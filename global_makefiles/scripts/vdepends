@@ -1,0 +1,102 @@
+#!/bin/bash
+awk '
+	#
+	# The first argument is the file to be scanned. All other
+	# arguments specify which other files exist. These filenames are
+	# stored and used to determine which entities, packages and
+	# architectures exist.
+	#
+	BEGIN {
+		for(i=2;i<=ARGC;i++) {
+			if(ARGV[i] ~ /\r/) {
+				# remove CR that are passed via the commandline
+				ARGV[i]=gensub(/\r/, "", "g", ARGV[i]);
+			}
+			if(ARGV[i] != ""){
+				name[ARGV[i]]=1;
+			}				
+		}
+
+		ARGC=2;
+
+		objname=gensub(/(.*\/)?(.*)\.vhd/, "\\2", "g", ARGV[1]);
+		printf("%s.vc: work/_lib", objname);
+		warnings=0;
+		errors=0;
+		if(objname ~ /-/) {
+			entity=gensub(/-.*/,"","",objname);
+			if(name[entity]==1)
+				printf(" \\\n\t%s.vc",entity)
+			else
+				warning[warnings++]="WARNING entity" entity " not found"
+		}
+
+	}
+
+	#
+	# Simplify the remainder of the script by removing strange
+	# constructions 
+	#
+	/--/ { sub(/--.*/,"") }
+	/ *[()] */ { $0=gensub(/ *([()]) */, "\\1", "g"); }
+	/ +:/ { $0=gensub(/ +:/, ": ", "g"); }
+    /\r/{ $0=gensub(/\r/, "", "g");}
+
+	#
+	# Component instantiations
+	#
+	$1~/:/ && name[sub(";","",$2)]==1 {
+		printf(" \\\n\t%s.vc",sub(";","",$2))
+	}
+
+	#
+	# Determine which packages we use. (We only use work)
+	#
+	$1=="use" &&  $2 ~/^work\./ {
+		package=gensub(/.*\.([A-Za-z0-9_]+)\..*/, "\\1", "g");
+		if(name[package]==1)
+			printf(" \\\n\t%s.vc",package)
+		else
+			error[errors++]="ERROR package " package " not found"
+	}
+
+	#
+	# Find for which entity the configuration is
+	#
+	$1=="configuration" {
+		if(name[$4]==1)
+			printf(" \\\n\t%s.vc",$4)
+		else
+			warning[warnings++]="WARNING component " $4 " not found"
+	}
+
+	#
+	# Find the entities and architectures used (both in configurations
+	# and configurations)
+	#
+	($1=="use" || $1 ~ /:/) && $2=="entity" {
+		entity=gensub(/\(.*/, "", "", $3);
+		entity=gensub(/.*\./, "", "", entity);
+		entity=gensub(/;.*/, "", "g", entity);
+		if($3 ~ /\(/) {
+			architecture=gensub(/^.*\(/, "", "", $3);
+			architecture=gensub(/\).*/, "", "", architecture);
+			if(name[entity]==1)
+				printf(" \\\n\t%s.vc",entity)
+			if(name[entity "-" architecture]==1) 
+				printf(" \\\n\t%s.vc",entity "-" architecture)
+		} else {
+			if(name[entity]==1)
+				printf(" \\\n\t%s.vc",entity)
+		}
+	}
+
+
+	END { 	
+		printf("\n"); 
+		for(i=0;i<errors;i++)
+			print "# " error[i]
+		for(i=0;i<warnings;i++)
+			print "# " warning[i]
+	}
+' $*

@@ -1,0 +1,22 @@
+/***************************************************** 
+* 
+* FILE : sd_ram16.bmm 
+* 
+* Define a BRAM map for the RAM memory space.
+* address space 0x00000000 - 0x3FFF, 16k deep by 8 bits wide. 
+* 
+****************************************************/ 
+
+ADDRESS_BLOCK sd_ram_low RAMB16 [0x00000000:0x00003FFF] 
+    BUS_BLOCK 
+        i_cpu/r_int_ram.i_zpuram/Mram_my_mem8 [7];
+        i_cpu/r_int_ram.i_zpuram/Mram_my_mem7 [6];
+        i_cpu/r_int_ram.i_zpuram/Mram_my_mem6 [5];
+        i_cpu/r_int_ram.i_zpuram/Mram_my_mem5 [4];
+        i_cpu/r_int_ram.i_zpuram/Mram_my_mem4 [3];
+        i_cpu/r_int_ram.i_zpuram/Mram_my_mem3 [2];
+        i_cpu/r_int_ram.i_zpuram/Mram_my_mem2 [1];
+        i_cpu/r_int_ram.i_zpuram/Mram_my_mem1 [0];
+    END_BUS_BLOCK; 
+END_ADDRESS_BLOCK;
+

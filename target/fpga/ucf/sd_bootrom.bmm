@@ -1,0 +1,29 @@
+/***************************************************** 
+* 
+* FILE : sd_bootrom.bmm 
+* 
+* Define a BRAM map for the ROM memory space.
+* address space 0x00000000 - 0x3FFF, 16k deep by 8 bits wide. 
+* 
+****************************************************/ 
+
+ADDRESS_BLOCK sd_bootrom1 RAMB16 [0x00001000:0x00004FFF] 
+    BUS_BLOCK 
+        sdcpu/Mrom_rom1_data_rom00008 [7];
+        sdcpu/Mrom_rom1_data_rom00007 [6];
+        sdcpu/Mrom_rom1_data_rom00006 [5];
+        sdcpu/Mrom_rom1_data_rom00005 [4];
+        sdcpu/Mrom_rom1_data_rom00004 [3];
+        sdcpu/Mrom_rom1_data_rom00003 [2];
+        sdcpu/Mrom_rom1_data_rom00002 [1];
+        sdcpu/Mrom_rom1_data_rom00001 [0];
+    END_BUS_BLOCK; 
+END_ADDRESS_BLOCK;
+
+ADDRESS_BLOCK sd_bootrom2 RAMB16 [0x00000000:0x00000FFF] 
+    BUS_BLOCK 
+        sdcpu/Mrom_rom2_data_rom00002 [7:4];
+        sdcpu/Mrom_rom2_data_rom00001 [3:0];
+    END_BUS_BLOCK; 
+END_ADDRESS_BLOCK;
+

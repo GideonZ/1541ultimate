@@ -1,0 +1,5 @@
+
+Possible modes:
+- Direct connection (should be handled by hardware)
+- Lowspeed device through FS Hub (needs to use preamble mode)
+- FS or LS device through HS Hub (needs to use split transactions)

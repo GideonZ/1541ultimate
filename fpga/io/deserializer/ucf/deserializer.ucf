@@ -1,0 +1,18 @@
+
+NET "IO<0>"  LOC = "P41";
+NET "IO<1>"  LOC = "P42";
+NET "IO<2>"  LOC = "P2";
+NET "IO<3>"  LOC = "P3";
+NET "IO<4>"  LOC = "P5";
+NET "IO<5>"  LOC = "P6";
+NET "IO<6>"  LOC = "P7";
+NET "IO<7>"  LOC = "P8";
+NET "IO<8>"  LOC = "P40";
+NET "IO<9>"  LOC = "P38";
+NET "IO<10>" LOC = "P39";
+NET "IO<11>" LOC = "P37";
+NET "CLOCK"  LOC = "P1";
+NET "SYNC"   LOC = "P34";
+NET "RXD"    LOC = "P33";
+NET "TXD"    LOC = "P32";
+
