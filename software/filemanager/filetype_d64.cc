@@ -1,0 +1,699 @@
+#include "filetype_d64.h"
+#include "directory.h"
+#include "c1541.h"
+#include "filemanager.h"
+
+extern "C" {
+    #include "dump_hex.h"
+}
+
+/* Drives to mount on */
+extern C1541 *c1541;
+
+// tester instance
+FileTypeD64 tester(file_type_factory);
+
+/*********************************************************************/
+/* D64/D71/D81 File Browser Handling                                 */
+/*********************************************************************/
+#define D64FILE_MOUNT    0x2101
+#define D64FILE_MOUNT_RO 0x2102
+#define D64FILE_MOUNT_UL 0x2103
+
+FileTypeD64 :: FileTypeD64(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
+{
+    fac.register_type(this);
+    info = NULL;
+}
+
+FileTypeD64 :: FileTypeD64(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+{
+    printf("Creating d64 type from info: %s\n", fi->lfname);
+    // we'll create a file-mapped block device and a default
+    // partition to attach our file system to
+    blk = new BlockDevice_File(this, 256);
+    prt = new Partition(blk, 0, (fi->size)>>8, 0);
+    fs  = new FileSystemD64(prt);
+}
+
+FileTypeD64 :: ~FileTypeD64()
+{
+    cleanup(); // shouldn't do anything
+}
+
+void FileTypeD64 :: cleanup(void)
+{
+	if(info) {
+		if(fs) {
+			delete fs;
+			delete prt;
+			delete blk;
+			fs = NULL; // invalidate object
+		}
+	}
+	cleanup_children();
+}
+
+int FileTypeD64 :: fetch_children()
+{
+    printf("Fetch d64 children. %p\n", this);
+    if(!fs)
+        return -1;
+        
+    cleanup_children();
+
+    // now getting the root directory
+    Directory *r = fs->dir_open(NULL);
+    FileInfo fi(32);    
+
+    int i=0;        
+    while(r->get_entry(fi) == FR_OK) {
+        children.append(new FileDirEntry(this, &fi));
+        ++i;
+    }
+    fs->dir_close(r);
+    return i;
+}
+
+int FileTypeD64 :: fetch_context_items(IndexedList<PathObject *> &list)
+{
+    list.append(new MenuItem(this, "Mount Disk", D64FILE_MOUNT));
+    list.append(new MenuItem(this, "Mount Disk Read Only", D64FILE_MOUNT_RO));
+    list.append(new MenuItem(this, "Mount Disk Unlinked", D64FILE_MOUNT_UL));
+
+    return 3 + FileDirEntry :: fetch_context_items_actual(list);
+}
+
+FileDirEntry *FileTypeD64 :: test_type(PathObject *obj)
+{
+	FileInfo *inf = obj->get_file_info();
+    if(strcmp(inf->extension, "D64")==0)
+        return new FileTypeD64(obj->parent, inf);
+//    if(strcmp(inf->extension, "D71")==0)
+//        return new FileTypeD64(NULL, inf);
+//    if(strcmp(inf->extension, "D81")==0)
+//        return new FileTypeD64(NULL, inf);
+    return NULL;
+}
+
+void FileTypeD64 :: execute(int selection)
+{
+    bool protect;
+    File *file;
+    BYTE flags;
+
+	switch(selection) {
+	case D64FILE_MOUNT_UL:
+		protect = false;
+		flags = FA_READ;
+		break;
+	case D64FILE_MOUNT_RO:
+		protect = true;
+		flags = FA_READ;
+		break;
+	case D64FILE_MOUNT:
+        protect = (info->attrib & AM_RDO);
+        flags = (protect)?FA_READ:(FA_READ | FA_WRITE);
+	default:
+		break;
+	}
+
+	switch(selection) {
+	case D64FILE_MOUNT:
+	case D64FILE_MOUNT_RO:
+	case D64FILE_MOUNT_UL:
+		printf("Mounting disk.. %s\n", get_name());
+		file = root.fopen(this, flags);
+//		file = info->fs->file_open(info, flags);
+		if(file) {
+            push_event(e_unfreeze);
+			push_event(e_mount_drv1, file, protect);
+			if(selection != D64FILE_MOUNT) {
+				push_event(e_unlink_drv1);
+			}
+		} else {
+			printf("Error opening file.\n");
+		}
+		break;
+	default:
+		FileDirEntry :: execute(selection);
+    }
+}
+
+/*********************************************************************/
+/* D64/D71/D81 File System implementation                            */
+/*********************************************************************/
+
+FileSystemD64 :: FileSystemD64(Partition *p) : FileSystem(p)
+{
+    DWORD sectors;
+    image_mode = 0;
+    current_sector = -1;
+    dirty = 0;
+
+    if(p->ioctl(GET_SECTOR_COUNT, &sectors) == RES_OK) {
+        if(sectors >= 1366) // D71
+            ++image_mode;
+        if(sectors >= 3200) // D81
+            ++image_mode;
+    }
+    bam_dirty = false;
+    bam_valid = false;
+    if(p->read(bam_buffer, get_root_sector(), 1) == RES_OK) {
+        bam_valid = true;
+    }
+    
+}
+    
+FileSystemD64 :: ~FileSystemD64()
+{
+}
+
+int FileSystemD64 :: get_abs_sector(int track, int sector)
+{
+    int result = 0;
+    
+    if(track <= 0)
+        return 0;
+
+    --track;
+    
+    if (image_mode > 1) {
+        if(track > 80)
+            track = 80;
+        if(sector > 39)
+            sector = 39;
+        return (track * 40) + sector;
+    }
+
+    if (image_mode == 1) {
+        if(track >= 35) {
+            result = 683;
+            track -= 35;
+        }
+    }
+
+    if(track >= 17) {
+        result += 17 * 21;
+        track -= 17;
+    } else {
+        return result + (track * 21) + sector;
+    }
+    if(track >= 7) {
+        result += 7 * 19;
+        track -= 7;
+    } else {
+        return result + (track * 19) + sector;
+    }
+    if(track >= 6) {
+        result += 6 * 18;
+        track -= 6;
+    } else {
+        return result + (track * 18) + sector;
+    }
+    
+    return result + (track * 17) + sector;
+}
+
+bool FileSystemD64 :: get_track_sector(int abs, int &track, int &sector)
+{
+	if(abs < 0)
+		return false;
+
+	if (image_mode > 1) {
+        track = (abs / 40);
+        sector = abs - (track * 40);
+        track ++;
+        return true;
+    }
+    
+    if (image_mode == 1) {
+        if (abs >= 683) {
+            track = 35;
+            abs -= 683;
+        } else {
+            track = 0;
+        }
+    }
+    
+    if(abs >= (17*21)) {
+        track += 17;
+        abs -= (17*21);
+    } else {
+        int t = (abs / 21);
+        sector = (abs - t*21);
+        track += t + 1;
+        return true;
+    }
+    
+    if(abs >= (7*19)) {
+        track += 7;
+        abs -= (7*19);
+    } else {
+        int t = (abs / 19);
+        sector = (abs - t*19);
+        track += t + 1;
+        return true;
+    }        
+
+    if(abs >= (6*18)) {
+        track += 6;
+        abs -= (6*18);
+    } else {
+        int t = (abs / 18);
+        sector = (abs - t*18);
+        track += t + 1;
+        return true;
+    }        
+
+    int t = (abs / 17);
+    sector = (abs - t*17);
+    track += t + 1;
+    return true;
+}
+
+int FileSystemD64 :: get_root_sector(void)
+{
+    if(image_mode > 1)
+        return get_abs_sector(40, 0);
+
+    return get_abs_sector(18, 0);
+}
+
+/*
+bool FileSystemD64 :: is_free(int abs)
+{
+    if(image_mode > 1)
+        return true; // we don't understand D71/D81 bit allocation maps yet
+
+            
+        
+}
+*/
+
+bool FileSystemD64 :: allocate_sector_on_track(int track, int &sector)
+{
+    BYTE k,b,*m;
+
+    if(bam_buffer[4*track]) {
+        m = &bam_buffer[1 + 4*track];
+        for(int i=0;i<21;i++) {
+            k = (i >> 3);
+            b = i & 7;
+            if ((m[k] >> b) & 1) {
+                m[k] &= ~(1 << b);
+                --bam_buffer[4*track];
+                sector = i;
+                bam_dirty = true;
+                return true;
+            }
+        }
+        // error!! bam indicated free sector, but there is none.
+        bam_buffer[4*track] = 0;
+        bam_dirty = true;
+    }
+    return false;
+}
+
+bool FileSystemD64 :: get_next_free_sector(int &track, int &sector)
+{
+    if(image_mode > 1)
+        return false; // we don't understand D71/D81 bit allocation maps yet
+        
+    if(allocate_sector_on_track(track, sector))
+        return true;
+
+    for(int i=17;i>=1;i--) {
+        if(allocate_sector_on_track(i, sector)) {
+            track = i;
+            return true;
+        }
+    }
+    for(int i=19;i<=35;i++) {
+        if(allocate_sector_on_track(i, sector)) {
+            track = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+FRESULT FileSystemD64 :: move_window(int abs)
+{
+    DRESULT res;
+    if(current_sector != abs) {
+    	if(dirty) {
+    		res = prt->write(sect_buffer, current_sector, 1);
+			if(res != RES_OK)
+				return FR_DISK_ERR;
+    	}
+    	res = prt->read(sect_buffer, abs, 1);
+        if(res == RES_OK) {
+            current_sector = abs;
+        } else {
+        	return FR_DISK_ERR;
+        }
+    }
+    return FR_OK;
+}
+
+
+
+// check if file system is present on this partition
+bool FileSystemD64 :: check(Partition *p)
+{
+    return false;
+}
+
+// Initialize file system
+void    FileSystemD64 :: init(void)
+{
+}              
+
+// Get number of free sectors on the file system
+FRESULT FileSystemD64 :: get_free (DWORD*)
+{
+    return FR_DENIED; // not yet implemented
+}
+
+// Clean-up cached data
+FRESULT FileSystemD64 :: sync(void)
+{
+    return FR_OK;
+}              
+
+// Opens directory (creates dir object, NULL = root)
+Directory *FileSystemD64 :: dir_open(FileInfo *info)
+{
+    if(info) { // can only get root directory, D64 does not allow sub directories
+        return NULL;
+    }
+    Directory *dir = new Directory(this, 0); // use handle as index in dir. reset to 0
+    return dir;
+}
+    
+
+// Closes (and destructs dir object)
+void FileSystemD64 :: dir_close(Directory *d)
+{
+    delete d;
+}
+
+// reads next entry from dir
+FRESULT FileSystemD64 :: dir_read(Directory *d, FileInfo *f)
+{
+    DWORD idx = d->handle;
+    int next_t, next_s;
+    
+    // Fields that are always the same.
+    f->fs      = this;
+	f->date    = 0;
+	f->time    = 0;
+
+	if(idx == 0) {
+	    f->attrib  = AM_VOL;
+        f->cluster = get_root_sector();
+        f->extension[0] = '\0';
+
+        /* Volume name extraction */
+        if(prt->read(sect_buffer, get_root_sector(), 1) == RES_OK) {
+            for(int i=0;i<24;i++) {
+                if(i < f->lfsize)
+                    f->lfname[i] = char(sect_buffer[144+i] | 0x80);
+            }
+            if(f->lfsize > 24)
+                f->lfname[24] = 0;
+        	f->size    = 0;
+        	d->handle  = 1;
+        	return FR_OK;
+        } else {
+            return FR_DISK_ERR;
+        }
+    } else {
+        --idx; // adjust for header
+        do {
+            if((idx & 7)==0) {
+                if(idx == 0) {
+            	    next_t = (image_mode==2)?40:18;
+            	    next_s = 1;
+                } else {
+                    next_t = (int)sect_buffer[0];
+                    next_s = (int)sect_buffer[1];
+                }
+                if(!next_t) { // end of list
+                    return FR_NO_FILE;
+                }
+                if(prt->read(sect_buffer, get_abs_sector(next_t, next_s), 1) != RES_OK) {
+                    return FR_DISK_ERR;
+                }
+            }
+            BYTE *p = &sect_buffer[(idx & 7) << 5]; // 32x from start of sector
+            //dump_hex(p, 32);
+            if((p[2] & 0x0f) == 0x02) { // PRG
+                int j = 0;
+                for(int i=5;i<21;i++) {
+                    if(j < f->lfsize)
+                        f->lfname[j++] = char(p[i] & 0x7F);
+                }
+                if(j < f->lfsize)
+                    f->lfname[j] = 0;
+
+        	    f->attrib = (p[2] & 0x40)?AM_RDO:0;
+                f->cluster = get_abs_sector((int)p[3], (int)p[4]);
+                f->size = (int)p[30] + 256*(int)p[31];
+                strncpy(f->extension, "PRG", 4);
+                d->handle = idx + 2; // continue after this next time (readjust for header)
+                return FR_OK;                
+            } else if(!p[3]) {
+                return FR_NO_FILE;
+            }
+            idx++;
+        } while(idx < 256);
+        return FR_NO_FILE;
+    }
+    return FR_INT_ERR;    
+}
+
+// functions for reading and writing files
+// Opens file (creates file object)
+File   *FileSystemD64 :: file_open(FileInfo *info, BYTE flags)
+{
+	FileInD64 *ff = new FileInD64(this);
+	File *f = new File(this, (DWORD)ff);
+	FRESULT res = ff->open(info, flags);
+	if(res == FR_OK) {
+		return f;
+	}
+	delete ff;
+	delete f;
+	return NULL;
+}  
+
+// Closes file (and destructs file object)
+void FileSystemD64::file_close(File *f)
+{
+    FileInD64 *ff = (FileInD64 *)f->handle;
+    ff->close();
+    delete ff;
+    delete f;
+}
+
+FRESULT FileSystemD64::file_read(File *f, void *buffer, DWORD len, UINT *bytes_read)
+{
+    FileInD64 *ff = (FileInD64 *)f->handle;
+    return ff->read(buffer, len, bytes_read);
+}
+
+FRESULT FileSystemD64::file_write(File *f, void *buffer, DWORD len, UINT *bytes_written)
+{
+    FileInD64 *ff = (FileInD64 *)f->handle;
+    return ff->write(buffer, len, bytes_written);
+}
+
+FRESULT FileSystemD64::file_seek(File *f, DWORD pos)
+{
+    FileInD64 *ff = (FileInD64 *)f->handle;
+    return ff->seek(pos);
+}
+
+/*********************************************************************/
+/* D64/D71/D81 File System implementation                            */
+/*********************************************************************/
+FileInD64 :: FileInD64(FileSystemD64 *f)
+{
+    current_track = 0;
+    current_sector = 0;
+    offset_in_sector = 0;
+    num_blocks = 0;
+    dir_sect = -1;
+    dir_entry_offset = 0;
+
+    fs = f;
+}
+    
+FRESULT FileInD64 :: open(FileInfo *info, BYTE flags)
+{
+	if(info->fs != fs)
+		return FR_INVALID_OBJECT;
+
+	if(!(fs->get_track_sector(info->cluster, current_track, current_sector)))
+		return FR_INT_ERR;
+
+	offset_in_sector = 2;
+
+	num_blocks = info->size;
+	dir_sect = info->dir_sector;
+	dir_entry_offset = info->dir_offset;
+
+	return FR_OK;
+}
+
+FRESULT FileInD64 :: close(void)
+{
+	fs->sync();
+	//flag = 0;
+}
+
+FRESULT FileInD64 :: read(void *buffer, DWORD len, UINT *transferred)
+{
+    FRESULT res;
+    
+    BYTE *dst = (BYTE *)buffer;
+    BYTE *src;
+    
+    int bytes_left;
+    int tr;
+    
+    *transferred = 0;
+
+    if(!len)
+        return FR_OK;
+
+    while(len) {
+        // make sure the current sector is within view
+        res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+        if(res != FR_OK)
+            return res;
+        src = &(fs->sect_buffer[offset_in_sector]);
+        
+        // determine the number of bytes left in sector
+        if(fs->sect_buffer[0] == 0) { // last sector
+            bytes_left = (1 + fs->sect_buffer[1]) - offset_in_sector;
+        } else {
+            bytes_left = 256 - offset_in_sector;
+        }
+
+        // determine number of bytes to transfer now
+        if(bytes_left > len)
+            tr = len;
+        else
+            tr = bytes_left;
+
+        // do the actual copy    
+        for(int i=0;i<tr;i++) {
+            *(dst++) = *(src++);
+        }
+        len -= tr;
+        offset_in_sector += tr;
+        *transferred += tr;
+        
+        // check for end of file
+        if((bytes_left == tr) && (fs->sect_buffer[0] == 0))
+            return FR_OK;
+
+        // continue
+        if(offset_in_sector == 256) { // proceed to the next sector
+            current_track = fs->sect_buffer[0];
+            current_sector = fs->sect_buffer[1];
+            offset_in_sector = 2;
+        }
+    }
+    return FR_OK;        
+}
+
+FRESULT  FileInD64 :: write(void *buffer, DWORD len, UINT *transferred)
+{
+    FRESULT res;
+    
+    BYTE *src = (BYTE *)buffer;
+    BYTE *dst;
+    
+    int bytes_left;
+    int tr;
+    
+    *transferred = 0;
+
+    if(!len)
+        return FR_OK;
+
+    if(current_track == 0) { // need to allocate the first block
+        fs->sync(); // make sure we can use the buffer to play around
+        if(!fs->get_next_free_sector(current_track, current_sector))
+            return FR_DISK_FULL;
+        num_blocks = 1;
+        offset_in_sector = 2;
+        fs->sect_buffer[0] = 0; // unlink
+        fs->sect_buffer[1] = 1; // 0 bytes in this sector
+    } else {
+        // make sure the current sector is within view
+        res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+        if(res != FR_OK)
+            return res;
+    }
+    
+    while(len) {
+        // check if we are at the end of our current sector
+        if(offset_in_sector == 256) {
+            if(fs->sect_buffer[0] == 0) { // we don't have any more bytes.. so extend the file
+                if(!fs->get_next_free_sector(current_track, current_sector))
+                    return FR_DISK_FULL;
+                num_blocks += 1;
+                fs->sect_buffer[0] = current_track;
+                fs->sect_buffer[1] = current_sector;
+                fs->dirty = 1;
+                fs->sync(); // make sure we can use the buffer to play around
+                fs->sect_buffer[0] = 0; // unlink
+                offset_in_sector = 2;
+            } else { 
+                current_track = fs->sect_buffer[0];
+                current_sector = fs->sect_buffer[1];
+                res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+                if(res != FR_OK)
+                    return res;
+                offset_in_sector = 2;
+            }
+        }
+
+        bytes_left = 256 - offset_in_sector; // we can use the whole sector
+
+        // determine number of bytes to transfer now
+        if(bytes_left > len)
+            tr = len;
+        else
+            tr = bytes_left;
+
+        // do the actual copy    
+        fs->dirty = 1;
+        dst = &(fs->sect_buffer[offset_in_sector]);
+        for(int i=0;i<tr;i++) {
+            *(dst++) = *(src++);
+        }
+        len -= tr;
+        offset_in_sector += tr;
+        *transferred += tr;
+        
+        if(fs->sect_buffer[0] == 0) { // last sector (still)
+            if((offset_in_sector-1) > fs->sect_buffer[1]) // we extended the file
+                fs->sect_buffer[1] = (BYTE)(offset_in_sector - 1);
+        }
+    }
+    fs->sync();
+    
+    // TODO: Update link to file in directory.
+    return FR_OK;        
+}
+
+FRESULT FileInD64 :: seek(DWORD pos)
+{
+	return FR_DENIED;
+}
