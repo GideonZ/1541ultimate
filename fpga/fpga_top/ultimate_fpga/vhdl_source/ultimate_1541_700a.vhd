@@ -212,9 +212,9 @@ architecture structural of ultimate_1541_700a is
     signal data_o, data_i   : std_logic := '1';
     signal auto_o, srq_i    : std_logic := '1';
 	
-    signal atn_o_2          : std_logic;
-    signal clk_o_2          : std_logic;
-    signal data_o_2         : std_logic;
+    signal atn_o_2          : std_logic := '1';
+    signal clk_o_2          : std_logic := '1';
+    signal data_o_2         : std_logic := '1';
 
 	signal iec_atn_o		: std_logic := '1';
 	signal iec_clk_o	    : std_logic := '1';
