@@ -17,6 +17,7 @@ port (
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
     
+    iec_reset_o     : in  std_logic;
     power           : out std_logic;
     drv_reset       : out std_logic;
     drive_address   : out std_logic_vector(1 downto 0);
@@ -153,6 +154,8 @@ begin
                 dirty_bits(wa) <= wd;
             end if;
 
+            drv_reset <= drv_reset_i or iec_reset_o;
+
             if reset='1' then
                 power_i          <= '0';
                 drv_reset_i      <= '1';
@@ -174,7 +177,6 @@ begin
     param_wdata     <= io_req.data;
 
     power           <= power_i;
-    drv_reset       <= drv_reset_i;
     drive_address   <= drive_address_i;
     floppy_inserted <= inserted_i;
     write_prot_n    <= sensor_i;

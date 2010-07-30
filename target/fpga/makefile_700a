@@ -86,6 +86,7 @@ BITGEN_FLAGS     := 	-w -d \
 
 SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/dma_bus_pkg.vhd \
@@ -144,6 +145,7 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/drive_registers.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/c1541_drive.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/c1541_pkg.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/c1541_timing.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/gcr2bin.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/bin2gcr.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/gcr_codec.vhd \
@@ -167,6 +169,7 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/cart_slot/vhdl_source/reu_pkg.vhd \
 				vhdl,work,../../fpga/cart_slot/vhdl_source/reu.vhd \
 				vhdl,work,../../fpga/fpga_top/ultimate_fpga/vhdl_source/s3e_clockgen.vhd \
+				vhdl,work,../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic.vhd \
 				vhdl,work,../../fpga/fpga_top/ultimate_fpga/vhdl_source/$(TARGET).vhd
 
  ################################################################################

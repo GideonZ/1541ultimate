@@ -18,8 +18,7 @@ generic (
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
-    cpu_clock_en    : in  std_logic;
-    drv_clock_en    : in  std_logic;
+    drive_stop      : in  std_logic;
     
     -- slave port on io bus
     io_req          : in  t_io_req;
@@ -38,6 +37,8 @@ port (
 
     data_o          : out std_logic; -- open drain
     data_i          : in  std_logic;              
+
+    iec_reset_n     : in  std_logic;
     
     -- LED
     act_led_n       : out std_logic;
@@ -49,6 +50,10 @@ port (
 end c1541_drive;
 
 architecture structural of c1541_drive is
+    signal cpu_clock_en     : std_logic;
+    signal drv_clock_en     : std_logic;
+    signal iec_reset_o      : std_logic;
+    
     signal param_write      : std_logic;
     signal param_ram_en     : std_logic;
     signal param_addr       : std_logic_vector(10 downto 0);
@@ -91,6 +96,19 @@ architecture structural of c1541_drive is
     signal count            : unsigned(7 downto 0) := X"00";
 	signal led_intensity	: unsigned(1 downto 0);
 begin        
+    i_timing: entity work.c1541_timing
+    port map (
+        clock        => clock,
+        reset        => reset,
+        
+        iec_reset_n  => iec_reset_n,
+        iec_reset_o  => iec_reset_o,
+    
+        drive_stop   => drive_stop,
+    
+        drv_clock_en => drv_clock_en,   -- 1/12.5 (4 MHz)
+        cpu_clock_en => cpu_clock_en ); -- 1/50   (1 MHz)
+
     i_cpu: entity work.cpu_part_1541
     generic map (
         g_tag          => g_cpu_tag,
@@ -232,6 +250,7 @@ begin
         param_wdata     => param_wdata,
         param_rdata     => param_rdata,
 
+        iec_reset_o     => iec_reset_o,
         power           => power,
         drv_reset       => drv_reset,
         drive_address   => drive_address,

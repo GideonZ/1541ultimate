@@ -12,7 +12,6 @@ end harness_v4;
 architecture tb of harness_v4 is
     constant c_uart_divisor : natural := 434;
 
-    signal CLOCK       : std_logic := '0';
     signal PHI2        : std_logic := '0';
     signal RSTn        : std_logic := '1';
     signal DOTCLK      : std_logic := '1';
@@ -73,12 +72,16 @@ architecture tb of harness_v4 is
     signal FLASH_MOSI  : std_logic;
     signal FLASH_MISO  : std_logic := '1';
     signal ULPI_CLOCK  : std_logic := '0';
+    signal ULPI_RESET  : std_logic := '0';
     signal ULPI_NXT    : std_logic := '0';
     signal ULPI_STP    : std_logic;
     signal ULPI_DIR    : std_logic := '0';
     signal ULPI_DATA   : std_logic_vector(7 downto 0) := (others => 'H');
 
-    signal reset        : std_logic;
+    signal sys_clock    : std_logic;
+    signal sys_reset    : std_logic;
+    signal sys_shifted  : std_logic;
+
     signal rx_char      : std_logic_vector(7 downto 0);
     signal rx_char_d    : std_logic_vector(7 downto 0);
     signal rx_ack       : std_logic;
@@ -92,12 +95,14 @@ architecture tb of harness_v4 is
 --    shared variable bram : h_mem_object;
 
 begin
-    mut: entity work.ultimate_1541_700a
+    mut: entity work.ultimate_logic
     generic map (
         g_simulation => true )
     port map (
-        CLOCK       => CLOCK,
-                                   
+        sys_clock   => sys_clock,
+        sys_reset   => sys_reset,
+        sys_shifted => sys_shifted,
+        
         PHI2        => PHI2,
         DOTCLK      => DOTCLK,
         RSTn        => RSTn,
@@ -180,6 +185,7 @@ begin
     
         -- USB Interface (ULPI)
         ULPI_CLOCK  => ULPI_CLOCK,
+        ULPI_RESET  => ULPI_RESET,
         ULPI_NXT    => ULPI_NXT,
         ULPI_STP    => ULPI_STP,
         ULPI_DIR    => ULPI_DIR,
@@ -188,18 +194,22 @@ begin
         -- Buttons
         BUTTON      => BUTTON );
 
+	sys_clock <= not sys_clock after 10 ns; -- 50 MHz
+    sys_reset <= '1', '0' after 100 ns;
+    sys_shifted <= transport sys_clock after 3 ns;
+    
 	ULPI_CLOCK <= not ULPI_CLOCK after 8.333 ns; -- 60 MHz
-	clock <= not clock after 10 ns; -- 50 MHz
+    ULPI_RESET <= '1', '0' after 100 ns;
+
 	PHI2  <= not PHI2 after 507.5 ns; -- 0.98525 MHz
     RSTn  <= '0', '1' after 6 us;
-    reset <= '1', '0' after 100 ns;
     
     i_ulpi_phy: entity work.ulpi_phy_bfm
     generic map (
         g_rx_interval => 100000 )
     port map (
         clock       => ULPI_CLOCK,
-        reset       => reset,
+        reset       => ULPI_RESET,
         
         ULPI_DATA   => ULPI_DATA,
         ULPI_DIR    => ULPI_DIR,
@@ -298,8 +308,8 @@ begin
     i_rx: entity work.rx
     generic map (c_uart_divisor)
     port map (
-        clk     => CLOCK,
-        reset   => reset,
+        clk     => sys_clock,
+        reset   => sys_reset,
     
         rxd     => UART_TXD,
         
@@ -309,8 +319,8 @@ begin
     i_tx: entity work.tx
     generic map (c_uart_divisor)
     port map (
-        clk     => CLOCK,
-        reset   => reset,
+        clk     => sys_clock,
+        reset   => sys_reset,
     
         dotx    => do_tx,
         txchar  => tx_char,
@@ -318,9 +328,9 @@ begin
 
         txd     => UART_RXD );
 
-    process(CLOCK)
+    process(sys_clock)
     begin
-        if rising_edge(CLOCK) then
+        if rising_edge(sys_clock) then
             if rx_ack='1' then
                 rx_char_d <= rx_char;
             end if;
@@ -333,11 +343,11 @@ begin
             if tx_done /= '1' then
                 wait until tx_done = '1';
             end if;
-            wait until CLOCK='1';
+            wait until sys_clock='1';
             tx_char <= i;
             do_tx   <= '1';
             wait until tx_done = '0';
-            wait until CLOCK='1';
+            wait until sys_clock='1';
             do_tx   <= '0';
         end procedure;        
 

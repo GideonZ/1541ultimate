@@ -17,14 +17,7 @@ port (
     sys_reset   : out std_logic;
     sys_shifted : out std_logic;
 
-    drive_stop  : in  std_logic;
-    drv_clock_en: out std_logic; -- 1/12.5 (4 MHz)
-    cpu_clock_en: out std_logic; -- 1/50   (1 MHz)
-    
-    eth_clock   : out std_logic; -- / 2.5  (20 MHz)
-
-    iec_reset_n : in  std_logic := '1';
-    iec_reset_o : out std_logic );
+    eth_clock   : out std_logic ); -- / 2.5  (20 MHz)
     
 end s3e_clockgen;
 
@@ -40,19 +33,11 @@ architecture Gideon of s3e_clockgen is
 	signal sys_reset_i		: std_logic := '1';
 	signal sys_reset_p		: std_logic := '1';
 	
-    signal div_cnt          : std_logic_vector(3 downto 0) := "0000";
-    signal pre_cnt          : std_logic_vector(1 downto 0) := "00";
-	signal cpu_cke_i		: std_logic := '0';
-    signal toggle           : std_logic := '0';
     signal reset_c          : std_logic;
     
     signal reset_out        : std_logic := '1';
     signal sysrst_cnt       : integer range 0 to 63;
 
-    signal iec_reset_sh     : std_logic_vector(0 to 2) := "000";
---    signal reset_sample_cnt : integer range 0 to 127 := 0;
---    signal reset_float      : std_logic := '1';
-    
     attribute register_duplication : string;
     attribute register_duplication of sys_reset_i : signal is "no";
 
@@ -115,40 +100,6 @@ begin
                 sysrst_cnt <= sysrst_cnt + 1;
             end if;
             sys_reset_p  <= sys_reset_i;
-
-			drv_clock_en <= '0';
-			cpu_cke_i    <= '0';
-			
-            if drive_stop='0' then
-    			if (div_cnt = X"B" and toggle='0') or
-    			   (div_cnt = X"C" and toggle='1') then
-    				div_cnt <= X"0";
-    				drv_clock_en <= '1';
-    
-                    toggle <= not toggle;
-    
-    	            pre_cnt <= pre_cnt + 1;
-    	
-    	            if pre_cnt = "11" then
-    	                cpu_cke_i <= '1';
-    	            else
-    	                cpu_cke_i <= '0';
-    	            end if;
-    			else
-    				div_cnt <= div_cnt + 1;
-    			end if;
-            end if;
-
-            if cpu_cke_i = '1' then
-                iec_reset_sh(0) <= not iec_reset_n;
-                iec_reset_sh(1 to 2) <= iec_reset_sh(0 to 1);
-            end if;                    
-
-            if sys_reset_p='1' then
-                toggle      <= '0';
-                pre_cnt     <= (others => '0');
-                div_cnt     <= (others => '0');
-            end if;
         end if;
         if dcm1_locked='0' then
             sysrst_cnt  <= 0;
@@ -158,6 +109,4 @@ begin
     end process;
 
     sys_reset    <= sys_reset_p;
-	cpu_clock_en <= cpu_cke_i;
-    iec_reset_o  <= '1' when iec_reset_sh="111" else '0';
 end Gideon;
