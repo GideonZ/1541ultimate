@@ -58,12 +58,14 @@ void FileManager :: handle_event(Event &e)
 File *FileManager :: fopen(char *filename, BYTE flags)
 {
 	Path *path = new Path;
+	//dump(); // dumps file system from root..
 	if(path->cd(filename)) {
 		PathObject *po = path->get_path_object();
 		FileInfo *fi = po->get_file_info();
 		if(fi) {
 			File *f = fi->fs->file_open(fi, flags);
 			if(f) {
+				po->attach();
 				f->node = po;
 				f->path = path;
 				open_file_list.append(f);

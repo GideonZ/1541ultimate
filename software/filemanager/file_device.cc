@@ -24,7 +24,7 @@ int FileDevice :: fetch_children(void)
         printf("Error initializing disk..\n");
         return -1;
     }
-    printf("Disk Initialized.\n");
+    //printf("Disk Initialized.\n");
     cleanup_children();
     Partition *p = disk->partition_list;
     int i = 0;

@@ -215,7 +215,6 @@ architecture logic of ultimate_logic is
     signal iec_srq_o        : std_logic := '1';
     
     -- miscellaneous interconnect
-    signal ulpi_reset_i     : std_logic;
     signal irq_i            : std_logic := '0';
     signal c64_irq_n        : std_logic;
     signal c64_irq          : std_logic;
@@ -247,7 +246,7 @@ begin
         io_req      => cpu_io_req,
         io_resp     => cpu_io_resp );
 
-
+		
     i_io_arb: entity work.io_bus_arbiter_pri
     generic map (
         g_ports     => 2 )
@@ -449,7 +448,7 @@ begin
             -- other hardware pins
             BUFFER_ENn      => BUFFER_ENn,
         
-			buttons_n		=> BUTTON,
+			buttons 		=> BUTTON,
             cart_led_n      => CART_LEDn,
             
             -- timing output
@@ -527,7 +526,7 @@ begin
             g_simulation => g_simulation )
         port map (
             ulpi_clock  => ULPI_CLOCK,
-            ulpi_reset  => ulpi_reset_i,
+            ulpi_reset  => ulpi_reset,
         
             -- ULPI Interface
             ULPI_DATA   => ULPI_DATA,

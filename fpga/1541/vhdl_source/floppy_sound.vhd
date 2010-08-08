@@ -36,7 +36,7 @@ port (
     mem_resp        : in  t_mem_resp;
 
     -- audio
-    sample_out      : out unsigned(12 downto 0) );
+    sample_out      : out unsigned(12 downto 0) := (others => '0'));
 
 end floppy_sound;
     
@@ -163,6 +163,7 @@ begin
                 voice1_cnt      <= (others => '0');
                 voice2_cnt      <= (others => '0');
                 voice1_addr     <= (others => '0');
+				sample_out      <= (others => '0');
             end if;
         end if;
     end process;

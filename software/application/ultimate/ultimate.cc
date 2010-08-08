@@ -3,7 +3,6 @@
 
 #include "c64.h"
 #include "c1541.h"
-#include "spiflash.h"
 #include "small_printf.h"
 #include "screen.h"
 #include "keyboard.h"
@@ -17,7 +16,9 @@
 #include "rtc.h"
 #include "tape_controller.h"
 
+// these should move to main_loop.h
 void main_loop(void);
+void send_nop(void);
 
 C1541 *c1541;
 UserInterface *user_interface;
@@ -72,11 +73,7 @@ int main()
 	printf("%s\n", rtc.get_time_string(time_buffer, 32));
 
     c1541 = new C1541(C1541_IO_LOC_DRIVE_1);
-    poll_list.append(&poll_drive_1);
-
-    c64 = new C64;
-    poll_list.append(&poll_c64);
-    c64->init_cartridge();
+    c64   = new C64;
 
 	tape_controller = new TapeController;
 
@@ -86,7 +83,16 @@ int main()
     TreeBrowser *root_tree_browser = new TreeBrowser();
     user_interface->activate_uiobject(root_tree_browser); // root of all evil!
 
+	// start the file system, scan the sd-card etc..
+	send_nop();
+	send_nop();
+	
+	// add the drive and C64 to the root of all evil
+    poll_list.append(&poll_drive_1);
 
+    poll_list.append(&poll_c64);
+    c64->init_cartridge();
+	
     printf("All linked modules have been initialized.\n");
     printf("Starting main loop...\n");
     main_loop();

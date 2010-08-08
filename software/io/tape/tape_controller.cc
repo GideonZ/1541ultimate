@@ -4,7 +4,6 @@
 #include "tape_controller.h"
 #include "menu.h"
 #include "filemanager.h"
-#include "spiflash.h"
 
 TapeController *tape_controller = NULL; // globally static
 

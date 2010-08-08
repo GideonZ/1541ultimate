@@ -80,7 +80,8 @@
 
 typedef struct _cart
 {
-    DWORD flash_addr;
+    BYTE  id;
+    void *custom_addr; // dynamically filled in
     DWORD length;
     BYTE  type;
 } cart_def;
@@ -89,6 +90,7 @@ class Keyboard;
 
 class C64
 {
+    Flash *flash;
     Keyboard *keyb;
     ConfigStore *cfg;
     

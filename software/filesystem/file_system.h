@@ -77,13 +77,18 @@ public:
 		fs = NULL;
 		cluster = 0;
 		size = 0;
+		date = 0;
+		time = 0;
 		dir_clust = 0;
 		dir_sector = 2;
 		dir_offset = 0;
 		attrib = 0;
 		lfsize = namesize;
-	    if (namesize)
+	    if (namesize) {
 	        lfname = new char[namesize];
+			lfname[0] = '$'; // test/debug
+			lfname[1] = '\0';
+		}
 	    else
 	        lfname = NULL;
     }

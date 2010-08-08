@@ -1,7 +1,8 @@
 #ifndef VERSIONS_H
 #define VERSIONS_H
 
-#define APPL_VERSION "2.0RC5"
-#define BOOT_VERSION "V1.0"
+#define APPL_VERSION "2.0RC6"
+#define BOOT_VERSION "V1.1"
+#define FPGA_VERSION "FPGA U2 $96"
 
 #endif

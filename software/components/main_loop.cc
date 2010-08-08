@@ -25,6 +25,16 @@ void main_loop(void)
     } while(event.type != e_terminate);
 }
 
+void send_nop(void)
+{
+    PollFunction func;
+	Event event = (Event)c_empty_event;
+	for(int i=0;i<poll_list.get_elements();i++) {
+		func = poll_list[i];
+		func(event);
+	}
+}
+
 #ifdef TEST_LOOP
 #include <stdio.h>
 #include <stdlib.h>

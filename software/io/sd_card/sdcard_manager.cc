@@ -40,9 +40,13 @@ void SdCardManager :: poll()
 {
 	int	sense = sdio_sense(); // doesn't cost much time to do it every time
 	switch(sd_card->get_state()) {
-		case e_device_unknown:
+		case e_device_unknown: // boot state
 		    if(sense & SD_CARD_DETECT) {
-		    	sd_card->set_state(e_device_not_ready);
+				if(sd_card->init()) { // initialize card
+					sd_card->set_state(e_device_error);
+				} else {
+					sd_card->set_state(e_device_ready);
+				}
 				push_event(e_refresh_browser, &root);
 		    } else {
 		    	sd_card->set_state(e_device_no_media);

@@ -77,50 +77,52 @@ begin
         variable waddr : std_logic_vector(31 downto 0) := (others => '0');
         variable more_writes : integer := 0;
     begin
-        if rising_edge(CLK) and bound and CKE='1' then
-            r_queue <= r_queue(1 to r_queue'high) & ("ZZZZZZZZ");
-            if more_writes > 0 then
-                waddr := std_logic_vector(unsigned(waddr) + 1);
-                if to_integer(unsigned(waddr)) mod g_burst_len_w = 0 then
-                    waddr := std_logic_vector(unsigned(waddr) - g_burst_len_w);
-                end if;
-                if DQM='0' then
-                    write_memory_8(this, waddr, DQ);
-                end if;
-                more_writes := more_writes - 1;
-            end if;
-                
-            if CSn='0' then
-                case command is
-                when "110" => -- RAS, register bank address
-                    bank_rows(bank) <= A(g_row_bits-1 downto 0);
-                    
-                when "101" => -- CAS, start read burst
-                    raddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
-                    raddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
-                    raddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
-                    --report hstr(BA) & " " & hstr(bank_rows(bank)) & " " & hstr(A) & ": " & hstr(raddr);
-                    
-                    for i in 0 to g_burst_len_r-1 loop
-                        r_queue(g_cas_latency + i) <= read_memory_8(this, raddr);
-                        raddr := std_logic_vector(unsigned(raddr) + 1);
-                        if to_integer(unsigned(raddr)) mod g_burst_len_r = 0 then
-                            raddr := std_logic_vector(unsigned(raddr) - g_burst_len_r);
-                        end if;
-                    end loop;
-
-                when "001" => -- CAS & WE, start write burst
-                    raddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
-                    raddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
-                    raddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
-                    more_writes := g_burst_len_w - 1;
-                    if DQM='0' then
-                        write_memory_8(this, waddr, DQ);
-                    end if;
-
-                when others =>
-                    null;                                        
-                end case;
+        if rising_edge(CLK) then
+        	if bound and CKE='1' then
+	            r_queue <= r_queue(1 to r_queue'high) & ("ZZZZZZZZ");
+	            if more_writes > 0 then
+	                waddr := std_logic_vector(unsigned(waddr) + 1);
+	                if to_integer(unsigned(waddr)) mod g_burst_len_w = 0 then
+	                    waddr := std_logic_vector(unsigned(waddr) - g_burst_len_w);
+	                end if;
+	                if DQM='0' then
+	                    write_memory_8(this, waddr, DQ);
+	                end if;
+	                more_writes := more_writes - 1;
+	            end if;
+	                
+	            if CSn='0' then
+	                case command is
+	                when "110" => -- RAS, register bank address
+	                    bank_rows(bank) <= A(g_row_bits-1 downto 0);
+	                    
+	                when "101" => -- CAS, start read burst
+	                    raddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
+	                    raddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
+	                    raddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
+	                    --report hstr(BA) & " " & hstr(bank_rows(bank)) & " " & hstr(A) & ": " & hstr(raddr);
+	                    
+	                    for i in 0 to g_burst_len_r-1 loop
+	                        r_queue(g_cas_latency + i) <= read_memory_8(this, raddr);
+	                        raddr := std_logic_vector(unsigned(raddr) + 1);
+	                        if to_integer(unsigned(raddr)) mod g_burst_len_r = 0 then
+	                            raddr := std_logic_vector(unsigned(raddr) - g_burst_len_r);
+	                        end if;
+	                    end loop;
+	
+	                when "001" => -- CAS & WE, start write burst
+	                    raddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
+	                    raddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
+	                    raddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
+	                    more_writes := g_burst_len_w - 1;
+	                    if DQM='0' then
+	                        write_memory_8(this, waddr, DQ);
+	                    end if;
+	
+	                when others =>
+	                    null;                                        
+	                end case;
+				end if;
             end if;
         end if;
     end process;

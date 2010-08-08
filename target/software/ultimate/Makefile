@@ -55,7 +55,9 @@ SRCS_C   =	zpu.c \
 # Therefore, the file manager needs to exist.
 
 SRCS_CC	 =  memory.cc \
-			spiflash.cc \
+			flash.cc \
+			at45_flash.cc \
+			w25q_flash.cc \
 			config.cc \
 			event.cc \
 			main_loop.cc \

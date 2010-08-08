@@ -7,6 +7,7 @@
 #include "config.h"
 #include "disk_image.h"
 #include "menu.h" // to add menu items
+#include "flash.h"
 
 #define C1541_IO_LOC_DRIVE_1 ((volatile BYTE *)0x4020000)
 
@@ -60,6 +61,7 @@ class C1541
     t_1541_ram  ram;
 	t_1541_rom  current_rom;
 	
+	Flash *flash;
     ConfigStore *cfg;
     File *mount_file;
     t_disk_state disk_state;

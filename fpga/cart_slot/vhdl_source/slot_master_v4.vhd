@@ -49,7 +49,7 @@ architecture gideon of slot_master_v4 is
     signal ba_c         : std_logic;
     signal rwn_c        : std_logic := '1';
     signal dma_n_i      : std_logic := '1';
-    signal data_c       : std_logic_vector(7 downto 0);
+    signal data_c       : std_logic_vector(7 downto 0) := (others => '1');
     signal addr_out     : std_logic_vector(15 downto 0) := (others => '1');
     signal drive_ah     : std_logic;
     signal drive_al     : std_logic;

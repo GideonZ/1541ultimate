@@ -50,7 +50,9 @@ SRCS_CC	 =  blockdev.cc \
 			fat_dir.cc \
 			fatfile.cc \
 			ccsbcs.cc \
-			spiflash.cc \
+			flash.cc \
+			at45_flash.cc \
+			w25q_flash.cc \
 			sd_card.cc \
 			sdio.cc \
 			memory.cc \

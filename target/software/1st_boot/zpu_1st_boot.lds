@@ -5,7 +5,7 @@ ENTRY(_start)
 
 MEMORY
 {
-    BRAM (rx)  : ORIGIN = 0x00000000, LENGTH = 4k
+    BRAM (rx)  : ORIGIN = 0x00000000, LENGTH = 8k
 }
 
 SECTIONS
@@ -16,17 +16,6 @@ SECTIONS
     KEEP (*(.fixed_vectors))
   } = 0
 
-/*
-  .startmeuk 0x10000:
-  {
-    *(.mysection)
-  } > DRAM
-  
-  .init :
-  {
-    KEEP (*(.init))
-  } > DRAM
-*/  
   .text : {
     *(.text .stub .text.* .gnu.linkonce.t.*)
   }

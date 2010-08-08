@@ -10,7 +10,7 @@ port (
     clock           : in  std_logic;
     reset           : in  std_logic;
     
-    RSTn_in         : in  std_logic;
+    RST_in          : in  std_logic;
     c64_reset       : in  std_logic;
     
     ethernet_enable : in  std_logic := '1';
@@ -95,7 +95,7 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            reset_in     <= reset or not RSTn_in or c64_reset;
+            reset_in     <= reset or RST_in or c64_reset;
             freeze_act_d <= freeze_act;
             
             -- control register
@@ -294,7 +294,7 @@ begin
 
     -- determine address
 --  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
+    process(cart_logic, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr)
     begin
         mem_addr_i <= g_rom_base;
 

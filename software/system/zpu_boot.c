@@ -89,12 +89,14 @@ void _premain()
 
 	t=main(1, args);
 
+/*
     pul = (unsigned long *)&__destructor_list;
     while(pul != (unsigned long *)&__end_of_destructors) {
         f = (fptr)*pul;
         f();
         pul++;
     }
+*/
 	for (;;);
 }
 

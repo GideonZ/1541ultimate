@@ -15,10 +15,6 @@
 #include "task_menu.h"
 */
 
-void tering(void)
-{
-    printf("Hello");
-}
 /***********************/
 /* Tree Browser Object */
 /***********************/
@@ -266,11 +262,11 @@ void TreeBrowserState :: into(void)
 
 	printf("Going deeper into = %s\n", selected->get_name());
     int children = selected->fetch_children();
+    reselect(); // might have been promoted..
     if(children < 0)
         return;
         
     printf("%d children fetched.\n", children);
-    reselect(); // might have been promoted..
 
 /*
     if(selected->children.is_empty())

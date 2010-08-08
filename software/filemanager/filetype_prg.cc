@@ -21,7 +21,7 @@ FileTypePRG tester_prg(file_type_factory);
 #define PRGFILE_LOAD      0x2202
 #define PRGFILE_MOUNT_RUN 0x2203
 
-cart_def dma_cart = { 0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
+cart_def dma_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
 
 FileTypePRG :: FileTypePRG(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
 {
@@ -103,7 +103,7 @@ void FileTypePRG :: execute(int selection)
 		if(file) {
             if(check_header(file)) {
     			C64_POKE(2, 0xAB); // magic key to enable DMA handshake
-                dma_cart.flash_addr = (DWORD)&_binary_sidcrt_65_start;
+                dma_cart.custom_addr = (void *)&_binary_sidcrt_65_start;
     			push_event(e_unfreeze, (void *)&dma_cart, 1);
     			if(selection == PRGFILE_MOUNT_RUN) {
     				d64 = root.fopen(parent, FA_READ);

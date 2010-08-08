@@ -55,6 +55,7 @@ begin
                 end if;
             
             when busy =>
+				req <= reqs(select_c);
                 if resp.ack='1' then
                     state <= idle;
                 end if;                    

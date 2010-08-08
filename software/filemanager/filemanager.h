@@ -24,7 +24,11 @@ public:
     }
     
     void handle_event(Event &e);
-
+	int  fetch_children()  {
+		return children.get_elements(); // just return the number of elements that
+			// are added to the file manager by other threads (event polls)
+	}
+	
     File *fopen(char *filename, BYTE flags);
     File *fopen(PathObject *obj, BYTE flags);
     void fclose(File *f);

@@ -1,5 +1,5 @@
 #include "integer.h"
-#include "spiflash.h"
+#include "flash.h"
 #include "small_printf.h"
 #include "sd_card.h"
 #include "disk.h"
@@ -115,14 +115,18 @@ FRESULT try_loading(char *filename)
 int try_flash(void)
 {
     DWORD length;
-    SpiFlash flash;
+	Flash *flash = get_flash();
+	t_flash_address image_addr;
+    
     char version[12];
     
-    flash.read(FLASH_ADDR_APPL, 4, &length);
-    flash.read(FLASH_ADDR_APPL+4, 12, version);
+	flash->get_image_addresses(FLASH_ID_APPL, &image_addr);
+    flash->read_dev_addr(image_addr.device_addr+0,  4, &length); // could come from image_addr, too, if we fix it in the interface
+    flash->read_dev_addr(image_addr.device_addr+4, 12, version); // we should create a flash call for this on the interface
+    
     printf("Application length = %08x, version %s\n", length, version);
     if(length != 0xFFFFFFFF) {
-        flash.read(FLASH_ADDR_APPL+16, length, (void *)APPLICATION_RUN_ADDRESS);
+        flash->read_dev_addr(image_addr.device_addr+16, length, (void *)APPLICATION_RUN_ADDRESS); // we should use flash->read_image here
         jump_run();
         return 1;
     }

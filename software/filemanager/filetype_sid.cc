@@ -1,7 +1,7 @@
 #include "filetype_sid.h"
 #include "filemanager.h"
 #include "c64.h"
-#include "spiflash.h"
+#include "flash.h"
 #include "menu.h"
 #include "userinterface.h"
 
@@ -21,10 +21,8 @@ FileTypeSID tester_sid(file_type_factory);
 const DWORD magic_psid = 0x50534944; // big endian assumed
 const DWORD magic_rsid = 0x52534944; // big endian assumed
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
-//const cart_def sid_cart = { FLASH_ADDR_SIDCRT, 0x1000, 0x01 | CART_RAM };
 
-cart_def sid_cart = { 0, 0x1000, 0x01 | CART_RAM };
-//const cart_def sid_cart = { FLASH_ADDR_EPYX,   0x02000,  0x0A };
+cart_def sid_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_RAM }; 
 
 static inline WORD swap_word(WORD p)
 {
@@ -287,7 +285,7 @@ int FileTypeSID :: prepare(bool use_default)
 
 	// leave the browser, and smoothly transition to
 	// sid cart.
-    sid_cart.flash_addr = (DWORD)&_binary_sidcrt_65_start;
+    sid_cart.custom_addr = (void *)&_binary_sidcrt_65_start;
 	push_event(e_unfreeze, (void *)&sid_cart, 1);
 
 	// call us back after the cartridge has been started

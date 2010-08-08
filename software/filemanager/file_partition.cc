@@ -37,8 +37,8 @@ char *FilePartition :: get_display_string(void)
 void FilePartition :: init()
 {
     // this function attaches the filesystem to the partition
-    if(info->fs)
-        return; // already initialized. Filesystems do not suddenly change on any partition
+    //if(info->fs)
+    //    return; // already initialized. Filesystems do not suddenly change on any partition
 
     // for quick fix: Assume FATFS:
     BYTE res = FATFS :: check_fs(prt);

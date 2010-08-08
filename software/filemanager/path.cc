@@ -51,10 +51,11 @@ int Path :: cd_single(char *cd)
     char *p = full_path.c_str();
     PathObject *t;
 
+	//printf("CD Single: %s\n", cd);
     if(strcmp(cd, "..") == 0) {
     	if(p_len > 1) {
             for(int i=p_len-2;i>=0;i--) {
-                if(p[i] == '/') {
+                if((p[i] == '/')||(p[i] == '\\')) {
                     p[i] = '\0';
                     t = current->parent;
                     t->cleanup_children();
@@ -70,6 +71,7 @@ int Path :: cd_single(char *cd)
     if(strcmp(cd, ".") == 0) {
         return 1;
     }
+	//current->dump();
     t = current->find_child(cd);
     if(!t)
         return 0;
@@ -83,18 +85,21 @@ int Path :: cd_single(char *cd)
 	return 1;
 }
 
-int Path :: cd(char *pa)
+int Path :: cd(char *pa_in)
 {
-    int pa_len = strlen(pa);
+    int pa_len = strlen(pa_in);
     int fp_len = full_path.length();
     char *fp = full_path.c_str();
     char *last_part;
     PathObject *t;
 
-    printf("CD '%s'\n", pa);
+	char *pa = new char[pa_len+1];
+	strcpy(pa, pa_in);
+    //printf("CD '%s' (starting from %s)\n", pa, full_path.c_str());
 
     // check for start from root
-    if((pa_len)&&(*pa == '/')) {
+    if( (pa_len) &&
+	    ((*pa == '/')||(*pa == '\\')) ) {
         --pa_len;
         pa++;
 		current->detach();
@@ -105,17 +110,19 @@ int Path :: cd(char *pa)
         current->attach();
         full_path = "/";
     }
-    if(!pa_len)
+    if(!pa_len) {
+		delete[] pa;
         return 1;
-
+	}
     // split path string into separate parts
     last_part = pa;
     for(int i=0;i<pa_len;i++) {
-        if(pa[i] == '/') {
+        if((pa[i] == '/')||(pa[i] == '\\')) {
             pa[i] = 0;
             if(!cd_single(last_part)) {
                 printf("A) Can't CD to %s\n", pa);
-                return 0;
+                delete[] pa;
+				return 0;
             }
             last_part = &pa[i+1];
         }
@@ -123,8 +130,11 @@ int Path :: cd(char *pa)
 
     if(!cd_single(last_part)) {
         printf("B) Can't CD to %s\n", last_part);
-        return 0;
+        delete[] pa;
+		return 0;
     }
+
+	delete[] pa;
     return 1;
 }
 

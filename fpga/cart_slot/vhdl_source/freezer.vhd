@@ -6,8 +6,8 @@ port (
     clock           : in  std_logic;
     reset           : in  std_logic;
     
-    RSTn_in         : in  std_logic;
-    button_freezen  : in  std_logic;
+    RST_in          : in  std_logic;
+    button_freeze   : in  std_logic;
     
     cpu_cycle_done  : in  std_logic;
     cpu_write       : in  std_logic;
@@ -33,9 +33,9 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            do_freeze   <= not button_freezen;
+            do_freeze   <= button_freeze;
             do_freeze_d <= do_freeze;
-            reset_in <= reset or not RSTn_in;
+            reset_in <= reset or RST_in;
 
             if cpu_cycle_done='1' then
                 if cpu_write='1' then

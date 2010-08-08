@@ -22,7 +22,7 @@
 #define CONFIG_H
 
 #include "integer.h"
-#include "spiflash.h"
+#include "flash.h"
 #include "path.h"
 
 #define CFG_TYPE_VALUE  0x01
@@ -103,8 +103,7 @@ class ConfigManager : public PathObject
 {
 //    List<ConfigStore*> stores;
     int num_pages;
-    int first_page;
-    
+    Flash *flash;
 public:
     ConfigManager();
     ~ConfigManager();
@@ -113,6 +112,8 @@ public:
     ConfigStore *open_store(DWORD store_id);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
+
+	Flash *get_flash_access(void) { return flash; }
 
 // Browser functions
     int  fetch_children(void);

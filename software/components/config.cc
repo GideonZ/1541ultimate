@@ -29,8 +29,13 @@ ConfigManager config_manager; // global!
 /*** CONFIGURATION MANAGER ***/
 ConfigManager :: ConfigManager() : PathObject(NULL, "ConfigManager")
 {
-    num_pages = FLASH_NUM_CONFIG_PAGES;
-    first_page = FLASH_PAGE_CONFIG_START;
+	flash = get_flash();
+	if(!flash) {
+		printf("Error opening Flash device...\n");
+		num_pages = 0;
+	} else {
+    	num_pages = flash->get_number_of_config_pages();
+    }
 //    root.add_child(this); // make ourselves visible in the browser
 }
 
@@ -53,35 +58,34 @@ ConfigManager :: ~ConfigManager()
 ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
                                 t_cfg_definition *defs) 
 {
-    int page_size = flash.get_page_size();
-    int addr = first_page * page_size;
+	if(!flash)
+		return NULL; // fail
+		
+    int page_size = flash->get_page_size();
     DWORD id;
     ConfigStore *s;
 
     for(int i=0;i<num_pages;i++) {
-        flash.read(addr, 4, &id);
+        flash->read_config_page(i, 4, &id);
         if (store_id == id) {
-            s = new ConfigStore(id, name, first_page+i, page_size, defs); // TODO
+            s = new ConfigStore(id, name, i, page_size, defs); // TODO
             s->read();
-            printf("APPENDING STORE %p %s\n", s, s->get_name());
+            //printf("APPENDING STORE %p %s\n", s, s->get_name());
             children.append(s);
 			s->attach();
             return s;
         }
-        addr += page_size;
     }
     printf("Store not found..\n");
-    addr = first_page * page_size;
     for(int i=0;i<num_pages;i++) {
-        flash.read(addr, 4, &id);
+        flash->read_config_page(i, 4, &id);
         if (id == 0xFFFFFFFF) {
-            s = new ConfigStore(store_id, name, first_page+i, page_size, defs); // TODO
+            s = new ConfigStore(store_id, name, i, page_size, defs); // TODO
             s->write();
             children.append(s);
 			s->attach();
             return s;
         }
-        addr += page_size;
     }
     return NULL; // failed
 }
@@ -111,14 +115,6 @@ ConfigStore *ConfigManager :: open_store(DWORD id)
 
 int ConfigManager :: fetch_children()
 {
-/*
-	ConfigStore *s;
-    if(children.is_empty()) {
-    	for(s = stores.head(); s; s = stores.next()) {
-    		children.append(s);
-    	}
-	}
-*/
     return children.get_elements();
 }
 
@@ -171,7 +167,6 @@ void ConfigStore :: pack()
     ConfigItem *i;
     int len;
     (*(DWORD *)mem_block) = id;
-//    for(i = items.head(); i; i = items.next()) {
     for(int n = 0; n < children.get_elements();n++) {
     	i = (ConfigItem *)children[n];
     	len = i->pack(b, remain);
@@ -193,11 +188,16 @@ void ConfigStore :: pack()
 
 void ConfigStore :: write()
 {
-	printf("Writing configstore '%s' to flash..", get_name());
+	printf("Writing configstore '%s' to flash, page %d..", get_name(), flash_page);
 	pack();
-    flash.write_page(flash_page, mem_block);
-    dirty = false;
-    printf(" done.\n");
+	Flash *flash = config_manager.get_flash_access();
+	if(flash) {
+	    flash->write_config_page(flash_page, mem_block);
+	    dirty = false;
+	    printf(" done.\n");
+	} else {
+		printf(" error.\n");
+	}
 }
 
 void ConfigStore :: unpack()
@@ -219,7 +219,6 @@ void ConfigStore :: unpack()
         }            
         // find ID in our store        
         for(int n = 0;n < children.get_elements(); n++) {
-//        for(i = items.head(); i; i = items.next()) {
         	i = (ConfigItem *)children[n];
         	if(id == i->definition->id) {
                 i->unpack(&mem_block[index+1], len);
@@ -231,8 +230,11 @@ void ConfigStore :: unpack()
 
 void ConfigStore :: read()
 {
-    flash.read_page(flash_page, mem_block);
-    unpack();
+	Flash *flash = config_manager.get_flash_access();
+	if(flash) {
+	    flash->read_config_page(flash_page, block_size, mem_block);
+	    unpack();
+	}
 	check_bounds();
 }
 
@@ -240,7 +242,6 @@ ConfigItem *ConfigStore :: find_item(BYTE id)
 {
     ConfigItem *i;
     for(int n = 0;n < children.get_elements(); n++) {
-//        for(i = items.head(); i; i = items.next()) {
     	i = (ConfigItem *)children[n];
         if(i->definition->id == id) {
             return i;
@@ -289,7 +290,6 @@ void ConfigStore :: dump(void)
 {
     ConfigItem *i;
     for(int n = 0;n < children.get_elements(); n++) {
-//        for(i = items.head(); i; i = items.next()) {
     	i = (ConfigItem *)children[n];
         printf("ID %02x: ", i->definition->id);
         if(i->definition->type == CFG_TYPE_STRING) {

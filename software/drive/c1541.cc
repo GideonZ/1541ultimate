@@ -8,7 +8,6 @@ extern "C" {
 #include "c1541.h"
 #include "disk_image.h"
 #include "small_printf.h"
-#include "spiflash.h"
 
 //#include "fatfile.h"
 #include "filemanager.h"
@@ -58,6 +57,7 @@ C1541 :: C1541(volatile BYTE *regs)
 {
     registers  = regs;
     mount_file = NULL;
+	flash = get_flash();
 
     cfg = config_manager.register_store((DWORD)regs, "1541 Drive Settings", c1541_config);
 
@@ -65,10 +65,11 @@ C1541 :: C1541(volatile BYTE *regs)
     memory_map = (volatile BYTE *)mem_address;
     printf("C1541 Memory address: %p\n", mem_address);
 
-    void *audio_address = (void *)(((DWORD)registers[C1541_AUDIO_ADDR]) << 16);
-    printf("C1541 Audio address: %p, loading... \n", audio_address);
-    flash.read(FLASH_ADDR_SOUNDS, 0x5000, audio_address);
-    
+	if(flash) {
+	    void *audio_address = (void *)(((DWORD)registers[C1541_AUDIO_ADDR]) << 16);
+	    printf("C1541 Audio address: %p, loading... \n", audio_address);
+	    flash->read_image(FLASH_ID_SOUNDS, audio_address, 0x4800);
+	}    
     ram = ram_modes[cfg->get_value(CFG_C1541_RAMBOARD)];
     set_rom(rom_modes[cfg->get_value(CFG_C1541_ROMSEL)], cfg->get_string(CFG_C1541_ROMFILE));
 
@@ -166,20 +167,25 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
 
 	current_rom = rom;
 	printf("Initializing 1541 rom: ");
+	if(!flash) {
+		printf("no flash.\n");
+		return;
+	}
+
     switch(rom) {
         case e_rom_1541:
 			printf("CBM1541\n");
-            flash.read(FLASH_ADDR_ROM1541, 0x4000, (void *)&memory_map[0xC000]);
+            flash->read_image(FLASH_ID_ROM1541, (void *)&memory_map[0xC000], 0x4000);
             memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
             break;
         case e_rom_1541ii:
 			printf("1541-II\n");
-            flash.read(FLASH_ADDR_ROM1541II, 0x4000, (void *)&memory_map[0xC000]);
+            flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
             memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
             break;
         case e_rom_1541c:
 			printf("1541C\n");
-            flash.read(FLASH_ADDR_ROM1541C, 0x4000, (void *)&memory_map[0xC000]);
+            flash->read_image(FLASH_ID_ROM1541C, (void *)&memory_map[0xC000], 0x4000);
             memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
             break;
         default: // custom
@@ -189,7 +195,7 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
 				res = f->read((void *)&memory_map[0x8000], 0x8000, &transferred);
 				if(res != FR_OK) {
 					printf("Error loading file.. default to 1541ii.\n");
-					flash.read(FLASH_ADDR_ROM1541II, 0x4000, (void *)&memory_map[0xC000]);
+					flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
 					memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
 				}
 				root.fclose(f);
@@ -201,7 +207,7 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
 				}
 			} else {
 				printf("C1541: Failed to open custom file.\n");
-				flash.read(FLASH_ADDR_ROM1541II, 0x4000, (void *)&memory_map[0xC000]);
+				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
 				memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
 			}
     }

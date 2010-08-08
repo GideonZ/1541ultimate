@@ -5,7 +5,7 @@ extern "C" {
 #include "small_printf.h"
 #include "c64.h"
 #include "c1541.h"
-#include "spiflash.h"
+#include "flash.h"
 #include <string.h>
 #include "menu.h"
 
@@ -41,26 +41,26 @@ char *cart_mode[] = { "None",
                       "Custom Snappy ROM"
                    };
 
-cart_def cartridges[] = { { 0x000000,             0x00000,  0x00 | CART_REU | CART_ETH },
-                          { FLASH_ADDR_FINAL3,    0x10000,  0x04 },
-                          { FLASH_ADDR_AR5PAL,    0x08000,  0x07 },
-                          { FLASH_ADDR_AR6PAL,    0x08000,  0x07 },
-                          { FLASH_ADDR_RR38PAL,   0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ADDR_SS5PAL,    0x10000,  0x05 | CART_REU },
-                          { FLASH_ADDR_TAR_PAL,   0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ADDR_AR5NTSC,   0x08000,  0x07 },
-                          { FLASH_ADDR_RR38NTSC,  0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ADDR_SS5NTSC,   0x10000,  0x05 | CART_REU },
-                          { FLASH_ADDR_TAR_NTSC,  0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ADDR_EPYX,      0x02000,  0x0A },
-                          { 0x000000,             0x02000,  0x01 | CART_REU | CART_ETH },
-                          { 0x000000,             0x04000,  0x02 | CART_REU | CART_ETH },
-                          { 0x000000,             0x80000,  0x08 | CART_REU },
-                          { 0x000000,             0x80000,  0x09 | CART_REU },
-                          { 0x000000,             0x80000,  0x0B | CART_REU },
-                          { 0x000000,             0x10000,  0x04 },
-                          { 0x000000,             0x10000,  0x06 | CART_REU | CART_ETH },
-                          { 0x000000,             0x10000,  0x05 | CART_REU }
+cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_REU | CART_ETH },
+                          { FLASH_ID_FINAL3,    0x000000, 0x10000,  0x04 },
+                          { FLASH_ID_AR5PAL,    0x000000, 0x08000,  0x07 },
+                          { FLASH_ID_AR6PAL,    0x000000, 0x08000,  0x07 },
+                          { FLASH_ID_RR38PAL,   0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
+                          { FLASH_ID_SS5PAL,    0x000000, 0x10000,  0x05 | CART_REU },
+                          { FLASH_ID_TAR_PAL,   0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
+                          { FLASH_ID_AR5NTSC,   0x000000, 0x08000,  0x07 },
+                          { FLASH_ID_RR38NTSC,  0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
+                          { FLASH_ID_SS5NTSC,   0x000000, 0x10000,  0x05 | CART_REU },
+                          { FLASH_ID_TAR_NTSC,  0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
+                          { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0A },
+                          { 0x00,               0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
+                          { 0x00,               0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
+                          { 0x00,               0x000000, 0x80000,  0x08 | CART_REU },
+                          { 0x00,               0x000000, 0x80000,  0x09 | CART_REU },
+                          { 0x00,               0x000000, 0x80000,  0x0B | CART_REU },
+                          { 0x00,               0x000000, 0x10000,  0x04 },
+                          { 0x00,               0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
+                          { 0x00,               0x000000, 0x10000,  0x05 | CART_REU }
  };
                           
 #define CFG_C64_CART     0xC1
@@ -90,16 +90,19 @@ struct t_cfg_definition c64_config[] = {
 
 C64 :: C64()
 {
-    char_set = new BYTE[CHARSET_SIZE];
-    flash.read(FLASH_ADDR_CHARS, CHARSET_SIZE, (void *)char_set);
-    keyb = new Keyboard(this);
-    
-    cfg = config_manager.register_store(0x43363420, "C64 and cartridge settings", c64_config);
-    if(cfg)
-    	C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
-
-    create_menu_items();
-
+    flash = get_flash();
+    if(flash) {
+	    char_set = new BYTE[CHARSET_SIZE];
+	    flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
+	    keyb = new Keyboard(this);
+	    
+	    cfg = config_manager.register_store(0x43363420, "C64 and cartridge settings", c64_config);
+	    if(cfg)
+	    	C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
+	
+	    create_menu_items();
+	}
+	
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
 	C64_STOP = 0;
@@ -549,6 +552,7 @@ void C64 :: set_cartridge(cart_def *def)
 		int cart = cfg->get_value(CFG_C64_CART);
 		def = &cartridges[cart];
 	}
+	
     printf("Setting cart mode %b. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
     C64_CARTRIDGE_TYPE = def->type & 0x1F;
     C64_REU_ENABLE = 0;
@@ -566,15 +570,13 @@ void C64 :: set_cartridge(cart_def *def)
     }
 
     DWORD mem_addr = ((DWORD)C64_CARTRIDGE_RAM_BASE) << 16;
-    if(def->flash_addr) {
-        if(def->type & CART_RAM) {
-            printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->flash_addr, mem_addr); 
-            memcpy((void *)mem_addr, (void *)def->flash_addr, def->length);
-        } else {
-            printf("Copying %d bytes from flash addr %p to mem addr %p\n", def->length, def->flash_addr, mem_addr);
-            flash.read(def->flash_addr, def->length, (void *)mem_addr);
-        }
-    } else if (def->length) {
+    if(def->type & CART_RAM) {
+        printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, mem_addr); 
+        memcpy((void *)mem_addr, def->custom_addr, def->length);
+    } else if(def->id) {
+        printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
+        flash->read_image(def->id, (void *)mem_addr, def->length);
+    } else if (def->length) { // not ram, not flash.. then it has to be custom
         *(BYTE *)(mem_addr+5) = 0; // disable previously started roms.
 
         char *n = cfg->get_string(CFG_C64_CUSTOM);
@@ -596,6 +598,7 @@ void C64 :: set_cartridge(cart_def *def)
 		}
 #endif
     }
+	// clear function RAM on the cartridge
     mem_addr -= 65536; // TODO: We know it, because we made the hardware, but the hardware should tell us!
     memset((void *)mem_addr, 0x00, 65536);
 }

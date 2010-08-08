@@ -78,9 +78,9 @@ architecture tb of harness_v4 is
     signal ULPI_DIR    : std_logic := '0';
     signal ULPI_DATA   : std_logic_vector(7 downto 0) := (others => 'H');
 
-    signal sys_clock    : std_logic;
-    signal sys_reset    : std_logic;
-    signal sys_shifted  : std_logic;
+    signal sys_clock    : std_logic := '0';
+    signal sys_reset    : std_logic := '0';
+    signal sys_shifted  : std_logic := '0';
 
     signal rx_char      : std_logic_vector(7 downto 0);
     signal rx_char_d    : std_logic_vector(7 downto 0);

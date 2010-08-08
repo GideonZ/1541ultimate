@@ -41,7 +41,7 @@ port (
     -- other hardware pins
     BUFFER_ENn      : out   std_logic;
 
-	buttons_n		: in    std_logic_vector(2 downto 0);
+	buttons 		: in    std_logic_vector(2 downto 0);
     cart_led_n      : out   std_logic;
     
     -- timing output
@@ -148,8 +148,8 @@ architecture structural of slot_server_v4 is
     signal mem_rack_slot    : std_logic;
     signal mem_dack_slot    : std_logic;
 begin
-    reset_button  <= buttons_n(0) when control.swap_buttons='0' else buttons_n(2);
-    freeze_button <= buttons_n(2) when control.swap_buttons='0' else buttons_n(0);
+    reset_button  <= buttons(0) when control.swap_buttons='0' else buttons(2);
+    freeze_button <= buttons(2) when control.swap_buttons='0' else buttons(0);
 
     i_registers: entity work.cart_slot_registers
     generic map (
@@ -303,8 +303,8 @@ begin
         clock           => clock,
         reset           => reset,
 
-        RSTn_in         => reset_button,
-        button_freezen  => freeze_button,
+        RST_in          => reset_button,
+        button_freeze   => freeze_button,
     
         cpu_cycle_done  => do_io_event,
         cpu_write       => cpu_write,
@@ -321,7 +321,7 @@ begin
     port map (
         clock           => clock,
         reset           => reset,
-        RSTn_in         => reset_button,
+        RST_in          => reset_button,
         c64_reset       => control.c64_reset,
 
         ethernet_enable => control.eth_enable,
@@ -415,7 +415,7 @@ begin
     NMIn     <= '0' when (control.c64_nmi='1')   or (serve_enable='1' and nmi_n='0') else 'Z';
     EXROMn   <= '0' when (control.c64_exrom='1') or (serve_enable='1' and exrom_n='0') else 'Z';
     GAMEn    <= '0' when (control.c64_game='1')  or (serve_enable='1' and game_n='0') else 'Z';
-    RSTn     <= '0' when (reset_button='0' and status.c64_stopped='0' and mask_buttons='0') or
+    RSTn     <= '0' when (reset_button='1' and status.c64_stopped='0' and mask_buttons='0') or
                          (control.c64_reset='1') else 'Z';
 
 

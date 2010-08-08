@@ -243,7 +243,14 @@ int UIPopup :: poll(int dummy, Event &e)
         }
     }
     if((c == 0x0D)||(c == 0x20)) {
-        return (1 << active_button);
+		for(int i=0,j=0;i<NUM_BUTTONS;i++) {
+			if(buttons & (1 << i)) {
+				if(active_button == j)
+					return (1 << i);
+				j++;
+			}
+		}
+        return 0;
     }
     if(c == 0x1D) {
         window->reverse(button_pos[active_button], 2, button_len[active_button]);

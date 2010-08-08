@@ -8,7 +8,7 @@ extern "C" {
 	#include "itu.h"
 }
 #include "c64.h"
-#include "spiflash.h"
+#include "flash.h"
 #include "screen.h"
 #include "keyboard.h"
 #include "sd_card.h"
@@ -29,6 +29,7 @@ extern BYTE _binary_2nd_boot_bin_end;
 
 Screen *screen;
 UserInterface *user_interface;
+Flash *flash;
 
 /*
 BlockDevice  *blk;
@@ -121,25 +122,37 @@ int save_flash(char *filename)
 }
 */
 
-void flash_buffer(int address, void *buffer, int length, char *version, char *descr)
+bool need_update(int id, char *version, char *descr)
 {
-    int page_size = flash.get_page_size();
+	t_flash_address image_address;
+	flash->get_image_addresses(id, &image_address);
+	int address = image_address.start;
+
+    char current[16];
+    flash->read_linear_addr(address + 4, 12, current);
+    current[12] = 0;
+    if((current[0] > ' ') && (current[0] <= 'z')) {
+        printf("Version of \033\027%s\033\037 found:\n\033\027%s\033\037. New version = \033\027%s\033\037\n\n", descr, current, version);
+    } else {
+    	printf("Unknown version of \033\027%s\033\037\n", descr);
+    	return true;
+    }
+    return (strcmp(version, current)!=0);
+}
+
+static int last_sector = -1;	
+
+void flash_buffer(int id, void *buffer, int length, char *version, char *descr)
+{
+	t_flash_address image_address;
+	flash->get_image_addresses(id, &image_address);
+	int address = image_address.start;
+    int page_size = flash->get_page_size();
     int page = address / page_size;
 
     printf("            \n");
+    printf("Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
     
-    char current[16];
-    flash.read(address + 4, 12, current);
-    current[12] = 0;
-    if((current[0] > ' ') && (current[0] <= 'z')) {
-        printf("Version of \033\027%s\033\037 found:\n\033\027%s\033\037. New version = \033\027%s\033\037\n", descr, current, version);
-    }
-    if(strcmp(version, current)==0) {
-        printf("%s already updated.\n", descr);
-        return;
-    }
-    printf("Flashing \033\027%s\033\037, version \033\027%s\033\037..\n", descr, version);
-
     BYTE *bin = new BYTE[length+16];
     DWORD *pul;
     pul = (DWORD *)bin;
@@ -148,11 +161,25 @@ void flash_buffer(int address, void *buffer, int length, char *version, char *de
     strcpy((char*)pul, version);
     memcpy(bin+16, buffer, length);                
 
+	bool do_erase = flash->need_erase();
+	int sector;
     char *p = (char *)bin;
     length+=16;
     while(length > 0) {
-        printf("Page %d\r", page);
-        flash.write_page(page++, p);
+		if (do_erase) {
+			sector = flash->page_to_sector(page);
+			if (sector != last_sector) {
+				last_sector = sector;
+				printf("Erase %d   \r", sector);
+				if(!flash->erase_sector(sector)) {
+			        user_interface->popup("Programming failed...", BUTTON_CANCEL);
+			        return;
+				}
+			}
+		}
+        printf("Page %d  \r", page);
+        flash->write_page(page, p);
+        page ++;
         p += page_size;
         length -= page_size;
     }    
@@ -176,34 +203,58 @@ int main()
     user_interface->init(c64, c64->get_keyboard());
     user_interface->set_screen(screen);
 
+	flash = get_flash();
+
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
 	printf("%s\n", rtc.get_time_string(time_buffer, 32));
+
+	if(!flash) {
+		user_interface->popup("Flash device not recognized.", BUTTON_CANCEL);
+		c64->unfreeze(0, NULL);
+		delete user_interface;
+		delete screen;
+	 	screen = NULL;
+    	delete c64;
+    	flash->reboot(0);
+	    while(1)
+	        ;
+    }
 
     int _binary_ultimate_bin_length = (int)&_binary_ultimate_bin_end - (int)&_binary_ultimate_bin_start;
     int _binary_1st_boot_700_bin_length = (int)&_binary_1st_boot_700_bin_end - (int)&_binary_1st_boot_700_bin_start;
     int _binary_2nd_boot_bin_length = (int)&_binary_2nd_boot_bin_end - (int)&_binary_2nd_boot_bin_start;
 
-/*
-    static char popup_buf[64];
-    sprintf(popup_buf, "Current FPGA rev $%b. Flash rev $94?", ITU_FPGA_VERSION);
-    printf(popup_buf);
-    
-    if(ITU_FPGA_VERSION != 0x94) {
-        if(user_interface->popup(popup_buf, BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            printf("Flashing FPGA...\n");
-            flash_buffer(0, &_binary_1st_boot_700_bin_start, _binary_1st_boot_700_bin_length, "FPGA U2 $94");
+	bool do_update1 = false;
+	bool do_update2 = false;
+
+    do_update1 = need_update(FLASH_ID_BOOTFPGA, FPGA_VERSION, "FPGA") ||
+                 need_update(FLASH_ID_BOOTAPP, BOOT_VERSION, "Secondary bootloader");
+    do_update2 = need_update(FLASH_ID_APPL, APPL_VERSION, "Ultimate application");
+
+	if(do_update1 || do_update2) {
+        if(user_interface->popup("Update required. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+			flash->protect_disable();
+			last_sector = -1;
+			if(do_update1) {
+			    flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_700_bin_start, _binary_1st_boot_700_bin_length, FPGA_VERSION, "FPGA");
+			    flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, _binary_2nd_boot_bin_length, BOOT_VERSION, "Secondary bootloader");
+			}
+			if(do_update2) {
+		    	flash_buffer(FLASH_ID_APPL, &_binary_ultimate_bin_start, _binary_ultimate_bin_length, APPL_VERSION, "Ultimate application");
+		    }
+			printf("            \nDone!\n");
         }
-    }
-*/
-    /* Don't ask, just do it! */
-    flash_buffer(0, &_binary_1st_boot_700_bin_start, _binary_1st_boot_700_bin_length, "FPGA U2 $95", "FPGA");
-    flash_buffer(FLASH_ADDR_BOOTAPP, &_binary_2nd_boot_bin_start, _binary_2nd_boot_bin_length, BOOT_VERSION, "Secondary bootloader");
-    flash_buffer(FLASH_ADDR_APPL, &_binary_ultimate_bin_start, _binary_ultimate_bin_length, APPL_VERSION, "Ultimate application");
-/*
-	printf("Erasing configuration sector.\n");
-	flash.erase_sector(0x20FFFF);
-*/
-	printf("            \nDone!\n");
+    } else {
+    	printf("No update required.\n");
+	}
+
+	printf("\nConfiguring Flash write protection..\n");
+	flash->protect_configure();
+	flash->protect_enable();
+	
+//	printf("Erasing configuration sector.\n");
+//	flash.erase_sector(0x20FFFF);
+
 	printf("\nPlease remove the SD card, and switch\noff your machine...\n");
     printf("\nTo avoid loading this updater again,\ndelete it from your media.\n");
 

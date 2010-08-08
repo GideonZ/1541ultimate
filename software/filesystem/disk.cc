@@ -67,7 +67,7 @@ int Disk::Init(void)
         return 1; // one default partition, starting on sector 0
     }
     
-    printf("Going to read partition table.\n");
+    //printf("Going to read partition table.\n");
     
     prt_list = &partition_list; // the first entry should be stored here in the class
     lba = 0L;

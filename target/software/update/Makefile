@@ -61,7 +61,9 @@ SRCS_C   =	zpu.c \
 SRCS_CC	 =  memory.cc \
 			event.cc \
 			main_loop.cc \
-			spiflash.cc \
+			flash.cc \
+			at45_flash.cc \
+			w25q_flash.cc \
 			path.cc \
 			pattern.cc \
 			config.cc \
