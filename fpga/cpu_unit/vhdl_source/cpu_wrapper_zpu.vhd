@@ -20,7 +20,8 @@ port (
     
     irq_i       : in  std_logic;
     break_o     : out std_logic;
-    
+    error		: out std_logic;
+	
     -- memory interface
     mem_req     : out t_mem_req;
     mem_resp    : in  t_mem_resp;
@@ -50,9 +51,17 @@ architecture logical of cpu_wrapper_zpu is
     signal mem_rack     : std_logic := '0';
     signal mem_dack     : std_logic := '0';
 
+	signal break_o_i	: std_logic;
+	signal reset_cpu	: std_logic;
+	
     type t_state is (idle, busy);
     signal state        : t_state;    
+
+	type t_crash_state is (all_ok, flash_on, flash_off);
+	signal crash_state 	: t_crash_state := all_ok;
+	signal delay		: integer range 0 to 8388607 := 0;
 begin
+	break_o <= break_o_i;
 
     core: entity work.zpu
     generic map (
@@ -62,9 +71,9 @@ begin
         g_dont_care  => '-') -- Value used to fill the unused bits, can be '-' or '0'
     port map (
         clock        => clock,
-        reset        => reset,
+        reset        => reset_cpu,
         interrupt_i  => irq_i,
-        break_o      => break_o,
+        break_o      => break_o_i,
 
         mem_address  => cpu_address,
         mem_instr    => cpu_instr,
@@ -145,5 +154,49 @@ begin
         end if;
     end process;
 
-end logical;
+	p_crash: process(clock)
+	begin
+		if rising_edge(clock) then
+			case crash_state is
+			when all_ok =>
+				reset_cpu <= '0';
+				error <= '0';
+				delay <= 6_250_000;
+				if break_o_i='1' then
+					reset_cpu <= '1';
+					crash_state <= flash_on;
+				end if;
+			
+			when flash_on =>
+				reset_cpu <= '1';
+				error <= '1';
+				if delay = 0 then
+					crash_state <= flash_off;
+					delay <= 6_250_000;
+				else
+					delay <= delay - 1;
+				end if;
+			
+			when flash_off =>
+				reset_cpu <= '1';
+				error <= '0';
+				if delay = 0 then
+					crash_state <= flash_on;
+					delay <= 6_250_000;
+				else
+					delay <= delay - 1;
+				end if;
 
+			when others =>
+				crash_state <= flash_on;
+				
+			end case;
+			
+			if reset='1' then
+				error <= '0';
+				reset_cpu <= '1';
+				crash_state <= all_ok;
+			end if;
+		end if;
+	end process;
+end logical;

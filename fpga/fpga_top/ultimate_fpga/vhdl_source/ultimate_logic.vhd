@@ -225,6 +225,10 @@ architecture logic of ultimate_logic is
 	signal sd_busy			: std_logic;
 	signal usb_busy			: std_logic;
 	signal sd_act_stretched : std_logic;
+	signal error			: std_logic;
+	signal act_led_n		: std_logic := '1';
+	signal motor_led_n		: std_logic := '1';
+	signal cart_led_n		: std_logic := '1';
 begin
 
     i_cpu: entity work.cpu_wrapper_zpu
@@ -238,7 +242,8 @@ begin
         
         irq_i       => irq_i,
         break_o     => open,
-        
+        error		=> error,
+		
         -- memory interface
         mem_req     => mem_req_cpu,
         mem_resp    => mem_resp_cpu,
@@ -330,14 +335,14 @@ begin
             iec_reset_n     => IEC_RESET,
 
             -- LED
-            act_led_n       => DISK_ACTn,
-            motor_led_n     => MOTOR_LEDn,
+            act_led_n       => act_led_n,
+            motor_led_n     => motor_led_n,
 
             -- audio out
             audio_sample    => drive_sample );
 
         sample_out <= '1' & std_logic_vector(drive_sample); -- use upper half of the range only
-        
+
         r_pwm: if g_drive_sound generate
             i_pwm0: entity work.sigma_delta_dac
             generic map (
@@ -412,8 +417,6 @@ begin
         end generate;
     end generate;
 
-	PWM_OUT     <= pwm_2 & pwm;
-        
     r_cart: if g_cartridge generate
         i_slot_srv: entity work.slot_server_v4
         generic map (
@@ -449,7 +452,7 @@ begin
             BUFFER_ENn      => BUFFER_ENn,
         
 			buttons 		=> BUTTON,
-            cart_led_n      => CART_LEDn,
+            cart_led_n      => cart_led_n,
             
             -- timing output
 			c64_stopped		=> c64_stopped,
@@ -573,8 +576,6 @@ begin
 		pulse_in	=> sd_busy,
 		pulse_out	=> sd_act_stretched );
 
-	SDACT_LEDn <= not (sd_act_stretched or usb_busy);
-	
     r_spi_flash: if g_spi_flash generate
         i_spi_flash: entity work.spi_peripheral_io
         generic map (
@@ -744,6 +745,12 @@ begin
     IEC_DATA   <= '0' when data_o='0' or data_o_2='0' or iec_data_o='0' else 'Z'; -- open drain
     IEC_SRQ_IN <= '0' when               iec_srq_o='0'  else 'Z'; -- open drain
     
+	PWM_OUT     <= pwm_2 & pwm;
+	DISK_ACTn   <= act_led_n xor error;
+	MOTOR_LEDn  <= motor_led_n xor error;
+    CART_LEDn   <= cart_led_n xor error;
+	SDACT_LEDn  <= not (sd_act_stretched or usb_busy) xor error;
+
     filt1: entity work.spike_filter generic map (10) port map(sys_clock, IEC_ATN,    atn_i);
     filt2: entity work.spike_filter generic map (10) port map(sys_clock, IEC_CLOCK,  clk_i);
     filt3: entity work.spike_filter generic map (10) port map(sys_clock, IEC_DATA,   data_i);
