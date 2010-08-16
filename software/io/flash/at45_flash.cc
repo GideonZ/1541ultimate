@@ -198,12 +198,23 @@ bool AT45_Flash :: wait_ready(int time_out)
 	bool ret = true;
     SPI_FLASH_CTRL = SPI_FORCE_SS;
     SPI_FLASH_DATA = AT45_StatusRegisterRead;
-    while(!(SPI_FLASH_DATA & 0x80)) {
-        if(!(i--)) {
+    do {
+		last_status = SPI_FLASH_DATA;
+		if(last_status & 0x10) {
+			debug(("Flash protected.\n"));
+			ret = false;
+			break;
+		}
+		if(last_status & 0x80) {
+			ret = true;
+			break;
+		}
+        if((--i)<0) {
             debug(("Flash timeout.\n"));
             ret = false;
+			break;
         }
-    }
+    } while(true);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     return ret;
 }
@@ -280,7 +291,21 @@ bool AT45_Flash :: write_page(int page, void *buffer)
         SPI_FLASH_DATA_32 = *(buf++);
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    return wait_ready(50000);
+    bool ret = wait_ready(50000);
+	if(!ret)
+		return ret;
+	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA = AT45_MainMemoryPagetoBuffer2Compare;
+    SPI_FLASH_DATA = BYTE(device_addr >> 16);
+    SPI_FLASH_DATA = BYTE(device_addr >> 8);
+    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    ret = wait_ready(50000);
+	if(!ret)
+		return ret;
+	if(last_status & 0x40) // compare failed
+		return false;
+	return true;
 }
 
 bool AT45_Flash :: erase_sector(int sector)

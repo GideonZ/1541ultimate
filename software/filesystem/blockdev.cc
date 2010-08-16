@@ -3,6 +3,7 @@
 
 BlockDevice::BlockDevice()
 {
+	dev_state = e_device_unknown;
 }
     
 BlockDevice::~BlockDevice()

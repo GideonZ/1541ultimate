@@ -121,6 +121,7 @@ int ConfigBrowser :: handle_key(char c)
     int ret = 0;
     
     switch(c) {
+        case 0x8C: // exit
         case 0x03: // runstop
         	if(state->level == 1) { // going to level 0, we need to store in flash
         		ConfigStore *st = (ConfigStore *)state->previous->selected;
@@ -129,10 +130,10 @@ int ConfigBrowser :: handle_key(char c)
         	}
         	ret = -2;
             break;
-        case 0x8C: // exit
-            push_event(e_unfreeze, 0);
-            push_event(e_terminate, 0);
-            break;
+//        case 0x8C: // exit
+//            push_event(e_unfreeze, 0);
+//            push_event(e_terminate, 0);
+//            break;
         case 0x11: // down
             state->down(1);
             break;

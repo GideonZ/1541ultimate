@@ -125,7 +125,7 @@ int ContextMenu :: handle_key(char c)
             ret = -1;
             //clean_up();
             push_event(e_unfreeze, 0);
-            push_event(e_terminate, 0);
+//            push_event(e_terminate, 0);
             break;
         case 0x11: // down
         	reset_quick_seek();

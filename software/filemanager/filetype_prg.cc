@@ -92,23 +92,24 @@ void FileTypePRG :: execute(int selection)
 {
 	printf("PRG Select: %4x\n", selection);
 	File *file, *d64;
-
+	FileInfo *inf;
+	
 	switch(selection) {
 	case PRGFILE_RUN:
 	case PRGFILE_LOAD:
 	case PRGFILE_MOUNT_RUN:
 		printf("DMA Load.. %s\n", get_name());
 		file = root.fopen(this, FA_READ);
-//		file = info->fs->file_open(info, FA_READ);
 		if(file) {
             if(check_header(file)) {
     			C64_POKE(2, 0xAB); // magic key to enable DMA handshake
                 dma_cart.custom_addr = (void *)&_binary_sidcrt_65_start;
     			push_event(e_unfreeze, (void *)&dma_cart, 1);
     			if(selection == PRGFILE_MOUNT_RUN) {
-    				d64 = root.fopen(parent, FA_READ);
-    				if(d64)
-    					push_event(e_mount_drv1, d64, true);
+					inf = parent->get_file_info();
+					d64 = root.fopen(parent, FA_READ);
+    				if(d64) // mount read only only if file is read only
+    					push_event(e_mount_drv1, d64, ((inf->attrib & AM_RDO) != 0));
     				else
     					printf("Can't open D64 file..\n");
     			}

@@ -32,7 +32,7 @@
 #define RW_SPEED  0
 
 /* Constructor */
-SdCard :: SdCard(void)
+SdCard :: SdCard(void) : BlockDevice()
 {
     sdhc = false;
     sd_type = 0;
@@ -54,9 +54,10 @@ DSTATUS SdCard :: status(void)
     else if (sense & SD_CARD_PROTECT)
         status |= STA_PROTECT;
 
-    if(!initialized)
-        status |= STA_NOINIT;
-    
+    if(!initialized) {
+		printf("SdCard not initialized.. %p\n", this);
+		status |= STA_NOINIT;
+	}
     return status;        
 }        
 
@@ -170,6 +171,7 @@ DSTATUS SdCard :: init(void)
 
 	sdio_set_speed(RW_SPEED); 
 
+	printf("Setting initialized to true.. %p\n", this);
     initialized = true;
 /*
     error = sd_getDriveSize(&size);

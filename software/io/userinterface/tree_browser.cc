@@ -261,19 +261,23 @@ void TreeBrowserState :: into(void)
 		return;
 
 	printf("Going deeper into = %s\n", selected->get_name());
-    int children = selected->fetch_children();
+    int child_count = selected->fetch_children();
     reselect(); // might have been promoted..
-    if(children < 0)
+    if(child_count < 0)
         return;
         
-    printf("%d children fetched.\n", children);
+    printf("%d children fetched.\n", child_count);
 
 /*
     if(selected->children.is_empty())
         return;
 */
         
-    deeper = new TreeBrowserState(selected, browser, level+1);
+	child_count = selected->children.get_elements();
+	for(int i=0;i<child_count;i++) {
+		selected->children[i]->attach(true);
+	}
+	deeper = new TreeBrowserState(selected, browser, level+1);
     browser->state = deeper;
     deeper->previous = this;
 }
@@ -283,7 +287,11 @@ void TreeBrowserState :: level_up(void)
     if(!previous)
         return;
 
-    previous->selected->cleanup_children();
+	int child_count = previous->selected->children.get_elements();
+	for(int i=0;i<child_count;i++) {
+		previous->selected->children[i]->detach(true);
+	}
+	previous->selected->cleanup_children();
     browser->state = previous;
     previous->refresh = true;
     previous = NULL; // unlink;
@@ -404,7 +412,7 @@ int TreeBrowser :: handle_key(char c)
             break;
         case 0x8C: // exit
             push_event(e_unfreeze);
-            push_event(e_terminate);
+//            push_event(e_terminate);
             break;
         case 0x11: // down
         	reset_quick_seek();

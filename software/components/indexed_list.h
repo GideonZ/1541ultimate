@@ -14,27 +14,37 @@ class IndexedList
 private:
 	T *element_array;
 	T empty;
+	BYTE *removal;
 	int size;
 	int elements;
 	void expand(void) {
 		T *new_array;
+		BYTE *new_removal;
 		if(!size)
 			size = 16;
 		else
 			size *= 2;
 		new_array = new T[size];
+		new_removal = new BYTE[size];
 		for(int i=0;i<elements;i++) {
 			new_array[i] = element_array[i];
+			new_removal[i] = removal[i];
 		}
 		delete element_array;
+		delete removal;
 		element_array = new_array;
+		removal = new_removal;
 	}
 public:
     IndexedList(int initial=32, T def) : empty(def) {
-		if(initial)
+		if(initial) {
 			element_array = new T[initial];
-		else
+			removal = new BYTE[initial];
+		} else {
 			element_array = NULL;
+			removal = NULL;
+		}
+			
 		size = initial;
 		elements = 0;
     }
@@ -42,6 +52,8 @@ public:
     ~IndexedList() {
 		if(element_array)
 			delete element_array;
+		if(removal)
+			delete removal;
     }
     
 	bool is_empty(void) {
@@ -50,6 +62,27 @@ public:
 
 	void clear_list(void) {
 		elements = 0;
+	}
+
+	void mark_for_removal(int idx) {
+		if(idx < size)
+			removal[idx] = 1;
+	}
+	
+	void purge_list(void) {
+		int left_over = 0;
+		ENTER_SAFE_SECTION
+		for(int i=0;i<elements;i++) {
+			if(removal[i] == 0) {
+				removal[left_over] = 0;
+				if(i != left_over) {
+					element_array[left_over] = element_array[i];
+				}
+				left_over ++;
+			}
+		}
+		elements = left_over;
+        LEAVE_SAFE_SECTION
 	}
 
 	void append(T el) {

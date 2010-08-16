@@ -104,13 +104,17 @@ int FileDirEntry :: fetch_children(void)
     cleanup_children();
 
     FileInfo fi(32);    
-
+	FRESULT fres;
+	
     if(info->is_directory()) {
         printf("Opening dir %s.\n", info->lfname);
         Directory *r = info->fs->dir_open(info);
-    
+		if(!r) {
+			printf("Error opening directory!\n");
+			return -1;
+		}
         int i=0;        
-        while(r->get_entry(fi) == FR_OK) {
+        while((fres = r->get_entry(fi)) == FR_OK) {
 			if(fi.lfname[0] != '.') {
 	            children.append(new FileDirEntry(this, &fi));
 	            ++i;

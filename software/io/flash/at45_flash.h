@@ -55,6 +55,7 @@ class AT45_Flash : public Flash
     int total_size;
     int page_shift;
 
+	BYTE last_status;
     bool wait_ready(int time_out);
 
 public:    

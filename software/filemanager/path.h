@@ -53,7 +53,7 @@ public:
 	
 	virtual void attach(bool single=false) {
 		if(single) {
-			printf("attach single: %s\n", get_name());
+			//printf("attach single: %s\n", get_name());
 			ref_count++;
 		} else {
 //			printf("Attach recursive: ");
@@ -67,28 +67,35 @@ public:
 		}
 	}
 
-	virtual void detach(void) {
+	virtual void detach(bool single=false) {
 		PathObject *obj = this;
 		//printf("Detach recursive: ");
-		while(obj) {
-			//printf("%s (%d), ", obj->get_name(), obj->ref_count);
-			if(obj->ref_count > 0)
-				obj->ref_count--;
-			else
-				printf("Internal error. Detach of object that is not attached. (%s)\n", obj->get_name());
-			obj = obj->parent;
+		if(single) {
+			//printf("detach single: %s\n", get_name());
+			ref_count--;
+		} else {
+			while(obj) {
+				//printf("%s (%d), ", obj->get_name(), obj->ref_count);
+				if(obj->ref_count > 0)
+					obj->ref_count--;
+				else
+					printf("Internal error. Detach of object that is not attached. (%s)\n", obj->get_name());
+				obj = obj->parent;
+			}
+			//printf("\n");
 		}
-		//printf("\n");
 	}
 
 	virtual void cleanup_children(void) {
 		//printf("Cleaning up %d children of %s.\n", children.get_elements(), get_name());
 		for(int i=0;i<children.get_elements();i++) {
 			children[i]->cleanup();
-    		if(children[i]->ref_count == 0)
-    			delete children[i];
+			if(children[i]->ref_count == 0) {
+				children.mark_for_removal(i);
+				delete children[i];
+			}
 		}
-		children.clear_list();
+		children.purge_list();
 	}
 
 	virtual void cleanup(void) {
