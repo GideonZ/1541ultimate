@@ -124,7 +124,7 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM)
 
 $(RESULT)/flash_400.mcs: $(RESULT)/$(PRJ).bin ../1st_boot/result/1st_boot_400.mcs Makefile
 	@echo Making Hex File for 400A
-	@$(BIN2HEX) -Z -o 0x53CA0 -t  $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
+	@$(BIN2HEX) -Z -o 0x53CA0 -v "V1.1" -t  $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
 	@$(BIN2HEX) -o 0x063000 -t -a $(ROMS)/ar5pal.bin   $(OUTPUT)/_flash.mcs
 	@$(BIN2HEX) -o 0x06B000 -t -a $(ROMS)/ar6pal.bin   $(OUTPUT)/_flash.mcs
 	@$(BIN2HEX) -o 0x073000 -t -a $(ROMS)/final3.bin   $(OUTPUT)/_flash.mcs
@@ -149,7 +149,7 @@ $(RESULT)/flash_400.mcs: $(RESULT)/$(PRJ).bin ../1st_boot/result/1st_boot_400.mc
 
 $(RESULT)/flash_700.mcs: $(RESULT)/$(PRJ).bin ../1st_boot/result/1st_boot_700.mcs Makefile
 	@echo Making Hex File for 700A
-	@$(BIN2HEX) -Z -o 0x53CA0 -t  $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
+	@$(BIN2HEX) -Z -o 0x53CA0 -v "V1.1" -t  $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
 	@$(BIN2HEX) -o 0x063000 -t -a $(ROMS)/ar5pal.bin   $(OUTPUT)/_flash.mcs
 	@$(BIN2HEX) -o 0x06B000 -t -a $(ROMS)/ar6pal.bin   $(OUTPUT)/_flash.mcs
 	@$(BIN2HEX) -o 0x073000 -t -a $(ROMS)/final3.bin   $(OUTPUT)/_flash.mcs

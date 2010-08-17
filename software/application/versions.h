@@ -3,6 +3,6 @@
 
 #define APPL_VERSION "2.0RC6"
 #define BOOT_VERSION "V1.1"
-#define FPGA_VERSION "FPGA U2 $97"
+#define FPGA_VERSION "FPGA U2 V97"
 
 #endif

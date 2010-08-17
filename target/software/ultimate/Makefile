@@ -182,15 +182,16 @@ clean:
 	@-rm -rf $(OUTPUT)
 	@-rm -rf $(RESULT)
 
+# Version number should not be hard coded here, but be taken from versions.h (or vice versa: generate versions.h before compiling)
 hex: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
 	@$(MAKE) -C ../2nd_boot hex
 	@$(BIN2HEX) -Z -o 0x108000 $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ).mcs
-	@$(BIN2HEX) -Z -o 0x108000 -t $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
+	@$(BIN2HEX) -Z -o 0x108000 -v "2.0RC6" -t $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
 	@cat ../2nd_boot/result/flash_700.mcs         >>$(OUTPUT)/_flash.mcs
 	@$(HEX2BIN) -o 0x000000 -s 0x128000 $(OUTPUT)/_flash.mcs $(RESULT)/flash_700.bin
 	@$(BIN2HEX) -o 0x000000 $(RESULT)/flash_700.bin $(RESULT)/flash_700.mcs
 	@rm $(OUTPUT)/_flash.mcs
-	@$(BIN2HEX) -Z -o 0x108000 -t $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
+	@$(BIN2HEX) -Z -o 0x108000 -v "2.0RC6" -t $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
 	@cat ../2nd_boot/result/flash_400.mcs         >>$(OUTPUT)/_flash.mcs
 	@$(HEX2BIN) -o 0x000000 -s 0x128000 $(OUTPUT)/_flash.mcs $(RESULT)/flash_400.bin
 	@$(BIN2HEX) -o 0x000000 $(RESULT)/flash_400.bin $(RESULT)/flash_400.mcs
