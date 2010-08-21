@@ -885,17 +885,30 @@ FRESULT FATFS :: f_rename (
 	ST_DWORD(new_dir->dir+FATDIR_FileSize, info->size);
 	wflag = 1;
     sync();
-    delete new_dir;
 
+//	printf("New dir entry:\n");
+//	new_dir->print_info();
+	
     // now try to find and delete the old one.
     FATDIR *old_dir = new FATDIR(this, info->dir_clust);
 	res = old_dir->follow_path(info->lfname, info->dir_clust);
+
 	if(res != FR_OK) {
 		printf("Old dir follow path result = %d.\n", res);
+		delete new_dir;
 		delete old_dir;
 		return res;
 	}
+
+//	old_dir->print_info();
 	res = old_dir->dir_remove();
+    sync();
+
+	// now set the info fields to point to new filename
+	move_window(new_dir->sect);
+	new_dir->get_fileinfo(info);
+
+    delete new_dir;
 	delete old_dir;
     return res;
 }

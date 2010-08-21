@@ -250,6 +250,11 @@ void TreeBrowserState :: reselect(void)
 
 void TreeBrowserState :: reload(void)
 {
+	int child_count = selected->children.get_elements();
+	for(int i=0;i<child_count;i++) {
+		selected->children[i]->detach(true);
+	}
+	node->cleanup_children();
 	node->fetch_children();
 	reselect();
 	refresh = true;

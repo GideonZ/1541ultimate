@@ -552,7 +552,7 @@ FRESULT FATDIR::dir_register (void)    /* Objects points to directory with objec
     FRESULT res;
     BYTE c, *dirbyte;
 #if _USE_LFN    /* LFN configuration */
-    WORD n, ne, is;
+    WORD n, ne, is = 0xFFFF;
     BYTE tmp_sn[12], *tmp_fn, sum;
     WCHAR *tmp_lfn;
 
@@ -585,7 +585,7 @@ FRESULT FATDIR::dir_register (void)    /* Objects points to directory with objec
         ne = 1;
     }
 
-    printf("Number of entries to reserve: %d", ne);
+    printf("Number of entries to reserve: %d\n", ne);
 
     /* Reserve contiguous entries */
     res = dir_seek(0);
@@ -642,6 +642,8 @@ FRESULT FATDIR::dir_register (void)    /* Objects points to directory with objec
             fs->wflag = 1;
         }
     }
+
+	lfn_idx = is;
 //    printf("Dir = %p. Win = %p. Dumping:", dir, fs->win);
 //    dump_hex(fs->win, 512);
 
@@ -663,6 +665,7 @@ FRESULT FATDIR::dir_remove (void)  /* Directory object pointing the entry to be 
 
     i = index;  /* SFN index */
     res = dir_seek((WORD)((lfn_idx == 0xFFFF) ? i : lfn_idx));  /* Goto the SFN or top of the LFN entries */
+	
     if (res == FR_OK) {
         do {
             res = fs->move_window(sect);
@@ -674,7 +677,7 @@ FRESULT FATDIR::dir_remove (void)  /* Directory object pointing the entry to be 
         } while (res == FR_OK);
         if (res == FR_NO_FILE) res = FR_INT_ERR;
     }
-
+	
 #else           /* Non LFN configuration */
     res = dir_seek(index);
     if (res == FR_OK) {

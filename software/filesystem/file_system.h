@@ -145,6 +145,8 @@ public:
     FileSystem(Partition *p);
     ~FileSystem();
 
+	static  const char *get_error_string(FRESULT res);
+
     static  bool check(Partition *p);        // check if file system is present on this partition
     virtual void    init(void);              // Initialize file system
     virtual FRESULT get_free (DWORD*);       // Get number of free sectors on the file system

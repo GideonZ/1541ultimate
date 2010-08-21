@@ -92,7 +92,9 @@ FileDirEntry *FileDirEntry :: attempt_promotion(void)
     if(promoted) {
         printf("Promotion success! %s\n", promoted->get_name());
         parent->children.replace(this, promoted); // replace
-//        promoted->parent = parent;
+		detach(true);
+		promoted->attach(true);
+		//        promoted->parent = parent;
         push_event(e_cleanup_path_object, this);
     }
     return promoted;
@@ -209,9 +211,10 @@ void FileDirEntry :: execute(int selection)
             if(res > 0) {
             	fres = info->fs->file_rename(info, buffer);
 				if(fres != FR_OK) {
-					user_interface->popup("Error renaming file or dir.", BUTTON_OK);
+					sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
+					user_interface->popup(buffer, BUTTON_OK);
 				} else {
-            		push_event(e_reload_browser);
+            		push_event(e_refresh_browser);
 				}
             }
             break;
