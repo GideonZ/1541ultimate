@@ -71,6 +71,7 @@ public:
     C1541(volatile BYTE *regs);
     ~C1541();
     
+	void init(void);
     void create_menu_items(void);
 
     void drive_power(bool on);

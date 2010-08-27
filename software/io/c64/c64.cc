@@ -107,6 +107,7 @@ C64 :: C64()
     C64_MODE = MODE_NORMAL;
 	C64_STOP = 0;
 	stopped = false;
+    C64_MODE = C64_MODE_RESET;
 }
     
 C64 :: ~C64()
@@ -348,7 +349,7 @@ void C64 :: resume(void)
 void C64 :: reset(void)
 {
     C64_MODE = C64_MODE_RESET;
-    ITU_TIMER = 200;
+    ITU_TIMER = 20;
     while(ITU_TIMER)
         ;
     C64_MODE = C64_MODE_UNRESET;

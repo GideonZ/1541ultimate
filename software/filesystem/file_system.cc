@@ -49,6 +49,8 @@ const char *FileSystem :: get_error_string(FRESULT res)
 			return "Out of memory";
 		case FR_DISK_FULL:
 			return "Disk is full";
+		case FR_DIR_NOT_EMPTY:
+			return "Directory not empty";
 		default:
 			return "Unknown error";
 	}
@@ -122,6 +124,11 @@ FRESULT FileSystem :: file_seek(File *f, DWORD pos)
 }
 
 FRESULT FileSystem :: file_rename(FileInfo *, char *new_name)
+{
+    return FR_DENIED;
+}
+
+FRESULT FileSystem :: file_delete(FileInfo *)
 {
     return FR_DENIED;
 }

@@ -1008,6 +1008,63 @@ FRESULT FATFS :: file_rename(FileInfo *fi, char *new_name)
     return f_rename(fi, new_name);
 }
 
+FRESULT FATFS :: file_delete(FileInfo *fi)
+{
+    FRESULT res;
+    FATDIR dj(this), *sdj;
+
+    res = chk_mounted(1);
+    if (res != FR_OK)
+		return res;
+
+	if (!(fi->cluster))
+		return FR_INVALID_NAME;				/* Is it the root directory? */
+	
+	if(fi->attrib & AM_RDO)					/* Is it read only? */
+		return FR_DENIED;
+	
+	if(fi->attrib & AM_DIR) {				/* It is a sub-directory */
+        if (fi->cluster < 2)
+			return FR_INT_ERR;
+			
+		res = dj.open(fi);
+		if (res != FR_OK)
+			return res;
+			
+        res = dj.dir_seek(2);
+        if (res != FR_OK)
+			return res;
+			
+        res = dj.dir_read();
+        if (res == FR_OK)
+			return FR_DIR_NOT_EMPTY;  /* Not empty sub-dir */
+			
+        if (res != FR_NO_FILE)
+			return res;
+    }
+
+	sdj = new FATDIR(this, fi->dir_clust);
+	if(!sdj)
+		return FR_NO_MEMORY;
+		
+	res = sdj->follow_path(fi->lfname, fi->dir_clust);
+	if (res != FR_OK) {
+		delete sdj;
+		return res;
+	}
+	
+    res = sdj->dir_remove();                  /* Remove directory entry */
+    if (res == FR_OK) {
+        if (fi->cluster)
+            res = remove_chain(fi->cluster);   /* Remove the cluster chain */
+        if (res == FR_OK)
+			res = sync();
+    }
+
+	delete sdj;
+    return res;
+}
+
 void FATFS::file_print_info(File *f)
 {
 	FATFIL *ff = (FATFIL *)f->handle;

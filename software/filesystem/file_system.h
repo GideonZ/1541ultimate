@@ -25,7 +25,8 @@ typedef enum {
     FR_MKFS_ABORTED,    /* 14 */
     FR_TIMEOUT,         /* 15 */
     FR_NO_MEMORY,		/* 16 */
-    FR_DISK_FULL        /* 17 */
+    FR_DISK_FULL,       /* 17 */
+	FR_DIR_NOT_EMPTY    /* 18 */
 } FRESULT;
 
 /* File attribute bits for directory entry */
@@ -161,6 +162,7 @@ public:
     // functions for reading and writing files
     virtual File   *file_open(FileInfo *, BYTE flags);  // Opens file (creates file object)
     virtual FRESULT file_rename(FileInfo *, char *new_name); // Renames a file
+	virtual FRESULT file_delete(FileInfo *); // deletes a file
     virtual void    file_close(File *f);                // Closes file (and destructs file object)
     virtual FRESULT file_read(File *f, void *buffer, DWORD len, UINT *transferred);
     virtual FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred);

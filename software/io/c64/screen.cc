@@ -289,8 +289,12 @@ void Screen :: output_line(char *string)
     char c;
     for(int i=0;i<window_x;string++) {
         c = *string;
-        if(!c)
-            break;
+        if(!c) {
+			for(int j=i;j<window_x;j++)
+				window_base[temp++] = 0;
+			break;
+		}
+		
         if((c >= 0x10)&&(c <= 0x1F)) {
             col = int(c - 0x10);
             continue;

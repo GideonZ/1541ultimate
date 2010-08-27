@@ -71,6 +71,7 @@ SRCS_CC	 =  memory.cc \
 			filetype_prg.cc \
 			filetype_tap.cc \
 			filetype_sid.cc \
+			filetype_reu.cc \
 			rtc.cc \
 			usb.cc \
 			usb_scsi.cc \

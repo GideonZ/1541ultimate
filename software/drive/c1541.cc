@@ -70,26 +70,10 @@ C1541 :: C1541(volatile BYTE *regs)
 	    printf("C1541 Audio address: %p, loading... \n", audio_address);
 	    flash->read_image(FLASH_ID_SOUNDS, audio_address, 0x4800);
 	}    
-    ram = ram_modes[cfg->get_value(CFG_C1541_RAMBOARD)];
-    set_rom(rom_modes[cfg->get_value(CFG_C1541_ROMSEL)], cfg->get_string(CFG_C1541_ROMFILE));
+    create_menu_items();
 
     gcr_image = new GcrImage();
     bin_image = new BinImage();
-
-    volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
-    for(int i=0;i<C1541_MAXTRACKS;i++) {
-    	*(param++) = (ULONG)gcr_image->dummy_track;
-        *(param++) = 16;
-    }
-	registers[C1541_SENSOR] = SENSOR_LIGHT;
-    registers[C1541_INSERTED] = 0;
-
-    set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
-    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
-
-    disk_state = e_no_disk;
-
-    create_menu_items();
 }
 
 C1541 :: ~C1541()
@@ -104,6 +88,23 @@ C1541 :: ~C1541()
 
 	// turn the drive off on destruction
     drive_power(false);
+}
+
+void C1541 :: init(void)
+{
+    volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
+    for(int i=0;i<C1541_MAXTRACKS;i++) {
+    	*(param++) = (ULONG)gcr_image->dummy_track;
+        *(param++) = 16;
+    }
+	registers[C1541_SENSOR] = SENSOR_LIGHT;
+    registers[C1541_INSERTED] = 0;
+    disk_state = e_no_disk;
+
+    ram = ram_modes[cfg->get_value(CFG_C1541_RAMBOARD)];
+    set_rom(rom_modes[cfg->get_value(CFG_C1541_ROMSEL)], cfg->get_string(CFG_C1541_ROMFILE));
+    set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
+    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
 }
 
 void C1541 :: create_menu_items(void)

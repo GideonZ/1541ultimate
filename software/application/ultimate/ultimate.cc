@@ -92,6 +92,7 @@ int main()
 
     poll_list.append(&poll_c64);
     c64->init_cartridge();
+	c1541->init();
 	
     printf("All linked modules have been initialized.\n");
     printf("Starting main loop...\n");

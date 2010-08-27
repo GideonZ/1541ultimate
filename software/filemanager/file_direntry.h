@@ -19,6 +19,7 @@ public:
     virtual void execute(int selection);
     virtual char *get_name(void);
     virtual char *get_display_string(void);
+	virtual int compare(PathObject *obj);
     virtual FileDirEntry *test_type(PathObject *obj);
     virtual FileInfo *get_file_info(void);
     int fetch_context_items_actual(IndexedList<PathObject *> &list);

@@ -205,5 +205,6 @@ int path_object_compare(IndexedList<PathObject *> *list, int a, int b)
 
 //	printf("%p %p ", obj_a, obj_b);
 //	printf("%s %s\n", obj_a->get_name(), obj_b->get_name());
-	return stricmp(obj_a->get_name(), obj_b->get_name());
+	return obj_a->compare(obj_b);
+//	return stricmp(obj_a->get_name(), obj_b->get_name());
 }

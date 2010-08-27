@@ -1,6 +1,7 @@
 #ifndef PATH_H
 #define PATH_H
 
+#include <string.h>
 #include "indexed_list.h"
 #include "mystring.h"
 #include "small_printf.h"
@@ -141,6 +142,11 @@ public:
     	children.sort(path_object_compare);
     }
 
+	// default compare function, just by name!
+	virtual int compare(PathObject *obj) {
+		return stricmp(get_name(), obj->get_name());
+	}
+	
 	void dump(int level=0) {
 		PathObject *obj;
 		for(int i=0;i<children.get_elements();i++) {

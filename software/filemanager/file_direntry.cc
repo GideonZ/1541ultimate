@@ -8,9 +8,10 @@
 #include "userinterface.h"
 #include "c1541.h"
 
-#define FILEDIR_RENAME   0x2001
-#define FILEDIR_DELETE   0x2002
-#define FILEDIR_ENTERDIR 0x2003
+#define FILEDIR_RENAME   			0x2001
+#define FILEDIR_DELETE   			0x2002
+#define FILEDIR_ENTERDIR 			0x2003
+#define FILEDIR_DELETE_CONTINUED   	0x2004
 
 #define MENU_CREATE_D64 0x3001
 #define MENU_CREATE_DIR 0x3002
@@ -102,7 +103,6 @@ FileDirEntry *FileDirEntry :: attempt_promotion(void)
 
 int FileDirEntry :: fetch_children(void)
 {
-    printf("FileDirEntry :: fetch_children\n");
     cleanup_children();
 
     FileInfo fi(32);    
@@ -219,8 +219,27 @@ void FileDirEntry :: execute(int selection)
             }
             break;
         case FILEDIR_DELETE:
-            //res = user_interface->popup("Are you sure?", 0xFF);
-            res = user_interface->popup("This function will be added soon!", BUTTON_CANCEL);
+            res = user_interface->popup("Are you sure?", BUTTON_YES | BUTTON_NO);
+			if(res == BUTTON_YES) {
+				push_event(e_invalidate, this);
+				push_event(e_path_object_exec_cmd, this, FILEDIR_DELETE_CONTINUED);
+			}
+			break;
+
+		case FILEDIR_DELETE_CONTINUED:
+			fres = info->fs->file_delete(info);
+			if(fres != FR_OK) {
+				sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
+				user_interface->popup(buffer, BUTTON_OK);
+			} else {
+				if(!parent->children.remove(this)) {
+					printf("ERROR: Couldn't remove child from list!!\n");
+				} else {
+					detach(true);
+					push_event(e_cleanup_path_object, this);
+					push_event(e_refresh_browser);
+				}
+			}
             break;
 
 		case FILEDIR_ENTERDIR:
@@ -293,4 +312,16 @@ void FileDirEntry :: execute(int selection)
             break;
     }
 	printf("Execute done!\n");
+}
+
+int FileDirEntry :: compare(PathObject *obj)
+{
+	FileDirEntry *b = (FileDirEntry *)obj;
+
+	if ((info->attrib & AM_DIR) && !(b->info->attrib & AM_DIR))
+		return -1;
+	if (!(info->attrib & AM_DIR) && (b->info->attrib & AM_DIR))
+		return 1;
+
+	return stricmp(get_name(), b->get_name());
 }

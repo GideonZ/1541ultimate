@@ -103,6 +103,7 @@ public:
     File   *file_open(FileInfo *, BYTE flags);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
     FRESULT file_rename(FileInfo *, char *new_name); // Renames a file
+	FRESULT file_delete(FileInfo *); // deletes a file
     FRESULT file_read(File *f, void *buffer, DWORD len, UINT *transferred);
     FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred);
     FRESULT file_seek(File *f, DWORD pos);

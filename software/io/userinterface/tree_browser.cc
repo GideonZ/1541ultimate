@@ -113,9 +113,9 @@ void TreeBrowserState :: draw()
 //	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
 	// this functions initializes the screen
     browser->window->set_color(default_color);
-    browser->window->clear();
 
     if(node->children.get_elements() == 0) {
+		browser->window->clear();
     	browser->window->move_cursor(0, 0);
     	browser->window->output("\033\025< No Items >");
     	selected = NULL;
@@ -130,15 +130,12 @@ void TreeBrowserState :: draw()
     PathObject *t;
     for(int i=0;i<y;i++) {
     	t = node->children[i+first_item_on_screen];
-    	if(!t)
-    		break;
-/*
-    	if(t == selected) {
-            selected_line = i;
-        }
-*/
+
         browser->window->move_cursor(0, i);
-        browser->window->output_line(t->get_display_string());
+        if(t)
+			browser->window->output_line(t->get_display_string());
+		else
+			browser->window->output_line("");
     }
 
     selected = node->children[first_item_on_screen + selected_line];
@@ -250,12 +247,24 @@ void TreeBrowserState :: reselect(void)
 
 void TreeBrowserState :: reload(void)
 {
-	int child_count = selected->children.get_elements();
+//	printf("Reload. Before: \n");
+//	root.dump();
+	int child_count = node->children.get_elements();
 	for(int i=0;i<child_count;i++) {
-		selected->children[i]->detach(true);
+		node->children[i]->detach(true);
 	}
+//	printf("After detach of children:\n");
+//	root.dump();
 	node->cleanup_children();
+//	printf("After cleanup of children:\n");
+//	root.dump();
 	node->fetch_children();
+//	printf("After fetch of children:\n");
+//	root.dump();
+	child_count = node->children.get_elements();
+	for(int i=0;i<child_count;i++) {
+		node->children[i]->attach(true);
+	}
 	reselect();
 	refresh = true;
 }
@@ -508,9 +517,13 @@ void TreeBrowserState :: move_to_index(int idx)
 	    draw();
 		return;
 	}
-
 	first_item_on_screen = idx - y;
-	selected_line = y;
+
+	if(first_item_on_screen + browser->window->get_size_y() >= num_el)
+		first_item_on_screen = num_el - browser->window->get_size_y();
+
+	selected_line = idx - first_item_on_screen;
+
     draw();    
 }
 
