@@ -191,6 +191,7 @@ int main()
 	printf("*** Ultimate Updater ***\n\n");
 
     c64 = new C64;
+	c64->reset();
     c64->freeze();
 
     screen = new Screen(c64->get_screen(), c64->get_color_map(), 40, 25);

@@ -74,8 +74,9 @@ public:
 	Rtc();
 	~Rtc();
 
+	int  get_correction(void);
 	void get_time_from_chip(void);
-	void set_time_in_chip(void);
+	void set_time_in_chip(int);
 
 	void get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s);
 	void set_time(int y, int M, int D, int wd, int h, int m, int s);

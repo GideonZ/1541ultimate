@@ -77,6 +77,7 @@ void Rtc :: write_byte(int addr, BYTE val)
     RTC_CHIP_DATA = (BYTE)(0x10 + addr);
     RTC_CHIP_DATA = val;
     RTC_CHIP_CTRL = SPI_CS_OFF;
+	rtc_regs[addr] = val; // update internal structure as well.
 }
 
 
@@ -88,7 +89,7 @@ void Rtc :: read_all(BYTE *buf)
     for(int i=0;i<16;i++) {
         buf[i] = RTC_CHIP_DATA;
     }
-    RTC_CHIP_CTRL = SPI_CS_OFF;
+	RTC_CHIP_CTRL = SPI_CS_OFF;
 }
 
 void Rtc :: get_time_from_chip(void)
@@ -107,9 +108,28 @@ void Rtc :: get_time_from_chip(void)
 	RTC_TIMER_LOCK = 0;
 }
 
-void Rtc :: set_time_in_chip(void)
+void Rtc :: set_time_in_chip(int corr_ppm)
 {
+	// calculate correction register
+	BYTE corr_byte = 0;
+	int div;
+	if((corr_ppm > 136)||(corr_ppm < -136)) {
+		div = 434;
+		corr_byte = 0x80;
+	} else {
+		div = 217;
+	}
+	int val = (200 * corr_ppm) / div;
+	if(val > 0)
+		if(val & 1) val++;
+	else
+		if(val & 1) val--;
+	val = (val >> 1) & 0x7F;
+	corr_byte |= BYTE(val);
+//	printf("Correction byte for %d ppm: %b\n", corr_ppm, corr_byte);
+	
 	RTC_TIMER_LOCK = 1;
+	write_byte(RTC_ADDR_CTRL1,    0x80);
 	write_byte(RTC_ADDR_SECONDS,  bin2bcd(RTC_TIMER_SECONDS));
 	write_byte(RTC_ADDR_MINUTES,  bin2bcd(RTC_TIMER_MINUTES));
 	write_byte(RTC_ADDR_HOURS,    bin2bcd(RTC_TIMER_HOURS));
@@ -117,7 +137,23 @@ void Rtc :: set_time_in_chip(void)
 	write_byte(RTC_ADDR_DAYS,     bin2bcd(RTC_TIMER_DAYS));
 	write_byte(RTC_ADDR_MONTHS,   bin2bcd(RTC_TIMER_MONTHS));
 	write_byte(RTC_ADDR_YEARS,    bin2bcd(RTC_TIMER_YEARS));
+	write_byte(RTC_ADDR_OFFSET,   corr_byte);
+	write_byte(RTC_ADDR_CTRL1,    0x00);
 	RTC_TIMER_LOCK = 0;
+}
+
+int  Rtc :: get_correction(void)
+{
+	BYTE corr_byte = rtc_regs[RTC_ADDR_OFFSET];
+	int mul = (corr_byte & 0x80)?434:217;
+	int val = (corr_byte & 0x40)?(int(corr_byte) | -128):int(corr_byte & 0x3F);
+//	printf("Mul = %d. Val = $%b (%d)\n", mul, val, val);
+	int corr = (mul * val) / 50;
+	if(corr > 0)
+		if(corr & 1) corr++;
+	else
+		if(corr & 1) corr--;
+	return (corr >> 1);
 }
 
 void Rtc :: get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
@@ -194,7 +230,7 @@ void RtcConfigStore :: read(void)
 	printf("** Cfg RTC Read **\n");
 	int y, M, D, wd, h, m, s;
 	rtc.get_time(y, M, D, wd, h, m, s);
-
+	int corr = rtc.get_correction();
     ConfigItem *i;
 
     for(int n = 0;n < children.get_elements(); n++) {
@@ -222,7 +258,7 @@ void RtcConfigStore :: read(void)
 			i->value = s;
 			break;
 		case CFG_RTC_CORR:
-			// TODO
+			i->value = corr;
 			break;
 		default:
 			break;
@@ -238,7 +274,7 @@ void RtcConfigStore :: write(void)
 	if(!dirty)
 		return;
 
-	int y, M, D, wd, h, m, s;
+	int y, M, D, wd, h, m, s, corr;
 
     ConfigItem *i;
 
@@ -267,7 +303,7 @@ void RtcConfigStore :: write(void)
 			s = i->value;
 			break;
 		case CFG_RTC_CORR:
-			// TODO
+			corr = i->value;
 			break;
 		default:
 			break;
@@ -275,7 +311,7 @@ void RtcConfigStore :: write(void)
 	}
     printf("Writing time: %d-%d-%d (%d) %02d:%02d:%02d\n", y, M, D, wd, h, m, s);
     rtc.set_time(y, M, D, wd, h, m, s);
-	rtc.set_time_in_chip();
+	rtc.set_time_in_chip(corr);
 	
 	dirty = false;
 }
