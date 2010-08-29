@@ -13,6 +13,7 @@ Path :: Path() : full_path("/")
 	root_obj = &root;
     current  = &root;
     root.attach();
+	cd("SdCard/Part0");
 }
 
 Path :: Path(PathObject *obj) : full_path("/")

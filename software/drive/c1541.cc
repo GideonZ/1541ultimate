@@ -165,7 +165,9 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
     File *f;
     UINT transferred;
     FRESULT res;
-
+	FileInfo *info;
+	int offset;
+	
 	current_rom = rom;
 	printf("Initializing 1541 rom: ");
 	if(!flash) {
@@ -177,41 +179,42 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
         case e_rom_1541:
 			printf("CBM1541\n");
             flash->read_image(FLASH_ID_ROM1541, (void *)&memory_map[0xC000], 0x4000);
-            memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
             break;
         case e_rom_1541ii:
 			printf("1541-II\n");
             flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
-            memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
             break;
         case e_rom_1541c:
 			printf("1541C\n");
             flash->read_image(FLASH_ID_ROM1541C, (void *)&memory_map[0xC000], 0x4000);
-            memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
             break;
         default: // custom
             f = root.fopen(custom, FA_READ);
             printf("1541 rom file: %p\n", f);
 			if(f) {
-				res = f->read((void *)&memory_map[0x8000], 0x8000, &transferred);
-				if(res != FR_OK) {
-					printf("Error loading file.. default to 1541ii.\n");
-					flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
-					memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
-				}
-				root.fclose(f);
+				info = f->node->get_file_info();
+				if (info->size > 0x8000)
+					offset = 0x8000;
+				else
+					offset = 0x10000 - info->size;
 
-				if (transferred > 0x4000) {
+				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
+				res = f->read((void *)&memory_map[offset], 0x8000, &transferred);
+				root.fclose(f);
+				if(res != FR_OK) {
+					printf("Error loading file.\n");
+				}
+				if(info->size > 0x4000) {
 					large_rom = true;
-				} else {
-					memcpy((void *)&memory_map[0xC000], (void *)&memory_map[0x8000], 0x4000);
 				}
 			} else {
 				printf("C1541: Failed to open custom file.\n");
 				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
-				memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
 			}
     }
+	if(!large_rom) // if rom <= 16K, then mirror it
+		memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
+	
     set_ram(ram); // use previous value
     drive_reset();
 }
