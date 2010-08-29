@@ -90,7 +90,9 @@ public:
 		ENTER_SAFE_SECTION
 		if(elements == size)
 			expand();
-		element_array[elements++] = el;
+		element_array[elements] = el;
+		removal[elements] = 0;
+		elements++;
         LEAVE_SAFE_SECTION
 //		printf("ed. El=%d. Size=%d\n", elements, size);
 	}
@@ -101,8 +103,10 @@ public:
 		for(int i=0;i<elements;i++) {
 			if(element_array[i] == el) {
 				elements--;
-				for(int j=i;j<elements;j++)
+				for(int j=i;j<elements;j++) {
 					element_array[j] = element_array[j+1];
+					removal[j] = removal[j+1];
+				}
 				res = 1;
 				break;
 			}
@@ -117,6 +121,10 @@ public:
 		temp = element_array[j];
 		element_array[j] = element_array[i];
 		element_array[i] = temp;
+		BYTE temp2;
+		temp2 = removal[j];
+		removal[j] = removal[i];
+		removal[i] = temp2;
         LEAVE_SAFE_SECTION
 	}
 

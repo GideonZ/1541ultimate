@@ -14,7 +14,7 @@ class FileManager : public PathObject
 {
 	IndexedList<File *>open_file_list;
 public:
-    FileManager() : PathObject(NULL), open_file_list(16, NULL) {
+    FileManager(char *n) : PathObject(NULL, n), open_file_list(16, NULL) {
         poll_list.append(&poll_filemanager);
     }
 

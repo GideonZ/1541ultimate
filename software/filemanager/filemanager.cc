@@ -7,7 +7,7 @@
 
 
 /* Instantiation of root system */
-FileManager root;
+FileManager root("Root");
 
 /* Poll function for main loop */
 void poll_filemanager(Event &e)
@@ -72,9 +72,11 @@ File *FileManager :: fopen(char *filename, BYTE flags)
 				return f; // could be 0
 			}
 		} else {
+			delete path;
 			return 0;
 		}
 	}
+	delete path;
 	return 0;
 }
 

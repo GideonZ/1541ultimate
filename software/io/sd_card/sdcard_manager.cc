@@ -24,6 +24,7 @@ SdCardManager :: SdCardManager(void)
 SdCardManager :: ~SdCardManager()
 {
 	root.children.remove(sd_dev);
+	sd_dev->detach();
 	delete sd_dev;
 	delete sd_card;
 }
@@ -33,6 +34,7 @@ void SdCardManager :: init()
 	sd_card = new SdCard; // block device
 	sd_dev = new FileDevice(&root, sd_card, "SdCard");
 	root.children.append(sd_dev);
+	sd_dev->attach();
 	poll_list.append(&poll_sdcard);
 }
 

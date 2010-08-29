@@ -24,7 +24,13 @@ Path :: Path(PathObject *obj) : full_path("/")
 
 Path :: ~Path()
 {
+//	printf("Destroying Path...\n");
+//	root_obj->dump();
 	current->detach();
+//	root_obj->dump();
+	root_obj->cleanup_children();
+//	root_obj->dump();
+//	printf("Exit path destructor..\n");
 /*
 	PathObject *p;
 	do {
@@ -51,7 +57,7 @@ int Path :: cd_single(char *cd)
     char *p = full_path.c_str();
     PathObject *t;
 
-	//printf("CD Single: %s\n", cd);
+	printf("CD Single: %s\n", cd);
     if(strcmp(cd, "..") == 0) {
     	if(p_len > 1) {
             for(int i=p_len-2;i>=0;i--) {
@@ -59,9 +65,8 @@ int Path :: cd_single(char *cd)
                     p[i] = '\0';
                     t = current->parent;
                     t->cleanup_children();
-                    current->detach();
+                    current->detach(true);
                     current = t;
-                    current->attach();
                     break;
                 }
             }
@@ -71,7 +76,6 @@ int Path :: cd_single(char *cd)
     if(strcmp(cd, ".") == 0) {
         return 1;
     }
-	//current->dump();
     t = current->find_child(cd);
     if(!t)
         return 0;
@@ -93,25 +97,26 @@ int Path :: cd(char *pa_in)
     char *last_part;
     PathObject *t;
 
-	char *pa = new char[pa_len+1];
+	char *pa_alloc = new char[pa_len+1];
+	char *pa = pa_alloc;
+	
 	strcpy(pa, pa_in);
-    //printf("CD '%s' (starting from %s)\n", pa, full_path.c_str());
-
+//    printf("CD '%s' (starting from %s)\n", pa, full_path.c_str());
+	
     // check for start from root
     if( (pa_len) &&
 	    ((*pa == '/')||(*pa == '\\')) ) {
         --pa_len;
         pa++;
-		current->detach();
         while(current != root_obj) {
         	current->cleanup_children();
+		    current->detach(true);
         	current = current->parent;
 		}
-        current->attach();
         full_path = "/";
     }
     if(!pa_len) {
-		delete[] pa;
+		delete[] pa_alloc;
         return 1;
 	}
     // split path string into separate parts
@@ -121,7 +126,7 @@ int Path :: cd(char *pa_in)
             pa[i] = 0;
             if(!cd_single(last_part)) {
                 printf("A) Can't CD to %s\n", pa);
-                delete[] pa;
+                delete[] pa_alloc;
 				return 0;
             }
             last_part = &pa[i+1];
@@ -130,11 +135,10 @@ int Path :: cd(char *pa_in)
 
     if(!cd_single(last_part)) {
         printf("B) Can't CD to %s\n", last_part);
-        delete[] pa;
+        delete[] pa_alloc;
 		return 0;
     }
-
-	delete[] pa;
+	delete[] pa_alloc;
     return 1;
 }
 

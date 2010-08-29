@@ -80,18 +80,21 @@ int main()
     user_interface = new UserInterface;
     user_interface->init(c64, c64->get_keyboard());
 
-    TreeBrowser *root_tree_browser = new TreeBrowser();
+ 	// start the file system, scan the sd-card etc..
+	send_nop();
+	send_nop();
+
+	// Instantiate and attach the root tree browser
+	TreeBrowser *root_tree_browser = new TreeBrowser();
     user_interface->activate_uiobject(root_tree_browser); // root of all evil!
-
-	// start the file system, scan the sd-card etc..
-	send_nop();
-	send_nop();
 	
-	// add the drive and C64 to the root of all evil
+	// add the drive and C64 to the 'OS' (the event loop)
     poll_list.append(&poll_drive_1);
-
     poll_list.append(&poll_c64);
-    c64->init_cartridge();
+
+    // now that everything is running, initialize the C64 and C1541 drive
+	// which might load custom ROMs from the file system.
+	c64->init_cartridge();
 	c1541->init();
 	
     printf("All linked modules have been initialized.\n");

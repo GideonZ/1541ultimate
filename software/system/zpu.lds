@@ -86,7 +86,7 @@ SECTIONS
 
   PROVIDE (end = .);
 
-  _stack = 0x0f3fff0;
+  _stack = 0x0effffc;
   _memreg = 0x28;
   
 /*

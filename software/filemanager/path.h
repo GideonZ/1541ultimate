@@ -30,7 +30,10 @@ public:
 
 	virtual ~PathObject() {
 		//printf("destructor %p %s ", this, get_name());
-		cleanup_children();
+		int el = children.get_elements();
+		for(int i=0;i<el;i++) {
+			delete children[i];
+		}
 		//printf("Ref=%d\n", ref_count);
 		if(ref_count) {
 			printf("Internal error! Deleting a path object that has %d references!\n", ref_count);
@@ -88,11 +91,14 @@ public:
 	}
 
 	virtual void cleanup_children(void) {
-		//printf("Cleaning up %d children of %s.\n", children.get_elements(), get_name());
-		for(int i=0;i<children.get_elements();i++) {
+		int el = children.get_elements();
+//		if(el)
+//			printf("Cleaning up %d children of %s.\n", el, get_name());
+		for(int i=0;i<el;i++) {
 			children[i]->cleanup();
 			if(children[i]->ref_count == 0) {
 				children.mark_for_removal(i);
+//				printf(" deleting %s\n", children[i]->get_name());
 				delete children[i];
 			}
 		}
@@ -150,13 +156,24 @@ public:
 	void dump(int level=0) {
 		PathObject *obj;
 		for(int i=0;i<children.get_elements();i++) {
+			printf("i=%4d:", i);
 			obj = children[i];
 			for(int j=0;j<level;j++) {
 				printf(" ");
 			}
-			printf("%2d %s\n", obj->ref_count, obj->get_name());
-			obj->dump(level+1);
+			printf("[%p]", obj);
+			if(!obj) {
+				printf("(null)\n");
+			} else {
+				char *str = obj->get_name();
+				if(!str)
+					str = "(null name)";
+				printf("%2d %s\n", obj->ref_count, str);
+				obj->dump(level+1);
+			}
 		}
+	    if(level == 0)
+			printf("--- End of Tree ---\n");
 	}
 };
 
