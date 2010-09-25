@@ -123,6 +123,7 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/io/icap/vhdl_source/icap.vhd \
 				vhdl,work,../../fpga/io/iec_interface/vhdl_source/iec_interface_io.vhd \
 				vhdl,work,../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd \
+				vhdl,work,../../fpga/io/c2n_record/vhdl_source/c2n_record.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_defs.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_decode.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/shifter.vhd \
