@@ -22,6 +22,7 @@ generic (
     g_hardware_iec  : boolean := true; --
     g_iec_prog_tim  : boolean := false;
     g_c2n_streamer  : boolean := true;
+    g_c2n_recorder  : boolean := true;
     g_cartridge     : boolean := true; --
     g_drive_sound   : boolean := true; --
     g_rtc_chip      : boolean := true;
@@ -119,10 +120,10 @@ port (
     ULPI_DATA   : inout std_logic_vector(7 downto 0);
 
     -- Cassette Interface
-    CAS_MOTOR   : in  std_logic := '0';
-    CAS_SENSE   : out std_logic := 'Z';
-    CAS_READ    : out std_logic := 'Z';
-    CAS_WRITE   : in  std_logic := '0';
+    CAS_MOTOR   : in    std_logic := '0';
+    CAS_SENSE   : inout std_logic := 'Z';
+    CAS_READ    : inout std_logic := 'Z';
+    CAS_WRITE   : in    std_logic := '0';
     
     -- Buttons
     button      : in  std_logic_vector(2 downto 0);
@@ -190,6 +191,8 @@ architecture logic of ultimate_logic is
     signal io_resp_usb      : t_io_resp := c_io_resp_init;
     signal io_req_c2n       : t_io_req;
     signal io_resp_c2n      : t_io_resp := c_io_resp_init;
+    signal io_req_c2n_rec   : t_io_req;
+    signal io_resp_c2n_rec  : t_io_resp := c_io_resp_init;
     signal io_req_icap      : t_io_req;
     signal io_resp_icap     : t_io_resp := c_io_resp_init;
     
@@ -221,6 +224,7 @@ architecture logic of ultimate_logic is
     signal phi2_tick        : std_logic;
     signal c64_stopped		: std_logic;
     signal c2n_sense        : std_logic := '0';
+    signal c2n_sense_in     : std_logic := '0';
     signal c2n_out			: std_logic := 'Z';
 	signal sd_busy			: std_logic;
 	signal usb_busy			: std_logic;
@@ -472,7 +476,7 @@ begin
     generic map (
         g_range_lo  => 17,
         g_range_hi  => 19,
-        g_ports     => 7 )
+        g_ports     => 8 )
     port map (
         clock    => sys_clock,
         
@@ -485,7 +489,8 @@ begin
         reqs(3)  => io_req_io,     -- 4060000
         reqs(4)  => io_req_usb,    -- 4080000
         reqs(5)  => io_req_c2n,    -- 40A0000
-        reqs(6)  => io_req_1541_2, -- 40C0000
+        reqs(6)  => io_req_c2n_rec,-- 40C0000
+        reqs(7)  => io_req_1541_2, -- 40E0000
 
         resps(0) => io_resp_itu,
         resps(1) => io_resp_1541,
@@ -493,7 +498,8 @@ begin
         resps(3) => io_resp_io,
         resps(4) => io_resp_usb,
         resps(5) => io_resp_c2n,
-        resps(6) => io_resp_1541_2 );
+        resps(6) => io_resp_c2n_rec,
+        resps(7) => io_resp_1541_2 );
 
     i_split2: entity work.io_bus_splitter
     generic map (
@@ -680,6 +686,23 @@ begin
             c2n_out         => c2n_out );
     end generate;
     
+    r_c2n_rec: if g_c2n_recorder generate
+        i_c2n: entity work.c2n_record
+        port map (
+            clock           => sys_clock,
+            reset           => sys_reset,
+        
+            req             => io_req_c2n_rec,
+            resp            => io_resp_c2n_rec,
+
+			c64_stopped		=> c64_stopped,
+            phi2_tick       => phi2_tick,
+            c2n_sense       => c2n_sense,
+            c2n_motor       => CAS_MOTOR,
+            c2n_write       => CAS_WRITE,
+            c2n_read        => CAS_READ );
+    end generate;
+
     i_icap: entity work.icap
     port map (
         clock           => sys_clock,
@@ -691,6 +714,7 @@ begin
 
 	CAS_SENSE <= '0' when c2n_sense='1' else 'Z';
 	CAS_READ  <= c2n_out;
+    c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
 	
     i_mem_arb: entity work.mem_bus_arbiter_pri
     generic map (

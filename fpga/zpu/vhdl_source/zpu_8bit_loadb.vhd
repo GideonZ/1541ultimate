@@ -150,7 +150,7 @@ architecture Behave of zpu_8bit_loadb is
     
     -- Decoded Opcode
     type decode_t is (dec_nop, dec_im, dec_load_sp, dec_store_sp, dec_add_sp,
-                            dec_emulate, dec_break, dec_push_sp, dec_pop_pc, dec_add,
+                            dec_emulate, dec_break, dec_push_sp, dec_pop_pc, dec_pop_int, dec_add,
                             dec_or, dec_and, dec_load, dec_not, dec_flip, dec_store,
                             dec_pop_sp, dec_interrupt, dec_storeb, dec_loadb, dec_neqbranch,
                             dec_compare);
@@ -261,6 +261,8 @@ begin
                      d_opcode <= dec_store;
                 when OPCODE_POPSP =>
                      d_opcode <= dec_pop_sp;
+                when OPCODE_POPINT =>
+                     d_opcode <= dec_pop_int;
                 when others => -- OPCODE_NOP and others
                      d_opcode <= dec_nop;
             end case;
@@ -339,10 +341,6 @@ begin
 
             addr_r(g_addr_size-1 downto 2) <= a_i(g_addr_size-1 downto 2);
 
-            if interrupt_i='0' then
-                in_irq_r <= '0'; -- no longer in an interrupt
-            end if;
-    
             case state is
                 when st_fetch =>
                     -- During this cycle
@@ -458,6 +456,13 @@ begin
 
                         when dec_pop_pc =>
                             -- Pop(PC)
+                            pc_r  <= a_i(pc_r'range);
+                            sp_r  <= sp_r+1;
+                            state <= st_fetch; -- was resync
+
+                        when dec_pop_int =>
+                            -- Pop(PC)
+                            in_irq_r <= '0'; -- no longer in an interrupt
                             pc_r  <= a_i(pc_r'range);
                             sp_r  <= sp_r+1;
                             state <= st_fetch; -- was resync
