@@ -87,6 +87,7 @@ SECTIONS
   PROVIDE (end = .);
 
   _stack = 0x0effffc;
+  _interrupt = 0x10;
   _memreg = 0x28;
   
 /*

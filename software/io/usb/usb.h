@@ -232,7 +232,7 @@ public:
     ~UsbDevice();
 
     void get_string(int index, char *dest, int len);
-    bool get_device_descriptor(void);
+    bool get_device_descriptor(bool slow);
     void set_address(int address);
     bool get_configuration(BYTE index);
     void set_configuration(BYTE config);

@@ -21,6 +21,7 @@ struct t_cfg_definition usb_config[] = {
 };
 
 BYTE c_get_device_descriptor[] = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
+BYTE c_get_device_descr_slow[] = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x08, 0x00 };
 BYTE c_get_string_descriptor[] = { 0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0x40, 0x00 };
 BYTE c_get_configuration[]     = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x40, 0x00 };
 BYTE c_set_address[]           = { 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -535,7 +536,7 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
 		if(!timeout) {
 			USB_COMMAND = USB_CMD_ABORT;
 			wait_ms(1);
-			return -1;
+			return -2;
 		}
 		timeout --;
 		ITU_TIMER = 50;
@@ -545,7 +546,7 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
 
 	DWORD ta = *transaction;
     int received = inlen - ((ta >> 9) & 0x7FF);
-//	printf("Transaction: %8x InLen=%d Received=%d\n", ta, inlen, received);
+	printf("Transaction: %8x InLen=%d Received=%d\n", ta, inlen, received);
 
     if(in) // user requested copy
         memcpy(in, (void *)&USB_BUFFER(32), received);
@@ -723,16 +724,24 @@ void UsbDevice :: get_string(int index, char *dest, int len)
       
 }
 
-bool UsbDevice :: get_device_descriptor(void)
+bool UsbDevice :: get_device_descriptor(bool slow)
 {
     int i;
 
-    i = host->control_exchange(current_address, c_get_device_descriptor, 8, &device_descr, 18, NULL);
-    if(i != 18) {
-        printf("Error: Expected 18 bytes on device descriptor.. got %d.\n", i);
-        return false;
+    if(slow) {
+        i = host->control_exchange(current_address, c_get_device_descr_slow, 8, &device_descr, 8, NULL);
+        if(i != 8) {
+            printf("Error: Expected 8 bytes on device descriptor.. got %d.\n", i);
+            return false;
+        }
+    } else {
+        i = host->control_exchange(current_address, c_get_device_descriptor, 8, &device_descr, 18, NULL);
+        if(i != 18) {
+            printf("Error: Expected 18 bytes on device descriptor.. got %d.\n", i);
+            return false;
+        }
     }
-           
+               
     printf("Len: %d\n", device_descr.length);
     printf("Type: %d\n", device_descr.type);
     printf("Version: %d\n", device_descr.version);
@@ -740,16 +749,18 @@ bool UsbDevice :: get_device_descriptor(void)
     printf("SubClass: %d\n", device_descr.sub_class);
     printf("Protocol: %d\n", device_descr.protocol);
     printf("MaxPacket: %d\n", device_descr.max_packet_size);
-    printf("Vendor: %d\n", le16_to_cpu(device_descr.vendor));
-    printf("Product: %d\n", le16_to_cpu(device_descr.product));
-    get_string(device_descr.manuf_string, manufacturer, 32);
-    get_string(device_descr.product_string, product, 32);
-    get_string(device_descr.serial_string, serial, 32);
-    printf("Manufacturer: %s\n", manufacturer);
-    printf("Product: %s\n", product);
-    printf("Serial #: %s\n", serial);
-    printf("Configurations: %d\n", device_descr.num_configurations);
-    
+
+    if(!slow) {
+        printf("Vendor: %d\n", le16_to_cpu(device_descr.vendor));
+        printf("Product: %d\n", le16_to_cpu(device_descr.product));
+        get_string(device_descr.manuf_string, manufacturer, 32);
+        get_string(device_descr.product_string, product, 32);
+        get_string(device_descr.serial_string, serial, 32);
+        printf("Manufacturer: %s\n", manufacturer);
+        printf("Product: %s\n", product);
+        printf("Serial #: %s\n", serial);
+        printf("Configurations: %d\n", device_descr.num_configurations);
+    }    
     return true;
 }
 
@@ -850,7 +861,7 @@ bool UsbDevice :: init(void)
     //DWORD *control_pipes;
     
     // first we get the device descriptor
-    if(!get_device_descriptor())
+    if(!get_device_descriptor(false)) // assume full/high speed
     	return false;
     
     // reset

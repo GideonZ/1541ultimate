@@ -33,7 +33,6 @@ typedef enum {
 } t_ui_state;
 
 class UIObject;
-class TreeBrowser;
 
 class UserInterface
 {
@@ -43,6 +42,7 @@ private:
 
     UIObject *ui_objects[MAX_UI_OBJECTS];
     
+    void set_screen_title(void);
 public:
     C64 *host;
     Keyboard *keyboard;
@@ -50,16 +50,15 @@ public:
     int     focus;
 
     UserInterface();
-    ~UserInterface();
+    virtual ~UserInterface();
+
+    virtual void handle_event(Event &e);
+    virtual int  popup(char *msg, BYTE flags); // blocking
+    virtual int  string_box(char *msg, char *buffer, int maxlen); // blocking
 
     void init(C64 *h, Keyboard *k);
-    void handle_event(Event &e);
+    void set_screen(Screen *s); /* Only used in updater */
     int  activate_uiobject(UIObject *obj);
-    void set_screen(Screen *s);
-    void set_screen_title(void);
-
-    int  popup(char *msg, BYTE flags); // blocking
-    int  string_box(char *msg, char *buffer, int maxlen); // blocking
         
     UIObject *get_current_ui_object(void) { return ui_objects[focus]; }
     UIObject *get_root_object(void) { return ui_objects[0]; }
@@ -128,6 +127,5 @@ public:
 
 void poll_user_interface(Event &e);
 extern UserInterface *user_interface;
-//extern TreeBrowser *active_browser;
 
 #endif

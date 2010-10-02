@@ -102,6 +102,9 @@ C64 :: C64()
 	
 	    create_menu_items();
 	}
+
+    if(C64_CLOCK_DETECT == 0)
+        printf("No PHI2 clock detected.. Stand alone mode.\n");
 	
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
@@ -122,6 +125,11 @@ C64 :: ~C64()
     delete[] char_set;
 }
 
+bool C64 :: exists(void)
+{
+    return (C64_CLOCK_DETECT != 0);
+}
+    
 void C64 :: create_menu_items(void)
 {
 	main_menu_static_items.append(new MenuItemGlobal(this, "Reset C64", MENU_C64_RESET));

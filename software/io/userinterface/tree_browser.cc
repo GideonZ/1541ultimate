@@ -342,7 +342,7 @@ void TreeBrowser :: task_menu(void)
 {
 	if(!state->node)
 		return;
-    printf("Creating context menu for %s\n", state->node->get_name());
+    printf("Creating task menu for %s\n", state->node->get_name());
     menu_node    = new PathObject(NULL);
     menu_browser = new TaskMenu(menu_node, state->node);
     menu_browser->init(window, keyb);

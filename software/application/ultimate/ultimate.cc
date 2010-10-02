@@ -15,6 +15,9 @@
 #include "path.h"
 #include "rtc.h"
 #include "tape_controller.h"
+#include "stream.h"
+#include "ui_stream.h"
+#include "stream_menu.h"
 
 // these should move to main_loop.h
 void main_loop(void);
@@ -22,7 +25,8 @@ void send_nop(void);
 
 C1541 *c1541;
 UserInterface *user_interface;
-
+TreeBrowser *root_tree_browser;
+StreamMenu *root_menu;
 /*
 char *en_dis[] = { "Disabled", "Enabled" };
 //char *on_off[] = { "Off", "On" };
@@ -72,40 +76,61 @@ int main()
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
 	printf("%s\n", rtc.get_time_string(time_buffer, 32));
 
-    c1541 = new C1541(C1541_IO_LOC_DRIVE_1);
-    c64   = new C64;
-
+    Stream my_stream;
+    UserInterfaceStream *stream_interface;
+    
+//    my_stream.format("Joehoe! %b en %d\n", ITU_FPGA_VERSION, -1);
+//    strcpy(time_buffer, "Change me");
+//    while(my_stream.getstr(time_buffer, 30) < 0);
+    
 	tape_controller = new TapeController;
 
-    user_interface = new UserInterface;
-    user_interface->init(c64, c64->get_keyboard());
+    c1541 = new C1541(C1541_IO_LOC_DRIVE_1);
+
+    c64   = new C64;
 
  	// start the file system, scan the sd-card etc..
 	send_nop();
 	send_nop();
 
-	// Instantiate and attach the root tree browser
-	TreeBrowser *root_tree_browser = new TreeBrowser();
-    user_interface->activate_uiobject(root_tree_browser); // root of all evil!
-	
-	// add the drive and C64 to the 'OS' (the event loop)
-    poll_list.append(&poll_drive_1);
-    poll_list.append(&poll_c64);
+    if(c64->exists()) {
+        user_interface = new UserInterface;
+        user_interface->init(c64, c64->get_keyboard());
+    
+    	// Instantiate and attach the root tree browser
+    	root_tree_browser = new TreeBrowser();
+        user_interface->activate_uiobject(root_tree_browser); // root of all evil!
+    	
+    	// add the C64 to the 'OS' (the event loop)
+        poll_list.append(&poll_c64);
+    
+        // now that everything is running, initialize the C64 and C1541 drive
+    	// which might load custom ROMs from the file system.
+    	c64->init_cartridge();
+    } else {
+        // stand alone mode
+        stream_interface = new UserInterfaceStream(&my_stream);
+        user_interface = stream_interface;
+        root_menu = new StreamMenu(&my_stream, &root);
+        stream_interface->set_menu(root_menu); // root of all evil!
+    }
 
-    // now that everything is running, initialize the C64 and C1541 drive
-	// which might load custom ROMs from the file system.
-	c64->init_cartridge();
+	// add the drive to the 'OS' (the event loop)
+    poll_list.append(&poll_drive_1);
 	c1541->init();
 	
     printf("All linked modules have been initialized.\n");
     printf("Starting main loop...\n");
     main_loop();
 
-    delete root_tree_browser;
-    delete user_interface;
-	delete tape_controller;
-    delete c1541;
+    if(root_tree_browser)
+        delete root_tree_browser;
+    if(user_interface)
+        delete user_interface;
+
     delete c64;
+    delete c1541;
+	delete tape_controller;
 
     //printf("Cleaned up main components.. now.. what's left??\n");
     //root.dump();

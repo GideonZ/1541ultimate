@@ -56,6 +56,23 @@ Boston, MA 02111-1307, USA.  */
             store       ; restore R0
     .endm
 
+    .macro  jsr_ind address
+            im _memreg      ; save R0
+            load
+            im _memreg+4    ; save R1
+            load
+            im _memreg+8    ; save R2
+            load
+            fixedim \address
+            load
+            call
+            im _memreg+8
+            store       ; restore R2
+            im _memreg+4
+            store       ; restore R1
+            im _memreg
+            store       ; restore R0
+    .endm
 
     .macro  jmp address
             fixedim \address
@@ -146,21 +163,30 @@ Boston, MA 02111-1307, USA.  */
         .balign 32,0
 # offset 0x0000 0000
         .globl _start
+        .globl _interrupt
         .globl _memreg
         .weak _memreg
 _start:
         ; intSp must be 0 when we jump to _premain
         
         jmp _premain
-        .balign 4,0
-_memreg:
-        nop
+
+# offset 0x0000 0010
+        .balign 16,0
+_interrupt:
+        .long 0x12345
 
         .balign 32,0
 # offset 0x0000 0020
         .globl _zpu_interrupt_vector
 _zpu_interrupt_vector:
         jmp ___zpu_interrupt_vector
+
+
+# offset 0x0000 0030
+        .balign 16,0
+_memreg:
+        nop
 
 /* instruction emulation code */
 
@@ -935,8 +961,8 @@ ___mod:
 ___div:
     cimpl __divsi3
 ___zpu_interrupt_vector:
-    jsr _zpu_interrupt
-    poppc
+    jsr_ind _interrupt
+    .byte 0x0f  ; pop_int
 
     .data
     .balign 4,0

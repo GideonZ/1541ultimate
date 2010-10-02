@@ -125,6 +125,7 @@ public:
 
     void create_menu_items(void);
 
+    bool exists(void);
     void poll(Event &e);
     void reset(void);
     void freeze(void);
