@@ -150,15 +150,15 @@ class Usb
 {
     int poll_delay;
 	int se0_seen;
-	int last_pipe;
     int get_device_slot(void);
     DWORD pipes[USB_MAX_PIPES];
+    int   transactions[USB_MAX_TRANSACTIONS];
     ConfigStore *cfg;
 
     void clean_up(void);
     void clear(void);
     void attach_root(void);
-    bool install_device(int idx, UsbDevice *dev);
+    bool install_device(UsbDevice *dev, bool draws_current);
 public:
     int speed;
     int max_current;
@@ -185,13 +185,19 @@ public:
 
     int  create_pipe(int addr, struct t_endpoint_descriptor *epd);
     void free_pipe(int index);
+    int  allocate_transaction(int len); // for reoccuring transactions
+    void free_transaction(int index);
+    
     int  control_exchange(int addr, void *, int, void *, int, BYTE **);
     void unstall_pipe(int pipe);
     int  bulk_out(void *buf, int len, int pipe);
     int  bulk_in(void *buf, int len, int pipe);
+    int  interrupt_in(int trans, int pipe, int len, BYTE *buf);
         
     // special bootloader function
     UsbDevice *init_simple(void);
+
+    friend class UsbHubDriver;
 };
 
 class UsbDriver
@@ -236,7 +242,7 @@ public:
     void set_address(int address);
     bool get_configuration(BYTE index);
     void set_configuration(BYTE config);
-    bool init(void);
+    bool init(int address);
     int  find_endpoint(BYTE code);
     int  get_max_lun(void);
 

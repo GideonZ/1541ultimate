@@ -30,6 +30,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/flash \
 			$(PATH_SW)/drive \
 			$(PATH_SW)/components \
+			$(PATH_SW)/io/stream \
 			$(PATH_SW)/io/c64 \
 			$(PATH_SW)/io/rtc \
 			$(PATH_SW)/io/usb \
@@ -54,7 +55,8 @@ SRCS_C   =	zpu.c \
 # root of the application. Devices can register themselves in the file system tree.
 # Therefore, the file manager needs to exist.
 
-SRCS_CC	 =  memory.cc \
+SRCS_CC	 =  stream.cc \
+			memory.cc \
 			flash.cc \
 			at45_flash.cc \
 			w25q_flash.cc \
@@ -75,6 +77,7 @@ SRCS_CC	 =  memory.cc \
 			rtc.cc \
 			usb.cc \
 			usb_scsi.cc \
+			usb_hub.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
@@ -101,7 +104,9 @@ SRCS_CC	 =  memory.cc \
 			tape_controller.cc \
 			size_str.cc \
 			userinterface.cc \
+			ui_stream.cc \
 			tree_browser.cc \
+			stream_menu.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
@@ -136,10 +141,10 @@ OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
 OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
 OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
 
-ALL_OBJS = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
+ALL_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
 
 
-.PHONY: hex clean all
+.PHONY: hex clean all dep
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
 #	$(MAKE) -C ../1st_boot
@@ -166,22 +171,34 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo "Compiling $<"
 	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
-%.o: %.c $(INCLUDES)
+%.o: %.c
 	@echo "Compiling $<"
 	@$(CC) $(COPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
-%.o: %.cc $(INCLUDES)
+%.o: %.cc
 	@echo "Compiling $<"
-	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
+	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
+	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
+
+%.d: %.cc
+	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
+
+%.d: %.c
+	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 
+# pull in dependency info for *existing* .o files
+-include $(ALL_OBJS:.o=.d)
 
 clean:
 	@-rm -rf $(OUTPUT)
 	@-rm -rf $(RESULT)
+
+dep:  $(OBJS_CC:.o=.d) $(OBJS_C:.o=.d)
+    
 
 # Version number should not be hard coded here, but be taken from versions.h (or vice versa: generate versions.h before compiling)
 hex: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin

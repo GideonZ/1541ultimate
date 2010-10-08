@@ -114,7 +114,7 @@ void Usb :: print_status(void)
     for(i=0;i<12;i++) {
         transact = USB_TRANSACTION(i);
         if(!transact)
-            break;
+            continue;
         p = (transact & 0x1F0) >> 4;
         printf("Transaction: %d\n", i);
         printf("   State: %s\n", c_transaction_state_strings[transact & 3]);
@@ -124,10 +124,10 @@ void Usb :: print_status(void)
         printf("   Pipe pointer: %d\n", p);
     }
     for(p=0;p<12;p++) {
-        printf("Pipe: %d\n", p);
         pipe = USB_PIPE(p);
         if(!pipe)
-            break;
+            continue;
+        printf("Pipe: %d\n", p);
         printf("   State: %s\n", c_pipe_state_strings[pipe & 3]);
         printf("   Direction: %s\n", c_pipe_direction_strings[(pipe & 4) >> 2]);
         printf("   Device Addr: %d\n", (pipe & 0x3F8) >> 3);
@@ -157,6 +157,7 @@ void Usb :: clear()
 {
     for(int i=0;i<USB_MAX_TRANSACTIONS;i++) {
         USB_TRANSACTION(i) = 0;
+        transactions[i] = 0;
     }
     for(int i=0;i<USB_MAX_PIPES;i++) {
         USB_PIPE(i) = 0;
@@ -331,7 +332,7 @@ UsbDevice *Usb :: init_simple(void)
 	wait_ms(30);
 	UsbDevice *dev = new UsbDevice(this);
 	if(dev) {
-		if(!dev->init()) {
+		if(!dev->init(1)) {
 			delete dev;
 			return NULL;
 		}
@@ -352,44 +353,41 @@ void Usb :: attach_root(void)
 		printf("USB Bus Voltage low..\n");
 		return;
 	}
-	    
-    int i = get_device_slot();
+/*	    
     if(i != 0) {
         printf("For some reason i am not getting slot 0.. \n Internal error\n");
         return;
     }
-
-    UsbDevice *dev = new UsbDevice(this);
-	install_device(i, dev);
-
-/*
-    for(int i=0;i<3;i++) {
-    	if(!install_device(i, dev)) {
-			bus_reset(cfg->get_value(CFG_USB_SPEED) > 0); // set to true for high speed
-			wait_ms(30);
-    	} else {
-    		break;
-    	}
-    }
 */
+    UsbDevice *dev = new UsbDevice(this);
+	install_device(dev, true);
 }
 
-bool Usb :: install_device(int idx, UsbDevice *dev)
+bool Usb :: install_device(UsbDevice *dev, bool draws_current)
 {
-    if(!dev->init()) {
+    int idx = get_device_slot();
+    
+    if(!dev->init(idx+1)) {
     	printf("Failed to init USB device. Not installed.\n");
     	return false;
     }
 
-    int device_curr = int(dev->device_config.max_power) * 2;
-    if(device_curr <= remaining_current) {
+    if(!draws_current) {
         device_list[idx] = dev;
-        remaining_current -= device_curr;
         dev->install();
         return true; // actually install should be able to return false too
     } else {
-    	printf("Device current (%d mA) exceeds maximum remaining current (%d mA).\n", device_curr, remaining_current);
-    	delete dev;
+        int device_curr = int(dev->device_config.max_power) * 2;
+
+        if(device_curr <= remaining_current) {
+            device_list[idx] = dev;
+            remaining_current -= device_curr;
+            dev->install();
+            return true; // actually install should be able to return false too
+        } else {
+        	printf("Device current (%d mA) exceeds maximum remaining current (%d mA).\n", device_curr, remaining_current);
+        	delete dev;
+        }
     }
     return false;
 }
@@ -679,7 +677,87 @@ int Usb :: bulk_in(void *buf, int len, int pipe)
     return new_len;
 }
 
-//int Usb :: bulk_in_queued
+int Usb :: allocate_transaction(int len)
+{
+    // find free transaction
+    int index = -1;
+    for(int i=4;i<USB_MAX_TRANSACTIONS;i++) {
+        if(!transactions[i]) {
+            index = i;
+            break;
+        }
+    }
+    if(index == -1)
+        return -1;
+
+    if(len > 8) // bigger sizes not yet supported as we need an allocator or DMA mode
+        return -1;
+        
+    int offset = 1280 + (12 * index);
+    transactions[index] = offset;
+    
+    return index;
+}
+
+void Usb :: free_transaction(int index)
+{
+    if(index < 4)
+        return;
+
+    if(transactions[index]) {
+        transactions[index] = 0;
+        USB_TRANSACTION(index) = 0L;
+    }
+}
+
+int Usb :: interrupt_in(int trans, int pipe, int len, BYTE *buf)
+{
+    int offset = transactions[trans];
+    volatile DWORD *tr = &USB_TRANSACTION(trans);
+    DWORD readback_status = (*tr) & 3;
+    
+    if(readback_status == 3) {
+        printf("Interrupt error..\n");
+        *tr = 2; // fake done
+    } else if (readback_status == 2) { // done
+        memcpy(buf, (void *)&USB_BUFFER(offset), len);
+        DWORD opcode = (offset << 20) | (len << 9) | (pipe << 4) | 0x09; // busy | interrupt
+        *tr = opcode; // restart
+        return len;
+    } else if (readback_status == 0) { // none
+        DWORD opcode = (offset << 20) | (len << 9) | (pipe << 4) | 0x09; // busy | interrupt
+        *tr = opcode; // start
+        return 0;
+    } 
+    return 0;    
+}
+
+ /*
+     function t_transaction_to_data(i: t_transaction) return std_logic_vector is
+        variable ret : std_logic_vector(31 downto 0);
+    begin
+        ret := (others => '0');
+        case i.state is
+        when none  => ret(1 downto 0) := "00";
+        when busy  => ret(1 downto 0) := "01";
+        when done  => ret(1 downto 0) := "10";
+        when error => ret(1 downto 0) := "11";
+        when others => ret(1 downto 0) := "11";
+        end case;
+        case i.transaction_type is
+        when control     => ret(3 downto 2) := "00";
+        when bulk        => ret(3 downto 2) := "01";
+        when interrupt   => ret(3 downto 2) := "10";
+        when isochronous => ret(3 downto 2) := "11";
+        when others      => ret(3 downto 2) := "11";
+        end case;
+        ret(8 downto 4)  := std_logic_vector(i.pipe_pointer);
+        ret(19 downto 9) := std_logic_vector(i.transfer_length);
+        ret(30 downto 20):= std_logic_vector(i.buffer_address);
+		ret(31) := i.link_to_next;
+        return ret;                
+    end function;
+*/    
 
 // =========================================================
 // USB DEVICE
@@ -775,21 +853,6 @@ void UsbDevice :: set_address(int address)
     if(i >= 0) {
         current_address = address;
     }
-/*
-    // need to return the pipes we allocated
-    a = ((DWORD)address) << 3;
-    int i = my_usb.last_pipe;
-    endpoint_controls[0] = (DWORD *)&USB_PIPE(i);
-    endpoint_controls[1] = (DWORD *)&USB_PIPE(i+1);
-    endpoint_numbers[0] = i;
-    endpoint_numbers[1] = i+1;
-
-    USB_PIPE(i+0) = 0x04100005 | a; // create new control endpoint pipe (out)
-    USB_PIPE(i+1) = 0x04100001 | a; // create new control endpoint pipe (in)
-
-    my_usb.last_pipe += 2;
-    my_usb.num_devices ++;
-*/
 }
 
 bool UsbDevice :: get_configuration(BYTE index)
@@ -856,7 +919,7 @@ void UsbDevice :: set_configuration(BYTE config)
     printf("Got %d bytes back.\n", i);
 }
 
-bool UsbDevice :: init(void)
+bool UsbDevice :: init(int address)
 {
     //DWORD *control_pipes;
     
@@ -864,27 +927,28 @@ bool UsbDevice :: init(void)
     if(!get_device_descriptor(false)) // assume full/high speed
     	return false;
     
-    // reset
-    host->bus_reset(host->speed == 2);
-    int s = host->get_speed();
-    if(s == 2) {
-        printf("** HiSpeed! **\n");
+    if(!parent) {
+        // reset
+        host->bus_reset(host->speed == 2);
+        int s = host->get_speed();
+        if(s == 2) {
+            printf("** HiSpeed! **\n");
+        }
+    
+        if((host->speed == 2) && (s != 2)) {
+            printf("High speed reset failed. Resetting again.. \n");
+            host->bus_reset(true);
+            s = host->get_speed();
+            if(s != 2)
+                return false;
+        }
     }
-
-    if((host->speed == 2) && (s != 2)) {
-        printf("High speed reset failed. Resetting again.. \n");
-        host->bus_reset(true);
-        s = host->get_speed();
-        if(s != 2)
-            return false;
-    }
-
+    
     // set address and create new control pipes for this address
-    set_address(3);
+    set_address(address);
 
     // get configuration
     return get_configuration(0);
-
 }
 
 int UsbDevice :: find_endpoint(BYTE code)

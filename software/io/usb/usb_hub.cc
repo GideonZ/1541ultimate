@@ -76,20 +76,35 @@ BYTE c_set_port_feature[]   = { 0x23, 0x03, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 }
 BYTE c_clear_hub_feature[]  = { 0x20, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
 BYTE c_clear_port_feature[] = { 0x23, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-#define PORT_CONNECTION     0x00
-#define PORT_ENABLE         0x01
-#define PORT_SUSPEND        0x02
-#define PORT_OVER_CURRENT   0x03
-#define PORT_RESET          0x04
-#define PORT_POWER          0x08
-#define PORT_LOW_SPEED      0x09
-#define PORT_TEST           0x15
-#define PORT_INDICATOR      0x16
+#define PORT_CONNECTION       0x00
+#define PORT_ENABLE           0x01
+#define PORT_SUSPEND          0x02
+#define PORT_OVER_CURRENT     0x03
+#define PORT_RESET            0x04
+#define PORT_POWER            0x08
+#define PORT_LOW_SPEED        0x09
+
+#define C_PORT_CONNECTION     0x10
+#define C_PORT_ENABLE         0x11
+#define C_PORT_SUSPEND        0x12
+#define C_PORT_OVER_CURRENT   0x13
+#define C_PORT_RESET          0x14
+
+#define PORT_TEST             0x15
+#define PORT_INDICATOR        0x16
+
+#define BIT_PORT_CONNECTION   0x01
+#define BIT_PORT_ENABLE       0x02
+#define BIT_PORT_SUSPEND      0x04
+#define BIT_PORT_OVER_CURRENT 0x08
+#define BIT_PORT_RESET        0x10
 
 void UsbHubDriver :: install(UsbDevice *dev)
 {
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
-
+    host = dev->host;
+    device = dev;
+    
 	dev->set_configuration(dev->device_config.config_value);
 
     BYTE *buf;
@@ -166,23 +181,94 @@ void UsbHubDriver :: install(UsbDevice *dev)
 
         if(buf[0] & 0x02) { // PORT_ENABLE set
             UsbDevice *d = new UsbDevice(dev->host);
-
-            if(buf[1] & 0x02) { // Low speed device
-                d->get_device_descriptor(true);
-            } else {
-                d->get_device_descriptor(false);
+            d->parent = dev;
+            if(!dev->host->install_device(d, false)) {  // false = assume powered hub for now            
+                printf("Install failed...\n");
+                continue;
             }
-                            
-            d->set_address(10+j);
         }
     }
+    printf("-- Install Complete.. --\n");
+
+    irq_transaction = host->allocate_transaction(1);
+    host->interrupt_in(irq_transaction, device->pipe_numbers[0], 1, irq_data);
 }
 
 void UsbHubDriver :: deinstall(UsbDevice *dev)
 {
+    host->free_transaction(irq_transaction);
 }
 
 void UsbHubDriver :: poll(void)
 {
+    int resp = host->interrupt_in(irq_transaction, device->pipe_numbers[0], 1, irq_data);
+    if(resp) {
+        printf("HUB IRQ data: ");
+        for(int i=0;i<resp;i++) {
+            printf("%b ", irq_data[i]);
+        } printf("\n");
+    }
+    if(!irq_data[0])
+        return;
+
+    BYTE *buf;
+    int i;
+    
+    for(int j=0;j<=num_ports;j++) {
+        irq_data[0] >>=1;
+        if(irq_data[0] & 1) {
+            c_get_port_status[4] = BYTE(j+1);
+        	i = host->control_exchange(device->current_address,
+        								    c_get_port_status, 8,
+        								    NULL, 64, &buf);
+            if(i == 4) {
+            	printf("Port %d status:", j);
+                for(int b=0;b<4;b++) {
+                    printf("%b ", buf[b]);
+                } printf("\n");
+
+                c_clear_port_feature[4] = BYTE(j+1);
+
+                if(buf[2] & BIT_PORT_CONNECTION) {
+                    printf("* CONNECTION CHANGE *\n");
+                    c_clear_port_feature[2] = C_PORT_CONNECTION;
+                	i = host->control_exchange(device->current_address,
+                							   c_clear_port_feature, 8,
+                							   NULL, 8, NULL);
+                }
+                if(buf[2] & BIT_PORT_ENABLE) {
+                    printf("* ENABLE CHANGE *\n");
+                    c_clear_port_feature[2] = C_PORT_ENABLE;
+                	i = host->control_exchange(device->current_address,
+                							   c_clear_port_feature, 8,
+                							   NULL, 8, NULL);
+                }
+                if(buf[2] & BIT_PORT_SUSPEND) {
+                    printf("* SUSPEND CHANGE *\n");
+                    c_clear_port_feature[2] = C_PORT_SUSPEND;
+                	i = host->control_exchange(device->current_address,
+                							   c_clear_port_feature, 8,
+                							   NULL, 8, NULL);
+                }
+                if(buf[2] & BIT_PORT_OVER_CURRENT) {
+                    printf("* OVERCURRENT CHANGE *\n");
+                    c_clear_port_feature[2] = C_PORT_OVER_CURRENT;
+                	i = host->control_exchange(device->current_address,
+                							   c_clear_port_feature, 8,
+                							   NULL, 8, NULL);
+                }
+                if(buf[2] & BIT_PORT_RESET) {
+                    printf("* RESET CHANGE *\n");
+                    c_clear_port_feature[2] = C_PORT_RESET;
+                	i = host->control_exchange(device->current_address,
+                							   c_clear_port_feature, 8,
+                							   NULL, 8, NULL);
+                }
+            } else {
+                printf("Failed to read port %d status. Got %d bytes.\n", j, i);
+                continue;
+            }
+        }        
+    }
 }
 	

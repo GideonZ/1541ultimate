@@ -1,0 +1,282 @@
+ajnjil-t.htm              TALK and LISTEN
+
+C64:
+
+TALK                (--------
+ed09  ora #$40      sets bits for TALK ($44-$5e)
+ed0b  bit $....     skips the next two bytes, skips to $ed0e
+
+LISTEN              (--------
+ed0c  ora #$20      sets bits for LISTEN ($24-$3e)
+ed0e  jsr $f0a4     waits until end of RS232 transmission
+ed11  pha           saves commandbyte
+ed12  bit $94       bit 7 is flag for IECOUT byte in buffer to send 0=no 1=yes
+ed14  bpl $ed20     b.i. there is no (old) byte to send
+ed16  sec
+ed17  ror $a3       sets bit 7 of $a3 = flag for send EOI (end or identify)
+ed19 *jsr fbfe      sends last byte (with EOI)
+ed1c  lsr $94       clears bit 7 of $94 = flag for no byte in buffer to send
+ed1e  lsr $a3       clears bit 7 of $a3 = flag for not EOI
+ed20  pla           restores commandbyte
+ed21  sta $95       stores commandbyte
+ed23  sei           prevents IRQs
+ed24 *jsr f0ed
+====================
+f0ed *lda #$00
+f0ef *sta $a3       clears JD IEC status byte
+f0f1 *jmp $ee97     sets data = inactive
+====================
+ee97  lda $dd00
+ee9a  and #$df      clears bit 5 = data out
+ee9c  sta $dd00
+ee9f  rts
+====================
+ed27  cmp #$3f      should compare whether UNLISTEN             but CBM error:
+ed29  bne $ed2e     branches allways                       accu cannot be #$3f
+ed2b  jsr $ee85     never sets clock=inactive         because bit 5 is cleared
+ed2e  lda $dd00
+ed31  ora #$08      sets bit 3
+ed33  sta $dd00     sets ATN = active
+                    (--------
+ed36  sei           prevents IRQs
+ed37  jsr $ee8e     sets clock = active
+ed3a  jsr $ee97     sets data = inaktive
+ed3d  jsr $eeb3     waits 1000 microseconds
+------------------------------------------------------------------------------
+
+      C64-IECOUT (= 1541-IECIN)
+      (for JD-commandbytes, CBM-commandbytes and CBM-databytes)
+      (not for JD-databytes)
+
+ed40  sei           prevents IRQs
+ed41  jsr $ee97     sets data = inactive
+ed44  jsr $eea9     carry=data in, bit7=clock in (!not inverted)
+ed47  bcs $edad     b.i. data=inactive  = device not present
+ed49  jsr $ee85     sets clock = inactive                              41:e9d0
+ed4c  bit $a3       bit 7 is bit for EOI
+ed4e  bpl $ed5a     b.i. no EOI
+ed50  jsr $eea9     reads bus (= EOI = C64 sends last byte)
+ed53  bcc $ed50     waits until floppy sets data = inactive            41:e9d2
+ed55  jsr $eea9     reads bus
+ed58  bcs $ed55     waits until floppy sets data = active              41:f683
+ed5a  jsr $eea9     reads bus                                       noEOI/EOI:
+ed5d  bcc $ed5a     waits until floppy sets data =inactive        41:e9d2/f689
+ed5f  jsr $ee8e     sets clock = active                                41:e9ea
+ed62 *txa
+ed63 *pha           saves x register
+ed64 *ldx #$08      counter for 8 bits per byte
+                    loop-----------------------------------------x  bit of $95
+ed66 *pha         3                                              8  0
+ed67 *pla         4 ?7 cycles delay?                             7  1
+ed68 *bit $dd00   4 reads bus                                    6  2
+ed6b *bmi $ed72   3 b.i. floppy sets data = inactive             5  3
+ed6d *pla           (data in = active)                           4  4
+ed6e *tax           restores x                                   3  5
+ed6f *jmp $edb0     time out error                               2  6
+-------------------                                              1  7
+ed72 *jsr $ee97  22 sets data = inactive
+ed75 *ror $95     5 bit of transmitted byte into carry
+ed77 *bcs $ed7c 2/3 b.i. transmission of a high-bit
+ed79 *jsr $eea0  22 sets data = active
+ed7c *jsr $ee85  22 sets clock =inactive                               41:e9f5
+ed7f *lda $dd00   4
+ed82 *and #$df    2 (sets data = inactive)
+ed84 *ora #$10    2 (sets clock = active)
+ed86 *php         3 perhaps: saves carry for ror bit into $95 at ed75?
+ed87 *pha         3 ?delay?
+ed88 *jsr $f8ea   6
+====================
+f8ea *sta $dd00   4 D=I C=A                                            41:ea09
+f8ed *and #$08    2 mascs bit 3 = ATN out
+f8ef *beq $f910 2/3 b.i. ATN out = inactive (=b.i. (CBM-) data byte)
+f8f1 *lda $95     3 rotated IECOUT byte
+f8f3 *ror         2 carry=bit6 of original byte -) bit7 of rotated byte
+f8f4 *ror         2 (c=b7 -) b7) accu is now the original byte
+f8f5 *cpx #02     2 counter for bits per byte (2 = bit 6 was transmitted)
+f8f7 *bne $f910 2/3 b.i. not bit 6 was transmitted
+f8f9 *ldx #$1e    2 = 31
+f8fb *bit $dd00   4                                                    41:f683
+f8fe *bpl $f905 2/4 b.i. floppy sets data = active (= signal from JD-floppy)
+f900 *dex         2 31*(4+2+2+4)=372
+f901 *bne $f8fb 2/4 waits 400 uS (+ VIC interrupt) for JD-signal
+f903 *beq $f90e   3 no signal from a JD-floppy
+--------------------
+f905 *bit $dd00   4
+f908 *bpl $f905 2/3 waits until JD-floppy sets data = inactive         41:f689
+f90a *ora #$40    2 sets bit 6 = flag for JD-IEC-BUS routines
+f90c *sta $a3     3 b7=0 (no EOI) b6=1 (JD-IEC) b5=0(TALK)/1(LISTEN)
+f90e *ldx #$02    2 restores x                    b4-0=device-number of floppy
+f910 *rts         6
+====================
+ed8b *pla         4 ?delay
+ed8c *plp         4 perhaps: restores carry for ror at $ed75
+ed8d *dex         2 decrements counter for bits per byte
+ed8e *bne $ed66 2/3 b.i. still bits to transfer
+                    loop------------------------------------------------------
+ed90 *pla
+ed91 *tax           restores x
+ed92  lda #$04
+ed94  sta $dc07     timer b high 4*256 =1000
+ed97  lda #$19
+ed99  sta $dc0f     starts timer b
+ed9c  lda $dc0d     clears (old) IRQ-bit
+ed9e  lda $dc0d     loads IRQ flag register
+eda2  and #$02      mascs timer b bit
+eda4  bne $edb0     b.i. timer b counted to 0 (=time out error)
+eda6  jsr $eea9     reads bus
+eda9  bcs $ed9f     b.i. floppy does not set data = active             41:ea0f
+edab  sei           allows IRQs (floppy sets D=A within 1000 uS)
+edac  rts           carry = low   (C64-ClockOut=active)
+==============================================================================
+
+
+==============================================================================
+
+      1541-IECIN (= C64-IECOUT)
+      (for JD-commandbytes, CBM-commandbytes and CBM-databytes)
+      (not for JD-databytes)
+
+routine when the C64 activates the ATN-line (-)IRQ in Floppy)
+
+e85b  sei
+e85c  lda #$00
+e85e *sta $98       sets default for CBM IEC bus routines
+e860
+....
+e87c *jsr $e9c9     IECIN takes command byte
+====================
+
+IEC-IN
+
+e9c9  lda #$08
+e9cb *sta $4b       counter for 8 bits per byte
+e9cd *jsr $ea17     reads bus (no return if change of ATN-line)
+e9d0 *bne $e9cd     waits until C64 sets clock = inactive              64:ed49
+e9d2 *jsr $e99c     sets data = inactive                          64:ed5d/ed53
+e9d5 *jsr $ff20                                                     noEOI/EOI
+====================
+ff20  lda $1800     reads serial bus
+ff23  and #$01      mascs data-in bit
+ff25  bne $ff20     waits until C64 sets data = inactive            64:allways
+ff27  lda #$01
+ff29  sta $1805     starts timer a (not used in JD-1541)
+ff2c *rts
+====================
+e9d8 *ldx #$90      $90-$7f=$11=#17   17*(33+6+2+2+3)=782
+e9da *jsr $ea17     reads bus
+e9dd *bne $e9ec     b.i. clock = active = no EOI                       64:ed5f
+e9df *dex                                                                  EOI
+e9e0 *bmi $e9da     b.i. counter not at end
+e9e2 *jsr $f683     =EOI (C64 doesn't set C=A within 782uS)
+====================
+f683 *jsr $e9a4     sets data = active (x=#$7f)                        64:ed58
+f686 *dex
+f687 *bne $f686
+f689 *jsr $e99c     sets data = inactive                               64:ed5d
+f68c *ldx #$00
+f68e *rts
+====================
+e9e5 *stx $f8       #$00: sets flag for EOI
+e9e7 *jsr $ea17     reads bus
+e9ea *beq $e9e7     waits until C64 sets clock = active                64:ed5f
+                    loop------------------------------------------------------
+e9ec *ldx #$0c      #$0c=12   12*(4+3+2+2+2+3)=192uS
+e9ee *lda $1800   4 serial bus
+e9f1 *sta $44     3
+e9f3 *and #$04    2 mascs clock-in bit                                 64:ed7c
+e9f5 *beq $e9ff   2 b.i. C64 sets clock = inactive (=flag for bit is ready)
+e9f7 *dex         2
+e9f8 *bne $e9ee   3 b.i. counter not at end
+e9fa *jsr $f674     C64 doesn't set clock = inactive within 218uS (26+192)
+====================
+f674 *lda $85       =bit 6-0 of actual IEC-IN byte
+f676 *lsr           puts bits into correct position
+f677 *cmp $77       compares with floppy device number for LISTEN
+f679 *beq $f67f     b.i. IEC-IN byte is LISTEN to this floppy
+f67b *cmp $78       compares with floppy device number for TALK
+f67d *bne $f68c     b.i. IEC-IN byte is not TALK to this floppy
+f67f *inc $98       #$00-)#$01 = flag for JD IEC bus routines
+f681 *ldx #$0f
+f683 *jsr $e9a5     sets data = active                                 64:f8fe
+f686 *dex
+f687 *bne $f686
+f689 *jsr $e99c     sets data = inactive                               64:f908
+f68c *ldx #$00
+f68e *rts
+====================
+e9fd *beq $e9ee     branches allways
+--------------------
+e9ff *lda $44
+ea01 *eor #$01      inverts data bit
+ea03 *lsr           data bit -) carry
+ea04 *ror $85       carry -) bit 7 of IEC-IN byte
+ea06 *jsr $ea17     reads bus
+ea09 *beq $ea06     waits until C64 sets clock = active                64:f8ea
+ea0b *dec $4b       decrements counter for bits per byte
+ea0d *bne $e9ec     b.i. bits to receive
+                    loop------------------------------------------------------
+ea0f *jsr e9a5      sets data = active                                 64:eda9
+ea12 *ldx #$00
+ea14 *lda $85       actual IEC-IN byte
+ea16 *rts           (to e87f)
+==============================================================================
+
+==============================================================================
+
+Decision whether JD- or CBM-IEC bus routines:
+
+JD-C64 & JD-1541
+C64 transmits bit 6 by putting it (inverted) into data and inactivates clock
+     (ed7c)
+1541 waits until clock = inactive (e975) and takes data bit 6 (inverted) to
+     IECIN-byte. =)IECIN byte contains bit 6-0 (but one bit shifted left)
+C64 sets 30uS later data=inactive & clock=active (f8ea)
+1541 waits until C64 sets clock = active (ea09) (and then waits for
+     transmission of next bit (7).
+C64 checks whether command- (ATN=A) or data-byte (ATN=I) (f8ef). If data-byte
+     then C64 transmits next bit.
+C64 checks whether bit 6 has been transmitted (f8f7). If not bit 6 has been
+     transmitted then C64 transmits next bit
+C64: If command-byte and bit 6 then C64 does not transmit bit 7 at once (=C64
+     does not inactivate clock) but C64 reads bus for 400uS (f8fb)
+1541 waits for transmission of bit 7 but C64 does not set clock = inactive
+     within 218uS (e9f5). =) 1541 compares the IEC-IN command byte with its
+     device number (f677/f67b)
+     If it is not this device then 1541 makes nothing, it waits for
+     transmission of bit 7 (f68c)
+     If it is this device then 1541 puts $98 from equal to not equal (f67f)
+     (=flag for JD IEC bus routines) and sets data = active for 405uS (f683)
+C64 checks whether 1541 sets data = active within 400 uS (f8fb)
+     If not (CBM floppy) then C64 makes nothing (f90e)
+     If yes (JD floppy) then: (f8fe)
+1541 sets data = inactive (f689)
+C64  If yes (JD floppy) (f8fe) then C64 waits until 1541 sets data = inactive.
+     (f908).Then C64 sets bit 6 of $a3 to high (= flag for JD IEC bus
+      routines) (f90c)
+1541 waits for transmission of bit 7 (e9f8)
+C64 transmits bit 7 (ed7c)
+
+JD-C64 & CBM-1541
+C64 makes delay after the transmission of bit 6
+but 1541 doesn't set data = active
+
+CBM-C64 & JD-1541:
+C64 transmits after bit 6 at once bit 7 (without delay)
+=) 1541 doesn't make the JD-check-routine
+
+The sending of data bytes to a CBM drive (f.e. a serial printer) is with the
+JD-kernal slower as with the CBM-kernal:
+Time for 100 bytes IECOUT:
+CBM-C64 & CBM-drive: 117mS
+ JD-C64 & CBM-drive: 146mS
+
+At the C64: The times can be increased by VIC interrupts
+ 
+----------------------------------------------------------------------
+2000/01/30
+Near Letter Quantity
+Jochen Adler
+NLQ@gmx.de
+http://home.t-online.de/home/dadler/
+----------------------------------------------------------------------
+Home

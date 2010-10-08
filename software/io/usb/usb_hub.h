@@ -13,6 +13,11 @@ class UsbHubDriver : public UsbDriver
     bool individual_overcurrent;
     bool compound;
 
+    int  irq_transaction;
+    BYTE irq_data[4];
+    
+    Usb       *host;
+    UsbDevice *device;
 public:
 	UsbHubDriver(IndexedList<UsbDriver *> &list);
 	UsbHubDriver();
