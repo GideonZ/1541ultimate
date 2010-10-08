@@ -8,6 +8,10 @@
 -- Description: This module implements a simple IEC transceiver.
 -------------------------------------------------------------------------------
  
+-- LUT/FF/S3S/BRAM: 238/ 85/126/0 (not programmable)
+-- LUT/FF/S3S/BRAM: 279/104/148/0 (programmable)
+
+
 library ieee;
     use ieee.std_logic_1164.all;
     use ieee.numeric_std.all;

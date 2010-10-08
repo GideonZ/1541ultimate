@@ -82,16 +82,6 @@ architecture wrap of usb_host_io is
     signal rx_store        : std_logic;
     signal rx_register     : std_logic;
 
-    signal host_reg_write  : std_logic;
-    signal host_reg_wdata  : std_logic_vector(7 downto 0);
-    signal host_reg_addr   : std_logic_vector(5 downto 0);
-    signal host_reg_ack    : std_logic;
-
-    signal reset_reg_write : std_logic;
-    signal reset_reg_wdata : std_logic_vector(7 downto 0);
-    signal reset_reg_addr  : std_logic_vector(5 downto 0);
-    signal reset_reg_ack   : std_logic;
-
     signal reg_read        : std_logic := '0';
     signal reg_write       : std_logic;
     signal reg_ack         : std_logic;
@@ -182,13 +172,7 @@ begin
 		sof_enable  => sof_enable,
         speed       => speed,
         abort       => abort,
-        
-        -- Register interface
-        write_reg   => host_reg_write,
-        reg_addr    => host_reg_addr,
-        reg_wdata   => host_reg_wdata,
-        reg_ack     => host_reg_ack,
-        
+                
         -- Receive Path Interface
         rx_pid          => rx_pid,
         rx_token        => rx_token,
@@ -366,11 +350,11 @@ begin
     	
         -- register interface
         read_reg    => reg_read,
-        write_reg   => reset_reg_write,
+        write_reg   => reg_write,
         read_data   => reg_rdata,
-        write_data  => reset_reg_wdata,
-        address     => reset_reg_addr,
-        reg_ack     => reset_reg_ack,
+        write_data  => reg_wdata,
+        address     => reg_addr,
+        reg_ack     => reg_ack,
         
         -- interface to packet transmitter
         send_packet => send_reset_data,
@@ -480,11 +464,5 @@ begin
         sys_descr_rdata when "100",
         sys_cmd_rdata when "101",
         X"00" when others;
-
-    reg_wdata <= host_reg_wdata when host_reg_write='1' else reset_reg_wdata;
-    reg_addr  <= host_reg_addr  when host_reg_write='1' else reset_reg_addr;
-    reg_write <= host_reg_write or reset_reg_write;
-    host_reg_ack  <= reg_ack;
-    reset_reg_ack <= reg_ack;
 
 end wrap;

@@ -24,3 +24,8 @@ LOAD #          (value)               ## added to output random sequences, or to
 Instruction encoding: <mask(4)> <value(4)> <ticks/jump (9)> <opcode (4)> = 21 bits
 
 Ticks: All ticks are in 탎. Values > 256 are in steps of 16 탎. (257 = 16탎, 258 = 32탎, ... 511 = 4.08 ms)
+
+Easier to en/decode: 12 bits value operand such that asymetric encoding of time is not necessary.
+Then total instruction is 24 bits.
+
+

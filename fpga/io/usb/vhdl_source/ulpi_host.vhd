@@ -48,12 +48,6 @@ port (
     speed       : in  std_logic_vector(1 downto 0);
     abort       : in  std_logic;
     
-    -- Register interface
-    write_reg       : out std_logic;
-    reg_addr        : out std_logic_vector(5 downto 0);
-    reg_wdata       : out std_logic_vector(7 downto 0);
-    reg_ack         : in  std_logic := '1';
-    
     -- Receive Path Interface
     rx_pid          : in  std_logic_vector(3 downto 0);
     rx_token        : in  std_logic_vector(10 downto 0);
@@ -147,10 +141,6 @@ begin
             descr_we <= '0';
             tx_put   <= '0';
             
-            write_reg <= '0';
-            reg_addr  <= (others => '0');
-            reg_wdata <= (others => '0');
-
             if abort='1' then
                 abort_reg <= '1';
             end if;
