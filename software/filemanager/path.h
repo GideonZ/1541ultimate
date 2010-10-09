@@ -29,12 +29,12 @@ public:
     }
 
 	virtual ~PathObject() {
-		//printf("destructor %p %s ", this, get_name());
+		//printf("destructor %p %s (%d)\n", this, get_name(), ref_count);
 		int el = children.get_elements();
 		for(int i=0;i<el;i++) {
-			delete children[i];
+			if(children[i]->ref_count == 0)
+				delete children[i];
 		}
-		//printf("Ref=%d\n", ref_count);
 		if(ref_count) {
 			printf("Internal error! Deleting a path object that has %d references!\n", ref_count);
 		}
@@ -95,18 +95,14 @@ public:
 //		if(el)
 //			printf("Cleaning up %d children of %s.\n", el, get_name());
 		for(int i=0;i<el;i++) {
-			children[i]->cleanup();
+			children[i]->cleanup_children();
 			if(children[i]->ref_count == 0) {
 				children.mark_for_removal(i);
-//				printf(" deleting %s\n", children[i]->get_name());
+				//printf(" deleting %s\n", children[i]->get_name());
 				delete children[i];
 			}
 		}
 		children.purge_list();
-	}
-
-	virtual void cleanup(void) {
-		cleanup_children();
 	}
 
 	// this will automatically add children, if any, and store them in the children list

@@ -97,10 +97,10 @@ port (
     ULPI_DATA   : inout std_logic_vector(7 downto 0);
 
     -- Cassette Interface
-    CAS_MOTOR   : in  std_logic := '0';
-    CAS_SENSE   : out std_logic := 'Z';
-    CAS_READ    : out std_logic := 'Z';
-    CAS_WRITE   : in  std_logic := '0';
+    CAS_MOTOR   : in    std_logic := '0';
+    CAS_SENSE   : inout std_logic := 'Z';
+    CAS_READ    : inout std_logic := 'Z';
+    CAS_WRITE   : inout std_logic := '0';
     
     -- Buttons
     BUTTON      : in    std_logic_vector(2 downto 0));
@@ -161,7 +161,8 @@ begin
         g_ram_expansion => true, --
         g_hardware_iec  => true, --
         g_iec_prog_tim  => false,
-        g_c2n_streamer  => true,
+        g_c2n_streamer  => false,
+        g_c2n_recorder  => false,
         g_cartridge     => true, --
         g_drive_sound   => true, --
         g_rtc_chip      => true,

@@ -38,11 +38,6 @@ FileTypeD64 :: FileTypeD64(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi
 
 FileTypeD64 :: ~FileTypeD64()
 {
-    cleanup(); // shouldn't do anything
-}
-
-void FileTypeD64 :: cleanup(void)
-{
 	if(info) {
 		if(fs) {
 			delete fs;
@@ -51,7 +46,6 @@ void FileTypeD64 :: cleanup(void)
 			fs = NULL; // invalidate object
 		}
 	}
-	cleanup_children();
 }
 
 int FileTypeD64 :: fetch_children()

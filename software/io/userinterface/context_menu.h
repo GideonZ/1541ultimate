@@ -38,7 +38,6 @@ public:
     virtual ~ContextMenu(void);
     
     virtual void init(Screen *pwin, Keyboard *keyb);
-    //virtual void deinit(void);
     virtual int poll(int, Event &e);
 };
 

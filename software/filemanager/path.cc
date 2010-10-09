@@ -37,7 +37,6 @@ Path :: ~Path()
 	do {
 		p = current->parent;
 		current->detach();
-		current->cleanup();
 		current = p;
 	} while(p);
 */

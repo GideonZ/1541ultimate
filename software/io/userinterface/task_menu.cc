@@ -25,7 +25,7 @@ void TaskMenu :: init(Screen *scr, Keyboard *key)
     keyb = key;
 
     if(context_state == e_new) {
-        items = object->fetch_task_items(state->node->children);
+    	items = object->fetch_task_items(state->node->children);
         for(int i=0;i<main_menu_static_items.get_elements();i++) {
         	state->node->children.append(main_menu_static_items[i]);
         	items++;
@@ -51,10 +51,14 @@ void TaskMenu :: init(Screen *scr, Keyboard *key)
         }
         if(max_len > 30)
             max_len = 30;
-    }        
+    }/* else {
+		printf("Task menu init called for a non-new structure, making a dump:\n");
+		state->node->dump();
+    } */
 
     window = new Screen(parent_win, 19-(max_len>>1), y_offs+2, max_len+2, rows);
     window->draw_border();
     context_state = e_active;
+	state->do_refresh();
 }
 

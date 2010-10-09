@@ -62,7 +62,7 @@ BMM_FILE  := ./ucf/sd_ram4.bmm			# bmm file location
 
 # TOOL FLAGS
 NGDBUILD_FLAGS	 := 	
-MAP_FLAGS        := 	-cm area -timing -pr b
+MAP_FLAGS        := 	-cm area -timing -pr b -detail
 PAR_FLAGS        := 	-w 
 TRCE_FLAGS       := 	-e 9 -l 11
 PROMGEN_FLAGS	 := 	-w -p mcs -c FF -x xcf04s

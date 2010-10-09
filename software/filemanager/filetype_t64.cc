@@ -167,7 +167,8 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 	        
 	    max  = LD_WORD(&read_buf[2]);
 	    used = LD_WORD(&read_buf[4]);
-
+		if(!used)
+			used = 1; // fix
 	    f->size = 0L;
 	    f->cluster = 0L;
 	    f->attrib  = AM_VOL;

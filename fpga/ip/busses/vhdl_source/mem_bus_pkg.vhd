@@ -50,6 +50,7 @@ package mem_bus_pkg is
         dack        : std_logic;
         dnext       : std_logic;
         blast       : std_logic;
+		low_addr	: unsigned(2 downto 0);
     end record;
 
     constant c_mem_burst_req_init : t_mem_burst_req := (

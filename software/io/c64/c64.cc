@@ -76,7 +76,7 @@ char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",               "%s", cart_mode,  0, 19, 4 },
-    { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",         "%s", NULL,       1, 31, (int)"SdCard/Part0/cart.bin" },
+    { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",         "%s", NULL,       1, 31, (int)"cart.bin" },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",      "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                "%s", reu_size,   0,  7, 4 },
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",            "%s", buttons,    0,  1, 1 },
@@ -457,6 +457,8 @@ void C64 :: freeze(void)
 
     // turn off button interrupts on SD-CPU
 //    GPIO_IMASK  &= ~BUTTONS;
+
+	dump_hex((void *)C64_MEMORY_BASE, 0x400);
 
     backup_io();
     init_io();

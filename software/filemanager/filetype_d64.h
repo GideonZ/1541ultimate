@@ -16,7 +16,6 @@ public:
     FileTypeD64(PathObject *par, FileInfo *fi);
     virtual ~FileTypeD64();
 
-	void  cleanup(void);
     int   fetch_children(void);
 	int   get_header_lines(void) { return 1; }
     int   fetch_context_items(IndexedList<PathObject *> &list);

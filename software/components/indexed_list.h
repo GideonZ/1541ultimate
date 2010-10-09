@@ -30,8 +30,10 @@ private:
 			new_array[i] = element_array[i];
 			new_removal[i] = removal[i];
 		}
-		delete element_array;
-		delete removal;
+		if(element_array)
+			delete element_array;
+		if(removal)
+			delete removal;
 		element_array = new_array;
 		removal = new_removal;
 	}

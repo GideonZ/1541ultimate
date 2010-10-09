@@ -54,7 +54,6 @@ public:
 
     ConfigItem(ConfigStore *s, t_cfg_definition *d);
     ~ConfigItem();
-    void cleanup(void) { } // elements are owned by the ConfigManager
 
     int pack(BYTE *buffer, int len);
     void unpack(BYTE *buffer, int len);
@@ -81,7 +80,6 @@ public:
 
     ConfigStore(DWORD id, char *name, int page, int page_size, t_cfg_definition *defs);
     virtual ~ConfigStore();
-//    void cleanup(void) { } // elements are owned by the ConfigManager
 
 // Interface functions
     virtual void read(void);

@@ -97,6 +97,7 @@ begin
         if rising_edge(clock) then
             reset_in     <= reset or RST_in or c64_reset;
             freeze_act_d <= freeze_act;
+			unfreeze     <= '0';
             
             -- control register
             if reset_in='1' then
@@ -108,9 +109,8 @@ begin
                 allow_bank   <= '0';
                 ram_select   <= '0';
                 do_io2       <= '1';
-                allow_bank   <= '0';
                 cart_en      <= '1';
-                unfreeze     <= '0';
+--                unfreeze     <= '0';
                 hold_nmi     <= '0';
             elsif freeze_act='1' and freeze_act_d='0' then
                 bank_bits  <= (others => '0');
@@ -118,7 +118,7 @@ begin
                 --allow_bank <= '0';
                 ram_select <= '0';
                 cart_en    <= '1';
-                unfreeze   <= '0';
+--                unfreeze   <= '0';
                 hold_nmi   <= '1';
             end if;
 
@@ -126,7 +126,7 @@ begin
             
             case cart_logic_d is
             when c_fc3 =>
-                unfreeze <= '0';
+--                unfreeze <= '0';
                 if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
                     bank_bits <= io_wdata(1 downto 0) & '0';
                     mode_bits <= '0' & io_wdata(4) & io_wdata(5);
@@ -305,20 +305,15 @@ begin
 
         case cart_logic is
         when c_retro =>
+            -- 64K RAM
             if mode_bits(2)='1' then
                 if slot_addr(13)='0' then
---                  if allow_bank='1' then
---                      mem_addr_i <= g_ram_base(25 downto 15) & bank_bits(14 downto 13) & slot_addr(12 downto 0);
---                  else
---                      mem_addr_i <= g_ram_base(25 downto 15) & "00" & slot_addr(12 downto 0);
---                  end if;
-                    mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(14 downto 13) & slot_addr(12 downto 0);
+                    mem_addr_i <= g_ram_base(27 downto 16) & bank_bits(15 downto 13) & slot_addr(12 downto 0);
                     if allow_bank='0' and slot_addr(15 downto 13)="110" then -- io range exceptions
-                        mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
+                        mem_addr_i <= g_ram_base(27 downto 16) & "000" & slot_addr(12 downto 0);
                     end if;
-                    
                 end if;
-                if slot_addr(15 downto 13)="100" and mode_bits(1 downto 0)="11" then
+                if slot_addr(15 downto 13)="100" then--and mode_bits(1 downto 0)/="10" then
                     allow_write <= '1';
                 end if;
                 if slot_addr(15 downto 8)=X"DE" and slot_addr(7 downto 1)/="0000000" then
@@ -330,22 +325,15 @@ begin
             end if;
         
         when c_action =>
-            -- 32K
-            mem_addr_i(14 downto 0) <= bank_bits(14 downto 13) & slot_addr(12 downto 0);
-
+            -- 32K RAM
             if mode_bits(2)='1' then
                 if slot_addr(13)='0' then
                     mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(14 downto 13) & slot_addr(12 downto 0);
                     if allow_bank='0' and slot_addr(15 downto 13)="110" then -- io range exceptions
                         mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
                     end if;
---                    if allow_bank='1' then
---                        mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(14 downto 13) & slot_addr(12 downto 0);
---                    else
---                        mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
---                    end if;
                 end if;
-                if slot_addr(15 downto 13)="100" and mode_bits(1 downto 0)="11" then
+                if slot_addr(15 downto 13)="100" then -- and mode_bits(1 downto 0)="11" then
                     allow_write <= '1';
                 end if;
                 if slot_addr(15 downto 8)=X"DE" and slot_addr(7 downto 1)/="0000000" then

@@ -47,6 +47,7 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
         max_len = 0;
         for(int i=0;i<state->node->children.get_elements();i++) {
         	PathObject *it = state->node->children[i];
+			//it->attach();
             len = strlen(it->get_name());
             if(len > max_len)
                 max_len = len;
@@ -64,17 +65,9 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
     else
         *hook = 3;
     context_state = e_active;
+	state->do_refresh();
 }
     
-/*
-void ContextMenu :: deinit(void)
-{
-    if(window)
-        delete window;
-    window = NULL;
-    refresh = true;
-}
-*/
 
 int ContextMenu :: poll(int dummy, Event &e)
 {

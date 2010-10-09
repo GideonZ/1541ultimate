@@ -34,9 +34,7 @@ public:
 	MenuItemGlobal(void *o, char *n, int f) : MenuItem(NULL, n, f), obj(o) {
 		attach();
 	}
-	~MenuItemGlobal() {
-		detach();
-	}
+	~MenuItemGlobal() { }
 
 	void execute(int dummy) {
 		push_event(e_object_private_cmd, obj, function);
