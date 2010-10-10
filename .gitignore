@@ -2,6 +2,9 @@ target/fpga/_xmsgs
 target/fpga/work400
 target/fpga/work700
 target/fpga/xlnx_auto_0_xdb
+target/simulation/sim/modelsim.ini
+target/simulation/sim/transcript
+target/simulation/sim/vsim.wlf
 target/simulation/sim/work
 target/software/1st_boot/output
 target/software/1st_boot/result

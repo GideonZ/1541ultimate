@@ -100,11 +100,12 @@ C64 :: C64()
 	    if(cfg)
 	    	C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
 	
-	    create_menu_items();
 	}
 
     if(C64_CLOCK_DETECT == 0)
         printf("No PHI2 clock detected.. Stand alone mode.\n");
+	else
+		main_menu_objects.append(this);
 	
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
@@ -130,12 +131,14 @@ bool C64 :: exists(void)
     return (C64_CLOCK_DETECT != 0);
 }
     
-void C64 :: create_menu_items(void)
+int  C64 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
-	main_menu_static_items.append(new MenuItemGlobal(this, "Reset C64", MENU_C64_RESET));
-	main_menu_static_items.append(new MenuItemGlobal(this, "Reboot C64", MENU_C64_REBOOT));
-}
+	item_list.append(new ObjectMenuItem(this, "Reset C64", MENU_C64_RESET));
+	item_list.append(new ObjectMenuItem(this, "Reboot C64", MENU_C64_REBOOT));
 
+	return 2;
+}
+		
 void C64 :: determine_d012(void)
 {
     BYTE b;
@@ -458,7 +461,7 @@ void C64 :: freeze(void)
     // turn off button interrupts on SD-CPU
 //    GPIO_IMASK  &= ~BUTTONS;
 
-	dump_hex((void *)C64_MEMORY_BASE, 0x400);
+//	dump_hex((void *)C64_MEMORY_BASE, 0x400);
 
     backup_io();
     init_io();

@@ -128,9 +128,8 @@ int StreamMenu :: process_command(char *command)
     else if ((strcmp(command, "task")==0) and (state == 0)) {
         menu = new PathObject(NULL);
         items = node->fetch_task_items(menu->children);
-        for(int i=0;i<main_menu_static_items.get_elements();i++) {
-        	menu->children.append(main_menu_static_items[i]);
-        	items++;
+        for(int i=0;i<main_menu_objects.get_elements();i++) {
+        	items += main_menu_objects[i]->fetch_task_items(menu->children);
         }
         print_items(0, items);
         state = 1;

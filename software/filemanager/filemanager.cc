@@ -55,6 +55,39 @@ void FileManager :: handle_event(Event &e)
 	}
 }
 
+File *FileManager :: fcreate(char *filename, PathObject *dir)
+{
+    FileInfo *info;
+    info = dir->get_file_info();
+    
+    if(!info) // can't create file if I don't know how
+        return NULL;
+        
+    if(!(info->attrib & AM_DIR))  // can't create a file in a file - it should be a dir.
+        return NULL;
+        
+    // create a copy of the file info object
+    FileInfo *fi = new FileInfo(*info);
+    fi->dir_clust = info->cluster; // the new file will be located in the directory DIR_CLUST!
+    // remember: our reference object was the directory, so the cluster of that object is our new dir_clust!
+    strcpy(fi->lfname, filename);
+    fix_filename(fi->lfname);
+    fi->attrib = 0;
+
+    File *f = fi->fs->file_open(fi, FA_CREATE_ALWAYS | FA_WRITE);
+    if(!f)
+        return NULL;
+        
+    f->print_info();
+    PathObject *node = new PathObject(dir, filename);
+    f->node = node;
+    dir->children.append(node);
+    open_file_list.append(f);    
+    node->attach();
+    return f;
+}
+
+
 File *FileManager :: fopen(char *filename, BYTE flags)
 {
 	Path *path = new Path;
@@ -114,4 +147,41 @@ void FileManager :: fclose(File *f)
 		delete p;
 		printf("ok!\n");
 	}
+}
+
+/* some handy functions */
+void set_extension(char *buffer, char *ext, int buf_size)
+{
+	int ext_len = strlen(ext);
+	if(buf_size < 1+ext_len)
+		return; // cant append, even to an empty base
+
+	// try to remove the extension
+	int name_len = strlen(buffer);
+	int min_dot = name_len-ext_len;
+	if(min_dot < 0)
+		min_dot = 0;
+	for(int i=name_len-1;i>=min_dot;i--) {
+		if(buffer[i] == '.')
+			buffer[i] = 0;
+	}
+
+	name_len = strlen(buffer);
+	if(name_len + ext_len + 1 > buf_size) {
+		buffer[buf_size-ext_len] = 0; // truncate to make space for extension!
+	}
+	strcat(buffer, ext);
+}
+
+void fix_filename(char *buffer)
+{
+	const char illegal[] = "\"*:<>\?|,\x7F";
+	int illegal_count = strlen(illegal);
+	int len = strlen(buffer);
+
+	for(int i=0;i<len;i++)
+		for(int j=0;j<illegal_count;j++)
+			if(buffer[i] == illegal[j])
+				buffer[i] = '_';
+
 }

@@ -17,6 +17,7 @@ UserInterface :: UserInterface()
     poll_list.append(&poll_user_interface);
     focus = -1;
     state = ui_idle;
+    current_path = NULL;
 }
 
 UserInterface :: ~UserInterface()

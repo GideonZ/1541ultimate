@@ -100,7 +100,7 @@ port (
     CAS_MOTOR   : in    std_logic := '0';
     CAS_SENSE   : inout std_logic := 'Z';
     CAS_READ    : inout std_logic := 'Z';
-    CAS_WRITE   : inout std_logic := '0';
+    CAS_WRITE   : inout std_logic := 'Z';
     
     -- Buttons
     BUTTON      : in    std_logic_vector(2 downto 0));
@@ -124,6 +124,11 @@ architecture structural of ultimate_1541_400a is
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
     
+    -- memory controller interconnect
+    signal memctrl_inhibit  : std_logic;
+    signal mem_req          : t_mem_req;
+    signal mem_resp         : t_mem_resp;
+
     -- debug
     signal scale_cnt        : unsigned(11 downto 0) := X"000";
     attribute iob : string;
@@ -172,7 +177,6 @@ begin
     port map (
         -- globals
         sys_clock   => sys_clock,
-        sys_shifted => sys_shifted,
         sys_reset   => sys_reset,
     
         ulpi_clock  => ulpi_clock,
@@ -203,16 +207,10 @@ begin
         NMIn        => NMIn,
         
         -- local bus side
-        LB_ADDR     => LB_ADDR, -- DRAM A
-        LB_DATA     => LB_DATA,
-                                    
-        SDRAM_CSn   => SDRAM_CSn,
-        SDRAM_RASn  => SDRAM_RASn,
-        SDRAM_CASn  => SDRAM_CASn,
-        SDRAM_WEn   => SDRAM_WEn,
-        SDRAM_DQM   => SDRAM_DQM,
-        SDRAM_CKE   => SDRAM_CKE,
-        SDRAM_CLK   => SDRAM_CLK,
+        mem_inhibit => memctrl_inhibit,
+        --memctrl_idle    => memctrl_idle,
+        mem_req     => mem_req,
+        mem_resp    => mem_resp,
          
         -- PWM outputs (for audio)
         PWM_OUT     => PWM_OUT,
@@ -267,6 +265,35 @@ begin
         
         -- Buttons
         BUTTON      => button_i );
+
+	i_memctrl: entity work.ext_mem_ctrl_v4
+    generic map (
+        g_simulation => false,
+    	A_Width	     => 15 )
+		
+    port map (
+        clock       => sys_clock,
+        clk_shifted => sys_shifted,
+        reset       => sys_reset,
+
+        inhibit     => memctrl_inhibit,
+        is_idle     => open, --memctrl_idle,
+        
+        req         => mem_req,
+        resp        => mem_resp,
+        
+		SDRAM_CSn   => SDRAM_CSn,	
+	    SDRAM_RASn  => SDRAM_RASn,
+	    SDRAM_CASn  => SDRAM_CASn,
+	    SDRAM_WEn   => SDRAM_WEn,
+		SDRAM_CKE	=> SDRAM_CKE,
+		SDRAM_CLK	=> SDRAM_CLK,
+
+        MEM_A       => LB_ADDR,
+        MEM_D       => LB_DATA );
+
+    -- tie offs
+    SDRAM_DQM  <= '0';
 
     process(ulpi_clock, reset_in)
     begin

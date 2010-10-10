@@ -13,47 +13,15 @@
 #define FILEDIR_ENTERDIR 			0x2003
 #define FILEDIR_DELETE_CONTINUED   	0x2004
 
-#define MENU_CREATE_D64 0x3001
-#define MENU_CREATE_DIR 0x3002
+#define MENU_CREATE_D64    0x3001
+#define MENU_CREATE_DIR    0x3002
+
+/* Debug options */
+#define MENU_DUMP_INFO     0x30FE
+#define MENU_DUMP_OBJECT   0x30FF
 
 /* Global Instance of file type factory */
 FileTypeFactory file_type_factory;
-
-static void set_extension(char *buffer, char *ext, int buf_size)
-{
-	int ext_len = strlen(ext);
-	if(buf_size < 1+ext_len)
-		return; // cant append, even to an empty base
-
-	// try to remove the extension
-	int name_len = strlen(buffer);
-	int min_dot = name_len-ext_len;
-	if(min_dot < 0)
-		min_dot = 0;
-	for(int i=name_len-1;i>=min_dot;i--) {
-		if(buffer[i] == '.')
-			buffer[i] = 0;
-	}
-
-	name_len = strlen(buffer);
-	if(name_len + ext_len + 1 > buf_size) {
-		buffer[buf_size-ext_len] = 0; // truncate to make space for extension!
-	}
-	strcat(buffer, ext);
-}
-
-static void fix_filename(char *buffer)
-{
-	const char illegal[] = "\"*:<>\?|,\x7F";
-	int illegal_count = strlen(illegal);
-	int len = strlen(buffer);
-
-	for(int i=0;i<len;i++)
-		for(int j=0;j<illegal_count;j++)
-			if(buffer[i] == illegal[j])
-				buffer[i] = '_';
-
-}
 
 
 
@@ -158,6 +126,10 @@ int FileDirEntry :: fetch_context_items_actual(IndexedList<PathObject *> &list)
 	    list.append(new MenuItem(this, "Delete", FILEDIR_DELETE));
 		count+=2;
 	}
+    list.append(new MenuItem(this, "Dump FileInfo", MENU_DUMP_INFO));
+    list.append(new MenuItem(this, "Dump PathObject", MENU_DUMP_OBJECT));
+    count += 2;
+    
 	return count;
 }
 
@@ -165,7 +137,9 @@ int FileDirEntry :: fetch_task_items(IndexedList<PathObject*> &list)
 {
     list.append(new MenuItem(this, "Create D64", MENU_CREATE_D64));
     list.append(new MenuItem(this, "Create Directory", MENU_CREATE_DIR));
-    return 2;
+    list.append(new MenuItem(this, "Dump FileInfo", MENU_DUMP_INFO));
+    list.append(new MenuItem(this, "Dump PathObject", MENU_DUMP_OBJECT));
+    return 4;
 }
 
 
@@ -185,10 +159,10 @@ char *FileDirEntry :: get_display_string()
         return "FileDirEntry_display";
 
     if(info->is_directory()) {
-        small_sprintf(buffer, "%28s\032 DIR", info->lfname);
+        small_sprintf(buffer, "%29s\032 DIR", info->lfname);
     } else {
         size_to_string_bytes(info->size, sizebuf);
-        small_sprintf(buffer, "%28s\027 %3s %s", info->lfname, info->extension, sizebuf);
+        small_sprintf(buffer, "%29s\027 %3s %s", info->lfname, info->extension, sizebuf);
     }
     
     return buffer;
@@ -246,6 +220,14 @@ void FileDirEntry :: execute(int selection)
 			push_event(e_browse_into);
 			break;
 			
+        case MENU_DUMP_INFO:
+            info->print_info();
+            break;
+        
+        case MENU_DUMP_OBJECT:
+            dump();
+            break;
+            
         case MENU_CREATE_D64:
         	buffer[0] = 0;
         	if(!(info->attrib & AM_DIR)) {
@@ -254,36 +236,26 @@ void FileDirEntry :: execute(int selection)
         	}
         	res = user_interface->string_box("Give name for new disk..", buffer, 22);
         	if(res > 0) {
+    			set_extension(buffer, ".d64", 32);
+    			fix_filename(buffer);
         		bin = new BinImage;
         		if(bin) {
-        			FileInfo *fi = new FileInfo(*info);
-        			strcpy(fi->lfname, buffer);
-        			set_extension(fi->lfname, ".d64", info->lfsize);
-        			fix_filename(fi->lfname);
-        			fi->attrib = 0;
-					// this is always a temporary file, and we don't have a pathobject
-					// so we do it the old unmanaged way.
-        			File *f = fi->fs->file_open(fi, FA_CREATE_ALWAYS | FA_WRITE);
-        			f->print_info();
-					PathObject *node = new PathObject(NULL, "dummy");
-					f->node = node;
+                    File *f = root.fcreate(buffer, this);
         			if(f) {
                 		bin->format(buffer);
                 		printf("Result of save: %d.\n", bin->save(f));
-                		f->close();
-						delete node;
+                        root.fclose(f);
                 		push_event(e_reload_browser);
         			} else {
-        				delete fi;
         				printf("Can't create file '%s'\n", buffer);
         			}
-        			delete fi;
         			delete bin;
         		} else {
         			printf("No memory to create bin.\n");
         		}
         	}
         	break;
+
         case MENU_CREATE_DIR:
         	buffer[0] = 0;
         	if(!(info->attrib & AM_DIR)) {
@@ -299,7 +271,7 @@ void FileDirEntry :: execute(int selection)
 				fres = fi->fs->dir_create(fi);
 			    printf("Result of mkdir: %d\n", fres);
 				if(fres != FR_OK) {
-					printf("Can't create file '%s'\n", buffer);
+					printf("Can't create directory '%s'\n", buffer);
 					user_interface->popup("Can't create directory.", BUTTON_OK);
 				} else {
             		push_event(e_reload_browser);

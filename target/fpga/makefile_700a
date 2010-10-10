@@ -100,6 +100,7 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd \
 				vhdl,work,../../fpga/ip/memory/vhdl_source/dpram.vhd \
 				vhdl,work,../../fpga/ip/clock/vhdl_source/real_time_clock.vhd \
+				vhdl,work,../../fpga/io/audio_select/vhdl_source/audio_select.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/tx.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/rx.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd \

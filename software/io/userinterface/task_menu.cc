@@ -1,8 +1,7 @@
 #include "task_menu.h"
 #include <string.h>
 
-IndexedList<PathObject*> main_menu_static_items(16, NULL);
-static TaskMenuManager main_menu_clear_on_exit;
+IndexedList<ObjectWithMenu*> main_menu_objects(16, NULL);
 
 TaskMenu :: TaskMenu(PathObject *n, PathObject *obj) : ContextMenu(n, obj, 0, 0)
 {
@@ -26,9 +25,8 @@ void TaskMenu :: init(Screen *scr, Keyboard *key)
 
     if(context_state == e_new) {
     	items = object->fetch_task_items(state->node->children);
-        for(int i=0;i<main_menu_static_items.get_elements();i++) {
-        	state->node->children.append(main_menu_static_items[i]);
-        	items++;
+        for(int i=0;i<main_menu_objects.get_elements();i++) {
+        	items += main_menu_objects[i]->fetch_task_items(state->node->children);
         }
         if(!items) {
             printf("No items.. exit.\n");

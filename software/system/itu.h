@@ -13,7 +13,8 @@
 #define ITU_IRQ_TIMER_EN  *((volatile BYTE *)0x4000007)
 #define ITU_IRQ_TIMER_LO  *((volatile BYTE *)0x4000008)
 #define ITU_IRQ_TIMER_HI  *((volatile BYTE *)0x4000009)
-#define ITU_FPGA_VERSION  *((volatile BYTE *)0x400000F)
+#define ITU_FPGA_VERSION  *((volatile BYTE *)0x400000B)
+#define ITU_CAPABILITIES  *((volatile DWORD*)0x500000C)
 
 #define ENTER_SAFE_SECTION ITU_IRQ_GLOBAL=0;
 #define LEAVE_SAFE_SECTION ITU_IRQ_GLOBAL=1;

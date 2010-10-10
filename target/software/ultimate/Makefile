@@ -37,6 +37,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/tape \
 			$(PATH_SW)/io/icap \
 			$(PATH_SW)/io/sd_card \
+			$(PATH_SW)/io/audio \
 			$(PATH_SW)/io/userinterface \
 			$(PATH_SW)/6502
 
@@ -77,7 +78,6 @@ SRCS_CC	 =  stream.cc \
 			rtc.cc \
 			usb.cc \
 			usb_scsi.cc \
-			usb_hub.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
@@ -102,6 +102,7 @@ SRCS_CC	 =  stream.cc \
 			sdio.cc \
 			sdcard_manager.cc \
 			tape_controller.cc \
+			tape_recorder.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_stream.cc \

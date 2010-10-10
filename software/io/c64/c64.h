@@ -6,6 +6,7 @@
 #include "keyboard.h"
 #include "config.h"
 #include "filemanager.h"
+#include "menu.h"
 
 #define C64_CARTREGS_BASE 0x4040000
 #define C64_MEMORY_BASE   0x5050000 // never corrected for endianness
@@ -91,7 +92,7 @@ typedef struct _cart
 
 class Keyboard;
 
-class C64
+class C64 : public ObjectWithMenu
 {
     Flash *flash;
     Keyboard *keyb;
@@ -123,7 +124,7 @@ public:
     C64();
     ~C64();
 
-    void create_menu_items(void);
+    int  fetch_task_items(IndexedList<PathObject*> &item_list);
 
     bool exists(void);
     void poll(Event &e);

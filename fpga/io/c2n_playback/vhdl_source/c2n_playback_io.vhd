@@ -18,7 +18,8 @@ port (
     
     c2n_motor       : in  std_logic;
     c2n_sense       : out std_logic;
-    c2n_out         : out std_logic );
+    c2n_out_r       : out std_logic;
+    c2n_out_w       : out std_logic );
 
 end c2n_playback_io;
 
@@ -41,6 +42,8 @@ architecture gideon of c2n_playback_io is
     signal state            : t_state;
     signal state_enc        : std_logic_vector(1 downto 0);
     signal mode             : std_logic;
+    signal sel              : std_logic;
+    signal c2n_out          : std_logic;
     
     attribute register_duplication  : string;
     attribute register_duplication of stream_en : signal is "no";
@@ -75,6 +78,7 @@ begin
                     end if;
                     fifo_flush <= req.data(2);
                     mode <= req.data(3);
+                    sel  <= req.data(6);
                 end if;
             elsif req.read='1' then
                 resp.ack <= '1';
@@ -186,6 +190,9 @@ begin
     status(7) <= fifo_empty;
 
     c2n_out   <= not toggle;
+
+    c2n_out_r <= c2n_out when sel='0' else '1';
+    c2n_out_w <= c2n_out when sel='1' else '1';
 
     with state select state_enc <=
         "00" when idle,

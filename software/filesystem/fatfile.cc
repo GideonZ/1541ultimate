@@ -168,9 +168,7 @@ FRESULT FATFIL::open (
 
     /* Create or Open a file */
     if (mode & (FA_CREATE_ALWAYS | FA_CREATE_NEW | FA_OPEN_ALWAYS)) {
-    	// we are using here the Cluster parameter, BECAUSE the file info points to
-    	// an object that is derived from the directory the file should be created in.
-    	res = open(info->lfname, info->cluster, mode); // dispatch to the old style
+    	res = open(info->lfname, info->dir_clust, mode); // dispatch to the old style
     	if(res != FR_OK)
     		return res;
     	/* put information back into file info structure */

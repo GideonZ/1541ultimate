@@ -18,19 +18,32 @@ static void poll_tape(Event &e)
 
 TapeController :: TapeController()
 {
+	paused = 0;
 	file = NULL;
 	stop();
     poll_list.append(&poll_tape);
-	main_menu_static_items.append(new MenuItemGlobal(this, "Pause Tape", MENU_C2N_PAUSE));
-	main_menu_static_items.append(new MenuItemGlobal(this, "Resume Tape", MENU_C2N_RESUME));
-//	main_menu_static_items.append(new MenuItemGlobal(this, "Tape status", MENU_C2N_STATUS));
+	main_menu_objects.append(this);
 }
 
 TapeController :: ~TapeController()
 {
 	poll_list.remove(&poll_tape);
+	main_menu_objects.remove(this);
 }
 	
+
+int  TapeController :: fetch_task_items(IndexedList<PathObject*> &item_list)
+{
+	if(!file)
+		return 0;
+	if(paused)
+		item_list.append(new ObjectMenuItem(this, "Resume Tape", MENU_C2N_RESUME));
+	else
+		item_list.append(new ObjectMenuItem(this, "Pause Tape", MENU_C2N_PAUSE));
+	
+	return 1;
+}
+
 void TapeController :: stop()
 {
 	PLAYBACK_CONTROL = C2N_CLEAR_ERROR | C2N_FLUSH_FIFO;
@@ -45,9 +58,10 @@ void TapeController :: stop()
 	
 void TapeController :: start()
 {
-	printf("Start Tape.. Status = %b.\n", PLAYBACK_STATUS);
+	printf("Start Tape.. Status = %b. [", PLAYBACK_STATUS);
 	PLAYBACK_CONTROL = C2N_CLEAR_ERROR | C2N_FLUSH_FIFO;
 	PLAYBACK_CONTROL = 0;
+	paused = 0;
 	
 	for(int i=0;i<16;i++) { // preload some blocks
 		if(PLAYBACK_STATUS & C2N_STAT_FIFO_AF)
@@ -56,6 +70,7 @@ void TapeController :: start()
 		read_block();
 	}
 	PLAYBACK_CONTROL = C2N_ENABLE | BYTE(mode << 3);
+	printf("] Status = %b.\n", PLAYBACK_STATUS);
 }
 	
 void TapeController :: read_block()
@@ -68,11 +83,11 @@ void TapeController :: read_block()
 	if(block > length)
 		block = length;
 
+	if(!block)
+		return;
+		
 	file->read((void *)PLAYBACK_DATA, block, &bytes_read);
 
-	if(bytes_read == 0) {
-		stop();
-	}
 	printf(".");
 	length -= bytes_read;
 	block = 512;
@@ -94,9 +109,11 @@ void TapeController :: poll(Event &e)
 			switch(e.param) {
 				case MENU_C2N_PAUSE:
 					PLAYBACK_CONTROL = (mode)?C2N_MODE_SELECT:0;
+					paused = 1;
 					break;
 				case MENU_C2N_RESUME:
 					PLAYBACK_CONTROL = ((mode)?C2N_MODE_SELECT:0) | C2N_ENABLE;
+					paused = 0;
 					break;
                 case MENU_C2N_STATUS:
                     printf("Tape status = %b\n", PLAYBACK_STATUS);

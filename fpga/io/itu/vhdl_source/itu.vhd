@@ -8,13 +8,14 @@ use work.itu_pkg.all;
 
 entity itu is
 generic (
-    g_version	: unsigned(7 downto 0) := X"FE";
-    g_uart      : boolean := true;
-    g_frequency : integer := 50_000_000;
-    g_edge_init : std_logic_vector(7 downto 0) := "00000001";
-    g_edge_write: boolean := true;
-    g_baudrate  : integer := 115_200;
-    g_timer_rate: integer := 200_000 ); -- 5µs (should not result in more than 8 bits div)
+    g_version	    : unsigned(7 downto 0) := X"FE";
+    g_uart          : boolean := true;
+    g_frequency     : integer := 50_000_000;
+    g_edge_init     : std_logic_vector(7 downto 0) := "00000001";
+    g_capabilities  : std_logic_vector(31 downto 0) := X"5555AAAA";
+    g_edge_write    : boolean := true;
+    g_baudrate      : integer := 115_200;
+    g_timer_rate    : integer := 200_000 ); -- 5µs (should not result in more than 8 bits div)
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
@@ -143,6 +144,14 @@ begin
                     io_resp_it.data <= std_logic_vector(irq_timer_cnt(15 downto 8));
                 when c_itu_fpga_version =>
                 	io_resp_it.data <= std_logic_vector(g_version);
+                when c_itu_capabilities0 =>
+                    io_resp_it.data <= g_capabilities(31 downto 24);
+                when c_itu_capabilities1 =>
+                    io_resp_it.data <= g_capabilities(23 downto 16);
+                when c_itu_capabilities2 =>
+                    io_resp_it.data <= g_capabilities(15 downto 8);
+                when c_itu_capabilities3 =>
+                    io_resp_it.data <= g_capabilities( 7 downto 0);
                 when others =>
                     null;
                 end case;

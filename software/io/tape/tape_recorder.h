@@ -4,6 +4,7 @@
 #include "file_system.h"
 #include "event.h"
 #include "poll.h"
+#include "menu.h"
 
 #define RECORD_STATUS  *((volatile BYTE *)0x40C0000)
 #define RECORD_CONTROL *((volatile BYTE *)0x40C0000)
@@ -15,6 +16,8 @@
 #define REC_MODE_RISING  0x00
 #define REC_MODE_FALLING 0x10
 #define REC_MODE_BOTH    0x20
+#define REC_SELECT_READ  0x00
+#define REC_SELECT_WRITE 0x40
 
 #define REC_STAT_ENABLED    0x01
 #define REC_STAT_ERROR      0x02
@@ -23,22 +26,25 @@
 #define REC_STAT_STREAM_EN  0x40
 #define REC_STAT_BYTE_AV    0x80
 
-class TapeRecorder
+class TapeRecorder : public ObjectWithMenu
 {
 	File *file;
-	DWORD length;
-	int   block;
-    int   mode;
-
-	void write_block();
+	int   recording;
+    int   select;
+    int   block;
+    int   total_length;
+	void  write_block();
 public:
 	TapeRecorder();
 	~TapeRecorder();
+
+	int  fetch_task_items(IndexedList<PathObject*> &item_list);
 	
+    void flush();
 	void stop();
 	void start();
 	void poll(Event &);
-	void set_file(File *, DWORD, int);
+	bool request_file();
 };
 
-extern TapeController *tape_controller;
+extern TapeRecorder *tape_recorder;

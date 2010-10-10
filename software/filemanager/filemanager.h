@@ -10,6 +10,9 @@
 
 void poll_filemanager(Event &e);
 
+void set_extension(char *buffer, char *ext, int buf_size);
+void fix_filename(char *buffer);
+
 class FileManager : public PathObject
 {
 	IndexedList<File *>open_file_list;
@@ -31,6 +34,8 @@ public:
 	
     File *fopen(char *filename, BYTE flags);
     File *fopen(PathObject *obj, BYTE flags);
+    File *fcreate(char *filename, PathObject *dir);
+    
     void fclose(File *f);
 };
 

@@ -43,6 +43,8 @@ private:
     UIObject *ui_objects[MAX_UI_OBJECTS];
     
     void set_screen_title(void);
+    PathObject *current_path;
+    
 public:
     C64 *host;
     Keyboard *keyboard;
@@ -55,12 +57,18 @@ public:
     virtual void handle_event(Event &e);
     virtual int  popup(char *msg, BYTE flags); // blocking
     virtual int  string_box(char *msg, char *buffer, int maxlen); // blocking
-
+    
+    // interface to find the current path from any object, they can ask the user interface
+    // This is intended for menu options that do not pass the path object.
+    void set_path(PathObject *po) { current_path = po; /*printf("Set current path to %s\n", po->get_name());*/  }
+    PathObject *get_path(void)    { return current_path; }
+    // end workaround
+    
     void init(C64 *h, Keyboard *k);
     void set_screen(Screen *s); /* Only used in updater */
     int  activate_uiobject(UIObject *obj);
         
-    UIObject *get_current_ui_object(void) { return ui_objects[focus]; }
+//    UIObject *get_current_ui_object(void) { return ui_objects[focus]; }
     UIObject *get_root_object(void) { return ui_objects[0]; }
 };
 

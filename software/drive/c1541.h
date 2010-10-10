@@ -51,7 +51,7 @@ typedef enum { e_no_disk,
 #define DRVSTAT_MOTOR   0x01
 #define DRVSTAT_WRITING 0x02
 
-class C1541
+class C1541 : public ObjectWithMenu
 {
     volatile BYTE *memory_map;
     volatile BYTE *registers;
@@ -72,7 +72,7 @@ public:
     ~C1541();
     
 	void init(void);
-    void create_menu_items(void);
+    int  fetch_task_items(IndexedList<PathObject*> &item_list);
 
     void drive_power(bool on);
     void drive_reset(void);

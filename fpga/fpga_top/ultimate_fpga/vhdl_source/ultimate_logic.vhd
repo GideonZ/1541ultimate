@@ -32,7 +32,6 @@ generic (
 port (
     -- globals
     sys_clock   : in    std_logic;
-    sys_shifted : in    std_logic;
     sys_reset   : in    std_logic;
 
     ulpi_clock  : in    std_logic;
@@ -63,17 +62,10 @@ port (
     NMIn        : inout std_logic;
     
     -- local bus side
-    LB_ADDR     : out   std_logic_vector(14 downto 0); -- DRAM A
-    LB_DATA     : inout std_logic_vector(7 downto 0);
+    mem_inhibit : out   std_logic;
+    mem_req     : out   t_mem_req;
+    mem_resp    : in    t_mem_resp;
     
-    SDRAM_CSn   : out   std_logic;
-    SDRAM_RASn  : out   std_logic;
-    SDRAM_CASn  : out   std_logic;
-    SDRAM_WEn   : out   std_logic;
-    SDRAM_DQM   : out   std_logic;
-	SDRAM_CKE	: out   std_logic;
-	SDRAM_CLK	: out   std_logic;
-	 
     -- PWM outputs (for audio)
     PWM_OUT     : out   std_logic_vector(1 downto 0) := "11";
 
@@ -123,7 +115,7 @@ port (
     CAS_MOTOR   : in    std_logic := '0';
     CAS_SENSE   : inout std_logic := 'Z';
     CAS_READ    : inout std_logic := 'Z';
-    CAS_WRITE   : in    std_logic := '0';
+    CAS_WRITE   : inout std_logic := 'Z';
     
     -- Buttons
     button      : in  std_logic_vector(2 downto 0);
@@ -137,6 +129,39 @@ end ultimate_logic;
 
 architecture logic of ultimate_logic is
 
+    function to_std(b : boolean) return std_logic is
+    begin
+        if b then
+            return '1';
+        end if;
+        return '0';
+    end function;
+    
+    impure function create_capabilities return std_logic_vector is
+        variable cap : std_logic_vector(31 downto 0) := (others => '0');
+    begin
+        cap(00) := to_std(g_uart);
+        cap(01) := to_std(g_drive_1541);
+        cap(02) := to_std(g_drive_1541_2);
+        cap(03) := to_std(g_drive_sound);
+        cap(04) := to_std(g_hardware_gcr);
+        cap(05) := to_std(g_hardware_iec);
+        cap(06) := to_std(g_iec_prog_tim);
+        cap(07) := to_std(g_c2n_streamer);
+        cap(08) := to_std(g_c2n_recorder);
+        cap(09) := to_std(g_cartridge);
+        cap(10) := to_std(g_ram_expansion);
+        cap(11) := to_std(g_usb_host);
+        cap(12) := to_std(g_rtc_chip);
+        cap(13) := to_std(g_rtc_timer);
+        cap(14) := to_std(g_spi_flash);
+
+        cap(31) := to_std(g_simulation);
+        return cap;
+    end function;
+
+    constant c_capabilities      : std_logic_vector(31 downto 0) := create_capabilities;
+
     constant c_tag_1541_cpu_1    : std_logic_vector(7 downto 0) := X"01";
     constant c_tag_1541_floppy_1 : std_logic_vector(7 downto 0) := X"02";
     constant c_tag_1541_audio_1  : std_logic_vector(7 downto 0) := X"03";
@@ -148,7 +173,6 @@ architecture logic of ultimate_logic is
     constant c_tag_reu           : std_logic_vector(7 downto 0) := X"09";
 
 	-- Memory interface
-    signal memctrl_inhibit  : std_logic;
     signal mem_req_cpu      : t_mem_req := c_mem_req_init;
     signal mem_resp_cpu     : t_mem_resp;
     signal mem_req_1541     : t_mem_req := c_mem_req_init;
@@ -157,8 +181,6 @@ architecture logic of ultimate_logic is
     signal mem_resp_1541_2  : t_mem_resp;
     signal mem_req_cart     : t_mem_req := c_mem_req_init;
     signal mem_resp_cart    : t_mem_resp;
-    signal mem_req          : t_mem_req := c_mem_req_init;
-    signal mem_resp         : t_mem_resp;
     
     -- IO Bus
     signal cpu_io_req       : t_io_req;
@@ -195,6 +217,8 @@ architecture logic of ultimate_logic is
     signal io_resp_c2n_rec  : t_io_resp := c_io_resp_init;
     signal io_req_icap      : t_io_req;
     signal io_resp_icap     : t_io_resp := c_io_resp_init;
+    signal io_req_aud_sel   : t_io_req;
+    signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
     
     -- Audio routing
     signal pwm              : std_logic;
@@ -225,7 +249,8 @@ architecture logic of ultimate_logic is
     signal c64_stopped		: std_logic;
     signal c2n_sense        : std_logic := '0';
     signal c2n_sense_in     : std_logic := '0';
-    signal c2n_out			: std_logic := 'Z';
+    signal c2n_out_r		: std_logic := '1';
+    signal c2n_out_w		: std_logic := '1';
 	signal sd_busy			: std_logic;
 	signal usb_busy			: std_logic;
 	signal sd_act_stretched : std_logic;
@@ -233,6 +258,7 @@ architecture logic of ultimate_logic is
 	signal act_led_n		: std_logic := '1';
 	signal motor_led_n		: std_logic := '1';
 	signal cart_led_n		: std_logic := '1';
+	signal c2n_pull_sense   : std_logic := '0';
 begin
 
     i_cpu: entity work.cpu_wrapper_zpu
@@ -275,13 +301,14 @@ begin
 
     i_itu: entity work.itu
     generic map (
-		g_version	 => g_version,
-        g_uart       => g_uart,
-        g_frequency  => g_clock_freq,
-        g_edge_init  => "00000001",
-        g_edge_write => false,
-        g_baudrate   => g_baud_rate,
-        g_timer_rate => g_timer_rate)
+		g_version	    => g_version,
+        g_capabilities  => c_capabilities,
+        g_uart          => g_uart,
+        g_frequency     => g_clock_freq,
+        g_edge_init     => "00000001",
+        g_edge_write    => false,
+        g_baudrate      => g_baud_rate,
+        g_timer_rate    => g_timer_rate)
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
@@ -463,7 +490,7 @@ begin
             phi2_tick       => phi2_tick,
 
             -- master on memory bus
-            memctrl_inhibit => memctrl_inhibit,
+            memctrl_inhibit => mem_inhibit,
             mem_req         => mem_req_cart,
             mem_resp        => mem_resp_cart,
             
@@ -505,7 +532,7 @@ begin
     generic map (
         g_range_lo  => 8,
         g_range_hi  => 10,
-        g_ports     => 7 )
+        g_ports     => 8 )
     port map (
         clock    => sys_clock,
         
@@ -519,6 +546,7 @@ begin
         reqs(4)  => io_req_rtc_tmr, -- 4060400
         reqs(5)  => io_req_gcr_dec, -- 4060500
         reqs(6)  => io_req_icap,    -- 4060600
+        reqs(7)  => io_req_aud_sel, -- 4060700
         
         resps(0) => io_resp_sd,
         resps(1) => io_resp_rtc,
@@ -526,7 +554,8 @@ begin
         resps(3) => io_resp_iec,
         resps(4) => io_resp_rtc_tmr,
         resps(5) => io_resp_gcr_dec,
-        resps(6) => io_resp_icap );
+        resps(6) => io_resp_icap,
+        resps(7) => io_resp_aud_sel );
 
 
     r_usb: if g_usb_host generate
@@ -683,7 +712,8 @@ begin
             phi2_tick       => phi2_tick,
             c2n_sense       => c2n_sense,
             c2n_motor       => CAS_MOTOR,
-            c2n_out         => c2n_out );
+            c2n_out_r       => c2n_out_r,
+            c2n_out_w       => c2n_out_w );
     end generate;
     
     r_c2n_rec: if g_c2n_recorder generate
@@ -697,7 +727,9 @@ begin
 
 			c64_stopped		=> c64_stopped,
             phi2_tick       => phi2_tick,
-            c2n_sense       => c2n_sense,
+
+            pull_sense      => c2n_pull_sense,
+            c2n_sense       => c2n_sense_in,
             c2n_motor       => CAS_MOTOR,
             c2n_write       => CAS_WRITE,
             c2n_read        => CAS_READ );
@@ -712,8 +744,9 @@ begin
         io_resp         => io_resp_icap );
 
 
-	CAS_SENSE <= '0' when c2n_sense='1' else 'Z';
-	CAS_READ  <= c2n_out;
+	CAS_SENSE <= '0' when (c2n_sense='1') or (c2n_pull_sense='1') else 'Z';
+	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';
+	CAS_WRITE <= '0' when c2n_out_w='0' else 'Z';
     c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
 	
     i_mem_arb: entity work.mem_bus_arbiter_pri
@@ -736,40 +769,28 @@ begin
         
         req         => mem_req,
         resp        => mem_resp );        
-    
 
-	i_memctrl: entity work.ext_mem_ctrl_v4
-    generic map (
-        g_simulation => g_simulation,
-    	A_Width	     => 15 )
-		
+
+    i_aud_select: entity work.audio_select
     port map (
-        clock       => sys_clock,
-        clk_shifted => sys_shifted,
-        reset       => sys_reset,
-
-        inhibit     => memctrl_inhibit,
-        is_idle     => open, --memctrl_idle,
+        clock           => sys_clock,
+        reset           => sys_reset,
         
-        req         => mem_req,
-        resp        => mem_resp,
+        req             => io_req_aud_sel,
+        resp            => io_resp_aud_sel,
         
-		SDRAM_CSn   => SDRAM_CSn,	
-	    SDRAM_RASn  => SDRAM_RASn,
-	    SDRAM_CASn  => SDRAM_CASn,
-	    SDRAM_WEn   => SDRAM_WEn,
-		SDRAM_CKE	=> SDRAM_CKE,
-		SDRAM_CLK	=> SDRAM_CLK,
-
-        MEM_A       => LB_ADDR,
-        MEM_D       => LB_DATA );
+        drive0          => pwm,
+        drive1          => pwm_2,
+        cas_read        => CAS_READ,
+        cas_write       => CAS_WRITE,
+        
+        pwm_out         => PWM_OUT );
 
     IEC_ATN    <= '0' when atn_o='0'  or atn_o_2='0'  or iec_atn_o='0'  else 'Z'; -- open drain
     IEC_CLOCK  <= '0' when clk_o='0'  or clk_o_2='0'  or iec_clk_o='0'  else 'Z'; -- open drain
     IEC_DATA   <= '0' when data_o='0' or data_o_2='0' or iec_data_o='0' else 'Z'; -- open drain
     IEC_SRQ_IN <= '0' when               iec_srq_o='0'  else 'Z'; -- open drain
     
-	PWM_OUT     <= pwm_2 & pwm;
 	DISK_ACTn   <= act_led_n xor error;
 	MOTOR_LEDn  <= motor_led_n xor error;
     CART_LEDn   <= cart_led_n xor error;
@@ -782,8 +803,6 @@ begin
     filt5: entity work.spike_filter port map(sys_clock, IRQn, c64_irq_n);
     c64_irq <= not c64_irq_n;
 
-    -- tie offs
-    SDRAM_DQM  <= '0';
     -- dummy
     SD_DATA     <= "ZZ"; 
 end logic;

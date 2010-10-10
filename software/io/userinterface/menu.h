@@ -27,20 +27,30 @@ public:
     }
 };
 
-class MenuItemGlobal : public MenuItem
+class ObjectMenuItem : public MenuItem
 {
 	void *obj;
 public:
-	MenuItemGlobal(void *o, char *n, int f) : MenuItem(NULL, n, f), obj(o) {
+	ObjectMenuItem(void *o, char *n, int f) : MenuItem(NULL, n, f), obj(o) {
 		attach();
 	}
-	~MenuItemGlobal() { }
+	~ObjectMenuItem() { }
 
 	void execute(int dummy) {
 		push_event(e_object_private_cmd, obj, function);
 	}
 };
 
-extern IndexedList<PathObject*> main_menu_static_items;
+
+class ObjectWithMenu
+{
+public:
+	ObjectWithMenu() {}
+	~ObjectWithMenu() {}
+
+    virtual int fetch_task_items(IndexedList<PathObject*> &item_list) { }
+};
+
+extern IndexedList<ObjectWithMenu*> main_menu_objects;
 
 #endif /* MENU_H_ */

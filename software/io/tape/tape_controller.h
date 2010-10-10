@@ -4,6 +4,7 @@
 #include "file_system.h"
 #include "event.h"
 #include "poll.h"
+#include "menu.h"
 
 #define PLAYBACK_STATUS  *((volatile BYTE *)0x40A0000)
 #define PLAYBACK_CONTROL *((volatile BYTE *)0x40A0000)
@@ -21,17 +22,20 @@
 #define C2N_STAT_STREAM_EN  0x40
 #define C2N_STAT_FIFO_EMPTY 0x80
 
-class TapeController
+class TapeController : public ObjectWithMenu
 {
 	File *file;
 	DWORD length;
 	int   block;
     int   mode;
-
+	int   paused;
+	
 	void read_block();
 public:
 	TapeController();
 	~TapeController();
+	
+	int  fetch_task_items(IndexedList<PathObject*> &item_list);
 	
 	void stop();
 	void start();

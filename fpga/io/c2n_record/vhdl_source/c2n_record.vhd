@@ -18,6 +18,7 @@ port (
     phi2_tick       : in  std_logic;
     c64_stopped		: in  std_logic;
     
+    pull_sense      : out std_logic;
     c2n_motor       : in  std_logic;
     c2n_sense       : in  std_logic;
     c2n_read        : in  std_logic;
@@ -29,6 +30,7 @@ architecture gideon of c2n_record is
     signal stream_en        : std_logic;
     signal mode             : std_logic_vector(1 downto 0);
     signal sel              : std_logic;
+    signal read_s           : std_logic;
     signal read_c           : std_logic;
     signal read_d           : std_logic;
     signal read_event       : std_logic;
@@ -57,6 +59,10 @@ architecture gideon of c2n_record is
     attribute register_duplication of read_c : signal is "no";
     
 begin
+    pull_sense <= sel and enabled;
+    
+    filt: entity work.spike_filter generic map (10) port map(clock, read_s, read_c);
+
     process(clock)
         variable v_diff : unsigned(10 downto 0);
     begin
@@ -69,7 +75,7 @@ begin
             -- signal capture
             stream_en <= c2n_sense and enabled and c2n_motor;
 
-            read_c <= (c2n_read and not sel) or (c2n_write and sel);
+            read_s <= (c2n_read and not sel) or (c2n_write and sel);
             read_d <= read_c;
             case mode is
                 when "00" =>

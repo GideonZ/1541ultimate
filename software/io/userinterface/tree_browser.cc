@@ -292,6 +292,7 @@ void TreeBrowserState :: into(void)
 		selected->children[i]->attach(true);
 	}
 	deeper = new TreeBrowserState(selected, browser, level+1);
+    user_interface->set_path(selected);
     browser->state = deeper;
     deeper->previous = this;
 }
@@ -307,6 +308,7 @@ void TreeBrowserState :: level_up(void)
 	}
 	previous->selected->cleanup_children();
     browser->state = previous;
+    user_interface->set_path(previous->node);
     previous->refresh = true;
     previous = NULL; // unlink;
     delete this;

@@ -15,9 +15,11 @@
 #include "path.h"
 #include "rtc.h"
 #include "tape_controller.h"
+#include "tape_recorder.h"
 #include "stream.h"
 #include "ui_stream.h"
 #include "stream_menu.h"
+#include "audio_select.h"
 
 // these should move to main_loop.h
 void main_loop(void);
@@ -71,22 +73,19 @@ void poll_c64(Event &e)
 int main()
 {
 	char time_buffer[32];
-	printf("*** 1541 Ultimate V2.0 ***\n\n");
-
+	printf("*** 1541 Ultimate V2.0 ***\n");
+    printf("*** FPGA Capabilities: %8x ***\n\n", ITU_CAPABILITIES);
+    
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
 	printf("%s\n", rtc.get_time_string(time_buffer, 32));
 
     Stream my_stream;
     UserInterfaceStream *stream_interface;
     
-//    my_stream.format("Joehoe! %b en %d\n", ITU_FPGA_VERSION, -1);
-//    strcpy(time_buffer, "Change me");
-//    while(my_stream.getstr(time_buffer, 30) < 0);
-    
 	tape_controller = new TapeController;
+	tape_recorder   = new TapeRecorder;
 
     c1541 = new C1541(C1541_IO_LOC_DRIVE_1);
-
     c64   = new C64;
 
  	// start the file system, scan the sd-card etc..
@@ -121,6 +120,10 @@ int main()
 	
     printf("All linked modules have been initialized.\n");
     printf("Starting main loop...\n");
+
+//    AUDIO_SELECT_LEFT  = SOUND_CAS_READ;
+//    AUDIO_SELECT_RIGHT = SOUND_CAS_READ;
+
     main_loop();
 
     if(root_tree_browser)
@@ -131,6 +134,7 @@ int main()
     delete c64;
     delete c1541;
 	delete tape_controller;
+	delete tape_recorder;
 
     //printf("Cleaned up main components.. now.. what's left??\n");
     //root.dump();

@@ -70,7 +70,7 @@ C1541 :: C1541(volatile BYTE *regs)
 	    printf("C1541 Audio address: %p, loading... \n", audio_address);
 	    flash->read_image(FLASH_ID_SOUNDS, audio_address, 0x4800);
 	}    
-    create_menu_items();
+	main_menu_objects.append(this);
 
     gcr_image = new GcrImage();
     bin_image = new BinImage();
@@ -82,6 +82,8 @@ C1541 :: ~C1541()
 		delete gcr_image;
 	if(bin_image)
 		delete bin_image;
+
+	main_menu_objects.remove(this);
 
 	if(mount_file)
 		root.fclose(mount_file);
@@ -107,10 +109,16 @@ void C1541 :: init(void)
     drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
 }
 
-void C1541 :: create_menu_items(void)
+int  C1541 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
-	main_menu_static_items.append(new MenuItemGlobal(this, "Reset 1541 Drive", MENU_1541_RESET));
-	main_menu_static_items.append(new MenuItemGlobal(this, "Remove 1541 Disk", MENU_1541_REMOVE));
+	int items = 1;
+	item_list.append(new ObjectMenuItem(this, "Reset 1541 Drive", MENU_1541_RESET));
+
+	if(disk_state != e_no_disk) {
+		item_list.append(new ObjectMenuItem(this, "Remove 1541 Disk", MENU_1541_REMOVE));
+		items++;
+	}
+	return items;
 }
 
 void C1541 :: drive_power(bool on)
