@@ -126,9 +126,11 @@ int FileDirEntry :: fetch_context_items_actual(IndexedList<PathObject *> &list)
 	    list.append(new MenuItem(this, "Delete", FILEDIR_DELETE));
 		count+=2;
 	}
+/*
     list.append(new MenuItem(this, "Dump FileInfo", MENU_DUMP_INFO));
     list.append(new MenuItem(this, "Dump PathObject", MENU_DUMP_OBJECT));
     count += 2;
+*/
     
 	return count;
 }
@@ -137,8 +139,10 @@ int FileDirEntry :: fetch_task_items(IndexedList<PathObject*> &list)
 {
     list.append(new MenuItem(this, "Create D64", MENU_CREATE_D64));
     list.append(new MenuItem(this, "Create Directory", MENU_CREATE_DIR));
+/*
     list.append(new MenuItem(this, "Dump FileInfo", MENU_DUMP_INFO));
     list.append(new MenuItem(this, "Dump PathObject", MENU_DUMP_OBJECT));
+*/
     return 4;
 }
 
