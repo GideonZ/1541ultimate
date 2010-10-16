@@ -46,9 +46,6 @@ struct t_cfg_definition c1541_config[] = {
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-#define MENU_1541_RESET  0x1501
-#define MENU_1541_REMOVE 0x1502
-
 //--------------------------------------------------------------
 // C1541 Drive Class
 //--------------------------------------------------------------
@@ -59,7 +56,11 @@ C1541 :: C1541(volatile BYTE *regs)
     mount_file = NULL;
 	flash = get_flash();
 
-    cfg = config_manager.register_store((DWORD)regs, "1541 Drive Settings", c1541_config);
+    if(regs == C1541_IO_LOC_DRIVE_1) {
+        cfg = config_manager.register_store((DWORD)regs, "1541 Drive A Settings", c1541_config);
+    } else {
+        cfg = config_manager.register_store((DWORD)regs, "1541 Drive B Settings", c1541_config);
+    }        
 
     DWORD mem_address = ((DWORD)registers[C1541_MEM_ADDR]) << 16;
     memory_map = (volatile BYTE *)mem_address;
@@ -112,10 +113,10 @@ void C1541 :: init(void)
 int  C1541 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
 	int items = 1;
-	item_list.append(new ObjectMenuItem(this, "Reset 1541 Drive", MENU_1541_RESET));
+	item_list.append(new DriveMenuItem(this, "Reset 1541 Drive", MENU_1541_RESET));
 
 	if(disk_state != e_no_disk) {
-		item_list.append(new ObjectMenuItem(this, "Remove 1541 Disk", MENU_1541_REMOVE));
+		item_list.append(new DriveMenuItem(this, "Remove 1541 Disk", MENU_1541_REMOVE));
 		items++;
 	}
 	return items;
@@ -324,28 +325,43 @@ void C1541 :: poll(Event &e)
 	static int skipped=0;
 	bool protect;
 	File *f;
-
+    t_drive_command *drive_command;
 	switch(e.type) {
-	case e_mount_drv1:
-		f = (File *)e.object;
-		protect = (bool)e.param;
-		mount_d64(protect, f);
-		break;
-	case e_mount_drv1_gcr:
-		f = (File *)e.object;
-		protect = (bool)e.param;
-		mount_g64(protect, f);
-		break;
-	case e_unlink_drv1:
-		disk_state = e_disk_file_closed;
-		if(mount_file) {
-			root.fclose(mount_file);
-			mount_file = NULL;
-		}
-		break;
+//	case e_mount_drv1:
+//		f = (File *)e.object;
+//		protect = (bool)e.param;
+//		mount_d64(protect, f);
+//		break;
+//	case e_mount_drv1_gcr:
+//		f = (File *)e.object;
+//		protect = (bool)e.param;
+//		mount_g64(protect, f);
+//		break;
+//	case e_unlink_drv1:
+//		disk_state = e_disk_file_closed;
+//		if(mount_file) {
+//			root.fclose(mount_file);
+//			mount_file = NULL;
+//		}
+//		break;
 	case e_object_private_cmd:
 		if(e.object == this) {
-			switch(e.param) {
+            drive_command = (t_drive_command *)e.param;
+//			switch(e.param) {
+            switch(drive_command->command) {
+        	case MENU_1541_MOUNT:
+        		mount_d64(drive_command->protect, drive_command->file);
+        		break;
+        	case MENU_1541_MOUNT_GCR:
+        		mount_g64(drive_command->protect, drive_command->file);
+        		break;
+        	case MENU_1541_UNLINK:
+        		disk_state = e_disk_file_closed;
+        		if(mount_file) {
+        			root.fclose(mount_file);
+        			mount_file = NULL;
+        		}
+        		break;
 			case MENU_1541_RESET:
 			    set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
 			    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
@@ -360,6 +376,7 @@ void C1541 :: poll(Event &e)
 			default:
 				printf("Unhandled menu item for C1541.\n");
 			}
+			delete drive_command; // cleanup
 		}
 		break;
 	default:

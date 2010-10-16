@@ -36,7 +36,7 @@ public:
 	}
 	~ObjectMenuItem() { }
 
-	void execute(int dummy) {
+	virtual void execute(int dummy) {
 		push_event(e_object_private_cmd, obj, function);
 	}
 };

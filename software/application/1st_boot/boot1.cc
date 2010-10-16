@@ -7,6 +7,7 @@ extern "C" {
 
 #define BOOT2_RUN_ADDR 0x10000
 #define APPL_RUN_ADDR  0x20000
+#define APPL_RUN_MK1   0x28000
 
 void (*function)();
 
@@ -20,6 +21,10 @@ void jump_run(DWORD a)
 
 int main(int argc, char **argv)
 {
+    // are we running on MK1 hardware?
+    if (!(CAPABILITIES & CAPAB_SPI_FLASH))
+        jump_run(APPL_RUN_MK1);
+
 	Flash *flash = get_flash();
 	t_flash_address image_addr;
 		

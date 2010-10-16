@@ -4,6 +4,7 @@ ZPU_TOOLCHAIN ?= /cygdrive/d/Proj/zpu/git/toolchain
 #TOOLCHAIN = /home/gideon/Proj/zpu/toolchain/toolchain
 BIN2HEX = $(TOOLS)/bin2hex
 HEX2BIN = $(TOOLS)/hex2bin
+MAKEAPPL = $(TOOLS)/makeappl
 TASS = $(TOOLS)/64tass/64tass
 
 BOOT = ../2nd_boot
@@ -14,6 +15,7 @@ CROSS     = zpu-elf
 
 # External inputs
 ROMS = ../../../roms
+BOOT_250_BIN = ../1st_boot/result/1st_boot_250.bin
 
 # Outputs
 RESULT = ./result
@@ -60,6 +62,7 @@ SRCS_CC	 =  stream.cc \
 			memory.cc \
 			flash.cc \
 			at45_flash.cc \
+			at49_flash.cc \
 			w25q_flash.cc \
 			config.cc \
 			event.cc \
@@ -145,7 +148,7 @@ OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
 ALL_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
 
 
-.PHONY: hex clean all dep
+.PHONY: hex clean all dep appl
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
 #	$(MAKE) -C ../1st_boot
@@ -216,3 +219,6 @@ hex: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
 	@$(BIN2HEX) -o 0x000000 $(RESULT)/flash_400.bin $(RESULT)/flash_400.mcs
 	@rm $(OUTPUT)/_flash.mcs
 	@echo Done!
+
+appl: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(BOOT_250_BIN)
+	@$(MAKEAPPL) $(RESULT)/appl.bin $(BOOT_250_BIN) 0 $(RESULT)/$(PRJ).bin 30000

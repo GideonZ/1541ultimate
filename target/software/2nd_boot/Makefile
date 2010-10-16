@@ -52,6 +52,7 @@ SRCS_CC	 =  blockdev.cc \
 			ccsbcs.cc \
 			flash.cc \
 			at45_flash.cc \
+			at49_flash.cc \
 			w25q_flash.cc \
 			sd_card.cc \
 			sdio.cc \

@@ -1,24 +1,28 @@
 #include "filetype_d64.h"
 #include "directory.h"
-#include "c1541.h"
 #include "filemanager.h"
+#include "menu.h"
+#include "c1541.h"
 
 extern "C" {
     #include "dump_hex.h"
 }
 
-/* Drives to mount on */
-extern C1541 *c1541;
-
 // tester instance
 FileTypeD64 tester(file_type_factory);
+
+extern C1541 *c1541_A;
+extern C1541 *c1541_B;
 
 /*********************************************************************/
 /* D64/D71/D81 File Browser Handling                                 */
 /*********************************************************************/
-#define D64FILE_MOUNT    0x2101
-#define D64FILE_MOUNT_RO 0x2102
-#define D64FILE_MOUNT_UL 0x2103
+#define D64FILE_MOUNT      0x2101
+#define D64FILE_MOUNT_RO   0x2102
+#define D64FILE_MOUNT_UL   0x2103
+#define D64FILE_MOUNT_B    0x2111
+#define D64FILE_MOUNT_RO_B 0x2112
+#define D64FILE_MOUNT_UL_B 0x2113
 
 FileTypeD64 :: FileTypeD64(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
 {
@@ -71,11 +75,22 @@ int FileTypeD64 :: fetch_children()
 
 int FileTypeD64 :: fetch_context_items(IndexedList<PathObject *> &list)
 {
-    list.append(new MenuItem(this, "Mount Disk", D64FILE_MOUNT));
-    list.append(new MenuItem(this, "Mount Disk Read Only", D64FILE_MOUNT_RO));
-    list.append(new MenuItem(this, "Mount Disk Unlinked", D64FILE_MOUNT_UL));
+    int count = 0;
+    if(CAPABILITIES & CAPAB_DRIVE_1541_1) {
+        list.append(new MenuItem(this, "Mount Disk", D64FILE_MOUNT));
+        list.append(new MenuItem(this, "Mount Disk Read Only", D64FILE_MOUNT_RO));
+        list.append(new MenuItem(this, "Mount Disk Unlinked", D64FILE_MOUNT_UL));
+        count += 3;
+    }
+    
+    if(CAPABILITIES & CAPAB_DRIVE_1541_2) {
+        list.append(new MenuItem(this, "Mount Disk on Drive B", D64FILE_MOUNT_B));
+        list.append(new MenuItem(this, "Mount Disk R/O on Dr.B", D64FILE_MOUNT_RO_B));
+        list.append(new MenuItem(this, "Mount Disk Unlnkd Dr.B", D64FILE_MOUNT_UL_B));
+        count += 3;
+    }
 
-    return 3 + FileDirEntry :: fetch_context_items_actual(list);
+    return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
 FileDirEntry *FileTypeD64 :: test_type(PathObject *obj)
@@ -95,17 +110,21 @@ void FileTypeD64 :: execute(int selection)
     bool protect;
     File *file;
     BYTE flags;
-
+    t_drive_command *drive_command;
+    
 	switch(selection) {
 	case D64FILE_MOUNT_UL:
+	case D64FILE_MOUNT_UL_B:
 		protect = false;
 		flags = FA_READ;
 		break;
 	case D64FILE_MOUNT_RO:
+	case D64FILE_MOUNT_RO_B:
 		protect = true;
 		flags = FA_READ;
 		break;
 	case D64FILE_MOUNT:
+	case D64FILE_MOUNT_B:
         protect = (info->attrib & AM_RDO);
         flags = (protect)?FA_READ:(FA_READ | FA_WRITE);
 	default:
@@ -118,12 +137,44 @@ void FileTypeD64 :: execute(int selection)
 	case D64FILE_MOUNT_UL:
 		printf("Mounting disk.. %s\n", get_name());
 		file = root.fopen(this, flags);
-//		file = info->fs->file_open(info, flags);
 		if(file) {
             push_event(e_unfreeze);
-			push_event(e_mount_drv1, file, protect);
+            drive_command = new t_drive_command;
+            drive_command->file = file;
+            drive_command->protect = protect;
+            drive_command->command = MENU_1541_MOUNT;
+//			push_event(e_mount_drv1, file, protect);
+			push_event(e_object_private_cmd, c1541_A, (int)drive_command);
+
 			if(selection != D64FILE_MOUNT) {
-				push_event(e_unlink_drv1);
+                drive_command = new t_drive_command;
+                drive_command->command = MENU_1541_UNLINK;
+//				push_event(e_unlink_drv1);
+    			push_event(e_object_private_cmd, c1541_A, (int)drive_command);
+			}
+		} else {
+			printf("Error opening file.\n");
+		}
+		break;
+	case D64FILE_MOUNT_B:
+	case D64FILE_MOUNT_RO_B:
+	case D64FILE_MOUNT_UL_B:
+		printf("Mounting disk.. %s\n", get_name());
+		file = root.fopen(this, flags);
+		if(file) {
+            push_event(e_unfreeze);
+            drive_command = new t_drive_command;
+            drive_command->file = file;
+            drive_command->protect = protect;
+            drive_command->command = MENU_1541_MOUNT;
+//			push_event(e_mount_drv1, file, protect);
+			push_event(e_object_private_cmd, c1541_B, (int)drive_command);
+
+			if(selection != D64FILE_MOUNT) {
+                drive_command = new t_drive_command;
+                drive_command->command = MENU_1541_UNLINK;
+//				push_event(e_unlink_drv1);
+    			push_event(e_object_private_cmd, c1541_B, (int)drive_command);
 			}
 		} else {
 			printf("Error opening file.\n");

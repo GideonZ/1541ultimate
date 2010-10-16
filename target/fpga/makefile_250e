@@ -57,7 +57,7 @@ XST_OPTIONS		:= -top $(TOP_NAME) \
 MY_PROMGEN := ../../tools/promgen
 
 #SETTING FILES		    
-UCF_FILES := ./ucf/sd_cartridge_v3a.ucf	# constraint/pin-assignment file(s)
+UCF_FILES := ./ucf/sd_cartridge_v3.ucf	# constraint/pin-assignment file(s)
 BMM_FILE  := ./ucf/sd_ram4.bmm			# bmm file location
 
 # TOOL FLAGS
@@ -86,6 +86,7 @@ BITGEN_FLAGS     := 	-w -d \
 
 SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/dma_bus_pkg.vhd \
@@ -99,13 +100,14 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd \
 				vhdl,work,../../fpga/ip/memory/vhdl_source/dpram.vhd \
 				vhdl,work,../../fpga/ip/clock/vhdl_source/real_time_clock.vhd \
+				vhdl,work,../../fpga/io/audio_select/vhdl_source/audio_select.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/tx.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/rx.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd \
 				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd \
 				vhdl,work,../../fpga/io/spi/vhdl_source/spi.vhd \
 				vhdl,work,../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd \
-				vhdl,work,../../fpga/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4.vhd \
+				vhdl,work,../../fpga/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4_u1.vhd \
 				vhdl,work,../../fpga/io/spike_filter/vhdl_source/spike_filter.vhd \
 				vhdl,work,../../fpga/io/usb/vhdl_source/usb_pkg.vhd \
 				vhdl,work,../../fpga/io/usb/vhdl_source/ulpi_bus.vhd \
@@ -122,6 +124,7 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/io/icap/vhdl_source/icap.vhd \
 				vhdl,work,../../fpga/io/iec_interface/vhdl_source/iec_interface_io.vhd \
 				vhdl,work,../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd \
+				vhdl,work,../../fpga/io/c2n_record/vhdl_source/c2n_record.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_defs.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_decode.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/shifter.vhd \
@@ -144,6 +147,7 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/drive_registers.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/c1541_drive.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/c1541_pkg.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/c1541_timing.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/gcr2bin.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/bin2gcr.vhd \
 				vhdl,work,../../fpga/1541/vhdl_source/gcr_codec.vhd \
@@ -167,6 +171,7 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/cart_slot/vhdl_source/reu_pkg.vhd \
 				vhdl,work,../../fpga/cart_slot/vhdl_source/reu.vhd \
 				vhdl,work,../../fpga/fpga_top/ultimate_fpga/vhdl_source/s3e_clockgen.vhd \
+				vhdl,work,../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic.vhd \
 				vhdl,work,../../fpga/fpga_top/ultimate_fpga/vhdl_source/$(TARGET).vhd
 
  ################################################################################

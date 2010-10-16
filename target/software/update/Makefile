@@ -63,6 +63,7 @@ SRCS_CC	 =  memory.cc \
 			main_loop.cc \
 			flash.cc \
 			at45_flash.cc \
+			at49_flash.cc \
 			w25q_flash.cc \
 			path.cc \
 			pattern.cc \

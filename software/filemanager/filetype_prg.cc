@@ -6,7 +6,7 @@
 #include <ctype.h>
 
 /* Drives to mount on */
-extern C1541 *c1541;
+extern C1541 *c1541_A;
 
 /* other external references */
 extern BYTE _binary_sidcrt_65_start;
@@ -93,6 +93,7 @@ void FileTypePRG :: execute(int selection)
 	printf("PRG Select: %4x\n", selection);
 	File *file, *d64;
 	FileInfo *inf;
+	t_drive_command *drive_command;
 	
 	switch(selection) {
 	case PRGFILE_RUN:
@@ -108,8 +109,13 @@ void FileTypePRG :: execute(int selection)
     			if(selection == PRGFILE_MOUNT_RUN) {
 					inf = parent->get_file_info();
 					d64 = root.fopen(parent, FA_READ);
-    				if(d64) // mount read only only if file is read only
-    					push_event(e_mount_drv1, d64, ((inf->attrib & AM_RDO) != 0));
+    				if(d64) { // mount read only only if file is read only
+                        drive_command = new t_drive_command;
+                        drive_command->command = MENU_1541_MOUNT;
+                        drive_command->protect = ((inf->attrib & AM_RDO) != 0);
+                        drive_command->file = d64;
+            			push_event(e_object_private_cmd, c1541_A, (int)drive_command);
+                    }
     				else
     					printf("Can't open D64 file..\n");
     			}

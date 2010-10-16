@@ -4,7 +4,6 @@ extern "C" {
 }
 #include "small_printf.h"
 #include "c64.h"
-#include "c1541.h"
 #include "flash.h"
 #include <string.h>
 #include "menu.h"
@@ -69,6 +68,7 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 #define CFG_C64_REU_SIZE 0xC4
 #define CFG_C64_ETH_EN   0xC5
 #define CFG_C64_SWAP_BTN 0xC6
+#define CFG_C64_DMA_ID   0xC7
 
 char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };    
 char *en_dis2[] = { "Disabled", "Enabled" };
@@ -79,6 +79,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",         "%s", NULL,       1, 31, (int)"cart.bin" },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",      "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                "%s", reu_size,   0,  7, 4 },
+    { CFG_C64_DMA_ID,   CFG_TYPE_VALUE,  "DMA Load Mimics ID:",     "%d", NULL,       8, 31, 8 },
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",            "%s", buttons,    0,  1, 1 },
 //    { CFG_C64_ETH_EN,   CFG_TYPE_ENUM,   "Ethernet CS8900A",        "%s", en_dis2,     0,  1, 0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
@@ -715,7 +716,7 @@ int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)
     printf("DMA load complete: $%4x-$%4x Run Code: %b\n", load_address, end_address, run_code);
 
 	C64_POKE(0x0162, run_code);  // handshake
-	C64_POKE(0x00BA, c1541->get_current_iec_address());    // fix drive number
+	C64_POKE(0x00BA, cfg->get_value(CFG_C64_DMA_ID));    // fix drive number
 
 	C64_POKE(0x002D, end_address);
 	C64_POKE(0x002E, end_address >> 8);

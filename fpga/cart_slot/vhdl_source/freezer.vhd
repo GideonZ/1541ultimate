@@ -12,6 +12,8 @@ port (
     cpu_cycle_done  : in  std_logic;
     cpu_write       : in  std_logic;
     
+    freezer_state   : out std_logic_vector(1 downto 0); -- debug
+
     unfreeze        : in  std_logic; -- could be software driven, or automatic, depending on cartridge
     freeze_trig     : out std_logic;
     freeze_act      : out std_logic );
@@ -82,4 +84,11 @@ begin
         end if;
     end process;
    
+    with state select freezer_state <=
+        "00" when idle,
+        "01" when triggered,
+        "10" when enter_freeze,
+        "11" when button,
+        "00" when others;
+
 end gideon;

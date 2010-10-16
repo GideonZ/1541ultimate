@@ -5,9 +5,11 @@ all:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/fpga -f makefile_700a
 	@$(MAKE) -C target/fpga -f makefile_400a
+	@$(MAKE) -C target/fpga -f makefile_250e
 	@$(MAKE) -C target/software/1st_boot
 	@$(MAKE) -C target/software/2nd_boot
 	@$(MAKE) -C target/software/ultimate hex
+	@$(MAKE) -C target/software/ultimate appl
 	@$(MAKE) -C target/software/update
 	@cp target/software/update/result/update.bin .
 	@cp target/software/ultimate/result/flash_700.mcs .

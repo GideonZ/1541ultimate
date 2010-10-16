@@ -25,7 +25,9 @@
 void main_loop(void);
 void send_nop(void);
 
-C1541 *c1541;
+C1541 *c1541_A;
+C1541 *c1541_B;
+
 UserInterface *user_interface;
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
@@ -62,7 +64,12 @@ struct t_cfg_definition old_items[] = {
 
 void poll_drive_1(Event &e)
 {
-	c1541->poll(e);
+	c1541_A->poll(e);
+}
+
+void poll_drive_2(Event &e)
+{
+	c1541_B->poll(e);
 }
 
 void poll_c64(Event &e)
@@ -82,11 +89,16 @@ int main()
     Stream my_stream;
     UserInterfaceStream *stream_interface;
     
-	tape_controller = new TapeController;
-	tape_recorder   = new TapeRecorder;
-
-    c1541 = new C1541(C1541_IO_LOC_DRIVE_1);
-    c64   = new C64;
+    if(ITU_CAPABILITIES & CAPAB_C2N_STREAMER)
+	    tape_controller = new TapeController;
+    if(ITU_CAPABILITIES & CAPAB_C2N_RECORDER)
+	    tape_recorder   = new TapeRecorder;
+    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_1)
+        c1541_A = new C1541(C1541_IO_LOC_DRIVE_1);
+    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_2)
+        c1541_B = new C1541(C1541_IO_LOC_DRIVE_2);
+    if(ITU_CAPABILITIES & CAPAB_CARTRIDGE)
+        c64     = new C64;
 
  	// start the file system, scan the sd-card etc..
 	send_nop();
@@ -114,9 +126,16 @@ int main()
         stream_interface->set_menu(root_menu); // root of all evil!
     }
 
-	// add the drive to the 'OS' (the event loop)
-    poll_list.append(&poll_drive_1);
-	c1541->init();
+	// add the drive(s) to the 'OS' (the event loop)
+    if(c1541_A) {
+        poll_list.append(&poll_drive_1);
+    	c1541_A->init();
+    }
+
+    if(c1541_B) {
+        poll_list.append(&poll_drive_2);
+    	c1541_B->init();
+    }
 	
     printf("All linked modules have been initialized.\n");
     printf("Starting main loop...\n");
@@ -130,11 +149,16 @@ int main()
         delete root_tree_browser;
     if(user_interface)
         delete user_interface;
-
-    delete c64;
-    delete c1541;
-	delete tape_controller;
-	delete tape_recorder;
+    if(c64)
+        delete c64;
+    if(c1541_A)
+        delete c1541_A;
+    if(c1541_B)
+        delete c1541_B;
+    if(tape_controller)
+	    delete tape_controller;
+    if(tape_recorder)
+	    delete tape_recorder;
 
     //printf("Cleaned up main components.. now.. what's left??\n");
     //root.dump();

@@ -13,17 +13,17 @@
  
 library ieee;
     use ieee.std_logic_1164.all;
-    use ieee.std_logic_arith.all;
-    use ieee.std_logic_unsigned.all;
+    use ieee.numeric_std.all;
 
 library unisim;
     use unisim.vcomponents.all;
 
+library work;
+    use work.mem_bus_pkg.all;
 
 entity ext_mem_ctrl_v4_u1 is
 generic (
     g_simulation       : boolean := false;
-    A_Width            : integer := 15;
 
 	SRAM_WR_ASU		   : integer := 0;
 	SRAM_WR_Pulse      : integer := 1; -- 2 cycles in total
@@ -66,8 +66,8 @@ port (
     MEM_A       : out   std_logic_vector(A_Width-1 downto 0);
     MEM_OEn     : out   std_logic;
     MEM_WEn     : out   std_logic;
-    MEM_D       : inout std_logic_vector(SRAM_Data_Width-1 downto 0) := (others => 'Z');
-    MEM_BEn     : out   std_logic_vector(SRAM_Byte_Lanes-1 downto 0) );
+    MEM_D       : inout std_logic_vector(7 downto 0) := (others => 'Z');
+    MEM_BEn     : out   std_logic );
 end ext_mem_ctrl_v4_u1;    
 
 -- ADDR: 25 24 23 22 21 20 19 ...
@@ -78,19 +78,19 @@ end ext_mem_ctrl_v4_u1;
 
 architecture Gideon of ext_mem_ctrl_v4_u1 is
     type t_init is record
-        addr    : std_logic_vector(15 downto 0);
+        addr    : std_logic_vector(23 downto 0);
         cmd     : std_logic_vector(2 downto 0);  -- we-cas-ras
     end record;
     type t_init_array is array(natural range <>) of t_init;
     constant c_init_array : t_init_array(0 to 7) := (
-        ( X"0400", "010" ), -- auto precharge
-        ( X"0220", "000" ), -- mode register, burstlen=1, writelen=1, CAS lat = 2
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ) );
+        ( X"000400", "010" ), -- auto precharge
+        ( X"000220", "000" ), -- mode register, burstlen=1, writelen=1, CAS lat = 2
+        ( X"000000", "001" ), -- auto refresh
+        ( X"000000", "001" ), -- auto refresh
+        ( X"000000", "001" ), -- auto refresh
+        ( X"000000", "001" ), -- auto refresh
+        ( X"000000", "001" ), -- auto refresh
+        ( X"000000", "001" ) );
 
     type t_state is (boot, init, idle, setup, pulse, hold, sd_cas, sd_wait, eth_pulse);
     signal boot_cnt       : integer range 0 to SDRAM_WakeupTime-1 := SDRAM_WakeupTime-1;
@@ -103,7 +103,7 @@ architecture Gideon of ext_mem_ctrl_v4_u1 is
     signal delay          : integer range 0 to 15;
     signal inhibit_d      : std_logic;
     signal rwn_i	      : std_logic;
-    signal tag		      : std_logic_vector(1 to tag_width);
+    signal tag		      : std_logic_vector(7 downto 0);
     signal memsel         : std_logic;
     signal mem_a_i        : std_logic_vector(MEM_A'range) := (others => '0');
     signal col_addr       : std_logic_vector(9 downto 0) := (others => '0');
@@ -113,7 +113,7 @@ architecture Gideon of ext_mem_ctrl_v4_u1 is
     signal reg_out        : integer range 0 to 3 := 0;     
     signal rdata_i        : std_logic_vector(7 downto 0) := (others => '0');
     signal refr_delay     : integer range 0 to 3;
-    
+    signal dack           : std_logic; -- for simulation handy to see
     attribute iob : string;
     attribute iob of rdata_i : signal is "true"; -- the general memctrl/rdata must be packed in IOB
 begin
@@ -142,12 +142,12 @@ begin
         procedure accept_req is
         begin
 			resp.rack      <= '1';
-			resp.rack_tag  <= req.req_tag;
-			tag		  <= req.req_tag;
-			rwn_i     <= req.readwriten;
-			mem_a_i   <= req.address(MEM_A'range);
-			sram_d_t  <= not req.readwriten;
-			sram_d_o  <= req.wdata;
+			resp.rack_tag  <= req.tag;
+			tag		  <= req.tag;
+			rwn_i     <= req.read_writen;
+			mem_a_i   <= std_logic_vector(req.address(MEM_A'range));
+			sram_d_t  <= not req.read_writen;
+			sram_d_o  <= req.data;
 			
 			SRAM_CSn  <= '1';
 			FLASH_CSn <= '1';
@@ -155,12 +155,12 @@ begin
 			SDRAM_CSn <= '1';
 			memsel    <= '0';
 			
-			if req.address(25 downto 24)="11" then
+			if req.address(25 downto 24) = "11" then
 				ETH_CSn <= '0';
                 delay   <= ETH_Acc_Time;
                 state   <= eth_pulse;
                 
-			elsif req.address(25 downto 24)="10" then
+			elsif req.address(25 downto 24) = "10" then
 				memsel    <= '1';
 				FLASH_CSn <= '0';
 				if FLASH_ASU=0 then
@@ -170,20 +170,20 @@ begin
 					delay <= FLASH_ASU;
 					state <= setup;
 				end if;
-                if req.readwriten='0' then -- write
-					MEM_BEn <= not wdata_mask;
+                if req.read_writen='0' then -- write
+					MEM_BEn <= '0';
 					MEM_WEn <= '0';
                     MEM_OEn <= '1';
                 else -- read
-					MEM_BEn <= (others => '0');
+					MEM_BEn <= '0';
 					MEM_OEn <= '0';
                     MEM_WEn <= '1';
                 end if;
 
-			elsif req.address(25 downto 19)="0000000" then
+			elsif req.address(25 downto 19)=0 then
 				SRAM_CSn <= '0';
-                if req.readwriten='0' then -- write
-					MEM_BEn <= not wdata_mask;
+                if req.read_writen='0' then -- write
+					MEM_BEn <= '0';
 					if SRAM_WR_ASU=0 then
 						state <= pulse;
 						MEM_WEn <= '0';
@@ -194,7 +194,7 @@ begin
 					end if;
 
                 else -- read
-					MEM_BEn <= (others => '0');
+					MEM_BEn <= '0';
 					MEM_OEn <= '0';
 					if SRAM_RD_ASU=0 then
 						state <= pulse;
@@ -206,9 +206,9 @@ begin
                 end if;
 
 			else -- SDRAM
-                mem_a_i(12 downto 0)  <= req.address(24 downto 12); -- 13 row bits
-                mem_a_i(17 downto 16) <= req.address(11 downto 10); --  2 bank bits
-                col_addr              <= req.address( 9 downto  0); -- 10 column bits
+                mem_a_i(12 downto 0)  <= std_logic_vector(req.address(24 downto 12)); -- 13 row bits
+                mem_a_i(17 downto 16) <= std_logic_vector(req.address(11 downto 10)); --  2 bank bits
+                col_addr              <= std_logic_vector(req.address( 9 downto  0)); -- 10 column bits
                 SDRAM_CSn  <= '0';
                 SDRAM_RASn <= '0';
                 SDRAM_CASn <= '1';
@@ -270,7 +270,7 @@ begin
 				if do_refresh='1' and not (inhibit_d='1' and inhibit='0') then
 				    send_refresh_cmd;
 				elsif inhibit='0' then
-    				if req='1' and refr_delay=0 then
+    				if req.request='1' and refr_delay=0 then
                         accept_req;
                     end if;
                 end if;
@@ -400,7 +400,7 @@ begin
             end case;
 
             if refresh_cnt = SDRAM_Refr_period-1 then
-                do_refresh  <= enable_refr;
+                do_refresh  <= '1';
                 refresh_cnt <= 0;
             else
                 refresh_cnt <= refresh_cnt + 1;
@@ -411,7 +411,7 @@ begin
                 ETH_CSn    <= '1';
 				SRAM_CSn   <= '1';
 				FLASH_CSn  <= '1';
-                MEM_BEn    <= (others => '1');
+                MEM_BEn    <= '1';
 				sram_d_t   <= '0';
                 MEM_OEn    <= '1';
 				MEM_WEn    <= '1';

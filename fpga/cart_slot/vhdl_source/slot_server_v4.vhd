@@ -44,6 +44,9 @@ port (
 	buttons 		: in    std_logic_vector(2 downto 0);
     cart_led_n      : out   std_logic;
     
+    -- debug
+    freezer_state   : out   std_logic_vector(1 downto 0);
+
     -- timing output
     phi2_tick       : out   std_logic;
 	c64_stopped		: out   std_logic;
@@ -309,6 +312,8 @@ begin
         cpu_cycle_done  => do_io_event,
         cpu_write       => cpu_write,
 
+        freezer_state   => freezer_state,
+
         unfreeze        => unfreeze,
         freeze_trig     => freeze_trig,
         freeze_act      => freeze_act );
@@ -412,7 +417,7 @@ begin
 
     -- open drain outputs
     IRQn     <= '0' when irq_n='0' or reu_irq='1' else 'Z';
-    NMIn     <= '0' when (control.c64_nmi='1')   or (serve_enable='1' and nmi_n='0') else 'Z';
+    NMIn     <= '0' when (control.c64_nmi='1')   or (nmi_n='0') else 'Z';
     EXROMn   <= '0' when (control.c64_exrom='1') or (serve_enable='1' and exrom_n='0') else 'Z';
     GAMEn    <= '0' when (control.c64_game='1')  or (serve_enable='1' and game_n='0') else 'Z';
     RSTn     <= '0' when (reset_button='1' and status.c64_stopped='0' and mask_buttons='0') or

@@ -14,9 +14,6 @@ typedef enum _event_type {
     e_invalidate,
     e_button_press,
     e_unfreeze,
-    e_mount_drv1,
-    e_mount_drv1_gcr,
-    e_unlink_drv1,
     e_dma_load,
     e_object_private_cmd,
     e_path_object_exec_cmd

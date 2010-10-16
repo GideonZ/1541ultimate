@@ -10,7 +10,20 @@
 #include "flash.h"
 
 #define C1541_IO_LOC_DRIVE_1 ((volatile BYTE *)0x4020000)
+#define C1541_IO_LOC_DRIVE_2 ((volatile BYTE *)0x40E0000)
 
+#define MENU_1541_RESET     0x1501
+#define MENU_1541_REMOVE    0x1502
+#define MENU_1541_MOUNT     0x1511
+#define MENU_1541_MOUNT_GCR 0x1512
+#define MENU_1541_UNLINK    0x1513
+
+struct t_drive_command
+{
+    int  command;
+    File *file;
+    bool protect;
+};
 
 typedef enum { e_rom_1541=0, e_rom_1541c=1, e_rom_1541ii=2, e_rom_custom=3 } t_1541_rom;
 typedef enum { e_ram_none      = 0x00,
@@ -88,7 +101,29 @@ public:
     void poll(Event &e);
 };
 
-extern C1541 *c1541; // default, the first drive!
+
+class DriveMenuItem : public ObjectMenuItem
+{
+	void *obj;
+    t_drive_command *cmd;
+public:
+	DriveMenuItem(void *o, char *n, int f) : ObjectMenuItem(NULL, n, 0), obj(o) {
+	    cmd = new t_drive_command;
+	    cmd->command = f;
+	    cmd->file = NULL;
+	    cmd->protect = false;
+	    //cmd->cleanup = false;
+	}
+
+	~DriveMenuItem() { 
+	    // delete cmd;
+	}
+
+	virtual void execute(int dummy) {
+		push_event(e_object_private_cmd, obj, (int)cmd);
+	}
+};
+
 
 #endif
 

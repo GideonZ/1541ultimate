@@ -1,14 +1,16 @@
 # System tool locations
 TOOLS = ../../../tools
 ZPU_TOOLCHAIN ?= /cygdrive/d/Proj/zpu/git/toolchain
-BIN2HEX = $(TOOLS)/bin2hex
-HEX2BIN = $(TOOLS)/hex2bin
-MAKEMEM = $(TOOLS)/make_mem
+BIN2HEX   = $(TOOLS)/bin2hex
+HEX2BIN   = $(TOOLS)/hex2bin
+MAKEMEM   = $(TOOLS)/make_mem
+MYPROMGEN = $(TOOLS)/promgen
 
 # Configuration
 CROSS     = zpu-elf
 
 # External inputs
+FPGA_250 = ../../fpga/work250/ultimate_1541_250e
 FPGA_400 = ../../fpga/work400/ultimate_1541_400a
 FPGA_700 = ../../fpga/work700/ultimate_1541_700a
 
@@ -31,6 +33,7 @@ SRCS_C   =	zpu_boot.c \
 			itu.c
 SRCS_CC	 =  flash.cc \
 			at45_flash.cc \
+			at49_flash.cc \
 			w25q_flash.cc \
 			boot1.cc
 SRCS_ASM =  crt0_boot.s
@@ -62,7 +65,7 @@ ALL_OBJS = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
 
 .PHONY: clean all test
 
-all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_400.mcs $(RESULT)/$(PRJ)_700.mcs
+all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_400.mcs $(RESULT)/$(PRJ)_700.mcs $(RESULT)/$(PRJ)_250.bin
 
 test:
 	echo $(ALL_OBJS)
@@ -95,17 +98,30 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 
+$(RESULT)/$(PRJ)_250.bin: $(OUTPUT)/$(PRJ)_250.bit
+	@echo "(My) PromGen 250A..."
+	@$(MYPROMGEN) $< $@
+
 $(RESULT)/$(PRJ)_400.mcs: $(OUTPUT)/$(PRJ)_400.bit
 	@echo "PromGen 400A..."
 	@promgen -w -s 2048 -p mcs -spi -u 0 $< -o $@
-	@$(HEX2BIN) -s 0x53C90 $@ $(@:.mcs=.tmp)
+	@$(HEX2BIN) -s 0x39990 $@ $(@:.mcs=.tmp)
 	@$(BIN2HEX) -Z -v "FPGA U2 V17" $(@:.mcs=.tmp) $@
+	@rm $(@:.mcs=.tmp)
 
 $(RESULT)/$(PRJ)_700.mcs: $(OUTPUT)/$(PRJ)_700.bit
 	@echo "PromGen 700A..."
 	@promgen -w -s 2048 -p mcs -spi -u 0 $< -o $@
 	@$(HEX2BIN) -s 0x53C90 $@ $(@:.mcs=.tmp)
 	@$(BIN2HEX) -Z -v "FPGA U2 V97" $(@:.mcs=.tmp) $@
+	@rm $(@:.mcs=.tmp)
+	
+$(OUTPUT)/$(PRJ)_250.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_250).bit
+	@echo "Data2MEM 250E..."
+	@data2mem -bm $(FPGA_250)_bd.bmm \
+	         -bt $(FPGA_250).bit \
+	         -bd $(OUTPUT)/$(PRJ).mem \
+	         -o b $(OUTPUT)/$(PRJ)_250.bit
 
 $(OUTPUT)/$(PRJ)_400.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_400).bit
 	@echo "Data2MEM 400A..."

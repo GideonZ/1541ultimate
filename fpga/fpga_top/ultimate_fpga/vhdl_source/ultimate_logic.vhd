@@ -14,6 +14,7 @@ generic (
     g_clock_freq    : natural := 50_000_000;
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
+    g_icap          : boolean := true;
     g_uart          : boolean := true;
     g_drive_1541    : boolean := true; --
     g_drive_1541_2  : boolean := true; --
@@ -91,7 +92,7 @@ port (
     SD_MOSI     : out   std_logic;
     SD_MISO     : in    std_logic;
     SD_CARDDETn : in    std_logic;
-    SD_DATA     : inout std_logic_vector(2 downto 1);
+    SD_DATA     : inout std_logic_vector(2 downto 1) := "ZZ";
     
     -- RTC Interface
     RTC_CS      : out   std_logic;
@@ -109,7 +110,7 @@ port (
     ULPI_NXT    : in    std_logic;
     ULPI_STP    : out   std_logic;
     ULPI_DIR    : in    std_logic;
-    ULPI_DATA   : inout std_logic_vector(7 downto 0);
+    ULPI_DATA   : inout std_logic_vector(7 downto 0) := "ZZZZZZZZ";
 
     -- Cassette Interface
     CAS_MOTOR   : in    std_logic := '0';
@@ -155,7 +156,8 @@ architecture logic of ultimate_logic is
         cap(12) := to_std(g_rtc_chip);
         cap(13) := to_std(g_rtc_timer);
         cap(14) := to_std(g_spi_flash);
-
+        cap(15) := to_std(g_icap);
+        
         cap(31) := to_std(g_simulation);
         return cap;
     end function;
@@ -259,6 +261,7 @@ architecture logic of ultimate_logic is
 	signal motor_led_n		: std_logic := '1';
 	signal cart_led_n		: std_logic := '1';
 	signal c2n_pull_sense   : std_logic := '0';
+    signal freezer_state    : std_logic_vector(1 downto 0);
 begin
 
     i_cpu: entity work.cpu_wrapper_zpu
@@ -484,6 +487,9 @@ begin
         
 			buttons 		=> BUTTON,
             cart_led_n      => cart_led_n,
+            
+            -- debug
+            freezer_state   => freezer_state,
             
             -- timing output
 			c64_stopped		=> c64_stopped,
@@ -735,14 +741,16 @@ begin
             c2n_read        => CAS_READ );
     end generate;
 
-    i_icap: entity work.icap
-    port map (
-        clock           => sys_clock,
-        reset           => sys_reset,
+    r_icap: if g_icap generate
+        i_icap: entity work.icap
+        port map (
+            clock           => sys_clock,
+            reset           => sys_reset,
+        
+            io_req          => io_req_icap,
+            io_resp         => io_resp_icap );
+    end generate;
     
-        io_req          => io_req_icap,
-        io_resp         => io_resp_icap );
-
 
 	CAS_SENSE <= '0' when (c2n_sense='1') or (c2n_pull_sense='1') else 'Z';
 	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';
@@ -795,6 +803,11 @@ begin
 	MOTOR_LEDn  <= motor_led_n xor error;
     CART_LEDn   <= cart_led_n xor error;
 	SDACT_LEDn  <= not (sd_act_stretched or usb_busy) xor error;
+
+--	DISK_ACTn   <= not freezer_state(1);
+--	MOTOR_LEDn  <= not freezer_state(0);
+--    CART_LEDn   <= IRQn;
+--	SDACT_LEDn  <= NMIn;
 
     filt1: entity work.spike_filter generic map (10) port map(sys_clock, IEC_ATN,    atn_i);
     filt2: entity work.spike_filter generic map (10) port map(sys_clock, IEC_CLOCK,  clk_i);
