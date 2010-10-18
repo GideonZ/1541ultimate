@@ -81,6 +81,7 @@ SRCS_CC	 =  stream.cc \
 			rtc.cc \
 			usb.cc \
 			usb_scsi.cc \
+			usb_hub.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
@@ -124,6 +125,7 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -ffunction-sections
 CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti
 LINK 	 = $(PATH_SW)/system/zpu.lds
+LINK_V1	 = $(PATH_SW)/system/zpu_v1.lds
 LLIB     =  -L $(ZPU_TOOLCHAIN)/install/lib/gcc/zpu-elf/3.4.2 \
 			-L $(ZPU_TOOLCHAIN)/install/zpu-elf/lib
 LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lc -lbcc --end-group -lgcc
@@ -163,6 +165,10 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo "Creating Binary $@"
 	@$(OBJCOPY) -O binary $< $@
 
+$(RESULT)/$(PRJ)_V1.bin: $(OUTPUT)/$(PRJ)_V1.out
+	@echo "Creating Binary $@"
+	@$(OBJCOPY) -O binary $< $@
+
 %.65: %.tas
 	@echo "Assembling $<"
 	@$(TASS) $< --m6502 --nostart -o $(OUTPUT)/$(@F)
@@ -194,6 +200,10 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 
+$(OUTPUT)/$(PRJ)_V1.out: $(LINK_V1) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502)
+	@echo "Linking..."
+	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK_V1) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ)_V1.out $(ALL_OBJS) $(LIBS)
+
 # pull in dependency info for *existing* .o files
 -include $(ALL_OBJS:.o=.d)
 
@@ -220,5 +230,5 @@ hex: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
 	@rm $(OUTPUT)/_flash.mcs
 	@echo Done!
 
-appl: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(BOOT_250_BIN)
-	@$(MAKEAPPL) $(RESULT)/appl.bin $(BOOT_250_BIN) 0 $(RESULT)/$(PRJ).bin 30000
+appl: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_V1.bin $(BOOT_250_BIN)
+	@$(MAKEAPPL) $(RESULT)/appl.bin $(BOOT_250_BIN) 0 $(RESULT)/$(PRJ)_V1.bin 30000

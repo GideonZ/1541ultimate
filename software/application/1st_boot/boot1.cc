@@ -7,7 +7,7 @@ extern "C" {
 
 #define BOOT2_RUN_ADDR 0x10000
 #define APPL_RUN_ADDR  0x20000
-#define APPL_RUN_MK1   0x28000
+#define APPL_RUN_MK1   0x30000
 
 void (*function)();
 

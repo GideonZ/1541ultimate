@@ -107,19 +107,17 @@ class DriveMenuItem : public ObjectMenuItem
 	void *obj;
     t_drive_command *cmd;
 public:
-	DriveMenuItem(void *o, char *n, int f) : ObjectMenuItem(NULL, n, 0), obj(o) {
-	    cmd = new t_drive_command;
-	    cmd->command = f;
-	    cmd->file = NULL;
-	    cmd->protect = false;
-	    //cmd->cleanup = false;
+	DriveMenuItem(void *o, char *n, int f) : ObjectMenuItem(NULL, n, f), obj(o) {
 	}
 
 	~DriveMenuItem() { 
-	    // delete cmd;
 	}
 
 	virtual void execute(int dummy) {
+	    cmd = new t_drive_command;
+	    cmd->command = function;
+	    cmd->file = NULL;
+	    cmd->protect = false;
 		push_event(e_object_private_cmd, obj, (int)cmd);
 	}
 };

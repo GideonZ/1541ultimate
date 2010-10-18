@@ -436,8 +436,14 @@ begin
                         trans_in.state <= error;
                         state <= update_pipe;
                     elsif rx_pid = c_pid_nak then
---                        state <= update_pipe; -- write back same data and go through idle
-                        state <= handle_trans;
+                        if link_busy='1' then
+                            link_busy <= '0';
+                            transaction_pntr <= transaction_pntr + 2; -- skip the next, too
+                            substate <= 0;
+                            state <= scan_transactions;
+                        else -- just retry
+                            state <= handle_trans;
+                        end if;
                     end if; -- all other pids are just ignored
 --				elsif do_sof='1' then
 --					state <= idle; -- test

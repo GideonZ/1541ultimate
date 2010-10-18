@@ -3,6 +3,6 @@
 
 #define APPL_VERSION "2.0RCA"
 #define BOOT_VERSION "V1.1"
-#define FPGA_VERSION "FPGA U2 V9C"
+#define FPGA_VERSION "FPGA U2 V9D"
 
 #endif
