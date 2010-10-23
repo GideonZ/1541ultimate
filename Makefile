@@ -13,7 +13,7 @@ all:
 	@$(MAKE) -C target/software/update
 	@cp target/software/update/result/update.bin .
 	@cp target/software/ultimate/result/flash_700.mcs .
-	
+	@cp target/software/update/result/appl.bin .
 
 clean:
 	@$(MAKE) -C tools clean

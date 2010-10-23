@@ -69,7 +69,7 @@ class C1541 : public ObjectWithMenu
     volatile BYTE *memory_map;
     volatile BYTE *registers;
     int iec_address;
-
+    char drive_letter;
     bool large_rom;
     t_1541_ram  ram;
 	t_1541_rom  current_rom;
@@ -81,7 +81,7 @@ class C1541 : public ObjectWithMenu
     GcrImage *gcr_image;
     BinImage *bin_image;
 public:
-    C1541(volatile BYTE *regs);
+    C1541(volatile BYTE *regs, char letter);
     ~C1541();
     
 	void init(void);
