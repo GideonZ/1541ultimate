@@ -637,6 +637,14 @@ begin
             SPI_MOSI    => FLASH_MOSI,
             SPI_MISO    => FLASH_MISO );
     end generate;
+
+    r_no_spi_flash: if not g_spi_flash generate
+        i_flash_dummy: entity work.io_dummy
+        port map (
+            clock       => sys_clock,
+            io_req      => io_req_flash,
+            io_resp     => io_resp_flash );
+    end generate;
     
     r_rtc: if g_rtc_chip generate
         signal spi_ss_n : std_logic;
@@ -663,6 +671,14 @@ begin
         RTC_CS <= not spi_ss_n;
     end generate;
 
+    r_no_rtc: if not g_rtc_chip generate
+        i_rtc_dummy: entity work.io_dummy
+        port map (
+            clock       => sys_clock,
+            io_req      => io_req_rtc,
+            io_resp     => io_resp_rtc );
+    end generate;
+
     r_rtc_timer: if g_rtc_timer generate
         i_rtc_timer: entity work.real_time_clock
         generic map (
@@ -673,6 +689,14 @@ begin
             
             req         => io_req_rtc_tmr,
             resp        => io_resp_rtc_tmr );
+    end generate;
+
+    r_no_rtc_timer: if not g_rtc_chip generate
+        i_rtc_timer_dummy: entity work.io_dummy
+        port map (
+            clock       => sys_clock,
+            io_req      => io_req_rtc_tmr,
+            io_resp     => io_resp_rtc_tmr );
     end generate;
 
     r_gcr_codec: if g_hardware_gcr generate

@@ -39,7 +39,7 @@ struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",              "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",       "%d", NULL,       8, 11, 8 },
     { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",         "%s", rom_sel,    0,  3, 2 },
-    { CFG_C1541_ROMFILE,   CFG_TYPE_STRING, "1541 ROM File",           "%s", NULL,       0, 36, (int)"SdCard/Part0/1541.rom" },
+    { CFG_C1541_ROMFILE,   CFG_TYPE_STRING, "1541 ROM File",           "%s", NULL,       0, 36, (int)"1541.rom" },
     { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "1541 RAM BOard",          "%s", ram_board,  0,  6, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",    "%d00 ms", NULL,  1, 10, 1 },
 //    { CFG_C1541_LASTMOUNT, CFG_TYPE_ENUM,   "Load last mounted disk",  "%s", yes_no,     0,  1, 0 },
@@ -50,17 +50,17 @@ struct t_cfg_definition c1541_config[] = {
 // C1541 Drive Class
 //--------------------------------------------------------------
 
-C1541 :: C1541(volatile BYTE *regs)
+C1541 :: C1541(volatile BYTE *regs, char letter)
 {
     registers  = regs;
     mount_file = NULL;
+    drive_letter = letter;
 	flash = get_flash();
 
-    if(regs == C1541_IO_LOC_DRIVE_1) {
-        cfg = config_manager.register_store((DWORD)regs, "1541 Drive A Settings", c1541_config);
-    } else {
-        cfg = config_manager.register_store((DWORD)regs, "1541 Drive B Settings", c1541_config);
-    }        
+    char buffer[32];
+    c1541_config[1].def = 8 + int(letter - 'A');
+    sprintf(buffer, "1541 Drive %c Settings", letter);    
+    cfg = config_manager.register_store((DWORD)regs, buffer, c1541_config);
 
     DWORD mem_address = ((DWORD)registers[C1541_MEM_ADDR]) << 16;
     memory_map = (volatile BYTE *)mem_address;
@@ -95,6 +95,8 @@ C1541 :: ~C1541()
 
 void C1541 :: init(void)
 {
+    printf("Init C1541. Cfg = %p\n", cfg);
+    
     volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
     for(int i=0;i<C1541_MAXTRACKS;i++) {
     	*(param++) = (ULONG)gcr_image->dummy_track;
@@ -113,10 +115,13 @@ void C1541 :: init(void)
 int  C1541 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
 	int items = 1;
-	item_list.append(new DriveMenuItem(this, "Reset 1541 Drive", MENU_1541_RESET));
+    char buffer[32];
+    sprintf(buffer, "Reset 1541 Drive %c", drive_letter);
+	item_list.append(new DriveMenuItem(this, buffer, MENU_1541_RESET));
 
 	if(disk_state != e_no_disk) {
-		item_list.append(new DriveMenuItem(this, "Remove 1541 Disk", MENU_1541_REMOVE));
+        sprintf(buffer, "Remove disk from Drive %c", drive_letter);
+		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_REMOVE));
 		items++;
 	}
 	return items;

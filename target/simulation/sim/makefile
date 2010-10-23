@@ -126,13 +126,13 @@ $(TESTBENCH)_DO_GUI_OVERRIDE	:=
 #### Multiple testcase targets are allowed (use different names).
 ###############################################################################
 
-#### tc1 #####
-#TESTCASE 					:= harness_v2
-#TESTCASES					:= $(TESTCASES) $(TESTCASE)
-#$(TESTCASE)_SRC				:= $(TESTCASE).vhd
-#$(TESTCASE)_ENTITY			:= $(TESTCASE)
-#$(TESTCASE)_TIME			:= 20 us;
-#$(TESTCASE)_DO_GUI_BEFORE	:= 
+### tc1 #####
+TESTCASE 					:= harness_v2_mk1
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
 
 TESTCASE 					:= harness_v4
 TESTCASES					:= $(TESTCASES) $(TESTCASE)

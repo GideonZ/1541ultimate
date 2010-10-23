@@ -46,27 +46,19 @@ public:
 
 	virtual Flash *tester(void);
 
-#ifndef BOOTLOADER
 	// Getting the serial number
     virtual void read_serial(void *buffer);
 
 	// Interface for getting images from ROM.
 	virtual int  read_image(int image_id, void *buffer, int buf_size);
     virtual void read_linear_addr(int addr, int len, void *buffer);
-#endif    
-
 	virtual void get_image_addresses(int image_id, t_flash_address *addr);
 	virtual void read_dev_addr(int device_addr, int len, void *buffer);
 
-//    virtual void read_devaddr(int addr, int len, void *buffer);
-//    virtual void write(int addr, int len, void *buffer);
-
-#ifndef BOOTLOADER
 	// Interface for flashing images
 	virtual int  get_page_size(void);
     virtual int  get_sector_size(int addr);
     virtual bool erase_sector(int sector);
-//    virtual int  write_image(int id, void *buffer) { };
 	virtual int  page_to_sector(int page);
 	virtual bool write_page(int page, void *buffer);
 	virtual bool need_erase(void) { return true; }
@@ -82,7 +74,6 @@ public:
     
 	// Protection functions
 	virtual void protect_disable(void);
-#endif
 	virtual bool protect_configure(void);
 	virtual void protect_enable(void);
 };

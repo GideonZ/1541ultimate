@@ -83,12 +83,15 @@ Usb :: Usb()
 {
 	poll_delay = 0;
 	initialized = false;
-	clear();
+
+    if(CAPABILITIES & CAPAB_USB_HOST) {
+	    clear();
 
 #ifndef BOOTLOADER
-    poll_list.append(&poll_usb);
-    cfg = config_manager.register_store(0x55534232, "USB settings", usb_config);
+        poll_list.append(&poll_usb);
+        cfg = config_manager.register_store(0x55534232, "USB settings", usb_config);
 #endif
+    }
 }
 
 Usb :: ~Usb()

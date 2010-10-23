@@ -5,7 +5,7 @@ ENTRY(_start)
 
 MEMORY
 {
-    BRAM (rx)  : ORIGIN = 0x00000000, LENGTH = 8k
+    BRAM (rx)  : ORIGIN = 0x00000000, LENGTH = 4k
 }
 
 SECTIONS

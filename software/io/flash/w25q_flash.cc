@@ -22,7 +22,6 @@ W25Q_Flash w25q_flash;
 static const t_flash_address flash_addresses[] = {
 	{ FLASH_ID_BOOTAPP,    0x01, 0x054000, 0x054000, 0x0C000 }, // 192 pages (48K)
 	{ FLASH_ID_APPL,       0x01, 0x100000, 0x100000, 0x80000 },
-#ifndef BOOTLOADER                                   
 	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x53CA0 },
 	{ FLASH_ID_AR5PAL,     0x00, 0x060000, 0x060000, 0x08000 },
 	{ FLASH_ID_AR6PAL,     0x00, 0x068000, 0x068000, 0x08000 },
@@ -43,7 +42,6 @@ static const t_flash_address flash_addresses[] = {
 	{ FLASH_ID_TAR_NTSC,   0x00, 0x0F0000, 0x0F0000, 0x10000 },
 	{ FLASH_ID_CUSTOMFPGA, 0x01, 0x180000, 0x180000, 0x54000 },
 	{ FLASH_ID_CONFIG,     0x00, 0x1FF000, 0x1FF000, 0x01000 },
-#endif                                               
 	{ FLASH_ID_LIST_END,   0x00, 0x1FE000, 0x1FE000, 0x01000 } };
 
 
@@ -93,7 +91,6 @@ void W25Q_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
 }
     
-//#ifndef BOOTLOADER
 Flash *W25Q_Flash :: tester()
 {
     SPI_FLASH_CTRL = SPI_FORCE_SS;
@@ -126,9 +123,7 @@ Flash *W25Q_Flash :: tester()
 
 	return NULL;
 }
-//#endif
 
-#ifndef BOOTLOADER
 
 int W25Q_Flash :: get_page_size(void)
 {
@@ -298,8 +293,6 @@ void W25Q_Flash :: protect_disable(void)
 
 	SPI_FLASH_DATA = W25Q_WriteDisable;
 }
-
-#endif
 
 bool W25Q_Flash :: protect_configure(void)
 {

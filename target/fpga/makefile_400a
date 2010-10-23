@@ -87,6 +87,7 @@ BITGEN_FLAGS     := 	-w -d \
 SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/io_dummy.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/dma_bus_pkg.vhd \

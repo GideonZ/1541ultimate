@@ -134,6 +134,32 @@ SHORT uart_write_buffer(const void *buf, USHORT count)
 
     return count;
 }
+
+/*
+-------------------------------------------------------------------------------
+							uart_write_hex
+							==============
+  Abstract:
+
+	Writes a hex byte to the uart
+
+  Parameters
+	hex_byte:   hex byte
+	count:		number of bytes to write
+
+  Return:
+	i:		number of bytes read
+-------------------------------------------------------------------------------
+*/
+SHORT uart_write_hex(BYTE b)
+{
+    const char hex[] = "0123456789ABCDEF";
+    static char buffer[2];
+    buffer[0] = hex[b >> 4];
+    buffer[1] = hex[b & 15];
+    return uart_write_buffer(buffer, 2);
+}
+
 /*
 -------------------------------------------------------------------------------
 							uart_get_byte

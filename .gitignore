@@ -1,4 +1,6 @@
+target/fpga/*.xrpt
 target/fpga/_xmsgs
+target/fpga/work250
 target/fpga/work400
 target/fpga/work700
 target/fpga/xlnx_auto_0_xdb
@@ -14,3 +16,4 @@ target/software/ultimate/output
 target/software/ultimate/result
 target/software/update/output
 target/software/update/result
+tools/*.exe

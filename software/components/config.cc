@@ -45,10 +45,7 @@ ConfigManager :: ~ConfigManager()
     ConfigStore *s;
     for(int n = 0; n < children.get_elements();n++) {
         s = (ConfigStore *)children[n];
-//        printf("%p ", s);
-//        printf("-> Detaching store %s\n", s->get_name());
 		s->detach();
-//        printf("-> Deleting store %s\n", s->get_name());
 		delete s;
     }
     children.clear_list();
@@ -61,6 +58,11 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
 	if(!flash)
 		return NULL; // fail
 		
+    if(store_id == 0) {
+        printf("ERROR: Requesting to register a store with ID=0\n");
+        return NULL;
+    }
+
     int page_size = flash->get_page_size();
     DWORD id;
     ConfigStore *s;
@@ -68,7 +70,7 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
     for(int i=0;i<num_pages;i++) {
         flash->read_config_page(i, 4, &id);
         if (store_id == id) {
-            s = new ConfigStore(id, name, i, page_size, defs); // TODO
+            s = new ConfigStore(store_id, name, i, page_size, defs); // TODO
             s->read();
             //printf("APPENDING STORE %p %s\n", s, s->get_name());
             children.append(s);
@@ -76,10 +78,11 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
             return s;
         }
     }
-    printf("Store not found..\n");
+    //printf("Store %8x not found..\n", store_id);
     for(int i=0;i<num_pages;i++) {
         flash->read_config_page(i, 4, &id);
         if (id == 0xFFFFFFFF) {
+            //printf("Found empty spot on config page %d, for ID=%8x. Size=%d. Defs=%p. Name=%s\n", i, store_id, page_size, defs, name);
             s = new ConfigStore(store_id, name, i, page_size, defs); // TODO
             s->write();
             children.append(s);
@@ -87,7 +90,14 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
             return s;
         }
     }
-    return NULL; // failed
+    // no entry in flash found, no place to create one.
+    // create a temporary one in memory.
+    s = new ConfigStore(store_id, name, -1, page_size, defs); // TODO
+    if(s) {
+        children.append(s);
+    	s->attach();
+    }
+    return s;
 }
 
 void ConfigManager :: add_custom_store(ConfigStore *cfg)
@@ -124,7 +134,12 @@ int ConfigManager :: fetch_children()
 ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
                            t_cfg_definition *defs) : PathObject(NULL, name)  //, items(32, NULL)
 {
-    mem_block = new BYTE[page_size];
+    //printf("Create configstore %8x with size %d..", store_id, page_size);
+    if(page_size)
+        mem_block = new BYTE[page_size];
+    else
+        mem_block = NULL;
+        
     block_size = page_size;
     flash_page = page;
     id = store_id;
@@ -141,6 +156,7 @@ ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
         children.append(item);
 		item->attach();
     }
+    printf(".. done\n");
 }
 
 ConfigStore :: ~ConfigStore()

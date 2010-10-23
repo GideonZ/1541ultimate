@@ -36,7 +36,7 @@ generic (
     ETH_Acc_Time       : integer := 9;
 
 	FLASH_ASU          : integer := 0;
-	FLASH_Pulse	       : integer := 3;
+	FLASH_Pulse	       : integer := 4;
 	FLASH_Hold		   : integer := 1; -- bus turn around
 
     A_Width            : integer := 23;
@@ -278,7 +278,7 @@ begin
 			when sd_cas =>
                 mem_a_i(10) <= '1'; -- auto precharge
                 mem_a_i(9 downto 0) <= col_addr;
-                sram_d_t <= '1';
+                sram_d_t <= not rwn_i; -- enable for writes
 
                 if delay = 0 then
                     -- read or write with auto precharge
@@ -289,7 +289,7 @@ begin
                     if rwn_i='0' then -- write
                         delay   <= 2;
                     else
-                        delay   <= 1;
+                        delay   <= 2;
                     end if;
                     state   <= sd_wait;
                 else
@@ -299,8 +299,10 @@ begin
             when sd_wait =>
                 sram_d_t <= '0';
                 if delay=0 then
-					dack     <= '1';
-					resp.dack_tag <= tag;
+                    if rwn_i='1' then
+    					dack     <= '1';
+					    resp.dack_tag <= tag;
+					end if;
                     state    <= idle;
                 else
                     delay <= delay - 1;
@@ -333,8 +335,10 @@ begin
 				if delay = 1 then
 					MEM_OEn  <= '1';
 					MEM_WEn  <= '1';
-					dack     <= '1';
-					resp.dack_tag <= tag;
+                    if rwn_i='1' then
+    					dack     <= '1';
+					    resp.dack_tag <= tag;
+					end if;
 					if memsel='0' then -- SRAM
 						if rwn_i='0' and SRAM_WR_Hold > 0 then
 							delay <= SRAM_WR_Hold;

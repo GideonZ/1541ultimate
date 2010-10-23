@@ -386,6 +386,7 @@ package body tl_flat_memory_model_pkg is
                 write_memory(bank, sector_idx, entry_idx, i);
 
                 if entry_idx = c_fm_sector_size then
+                    entry_idx := 0;
                     if sector_idx = c_fm_max_sector then
                         sector_idx := 0;
                     else

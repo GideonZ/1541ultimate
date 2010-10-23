@@ -61,6 +61,7 @@ void wait_ms(int);
 // Uart Functions
 SHORT uart_read_buffer(const void *buf, USHORT count);
 SHORT uart_write_buffer(const void *buf, USHORT count);
+SHORT uart_write_hex(BYTE b);
 BOOL uart_data_available(void);
 int uart_get_byte(int delay);
 

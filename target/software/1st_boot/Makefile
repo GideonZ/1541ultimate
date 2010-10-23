@@ -31,11 +31,7 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 SRCS_C   =	zpu_boot.c \
 			itu.c
-SRCS_CC	 =  flash.cc \
-			at45_flash.cc \
-			at49_flash.cc \
-			w25q_flash.cc \
-			boot1.cc
+SRCS_CC	 =  boot1.cc
 SRCS_ASM =  crt0_boot.s
 
 PATH_INC =  $(addprefix -I, $(VPATH))

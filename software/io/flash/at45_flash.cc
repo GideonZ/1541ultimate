@@ -22,7 +22,6 @@ AT45_Flash at45_flash;
 static const t_flash_address flash_addresses[] = {
 	{ FLASH_ID_BOOTAPP,    0x01, 0x053CA0, 0x0A2800, 0x0F360 }, // 118 pages
 	{ FLASH_ID_APPL,       0x01, 0x108000, 0x200000, 0x80000 }, // sector 8 (W25QDB161D)
-#ifndef BOOTLOADER
 	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x53CA0 },
 	{ FLASH_ID_AR5PAL,     0x00, 0x063000, 0x0C0000, 0x08000 },
 	{ FLASH_ID_AR6PAL,     0x00, 0x06B000, 0x0CF820, 0x08000 },
@@ -43,7 +42,6 @@ static const t_flash_address flash_addresses[] = {
 	{ FLASH_ID_TAR_NTSC,   0x00, 0x0F3000, 0x1D7430, 0x10000 },
 	{ FLASH_ID_CUSTOMFPGA, 0x01, 0x18C000, 0x300000, 0x53CA0 }, // sector 12
 	{ FLASH_ID_CONFIG,     0x00, 0x20DF00, 0x3FC000, 0x02100 },
-#endif
 	{ FLASH_ID_LIST_END,   0x00, 0x20DCF0, 0x3FBC00, 0x00210 } };
 
 
@@ -96,7 +94,6 @@ void AT45_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
 }
     
-//#ifndef BOOTLOADER
 AT45_Flash *AT45_Flash :: tester()
 {
     SPI_FLASH_CTRL = SPI_FORCE_SS;
@@ -124,9 +121,6 @@ AT45_Flash *AT45_Flash :: tester()
 
 	return NULL;
 }
-//#endif
-
-#ifndef BOOTLOADER
 
 int AT45_Flash :: get_page_size(void)
 {
@@ -388,8 +382,6 @@ void AT45_Flash :: protect_disable(void)
 	SPI_FLASH_DATA_32 = 0x3D2A7F9A;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
 }
-
-#endif
 
 void AT45_Flash :: protect_enable(void)
 {

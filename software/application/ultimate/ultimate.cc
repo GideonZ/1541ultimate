@@ -94,9 +94,11 @@ int main()
     if(ITU_CAPABILITIES & CAPAB_C2N_RECORDER)
 	    tape_recorder   = new TapeRecorder;
     if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_1)
-        c1541_A = new C1541(C1541_IO_LOC_DRIVE_1);
-    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_2)
-        c1541_B = new C1541(C1541_IO_LOC_DRIVE_2);
+        c1541_A = new C1541(C1541_IO_LOC_DRIVE_1, 'A');
+    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_2) {
+        c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
+        AUDIO_SELECT_RIGHT  = SOUND_DRIVE_1;
+    }
     if(ITU_CAPABILITIES & CAPAB_CARTRIDGE)
         c64     = new C64;
 
@@ -104,7 +106,7 @@ int main()
 	send_nop();
 	send_nop();
 
-    if(c64->exists()) {
+    if(c64 && c64->exists()) {
         user_interface = new UserInterface;
         user_interface->init(c64, c64->get_keyboard());
     
@@ -127,6 +129,8 @@ int main()
     }
 
 	// add the drive(s) to the 'OS' (the event loop)
+    printf("C1541A: %p, C1541B: %p\n", c1541_A, c1541_B);
+
     if(c1541_A) {
         poll_list.append(&poll_drive_1);
     	c1541_A->init();

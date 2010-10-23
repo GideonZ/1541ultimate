@@ -1,4 +1,3 @@
-
 #include "rtc.h"
 #include "small_printf.h"
 
@@ -53,13 +52,15 @@ static BYTE bin2bcd(BYTE bin)
 
 Rtc :: Rtc()
 {
-	cfg = new RtcConfigStore("Clock Settings", rtc_config);
-	config_manager.add_custom_store(cfg);
-	get_time_from_chip();
-
-	// Check and correct clock out setting
-	if((rtc_regs[RTC_ADDR_CLOCKOUT] & 0x70) != 0x70)
-		write_byte(RTC_ADDR_CLOCKOUT, 0x72);
+    if(CAPABILITIES & CAPAB_RTC_CHIP) {
+    	cfg = new RtcConfigStore("Clock Settings", rtc_config);
+    	config_manager.add_custom_store(cfg);
+    	get_time_from_chip();
+    
+    	// Check and correct clock out setting
+    	if((rtc_regs[RTC_ADDR_CLOCKOUT] & 0x70) != 0x70)
+    		write_byte(RTC_ADDR_CLOCKOUT, 0x72);
+    }
 }
 
 Rtc :: ~Rtc()

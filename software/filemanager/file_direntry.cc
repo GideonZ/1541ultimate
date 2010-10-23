@@ -143,7 +143,7 @@ int FileDirEntry :: fetch_task_items(IndexedList<PathObject*> &list)
     list.append(new MenuItem(this, "Dump FileInfo", MENU_DUMP_INFO));
     list.append(new MenuItem(this, "Dump PathObject", MENU_DUMP_OBJECT));
 */
-    return 4;
+    return 2;
 }
 
 

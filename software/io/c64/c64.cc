@@ -88,13 +88,15 @@ struct t_cfg_definition c64_config[] = {
 #define MENU_C64_RESET  0x6401
 #define MENU_C64_REBOOT 0x6402
 
+extern BYTE _binary_chars_bin_start;
 
 C64 :: C64()
 {
     flash = get_flash();
     if(flash) {
-	    char_set = new BYTE[CHARSET_SIZE];
-	    flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
+        char_set = (BYTE *)&_binary_chars_bin_start;
+	    // char_set = new BYTE[CHARSET_SIZE];
+	    // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
 	    keyb = new Keyboard(this);
 	    
 	    cfg = config_manager.register_store(0x43363420, "C64 and cartridge settings", c64_config);
@@ -124,7 +126,7 @@ C64 :: ~C64()
 	}
 
     delete keyb;
-    delete[] char_set;
+//    delete[] char_set;
 }
 
 bool C64 :: exists(void)

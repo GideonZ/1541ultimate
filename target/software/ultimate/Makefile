@@ -1,4 +1,6 @@
 # System tool locations
+
+HERE = $(shell pwd)
 TOOLS = ../../../tools
 ZPU_TOOLCHAIN ?= /cygdrive/d/Proj/zpu/git/toolchain
 #TOOLCHAIN = /home/gideon/Proj/zpu/toolchain/toolchain
@@ -18,8 +20,9 @@ ROMS = ../../../roms
 BOOT_250_BIN = ../1st_boot/result/1st_boot_250.bin
 
 # Outputs
-RESULT = ./result
-OUTPUT = ./output
+RESULT    = $(shell pwd)/result
+OUTPUT    = ./output
+OUTPUT_FP = $(shell pwd)/output
 
 PRJ      =  ultimate
 PATH_SW  =  ../../../software
@@ -41,7 +44,8 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/sd_card \
 			$(PATH_SW)/io/audio \
 			$(PATH_SW)/io/userinterface \
-			$(PATH_SW)/6502
+			$(PATH_SW)/6502 \
+			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
@@ -121,6 +125,8 @@ SRCS_ASM =  crt0_appl.s
 
 SRCS_6502 = sidcrt.tas
 
+SRCS_BIN =  chars.bin
+
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -ffunction-sections
 CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti
@@ -146,8 +152,10 @@ OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
 OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
 OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
 OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
+OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.bo))
 
-ALL_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN))
+ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
 .PHONY: hex clean all dep appl
@@ -169,10 +177,14 @@ $(RESULT)/$(PRJ)_V1.bin: $(OUTPUT)/$(PRJ)_V1.out
 	@echo "Creating Binary $@"
 	@$(OBJCOPY) -O binary $< $@
 
+%.bo: %.bin
+	@echo "Converting $(<F) binary to $(@F).."
+	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(<F) $(OUTPUT_FP)/$(@F); cd $(HERE)
+
 %.65: %.tas
 	@echo "Assembling $<"
-	@$(TASS) $< --m6502 --nostart -o $(OUTPUT)/$(@F)
-     
+	$(TASS) $< --m6502 --nostart -o $(OUTPUT)/$(@F)
+
 %.o: %.65
 	@echo "Converting .65 binary to .o"
 	@cd $(OUTPUT); $(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(<F) $@
@@ -196,16 +208,16 @@ $(RESULT)/$(PRJ)_V1.bin: $(OUTPUT)/$(PRJ)_V1.out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502)
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 
-$(OUTPUT)/$(PRJ)_V1.out: $(LINK_V1) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502)
+$(OUTPUT)/$(PRJ)_V1.out: $(LINK_V1) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK_V1) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ)_V1.out $(ALL_OBJS) $(LIBS)
 
 # pull in dependency info for *existing* .o files
--include $(ALL_OBJS:.o=.d)
+-include $(ALL_DEP_OBJS:.o=.d)
 
 clean:
 	@-rm -rf $(OUTPUT)

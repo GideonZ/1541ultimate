@@ -40,6 +40,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/icap \
 			$(PATH_SW)/io/sd_card \
 			$(PATH_SW)/io/userinterface \
+			$(ROMS) \
 			$(ULTIMATE)/result \
 			$(2ND_BOOT)/result
 
@@ -82,6 +83,7 @@ SRCS_ASM =  crt0_appl.s
 
 SRCS_BIN =  ultimate.bin \
 			1st_boot_700.bin \
+			chars.bin \
 			2nd_boot.bin
 
 PATH_INC =  $(addprefix -I, $(VPATH))

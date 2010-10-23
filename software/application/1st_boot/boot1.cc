@@ -1,5 +1,5 @@
-#include "flash.h"
-#include "at45_flash.h"
+#include "w25q_flash.h"
+#include "at49_flash.h"
 
 extern "C" {
     #include "itu.h"
@@ -18,63 +18,128 @@ void jump_run(DWORD a)
     function();
 }
 
+bool w25q_wait_ready(int time_out)
+{
+// TODO: FOR Microblaze or any faster CPU, we need to insert wait cycles here
+    int i=time_out;
+	bool ret = true;
+    SPI_FLASH_CTRL = SPI_FORCE_SS;
+    SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
+    while(SPI_FLASH_DATA & 0x01) {
+        if(!(i--)) {
+            uart_write_buffer("Flash timeout.\n", 16);
+            ret = false;
+        }
+    }
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    return ret;
+}
+
 
 int main(int argc, char **argv)
 {
-    // are we running on MK1 hardware?
-    if (!(CAPABILITIES & CAPAB_SPI_FLASH))
-        jump_run(APPL_RUN_MK1);
-
-	Flash *flash = get_flash();
-	t_flash_address image_addr;
-		
-	flash->protect_enable();
-
-    UINT length;
-    uart_write_buffer("**Primary Boot**\n\r", 18);
-	flash->protect_enable();
-	flash->get_image_addresses(FLASH_ID_BOOTAPP, &image_addr);
-    flash->read_dev_addr(image_addr.device_addr, 4, &length);    
-    if(length != 0xFFFFFFFF) {
-        flash->read_dev_addr(image_addr.device_addr+16, length, (void *)BOOT2_RUN_ADDR);
-        jump_run(BOOT2_RUN_ADDR);
-        while(1);
-    }
-    uart_write_buffer("No bootloader, trying application.\n\r", 36);
-	flash->get_image_addresses(FLASH_ID_APPL, &image_addr);
-    flash->read_dev_addr(image_addr.device_addr, 4, &length);    
-    if(length != 0xFFFFFFFF) {
-        flash->read_dev_addr(image_addr.device_addr+16, length, (void *)APPL_RUN_ADDR);
-        jump_run(APPL_RUN_ADDR);
-        while(1);
-    }
-    uart_write_buffer("Nothing to boot.\n\r", 18);
-    while(1);
-}
+    if (!(CAPABILITIES & CAPAB_SPI_FLASH)) {
 /*
+        AT49_COMMAND1 = 0xAA;
+        AT49_COMMAND2 = 0x55;
+        AT49_COMMAND1 = 0x90;
+    	BYTE manuf  = AT49_MEM_ARRAY(0);
+    	BYTE dev_id = AT49_MEM_ARRAY(2);
+        AT49_COMMAND1 = 0xAA;
+        AT49_COMMAND2 = 0x55;
+        AT49_COMMAND1 = 0xF0;
+        uart_write_hex(manuf);
+        uart_write_hex(dev_id);
+*/
+        jump_run(APPL_RUN_MK1);
+    }
 
-int main(int argc, char **argv)
-{
-	t_flash_address image_addr;
-		
-    UINT length;
     uart_write_buffer("**Primary Boot**\n\r", 18);
-	at45_flash.get_image_addresses(FLASH_ID_BOOTAPP, &image_addr);
-    at45_flash.read_dev_addr(image_addr.device_addr, 4, &length);    
-    if(length != 0xFFFFFFFF) {
-        at45_flash.read_dev_addr(image_addr.device_addr+16, length, (void *)BOOT2_RUN_ADDR);
+
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    SPI_FLASH_DATA = 0xFF;
+
+    // check flash
+    SPI_FLASH_CTRL = SPI_FORCE_SS;
+    SPI_FLASH_DATA = 0x9F; // JEDEC Get ID
+	BYTE manuf = SPI_FLASH_DATA;
+	BYTE dev_id = SPI_FLASH_DATA;
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+
+    DWORD read_boot2, read_appl;
+    DWORD *dest;
+    
+    int flash_type = 0;
+    if(manuf != 0x1F) { // not Atmel
+        read_boot2 = 0x030A2800;
+        read_appl  = 0x03200000;
+
+        // protect flash the Atmel way
+        SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    	SPI_FLASH_DATA_32 = 0x3D2A7FA9;
+        SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    } else {
+        flash_type = 1; // assume Winbond
+        read_boot2 = 0x03054000;
+        read_appl  = 0x03100000;
+
+        // protect flash the Winbond way
+        SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    	SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
+    	BYTE status = SPI_FLASH_DATA;
+        SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+        if ((status & 0x7C) != 0x34) {
+            SPI_FLASH_CTRL = 0;
+        	SPI_FLASH_DATA = W25Q_WriteEnable;
+            SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+        	SPI_FLASH_DATA = W25Q_WriteStatusRegister;
+        	SPI_FLASH_DATA = 0x34;
+        	SPI_FLASH_DATA = 0x00;
+            SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+        	w25q_wait_ready(10000);
+        	SPI_FLASH_DATA = W25Q_WriteDisable;
+        }
+    }
+
+    int length;
+    
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA_32 = read_boot2;
+    length = (int)SPI_FLASH_DATA_32;
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+   
+    if(length != -1) {
+        read_boot2 += 16;
+        SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+        SPI_FLASH_DATA_32 = read_boot2;
+        dest = (DWORD *)BOOT2_RUN_ADDR;
+        while(length > 0) {
+            *(dest++) = SPI_FLASH_DATA_32;
+            length -= 4;
+        }
         jump_run(BOOT2_RUN_ADDR);
         while(1);
     }
+
     uart_write_buffer("No bootloader, trying application.\n\r", 36);
-	at45_flash.get_image_addresses(FLASH_ID_APPL, &image_addr);
-    at45_flash.read_dev_addr(image_addr.device_addr, 4, &length);    
-    if(length != 0xFFFFFFFF) {
-        at45_flash.read_dev_addr(image_addr.device_addr+16, length, (void *)APPL_RUN_ADDR);
+
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA_32 = read_appl;
+    length = (int)SPI_FLASH_DATA_32;
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+   
+    if(length != -1) {
+        read_appl += 16;
+        SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+        SPI_FLASH_DATA_32 = read_appl;
+        dest = (DWORD *)APPL_RUN_ADDR;
+        while(length > 0) {
+            *(dest++) = SPI_FLASH_DATA_32;
+            length -= 4;
+        }
         jump_run(APPL_RUN_ADDR);
         while(1);
     }
     uart_write_buffer("Nothing to boot.\n\r", 18);
     while(1);
 }
-*/

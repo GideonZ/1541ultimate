@@ -42,14 +42,10 @@ typedef struct t_flash_address {
 
 class Flash
 {
-#ifndef BOOTLOADER
-//	virtual void read_page(int page, void *buffer) { }
-#endif
 public:    
     Flash() { }
     ~Flash() { }
 
-#ifndef BOOTLOADER
 	virtual Flash *tester(void) { return NULL; }
     
 	// Getting the serial number
@@ -58,14 +54,11 @@ public:
 	// Interface for getting images from ROM.
 	virtual int  read_image(int image_id, void *buffer, int buf_size) { return 0; }
     virtual void read_linear_addr(int addr, int len, void *buffer) { }
-#endif
-
-	virtual void get_image_addresses(int image_id, t_flash_address *addr) { }
 	virtual void read_dev_addr(int device_addr, int len, void *buffer) { } // low level read function, needed for boot
+	virtual void get_image_addresses(int image_id, t_flash_address *addr) { }
 
-#ifndef BOOTLOADER
 	// Interface for flashing images
-	virtual int  get_page_size(void) { return 1; }
+	virtual int  get_page_size(void) { return 1; } // programmable block
     virtual int  get_sector_size(int addr) { return 1; }
     virtual bool erase_sector(int sector) { return false; }
 	virtual int  page_to_sector(int page) { return -1; }
@@ -86,8 +79,6 @@ public:
 	// Protection functions
 	virtual bool protect_configure(void) { return false; }
 	virtual void protect_disable(void) { }
-#endif
-
 	virtual void protect_enable(void) { }
 
 };
