@@ -284,9 +284,14 @@ void Usb :: init(void)
 
     // power up
     clear(); // reinit structure
-    write_ulpi_register(ULPI_OTG_CONTROL, OTG_DRV_VBUS | OTG_DP_PD | OTG_DM_PD );
-    wait_ms(700);
-
+    s = read_ulpi_register(ULPI_IRQ_CURRENT);
+    if(s & 2) {
+        printf("*** There is already power on the bus!! *** Powered HUB?? ***\n");
+    } else {
+        write_ulpi_register(ULPI_OTG_CONTROL, OTG_DRV_VBUS | OTG_DP_PD | OTG_DM_PD );
+        wait_ms(700);
+    }
+    
     // s = read_ulpi_register(ULPI_LINE_STATE);
     s = get_ulpi_status();
     printf("Linestatus before reset: $%b\n", s);

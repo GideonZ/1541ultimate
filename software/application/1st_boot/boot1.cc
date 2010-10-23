@@ -70,7 +70,7 @@ int main(int argc, char **argv)
     DWORD *dest;
     
     int flash_type = 0;
-    if(manuf != 0x1F) { // not Atmel
+    if(manuf == 0x1F) { // Atmel
         read_boot2 = 0x030A2800;
         read_appl  = 0x03200000;
 

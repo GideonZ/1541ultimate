@@ -49,6 +49,7 @@
 #define ULPI_FUNC_CTRL    0x04
 #define ULPI_OTG_CONTROL  0x0A
 #define ULPI_IRQEN_RISING 0x0D
+#define ULPI_IRQ_CURRENT  0x13
 #define ULPI_IRQ_STATUS   0x14
 #define ULPI_LINE_STATE   0x15
 

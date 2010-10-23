@@ -109,7 +109,7 @@ $(RESULT)/$(PRJ)_700.mcs: $(OUTPUT)/$(PRJ)_700.bit
 	@echo "PromGen 700A..."
 	@promgen -w -s 2048 -p mcs -spi -u 0 $< -o $@
 	@$(HEX2BIN) -s 0x53C90 $@ $(@:.mcs=.tmp)
-	@$(BIN2HEX) -Z -v "FPGA U2 V97" $(@:.mcs=.tmp) $@
+	@$(BIN2HEX) -Z -v "FPGA U2 V9E" $(@:.mcs=.tmp) $@
 	@rm $(@:.mcs=.tmp)
 	
 $(OUTPUT)/$(PRJ)_250.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_250).bit

@@ -94,16 +94,15 @@ C64 :: C64()
 {
     flash = get_flash();
     if(flash) {
-        char_set = (BYTE *)&_binary_chars_bin_start;
-	    // char_set = new BYTE[CHARSET_SIZE];
-	    // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
-	    keyb = new Keyboard(this);
-	    
 	    cfg = config_manager.register_store(0x43363420, "C64 and cartridge settings", c64_config);
 	    if(cfg)
 	    	C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
-	
 	}
+
+    // char_set = new BYTE[CHARSET_SIZE];
+    // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
+    char_set = (BYTE *)&_binary_chars_bin_start;
+    keyb = new Keyboard(this);
 
     if(C64_CLOCK_DETECT == 0)
         printf("No PHI2 clock detected.. Stand alone mode.\n");

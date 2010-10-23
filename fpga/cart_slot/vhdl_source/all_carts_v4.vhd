@@ -120,6 +120,8 @@ begin
                 cart_en    <= '1';
 --                unfreeze   <= '0';
                 hold_nmi   <= '1';
+            elsif cart_en = '0' then
+                cart_logic_d <= cart_logic; -- activate change of mode!
             end if;
 
             serve_vic <= '0';

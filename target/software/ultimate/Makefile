@@ -85,7 +85,6 @@ SRCS_CC	 =  stream.cc \
 			rtc.cc \
 			usb.cc \
 			usb_scsi.cc \
-			usb_hub.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
@@ -230,12 +229,12 @@ dep:  $(OBJS_CC:.o=.d) $(OBJS_C:.o=.d)
 hex: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
 	@$(MAKE) -C ../2nd_boot hex
 	@$(BIN2HEX) -Z -o 0x108000 $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ).mcs
-	@$(BIN2HEX) -Z -o 0x108000 -v "2.0RC9" -t $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
+	@$(BIN2HEX) -Z -o 0x108000 -v "2.0RCA" -t $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
 	@cat ../2nd_boot/result/flash_700.mcs         >>$(OUTPUT)/_flash.mcs
 	@$(HEX2BIN) -o 0x000000 -s 0x138000 $(OUTPUT)/_flash.mcs $(RESULT)/flash_700.bin
 	@$(BIN2HEX) -o 0x000000 $(RESULT)/flash_700.bin $(RESULT)/flash_700.mcs
 	@rm $(OUTPUT)/_flash.mcs
-	@$(BIN2HEX) -Z -o 0x108000 -v "2.0RC9" -t $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
+	@$(BIN2HEX) -Z -o 0x108000 -v "2.0RCA" -t $(RESULT)/$(PRJ).bin $(OUTPUT)/_flash.mcs
 	@cat ../2nd_boot/result/flash_400.mcs         >>$(OUTPUT)/_flash.mcs
 	@$(HEX2BIN) -o 0x000000 -s 0x138000 $(OUTPUT)/_flash.mcs $(RESULT)/flash_400.bin
 	@$(BIN2HEX) -o 0x000000 $(RESULT)/flash_400.bin $(RESULT)/flash_400.mcs
