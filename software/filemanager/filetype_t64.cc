@@ -215,6 +215,7 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 	                f->attrib = 0;
 	                strncpy(f->extension, "PRG", 4);
 	                f->size = (stop)?(stop - strt):(65536 - strt);
+                    f->size += 2; // the file is actually two longer than the start-stop
 	            } else {
 	            	strcpy(f->lfname, "- Invalid name -");
 	                f->cluster = 0;
@@ -331,6 +332,10 @@ FRESULT FileInT64 :: read(void *buffer, DWORD len, UINT *transferred)
     if(!len)
         return FR_OK;
 
+    if(len > (length - offset)) {
+        len = length - offset;
+    }
+    
 	res = fs->t64_file->read(dst, len, &bytes_read);
 	*transferred += bytes_read;
 	return res;

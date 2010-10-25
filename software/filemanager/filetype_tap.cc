@@ -46,8 +46,12 @@ FileTypeTap :: ~FileTypeTap()
 
 int FileTypeTap :: fetch_context_items(IndexedList<PathObject *> &list)
 {
-    list.append(new MenuItem(this, "Start Tape", TAPFILE_START ));
-    return 1 + FileDirEntry :: fetch_context_items_actual(list);
+    int count = 0;
+    if(CAPABILITIES & CAPAB_C2N_STREAMER) {
+        list.append(new MenuItem(this, "Start Tape", TAPFILE_START ));
+        count++;
+    }
+    return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
 FileDirEntry *FileTypeTap :: test_type(PathObject *obj)

@@ -428,8 +428,8 @@ void C64 :: init_io(void)
     printf("Init IO.\n");
     
     // set VIC bank to 0
-	CIA2_DDRA |= 0x03;
-	CIA2_DPA  |= 0x03;
+	CIA2_DDRA &= 0xFC; // set bank bits to input
+//  CIA2_DPA  |= 0x03; // don't touch!
 
     // enable keyboard
 	CIA1_DDRA  = 0xFF; // all out
@@ -499,7 +499,7 @@ void C64 :: restore_io(void)
 
     // restore the cia registers
     CIA2_DDRA = cia_backup[0];
-    CIA2_DPA  = cia_backup[1];
+//    CIA2_DPA  = cia_backup[1]; // don't touch!
 	CIA1_DDRA = cia_backup[2];
 	CIA1_DDRB = cia_backup[3];
 	CIA1_DPA  = cia_backup[4];
