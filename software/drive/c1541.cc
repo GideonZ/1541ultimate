@@ -75,6 +75,9 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
 
     gcr_image = new GcrImage();
     bin_image = new BinImage();
+    
+//    if(letter == 'A')
+//        gcr_image->test();
 }
 
 C1541 :: ~C1541()

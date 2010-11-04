@@ -37,7 +37,8 @@ class GcrImage
     BYTE gcr_data[C1541_MAX_GCR_LEN];
 
     // private functions
-    BYTE *find_sync(BYTE *, BYTE *);
+    BYTE *wrap(BYTE **, BYTE *, BYTE *, int);
+    BYTE *find_sync(BYTE *, BYTE *, BYTE *);
     BYTE *convert_block_bin2gcr(BYTE *bin, BYTE *gcr, int len);
     BYTE *convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr);
 public:
@@ -55,7 +56,8 @@ public:
     void convert_disk_bin2gcr(BinImage *bin_image);
     int  convert_track_gcr2bin(int track, BinImage *bin_image);
     void invalidate(void);
-
+    bool test(void);
+    
     friend class BinImage;
 };
 

@@ -194,16 +194,31 @@ BYTE *GcrImage :: convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr)
     return gcr;
 }
 
-BYTE *GcrImage :: find_sync(BYTE *gcr_data, BYTE *end)
+BYTE *GcrImage :: find_sync(BYTE *gcr_data, BYTE *begin, BYTE *end)
 {
-	while((gcr_data < end) && (*gcr_data != 0xFF))
-		gcr_data++;
-	while((gcr_data < end) && (*gcr_data == 0xFF))
-		gcr_data++;
+    bool wrap = false;
 
-	if(gcr_data >= end)
-		return NULL;
-
+	while(*gcr_data != 0xFF) {
+		if(gcr_data < end)
+    		gcr_data++;
+        else {
+            if(wrap)
+                return NULL;
+            wrap = true;
+            gcr_data = begin;
+        }
+    }
+            
+	while(*gcr_data == 0xFF) {
+		if(gcr_data < end)
+    		gcr_data++;
+        else {
+            if(wrap)
+                return NULL;
+            wrap = true;
+            gcr_data = begin;
+        }
+    }
 	return gcr_data;
 }
 
@@ -223,6 +238,26 @@ inline void conv_5bytes_gcr2bin(BYTE **gcr, BYTE *bin)
 	*gcr = b;
 }
 
+BYTE *GcrImage :: wrap(BYTE **current, BYTE *begin, BYTE *end, int count)
+{
+    BYTE *gcr = *current;
+//    printf("[%p-%p-%p:%d]", begin, gcr, end, count);
+    if(gcr > (end - count)) {
+//		printf("Wrap(%d)..", count);
+		BYTE *d = sector_buffer;
+		BYTE *s = gcr;
+        *current = (gcr + count) - (end - begin);
+		while((s < end)&&(count--))
+			*(d++) = *(s++);
+		s = begin;
+		while(count--)
+			*(d++) = *(s++);
+		return sector_buffer; // set decode pointer to the scratch pad
+	}
+    *current = gcr + count;
+	return gcr;
+}
+    
 int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 {
 	static BYTE header[8];
@@ -231,38 +266,37 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 	int expected_secs = bin_image->track_sectors[track];
 	BYTE *bin = bin_image->track_start[track];
 	BYTE *gcr;
+    BYTE *begin;
 	BYTE *end;
 	BYTE *dest;
+    BYTE *gcr_data;
+	BYTE *new_gcr;
 	bool  expect_data = false;
 	bool  wrapped = false;
-	gcr = track_address[2*track];
-	end = gcr + track_length[2*track];
-
+    begin = track_address[2*track];
+	end = begin + track_length[2*track];
+	gcr = begin;
+    
 	int secs = 0;
-	while(gcr) {
-		gcr = find_sync(gcr, end);
-		if(!gcr) {
-			break;
-		}
-		if((gcr > (end - 350))&&(!wrapped)) { // 10 bytes header, 9 bytes gap, 5 bytes sync, 325 bytes data + 1
-			wrapped = true;
-			printf("Need wrap... ", gcr, end);
-			BYTE *d = sector_buffer;
-			BYTE *s = gcr;
-			while(s < end)
-				*(d++) = *(s++);
-			s = track_address[2*track]; // restart from the beginning of track
-			end = sector_buffer + 350;
-			while(d < end)
-				*(d++) = *(s++);
-			gcr = sector_buffer; // move our main pointer to the scratch pad
-		}
-		conv_5bytes_gcr2bin(&gcr, &header[0]);
+	
+	while(secs < expected_secs) {
+        
+		new_gcr = find_sync(gcr, begin, end);
+        if(new_gcr < gcr) {
+//            printf(":W");
+            wrapped = true;
+        }            
+        gcr = new_gcr;
+
+        gcr_data = wrap(&gcr, begin, end, 5);
+		conv_5bytes_gcr2bin(&gcr_data, &header[0]);
 		if(header[0] == 8) {
-			conv_5bytes_gcr2bin(&gcr, &header[4]);
+            gcr_data = wrap(&gcr, begin, end, 5);
+			conv_5bytes_gcr2bin(&gcr_data, &header[4]);
 			t = (int)header[3];
 			s = (int)header[2];
 			dest = bin + (256 * s);
+//            printf(":H[%d.%d]", t, s);
 			//printf("Sector header found: %d %d\n", t, s);
 			if(t != (track+1)) {
 				printf("Error, sector doesn't belong to this track.\n");
@@ -276,17 +310,20 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 		}
 		if(header[0] == 7) {
 			if(!expect_data) {
-				printf("Ignoring data block. No header.\n");
+//                printf("$");
+//				printf("Ignoring data block. No header.\n");
 			} else {
+//                printf(":D");
 				expect_data = false;
 				secs++;
 				memcpy(dest, &header[1], 3);
 				dest += 3;
+                gcr_data = wrap(&gcr, begin, end, 320);
 				for(int i=0;i<63;i++) {
-					conv_5bytes_gcr2bin(&gcr, dest);
+					conv_5bytes_gcr2bin(&gcr_data, dest);
 					dest+=4;
 				}
-				conv_5bytes_gcr2bin(&gcr, &header[4]);
+				conv_5bytes_gcr2bin(&gcr_data, &header[4]);
 				*(dest++) = header[4];
 				//printf("bin = %p\n", bin);
 			}
@@ -389,6 +426,64 @@ bool GcrImage :: write_track(int track, File *f)
 	return true;
 }
 
+bool GcrImage :: test(void)
+{
+    // first create a temporary binary image
+    // and fill it with test data
+    BinImage *bin = new BinImage;
+    bin->format("diskname");
+    
+    BYTE *bin_track0 = bin->track_start[0];
+    int sectors = bin->track_sectors[0];
+    int bytes = sectors * 256;
+    
+    BYTE b = 1;
+    BYTE *dst = bin_track0;
+    for(int i=0;i<bytes;i++) {
+        *(dst++) = b++;
+        if(b == 45)
+            b = 1;
+    }
+
+    // convert it to gcr
+    convert_disk_bin2gcr(bin);
+
+    // now let's say we decode back to another location:
+    bin->track_start[0] = bin->track_start[2];
+    BYTE *decoded = bin->track_start[2];
+
+    // determine where to put the wrap byte
+    BYTE *gcr_next = track_address[0] + track_length[0];
+    
+    printf("GCR Image ready to decode...\n");
+    
+    // now start decoding 600 times
+    int total = 0;
+    for(int i=0;i<600;i++) {
+        // clear
+        for(int j=0;j<bytes;j++)
+            decoded[j] = 0;
+
+        // decode
+        convert_track_gcr2bin(0, bin);
+
+        // compare (better than checking the return value)
+        int errors = 0;
+        for(int j=0;j<bytes;j++) {
+            if (decoded[j] != bin_track0[j])
+                errors ++;
+        }
+        printf("Decode position %d: Errors = %d\n", i, errors);
+        total += errors;
+
+        // shift up one byte
+        *(gcr_next++) = *track_address[0];
+        track_address[0] ++;
+    }
+    printf("Test was %s\n", total?"NOT successful":"SUCCESSFUL!!");
+    return (total == 0);    
+}
+    
 //--------------------------------------------------------------
 // Binary Image Class
 //--------------------------------------------------------------
