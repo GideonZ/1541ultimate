@@ -52,6 +52,7 @@ public:
     int    track_length[C1541_MAXTRACKS];
 
     bool load(File *f);
+    bool save(File *f);
     bool write_track(int, File *f);
     void convert_disk_bin2gcr(BinImage *bin_image);
     int  convert_track_gcr2bin(int track, BinImage *bin_image);

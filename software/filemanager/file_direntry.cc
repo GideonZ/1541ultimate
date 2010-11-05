@@ -15,6 +15,7 @@
 
 #define MENU_CREATE_D64    0x3001
 #define MENU_CREATE_DIR    0x3002
+#define MENU_CREATE_G64    0x3003
 
 /* Debug options */
 #define MENU_DUMP_INFO     0x30FE
@@ -138,6 +139,7 @@ int FileDirEntry :: fetch_context_items_actual(IndexedList<PathObject *> &list)
 int FileDirEntry :: fetch_task_items(IndexedList<PathObject*> &list)
 {
     list.append(new MenuItem(this, "Create D64", MENU_CREATE_D64));
+    list.append(new MenuItem(this, "Create G64", MENU_CREATE_G64));
     list.append(new MenuItem(this, "Create Directory", MENU_CREATE_DIR));
 /*
     list.append(new MenuItem(this, "Dump FileInfo", MENU_DUMP_INFO));
@@ -178,6 +180,8 @@ void FileDirEntry :: execute(int selection)
     int res;
     char buffer[40];
     BinImage *bin;
+    GcrImage *gcr;
+    bool save_result;
     FRESULT fres;
     
     printf("FileDirEntry Execute option %4x\n", selection);
@@ -233,6 +237,7 @@ void FileDirEntry :: execute(int selection)
             break;
             
         case MENU_CREATE_D64:
+        case MENU_CREATE_G64:
         	buffer[0] = 0;
         	if(!(info->attrib & AM_DIR)) {
         		printf("I don't know what you are trying to do, but the info doesn't point to a DIR!\n");
@@ -240,14 +245,26 @@ void FileDirEntry :: execute(int selection)
         	}
         	res = user_interface->string_box("Give name for new disk..", buffer, 22);
         	if(res > 0) {
-    			set_extension(buffer, ".d64", 32);
+    			set_extension(buffer, (selection == MENU_CREATE_G64)?(char *)".g64":(char *)".d64", 32);
     			fix_filename(buffer);
-        		bin = new BinImage;
+                if (selection == MENU_CREATE_G64)
+    		    bin = new BinImage;
         		if(bin) {
                     File *f = root.fcreate(buffer, this);
         			if(f) {
                 		bin->format(buffer);
-                		printf("Result of save: %d.\n", bin->save(f));
+                        if(selection == MENU_CREATE_G64) {
+                            gcr = new GcrImage;
+                            if(gcr) {
+                                gcr->convert_disk_bin2gcr(bin);
+                                save_result = gcr->save(f);
+                            } else {
+                                printf("No memory to create gcr image.\n");
+                            }
+                        } else {
+                            save_result = bin->save(f);
+                        }
+                		printf("Result of save: %d.\n", save_result);
                         root.fclose(f);
                 		push_event(e_reload_browser);
         			} else {

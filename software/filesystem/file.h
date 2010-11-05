@@ -37,6 +37,7 @@ public:
     // functions for reading and writing files
     void invalidate(void) { node = NULL; }
     virtual void    close(void);
+    virtual FRESULT sync(void);
     virtual FRESULT read(void *buffer, DWORD len, UINT *transferred);
     virtual FRESULT write(void *buffer, DWORD len, UINT *transferred);
     virtual FRESULT seek(DWORD pos);

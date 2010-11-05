@@ -20,6 +20,8 @@ __inline DWORD le_to_cpu_32(DWORD a)
     return (a >> 24) | (a << 24) | m1 | m2;
 }
 
+#define cpu_to_le_32 le_to_cpu_32
+
 
 extern BYTE bam_header[];
 
@@ -197,29 +199,25 @@ BYTE *GcrImage :: convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr)
 BYTE *GcrImage :: find_sync(BYTE *gcr_data, BYTE *begin, BYTE *end)
 {
     bool wrap = false;
+    int sync_count = 0;
 
-	while(*gcr_data != 0xFF) {
-		if(gcr_data < end)
+    do {
+        if(*gcr_data == 0xFF) {
+            sync_count++;
+        } else {
+            if(sync_count > 2)
+                return gcr_data; // byte after sync
+            sync_count = 0;
+        }
+		if(gcr_data < end) {
     		gcr_data++;
-        else {
+        } else {
             if(wrap)
                 return NULL;
             wrap = true;
             gcr_data = begin;
         }
-    }
-            
-	while(*gcr_data == 0xFF) {
-		if(gcr_data < end)
-    		gcr_data++;
-        else {
-            if(wrap)
-                return NULL;
-            wrap = true;
-            gcr_data = begin;
-        }
-    }
-	return gcr_data;
+    } while(1);
 }
 
 inline void conv_5bytes_gcr2bin(BYTE **gcr, BYTE *bin)
@@ -297,6 +295,10 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 			s = (int)header[2];
 			dest = bin + (256 * s);
 //            printf(":H[%d.%d]", t, s);
+//            if(s==8) {
+//                printf("\nSector 8. Current pointer: %p\n", gcr_data);
+//                dump_hex(new_gcr-10, 104);
+//            }
 			//printf("Sector header found: %d %d\n", t, s);
 			if(t != (track+1)) {
 				printf("Error, sector doesn't belong to this track.\n");
@@ -396,9 +398,6 @@ bool GcrImage :: load(File *f)
 	    	track_address[i] = tr + 2;
     		track_length[i] = (int)w;
             printf("Set track %d.%d to 0x%6x / 0x%4x.\n", (i>>1)+1, (i&1)?5:0, track_address[i], w);
-			if(i == 0) {
-				dump_hex(track_address[i], 203);
-			}
         } else {
             printf("Skipping track %d.%d.\n", (i>>1)+1, (i&1)?5:0);
             track_address[i] = dummy_track;
@@ -408,6 +407,65 @@ bool GcrImage :: load(File *f)
     return true;
 }
 
+bool GcrImage :: save(File *f)
+{
+    BYTE *header = new BYTE[16 + C1541_MAXTRACKS * 8];
+
+    memcpy(header, "GCR-1541", 8);
+    header[8] = 0;
+    header[9] = C1541_MAXTRACKS;
+    header[10] = (BYTE)C1541_MAXTRACKLEN;
+    header[11] = (BYTE)(C1541_MAXTRACKLEN >> 8); // we do not use a fixed length!! Beware!!
+
+    DWORD *pul = (DWORD *)&header[12]; // because 12 is a multiple of 4, we can do this
+
+    DWORD track_start = 12 + C1541_MAXTRACKS * 8;
+    
+    for(int i=0;i<C1541_MAXTRACKS;i++) {
+        if((track_address[i] == dummy_track)||(!track_address[i]))
+            *(pul++) = 0;
+        else {
+            *(pul++) = cpu_to_le_32(track_start);
+            track_start += track_length[i] + 2;
+        }
+    }
+    int speed;
+    for(int i=0;i<C1541_MAXTRACKS;i++) {
+        if(i<34) speed = 3;
+        else if(i<48) speed = 2;
+        else if(i<60) speed = 1;
+        else speed = 0;
+
+        if((track_address[i] == dummy_track)||(!track_address[i]))
+            *(pul++) = 0;
+        else 
+            *(pul++) = cpu_to_le_32(speed);
+    }
+
+    UINT bytes_written;
+    FRESULT res = f->write(header, 12 + C1541_MAXTRACKS * 8, &bytes_written);
+    delete header;
+    
+    if(res != FR_OK)
+        return false;
+        
+    BYTE size[2];
+    for(int i=0;i<C1541_MAXTRACKS;i++) {
+        if((track_address[i] == dummy_track)||(!track_address[i]))
+            continue;
+        size[0] = (BYTE)track_length[i];
+        size[1] = (BYTE)(track_length[i] >> 8);
+        res = f->write(size, 2, &bytes_written);
+        if(res != FR_OK)
+            return false;
+        res = f->write(track_address[i], track_length[i], &bytes_written);
+        if(res != FR_OK)
+            return false;
+    }
+    
+    return true;
+}
+    
 bool GcrImage :: write_track(int track, File *f)
 {
 	if(track_address[track] == dummy_track)
@@ -434,6 +492,10 @@ bool GcrImage :: test(void)
     bin->format("diskname");
     
     BYTE *bin_track0 = bin->track_start[0];
+
+    bin_track0[260] = 0; // 0x104 = 0
+    bin_track0[261] = 0; // 0x105 = 0
+    
     int sectors = bin->track_sectors[0];
     int bytes = sectors * 256;
     
@@ -617,6 +679,6 @@ int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
 	res = file->write(track_start[track], 256*track_sectors[track], &transferred);
 	if(res != FR_OK)
 		return res;
-	return 0;
+    return file->sync();
 }
 
