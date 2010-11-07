@@ -39,6 +39,7 @@ port (
     data_i          : in  std_logic;              
 
     iec_reset_n     : in  std_logic;
+    c64_reset_n     : in  std_logic;
     
     -- LED
     act_led_n       : out std_logic;
@@ -66,6 +67,7 @@ architecture structural of c1541_drive is
     signal en_hum           : std_logic;
     signal en_slip          : std_logic;
 
+    signal use_c64_reset    : std_logic;
     signal floppy_inserted  : std_logic := '0';
     signal audio_enable     : std_logic;
     signal bank_is_ram      : std_logic_vector(7 downto 0);
@@ -101,6 +103,8 @@ begin
         clock        => clock,
         reset        => reset,
         
+        use_c64_reset=> use_c64_reset,
+        c64_reset_n  => c64_reset_n,
         iec_reset_n  => iec_reset_n,
         iec_reset_o  => iec_reset_o,
     
@@ -251,6 +255,7 @@ begin
         param_rdata     => param_rdata,
 
         iec_reset_o     => iec_reset_o,
+        use_c64_reset   => use_c64_reset,
         power           => power,
         drv_reset       => drv_reset,
         drive_address   => drive_address,

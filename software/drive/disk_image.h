@@ -52,9 +52,10 @@ public:
     int    track_length[C1541_MAXTRACKS];
 
     bool load(File *f);
-    bool save(File *f);
+    bool save(File *f, bool);
     bool write_track(int, File *f);
-    void convert_disk_bin2gcr(BinImage *bin_image);
+    void convert_disk_bin2gcr(BinImage *bin_image, bool report);
+    int  convert_disk_gcr2bin(BinImage *bin_image, bool);
     int  convert_track_gcr2bin(int track, BinImage *bin_image);
     void invalidate(void);
     bool test(void);
@@ -65,13 +66,13 @@ public:
 
 class BinImage
 {
-    int   num_tracks;
     BYTE *track_start[C1541_MAXTRACKS];
     int   track_sectors[C1541_MAXTRACKS];
     BYTE *errors; // NULL means no error bytes
     int   error_size;
 
 public:
+    int   num_tracks;
     BYTE *bin_data;
 
     BinImage();
@@ -79,7 +80,7 @@ public:
 
     int format(char *diskname);
     int load(File *);
-    int save(File *);
+    int save(File *, bool);
     int write_track(int track, GcrImage *, File *);
 
     friend class GcrImage;

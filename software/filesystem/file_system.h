@@ -119,6 +119,9 @@ public:
 	bool is_directory(void) {
 	    return (attrib & AM_DIR);
 	}
+
+	bool is_writable(void);
+	    
 	void print_info(void) {
 		printf("File System: %p\n", fs);
 		printf("Cluster    : %d\n", cluster);
@@ -152,7 +155,7 @@ public:
     virtual void    init(void);              // Initialize file system
     virtual FRESULT get_free (DWORD*);       // Get number of free sectors on the file system
     virtual FRESULT sync(void);              // Clean-up cached data
-
+    virtual bool is_writable() { return false; } // by default a file system is not writable, unless we implement it
     // functions for reading directories
     virtual Directory *dir_open(FileInfo *); // Opens directory (creates dir object, NULL = root)
     virtual void dir_close(Directory *d);    // Closes (and destructs dir object)

@@ -5,16 +5,18 @@ use ieee.numeric_std.all;
 
 entity c1541_timing is
 port (
-    clock       : in  std_logic;
-    reset       : in  std_logic;
+    clock           : in  std_logic;
+    reset           : in  std_logic;
     
-    iec_reset_n : in  std_logic;
-    iec_reset_o : out std_logic;
+    use_c64_reset   : in  std_logic;
+    c64_reset_n     : in  std_logic;
+    iec_reset_n     : in  std_logic;
+    iec_reset_o     : out std_logic;
 
-    drive_stop  : in  std_logic;
-
-    drv_clock_en: out std_logic;   -- 1/12.5 (4 MHz)
-    cpu_clock_en: out std_logic ); -- 1/50   (1 MHz)
+    drive_stop      : in  std_logic;
+                    
+    drv_clock_en    : out std_logic;   -- 1/12.5 (4 MHz)
+    cpu_clock_en    : out std_logic ); -- 1/50   (1 MHz)
     
 end c1541_timing;
 
@@ -24,6 +26,7 @@ architecture Gideon of c1541_timing is
 	signal cpu_clock_en_i	: std_logic := '0';
     signal toggle           : std_logic := '0';
     signal iec_reset_sh     : std_logic_vector(0 to 2) := "000";
+    signal c64_reset_sh     : std_logic_vector(0 to 2) := "000";
 begin
     process(clock)
     begin
@@ -52,6 +55,9 @@ begin
             if cpu_clock_en_i = '1' then
                 iec_reset_sh(0) <= not iec_reset_n;
                 iec_reset_sh(1 to 2) <= iec_reset_sh(0 to 1);
+
+                c64_reset_sh(0) <= use_c64_reset and not c64_reset_n;
+                c64_reset_sh(1 to 2) <= c64_reset_sh(0 to 1);
             end if;                    
 
             if reset='1' then
@@ -63,5 +69,5 @@ begin
     end process;
 
 	cpu_clock_en <= cpu_clock_en_i;
-    iec_reset_o  <= '1' when iec_reset_sh="111" else '0';
+    iec_reset_o  <= '1' when (iec_reset_sh="111") and (c64_reset_sh="111") else '0';
 end Gideon;

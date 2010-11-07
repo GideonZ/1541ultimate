@@ -1,6 +1,13 @@
 
 #include "file_system.h"
 
+bool FileInfo :: is_writable(void)
+{
+        if(!fs->is_writable())
+            return false;
+        return (attrib & AM_RDO);
+}
+	
 FileSystem :: FileSystem(Partition *p)
 {
     prt = p;

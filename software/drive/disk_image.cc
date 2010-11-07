@@ -11,6 +11,7 @@
 extern "C" {
 	#include "dump_hex.h"
 }
+#include "userinterface.h" // for showing status information only
 
 __inline DWORD le_to_cpu_32(DWORD a)
 {
@@ -256,6 +257,20 @@ BYTE *GcrImage :: wrap(BYTE **current, BYTE *begin, BYTE *end, int count)
 	return gcr;
 }
     
+int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, bool report)
+{
+    int errors = 0;
+    int result = 0;
+    for(int track=0;track<bin_image->num_tracks;track++) {
+        result = convert_track_gcr2bin(track, bin_image);
+        if(result)
+            errors ++;
+        if(report)
+            user_interface->update_status(NULL, 1);
+    }
+    return errors;
+}
+
 int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 {
 	static BYTE header[8];
@@ -338,7 +353,7 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 	return 0;
 }
 
-void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image)
+void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, bool report)
 {
 	id2 = bin_image->bin_data[91554];
     id1 = bin_image->bin_data[91555];
@@ -356,6 +371,8 @@ void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image)
 		track_address[2*i + 1] = dummy_track;
         track_length[2*i + 1] = int(newgcr - gcr);
         gcr = newgcr;
+        if(report)
+            user_interface->update_status(NULL, 1);
     }
 }
 
@@ -369,6 +386,7 @@ bool GcrImage :: load(File *f)
     WORD w;
 
     fres = f->read(gcr_data, C1541_MAX_GCR_LEN, &bytes_read);
+
     printf("Total bytes read: %d.\n", bytes_read);
     if(fres != FR_OK) {
     	return false;
@@ -407,7 +425,7 @@ bool GcrImage :: load(File *f)
     return true;
 }
 
-bool GcrImage :: save(File *f)
+bool GcrImage :: save(File *f, bool report)
 {
     BYTE *header = new BYTE[16 + C1541_MAXTRACKS * 8];
 
@@ -450,17 +468,23 @@ bool GcrImage :: save(File *f)
         return false;
         
     BYTE size[2];
+    int skipped = 0;
     for(int i=0;i<C1541_MAXTRACKS;i++) {
-        if((track_address[i] == dummy_track)||(!track_address[i]))
+        if((track_address[i] == dummy_track)||(!track_address[i])) {
+            skipped++;
             continue;
+        }
         size[0] = (BYTE)track_length[i];
         size[1] = (BYTE)(track_length[i] >> 8);
         res = f->write(size, 2, &bytes_written);
         if(res != FR_OK)
             return false;
         res = f->write(track_address[i], track_length[i], &bytes_written);
+        if(report)
+            user_interface->update_status(NULL, 1 + skipped);
         if(res != FR_OK)
             return false;
+        skipped = 0;
     }
     
     return true;
@@ -480,6 +504,7 @@ bool GcrImage :: write_track(int track, File *f)
 	fres = f->write(track_address[track], track_length[track], &bytes_written);
 	if(fres != FR_OK)
 		return false;
+    f->sync();
 	printf("%d bytes written at offset %6x.\n", bytes_written, offset);
 	return true;
 }
@@ -508,7 +533,7 @@ bool GcrImage :: test(void)
     }
 
     // convert it to gcr
-    convert_disk_bin2gcr(bin);
+    convert_disk_bin2gcr(bin, false);
 
     // now let's say we decode back to another location:
     bin->track_start[0] = bin->track_start[2];
@@ -604,7 +629,7 @@ int BinImage :: load(File *file)
 	return 0;
 }
 
-int BinImage :: save(File *file)
+int BinImage :: save(File *file, bool report)
 {
 	UINT transferred = 0;
 	int res =  file->seek(0);
@@ -612,14 +637,31 @@ int BinImage :: save(File *file)
 		printf("SEEK ERROR: %d\n", res);
 		return -1;
 	}
-	res = file->write(bin_data, 683*256, &transferred);
-	if(res != FR_OK)
-		return -2;
 
-	BYTE *data = &bin_data[683*256];
+	BYTE *data = bin_data;
+    if(report) {
+        for(int i=0;i<34;i++) {
+        	res = file->write(data, 10 * 512, &transferred);
+        	if(res != FR_OK)
+        		return -2;
+            user_interface->update_status(NULL, 1);
+            data += (10 * 512);
+        }
+    	res = file->write(data, 3 * 256, &transferred);
+    	if(res != FR_OK)
+    		return -2;
+    } else {
+    	res = file->write(data, 683 * 256, &transferred);
+    	if(res != FR_OK)
+    		return -2;
+    }            
+
+	data = &bin_data[683*256];
 	num_tracks -= 35;
 	while(num_tracks--) {
 		res = file->write(data, 17*256, &transferred);
+        if(report)
+            user_interface->update_status(NULL, 1);
 		if(res != FR_OK)
 			return -3;
 		data += 17*256;

@@ -367,7 +367,8 @@ begin
             data_i          => data_i,              
             
             iec_reset_n     => IEC_RESET,
-
+            c64_reset_n     => RSTn,
+            
             -- LED
             act_led_n       => act_led_n,
             motor_led_n     => motor_led_n,
@@ -427,6 +428,7 @@ begin
             data_i          => data_i,              
             
             iec_reset_n     => IEC_RESET,
+            c64_reset_n     => RSTn,
 
             -- LED
             act_led_n       => open, --DISK_ACTn,

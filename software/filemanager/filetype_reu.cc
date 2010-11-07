@@ -52,27 +52,53 @@ void FileTypeREU :: execute(int selection)
 	printf("REU Select: %4x\n", selection);
 	File *file;
 	UINT bytes_read;
-	int res;
+	bool progress;
+	int sectors;
+    int secs_per_step;
+    int bytes_per_step;
+    int total_bytes_read;
+    int remain;
+    
 	static char buffer[36];
-
+    BYTE *dest;
+    
 	switch(selection) {
 	case REUFILE_LOAD:
-		res = BUTTON_OK;
-		if(info->size > 0x100000)
-			res = user_interface->popup("This might take a while. Continue?", BUTTON_OK | BUTTON_CANCEL );
-		if(res == BUTTON_OK) {
-			printf("REU Load.. %s\n", get_name());
-			file = root.fopen(this, FA_READ);
-			if(file) {
-				// load file in REU memory
-				file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
-				sprintf(buffer, "Bytes loaded: %d ($%8x)", bytes_read, bytes_read);
-				root.fclose(file);
-				file = NULL;
-				user_interface->popup(buffer, BUTTON_OK);
-			} else {
-				printf("Error opening file.\n");
-			}
+//		if(info->size > 0x100000)
+//			res = user_interface->popup("This might take a while. Continue?", BUTTON_OK | BUTTON_CANCEL );
+        sectors = (info->size >> 9);
+        if(sectors >= 128)
+            progress = true;
+        secs_per_step = (sectors + 31) >> 5;
+        bytes_per_step = secs_per_step << 9;
+        remain = info->size;
+        
+		printf("REU Load.. %s\n", get_name());
+		file = root.fopen(this, FA_READ);
+		if(file) {
+            total_bytes_read = 0;
+			// load file in REU memory
+            if(progress) {
+                user_interface->show_status("Loading REU file..", 32);
+                dest = (BYTE *)(REU_MEMORY_BASE);
+                while(remain >= 0) {
+        			file->read(dest, bytes_per_step, &bytes_read);
+                    total_bytes_read += bytes_read;
+                    user_interface->update_status(NULL, 1);
+        			remain -= bytes_per_step;
+        			dest += bytes_per_step;
+        	    }
+        	    user_interface->hide_status();
+        	} else {
+    			file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
+                total_bytes_read += bytes_read;
+    	    }
+			sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
+			root.fclose(file);
+			file = NULL;
+			user_interface->popup(buffer, BUTTON_OK);
+		} else {
+			printf("Error opening file.\n");
 		}
 		break;
 	default:

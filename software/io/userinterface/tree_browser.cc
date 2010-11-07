@@ -239,6 +239,8 @@ void TreeBrowserState :: down(int num)
 
 void TreeBrowserState :: reselect(void)
 {
+    int header = node->get_header_lines();
+// ####    
 	if(selected_line + first_item_on_screen >= node->children.get_elements()) {
 		move_to_index(node->children.get_elements()-1);
 	}
@@ -348,7 +350,7 @@ void TreeBrowser :: task_menu(void)
     menu_node    = new PathObject(NULL);
     menu_browser = new TaskMenu(menu_node, state->node);
     menu_browser->init(window, keyb);
-    state->reselect();
+//    state->reselect();
     user_interface->activate_uiobject(menu_browser);
     // from this moment on, we loose focus.. polls will go directly to menu!
 
@@ -388,6 +390,7 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
 //            printf("Menu Node = %p. Menu_browser = %p.\n", menu_node, menu_browser);
 //            dump_hex(menu_node, 0x80);
             state->update_selected(); //refresh = true;
+            state->reselect();
 //            printf("A");
             delete menu_browser;
 //            printf("B");

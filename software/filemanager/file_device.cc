@@ -31,7 +31,15 @@ int FileDevice :: fetch_children(void)
     while(p) {
         char pname[] = "Partx";
         pname[4] = '0'+i;
-        children.append(new FilePartition(this, p, pname));
+
+		bool found = false;
+		for(int x=0;x<children.get_elements();x++) {
+			if(pattern_match(pname, children[x]->get_name(), false))
+				found = true;
+        }
+        if(!found)
+            children.append(new FilePartition(this, p, pname));
+
         ++i;
         p = p->next_partition;
     }

@@ -14,6 +14,8 @@
 
 #define MENU_1541_RESET     0x1501
 #define MENU_1541_REMOVE    0x1502
+#define MENU_1541_SAVED64   0x1503
+#define MENU_1541_SAVEG64   0x1504
 #define MENU_1541_MOUNT     0x1511
 #define MENU_1541_MOUNT_GCR 0x1512
 #define MENU_1541_UNLINK    0x1513
@@ -117,6 +119,7 @@ public:
 	    cmd = new t_drive_command;
 	    cmd->command = function;
 	    cmd->file = NULL;
+//        cmd->location = location;
 	    cmd->protect = false;
 		push_event(e_object_private_cmd, obj, (int)cmd);
 	}

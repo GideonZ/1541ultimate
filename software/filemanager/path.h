@@ -28,6 +28,8 @@ public:
     	ref_count = 0;
     }
 
+    int get_ref_count() { return ref_count; }
+
 	virtual ~PathObject() {
 		//printf("destructor %p %s (%d)\n", this, get_name(), ref_count);
 		int el = children.get_elements();
@@ -75,8 +77,8 @@ public:
 		PathObject *obj = this;
 		//printf("Detach recursive: ");
 		if(single) {
-			//printf("detach single: %s\n", get_name());
-			ref_count--;
+			if(ref_count > 0)
+			    ref_count--;
 		} else {
 			while(obj) {
 				//printf("%s (%d), ", obj->get_name(), obj->ref_count);
@@ -108,8 +110,6 @@ public:
 	// this will automatically add children, if any, and store them in the children list
 	virtual int  fetch_children()  {
 		return -1; // default: we don't know how to fetch children...
-//		return children.get_elements(); // by default, we just return the number of children that were
-		// statically added.
 	}
 
 	// the following function will return a new PathObject, based on the name.
@@ -136,9 +136,7 @@ public:
 
     virtual FileInfo *get_file_info(void) { return NULL; }
 
-    virtual void execute(int select) {
-        printf("Selected option #%d for base object.\n", select);
-    }
+    virtual void execute(int select) { }
 
     virtual void sort_children(void) {
     	children.sort(path_object_compare);
@@ -151,8 +149,9 @@ public:
 	
 	void dump(int level=0) {
 		PathObject *obj;
+        if(level == 0)
+            printf("--- Dumping Path from %s ---\n", get_name());
 		for(int i=0;i<children.get_elements();i++) {
-			printf("i=%4d:", i);
 			obj = children[i];
 			for(int j=0;j<level;j++) {
 				printf(" ");

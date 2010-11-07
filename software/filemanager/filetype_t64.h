@@ -42,6 +42,7 @@ public:
     FileTypeT64(PathObject *par, FileInfo *fi);
     ~FileTypeT64();
 
+    bool  is_writable(void) { return false; }
     int   fetch_children(void);
 	int   get_header_lines(void) { return 1; }
     int   fetch_context_items(IndexedList<PathObject *> &list);

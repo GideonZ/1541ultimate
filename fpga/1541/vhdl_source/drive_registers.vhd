@@ -18,6 +18,7 @@ port (
     io_resp         : out t_io_resp;
     
     iec_reset_o     : in  std_logic;
+    use_c64_reset   : out std_logic;
     power           : out std_logic;
     drv_reset       : out std_logic;
     drive_address   : out std_logic_vector(1 downto 0);
@@ -46,6 +47,7 @@ architecture rtl of drive_registers is
 
     signal power_i          : std_logic;
     signal drv_reset_i      : std_logic;
+    signal use_c64_reset_i  : std_logic;
     signal drive_address_i  : std_logic_vector(1 downto 0);
     signal sensor_i         : std_logic;
     signal bank_is_ram_i    : std_logic_vector(7 downto 0);
@@ -74,6 +76,7 @@ begin
                         power_i <= io_req.data(0);
                     when c_drvreg_reset =>
                         drv_reset_i <= io_req.data(0);
+                        use_c64_reset_i <= io_req.data(1);
                     when c_drvreg_address =>
                         drive_address_i <= io_req.data(1 downto 0);
                     when c_drvreg_sensor =>
@@ -109,6 +112,7 @@ begin
                         io_resp.data(0) <= power_i;
                     when c_drvreg_reset =>
                         io_resp.data(0) <= drv_reset_i;
+                        io_resp.data(1) <= use_c64_reset_i;
                     when c_drvreg_address =>
                         io_resp.data(1 downto 0) <= drive_address_i;
                     when c_drvreg_sensor =>

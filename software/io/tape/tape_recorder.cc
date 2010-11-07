@@ -44,12 +44,14 @@ int  TapeRecorder :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
 	int items = 0;
     PathObject *po;
+    FileInfo *info;
 	if(recording) {
 		item_list.append(new ObjectMenuItem(this, "Finish Rec. to TAP", MENU_REC_FINISH));
 		items = 1;
 	}
     else {
         po = user_interface->get_path();
+/*
         if(po) {
             printf("Current DIR: %s\n", po->get_name());
             FileInfo *info = po->get_file_info();
@@ -58,10 +60,14 @@ int  TapeRecorder :: fetch_task_items(IndexedList<PathObject*> &item_list)
         } else {
             printf("Path not set.\n");
         }
+*/
         if(po && po->get_file_info()) {
-    		item_list.append(new ObjectMenuItem(this, "Sample tape to TAP", MENU_REC_SAMPLE_TAPE));
-    		item_list.append(new ObjectMenuItem(this, "Capture save to TAP", MENU_REC_RECORD_TO_TAP));
-    		items = 2;
+            info = po->get_file_info();
+            if(info->is_writable()) {
+        		item_list.append(new ObjectMenuItem(this, "Sample tape to TAP", MENU_REC_SAMPLE_TAPE));
+        		item_list.append(new ObjectMenuItem(this, "Capture save to TAP", MENU_REC_RECORD_TO_TAP));
+        		items = 2;
+            }
     	}
 	}
 	return items;
@@ -130,6 +136,7 @@ void TapeRecorder :: flush()
     file->write(&le_size, 4, &bytes_written);
 
 	root.fclose(file);
+	push_event(e_reload_browser);
 	file = NULL;
 	recording = 0;
 }

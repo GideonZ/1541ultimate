@@ -19,6 +19,7 @@ Screen :: Screen(char *b, char *c, int sx, int sy)
     pointer    = 0;
     color      = 15;
     border     = 0;
+    reverse    = 0;
     backup_chars = NULL;
     backup_color = NULL;
     allow_scroll = true;
@@ -48,6 +49,7 @@ Screen :: Screen(Screen *scr, int x1, int y1, int sx, int sy)
     pointer    = 0;
     color      = 15;
     border     = 0;
+    reverse    = 0;
     backup_chars = NULL;
     backup_color = NULL;
     allow_scroll = true;
@@ -170,6 +172,7 @@ void Screen :: clear(void)
     cursor_x = cursor_y = 0;
     pointer = 0; //(offset_y * size_y) + offset_x;
     allow_scroll = true;
+    reverse = 0;
 }
 
 void Screen :: no_scroll(void)
@@ -226,6 +229,11 @@ void Screen :: scroll_down()
         b[x+size_x] = 0;
 }
 
+void Screen :: reverse_mode(int r)
+{
+    reverse = r;
+}
+    
 void Screen :: output(char c)
 {
 	if(escape) {
@@ -256,7 +264,11 @@ void Screen :: output(char c)
         	escape = true;
         	break;
         default:
-            window_base[pointer] = c;
+            if(reverse)
+                window_base[pointer] = c | 0x80;
+            else
+                window_base[pointer] = c;
+                
             window_base_col[pointer] = (char)color;
             pointer ++;
             cursor_x++;
@@ -299,7 +311,11 @@ void Screen :: output_line(char *string)
             col = int(c - 0x10);
             continue;
         }
-        window_base[temp] = c;
+        if(reverse)
+            window_base[temp] = c | 0x80;
+        else
+            window_base[temp] = c;
+            
         window_base_col[temp] = (char)col;
         temp++;
         i++;
@@ -340,7 +356,7 @@ void Screen :: draw_border(void)
     border ++;
 }
 
-void Screen :: reverse(int x, int y, int len)
+void Screen :: make_reverse(int x, int y, int len)
 {
     char *scr = window_base;
     scr += (y * size_x) + x;

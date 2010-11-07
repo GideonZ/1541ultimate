@@ -8,11 +8,13 @@
 class FileDirEntry : public PathObject
 {
     FileDirEntry *attempt_promotion(void);
+    void remove_duplicates(void);
 public:
     FileInfo *info;
     FileDirEntry(PathObject *par, FileInfo *fi);
     virtual ~FileDirEntry();
 
+    virtual bool is_writable(void);
     virtual int fetch_children(void);
     virtual int fetch_context_items(IndexedList<PathObject *> &list);
     virtual int fetch_task_items(IndexedList<PathObject*> &list);

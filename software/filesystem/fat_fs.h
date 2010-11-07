@@ -85,6 +85,7 @@ public:
     ~FATFS() { }                              /* Destructor */
     
     static BYTE check_fs (Partition *p);      /* Load boot record and check if it is an FAT boot record */
+    bool    is_writable(void) { return true; } // ###
     void    init (void);                      /* Initialize file system object based on boot record */
     void    print_info (void);                /* Print information to console about FAT filesystem */
     FRESULT getfree (DWORD*);                 /* Get number of free clusters on the drive */

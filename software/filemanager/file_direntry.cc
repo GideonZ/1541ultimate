@@ -56,6 +56,11 @@ FileInfo *FileDirEntry :: get_file_info(void)
 	return info;
 }
 
+bool FileDirEntry :: is_writable(void)
+{
+    return (info->is_directory() && info->fs->is_writable());
+}
+
 FileDirEntry *FileDirEntry :: attempt_promotion(void)
 {    
     FileDirEntry *promoted = file_type_factory.promote(this);
@@ -73,6 +78,7 @@ FileDirEntry *FileDirEntry :: attempt_promotion(void)
 int FileDirEntry :: fetch_children(void)
 {
     cleanup_children();
+    int remaining_children = children.get_elements();
 
     FileInfo fi(32);    
 	FRESULT fres;
@@ -86,13 +92,14 @@ int FileDirEntry :: fetch_children(void)
 		}
         int i=0;        
         while((fres = r->get_entry(fi)) == FR_OK) {
-			if(fi.lfname[0] != '.') {
+			if((fi.lfname[0] != '.') && !(fi.attrib & AM_HID)) {
 	            children.append(new FileDirEntry(this, &fi));
 	            ++i;
 			}
         }
         info->fs->dir_close(r);
         sort_children();
+        remove_duplicates(); // should be easy!!
         return i;
     } else {
         // Filetype factory->transform 
@@ -118,11 +125,12 @@ int FileDirEntry :: fetch_context_items(IndexedList<PathObject *> &list)
 int FileDirEntry :: fetch_context_items_actual(IndexedList<PathObject *> &list)
 {
 	int count = 0;
+	FileInfo *info = parent->get_file_info();
 	if(info->attrib & AM_DIR) {
 		list.append(new MenuItem(this, "Enter", FILEDIR_ENTERDIR));
 		count++;
 	}
-	if(parent->get_file_info()) {
+	if(info && info->is_writable()) {
 		list.append(new MenuItem(this, "Rename", FILEDIR_RENAME));
 	    list.append(new MenuItem(this, "Delete", FILEDIR_DELETE));
 		count+=2;
@@ -138,14 +146,13 @@ int FileDirEntry :: fetch_context_items_actual(IndexedList<PathObject *> &list)
 
 int FileDirEntry :: fetch_task_items(IndexedList<PathObject*> &list)
 {
-    list.append(new MenuItem(this, "Create D64", MENU_CREATE_D64));
-    list.append(new MenuItem(this, "Create G64", MENU_CREATE_G64));
-    list.append(new MenuItem(this, "Create Directory", MENU_CREATE_DIR));
-/*
-    list.append(new MenuItem(this, "Dump FileInfo", MENU_DUMP_INFO));
-    list.append(new MenuItem(this, "Dump PathObject", MENU_DUMP_OBJECT));
-*/
-    return 2;
+    if(is_writable()) {
+        list.append(new MenuItem(this, "Create D64", MENU_CREATE_D64));
+        list.append(new MenuItem(this, "Create G64", MENU_CREATE_G64));
+        list.append(new MenuItem(this, "Create Directory", MENU_CREATE_DIR));
+        return 3;
+    }
+    return 0;
 }
 
 
@@ -247,7 +254,6 @@ void FileDirEntry :: execute(int selection)
         	if(res > 0) {
     			set_extension(buffer, (selection == MENU_CREATE_G64)?(char *)".g64":(char *)".d64", 32);
     			fix_filename(buffer);
-                if (selection == MENU_CREATE_G64)
     		    bin = new BinImage;
         		if(bin) {
                     File *f = root.fcreate(buffer, this);
@@ -256,13 +262,18 @@ void FileDirEntry :: execute(int selection)
                         if(selection == MENU_CREATE_G64) {
                             gcr = new GcrImage;
                             if(gcr) {
-                                gcr->convert_disk_bin2gcr(bin);
-                                save_result = gcr->save(f);
+                                user_interface->show_status("Converting..", 70);
+                                gcr->convert_disk_bin2gcr(bin, true);
+                                user_interface->update_status("Saving...", 0);
+                                save_result = gcr->save(f, true);
+                                user_interface->hide_status();
                             } else {
                                 printf("No memory to create gcr image.\n");
                             }
                         } else {
-                            save_result = bin->save(f);
+                            user_interface->show_status("Creating D64..", 35);
+                            save_result = bin->save(f, true);
+                            user_interface->hide_status();
                         }
                 		printf("Result of save: %d.\n", save_result);
                         root.fclose(f);
@@ -302,9 +313,9 @@ void FileDirEntry :: execute(int selection)
         	}
         	break;
         default:
+            PathObject :: execute(selection);
             break;
     }
-	printf("Execute done!\n");
 }
 
 int FileDirEntry :: compare(PathObject *obj)
@@ -316,5 +327,27 @@ int FileDirEntry :: compare(PathObject *obj)
 	if (!(info->attrib & AM_DIR) && (b->info->attrib & AM_DIR))
 		return 1;
 
-	return stricmp(get_name(), b->get_name());
+    int by_name = stricmp(get_name(), b->get_name());
+    if(by_name)
+	    return by_name;
+	return b->get_ref_count() - get_ref_count(); // for duplicates! (locked item will be first)
 }
+
+void FileDirEntry :: remove_duplicates(void)
+{
+    int count = children.get_elements();
+    PathObject *p, *n;
+    
+    for(int i=0;i<count;i++) {
+        p = children[i];
+        if(p->get_ref_count()) { // locked?
+            n = children[i+1];
+            if(n) { // should exist, but just to be sure and avoid crashing
+                delete n;
+                children.remove(n);
+                count--;
+            }
+        }
+    }
+}
+    

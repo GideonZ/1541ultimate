@@ -28,10 +28,15 @@ void TaskMenu :: init(Screen *scr, Keyboard *key)
         for(int i=0;i<main_menu_objects.get_elements();i++) {
         	items += main_menu_objects[i]->fetch_task_items(state->node->children);
         }
+        // debug
+        // items += root.fetch_task_items(state->node->children);
+        // end debug
         if(!items) {
             printf("No items.. exit.\n");
             context_state = e_finished;
             return;
+        } else {
+            printf("Number of items: %d\n", items);
         }
         rows = items + 2;
         size_y = parent_win->get_size_y();

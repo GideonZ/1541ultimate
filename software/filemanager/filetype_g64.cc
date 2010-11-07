@@ -58,7 +58,7 @@ int FileTypeG64 :: fetch_context_items(IndexedList<PathObject *> &list)
         count += 3;
     }
 
-    return 3 + FileDirEntry :: fetch_context_items_actual(list);
+    return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
 FileDirEntry *FileTypeG64 :: test_type(PathObject *obj)
@@ -128,11 +128,11 @@ void FileTypeG64 :: execute(int selection)
             drive_command->protect = protect;
             drive_command->command = MENU_1541_MOUNT_GCR;
             push_event(e_unfreeze);
-			push_event(e_object_private_cmd, c1541_A, (int)drive_command);
-			if(selection != G64FILE_MOUNT) {
+			push_event(e_object_private_cmd, c1541_B, (int)drive_command);
+			if(selection != G64FILE_MOUNT_B) {
                 drive_command = new t_drive_command;
                 drive_command->command = MENU_1541_UNLINK;
-    			push_event(e_object_private_cmd, c1541_A, (int)drive_command);
+    			push_event(e_object_private_cmd, c1541_B, (int)drive_command);
 			}
 		} else {
 			printf("Error opening file.\n");

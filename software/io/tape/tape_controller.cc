@@ -10,6 +10,7 @@ TapeController *tape_controller = NULL; // globally static
 #define MENU_C2N_PAUSE         0x3201
 #define MENU_C2N_RESUME        0x3202
 #define MENU_C2N_STATUS        0x3203
+#define MENU_C2N_STOP          0x3204
 
 static void poll_tape(Event &e)
 {
@@ -40,8 +41,8 @@ int  TapeController :: fetch_task_items(IndexedList<PathObject*> &item_list)
 		item_list.append(new ObjectMenuItem(this, "Resume Tape", MENU_C2N_RESUME));
 	else
 		item_list.append(new ObjectMenuItem(this, "Pause Tape", MENU_C2N_PAUSE));
-	
-	return 1;
+    item_list.append(new ObjectMenuItem(this, "Stop tape playback", MENU_C2N_STOP));
+	return 2;
 }
 
 void TapeController :: stop()
@@ -118,6 +119,9 @@ void TapeController :: poll(Event &e)
                 case MENU_C2N_STATUS:
                     printf("Tape status = %b\n", PLAYBACK_STATUS);
 //                    flash.reboot(0);
+                    break;
+                case MENU_C2N_STOP:
+                    stop();
                     break;
 				default:
 					break;

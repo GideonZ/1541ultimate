@@ -8,6 +8,7 @@ extern "C" {
 #include "c1541.h"
 #include "disk_image.h"
 #include "small_printf.h"
+#include "userinterface.h"
 
 //#include "fatfile.h"
 #include "filemanager.h"
@@ -126,6 +127,17 @@ int  C1541 :: fetch_task_items(IndexedList<PathObject*> &item_list)
         sprintf(buffer, "Remove disk from Drive %c", drive_letter);
 		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_REMOVE));
 		items++;
+
+        PathObject *po = user_interface->get_path();
+        if(po && po->get_file_info()) {
+            sprintf(buffer, "Save disk in drive %c as D64", drive_letter);
+    		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_SAVED64));
+    		items++;
+    
+            sprintf(buffer, "Save disk in drive %c as G64", drive_letter);
+    		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_SAVEG64));
+    		items++;
+    	}
 	}
 	return items;
 }
@@ -303,7 +315,7 @@ void C1541 :: mount_d64(bool protect, File *file)
 	printf("Loading...");
 	bin_image->load(file);
 	printf("Converting...");
-	gcr_image->convert_disk_bin2gcr(bin_image);
+	gcr_image->convert_disk_bin2gcr(bin_image, false);
 	printf("Inserting...");
 	insert_disk(protect, gcr_image);
 	printf("Done\n");
@@ -330,10 +342,15 @@ void C1541 :: poll(Event &e)
 {
 	int tr;
 	int written;
+	int res;
+	bool g64;
 	static int skipped=0;
 	bool protect;
-	File *f;
+	File *file;
     t_drive_command *drive_command;
+    PathObject *po;
+    static char buffer[32];
+    
 	switch(e.type) {
 //	case e_mount_drv1:
 //		f = (File *)e.object;
@@ -381,6 +398,37 @@ void C1541 :: poll(Event &e)
 				}
 				remove_disk();
 				break;
+            case MENU_1541_SAVED64:
+            case MENU_1541_SAVEG64:
+                g64 = (drive_command->command == MENU_1541_SAVEG64);
+                po = user_interface->get_path();
+                printf("Menu Item %4x. PathObject = %p.\n", drive_command->command, po);
+                if(po && po->get_file_info()) {
+                	res = user_interface->string_box("Give name for image file..", buffer, 24);
+                	if(res > 0) {
+                		set_extension(buffer, (g64)?(char *)".g64":(char *)".d64", 32);
+                		fix_filename(buffer);
+                        file = root.fcreate(buffer, user_interface->get_path());
+                        if(file) {
+                            if(g64) {
+                                user_interface->show_status("Saving G64...", 84);
+                                gcr_image->save(file, true);
+                                user_interface->hide_status();
+                            } else {
+                                user_interface->show_status("Converting disk...", 2*bin_image->num_tracks);
+                                gcr_image->convert_disk_gcr2bin(bin_image, true);
+                                user_interface->update_status("Saving D64...", 0);
+                                bin_image->save(file, true);
+                                user_interface->hide_status();
+                            }
+                            file->close();
+                    		push_event(e_reload_browser);
+                        } else {
+                        	user_interface->popup("Unable to open file..", BUTTON_OK);
+                        }
+                    }
+                }
+                break;    
 			default:
 				printf("Unhandled menu item for C1541.\n");
 			}

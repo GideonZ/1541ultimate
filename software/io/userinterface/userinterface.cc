@@ -167,6 +167,24 @@ int UserInterface :: string_box(char *msg, char *buffer, int maxlen)
     return ret;
 }
 
+int  UserInterface :: show_status(char *msg, int steps)
+{
+    status_box = new UIStatusBox(msg, steps);
+    status_box->init(screen);
+}
+
+int  UserInterface :: update_status(char *msg, int steps)
+{
+    status_box->update(msg, steps);
+}
+
+int  UserInterface :: hide_status(void)
+{
+    status_box->deinit();
+    delete status_box;
+}
+
+
 /* User Interface Objects */
 /* Popup */
 UIPopup :: UIPopup(char *msg, BYTE btns) : message(msg)
@@ -230,7 +248,7 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
 
     active_button = 0; // we can change this
     
-    window->reverse(button_pos[active_button], 2, button_len[active_button]);
+    window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
     keyboard->clear_buffer();
 }
 
@@ -254,17 +272,17 @@ int UIPopup :: poll(int dummy, Event &e)
         return 0;
     }
     if(c == 0x1D) {
-        window->reverse(button_pos[active_button], 2, button_len[active_button]);
+        window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
         active_button ++;
         if(active_button >= btns_active)
             active_button = btns_active-1;
-        window->reverse(button_pos[active_button], 2, button_len[active_button]);
+        window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
     } else if(c == 0x9D) {
-        window->reverse(button_pos[active_button], 2, button_len[active_button]);
+        window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
         active_button --;
         if(active_button < 0)
             active_button = 0;
-        window->reverse(button_pos[active_button], 2, button_len[active_button]);
+        window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
     }
     return 0;
 }    
@@ -420,3 +438,51 @@ void UIStringBox :: deinit(void)
     delete window;
 }
 
+/* Status Box */
+UIStatusBox :: UIStatusBox(char *msg, int steps) : message(msg)
+{
+    total_steps = steps;
+    progress = 0;
+}
+    
+void UIStatusBox :: init(Screen *screen)
+{
+    int window_width = 32;
+    int message_width = message.length();
+    int x1 = (screen->get_size_x() - window_width) / 2;
+    int y1 = (screen->get_size_y() - 5) / 2;
+    int x_m = (window_width - message_width) / 2;
+
+    window = new Screen(screen, x1, y1, window_width, 5);
+    window->draw_border();
+    window->move_cursor(x_m, 0);
+    window->output_line(message.c_str());
+    window->move_cursor(0, 2);
+}
+
+void UIStatusBox :: deinit(void)
+{
+    delete window;
+}
+
+void UIStatusBox :: update(char *msg, int steps)
+{
+    static char percent[8];
+    static char bar[40];
+    progress += steps;
+
+    if(msg) {
+        message = msg;
+        window->clear();
+        window->output_line(message.c_str());
+    }
+    
+    memset(bar, 32, 36);
+    window->move_cursor(0, 2);
+    window->reverse_mode(1);
+    bar[(32 * progress) / total_steps] = 0; // terminate
+    window->output_line(bar);
+
+//    sprintf(percent, "%d%", (100 * progress) / total_steps);
+//    window->output(percent);
+}

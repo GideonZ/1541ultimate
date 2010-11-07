@@ -170,7 +170,7 @@ void FileTypeD64 :: execute(int selection)
 //			push_event(e_mount_drv1, file, protect);
 			push_event(e_object_private_cmd, c1541_B, (int)drive_command);
 
-			if(selection != D64FILE_MOUNT) {
+			if(selection != D64FILE_MOUNT_B) {
                 drive_command = new t_drive_command;
                 drive_command->command = MENU_1541_UNLINK;
 //				push_event(e_unlink_drv1);

@@ -33,6 +33,7 @@ typedef enum {
 } t_ui_state;
 
 class UIObject;
+class UIStatusBox;
 
 class UserInterface
 {
@@ -44,7 +45,7 @@ private:
     
     void set_screen_title(void);
     PathObject *current_path;
-    
+    UIStatusBox *status_box;
 public:
     C64 *host;
     Keyboard *keyboard;
@@ -57,6 +58,10 @@ public:
     virtual void handle_event(Event &e);
     virtual int  popup(char *msg, BYTE flags); // blocking
     virtual int  string_box(char *msg, char *buffer, int maxlen); // blocking
+
+    virtual int  show_status(char *msg, int steps); // not blocking
+    virtual int  update_status(char *msg, int steps); // not blocking
+    virtual int  hide_status(void); // not blocking (of course)
     
     // interface to find the current path from any object, they can ask the user interface
     // This is intended for menu options that do not pass the path object.
@@ -132,6 +137,21 @@ public:
     int  poll(int, Event &e);
 };
 
+class UIStatusBox : public UIObject
+{
+private:
+    string   message;
+    int      total_steps;
+    int      progress;
+    Screen  *window;
+public:
+    UIStatusBox(char *msg, int steps);
+    ~UIStatusBox() { }
+    
+    void init(Screen *screen);
+    void deinit(void);
+    void update(char *msg, int steps);
+};
 
 void poll_user_interface(Event &e);
 extern UserInterface *user_interface;
