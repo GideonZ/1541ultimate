@@ -1003,6 +1003,12 @@ FRESULT FATFS::file_seek(File *f, DWORD pos)
     return ff->lseek(pos);
 }
 
+FRESULT FATFS::file_sync(File *f)
+{
+    FATFIL *ff = (FATFIL *)f->handle;
+    return ff->sync();
+}
+
 FRESULT FATFS :: file_rename(FileInfo *fi, char *new_name)
 {
     return f_rename(fi, new_name);

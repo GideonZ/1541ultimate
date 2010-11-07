@@ -15,6 +15,7 @@ port (
     
     reset_done  : out   std_logic;
 	sof_enable  : out   std_logic;
+	scan_enable : out   std_logic;
     speed       : out   std_logic_vector(1 downto 0);
     abort       : out   std_logic;    
     -- status
@@ -34,11 +35,11 @@ port (
     resp_data   : out   std_logic_vector(8 downto 0);
 
     -- register interface
-    read_reg    : out   std_logic;
-    write_reg   : out   std_logic;
-    read_data   : in    std_logic_vector(7 downto 0);
-    write_data  : out   std_logic_vector(7 downto 0);
-    address     : out   std_logic_vector(5 downto 0);
+    reg_read    : out   std_logic;
+    reg_write   : out   std_logic;
+    reg_rdata   : in    std_logic_vector(7 downto 0);
+    reg_wdata   : out   std_logic_vector(7 downto 0);
+    reg_address : out   std_logic_vector(5 downto 0);
     reg_ack     : in    std_logic;
     
     send_packet : out   std_logic;
@@ -112,7 +113,7 @@ begin
             
             case state is
             when idle =>
-                address <= cmd_data(5 downto 0);
+                reg_address <= cmd_data(5 downto 0);
 
                 if cmd_valid = '1' then
                     case cmd_data(7 downto 6) is
@@ -145,6 +146,10 @@ begin
 							usb_busy <= '1';
 						when c_cmd_clear_busy =>
 							usb_busy <= '0';
+                        when c_cmd_disable_scan =>
+                            scan_enable <= '0';
+                        when c_cmd_enable_scan =>
+                            scan_enable <= '1';
                         when others =>
                             resp_data <= '0' & X"AA";
                             state <= send_resp;
@@ -152,7 +157,7 @@ begin
                     when "11" =>
                         state <= user_reg_write;
                     when "10" =>
-                        read_reg <= '1';
+                        reg_read <= '1';
                         state <= user_reg_read;
                     when others =>
                         null;
@@ -161,21 +166,21 @@ begin
 
             when user_reg_read =>
                 if reg_ack = '1' then
-                    read_reg <= '0';
-                    resp_data <= "1" & read_data;
+                    reg_read <= '0';
+                    resp_data <= "1" & reg_rdata;
                     state <= send_resp;
                 end if;
             
             when user_reg_write =>
                 if cmd_valid = '1' then
-                    write_data <= cmd_data;
-                    write_reg <= '1';
+                    reg_wdata <= cmd_data;
+                    reg_write <= '1';
                     state <= user_write_2;
                 end if;
             
             when user_write_2 =>
                 if reg_ack = '1' then
-                    write_reg <= '0';
+                    reg_write <= '0';
                     state <= idle;
                 end if;
                 
@@ -207,12 +212,12 @@ begin
                 end if;
 
             when set_se0 =>
-                address    <= std_logic_vector(to_unsigned(4, address'length));
-                write_reg  <= '1';
-                write_data <= X"50";
+                reg_address    <= std_logic_vector(to_unsigned(4, reg_address'length));
+                reg_write  <= '1';
+                reg_wdata <= X"50";
                 timer_1 <= c_filter_times(g_simulation); -- reset timer 1 (4.25 �s)
                 if reg_ack = '1' then
-                    write_reg <= '0';
+                    reg_write <= '0';
                     if low_speed='1' or disable_hs='1' then
                         state <= reset_end;
                     else
@@ -289,15 +294,15 @@ begin
                 user_valid <= '0';
                 user_last  <= '0';
                 if t0_expired = '1' then
-                    address    <= std_logic_vector(to_unsigned(4, address'length));
-                    write_reg  <= '1';
-                    write_data <= map_speed(speed_i) or X"20"; -- reset bit set
+                    reg_address    <= std_logic_vector(to_unsigned(4, reg_address'length));
+                    reg_write  <= '1';
+                    reg_wdata <= map_speed(speed_i) or X"20"; -- reset bit set
                     state <= reset_finished;
                end if;
             
             when reset_finished =>
                 if reg_ack='1' then
-                    write_reg <= '0';
+                    reg_write <= '0';
                     reset_done_i <= '1';
                     state <= idle;
                 end if;
@@ -312,13 +317,15 @@ begin
                 state        <= idle;
                 reset_done_i <= '0';
 				sof_enable   <= '0';
+                scan_enable  <= '1';
                 user_data    <= X"00";
                 user_last    <= '0';
                 user_valid   <= '0';
                 send_packet  <= '0';
-                read_reg     <= '0';
-                write_reg    <= '0';
-                write_data   <= X"00";
+                reg_read     <= '0';
+                reg_write    <= '0';
+                reg_wdata    <= X"00";
+                reg_address  <= (others => '0');
                 resp_data    <= (others => '0');
                 timer_2      <= 31;
                 t2_expired   <= '0';

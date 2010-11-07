@@ -87,7 +87,6 @@ architecture wrap of usb_host_io is
     signal reg_ack         : std_logic;
     signal reg_addr        : std_logic_vector(5 downto 0);  
     signal reg_wdata       : std_logic_vector(7 downto 0);  
-    signal reg_rdata       : std_logic_vector(7 downto 0);
 
 --    signal reset_pkt       : std_logic;
 --    signal reset_valid     : std_logic;
@@ -100,6 +99,7 @@ architecture wrap of usb_host_io is
     
     signal reset_done      : std_logic;
 	signal sof_enable	   : std_logic;
+	signal scan_enable     : std_logic;
     signal speed           : std_logic_vector(1 downto 0);
     signal gap_length      : std_logic_vector(7 downto 0);
     signal abort           : std_logic;
@@ -170,6 +170,7 @@ begin
         -- Interface to bus reset unit
         reset_done  => reset_done,
 		sof_enable  => sof_enable,
+		scan_enable => scan_enable,
         speed       => speed,
         abort       => abort,
                 
@@ -238,7 +239,6 @@ begin
         tx_valid    => tx_valid,
         tx_next     => tx_next,
         tx_data     => tx_data,
-        rx_register => rx_register,
         rx_data     => rx_data,
         
         -- Status
@@ -247,7 +247,6 @@ begin
         gap_length  => gap_length,
         busy        => tx_busy,
         tx_ack      => tx_ack,         
-        reg_ack     => reg_ack,
         
         -- Interface to send tokens
         send_token  => send_token,
@@ -265,13 +264,8 @@ begin
         -- Interface to read/write registers and reset packets
         send_reset_data => send_reset_data,
         reset_data      => reset_data,
-        reset_last      => reset_last,
+        reset_last      => reset_last );
         
-        read_reg    => reg_read,
-        write_reg   => reg_write,
-        address     => reg_addr,
-        write_data  => reg_wdata,
-        read_data   => reg_rdata );
 
     i_rx: entity work.ulpi_rx
     generic map (
@@ -309,6 +303,13 @@ begin
         
         status      => status,
         
+        -- register interface
+        reg_read    => reg_read,
+        reg_write   => reg_write,
+        reg_address => reg_addr,
+        reg_wdata   => reg_wdata,
+        reg_ack     => reg_ack,
+
         -- stream interface
         tx_data     => tx_data,
         tx_last     => tx_last,
@@ -331,6 +332,7 @@ begin
         
         reset_done  => reset_done,
 		sof_enable  => sof_enable,
+		scan_enable => scan_enable,
         speed       => speed,
         abort       => abort,
         
@@ -349,11 +351,11 @@ begin
     	usb_busy	=> usb_busy,
     	
         -- register interface
-        read_reg    => reg_read,
-        write_reg   => reg_write,
-        read_data   => reg_rdata,
-        write_data  => reg_wdata,
-        address     => reg_addr,
+        reg_read    => reg_read,
+        reg_write   => reg_write,
+        reg_rdata   => rx_data,
+        reg_wdata   => reg_wdata,
+        reg_address => reg_addr,
         reg_ack     => reg_ack,
         
         -- interface to packet transmitter

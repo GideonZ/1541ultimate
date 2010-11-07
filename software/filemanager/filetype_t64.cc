@@ -298,7 +298,7 @@ FRESULT FileInT64 :: open(FileInfo *info, BYTE flags)
 
 FRESULT FileInT64 :: close(void)
 {
-	fs->sync();
+	return fs->sync();
 	//flag = 0;
 }
 

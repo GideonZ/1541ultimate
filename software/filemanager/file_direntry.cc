@@ -262,7 +262,8 @@ void FileDirEntry :: execute(int selection)
                         if(selection == MENU_CREATE_G64) {
                             gcr = new GcrImage;
                             if(gcr) {
-                                user_interface->show_status("Converting..", 70);
+                                bin->num_tracks = 40;
+                                user_interface->show_status("Converting..", 120);
                                 gcr->convert_disk_bin2gcr(bin, true);
                                 user_interface->update_status("Saving...", 0);
                                 save_result = gcr->save(f, true);

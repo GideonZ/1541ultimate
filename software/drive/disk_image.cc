@@ -425,6 +425,31 @@ bool GcrImage :: load(File *f)
     return true;
 }
 
+int GcrImage :: find_track_start(int track)
+{
+    BYTE *begin = track_address[track];
+    BYTE *end   = track_address[track] + track_length[track];
+    BYTE *gcr = begin;
+    BYTE *gcr_data;
+    int offset;
+    
+    for(int j=0;j<42;j++) { // try at maximum twice for each sector (two syncs per sector!)
+        gcr = find_sync(gcr, begin, end);
+        if(!gcr)
+            return 0;
+        gcr_data = wrap(&gcr, begin, end, 5);
+    	conv_5bytes_gcr2bin(&gcr_data, &header[0]);
+    	if((header[0] == 8)&&(header[2] == 0)) {
+            // sector 0 found!
+            offset = (gcr - begin) - 10;
+            if(offset < 0)
+                offset += track_length[track];
+            return offset;
+        }
+    }
+    return 0;    
+}
+    
 bool GcrImage :: save(File *f, bool report)
 {
     BYTE *header = new BYTE[16 + C1541_MAXTRACKS * 8];
@@ -433,7 +458,7 @@ bool GcrImage :: save(File *f, bool report)
     header[8] = 0;
     header[9] = C1541_MAXTRACKS;
     header[10] = (BYTE)C1541_MAXTRACKLEN;
-    header[11] = (BYTE)(C1541_MAXTRACKLEN >> 8); // we do not use a fixed length!! Beware!!
+    header[11] = (BYTE)(C1541_MAXTRACKLEN >> 8);
 
     DWORD *pul = (DWORD *)&header[12]; // because 12 is a multiple of 4, we can do this
 
@@ -444,7 +469,8 @@ bool GcrImage :: save(File *f, bool report)
             *(pul++) = 0;
         else {
             *(pul++) = cpu_to_le_32(track_start);
-            track_start += track_length[i] + 2;
+            track_start += C1541_MAXTRACKLEN + 2;
+            // track_start += track_length[i] + 2;
         }
     }
     int speed;
@@ -467,6 +493,9 @@ bool GcrImage :: save(File *f, bool report)
     if(res != FR_OK)
         return false;
         
+    BYTE *filler_bytes = new BYTE[C1541_MAXTRACKLEN];
+    memset(filler_bytes, 0xFF, C1541_MAXTRACKLEN);
+    
     BYTE size[2];
     int skipped = 0;
     for(int i=0;i<C1541_MAXTRACKS;i++) {
@@ -478,15 +507,31 @@ bool GcrImage :: save(File *f, bool report)
         size[1] = (BYTE)(track_length[i] >> 8);
         res = f->write(size, 2, &bytes_written);
         if(res != FR_OK)
-            return false;
-        res = f->write(track_address[i], track_length[i], &bytes_written);
+            break;
+        // find alignment
+        int start = find_track_start(i);
+        if(start > 0) {
+            res = f->write(track_address[i]+start, track_length[i]-start, &bytes_written);
+            if(res != FR_OK)
+                break;
+            res = f->write(track_address[i], start, &bytes_written);
+        } else {
+            res = f->write(track_address[i], track_length[i], &bytes_written);
+        }
+        if(res != FR_OK)
+            break;
+        res = f->write(filler_bytes, C1541_MAXTRACKLEN - track_length[i], &bytes_written);
         if(report)
             user_interface->update_status(NULL, 1 + skipped);
         if(res != FR_OK)
-            return false;
+            break;
         skipped = 0;
     }
     
+    delete filler_bytes;
+    
+    if(res != FR_OK)
+        return false;
     return true;
 }
     
@@ -711,14 +756,19 @@ int BinImage :: format(char *name)
 int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
 {
 	int res = gcr_image->convert_track_gcr2bin(track, this);
-	if(res)
+	if(res) {
+        printf("Decode failed with error %d.\n", res);
 		return res;
+	}
 	DWORD offset = DWORD(track_start[track] - bin_data);
 	res = file->seek(offset);
-	if(res != FR_OK)
+	if(res != FR_OK) {
+        printf("While trying to write track %d, seek offset $%6x failed with error %d.\n", track+1, offset, res);
 		return res;
+	}
 	UINT transferred;
 	res = file->write(track_start[track], 256*track_sectors[track], &transferred);
+//    printf("Writing track %d. Trying %d bytes from offset $%06x, written: %d. Result=%d.\n", track+1, 256*track_sectors[track], offset, transferred, res);
 	if(res != FR_OK)
 		return res;
     return file->sync();

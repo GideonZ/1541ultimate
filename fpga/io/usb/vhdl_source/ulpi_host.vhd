@@ -45,6 +45,7 @@ port (
     -- Interface to bus initialization unit
     reset_done  : in  std_logic;
 	sof_enable  : in  std_logic;
+	scan_enable : in  std_logic := '1';
     speed       : in  std_logic_vector(1 downto 0);
     abort       : in  std_logic;
     
@@ -104,6 +105,9 @@ architecture functional of ulpi_host is
     attribute fsm_encoding of state : signal is "sequential";
 --    attribute keep : string;
 --    attribute keep of timeout : signal is "true";
+
+    signal debug_count  : integer range 0 to 1023 := 0;
+    signal debug_error  : std_logic := '0';
     
 begin
     descr_addr <= std_logic_vector(descr_addr_i);
@@ -193,8 +197,12 @@ begin
                     send_token  <= '0';
                     send_handsh <= '0';
                     send_data   <= '0'; -- redundant - will not come here
-                    state <= scan_transactions;
                     substate <= 0;
+                    if scan_enable='1' then
+                        state <= scan_transactions;
+                    else
+                        state <= idle;
+                    end if;                        
                 end if;
                 
             when scan_transactions =>
@@ -442,7 +450,7 @@ begin
                             substate <= 0;
                             state <= scan_transactions;
                         else -- just retry
-                            state <= handle_trans;
+                            state <= update_trans; --handle_trans;
                         end if;
                     end if; -- all other pids are just ignored
 --				elsif do_sof='1' then
@@ -484,7 +492,8 @@ begin
                     buf_addr_i <= buf_addr_i + 1;
                     trans_len <= trans_len + 1;
                 end if;
-                if rx_error = '1' then
+--------------------------------------------------------------------
+                if rx_error = '1' or debug_error='1' then
                     -- go back to send the in token again
                     buf_en <= '0';
                     state <= handle_trans;
@@ -587,6 +596,19 @@ begin
             when others => 
                 null;
             end case;
+
+---------------------------------------------------
+--          DEBUG
+---------------------------------------------------
+            if state /= receive_data then
+                debug_count <= 0;
+                debug_error <= '0';
+            elsif debug_count = 1023 then
+                debug_error <= '1';
+            else
+                debug_count <= debug_count + 1;
+            end if;
+---------------------------------------------------
 
             if frame_div = 0 then
                 do_sof <= sof_enable;

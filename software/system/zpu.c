@@ -44,8 +44,11 @@ void _premain()
     UART_DATA = 0x32;
     UART_DATA = 0x2e;
 
+//    small_printf("\nCalling constructors...\n");
+
     pul = (unsigned long *)&__constructor_list;
     while(pul != (unsigned long *)&__end_of_constructors) {
+//        small_printf("Constructor %p...\n", *pul);
         f = (fptr)*pul;
         f();
         pul++;
@@ -53,6 +56,8 @@ void _premain()
         
     UART_DATA = 0x33;
     UART_DATA = 0x2e;
+
+//    small_printf("\nStarting Main...\n");
 
 	t=main(1, args);
 

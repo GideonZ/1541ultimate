@@ -35,14 +35,17 @@ t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom }
 #define CFG_C1541_RAMBOARD  0xD5
 #define CFG_C1541_SWAPDELAY 0xD6
 #define CFG_C1541_LASTMOUNT 0xD7
+#define CFG_C1541_C64RESET  0xD8
 
 struct t_cfg_definition c1541_config[] = {
-    { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",              "%s", en_dis,     0,  1, 1 },
-    { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",       "%d", NULL,       8, 11, 8 },
-    { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",         "%s", rom_sel,    0,  3, 2 },
-    { CFG_C1541_ROMFILE,   CFG_TYPE_STRING, "1541 ROM File",           "%s", NULL,       0, 36, (int)"1541.rom" },
-    { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "1541 RAM BOard",          "%s", ram_board,  0,  6, 0 },
-    { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",    "%d00 ms", NULL,  1, 10, 1 },
+    { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",                 "%s", en_dis,     0,  1, 1 },
+    { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",          "%d", NULL,       8, 11, 8 },
+    { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  3, 2 },
+    { CFG_C1541_ROMFILE,   CFG_TYPE_STRING, "1541 ROM File",              "%s", NULL,       0, 36, (int)"1541.rom" },
+    { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "1541 RAM BOard",             "%s", ram_board,  0,  6, 0 },
+    { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",       "%d00 ms", NULL,  1, 10, 1 },
+    { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "1541 Resets when C64 resets","%s", yes_no,     0,  1, 1 },
+    
 //    { CFG_C1541_LASTMOUNT, CFG_TYPE_ENUM,   "Load last mounted disk",  "%s", yes_no,     0,  1, 0 },
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
@@ -67,6 +70,8 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
     memory_map = (volatile BYTE *)mem_address;
     printf("C1541 Memory address: %p\n", mem_address);
 
+    write_skip = 0;
+    
 	if(flash) {
 	    void *audio_address = (void *)(((DWORD)registers[C1541_AUDIO_ADDR]) << 16);
 	    printf("C1541 Audio address: %p, loading... \n", audio_address);
@@ -153,7 +158,10 @@ void C1541 :: drive_reset(void)
 {
     registers[C1541_RESET] = 1;
     wait_ms(1);
-    registers[C1541_RESET] = 0;
+    if(cfg->get_value(CFG_C1541_C64RESET))
+        registers[C1541_RESET] = 2;
+    else
+        registers[C1541_RESET] = 0;
 }
 
 void C1541 :: set_hw_address(int addr)
@@ -294,11 +302,14 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
 //    	printf("%2d %08x %08x\n", i, image->track_address[i], image->track_length[i]);
     	*(param++) = (ULONG)image->track_address[i];
         *(param++) = image->track_length[i]-1;
+        registers[C1541_DIRTYFLAGS + i/2] = 0;
     }            
+	registers[C1541_ANYDIRTY] = 0;
 
     if(!protect) {
         registers[C1541_SENSOR] = SENSOR_LIGHT;
     }
+
     registers[C1541_INSERTED] = 1;
 //    image->mounted_on = this;
     disk_state = e_alien_image;
@@ -344,7 +355,6 @@ void C1541 :: poll(Event &e)
 	int written;
 	int res;
 	bool g64;
-	static int skipped=0;
 	bool protect;
 	File *file;
     t_drive_command *drive_command;
@@ -452,11 +462,11 @@ void C1541 :: poll(Event &e)
         mount_file = NULL;
     }
 
-	if((registers[C1541_ANYDIRTY])||(skipped)) {
-		if(!skipped) {
+	if((registers[C1541_ANYDIRTY])||(write_skip)) {
+		if(!write_skip) {
 			registers[C1541_ANYDIRTY] = 0;  // clear flag once we didn't skip anything anymore
 		}
-		skipped = 0;
+		write_skip = 0;
 		for(tr=0,written=0;tr<C1541_MAXTRACKS/2;tr++) {
 			if(registers[C1541_DIRTYFLAGS + tr]) {
 				if((!(registers[C1541_STATUS] & DRVSTAT_MOTOR)) || ((registers[C1541_TRACK] >> 1) != tr)) {
@@ -478,12 +488,10 @@ void C1541 :: poll(Event &e)
 					}
 					written++;
 				} else {
-					skipped ++;
+//                    printf("C1541 writeback: Skip: TR %d. CUR %d. ST: %b\n", tr, registers[C1541_TRACK] >> 1, registers[C1541_STATUS]);
+					write_skip ++;
 				}
 			}
 		}
-		if(written)
-			if(mount_file->fs->sync() != FR_OK)
-				printf("Error syncing file.\n");
 	}
 }

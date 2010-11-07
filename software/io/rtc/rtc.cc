@@ -53,6 +53,7 @@ static BYTE bin2bcd(BYTE bin)
 Rtc :: Rtc()
 {
     if(CAPABILITIES & CAPAB_RTC_CHIP) {
+        capable = true;
     	cfg = new RtcConfigStore("Clock Settings", rtc_config);
     	config_manager.add_custom_store(cfg);
     	get_time_from_chip();
@@ -60,6 +61,8 @@ Rtc :: Rtc()
     	// Check and correct clock out setting
     	if((rtc_regs[RTC_ADDR_CLOCKOUT] & 0x70) != 0x70)
     		write_byte(RTC_ADDR_CLOCKOUT, 0x72);
+    } else {
+        capable = false;
     }
 }
 
@@ -212,7 +215,17 @@ char * Rtc :: get_long_date(char *dest, int len)
 
 DWORD Rtc :: get_fat_time(void)
 {
-	return RTC_TIMER_FAT_TIME;
+    if(capable)
+    	return RTC_TIMER_FAT_TIME;
+/*
+    30 << 25 = 0x3C000000
+    11 << 21 = 0x01600000
+     7 << 16 = 0x00070000
+    16 << 11 = 0x00008000
+    36 <<  5 = 0x00000480
+    23 <<  0 = 0x00000017
+*/
+    return 0x3D678497;
 }
 
 Rtc rtc; // global

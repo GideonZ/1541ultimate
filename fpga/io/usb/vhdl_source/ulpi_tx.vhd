@@ -13,7 +13,6 @@ port (
     tx_valid    : out   std_logic;
     tx_next     : in    std_logic;
     tx_data     : out   std_logic_vector(7 downto 0);
-    rx_register : in    std_logic;
     rx_data     : in    std_logic_vector(7 downto 0);
     
     -- Status
@@ -22,7 +21,6 @@ port (
     gap_length  : in    std_logic_vector(7 downto 0);
     busy        : out   std_logic;
     tx_ack      : out   std_logic;
-    reg_ack     : out   std_logic;
     
     -- Interface to send tokens and handshakes
     send_token  : in    std_logic;
@@ -38,22 +36,16 @@ port (
     user_valid  : in    std_logic;
     user_next   : out   std_logic;
             
-    -- Interface to read/write registers, and reset packets
+    -- Interface to output reset packets
     send_reset_data : in std_logic;
     reset_last      : in std_logic;
-    reset_data      : in std_logic_vector(7 downto 0);
-    
-    read_reg    : in    std_logic;
-    write_reg   : in    std_logic;
-    address     : in    std_logic_vector(5 downto 0);
-    write_data  : in    std_logic_vector(7 downto 0);
-    read_data   : out   std_logic_vector(7 downto 0) );
+    reset_data      : in std_logic_vector(7 downto 0) );
 
 end ulpi_tx;
 
 architecture gideon of ulpi_tx is
     type t_state is (idle, crc_1, crc_2, token1, token2, token3,
-                     reset_pkt, read_register, write_register, transmit,
+                     reset_pkt, transmit,
                      wait4next, write_end, handshake, gap, gap2);
     signal state    : t_state;
 
@@ -71,6 +63,9 @@ architecture gideon of ulpi_tx is
 --    constant c_gap_val  : integer := 0;
     signal gap_count    : integer range 0 to 255;
 
+    signal debug_count  : integer range 0 to 255 := 0;
+    signal debug_error  : std_logic := '0';
+
     -- XILINX USB STICK:
     -- On high speed, gap values 0x05 - 0x25 WORK.. (bigger than 0x25 doesn't, smaller than 0x05 doesn't..)
     -- TRUST USB 2.0 Hub:
@@ -84,16 +79,14 @@ architecture gideon of ulpi_tx is
     attribute fsm_encoding : string;
     attribute fsm_encoding of state : signal is "sequential";
 begin
-    tx_ack <= send_token or send_handsh or send_data when
-           (state = idle) else '0';
+    tx_ack <= (send_token or send_handsh or send_data)  when
+              (state = idle) else '0';
     
     j_state <= not speed(0) & speed(0);
 
     process(clock)
     begin
         if rising_edge(clock) then
-            reg_ack <= '0';
-            
             case state is
             when idle =>
                 tx_start  <= '0';
@@ -102,18 +95,7 @@ begin
                 tx_data_i <= X"00";
                 no_data_d <= no_data;
 
-                if write_reg='1' then
-                    tx_start  <= '1';
-                    tx_valid  <= '1';
-                    tx_data_i <= "10" & address;
-                    state <= write_register;
-                elsif read_reg='1' then
-                    tx_start  <= '1';
-                    tx_valid  <= '1';
-                    tx_last_i <= '1';
-                    tx_data_i <= "11" & address;
-                    state <= read_register;
-                elsif send_token='1' then
+                if send_token='1' then
                     tx_start <= '1';
                     tx_valid <= '1';
                     tx_data_i <= X"4" & pid;
@@ -147,15 +129,6 @@ begin
                     end if;
                 end if;
 
-            when write_register =>
-                if tx_next='1' then
-                    tx_start  <= '0';
-                    tx_last_i <= '1';
-                    tx_data_i <= write_data;
-                    state <= write_end;
-                    reg_ack <= '1';
-                end if;
-            
             when handshake =>
                 if tx_next='1' then
                     tx_start  <= '0';
@@ -169,18 +142,6 @@ begin
                     tx_start  <= '0';
                     tx_valid  <= '0';
                     tx_last_i <= '0';
-                    state <= idle;
-                end if;
-                
-            when read_register =>
-                if tx_next='1' then
-                    tx_start  <= '0';
-                    tx_valid  <= '0';
-                    tx_last_i <= '0';
-                end if;
-                if rx_register='1' then
-                    read_data <= rx_data;
-                    reg_ack <= '1';
                     state <= idle;
                 end if;
                 
@@ -265,6 +226,21 @@ begin
 
             end case;                                    
 
+---------------------------------------------------
+--          DEBUG
+---------------------------------------------------
+            if state /= token2 then
+                debug_count <= 0;
+                debug_error <= '0';
+            elsif debug_count = 255 then
+                debug_error <= '1';
+            else
+                debug_count <= debug_count + 1;
+            end if;
+            if debug_error='1' then -- this makes debug_error continue to exist
+                state <= idle;
+            end if;
+---------------------------------------------------
             if reset='1' then
                 state  <= idle;
             end if;

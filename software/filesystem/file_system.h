@@ -154,8 +154,9 @@ public:
     static  bool check(Partition *p);        // check if file system is present on this partition
     virtual void    init(void);              // Initialize file system
     virtual FRESULT get_free (DWORD*);       // Get number of free sectors on the file system
-    virtual FRESULT sync(void);              // Clean-up cached data
     virtual bool is_writable() { return false; } // by default a file system is not writable, unless we implement it
+    virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
+    
     // functions for reading directories
     virtual Directory *dir_open(FileInfo *); // Opens directory (creates dir object, NULL = root)
     virtual void dir_close(Directory *d);    // Closes (and destructs dir object)
@@ -170,6 +171,7 @@ public:
     virtual FRESULT file_read(File *f, void *buffer, DWORD len, UINT *transferred);
     virtual FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred);
     virtual FRESULT file_seek(File *f, DWORD pos);
+    virtual FRESULT file_sync(File *f);             // Clean-up cached data
     virtual void    file_print_info(File *f) { } // debug
     
     // Modification functions

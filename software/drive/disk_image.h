@@ -19,7 +19,7 @@
 #define GCR_ENCODER_GCR_OUT4 (*(volatile BYTE *)0x406050C)
 
 #define C1541_MAXTRACKS   84
-#define C1541_MAXTRACKLEN 0x1E0C
+#define C1541_MAXTRACKLEN 0x1EF8
 #define C1541_MAX_D64_LEN 0x30000
 #define C1541_MAX_GCR_LEN (C1541_MAXTRACKLEN * C1541_MAXTRACKS)
 
@@ -41,6 +41,7 @@ class GcrImage
     BYTE *find_sync(BYTE *, BYTE *, BYTE *);
     BYTE *convert_block_bin2gcr(BYTE *bin, BYTE *gcr, int len);
     BYTE *convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr);
+    int   find_track_start(int);
 public:
     GcrImage();
     ~GcrImage();

@@ -75,6 +75,7 @@ class C1541 : public ObjectWithMenu
     bool large_rom;
     t_1541_ram  ram;
 	t_1541_rom  current_rom;
+	int write_skip;
 	
 	Flash *flash;
     ConfigStore *cfg;

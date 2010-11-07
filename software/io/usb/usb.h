@@ -16,18 +16,20 @@
 #define USB_CMD_QUEUE_STAT  *((volatile BYTE *)0x4080802)
 #define USB_RESP_GET        *((volatile BYTE *)0x4080803)
 
-#define USB_CMD_GET_STATUS   1
-#define USB_CMD_GET_SPEED    2 
-#define USB_CMD_GET_DONE     3
-#define USB_CMD_BUSRESET_HS  4
-#define USB_CMD_BUSRESET_FS  5
-#define USB_CMD_DISABLE_HOST 6
-#define USB_CMD_ABORT        7
-#define USB_CMD_SOF_ENABLE   8
-#define USB_CMD_SOF_DISABLE  9
-#define USB_CMD_SET_GAP	    10
-#define USB_CMD_SET_BUSY    11
-#define USB_CMD_CLEAR_BUSY	12
+#define USB_CMD_GET_STATUS    1
+#define USB_CMD_GET_SPEED     2 
+#define USB_CMD_GET_DONE      3
+#define USB_CMD_BUSRESET_HS   4
+#define USB_CMD_BUSRESET_FS   5
+#define USB_CMD_DISABLE_HOST  6
+#define USB_CMD_ABORT         7
+#define USB_CMD_SOF_ENABLE    8
+#define USB_CMD_SOF_DISABLE   9
+#define USB_CMD_SET_GAP	     10
+#define USB_CMD_SET_BUSY     11
+#define USB_CMD_CLEAR_BUSY	 12
+#define USB_CMD_SCAN_DISABLE 14
+#define USB_CMD_SCAN_ENABLE  15
 
 #define USB_RESP_REGVALUE   0x01
 #define USB_RESP_AVAILABLE  0x80
@@ -46,6 +48,7 @@
 #define USB_MAX_TRANSACTIONS 64
 #define USB_MAX_PIPES        30
 
+#define ULPI_VENDOR_ID_L  0x00
 #define ULPI_FUNC_CTRL    0x04
 #define ULPI_OTG_CONTROL  0x0A
 #define ULPI_IRQEN_RISING 0x0D
@@ -160,6 +163,7 @@ class Usb
     void clear(void);
     void attach_root(void);
     bool install_device(UsbDevice *dev, bool draws_current);
+    void deinstall_device(UsbDevice *dev);
 public:
     int speed;
     int max_current;

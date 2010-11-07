@@ -129,11 +129,11 @@ int UserInterface :: activate_uiobject(UIObject *obj)
 
 void UserInterface :: set_screen_title()
 {
-    // precondition: screen is cleared.
+    static char title[48];
+    // precondition: screen is cleared.  // \020 = alpha \021 = beta
+    sprintf(title, "\033\021    **** 1541 Ultimate %s (%b) ****\033\037\n", APPL_VERSION, ITU_FPGA_VERSION);
     screen->move_cursor(0,0);
-    screen->output("\033\021     **** 1541 Ultimate ");
-    screen->output(APPL_VERSION);
-    screen->output(" ****\n\033\037"); // \020 = alpha \021 = beta
+    screen->output(title);
     for(int i=0;i<40;i++)
         screen->output('\002');
 }
@@ -480,7 +480,10 @@ void UIStatusBox :: update(char *msg, int steps)
     memset(bar, 32, 36);
     window->move_cursor(0, 2);
     window->reverse_mode(1);
-    bar[(32 * progress) / total_steps] = 0; // terminate
+    int terminate = (32 * progress) / total_steps;
+    if(terminate > 32)
+        terminate = 32;
+    bar[terminate] = 0; // terminate
     window->output_line(bar);
 
 //    sprintf(percent, "%d%", (100 * progress) / total_steps);

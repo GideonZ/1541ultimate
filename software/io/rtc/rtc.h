@@ -68,6 +68,7 @@ class Rtc
 private:
 	void write_byte(int addr, BYTE val);
 	void read_all(BYTE *buf);
+    bool capable;
 	BYTE rtc_regs[16];
 	RtcConfigStore *cfg;
 public:

@@ -84,6 +84,7 @@ SRCS_CC	 =  stream.cc \
 			filetype_reu.cc \
 			rtc.cc \
 			usb.cc \
+			usb_hub.cc \
 			usb_scsi.cc \
 			c64.cc \
 			screen.cc \

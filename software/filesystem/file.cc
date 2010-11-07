@@ -15,7 +15,7 @@ void    File :: close(void)
 FRESULT File :: sync(void)
 {
 	if(!node) return FR_INVALID_OBJECT;
-	return fs->sync();
+	return fs->file_sync(this);
 }
 
 FRESULT File :: read(void *buffer, DWORD len, UINT *transferred)

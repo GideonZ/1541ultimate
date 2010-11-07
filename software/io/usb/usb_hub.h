@@ -18,6 +18,7 @@ class UsbHubDriver : public UsbDriver
     
     Usb       *host;
     UsbDevice *device;
+    UsbDevice *children[4];
 public:
 	UsbHubDriver(IndexedList<UsbDriver *> &list);
 	UsbHubDriver();

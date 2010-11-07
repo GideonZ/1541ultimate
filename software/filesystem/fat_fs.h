@@ -108,6 +108,7 @@ public:
     FRESULT file_read(File *f, void *buffer, DWORD len, UINT *transferred);
     FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred);
     FRESULT file_seek(File *f, DWORD pos);
+    FRESULT file_sync(File *f);
     void    file_print_info(File *f); // debug
 #endif
 

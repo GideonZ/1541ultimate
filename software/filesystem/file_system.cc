@@ -3,9 +3,9 @@
 
 bool FileInfo :: is_writable(void)
 {
-        if(!fs->is_writable())
-            return false;
-        return (attrib & AM_RDO);
+    if(!fs->is_writable())
+        return false;
+    return !(attrib & AM_RDO);
 }
 	
 FileSystem :: FileSystem(Partition *p)
@@ -80,11 +80,6 @@ FRESULT FileSystem :: get_free (DWORD*)
     return FR_DENIED;
 }
    
-FRESULT FileSystem :: sync(void)
-{
-    return FR_DENIED;
-}
-
 Directory *FileSystem :: dir_open(FileInfo *)
 {
     return NULL;
@@ -126,6 +121,11 @@ FRESULT FileSystem :: file_write(File *f, void *buffer, DWORD len, UINT *transfe
 }
 
 FRESULT FileSystem :: file_seek(File *f, DWORD pos)
+{
+    return FR_DENIED;
+}
+
+FRESULT FileSystem :: file_sync(File *f)
 {
     return FR_DENIED;
 }

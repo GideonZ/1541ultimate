@@ -11,12 +11,15 @@ extern "C" {
 
 #define CFG_USB_SPEED    0x51
 #define CFG_USB_MAXCUR   0x52
+#define CFG_USB_BOOT     0x53
 
 char *usb_speed[] = { "Full Speed", "High Speed" };
+char *usb_yesno[] = { "No", "Yes" };
 
 struct t_cfg_definition usb_config[] = {
-	{ CFG_USB_MAXCUR,   CFG_TYPE_VALUE,  "Maximum Bus Current", "%d0 mA", NULL,       5, 35, 25 },
-	{ CFG_USB_SPEED,    CFG_TYPE_ENUM,   "Bus Speed",               "%s", usb_speed,  0,  1,  1 },
+	{ CFG_USB_MAXCUR,   CFG_TYPE_VALUE,  "Maximum Bus Current",     "%d0 mA", NULL,       5, 35, 25 },
+	{ CFG_USB_SPEED,    CFG_TYPE_ENUM,   "Bus Speed",                   "%s", usb_speed,  0,  1,  1 },
+	{ CFG_USB_BOOT,     CFG_TYPE_ENUM,   "Load boot images from USB",   "%s", usb_yesno,  0,  1,  1 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -90,6 +93,8 @@ Usb :: Usb()
 #ifndef BOOTLOADER
         poll_list.append(&poll_usb);
         cfg = config_manager.register_store(0x55534232, "USB settings", usb_config);
+        if (cfg->get_value(CFG_USB_BOOT) ==0 )
+            poll_delay = 6;
 #endif
     }
 }
@@ -400,6 +405,18 @@ bool Usb :: install_device(UsbDevice *dev, bool draws_current)
     return false;
 }
 
+void Usb :: deinstall_device(UsbDevice *dev)
+{
+    dev->deinstall();
+    for(int i=0;i<USB_MAX_DEVICES;i++) {
+        if(device_list[i] == dev) {
+        	device_list[i] = NULL;
+        	delete dev;
+        	break;
+        }
+    }
+}
+    
 void Usb :: poll(Event &e)
 {
 	if(poll_delay > 0) {
@@ -413,6 +430,7 @@ void Usb :: poll(Event &e)
 	if(device_present) {
 		bool disconnect = false;
 		if(speed == 2) {
+            //read_ulpi_register(ULPI_VENDOR_ID_L);
         	int irq = read_ulpi_register(ULPI_IRQ_STATUS); // clear pending interrupts
         	if(irq & IRQ_HOST_DISCONNECT)
         		disconnect = true;
@@ -510,17 +528,29 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
 {
     memcpy((void *)&USB_BUFFER(0), out, outlen);
 
+    // TODO: just FORCE the coming two transactions to be at the beginning of a frame, and always one after another
+    USB_COMMAND = USB_CMD_SCAN_DISABLE;
+    wait_ms(1);
+
     DWORD a = ((DWORD)addr)<<3;
 	USB_PIPE(0) = 0x04100005 | a; // Dev address a, Endpoint 0, Control Out
 	USB_PIPE(1) = 0x04100001 | a; // Dev address a, Endpoint 0, Control In
 
-	volatile DWORD *transaction = &USB_TRANSACTION(0);
-    USB_TRANSACTION(0) = 0x00000001 | (outlen << 9); // outlen bytes to pipe 0, from buffer 0x000
-    transaction = &USB_TRANSACTION(0);
+	volatile DWORD *transaction;
+	
+    USB_TRANSACTION(0) = 0x80000001 | (outlen << 9); // outlen bytes to pipe 0, from buffer 0x000, LINK TO NEXT
+	USB_TRANSACTION(1) = 0x02000015 | (inlen << 9); // inlen bytes from pipe 1, to buffer 0x020
+
+	transaction = &USB_TRANSACTION(1); // both transactions should take place, we only check the second
+
+    USB_COMMAND = USB_CMD_SCAN_ENABLE; // go!
 
     int timeout = 100; // 25 ms
 	while((*transaction & 0x3) == 0x01) {
         if(!timeout) {
+            // clear
+            USB_TRANSACTION(0) = 0;
+            USB_TRANSACTION(1) = 0;
 			USB_COMMAND = USB_CMD_ABORT;
 			wait_ms(1);
             return -1;
@@ -530,25 +560,6 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
         while(ITU_TIMER)
             ;
     }
-
-    if(!inlen) 
-        return 0;
-	
-	USB_TRANSACTION(1) = 0x02000015 | (inlen << 9); // inlen bytes from pipe 1, to buffer 0x020
-	transaction = &USB_TRANSACTION(1);
-
-	timeout = 100; // 25 ms
-	while((*transaction & 0x3) == 0x01) {
-		if(!timeout) {
-			USB_COMMAND = USB_CMD_ABORT;
-			wait_ms(1);
-			return -2;
-		}
-		timeout --;
-		ITU_TIMER = 50;
-		while(ITU_TIMER)
-			;
-	}
 
 	DWORD ta = *transaction;
     int received = inlen - ((ta >> 9) & 0x7FF);
@@ -560,10 +571,6 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
     if(buf) // user requested pointer to usb buffer
         *buf = (BYTE *)&USB_BUFFER(32);
         
-/*    for(int i=0;i<received;i++) {
-        printf("%b ", USB_BUFFER(32+i));
-    } printf("\n");
-*/    
     return received;
 }
 
