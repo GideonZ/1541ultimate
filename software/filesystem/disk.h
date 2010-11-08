@@ -14,6 +14,9 @@ class Disk
     BlockDevice     *dev;
     int              sector_size;
     BYTE            *buf;
+    int              p_count;
+    
+    int read_ebr(Partition ***prt_list, DWORD lba);
     
 public:
     Partition       *partition_list;

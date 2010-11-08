@@ -2,6 +2,10 @@
 #include "disk.h"
 #include "small_printf.h"
     
+extern "C" {
+	#include "dump_hex.h"
+}
+
 Disk::Disk(BlockDevice *b, int sec = 512)
 {
     dev = b;
@@ -57,6 +61,10 @@ int Disk::Init(void)
 
     printf("Get sector count: %d\n", size);    
 
+    for(int i=10;i>=0;i--) {
+        printf("reading sector %d got %d.\n", i, dev->read(buf, i, 1));
+    }
+    
 	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	{ /* Check "FAT" string */
         partition_list = new Partition(dev, 0L, size, 0x06);
         return 1; // one default partition, starting on sector 0
@@ -71,27 +79,65 @@ int Disk::Init(void)
     
     prt_list = &partition_list; // the first entry should be stored here in the class
     lba = 0L;
-    int p_count = 0;        
+    p_count = 0;        
 
     // walk through partition tables
-    do {
-        tbl = &buf[MBR_PTable];
+    tbl = &buf[MBR_PTable];
+    dump_hex(tbl, 66);
+
+    for(int p=0;p<4;p++) {
         if(tbl[4]) {
             start = LD_DWORD(&tbl[8]);
             size  = LD_DWORD(&tbl[12]);
-            prt = new Partition(dev, lba + start, size, tbl[4]);
-            *prt_list = prt;
-            prt_list = &prt->next_partition;
-            p_count ++;
+            if(tbl[4] == 0x0F) {
+                printf("Result of EBR read: %d.\n", read_ebr(&prt_list, start));
+            } else {
+                prt = new Partition(dev, lba + start, size, tbl[4]);
+                *prt_list = prt;
+                prt_list = &prt->next_partition;
+                p_count ++;
+            }
         }
-        next = LD_DWORD(&tbl[24]);
-        lba += next;
-        if(next) { // read next EBR
-            if(dev->read(buf, sector_size, 1) != RES_OK)
-                return p_count;
-        }
-    } while(next);
-
+        tbl += 16;
+    }            
     return p_count;        
 }
 
+int Disk :: read_ebr(Partition ***prt_list, DWORD lba)
+{
+    BYTE *local_buf = new BYTE[sector_size];
+    Partition *prt;
+    DWORD start, size;
+    BYTE *tbl;
+
+    if(dev->read(local_buf, lba, 1) != RES_OK) {
+        delete local_buf;
+        return -2; // partition unreadable
+    }
+    
+    if(LD_WORD(local_buf + BS_Signature) != 0xAA55) {
+        delete local_buf;
+        return -3; // partition unformatted 
+    }
+            
+    tbl = &local_buf[MBR_PTable];
+    dump_hex(tbl, 66);
+
+    for(int p=0;p<4;p++) {
+        if(tbl[4]) {
+            start = LD_DWORD(&tbl[8]);
+            size  = LD_DWORD(&tbl[12]);
+            if(tbl[4] == 0x0F) {
+                read_ebr(prt_list, start);
+            } else {
+                prt = new Partition(dev, lba + start, size, tbl[4]);
+                **prt_list = prt;
+                *prt_list = &prt->next_partition;
+                p_count ++;
+            }
+        }
+        tbl += 16;
+    }            
+    delete local_buf;
+    return 0;
+}

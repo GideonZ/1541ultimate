@@ -69,5 +69,5 @@ begin
     end process;
 
 	cpu_clock_en <= cpu_clock_en_i;
-    iec_reset_o  <= '1' when (iec_reset_sh="111") and (c64_reset_sh="111") else '0';
+    iec_reset_o  <= '1' when (iec_reset_sh="111") or (c64_reset_sh="111") else '0';
 end Gideon;
