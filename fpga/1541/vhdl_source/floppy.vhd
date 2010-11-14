@@ -66,6 +66,7 @@ architecture structural of floppy is
     signal drv_rdata        : std_logic_vector(7 downto 0);
     signal do_read          : std_logic;
     signal do_write         : std_logic;
+    signal do_advance       : std_logic;
     signal track_start      : std_logic_vector(25 downto 0);
     signal max_offset       : std_logic_vector(13 downto 0);
     signal track_i          : std_logic_vector(6 downto 0);
@@ -83,6 +84,7 @@ begin
 		drv_rdata		=> drv_rdata, -- from memory
         do_read         => do_read,
     	do_write	    => do_write,
+        do_advance      => do_advance,
 
         floppy_inserted => floppy_inserted,
 
@@ -130,6 +132,7 @@ begin
         drv_wdata       => write_data,
         do_read         => do_read,
         do_write        => do_write,
+        do_advance      => do_advance,
 
         track_start     => track_start,
         max_offset      => max_offset,

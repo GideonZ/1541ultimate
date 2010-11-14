@@ -30,7 +30,8 @@ port (
 	drv_rdata		: out std_logic_vector(7 downto 0);
     do_read         : in  std_logic;
     do_write        : in  std_logic;
-
+    do_advance      : in  std_logic;
+    
     track_start     : in  std_logic_vector(25 downto 0);
     max_offset      : in  std_logic_vector(13 downto 0);
     
@@ -53,6 +54,15 @@ begin
 
     process(clock)
         variable new_addr : unsigned(mem_req.address'range);
+
+        procedure advance is
+        begin
+            if offset_count >= unsigned(max_offset) then
+                offset_count <= (others => '0');
+            else
+                offset_count <= offset_count + 1;
+            end if;
+        end procedure;
     begin
         if rising_edge(clock) then
             case state is
@@ -66,6 +76,8 @@ begin
                     state <= writing;
                     mem_req.read_writen <= '0';
                     mem_req.request <= '1';
+                elsif do_advance='1' then
+                    advance;
                 end if;
 
             when reading =>
@@ -73,7 +85,7 @@ begin
                     mem_req.request <= '0';
                 end if;
 				if mem_dack='1' then
-	                offset_count <= offset_count + 1;
+                    advance;
 					drv_rdata    <= mem_resp.data;
 					state        <= idle;
 				end if;
@@ -81,7 +93,7 @@ begin
             when writing =>
                 if mem_rack='1' then
                     mem_req.request <= '0';
-	                offset_count <= offset_count + 1;
+                    advance;
 					drv_rdata    <= mem_resp.data;
 					state        <= idle;
 				end if;
@@ -91,11 +103,6 @@ begin
             end case;
             
             mem_req.data <= drv_wdata;
-
-            -- default wrap around
-            if offset_count > unsigned(max_offset) then
-                offset_count <= (others => '0');
-            end if;
 
             if reset='1' then
                 offset_count <= (others => '0');

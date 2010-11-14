@@ -125,11 +125,18 @@ begin
             end if;
             sync_i <= s;
             
+            do_advance <= '0';
+            mode_d <= mode;
+            if mode_d='1' and mode='0' then -- going to write
+                do_advance <= '1';
+            end if;
+            
             do_write <= '0';
 			if rd_bit_cnt = "111" and mode='0' and bit_div = X"7" and clock_en='1' then
 				do_write <= floppy_inserted; --'1';
 			end if;
 
+            
             if bit_tick='1' then
                 rd_shift   <= rd_shift(8 downto 0) & mem_rd_bit;
                 rd_bit_cnt <= rd_bit_cnt + 1;
