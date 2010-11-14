@@ -68,6 +68,7 @@ begin
             case state is
             when idle =>
                 mem_req.address  <= unsigned(track_start) + offset_count;
+                mem_req.data <= drv_wdata;
                 if do_read='1' then
                     state <= reading;
                     mem_req.read_writen <= '1';
@@ -102,8 +103,6 @@ begin
                 null;
             end case;
             
-            mem_req.data <= drv_wdata;
-
             if reset='1' then
                 offset_count <= (others => '0');
                 state        <= idle;
