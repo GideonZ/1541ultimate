@@ -13,6 +13,7 @@ entity cpu_wrapper_zpu is
 generic (
     g_mem_tag         : std_logic_vector(7 downto 0) := X"20";
     g_internal_prg    : boolean := true;
+    g_boot_rom        : boolean := false;
     g_simulation      : boolean := false );
 port (
     clock       : in  std_logic;
@@ -87,20 +88,38 @@ begin
 
 
     r_int_ram: if g_internal_prg generate
-        i_zpuram: entity work.mem4k
-        generic map (
-            simulation => g_simulation )
-        port map (
-            clock   => clock,
-            reset   => reset,
-            address => cpu_address,
-            request => cpu_req,
-            mwrite  => cpu_write,
-            wdata   => cpu_wdata,
-            rdata   => ram_rdata,
-            rack    => ram_rack,
-            dack    => ram_dack,
-            claimed => ram_claimed );
+        if g_boot_rom generate
+            i_zpuram: entity work.mem32k
+            generic map (
+                simulation => g_simulation )
+            port map (
+                clock   => clock,
+                reset   => reset,
+                address => cpu_address,
+                request => cpu_req,
+                mwrite  => cpu_write,
+                wdata   => cpu_wdata,
+                rdata   => ram_rdata,
+                rack    => ram_rack,
+                dack    => ram_dack,
+                claimed => ram_claimed );
+        end generate;
+        if not g_boot_rom generate
+            i_zpuram: entity work.mem4k
+            generic map (
+                simulation => g_simulation )
+            port map (
+                clock   => clock,
+                reset   => reset,
+                address => cpu_address,
+                request => cpu_req,
+                mwrite  => cpu_write,
+                wdata   => cpu_wdata,
+                rdata   => ram_rdata,
+                rack    => ram_rack,
+                dack    => ram_dack,
+                claimed => ram_claimed );
+        end generate;
     end generate;
 
     cpu_rdata <= io_resp.data when io_resp.ack='1'

@@ -14,6 +14,7 @@ generic (
     g_clock_freq    : natural := 50_000_000;
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
+    g_boot_rom      : boolean := false;
     g_icap          : boolean := true;
     g_uart          : boolean := true;
     g_drive_1541    : boolean := true; --
@@ -157,7 +158,8 @@ architecture logic of ultimate_logic is
         cap(13) := to_std(g_rtc_timer);
         cap(14) := to_std(g_spi_flash);
         cap(15) := to_std(g_icap);
-        
+
+        cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
         return cap;
     end function;
@@ -268,6 +270,7 @@ begin
     generic map (
         g_mem_tag         => c_tag_cpu,
         g_internal_prg    => true,
+        g_boot_rom        => g_boot_rom,
         g_simulation      => g_simulation )
     port map (
         clock       => sys_clock,
