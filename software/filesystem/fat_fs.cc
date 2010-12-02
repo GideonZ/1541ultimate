@@ -1026,8 +1026,8 @@ FRESULT FATFS :: file_delete(FileInfo *fi)
     if (res != FR_OK)
 		return res;
 
-	if (!(fi->cluster))
-		return FR_INVALID_NAME;				/* Is it the root directory? */
+//	if (!(fi->cluster))
+//		return FR_INVALID_NAME;				/* Is it the root directory? */
 	
 	if(fi->attrib & AM_RDO)					/* Is it read only? */
 		return FR_DENIED;

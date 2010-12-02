@@ -46,7 +46,7 @@ DRESULT Partition::write(const BYTE *buffer, DWORD sector, BYTE count)
 {
     if(!dev)
         return RES_NOTRDY;
-    printf("Write sector %d (%d)\n", sector,count);
+//    printf("Write sector %d (%d)\n", sector,count);
     return dev->write(buffer,start + sector,count);
 }
 #endif

@@ -19,6 +19,7 @@ package usb_pkg is
         max_transfer        : unsigned(10 downto 0); -- could be encoded in less (3) bits (only 2^x)
         data_toggle         : std_logic;
         control             : std_logic;   -- '1' if this pipe is treated as a control pipe
+        timeout             : std_logic;
         --transfer_mode       : t_transfer_mode;        
     end record; -- 18 bits now with encoded max transfer, otherwise 26
     
@@ -106,6 +107,7 @@ package body usb_pkg is
 --        max_transfer(3 + to_integer(unsigned(i(16 downto 14)))) <= '1'; -- set one bit
         ret.data_toggle         := i(25);
         ret.control             := i(26);
+        ret.timeout             := i(31);
 --        case i(28 downto 27) is
 --        when "00" =>
 --            ret.transfer_mode := direct;
@@ -139,6 +141,7 @@ package body usb_pkg is
         ret(24 downto 14) := std_logic_vector(i.max_transfer);
         ret(25)           := i.data_toggle;
         ret(26)           := i.control;
+        ret(31)           := i.timeout;
 --        case i.transfer_mode is
 --        when direct       => ret(28 downto 27) := "00";
 --        when use_preamble => ret(28 downto 27) := "01";

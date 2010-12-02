@@ -455,7 +455,10 @@ begin
 --				elsif do_sof='1' then
 --					state <= idle; -- test
 				elsif timeout then
-                    state <= handle_trans; -- try again
+                    pipe_in.timeout <= '1';
+                    trans_in.state <= error;
+                    state <= update_pipe;
+--                    state <= handle_trans; -- try again
                 end if;
 
             when get_status =>

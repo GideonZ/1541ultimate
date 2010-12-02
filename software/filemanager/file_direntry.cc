@@ -252,13 +252,13 @@ void FileDirEntry :: execute(int selection)
         	}
         	res = user_interface->string_box("Give name for new disk..", buffer, 22);
         	if(res > 0) {
-    			set_extension(buffer, (selection == MENU_CREATE_G64)?(char *)".g64":(char *)".d64", 32);
     			fix_filename(buffer);
     		    bin = new BinImage;
         		if(bin) {
+            		bin->format(buffer);
+        			set_extension(buffer, (selection == MENU_CREATE_G64)?(char *)".g64":(char *)".d64", 32);
                     File *f = root.fcreate(buffer, this);
         			if(f) {
-                		bin->format(buffer);
                         if(selection == MENU_CREATE_G64) {
                             gcr = new GcrImage;
                             if(gcr) {

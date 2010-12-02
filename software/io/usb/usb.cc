@@ -679,6 +679,11 @@ int Usb :: bulk_out(void *buf, int len, int pipe)
         timeout --;
         wait_ms(1);
     }
+    if((*transaction & 0x3) == 0x03) { // error
+        printf("ERROR OUT: pipe status = %8x\n", USB_PIPE(pipe));
+        return 0;
+    }
+    
     return len;
 }
 
@@ -720,6 +725,11 @@ int Usb :: bulk_in(void *buf, int len, int pipe)
         }
         timeout --;
         wait_ms(1);
+    }
+
+    if((*transaction & 0x3) == 0x03) { // error
+        printf("ERROR IN: pipe status = %8x\n", USB_PIPE(pipe));
+        return 0;
     }
 
     new_len = (int)((USB_TRANSACTION(3) >> 9) & 0x7FF);
