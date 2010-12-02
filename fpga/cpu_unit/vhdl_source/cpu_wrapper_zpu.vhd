@@ -88,7 +88,7 @@ begin
 
 
     r_int_ram: if g_internal_prg generate
-        if g_boot_rom generate
+        r_boot: if g_boot_rom generate
             i_zpuram: entity work.mem32k
             generic map (
                 simulation => g_simulation )
@@ -104,7 +104,7 @@ begin
                 dack    => ram_dack,
                 claimed => ram_claimed );
         end generate;
-        if not g_boot_rom generate
+        r_noboot: if not g_boot_rom generate
             i_zpuram: entity work.mem4k
             generic map (
                 simulation => g_simulation )

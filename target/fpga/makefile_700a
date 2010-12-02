@@ -24,7 +24,7 @@ export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
 
 TARGET 			:= ultimate_1541_700a
 
-ISE_VERSION		:= 12
+ISE_VERSION		:= 10
 
 DESIGN_NAME 	:= $(TARGET)
 TOP_NAME    	:= $(TARGET)
@@ -106,6 +106,13 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/rx.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd \
 				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/delta_sigma_2to5.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/high_pass.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/hf_noise.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/sine_osc.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/mash.vhd \
 				vhdl,work,../../fpga/io/spi/vhdl_source/spi.vhd \
 				vhdl,work,../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd \
 				vhdl,work,../../fpga/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4.vhd \

@@ -7,10 +7,9 @@ library work;
 use work.mem_bus_pkg.all;
 use work.io_bus_pkg.all;
 
-entity ultimate_1541_250e is
+entity ultimate_1541_1400a is
 generic (
-    g_simulation    : boolean := false;
-	g_version		: unsigned(7 downto 0) := X"15" );
+    g_version       : unsigned(7 downto 0) := X"62" );
 port (
     CLOCK       : in    std_logic;
     
@@ -39,24 +38,17 @@ port (
     NMIn        : inout std_logic;
     
     -- local bus side
-    
-    LB_ADDR     : out   std_logic_vector(21 downto 0); -- 4M linear space
+    LB_ADDR     : out   std_logic_vector(14 downto 0); -- DRAM A
     LB_DATA     : inout std_logic_vector(7 downto 0);
-
-    FLASH_CSn   : out   std_logic;
-    SRAM_CSn    : out   std_logic;
-    
-    MEM_WEn     : out   std_logic;
-    MEM_OEn     : out   std_logic;
     
     SDRAM_CSn   : out   std_logic;
     SDRAM_RASn  : out   std_logic;
     SDRAM_CASn  : out   std_logic;
     SDRAM_WEn   : out   std_logic;
     SDRAM_DQM   : out   std_logic;
-	SDRAM_CKE	: out   std_logic;
-	SDRAM_CLK	: out   std_logic;
-	 
+    SDRAM_CKE   : out   std_logic;
+    SDRAM_CLK   : out   std_logic;
+     
     -- PWM outputs (for audio)
     PWM_OUT     : out   std_logic_vector(1 downto 0) := "11";
 
@@ -68,55 +60,55 @@ port (
     IEC_SRQ_IN  : inout std_logic;
     
     DISK_ACTn   : out   std_logic; -- activity LED
-	CART_LEDn	: out   std_logic;
-	SDACT_LEDn	: out   std_logic;
+    CART_LEDn   : out   std_logic;
+    SDACT_LEDn  : out   std_logic;
     MOTOR_LEDn  : out   std_logic;
-	
-	-- Debug UART
-	UART_TXD	: out   std_logic;
-	UART_RXD	: in    std_logic;
-	
-	-- USB
-	USB_IOP		: inout std_logic;
-	USB_ION		: inout std_logic;
-	USB_SEP		: in    std_logic;
-	USB_SEN		: in    std_logic;
-	USB_DET     : inout std_logic;
-
+    
+    -- Debug UART
+    UART_TXD    : out   std_logic;
+    UART_RXD    : in    std_logic;
+    
     -- SD Card Interface
     SD_SSn      : out   std_logic;
     SD_CLK      : out   std_logic;
     SD_MOSI     : out   std_logic;
     SD_MISO     : in    std_logic;
-    SD_WP       : in    std_logic;
     SD_CARDDETn : in    std_logic;
+    SD_DATA     : inout std_logic_vector(2 downto 1);
     
-    -- 1-wire Interface
-    ONE_WIRE    : inout std_logic;
+    -- RTC Interface
+    RTC_CS      : out   std_logic;
+    RTC_SCK     : out   std_logic;
+    RTC_MOSI    : out   std_logic;
+    RTC_MISO    : in    std_logic;
 
-    -- Ethernet Interface
-    ETH_CLK     : inout std_logic := '0';
-    ETH_IRQ     : in    std_logic := '0';
-    ETH_CSn     : out   std_logic;
-    ETH_CS      : out   std_logic;
-    ETH_RST     : out   std_logic;
-    
+    -- Flash Interface
+    FLASH_CSn   : out   std_logic;
+    FLASH_SCK   : out   std_logic;
+    FLASH_MOSI  : out   std_logic;
+    FLASH_MISO  : in    std_logic;
+
+    -- USB Interface (ULPI)
+    ULPI_RESET  : out   std_logic;
+    ULPI_CLOCK  : in    std_logic;
+    ULPI_NXT    : in    std_logic;
+    ULPI_STP    : out   std_logic;
+    ULPI_DIR    : in    std_logic;
+    ULPI_DATA   : inout std_logic_vector(7 downto 0);
+
     -- Cassette Interface
     CAS_MOTOR   : in    std_logic := '0';
-    CAS_SENSE   : inout std_logic;
-    CAS_READ    : inout std_logic;
-    CAS_WRITE   : inout std_logic;
+    CAS_SENSE   : inout std_logic := 'Z';
+    CAS_READ    : inout std_logic := 'Z';
+    CAS_WRITE   : inout std_logic := 'Z';
     
     -- Buttons
     BUTTON      : in    std_logic_vector(2 downto 0));
-
---    attribute iob : string;
---    attribute iob of CAS_SENSE : signal is "false";
-	
-end ultimate_1541_250e;
+    
+end ultimate_1541_1400a;
 
 
-architecture structural of ultimate_1541_250e is
+architecture structural of ultimate_1541_1400a is
 
     attribute IFD_DELAY_VALUE : string;
     attribute IFD_DELAY_VALUE of LB_DATA: signal is "0";
@@ -157,39 +149,38 @@ begin
         sys_shifted  => sys_shifted,
 --        sys_clock_2x => sys_clock_2x,
 
-        eth_clock    => ETH_CLK );
+        eth_clock    => open );
 
 
     i_logic: entity work.ultimate_logic 
     generic map (
         g_version       => g_version,
-        g_simulation    => g_simulation,
+        g_simulation    => false,
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
-        g_icap          => false,
         g_uart          => true,
         g_drive_1541    => true, --
-        g_drive_1541_2  => false, --
-        g_hardware_gcr  => true,
-        g_ram_expansion => true, --
-        g_hardware_iec  => false, --
+        g_drive_1541_2  => true, --
+        g_hardware_gcr  => true, --
+        g_ram_expansion => false, --
+        g_hardware_iec  => false,
         g_iec_prog_tim  => false,
         g_c2n_streamer  => false,
         g_c2n_recorder  => false,
         g_cartridge     => true, --
-        g_drive_sound   => false, --
-        g_rtc_chip      => false,
-        g_rtc_timer     => false,
-        g_usb_host      => false,
-        g_spi_flash     => false )
+        g_drive_sound   => true, --
+        g_rtc_chip      => true,
+        g_rtc_timer     => true,
+        g_usb_host      => true,
+        g_spi_flash     => true )
     port map (
         -- globals
         sys_clock   => sys_clock,
         sys_reset   => sys_reset,
     
-        ulpi_clock  => sys_clock, -- just in case anything is connected
-        ulpi_reset  => sys_reset, -- just in case anything is connected
+        ulpi_clock  => ulpi_clock,
+        ulpi_reset  => ulpi_reset_i,
     
         -- slot side
         PHI2        => PHI2,
@@ -220,7 +211,7 @@ begin
         --memctrl_idle    => memctrl_idle,
         mem_req     => mem_req,
         mem_resp    => mem_resp,
-         
+                 
         -- PWM outputs (for audio)
         PWM_OUT     => PWM_OUT,
     
@@ -246,23 +237,25 @@ begin
         SD_MOSI     => SD_MOSI,
         SD_MISO     => SD_MISO,
         SD_CARDDETn => SD_CARDDETn,
+        SD_DATA     => SD_DATA,
         
         -- RTC Interface
-        RTC_CS      => open,
-        RTC_SCK     => open,
-        RTC_MOSI    => open,
-        RTC_MISO    => '0',
+        RTC_CS      => RTC_CS,
+        RTC_SCK     => RTC_SCK,
+        RTC_MOSI    => RTC_MOSI,
+        RTC_MISO    => RTC_MISO,
     
         -- Flash Interface
-        FLASH_CSn   => open,
-        FLASH_SCK   => open,
-        FLASH_MOSI  => open,
-        FLASH_MISO  => '0',
+        FLASH_CSn   => FLASH_CSn,
+        FLASH_SCK   => FLASH_SCK,
+        FLASH_MOSI  => FLASH_MOSI,
+        FLASH_MISO  => FLASH_MISO,
     
         -- USB Interface (ULPI)
-        ULPI_NXT    => '0',
-        ULPI_STP    => open,
-        ULPI_DIR    => '0',
+        ULPI_NXT    => ULPI_NXT,
+        ULPI_STP    => ULPI_STP,
+        ULPI_DIR    => ULPI_DIR,
+        ULPI_DATA   => ULPI_DATA,
     
         -- Cassette Interface
         CAS_MOTOR   => CAS_MOTOR,
@@ -273,10 +266,11 @@ begin
         -- Buttons
         BUTTON      => button_i );
 
-	i_memctrl: entity work.ext_mem_ctrl_v4_u1
+
+	i_memctrl: entity work.ext_mem_ctrl_v4
     generic map (
-        g_simulation => g_simulation,
-    	A_Width	     => LB_ADDR'length )
+        g_simulation => false,
+    	A_Width	     => 15 )
 		
     port map (
         clock       => sys_clock,
@@ -296,28 +290,29 @@ begin
 		SDRAM_CKE	=> SDRAM_CKE,
 		SDRAM_CLK	=> SDRAM_CLK,
 
-        ETH_CSn     => ETH_CSn,
-        SRAM_CSn    => SRAM_CSn,
-    	FLASH_CSn   => FLASH_CSn,
-
-        MEM_OEn     => MEM_OEn,
-        MEM_WEn     => MEM_WEn,
-        MEM_BEn     => open,
-
         MEM_A       => LB_ADDR,
         MEM_D       => LB_DATA );
-
-
-    ETH_RST   <= sys_reset;
-    ETH_CS    <= '1'; --config.eth_enable; --'1'; -- addr 8/9
 
     -- tie offs
     SDRAM_DQM  <= '0';
 
-	-- USB
-	USB_IOP		<= USB_SEP;
-	USB_ION		<= USB_SEN;
-	USB_DET     <= 'Z';
-    ONE_WIRE    <= 'Z';
+    process(ulpi_clock, reset_in)
+    begin
+        if rising_edge(ulpi_clock) then
+            ulpi_reset_i <= sys_reset;
+        end if;
+        if reset_in='1' then
+            ulpi_reset_i <= '1';
+        end if;
+    end process;
+
+    process(ulpi_clock)
+    begin
+        if rising_edge(ulpi_clock) then
+            scale_cnt <= scale_cnt + 1;
+        end if;
+    end process;
+
+    ULPI_RESET <= ulpi_reset_i;
 
 end structural;

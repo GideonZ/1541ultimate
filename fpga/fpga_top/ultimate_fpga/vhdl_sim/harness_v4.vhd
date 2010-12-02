@@ -1,6 +1,7 @@
 
 library work;
 use work.tl_flat_memory_model_pkg.all;
+use work.mem_bus_pkg.all;
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -94,6 +95,11 @@ architecture tb of harness_v4 is
 --    shared variable rom  : h_mem_object;
 --    shared variable bram : h_mem_object;
 
+    -- memory controller interconnect
+    signal memctrl_inhibit  : std_logic;
+    signal mem_req          : t_mem_req;
+    signal mem_resp         : t_mem_resp;
+
 begin
     mut: entity work.ultimate_logic
     generic map (
@@ -101,7 +107,6 @@ begin
     port map (
         sys_clock   => sys_clock,
         sys_reset   => sys_reset,
-        sys_shifted => sys_shifted,
         
         PHI2        => PHI2,
         DOTCLK      => DOTCLK,
@@ -127,16 +132,11 @@ begin
         IRQn        => IRQn,
         NMIn        => NMIn,
                                    
-        LB_ADDR     => LB_ADDR,
-        LB_DATA     => LB_DATA,
-                                   
-        SDRAM_CSn   => SDRAM_CSn,
-        SDRAM_RASn  => SDRAM_RASn,
-        SDRAM_CASn  => SDRAM_CASn,
-        SDRAM_WEn   => SDRAM_WEn,
-        SDRAM_CKE   => SDRAM_CKE,
-        SDRAM_CLK   => SDRAM_CLK,
-        SDRAM_DQM   => SDRAM_DQM,
+        -- local bus side
+        mem_inhibit => memctrl_inhibit,
+        --memctrl_idle    => memctrl_idle,
+        mem_req     => mem_req,
+        mem_resp    => mem_resp,
          
         -- PWM outputs (for audio)
         PWM_OUT     => PWM_OUT,
@@ -194,6 +194,32 @@ begin
         -- Buttons
         BUTTON      => BUTTON );
 
+	i_memctrl: entity work.ext_mem_ctrl_v4
+    generic map (
+        g_simulation => false,
+    	A_Width	     => 15 )
+		
+    port map (
+        clock       => sys_clock,
+        clk_shifted => sys_shifted,
+        reset       => sys_reset,
+
+        inhibit     => memctrl_inhibit,
+        is_idle     => open, --memctrl_idle,
+        
+        req         => mem_req,
+        resp        => mem_resp,
+        
+		SDRAM_CSn   => SDRAM_CSn,	
+	    SDRAM_RASn  => SDRAM_RASn,
+	    SDRAM_CASn  => SDRAM_CASn,
+	    SDRAM_WEn   => SDRAM_WEn,
+		SDRAM_CKE	=> SDRAM_CKE,
+		SDRAM_CLK	=> SDRAM_CLK,
+
+        MEM_A       => LB_ADDR,
+        MEM_D       => LB_DATA );
+
 	sys_clock <= not sys_clock after 10 ns; -- 50 MHz
     sys_reset <= '1', '0' after 100 ns;
     sys_shifted <= transport sys_clock after 3 ns;
@@ -202,7 +228,7 @@ begin
     ULPI_RESET <= '1', '0' after 100 ns;
 
 	PHI2  <= not PHI2 after 507.5 ns; -- 0.98525 MHz
-    RSTn  <= '0', '1' after 6 us;
+    RSTn  <= '0', '1' after 6 us, '0' after 100 us, '1' after 105 us;
     
     i_ulpi_phy: entity work.ulpi_phy_bfm
     generic map (

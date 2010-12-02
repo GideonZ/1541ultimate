@@ -22,22 +22,22 @@ export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
 ################################################################################
 #SHELL           := /bin/bash
 
-TARGET 			:= ultimate_1541_250e
+TARGET 			:= ultimate_1541_1400a
 
 ISE_VERSION		:= 12
 
 DESIGN_NAME 	:= $(TARGET)
 TOP_NAME    	:= $(TARGET)
 
-CONFIG			:= makefile_250e
+CONFIG			:= makefile_1400a
 
 # Project ROOT
-WORK_DIR		:= work250
+WORK_DIR		:= work1400
 
 # Part settings
-PART_TYPE        := xc3s250e
+PART_TYPE        := xc3s1400a
 PART_SPEED_GRADE := 4
-PART_PACKAGE     := pq208
+PART_PACKAGE     := ft256
 PART             := $(PART_TYPE)-$(PART_SPEED_GRADE)-$(PART_PACKAGE)
 
 #Synthesis options
@@ -57,12 +57,12 @@ XST_OPTIONS		:= -top $(TOP_NAME) \
 MY_PROMGEN := ../../tools/promgen
 
 #SETTING FILES		    
-UCF_FILES := ./ucf/sd_cartridge_v3.ucf	# constraint/pin-assignment file(s)
+UCF_FILES := ./ucf/ultimate_ii.ucf 		# constraint/pin-assignment file(s)
 BMM_FILE  := ./ucf/sd_ram4.bmm			# bmm file location
 
 # TOOL FLAGS
 NGDBUILD_FLAGS	 := 	
-MAP_FLAGS        := 	-cm area -timing -pr b
+MAP_FLAGS        := 	-cm area -timing -pr b -detail
 PAR_FLAGS        := 	-w 
 TRCE_FLAGS       := 	-e 9 -l 11
 PROMGEN_FLAGS	 := 	-w -p mcs -c FF -x xcf04s
@@ -106,16 +106,14 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/rx.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd \
 				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd \
-				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/delta_sigma_2to5.vhd \
 				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd \
 				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/high_pass.vhd \
 				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd \
 				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/hf_noise.vhd \
 				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/sine_osc.vhd \
-				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/mash.vhd \
 				vhdl,work,../../fpga/io/spi/vhdl_source/spi.vhd \
 				vhdl,work,../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd \
-				vhdl,work,../../fpga/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4_u1.vhd \
+				vhdl,work,../../fpga/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4.vhd \
 				vhdl,work,../../fpga/io/spike_filter/vhdl_source/spike_filter.vhd \
 				vhdl,work,../../fpga/io/usb/vhdl_source/usb_pkg.vhd \
 				vhdl,work,../../fpga/io/usb/vhdl_source/ulpi_bus.vhd \

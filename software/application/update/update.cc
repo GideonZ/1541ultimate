@@ -185,6 +185,25 @@ void flash_buffer(int id, void *buffer, int length, char *version, char *descr)
     }    
 }
 
+bool program_flash(bool do_update1, bool do_update2)
+{
+    int _binary_ultimate_bin_length = (int)&_binary_ultimate_bin_end - (int)&_binary_ultimate_bin_start;
+    int _binary_1st_boot_700_bin_length = (int)&_binary_1st_boot_700_bin_end - (int)&_binary_1st_boot_700_bin_start;
+    int _binary_2nd_boot_bin_length = (int)&_binary_2nd_boot_bin_end - (int)&_binary_2nd_boot_bin_start;
+
+	flash->protect_disable();
+	last_sector = -1;
+	if(do_update1) {
+	    flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_700_bin_start, _binary_1st_boot_700_bin_length, FPGA_VERSION, "FPGA");
+	    flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, _binary_2nd_boot_bin_length, BOOT_VERSION, "Secondary bootloader");
+	}
+	if(do_update2) {
+    	flash_buffer(FLASH_ID_APPL, &_binary_ultimate_bin_start, _binary_ultimate_bin_length, APPL_VERSION, "Ultimate application");
+    }
+	printf("            \nDone!\n");
+	return true;
+}
+    
 int main()
 {
 	char time_buffer[32];
@@ -221,10 +240,6 @@ int main()
 	        ;
     }
 
-    int _binary_ultimate_bin_length = (int)&_binary_ultimate_bin_end - (int)&_binary_ultimate_bin_start;
-    int _binary_1st_boot_700_bin_length = (int)&_binary_1st_boot_700_bin_end - (int)&_binary_1st_boot_700_bin_start;
-    int _binary_2nd_boot_bin_length = (int)&_binary_2nd_boot_bin_end - (int)&_binary_2nd_boot_bin_start;
-
 	bool do_update1 = false;
 	bool do_update2 = false;
 
@@ -234,19 +249,12 @@ int main()
 
 	if(do_update1 || do_update2) {
         if(user_interface->popup("Update required. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-			flash->protect_disable();
-			last_sector = -1;
-			if(do_update1) {
-			    flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_700_bin_start, _binary_1st_boot_700_bin_length, FPGA_VERSION, "FPGA");
-			    flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, _binary_2nd_boot_bin_length, BOOT_VERSION, "Secondary bootloader");
-			}
-			if(do_update2) {
-		    	flash_buffer(FLASH_ID_APPL, &_binary_ultimate_bin_start, _binary_ultimate_bin_length, APPL_VERSION, "Ultimate application");
-		    }
-			printf("            \nDone!\n");
+            program_flash(do_update1, do_update2);
         }
     } else {
-    	printf("No update required.\n");
+        if(user_interface->popup("Update NOT required. Force?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+            program_flash(true, true);
+        }
 	}
 
 	printf("\nConfiguring Flash write protection..\n");

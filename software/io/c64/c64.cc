@@ -693,6 +693,8 @@ int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)
     if(reloc)
     	load_address = reloc;
 
+    int max_length = 65536 - int(load_address); // never exceed $FFFF
+
 	// handshake with sid player cart
 	stop(false);
 	C64_POKE(0x162, 0);
@@ -712,7 +714,7 @@ int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)
     printf("Now loading...");
 
     /* Now actually load the file */
-    f->read((BYTE *)(C64_MEMORY_BASE + load_address), 0x10000, &transferred);
+    f->read((BYTE *)(C64_MEMORY_BASE + load_address), max_length, &transferred);
     WORD end_address = load_address + transferred;
     printf("DMA load complete: $%4x-$%4x Run Code: %b\n", load_address, end_address, run_code);
 

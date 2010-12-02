@@ -30,6 +30,11 @@ UsbHubDriver :: UsbHubDriver(IndexedList<UsbDriver*> &list)
 
 UsbHubDriver :: UsbHubDriver()
 {
+    for(int i=0;i<4;i++) {
+        children[i] = NULL;
+    }
+    device = NULL;
+    host = NULL;
 }
 
 UsbHubDriver :: ~UsbHubDriver()
@@ -109,7 +114,7 @@ void UsbHubDriver :: install(UsbDevice *dev)
 
     BYTE *buf;
     
-	printf("Getting hub descriptor...\n");
+	printf("Getting hub descriptor ADDR=%d...\n", dev->current_address);
 	int i = dev->host->control_exchange(dev->current_address,
 								   c_get_hub_descriptor, 8,
 								   NULL, 64, &buf);
@@ -155,7 +160,6 @@ void UsbHubDriver :: install(UsbDevice *dev)
     }
     wait_ms(power_on_time);        
 
-/*
     printf("Reset all ports and getting their status..\n");
     // Reset all ports
     c_set_port_feature[2] = PORT_RESET;
@@ -171,28 +175,45 @@ void UsbHubDriver :: install(UsbDevice *dev)
     								    c_get_port_status, 8,
     								    NULL, 64, &buf);
         if(i == 4) {
-        	printf("Port %d status:", j);
+        	printf("Port %d of hub on addr %d INITIAL status:", j+1, dev->current_address);
             for(int b=0;b<4;b++) {
                 printf("%b ", buf[b]);
             } printf("\n");
         } else {
-            printf("Failed to read port %d status. Got %d bytes.\n", j, i);
+            printf("Failed to read port %d status. Got %d bytes.\n", j+1, i);
             continue;
         }
 
         if(buf[0] & 0x02) { // PORT_ENABLE set
             UsbDevice *d = new UsbDevice(dev->host);
             d->parent = dev;
+            c_clear_port_feature[4] = BYTE(j+1);
             if(!dev->host->install_device(d, false)) {  // false = assume powered hub for now            
-                printf("Install failed...\n");
+                printf("Install failed... Clearing port enable\n");
+                // disable port, because connected device has wrong address
+                c_clear_port_feature[2] = PORT_ENABLE;
+            	i = host->control_exchange(dev->current_address,
+            							   c_clear_port_feature, 8,
+            							   NULL, 8, NULL);
                 continue;
+            } else {
+                children[j] = d;
             }
+            c_clear_port_feature[4] = BYTE(j+1);
+            c_clear_port_feature[2] = C_PORT_CONNECTION;
+        	i = host->control_exchange(dev->current_address,
+        							   c_clear_port_feature, 8,
+        							   NULL, 8, NULL);
+            c_clear_port_feature[2] = C_PORT_RESET;
+        	i = host->control_exchange(dev->current_address,
+        							   c_clear_port_feature, 8,
+        							   NULL, 8, NULL);
         }
     }
-    printf("-- Install Complete.. --\n");
-*/
+    printf("-- Install Complete..HUB on address %d.. --\n", dev->current_address);
+
     irq_transaction = host->allocate_transaction(1);
-    host->interrupt_in(irq_transaction, device->pipe_numbers[0], 1, irq_data);
+//    host->interrupt_in(irq_transaction, device->pipe_numbers[0], 1, irq_data);
 }
 
 void UsbHubDriver :: deinstall(UsbDevice *dev)
@@ -204,10 +225,12 @@ void UsbHubDriver :: poll(void)
 {
     int resp = host->interrupt_in(irq_transaction, device->pipe_numbers[0], 1, irq_data);
     if(resp) {
-        printf("HUB IRQ data: ");
+        printf("HUB (ADDR=%d) IRQ data: ", device->current_address);
         for(int i=0;i<resp;i++) {
             printf("%b ", irq_data[i]);
         } printf("\n");
+    } else {
+        return;
     }
     if(!irq_data[0])
         return;
@@ -216,7 +239,7 @@ void UsbHubDriver :: poll(void)
     BYTE buf[4];
     int i;
     
-    for(int j=0;j<=num_ports;j++) {
+    for(int j=0;j<num_ports;j++) {
         irq_data[0] >>=1;
         if(irq_data[0] & 1) {
             c_get_port_status[4] = BYTE(j+1);
@@ -227,7 +250,7 @@ void UsbHubDriver :: poll(void)
                 for(int b=0;b<4;b++)
                     buf[b] = usb_buf[b];
                     
-            	printf("Port %d status:", j);
+            	printf("Port %d of hub on addr %d status:", j+1, device->current_address);
                 for(int b=0;b<4;b++) {
                     printf("%b ", buf[b]);
                 } printf("\n");
@@ -245,7 +268,7 @@ void UsbHubDriver :: poll(void)
                         c_set_port_feature[2] = PORT_RESET;
                         c_set_port_feature[4] = BYTE(j+1); 
                         wait_ms(power_on_time);        
-                        printf("Issuing reset on port %d.\n", j);
+                        printf("Issuing reset on port %d.\n", j+1);
                     	i = host->control_exchange(device->current_address,
                								       c_set_port_feature, 8,
                 								   NULL, 64, NULL);
@@ -253,6 +276,7 @@ void UsbHubDriver :: poll(void)
                         if(children[j]) {
                             host->deinstall_device(children[j]);
                         }
+                        children[j] = NULL;
                     }                        
                 }
                 if(buf[2] & BIT_PORT_ENABLE) {
@@ -278,24 +302,30 @@ void UsbHubDriver :: poll(void)
                 }
                 if(buf[2] & BIT_PORT_RESET) {
                     printf("* RESET CHANGE *\n");
+                    if(buf[0] & BIT_PORT_ENABLE) {
+                        if(children[j]) {
+                            printf("*** ERROR *** Device already present! ***\n");
+                            host->deinstall_device(children[j]);
+                            children[j] = NULL;
+                        } else {
+                            wait_ms(power_on_time);        
+                            UsbDevice *d = new UsbDevice(host);
+                            d->parent = device;
+                            if(!host->install_device(d, false)) {  // false = assume powered hub for now            
+                                printf("Install failed...\n");
+                                continue;
+                            } else {
+                                children[j] = d;
+                            }
+                        }
+                    }
                     c_clear_port_feature[2] = C_PORT_RESET;
                 	i = host->control_exchange(device->current_address,
                 							   c_clear_port_feature, 8,
                 							   NULL, 8, NULL);
-                    if(buf[0] & 0x02) { // PORT_ENABLE set
-                        wait_ms(power_on_time);        
-                        UsbDevice *d = new UsbDevice(host);
-                        d->parent = device;
-                        if(!host->install_device(d, false)) {  // false = assume powered hub for now            
-                            printf("Install failed...\n");
-                            continue;
-                        } else {
-                            children[j] = d;
-                        }
-                    }
                 }
             } else {
-                printf("Failed to read port %d status. Got %d bytes.\n", j, i);
+                printf("Failed to read port %d status. Got %d bytes.\n", j+1, i);
                 continue;
             }
         }        

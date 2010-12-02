@@ -10,35 +10,64 @@ MYPROMGEN = $(TOOLS)/promgen
 CROSS     = zpu-elf
 
 # External inputs
-FPGA_250  = ../../fpga/work250/ultimate_1541_250e
-FPGA_400  = ../../fpga/work400/ultimate_1541_400a
-FPGA_700  = ../../fpga/work700/ultimate_1541_700a
-FPGA_1400 = ../../fpga/work1400/ultimate_1541_1400a
+FPGA_400  = ../../fpga/boot400/boot_400a
+FPGA_700  = ../../fpga/boot700/boot_700a
+FPGA_1400 = ../../fpga/boot1400/boot_1400a
+ROMS      = ../../../roms
 
 # Outputs
 RESULT = ./result
 OUTPUT = ./output
 
-PRJ      =  1st_boot
+PRJ      =  programmer
 PATH_SW  =  ../../../software
 
-VPATH     = $(PATH_SW)/application/1st_boot \
+VPATH     = $(PATH_SW)/application \
+			$(PATH_SW)/application/programmer \
+			$(PATH_SW)/filesystem \
+			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
+			$(PATH_SW)/io/flash \
 			$(PATH_SW)/io/icap \
-			$(PATH_SW)/io/flash
+			$(PATH_SW)/drive \
+			$(PATH_SW)/components \
+			$(PATH_SW)/io/c64 \
+			$(PATH_SW)/io/rtc \
+			$(PATH_SW)/io/usb \
+			$(PATH_SW)/io/sd_card \
+			$(PATH_SW)/io/userinterface
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 
-SRCS_C   =	zpu_boot.c \
-			itu.c
-SRCS_CC	 =  boot1.cc
-SRCS_ASM =  crt0_boot.s
+SRCS_C   =	zpu.c \
+			itu.c \
+			xmodem.c \
+			crc16.c \
+			dump_hex.c \
+			small_printf.c
+SRCS_CC	 =  blockdev.cc \
+			disk.cc \
+			partition.cc \
+			file_system.cc \
+			fat_fs.cc \
+			fat_dir.cc \
+			fatfile.cc \
+			ccsbcs.cc \
+			flash.cc \
+			at45_flash.cc \
+			at49_flash.cc \
+			w25q_flash.cc \
+			sd_card.cc \
+			sdio.cc \
+			memory.cc \
+			prog.cc
+SRCS_ASM =  crt0_appl.s
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -Os -DGCC_ZPU -DBOOTLOADER -ffunction-sections
+COPTIONS = -Os -DGCC_ZPU -DBOOTLOADER -D_FS_READONLY=1 -D_FS_MINIMIZE=3 -ffunction-sections
 CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti
-LINK 	 = ./zpu_1st_boot.lds
+LINK 	 = ./zpu_32k_internal.lds
 LLIB     =  -L $(ZPU_TOOLCHAIN)/install/lib/gcc/zpu-elf/3.4.2 \
 			-L $(ZPU_TOOLCHAIN)/install/zpu-elf/lib
 LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lc -lbcc --end-group -lgcc
@@ -52,6 +81,11 @@ LD		  = $(CROSS)-ld
 OBJDUMP   = $(CROSS)-objdump
 OBJCOPY	  = $(CROSS)-objcopy
 
+
+.PHONY: all clean
+
+all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ)_700.bit
+
 .SUFFIXES:
 
 OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
@@ -59,16 +93,6 @@ OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
 OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
 ALL_OBJS = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
 
-
-.PHONY: clean all test
-
-all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_400.mcs $(RESULT)/$(PRJ)_700.mcs $(RESULT)/$(PRJ)_250.bin $(RESULT)/$(PRJ)_1400.mcs
-
-test:
-	echo $(ALL_OBJS)
-	echo $(OBJS_C)
-	echo $(OBJS_CC)
-	
 $(OUTPUT):
 	@mkdir $(OUTPUT)
 
@@ -95,63 +119,32 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 
-$(RESULT)/$(PRJ)_250.bin: $(OUTPUT)/$(PRJ)_250.bit
-	@echo "(My) PromGen 250A..."
-	@$(MYPROMGEN) $< $@
-
-$(RESULT)/$(PRJ)_400.mcs: $(OUTPUT)/$(PRJ)_400.bit
-	@echo "PromGen 400A..."
-	@promgen -w -s 2048 -p mcs -spi -u 0 $< -o $@
-	@$(HEX2BIN) -s 0x39990 $@ $(@:.mcs=.tmp)
-	@$(BIN2HEX) -Z -v "FPGA U2 V17" $(@:.mcs=.tmp) $@
-	@rm $(@:.mcs=.tmp)
-
-$(RESULT)/$(PRJ)_700.mcs: $(OUTPUT)/$(PRJ)_700.bit
-	@echo "PromGen 700A..."
-	@promgen -w -s 2048 -p mcs -spi -u 0 $< -o $@
-	@$(HEX2BIN) -s 0x53C90 $@ $(@:.mcs=.tmp)
-	@$(BIN2HEX) -Z -v "FPGA U2 V9E" $(@:.mcs=.tmp) $@
-	@rm $(@:.mcs=.tmp)
-	
-$(RESULT)/$(PRJ)_1400.mcs: $(OUTPUT)/$(PRJ)_1400.bit
-	@echo "PromGen 1400A..."
-	@promgen -w -s 2048 -p mcs -spi -u 0 $< -o $@
-	@$(HEX2BIN) -s 0x91260 $@ $(@:.mcs=.tmp)
-	@$(BIN2HEX) -Z -v "FPGA U2 V62" $(@:.mcs=.tmp) $@
-	@rm $(@:.mcs=.tmp)
-
-$(OUTPUT)/$(PRJ)_250.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_250).bit
-	@echo "Data2MEM 250E..."
-	@data2mem -bm $(FPGA_250)_bd.bmm \
-	         -bt $(FPGA_250).bit \
-	         -bd $(OUTPUT)/$(PRJ).mem \
-	         -o b $(OUTPUT)/$(PRJ)_250.bit
+$(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
+	@echo "Make mem..."
+	@$(MAKEMEM) $< 32768 >$@
 
 $(OUTPUT)/$(PRJ)_400.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_400).bit
 	@echo "Data2MEM 400A..."
 	@data2mem -bm $(FPGA_400)_bd.bmm \
 	         -bt $(FPGA_400).bit \
 	         -bd $(OUTPUT)/$(PRJ).mem \
-	         -o b $(OUTPUT)/$(PRJ)_400.bit
+	         -o b $(RESULT)/$(PRJ)_400.bit
 
 $(OUTPUT)/$(PRJ)_700.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_700).bit
 	@echo "Data2MEM 700A..."
 	@data2mem -bm $(FPGA_700)_bd.bmm \
 	         -bt $(FPGA_700).bit \
 	         -bd $(OUTPUT)/$(PRJ).mem \
-	         -o b $(OUTPUT)/$(PRJ)_700.bit
+	         -o b $(RESULT)/$(PRJ)_700.bit
 
 $(OUTPUT)/$(PRJ)_1400.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_1400).bit
 	@echo "Data2MEM 1400A..."
 	@data2mem -bm $(FPGA_1400)_bd.bmm \
 	         -bt $(FPGA_1400).bit \
 	         -bd $(OUTPUT)/$(PRJ).mem \
-	         -o b $(OUTPUT)/$(PRJ)_1400.bit
-
-$(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
-	@echo "Make mem..."
-	@$(MAKEMEM) $< 4096 >$@
+	         -o b $(RESULT)/$(PRJ)_1400.bit
 
 clean:
 	@-rm -rf $(OUTPUT)
 	@-rm -rf $(RESULT)
+

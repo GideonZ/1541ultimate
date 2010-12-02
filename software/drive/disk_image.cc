@@ -99,6 +99,24 @@ void GcrImage :: invalidate(void)
     }
 }
 
+void GcrImage :: blank(void)
+{
+	memset(gcr_data, 0x00, C1541_MAX_GCR_LEN);
+
+    BYTE *gcr = gcr_image; // internal storage
+    int length;
+    
+    for(int i=0;i<C1541_MAXTRACKS;i+=2) {
+        length = track_lengths[track_to_region(i/2)];
+        printf("Length of track %d is %d.\n", i+1, length);
+        track_address[i] = gcr;
+        track_length[i] = length;
+		track_address[i + 1] = dummy_track;
+        track_length[i + 1] = length;
+        gcr += length;
+    }
+}
+    
 GcrImage :: ~GcrImage(void)
 {
 //    if(mounted_on)
@@ -450,7 +468,7 @@ int GcrImage :: find_track_start(int track)
     return 0;    
 }
     
-bool GcrImage :: save(File *f, bool report)
+bool GcrImage :: save(File *f, bool report, bool align)
 {
     BYTE *header = new BYTE[16 + C1541_MAXTRACKS * 8];
 
@@ -503,13 +521,16 @@ bool GcrImage :: save(File *f, bool report)
             skipped++;
             continue;
         }
-        size[0] = (BYTE)track_length[i];
-        size[1] = (BYTE)(track_length[i] >> 8);
+        int reported_length = track_length[i];
+        size[0] = (BYTE)reported_length;
+        size[1] = (BYTE)(reported_length >> 8);
         res = f->write(size, 2, &bytes_written);
         if(res != FR_OK)
             break;
         // find alignment
-        int start = find_track_start(i);
+        int start = 0;
+        if(align)
+            start = find_track_start(i);
         if(start > 0) {
             res = f->write(track_address[i]+start, track_length[i]-start, &bytes_written);
             if(res != FR_OK)
@@ -535,18 +556,30 @@ bool GcrImage :: save(File *f, bool report)
     return true;
 }
     
-bool GcrImage :: write_track(int track, File *f)
+bool GcrImage :: write_track(int track, File *f, bool align)
 {
 	if(track_address[track] == dummy_track)
 		return false;
 
 	DWORD offset = DWORD(track_address[track]) - DWORD(gcr_data);
-	UINT bytes_written;
+	UINT bytes_written, bw2;
 
 	FRESULT fres = f->seek(offset);
 	if(fres != FR_OK)
 		return false;
-	fres = f->write(track_address[track], track_length[track], &bytes_written);
+
+    int start = 0;
+    if(align)
+        start = find_track_start(track);
+    if(start > 0) {
+        fres = f->write(track_address[track]+start, track_length[track]-start, &bytes_written);
+        if(fres != FR_OK)
+    		return false;
+        fres = f->write(track_address[track], start, &bw2);
+        bytes_written += bw2;
+    } else {
+        fres = f->write(track_address[track], track_length[track], &bytes_written);
+    }
 	if(fres != FR_OK)
 		return false;
     f->sync();

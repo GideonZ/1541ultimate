@@ -1,5 +1,6 @@
 extern "C" {
 	#include "itu.h"
+    #include "dump_hex.h"
 }
 #include "usb.h"
 #include "small_printf.h"
@@ -84,6 +85,7 @@ static void poll_usb(Event &e)
 
 Usb :: Usb()
 {
+    debug = false;
 	poll_delay = 0;
 	initialized = false;
 
@@ -254,8 +256,8 @@ void Usb :: bus_reset(bool hs)
     for(int i=0;i<USB_MAX_TRANSACTIONS;i++) {
         USB_TRANSACTION(i) = 0;
     }
-    wait_ms(2);
-    write_ulpi_register(ULPI_FUNC_CTRL, FUNC_SUSPENDM | FUNC_RESET | FUNC_TERM_SEL | FUNC_XCVR_FS);
+//    wait_ms(2);
+//    write_ulpi_register(ULPI_FUNC_CTRL, FUNC_SUSPENDM | FUNC_RESET | FUNC_TERM_SEL | FUNC_XCVR_FS);
     wait_ms(2);
     write_ulpi_register(ULPI_FUNC_CTRL, FUNC_SUSPENDM | FUNC_RESET | FUNC_TERM_SEL | FUNC_XCVR_FS);
     wait_ms(100);
@@ -427,11 +429,12 @@ void Usb :: poll(Event &e)
 	if(!initialized)
 		return init();
 
+	int irq = 0;
 	if(device_present) {
 		bool disconnect = false;
 		if(speed == 2) {
             //read_ulpi_register(ULPI_VENDOR_ID_L);
-        	int irq = read_ulpi_register(ULPI_IRQ_STATUS); // clear pending interrupts
+        	irq = read_ulpi_register(ULPI_IRQ_STATUS); // clear pending interrupts
         	if(irq & IRQ_HOST_DISCONNECT)
         		disconnect = true;
         } else {
@@ -445,7 +448,7 @@ void Usb :: poll(Event &e)
 	        }
 		}
 		if(disconnect) {
-            printf("Disconnected!\n");
+            printf("Disconnected %b!\n", irq);
             device_present = false;
             clean_up(); // since the root was removed, all devices need to be disabled
             USB_COMMAND = USB_CMD_DISABLE_HOST;
@@ -529,6 +532,9 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
     memcpy((void *)&USB_BUFFER(0), out, outlen);
 
     // TODO: just FORCE the coming two transactions to be at the beginning of a frame, and always one after another
+    // Putting the setup and in transactions too fast after one another cause some devices to get into an undefined state
+    // so it wasn't so bad to just wait for the first to finish, and then start the next!
+
     USB_COMMAND = USB_CMD_SCAN_DISABLE;
     wait_ms(1);
 
@@ -538,19 +544,49 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
 
 	volatile DWORD *transaction;
 	
-    USB_TRANSACTION(0) = 0x80000001 | (outlen << 9); // outlen bytes to pipe 0, from buffer 0x000, LINK TO NEXT
-	USB_TRANSACTION(1) = 0x02000015 | (inlen << 9); // inlen bytes from pipe 1, to buffer 0x020
-
-	transaction = &USB_TRANSACTION(1); // both transactions should take place, we only check the second
+//    USB_TRANSACTION(0) = 0x80000001 | (outlen << 9); // outlen bytes to pipe 0, from buffer 0x000, LINK TO NEXT
+//	USB_TRANSACTION(1) = 0x82000015 | (inlen << 9);  // inlen bytes from pipe 1, to buffer 0x020, LINK TO NEXT
+//    USB_TRANSACTION(2) = 0x00800005;                // outlen bytes to pipe 0, zero bytes
+    
+    USB_TRANSACTION(0) = 0x00000001 | (outlen << 9); // outlen bytes to pipe 0, from buffer 0x000, LINK TO NEXT
+	transaction = &USB_TRANSACTION(0);
 
     USB_COMMAND = USB_CMD_SCAN_ENABLE; // go!
-
+    if(debug) {
+        USB_COMMAND = USB_CMD_SET_DEBUG;
+        debug = false;
+    }
+    
     int timeout = 100; // 25 ms
 	while((*transaction & 0x3) == 0x01) {
         if(!timeout) {
             // clear
             USB_TRANSACTION(0) = 0;
             USB_TRANSACTION(1) = 0;
+            USB_TRANSACTION(2) = 0;
+			USB_COMMAND = USB_CMD_ABORT;
+			wait_ms(1);
+            return -1;
+        }
+        timeout --;
+        ITU_TIMER = 50;
+        while(ITU_TIMER)
+            ;
+    }
+
+    if(!inlen)
+        return 0;
+        
+	USB_TRANSACTION(1) = 0x02000015 | (inlen << 9);  // inlen bytes from pipe 1, to buffer 0x020, LINK TO NEXT
+	transaction = &USB_TRANSACTION(1);
+
+    timeout = 100; // 25 ms
+	while((*transaction & 0x3) == 0x01) {
+        if(!timeout) {
+            // clear
+            USB_TRANSACTION(0) = 0;
+            USB_TRANSACTION(1) = 0;
+            USB_TRANSACTION(2) = 0;
 			USB_COMMAND = USB_CMD_ABORT;
 			wait_ms(1);
             return -1;
@@ -564,6 +600,11 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
 	DWORD ta = *transaction;
     int received = inlen - ((ta >> 9) & 0x7FF);
 	printf("Transaction: %8x InLen=%d Received=%d\n", ta, inlen, received);
+    if(received < 0) {
+        dump_hex((void *)&USB_BUFFER(32), 64);
+    }
+    if(received < 0)
+        return -1;
 
     if(in) // user requested copy
         memcpy(in, (void *)&USB_BUFFER(32), received);
@@ -623,14 +664,14 @@ int Usb :: bulk_out(void *buf, int len, int pipe)
         printf("%b ", ((BYTE *)buf)[i]);
     printf(".\n");
 */
-    volatile DWORD *transaction = &USB_TRANSACTION(2);
-    USB_TRANSACTION(2) = 0x10000005 | (DWORD)(len << 9) | (DWORD)(pipe << 4);
+    volatile DWORD *transaction = &USB_TRANSACTION(4);
+    USB_TRANSACTION(4) = 0x10000005 | (DWORD)(len << 9) | (DWORD)(pipe << 4);
     
-    int timeout = 1000;
+    int timeout = 5000;
     while((*transaction & 0x3) == 0x01) {
         if(!timeout) {
-        	printf("Timeout. Transaction = %8x\n", USB_TRANSACTION(2));
-        	USB_TRANSACTION(2) = 0;
+        	printf("Timeout. Transaction = %8x\n", *transaction);
+        	USB_TRANSACTION(4) = 0;
         	USB_COMMAND = USB_CMD_ABORT;
             wait_ms(1);
             return -1;
@@ -669,7 +710,7 @@ int Usb :: bulk_in(void *buf, int len, int pipe)
     volatile DWORD *transaction = &USB_TRANSACTION(3);
     USB_TRANSACTION(3) = 0x30000005 | (DWORD)(len << 9) | (DWORD)(pipe << 4);
     
-    int timeout = 1000; 
+    int timeout = 5000; 
     while((*transaction & 0x3) == 0x01) {
         if(!timeout) {
         	USB_TRANSACTION(3) = 0;
@@ -696,7 +737,7 @@ int Usb :: allocate_transaction(int len)
 {
     // find free transaction
     int index = -1;
-    for(int i=4;i<USB_MAX_TRANSACTIONS;i++) {
+    for(int i=5;i<USB_MAX_TRANSACTIONS;i++) {
         if(!transactions[i]) {
             index = i;
             break;
@@ -711,14 +752,16 @@ int Usb :: allocate_transaction(int len)
     int offset = 1280 + (12 * index);
     transactions[index] = offset;
     
+    printf("Allocated transaction %d at $%3x.\n", index, offset);
     return index;
 }
 
 void Usb :: free_transaction(int index)
 {
-    if(index < 4)
+    if(index < 5)
         return;
 
+    printf("Freeing transaction %d.\n", index);
     if(transactions[index]) {
         transactions[index] = 0;
         USB_TRANSACTION(index) = 0L;
@@ -732,7 +775,7 @@ int Usb :: interrupt_in(int trans, int pipe, int len, BYTE *buf)
     DWORD readback_status = (*tr) & 3;
     
     if(readback_status == 3) {
-        printf("Interrupt error..\n");
+        printf("Interrupt error.. %8x\n", readback_status);
         *tr = 2; // fake done
     } else if (readback_status == 2) { // done
         memcpy(buf, (void *)&USB_BUFFER(offset), len);
@@ -741,6 +784,7 @@ int Usb :: interrupt_in(int trans, int pipe, int len, BYTE *buf)
         return len;
     } else if (readback_status == 0) { // none
         DWORD opcode = (offset << 20) | (len << 9) | (pipe << 4) | 0x09; // busy | interrupt
+        printf("No interrupt active on transaction %d (%8x), writing %8x\n", trans, readback_status, opcode);
         *tr = opcode; // start
         return 0;
     } 
@@ -846,6 +890,10 @@ bool UsbDevice :: get_device_descriptor(bool slow)
     if(!slow) {
         printf("Vendor: %d\n", le16_to_cpu(device_descr.vendor));
         printf("Product: %d\n", le16_to_cpu(device_descr.product));
+        if(le16_to_cpu(device_descr.vendor) == 1423) {
+//            host->bus_reset(true);
+            host->debug = true;
+        }
         get_string(device_descr.manuf_string, manufacturer, 32);
         get_string(device_descr.product_string, product, 32);
         get_string(device_descr.serial_string, serial, 32);

@@ -994,7 +994,10 @@ FRESULT FATFS::file_read(File *f, void *buffer, DWORD len, UINT *bytes_read)
 FRESULT FATFS::file_write(File *f, void *buffer, DWORD len, UINT *bytes_written)
 {
     FATFIL *ff = (FATFIL *)f->handle;
-    return ff->write(buffer, len, bytes_written);
+//    printf("Writing %d bytes from %p...\n", len, buffer);
+    FRESULT res = ff->write(buffer, len, bytes_written);
+//    printf("... written: %d\n", *bytes_written);
+    return res;
 }
 
 FRESULT FATFS::file_seek(File *f, DWORD pos)

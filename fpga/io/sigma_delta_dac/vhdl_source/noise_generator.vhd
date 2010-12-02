@@ -8,6 +8,7 @@ generic (
     g_seed          : std_logic_vector := X"000001" );
 port (
     clock           : in  std_logic;
+    enable          : in  std_logic;
     reset           : in  std_logic;
     
     q               : out std_logic_vector(g_polynom'length-1 downto 0) );
@@ -25,19 +26,21 @@ begin
         variable new_bit  : std_logic;
     begin
         if rising_edge(clock) then
-            if g_type = "Fibonacci" then
-                new_bit := '1';
-                for i in c_poly'range loop
-                    if c_poly(i)='1' then
-                        new_bit := new_bit xor reg(i);
+            if enable='1' then
+                if g_type = "Fibonacci" then
+                    new_bit := '1';
+                    for i in c_poly'range loop
+                        if c_poly(i)='1' then
+                            new_bit := new_bit xor reg(i);
+                        end if;
+                    end loop;
+                    reg <= reg(reg'high-1 downto 0) & new_bit;
+                else -- "Galois", enforced by assert
+                    if reg(reg'high)='1' then
+                        reg <= (reg(reg'high-1 downto 0) & '0') xor c_poly;
+                    else
+                        reg <=  reg(reg'high-1 downto 0) & '1';
                     end if;
-                end loop;
-                reg <= reg(reg'high-1 downto 0) & new_bit;
-            else -- "Galois", enforced by assert
-                if reg(reg'high)='1' then
-                    reg <= (reg(reg'high-1 downto 0) & '0') xor c_poly;
-                else
-                    reg <=  reg(reg'high-1 downto 0) & '1';
                 end if;
             end if;
             

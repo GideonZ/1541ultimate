@@ -100,6 +100,7 @@ architecture functional of ulpi_host is
     signal timeout      : boolean;
     signal timeout_cnt  : integer range 0 to c_timeout_val;
     signal first_transfer   : boolean;
+    signal terminate    : std_logic;
     
     attribute fsm_encoding : string;
     attribute fsm_encoding of state : signal is "sequential";
@@ -119,7 +120,10 @@ begin
     p_protocol: process(clock)
         procedure next_transaction is
         begin
-            if transaction_pntr = c_max_transaction then
+            if terminate='1' then
+                terminate <= '0';
+                state <= idle;
+            elsif transaction_pntr = c_max_transaction then
                 transaction_pntr <= 0;
                 state <= idle; -- wait for next sof before rescan
             else
@@ -444,19 +448,14 @@ begin
                         trans_in.state <= error;
                         state <= update_pipe;
                     elsif rx_pid = c_pid_nak then
-                        if link_busy='1' then
-                            link_busy <= '0';
-                            transaction_pntr <= transaction_pntr + 2; -- skip the next, too
-                            substate <= 0;
-                            state <= scan_transactions;
-                        else -- just retry
-                            state <= update_trans; --handle_trans;
-                        end if;
+                        terminate <= '0'; --link_busy; -- if control packet, then don't continue with next transaction!
+                        state <= update_trans;
+--                        state <= handle_trans; -- just retry and retry, no matter what kind of packet it is, don't send SOF!
                     end if; -- all other pids are just ignored
 --				elsif do_sof='1' then
 --					state <= idle; -- test
 				elsif timeout then
-                    state <= handle_trans;
+                    state <= handle_trans; -- try again
                 end if;
 
             when get_status =>
@@ -600,14 +599,14 @@ begin
 ---------------------------------------------------
 --          DEBUG
 ---------------------------------------------------
-            if state /= receive_data then
-                debug_count <= 0;
-                debug_error <= '0';
-            elsif debug_count = 1023 then
-                debug_error <= '1';
-            else
-                debug_count <= debug_count + 1;
-            end if;
+--            if state /= receive_data then
+--                debug_count <= 0;
+--                debug_error <= '0';
+--            elsif debug_count = 1023 then
+--                debug_error <= '1';
+--            else
+--                debug_count <= debug_count + 1;
+--            end if;
 ---------------------------------------------------
 
             if frame_div = 0 then
@@ -644,6 +643,7 @@ begin
                 send_data    <= '0';
                 send_handsh  <= '0';
                 need_ping	 <= '0';
+                terminate    <= '0';
             end if;                
         end if;
     end process;

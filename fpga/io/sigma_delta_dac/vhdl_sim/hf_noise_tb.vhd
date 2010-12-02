@@ -17,6 +17,8 @@ begin
     reset <= '1', '0' after 100 ns;        
 
     i_hf: entity work.hf_noise 
+    generic map (
+        g_hp_filter     => true )
     port map (
         clock           => clock,
         reset           => reset,

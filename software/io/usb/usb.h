@@ -28,6 +28,7 @@
 #define USB_CMD_SET_GAP	     10
 #define USB_CMD_SET_BUSY     11
 #define USB_CMD_CLEAR_BUSY	 12
+#define USB_CMD_SET_DEBUG    13
 #define USB_CMD_SCAN_DISABLE 14
 #define USB_CMD_SCAN_ENABLE  15
 
@@ -165,6 +166,7 @@ class Usb
     bool install_device(UsbDevice *dev, bool draws_current);
     void deinstall_device(UsbDevice *dev);
 public:
+    bool debug;
     int speed;
     int max_current;
     int remaining_current;

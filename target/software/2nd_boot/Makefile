@@ -39,6 +39,7 @@ SRCS_C   =	zpu.c \
 			itu.c \
 			xmodem.c \
 			crc16.c \
+			dump_hex.c \
 			small_printf.c
 SRCS_CC	 =  blockdev.cc \
 			disk.cc \

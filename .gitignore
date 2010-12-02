@@ -1,5 +1,8 @@
+fpga/io/sigma_delta_dac/sim
 target/fpga/*.xrpt
 target/fpga/_xmsgs
+target/fpga/boot700
+target/fpga/work1400
 target/fpga/work250
 target/fpga/work400
 target/fpga/work700

@@ -21,7 +21,7 @@ port (
     -- status
     status      : in    std_logic_vector(7 downto 0);
 	usb_busy	: out   std_logic;
-
+    
     -- other controls
     gap_length  : out   std_logic_vector(7 downto 0);
 	
@@ -69,13 +69,15 @@ architecture functional of bus_reset is
     signal t0_expired   : std_logic;
     signal t2_expired   : std_logic := '0';
     signal timer_0      : integer range 0 to 4194303; -- ~  70 ms
-    signal timer_1      : integer range 0 to 8191;    -- ~ 136 �s
+    signal timer_1      : integer range 0 to 8191;    -- ~ 136 us
     signal timer_2      : integer range 0 to 31 := 31; -- 500 ns
     signal stop_chirp   : std_logic;
     signal reset_done_i : std_logic;
     signal latest_chirp_start : std_logic;
     signal cmd_valid    : std_logic;
     signal cmd_get_i    : std_logic;
+
+    signal debug        : std_logic;
     
 --    attribute fsm_encoding : string;
 --    attribute fsm_encoding of state : signal is "sequential";
@@ -118,6 +120,7 @@ begin
                 if cmd_valid = '1' then
                     case cmd_data(7 downto 6) is
                     when "00" =>
+                        debug <= '0';
                         case cmd_data(3 downto 0) is
                         when c_cmd_get_status =>
                             resp_data <= "0" & status;
@@ -150,8 +153,14 @@ begin
                             scan_enable <= '0';
                         when c_cmd_enable_scan =>
                             scan_enable <= '1';
+                        when c_cmd_set_debug =>
+                            debug <= '1';
                         when others =>
-                            resp_data <= '0' & X"AA";
+                            if debug='1' then
+                                resp_data <= '0' & X"AB";
+                            else
+                                resp_data <= '0' & X"AA";
+                            end if;                            
                             state <= send_resp;
                         end case;
                     when "11" =>
@@ -333,6 +342,7 @@ begin
                 stop_chirp   <= '0';
                 latest_chirp_start <= '0';
 				usb_busy	 <= '0';
+                debug        <= '0';
             end if;
         end if;
     end process;

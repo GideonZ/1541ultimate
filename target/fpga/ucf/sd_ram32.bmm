@@ -9,54 +9,27 @@
 
 ADDRESS_BLOCK sd_ram_low RAMB16 [0x00000000:0x00003FFF] 
     BUS_BLOCK 
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem15 [7];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem13 [6];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem11 [5];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem9  [4];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem7  [3];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem5  [2];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem3  [1];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem1  [0];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem15 [7];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem13 [6];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem11 [5];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem9  [4];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem7  [3];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem5  [2];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem3  [1];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem1  [0];
     END_BUS_BLOCK; 
 END_ADDRESS_BLOCK;
 
 ADDRESS_BLOCK sd_ram_high RAMB16 [0x00004000:0x00007FFF] 
     BUS_BLOCK 
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem16 [7];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem14 [6];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem12 [5];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem10 [4];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem8  [3];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem6  [2];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem4  [1];
-        sdcpu/g_int_ram.i_zpuram/Mram_my_mem2  [0];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem16 [7];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem14 [6];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem12 [5];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem10 [4];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem8  [3];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem6  [2];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem4  [1];
+        i_logic/i_cpu/r_int_ram.r_boot.i_zpuram/Mram_my_mem2  [0];
     END_BUS_BLOCK; 
 END_ADDRESS_BLOCK;
 
-/*
-ADDRESS_BLOCK sd_ram_low RAMB16 [0x00000000:0x00003FFF] 
-    BUS_BLOCK 
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem14 [7];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem12 [6];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem10 [5];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem8  [4];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem6  [3];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem4  [2];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem2  [1];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem   [0];
-    END_BUS_BLOCK; 
-END_ADDRESS_BLOCK;
-
-ADDRESS_BLOCK sd_ram_high RAMB16 [0x00004000:0x00007FFF] 
-    BUS_BLOCK 
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem15 [7];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem13 [6];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem11 [5];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem9  [4];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem7  [3];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem5  [2];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem3  [1];
-        sdcpu/g_int_ram.i_zpuram/inst_Mram_mem1  [0];
-    END_BUS_BLOCK; 
-END_ADDRESS_BLOCK;
-*/

@@ -25,6 +25,7 @@ port (
     floppy_inserted : out std_logic;
     write_prot_n    : out std_logic;
     bank_is_ram     : out std_logic_vector(7 downto 0);
+    dirty_led_n     : out std_logic;
 
     param_write     : out std_logic;
     param_ram_en    : out std_logic;
@@ -167,7 +168,7 @@ begin
                 sensor_i         <= '0';
                 bank_is_ram_i    <= (others => '0');
                 inserted_i       <= '0';
-
+                use_c64_reset_i  <= '1';
                 any_dirty <= '0';
                 irq_en    <= '0';
                 wd        <= '0';
@@ -185,5 +186,6 @@ begin
     floppy_inserted <= inserted_i;
     write_prot_n    <= sensor_i;
     bank_is_ram     <= bank_is_ram_i;
-
+    dirty_led_n     <= not any_dirty;
+    use_c64_reset   <= use_c64_reset_i;
 end rtl;

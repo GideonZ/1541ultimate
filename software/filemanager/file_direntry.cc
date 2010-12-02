@@ -266,7 +266,7 @@ void FileDirEntry :: execute(int selection)
                                 user_interface->show_status("Converting..", 120);
                                 gcr->convert_disk_bin2gcr(bin, true);
                                 user_interface->update_status("Saving...", 0);
-                                save_result = gcr->save(f, true);
+                                save_result = gcr->save(f, true, false); // create image, without alignment, we are aligned already
                                 user_interface->hide_status();
                             } else {
                                 printf("No memory to create gcr image.\n");

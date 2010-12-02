@@ -192,11 +192,17 @@ begin
         end if;
     end process;
 
-    p_next: process(state, tx_valid, tx_start, ULPI_DIR, ULPI_NXT, ulpi_last, reg_read, reg_write)
+    p_next: process(state, tx_valid, tx_start, rx_reg_i, tx_reg_i, ULPI_DIR, ULPI_NXT, ulpi_last, reg_read, reg_write)
     begin
         case state is
         when idle =>
-            tx_next <= not ULPI_DIR and tx_valid and tx_start and not reg_read and not reg_write;
+            tx_next <= not ULPI_DIR and tx_valid and tx_start;
+            if reg_read='1' and rx_reg_i='0' then
+                tx_next <= '0';
+            end if;
+            if reg_write='1' and tx_reg_i='0' then
+                tx_next <= '0';
+            end if;
 
         when transmit =>
             tx_next <= ULPI_NXT and tx_valid and not ulpi_last;

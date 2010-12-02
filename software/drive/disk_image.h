@@ -52,9 +52,10 @@ public:
     BYTE  *gcr_image; // pointer to array, in order to do something special later.
     int    track_length[C1541_MAXTRACKS];
 
+    void blank(void);
     bool load(File *f);
-    bool save(File *f, bool);
-    bool write_track(int, File *f);
+    bool save(File *f, bool, bool);
+    bool write_track(int, File *f, bool);
     void convert_disk_bin2gcr(BinImage *bin_image, bool report);
     int  convert_disk_gcr2bin(BinImage *bin_image, bool);
     int  convert_track_gcr2bin(int track, BinImage *bin_image);

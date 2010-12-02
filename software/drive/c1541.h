@@ -16,6 +16,7 @@
 #define MENU_1541_REMOVE    0x1502
 #define MENU_1541_SAVED64   0x1503
 #define MENU_1541_SAVEG64   0x1504
+#define MENU_1541_BLANK     0x1505
 #define MENU_1541_MOUNT     0x1511
 #define MENU_1541_MOUNT_GCR 0x1512
 #define MENU_1541_UNLINK    0x1513
@@ -101,6 +102,7 @@ public:
     void insert_disk(bool protect, GcrImage *image);
     void mount_d64(bool protect, File *);
     void mount_g64(bool protect, File *);
+    void mount_blank(void);
     void poll(Event &e);
 };
 

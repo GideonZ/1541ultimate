@@ -30,7 +30,8 @@ port (
     drv_rdata       : in  std_logic_vector(7 downto 0);
     do_read         : out std_logic;
 	do_write	    : out std_logic;
-
+    do_advance      : out std_logic;
+    
     -- info about the head
     track           : out std_logic_vector(6 downto 0);
     track_is_0      : out std_logic;
@@ -71,6 +72,8 @@ architecture gideon of floppy_stream is
     signal up, down    : std_logic;
     signal step_d      : std_logic_vector(1 downto 0);
     signal step_dd0    : std_logic;
+    signal mode_d      : std_logic;
+    signal write_delay : integer range 0 to 3;
 begin
     p_clock_div: process(clock)
     begin
@@ -128,14 +131,19 @@ begin
             do_advance <= '0';
             mode_d <= mode;
             if mode_d='1' and mode='0' then -- going to write
-                do_advance <= '1';
+                write_delay <= 2;
+                do_advance <= '0';
             end if;
             
             do_write <= '0';
 			if rd_bit_cnt = "111" and mode='0' and bit_div = X"7" and clock_en='1' then
-				do_write <= floppy_inserted; --'1';
+                if write_delay = 0 then
+    				do_write <= floppy_inserted; --'1';
+    		    else
+                    do_advance <= '1';
+    		        write_delay <= write_delay - 1;
+    		    end if;
 			end if;
-
             
             if bit_tick='1' then
                 rd_shift   <= rd_shift(8 downto 0) & mem_rd_bit;

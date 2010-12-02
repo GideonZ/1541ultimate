@@ -73,6 +73,7 @@ package usb_pkg is
     constant c_cmd_set_gap      : std_logic_vector(3 downto 0) := X"A";
     constant c_cmd_set_busy     : std_logic_vector(3 downto 0) := X"B";
     constant c_cmd_clear_busy   : std_logic_vector(3 downto 0) := X"C";
+    constant c_cmd_set_debug    : std_logic_vector(3 downto 0) := X"D";
     constant c_cmd_disable_scan : std_logic_vector(3 downto 0) := X"E";
     constant c_cmd_enable_scan  : std_logic_vector(3 downto 0) := X"F";
     

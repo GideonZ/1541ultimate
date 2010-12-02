@@ -41,8 +41,6 @@ port (
 end floppy_mem;
 
 architecture gideon of floppy_mem is
-    signal offset_count : unsigned(13 downto 0);
-
     type t_state is (idle, reading, writing);
     signal state        : t_state;
 
@@ -53,40 +51,41 @@ begin
     mem_dack <= '1' when mem_resp.dack_tag = g_tag else '0';
 
     process(clock)
-        variable new_addr : unsigned(mem_req.address'range);
+        variable offset_count : unsigned(13 downto 0);
 
         procedure advance is
         begin
             if offset_count >= unsigned(max_offset) then
-                offset_count <= (others => '0');
+                offset_count := (others => '0');
             else
-                offset_count <= offset_count + 1;
+                offset_count := offset_count + 1;
             end if;
         end procedure;
     begin
         if rising_edge(clock) then
             case state is
             when idle =>
-                mem_req.address  <= unsigned(track_start) + offset_count;
-                mem_req.data <= drv_wdata;
                 if do_read='1' then
+                    advance;
                     state <= reading;
                     mem_req.read_writen <= '1';
                     mem_req.request <= '1';
                 elsif do_write='1' then
+                    advance;
                     state <= writing;
                     mem_req.read_writen <= '0';
                     mem_req.request <= '1';
                 elsif do_advance='1' then
                     advance;
                 end if;
+                mem_req.data <= drv_wdata;
+                mem_req.address  <= unsigned(track_start) + offset_count;
 
             when reading =>
                 if mem_rack='1' then
                     mem_req.request <= '0';
                 end if;
 				if mem_dack='1' then
-                    advance;
 					drv_rdata    <= mem_resp.data;
 					state        <= idle;
 				end if;
@@ -94,7 +93,6 @@ begin
             when writing =>
                 if mem_rack='1' then
                     mem_req.request <= '0';
-                    advance;
 					drv_rdata    <= mem_resp.data;
 					state        <= idle;
 				end if;
@@ -104,7 +102,7 @@ begin
             end case;
             
             if reset='1' then
-                offset_count <= (others => '0');
+                offset_count := (others => '0');
                 state        <= idle;
                 mem_req      <= c_mem_req_init;
                 mem_req.tag  <= g_tag;

@@ -44,9 +44,10 @@ port (
     -- LED
     act_led_n       : out std_logic;
     motor_led_n     : out std_logic;
+    dirty_led_n     : out std_logic;
 
     -- audio out
-    audio_sample    : out unsigned(12 downto 0) );
+    audio_sample    : out signed(12 downto 0) );
 
 end c1541_drive;
 
@@ -69,7 +70,6 @@ architecture structural of c1541_drive is
 
     signal use_c64_reset    : std_logic;
     signal floppy_inserted  : std_logic := '0';
-    signal audio_enable     : std_logic;
     signal bank_is_ram      : std_logic_vector(7 downto 0);
     signal power            : std_logic;
     signal motor_on         : std_logic;
@@ -81,7 +81,6 @@ architecture structural of c1541_drive is
     signal sync             : std_logic;
     signal track            : std_logic_vector(6 downto 0);
     signal track_is_0       : std_logic;
-    signal act_led          : std_logic;
 	signal drive_address	: std_logic_vector(1 downto 0) := "00";
 	signal write_prot_n	    : std_logic := '1';
     signal drv_reset        : std_logic := '1';
@@ -262,6 +261,7 @@ begin
         floppy_inserted => floppy_inserted,
         write_prot_n    => write_prot_n,
         bank_is_ram     => bank_is_ram,
+        dirty_led_n     => dirty_led_n,
         
         track           => track,
         mode            => mode,

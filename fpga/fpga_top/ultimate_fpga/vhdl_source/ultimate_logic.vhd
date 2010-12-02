@@ -44,7 +44,7 @@ port (
     DOTCLK      : in    std_logic;
     RSTn        : inout std_logic;
 
-    BUFFER_ENn  : out   std_logic;
+    BUFFER_ENn  : out   std_logic := '1';
 
     SLOT_ADDR   : inout std_logic_vector(15 downto 0);
     SLOT_DATA   : inout std_logic_vector(7 downto 0);
@@ -227,8 +227,8 @@ architecture logic of ultimate_logic is
     -- Audio routing
     signal pwm              : std_logic;
     signal pwm_2            : std_logic := '0';
-    signal drive_sample     : unsigned(12 downto 0);
-    signal drive_sample_2   : unsigned(12 downto 0);
+    signal drive_sample     : signed(12 downto 0);
+    signal drive_sample_2   : signed(12 downto 0);
     
     -- IEC signal routing
     signal atn_o, atn_i     : std_logic := '1';
@@ -264,6 +264,8 @@ architecture logic of ultimate_logic is
 	signal cart_led_n		: std_logic := '1';
 	signal c2n_pull_sense   : std_logic := '0';
     signal freezer_state    : std_logic_vector(1 downto 0);
+    signal dirty_led_1_n    : std_logic := '1';
+    signal dirty_led_2_n    : std_logic := '1';
 begin
 
     i_cpu: entity work.cpu_wrapper_zpu
@@ -335,7 +337,6 @@ begin
 
 
     r_drive: if g_drive_1541 generate
-        signal sample_out       : std_logic_vector(13 downto 0);
     begin
         i_drive: entity work.c1541_drive
         generic map (
@@ -375,28 +376,27 @@ begin
             -- LED
             act_led_n       => act_led_n,
             motor_led_n     => motor_led_n,
+            dirty_led_n     => dirty_led_1_n,
 
             -- audio out
             audio_sample    => drive_sample );
 
-        sample_out <= '1' & std_logic_vector(drive_sample); -- use upper half of the range only
-
         r_pwm: if g_drive_sound generate
-            i_pwm0: entity work.sigma_delta_dac
+            i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
             generic map (
-                width   => 14 )
+                g_left_shift => 2,
+                g_width => drive_sample'length )
             port map (
-                clk     => sys_clock,
+                clock   => sys_clock,
                 reset   => sys_reset,
                 
-                dac_in  => sample_out,
+                dac_in  => drive_sample,
             
                 dac_out => pwm );
         end generate;
     end generate;
 
     r_drive_2: if g_drive_1541_2 generate
-        signal sample_out       : std_logic_vector(13 downto 0);
     begin
         i_drive: entity work.c1541_drive
         generic map (
@@ -436,21 +436,21 @@ begin
             -- LED
             act_led_n       => open, --DISK_ACTn,
             motor_led_n     => open, --MOTOR_LEDn,
+            dirty_led_n     => dirty_led_2_n,
 
             -- audio out
             audio_sample    => drive_sample_2 );
 
-        sample_out <= '1' & std_logic_vector(drive_sample_2); -- use upper half of the range only
-        
         r_pwm: if g_drive_sound generate
-            i_pwm0: entity work.sigma_delta_dac
+            i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
             generic map (
-                width   => 14 )
+                g_left_shift => 2,
+                g_width => drive_sample_2'length )
             port map (
-                clk     => sys_clock,
+                clock   => sys_clock,
                 reset   => sys_reset,
                 
-                dac_in  => sample_out,
+                dac_in  => drive_sample_2,
             
                 dac_out => pwm_2 );
         end generate;
@@ -831,7 +831,7 @@ begin
 	DISK_ACTn   <= act_led_n xor error;
 	MOTOR_LEDn  <= motor_led_n xor error;
     CART_LEDn   <= cart_led_n xor error;
-	SDACT_LEDn  <= not (sd_act_stretched or usb_busy) xor error;
+	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or usb_busy)) xor error;
 
 --	DISK_ACTn   <= not freezer_state(1);
 --	MOTOR_LEDn  <= not freezer_state(0);

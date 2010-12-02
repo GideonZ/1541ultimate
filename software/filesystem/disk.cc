@@ -61,10 +61,6 @@ int Disk::Init(void)
 
     printf("Get sector count: %d\n", size);    
 
-    for(int i=10;i>=0;i--) {
-        printf("reading sector %d got %d.\n", i, dev->read(buf, i, 1));
-    }
-    
 	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	{ /* Check "FAT" string */
         partition_list = new Partition(dev, 0L, size, 0x06);
         return 1; // one default partition, starting on sector 0
@@ -83,7 +79,7 @@ int Disk::Init(void)
 
     // walk through partition tables
     tbl = &buf[MBR_PTable];
-    dump_hex(tbl, 66);
+//    dump_hex(tbl, 66);
 
     for(int p=0;p<4;p++) {
         if(tbl[4]) {
@@ -121,7 +117,7 @@ int Disk :: read_ebr(Partition ***prt_list, DWORD lba)
     }
             
     tbl = &local_buf[MBR_PTable];
-    dump_hex(tbl, 66);
+//    dump_hex(tbl, 66);
 
     for(int p=0;p<4;p++) {
         if(tbl[4]) {

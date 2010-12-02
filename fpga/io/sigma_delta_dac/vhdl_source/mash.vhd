@@ -8,6 +8,7 @@ generic (
     g_width     : positive := 16 );
 port (
     clock       : in  std_logic;
+    enable      : in  std_logic := '1';
     reset       : in  std_logic;
     
     dac_in      : in  unsigned(g_width-1 downto 0);
@@ -44,7 +45,7 @@ architecture gideon of mash is
         return b - c;
     end function;
 begin
-    process(accu, dac_in, carry, delta, delta_d)
+    process(accu, dac_in, carry, delta, delta_d, sum)
         variable a : unsigned(dac_in'range);
         variable y : unsigned(dac_in'range);
         variable c : std_logic;
@@ -72,8 +73,10 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            accu    <= sum;
-            delta_d <= delta;
+            if enable='1' then
+                accu    <= sum;
+                delta_d <= delta;
+            end if;
             
             if reset='1' then
                 accu    <= (others => (others => '0'));

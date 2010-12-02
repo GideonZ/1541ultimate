@@ -82,13 +82,13 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 
 	// this should actually be done for each LUN:
 	for(int i=0;i<=max_lun;i++) {
-		printf("*** LUN = %d ***\n", i);
 		scsi_blk_dev[i] = new UsbScsi(dev, i);
 		scsi_blk_dev[i]->reset();
 		path_dev[i] = new FileDevice(&root, scsi_blk_dev[i], scsi_blk_dev[i]->get_name());
 		state_copy[i] = scsi_blk_dev[i]->get_state(); // returns unknown, most likely! :)
+		printf("*** LUN = %d *** Initial state = %d ***\n", i, state_copy[i]);
 		poll_interval[i] = i; // ;-) not all at the same time!
-		media_seen[current_lun] = false;
+		media_seen[i] = false;
 		root.children.append(path_dev[i]);
 	}
 	push_event(e_refresh_browser, &root);
@@ -129,6 +129,7 @@ void UsbScsiDriver :: poll(void)
 	state_copy[current_lun] = new_state;
 
 	if(media_seen[current_lun] && (new_state==e_device_no_media)) { // removal!
+        //printf("Media seen[%d]=%d and new_state=%d. old_state=%d.\n", current_lun, media_seen[current_lun], new_state, old_state);
 		media_seen[current_lun] = false;
 		push_event(e_invalidate, path_dev[current_lun]);
 	}

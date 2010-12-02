@@ -36,7 +36,7 @@ port (
     mem_resp        : in  t_mem_resp;
 
     -- audio
-    sample_out      : out unsigned(12 downto 0) := (others => '0'));
+    sample_out      : out signed(12 downto 0) := (others => '0'));
 
 end floppy_sound;
     
@@ -73,7 +73,7 @@ begin
             sample_tick <= '0';
             if rate_count = 0 then
                 signed_sum := motor_sample + (head_sample(head_sample'high) & head_sample & "0000");
-                sample_out  <= not signed_sum(12) & unsigned(signed_sum(11 downto 0));
+                sample_out  <= signed_sum;
                 rate_count  <= rate_div;
                 sample_tick <= '1';
             else
@@ -120,6 +120,11 @@ begin
                     serve_state <= wait_voice2;                    
                 else
                     serve_state <= idle;
+--                    if motor_sample(7)='1' then
+--                        motor_sample <= motor_sample + 1; -- is negative, go to zero
+--                    elsif motor_sample /= 0 then
+--                        motor_sample <= motor_sample - 1;
+--                    end if;
                 end if;
             
             when wait_voice2 =>
@@ -164,6 +169,7 @@ begin
                 voice2_cnt      <= (others => '0');
                 voice1_addr     <= (others => '0');
 				sample_out      <= (others => '0');
+				motor_sample    <= (others => '0');
             end if;
         end if;
     end process;

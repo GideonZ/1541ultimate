@@ -36,6 +36,7 @@ t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom }
 #define CFG_C1541_SWAPDELAY 0xD6
 #define CFG_C1541_LASTMOUNT 0xD7
 #define CFG_C1541_C64RESET  0xD8
+#define CFG_C1541_GCRALIGN  0xDA
 
 struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",                 "%s", en_dis,     0,  1, 1 },
@@ -45,6 +46,8 @@ struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "1541 RAM BOard",             "%s", ram_board,  0,  6, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",       "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "1541 Resets when C64 resets","%s", yes_no,     0,  1, 1 },
+//    { CFG_C1541_GCRTWEAK,  CFG_TYPE_VALUE,  "GCR Image Save Tweak",       "%d", NULL,      -4,  4, 0 },
+    { CFG_C1541_GCRALIGN,  CFG_TYPE_ENUM,   "GCR Save Align Tracks",      "%s", yes_no,     0,  1, 1 },
     
 //    { CFG_C1541_LASTMOUNT, CFG_TYPE_ENUM,   "Load last mounted disk",  "%s", yes_no,     0,  1, 0 },
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
@@ -143,7 +146,11 @@ int  C1541 :: fetch_task_items(IndexedList<PathObject*> &item_list)
     		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_SAVEG64));
     		items++;
     	}
-	}
+	} else {
+        sprintf(buffer, "Insert blank disk in drive %c", drive_letter);
+		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_BLANK));
+		items++;
+    }	    
 	return items;
 }
 
@@ -151,7 +158,8 @@ void C1541 :: drive_power(bool on)
 {
     registers[C1541_POWER] = on?1:0;
     if(on)
-        drive_reset();    
+        drive_reset();
+    registers[C1541_ANYDIRTY] = 0;
 }
 
 void C1541 :: drive_reset(void)
@@ -349,6 +357,21 @@ void C1541 :: mount_g64(bool protect, File *file)
 	disk_state = e_gcr_disk;
 }
 
+void C1541 :: mount_blank()
+{
+	if(mount_file) {
+		root.fclose(mount_file);
+	}
+	mount_file = NULL;
+	remove_disk();
+    wait_ms(250);
+	gcr_image->blank();
+	printf("Inserting blank disk...");
+	insert_disk(false, gcr_image);
+	printf("Done\n");
+	disk_state = e_disk_file_closed;
+}
+
 void C1541 :: poll(Event &e)
 {
 	int tr;
@@ -408,6 +431,9 @@ void C1541 :: poll(Event &e)
 				}
 				remove_disk();
 				break;
+            case MENU_1541_BLANK:
+                mount_blank();
+                break;
             case MENU_1541_SAVED64:
             case MENU_1541_SAVEG64:
                 g64 = (drive_command->command == MENU_1541_SAVEG64);
@@ -422,7 +448,7 @@ void C1541 :: poll(Event &e)
                         if(file) {
                             if(g64) {
                                 user_interface->show_status("Saving G64...", 84);
-                                gcr_image->save(file, true);
+                                gcr_image->save(file, true, (cfg->get_value(CFG_C1541_GCRALIGN)!=0));
                                 user_interface->hide_status();
                             } else {
                                 user_interface->show_status("Converting disk...", 2*bin_image->num_tracks);
@@ -474,7 +500,7 @@ void C1541 :: poll(Event &e)
 					switch(disk_state) {
 					case e_gcr_disk:
 						printf("Writing back GCR track %d.0...\n", tr+1);
-						gcr_image->write_track(tr*2, mount_file);
+						gcr_image->write_track(tr*2, mount_file, cfg->get_value(CFG_C1541_GCRALIGN));
 						break;
 					case e_d64_disk:
 						printf("Writing back binary track %d...\n", tr+1);
