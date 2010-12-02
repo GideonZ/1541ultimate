@@ -101,6 +101,8 @@ Flash *W25Q_Flash :: tester()
 	BYTE capacity = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     
+//    printf("W25Q MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
+
     if(manuf != 0xEF)
     	return NULL; // not Winbond
 
@@ -213,6 +215,7 @@ bool W25Q_Flash :: write_page(int page, void *buffer)
     int len = 1 << (W25Q_PageShift - 2);
     DWORD *buf = (DWORD *)buffer;
     
+	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
 
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -224,9 +227,10 @@ bool W25Q_Flash :: write_page(int page, void *buffer)
         SPI_FLASH_DATA_32 = *(buf++);
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-
     bool ret = wait_ready(5000);
+	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
 	return ret;
 }
 
@@ -234,6 +238,7 @@ bool W25Q_Flash :: erase_sector(int sector)
 {
 	int addr = (sector * sector_size) << W25Q_PageShift;
 
+	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
     debug(("Sector erase. %b %b %b\n", BYTE(addr >> 16), BYTE(addr >> 8), BYTE(addr)));
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -243,7 +248,9 @@ bool W25Q_Flash :: erase_sector(int sector)
     SPI_FLASH_DATA = BYTE(addr);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     bool ret = wait_ready(50000);
+    SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
 	return ret;
 }
 
@@ -282,6 +289,7 @@ void W25Q_Flash :: protect_disable(void)
 	//  0     0    1   0    0    0    0     0
 	
 	// program status register with value 0x20
+	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = W25Q_WriteStatusRegister;
@@ -291,6 +299,7 @@ void W25Q_Flash :: protect_disable(void)
 
 	wait_ready(10000);
 
+	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
 }
 
@@ -304,6 +313,7 @@ bool W25Q_Flash :: protect_configure(void)
 	//  0     0    1   1    0    1    0     0
 	
 	// program status register with value 0x34
+	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = W25Q_WriteStatusRegister;
@@ -313,6 +323,7 @@ bool W25Q_Flash :: protect_configure(void)
 
 	wait_ready(10000);
 
+	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
 }
 

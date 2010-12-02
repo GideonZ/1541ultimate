@@ -27,6 +27,38 @@ extern BYTE _binary_1st_boot_700_bin_end;
 extern BYTE _binary_2nd_boot_bin_start;
 extern BYTE _binary_2nd_boot_bin_end;
 
+extern BYTE _binary_1541_ii_bin_start;
+extern BYTE _binary_1541_bin_start;
+extern BYTE _binary_1541c_bin_start;
+extern BYTE _binary_ar5ntsc_bin_start;
+extern BYTE _binary_ar5pal_bin_start;
+extern BYTE _binary_ar6pal_bin_start;
+extern BYTE _binary_epyx_bin_start;
+extern BYTE _binary_final3_bin_start;
+extern BYTE _binary_rr38ntsc_bin_start;
+extern BYTE _binary_rr38pal_bin_start;
+extern BYTE _binary_sounds_bin_start;
+extern BYTE _binary_ss5ntsc_bin_start;
+extern BYTE _binary_ss5pal_bin_start;
+extern BYTE _binary_tar_ntsc_bin_start;
+extern BYTE _binary_tar_pal_bin_start;
+
+extern BYTE _binary_1541_ii_bin_end;
+extern BYTE _binary_1541_bin_end;
+extern BYTE _binary_1541c_bin_end;
+extern BYTE _binary_ar5ntsc_bin_end;
+extern BYTE _binary_ar5pal_bin_end;
+extern BYTE _binary_ar6pal_bin_end;
+extern BYTE _binary_epyx_bin_end;
+extern BYTE _binary_final3_bin_end;
+extern BYTE _binary_rr38ntsc_bin_end;
+extern BYTE _binary_rr38pal_bin_end;
+extern BYTE _binary_sounds_bin_end;
+extern BYTE _binary_ss5ntsc_bin_end;
+extern BYTE _binary_ss5pal_bin_end;
+extern BYTE _binary_tar_ntsc_bin_end;
+extern BYTE _binary_tar_pal_bin_end;
+
 Screen *screen;
 UserInterface *user_interface;
 Flash *flash;
@@ -142,35 +174,42 @@ bool need_update(int id, char *version, char *descr)
 
 static int last_sector = -1;	
 
-void flash_buffer(int id, void *buffer, int length, char *version, char *descr)
+void flash_buffer(int id, void *buffer, void *buf_end, char *version, char *descr)
 {
+    int length = (int)buf_end - (int)buffer;
 	t_flash_address image_address;
 	flash->get_image_addresses(id, &image_address);
 	int address = image_address.start;
     int page_size = flash->get_page_size();
     int page = address / page_size;
-
-    printf("            \n");
-    printf("Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
+    char *p;
     
-    BYTE *bin = new BYTE[length+16];
-    DWORD *pul;
-    pul = (DWORD *)bin;
-    *(pul++) = (DWORD)length;
-    memset(pul, 0, 12);
-    strcpy((char*)pul, version);
-    memcpy(bin+16, buffer, length);                
-
+    printf("            \n");
+    if(image_address.has_header) {
+        printf("Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
+        BYTE *bin = new BYTE[length+16];
+        DWORD *pul;
+        pul = (DWORD *)bin;
+        *(pul++) = (DWORD)length;
+        memset(pul, 0, 12);
+        strcpy((char*)pul, version);
+        memcpy(bin+16, buffer, length);
+        length+=16;
+        p = (char *)bin;
+    }
+    else {
+        printf("Flashing  \033\027%s\033\037..\n", descr);
+        p = (char *)buffer;
+    }    
+    
 	bool do_erase = flash->need_erase();
 	int sector;
-    char *p = (char *)bin;
-    length+=16;
     while(length > 0) {
 		if (do_erase) {
 			sector = flash->page_to_sector(page);
 			if (sector != last_sector) {
 				last_sector = sector;
-				printf("Erase %d   \r", sector);
+//				printf("Erase %d   \r", sector);
 				if(!flash->erase_sector(sector)) {
 			        user_interface->popup("Programming failed...", BUTTON_CANCEL);
 			        return;
@@ -185,20 +224,33 @@ void flash_buffer(int id, void *buffer, int length, char *version, char *descr)
     }    
 }
 
-bool program_flash(bool do_update1, bool do_update2)
+bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 {
-    int _binary_ultimate_bin_length = (int)&_binary_ultimate_bin_end - (int)&_binary_ultimate_bin_start;
-    int _binary_1st_boot_700_bin_length = (int)&_binary_1st_boot_700_bin_end - (int)&_binary_1st_boot_700_bin_start;
-    int _binary_2nd_boot_bin_length = (int)&_binary_2nd_boot_bin_end - (int)&_binary_2nd_boot_bin_start;
-
 	flash->protect_disable();
 	last_sector = -1;
 	if(do_update1) {
-	    flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_700_bin_start, _binary_1st_boot_700_bin_length, FPGA_VERSION, "FPGA");
-	    flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, _binary_2nd_boot_bin_length, BOOT_VERSION, "Secondary bootloader");
+	    flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_700_bin_start, &_binary_1st_boot_700_bin_end, FPGA_VERSION, "FPGA");
+	    flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, &_binary_2nd_boot_bin_end, BOOT_VERSION, "Secondary bootloader");
 	}
+    if(do_roms) {
+	    flash_buffer(FLASH_ID_AR5PAL,    &_binary_ar5pal_bin_start,   &_binary_ar5pal_bin_end,   "", "ar5pal");
+	    flash_buffer(FLASH_ID_AR6PAL,    &_binary_ar6pal_bin_start,   &_binary_ar6pal_bin_end,   "", "ar6pal");
+	    flash_buffer(FLASH_ID_FINAL3,    &_binary_final3_bin_start,   &_binary_final3_bin_end,   "", "final3");
+	    flash_buffer(FLASH_ID_SOUNDS,    &_binary_sounds_bin_start,   &_binary_sounds_bin_end,   "", "sounds");
+	    flash_buffer(FLASH_ID_EPYX,      &_binary_epyx_bin_start,     &_binary_epyx_bin_end,     "", "epyx");
+	    flash_buffer(FLASH_ID_ROM1541,   &_binary_1541_bin_start,     &_binary_1541_bin_end,     "", "1541");
+	    flash_buffer(FLASH_ID_RR38PAL,   &_binary_rr38pal_bin_start,  &_binary_rr38pal_bin_end,  "", "rr38pal");
+	    flash_buffer(FLASH_ID_SS5PAL,    &_binary_ss5pal_bin_start,   &_binary_ss5pal_bin_end,   "", "ss5pal");
+	    flash_buffer(FLASH_ID_AR5NTSC,   &_binary_ar5ntsc_bin_start,  &_binary_ar5ntsc_bin_end,  "", "ar5ntsc");
+	    flash_buffer(FLASH_ID_ROM1541C,  &_binary_1541c_bin_start,    &_binary_1541c_bin_end,    "", "1541c");
+	    flash_buffer(FLASH_ID_ROM1541II, &_binary_1541_ii_bin_start,  &_binary_1541_ii_bin_end,  "", "1541-ii");
+	    flash_buffer(FLASH_ID_RR38NTSC,  &_binary_rr38ntsc_bin_start, &_binary_rr38ntsc_bin_end, "", "rr38ntsc");
+	    flash_buffer(FLASH_ID_SS5NTSC,   &_binary_ss5ntsc_bin_start,  &_binary_ss5ntsc_bin_end,  "", "ss5ntsc");
+	    flash_buffer(FLASH_ID_TAR_PAL,   &_binary_tar_pal_bin_start,  &_binary_tar_pal_bin_end,  "", "tar_pal");
+	    flash_buffer(FLASH_ID_TAR_NTSC,  &_binary_tar_ntsc_bin_start, &_binary_tar_ntsc_bin_end, "", "tar_ntsc");
+    }
 	if(do_update2) {
-    	flash_buffer(FLASH_ID_APPL, &_binary_ultimate_bin_start, _binary_ultimate_bin_length, APPL_VERSION, "Ultimate application");
+    	flash_buffer(FLASH_ID_APPL, &_binary_ultimate_bin_start, &_binary_ultimate_bin_end, APPL_VERSION, "Ultimate application");
     }
 	printf("            \nDone!\n");
 	return true;
@@ -235,25 +287,34 @@ int main()
 		delete screen;
 	 	screen = NULL;
     	delete c64;
-    	flash->reboot(0);
 	    while(1)
 	        ;
     }
 
 	bool do_update1 = false;
 	bool do_update2 = false;
+    bool virgin = false;
 
+    // virginity check
+	t_flash_address image_address;
+	flash->get_image_addresses(FLASH_ID_AR5PAL, &image_address);
+    flash->read_linear_addr(image_address.start, 2, time_buffer);
+    if(time_buffer[0] == 0xFF)
+        virgin = true;
+        
     do_update1 = need_update(FLASH_ID_BOOTFPGA, FPGA_VERSION, "FPGA") ||
                  need_update(FLASH_ID_BOOTAPP, BOOT_VERSION, "Secondary bootloader");
     do_update2 = need_update(FLASH_ID_APPL, APPL_VERSION, "Ultimate application");
 
-	if(do_update1 || do_update2) {
+    if(virgin) {
+        program_flash(do_update1, do_update2, true);
+    } else if(do_update1 || do_update2) {
         if(user_interface->popup("Update required. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            program_flash(do_update1, do_update2);
+            program_flash(do_update1, do_update2, false);
         }
     } else {
         if(user_interface->popup("Update NOT required. Force?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            program_flash(true, true);
+            program_flash(true, true, false);
         }
 	}
 
@@ -261,19 +322,15 @@ int main()
 	flash->protect_configure();
 	flash->protect_enable();
 	
-//	printf("Erasing configuration sector.\n");
-//	flash.erase_sector(0x20FFFF);
-
+    if(virgin) {
+        user_interface->popup("Remove SDCard. Reboot?", BUTTON_OK);
+        flash->reboot(0);
+    }
+    
 	printf("\nPlease remove the SD card, and switch\noff your machine...\n");
     printf("\nTo avoid loading this updater again,\ndelete it from your media.\n");
 
     while(1)
         ;
-
-/*
-	wait_ms(5000);
-	delete screen;
- 	screen = NULL;
-    delete c64;
-*/
 }
+

@@ -84,7 +84,22 @@ SRCS_ASM =  crt0_appl.s
 SRCS_BIN =  ultimate.bin \
 			1st_boot_700.bin \
 			chars.bin \
-			2nd_boot.bin
+			2nd_boot.bin \
+			1541-ii.bin \
+			1541.bin \
+			1541c.bin \
+			ar5ntsc.bin \
+			ar5pal.bin \
+			ar6pal.bin \
+			epyx.bin \
+			final3.bin \
+			rr38ntsc.bin \
+			rr38pal.bin \
+			sounds.bin \
+			ss5ntsc.bin \
+			ss5pal.bin \
+			tar_ntsc.bin \
+			tar_pal.bin
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -ffunction-sections
