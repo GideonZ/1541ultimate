@@ -10,7 +10,7 @@ use work.io_bus_pkg.all;
 entity ultimate_1541_250e is
 generic (
     g_simulation    : boolean := false;
-	g_version		: unsigned(7 downto 0) := X"15" );
+	g_version		: unsigned(7 downto 0) := X"16" );
 port (
     CLOCK       : in    std_logic;
     
@@ -178,7 +178,7 @@ begin
         g_c2n_streamer  => false,
         g_c2n_recorder  => false,
         g_cartridge     => true, --
-        g_drive_sound   => false, --
+        g_drive_sound   => true, --
         g_rtc_chip      => false,
         g_rtc_timer     => false,
         g_usb_host      => false,
