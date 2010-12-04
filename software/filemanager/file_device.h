@@ -14,6 +14,8 @@ public:
     FileDevice(PathObject *p, BlockDevice *b, char *n);
     virtual ~FileDevice();
     
+    void attach_disk(int block_size);
+    void detach_disk(void);
     int fetch_children(void);
     char *get_display_string(void);
 };

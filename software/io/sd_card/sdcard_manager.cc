@@ -46,8 +46,9 @@ void SdCardManager :: poll()
 		    if(sense & SD_CARD_DETECT) {
 				if(sd_card->init()) { // initialize card
 					sd_card->set_state(e_device_error);
-				} else {
+				} else { // initial insertion
 					sd_card->set_state(e_device_ready);
+                    sd_dev->attach_disk(512); // block size
 				}
 				push_event(e_refresh_browser, &root);
 		    } else {
@@ -70,6 +71,7 @@ void SdCardManager :: poll()
 				push_event(e_refresh_browser, &root);
 			} else {
 				sd_card->set_state(e_device_ready);
+                sd_dev->attach_disk(512); // block size
 				push_event(e_refresh_browser, &root);
 			}
 			break;
@@ -77,6 +79,7 @@ void SdCardManager :: poll()
 		case e_device_ready:
 			if(!(sense & SD_CARD_DETECT)) { // removal
 				push_event(e_invalidate, sd_dev);
+				push_event(e_detach_disk, sd_dev);
 				sd_card->set_state(e_device_no_media);
 				push_event(e_refresh_browser, &root);
 			}
@@ -84,6 +87,8 @@ void SdCardManager :: poll()
 
 		case e_device_error:
 			if(!(sense & SD_CARD_DETECT)) { // removal
+				push_event(e_invalidate, sd_dev);
+				push_event(e_detach_disk, sd_dev);
 				sd_card->set_state(e_device_no_media);
 				push_event(e_refresh_browser, &root);
 			}

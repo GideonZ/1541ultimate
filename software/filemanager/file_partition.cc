@@ -6,6 +6,7 @@
 #include "fat_fs.h"
 #include "size_str.h"
 
+
 FilePartition :: FilePartition(PathObject *par, Partition *p, char *n) : FileDirEntry(par, NULL), name(n)
 {
     prt = p; // link to partition object.
@@ -22,6 +23,21 @@ FilePartition :: ~FilePartition()
 	}
 }
 
+char *FilePartition :: get_type_string(BYTE typ)
+{
+    switch(typ) {
+        case 0x00: return "None";
+        case 0x01: return "FAT12";
+        case 0x06: return "FAT16";
+        case 0x07: return "NTFS";
+        case 0x0B: return "FAT32";
+        case 0x82: return "Swap";
+        case 0x83: return "Linux";
+        default: return "??";
+    }
+    return "";
+}
+
 char *FilePartition :: get_display_string(void)
 {
     static char buffer[44];
@@ -29,7 +45,7 @@ char *FilePartition :: get_display_string(void)
     DWORD length;
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
-    small_sprintf(buffer, "\037%20s \027Size: %s", get_name(), sizebuf);
+    small_sprintf(buffer, "\037%24s \027%s \032%s", get_name(), sizebuf, get_type_string(prt->get_type()));
     return buffer;
 }
 

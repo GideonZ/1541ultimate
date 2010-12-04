@@ -5,7 +5,7 @@
 FileDevice :: FileDevice(PathObject *p, BlockDevice *b, char *n) : PathObject(p, n)
 {
     blk = b;
-    disk = new Disk(b, 512);
+    disk = NULL; //new Disk(b, 512);
 }
 
 FileDevice :: ~FileDevice()
@@ -17,8 +17,36 @@ FileDevice :: ~FileDevice()
 	// now the children will be cleaned again the base class destructor.. (so be it)
 }
 
+void FileDevice :: attach_disk(int block_size)
+{
+    if(disk) {
+        printf("ERROR: DISK ALREADY EXISTS ON FILE DEVICE %s!\n", get_name());
+        delete disk;
+    }
+    disk = new Disk(blk, block_size);
+}
+
+void FileDevice :: detach_disk(void)
+{
+    if(disk) {
+        cleanup_children();
+        delete disk;
+    }
+    disk = NULL;
+}
+    
 int FileDevice :: fetch_children(void)
 {
+    t_device_state state = blk->get_state();
+    if(state != e_device_ready) {
+        printf("Device is not ready to fetch children.\n");
+        return -2;
+    }
+    if(!disk) {
+        printf("No disk class attached!!\n");
+        return -3;
+    }
+
     // this function converts the partitions below the disk into browsable items
     if(disk->Init() < 0) {
         printf("Error initializing disk..\n");

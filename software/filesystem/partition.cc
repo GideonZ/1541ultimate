@@ -60,7 +60,6 @@ DRESULT Partition::ioctl(BYTE command, void *data)
         *((DWORD *)data) = length;
         return RES_OK;
     }
-        
     if(!dev)
         return RES_NOTRDY;
     return dev->ioctl(command, data);

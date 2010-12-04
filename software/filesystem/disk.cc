@@ -57,18 +57,21 @@ int Disk::Init(void)
 
     /* Handle special case in which there is no partition table present */
     /* This can only be the case when it is a FAT file system */
-    dev->ioctl(GET_SECTOR_COUNT, &size);
-
-    printf("Get sector count: %d\n", size);    
 
 	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	{ /* Check "FAT" string */
-        partition_list = new Partition(dev, 0L, size, 0x06);
-        return 1; // one default partition, starting on sector 0
+        if(dev->ioctl(GET_SECTOR_COUNT, &size) == RES_OK) {
+            partition_list = new Partition(dev, 0L, size, 0x06);
+            return 1; // one default partition, starting on sector 0
+        }
+        return -4; // can't read device size
     }
     
 	if ((LD_DWORD(&buf[BS_FilSysType32]) & 0xFFFFFF) == 0x544146) {
-        partition_list = new Partition(dev, 0L, size, 0x0C);
-        return 1; // one default partition, starting on sector 0
+        if(dev->ioctl(GET_SECTOR_COUNT, &size) == RES_OK) {
+            partition_list = new Partition(dev, 0L, size, 0x0C);
+            return 1; // one default partition, starting on sector 0
+        }
+        return -4; // can't read device size
     }
     
     //printf("Going to read partition table.\n");

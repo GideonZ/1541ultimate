@@ -20,7 +20,7 @@ char *usb_yesno[] = { "No", "Yes" };
 struct t_cfg_definition usb_config[] = {
 	{ CFG_USB_MAXCUR,   CFG_TYPE_VALUE,  "Maximum Bus Current",     "%d0 mA", NULL,       5, 35, 25 },
 	{ CFG_USB_SPEED,    CFG_TYPE_ENUM,   "Bus Speed",                   "%s", usb_speed,  0,  1,  1 },
-	{ CFG_USB_BOOT,     CFG_TYPE_ENUM,   "Load boot images from USB",   "%s", usb_yesno,  0,  1,  1 },
+	{ CFG_USB_BOOT,     CFG_TYPE_ENUM,   "Load boot images from USB",   "%s", usb_yesno,  0,  1,  0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -88,7 +88,7 @@ Usb :: Usb()
     debug = false;
 	poll_delay = 0;
 	initialized = false;
-
+    
     if(CAPABILITIES & CAPAB_USB_HOST) {
 	    clear();
 
@@ -310,6 +310,7 @@ void Usb :: init(void)
     } else {
         device_present = true;
 		USB_COMMAND = USB_CMD_SOF_ENABLE;
+        wait_ms(30);
         bus_reset(cfg->get_value(CFG_USB_SPEED) > 0); // set to true for high speed
         wait_ms(30);
         write_ulpi_register(ULPI_IRQEN_RISING, IRQ_HOST_DISCONNECT);
@@ -382,10 +383,19 @@ bool Usb :: install_device(UsbDevice *dev, bool draws_current)
 {
     int idx = get_device_slot();
     
-    if(!dev->init(idx+1)) {
-    	printf("Failed to init USB device. Not installed.\n");
-    	return false;
+//    if(!dev->init(idx+1)) {
+//    	printf("Failed to init USB device. Not installed.\n");
+//    	return false;
+//    }
+    bool ok = false;
+    for(int i=0;i<20;i++) { // try 20 times!
+        if(dev->init(idx+1)) {
+            ok = true;
+            break;
+        }
     }
+    if(!ok)
+        return false;
 
     if(!draws_current) {
         device_list[idx] = dev;
@@ -514,7 +524,7 @@ int Usb :: create_pipe(int dev_addr, struct t_endpoint_descriptor *epd)
     // now allocate pipe in usb structure
     USB_PIPE(index+2) = pipe;
     pipes[index] = pipe;
-    printf("Pipe with value %8x created. Index = %d\n", pipe, index+2);
+    printf("Pipe with value %8x created. Max Packet = %d. Index = %d\n", pipe, le16_to_cpu(epd->max_packet_size), index+2);
     return index+2; // value to be used in transactions
 }
 
@@ -574,6 +584,11 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
             ;
     }
 
+    if((*transaction & 0x3) == 0x03) { // error
+        printf("ERROR SETUP: pipe status = %8x\n", USB_PIPE(0));
+        return -2;
+    }
+
     if(!inlen)
         return 0;
         
@@ -595,6 +610,11 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
         ITU_TIMER = 50;
         while(ITU_TIMER)
             ;
+    }
+
+    if((*transaction & 0x3) == 0x03) { // error
+        printf("ERROR CTRL IN: pipe status = %8x\n", USB_PIPE(1));
+        return -3;
     }
 
 	DWORD ta = *transaction;
@@ -690,7 +710,8 @@ int Usb :: bulk_out(void *buf, int len, int pipe)
 int Usb :: bulk_in(void *buf, int len, int pipe)
 {
     int new_len;
-
+    BYTE *buffer = (BYTE*)buf;
+    
 	// clear pipe's stall status, if any
     DWORD p = USB_PIPE(pipe);
 
@@ -713,34 +734,50 @@ int Usb :: bulk_in(void *buf, int len, int pipe)
 	}
 
     volatile DWORD *transaction = &USB_TRANSACTION(3);
-    USB_TRANSACTION(3) = 0x30000005 | (DWORD)(len << 9) | (DWORD)(pipe << 4);
+
+    int current;
+    int transferred = 0;
     
-    int timeout = 5000; 
-    while((*transaction & 0x3) == 0x01) {
-        if(!timeout) {
-        	USB_TRANSACTION(3) = 0;
-            USB_COMMAND = USB_CMD_ABORT;
+    while(len > 0) {
+        current = len;
+        if(current > 512)  // or max pipe, but hardware should already split into small chunks
+            current = 512;
+
+        USB_TRANSACTION(3) = 0x30000005 | (DWORD)(current << 9) | (DWORD)(pipe << 4);
+//        USB_TRANSACTION(3) = 0x30000005 | (DWORD)(len << 9) | (DWORD)(pipe << 4);
+        
+        int timeout = 5000; 
+        while((*transaction & 0x3) == 0x01) {
+            if(!timeout) {
+            	USB_TRANSACTION(3) = 0;
+                USB_COMMAND = USB_CMD_ABORT;
+                wait_ms(1);
+                return -1;
+            }
+            timeout --;
             wait_ms(1);
-            return -1;
         }
-        timeout --;
-        wait_ms(1);
+    
+        if((*transaction & 0x3) == 0x03) { // error
+            printf("ERROR IN: pipe status = %8x\n", USB_PIPE(pipe));
+            return 0;
+        }
+
+        new_len = (int)((USB_TRANSACTION(3) >> 9) & 0x7FF);
+        new_len = current - new_len;
+//        if(new_len < 0)
+//            new_len = 0;
+    
+    //    printf("len = %d. new len = %d\n", len, new_len);
+        if(!new_len)
+            printf("No data. Pipe: %8x\n", USB_PIPE(pipe));
+    
+        memcpy(buffer, (void *)&USB_BUFFER(768), new_len);
+        buffer += new_len;
+        len -= current;
+        transferred += new_len;
     }
-
-    if((*transaction & 0x3) == 0x03) { // error
-        printf("ERROR IN: pipe status = %8x\n", USB_PIPE(pipe));
-        return 0;
-    }
-
-    new_len = (int)((USB_TRANSACTION(3) >> 9) & 0x7FF);
-    new_len = len - new_len;
-
-//    printf("len = %d. new len = %d\n", len, new_len);
-    if(!new_len)
-        printf("No data. Pipe: %8x\n", USB_PIPE(pipe));
-
-    memcpy(buf, (void *)&USB_BUFFER(768), new_len);
-    return new_len;
+    return transferred;
 }
 
 int Usb :: allocate_transaction(int len)
@@ -784,14 +821,17 @@ int Usb :: interrupt_in(int trans, int pipe, int len, BYTE *buf)
     volatile DWORD *tr = &USB_TRANSACTION(trans);
     DWORD readback_status = (*tr) & 3;
     
-    if(readback_status == 3) {
-        printf("Interrupt error.. %8x\n", readback_status);
-        *tr = 2; // fake done
-    } else if (readback_status == 2) { // done
+    // first the good case.
+    if (readback_status == 2) { // done
         memcpy(buf, (void *)&USB_BUFFER(offset), len);
         DWORD opcode = (offset << 20) | (len << 9) | (pipe << 4) | 0x09; // busy | interrupt
         *tr = opcode; // restart
         return len;
+    }
+    
+    if(readback_status == 3) {
+        printf("Interrupt error.. %8x (pipe = %8x)\n", readback_status, USB_PIPE(pipe));
+        *tr = 0; // fake none
     } else if (readback_status == 0) { // none
         DWORD opcode = (offset << 20) | (len << 9) | (pipe << 4) | 0x09; // busy | interrupt
         printf("No interrupt active on transaction %d (%8x), writing %8x\n", trans, readback_status, opcode);
@@ -800,33 +840,6 @@ int Usb :: interrupt_in(int trans, int pipe, int len, BYTE *buf)
     } 
     return 0;    
 }
-
- /*
-     function t_transaction_to_data(i: t_transaction) return std_logic_vector is
-        variable ret : std_logic_vector(31 downto 0);
-    begin
-        ret := (others => '0');
-        case i.state is
-        when none  => ret(1 downto 0) := "00";
-        when busy  => ret(1 downto 0) := "01";
-        when done  => ret(1 downto 0) := "10";
-        when error => ret(1 downto 0) := "11";
-        when others => ret(1 downto 0) := "11";
-        end case;
-        case i.transaction_type is
-        when control     => ret(3 downto 2) := "00";
-        when bulk        => ret(3 downto 2) := "01";
-        when interrupt   => ret(3 downto 2) := "10";
-        when isochronous => ret(3 downto 2) := "11";
-        when others      => ret(3 downto 2) := "11";
-        end case;
-        ret(8 downto 4)  := std_logic_vector(i.pipe_pointer);
-        ret(19 downto 9) := std_logic_vector(i.transfer_length);
-        ret(30 downto 20):= std_logic_vector(i.buffer_address);
-		ret(31) := i.link_to_next;
-        return ret;                
-    end function;
-*/    
 
 // =========================================================
 // USB DEVICE
@@ -1000,6 +1013,7 @@ bool UsbDevice :: init(int address)
     if(!get_device_descriptor(false)) // assume full/high speed
     	return false;
     
+/*
     if(!parent) {
         // reset
         host->bus_reset(host->speed == 2);
@@ -1016,7 +1030,7 @@ bool UsbDevice :: init(int address)
                 return false;
         }
     }
-    
+*/    
     // set address and create new control pipes for this address
     set_address(address);
 
@@ -1050,7 +1064,7 @@ int UsbDevice :: get_max_lun(void)
     if(!i)
         return 0;
 
-        printf("Got %d bytes. Max lun: %b\n", i, *buf);
+//        printf("Got %d bytes. Max lun: %b\n", i, *buf);
     return (int)*buf;
 }
 

@@ -321,14 +321,14 @@ int main()
 	printf("\nConfiguring Flash write protection..\n");
 	flash->protect_configure();
 	flash->protect_enable();
-	
-    if(virgin) {
-        user_interface->popup("Remove SDCard. Reboot?", BUTTON_OK);
-        flash->reboot(0);
-    }
-    
-	printf("\nPlease remove the SD card, and switch\noff your machine...\n");
     printf("\nTo avoid loading this updater again,\ndelete it from your media.\n");
+	
+    wait_ms(2000);
+    
+    user_interface->popup("Remove SDCard. Reboot?", BUTTON_OK);
+    flash->reboot(0);
+    
+//	printf("\nPlease remove the SD card, and switch\noff your machine...\n");
 
     while(1)
         ;

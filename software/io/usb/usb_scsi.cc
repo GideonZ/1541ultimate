@@ -58,13 +58,12 @@ bool UsbScsiDriver :: test_driver(UsbDevice *dev)
 		printf("Interface class is not mass storage. [%b]\n", dev->interface_descr.interface_class);
 		return false;
 	}
-	if(dev->interface_descr.sub_class != 0x06) {
-		printf("SubClass is not transparent SCSI. [%b]\n", dev->interface_descr.sub_class);
-		return false;
-	}
-
 	if(dev->interface_descr.protocol != 0x50) {
 		printf("Protocol is not bulk only. [%b]\n", dev->interface_descr.protocol);
+		return false;
+	}
+	if(dev->interface_descr.sub_class != 0x06) {
+		printf("SubClass is not transparent SCSI. [%b]\n", dev->interface_descr.sub_class);
 		return false;
 	}
 
@@ -80,7 +79,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	max_lun = dev->get_max_lun();
 	printf("max lun = %d\n", max_lun);
 
-	// this should actually be done for each LUN:
+    // create a device for each LUN
 	for(int i=0;i<=max_lun;i++) {
 		scsi_blk_dev[i] = new UsbScsi(dev, i);
 		scsi_blk_dev[i]->reset();
@@ -115,7 +114,9 @@ void UsbScsiDriver :: poll(void)
 								100 }; // error
 	UsbScsi *blk;
 	t_device_state old_state, new_state;
-	
+
+    DWORD capacity, block_size;
+
 	// poll intervals are meant to lower the unnecessary
 	// traffic on the USB bus.
 	if(poll_interval[current_lun] > 0) {
@@ -132,14 +133,22 @@ void UsbScsiDriver :: poll(void)
         //printf("Media seen[%d]=%d and new_state=%d. old_state=%d.\n", current_lun, media_seen[current_lun], new_state, old_state);
 		media_seen[current_lun] = false;
 		push_event(e_invalidate, path_dev[current_lun]);
+		push_event(e_detach_disk, path_dev[current_lun]);
+	}
+
+	if(new_state == e_device_ready) {
+        if(!media_seen[current_lun]) {
+            if(blk->read_capacity(&capacity, &block_size) == RES_OK) {
+                path_dev[current_lun]->attach_disk(int(block_size));
+            } else {
+                blk->set_state(e_device_error);
+            }
+        }
+		media_seen[current_lun] = true;
 	}
 
 	if(old_state != new_state) {
 		push_event(e_refresh_browser, &root);
-	}
-
-	if(new_state == e_device_ready) {
-		media_seen[current_lun] = true;
 	}
 
 	// lookup new poll interval
@@ -166,6 +175,7 @@ UsbScsi :: UsbScsi(UsbDevice *d, int unit)
     device = d;
     lun = unit;
     removable = 0;
+    block_size = 512;
     
     memset(&cbw, 0, sizeof(cbw));
     cbw.signature = 0x55534243;
@@ -304,7 +314,7 @@ void UsbScsi :: handle_sense_error(void)
 			set_state(e_device_no_media);
 			break;
 		default:
-			printf("Unhandled sense code.\n");
+			printf("Unhandled sense code %b/%b.\n", sense_data[2], sense_data[12]);
 		}
 	}
 }
@@ -445,9 +455,8 @@ bool UsbScsi :: test_unit_ready(void)
 	return false;
 }
 
-DRESULT UsbScsi :: read_capacity(DWORD *num_blocks)
+DRESULT UsbScsi :: read_capacity(DWORD *num_blocks, DWORD *blk_size)
 {
-    DWORD block_size;
     BYTE buf[8];
     
     if(!initialized)
@@ -458,13 +467,15 @@ DRESULT UsbScsi :: read_capacity(DWORD *num_blocks)
 
     BYTE read_cap_command[] = { 0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     printf("Read capacity.\n");
-    int stat = exec_command(10, false, read_cap_command, 8, buf, true);
+    int stat = exec_command(10, false, read_cap_command, 8, buf, false);
     
     if(stat >= 0) {
         memcpy(num_blocks, &buf[0], 4);
         ++(*num_blocks);
-        memcpy(&block_size, &buf[4], 4);
-        printf("Block Size: %d.\n", block_size);
+        memcpy(blk_size, &buf[4], 4);
+//        printf("Block Size: %d. Num Blocks: %d\n", *blk_size, *num_blocks);
+        this->block_size = int(*blk_size);
+        this->capacity   = *num_blocks;
         return RES_OK;
     } else { // command failed
         printf("Read capacity failed.\n");
@@ -733,7 +744,7 @@ DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, BYTE num_sectors)
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;
 
-    //    printf("Read USB sector: %d.\n", sector);
+//        printf("Read USB sector: %d (%d).\n", sector, num_sectors);
 
     BYTE read_10_command[] = { 0x28, BYTE(lun << 5), 0,0,0,0, 0x00, 0, 1, 0 };
     
@@ -745,14 +756,15 @@ DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, BYTE num_sectors)
         memcpy(&read_10_command[2], &sector, 4);
         
         for(int retry=0;retry<10;retry++) {
-            if(exec_command(10, false, read_10_command, 512, buf, false) != 512) {
+            USB_COMMAND = USB_CMD_SET_DEBUG;
+            if(exec_command(10, false, read_10_command, block_size, buf, false) != block_size) {
         		USB_COMMAND = USB_CMD_CLEAR_BUSY;
                 return RES_ERROR;
             } else
                 break;
         }
         
-        buf += 512;
+        buf += block_size;
         sector ++;
     }
 
@@ -799,13 +811,14 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, BYTE num_sectors)
 DRESULT UsbScsi :: ioctl(BYTE command, void *pdata)
 {
     DWORD *data = (DWORD *)pdata;
+    DWORD dummy;
+
     switch(command) {
         case GET_SECTOR_COUNT:
-            return read_capacity(data);
-            break;
+//            printf("Get Sector Count...\n");
+            return read_capacity(data, &dummy);
         case GET_SECTOR_SIZE:
-            *data = 512;
-            break;
+            return read_capacity(&dummy, data);
         default:
             printf("IOCTL %d.\n", command);
             return RES_PARERR;

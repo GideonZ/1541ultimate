@@ -181,13 +181,18 @@ int  W25Q_Flash :: get_number_of_config_pages(void)
 
 void W25Q_Flash :: read_config_page(int page, int length, void *buffer)
 {
-	int addr = (page + W25Q_PAGE_CONFIG_START) << W25Q_PageShift;
+    page *= sector_size;
+    page += W25Q_PAGE_CONFIG_START;
+	int addr = page << W25Q_PageShift;
 	read_dev_addr(addr, length, buffer);
 }
 
 void W25Q_Flash :: write_config_page(int page, void *buffer)
 {
-	write_page(page + W25Q_PAGE_CONFIG_START, buffer);
+    page *= sector_size;
+    page += W25Q_PAGE_CONFIG_START;
+    erase_sector(page / sector_size); // silly.. divide and later multiply.. oh well!
+	write_page(page, buffer);
 }
 
 /*

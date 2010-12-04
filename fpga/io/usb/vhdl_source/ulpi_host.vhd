@@ -179,6 +179,7 @@ begin
                 end if;                    
             
             when idle =>
+                abort_reg <= '0';
                 if do_sof='1' then
                     do_sof <= '0';
                     tx_token <= std_logic_vector(frame_cnt(13 downto 3));
@@ -243,6 +244,7 @@ begin
                 end case;
             
             when handle_trans => -- both pipe and transaction records are now valid
+                abort_reg <= '0';
 				substate <= 0;
                 if do_sof='1' and link_busy='0' then
                     state <= idle;
@@ -273,19 +275,21 @@ begin
                         state        <= setup_token;
 
                     when bulk | interrupt =>
-                        tx_token   <= pipe_in.device_endpoint & pipe_in.device_address;
-                        state      <= bulk_token;
-                        send_token <= '1';
+                        tx_token    <= pipe_in.device_endpoint & pipe_in.device_address;
+                        state       <= bulk_token;
+                        send_token  <= '1';
+                        timeout     <= false;
+                        timeout_cnt <= c_timeout_val;
 
                         if pipe_in.direction = dir_in then
                             tx_pid   <= c_pid_in;
                         else
-							if need_ping='1' then
-								tx_pid <= c_pid_ping;
-								state  <= do_ping;
-							else								
+--							if need_ping='1' then
+--								tx_pid <= c_pid_ping;
+--								state  <= do_ping;
+--							else								
 	                            tx_pid   <= c_pid_out;
-	                        end if;
+--	                        end if;
                         end if;
                         if pipe_in.control='1' and first_transfer then
                             pipe_in.data_toggle <= '1'; -- start with data 1

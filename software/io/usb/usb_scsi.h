@@ -54,7 +54,8 @@ class UsbScsi : public BlockDevice
     int        lun;
     int		   removable;
     DWORD      capacity;
-
+    int        block_size;
+    
     int        bulk_in;
     int        bulk_out;
 
@@ -76,7 +77,7 @@ public:
     void inquiry(void);
 	bool test_unit_ready(void);
 	void print_sense_error(void);
-    DRESULT read_capacity(DWORD *num_blocks);
+    DRESULT read_capacity(DWORD *num_blocks, DWORD *block_size);
 
     DSTATUS init(void);
     DSTATUS status(void);

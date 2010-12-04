@@ -163,6 +163,8 @@ begin
                             end if;                            
                             state <= send_resp;
                         end case;
+--                    when "01" =>
+--                        gap_length <= "00" & cmd_data(5 downto 0);
                     when "11" =>
                         state <= user_reg_write;
                     when "10" =>

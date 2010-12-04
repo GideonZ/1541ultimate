@@ -12,6 +12,7 @@ typedef enum _event_type {
 	e_browse_into,
     e_terminate,
     e_invalidate,
+    e_detach_disk,
     e_button_press,
     e_unfreeze,
     e_dma_load,

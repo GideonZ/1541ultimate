@@ -153,6 +153,7 @@ class UsbDriver;
    
 class Usb
 {
+    int gap;
     int poll_delay;
 	int se0_seen;
     int get_device_slot(void);

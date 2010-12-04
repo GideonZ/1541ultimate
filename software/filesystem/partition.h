@@ -26,6 +26,7 @@ public:
     ~Partition();                 /* destructor */
     
     void print_info(void);
+    BYTE get_type(void) { return type; }
     
     // Fall through:
     DSTATUS status(void);

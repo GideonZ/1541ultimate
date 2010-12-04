@@ -4,7 +4,7 @@
 #include "integer.h"
 #include "flash.h"
 
-#define W25Q_PAGE_CONFIG_START 8176
+#define W25Q_PAGE_CONFIG_START (8192-256)
 #define W25Q_NUM_CONFIG_PAGES  16
 
 #define W25Q_ContinuousArrayRead_LowFrequency       0x03

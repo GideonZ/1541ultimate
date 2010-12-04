@@ -65,7 +65,9 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
 	flash = get_flash();
 
     char buffer[32];
-    c1541_config[1].def = 8 + int(letter - 'A');
+    c1541_config[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
+    c1541_config[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
+        
     sprintf(buffer, "1541 Drive %c Settings", letter);    
     cfg = config_manager.register_store((DWORD)regs, buffer, c1541_config);
 

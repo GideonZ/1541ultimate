@@ -4,7 +4,7 @@
 #include "poll.h"
 #include "path.h"
 #include "filemanager.h"
-
+#include "file_device.h"
 
 /* Instantiation of root system */
 FileManager root("Root");
@@ -20,6 +20,8 @@ void FileManager :: handle_event(Event &e)
 	PathObject *o, *c;
     o = (PathObject *)e.object;
     File *f;
+    FileDevice *fd;
+    
 	switch(e.type) {
 	case e_cleanup_path_object:
         printf("Cleaning up %s\n", o->get_name());
@@ -50,6 +52,9 @@ void FileManager :: handle_event(Event &e)
 			}
 		}
 		break;
+    case e_detach_disk:
+        fd = (FileDevice *)e.object;
+        fd->detach_disk();
 	default:
 		break;
 	}
