@@ -1,10 +1,10 @@
 
-.PHONY: all clean sw_clean
+.PHONY: all mk1 special clean sw_clean loader
 
 all:
+	@svn up
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/fpga -f makefile_700a
-	@$(MAKE) -C target/fpga -f makefile_400a
 	@$(MAKE) -C target/fpga -f makefile_250e
 	@$(MAKE) -C target/software/1st_boot
 	@$(MAKE) -C target/software/2nd_boot
@@ -12,15 +12,37 @@ all:
 	@$(MAKE) -C target/software/ultimate appl
 	@$(MAKE) -C target/software/update
 	@cp target/software/update/result/update.bin .
-	@cp target/software/ultimate/result/flash_700.mcs .
 	@cp target/software/ultimate/result/appl.bin .
+
+mk1:
+	@svn up
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/fpga -f makefile_250e
+	@$(MAKE) -C target/software/1st_boot mk1
+	@$(MAKE) -C target/software/ultimate appl
+	@cp target/software/ultimate/result/appl.bin .
+
+special:
+	@svn up
+	@$(MAKE) -C target/fpga -f makefile_1400a
+	@$(MAKE) -C target/fpga -f makefile_400a
+	@$(MAKE) -C target/software/1st_boot special
+	@$(MAKE) -C target/software/ultimate
+	@echo "Bitfiles and application made.. No updater or such available."
+
+loader:
+	@$(MAKE) -C target/fpga -f makefile_boot_700a
+	@$(MAKE) -C target/software/programmer
+	@cp target/software/programmer/result/*.bit .
 
 clean:
 	@$(MAKE) -C tools clean
 	@rm -f ./update.bin
 	@rm -f ./flash_700.mcs
+	@rm -rf target/fpga/work1400
 	@rm -rf target/fpga/work400
 	@rm -rf target/fpga/work700
+	@rm -rf target/fpga/boot_700
 	@rm -rf target/fpga/work250
 	@rm -rf target/fpga/_xm*
 	@rm -rf target/fpga/x*

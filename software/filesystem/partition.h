@@ -9,7 +9,9 @@
 
 #include "integer.h"
 #include "blockdev.h"
+//#include "file_system.h"
 
+class FileSystem;
 
 class Partition
 {
@@ -27,6 +29,7 @@ public:
     
     void print_info(void);
     BYTE get_type(void) { return type; }
+    FileSystem *attach_filesystem(void);
     
     // Fall through:
     DSTATUS status(void);

@@ -1,8 +1,8 @@
 #include "integer.h"
 extern "C" {
 	#include "dump_hex.h"
+    #include "small_printf.h"
 }
-#include "small_printf.h"
 #include "c64.h"
 #include "flash.h"
 #include <string.h>

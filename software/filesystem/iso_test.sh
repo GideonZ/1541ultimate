@@ -1,0 +1,1 @@
+g++ -DLITTLE_ENDIAN -I../system -I../components -I../filemanager test_iso.cc ../system/small_printf.c ../system/dump_hex.c blockdev.cc blockdev_emul.cc partition.cc file_system.cc directory.cc file.cc iso9660.cc

@@ -1,5 +1,7 @@
 #include "size_str.h"
-#include "small_printf.h"
+extern "C" {
+    #include "small_printf.h"
+}
 
 void size_to_string_bytes(DWORD size, char *buffer)
 {

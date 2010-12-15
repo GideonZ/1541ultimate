@@ -82,9 +82,11 @@ OBJDUMP   = $(CROSS)-objdump
 OBJCOPY	  = $(CROSS)-objcopy
 
 
-.PHONY: all clean
+.PHONY: all clean special
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ)_700.bit
+
+special: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ)_1400.bit $(OUTPUT)/$(PRJ)_400.bit
 
 .SUFFIXES:
 

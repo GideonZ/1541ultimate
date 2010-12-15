@@ -4,10 +4,10 @@
 extern "C" {
 	#include "itu.h"
 	#include "dump_hex.h"
+    #include "small_printf.h"
 }
 #include "c1541.h"
 #include "disk_image.h"
-#include "small_printf.h"
 #include "userinterface.h"
 
 //#include "fatfile.h"

@@ -1,6 +1,5 @@
 #include "integer.h"
 #include "flash.h"
-#include "small_printf.h"
 #include "sd_card.h"
 #include "disk.h"
 #include "fat_fs.h"
@@ -11,6 +10,7 @@
 extern "C" {
 	#include "itu.h"
 	#include "xmodem.h"
+    #include "small_printf.h"
 }
 
 #define APPLICATION_RUN_ADDRESS 0x20000

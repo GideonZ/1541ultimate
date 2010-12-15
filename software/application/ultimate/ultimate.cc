@@ -1,9 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern "C" {
+    #include "small_printf.h"
+}
 #include "c64.h"
 #include "c1541.h"
-#include "small_printf.h"
 #include "screen.h"
 #include "keyboard.h"
 #include "userinterface.h"

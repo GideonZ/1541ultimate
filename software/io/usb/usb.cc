@@ -1,9 +1,9 @@
 extern "C" {
 	#include "itu.h"
     #include "dump_hex.h"
+    #include "small_printf.h"
 }
 #include "usb.h"
-#include "small_printf.h"
 #include <stdlib.h>
 
 // =================

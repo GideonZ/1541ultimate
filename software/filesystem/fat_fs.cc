@@ -82,7 +82,9 @@
 / fat chaining and all.
 /---------------------------------------------------------------------------*/
 
-#include "small_printf.h"
+extern "C" {
+    #include "small_printf.h"
+}
 #include "fat_fs.h"         /* FatFs configurations and declarations */
 #include "fat_dir.h"
 #include "fatfile.h"
@@ -456,12 +458,12 @@ BYTE FATFS::check_fs (Partition *prt)
 /*-----------------------------------------------------------------------*/
 /* Initialize File system object, based on current boot record           */
 /*-----------------------------------------------------------------------*/
-void FATFS::init(void)
+bool FATFS::init(void)
 {
     DWORD fsize, tsect, mclst;
     
 	if (prt->read(win, 0, 1) != RES_OK)	/* Load boot record */
-		return;
+		return false;
 
 	/* Initialize the file system object */
 	fsize = LD_WORD(win+BPB_FATSz16);				/* Number of sectors per FAT */
@@ -507,6 +509,7 @@ void FATFS::init(void)
 #if _FS_RPATH
 	cdir = 0;			/* Current directory (root dir) */
 #endif
+    return true;
 }
 
 void FATFS::print_info(void)

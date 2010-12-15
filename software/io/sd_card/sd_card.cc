@@ -21,10 +21,14 @@
 //#include "manifest.h"
 #include <stdio.h>
 #include "integer.h"
-#include "itu.h"
 #include "sd_card.h"
-#include "small_printf.h"
 #include "profiler.h"
+
+extern "C" {
+    #include "itu.h"
+    #include "small_printf.h"
+}
+
 
 #define TXT printf
 #define DBG(x) x

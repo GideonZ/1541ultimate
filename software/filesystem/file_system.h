@@ -2,9 +2,10 @@
 #define FILE_SYSTEM_H
 
 #include "partition.h"
-//#include "tree.h"
 #include <string.h>
-#include "small_printf.h"
+extern "C" {
+    #include "small_printf.h"
+}
 
 /* File function return code (FRESULT) */
 typedef enum {
@@ -48,6 +49,7 @@ typedef enum {
 #define FA_WRITE            0x02
 #define FA_CREATE_NEW       0x04
 #define FA_CREATE_ALWAYS    0x08
+#define FA_ANY_WRITE_FLAG   0x0E // the three above orred
 #define FA_OPEN_ALWAYS      0x10
 #define FA__WRITTEN         0x20
 #define FA__DIRTY           0x40
@@ -147,13 +149,13 @@ protected:
     Partition *prt;
 public:
     FileSystem(Partition *p);
-    ~FileSystem();
+    virtual ~FileSystem();
 
 	static  const char *get_error_string(FRESULT res);
 
     static  bool check(Partition *p);        // check if file system is present on this partition
-    virtual void    init(void);              // Initialize file system
-    virtual FRESULT get_free (DWORD*);       // Get number of free sectors on the file system
+    virtual bool    init(void);              // Initialize file system
+    virtual FRESULT get_free (DWORD *e) { *e = 0; return FR_OK; } // Get number of free sectors on the file system
     virtual bool is_writable() { return false; } // by default a file system is not writable, unless we implement it
     virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
     

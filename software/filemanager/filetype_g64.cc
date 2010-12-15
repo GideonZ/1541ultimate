@@ -20,7 +20,7 @@ FileTypeG64 tester_g64(file_type_factory);
 #define G64FILE_MOUNT_RO_B 0x2122
 #define G64FILE_MOUNT_UL_B 0x2123
 
-FileTypeG64 :: FileTypeG64(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
+FileTypeG64 :: FileTypeG64(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
     fac.register_type(this);
     info = NULL;

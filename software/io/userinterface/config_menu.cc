@@ -1,11 +1,11 @@
+extern "C" {
+    #include "small_printf.h"
+}
 #include "userinterface.h"
-#include "small_printf.h"
 #include <stdlib.h>
 #include <string.h>
 #include "mystring.h" // my string class
 #include "config_menu.h"
-//#include "filemanager.h"
-//#include "context_menu.h"
 
 /************************/
 /* ConfigBrowser Object */

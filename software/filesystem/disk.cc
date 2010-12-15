@@ -1,8 +1,8 @@
 
 #include "disk.h"
-#include "small_printf.h"
     
 extern "C" {
+    #include "small_printf.h"
 	#include "dump_hex.h"
 }
 
@@ -52,17 +52,18 @@ int Disk::Init(void)
     if(dev->read(buf, 0L, 1) != RES_OK)
         return -2; // disk unreadable
 
-    if(LD_WORD(buf + BS_Signature) != 0xAA55)
-        return -3; // disk unformatted 
-
-    /* Handle special case in which there is no partition table present */
-    /* This can only be the case when it is a FAT file system */
-
-	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	{ /* Check "FAT" string */
+    if(LD_WORD(buf + BS_Signature) != 0xAA55) {
         if(dev->ioctl(GET_SECTOR_COUNT, &size) == RES_OK) {
-            partition_list = new Partition(dev, 0L, size, 0x06);
+            partition_list = new Partition(dev, 0L, size, 0x00);
             return 1; // one default partition, starting on sector 0
         }
+        return -3; // disk unformatted or can't even create a default partition
+    }
+
+    // Handle special case in which there is no partition table present 
+    // This can only be the case when it is a FAT file system 
+
+	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	{ // Check "FAT" string
         return -4; // can't read device size
     }
     

@@ -2,9 +2,11 @@
 #define PATH_H
 
 #include <string.h>
+extern "C" {
+    #include "small_printf.h"
+}
 #include "indexed_list.h"
 #include "mystring.h"
-#include "small_printf.h"
 #include "pattern.h"
 
 class MenuItem;

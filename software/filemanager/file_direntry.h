@@ -3,14 +3,13 @@
 
 #include "path.h"
 #include "file_system.h"
-#include "small_printf.h"
 
 class FileDirEntry : public PathObject
 {
     FileDirEntry *attempt_promotion(void);
-    void remove_duplicates(void);
 public:
     FileInfo *info;
+    FileDirEntry(PathObject *par, char *name);
     FileDirEntry(PathObject *par, FileInfo *fi);
     virtual ~FileDirEntry();
 
@@ -25,6 +24,7 @@ public:
     virtual FileDirEntry *test_type(PathObject *obj);
     virtual FileInfo *get_file_info(void);
     int fetch_context_items_actual(IndexedList<PathObject *> &list);
+    void remove_duplicates(void);
 };
 
 class FileTypeFactory
@@ -36,7 +36,6 @@ public:
     
     FileDirEntry *promote(PathObject *obj) {
 		FileInfo *info = obj->get_file_info();
-        printf("Trying to promote %s.\n", info->lfname);
         FileDirEntry *tester;
         for(int i=0;i<file_types.get_elements();i++) {
             tester = file_types[i];

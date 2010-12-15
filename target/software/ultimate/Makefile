@@ -82,6 +82,7 @@ SRCS_CC	 =  stream.cc \
 			filetype_tap.cc \
 			filetype_sid.cc \
 			filetype_reu.cc \
+			filetype_iso.cc \
 			rtc.cc \
 			usb.cc \
 			usb_hub.cc \
@@ -106,6 +107,7 @@ SRCS_CC	 =  stream.cc \
 			fat_dir.cc \
 			fatfile.cc \
 			ccsbcs.cc \
+			iso9660.cc \
 			sd_card.cc \
 			sdio.cc \
 			sdcard_manager.cc \

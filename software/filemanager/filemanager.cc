@@ -1,5 +1,7 @@
 #include <stdio.h>
-#include "small_printf.h"
+extern "C" {
+    #include "small_printf.h"
+}
 #include "event.h"
 #include "poll.h"
 #include "path.h"
@@ -79,7 +81,7 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
     fix_filename(fi->lfname);
     fi->attrib = 0;
 
-    File *f = fi->fs->file_open(fi, FA_CREATE_ALWAYS | FA_WRITE);
+    File *f = fi->fs->file_open(fi, FA_CREATE_NEW | FA_WRITE);
     if(!f)
         return NULL;
         
@@ -133,6 +135,7 @@ File *FileManager :: fopen(PathObject *obj, BYTE flags)
 	} else {
 		return 0;
 	}
+	return 0;
 }
 
 void FileManager :: fclose(File *f)

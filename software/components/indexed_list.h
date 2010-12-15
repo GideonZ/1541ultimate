@@ -2,7 +2,6 @@
 #define INDEXED_LIST_H
 
 #include "integer.h"
-#include "small_printf.h"
 
 #ifndef ENTER_SAFE_SECTION
 #include "itu.h"
@@ -38,7 +37,7 @@ private:
 		removal = new_removal;
 	}
 public:
-    IndexedList(int initial=32, T def) : empty(def) {
+    IndexedList(int initial, T def) : empty(def) {
 		if(initial) {
 			element_array = new T[initial];
 			removal = new BYTE[initial];

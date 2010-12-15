@@ -13,7 +13,7 @@ FileTypeT64 tester_t64(file_type_factory);
 /* T64 File Browser Handling                                 */
 /*********************************************************************/
 
-FileTypeT64 :: FileTypeT64(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
+FileTypeT64 :: FileTypeT64(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
     fac.register_type(this);
     fs = NULL;

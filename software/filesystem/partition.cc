@@ -2,7 +2,12 @@
 #include <stdio.h>
 #include "blockdev.h"
 #include "partition.h"
-#include "small_printf.h"
+#include "fat_fs.h"
+#include "iso9660.h"
+
+extern "C" {
+    #include "small_printf.h"
+}
 
 Partition::Partition(BlockDevice *blk, DWORD offset, DWORD size, BYTE t)
 {
@@ -18,7 +23,7 @@ Partition::Partition(BlockDevice *blk, DWORD offset, DWORD size, BYTE t)
     
 Partition::~Partition()
 {
-	printf("*** PARTITION NOW GONE.. ***\n");
+	// printf("*** PARTITION NOW GONE.. ***\n");
 	//    dev = 0;
 }
 
@@ -32,6 +37,40 @@ DSTATUS Partition::status(void)
     if(!dev)
         return STA_NOINIT;
     return dev->status();
+}
+
+FileSystem *Partition :: attach_filesystem(void)
+{
+    FileSystem *fs = NULL;
+    DWORD sec_size;
+    ioctl(GET_SECTOR_SIZE, &sec_size);
+    
+    bool iso;
+    if(sec_size == 2048) { // if 2K, assume ISO9660
+        iso = FileSystem_ISO9660 :: check(this);
+        if(iso) {
+            fs = new FileSystem_ISO9660(this);
+            if(!fs->init()) {
+                delete fs;
+                fs = NULL;
+            }
+        }
+    }    
+
+    if(fs)
+        return fs;
+
+    // for quick fix: Assume FATFS:
+    BYTE res = FATFS :: check_fs(this);
+    printf("Checked FATFS: Result = %d\n", res);
+    if(!res) {
+        fs = new FATFS(this);
+        if(!fs->init()) {
+            delete fs;
+            fs = NULL;
+        }
+    }
+    return fs;
 }
     
 DRESULT Partition::read(BYTE *buffer, DWORD sector, BYTE count)

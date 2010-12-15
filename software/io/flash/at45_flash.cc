@@ -1,6 +1,9 @@
 #include "at45_flash.h"
 #include "icap.h"
-#include "small_printf.h"
+extern "C" {
+    #include "itu.h"
+    #include "small_printf.h"
+}
 
 #ifdef BOOTLOADER
 #define debug(x)

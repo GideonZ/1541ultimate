@@ -12,7 +12,7 @@ FileTypeREU tester_reu(file_type_factory);
 /*********************************************************************/
 #define REUFILE_LOAD      0x5201
 
-FileTypeREU :: FileTypeREU(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
+FileTypeREU :: FileTypeREU(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
     fac.register_type(this);
     info = NULL;

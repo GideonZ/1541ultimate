@@ -1,5 +1,7 @@
 #include "rtc.h"
-#include "small_printf.h"
+extern "C" {
+    #include "small_printf.h"
+}
 
 char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
 										"Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };

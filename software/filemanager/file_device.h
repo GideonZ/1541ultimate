@@ -5,8 +5,9 @@
 #include "disk.h"
 #include "partition.h"
 #include "path.h"
+#include "file_direntry.h"
 
-class FileDevice : public PathObject
+class FileDevice : public FileDirEntry
 {
     BlockDevice *blk;
     Disk *disk;

@@ -2,10 +2,10 @@
 #include <stdlib.h>
 extern "C" {
 	#include "itu.h"
+    #include "small_printf.h"
 }
 #include "integer.h"
 #include "usb_hub.h"
-#include "small_printf.h"
 #include "event.h"
 
 __inline DWORD cpu_to_32le(DWORD a)

@@ -18,10 +18,12 @@
  *   Abstract:
  *   This module implements functions to store/retrieve configuration items
  */
+extern "C" {
+    #include "dump_hex.h"
+    #include "small_printf.h"
+}
 #include "config.h"
-#include "small_printf.h"
 #include <string.h>
-#include "dump_hex.h"
 #include "menu.h"
 
 ConfigManager config_manager; // global!

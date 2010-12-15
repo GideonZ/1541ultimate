@@ -25,7 +25,7 @@ FileTypeTap tester_tap(file_type_factory);
 /* Tap File Browser Handling                                 */
 /*************************************************************/
 
-FileTypeTap :: FileTypeTap(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
+FileTypeTap :: FileTypeTap(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
     fac.register_type(this);
     file = NULL;

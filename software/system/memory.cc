@@ -1,9 +1,9 @@
 #include <stdlib.h>
 #include <string.h>
-#include "small_printf.h"
 #include "memory.h"
 extern "C" {
     #include "dump_hex.h"
+    #include "small_printf.h"
 }
 #define USE_MEM_TRACE 0
 #define MEM_VERBOSE 1

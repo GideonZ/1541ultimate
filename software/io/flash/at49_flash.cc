@@ -1,8 +1,8 @@
 extern "C" {
     #include "itu.h"
+    #include "small_printf.h"
 }
 #include "at49_flash.h"
-#include "small_printf.h"
 #include <string.h>
 
 #ifdef BOOTLOADER

@@ -1,6 +1,8 @@
 #include "w25q_flash.h"
 #include "icap.h"
-#include "small_printf.h"
+extern "C" {
+    #include "small_printf.h"
+}
 
 #ifdef BOOTLOADER
 #define debug(x)

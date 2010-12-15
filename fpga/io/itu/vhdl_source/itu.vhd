@@ -17,19 +17,21 @@ generic (
     g_baudrate      : integer := 115_200;
     g_timer_rate    : integer := 200_000 ); -- 5µs (should not result in more than 8 bits div)
 port (
-    clock       : in  std_logic;
-    reset       : in  std_logic;
-    
-    io_req      : in  t_io_req;
-    io_resp     : out t_io_resp;
+    clock           : in  std_logic;
+    reset           : in  std_logic;
+                    
+    io_req          : in  t_io_req;
+    io_resp         : out t_io_resp;
 
-    irq_in      : in  std_logic_vector(7 downto 2);
-    irq_out     : out std_logic;
-    
-    uart_txd    : out std_logic;
-    uart_rxd    : in  std_logic := '1';
-    uart_rts    : out std_logic;
-    uart_cts    : in  std_logic := '1' );
+    irq_timer_tick  : in  std_logic := '0';
+
+    irq_in          : in  std_logic_vector(7 downto 2);
+    irq_out         : out std_logic;
+                    
+    uart_txd        : out std_logic;
+    uart_rxd        : in  std_logic := '1';
+    uart_rts        : out std_logic;
+    uart_cts        : in  std_logic := '1' );
 
 end itu;
 
@@ -45,6 +47,7 @@ architecture gideon of itu is
     signal irq_timer_val    : unsigned(15 downto 0);
     signal irq_timer_cnt    : unsigned(23 downto 0);
     signal irq_timer_en     : std_logic;
+    signal irq_timer_select : std_logic;
 
     signal irq_en           : std_logic;
     signal irq_c            : std_logic_vector(7 downto 0);
@@ -83,8 +86,12 @@ begin
             if irq_timer_en='1' then
                 if irq_timer_cnt = 0 then
                     irq_c(0) <= '1';
-                    irq_timer_cnt <= irq_timer_val & X"FF";
-                else
+                    if irq_timer_select='1' then
+                        irq_timer_cnt <= X"00" & irq_timer_val;
+                    else
+                        irq_timer_cnt <= irq_timer_val & X"FF";
+                    end if;
+                elsif irq_timer_select='0' or irq_timer_tick='1' then
                     irq_timer_cnt <= irq_timer_cnt - 1;
                 end if;
             end if;
@@ -112,6 +119,7 @@ begin
                     timer <= unsigned(io_req_it.data);
                 when c_itu_irq_timer_en =>
                     irq_timer_en <= io_req_it.data(0);
+                    irq_timer_select <= io_req_it.data(1);
                     if irq_timer_en='0' then
                         irq_timer_cnt <= irq_timer_val & X"FF";
                     end if;
@@ -138,6 +146,7 @@ begin
                     io_resp_it.data <= std_logic_vector(timer);
                 when c_itu_irq_timer_en =>
                     io_resp_it.data(0) <= irq_timer_en;
+                    io_resp_it.data(1) <= irq_timer_select;
                 when c_itu_irq_timer_lo =>
                     io_resp_it.data <= std_logic_vector(irq_timer_cnt(7 downto 0));
                 when c_itu_irq_timer_hi =>

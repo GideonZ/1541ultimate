@@ -1,7 +1,7 @@
 #ifndef SMALL_PRINTF_H
 #define SMALL_PRINTF_H
 
-extern "C" {
+//extern "C" {
 	#include <stdarg.h>
 
     int small_printf(const char *fmt, ...);
@@ -12,7 +12,7 @@ extern "C" {
 	int _vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap);
 
 	#include "itu.h"
-}
+//}
 
 #define printf  small_printf
 #define sprintf small_sprintf

@@ -45,7 +45,7 @@ public:
     ~FileSystemD64();
     
     static  bool check(Partition *p); // check if file system is present on this partition
-    void    init(void);               // Initialize file system
+    bool    init(void);               // Initialize file system
     FRESULT get_free (DWORD*);        // Get number of free sectors on the file system
     FRESULT sync(void);               // Clean-up cached data
 

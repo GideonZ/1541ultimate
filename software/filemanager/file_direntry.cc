@@ -1,8 +1,10 @@
+extern "C" {
+    #include "small_printf.h"
+}
 #include "filemanager.h"
 #include "file_system.h"
 #include "directory.h"
 #include "file_direntry.h"
-#include "small_printf.h"
 #include "size_str.h"
 #include "event.h"
 #include "userinterface.h"
@@ -25,6 +27,12 @@
 FileTypeFactory file_type_factory;
 
 
+
+FileDirEntry :: FileDirEntry(PathObject *par, char *name) : PathObject(par, name)
+{
+    info = NULL;
+}
+   
 
 FileDirEntry :: FileDirEntry(PathObject *par, FileInfo *i) : PathObject(par)
 {
@@ -160,7 +168,7 @@ char *FileDirEntry :: get_name()
 {
     if(info)
         return info->lfname;
-    return "FileDirEntry";
+    return PathObject :: get_name();
 }
 
 char *FileDirEntry :: get_display_string()
@@ -281,6 +289,7 @@ void FileDirEntry :: execute(int selection)
                 		push_event(e_reload_browser);
         			} else {
         				printf("Can't create file '%s'\n", buffer);
+    					user_interface->popup("Can't create file.", BUTTON_OK);
         			}
         			delete bin;
         		} else {

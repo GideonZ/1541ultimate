@@ -17,9 +17,7 @@
 
 class FilePartition : public FileDirEntry
 {
-    string name;
 	Partition *prt;
-//    FileSystem *fs;
     
     void init(void);
 public:
@@ -27,7 +25,6 @@ public:
     virtual ~FilePartition();
 
     char *get_type_string(BYTE typ);
-    char *get_name(void) { return name.c_str(); }
     char *get_display_string(void);
     int   fetch_children(void);
 };

@@ -1,8 +1,8 @@
 extern "C" {
     #include "itu.h"
+    #include "small_printf.h"
 }
 #include "stream.h"
-#include "small_printf.h"
 
 int Stream :: read(BYTE *buffer, int length)    
 {

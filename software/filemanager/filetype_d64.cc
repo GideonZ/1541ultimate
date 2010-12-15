@@ -24,7 +24,7 @@ extern C1541 *c1541_B;
 #define D64FILE_MOUNT_RO_B 0x2112
 #define D64FILE_MOUNT_UL_B 0x2113
 
-FileTypeD64 :: FileTypeD64(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
+FileTypeD64 :: FileTypeD64(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
     fac.register_type(this);
     info = NULL;
@@ -411,8 +411,9 @@ bool FileSystemD64 :: check(Partition *p)
 }
 
 // Initialize file system
-void    FileSystemD64 :: init(void)
+bool FileSystemD64 :: init(void)
 {
+    return true;
 }              
 
 // Get number of free sectors on the file system

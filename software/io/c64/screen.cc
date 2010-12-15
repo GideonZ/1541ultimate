@@ -1,6 +1,9 @@
 #include "screen.h"
 #include "integer.h"
-#include "small_printf.h"
+extern "C" {
+    #include "itu.h"
+    #include "small_printf.h"
+}
 
 Screen :: Screen(char *b, char *c, int sx, int sy)
 {

@@ -1,5 +1,7 @@
 #include "sdio.h"
-#include "small_printf.h"
+extern "C" {
+    #include "small_printf.h"
+}
 
 /* Function to sense the presence of the card
    and write protect, if exists */

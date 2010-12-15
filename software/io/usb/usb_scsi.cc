@@ -2,11 +2,11 @@
 #include <stdlib.h>
 extern "C" {
 	#include "itu.h"
+    #include "small_printf.h"
 }
 #include "integer.h"
 #include "usb.h"
 #include "usb_scsi.h"
-#include "small_printf.h"
 #include "event.h"
 
 __inline DWORD cpu_to_32le(DWORD a)
@@ -62,10 +62,10 @@ bool UsbScsiDriver :: test_driver(UsbDevice *dev)
 		printf("Protocol is not bulk only. [%b]\n", dev->interface_descr.protocol);
 		return false;
 	}
-	if(dev->interface_descr.sub_class != 0x06) {
-		printf("SubClass is not transparent SCSI. [%b]\n", dev->interface_descr.sub_class);
-		return false;
-	}
+//	if(dev->interface_descr.sub_class != 0x06) {
+//		printf("SubClass is not transparent SCSI. [%b]\n", dev->interface_descr.sub_class);
+//		return false;
+//	}
 
 	// TODO: More tests needed here?
 	return true;

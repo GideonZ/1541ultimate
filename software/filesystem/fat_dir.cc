@@ -1,10 +1,10 @@
 
-#include "small_printf.h"
 #include "directory.h"
 #include "fat_dir.h"
 #include "rtc.h"
 extern "C" {
 	#include "dump_hex.h"
+    #include "small_printf.h"
 }
 #include <string.h>
 

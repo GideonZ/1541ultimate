@@ -21,22 +21,23 @@
  */
 
 #include "integer.h"
+#include "small_printf.h"
 
 #ifndef DUMP_BYTES
 #define DUMP_BYTES 16
 #endif
 
-int small_printf(const char *fmt, ...);
-#define printf  small_printf
-
-void dump_hex(void *pp, int len)
+void dump_hex_actual(void *pp, int len, int relative)
 {
     int w,t;
     BYTE c;
     BYTE *p = (BYTE *)pp;
     
 	for(w=0;w<len;w+=DUMP_BYTES) {
-		printf("%p: ", p + w);
+        if(relative)
+            printf("%4x: ", w);
+        else
+		    printf("%p: ", p + w);
         for(t=0;t<DUMP_BYTES;t++) {
             if((w+t) < len) {
 		        printf("%02x ", p[w+t]);
@@ -60,6 +61,16 @@ void dump_hex(void *pp, int len)
 	}
 }
 
+void dump_hex(void *pp, int len)
+{
+    dump_hex_actual(pp, len, 0);
+}
+
+void dump_hex_relative(void *pp, int len)
+{
+    dump_hex_actual(pp, len, 0);
+}
+
 void dump_hex_dirty(void *pp, int len, BYTE ptrn)
 {
 	int w,t,d;
@@ -74,3 +85,4 @@ void dump_hex_dirty(void *pp, int len, BYTE ptrn)
 		}
 	}
 }
+

@@ -1,16 +1,18 @@
+extern "C" {
+    #include "small_printf.h"
+}
 #include "file_device.h"
 #include "file_partition.h"
 #include "file_system.h"
 #include "file_direntry.h"
-#include "small_printf.h"
-#include "fat_fs.h"
 #include "size_str.h"
 
 
-FilePartition :: FilePartition(PathObject *par, Partition *p, char *n) : FileDirEntry(par, NULL), name(n)
+FilePartition :: FilePartition(PathObject *par, Partition *p, char *n) : FileDirEntry(par, n) //, name(n)
 {
     prt = p; // link to partition object.
-    info = new FileInfo(32);
+    info = new FileInfo(16);
+    strcpy(info->lfname, n); // redundant, oh well!
 }
 
 FilePartition :: ~FilePartition()
@@ -50,22 +52,9 @@ char *FilePartition :: get_display_string(void)
     return buffer;
 }
 
-
 void FilePartition :: init()
 {
-    // this function attaches the filesystem to the partition
-    //if(info->fs)
-    //    return; // already initialized. Filesystems do not suddenly change on any partition
-
-    // for quick fix: Assume FATFS:
-    BYTE res = FATFS :: check_fs(prt);
-    printf("Checked FATFS: Result = %d\n", res);
-    if(!res) {
-        info->fs = new FATFS(prt);
-        info->fs->init();
-    } else {
-        info->fs = NULL;
-    }
+    info->fs = prt->attach_filesystem();
     info->cluster = 0; // indicate root dir
     info->attrib = AM_DIR; // ;-)
 }

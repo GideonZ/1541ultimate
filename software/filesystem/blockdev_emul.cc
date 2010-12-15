@@ -1,34 +1,34 @@
 
 #include <stdio.h>
 #include <sys/stat.h>
-#include "blockdev.h"
+#include "blockdev_emul.h"
 
-BlockDevice::BlockDevice(char *name)
+BlockDevice_Emulated::BlockDevice_Emulated(char *name, int sec_size)
 {
-    sector_size = 512;
+    sector_size = sec_size;
     struct stat file_status;
     if(!stat(name, &file_status)) {
         file_size = file_status.st_size;
         f = fopen(name, "rb+");
-        printf("Construct block device, opening file %s of size %d (%p).\n", name, file_size, f);
+        printf("Construct block device, opening file %s of size %ld (%p).\n", name, file_size, f);
     } else {
         f = NULL;
     }
 }
     
-BlockDevice::~BlockDevice()
+BlockDevice_Emulated::~BlockDevice_Emulated()
 {
     if(f)
         fclose(f);
 }
 
-DSTATUS BlockDevice::init(void)
+DSTATUS BlockDevice_Emulated::init(void)
 {
     // We don't need to do anything here, just return status
     return status();
 }
         
-DSTATUS BlockDevice::status(void)
+DSTATUS BlockDevice_Emulated::status(void)
 {
     if(f)
         return 0;
@@ -36,7 +36,7 @@ DSTATUS BlockDevice::status(void)
         return STA_NODISK;
 }
     
-DRESULT BlockDevice::read(BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice_Emulated::read(BYTE *buffer, DWORD sector, BYTE count)
 {
 //    printf("Device read sector %d.\n", sector);
 
@@ -51,7 +51,7 @@ DRESULT BlockDevice::read(BYTE *buffer, DWORD sector, BYTE count)
 }
 
 #if	_READONLY == 0
-DRESULT BlockDevice::write(const BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice_Emulated::write(const BYTE *buffer, DWORD sector, BYTE count)
 {
 //    printf("Device write sector %d. ", sector);
 
@@ -67,7 +67,7 @@ DRESULT BlockDevice::write(const BYTE *buffer, DWORD sector, BYTE count)
 }
 #endif
 
-DRESULT BlockDevice::ioctl(BYTE command, void *data)
+DRESULT BlockDevice_Emulated::ioctl(BYTE command, void *data)
 {
     DWORD size;
     DWORD *dest = (DWORD *)data;

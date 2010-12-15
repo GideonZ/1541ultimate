@@ -23,7 +23,7 @@ FileTypePRG tester_prg(file_type_factory);
 
 cart_def dma_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
 
-FileTypePRG :: FileTypePRG(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
+FileTypePRG :: FileTypePRG(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
     fac.register_type(this);
     info = NULL;

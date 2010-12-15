@@ -2,15 +2,7 @@
 #define TASK_MENU_H
 
 #include "context_menu.h"
-/*
-#include "path.h"
-#include "screen.h"
-#include "userinterface.h"
-#include "tree_browser.h"
-#include "mystring.h"
-#include "small_printf.h"
-#include "context_menu.h"
-*/
+
 class TaskMenu : public ContextMenu
 {
     // private functions:

@@ -1,8 +1,10 @@
 #include "file_device.h"
 #include "file_partition.h"
-#include "small_printf.h"
+extern "C" {
+    #include "small_printf.h"
+}
 
-FileDevice :: FileDevice(PathObject *p, BlockDevice *b, char *n) : PathObject(p, n)
+FileDevice :: FileDevice(PathObject *p, BlockDevice *b, char *n) : FileDirEntry(p, n)
 {
     blk = b;
     disk = NULL; //new Disk(b, 512);
@@ -48,13 +50,27 @@ int FileDevice :: fetch_children(void)
     }
 
     // this function converts the partitions below the disk into browsable items
-    if(disk->Init() < 0) {
+    int p_count = disk->Init();
+    
+    if(p_count < 0) {
         printf("Error initializing disk..\n");
         return -1;
     }
-    //printf("Disk Initialized.\n");
     cleanup_children();
+
     Partition *p = disk->partition_list;
+    if(p_count == 1) { // do not create partition in browser; that's not necessary!
+        printf("There is only one partition!! we can do this smarter!\n");
+        info->fs = p->attach_filesystem();
+        info->cluster = 0; // indicate root dir
+        info->attrib = AM_DIR; // ;-)
+        if(!info->fs)
+            return -1;
+        int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..
+        sort_children();
+        return count;
+    }
+
     int i = 0;
     while(p) {
         char pname[] = "Partx";
@@ -68,10 +84,10 @@ int FileDevice :: fetch_children(void)
         if(!found)
             children.append(new FilePartition(this, p, pname));
 
-        ++i;
         p = p->next_partition;
+        ++i;
     }
-    return i;
+    return p_count;
 }
 
 char *FileDevice :: get_display_string(void)

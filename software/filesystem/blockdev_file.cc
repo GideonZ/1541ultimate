@@ -1,6 +1,8 @@
 
+extern "C" {
+    #include "small_printf.h"
+}
 #include "blockdev_file.h"
-#include "small_printf.h"
 #include "filemanager.h"
 
 BlockDevice_File::BlockDevice_File(PathObject *obj, int sec_size)

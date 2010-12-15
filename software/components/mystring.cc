@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <string.h> // C library
 #include "mystring.h" // my class definition
-#include "small_printf.h"
+extern "C" {
+    #include "small_printf.h"
+}
 
 string :: string()
 {

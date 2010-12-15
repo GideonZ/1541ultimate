@@ -6,6 +6,7 @@
 
 extern "C" {
 	#include "itu.h"
+    #include "small_printf.h"
 }
 #include "c64.h"
 #include "flash.h"
@@ -17,7 +18,6 @@ extern "C" {
 #include "fatfile.h"
 #include "config.h"
 #include "rtc.h"
-#include "small_printf.h"
 #include "userinterface.h"
 
 extern BYTE _binary_ultimate_bin_start;

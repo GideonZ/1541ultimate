@@ -1,10 +1,14 @@
+    
+extern "C" {
+    #include "small_printf.h"
+	#include "dump_hex.h"
+}
 
 #include "file_system.h"
 #include "file.h"
 #include "fatfile.h"
 #include "fat_dir.h"
 #include <string.h>
-#include "small_printf.h"
 #include "rtc.h"
 
 #define mem_set memset

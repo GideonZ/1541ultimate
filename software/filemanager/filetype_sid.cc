@@ -37,7 +37,7 @@ static inline WORD swap_word(WORD p)
 /* SID File Browser Handling                                 */
 /*************************************************************/
 
-FileTypeSID :: FileTypeSID(FileTypeFactory &fac) : FileDirEntry(NULL, NULL)
+FileTypeSID :: FileTypeSID(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
     fac.register_type(this);
     file = NULL;

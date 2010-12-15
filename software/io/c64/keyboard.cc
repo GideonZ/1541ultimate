@@ -1,10 +1,10 @@
 extern "C" {
     #include "itu.h"
+    #include "small_printf.h"
 }
 
 #include "keyboard.h"
 #include "c64.h"
-#include "small_printf.h"
 
 
 #define NO_IRQ 1

@@ -70,16 +70,11 @@ bool FileSystem :: check(Partition *p)
     return false; // base class never gives a match
 }
     
-void FileSystem :: init(void)
+bool FileSystem :: init(void)
 {
-    return;
+    return false;
 }
     
-FRESULT FileSystem :: get_free (DWORD*)
-{
-    return FR_DENIED;
-}
-   
 Directory *FileSystem :: dir_open(FileInfo *)
 {
     return NULL;
