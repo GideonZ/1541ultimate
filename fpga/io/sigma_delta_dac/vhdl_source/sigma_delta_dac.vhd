@@ -8,6 +8,8 @@ use work.my_math_pkg.all;
 entity sigma_delta_dac is
 generic (
     g_width         : positive := 12;
+    g_invert        : boolean := false;
+    g_use_mid_only  : boolean := true;
     g_left_shift    : natural := 1 );
 port (
     clock   : in  std_logic;
@@ -29,7 +31,9 @@ architecture gideon of sigma_delta_dac is
     signal sine_enable : std_logic;
 begin
     dac_in_scaled <= left_scale(dac_in, g_left_shift);
-    converted <= not dac_in_scaled(dac_in_scaled'high) & unsigned(dac_in_scaled(dac_in_scaled'high downto g_left_shift));
+    converted <= (not dac_in_scaled(dac_in_scaled'high) & unsigned(dac_in_scaled(dac_in_scaled'high downto g_left_shift))) when g_use_mid_only else
+                 (not dac_in_scaled(dac_in_scaled'high) & unsigned(dac_in_scaled(dac_in_scaled'high-1 downto g_left_shift))) & '0';
+
 --    converted <= not sine(sine'high) & unsigned(sine(sine'high downto 0));
 
 --    i_pilot: entity work.sine_osc
@@ -63,7 +67,11 @@ begin
             divider <= divider + 1;
             sum_with_carry(accu, converted, a_new, carry);
             accu <= a_new;
-            out_i <= carry;
+            if g_invert then
+                out_i <= not carry;
+            else
+                out_i <= carry;
+            end if;
             
             if reset='1' then
                 out_i     <= not out_i;
