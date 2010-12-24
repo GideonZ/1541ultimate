@@ -3,6 +3,7 @@
 /*.mcs
 /*.zip
 fpga/io/sigma_delta_dac/sim
+roms/JiffyDOS_1541_6.00_(rebadged_5.0).bin
 target/fpga/*.xrpt
 target/fpga/_xmsgs
 target/fpga/boot700
@@ -19,6 +20,8 @@ target/software/1st_boot/output
 target/software/1st_boot/result
 target/software/2nd_boot/output
 target/software/2nd_boot/result
+target/software/programmer/output
+target/software/programmer/result
 target/software/ultimate/output
 target/software/ultimate/result
 target/software/update/output

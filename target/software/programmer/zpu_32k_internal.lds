@@ -1,0 +1,83 @@
+OUTPUT_FORMAT("elf32-zpu", "elf32-zpu",
+	      "elf32-zpu")
+OUTPUT_ARCH(zpu)
+ENTRY(_start)
+
+MEMORY
+{
+    BRAM (rx)  : ORIGIN = 0x00000000, LENGTH = 32k
+}
+
+SECTIONS
+{
+  .fixed_vectors :
+  {
+	. = .;
+    KEEP (*(.fixed_vectors))
+  } = 0
+
+  .text : {
+    *(.text .stub .text.* .gnu.linkonce.t.*)
+  }
+  .fini           :
+  {
+    KEEP (*(.fini))
+  } > BRAM
+
+  .rodata      ALIGN(4)    :
+  {
+    *(.rodata .rodata.* .gnu.linkonce.r.*)
+    *(.rodata1)
+  	. = ALIGN(4); /* Enforce alignment of .data below */
+  } > BRAM
+
+    /* Now we want the data to load, but not to live in that
+       area of the ram. So we load the initialized data here,
+       but we try to let it live behind our loaded image. */
+
+    end_of_text = .;
+
+    __ram_start = .;
+    
+  .data ALIGN(4) :
+  {
+    __data_start = . ;
+    *(.data .data.* .gnu.linkonce.d.* .gcc_except_table)
+    __constructor_list = .;
+    KEEP (*(.ctors))
+    __end_of_constructors = .;
+    
+    __destructor_list = .;
+    KEEP (*(.dtors))
+    __end_of_destructors = .;
+
+    KEEP (*(.jcr))
+    __data_end = .;
+  } > BRAM
+
+  __bss_start = .;
+  __bss_start__ = .;
+  .bss ALIGN(4) (NOLOAD) :
+  {
+   *(.dynbss)
+   *(.bss .bss.* .gnu.linkonce.b.*)
+   *(COMMON)
+   /* Align here to ensure that the .bss section occupies space up to
+      _end.  Align after .bss to ensure correct alignment even if the
+      .bss section disappears because there are no input sections.  */
+   . = ALIGN(32 / 8);
+  }
+  . = ALIGN(32 / 8);
+  _end = .;
+  _bss_end__ = . ; __bss_end__ = . ; __end__ = . ;
+
+  PROVIDE (end = .);
+
+  _stack = 0x0f6fff0;
+  _memreg = 0x28;
+  
+  .stack 0xff0000:
+  {
+    *(.stack)
+  }  
+}
