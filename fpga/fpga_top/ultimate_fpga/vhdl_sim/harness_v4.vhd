@@ -14,7 +14,7 @@ architecture tb of harness_v4 is
     constant c_uart_divisor : natural := 434;
 
     signal PHI2        : std_logic := '0';
-    signal RSTn        : std_logic := '1';
+    signal RSTn        : std_logic := 'H';
     signal DOTCLK      : std_logic := '1';
     signal BUFFER_ENn  : std_logic := '1';
     signal LB_ADDR     : std_logic_vector(14 downto 0);
@@ -228,7 +228,7 @@ begin
     ULPI_RESET <= '1', '0' after 100 ns;
 
 	PHI2  <= not PHI2 after 507.5 ns; -- 0.98525 MHz
-    RSTn  <= '0', '1' after 6 us, '0' after 100 us, '1' after 105 us;
+    RSTn  <= '0', 'H' after 6 us, '0' after 100 us, 'H' after 105 us;
     
     i_ulpi_phy: entity work.ulpi_phy_bfm
     generic map (
@@ -264,7 +264,7 @@ begin
 
     process
     begin
-        SLOT_ADDR <= X"7FF0";
+        SLOT_ADDR <= X"D3F8";
         RWn       <= '1';
         while true loop
             wait until PHI2 = '0';

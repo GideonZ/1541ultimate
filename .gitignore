@@ -1,3 +1,7 @@
+/*.bin
+/*.bit
+/*.mcs
+/*.zip
 fpga/io/sigma_delta_dac/sim
 target/fpga/*.xrpt
 target/fpga/_xmsgs

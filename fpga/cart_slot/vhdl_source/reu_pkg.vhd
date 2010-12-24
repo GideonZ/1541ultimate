@@ -15,7 +15,12 @@ package reu_pkg is
     constant c_translen_h : std_logic_vector(4 downto 0) := '0' & X"8";
     constant c_irqmask    : std_logic_vector(4 downto 0) := '0' & X"9";
     constant c_control    : std_logic_vector(4 downto 0) := '0' & X"A";
-
+    -- extended registers
+    constant c_size_read  : std_logic_vector(4 downto 0) := '0' & X"C";
+    constant c_start_delay: std_logic_vector(4 downto 0) := '0' & X"D";
+    constant c_rate_div   : std_logic_vector(4 downto 0) := '0' & X"E";
+    constant c_translen_x : std_logic_vector(4 downto 0) := '0' & X"F";
+    
     constant c_mode_toreu   : std_logic_vector(1 downto 0) := "00";
     constant c_mode_toc64   : std_logic_vector(1 downto 0) := "01";
     constant c_mode_swap    : std_logic_vector(1 downto 0) := "10";

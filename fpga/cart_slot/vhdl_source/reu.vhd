@@ -7,9 +7,13 @@ library work;
     use work.mem_bus_pkg.all;
     use work.dma_bus_pkg.all;
         
+-- Standard: 433 LUT/148 FF
+-- Extended: 564 LUT/195 FF
+
 entity reu is
 generic (
     g_ram_tag       : std_logic_vector(7 downto 0) := X"10";
+    g_extended      : boolean := true;
     g_ram_base      : unsigned(27 downto 0) := X"1000000" ); -- second (=upper 16M)
 port (
     clock           : in  std_logic;
@@ -24,6 +28,7 @@ port (
     io_rdata        : out std_logic_vector(7 downto 0);
     
     -- system interface
+    phi2_tick       : in  std_logic := '0';
     reu_dma_n       : out std_logic := '1';
     write_ff00      : in  std_logic := '0';
     irq_out         : out std_logic;
@@ -51,7 +56,7 @@ end reu;
 
 architecture gideon of reu is
 
-    type t_state is (idle, do_read_c64, do_write_c64, do_read_reu, do_write_reu, check_end);
+    type t_state is (idle, do_read_c64, do_write_c64, do_read_reu, do_write_reu, check_end, delay);
     signal state     : t_state;
     
     attribute fsm_encoding : string;
@@ -61,11 +66,11 @@ architecture gideon of reu is
     
     signal c64_base   : unsigned(15 downto 0) := (others => '0');
     signal reu_base   : unsigned(23 downto 0) := (others => '0');
-    signal length_reg : unsigned(15 downto 0) := (others => '1');
+    signal length_reg : unsigned(23 downto 0) := (others => '1');
 
     signal c64_addr   : unsigned(15 downto 0) := (others => '0');
-    signal reu_addr   : unsigned(18 downto 0) := (others => '0');
-    signal count      : unsigned(15 downto 0) := (others => '1');
+    signal reu_addr   : unsigned(23 downto 0) := (others => '0');
+    signal count      : unsigned(23 downto 0) := (others => '1');
     
     signal c64_req    : std_logic;
     signal c64_rack   : std_logic;
@@ -112,6 +117,10 @@ architecture gideon of reu is
     signal control  : t_control;
     signal command  : t_command;
 
+    -- signals for extended mode
+    signal rate_div     : unsigned(7 downto 0) := (others => '0');
+    signal start_delay  : unsigned(7 downto 0) := (others => '0');
+    signal ext_count    : unsigned(7 downto 0) := (others => '0');
 begin
     with size_ctrl select mask <=
         "00000001" when "000",
@@ -123,7 +132,8 @@ begin
         "01111111" when "110",
         "11111111" when others;
 
-    masked_reu_addr(23 downto 19) <= (reu_base(23 downto 19) or not mask(7 downto 3));
+    masked_reu_addr(23 downto 19) <= (reu_base(23 downto 19) or not mask(7 downto 3)) when not g_extended else
+                                     (reu_addr(23 downto 19) or not mask(7 downto 3));
     masked_reu_addr(18 downto 16) <= (reu_addr(18 downto 16) or not mask(2 downto 0));
     masked_reu_addr(15 downto  0) <= reu_addr(15 downto 0);
     
@@ -156,7 +166,8 @@ begin
             if control.fix_reu='0' then
                 reu_addr <= reu_addr + 1;
             end if;
-            if count = 1 then
+            if (count(15 downto 0) = 1 and not g_extended) or
+               (count = 1 and g_extended) then
                 trans_done <= '1';
             else 
                 count    <= count - 1;
@@ -168,7 +179,11 @@ begin
             if command.autoload='1' then
                 c64_addr <= c64_base;
                 reu_addr <= reu_base(reu_addr'range);
-                count    <= length_reg;
+                if g_extended then
+                    count    <= length_reg;
+                else
+                    count(15 downto 0) <= length_reg(15 downto 0);
+                end if;
             end if;
             command.ff00 <= '1'; -- reset to default state
             state <= idle;
@@ -199,11 +214,11 @@ begin
                 when c_reubase_m  => reu_base(15 downto 8) <= io_wdatau;                
                                      reu_addr(15 downto 0) <= io_wdatau & reu_base(7 downto 0);   -- half autoload bug
                 when c_reubase_h  => reu_base(23 downto 16) <= io_wdatau;
-                                     reu_addr(18 downto 16) <= io_wdatau(2 downto 0);
+                                     reu_addr(23 downto 16) <= io_wdatau;
                 when c_translen_l => length_reg(7 downto 0) <= io_wdatau;
-                                     count <= length_reg(15 downto 8) & io_wdatau;   -- half autoload bug
+                                     count(15 downto 0) <= length_reg(15 downto 8) & io_wdatau;   -- half autoload bug
                 when c_translen_h => length_reg(15 downto 8) <= io_wdatau;
-                                     count <= io_wdatau & length_reg(7 downto 0);    -- half autoload bug
+                                     count(15 downto 0) <= io_wdatau & length_reg(7 downto 0);    -- half autoload bug
 
                 when c_irqmask    =>
                     control.irq_en    <= io_wdata(7);
@@ -228,6 +243,21 @@ begin
                 end case;
             end if;
 
+            -- extended registers
+            if io_write='1' and io_event_addr(8)='1' and g_extended then  --$DF00
+                case io_event_addr(4 downto 0) is
+                when c_start_delay =>
+                    start_delay <= io_wdatau;
+                when c_rate_div    =>
+                    rate_div    <= io_wdatau;
+                when c_translen_x =>
+                    length_reg(23 downto 16) <= io_wdatau;
+                    count(23 downto 16) <= io_wdatau;
+                when others =>
+                    null;
+                end case;
+            end if;
+
             -- clear on read flags
             if io_read='1' and io_event_addr(8)='1' then
                 if io_event_addr(4 downto 0) = c_status then
@@ -240,16 +270,28 @@ begin
             when idle =>
                 reu_dma_n <= '1';
                 glob_rwn  <= '1';
-                
+                ext_count <= start_delay;
                 if command.execute='1' then
                     if (command.ff00='0' and write_ff00='1') or
                        (command.ff00='1') then
                         verify_error <= '0';
                         trans_done   <= '0';
                         command.execute <= '0';
-                        dispatch;
-                        reu_dma_n <= '0';
+                        if g_extended then
+                            state <= delay;
+                        else
+                            dispatch;
+                            reu_dma_n <= '0';
+                        end if;
                     end if;
+                end if;
+
+            when delay =>
+                if ext_count = 0 then
+                    dispatch;
+                    reu_dma_n <= '0';
+                elsif phi2_tick='1' then
+                    ext_count <= ext_count - 1;
                 end if;
                 
             when do_read_reu =>
@@ -315,8 +357,11 @@ begin
                 end if;
                 
             when check_end =>
+                ext_count <= rate_div;
                 if trans_done='1' then
                     transfer_end;
+                elsif g_extended then
+                    state <= delay;
                 else
                     dispatch;
                 end if;
@@ -339,10 +384,14 @@ begin
 
                 c64_base     <= (others => '0');
                 reu_base     <= (others => '0');
-                length_reg   <= (others => '1');
+                length_reg   <= X"00FFFF";
                 c64_addr     <= (others => '0');
                 reu_addr     <= (others => '0');
                 count        <= (others => '1');
+                rate_div     <= (others => '0');
+                start_delay  <= (others => '0');
+                rate_div     <= (others => '0');
+                ext_count    <= (others => '0');
             end if;
         end if;
     end process;
@@ -380,10 +429,18 @@ begin
         when c_c64base_h  => io_rdata <= std_logic_vector(c64_addr(15 downto 8)); 
         when c_reubase_l  => io_rdata <= std_logic_vector(reu_addr(7 downto 0));
         when c_reubase_m  => io_rdata <= std_logic_vector(reu_addr(15 downto 8));
-        when c_reubase_h  => io_rdata <= "11111" & std_logic_vector(reu_addr(18 downto 16)); -- maximum 19 bits
+        when c_reubase_h  =>
+            if g_extended then
+                io_rdata <= std_logic_vector(reu_addr(23 downto 16));
+            else
+                io_rdata <= "11111" & std_logic_vector(reu_addr(18 downto 16)); -- maximum 19 bits
+            end if;
         when c_translen_l => io_rdata <= std_logic_vector(count(7 downto 0));
         when c_translen_h => io_rdata <= std_logic_vector(count(15 downto 8));
 
+        when c_size_read    => if g_extended then io_rdata <= std_logic_vector(mask); end if;
+        when c_start_delay  => if g_extended then io_rdata <= std_logic_vector(start_delay); end if;
+        when c_rate_div     => if g_extended then io_rdata <= std_logic_vector(rate_div); end if;
         when others => 
             null;
 

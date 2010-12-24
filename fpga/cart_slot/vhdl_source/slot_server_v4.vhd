@@ -16,7 +16,9 @@ generic (
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
     g_control_read  : boolean := true;
-    g_ram_expansion : boolean := true );
+    g_ram_expansion : boolean := true;
+    g_extended_reu  : boolean := false );
+
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -46,6 +48,7 @@ port (
     
     -- debug
     freezer_state   : out   std_logic_vector(1 downto 0);
+    sample_out      : out   signed(17 downto 0);    
 
     -- timing output
     phi2_tick       : out   std_logic;
@@ -147,7 +150,12 @@ architecture structural of slot_server_v4 is
     signal mem_resp_slot    : t_mem_resp;
     signal mem_req_reu      : t_mem_req;
     signal mem_resp_reu     : t_mem_resp;
-
+    signal mem_req_trace    : t_mem_req;
+    signal mem_resp_trace   : t_mem_resp;
+    signal io_req_trace     : t_io_req;
+    signal io_resp_trace    : t_io_resp;
+        signal sid_write    : std_logic;
+    
     signal mem_rack_slot    : std_logic;
     signal mem_dack_slot    : std_logic;
 begin
@@ -166,6 +174,9 @@ begin
         
         io_req          => io_req,
         io_resp         => io_resp,
+
+        io_req_trace    => io_req_trace,
+        io_resp_trace   => io_resp_trace,
         
         dma_req         => dma_req_regs,
         dma_resp        => dma_resp_regs,
@@ -361,14 +372,60 @@ begin
         exrom_n         => exrom_n,
         game_n          => game_n,
     
-        CART_LEDn       => cart_led_n );
+        CART_LEDn       => open ); --cart_led_n );
 
+    i_trce: entity work.sid_trace
+    generic map (
+        g_mem_tag   => X"CE" )
+    port map (
+        clock       => clock,
+        reset       => actual_c64_reset,
+        
+        addr        => unsigned(slot_addr(6 downto 0)),
+        wren        => sid_write,
+        wdata       => io_wdata,
+    
+        phi2_tick   => phi2_tick_i,
+        
+        io_req      => io_req_trace,
+        io_resp     => io_resp_trace,
+    
+        mem_req     => mem_req_trace,
+        mem_resp    => mem_resp_trace );
+
+    i_sid: entity work.sid_top
+    generic map (
+        g_num_voices  => 3 )
+        
+    port map (
+        clock       => clock,
+        reset       => actual_c64_reset,
+        
+        addr        => unsigned(slot_addr(6 downto 0)),
+        wren        => sid_write,
+        wdata       => io_wdata,
+        rdata       => open,
+    
+        start_iter  => phi2_tick_i,
+        error_out   => cart_led_n,
+        sample_out  => sample_out );
+
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            sid_write <= '0';
+            if slot_addr(15 downto 8) = X"D4" then
+                sid_write <= do_sample_io and not mem_req_slot.read_writen;
+            end if;
+        end if;
+    end process;
 
     g_reu: if g_ram_expansion generate
         signal reu_write    : std_logic := '0';
     begin
         i_reu: entity work.reu
         generic map (
+            g_extended      => g_extended_reu,
             g_ram_base      => g_ram_base_reu,
             g_ram_tag       => g_tag_reu )
         port map (
@@ -384,6 +441,7 @@ begin
             io_rdata        => reu_reg_rdata,
             
             -- system interface
+            phi2_tick       => do_io_event,
             irq_out         => reu_irq,
             reu_dma_n       => reu_dma_n,
             write_ff00      => write_ff00,
@@ -399,7 +457,7 @@ begin
         reu_write       <= io_write and control.reu_enable;
 
         -- when reu_enable is '0', the REU exists, but will never respond to writes to registers
-        reu_reg_output   <= '1' when slot_addr(15 downto 8)=X"DF" and control.reu_enable='1' else '0';
+        reu_reg_output   <= '1' when slot_addr(15 downto 8)=X"DF" and slot_addr(7 downto 5)="000" and control.reu_enable='1' else '0';
 
     end generate;
 
@@ -442,15 +500,17 @@ begin
     
     i_mem_arb: entity work.mem_bus_arbiter_pri
     generic map (
-        g_ports     => 2 )
+        g_ports     => 3 )
     port map (
         clock       => clock,
         reset       => reset,
         
         reqs(0)     => mem_req_slot,
         reqs(1)     => mem_req_reu,
+        reqs(2)     => mem_req_trace,
         resps(0)    => mem_resp_slot,
         resps(1)    => mem_resp_reu,
+        resps(2)    => mem_resp_trace,
         
         req         => mem_req,
         resp        => mem_resp );

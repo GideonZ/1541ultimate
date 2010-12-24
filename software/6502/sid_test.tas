@@ -1,0 +1,131 @@
+
+	*=$0801
+	.word ss,2005
+	.null $9e,^start;sys
+ss	.word 0
+
+reu_status      = $DF00
+reu_command     = $DF01
+reu_c64base_l   = $DF02
+reu_c64base_h   = $DF03
+reu_reubase_l   = $DF04
+reu_reubase_m   = $DF05
+reu_reubase_h   = $DF06
+reu_translen_l  = $DF07
+reu_translen_h  = $DF08
+reu_irqmask     = $DF09
+reu_control     = $DF0A
+reu_size_read   = $DF0C
+reu_start_delay = $DF0D
+reu_rate_div    = $DF0E
+reu_translen_x  = $DF0F
+
+reu_mode_toreu   = $B0
+reu_mode_toc64   = $B1
+reu_mode_swap    = $B2
+reu_mode_verify  = $B3
+
+reu_ctrl_nofix   = $00
+reu_ctrl_fixc64  = $80
+reu_ctrl_fixreu  = $40
+reu_ctrl_fixboth = $C0
+
+sid_freq_l3      = $D40E
+sid_freq_h3      = $D40F
+sid_pw_l3        = $D410
+sid_pw_h3        = $D411 
+sid_control3     = $D412
+sid_ad3          = $D413
+sid_sr3          = $D414
+sid_volume       = $D418
+sid_osc3         = $D41B
+sid_env3         = $D41C
+
+buffer_addr      = $3000
+buffer_size      = $5000     
+sample_length    = $FFFF
+read_base        = $0000
+
+start	sei
+        sta attack
+        lda #$0B
+        sta $D011
+        
+        lda #<sample_length
+        sta reu_translen_l
+        lda #>sample_length
+        sta reu_translen_h
+        lda #$00
+        sta reu_translen_x
+        sta reu_reubase_l
+        sta reu_reubase_m
+        sta reu_reubase_h
+        lda #<sid_env3
+        sta reu_c64base_l
+        lda #>sid_env3
+        sta reu_c64base_h
+        lda #reu_ctrl_fixc64
+        sta reu_control
+
+        lda #15
+        sta sid_volume
+        lda #$40
+        sta sid_freq_h3
+
+        lda attack
+        asl
+        asl
+        asl
+        asl
+        ora #$01
+        sta sid_ad3
+        lda #$E1
+        sta sid_sr3
+
+        lda #6
+        sta reu_start_delay
+        lda #reu_mode_toreu
+        sta reu_command
+        lda #$11
+        sta sid_control3
+        ; reu starts now!
+        
+        ldx #0
+        ldy #0
+-       dey
+        bne -
+        dex
+        bne -
+
+        lda #$10
+        sta sid_control3
+
+        ; fetch reu data to C64 memory
+        lda #<buffer_size
+        sta reu_translen_l
+        lda #>buffer_size
+        sta reu_translen_h
+        lda #$00
+        sta reu_translen_x
+        lda #<read_base
+        sta reu_reubase_l
+        lda #>read_base
+        sta reu_reubase_m
+        lda #0
+        sta reu_reubase_h
+        lda #<buffer_addr
+        sta reu_c64base_l
+        lda #>buffer_addr
+        sta reu_c64base_h
+        lda #reu_ctrl_nofix
+        sta reu_control
+        lda #reu_mode_toc64
+        sta reu_command
+        nop
+        nop
+        nop
+        lda #$1B
+        sta $d011
+        rts
+        
+attack  .byte 0

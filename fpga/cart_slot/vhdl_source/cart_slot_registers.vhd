@@ -19,6 +19,9 @@ port (
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
     
+    io_req_trace    : out t_io_req;
+    io_resp_trace   : in  t_io_resp;
+
     dma_req         : out t_dma_req;
     dma_resp        : in  t_dma_resp;
     
@@ -30,6 +33,7 @@ end entity;
 architecture rtl of cart_slot_registers is
     signal control_i    : t_cart_control;
     signal dma_rwn_i    : std_logic;
+    signal trace        : std_logic := '0';
 begin
     dma_req.address     <= io_req.address(15 downto 0);
     dma_req.read_writen <= dma_rwn_i;
@@ -54,7 +58,20 @@ begin
             end if;
             
             control_i.cartridge_kill <= '0'; 
-            if io_req.write='1' then
+--DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG--
+            io_req_trace <= io_req;
+            io_req_trace.read <= '0';
+            io_req_trace.write <= '0';
+            if trace='1' then
+                io_resp <= io_resp_trace;
+                if io_resp_trace.ack='1' then
+                    trace <= '0';
+                end if;
+            elsif (io_req.read='1' or io_req.write='1') and io_req.address(16 downto 15)="01" then
+                io_req_trace <= io_req; -- forward read/write pulse to trace and wait for trace response
+                trace <= '1'; 
+--DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG----DEBUG--
+            elsif io_req.write='1' then
                 if io_req.address(16)='1' and status.c64_stopped='1' then
                     dma_req.request <= '1';
                     dma_rwn_i <= '0';

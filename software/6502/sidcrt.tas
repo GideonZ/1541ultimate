@@ -79,16 +79,15 @@ start         sei
 
               jsr $ff8a           ;restore default IO vectors
 
-;              lda #$02
-;              sta $d020
-
-;              lda $02
-;              tax
-;              stx $CFFD
-;              inx
-;              stx $CFFE
-;              inx
-;              stx $CFFF
+              ; set test bit of each voice to guarantee synced voices!
+              lda #$08
+              sta $d404
+              sta $d404 + 7
+              sta $d404 + 14
+              lda #$00
+              sta $d404
+              sta $d404 + 7
+              sta $d404 + 14
               
               lda $02
               cmp #$AA
