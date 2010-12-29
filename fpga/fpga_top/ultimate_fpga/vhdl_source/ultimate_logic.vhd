@@ -18,14 +18,16 @@ generic (
     g_icap          : boolean := true;
     g_uart          : boolean := true;
     g_drive_1541    : boolean := true; --
-    g_drive_1541_2  : boolean := true; --
+    g_drive_1541_2  : boolean := false; --
     g_hardware_gcr  : boolean := true;
     g_ram_expansion : boolean := true; --
+    g_extended_reu  : boolean := false;
     g_hardware_iec  : boolean := true; --
     g_iec_prog_tim  : boolean := false;
     g_c2n_streamer  : boolean := true;
     g_c2n_recorder  : boolean := true;
     g_cartridge     : boolean := true; --
+    g_stereo_sid    : boolean := true;
     g_drive_sound   : boolean := true; --
     g_rtc_chip      : boolean := true;
     g_rtc_timer     : boolean := true;
@@ -158,6 +160,8 @@ architecture logic of ultimate_logic is
         cap(13) := to_std(g_rtc_timer);
         cap(14) := to_std(g_spi_flash);
         cap(15) := to_std(g_icap);
+        cap(16) := to_std(g_extended_reu);
+        cap(17) := to_std(g_stereo_sid);
 
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -266,6 +270,10 @@ architecture logic of ultimate_logic is
     signal freezer_state    : std_logic_vector(1 downto 0);
     signal dirty_led_1_n    : std_logic := '1';
     signal dirty_led_2_n    : std_logic := '1';
+    signal sid_sample_left  : signed(17 downto 0);
+    signal sid_sample_right : signed(17 downto 0);
+    signal sid_pwm_left     : std_logic;
+    signal sid_pwm_right    : std_logic;
 begin
 
     i_cpu: entity work.cpu_wrapper_zpu
@@ -456,6 +464,32 @@ begin
         end generate;
     end generate;
 
+    i_pdm_sid_L: entity work.sigma_delta_dac --delta_sigma_2to5
+    generic map (
+        g_left_shift => 0,
+        g_invert => true,
+        g_use_mid_only => false,
+        g_width => sid_sample_left'length )
+    port map (
+        clock   => sys_clock,
+        reset   => sys_reset,
+        
+        dac_in  => sid_sample_left,
+        dac_out => sid_pwm_left );
+
+    i_pdm_sid_R: entity work.sigma_delta_dac --delta_sigma_2to5
+    generic map (
+        g_left_shift => 0,
+        g_invert => true,
+        g_use_mid_only => false,
+        g_width => sid_sample_right'length )
+    port map (
+        clock   => sys_clock,
+        reset   => sys_reset,
+        
+        dac_in  => sid_sample_right,
+        dac_out => sid_pwm_right );
+
     r_cart: if g_cartridge generate
         i_slot_srv: entity work.slot_server_v4
         generic map (
@@ -465,7 +499,11 @@ begin
             g_rom_base_cart => X"0F80000", -- should be on a 512K boundary
             g_ram_base_cart => X"0F70000", -- should be on a 64K boundary
             g_control_read  => true,
-            g_ram_expansion => g_ram_expansion )
+            g_ram_expansion => g_ram_expansion,
+            g_implement_sid => g_stereo_sid,
+            g_sid_voices    => 3,
+            g_extended_reu  => g_extended_reu )
+
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
@@ -495,6 +533,8 @@ begin
             
             -- debug
             freezer_state   => freezer_state,
+            sample_left     => sid_sample_left,
+            sample_right    => sid_sample_right,
             
             -- timing output
 			c64_stopped		=> c64_stopped,
@@ -820,7 +860,9 @@ begin
         drive1          => pwm_2,
         cas_read        => CAS_READ,
         cas_write       => CAS_WRITE,
-        
+        sid_left        => sid_pwm_left,
+        sid_right       => sid_pwm_right,
+                
         pwm_out         => PWM_OUT );
 
     IEC_ATN    <= '0' when atn_o='0'  or atn_o_2='0'  or iec_atn_o='0'  else 'Z'; -- open drain

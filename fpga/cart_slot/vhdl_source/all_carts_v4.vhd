@@ -2,6 +2,9 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+library work;
+use work.slot_bus_pkg.all;
+
 entity all_carts_v4 is
 generic (
     g_rom_base      : std_logic_vector(27 downto 0) := X"0F80000"; -- multiple of 512K
@@ -20,26 +23,18 @@ port (
     
     cart_kill       : in  std_logic;
     cart_logic      : in  std_logic_vector(3 downto 0);   -- 1 out of 16 logic emulations
---  cart_base       : in  std_logic_vector(19 downto 15); -- 1 out of 32 base addresses for roms
     
-    io_write        : in  std_logic;
-    io_read         : in  std_logic;
-    io_addr         : in  std_logic_vector(8 downto 0);    
-    io_wdata        : in  std_logic_vector(7 downto 0);
-    epyx_timeout    : in  std_logic;
+    slot_req        : in  t_slot_req;
+    slot_resp       : out t_slot_resp;
 
+    epyx_timeout    : in  std_logic;
     serve_enable    : out std_logic; -- enables fetching bus address PHI2=1
     serve_vic       : out std_logic; -- enables doing so for PHI2=0
-
     serve_rom       : out std_logic; -- ROML or ROMH
     serve_io1       : out std_logic; -- IO1n
     serve_io2       : out std_logic; -- IO2n
     allow_write     : out std_logic;
-
-    reg_output      : out std_logic;
-    reg_rdata       : out std_logic_vector(7 downto 0);
     
-    slot_addr       : in  std_logic_vector(15 downto 0);
     mem_addr        : out unsigned(25 downto 0);   
     
     irq_n           : out std_logic;
@@ -70,7 +65,6 @@ architecture gideon of all_carts_v4 is
     signal hold_nmi     : std_logic;
     signal eth_addr     : boolean;
     signal cart_logic_d : std_logic_vector(cart_logic'range) := (others => '0');
---    signal cart_base_d  : std_logic_vector(cart_base'range)  := (others => '0');
     signal mem_addr_i   : std_logic_vector(27 downto 0);
         
     constant c_none         : std_logic_vector(3 downto 0) := "0000";
@@ -89,8 +83,20 @@ architecture gideon of all_carts_v4 is
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
     
+    -- alias
+    signal slot_addr        : std_logic_vector(15 downto 0);
+    signal io_read          : std_logic;
+    signal io_write         : std_logic;
+    signal io_addr          : std_logic_vector(8 downto 0);
+    signal io_wdata         : std_logic_vector(7 downto 0);
 begin
     serve_enable <= cart_en;
+
+    slot_addr <= std_logic_vector(slot_req.bus_address);
+    io_write  <= slot_req.io_write;
+    io_read   <= slot_req.io_read;
+    io_addr   <= std_logic_vector(slot_req.io_address(8 downto 0));
+    io_wdata  <= slot_req.data;
     
     process(clock)
     begin
@@ -102,7 +108,6 @@ begin
             -- control register
             if reset_in='1' then
                 cart_logic_d <= cart_logic; -- activate change of mode!
---                cart_base_d  <= cart_base;  -- activate change of base.
                 mode_bits    <= (others => '0');
                 bank_bits    <= (others => '0');
                 ext_bank     <= (others => '0');
@@ -296,7 +301,7 @@ begin
 
     -- determine address
 --  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -305,7 +310,7 @@ begin
         mem_addr_i(15 downto 0)  <= bank_bits(15 downto 13) & slot_addr(12 downto 0);
         allow_write <= '0';
 
-        case cart_logic is
+        case cart_logic_d is
         when c_retro =>
             -- 64K RAM
             if mode_bits(2)='1' then
@@ -390,15 +395,15 @@ begin
 
     mem_addr <= unsigned(mem_addr_i(mem_addr'range));
 
-    reg_rdata(7) <= bank_bits(15);
-    reg_rdata(6) <= '1';
-    reg_rdata(5) <= '0';
-    reg_rdata(4) <= bank_bits(14);
-    reg_rdata(3) <= bank_bits(13);
-    reg_rdata(2) <= '0'; -- freeze button pressed
-    reg_rdata(1) <= allow_bank; -- '1'; -- allow bank bit stuck at '1' for 1541U
-    reg_rdata(0) <= '0';
+    slot_resp.data(7) <= bank_bits(15);
+    slot_resp.data(6) <= '1';
+    slot_resp.data(5) <= '0';
+    slot_resp.data(4) <= bank_bits(14);
+    slot_resp.data(3) <= bank_bits(13);
+    slot_resp.data(2) <= '0'; -- freeze button pressed
+    slot_resp.data(1) <= allow_bank; -- '1'; -- allow bank bit stuck at '1' for 1541U
+    slot_resp.data(0) <= '0';
     
-    reg_output   <= '1' when (slot_addr(15 downto 1)="110111100000000") and (cart_logic_d = c_retro) else '0';
-
+    slot_resp.reg_output <= '1' when (slot_addr(8 downto 1)="00000000") and (cart_logic_d = c_retro) else '0';
+    slot_resp.irq <= '0';
 end gideon;

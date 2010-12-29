@@ -6,7 +6,8 @@ library work;
     use work.reu_pkg.all;
     use work.mem_bus_pkg.all;
     use work.dma_bus_pkg.all;
-        
+    use work.slot_bus_pkg.all;
+            
 -- Standard: 433 LUT/148 FF
 -- Extended: 564 LUT/195 FF
 
@@ -20,19 +21,14 @@ port (
     reset           : in  std_logic;
     
     -- register interface
-    io_write        : in  std_logic;
-    io_read         : in  std_logic;
-    io_event_addr   : in  std_logic_vector(8 downto 0);
-    io_wdata        : in  std_logic_vector(7 downto 0);
-    io_read_addr    : in  std_logic_vector(4 downto 0);
-    io_rdata        : out std_logic_vector(7 downto 0);
+    slot_req        : in  t_slot_req;
+    slot_resp       : out t_slot_resp;
     
     -- system interface
     phi2_tick       : in  std_logic := '0';
     reu_dma_n       : out std_logic := '1';
-    write_ff00      : in  std_logic := '0';
-    irq_out         : out std_logic;
     size_ctrl       : in  std_logic_vector(2 downto 0) := "001";
+    enable          : in  std_logic;
     
     -- memory interface
     mem_req         : out t_mem_req;
@@ -63,6 +59,8 @@ architecture gideon of reu is
     attribute fsm_encoding of state : signal is "one-hot";
 
     signal io_wdatau  : unsigned(7 downto 0);
+    signal io_rdata   : std_logic_vector(7 downto 0);
+    signal io_write   : std_logic;
     
     signal c64_base   : unsigned(15 downto 0) := (others => '0');
     signal reu_base   : unsigned(23 downto 0) := (others => '0');
@@ -79,6 +77,7 @@ architecture gideon of reu is
     signal reu_rack   : std_logic;
     signal reu_dack   : std_logic;
     signal glob_rwn   : std_logic;
+    signal write_ff00 : std_logic;
      
     signal masked_reu_addr : unsigned(23 downto 0);
     
@@ -122,6 +121,8 @@ architecture gideon of reu is
     signal start_delay  : unsigned(7 downto 0) := (others => '0');
     signal ext_count    : unsigned(7 downto 0) := (others => '0');
 begin
+    write_ff00 <= '1' when slot_req.io_write='1' and slot_req.io_address=X"FF00" else '0';
+    
     with size_ctrl select mask <=
         "00000001" when "000",
         "00000011" when "001",
@@ -140,7 +141,7 @@ begin
     reu_rack <= '1' when mem_resp.rack_tag = g_ram_tag else '0';
     reu_dack <= '1' when mem_resp.dack_tag = g_ram_tag else '0';
     
-    io_wdatau <= unsigned(io_wdata);
+    io_wdatau <= unsigned(slot_req.data);
     
     -- fill mem request structure
     mem_req.tag         <= g_ram_tag;
@@ -203,8 +204,8 @@ begin
         end procedure;
     begin
         if rising_edge(clock) then
-            if io_write='1' and io_event_addr(8)='1' then  --$DF00
-                case io_event_addr(4 downto 0) is
+            if io_write='1' and slot_req.io_address(8)='1' then  --$DF00
+                case slot_req.io_address(4 downto 0) is
                 when c_c64base_l  => c64_base(7 downto 0) <= io_wdatau;
                                      c64_addr <= c64_base(15 downto 8) & io_wdatau;  -- half autoload bug
                 when c_c64base_h  => c64_base(15 downto 8) <= io_wdatau;
@@ -221,22 +222,22 @@ begin
                                      count(15 downto 0) <= io_wdatau & length_reg(7 downto 0);    -- half autoload bug
 
                 when c_irqmask    =>
-                    control.irq_en    <= io_wdata(7);
-                    control.irq_done  <= io_wdata(6);
-                    control.irq_error <= io_wdata(5);
+                    control.irq_en    <= io_wdatau(7);
+                    control.irq_done  <= io_wdatau(6);
+                    control.irq_error <= io_wdatau(5);
 
                 when c_control    =>
-                    control.fix_reu  <= io_wdata(6);
-                    control.fix_c64  <= io_wdata(7);
+                    control.fix_reu  <= io_wdatau(6);
+                    control.fix_c64  <= io_wdatau(7);
 
                 when c_command    =>
-                    command.execute  <= io_wdata(7);
-                    reserved(2)      <= io_wdata(6);
-                    command.autoload <= io_wdata(5);
-                    command.ff00     <= io_wdata(4);
-                    reserved(1)      <= io_wdata(3);
-                    reserved(0)      <= io_wdata(2);
-                    command.mode     <= io_wdata(1 downto 0);
+                    command.execute  <= io_wdatau(7);
+                    reserved(2)      <= io_wdatau(6);
+                    command.autoload <= io_wdatau(5);
+                    command.ff00     <= io_wdatau(4);
+                    reserved(1)      <= io_wdatau(3);
+                    reserved(0)      <= io_wdatau(2);
+                    command.mode     <= slot_req.data(1 downto 0);
 
                 when others =>
                     null;
@@ -244,8 +245,8 @@ begin
             end if;
 
             -- extended registers
-            if io_write='1' and io_event_addr(8)='1' and g_extended then  --$DF00
-                case io_event_addr(4 downto 0) is
+            if io_write='1' and slot_req.io_address(8)='1' and g_extended then  --$DF00
+                case slot_req.io_address(4 downto 0) is
                 when c_start_delay =>
                     start_delay <= io_wdatau;
                 when c_rate_div    =>
@@ -259,8 +260,8 @@ begin
             end if;
 
             -- clear on read flags
-            if io_read='1' and io_event_addr(8)='1' then
-                if io_event_addr(4 downto 0) = c_status then
+            if slot_req.io_read='1' and slot_req.io_address(8)='1' then
+                if slot_req.io_address(4 downto 0) = c_status then
                     verify_error <= '0';
                     trans_done   <= '0';
                 end if;
@@ -396,11 +397,11 @@ begin
         end if;
     end process;
     
-    p_read: process(io_read_addr, control, command, count, c64_addr, reu_addr, verify_error, trans_done, irq_pend,
-                c64_base, reu_base, length_reg, reserved, mask)
+    p_read: process(slot_req, control, command, count, c64_addr, reu_addr, verify_error, trans_done, irq_pend,
+                c64_base, reu_base, length_reg, reserved, mask, start_delay, rate_div)
     begin
         io_rdata <= X"FF";
-        case io_read_addr is
+        case slot_req.bus_address(4 downto 0) is
         when c_status     =>
             io_rdata(7) <= irq_pend;
             io_rdata(6) <= trans_done;
@@ -447,7 +448,10 @@ begin
         end case;
     end process;
 
-    irq_out  <= irq_pend;
     irq_pend <= control.irq_en and ((control.irq_done and trans_done) or (control.irq_error and verify_error));
 
+    slot_resp.irq        <= irq_pend;
+    slot_resp.data       <= io_rdata;
+    slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 5)=X"8" else '0';
+    io_write             <= enable and slot_req.io_write;
 end gideon;

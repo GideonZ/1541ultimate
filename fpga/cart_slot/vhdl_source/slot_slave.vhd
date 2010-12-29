@@ -1,7 +1,9 @@
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_arith.all;
-use ieee.std_logic_unsigned.all;
+use ieee.numeric_std.all;
+
+library work;
+use work.slot_bus_pkg.all;
 
 entity slot_slave is
 port (
@@ -48,15 +50,20 @@ port (
     allow_write     : in  std_logic := '0';
     do_reg_output   : in  std_logic := '0';
 
-    slot_addr       : out std_logic_vector(15 downto 0);
-    cpu_write       : out std_logic; -- state, sampled during CPU cycle
     epyx_timeout    : out std_logic; -- '0' => epyx is on, '1' epyx is off    
-    io_write        : out std_logic;
-    io_read         : out std_logic;
-    io_event_addr   : out std_logic_vector(8 downto 0) := (others => '0');
-    io_rdata        : in  std_logic_vector(7 downto 0);
-    io_wdata        : out std_logic_vector(7 downto 0);
-    write_ff00      : out std_logic;
+    cpu_write       : out std_logic; -- for freezer
+
+    slot_req        : out t_slot_req;
+    slot_resp       : in  t_slot_resp;
+
+--    slot_addr       : out std_logic_vector(15 downto 0);
+--    cpu_write       : out std_logic; -- state, sampled during CPU cycle
+--    io_write        : out std_logic;
+--    io_read         : out std_logic;
+--    io_event_addr   : out std_logic_vector(15 downto 0) := (others => '0');
+--    io_rdata        : in  std_logic_vector(7 downto 0);
+--    io_wdata        : out std_logic_vector(7 downto 0);
+
     
     -- interface with hardware
     BUFFER_ENn      : out std_logic );
@@ -79,7 +86,6 @@ architecture gideon of slot_slave is
     signal io_out       : boolean := false;
     signal io_read_cond : std_logic;
     signal io_write_cond: std_logic;
-    signal wr_ff00_cond : std_logic;
     signal ultimax      : std_logic;
     signal last_rwn     : std_logic;
     signal mem_wdata_i  : std_logic_vector(7 downto 0);
@@ -92,7 +98,7 @@ architecture gideon of slot_slave is
     attribute register_duplication of romhn_c   : signal is "no";
     attribute register_duplication of reset_out : signal is "no";
 
-    type   t_state is (idle, mem_access, wait_end);
+    type   t_state is (idle, mem_access, wait_end, reg_out);
                        
     attribute iob : string;
     attribute iob of data_c : signal is "true"; 
@@ -102,12 +108,11 @@ architecture gideon of slot_slave is
 --    attribute fsm_encoding : string;
 --    attribute fsm_encoding of state : signal is "sequential";
 
-    signal epyx_timer       : std_logic_vector(6 downto 0) := (others => '0');
+    signal epyx_timer       : unsigned(6 downto 0) := (others => '0');
     signal epyx_reset       : std_logic := '0';
 begin
-    io_write        <= do_io_event and io_write_cond;
-    io_read         <= do_io_event and io_read_cond;
-    write_ff00      <= do_io_event and wr_ff00_cond;
+    slot_req.io_write <= do_io_event and io_write_cond;
+    slot_req.io_read  <= do_io_event and io_read_cond;
     
     process(clock)
     begin
@@ -137,29 +142,28 @@ begin
                 end if;
             end if;
 
+            slot_req.bus_write <= '0';
             if do_sample_io='1' then
-                cpu_write     <= not RWn;
-                io_event_addr <= address_c(8 downto 0);
-                mem_wdata_i   <= data_c;
-                if rwn_c='0' and address_c=X"FF00" then
-                    wr_ff00_cond <= '1';
-                else
-                    wr_ff00_cond <= '0';
-                end if;
+                cpu_write  <= not RWn;
+
+                slot_req.bus_write  <= not RWn;
+                slot_req.io_address <= unsigned(address_c);
+                mem_wdata_i         <= data_c;
+
                 io_write_cond <= not rwn_c and (not io2n_c or not io1n_c);
                 io_read_cond  <= rwn_c and (not io2n_c or not io1n_c);
-                epyx_reset <= not io2n_c or not io1n_c or not romln_c or not RSTn;
+                epyx_reset    <= not io2n_c or not io1n_c or not romln_c or not RSTn;
             end if;
             
             case state is
             when idle =>
                 if do_sample_addr='1' then
                     -- register output
-                    if do_reg_output='1' and rwn_c='1' then -- read register
-                        data_out <= io_rdata;
+                    if slot_resp.reg_output='1' and addr_is_io and rwn_c='1' then -- read register
+                        data_out <= slot_resp.data;
                         io_out   <= true;
                         dav      <= '1';
-                        state    <= wait_end;
+                        state    <= reg_out;
 
                     elsif allow_serve='1' and servicable='1' and rwn_c='1' then
                         -- memory read
@@ -211,13 +215,21 @@ begin
                     DATA_out <= mem_rdata;
                     dav      <= '1';
 				end if;
+                if phi2_tick='1' or do_io_event='1' then -- around the clock edges
+                    state <= idle;
+                    io_out <= false;
+                    dav    <= '0';
+                end if;
+
+            when reg_out =>
+                data_out <= slot_resp.data;
 
                 if phi2_tick='1' or do_io_event='1' then -- around the clock edges
                     state <= idle;
                     io_out <= false;
                     dav    <= '0';
-                end if;                    
-
+                end if;
+                
             when others =>
                 null;                    
 
@@ -238,7 +250,7 @@ begin
                 io_out          <= false;
                 io_read_cond    <= '0';
                 io_write_cond   <= '0';
-                wr_ff00_cond    <= '0';
+                slot_req.io_address <= (others => '0');
                 cpu_write       <= '0';
                 epyx_reset      <= '1';
             end if;
@@ -267,10 +279,11 @@ begin
 
     mem_req    <= mem_req_ff;
     mem_rwn    <= rwn_c;
-    slot_addr  <= address_c(15 downto 0);
-
+    mem_wdata  <= mem_wdata_i;
+    
     BUFFER_ENn <= '0';
                                 
-    mem_wdata  <= mem_wdata_i;
-    io_wdata   <= mem_wdata_i;
+    slot_req.data        <= mem_wdata_i;
+    slot_req.bus_address <= unsigned(address_c(15 downto 0));
+
 end gideon;

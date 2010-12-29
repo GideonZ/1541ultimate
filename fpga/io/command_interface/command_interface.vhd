@@ -32,8 +32,15 @@ architecture gideon of command_interface is
     signal io_ram_en    : std_logic;
     signal io_ram_rdata : std_logic;
     signal io_ram_ack   : std_logic;
+
+    signal b_address    : unsigned(10 downto 0);
+    signal b_rdata      : std_logic_vector(7 downto 0);
+    signal b_wdata      : std_logic_vector(7 downto 0);
+    signal b_en         : std_logic;
+    signal b_we         : std_logic;
+
 begin
-    -- first we split our I/O bus in 4 ranges, of 2K each.
+    -- first we split our I/O bus in max 4 ranges, of 2K each.
     i_split: entity work.io_bus_splitter
     generic map (
         g_range_lo  => 11,
@@ -77,17 +84,30 @@ begin
         a_we                    => io_req_ram.write,
 
         b_clock                 => clock,
-        b_address               => ,
-        b_rdata                 => ,
-        b_wdata                 => ,
-        b_en                    => ,
-        b_we                    => ,
+        b_address               => b_address,
+        b_rdata                 => b_rdata,
+        b_wdata                 => b_wdata,
+        b_en                    => b_en,
+        b_we                    => b_we );
 
+    i_protocol: entity work.command_protocol
+    port map (
+        clock       => clock,
+        reset       => reset,
+        
+        -- Local CPU side
+        io_req      => io_req_regs,
+        io_resp     => io_resp_regs,
 
-    p_control: process(clock)
-    begin
-        if reset='1' then
-        end if;
-    end process;
-
+        -- slot
+        slot_req    => slot_req,
+        slot_resp   => slot_resp,
+        
+        -- memory
+        address     => b_address,
+        rdata       => b_rdata,
+        wdata       => b_wdata,
+        b_en        => b_en,
+        b_we        => b_we );
+        
 end architecture;

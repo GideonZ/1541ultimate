@@ -1,11 +1,15 @@
 
-library work;
-use work.tl_flat_memory_model_pkg.all;
-use work.mem_bus_pkg.all;
-
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+
+library work;
+use work.tl_flat_memory_model_pkg.all;
+use work.mem_bus_pkg.all;
+use work.cart_slot_pkg.all;
+use work.io_bus_pkg.all;
+use work.io_bus_bfm_pkg.all;
+
 
 entity harness_v4 is
 end harness_v4;
@@ -56,7 +60,7 @@ architecture tb of harness_v4 is
     signal SD_MISO     : std_logic := '1';
     signal SD_WP       : std_logic := '1';
     signal SD_CARDDETn : std_logic := '1';
-    signal BUTTON      : std_logic_vector(2 downto 0) := "111";
+    signal BUTTON      : std_logic_vector(2 downto 0) := "000";
     signal SLOT_ADDR   : std_logic_vector(15 downto 0);
     signal SLOT_DATA   : std_logic_vector(7 downto 0);
     signal RWn         : std_logic := '1';
@@ -99,7 +103,8 @@ architecture tb of harness_v4 is
     signal memctrl_inhibit  : std_logic;
     signal mem_req          : t_mem_req;
     signal mem_resp         : t_mem_resp;
-
+    signal io_req           : t_io_req;
+    signal io_resp          : t_io_resp;
 begin
     mut: entity work.ultimate_logic
     generic map (
@@ -138,6 +143,10 @@ begin
         mem_req     => mem_req,
         mem_resp    => mem_resp,
          
+        -- io bus for simulation
+        sim_io_req  => io_req,
+        sim_io_resp => io_resp,
+
         -- PWM outputs (for audio)
         PWM_OUT     => PWM_OUT,
     
@@ -196,7 +205,7 @@ begin
 
 	i_memctrl: entity work.ext_mem_ctrl_v4
     generic map (
-        g_simulation => false,
+        g_simulation => true,
     	A_Width	     => 15 )
 		
     port map (
@@ -242,6 +251,15 @@ begin
         ULPI_NXT    => ULPI_NXT,
         ULPI_STP    => ULPI_STP );
 
+    i_io_bfm: entity work.io_bus_bfm
+    generic map (
+        g_name      => "io_bfm" )
+    port map (
+        clock       => sys_clock,
+    
+        req         => io_req,
+        resp        => io_resp );
+
 	process
 	begin
         bind_mem_model("intram", ram);
@@ -264,7 +282,7 @@ begin
 
     process
     begin
-        SLOT_ADDR <= X"D3F8";
+        SLOT_ADDR <= X"DDF8";
         RWn       <= '1';
         while true loop
             wait until PHI2 = '0';
@@ -310,27 +328,6 @@ begin
     
         DQ   => LB_DATA);
 
---    assert not (ADDRESS(18 downto 16)="011" and ADDRESS(15 downto 0)=X"86A0" and SRAM_CSn='0' and MEM_WEn='0')
---        report "writing to jump address."
---        severity failure;
-
---    sram: entity work.sram_model_8
---    generic map("sram", 19, 10 ns)
---    port map (LB_ADDR(18 downto 0), LB_DATA, SRAM_CSn, MEM_OEn, MEM_WEn);
---
---    flash: entity work.sram_model_8
---    generic map("flash", 21, 70 ns)
---    port map (LB_ADDR(20 downto 0), LB_DATA, FLASH_CSn, MEM_OEn, '1');
-
---    process(ETH_CS, ETH_CSn, LB_ADDR)
---    begin
---        if ETH_CS='1' and ETH_CSn='0' then
---            LB_DATA <= not LB_ADDR(7 downto 0) after 135 ns;
---        else
---            LB_DATA <= (others => 'Z') after 50 ns;
---        end if;  
---    end process;
-
     i_rx: entity work.rx
     generic map (c_uart_divisor)
     port map (
@@ -363,6 +360,34 @@ begin
         end if;
     end process;
     
+--     procedure register_io_bus_bfm(named : string; variable pntr: inout p_io_bus_bfm_object);
+--     procedure bind_io_bus_bfm(named : string; variable pntr: inout p_io_bus_bfm_object);
+--     procedure io_read(variable io : inout p_io_bus_bfm_object; addr : unsigned; data : out std_logic_vector(7 downto 0));
+--     procedure io_write(variable io : inout p_io_bus_bfm_object; addr : unsigned; data : std_logic_vector(7 downto 0));
+
+--    constant c_cart_c64_mode            : unsigned(3 downto 0) := X"0";
+--    constant c_cart_c64_stop            : unsigned(3 downto 0) := X"1";
+--    constant c_cart_c64_stop_mode       : unsigned(3 downto 0) := X"2";
+--    constant c_cart_c64_clock_detect    : unsigned(3 downto 0) := X"3";
+--    constant c_cart_cartridge_rom_base  : unsigned(3 downto 0) := X"4";
+--    constant c_cart_cartridge_type      : unsigned(3 downto 0) := X"5";
+--    constant c_cart_cartridge_kill      : unsigned(3 downto 0) := X"6";
+--    constant c_cart_reu_enable          : unsigned(3 downto 0) := X"8";
+--    constant c_cart_reu_size            : unsigned(3 downto 0) := X"9";
+--	constant c_cart_swap_buttons		: unsigned(3 downto 0) := X"A";
+--    constant c_cart_ethernet_enable     : unsigned(3 downto 0) := X"F";
+    process
+        variable io : p_io_bus_bfm_object;
+    begin
+        wait until sys_reset='0';
+        wait until sys_clock='1';
+        bind_io_bus_bfm("io_bfm", io);
+        io_write(io, X"40000" + c_cart_c64_mode, X"04"); -- reset
+        io_write(io, X"40000" + c_cart_cartridge_type, X"06"); -- retro
+        io_write(io, X"40000" + c_cart_c64_mode, X"08"); -- unreset
+        wait;
+    end process;
+
     process
         procedure send_char(i: std_logic_vector(7 downto 0)) is
         begin

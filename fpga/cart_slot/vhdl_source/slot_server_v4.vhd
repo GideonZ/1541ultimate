@@ -6,6 +6,7 @@ library work;
 use work.io_bus_pkg.all;
 use work.mem_bus_pkg.all;
 use work.dma_bus_pkg.all;
+use work.slot_bus_pkg.all;
 use work.cart_slot_pkg.all;
 
 entity slot_server_v4 is
@@ -17,6 +18,8 @@ generic (
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
     g_control_read  : boolean := true;
     g_ram_expansion : boolean := true;
+    g_implement_sid : boolean := true;
+    g_sid_voices    : natural := 3;
     g_extended_reu  : boolean := false );
 
 port (
@@ -48,7 +51,8 @@ port (
     
     -- debug
     freezer_state   : out   std_logic_vector(1 downto 0);
-    sample_out      : out   signed(17 downto 0);    
+    sample_left     : out   signed(17 downto 0) := (others => '0');
+    sample_right    : out   signed(17 downto 0) := (others => '0');
 
     -- timing output
     phi2_tick       : out   std_logic;
@@ -100,34 +104,16 @@ architecture structural of slot_server_v4 is
     signal serve_io1       : std_logic := '0'; -- IO1n
     signal serve_io2       : std_logic := '0'; -- IO2n
     signal allow_write     : std_logic := '0';
-    signal do_reg_output   : std_logic := '0';
-    signal cart_reg_output : std_logic;
-    signal reu_reg_output  : std_logic;
-    signal cart_reg_rdata  : std_logic_vector(7 downto 0);
-    signal reu_reg_rdata   : std_logic_vector(7 downto 0);
     
-    signal slot_addr       : std_logic_vector(15 downto 0);
     signal cpu_write       : std_logic;
-    signal cpu_cycle_done  : std_logic;
     signal epyx_timeout    : std_logic;
     
-    signal write_ff00      : std_logic;
-    signal io_write        : std_logic;
-    signal io_read         : std_logic;
-    signal io_event_addr   : std_logic_vector(8 downto 0);
-    signal io_rdata        : std_logic_vector(7 downto 0);
-    signal io_wdata        : std_logic_vector(7 downto 0);
     signal reu_dma_n       : std_logic := '1'; -- direct from REC
-    signal reu_irq         : std_logic;
 
     signal mask_buttons     : std_logic := '0';
     signal reset_button     : std_logic;
     signal freeze_button    : std_logic;
 	
-    signal c64_clock_detect : std_logic;
-    signal c64_reset        : std_logic;
-    signal c64_nmi          : std_logic;
-    signal c64_cycle_done   : std_logic;
     signal actual_c64_reset : std_logic;
     
     signal nmi_n            : std_logic := '1';
@@ -139,28 +125,93 @@ architecture structural of slot_server_v4 is
     signal freeze_trig      : std_logic;
     signal freeze_act       : std_logic;
 
-    signal dma_req_regs     : t_dma_req;
-    signal dma_resp_regs    : t_dma_resp;
+    signal io_req_dma       : t_io_req;
+    signal io_resp_dma      : t_io_resp := c_io_resp_init;
+    signal io_req_peri      : t_io_req;
+    signal io_resp_peri     : t_io_resp := c_io_resp_init;
+    signal io_req_sid       : t_io_req;
+    signal io_resp_sid      : t_io_resp := c_io_resp_init;
+    signal io_req_regs      : t_io_req;
+    signal io_resp_regs     : t_io_resp := c_io_resp_init;
+    signal io_req_cmd       : t_io_req;
+    signal io_resp_cmd      : t_io_resp := c_io_resp_init;
+
+    signal dma_req_io       : t_dma_req;
+    signal dma_resp_io      : t_dma_resp := c_dma_resp_init;
     signal dma_req_reu      : t_dma_req;
-    signal dma_resp_reu     : t_dma_resp;
+    signal dma_resp_reu     : t_dma_resp := c_dma_resp_init;
     signal dma_req          : t_dma_req;
-    signal dma_resp         : t_dma_resp;
+    signal dma_resp         : t_dma_resp := c_dma_resp_init;
+
+    signal slot_req         : t_slot_req;
+    signal slot_resp        : t_slot_resp := c_slot_resp_init;
+    signal slot_resp_reu    : t_slot_resp := c_slot_resp_init;
+    signal slot_resp_cart   : t_slot_resp := c_slot_resp_init;
+    signal slot_resp_sid    : t_slot_resp := c_slot_resp_init;
+    signal slot_resp_cmd    : t_slot_resp := c_slot_resp_init;
 
     signal mem_req_slot     : t_mem_req;
     signal mem_resp_slot    : t_mem_resp;
     signal mem_req_reu      : t_mem_req;
     signal mem_resp_reu     : t_mem_resp;
-    signal mem_req_trace    : t_mem_req;
-    signal mem_resp_trace   : t_mem_resp;
-    signal io_req_trace     : t_io_req;
-    signal io_resp_trace    : t_io_resp;
-        signal sid_write    : std_logic;
+--    signal mem_req_trace    : t_mem_req;
+--    signal mem_resp_trace   : t_mem_resp;
     
     signal mem_rack_slot    : std_logic;
     signal mem_dack_slot    : std_logic;
 begin
     reset_button  <= buttons(0) when control.swap_buttons='0' else buttons(2);
     freeze_button <= buttons(2) when control.swap_buttons='0' else buttons(0);
+
+    i_split_64K: entity work.io_bus_splitter
+    generic map (
+        g_range_lo  => 16,
+        g_range_hi  => 16,
+        g_ports     => 2 )
+    port map (
+        clock    => clock,
+        
+        req      => io_req,
+        resp     => io_resp,
+    
+        reqs(0)  => io_req_peri,
+        reqs(1)  => io_req_dma,
+        
+        resps(0) => io_resp_peri,
+        resps(1) => io_resp_dma );
+        
+    i_bridge: entity work.io_to_dma_bridge
+    port map (
+        clock       => clock,
+        reset       => reset,
+                    
+        c64_stopped => status.c64_stopped,
+        
+        io_req      => io_req_dma,
+        io_resp     => io_resp_dma,
+        
+        dma_req     => dma_req_io,
+        dma_resp    => dma_resp_io );
+
+    i_split_8K: entity work.io_bus_splitter
+    generic map (
+        g_range_lo  => 13,
+        g_range_hi  => 15,
+        g_ports     => 3 )
+    port map (
+        clock    => clock,
+        
+        req      => io_req_peri,
+        resp     => io_resp_peri,
+           
+        reqs(0)  => io_req_regs,
+        reqs(1)  => io_req_sid,
+        reqs(2)  => io_req_cmd,
+        
+        resps(0) => io_resp_regs,
+        resps(1) => io_resp_sid,
+        resps(2) => io_resp_cmd );
+        
 
     i_registers: entity work.cart_slot_registers
     generic map (
@@ -172,15 +223,9 @@ begin
         clock           => clock,
         reset           => reset,
         
-        io_req          => io_req,
-        io_resp         => io_resp,
+        io_req          => io_req_regs,
+        io_resp         => io_resp_regs,
 
-        io_req_trace    => io_req_trace,
-        io_resp_trace   => io_resp_trace,
-        
-        dma_req         => dma_req_regs,
-        dma_resp        => dma_resp_regs,
-        
         control         => control,
         status          => status );
         
@@ -257,18 +302,12 @@ begin
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
         allow_write     => allow_write,
-        do_reg_output   => do_reg_output,
     
-        slot_addr       => slot_addr,
         cpu_write       => cpu_write,
         epyx_timeout    => epyx_timeout,
         
-        io_write        => io_write,
-        io_read         => io_read,
-        io_event_addr   => io_event_addr,
-        io_rdata        => io_rdata,
-        io_wdata        => io_wdata,
-        write_ff00      => write_ff00,
+        slot_req        => slot_req,
+        slot_resp       => slot_resp,
         
         -- interface with hardware
         BUFFER_ENn      => BUFFER_ENn );
@@ -346,18 +385,11 @@ begin
         unfreeze        => unfreeze,
         
         cart_logic      => control.cartridge_type,
---        cart_base       => "00000",
         cart_kill       => control.cartridge_kill,
-
-        io_read         => io_read,
-        io_write        => io_write,
-        io_addr         => io_event_addr,
-        io_wdata        => io_wdata,
-        slot_addr       => slot_addr,
         epyx_timeout    => epyx_timeout,
 
-        reg_output      => cart_reg_output,
-        reg_rdata       => cart_reg_rdata,
+        slot_req        => slot_req,
+        slot_resp       => slot_resp_cart,
 
         mem_addr        => mem_req_slot.address, 
         serve_enable    => serve_enable,
@@ -372,56 +404,52 @@ begin
         exrom_n         => exrom_n,
         game_n          => game_n,
     
-        CART_LEDn       => open ); --cart_led_n );
+        CART_LEDn       => cart_led_n );
 
-    i_trce: entity work.sid_trace
-    generic map (
-        g_mem_tag   => X"CE" )
-    port map (
-        clock       => clock,
-        reset       => actual_c64_reset,
-        
-        addr        => unsigned(slot_addr(6 downto 0)),
-        wren        => sid_write,
-        wdata       => io_wdata,
-    
-        phi2_tick   => phi2_tick_i,
-        
-        io_req      => io_req_trace,
-        io_resp     => io_resp_trace,
-    
-        mem_req     => mem_req_trace,
-        mem_resp    => mem_resp_trace );
 
-    i_sid: entity work.sid_top
-    generic map (
-        g_num_voices  => 3 )
-        
-    port map (
-        clock       => clock,
-        reset       => actual_c64_reset,
-        
-        addr        => unsigned(slot_addr(6 downto 0)),
-        wren        => sid_write,
-        wdata       => io_wdata,
-        rdata       => open,
-    
-        start_iter  => phi2_tick_i,
-        error_out   => cart_led_n,
-        sample_out  => sample_out );
-
-    process(clock)
+    r_sid: if g_implement_sid generate
     begin
-        if rising_edge(clock) then
-            sid_write <= '0';
-            if slot_addr(15 downto 8) = X"D4" then
-                sid_write <= do_sample_io and not mem_req_slot.read_writen;
-            end if;
-        end if;
-    end process;
+--    i_trce: entity work.sid_trace
+--    generic map (
+--        g_mem_tag   => X"CE" )
+--    port map (
+--        clock       => clock,
+--        reset       => actual_c64_reset,
+--        
+--        addr        => unsigned(slot_addr(6 downto 0)),
+--        wren        => sid_write,
+--        wdata       => io_wdata,
+--    
+--        phi2_tick   => phi2_tick_i,
+--        
+--        io_req      => io_req_trace,
+--        io_resp     => io_resp_trace,
+--    
+--        mem_req     => mem_req_trace,
+--        mem_resp    => mem_resp_trace );
 
+
+        i_sid: entity work.sid_peripheral
+        generic map (
+            g_num_voices  => g_sid_voices )
+            
+        port map (
+            clock        => clock,
+            reset        => actual_c64_reset,
+            
+            io_req       => io_req_sid,
+            io_resp      => io_resp_sid,
+            
+            slot_req     => slot_req,
+            slot_resp    => slot_resp_sid,
+        
+            start_iter   => phi2_tick_i,
+            sample_left  => sample_left,
+            sample_right => sample_right );
+
+    end generate;
+    
     g_reu: if g_ram_expansion generate
-        signal reu_write    : std_logic := '0';
     begin
         i_reu: entity work.reu
         generic map (
@@ -433,19 +461,14 @@ begin
             reset           => actual_c64_reset,
             
             -- register interface
-            io_write        => reu_write,
-            io_read         => io_read,
-            io_event_addr   => io_event_addr,
-            io_wdata        => io_wdata,
-            io_read_addr    => slot_addr(4 downto 0),
-            io_rdata        => reu_reg_rdata,
+            slot_req        => slot_req,
+            slot_resp       => slot_resp_reu,
             
             -- system interface
             phi2_tick       => do_io_event,
-            irq_out         => reu_irq,
             reu_dma_n       => reu_dma_n,
-            write_ff00      => write_ff00,
             size_ctrl       => control.reu_size,
+            enable          => control.reu_enable,
             
             -- memory interface
             mem_req         => mem_req_reu,
@@ -454,16 +477,9 @@ begin
             dma_req         => dma_req_reu,
             dma_resp        => dma_resp_reu );
 
-        reu_write       <= io_write and control.reu_enable;
-
-        -- when reu_enable is '0', the REU exists, but will never respond to writes to registers
-        reu_reg_output   <= '1' when slot_addr(15 downto 8)=X"DF" and slot_addr(7 downto 5)="000" and control.reu_enable='1' else '0';
-
     end generate;
 
-    do_reg_output <= reu_reg_output or cart_reg_output;
-    io_rdata      <= cart_reg_rdata when slot_addr(8)='0' else reu_reg_rdata;
-    cpu_cycle_done <= do_io_event;
+    slot_resp <= or_reduce(slot_resp_reu & slot_resp_cart & slot_resp_sid & slot_resp_cmd);
 
     ADDRESS(15 downto 8) <= address_out(15 downto 8) when address_tri_h='1' else (others => 'Z');
     ADDRESS(7 downto 0)  <= address_out(7 downto 0)  when address_tri_l='1' else (others => 'Z');
@@ -474,7 +490,7 @@ begin
             master_dout when (master_dtri='1') else (others => 'Z');
 
     -- open drain outputs
-    IRQn     <= '0' when irq_n='0' or reu_irq='1' else 'Z';
+    IRQn     <= '0' when irq_n='0' or slot_resp.irq='1' else 'Z';
     NMIn     <= '0' when (control.c64_nmi='1')   or (nmi_n='0') else 'Z';
     EXROMn   <= '0' when (control.c64_exrom='1') or (serve_enable='1' and exrom_n='0') else 'Z';
     GAMEn    <= '0' when (control.c64_game='1')  or (serve_enable='1' and game_n='0') else 'Z';
@@ -490,9 +506,9 @@ begin
         clock       => clock,
         reset       => reset,
         
-        reqs(0)     => dma_req_regs,
+        reqs(0)     => dma_req_io,
         reqs(1)     => dma_req_reu,
-        resps(0)    => dma_resp_regs,
+        resps(0)    => dma_resp_io,
         resps(1)    => dma_resp_reu,
         
         req         => dma_req,
@@ -500,17 +516,17 @@ begin
     
     i_mem_arb: entity work.mem_bus_arbiter_pri
     generic map (
-        g_ports     => 3 )
+        g_ports     => 2 )
     port map (
         clock       => clock,
         reset       => reset,
         
         reqs(0)     => mem_req_slot,
         reqs(1)     => mem_req_reu,
-        reqs(2)     => mem_req_trace,
+--        reqs(2)     => mem_req_trace,
         resps(0)    => mem_resp_slot,
         resps(1)    => mem_resp_reu,
-        resps(2)    => mem_resp_trace,
+--        resps(2)    => mem_resp_trace,
         
         req         => mem_req,
         resp        => mem_resp );
