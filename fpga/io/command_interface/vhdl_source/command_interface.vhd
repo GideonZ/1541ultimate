@@ -30,7 +30,7 @@ architecture gideon of command_interface is
     signal io_resp_ram  : t_io_resp;
 
     signal io_ram_en    : std_logic;
-    signal io_ram_rdata : std_logic;
+    signal io_ram_rdata : std_logic_vector(7 downto 0);
     signal io_ram_ack   : std_logic;
 
     signal b_address    : unsigned(10 downto 0);
@@ -47,7 +47,7 @@ begin
         g_range_hi  => 12,
         g_ports     => 2 )
     port map (
-        clock    => sys_clock,
+        clock    => clock,
         
         req      => io_req,
         resp     => io_resp,
@@ -68,14 +68,14 @@ begin
     io_resp_ram.data <= X"00" when io_ram_ack='0' else io_ram_rdata;
 
     i_ram: entity work.dpram
-    generic (
+    generic map (
         g_width_bits            => 8,
         g_depth_bits            => 11,
         g_read_first_a          => false,
         g_read_first_b          => false,
         g_storage               => "block" )
 
-    port (
+    port map (
         a_clock                 => clock,
         a_address               => io_req_ram.address(10 downto 0),
         a_rdata                 => io_ram_rdata,
@@ -107,7 +107,7 @@ begin
         address     => b_address,
         rdata       => b_rdata,
         wdata       => b_wdata,
-        b_en        => b_en,
-        b_we        => b_we );
+        en          => b_en,
+        we          => b_we );
         
 end architecture;
