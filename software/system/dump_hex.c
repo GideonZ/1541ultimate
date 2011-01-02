@@ -68,7 +68,7 @@ void dump_hex(void *pp, int len)
 
 void dump_hex_relative(void *pp, int len)
 {
-    dump_hex_actual(pp, len, 0);
+    dump_hex_actual(pp, len, 1);
 }
 
 void dump_hex_dirty(void *pp, int len, BYTE ptrn)

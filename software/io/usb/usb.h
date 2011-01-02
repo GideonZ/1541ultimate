@@ -197,6 +197,8 @@ public:
     void free_transaction(int index);
     
     int  control_exchange(int addr, void *, int, void *, int, BYTE **);
+    int  control_write(int addr, void *, int, void *, int);
+    
     void unstall_pipe(int pipe);
     int  bulk_out(void *buf, int len, int pipe);
     int  bulk_in(void *buf, int len, int pipe);

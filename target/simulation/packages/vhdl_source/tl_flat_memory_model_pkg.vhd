@@ -29,11 +29,11 @@ package tl_flat_memory_model_pkg is
 
     constant c_fm_max_bank    : integer := 255;
     constant c_fm_max_sector  : integer := 65535;
-    constant c_fm_sector_size : integer := 16383;
+    constant c_fm_sector_size : integer := 16384;
 
     subtype t_byte is std_logic_vector(7 downto 0);
 
-    type flat_mem_sector_t is array(0 to c_fm_sector_size) of integer;  -- each sector is 64kB
+    type flat_mem_sector_t is array(0 to c_fm_sector_size-1) of integer;  -- each sector is 64kB
     type flat_mem_sector_p is access flat_mem_sector_t;
     type flat_mem_bank_t is array(0 to c_fm_max_sector) of flat_mem_sector_p;  -- there are 64k sectors (4 GB)
     type flat_mem_bank_p is access flat_mem_bank_t;
@@ -113,6 +113,18 @@ package tl_flat_memory_model_pkg is
         bank    : integer;
         address : std_logic_vector(31 downto 0);
         data    : std_logic_vector(7 downto 0));
+
+    -- integer direct access calls
+    impure function read_memory_int(
+        bank    : integer;
+        address : integer )
+        return integer;
+    
+    procedure write_memory_int(
+        bank    : integer;
+        address : integer;
+        data    : integer );
+    
 
     -- File Access Procedures
     procedure load_memory(
@@ -207,7 +219,7 @@ package body tl_flat_memory_model_pkg is
 
         if flat_memories(bank).bank(sector) = null then
             flat_memories(bank).bank(sector)                          := new flat_mem_sector_t;
-            flat_memories(bank).bank(sector).all(0 to c_fm_sector_size) := (others => 0);
+            flat_memories(bank).bank(sector).all(0 to c_fm_sector_size-1) := (others => 0);
         end if;
 
         flat_memories(bank).bank(sector).all(entry) := data;
@@ -356,6 +368,31 @@ package body tl_flat_memory_model_pkg is
         write_memory_be(bank, address, write_data, be_temp);
     end procedure write_memory_8;
 
+    -- Integer direct procedures
+    impure function read_memory_int(
+        bank    : integer;
+        address : integer )
+        return integer is
+
+        variable sect, index    : integer;
+    begin
+        sect  := address / c_fm_sector_size;
+        index := address mod c_fm_sector_size;
+        return read_memory(bank, sect, index);
+    end function read_memory_int;
+    
+    procedure write_memory_int(
+        bank    : integer;
+        address : integer;
+        data    : integer ) is
+
+        variable sect, index    : integer;
+    begin
+        sect  := address / c_fm_sector_size;
+        index := address mod c_fm_sector_size;
+        write_memory(bank, sect, index, data);        
+    end procedure write_memory_int;
+
     -- File access procedures
 
     -- not a public procedure.
@@ -385,7 +422,7 @@ package body tl_flat_memory_model_pkg is
                 read(myfile, i);
                 write_memory(bank, sector_idx, entry_idx, i);
 
-                if entry_idx = c_fm_sector_size then
+                if entry_idx = c_fm_sector_size-1 then
                     entry_idx := 0;
                     if sector_idx = c_fm_max_sector then
                         sector_idx := 0;
@@ -554,7 +591,7 @@ package body tl_flat_memory_model_pkg is
                 write(myfile, i);
                 remaining := remaining - 1;
 
-                if entry_idx = c_fm_sector_size then
+                if entry_idx = c_fm_sector_size-1 then
                     if sector_idx = c_fm_max_sector then
                         sector_idx := 0;
                     else
@@ -673,8 +710,3 @@ package body tl_flat_memory_model_pkg is
         file_close(myfile);
     end save_memory_hex;
 end;
-
-
-
-
-

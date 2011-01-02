@@ -8,5 +8,6 @@
 #define SOUND_DRIVE_1     1
 #define SOUND_CAS_READ    2
 #define SOUND_CAS_WRITE   3
-
+#define SOUND_SID_LEFT    4
+#define SOUND_SID_RIGHT   5
 #endif

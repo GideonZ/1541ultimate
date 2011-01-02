@@ -44,6 +44,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/sd_card \
 			$(PATH_SW)/io/audio \
 			$(PATH_SW)/io/userinterface \
+			$(PATH_SW)/io/command_interface \
 			$(PATH_SW)/6502 \
 			$(ROMS)
 
@@ -87,6 +88,7 @@ SRCS_CC	 =  stream.cc \
 			usb.cc \
 			usb_hub.cc \
 			usb_scsi.cc \
+			usb_em1010.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
@@ -121,6 +123,7 @@ SRCS_CC	 =  stream.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
+			command_intf.cc \
 			$(PRJ).cc
 
 SRCS_ASM =  crt0_appl.s

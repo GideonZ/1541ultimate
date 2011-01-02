@@ -387,6 +387,8 @@ void FileTypeSID :: load(void)
 	C64_POKE(0x0035, 0);    // FRESPC
 	C64_POKE(0x0036, 0xA0);
 	
+//    SID_REGS(0) = 0x33; // start trace
+    
 	c64->resume();
 
 	root.fclose(file);

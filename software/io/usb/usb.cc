@@ -562,10 +562,10 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
 	transaction = &USB_TRANSACTION(0);
 
     USB_COMMAND = USB_CMD_SCAN_ENABLE; // go!
-    if(debug) {
-        USB_COMMAND = USB_CMD_SET_DEBUG;
-        debug = false;
-    }
+//    if(debug) {
+//        USB_COMMAND = USB_CMD_SET_DEBUG;
+//        debug = false;
+//    }
     
     int timeout = 100; // 25 ms
 	while((*transaction & 0x3) == 0x01) {
@@ -619,7 +619,7 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
 
 	DWORD ta = *transaction;
     int received = inlen - ((ta >> 9) & 0x7FF);
-	printf("Transaction: %8x InLen=%d Received=%d\n", ta, inlen, received);
+	//printf("Transaction: %8x InLen=%d Received=%d\n", ta, inlen, received);
     if(received < 0) {
         dump_hex((void *)&USB_BUFFER(32), 64);
     }
@@ -633,6 +633,93 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
         *buf = (BYTE *)&USB_BUFFER(32);
         
     return received;
+}
+
+int Usb :: control_write(int addr, void *setup_out, int setup_len, void *data_out, int data_len)
+{
+    memcpy((void *)&USB_BUFFER(0), setup_out, setup_len);
+
+    // TODO: just FORCE the coming two transactions to be at the beginning of a frame, and always one after another
+    // Putting the setup and in transactions too fast after one another cause some devices to get into an undefined state
+    // so it wasn't so bad to just wait for the first to finish, and then start the next!
+
+    USB_COMMAND = USB_CMD_SCAN_DISABLE;
+    wait_ms(1);
+
+    DWORD a = ((DWORD)addr)<<3;
+	USB_PIPE(0) = 0x04100005 | a; // Dev address a, Endpoint 0, Control Out
+	USB_PIPE(1) = 0x02100005 | a; // Dev address a, Endpoint 0, Generic Out, Toggle-bit=1
+
+	volatile DWORD *transaction;
+	
+    USB_TRANSACTION(0) = 0x00000001 | (setup_len << 9); // setup_len bytes to pipe 0, from buffer 0x000, LINK TO NEXT
+	transaction = &USB_TRANSACTION(0);
+
+    USB_COMMAND = USB_CMD_SCAN_ENABLE; // go!
+    if(debug) {
+        USB_COMMAND = USB_CMD_SET_DEBUG;
+        debug = false;
+    }
+    
+    int timeout = 100; // 25 ms
+	while((*transaction & 0x3) == 0x01) {
+        if(!timeout) {
+            // clear
+            USB_TRANSACTION(0) = 0;
+            USB_TRANSACTION(1) = 0;
+            USB_TRANSACTION(2) = 0;
+			USB_COMMAND = USB_CMD_ABORT;
+			wait_ms(1);
+            return -1;
+        }
+        timeout --;
+        ITU_TIMER = 50;
+        while(ITU_TIMER)
+            ;
+    }
+
+    if((*transaction & 0x3) == 0x03) { // error
+        printf("ERROR SETUP: pipe status = %8x\n", USB_PIPE(0));
+        return -2;
+    }
+
+    if(!data_len)
+        return 0;
+        
+    memcpy((void *)&USB_BUFFER(0x20), data_out, data_len);
+    dump_hex((void *)&USB_BUFFER(0), 64);
+	USB_TRANSACTION(1) = 0x02000015 | (data_len << 9);  // data_len bytes to pipe 1, from buffer 0x020
+	transaction = &USB_TRANSACTION(1);
+
+    timeout = 100; // 25 ms
+	while((*transaction & 0x3) == 0x01) {
+        if(!timeout) {
+            // clear
+            USB_TRANSACTION(0) = 0;
+            USB_TRANSACTION(1) = 0;
+            USB_TRANSACTION(2) = 0;
+			USB_COMMAND = USB_CMD_ABORT;
+			wait_ms(1);
+            return -1;
+        }
+        timeout --;
+        ITU_TIMER = 50;
+        while(ITU_TIMER)
+            ;
+    }
+
+    if((*transaction & 0x3) == 0x03) { // error
+        printf("ERROR CTRL OUT: pipe status = %8x\n", USB_PIPE(1));
+        return -3;
+    }
+
+	DWORD ta = *transaction;
+    int transmitted = data_len - ((ta >> 9) & 0x7FF);
+	printf("Transaction: %8x DataLen=%d Transmitted=%d\n", ta, data_len, transmitted);
+    if(transmitted < 0)
+        return -1;
+
+    return transmitted;
 }
 
 void Usb :: unstall_pipe(int pipe)
@@ -911,10 +998,9 @@ bool UsbDevice :: get_device_descriptor(bool slow)
     printf("MaxPacket: %d\n", device_descr.max_packet_size);
 
     if(!slow) {
-        printf("Vendor: %d\n", le16_to_cpu(device_descr.vendor));
-        printf("Product: %d\n", le16_to_cpu(device_descr.product));
-        if(le16_to_cpu(device_descr.vendor) == 1423) {
-//            host->bus_reset(true);
+        printf("Vendor: %4x\n", le16_to_cpu(device_descr.vendor));
+        printf("Product: %4x\n", le16_to_cpu(device_descr.product));
+        if(le16_to_cpu(device_descr.vendor) == 0x6e2b) {
             host->debug = true;
         }
         get_string(device_descr.manuf_string, manufacturer, 32);

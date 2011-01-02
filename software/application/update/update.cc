@@ -314,7 +314,7 @@ int main()
         }
     } else {
         if(user_interface->popup("Update NOT required. Force?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            program_flash(true, true, false);
+            program_flash(true, true, true);
         }
 	}
 

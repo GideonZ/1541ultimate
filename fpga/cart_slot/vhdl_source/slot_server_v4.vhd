@@ -17,6 +17,7 @@ generic (
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
     g_control_read  : boolean := true;
+    g_command_intf  : boolean := true;
     g_ram_expansion : boolean := true;
     g_implement_sid : boolean := true;
     g_sid_voices    : natural := 3;
@@ -449,6 +450,22 @@ begin
 
     end generate;
     
+    g_cmd: if g_command_intf generate
+        i_cmd: entity work.command_interface
+        port map (
+            clock           => clock,
+            reset           => reset,
+            
+            -- C64 side interface
+            slot_req        => slot_req,
+            slot_resp       => slot_resp_cmd,
+            
+            -- io interface for local cpu
+            io_req          => io_req_cmd, -- we get an 8K range
+            io_resp         => io_resp_cmd );
+
+    end generate;
+
     g_reu: if g_ram_expansion generate
     begin
         i_reu: entity work.reu

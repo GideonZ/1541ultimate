@@ -92,6 +92,8 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/dma_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/busses/vhdl_source/dma_bus_arbiter_pri.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/slot_bus_pkg.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/io_to_dma_bridge.vhd \
 				vhdl,work,../../fpga/ip/sync_fifo/vhdl_source/sync_fifo.vhd \
 				vhdl,work,../../fpga/ip/srl_fifo/vhdl_source/srl_fifo.vhd \
 				vhdl,work,../../fpga/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd \
@@ -133,6 +135,24 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/io/iec_interface/vhdl_source/iec_interface_io.vhd \
 				vhdl,work,../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd \
 				vhdl,work,../../fpga/io/c2n_record/vhdl_source/c2n_record.vhd \
+				vhdl,work,../../fpga/io/command_interface/vhdl_source/command_if_pkg.vhd \
+				vhdl,work,../../fpga/io/command_interface/vhdl_source/command_protocol.vhd \
+				vhdl,work,../../fpga/io/command_interface/vhdl_source/command_interface.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_debug_pkg.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_trace.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/Q_table.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/adsr_multi.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/mult_acc.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/oscillator.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_ctrl.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_filter.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_mixer.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_regs.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/wave_map.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_top.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_io_regs_pkg.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_io_regs.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_peripheral.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_defs.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_decode.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/shifter.vhd \

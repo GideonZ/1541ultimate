@@ -10,9 +10,13 @@
 
 #define C64_CARTREGS_BASE 0x4040000
 #define C64_MEMORY_BASE   0x5050000 // never corrected for endianness
+//#define C64_TRACE_BASE    0x4048000
 
 #define REU_MEMORY_BASE 0x1000000
 #define REU_MAX_SIZE    0x1000000
+
+//#define SID_TRACE_END           *((volatile DWORD *)(C64_TRACE_BASE + 0x80))
+//#define SID_REGS(x)             *((volatile BYTE *)(C64_TRACE_BASE + x))
 
 #define C64_MODE                *((volatile BYTE *)(C64_CARTREGS_BASE + 0x0))
 #define C64_STOP                *((volatile BYTE *)(C64_CARTREGS_BASE + 0x1))

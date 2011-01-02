@@ -7,6 +7,7 @@ extern "C" {
 #include "flash.h"
 #include <string.h>
 #include "menu.h"
+#include "userinterface.h"
 
 // static pointer
 C64   *c64;
@@ -85,8 +86,10 @@ struct t_cfg_definition c64_config[] = {
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-#define MENU_C64_RESET  0x6401
-#define MENU_C64_REBOOT 0x6402
+#define MENU_C64_RESET   0x6401
+#define MENU_C64_REBOOT  0x6402
+//#define MENU_C64_TRACE   0x6581
+#define MENU_C64_SAVEREU 0x6403
 
 extern BYTE _binary_chars_bin_start;
 
@@ -137,7 +140,8 @@ int  C64 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
 	item_list.append(new ObjectMenuItem(this, "Reset C64", MENU_C64_RESET));
 	item_list.append(new ObjectMenuItem(this, "Reboot C64", MENU_C64_REBOOT));
-
+//    item_list.append(new ObjectMenuItem(this, "Save SID Trace", MENU_C64_TRACE));
+    item_list.append(new ObjectMenuItem(this, "Save REU Memory", MENU_C64_SAVEREU));
 	return 2;
 }
 		
@@ -576,6 +580,7 @@ void C64 :: set_cartridge(cart_def *def)
         if(cfg->get_value(CFG_C64_REU_EN)) {
         	printf("Enabling REU!!\n");
         	C64_REU_ENABLE = 1;
+            C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
         }
     }
     C64_ETHERNET_ENABLE = 0;
@@ -645,6 +650,10 @@ void C64 :: cartridge_test(void)
 void C64 :: poll(Event &e)
 {
 	File *f;
+	PathObject *po;
+	DWORD size;
+	UINT transferred;
+	
 	bool run;
 	if(e.type == e_dma_load) {
 		f = (File *)e.object;
@@ -670,6 +679,38 @@ void C64 :: poll(Event &e)
 				init_cartridge();
 			}
 			break;
+//        case MENU_C64_TRACE:
+//            printf("Trace end address: %8x.\n", SID_TRACE_END);
+//            for(int i=0;i<32;i++) {
+//                printf("%b ", SID_REGS(i));
+//            }
+//            po = user_interface->get_path();
+//            f = root.fcreate("sidtrace.555", po);
+//            if(f) {
+//                printf("Opened file successfully.\n");
+//                size = SID_TRACE_END - REU_MEMORY_BASE;
+//                if(size > 1000000)
+//                    size = 1000000;
+//                printf("Writing %d bytes,...", size);
+//                f->write((void *)REU_MEMORY_BASE, size, &transferred);
+//                printf("written: %d...", transferred);
+//                f->close();
+//            } else {
+//                printf("Couldn't open file..\n");
+//            }
+//            break;
+        case MENU_C64_SAVEREU:
+            po = user_interface->get_path();
+            f = root.fcreate("memory.reu", po);
+            if(f) {
+                printf("Opened file successfully.\n");
+                f->write((void *)REU_MEMORY_BASE, REU_MAX_SIZE, &transferred);
+                printf("written: %d...", transferred);
+                f->close();
+            } else {
+                printf("Couldn't open file..\n");
+            }
+            break;
 		default:
 			printf("Unhandled C64 menu command %4x.\n", e.param);
 		}

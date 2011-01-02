@@ -16,7 +16,7 @@ package command_if_pkg is
     constant c_cif_io_status_end        : unsigned(3 downto 0) := X"9";
     constant c_cif_io_status_length     : unsigned(3 downto 0) := X"A"; -- write will reset status readout
     constant c_cif_io_response_len_l    : unsigned(3 downto 0) := X"C"; -- write will reset response readout
-    constant c_cif_io_repsonse_len_h    : unsigned(3 downto 0) := X"D";
+    constant c_cif_io_response_len_h    : unsigned(3 downto 0) := X"D";
     constant c_cif_io_command_len_l     : unsigned(3 downto 0) := X"E"; -- read only
     constant c_cif_io_command_len_h     : unsigned(3 downto 0) := X"F"; 
 
@@ -31,9 +31,8 @@ package command_if_pkg is
     constant c_cmd_if_command_buffer_size  : integer := 896;
     constant c_cmd_if_response_buffer_size : integer := 896;
     constant c_cmd_if_status_buffer_size   : integer := 256;
-
-    constant c_cmd_if_command_buffer_end   : unsigned(10 downto 0) := c_cmd_if_command_buffer_addr + c_cmd_if_command_buffer_size;
-    constant c_cmd_if_response_buffer_end  : unsigned(10 downto 0) := c_cmd_if_response_buffer_addr + c_cmd_if_response_buffer_size;
-    constant c_cmd_if_status_buffer_end    : unsigned(10 downto 0) := c_cmd_if_status_buffer_addr + c_cmd_if_status_buffer_size;
+    constant c_cmd_if_command_buffer_end   : unsigned(10 downto 0) := to_unsigned(   0 + c_cmd_if_command_buffer_size-1, 11);
+    constant c_cmd_if_response_buffer_end  : unsigned(10 downto 0) := to_unsigned( 896 + c_cmd_if_response_buffer_size-1, 11);
+    constant c_cmd_if_status_buffer_end    : unsigned(10 downto 0) := to_unsigned(1792 + c_cmd_if_status_buffer_size-1, 11);
 
 end package;

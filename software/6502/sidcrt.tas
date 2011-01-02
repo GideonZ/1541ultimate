@@ -841,9 +841,7 @@ ScreenDone    lda #$1b
 ;--- init SID chip ---------
               
               ldx #$19
--             lda #$08
-              sta $d3ff,x
-              eor #$08
+-             lda #$00
               sta $d3ff,x
               dex
               bne -

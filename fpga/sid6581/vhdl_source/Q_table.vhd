@@ -39,7 +39,7 @@ architecture Gideon of Q_table is
         return ret;
     end function;
 
-    constant c_table : t_18_bit_array(0 to 15) := create_factors(3.8);
+    constant c_table : t_18_bit_array(0 to 15) := create_factors(1.8);
 begin
     filter_q <= c_table(to_integer(Q_reg));
 end Gideon;

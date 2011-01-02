@@ -53,28 +53,45 @@ architecture gideon of command_protocol is
     signal command_length   : unsigned(10 downto 0);
     signal response_length  : unsigned(10 downto 0);
     signal status_length    : unsigned(10 downto 0);
-    signal response_valid   : std_logic;
-    signal status_valid     : std_logic;
+--    signal response_valid   : std_logic;
+--    signal status_valid     : std_logic;
+    signal rdata_resp       : std_logic_vector(7 downto 0);
+    signal rdata_stat       : std_logic_vector(7 downto 0);
     
     signal slot_status      : std_logic_vector(7 downto 0);
+    alias  response_valid   : std_logic                    is slot_status(7);
+    alias  status_valid     : std_logic                    is slot_status(6);
+    alias  handshake_out    : std_logic_vector(1 downto 0) is slot_status(5 downto 4);
     alias  handshake_in     : std_logic_vector(3 downto 0) is slot_status(3 downto 0);
-    alias  handshake_out    : std_logic_vector(3 downto 0) is slot_status(7 downto 4);
 begin
+--    assert false report integer'image(to_integer(c_cmd_if_command_buffer_end))  severity warning;
+--    assert false report integer'image(to_integer(c_cmd_if_response_buffer_end)) severity warning;
+--    assert false report integer'image(to_integer(c_cmd_if_status_buffer_end))   severity warning;
+--
+
     command_length <= command_pointer - c_cmd_if_command_buffer_addr;
 
-    slot_resp.data <= slot_status when slot_req.bus_address(1 downto 0)="00" else
-                      rdata; -- data from memory
-    slot_resp.reg_output <= enabled when slot_req.io_address(8 downto 2) = slot_base else '0';
+    with slot_req.bus_address(1 downto 0) select slot_resp.data <=
+        slot_status when c_cif_slot_control,
+        X"00"       when c_cif_slot_command,
+        rdata_resp  when c_cif_slot_response, 
+        rdata_stat  when others;   
+        
+    rdata_resp <= rdata when response_valid='1' else X"00";
+    rdata_stat <= rdata when status_valid='1' else X"00";
+
+    slot_resp.reg_output <= enabled when slot_req.bus_address(8 downto 2) = slot_base else '0';
     slot_resp.irq <= '0';
 
     -- signals to RAM
     en <= enabled;
     we <= do_write;
+    wdata <= slot_req.data;
     address <= command_pointer  when do_write='1' else
                response_pointer when slot_req.bus_address(0)='0' else
                status_pointer; 
 
-    do_write <= '1' when slot_req.io_write='1' and slot_req.io_address = (slot_base & c_cif_slot_command) else '0';
+    do_write <= '1' when slot_req.io_write='1' and slot_req.io_address(8 downto 0) = (slot_base & c_cif_slot_command) else '0';
     
     p_control: process(clock)
     begin
@@ -126,12 +143,17 @@ begin
                 when c_cif_io_slot_enable    =>
                     enabled <= io_req.data(0);
                 when c_cif_io_handshake_out  =>
-                    handshake_out <= io_req.data(3 downto 0);
+                    handshake_out <= io_req.data(1 downto 0);
+                    if io_req.data(7)='1' then
+                        command_pointer <= c_cmd_if_command_buffer_addr;
+                    end if;
                 when c_cif_io_status_length  =>
+                    status_pointer <= c_cmd_if_status_buffer_addr;
                     status_length(7 downto 0) <= unsigned(io_req.data); -- FIXME
                 when c_cif_io_response_len_l =>
+                    response_pointer <= c_cmd_if_response_buffer_addr;
                     response_length(7 downto 0) <= unsigned(io_req.data);
-                when c_cif_io_repsonse_len_h =>
+                when c_cif_io_response_len_h =>
                     response_length(10 downto 8) <= unsigned(io_req.data(2 downto 0));
                 when others =>
                     null;
@@ -144,9 +166,9 @@ begin
                 when c_cif_io_slot_enable    =>
                     io_resp.data(0) <= enabled;
                 when c_cif_io_handshake_out  =>
-                    io_resp.data(3 downto 0) <= handshake_out;
+                    io_resp.data(1 downto 0) <= handshake_out;
                 when c_cif_io_handshake_in   =>
-                    io_resp.data(3 downto 0) <= handshake_in;
+                    io_resp.data <= slot_status;
                 when c_cif_io_command_start  =>
                     io_resp.data <= std_logic_vector(c_cmd_if_command_buffer_addr(10 downto 3));
                 when c_cif_io_command_end    =>
@@ -163,7 +185,7 @@ begin
                     io_resp.data <= std_logic_vector(status_length(7 downto 0)); -- fixme
                 when c_cif_io_response_len_l =>
                     io_resp.data <= std_logic_vector(response_length(7 downto 0));
-                when c_cif_io_repsonse_len_h =>
+                when c_cif_io_response_len_h =>
                     io_resp.data(2 downto 0) <= std_logic_vector(response_length(10 downto 8));
                 when c_cif_io_command_len_l  =>
                     io_resp.data <= std_logic_vector(command_length(7 downto 0));
@@ -178,41 +200,13 @@ begin
                 command_pointer  <= c_cmd_if_command_buffer_addr;
                 response_pointer <= c_cmd_if_response_buffer_addr;
                 status_pointer   <= c_cmd_if_status_buffer_addr;
+                response_length  <= (others => '0');
+                status_length    <= (others => '0');
                 handshake_in     <= (others => '0');
-                handshake_out    <= (others => '0');
+                handshake_out    <= "00";
+                enabled          <= '0';
+                slot_base        <= (others => '0');
             end if;
         end if;
     end process;
 end architecture;
-
---    constant c_cif_io_slot_base         : unsigned(3 downto 0) := X"0"; 
---    constant c_cif_io_slot_enable       : unsigned(3 downto 0) := X"1";
---    constant c_cif_io_handshake_out     : unsigned(3 downto 0) := X"2"; -- write will also cause pointers to be reset
---    constant c_cif_io_handshake_in      : unsigned(3 downto 0) := X"3";
---    constant c_cif_io_command_start     : unsigned(3 downto 0) := X"4"; -- read only; tells software where the buffers are.
---    constant c_cif_io_command_end       : unsigned(3 downto 0) := X"5";
---    constant c_cif_io_response_start    : unsigned(3 downto 0) := X"6"; -- read only; tells software where the buffers are.
---    constant c_cif_io_response_end      : unsigned(3 downto 0) := X"7";
---    constant c_cif_io_status_start      : unsigned(3 downto 0) := X"8"; -- read only; tells software where the buffers are.
---    constant c_cif_io_status_end        : unsigned(3 downto 0) := X"9";
---    constant c_cif_io_status_length     : unsigned(3 downto 0) := X"A"; -- write will reset status readout
---    constant c_cif_io_response_len_l    : unsigned(3 downto 0) := X"C"; -- write will reset response readout
---    constant c_cif_io_repsonse_len_h    : unsigned(3 downto 0) := X"D";
---    constant c_cif_io_command_len_l     : unsigned(3 downto 0) := X"E"; -- read only
---    constant c_cif_io_command_len_h     : unsigned(3 downto 0) := X"F"; 
---
---    constant c_cif_slot_control         : unsigned(1 downto 0) := "00"; -- R/W
---    constant c_cif_slot_command         : unsigned(1 downto 0) := "01"; -- WO
---    constant c_cif_slot_response        : unsigned(1 downto 0) := "10"; -- RO
---    constant c_cif_slot_status          : unsigned(1 downto 0) := "11"; -- RO
---
---    constant c_cmd_if_command_buffer_addr  : unsigned(10 downto 0) := to_unsigned(   0, 11);
---    constant c_cmd_if_response_buffer_addr : unsigned(10 downto 0) := to_unsigned( 896, 11);
---    constant c_cmd_if_status_buffer_addr   : unsigned(10 downto 0) := to_unsigned(1792, 11);
---    constant c_cmd_if_command_buffer_size  : integer := 896;
---    constant c_cmd_if_response_buffer_size : integer := 896;
---    constant c_cmd_if_status_buffer_size   : integer := 256;
---
---    constant c_cmd_if_command_buffer_end   : unsigned(10 downto 0) := c_cmd_if_command_buffer_addr + c_cmd_if_command_buffer_size;
---    constant c_cmd_if_response_buffer_end  : unsigned(10 downto 0) := c_cmd_if_response_buffer_addr + c_cmd_if_response_buffer_size;
---    constant c_cmd_if_status_buffer_end    : unsigned(10 downto 0) := c_cmd_if_status_buffer_addr + c_cmd_if_status_buffer_size;

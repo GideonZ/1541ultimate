@@ -20,14 +20,15 @@ generic (
     g_drive_1541    : boolean := true; --
     g_drive_1541_2  : boolean := false; --
     g_hardware_gcr  : boolean := true;
+    g_cartridge     : boolean := true; --
+    g_command_intf  : boolean := true;
+    g_stereo_sid    : boolean := true;
     g_ram_expansion : boolean := true; --
     g_extended_reu  : boolean := false;
     g_hardware_iec  : boolean := true; --
     g_iec_prog_tim  : boolean := false;
     g_c2n_streamer  : boolean := true;
     g_c2n_recorder  : boolean := true;
-    g_cartridge     : boolean := true; --
-    g_stereo_sid    : boolean := true;
     g_drive_sound   : boolean := true; --
     g_rtc_chip      : boolean := true;
     g_rtc_timer     : boolean := true;
@@ -162,6 +163,7 @@ architecture logic of ultimate_logic is
         cap(15) := to_std(g_icap);
         cap(16) := to_std(g_extended_reu);
         cap(17) := to_std(g_stereo_sid);
+        cap(18) := to_std(g_command_intf);
 
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -500,6 +502,7 @@ begin
             g_ram_base_cart => X"0F70000", -- should be on a 64K boundary
             g_control_read  => true,
             g_ram_expansion => g_ram_expansion,
+            g_command_intf  => g_command_intf,
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 3,
             g_extended_reu  => g_extended_reu )

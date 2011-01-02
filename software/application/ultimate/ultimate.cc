@@ -104,6 +104,9 @@ int main()
     if(ITU_CAPABILITIES & CAPAB_CARTRIDGE)
         c64     = new C64;
 
+    AUDIO_SELECT_LEFT   = SOUND_SID_LEFT;
+    AUDIO_SELECT_RIGHT  = SOUND_SID_RIGHT;
+
  	// start the file system, scan the sd-card etc..
 	send_nop();
 	send_nop();

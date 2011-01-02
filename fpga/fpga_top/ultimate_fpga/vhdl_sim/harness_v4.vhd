@@ -9,7 +9,7 @@ use work.mem_bus_pkg.all;
 use work.cart_slot_pkg.all;
 use work.io_bus_pkg.all;
 use work.io_bus_bfm_pkg.all;
-
+use work.command_if_pkg.all;
 
 entity harness_v4 is
 end harness_v4;
@@ -282,7 +282,7 @@ begin
 
     process
     begin
-        SLOT_ADDR <= X"DDF8";
+        SLOT_ADDR <= X"DF80";
         RWn       <= '1';
         while true loop
             wait until PHI2 = '0';
@@ -385,6 +385,8 @@ begin
         io_write(io, X"40000" + c_cart_c64_mode, X"04"); -- reset
         io_write(io, X"40000" + c_cart_cartridge_type, X"06"); -- retro
         io_write(io, X"40000" + c_cart_c64_mode, X"08"); -- unreset
+        io_write(io, X"44000" + c_cif_io_slot_base, X"7E"); 
+        io_write(io, X"44000" + c_cif_io_slot_enable, X"01"); 
         wait;
     end process;
 

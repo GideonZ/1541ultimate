@@ -64,8 +64,9 @@ begin
             io_ram_ack <= io_ram_en;
         end if;
     end process;
-    io_ram_en        <= io_req.read or io_req.write;
+    io_ram_en        <= io_req_ram.read or io_req_ram.write;
     io_resp_ram.data <= X"00" when io_ram_ack='0' else io_ram_rdata;
+    io_resp_ram.ack  <= io_ram_ack;
 
     i_ram: entity work.dpram
     generic map (
