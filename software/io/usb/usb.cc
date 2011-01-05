@@ -524,7 +524,7 @@ int Usb :: create_pipe(int dev_addr, struct t_endpoint_descriptor *epd)
     // now allocate pipe in usb structure
     USB_PIPE(index+2) = pipe;
     pipes[index] = pipe;
-    printf("Pipe with value %8x created. Max Packet = %d. Index = %d\n", pipe, le16_to_cpu(epd->max_packet_size), index+2);
+    printf("Pipe with value %8x created. Max Packet = %d. Index = %d. Dir = %s\n", pipe, le16_to_cpu(epd->max_packet_size), index+2, (pipe & 4)?"out":"in");
     return index+2; // value to be used in transactions
 }
 
@@ -740,9 +740,21 @@ void Usb :: unstall_pipe(int pipe)
 	USB_PIPE(pipe) = p;
 }
 
+int Usb :: bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe)
+{
+    memcpy((void *)&USB_BUFFER(256), prefix, prefix_len);
+    memcpy((void *)&USB_BUFFER(256+prefix_len), buf, len);
+    return bulk_out_actual(prefix_len + len, pipe);
+}
+
 int Usb :: bulk_out(void *buf, int len, int pipe)
 {
     memcpy((void *)&USB_BUFFER(256), buf, len);
+    return bulk_out_actual(len, pipe);
+}
+    
+int Usb :: bulk_out_actual(int len, int pipe)
+{
 
 //    printf("Pipe = %08x\n", USB_PIPE(pipe));
 //    USB_PIPE(pipe) ^= 0x02000000; // toggle data (debug)

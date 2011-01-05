@@ -166,6 +166,8 @@ class Usb
     void attach_root(void);
     bool install_device(UsbDevice *dev, bool draws_current);
     void deinstall_device(UsbDevice *dev);
+
+    int  bulk_out_actual(int len, int pipe);
 public:
     bool debug;
     int speed;
@@ -201,6 +203,7 @@ public:
     
     void unstall_pipe(int pipe);
     int  bulk_out(void *buf, int len, int pipe);
+    int  bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe);
     int  bulk_in(void *buf, int len, int pipe);
     int  interrupt_in(int trans, int pipe, int len, BYTE *buf);
         

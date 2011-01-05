@@ -69,12 +69,27 @@ class UsbEm1010Driver : public UsbDriver
     Usb       *host;
     UsbDevice *device;
 
+    int  bulk_in;
+    int  bulk_out;
+    BYTE mac_address[6];
+
     bool read_register(BYTE offset, BYTE &data);
     bool read_registers(BYTE offset, BYTE *data, int len);
     bool dump_registers(void);
     bool write_register(BYTE offset, BYTE data);
     bool read_phy_register(BYTE offset, WORD *data);
     bool write_phy_register(BYTE offset, WORD data);
+
+    // for testing only //
+    int  prepare_dhcp_discover(void);
+    WORD udp_sum_calc(WORD len_udp, BYTE *header, BYTE *buff);
+    int  udp_header(BYTE *buf, WORD len, WORD src, WORD dst);
+    int  ip_header(BYTE *buf, WORD len, BYTE prot, DWORD src, DWORD dst);
+    int  eth_header(BYTE *buf, WORD type); // makes IP header for broadcast
+
+    BYTE tx_buffer[1600];
+    BYTE rx_buffer[1600];
+
 public:
 	UsbEm1010Driver(IndexedList<UsbDriver *> &list);
 	UsbEm1010Driver();
@@ -85,6 +100,9 @@ public:
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);
+
+    bool receive_frame(BYTE *buffer, int *length);
+    bool transmit_frame(BYTE *buffer, int length);
 };
 
 #endif
