@@ -656,7 +656,7 @@ defaultScreen
               sta $fb
 
 ;Print Clock info
-              ldy #$04            ;check version
+              ldy #$05            ;check version
               jsr $0180           ;read header
               lsr
               bcs printUnknownClock
@@ -715,7 +715,7 @@ printClock    lda $ff
 +
 
 ;Print model info
-              ldy #$04            ;check version
+              ldy #$05            ;check version
               jsr $0180           ;read header
               lsr
               bcs printUnknownModel
@@ -1099,7 +1099,7 @@ afterInitSet
 readSpeedBits              
               tax
 
-              ldy #$04            ;check version
+              ldy #$05            ;check version
               jsr $0180           ;read header
               lsr
               bcs oldVersion
@@ -1200,7 +1200,7 @@ installPlayer
               iny
               sta ($fe),y    
 FixedSpeed              
-              ldy #$04            ;check version
+              ldy #$05            ;check version
               jsr $0180           ;read header
               lsr
               bcs defaultSpeed    ;if old version then play at default speed
