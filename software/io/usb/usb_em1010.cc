@@ -109,6 +109,8 @@ void UsbEm1010Driver :: install(UsbDevice *dev)
     bulk_in  = dev->find_endpoint(0x82);
     bulk_out = dev->find_endpoint(0x02);
 
+    /* Let's test transmit/receive */
+    /* Send a DHCP discover to our router and wait for response. */
     int len = 0;
     receive_frame(rx_buffer, &len);
     printf("Received: %d bytes.\n", len);

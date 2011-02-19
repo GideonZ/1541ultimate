@@ -48,6 +48,11 @@ architecture structural of sid_peripheral is
 
     signal control      : t_sid_control;
 
+    signal sid_addr     : unsigned(7 downto 0);
+    signal sid_wren     : std_logic;
+    signal sid_wdata    : std_logic_vector(7 downto 0);
+    signal sid_rdata    : std_logic_vector(7 downto 0);
+
     signal sid_write    : std_logic;
 begin
     -- first we split our I/O bus in max 4 ranges, of 2K each.
@@ -62,8 +67,8 @@ begin
         req      => io_req,
         resp     => io_resp,
         
-        reqs(0)  => io_req_regs,
-        reqs(1)  => io_req_filt,
+        reqs(0)  => io_req_regs, -- 4042000
+        reqs(1)  => io_req_filt, -- 4042800
         
         resps(0) => io_resp_regs,
         resps(1) => io_resp_filt );
@@ -81,6 +86,21 @@ begin
         
         control  => control );    
 
+    i_sid_mapper: entity work.sid_mapper
+    port map (
+        clock         => clock,
+        reset         => reset,
+        
+        control       => control,
+        
+        slot_req      => slot_req,
+        slot_resp     => slot_resp,
+        
+        sid_addr      => sid_addr,
+        sid_wren      => sid_wren,
+        sid_wdata     => sid_wdata,
+        sid_rdata     => sid_rdata );
+
     i_sid_engine: entity work.sid_top
     generic map (
         g_filter_div  => g_filter_div,
@@ -89,10 +109,10 @@ begin
         clock         => clock,
         reset         => reset,
                       
-        addr          => slot_req.bus_address(7 downto 0),
-        wren          => sid_write,
-        wdata         => slot_req.data,
-        rdata         => slot_resp.data,
+        addr          => sid_addr,
+        wren          => sid_wren,
+        wdata         => sid_wdata,
+        rdata         => sid_rdata,
 
         io_req_filt   => io_req_filt,
         io_resp_filt  => io_resp_filt,

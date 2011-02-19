@@ -168,13 +168,15 @@ begin
             when st_attack =>
                 if gate = '0' then
                     next_state := st_release;
+                elsif cur_env = X"FF" then
+                    next_state := st_decay;
                 end if;
                 
                 if do_count_15='1' then
                     next_env := cur_env + 1;
-                    if cur_env = X"FE" or cur_env = X"FF" then -- result could be FF, but also 00!!
-                        next_state := st_decay;
-                    end if;
+--                    if cur_env = X"FE" or cur_env = X"FF" then -- result could be FF, but also 00!!
+--                        next_state := st_decay;
+--                    end if;
                 end if;
             
             when st_decay =>

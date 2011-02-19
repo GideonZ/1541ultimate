@@ -175,8 +175,8 @@ begin
         req      => io_req,
         resp     => io_resp,
     
-        reqs(0)  => io_req_peri,
-        reqs(1)  => io_req_dma,
+        reqs(0)  => io_req_peri, -- 4040000
+        reqs(1)  => io_req_dma,  -- 4050000
         
         resps(0) => io_resp_peri,
         resps(1) => io_resp_dma );
@@ -205,9 +205,9 @@ begin
         req      => io_req_peri,
         resp     => io_resp_peri,
            
-        reqs(0)  => io_req_regs,
-        reqs(1)  => io_req_sid,
-        reqs(2)  => io_req_cmd,
+        reqs(0)  => io_req_regs,  -- 4040000
+        reqs(1)  => io_req_sid,   -- 4042000
+        reqs(2)  => io_req_cmd,   -- 4044000
         
         resps(0) => io_resp_regs,
         resps(1) => io_resp_sid,
@@ -436,7 +436,7 @@ begin
             
         port map (
             clock        => clock,
-            reset        => actual_c64_reset,
+            reset        => reset,
             
             io_req       => io_req_sid,
             io_resp      => io_resp_sid,

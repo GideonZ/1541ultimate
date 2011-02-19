@@ -146,7 +146,7 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            address  <= unsigned(address_remap(to_integer(addr(4 downto 0))));
+            address  <= unsigned(address_remap(to_integer(addr)));
             do_write <= wren;
             wdata_d  <= wdata;
 

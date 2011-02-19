@@ -152,6 +152,7 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/sid6581/vhdl_source/sid_top.vhd \
 				vhdl,work,../../fpga/sid6581/vhdl_source/sid_io_regs_pkg.vhd \
 				vhdl,work,../../fpga/sid6581/vhdl_source/sid_io_regs.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_mapper.vhd \
 				vhdl,work,../../fpga/sid6581/vhdl_source/sid_peripheral.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_defs.vhd \
 				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_decode.vhd \

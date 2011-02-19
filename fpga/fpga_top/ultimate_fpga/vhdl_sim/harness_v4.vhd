@@ -282,7 +282,7 @@ begin
 
     process
     begin
-        SLOT_ADDR <= X"DF80";
+        SLOT_ADDR <= X"D400";
         RWn       <= '1';
         while true loop
             wait until PHI2 = '0';
@@ -387,6 +387,9 @@ begin
         io_write(io, X"40000" + c_cart_c64_mode, X"08"); -- unreset
         io_write(io, X"44000" + c_cif_io_slot_base, X"7E"); 
         io_write(io, X"44000" + c_cif_io_slot_enable, X"01"); 
+        wait for 6 us;
+        wait until sys_clock='1';
+        io_write(io, X"42002", X"42"); 
         wait;
     end process;
 

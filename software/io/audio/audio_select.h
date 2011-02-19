@@ -1,6 +1,8 @@
 #ifndef AUDIO_SELECT_H
 #define AUDIO_SELECT_H
 
+#include "config.h"
+
 #define AUDIO_SELECT_LEFT   *((volatile BYTE *)0x4060700)
 #define AUDIO_SELECT_RIGHT  *((volatile BYTE *)0x4060701)
 
@@ -10,4 +12,29 @@
 #define SOUND_CAS_WRITE   3
 #define SOUND_SID_LEFT    4
 #define SOUND_SID_RIGHT   5
+
+#define SID_VOICES       *((volatile BYTE *)0x4042000)
+#define SID_FILTER_DIV   *((volatile BYTE *)0x4042001)
+#define SID_BASE_LEFT    *((volatile BYTE *)0x4042002)
+#define SID_BASE_RIGHT   *((volatile BYTE *)0x4042003)
+#define SID_SNOOP_LEFT   *((volatile BYTE *)0x4042004)
+#define SID_SNOOP_RIGHT  *((volatile BYTE *)0x4042005)
+#define SID_ENABLE_LEFT  *((volatile BYTE *)0x4042006)
+#define SID_ENABLE_RIGHT *((volatile BYTE *)0x4042007)
+#define SID_EXTEND_LEFT  *((volatile BYTE *)0x4042008)
+#define SID_EXTEND_RIGHT *((volatile BYTE *)0x4042009)
+
+
+class AudioConfig
+{
+    Flash *flash;
+    ConfigStore *cfg;
+public:
+    AudioConfig();
+    ~AudioConfig() {}
+    void effectuate();
+};
+
+extern AudioConfig audio_configurator;
+
 #endif

@@ -99,13 +99,9 @@ int main()
         c1541_A = new C1541(C1541_IO_LOC_DRIVE_1, 'A');
     if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_2) {
         c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
-        AUDIO_SELECT_RIGHT  = SOUND_DRIVE_1;
     }
     if(ITU_CAPABILITIES & CAPAB_CARTRIDGE)
         c64     = new C64;
-
-    AUDIO_SELECT_LEFT   = SOUND_SID_LEFT;
-    AUDIO_SELECT_RIGHT  = SOUND_SID_RIGHT;
 
  	// start the file system, scan the sd-card etc..
 	send_nop();
@@ -148,9 +144,6 @@ int main()
 	
     printf("All linked modules have been initialized.\n");
     printf("Starting main loop...\n");
-
-//    AUDIO_SELECT_LEFT  = SOUND_CAS_READ;
-//    AUDIO_SELECT_RIGHT = SOUND_CAS_READ;
 
     main_loop();
 

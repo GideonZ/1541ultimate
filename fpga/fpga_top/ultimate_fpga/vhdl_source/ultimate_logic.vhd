@@ -504,7 +504,7 @@ begin
             g_ram_expansion => g_ram_expansion,
             g_command_intf  => g_command_intf,
             g_implement_sid => g_stereo_sid,
-            g_sid_voices    => 3,
+            g_sid_voices    => 16,
             g_extended_reu  => g_extended_reu )
 
         port map (

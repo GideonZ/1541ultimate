@@ -213,11 +213,16 @@ int FileTypeSID :: prepare(bool use_default)
 		error = 2;
 		goto handle_error;
 	}
-	if(file->read(&start, 2, &bytes_read) != FR_OK) {
-		error = 3;
-		goto handle_error;
-	}
-	start = le2cpu(start);
+    pus = (WORD *)&sid_header[0x08];
+    start = *pus;
+    if(start == 0) {
+    	if(file->read(&start, 2, &bytes_read) != FR_OK) {
+    		error = 3;
+    		goto handle_error;
+    	}
+    }
+    start = le2cpu(start);
+
 	info = file->node->get_file_info();
 	if(!info) {
 		error = 5;

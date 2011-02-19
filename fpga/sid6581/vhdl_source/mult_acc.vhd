@@ -160,6 +160,8 @@ begin
                     direct_out_r <= accu_ur;
                     filter_out_l <= accu_fl;
                     filter_out_r <= accu_fr;
+                    accu_fr <= (others => '0');
+                    accu_ur <= (others => '0');
                     if filter_m='1' then
                         accu_fl <= mult_trunc;
                         accu_ul <= (others => '0');
@@ -182,7 +184,7 @@ begin
                         accu_fr <= sum_limit(accu_fr, mult_trunc);
                     else
                         if (voice_m /= 10) or (voice3_off_r = '0') then
-                            accu_ul <= sum_limit(accu_ul, mult_trunc);
+                            accu_ur <= sum_limit(accu_ur, mult_trunc);
                         end if;
                     end if;
                 end if;
