@@ -3,7 +3,7 @@
 ;
 ; Programmed by Wilfred Bos - April 2009
 ;
-; Copyright (c) 2009 - 2010 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2009 - 2011 Wilfred Bos / Gideon Zweijtzer
 ;
 ; Info:
 ;  Call the player by activating the cartridge and performing a reset. Pass tune
@@ -38,7 +38,7 @@
               .byte >startNMI
               .byte 'C' + $80, 'B' + $80, 'M' + $80, '80'   ;CBM80
 
-              .text $00, 'Ultimate SID Player Cartridge V1.0. Copyright (c) 2009 Wilfred Bos / Gideon Zweijtzer', $00
+              .text $00, 'Ultimate SID Player Cartridge V1.1. Copyright (c) 2009-2011 Wilfred Bos / Gideon Zweijtzer', $00
 
 startNMI      pla                 ;just ignore pressing restore key
               tay
@@ -58,12 +58,9 @@ start         sei
               stx $d021
               stx $d418
 
-              jsr $ff84            ;init I/O devices / CIA timers
+              jsr $ff84           ;init I/O devices / CIA timers
 
-;              lda #$01
-;              sta $d020
-
-              ;jsr $ff87           ;init RAM, tape buffer, screen (replaced by the following)
+              ;jsr $ff87          ;init RAM, tape buffer, screen (replaced by the following)
 
               ldx #$00
               lda #$00
@@ -97,20 +94,14 @@ start         sei
               jmp reset
               
 dma_mode
-;              lda #$03
-;              sta $d020
-
 							;load PRG file
               lda #$00
               sta $02
               
-              jsr $ff81     ;(init screen and VIC-Chip the normal way)
+              jsr $ff81     			;(init screen and VIC-Chip the normal way)
               jmp continue_initializing
 
 sid_mode
-;              lda #$04
-;              sta $d020
-
 	            ;jsr $ff81 (init screen and VIC-Chip) is replaced by the following block
               ;to avoid screen color change
               lda #$03
@@ -120,26 +111,20 @@ sid_mode
               ldx #$2f
 -             lda $ecb8,x
               sta $cfff,x
-              cpx #$23    ;don't set $d020 and $d021
+              cpx #$23    				;don't set $d020 and $d021
               bne +
               dex
               dex              
-+             cpx #$13    ;don't set d011
++             cpx #$13    				;don't set d011
               bne +
               dex              
 +             dex
               bne -
 
 continue_initializing
-;              lda #$05
-;              sta $d020
-
               jsr $e51b
               jsr $ff5e
               jsr $e453           ;copy BASIC vectors to RAM
-
-;              lda #$06
-;              sta $d020
 
               lda $0300
               sta $0334
@@ -182,9 +167,6 @@ basicStartedIRQ
 
               lda $dc0d           ;acknowledge IRQ
 
-;              lda #$07
-;              sta $d020
-
               lda $02
               cmp #$AA
               beq load_sid
@@ -198,9 +180,6 @@ basicStartedIRQ
               jmp $0100           ;clear memory and execute DMA load, and do run
 
 load_sid      
-;              lda #$08
-;              sta $d020
-
               ldx #$ff            ;init stack pointer
               txs
               lda #$fc            ;push reset address on stack
@@ -247,9 +226,6 @@ load_sid
 
               ;if header is no real header then disable cartridge and perform a reset
 reset
-;              lda #$0f
-;              sta $d020
-
               ldx #$00
 -             lda resetRoutine,x
               sta $0100,x
@@ -513,7 +489,7 @@ ramAreaNOK
               and #$f0
               clc
               adc #$13
-              and #%11111100  ;align to $x000, $x400, $x800 or $xC00 pages
+              and #%11111100  		;align to $x000, $x400, $x800 or $xC00 pages
               pha
 ramAreaOK     pla
               pha      
@@ -656,10 +632,10 @@ defaultScreen
               sta $fb
 
 ;Print Clock info
-              ldy #$05            ;check version
+              ldy #$04            ;check version
               jsr $0180           ;read header
-              lsr
-              bcs printUnknownClock
+              cmp #$01
+              beq printUnknownClock
               
               ldy #$77
               jsr $0180
@@ -715,10 +691,10 @@ printClock    lda $ff
 +
 
 ;Print model info
-              ldy #$05            ;check version
+              ldy #$04            ;check version
               jsr $0180           ;read header
-              lsr
-              bcs printUnknownModel
+              cmp #$01
+              beq printUnknownModel
               
               ldy #$77
               jsr $0180
@@ -1041,7 +1017,7 @@ psidfile      ldy #$0a            ;get init address
               ldy #$06           
               sta ($fe),y
 
-              jsr getBankPlay         ;call getBank, input is play high address in accumulator
+              jsr getBankPlay    	;call getBank, input is play high address in accumulator
               ldy #$01
               sta ($fe),y
               
@@ -1099,10 +1075,10 @@ afterInitSet
 readSpeedBits              
               tax
 
-              ldy #$05            ;check version
+              ldy #$04            ;check version
               jsr $0180           ;read header
-              lsr
-              bcs oldVersion
+              cmp #$01
+              beq oldVersion
               ldy #$77
               jsr $0180           ;read header
               and #$02            ;is PlaySID specific?
@@ -1200,10 +1176,10 @@ installPlayer
               iny
               sta ($fe),y    
 FixedSpeed              
-              ldy #$05            ;check version
+              ldy #$04            ;check version
               jsr $0180           ;read header
-              lsr
-              bcs defaultSpeed    ;if old version then play at default speed
+              cmp #$01
+              beq defaultSpeed    ;if old version then play at default speed
 
               ldy #$77
               jsr $0180           ;read header
