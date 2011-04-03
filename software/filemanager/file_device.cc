@@ -16,6 +16,8 @@ FileDevice :: ~FileDevice()
 	// because our children are dependent and refer to this disk:
 	if(disk)
         delete disk;
+    if(info)
+        delete info;
 	// now the children will be cleaned again the base class destructor.. (so be it)
 }
 
@@ -61,14 +63,20 @@ int FileDevice :: fetch_children(void)
     Partition *p = disk->partition_list;
     if(p_count == 1) { // do not create partition in browser; that's not necessary!
         printf("There is only one partition!! we can do this smarter!\n");
-        info->fs = p->attach_filesystem();
-        info->cluster = 0; // indicate root dir
-        info->attrib = AM_DIR; // ;-)
-        if(!info->fs)
+        if(!info)
+            info = new FileInfo(get_name());
+        if(info) {
+            info->fs = p->attach_filesystem();
+            info->cluster = 0; // indicate root dir
+            info->attrib = AM_DIR; // ;-)
+            if(!info->fs)
+                return -1;
+            int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..
+            sort_children();
+            return count;
+        } else {
             return -1;
-        int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..
-        sort_children();
-        return count;
+        }
     }
 
     int i = 0;

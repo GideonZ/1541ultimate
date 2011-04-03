@@ -1086,6 +1086,7 @@ bool UsbDevice :: get_configuration(BYTE index)
                 break;
             default:
                 printf("Unknown type of descriptor: %d.\n", type);
+                i = len_descr; // break out of loop
         }
         i += len;
     }

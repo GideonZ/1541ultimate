@@ -16,8 +16,13 @@ private:
     DWORD   curr_clust; /* Current cluster */
     DWORD   dsect;      /* Current data sector */
 #if !_FS_READONLY
-    DWORD   dir_sect;   /* Sector containing the directory entry */
-    BYTE*   dir_ptr;    /* Pointer to the directory entry in the window */
+    FATDIR *dir_obj;    /* Information about the directory entry that points to this file */
+//    DWORD   dir_clust;  /* WHERE is the directory the file resides in */
+//    WORD    dir_index;  /* The index of the relevant entry */
+//    BYTE    dir_entry_known; /* tells us if the values below are actually known.. (they are not needed for
+//                                reading only) */
+//    DWORD   dir_sect;   /* Sector containing the directory entry */
+//    BYTE*   dir_ptr;    /* Pointer to the directory entry in the window */
 #endif
 #if !_FS_TINY
     BYTE    buf[_MAX_SS];/* File R/W buffer */
@@ -25,11 +30,11 @@ private:
 public:
     FATFIL(FATFS *);                /* constructor */
     FATFIL(FATFS *, XCHAR *, BYTE); /* constructor, calls open, too */
-    ~FATFIL() {};                   /* destructor */
+    ~FATFIL();                      /* destructor */
 
     void print_info(void);			// prints all variables for debug
     FRESULT validate(void);                    /* Check if everything is still ok */
-    FRESULT open(XCHAR*, DWORD s, BYTE);       /* Open or create a file */
+    FRESULT open(XCHAR*, DWORD s, BYTE, WORD *dir_index);  /* Open or create a file */
     FRESULT open(FileInfo *fi, BYTE);          /* Open or create a file, using a known dir entry */
     FRESULT read(void*, UINT, UINT*);          /* Read data from a file */
     FRESULT write(const void*, UINT, UINT*);   /* Write data to a file */

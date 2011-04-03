@@ -178,8 +178,9 @@ FRESULT FATDIR::dir_seek (
 
     if (clst == 0) {    /* Static table */
         clust = clst;
-        if (idx >= fs->n_rootdir)       /* Index is out of range */
+        if (idx >= fs->n_rootdir) {      /* Index is out of range */
             return FR_INT_ERR;
+        }
         sect = fs->dirbase + idx / (REF_SECSIZE(fs) / 32);  /* Sector# */
     }
     else {              /* Dynamic table */
@@ -196,7 +197,7 @@ FRESULT FATDIR::dir_seek (
     }
 
     dir = fs->win + (idx % (REF_SECSIZE(fs) / 32)) * 32;    /* Ptr to the entry in the sector */
-
+    fs->move_window(sect);
     return FR_OK;   /* Seek succeeded */
 }
 
@@ -429,6 +430,37 @@ BYTE sum_sfn (
 }
 #endif
 
+
+#if _USE_LFN
+FRESULT FATDIR::dir_find_lfn_start(void) // will set lfn_index correctly, based on current position
+{
+    if((dir[FATDIR_Attr] & AM_MASK) == AM_LFN)
+        return FR_INT_ERR;
+
+    BYTE sum = sum_sfn(dir);
+    lfn_idx = 0xFFFF;
+    WORD idx = index;
+    WORD sfn_idx = index;
+    FRESULT res;
+    BYTE attr;
+    
+    while(--idx) {
+        res = dir_seek(idx);
+        if(res != FR_OK)
+            return res;
+        attr = dir[FATDIR_Attr] & AM_MASK;
+        if(attr != AM_LFN)
+            break; // no LFN
+        if(dir[LFATDIR_Chksum] != sum)
+            break; // no matching LFN
+        if(dir[FATDIR_Name] & 0x40) {
+            lfn_idx = idx;
+            break;
+        }
+    }
+    return dir_seek(sfn_idx);
+}
+#endif
 
 /*-----------------------------------------------------------------------*/
 /* Directory handling - Find an object in the directory                  */
@@ -939,16 +971,18 @@ void FATDIR::get_fileinfo( /* No return code */
             }
         }
 */
-        fno->dir_clust = this->clust;
-        fno->dir_offset = (WORD)(dir - fs->win);
-        fno->dir_sector = sect;
+        fno->dir_clust = this->sclust;
+//        fno->dir_offset = (WORD)(dir - fs->win);
+//        fno->dir_sector = sect;
+//        fno->lfn_index = lfn_idx;
+        fno->dir_index = index;
         fno->attrib  = dirbyte[FATDIR_Attr];               /* Attribute */
         fno->size    = LD_DWORD(dirbyte+FATDIR_FileSize);    /* Size */
         fno->date    = LD_WORD(dirbyte+FATDIR_WrtDate);      /* Date */
         fno->time    = LD_WORD(dirbyte+FATDIR_WrtTime);      /* Time */
         fno->cluster = ((DWORD)LD_WORD(dirbyte+FATDIR_FstClusHI) << 16) |
                                LD_WORD(dirbyte+FATDIR_FstClusLO);
-
+        
         p = fno->extension;
         for (i = 8; i < 11; i++) {
             c = dirbyte[i];

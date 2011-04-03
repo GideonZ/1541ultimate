@@ -133,7 +133,8 @@ int FileDirEntry :: fetch_context_items(IndexedList<PathObject *> &list)
 int FileDirEntry :: fetch_context_items_actual(IndexedList<PathObject *> &list)
 {
 	int count = 0;
-	FileInfo *info = parent->get_file_info();
+	FileInfo *info = get_file_info(); // parent-> removed!
+
 	if(info->attrib & AM_DIR) {
 		list.append(new MenuItem(this, "Enter", FILEDIR_ENTERDIR));
 		count++;

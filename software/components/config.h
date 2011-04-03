@@ -121,4 +121,17 @@ public:
 extern ConfigManager config_manager; // global!
 //extern TreeNode config_root;
 
+// Base class for any configurable object
+//class ConfigurableObject
+//{
+//private:
+//public:
+//    ConfigurableObject();
+//    ~ConfigurableObject();
+//    
+//    int  register_store(DWORD store_id, char *name, t_cfg_definition *defs);
+//    void fetch
+//    void effectuate();
+//    
+
 #endif

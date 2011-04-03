@@ -40,14 +40,23 @@ FATFIL::FATFIL(FATFS *pfs) /* default constructor */
 {
     fs = pfs;
     valid = 0;
+    dir_obj = NULL;
 }
 
 FATFIL::FATFIL(FATFS *pfs, XCHAR *path, BYTE mode)
 {
     fs = pfs;
-    open(path, 0, mode);
+    WORD dummy;
+    dir_obj = NULL;
+    open(path, 0, mode, &dummy);
 }
 
+FATFIL::~FATFIL()
+{
+    if(dir_obj)
+        delete dir_obj;
+}
+    
 FRESULT FATFIL::validate(void)
 {
     ENTER_FF(fs);
@@ -59,23 +68,38 @@ FRESULT FATFIL::validate(void)
 }
     
 
+/*
+FRESULT FATFIL::find_file_in_dir()
+{
+    if(dir_obj)
+        return FR_OK;
+
+    dir_obj = new FATDIR(fs, dir_clust);    // Init FATDIR object and point to the file system 
+
+}
+*/
+    
 /*-----------------------------------------------------------------------*/
 /* Open or Create a File                                                 */
 /*-----------------------------------------------------------------------*/
-
 FRESULT FATFIL::open (
     XCHAR *path,  /* Pointer to the file name */
     DWORD dir_clust,  /* if given, this is where we start with the path */
-    BYTE mode   /* Access mode and file open mode flags */
+    BYTE mode,   /* Access mode and file open mode flags */
+    WORD *dir_index  /* return value: index of dir entry that was found */
 )
 {
     FRESULT res;
     BYTE *dir;
 
+    if(dir_obj)
+        delete dir_obj;
+        
 //    small_printf("Open %s %b %d\n", path, mode, dir_clust);
-    FATDIR dj(fs, dir_clust);    /* Init FATDIR object and point to the file system */
+    dir_obj = new FATDIR(fs, dir_clust);    /* Init FATDIR object and point to the file system */
 
     valid = 0;
+    *dir_index = 0xFFFF;
 
 #if !_FS_READONLY
     mode &= (FA_READ | FA_WRITE | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS | FA_CREATE_NEW);
@@ -86,7 +110,7 @@ FRESULT FATFIL::open (
 #endif
     if (res != FR_OK) LEAVE_FF(fs, res);
 
-    res = dj.follow_path(path, dir_clust);   /* Follow the file path */
+    res = dir_obj->follow_path(path, dir_clust);   /* Follow the file path */
 //    small_printf("Follow path (%s/%d) returned: %d.\n", path, dir_clust, res);
 
 #if !_FS_READONLY
@@ -96,15 +120,15 @@ FRESULT FATFIL::open (
 
         if (res != FR_OK) {         /* No file, create new */
             if (res == FR_NO_FILE)  /* There is no file to open, create a new entry */
-                res = dj.dir_register();
+                res = dir_obj->dir_register();
             if (res != FR_OK) LEAVE_FF(fs, res);
             mode |= FA_CREATE_ALWAYS;
-            dir = dj.dir;           /* Created entry (SFN entry) */
+            dir = dir_obj->dir;           /* Created entry (SFN entry) */
         }
         else {                      /* Any object is already existing */
             if (mode & FA_CREATE_NEW)           /* Cannot create new */
                 LEAVE_FF(fs, FR_EXIST);
-            dir = dj.dir;
+            dir = dir_obj->dir;
             if (!dir || (dir[FATDIR_Attr] & (AM_RDO | AM_DIR)))    /* Cannot overwrite it (R/O or FATDIR) */
                 LEAVE_FF(fs, FR_DENIED);
             if (mode & FA_CREATE_ALWAYS) {      /* Resize it to zero on over write mode */
@@ -135,15 +159,17 @@ FRESULT FATFIL::open (
     else {
 #endif /* !_FS_READONLY */
         if (res != FR_OK) LEAVE_FF(fs, res);   /* Follow failed */
-        dir = dj.dir;
+        dir = dir_obj->dir;
         if (!dir || (dir[FATDIR_Attr] & AM_DIR))   /* It is a directory */
             LEAVE_FF(fs, FR_NO_FILE);
 #if !_FS_READONLY
         if ((mode & FA_WRITE) && (dir[FATDIR_Attr] & AM_RDO)) /* R/O violation */
             LEAVE_FF(fs, FR_DENIED);
     }
-    dir_sect = fs->winsect;        /* Pointer to the directory entry */
-    dir_ptr = dj.dir;
+//    dir_sect = fs->winsect;        /* Pointer to the directory entry */
+//    dir_ptr = dir_obj->dir;
+//    dir_entry_known = 1;
+    *dir_index = dir_obj->index;
 #endif
     flag = mode;                    /* File access mode */
     org_clust =                     /* File start cluster */
@@ -154,6 +180,8 @@ FRESULT FATFIL::open (
 
     valid = 1;
 
+    printf("File opened by name.. this is the directory info: \n");
+    dir_obj->print_info();
     LEAVE_FF(fs, FR_OK);
 }
 
@@ -164,7 +192,8 @@ FRESULT FATFIL::open (
 )
 {
     FRESULT res;
-
+    WORD dir_index;
+    
 //    small_printf("File open: Flags=%b\n", mode);
 //    info->print_info();
 
@@ -172,15 +201,16 @@ FRESULT FATFIL::open (
 
     /* Create or Open a file */
     if (mode & (FA_CREATE_ALWAYS | FA_CREATE_NEW | FA_OPEN_ALWAYS)) {
-    	res = open(info->lfname, info->dir_clust, mode); // dispatch to the old style
+    	res = open(info->lfname, info->dir_clust, mode, &dir_index); // dispatch to the old style
     	if(res != FR_OK)
     		return res;
     	/* put information back into file info structure */
     	info->cluster = org_clust;
     	info->date = info->time = 0;
 #if !_FS_READONLY
-    	info->dir_sector = dir_sect;
-    	info->dir_offset = WORD(dir_ptr - fs->win);
+        info->dir_index  = dir_index;
+//    	info->dir_sector = dir_sect;
+//    	info->dir_offset = WORD(dir_ptr - fs->win);
 #endif
     	info->size = 0;
     	return FR_OK;
@@ -194,8 +224,12 @@ FRESULT FATFIL::open (
         LEAVE_FF(fs, FR_DENIED);
 
 #if !_FS_READONLY
-    dir_sect = info->dir_sector;          // Pointer to the directory entry
-    dir_ptr = &fs->win[info->dir_offset];
+    if(dir_obj) {
+        printf("Warning: File structure already has dir object attached!\n");
+        delete dir_obj;
+    }
+    dir_obj = new FATDIR(fs, info->dir_clust);
+    printf("Seeking Index %d of dir resulted in: %d\n", info->dir_index, dir_obj->dir_seek(info->dir_index));
 #endif
 
     flag = mode;                    /* File access mode */
@@ -205,6 +239,7 @@ FRESULT FATFIL::open (
     dsect = 0;
     valid = 1;
 
+    print_info();
     LEAVE_FF(fs, FR_OK);
 }
 
@@ -435,9 +470,10 @@ FRESULT FATFIL::sync (void)
             }
 #endif
             /* Update the directory entry */
-            res = fs->move_window(dir_sect);
+
+            res = fs->move_window(dir_obj->sect);
             if (res == FR_OK) {
-                dir = dir_ptr;
+                dir = dir_obj->dir;
                 dir[FATDIR_Attr] |= AM_ARC;                    /* Set archive bit */
                 ST_DWORD(dir+FATDIR_FileSize, fsize);      /* Update file size */
                 ST_WORD(dir+FATDIR_FstClusLO, org_clust);  /* Update start cluster */
@@ -794,7 +830,8 @@ void FATFIL :: print_info(void)
 	printf("Current clst: %d\n", curr_clust); /* Current cluster */
 	printf("Cur. dsect  : %d\n", dsect);      /* Current data sector */
 #if !_FS_READONLY
-	printf("Dir Sector  : %d\n", dir_sect);   /* Sector containing the directory entry */
-	printf("Dir pointer : %p\n", dir_ptr);    /* Pointer to the directory entry in the window */
+    if(dir_obj) {
+        dir_obj->print_info();
+    }
 #endif
 }

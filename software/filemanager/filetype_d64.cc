@@ -588,8 +588,8 @@ FRESULT FileInD64 :: open(FileInfo *info, BYTE flags)
 	offset_in_sector = 2;
 
 	num_blocks = info->size;
-	dir_sect = info->dir_sector;
-	dir_entry_offset = info->dir_offset;
+//	dir_sect = info->dir_sector;
+//	dir_entry_offset = info->dir_offset;
 
 	return FR_OK;
 }

@@ -182,8 +182,8 @@ try_next:
     }
 
     f->cluster    = dir_record.actual.sector;
-    f->dir_sector = handle->sector;
-    f->dir_offset = handle->offset;
+//    f->dir_sector = handle->sector;
+//    f->dir_offset = handle->offset;
     f->dir_clust  = handle->start;
     f->attrib     = (dir_record.actual.flags & 0x02)?(AM_DIR):0;
     f->fs         = this;

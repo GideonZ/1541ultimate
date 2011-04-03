@@ -84,6 +84,7 @@
 
 extern "C" {
     #include "small_printf.h"
+    #include "dump_hex.h"
 }
 #include "fat_fs.h"         /* FatFs configurations and declarations */
 #include "fat_dir.h"
@@ -873,6 +874,7 @@ FRESULT FATFS :: f_rename (
     	delete new_dir;
     	return res;
     }
+
     res = new_dir->dir_register();
     if(res != FR_OK) {
     	delete new_dir;
@@ -894,16 +896,17 @@ FRESULT FATFS :: f_rename (
 	
     // now try to find and delete the old one.
     FATDIR *old_dir = new FATDIR(this, info->dir_clust);
-	res = old_dir->follow_path(info->lfname, info->dir_clust);
+    res = old_dir->dir_seek(info->dir_index);
+    printf("SEEK on old dir, index = %d, resulted: %d\n", info->dir_index, res);
+    if(res != FR_OK)
+        goto exit_rename;
 
-	if(res != FR_OK) {
-		printf("Old dir follow path result = %d.\n", res);
-		delete new_dir;
-		delete old_dir;
-		return res;
-	}
+    res = old_dir->dir_find_lfn_start();
+    printf("Now let's find the LFN... result = %d\n", res);
+    if(res != FR_OK)
+        goto exit_rename;
+        
 
-//	old_dir->print_info();
 	res = old_dir->dir_remove();
     sync();
 
@@ -911,6 +914,7 @@ FRESULT FATFS :: f_rename (
 	move_window(new_dir->sect);
 	new_dir->get_fileinfo(info);
 
+exit_rename:
     delete new_dir;
 	delete old_dir;
     return res;
@@ -1055,16 +1059,21 @@ FRESULT FATFS :: file_delete(FileInfo *fi)
 			return res;
     }
 
+    printf("fi->dir_clust = %d.\n", fi->dir_clust);
 	sdj = new FATDIR(this, fi->dir_clust);
 	if(!sdj)
 		return FR_NO_MEMORY;
 		
-	res = sdj->follow_path(fi->lfname, fi->dir_clust);
+	res = sdj->dir_seek(fi->dir_index);
 	if (res != FR_OK) {
 		delete sdj;
 		return res;
 	}
-	
+    res = sdj->dir_find_lfn_start();
+	if (res != FR_OK) {
+		delete sdj;
+		return res;
+	}
     res = sdj->dir_remove();                  /* Remove directory entry */
     if (res == FR_OK) {
         if (fi->cluster)

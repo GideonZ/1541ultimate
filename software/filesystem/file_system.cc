@@ -3,8 +3,12 @@
 
 bool FileInfo :: is_writable(void)
 {
-    if(!fs->is_writable())
+//    printf("Checking writability of %s.\n", lfname);
+    if(!fs->is_writable()) {
+        printf("%s: FileSystem is not writable..\n", lfname);
         return false;
+    }
+//    printf("Attrib: %b\n", attrib);
     return !(attrib & AM_RDO);
 }
 	

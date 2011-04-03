@@ -31,6 +31,9 @@ protected:
     FRESULT dir_seek (WORD idx);        /* Directory handling - Seek directory index */
     FRESULT dir_next (bool);            /* Directory handling - Move directory index next */
     FRESULT dir_find (void);            /* Finds filename */
+#if _USE_LFN
+    FRESULT dir_find_lfn_start(void);   // will set lfn_index correctly, based on current position
+#endif
     FRESULT dir_read (void);            /* Reads entry */
     FRESULT dir_register (void);	    /* Register an object to the directory       */
     FRESULT dir_remove (void);          /* Remove an object from the directory       */

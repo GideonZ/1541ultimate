@@ -68,8 +68,11 @@ public:
 	WORD	date;	 /* Last modified date */
 	WORD	time;	 /* Last modified time */
 	DWORD   dir_clust;  /* Start of directory, needed to reopen dir */
-	DWORD   dir_sector; /* Actual sector in which the directory item is located */
-    WORD    dir_offset; /* Offset within sector where dir entry is located */
+    WORD    dir_index;  /* Entry of the directory we have our directory item. */
+//   DWORD   dir_sector; /* Actual sector in which the directory item is located */
+//    WORD    dir_offset; /* Offset within sector where dir entry is located */
+//    WORD    lfn_index;  /* dirty hack to easily find the first entry of the name */
+                        /* should NOT be in file info... should be handled within the file system itself!! */
     WORD    lfsize;
     char   *lfname;
 	BYTE	attrib;	 /* Attribute */
@@ -83,8 +86,10 @@ public:
 		date = 0;
 		time = 0;
 		dir_clust = 0;
-		dir_sector = 2;
-		dir_offset = 0;
+//		dir_sector = 2;
+//		dir_offset = 0;
+//		lfn_index = 0xFFFF;
+        dir_index = 0;
 		attrib = 0;
 		lfsize = namesize;
 	    if (namesize) {
@@ -96,6 +101,21 @@ public:
 	        lfname = NULL;
     }
     
+    FileInfo(char *name)
+    {
+		fs = NULL;
+		cluster = 0;
+		size = 0;
+		date = 0;
+		time = 0;
+		dir_clust = 0;
+        dir_index = 0;
+		attrib = 0;
+		lfsize = strlen(name)+1;
+        lfname = new char[lfsize];
+        strcpy(lfname, name);
+    }
+    
     FileInfo(FileInfo &i)
     {
         fs = i.fs;
@@ -104,8 +124,10 @@ public:
         date = i.date;
         time = i.time;
         dir_clust = i.dir_clust;
-        dir_sector = i.dir_sector;
-        dir_offset = i.dir_offset;
+        dir_index = i.dir_index;
+//        dir_sector = i.dir_sector;
+//        dir_offset = i.dir_offset;
+//        lfn_index = i.lfn_index;
         lfsize = i.lfsize;
         lfname = new char[lfsize];
         strncpy(lfname, i.lfname, lfsize);
@@ -130,13 +152,15 @@ public:
 		printf("Size       : %d\n", size);
 		printf("Date       : %d\n", date);
 		printf("Time	   : %d\n", time);
+        printf("DIR index  : %d\n", dir_index);
 		printf("LFSize     : %d\n", lfsize);
 		printf("LFname     : %s\n", lfname);
 		printf("Attrib:    : %b\n", attrib);
 		printf("Extension  : %s\n", extension);
 		printf("Dir Clust  : %d\n", dir_clust);
-		printf("Dir sector : %d\n", dir_sector);
-		printf("Dir offset : %d\n", dir_offset);
+//        printf("LFN index  : %d\n", lfn_index);
+//		printf("Dir sector : %d\n", dir_sector);
+//		printf("Dir offset : %d\n", dir_offset);
 	}
 };
 
@@ -176,9 +200,6 @@ public:
     virtual FRESULT file_sync(File *f);             // Clean-up cached data
     virtual void    file_print_info(File *f) { } // debug
     
-    // Modification functions
-//    virtual FRESULT rename(void);
-    // ...
 };
 
 // FATFS is a derivate from this base class. This base class implements the interface
