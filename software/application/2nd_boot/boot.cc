@@ -92,7 +92,8 @@ int init_fat_on_usb(void)
 FRESULT try_loading(char *filename)
 {
     FATFIL *file = new FATFIL(fs);
-    FRESULT res = file->open(filename, 0, FA_READ);
+    WORD dummy;
+    FRESULT res = file->open(filename, 0, FA_READ, &dummy);
     printf("File %s open result = %d.\n", filename, res);
     if(res != FR_OK) {
         return res;

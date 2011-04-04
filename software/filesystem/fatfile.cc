@@ -40,21 +40,27 @@ FATFIL::FATFIL(FATFS *pfs) /* default constructor */
 {
     fs = pfs;
     valid = 0;
+#if !_FS_READONLY
     dir_obj = NULL;
+#endif
 }
 
 FATFIL::FATFIL(FATFS *pfs, XCHAR *path, BYTE mode)
 {
     fs = pfs;
     WORD dummy;
+#if !_FS_READONLY
     dir_obj = NULL;
+#endif
     open(path, 0, mode, &dummy);
 }
 
 FATFIL::~FATFIL()
 {
+#if !_FS_READONLY
     if(dir_obj)
         delete dir_obj;
+#endif
 }
     
 FRESULT FATFIL::validate(void)
@@ -68,17 +74,6 @@ FRESULT FATFIL::validate(void)
 }
     
 
-/*
-FRESULT FATFIL::find_file_in_dir()
-{
-    if(dir_obj)
-        return FR_OK;
-
-    dir_obj = new FATDIR(fs, dir_clust);    // Init FATDIR object and point to the file system 
-
-}
-*/
-    
 /*-----------------------------------------------------------------------*/
 /* Open or Create a File                                                 */
 /*-----------------------------------------------------------------------*/
@@ -92,14 +87,17 @@ FRESULT FATFIL::open (
     FRESULT res;
     BYTE *dir;
 
-    if(dir_obj)
-        delete dir_obj;
-        
-//    small_printf("Open %s %b %d\n", path, mode, dir_clust);
-    dir_obj = new FATDIR(fs, dir_clust);    /* Init FATDIR object and point to the file system */
-
     valid = 0;
     *dir_index = 0xFFFF;
+
+#if !_FS_READONLY
+    if(dir_obj)
+        delete dir_obj;
+    dir_obj = new FATDIR(fs, dir_clust);    /* Init FATDIR object and point to the file system */
+#else
+    FATDIR dj(fs, dir_clust);
+    FATDIR *dir_obj = &dj;
+#endif
 
 #if !_FS_READONLY
     mode &= (FA_READ | FA_WRITE | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS | FA_CREATE_NEW);

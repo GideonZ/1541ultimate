@@ -151,8 +151,14 @@ class UsbDevice;
 class UsbDriver;
 
    
+#ifndef BOOTLOADER
 class Usb : public ConfigurableObject
 {
+#else
+class Usb
+{
+    ConfigStore *cfg;
+#endif
     int gap;
     int poll_delay;
 	int se0_seen;

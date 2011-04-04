@@ -17,12 +17,6 @@ private:
     DWORD   dsect;      /* Current data sector */
 #if !_FS_READONLY
     FATDIR *dir_obj;    /* Information about the directory entry that points to this file */
-//    DWORD   dir_clust;  /* WHERE is the directory the file resides in */
-//    WORD    dir_index;  /* The index of the relevant entry */
-//    BYTE    dir_entry_known; /* tells us if the values below are actually known.. (they are not needed for
-//                                reading only) */
-//    DWORD   dir_sect;   /* Sector containing the directory entry */
-//    BYTE*   dir_ptr;    /* Pointer to the directory entry in the window */
 #endif
 #if !_FS_TINY
     BYTE    buf[_MAX_SS];/* File R/W buffer */
