@@ -58,16 +58,11 @@ struct t_cfg_definition audio_cfg[] = {
 
 AudioConfig :: AudioConfig()
 {
-    flash = get_flash();
-    if(flash) {
-	    cfg = config_manager.register_store(0x41554449, "Audio Output settings", audio_cfg);
-        effectuate();
-	} else {
-        cfg = NULL;
-	}
+    register_store(0x41554449, "Audio Output settings", audio_cfg);
+    effectuate_settings();
 }
     
-void AudioConfig :: effectuate()
+void AudioConfig :: effectuate_settings()
 {
     if(!cfg)
         return;

@@ -55,7 +55,7 @@ ConfigManager :: ~ConfigManager()
 }
 
 ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
-                                t_cfg_definition *defs) 
+                                t_cfg_definition *defs, ConfigurableObject *ob) 
 {
 	if(!flash)
 		return NULL; // fail
@@ -72,7 +72,7 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
     for(int i=0;i<num_pages;i++) {
         flash->read_config_page(i, 4, &id);
         if (store_id == id) {
-            s = new ConfigStore(store_id, name, i, page_size, defs); // TODO
+            s = new ConfigStore(store_id, name, i, page_size, defs, ob); // TODO
             s->read();
             //printf("APPENDING STORE %p %s\n", s, s->get_name());
             children.append(s);
@@ -85,7 +85,7 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
         flash->read_config_page(i, 4, &id);
         if (id == 0xFFFFFFFF) {
             //printf("Found empty spot on config page %d, for ID=%8x. Size=%d. Defs=%p. Name=%s\n", i, store_id, page_size, defs, name);
-            s = new ConfigStore(store_id, name, i, page_size, defs); // TODO
+            s = new ConfigStore(store_id, name, i, page_size, defs, ob); // TODO
             s->write();
             children.append(s);
 			s->attach();
@@ -94,7 +94,7 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
     }
     // no entry in flash found, no place to create one.
     // create a temporary one in memory.
-    s = new ConfigStore(store_id, name, -1, page_size, defs); // TODO
+    s = new ConfigStore(store_id, name, -1, page_size, defs, ob); // TODO
     if(s) {
         children.append(s);
     	s->attach();
@@ -134,7 +134,7 @@ int ConfigManager :: fetch_children()
 /*** CONFIGURATION STORE ***/
 //   ===================
 ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
-                           t_cfg_definition *defs) : PathObject(NULL, name)  //, items(32, NULL)
+                           t_cfg_definition *defs, ConfigurableObject *ob) : PathObject(NULL, name)  //, items(32, NULL)
 {
     //printf("Create configstore %8x with size %d..", store_id, page_size);
     if(page_size)
@@ -145,6 +145,7 @@ ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
     block_size = page_size;
     flash_page = page;
     id = store_id;
+    obj = ob;
     dirty = false;
 //    definitions = def;
     
@@ -163,8 +164,9 @@ ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
 
 ConfigStore :: ~ConfigStore()
 {
-    if(dirty)
+    if(dirty) {
         write();
+    }
         
     ConfigItem *i;
     for(int n = 0; n < children.get_elements();n++) {
@@ -207,6 +209,9 @@ void ConfigStore :: pack()
 void ConfigStore :: write()
 {
 	printf("Writing configstore '%s' to flash, page %d..", get_name(), flash_page);
+    if(obj)
+        obj->effectuate_settings();
+
 	pack();
 	Flash *flash = config_manager.get_flash_access();
 	if(flash) {

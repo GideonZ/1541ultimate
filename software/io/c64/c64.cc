@@ -93,14 +93,11 @@ struct t_cfg_definition c64_config[] = {
 
 extern BYTE _binary_chars_bin_start;
 
+    
 C64 :: C64()
 {
     flash = get_flash();
-    if(flash) {
-	    cfg = config_manager.register_store(0x43363420, "C64 and cartridge settings", c64_config);
-	    if(cfg)
-	    	C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
-	}
+    register_store(0x43363420, "C64 and cartridge settings", c64_config);
 
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
@@ -129,6 +126,32 @@ C64 :: ~C64()
 
     delete keyb;
 //    delete[] char_set;
+}
+
+void C64 :: effectuate_settings(void)
+{
+    // this function will set the parameters that can be switched while the machine is running
+    // init_cartridge is called only at reboot, and will cause the C64 to reset.
+	C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
+
+    cart_def *def;
+	int cart = cfg->get_value(CFG_C64_CART);
+	def = &cartridges[cart];
+	
+    C64_REU_ENABLE = 0;
+    if(def->type & CART_REU) {
+        if(cfg->get_value(CFG_C64_REU_EN)) {
+        	printf("Enabling REU!!\n");
+        	C64_REU_ENABLE = 1;
+            C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
+        }
+    }
+    C64_ETHERNET_ENABLE = 0;
+    if(def->type & CART_ETH) {
+        if(cfg->get_value(CFG_C64_ETH_EN)) {
+            C64_ETHERNET_ENABLE = 1;
+        }
+    }
 }
 
 bool C64 :: exists(void)

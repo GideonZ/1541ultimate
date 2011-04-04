@@ -62,6 +62,10 @@ begin
                     control_i.extend_left  <= io_req.data(0);
                 when c_sid_extend_right =>
                     control_i.extend_right <= io_req.data(0);
+                when c_sid_wavesel_left =>
+                    control_i.comb_wave_left <= io_req.data(0);
+                when c_sid_wavesel_right =>
+                    control_i.comb_wave_right <= io_req.data(0);
                 when others =>
                     null;
                 end case;
@@ -88,6 +92,10 @@ begin
                     io_resp.data(0) <= control_i.extend_left;
                 when c_sid_extend_right =>
                     io_resp.data(0) <= control_i.extend_right;
+                when c_sid_wavesel_left =>
+                    io_resp.data(0) <= control_i.comb_wave_left;
+                when c_sid_wavesel_right =>
+                    io_resp.data(0) <= control_i.comb_wave_right;
                 when others =>
                     null;
                 end case;

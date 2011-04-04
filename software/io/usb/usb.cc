@@ -94,7 +94,7 @@ Usb :: Usb()
 
 #ifndef BOOTLOADER
         poll_list.append(&poll_usb);
-        cfg = config_manager.register_store(0x55534232, "USB settings", usb_config);
+        register_store(0x55534232, "USB settings", usb_config);
         if (cfg->get_value(CFG_USB_BOOT) ==0 )
             poll_delay = 6;
 #endif

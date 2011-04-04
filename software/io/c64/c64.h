@@ -96,11 +96,10 @@ typedef struct _cart
 
 class Keyboard;
 
-class C64 : public ObjectWithMenu
+class C64 : public ObjectWithMenu, ConfigurableObject
 {
     Flash *flash;
     Keyboard *keyb;
-    ConfigStore *cfg;
     
     BYTE *char_set; //[CHARSET_SIZE];
     BYTE vic_backup[NUM_VICREGS];
@@ -129,7 +128,8 @@ public:
     ~C64();
 
     int  fetch_task_items(IndexedList<PathObject*> &item_list);
-
+    void effectuate_settings(void);
+    
     bool exists(void);
     void poll(Event &e);
     void reset(void);

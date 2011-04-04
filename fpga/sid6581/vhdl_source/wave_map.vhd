@@ -30,6 +30,7 @@ port (
     test     : in  std_logic := '0';
        
     voice_i  : in  unsigned(3 downto 0);
+    comb_mode: in  std_logic;
     enable_i : in  std_logic;
     wave_sel : in  std_logic_vector(3 downto 0);
     sq_width : in  unsigned(11 downto 0);
@@ -115,15 +116,33 @@ begin
             when X"2" =>
                 out_tmp := sawtooth;
             when X"3" =>
-                out_tmp(g_sample_bits-1 downto g_sample_bits-8) := 
-                        c_wave_TS(to_integer(osc_val(23 downto 23-g_sample_bits)));
+                if comb_mode='0' then
+                    out_tmp(g_sample_bits-1 downto g_sample_bits-8) := 
+                            c_wave_TS(to_integer(osc_val(23 downto 23-g_sample_bits)));
+                else -- 8580
+                    out_tmp := triangle and sawtooth;
+                end if;
             when X"4" =>
                 out_tmp := square;
             when X"5" => -- combined triangle and square
-                if square(0)='1' then
-                    out_tmp(g_sample_bits-1 downto g_sample_bits-8) := 
-                        c_wave_TP(to_integer(triangle(g_sample_bits-1 downto g_sample_bits-8)));
+                if comb_mode='0' then
+                    if square(0)='1' then
+                        out_tmp(g_sample_bits-1 downto g_sample_bits-8) := 
+                            c_wave_TP(to_integer(triangle(g_sample_bits-1 downto g_sample_bits-8)));
+                    end if;
+                else -- 8580
+                    out_tmp := triangle and square;
                 end if;
+            when X"6" => -- combined saw and pulse
+                if comb_mode='1' then
+                    out_tmp := sawtooth and square;
+                end if;                   
+
+            when X"7" => -- combined triangle, saw and pulse
+                if comb_mode='1' then
+                    out_tmp := triangle and sawtooth and square;
+                end if;                   
+
             when X"8" =>
                 out_tmp(g_sample_bits-1) := noise_tmp(22); -- unsure.. 21?
                 out_tmp(g_sample_bits-2) := noise_tmp(20);

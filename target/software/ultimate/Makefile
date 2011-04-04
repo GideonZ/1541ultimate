@@ -123,9 +123,10 @@ SRCS_CC	 =  stream.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
-			command_intf.cc \
 			audio_select.cc \
 			$(PRJ).cc
+
+####			command_intf.cc \
 
 SRCS_ASM =  crt0_appl.s
 

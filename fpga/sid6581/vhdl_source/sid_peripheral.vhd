@@ -114,6 +114,9 @@ begin
         wdata         => sid_wdata,
         rdata         => sid_rdata,
 
+        comb_wave_l   => control.comb_wave_left,
+        comb_wave_r   => control.comb_wave_right,
+
         io_req_filt   => io_req_filt,
         io_resp_filt  => io_resp_filt,
     

@@ -79,6 +79,7 @@ architecture gideon of all_carts_v4 is
     constant c_ocean128     : std_logic_vector(3 downto 0) := "1001";
     constant c_epyx         : std_logic_vector(3 downto 0) := "1010";
     constant c_ocean256     : std_logic_vector(3 downto 0) := "1011";
+    constant c_domark       : std_logic_vector(3 downto 0) := "1101";
     
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -241,6 +242,23 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= '1';
             
+            when c_domark =>
+                if io_write='1' and io_addr(8)='0' then -- DE00 range
+                    bank_bits <= io_wdata(2 downto 0);
+                    ext_bank  <= '0' & io_wdata(4 downto 3);
+--                    if io_wdata(7 downto 5) /= "000" then -- permanent off
+--                        cart_en <= '0';
+--                    end if;
+                    cart_en <= not (io_wdata(7) or io_wdata(6) or io_wdata(5));
+                end if;
+                game_n    <= '1';
+                exrom_n   <= '0';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
             when c_ocean256 =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits <= io_wdata(2 downto 0);

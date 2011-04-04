@@ -26,14 +26,13 @@
 #define SID_COMBSEL_LEFT  *((volatile BYTE *)0x404200A)
 #define SID_COMBSEL_RIGHT *((volatile BYTE *)0x404200B)
 
-class AudioConfig
+class AudioConfig : public ConfigurableObject
 {
-    Flash *flash;
-    ConfigStore *cfg;
 public:
     AudioConfig();
     ~AudioConfig() {}
-    void effectuate();
+
+    void effectuate_settings();
 };
 
 extern AudioConfig audio_configurator;

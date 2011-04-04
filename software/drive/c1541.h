@@ -28,7 +28,7 @@ struct t_drive_command
     bool protect;
 };
 
-typedef enum { e_rom_1541=0, e_rom_1541c=1, e_rom_1541ii=2, e_rom_custom=3 } t_1541_rom;
+typedef enum { e_rom_1541=0, e_rom_1541c=1, e_rom_1541ii=2, e_rom_custom=3, e_rom_unset=99 } t_1541_rom;
 typedef enum { e_ram_none      = 0x00,
                e_ram_8000_BFFF = 0x30,
                e_ram_4000_7FFF = 0x0C,
@@ -67,10 +67,11 @@ typedef enum { e_no_disk,
 #define DRVSTAT_MOTOR   0x01
 #define DRVSTAT_WRITING 0x02
 
-class C1541 : public ObjectWithMenu
+class C1541 : public ConfigurableObject, ObjectWithMenu
 {
     volatile BYTE *memory_map;
     volatile BYTE *registers;
+
     int iec_address;
     char drive_letter;
     bool large_rom;
@@ -79,7 +80,6 @@ class C1541 : public ObjectWithMenu
 	int write_skip;
 	
 	Flash *flash;
-    ConfigStore *cfg;
     File *mount_file;
     t_disk_state disk_state;
     GcrImage *gcr_image;
@@ -89,8 +89,10 @@ public:
     ~C1541();
     
 	void init(void);
-    int  fetch_task_items(IndexedList<PathObject*> &item_list);
 
+    int  fetch_task_items(IndexedList<PathObject*> &item_list); // from ObjectWithMenu
+    void effectuate_settings(void); // from ConfigurableObject
+    
     void drive_power(bool on);
     void drive_reset(void);
     void set_hw_address(int addr);

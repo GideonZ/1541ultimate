@@ -43,6 +43,7 @@ struct t_cfg_definition
 };
 
 class ConfigStore;
+class ConfigurableObject;
 
 class ConfigItem : public PathObject
 {
@@ -69,6 +70,7 @@ class ConfigStore : public PathObject
     int    flash_page;
     BYTE  *mem_block;
     int    block_size;
+    ConfigurableObject *obj;
     
     void pack(void);
     void unpack(void);
@@ -78,7 +80,7 @@ public:
     DWORD id;
     bool  dirty;
 
-    ConfigStore(DWORD id, char *name, int page, int page_size, t_cfg_definition *defs);
+    ConfigStore(DWORD id, char *name, int page, int page_size, t_cfg_definition *defs, ConfigurableObject *obj);
     virtual ~ConfigStore();
 
 // Interface functions
@@ -106,7 +108,7 @@ public:
     ConfigManager();
     ~ConfigManager();
     
-    ConfigStore *register_store(DWORD store_id, char *name, t_cfg_definition *defs);
+    ConfigStore *register_store(DWORD store_id, char *name, t_cfg_definition *defs, ConfigurableObject *ob);
     ConfigStore *open_store(DWORD store_id);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
@@ -122,16 +124,23 @@ extern ConfigManager config_manager; // global!
 //extern TreeNode config_root;
 
 // Base class for any configurable object
-//class ConfigurableObject
-//{
-//private:
-//public:
-//    ConfigurableObject();
-//    ~ConfigurableObject();
-//    
-//    int  register_store(DWORD store_id, char *name, t_cfg_definition *defs);
-//    void fetch
-//    void effectuate();
-//    
+
+class ConfigurableObject
+{
+public:
+    ConfigStore *cfg;
+
+    ConfigurableObject() { }
+    virtual ~ConfigurableObject() { }
+    
+    virtual bool register_store(DWORD store_id, char *name, t_cfg_definition *defs)
+    {
+        cfg = config_manager.register_store(store_id, name, defs, this);
+        return (cfg != NULL);
+    }
+    
+    virtual void fetch_settings() { }
+    virtual void effectuate_settings() { }
+};
 
 #endif

@@ -30,6 +30,9 @@ port (
     wdata         : in  std_logic_vector(7 downto 0);
     rdata         : out std_logic_vector(7 downto 0);
 
+    comb_wave_l   : in  std_logic := '0';
+    comb_wave_r   : in  std_logic := '0';
+
     io_req_filt   : in  t_io_req;
     io_resp_filt  : out t_io_resp;
 
@@ -57,6 +60,7 @@ architecture structural of sid_top is
 
     -- Wave map parameters
     signal msb_other   : std_logic;
+    signal comb_mode   : std_logic;
     signal ring_mod    : std_logic;
     signal wave_sel    : std_logic_vector(3 downto 0);
     signal sq_width    : unsigned(11 downto 0);
@@ -130,6 +134,9 @@ begin
         wdata       => wdata,
         rdata       => rdata,
         
+        comb_wave_l => comb_wave_l,
+        comb_wave_r => comb_wave_r,
+
     ---
         voice_osc   => voice_osc,
         voice_wave  => voice_wave,
@@ -142,6 +149,7 @@ begin
         sync        => sync,
         
         -- Wave map parameters
+        comb_mode   => comb_mode,
         ring_mod    => ring_mod,
         wave_sel    => wave_sel,
         sq_width    => sq_width,
@@ -219,23 +227,24 @@ begin
         g_num_voices  => g_num_voices,
         g_sample_bits => 12 )
     port map (
-        clock    => clock,
-        reset    => reset,
-        test     => test_wave,
+        clock     => clock,
+        reset     => reset,
+        test      => test_wave,
         
-        osc_val  => osc_val,
-        carry_20 => carry_20,
-        msb_other=> msb_other,
+        osc_val   => osc_val,
+        carry_20  => carry_20,
+        msb_other => msb_other,
         
-        voice_i  => voice_wave,
-        enable_i => enable_wave,
-        wave_sel => wave_sel,
-        ring_mod => ring_mod,
-        sq_width => sq_width,
+        voice_i   => voice_wave,
+        enable_i  => enable_wave,
+        comb_mode => comb_mode,
+        wave_sel  => wave_sel,
+        ring_mod  => ring_mod,
+        sq_width  => sq_width,
     
-        voice_o  => voice_mul,
-        enable_o => enable_mul,
-        wave_out => waveform );
+        voice_o   => voice_mul,
+        enable_o  => enable_mul,
+        wave_out  => waveform );
 
     adsr: entity work.adsr_multi
     generic map (

@@ -55,7 +55,7 @@
 class RtcConfigStore : public ConfigStore
 {
 public:
-	RtcConfigStore(char *name, t_cfg_definition *defs) : ConfigStore(0, name, -1, 0, defs) { }
+	RtcConfigStore(char *name, t_cfg_definition *defs) : ConfigStore(0, name, -1, 0, defs, NULL) { }
 	~RtcConfigStore() { if(dirty) write(); }
 
 	int  fetch_children(void);

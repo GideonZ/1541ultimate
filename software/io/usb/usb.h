@@ -151,7 +151,7 @@ class UsbDevice;
 class UsbDriver;
 
    
-class Usb
+class Usb : public ConfigurableObject
 {
     int gap;
     int poll_delay;
@@ -159,7 +159,7 @@ class Usb
     int get_device_slot(void);
     DWORD pipes[USB_MAX_PIPES];
     int   transactions[USB_MAX_TRANSACTIONS];
-    ConfigStore *cfg;
+    //ConfigStore *cfg;
 
     void clean_up(void);
     void clear(void);

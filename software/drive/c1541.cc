@@ -56,12 +56,34 @@ struct t_cfg_definition c1541_config[] = {
 //--------------------------------------------------------------
 // C1541 Drive Class
 //--------------------------------------------------------------
+void C1541 :: effectuate_settings(void)
+{
+    printf("Effectuate 1541 settings:\n");
+    ram = ram_modes[cfg->get_value(CFG_C1541_RAMBOARD)];
+    set_ram(ram);
+
+    set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
+    set_sw_address(cfg->get_value(CFG_C1541_BUS_ID));
+
+    t_1541_rom rom = rom_modes[cfg->get_value(CFG_C1541_ROMSEL)];
+    if((rom != current_rom)||
+       (rom == e_rom_custom)) { // && ( check if the name has changed
+
+        set_rom(rom, cfg->get_string(CFG_C1541_ROMFILE));
+    }
+
+    if(registers[C1541_POWER] != cfg->get_value(CFG_C1541_POWERED)) {
+        drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
+    }
+}
+    
 
 C1541 :: C1541(volatile BYTE *regs, char letter)
 {
     registers  = regs;
     mount_file = NULL;
     drive_letter = letter;
+    current_rom = e_rom_unset;
 	flash = get_flash();
 
     char buffer[32];
@@ -69,7 +91,7 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
     c1541_config[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
         
     sprintf(buffer, "1541 Drive %c Settings", letter);    
-    cfg = config_manager.register_store((DWORD)regs, buffer, c1541_config);
+    register_store((DWORD)regs, buffer, c1541_config);
 
     DWORD mem_address = ((DWORD)registers[C1541_MEM_ADDR]) << 16;
     memory_map = (volatile BYTE *)mem_address;
@@ -120,10 +142,7 @@ void C1541 :: init(void)
     registers[C1541_INSERTED] = 0;
     disk_state = e_no_disk;
 
-    ram = ram_modes[cfg->get_value(CFG_C1541_RAMBOARD)];
-    set_rom(rom_modes[cfg->get_value(CFG_C1541_ROMSEL)], cfg->get_string(CFG_C1541_ROMFILE));
-    set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
-    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
+    effectuate_settings();
 }
 
 int  C1541 :: fetch_task_items(IndexedList<PathObject*> &item_list)
