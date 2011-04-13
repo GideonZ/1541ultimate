@@ -175,7 +175,9 @@ begin
         g_ram_expansion => false, --
         g_hardware_iec  => false, --
         g_iec_prog_tim  => false,
-        g_c2n_streamer  => true,
+	    g_stereo_sid    => false,
+		g_command_intf  => false,
+        g_c2n_streamer  => false,
         g_c2n_recorder  => false,
         g_cartridge     => true, --
         g_drive_sound   => true, --

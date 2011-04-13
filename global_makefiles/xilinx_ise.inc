@@ -51,6 +51,9 @@ $(warning "WARNING: The file containing the ISE tool locations is not found. \
            wrong. Create an ISE locations file to get rid of this warning!")
 endif
 
+ifneq ($(ISE_LOCATIONS_FILE_USER),yes)
+$(warning "WARNING: No USER DEFINED ISE locations file file used!")
+endif
 
 THIS_MAKE_DEP := $(THIS_MAKE_DEP) $(lastword $(MAKEFILE_LIST))
 
