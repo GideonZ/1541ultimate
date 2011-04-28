@@ -160,19 +160,21 @@ begin
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
         g_uart          => true,
-        g_drive_1541    => true, --
-        g_drive_1541_2  => true, --
-        g_hardware_gcr  => true, --
-        g_ram_expansion => false, --
+        g_drive_1541    => true,
+        g_drive_1541_2  => false,
+        g_hardware_gcr  => true,
+        g_ram_expansion => true,
+        g_extended_reu  => false,
+        g_stereo_sid    => false,
         g_hardware_iec  => false,
         g_iec_prog_tim  => false,
         g_c2n_streamer  => false,
         g_c2n_recorder  => false,
-        g_cartridge     => true, --
-        g_drive_sound   => true, --
+        g_cartridge     => true,
+        g_drive_sound   => true,
         g_rtc_chip      => true,
         g_rtc_timer     => true,
-        g_usb_host      => true,
+        g_usb_host      => false,
         g_spi_flash     => true )
     port map (
         -- globals

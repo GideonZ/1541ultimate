@@ -329,7 +329,7 @@ begin
 
                     case command.mode is
                         when c_mode_verify =>
-                            if mem_resp.data /= reu_read_reg then
+                            if dma_resp.data /= reu_read_reg then
                                 verify_error <= '1';
                                 state <= idle;
                             else

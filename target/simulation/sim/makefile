@@ -141,11 +141,11 @@ $(TESTCASE)_ENTITY			:= $(TESTCASE)
 $(TESTCASE)_TIME			:= 20 us;
 $(TESTCASE)_DO_GUI_BEFORE	:= 
 
-TESTCASE 					:= cache_tc_1
+TESTCASE 					:= reu_tc_1
 TESTCASES					:= $(TESTCASES) $(TESTCASE)
 $(TESTCASE)_SRC				:= $(TESTCASE).vhd
 $(TESTCASE)_ENTITY			:= $(TESTCASE)
-$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_TIME			:= 40 us;
 $(TESTCASE)_DO_GUI_BEFORE	:= 
 
 ###############################################################################
