@@ -227,7 +227,7 @@ FRESULT FATFIL::open (
         delete dir_obj;
     }
     dir_obj = new FATDIR(fs, info->dir_clust);
-    printf("Seeking Index %d of dir resulted in: %d\n", info->dir_index, dir_obj->dir_seek(info->dir_index));
+//    printf("Seeking Index %d of dir resulted in: %d\n", info->dir_index, dir_obj->dir_seek(info->dir_index));
 #endif
 
     flag = mode;                    /* File access mode */
@@ -237,7 +237,7 @@ FRESULT FATFIL::open (
     dsect = 0;
     valid = 1;
 
-    print_info();
+//    print_info();
     LEAVE_FF(fs, FR_OK);
 }
 

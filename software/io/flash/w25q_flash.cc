@@ -197,6 +197,14 @@ void W25Q_Flash :: write_config_page(int page, void *buffer)
 	write_page(page, buffer);
 }
 
+void W25Q_Flash :: clear_config_page(int page)
+{
+    page *= sector_size;
+    page += W25Q_PAGE_CONFIG_START;
+    erase_sector(page / sector_size); // silly.. divide and later multiply.. oh well!
+}
+    
+
 /*
 void W25Q_Flash :: read_page(int page, void *buffer)
 {

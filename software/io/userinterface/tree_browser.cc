@@ -92,7 +92,7 @@ void TreeBrowserState :: do_refresh()
 
     if(!selected) {
         browser->reset_quick_seek();
-
+        draw();
         if(initial_index >= 0) {
             move_to_index(initial_index);
         } else {
@@ -122,10 +122,11 @@ void TreeBrowserState :: draw()
     	return;
     }
 
+    int y = browser->window->get_size_y(); // how many can I show?
+//    printf("TreeBrowserState::Draw: first=%d, y=%d, selected_line=%d\n", first_item_on_screen, y, selected_line);
+
     if(first_item_on_screen < 0)
         return;
-
-    int y = browser->window->get_size_y(); // how many can I show?
     
     PathObject *t;
     for(int i=0;i<y;i++) {

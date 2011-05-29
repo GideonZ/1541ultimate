@@ -68,6 +68,7 @@ public:
 	virtual int  get_number_of_config_pages(void);
     virtual void read_config_page(int page, int length, void *buffer);
     virtual void write_config_page(int page, void *buffer);
+    virtual void clear_config_page(int page);
 
 	// Multiple FPGA images
     virtual void reboot(int addr);

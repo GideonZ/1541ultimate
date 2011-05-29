@@ -90,9 +90,6 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
     c1541_config[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
     c1541_config[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
         
-    sprintf(buffer, "1541 Drive %c Settings", letter);    
-    register_store((DWORD)regs, buffer, c1541_config);
-
     DWORD mem_address = ((DWORD)registers[C1541_MEM_ADDR]) << 16;
     memory_map = (volatile BYTE *)mem_address;
     printf("C1541 Memory address: %p\n", mem_address);
@@ -109,8 +106,8 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
     gcr_image = new GcrImage();
     bin_image = new BinImage();
     
-//    if(letter == 'A')
-//        gcr_image->test();
+    sprintf(buffer, "1541 Drive %c Settings", letter);    
+    register_store((DWORD)regs, buffer, c1541_config);
 }
 
 C1541 :: ~C1541()

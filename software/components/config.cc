@@ -159,7 +159,7 @@ ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
         children.append(item);
 		item->attach();
     }
-    printf(".. done\n");
+//    printf(".. done\n");
 }
 
 ConfigStore :: ~ConfigStore()
@@ -187,6 +187,7 @@ void ConfigStore :: pack()
     ConfigItem *i;
     int len;
     (*(DWORD *)mem_block) = id;
+//    printf("Packing ConfigStore %s.\n", get_name());
     for(int n = 0; n < children.get_elements();n++) {
     	i = (ConfigItem *)children[n];
     	len = i->pack(b, remain);
@@ -206,11 +207,15 @@ void ConfigStore :: pack()
 */
 }
 
+void ConfigStore :: effectuate()
+{
+    if(obj)
+        obj->effectuate_settings();
+}
+    
 void ConfigStore :: write()
 {
 	printf("Writing configstore '%s' to flash, page %d..", get_name(), flash_page);
-    if(obj)
-        obj->effectuate_settings();
 
 	pack();
 	Flash *flash = config_manager.get_flash_access();
@@ -416,6 +421,7 @@ int ConfigItem :: pack(BYTE *buffer, int len)
     }
     switch(definition->type) {
         case CFG_TYPE_VALUE:
+//            printf("Value %s = %d\n", definition->item_text, value);
             if(len < 5) {
                 printf("Int doesn't fit anymore.\n");
                 return 0;
@@ -427,6 +433,7 @@ int ConfigItem :: pack(BYTE *buffer, int len)
             *(buffer++) = (BYTE)(value >> 0);
             return 7;
         case CFG_TYPE_ENUM:
+//            printf("Enum %s = %s\n", definition->item_text, definition->items[value]);
             if(len < 2) {
                 printf("Enum doesn't fit anymore.\n");
                 return 0;
@@ -435,6 +442,7 @@ int ConfigItem :: pack(BYTE *buffer, int len)
             *(buffer++) = (BYTE)(value >> 0);
             return 4;
         case CFG_TYPE_STRING:
+//            printf("String %s = %s\n", definition->item_text, string);
             if(2+strlen(string) > len) {
                 printf("String doesn't fit.\n");
                 return 0;

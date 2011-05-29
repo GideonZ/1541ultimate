@@ -318,6 +318,13 @@ int main()
         }
 	}
 
+    if(!virgin & user_interface->popup("Reset configuration?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+        int num = flash->get_number_of_config_pages();
+        for(int i=0;i<num;i++) {
+            flash->clear_config_page(i);
+        }
+    }
+
 	printf("\nConfiguring Flash write protection..\n");
 	flash->protect_configure();
 	flash->protect_enable();

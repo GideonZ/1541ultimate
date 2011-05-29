@@ -254,6 +254,21 @@ void AT45_Flash :: write_config_page(int page, void *buffer)
 	write_page(page + AT45_PAGE_CONFIG_START, buffer);
 }
 
+void AT45_Flash :: clear_config_page(int page)
+{
+    page += AT45_PAGE_CONFIG_START;   
+    int device_addr = (page << page_shift);
+    
+    debug(("Page erase. %b %b %b\n", BYTE(device_addr >> 16), BYTE(device_addr >> 8), BYTE(device_addr)));
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA = AT45_PageErase;
+    SPI_FLASH_DATA = BYTE(device_addr >> 16);
+    SPI_FLASH_DATA = BYTE(device_addr >> 8);
+    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    wait_ready(250000);
+}
+
 /*
 void AT45_Flash :: read_page(int page, void *buffer)
 {

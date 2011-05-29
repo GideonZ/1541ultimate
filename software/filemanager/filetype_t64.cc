@@ -69,7 +69,8 @@ int FileTypeT64 :: fetch_children()
 
 int   FileTypeT64 :: fetch_context_items(IndexedList<PathObject *> &list)
 {
-    return FileDirEntry :: fetch_context_items_actual(list);
+	list.append(new MenuItem(this, "Enter", FILEDIR_ENTERDIR));
+    return 1+ (FileDirEntry :: fetch_context_items_actual(list));
 }
 
 FileDirEntry *FileTypeT64 :: test_type(PathObject *obj)

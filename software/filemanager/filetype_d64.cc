@@ -90,6 +90,9 @@ int FileTypeD64 :: fetch_context_items(IndexedList<PathObject *> &list)
         count += 3;
     }
 
+	list.append(new MenuItem(this, "Enter", FILEDIR_ENTERDIR));
+    count++;
+    
     return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 

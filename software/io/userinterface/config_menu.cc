@@ -52,8 +52,10 @@ void ConfigBrowserState :: level_up(void)
 {
 	if(level == 1) { // going to level 0, we need to store in flash
 		ConfigStore *st = (ConfigStore *)previous->selected;
-		if(st->dirty)
+		if(st->dirty) {
 			st->write();
+			st->effectuate();
+		}
 	}
     browser->state = previous;
     previous->refresh = true;
@@ -125,8 +127,10 @@ int ConfigBrowser :: handle_key(char c)
         case 0x03: // runstop
         	if(state->level == 1) { // going to level 0, we need to store in flash
         		ConfigStore *st = (ConfigStore *)state->previous->selected;
-        		if(st->dirty)
+        		if(st->dirty) {
         			st->write();
+        			st->effectuate();
+        		}
         	}
         	ret = -2;
             break;

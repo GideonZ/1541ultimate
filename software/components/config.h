@@ -86,6 +86,7 @@ public:
 // Interface functions
     virtual void read(void);
     virtual void write(void);
+    virtual void effectuate(void);
 
     ConfigItem *find_item(BYTE id);
     int  get_value(BYTE id);
