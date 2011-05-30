@@ -224,8 +224,22 @@ void flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
     }    
 }
 
+void copy_rom(BYTE *roms, int id, int *min, int *max, BYTE *source, BYTE *source_end)
+{
+	t_flash_address image_address;
+	flash->get_image_addresses(id, &image_address);
+    if(image_address.start < *min)
+        *min = image_address.start;
+    if((image_address.start + image_address.max_length) > *max)
+        *max = image_address.start + image_address.max_length;
+    int length = (int)source_end - (int)source;
+    memcpy(roms+image_address.start, source, length);
+}
+
 bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 {
+	BYTE *roms;
+	
 	flash->protect_disable();
 	last_sector = -1;
 	if(do_update1) {
@@ -233,21 +247,46 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 	    flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, &_binary_2nd_boot_bin_end, BOOT_VERSION, "Secondary bootloader");
 	}
     if(do_roms) {
-	    flash_buffer(FLASH_ID_AR5PAL,    &_binary_ar5pal_bin_start,   &_binary_ar5pal_bin_end,   "", "ar5pal");
-	    flash_buffer(FLASH_ID_AR6PAL,    &_binary_ar6pal_bin_start,   &_binary_ar6pal_bin_end,   "", "ar6pal");
-	    flash_buffer(FLASH_ID_FINAL3,    &_binary_final3_bin_start,   &_binary_final3_bin_end,   "", "final3");
-	    flash_buffer(FLASH_ID_SOUNDS,    &_binary_sounds_bin_start,   &_binary_sounds_bin_end,   "", "sounds");
-	    flash_buffer(FLASH_ID_EPYX,      &_binary_epyx_bin_start,     &_binary_epyx_bin_end,     "", "epyx");
-	    flash_buffer(FLASH_ID_ROM1541,   &_binary_1541_bin_start,     &_binary_1541_bin_end,     "", "1541");
-	    flash_buffer(FLASH_ID_RR38PAL,   &_binary_rr38pal_bin_start,  &_binary_rr38pal_bin_end,  "", "rr38pal");
-	    flash_buffer(FLASH_ID_SS5PAL,    &_binary_ss5pal_bin_start,   &_binary_ss5pal_bin_end,   "", "ss5pal");
-	    flash_buffer(FLASH_ID_AR5NTSC,   &_binary_ar5ntsc_bin_start,  &_binary_ar5ntsc_bin_end,  "", "ar5ntsc");
-	    flash_buffer(FLASH_ID_ROM1541C,  &_binary_1541c_bin_start,    &_binary_1541c_bin_end,    "", "1541c");
-	    flash_buffer(FLASH_ID_ROM1541II, &_binary_1541_ii_bin_start,  &_binary_1541_ii_bin_end,  "", "1541-ii");
-	    flash_buffer(FLASH_ID_RR38NTSC,  &_binary_rr38ntsc_bin_start, &_binary_rr38ntsc_bin_end, "", "rr38ntsc");
-	    flash_buffer(FLASH_ID_SS5NTSC,   &_binary_ss5ntsc_bin_start,  &_binary_ss5ntsc_bin_end,  "", "ss5ntsc");
-	    flash_buffer(FLASH_ID_TAR_PAL,   &_binary_tar_pal_bin_start,  &_binary_tar_pal_bin_end,  "", "tar_pal");
-	    flash_buffer(FLASH_ID_TAR_NTSC,  &_binary_tar_ntsc_bin_start, &_binary_tar_ntsc_bin_end, "", "tar_ntsc");
+        if(flash->get_page_size() == 528) { // atmel 45.. we should program the roms in one block!
+            roms = (BYTE *)malloc(0x210000);
+            memset(roms, 0xFF, 0x210000);
+            int min = 0x210000;
+            int max = 0x000000;
+            copy_rom(roms, FLASH_ID_AR5PAL,    &min, &max, &_binary_ar5pal_bin_start,   &_binary_ar5pal_bin_end   );
+            copy_rom(roms, FLASH_ID_AR6PAL,    &min, &max, &_binary_ar6pal_bin_start,   &_binary_ar6pal_bin_end   );
+            copy_rom(roms, FLASH_ID_FINAL3,    &min, &max, &_binary_final3_bin_start,   &_binary_final3_bin_end   );
+            copy_rom(roms, FLASH_ID_SOUNDS,    &min, &max, &_binary_sounds_bin_start,   &_binary_sounds_bin_end   );
+            copy_rom(roms, FLASH_ID_EPYX,      &min, &max, &_binary_epyx_bin_start,     &_binary_epyx_bin_end     );
+            copy_rom(roms, FLASH_ID_ROM1541,   &min, &max, &_binary_1541_bin_start,     &_binary_1541_bin_end     );
+            copy_rom(roms, FLASH_ID_RR38PAL,   &min, &max, &_binary_rr38pal_bin_start,  &_binary_rr38pal_bin_end  );
+            copy_rom(roms, FLASH_ID_SS5PAL,    &min, &max, &_binary_ss5pal_bin_start,   &_binary_ss5pal_bin_end   );
+            copy_rom(roms, FLASH_ID_AR5NTSC,   &min, &max, &_binary_ar5ntsc_bin_start,  &_binary_ar5ntsc_bin_end  );
+            copy_rom(roms, FLASH_ID_ROM1541C,  &min, &max, &_binary_1541c_bin_start,    &_binary_1541c_bin_end    );
+            copy_rom(roms, FLASH_ID_ROM1541II, &min, &max, &_binary_1541_ii_bin_start,  &_binary_1541_ii_bin_end  );
+            copy_rom(roms, FLASH_ID_RR38NTSC,  &min, &max, &_binary_rr38ntsc_bin_start, &_binary_rr38ntsc_bin_end );
+            copy_rom(roms, FLASH_ID_SS5NTSC,   &min, &max, &_binary_ss5ntsc_bin_start,  &_binary_ss5ntsc_bin_end  );
+            copy_rom(roms, FLASH_ID_TAR_PAL,   &min, &max, &_binary_tar_pal_bin_start,  &_binary_tar_pal_bin_end  );
+            copy_rom(roms, FLASH_ID_TAR_NTSC,  &min, &max, &_binary_tar_ntsc_bin_start, &_binary_tar_ntsc_bin_end );
+            // printf("All roms located from %p to %p.\n", min, max);
+            flash_buffer(FLASH_ID_ALL_ROMS, roms + min, roms + max, "", "all roms");
+            free(roms);
+        } else {
+    	    flash_buffer(FLASH_ID_AR5PAL,    &_binary_ar5pal_bin_start,   &_binary_ar5pal_bin_end,   "", "ar5pal");
+    	    flash_buffer(FLASH_ID_AR6PAL,    &_binary_ar6pal_bin_start,   &_binary_ar6pal_bin_end,   "", "ar6pal");
+    	    flash_buffer(FLASH_ID_FINAL3,    &_binary_final3_bin_start,   &_binary_final3_bin_end,   "", "final3");
+    	    flash_buffer(FLASH_ID_SOUNDS,    &_binary_sounds_bin_start,   &_binary_sounds_bin_end,   "", "sounds");
+    	    flash_buffer(FLASH_ID_EPYX,      &_binary_epyx_bin_start,     &_binary_epyx_bin_end,     "", "epyx");
+    	    flash_buffer(FLASH_ID_ROM1541,   &_binary_1541_bin_start,     &_binary_1541_bin_end,     "", "1541");
+    	    flash_buffer(FLASH_ID_RR38PAL,   &_binary_rr38pal_bin_start,  &_binary_rr38pal_bin_end,  "", "rr38pal");
+    	    flash_buffer(FLASH_ID_SS5PAL,    &_binary_ss5pal_bin_start,   &_binary_ss5pal_bin_end,   "", "ss5pal");
+    	    flash_buffer(FLASH_ID_AR5NTSC,   &_binary_ar5ntsc_bin_start,  &_binary_ar5ntsc_bin_end,  "", "ar5ntsc");
+    	    flash_buffer(FLASH_ID_ROM1541C,  &_binary_1541c_bin_start,    &_binary_1541c_bin_end,    "", "1541c");
+    	    flash_buffer(FLASH_ID_ROM1541II, &_binary_1541_ii_bin_start,  &_binary_1541_ii_bin_end,  "", "1541-ii");
+    	    flash_buffer(FLASH_ID_RR38NTSC,  &_binary_rr38ntsc_bin_start, &_binary_rr38ntsc_bin_end, "", "rr38ntsc");
+    	    flash_buffer(FLASH_ID_SS5NTSC,   &_binary_ss5ntsc_bin_start,  &_binary_ss5ntsc_bin_end,  "", "ss5ntsc");
+    	    flash_buffer(FLASH_ID_TAR_PAL,   &_binary_tar_pal_bin_start,  &_binary_tar_pal_bin_end,  "", "tar_pal");
+    	    flash_buffer(FLASH_ID_TAR_NTSC,  &_binary_tar_ntsc_bin_start, &_binary_tar_ntsc_bin_end, "", "tar_ntsc");
+        }
     }
 	if(do_update2) {
     	flash_buffer(FLASH_ID_APPL, &_binary_ultimate_bin_start, &_binary_ultimate_bin_end, APPL_VERSION, "Ultimate application");
