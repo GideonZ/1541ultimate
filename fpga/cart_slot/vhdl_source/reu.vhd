@@ -61,6 +61,7 @@ architecture gideon of reu is
     signal io_wdatau  : unsigned(7 downto 0);
     signal io_rdata   : std_logic_vector(7 downto 0);
     signal io_write   : std_logic;
+    signal io_read    : std_logic;
     
     signal c64_base   : unsigned(15 downto 0) := (others => '0');
     signal reu_base   : unsigned(23 downto 0) := (others => '0');
@@ -121,7 +122,7 @@ architecture gideon of reu is
     signal start_delay  : unsigned(7 downto 0) := (others => '0');
     signal ext_count    : unsigned(7 downto 0) := (others => '0');
 begin
-    write_ff00 <= '1' when slot_req.io_write='1' and slot_req.io_address=X"FF00" else '0';
+    write_ff00 <= '1' when slot_req.late_write='1' and slot_req.io_address=X"FF00" else '0';
     
     with size_ctrl select mask <=
         "00000001" when "000",
@@ -171,7 +172,7 @@ begin
                (count = 1 and g_extended) then
                 trans_done <= '1';
             else 
-                count    <= count - 1;
+                count <= count - 1;
             end if;
         end procedure;
 
@@ -204,7 +205,7 @@ begin
         end procedure;
     begin
         if rising_edge(clock) then
-            if io_write='1' and slot_req.io_address(8)='1' then  --$DF00
+            if io_write='1' then  --$DF00-$DF1F, decoded below in a concurrent statement
                 case slot_req.io_address(4 downto 0) is
                 when c_c64base_l  => c64_base(7 downto 0) <= io_wdatau;
                                      c64_addr <= c64_base(15 downto 8) & io_wdatau;  -- half autoload bug
@@ -245,7 +246,7 @@ begin
             end if;
 
             -- extended registers
-            if io_write='1' and slot_req.io_address(8)='1' and g_extended then  --$DF00
+            if io_write='1' and g_extended then  --$DF00-$DF1F, decoded below in a concurrent statement
                 case slot_req.io_address(4 downto 0) is
                 when c_start_delay =>
                     start_delay <= io_wdatau;
@@ -260,7 +261,7 @@ begin
             end if;
 
             -- clear on read flags
-            if slot_req.io_read='1' and slot_req.io_address(8)='1' then
+            if io_read='1' then
                 if slot_req.io_address(4 downto 0) = c_status then
                     verify_error <= '0';
                     trans_done   <= '0';
@@ -452,6 +453,7 @@ begin
 
     slot_resp.irq        <= irq_pend;
     slot_resp.data       <= io_rdata;
-    slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 5)=X"8" else '0';
-    io_write             <= enable and slot_req.io_write;
+    slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 5)=X"8" and (state = idle) else '0';
+    io_write             <= (enable and slot_req.io_write) when slot_req.io_address(8 downto 5)=X"8" else '0';
+    io_read              <= (enable and slot_req.io_read) when slot_req.io_address(8 downto 5)=X"8" else '0';
 end gideon;

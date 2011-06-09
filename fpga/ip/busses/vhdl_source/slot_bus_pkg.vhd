@@ -10,6 +10,7 @@ package slot_bus_pkg is
         io_address      : unsigned(15 downto 0); -- for late reads/writes
         io_read         : std_logic;
         io_write        : std_logic;
+        late_write      : std_logic;
         data            : std_logic_vector(7 downto 0);
     end record;
     
@@ -25,6 +26,7 @@ package slot_bus_pkg is
         io_address    => X"0000",
         io_read       => '0',
         io_write      => '0',
+        late_write    => '0',
         data          => X"00" );
      
     constant c_slot_resp_init : t_slot_resp := (

@@ -10,9 +10,15 @@
 ################################################################################
 
 PLATFORM=lin64
-ISE_VERSION	?= 11	# when not defined use highest version available
+ISE_VERSION	?= 13	# when not defined use highest version available
 
 export ISE_LOCATIONS_FILE_INCLUDED=yes
+
+ifeq ($(ISE_VERSION),13)
+    export MYXILINX=/cygdrive/c/Xilinx/13.1/ISE_DS/ISE
+    export XILINX=C:\\Xilinx\\13.1\\ISE_DS\\ISE
+    PLATFORM=nt
+endif
 
 ifeq ($(ISE_VERSION),12)
     export MYXILINX=/cygdrive/c/Xilinx/12.1/ISE_DS/ISE

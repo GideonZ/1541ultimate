@@ -156,8 +156,8 @@ begin
           
             when do_dma =>
                 dma_rdata <= data_c;
-                --if phi2_recovered='0' then -- end of CPU cycle
-                if do_io_event='1' then
+                if phi2_recovered='0' then -- end of CPU cycle
+                --if do_io_event='1' then
                     dma_ack_i <= '1';
                     state <= stopped;
                 end if;

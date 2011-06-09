@@ -9,7 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_1541_700a is
 generic (
-    g_version       : unsigned(7 downto 0) := X"A6" );
+    g_version       : unsigned(7 downto 0) := X"A8" );
 port (
     CLOCK       : in    std_logic;
     
@@ -159,6 +159,7 @@ begin
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
+        g_icap          => true,
         g_uart          => true,
         g_drive_1541    => true,
         g_drive_1541_2  => true,
@@ -171,6 +172,7 @@ begin
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
         g_cartridge     => true,
+		g_command_intf  => true,
         g_drive_sound   => true,
         g_rtc_chip      => true,
         g_rtc_timer     => true,

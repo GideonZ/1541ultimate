@@ -86,6 +86,7 @@ architecture gideon of slot_slave is
     signal io_out       : boolean := false;
     signal io_read_cond : std_logic;
     signal io_write_cond: std_logic;
+    signal late_write_cond  : std_logic;
     signal ultimax      : std_logic;
     signal last_rwn     : std_logic;
     signal mem_wdata_i  : std_logic_vector(7 downto 0);
@@ -111,8 +112,9 @@ architecture gideon of slot_slave is
     signal epyx_timer       : unsigned(6 downto 0) := (others => '0');
     signal epyx_reset       : std_logic := '0';
 begin
-    slot_req.io_write <= do_io_event and io_write_cond;
-    slot_req.io_read  <= do_io_event and io_read_cond;
+    slot_req.io_write   <= do_io_event and io_write_cond;
+    slot_req.io_read    <= do_io_event and io_read_cond;
+    slot_req.late_write <= do_io_event and late_write_cond;
     
     process(clock)
     begin
@@ -150,6 +152,7 @@ begin
                 slot_req.io_address <= unsigned(address_c);
                 mem_wdata_i         <= data_c;
 
+                late_write_cond <= not rwn_c;
                 io_write_cond <= not rwn_c and (not io2n_c or not io1n_c);
                 io_read_cond  <= rwn_c and (not io2n_c or not io1n_c);
                 epyx_reset    <= not io2n_c or not io1n_c or not romln_c or not RSTn;
@@ -250,6 +253,7 @@ begin
                 io_out          <= false;
                 io_read_cond    <= '0';
                 io_write_cond   <= '0';
+                late_write_cond <= '0';
                 slot_req.io_address <= (others => '0');
                 cpu_write       <= '0';
                 epyx_reset      <= '1';

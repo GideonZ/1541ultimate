@@ -86,7 +86,7 @@ OBJCOPY	  = $(CROSS)-objcopy
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ)_700.bit
 
-special: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ)_1400.bit $(OUTPUT)/$(PRJ)_400.bit
+special: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ)_400.bit $(OUTPUT)/$(PRJ)_1400.bit 
 
 .SUFFIXES:
 

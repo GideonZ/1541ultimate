@@ -15,25 +15,25 @@ generic (
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
     g_boot_rom      : boolean := false;
-    g_icap          : boolean := true;
-    g_uart          : boolean := true;
-    g_drive_1541    : boolean := true; --
-    g_drive_1541_2  : boolean := false; --
-    g_hardware_gcr  : boolean := true;
-    g_cartridge     : boolean := true; --
-    g_command_intf  : boolean := true;
-    g_stereo_sid    : boolean := true;
-    g_ram_expansion : boolean := true; --
+    g_icap          : boolean := false;
+    g_uart          : boolean := false;
+    g_drive_1541    : boolean := false;
+    g_drive_1541_2  : boolean := false;
+    g_hardware_gcr  : boolean := false;
+    g_cartridge     : boolean := false;
+    g_command_intf  : boolean := false;
+    g_stereo_sid    : boolean := false;
+    g_ram_expansion : boolean := false;
     g_extended_reu  : boolean := false;
-    g_hardware_iec  : boolean := true; --
+    g_hardware_iec  : boolean := false;
     g_iec_prog_tim  : boolean := false;
-    g_c2n_streamer  : boolean := true;
-    g_c2n_recorder  : boolean := true;
-    g_drive_sound   : boolean := true; --
-    g_rtc_chip      : boolean := true;
-    g_rtc_timer     : boolean := true;
-    g_usb_host      : boolean := true;
-    g_spi_flash     : boolean := true );
+    g_c2n_streamer  : boolean := false;
+    g_c2n_recorder  : boolean := false;
+    g_drive_sound   : boolean := false;
+    g_rtc_chip      : boolean := false;
+    g_rtc_timer     : boolean := false;
+    g_usb_host      : boolean := false;
+    g_spi_flash     : boolean := false );
 port (
     -- globals
     sys_clock   : in    std_logic;
