@@ -50,7 +50,6 @@ package mem_bus_pkg is
         dack        : std_logic;
         dnext       : std_logic;
         blast       : std_logic;
-		low_addr	: unsigned(2 downto 0);
     end record;
 
     constant c_mem_burst_req_init : t_mem_burst_req := (
@@ -59,6 +58,13 @@ package mem_bus_pkg is
         address     => (others => '0'),
         data        => X"00",
         byte_en     => '1' );
+
+    constant c_mem_burst_resp_init : t_mem_burst_resp := (
+        data        => X"00",
+        rack        => '0',
+        dack        => '0',
+        dnext       => '0',
+        blast       => '0' );
 
     -- 16 bits memory bus with burst --
     type t_mem_burst_16_req is record

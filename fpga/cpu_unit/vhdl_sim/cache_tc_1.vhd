@@ -25,7 +25,23 @@ begin
         bind_mem_bus_master_bfm("mem_master", mm);
 
         wait for 100 ns;
-        mem_write(mm, X"0000", X"01");
+        mem_write(mm, X"1200", X"01");
+--        mem_write(mm, X"1201", X"02");
+--        mem_write(mm, X"1202", X"03");
+--        mem_write(mm, X"1203", X"04");
+--        wait for 500 ns;
+--        mem_read(mm, X"1200", read_data);
+--        wait for 500 ns;
+--        mem_read(mm, X"1203", read_data);
+--        mem_read(mm, X"1202", read_data);
+        wait for 500 ns;
+--        mem_read(mm, X"5202", read_data);
+        mem_write(mm, X"5202", X"33");
+        wait for 500 ns;
+        mem_read(mm, X"1203", read_data);
+        mem_read(mm, X"1202", read_data);
+        wait for 500 ns;
+
         mem_write(mm, X"0001", X"02");
         mem_write(mm, X"0002", X"03");
         mem_write(mm, X"0003", X"04");

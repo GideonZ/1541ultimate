@@ -15,8 +15,8 @@ architecture harness of harness_dm_cache is
     signal reset       : std_logic;
     signal client_req  : t_mem_req  := c_mem_req_init;
     signal client_resp : t_mem_resp := c_mem_resp_init;
-    signal mem_req     : t_mem_req  := c_mem_req_init;
-    signal mem_resp    : t_mem_resp := c_mem_resp_init;
+    signal mem_req     : t_mem_burst_req  := c_mem_burst_req_init;
+    signal mem_resp    : t_mem_burst_resp := c_mem_burst_resp_init;
 
 	signal SDRAM_CLK   : std_logic;
 	signal SDRAM_CKE   : std_logic;
@@ -62,7 +62,7 @@ begin
         req         => client_req,
         resp        => client_resp );
 
-    i_mem_ctrl: entity work.ext_mem_ctrl_v4
+    i_mem_ctrl: entity work.ext_mem_ctrl_v5_sdr
     generic map (
         g_simulation => true,
     	A_Width	     => 15 )
@@ -100,8 +100,8 @@ begin
     generic map(
         g_given_name  => "dram",
         g_cas_latency => 2,
-        g_burst_len_r => 1,
-        g_burst_len_w => 1,
+        g_burst_len_r => 4,
+        g_burst_len_w => 4,
         g_column_bits => 10,
         g_row_bits    => 13,
         g_bank_bits   => 2 )

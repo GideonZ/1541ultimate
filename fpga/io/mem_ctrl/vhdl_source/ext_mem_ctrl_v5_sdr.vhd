@@ -7,9 +7,8 @@
  
 library ieee;
     use ieee.std_logic_1164.all;
-    use ieee.std_logic_arith.all;
-    use ieee.std_logic_unsigned.all;
-
+    use ieee.numeric_std.all;
+    
 library unisim;
     use unisim.vcomponents.all;
 
@@ -30,8 +29,8 @@ port (
     inhibit     : in  std_logic := '0';
     is_idle     : out std_logic;
 
-    req         : in  t_mem_burst_16_req;
-    resp        : out t_mem_burst_16_resp;
+    req         : in  t_mem_burst_req;
+    resp        : out t_mem_burst_resp;
 
 	SDRAM_CLK	: out std_logic;
 	SDRAM_CKE	: out std_logic;
@@ -66,9 +65,8 @@ architecture Gideon of ext_mem_ctrl_v5_sdr is
 
     type t_state is (boot, init, idle, sd_cas, sd_wait);
     signal state          : t_state;
-    signal sram_d_o       : std_logic_vector(MEM_D'range) := (others => '1');
-    signal sram_d_t       : std_logic := '0';
-    signal r_valid        : std_logic_vector(3 downto 0) := "0000";
+    signal sdram_d_o      : std_logic_vector(MEM_D'range) := (others => '1');
+    signal sdram_d_t      : std_logic_vector(3 downto 0) := "0000";
     signal delay          : integer range 0 to 15;
     signal inhibit_d      : std_logic;
     signal rwn_i	      : std_logic;
@@ -85,9 +83,9 @@ architecture Gideon of ext_mem_ctrl_v5_sdr is
     signal enable_sdram   : std_logic := '1';
 
     signal req_i          : std_logic;
-    signal dack           : std_logic;
     signal rack           : std_logic;
-    signal dnext          : std_logic;
+    signal dack           : std_logic_vector(3 downto 0) := "0000";
+    signal dnext          : std_logic_vector(3 downto 0) := "0000";
 
     signal last_bank      : std_logic_vector(1 downto 0) := "10";
     signal addr_bank      : std_logic_vector(1 downto 0);
@@ -113,11 +111,12 @@ begin
 
     req_i <= req.request;
 
-    resp.data  <= rdata_hi_d & rdata_lo;
+    resp.data  <= rdata;
     resp.rack  <= rack;
-    resp.dack  <= dack;
-    resp.dnext <= dnext;
-
+    resp.dack  <= dack(0);
+    resp.dnext <= dnext(0);
+    resp.blast <= (dack(0) and not dack(1)) or (dnext(0) and not dnext(1));
+    
     process(clock)
         procedure send_refresh_cmd is
         begin
@@ -143,27 +142,29 @@ begin
             SDRAM_WEn  <= '1'; -- Command = ACTIVE
             delay      <= 0;
             state  <= sd_cas;                            
-            dnext  <= '1';   -- if we set delay to a value not equal to zero, we should not
-                             -- set the dnext here.
+            if req.read_writen='0' then
+                dnext  <= "1111";
+                delay  <= 1;
+            end if;
         end procedure;
     begin
             
         if rising_edge(clock) then
-			dack       <= '0';
-			dnext      <= '0';
             inhibit_d  <= inhibit;
             cs_n_i     <= '1';
             SDRAM_CKE  <= enable_sdram;
             SDRAM_RASn  <= '1';
             SDRAM_CASn  <= '1';
             SDRAM_WEn   <= '1';
+            sdram_d_o   <= req.data;
             
             if refr_delay /= 0 then
                 refr_delay <= refr_delay - 1;
             end if;
 
-            sram_d_t <= '0' & sram_d_t(1);
-            r_valid  <= '0' & r_valid(3 downto 1);
+            sdram_d_t <= '0' & sdram_d_t(3 downto 1);
+            dack     <= '0' & dack(3 downto 1);
+            dnext    <= '0' & dnext(3 downto 1);
             rdata    <= MEM_D;
 
             case state is
@@ -205,7 +206,7 @@ begin
                         accept_req;
                     end if;
                 end if;
-					
+				
             
 			when sd_cas =>
                 -- we always perform auto precharge.
@@ -222,15 +223,9 @@ begin
                 mem_a_i(10) <= '1'; -- auto precharge
                 mem_a_i(9 downto 0) <= col_addr;
 
-                if delay <= 1 then
-                    dnext <= '1';
-                end if;
-
                 if delay = 0 then
                     if rwn_i='0' then
-                        sram_d_t <= '1';
-                    else
-                        r_valid(3 downto 2) <= "11";
+                        sdram_d_t <= "1111";
                     end if;
 
                     -- read or write with auto precharge
@@ -239,15 +234,24 @@ begin
                     SDRAM_CASn  <= '0';
                     SDRAM_WEn   <= rwn_i;
                     if rwn_i='0' then -- write
-                        delay   <= 2;
+                        delay   <= 4;
                     else
-                        delay   <= 1;
+                        delay   <= 6;
                     end if;
-                    state   <= idle;
+                    state   <= sd_wait;
                 else
                     delay <= delay - 1;
                 end if;
-                
+
+            when sd_wait =>
+                if delay=4 and rwn_i='1' then
+                    dack <= "1111";
+                end if;
+                if delay=1 then
+                    state <= idle;
+                end if;
+                delay <= delay - 1;    
+
             when others =>
                 null;
 
@@ -262,7 +266,7 @@ begin
 
             if reset='1' then
                 state        <= boot;
---				sram_d_t     <= (others => '0');
+				sdram_d_t    <= (others => '0');
 				delay        <= 0;
                 do_refresh   <= '0';
                 boot_cnt     <= SDRAM_WakeupTime-1;
@@ -291,7 +295,7 @@ begin
         end case;
     end process;
 
-    MEM_D       <= sram_d_o when sram_d_t(0)='1' else (others => 'Z');
+    MEM_D       <= sdram_d_o when sdram_d_t(0)='1' else (others => 'Z');
     MEM_A       <= mem_a_i;
 
     not_clock <= not clk_shifted;
