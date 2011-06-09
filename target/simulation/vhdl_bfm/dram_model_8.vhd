@@ -111,9 +111,9 @@ begin
 	                    end loop;
 	
 	                when "001" => -- CAS & WE, start write burst
-	                    raddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
-	                    raddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
-	                    raddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
+	                    waddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
+	                    waddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
+	                    waddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
 	                    more_writes := g_burst_len_w - 1;
 	                    if DQM='0' then
 	                        write_memory_8(this, waddr, DQ);
