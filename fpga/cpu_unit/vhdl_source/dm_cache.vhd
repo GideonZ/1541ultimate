@@ -63,7 +63,7 @@ architecture gideon of dm_cache is
     signal old_addr_la          : unsigned(c_address_width-1 downto 0) := (others => '1');
     signal address_la           : unsigned(c_address_width-1 downto 0);
 
-    signal fill_address         : unsigned(c_address_width-1 downto 0) := (others => '0');
+    signal fill_index           : unsigned(c_cache_size_bits-1 downto 0) := (others => '0');
     signal fill_valid           : std_logic;
     signal fill_data            : std_logic_vector(c_data_width-1 downto 0);
 
@@ -71,14 +71,13 @@ architecture gideon of dm_cache is
     signal write_bus_write      : std_logic;
     signal write_bus_write_d    : std_logic;
     signal write_bus_data       : std_logic_vector(c_data_width-1 downto 0);
---    signal write_reg_invalidate : std_logic := '0';
+    signal write_reg_invalidate : std_logic;
     
     signal reg_address          : unsigned(c_address_width-1 downto 0);
     signal reg_data             : std_logic_vector(c_data_width-1 downto 0);
     signal reg_hit              : std_logic;
     signal reg_valid            : std_logic;
     signal store_reg            : std_logic := '0';
-    signal store_ff             : std_logic := '0';
     signal cache_index          : unsigned(c_cache_size_bits-1 downto 0);
     signal cache_wdata          : std_logic_vector(c_data_width-1 downto 0);
     signal cache_rdata          : std_logic_vector(c_data_width-1 downto 0);
@@ -86,18 +85,22 @@ architecture gideon of dm_cache is
     
     signal mem_busy             : std_logic := '0';
     signal need_mem_access      : std_logic := '0';
-    signal mem_req_ff           : std_logic;
+    signal mem_req_i            : std_logic;
     signal mem_rwn              : std_logic;
     signal mem_address          : unsigned(c_address_width-1 downto 0);
 
-    signal wb_address           : unsigned(c_address_width-1 downto 0);
-    signal wr_back              : std_logic;
-    signal write_counter        : unsigned(c_line_size_bits-1 downto 0);
-    signal read_counter         : unsigned(c_line_size_bits-1 downto 0);
+    signal dirty_d              : std_logic;
+    signal burst_count          : unsigned(c_line_size_bits-1 downto 0);
+    signal burst_count_d        : unsigned(c_line_size_bits-1 downto 0);
+
+    signal mem_wrfifo_put       : std_logic;
+    signal mem_rdfifo_get       : std_logic;
     
     signal dirty_by_register    : std_logic;
+    signal data_to_dram_mux     : std_logic;
+    signal trigger_reg_to_dram  : std_logic;
     
-    type t_state is (idle, write_back, fill);
+    type t_state is (idle, check_dirty, fill, deferred);
     signal state                : t_state;
 begin
     any_request     <= client_req.request and ready;
@@ -148,9 +151,10 @@ begin
         hit         => cache_hit,
         address_out => old_address );
 
-    write_bus_write   <= client_req.request and not client_req.read_writen and ready;
-    write_bus_address <= client_req.address;
-    write_bus_data    <= client_req.data;
+    write_bus_write      <= client_req.request and not client_req.read_writen and ready;
+    write_bus_address    <= client_req.address;
+    write_bus_data       <= client_req.data;
+    write_reg_invalidate <= store_reg or (trigger_reg_to_dram and dirty_d);
     
     i_last_write: entity work.delayed_write
     generic map (
@@ -166,15 +170,14 @@ begin
         bus_address => write_bus_address,
         bus_write   => write_bus_write,
         bus_wdata   => write_bus_data,
-        invalidate  => store_reg, --write_reg_invalidate,
+        invalidate  => write_reg_invalidate,
         
         reg_address => reg_address,
         reg_out     => reg_data,
         reg_hit     => reg_hit,
         reg_valid   => reg_valid );
 
-    cache_index <= index_of(wb_address) when wr_back='1' else
-                   index_of(fill_address) when fill_valid='1' else
+    cache_index <= fill_index when (state /= idle) else
                    index_of(reg_address) when store_reg='1' else
                    index_of(client_req.address);
     cache_wdata <= fill_data when fill_valid='1' else
@@ -183,17 +186,20 @@ begin
 
 
     -- we store and invalidate the register in the following occasions:
-    -- 1) There is another write, and the register is valid. (register replace with new value/address)
+    -- 1) There is another write, and the register is valid. (register replace with new value/address, and will set to valid again.)
     -- 2) There is a cache miss, and the register got not just written the cycle before. Because, if that is the case
     --    the cache miss was caused by the write that preceded the cycle, and hence the register cannot yet be stored,
     --    since the cache line needs to be filled first. We'll need to wait for the next opportunity.
     
+    -- Another option is to accept that a cacheline is written back from the cache ram OR the register (place
+    -- a multiplexer in the data to dram). This has the advantage that the cache_index multiplexer does not
+    -- depend on cache_miss, which is a long path. In order to do this, we need to compare the register
+    -- address with the old address. We can do this in a registered way; since the reading of the cache ram
+    -- also has a latency of 1.
+    
     store_reg   <= '1' when (reg_valid='1' and write_bus_write='1') else 
-                   '1' when (reg_valid='1' and cache_miss='1' and write_bus_write_d='0') else
-                   -- '1' when store_ff='1' else
+--                   '1' when (reg_valid='1' and cache_miss='1' and write_bus_write_d='0') else
                    '0';
-
---    write_reg_invalidate <= store_reg and not write_bus_write; -- it will still be valid
 
     i_cache_ram: entity work.spram
     generic map (
@@ -210,11 +216,11 @@ begin
         we            => cache_we );
 
     -- read data multiplexer
-    fill_valid       <= mem_resp.dack;
+    fill_valid       <= mem_resp.rdata_av;
     fill_data        <= mem_resp.data;
     client_resp.rack <= client_req.request and ready;
     
-    process(reg_hit, reg_data, read_request_d, client_tag_d, cache_hit, cache_rdata, fill_data, fill_valid, read_counter, read_la, address_la)
+    process(reg_hit, reg_data, read_request_d, client_tag_d, cache_hit, cache_rdata, fill_data, fill_valid, burst_count, read_la, address_la)
     begin
         client_resp.dack_tag <= (others => '0');
         if reg_hit='1' then -- latest written data goes first!
@@ -230,13 +236,13 @@ begin
         else
             client_resp.data <= fill_data;
             -- TODO: generate dack when correct word passes by (not necessary, but will increase performance)
-            if fill_valid='1' and read_counter = address_la(read_counter'range) and read_la='1' then
+            if fill_valid='1' and burst_count = address_la(burst_count'range) and read_la='1' then
                 client_resp.dack_tag <= client_tag_d;
             end if;
         end if;
     end process;
     
-    allocate <= allocate_ff;-- or (cache_miss and not dirty);
+    allocate <= allocate_ff;
     modify   <= store_reg or modify_ff;
         
      -- cache_miss='1' =>
@@ -261,96 +267,95 @@ begin
     -- have a direct mapped cache, we can easily do this, because we know that the register data
     -- *always* holds data that belongs to an active cache line. This is enforced by allocate on write.
 
-    -- 1) on a cache miss, we can always perform a REGSITER WRITEBACK AND INVALIDATE. (store_reg <= reg_valid, reg_invalidate <= '1')
-    -- 2) writeback should be triggered also when store_reg occured on the same cache line as that is being replaced.
-    
-    -- There is a special case, however. If a cacheline is not valid, it can never be written back! In this case,
-    -- the register will not be stored in the cacheline, and kept as is. Thus: on a cache miss we can only do the register
-    -- write back when the cacheline is valid (i.e. it was loaded from ram)
-
     p_cache_control: process(clock)
     begin
         if rising_edge(clock) then
             write_bus_write_d <= write_bus_write;
+            burst_count_d     <= burst_count;
+
             allocate_ff <= '0';
             modify_ff   <= '0';
---            store_ff    <= reg_valid and cache_miss and not write_bus_write_d;
+            mem_req_i   <= '0';
             
-            if mem_resp.blast='1' and mem_resp.dnext='1' then -- reset write back flag.
-                wr_back <= '0';
-                allocate_ff <= '1';
-                modify_ff <= write_la;
-            end if;
-
             case state is
             when idle =>
-                if need_mem_access='1' and mem_resp.rack='0' then
-                    mem_req_ff <= '1';
-                    if line_dirty='1' or dirty_by_register='1' then -- data in cache has been written and needs to be written back.
-                        mem_rwn     <= '0';
-                        mem_address <= old_address;
-                        old_addr_la <= old_address;
-                        state       <= write_back;
-                    else -- data in cache can be overwritten (hence we can allocate)
-                        allocate_ff <= '1';
-                        modify_ff   <= write_la;
+                if cache_miss='1' then
+                    if mem_resp.ready='1' then
+                        -- issue read access (priority read over write)
+                        mem_req_i   <= '1';
                         mem_rwn     <= '1';
                         mem_address <= address_la;
-                        state       <= fill;
-                    end if;
+                        state <= check_dirty;
+                    else
+                        state <= deferred;
+                    end if;                  
                 end if;
-            
-            when write_back =>
-                if mem_resp.rack='1' then
-                    wr_back     <= '1';
-                    mem_rwn     <= '1';
-                    mem_address <= address_la;
-                    state       <= fill;
+                dirty_d <= (dirty_by_register or line_dirty) and cache_miss; -- dirty will be our read enable from cache :)
+                trigger_reg_to_dram <= dirty_by_register;
+                
+            when check_dirty => -- sequences through 'line_size' words
+                mem_address <= old_address;
+                mem_rwn     <= '0'; -- write
+                if dirty_d='0' then
+                    state <= fill;
+                else -- dirty_d='1'                
+                    burst_count <= burst_count + 1;
+                    if signed(burst_count) = -1 then -- last?
+                        mem_req_i <= '1'; -- issue the write request to memctrl
+                        dirty_d <= '0';
+                        state <= fill;
+                    end if;
                 end if;
 
             when fill =>
-                if mem_resp.rack='1' then
-                    mem_req_ff  <= '0';
+                if mem_resp.rdata_av='1' then
+                    burst_count <= burst_count + 1;
+                    if signed(burst_count) = -2 then -- doesn't work for burstlen=2!
+                        allocate_ff <= '1'; -- update tag
+                        modify_ff <= write_la;
+                    end if;
+                    if signed(burst_count) = -1 then -- last?
+                        state <= idle;
+                    end if;
                 end if;
-                if mem_resp.blast='1' and mem_resp.dack='1' then
-                    state <= idle;
-                end if;
-                    
+                -- asynchronously: mem_rdfifo_get <= '1' when state = fill and mem_resp.rdata_av='1'.
+
             when others =>
                 null;
             end case;
 
-            if mem_resp.dnext='1' then
-                write_counter <= write_counter + 1;
-            end if;
-            if mem_resp.dack='1' then
-                read_counter <= read_counter + 1;
-            end if;
-            
+            mem_wrfifo_put <= dirty_d; -- latency of blockram
+                        
             if reset='1' then
-                write_counter <= (others => '0');
-                read_counter  <= (others => '0');
-                wr_back    <= '0';
-                state      <= idle;
-                mem_rwn    <= '1';
-                mem_req_ff <= '0';
+                burst_count <= (others => '0');
+                dirty_d     <= '0';
+                state       <= idle;
+                mem_rwn     <= '1';
+                mem_req_i   <= '0';
             end if;
         end if;
     end process;
 
-    fill_address(fill_address'high downto c_line_size_bits) <= address_la(fill_address'high downto c_line_size_bits);
-    fill_address(c_line_size_bits-1 downto 0) <= read_counter;
-    wb_address(wb_address'high downto c_line_size_bits) <= old_addr_la(wb_address'high downto c_line_size_bits);
-    wb_address(c_line_size_bits-1 downto 0) <= write_counter;
-    dirty_by_register <= '1' when reg_address(reg_address'high downto c_line_size_bits)=old_address(old_address'high downto c_line_size_bits) and
-                            reg_valid='1' else '0';
+    mem_rdfifo_get <= '1' when state = fill and mem_resp.rdata_av='1' else '0';
+    
+    -- index to the cache for back-office operations (line in, line out)
+    fill_index <= address_la(cache_index'high downto c_line_size_bits) & burst_count;
+    
+    dirty_by_register <= '1' when reg_address(c_cache_size_bits-1 downto c_line_size_bits) =
+                                  old_address(c_cache_size_bits-1 downto c_line_size_bits) and
+                            reg_valid='1' and write_bus_write_d='0' else '0';
+
+    data_to_dram_mux  <= '1' when trigger_reg_to_dram='1' and (burst_count_d=reg_address(c_line_size_bits-1 downto 0)) else
+                         '0';
     
     mem_busy <= '1' when (state/= idle) else '0';
 
-    mem_req.request     <= mem_req_ff;
+    mem_req.request     <= mem_req_i;
     mem_req.read_writen <= mem_rwn;
     mem_req.address     <= mem_address(mem_address'high downto c_line_size_bits) & to_unsigned(0, c_line_size_bits);
-    mem_req.data        <= cache_rdata;
+    mem_req.data        <= cache_rdata when data_to_dram_mux='0' else reg_data;
+    mem_req.data_pop    <= '1' when (state = fill) and mem_resp.rdata_av='1' else '0';
+    mem_req.data_push   <= mem_wrfifo_put;
     
 --  i_cache_control: entity work.cache_controller
 --  port map (

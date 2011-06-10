@@ -21,7 +21,7 @@ use ieee.std_logic_unsigned.all;
 library unisim;
 use unisim.vcomponents.all;
 
-entity SRL_fifo is
+entity srl_fifo is
 generic (Width : integer := 32;
          Depth : integer := 15; -- 15 is the maximum
          Threshold : integer := 13);
@@ -38,7 +38,7 @@ port (
     DataInFifo  : out std_logic);
 end SRL_fifo;
 
-architecture  Gideon  of  SRL_fifo  is
+architecture  Gideon  of  srl_fifo  is
 
     signal NumElements     : std_logic_vector(3 downto 0);
     signal FilteredGet     : std_logic;

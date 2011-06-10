@@ -41,15 +41,16 @@ package mem_bus_pkg is
         read_writen : std_logic;
         address     : unsigned(25 downto 0);
         data        : std_logic_vector(7 downto 0);
+        data_push   : std_logic;
+        data_pop    : std_logic;
         byte_en     : std_logic;
     end record;
     
     type t_mem_burst_resp is record
         data        : std_logic_vector(7 downto 0);
-        rack        : std_logic;
-        dack        : std_logic;
-        dnext       : std_logic;
-        blast       : std_logic;
+        ready       : std_logic; -- can accept requests
+        rdata_av    : std_logic; -- indicates if there is data in read fifo
+        wdata_full  : std_logic; -- indicates if there is space in write fifo
     end record;
 
     constant c_mem_burst_req_init : t_mem_burst_req := (
@@ -57,14 +58,15 @@ package mem_bus_pkg is
         read_writen => '1',
         address     => (others => '0'),
         data        => X"00",
+        data_push   => '0',
+        data_pop    => '0',
         byte_en     => '1' );
 
     constant c_mem_burst_resp_init : t_mem_burst_resp := (
         data        => X"00",
-        rack        => '0',
-        dack        => '0',
-        dnext       => '0',
-        blast       => '0' );
+        ready       => '0',
+        rdata_av    => '0',
+        wdata_full  => '0' );
 
     -- 16 bits memory bus with burst --
     type t_mem_burst_16_req is record

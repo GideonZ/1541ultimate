@@ -54,6 +54,7 @@ begin
         check_dram(X"0002", X"03"); -- see if the loop is correct
         mem_write(mm, X"1802", X"55");
         check_mem(X"0002", X"03"); -- written in the loop above, same cacheline!
+        wait for 200 ns;
         check_dram(X"1802", X"55");
 
         -- check if modified cacheline gets written back correctly upon read miss
@@ -61,6 +62,7 @@ begin
         mem_write(mm, X"0011", X"FB");
         check_dram(X"0011", X"12"); -- should be OLD data!
         mem_read(mm, X"7010", read_data); -- causes read miss
+        wait for 200 ns;
         check_dram(X"0010", X"11");
         check_dram(X"0011", X"FB");
         check_dram(X"0012", X"13");
@@ -71,7 +73,7 @@ begin
         mem_write(mm, X"0031", X"FC");
         check_dram(X"0031", X"32"); -- should be OLD data!
         mem_write(mm, X"7031", X"99"); -- causes write miss
-        wait for 200 ns;
+        wait for 400 ns;
         check_dram(X"0030", X"31");
         check_dram(X"0031", X"FC");
         check_dram(X"0032", X"33");

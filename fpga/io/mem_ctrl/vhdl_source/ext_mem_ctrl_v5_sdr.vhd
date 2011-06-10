@@ -77,6 +77,7 @@ architecture Gideon of ext_mem_ctrl_v5_sdr is
     signal do_refresh     : std_logic := '0';
     signal not_clock      : std_logic;
     signal rdata          : std_logic_vector(7 downto 0) := (others => '0');
+    signal wdata          : std_logic_vector(7 downto 0) := (others => '0');
     signal refr_delay     : integer range 0 to 3;
     signal boot_cnt       : integer range 0 to SDRAM_WakeupTime-1 := SDRAM_WakeupTime-1;
     signal init_cnt       : integer range 0 to c_init_array'high;
@@ -102,24 +103,85 @@ architecture Gideon of ext_mem_ctrl_v5_sdr is
     attribute iob of SDRAM_CKE : signal is "false";
 --    attribute iob of rdata_i : signal is "true"; -- the general memctrl/rdata must be packed in IOB
 
+    constant c_address_width    : integer := req.address'length;
+    constant c_data_width       : integer := req.data'length;
+
+    signal rwn_fifo             : std_logic;
+    signal address_fifo         : std_logic_vector(c_address_width-1 downto 0);
+    signal cmd_af               : std_logic;
+    signal cmd_av               : std_logic;
+    signal rdata_af             : std_logic;
 begin
 --    addr_bank   <= std_logic_vector(req.address(3 downto 2));
 --    addr_row    <= std_logic_vector(req.address(24 downto 12));
 --    addr_column <= std_logic_vector(req.address(11 downto 4)) & std_logic_vector(req.address(1 downto 0));
 
-    addr_row    <= std_logic_vector(req.address(24 downto 12));
-    addr_bank   <= std_logic_vector(req.address(11 downto 10));
-    addr_column <= std_logic_vector(req.address(9 downto 0));
+    addr_row    <= address_fifo(24 downto 12);
+    addr_bank   <= address_fifo(11 downto 10);
+    addr_column <= address_fifo(9 downto 0);
 
     is_idle <= '1' when state = idle else '0';
 
-    req_i <= req.request;
+    req_i      <= cmd_av;
+    resp.ready <= not cmd_af;
+    
+    -- resp.rack  <= rack;
+    -- resp.dack  <= dack(0);
+    -- resp.dnext <= dnext(0);
+    -- resp.blast <= (dack(0) and not dack(1)) or (dnext(0) and not dnext(1));
 
-    resp.data  <= rdata;
-    resp.rack  <= rack;
-    resp.dack  <= dack(0);
-    resp.dnext <= dnext(0);
-    resp.blast <= (dack(0) and not dack(1)) or (dnext(0) and not dnext(1));
+    i_command_fifo: entity work.srl_fifo
+    generic map (
+        Width     => c_address_width + 1,
+        Depth     => 15,
+        Threshold => 3)
+    port map (
+        clk         => clock,
+        reset       => reset,
+        GetElement  => rack,
+        PutElement  => req.request,
+        FlushFifo   => '0',
+        DataIn(c_address_width)            => req.read_writen,
+        DataIn(c_address_width-1 downto 0) => std_logic_vector(req.address),
+        DataOut(c_address_width)            => rwn_fifo,
+        DataOut(c_address_width-1 downto 0) => address_fifo,
+        SpaceInFifo => open,
+        AlmostFull  => cmd_af,
+        DataInFifo  => cmd_av );
+
+    i_read_fifo: entity work.srl_fifo
+    generic map (
+        Width     => c_data_width,
+        Depth     => 15,
+        Threshold => 6 )
+    port map (
+        clk         => clock,
+        reset       => reset,
+        GetElement  => req.data_pop,
+        PutElement  => dack(0),
+        FlushFifo   => '0',
+        DataIn      => rdata,
+        DataOut     => resp.data,
+        SpaceInFifo => open,
+        AlmostFull  => rdata_af,
+        DataInFifo  => resp.rdata_av );
+
+    i_write_fifo: entity work.SRL_fifo
+    generic map (
+        Width     => c_data_width,
+        Depth     => 15,
+        Threshold => 6 )
+    port map (
+        clk         => clock,
+        reset       => reset,
+        GetElement  => dnext(0),
+        PutElement  => req.data_push,
+        FlushFifo   => '0',
+        DataIn      => req.data,
+        DataOut     => wdata,
+        SpaceInFifo => open,
+        AlmostFull  => resp.wdata_full,
+        DataInFifo  => open );
     
     process(clock)
         procedure send_refresh_cmd is
@@ -134,7 +196,7 @@ begin
 
         procedure accept_req is
         begin
-			rwn_i     <= req.read_writen;
+			rwn_i     <= rwn_fifo;
             last_bank <= addr_bank;
             
             mem_a_i(12 downto 0)  <= addr_row;
@@ -146,9 +208,9 @@ begin
             SDRAM_WEn  <= '1'; -- Command = ACTIVE
             delay      <= 0;
             state  <= sd_cas;                            
-            if req.read_writen='0' then
+            if rwn_fifo='0' then
                 dnext  <= "1111";
-                delay  <= 1;
+                delay  <= 0;
             end if;
         end procedure;
     begin
@@ -160,7 +222,7 @@ begin
             SDRAM_RASn  <= '1';
             SDRAM_CASn  <= '1';
             SDRAM_WEn   <= '1';
-            sdram_d_o   <= req.data;
+            sdram_d_o   <= wdata;
             
             if refr_delay /= 0 then
                 refr_delay <= refr_delay - 1;
@@ -227,34 +289,43 @@ begin
                 mem_a_i(10) <= '1'; -- auto precharge
                 mem_a_i(9 downto 0) <= col_addr;
 
-                if delay = 0 then
-                    if rwn_i='0' then
+                if rwn_i='0' then
+                    if delay=0 then
+                        -- write with auto precharge
                         sdram_d_t <= "1111";
-                    end if;
-
-                    -- read or write with auto precharge
-                    cs_n_i   <= '0';
-                    SDRAM_RASn  <= '1';
-                    SDRAM_CASn  <= '0';
-                    SDRAM_WEn   <= rwn_i;
-                    if rwn_i='0' then -- write
+                        cs_n_i   <= '0';
+                        SDRAM_RASn  <= '1';
+                        SDRAM_CASn  <= '0';
+                        SDRAM_WEn   <= '0';
                         delay   <= 4;
+                        state   <= sd_wait;
                     else
-                        delay   <= 6;
+                        delay <= delay - 1;
                     end if;
-                    state   <= sd_wait;
                 else
-                    delay <= delay - 1;
+                    if delay = 0 then
+                        if rdata_af='0' then
+                            -- read with auto precharge
+                            cs_n_i   <= '0';
+                            SDRAM_RASn  <= '1';
+                            SDRAM_CASn  <= '0';
+                            SDRAM_WEn   <= '1';
+                            delay   <= 6;
+                            state   <= sd_wait;
+                        end if;
+                    else
+                        delay <= delay - 1;
+                    end if;
                 end if;
 
             when sd_wait =>
-                if delay=4 and rwn_i='1' then
-                    dack <= "1111";
-                end if;
                 if delay=1 then
                     state <= idle;
                 end if;
                 delay <= delay - 1;    
+                if delay=4 and rwn_i='1' then
+                    dack <= "1111";
+                end if;
 
             when others =>
                 null;
