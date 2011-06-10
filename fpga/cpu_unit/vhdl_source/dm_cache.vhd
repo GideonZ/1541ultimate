@@ -48,7 +48,7 @@ architecture gideon of dm_cache is
     signal write_la             : std_logic := '0';
     
     signal tagram_request       : std_logic := '0';
-    signal tagram_address       : unsigned(c_address_width-1 downto 0);
+    signal tagram_upd_addr      : unsigned(c_address_width-1 downto 0);
     signal allocate             : std_logic := '0';
     signal allocate_ff          : std_logic := '0';
     signal modify               : std_logic := '0';
@@ -69,15 +69,16 @@ architecture gideon of dm_cache is
 
     signal write_bus_address    : unsigned(c_address_width-1 downto 0);
     signal write_bus_write      : std_logic;
+    signal write_bus_write_d    : std_logic;
     signal write_bus_data       : std_logic_vector(c_data_width-1 downto 0);
-    signal write_reg_invalidate : std_logic := '0';
+--    signal write_reg_invalidate : std_logic := '0';
     
     signal reg_address          : unsigned(c_address_width-1 downto 0);
     signal reg_data             : std_logic_vector(c_data_width-1 downto 0);
     signal reg_hit              : std_logic;
     signal reg_valid            : std_logic;
     signal store_reg            : std_logic := '0';
-
+    signal store_ff             : std_logic := '0';
     signal cache_index          : unsigned(c_cache_size_bits-1 downto 0);
     signal cache_wdata          : std_logic_vector(c_data_width-1 downto 0);
     signal cache_rdata          : std_logic_vector(c_data_width-1 downto 0);
@@ -93,6 +94,8 @@ architecture gideon of dm_cache is
     signal wr_back              : std_logic;
     signal write_counter        : unsigned(c_line_size_bits-1 downto 0);
     signal read_counter         : unsigned(c_line_size_bits-1 downto 0);
+    
+    signal dirty_by_register    : std_logic;
     
     type t_state is (idle, write_back, fill);
     signal state                : t_state;
@@ -118,9 +121,8 @@ begin
     end process;
     
     tagram_request     <= client_req.request and ready;
-    tagram_address     <= --reg_address when store_reg='1' else
-                          address_la when allocate='1' else
-                          client_req.address;
+    tagram_upd_addr    <= address_la when allocate='1' else
+                          reg_address;                          
 
     i_tag_ram: entity work.tag_ram 
     generic map (
@@ -131,8 +133,10 @@ begin
         clock       => clock,
         reset       => reset,
 
-        address_in  => tagram_address,
-        request     => tagram_request,
+        query_addr  => client_req.address,
+        do_query    => tagram_request,
+
+        update_addr => tagram_upd_addr,
         allocate    => allocate,
         modify      => modify,
         invalidate  => invalidate,
@@ -162,7 +166,7 @@ begin
         bus_address => write_bus_address,
         bus_write   => write_bus_write,
         bus_wdata   => write_bus_data,
-        invalidate  => write_reg_invalidate,
+        invalidate  => store_reg, --write_reg_invalidate,
         
         reg_address => reg_address,
         reg_out     => reg_data,
@@ -178,11 +182,18 @@ begin
     cache_we    <= fill_valid or store_reg;
 
 
-    store_reg   <= '1' when reg_valid='1' and (write_bus_write='1' or write_reg_invalidate='1') else
+    -- we store and invalidate the register in the following occasions:
+    -- 1) There is another write, and the register is valid. (register replace with new value/address)
+    -- 2) There is a cache miss, and the register got not just written the cycle before. Because, if that is the case
+    --    the cache miss was caused by the write that preceded the cycle, and hence the register cannot yet be stored,
+    --    since the cache line needs to be filled first. We'll need to wait for the next opportunity.
+    
+    store_reg   <= '1' when (reg_valid='1' and write_bus_write='1') else 
+                   '1' when (reg_valid='1' and cache_miss='1' and write_bus_write_d='0') else
+                   -- '1' when store_ff='1' else
                    '0';
 
-    write_reg_invalidate <= reg_valid when (cache_miss='1' and line_valid='1') else
-                            '0';
+--    write_reg_invalidate <= store_reg and not write_bus_write; -- it will still be valid
 
     i_cache_ram: entity work.spram
     generic map (
@@ -260,8 +271,10 @@ begin
     p_cache_control: process(clock)
     begin
         if rising_edge(clock) then
+            write_bus_write_d <= write_bus_write;
             allocate_ff <= '0';
             modify_ff   <= '0';
+--            store_ff    <= reg_valid and cache_miss and not write_bus_write_d;
             
             if mem_resp.blast='1' and mem_resp.dnext='1' then -- reset write back flag.
                 wr_back <= '0';
@@ -273,7 +286,7 @@ begin
             when idle =>
                 if need_mem_access='1' and mem_resp.rack='0' then
                     mem_req_ff <= '1';
-                    if line_dirty='1' then -- data in cache has been written and needs to be written back.
+                    if line_dirty='1' or dirty_by_register='1' then -- data in cache has been written and needs to be written back.
                         mem_rwn     <= '0';
                         mem_address <= old_address;
                         old_addr_la <= old_address;
@@ -329,7 +342,9 @@ begin
     fill_address(c_line_size_bits-1 downto 0) <= read_counter;
     wb_address(wb_address'high downto c_line_size_bits) <= old_addr_la(wb_address'high downto c_line_size_bits);
     wb_address(c_line_size_bits-1 downto 0) <= write_counter;
-
+    dirty_by_register <= '1' when reg_address(reg_address'high downto c_line_size_bits)=old_address(old_address'high downto c_line_size_bits) and
+                            reg_valid='1' else '0';
+    
     mem_busy <= '1' when (state/= idle) else '0';
 
     mem_req.request     <= mem_req_ff;

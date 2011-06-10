@@ -103,9 +103,13 @@ architecture Gideon of ext_mem_ctrl_v5_sdr is
 --    attribute iob of rdata_i : signal is "true"; -- the general memctrl/rdata must be packed in IOB
 
 begin
-    addr_bank   <= std_logic_vector(req.address(3 downto 2));
+--    addr_bank   <= std_logic_vector(req.address(3 downto 2));
+--    addr_row    <= std_logic_vector(req.address(24 downto 12));
+--    addr_column <= std_logic_vector(req.address(11 downto 4)) & std_logic_vector(req.address(1 downto 0));
+
     addr_row    <= std_logic_vector(req.address(24 downto 12));
-    addr_column <= std_logic_vector(req.address(11 downto 4)) & std_logic_vector(req.address(1 downto 0));
+    addr_bank   <= std_logic_vector(req.address(11 downto 10));
+    addr_column <= std_logic_vector(req.address(9 downto 0));
 
     is_idle <= '1' when state = idle else '0';
 
