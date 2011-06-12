@@ -127,7 +127,7 @@ begin
     i_fifo: entity work.SRL_fifo
     generic map ( Width => 39 )
     port map (
-        clk         => clock,
+        clock       => clock,
         reset       => reset,
         GetElement  => fifo_pop,
         PutElement  => fifo_push,

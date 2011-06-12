@@ -14,7 +14,10 @@ port (
     client_resp : out t_mem_resp;
     
     mem_req     : out t_mem_burst_req;
-    mem_resp    : in  t_mem_burst_resp );
+    mem_resp    : in  t_mem_burst_resp;
+    
+    hit_count   : out unsigned(31 downto 0);
+    miss_count  : out unsigned(31 downto 0) );
 
 end dm_cache;
 
@@ -47,37 +50,40 @@ architecture gideon of dm_cache is
     signal read_la              : std_logic := '0';
     signal write_la             : std_logic := '0';
     
+    signal address_in           : unsigned(c_address_width-1 downto 0);
+    signal tagram_address       : unsigned(c_address_width-1 downto 0);
     signal tagram_request       : std_logic := '0';
-    signal tagram_upd_addr      : unsigned(c_address_width-1 downto 0);
     signal allocate             : std_logic := '0';
     signal allocate_ff          : std_logic := '0';
-    signal modify               : std_logic := '0';
     signal modify_ff            : std_logic := '0';
     signal invalidate           : std_logic := '0';
-    signal error                : std_logic := '0';
     signal line_dirty           : std_logic := '0';
     signal line_valid           : std_logic := '0';
     signal cache_miss           : std_logic := '0';
     signal cache_hit            : std_logic := '0';
     signal old_address          : unsigned(c_address_width-1 downto 0);
-    signal old_addr_la          : unsigned(c_address_width-1 downto 0) := (others => '1');
     signal address_la           : unsigned(c_address_width-1 downto 0);
 
-    signal fill_index           : unsigned(c_cache_size_bits-1 downto 0) := (others => '0');
+    signal fill_high            : unsigned(c_address_width-1 downto c_line_size_bits) := (others => '0');
+    signal fill_address         : unsigned(c_address_width-1 downto 0) := (others => '0');
     signal fill_valid           : std_logic;
     signal fill_data            : std_logic_vector(c_data_width-1 downto 0);
 
-    signal write_bus_address    : unsigned(c_address_width-1 downto 0);
     signal write_bus_write      : std_logic;
     signal write_bus_write_d    : std_logic;
     signal write_bus_data       : std_logic_vector(c_data_width-1 downto 0);
     signal write_reg_invalidate : std_logic;
     
+    -- signals related to delayed write register
     signal reg_address          : unsigned(c_address_width-1 downto 0);
     signal reg_data             : std_logic_vector(c_data_width-1 downto 0);
     signal reg_hit              : std_logic;
     signal reg_valid            : std_logic;
     signal store_reg            : std_logic := '0';
+    signal dirty_by_register    : std_logic;
+    signal data_to_dram_mux     : std_logic;
+    signal trigger_reg_to_dram  : std_logic;
+
     signal cache_index          : unsigned(c_cache_size_bits-1 downto 0);
     signal cache_wdata          : std_logic_vector(c_data_width-1 downto 0);
     signal cache_rdata          : std_logic_vector(c_data_width-1 downto 0);
@@ -88,6 +94,7 @@ architecture gideon of dm_cache is
     signal mem_req_i            : std_logic;
     signal mem_rwn              : std_logic;
     signal mem_address          : unsigned(c_address_width-1 downto 0);
+    signal mem_wdata            : std_logic_vector(c_data_width-1 downto 0);
 
     signal dirty_d              : std_logic;
     signal burst_count          : unsigned(c_line_size_bits-1 downto 0);
@@ -96,9 +103,11 @@ architecture gideon of dm_cache is
     signal mem_wrfifo_put       : std_logic;
     signal mem_rdfifo_get       : std_logic;
     
-    signal dirty_by_register    : std_logic;
-    signal data_to_dram_mux     : std_logic;
-    signal trigger_reg_to_dram  : std_logic;
+    signal helper_data_to_ram   : std_logic_vector(c_data_width-1 downto 0);
+    signal helper_data_from_ram : std_logic_vector(c_data_width-1 downto 0);
+    
+    signal hit_count_i          : unsigned(31 downto 0) := (others => '0');
+    signal miss_count_i         : unsigned(31 downto 0) := (others => '0');
     
     type t_state is (idle, check_dirty, fill, deferred);
     signal state                : t_state;
@@ -114,18 +123,24 @@ begin
         if rising_edge(clock) then
             read_request_d  <= read_request;
             write_request_d <= write_request;
-            client_tag_d    <= client_req.tag;
             if ready='1' then
-                address_la <= client_req.address;
-                read_la    <= client_req.request and client_req.read_writen;
-                write_la   <= client_req.request and not client_req.read_writen;
+                client_tag_d  <= client_req.tag;
+                address_la    <= client_req.address;
+                read_la       <= client_req.request and client_req.read_writen;
+                write_la      <= client_req.request and not client_req.read_writen;
             end if;
         end if;
     end process;
     
+    -- main address multiplexer
+    address_in         <= reg_address when store_reg='1' else
+                          fill_address when (state /= idle) else
+                          client_req.address;
+                          
     tagram_request     <= client_req.request and ready;
-    tagram_upd_addr    <= address_la when allocate='1' else
-                          reg_address;                          
+    tagram_address     <= fill_address when (state /= idle) else
+                          client_req.address;
+
 
     i_tag_ram: entity work.tag_ram 
     generic map (
@@ -136,15 +151,16 @@ begin
         clock       => clock,
         reset       => reset,
 
-        query_addr  => client_req.address,
+        address_in  => tagram_address,
         do_query    => tagram_request,
 
-        update_addr => tagram_upd_addr,
         allocate    => allocate,
-        modify      => modify,
+        alloc_dirty => modify_ff,
         invalidate  => invalidate,
 
-        error       => error,
+        modify      => store_reg,
+        modify_addr => reg_address,
+        
         dirty       => line_dirty,
         valid       => line_valid,
         miss        => cache_miss,
@@ -152,7 +168,6 @@ begin
         address_out => old_address );
 
     write_bus_write      <= client_req.request and not client_req.read_writen and ready;
-    write_bus_address    <= client_req.address;
     write_bus_data       <= client_req.data;
     write_reg_invalidate <= store_reg or (trigger_reg_to_dram and dirty_d);
     
@@ -164,10 +179,8 @@ begin
         clock       => clock,
         reset       => reset,
 
-        match_addr  => client_req.address,
+        address_in  => client_req.address,
         match_req   => read_request,
-        
-        bus_address => write_bus_address,
         bus_write   => write_bus_write,
         bus_wdata   => write_bus_data,
         invalidate  => write_reg_invalidate,
@@ -177,9 +190,8 @@ begin
         reg_hit     => reg_hit,
         reg_valid   => reg_valid );
 
-    cache_index <= fill_index when (state /= idle) else
-                   index_of(reg_address) when store_reg='1' else
-                   index_of(client_req.address);
+    cache_index <= index_of(address_in);
+    
     cache_wdata <= fill_data when fill_valid='1' else
                    reg_data;
     cache_we    <= fill_valid or store_reg;
@@ -216,9 +228,10 @@ begin
         we            => cache_we );
 
     -- read data multiplexer
-    fill_valid       <= mem_resp.rdata_av;
-    fill_data        <= mem_resp.data;
-    client_resp.rack <= client_req.request and ready;
+    fill_valid           <= mem_resp.rdata_av;
+    fill_data            <= mem_resp.data;
+    client_resp.rack     <= client_req.request and ready;
+    client_resp.rack_tag <= client_req.tag when client_req.request='1' and ready='1' else (others => '0');
     
     process(reg_hit, reg_data, read_request_d, client_tag_d, cache_hit, cache_rdata, fill_data, fill_valid, burst_count, read_la, address_la)
     begin
@@ -243,7 +256,6 @@ begin
     end process;
     
     allocate <= allocate_ff;
-    modify   <= store_reg or modify_ff;
         
      -- cache_miss='1' =>
         -- if dirty and not g_write_through =>
@@ -277,6 +289,13 @@ begin
             modify_ff   <= '0';
             mem_req_i   <= '0';
             
+            if cache_miss='1' then
+                miss_count_i <= miss_count_i + 1;
+            end if;
+            if cache_hit='1' then
+                hit_count_i <= hit_count_i + 1;
+            end if;
+
             case state is
             when idle =>
                 if cache_miss='1' then
@@ -292,17 +311,21 @@ begin
                 end if;
                 dirty_d <= (dirty_by_register or line_dirty) and cache_miss; -- dirty will be our read enable from cache :)
                 trigger_reg_to_dram <= dirty_by_register;
+                --fill_high <= old_address(old_address'high downto c_line_size_bits); -- high bits don't matter here (this is correct!)
+                --fill_high <= address_la(old_address'high downto c_line_size_bits); -- high bits don't matter here (optimization!!)
                 
             when check_dirty => -- sequences through 'line_size' words
                 mem_address <= old_address;
                 mem_rwn     <= '0'; -- write
                 if dirty_d='0' then
+                    --fill_high <= address_la(address_la'high downto c_line_size_bits); -- high bits do matter here
                     state <= fill;
                 else -- dirty_d='1'                
                     burst_count <= burst_count + 1;
                     if signed(burst_count) = -1 then -- last?
                         mem_req_i <= '1'; -- issue the write request to memctrl
                         dirty_d <= '0';
+                        --fill_high <= address_la(address_la'high downto c_line_size_bits); -- high bits do matter here
                         state <= fill;
                     end if;
                 end if;
@@ -339,7 +362,8 @@ begin
     mem_rdfifo_get <= '1' when state = fill and mem_resp.rdata_av='1' else '0';
     
     -- index to the cache for back-office operations (line in, line out)
-    fill_index <= address_la(cache_index'high downto c_line_size_bits) & burst_count;
+    fill_high <= address_la(old_address'high downto c_line_size_bits);
+    fill_address <= fill_high & burst_count;
     
     dirty_by_register <= '1' when reg_address(c_cache_size_bits-1 downto c_line_size_bits) =
                                   old_address(c_cache_size_bits-1 downto c_line_size_bits) and
@@ -350,30 +374,18 @@ begin
     
     mem_busy <= '1' when (state/= idle) else '0';
 
+    mem_wdata           <= cache_rdata when data_to_dram_mux='0' else reg_data;
     mem_req.request     <= mem_req_i;
     mem_req.read_writen <= mem_rwn;
     mem_req.address     <= mem_address(mem_address'high downto c_line_size_bits) & to_unsigned(0, c_line_size_bits);
-    mem_req.data        <= cache_rdata when data_to_dram_mux='0' else reg_data;
-    mem_req.data_pop    <= '1' when (state = fill) and mem_resp.rdata_av='1' else '0';
+    mem_req.data        <= mem_wdata;
+    mem_req.data_pop    <= mem_rdfifo_get;
     mem_req.data_push   <= mem_wrfifo_put;
     
---  i_cache_control: entity work.cache_controller
---  port map (
---      clock           => clock,
---      reset           => reset,
---
---      allocate        => allocate,
---      modify          => modify,
---      invalidate      => invalidate,
---                      
---      dirty           => dirty,
---      miss            => cache_miss,
---      hit             => cache_hit,
---
---      
---
---      
---      mem_req         => mem_req,
---      mem_resp        => mem_resp );
+    helper_data_to_ram   <= mem_wdata     when mem_wrfifo_put='1' else (others => 'Z');
+    helper_data_from_ram <= mem_resp.data when mem_rdfifo_get='1' else (others => 'Z');
+
+    hit_count           <= hit_count_i;
+    miss_count          <= miss_count_i;
 
 end gideon;

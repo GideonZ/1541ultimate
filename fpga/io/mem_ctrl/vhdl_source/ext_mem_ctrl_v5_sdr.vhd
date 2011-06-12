@@ -78,7 +78,8 @@ architecture Gideon of ext_mem_ctrl_v5_sdr is
     signal not_clock      : std_logic;
     signal rdata          : std_logic_vector(7 downto 0) := (others => '0');
     signal wdata          : std_logic_vector(7 downto 0) := (others => '0');
-    signal refr_delay     : integer range 0 to 3;
+    signal refr_delay     : integer range 0 to 7;
+    signal next_delay     : integer range 0 to 7;
     signal boot_cnt       : integer range 0 to SDRAM_WakeupTime-1 := SDRAM_WakeupTime-1;
     signal init_cnt       : integer range 0 to c_init_array'high;
     signal enable_sdram   : std_logic := '1';
@@ -101,50 +102,57 @@ architecture Gideon of ext_mem_ctrl_v5_sdr is
 
     attribute iob : string;
     attribute iob of SDRAM_CKE : signal is "false";
---    attribute iob of rdata_i : signal is "true"; -- the general memctrl/rdata must be packed in IOB
+    attribute iob of rdata     : signal is "true"; -- the general memctrl/rdata must be packed in IOB
 
     constant c_address_width    : integer := req.address'length;
     constant c_data_width       : integer := req.data'length;
 
+    signal cmd_fifo_data_in     : std_logic_vector(c_address_width downto 0);
+    signal cmd_fifo_data_out    : std_logic_vector(c_address_width downto 0);
+    
     signal rwn_fifo             : std_logic;
     signal address_fifo         : std_logic_vector(c_address_width-1 downto 0);
     signal cmd_af               : std_logic;
     signal cmd_av               : std_logic;
     signal rdata_af             : std_logic;
+    signal push_cmd             : std_logic;
 begin
---    addr_bank   <= std_logic_vector(req.address(3 downto 2));
---    addr_row    <= std_logic_vector(req.address(24 downto 12));
---    addr_column <= std_logic_vector(req.address(11 downto 4)) & std_logic_vector(req.address(1 downto 0));
-
+    addr_bank   <= address_fifo(3 downto 2);
     addr_row    <= address_fifo(24 downto 12);
-    addr_bank   <= address_fifo(11 downto 10);
-    addr_column <= address_fifo(9 downto 0);
+    addr_column <= address_fifo(11 downto 4) & address_fifo(1 downto 0);
+
+--    addr_row    <= address_fifo(24 downto 12);
+--    addr_bank   <= address_fifo(11 downto 10);
+--    addr_column <= address_fifo(9 downto 0);
 
     is_idle <= '1' when state = idle else '0';
 
     req_i      <= cmd_av;
     resp.ready <= not cmd_af;
+    push_cmd   <= req.request and not cmd_af;
     
     -- resp.rack  <= rack;
     -- resp.dack  <= dack(0);
     -- resp.dnext <= dnext(0);
     -- resp.blast <= (dack(0) and not dack(1)) or (dnext(0) and not dnext(1));
 
+    cmd_fifo_data_in <= req.read_writen & std_logic_vector(req.address);
+    address_fifo     <= cmd_fifo_data_out(address_fifo'range);
+    rwn_fifo         <= cmd_fifo_data_out(cmd_fifo_data_out'high);
+    
     i_command_fifo: entity work.srl_fifo
     generic map (
         Width     => c_address_width + 1,
         Depth     => 15,
         Threshold => 3)
     port map (
-        clk         => clock,
+        clock       => clock,
         reset       => reset,
         GetElement  => rack,
-        PutElement  => req.request,
+        PutElement  => push_cmd,
         FlushFifo   => '0',
-        DataIn(c_address_width)            => req.read_writen,
-        DataIn(c_address_width-1 downto 0) => std_logic_vector(req.address),
-        DataOut(c_address_width)            => rwn_fifo,
-        DataOut(c_address_width-1 downto 0) => address_fifo,
+        DataIn      => cmd_fifo_data_in,
+        DataOut     => cmd_fifo_data_out,
         SpaceInFifo => open,
         AlmostFull  => cmd_af,
         DataInFifo  => cmd_av );
@@ -155,7 +163,7 @@ begin
         Depth     => 15,
         Threshold => 6 )
     port map (
-        clk         => clock,
+        clock       => clock,
         reset       => reset,
         GetElement  => req.data_pop,
         PutElement  => dack(0),
@@ -172,7 +180,7 @@ begin
         Depth     => 15,
         Threshold => 6 )
     port map (
-        clk         => clock,
+        clock       => clock,
         reset       => reset,
         GetElement  => dnext(0),
         PutElement  => req.data_push,
@@ -186,12 +194,15 @@ begin
     process(clock)
         procedure send_refresh_cmd is
         begin
-            do_refresh <= '0';
-            cs_n_i  <= '0';
-            SDRAM_RASn <= '0';
-            SDRAM_CASn <= '0';
-            SDRAM_WEn  <= '1'; -- Auto Refresh
-            refr_delay <= 3; 
+            if refr_delay = 0 then
+                do_refresh <= '0';
+                cs_n_i  <= '0';
+                SDRAM_RASn <= '0';
+                SDRAM_CASn <= '0';
+                SDRAM_WEn  <= '1'; -- Auto Refresh
+                refr_delay <= 3;
+                next_delay <= 3;
+            end if;
         end procedure;
 
         procedure accept_req is
@@ -227,7 +238,13 @@ begin
             if refr_delay /= 0 then
                 refr_delay <= refr_delay - 1;
             end if;
-
+            if next_delay /= 0 then
+                next_delay <= next_delay - 1;
+            end if;
+            if delay /= 0 then
+                delay <= delay - 1;
+            end if;
+            
             sdram_d_t <= '0' & sdram_d_t(3 downto 1);
             dack     <= '0' & dack(3 downto 1);
             dnext    <= '0' & dnext(3 downto 1);
@@ -258,8 +275,6 @@ begin
                     else
                         init_cnt <= init_cnt + 1;
                     end if;
-                else
-                    delay <= delay - 1;
                 end if;
 
             when idle =>
@@ -268,7 +283,7 @@ begin
 				if do_refresh='1' and not (inhibit_d='1' or inhibit='1') then
 				    send_refresh_cmd;
 				elsif inhibit='0' then
-    				if req_i='1' and refr_delay = 0 then
+    				if req_i='1' and next_delay = 0 then
                         accept_req;
                     end if;
                 end if;
@@ -282,8 +297,11 @@ begin
                 -- be further away in time. If there is NO access
                 -- pending, then we assume the same bank, and introduce
                 -- the delay.
+                refr_delay <= 5;
                 if (req_i='1' and addr_bank=last_bank) or req_i='0' then
-                    refr_delay <= 2;
+                    next_delay <= 5;
+                else
+                    next_delay <= 2;
                 end if;
 
                 mem_a_i(10) <= '1'; -- auto precharge
@@ -297,10 +315,8 @@ begin
                         SDRAM_RASn  <= '1';
                         SDRAM_CASn  <= '0';
                         SDRAM_WEn   <= '0';
-                        delay   <= 4;
+                        delay   <= 2;
                         state   <= sd_wait;
-                    else
-                        delay <= delay - 1;
                     end if;
                 else
                     if delay = 0 then
@@ -310,11 +326,9 @@ begin
                             SDRAM_RASn  <= '1';
                             SDRAM_CASn  <= '0';
                             SDRAM_WEn   <= '1';
-                            delay   <= 6;
+                            delay   <= 2;
                             state   <= sd_wait;
                         end if;
-                    else
-                        delay <= delay - 1;
                     end if;
                 end if;
 
@@ -322,8 +336,7 @@ begin
                 if delay=1 then
                     state <= idle;
                 end if;
-                delay <= delay - 1;    
-                if delay=4 and rwn_i='1' then
+                if delay=1 and rwn_i='1' then
                     dack <= "1111";
                 end if;
 
@@ -351,7 +364,7 @@ begin
         end if;
     end process;
     
-    process(state, do_refresh, inhibit, inhibit_d, req_i, refr_delay)
+    process(state, do_refresh, inhibit, inhibit_d, req_i, next_delay)
     begin
         rack <= '0';
         case state is
@@ -361,7 +374,7 @@ begin
 				if do_refresh='1' and not (inhibit_d='1' and inhibit='0') then
 				    null;
 				elsif inhibit='0' then
-    				if req_i='1' and refr_delay = 0 then
+    				if req_i='1' and next_delay = 0 then
                         rack <= '1';
                     end if;
                 end if;
@@ -370,7 +383,7 @@ begin
         end case;
     end process;
 
-    MEM_D       <= sdram_d_o when sdram_d_t(0)='1' else (others => 'Z');
+    MEM_D       <= sdram_d_o after 7 ns when sdram_d_t(0)='1' else (others => 'Z') after 7 ns;
     MEM_A       <= mem_a_i;
 
     not_clock <= not clk_shifted;

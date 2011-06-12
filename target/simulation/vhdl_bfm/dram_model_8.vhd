@@ -55,10 +55,9 @@ architecture bfm of dram_model_8 is
     type t_byte_array is array(natural range <>) of std_logic_vector(7 downto 0);
     signal r_queue      : t_byte_array(0 to g_cas_latency + g_burst_len_r) := (others => (others => 'Z'));
 
-    -- mapping
-    constant c_col      : integer := 0;
-    constant c_bank     : integer := g_column_bits;
-    constant c_row      : integer := g_column_bits + g_bank_bits;
+--    constant c_col      : integer := 0;
+--    constant c_bank     : integer := g_column_bits;
+--    constant c_row      : integer := g_column_bits + g_bank_bits;
 begin
     bind: process
     begin
@@ -70,12 +69,30 @@ begin
     command <= WEn & CASn & RASn;
     bank <= to_integer(unsigned(BA));
     
-    DQ <= r_queue(0);
+    DQ <= transport r_queue(0) after 6 ns;
     
     process(CLK)
         variable raddr : std_logic_vector(31 downto 0) := (others => '0');
         variable waddr : std_logic_vector(31 downto 0) := (others => '0');
         variable more_writes : integer := 0;
+
+        function map_address(bank_bits : std_logic_vector(g_bank_bits-1 downto 0);
+                             row_bits  : std_logic_vector(g_row_bits-1 downto 0);
+                             col_bits  : std_logic_vector(g_column_bits-1 downto 0) ) return std_logic_vector is
+            variable ret    : std_logic_vector(31 downto 0) := (others => '0');
+
+        begin
+            -- mapping used in v5_sdr
+            --addr_bank   <= address_fifo(3 downto 2);
+            --addr_row    <= address_fifo(24 downto 12);
+            --addr_column <= address_fifo(11 downto 4) & address_fifo(1 downto 0);
+            ret(g_bank_bits+1 downto 2) := bank_bits;
+            ret(1 downto 0) := col_bits(1 downto 0);
+            ret(g_column_bits+g_bank_bits-1 downto g_bank_bits+2) := col_bits(g_column_bits-1 downto 2);
+            ret(g_bank_bits+g_column_bits+g_row_bits-1 downto g_bank_bits+g_column_bits) := row_bits;
+            return ret;
+        end function;
+
     begin
         if rising_edge(CLK) then
         	if bound and CKE='1' then
@@ -97,13 +114,14 @@ begin
 	                    bank_rows(bank) <= A(g_row_bits-1 downto 0);
 	                    
 	                when "101" => -- CAS, start read burst
-	                    raddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
-	                    raddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
-	                    raddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
+	                    raddr := map_address(BA, bank_rows(bank), A(g_column_bits-1 downto 0));
+	                    --raddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
+	                    --raddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
+	                    --raddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
 	                    --report hstr(BA) & " " & hstr(bank_rows(bank)) & " " & hstr(A) & ": " & hstr(raddr);
 	                    
 	                    for i in 0 to g_burst_len_r-1 loop
-	                        r_queue(g_cas_latency + i) <= read_memory_8(this, raddr);
+	                        r_queue(g_cas_latency-1 + i) <= read_memory_8(this, raddr);
 	                        raddr := std_logic_vector(unsigned(raddr) + 1);
 	                        if to_integer(unsigned(raddr)) mod g_burst_len_r = 0 then
 	                            raddr := std_logic_vector(unsigned(raddr) - g_burst_len_r);
@@ -111,9 +129,10 @@ begin
 	                    end loop;
 	
 	                when "001" => -- CAS & WE, start write burst
-	                    waddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
-	                    waddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
-	                    waddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
+	                    waddr := map_address(BA, bank_rows(bank), A(g_column_bits-1 downto 0));
+	                    --waddr(c_bank+g_bank_bits-1 downto c_bank) := BA;
+	                    --waddr(c_row+g_row_bits-1 downto c_row) := bank_rows(bank);
+	                    --waddr(c_col+g_column_bits-1 downto c_col) := A(g_column_bits-1 downto 0);
 	                    more_writes := g_burst_len_w - 1;
 	                    if DQM='0' then
 	                        write_memory_8(this, waddr, DQ);

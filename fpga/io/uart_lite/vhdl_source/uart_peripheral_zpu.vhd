@@ -74,7 +74,7 @@ begin
 		Width     => 8,
         Threshold => 12 )
 	port map (
-	    clk         => clock,
+	    clock       => clock,
 	    reset       => reset,
 	    GetElement  => rxfifo_get,
 	    PutElement  => rx_ack,
@@ -91,7 +91,7 @@ begin
     		Width     => 8,
             Threshold => 12 )
     	port map (
-    	    clk         => clock,
+    	    clock       => clock,
     	    reset       => reset,
     	    GetElement  => txfifo_get,
     	    PutElement  => txfifo_put,

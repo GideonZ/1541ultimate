@@ -13,6 +13,7 @@ CROSS     = zpu-elf
 FPGA_250  = ../../fpga/work250/ultimate_1541_250e
 FPGA_400  = ../../fpga/work400/ultimate_1541_400a
 FPGA_700  = ../../fpga/work700/ultimate_1541_700a
+FPGA_700C = ../../fpga/work700c/ultimate2_cached
 FPGA_1400 = ../../fpga/work1400/ultimate_1541_1400a
 
 # Outputs
@@ -60,7 +61,7 @@ OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
 ALL_OBJS = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
 
 
-.PHONY: normal clean all test mk1 special
+.PHONY: normal clean all test mk1 special cached
 
 normal: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_700.mcs $(RESULT)/$(PRJ)_250.bin
 
@@ -70,10 +71,13 @@ special: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_400.mcs $(RESULT)/$(PRJ)_1400.mcs
 
 mk1: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_250.bin 
 
+cached: $(OUTPUT) $(RESULT) $(OUTPUT)/$(PRJ)_700_cached.bit
+
 test:
 	echo $(ALL_OBJS)
 	echo $(OBJS_C)
 	echo $(OBJS_CC)
+	echo $(RESULT)/$(PRJ)_700_cached.bit
 	
 $(OUTPUT):
 	@mkdir $(OUTPUT)
@@ -146,6 +150,13 @@ $(OUTPUT)/$(PRJ)_700.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_700).bit
 	         -bt $(FPGA_700).bit \
 	         -bd $(OUTPUT)/$(PRJ).mem \
 	         -o b $(OUTPUT)/$(PRJ)_700.bit
+
+$(OUTPUT)/$(PRJ)_700_cached.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_700C).bit
+	@echo "Data2MEM 700A Cached..."
+	@data2mem -bm $(FPGA_700C)_bd.bmm \
+	         -bt $(FPGA_700C).bit \
+	         -bd $(OUTPUT)/$(PRJ).mem \
+	         -o b $(OUTPUT)/$(PRJ)_700_cached.bit
 
 $(OUTPUT)/$(PRJ)_1400.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_1400).bit
 	@echo "Data2MEM 1400A..."

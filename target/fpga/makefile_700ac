@@ -1,0 +1,245 @@
+################################################################################
+##
+## (C) COPYRIGHT 2010  Gideon's Logic Architectures
+##
+################################################################################
+## This is the Xilinx configuration make file containing project specific 
+## settings.
+################################################################################
+#### NOTE: The following restrictions apply when using this make file:
+####		- file and directory names may not contain spaces!
+####		- target names must be lowercase
+################################################################################
+
+# GLOBAL incs should point to the make include files directory
+export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
+							
+
+.SUFFIXES:		#delete all known suffixes
+
+################################################################################
+#### TARGET
+################################################################################
+#SHELL           := /bin/bash
+
+TARGET 			:= ultimate2_cached
+
+ISE_VERSION		:= 13
+
+DESIGN_NAME 	:= $(TARGET)
+TOP_NAME    	:= $(TARGET)
+
+CONFIG			:= makefile_700ac
+
+# Project ROOT
+WORK_DIR		:= work700c
+
+# Part settings
+PART_TYPE        := xc3s700a
+PART_SPEED_GRADE := 4
+PART_PACKAGE     := ft256
+PART             := $(PART_TYPE)-$(PART_SPEED_GRADE)-$(PART_PACKAGE)
+
+#Synthesis options
+XST_LSO			:= work
+XST_FLAGS	 	:= 
+XST_OPTIONS		:= -top $(TOP_NAME) \
+				   -hierarchy_separator / \
+				   -bus_delimiter \(\) \
+				   -cross_clock_analysis YES \
+				   -iob true \
+				   -opt_mode Speed \
+				   -opt_level 2 \
+				   -register_balancing no \
+				   -keep_hierarchy no
+
+# Tools
+MY_PROMGEN := ../../tools/promgen
+
+#SETTING FILES		    
+UCF_FILES := ./ucf/ultimate_ii.ucf 		# constraint/pin-assignment file(s)
+BMM_FILE  := ./ucf/sd_ram4.bmm			# bmm file location
+
+# TOOL FLAGS
+NGDBUILD_FLAGS	 := 	
+MAP_FLAGS        := 	-cm area -timing -pr b -detail
+PAR_FLAGS        := 	-w 
+TRCE_FLAGS       := 	-e 9 -l 11
+PROMGEN_FLAGS	 := 	-w -p mcs -c FF -x xcf04s
+BITGEN_FLAGS     := 	-w -d \
+					    -g DebugBitstream:No -g Binary:no -g CRC:Enable \
+					    -g ConfigRate:25 -g ProgPin:PullUp \
+					    -g DonePin:PullUp -g TckPin:PullUp -g TdiPin:PullUp \
+					    -g TdoPin:PullUp -g TmsPin:PullUp \
+					    -g UnusedPin:PullUp -g UserID:0xFFFFFFFF \
+					    -g StartUpClk:CClk -g DONE_cycle:4 -g GTS_cycle:5 \
+					    -g GWE_cycle:6 -g LCK_cycle:NoWait -g Security:None \
+					    -g Persist:No -g DonePipe:no \
+					    -g DriveDone:Yes
+								
+################################################################################
+## The SYNTH_PROJ variable contains all the project file locations. It is a 
+## space seperated list of records. The following format is used:
+## <source type>,<lib>,<filepath> <source type>,<lib>,<filepath> etc.
+## (for example: vhdl,work,../../dummy.vhdl)
+################################################################################
+
+SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/io_dummy.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/dma_bus_pkg.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/dma_bus_arbiter_pri.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/slot_bus_pkg.vhd \
+				vhdl,work,../../fpga/ip/busses/vhdl_source/io_to_dma_bridge.vhd \
+				vhdl,work,../../fpga/ip/sync_fifo/vhdl_source/sync_fifo.vhd \
+				vhdl,work,../../fpga/ip/srl_fifo/vhdl_source/srl_fifo.vhd \
+				vhdl,work,../../fpga/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd \
+				vhdl,work,../../fpga/ip/synchroniser/vhdl_source/synchroniser.vhd \
+				vhdl,work,../../fpga/ip/async_fifo/vhdl_source/gray_code_pkg.vhd \
+				vhdl,work,../../fpga/ip/async_fifo/vhdl_source/async_fifo.vhd \
+				vhdl,work,../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd \
+				vhdl,work,../../fpga/ip/memory/vhdl_source/dpram.vhd \
+				vhdl,work,../../fpga/ip/memory/vhdl_source/pseudo_dpram.vhd \
+				vhdl,work,../../fpga/ip/memory/vhdl_source/spram.vhd \
+				vhdl,work,../../fpga/ip/clock/vhdl_source/real_time_clock.vhd \
+				vhdl,work,../../fpga/io/audio_select/vhdl_source/audio_select.vhd \
+				vhdl,work,../../fpga/io/uart_lite/vhdl_source/tx.vhd \
+				vhdl,work,../../fpga/io/uart_lite/vhdl_source/rx.vhd \
+				vhdl,work,../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/delta_sigma_2to5.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/high_pass.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/hf_noise.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/sine_osc.vhd \
+				vhdl,work,../../fpga/io/sigma_delta_dac/vhdl_source/mash.vhd \
+				vhdl,work,../../fpga/io/spi/vhdl_source/spi.vhd \
+				vhdl,work,../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd \
+				vhdl,work,../../fpga/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v5_sdr.vhd \
+				vhdl,work,../../fpga/io/spike_filter/vhdl_source/spike_filter.vhd \
+				vhdl,work,../../fpga/io/usb/vhdl_source/usb_pkg.vhd \
+				vhdl,work,../../fpga/io/usb/vhdl_source/ulpi_bus.vhd \
+				vhdl,work,../../fpga/io/usb/vhdl_source/token_crc.vhd \
+				vhdl,work,../../fpga/io/usb/vhdl_source/data_crc.vhd \
+				vhdl,work,../../fpga/io/usb/vhdl_source/ulpi_tx.vhd \
+				vhdl,work,../../fpga/io/usb/vhdl_source/ulpi_rx.vhd \
+				vhdl,work,../../fpga/io/usb/vhdl_source/ulpi_host.vhd \
+				vhdl,work,../../fpga/io/usb/vhdl_source/bus_reset.vhd \
+				vhdl,work,../../fpga/io/usb/vhdl_source/usb_host_io.vhd \
+				vhdl,work,../../fpga/io/itu/vhdl_source/itu_pkg.vhd \
+				vhdl,work,../../fpga/io/itu/vhdl_source/itu.vhd \
+				vhdl,work,../../fpga/io/icap/vhdl_source/icap_pkg.vhd \
+				vhdl,work,../../fpga/io/icap/vhdl_source/icap.vhd \
+				vhdl,work,../../fpga/io/iec_interface/vhdl_source/iec_interface_io.vhd \
+				vhdl,work,../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd \
+				vhdl,work,../../fpga/io/c2n_record/vhdl_source/c2n_record.vhd \
+				vhdl,work,../../fpga/io/command_interface/vhdl_source/command_if_pkg.vhd \
+				vhdl,work,../../fpga/io/command_interface/vhdl_source/command_protocol.vhd \
+				vhdl,work,../../fpga/io/command_interface/vhdl_source/command_interface.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_debug_pkg.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_trace.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/Q_table.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/adsr_multi.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/mult_acc.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/oscillator.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_ctrl.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_filter.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_mixer.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_regs.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/wave_map.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_top.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_io_regs_pkg.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_io_regs.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_mapper.vhd \
+				vhdl,work,../../fpga/sid6581/vhdl_source/sid_peripheral.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_defs.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/pkg_6502_decode.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/shifter.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/implied.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/bit_cpx_cpy.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/alu.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/proc_registers.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/proc_interrupt.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/proc_control.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/data_oper.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/proc_core.vhd \
+				vhdl,work,../../fpga/6502/vhdl_source/cpu6502.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/floppy_stream.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/floppy_mem.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/floppy_param_mem.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/floppy.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/floppy_sound.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/via6522.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/cpu_part_1541.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/drive_registers.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/c1541_drive.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/c1541_pkg.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/c1541_timing.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/gcr2bin.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/bin2gcr.vhd \
+				vhdl,work,../../fpga/1541/vhdl_source/gcr_codec.vhd \
+				vhdl,work,../../fpga/zpu/vhdl_source/zpupkg.vhd \
+				vhdl,work,../../fpga/zpu/vhdl_source/zpu_compare.vhd \
+				vhdl,work,../../fpga/zpu/vhdl_source/zpu_8bit_loadb.vhd \
+				vhdl,work,../../fpga/zpu/vhdl_source/zpu.vhd \
+				vhdl,work,../../fpga/zpu/vhdl_source/zpu_profiler.vhd \
+				vhdl,work,../../fpga/cpu_unit/vhdl_source/cpu_wrapper_zpu.vhd \
+				vhdl,work,../../fpga/cpu_unit/vhdl_source/mem32k.vhd \
+				vhdl,work,../../fpga/cpu_unit/vhdl_source/mem16k.vhd \
+				vhdl,work,../../fpga/cpu_unit/vhdl_source/mem4k.vhd \
+				vhdl,work,../../fpga/cpu_unit/vhdl_source/dm_cache.vhd \
+				vhdl,work,../../fpga/cpu_unit/vhdl_source/tag_ram.vhd \
+				vhdl,work,../../fpga/cpu_unit/vhdl_source/delayed_write.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/cart_slot_pkg.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/cart_slot_registers.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/slot_timing.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/slot_slave.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/slot_server_v4.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/freezer.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/all_carts_v4.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/reu_pkg.vhd \
+				vhdl,work,../../fpga/cart_slot/vhdl_source/reu.vhd \
+				vhdl,work,../../fpga/fpga_top/ultimate_fpga/vhdl_source/s3e_clockgen.vhd \
+				vhdl,work,../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic.vhd \
+				vhdl,work,../../fpga/fpga_top/ultimate_fpga/vhdl_source/$(TARGET).vhd
+
+ ################################################################################
+ #### Special flow options    
+ ################################################################################
+
+## IGNORE_TIMING_PIN_ERRORS
+## When this variable is set to set yes a bit file is generated even when the 
+## timing constraints are not met or not all pins in the design are assigend.
+
+IGNORE_TIMING_PIN_ERRORS = no
+
+################################################################################
+#### Target specific rules
+################################################################################
+
+.PHONY: all test
+all: $(TARGET).bit			# may be changed
+
+test::
+	echo $(XILINX)
+	echo $(XST)
+	echo "$(GEN_VAR_DEP_FILE)"
+
+	
+################################################################################
+#### WARNING!!
+################################################################################
+#### Do not touch the settings below (these statements should be placed at the
+#### end of the makefile)
+################################################################################
+
+################################################################################
+#### Include general Xilinx build rules
+################################################################################
+
+include $(GLOBAL_INCS)/xilinx_ise.inc

@@ -26,7 +26,7 @@ generic (Width : integer := 32;
          Depth : integer := 15; -- 15 is the maximum
          Threshold : integer := 13);
 port (
-    clk         : in std_logic;
+    clock       : in std_logic;
     reset       : in std_logic;
     GetElement  : in std_logic;
     PutElement  : in std_logic;
@@ -52,11 +52,11 @@ begin
     DataInFifo  <= DataInFifo_i;
     SpaceInFifo <= SpaceInFifo_i;
     
-    process(CLK, Reset)
+    process(clock)
         variable NewCnt : std_logic_vector(3 downto 0);--integer range 0 to Depth;
     begin
-        if (CLK'event and CLK='1') then
-            if (FlushFifo='1') then
+        if rising_edge(clock) then
+            if FlushFifo='1' then
                 NewCnt := "1111"; --0;
             elsif (FilteredGet='1') and (FilteredPut='0') then
                 NewCnt := NumElements - 1;
@@ -84,19 +84,20 @@ begin
             else
                 SpaceInFifo_i <= '0';
             end if;                                    
-        end if;
-        if Reset='1' then
-            NumElements <= "1111";
-            SpaceInFifo_i <= '1';
-            DataInFifo_i <= '0';
-            AlmostFull <= '0';
+
+            if Reset='1' then
+                NumElements <= "1111";
+                SpaceInFifo_i <= '1';
+                DataInFifo_i <= '0';
+                AlmostFull <= '0';
+            end if;
         end if;
     end process;
 
     SRLs : for srl2 in 0 to Width-1 generate
       i_SRL : SRL16E
         port map (
-          CLK => CLK,
+          CLK => clock,
           CE  => FilteredPut,
           D   => DataIn(srl2),
           A3  => NumElements(3),

@@ -35,9 +35,22 @@ bool w25q_wait_ready(int time_out)
     return ret;
 }
 
+void uart_write_hex_long(DWORD hex)
+{
+    uart_write_hex(BYTE(hex >> 24));
+    uart_write_hex(BYTE(hex >> 16));
+    uart_write_hex(BYTE(hex >> 8));
+    uart_write_hex(BYTE(hex));
+}
+
 
 int main(int argc, char **argv)
 {
+    if (CAPABILITIES & CAPAB_SIMULATION) {
+        UART_DATA = BYTE('*');
+        jump_run(APPL_RUN_ADDR);
+    }
+
     if (!(CAPABILITIES & CAPAB_SPI_FLASH)) {
 /*
         AT49_COMMAND1 = 0xAA;
@@ -117,6 +130,8 @@ int main(int argc, char **argv)
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
+//        uart_write_hex_long(*(DWORD *)BOOT2_RUN_ADDR);
+//        uart_write_buffer("Running 2nd boot.\n\r", 19); 
         jump_run(BOOT2_RUN_ADDR);
         while(1);
     }

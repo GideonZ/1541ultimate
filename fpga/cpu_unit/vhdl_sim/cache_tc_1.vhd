@@ -87,8 +87,7 @@ begin
         wait for 200 ns;
         check_dram(X"0062", X"FF");
 
-        wait;
-        
+        -- other checks        
         
         mem_write(mm, X"1080", X"01");
         mem_write(mm, X"1081", X"02");

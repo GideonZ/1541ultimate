@@ -112,6 +112,16 @@ $(TESTBENCH)_DO_GUI_BEFORE		:=
 $(TESTBENCH)_DO_GUI_AFTER		:= 
 $(TESTBENCH)_DO_GUI_OVERRIDE	:= 
 
+#### tb5 #####
+TESTBENCH 						:= ext_mem_ctrl_v5_sdr_tb
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
 ###############################################################################
 #### Testcases
 ###############################################################################
@@ -135,6 +145,13 @@ $(TESTCASE)_TIME			:= 20 us;
 $(TESTCASE)_DO_GUI_BEFORE	:= 
 
 TESTCASE 					:= harness_v4
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= 20 us;
+$(TESTCASE)_DO_GUI_BEFORE	:= 
+
+TESTCASE 					:= harness_v5
 TESTCASES					:= $(TESTCASES) $(TESTCASE)
 $(TESTCASE)_SRC				:= $(TESTCASE).vhd
 $(TESTCASE)_ENTITY			:= $(TESTCASE)

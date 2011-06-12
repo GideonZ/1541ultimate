@@ -666,7 +666,7 @@ begin
         Depth      => 15,
         Threshold  => 10 ) 
     port map (
-        clk                 => clock,
+        clock               => clock,
         reset               => reset,
         GetElement          => user_next,
         PutElement          => tx_put,

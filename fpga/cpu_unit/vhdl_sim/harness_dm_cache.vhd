@@ -36,9 +36,12 @@ architecture harness of harness_dm_cache is
 	signal logic_WEn   : std_logic := '1';
     signal logic_DQM   : std_logic := '0';
 
+    signal hit_count   : unsigned(31 downto 0);
+    signal miss_count  : unsigned(31 downto 0);
+    signal hit_ratio   : real := 0.0;
 begin
     clock <= not clock after 10 ns;
-    clock_shifted <= transport clock after 2 ns;
+    clock_shifted <= transport clock after 7.5 ns;
 
     reset <= '1', '0' after 100 ns;
     
@@ -51,7 +54,12 @@ begin
         client_resp => client_resp,
         
         mem_req     => mem_req,
-        mem_resp    => mem_resp );
+        mem_resp    => mem_resp,
+        
+        hit_count   => hit_count,
+        miss_count  => miss_count );
+
+    hit_ratio <= real(to_integer(hit_count)) / real(to_integer(miss_count) + to_integer(hit_count) + 1);
 
     i_mem_master_bfm: entity work.mem_bus_master_bfm
     generic map (

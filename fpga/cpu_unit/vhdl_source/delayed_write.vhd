@@ -10,10 +10,9 @@ port (
     clock       : in  std_logic;
     reset       : in  std_logic;
     
+    address_in  : in  unsigned(g_address_width-1 downto 0);
     match_req   : in  std_logic;
-    match_addr  : in  unsigned(g_address_width-1 downto 0);
 
-    bus_address : in  unsigned(g_address_width-1 downto 0);
     bus_write   : in  std_logic;
     bus_wdata   : in  std_logic_vector(g_data_width-1 downto 0);
     invalidate  : in  std_logic;
@@ -27,21 +26,21 @@ end delayed_write;
 architecture gideon of delayed_write is
     signal valid        : std_logic;
     signal reg_data     : std_logic_vector(bus_wdata'range) := (others => '0');
-    signal reg_addr_i   : unsigned(bus_address'range) := (others => '0');
+    signal reg_addr_i   : unsigned(address_in'range) := (others => '0');
 begin
     process(clock)
     begin
         if rising_edge(clock) then
             if bus_write='1' then
                 reg_data    <= bus_wdata;
-                reg_addr_i  <= bus_address;
+                reg_addr_i  <= address_in;
                 valid       <= '1';
             elsif invalidate='1' then
                 valid       <= '0';
             end if;
             
             reg_hit <= '0';
-            if valid='1' and reg_addr_i = match_addr and match_req='1' then
+            if valid='1' and reg_addr_i = address_in and match_req='1' then
                 reg_hit <= '1';
             end if;
             
