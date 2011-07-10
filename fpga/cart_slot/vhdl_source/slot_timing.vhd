@@ -78,15 +78,17 @@ begin
                 serve_en_i <= '1';
             end if;
 
-            if (phi2_rec_i='0' and allow_tick_h) or
-               (phi2_rec_i='1' and allow_tick_l) then
-                phi2_rec_i <= PHI2;
-            end if;
+--            if (phi2_rec_i='0' and allow_tick_h) or
+--               (phi2_rec_i='1' and allow_tick_l) then
+--                phi2_rec_i <= PHI2;
+--            end if;
 
             -- related to rising edge
-            if phi2_d='0' and phi2_c='1' and allow_tick_h then  -- rising edge
+--            if phi2_d='0' and phi2_c='1' and allow_tick_h then  -- rising edge
+            if phase_l = 24 then
                 ba_hist      <= ba_hist(2 downto 0) & ba_c;
                 phi2_tick_i  <= '1';
+                phi2_rec_i   <= '1';
                 phase_h      <= 0;
                 clock_det    <= '1';
                 allow_tick_h <= false; -- filter
@@ -103,6 +105,7 @@ begin
             phi2_falling <= '0';
             if phi2_d='1' and phi2_c='0' and allow_tick_l then  -- falling edge
                 phi2_falling <= '1';
+                phi2_rec_i   <= '0';
                 phase_l      <= 0;
                 allow_tick_l <= false; -- filter
             elsif phase_l /= 63 then
