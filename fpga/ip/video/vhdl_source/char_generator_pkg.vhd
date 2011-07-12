@@ -18,50 +18,50 @@ use ieee.numeric_std.all;
 package char_generator_pkg is
 
     type t_chargen_control is record
-        clocks_per_line     : unsigned(10 downto 0);
+        clocks_per_line     : unsigned(11 downto 0);
         char_width          : unsigned(2 downto 0);
         char_height         : unsigned(3 downto 0);
-        chars_per_line      : unsigned(6 downto 0);
-        active_lines        : unsigned(4 downto 0);
-        x_on                : unsigned(10 downto 0);
-        y_on                : unsigned(8 downto 0);
-        pointer             : unsigned(10 downto 0);
+        chars_per_line      : unsigned(7 downto 0);
+        active_lines        : unsigned(5 downto 0);
+        x_on                : unsigned(11 downto 0);
+        y_on                : unsigned(11 downto 0);
+        pointer             : unsigned(14 downto 0);
         perform_sync        : std_logic;
     end record;
 
     constant c_chargen_control_init : t_chargen_control := (
-        clocks_per_line     => to_unsigned(672, 11),
+        clocks_per_line     => to_unsigned(672, 12),
         char_width          => to_unsigned(0, 3),
         char_height         => to_unsigned(9, 4),
-        chars_per_line      => to_unsigned(64, 7), -- 65
-        active_lines        => to_unsigned(4, 5),
-        x_on                => to_unsigned(152, 11), -- 139
-        y_on                => to_unsigned(260, 9),
-        pointer             => to_unsigned(0, 11),
+        chars_per_line      => to_unsigned(60, 8),
+        active_lines        => to_unsigned(30, 6),
+        x_on                => to_unsigned(15, 12),
+        y_on                => to_unsigned(6, 12),
+        pointer             => to_unsigned(0, 15),
         perform_sync        => '0' );
 
     -- 640x225 (80x25 => 8x9 chars, in 45 C64 chars width)
     constant c_chargen_control_init_orig : t_chargen_control := (
-        clocks_per_line     => to_unsigned(896, 11),
+        clocks_per_line     => to_unsigned(896, 12),
         char_width          => to_unsigned(0, 3),
         char_height         => to_unsigned(8, 4),
-        chars_per_line      => to_unsigned(80, 7),
-        active_lines        => to_unsigned(25, 5),
-        x_on                => to_unsigned(190, 11),
-        y_on                => to_unsigned(46, 9),
-        pointer             => to_unsigned(0, 11),
+        chars_per_line      => to_unsigned(80, 8),
+        active_lines        => to_unsigned(25, 6),
+        x_on                => to_unsigned(190, 12),
+        y_on                => to_unsigned(46, 12),
+        pointer             => to_unsigned(0, 15),
         perform_sync        => '0' );
 
     -- 480x200 (80x25 => 6x8 chars, in 45 C64 chars width)
     constant c_chargen_control_init_480 : t_chargen_control := (
-        clocks_per_line     => to_unsigned(672, 11),
+        clocks_per_line     => to_unsigned(672, 12),
         char_width          => to_unsigned(6, 3),
         char_height         => to_unsigned(8, 4),
-        chars_per_line      => to_unsigned(80, 7),
-        active_lines        => to_unsigned(25, 5),
-        x_on                => to_unsigned(142, 11),
-        y_on                => to_unsigned(48, 9),
-        pointer             => to_unsigned(0, 11),
+        chars_per_line      => to_unsigned(80, 8),
+        active_lines        => to_unsigned(25, 6),
+        x_on                => to_unsigned(142, 12),
+        y_on                => to_unsigned(48, 12),
+        pointer             => to_unsigned(0, 15),
         perform_sync        => '0' );
 
 
