@@ -15,6 +15,7 @@ generic (
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
     g_boot_rom      : boolean := false;
+    g_video_overlay : boolean := false;
     g_icap          : boolean := false;
     g_uart          : boolean := false;
     g_drive_1541    : boolean := false;
@@ -164,6 +165,7 @@ architecture logic of ultimate_logic is
         cap(16) := to_std(g_extended_reu);
         cap(17) := to_std(g_stereo_sid);
         cap(18) := to_std(g_command_intf);
+        cap(19) := to_std(g_video_overlay);
 
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -199,6 +201,8 @@ architecture logic of ultimate_logic is
     signal io_resp          : t_io_resp := c_io_resp_init;
     signal io_req_1541      : t_io_req;
     signal io_resp_1541     : t_io_resp := c_io_resp_init;
+    signal io_req_1541_1    : t_io_req;
+    signal io_resp_1541_1   : t_io_resp := c_io_resp_init;
     signal io_req_1541_2    : t_io_req;
     signal io_resp_1541_2   : t_io_resp := c_io_resp_init;
     signal io_req_itu       : t_io_req;
@@ -207,6 +211,8 @@ architecture logic of ultimate_logic is
     signal io_resp_cart     : t_io_resp := c_io_resp_init;
     signal io_req_io        : t_io_req;
     signal io_resp_io       : t_io_resp := c_io_resp_init;
+    signal io_req_big_io    : t_io_req;
+    signal io_resp_big_io   : t_io_resp := c_io_resp_init;
     signal io_req_sd        : t_io_req;
     signal io_resp_sd       : t_io_resp := c_io_resp_init;
     signal io_req_rtc       : t_io_req;
@@ -363,8 +369,8 @@ begin
             drive_stop      => c64_stopped,
             
             -- slave port on io bus
-            io_req          => io_req_1541,
-            io_resp         => io_resp_1541,
+            io_req          => io_req_1541_1,
+            io_resp         => io_resp_1541_1,
                         
             -- master port on memory bus
             mem_req         => mem_req_1541,
@@ -564,14 +570,14 @@ begin
         req      => io_req,
         resp     => io_resp,
         
-        reqs(0)  => io_req_itu,    -- 4000000
-        reqs(1)  => io_req_1541,   -- 4020000
-        reqs(2)  => io_req_cart,   -- 4040000
-        reqs(3)  => io_req_io,     -- 4060000
-        reqs(4)  => io_req_usb,    -- 4080000
-        reqs(5)  => io_req_c2n,    -- 40A0000
-        reqs(6)  => io_req_c2n_rec,-- 40C0000
-        reqs(7)  => io_req_1541_2, -- 40E0000
+        reqs(0)  => io_req_itu,     -- 4000000 ( 16 ... 400000F)
+        reqs(1)  => io_req_1541,    -- 4020000 (  8K... 4021FFF) & 4024000 for drive B
+        reqs(2)  => io_req_cart,    -- 4040000 (128K... 405FFFF)
+        reqs(3)  => io_req_io,      -- 4060000 (  2K... 40607FF)
+        reqs(4)  => io_req_usb,     -- 4080000 (  8K... 4081FFF)
+        reqs(5)  => io_req_c2n,     -- 40A0000 (  4K... 40A0FFF)
+        reqs(6)  => io_req_c2n_rec, -- 40C0000 (  4K... 40C0FFF)
+        reqs(7)  => io_req_big_io,  -- 40E0000 (128K... 40FFFFF)
 
         resps(0) => io_resp_itu,
         resps(1) => io_resp_1541,
@@ -580,9 +586,27 @@ begin
         resps(4) => io_resp_usb,
         resps(5) => io_resp_c2n,
         resps(6) => io_resp_c2n_rec,
-        resps(7) => io_resp_1541_2 );
+        resps(7) => io_resp_big_io );
+
 
     i_split2: entity work.io_bus_splitter
+    generic map (
+        g_range_lo  => 14,
+        g_range_hi  => 14,
+        g_ports     => 2 )
+    port map (
+        clock    => sys_clock,
+        
+        req      => io_req_1541,
+        resp     => io_resp_1541,
+        
+        reqs(0)  => io_req_1541_1,
+        reqs(1)  => io_req_1541_2,
+        
+        resps(0) => io_resp_1541_1,
+        resps(1) => io_resp_1541_2 );
+
+    i_split3: entity work.io_bus_splitter
     generic map (
         g_range_lo  => 8,
         g_range_hi  => 10,
@@ -822,7 +846,27 @@ begin
             io_req          => io_req_icap,
             io_resp         => io_resp_icap );
     end generate;
-    
+
+    r_overlay: if g_video_overlay generate
+        i_overlay: entity work.char_generator_peripheral
+        generic map (
+            g_screen_size   => 11,
+            g_color_ram     => true )
+        port map (
+            clock           => sys_clock,
+            reset           => sys_reset,
+            
+            io_req          => io_req_big_io,  -- to be split later
+            io_resp         => io_resp_big_io,
+            
+            h_count         => h_count,
+            v_count         => v_count,
+            
+            pixel_active    => pixel_active,
+            pixel_opaque    => pixel_opaque,
+            pixel_data      => pixel_data );
+        
+    end generate;
 
 	CAS_SENSE <= '0' when (c2n_sense='1') or (c2n_pull_sense='1') else 'Z';
 	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';
