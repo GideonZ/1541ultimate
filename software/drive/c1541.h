@@ -10,7 +10,7 @@
 #include "flash.h"
 
 #define C1541_IO_LOC_DRIVE_1 ((volatile BYTE *)0x4020000)
-#define C1541_IO_LOC_DRIVE_2 ((volatile BYTE *)0x40E0000)
+#define C1541_IO_LOC_DRIVE_2 ((volatile BYTE *)0x4024000)
 
 #define MENU_1541_RESET     0x1501
 #define MENU_1541_REMOVE    0x1502

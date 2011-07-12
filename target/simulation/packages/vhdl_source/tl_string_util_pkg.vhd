@@ -1,9 +1,23 @@
 -------------------------------------------------------------------------------
 --
--- (C) COPYRIGHT 2010 - Gideon's Logic Architectures
+-- (C) COPYRIGHT 2006 TECHNOLUTION B.V., GOUDA NL
+-- | =======          I                   ==          I    =
+-- |    I             I                    I          I
+-- |    I   ===   === I ===  I ===   ===   I  I    I ====  I   ===  I ===
+-- |    I  /   \ I    I/   I I/   I I   I  I  I    I  I    I  I   I I/   I
+-- |    I  ===== I    I    I I    I I   I  I  I    I  I    I  I   I I    I
+-- |    I  \     I    I    I I    I I   I  I  I   /I  \    I  I   I I    I
+-- |    I   ===   === I    I I    I  ===  ===  === I   ==  I   ===  I    I
+-- |                 +---------------------------------------------------+
+-- +----+            |  +++++++++++++++++++++++++++++++++++++++++++++++++|
+--      |            |             ++++++++++++++++++++++++++++++++++++++|
+--      +------------+                          +++++++++++++++++++++++++|
+--                                                         ++++++++++++++|
+--              A U T O M A T I O N     T E C H N O L O G Y         +++++|
 --
 -------------------------------------------------------------------------------
--- Title      : String Utilities 
+-- Title      : Style guide example package
+-- Author     : Jonathan Hofman (jonathan.hofman@technolution.nl) (import only)
 -------------------------------------------------------------------------------
 -- Description: This file contains type definitions
 -------------------------------------------------------------------------------
@@ -128,6 +142,13 @@ package tl_string_util_pkg is
     ---------------------------------------------------------------------------
 	function is_hchr(c : character) return boolean;
 
+    function resize(s: string; size: natural; default: character := ' ') return string;
+
+    ---------------------------------------------------------------------------
+    -- Compare function for strings that correctly handles terminators (NUL)
+    ---------------------------------------------------------------------------
+    function strcmp(a: string; b: string) return boolean;
+
 -------------------------------------------------------------------------------
 -- file I/O
 -------------------------------------------------------------------------------
@@ -148,7 +169,12 @@ package tl_string_util_pkg is
     ---------------------------------------------------------------------------
     procedure str_read(file in_file: TEXT; res_string: out string);
 
-
+-------------------------------------------------------------------------------
+-- character manipulation
+-------------------------------------------------------------------------------
+   function char_to_std_logic_vector (
+        constant my_char : character)
+        return std_logic_vector;
 
 end tl_string_util_pkg;
 
@@ -731,6 +757,33 @@ package body tl_string_util_pkg is
         return v_result;
 	end function;
 
+    function strcmp(a: string; b: string) return boolean is
+        variable r : boolean := true;
+    begin
+        for i in a'range loop
+            if i > b'right then
+                if a(i) /= NUL then -- b is shorter and a doesn't terminate here.
+                    return false;
+                else
+                    return true; -- b is shorter, but a does terminate here
+                end if;
+            end if;                    
+            if a(i) /= b(i) then -- characters are not the same
+                return false;
+            end if;
+            if a(i) = NUL and b(i) = NUL then -- a and b have a string terminator at the same place
+                                              -- and previous characters were all the same
+                return true;
+            end if;
+        end loop;
+        -- if b is longer, then check if b has a terminator
+        if (b'right > a'right) then
+            if b(a'right + 1) /= NUL then
+                return false;
+            end if;
+        end if;
+        return true;
+    end strcmp;
 
 -------------------------------------------------------------------------------
 -- file I/O
@@ -797,7 +850,26 @@ package body tl_string_util_pkg is
             end if;
         end loop;
     end str_write;
+    
+   function char_to_std_logic_vector (
+        constant my_char : character)
+        return std_logic_vector is
+    begin
+        return std_logic_vector(to_unsigned(character'pos(my_char), 8));
+    end;
+
+    function resize(s: string; size: natural; default: character := ' ') return string is
+        variable result: string(1 to size) := (others => default);
+    begin
+        if s'length > size then
+            result := s(result'range);
+        else
+            result(s'range) := s;
+        end if;
+
+        return result;
+    end function;
+
 
 end tl_string_util_pkg;
-
 
