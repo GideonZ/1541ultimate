@@ -24,7 +24,7 @@ export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
 
 TARGET 			:= ultimate_1541_700a
 
-ISE_VERSION		:= 10
+ISE_VERSION		:= 13
 
 DESIGN_NAME 	:= $(TARGET)
 TOP_NAME    	:= $(TARGET)
@@ -102,6 +102,13 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/ip/async_fifo/vhdl_source/async_fifo.vhd \
 				vhdl,work,../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd \
 				vhdl,work,../../fpga/ip/memory/vhdl_source/dpram.vhd \
+				vhdl,work,../../fpga/ip/memory/vhdl_source/dpram_io.vhd \
+				vhdl,work,../../fpga/ip/video/vhdl_source/char_generator_pkg.vhd \
+				vhdl,work,../../fpga/ip/video/vhdl_source/char_generator_rom_pkg.vhd \
+				vhdl,work,../../fpga/ip/video/vhdl_source/char_generator_rom.vhd \
+				vhdl,work,../../fpga/ip/video/vhdl_source/char_generator_regs.vhd \
+				vhdl,work,../../fpga/ip/video/vhdl_source/char_generator_slave.vhd \
+				vhdl,work,../../fpga/ip/video/vhdl_source/char_generator_peripheral.vhd \
 				vhdl,work,../../fpga/ip/clock/vhdl_source/real_time_clock.vhd \
 				vhdl,work,../../fpga/io/audio_select/vhdl_source/audio_select.vhd \
 				vhdl,work,../../fpga/io/uart_lite/vhdl_source/tx.vhd \
@@ -138,6 +145,10 @@ SYNTH_PROJ	:= 	vhdl,work,../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,../../fpga/io/command_interface/vhdl_source/command_if_pkg.vhd \
 				vhdl,work,../../fpga/io/command_interface/vhdl_source/command_protocol.vhd \
 				vhdl,work,../../fpga/io/command_interface/vhdl_source/command_interface.vhd \
+				vhdl,work,../../fpga/io/copper/vhdl_source/copper_pkg.vhd \
+				vhdl,work,../../fpga/io/copper/vhdl_source/copper_regs.vhd \
+				vhdl,work,../../fpga/io/copper/vhdl_source/copper_engine.vhd \
+				vhdl,work,../../fpga/io/copper/vhdl_source/copper.vhd \
 				vhdl,work,../../fpga/sid6581/vhdl_source/sid_debug_pkg.vhd \
 				vhdl,work,../../fpga/sid6581/vhdl_source/sid_trace.vhd \
 				vhdl,work,../../fpga/sid6581/vhdl_source/Q_table.vhd \

@@ -22,6 +22,7 @@ extern "C" {
 #include "ui_stream.h"
 #include "stream_menu.h"
 #include "audio_select.h"
+#include "overlay.h"
 
 // these should move to main_loop.h
 void main_loop(void);
@@ -33,6 +34,8 @@ C1541 *c1541_B;
 UserInterface *user_interface;
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
+Overlay *overlay;
+
 /*
 char *en_dis[] = { "Disabled", "Enabled" };
 //char *on_off[] = { "Off", "On" };
@@ -107,6 +110,7 @@ int main()
 	send_nop();
 	send_nop();
 
+
     if(c64 && c64->exists()) {
         user_interface = new UserInterface;
         user_interface->init(c64, c64->get_keyboard());
@@ -121,6 +125,13 @@ int main()
         // now that everything is running, initialize the C64 and C1541 drive
     	// which might load custom ROMs from the file system.
     	c64->init_cartridge();
+    } else if(ITU_CAPABILITIES & CAPAB_OVERLAY) {
+        printf("Using Overlay module as user interface...\n");
+        overlay = new Overlay();
+        user_interface = new UserInterface;
+        user_interface->init(overlay, overlay->get_keyboard());
+    	root_tree_browser = new TreeBrowser();
+        user_interface->activate_uiobject(root_tree_browser); // root of all evil!
     } else {
         // stand alone mode
         stream_interface = new UserInterfaceStream(&my_stream);
@@ -147,6 +158,8 @@ int main()
 
     main_loop();
 
+    if(overlay)
+        delete overlay;
     if(root_tree_browser)
         delete root_tree_browser;
     if(user_interface)

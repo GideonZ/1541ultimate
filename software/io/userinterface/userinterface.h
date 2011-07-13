@@ -5,7 +5,7 @@
 #include <string.h>
 #include "integer.h"
 #include "screen.h"
-#include "c64.h"
+#include "host.h"
 #include "keyboard.h"
 #include "path.h"
 #include "poll.h"
@@ -47,7 +47,7 @@ private:
     PathObject *current_path;
     UIStatusBox *status_box;
 public:
-    C64 *host;
+    GenericHost *host;
     Keyboard *keyboard;
     Screen *screen;
     int     focus;
@@ -69,7 +69,7 @@ public:
     PathObject *get_path(void)    { return current_path; }
     // end workaround
     
-    void init(C64 *h, Keyboard *k);
+    void init(GenericHost *h, Keyboard *k);
     void set_screen(Screen *s); /* Only used in updater */
     int  activate_uiobject(UIObject *obj);
         

@@ -26,14 +26,15 @@ generic (
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
-        
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
 
+    pix_clock       : in  std_logic;
+    pix_reset       : in  std_logic;
     h_count         : in  unsigned(11 downto 0);
     v_count         : in  unsigned(11 downto 0);
-    
     pixel_active    : out std_logic;
+    pixel_opaque    : out std_logic;
     pixel_data      : out unsigned(3 downto 0) );
     
 end entity;
@@ -61,8 +62,8 @@ begin
 	
     i_split: entity work.io_bus_splitter
     generic map (
-        g_range_lo  => 15,
-        g_range_hi  => 16,
+        g_range_lo  => g_screen_size,
+        g_range_hi  => g_screen_size+1,
         g_ports     => 3 )
     port map (
         clock    => clock,
@@ -70,9 +71,9 @@ begin
         req      => io_req,
         resp     => io_resp,
     
-        reqs(0)  => io_req_regs,  -- xxx0000
-        reqs(1)  => io_req_scr,   -- xxx8000
-        reqs(2)  => io_req_color, -- xx10000
+        reqs(0)  => io_req_regs,  -- size=15: xxx0000, size=11: xxx0000
+        reqs(1)  => io_req_scr,   -- size=15: xxx8000, size=11: xxx0800
+        reqs(2)  => io_req_color, -- size=15: xx10000, size=11: xxx1000
         
         resps(0) => io_resp_regs,
         resps(1) => io_resp_scr,
@@ -92,8 +93,8 @@ begin
 	generic map (
 		g_screen_size	=> g_screen_size )
     port map (
-        clock           => clock,
-        reset           => reset,
+        clock           => pix_clock,
+        reset           => pix_reset,
                                        
         h_count         => h_count,
         v_count         => v_count,
@@ -108,18 +109,19 @@ begin
         char_data       => char_data,
                                        
         pixel_active    => pixel_active,
+        pixel_opaque    => pixel_opaque,
         pixel_data      => pixel_data );
 
     i_rom: entity work.char_generator_rom
     port map (
-        clock       => clock,
+        clock       => pix_clock,
         enable      => '1',
         address     => char_addr,
         data        => char_data );
 
---    process(clock)
+--    process(pix_clock)
 --    begin
---        if rising_edge(clock) then
+--        if rising_edge(pix_clock) then
 --            screen_data <= std_logic_vector(screen_addr(7 downto 0));
 --            color_data  <= std_logic_vector(screen_addr(10 downto 3));
 --        end if;
@@ -131,7 +133,7 @@ begin
         g_default               => X"20",
         g_storage               => "block" )
     port map (
-        a_clock                 => clock,
+        a_clock                 => pix_clock,
         a_address               => screen_addr,
         a_rdata                 => screen_Data,
 
@@ -146,7 +148,7 @@ begin
             g_default               => X"0F",
             g_storage               => "block" )
         port map (
-            a_clock                 => clock,
+            a_clock                 => pix_clock,
             a_address               => screen_addr,
             a_rdata                 => color_data,
     

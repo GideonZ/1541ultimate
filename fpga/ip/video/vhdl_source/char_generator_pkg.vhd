@@ -27,6 +27,7 @@ package char_generator_pkg is
         y_on                : unsigned(11 downto 0);
         pointer             : unsigned(14 downto 0);
         perform_sync        : std_logic;
+        transparent         : std_logic_vector(3 downto 0);
     end record;
 
     constant c_chargen_control_init : t_chargen_control := (
@@ -38,7 +39,8 @@ package char_generator_pkg is
         x_on                => to_unsigned(15, 12),
         y_on                => to_unsigned(6, 12),
         pointer             => to_unsigned(0, 15),
-        perform_sync        => '0' );
+        perform_sync        => '0',
+        transparent         => X"5" );
 
     -- 640x225 (80x25 => 8x9 chars, in 45 C64 chars width)
     constant c_chargen_control_init_orig : t_chargen_control := (
@@ -50,7 +52,8 @@ package char_generator_pkg is
         x_on                => to_unsigned(190, 12),
         y_on                => to_unsigned(46, 12),
         pointer             => to_unsigned(0, 15),
-        perform_sync        => '0' );
+        perform_sync        => '0',
+        transparent         => X"5" );
 
     -- 480x200 (80x25 => 6x8 chars, in 45 C64 chars width)
     constant c_chargen_control_init_480 : t_chargen_control := (
@@ -62,8 +65,8 @@ package char_generator_pkg is
         x_on                => to_unsigned(142, 12),
         y_on                => to_unsigned(48, 12),
         pointer             => to_unsigned(0, 15),
-        perform_sync        => '0' );
-
+        perform_sync        => '0',
+        transparent         => X"5" );
 
     constant c_chargen_line_clocks_hi   : unsigned(3 downto 0) := X"0";
     constant c_chargen_line_clocks_lo   : unsigned(3 downto 0) := X"1";
@@ -78,5 +81,6 @@ package char_generator_pkg is
     constant c_chargen_pointer_hi       : unsigned(3 downto 0) := X"A";
     constant c_chargen_pointer_lo       : unsigned(3 downto 0) := X"B";
     constant c_chargen_perform_sync     : unsigned(3 downto 0) := X"C";
+    constant c_chargen_transparency     : unsigned(3 downto 0) := X"D";
 
 end package;

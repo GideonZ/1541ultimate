@@ -67,6 +67,8 @@ begin
                         control_i.pointer(7 downto 0) <= unsigned(io_req.data);
                     when c_chargen_perform_sync =>
                         control_i.perform_sync <= io_req.data(0);
+                    when c_chargen_transparency =>
+                        control_i.transparent <= io_req.data(3 downto 0);
                     when others =>
                         null;
                 end case;

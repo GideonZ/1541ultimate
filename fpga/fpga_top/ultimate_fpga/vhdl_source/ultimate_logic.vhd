@@ -34,7 +34,8 @@ generic (
     g_rtc_chip      : boolean := false;
     g_rtc_timer     : boolean := false;
     g_usb_host      : boolean := false;
-    g_spi_flash     : boolean := false );
+    g_spi_flash     : boolean := false;
+    g_vic_copper    : boolean := false );
 port (
     -- globals
     sys_clock   : in    std_logic;
@@ -123,6 +124,15 @@ port (
     CAS_READ    : inout std_logic := 'Z';
     CAS_WRITE   : inout std_logic := 'Z';
     
+    -- Interface to other graphical output (Full HD of course and in 3D!) ;-)
+    vid_clock   : in    std_logic := '0';
+    vid_reset   : in    std_logic := '0';
+    vid_h_count : in    unsigned(11 downto 0) := (others => '0');
+    vid_v_count : in    unsigned(11 downto 0) := (others => '0');
+    vid_active  : out   std_logic;
+    vid_opaque  : out   std_logic;
+    vid_data    : out   unsigned(3 downto 0);
+
     -- Buttons
     button      : in  std_logic_vector(2 downto 0);
     
@@ -165,8 +175,8 @@ architecture logic of ultimate_logic is
         cap(16) := to_std(g_extended_reu);
         cap(17) := to_std(g_stereo_sid);
         cap(18) := to_std(g_command_intf);
-        cap(19) := to_std(g_video_overlay);
-
+        cap(19) := to_std(g_vic_copper);
+        cap(20) := to_std(g_video_overlay);
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
         return cap;
@@ -282,6 +292,8 @@ architecture logic of ultimate_logic is
     signal sid_sample_right : signed(17 downto 0);
     signal sid_pwm_left     : std_logic;
     signal sid_pwm_right    : std_logic;
+    signal trigger_1        : std_logic;
+    signal trigger_2        : std_logic;
 begin
 
     i_cpu: entity work.cpu_wrapper_zpu
@@ -508,11 +520,11 @@ begin
             g_ram_base_cart => X"0F70000", -- should be on a 64K boundary
             g_control_read  => true,
             g_ram_expansion => g_ram_expansion,
+            g_extended_reu  => g_extended_reu,
             g_command_intf  => g_command_intf,
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 16,
-            g_extended_reu  => g_extended_reu )
-
+            g_vic_copper    => g_vic_copper )
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
@@ -544,6 +556,8 @@ begin
             freezer_state   => freezer_state,
             sample_left     => sid_sample_left,
             sample_right    => sid_sample_right,
+            trigger_1       => trigger_1,
+            trigger_2       => trigger_2,
             
             -- timing output
 			c64_stopped		=> c64_stopped,
@@ -855,22 +869,28 @@ begin
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
-            
             io_req          => io_req_big_io,  -- to be split later
             io_resp         => io_resp_big_io,
             
-            h_count         => h_count,
-            v_count         => v_count,
+            pix_clock       => vid_clock,
+            pix_reset       => vid_reset,
+
+            h_count         => vid_h_count,
+            v_count         => vid_v_count,
             
-            pixel_active    => pixel_active,
-            pixel_opaque    => pixel_opaque,
-            pixel_data      => pixel_data );
+            pixel_active    => vid_active,
+            pixel_opaque    => vid_opaque,
+            pixel_data      => vid_data );
         
     end generate;
 
 	CAS_SENSE <= '0' when (c2n_sense='1') or (c2n_pull_sense='1') else 'Z';
-	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';
-	CAS_WRITE <= '0' when c2n_out_w='0' else 'Z';
+--	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';
+--	CAS_WRITE <= '0' when c2n_out_w='0' else 'Z';
+
+    CAS_READ  <= trigger_1;
+    CAS_WRITE <= trigger_2;
+
     c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
 	
     i_mem_arb: entity work.mem_bus_arbiter_pri

@@ -22,8 +22,8 @@ UserInterface :: UserInterface()
 
 UserInterface :: ~UserInterface()
 {
-	if(host->has_stopped())
-		printf("WARNING: Host is still frozen!!\n");
+//	if(host->has_stopped())
+//		printf("WARNING: Host is still frozen!!\n");
 
 	printf("Destructing user interface..\n");
 	poll_list.remove(&poll_user_interface);
@@ -36,7 +36,7 @@ UserInterface :: ~UserInterface()
     printf(" bye UI!\n");
 }
 
-void UserInterface :: init(C64 *h, Keyboard *k)
+void UserInterface :: init(GenericHost *h, Keyboard *k)
 {
     host = h;
     keyboard = k;
@@ -70,6 +70,9 @@ void UserInterface :: handle_event(Event &e)
                     ui_objects[i]->init(screen, keyboard);
                 }
                 state = ui_host_owned;
+                if(ITU_FPGA_VERSION < MINIMUM_FPGA_REV) {
+                    popup("FPGA too old..", BUTTON_OK);
+                }
             }
             else if((e.type == e_invalidate) && (focus >= 0)) { // even if we are inactive, the tree browser should execute this!!
             	ui_objects[0]->poll(0, e);
@@ -82,7 +85,7 @@ void UserInterface :: handle_event(Event &e)
                     ui_objects[i]->deinit();
                 }
                 delete screen;
-                host->unfreeze(e.param, (cart_def *)e.object);
+                host->unfreeze(e); // e.param, (cart_def *)e.object
                 state = ui_idle;
             } else {
                 ret = 0;
@@ -98,7 +101,7 @@ void UserInterface :: handle_event(Event &e)
                     }
                     else {
                         delete screen;
-                        host->unfreeze(0, NULL);
+                        host->unfreeze((Event &)c_empty_event);
                         state = ui_idle;
                         break;
                     }

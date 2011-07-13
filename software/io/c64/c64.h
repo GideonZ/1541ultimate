@@ -1,6 +1,7 @@
 #ifndef C64_H
 #define C64_H
 
+#include "host.h"
 #include "event.h"
 #include "integer.h"
 #include "keyboard.h"
@@ -96,7 +97,7 @@ typedef struct _cart
 
 class Keyboard;
 
-class C64 : public ObjectWithMenu, ConfigurableObject
+class C64 : public GenericHost, ObjectWithMenu, ConfigurableObject
 {
     Flash *flash;
     Keyboard *keyb;
@@ -127,23 +128,25 @@ public:
     C64();
     ~C64();
 
+    /* Object With Menu */
     int  fetch_task_items(IndexedList<PathObject*> &item_list);
+    /* Configurable Object */
     void effectuate_settings(void);
     
+    /* Generic Host */
     bool exists(void);
     void poll(Event &e);
     void reset(void);
     void freeze(void);
-    void unfreeze(int, cart_def *);
+    void unfreeze(Event &e);
     char *get_screen(void);
     char *get_color_map(void);
     Keyboard *get_keyboard(void);
-    void init_cartridge(void);
 
+    /* C64 specifics */
+    void init_cartridge(void);
     void cartridge_test(void);
     int  dma_load(File *f, BYTE run_mode, WORD reloc=0);
-    
-    // status
     bool has_stopped(void);
     
     friend class FileTypeSID; // sid load does some tricks

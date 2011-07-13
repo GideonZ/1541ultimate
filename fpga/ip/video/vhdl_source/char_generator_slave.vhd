@@ -38,6 +38,7 @@ port (
     char_data       : in  std_logic_vector(7 downto 0);
 
     pixel_active    : out std_logic;
+    pixel_opaque    : out std_logic;
     pixel_data      : out unsigned(3 downto 0) );
 
 end entity;
@@ -122,11 +123,22 @@ begin
 			if active_d2='1' then
 				if char_data(to_integer(pixel_sel_d2))='1' then
 		            pixel_data <= unsigned(color_data_d(3 downto 0));
+                    if color_data_d(3 downto 0) = control.transparent then
+                        pixel_opaque <= '0';
+                    else
+                        pixel_opaque <= '1';
+                    end if;
 		        else
 		        	pixel_data <= unsigned(color_data_d(7 downto 4));
+                    if color_data_d(7 downto 4) = control.transparent then
+                        pixel_opaque <= '0';
+                    else
+                        pixel_opaque <= '1';
+                    end if;
 		        end if;
 			else
-				pixel_data <= (others => '0');
+				pixel_data   <= (others => '0');
+                pixel_opaque <= '0';
 		    end if;           
 
             if reset='1' then

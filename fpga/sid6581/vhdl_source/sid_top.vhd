@@ -33,7 +33,7 @@ port (
     comb_wave_l   : in  std_logic := '0';
     comb_wave_r   : in  std_logic := '0';
 
-    io_req_filt   : in  t_io_req;
+    io_req_filt   : in  t_io_req := c_io_req_init;
     io_resp_filt  : out t_io_resp;
 
     start_iter    : in  std_logic;

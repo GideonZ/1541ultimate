@@ -479,7 +479,8 @@ void C64 :: init_io(void)
 	VIC_REG(21) = 0x00; // turn off sprites
     VIC_REG(22) = 0xC8; // Screen = 40 cols with correct scroll
     VIC_REG(32) = 0x00; // black border
-	VIC_REG(26) = 0x01; // Enable Raster interrupt
+	//VIC_REG(26) = 0x01; // Enable Raster interrupt
+
 }    
 
 
@@ -544,8 +545,11 @@ void C64 :: restore_io(void)
     SID_DUMMY  = 0;   // clear internal charge on databus!
 }
 
-void C64 :: unfreeze(int mode, cart_def *def)
+void C64 :: unfreeze(Event &e)
 {
+    int mode = e.param;
+    cart_def *def = (cart_def *)e.object;
+    
     keyb->wait_free();
     
 	if(mode == 0) {
