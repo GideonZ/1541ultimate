@@ -77,12 +77,19 @@ port (
     PWM_OUT     : out   std_logic_vector(1 downto 0) := "11";
 
     -- IEC bus
-    IEC_ATN     : inout std_logic;
-    IEC_DATA    : inout std_logic;
-    IEC_CLOCK   : inout std_logic;
-    IEC_RESET   : in    std_logic;
-    IEC_SRQ_IN  : inout std_logic;
+    -- actual levels of the pins --
+    iec_reset_i : in    std_logic;
+    iec_atn_i   : in    std_logic;
+    iec_data_i  : in    std_logic;
+    iec_clock_i : in    std_logic;
+    iec_srq_i   : in    std_logic;
     
+    iec_reset_o : out   std_logic := '1';
+    iec_atn_o   : out   std_logic;
+    iec_data_o  : out   std_logic;
+    iec_clock_o : out   std_logic;
+    iec_srq_o   : out   std_logic;
+
     DISK_ACTn   : out   std_logic; -- activity LED
 	CART_LEDn	: out   std_logic;
 	SDACT_LEDn	: out   std_logic;
@@ -256,16 +263,16 @@ architecture logic of ultimate_logic is
     signal atn_o, atn_i     : std_logic := '1';
     signal clk_o, clk_i     : std_logic := '1';
     signal data_o, data_i   : std_logic := '1';
-    signal auto_o, srq_i    : std_logic := '1';
+    signal srq_i            : std_logic := '1';
 	
     signal atn_o_2          : std_logic := '1';
     signal clk_o_2          : std_logic := '1';
     signal data_o_2         : std_logic := '1';
 
-	signal iec_atn_o		: std_logic := '1';
-	signal iec_clk_o	    : std_logic := '1';
-	signal iec_data_o		: std_logic := '1';
-    signal iec_srq_o        : std_logic := '1';
+	signal hw_atn_o		    : std_logic := '1';
+	signal hw_clk_o	        : std_logic := '1';
+	signal hw_data_o		: std_logic := '1';
+    signal hw_srq_o         : std_logic := '1';
     
     -- miscellaneous interconnect
     signal irq_i            : std_logic := '0';
@@ -398,7 +405,7 @@ begin
             data_o          => data_o, -- open drain
             data_i          => data_i,              
             
-            iec_reset_n     => IEC_RESET,
+            iec_reset_n     => iec_reset_i,
             c64_reset_n     => RSTn,
             
             -- LED
@@ -458,7 +465,7 @@ begin
             data_o          => data_o_2, -- open drain
             data_i          => data_i,              
             
-            iec_reset_n     => IEC_RESET,
+            iec_reset_n     => iec_reset_i,
             c64_reset_n     => RSTn,
 
             -- LED
@@ -805,11 +812,11 @@ begin
             reset           => sys_reset,
         
             iec_atn_i       => atn_i,
-            iec_atn_o       => iec_atn_o,
+            iec_atn_o       => hw_atn_o,
             iec_clk_i       => clk_i,
-            iec_clk_o       => iec_clk_o,
+            iec_clk_o       => hw_clk_o,
             iec_data_i      => data_i,
-            iec_data_o      => iec_data_o,
+            iec_data_o      => hw_data_o,
         
             io_req          => io_req_iec,
             io_resp         => io_resp_iec );
@@ -932,11 +939,11 @@ begin
                 
         pwm_out         => PWM_OUT );
 
-    IEC_ATN    <= '0' when atn_o='0'  or atn_o_2='0'  or iec_atn_o='0'  else 'Z'; -- open drain
-    IEC_CLOCK  <= '0' when clk_o='0'  or clk_o_2='0'  or iec_clk_o='0'  else 'Z'; -- open drain
-    IEC_DATA   <= '0' when data_o='0' or data_o_2='0' or iec_data_o='0' else 'Z'; -- open drain
-    IEC_SRQ_IN <= '0' when               iec_srq_o='0'  else 'Z'; -- open drain
-    
+    iec_atn_o    <= '0' when atn_o='0'  or atn_o_2='0'  or hw_atn_o='0'  else '1';
+    iec_clock_o  <= '0' when clk_o='0'  or clk_o_2='0'  or hw_clk_o='0'  else '1';
+    iec_data_o   <= '0' when data_o='0' or data_o_2='0' or hw_data_o='0' else '1';
+    iec_srq_o    <= hw_srq_o; -- only source
+        
 	DISK_ACTn   <= act_led_n xor error;
 	MOTOR_LEDn  <= motor_led_n xor error;
     CART_LEDn   <= cart_led_n xor error;
@@ -947,10 +954,10 @@ begin
 --    CART_LEDn   <= IRQn;
 --	SDACT_LEDn  <= NMIn;
 
-    filt1: entity work.spike_filter generic map (10) port map(sys_clock, IEC_ATN,    atn_i);
-    filt2: entity work.spike_filter generic map (10) port map(sys_clock, IEC_CLOCK,  clk_i);
-    filt3: entity work.spike_filter generic map (10) port map(sys_clock, IEC_DATA,   data_i);
-    filt4: entity work.spike_filter generic map (10) port map(sys_clock, IEC_SRQ_IN, srq_i);
+    filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_i,    atn_i);
+    filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_i,  clk_i);
+    filt3: entity work.spike_filter generic map (10) port map(sys_clock, iec_data_i,   data_i);
+    filt4: entity work.spike_filter generic map (10) port map(sys_clock, iec_srq_i,    srq_i);
     filt5: entity work.spike_filter port map(sys_clock, IRQn, c64_irq_n);
     c64_irq <= not c64_irq_n;
 
