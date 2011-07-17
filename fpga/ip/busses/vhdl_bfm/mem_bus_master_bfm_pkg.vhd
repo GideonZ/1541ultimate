@@ -21,6 +21,7 @@ package mem_bus_master_bfm_pkg is
         name        : string(1 to 256);
 
         command     : t_mem_bus_bfm_command;
+        poll_time   : time;
         tag         : std_logic_vector(7 downto 0);
         address     : unsigned(25 downto 0);
         data        : std_logic_vector(7 downto 0);
@@ -60,6 +61,7 @@ package body mem_bus_master_bfm_pkg is
             mem_bus_master_bfms := pntr;
         end if;
         pntr.tag := X"01";
+        pntr.poll_time := 2 ns;
         
     end register_mem_bus_master_bfm;
 
@@ -92,7 +94,7 @@ package body mem_bus_master_bfm_pkg is
         m.address := a_i;
         m.command := e_mem_read;
         while m.command /= e_mem_none loop
-            wait for 10 ns;
+            wait for m.poll_time;
         end loop;
         data := m.data;
     end procedure;
@@ -107,7 +109,7 @@ package body mem_bus_master_bfm_pkg is
         m.command := e_mem_write;
         m.data    := data;
         while m.command /= e_mem_none loop
-            wait for 10 ns;
+            wait for m.poll_time;
         end loop;
     end procedure;
 end;

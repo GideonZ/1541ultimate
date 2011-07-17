@@ -9,7 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_logic is
 generic (
-	g_version		: unsigned(7 downto 0) := X"FE";
+	g_version		: unsigned(7 downto 0) := X"FF";
     g_simulation    : boolean := true;
     g_clock_freq    : natural := 50_000_000;
     g_baud_rate     : natural := 115_200;

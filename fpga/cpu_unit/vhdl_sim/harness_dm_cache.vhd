@@ -25,8 +25,8 @@ architecture harness of harness_dm_cache is
 	signal SDRAM_CASn  : std_logic := '1';
 	signal SDRAM_WEn   : std_logic := '1';
     signal SDRAM_DQM   : std_logic := '0';
-    signal MEM_A       : std_logic_vector(14 downto 0);
-    signal MEM_D       : std_logic_vector(7 downto 0) := (others => 'Z');
+    signal SDRAM_A     : std_logic_vector(14 downto 0);
+    signal SDRAM_D     : std_logic_vector(7 downto 0) := (others => 'Z');
 
 	signal logic_CLK   : std_logic;
 	signal logic_CKE   : std_logic;
@@ -35,6 +35,7 @@ architecture harness of harness_dm_cache is
 	signal logic_CASn  : std_logic := '1';
 	signal logic_WEn   : std_logic := '1';
     signal logic_DQM   : std_logic := '0';
+    signal logic_A     : std_logic_vector(14 downto 0) := (others => 'H');
 
     signal hit_count   : unsigned(31 downto 0);
     signal miss_count  : unsigned(31 downto 0);
@@ -93,8 +94,8 @@ begin
     	SDRAM_WEn   => logic_WEn,
         SDRAM_DQM   => logic_DQM,
     
-        MEM_A       => MEM_A,
-        MEM_D       => MEM_D );
+        MEM_A       => logic_A,
+        MEM_D       => SDRAM_D );
 
 	SDRAM_CLK	<= transport logic_CLK  after 6 ns;
 	SDRAM_CKE	<= transport logic_CKE  after 6 ns;
@@ -103,11 +104,12 @@ begin
 	SDRAM_CASn  <= transport logic_CASn after 6 ns;
 	SDRAM_WEn   <= transport logic_WEn  after 6 ns;
     SDRAM_DQM   <= transport logic_DQM  after 6 ns;
-
+    SDRAM_A     <= transport logic_A    after 6 ns;
+    
     i_dram_bfm: entity work.dram_model_8
     generic map(
         g_given_name  => "dram",
-        g_cas_latency => 2,
+        g_cas_latency => 1,
         g_burst_len_r => 4,
         g_burst_len_w => 4,
         g_column_bits => 10,
@@ -116,14 +118,14 @@ begin
     port map (
         CLK  => SDRAM_CLK,
         CKE  => SDRAM_CKE,
-        A    => MEM_A(12 downto 0),
-        BA   => MEM_A(14 downto 13),
+        A    => SDRAM_A(12 downto 0),
+        BA   => SDRAM_A(14 downto 13),
         CSn  => SDRAM_CSn,
         RASn => SDRAM_RASn,
         CASn => SDRAM_CASn,
         WEn  => SDRAM_WEn,
         DQM  => SDRAM_DQM, 
     
-        DQ   => MEM_D);
+        DQ   => SDRAM_D);
 
 end harness;

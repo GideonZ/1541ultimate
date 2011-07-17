@@ -22,6 +22,7 @@ package slot_bus_master_bfm_pkg is
         name        : string(1 to 256);
 
         command     : t_slot_bus_bfm_command;
+        poll_time   : time;
         address     : unsigned(15 downto 0);
         data        : std_logic_vector(7 downto 0);
 		irq_pending : boolean;
@@ -63,6 +64,7 @@ package body slot_bus_master_bfm_pkg is
             slot_bus_master_bfms := pntr;
         end if;
         pntr.irq_pending := false;
+        pntr.poll_time := 10 ns;
     end register_slot_bus_master_bfm;
 
     procedure bind_slot_bus_master_bfm(named         : string;
@@ -94,7 +96,7 @@ package body slot_bus_master_bfm_pkg is
         m.address := a_i;
         m.command := e_slot_bus_read;
         while m.command /= e_slot_none loop
-            wait for 10 ns;
+            wait for m.poll_time;
         end loop;
         data := m.data;
     end procedure;
@@ -108,7 +110,7 @@ package body slot_bus_master_bfm_pkg is
         m.address := a_i;
         m.command := e_slot_io_read;
         while m.command /= e_slot_none loop
-            wait for 10 ns;
+            wait for m.poll_time;
         end loop;
         data := m.data;
     end procedure;
@@ -123,7 +125,7 @@ package body slot_bus_master_bfm_pkg is
         m.command := e_slot_bus_write;
         m.data    := data;
         while m.command /= e_slot_none loop
-            wait for 10 ns;
+            wait for m.poll_time;
         end loop;
     end procedure;
 
@@ -137,14 +139,14 @@ package body slot_bus_master_bfm_pkg is
         m.command := e_slot_io_write;
         m.data    := data;
         while m.command /= e_slot_none loop
-            wait for 10 ns;
+            wait for m.poll_time;
         end loop;
     end procedure;
 
 	procedure slot_wait_irq(variable m : inout p_slot_bus_master_bfm_object) is
 	begin
 		while not m.irq_pending loop
-            wait for 10 ns;
+            wait for m.poll_time;
         end loop;
 	end procedure;
 end;

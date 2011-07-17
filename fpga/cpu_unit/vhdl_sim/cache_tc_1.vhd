@@ -93,6 +93,7 @@ begin
         mem_write(mm, X"1081", X"02");
         mem_write(mm, X"1082", X"03");
         mem_write(mm, X"1083", X"04");
+        report "Checking data that just got written in a hit..";
         check_mem(X"1083", X"04");
         check_mem(X"1082", X"03");
         check_mem(X"5082", X"00");
