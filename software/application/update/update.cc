@@ -8,7 +8,10 @@ extern "C" {
 	#include "itu.h"
     #include "small_printf.h"
 }
+
+#include "host.h"
 #include "c64.h"
+#include "overlay.h"
 #include "flash.h"
 #include "screen.h"
 #include "keyboard.h"
@@ -300,18 +303,23 @@ int main()
 	char time_buffer[32];
 	printf("*** Ultimate Updater ***\n\n");
 
-    c64 = new C64;
-	c64->reset();
-    c64->freeze();
+    GenericHost *host;
+    if (ITU_CAPABILITIES & CAPAB_OVERLAY) 
+        host = new Overlay;
+    else
+        host = new C64;
+    
+	host->reset();
+    host->freeze();
 
-    screen = new Screen(c64->get_screen(), c64->get_color_map(), 40, 25);
+    screen = new Screen(host->get_screen(), host->get_color_map(), 40, 25);
     screen->move_cursor(0,0);
     screen->output("\033\021   **** 1541 Ultimate II Updater ****\n\033\037"); // \020 = alpha \021 = beta
     for(int i=0;i<40;i++)
         screen->output('\002');
 
     user_interface = new UserInterface;
-    user_interface->init(c64, c64->get_keyboard());
+    user_interface->init(host, host->get_keyboard());
     user_interface->set_screen(screen);
 
 	flash = get_flash();
@@ -321,11 +329,11 @@ int main()
 
 	if(!flash) {
 		user_interface->popup("Flash device not recognized.", BUTTON_CANCEL);
-		c64->unfreeze(0, NULL);
+		host->unfreeze((Event &)c_empty_event);
 		delete user_interface;
 		delete screen;
 	 	screen = NULL;
-    	delete c64;
+    	delete host;
 	    while(1)
 	        ;
     }

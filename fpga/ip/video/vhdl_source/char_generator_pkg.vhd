@@ -82,5 +82,7 @@ package char_generator_pkg is
     constant c_chargen_pointer_lo       : unsigned(3 downto 0) := X"B";
     constant c_chargen_perform_sync     : unsigned(3 downto 0) := X"C";
     constant c_chargen_transparency     : unsigned(3 downto 0) := X"D";
+    constant c_chargen_keyb_row         : unsigned(3 downto 0) := X"E";
+    constant c_chargen_keyb_col         : unsigned(3 downto 0) := X"F";
 
 end package;

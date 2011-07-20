@@ -69,9 +69,13 @@ void UserInterface :: handle_event(Event &e)
                     //printf("Going to (re)init objects %d.\n", i);
                     ui_objects[i]->init(screen, keyboard);
                 }
-                state = ui_host_owned;
+                if(e.param)
+                    state = ui_host_permanent;
+                else
+                    state = ui_host_owned;
+
                 if(ITU_FPGA_VERSION < MINIMUM_FPGA_REV) {
-                    popup("FPGA too old..", BUTTON_OK);
+                    popup("WARNING: FPGA too old..", BUTTON_OK);
                 }
             }
             else if((e.type == e_invalidate) && (focus >= 0)) { // even if we are inactive, the tree browser should execute this!!
@@ -87,26 +91,28 @@ void UserInterface :: handle_event(Event &e)
                 delete screen;
                 host->unfreeze(e); // e.param, (cart_def *)e.object
                 state = ui_idle;
-            } else {
-                ret = 0;
-                do {
-                    ret = ui_objects[focus]->poll(ret, e); // param pass chain
-                    if(!ret) // return value of 0 keeps us in the same state
-                        break;
-                    printf("Object level %d returned %d.\n", focus, ret);
-                    ui_objects[focus]->deinit();
-                    if(focus) {
-                        focus--;
-                        //printf("Restored focus to level %d.\n", focus);
-                    }
-                    else {
-                        delete screen;
-                        host->unfreeze((Event &)c_empty_event);
-                        state = ui_idle;
-                        break;
-                    }
-                } while(1);    
+                break;
             }
+        // fall through from host_owned:
+        case ui_host_permanent:
+            ret = 0;
+            do {
+                ret = ui_objects[focus]->poll(ret, e); // param pass chain
+                if(!ret) // return value of 0 keeps us in the same state
+                    break;
+                printf("Object level %d returned %d.\n", focus, ret);
+                ui_objects[focus]->deinit();
+                if(focus) {
+                    focus--;
+                    //printf("Restored focus to level %d.\n", focus);
+                }
+                else {
+                    delete screen;
+                    host->unfreeze((Event &)c_empty_event);
+                    state = ui_idle;
+                    break;
+                }
+            } while(1);    
             break;
         default:
             break;

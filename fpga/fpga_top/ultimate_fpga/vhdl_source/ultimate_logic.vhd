@@ -47,7 +47,7 @@ port (
     -- slot side
     PHI2        : in    std_logic;
     DOTCLK      : in    std_logic;
-    RSTn        : inout std_logic;
+    RSTn        : inout std_logic := '1';
 
     BUFFER_ENn  : out   std_logic := '1';
 
@@ -139,6 +139,8 @@ port (
     vid_active  : out   std_logic;
     vid_opaque  : out   std_logic;
     vid_data    : out   unsigned(3 downto 0);
+    keyb_row    : in    std_logic_vector(7 downto 0) := (others => '0');
+    keyb_col    : inout std_logic_vector(7 downto 0) := (others => '0');
 
     -- Buttons
     button      : in  std_logic_vector(2 downto 0);
@@ -878,6 +880,9 @@ begin
             reset           => sys_reset,
             io_req          => io_req_big_io,  -- to be split later
             io_resp         => io_resp_big_io,
+
+            keyb_col        => keyb_col,
+            keyb_row        => keyb_row,
             
             pix_clock       => vid_clock,
             pix_reset       => vid_reset,

@@ -7,6 +7,7 @@ extern "C" {
 
 #include "integer.h"
 #include "host.h"
+#include "keyboard.h"
 
 #define CHARGEN_LINE_CLOCKS_HI   *((volatile BYTE *)0x40E0000)
 #define CHARGEN_LINE_CLOCKS_LO   *((volatile BYTE *)0x40E0001)
@@ -22,6 +23,10 @@ extern "C" {
 #define CHARGEN_POINTER_LO       *((volatile BYTE *)0x40E000B)
 #define CHARGEN_PERFORM_SYNC     *((volatile BYTE *)0x40E000C)
 #define CHARGEN_TRANSPARENCY     *((volatile BYTE *)0x40E000D)
+#define CHARGEN_KEYB_ROW         *((volatile BYTE *)0x40E000E)
+#define CHARGEN_KEYB_COL         *((volatile BYTE *)0x40E000F)
+
+
 #define CHARGEN_SCREEN_RAM       (0x40E0800)
 #define CHARGEN_COLOR_RAM        (0x40E1000)
 
@@ -31,8 +36,11 @@ extern "C" {
 
 class Overlay : public GenericHost
 {
+    Keyboard *keyb;
 public:
     Overlay() {
+        keyb = NULL;
+        
         if(CAPABILITIES & CAPAB_OVERLAY) {
             CHARGEN_CHAR_WIDTH       = 8;
             CHARGEN_CHAR_HEIGHT      = 9;
@@ -46,9 +54,14 @@ public:
             CHARGEN_POINTER_LO       = 0;
             CHARGEN_PERFORM_SYNC     = 0;
             CHARGEN_TRANSPARENCY     = 4;
+
+            keyb = new Keyboard(this, &CHARGEN_KEYB_ROW, &CHARGEN_KEYB_COL);
         }
     }
-    ~Overlay() { }
+    ~Overlay() {
+        if(keyb)
+            delete keyb;
+    }
 
     bool exists(void) {
         if(CAPABILITIES & CAPAB_OVERLAY) {
@@ -56,6 +69,10 @@ public:
         } else {
             return false;
         }
+    }
+    
+    bool is_accessible(void) {
+        return true;
     }
     
     void poll(Event &e) { }
@@ -67,7 +84,9 @@ public:
     char *get_color_map(void) { return (char *)CHARGEN_COLOR_RAM; }
 
     /* We should actually just return an input device type */
-    Keyboard *get_keyboard(void) { return NULL; }
+    Keyboard *get_keyboard(void) {
+        return keyb;
+    }
 };
 
 #endif

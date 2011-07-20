@@ -5,6 +5,7 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 #include "mystring.h" // my string class
+#include "config.h"
 #include "config_menu.h"
 
 /************************/

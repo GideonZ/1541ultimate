@@ -147,7 +147,7 @@ public:
     void init_cartridge(void);
     void cartridge_test(void);
     int  dma_load(File *f, BYTE run_mode, WORD reloc=0);
-    bool has_stopped(void);
+    bool is_accessible(void);
     
     friend class FileTypeSID; // sid load does some tricks
 };

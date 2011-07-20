@@ -2,15 +2,17 @@
 #define KEYBOARD_H
 
 #include "integer.h"
-#include "c64.h"
+#include "host.h"
 
 #define KEY_BUFFER_SIZE 16
 
-class C64;
+class GenericHost;
 
 class Keyboard
 {
-    C64 *host;
+    GenericHost *host;
+    volatile BYTE *row_register;
+    volatile BYTE *col_register;
     
     BYTE shift_prev;
     BYTE mtrx_prev;
@@ -23,7 +25,7 @@ class Keyboard
     BYTE key_buffer[KEY_BUFFER_SIZE];
     int  key_count;
 public:
-    Keyboard(C64 *h);
+    Keyboard(GenericHost *, volatile BYTE *r, volatile BYTE *c);
     ~Keyboard();
     
     void scan(void);

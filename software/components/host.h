@@ -13,6 +13,7 @@ public:
     virtual ~GenericHost() { }
 
     virtual bool exists(void) { return false; }
+    virtual bool is_accessible(void) { return false; }
     virtual void poll(Event &e) { }
     virtual void reset(void) { }
     virtual void freeze(void) { }

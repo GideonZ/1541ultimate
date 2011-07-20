@@ -1,3 +1,4 @@
+#include "menu.h"
 #include "integer.h"
 extern "C" {
 	#include "dump_hex.h"
@@ -102,7 +103,7 @@ C64 :: C64()
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
     char_set = (BYTE *)&_binary_chars_bin_start;
-    keyb = new Keyboard(this);
+    keyb = new Keyboard(this, &CIA1_DPA, &CIA1_DPB);
 
     if(C64_CLOCK_DETECT == 0)
         printf("No PHI2 clock detected.. Stand alone mode.\n");
@@ -582,7 +583,7 @@ char *C64 :: get_color_map(void)
     return (char *)C64_COLORRAM;
 }
 
-bool C64 :: has_stopped(void)
+bool C64 :: is_accessible(void)
 {
     return stopped;
 }
@@ -676,6 +677,7 @@ void C64 :: cartridge_test(void)
 
 void C64 :: poll(Event &e)
 {
+#ifndef _NO_FILE_ACCESS
 	File *f;
 	PathObject *po;
 	DWORD size;
@@ -691,7 +693,7 @@ void C64 :: poll(Event &e)
 	} else if((e.type == e_object_private_cmd)&&(e.object == this)) {
 		switch(e.param) {
 		case MENU_C64_RESET:
-			if(has_stopped()) { // we can't execute this yet
+			if(is_accessible()) { // we can't execute this yet
 				push_event(e_unfreeze);
 				push_event(e_object_private_cmd, this, MENU_C64_RESET); // rethrow event
 			} else {
@@ -699,7 +701,7 @@ void C64 :: poll(Event &e)
 			}
 			break;
 		case MENU_C64_REBOOT:
-			if(has_stopped()) { // we can't execute this yet
+			if(is_accessible()) { // we can't execute this yet
 				push_event(e_unfreeze);
 				push_event(e_object_private_cmd, this, MENU_C64_REBOOT); // rethrow event
 			} else {
@@ -742,6 +744,7 @@ void C64 :: poll(Event &e)
 			printf("Unhandled C64 menu command %4x.\n", e.param);
 		}
 	}
+#endif
 }
 
 int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)

@@ -37,6 +37,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/c64 \
 			$(PATH_SW)/io/rtc \
 			$(PATH_SW)/io/usb \
+			$(PATH_SW)/io/overlay \
 			$(PATH_SW)/io/icap \
 			$(PATH_SW)/io/sd_card \
 			$(PATH_SW)/io/userinterface \

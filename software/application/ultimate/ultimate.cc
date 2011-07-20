@@ -132,6 +132,7 @@ int main()
         user_interface->init(overlay, overlay->get_keyboard());
     	root_tree_browser = new TreeBrowser();
         user_interface->activate_uiobject(root_tree_browser); // root of all evil!
+        push_event(e_button_press, NULL, 1);
     } else {
         // stand alone mode
         stream_interface = new UserInterfaceStream(&my_stream);

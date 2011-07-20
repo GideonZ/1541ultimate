@@ -29,7 +29,8 @@
 
 typedef enum {
     ui_idle,
-    ui_host_owned
+    ui_host_owned,
+    ui_host_permanent
 } t_ui_state;
 
 class UIObject;

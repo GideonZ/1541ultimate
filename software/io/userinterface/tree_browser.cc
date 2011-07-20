@@ -8,8 +8,8 @@
 #include "config_menu.h"
 #include "context_menu.h"
 #include "task_menu.h"
-/*
 #include "filemanager.h"
+/*
 #include "config.h"
 #include "dump_hex.h"
 #include "task_menu.h"
@@ -166,7 +166,7 @@ void TreeBrowserState :: unhighlight()
     
 void TreeBrowserState :: highlight()
 {
-    browser->window->set_color(1, 0, selected_line, 40, 1, true);
+    browser->window->set_color(0x61, 0, selected_line, 40, 1, true);
 //    window->reverse(0, selection_index, 40);
 //    window->set_color(1, 0, selection_index, quick_seek_length, 1);
 }

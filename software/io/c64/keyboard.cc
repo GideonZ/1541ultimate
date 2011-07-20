@@ -42,9 +42,11 @@ const BYTE keymap_shifted[] = {
     0x21,0x7E,0x00,0x22,0xA0,0x00,0x51,0x83,
     0x00 };
 
-Keyboard :: Keyboard(C64 *h)
+Keyboard :: Keyboard(GenericHost *h, volatile BYTE *row, volatile BYTE *col)
 {
     host = h;
+    col_register = col;
+    row_register = row;
     
     repeat_speed = 4;
     first_delay = 16;
@@ -70,13 +72,13 @@ void Keyboard :: scan(void)
     bool joy = false;
     
     // check if we have access to the I/O
-    if(!(host->has_stopped()))
+    if(!(host->is_accessible()))
         return;
 
     // Scan Joystick Port 2 first
-    CIA1_DPA = 0xFF; // deselect keyboard for pure joystick scan
-    CIA1_DPA = 0XFF; // delay
-    row = CIA1_DPA; // port2
+    *col_register = 0xFF; // deselect keyboard for pure joystick scan
+    *col_register = 0XFF; // delay
+    row = *col_register; // port2
     if(row != 0xFF) {
         joy = true;
         if     (!(row & 0x01)) { shift_flag = 0x01; mtrx = 0x07; }
@@ -88,16 +90,16 @@ void Keyboard :: scan(void)
     
     // If the joystick was not used, we can safely scan the keyboard
     if(!joy) {
-        CIA1_DPA = 0; // select all rows of keyboard
-        if (CIA1_DPB != 0xFF) { // process key image
+        *col_register = 0; // select all rows of keyboard
+        if (*row_register != 0xFF) { // process key image
             map = keymap_normal;
             col = 0xFE;
             for(int idx=0,y=0;y<8;y++) {
-                CIA1_DPA = 0xFF;
-                CIA1_DPA = col;
+                *col_register = 0xFF;
+                *col_register = col;
                 do {
-                    row = CIA1_DPB;
-                } while(row != CIA1_DPB);
+                    row = *row_register;
+                } while(row != *row_register);
                 for(int x=0;x<8;x++, idx++) {
                     if((row & 1)==0) {
                         mod = modifier_map[idx];
@@ -180,13 +182,13 @@ BYTE Keyboard :: getch(void)
 void Keyboard :: wait_free(void)
 {
     // check if we have access to the I/O
-    if(!(host->has_stopped()))
+    if(!(host->is_accessible()))
         return;
 
-    CIA1_DPA = 0; // select all rows
-    while(CIA1_DPB != 0xFF)
+    *col_register = 0; // select all rows
+    while(*row_register != 0xFF)
         ;
-    CIA1_DPA = 0xFF;
+    *col_register = 0xFF;
 }
 
 void Keyboard :: set_delays(int initial, int repeat)
