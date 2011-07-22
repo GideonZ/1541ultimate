@@ -897,11 +897,11 @@ begin
     end generate;
 
 	CAS_SENSE <= '0' when (c2n_sense='1') or (c2n_pull_sense='1') else 'Z';
---	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';
---	CAS_WRITE <= '0' when c2n_out_w='0' else 'Z';
+	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';
+	CAS_WRITE <= '0' when c2n_out_w='0' else 'Z';
 
-    CAS_READ  <= trigger_1;
-    CAS_WRITE <= trigger_2;
+--    CAS_READ  <= trigger_1;
+--    CAS_WRITE <= trigger_2;
 
     c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
 	

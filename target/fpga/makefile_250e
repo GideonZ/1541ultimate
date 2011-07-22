@@ -24,7 +24,7 @@ export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
 
 TARGET 			:= ultimate_1541_250e
 
-ISE_VERSION		:= 12
+ISE_VERSION		:= 13
 
 DESIGN_NAME 	:= $(TARGET)
 TOP_NAME    	:= $(TARGET)
@@ -89,6 +89,7 @@ ULTIMATE_FPGA := ../../fpga
 include ultimate_logic.inc
 
 SYNTH_PROJ	:= 	$(ALL_ULTIMATE_LOGIC) \
+				vhdl,work,$(ULTIMATE_FPGA)/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4_u1.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/$(TARGET).vhd
 
  ################################################################################

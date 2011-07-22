@@ -55,10 +55,19 @@ struct t_cfg_definition audio_cfg[] = {
     { CFG_AUDIO_SID_WAVE_RIGHT, CFG_TYPE_ENUM, "SID Right Combined Waveforms", "%s", sidchip_sel, 0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,        0,  0, 0 } };
 
+struct t_cfg_definition audio_cfg_no_sid[] = {
+    { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  3, 0 },
+    { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices, 0,  3, 1 },
+    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,        0,  0, 0 } };
+
 
 AudioConfig :: AudioConfig()
 {
-    register_store(0x41554449, "Audio Output settings", audio_cfg);
+    if(CAPABILITIES & CAPAB_STEREO_SID) {
+        register_store(0x41554449, "Audio Output settings", audio_cfg);
+    } else {
+        register_store(0x4155444A, "Audio Output settings", audio_cfg_no_sid);
+    }
     effectuate_settings();
 }
     

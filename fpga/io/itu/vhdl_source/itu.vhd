@@ -212,7 +212,7 @@ begin
         resps(0) => io_resp_it,
         resps(1) => io_resp_uart );
 
-    n_uart: if g_uart generate
+    r_uart: if g_uart generate
         uart: entity work.uart_peripheral_io
         generic map (
             g_divisor   => c_baud_div )
@@ -231,4 +231,14 @@ begin
             rxd         => uart_rxd );
     end generate;
 
+    no_uart: if not g_uart generate
+        process(clock)
+        begin
+            if rising_edge(clock) then
+                io_resp_uart <= c_io_resp_init;
+                io_resp_uart.ack <= io_req_uart.read or io_req_uart.write;
+            end if;
+        end process;
+    end generate;
+    
 end architecture;

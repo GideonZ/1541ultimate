@@ -463,6 +463,7 @@ FRESULT FileSystemD64 :: dir_read(Directory *d, FileInfo *f)
 	    f->attrib  = AM_VOL;
         f->cluster = get_root_sector();
         f->extension[0] = '\0';
+        memset(loop_detect, 0, 256);
 
         /* Volume name extraction */
         if(prt->read(sect_buffer, get_root_sector(), 1) == RES_OK) {
@@ -489,15 +490,21 @@ FRESULT FileSystemD64 :: dir_read(Directory *d, FileInfo *f)
                     next_t = (int)sect_buffer[0];
                     next_s = (int)sect_buffer[1];
                 }
+                // printf("- Reading %d %d - \n", next_t, next_s);
                 if(!next_t) { // end of list
                     return FR_NO_FILE;
+                }
+                if(loop_detect[next_s]) {
+                    return FR_NO_FILE; // detect loop, but just exit
                 }
                 if(prt->read(sect_buffer, get_abs_sector(next_t, next_s), 1) != RES_OK) {
                     return FR_DISK_ERR;
                 }
+                loop_detect[next_s] = 1;
             }
             BYTE *p = &sect_buffer[(idx & 7) << 5]; // 32x from start of sector
-            //dump_hex(p, 32);
+            // printf("-\n");
+            // dump_hex(p, 32);
             if((p[2] & 0x0f) == 0x02) { // PRG
                 int j = 0;
                 for(int i=5;i<21;i++) {
@@ -513,7 +520,7 @@ FRESULT FileSystemD64 :: dir_read(Directory *d, FileInfo *f)
                 strncpy(f->extension, "PRG", 4);
                 d->handle = idx + 2; // continue after this next time (readjust for header)
                 return FR_OK;                
-            } else if(!p[3]) {
+            } else if(!(p[3] | p[2])) {
                 return FR_NO_FILE;
             }
             idx++;

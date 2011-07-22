@@ -10,7 +10,7 @@ use work.io_bus_pkg.all;
 entity ultimate_1541_250e is
 generic (
     g_simulation    : boolean := false;
-	g_version		: unsigned(7 downto 0) := X"17" );
+	g_version		: unsigned(7 downto 0) := X"AA" );
 port (
     CLOCK       : in    std_logic;
     
@@ -137,6 +137,12 @@ architecture structural of ultimate_1541_250e is
     signal mem_req          : t_mem_req;
     signal mem_resp         : t_mem_resp;
 
+    -- IEC open drain
+    signal iec_atn_o   : std_logic;
+    signal iec_data_o  : std_logic;
+    signal iec_clock_o : std_logic;
+    signal iec_srq_o   : std_logic;
+
     -- debug
     signal scale_cnt        : unsigned(11 downto 0) := X"000";
     attribute iob : string;
@@ -168,11 +174,11 @@ begin
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
         g_icap          => false,
-        g_uart          => true,
+        g_uart          => false,
         g_drive_1541    => true, --
         g_drive_1541_2  => false, --
         g_hardware_gcr  => true,
-        g_ram_expansion => false, --
+        g_ram_expansion => true, --
         g_hardware_iec  => false, --
         g_iec_prog_tim  => false,
 	    g_stereo_sid    => false,
@@ -227,11 +233,17 @@ begin
         PWM_OUT     => PWM_OUT,
     
         -- IEC bus
-        IEC_ATN     => IEC_ATN,
-        IEC_DATA    => IEC_DATA,
-        IEC_CLOCK   => IEC_CLOCK,
-        IEC_RESET   => IEC_RESET,
-        IEC_SRQ_IN  => IEC_SRQ_IN,
+        iec_reset_i => IEC_RESET,
+        iec_atn_i   => IEC_ATN,
+        iec_data_i  => IEC_DATA,
+        iec_clock_i => IEC_CLOCK,
+        iec_srq_i   => IEC_SRQ_IN,
+                                  
+        iec_reset_o => open,
+        iec_atn_o   => iec_atn_o,
+        iec_data_o  => iec_data_o,
+        iec_clock_o => iec_clock_o,
+        iec_srq_o   => iec_srq_o,
                                     
         DISK_ACTn   => DISK_ACTn, -- activity LED
         CART_LEDn   => CART_LEDn,
@@ -272,8 +284,19 @@ begin
         CAS_READ    => CAS_READ,
         CAS_WRITE   => CAS_WRITE,
         
+        -- Unused
+        vid_clock   => sys_clock,
+        vid_reset   => sys_reset,
+        vid_h_count => X"000",
+        vid_v_count => X"000",
+
         -- Buttons
         BUTTON      => button_i );
+
+    IEC_ATN    <= '0' when iec_atn_o   = '0' else 'Z';
+    IEC_DATA   <= '0' when iec_data_o  = '0' else 'Z';
+    IEC_CLOCK  <= '0' when iec_clock_o = '0' else 'Z';
+    IEC_SRQ_IN <= '0' when iec_srq_o   = '0' else 'Z';
 
 	i_memctrl: entity work.ext_mem_ctrl_v4_u1
     generic map (

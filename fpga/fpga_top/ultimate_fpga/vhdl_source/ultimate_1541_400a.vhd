@@ -129,6 +129,12 @@ architecture structural of ultimate_1541_400a is
     signal mem_req          : t_mem_req;
     signal mem_resp         : t_mem_resp;
 
+    -- IEC open drain
+    signal iec_atn_o   : std_logic;
+    signal iec_data_o  : std_logic;
+    signal iec_clock_o : std_logic;
+    signal iec_srq_o   : std_logic;
+
     -- debug
     signal scale_cnt        : unsigned(11 downto 0) := X"000";
     attribute iob : string;
@@ -220,11 +226,17 @@ begin
         PWM_OUT     => PWM_OUT,
     
         -- IEC bus
-        IEC_ATN     => IEC_ATN,
-        IEC_DATA    => IEC_DATA,
-        IEC_CLOCK   => IEC_CLOCK,
-        IEC_RESET   => IEC_RESET,
-        IEC_SRQ_IN  => IEC_SRQ_IN,
+        iec_reset_i => IEC_RESET,
+        iec_atn_i   => IEC_ATN,
+        iec_data_i  => IEC_DATA,
+        iec_clock_i => IEC_CLOCK,
+        iec_srq_i   => IEC_SRQ_IN,
+                                  
+        iec_reset_o => open,
+        iec_atn_o   => iec_atn_o,
+        iec_data_o  => iec_data_o,
+        iec_clock_o => iec_clock_o,
+        iec_srq_o   => iec_srq_o,
                                     
         DISK_ACTn   => DISK_ACTn, -- activity LED
         CART_LEDn   => CART_LEDn,
@@ -269,6 +281,11 @@ begin
         
         -- Buttons
         BUTTON      => button_i );
+
+    IEC_ATN    <= '0' when iec_atn_o   = '0' else 'Z';
+    IEC_DATA   <= '0' when iec_data_o  = '0' else 'Z';
+    IEC_CLOCK  <= '0' when iec_clock_o = '0' else 'Z';
+    IEC_SRQ_IN <= '0' when iec_srq_o   = '0' else 'Z';
 
 	i_memctrl: entity work.ext_mem_ctrl_v4
     generic map (

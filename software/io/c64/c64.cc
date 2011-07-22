@@ -103,7 +103,7 @@ C64 :: C64()
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
     char_set = (BYTE *)&_binary_chars_bin_start;
-    keyb = new Keyboard(this, &CIA1_DPA, &CIA1_DPB);
+    keyb = new Keyboard(this, &CIA1_DPB, &CIA1_DPA);
 
     if(C64_CLOCK_DETECT == 0)
         printf("No PHI2 clock detected.. Stand alone mode.\n");
