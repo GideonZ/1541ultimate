@@ -21,6 +21,8 @@ use work.dma_bus_pkg.all;
 use work.copper_pkg.all;
 
 entity copper_engine is
+generic (
+    g_copper_size : natural := 12 );
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
@@ -28,7 +30,7 @@ port (
     irq_n       : in  std_logic;
     phi2_tick   : in  std_logic;
     
-    ram_address : out unsigned(10 downto 0);
+    ram_address : out unsigned(g_copper_size-1 downto 0);
     ram_rdata   : in  std_logic_vector(7 downto 0);
     ram_wdata   : out std_logic_vector(7 downto 0);
     ram_en      : out std_logic;
@@ -55,17 +57,32 @@ architecture gideon of copper_engine is
     signal sync     : std_logic;
     signal timer    : unsigned(15 downto 0);
     signal match    : unsigned(15 downto 0);
-    signal addr_i   : unsigned(10 downto 0);
-    type t_state is (idle, fetch, decode, fetch2, decode2, fetch3, decode3, wait_irq, wait_sync, wait_until, wait_dma);
+    signal addr_i   : unsigned(ram_address'range);
+    type t_state is (idle, fetch, decode, fetch2, decode2, fetch3, decode3, wait_irq, wait_sync, wait_until, wait_dma,
+                     record_start, recording, record_end);
     signal state    : t_state;
+
+    signal store_word   : std_logic_vector(31 downto 0) := (others => '0');
+    signal store_trig   : std_logic := '0';
+    signal fifo_dout    : std_logic_vector(31 downto 0) := (others => '0');
+    signal fifo_dav     : std_logic;
+    signal fifo_pop     : std_logic;
+    signal ram_we_i     : std_logic;
 begin
     p_fsm: process(clock)
+        procedure process_fifo_data is
+        begin
+            if fifo_dav='1' then
+                addr_i <= addr_i + 1;
+            end if;
+        end procedure;
     begin
         if rising_edge(clock) then
             irq_c <= not irq_n;
             irq_d <= irq_c;
             trigger_1 <= '0';
             trigger_2 <= '0';
+            store_trig <= '0';
 
             slot_resp <= c_slot_resp_init;
                         
@@ -87,7 +104,8 @@ begin
                     status.running <= '1';
                     
                 when c_copper_cmd_record =>
-                    null;
+                    state <= record_start;
+                    status.running <= '1';
                     
                 when others =>
                     null;
@@ -193,6 +211,32 @@ begin
                     state <= fetch;
                 end if;
 
+            when record_start =>
+                if sync='1' then
+                    state <= recording;
+                end if;
+
+            when recording =>
+                process_fifo_data;
+                if slot_req.bus_write='1' and slot_req.bus_address(15 downto 10)="110100" then
+                    store_word(23 downto 16) <= std_logic_vector(slot_req.bus_address(7 downto 0));
+                    store_word(31 downto 24) <= slot_req.data;
+                    store_word(15 downto  0) <= std_logic_vector(timer);
+                    store_trig <= '1';
+                end if;
+                if sync='1' then
+                    store_word <= (others => '1');
+                    store_trig <= '1';
+                    state <= record_end;
+                end if;
+            
+            when record_end =>
+                process_fifo_data;
+                if fifo_dav='0' and store_trig='0' then
+                    state <= idle;
+                    status.running <= '0';
+                end if;
+
             when others =>
                 null;
             end case;
@@ -213,8 +257,34 @@ begin
         end if;
     end process;
     
-    ram_wdata   <= X"00";
+    i_store_fifo: entity work.srl_fifo
+    generic map (
+        Width     => 32,
+        Depth     => 15,
+        Threshold => 12 )
+    port map (
+        clock       => clock,
+        reset       => reset,
+        GetElement  => fifo_pop,
+        PutElement  => store_trig,
+        FlushFifo   => '0',
+        DataIn      => store_word,
+        DataOut     => fifo_dout,
+        SpaceInFifo => open,
+        AlmostFull  => open,
+        DataInFifo  => fifo_dav );
+
+    ram_we_i <= fifo_dav; -- whenever there is data, write!
+    fifo_pop <= '1' when addr_i(1 downto 0)="11" and ram_we_i='1' else '0'; -- pop data when we're writing the last byte of the word
+
+    with addr_i(1 downto 0) select
+        ram_wdata <=
+            fifo_dout(7 downto 0) when "00",
+            fifo_dout(15 downto 8) when "01",
+            fifo_dout(23 downto 16) when "10",
+            fifo_dout(31 downto 24) when others;
+            
     ram_address <= addr_i;
-    ram_we      <= '0';
-    ram_en      <= '1' when (state = fetch) or (state = fetch2) or (state = fetch3) else '0';
+    ram_we      <= ram_we_i;
+    ram_en      <= '1' when (state = fetch) or (state = fetch2) or (state = fetch3) or (ram_we_i='1') else '0';
 end architecture;

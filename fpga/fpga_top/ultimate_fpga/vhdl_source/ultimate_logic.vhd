@@ -139,6 +139,7 @@ port (
     vid_active  : out   std_logic;
     vid_opaque  : out   std_logic;
     vid_data    : out   unsigned(3 downto 0);
+    overlay_on  : out   std_logic;
     keyb_row    : in    std_logic_vector(7 downto 0) := (others => '0');
     keyb_col    : inout std_logic_vector(7 downto 0) := (others => '0');
 
@@ -883,6 +884,8 @@ begin
 
             keyb_col        => keyb_col,
             keyb_row        => keyb_row,
+            
+            overlay_on      => overlay_on,
             
             pix_clock       => vid_clock,
             pix_reset       => vid_reset,

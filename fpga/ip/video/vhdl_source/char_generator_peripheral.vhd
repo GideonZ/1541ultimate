@@ -28,9 +28,10 @@ port (
     reset           : in  std_logic;
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
+    overlay_on      : out std_logic;
+
     keyb_row        : in    std_logic_vector(7 downto 0) := (others => '0');
     keyb_col        : inout std_logic_vector(7 downto 0) := (others => '0');
-
     pix_clock       : in  std_logic;
     pix_reset       : in  std_logic;
     h_count         : in  unsigned(11 downto 0);
@@ -58,6 +59,8 @@ architecture structural of char_generator_peripheral is
 	signal io_resp_color	: t_io_resp := c_io_resp_init;
 
 begin
+    overlay_on <= control.overlay_on;
+    
 	-- allocate 32K for character memory
 	-- allocate 32K for color memory
 	-- allocate another space for registers

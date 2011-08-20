@@ -79,7 +79,7 @@
 #define C64_PEEK(x)   (*((volatile BYTE *)(C64_MEMORY_BASE + x)))
 
 #define NUM_VICREGS    48
-#define COLOR_SIZE   1000
+#define COLOR_SIZE   1024
 #define BACKUP_SIZE  2048
 #define CHARSET_SIZE 2048
 
@@ -105,6 +105,8 @@ class C64 : public GenericHost, ObjectWithMenu, ConfigurableObject
     BYTE *char_set; //[CHARSET_SIZE];
     BYTE vic_backup[NUM_VICREGS];
     BYTE ram_backup[BACKUP_SIZE];
+    BYTE screen_backup[COLOR_SIZE]; // only used now for vic state write
+    BYTE color_backup[COLOR_SIZE];
     BYTE cia_backup[5];
     
     BYTE stop_mode;
@@ -135,6 +137,7 @@ public:
     
     /* Generic Host */
     bool exists(void);
+    bool is_accessible(void);
     void poll(Event &e);
     void reset(void);
     void freeze(void);
@@ -147,8 +150,8 @@ public:
     void init_cartridge(void);
     void cartridge_test(void);
     int  dma_load(File *f, BYTE run_mode, WORD reloc=0);
-    bool is_accessible(void);
-    
+    bool write_vic_state(File *f);
+        
     friend class FileTypeSID; // sid load does some tricks
 };
 

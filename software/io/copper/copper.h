@@ -13,7 +13,8 @@
 #define COPPER_FRAMELEN_L  *((volatile BYTE *)0x4046004)
 #define COPPER_FRAMELEN_H  *((volatile BYTE *)0x4046005)
 #define COPPER_BREAK       *((volatile BYTE *)0x4046006)
-#define COPPER_RAM(x)      *((volatile BYTE *)(0x4046800+x))
+#define COPPER_RAM(x)      *((volatile BYTE *)(0x4047000+x))
+#define COPPER_RAM_SIZE    4096
 
 #define COPPER_CMD_PLAY    0x01
 #define COPPER_CMD_RECORD  0x02
@@ -33,9 +34,13 @@
 
 class Copper : public ObjectWithMenu
 {
+    bool synchronized;
+
     void measure(void);
     void sync(void);
     void timed_write(void);
+    void capture(void);
+    void write_state(void);
 public:
 	Copper();
 	~Copper();

@@ -27,6 +27,7 @@ package char_generator_pkg is
         y_on                : unsigned(11 downto 0);
         pointer             : unsigned(14 downto 0);
         perform_sync        : std_logic;
+        overlay_on          : std_logic;
         transparent         : std_logic_vector(3 downto 0);
     end record;
 
@@ -40,6 +41,7 @@ package char_generator_pkg is
         y_on                => to_unsigned(6, 12),
         pointer             => to_unsigned(0, 15),
         perform_sync        => '0',
+        overlay_on          => '0',
         transparent         => X"5" );
 
     -- 640x225 (80x25 => 8x9 chars, in 45 C64 chars width)
@@ -52,6 +54,7 @@ package char_generator_pkg is
         x_on                => to_unsigned(190, 12),
         y_on                => to_unsigned(46, 12),
         pointer             => to_unsigned(0, 15),
+        overlay_on          => '0',
         perform_sync        => '0',
         transparent         => X"5" );
 
@@ -65,6 +68,7 @@ package char_generator_pkg is
         x_on                => to_unsigned(142, 12),
         y_on                => to_unsigned(48, 12),
         pointer             => to_unsigned(0, 15),
+        overlay_on          => '0',
         perform_sync        => '0',
         transparent         => X"5" );
 

@@ -305,7 +305,7 @@ int main()
 
     GenericHost *host;
     if (ITU_CAPABILITIES & CAPAB_OVERLAY) 
-        host = new Overlay;
+        host = new Overlay(true);
     else
         host = new C64;
     

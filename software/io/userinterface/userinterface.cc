@@ -120,6 +120,10 @@ void UserInterface :: handle_event(Event &e)
 
     BYTE buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
     if((buttons & ~button_prev) & ITU_BUTTON1) {
+        if(state == ui_idle) { // this is nasty, but at least we know that it's executed FIRST
+            // and that it has no effect when no copper exists.
+            push_event(e_copper_capture, 0);
+        }
         push_event(e_button_press, 0);
     }
     button_prev = buttons;

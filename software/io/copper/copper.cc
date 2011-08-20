@@ -14,6 +14,7 @@ Copper copper; // this global causes us to run!!
 #define COPPER_MENU_SYNC        0x6302
 #define COPPER_MENU_BREAK       0x6303
 #define COPPER_MENU_TIMED_WRITE 0x6304
+#define COPPER_MENU_WRITE_STATE 0x6305
 
 static void poll_copper(Event &e)
 {
@@ -27,6 +28,7 @@ Copper :: Copper()
         printf("** COPPER ENABLED **\n");
         main_menu_objects.append(this);
     }
+    synchronized = false;
 }
 
 Copper :: ~Copper()
@@ -41,7 +43,8 @@ int  Copper :: fetch_task_items(IndexedList<PathObject*> &item_list)
 	item_list.append(new ObjectMenuItem(this, "Copper Sync", COPPER_MENU_SYNC));
 	item_list.append(new ObjectMenuItem(this, "Copper Break", COPPER_MENU_BREAK));
 	item_list.append(new ObjectMenuItem(this, "Copper Timed Write", COPPER_MENU_TIMED_WRITE));
-	return 1;
+	item_list.append(new ObjectMenuItem(this, "Copper Write State", COPPER_MENU_WRITE_STATE));
+	return 5;
 }
 
 void Copper :: poll(Event &e)
@@ -61,11 +64,21 @@ void Copper :: poll(Event &e)
                 case COPPER_MENU_TIMED_WRITE:
                     timed_write();
                     break;
+                case COPPER_MENU_WRITE_STATE:
+                    write_state();
+                    break;
 				default:
 					break;
 			}
 		}
 	}
+	if(e.type == e_copper_capture) {
+	    if(synchronized) {
+            capture();
+	    } else {
+	        printf("Sorry, we're not synchronized, so we can't do a capture.\n");
+	    }
+    }
 }
 
 /*
@@ -156,6 +169,7 @@ void Copper :: sync()
         ;
 
     printf("Copper is now in sync; do not clear timer.\n");    
+    synchronized = true;
 }
 
 int atoi(char *s)
@@ -173,6 +187,30 @@ int atoi(char *s)
         s++;
     }
     return res;            
+}
+
+void Copper :: capture(void)
+{
+    COPPER_COMMAND = COPPER_CMD_RECORD;
+
+    while(COPPER_STATUS & 0x01)
+        ;
+    
+    BYTE b1,b2,b3,b4;
+    WORD w1;
+    int line, cycle;
+    for(int i=0;i<COPPER_RAM_SIZE;i+=4) {
+        b1 = COPPER_RAM(i);
+        b2 = COPPER_RAM(i+1);
+        b3 = COPPER_RAM(i+2);
+        b4 = COPPER_RAM(i+3);
+        if(b2 == 0xFF)
+            break;
+        w1 = (WORD(b2) << 8) | b1;
+        line = 1 + (int(w1) / 63);
+        cycle = 1 + (int(w1) % 63);               
+        printf("Line %3d Cycle %2d: %b > $D0%b\n", line, cycle, b4, b3);
+    }
 }
 
 void Copper :: timed_write(void)
@@ -232,4 +270,22 @@ void Copper :: timed_write(void)
     COPPER_COMMAND = COPPER_CMD_PLAY;
 
     printf("Copper is now running.. %b\n", COPPER_STATUS);
+}
+
+void Copper :: write_state(void)
+{
+    UINT written;
+    PathObject *po = user_interface->get_path();
+    File *f = root.fcreate("image.vic", po);
+    if(f) {
+        printf("Opened file successfully.\n");
+        if(!c64->write_vic_state(f)) {
+            printf("Write unsuccessful.\n");
+        } else {
+            f->write((BYTE *)&COPPER_RAM(0), COPPER_RAM_SIZE, &written);
+        }
+        f->close();
+    } else {
+        printf("Couldn't open file..\n");
+    }
 }

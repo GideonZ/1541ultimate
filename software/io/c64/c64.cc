@@ -10,6 +10,8 @@ extern "C" {
 #include "menu.h"
 #include "userinterface.h"
 
+#define BACKUP_SCREEN
+
 // static pointer
 C64   *c64;
 
@@ -433,7 +435,15 @@ void C64 :: backup_io(void)
         printf("%b ", CIA1_REG(i));
     } printf("\n");
 
-	// back up 3 kilobytes of RAM to do our thing 
+    // back up screen and color
+#ifdef BACKUP_SCREEN
+    BYTE *screen = (BYTE *)C64_SCREEN;
+    for(i=0;i<COLOR_SIZE;i++) {
+        color_backup[i] = COLOR_RAM(i);
+        screen_backup[i] = screen[i];
+    }
+#endif
+	// back up 2 kilobytes of RAM to do our thing 
 	for(i=0;i<BACKUP_SIZE;i++) {
 		ram_backup[i] = MEM_LOC(i);
 	}
@@ -813,3 +823,47 @@ int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)
 
     return 0;
 }
+
+bool C64 :: write_vic_state(File *f)
+{
+    UINT transferred;
+    BYTE mode = C64_MODE;
+    FRESULT fres;
+    C64_MODE = 0;
+
+    // find bank
+    BYTE bank = 3 - (cia_backup[1] & 0x03);
+    DWORD addr = C64_MEMORY_BASE + (DWORD(bank) << 14);
+    if(bank == 0) {
+        fres = f->write((BYTE *)C64_MEMORY_BASE, 0x0400, &transferred);
+        if(fres != FR_OK)
+            goto fail;
+        fres = f->write(screen_backup, 0x0400, &transferred);
+        if(fres != FR_OK)
+            goto fail;
+        fres = f->write(ram_backup, 0x0800, &transferred);
+        if(fres != FR_OK)
+            goto fail;
+        fres = f->write((BYTE *)(C64_MEMORY_BASE + 0x1000), 0x3000, &transferred);
+        if(fres != FR_OK)
+            goto fail;
+    } else {        
+        fres = f->write((BYTE *)addr, 16384, &transferred);
+        if(fres != FR_OK)
+            goto fail;
+    }    
+    fres = f->write(color_backup, 0x0400, &transferred);
+    if(fres != FR_OK)
+        goto fail;
+    fres = f->write(vic_backup, NUM_VICREGS, &transferred);   
+    if(fres != FR_OK)
+        goto fail;
+    
+    C64_MODE = mode;
+    return true;
+
+fail:
+    C64_MODE = mode;
+    return false;
+}
+    

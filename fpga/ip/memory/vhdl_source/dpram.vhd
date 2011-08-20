@@ -18,8 +18,8 @@ entity dpram is
         a_en                    : in  std_logic := '1';
         a_we                    : in  std_logic := '0';
 
-        b_clock                 : in  std_logic;
-        b_address               : in  unsigned(g_depth_bits-1 downto 0);
+        b_clock                 : in  std_logic := '0';
+        b_address               : in  unsigned(g_depth_bits-1 downto 0) := (others => '0');
         b_rdata                 : out std_logic_vector(g_width_bits-1 downto 0);
         b_wdata                 : in  std_logic_vector(g_width_bits-1 downto 0) := (others => '0');
         b_en                    : in  std_logic := '1';

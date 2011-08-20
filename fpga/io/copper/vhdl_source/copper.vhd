@@ -22,6 +22,8 @@ use work.dma_bus_pkg.all;
 use work.copper_pkg.all;
 
 entity copper is
+generic (
+    g_copper_size : natural := 12 );
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
@@ -52,7 +54,7 @@ architecture gideon of copper is
     signal ram_rdata    : std_logic_vector(7 downto 0);
     signal ram_gate     : std_logic := '0';
     
-    signal copper_addr  : unsigned(10 downto 0);
+    signal copper_addr  : unsigned(g_copper_size-1 downto 0);
     signal copper_rdata : std_logic_vector(7 downto 0);
     signal copper_wdata : std_logic_vector(7 downto 0);
     signal copper_we    : std_logic;
@@ -63,7 +65,7 @@ architecture gideon of copper is
 begin
     i_split: entity work.io_bus_splitter
     generic map (
-        g_range_lo  => 11,
+        g_range_lo  => 12,
         g_range_hi  => 12,
         g_ports     => 2 )
     port map (
@@ -92,14 +94,14 @@ begin
     i_ram: entity work.dpram
     generic map (
         g_width_bits    => 8,
-        g_depth_bits    => 11,
+        g_depth_bits    => g_copper_size,
         g_read_first_a  => false,
         g_read_first_b  => false,
         g_storage       => "block" )
     
     port map (
         a_clock         => clock,
-        a_address       => io_req_ram.address(10 downto 0),
+        a_address       => io_req_ram.address(g_copper_size-1 downto 0),
         a_rdata         => ram_rdata,
         a_wdata         => io_req_ram.data,
         a_en            => '1',
@@ -122,6 +124,8 @@ begin
     io_resp_ram.data <= ram_rdata when ram_gate='1' else X"00";
 
     i_fsm: entity work.copper_engine
+    generic map (
+        g_copper_size => g_copper_size )
     port map (
         clock       => clock,
         reset       => reset,

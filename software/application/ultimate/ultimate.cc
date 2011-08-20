@@ -127,12 +127,12 @@ int main()
     	c64->init_cartridge();
     } else if(ITU_CAPABILITIES & CAPAB_OVERLAY) {
         printf("Using Overlay module as user interface...\n");
-        overlay = new Overlay();
+        overlay = new Overlay(false);
         user_interface = new UserInterface;
         user_interface->init(overlay, overlay->get_keyboard());
     	root_tree_browser = new TreeBrowser();
         user_interface->activate_uiobject(root_tree_browser); // root of all evil!
-        push_event(e_button_press, NULL, 1);
+        // push_event(e_button_press, NULL, 1);
     } else {
         // stand alone mode
         stream_interface = new UserInterfaceStream(&my_stream);

@@ -1,0 +1,211 @@
+;-------------------------------------------------
+; Cycle Checker and VIC synchronization ROM
+;
+; Programmed by Gideon Zweijtzer
+;
+; Copyright (c) 2011 - Gideon Zweijtzer
+;
+;-------------------------------------------------
+
+              *= $8000            ;base address of cartridge
+
+              IO_IRQ_ACK = $DFF0
+              IO_IRQ_REQ = $DFF1
+              IO_ROM_OFF = $DFF2
+
+              IO_STATUS    = $DFFF
+              IO_CART_SYNC = $DFFD
+              IO_CART_OFF  = $DFFF
+
+              STS_INIT  = $B0
+              STS_SYNC  = $B2
+              
+              .byte <start        ;cold start vector
+              .byte >start
+              .byte <startNMI     ;nmi vector
+              .byte >startNMI
+              .byte 'C' + $80, 'B' + $80, 'M' + $80, '80'   ;CBM80
+
+              .text $00, 'VIC Sync Cart and IRQ tester V1.0. Copyright (c) 2011 - Gideon Zweijtzer', $00
+
+startNMI      pla                 ;just ignore pressing restore key
+              tay
+              pla
+              tax
+              pla
+              rti
+              
+start         sei
+              ldy #$5a
+              lda #$7f
+              sta $dd0d
+              lda $dd0d
+              ldx #$00
+              stx $d01a
+              stx $d015
+              dex
+              stx $d019
+                 
+              ldx #$00
+              stx $d011
+              stx $d020
+              stx $d418
+              dex
+              stx $d021
+
+              ldx #exit_end-exit
+-             lda exit-1,x
+              sta $01FF,x
+              dex
+              bne -
+
+test_cart     lda IO_STATUS
+              cmp #STS_INIT
+              beq init_irq
+              lda #$02
+              sta $d020
+              jmp $0200
+              
+
+init_test     lda #<irq_entry_tst
+              sta $0314
+              lda #>irq_entry_tst
+              sta $0315
+
+              ; no more bad lines!
+do_irq_test   lda #$0B
+              sta $d011
+              cli
+                            
+              ldy #$3F
+              
+              ; first check nops
+-             ldx #$3F
+              clc
+-             stx IO_IRQ_REQ
+              nop
+              nop
+              nop
+              nop
+              nop
+              nop
+              dex
+              dex
+              bpl -
+
+; then check the non-taken branches
+              ldx #$3F
+              clc
+-             stx IO_IRQ_REQ
+              bcs +
++             bcs +
++             bcs +
++             bcs +
++             bcs +
++             bcs +
++             dex
+              dex
+              bpl -
+
+              ; now check the taken branches
+              ldx #$3F
+              clc
+-             stx IO_IRQ_REQ
+              bcc +
++             bcc +
++             bcc +
++             bcc +
++             bcc +
++             bcc +
++             dex
+              dex
+              bpl -
+
+              ; now check a RMW instruction
+              ldx #$6F
+              clc
+-             stx IO_IRQ_REQ
+              lsr $FD
+              lsr $FD
+              lsr $FD
+              dex
+              dex
+              bpl -
+
+              dey
+              bne --
+
+init_irq      sei
+              lda #<irq_entry_vic
+              sta $0314
+              lda #>irq_entry_vic
+              sta $0315
+
+              lda #$00
+              sta $02
+              lda #$01
+              sta $d012
+              lda #$1b
+              sta $d011
+              lda #$01
+              sta $d01a
+
+init_vic      lda #$64
+              ldx #$00
+-             sta $d000,x
+              inx
+              cpx #$10
+              bne -
+              lda #$00
+              sta $d010
+              lda #$ff
+              sta $d015
+              lda #$00
+              sta $d017 ; no y exp
+              sta $d01d ; no x exp
+
+              cli
+              
+test_sync     lda IO_STATUS
+              cmp #STS_SYNC
+              bne test_sync
+              
+              ; turn off sprites again
+              lda #$00
+              sta $d015              
+              ; turn off interrupts as well
+              sta $d01a
+
+              lda #$ff
+              ldx $d01e
+              sta $d01e
+              ldx $d01f
+              sta $d01f              
+              sta $d019 ; clear all interrupts
+              
+reboot        jmp $0200
+
+
+exit          sta IO_ROM_OFF
+              sta IO_CART_OFF
+              jmp $fce2
+exit_end      nop
+
+irq_entry_vic pha
+              lda #$01
+              sta $d019
+              inc $02
+              lda $02
+              cmp #$50
+              bne +
+              sta IO_CART_SYNC
+              lda #$05
+              sta $d020
++             pla
+              jmp $ea31
+
+irq_entry_tst sta IO_IRQ_ACK
+              jmp $ea31
+              
+
+fileEnd

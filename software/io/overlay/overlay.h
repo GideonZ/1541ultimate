@@ -38,7 +38,7 @@ class Overlay : public GenericHost
 {
     Keyboard *keyb;
 public:
-    Overlay() {
+    Overlay(bool active) {
         keyb = NULL;
         
         if(CAPABILITIES & CAPAB_OVERLAY) {
@@ -53,7 +53,7 @@ public:
             CHARGEN_POINTER_HI       = 0;
             CHARGEN_POINTER_LO       = 0;
             CHARGEN_PERFORM_SYNC     = 0;
-            CHARGEN_TRANSPARENCY     = 4;
+            CHARGEN_TRANSPARENCY     = (active)?0x84:0x04;
 
             keyb = new Keyboard(this, &CHARGEN_KEYB_ROW, &CHARGEN_KEYB_COL);
         }
@@ -77,8 +77,12 @@ public:
     
     void poll(Event &e) { }
     void reset(void) { }
-    void freeze(void) { }
-    void unfreeze(Event &e) { }
+    void freeze(void) {
+        CHARGEN_TRANSPARENCY = 0x86;
+    }
+    void unfreeze(Event &e) {
+        CHARGEN_TRANSPARENCY = 0x06;
+    }
 
     char *get_screen(void) { return (char *)CHARGEN_SCREEN_RAM; }
     char *get_color_map(void) { return (char *)CHARGEN_COLOR_RAM; }

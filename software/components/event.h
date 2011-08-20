@@ -14,6 +14,7 @@ typedef enum _event_type {
     e_invalidate,
     e_detach_disk,
     e_button_press,
+    e_copper_capture,
     e_unfreeze,
     e_dma_load,
     e_object_private_cmd,
