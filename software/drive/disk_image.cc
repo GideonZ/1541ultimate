@@ -373,8 +373,8 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 
 void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, bool report)
 {
-	id2 = bin_image->bin_data[91554];
-    id1 = bin_image->bin_data[91555];
+	id1 = bin_image->bin_data[91554];
+    id2 = bin_image->bin_data[91555];
 
     BYTE *gcr = gcr_image; // internal storage
     BYTE *newgcr;

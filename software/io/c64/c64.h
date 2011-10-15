@@ -47,8 +47,17 @@
 #define C64_DO_STOP        0x01
 #define C64_HAS_STOPPED    0x02
 
-#define DMA_RUN    0xBC
-#define DMA_BASIC  0x80
+#define RUNCODE_LOAD_BIT           0x01
+#define RUNCODE_RUN_BIT            0x02
+#define RUNCODE_TAPE_BIT           0x20
+#define RUNCODE_REAL_BIT           0x40
+#define RUNCODE_MOUNT_BIT          0x80
+
+#define RUNCODE_DMALOAD_RUN       (RUNCODE_LOAD_BIT | RUNCODE_RUN_BIT)
+#define RUNCODE_DMALOAD           (RUNCODE_LOAD_BIT)
+#define RUNCODE_MOUNT_DMALOAD_RUN  (RUNCODE_MOUNT_BIT | RUNCODE_LOAD_BIT | RUNCODE_RUN_BIT)
+#define RUNCODE_MOUNT_LOAD_RUN     (RUNCODE_MOUNT_BIT | RUNCODE_REAL_BIT | RUNCODE_LOAD_BIT | RUNCODE_RUN_BIT)
+#define RUNCODE_TAPE_LOAD_RUN     (RUNCODE_TAPE_BIT | RUNCODE_REAL_BIT | RUNCODE_LOAD_BIT | RUNCODE_RUN_BIT)
 
 #define VIC_REG(x)   *((volatile BYTE *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile BYTE *)(C64_MEMORY_BASE + 0xDC00 + x))
@@ -156,5 +165,12 @@ public:
 };
 
 extern C64   *c64;
+
+class C64Event
+{
+ public:
+    static int prepare_dma_load(File *f, const char *name, int len, BYTE run_mode, WORD reloc=0);
+    static int perform_dma_load(File *f, BYTE run_mode, WORD reloc=0);
+};
 
 #endif

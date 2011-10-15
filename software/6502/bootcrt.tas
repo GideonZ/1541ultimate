@@ -1,0 +1,464 @@
+;**************************************************************************
+;*
+;* FILE  bootcrt.tas
+;* Copyright (c) 2011 Daniel Kahlin <daniel@kahlin.net>
+;* Written by Daniel Kahlin <daniel@kahlin.net>
+;*
+;* DESCRIPTION
+;*   Boot Cartridge for the 1541-Ultimate
+;*
+;******
+        * = $8000
+
+flag_zp	= $02
+runcode = $0162
+device  = $0163
+namelen = $0164
+name    = $0165
+
+RUNCODE_LOAD_BIT	  = %00000001
+RUNCODE_RUN_BIT           = %00000010
+RUNCODE_TAPE_BIT	  = %00100000
+RUNCODE_REAL_BIT	  = %01000000
+RUNCODE_MOUNT_BIT         = %10000000
+
+RUNCODE_DMALOAD_RUN       = %00000011
+RUNCODE_DMALOAD           = %00000001
+RUNCODE_MOUNT_DMALOAD_RUN = %10000011
+RUNCODE_MOUNT_LOAD_RUN    = %11000011
+
+	
+;**************************************************************************
+;*
+;* NAME  cartridge header
+;*
+;* DESCRIPTION
+;*   Normal $8000 cartridge header
+;*
+;******
+        .word   cold_start
+        .word   warm_start
+        .byte   "C"|$80,"B"|$80,"M"|$80,"8","0"
+
+; ident
+	.text	0,"Ultimate Boot Cartridge / TLR",0
+	
+;**************************************************************************
+;*
+;* NAME  cold_start
+;*
+;* DESCRIPTION
+;*   Make minimal setup.  Force cartridge of and reset if flag signals that
+;*   a transfer is in progress.
+;*
+;******
+cold_start
+	sei
+	cld
+	ldx	#$ff
+	txs
+
+	lda	flag_zp
+	bmi	main_start
+
+clean_reset
+	ldx	#RESET_TRAMPOLINE_LEN
+cr_lp1
+	lda	reset_trampoline-1,x
+	sta	$d000-1,x
+	dex
+	bne	cr_lp1
+	jmp	$d000
+
+reset_trampoline
+	sta	$dfff		; disable boot cart
+	jmp	($fffc)
+RESET_TRAMPOLINE_LEN	= *-reset_trampoline
+	
+
+;**************************************************************************
+;*
+;* NAME  warm_start
+;*
+;* DESCRIPTION
+;*   Acknowledge NMI and return immediately.
+;*
+;******
+warm_start
+	bit	$dd0d
+	pla
+	tay
+	pla
+	tax
+	pla
+	rti
+
+
+;**************************************************************************
+;*
+;* NAME  main_start
+;*
+;* DESCRIPTION
+;*   Perform load.
+;*   Acc = flag_zp, X=$FF.
+;*
+;******
+main_start
+	jsr	$fda3
+	jsr	clone_fd50
+	jsr	clone_fd15
+	jsr	$ff5b
+
+; init basic vectors
+	jsr	$e453
+; init basic storage (sets $01fc and $01fd to $01)
+	jsr	$e3bf
+; basic start message + new (resets stack pointer to $fa)
+	jsr	$e422
+
+	jsr	wait_cart_ready
+;******
+;* LOAD
+	bit	runcode		; test real bit
+	bvs	ms_skp1
+
+	jsr	dma_load
+	jmp	ms_skp3
+
+kbuffer
+	.text	13,"RUN",13
+KBUFFER_LEN	= *-kbuffer
+ms_skp1
+	lda	runcode
+	and	#RUNCODE_TAPE_BIT
+	bne	ms_skp2
+	jsr	print_load
+	lda	#145		;CRSR-UP
+	jsr	$ffd2
+	jsr	$ffd2
+	lda	#0
+	sta	$d3		;reset column
+	sei
+	ldx	#KBUFFER_LEN
+	stx	$c6
+ms_lp1
+	lda	kbuffer-1,x
+	sta	$0277-1,x
+	dex
+	bne	ms_lp1
+
+	jmp	exit_basic
+
+kbuffer2
+	.text	"LOAD",13,"RUN",13
+KBUFFER2_LEN	= *-kbuffer2
+ms_skp2
+	lda	#145		;CRSR-UP
+	jsr	$ffd2
+	jsr	$ffd2
+	lda	#0
+	sta	$d3		;reset column
+	sei
+	ldx	#KBUFFER2_LEN
+	stx	$c6
+ms_lp2
+	lda	kbuffer2-1,x
+	sta	$0277-1,x
+	dex
+	bne	ms_lp2
+
+	jmp	exit_basic
+
+ms_skp3
+;******
+;* RUN
+	lda	runcode
+	and	#RUNCODE_RUN_BIT
+	beq	load_program
+
+	jsr	print_run
+	jmp	run_program
+
+
+;**************************************************************************
+;*
+;* NAME  wait_cart_ready
+;*
+;* DESCRIPTION
+;*   Wait until cart is ready.  Print mounting... if disk is being mounted.
+;*
+;******
+wait_cart_ready
+	jsr	print_cr
+
+	bit	runcode
+	bpl	wcr_skp1
+
+; print "MOUNTING..."
+	lda	#<mount_msg
+	ldy	#>mount_msg
+	jsr	$ab1e
+wcr_skp1
+	
+; wait for cart to be ready
+wcr_lp1
+	bit	flag_zp
+	bvc	wcr_lp1
+
+	ldy	$d3
+	beq	wcr_skp2
+
+; blank out "MOUNTING..."
+	lda	#$20
+wcr_lp2
+	sta	($d1),y
+	dey
+	bpl	wcr_lp2
+	iny
+	sty	$d3
+
+wcr_skp2
+
+; print "READY."
+	lda	#<ready_msg
+	ldy	#>ready_msg
+	jsr	$ab1e
+	rts
+
+mount_msg
+	.text	"MOUNTING...",0
+ready_msg
+	.text	"READY.",13,0
+
+;**************************************************************************
+;*
+;* NAME  dma_load
+;*
+;* DESCRIPTION
+;*   Perform DMA load
+;*
+;******
+dma_load
+	jsr	print_load
+	jsr	print_load2
+	sei
+	ldx	#DMA_LOADER_LEN
+dl_lp1
+	lda	dma_loader_st-1,x
+	sta	DMA_LOADER-1,x
+	dex
+	bne	dl_lp1
+
+	lda	#1
+	ldx	#$34
+	ldy	$01
+	jsr	DMA_LOADER
+	rts
+	
+DMA_LOADER	= $0150
+dma_loader_st
+	stx	$01
+	sta	flag_zp		; signal to allow DMA
+dl_lp2
+	lda	flag_zp		; wait for DMA complete signal from cart
+	bne	dl_lp2
+
+	sty	$01
+	rts
+DMA_LOADER_LEN	= *-dma_loader_st
+
+
+;**************************************************************************
+;*
+;* NAME  run_program, load_program, exit_basic
+;*
+;* DESCRIPTION
+;*   run program
+;*
+;******
+exit_basic
+	ldy	#2
+	.byte	$2c
+load_program
+	ldy	#1
+	.byte	$2c
+run_program
+	ldy	#0
+	sei
+	ldx	#RUNNER_LEN
+rp_lp1
+	lda	runner_st-1,x
+	sta	RUNNER-1,x
+	dex
+	bne	rp_lp1
+
+	tya
+	beq	rp_skp1		;Y=0, run program
+	lda	#$74
+	sta	runner_runjmp+1
+	lda	#$a4
+	sta	runner_runjmp+2
+	dey
+	beq	rp_skp1		;Y=1, load program
+; Y=2, exit to basic
+	lda	#$2c
+	sta	runner_relinkjsr
+
+rp_skp1
+
+; important for basic
+	ldx	#$fb
+	txs
+
+; turn of os messages for run
+	lda	#$00
+	jsr	$ff90
+
+	jmp	RUNNER
+
+RUNNER		=	$0150
+runner_st
+	sta	$dfff		; disable boot cart
+	cli
+runner_relinkjsr = *-runner_st+RUNNER
+	jsr	$a533		; relink
+	jsr	$a659		; clr, setup chrget/chrgot ptr
+runner_runjmp	= *-runner_st+RUNNER
+	jmp	$a7ae		; run
+RUNNER_LEN	= *-runner_st
+
+;**************************************************************************
+;*
+;* NAME  clone_fd50
+;*
+;* DESCRIPTION
+;*   Clone the memory init at $fd50 without memtest.
+;*
+;******
+clone_fd50
+	lda	#0
+	tay
+cfd50_lp1
+;	sta	$0002,y
+	sta	$0003,y		;Make sure flag_zp ($02) is preserved.
+	sta	$0200,y
+	sta	$0300,y
+	iny
+	bne	cfd50_lp1
+
+	ldx	#$03
+	lda	#$3c
+	sta	$b2
+	stx	$b3
+
+	ldx	#$00
+	ldy	#$a0
+	jmp	$fd8c	;Set MemBounds
+
+;**************************************************************************
+;*
+;* NAME  clone_fd15
+;*
+;* DESCRIPTION
+;*   Clone the vector setup at $fd15 without trashing memory below kernal
+;*
+;******
+clone_fd15
+	ldy	#$1f
+cfd15_lp1
+	lda	$fd30,y
+	sta	$0314,y
+	dey
+	bpl	cfd15_lp1
+	rts
+
+;**************************************************************************
+;*
+;* NAME  print_load
+;*
+;* DESCRIPTION
+;*   print load message
+;*
+;******
+print_load
+	lda	#<load1_msg
+	ldy	#>load1_msg
+	jsr	$ab1e
+	jsr	print_quote
+	jsr	print_name
+	jsr	print_quote
+	jsr	print_comma
+	ldx	device
+	lda	#0
+	jsr	$bdcd
+	jsr	print_comma
+	lda	#"1"
+	jmp	$ffd2
+;	rts
+
+print_load2
+	lda	#<load2_msg
+	ldy	#>load2_msg
+	jsr	$ab1e
+	jsr	print_name
+	lda	#<load3_msg
+	ldy	#>load3_msg
+	jmp	$ab1e
+;	rts
+
+load1_msg
+	.text	"LOAD",0
+load2_msg
+	.text	13,13,"SEARCHING FOR ",0
+load3_msg
+	.text   13,"LOADING"
+	.text	0
+
+print_name
+	ldx	#0
+pn_lp1
+	cpx	namelen
+	beq	pn_ex1
+	lda	name,x
+	jsr	$ffd2
+	inx
+	bne	pn_lp1
+pn_ex1
+	rts
+
+;**************************************************************************
+;*
+;* NAME  print_cr, print_quote, print_comma
+;*
+;* DESCRIPTION
+;*   Print common single chars.
+;*
+;******
+print_cr
+	lda	#13
+	.byte	$2c
+print_quote
+	lda	#34
+	.byte	$2c
+print_comma
+	lda	#","
+	jmp	$ffd2
+
+;**************************************************************************
+;*
+;* NAME  print_run
+;*
+;* DESCRIPTION
+;*   print run message
+;*
+;******
+print_run
+	lda	#<run_msg
+	ldy	#>run_msg
+	jmp	$ab1e
+run_msg
+	.text	13,"READY.",13
+	.text	"RUN",13
+	.text	0
+
+; eof

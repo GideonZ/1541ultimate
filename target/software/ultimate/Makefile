@@ -133,7 +133,7 @@ SRCS_CC	 =  stream.cc \
 
 SRCS_ASM =  crt0_appl.s
 
-SRCS_6502 = sidcrt.tas
+SRCS_6502 = sidcrt.tas bootcrt.tas
 
 SRCS_BIN =  chars.bin
 

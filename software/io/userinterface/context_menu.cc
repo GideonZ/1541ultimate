@@ -110,6 +110,7 @@ int ContextMenu :: handle_key(char c)
     int ret = 0;
     
     switch(c) {
+        case 0x9D: // left
         case 0x03: // runstop
             //clean_up();
             ret = -1;

@@ -1,3 +1,29 @@
+/*
+ * c64.cc
+ *
+ * Written by 
+ *    Gideon Zweijtzer <info@1541ultimate.net>
+ *    Daniel Kahlin <daniel@kahlin.net>
+ *
+ *  This file is part of the 1541 Ultimate-II application.
+ *  Copyright (C) 200?-2011 Gideon Zweijtzer <info@1541ultimate.net>
+ *  Copyright (C) 2011 Daniel Kahlin <daniel@kahlin.net>
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
 #include "menu.h"
 #include "integer.h"
 extern "C" {
@@ -10,7 +36,10 @@ extern "C" {
 #include "menu.h"
 #include "userinterface.h"
 
-#define BACKUP_SCREEN
+/* other external references */
+extern BYTE _binary_bootcrt_65_start;
+
+cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
 
 // static pointer
 C64   *c64;
@@ -435,15 +464,7 @@ void C64 :: backup_io(void)
         printf("%b ", CIA1_REG(i));
     } printf("\n");
 
-    // back up screen and color
-#ifdef BACKUP_SCREEN
-    BYTE *screen = (BYTE *)C64_SCREEN;
-    for(i=0;i<COLOR_SIZE;i++) {
-        color_backup[i] = COLOR_RAM(i);
-        screen_backup[i] = screen[i];
-    }
-#endif
-	// back up 2 kilobytes of RAM to do our thing 
+	// back up 3 kilobytes of RAM to do our thing 
 	for(i=0;i<BACKUP_SIZE;i++) {
 		ram_backup[i] = MEM_LOC(i);
 	}
@@ -693,12 +714,14 @@ void C64 :: poll(Event &e)
 	DWORD size;
 	UINT transferred;
 	
-	bool run;
+	int run_code;
 	if(e.type == e_dma_load) {
 		f = (File *)e.object;
-		run = (e.param != 0);
-		dma_load(f, run?DMA_RUN:DMA_BASIC);
-		root.fclose(f);
+		run_code = e.param;
+		dma_load(f, run_code);
+        if (f) {
+            root.fclose(f);
+        }
 //		f->close();
 	} else if((e.type == e_object_private_cmd)&&(e.object == this)) {
 		switch(e.param) {
@@ -757,16 +780,44 @@ void C64 :: poll(Event &e)
 #endif
 }
 
+
+// static member
+int C64Event :: prepare_dma_load(File *f, const char *name, int len, BYTE run_code, WORD reloc)
+{
+    C64_POKE(0x162, run_code);
+
+    for (int i=0; i < len; i++) {
+        C64_POKE(0x165+i, name[i]);
+    }
+    C64_POKE(0x164, len);
+
+    C64_POKE(2, 0x80); // initial boot cart handshake
+    boot_cart.custom_addr = (void *)&_binary_bootcrt_65_start;
+    push_event(e_unfreeze, (void *)&boot_cart, 1);
+    return 0;
+}
+
+// static member
+int C64Event :: perform_dma_load(File *f, BYTE run_code, WORD reloc)
+{
+    push_event(e_dma_load, f, run_code);
+    return 0;
+}
+
+
+
 int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)
 {
 	// First, check if we have file access
     UINT transferred;
 	WORD load_address;
-    FRESULT res = f->read(&load_address, 2, &transferred);
-    printf("Load address: %4x...", load_address);
-    if(res != FR_OK) {
-    	printf("Can't read from file..\n");
-    	return -1;
+    if (f) {
+        FRESULT res = f->read(&load_address, 2, &transferred);
+        printf("Load address: %4x...", load_address);
+        if(res != FR_OK) {
+            printf("Can't read from file..\n");
+            return -1;
+        }
     }
     load_address = le2cpu(load_address); // make sure we can interpret the word correctly (endianness)
 
@@ -776,44 +827,50 @@ int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)
 
     int max_length = 65536 - int(load_address); // never exceed $FFFF
 
-	// handshake with sid player cart
+	// handshake with boot cart
 	stop(false);
-	C64_POKE(0x162, 0);
+	C64_POKE(0x163, cfg->get_value(CFG_C64_DMA_ID));    // drive number for printout
 
-	int timeout = 0;
-	while(C64_PEEK(2) != 0x01) {
-		resume();
-		timeout++;
-		if(timeout == 60) {
-			init_cartridge();
-			return -1;
-		}
-		wait_ms(25);
-		printf("_");
-		stop(false);
-	}
-    printf("Now loading...");
+	C64_POKE(2, 0x40);  // signal cart ready for DMA load
 
-    /* Now actually load the file */
-    f->read((BYTE *)(C64_MEMORY_BASE + load_address), max_length, &transferred);
-    WORD end_address = load_address + transferred;
-    printf("DMA load complete: $%4x-$%4x Run Code: %b\n", load_address, end_address, run_code);
+    if ( !(run_code & RUNCODE_REAL_BIT) ) {
 
-	C64_POKE(0x0162, run_code);  // handshake
-	C64_POKE(0x00BA, cfg->get_value(CFG_C64_DMA_ID));    // fix drive number
+        int timeout = 0;
+        while(C64_PEEK(2) != 0x01) {
+            resume();
+            timeout++;
+            if(timeout == 60) {
+                init_cartridge();
+                return -1;
+            }
+            wait_ms(25);
+            printf("_");
+            stop(false);
+        }
+        printf("Now loading...");
 
-	C64_POKE(0x002D, end_address);
-	C64_POKE(0x002E, end_address >> 8);
-	C64_POKE(0x002F, end_address);
-	C64_POKE(0x0030, end_address >> 8);
-	C64_POKE(0x0031, end_address);
-	C64_POKE(0x0032, end_address >> 8);
-	C64_POKE(0x00AE, end_address);
-	C64_POKE(0x00AF, end_address >> 8);
+        /* Now actually load the file */
+        f->read((BYTE *)(C64_MEMORY_BASE + load_address), max_length, &transferred);
+        WORD end_address = load_address + transferred;
+        printf("DMA load complete: $%4x-$%4x Run Code: %b\n", load_address, end_address, run_code);
 
-	C64_POKE(0x0090, 0x40); // Load status
-	C64_POKE(0x0035, 0);    // FRESPC
-	C64_POKE(0x0036, 0xA0);
+        C64_POKE(2, 0); // signal DMA load done
+        C64_POKE(0x0162, run_code);
+        C64_POKE(0x00BA, cfg->get_value(CFG_C64_DMA_ID));    // fix drive number
+
+        C64_POKE(0x002D, end_address);
+        C64_POKE(0x002E, end_address >> 8);
+        C64_POKE(0x002F, end_address);
+        C64_POKE(0x0030, end_address >> 8);
+        C64_POKE(0x0031, end_address);
+        C64_POKE(0x0032, end_address >> 8);
+        C64_POKE(0x00AE, end_address);
+        C64_POKE(0x00AF, end_address >> 8);
+
+        C64_POKE(0x0090, 0x40); // Load status
+        C64_POKE(0x0035, 0);    // FRESPC
+        C64_POKE(0x0036, 0xA0);
+    }
 
     printf("Resuming..\n");
     resume();

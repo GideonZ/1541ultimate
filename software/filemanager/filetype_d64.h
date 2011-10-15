@@ -28,12 +28,13 @@ class FileSystemD64 : public FileSystem
 {
     BYTE sect_buffer[256]; // one sector
     BYTE bam_buffer[256];
-    BYTE loop_detect[256];
     bool bam_valid;
     bool bam_dirty;
     int  image_mode;
     int  current_sector;
     int  dirty;
+
+    int  num_sectors;
 
     FRESULT move_window(int);
     int  get_root_sector(void);
@@ -62,7 +63,23 @@ public:
     FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred);
     FRESULT file_seek(File *f, DWORD pos);
     
+    friend class DirInD64;
     friend class FileInD64;
+};
+
+class DirInD64
+{
+    int idx;
+    BYTE *visited;  // this should probably be a bit vector
+
+    FileSystemD64 *fs;
+public:
+    DirInD64(FileSystemD64 *);
+    ~DirInD64() { }
+
+    FRESULT open(FileInfo *info);
+    FRESULT close(void);
+    FRESULT read(FileInfo *f);
 };
 
 class FileInD64
@@ -73,8 +90,11 @@ class FileInD64
     int num_blocks;
     int dir_sect;
     int dir_entry_offset;
+    BYTE *visited;  // this should probably be a bit vector
     
     FileSystemD64 *fs;
+
+    FRESULT visit(void);
 public:
     FileInD64(FileSystemD64 *);
     ~FileInD64() { }
