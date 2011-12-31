@@ -102,9 +102,13 @@ SRCS_BIN =  ultimate.bin \
 			tar_ntsc.bin \
 			tar_pal.bin
 
+ifeq	($(FPGA400), 1)
+	SRCS_BIN += 1st_boot_400.bin
+endif
+    
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -ffunction-sections
-CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0
+CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 -D_FPGA400=$(FPGA400)
 LINK 	 = $(PATH_SW)/system/zpu.lds
 LLIB     =  -L $(ZPU_TOOLCHAIN)/install/lib/gcc/zpu-elf/3.4.2 \
 			-L $(ZPU_TOOLCHAIN)/install/zpu-elf/lib
@@ -149,6 +153,10 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo "Converting $(<F) bitfile to $(@F)"
 	@cd $(dir $<); $(PROMGEN) -r $(<F) $(OUTPUT)/$(@F) >/dev/null; cd $(HERE)
 	
+1st_boot_400.bin: $(1ST_BOOT)/output/1st_boot_400.bit
+	@echo "Converting $(<F) bitfile to $(@F)"
+	@cd $(dir $<); $(PROMGEN) -r $(<F) $(OUTPUT)/$(@F) >/dev/null; cd $(HERE)
+
 %.bo: %.bin
 	@echo "Converting $(<F) binary to $(@F).."
 	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(<F) $(OUTPUT)/$(@F); cd $(HERE)

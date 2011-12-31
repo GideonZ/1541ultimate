@@ -198,8 +198,8 @@ bool AT45_Flash :: wait_ready(int time_out)
     SPI_FLASH_DATA = AT45_StatusRegisterRead;
     do {
 		last_status = SPI_FLASH_DATA;
-		if(last_status & 0x10) {
-			debug(("Flash protected.\n"));
+		if(last_status & 0x02) {
+			error(("Flash protected.\n"));
 			ret = false;
 			break;
 		}
@@ -208,7 +208,7 @@ bool AT45_Flash :: wait_ready(int time_out)
 			break;
 		}
         if((--i)<0) {
-            debug(("Flash timeout.\n"));
+            error(("Flash timeout.\n"));
             ret = false;
 			break;
         }
@@ -270,8 +270,7 @@ void AT45_Flash :: clear_config_page(int page)
     wait_ready(250000);
 }
 
-/*
-void AT45_Flash :: read_page(int page, void *buffer)
+bool AT45_Flash :: read_page(int page, void *buffer)
 {
     int device_addr = (page << page_shift);
     int len = (page_size >> 2);
@@ -286,8 +285,8 @@ void AT45_Flash :: read_page(int page, void *buffer)
         *(buf++) = SPI_FLASH_DATA_32;
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    return true;
 }
-*/
 
 bool AT45_Flash :: write_page(int page, void *buffer)
 {
@@ -316,8 +315,10 @@ bool AT45_Flash :: write_page(int page, void *buffer)
     ret = wait_ready(50000);
 	if(!ret)
 		return ret;
-	if(last_status & 0x40) // compare failed
+	if(last_status & 0x40) { // compare failed
+	    error(("AT45 write page: verify failed.\n"));
 		return false;
+    }
 	return true;
 }
 
@@ -340,7 +341,18 @@ int AT45_Flash :: page_to_sector(int page)
 {
 	return (page / sector_size);
 }
-
+/*
+static BYTE rotate(BYTE t)
+{
+    BYTE r = 0;
+    for(int b=0;b<8;b++) {
+        r <<= 1;
+        r |= (t & 1);
+        t >>= 1;
+    }
+    return r;
+}
+*/
 void AT45_Flash :: reboot(int addr)
 {
     int page = addr / page_size;
@@ -350,11 +362,14 @@ void AT45_Flash :: reboot(int addr)
     BYTE icap_sequence[20] = { 0xAA, 0x99, 0x32, 0x61,    0,    0, 0x32, 0x81,    0,    0,
                                0x32, 0xA1, 0x00, 0x4F, 0x30, 0xA1, 0x00, 0x0E, 0x20, 0x00 };
 
-    icap_sequence[4] = (device_addr >> 8);
-    icap_sequence[5] = (device_addr >> 0);
-    icap_sequence[9] = (device_addr >> 16);
+    icap_sequence[4] = device_addr >> 8;
+    icap_sequence[5] = device_addr >> 0;
+    icap_sequence[9] = device_addr >> 16;
     icap_sequence[8] = AT45_ContinuousArrayRead_LowFrequency;
 
+    for(int i=0;i<20;i++) {
+        printf("%b ", icap_sequence[i]);
+    }
     ICAP_PULSE = 0;
     ICAP_PULSE = 0;
     for(int i=0;i<20;i++) {
@@ -362,7 +377,7 @@ void AT45_Flash :: reboot(int addr)
     }
     ICAP_PULSE = 0;
     ICAP_PULSE = 0;
-    debug(("You should never see this!\n"));
+    error(("You should never see this!\n"));
 }
 
 bool AT45_Flash :: protect_configure(void)

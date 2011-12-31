@@ -14,6 +14,7 @@ generic (
     g_clock_freq    : natural := 50_000_000;
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
+    g_fpga_type     : natural := 0;
     g_boot_rom      : boolean := false;
     g_video_overlay : boolean := false;
     g_icap          : boolean := false;
@@ -187,6 +188,7 @@ architecture logic of ultimate_logic is
         cap(18) := to_std(g_command_intf);
         cap(19) := to_std(g_vic_copper);
         cap(20) := to_std(g_video_overlay);
+        cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
         return cap;
@@ -383,8 +385,8 @@ begin
             g_audio_tag     => c_tag_1541_audio_1,
             g_audio         => g_drive_sound,
             g_audio_div     => (g_clock_freq / 22500),
-            g_audio_base    => X"0F50000",
-            g_ram_base      => X"0F60000" )
+            g_audio_base    => X"0EC0000",
+            g_ram_base      => X"0EE0000" )
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
@@ -443,8 +445,8 @@ begin
             g_audio_tag     => c_tag_1541_audio_2,
             g_audio         => g_drive_sound,
             g_audio_div     => (g_clock_freq / 22500),
-            g_audio_base    => X"0F50000",
-            g_ram_base      => X"0F40000" )
+            g_audio_base    => X"0EC0000",
+            g_ram_base      => X"0ED0000" )
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
@@ -526,8 +528,8 @@ begin
             g_tag_slot      => c_tag_slot,
             g_tag_reu       => c_tag_reu,
             g_ram_base_reu  => X"1000000", -- should be on 16M boundary, or should be limited in size
-            g_rom_base_cart => X"0F80000", -- should be on a 512K boundary
-            g_ram_base_cart => X"0F70000", -- should be on a 64K boundary
+            g_rom_base_cart => X"0F00000", -- should be on a 1M boundary
+            g_ram_base_cart => X"0EF0000", -- should be on a 64K boundary
             g_control_read  => true,
             g_ram_expansion => g_ram_expansion,
             g_extended_reu  => g_extended_reu,

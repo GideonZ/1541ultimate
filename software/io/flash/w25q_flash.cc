@@ -204,9 +204,7 @@ void W25Q_Flash :: clear_config_page(int page)
     erase_sector(page / sector_size); // silly.. divide and later multiply.. oh well!
 }
     
-
-/*
-void W25Q_Flash :: read_page(int page, void *buffer)
+bool W25Q_Flash :: read_page(int page, void *buffer)
 {
     int device_addr = (page << W25Q_PageShift);
     int len = 1 << (W25Q_PageShift - 2);
@@ -221,8 +219,8 @@ void W25Q_Flash :: read_page(int page, void *buffer)
         *(buf++) = SPI_FLASH_DATA_32;
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    return true;
 }
-*/
 
 bool W25Q_Flash :: write_page(int page, void *buffer)
 {

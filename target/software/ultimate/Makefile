@@ -86,6 +86,8 @@ SRCS_CC	 =  stream.cc \
 			filetype_sid.cc \
 			filetype_reu.cc \
 			filetype_iso.cc \
+			filetype_crt.cc \
+			filetype_bit.cc \
 			rtc.cc \
 			usb.cc \
 			usb_hub.cc \
@@ -121,21 +123,22 @@ SRCS_CC	 =  stream.cc \
 			userinterface.cc \
 			ui_stream.cc \
 			tree_browser.cc \
+			tree_browser_state.cc \
 			stream_menu.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
 			audio_select.cc \
-			copper.cc \
 			$(PRJ).cc
 
+####			copper.cc \
 ####			command_intf.cc \
 
 SRCS_ASM =  crt0_appl.s
 
-SRCS_6502 = sidcrt.tas bootcrt.tas
+SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas
 
-SRCS_BIN =  chars.bin
+SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -ffunction-sections

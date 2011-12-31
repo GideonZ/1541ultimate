@@ -53,6 +53,11 @@ struct t_cfg_definition c1541_config[] = {
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
+extern BYTE _binary_1541_bin_start;
+extern BYTE _binary_1541c_bin_start;
+extern BYTE _binary_1541_ii_bin_start;
+extern BYTE _binary_sounds_bin_start;
+
 //--------------------------------------------------------------
 // C1541 Drive Class
 //--------------------------------------------------------------
@@ -99,7 +104,8 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
 	if(flash) {
 	    void *audio_address = (void *)(((DWORD)registers[C1541_AUDIO_ADDR]) << 16);
 	    printf("C1541 Audio address: %p, loading... \n", audio_address);
-	    flash->read_image(FLASH_ID_SOUNDS, audio_address, 0x4800);
+//	    flash->read_image(FLASH_ID_SOUNDS, audio_address, 0x4800);
+        memcpy(audio_address, &_binary_sounds_bin_start, 0x4800);
 	}    
 	main_menu_objects.append(this);
 
@@ -241,15 +247,18 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
     switch(rom) {
         case e_rom_1541:
 			printf("CBM1541\n");
-            flash->read_image(FLASH_ID_ROM1541, (void *)&memory_map[0xC000], 0x4000);
+//            flash->read_image(FLASH_ID_ROM1541, (void *)&memory_map[0xC000], 0x4000);
+            memcpy((void *)&memory_map[0xC000], &_binary_1541_bin_start, 0x4000);
             break;
         case e_rom_1541ii:
 			printf("1541-II\n");
-            flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
+//            flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
+            memcpy((void *)&memory_map[0xC000], &_binary_1541_ii_bin_start, 0x4000);
             break;
         case e_rom_1541c:
 			printf("1541C\n");
-            flash->read_image(FLASH_ID_ROM1541C, (void *)&memory_map[0xC000], 0x4000);
+//            flash->read_image(FLASH_ID_ROM1541C, (void *)&memory_map[0xC000], 0x4000);
+            memcpy((void *)&memory_map[0xC000], &_binary_1541c_bin_start, 0x4000);
             break;
         default: // custom
             f = root.fopen(custom, FA_READ);
@@ -261,7 +270,8 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
 				else
 					offset = 0x10000 - info->size;
 
-				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
+//				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
+                memcpy((void *)&memory_map[0xC000], &_binary_1541_ii_bin_start, 0x4000);
 				res = f->read((void *)&memory_map[offset], 0x8000, &transferred);
 				root.fclose(f);
 				if(res != FR_OK) {
@@ -272,7 +282,8 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
 				}
 			} else {
 				printf("C1541: Failed to open custom file.\n");
-				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
+//				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
+                memcpy((void *)&memory_map[0xC000], &_binary_1541_ii_bin_start, 0x4000);
 			}
     }
 	if(!large_rom) // if rom <= 16K, then mirror it

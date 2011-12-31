@@ -15,6 +15,7 @@ Copper copper; // this global causes us to run!!
 #define COPPER_MENU_BREAK       0x6303
 #define COPPER_MENU_TIMED_WRITE 0x6304
 #define COPPER_MENU_WRITE_STATE 0x6305
+#define COPPER_MENU_SWEEP       0x6306
 
 static void poll_copper(Event &e)
 {
@@ -44,7 +45,8 @@ int  Copper :: fetch_task_items(IndexedList<PathObject*> &item_list)
 	item_list.append(new ObjectMenuItem(this, "Copper Break", COPPER_MENU_BREAK));
 	item_list.append(new ObjectMenuItem(this, "Copper Timed Write", COPPER_MENU_TIMED_WRITE));
 	item_list.append(new ObjectMenuItem(this, "Copper Write State", COPPER_MENU_WRITE_STATE));
-	return 5;
+	item_list.append(new ObjectMenuItem(this, "Copper Sweep Parameter", COPPER_MENU_SWEEP));
+	return 6;
 }
 
 void Copper :: poll(Event &e)
@@ -66,6 +68,9 @@ void Copper :: poll(Event &e)
                     break;
                 case COPPER_MENU_WRITE_STATE:
                     write_state();
+                    break;
+                case COPPER_MENU_SWEEP:
+                    sweep();
                     break;
 				default:
 					break;
@@ -288,4 +293,73 @@ void Copper :: write_state(void)
     } else {
         printf("Couldn't open file..\n");
     }
+}
+
+void Copper :: sweep(void)
+{
+    static BYTE copper_list[] = { // init
+       COPCODE_WAIT_SYNC, // 0
+       COPCODE_WAIT_UNTIL, 0x0F, 0x0C, // 1, 2, 3
+//       COPCODE_WRITE_REG + 0x21, 0x0D,
+//       COPCODE_WRITE_REG + 0x21, 0x00,
+//       COPCODE_WAIT_FOR, 61, // two cycles already used
+       COPCODE_WRITE_REG + 0x21, 0x06,
+       COPCODE_WRITE_REG + 0x18, 0x02,
+       COPCODE_WRITE_REG + 0x18, 0x12,
+       COPCODE_WRITE_REG + 0x21, 0x07,
+       COPCODE_WRITE_REG + 0x21, 0x00,
+       COPCODE_WRITE_REG + 0x20, 0x07,
+       COPCODE_WRITE_REG + 0x20, 0x0B,
+       COPCODE_REPEAT };
+
+    C64_POKE(1024, 18);
+//    for(int i=0;i<40;i++) {
+//        C64_POKE(0xD800+i, 0x0e);
+//    }
+
+    Keyboard *keyb = c64->get_keyboard();
+    
+    COPPER_BREAK = 1;
+
+    // len = 14
+    for(int i=0;i<40;i++) {
+        COPPER_RAM(i) = copper_list[i];
+        printf("%b ", copper_list[i]);
+    }
+    printf("\n");
+
+    COPPER_COMMAND = COPPER_CMD_PLAY;
+
+    BYTE a, b, c;
+    int cycle = 3495;
+    do {
+        c = keyb->getch();
+        switch(c) {
+            case 0x1D:
+                cycle ++;
+                break;
+            case 0x9D:
+                cycle --;
+                break;
+            case 0x11:
+                cycle += 63;
+                break;
+            case 0x91:
+                cycle -= 63;
+                break;
+            default:
+                break;
+        }
+        if(c != 0) {
+            a = BYTE(cycle & 0xFF);
+            b = BYTE(cycle >> 8);
+            COPPER_RAM(3) = b;
+            COPPER_RAM(2) = a;
+            printf("Line: %d. Cycle: %d.\n", 1+(cycle/63), 1+(cycle%63));
+        }
+    } while(c != 0x03);
+
+    COPPER_BREAK = 1;
+    C64_POKE(0xD011, 0x1B);
+    C64_POKE(0xD016, 0x08);
 }

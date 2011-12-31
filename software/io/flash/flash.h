@@ -59,10 +59,12 @@ public:
 	virtual void get_image_addresses(int image_id, t_flash_address *addr) { }
 
 	// Interface for flashing images
+    virtual int  get_number_of_pages(void) { return 1; }
 	virtual int  get_page_size(void) { return 1; } // programmable block
     virtual int  get_sector_size(int addr) { return 1; }
     virtual bool erase_sector(int sector) { return false; }
 	virtual int  page_to_sector(int page) { return -1; }
+    virtual bool read_page(int page, void *buffer) { return false; }
 	virtual bool write_page(int page, void *buffer) { return false; }
 	virtual bool need_erase(void) { return false; }
 	

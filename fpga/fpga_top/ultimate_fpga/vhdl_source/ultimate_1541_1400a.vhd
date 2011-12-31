@@ -9,7 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_1541_1400a is
 generic (
-    g_version       : unsigned(7 downto 0) := X"62" );
+    g_version       : unsigned(7 downto 0) := X"AB" );
 port (
     CLOCK       : in    std_logic;
     
@@ -129,6 +129,12 @@ architecture structural of ultimate_1541_1400a is
     signal mem_req          : t_mem_req;
     signal mem_resp         : t_mem_resp;
 
+    -- IEC open drain
+    signal iec_atn_o   : std_logic;
+    signal iec_data_o  : std_logic;
+    signal iec_clock_o : std_logic;
+    signal iec_srq_o   : std_logic;
+    
     -- debug
     signal scale_cnt        : unsigned(11 downto 0) := X"000";
     attribute iob : string;
@@ -159,23 +165,27 @@ begin
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
+        g_icap          => true,
         g_uart          => true,
         g_drive_1541    => true,
-        g_drive_1541_2  => false,
+        g_drive_1541_2  => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
-        g_stereo_sid    => false,
+        g_stereo_sid    => true,
         g_hardware_iec  => false,
         g_iec_prog_tim  => false,
-        g_c2n_streamer  => false,
-        g_c2n_recorder  => false,
+        g_c2n_streamer  => true,
+        g_c2n_recorder  => true,
         g_cartridge     => true,
+		g_command_intf  => true,
         g_drive_sound   => true,
         g_rtc_chip      => true,
         g_rtc_timer     => true,
-        g_usb_host      => false,
-        g_spi_flash     => true )
+        g_usb_host      => true,
+        g_spi_flash     => true,
+        g_vic_copper    => true,
+        g_video_overlay => false )
     port map (
         -- globals
         sys_clock   => sys_clock,
@@ -218,11 +228,17 @@ begin
         PWM_OUT     => PWM_OUT,
     
         -- IEC bus
-        IEC_ATN     => IEC_ATN,
-        IEC_DATA    => IEC_DATA,
-        IEC_CLOCK   => IEC_CLOCK,
-        IEC_RESET   => IEC_RESET,
-        IEC_SRQ_IN  => IEC_SRQ_IN,
+        iec_reset_i => IEC_RESET,
+        iec_atn_i   => IEC_ATN,
+        iec_data_i  => IEC_DATA,
+        iec_clock_i => IEC_CLOCK,
+        iec_srq_i   => IEC_SRQ_IN,
+                                  
+        iec_reset_o => open,
+        iec_atn_o   => iec_atn_o,
+        iec_data_o  => iec_data_o,
+        iec_clock_o => iec_clock_o,
+        iec_srq_o   => iec_srq_o,
                                     
         DISK_ACTn   => DISK_ACTn, -- activity LED
         CART_LEDn   => CART_LEDn,
@@ -265,9 +281,21 @@ begin
         CAS_READ    => CAS_READ,
         CAS_WRITE   => CAS_WRITE,
         
+        vid_clock   => sys_clock,
+        vid_reset   => sys_reset,
+        vid_h_count => X"000",
+        vid_v_count => X"000",
+        vid_active  => open,
+        vid_opaque  => open,
+        vid_data    => open,
+
         -- Buttons
         BUTTON      => button_i );
 
+    IEC_ATN    <= '0' when iec_atn_o   = '0' else 'Z';
+    IEC_DATA   <= '0' when iec_data_o  = '0' else 'Z';
+    IEC_CLOCK  <= '0' when iec_clock_o = '0' else 'Z';
+    IEC_SRQ_IN <= '0' when iec_srq_o   = '0' else 'Z';
 
 	i_memctrl: entity work.ext_mem_ctrl_v4
     generic map (

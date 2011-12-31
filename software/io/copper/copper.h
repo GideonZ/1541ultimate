@@ -41,6 +41,8 @@ class Copper : public ObjectWithMenu
     void timed_write(void);
     void capture(void);
     void write_state(void);
+    void sweep(void);
+    
 public:
 	Copper();
 	~Copper();

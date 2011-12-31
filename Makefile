@@ -5,12 +5,13 @@ all:
 	@svn up
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/fpga -f makefile_700a
+	@$(MAKE) -C target/fpga -f makefile_400a
 	@$(MAKE) -C target/fpga -f makefile_250e
 	@$(MAKE) -C target/software/1st_boot
 	@$(MAKE) -C target/software/2nd_boot
 	@$(MAKE) -C target/software/ultimate
 	@$(MAKE) -C target/software/ultimate appl
-	@$(MAKE) -C target/software/update
+	@$(MAKE) -C target/software/update FPGA400=1
 	@cp target/software/update/result/update.bin .
 	@cp target/software/ultimate/result/appl.bin .
 
@@ -21,7 +22,7 @@ mk2:
 	@$(MAKE) -C target/software/1st_boot
 	@$(MAKE) -C target/software/2nd_boot
 	@$(MAKE) -C target/software/ultimate
-	@$(MAKE) -C target/software/update
+	@$(MAKE) -C target/software/update FPGA400=0
 	@cp target/software/update/result/update.bin .
 
 mk1:
@@ -41,6 +42,7 @@ special:
 	@echo "Bitfiles and application made.. No updater or such available."
 
 loader:
+	@$(MAKE) -C target/fpga -f makefile_boot_400a
 	@$(MAKE) -C target/fpga -f makefile_boot_700a
 	@$(MAKE) -C target/software/programmer
 	@cp target/software/programmer/result/*.bit .

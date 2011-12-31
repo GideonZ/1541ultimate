@@ -2,6 +2,7 @@
 #define CONFIG_MENU_H
 
 #include "tree_browser.h"
+#include "tree_browser_state.h"
 
 class ConfigBrowserState : public TreeBrowserState
 {

@@ -9,7 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_1541_400a is
 generic (
-    g_version       : unsigned(7 downto 0) := X"16" );
+    g_version       : unsigned(7 downto 0) := X"AB" );
 port (
     CLOCK       : in    std_logic;
     
@@ -134,7 +134,7 @@ architecture structural of ultimate_1541_400a is
     signal iec_data_o  : std_logic;
     signal iec_clock_o : std_logic;
     signal iec_srq_o   : std_logic;
-
+    
     -- debug
     signal scale_cnt        : unsigned(11 downto 0) := X"000";
     attribute iob : string;
@@ -165,6 +165,7 @@ begin
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
+        g_fpga_type     => 1,
         g_icap          => true,
         g_uart          => true,
         g_drive_1541    => true,
@@ -175,7 +176,7 @@ begin
         g_stereo_sid    => false,
         g_hardware_iec  => false,
         g_iec_prog_tim  => false,
-        g_c2n_streamer  => true,
+        g_c2n_streamer  => false,
         g_c2n_recorder  => false,
         g_cartridge     => true,
 		g_command_intf  => false,
@@ -183,7 +184,9 @@ begin
         g_rtc_chip      => true,
         g_rtc_timer     => true,
         g_usb_host      => true,
-        g_spi_flash     => true )
+        g_spi_flash     => true,
+        g_vic_copper    => false,
+        g_video_overlay => false )
     port map (
         -- globals
         sys_clock   => sys_clock,
@@ -221,7 +224,7 @@ begin
         --memctrl_idle    => memctrl_idle,
         mem_req     => mem_req,
         mem_resp    => mem_resp,
-         
+                 
         -- PWM outputs (for audio)
         PWM_OUT     => PWM_OUT,
     
@@ -279,6 +282,14 @@ begin
         CAS_READ    => CAS_READ,
         CAS_WRITE   => CAS_WRITE,
         
+        vid_clock   => sys_clock,
+        vid_reset   => sys_reset,
+        vid_h_count => X"000",
+        vid_v_count => X"000",
+        vid_active  => open,
+        vid_opaque  => open,
+        vid_data    => open,
+
         -- Buttons
         BUTTON      => button_i );
 

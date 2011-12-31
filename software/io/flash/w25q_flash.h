@@ -57,9 +57,11 @@ public:
 
 	// Interface for flashing images
 	virtual int  get_page_size(void);
+    virtual int  get_number_of_pages(void) { return total_size; }
     virtual int  get_sector_size(int addr);
     virtual bool erase_sector(int sector);
 	virtual int  page_to_sector(int page);
+	virtual bool read_page(int page, void *buffer);
 	virtual bool write_page(int page, void *buffer);
 	virtual bool need_erase(void) { return true; }
 

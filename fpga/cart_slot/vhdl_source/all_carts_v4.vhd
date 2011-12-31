@@ -7,8 +7,8 @@ use work.slot_bus_pkg.all;
 
 entity all_carts_v4 is
 generic (
-    g_rom_base      : std_logic_vector(27 downto 0) := X"0F80000"; -- multiple of 512K
-    g_ram_base      : std_logic_vector(27 downto 0) := X"0F70000" ); -- multiple of 64K
+    g_rom_base      : std_logic_vector(27 downto 0) := X"0F00000"; -- multiple of 1M
+    g_ram_base      : std_logic_vector(27 downto 0) := X"0EF0000" ); -- multiple of 64K
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -70,7 +70,7 @@ architecture gideon of all_carts_v4 is
     constant c_none         : std_logic_vector(3 downto 0) := "0000";
     constant c_8k           : std_logic_vector(3 downto 0) := "0001";
     constant c_16k          : std_logic_vector(3 downto 0) := "0010";
---    constant c_none         : std_logic_vector(3 downto 0) := "011";
+    constant c_16k_umax     : std_logic_vector(3 downto 0) := "0011";
     constant c_fc3          : std_logic_vector(3 downto 0) := "0100";
     constant c_ss5          : std_logic_vector(3 downto 0) := "0101";
     constant c_retro        : std_logic_vector(3 downto 0) := "0110";
@@ -80,7 +80,8 @@ architecture gideon of all_carts_v4 is
     constant c_epyx         : std_logic_vector(3 downto 0) := "1010";
     constant c_ocean256     : std_logic_vector(3 downto 0) := "1011";
     constant c_domark       : std_logic_vector(3 downto 0) := "1101";
-    
+    constant c_easy_flash   : std_logic_vector(3 downto 0) := "1100";
+
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
     
@@ -190,6 +191,23 @@ begin
                 irq_n     <= not(freeze_trig or freeze_act);
                 nmi_n     <= not(freeze_trig or freeze_act);
 
+            when c_easy_flash =>
+                if io_write='1' and io_addr(8)='0' and cart_en='1' then -- DExx
+                    if io_addr(1)='0' then -- DE00
+                        ext_bank  <= io_wdata(5 downto 3);
+                        bank_bits <= io_wdata(2 downto 0);
+                    else -- DE02
+                        mode_bits <= io_wdata(2 downto 0); -- LED not implemented
+                    end if;
+                end if;
+                game_n    <= not (mode_bits(0) or not mode_bits(2));
+                exrom_n   <= not mode_bits(1);
+                serve_rom <= '1';
+                serve_io1 <= '0'; -- write registers only, no reads
+                serve_io2 <= '1'; -- RAM
+                irq_n     <= '1';
+                nmi_n     <= '1';
+                
             when c_ss5 =>
                 if io_write='1' and io_addr(8) = '0' and cart_en='1' then -- DE00-DEFF
                     bank_bits <= io_wdata(4) & io_wdata(2) & '0';
@@ -229,6 +247,18 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= '1';
 
+            when c_16k_umax =>
+                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
+                    cart_en <= '0'; -- permanent off
+                end if;
+                game_n    <= '0';
+                exrom_n   <= '1';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
             when c_ocean128 =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits <= io_wdata(2 downto 0);
@@ -246,13 +276,14 @@ begin
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits <= io_wdata(2 downto 0);
                     ext_bank  <= '0' & io_wdata(4 downto 3);
+                    mode_bits(0) <= io_wdata(7);
 --                    if io_wdata(7 downto 5) /= "000" then -- permanent off
 --                        cart_en <= '0';
 --                    end if;
                     cart_en <= not (io_wdata(7) or io_wdata(6) or io_wdata(5));
                 end if;
                 game_n    <= '1';
-                exrom_n   <= '0';
+                exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
                 serve_io1 <= '0';
                 serve_io2 <= '0';
@@ -262,7 +293,7 @@ begin
             when c_ocean256 =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits <= io_wdata(2 downto 0);
-                    ext_bank  <= io_wdata(4) & '0' & io_wdata(3);
+                    ext_bank  <= "00" & io_wdata(3);
                 end if;
                 game_n    <= '0';
                 exrom_n   <= '0';
@@ -277,7 +308,7 @@ begin
                     bank_bits <= io_addr(2 downto 0);
                     ext_bank  <= io_addr(5 downto 3);
                 end if;
-                game_n    <= '0';
+                game_n    <= '1';
                 exrom_n   <= '0';
                 serve_rom <= '1';
                 serve_io1 <= '0';
@@ -369,6 +400,15 @@ begin
                 end if;
             end if;
 
+        when c_easy_flash =>
+            -- Little RAM
+            if slot_addr(15 downto 8)=X"DF" then
+                mem_addr_i <= g_ram_base(27 downto 8) & slot_addr(7 downto 0);
+                allow_write <= '1';
+            else
+                mem_addr_i <= g_rom_base(27 downto 20) & slot_addr(13) & ext_bank & bank_bits & slot_addr(12 downto 0);
+            end if;
+
         when c_fc3 =>
             mem_addr_i(15 downto 0) <= bank_bits(15 downto 14) & slot_addr(13 downto 0); -- 16K banks
             
@@ -387,15 +427,15 @@ begin
         when c_8k | c_epyx =>
             mem_addr_i(12 downto 0) <= slot_addr(12 downto 0);
             
-        when c_16k =>
+        when c_16k | c_16k_umax =>
             mem_addr_i(13 downto 0) <= slot_addr(13 downto 0);
         
-        when c_ocean128 | c_system3 =>
-            mem_addr_i(18 downto 0) <= ext_bank & bank_bits & slot_addr(12 downto 0);
+        when c_ocean128 | c_system3 | c_domark | c_ocean256 =>
+            mem_addr_i <= g_rom_base(27 downto 20) & slot_addr(13) & ext_bank & bank_bits & slot_addr(12 downto 0);
 
-        when c_ocean256 =>
-            mem_addr_i(18 downto 0) <= ext_bank & bank_bits & slot_addr(12 downto 0);
-            mem_addr_i(17) <= slot_addr(13); -- map banks 16-31 to $A000. (second 128K)
+--        when c_ocean256 =>
+--            mem_addr_i(18 downto 0) <= ext_bank & bank_bits & slot_addr(12 downto 0);
+--            mem_addr_i(19) <= slot_addr(13); -- map banks 16-31 to $A000. (second 128K)
 
         when others =>
             null;

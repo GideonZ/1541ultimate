@@ -27,6 +27,10 @@ extern BYTE _binary_ultimate_bin_start;
 extern BYTE _binary_ultimate_bin_end;
 extern BYTE _binary_1st_boot_700_bin_start;
 extern BYTE _binary_1st_boot_700_bin_end;
+#if _FPGA400 == 1
+    extern BYTE _binary_1st_boot_400_bin_start;
+    extern BYTE _binary_1st_boot_400_bin_end;
+#endif
 extern BYTE _binary_2nd_boot_bin_start;
 extern BYTE _binary_2nd_boot_bin_end;
 
@@ -214,13 +218,16 @@ void flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
 				last_sector = sector;
 //				printf("Erase %d   \r", sector);
 				if(!flash->erase_sector(sector)) {
-			        user_interface->popup("Programming failed...", BUTTON_CANCEL);
+			        user_interface->popup("Erasing failed...", BUTTON_CANCEL);
 			        return;
 				}
 			}
 		}
         printf("Page %d  \r", page);
-        flash->write_page(page, p);
+        if(!flash->write_page(page, p)) {
+            user_interface->popup("Programming failed...", BUTTON_CANCEL);
+            return;
+        }
         page ++;
         p += page_size;
         length -= page_size;
@@ -245,8 +252,21 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 	
 	flash->protect_disable();
 	last_sector = -1;
+    int fpga_type = (CAPABILITIES & CAPAB_FPGA_TYPE) >> FPGA_TYPE_SHIFT;
 	if(do_update1) {
-	    flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_700_bin_start, &_binary_1st_boot_700_bin_end, FPGA_VERSION, "FPGA");
+        switch(fpga_type) {
+            case 0:
+    	        flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_700_bin_start, &_binary_1st_boot_700_bin_end, FPGA_VERSION, "FPGA");
+    	        break;
+#if _FPGA400 == 1
+    	    case 1:
+    	        flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_400_bin_start, &_binary_1st_boot_400_bin_end, FPGA_VERSION, "FPGA");
+    	        break;
+#endif
+            default:
+                printf("ERROR: Unknown FPGA type detected.\n");
+                while(1);
+	    } 
 	    flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, &_binary_2nd_boot_bin_end, BOOT_VERSION, "Secondary bootloader");
 	}
     if(do_roms) {
@@ -342,6 +362,10 @@ int main()
 	bool do_update2 = false;
     bool virgin = false;
 
+//	flash->protect_disable();
+//    printf("Flash protection disabled.\n");
+//    while(1);
+//
     // virginity check
 	t_flash_address image_address;
 	flash->get_image_addresses(FLASH_ID_AR5PAL, &image_address);

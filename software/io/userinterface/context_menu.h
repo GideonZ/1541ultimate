@@ -2,6 +2,7 @@
 #define CONTEXT_MENU_H
 
 #include "tree_browser.h"
+#include "tree_browser_state.h"
 
 typedef enum _context_state {
     e_new = 0,

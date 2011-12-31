@@ -1,0 +1,450 @@
+;-------------------------------------------------
+; Command Interface I/O Module Tester
+;
+; Programmed by Gideon Zweijtzer
+;
+; Copyright (c) 2011 - Gideon Zweijtzer
+;
+;-------------------------------------------------
+;
+; This module is a resident 8K rom at $8000 that installs some basic extensions.
+; the @ command is added, which sends a command to the Ultimate through the
+; command interface channel. The @ statement also prints the result.
+; the <- statement (arrow left) prints the current remaining data and status,
+; and aborts any command currently active on the Ultimate.
+
+
+            *= $8000            ;base address of cartridge
+
+            AT_TOKEN = $40
+            CMD_IF_CONTROL = $DFF0
+            CMD_IF_COMMAND = $DFF1
+            CMD_IF_RESULT  = $DFF2
+            CMD_IF_STATUS  = $DFF3
+
+            CMD_PUSH_CMD   = $01
+            CMD_NEXT_DATA  = $02
+            CMD_ABORT      = $04
+
+            CMD_STATE_BITS      = $30
+            CMD_STATE_IDLE      = $00
+            CMD_STATE_BUSY      = $10
+            CMD_STATE_LAST_DATA = $20
+            CMD_STATE_MORE_DATA = $30
+
+            .byte <start        ;cold start vector
+            .byte >start
+            .byte <startNMI     ;nmi vector
+            .byte >startNMI
+            .byte 'C' + $80, 'B' + $80, 'M' + $80, '80'   ;CBM80
+
+            .text $00, 'Test routines for Command Interface I/O Module. Copyright (c) 2011 - Gideon Zweijtzer', $00
+
+startNMI    jmp $fe5e
+
+start       sei
+            jsr $ff84       ; init I/O devices / CIA timers
+            jsr $ff87       ; init RAM, tape buffer, screen (replaced by the following)
+            jsr $ff8a       ; restore default IO vectors
+            jsr $ff81     	;(init screen and VIC-Chip the normal way)
+
+            jsr $e453       ; copy BASIC vectors to RAM
+            jsr $e3bf       ; initialize basic
+            jsr $e422       ; print BASIC start up messages
+
+            lda #$0d
+            jsr $ffd2
+
+            jsr get_result
+            jsr get_status
+            lda #$04
+            sta CMD_IF_CONTROL
+
+            lda #<execute
+            ldy #>execute
+            sta $0308
+            sty $0309
+
+            ; reroute trap 1
+            lda $031a
+            ldy $031b
+            sta $cfe0
+            sty $cfe1
+            lda #<trap1
+            ldy #>trap1
+            sta $031a
+            sty $031b
+
+            ; reroute trap 2
+            lda $031c
+            ldy $031d
+            sta $cfe2
+            sty $cfe3
+            lda #<trap2
+            ldy #>trap2
+            sta $031c
+            sty $031d
+
+            ; reroute trap 3
+            lda $031e
+            ldy $031f
+            sta $cfe4
+            sty $cfe5
+            lda #<trap3
+            ldy #>trap3
+            sta $031e
+            sty $031f
+
+            ; reroute trap 4
+            lda $0320
+            ldy $0321
+            sta $cfe6
+            sty $cfe7
+            lda #<trap4
+            ldy #>trap4
+            sta $0320
+            sty $0321
+
+;            ; reroute trap 5
+;            lda $0322
+;            ldy $0323
+;            sta $cfe8
+;            sty $cfe9
+;            lda #<trap5
+;            ldy #>trap5
+;            sta $0322
+;            sty $0323
+;
+;            ; reroute trap 6
+;            lda $0324
+;            ldy $0325
+;            sta $cfea
+;            sty $cfeb
+;            lda #<trap6
+;            ldy #>trap6
+;            sta $0324
+;            sty $0325
+;
+;            ; reroute trap 7
+;            lda $0326
+;            ldy $0327
+;            sta $cfec
+;            sty $cfed
+;            lda #<trap7
+;            ldy #>trap7
+;            sta $0326
+;            sty $0327
+;
+            ; reroute trap 8
+            lda $032a
+            ldy $032b
+            sta $cfee
+            sty $cfef
+            lda #<trap8
+            ldy #>trap8
+            sta $032a
+            sty $032b
+
+            ; reroute trap 9
+            lda $0330
+            ldy $0331
+            sta $cff0
+            sty $cff1
+            lda #<trap9
+            ldy #>trap9
+            sta $0330
+            sty $0331
+
+            ; reroute trap 10
+            lda $0332
+            ldy $0333
+            sta $cff2
+            sty $cff3
+            lda #<trap10
+            ldy #>trap10
+            sta $0332
+            sty $0333
+
+            cli
+            ldx #$80
+            jmp ($0300)
+
+trap1       jsr save_regs
+            lda #$21
+            jsr $e716
+            jsr print_regs
+            jsr restore_regs
+            jmp ($cfe0)
+
+trap2       jsr save_regs
+            lda #$40
+            jsr $e716
+            jsr print_regs
+            jsr restore_regs
+            jmp ($cfe2)
+
+trap3       jsr save_regs
+            lda #$23
+            jsr $e716
+            jsr print_regs
+            jsr restore_regs
+            jmp ($cfe4)
+
+trap4       jsr save_regs
+            lda #$24
+            jsr $e716
+            jsr print_regs
+            jsr restore_regs
+            jmp ($cfe6)
+
+trap5       jsr save_regs
+            lda #$25
+            jsr $e716
+            jsr restore_regs
+            jmp ($cfe8)
+
+trap6       jsr save_regs
+            lda #$5E
+            jsr $e716
+            jsr print_regs
+            jsr restore_regs
+            jmp ($cfea)
+
+trap7       jsr save_regs
+            lda #$27
+            jsr $e716
+            jsr print_regs
+            jsr restore_regs
+            jmp ($cfec)
+
+trap8       jsr save_regs
+            lda #$2A
+            jsr $e716
+            jsr print_regs
+            jsr restore_regs
+            jmp ($cfee)
+
+trap9       jsr save_regs
+            lda #$28
+            jsr $e716
+            jsr print_regs
+            lda $b7
+            jsr print_hex
+            lda $b8
+            jsr print_hex
+            lda $b9
+            jsr print_hex
+            lda $ba
+            jsr print_hex
+            jsr restore_regs
+            jmp ($cff0)
+
+trap10      jsr save_regs
+            lda #$29
+            jsr $e716
+            jsr print_regs
+            lda $b7
+            jsr print_hex
+            lda $b8
+            jsr print_hex
+            lda $b9
+            jsr print_hex
+            lda $ba
+            jsr print_hex
+            lda #$20
+            jsr $e716
+            lda $ad
+            jsr print_hex
+            lda $ac
+            jsr print_hex
+            lda #$20
+            jsr $e716
+            lda $af
+            jsr print_hex
+            lda $ae
+            jsr print_hex
+            jsr restore_regs
+            jmp ($cff2)
+
+print_regs  lda $fb
+            jsr print_hex
+            lda $fc
+            jsr print_hex
+            lda $fd
+            jmp print_hex
+
+save_regs   .proc
+            sta $fb
+            stx $fc
+            sty $fd
+            rts
+            .pend
+
+restore_regs    .proc
+            lda $fb
+            ldx $fc
+            ldy $fd
+            rts
+            .pend
+            
+print_hex   .proc
+            pha
+            lsr
+            lsr
+            lsr
+            lsr
+            tax
+            lda hex_bytes,x
+            jsr $e716
+            pla
+            and #$0F
+            tax
+            lda hex_bytes,x
+            jmp $e716
+hex_bytes   .text '0123456789ABCDEF'
+            .pend
+
+still_busy  ldx #$02 ; file open error
+            jmp ($0300)
+                        
+execute
+            jsr $0073
+            cmp #AT_TOKEN
+            beq send_command
+            cmp #$5F
+            beq get_status_command
+            jmp $a7e7
+
+send_command
+            lda CMD_IF_CONTROL
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_IDLE
+            bne still_busy
+
+            ; start forwarding string expression
+            jsr $0073
+            jsr $ad9e ; Evaluate Expression
+
+            bit $0d   ; String?
+            bmi _copy_string_to_cmdif
+;            jmp _syntax            
+            jsr $bddd ; Process numeric parameter
+            jsr $b487
+
+_copy_string_to_cmdif  ; equivalent of routine at AB21, but then outputs to I/O
+            jsr $b6a6 ; Fetch string parameters
+            tax
+            ldy #$00
+            inx
+-           dex
+            beq _str_done
+            lda ($22),y
+            sta CMD_IF_COMMAND
+            iny
+            jmp -
+
+_str_done
+            lda #CMD_PUSH_CMD
+            sta CMD_IF_CONTROL
+
+            ; wait until command done OR until there is data to return
+            ; in other words: wait as long as ultimate is processing
+
+-           lda CMD_IF_CONTROL
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_BUSY
+            beq -
+
+            jsr print_result
+            lda #CMD_NEXT_DATA
+            sta CMD_IF_CONTROL
+            lda CMD_IF_CONTROL
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_BUSY
+            beq -
+
+_next_statement
+            jsr $0079
+            beq +
+            cmp #$3a
+            bne _syntax
++           jmp $a7ae
+
+_syntax     ldx #$0b
+            jmp ($0300)
+
+get_status_command
+            jsr get_result
+            jsr get_status
+            lda CMD_IF_CONTROL
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_MORE_DATA
+            bne +
+            jsr print_abort
+            lda #$04
+            sta CMD_IF_CONTROL
++           jsr $0073
+            jmp _next_statement
+
+print_result    .proc
+-           lda CMD_IF_CONTROL
+            bpl +
+            lda CMD_IF_RESULT
+            jsr $ffd2
+            jmp -            
++           lda #CMD_NEXT_DATA
+            sta CMD_IF_CONTROL
+            rts
+            .pend
+            
+get_result  .proc
+            lda CMD_IF_CONTROL
+            bmi +
+            rts
++           lda #<result_string
+            ldy #>result_string
+            jsr $ab1e
+            jsr print_result
++           lda #$0d
+            jmp $ffd2
+
+
+result_string .text "RESULT: ", $00
+            .pend
+            
+
+
+get_status  .proc
+            bit CMD_IF_CONTROL
+            bvs +
+            rts
++           lda #<status_string
+            ldy #>status_string
+            jsr $ab1e
+-           bit CMD_IF_CONTROL
+            bvc +
+            lda CMD_IF_STATUS
+            jsr $ffd2
+            jmp -            
++           lda #$0d
+            jmp $ffd2
+status_string .text "STATUS: ", $00
+            .pend
+
+print_busy  .proc
+            lda #<busy_string
+            ldy #>busy_string
+            jsr $ab1e
+            lda #$0d
+            jmp $ffd2
+busy_string .text "?DEVICE BUSY", $00
+            .pend
+
+print_abort .proc
+            lda #<busy_string
+            ldy #>busy_string
+            jsr $ab1e
+            lda #$0d
+            jmp $ffd2
+busy_string .text "PENDING COMMAND ABORTED.", $00
+            .pend

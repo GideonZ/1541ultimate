@@ -6,7 +6,7 @@ ENTRY(_start)
 MEMORY
 {
     BRAM (rx)  : ORIGIN = 0x00000000, LENGTH = 8k
-    DRAM (rwx) : ORIGIN = 0x00010000, LENGTH = 15M
+    DRAM (rwx) : ORIGIN = 0x00010000, LENGTH = 0x00EB0000
 }
 
 SECTIONS
@@ -86,7 +86,7 @@ SECTIONS
 
   PROVIDE (end = .);
 
-  _stack = 0x0effffc;
+  _stack = 0x0ebfffc;
   _interrupt = 0x10;
   _memreg = 0x28;
   

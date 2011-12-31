@@ -16,6 +16,7 @@ typedef enum _event_type {
     e_button_press,
     e_copper_capture,
     e_unfreeze,
+    e_cart_mode_change,
     e_dma_load,
     e_object_private_cmd,
     e_path_object_exec_cmd

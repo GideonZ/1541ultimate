@@ -38,8 +38,10 @@ extern "C" {
 
 /* other external references */
 extern BYTE _binary_bootcrt_65_start;
+extern BYTE _binary_cmd_test_rom_65_start;
 
 cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
+cart_def cmd_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 // static pointer
 C64   *c64;
@@ -65,10 +67,12 @@ char *cart_mode[] = { "None",
                       "Epyx Fastloader",
                       "Custom 8K ROM",
                       "Custom 16K ROM",
+/*
                       "Custom System 3 ROM",
                       "Custom Ocean V1 ROM",
                       "Custom Ocean V2/T2 ROM",
                       "Custom Final III ROM",
+*/
                       "Custom Retro Replay ROM",
                       "Custom Snappy ROM"
                    };
@@ -87,10 +91,12 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0A },
                           { 0x00,               0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
                           { 0x00,               0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
+/*
                           { 0x00,               0x000000, 0x80000,  0x08 | CART_REU },
                           { 0x00,               0x000000, 0x80000,  0x09 | CART_REU },
                           { 0x00,               0x000000, 0x80000,  0x0B | CART_REU },
                           { 0x00,               0x000000, 0x10000,  0x04 },
+*/
                           { 0x00,               0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
                           { 0x00,               0x000000, 0x10000,  0x05 | CART_REU }
  };
@@ -118,10 +124,12 @@ struct t_cfg_definition c64_config[] = {
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-#define MENU_C64_RESET   0x6401
-#define MENU_C64_REBOOT  0x6402
-//#define MENU_C64_TRACE   0x6581
-#define MENU_C64_SAVEREU 0x6403
+#define MENU_C64_RESET      0x6401
+#define MENU_C64_REBOOT     0x6402
+//#define MENU_C64_TRACE    0x6581
+#define MENU_C64_SAVEREU    0x6403
+#define MENU_C64_SAVEFLASH  0x6404
+#define MENU_C64_RUNCMDCART 0x6405
 
 extern BYTE _binary_chars_bin_start;
 
@@ -197,7 +205,10 @@ int  C64 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 	item_list.append(new ObjectMenuItem(this, "Reboot C64", MENU_C64_REBOOT));
 //    item_list.append(new ObjectMenuItem(this, "Save SID Trace", MENU_C64_TRACE));
     item_list.append(new ObjectMenuItem(this, "Save REU Memory", MENU_C64_SAVEREU));
-	return 2;
+//    item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_C64_RUNCMDCART));  /* temporary item */
+   
+//    item_list.append(new ObjectMenuItem(this, "Save Flash", MENU_C64_SAVEFLASH));
+	return 3;
 }
 		
 void C64 :: determine_d012(void)
@@ -634,6 +645,8 @@ void C64 :: set_cartridge(cart_def *def)
 	
     printf("Setting cart mode %b. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
     C64_CARTRIDGE_TYPE = def->type & 0x1F;
+    push_event(e_cart_mode_change, NULL, def->type);
+    
     C64_REU_ENABLE = 0;
     if(def->type & CART_REU) {
         if(cfg->get_value(CFG_C64_REU_EN)) {
@@ -772,6 +785,26 @@ void C64 :: poll(Event &e)
             } else {
                 printf("Couldn't open file..\n");
             }
+            break;
+        case MENU_C64_SAVEFLASH: // doesn't belong here, but i need it fast
+            po = user_interface->get_path();
+            f = root.fcreate("flash_dump.bin", po);
+            if(f) {
+                int pages = flash->get_number_of_pages();
+                int page_size = flash->get_page_size();
+                BYTE *page_buf = new BYTE[page_size];
+                for(int i=0;i<pages;i++) {
+                    flash->read_page(i, page_buf);
+                    f->write(page_buf, page_size, &transferred);
+                }
+                f->close();
+            } else {
+                printf("Couldn't open file..\n");
+            }
+            break;
+        case MENU_C64_RUNCMDCART:
+            cmd_cart.custom_addr = (void *)&_binary_cmd_test_rom_65_start;
+            push_event(e_unfreeze, (void *)&cmd_cart, 1);
             break;
 		default:
 			printf("Unhandled C64 menu command %4x.\n", e.param);
