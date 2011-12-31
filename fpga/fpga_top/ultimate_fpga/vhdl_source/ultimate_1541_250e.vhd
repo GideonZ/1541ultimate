@@ -10,7 +10,7 @@ use work.io_bus_pkg.all;
 entity ultimate_1541_250e is
 generic (
     g_simulation    : boolean := false;
-	g_version		: unsigned(7 downto 0) := X"AA" );
+	g_version		: unsigned(7 downto 0) := X"AC" );
 port (
     CLOCK       : in    std_logic;
     
@@ -168,6 +168,7 @@ begin
 
     i_logic: entity work.ultimate_logic 
     generic map (
+        g_fpga_type     => 2,
         g_version       => g_version,
         g_simulation    => g_simulation,
         g_clock_freq    => 50_000_000,

@@ -21,7 +21,9 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  */
-
+extern "C" {
+	#include "itu.h"
+}
 #include "filetype_bit.h"
 #include "filemanager.h"
 #include "userinterface.h"
@@ -41,7 +43,11 @@ static int readhead(File *f);
 
 FileTypeBIT :: FileTypeBIT(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
-    fac.register_type(this);
+    if((ITU_CAPABILITIES & CAPAB_FPGA_TYPE) >> FPGA_TYPE_SHIFT) {
+        printf("Bitfile loading only supported on S3-700A.\n");
+    } else {
+        fac.register_type(this);
+    }
     info = NULL;
 }
 

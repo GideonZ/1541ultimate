@@ -42,12 +42,68 @@
 
 startNMI    jmp $fe5e
 
+;**************************************************************************
+;*
+;* NAME  clone_fd50
+;*
+;* DESCRIPTION
+;*   Clone the memory init at $fd50 without memtest.
+;*
+;******
+clone_fd50
+	lda	#0
+	tay
+cfd50_lp1
+;	sta	$0002,y
+	sta	$0003,y		;Make sure flag_zp ($02) is preserved.
+	sta	$0200,y
+	sta	$0300,y
+	iny
+	bne	cfd50_lp1
+
+	ldx	#$03
+	lda	#$3c
+	sta	$b2
+	stx	$b3
+
+	ldx	#$00
+	ldy	#$a0
+	jmp	$fd8c	;Set MemBounds
+
+;**************************************************************************
+;*
+;* NAME  clone_fd15
+;*
+;* DESCRIPTION
+;*   Clone the vector setup at $fd15 without trashing memory below kernal
+;*
+;******
+clone_fd15
+	ldy	#$1f
+cfd15_lp1
+	lda	$fd30,y
+	sta	$0314,y
+	dey
+	bpl	cfd15_lp1
+	rts
+
+;**************************************************************************
+;*
+;* NAME  start
+;*
+;* DESCRIPTION
+;*   Start address of the cartridge
+;*
+;******
 start       sei
             jsr $ff84       ; init I/O devices / CIA timers
-            jsr $ff87       ; init RAM, tape buffer, screen (replaced by the following)
-            jsr $ff8a       ; restore default IO vectors
-            jsr $ff81     	;(init screen and VIC-Chip the normal way)
+;            jsr $ff87       ; init RAM, tape buffer, screen 
+;            jsr $ff8a       ; restore default IO vectors
 
+        	jsr	clone_fd50
+	        jsr	clone_fd15
+
+            jsr $ff81     	;(init screen and VIC-Chip the normal way)
             jsr $e453       ; copy BASIC vectors to RAM
             jsr $e3bf       ; initialize basic
             jsr $e422       ; print BASIC start up messages
@@ -65,244 +121,10 @@ start       sei
             sta $0308
             sty $0309
 
-            ; reroute trap 1
-            lda $031a
-            ldy $031b
-            sta $cfe0
-            sty $cfe1
-            lda #<trap1
-            ldy #>trap1
-            sta $031a
-            sty $031b
-
-            ; reroute trap 2
-            lda $031c
-            ldy $031d
-            sta $cfe2
-            sty $cfe3
-            lda #<trap2
-            ldy #>trap2
-            sta $031c
-            sty $031d
-
-            ; reroute trap 3
-            lda $031e
-            ldy $031f
-            sta $cfe4
-            sty $cfe5
-            lda #<trap3
-            ldy #>trap3
-            sta $031e
-            sty $031f
-
-            ; reroute trap 4
-            lda $0320
-            ldy $0321
-            sta $cfe6
-            sty $cfe7
-            lda #<trap4
-            ldy #>trap4
-            sta $0320
-            sty $0321
-
-;            ; reroute trap 5
-;            lda $0322
-;            ldy $0323
-;            sta $cfe8
-;            sty $cfe9
-;            lda #<trap5
-;            ldy #>trap5
-;            sta $0322
-;            sty $0323
-;
-;            ; reroute trap 6
-;            lda $0324
-;            ldy $0325
-;            sta $cfea
-;            sty $cfeb
-;            lda #<trap6
-;            ldy #>trap6
-;            sta $0324
-;            sty $0325
-;
-;            ; reroute trap 7
-;            lda $0326
-;            ldy $0327
-;            sta $cfec
-;            sty $cfed
-;            lda #<trap7
-;            ldy #>trap7
-;            sta $0326
-;            sty $0327
-;
-            ; reroute trap 8
-            lda $032a
-            ldy $032b
-            sta $cfee
-            sty $cfef
-            lda #<trap8
-            ldy #>trap8
-            sta $032a
-            sty $032b
-
-            ; reroute trap 9
-            lda $0330
-            ldy $0331
-            sta $cff0
-            sty $cff1
-            lda #<trap9
-            ldy #>trap9
-            sta $0330
-            sty $0331
-
-            ; reroute trap 10
-            lda $0332
-            ldy $0333
-            sta $cff2
-            sty $cff3
-            lda #<trap10
-            ldy #>trap10
-            sta $0332
-            sty $0333
-
             cli
             ldx #$80
             jmp ($0300)
 
-trap1       jsr save_regs
-            lda #$21
-            jsr $e716
-            jsr print_regs
-            jsr restore_regs
-            jmp ($cfe0)
-
-trap2       jsr save_regs
-            lda #$40
-            jsr $e716
-            jsr print_regs
-            jsr restore_regs
-            jmp ($cfe2)
-
-trap3       jsr save_regs
-            lda #$23
-            jsr $e716
-            jsr print_regs
-            jsr restore_regs
-            jmp ($cfe4)
-
-trap4       jsr save_regs
-            lda #$24
-            jsr $e716
-            jsr print_regs
-            jsr restore_regs
-            jmp ($cfe6)
-
-trap5       jsr save_regs
-            lda #$25
-            jsr $e716
-            jsr restore_regs
-            jmp ($cfe8)
-
-trap6       jsr save_regs
-            lda #$5E
-            jsr $e716
-            jsr print_regs
-            jsr restore_regs
-            jmp ($cfea)
-
-trap7       jsr save_regs
-            lda #$27
-            jsr $e716
-            jsr print_regs
-            jsr restore_regs
-            jmp ($cfec)
-
-trap8       jsr save_regs
-            lda #$2A
-            jsr $e716
-            jsr print_regs
-            jsr restore_regs
-            jmp ($cfee)
-
-trap9       jsr save_regs
-            lda #$28
-            jsr $e716
-            jsr print_regs
-            lda $b7
-            jsr print_hex
-            lda $b8
-            jsr print_hex
-            lda $b9
-            jsr print_hex
-            lda $ba
-            jsr print_hex
-            jsr restore_regs
-            jmp ($cff0)
-
-trap10      jsr save_regs
-            lda #$29
-            jsr $e716
-            jsr print_regs
-            lda $b7
-            jsr print_hex
-            lda $b8
-            jsr print_hex
-            lda $b9
-            jsr print_hex
-            lda $ba
-            jsr print_hex
-            lda #$20
-            jsr $e716
-            lda $ad
-            jsr print_hex
-            lda $ac
-            jsr print_hex
-            lda #$20
-            jsr $e716
-            lda $af
-            jsr print_hex
-            lda $ae
-            jsr print_hex
-            jsr restore_regs
-            jmp ($cff2)
-
-print_regs  lda $fb
-            jsr print_hex
-            lda $fc
-            jsr print_hex
-            lda $fd
-            jmp print_hex
-
-save_regs   .proc
-            sta $fb
-            stx $fc
-            sty $fd
-            rts
-            .pend
-
-restore_regs    .proc
-            lda $fb
-            ldx $fc
-            ldy $fd
-            rts
-            .pend
-            
-print_hex   .proc
-            pha
-            lsr
-            lsr
-            lsr
-            lsr
-            tax
-            lda hex_bytes,x
-            jsr $e716
-            pla
-            and #$0F
-            tax
-            lda hex_bytes,x
-            jmp $e716
-hex_bytes   .text '0123456789ABCDEF'
-            .pend
 
 still_busy  ldx #$02 ; file open error
             jmp ($0300)
