@@ -82,7 +82,7 @@ OBJCOPY	  = $(CROSS)-objcopy
 .PHONY: hex clean all
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
-	$(MAKE) -C ../1st_boot
+#	$(MAKE) -C ../1st_boot
 
 .SUFFIXES:
 

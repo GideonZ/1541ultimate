@@ -61,7 +61,7 @@ OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
 ALL_OBJS = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
 
 
-.PHONY: normal clean all test mk1 special cached
+.PHONY: normal clean all test mk1 mk2 special cached
 
 normal: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_700.mcs $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_400.mcs $(RESULT)/$(PRJ)_250.bin
 
@@ -70,6 +70,8 @@ all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_400.mcs $(RESULT)/$(PRJ)_700.mcs $(RES
 special:  $(RESULT)/$(PRJ)_1400.mcs
 
 mk1: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_250.bin 
+
+mk2: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ)_700.mcs
 
 cached: $(OUTPUT) $(RESULT) $(OUTPUT)/$(PRJ)_700_cached.bit
 

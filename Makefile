@@ -19,7 +19,7 @@ mk2:
 	@svn up
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/fpga -f makefile_700a
-	@$(MAKE) -C target/software/1st_boot
+	@$(MAKE) -C target/software/1st_boot mk2
 	@$(MAKE) -C target/software/2nd_boot
 	@$(MAKE) -C target/software/ultimate
 	@$(MAKE) -C target/software/update FPGA400=0
