@@ -6,6 +6,8 @@ ZPU_TOOLCHAIN ?= /cygdrive/d/Proj/zpu/git/toolchain
 BIN2HEX = $(TOOLS)/bin2hex
 HEX2BIN = $(TOOLS)/hex2bin
 PROMGEN = $(TOOLS)/promgen
+CHECKSUM = $(TOOLS)/checksum
+
 1ST_BOOT = $(HERE)/../1st_boot
 2ND_BOOT = $(HERE)/../2nd_boot
 ULTIMATE = $(HERE)/../ultimate
@@ -130,6 +132,7 @@ OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
 OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
 OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.bo))
+CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 ALL_OBJS = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN))
 
 
@@ -161,6 +164,10 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo "Converting $(<F) binary to $(@F).."
 	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(<F) $(OUTPUT)/$(@F); cd $(HERE)
 
+%.chk: %.bin
+	@echo "Calculating checksum of $(<F) binary to $(@F).."
+	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(CHECKSUM) $(<F) $(OUTPUT)/$(@F); cd $(HERE)
+
 %.o: %.s
 	@echo "Compiling $(notdir $<)"
 	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
@@ -171,6 +178,11 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 
 %.o: %.cc $(INCLUDES)
 	@echo "Compiling $(notdir $<)"
+	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
+
+update.o: update.cc $(INCLUDES) $(CHK_BIN)
+	@echo "Compiling $(notdir $<)"
+	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) >$(OUTPUT)/checksums.h
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
 $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_BIN)

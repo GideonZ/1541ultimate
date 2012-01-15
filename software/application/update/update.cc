@@ -7,6 +7,7 @@
 extern "C" {
 	#include "itu.h"
     #include "small_printf.h"
+    #include "dump_hex.h"
 }
 
 #include "host.h"
@@ -22,6 +23,7 @@ extern "C" {
 #include "config.h"
 #include "rtc.h"
 #include "userinterface.h"
+#include "checksums.h"
 
 extern BYTE _binary_ultimate_bin_start;
 extern BYTE _binary_ultimate_bin_end;
@@ -98,6 +100,21 @@ int console_print(const char *fmt, ...)
 	}
     va_end(ap);
     return (ret);
+}
+
+int calc_checksum(BYTE *buffer, BYTE *buffer_end)
+{
+    int check = 0;
+    int b;
+    while(buffer != buffer_end) {
+        b = (int)*buffer;
+        if(check < 0)
+            check = check ^ 0x801618D5; // makes it positive! ;)
+        check <<= 1;
+        check += b;
+        buffer++;
+    }
+    return check;
 }
 
 /*
@@ -179,9 +196,25 @@ bool need_update(int id, char *version, char *descr)
     return (strcmp(version, current)!=0);
 }
 
+bool my_memcmp(void *a, void *b, int len)
+{
+    DWORD *pula = (DWORD *)a;
+    DWORD *pulb = (DWORD *)b;
+    len >>= 2;
+    while(len--) {
+        if(*pula != *pulb) {
+            printf("ERR: %p: %8x, %p %8x.\n", pula, *pula, pulb, *pulb);
+            return false;
+        }
+        pula++;
+        pulb++;
+    }
+    return true;
+}
+
 static int last_sector = -1;	
 
-void flash_buffer(int id, void *buffer, void *buf_end, char *version, char *descr)
+bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *descr)
 {
     int length = (int)buf_end - (int)buffer;
 	t_flash_address image_address;
@@ -190,8 +223,9 @@ void flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
     int page_size = flash->get_page_size();
     int page = address / page_size;
     char *p;
-    
-    printf("            \n");
+    char *verify_buffer = new char[page_size]; // is never freed, but the hell we care!
+
+    //printf("            \n");
     if(image_address.has_header) {
         printf("Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
         BYTE *bin = new BYTE[length+16];
@@ -216,22 +250,41 @@ void flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
 			sector = flash->page_to_sector(page);
 			if (sector != last_sector) {
 				last_sector = sector;
-//				printf("Erase %d   \r", sector);
+				// printf("Erasing     %d   \r", sector);
 				if(!flash->erase_sector(sector)) {
-			        user_interface->popup("Erasing failed...", BUTTON_CANCEL);
-			        return;
+			        // user_interface->popup("Erasing failed...", BUTTON_CANCEL);
+			        return false;
 				}
 			}
 		}
-        printf("Page %d  \r", page);
-        if(!flash->write_page(page, p)) {
-            user_interface->popup("Programming failed...", BUTTON_CANCEL);
-            return;
+        printf("Programming %d  \r", page);
+        int retry = 3;
+        while(retry > 0) {
+            retry --;
+            if(!flash->write_page(page, p)) {
+                printf("Programming error on page %d.\n", page);
+                continue;    
+            }
+            flash->read_page(page, verify_buffer);
+            if(!my_memcmp(verify_buffer, p, page_size)) {
+                printf("Verify failed on page %d. Retry %d.\n", page, retry);
+                printf("%p %p %d\n", verify_buffer, p, page_size);
+                dump_hex(verify_buffer, 32);
+                dump_hex(p, 32);
+                continue;
+            }
+            retry = -2;
+        }
+        if(retry != -2) {                
+            //user_interface->popup("Programming failed...", BUTTON_CANCEL);
+            return false;
         }
         page ++;
         p += page_size;
         length -= page_size;
-    }    
+    }
+
+    return true;    
 }
 
 void copy_rom(BYTE *roms, int id, int *min, int *max, BYTE *source, BYTE *source_end)
@@ -254,20 +307,30 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 	last_sector = -1;
     int fpga_type = (CAPABILITIES & CAPAB_FPGA_TYPE) >> FPGA_TYPE_SHIFT;
 	if(do_update1) {
-        switch(fpga_type) {
-            case 0:
-    	        flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_700_bin_start, &_binary_1st_boot_700_bin_end, FPGA_VERSION, "FPGA");
-    	        break;
+        bool ok;
+        
+        do {
+            switch(fpga_type) {
+                case 0:
+        	        ok = flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_700_bin_start, &_binary_1st_boot_700_bin_end, FPGA_VERSION, "FPGA");
+        	        break;
 #if _FPGA400 == 1
-    	    case 1:
-    	        flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_400_bin_start, &_binary_1st_boot_400_bin_end, FPGA_VERSION, "FPGA");
-    	        break;
+        	    case 1:
+        	        ok = flash_buffer(FLASH_ID_BOOTFPGA, &_binary_1st_boot_400_bin_start, &_binary_1st_boot_400_bin_end, FPGA_VERSION, "FPGA");
+        	        break;
 #endif
-            default:
-                printf("ERROR: Unknown FPGA type detected.\n");
-                while(1);
-	    } 
-	    flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, &_binary_2nd_boot_bin_end, BOOT_VERSION, "Secondary bootloader");
+                default:
+                    printf("ERROR: Unknown FPGA type detected.\n");
+                    while(1);
+            } 
+            if(!ok)
+                user_interface->popup("Critical update failed. Retry?", BUTTON_OK);
+        } while(!ok);
+        do {
+            ok = flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, &_binary_2nd_boot_bin_end, BOOT_VERSION, "Secondary bootloader");
+            if(!ok)
+                user_interface->popup("Critical update failed. Retry?", BUTTON_OK);
+        } while(!ok);
 	}
     if(do_roms) {
         if(flash->get_page_size() == 528) { // atmel 45.. we should program the roms in one block!
@@ -314,7 +377,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 	if(do_update2) {
     	flash_buffer(FLASH_ID_APPL, &_binary_ultimate_bin_start, &_binary_ultimate_bin_end, APPL_VERSION, "Ultimate application");
     }
-	printf("            \nDone!\n");
+	printf("                       \nDone!\n");
 	return true;
 }
     
@@ -358,6 +421,29 @@ int main()
 	        ;
     }
 
+    /* Extra check on the loaded images */
+    const char *check_error = "\033\032\nChecksum error... Not flashing.\n";
+    printf("\033\027Checking checksums loaded images..\033\037\n");
+    if(calc_checksum(&_binary_1st_boot_700_bin_start, &_binary_1st_boot_700_bin_end) == CHK_1st_boot_700_bin)
+        printf("Checksum of FPGA image:   OK..\n");
+    else {
+        printf(check_error);
+        while(1);
+    }
+    if(calc_checksum(&_binary_2nd_boot_bin_start, &_binary_2nd_boot_bin_end) == CHK_2nd_boot_bin)
+        printf("Checksum of Bootloader:   OK..\n");
+    else {
+        printf(check_error);
+        while(1);
+    }
+    if(calc_checksum(&_binary_ultimate_bin_start, &_binary_ultimate_bin_end) == CHK_ultimate_bin)
+        printf("Checksum of Application:  OK..\n\n");
+    else {
+        printf(check_error);
+        while(1);
+    }
+    printf("\n\n\n\n\n\n\n\n");
+            
 	bool do_update1 = false;
 	bool do_update2 = false;
     bool virgin = false;
@@ -389,6 +475,10 @@ int main()
         }
 	}
 
+	printf("\nConfiguring Flash write protection..\n");
+	flash->protect_configure();
+	flash->protect_enable();
+
     if(!virgin) {
         if (user_interface->popup("Reset configuration?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
             int num = flash->get_number_of_config_pages();
@@ -398,9 +488,6 @@ int main()
         }
     }
 
-	printf("\nConfiguring Flash write protection..\n");
-	flash->protect_configure();
-	flash->protect_enable();
     printf("\nTo avoid loading this updater again,\ndelete it from your media.\n");
 	
     wait_ms(2000);
