@@ -33,18 +33,21 @@ use work.tl_string_util_pkg.all;
 
 package tl_file_io_pkg is
     
-    type t_binary_file is file of integer;
+    type t_slv8_array is array(natural range <>) of std_logic_vector(7 downto 0);
+    
+    procedure get_char_from_file(file my_file : text; my_line : inout line; file_end : out boolean; hex : out character);
+    procedure get_byte_from_file(file my_file : text; my_line : inout line; file_end : out boolean; dat : out std_logic_vector);
 
+    procedure read_hex_file_to_array (file myfile : text; array_size  : integer; result : inout t_slv8_array);
+
+    -- handling binary files
+    type t_binary_file is file of integer;
     type t_binary_file_rec is record
         offset   : integer range 0 to 4;
         long_vec : std_logic_vector(31 downto 0);
     end record;
 
-    procedure get_char_from_file(file my_file : text; my_line : inout line; file_end : out boolean; hex : out character);
-    procedure get_byte_from_file(file my_file : text; my_line : inout line; file_end : out boolean; dat : out std_logic_vector);
-
     procedure init_record(rec : inout t_binary_file_rec);
-
     procedure read_byte(file my_file  : t_binary_file; byte : out std_logic_vector; rec : inout t_binary_file_rec);
     procedure write_byte(file my_file : t_binary_file; byte : in std_logic_vector; rec : inout t_binary_file_rec);
     procedure purge(file my_file      : t_binary_file; rec : inout t_binary_file_rec);
@@ -97,6 +100,90 @@ package body tl_file_io_pkg is
         dat      := data;
 
     end get_byte_from_file;
+
+    procedure read_hex_file_to_array (
+        file myfile : text;
+        array_size  : integer;
+        result      : inout t_slv8_array)
+    is
+        variable L        : line;
+        variable addr     : unsigned(31 downto 0) := (others => '0');
+        variable c        : character;
+        variable data     : std_logic_vector(7 downto 0);
+        variable sum      : unsigned(7 downto 0);
+        variable rectype  : std_logic_vector(7 downto 0);
+        variable tmp_addr : std_logic_vector(15 downto 0);
+        variable fileend  : boolean;
+        variable linenr   : integer := 0;
+        variable len      : integer;
+
+        variable out_array: t_slv8_array(0 to array_size-1) := (others => (others => '0'));
+    begin
+      
+        outer : while true loop
+            if EndFile(myfile) then
+                report "Missing end of file record."
+                    severity warning;
+                exit outer;
+            end if;
+
+            -- search for lines starting with ':'
+            start : while true loop
+                readline(myfile, L);
+                linenr := linenr + 1;
+                read(L, c);
+                if c = ':' then
+                    exit start;
+                end if;
+            end loop;
+
+            -- parse the rest of the line
+            sum := X"00";
+            get_byte_from_file(myfile, L, fileend, data);
+            len := to_integer(unsigned(data));
+            get_byte_from_file(myfile, L, fileend, tmp_addr(15 downto 8));
+            get_byte_from_file(myfile, L, fileend, tmp_addr(7 downto 0));
+            get_byte_from_file(myfile, L, fileend, rectype);
+
+            sum := sum - (unsigned(data) + unsigned(tmp_addr(15 downto 8)) + unsigned(tmp_addr(7 downto 0)) + unsigned(rectype));
+
+            case rectype is
+                when X"00" =>           -- data record
+                    addr(15 downto 0) := unsigned(tmp_addr);
+                    for i in 0 to len-1 loop
+                        get_byte_from_file(myfile, L, fileend, data);
+                        sum  := sum - unsigned(data);
+                        out_array(to_integer(addr)) := data;
+                        addr := addr + 1;
+                    end loop;
+                    
+                when X"01" =>           -- end of file record
+                    exit outer;
+                    
+                when X"04" =>           -- extended linear address record
+                    get_byte_from_file(myfile, L, fileend, data);
+                    addr(31 downto 24) := unsigned(data);
+                    sum := sum - addr(31 downto 24);
+                    get_byte_from_file(myfile, L, fileend, data);
+                    addr(23 downto 16) := unsigned(data);
+                    sum := sum - addr(23 downto 16);
+
+                when others =>
+                    report "Unexpected record type " & vec_to_hex(rectype, 2)
+                        severity warning;
+                    exit outer;
+                    
+            end case;
+
+            -- check checksum
+            get_byte_from_file(myfile, L, fileend, data);
+            assert sum = unsigned(data)
+                report "Warning: Checksum incorrect at line: " & integer'image(linenr)
+                severity warning;
+        end loop;
+        result := out_array;
+
+    end read_hex_file_to_array;
 
     procedure init_record(rec : inout t_binary_file_rec) is
     begin
