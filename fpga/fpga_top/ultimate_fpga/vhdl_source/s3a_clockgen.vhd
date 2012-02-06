@@ -16,8 +16,9 @@ port (
     sys_clock    : out std_logic; -- 50 MHz
     sys_reset    : out std_logic;
     sys_clock_2x : out std_logic;
-
-    drive_stop   : in  std_logic;
+    sys_clock_4x : out std_logic;
+    
+    drive_stop   : in  std_logic := '0';
     drv_clock_en : out std_logic; -- 1/12.5 (4 MHz)
     cpu_clock_en : out std_logic; -- 1/50   (1 MHz)
     
@@ -58,6 +59,7 @@ architecture Gideon of s3a_clockgen is
 
     signal clk_0_pre       : std_logic;
     signal clk_2x_pre      : std_logic;
+    signal clk_4x_pre      : std_logic;
 begin
     dcm_lock <= dcm1_locked;
    
@@ -87,6 +89,8 @@ begin
 		CLK_FEEDBACK       => "1X",
 --		PHASE_SHIFT        => -20,
         CLKDV_DIVIDE       => 2.5,
+        CLKFX_MULTIPLY     => 4,
+        CLKFX_DIVIDE       => 1,
 		STARTUP_WAIT       => true
 	)
 	port map
@@ -95,6 +99,7 @@ begin
 		CLKFB    => sys_clk_buf,
 		CLK0     => clk_0_pre,
         CLK2X    => clk_2x_pre,
+        CLKFX    => clk_4x_pre,
         CLKDV    => eth_clock,
 		LOCKED   => dcm1_locked,
 		RST      => reset_dcm
@@ -102,6 +107,7 @@ begin
 
 	bufg_sys:   BUFG port map (I => clk_0_pre,  O => sys_clk_buf);
 	bufg_sys2x: BUFG port map (I => clk_2x_pre, O => sys_clock_2x);
+	bufg_sys4x: BUFG port map (I => clk_4x_pre, O => sys_clock_4x);
 
     sys_clk_i   <= sys_clk_buf;
     sys_clock   <= sys_clk_buf;

@@ -2,10 +2,18 @@ library ieee;
     use ieee.std_logic_1164.all;
     use ieee.numeric_std.all;
 
+library std;
+    use std.textio.all;
+
+library work;
+    use work.tl_file_io_pkg.all;
+
 entity dpram_rdw_byte is
     generic (
+        g_rdw_check             : boolean := true;
         g_width_bits            : positive := 32;
         g_depth_bits            : positive := 9;
+        g_init_file             : string := "none";
         g_storage               : string := "block"  -- can also be "block" or "distributed"
     );
     port (
@@ -37,10 +45,16 @@ begin
     b_we_i <= b_byte_en when b_we='1' else (others => '0');
     
     r_byte: for i in b_we_i'range generate
+
         i_byte_ram: entity work.dpram_rdw
         generic map (
+            g_rdw_check   => g_rdw_check,
             g_width_bits  => 8,
             g_depth_bits  => g_depth_bits,
+            g_init_value  => X"00",
+            g_init_file   => g_init_file,
+            g_init_width  => (g_width_bits/8),
+            g_init_offset => i,
             g_storage     => g_storage )
         port map (
             clock         => clock,

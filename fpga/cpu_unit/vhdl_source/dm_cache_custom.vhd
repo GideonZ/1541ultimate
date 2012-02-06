@@ -4,6 +4,11 @@ use ieee.numeric_std.all;
 
 entity dm_cache_custom is
 generic (
+--    g_allocate_on_write : boolean := true;
+--    g_write_through     : boolean := false;
+    g_write_support     : boolean := true;
+    g_early_resume      : boolean := false;
+    g_init_file         : string  := "none";
     g_address_width     : natural := 24;
     g_data_width        : natural := 32;
     g_id_width          : natural := 8;
@@ -68,6 +73,11 @@ architecture gideon of dm_cache_custom is
         valid           : std_logic;
     end record;
     
+    constant c_tag_pre_init : t_tag := (
+        address_high => to_unsigned(0, g_address_width - g_cache_size_bits),
+        dirty        => '1',
+        valid        => '1' );
+    
     function tag_pack(t : t_tag) return std_logic_vector is
         variable ret : std_logic_vector(c_tag_width-1 downto 0);
     begin
@@ -102,7 +112,7 @@ architecture gideon of dm_cache_custom is
     signal cache_wr_index       : unsigned(g_cache_size_bits-1 downto 0);
     signal cache_wdata          : std_logic_vector(g_data_width-1 downto 0);
     signal cache_byte_en        : std_logic_vector(client_byte_en'range);
-    signal cache_data_out       : std_logic_vector(g_data_width-1 downto 0);
+    signal cache_data_out       : std_logic_vector(g_data_width-1 downto 0) := (others => '0');
     signal cache_rdata          : std_logic_vector(g_data_width-1 downto 0);
     signal cache_we             : std_logic;
     signal cache_b_en           : std_logic;
@@ -186,20 +196,20 @@ begin
 
     -- main address multiplexer
     rd_address         <= client_address;
-    wr_address         <= fill_address when (fill_valid='1' or dirty_d='1') else
+    wr_address         <= fill_address when (mem_rdfifo_get='1' or dirty_d='1') else
                           last_write_address;
                           
     cache_rd_index <= cache_index_of(rd_address);
     cache_wr_index <= cache_index_of(wr_address);
    
-    cache_wdata    <= fill_data when fill_valid='1' else
+    cache_wdata    <= fill_data when mem_rdfifo_get='1' else
                       last_write_data;
-    cache_byte_en  <= (others => '1') when fill_valid='1' else
+    cache_byte_en  <= (others => '1') when mem_rdfifo_get='1' else
                       last_write_byte_en;
-    wr_tag         <= fill_tag when fill_valid='1' else
+    wr_tag         <= fill_tag when mem_rdfifo_get='1' else
                       last_write_tag;
 
-    cache_we       <= fill_valid or store_reg;
+    cache_we       <= mem_rdfifo_get or store_reg;
     cache_b_en     <= cache_we or dirty_d; -- dirty_d is set during fill operation and causes read enable here
     cache_rd_en    <= client_request and ready;
 
@@ -212,25 +222,53 @@ begin
     last_write_tag.valid  <= last_write_valid;
     
 
-    i_cache_ram: entity work.dpram_rdw_byte
-    generic map (
-        g_width_bits   => g_data_width,
-        g_depth_bits   => g_cache_size_bits,
-        g_storage      => "auto" )
-    port map (
-        clock         => clock,
+    r_write_byte_en: if g_write_support generate
+        i_cache_ram: entity work.dpram_rdw_byte
+        generic map (
+            g_rdw_check    => g_early_resume,
+            g_width_bits   => g_data_width,
+            g_depth_bits   => g_cache_size_bits,
+            g_init_file    => g_init_file,
+            g_storage      => "auto" )
+        port map (
+            clock         => clock,
+    
+            a_address     => cache_rd_index,
+            a_rdata       => cache_rdata,
+            a_en          => cache_rd_en,
+            
+            b_address     => cache_wr_index,
+            b_rdata       => cache_data_out,
+            b_wdata       => cache_wdata,
+            b_byte_en     => cache_byte_en,
+            b_en          => cache_b_en,
+            b_we          => cache_we );
+    end generate;
+    
+    r_write_fill_only: if not g_write_support generate
+        i_cache_ram_nobe: entity work.dpram_rdw
+        generic map (
+            g_rdw_check   => g_early_resume,
+            g_width_bits  => g_data_width,
+            g_depth_bits  => g_cache_size_bits,
+            g_init_value  => X"00000000",
+            g_init_file   => g_init_file,
+            g_init_width  => g_data_width/8,
+            g_init_offset => 0,
+            g_storage     => "auto" ) 
+        port map (
+            clock         => clock,
 
-        a_address     => cache_rd_index,
-        a_rdata       => cache_rdata,
-        a_en          => cache_rd_en,
-        
-        b_address     => cache_wr_index,
-        b_rdata       => cache_data_out,
-        b_wdata       => cache_wdata,
-        b_byte_en     => cache_byte_en,
-        b_en          => cache_b_en,
-        b_we          => cache_we );
+            a_address     => cache_rd_index,
+            a_rdata       => cache_rdata,
+            a_en          => cache_rd_en,
 
+            b_address     => cache_wr_index,
+            b_rdata       => cache_data_out,
+            b_wdata       => fill_data,
+            b_en          => cache_b_en,
+            b_we          => mem_rdfifo_get );
+    end generate;    
 
     tag_rd_index       <= tag_index_of(rd_address);    
     tag_wr_index       <= tag_index_of(wr_address);
@@ -239,7 +277,9 @@ begin
 
     i_tag_ram: entity work.dpram_rdw 
     generic map (
+        g_rdw_check    => g_early_resume,
         g_width_bits  => c_tag_width,
+        g_init_value  => tag_pack(c_tag_pre_init),
         g_depth_bits  => c_tag_size_bits )
     port map (
         clock       => clock,

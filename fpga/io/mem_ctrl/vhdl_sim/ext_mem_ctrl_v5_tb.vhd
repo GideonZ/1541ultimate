@@ -73,10 +73,11 @@ begin
     	SDRAM_WEn   => logic_WEn,
         SDRAM_DQM   => logic_DQM,
     
-        MEM_A       => MEM_A,
+        MEM_A       => logic_A,
         MEM_D       => MEM_D );
 
 
+    SDRAM_A     <= transport logic_A    after 6 ns;
 	SDRAM_CLK	<= transport logic_CLK  after 6 ns;
 	SDRAM_CKE	<= transport logic_CKE  after 6 ns;
     SDRAM_CSn   <= transport logic_CSn  after 6 ns;
@@ -97,7 +98,7 @@ begin
         
         while true loop
             wait until clock='1';
-            if resp.rack='1' then
+            if resp.ready='1' then
                 req.address <= req.address + 4;
             end if;
         end loop;
