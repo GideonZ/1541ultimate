@@ -54,7 +54,8 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/icap/vhdl_source/icap_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/icap/vhdl_source/icap.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/iec_interface/vhdl_source/iec_interface_io.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/iec_interface/vhdl_source/iec_processor.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/iec_interface/vhdl_source/iec_processor_io.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/c2n_playback/vhdl_source/c2n_playback_io.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/c2n_record/vhdl_source/c2n_record.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/command_interface/vhdl_source/command_if_pkg.vhd \

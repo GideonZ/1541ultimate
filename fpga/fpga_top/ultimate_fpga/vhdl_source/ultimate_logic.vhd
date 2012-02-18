@@ -808,23 +808,20 @@ begin
     end generate;
 
     r_iec: if g_hardware_iec generate
-        i_iec: entity work.iec_interface_io
-        generic map (
-            g_state_readback    => false,
-            programmable_timing => g_iec_prog_tim )
+        i_iec: entity work.iec_processor_io
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
         
-            iec_atn_i       => atn_i,
-            iec_atn_o       => hw_atn_o,
-            iec_clk_i       => clk_i,
-            iec_clk_o       => hw_clk_o,
-            iec_data_i      => data_i,
-            iec_data_o      => hw_data_o,
+            atn_i           => atn_i,
+            atn_o           => hw_atn_o,
+            clk_i           => clk_i,
+            clk_o           => hw_clk_o,
+            data_i          => data_i,
+            data_o          => hw_data_o,
         
-            io_req          => io_req_iec,
-            io_resp         => io_resp_iec );
+            req             => io_req_iec,
+            resp            => io_resp_iec );
     end generate;
 
     r_c2n: if g_c2n_streamer generate

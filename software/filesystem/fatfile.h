@@ -2,6 +2,7 @@
 #define FATFILE_H
 
 #include "fat_fs.h"
+#include "fat_dir.h"
 
 /* File object structure */
 class FATFIL { /* this is a FAT file.. and should be derived from generic FILE class. */

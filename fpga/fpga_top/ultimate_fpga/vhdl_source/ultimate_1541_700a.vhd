@@ -173,7 +173,7 @@ begin
         g_ram_expansion => true,
         g_extended_reu  => false,
         g_stereo_sid    => true,
-        g_hardware_iec  => false,
+        g_hardware_iec  => true,
         g_iec_prog_tim  => false,
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
