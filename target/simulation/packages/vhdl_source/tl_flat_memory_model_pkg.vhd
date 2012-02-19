@@ -512,7 +512,7 @@ package body tl_flat_memory_model_pkg is
                     sum := sum - addr(23 downto 16);
 
                 when others =>
-                    report "Unexpecteed record type " & vec_to_hex(rectype, 2)
+                    report "Unexpected record type " & vec_to_hex(rectype, 2)
                         severity warning;
                     return;
                     

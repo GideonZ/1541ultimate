@@ -59,6 +59,7 @@ architecture mixed of iec_processor is
     constant c_opc_wait     : std_logic_vector(3 downto 0) := X"C";
 
     signal inputs       : std_logic_vector(3 downto 0);
+    signal inputs_raw   : std_logic_vector(3 downto 0);
 
     signal timer        : unsigned(11 downto 0);
     signal pc           : unsigned(instr_addr'range);
@@ -96,8 +97,9 @@ begin
     atn_o  <= a_drivers(2);
     srq_o  <= a_drivers(3);
     
-    inputs <= srq_i & atn_i & data_i & clk_i;
-
+    inputs_raw <= srq_i & atn_i & data_i & clk_i;
+    inputs     <= std_logic_vector(to_01(unsigned(inputs_raw)));
+    
     input_vector(31 downto 28) <= "10XX";
     input_vector(27)           <= ctrl_reg;
     input_vector(26)           <= valid_reg;
@@ -232,7 +234,7 @@ begin
             end case;
 
             atn_i_d <= atn_i;
-            if atn_i='0' and atn_i_d='1' then
+            if atn_i='0' and atn_i_d/='0' then
                 if a_irq_enable='1' then
                     down_fifo_flush <= '1';
                     pc <= (others => '0');

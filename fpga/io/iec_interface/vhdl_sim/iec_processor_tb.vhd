@@ -5,6 +5,7 @@ use ieee.numeric_std.all;
 
 library work;
 use work.io_bus_pkg.all;
+use work.io_bus_bfm_pkg.all;
 
 entity iec_processor_tb is
 
@@ -25,8 +26,8 @@ architecture tb of iec_processor_tb is
     signal iec_clock       : std_logic;
     signal iec_data        : std_logic;
     signal iec_atn         : std_logic;
-
-    
+    signal received        : std_logic_vector(7 downto 0);
+    signal eoi             : std_logic;    
 begin
     clock <= not clock after 10 ns;
     reset <= '1', '0' after 100 ns;
@@ -87,16 +88,64 @@ begin
             master_data_o <= '1';
             master_clk_o  <= '0';
             wait for 1 us;
-            wait until iec_data = '0' for 1000 us;
+            if iec_data /= '0' then
+                wait until iec_data = '0' for 1000 us;
+            end if;
             wait for 20 us;
             master_atn_o <= '1';
         end procedure;
+
+        procedure receive_byte(ret : out std_logic_vector(7 downto 0); eoi : out std_logic) is
+            variable data : std_logic_vector(7 downto 0);
+            variable last : std_logic;
+        begin
+            last := '0';
+            master_data_o <= '1'; -- ok, go ahead
+            wait until iec_clock = '0' for 200 us;
+            if iec_clock = 'H' then
+                master_data_o <= '0';
+                last := '1';
+                wait for 60 us;
+                master_data_o <= '1';
+                if iec_clock /= '0' then
+                    wait until iec_clock = '0';
+                end if;
+            end if;                  
+            for i in 0 to 7 loop
+                wait until iec_clock = 'H' for 200 us;
+                data(i) := iec_data;
+            end loop;
+            wait until iec_clock = '0';
+            master_data_o <= '0'; -- seen it!!
+            wait for 60 us;
+            ret := data;
+            eoi := last;
+        end procedure;
+
+        variable io : p_io_bus_bfm_object;
+        variable data : std_logic_vector(7 downto 0);
+        variable last : std_logic;
     begin
         master_clk_o  <= '1';
         master_data_o <= '1';
         master_atn_o  <= '1';
+        wait for 1 us;
+        bind_io_bus_bfm("io_bfm", io);
         wait for 10 us;
-        send_atn_byte(X"2A");
+        send_atn_byte(X"4A");
+        send_atn_byte(X"6F");
+        wait for 50 us;
+        master_clk_o <= '1'; -- release
+        master_data_o <= '0'; -- wait, I am not ready!!
+        io_write(io, X"4", X"33"); 
+        io_write(io, X"5", X"47"); -- last byte
+        wait for 400 us;
+        receive_byte(data, last);
+        received <= data;
+        eoi <= last;
+        receive_byte(data, last);
+        received <= data;
+        eoi <= last;
         wait;
     end process;
 end architecture;

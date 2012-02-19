@@ -37,7 +37,7 @@ VSIM_SOURCES 	= # is automatically generated from the source include files or au
 
 WORK_DIR		= work
 
-SOURCE_INCLUDES =
+SOURCE_INCLUDES = secretblaze.sinc
 
 # AUTO_DEP_PATHS
 #
@@ -114,6 +114,66 @@ $(TESTBENCH)_DO_GUI_OVERRIDE	:=
 
 #### tb5 #####
 TESTBENCH 						:= ext_mem_ctrl_v5_sdr_tb
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb6 #####
+TESTBENCH 						:= ext_mem_ctrl_v6_tb
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb7 #####
+TESTBENCH 						:= ext_mem_test_v6_tb
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb8 #####
+TESTBENCH 						:= ext_mem_test_32_tb
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb9 #####
+TESTBENCH 						:= ext_mem_ctrl_v7_tb
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb10 #####
+TESTBENCH 						:= sb_cpu
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb11 #####
+TESTBENCH 						:= iec_processor_tb
 TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
 $(TESTBENCH)_SRC				:= 
 $(TESTBENCH)_ENTITY				:= 
@@ -210,3 +270,5 @@ info: vsim-info
 
 include $(GLOBAL_INCS)/vsim_tools.inc
 
+test:
+	echo $(VSIM_SOURCES)

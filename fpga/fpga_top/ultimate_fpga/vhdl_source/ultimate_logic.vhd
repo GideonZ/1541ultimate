@@ -597,7 +597,7 @@ begin
         resp     => io_resp,
         
         reqs(0)  => io_req_itu,     -- 4000000 ( 16 ... 400000F)
-        reqs(1)  => io_req_1541,    -- 4020000 (  8K... 4021FFF) & 4024000 for drive B
+        reqs(1)  => io_req_1541,    -- 4020000 (  8K... 4021FFF) & 4024000 for drive B 
         reqs(2)  => io_req_cart,    -- 4040000 (128K... 405FFFF)
         reqs(3)  => io_req_io,      -- 4060000 (  2K... 40607FF)
         reqs(4)  => io_req_usb,     -- 4080000 (  8K... 4081FFF)
@@ -618,19 +618,21 @@ begin
     i_split2: entity work.io_bus_splitter
     generic map (
         g_range_lo  => 14,
-        g_range_hi  => 14,
-        g_ports     => 2 )
+        g_range_hi  => 15,
+        g_ports     => 3 )
     port map (
         clock    => sys_clock,
         
         req      => io_req_1541,
         resp     => io_resp_1541,
         
-        reqs(0)  => io_req_1541_1,
-        reqs(1)  => io_req_1541_2,
+        reqs(0)  => io_req_1541_1,  -- 4020000
+        reqs(1)  => io_req_1541_2,  -- 4024000
+        reqs(2)  => io_req_iec,     -- 4028000
         
         resps(0) => io_resp_1541_1,
-        resps(1) => io_resp_1541_2 );
+        resps(1) => io_resp_1541_2,
+        resps(2) => io_resp_iec );
 
     i_split3: entity work.io_bus_splitter
     generic map (
@@ -646,7 +648,7 @@ begin
         reqs(0)  => io_req_sd,      -- 4060000 
         reqs(1)  => io_req_rtc,     -- 4060100 
         reqs(2)  => io_req_flash,   -- 4060200 
-        reqs(3)  => io_req_iec,     -- 4060300 
+        reqs(3)  => open,           -- 4060300 
         reqs(4)  => io_req_rtc_tmr, -- 4060400
         reqs(5)  => io_req_gcr_dec, -- 4060500
         reqs(6)  => io_req_icap,    -- 4060600
@@ -655,7 +657,7 @@ begin
         resps(0) => io_resp_sd,
         resps(1) => io_resp_rtc,
         resps(2) => io_resp_flash,
-        resps(3) => io_resp_iec,
+        resps(3) => c_io_resp_init,
         resps(4) => io_resp_rtc_tmr,
         resps(5) => io_resp_gcr_dec,
         resps(6) => io_resp_icap,
