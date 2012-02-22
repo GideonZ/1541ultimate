@@ -47,6 +47,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/userinterface \
 			$(PATH_SW)/io/command_interface \
 			$(PATH_SW)/io/copper \
+			$(PATH_SW)/io/iec \
 			$(PATH_SW)/6502 \
 			$(ROMS)
 
@@ -129,6 +130,7 @@ SRCS_CC	 =  stream.cc \
 			context_menu.cc \
 			task_menu.cc \
 			audio_select.cc \
+			iec.cc \
 			$(PRJ).cc
 
 ####			copper.cc \

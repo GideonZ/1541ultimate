@@ -3,6 +3,7 @@
 
 #include "integer.h"
 #include "event.h"
+#include "menu.h"
 
 #define HW_IEC_REGS      0x4028000
 #define HW_IEC_CODE      0x4028800
@@ -23,15 +24,25 @@
 #define IEC_FIFO_FULL  0x02
 #define IEC_FIFO_CTRL  0x80
 
+#define LOGGER_BASE            0x4060300
+#define LOGGER_ADDRESS         *((volatile DWORD *)(LOGGER_BASE + 0x0)) // read
+#define LOGGER_LENGTH          *((volatile BYTE  *)(LOGGER_BASE + 0x4)) // read
+#define LOGGER_COMMAND         *((volatile BYTE  *)(LOGGER_BASE + 0x5)) // write
 
-class IecInterface
+#define LOGGER_CMD_START       0x33
+#define LOGGER_CMD_STOP        0x44
+
+class IecInterface : public ObjectWithMenu
 {
     bool atn;
+    DWORD start_address;
+    DWORD end_address;
 public:
     IecInterface();
     ~IecInterface();
     
     int poll(Event &ev);
+    int   fetch_task_items(IndexedList<PathObject *> &list);
 
 };
 

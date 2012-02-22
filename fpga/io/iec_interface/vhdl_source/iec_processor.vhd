@@ -86,10 +86,10 @@ architecture mixed of iec_processor is
     signal input_vector : std_logic_vector(31 downto 0);
     signal selected_bit : std_logic;
 
-    signal out_vector   : std_logic_vector(15 downto 0);
-    alias a_drivers     : std_logic_vector(3 downto 0) is out_vector(15 downto 12);
-    alias a_irq_enable  : std_logic                    is out_vector(11);
-    alias a_status      : std_logic_vector(3 downto 0) is out_vector(11 downto 8);
+    signal out_vector   : std_logic_vector(19 downto 0);
+    alias a_drivers     : std_logic_vector(3 downto 0) is out_vector(19 downto 16);
+    alias a_irq_enable  : std_logic                    is out_vector(8);
+    alias a_status      : std_logic_vector(7 downto 0) is out_vector(15 downto 8);
     alias a_data_reg    : std_logic_vector(7 downto 0) is out_vector(7 downto 0);
 begin
     clk_o  <= a_drivers(0);
@@ -100,18 +100,16 @@ begin
     inputs_raw <= srq_i & atn_i & data_i & clk_i;
     inputs     <= std_logic_vector(to_01(unsigned(inputs_raw)));
     
-    input_vector(31 downto 28) <= "10XX";
-    input_vector(27)           <= ctrl_reg;
-    input_vector(26)           <= valid_reg;
-    input_vector(25)           <= timeout_reg;
-    input_vector(24)           <= up_fifo_full;
-    input_vector(23)           <= '1' when (inputs and a_mask) = a_value else '0';
-    input_vector(22)           <= 'X'; --'0' when (inputs and a_mask) = a_value else '1';
-    input_vector(21)           <= '1' when (a_data_reg = a_databyte) else '0';
-    input_vector(20)           <= 'X'; --'0' when (a_data_reg = a_databyte) else '1';
-    input_vector(19 downto 16) <= inputs;
-    input_vector(15 downto 12) <= a_drivers;
-    input_vector(11 downto 8)  <= a_status;
+    input_vector(31 downto 30) <= "10";
+    input_vector(29)           <= ctrl_reg;
+    input_vector(28)           <= valid_reg;
+    input_vector(27)           <= timeout_reg;
+    input_vector(26)           <= up_fifo_full;
+    input_vector(25)           <= '1' when (inputs and a_mask) = a_value else '0';
+    input_vector(24)           <= '1' when (a_data_reg = a_databyte) else '0';
+    input_vector(23 downto 20) <= inputs;
+    input_vector(19 downto 16) <= a_drivers;
+    input_vector(15 downto 8)  <= a_status;
     input_vector(7 downto 0)   <= a_data_reg;
 
     selected_bit <= input_vector(to_integer(unsigned(a_select))) xor a_invert;
@@ -166,7 +164,7 @@ begin
 --                    a_drivers  <= a_databyte(3 downto 0);
                     
                 when c_opc_reset_st =>
-                    a_status   <= "1000";
+                    a_status   <= X"01";
                 
                 when c_opc_reset_drv =>
                     a_drivers  <= "1111";
@@ -199,7 +197,7 @@ begin
                     end if;
 
                 when c_opc_copy_bit =>
-                    out_vector(to_integer(unsigned(a_databyte(3 downto 0)))) <= selected_bit;
+                    out_vector(to_integer(unsigned(a_databyte(4 downto 0)))) <= selected_bit;
 
                 when c_opc_if =>
                     if selected_bit='1' then
@@ -246,7 +244,7 @@ begin
                 state        <= idle;
                 pc           <= (others => '0');
                 pc_ret       <= (others => '0');
-                out_vector   <= X"F800";
+                out_vector   <= X"F0100";
             end if;
         end if;
     end process;

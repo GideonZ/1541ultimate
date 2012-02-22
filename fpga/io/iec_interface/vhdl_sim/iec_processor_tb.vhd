@@ -122,24 +122,24 @@ begin
             eoi := last;
         end procedure;
 
-        variable io : p_io_bus_bfm_object;
         variable data : std_logic_vector(7 downto 0);
         variable last : std_logic;
     begin
         master_clk_o  <= '1';
         master_data_o <= '1';
         master_atn_o  <= '1';
-        wait for 1 us;
-        bind_io_bus_bfm("io_bfm", io);
         wait for 10 us;
         send_atn_byte(X"4A");
         send_atn_byte(X"6F");
         wait for 50 us;
         master_clk_o <= '1'; -- release
         master_data_o <= '0'; -- wait, I am not ready!!
-        io_write(io, X"4", X"33"); 
-        io_write(io, X"5", X"47"); -- last byte
-        wait for 400 us;
+        wait for 10 us;
+        wait until iec_clock='H';
+        wait for 30 us;
+        receive_byte(data, last);
+        received <= data;
+        eoi <= last;
         receive_byte(data, last);
         received <= data;
         eoi <= last;
@@ -148,5 +148,29 @@ begin
         eoi <= last;
         wait;
     end process;
+
+    process
+        variable io : p_io_bus_bfm_object;
+        variable stat : std_logic_vector(7 downto 0);
+        variable data : std_logic_vector(7 downto 0);
+    begin
+        wait for 1 us;
+        bind_io_bus_bfm("io_bfm", io);
+        
+        while true loop
+            io_read(io, X"2", stat);
+            if stat(0)='0' then -- not empty, so data avail
+                io_read(io, X"6", data);
+                if stat(7)='1' and data=X"43" then
+                    wait for 400 us;
+                    io_write(io, X"4", X"33"); 
+                    io_write(io, X"4", X"44"); 
+                    io_write(io, X"5", X"55"); -- last byte
+                end if;
+            end if;                
+        end loop;            
+        wait;
+    end process;
+
 end architecture;
  

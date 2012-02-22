@@ -24,7 +24,7 @@ CC  = gcc
 # Binaries
 
 .PHONY:	all clean
-all:   	bin2hex hex2bin make_array make_mem makeappl promgen checksum
+all:   	bin2hex hex2bin make_array make_mem makeappl promgen checksum dump_vcd
 ifneq ($(TERM), cygwin)
 	@$(MAKE) -C 64tass
 endif
@@ -44,6 +44,7 @@ clean:
 	@rm -f makeappl.exe
 	@rm -f promgen.exe
 	@rm -f checksum.exe
+	@rm -f dump_vcd.exe
 	@rm -f 64tass/64tass
 	@rm -f 64tass/*.o
 	

@@ -36,7 +36,8 @@ generic (
     g_rtc_timer     : boolean := false;
     g_usb_host      : boolean := false;
     g_spi_flash     : boolean := false;
-    g_vic_copper    : boolean := false );
+    g_vic_copper    : boolean := false;
+    g_analyzer      : boolean := false );
 port (
     -- globals
     sys_clock   : in    std_logic;
@@ -215,7 +216,9 @@ architecture logic of ultimate_logic is
     signal mem_resp_1541_2  : t_mem_resp;
     signal mem_req_cart     : t_mem_req := c_mem_req_init;
     signal mem_resp_cart    : t_mem_resp;
-    
+    signal mem_req_debug    : t_mem_req := c_mem_req_init;
+    signal mem_resp_debug   : t_mem_resp;
+
     -- IO Bus
     signal cpu_io_req       : t_io_req;
     signal cpu_io_resp      : t_io_resp := c_io_resp_init;
@@ -257,6 +260,8 @@ architecture logic of ultimate_logic is
     signal io_resp_icap     : t_io_resp := c_io_resp_init;
     signal io_req_aud_sel   : t_io_req;
     signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
+    signal io_req_debug     : t_io_req;
+    signal io_resp_debug    : t_io_resp := c_io_resp_init;
     
     -- Audio routing
     signal pwm              : std_logic;
@@ -648,7 +653,7 @@ begin
         reqs(0)  => io_req_sd,      -- 4060000 
         reqs(1)  => io_req_rtc,     -- 4060100 
         reqs(2)  => io_req_flash,   -- 4060200 
-        reqs(3)  => open,           -- 4060300 
+        reqs(3)  => io_req_debug,   -- 4060300 
         reqs(4)  => io_req_rtc_tmr, -- 4060400
         reqs(5)  => io_req_gcr_dec, -- 4060500
         reqs(6)  => io_req_icap,    -- 4060600
@@ -657,7 +662,7 @@ begin
         resps(0) => io_resp_sd,
         resps(1) => io_resp_rtc,
         resps(2) => io_resp_flash,
-        resps(3) => c_io_resp_init,
+        resps(3) => io_resp_debug,
         resps(4) => io_resp_rtc_tmr,
         resps(5) => io_resp_gcr_dec,
         resps(6) => io_resp_icap,
@@ -911,7 +916,7 @@ begin
 	
     i_mem_arb: entity work.mem_bus_arbiter_pri
     generic map (
-        g_ports      => 4,
+        g_ports      => 5,
         g_registered => false )
     port map (
         clock       => sys_clock,
@@ -920,12 +925,14 @@ begin
         reqs(0)     => mem_req_cart,
         reqs(1)     => mem_req_1541,
         reqs(2)     => mem_req_1541_2,
-        reqs(3)     => mem_req_cpu,
+        reqs(3)     => mem_req_debug,
+        reqs(4)     => mem_req_cpu,
 
         resps(0)    => mem_resp_cart,
         resps(1)    => mem_resp_1541,
         resps(2)    => mem_resp_1541_2,
-        resps(3)    => mem_resp_cpu,
+        resps(3)    => mem_resp_debug,
+        resps(4)    => mem_resp_cpu,
         
         req         => mem_req,
         resp        => mem_resp );        
@@ -971,5 +978,32 @@ begin
     c64_irq <= not c64_irq_n;
 
     -- dummy
-    SD_DATA     <= "ZZ"; 
+    SD_DATA     <= "ZZ";
+    
+    g_ela: if g_analyzer generate
+        signal ev_data  : std_logic_vector(15 downto 0);
+    begin
+        i_ela: entity work.logic_analyzer
+        generic map (
+            g_timer_div    => 50,
+            g_change_width => 16,
+            g_data_length  => 2 )
+        port map (
+            clock       => sys_clock,
+            reset       => sys_reset,
+            
+            ev_dav      => '0',
+            ev_data     => ev_data,
+            
+            ---
+            mem_req     => mem_req_debug,
+            mem_resp    => mem_resp_debug,
+            
+            io_req      => io_req_debug,
+            io_resp     => io_resp_debug );
+         
+        ev_data <= srq_i & atn_i & data_i & clk_i & '1' & atn_o_2 & data_o_2 & clk_o_2 &
+                   '0' & atn_o & data_o & clk_o & hw_srq_o & hw_atn_o & hw_data_o & hw_clk_o;
+    end generate;
+    
 end logic;

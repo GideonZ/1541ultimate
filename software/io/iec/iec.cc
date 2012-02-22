@@ -7,6 +7,11 @@ extern "C" {
 #include "poll.h"
 #include "c64.h"
 #include "filemanager.h"
+#include "userinterface.h"
+
+#define MENU_IEC_RESET       0xCA10
+#define MENU_IEC_TRACE_ON    0xCA11
+#define MENU_IEC_TRACE_OFF   0xCA12
 
 // this global will cause us to run!
 IecInterface iec_if;
@@ -20,7 +25,7 @@ IecInterface :: IecInterface()
 {
     if(CAPABILITIES & CAPAB_HARDWARE_IEC) {
         poll_list.append(&poll_iec_interface);
-    
+		main_menu_objects.append(this);
         printf("IEC Processor found: Version = %b\n", HW_IEC_VERSION);
     
     }
@@ -32,6 +37,15 @@ IecInterface :: ~IecInterface()
 	poll_list.remove(&poll_iec_interface);
 }
 
+int IecInterface :: fetch_task_items(IndexedList<PathObject *> &list)
+{
+	list.append(new ObjectMenuItem(this, "Reset IEC",      MENU_IEC_RESET));
+	list.append(new ObjectMenuItem(this, "Trace IEC",      MENU_IEC_TRACE_ON));
+    list.append(new ObjectMenuItem(this, "Dump IEC Trace", MENU_IEC_TRACE_OFF));
+	return 3;
+}
+
+BYTE dummy_prg[] = { 0x01, 0x08, 0x0C, 0x08, 0xDC, 0x07, 0x99, 0x22, 0x48, 0x4F, 0x49, 0x22, 0x00, 0x00, 0x00 };
 int IecInterface :: poll(Event &e)
 {
     int a;
@@ -40,19 +54,23 @@ int IecInterface :: poll(Event &e)
         data = HW_IEC_RX_DATA;
         if(a & IEC_FIFO_CTRL) {
             switch(data) {
-                case 0x01:
-                    atn = true;
+                case 0x43:
+                    printf("{tlk} ");
+                    for(int i=0;i<14;i++) {
+                        HW_IEC_TX_DATA = (BYTE)dummy_prg[i];
+                    }
+                    HW_IEC_TX_LAST = 0x00;
                     break;
-                case 0x02:
-                    atn = false;
-                    break;
-                case 0x03:
-                    for(int i=0;i<10;i++)
-                        HW_IEC_TX_DATA = 0x40 + (BYTE)i;
-                    HW_IEC_TX_LAST = 0xAA;
-                    break;
-                case 0x0E:
+                case 0x45:
                     printf("{end} ");
+                    break;
+                case 0x41:
+                    atn = true;
+                    printf("<%b> ", data);
+                    break;
+                case 0x42:
+                    atn = false;
+                    printf("<%b> ", data);
                     break;
                 default:
                     printf("<%b> ", data);
@@ -62,6 +80,42 @@ int IecInterface :: poll(Event &e)
                 printf("[/%b] ", data);
             else
                 printf("[%b] ", data);
+        }
+    }
+
+	File *f;
+	PathObject *po;
+	UINT transferred;
+
+	if((e.type == e_object_private_cmd)&&(e.object == this)) {
+		switch(e.param) {
+            case MENU_IEC_RESET:
+                HW_IEC_RESET = 1;
+                break;
+            case MENU_IEC_TRACE_ON :
+                LOGGER_COMMAND = LOGGER_CMD_START;
+                start_address = (LOGGER_ADDRESS & 0xFFFFFFFCL);
+                printf("Logic Analyzer started. Address = %p. Length=%b\n", start_address, LOGGER_LENGTH);
+                break;
+            case MENU_IEC_TRACE_OFF:
+                LOGGER_COMMAND = LOGGER_CMD_STOP;
+                end_address = LOGGER_ADDRESS;
+                printf("Logic Analyzer stopped. Address = %p\n", end_address);
+                if(start_address == end_address)
+                    break;
+                po = user_interface->get_path();
+                f = root.fcreate("iectrace.bin", po);
+                if(f) {
+                    printf("Opened file successfully.\n");
+                    f->write((void *)start_address, end_address - start_address, &transferred);
+                    printf("written: %d...", transferred);
+                    f->close();
+                } else {
+                    printf("Couldn't open file..\n");
+                }
+                break;
+            default:
+                break;
         }
     }
 }

@@ -65,6 +65,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/copper/vhdl_source/copper_regs.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/copper/vhdl_source/copper_engine.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/copper/vhdl_source/copper.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/debug/vhdl_source/logic_analyzer.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_debug_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_trace.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/Q_table.vhd \
