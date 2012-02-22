@@ -99,6 +99,7 @@ public:
 		}
 	    else
 	        lfname = NULL;
+        extension[3] = 0;
     }
     
     FileInfo(char *name)
@@ -114,6 +115,7 @@ public:
 		lfsize = strlen(name)+1;
         lfname = new char[lfsize];
         strcpy(lfname, name);
+        extension[3] = 0;
     }
     
     FileInfo(FileInfo &i)
@@ -133,6 +135,7 @@ public:
         strncpy(lfname, i.lfname, lfsize);
         strncpy(extension, i.extension, 4);
         attrib = i.attrib;
+        extension[3] = 0;
     }
     
 	~FileInfo() {

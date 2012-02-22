@@ -32,17 +32,24 @@
 #define LOGGER_CMD_START       0x33
 #define LOGGER_CMD_STOP        0x44
 
+class IecChannel;
+
 class IecInterface : public ObjectWithMenu
 {
     bool atn;
+    bool talking;
     DWORD start_address;
     DWORD end_address;
+    IecChannel *channels[16];
+    int current_channel;
 public:
+    Path *path;
+
     IecInterface();
     ~IecInterface();
     
     int poll(Event &ev);
-    int   fetch_task_items(IndexedList<PathObject *> &list);
+    int fetch_task_items(IndexedList<PathObject *> &list);
 
 };
 

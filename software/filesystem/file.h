@@ -42,7 +42,16 @@ public:
     virtual FRESULT write(void *buffer, DWORD len, UINT *transferred);
     virtual FRESULT seek(DWORD pos);
     virtual void print_info() { fs->file_print_info(this); }
-
+    virtual int get_size(void)
+    {
+        if(!node)
+            return -1;
+        FileInfo *fi = node->get_file_info();
+        if(!fi)
+            return -2;
+        return (int)fi->size; 
+    }
+    
 };
 
 #endif

@@ -94,6 +94,20 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
     return f;
 }
 
+File *FileManager :: fopen(char *filename, PathObject *dir, BYTE flags)
+{
+    PathObject *obj = dir->find_child(filename);
+    if(obj) {
+        return fopen(obj, flags);
+    }
+
+    // file not found. Check flags if we are allowed to create it
+    if(flags & FA_CREATE_NEW) {
+        return fcreate(filename, dir);
+    }
+    return NULL;    
+}
+
 
 File *FileManager :: fopen(char *filename, BYTE flags)
 {

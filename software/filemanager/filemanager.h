@@ -45,6 +45,7 @@ public:
     }
 
     File *fopen(char *filename, BYTE flags);
+    File *fopen(char *filename, PathObject *dir, BYTE flags);
     File *fopen(PathObject *obj, BYTE flags);
     File *fcreate(char *filename, PathObject *dir);
     

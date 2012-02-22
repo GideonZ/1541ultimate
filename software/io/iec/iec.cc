@@ -4,6 +4,7 @@ extern "C" {
     #include "small_printf.h"
 }
 #include "iec.h"
+#include "iec_channel.h"
 #include "poll.h"
 #include "c64.h"
 #include "filemanager.h"
@@ -23,17 +24,30 @@ void poll_iec_interface(Event &ev)
 
 IecInterface :: IecInterface()
 {
-    if(CAPABILITIES & CAPAB_HARDWARE_IEC) {
-        poll_list.append(&poll_iec_interface);
-		main_menu_objects.append(this);
-        printf("IEC Processor found: Version = %b\n", HW_IEC_VERSION);
-    
-    }
+    if(!(CAPABILITIES & CAPAB_HARDWARE_IEC))
+        return;
+
+    poll_list.append(&poll_iec_interface);
+	main_menu_objects.append(this);
+    printf("IEC Processor found: Version = %b\n", HW_IEC_VERSION);
     atn = false;
+    path = new Path; // starts in SdCard root ;)
+
+    for(int i=0;i<16;i++) {
+        channels[i] = new IecChannel(this, i);
+    }
+    current_channel = 0;
+    talking = false;
 }
 
 IecInterface :: ~IecInterface()
 {
+    if(!(CAPABILITIES & CAPAB_HARDWARE_IEC))
+        return;
+
+    for(int i=0;i<16;i++)
+        delete channels[i];
+    delete path;
 	poll_list.remove(&poll_iec_interface);
 }
 
@@ -45,7 +59,8 @@ int IecInterface :: fetch_task_items(IndexedList<PathObject *> &list)
 	return 3;
 }
 
-BYTE dummy_prg[] = { 0x01, 0x08, 0x0C, 0x08, 0xDC, 0x07, 0x99, 0x22, 0x48, 0x4F, 0x49, 0x22, 0x00, 0x00, 0x00 };
+//BYTE dummy_prg[] = { 0x01, 0x08, 0x0C, 0x08, 0xDC, 0x07, 0x99, 0x22, 0x48, 0x4F, 0x49, 0x22, 0x00, 0x00, 0x00 };
+
 int IecInterface :: poll(Event &e)
 {
     int a;
@@ -56,16 +71,15 @@ int IecInterface :: poll(Event &e)
             switch(data) {
                 case 0x43:
                     printf("{tlk} ");
-                    for(int i=0;i<14;i++) {
-                        HW_IEC_TX_DATA = (BYTE)dummy_prg[i];
-                    }
-                    HW_IEC_TX_LAST = 0x00;
+                    talking = true;
                     break;
                 case 0x45:
                     printf("{end} ");
+                    channels[current_channel]->push_command(0);
                     break;
                 case 0x41:
                     atn = true;
+                    talking = false;
                     printf("<%b> ", data);
                     break;
                 case 0x42:
@@ -76,10 +90,36 @@ int IecInterface :: poll(Event &e)
                     printf("<%b> ", data);
             }
         } else {
-            if(atn)
+            if(atn) {
                 printf("[/%b] ", data);
-            else
+                if(data >= 0x60) { // workaround for passing of wrong atn codes talk/untalk
+                    current_channel = int(data & 0x0F);
+                    channels[current_channel]->push_command(data & 0xF0);
+                }
+            } else {
                 printf("[%b] ", data);
+                channels[current_channel]->push_data(data);
+            }
+        }
+    }
+
+    int st;
+    if(talking) {
+        if(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
+            st = channels[current_channel]->pop_data(data);
+            if(st == IEC_OK)
+                HW_IEC_TX_DATA = data;
+            else if(st == IEC_LAST) {
+                HW_IEC_TX_LAST = 1;
+                while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+                    ;
+                HW_IEC_TX_DATA = data;
+                talking = false;
+            } else { 
+                printf("Talk Error = %d\n", st);
+                HW_IEC_TX_LAST = 0x10;
+                talking = false;
+            }
         }
     }
 
