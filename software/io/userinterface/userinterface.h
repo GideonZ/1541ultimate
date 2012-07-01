@@ -11,6 +11,7 @@
 #include "poll.h"
 #include "event.h"
 #include "versions.h"
+#include "config.h"
 
 
 #define NUM_BUTTONS 5
@@ -36,9 +37,12 @@ typedef enum {
 class UIObject;
 class UIStatusBox;
 
-class UserInterface
+class UserInterface : public ConfigurableObject
 {
 private:
+    /* Configurable Object */
+    void effectuate_settings(void);
+
     bool initialized;
     t_ui_state state;
 
@@ -48,6 +52,8 @@ private:
     PathObject *current_path;
     UIStatusBox *status_box;
 public:
+    int color_border, color_bg, color_fg, color_sel;
+
     GenericHost *host;
     Keyboard *keyboard;
     Screen *screen;
@@ -74,6 +80,8 @@ public:
     void set_screen(Screen *s); /* Only used in updater */
     int  activate_uiobject(UIObject *obj);
         
+    void run_editor(char *);
+
 //    UIObject *get_current_ui_object(void) { return ui_objects[focus]; }
     UIObject *get_root_object(void) { return ui_objects[0]; }
 };

@@ -749,8 +749,19 @@ int Usb :: bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len
 
 int Usb :: bulk_out(void *buf, int len, int pipe)
 {
-    memcpy((void *)&USB_BUFFER(256), buf, len);
-    return bulk_out_actual(len, pipe);
+    int total = 0;
+    char *b = (char *)buf;
+    while(len > 0) {
+        int len_now = (len > 512)?512:len;
+        memcpy((void *)&USB_BUFFER(256), b, len_now);
+        int res = bulk_out_actual(len_now, pipe);
+        if (res <= 0)
+            return total;
+        b += res;
+        len -= res;            
+        total += res;
+    }
+    return total;
 }
     
 int Usb :: bulk_out_actual(int len, int pipe)

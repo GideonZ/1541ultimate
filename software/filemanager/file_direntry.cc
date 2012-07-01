@@ -81,20 +81,26 @@ int FileDirEntry :: fetch_children(void)
 	
     if(info->is_directory()) {
         printf("Opening dir %s.\n", info->lfname);
+        info->print_info();
         Directory *r = info->fs->dir_open(info);
+        printf("Directory = %p\n", r);
 		if(!r) {
 			printf("Error opening directory!\n");
 			return -1;
 		}
         int i=0;        
         while((fres = r->get_entry(fi)) == FR_OK) {
+            printf(".");
 			if((fi.lfname[0] != '.') && !(fi.attrib & AM_HID)) {
 	            children.append(new FileDirEntry(this, &fi));
 	            ++i;
 			}
         }
+        printf("close");
         info->fs->dir_close(r);
+        printf("sort");
         sort_children();
+        printf("dup");
         remove_duplicates(); // should be easy!!
         return i;
     } else {
@@ -131,6 +137,10 @@ int FileDirEntry :: fetch_context_items_actual(IndexedList<PathObject *> &list)
 		list.append(new MenuItem(this, "Rename", FILEDIR_RENAME));
 	    list.append(new MenuItem(this, "Delete", FILEDIR_DELETE));
 		count+=2;
+        if((info->size <= 262144)&&(!(info->attrib & AM_DIR))) {
+            list.append(new MenuItem(this, "View",   FILEDIR_VIEW));
+            count++;
+        }
 	}
 /*
     list.append(new MenuItem(this, "Dump FileInfo", MENU_DUMP_INFO));
@@ -187,6 +197,8 @@ void FileDirEntry :: execute(int selection)
     GcrImage *gcr;
     bool save_result;
     FRESULT fres;
+    File *f;
+    UINT transferred = 0;
     
     printf("FileDirEntry Execute option %4x\n", selection);
     switch(selection) {
@@ -232,6 +244,19 @@ void FileDirEntry :: execute(int selection)
 			push_event(e_browse_into);
 			break;
 			
+        case FILEDIR_VIEW:
+            f = info->fs->file_open(info, FA_READ);
+            if(f != NULL) {
+                char *text_buf = new char[info->size+1];
+                fres = info->fs->file_read(f, text_buf, info->size, &transferred);
+                printf("Res = %d. Read text buffer: %d bytes\n", fres, transferred);
+                text_buf[transferred] = 0;
+                // printf(text_buf);
+                user_interface->run_editor(text_buf);
+                delete text_buf;
+            }
+            break;            
+
         case MENU_DUMP_INFO:
             info->print_info();
             break;
@@ -295,9 +320,7 @@ void FileDirEntry :: execute(int selection)
         	}
         	res = user_interface->string_box("Give name for new directory..", buffer, 22);
         	if(res > 0) {
-        		FileInfo *fi = new FileInfo(*info);
-        		printf("%p.", &fi);
-        		strcpy(fi->lfname, buffer);
+        		FileInfo *fi = new FileInfo(info, buffer);
         		fi->attrib = 0;
 				fres = fi->fs->dir_create(fi);
 			    printf("Result of mkdir: %d\n", fres);

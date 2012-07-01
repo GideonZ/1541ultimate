@@ -138,6 +138,25 @@ public:
         extension[3] = 0;
     }
     
+    FileInfo(FileInfo *i, char *new_name)
+    {
+        fs = i->fs;
+        cluster = i->cluster;
+        size = i->size;
+        date = i->date;
+        time = i->time;
+        dir_clust = i->dir_clust;
+        dir_index = i->dir_index;
+//        dir_sector = i->dir_sector;
+//        dir_offset = i->dir_offset;
+//        lfn_index = i->lfn_index;
+		lfsize = strlen(new_name)+1;
+        lfname = new char[lfsize];
+        strcpy(lfname, new_name);
+        attrib = i->attrib;
+        extension[0] = 0;
+    }
+
 	~FileInfo() {
 	    if(lfname)
 	        delete lfname;

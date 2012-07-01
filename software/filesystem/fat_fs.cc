@@ -927,7 +927,7 @@ exit_rename:
 // Opens directory (creates dir object, NULL = root)
 Directory *FATFS::dir_open(FileInfo *f)  
 {
-    f->print_info();
+//    f->print_info();
     FATDIR *fd = new FATDIR(this);
     Directory *d = new Directory(this, (DWORD)fd);
     

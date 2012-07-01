@@ -68,7 +68,7 @@ int FileDevice :: fetch_children(void)
         if(info) {
             info->fs = p->attach_filesystem();
             info->cluster = 0; // indicate root dir
-            info->attrib = AM_DIR | AM_RDO; // ;-)
+            info->attrib = AM_DIR; // ;-)  (not read only of course, removed!!)
             if(!info->fs)
                 return -1;
             int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..

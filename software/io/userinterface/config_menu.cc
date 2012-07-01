@@ -33,7 +33,7 @@ void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 
 ConfigBrowserState :: ConfigBrowserState(PathObject *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
 {
-    default_color = 7;
+    //default_color = 7;
 }
 
 ConfigBrowserState :: ~ConfigBrowserState()

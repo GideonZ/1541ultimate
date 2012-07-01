@@ -13,7 +13,6 @@ public:
     int first_item_on_screen;
     int selected_line; // y-cursor
 
-    int default_color;
     int initial_index;
     bool refresh;
 

@@ -486,7 +486,7 @@ void C1541 :: poll(Event &e)
                                 bin_image->save(file, true);
                                 user_interface->hide_status();
                             }
-                            file->close();
+                            root.fclose(file);
                     		push_event(e_reload_browser);
                         } else {
                         	user_interface->popup("Unable to open file..", BUTTON_OK);

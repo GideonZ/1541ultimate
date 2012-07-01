@@ -40,7 +40,7 @@ public:
 				delete children[i];
 		}
 		if(ref_count) {
-			printf("Internal error! Deleting a path object that has %d references!\n", ref_count);
+			printf("Internal error! Deleting a path object %s that has %d references!\n", ref_count, get_name());
 		}
 	}
 

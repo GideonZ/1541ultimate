@@ -178,8 +178,8 @@ FRESULT FATFIL::open (
 
     valid = 1;
 
-    printf("File opened by name.. this is the directory info: \n");
-    dir_obj->print_info();
+//    printf("File opened by name.. this is the directory info: \n");
+//    dir_obj->print_info();
     LEAVE_FF(fs, FR_OK);
 }
 

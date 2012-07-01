@@ -74,10 +74,9 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
         return NULL;
         
     // create a copy of the file info object
-    FileInfo *fi = new FileInfo(*info);
+    FileInfo *fi = new FileInfo(info, filename);
     fi->dir_clust = info->cluster; // the new file will be located in the directory DIR_CLUST!
     // remember: our reference object was the directory, so the cluster of that object is our new dir_clust!
-    strcpy(fi->lfname, filename);
     fix_filename(fi->lfname);
     fi->attrib = 0;
 
@@ -85,7 +84,7 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
     if(!f)
         return NULL;
         
-    f->print_info();
+//    f->print_info();
     PathObject *node = new PathObject(dir, filename);
     f->node = node;
     dir->children.append(node);

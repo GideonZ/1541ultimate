@@ -1,4 +1,27 @@
 #include "userinterface.h"
+#include "editor.h"
+
+/* Configuration */
+char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
+                   "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
+
+                          
+static char *en_dis[] = { "Disabled", "Enabled" };
+
+#define CFG_USERIF_BACKGROUND 0x01
+#define CFG_USERIF_BORDER     0x02
+#define CFG_USERIF_FOREGROUND 0x03
+#define CFG_USERIF_SELECTED   0x04
+#define CFG_USERIF_WORDWRAP   0x05
+
+struct t_cfg_definition user_if_config[] = {
+    { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 0 },
+    { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 0 },
+    { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 15 },
+    { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 1 },
+//    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
+    { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
+};
 
 const char *c_button_names[NUM_BUTTONS] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
 const char c_button_keys[NUM_BUTTONS] = { 'o', 'y', 'n', 'c', 'a' };
@@ -18,6 +41,9 @@ UserInterface :: UserInterface()
     focus = -1;
     state = ui_idle;
     current_path = NULL;
+
+    register_store(0x47454E2E, "User Interface Settings", user_if_config);
+    effectuate_settings();
 }
 
 UserInterface :: ~UserInterface()
@@ -36,6 +62,16 @@ UserInterface :: ~UserInterface()
     printf(" bye UI!\n");
 }
 
+void UserInterface :: effectuate_settings(void)
+{
+    color_border = cfg->get_value(CFG_USERIF_BORDER);
+    color_fg     = cfg->get_value(CFG_USERIF_FOREGROUND);
+    color_bg     = cfg->get_value(CFG_USERIF_BACKGROUND);
+    color_sel    = cfg->get_value(CFG_USERIF_SELECTED);
+
+    push_event(e_refresh_browser);
+}
+    
 void UserInterface :: init(GenericHost *h, Keyboard *k)
 {
     host = h;
@@ -197,6 +233,17 @@ int  UserInterface :: hide_status(void)
     delete status_box;
 }
 
+void UserInterface :: run_editor(char *text_buf)
+{
+	Event e(e_nop, 0, 0);
+    Editor *edit = new Editor(text_buf);
+    edit->init(screen, keyboard);
+    int ret;
+    do {
+        ret = edit->poll(0, e);
+    } while(!ret);
+    edit->deinit();
+}
 
 /* User Interface Objects */
 /* Popup */

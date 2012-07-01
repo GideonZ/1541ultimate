@@ -297,6 +297,24 @@ void Screen :: output(char *string)
     }
 }
 
+void Screen :: output_length(char *string, int len)
+{
+    int temp = pointer - cursor_x;
+    char c;
+    for(int i=0;i<window_x;string++) {
+        c = *string;
+        if(i == len) {
+			for(int j=i;j<window_x;j++)
+				window_base[temp++] = 0;
+			break;
+		}
+        window_base[temp] = c;
+        window_base_col[temp] = (char)color;
+        temp++;
+        i++;
+    }
+}
+
 void Screen :: output_line(char *string)
 {
     int temp = pointer - cursor_x;
@@ -381,4 +399,24 @@ int Screen :: get_size_y(void)
 char *Screen :: get_pointer(void)
 {
     return &window_base[pointer];
+}
+
+int console_print(Screen *screen, const char *fmt, ...)
+{
+	static char str[256];
+
+    va_list ap;
+    int ret;
+	char *pnt = str;
+	
+    va_start(ap, fmt);
+	if(screen) {
+	    ret = _vprintf(_string_write_char, (void **)&pnt, fmt, ap);
+	    _string_write_char(0, (void **)&pnt);
+	    screen->output(str);
+	} else {
+		ret = _vprintf(_diag_write_char, (void **)&pnt, fmt, ap);
+	}
+    va_end(ap);
+    return (ret);
 }

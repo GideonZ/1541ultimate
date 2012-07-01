@@ -10,6 +10,7 @@
 #include "context_menu.h"
 #include "task_menu.h"
 #include "filemanager.h"
+#include "editor.h"
 
 /***********************/
 /* Tree Browser Object */
@@ -90,6 +91,19 @@ void TreeBrowser :: task_menu(void)
 
 //    printf("Menu Node = %p. Menu_browser = %p.\n", menu_node, menu_browser);
 }
+
+void TreeBrowser :: test_editor(void)
+{
+	Event e(e_nop, 0, 0);
+    Editor *edit = new Editor(NULL); // use built-in text
+    edit->init(window, keyb);
+    int ret;
+    do {
+        ret = edit->poll(0, e);
+    } while(!ret);
+    edit->deinit();
+}
+    
 
 int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
 {
@@ -180,6 +194,7 @@ int TreeBrowser :: handle_key(char c)
             state->up(window->get_size_y()/2);
             break;
         case 0x86: // F3 -> RUN
+            test_editor();
             ret = 0; // ## TODO
             break;
 		case 0x87: // F5: Menu

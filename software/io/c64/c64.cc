@@ -35,6 +35,7 @@ extern "C" {
 #include <string.h>
 #include "menu.h"
 #include "userinterface.h"
+#include "sampler.h"
 
 /* other external references */
 extern BYTE _binary_bootcrt_65_start;
@@ -130,6 +131,9 @@ struct t_cfg_definition c64_config[] = {
 #define MENU_C64_SAVEREU    0x6403
 #define MENU_C64_SAVEFLASH  0x6404
 #define MENU_C64_RUNCMDCART 0x6405
+#define MENU_C64_PLAY8B     0x6406
+#define MENU_C64_PLAY16B    0x6407
+#define MENU_C64_BOOTFPGA   0x6408
 
 extern BYTE _binary_chars_bin_start;
 
@@ -203,12 +207,15 @@ int  C64 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
 	item_list.append(new ObjectMenuItem(this, "Reset C64", MENU_C64_RESET));
 	item_list.append(new ObjectMenuItem(this, "Reboot C64", MENU_C64_REBOOT));
+    item_list.append(new ObjectMenuItem(this, "Boot Alternate FPGA", MENU_C64_BOOTFPGA));
 //    item_list.append(new ObjectMenuItem(this, "Save SID Trace", MENU_C64_TRACE));
     item_list.append(new ObjectMenuItem(this, "Save REU Memory", MENU_C64_SAVEREU));
 //    item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_C64_RUNCMDCART));  /* temporary item */
    
 //    item_list.append(new ObjectMenuItem(this, "Save Flash", MENU_C64_SAVEFLASH));
-	return 3;
+    item_list.append(new ObjectMenuItem(this, "Play 8bit REU sample", MENU_C64_PLAY8B));
+    item_list.append(new ObjectMenuItem(this, "Play 16bit REU sample", MENU_C64_PLAY16B));
+	return 6;
 }
 		
 void C64 :: determine_d012(void)
@@ -726,8 +733,9 @@ void C64 :: poll(Event &e)
 	PathObject *po;
 	DWORD size;
 	UINT transferred;
-	
+    t_flash_address addr;
 	int run_code;
+
 	if(e.type == e_dma_load) {
 		f = (File *)e.object;
 		run_code = e.param;
@@ -801,6 +809,38 @@ void C64 :: poll(Event &e)
             } else {
                 printf("Couldn't open file..\n");
             }
+            break;
+        case MENU_C64_PLAY8B:
+            for(int i=0;i<8;i++) {
+                VOICE_CONTROL(i) = 0;
+            }
+            VOICE_START(0)   = 0x01000000L;
+            VOICE_LENGTH(0)  = 0x00800000L;
+            VOICE_RATE(0)    = 195; // 32K
+            VOICE_CONTROL(0) = (VOICE_CTRL_ENABLE | VOICE_CTRL_8BIT);
+
+            VOICE_START(1)   = 0x01000000L;
+            VOICE_LENGTH(1)  = 0x00800000L;
+            VOICE_RATE(1)    = 194; // 32K
+            VOICE_CONTROL(1) = (VOICE_CTRL_ENABLE | VOICE_CTRL_8BIT);
+            break;
+        case MENU_C64_PLAY16B:
+            for(int i=0;i<8;i++) {
+                VOICE_START(i)   = DWORD((i+1)*0x111);
+                VOICE_LENGTH(i)  = DWORD((8-i)*0x1111);
+                VOICE_CONTROL(i) = 0;
+            }
+            VOICE_CONTROL(1) = 0;
+            VOICE_START(1)   = 0x01001000L;
+            VOICE_LENGTH(1)  = 0x00F00000L;
+            VOICE_RATE(1)    = 194; // 32K
+            VOICE_CONTROL(1) = (VOICE_CTRL_ENABLE | VOICE_CTRL_16BIT);
+            wait_ms(5000);
+            VOICE_RATE(1)    = 142; // 32K
+            break;
+        case MENU_C64_BOOTFPGA:
+            flash->get_image_addresses(FLASH_ID_CUSTOMFPGA, &addr);
+            flash->reboot(addr.start);
             break;
         case MENU_C64_RUNCMDCART:
             cmd_cart.custom_addr = (void *)&_binary_cmd_test_rom_65_start;

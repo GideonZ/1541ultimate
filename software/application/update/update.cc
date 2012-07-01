@@ -80,27 +80,7 @@ FATFS        *fs;
 */
 
 #undef printf
-#define printf console_print
-
-int console_print(const char *fmt, ...)
-{
-	static char str[256];
-
-    va_list ap;
-    int ret;
-	char *pnt = str;
-	
-    va_start(ap, fmt);
-	if(screen) {
-	    ret = _vprintf(_string_write_char, (void **)&pnt, fmt, ap);
-	    _string_write_char(0, (void **)&pnt);
-	    screen->output(str);
-	} else {
-		ret = _vprintf(_diag_write_char, (void **)&pnt, fmt, ap);
-	}
-    va_end(ap);
-    return (ret);
-}
+//#define printf(x) console_print(screen, x)
 
 int calc_checksum(BYTE *buffer, BYTE *buffer_end)
 {
@@ -123,7 +103,7 @@ int init_fat(void)
     dsk   = new Disk(blk, 512);
 
     int res = dsk->Init();
-    printf("Disk initialized. Returned: %d\n", res);
+    console_print(screen, "Disk initialized. Returned: %d\n", res);
 
     if(res < 1) {
         delete dsk;
@@ -135,7 +115,7 @@ int init_fat(void)
     prt = dsk->partition_list; // get first partition
     fs = new FATFS(prt);
     if(fs->check_fs(prt)) {
-        printf("Did not find FAT file system.\n");
+        console_print(screen, "Did not find FAT file system.\n");
         delete fs;
         delete prt;
         delete dsk;
@@ -159,7 +139,7 @@ int save_flash(char *filename)
 {
     FATFIL *file = new FATFIL(fs);
     int res = file->open(filename, 0, FA_READ | FA_WRITE | FA_CREATE_ALWAYS );
-    printf("File %s open result = %d.\n", filename, res);
+    console_print(screen, "File %s open result = %d.\n", filename, res);
     if(res != FR_OK) {
         return 0;
     }
@@ -169,7 +149,7 @@ int save_flash(char *filename)
 	for(int i=0;i<128;i++) {
 		flash.read(addr, 33*512, buffer);
 	    res = file->write(buffer, 33*512, &bytes_written);
-	    printf("Bytes written: %d (0x%6x)\n", bytes_written, addr);
+	    console_print(screen, "Bytes written: %d (0x%6x)\n", bytes_written, addr);
 	    addr += (33*512);
 	}    
     file->close();
@@ -188,9 +168,9 @@ bool need_update(int id, char *version, char *descr)
     flash->read_linear_addr(address + 4, 12, current);
     current[12] = 0;
     if((current[0] > ' ') && (current[0] <= 'z')) {
-        printf("Version of \033\027%s\033\037 found:\n\033\027%s\033\037. New version = \033\027%s\033\037\n\n", descr, current, version);
+        console_print(screen, "Version of \033\027%s\033\037 found:\n\033\027%s\033\037. New version = \033\027%s\033\037\n\n", descr, current, version);
     } else {
-    	printf("Unknown version of \033\027%s\033\037\n", descr);
+    	console_print(screen, "Unknown version of \033\027%s\033\037\n", descr);
     	return true;
     }
     return (strcmp(version, current)!=0);
@@ -203,7 +183,7 @@ bool my_memcmp(void *a, void *b, int len)
     len >>= 2;
     while(len--) {
         if(*pula != *pulb) {
-            printf("ERR: %p: %8x, %p %8x.\n", pula, *pula, pulb, *pulb);
+            console_print(screen, "ERR: %p: %8x, %p %8x.\n", pula, *pula, pulb, *pulb);
             return false;
         }
         pula++;
@@ -225,9 +205,9 @@ bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
     char *p;
     char *verify_buffer = new char[page_size]; // is never freed, but the hell we care!
 
-    //printf("            \n");
+    //console_print(screen, "            \n");
     if(image_address.has_header) {
-        printf("Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
+        console_print(screen, "Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
         BYTE *bin = new BYTE[length+16];
         DWORD *pul;
         pul = (DWORD *)bin;
@@ -239,7 +219,7 @@ bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
         p = (char *)bin;
     }
     else {
-        printf("Flashing  \033\027%s\033\037..\n", descr);
+        console_print(screen, "Flashing  \033\027%s\033\037..\n", descr);
         p = (char *)buffer;
     }    
     
@@ -250,25 +230,25 @@ bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
 			sector = flash->page_to_sector(page);
 			if (sector != last_sector) {
 				last_sector = sector;
-				// printf("Erasing     %d   \r", sector);
+				// console_print(screen, "Erasing     %d   \r", sector);
 				if(!flash->erase_sector(sector)) {
 			        // user_interface->popup("Erasing failed...", BUTTON_CANCEL);
 			        return false;
 				}
 			}
 		}
-        printf("Programming %d  \r", page);
+        console_print(screen, "Programming %d  \r", page);
         int retry = 3;
         while(retry > 0) {
             retry --;
             if(!flash->write_page(page, p)) {
-                printf("Programming error on page %d.\n", page);
+                console_print(screen, "Programming error on page %d.\n", page);
                 continue;    
             }
             flash->read_page(page, verify_buffer);
             if(!my_memcmp(verify_buffer, p, page_size)) {
-                printf("Verify failed on page %d. Retry %d.\n", page, retry);
-                printf("%p %p %d\n", verify_buffer, p, page_size);
+                console_print(screen, "Verify failed on page %d. Retry %d.\n", page, retry);
+                console_print(screen, "%p %p %d\n", verify_buffer, p, page_size);
                 dump_hex(verify_buffer, 32);
                 dump_hex(p, 32);
                 continue;
@@ -320,7 +300,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
         	        break;
 #endif
                 default:
-                    printf("ERROR: Unknown FPGA type detected.\n");
+                    console_print(screen, "ERROR: Unknown FPGA type detected.\n");
                     while(1);
             } 
             if(!ok)
@@ -353,7 +333,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
             copy_rom(roms, FLASH_ID_SS5NTSC,   &min, &max, &_binary_ss5ntsc_bin_start,  &_binary_ss5ntsc_bin_end  );
             copy_rom(roms, FLASH_ID_TAR_PAL,   &min, &max, &_binary_tar_pal_bin_start,  &_binary_tar_pal_bin_end  );
             copy_rom(roms, FLASH_ID_TAR_NTSC,  &min, &max, &_binary_tar_ntsc_bin_start, &_binary_tar_ntsc_bin_end );
-            // printf("All roms located from %p to %p.\n", min, max);
+            // console_print(screen, "All roms located from %p to %p.\n", min, max);
             flash_buffer(FLASH_ID_ALL_ROMS, roms + min, roms + max, "", "all roms");
             free(roms);
         } else {
@@ -377,14 +357,14 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 	if(do_update2) {
     	flash_buffer(FLASH_ID_APPL, &_binary_ultimate_bin_start, &_binary_ultimate_bin_end, APPL_VERSION, "Ultimate application");
     }
-	printf("                       \nDone!\n");
+	console_print(screen, "                       \nDone!\n");
 	return true;
 }
     
 int main()
 {
 	char time_buffer[32];
-	printf("*** Ultimate Updater ***\n\n");
+	console_print(screen, "*** Ultimate Updater ***\n\n");
 
     GenericHost *host;
     if (ITU_CAPABILITIES & CAPAB_OVERLAY) 
@@ -407,8 +387,8 @@ int main()
 
 	flash = get_flash();
 
-	printf("%s ", rtc.get_long_date(time_buffer, 32));
-	printf("%s\n", rtc.get_time_string(time_buffer, 32));
+	console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
+	console_print(screen, "%s\n", rtc.get_time_string(time_buffer, 32));
 
 	if(!flash) {
 		user_interface->popup("Flash device not recognized.", BUTTON_CANCEL);
@@ -423,33 +403,33 @@ int main()
 
     /* Extra check on the loaded images */
     const char *check_error = "\033\032\nChecksum error... Not flashing.\n";
-    printf("\033\027Checking checksums loaded images..\033\037\n");
+    console_print(screen, "\033\027Checking checksums loaded images..\033\037\n");
     if(calc_checksum(&_binary_1st_boot_700_bin_start, &_binary_1st_boot_700_bin_end) == CHK_1st_boot_700_bin)
-        printf("Checksum of FPGA image:   OK..\n");
+        console_print(screen, "Checksum of FPGA image:   OK..\n");
     else {
-        printf(check_error);
+        console_print(screen, check_error);
         while(1);
     }
     if(calc_checksum(&_binary_2nd_boot_bin_start, &_binary_2nd_boot_bin_end) == CHK_2nd_boot_bin)
-        printf("Checksum of Bootloader:   OK..\n");
+        console_print(screen, "Checksum of Bootloader:   OK..\n");
     else {
-        printf(check_error);
+        console_print(screen, check_error);
         while(1);
     }
     if(calc_checksum(&_binary_ultimate_bin_start, &_binary_ultimate_bin_end) == CHK_ultimate_bin)
-        printf("Checksum of Application:  OK..\n\n");
+        console_print(screen, "Checksum of Application:  OK..\n\n");
     else {
-        printf(check_error);
+        console_print(screen, check_error);
         while(1);
     }
-    printf("\n\n\n\n\n\n\n\n");
+    console_print(screen, "\n\n\n\n\n\n\n\n");
             
 	bool do_update1 = false;
 	bool do_update2 = false;
     bool virgin = false;
 
 //	flash->protect_disable();
-//    printf("Flash protection disabled.\n");
+//    console_print(screen, "Flash protection disabled.\n");
 //    while(1);
 //
     // virginity check
@@ -475,7 +455,7 @@ int main()
         }
 	}
 
-	printf("\nConfiguring Flash write protection..\n");
+	console_print(screen, "\nConfiguring Flash write protection..\n");
 	flash->protect_configure();
 	flash->protect_enable();
 
@@ -488,14 +468,14 @@ int main()
         }
     }
 
-    printf("\nTo avoid loading this updater again,\ndelete it from your media.\n");
+    console_print(screen, "\nTo avoid loading this updater again,\ndelete it from your media.\n");
 	
     wait_ms(2000);
     
     user_interface->popup("Remove SDCard. Reboot?", BUTTON_OK);
     flash->reboot(0);
     
-//	printf("\nPlease remove the SD card, and switch\noff your machine...\n");
+//	console_print(screen, "\nPlease remove the SD card, and switch\noff your machine...\n");
 
     while(1)
         ;

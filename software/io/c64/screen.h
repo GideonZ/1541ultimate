@@ -43,6 +43,7 @@ public:
     void  output(char);
     void  output(char *);
     void  output_line(char *);
+    void  output_length(char *, int);
     void  draw_border(void);
     void  reverse_mode(int);
     void  make_reverse(int x, int y, int len);
@@ -50,6 +51,8 @@ public:
     int   get_size_y(void);
     char *get_pointer(void);
 };
+
+int console_print(Screen *screen, const char *fmt, ...);
 
 #endif
 

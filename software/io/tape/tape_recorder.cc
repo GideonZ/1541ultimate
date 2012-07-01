@@ -51,7 +51,7 @@ int  TapeRecorder :: fetch_task_items(IndexedList<PathObject*> &item_list)
 	}
     else {
         po = user_interface->get_path();
-/*
+
         if(po) {
             printf("Current DIR: %s\n", po->get_name());
             FileInfo *info = po->get_file_info();
@@ -60,7 +60,7 @@ int  TapeRecorder :: fetch_task_items(IndexedList<PathObject*> &item_list)
         } else {
             printf("Path not set.\n");
         }
-*/
+
         if(po && po->get_file_info()) {
             info = po->get_file_info();
             if(info->is_writable()) {

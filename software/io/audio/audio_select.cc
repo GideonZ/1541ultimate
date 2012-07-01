@@ -25,7 +25,7 @@ AudioConfig audio_configurator;
 #define CFG_AUDIO_SID_WAVE_LEFT  0x56
 #define CFG_AUDIO_SID_WAVE_RIGHT 0x57
 
-char *aud_choices[] = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right" };
+char *aud_choices[] = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right" };
 
 char *sid_base[] = { "Snoop $D400", "Snoop $D420", "Snoop $D480", "Snoop $D500", "Snoop $D580", 
                      "Snoop $D600", "Snoop $D680", "Snoop $D700", "Snoop $D780",
@@ -43,8 +43,8 @@ char *en_dis3[] = { "Disabled", "Enabled" };
 char *sidchip_sel[] = { "6581", "8580" };
 
 struct t_cfg_definition audio_cfg[] = {
-    { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  5, 0 },
-    { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices, 0,  5, 1 },
+    { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  7, 0 },
+    { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices, 0,  7, 1 },
     { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis3,     0,  1, 1 },
     { CFG_AUDIO_SID_BASE_LEFT,  CFG_TYPE_ENUM, "SID Left Base",                "%s", sid_base,    0, 24, 0 },
     { CFG_AUDIO_SID_EXT_LEFT,   CFG_TYPE_ENUM, "SID Left Mode",                "%s", sid_voices,  0,  1, 0 },
@@ -63,7 +63,7 @@ struct t_cfg_definition audio_cfg_no_sid[] = {
 
 AudioConfig :: AudioConfig()
 {
-    if(CAPABILITIES & CAPAB_STEREO_SID) {
+    if(CAPABILITIES & (CAPAB_STEREO_SID | CAPAB_SAMPLER)) {
         register_store(0x41554449, "Audio Output settings", audio_cfg);
     } else {
         register_store(0x4155444A, "Audio Output settings", audio_cfg_no_sid);

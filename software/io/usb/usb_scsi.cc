@@ -744,29 +744,29 @@ DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, BYTE num_sectors)
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;
 
-//        printf("Read USB sector: %d (%d).\n", sector, num_sectors);
+        // printf("Read USB sector: %d (%d).\n", sector, num_sectors);
 
-    BYTE read_10_command[] = { 0x28, BYTE(lun << 5), 0,0,0,0, 0x00, 0, 1, 0 };
+    BYTE read_10_command[] = { 0x28, BYTE(lun << 5), 0,0,0,0, 0x00, 0, num_sectors, 0 };
     
     int len, stat_len;
 
 	USB_COMMAND = USB_CMD_SET_BUSY;
-    for(int s=0;s<num_sectors;s++) {
+//    for(int s=0;s<num_sectors;s++) {
         //ST_DWORD(&cbw.cmd[2], sector);
         memcpy(&read_10_command[2], &sector, 4);
         
         for(int retry=0;retry<10;retry++) {
             USB_COMMAND = USB_CMD_SET_DEBUG;
-            if(exec_command(10, false, read_10_command, block_size, buf, false) != block_size) {
+            if(exec_command(10, false, read_10_command, block_size*num_sectors, buf, false) != block_size*num_sectors) {
         		USB_COMMAND = USB_CMD_CLEAR_BUSY;
                 return RES_ERROR;
             } else
                 break;
         }
         
-        buf += block_size;
-        sector ++;
-    }
+//        buf += block_size;
+//        sector ++;
+//    }
 
 	USB_COMMAND = USB_CMD_CLEAR_BUSY;
     return RES_OK;
@@ -780,20 +780,20 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, BYTE num_sectors)
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;
 
-    BYTE write_10_command[] = { 0x2A, BYTE(lun << 5), 0,0,0,0, 0x00, 0, 1, 0 };
+    BYTE write_10_command[] = { 0x2A, BYTE(lun << 5), 0,0,0,0, 0x00, 0, num_sectors, 0 };
     
     int len, stat_len;
 
 	USB_COMMAND = USB_CMD_SET_BUSY;
 
     printf("USB: Writing %d sectors from %d.\n", num_sectors, sector);
-    for(int s=0;s<num_sectors;s++) {
+//    for(int s=0;s<num_sectors;s++) {
         //ST_DWORD(&cbw.cmd[2], sector);
         memcpy(&write_10_command[2], &sector, 4);
 
         for(int retry=0;retry<10;retry++) {
-        	len = exec_command(10, true, write_10_command, 512, (BYTE *)buf, false);
-        	if(len != 512) {
+        	len = exec_command(10, true, write_10_command, block_size*num_sectors, (BYTE *)buf, false);
+        	if(len != block_size*num_sectors) {
         		printf("Error %d.\n", len);
         		USB_COMMAND = USB_CMD_CLEAR_BUSY;
                 return RES_ERROR;
@@ -801,9 +801,9 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, BYTE num_sectors)
                 break;
         }
         
-        buf += 512;
-        sector ++;
-    }
+//        buf += block_size;
+//        sector ++;
+//    }
 	USB_COMMAND = USB_CMD_CLEAR_BUSY;
     return RES_OK;
 }

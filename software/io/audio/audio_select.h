@@ -12,6 +12,8 @@
 #define SOUND_CAS_WRITE   3
 #define SOUND_SID_LEFT    4
 #define SOUND_SID_RIGHT   5
+#define SOUND_SAMP_LEFT   6
+#define SOUND_SAMP_RIGHT  7
 
 #define SID_VOICES        *((volatile BYTE *)0x4042000)
 #define SID_FILTER_DIV    *((volatile BYTE *)0x4042001)

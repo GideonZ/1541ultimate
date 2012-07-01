@@ -58,6 +58,7 @@ extern FileTypeFactory file_type_factory;
 #define FILEDIR_DELETE   			0x2002
 #define FILEDIR_ENTERDIR 			0x2003
 #define FILEDIR_DELETE_CONTINUED   	0x2004
+#define FILEDIR_VIEW                0x2005
 
 #define MENU_CREATE_D64    0x3001
 #define MENU_CREATE_DIR    0x3002

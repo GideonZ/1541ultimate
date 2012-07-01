@@ -36,7 +36,8 @@ public:
     void context(int);
     void task_menu(void);
     void config(void);
-
+    void test_editor(void);
+    
     void invalidate(PathObject *obj);
 };
 #endif

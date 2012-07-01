@@ -24,7 +24,6 @@ TreeBrowserState :: TreeBrowserState(PathObject *n, TreeBrowser *b, int lev)
     selected = NULL;
 
     refresh = true;
-    default_color = 15;
     initial_index = -1;
     previous = NULL;
     deeper = NULL;
@@ -71,7 +70,7 @@ void TreeBrowserState :: draw()
 //	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, node->children.get_elements());
 //	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
 	// this functions initializes the screen
-    browser->window->set_color(default_color);
+    browser->window->set_color(user_interface->color_fg);
 
     if(node->children.get_elements() == 0) {
 		browser->window->clear();
@@ -113,19 +112,19 @@ void TreeBrowserState :: update_selected(void)
         return;
 
     browser->window->move_cursor(0, selected_line);
-    browser->window->set_color(1); // highlighted
+    browser->window->set_color(user_interface->color_sel); // highlighted
     browser->window->output_line(selected->get_display_string());
 }
     
 void TreeBrowserState :: unhighlight()
 {
-    browser->window->set_color(default_color, 0, selected_line, 40, 1, true);
+    browser->window->set_color(user_interface->color_fg, 0, selected_line, 40, 1, true);
 //    window->reverse(0, selection_index, 40);
 }
     
 void TreeBrowserState :: highlight()
 {
-    browser->window->set_color(0x61, 0, selected_line, 40, 1, true);
+    browser->window->set_color(0x60+user_interface->color_sel, 0, selected_line, 40, 1, true);
 //    window->reverse(0, selection_index, 40);
 //    window->set_color(1, 0, selection_index, quick_seek_length, 1);
 }
@@ -149,7 +148,7 @@ void TreeBrowserState :: up(int num)
 			browser->window->scroll_down();
 			first_item_on_screen--;
 			browser->window->move_cursor(0,0);
-			browser->window->set_color(default_color);
+			browser->window->set_color(user_interface->color_fg);
 			reselect();
 			browser->window->output_line(selected->get_display_string());
 		} else {
@@ -184,7 +183,7 @@ void TreeBrowserState :: down(int num)
 			browser->window->scroll_up();
 			first_item_on_screen++;
 			browser->window->move_cursor(0,max_y);
-			browser->window->set_color(default_color);
+			browser->window->set_color(user_interface->color_fg);
 			reselect();
 			browser->window->output_line(selected->get_display_string());
 		} else {
