@@ -14,6 +14,9 @@ extern "C" {
 #define MENU_IEC_TRACE_ON    0xCA11
 #define MENU_IEC_TRACE_OFF   0xCA12
 
+extern BYTE  _binary_iec_code_iec_start;
+extern DWORD _binary_iec_code_iec_size;
+
 // this global will cause us to run!
 IecInterface iec_if;
 
@@ -29,7 +32,15 @@ IecInterface :: IecInterface()
 
     poll_list.append(&poll_iec_interface);
 	main_menu_objects.append(this);
-    printf("IEC Processor found: Version = %b\n", HW_IEC_VERSION);
+    int size = (int)&_binary_iec_code_iec_size;
+    printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
+    BYTE *src = &_binary_iec_code_iec_start;
+    BYTE *dst = (BYTE *)HW_IEC_CODE_BE;
+    for(int i=0;i<size;i++)
+        *(dst++) = *(src++);
+    printf("%d bytes loaded.\n", size);
+    HW_IEC_RESET = 1;
+
     atn = false;
     path = new Path; // starts in SdCard root ;)
 

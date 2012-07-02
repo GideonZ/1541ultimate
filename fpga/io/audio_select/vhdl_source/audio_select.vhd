@@ -21,6 +21,8 @@ port (
     cas_write       : in  std_logic;
     sid_left        : in  std_logic;
     sid_right       : in  std_logic;
+    samp_left       : in  std_logic;
+    samp_right      : in  std_logic;
     
     pwm_out         : out std_logic_vector(1 downto 0) );
 
@@ -32,7 +34,7 @@ architecture gideon of audio_select is
     signal in_vec       : std_logic_vector(0 to 7);
 begin
 
-    in_vec <= drive0 & drive1 & cas_read & cas_write & sid_left & sid_right & sid_left & sid_right;
+    in_vec <= drive0 & drive1 & cas_read & cas_write & sid_left & sid_right & samp_left & samp_right;
 
     process(clock)
     begin

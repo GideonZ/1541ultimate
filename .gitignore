@@ -10,6 +10,8 @@ fpga/sid6581/sim/vsim.wlf
 fpga/sid6581/sim/work
 fpga/sid6581/tools
 fpga/sid_old
+/old_flash_images
+/releases
 roms/JiffyDOS_1541_6.00_(rebadged_5.0).bin
 target/fpga/*.xrpt
 target/fpga/_xmsgs

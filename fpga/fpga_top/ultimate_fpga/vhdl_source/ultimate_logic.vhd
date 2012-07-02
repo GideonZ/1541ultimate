@@ -37,6 +37,7 @@ generic (
     g_usb_host      : boolean := false;
     g_spi_flash     : boolean := false;
     g_vic_copper    : boolean := false;
+    g_sampler       : boolean := false;
     g_analyzer      : boolean := false );
 port (
     -- globals
@@ -189,6 +190,7 @@ architecture logic of ultimate_logic is
         cap(18) := to_std(g_command_intf);
         cap(19) := to_std(g_vic_copper);
         cap(20) := to_std(g_video_overlay);
+        cap(21) := to_std(g_sampler);
         cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -209,15 +211,17 @@ architecture logic of ultimate_logic is
 
 	-- Memory interface
     signal mem_req_cpu      : t_mem_req := c_mem_req_init;
-    signal mem_resp_cpu     : t_mem_resp;
+    signal mem_resp_cpu     : t_mem_resp := c_mem_resp_init;
     signal mem_req_1541     : t_mem_req := c_mem_req_init;
-    signal mem_resp_1541    : t_mem_resp;
+    signal mem_resp_1541    : t_mem_resp := c_mem_resp_init;
     signal mem_req_1541_2   : t_mem_req := c_mem_req_init;
-    signal mem_resp_1541_2  : t_mem_resp;
+    signal mem_resp_1541_2  : t_mem_resp := c_mem_resp_init;
     signal mem_req_cart     : t_mem_req := c_mem_req_init;
-    signal mem_resp_cart    : t_mem_resp;
+    signal mem_resp_cart    : t_mem_resp := c_mem_resp_init;
+    signal mem_req_samp     : t_mem_req := c_mem_req_init;
+    signal mem_resp_samp    : t_mem_resp := c_mem_resp_init;
     signal mem_req_debug    : t_mem_req := c_mem_req_init;
-    signal mem_resp_debug   : t_mem_resp;
+    signal mem_resp_debug   : t_mem_resp := c_mem_resp_init;
 
     -- IO Bus
     signal cpu_io_req       : t_io_req;
@@ -262,7 +266,9 @@ architecture logic of ultimate_logic is
     signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
     signal io_req_debug     : t_io_req;
     signal io_resp_debug    : t_io_resp := c_io_resp_init;
-    
+    signal io_req_samp      : t_io_req;
+    signal io_resp_samp     : t_io_resp := c_io_resp_init;
+
     -- Audio routing
     signal pwm              : std_logic;
     signal pwm_2            : std_logic := '0';
@@ -309,6 +315,8 @@ architecture logic of ultimate_logic is
     signal sid_sample_right : signed(17 downto 0);
     signal sid_pwm_left     : std_logic;
     signal sid_pwm_right    : std_logic;
+    signal samp_pwm_left    : std_logic;
+    signal samp_pwm_right   : std_logic;
     signal trigger_1        : std_logic;
     signal trigger_2        : std_logic;
 begin
@@ -642,22 +650,23 @@ begin
     i_split3: entity work.io_bus_splitter
     generic map (
         g_range_lo  => 8,
-        g_range_hi  => 10,
-        g_ports     => 8 )
+        g_range_hi  => 11,
+        g_ports     => 9 )
     port map (
         clock    => sys_clock,
         
         req      => io_req_io,
         resp     => io_resp_io,
         
-        reqs(0)  => io_req_sd,      -- 4060000 
-        reqs(1)  => io_req_rtc,     -- 4060100 
-        reqs(2)  => io_req_flash,   -- 4060200 
-        reqs(3)  => io_req_debug,   -- 4060300 
-        reqs(4)  => io_req_rtc_tmr, -- 4060400
-        reqs(5)  => io_req_gcr_dec, -- 4060500
-        reqs(6)  => io_req_icap,    -- 4060600
-        reqs(7)  => io_req_aud_sel, -- 4060700
+        reqs(0)  => io_req_sd,       -- 4060000 
+        reqs(1)  => io_req_rtc,      -- 4060100 
+        reqs(2)  => io_req_flash,    -- 4060200 
+        reqs(3)  => io_req_debug,    -- 4060300 
+        reqs(4)  => io_req_rtc_tmr,  -- 4060400
+        reqs(5)  => io_req_gcr_dec,  -- 4060500
+        reqs(6)  => io_req_icap,     -- 4060600
+        reqs(7)  => io_req_aud_sel,  -- 4060700
+        reqs(8)  => io_req_samp,     -- 4060800
         
         resps(0) => io_resp_sd,
         resps(1) => io_resp_rtc,
@@ -666,7 +675,8 @@ begin
         resps(4) => io_resp_rtc_tmr,
         resps(5) => io_resp_gcr_dec,
         resps(6) => io_resp_icap,
-        resps(7) => io_resp_aud_sel );
+        resps(7) => io_resp_aud_sel,
+        resps(8) => io_resp_samp );
 
 
     r_usb: if g_usb_host generate
@@ -914,9 +924,58 @@ begin
 
     c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
 	
+    r_sampler: if g_sampler generate
+        signal sample_L     : signed(17 downto 0);
+        signal sample_R     : signed(17 downto 0);
+    begin
+        i_sampler: entity work.sampler
+        generic map (
+            g_num_voices    => 8 )
+        port map (
+            clock       => sys_clock,
+            reset       => sys_reset,
+            
+            io_req      => io_req_samp,
+            io_resp     => io_resp_samp,
+            
+            mem_req     => mem_req_samp,
+            mem_resp    => mem_resp_samp,
+            
+            sample_L    => sample_L,
+            sample_R    => sample_R,
+            new_sample  => open );
+
+        i_pdm_samp_L: entity work.sigma_delta_dac --delta_sigma_2to5
+        generic map (
+            g_left_shift => 0,
+            g_invert => true,
+            g_use_mid_only => false,
+            g_width => 18 )
+        port map (
+            clock   => sys_clock,
+            reset   => sys_reset,
+            
+            dac_in  => sample_L,
+            dac_out => samp_pwm_left );
+    
+        i_pdm_samp_R: entity work.sigma_delta_dac --delta_sigma_2to5
+        generic map (
+            g_left_shift => 0,
+            g_invert => true,
+            g_use_mid_only => false,
+            g_width => 18 )
+        port map (
+            clock   => sys_clock,
+            reset   => sys_reset,
+            
+            dac_in  => sample_R,
+            dac_out => samp_pwm_right );
+
+    end generate;
+
     i_mem_arb: entity work.mem_bus_arbiter_pri
     generic map (
-        g_ports      => 5,
+        g_ports      => 6,
         g_registered => false )
     port map (
         clock       => sys_clock,
@@ -925,14 +984,16 @@ begin
         reqs(0)     => mem_req_cart,
         reqs(1)     => mem_req_1541,
         reqs(2)     => mem_req_1541_2,
-        reqs(3)     => mem_req_debug,
-        reqs(4)     => mem_req_cpu,
+        reqs(3)     => mem_req_samp,
+        reqs(4)     => mem_req_debug,
+        reqs(5)     => mem_req_cpu,
 
         resps(0)    => mem_resp_cart,
         resps(1)    => mem_resp_1541,
         resps(2)    => mem_resp_1541_2,
-        resps(3)    => mem_resp_debug,
-        resps(4)    => mem_resp_cpu,
+        resps(3)    => mem_resp_samp,
+        resps(4)    => mem_resp_debug,
+        resps(5)    => mem_resp_cpu,
         
         req         => mem_req,
         resp        => mem_resp );        
@@ -952,6 +1013,8 @@ begin
         cas_write       => CAS_WRITE,
         sid_left        => sid_pwm_left,
         sid_right       => sid_pwm_right,
+        samp_left       => samp_pwm_left,
+        samp_right      => samp_pwm_right,
                 
         pwm_out         => PWM_OUT );
 

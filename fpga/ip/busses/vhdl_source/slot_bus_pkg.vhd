@@ -6,6 +6,7 @@ package slot_bus_pkg is
 
     type t_slot_req is record
         bus_address     : unsigned(15 downto 0); -- for async reads and direct bus writes
+        bus_read        : std_logic; -- gives the start pulse for a read
         bus_write       : std_logic;
         io_address      : unsigned(15 downto 0); -- for late reads/writes
         io_read         : std_logic;
@@ -23,6 +24,7 @@ package slot_bus_pkg is
     constant c_slot_req_init : t_slot_req := (
         bus_address   => X"0000",
         bus_write     => '0',
+        bus_read      => '0',
         io_address    => X"0000",
         io_read       => '0',
         io_write      => '0',

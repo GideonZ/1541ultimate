@@ -8,6 +8,7 @@ BIN2HEX = $(TOOLS)/bin2hex
 HEX2BIN = $(TOOLS)/hex2bin
 MAKEAPPL = $(TOOLS)/makeappl
 TASS = $(TOOLS)/64tass/64tass
+PARSE_IEC = $(TOOLS)/parse_iec.py
 
 BOOT = ../2nd_boot
 
@@ -122,6 +123,7 @@ SRCS_CC	 =  stream.cc \
 			tape_recorder.cc \
 			size_str.cc \
 			userinterface.cc \
+			editor.cc \
 			ui_stream.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
@@ -141,6 +143,8 @@ SRCS_ASM =  crt0_appl.s
 SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas
 
 SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin
+
+SRCS_IEC = iec_code.txt
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -ffunction-sections
@@ -167,9 +171,10 @@ OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
 OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
 OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
 OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
+OBJS_IEC = $(notdir $(SRCS_IEC:%.txt=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.bo))
 
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN))
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN) $(OBJS_IEC))
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
@@ -200,6 +205,14 @@ $(RESULT)/$(PRJ)_V1.bin: $(OUTPUT)/$(PRJ)_V1.out
 	@echo "Assembling $<"
 	$(TASS) $< --m6502 --nostart -o $(OUTPUT)/$(@F)
 
+%.iec: %.txt
+	@echo "Assembling IEC processor code $(<F)"
+	@python $(PARSE_IEC) $< $(OUTPUT)/$(@F) >python_out
+
+%.o: %.iec
+	@echo "Converting $(<F) binary to .o"
+	@cd $(OUTPUT); $(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(<F) $@
+
 %.o: %.65
 	@echo "Converting .65 binary to .o"
 	@cd $(OUTPUT); $(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(<F) $@
@@ -223,11 +236,11 @@ $(RESULT)/$(PRJ)_V1.bin: $(OUTPUT)/$(PRJ)_V1.out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN)
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 
-$(OUTPUT)/$(PRJ)_V1.out: $(LINK_V1) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN)
+$(OUTPUT)/$(PRJ)_V1.out: $(LINK_V1) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK_V1) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ)_V1.out $(ALL_OBJS) $(LIBS)
 

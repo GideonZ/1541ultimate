@@ -1,0 +1,251 @@
+
+Tv = 200
+Ts = 200
+Ttk = 200
+Tda = 80
+T0 = 80
+T1 = 80
+Tne = 40
+Tye = 1000
+Tbb = 90
+
+ATN_IRQ
+            SET CLK=1  # release clock
+            SET DATA=0 # not ready to receive
+            WAIT UNTIL CLK=0 
+
+# We are now able to release data, unless we are not ready to receive data
+# So we have to check our FIFO and see if it has room for a new byte.
+            LOAD $41
+            PUSHC
+
+_atn_loop
+            WAIT UNTIL CLK=1
+            SUB RECEIVE_BYTE
+            IF NOT TALKER THEN _no_push1
+            SUB PUSH_BYTE  # we can always push this byte, because we waited before becoming ready
+            JUMP _no_push2
+_no_push1
+            IF NOT LISTENER THEN _no_push2
+            SUB PUSH_BYTE
+_no_push2
+            SUB CHECK_ATN_BYTE
+            IF LISTENER THEN _keep_data
+            IF TALKER THEN _keep_data
+            WAIT FOR 70 us
+            SET DATA=1
+_keep_data
+            # at some time, the computer will either
+            # 1) want us to talk
+            # 2) it wants to send another byte to us under attention
+            # 3) it wants to send another byte without attention
+            # In all cases, it will release the clock line
+_check_after_atn_byte
+            WAIT UNTIL NOT CLK=0,ATN=0
+
+            IF NOT ATN THEN _atn_loop  #CLK might still be 0
+            LOAD $42  # Tell to the software that ATN is now released
+            PUSHC
+
+            IF TALKER THEN ATN_TURNAROUND # We'll talk?
+
+            # ATN is released, we are not going to talk, so we might need to listen
+            # But if we don't need to listen, just get off the bus and die
+
+            IF NOT LISTENER THEN RELEASE
+
+            # We need to listen!
+#            LOAD $44
+#            PUSHC
+          
+_listen_normally                        
+            WAIT UNTIL CLK=1
+            SUB RECEIVE_BYTE
+            SUB PUSH_BYTE
+            ## IF ###
+            WAIT UNTIL NOT CLK=0
+            IF NOT EOI THEN _listen_normally                        
+            JUMP RELEASE
+            
+ATN_TURNAROUND
+            WAIT UNTIL CLK=1 FOR Ttk
+            IF TIMEOUT THEN _error
+            SET CLK=0
+            SET DATA=1
+            WAIT FOR Tda
+            SET EOI=0
+            LOAD $43  # Tell to the software that it should push data
+            PUSHC
+            SET EOI=0    
+
+TRANSMIT
+            POP
+            IF NOT CTRL THEN _tx_data
+            IF DATABYTE IS $10 THEN RELEASE
+            SET EOI=1
+            POP
+_tx_data
+            SET CLK=1
+            WAIT UNTIL DATA=1  # forever possibly!
+            IF NOT EOI THEN _no_tx_eoi
+            WAIT FOR 100 us
+            WAIT UNTIL DATA=0 FOR Tye
+            IF TIMEOUT THEN _error
+            SET CLK=0
+            WAIT UNTIL DATA=1
+_no_tx_eoi
+            WAIT FOR Tne
+            SET CLK=0
+            SET DATA=REGBIT0
+            WAIT FOR T0
+            SET CLK=1
+            WAIT FOR T1
+            SET CLK=0
+            SET DATA=REGBIT1
+            WAIT FOR T0
+            SET CLK=1
+            WAIT FOR T1
+            SET CLK=0
+            SET DATA=REGBIT2
+            WAIT FOR T0
+            SET CLK=1
+            WAIT FOR T1
+            SET CLK=0
+            SET DATA=REGBIT3
+            WAIT FOR T0
+            SET CLK=1
+            WAIT FOR T1
+            SET CLK=0
+            SET DATA=REGBIT4
+            WAIT FOR T0
+            SET CLK=1
+            WAIT FOR T1
+            SET CLK=0
+            SET DATA=REGBIT5
+            WAIT FOR T0
+            SET CLK=1
+            WAIT FOR T1
+            SET CLK=0
+            SET DATA=REGBIT6
+            WAIT FOR T0
+            SET CLK=1
+            WAIT FOR T1
+            SET CLK=0
+            SET DATA=REGBIT7
+            WAIT FOR T0
+            SET CLK=1
+            WAIT FOR T1
+            SET DATA=1
+            SET CLK=0
+            WAIT FOR 1 us  #otherwise we might still read our own latest data bit
+            WAIT UNTIL DATA=0 FOR 1000 us
+            IF TIMEOUT THEN _error
+            # PUSHD # debug
+            WAIT FOR Tbb
+            IF NOT EOI THEN TRANSMIT  # loop until everything was transmitted
+
+RELEASE
+            LOAD $DD
+            PUSHC
+            # Release from bus and die
+            SET CLK=1
+            SET DATA=1
+            WAIT 
+                        
+RECEIVE_BYTE
+# initial state: DATA is low, CLK=1
+
+_wait1
+            IF UPFIFOFULL THEN _wait1
+            SET DATA=1
+
+            WAIT UNTIL CLK=0 FOR 200 us
+            SET EOI=TIMEOUT  # If there was a timeout, set the EOI flag
+            IF NOT EOI THEN _recv0
+            SET DATA=0
+            WAIT FOR 70 us
+            SET DATA=1
+            WAIT UNTIL CLK=0 FOR 1000 us
+            IF TIMEOUT THEN _error
+                        
+_recv0
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT0=DATA
+            IF TIMEOUT THEN _error   
+            WAIT UNTIL CLK=0 FOR Tv
+                                     
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT1=DATA
+            IF TIMEOUT THEN _error   
+            WAIT UNTIL CLK=0 FOR Tv
+
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT2=DATA
+            IF TIMEOUT THEN _error   
+            WAIT UNTIL CLK=0 FOR Tv
+                                     
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT3=DATA
+            IF TIMEOUT THEN _error   
+            WAIT UNTIL CLK=0 FOR Tv
+                                     
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT4=DATA
+            IF TIMEOUT THEN _error   
+            WAIT UNTIL CLK=0 FOR Tv
+                                     
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT5=DATA
+            IF TIMEOUT THEN _error   
+            WAIT UNTIL CLK=0 FOR Tv
+                                     
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT6=DATA
+            IF TIMEOUT THEN _error   
+            WAIT UNTIL CLK=0 FOR Tv
+                                     
+            WAIT UNTIL CLK=1 FOR Ts
+            IN   DATABIT7=DATA
+            IF TIMEOUT THEN _error   
+            WAIT UNTIL CLK=0 FOR Tv
+            
+# Now acknowledge byte
+            WAIT FOR 75 us
+            SET  DATA=0
+            RET
+
+PUSH_BYTE
+            PUSHD # Push received byte to software
+            IF NOT EOI THEN _noeoi
+            # If end flag was received, push end marker to software
+            LOAD $45
+            PUSHC
+_noeoi
+            RET
+
+CHECK_ATN_BYTE
+            IF NOT DATABYTE IS $5F THEN _dont_untalk
+            SET TALKER=0
+            RET
+_dont_untalk
+            IF NOT DATABYTE IS $4A THEN _dont_talk
+            SET TALKER=1
+            SET LISTENER=0
+            RET
+_dont_talk
+            IF NOT DATABYTE IS $3F THEN _dont_unlisten
+            SET LISTENER=0
+            RET
+_dont_unlisten
+            IF NOT DATABYTE IS $2A THEN _dont_listen
+            SET LISTENER=1
+            SET TALKER=0
+_dont_listen            
+            RET
+
+# Below are some different error codes for debug
+_error
+            LOAD $EE
+            PUSHC
+            JUMP RELEASE
+            

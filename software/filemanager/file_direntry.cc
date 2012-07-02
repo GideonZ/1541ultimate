@@ -96,11 +96,11 @@ int FileDirEntry :: fetch_children(void)
 	            ++i;
 			}
         }
-        printf("close");
+        //printf("close");
         info->fs->dir_close(r);
-        printf("sort");
+        //printf("sort");
         sort_children();
-        printf("dup");
+        //printf("dup");
         remove_duplicates(); // should be easy!!
         return i;
     } else {

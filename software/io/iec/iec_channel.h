@@ -7,7 +7,7 @@
 #include <ctype.h>
 
 typedef enum _t_channel_state {
-    e_idle, e_filename, e_file, e_complete, e_error
+    e_idle, e_filename, e_file, e_dir, e_complete, e_error
     
 } t_channel_state;
 
@@ -15,6 +15,11 @@ enum t_channel_retval {
     IEC_OK=0, IEC_LAST=1, IEC_NO_DATA=-1, IEC_FILE_NOT_FOUND=-2, IEC_NO_FILE=-3,
     IEC_READ_ERROR=-4, IEC_WRITE_ERROR=-5, IEC_BYTE_LOST=-6 
 };
+
+static BYTE c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
+                            32, 32, 32, 32, 32, 32, 32, 32,
+                            32, 32, 32, 32, 32, 32, 32, 32,
+                            34, 32, 48, 48, 32, 50, 65,  0 };
 
 class IecChannel
 {
@@ -26,6 +31,10 @@ class IecChannel
     int  pointer;
     File *f;
     int  last_command;
+    int  dir_index;
+    int  dir_last;
+    PathObject *dir_obj;
+    
     t_channel_state state;
 
     int  last_byte;
@@ -46,6 +55,8 @@ public:
         pointer = 0;
         write = 0;
         state = e_idle;
+        dir_index = 0;
+        dir_last = 0;
     }
     
     ~IecChannel()
@@ -55,13 +66,23 @@ public:
 
     int pop_data(BYTE& b)
     {
-        if(state != e_file) {
-            return IEC_NO_FILE;
+        switch(state) {
+            case e_file:
+                if(pointer == 256) {
+                    if(read_block())
+                        return IEC_READ_ERROR;
+                }            
+                break;
+            case e_dir:                
+                if(pointer == 32) {
+                    if(read_dir_entry())
+                        return IEC_READ_ERROR;
+                }
+                break;
+            default:
+                return IEC_NO_FILE;
         }
-        if(pointer == 256) {
-            if(!read_block())
-                return IEC_READ_ERROR;
-        }            
+
         if(pointer == last_byte) {
             b = buffer[pointer];
             state = e_complete;
@@ -71,10 +92,61 @@ public:
         return IEC_OK;
     }
     
+    int read_dir_entry(void)
+    {
+        if(dir_index >= dir_last) {
+            buffer[2] = 9999 & 255;
+            buffer[3] = 9999 >> 8;
+            memcpy(&buffer[4], "BLOCKS FREE.             \0\0\0", 28);
+            last_byte = 31;
+            pointer = 0;
+            return 0;
+        }
+        //printf("Dir index = %d\n", dir_index);
+        //printf("Dir Obj %p %s\n", dir_obj, dir_obj->get_name());
+        PathObject *entry = dir_obj->children[dir_index++];
+        //printf("entry = %p\n", entry);
+        FileInfo *info = entry->get_file_info();
+        //printf("info = %p\n", info);
+        DWORD size = 0;
+        DWORD size2 = 0;
+        if(info) {
+            size = info->size;
+        }
+        size /= 254;
+        if(size > 65535)
+            size = 65535;
+        size2 = size;
+        int chars=1;
+        while(size2 >= 10) {
+            size2 /= 10;
+            chars ++;
+        }        
+        int spaces=4-chars;
+        buffer[2] = size & 255;
+        buffer[3] = size >> 8;
+        int pos = 4;
+        while((spaces--)>=0)
+            buffer[pos++] = 32;
+        buffer[pos++]=34;
+        char *name = entry->get_name();
+        while((*name)&&(pos < 24))
+            buffer[pos++] = toupper(*(name++));
+        buffer[pos++] = 34;
+        while(pos < 31)
+            buffer[pos++] = 32;
+        buffer[31] = 0;
+        pointer = 0;
+        return 0;        
+    }
+    
     int read_block(void)
     {
-        res = f->read(buffer, 256, &bytes);
-        printf("\nSize was %d. Read %d bytes. ", size, bytes);
+        res = FR_INVALID_OBJECT;
+        if(f) {
+            res = f->read(buffer, 256, &bytes);
+            printf("\nSize was %d. Read %d bytes. ", size, bytes);
+        }
         if(res != FR_OK) {
             state = e_error;
             return IEC_READ_ERROR;
@@ -89,12 +161,13 @@ public:
         }
         size -= 256;
         pointer = 0;
+        return 0;
     }
             
     int push_data(BYTE b)
     {
         UINT bytes;
-        FRESULT res;
+        res = FR_INVALID_OBJECT;
 
         switch(state) {
             case e_filename:
@@ -104,7 +177,9 @@ public:
             case e_file:
                 buffer[pointer++] = b;
                 if(pointer == 256) {
-                    res = f->write(buffer, 256, &bytes);
+                    if(f) {
+                        res = f->write(buffer, 256, &bytes);
+                    }
                     if(res != FR_OK) {
                         root.fclose(f);
                         state = e_error;
@@ -129,10 +204,14 @@ public:
                 pointer = 0;
                 break;
             case 0xE0: // close
-                if((pointer > 0) && (write)) {
+                printf("close %d %d\n", pointer, write);
+                if(write) {
                     dump_hex(buffer, pointer);
-                    res = f->write(buffer, pointer, &bytes);
-                    root.fclose(f);
+                    res = (pointer > 0)?FR_INVALID_OBJECT:FR_OK;
+                    if ((f) && (pointer > 0)) {
+                        res = f->write(buffer, pointer, &bytes);
+                    }
+                    close_file(); //root.fclose(f);
                     if(res != FR_OK) {
                         state = e_error;
                         return IEC_WRITE_ERROR;
@@ -158,6 +237,7 @@ private:
         
         buffer[pointer] = 0; // string terminator
         printf("Open file. Raw Filename = '%s'\n", buffer);
+
         // defaults
         if(channel == 1)
             write = 1;
@@ -203,6 +283,27 @@ private:
         if(write)
             flags |= (FA_WRITE | FA_CREATE_NEW);
             
+        if(buffer[0] == '$') {
+            printf("Opening directory...\n");
+            state = e_dir;
+            pointer = 0;
+            last_byte = -1;
+            size = 32;
+            memcpy(buffer, c_header, 32);
+            dir_obj = dir;
+            char *name = dir_obj->get_name();
+            int pos = 8;
+            while((pos < 23) && (*name))
+                buffer[pos++] = toupper(*(name++));
+            dump_hex(buffer, 32);
+            dir_obj = dir;
+            //printf("fetch...");
+            dir_last = dir_obj->fetch_children();
+            //printf("%d\n", dir_last);
+            dir_index = 0;
+            return 0;
+        }
+
         f = root.fopen((char *)buffer, dir, flags);
         if(f) {
             printf("Successfully opened file %s in %s\n", buffer, interface->path->get_path());
@@ -211,13 +312,13 @@ private:
             state = e_file;
             if(!write) {
                 size = f->get_size();
-                read_block();
+                return read_block();
             }
         } else {
             printf("Can't open file %s in %s\n", buffer, interface->path->get_path());
         }            
+        return 0;
     }
-    
     
     
     int close_file(void) // file should be open

@@ -16,7 +16,7 @@ library std;
 use std.textio.all;
 
 package file_io_pkg is
-    subtype byte is std_logic_vector(7 downto 0);
+    subtype t_byte is std_logic_vector(7 downto 0);
 
     function nibbletohex(nibble : std_logic_vector(3 downto 0)) return character;
     function hextonibble(c      : character) return std_logic_vector;
@@ -25,20 +25,20 @@ package file_io_pkg is
     function vectohex(vec       : std_logic_vector; len : integer) return string;
 
     procedure getcharfromfile(file myfile : text; l : inout line; stop : out boolean; hex : out character);
-    procedure getbytefromfile(file myfile : text; l : inout line; fileend : out boolean; dat : out byte);
+    procedure getbytefromfile(file myfile : text; l : inout line; fileend : out boolean; dat : out t_byte);
 
-    type binary_file is file of integer;
+    type t_binary_file is file of integer;
 
-    type binaryfilerec is record
+    type t_binary_file_handle is record
         offset  : integer range 0 to 4;
         longvec : std_logic_vector(31 downto 0);
     end record;
 
     constant emptysp              :       string := "                                      ";
-    procedure initrecord(rec      : inout binaryfilerec);
-    procedure readbyte(file f     :       binary_file; b : out byte; rec : inout binaryfilerec);
-    procedure writebyte(file f    :       binary_file; b : in byte; rec : inout binaryfilerec);
-    procedure purge(file f        :       binary_file; rec : inout binaryfilerec);
+    procedure initrecord(rec      : inout t_binary_file_handle);
+    procedure readbyte(file f     :       t_binary_file; b : out t_byte; rec : inout t_binary_file_handle);
+    procedure writebyte(file f    :       t_binary_file; b : in t_byte; rec : inout t_binary_file_handle);
+    procedure purge(file f        :       t_binary_file; rec : inout t_binary_file_handle);
     procedure onoffchar(l         : inout line; ena : std_logic; ch : character);
     procedure onoffchar(l         : inout line; ena : std_logic; ch, alt : character);
     procedure hexout(l            : inout line; ena : std_logic; vec : std_logic_vector; len : integer);
@@ -160,9 +160,9 @@ package body file_io_pkg is
         end loop;
     end getcharfromfile;
 
-    procedure getbytefromfile(file myfile : text; l : inout line; fileend : out boolean; dat : out byte) is
+    procedure getbytefromfile(file myfile : text; l : inout line; fileend : out boolean; dat : out t_byte) is
         variable hex  : character;
-        variable d    : byte;
+        variable d    : t_byte;
         variable stop : boolean := false;
     begin
         d := x"00";
@@ -220,7 +220,7 @@ package body file_io_pkg is
         rec.longvec := (others => '0');
     end procedure;
 
-    procedure readbyte(file f : binary_file; b : out byte; rec : inout binaryfilerec) is
+    procedure readbyte(file f : binary_file; b : out t_byte; rec : inout binaryfilerec) is
         variable i : integer;
     begin
         if rec.offset = 0 then
@@ -236,7 +236,7 @@ package body file_io_pkg is
         end if;
     end procedure;
 
-    procedure writebyte(file f : binary_file; b : in byte; rec : inout binaryfilerec) is
+    procedure writebyte(file f : binary_file; b : in t_byte; rec : inout binaryfilerec) is
         variable i : integer;
     begin
         rec.longvec(31 downto 24) := b;
