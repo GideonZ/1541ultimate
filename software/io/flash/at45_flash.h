@@ -98,6 +98,7 @@ public:
 	virtual void protect_disable(void);
 	virtual bool protect_configure(void);
 	virtual void protect_enable(void);
+    virtual void protect_show_status(void);
 };
 
 extern AT45_Flash at45_flash;

@@ -9,7 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_1541_700a is
 generic (
-    g_version       : unsigned(7 downto 0) := X"AC" );
+    g_version       : unsigned(7 downto 0) := X"AE" );
 port (
     CLOCK       : in    std_logic;
     
@@ -178,14 +178,16 @@ begin
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
         g_cartridge     => true,
-		g_command_intf  => true,
+		g_command_intf  => false,
         g_drive_sound   => true,
         g_rtc_chip      => true,
         g_rtc_timer     => true,
         g_usb_host      => true,
         g_spi_flash     => true,
         g_vic_copper    => false,
-        g_video_overlay => false )
+        g_video_overlay => false,
+        g_sampler       => false,
+        g_analyzer      => false )
     port map (
         -- globals
         sys_clock   => sys_clock,

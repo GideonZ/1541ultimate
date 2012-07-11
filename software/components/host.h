@@ -18,6 +18,7 @@ public:
     virtual void reset(void) { }
     virtual void freeze(void) { }
     virtual void unfreeze(Event &e) { }
+    virtual void set_colors(int background, int border) { }
 
     /* We should actually just return an output device */
     virtual char *get_screen(void) { return NULL; }

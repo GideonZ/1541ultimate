@@ -151,8 +151,9 @@ public:
     void reset(void);
     void freeze(void);
     void unfreeze(Event &e);
-    char *get_screen(void);
-    char *get_color_map(void);
+    void set_colors(int background, int border);
+    char *get_screen(void);     // should be obsoleted!
+    char *get_color_map(void);  // should be obsoleted!
     Keyboard *get_keyboard(void);
 
     /* C64 specifics */

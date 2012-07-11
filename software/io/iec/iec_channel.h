@@ -21,6 +21,8 @@ static BYTE c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
                             32, 32, 32, 32, 32, 32, 32, 32,
                             34, 32, 48, 48, 32, 50, 65,  0 };
 
+class IecCommandChannel;
+
 class IecChannel
 {
     IecInterface *interface;
@@ -64,7 +66,7 @@ public:
         close_file();
     }
 
-    int pop_data(BYTE& b)
+    virtual int pop_data(BYTE& b)
     {
         switch(state) {
             case e_file:
@@ -79,7 +81,11 @@ public:
                         return IEC_READ_ERROR;
                 }
                 break;
+//            case e_complete:
+//                b = 0;
+//                return IEC_LAST;
             default:
+                b = 0;
                 return IEC_NO_FILE;
         }
 
@@ -164,7 +170,7 @@ public:
         return 0;
     }
             
-    int push_data(BYTE b)
+    virtual int push_data(BYTE b)
     {
         UINT bytes;
         res = FR_INVALID_OBJECT;
@@ -193,7 +199,7 @@ public:
         return IEC_OK;
     }
     
-    int push_command(BYTE b)
+    virtual int push_command(BYTE b)
     {
         if(b)
             last_command = b;
@@ -328,14 +334,71 @@ private:
         f = NULL;
         state = e_idle;
     }
+    friend class IecCommandChannel;
 };
 
-/*
 class IecCommandChannel : public IecChannel
 {
+//    BYTE error_buf[40];
+    int track_counter;
 public:
-    IecCommandChannel() {}
-    ~IecCommandChannel() {}
+    IecCommandChannel(IecInterface *intf, int ch) : IecChannel(intf, ch)
+    {
+        get_last_error();
+    }
+    ~IecCommandChannel() { }
+
+    void get_last_error(int err = -1)
+    {
+        if(err >= 0)
+            interface->last_error = err;
+
+        last_byte = interface->get_last_error((char *)buffer) - 1;
+        printf("Get last error: last = %d. buffer = %s.\n", last_byte, buffer);
+        pointer = 0;
+    	interface->last_error = ERR_OK;
+    }
+
+    int pop_data(BYTE& b)
+    {
+        if(pointer > last_byte) {
+            return IEC_NO_FILE;
+        }
+        if(pointer == last_byte) {
+            b = buffer[pointer];
+            get_last_error();
+            return IEC_LAST;
+        }
+        b = buffer[pointer++];
+        return IEC_OK;
+    }
+
+    int push_data(BYTE b)
+    {
+        if(pointer < 64) {
+            buffer[pointer++] = b;
+            return IEC_OK;
+        }
+        return IEC_BYTE_LOST;
+    }
+
+    int push_command(BYTE b)
+    {
+        switch(b) {
+            case 0x60:
+            case 0xE0:
+            case 0xF0:
+                pointer = 0;
+                break;
+            case 0x00: // end of data, command received in buffer
+                buffer[pointer]=0;
+                printf("Command received: %s\n", buffer);
+                get_last_error(ERR_SYNTAX_ERROR_CMD);
+                break;
+            default:
+                printf("Error on channel %d. Unknown command: %b\n", channel, b);
+        }
+    }
 };
-*/
+
 #endif /* IEC_CHANNEL_H */

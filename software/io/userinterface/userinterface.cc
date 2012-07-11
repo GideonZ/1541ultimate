@@ -41,6 +41,9 @@ UserInterface :: UserInterface()
     focus = -1;
     state = ui_idle;
     current_path = NULL;
+    host = NULL;
+    keyboard = NULL;
+    screen = NULL;
 
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
@@ -68,6 +71,9 @@ void UserInterface :: effectuate_settings(void)
     color_fg     = cfg->get_value(CFG_USERIF_FOREGROUND);
     color_bg     = cfg->get_value(CFG_USERIF_BACKGROUND);
     color_sel    = cfg->get_value(CFG_USERIF_SELECTED);
+
+    if(host && host->is_accessible())
+        host->set_colors(color_bg, color_border);
 
     push_event(e_refresh_browser);
 }
@@ -99,6 +105,7 @@ void UserInterface :: handle_event(Event &e)
             if (e.type == e_button_press) {
 				// root.dump();
                 host->freeze();
+                host->set_colors(color_bg, color_border);
                 screen = new Screen(host->get_screen(), host->get_color_map(), 40, 25);
                 set_screen_title();
                 for(i=0;i<=focus;i++) {  // build up

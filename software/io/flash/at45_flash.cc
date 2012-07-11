@@ -3,6 +3,7 @@
 extern "C" {
     #include "itu.h"
     #include "small_printf.h"
+    #include "dump_hex.h"
 }
 
 #ifdef BOOTLOADER
@@ -198,11 +199,13 @@ bool AT45_Flash :: wait_ready(int time_out)
     SPI_FLASH_DATA = AT45_StatusRegisterRead;
     do {
 		last_status = SPI_FLASH_DATA;
+/* it turns out that bit 1 is always set when protection is enabled, no matter whether this particular page was written or not.
 		if(last_status & 0x02) {
 			error(("Flash protected.\n"));
 			ret = false;
 			break;
 		}
+*/
 		if(last_status & 0x80) {
 			ret = true;
 			break;
@@ -409,6 +412,30 @@ bool AT45_Flash :: protect_configure(void)
 
 	return true;
 }
+
+void AT45_Flash :: protect_show_status(void)
+{
+    BYTE *buffer = new BYTE[sector_count];
+
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+	SPI_FLASH_DATA_32 = 0x32323232;
+    for(int i=0;i<sector_count;i++) {
+        buffer[i] = SPI_FLASH_DATA;
+    }
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    dump_hex_relative(buffer, sector_count);
+
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+	SPI_FLASH_DATA_32 = 0x35353535;
+    for(int i=0;i<sector_count;i++) {
+        buffer[i] = SPI_FLASH_DATA;
+    }
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    dump_hex_relative(buffer, sector_count);
+
+    delete[] buffer;
+}
+    
 
 void AT45_Flash :: protect_disable(void)
 {

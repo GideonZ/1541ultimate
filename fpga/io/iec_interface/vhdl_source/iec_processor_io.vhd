@@ -33,7 +33,8 @@ end iec_processor_io;
 
 architecture structural of iec_processor_io is
     signal proc_reset      : std_logic;
-    
+    signal enable          : std_logic;
+        
     -- instruction ram interface
     signal instr_addr      : unsigned(8 downto 0);
     signal instr_en        : std_logic;
@@ -208,7 +209,7 @@ begin
         if rising_edge(clock) then
             ram_sel <= '0';
             reg_rdata <= (others => '0');
-            proc_reset <= '0';
+            proc_reset <= not enable;
             resp.ack <= '0';
                         
             if req.read='1' then
@@ -241,6 +242,7 @@ begin
                     case req.address(2 downto 0) is
                         when "011" =>
                             proc_reset <= '1';
+                            enable <= req.data(0);
                         when others =>
                             null;
                     end case;
@@ -249,6 +251,7 @@ begin
             
             if reset='1' then
                 proc_reset <= '1';
+                enable <= '0';
             end if;
         end if;
 

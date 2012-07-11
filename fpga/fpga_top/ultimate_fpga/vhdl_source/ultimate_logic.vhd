@@ -191,6 +191,7 @@ architecture logic of ultimate_logic is
         cap(19) := to_std(g_vic_copper);
         cap(20) := to_std(g_video_overlay);
         cap(21) := to_std(g_sampler);
+        cap(22) := to_std(g_analyzer);
         cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);

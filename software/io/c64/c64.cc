@@ -703,6 +703,11 @@ void C64 :: set_cartridge(cart_def *def)
     memset((void *)mem_addr, 0x00, 65536);
 }
 
+void C64 :: set_colors(int background, int border) {
+    BORDER     = BYTE(border);
+    BACKGROUND = BYTE(background);
+}
+
 void C64 :: init_cartridge()
 {
     if(!cfg)
@@ -852,7 +857,6 @@ void C64 :: poll(Event &e)
 	}
 #endif
 }
-
 
 // static member
 int C64Event :: prepare_dma_load(File *f, const char *name, int len, BYTE run_code, WORD reloc)
