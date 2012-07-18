@@ -106,6 +106,9 @@ public:
     void mount_g64(bool protect, File *);
     void mount_blank(void);
     void poll(Event &e);
+
+    void check_if_save_needed(void);
+    void save_disk_to_file(bool g64);
 };
 
 

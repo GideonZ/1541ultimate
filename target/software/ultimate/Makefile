@@ -133,6 +133,7 @@ SRCS_CC	 =  stream.cc \
 			task_menu.cc \
 			audio_select.cc \
 			iec.cc \
+			sampler.cc \
 			$(PRJ).cc
 
 ####			copper.cc \

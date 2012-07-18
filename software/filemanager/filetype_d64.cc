@@ -172,6 +172,9 @@ void FileTypeD64 :: execute(int selection)
 		printf("Mounting disk.. %s\n", get_name());
 		file = root.fopen(this, flags);
 		if(file) {
+            // unfortunately, we need to insert this here, because we have to make sure we still have
+            // a user interface available, to ask if a save is needed.
+            c1541_A->check_if_save_needed();
             drive_command = new t_drive_command;
             drive_command->file = file;
             drive_command->protect = protect;
@@ -202,6 +205,9 @@ void FileTypeD64 :: execute(int selection)
 		printf("Mounting disk.. %s\n", get_name());
 		file = root.fopen(this, flags);
 		if(file) {
+            // unfortunately, we need to insert this here, because we have to make sure we still have
+            // a user interface available, to ask if a save is needed.
+            c1541_B->check_if_save_needed();
             push_event(e_unfreeze);
             drive_command = new t_drive_command;
             drive_command->file = file;

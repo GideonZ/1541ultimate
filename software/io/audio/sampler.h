@@ -1,7 +1,9 @@
 #ifndef SAMPLER_H
 #define SAMPLER_H
 
-//#include "config.h"
+#include "event.h"
+#include "poll.h"
+#include "menu.h"
 
 #define SAMPLER_BASE        0x5060800
 
@@ -31,5 +33,18 @@
 #define VOICE_CTRL_IRQ      0x04
 #define VOICE_CTRL_8BIT     0x00
 #define VOICE_CTRL_16BIT    0x10
+
+#define MENU_SAMP_PLAY8B  0x8301
+#define MENU_SAMP_PLAY16B 0x8302
+
+class Sampler : public ObjectWithMenu
+{
+public:
+    Sampler();
+    ~Sampler();
+
+    void poll(Event &e);
+	int  fetch_task_items(IndexedList<PathObject*> &item_list);
+};
 
 #endif

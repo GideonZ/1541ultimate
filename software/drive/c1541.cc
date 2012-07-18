@@ -305,6 +305,21 @@ void C1541 :: set_ram(t_1541_ram ram_setting)
     registers[C1541_RAMMAP] = bank_is_ram;
 }    
 
+void C1541 :: check_if_save_needed(void)
+{
+    printf("## Checking if disk change is needed: %c %d %d\n", drive_letter, registers[C1541_ANYDIRTY], disk_state);
+	if(!((registers[C1541_ANYDIRTY])||(write_skip))) {
+        return;
+    }
+    if(disk_state == e_no_disk) {
+        return;
+    }
+	if(user_interface->popup("About to remove a changed disk. Save?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
+	    return;
+    }
+    save_disk_to_file((disk_state == e_gcr_disk));
+}
+
 void C1541 :: remove_disk(void)
 {
     registers[C1541_INSERTED] = 0;
@@ -405,13 +420,9 @@ void C1541 :: poll(Event &e)
 {
 	int tr;
 	int written;
-	int res;
 	bool g64;
 	bool protect;
-	File *file;
     t_drive_command *drive_command;
-    PathObject *po;
-    static char buffer[32];
     
 	switch(e.type) {
 //	case e_mount_drv1:
@@ -454,6 +465,7 @@ void C1541 :: poll(Event &e)
 			    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
 				break;
 			case MENU_1541_REMOVE:
+                check_if_save_needed();
 				if(mount_file) {
 					root.fclose(mount_file);
 					mount_file = NULL;
@@ -466,33 +478,7 @@ void C1541 :: poll(Event &e)
             case MENU_1541_SAVED64:
             case MENU_1541_SAVEG64:
                 g64 = (drive_command->command == MENU_1541_SAVEG64);
-                po = user_interface->get_path();
-                printf("Menu Item %4x. PathObject = %p.\n", drive_command->command, po);
-                if(po && po->get_file_info()) {
-                	res = user_interface->string_box("Give name for image file..", buffer, 24);
-                	if(res > 0) {
-                		set_extension(buffer, (g64)?(char *)".g64":(char *)".d64", 32);
-                		fix_filename(buffer);
-                        file = root.fcreate(buffer, user_interface->get_path());
-                        if(file) {
-                            if(g64) {
-                                user_interface->show_status("Saving G64...", 84);
-                                gcr_image->save(file, true, (cfg->get_value(CFG_C1541_GCRALIGN)!=0));
-                                user_interface->hide_status();
-                            } else {
-                                user_interface->show_status("Converting disk...", 2*bin_image->num_tracks);
-                                gcr_image->convert_disk_gcr2bin(bin_image, true);
-                                user_interface->update_status("Saving D64...", 0);
-                                bin_image->save(file, true);
-                                user_interface->hide_status();
-                            }
-                            root.fclose(file);
-                    		push_event(e_reload_browser);
-                        } else {
-                        	user_interface->popup("Unable to open file..", BUTTON_OK);
-                        }
-                    }
-                }
+                save_disk_to_file(g64);
                 break;    
 			default:
 				printf("Unhandled menu item for C1541.\n");
@@ -507,7 +493,6 @@ void C1541 :: poll(Event &e)
 //	printf("%02d ", registers[C1541_TRACK]);
 
 	if(!mount_file) {
-		registers[C1541_ANYDIRTY] = 0;  // clear flag so we won't come back here endlessly
 		return;
 	}
     if(!mount_file->node) {
@@ -515,6 +500,10 @@ void C1541 :: poll(Event &e)
         disk_state = e_disk_file_closed;
         root.fclose(mount_file);
         mount_file = NULL;
+        return;
+    }
+    if((disk_state != e_gcr_disk)&&(disk_state != e_d64_disk)) {
+        return;
     }
 
 	if((registers[C1541_ANYDIRTY])||(write_skip)) {
@@ -549,4 +538,39 @@ void C1541 :: poll(Event &e)
 			}
 		}
 	}
+}
+
+void C1541 :: save_disk_to_file(bool g64)
+{
+    PathObject *po;
+    static char buffer[32];
+	File *file;
+	int res;
+
+    po = user_interface->get_path();
+    if(po && po->get_file_info()) {
+    	res = user_interface->string_box("Give name for image file..", buffer, 24);
+    	if(res > 0) {
+    		set_extension(buffer, (g64)?(char *)".g64":(char *)".d64", 32);
+    		fix_filename(buffer);
+            file = root.fcreate(buffer, user_interface->get_path());
+            if(file) {
+                if(g64) {
+                    user_interface->show_status("Saving G64...", 84);
+                    gcr_image->save(file, true, (cfg->get_value(CFG_C1541_GCRALIGN)!=0));
+                    user_interface->hide_status();
+                } else {
+                    user_interface->show_status("Converting disk...", 2*bin_image->num_tracks);
+                    gcr_image->convert_disk_gcr2bin(bin_image, true);
+                    user_interface->update_status("Saving D64...", 0);
+                    bin_image->save(file, true);
+                    user_interface->hide_status();
+                }
+                root.fclose(file);
+        		push_event(e_reload_browser);
+            } else {
+            	user_interface->popup("Unable to open file..", BUTTON_OK);
+            }
+        }
+    }
 }

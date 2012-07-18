@@ -133,6 +133,7 @@ void FileTypeG64 :: execute(int selection)
 		printf("Mounting disk.. %s\n", get_name());
 		file = root.fopen(this, flags);
 		if(file) {
+            c1541_A->check_if_save_needed();
             drive_command = new t_drive_command;
             drive_command->file = file;
             drive_command->protect = protect;
@@ -161,6 +162,7 @@ void FileTypeG64 :: execute(int selection)
 		printf("Mounting disk.. %s\n", get_name());
 		file = root.fopen(this, flags);
 		if(file) {
+            c1541_B->check_if_save_needed();
             drive_command = new t_drive_command;
             drive_command->file = file;
             drive_command->protect = protect;

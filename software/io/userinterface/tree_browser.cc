@@ -193,10 +193,10 @@ int TreeBrowser :: handle_key(char c)
         	reset_quick_seek();
             state->up(window->get_size_y()/2);
             break;
-        case 0x86: // F3 -> RUN
-            test_editor();
-            ret = 0; // ## TODO
-            break;
+//        case 0x86: // F3 -> RUN
+//            test_editor();
+//            ret = 0; // ## TODO
+//            break;
 		case 0x87: // F5: Menu
 			task_menu();
 			break;
