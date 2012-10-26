@@ -298,7 +298,7 @@ $(VWORK_DIR)/%.vc.depend.make: %.vhd $(VWORK_DIR_DEP) $(VWORK_DIR)/sources.sinc 
 
 %.vc: %.vhd
 	@$(call print_cmd_info,"VCOM","$< - ($(VHDL_LIB_$(*F)))")
-	@$(VCOM) $(VCOM_FLAGS) -work $(VHDL_LIB_$(*F)) $< || (rm -f $(VWORK_DIR)/$(@F); false)
+	$(VCOM) $(VCOM_FLAGS) -work $(VHDL_LIB_$(*F)) $< || (rm -f $(VWORK_DIR)/$(@F); false)
 	@touch $(VWORK_DIR)/$(@F)
 
     ############################################################################

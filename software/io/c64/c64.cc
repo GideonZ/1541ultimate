@@ -108,18 +108,20 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 #define CFG_C64_ETH_EN   0xC5
 #define CFG_C64_SWAP_BTN 0xC6
 #define CFG_C64_DMA_ID   0xC7
+#define CFG_C64_MAP_SAMP 0xC8
 
 char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };    
 char *en_dis2[] = { "Disabled", "Enabled" };
 char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 
 struct t_cfg_definition c64_config[] = {
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",               "%s", cart_mode,  0, 15, 4 },
-    { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",         "%s", NULL,       1, 31, (int)"cart.bin" },
-    { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",      "%s", en_dis2,    0,  1, 0 },
-    { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                "%s", reu_size,   0,  7, 4 },
-    { CFG_C64_DMA_ID,   CFG_TYPE_VALUE,  "DMA Load Mimics ID:",     "%d", NULL,       8, 31, 8 },
-    { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",            "%s", buttons,    0,  1, 1 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 15, 4 },
+    { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",              "%s", NULL,       1, 31, (int)"cart.bin" },
+    { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
+    { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_DMA_ID,   CFG_TYPE_VALUE,  "DMA Load Mimics ID:",          "%d", NULL,       8, 31, 8 },
+    { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",                 "%s", buttons,    0,  1, 1 },
 //    { CFG_C64_ETH_EN,   CFG_TYPE_ENUM,   "Ethernet CS8900A",        "%s", en_dis2,     0,  1, 0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
@@ -178,13 +180,28 @@ void C64 :: effectuate_settings(void)
     cart_def *def;
 	int cart = cfg->get_value(CFG_C64_CART);
 	def = &cartridges[cart];
-	
+    set_emulation_flags(def);
+}
+
+void C64 :: set_emulation_flags(cart_def *def)
+{
     C64_REU_ENABLE = 0;
+	C64_SAMPLER_ENABLE = 0;
+
     if(def->type & CART_REU) {
         if(cfg->get_value(CFG_C64_REU_EN)) {
         	printf("Enabling REU!!\n");
         	C64_REU_ENABLE = 1;
             C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
+        }
+        if(CAPABILITIES & CAPAB_SAMPLER) {
+            printf("Sampler found in FPGA... IO map: ");
+            if(cfg->get_value(CFG_C64_MAP_SAMP)) {
+                printf("Enabled!\n");
+            	C64_SAMPLER_ENABLE = 1;
+            } else {
+                printf("disabled.\n");
+            }
         }
     }
     C64_ETHERNET_ENABLE = 0;
@@ -204,13 +221,13 @@ int  C64 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
 	item_list.append(new ObjectMenuItem(this, "Reset C64", MENU_C64_RESET));
 	item_list.append(new ObjectMenuItem(this, "Reboot C64", MENU_C64_REBOOT));
-    item_list.append(new ObjectMenuItem(this, "Boot Alternate FPGA", MENU_C64_BOOTFPGA));
+//    item_list.append(new ObjectMenuItem(this, "Boot Alternate FPGA", MENU_C64_BOOTFPGA));
 //    item_list.append(new ObjectMenuItem(this, "Save SID Trace", MENU_C64_TRACE));
     item_list.append(new ObjectMenuItem(this, "Save REU Memory", MENU_C64_SAVEREU));
 //    item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_C64_RUNCMDCART));  /* temporary item */
    
 //    item_list.append(new ObjectMenuItem(this, "Save Flash", MENU_C64_SAVEFLASH));
-	return 4;
+	return 3;
 }
 		
 void C64 :: determine_d012(void)
@@ -648,20 +665,7 @@ void C64 :: set_cartridge(cart_def *def)
     C64_CARTRIDGE_TYPE = def->type & 0x1F;
     push_event(e_cart_mode_change, NULL, def->type);
     
-    C64_REU_ENABLE = 0;
-    if(def->type & CART_REU) {
-        if(cfg->get_value(CFG_C64_REU_EN)) {
-        	printf("Enabling REU!!\n");
-        	C64_REU_ENABLE = 1;
-            C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
-        }
-    }
-    C64_ETHERNET_ENABLE = 0;
-    if(def->type & CART_ETH) {
-        if(cfg->get_value(CFG_C64_ETH_EN)) {
-            C64_ETHERNET_ENABLE = 1;
-        }
-    }
+    set_emulation_flags(def);
 
     DWORD mem_addr = ((DWORD)C64_CARTRIDGE_RAM_BASE) << 16;
     if(def->type & CART_RAM) {

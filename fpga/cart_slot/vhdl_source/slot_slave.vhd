@@ -112,10 +112,11 @@ architecture gideon of slot_slave is
     signal epyx_timer       : unsigned(6 downto 0) := (others => '0');
     signal epyx_reset       : std_logic := '0';
 begin
-    slot_req.io_write   <= do_io_event and io_write_cond;
-    slot_req.io_read    <= do_io_event and io_read_cond;
-    slot_req.late_write <= do_io_event and late_write_cond;
-    
+    slot_req.io_write      <= do_io_event and io_write_cond;
+    slot_req.io_read       <= do_io_event and io_read_cond;
+    slot_req.late_write    <= do_io_event and late_write_cond;
+    slot_req.io_read_early <= '1' when (addr_is_io and rwn_c='1' and do_sample_addr='1') else '0';
+
     process(clock)
     begin
         if rising_edge(clock) then

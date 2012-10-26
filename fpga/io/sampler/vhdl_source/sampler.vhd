@@ -19,6 +19,8 @@ port (
     mem_req     : out t_mem_req;
     mem_resp    : in  t_mem_resp;
     
+    irq         : out std_logic;
+    
     sample_L    : out signed(17 downto 0);
     sample_R    : out signed(17 downto 0);
     new_sample  : out std_logic );
@@ -35,6 +37,7 @@ architecture gideon of sampler is
     signal fetch_addr    : unsigned(25 downto 0);
     signal fetch_tag     : std_logic_vector(7 downto 0);
     signal interrupt     : std_logic_vector(g_num_voices-1 downto 0);
+    signal interrupt_clr : std_logic_vector(g_num_voices-1 downto 0);
 
     signal current_control    : t_voice_control;
 
@@ -55,8 +58,11 @@ begin
         io_resp     => io_resp,
         
         rd_addr     => voice_i,
-        control     => current_control );
+        control     => current_control,
+        irq_status  => interrupt,
+        irq_clear   => interrupt_clr );
 
+    irq <= '1' when unsigned(interrupt) /= 0 else '0';
 
     process(clock)
         variable current_state      : t_voice_state;
@@ -71,8 +77,13 @@ begin
                 voice_i <= voice_i + 1;            
             end if;
  
+            for i in interrupt'range loop
+                if interrupt_clr(i)='1' then
+                    interrupt(i) <= '0';
+                end if;
+            end loop;
+            
             fetch_en <= '0';
-            interrupt <= (others => '0');
             current_state   := voice_state(0); 
             sample_reg      := voice_sample_reg_h(voice_i) & voice_sample_reg_l(voice_i);
             
@@ -91,23 +102,21 @@ begin
                 if current_state.divider = 0 then
                     next_state.divider    := current_control.rate;
                     next_state.sample_out := sample_reg;
-                    if current_state.position = current_control.length then
-                        if current_control.repeat then
-                            next_state.state    := fetch1;
-                            next_state.position := (others => '0');
-                        else
-                            next_state.state    := finished;
+                    next_state.state      := fetch1;
+                    if (current_state.position = current_control.repeat_b) then
+                        if current_control.enable and current_control.repeat then
+                            next_state.position := current_control.repeat_a;
                         end if;
+                    elsif current_state.position = current_control.length then
+                        next_state.state    := finished;
                         if current_control.interrupt then
                             interrupt(voice_i) <= '1';
                         end if;                        
-                    else
-                        next_state.state := fetch1;
                     end if;
                 else
                     next_state.divider := current_state.divider - 1;
                 end if;
-                if not current_control.enable then
+                if not current_control.enable and not current_control.repeat then
                     next_state.state := idle;
                 end if;
 
@@ -122,18 +131,27 @@ begin
                 if current_control.mode = mono8 then
                     fetch_tag  <= "110" & std_logic_vector(to_unsigned(voice_i, 4)) & '1'; -- high
                     next_state.state := playing;
+                    if current_control.interleave then
+                        next_state.position := current_state.position + 2; -- this and the next byte
+                    else
+                        next_state.position := current_state.position + 1; -- this byte only
+                    end if;
                 else
                     fetch_tag  <= "110" & std_logic_vector(to_unsigned(voice_i, 4)) & '0'; -- low
+                    next_state.position := current_state.position + 1;  -- go to the next byte
                     next_state.state := fetch2;
                 end if;
-                next_state.position := current_state.position + 1;
             
             when fetch2 =>
                 fetch_en   <= '1';
                 fetch_addr <= current_control.start_addr + current_state.position;
                 fetch_tag  <= "110" & std_logic_vector(to_unsigned(voice_i, 4)) & '1'; -- high
                 next_state.state    := playing;
-                next_state.position := current_state.position + 1;
+                if current_control.interleave then
+                    next_state.position := current_state.position + 3; -- this and the two next bytes
+                else
+                    next_state.position := current_state.position + 1; -- this byte only
+                end if;
             
             when others =>
                 null;
@@ -164,6 +182,8 @@ begin
 
             if reset='1' then
                 voice_i <= 0;
+                next_state.state := idle; -- shifted into the voice state vector automatically.
+                interrupt <= (others => '0');
             end if;
         end if;
     end process;

@@ -20,6 +20,7 @@ generic (
     g_command_intf  : boolean := true;
     g_ram_expansion : boolean := true;
     g_extended_reu  : boolean := false;
+    g_sampler       : boolean := false;
     g_implement_sid : boolean := true;
     g_sid_voices    : natural := 3;
     g_vic_copper    : boolean := false );
@@ -56,8 +57,12 @@ port (
 
     -- debug
     freezer_state   : out   std_logic_vector(1 downto 0);
-    sample_left     : out   signed(17 downto 0) := (others => '0');
-    sample_right    : out   signed(17 downto 0) := (others => '0');
+
+    -- audio output
+    sid_pwm_left    : out   std_logic := '0';
+    sid_pwm_right   : out   std_logic := '0';
+    samp_pwm_left   : out   std_logic := '0';
+    samp_pwm_right  : out   std_logic := '0';
 
     -- timing output
     phi2_tick       : out   std_logic;
@@ -142,7 +147,9 @@ architecture structural of slot_server_v4 is
     signal io_resp_cmd      : t_io_resp := c_io_resp_init;
     signal io_req_copper    : t_io_req;
     signal io_resp_copper   : t_io_resp := c_io_resp_init;
-
+    signal io_req_samp_cpu  : t_io_req;
+    signal io_resp_samp_cpu : t_io_resp := c_io_resp_init;
+    
     signal dma_req_io       : t_dma_req;
     signal dma_resp_io      : t_dma_resp := c_dma_resp_init;
     signal dma_req_reu      : t_dma_req;
@@ -158,16 +165,26 @@ architecture structural of slot_server_v4 is
     signal slot_resp_cart   : t_slot_resp := c_slot_resp_init;
     signal slot_resp_sid    : t_slot_resp := c_slot_resp_init;
     signal slot_resp_cmd    : t_slot_resp := c_slot_resp_init;
-
-    signal mem_req_slot     : t_mem_req;
-    signal mem_resp_slot    : t_mem_resp;
-    signal mem_req_reu      : t_mem_req;
-    signal mem_resp_reu     : t_mem_resp;
+    signal slot_resp_samp   : t_slot_resp := c_slot_resp_init;
+    
+    signal mem_req_slot     : t_mem_req   := c_mem_req_init; 
+    signal mem_resp_slot    : t_mem_resp  := c_mem_resp_init;
+    signal mem_req_reu      : t_mem_req   := c_mem_req_init; 
+    signal mem_resp_reu     : t_mem_resp  := c_mem_resp_init;
+    signal mem_req_samp     : t_mem_req   := c_mem_req_init;
+    signal mem_resp_samp    : t_mem_resp  := c_mem_resp_init;
+    
 --    signal mem_req_trace    : t_mem_req;
 --    signal mem_resp_trace   : t_mem_resp;
     
     signal mem_rack_slot    : std_logic;
     signal mem_dack_slot    : std_logic;
+
+    signal sid_sample_left  : signed(17 downto 0);
+    signal sid_sample_right : signed(17 downto 0);
+    signal sample_L         : signed(17 downto 0);
+    signal sample_R         : signed(17 downto 0);
+
 begin
     reset_button  <= buttons(0) when control.swap_buttons='0' else buttons(2);
     freeze_button <= buttons(2) when control.swap_buttons='0' else buttons(0);
@@ -206,22 +223,24 @@ begin
     generic map (
         g_range_lo  => 13,
         g_range_hi  => 15,
-        g_ports     => 4 )
+        g_ports     => 5 )
     port map (
         clock    => clock,
         
         req      => io_req_peri,
         resp     => io_resp_peri,
            
-        reqs(0)  => io_req_regs,  -- 4040000
-        reqs(1)  => io_req_sid,   -- 4042000
-        reqs(2)  => io_req_cmd,   -- 4044000
-        reqs(3)  => io_req_copper,-- 4046000
+        reqs(0)  => io_req_regs,     -- 4040000
+        reqs(1)  => io_req_sid,      -- 4042000
+        reqs(2)  => io_req_cmd,      -- 4044000
+        reqs(3)  => io_req_copper,   -- 4046000
+        reqs(4)  => io_req_samp_cpu, -- 4048000
         
         resps(0) => io_resp_regs,
         resps(1) => io_resp_sid,
         resps(2) => io_resp_cmd,
-        resps(3) => io_resp_copper );
+        resps(3) => io_resp_copper,
+        resps(4) => io_resp_samp_cpu );
         
 
     i_registers: entity work.cart_slot_registers
@@ -455,8 +474,34 @@ begin
             slot_resp    => slot_resp_sid,
         
             start_iter   => phi2_tick_i,
-            sample_left  => sample_left,
-            sample_right => sample_right );
+            sample_left  => sid_sample_left,
+            sample_right => sid_sample_right );
+
+        i_pdm_sid_L: entity work.sigma_delta_dac --delta_sigma_2to5
+        generic map (
+            g_left_shift => 0,
+            g_invert => true,
+            g_use_mid_only => false,
+            g_width => sid_sample_left'length )
+        port map (
+            clock   => clock,
+            reset   => reset,
+            
+            dac_in  => sid_sample_left,
+            dac_out => sid_pwm_left );
+    
+        i_pdm_sid_R: entity work.sigma_delta_dac --delta_sigma_2to5
+        generic map (
+            g_left_shift => 0,
+            g_invert => true,
+            g_use_mid_only => false,
+            g_width => sid_sample_right'length )
+        port map (
+            clock   => clock,
+            reset   => reset,
+            
+            dac_in  => sid_sample_right,
+            dac_out => sid_pwm_right );
 
     end generate;
     
@@ -529,7 +574,95 @@ begin
 
     end generate;
 
-    slot_resp <= or_reduce(slot_resp_reu & slot_resp_cart & slot_resp_sid & slot_resp_cmd );
+    r_sampler: if g_sampler generate
+        signal local_io_req     : t_io_req  := c_io_req_init;
+        signal local_io_resp    : t_io_resp;
+        signal io_req_samp      : t_io_req;
+        signal io_resp_samp     : t_io_resp;
+        signal irq_samp         : std_logic;
+    begin
+        i_io_bridge: entity work.slot_to_io_bridge
+        generic map (
+            g_io_base       => X"48000", -- dont care in this context
+            g_slot_start    => "100100000",
+            g_slot_stop     => "111111111" )
+        port map (
+            clock           => clock,
+            reset           => reset,
+            
+            enable          => control.sampler_enable,
+            irq_in          => irq_samp,
+            
+            slot_req        => slot_req,
+            slot_resp       => slot_resp_samp,
+            
+            io_req          => local_io_req,
+            io_resp         => local_io_resp );
+        
+        i_io_arb_sampler: entity work.io_bus_arbiter_pri
+        generic map (
+            g_ports     => 2 )
+        port map (
+            clock       => clock,
+            reset       => reset,
+            
+            reqs(0)     => io_req_samp_cpu,
+            reqs(1)     => local_io_req,
+            
+            resps(0)    => io_resp_samp_cpu,
+            resps(1)    => local_io_resp,
+            
+            req         => io_req_samp,
+            resp        => io_resp_samp );
+
+        i_sampler: entity work.sampler
+        generic map (
+            g_num_voices    => 8 )
+        port map (
+            clock       => clock,
+            reset       => actual_c64_reset,
+            
+            io_req      => io_req_samp,
+            io_resp     => io_resp_samp,
+            
+            mem_req     => mem_req_samp,
+            mem_resp    => mem_resp_samp,
+
+            irq         => irq_samp,
+            
+            sample_L    => sample_L,
+            sample_R    => sample_R,
+            new_sample  => open );
+
+        i_pdm_samp_L: entity work.sigma_delta_dac --delta_sigma_2to5
+        generic map (
+            g_left_shift => 0,
+            g_invert => true,
+            g_use_mid_only => false,
+            g_width => 18 )
+        port map (
+            clock   => clock,
+            reset   => reset,
+            
+            dac_in  => sample_L,
+            dac_out => samp_pwm_left );
+    
+        i_pdm_samp_R: entity work.sigma_delta_dac --delta_sigma_2to5
+        generic map (
+            g_left_shift => 0,
+            g_invert => true,
+            g_use_mid_only => false,
+            g_width => 18 )
+        port map (
+            clock   => clock,
+            reset   => reset,
+            
+            dac_in  => sample_R,
+            dac_out => samp_pwm_right );
+
+    end generate;
+
+    slot_resp <= or_reduce(slot_resp_reu & slot_resp_cart & slot_resp_sid & slot_resp_cmd & slot_resp_samp);
 
     ADDRESS(15 downto 8) <= address_out(15 downto 8) when address_tri_h='1' else (others => 'Z');
     ADDRESS(7 downto 0)  <= address_out(7 downto 0)  when address_tri_l='1' else (others => 'Z');
@@ -569,17 +702,20 @@ begin
     
     i_mem_arb: entity work.mem_bus_arbiter_pri
     generic map (
-        g_ports     => 2 )
+        g_ports     => 3 )
     port map (
         clock       => clock,
         reset       => reset,
         
         reqs(0)     => mem_req_slot,
         reqs(1)     => mem_req_reu,
---        reqs(2)     => mem_req_trace,
+        reqs(2)     => mem_req_samp,
+        
+--        reqs(3)     => mem_req_trace,
         resps(0)    => mem_resp_slot,
         resps(1)    => mem_resp_reu,
---        resps(2)    => mem_resp_trace,
+        resps(2)    => mem_resp_samp,
+--        resps(3)    => mem_resp_trace,
         
         req         => mem_req,
         resp        => mem_resp );

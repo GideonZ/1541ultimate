@@ -63,6 +63,8 @@ begin
                     control_i.eth_enable <= io_req.data(0);
                 when c_cart_swap_buttons =>
                 	control_i.swap_buttons <= io_req.data(0);
+                when c_cart_sampler_enable =>
+                    control_i.sampler_enable <= io_req.data(0);
                 when others =>
                     null;
                 end case;
@@ -91,6 +93,8 @@ begin
                     io_resp.data(2 downto 0) <= control_i.reu_size;
                 when c_cart_ethernet_enable =>
                     io_resp.data(0) <= control_i.eth_enable;
+                when c_cart_sampler_enable =>
+                    io_resp.data(0) <= control_i.sampler_enable;
                 when c_cart_swap_buttons =>
                 	io_resp.data(0) <= control_i.swap_buttons;
                 when others =>

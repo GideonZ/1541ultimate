@@ -450,8 +450,11 @@ int main()
             program_flash(do_update1, do_update2, false);
         }
     } else {
-        if(user_interface->popup("Update NOT required. Force?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+        int response = user_interface->popup("Update NOT required. Force?", BUTTON_ALL | BUTTON_YES | BUTTON_NO);
+        if(response == BUTTON_ALL) {
             program_flash(true, true, true);
+        } else if(response == BUTTON_YES) {
+            program_flash(false, true, false);
         }
 	}
 

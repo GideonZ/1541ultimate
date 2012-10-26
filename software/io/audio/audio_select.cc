@@ -14,16 +14,17 @@ extern "C" {
 AudioConfig audio_configurator;
 
                           
+#define CFG_AUDIO_SID_WAVE_LEFT  0x56
+#define CFG_AUDIO_SID_WAVE_RIGHT 0x57
+#define CFG_AUDIO_SID_ENABLE_L   0x58
+#define CFG_AUDIO_SID_ENABLE_R   0x59
 #define CFG_AUDIO_SELECT_LEFT    0x5A
 #define CFG_AUDIO_SELECT_RIGHT   0x5B
 #define CFG_AUDIO_SID_BASE_LEFT  0x5C
 #define CFG_AUDIO_SID_BASE_RIGHT 0x5D
 #define CFG_AUDIO_SID_EXT_LEFT   0x5E
 #define CFG_AUDIO_SID_EXT_RIGHT  0x5F
-#define CFG_AUDIO_SID_ENABLE_L   0x58
-#define CFG_AUDIO_SID_ENABLE_R   0x59
-#define CFG_AUDIO_SID_WAVE_LEFT  0x56
-#define CFG_AUDIO_SID_WAVE_RIGHT 0x57
+#define CFG_AUDIO_SAMPLER_IO     0x60
 
 char *aud_choices[] = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right" };
 
@@ -43,8 +44,8 @@ char *en_dis3[] = { "Disabled", "Enabled" };
 char *sidchip_sel[] = { "6581", "8580" };
 
 struct t_cfg_definition audio_cfg[] = {
-    { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  5, 0 },
-    { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices, 0,  5, 1 },
+    { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  7, 0 },
+    { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices, 0,  7, 1 },
     { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis3,     0,  1, 1 },
     { CFG_AUDIO_SID_BASE_LEFT,  CFG_TYPE_ENUM, "SID Left Base",                "%s", sid_base,    0, 24, 0 },
     { CFG_AUDIO_SID_EXT_LEFT,   CFG_TYPE_ENUM, "SID Left Mode",                "%s", sid_voices,  0,  1, 0 },
@@ -53,6 +54,7 @@ struct t_cfg_definition audio_cfg[] = {
     { CFG_AUDIO_SID_BASE_RIGHT, CFG_TYPE_ENUM, "SID Right Base",               "%s", sid_base,    0, 24, 8 },
     { CFG_AUDIO_SID_EXT_RIGHT,  CFG_TYPE_ENUM, "SID Right Mode",               "%s", sid_voices,  0,  1, 0 },
     { CFG_AUDIO_SID_WAVE_RIGHT, CFG_TYPE_ENUM, "SID Right Combined Waveforms", "%s", sidchip_sel, 0,  1, 0 },
+//    { CFG_AUDIO_SAMPLER_IO,     CFG_TYPE_ENUM, "Map Sampler in $DF20-DFFF",    "%s", en_dis3,     0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,        0,  0, 0 } };
 
 struct t_cfg_definition audio_cfg_no_sid[] = {
@@ -79,20 +81,19 @@ void AudioConfig :: effectuate_settings()
     AUDIO_SELECT_LEFT   = cfg->get_value(CFG_AUDIO_SELECT_LEFT);
     AUDIO_SELECT_RIGHT  = cfg->get_value(CFG_AUDIO_SELECT_RIGHT);
     
-    if(!(CAPABILITIES & CAPAB_STEREO_SID))
-        return;
-
-    printf("Number of voices implemented in FPGA: %d\n", SID_VOICES);
-    SID_BASE_LEFT     = sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)];
-    SID_SNOOP_LEFT    = (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)] & 0x80)?0:1;
-    SID_ENABLE_LEFT   = cfg->get_value(CFG_AUDIO_SID_ENABLE_L);
-    SID_EXTEND_LEFT   = cfg->get_value(CFG_AUDIO_SID_EXT_LEFT);
-    SID_COMBSEL_LEFT  = cfg->get_value(CFG_AUDIO_SID_WAVE_LEFT);
-
-    SID_BASE_RIGHT    = sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_RIGHT)];
-    SID_SNOOP_RIGHT   = (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_RIGHT)] & 0x80)?0:1;
-    SID_ENABLE_RIGHT  = cfg->get_value(CFG_AUDIO_SID_ENABLE_R);
-    SID_EXTEND_RIGHT  = cfg->get_value(CFG_AUDIO_SID_EXT_RIGHT);
-    SID_COMBSEL_RIGHT = cfg->get_value(CFG_AUDIO_SID_WAVE_RIGHT);
+    if(CAPABILITIES & CAPAB_STEREO_SID) {
+        printf("Number of SID voices implemented in FPGA: %d\n", SID_VOICES);
+        SID_BASE_LEFT     = sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)];
+        SID_SNOOP_LEFT    = (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)] & 0x80)?0:1;
+        SID_ENABLE_LEFT   = cfg->get_value(CFG_AUDIO_SID_ENABLE_L);
+        SID_EXTEND_LEFT   = cfg->get_value(CFG_AUDIO_SID_EXT_LEFT);
+        SID_COMBSEL_LEFT  = cfg->get_value(CFG_AUDIO_SID_WAVE_LEFT);
+    
+        SID_BASE_RIGHT    = sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_RIGHT)];
+        SID_SNOOP_RIGHT   = (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_RIGHT)] & 0x80)?0:1;
+        SID_ENABLE_RIGHT  = cfg->get_value(CFG_AUDIO_SID_ENABLE_R);
+        SID_EXTEND_RIGHT  = cfg->get_value(CFG_AUDIO_SID_EXT_RIGHT);
+        SID_COMBSEL_RIGHT = cfg->get_value(CFG_AUDIO_SID_WAVE_RIGHT);
+    }
 }
 

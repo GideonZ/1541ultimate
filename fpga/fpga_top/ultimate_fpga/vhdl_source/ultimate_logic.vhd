@@ -219,8 +219,6 @@ architecture logic of ultimate_logic is
     signal mem_resp_1541_2  : t_mem_resp := c_mem_resp_init;
     signal mem_req_cart     : t_mem_req := c_mem_req_init;
     signal mem_resp_cart    : t_mem_resp := c_mem_resp_init;
-    signal mem_req_samp     : t_mem_req := c_mem_req_init;
-    signal mem_resp_samp    : t_mem_resp := c_mem_resp_init;
     signal mem_req_debug    : t_mem_req := c_mem_req_init;
     signal mem_resp_debug   : t_mem_resp := c_mem_resp_init;
 
@@ -267,8 +265,6 @@ architecture logic of ultimate_logic is
     signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
     signal io_req_debug     : t_io_req;
     signal io_resp_debug    : t_io_resp := c_io_resp_init;
-    signal io_req_samp      : t_io_req;
-    signal io_resp_samp     : t_io_resp := c_io_resp_init;
 
     -- Audio routing
     signal pwm              : std_logic;
@@ -312,8 +308,6 @@ architecture logic of ultimate_logic is
     signal freezer_state    : std_logic_vector(1 downto 0);
     signal dirty_led_1_n    : std_logic := '1';
     signal dirty_led_2_n    : std_logic := '1';
-    signal sid_sample_left  : signed(17 downto 0);
-    signal sid_sample_right : signed(17 downto 0);
     signal sid_pwm_left     : std_logic;
     signal sid_pwm_right    : std_logic;
     signal samp_pwm_left    : std_logic;
@@ -510,32 +504,6 @@ begin
         end generate;
     end generate;
 
-    i_pdm_sid_L: entity work.sigma_delta_dac --delta_sigma_2to5
-    generic map (
-        g_left_shift => 0,
-        g_invert => true,
-        g_use_mid_only => false,
-        g_width => sid_sample_left'length )
-    port map (
-        clock   => sys_clock,
-        reset   => sys_reset,
-        
-        dac_in  => sid_sample_left,
-        dac_out => sid_pwm_left );
-
-    i_pdm_sid_R: entity work.sigma_delta_dac --delta_sigma_2to5
-    generic map (
-        g_left_shift => 0,
-        g_invert => true,
-        g_use_mid_only => false,
-        g_width => sid_sample_right'length )
-    port map (
-        clock   => sys_clock,
-        reset   => sys_reset,
-        
-        dac_in  => sid_sample_right,
-        dac_out => sid_pwm_right );
-
     r_cart: if g_cartridge generate
         i_slot_srv: entity work.slot_server_v4
         generic map (
@@ -548,6 +516,7 @@ begin
             g_ram_expansion => g_ram_expansion,
             g_extended_reu  => g_extended_reu,
             g_command_intf  => g_command_intf,
+            g_sampler       => g_sampler,
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 16,
             g_vic_copper    => g_vic_copper )
@@ -578,10 +547,14 @@ begin
 			buttons 		=> BUTTON,
             cart_led_n      => cart_led_n,
             
+            -- audio
+            sid_pwm_left    => sid_pwm_left,
+            sid_pwm_right   => sid_pwm_right,
+            samp_pwm_left   => samp_pwm_left,
+            samp_pwm_right  => samp_pwm_right,
+
             -- debug
             freezer_state   => freezer_state,
-            sample_left     => sid_sample_left,
-            sample_right    => sid_sample_right,
             trigger_1       => trigger_1,
             trigger_2       => trigger_2,
             
@@ -613,7 +586,7 @@ begin
         reqs(0)  => io_req_itu,     -- 4000000 ( 16 ... 400000F)
         reqs(1)  => io_req_1541,    -- 4020000 (  8K... 4021FFF) & 4024000 for drive B 
         reqs(2)  => io_req_cart,    -- 4040000 (128K... 405FFFF)
-        reqs(3)  => io_req_io,      -- 4060000 (  2K... 40607FF)
+        reqs(3)  => io_req_io,      -- 4060000 (  2K... 4060FFF)
         reqs(4)  => io_req_usb,     -- 4080000 (  8K... 4081FFF)
         reqs(5)  => io_req_c2n,     -- 40A0000 (  4K... 40A0FFF)
         reqs(6)  => io_req_c2n_rec, -- 40C0000 (  4K... 40C0FFF)
@@ -652,7 +625,7 @@ begin
     generic map (
         g_range_lo  => 8,
         g_range_hi  => 11,
-        g_ports     => 9 )
+        g_ports     => 8 )
     port map (
         clock    => sys_clock,
         
@@ -667,7 +640,6 @@ begin
         reqs(5)  => io_req_gcr_dec,  -- 4060500
         reqs(6)  => io_req_icap,     -- 4060600
         reqs(7)  => io_req_aud_sel,  -- 4060700
-        reqs(8)  => io_req_samp,     -- 4060800
         
         resps(0) => io_resp_sd,
         resps(1) => io_resp_rtc,
@@ -676,8 +648,7 @@ begin
         resps(4) => io_resp_rtc_tmr,
         resps(5) => io_resp_gcr_dec,
         resps(6) => io_resp_icap,
-        resps(7) => io_resp_aud_sel,
-        resps(8) => io_resp_samp );
+        resps(7) => io_resp_aud_sel );
 
 
     r_usb: if g_usb_host generate
@@ -925,58 +896,10 @@ begin
 
     c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
 	
-    r_sampler: if g_sampler generate
-        signal sample_L     : signed(17 downto 0);
-        signal sample_R     : signed(17 downto 0);
-    begin
-        i_sampler: entity work.sampler
-        generic map (
-            g_num_voices    => 8 )
-        port map (
-            clock       => sys_clock,
-            reset       => sys_reset,
-            
-            io_req      => io_req_samp,
-            io_resp     => io_resp_samp,
-            
-            mem_req     => mem_req_samp,
-            mem_resp    => mem_resp_samp,
-            
-            sample_L    => sample_L,
-            sample_R    => sample_R,
-            new_sample  => open );
-
-        i_pdm_samp_L: entity work.sigma_delta_dac --delta_sigma_2to5
-        generic map (
-            g_left_shift => 0,
-            g_invert => true,
-            g_use_mid_only => false,
-            g_width => 18 )
-        port map (
-            clock   => sys_clock,
-            reset   => sys_reset,
-            
-            dac_in  => sample_L,
-            dac_out => samp_pwm_left );
-    
-        i_pdm_samp_R: entity work.sigma_delta_dac --delta_sigma_2to5
-        generic map (
-            g_left_shift => 0,
-            g_invert => true,
-            g_use_mid_only => false,
-            g_width => 18 )
-        port map (
-            clock   => sys_clock,
-            reset   => sys_reset,
-            
-            dac_in  => sample_R,
-            dac_out => samp_pwm_right );
-
-    end generate;
 
     i_mem_arb: entity work.mem_bus_arbiter_pri
     generic map (
-        g_ports      => 6,
+        g_ports      => 5,
         g_registered => false )
     port map (
         clock       => sys_clock,
@@ -985,16 +908,14 @@ begin
         reqs(0)     => mem_req_cart,
         reqs(1)     => mem_req_1541,
         reqs(2)     => mem_req_1541_2,
-        reqs(3)     => mem_req_samp,
-        reqs(4)     => mem_req_debug,
-        reqs(5)     => mem_req_cpu,
+        reqs(3)     => mem_req_debug,
+        reqs(4)     => mem_req_cpu,
 
         resps(0)    => mem_resp_cart,
         resps(1)    => mem_resp_1541,
         resps(2)    => mem_resp_1541_2,
-        resps(3)    => mem_resp_samp,
-        resps(4)    => mem_resp_debug,
-        resps(5)    => mem_resp_cpu,
+        resps(3)    => mem_resp_debug,
+        resps(4)    => mem_resp_cpu,
         
         req         => mem_req,
         resp        => mem_resp );        

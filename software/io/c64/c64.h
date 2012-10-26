@@ -29,6 +29,7 @@
 #define C64_REU_ENABLE          *((volatile BYTE *)(C64_CARTREGS_BASE + 0x8))
 #define C64_REU_SIZE            *((volatile BYTE *)(C64_CARTREGS_BASE + 0x9))
 #define C64_SWAP_CART_BUTTONS   *((volatile BYTE *)(C64_CARTREGS_BASE + 0xA))
+#define C64_SAMPLER_ENABLE      *((volatile BYTE *)(C64_CARTREGS_BASE + 0xE))
 #define C64_ETHERNET_ENABLE     *((volatile BYTE *)(C64_CARTREGS_BASE + 0xF))
 
 #define C64_MODE_EXROM     0x01
@@ -132,6 +133,7 @@ class C64 : public GenericHost, ObjectWithMenu, ConfigurableObject
     void init_io(void);
     void restore_io(void);
     void set_cartridge(cart_def *def);
+    void set_emulation_flags(cart_def *def);
 
     void stop(bool do_raster = true);
     void resume(void);

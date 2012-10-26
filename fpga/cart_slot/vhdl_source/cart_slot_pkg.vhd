@@ -14,6 +14,7 @@ package cart_slot_pkg is
     constant c_cart_reu_enable          : unsigned(3 downto 0) := X"8";
     constant c_cart_reu_size            : unsigned(3 downto 0) := X"9";
 	constant c_cart_swap_buttons		: unsigned(3 downto 0) := X"A";
+    constant c_cart_sampler_enable      : unsigned(3 downto 0) := X"E";
     constant c_cart_ethernet_enable     : unsigned(3 downto 0) := X"F";
 
     type t_cart_control is record
@@ -28,6 +29,7 @@ package cart_slot_pkg is
         reu_enable     : std_logic;
         reu_size       : std_logic_vector(2 downto 0);
         eth_enable     : std_logic;
+        sampler_enable : std_logic;
 		swap_buttons   : std_logic;
     end record;
     
@@ -48,6 +50,7 @@ package cart_slot_pkg is
         reu_enable     => '0',
         reu_size       => "111",
         eth_enable     => '0',
+        sampler_enable => '0',
         swap_buttons   => '1' );
     
 
