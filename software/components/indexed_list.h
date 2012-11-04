@@ -146,6 +146,10 @@ public:
 		return elements;
 	}
 
+	int get_size(void) {
+		return size;
+	}
+
 	T operator[] (int i) {
 		if(i < 0)
 			return empty;

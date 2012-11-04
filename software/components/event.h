@@ -6,7 +6,7 @@
 typedef enum _event_type {
     e_nop = 0,
     e_cleanup_path_object,
-    e_cleanup_other_object,
+    e_cleanup_block_device,
     e_refresh_browser,
     e_reload_browser,
 	e_browse_into,

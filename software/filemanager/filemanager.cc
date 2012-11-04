@@ -21,6 +21,7 @@ void FileManager :: handle_event(Event &e)
 {
 	PathObject *o, *c;
     o = (PathObject *)e.object;
+    BlockDevice *blk;
     File *f;
     FileDevice *fd;
     
@@ -28,6 +29,11 @@ void FileManager :: handle_event(Event &e)
 	case e_cleanup_path_object:
         printf("Cleaning up %s\n", o->get_name());
         delete o;
+        break;
+    case e_cleanup_block_device:
+        blk = (BlockDevice *)e.object;
+        printf("Cleaning up Blockdevice %p\n", blk);
+        delete blk;
         break;
 	case e_path_object_exec_cmd:
 		o->execute(e.param);

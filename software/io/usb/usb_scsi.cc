@@ -100,7 +100,7 @@ void UsbScsiDriver :: deinstall(UsbDevice *dev)
 		root.children.remove(path_dev[i]);
 		push_event(e_invalidate, path_dev[i]);
 		push_event(e_cleanup_path_object, path_dev[i]);
-		push_event(e_cleanup_other_object, scsi_blk_dev[i]);
+		push_event(e_cleanup_block_device, scsi_blk_dev[i]);
 	}
 	push_event(e_refresh_browser, &root);
 }

@@ -10,12 +10,17 @@ extern "C" {
 
 MemManager :: MemManager()
 {
+    printf("*** CREATING MEMORY MANAGER ***\n");
 	for(int i=0;i<NUM_MALLOCS;i++) {
 		mem_locations[i] = 0;
 		mem_lengths[i] = 0;
+    	mem_freed[i] = -2;
 	}
 	total_alloc = 0;
 	last_alloc = 0;
+    free_count = 0;
+    enabled = false;
+    dump();
 }
 
 MemManager :: ~MemManager()
@@ -30,6 +35,15 @@ MemManager :: ~MemManager()
 	}
 }
 
+void MemManager :: dump()
+{
+    printf("The memory manager is currently %s\n", enabled?"enabled":"disabled");
+	printf("Total allocated: %d bytes.", total_alloc);
+    for(int i=0;i<last_alloc;i++) {
+		printf("%4d: Size: %7d  Loc: %p. Freed: %4d\n", i, mem_lengths[i], mem_locations[i], mem_freed[i]);
+    }
+}
+    
 void *MemManager :: qalloc(size_t size)
 {
     void *p = malloc(size);
@@ -59,6 +73,7 @@ void *MemManager :: qalloc(size_t size)
     if(last_alloc < NUM_MALLOCS) {
     	mem_lengths[last_alloc] = size;
     	mem_locations[last_alloc] = p;
+    	mem_freed[last_alloc] = -1;
     	total_alloc += size;
 #if MEM_VERBOSE > 0
 		printf("++ %4d: Size: %7d  Loc: %p. Total = %d\n", last_alloc, size, p, total_alloc);
@@ -74,21 +89,20 @@ void *MemManager :: qalloc(size_t size)
 void MemManager :: qfree(void *p)
 {
 	for(int i=0;i<NUM_MALLOCS;i++) {
-		if(mem_locations[i] == p) {
+		if((mem_locations[i] == p)&&(mem_freed[i] < 0)) {
 			total_alloc -= mem_lengths[i];
 #if MEM_VERBOSE > 0
     		printf("-- %4d: Size: %7d  Loc: %p. Total = %d\n", i, mem_lengths[i], p, total_alloc);
 #endif
-    		memset(p, 0xBB, mem_lengths[i]);
-			mem_lengths[i] = 0;
-			mem_locations[i] = 0;
+    		memset(p, i, mem_lengths[i]);
+			mem_freed[i] = free_count++;
 			free(p);
 			return;
 		}
 	}
 	printf("Trying to free a location that is not in the alloc list: %p\n", p);
-	while(1)
-		;
+//	while(1)
+//		;
 }
 
 #if USE_MEM_TRACE > 0
@@ -98,7 +112,10 @@ MemManager mem_manager;
 void * operator new(size_t size)
 {
 #if USE_MEM_TRACE == 1
-	return mem_manager.qalloc(size);
+    if(mem_manager.enabled) {
+    	return mem_manager.qalloc(size);
+    }
+	return malloc(size);
 #else
 	return malloc(size);
 #endif
@@ -107,7 +124,11 @@ void * operator new(size_t size)
 void operator delete(void *p)
 {
 #if USE_MEM_TRACE == 1
-	mem_manager.qfree(p);
+    if(mem_manager.enabled) {
+    	mem_manager.qfree(p);
+    } else {
+    	free(p);
+    }
 #else
 	free(p);
 #endif
@@ -116,7 +137,10 @@ void operator delete(void *p)
 void * operator new[](size_t size)
 {
 #if USE_MEM_TRACE == 1
-	return mem_manager.qalloc(size);
+    if(mem_manager.enabled) {
+    	return mem_manager.qalloc(size);
+    }
+	return malloc(size);
 #else
 	return malloc(size);
 #endif
@@ -125,7 +149,11 @@ void * operator new[](size_t size)
 void operator delete[](void *p)
 {
 #if USE_MEM_TRACE == 1
-	mem_manager.qfree(p);
+    if(mem_manager.enabled) {
+    	mem_manager.qfree(p);
+    } else {
+    	free(p);
+    }
 #else
 	free(p);
 #endif

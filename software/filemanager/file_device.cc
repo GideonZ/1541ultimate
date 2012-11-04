@@ -12,13 +12,15 @@ FileDevice :: FileDevice(PathObject *p, BlockDevice *b, char *n) : FileDirEntry(
 
 FileDevice :: ~FileDevice()
 {
-	cleanup_children(); // THIS IS ABSOLUTELY NECESSARY..
-	// because our children are dependent and refer to this disk:
-	if(disk)
-        delete disk;
-    if(info)
+    detach_disk();
+    if(info) {
+        if(info->fs)
+            delete info->fs;
         delete info;
+    }
 	// now the children will be cleaned again the base class destructor.. (so be it)
+    info = NULL;
+//    printf("Done destructing %s\n", get_name());
 }
 
 void FileDevice :: attach_disk(int block_size)
