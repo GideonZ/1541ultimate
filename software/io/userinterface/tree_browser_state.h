@@ -29,8 +29,8 @@ public:
     void draw();
     void reselect();
     void reload(void);
-    void highlight();
-    void unhighlight();
+    virtual void highlight();
+    virtual void unhighlight();
     void up(int);
     void down(int);
     void move_to_index(int);

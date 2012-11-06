@@ -181,3 +181,17 @@ int ConfigBrowser :: handle_key(char c)
     }    
     return ret;
 }
+
+void ConfigBrowserState :: unhighlight()
+{
+    browser->window->move_cursor(0, selected_line);
+    browser->window->set_color(user_interface->color_fg); // highlighted
+    browser->window->output_line(selected->get_display_string());
+}
+    
+void ConfigBrowserState :: highlight()
+{
+    browser->window->move_cursor(0, selected_line);
+    browser->window->set_color(user_interface->color_sel); // highlighted
+    browser->window->output_line(selected->get_display_string());
+}

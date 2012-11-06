@@ -15,6 +15,8 @@ public:
     void change(void);
     void increase(void);
     void decrease(void);
+    void unhighlight(void);
+    void highlight(void);
 };
 
 class ConfigBrowser : public TreeBrowser
