@@ -113,6 +113,6 @@ char *FileDevice :: get_display_string(void)
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
 */
-    small_sprintf(buffer, "\037%29s \025%s", get_name(), c_state_string[(int)state]);
+    small_sprintf(buffer, "%29s \025%s", get_name(), c_state_string[(int)state]);
     return buffer;
 }

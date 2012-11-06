@@ -48,7 +48,7 @@ char *FilePartition :: get_display_string(void)
     DWORD length;
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
-    small_sprintf(buffer, "\037%24s \027%s \032%s", get_name(), sizebuf, get_type_string(prt->get_type()));
+    small_sprintf(buffer, "%24s \027%s \032%s", get_name(), sizebuf, get_type_string(prt->get_type()));
     return buffer;
 }
 

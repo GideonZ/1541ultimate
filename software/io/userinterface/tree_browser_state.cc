@@ -118,13 +118,13 @@ void TreeBrowserState :: update_selected(void)
     
 void TreeBrowserState :: unhighlight()
 {
-    browser->window->set_color(user_interface->color_fg, 0, selected_line, 40, 1, true);
+    browser->window->set_color(user_interface->color_fg, 0, selected_line, 30, 1, false);
 //    window->reverse(0, selection_index, 40);
 }
     
 void TreeBrowserState :: highlight()
 {
-    browser->window->set_color(0x60+user_interface->color_sel, 0, selected_line, 40, 1, true);
+    browser->window->set_color(0x60+user_interface->color_sel, 0, selected_line, 30, 1, false);
 //    window->reverse(0, selection_index, 40);
 //    window->set_color(1, 0, selection_index, quick_seek_length, 1);
 }
