@@ -1,0 +1,534 @@
+; just to make it compile and easy to inspect
+
+	*=$0801
+	.word ss,2013
+	.null $9e,^start;sys
+ss	.word 0
+
+start
+    ; transfer drive code to drive, from $0400
+    ; open 1,8,15
+    lda #1  ; logical file
+    ldx #8  ; drive
+    ldy #15 ; secondary address: command channel
+    jsr $ffba ; SETLFS
+    lda #0  ; no filename
+    jsr $ffbd ; SETNAM
+    jsr $ffc0 ; OPEN
+
+    ; set pointer of code to send
+    lda #<drive_code_start
+    sta $fb
+    lda #>drive_code_start
+    sta $fc
+    ; set destination address in drive to $0400
+    lda #0
+    sta $fd
+    lda #4
+    sta $fe
+    
+    ; now loop for a total number of (drive_code_end - drive_code_start)/32
+    ldx #((drive_code_end - drive_code_start)+31)/32
+-   txa
+    pha
+    jsr send_code_block
+    pla
+    tax
+    dex
+    bne -
+
+    jsr send_execute
+    
+    ; now close file
+;    lda #1
+;    jsr $ffc3 ; CLOSE (not possible, because we are already executing)
+;
+    lda #$07
+    sta $dd00
+
+    rts
+    
+send_execute
+    lda #'E'
+    jsr $ffd2
+    ldx #1
+    jsr $ffc9
+    lda #'M'
+    jsr $ffd2
+    lda #'-'
+    jsr $ffd2
+    lda #'E'
+    jsr $ffd2
+    lda #0
+    jsr $ffd2
+    lda #4
+    jsr $ffd2
+    jsr $ffcc ; CLRCHN
+    lda #$0d
+    jsr $ffd2
+    rts
+    
+send_code_block ; pointer is in FB/FC
+    lda #'.'
+    jsr $ffd2
+    ldx #1
+    jsr $ffc9 ; CHKOUT
+    lda #'M'
+    jsr $ffd2
+    lda #'-'
+    jsr $ffd2
+    lda #'W'
+    jsr $ffd2
+    lda $fd
+    jsr $ffd2
+    lda $fe
+    jsr $ffd2
+    lda #$20
+    jsr $ffd2
+    ldy #0
+-   lda ($fb),y
+    jsr $ffd2
+    iny
+    cpy #32
+    bne -
+    jsr $ffcc ; CLRCHN
+    lda $fb
+    clc
+    adc #32
+    sta $fb
+    lda $fc
+    adc #0
+    sta $fc
+    lda $fd
+    clc
+    adc #32
+    sta $fd
+    lda $fe
+    adc #0
+    sta $fe
+    rts
+
+; -------------------------------------------------
+; -- DRIVE CODE 
+; -------------------------------------------------
+drive_code_start
+	.logical $0400
+
+    iec_datain = $01
+    iec_dataout = $02
+    iec_clkin = $04
+    iec_clkout = $08
+    iec_atna = $10
+    
+    ctrl_step = $01
+    ctrl_motor = $04
+    ctrl_led = $08
+    ctrl_wprot = $10
+    ctrl_density = $20
+    ctrl_sync = $80
+        
+    via_iec = $1800 ; port B cia1
+    via_timer = $1805 ; cia1 timer
+    via_ctrl = $1c00 ; port B cia2 (sync, motor, etc)
+    via_data = $1c01 ; port A cia2
+    
+    data_buffer = $0300
+    shifted_table = $0700
+    sectors_to_read = $06c0
+    last_part = $01ba
+       
+    bin_to_gcr = $f77f
+    region_limits = $fed7
+    region_sectors = $fed1
+    
+    attempts = $8c
+    temp1    = $8d
+    sectors_read = $8e
+    sectors_on_this_track = $8f
+    current_track = $90
+    zone = $91
+    
+start_copy
+    jsr create_shift_table
+    lda #0 ; remove ourselves from the bus
+    sta via_iec
+    jsr wait_bus_free
+    jsr seek_track_1
+    jsr wait_a_little
+    cmp #1
+    beq read_disk
+    rts ; just exit
+    jmp send_error ; and exit        
+read_disk
+    jsr $f97e ; turn motor on
+    sei
+    lda #1
+-
+    jsr calculate_zone ; sets current track, zone and sectors on track
+    jsr read_track ; read and transfer track
+    jsr step_in ; move head half track
+    jsr step_in ; move head half track
+    lda current_track
+    clc
+    adc #$01
+    cmp #36
+    bne -
+    tay
+-   jsr step_out
+    jsr step_out
+    dey
+    bne -    
+    cli
+    rts
+
+wait_a_little
+    ldx #$40
+    ldy #0
+-   iny
+    bne -
+    dex
+    bne -
+    rts
+
+calculate_zone ; (track number in a)
+    sta current_track
+    ldx #$04
+-   cmp region_limits-1,x
+    dex
+    bcs -
+    lda region_sectors,x
+    sta sectors_on_this_track
+    txa
+    asl
+    asl
+    asl
+    asl
+    asl
+    sta zone
+    lda via_ctrl
+    and #$9f
+    ora zone
+    sta via_ctrl
+    rts
+    
+seek_track_1
+    sei
+    lda #$c0
+    sta $01
+    cli
+-   lda $01
+    bmi -
+    lda $01
+    cmp #$01
+    beq +
+    rts
++   sei
+    lda #$b0
+    sta $01
+    lda #$01
+    sta $08
+    lda #$00
+    sta $09
+    cli
+-   lda $01
+    bmi -
+    lda $01
+    rts
+
+step_in
+    ldx via_ctrl
+    inx
+    txa
+    and #$03
+    sta via_ctrl
+_wait_timer
+    lda #$fc
+    sta via_timer
+-   bit via_timer
+    bmi -
+    rts
+    
+step_out
+    ldx via_ctrl
+    dex
+    txa
+    and #$03
+    sta via_ctrl
+    jmp _wait_timer
+
+read_track
+    lda sectors_on_this_track
+    jsr prepare_sector_table
+    lda #$00
+    sta sectors_read
+-   jsr read_sector
+    bne +
+;    jsr send_block
+    lda sectors_read
+    cmp sectors_on_this_track
+    bne -
+    rts
++   jsr send_error
+    rts
+    
+send_error
+    ; do synchronization with receiver
+    ; set clock, wait for data set
+    ; clear clock, wait for data clear
+    lda #iec_clkout
+    sta via_iec
+-   lda #iec_datain
+    and via_iec
+    beq -
+    
+    lda #0
+    sta via_iec
+-   lda #iec_datain
+    and via_iec
+    bne -
+    rts
+        
+send_block
+    ; do synchronization with receiver
+    ; set data, wait for clock set
+    ; clear data, wait for clock clear
+    ; pulse data+clock together
+    ; clear data+clock
+        
+    lda #iec_dataout
+    sta via_iec
+-
+    lda #iec_clkin
+    and via_iec
+    beq -
+    lda #0
+    sta via_iec
+    lda #iec_clkin
+-
+    and via_iec
+    bne -
+
+    lda #(iec_clkout + iec_dataout)
+    sta via_iec
+    ; nop 3 cycles
+    lda #0
+    sta via_iec
+
+    ;; transfer block
+    ldx #$00
+-
+    lda data_buffer,x
+    tay
+    and #$0f
+    sta via_iec ; bit 3/1
+    asl
+    and #$0f
+    sta via_iec ; bit 2/0
+    lda shifted_table,y
+    sta via_iec ; bit 7/5
+    asl
+    and #$0f
+    sta via_iec ; bit 6/4
+    inx
+    bne -
+
+    lda last_part,x
+-
+    tay
+    and #$0f
+    sta via_iec ; bit 3/1
+    asl
+    and #$0f
+    sta via_iec ; bit 2/0
+    lda shifted_table,y
+    sta via_iec ; bit 7/5
+    asl
+    and #$0f
+    sta via_iec ; bit 6/4
+    inx
+    cpx #$44
+    bne -
+    
+    lda #iec_dataout
+    sta via_iec
+    lda #0
+    sta via_iec
+    rts
+
+create_shift_table
+    ldx #0
+-
+    txa
+    lsr
+    lsr
+    lsr
+    lsr
+    sta shifted_table,x
+    inx
+    bne -
+    rts
+
+read_sector
+    lda #64 ; number of attempts?
+    sta attempts
+_next_attempt
+    dec attempts
+    bpl +
+_out
+    lda #1 ; ERROR
+    rts    
+    ; turn on LED
++   lda #ctrl_led
+    ora via_ctrl
+    sta via_ctrl
+    ; set timer and wait for sync
+    lda #$f0
+    sta via_timer
+-   bit via_timer
+    bmi +
+    jmp _out
++   bit via_ctrl
+    bpl -
+    ; check for header
+    lda via_data
+    clv
+-   bvc -
+    clv
+    lda via_data
+    cmp #$52
+    bne _next_attempt
+-   bvc -
+    clv
+    lda via_data
+    and #$c0
+    eor #$40
+    bne _next_attempt
+-   bvc -
+    clv
+    lda via_data
+    and #$0f
+    eor #$05
+    bne _next_attempt
+-   bvc -
+    clv
+    lda via_data
+    lsr
+    lsr
+    tax
+    lda sectors_to_read,x
+    cmp #$ff
+    beq _next_attempt    
+    tax ; store binary number later
+    ; we know enough about the header now
+    ; skip the rest
+    ; wait for sync and data block
+-   bit via_ctrl
+    bmi -
+    lda via_data
+    clv
+    ldy #0
+-   bvc -
+    clv
+    lda via_data
+    cmp #$55
+    bne _next_attempt
+-   bvc -
+    clv
+    lda via_data
+    sta data_buffer,y
+    iny
+    bne -
+    ldy #$bf
+-   bvc -
+    clv
+    lda via_data
+    sta last_part-$bf,y
+    iny
+    bne -
+-   bvc -
+    clv
+    lda via_data
+    and #$f0
+    sta last_part+$41
+    stx last_part+$42 ; current sector
+    ;; checksum to last_part+$43.. but why, for transfer errors?
+    ; turn led off
+    lda #(255-ctrl_led)
+    and via_ctrl
+    sta via_ctrl
+    inc sectors_read
+    lda #0 ; OK
+    rts
+    
+; prepare sector table (a = number of sectors)
+; the result of this function is a 64-byte table
+; that has a valid binary sector number stored on
+; the position indexed by a 6-bit GCR pattern.
+; all other patterns are $ff
+prepare_sector_table
+    tay
+    lda #$ff
+    ldx #$3f
+-   sta sectors_to_read,x
+    dex
+    bpl -
+-   dey
+    tya
+    and #$0f
+    tax
+    lda bin_to_gcr,x
+    sta temp1
+    tya
+    and #$10
+    asl
+    ora temp1
+    tax
+    tya
+    sta sectors_to_read,x    
+    cpy #$00
+    bne -
+    rts
+
+wait_bus_free
+    lda #ctrl_led
+    ora via_ctrl
+    sta via_ctrl
+    lda #0
+    sta via_iec
+-   lda via_iec
+    and #$0f
+    bne -
+    lda #255-ctrl_led
+    and via_ctrl
+    sta via_ctrl
+    rts
+
+    .here      
+drive_code_end
+
+
+; 0 01010
+; 1 01011
+; 2 10010
+; 3 10011
+; 4 01110
+; 5 01111
+; 6 10110
+; 7 10111
+; 8 01001
+; 9 11001
+; a 11010
+; b 11011
+; c 01101
+; d 11101
+; e 11110
+; f 10101
+;  $08 CHK SEC TRACK IDLO IDHI $0F $0F
+; 01010 01001 ????? ????? 0101s sssss ttttt ttttt ID 
+; 0101 0010 | 01-- ---- | ---- 0101 | ssss sstt | tttt tttt |
+;    $52      $40(&$c0)    $05(&$0f)   sec(>>2)
+; 
+;  $07
+; 01010 10111
+; 0101 0101 11 $55 $C0
+; 
