@@ -9,13 +9,20 @@ extern "C" {
 #include "c64.h"
 #include "filemanager.h"
 #include "userinterface.h"
+#include "disk_image.h"
 
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
 #define MENU_IEC_TRACE_OFF   0xCA12
+#define MENU_IEC_WARP        0xCA13
+#define MENU_IEC_WARP2       0xCA14
+#define MENU_IEC_WARP3       0xCA15
+
+cart_def warp_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 extern BYTE  _binary_iec_code_iec_start;
 extern DWORD _binary_iec_code_iec_size;
+extern BYTE _binary_warp_rom_65_start;
 
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
@@ -123,6 +130,8 @@ void poll_iec_interface(Event &ev)
 
 IecInterface :: IecInterface()
 {
+    ui_window = NULL;
+    
     if(!(CAPABILITIES & CAPAB_HARDWARE_IEC))
         return;
 
@@ -152,7 +161,7 @@ IecInterface :: IecInterface()
     talking = false;
     last_addr = 10;
     last_error = ERR_DOS;
-
+    wait_irq = false;
     effectuate_settings();
 }
 
@@ -198,25 +207,47 @@ void IecInterface :: effectuate_settings(void)
 
 int IecInterface :: fetch_task_items(IndexedList<PathObject *> &list)
 {
+    int count = 2;
 	list.append(new ObjectMenuItem(this, "Reset IEC",      MENU_IEC_RESET));
+	list.append(new ObjectMenuItem(this, "UltiCopy",       MENU_IEC_WARP));
     if(!(CAPABILITIES & CAPAB_ANALYZER))
-        return 1;
+        return count;
 
 	list.append(new ObjectMenuItem(this, "Trace IEC",      MENU_IEC_TRACE_ON));
     list.append(new ObjectMenuItem(this, "Dump IEC Trace", MENU_IEC_TRACE_OFF));
-	return 3;
+    count += 2;
+	return count;
 }
 
 //BYTE dummy_prg[] = { 0x01, 0x08, 0x0C, 0x08, 0xDC, 0x07, 0x99, 0x22, 0x48, 0x4F, 0x49, 0x22, 0x00, 0x00, 0x00 };
 
 int IecInterface :: poll(Event &e)
 {
-    int a;
     BYTE data;
-    while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
+
+    if(wait_irq) {
+        if (HW_IEC_IRQ & 0x01) {
+            get_warp_data();
+        }
+        return 0;
+    }
+
+    int a = HW_IEC_RX_FIFO_STATUS;
+    if (!(a & IEC_FIFO_EMPTY)) {
         data = HW_IEC_RX_DATA;
         if(a & IEC_FIFO_CTRL) {
             switch(data) {
+                case 0xDA:
+                    HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
+                    wait_irq = true;
+                    break;
+                case 0xAD:
+                    // printf("{warp_end}");
+                    static_bin_image.num_tracks = (int)last_track;
+                    break;
+                case 0xDE:
+                    get_warp_error();
+                    break;
                 case 0x43:
                     printf("{tlk} ");
                     talking = true;
@@ -258,14 +289,14 @@ int IecInterface :: poll(Event &e)
             if(st == IEC_OK)
                 HW_IEC_TX_DATA = data;
             else if(st == IEC_LAST) {
-                HW_IEC_TX_LAST = 1;
+                HW_IEC_TX_CTRL = 1;
                 while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
                     ;
                 HW_IEC_TX_DATA = data;
                 talking = false;
             } else { 
                 printf("Talk Error = %d\n", st);
-                HW_IEC_TX_LAST = 0x10;
+                HW_IEC_TX_CTRL = 0x10;
                 talking = false;
             }
         }
@@ -279,6 +310,19 @@ int IecInterface :: poll(Event &e)
 		switch(e.param) {
             case MENU_IEC_RESET:
                 HW_IEC_RESET_ENABLE = iec_enable;
+                break;
+            case MENU_IEC_WARP:
+                warp_cart.custom_addr = (void *)&_binary_warp_rom_65_start;
+                push_event(e_unfreeze, (void *)&warp_cart, 1);
+                push_event(e_object_private_cmd, this, MENU_IEC_WARP2);
+                break;
+            case MENU_IEC_WARP2:
+                wait_ms(2500);
+                push_event(e_freeze); // ;-) let's get back!
+                push_event(e_object_private_cmd, this, MENU_IEC_WARP3);
+                break;
+            case MENU_IEC_WARP3:
+                start_warp();
                 break;
             case MENU_IEC_TRACE_ON :
                 LOGGER_COMMAND = LOGGER_CMD_START;
@@ -306,8 +350,108 @@ int IecInterface :: poll(Event &e)
                 break;
         }
     }
+    return 0;
 }
 
+void IecInterface :: start_warp(void)
+{
+    printf("Starting IEC Warp Mode.\n");
+    ui_window = new UltiCopy();
+    ui_window->init(user_interface->screen, user_interface->keyboard);
+    user_interface->activate_uiobject(ui_window); // now we have focus
+    
+    last_track = 0;
+
+    HW_IEC_RESET_ENABLE = 1; // reset the IEC controller, just in case
+    // clear pending interrupt if any
+    HW_IEC_IRQ = 0;
+    // push warp command into down-fifo
+    HW_IEC_TX_CTRL = 0x57;
+}
+
+void IecInterface :: get_warp_data(void)
+{
+    DWORD read;
+    BYTE temp[260];
+    DWORD *dw = (DWORD *)&temp[0];
+        
+    for(int i=0;i<64;i++) {
+        GCR_DECODER_GCR_IN_32 = HW_IEC_RX_DATA_32;
+        GCR_DECODER_GCR_IN = HW_IEC_RX_DATA;
+        //printf("%8x ", GCR_DECODER_BIN_OUT_32);
+        *(dw++) = GCR_DECODER_BIN_OUT_32;
+    }
+    read = HW_IEC_RX_DATA_32;
+    GCR_DECODER_GCR_IN_32 = read;
+    GCR_DECODER_GCR_IN = 0x55;
+    *(dw++) = GCR_DECODER_BIN_OUT_32;
+
+    BYTE sector = (BYTE)read;
+    BYTE track = HW_IEC_RX_DATA;
+    BYTE *dest = static_bin_image.get_sector_pointer(track, sector);
+    BYTE *src = &temp[1];
+    // console_print(ui_window->window, "Sector {%b %b (%p -> %p}\n", track, sector, src, dest);
+    ui_window->window->set_char(track-1,sector,'*');
+    last_track = track;
+    for(int i=0;i<256;i++) {
+        *(dest++) = *(src++);
+    }
+
+    // clear pending interrupt
+    wait_irq = false;
+    HW_IEC_IRQ = 0;
+}
+
+void IecInterface :: get_warp_error(void)
+{
+    BYTE err = HW_IEC_RX_DATA;
+    printf("{Warp Error: %b}", err);
+    // clear pending interrupt
+    HW_IEC_IRQ = 0;
+
+    if(err & 0x80) {
+        last_track++;
+        printf("Error on track %d.\n", last_track);
+    } else if(err == 0) {
+        save_copied_disk();
+        ui_window->close();
+    } else if(err < 0x20) {
+        user_interface->popup("Error reading disk..", BUTTON_OK);
+        ui_window->close();
+    }
+}
+
+void IecInterface :: save_copied_disk()
+{
+    char buffer[40];
+    bool save_result;
+    File *f;
+    int res;
+    BinImage *bin;
+    PathObject *po;
+    
+	buffer[0] = 0;
+	res = user_interface->string_box("Give name for copied disk..", buffer, 22);
+	if(res > 0) {
+		fix_filename(buffer);
+	    bin = &static_bin_image;
+		set_extension(buffer, ".d64", 32);
+        po = user_interface->get_path();
+        f = root.fcreate(buffer, po);
+		if(f) {
+            user_interface->show_status("Saving D64..", 35);
+            save_result = bin->save(f, true);
+            user_interface->hide_status();
+    		printf("Result of save: %d.\n", save_result);
+            root.fclose(f);
+    		push_event(e_reload_browser);
+		} else {
+			printf("Can't create file '%s'\n", buffer);
+			user_interface->popup("Can't create file.", BUTTON_OK);
+		}
+	}
+}
+                
 int IecInterface :: get_last_error(char *buffer)
 {
 	int len;
@@ -319,8 +463,50 @@ int IecInterface :: get_last_error(char *buffer)
     return sprintf(buffer,"99,UNKNOWN,00,00\015");
 }
 
-// tester instance
+/*********************************************************************/
+/* Copier user interface screen
+/*********************************************************************/
+UltiCopy :: UltiCopy()
+{
+    parent_win = NULL;
+    keyb = NULL;
+    window = NULL;
+    return_code = 0;
+}
+    
+UltiCopy :: ~UltiCopy()
+{
+}    
 
+void UltiCopy :: init(Screen *scr, Keyboard *key)
+{
+    parent_win = scr;
+    keyb = key;
+    window = new Screen(parent_win, 0, 1, 40, 23);
+    window->draw_border_horiz();
+    window->clear();
+}
+    
+void UltiCopy :: deinit(void)
+{
+    if (window)
+        delete window;
+}
+
+int UltiCopy :: handle_key(char c)
+{
+}
+
+int UltiCopy :: poll(int a, Event& e)
+{
+    return return_code;
+}
+        
+void UltiCopy :: close(void)
+{
+    return_code = 1;
+}
+    
 /*********************************************************************/
 /* IEC File Browser Handling                                         */
 /*********************************************************************/
@@ -375,3 +561,4 @@ void FileTypeIEC :: execute(int selection)
             break;
     }
 }
+

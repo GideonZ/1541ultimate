@@ -34,7 +34,12 @@ end iec_processor_io;
 architecture structural of iec_processor_io is
     signal proc_reset      : std_logic;
     signal enable          : std_logic;
-        
+
+    -- irq
+    signal irq_event       : std_logic;
+    signal irq_enable      : std_logic;
+    signal irq_status      : std_logic;
+            
     -- instruction ram interface
     signal instr_addr      : unsigned(8 downto 0);
     signal instr_en        : std_logic;
@@ -87,6 +92,8 @@ begin
         down_fifo_dout  => down_fifo_dout,
         down_fifo_flush => down_fifo_flush,
                 
+        irq_event       => irq_event,
+
         clk_o           => clk_o,
         clk_i           => clk_i,
         data_o          => data_o,
@@ -164,25 +171,49 @@ begin
         WEB   => '0' );
 
 
-    i_up_fifo: entity work.srl_fifo
-    generic map (
-        Width       => 9,
-        Depth       => 15, -- 15 is the maximum
-        Threshold   => 13 )
-    port map (
-        clock       => clock,
-        reset       => reset,
-        GetElement  => up_fifo_get,
-        PutElement  => up_fifo_put,
-        FlushFifo   => '0',
-        DataIn      => up_fifo_din,
-        DataOut     => up_fifo_dout,
-        SpaceInFifo => up_space,
-        AlmostFull  => open,
-        DataInFifo  => up_dav);
+--    i_up_fifo: entity work.srl_fifo
+--    generic map (
+--        Width       => 9,
+--        Depth       => 15, -- 15 is the maximum
+--        Threshold   => 13 )
+--    port map (
+--        clock       => clock,
+--        reset       => reset,
+--        GetElement  => up_fifo_get,
+--        PutElement  => up_fifo_put,
+--        FlushFifo   => '0',
+--        DataIn      => up_fifo_din,
+--        DataOut     => up_fifo_dout,
+--        SpaceInFifo => up_space,
+--        AlmostFull  => open,
+--        DataInFifo  => up_dav);
+--    
+--    up_fifo_empty <= not up_dav;
+--    up_fifo_full  <= not up_space;
+
+    i_up_fifo: entity work.sync_fifo
+        generic map (
+            g_depth        => 2048,
+            g_data_width   => 9,
+            g_threshold    => 500,
+            g_storage      => "blockram",     -- can also be "blockram" or "distributed"
+            g_fall_through => true )
+        port map (
+            clock       => clock,
+            reset       => reset,
     
-    up_fifo_empty <= not up_dav;
-    up_fifo_full  <= not up_space;
+            rd_en       => up_fifo_get,
+            wr_en       => up_fifo_put,
+    
+            din         => up_fifo_din,
+            dout        => up_fifo_dout,
+    
+            flush       => '0',
+    
+            full        => up_fifo_full,
+            almost_full => open,
+            empty       => up_fifo_empty,
+            count       => open  );
 
     i_down_fifo: entity work.srl_fifo
     generic map (
@@ -215,39 +246,49 @@ begin
             if req.read='1' then
                 resp.ack <= '1'; -- data handled outside clocked process if ram
                 ram_sel <= req.address(11);
-                case req.address(2 downto 0) is
-                    when "000" =>
-                        reg_rdata <= X"21"; -- version
+                case req.address(3 downto 0) is
+                    when X"0" =>
+                        reg_rdata <= X"23"; -- version
                         
-                    when "001" =>
+                    when X"1" =>
                         reg_rdata(0) <= down_fifo_empty;
                         reg_rdata(1) <= down_fifo_full;
                     
-                    when "010" =>
+                    when X"2" =>
                         reg_rdata(0) <= up_fifo_empty;
                         reg_rdata(1) <= up_fifo_full;
                         reg_rdata(7) <= up_fifo_dout(8); 
 
-                    when "110" =>
+                    when X"6"|X"8"|X"9"|X"A"|X"B" =>
                         reg_rdata <= up_fifo_dout(7 downto 0);
                     
-                    when "111" =>
+                    when X"7" =>
                         reg_rdata <= "0000000" & up_fifo_dout(8);
                         
+                    when X"C" =>
+                        reg_rdata <= "0000000" & irq_status;
+
                     when others => null;
                 end case;
             elsif req.write='1' then
                 resp.ack <= '1'; -- data handled outside clocked process if ram
                 if req.address(11)='0' then
-                    case req.address(2 downto 0) is
-                        when "011" =>
+                    case req.address(3 downto 0) is
+                        when X"3" =>
                             proc_reset <= '1';
                             enable <= req.data(0);
+                        when X"C" =>
+                            irq_status <= '0';
+                            irq_enable <= req.data(0);
                         when others =>
                             null;
                     end case;
                 end if;
             end if;
+            if irq_event='1' then
+                irq_status <= '1';
+            end if;
+            resp.irq <= irq_enable and irq_status;
             
             if reset='1' then
                 proc_reset <= '1';
@@ -258,8 +299,8 @@ begin
     end process;
 
     resp.data  <= ram_rdata when ram_sel='1' else reg_rdata;
-    down_fifo_put <= '1' when req.write='1' and req.address(11)='0' and req.address(2 downto 1) = "10" else '0';
-    up_fifo_get   <= '1' when req.read='1'  and req.address(11)='0' and req.address(2 downto 0) = "110" else '0';    
+    down_fifo_put <= '1' when req.write='1' and req.address(11)='0' and req.address(3 downto 1) = "10" else '0';
+    up_fifo_get   <= '1' when req.read='1'  and req.address(11)='0' and ((req.address(3 downto 0) = "0110") or (req.address(3 downto 2) = "10")) else '0';    
     down_fifo_din <= req.address(0) & req.data;
     ram_en <= (req.write or req.read) and req.address(11);
 end structural;

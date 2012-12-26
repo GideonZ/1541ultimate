@@ -21,7 +21,8 @@ Screen :: Screen(char *b, char *c, int sx, int sy)
     cursor_y   = 0;
     pointer    = 0;
     color      = 15;
-    border     = 0;
+    border_h   = 0;
+    border_v   = 0;
     reverse    = 0;
     backup_chars = NULL;
     backup_color = NULL;
@@ -33,8 +34,8 @@ Screen :: Screen(char *b, char *c, int sx, int sy)
 
 Screen :: Screen(Screen *scr, int x1, int y1, int sx, int sy)
 {
-	x1 += scr->border;
-	y1 += scr->border;
+	x1 += scr->border_v;
+	y1 += scr->border_h;
 
     root_base       = scr->root_base;
     root_base_col   = scr->root_base_col;
@@ -51,7 +52,8 @@ Screen :: Screen(Screen *scr, int x1, int y1, int sx, int sy)
     cursor_y   = 0;
     pointer    = 0;
     color      = 15;
-    border     = 0;
+    border_h   = 0;
+    border_v   = 0;
     reverse    = 0;
     backup_chars = NULL;
     backup_color = NULL;
@@ -95,13 +97,18 @@ void Screen :: restore(void)
     if (!backup_color)
         return;
 
-    while(border > 0) {
-        border--;
-        window_base -= (size_x + 1);
-        window_base_col -= (size_x + 1);
-        window_x  += 2;
+    while(border_h > 0) {
+        border_h--;
+        window_base -= size_x;
+        window_base_col -= size_x;
         window_y  += 2;
-//        printf("Window Unbordered: %p %p %d %d\n", window_base, window_base_col, window_x, window_y);
+    }
+
+    while(border_v > 0) {
+        border_v--;
+        window_base -= 1;
+        window_base_col -= 1;
+        window_x  += 2;
     }
     
     char *b = window_base;
@@ -374,7 +381,32 @@ void Screen :: draw_border(void)
     cursor_x   = 0;
     cursor_y   = 0;
     pointer    = 0;
-    border ++;
+    border_h ++;
+    border_v ++;
+}
+
+void Screen :: draw_border_horiz(void)
+{
+    char *scr = window_base;
+    int w = window_x;
+    int h = window_y;
+    
+    // draw box from left to right
+    for(int b=0;b<w;b++) {
+        scr[b] = 2; // horizontal line
+    }
+    scr += size_x * (h-1);
+    for(int b=0;b<w;b++) {
+        scr[b] = 2; // horizontal line
+    }
+    
+    window_base += size_x;
+    window_base_col += size_x;
+    window_y  -= 2;
+    cursor_x   = 0;
+    cursor_y   = 0;
+    pointer    = 0;
+    border_v ++;
 }
 
 void Screen :: make_reverse(int x, int y, int len)
@@ -396,11 +428,19 @@ int Screen :: get_size_y(void)
     return window_y;
 }
 
+
 char *Screen :: get_pointer(void)
 {
     return &window_base[pointer];
 }
 
+void Screen :: set_char(int x, int y, char c)
+{
+    char *scr = window_base;
+    scr += (y * size_x) + x;
+    *scr = c;        
+}
+    
 int console_print(Screen *screen, const char *fmt, ...)
 {
 	static char str[256];

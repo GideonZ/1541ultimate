@@ -404,15 +404,17 @@ bool Usb :: install_device(UsbDevice *dev, bool draws_current)
     } else {
         int device_curr = int(dev->device_config.max_power) * 2;
 
-        if(device_curr <= remaining_current) {
-            device_list[idx] = dev;
-            remaining_current -= device_curr;
-            dev->install();
-            return true; // actually install should be able to return false too
-        } else {
+        if(device_curr > remaining_current) {
         	printf("Device current (%d mA) exceeds maximum remaining current (%d mA).\n", device_curr, remaining_current);
-        	delete dev;
+//            delete dev;
+//            return false;
         }
+//        else {
+        device_list[idx] = dev;
+        remaining_current -= device_curr;
+        dev->install();
+        return true; // actually install should be able to return false too
+//        }
     }
     return false;
 }
@@ -800,7 +802,7 @@ int Usb :: bulk_out_actual(int len, int pipe)
     int timeout = 5000;
     while((*transaction & 0x3) == 0x01) {
         if(!timeout) {
-        	printf("Timeout. Transaction = %8x\n", *transaction);
+        	printf("Timeout. Transaction = %8x %d\n", *transaction, get_ulpi_status());
         	USB_TRANSACTION(4) = 0;
         	USB_COMMAND = USB_CMD_ABORT;
             wait_ms(1);

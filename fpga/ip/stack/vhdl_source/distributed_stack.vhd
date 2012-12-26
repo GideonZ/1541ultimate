@@ -44,7 +44,8 @@ architecture  Gideon  of  distributed_stack  is
     signal data_valid_i    : std_logic;
     signal full_i          : std_logic;
     signal filtered_pop    : std_logic;
-    signal filtered_push   : std_logic
+    signal filtered_push   : std_logic;
+    signal ram_data        : std_logic_vector(Width-1 downto 0);
 begin
     filtered_pop  <= data_valid_i and pop;
     filtered_push <= not full_i and push;

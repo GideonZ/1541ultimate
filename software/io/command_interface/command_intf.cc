@@ -10,6 +10,12 @@ extern "C" {
 // this global will cause us to run!
 CommandInterface cmd_if;
 
+// cart definition
+extern BYTE _binary_cmd_test_rom_65_start;
+cart_def cmd_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
+
+#define MENU_CMD_RUNCMDCART 0xC180
+
 void poll_command_interface(Event &ev)
 {
     cmd_if.poll(ev);
@@ -55,6 +61,11 @@ int CommandInterface :: poll(Event &e)
         } else {
             CMD_IF_SLOT_ENABLE = 0;
         }                    
+	} else if((e.type == e_object_private_cmd)&&(e.object == this)) {
+        case MENU_CMD_RUNCMDCART:
+            cmd_cart.custom_addr = (void *)&_binary_cmd_test_rom_65_start;
+            push_event(e_unfreeze, (void *)&cmd_cart, 1);
+            break;
     }
     
     if(status_byte & CMD_ABORT_DATA) {
@@ -125,6 +136,12 @@ int CommandInterface :: poll(Event &e)
     return 0;
 }
 
+void CommandInterface :: fetch_task_items()
+{
+    item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_C64_RUNCMDCART));  /* temporary item */
+    return 1;
+}
+    
 void CommandInterface :: dump_registers(void)
 {
     printf("CMD_IF_SLOT_BASE       %b\n", CMD_IF_SLOT_BASE     );

@@ -57,13 +57,15 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
     }        
 
     window = new Screen(parent_win, parent_win->get_size_x()-2-max_len, y_offs+2, max_len+2, rows);
-    window->move_cursor(0, corner-y_offs);
-    char *hook = window->get_pointer();
+    //window->move_cursor(0, corner-y_offs);
+    //char *hook = window->get_pointer();
     window->draw_border();
     if((corner == y_offs)||(corner == (y_offs+rows-1)))
-        *hook = 2;
+        window->set_char(0, corner-y_offs, 2);
+        //*hook = 2;
     else
-        *hook = 3;
+        window->set_char(0, corner-y_offs, 3);
+        //*hook = 3;
     context_state = e_active;
 	state->do_refresh();
 }

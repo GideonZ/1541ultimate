@@ -51,5 +51,7 @@ typedef enum { FALSE = 0, TRUE } BOOL;
 #define NR_OF_EL(a)		(sizeof(a) / sizeof(a[0]))
 #define UNREFERENCED_PAR(a)	a=a
 
+#define max(a,b) ((a>b)?a:b)
+
 #endif // _INTEGER
 

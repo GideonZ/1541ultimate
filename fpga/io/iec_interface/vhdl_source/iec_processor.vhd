@@ -25,6 +25,8 @@ port (
     down_fifo_flush : out std_logic;
     down_fifo_dout  : in  std_logic_vector(8 downto 0);
     
+    irq_event       : out std_logic;
+    
     clk_o           : out std_logic;
     clk_i           : in  std_logic;
     data_o          : out std_logic;
@@ -48,6 +50,7 @@ architecture mixed of iec_processor is
     constant c_opc_sub      : std_logic_vector(3 downto 0) := X"4";
     constant c_opc_ret      : std_logic_vector(3 downto 0) := X"7";
     constant c_opc_copy_bit : std_logic_vector(3 downto 0) := X"5";
+    constant c_opc_irq      : std_logic_vector(3 downto 0) := X"6";
 
     constant c_opc_if       : std_logic_vector(3 downto 0) := X"8";
 
@@ -63,7 +66,7 @@ architecture mixed of iec_processor is
 
     signal timer        : unsigned(11 downto 0);
     signal pc           : unsigned(instr_addr'range);
-    signal pc_ret       : unsigned(instr_addr'range);
+    signal pc_ret_std   : std_logic_vector(instr_addr'range);
     signal pop, push    : std_logic;
     signal presc        : integer range 0 to g_mhz;
     signal timer_done   : std_logic;
@@ -127,6 +130,7 @@ begin
             up_fifo_put   <= '0';
             down_fifo_get <= '0';
             down_fifo_flush <= '0';
+            irq_event <= '0';
             
             if presc = 0 then
                 if timer = 1 then
@@ -169,6 +173,9 @@ begin
                 
                 when c_opc_reset_drv =>
                     a_drivers  <= "1111";
+
+                when c_opc_irq =>
+                    irq_event <= '1';
 
                 when c_opc_pushc    =>
                     if up_fifo_full='0' then
@@ -214,7 +221,7 @@ begin
                     pc <= unsigned(a_operand(pc'range));
                     
                 when c_opc_ret =>
-                    pc <= pc_ret;
+                    pc <= unsigned(pc_ret_std);
 
                 when others =>
                     null;
@@ -233,18 +240,16 @@ begin
             end case;
 
             atn_i_d <= atn_i;
-            if atn_i='0' and atn_i_d/='0' then
-                if a_irq_enable='1' then
-                    down_fifo_flush <= '1';
-                    pc <= (others => '0');
-                    state <= get_inst;
-                end if;
+            if atn_i='0' and atn_i_d/='0' and a_irq_enable='1' then
+                down_fifo_flush <= '1';
+                pc <= to_unsigned(1, pc'length);
+                state <= get_inst;
             end if;
 
             if reset='1' then
-                state        <= idle;
+                state        <= get_inst;
                 pc           <= (others => '0');
-                out_vector   <= X"F0100";
+                out_vector   <= X"F0000";
             end if;
         end if;
     end process;
@@ -254,7 +259,7 @@ begin
     
     i_stack: entity work.distributed_stack
     generic map (
-        width => pc'width,
+        width => pc'length,
         simultaneous_pushpop => false )
     port map (
         clock       => clock,
@@ -262,8 +267,8 @@ begin
         pop         => pop,
         push        => push,
         flush       => '0',
-        data_in     => pc,
-        data_out    => pc_ret,
+        data_in     => std_logic_vector(pc),
+        data_out    => pc_ret_std,
         full        => open,
         data_valid  => open );
     

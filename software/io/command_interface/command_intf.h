@@ -42,7 +42,7 @@
 #define HANDSHAKE_VALIDATE_LAST   0x10
 #define HANDSHAKE_VALIDATE_MORE   0x30
 
-class CommandInterface
+class CommandInterface : public ObjectWithMenu
 {
     volatile BYTE *command_buffer;
     volatile BYTE *response_buffer;

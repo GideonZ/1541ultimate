@@ -275,7 +275,7 @@ void FileDirEntry :: execute(int selection)
         	res = user_interface->string_box("Give name for new disk..", buffer, 22);
         	if(res > 0) {
     			fix_filename(buffer);
-    		    bin = new BinImage;
+    		    bin = &static_bin_image; //new BinImage;
         		if(bin) {
             		bin->format(buffer);
         			set_extension(buffer, (selection == MENU_CREATE_G64)?(char *)".g64":(char *)".d64", 32);
@@ -305,7 +305,7 @@ void FileDirEntry :: execute(int selection)
         				printf("Can't create file '%s'\n", buffer);
     					user_interface->popup("Can't create file.", BUTTON_OK);
         			}
-        			delete bin;
+        			// delete bin;
         		} else {
         			printf("No memory to create bin.\n");
         		}

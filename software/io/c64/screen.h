@@ -20,7 +20,8 @@ class Screen
     int cursor_y;
     int pointer;
     int color;
-    int border;
+    int border_h;
+    int border_v;
     int reverse;
     
     char *backup_chars;
@@ -45,10 +46,12 @@ public:
     void  output_line(char *);
     void  output_length(char *, int);
     void  draw_border(void);
+    void  draw_border_horiz(void);
     void  reverse_mode(int);
     void  make_reverse(int x, int y, int len);
     int   get_size_x(void);
     int   get_size_y(void);
+    void  set_char(int x, int y, char);
     char *get_pointer(void);
 };
 

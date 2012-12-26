@@ -5,6 +5,7 @@
 #include "event.h"
 #include "menu.h"
 #include "config.h"
+#include "userinterface.h"
 
 #define HW_IEC_REGS      0x4028000
 #define HW_IEC_CODE      0x4028800
@@ -17,10 +18,12 @@
 #define HW_IEC_TX_FIFO_STATUS  *((volatile BYTE *)(HW_IEC_REGS + 0x1)) // 1: full 0: empty
 #define HW_IEC_RX_FIFO_STATUS  *((volatile BYTE *)(HW_IEC_REGS + 0x2)) // 7: ctrlcode 1: full 0: empty
 #define HW_IEC_RESET_ENABLE    *((volatile BYTE *)(HW_IEC_REGS + 0x3)) // 0 = reset, 1 = run (and reset)
-#define HW_IEC_TX_DATA         *((volatile BYTE *)(HW_IEC_REGS + 0x4)) // push
-#define HW_IEC_TX_LAST         *((volatile BYTE *)(HW_IEC_REGS + 0x5)) // push with EOI
+#define HW_IEC_TX_DATA         *((volatile BYTE *)(HW_IEC_REGS + 0x4)) // push data byte
+#define HW_IEC_TX_CTRL         *((volatile BYTE *)(HW_IEC_REGS + 0x5)) // push control byte
 #define HW_IEC_RX_DATA         *((volatile BYTE *)(HW_IEC_REGS + 0x6)) // read+clear
 #define HW_IEC_RX_CTRL         *((volatile BYTE *)(HW_IEC_REGS + 0x7)) // read
+#define HW_IEC_RX_DATA_32      *((volatile DWORD *)(HW_IEC_REGS + 0x8)) // read+clear
+#define HW_IEC_IRQ             *((volatile BYTE *)(HW_IEC_REGS + 0xC)) // write=ack, bit0=irq enable
 
 #define IEC_FIFO_EMPTY 0x01
 #define IEC_FIFO_FULL  0x02
@@ -35,16 +38,24 @@
 #define LOGGER_CMD_STOP        0x44
 
 class IecChannel;
+class UltiCopy;
 
 class IecInterface : public ObjectWithMenu,  ConfigurableObject
 {
     int last_addr;
+    bool wait_irq;
     bool atn;
     bool talking;
     DWORD start_address;
     DWORD end_address;
     IecChannel *channels[16];
     int current_channel;
+    void start_warp(void);
+    void get_warp_data(void);
+    void get_warp_error(void);
+    void save_copied_disk(void);
+    UltiCopy *ui_window;
+    BYTE last_track;
 public:
     int last_error;
     Path *path;
@@ -62,6 +73,29 @@ public:
 extern IecInterface HW_IEC;
  
 void poll_iec_interface(Event &ev);
+
+
+class UltiCopy : public UIObject
+{
+public:
+    Screen   *parent_win;
+    Screen   *window;
+    Keyboard *keyb;
+    int return_code;
+
+    // Member functions
+    UltiCopy();
+    virtual ~UltiCopy();
+
+    virtual void init(Screen *win, Keyboard *k);
+    virtual void deinit(void);
+
+    virtual int poll(int, Event &e);
+    virtual int handle_key(char);
+
+    void close(void);
+};
+
 
 // FileType to load code
 #include "file_direntry.h"

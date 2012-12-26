@@ -26,7 +26,8 @@ port (
     write_prot_n    : out std_logic;
     bank_is_ram     : out std_logic_vector(7 downto 0);
     dirty_led_n     : out std_logic;
-
+    stop_on_freeze  : out std_logic;
+    
     param_write     : out std_logic;
     param_ram_en    : out std_logic;
     param_addr      : out std_logic_vector(10 downto 0);
@@ -53,6 +54,7 @@ architecture rtl of drive_registers is
     signal sensor_i         : std_logic;
     signal bank_is_ram_i    : std_logic_vector(7 downto 0);
     signal inserted_i       : std_logic;
+    signal stop_when_frozen : std_logic;
 begin
     p_reg: process(clock)
     begin
@@ -78,6 +80,7 @@ begin
                     when c_drvreg_reset =>
                         drv_reset_i <= io_req.data(0);
                         use_c64_reset_i <= io_req.data(1);
+                        stop_when_frozen <= io_req.data(2);
                     when c_drvreg_address =>
                         drive_address_i <= io_req.data(1 downto 0);
                     when c_drvreg_sensor =>
@@ -114,6 +117,7 @@ begin
                     when c_drvreg_reset =>
                         io_resp.data(0) <= drv_reset_i;
                         io_resp.data(1) <= use_c64_reset_i;
+                        io_resp.data(2) <= stop_when_frozen;
                     when c_drvreg_address =>
                         io_resp.data(1 downto 0) <= drive_address_i;
                     when c_drvreg_sensor =>
@@ -188,4 +192,5 @@ begin
     bank_is_ram     <= bank_is_ram_i;
     dirty_led_n     <= not any_dirty;
     use_c64_reset   <= use_c64_reset_i;
+    stop_on_freeze  <= stop_when_frozen;
 end rtl;

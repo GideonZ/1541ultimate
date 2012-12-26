@@ -86,6 +86,8 @@ architecture structural of c1541_drive is
     signal drv_reset        : std_logic := '1';
     signal disk_rdata       : std_logic_vector(7 downto 0);
     signal disk_wdata       : std_logic_vector(7 downto 0);
+    signal drive_stop_i     : std_logic;
+    signal stop_on_freeze   : std_logic;
     
     signal mem_req_cpu      : t_mem_req;
     signal mem_resp_cpu     : t_mem_resp;
@@ -97,6 +99,8 @@ architecture structural of c1541_drive is
     signal count            : unsigned(7 downto 0) := X"00";
 	signal led_intensity	: unsigned(1 downto 0);
 begin        
+    drive_stop_i <= drive_stop and stop_on_freeze;
+    
     i_timing: entity work.c1541_timing
     port map (
         clock        => clock,
@@ -107,7 +111,7 @@ begin
         iec_reset_n  => iec_reset_n,
         iec_reset_o  => iec_reset_o,
     
-        drive_stop   => drive_stop,
+        drive_stop   => drive_stop_i,
     
         drv_clock_en => drv_clock_en,   -- 1/12.5 (4 MHz)
         cpu_clock_en => cpu_clock_en ); -- 1/50   (1 MHz)
@@ -262,6 +266,7 @@ begin
         write_prot_n    => write_prot_n,
         bank_is_ram     => bank_is_ram,
         dirty_led_n     => dirty_led_n,
+        stop_on_freeze  => stop_on_freeze,
         
         track           => track,
         mode            => mode,

@@ -18,6 +18,11 @@
 #define GCR_ENCODER_GCR_OUT3 (*(volatile BYTE *)0x406050B)
 #define GCR_ENCODER_GCR_OUT4 (*(volatile BYTE *)0x406050C)
 
+#define GCR_ENCODER_BIN_IN_32  (*(volatile DWORD *)0x5060508)
+#define GCR_DECODER_GCR_IN_32  (*(volatile DWORD *)0x4060500)
+#define GCR_DECODER_BIN_OUT_32 (*(volatile DWORD *)0x5060500)
+
+
 #define C1541_MAXTRACKS   84
 #define C1541_MAXTRACKLEN 0x1EF8
 #define C1541_MAX_D64_LEN 0x30000
@@ -85,8 +90,12 @@ public:
     int save(File *, bool);
     int write_track(int track, GcrImage *, File *);
 
+    // int get_absolute_sector(int track, int sector);
+    BYTE * get_sector_pointer(int track, int sector);
+
     friend class GcrImage;
 };
 
+extern BinImage static_bin_image; // for general use
 
 #endif /* DISK_IMAGE_H_ */

@@ -1,4 +1,3 @@
-#include "userinterface.h"
 #include "editor.h"
 
 /* Configuration */
@@ -102,7 +101,7 @@ void UserInterface :: handle_event(Event &e)
 
     switch(state) {
         case ui_idle:
-            if (e.type == e_button_press) {
+        	if ((e.type == e_button_press)||(e.type == e_freeze)) {
 				// root.dump();
                 host->freeze();
                 host->set_colors(color_bg, color_border);
@@ -120,6 +119,7 @@ void UserInterface :: handle_event(Event &e)
                 if(ITU_FPGA_VERSION < MINIMUM_FPGA_REV) {
                     popup("WARNING: FPGA too old..", BUTTON_OK);
                 }
+                push_event(e_enter_menu, 0);
             }
             else if((e.type == e_invalidate) && (focus >= 0)) { // even if we are inactive, the tree browser should execute this!!
             	ui_objects[0]->poll(0, e);
@@ -170,6 +170,11 @@ void UserInterface :: handle_event(Event &e)
         push_event(e_button_press, 0);
     }
     button_prev = buttons;
+}
+
+bool UserInterface :: is_available(void)
+{
+    return (state != ui_idle);
 }
 
 int UserInterface :: activate_uiobject(UIObject *obj)
@@ -383,9 +388,10 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
     window->draw_border();
     window->move_cursor(x_m, 0);
     window->output_line(message.c_str());
-    window->move_cursor(0, 2);
 
+    window->move_cursor(0, 2);
     scr = window->get_pointer();
+
 /// Now prefill the box...
     len = 0;
     cur = 0;

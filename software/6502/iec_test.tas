@@ -150,6 +150,122 @@ drive_code_start
     current_track = $90
     zone = $91
     
+drive_start
+    jmp start_copy
+
+send_block
+    ; do synchronization with receiver
+    ; set data, wait for clock set
+    ; clear data, wait for clock clear
+    ; pulse data+clock together
+    ; clear data+clock
+        
+    lda #iec_dataout
+    sta via_iec
+-
+    lda #iec_clkin
+    and via_iec
+    beq -
+    lda #0
+    sta via_iec
+    lda #iec_clkin
+-
+    and via_iec
+    bne -
+
+    lda #(iec_clkout + iec_dataout) ;2
+    sta via_iec                     ;4
+    ; nop 3 cycles
+    lda #0                          ;2
+    sta via_iec                     ;4 -- 6 us pulse
+
+    ;; pulse (6) -- 14 -- bits: 8 8 8 17
+    ;; sample +4us (center)
+    ;; wait for both clock and data low (start of 6 us pulse)
+    ;; then wait 6+14+4 = 24 us, then cycle through pattern 8 8 8 17 8 8 8 17
+    ;; the last of 256 bytes: 8 8 8 16! + 3 = 19
+    ;; then: 8 8 8 19 
+    
+    ;; transfer block
+    ldx #$00                ; 2
+-
+    lda data_buffer,x       ; 4
+    tay                     ; 2
+    and #$0f                ; 2
+    sta via_iec ; bit 3/1   ; 4
+    asl                     ; 2
+    and #$0f                ; 2
+    sta via_iec ; bit 2/0   ; 4
+    lda shifted_table,y     ; 4
+    sta via_iec ; bit 7/5   ; 4
+    asl                     ; 2
+    and #$0f                ; 2
+    sta via_iec ; bit 6/4   ; 4
+    inx                     ; 2
+    bne -                   ; 3*
+                            ; -- 41 --
+    lda $00                 ; 3
+-
+    lda last_part,x         ; 4       
+    tay                     ; 2       
+    and #$0f                ; 2       
+    sta via_iec ; bit 3/1   ; 4       
+    asl                     ; 2       
+    and #$0f                ; 2       
+    sta via_iec ; bit 2/0   ; 4       
+    lda shifted_table,y     ; 4       
+    sta via_iec ; bit 7/5   ; 4       
+    asl                     ; 2       
+    and #$0f                ; 2       
+    sta via_iec ; bit 6/4   ; 4       
+    inx                     ; 2       
+    cpx #$44                ; 2      
+    bne -                   ; 3*
+                            ; -- 43 --!
+
+    lda #0
+    sta via_iec
+    rts
+
+send_error
+    tay
+    ; do synchronization with receiver
+    ; set clock, wait for data set
+    ; clear clock, wait for data clear
+    lda #iec_clkout
+    sta via_iec
+-   lda #iec_datain
+    and via_iec
+    beq -
+    
+    lda #0
+    sta via_iec
+-   lda #iec_datain
+    and via_iec
+    bne -
+
+    lda #(iec_clkout + iec_dataout) ;2
+    sta via_iec                     ;4
+    ; nop 3 cycles
+    lda #0                          ;2
+    sta via_iec                     ;4 -- 6 us pulse
+
+    tya                     ; 2
+    and #$0f                ; 2
+    sta via_iec ; bit 3/1   ; 4
+    asl                     ; 2
+    and #$0f                ; 2
+    sta via_iec ; bit 2/0   ; 4
+    lda shifted_table,y     ; 4
+    sta via_iec ; bit 7/5   ; 4
+    asl                     ; 2
+    and #$0f                ; 2
+    sta via_iec ; bit 6/4   ; 4
+
+    lda #0
+    sta via_iec
+    rts
+
 start_copy
     jsr create_shift_table
     lda #0 ; remove ourselves from the bus
@@ -159,8 +275,11 @@ start_copy
 ;    jsr wait_a_little
     cmp #1
     beq read_disk
-    rts ; just exit
-    jmp send_error ; and exit        
+    sei
+    jsr send_error
+    cli
+    rts
+    
 read_disk
     jsr $f97e ; turn motor on
     sei
@@ -168,12 +287,15 @@ read_disk
 -
     jsr calculate_zone ; sets current track, zone and sectors on track
     jsr read_track ; read and transfer track
+    beq +
+    ora #$c0
+    jsr send_error
     jsr step_in ; move head half track
     jsr step_in ; move head half track
     lda current_track
     clc
     adc #$01
-    cmp #36
+    cmp #41
     bne -
     tay
 -   jsr step_out
@@ -181,16 +303,7 @@ read_disk
     dey
     bne -    
     cli
-    rts
-
-wait_a_little
-    ldx #$40
-    ldy #0
--   iny
-    bne -
-    dex
-    bne -
-    rts
+    jmp $f98f ; turn off drive motor and exit
 
 calculate_zone ; (track number in a)
     sta current_track
@@ -273,99 +386,16 @@ read_track
     sta sectors_read
 -   jsr read_sector
     bne +
+
     jsr send_block
     lda sectors_read
     cmp sectors_on_this_track
     bne -
     rts
-+   jsr send_error
++   ora #$80
+    jsr send_error
     rts
     
-send_error
-    ; do synchronization with receiver
-    ; set clock, wait for data set
-    ; clear clock, wait for data clear
-    rts
-    lda #iec_clkout
-    sta via_iec
--   lda #iec_datain
-    and via_iec
-    beq -
-    
-    lda #0
-    sta via_iec
--   lda #iec_datain
-    and via_iec
-    bne -
-    rts
-        
-send_block
-    ; do synchronization with receiver
-    ; set data, wait for clock set
-    ; clear data, wait for clock clear
-    ; pulse data+clock together
-    ; clear data+clock
-        
-;    lda #iec_dataout
-;    sta via_iec
-;-
-;    lda #iec_clkin
-;    and via_iec
-;    beq -
-;    lda #0
-;    sta via_iec
-;    lda #iec_clkin
-;-
-;    and via_iec
-;    bne -
-
-    lda #(iec_clkout + iec_dataout)
-    sta via_iec
-    ; nop 3 cycles
-    lda #0
-    sta via_iec
-
-    ;; transfer block
-    ldx #$00
--
-    lda data_buffer,x
-    tay
-    and #$0f
-    sta via_iec ; bit 3/1
-    asl
-    and #$0f
-    sta via_iec ; bit 2/0
-    lda shifted_table,y
-    sta via_iec ; bit 7/5
-    asl
-    and #$0f
-    sta via_iec ; bit 6/4
-    inx
-    bne -
-
-    lda last_part,x
--
-    tay
-    and #$0f
-    sta via_iec ; bit 3/1
-    asl
-    and #$0f
-    sta via_iec ; bit 2/0
-    lda shifted_table,y
-    sta via_iec ; bit 7/5
-    asl
-    and #$0f
-    sta via_iec ; bit 6/4
-    inx
-    cpx #$44
-    bne -
-    
-    lda #iec_dataout
-    sta via_iec
-    lda #0
-    sta via_iec
-    rts
-
 create_shift_table
     ldx #0
 -
@@ -467,7 +497,8 @@ _out
     lda #$ee ; done!
     sta sectors_to_read,x
     sty last_part+$42 ; current sector (binary)
-
+    lda current_track
+    sta last_part+$43 
     ;; checksum to last_part+$43.. but why, for transfer errors?
     ; turn led off
     lda #(255-ctrl_led)

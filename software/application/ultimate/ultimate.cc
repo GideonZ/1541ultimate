@@ -94,22 +94,8 @@ int main()
     Stream my_stream;
     UserInterfaceStream *stream_interface;
     
-    if(ITU_CAPABILITIES & CAPAB_C2N_STREAMER)
-	    tape_controller = new TapeController;
-    if(ITU_CAPABILITIES & CAPAB_C2N_RECORDER)
-	    tape_recorder   = new TapeRecorder;
-    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_1)
-        c1541_A = new C1541(C1541_IO_LOC_DRIVE_1, 'A');
-    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_2) {
-        c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
-    }
     if(ITU_CAPABILITIES & CAPAB_CARTRIDGE)
         c64     = new C64;
-
- 	// start the file system, scan the sd-card etc..
-	send_nop();
-	send_nop();
-
 
     if(c64 && c64->exists()) {
         user_interface = new UserInterface;
@@ -140,6 +126,19 @@ int main()
         root_menu = new StreamMenu(&my_stream, &root);
         stream_interface->set_menu(root_menu); // root of all evil!
     }
+
+    if(ITU_CAPABILITIES & CAPAB_C2N_STREAMER)
+	    tape_controller = new TapeController;
+    if(ITU_CAPABILITIES & CAPAB_C2N_RECORDER)
+	    tape_recorder   = new TapeRecorder;
+    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_1)
+        c1541_A = new C1541(C1541_IO_LOC_DRIVE_1, 'A');
+    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_2) {
+        c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
+    }
+ 	// start the file system, scan the sd-card etc..
+	send_nop();
+	send_nop();
 
 	// add the drive(s) to the 'OS' (the event loop)
     printf("C1541A: %p, C1541B: %p\n", c1541_A, c1541_B);

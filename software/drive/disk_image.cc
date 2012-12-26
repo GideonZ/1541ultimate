@@ -132,12 +132,10 @@ GcrImage :: ~GcrImage(void)
 
 BYTE *GcrImage :: convert_block_bin2gcr(BYTE *bin, BYTE *gcr, int len)
 {
+    DWORD *dw = (DWORD *)bin;
 	for(int i=0;i<len;i+=4) {
 #if HARDWARE_ENCODING > 0
-    	GCR_ENCODER_BIN_IN = *(bin++);
-    	GCR_ENCODER_BIN_IN = *(bin++);
-    	GCR_ENCODER_BIN_IN = *(bin++);
-    	GCR_ENCODER_BIN_IN = *(bin++);
+    	GCR_ENCODER_BIN_IN_32 = *(dw++);
 		*(gcr++) = GCR_ENCODER_GCR_OUT0;
     	*(gcr++) = GCR_ENCODER_GCR_OUT1;
     	*(gcr++) = GCR_ENCODER_GCR_OUT2;
@@ -646,6 +644,7 @@ bool GcrImage :: test(void)
         track_address[0] ++;
     }
     printf("Test was %s\n", total?"NOT successful":"SUCCESSFUL!!");
+    delete bin;
     return (total == 0);    
 }
     
@@ -672,6 +671,37 @@ BinImage :: ~BinImage()
 {
 	if(bin_data)
 		delete bin_data;
+}
+
+/*
+int BinImage :: get_absolute_sector(int track, int sector)
+{
+    track --;
+    if (track < 0)
+        return -1;
+        
+    int result = track * 17;
+    
+    result += 2*max(track, 17);
+    result += max(track, 24);
+    result += max(track, 30);
+
+    if(result >= 785) // 41 tracks limit
+        return 784;
+        
+    return result;
+}
+*/
+
+BYTE * BinImage :: get_sector_pointer(int track, int sector)
+{
+/*
+    int sec = get_absolute_sector(track, sector);
+    if(sec < 0)
+        return NULL;
+    return &bin_data[256*sec];
+*/
+    return track_start[track-1] + (sector << 8);
 }
 
 int BinImage :: load(File *file)
@@ -807,3 +837,4 @@ int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
     return file->sync();
 }
 
+BinImage static_bin_image; // for general use

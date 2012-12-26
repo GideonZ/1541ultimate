@@ -37,6 +37,7 @@ t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom }
 #define CFG_C1541_LASTMOUNT 0xD7
 #define CFG_C1541_C64RESET  0xD8
 #define CFG_C1541_GCRALIGN  0xDA
+#define CFG_C1541_STOPFREEZ 0xDB
 
 struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",                 "%s", en_dis,     0,  1, 1 },
@@ -46,6 +47,7 @@ struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "1541 RAM BOard",             "%s", ram_board,  0,  6, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",       "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "1541 Resets when C64 resets","%s", yes_no,     0,  1, 1 },
+    { CFG_C1541_STOPFREEZ, CFG_TYPE_ENUM,   "1541 Freezes in menu",       "%s", yes_no,     0,  1, 1 },
 //    { CFG_C1541_GCRTWEAK,  CFG_TYPE_VALUE,  "GCR Image Save Tweak",       "%d", NULL,      -4,  4, 0 },
     { CFG_C1541_GCRALIGN,  CFG_TYPE_ENUM,   "GCR Save Align Tracks",      "%s", yes_no,     0,  1, 1 },
     
@@ -190,10 +192,14 @@ void C1541 :: drive_reset(void)
 {
     registers[C1541_RESET] = 1;
     wait_ms(1);
+    BYTE reg = 0;
+    
+    if(cfg->get_value(CFG_C1541_STOPFREEZ))
+        reg |= 4;
     if(cfg->get_value(CFG_C1541_C64RESET))
-        registers[C1541_RESET] = 2;
-    else
-        registers[C1541_RESET] = 0;
+        reg |= 2;
+
+    registers[C1541_RESET] = reg;
 }
 
 void C1541 :: set_hw_address(int addr)

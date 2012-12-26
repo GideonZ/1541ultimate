@@ -9,6 +9,10 @@ Tne = 40
 Tye = 1000
 Tbb = 90
 
+start
+            JUMP reset_vec
+            
+# IRQ is at address 1
 ATN_IRQ
             SET CLK=1  # release clock
             SET DATA=0 # not ready to receive
@@ -137,7 +141,7 @@ _no_tx_eoi
             WAIT FOR T1
             SET DATA=1
             SET CLK=0
-            WAIT FOR 1 us  #otherwise we might still read our own latest data bit
+            WAIT FOR 2 us  #otherwise we might still read our own latest data bit
             WAIT UNTIL DATA=0 FOR 1000 us
             IF TIMEOUT THEN _error
             # PUSHD # debug
@@ -248,4 +252,136 @@ _error
             LOAD $EE
             PUSHC
             JUMP RELEASE
-            
+
+reset_vec
+            SET IRQ_EN=1
+            POP ; hang
+            IF NOT CTRL THEN reset_vec
+            IF DATABYTE IS $57 THEN WARP_START
+            JUMP reset_vec
+
+WARP_START
+            SET IRQ_EN=0
+            WAIT UNTIL NOT CLK=1,DATA=1
+            IF NOT CLK THEN warp_error
+warp_data
+            LOAD $DA
+            PUSHC
+            POP ; handshake
+            LOAD $55 # Push missing $55
+            PUSHD
+            SET CLK=0
+            WAIT UNTIL DATA=1
+            SET CLK=1
+            WAIT UNTIL CLK=0,DATA=0 FOR 1000 us
+            IF TIMEOUT THEN warp_timeout
+            # 6 microsecond pulse has started, now wait for the first data bit
+            WAIT FOR 7 us
+            SUB get_256
+            SUB get_68
+            LOAD $AD
+            PUSHC
+            WAIT UNTIL CLK=1,DATA=1
+            IRQ
+            JUMP WARP_START
+
+warp_error
+            LOAD $DE
+            PUSHC
+            SET DATA=0
+            WAIT UNTIL CLK=1
+            SET DATA=1
+            WAIT UNTIL CLK=0,DATA=0 FOR 1000 us
+            IF TIMEOUT THEN warp_timeout
+            # 6 microsecond pulse has started, now wait for the first data bit
+            WAIT FOR 1 us
+            SUB get_warp_byte
+            WAIT UNTIL CLK=1,DATA=1
+            IRQ
+            IF NOT REGBIT7 THEN reset_vec
+            JUMP WARP_START # not yet done
+
+warp_timeout
+            LOAD $41
+            PUSHC
+            WAIT UNTIL CLK=1,DATA=1
+            JUMP WARP_START
+
+get_warp_byte
+            WAIT FOR 17 us
+            IN DATABIT3=!CLK
+            IN DATABIT1=!DATA
+            WAIT FOR 8 us
+            IN DATABIT2=!CLK
+            IN DATABIT0=!DATA
+            WAIT FOR 8 us
+            IN DATABIT7=!CLK
+            IN DATABIT5=!DATA
+            WAIT FOR 8 us
+            IN DATABIT6=!CLK
+            IN DATABIT4=!DATA
+            PUSHD
+            RET
+
+get_byte_slow
+            SUB get_warp_byte
+            WAIT FOR 2 us
+            RET
+
+get_8
+            SUB get_warp_byte
+            SUB get_warp_byte
+            SUB get_warp_byte
+            SUB get_warp_byte
+            SUB get_warp_byte
+            SUB get_warp_byte
+            SUB get_warp_byte
+            SUB get_warp_byte
+            RET
+
+get_64
+            SUB get_8
+            SUB get_8
+            SUB get_8
+            SUB get_8
+            SUB get_8
+            SUB get_8
+            SUB get_8
+            SUB get_8
+            RET
+
+get_256
+            SUB get_64
+            SUB get_64
+            SUB get_64
+            SUB get_64
+            RET
+
+get_8_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            RET
+
+get_68
+            SUB get_8_slow
+            SUB get_8_slow
+            SUB get_8_slow
+            SUB get_8_slow
+            SUB get_8_slow
+            SUB get_8_slow
+            SUB get_8_slow
+            SUB get_8_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            SUB get_byte_slow
+            RET
+  
+
+                        

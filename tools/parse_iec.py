@@ -136,7 +136,7 @@ def _get_set_signals(str):
         inv = 1
         sig = sig[1:]
     try:
-        in_index = input_signals[split[1]]
+        in_index = input_signals[sig]
     except KeyError:
         raise NameError("Invalid source signal %s on line %d" % (split[1], nr)) 
         
@@ -206,6 +206,11 @@ def _pop(params):
 #    constant c_opc_pop      : std_logic_vector(3 downto 0) := X"3";
     logger.info("PC: %03x: POP" % pc)
     _output_opc(1)  # Pop does not take parameters
+
+def _irq(params):
+#    constant c_opc_pop      : std_logic_vector(3 downto 0) := X"3";
+    logger.info("PC: %03x: IRQ" % pc)
+    _output_opc(6)  # IRQ does not take parameters
 
 def _sub(params):
 #    constant c_opc_sub      : std_logic_vector(3 downto 0) := X"4";
@@ -372,7 +377,8 @@ mnemonics = {
     'WAIT'  : _wait,
     'RET'   : _ret,
     'SUB'   : _sub,
-    'JUMP'  : _jump
+    'JUMP'  : _jump,
+    'IRQ'   : _irq
     }
 
 def parse_lines(lines):

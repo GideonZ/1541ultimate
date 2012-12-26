@@ -38,10 +38,8 @@ extern "C" {
 
 /* other external references */
 extern BYTE _binary_bootcrt_65_start;
-extern BYTE _binary_cmd_test_rom_65_start;
 
 cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
-cart_def cmd_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 // static pointer
 C64   *c64;
@@ -131,7 +129,6 @@ struct t_cfg_definition c64_config[] = {
 //#define MENU_C64_TRACE    0x6581
 #define MENU_C64_SAVEREU    0x6403
 #define MENU_C64_SAVEFLASH  0x6404
-#define MENU_C64_RUNCMDCART 0x6405
 #define MENU_C64_BOOTFPGA   0x6408
 
 extern BYTE _binary_chars_bin_start;
@@ -224,7 +221,6 @@ int  C64 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 //    item_list.append(new ObjectMenuItem(this, "Boot Alternate FPGA", MENU_C64_BOOTFPGA));
 //    item_list.append(new ObjectMenuItem(this, "Save SID Trace", MENU_C64_TRACE));
     item_list.append(new ObjectMenuItem(this, "Save REU Memory", MENU_C64_SAVEREU));
-//    item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_C64_RUNCMDCART));  /* temporary item */
    
 //    item_list.append(new ObjectMenuItem(this, "Save Flash", MENU_C64_SAVEFLASH));
 	return 3;
@@ -816,10 +812,6 @@ void C64 :: poll(Event &e)
         case MENU_C64_BOOTFPGA:
             flash->get_image_addresses(FLASH_ID_CUSTOMFPGA, &addr);
             flash->reboot(addr.start);
-            break;
-        case MENU_C64_RUNCMDCART:
-            cmd_cart.custom_addr = (void *)&_binary_cmd_test_rom_65_start;
-            push_event(e_unfreeze, (void *)&cmd_cart, 1);
             break;
 		default:
 			printf("Unhandled C64 menu command %4x.\n", e.param);

@@ -97,6 +97,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 void UsbScsiDriver :: deinstall(UsbDevice *dev)
 {
 	for(int i=0;i<=max_lun;i++) {
+        printf("DeInstalling SCSI Lun %d\n", i);
 		root.children.remove(path_dev[i]);
 		push_event(e_invalidate, path_dev[i]);
 		push_event(e_cleanup_path_object, path_dev[i]);
