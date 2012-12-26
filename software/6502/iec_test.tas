@@ -154,13 +154,9 @@ start_copy
     jsr create_shift_table
     lda #0 ; remove ourselves from the bus
     sta via_iec
-    sta $06bf
-    sta $06be
-    sta $06bd
-    sta $06bc
     jsr wait_bus_free
     jsr seek_track_1
-    jsr wait_a_little
+;    jsr wait_a_little
     cmp #1
     beq read_disk
     rts ; just exit
@@ -252,7 +248,7 @@ _si
     and #$03
     ora temp1
     sta via_ctrl
-    lda #$c0
+    lda #$90
     sta via_timer
 -   bit via_timer
     bmi -
@@ -289,7 +285,6 @@ send_error
     ; do synchronization with receiver
     ; set clock, wait for data set
     ; clear clock, wait for data clear
-    inc $06be
     rts
     lda #iec_clkout
     sta via_iec
@@ -392,7 +387,7 @@ _next_attempt
     lda attempts
     bpl +
 _out
-    lda #1 ; ERROR
+    lda #1 ; SECTOR NOT FOUND
     rts    
     ; turn on LED
 +   lda #ctrl_led
@@ -403,10 +398,10 @@ _out
     sta via_timer
 -   bit via_timer
     bmi +
-    jmp _next_attempt
+    lda #2 ; NO SYNC
+    rts
 +   bit via_ctrl
     bmi -
-    inc $06bf ; debug
     ; check for header
     lda via_data
     clv
@@ -434,9 +429,8 @@ _out
     lsr
     tax
     lda sectors_to_read,x
-    cmp #$ff
-    beq _next_attempt    
-    tax ; store binary number later
+    bmi _next_attempt    
+    ; note: x holds GCR code for sector number
     ; we know enough about the header now
     ; skip the rest
     ; wait for sync and data block
@@ -468,7 +462,12 @@ _out
     lda via_data
     and #$f0
     sta last_part+$41
-    stx last_part+$42 ; current sector
+    lda sectors_to_read,x
+    tay
+    lda #$ee ; done!
+    sta sectors_to_read,x
+    sty last_part+$42 ; current sector (binary)
+
     ;; checksum to last_part+$43.. but why, for transfer errors?
     ; turn led off
     lda #(255-ctrl_led)
