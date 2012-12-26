@@ -131,7 +131,9 @@ drive_code_start
     via_timer = $1805 ; cia1 timer
     via_ctrl = $1c00 ; port B cia2 (sync, motor, etc)
     via_data = $1c01 ; port A cia2
-    
+    via_data_dir = $1c03; port A cia 2
+    via_mode = $1c0c
+        
     data_buffer = $0300
     shifted_table = $0700
     sectors_to_read = $06c0
@@ -152,6 +154,10 @@ start_copy
     jsr create_shift_table
     lda #0 ; remove ourselves from the bus
     sta via_iec
+    sta $06bf
+    sta $06be
+    sta $06bd
+    sta $06bc
     jsr wait_bus_free
     jsr seek_track_1
     jsr wait_a_little
@@ -236,34 +242,42 @@ seek_track_1
     rts
 
 step_in
-    ldx via_ctrl
+    lda via_ctrl
+    tax
+    and #$fc
+    sta temp1
     inx
+_si
     txa
     and #$03
+    ora temp1
     sta via_ctrl
-_wait_timer
-    lda #$fc
+    lda #$c0
     sta via_timer
 -   bit via_timer
     bmi -
     rts
     
 step_out
-    ldx via_ctrl
+    lda via_ctrl
+    tax
+    and #$fc
+    sta temp1
     dex
-    txa
-    and #$03
-    sta via_ctrl
-    jmp _wait_timer
+    jmp _si
 
 read_track
     lda sectors_on_this_track
     jsr prepare_sector_table
+    lda #$ee
+    sta via_mode
+    lda #$00
+    sta via_data_dir
     lda #$00
     sta sectors_read
 -   jsr read_sector
     bne +
-;    jsr send_block
+    jsr send_block
     lda sectors_read
     cmp sectors_on_this_track
     bne -
@@ -275,6 +289,8 @@ send_error
     ; do synchronization with receiver
     ; set clock, wait for data set
     ; clear clock, wait for data clear
+    inc $06be
+    rts
     lda #iec_clkout
     sta via_iec
 -   lda #iec_datain
@@ -295,18 +311,18 @@ send_block
     ; pulse data+clock together
     ; clear data+clock
         
-    lda #iec_dataout
-    sta via_iec
--
-    lda #iec_clkin
-    and via_iec
-    beq -
-    lda #0
-    sta via_iec
-    lda #iec_clkin
--
-    and via_iec
-    bne -
+;    lda #iec_dataout
+;    sta via_iec
+;-
+;    lda #iec_clkin
+;    and via_iec
+;    beq -
+;    lda #0
+;    sta via_iec
+;    lda #iec_clkin
+;-
+;    and via_iec
+;    bne -
 
     lda #(iec_clkout + iec_dataout)
     sta via_iec
@@ -369,10 +385,11 @@ create_shift_table
     rts
 
 read_sector
-    lda #64 ; number of attempts?
+    lda #64
     sta attempts
 _next_attempt
     dec attempts
+    lda attempts
     bpl +
 _out
     lda #1 ; ERROR
@@ -382,13 +399,14 @@ _out
     ora via_ctrl
     sta via_ctrl
     ; set timer and wait for sync
-    lda #$f0
+    lda #$d0
     sta via_timer
 -   bit via_timer
     bmi +
-    jmp _out
+    jmp _next_attempt
 +   bit via_ctrl
-    bpl -
+    bmi -
+    inc $06bf ; debug
     ; check for header
     lda via_data
     clv
