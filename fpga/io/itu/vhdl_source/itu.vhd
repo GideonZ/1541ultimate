@@ -26,7 +26,6 @@ port (
     irq_timer_tick  : in  std_logic := '0';
 
     irq_in          : in  std_logic_vector(7 downto 2);
-    irq_out         : out std_logic;
                     
     uart_txd        : out std_logic;
     uart_rxd        : in  std_logic := '1';
@@ -175,10 +174,10 @@ begin
             end loop;
             irq_edge_flag <= new_irq_edge_flag;
             
-            irq_out <= '0';
+            io_resp_it.irq <= '0';
             if irq_en = '1' then
                 if (irq_active and imask) /= X"00" then
-                    irq_out <= '1';
+                    io_resp_it.irq <= '1';
                 end if;
             end if;
                             
@@ -223,8 +222,6 @@ begin
             io_req      => io_req_uart,
             io_resp     => io_resp_uart,
             
-            uart_irq    => uart_irq,
-        
             rts         => uart_rts,
             cts         => uart_cts,
             txd         => uart_txd,

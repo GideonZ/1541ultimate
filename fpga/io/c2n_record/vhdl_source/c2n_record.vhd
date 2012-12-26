@@ -39,6 +39,7 @@ architecture gideon of c2n_record is
     signal diff             : unsigned(23 downto 0);
     signal remain           : unsigned(2 downto 0);
     signal error            : std_logic;
+    signal irq_en           : std_logic;
     signal status           : std_logic_vector(7 downto 0);
     signal fifo_din         : std_logic_vector(7 downto 0);
     signal fifo_dout        : std_logic_vector(7 downto 0);
@@ -97,8 +98,8 @@ begin
                 resp.ack <= '1'; -- ack for fifo write as well.
                 if req.address(11)='0' then
                     enabled <= req.data(0);
-                    if req.data(0)='0' and enabled='1' then
-                        read_event <= '1';
+                    if req.data(0)='0' and enabled='1' then -- getting disabled
+                        read_event <= '1'; -- why??
                     end if;
                     
                     if req.data(1)='1' then
@@ -107,6 +108,7 @@ begin
                     fifo_flush <= req.data(2);
                     mode <= req.data(5 downto 4);
                     sel <= req.data(6);
+                    irq_en  <= req.data(7);                    
                 end if;
             elsif req.read='1' then
                 resp.ack <= '1';
@@ -117,6 +119,8 @@ begin
                 end if;
             end if;
 
+            resp.irq <= irq_en and fifo_almostfull;
+            
             -- listening process
             if stream_en='1' then
                 if phi2_tick='1' then
@@ -193,6 +197,7 @@ begin
                 mode     <= "00";
                 sel      <= '0';
                 remain   <= "000";
+                irq_en   <= '0';
             end if;
         end if;
     end process;

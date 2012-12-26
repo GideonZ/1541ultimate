@@ -326,7 +326,6 @@ begin
         clock       => sys_clock,
         reset       => sys_reset,
         
-        irq_i       => irq_i,
         break_o     => open,
         error		=> error,
 		
@@ -378,7 +377,6 @@ begin
         irq_in(4)   => c64_irq,
         irq_in(3)   => '0',
         irq_in(2)   => '0',
-        irq_out     => irq_i,
         
         uart_txd    => UART_TXD,
         uart_rxd    => UART_RXD );

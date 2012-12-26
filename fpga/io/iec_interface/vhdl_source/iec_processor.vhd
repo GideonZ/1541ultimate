@@ -64,6 +64,7 @@ architecture mixed of iec_processor is
     signal timer        : unsigned(11 downto 0);
     signal pc           : unsigned(instr_addr'range);
     signal pc_ret       : unsigned(instr_addr'range);
+    signal pop, push    : std_logic;
     signal presc        : integer range 0 to g_mhz;
     signal timer_done   : std_logic;
     signal atn_i_d      : std_logic;
@@ -209,7 +210,7 @@ begin
                     state <= wait_true;
                     
                 when c_opc_sub =>
-                    pc_ret <= pc;
+                    -- pc_ret <= pc; (will be pushed)
                     pc <= unsigned(a_operand(pc'range));
                     
                 when c_opc_ret =>
@@ -243,9 +244,27 @@ begin
             if reset='1' then
                 state        <= idle;
                 pc           <= (others => '0');
-                pc_ret       <= (others => '0');
                 out_vector   <= X"F0100";
             end if;
         end if;
     end process;
+
+    push <= '1' when (state = decode) and (a_opcode = c_opc_sub) else '0';
+    pop  <= '1' when (state = decode) and (a_opcode = c_opc_ret) else '0';
+    
+    i_stack: entity work.distributed_stack
+    generic map (
+        width => pc'width,
+        simultaneous_pushpop => false )
+    port map (
+        clock       => clock,
+        reset       => reset,
+        pop         => pop,
+        push        => push,
+        flush       => '0',
+        data_in     => pc,
+        data_out    => pc_ret,
+        full        => open,
+        data_valid  => open );
+    
 end mixed;

@@ -16,8 +16,6 @@ port (
     io_req      : in  t_io_req;
     io_resp     : out t_io_resp;
 	
-	uart_irq	: out std_logic;
-
 	txd			: out std_logic;
 	rxd			: in  std_logic := '1';
 	rts         : out std_logic;
@@ -159,6 +157,13 @@ begin
                 io_resp.data <= rdata_mux;
 			end if;
 
+            if (flags(7 downto 6) and imask) /= "00" then
+            	io_resp.irq <= '1';
+            else
+                io_resp.irq <= '0';
+            end if;
+
+
 			if reset='1' then
 				overflow <= '0';
 				imask    <= (others => '0');
@@ -182,7 +187,5 @@ begin
 		flags            when c_uart_flags,
 		imask & "000000" when c_uart_imask,
 		X"00"            when others;
-
-	uart_irq <= '1' when (flags(7 downto 6) and imask) /= "00" else '0';
 
 end gideon;

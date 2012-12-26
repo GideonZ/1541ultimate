@@ -19,7 +19,6 @@ port (
     clock       : in  std_logic;
     reset       : in  std_logic;
     
-    irq_i       : in  std_logic;
     break_o     : out std_logic;
     error		: out std_logic;
 	
@@ -73,7 +72,7 @@ begin
     port map (
         clock        => clock,
         reset        => reset_cpu,
-        interrupt_i  => irq_i,
+        interrupt_i  => io_resp.irq,
         break_o      => break_o_i,
 
         mem_address  => cpu_address,
