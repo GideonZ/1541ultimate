@@ -28,7 +28,7 @@ Screen :: Screen(char *b, char *c, int sx, int sy)
     backup_color = NULL;
     allow_scroll = true;
     escape       = false;
-
+    parent       = NULL;
     backup();
 }
 
@@ -59,13 +59,20 @@ Screen :: Screen(Screen *scr, int x1, int y1, int sx, int sy)
     backup_color = NULL;
     allow_scroll = true;
     escape       = false;
-
+    parent       = scr;
     backup();
 }
 
 Screen :: ~Screen()
 {
     restore();
+}
+
+void Screen :: dump(void)
+{
+    printf("Screen %p (window_base: %p) %d/%d %d/%d [%d/%d]\n", this, window_base, window_x, window_y, offset_x, offset_y, border_v, border_h);
+    if(parent)
+        parent->dump();
 }
 
 void Screen :: backup(void)
@@ -125,6 +132,9 @@ void Screen :: restore(void)
     }
     delete[] backup_chars;
     delete[] backup_color;    
+
+    backup_chars = NULL;
+    backup_color = NULL;
 //    printf("Window destructed.\n");
     
 }
@@ -406,7 +416,7 @@ void Screen :: draw_border_horiz(void)
     cursor_x   = 0;
     cursor_y   = 0;
     pointer    = 0;
-    border_v ++;
+    border_h ++;
 }
 
 void Screen :: make_reverse(int x, int y, int len)

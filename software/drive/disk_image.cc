@@ -6,6 +6,8 @@
  */
 #include "disk_image.h"
 #include "file_system.h"
+#include "filemanager.h"
+
 #include <ctype.h>
 #include <string.h>
 extern "C" {
@@ -589,7 +591,7 @@ bool GcrImage :: test(void)
 {
     // first create a temporary binary image
     // and fill it with test data
-    BinImage *bin = new BinImage;
+    BinImage *bin = new BinImage("Test");
     bin->format("diskname");
     
     BYTE *bin_track0 = bin->track_start[0];
@@ -651,7 +653,7 @@ bool GcrImage :: test(void)
 //--------------------------------------------------------------
 // Binary Image Class
 //--------------------------------------------------------------
-BinImage :: BinImage()
+BinImage :: BinImage(char *name) : PathObject(NULL, name)
 {
 	bin_data = new BYTE[C1541_MAX_D64_LEN];
 
@@ -665,12 +667,31 @@ BinImage :: BinImage()
 	}
 	errors = NULL;
 	num_tracks = 35;
+	
+    // we'll create a ram-mapped block device and a default
+    // partition to attach our file system to, so we can access the
+    // bin image as if it were a file system as well
+    // actually, we could have made a ram-mapped partition as well directly, TODO
+    blk = new BlockDevice_Ram(bin_data, 256, 768);
+    prt = new Partition(blk, 0, 768, 0);
+    fs  = new FileSystemD64(prt);
+
+    // lets try this
+	root.children.append(this);
 }
 
 BinImage :: ~BinImage()
 {
+    root.children.remove(this);
+    
 	if(bin_data)
 		delete bin_data;
+    if(fs)
+        delete fs;
+    if(prt)
+        delete prt;
+    if(blk)
+        delete blk;
 }
 
 /*
@@ -837,4 +858,54 @@ int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
     return file->sync();
 }
 
-BinImage static_bin_image; // for general use
+int BinImage :: fetch_children()
+{
+    printf("Fetch binimage children.\n");
+    if(!fs)
+        return -1;
+        
+    cleanup_children();
+
+    // now getting the root directory
+    Directory *r = fs->dir_open(NULL);
+    FileInfo fi(32);    
+
+    int i=0;        
+    while(r->get_entry(fi) == FR_OK) {
+        children.append(new FileDirEntry(this, &fi));
+        ++i;
+    }
+    fs->dir_close(r);
+    return i;
+}
+
+void BinImage :: get_sensible_name(char *buffer)
+{
+    buffer[0] = 0;
+    Directory *r = fs->dir_open(NULL);
+    char *n;
+    FileInfo fi(32);    
+    r->get_entry(fi); // title
+    for(int i=0;i<18;i++)
+        fi.lfname[i] &= 0x7f; // remove reverse
+    fi.lfname[18] = 0;
+    for(int i=17;i>=0;i--)
+        if (fi.lfname[i] == ' ')
+            fi.lfname[i] = 0;
+        else
+            break;
+    printf("Title: '%s'\n", fi.lfname);
+    if(strlen(fi.lfname) == 0) { // no name? try next
+        r->get_entry(fi); // title
+    }
+    strcpy(buffer, fi.lfname);
+    int len = strlen(buffer);
+    for(int i=0;i<len;i++) {
+        if((buffer[i]>='A')&&(buffer[i]<='Z'))
+            buffer[i] |= 0x20;
+    }
+    fs->dir_close(r);    
+}
+
+
+BinImage static_bin_image("Static Binary Image"); // for general use

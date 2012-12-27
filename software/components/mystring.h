@@ -24,6 +24,7 @@ public:
     string& operator=(char *rhs);
     string& operator=(string &rhs);
 
+    string& operator+=(char rhs);
     string& operator+=(char *rhs);
     string& operator+=(string &rhs);
     bool operator==(string &rhs);

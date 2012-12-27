@@ -3,6 +3,7 @@
 
 class Screen
 {
+    Screen *parent;
     char *root_base;
     char *root_base_col;
     char *window_base;
@@ -32,7 +33,7 @@ public:
     Screen(char *, char *, int, int);
     Screen(Screen*, int, int, int, int);
     ~Screen();
-    
+    void  dump(void);    
     void  set_color(int);
     int   get_color(void);
     void  set_color(int, int, int, int, int, bool stop=false);

@@ -71,7 +71,8 @@ class C1541 : public ConfigurableObject, ObjectWithMenu
 {
     volatile BYTE *memory_map;
     volatile BYTE *registers;
-
+    string drive_name;
+    
     int iec_address;
     char drive_letter;
     bool large_rom;

@@ -2,9 +2,9 @@
 #define FILETYPE_D64_H
 
 #include "file_direntry.h"
-#include "blockdev_file.h"
 #include "partition.h"
 #include "file_system.h"
+#include "blockdev_file.h"
 
 class FileTypeD64 : public FileDirEntry
 {

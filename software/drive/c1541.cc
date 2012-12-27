@@ -110,9 +110,11 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
         memcpy(audio_address, &_binary_sounds_bin_start, 0x4800);
 	}    
 	main_menu_objects.append(this);
+    drive_name = "Drive ";
+    drive_name += letter;
 
     gcr_image = new GcrImage();
-    bin_image = new BinImage();
+    bin_image = new BinImage(drive_name.c_str());
     
     sprintf(buffer, "1541 Drive %c Settings", letter);    
     register_store((DWORD)regs, buffer, c1541_config);

@@ -243,10 +243,12 @@ int IecInterface :: poll(Event &e)
                     break;
                 case 0xAD:
                     // printf("{warp_end}");
-                    static_bin_image.num_tracks = (int)last_track;
                     break;
                 case 0xDE:
                     get_warp_error();
+                    break;
+                case 0x57:
+                    printf("{warp mode}");
                     break;
                 case 0x43:
                     printf("{tlk} ");
@@ -374,12 +376,13 @@ void IecInterface :: get_warp_data(void)
     DWORD read;
     BYTE temp[260];
     DWORD *dw = (DWORD *)&temp[0];
-        
+    int err = 0;
     for(int i=0;i<64;i++) {
         GCR_DECODER_GCR_IN_32 = HW_IEC_RX_DATA_32;
         GCR_DECODER_GCR_IN = HW_IEC_RX_DATA;
-        //printf("%8x ", GCR_DECODER_BIN_OUT_32);
         *(dw++) = GCR_DECODER_BIN_OUT_32;
+        if(GCR_DECODER_ERRORS)
+            err++;
     }
     read = HW_IEC_RX_DATA_32;
     GCR_DECODER_GCR_IN_32 = read;
@@ -390,13 +393,14 @@ void IecInterface :: get_warp_data(void)
     BYTE track = HW_IEC_RX_DATA;
     BYTE *dest = static_bin_image.get_sector_pointer(track, sector);
     BYTE *src = &temp[1];
-    // console_print(ui_window->window, "Sector {%b %b (%p -> %p}\n", track, sector, src, dest);
-    ui_window->window->set_char(track-1,sector,'*');
+    // printf("Sector {%b %b (%p -> %p}\n", track, sector, src, dest);
+    ui_window->window->set_char(track-1,sector,err?'-':'*');
     last_track = track;
-    for(int i=0;i<256;i++) {
-        *(dest++) = *(src++);
+    if(dest) {
+        for(int i=0;i<256;i++) {
+            *(dest++) = *(src++);
+        }
     }
-
     // clear pending interrupt
     wait_irq = false;
     HW_IEC_IRQ = 0;
@@ -430,7 +434,10 @@ void IecInterface :: save_copied_disk()
     BinImage *bin;
     PathObject *po;
     
-	buffer[0] = 0;
+    static_bin_image.num_tracks = 35; // standard!
+
+	// buffer[0] = 0;
+	static_bin_image.get_sensible_name(buffer);
 	res = user_interface->string_box("Give name for copied disk..", buffer, 22);
 	if(res > 0) {
 		fix_filename(buffer);

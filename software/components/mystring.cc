@@ -86,6 +86,24 @@ string& string :: operator=(string &rhs)
     return *this;
 }
 
+string& string :: operator+=(char rhs)
+{
+    int n = length() + 2;
+    if(n > alloc) { // doesnt fit
+        char *new_cp = new char[n];
+        alloc = n;
+        strcpy(new_cp, cp);
+        new_cp[n-2] = rhs;
+        new_cp[n-1] = 0;
+        delete[] cp;
+        cp = new_cp;
+    } else { // fits
+        cp[n-2] = rhs;
+        cp[n-1] = 0;
+    }
+    return *this;
+}
+
 string& string :: operator+=(char *rhs)
 {
     int n = length() + strlen(rhs) + 1;

@@ -136,6 +136,7 @@ load_drive_code
     lda #4
     sta $fe
     
+    sei
     ; now loop for a total number of (drive_code_end - drive_code_start)/32
     ldx #((drive_code_end - drive_code_start)+31)/32
 -   txa
@@ -147,7 +148,7 @@ load_drive_code
     bne -
 
     jsr send_execute
-    
+    cli
     ; now close file
 ;    lda #1
 ;    jsr $ffc3 ; CLOSE (not possible, because we are already executing)
@@ -217,6 +218,7 @@ send_code_block ; pointer is in FB/FC
     sta $fe
     rts
 
+
 ; -------------------------------------------------
 ; -- DRIVE CODE 
 ; -------------------------------------------------
@@ -258,6 +260,8 @@ drive_code_start
     sectors_on_this_track = $8f
     current_track = $90
     zone = $91
+    transfer_pointer = $92
+    transfer_end = $94
     
 drive_start
     jmp start_copy
@@ -282,62 +286,62 @@ send_block
     and via_iec
     bne -
 
+    ;; setup pointer
+    lda #$80
+    ldx #<data_buffer
+    ldy #>data_buffer
+    jsr send_sub_block
+    lda #$80
+    ldx #<(data_buffer+$80)
+    ldy #>(data_buffer+$80)
+    jsr send_sub_block
+    lda #$44
+    ldx #<last_part
+    ldy #>last_part
+    jsr send_sub_block
+    rts
+
+send_sub_block
+    sta transfer_end
+    stx transfer_pointer
+    sty transfer_pointer+1
+    
     lda #(iec_clkout + iec_dataout) ;2
-    sta via_iec                     ;4
-    ; nop 3 cycles
+    sta via_iec                     ;4 <-- start
     lda #0                          ;2
     sta via_iec                     ;4 -- 6 us pulse
 
-    ;; pulse (6) -- 14 -- bits: 8 8 8 17
-    ;; sample +4us (center)
+    ;; pulse (6) -- 15 -- bits: 8 8 8 21
+    ;; sample +4us (center of 8)
     ;; wait for both clock and data low (start of 6 us pulse)
-    ;; then wait 6+14+4 = 24 us, then cycle through pattern 8 8 8 17 8 8 8 17
-    ;; the last of 256 bytes: 8 8 8 16! + 3 = 19
-    ;; then: 8 8 8 19 
+    ;; then wait 6+15+4 = 25 us, then cycle through pattern 8 8 8 21 8 8 8 21
     
     ;; transfer block
-    ldx #$00                ; 2
+    ldy #$00                 ; 2
 -
-    lda data_buffer,x       ; 4
-    tay                     ; 2
-    and #$0f                ; 2
-    sta via_iec ; bit 3/1   ; 4
-    asl                     ; 2
-    and #$0f                ; 2
-    sta via_iec ; bit 2/0   ; 4
-    lda shifted_table,y     ; 4
-    sta via_iec ; bit 7/5   ; 4
-    asl                     ; 2
-    and #$0f                ; 2
-    sta via_iec ; bit 6/4   ; 4
-    inx                     ; 2
-    bne -                   ; 3*
-                            ; -- 41 --
-    lda $00                 ; 3
--
-    lda last_part,x         ; 4       
-    tay                     ; 2       
-    and #$0f                ; 2       
-    sta via_iec ; bit 3/1   ; 4       
-    asl                     ; 2       
-    and #$0f                ; 2       
-    sta via_iec ; bit 2/0   ; 4       
-    lda shifted_table,y     ; 4       
-    sta via_iec ; bit 7/5   ; 4       
-    asl                     ; 2       
-    and #$0f                ; 2       
-    sta via_iec ; bit 6/4   ; 4       
-    inx                     ; 2       
-    cpx #$44                ; 2      
-    bne -                   ; 3*
-                            ; -- 43 --!
-
+    lda (transfer_pointer),y ; 5
+    tax                      ; 2
+    and #$0f                 ; 2
+    sta via_iec ; bit 3/1    ; 4
+    asl                      ; 2
+    and #$0f                 ; 2
+    sta via_iec ; bit 2/0    ; 4
+    lda shifted_table,x      ; 4
+    sta via_iec ; bit 7/5    ; 4
+    asl                      ; 2
+    and #$0f                 ; 2
+    sta via_iec ; bit 6/4    ; 4
+    iny                      ; 2
+    cpy transfer_end         ; 3
+    bne -                    ; 3*
+                             ; -- 45 --
     lda #0
     sta via_iec
     rts
 
 send_error
-    tay
+    sta temp1
+
     ; do synchronization with receiver
     ; set clock, wait for data set
     ; clear clock, wait for data clear
@@ -346,34 +350,16 @@ send_error
 -   lda #iec_datain
     and via_iec
     beq -
-    
     lda #0
     sta via_iec
 -   lda #iec_datain
     and via_iec
     bne -
 
-    lda #(iec_clkout + iec_dataout) ;2
-    sta via_iec                     ;4
-    ; nop 3 cycles
-    lda #0                          ;2
-    sta via_iec                     ;4 -- 6 us pulse
-
-    tya                     ; 2
-    and #$0f                ; 2
-    sta via_iec ; bit 3/1   ; 4
-    asl                     ; 2
-    and #$0f                ; 2
-    sta via_iec ; bit 2/0   ; 4
-    lda shifted_table,y     ; 4
-    sta via_iec ; bit 7/5   ; 4
-    asl                     ; 2
-    and #$0f                ; 2
-    sta via_iec ; bit 6/4   ; 4
-
-    lda #0
-    sta via_iec
-    rts
+    lda #1
+    ldx #<temp1
+    ldy #>temp1
+    jmp send_sub_block
 
 start_copy
     jsr create_shift_table
@@ -404,7 +390,7 @@ read_disk
     lda current_track
     clc
     adc #$01
-    cmp #41
+    cmp #36
     bne -
     tay
 -   jsr step_out
@@ -661,6 +647,7 @@ wait_bus_free
     and via_ctrl
     sta via_ctrl
     rts
-
+    .cerror *>$6c0
     .here      
 drive_code_end
+

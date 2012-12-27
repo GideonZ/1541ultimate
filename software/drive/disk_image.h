@@ -3,6 +3,8 @@
 
 #include "integer.h"
 #include "file_system.h"
+#include "blockdev_ram.h"
+#include "filetype_d64.h"
 
 #define GCR_DECODER_GCR_IN   (*(volatile BYTE *)0x4060500)
 #define GCR_DECODER_BIN_OUT0 (*(volatile BYTE *)0x4060500)
@@ -71,18 +73,21 @@ public:
 };
 
 
-class BinImage
+class BinImage : public PathObject
 {
     BYTE *track_start[C1541_MAXTRACKS];
     int   track_sectors[C1541_MAXTRACKS];
     BYTE *errors; // NULL means no error bytes
     int   error_size;
 
+    BlockDevice_Ram *blk;
+    Partition *prt;
+    FileSystemD64 *fs;
 public:
     int   num_tracks;
     BYTE *bin_data;
 
-    BinImage();
+    BinImage(char *);
     ~BinImage();
 
     int format(char *diskname);
@@ -94,6 +99,11 @@ public:
     BYTE * get_sector_pointer(int track, int sector);
 
     friend class GcrImage;
+
+    // functions that override virtual functions of PathObject
+    int fetch_children();
+	int get_header_lines() { return 1; }
+    void get_sensible_name(char *buffer);
 };
 
 extern BinImage static_bin_image; // for general use

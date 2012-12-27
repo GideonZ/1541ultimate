@@ -261,6 +261,7 @@ reset_vec
             JUMP reset_vec
 
 WARP_START
+            PUSHC # Acknowledge warp enter
             SET IRQ_EN=0
             WAIT UNTIL NOT CLK=1,DATA=1
             IF NOT CLK THEN warp_error
@@ -273,11 +274,12 @@ warp_data
             SET CLK=0
             WAIT UNTIL DATA=1
             SET CLK=1
-            WAIT UNTIL CLK=0,DATA=0 FOR 1000 us
-            IF TIMEOUT THEN warp_timeout
-            # 6 microsecond pulse has started, now wait for the first data bit
-            WAIT FOR 7 us
-            SUB get_256
+            
+            SUB warp_sync
+            SUB get_128
+            SUB warp_sync
+            SUB get_128
+            SUB warp_sync
             SUB get_68
             LOAD $AD
             PUSHC
@@ -291,27 +293,34 @@ warp_error
             SET DATA=0
             WAIT UNTIL CLK=1
             SET DATA=1
-            WAIT UNTIL CLK=0,DATA=0 FOR 1000 us
-            IF TIMEOUT THEN warp_timeout
-            # 6 microsecond pulse has started, now wait for the first data bit
-            WAIT FOR 1 us
+            SUB warp_sync
             SUB get_warp_byte
             WAIT UNTIL CLK=1,DATA=1
             IRQ
-            IF NOT REGBIT7 THEN reset_vec
+            IF NOT REGBIT7 THEN reset_vec # done
             JUMP WARP_START # not yet done
 
-warp_timeout
-            LOAD $41
-            PUSHC
+warp_sync
             WAIT UNTIL CLK=1,DATA=1
-            JUMP WARP_START
+            WAIT UNTIL CLK=0,DATA=0 FOR 1000 us
+            # 6 microsecond pulse has started, now wait for the first data bit (25 us)
+            WAIT FOR 4 us # 21 us is in get byte
+            RET
+
+warp_timeout
+            LOAD $AE
+            PUSHC
+            IRQ
+            WAIT UNTIL CLK=1,DATA=1
+            JUMP reset_vec
 
 get_warp_byte
-            WAIT FOR 17 us
+            WAIT FOR 21 us
+            OUT SRQ=0
             IN DATABIT3=!CLK
             IN DATABIT1=!DATA
             WAIT FOR 8 us
+            OUT SRQ=1
             IN DATABIT2=!CLK
             IN DATABIT0=!DATA
             WAIT FOR 8 us
@@ -323,64 +332,35 @@ get_warp_byte
             PUSHD
             RET
 
-get_byte_slow
-            SUB get_warp_byte
-            WAIT FOR 2 us
-            RET
-
-get_8
-            SUB get_warp_byte
-            SUB get_warp_byte
-            SUB get_warp_byte
-            SUB get_warp_byte
+get_4
             SUB get_warp_byte
             SUB get_warp_byte
             SUB get_warp_byte
             SUB get_warp_byte
             RET
 
-get_64
-            SUB get_8
-            SUB get_8
-            SUB get_8
-            SUB get_8
-            SUB get_8
-            SUB get_8
-            SUB get_8
-            SUB get_8
+get_32
+            SUB get_4
+            SUB get_4
+            SUB get_4
+            SUB get_4
+            SUB get_4
+            SUB get_4
+            SUB get_4
+            SUB get_4
             RET
 
-get_256
-            SUB get_64
-            SUB get_64
-            SUB get_64
-            SUB get_64
-            RET
-
-get_8_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
+get_128
+            SUB get_32
+            SUB get_32
+            SUB get_32
+            SUB get_32
             RET
 
 get_68
-            SUB get_8_slow
-            SUB get_8_slow
-            SUB get_8_slow
-            SUB get_8_slow
-            SUB get_8_slow
-            SUB get_8_slow
-            SUB get_8_slow
-            SUB get_8_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
-            SUB get_byte_slow
+            SUB get_32
+            SUB get_32
+            SUB get_4
             RET
   
 

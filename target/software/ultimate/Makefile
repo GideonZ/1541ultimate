@@ -106,6 +106,7 @@ SRCS_CC	 =  stream.cc \
 			pattern.cc \
 			blockdev.cc \
 			blockdev_file.cc \
+			blockdev_ram.cc \
 			disk.cc \
 			partition.cc \
 			file_system.cc \
@@ -204,7 +205,7 @@ $(RESULT)/$(PRJ)_V1.bin: $(OUTPUT)/$(PRJ)_V1.out
 
 %.65: %.tas
 	@echo "Assembling $<"
-	$(TASS) $< --m6502 --nostart -o $(OUTPUT)/$(@F)
+	@$(TASS) $< --m6502 --nostart -o $(OUTPUT)/$(@F)
 
 %.iec: %.txt
 	@echo "Assembling IEC processor code $(<F)"
