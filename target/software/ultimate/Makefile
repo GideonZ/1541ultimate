@@ -134,11 +134,12 @@ SRCS_CC	 =  stream.cc \
 			task_menu.cc \
 			audio_select.cc \
 			iec.cc \
+			command_intf.cc \
+			dos.cc \
 			$(PRJ).cc
 
 ####			sampler.cc \
 ####			copper.cc \
-####			command_intf.cc \
 
 SRCS_ASM =  crt0_appl.s
 

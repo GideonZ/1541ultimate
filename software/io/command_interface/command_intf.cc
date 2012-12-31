@@ -6,9 +6,16 @@ extern "C" {
 #include "command_intf.h"
 #include "poll.h"
 #include "c64.h"
+#include "dos.h"
+
+// this target is a dummy.
+CommandTarget cmd_if_empty_target;
 
 // this global will cause us to run!
 CommandInterface cmd_if;
+
+// these globals will be filled in by the clients
+CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 
 // cart definition
 extern BYTE _binary_cmd_test_rom_65_start;
@@ -23,21 +30,27 @@ void poll_command_interface(Event &ev)
 
 CommandInterface :: CommandInterface()
 {
+    for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
+        command_targets[i] = &cmd_if_empty_target;
+    
     if(CAPABILITIES & CAPAB_COMMAND_INTF) {
-        CMD_IF_SLOT_BASE = 0xFC;
+        CMD_IF_SLOT_BASE = 0x47; // $DF1C
         CMD_IF_SLOT_ENABLE = 1;
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
         poll_list.append(&poll_command_interface);
     
         dump_registers();
     
-        response_buffer = (volatile BYTE *)(CMD_IF_RAM_BASE + (8*CMD_IF_RESPONSE_START));
-        status_buffer   = (volatile BYTE *)(CMD_IF_RAM_BASE + (8*CMD_IF_STATUS_START));
-        command_buffer  = (volatile BYTE *)(CMD_IF_RAM_BASE + (8*CMD_IF_COMMAND_START));
+        response_buffer = (BYTE *)(CMD_IF_RAM_BASE + (8*CMD_IF_RESPONSE_START));
+        status_buffer   = (BYTE *)(CMD_IF_RAM_BASE + (8*CMD_IF_STATUS_START));
+        command_buffer  = (BYTE *)(CMD_IF_RAM_BASE + (8*CMD_IF_COMMAND_START));
     
-        sprintf((char *)response_buffer, "ULTIMATE-II V2.4");
-        CMD_IF_RESPONSE_LEN_H = 0;
-        CMD_IF_RESPONSE_LEN_L = 16;
+        incoming_command.message = command_buffer;
+        incoming_command.length = 0;
+        
+//        sprintf((char *)response_buffer, "ULTIMATE-II V2.5");
+//        CMD_IF_RESPONSE_LEN_H = 0;
+//        CMD_IF_RESPONSE_LEN_L = 16;
     }
 }
 
@@ -48,6 +61,7 @@ CommandInterface :: ~CommandInterface()
     CMD_IF_SLOT_ENABLE = 0;
 }
 
+/*
 int CommandInterface :: poll(Event &e)
 {
 //    printf("Poll Command IF!\n");
@@ -135,10 +149,58 @@ int CommandInterface :: poll(Event &e)
     }
     return 0;
 }
+*/
 
-void CommandInterface :: fetch_task_items()
+int CommandInterface :: poll(Event &e)
 {
-    item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_C64_RUNCMDCART));  /* temporary item */
+    int length;
+    BYTE status_byte = CMD_IF_STATUSBYTE;
+
+    if(e.type == e_cart_mode_change) {
+        printf("CommandInterface received a cart mode change to %b.\n", e.param);
+        if(e.param & CART_REU) {
+            CMD_IF_SLOT_ENABLE = 1;
+        } else {
+            CMD_IF_SLOT_ENABLE = 0;
+        }                    
+    }
+    
+    if(status_byte & CMD_ABORT_DATA) {
+//        printf("Abort bit cleared, we were not transmitting data.\n");
+        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_ABORT;
+    }
+    if(status_byte & CMD_DATA_ACCEPTED) {
+//        printf("You tell me you accepted data, but I didn't give you any.\n");
+        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+    }
+    
+    Message *data, *status;
+    
+    if(status_byte & CMD_NEW_COMMAND) {
+        length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
+
+        if (length) {
+            printf("Command received:\n");
+            dump_hex_relative((void *)command_buffer, length);
+    
+            incoming_command.length = length;
+            BYTE target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
+            command_targets[target]->parse_command(&incoming_command, &data, &status);
+            
+        } else {
+            printf("Null command.\n");
+            CMD_IF_RESPONSE_LEN_H = 0;
+            CMD_IF_RESPONSE_LEN_L = 0;
+            CMD_IF_STATUS_LENGTH = 0;
+        }
+        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND; // resets the command valid bit and the pointers.
+    }
+    return 0;
+}
+
+int  CommandInterface :: fetch_task_items(IndexedList<PathObject*> &item_list)
+{
+    item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_CMD_RUNCMDCART));  /* temporary item */
     return 1;
 }
     
@@ -160,3 +222,8 @@ void CommandInterface :: dump_registers(void)
     printf("CMD_IF_COMMAND_LEN_L   %b\n", CMD_IF_COMMAND_LEN_L );
     printf("CMD_IF_COMMAND_LEN_H   %b\n", CMD_IF_COMMAND_LEN_H );
 }
+
+Message c_message_no_target      = {  9, (BYTE *)"NO TARGET" }; 
+Message c_status_ok              = {  5, (BYTE *)"00,OK" };
+Message c_status_unknown_command = { 18, (BYTE *)"21,UNKNOWN COMMAND" };
+Message c_message_empty          = {  0, (BYTE *)"" };

@@ -88,6 +88,7 @@ TRANSMIT
             IF DATABYTE IS $10 THEN RELEASE
             SET EOI=1
             POP
+_tx_data
             SUB TX_BYTE
             IF NOT EOI THEN TRANSMIT  # loop until everything was transmitted
             JUMP RELEASE
@@ -156,9 +157,10 @@ RELEASE
             LOAD $DD
             PUSHC
             # Release from bus and die
+            SET ATN=1
             SET CLK=1
             SET DATA=1
-            JUMP _reset_vec
+            JUMP reset_vec
                         
 RECEIVE_BYTE
 # initial state: DATA is low, CLK=1
@@ -253,7 +255,7 @@ _dont_listen
 
 # Below are some different error codes for debug
 _error_sub
-            POPSTACK
+            POPST
 _error
             LOAD $EE
             PUSHC
@@ -281,12 +283,26 @@ _atn_send
             SUB TX_BYTE
             JUMP _atn_send
 _master_test
-            IF DATABYTE IS $4C THEN _release_atn
+            IF DATABYTE IS $4C THEN _release_atn_and_tx
+            IF DATABYTE IS $4B THEN RELEASE
+            IF DATABYTE IS $4A THEN _release_and_turnaround
             LOAD $E5
             PUSHC
-_release_atn
+_release_atn_and_tx
             SET ATN=1
             JUMP TRANSMIT
+
+_release_and_turnaround
+            SET ATN=1
+            WAIT FOR 30 us
+            SET CLK=1
+            WAIT FOR 5 us
+            JUMP _listen_normally                        
+
+no_device
+            LOAD $E6
+            PUSHC
+            JUMP RELEASE
 
 WARP_START
             PUSHC # Acknowledge warp enter

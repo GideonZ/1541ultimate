@@ -3,6 +3,7 @@
 
 #include "integer.h"
 #include "event.h"
+#include "menu.h"
 
 #define CMD_IF_BASE      0x4044000
 #define CMD_IF_RAM_BASE  0x4044800
@@ -42,23 +43,69 @@
 #define HANDSHAKE_VALIDATE_LAST   0x10
 #define HANDSHAKE_VALIDATE_MORE   0x30
 
+typedef struct _message
+{
+    int   length;
+    BYTE *message;
+} Message;
+
 class CommandInterface : public ObjectWithMenu
 {
-    volatile BYTE *command_buffer;
-    volatile BYTE *response_buffer;
-    volatile BYTE *status_buffer;
+    BYTE *command_buffer;
+    BYTE *response_buffer;
+    BYTE *status_buffer;
 
+    Message incoming_command;
+    
 public:
     CommandInterface();
     ~CommandInterface();
     
     int poll(Event &ev);
     void dump_registers(void);
-
+    int  fetch_task_items(IndexedList<PathObject*> &item_list);
 };
 
 extern CommandInterface cmd_if;
  
 void poll_command_interface(Event &ev);
+
+/* Command Targets */
+
+#define CMD_IF_MAX_TARGET   0x0F
+
+// Mandatory commands for all targets
+#define CMD_IDENTIFY   0x01
+
+extern Message c_message_no_target;
+extern Message c_status_ok;
+extern Message c_status_unknown_command;
+extern Message c_message_empty;
+
+class CommandTarget
+{
+
+public:
+    CommandTarget() { }
+    virtual ~CommandTarget() { }
+
+    virtual void parse_command(Message *command, Message **reply, Message **status) {
+        if(command->message[1] == CMD_IDENTIFY) {
+            *reply  = &c_message_no_target;
+            *status = &c_status_ok;
+        } else {
+            *reply  = &c_message_empty;
+            *status = &c_status_unknown_command; 
+        }        
+    }
+    virtual bool get_more_data(Message **reply, Message **status) {
+        *reply  = &c_message_empty;
+        *status = &c_status_ok; 
+        return false;
+    }
+};
+
+extern CommandTarget *command_targets[];
+
 
 #endif
