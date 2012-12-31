@@ -48,16 +48,15 @@ architecture mixed of iec_processor is
     constant c_opc_pushd    : std_logic_vector(3 downto 0) := X"3";
     
     constant c_opc_sub      : std_logic_vector(3 downto 0) := X"4";
-    constant c_opc_ret      : std_logic_vector(3 downto 0) := X"7";
     constant c_opc_copy_bit : std_logic_vector(3 downto 0) := X"5";
     constant c_opc_irq      : std_logic_vector(3 downto 0) := X"6";
+    constant c_opc_ret      : std_logic_vector(3 downto 0) := X"7";
 
     constant c_opc_if       : std_logic_vector(3 downto 0) := X"8";
-
+    constant c_opc_popstack : std_logic_vector(3 downto 0) := X"9";
+    
     constant c_opc_reset_st : std_logic_vector(3 downto 0) := X"D";
     constant c_opc_reset_drv: std_logic_vector(3 downto 0) := X"E";
-    constant c_opc_load_st  : std_logic_vector(3 downto 0) := X"A";
-    constant c_opc_load_drv : std_logic_vector(3 downto 0) := X"B";
 
     constant c_opc_wait     : std_logic_vector(3 downto 0) := X"C";
 
@@ -161,13 +160,7 @@ begin
                 case a_opcode is
                 when c_opc_load     =>
                     a_data_reg <= a_databyte;
-                    
---                when c_opc_load_st =>
---                    a_status   <= a_databyte(3 downto 0);
---                
---                when c_opc_load_drv =>
---                    a_drivers  <= a_databyte(3 downto 0);
-                    
+                                        
                 when c_opc_reset_st =>
                     a_status   <= X"01";
                 
@@ -223,6 +216,9 @@ begin
                 when c_opc_ret =>
                     pc <= unsigned(pc_ret_std);
 
+                when c_opc_popstack =>
+                    null;
+
                 when others =>
                     null;
                 end case;
@@ -255,7 +251,7 @@ begin
     end process;
 
     push <= '1' when (state = decode) and (a_opcode = c_opc_sub) else '0';
-    pop  <= '1' when (state = decode) and (a_opcode = c_opc_ret) else '0';
+    pop  <= '1' when (state = decode) and ((a_opcode = c_opc_ret) or (a_opcode = c_opc_popstack)) else '0';
     
     i_stack: entity work.distributed_stack
     generic map (

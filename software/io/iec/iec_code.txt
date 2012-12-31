@@ -88,13 +88,17 @@ TRANSMIT
             IF DATABYTE IS $10 THEN RELEASE
             SET EOI=1
             POP
-_tx_data
+            SUB TX_BYTE
+            IF NOT EOI THEN TRANSMIT  # loop until everything was transmitted
+            JUMP RELEASE
+
+TX_BYTE
             SET CLK=1
             WAIT UNTIL DATA=1  # forever possibly!
             IF NOT EOI THEN _no_tx_eoi
             WAIT FOR 100 us
             WAIT UNTIL DATA=0 FOR Tye
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error_sub
             SET CLK=0
             WAIT UNTIL DATA=1
 _no_tx_eoi
@@ -143,10 +147,10 @@ _no_tx_eoi
             SET CLK=0
             WAIT FOR 2 us  #otherwise we might still read our own latest data bit
             WAIT UNTIL DATA=0 FOR 1000 us
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error_sub
             # PUSHD # debug
             WAIT FOR Tbb
-            IF NOT EOI THEN TRANSMIT  # loop until everything was transmitted
+            RET
 
 RELEASE
             LOAD $DD
@@ -154,7 +158,7 @@ RELEASE
             # Release from bus and die
             SET CLK=1
             SET DATA=1
-            WAIT 
+            JUMP _reset_vec
                         
 RECEIVE_BYTE
 # initial state: DATA is low, CLK=1
@@ -170,47 +174,47 @@ _wait1
             WAIT FOR 70 us
             SET DATA=1
             WAIT UNTIL CLK=0 FOR 1000 us
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error_sub
                         
 _recv0
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT0=DATA
-            IF TIMEOUT THEN _error   
+            IF TIMEOUT THEN _error_sub
             WAIT UNTIL CLK=0 FOR Tv
                                      
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT1=DATA
-            IF TIMEOUT THEN _error   
+            IF TIMEOUT THEN _error_sub
             WAIT UNTIL CLK=0 FOR Tv
 
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT2=DATA
-            IF TIMEOUT THEN _error   
+            IF TIMEOUT THEN _error_sub
             WAIT UNTIL CLK=0 FOR Tv
                                      
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT3=DATA
-            IF TIMEOUT THEN _error   
+            IF TIMEOUT THEN _error_sub
             WAIT UNTIL CLK=0 FOR Tv
                                      
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT4=DATA
-            IF TIMEOUT THEN _error   
+            IF TIMEOUT THEN _error_sub
             WAIT UNTIL CLK=0 FOR Tv
                                      
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT5=DATA
-            IF TIMEOUT THEN _error   
+            IF TIMEOUT THEN _error_sub
             WAIT UNTIL CLK=0 FOR Tv
                                      
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT6=DATA
-            IF TIMEOUT THEN _error   
+            IF TIMEOUT THEN _error_sub
             WAIT UNTIL CLK=0 FOR Tv
                                      
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT7=DATA
-            IF TIMEOUT THEN _error   
+            IF TIMEOUT THEN _error_sub
             WAIT UNTIL CLK=0 FOR Tv
             
 # Now acknowledge byte
@@ -248,6 +252,8 @@ _dont_listen
             RET
 
 # Below are some different error codes for debug
+_error_sub
+            POPSTACK
 _error
             LOAD $EE
             PUSHC
@@ -258,7 +264,29 @@ reset_vec
             POP ; hang
             IF NOT CTRL THEN reset_vec
             IF DATABYTE IS $57 THEN WARP_START
+            IF DATABYTE IS $4D THEN MASTER_START
             JUMP reset_vec
+
+MASTER_START
+            SET IRQ_EN=0
+            SET ATN=0
+            SET CLK=0
+            SET DATA=1
+            WAIT FOR 20 us
+            WAIT UNTIL DATA=0 FOR 1000 us
+            IF TIMEOUT THEN no_device
+_atn_send
+            POP
+            IF CTRL THEN _master_test
+            SUB TX_BYTE
+            JUMP _atn_send
+_master_test
+            IF DATABYTE IS $4C THEN _release_atn
+            LOAD $E5
+            PUSHC
+_release_atn
+            SET ATN=1
+            JUMP TRANSMIT
 
 WARP_START
             PUSHC # Acknowledge warp enter

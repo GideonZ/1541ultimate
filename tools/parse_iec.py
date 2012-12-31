@@ -192,23 +192,22 @@ def _load(params):
     logger.info("PC: %03x: LOAD #%d." % (pc, val))
     _output_8_12(0, val, 0)  # 12 bit operand remains unused
     
+def _pop(params):
+#    constant c_opc_pop      : std_logic_vector(3 downto 0) := X"1";
+    logger.info("PC: %03x: POP" % pc)
+    _output_opc(1)  # Pop does not take parameters
+
 def _pushc(params):
-#    constant c_opc_pushc    : std_logic_vector(3 downto 0) := X"1";
+#    constant c_opc_pushc    : std_logic_vector(3 downto 0) := X"2";
     logger.info("PC: %03x: PUSHC" % pc)
     _output_opc(2)  # PushC does not take parameters (silly, because it could push <value>)
     
 def _pushd(params):
-#    constant c_opc_pushd    : std_logic_vector(3 downto 0) := X"2";
+#    constant c_opc_pushd    : std_logic_vector(3 downto 0) := X"3";
     logger.info("PC: %03x: PUSHD" % pc)
     _output_opc(3)  # PushD does not take parameters
 
-def _pop(params):
-#    constant c_opc_pop      : std_logic_vector(3 downto 0) := X"3";
-    logger.info("PC: %03x: POP" % pc)
-    _output_opc(1)  # Pop does not take parameters
-
 def _irq(params):
-#    constant c_opc_pop      : std_logic_vector(3 downto 0) := X"3";
     logger.info("PC: %03x: IRQ" % pc)
     _output_opc(6)  # IRQ does not take parameters
 
@@ -292,11 +291,14 @@ def _if(params):
                
         else:
             raise NameError("Unexpected check word %s on line %d." % (spl[0], nr))
-
     
+def _popst(params):
+#    constant c_opc_popstack : std_logic_vector(3 downto 0) := X"9";
+    logger.info("PC: %03x: POPST" % pc)
+    _output_opc(9)  # Popstack does not take parameters
+
 def _wait(params):
 #    constant c_opc_wait     : std_logic_vector(3 downto 0) := X"C";
-#    constant c_opc_wait_not : std_logic_vector(3 downto 0) := X"D";
     spl = params.split()
     inv = 0
     next = 0
@@ -335,7 +337,6 @@ def _wait(params):
     _output_direct(data)
 
 def unknown_mnem(params):
-#    constant c_opc_irq_conf : std_logic_vector(3 downto 0) := X"E";
     print "Unknown mnemonic: '%s'" % params
 
 def dump_bram_init():
@@ -366,19 +367,20 @@ def dump_iec_file(filename):
     f.close()
         
 mnemonics = {
-    'LOAD'  : _load,
-    'PUSHC' : _pushc,
-    'PUSHD' : _pushd,
-    'POP'   : _pop,
-    'OUT'   : _out,
-    'SET'   : _out,
-    'IN'    : _out,
-    'IF'    : _if,
-    'WAIT'  : _wait,
-    'RET'   : _ret,
-    'SUB'   : _sub,
-    'JUMP'  : _jump,
-    'IRQ'   : _irq
+    'LOAD'  : _load,   # 0
+    'POP'   : _pop,    # 1
+    'PUSHC' : _pushc,  # 2
+    'PUSHD' : _pushd,  # 3
+    'SUB'   : _sub,    # 4
+    'OUT'   : _out,    # 5
+    'SET'   : _out,    # 5
+    'IN'    : _out,    # 5
+    'IRQ'   : _irq,    # 6
+    'RET'   : _ret,    # 7
+    'IF'    : _if,     # 8
+    'JUMP'  : _jump,   # 8
+    'POPST' : _popst,  # 9
+    'WAIT'  : _wait    # C
     }
 
 def parse_lines(lines):
