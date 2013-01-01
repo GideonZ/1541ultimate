@@ -25,6 +25,12 @@
 #define HW_IEC_RX_DATA_32      *((volatile DWORD *)(HW_IEC_REGS + 0x8)) // read+clear
 #define HW_IEC_IRQ             *((volatile BYTE *)(HW_IEC_REGS + 0xC)) // write=ack, bit0=irq enable
 
+#define IEC_CMD_GO_WARP     0x57
+#define IEC_CMD_GO_MASTER   0x4D
+#define IEC_CMD_ATN_TO_TX   0x4C
+#define IEC_CMD_ATN_RELEASE 0x4B
+#define IEC_CMD_ATN_TO_RX   0x4A
+
 #define IEC_FIFO_EMPTY 0x01
 #define IEC_FIFO_FULL  0x02
 #define IEC_FIFO_CTRL  0x80
@@ -50,10 +56,16 @@ class IecInterface : public ObjectWithMenu,  ConfigurableObject
     DWORD end_address;
     IecChannel *channels[16];
     int current_channel;
-    void start_warp(void);
+    int warp_drive;
+    void test_master(int);
+    void start_warp(int);
     void get_warp_data(void);
     void get_warp_error(void);
     void save_copied_disk(void);
+    void master_open_file(int device, int channel, char *filename, bool write);
+    bool master_send_cmd(int device, BYTE *cmd, int length);
+    void master_read_status(int device);
+    bool run_drive_code(int device, WORD addr, BYTE *code, int length);
     UltiCopy *ui_window;
     BYTE last_track;
 public:

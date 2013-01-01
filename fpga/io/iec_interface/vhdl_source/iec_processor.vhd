@@ -53,7 +53,7 @@ architecture mixed of iec_processor is
     constant c_opc_ret      : std_logic_vector(3 downto 0) := X"7";
 
     constant c_opc_if       : std_logic_vector(3 downto 0) := X"8";
-    constant c_opc_popstack : std_logic_vector(3 downto 0) := X"9";
+    constant c_opc_clrstack : std_logic_vector(3 downto 0) := X"9";
     
     constant c_opc_reset_st : std_logic_vector(3 downto 0) := X"D";
     constant c_opc_reset_drv: std_logic_vector(3 downto 0) := X"E";
@@ -73,6 +73,7 @@ architecture mixed of iec_processor is
     signal valid_reg    : std_logic := '0';
     signal ctrl_reg     : std_logic := '0';
     signal timeout_reg  : std_logic := '0';
+    signal flush_stack  : std_logic;
         
     type t_state is (idle, get_inst, decode, wait_true);
     signal state        : t_state;
@@ -88,7 +89,7 @@ architecture mixed of iec_processor is
 
     signal input_vector : std_logic_vector(31 downto 0);
     signal selected_bit : std_logic;
-
+    
     signal out_vector   : std_logic_vector(19 downto 0);
     alias a_drivers     : std_logic_vector(3 downto 0) is out_vector(19 downto 16);
     alias a_irq_enable  : std_logic                    is out_vector(8);
@@ -130,6 +131,7 @@ begin
             down_fifo_get <= '0';
             down_fifo_flush <= '0';
             irq_event <= '0';
+            flush_stack <= '0';
             
             if presc = 0 then
                 if timer = 1 then
@@ -216,8 +218,8 @@ begin
                 when c_opc_ret =>
                     pc <= unsigned(pc_ret_std);
 
-                when c_opc_popstack =>
-                    null;
+                when c_opc_clrstack =>
+                    flush_stack <= '1';
 
                 when others =>
                     null;
@@ -251,7 +253,7 @@ begin
     end process;
 
     push <= '1' when (state = decode) and (a_opcode = c_opc_sub) else '0';
-    pop  <= '1' when (state = decode) and ((a_opcode = c_opc_ret) or (a_opcode = c_opc_popstack)) else '0';
+    pop  <= '1' when (state = decode) and (a_opcode = c_opc_ret) else '0';
     
     i_stack: entity work.distributed_stack
     generic map (
@@ -262,7 +264,7 @@ begin
         reset       => reset,
         pop         => pop,
         push        => push,
-        flush       => '0',
+        flush       => flush_stack,
         data_in     => std_logic_vector(pc),
         data_out    => pc_ret_std,
         full        => open,

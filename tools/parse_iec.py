@@ -292,10 +292,10 @@ def _if(params):
         else:
             raise NameError("Unexpected check word %s on line %d." % (spl[0], nr))
     
-def _popst(params):
-#    constant c_opc_popstack : std_logic_vector(3 downto 0) := X"9";
-    logger.info("PC: %03x: POPST" % pc)
-    _output_opc(9)  # Popstack does not take parameters
+def _clrst(params):
+#    constant c_opc_clear_stack : std_logic_vector(3 downto 0) := X"9";
+    logger.info("PC: %03x: CLRST" % pc)
+    _output_opc(9)  # Clear stack does not take parameters
 
 def _wait(params):
 #    constant c_opc_wait     : std_logic_vector(3 downto 0) := X"C";
@@ -379,7 +379,7 @@ mnemonics = {
     'RET'   : _ret,    # 7
     'IF'    : _if,     # 8
     'JUMP'  : _jump,   # 8
-    'POPST' : _popst,  # 9
+    'CLRST' : _clrst,  # 9
     'WAIT'  : _wait    # C
     }
 
@@ -427,7 +427,7 @@ if __name__ == "__main__":
     pc = 0
     phase = 2
     logger.info("Pass 2...")
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(logging.DEBUG)
     parse_lines(lines)
 
 #    print program

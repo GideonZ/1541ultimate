@@ -143,7 +143,7 @@ SRCS_CC	 =  stream.cc \
 
 SRCS_ASM =  crt0_appl.s
 
-SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas warp_rom.tas
+SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
 SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin
 

@@ -14,15 +14,24 @@ extern "C" {
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
 #define MENU_IEC_TRACE_OFF   0xCA12
-#define MENU_IEC_WARP        0xCA13
-#define MENU_IEC_WARP2       0xCA14
-#define MENU_IEC_WARP3       0xCA15
-
+#define MENU_IEC_WARP_8      0xCA13
+#define MENU_IEC_WARP_9      0xCA14
+#define MENU_IEC_MASTER_1    0xCA16
+#define MENU_IEC_MASTER_2    0xCA17
+#define MENU_IEC_MASTER_3    0xCA18
+#define MENU_IEC_MASTER_4    0xCA19
+#define MENU_IEC_LOADDIR     0xCA1A
+#define MENU_IEC_LOADFIRST   0xCA1B
+#define MENU_READ_STATUS     0xCA1C
+#define MENU_SEND_COMMAND    0xCA1D
+   
 cart_def warp_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 extern BYTE  _binary_iec_code_iec_start;
 extern DWORD _binary_iec_code_iec_size;
-extern BYTE _binary_warp_rom_65_start;
+//extern BYTE _binary_warp_rom_65_start;
+extern BYTE _binary_ulticopy_65_start;
+extern DWORD _binary_ulticopy_65_size;
 
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
@@ -207,9 +216,19 @@ void IecInterface :: effectuate_settings(void)
 
 int IecInterface :: fetch_task_items(IndexedList<PathObject *> &list)
 {
-    int count = 2;
+    int count = 3;
 	list.append(new ObjectMenuItem(this, "Reset IEC",      MENU_IEC_RESET));
-	list.append(new ObjectMenuItem(this, "UltiCopy",       MENU_IEC_WARP));
+	list.append(new ObjectMenuItem(this, "UltiCopy 8",     MENU_IEC_WARP_8));
+	list.append(new ObjectMenuItem(this, "UltiCopy 9",     MENU_IEC_WARP_9));
+	// list.append(new ObjectMenuItem(this, "IEC Test 1",     MENU_IEC_MASTER_1));
+	// list.append(new ObjectMenuItem(this, "IEC Test 2",     MENU_IEC_MASTER_2));
+	// list.append(new ObjectMenuItem(this, "IEC Test 3",     MENU_IEC_MASTER_3));
+	// list.append(new ObjectMenuItem(this, "IEC Test 4",     MENU_IEC_MASTER_4));
+    // list.append(new ObjectMenuItem(this, "Load $",         MENU_IEC_LOADDIR));
+    // list.append(new ObjectMenuItem(this, "Load *",         MENU_IEC_LOADFIRST));
+    // list.append(new ObjectMenuItem(this, "Read status",    MENU_READ_STATUS));
+    // list.append(new ObjectMenuItem(this, "Send command",   MENU_SEND_COMMAND));
+
     if(!(CAPABILITIES & CAPAB_ANALYZER))
         return count;
 
@@ -231,18 +250,20 @@ int IecInterface :: poll(Event &e)
         }
         return 0;
     }
-
-    int a = HW_IEC_RX_FIFO_STATUS;
-    if (!(a & IEC_FIFO_EMPTY)) {
+    char buffer[24];
+    int res;
+    
+    BYTE a;
+    while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
         data = HW_IEC_RX_DATA;
         if(a & IEC_FIFO_CTRL) {
             switch(data) {
                 case 0xDA:
                     HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
                     wait_irq = true;
-                    break;
+                    return 0;
                 case 0xAD:
-                    // printf("{warp_end}");
+                    UART_DATA = 0x23; // printf("{warp_end}");
                     break;
                 case 0xDE:
                     get_warp_error();
@@ -313,18 +334,39 @@ int IecInterface :: poll(Event &e)
             case MENU_IEC_RESET:
                 HW_IEC_RESET_ENABLE = iec_enable;
                 break;
-            case MENU_IEC_WARP:
-                warp_cart.custom_addr = (void *)&_binary_warp_rom_65_start;
-                push_event(e_unfreeze, (void *)&warp_cart, 1);
-                push_event(e_object_private_cmd, this, MENU_IEC_WARP2);
+            case MENU_IEC_WARP_8:
+                start_warp(8);
                 break;
-            case MENU_IEC_WARP2:
-                wait_ms(2500);
-                push_event(e_freeze); // ;-) let's get back!
-                push_event(e_object_private_cmd, this, MENU_IEC_WARP3);
+            case MENU_IEC_WARP_9:
+                start_warp(9);
                 break;
-            case MENU_IEC_WARP3:
-                start_warp();
+            case MENU_IEC_MASTER_1:
+                test_master(1);
+                break;
+            case MENU_IEC_MASTER_2:
+                test_master(2);
+                break;
+            case MENU_IEC_MASTER_3:
+                test_master(3);
+                break;
+            case MENU_IEC_MASTER_4:
+                test_master(4);
+                break;
+            case MENU_IEC_LOADDIR:
+                master_open_file(8, 0, "$", false);
+                break;
+            case MENU_IEC_LOADFIRST:
+                master_open_file(8, 0, "*", false);
+                break;
+            case MENU_READ_STATUS:
+                master_read_status(8);
+                break;
+            case MENU_SEND_COMMAND:
+            	buffer[0] = 0;
+                res = user_interface->string_box("Command", buffer, 22);
+                if (res > 0) {
+                    master_send_cmd(8, (BYTE*)buffer, strlen(buffer));
+                }
                 break;
             case MENU_IEC_TRACE_ON :
                 LOGGER_COMMAND = LOGGER_CMD_START;
@@ -355,20 +397,31 @@ int IecInterface :: poll(Event &e)
     return 0;
 }
 
-void IecInterface :: start_warp(void)
+void IecInterface :: start_warp(int drive)
 {
+    warp_drive = drive;
     printf("Starting IEC Warp Mode.\n");
+    C64_POKE(0xDD00,0x07); // make sure the C64 that might be connected does not interfere
     ui_window = new UltiCopy();
     ui_window->init(user_interface->screen, user_interface->keyboard);
     user_interface->activate_uiobject(ui_window); // now we have focus
+    ui_window->window->move_cursor(15,10);
+    ui_window->window->output("Loading...");
     
-    last_track = 0;
+    if(!run_drive_code(warp_drive, 0x400, &_binary_ulticopy_65_start, (int)&_binary_ulticopy_65_size)) {
+        user_interface->popup("Error accessing drive..", BUTTON_OK);
+        ui_window->close();
+        push_event(e_refresh_browser);
+        return;
+    }
 
+    ui_window->window->clear();
     HW_IEC_RESET_ENABLE = 1; // reset the IEC controller, just in case
     // clear pending interrupt if any
     HW_IEC_IRQ = 0;
     // push warp command into down-fifo
-    HW_IEC_TX_CTRL = 0x57;
+    HW_IEC_TX_CTRL = IEC_CMD_GO_WARP;
+    last_track = 0;
 }
 
 void IecInterface :: get_warp_data(void)
@@ -408,6 +461,9 @@ void IecInterface :: get_warp_data(void)
 
 void IecInterface :: get_warp_error(void)
 {
+    while (HW_IEC_RX_FIFO_STATUS & IEC_FIFO_EMPTY)
+        ;
+        
     BYTE err = HW_IEC_RX_DATA;
     printf("{Warp Error: %b}", err);
     // clear pending interrupt
@@ -418,7 +474,18 @@ void IecInterface :: get_warp_error(void)
         printf("Error on track %d.\n", last_track);
     } else if(err == 0) {
         save_copied_disk();
-        ui_window->close();
+        if(user_interface->popup("Another disk?", BUTTON_YES|BUTTON_NO) == BUTTON_YES) {
+            ui_window->window->clear();
+            run_drive_code(warp_drive, 0x403, NULL, 0); // restart
+            // clear pending interrupt if any
+            HW_IEC_IRQ = 0;
+            // push warp command into down-fifo
+            HW_IEC_TX_CTRL = IEC_CMD_GO_WARP;
+            last_track = 0;
+        } else {
+            ui_window->close();
+            push_event(e_reload_browser);
+        }
     } else if(err < 0x20) {
         user_interface->popup("Error reading disk..", BUTTON_OK);
         ui_window->close();
@@ -468,6 +535,162 @@ int IecInterface :: get_last_error(char *buffer)
 		}
 	}
     return sprintf(buffer,"99,UNKNOWN,00,00\015");
+}
+
+void IecInterface :: master_open_file(int device, int channel, char *filename, bool write)
+{
+    printf("Open '%s' on device '%d', channel %d\n", filename, device, channel);
+    HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+    HW_IEC_TX_DATA = 0x20 | (((BYTE)device) & 0x1F); // listen!
+    HW_IEC_TX_DATA = 0xF0 | (((BYTE)channel) & 0x0F); // open on channel x
+    HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_TX;
+
+    int len = strlen(filename);
+    for (int i=0;i<len;i++) {
+        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+            ;
+        if (i == (len-1))
+            HW_IEC_TX_CTRL = 0x01; // EOI
+        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+            ;
+        HW_IEC_TX_DATA = (BYTE)filename[i];
+    }
+    if(!write) {
+        while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
+            ;
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x3F; // unlisten
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
+        // and talk!
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x40 | (((BYTE)device) & 0x1F); // talk
+        HW_IEC_TX_DATA = 0x60 | (((BYTE)channel) & 0x0F); // open channel
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_RX;
+    }
+}        
+
+bool IecInterface :: master_send_cmd(int device, BYTE *cmd, int length)
+{
+    //printf("Send command on device '%d' [%s]\n", device, cmd);
+    // dump_hex(cmd, length);
+    
+    HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+    HW_IEC_TX_DATA = 0x20 | (((BYTE)device) & 0x1F); // listen!
+    HW_IEC_TX_DATA = 0x6F;
+    HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_TX;
+
+    for (int i=0;i<length;i++) {
+        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+            ;
+        if (i == (length-1))
+            HW_IEC_TX_CTRL = 0x01; // EOI
+        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+            ;
+        HW_IEC_TX_DATA = cmd[i];
+    }
+    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
+        ;
+
+    HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+    HW_IEC_TX_DATA = 0x3F; // unlisten
+    HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
+
+    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
+        ;
+
+    BYTE st,code;
+    st = HW_IEC_RX_FIFO_STATUS;
+    if(!(st & IEC_FIFO_EMPTY)) {
+        code = HW_IEC_RX_DATA;
+        if(st & IEC_FIFO_CTRL) {
+            printf("Return code: %b\n", code);
+            if((code & 0xF0) == 0xE0)
+                return false;
+        } else {
+            printf("Huh? Didn't expect data: %b\n", code);
+        }        
+    }
+}
+
+void IecInterface :: master_read_status(int device)
+{
+    printf("Reading status channel from device %d\n", device);
+    HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+    HW_IEC_TX_DATA = 0x40 | (((BYTE)device) & 0x1F); // listen!
+    HW_IEC_TX_DATA = 0x6F; // channel 15
+    HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_RX;
+}
+
+bool IecInterface :: run_drive_code(int device, WORD addr, BYTE *code, int length)
+{
+    printf("Load drive code. Length = %d\n", length);
+    BYTE buffer[40];
+    WORD address = addr;
+    int size;
+    strcpy((char*)buffer, "M-W");
+    while(length > 0) {
+        size = (length > 32)?32:length;
+        buffer[3] = (BYTE)(address & 0xFF);
+        buffer[4] = (BYTE)(address >> 8);
+        buffer[5] = (BYTE)(size);
+        for(int i=0;i<size;i++) {
+            buffer[6+i] = *(code++);
+        }
+        printf(".");
+        if(!master_send_cmd(device, buffer, size+6))
+            return false;
+        length -= size;
+        address += size;
+    }
+    strcpy((char*)buffer, "M-E");
+    buffer[3] = (BYTE)(addr & 0xFF);
+    buffer[4] = (BYTE)(addr >> 8);
+    master_send_cmd(device, buffer, 5);
+}
+
+void IecInterface :: test_master(int test)
+{
+    switch(test) {
+    case 1:
+        printf("Open $ on device 8\n");
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x28; // listen #8!
+        HW_IEC_TX_DATA = 0xF0; // open
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_TX;
+        HW_IEC_TX_CTRL = 0x01; // EOI
+        HW_IEC_TX_DATA = '$';
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x3F; // unlisten
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
+        break;
+    case 2:
+        printf("Talk channel 0\n");
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x48; // talk #8!!
+        HW_IEC_TX_DATA = 0x60; // channel 0
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_RX;
+        break;
+    case 3:
+        printf("Close file on 8\n");
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x5F; // untalk
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x28; // listen #8!
+        HW_IEC_TX_DATA = 0xE0; // close
+        HW_IEC_TX_DATA = 0x3F; // unlisten
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
+        break;
+    case 4:
+        printf("Reading status channel\n");
+        HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
+        HW_IEC_TX_DATA = 0x48; // talk #8!!
+        HW_IEC_TX_DATA = 0x6F; // channel 15
+        HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_RX;
+        break;        
+    default:
+        printf("To be defined.\n");
+    }
 }
 
 /*********************************************************************/
