@@ -13,7 +13,8 @@
  
 library ieee;
     use ieee.std_logic_1164.all;
-
+    use ieee.numeric_std.all;
+    
 library work;
     use work.mem_bus_pkg.all;
     
@@ -70,6 +71,7 @@ architecture structural of floppy is
     signal track_start      : std_logic_vector(25 downto 0);
     signal max_offset       : std_logic_vector(13 downto 0);
     signal track_i          : std_logic_vector(6 downto 0);
+    signal bit_time         : unsigned(8 downto 0);
 begin
     en_hum  <= motor_on and not floppy_inserted;
     en_slip <= motor_on and floppy_inserted;
@@ -103,6 +105,7 @@ begin
         byte_ready      => byte_ready,
         soe             => soe,
         rate_ctrl       => rate_ctrl,
+        bit_time        => bit_time,
         
         read_data       => read_data );
 
@@ -119,7 +122,8 @@ begin
     
         track       => track_i,
         track_start => track_start,
-        max_offset  => max_offset );
+        max_offset  => max_offset,
+        bit_time    => bit_time );
 
     fetch_wb: entity work.floppy_mem
     generic map (

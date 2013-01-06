@@ -427,7 +427,7 @@ if __name__ == "__main__":
     pc = 0
     phase = 2
     logger.info("Pass 2...")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.WARN)
     parse_lines(lines)
 
 #    print program

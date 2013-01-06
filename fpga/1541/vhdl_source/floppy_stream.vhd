@@ -48,8 +48,9 @@ port (
     step            : in  std_logic_vector(1 downto 0);
     byte_ready      : out std_logic;
     soe             : in  std_logic;
-    rate_ctrl       : in  std_logic_vector(1 downto 0);
-    
+    rate_ctrl       : in  std_logic_vector(1 downto 0); -- dont have any effect anymore
+    bit_time        : in  unsigned(8 downto 0); -- in steps of 10 ns
+        
     -- data to drive CPU
     read_data       : out std_logic_vector(7 downto 0) );
     
@@ -58,7 +59,9 @@ end floppy_stream;
 architecture gideon of floppy_stream is
     signal bit_div  : unsigned(3 downto 0);
     signal bit_tick : std_logic;
-
+    signal bit_timer   : unsigned(7 downto 0);
+    signal bit_carry   : std_logic;
+    
     signal mem_bit_cnt : unsigned(2 downto 0);
     signal rd_bit_cnt  : unsigned(2 downto 0) := "000";
     signal mem_shift   : std_logic_vector(7 downto 0);
@@ -79,17 +82,32 @@ begin
     begin
         if rising_edge(clock) then
             bit_tick <= '0';
-            if clock_en='1' then
-                if bit_div="1111" then
-                    bit_div  <= "00" & unsigned(rate_ctrl);
-                    bit_tick <= motor_on;
+            if bit_timer = 0 then
+                bit_tick <= '1';
+                bit_carry <= not bit_carry and bit_time(0); -- toggle if bit 0 is set
+                if bit_carry='1' then
+                    bit_timer <= bit_time(8 downto 1);
                 else
-                    bit_div <= bit_div + 1;
+                    bit_timer <= bit_time(8 downto 1) - 1;
                 end if;
+            else
+                bit_timer <= bit_timer - 1;
             end if;
             if reset='1' then
-                bit_div <= "0000";
+                bit_timer <= to_unsigned(10, bit_timer'length);
+                bit_carry <= '0';
             end if;
+--            if clock_en='1' then
+--                if bit_div="1111" then
+--                    bit_div  <= "00" & unsigned(rate_ctrl);
+--                    bit_tick <= motor_on;
+--                else
+--                    bit_div <= bit_div + 1;
+--                end if;
+--            end if;
+--            if reset='1' then
+--                bit_div <= "0000";
+--            end if;
         end if;            
     end process;
     

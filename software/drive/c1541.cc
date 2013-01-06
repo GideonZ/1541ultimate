@@ -143,7 +143,7 @@ void C1541 :: init(void)
     volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
     for(int i=0;i<C1541_MAXTRACKS;i++) {
     	*(param++) = (ULONG)gcr_image->dummy_track;
-        *(param++) = 16;
+        *(param++) = 0x01450010;
     }
 	registers[C1541_SENSOR] = SENSOR_LIGHT;
     registers[C1541_INSERTED] = 0;
@@ -337,7 +337,7 @@ void C1541 :: remove_disk(void)
     volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
     for(int i=0;i<C1541_MAXTRACKS;i++) {
     	*(param++) = (ULONG)gcr_image->dummy_track;
-        *(param++) = 16;
+        *(param++) = 0x01450010;
     }
 
     registers[C1541_SENSOR] = SENSOR_LIGHT;
@@ -351,17 +351,12 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
 
     volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
 
-/*
-	if(current_rom != e_rom_1541c) {
-		printf("inserting half track for drive other than 1541-C...\n");
-		*(param++) = (ULONG)gcr_image->dummy_track;
-	    *(param++) = (ULONG)16;
-	}
-*/
+    DWORD rotation_speed = 2500000; // 1/8 track time => 10 ns steps
     for(int i=0;i<C1541_MAXTRACKS;i++) {
 //    	printf("%2d %08x %08x\n", i, image->track_address[i], image->track_length[i]);
     	*(param++) = (ULONG)image->track_address[i];
-        *(param++) = image->track_length[i]-1;
+        DWORD bit_time = rotation_speed / image->track_length[i];
+        *(param++) = (image->track_length[i]-1) | (bit_time << 16);
         registers[C1541_DIRTYFLAGS + i/2] = 0;
     }            
 	registers[C1541_ANYDIRTY] = 0;

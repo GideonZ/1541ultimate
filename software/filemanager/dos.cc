@@ -15,7 +15,7 @@ Dos :: ~Dos()
     // officially we should deregister ourselves, but as this will only occur at application exit, there is no need
 }
     
-void Dos :: parseCommand(Message *command, Message **reply, Message **status)
+void Dos :: parse_command(Message *command, Message **reply, Message **status)
 {
     // the first byte of the command lead us here to this function.
     // the second byte is the command byte for the DOS; the third and forth byte are the length
@@ -67,7 +67,7 @@ void Dos :: parseCommand(Message *command, Message **reply, Message **status)
     }
 }
     
-bool Dos :: getMoreData(Message **reply, Message **status)
+bool Dos :: get_more_data(Message **reply, Message **status)
 {
     *reply  = &c_message_empty;
     *status = &c_status_ok; 

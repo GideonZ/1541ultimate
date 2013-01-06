@@ -30,6 +30,7 @@ port (
     cpu_rdata   : out std_logic_vector(7 downto 0);
 
     track       : in  std_logic_vector(6 downto 0);
+    bit_time    : out unsigned(8 downto 0);
     track_start : out std_logic_vector(25 downto 0);
     max_offset  : out std_logic_vector(13 downto 0) );
 
@@ -71,6 +72,7 @@ begin
                 track_start <= param_data(track_start'range);
             else
                 max_offset  <= param_data(max_offset'range);
+                bit_time    <= unsigned(param_data(bit_time'high+16 downto 16));
             end if;
             if reset='1' then
                 toggle <= '0';

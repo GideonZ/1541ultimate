@@ -453,7 +453,10 @@ begin
 
     slot_resp.irq        <= irq_pend;
     slot_resp.data       <= io_rdata;
-    slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 5)=X"8" and (state = idle) else '0';
+    slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 5)=X"8" and
+                                        slot_req.bus_address(4 downto 2)/="111" and
+                                        (state = idle)
+                                   else '0';
     io_write             <= (enable and slot_req.io_write) when slot_req.io_address(8 downto 5)=X"8" else '0';
     io_read              <= (enable and slot_req.io_read) when slot_req.io_address(8 downto 5)=X"8" else '0';
 end gideon;

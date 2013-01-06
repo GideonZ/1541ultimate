@@ -28,8 +28,8 @@ public:
     Dos(int id);
     ~Dos();
 
-    void parseCommand(Message *command, Message **reply, Message **status);
-    bool getMoreData(Message **reply, Message **status);  
+    void parse_command(Message *command, Message **reply, Message **status);
+    bool get_more_data(Message **reply, Message **status);  
 };
 
 #endif
