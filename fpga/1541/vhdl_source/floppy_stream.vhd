@@ -57,8 +57,8 @@ port (
 end floppy_stream;    
 
 architecture gideon of floppy_stream is
-    signal bit_div  : unsigned(3 downto 0);
-    signal bit_tick : std_logic;
+    signal bit_square  : std_logic;
+    signal bit_tick    : std_logic;
     signal bit_timer   : unsigned(7 downto 0);
     signal bit_carry   : std_logic;
     
@@ -93,6 +93,11 @@ begin
             else
                 bit_timer <= bit_timer - 1;
             end if;
+            bit_square <= '0';
+            if bit_timer < ('0' & bit_time(8 downto 2)) then
+                bit_square <= '1';
+            end if;
+            
             if reset='1' then
                 bit_timer <= to_unsigned(10, bit_timer'length);
                 bit_carry <= '0';
@@ -154,7 +159,7 @@ begin
             end if;
             
             do_write <= '0';
-			if rd_bit_cnt = "111" and mode='0' and bit_div = X"7" and clock_en='1' then
+			if rd_bit_cnt = "111" and mode='0' and bit_tick='1' then
                 if write_delay = 0 then
     				do_write <= floppy_inserted; --'1';
     		    else
@@ -171,7 +176,7 @@ begin
                 rd_bit_cnt <= "000";
             end if;
 
-            if (rd_bit_cnt="111") and (soe = '1') and (bit_div(3)='1') then
+            if (rd_bit_cnt="111") and (soe = '1') and (bit_square='1') then
                 byte_rdy_i <= '0';
             else
                 byte_rdy_i <= '1';

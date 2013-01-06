@@ -1148,6 +1148,7 @@ FRESULT FATDIR :: mkdir (XCHAR *newname)       /* Pointer to the directory path 
     dir_byte[FATDIR_Name] = '.';
     dir_byte[FATDIR_Attr] = AM_DIR;
     tim = rtc.get_fat_time();
+    ST_DWORD(dir_byte+FATDIR_CrtTime, tim);
     ST_DWORD(dir_byte+FATDIR_WrtTime, tim);
     ST_WORD(dir_byte+FATDIR_FstClusLO, dclst);
     ST_WORD(dir_byte+FATDIR_FstClusHI, dclst >> 16);
@@ -1177,9 +1178,10 @@ FRESULT FATDIR :: mkdir (XCHAR *newname)       /* Pointer to the directory path 
         fs->remove_chain(dclst);
     } else {
         dir[FATDIR_Attr] = AM_DIR;                 /* Attribute */
-        ST_DWORD(dir+FATDIR_WrtTime, tim);         /* Crated time */
+        ST_DWORD(dir+FATDIR_WrtTime, tim);         /* Last accessed time */
+        ST_DWORD(dir+FATDIR_CrtTime, tim);         /* Created time */
         ST_WORD(dir+FATDIR_FstClusLO, dclst);      /* Table start cluster */
-        ST_WORD(dir+FATDIR_FstClusHI, dclst >> 16);
+        ST_WORD(dir+FATDIR_FstClusHI, dclst >> 16);/* should only do this for FAT32, but will be 0 for nonFAT32 anyways */
         fs->wflag = 1;
         res = fs->sync();
     }
