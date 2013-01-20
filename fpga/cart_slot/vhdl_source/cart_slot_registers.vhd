@@ -55,6 +55,8 @@ begin
                     control_i.cartridge_type <= io_req.data(3 downto 0);
                 when c_cart_cartridge_kill =>
                     control_i.cartridge_kill <= '1';
+                when c_cart_kernal_enable =>
+                    control_i.kernal_enable <= io_req.data(0);
                 when c_cart_reu_enable =>
                     control_i.reu_enable <= io_req.data(0);
                 when c_cart_reu_size =>
@@ -87,6 +89,8 @@ begin
                     io_resp.data <= std_logic_vector(g_rom_base(23 downto 16));
                 when c_cart_cartridge_type =>
                     io_resp.data(3 downto 0) <= control_i.cartridge_type;
+                when c_cart_kernal_enable =>
+                    io_resp.data(0) <= control_i.kernal_enable;
                 when c_cart_reu_enable =>
                     io_resp.data(0) <= control_i.reu_enable;
                 when c_cart_reu_size =>

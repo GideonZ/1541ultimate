@@ -17,10 +17,10 @@
             *= $8000            ;base address of cartridge
 
             AT_TOKEN = $40
-            CMD_IF_CONTROL = $DFF0
-            CMD_IF_COMMAND = $DFF1
-            CMD_IF_RESULT  = $DFF2
-            CMD_IF_STATUS  = $DFF3
+            CMD_IF_CONTROL = $DF1C
+            CMD_IF_COMMAND = $DF1D
+            CMD_IF_RESULT  = $DF1E
+            CMD_IF_STATUS  = $DF1F
 
             CMD_PUSH_CMD   = $01
             CMD_NEXT_DATA  = $02
@@ -38,7 +38,7 @@
             .byte >startNMI
             .byte 'C' + $80, 'B' + $80, 'M' + $80, '80'   ;CBM80
 
-            .text $00, 'Test routines for Command Interface I/O Module. Copyright (c) 2011 - Gideon Zweijtzer', $00
+            .text $00, 'Test routines for Command Interface I/O Module. Copyright (c) 2013 - Gideon Zweijtzer', $00
 
 startNMI    jmp $fe5e
 
@@ -67,7 +67,7 @@ cfd50_lp1
 	stx	$b3
 
 	ldx	#$00
-	ldy	#$a0
+	ldy	#$80
 	jmp	$fd8c	;Set MemBounds
 
 ;**************************************************************************
@@ -113,8 +113,6 @@ start       sei
 
             jsr get_result
             jsr get_status
-            lda #$04
-            sta CMD_IF_CONTROL
 
             lda #<execute
             ldy #>execute
@@ -172,11 +170,8 @@ _str_done
             ; wait until command done OR until there is data to return
             ; in other words: wait as long as ultimate is processing
 
--           lda CMD_IF_CONTROL
-            and #CMD_STATE_BITS
-            cmp #CMD_STATE_BUSY
-            beq -
-
+-           jsr wait_while_busy
+            jsr get_status
             jsr print_result
             lda #CMD_NEXT_DATA
             sta CMD_IF_CONTROL
@@ -214,9 +209,7 @@ print_result    .proc
             lda CMD_IF_RESULT
             jsr $ffd2
             jmp -            
-+           lda #CMD_NEXT_DATA
-            sta CMD_IF_CONTROL
-            rts
++           rts
             .pend
             
 get_result  .proc
@@ -227,14 +220,20 @@ get_result  .proc
             ldy #>result_string
             jsr $ab1e
             jsr print_result
-+           lda #$0d
++           lda #CMD_NEXT_DATA
+            sta CMD_IF_CONTROL
+            lda #$0d
             jmp $ffd2
-
 
 result_string .text "RESULT: ", $00
             .pend
-            
 
+wait_while_busy .proc
+-           lda CMD_IF_CONTROL
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_BUSY
+            beq -
+            rts
 
 get_status  .proc
             bit CMD_IF_CONTROL

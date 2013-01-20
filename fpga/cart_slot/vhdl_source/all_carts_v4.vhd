@@ -7,6 +7,7 @@ use work.slot_bus_pkg.all;
 
 entity all_carts_v4 is
 generic (
+    g_kernal_base   : std_logic_vector(27 downto 0) := X"0ECC000"; -- multiple of 16K
     g_rom_base      : std_logic_vector(27 downto 0) := X"0F00000"; -- multiple of 1M
     g_ram_base      : std_logic_vector(27 downto 0) := X"0EF0000" ); -- multiple of 64K
 port (
@@ -17,6 +18,8 @@ port (
     c64_reset       : in  std_logic;
     
     ethernet_enable : in  std_logic := '1';
+    kernal_enable   : in  std_logic;
+    kernal_area     : in  std_logic;
     freeze_trig     : in  std_logic; -- goes '1' when the button has been pressed and we're waiting to enter the freezer
     freeze_act      : in  std_logic; -- goes '1' when we need to switch in the cartridge for freeze mode
     unfreeze        : out std_logic; -- indicates the freeze logic to switch back to non-freeze mode.
@@ -92,7 +95,7 @@ architecture gideon of all_carts_v4 is
     signal io_addr          : std_logic_vector(8 downto 0);
     signal io_wdata         : std_logic_vector(7 downto 0);
 begin
-    serve_enable <= cart_en;
+    serve_enable <= cart_en or kernal_enable;
 
     slot_addr <= std_logic_vector(slot_req.bus_address);
     io_write  <= slot_req.io_write;
@@ -350,7 +353,7 @@ begin
 
     -- determine address
 --  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -440,6 +443,10 @@ begin
         when others =>
             null;
         end case;
+
+        if kernal_area='1' then
+            mem_addr_i <= g_kernal_base(27 downto 14) & slot_addr(12 downto 0) & '0';
+        end if;
 
 --        if eth_addr then
 --            mem_addr_i(25 downto 21) <= eth_base(25 downto 21);

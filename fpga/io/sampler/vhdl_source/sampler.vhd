@@ -215,7 +215,7 @@ begin
         mem_req.address     <= unsigned(fifo_dout(25 downto 0));
         mem_req.tag         <= fifo_dout(33 downto 26);
         mem_req.data        <= X"00";
-
+        mem_req.size        <= "00"; -- 1 byte at a time (can be optimized!)
         rack <= '1' when (mem_resp.rack='1' and mem_resp.rack_tag(7 downto 5)="110") else '0';
     end block;
 

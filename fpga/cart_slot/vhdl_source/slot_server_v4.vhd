@@ -87,6 +87,7 @@ architecture structural of slot_server_v4 is
     signal do_sample_addr  : std_logic;
     signal do_sample_io    : std_logic;
     signal do_io_event     : std_logic;
+    signal do_probe_end    : std_logic;
     signal timing_inhibit  : std_logic;
 
     signal slave_dout      : std_logic_vector(7 downto 0);
@@ -115,6 +116,12 @@ architecture structural of slot_server_v4 is
     signal serve_io2       : std_logic := '0'; -- IO2n
     signal allow_write     : std_logic := '0';
     
+    -- kernal replacement logic
+    signal kernal_area     : std_logic := '0';
+    signal kernal_probe    : std_logic := '0';
+    signal kernal_addr_out : std_logic := '0';
+    signal force_ultimax   : std_logic := '0';
+
     signal cpu_write       : std_logic;
     signal epyx_timeout    : std_logic;
     
@@ -126,10 +133,13 @@ architecture structural of slot_server_v4 is
 	
     signal actual_c64_reset : std_logic;
     
+    signal dma_n            : std_logic := '1';
     signal nmi_n            : std_logic := '1';
     signal irq_n            : std_logic := '1';
     signal exrom_n          : std_logic := '1';
     signal game_n           : std_logic := '1';
+
+    signal irq_oc, nmi_oc, rst_oc, dma_oc, exrom_oc, game_oc    : std_logic;
 
     signal unfreeze         : std_logic;
     signal freeze_trig      : std_logic;
@@ -282,6 +292,7 @@ begin
         inhibit         => timing_inhibit,
         do_sample_addr  => do_sample_addr,
         do_sample_io    => do_sample_io,
+        do_probe_end    => do_probe_end,
         do_io_event     => do_io_event );
 
     mem_req_slot.tag <= g_tag_slot;
@@ -312,9 +323,11 @@ begin
         mem_req         => mem_req_slot.request,
         mem_rwn         => mem_req_slot.read_writen,
         mem_wdata       => mem_req_slot.data,
+        mem_size        => mem_req_slot.size,
         mem_rack        => mem_rack_slot,
         mem_dack        => mem_dack_slot,
         mem_rdata       => mem_resp_slot.data,
+        mem_count       => mem_resp.count,
         -- mem_addr comes from cartridge logic
     
         -- synchronized outputs
@@ -325,6 +338,7 @@ begin
         do_sample_addr  => do_sample_addr,
         do_sample_io    => do_sample_io,
         do_io_event     => do_io_event,
+        do_probe_end    => do_probe_end,
     
         -- interface with freezer (cartridge) logic
         allow_serve     => allow_serve,
@@ -332,6 +346,12 @@ begin
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
         allow_write     => allow_write,
+
+        -- kernal emulation
+        kernal_enable   => control.kernal_enable,
+        kernal_probe    => kernal_probe,
+        kernal_area     => kernal_area,
+        force_ultimax   => force_ultimax,
     
         cpu_write       => cpu_write,
         epyx_timeout    => epyx_timeout,
@@ -348,7 +368,7 @@ begin
         reset           => reset,
         
         -- Cartridge pins
-        DMAn            => DMAn,
+        DMAn            => dma_n,
         BA              => BA,
         RWn_in          => RWn,
         RWn_out         => rwn_out,
@@ -428,7 +448,9 @@ begin
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
         allow_write     => allow_write,
-
+        kernal_area     => kernal_area,
+        kernal_enable   => control.kernal_enable,
+        
         irq_n           => irq_n,
         nmi_n           => nmi_n,
         exrom_n         => exrom_n,
@@ -664,8 +686,19 @@ begin
 
     slot_resp <= or_reduce(slot_resp_reu & slot_resp_cart & slot_resp_sid & slot_resp_cmd & slot_resp_samp);
 
-    ADDRESS(15 downto 8) <= address_out(15 downto 8) when address_tri_h='1' else (others => 'Z');
+    p_probe_address_delay: process(clock)
+        variable kernal_probe_d : std_logic_vector(2 downto 0) := (others => '0');
+    begin
+        if rising_edge(clock) then
+            kernal_addr_out <= kernal_probe_d(0);
+            kernal_probe_d := kernal_probe & kernal_probe_d(kernal_probe_d'high downto 1);
+        end if;
+    end process;
+
     ADDRESS(7 downto 0)  <= address_out(7 downto 0)  when address_tri_l='1' else (others => 'Z');
+    ADDRESS(12 downto 8) <= address_out(12 downto 8) when address_tri_h='1' else (others => 'Z');
+    ADDRESS(15 downto 13) <= "101" when (kernal_addr_out='1' and kernal_probe='1') else
+                             address_out(15 downto 13) when address_tri_h='1' else (others => 'Z');
 
     RWn  <= rwn_out when rwn_tri='1' else 'Z';
 
@@ -673,13 +706,38 @@ begin
             master_dout when (master_dtri='1') else (others => 'Z');
 
     -- open drain outputs
-    IRQn     <= '0' when irq_n='0' or slot_resp.irq='1' else 'Z';
-    NMIn     <= '0' when (control.c64_nmi='1')   or (nmi_n='0') else 'Z';
-    EXROMn   <= '0' when (control.c64_exrom='1') or (serve_enable='1' and exrom_n='0') else 'Z';
-    GAMEn    <= '0' when (control.c64_game='1')  or (serve_enable='1' and game_n='0') else 'Z';
-    RSTn     <= '0' when (reset_button='1' and status.c64_stopped='0' and mask_buttons='0') or
-                         (control.c64_reset='1') else 'Z';
-
+    irq_oc  <= '0' when irq_n='0' or slot_resp.irq='1' else '1';
+    nmi_oc  <= '0' when (control.c64_nmi='1')   or (nmi_n='0') else '1';
+    rst_oc  <= '0' when (reset_button='1' and status.c64_stopped='0' and mask_buttons='0') or
+                         (control.c64_reset='1') else '1';
+    dma_oc  <= '0' when (dma_n='0' or kernal_probe='1') else '1';
+    -- dma_oc  <= '0' when (dma_n='0') else '1';
+    
+    process(control, serve_enable, exrom_n, game_n, force_ultimax, kernal_probe)
+    begin
+        exrom_oc <= '1';
+        game_oc  <= '1';
+        if force_ultimax = '1' then
+            game_oc <= '0';
+        elsif kernal_probe = '1' then
+            game_oc <= '0';
+            exrom_oc <= '0';
+        else
+            if (control.c64_exrom='1') or (serve_enable='1' and exrom_n='0') then
+                exrom_oc <= '0';
+            end if;
+            if (control.c64_game='1') or (serve_enable='1' and game_n='0') then
+                game_oc <= '0';
+            end if;
+        end if;
+    end process;
+    
+    irq_push: entity work.oc_pusher port map(clock => clock, sig_in => irq_oc, oc_out => IRQn);
+    nmi_push: entity work.oc_pusher port map(clock => clock, sig_in => nmi_oc, oc_out => NMIn);
+    rst_push: entity work.oc_pusher port map(clock => clock, sig_in => rst_oc, oc_out => RSTn);
+    dma_push: entity work.oc_pusher port map(clock => clock, sig_in => dma_oc, oc_out => DMAn);
+    exr_push: entity work.oc_pusher port map(clock => clock, sig_in => exrom_oc, oc_out => EXROMn);
+    gam_push: entity work.oc_pusher port map(clock => clock, sig_in => game_oc, oc_out => GAMEn);
 
     -- arbitration
     i_dma_arb: entity work.dma_bus_arbiter_pri

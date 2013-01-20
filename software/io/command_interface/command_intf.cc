@@ -38,6 +38,7 @@ CommandInterface :: CommandInterface()
         CMD_IF_SLOT_ENABLE = 1;
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
         poll_list.append(&poll_command_interface);
+    	main_menu_objects.append(this);
     
         dump_registers();
     
@@ -48,10 +49,8 @@ CommandInterface :: CommandInterface()
         incoming_command.message = command_buffer;
         incoming_command.length = 0;
         
-//        sprintf((char *)response_buffer, "ULTIMATE-II V2.5");
-//        CMD_IF_RESPONSE_LEN_H = 0;
-//        CMD_IF_RESPONSE_LEN_L = 16;
     }
+    target = CMD_TARGET_NONE;
 }
 
 CommandInterface :: ~CommandInterface()
@@ -154,7 +153,6 @@ int CommandInterface :: poll(Event &e)
 int CommandInterface :: poll(Event &e)
 {
     int length;
-    BYTE status_byte = CMD_IF_STATUSBYTE;
 
     if(e.type == e_cart_mode_change) {
         printf("CommandInterface received a cart mode change to %b.\n", e.param);
@@ -163,19 +161,40 @@ int CommandInterface :: poll(Event &e)
         } else {
             CMD_IF_SLOT_ENABLE = 0;
         }                    
+	} else if((e.type == e_object_private_cmd)&&(e.object == this)) {
+        switch(e.param) {
+        case MENU_CMD_RUNCMDCART:
+            cmd_cart.custom_addr = (void *)&_binary_cmd_test_rom_65_start;
+            push_event(e_unfreeze, (void *)&cmd_cart, 1);
+            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
+            sprintf((char *)response_buffer, "ULTIMATE-II V2.6");
+            CMD_IF_RESPONSE_LEN_H = 0;
+            CMD_IF_RESPONSE_LEN_L = 16;
+            break;
+        default:
+            break;
+        }      
     }
+  
+    Message *data, *status;
     
+    BYTE status_byte = CMD_IF_STATUSBYTE;
+
     if(status_byte & CMD_ABORT_DATA) {
-//        printf("Abort bit cleared, we were not transmitting data.\n");
+        printf("Abort received.\n");
+        if (target != CMD_TARGET_NONE) {
+            command_targets[target]->abort();
+        }
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_ABORT;
     }
     if(status_byte & CMD_DATA_ACCEPTED) {
-//        printf("You tell me you accepted data, but I didn't give you any.\n");
+        if (target != CMD_TARGET_NONE) {
+            command_targets[target]->get_more_data(&data, &status);
+            copy_result(data, status);
+        }
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
     }
-    
-    Message *data, *status;
-    
+
     if(status_byte & CMD_NEW_COMMAND) {
         length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
 
@@ -184,18 +203,39 @@ int CommandInterface :: poll(Event &e)
             dump_hex_relative((void *)command_buffer, length);
     
             incoming_command.length = length;
-            BYTE target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
+            target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
             command_targets[target]->parse_command(&incoming_command, &data, &status);
-            
+            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
+            copy_result(data, status);
+
         } else {
             printf("Null command.\n");
             CMD_IF_RESPONSE_LEN_H = 0;
             CMD_IF_RESPONSE_LEN_L = 0;
             CMD_IF_STATUS_LENGTH = 0;
+            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
         }
-        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND; // resets the command valid bit and the pointers.
     }
     return 0;
+}
+
+void CommandInterface :: copy_result(Message *data, Message *status)
+{
+    printf("data:\n");
+    dump_hex_relative((void *)data->message, data->length);
+    printf("status:\n");
+    dump_hex_relative((void *)status->message, status->length);
+    memcpy(response_buffer, data->message, data->length);
+    memcpy(status_buffer, status->message, status->length);
+    CMD_IF_RESPONSE_LEN_H = BYTE(data->length >> 8);
+    CMD_IF_RESPONSE_LEN_L = BYTE(data->length);
+    CMD_IF_STATUS_LENGTH = status->length;
+    if(data->last_part) {
+        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
+        target = CMD_TARGET_NONE;
+    } else {
+        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_MORE;
+    }    
 }
 
 int  CommandInterface :: fetch_task_items(IndexedList<PathObject*> &item_list)
@@ -223,7 +263,7 @@ void CommandInterface :: dump_registers(void)
     printf("CMD_IF_COMMAND_LEN_H   %b\n", CMD_IF_COMMAND_LEN_H );
 }
 
-Message c_message_no_target      = {  9, (BYTE *)"NO TARGET" }; 
-Message c_status_ok              = {  5, (BYTE *)"00,OK" };
-Message c_status_unknown_command = { 18, (BYTE *)"21,UNKNOWN COMMAND" };
-Message c_message_empty          = {  0, (BYTE *)"" };
+Message c_message_no_target      = {  9, true, (BYTE *)"NO TARGET" }; 
+Message c_status_ok              = {  5, true, (BYTE *)"00,OK" };
+Message c_status_unknown_command = { 18, true, (BYTE *)"21,UNKNOWN COMMAND" };
+Message c_message_empty          = {  0, true, (BYTE *)"" };

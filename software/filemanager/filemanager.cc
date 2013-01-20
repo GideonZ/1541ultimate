@@ -73,12 +73,16 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
     FileInfo *info;
     info = dir->get_file_info();
     
+    // printf("fcreate: DIR=%p (%s) info = %p\n", dir, dir->get_name(), info);
+    
     if(!info) // can't create file if I don't know how
         return NULL;
         
     if(!(info->attrib & AM_DIR))  // can't create a file in a file - it should be a dir.
         return NULL;
         
+    // info->print_info();
+    
     // create a copy of the file info object
     FileInfo *fi = new FileInfo(info, filename);
     fi->dir_clust = info->cluster; // the new file will be located in the directory DIR_CLUST!
@@ -90,7 +94,9 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
     if(!f)
         return NULL;
         
-//    f->print_info();
+    f->print_info();
+    printf("File creation successful so far!\n");
+
     PathObject *node = new PathObject(dir, filename);
     f->node = node;
     dir->children.append(node);

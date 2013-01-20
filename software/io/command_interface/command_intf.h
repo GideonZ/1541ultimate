@@ -6,7 +6,7 @@
 #include "menu.h"
 
 #define CMD_IF_BASE      0x4044000
-#define CMD_IF_RAM_BASE  0x4044800
+#define CMD_IF_RAM_BASE  0x5044800
 
 #define CMD_IF_RAM(x)          *((volatile BYTE *)(CMD_IF_RAM_BASE +x))
 
@@ -36,16 +36,19 @@
 #define CMD_STATE_DATA_LAST       0x20
 #define CMD_STATE_DATA_MORE       0x30
 
-#define HANDSHAKE_RESET           0xff
+#define HANDSHAKE_RESET           0x87
 #define HANDSHAKE_ACCEPT_COMMAND  0x01
 #define HANDSHAKE_ACCEPT_NEXTDATA 0x02
 #define HANDSHAKE_ACCEPT_ABORT    0x04
 #define HANDSHAKE_VALIDATE_LAST   0x10
 #define HANDSHAKE_VALIDATE_MORE   0x30
 
+#define CMD_TARGET_NONE 0xFF
+
 typedef struct _message
 {
     int   length;
+    bool  last_part;
     BYTE *message;
 } Message;
 
@@ -56,6 +59,8 @@ class CommandInterface : public ObjectWithMenu
     BYTE *status_buffer;
 
     Message incoming_command;
+    BYTE target;    
+    void copy_result(Message *data, Message *status);
     
 public:
     CommandInterface();
@@ -98,11 +103,12 @@ public:
             *status = &c_status_unknown_command; 
         }        
     }
-    virtual bool get_more_data(Message **reply, Message **status) {
+    virtual void get_more_data(Message **reply, Message **status) {
         *reply  = &c_message_empty;
         *status = &c_status_ok; 
-        return false;
     }
+    
+    virtual void abort(void) { }
 };
 
 extern CommandTarget *command_targets[];

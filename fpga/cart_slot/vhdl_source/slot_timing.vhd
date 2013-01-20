@@ -25,6 +25,7 @@ port (
 
     inhibit         : out std_logic;
     do_sample_addr  : out std_logic;
+    do_probe_end    : out std_logic;
     do_sample_io    : out std_logic;
     do_io_event     : out std_logic );
 end slot_timing;
@@ -47,7 +48,8 @@ architecture gideon of slot_timing is
 
     constant c_memdelay    : integer := 5;
     
-    constant c_sample      : integer := 5;
+    constant c_sample      : integer := 4;
+    constant c_probe_end   : integer := 11;
     constant c_sample_vic  : integer := 10;
     constant c_io          : integer := 19;
 
@@ -118,15 +120,22 @@ begin
             do_io_event <= phi2_falling;
 
             -- timing pulses
-            do_sample_addr <= '0';
-            if phase_h = (c_sample - c_memdelay) then
+            if phase_h = 0 then --(c_sample - c_memdelay) then
                 inhibit <= serve_en_i;
-            elsif phase_h = (c_sample - 1) then
-                do_sample_addr <= '1';            
             elsif phase_h = c_sample then
                 inhibit <= '0';
             end if;
+
+            do_sample_addr <= '0';
+            if phase_h = (c_sample - 1) then
+                do_sample_addr <= '1';
+            end if;
             
+            do_probe_end <= '0';            
+            if phase_h = c_probe_end then
+                do_probe_end <= '1';
+            end if;
+
             if serve_vic='1' then
                 if phase_l = (c_sample_vic - c_memdelay) then
                     inhibit <= serve_en_i;

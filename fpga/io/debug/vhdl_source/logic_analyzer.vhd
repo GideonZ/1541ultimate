@@ -140,4 +140,5 @@ begin
     mem_req.tag         <= X"F0";
     mem_req.address     <= "01" & unsigned(ev_addr);
     mem_req.read_writen <= '0'; -- write only
+    mem_req.size        <= "00"; -- 1 byte at a time
 end gideon;

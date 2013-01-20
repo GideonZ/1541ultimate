@@ -8,6 +8,7 @@ package mem_bus_pkg is
         tag         : std_logic_vector(7 downto 0);
         request     : std_logic;
         read_writen : std_logic;
+        size        : unsigned(1 downto 0); -- +1 for reads only
         address     : unsigned(25 downto 0);
         data        : std_logic_vector(7 downto 0);
     end record;
@@ -17,12 +18,14 @@ package mem_bus_pkg is
         rack        : std_logic;
         rack_tag    : std_logic_vector(7 downto 0);
         dack_tag    : std_logic_vector(7 downto 0);
+        count       : unsigned(1 downto 0);
     end record;
 
     constant c_mem_req_init : t_mem_req := (
         tag         => X"00",
         request     => '0',
         read_writen => '1',
+        size        => "00",
         address     => (others => '0'),
         data        => X"00" );
      
@@ -30,7 +33,8 @@ package mem_bus_pkg is
         data        => X"00",
         rack        => '0',
         rack_tag    => X"00",
-        dack_tag    => X"00" );
+        dack_tag    => X"00",
+        count       => "00" );
         
     type t_mem_req_array is array(natural range <>) of t_mem_req;
     type t_mem_resp_array is array(natural range <>) of t_mem_resp;

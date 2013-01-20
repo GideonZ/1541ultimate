@@ -134,6 +134,7 @@ begin
     mem_req.address     <= unsigned(cpu_address(25 downto 0));
     mem_req.read_writen <= not cpu_write;
     mem_req.data        <= cpu_wdata;
+    mem_req.size        <= "00"; -- to be optimized
     
     mem_rack <= '1' when mem_resp.rack_tag = g_mem_tag else '0';
     mem_dack <= '1' when mem_resp.dack_tag = g_mem_tag else '0';

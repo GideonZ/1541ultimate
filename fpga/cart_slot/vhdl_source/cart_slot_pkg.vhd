@@ -11,6 +11,7 @@ package cart_slot_pkg is
     constant c_cart_cartridge_rom_base  : unsigned(3 downto 0) := X"4";
     constant c_cart_cartridge_type      : unsigned(3 downto 0) := X"5";
     constant c_cart_cartridge_kill      : unsigned(3 downto 0) := X"6";
+    constant c_cart_kernal_enable       : unsigned(3 downto 0) := X"7";
     constant c_cart_reu_enable          : unsigned(3 downto 0) := X"8";
     constant c_cart_reu_size            : unsigned(3 downto 0) := X"9";
 	constant c_cart_swap_buttons		: unsigned(3 downto 0) := X"A";
@@ -26,6 +27,7 @@ package cart_slot_pkg is
         c64_stop_mode  : std_logic_vector(1 downto 0);
         cartridge_type : std_logic_vector(3 downto 0);
         cartridge_kill : std_logic;
+        kernal_enable  : std_logic;
         reu_enable     : std_logic;
         reu_size       : std_logic_vector(2 downto 0);
         eth_enable     : std_logic;
@@ -47,6 +49,7 @@ package cart_slot_pkg is
         c64_stop_mode  => "00",
         cartridge_type => X"0",
         cartridge_kill => '0',
+        kernal_enable  => '0',
         reu_enable     => '0',
         reu_size       => "111",
         eth_enable     => '0',

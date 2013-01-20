@@ -26,11 +26,14 @@
 #define C64_CARTRIDGE_RAM_BASE  *((volatile BYTE *)(C64_CARTREGS_BASE + 0x4))
 #define C64_CARTRIDGE_TYPE      *((volatile BYTE *)(C64_CARTREGS_BASE + 0x5))
 #define C64_CARTRIDGE_KILL      *((volatile BYTE *)(C64_CARTREGS_BASE + 0x6))
+#define C64_KERNAL_ENABLE       *((volatile BYTE *)(C64_CARTREGS_BASE + 0x7))
 #define C64_REU_ENABLE          *((volatile BYTE *)(C64_CARTREGS_BASE + 0x8))
 #define C64_REU_SIZE            *((volatile BYTE *)(C64_CARTREGS_BASE + 0x9))
 #define C64_SWAP_CART_BUTTONS   *((volatile BYTE *)(C64_CARTREGS_BASE + 0xA))
 #define C64_SAMPLER_ENABLE      *((volatile BYTE *)(C64_CARTREGS_BASE + 0xE))
 #define C64_ETHERNET_ENABLE     *((volatile BYTE *)(C64_CARTREGS_BASE + 0xF))
+
+#define C64_KERNAL_BASE         0x0ECC000
 
 #define C64_MODE_EXROM     0x01
 #define C64_MODE_GAME      0x02

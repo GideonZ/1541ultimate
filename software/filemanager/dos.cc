@@ -1,17 +1,20 @@
 #include "dos.h"
 
-Message c_message_identification_dos = { 20, (BYTE *)"ULTIMATE-II DOS V1.0" }; 
-Message c_status_not_implemented     = { 27, (BYTE *)"99,FUNCTION NOT IMPLEMENTED" };
+Message c_message_identification_dos = { 20, true, (BYTE *)"ULTIMATE-II DOS V1.0" }; 
+Message c_status_not_implemented     = { 27, true, (BYTE *)"99,FUNCTION NOT IMPLEMENTED" };
 
 Dos dos1(1); // this global registers a Dos interface object as ID 1
 
 Dos :: Dos(int id)
 {
     command_targets[id] = this; // register ourselves
+    state = 0;
+    temp_message.message = new BYTE[80];
 }
 
 Dos :: ~Dos()
 {
+    delete[] temp_message.message;
     // officially we should deregister ourselves, but as this will only occur at application exit, there is no need
 }
     
@@ -61,15 +64,40 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             *reply  = &c_message_empty;
             *status = &c_status_not_implemented; 
             break;
+        case DOS_CMD_ECHO:
+            *reply  = command;
+            *status = &c_status_ok;
+            break;
+        case DOS_CMD_COUNT:
+            printf("starting counter\n");
+            sprintf((char*)temp_message.message, "STARTING COUNTER");
+            temp_message.length = 16;
+            temp_message.last_part = false;
+            *reply  = &temp_message;
+            *status = &c_status_ok;
+            state = 1;
+            break;
         default:
             *reply  = &c_message_empty;
             *status = &c_status_unknown_command; 
     }
 }
     
-bool Dos :: get_more_data(Message **reply, Message **status)
+void Dos :: get_more_data(Message **reply, Message **status)
 {
-    *reply  = &c_message_empty;
-    *status = &c_status_ok; 
-    return false;
+    if (state == 0) {
+        printf("asking for more data, but state = 0\n");
+        *reply  = &c_message_empty;
+        *status = &c_status_ok;
+    } else {
+        printf("copying count value\n");
+        sprintf((char*)temp_message.message, "COUNT: %b", state);
+        temp_message.length = 9;
+        state ++;
+        temp_message.last_part = (state == 9);
+        if (state == 9)
+            state = 0;
+        *reply  = &temp_message;
+        *status = &c_message_empty;
+    } 
 }

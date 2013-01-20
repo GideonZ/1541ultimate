@@ -122,6 +122,7 @@ begin
     mem_req.read_writen <= mem_rwn;
     mem_req.data        <= mem_wdata;
     mem_req.tag         <= g_tag;
+    mem_req.size        <= "00"; -- 1 byte at a time
 
     mem_rack  <= '1' when mem_resp.rack_tag = g_tag else '0';
     mem_dack  <= '1' when mem_resp.dack_tag = g_tag else '0';

@@ -14,6 +14,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/srl_fifo/vhdl_source/srl_fifo.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/stack/vhdl_source/distributed_stack.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/oc_pusher/vhdl_source/oc_pusher.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/synchroniser/vhdl_source/synchroniser.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/async_fifo/vhdl_source/gray_code_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/async_fifo/vhdl_source/async_fifo.vhd \
@@ -41,7 +42,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/sigma_delta_dac/vhdl_source/mash.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/spi/vhdl_source/spi.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/spi/vhdl_source/spi_peripheral_io.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4b.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/spike_filter/vhdl_source/spike_filter.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/ulpi_bus.vhd \

@@ -39,6 +39,8 @@ extern "C" {
 /* other external references */
 extern BYTE _binary_bootcrt_65_start;
 
+extern BYTE _binary_kernal_sx_251104_04_bin_start;
+
 cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
 
 // static pointer
@@ -107,6 +109,7 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 #define CFG_C64_SWAP_BTN 0xC6
 #define CFG_C64_DMA_ID   0xC7
 #define CFG_C64_MAP_SAMP 0xC8
+#define CFG_C64_ALT_KERN 0xC9
 
 char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };    
 char *en_dis2[] = { "Disabled", "Enabled" };
@@ -115,6 +118,7 @@ char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 15, 4 },
     { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",              "%s", NULL,       1, 31, (int)"cart.bin" },
+    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
     { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis2,    0,  1, 0 },
@@ -154,6 +158,15 @@ C64 :: C64()
 	C64_STOP = 0;
 	stopped = false;
     C64_MODE = C64_MODE_RESET;
+
+    BYTE *src = (BYTE *)&_binary_kernal_sx_251104_04_bin_start;
+    BYTE *dst = (BYTE *)C64_KERNAL_BASE;
+    for(int i=0;i<8192;i++) {
+        *(dst++) = (i&1)?0xAA:0x55; //*(src);
+        *(dst++) = *(src++);
+    }
+//    memcpy((void *)C64_KERNAL_BASE, (void *)&_binary_kernal_sx_251104_04_bin_start, 8192);
+    dump_hex((void *)(C64_KERNAL_BASE + 0x3FD0), 48);
 }
     
 C64 :: ~C64()
@@ -708,6 +721,7 @@ void C64 :: init_cartridge()
         return;
 
     C64_MODE = C64_MODE_RESET;
+    C64_KERNAL_ENABLE = cfg->get_value(CFG_C64_ALT_KERN);
 
     int cart = cfg->get_value(CFG_C64_CART);
     set_cartridge(&cartridges[cart]);

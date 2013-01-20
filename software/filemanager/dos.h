@@ -20,16 +20,19 @@
 #define DOS_CMD_CLOSE_DIR  0x08
 #define DOS_CMD_READ_DATA  0x09
 #define DOS_CMD_WRITE_DATA 0x0A
+#define DOS_CMD_ECHO       0x0B
+#define DOS_CMD_COUNT      0x30
 
 class Dos : CommandTarget
 {
-    
+    int state;    
+    Message temp_message;
 public:
     Dos(int id);
     ~Dos();
 
     void parse_command(Message *command, Message **reply, Message **status);
-    bool get_more_data(Message **reply, Message **status);  
+    void get_more_data(Message **reply, Message **status);  
 };
 
 #endif

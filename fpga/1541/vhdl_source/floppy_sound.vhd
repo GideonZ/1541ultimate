@@ -62,7 +62,7 @@ begin
     mem_req.read_writen <= '1'; -- always read
     mem_req.address     <= sound_base(25 downto 16) & mem_addr_i;
     mem_req.data        <= X"00";
-    
+    mem_req.size        <= "00"; -- 1 byte at a time
     mem_rack <= '1' when mem_resp.rack_tag = g_tag else '0';
     mem_dack <= '1' when mem_resp.dack_tag = g_tag else '0';
 

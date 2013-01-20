@@ -195,7 +195,7 @@ void FileDirEntry :: execute(int selection)
     char buffer[40];
     BinImage *bin;
     GcrImage *gcr;
-    bool save_result;
+    int save_result;
     FRESULT fres;
     File *f;
     UINT transferred = 0;

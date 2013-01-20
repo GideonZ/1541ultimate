@@ -150,6 +150,7 @@ begin
     mem_req.address     <= g_ram_base(25 downto 24) & masked_reu_addr;
     mem_req.read_writen <= glob_rwn;
     mem_req.data        <= c64_read_reg;
+    mem_req.size        <= "00"; -- 1 byte at a time
     
     -- fill dma request structure
     dma_req.request     <= c64_req;
