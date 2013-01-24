@@ -44,6 +44,8 @@ FileDirEntry *FileTypeREU :: test_type(PathObject *obj)
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "REU")==0)
         return new FileTypeREU(obj->parent, inf);
+    if(strcmp(inf->extension, "MOD")==0)
+        return new FileTypeREU(obj->parent, inf);
     return NULL;
 }
 

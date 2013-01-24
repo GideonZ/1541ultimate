@@ -23,10 +23,21 @@
 #define DOS_CMD_ECHO       0x0B
 #define DOS_CMD_COUNT      0x30
 
+typedef enum _e_dos_state {
+    e_dos_idle,
+    e_dos_in_file,
+    e_dos_in_directory
+} e_dos_state;
+
 class Dos : CommandTarget
 {
-    int state;    
-    Message temp_message;
+    e_dos_state dos_state;
+    File *file;
+    Directory *dir;
+    Path *path;
+    Message data_message;
+    Message status_message;
+    int remaining;
 public:
     Dos(int id);
     ~Dos();

@@ -197,6 +197,7 @@ public:
     FileSystem(Partition *p);
     virtual ~FileSystem();
 
+    virtual FRESULT get_last_error() { return FR_OK; }
 	static  const char *get_error_string(FRESULT res);
 
     static  bool check(Partition *p);        // check if file system is present on this partition

@@ -79,11 +79,15 @@ private:
     DWORD   winsect;    /* Current sector appearing in the win[] */
     BYTE    win[_MAX_SS];/* Disk access window for Directory/FAT */
 
-
+    FRESULT last_error;
 public:
-    FATFS(Partition *p) : FileSystem(p) { }   /* Constructor */
+    FATFS(Partition *p) : FileSystem(p) { 
+        last_error = FR_OK;
+    }   /* Constructor */
+
     ~FATFS() { }                              /* Destructor */
     
+    FRESULT get_last_error() { return last_error; }
     static BYTE check_fs (Partition *p);      /* Load boot record and check if it is an FAT boot record */
     bool    is_writable(void) { return true; } // ###
     bool    init (void);                      /* Initialize file system object based on boot record */

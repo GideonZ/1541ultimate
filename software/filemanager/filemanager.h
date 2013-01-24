@@ -16,15 +16,21 @@ void fix_filename(char *buffer);
 
 class FileManager : public PathObject
 {
+    FRESULT last_error;
 	IndexedList<File *>open_file_list;
 public:
     FileManager(char *n) : PathObject(NULL, n), open_file_list(16, NULL) {
         poll_list.append(&poll_filemanager);
+        last_error = FR_OK;
     }
 
     ~FileManager() {
         poll_list.remove(&poll_filemanager);
         cleanup_children();
+    }
+    
+    FRESULT get_last_error(void) {
+        return last_error;
     }
     
     void handle_event(Event &e);

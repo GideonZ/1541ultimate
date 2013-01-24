@@ -75,12 +75,16 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
     
     // printf("fcreate: DIR=%p (%s) info = %p\n", dir, dir->get_name(), info);
     
-    if(!info) // can't create file if I don't know how
+    if(!info) { // can't create file if I don't know how
+        last_error = FR_NO_FILESYSTEM;
         return NULL;
-        
-    if(!(info->attrib & AM_DIR))  // can't create a file in a file - it should be a dir.
+    }
+            
+    if(!(info->attrib & AM_DIR)) {  // can't create a file in a file - it should be a dir.
+        last_error = FR_DENIED;
         return NULL;
-        
+    }
+            
     // info->print_info();
     
     // create a copy of the file info object
@@ -91,9 +95,12 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
     fi->attrib = 0;
 
     File *f = fi->fs->file_open(fi, FA_CREATE_NEW | FA_WRITE);
-    if(!f)
+    if(!f) {
+        last_error = fi->fs->get_last_error();
         return NULL;
-        
+    }        
+    last_error = FR_OK;
+    
     f->print_info();
     printf("File creation successful so far!\n");
 
@@ -107,6 +114,7 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
 
 File *FileManager :: fopen(char *filename, PathObject *dir, BYTE flags)
 {
+    last_error = FR_OK;
     PathObject *obj = dir->find_child(filename);
     if(obj) {
         return fopen(obj, flags);
@@ -116,6 +124,7 @@ File *FileManager :: fopen(char *filename, PathObject *dir, BYTE flags)
     if(flags & FA_CREATE_NEW) {
         return fcreate(filename, dir);
     }
+    last_error = FR_NO_FILE;
     return NULL;    
 }
 
@@ -134,13 +143,19 @@ File *FileManager :: fopen(char *filename, BYTE flags)
 				f->node = po;
 				f->path = path;
 				open_file_list.append(f);
+                last_error = FR_OK;
 				return f; // could be 0
-			}
+			} else {
+                last_error = FR_NO_FILE;
+	        }		    
 		} else {
+            last_error = FR_NO_FILESYSTEM;
 			delete path;
 			return 0;
 		}
-	}
+	} else {
+        last_error = FR_NO_FILE;
+    }
 	delete path;
 	return 0;
 }
@@ -155,11 +170,13 @@ File *FileManager :: fopen(PathObject *obj, BYTE flags)
 			f->node = obj;
 			f->path = NULL;
 			open_file_list.append(f);
+            last_error = FR_OK;
 			return f; // could be 0
+		} else {
+		    last_error = fi->fs->get_last_error();
 		}
-	} else {
-		return 0;
 	}
+    last_error = FR_NO_FILESYSTEM;
 	return 0;
 }
 

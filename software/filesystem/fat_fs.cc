@@ -976,6 +976,7 @@ File *FATFS::file_open(FileInfo *info, BYTE flags)
 	FATFIL *ff = new FATFIL(this);
     File *f = new File(this, (DWORD)ff);
     FRESULT res = ff->open(info, flags);
+    last_error = res;
     if(res == FR_OK) {
         return f;
     }
