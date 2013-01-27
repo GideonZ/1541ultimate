@@ -43,7 +43,7 @@ struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",                 "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",          "%d", NULL,       8, 11, 8 },
     { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  3, 2 },
-    { CFG_C1541_ROMFILE,   CFG_TYPE_STRING, "1541 ROM File",              "%s", NULL,       0, 36, (int)"1541.rom" },
+    { CFG_C1541_ROMFILE,   CFG_TYPE_STRING, "1541 ROM File",              "%s", NULL,       1, 36, (int)"1541.rom" },
     { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "1541 RAM BOard",             "%s", ram_board,  0,  6, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",       "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "1541 Resets when C64 resets","%s", yes_no,     0,  1, 1 },

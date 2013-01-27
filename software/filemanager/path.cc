@@ -178,10 +178,9 @@ void Path :: path_from_object(PathObject *obj)
 	// recursive.. first: find root object
 	if(obj->parent) {
 		path_from_object(obj->parent);
-	}
-//	else {
-//		root_obj = obj;
-//	}
+	} else {
+	    full_path = "";
+    }
 
 	// now, we are at the root, or processing the path in the correct order
 	obj->attach(true);

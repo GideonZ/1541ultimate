@@ -110,6 +110,7 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 #define CFG_C64_DMA_ID   0xC7
 #define CFG_C64_MAP_SAMP 0xC8
 #define CFG_C64_ALT_KERN 0xC9
+#define CFG_C64_KERNFILE 0xCA
 
 char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };    
 char *en_dis2[] = { "Disabled", "Enabled" };
@@ -119,6 +120,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 15, 4 },
     { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",              "%s", NULL,       1, 31, (int)"cart.bin" },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_KERNFILE, CFG_TYPE_STRING, "Alternate Kernal File",        "%s", NULL,       1, 36, (int)"kernal.rom" },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
     { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis2,    0,  1, 0 },
@@ -158,15 +160,6 @@ C64 :: C64()
 	C64_STOP = 0;
 	stopped = false;
     C64_MODE = C64_MODE_RESET;
-
-    BYTE *src = (BYTE *)&_binary_kernal_sx_251104_04_bin_start;
-    BYTE *dst = (BYTE *)C64_KERNAL_BASE;
-    for(int i=0;i<8192;i++) {
-        *(dst++) = (i&1)?0xAA:0x55; //*(src);
-        *(dst++) = *(src++);
-    }
-//    memcpy((void *)C64_KERNAL_BASE, (void *)&_binary_kernal_sx_251104_04_bin_start, 8192);
-    dump_hex((void *)(C64_KERNAL_BASE + 0x3FD0), 48);
 }
     
 C64 :: ~C64()
@@ -687,7 +680,7 @@ void C64 :: set_cartridge(cart_def *def)
         *(BYTE *)(mem_addr+5) = 0; // disable previously started roms.
 
         char *n = cfg->get_string(CFG_C64_CUSTOM);
-        printf("Now I need to load '%s' as cartridge.\n", n);
+        printf("Now loading '%s' as cartridge.\n", n);
 
 #ifndef _NO_FILE_ACCESS
         File *f = root.fopen(n, FA_READ);
@@ -721,7 +714,38 @@ void C64 :: init_cartridge()
         return;
 
     C64_MODE = C64_MODE_RESET;
-    C64_KERNAL_ENABLE = cfg->get_value(CFG_C64_ALT_KERN);
+    C64_KERNAL_ENABLE = 0;
+
+#ifndef _NO_FILE_ACCESS
+    if (cfg->get_value(CFG_C64_ALT_KERN)) {
+        char *n = cfg->get_string(CFG_C64_KERNFILE);
+        printf("Now loading '%s' as KERNAL ROM.\n", n);
+
+        File *f = root.fopen(n, FA_READ);
+		if(f) {
+			UINT transferred;
+            BYTE *temp = new BYTE[8192];
+			FRESULT res = f->read(temp, 8192, &transferred);
+            C64_KERNAL_ENABLE = 1;
+			if ((res != FR_OK) || (transferred != 8192)) {
+				printf("Error loading file.. [%d bytes read] disabling custom kernal.\n", transferred);
+                C64_KERNAL_ENABLE = 0;
+			}
+			root.fclose(f);
+            // BYTE *src = (BYTE *)&_binary_kernal_sx_251104_04_bin_start;
+            BYTE *src = temp;
+            BYTE *dst = (BYTE *)(C64_KERNAL_BASE+1);
+            for(int i=0;i<8192;i++) {
+                *(dst) = *(src++);
+                dst += 2;
+            }
+            dump_hex((void *)(C64_KERNAL_BASE + 0x3FD0), 48);
+            delete[] temp;
+		} else {
+			printf("Open file failed.\n");
+		}
+    }
+#endif
 
     int cart = cfg->get_value(CFG_C64_CART);
     set_cartridge(&cartridges[cart]);

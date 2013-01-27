@@ -38,6 +38,8 @@ class Dos : CommandTarget
     Message data_message;
     Message status_message;
     int remaining;
+    int dir_entries;
+    int current_index;
 public:
     Dos(int id);
     ~Dos();
