@@ -179,6 +179,15 @@ string& operator+(string &left, char *right)
     return *result;
 }
 
+string& operator+(char *left, string &right)
+{
+//    printf("+ operator. Left = %s, Right = (%s)%p\n", left, right.cp, &right);
+    string *result = new string(left);
+    result->temporary = 1;
+    (*result)+=right;
+    return *result;
+}
+
 int strcmp(string &a, string &b)
 {
     if(!a.cp && !b.cp)

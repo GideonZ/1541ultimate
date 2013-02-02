@@ -94,6 +94,11 @@ int main()
     Stream my_stream;
     UserInterfaceStream *stream_interface;
     
+ 	// start the file system, scan the sd-card etc..
+	send_nop();
+	send_nop();
+	send_nop();
+
     if(ITU_CAPABILITIES & CAPAB_CARTRIDGE)
         c64     = new C64;
 
@@ -136,9 +141,6 @@ int main()
     if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_2) {
         c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
     }
- 	// start the file system, scan the sd-card etc..
-	send_nop();
-	send_nop();
 
 	// add the drive(s) to the 'OS' (the event loop)
     printf("C1541A: %p, C1541B: %p\n", c1541_A, c1541_B);

@@ -397,11 +397,23 @@ int IecInterface :: poll(Event &e)
     return 0;
 }
 
+#include "c1541.h"
+extern C1541 *c1541_A;
+extern C1541 *c1541_B;
+
 void IecInterface :: start_warp(int drive)
 {
     warp_drive = drive;
     printf("Starting IEC Warp Mode.\n");
     C64_POKE(0xDD00,0x07); // make sure the C64 that might be connected does not interfere
+    // make sure that our local drives are turned off as well
+    if (c1541_A) {
+        c1541_A->drive_power(false);
+    }
+    if (c1541_B) {
+        c1541_B->drive_power(false);
+    }
+    
     ui_window = new UltiCopy();
     ui_window->init(user_interface->screen, user_interface->keyboard);
     user_interface->activate_uiobject(ui_window); // now we have focus
@@ -412,6 +424,12 @@ void IecInterface :: start_warp(int drive)
         user_interface->popup("Error accessing drive..", BUTTON_OK);
         ui_window->close();
         push_event(e_refresh_browser);
+        if (c1541_A) {
+            c1541_A->effectuate_settings();
+        }
+        if (c1541_B) {
+            c1541_B->effectuate_settings();
+        }
         return;
     }
 
@@ -468,6 +486,7 @@ void IecInterface :: get_warp_error(void)
     printf("{Warp Error: %b}", err);
     // clear pending interrupt
     HW_IEC_IRQ = 0;
+    bool re_enable = false;
 
     if(err & 0x80) {
         last_track++;
@@ -485,11 +504,22 @@ void IecInterface :: get_warp_error(void)
         } else {
             ui_window->close();
             push_event(e_reload_browser);
+            re_enable = true;
         }
     } else if(err < 0x20) {
         user_interface->popup("Error reading disk..", BUTTON_OK);
         ui_window->close();
+        re_enable = true;
     }
+    
+    if(re_enable) {
+        if (c1541_A) {
+            c1541_A->effectuate_settings();
+        }
+        if (c1541_B) {
+            c1541_B->effectuate_settings();
+        }
+    }    
 }
 
 void IecInterface :: save_copied_disk()

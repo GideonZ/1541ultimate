@@ -677,12 +677,14 @@ BinImage :: BinImage(char *name) : PathObject(NULL, name)
     fs  = new FileSystemD64(prt);
 
     // lets try this
-	root.children.append(this);
+	//root.children.append(this);
+	//this->attach();
 }
 
 BinImage :: ~BinImage()
 {
-    root.children.remove(this);
+    //this->detach();
+    //root.children.remove(this);
     
 	if(bin_data)
 		delete bin_data;

@@ -4,6 +4,7 @@
 #include "integer.h"
 #include "event.h"
 #include "menu.h"
+#include "config.h"
 
 #define CMD_IF_BASE      0x4044000
 #define CMD_IF_RAM_BASE  0x5044800
@@ -52,7 +53,7 @@ typedef struct _message
     BYTE *message;
 } Message;
 
-class CommandInterface : public ObjectWithMenu
+class CommandInterface : public ObjectWithMenu, ConfigurableObject
 {
     BYTE *command_buffer;
     BYTE *response_buffer;

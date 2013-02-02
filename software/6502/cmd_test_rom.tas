@@ -111,7 +111,6 @@ start       sei
             lda #$0d
             jsr $ffd2
 
-            jsr get_result
             jsr get_status
 
             lda #<execute
@@ -129,11 +128,12 @@ still_busy  ldx #$02 ; file open error
                         
 execute
             jsr $0073
+            sta $fc
             cmp #AT_TOKEN
             beq send_command
             cmp #$5F
-            beq get_status_command
-            jmp $a7e7
+            beq send_command
++           jmp $a7e7
 
 send_command
             lda CMD_IF_CONTROL
@@ -159,9 +159,48 @@ _copy_string_to_cmdif  ; equivalent of routine at AB21, but then outputs to I/O
 -           dex
             beq _str_done
             lda ($22),y
-            sta CMD_IF_COMMAND
+            cmp #$24
+            beq _hex
+_wrcmdbyte  sta CMD_IF_COMMAND
             iny
             jmp -
+
+_hex        iny
+            dex
+            beq _syntax ; should have a parameter!
+            lda ($22),y
+            sec
+            sbc #$30
+            cmp #$0A
+            bpl _no_digit1
+-           asl
+            asl
+            asl
+            asl
+            sta $fb
+            jmp _digit2
+_no_digit1  sbc #$11
+            bmi _syntax
+            cmp #$06
+            bpl _syntax
+            adc #$0A
+            jmp -             
+_digit2     iny
+            dex
+            beq _syntax ; should have a parameter!
+            lda ($22),y
+            sec
+            sbc #$30
+            cmp #$0A
+            bpl _no_digit2
+-           ora $fb
+            rts
+_no_digit2  sbc #$11
+            bmi _syntax
+            cmp #$06
+            bpl _syntax
+            adc #$0A
+            jmp -             
 
 _str_done
             lda #CMD_PUSH_CMD
@@ -171,8 +210,8 @@ _str_done
             ; in other words: wait as long as ultimate is processing
 
 -           jsr wait_while_busy
-            jsr get_status
             jsr print_result
+            jsr get_status
             lda #CMD_NEXT_DATA
             sta CMD_IF_CONTROL
             lda CMD_IF_CONTROL
@@ -190,43 +229,43 @@ _next_statement
 _syntax     ldx #$0b
             jmp ($0300)
 
-get_status_command
-            jsr get_result
-            jsr get_status
-            lda CMD_IF_CONTROL
-            and #CMD_STATE_BITS
-            cmp #CMD_STATE_MORE_DATA
-            bne +
-            jsr print_abort
-            lda #$04
-            sta CMD_IF_CONTROL
-+           jsr $0073
-            jmp _next_statement
-
 print_result    .proc
+            lda $fc
+            cmp #$5F
+            beq _print_hex
 -           lda CMD_IF_CONTROL
             bpl +
             lda CMD_IF_RESULT
             jsr $ffd2
             jmp -            
 +           rts
-            .pend
-            
-get_result  .proc
-            lda CMD_IF_CONTROL
-            bmi +
-            rts
-+           lda #<result_string
-            ldy #>result_string
-            jsr $ab1e
-            jsr print_result
-+           lda #CMD_NEXT_DATA
-            sta CMD_IF_CONTROL
-            lda #$0d
+
+_print_hex
+-           lda CMD_IF_CONTROL
+            bpl +
+            lda CMD_IF_RESULT
+            pha
+            and #$F0
+            lsr
+            lsr
+            lsr
+            lsr
+            tax
+            lda hex_chars,x
+            jsr $ffd2
+            pla
+            and #$0f
+            lda hex_chars,x
+            jsr $ffd2
+            lda #$20
+            jsr $ffd2
+            jmp -
++           lda #$0D
             jmp $ffd2
 
-result_string .text "RESULT: ", $00
+hex_chars   .text "0123456789ABCDEF"
             .pend
+            
 
 wait_while_busy .proc
 -           lda CMD_IF_CONTROL

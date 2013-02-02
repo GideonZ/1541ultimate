@@ -27,11 +27,11 @@ Path :: ~Path()
 {
 //	printf("Destroying Path...\n");
 //	root_obj->dump();
-	current->detach();
+    current->detach();
 //	root_obj->dump();
 	root_obj->cleanup_children();
 //	root_obj->dump();
-//	printf("Exit path destructor..\n");
+	//printf("Exit path destructor..\n");
 /*
 	PathObject *p;
 	do {
@@ -77,6 +77,7 @@ int Path :: cd_single(char *cd)
         return 1;
     }
     t = current->find_child(cd);
+    printf("Find child returned: %p\n", t);
     if(!t)
         return 0;
 
@@ -101,7 +102,7 @@ int Path :: cd(char *pa_in)
 	char *pa = pa_alloc;
 	
 	strcpy(pa, pa_in);
-//    printf("CD '%s' (starting from %s)\n", pa, full_path.c_str());
+    // printf("CD '%s' (starting from %s)\n", pa, full_path.c_str());
 	
     // check for start from root
     if( (pa_len) &&

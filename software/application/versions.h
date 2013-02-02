@@ -3,8 +3,8 @@
 
 #define APPL_VERSION "2.6"
 #define BOOT_VERSION "V1.4"
-#define FPGA_VERSION "FPGA U2 VF1 "
-#define MINIMUM_FPGA_REV 0xF1
+#define FPGA_VERSION "FPGA U2 VF2 "
+#define MINIMUM_FPGA_REV 0xF2
 
 #endif
 

@@ -61,8 +61,9 @@ class UsbScsi : public BlockDevice
 
     BYTE       stat_resp[32];
     BYTE       sense_data[32];
-    char	   name[32];
-
+    char	   name[16];
+    char       disp_name[32];
+    
     struct t_cbw    cbw;
 public:
     UsbScsi(UsbDevice *d, int unit);
@@ -71,6 +72,7 @@ public:
     int status_transport(bool);
     void reset(void);
     char *get_name(void) { return name; }
+    char *get_disp_name(void) { return disp_name; }
     int  request_sense(bool debug = false);
     void handle_sense_error(void);
     int  exec_command(int cmdlen, bool out, BYTE *cmd, int resplen, BYTE *response, bool debug = false);

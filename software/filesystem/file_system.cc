@@ -27,43 +27,43 @@ const char *FileSystem :: get_error_string(FRESULT res)
 		case FR_OK:
 			return "OK!";
 		case FR_DISK_ERR:
-			return "Disk error";
+			return "DISK ERROR";
 		case FR_INT_ERR:
-			return "Internal error";
+			return "INTERNAL ERROR";
 		case FR_NOT_READY:
-			return "Device not ready";
+			return "DEVICE NOT READY";
 		case FR_NO_FILE:
-			return "File doesn't exist";
+			return "FILE DOESN'T EXIST";
 		case FR_NO_PATH:
-			return "Path doesn't exist";
+			return "PATH DOESN'T EXIST";
 		case FR_INVALID_NAME:
-			return "Invalid name";
+			return "INVALID NAME";
 		case FR_DENIED:
-			return "Access denied";
+			return "ACCESS DENIED";
 		case FR_EXIST:
-			return "File exists";
+			return "FILE EXISTS";
 		case FR_INVALID_OBJECT:
-			return "Invalid Object";
+			return "INVALID OBJECT";
 		case FR_WRITE_PROTECTED:
-			return "Write protected";
+			return "WRITE PROTECTED";
 		case FR_INVALID_DRIVE:
-			return "Invalid drive"; // obsolete
+			return "INVALID DRIVE"; // obsolete
 		case FR_NOT_ENABLED:
-			return "Not enabled";
+			return "NOT ENABLED";
 		case FR_NO_FILESYSTEM:
-			return "No Filesystem";
+			return "NO FILESYSTEM";
 		case FR_MKFS_ABORTED:
-			return "Make FileSystem Aborted";
+			return "MAKE FILESYSTEM ABORTED";
 		case FR_TIMEOUT:
-			return "I/O Timeout";
+			return "I/O TIMEOUT";
 		case FR_NO_MEMORY:
-			return "Out of memory";
+			return "OUT OF MEMORY";
 		case FR_DISK_FULL:
-			return "Disk is full";
+			return "DISK IS FULL";
 		case FR_DIR_NOT_EMPTY:
-			return "Directory not empty";
+			return "DIRECTORY NOT EMPTY";
 		default:
-			return "Unknown error";
+			return "UNKNOWN ERROR";
 	}
 	return "";
 }

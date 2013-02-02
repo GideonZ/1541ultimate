@@ -32,6 +32,7 @@ public:
 
     friend string& operator+(string &, string &);
     friend string& operator+(string &, char *);
+    friend string& operator+(char *, string &);
     friend int strcmp(string &a, string &b);
     friend int stricmp(string &a, string &b);
     friend string& int_to_string(int i);
@@ -39,6 +40,8 @@ public:
 
 string& operator+(string &left, string &right);
 string& operator+(string &left, char *rhs);
+string& operator+(char *left, string &rhs);
+//string& operator+(char *left, char *right);
 int strcmp(string &a, string &b);
 int stricmp(string &a, string &b);
 string& int_to_string(int i);

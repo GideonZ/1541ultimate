@@ -83,7 +83,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	for(int i=0;i<=max_lun;i++) {
 		scsi_blk_dev[i] = new UsbScsi(dev, i);
 		scsi_blk_dev[i]->reset();
-		path_dev[i] = new FileDevice(&root, scsi_blk_dev[i], scsi_blk_dev[i]->get_name());
+		path_dev[i] = new FileDevice(&root, scsi_blk_dev[i], scsi_blk_dev[i]->get_name(), scsi_blk_dev[i]->get_disp_name());
 		state_copy[i] = scsi_blk_dev[i]->get_state(); // returns unknown, most likely! :)
 		printf("*** LUN = %d *** Initial state = %d ***\n", i, state_copy[i]);
 		poll_interval[i] = i; // ;-) not all at the same time!
@@ -178,6 +178,7 @@ UsbScsi :: UsbScsi(UsbDevice *d, int unit)
     removable = 0;
     block_size = 512;
     
+
     memset(&cbw, 0, sizeof(cbw));
     cbw.signature = 0x55534243;
     cbw.lun = (BYTE)lun;
@@ -424,8 +425,11 @@ void UsbScsi :: inquiry(void)
     response[36] = 0;
     printf("Device: %s\n", (char *)&response[8]);
 
-    // copy  name
-    char *n = name;
+    // create file system name
+    sprintf(name, "usb%d.%d", device->current_address, lun);
+    
+    // copy display name
+    char *n = disp_name;
     int j=0;
     for(int i=8;i<16;i++)
     	n[j++] = (char)response[i];

@@ -102,7 +102,7 @@ public:
 			children[i]->cleanup_children();
 			if(children[i]->ref_count == 0) {
 				children.mark_for_removal(i);
-				//printf(" deleting %s\n", children[i]->get_name());
+				// printf(" deleting %s\n", children[i]->get_name());
 				delete children[i];
 			}
 		}
@@ -117,7 +117,7 @@ public:
 	// the following function will return a new PathObject, based on the name.
 	virtual PathObject *find_child(char *find_me) {
 		// the quick and memory hungry way:
-		printf("Trying to find child %s. Name of this: %s\n", find_me, get_name());
+		// printf("Trying to find child %s. Name of this: %s\n", find_me, get_name());
 		if(fetch_children() < 1)
 			return NULL;
 		for(int i=0;i<children.get_elements();i++) {
@@ -149,6 +149,18 @@ public:
 		return stricmp(get_name(), obj->get_name());
 	}
 	
+    char *get_full_path(string& out) {
+        PathObject *po = this;
+        string sep("/");
+        out = sep + po->get_name();
+        while(po->parent) {
+            po = po->parent;
+            out = sep + po->get_name() + out;
+        }
+        printf("Get full path returns: %s\n", out.c_str());
+        return out.c_str();
+    }
+
 	void dump(int level=0) {
 		PathObject *obj;
         if(level == 0)

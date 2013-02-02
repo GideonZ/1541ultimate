@@ -20,6 +20,8 @@ port (
 
     SOn         : in  std_logic -- set Overflow flag
 );
+    attribute optimize : string;
+    attribute optimize of cpu6502 : entity is "SPEED";
 end cpu6502;
 
 
@@ -27,6 +29,7 @@ end cpu6502;
 architecture cycle_exact of cpu6502 is
 
     signal read_write_n : std_logic;
+
 begin
     
     core: entity work.proc_core
