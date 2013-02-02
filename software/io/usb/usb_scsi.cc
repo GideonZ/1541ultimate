@@ -426,7 +426,7 @@ void UsbScsi :: inquiry(void)
     printf("Device: %s\n", (char *)&response[8]);
 
     // create file system name
-    sprintf(name, "usb%d.%d", device->current_address, lun);
+    sprintf(name, "USB%d.%d", device->current_address, lun);
     
     // copy display name
     char *n = disp_name;

@@ -145,7 +145,7 @@ SRCS_ASM =  crt0_appl.s
 
 SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin kernal.sx.251104-04.bin
+SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin
 
 SRCS_IEC = iec_code.txt
 

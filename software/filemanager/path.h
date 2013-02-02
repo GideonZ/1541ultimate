@@ -32,6 +32,8 @@ public:
 
     int get_ref_count() { return ref_count; }
 
+    bool isRoot() { return parent == NULL; }
+
 	virtual ~PathObject() {
 		//printf("destructor %p %s (%d)\n", this, get_name(), ref_count);
 		int el = children.get_elements();
@@ -40,7 +42,7 @@ public:
 				delete children[i];
 		}
 		if(ref_count) {
-			printf("Internal error! Deleting a path object %s that has %d references!\n", ref_count, get_name());
+			printf("Internal error! Deleting a path object %s that has %d references!\n", get_name(), ref_count);
 		}
 	}
 
@@ -153,7 +155,7 @@ public:
         PathObject *po = this;
         string sep("/");
         out = sep + po->get_name();
-        while(po->parent) {
+        while(!po->parent->isRoot()) {
             po = po->parent;
             out = sep + po->get_name() + out;
         }

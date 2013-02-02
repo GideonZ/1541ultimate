@@ -45,7 +45,7 @@ CommandInterface :: CommandInterface()
     if(CAPABILITIES & CAPAB_COMMAND_INTF) {
         register_store(0x434D4E44, "Ultimate Command Interface", cmd_config);
         CMD_IF_SLOT_BASE = 0x47; // $DF1C
-        CMD_IF_SLOT_ENABLE = cfg->get_value(CFG_CMD_ENABLE);
+        CMD_IF_SLOT_ENABLE = 0; // DISABLE until we know we can enable ourselves: cfg->get_value(CFG_CMD_ENABLE);
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
         poll_list.append(&poll_command_interface);
     	main_menu_objects.append(this);
@@ -70,26 +70,33 @@ CommandInterface :: ~CommandInterface()
     CMD_IF_SLOT_ENABLE = 0;
 }
 
+void CommandInterface :: effectuate_settings(void)
+{
+    printf("CMD_IF: Effectuate\n");
+    if(cart_mode & CART_REU) {
+        CMD_IF_SLOT_ENABLE = cfg->get_value(CFG_CMD_ENABLE);
+    } else {
+        CMD_IF_SLOT_ENABLE = 0;
+    }                    
+}
+    
 int CommandInterface :: poll(Event &e)
 {
     int length;
 
     if(e.type == e_cart_mode_change) {
         printf("CommandInterface received a cart mode change to %b.\n", e.param);
-        if(e.param & CART_REU) {
-            CMD_IF_SLOT_ENABLE = cfg->get_value(CFG_CMD_ENABLE);
-        } else {
-            CMD_IF_SLOT_ENABLE = 0;
-        }                    
+        cart_mode = e.param;
+        effectuate_settings();
 	} else if((e.type == e_object_private_cmd)&&(e.object == this)) {
         switch(e.param) {
         case MENU_CMD_RUNCMDCART:
             cmd_cart.custom_addr = (void *)&_binary_cmd_test_rom_65_start;
             push_event(e_unfreeze, (void *)&cmd_cart, 1);
             CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
-            sprintf((char *)response_buffer, "ULTIMATE-II V2.6");
-            CMD_IF_RESPONSE_LEN_H = 0;
-            CMD_IF_RESPONSE_LEN_L = 16;
+            //sprintf((char *)response_buffer, "ULTIMATE-II V2.6");
+            //CMD_IF_RESPONSE_LEN_H = 0;
+            //CMD_IF_RESPONSE_LEN_L = 16;
             break;
         default:
             break;
@@ -105,7 +112,7 @@ int CommandInterface :: poll(Event &e)
         if (target != CMD_TARGET_NONE) {
             command_targets[target]->abort();
         }
-        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_ABORT;
+        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
     }
     if(status_byte & CMD_DATA_ACCEPTED) {
         if (target != CMD_TARGET_NONE) {
@@ -119,8 +126,8 @@ int CommandInterface :: poll(Event &e)
         length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
 
         if (length) {
-            printf("Command received:\n");
-            dump_hex_relative((void *)command_buffer, length);
+            //printf("Command received:\n");
+            //dump_hex_relative((void *)command_buffer, length);
     
             incoming_command.length = length;
             target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
@@ -141,10 +148,10 @@ int CommandInterface :: poll(Event &e)
 
 void CommandInterface :: copy_result(Message *data, Message *status)
 {
-    printf("data:\n");
-    dump_hex_relative((void *)data->message, data->length);
-    printf("status:\n");
-    dump_hex_relative((void *)status->message, status->length);
+    //printf("data:\n");
+    //dump_hex_relative((void *)data->message, data->length);
+    //printf("status:\n");
+    //dump_hex_relative((void *)status->message, status->length);
     memcpy(response_buffer, data->message, data->length);
     memcpy(status_buffer, status->message, status->length);
     CMD_IF_RESPONSE_LEN_H = BYTE(data->length >> 8);

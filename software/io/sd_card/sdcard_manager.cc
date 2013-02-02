@@ -32,7 +32,7 @@ SdCardManager :: ~SdCardManager()
 void SdCardManager :: init()
 {
 	sd_card = new SdCard; // block device
-	sd_dev = new FileDevice(&root, sd_card, "sd", "SdCard");
+	sd_dev = new FileDevice(&root, sd_card, "SD", "SdCard");
 	root.children.append(sd_dev);
 	sd_dev->attach();
 	poll_list.append(&poll_sdcard);

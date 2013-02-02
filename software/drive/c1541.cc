@@ -353,9 +353,9 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
 
     DWORD rotation_speed = 2500000; // 1/8 track time => 10 ns steps
     for(int i=0;i<C1541_MAXTRACKS;i++) {
-//    	printf("%2d %08x %08x\n", i, image->track_address[i], image->track_length[i]);
-    	*(param++) = (ULONG)image->track_address[i];
         DWORD bit_time = rotation_speed / image->track_length[i];
+    	// printf("%2d %08x %08x %d\n", i, image->track_address[i], image->track_length[i], bit_time);
+    	*(param++) = (ULONG)image->track_address[i];
         *(param++) = (image->track_length[i]-1) | (bit_time << 16);
         registers[C1541_DIRTYFLAGS + i/2] = 0;
     }            

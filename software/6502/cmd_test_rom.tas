@@ -194,7 +194,7 @@ _digit2     iny
             cmp #$0A
             bpl _no_digit2
 -           ora $fb
-            rts
+            jmp _wrcmdbyte
 _no_digit2  sbc #$11
             bmi _syntax
             cmp #$06
@@ -238,7 +238,8 @@ print_result    .proc
             lda CMD_IF_RESULT
             jsr $ffd2
             jmp -            
-+           rts
++           lda #$0D
+            jmp $ffd2
 
 _print_hex
 -           lda CMD_IF_CONTROL
@@ -255,6 +256,7 @@ _print_hex
             jsr $ffd2
             pla
             and #$0f
+            tax
             lda hex_chars,x
             jsr $ffd2
             lda #$20

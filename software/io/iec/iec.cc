@@ -419,6 +419,7 @@ void IecInterface :: start_warp(int drive)
     user_interface->activate_uiobject(ui_window); // now we have focus
     ui_window->window->move_cursor(15,10);
     ui_window->window->output("Loading...");
+    HW_IEC_RESET_ENABLE = 1; // reset the IEC controller, just in case
     
     if(!run_drive_code(warp_drive, 0x400, &_binary_ulticopy_65_start, (int)&_binary_ulticopy_65_size)) {
         user_interface->popup("Error accessing drive..", BUTTON_OK);
@@ -430,6 +431,7 @@ void IecInterface :: start_warp(int drive)
         if (c1541_B) {
             c1541_B->effectuate_settings();
         }
+        HW_IEC_RESET_ENABLE = iec_enable;
         return;
     }
 
@@ -519,6 +521,7 @@ void IecInterface :: get_warp_error(void)
         if (c1541_B) {
             c1541_B->effectuate_settings();
         }
+        HW_IEC_RESET_ENABLE = iec_enable;
     }    
 }
 

@@ -106,7 +106,7 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
 
     PathObject *node = new PathObject(dir, filename);
     f->node = node;
-    dir->children.append(node);
+    //dir->children.append(node);
     open_file_list.append(f);    
     node->attach();
     return f;
@@ -192,6 +192,7 @@ void FileManager :: fclose(File *f)
 		printf("Closing invalidated file.\n");
 	open_file_list.remove(f);
 	f->close();
+
 	if(p) {
 		printf("File closed, now destructing path.\n");
 		delete p;

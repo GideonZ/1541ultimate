@@ -62,6 +62,7 @@ class CommandInterface : public ObjectWithMenu, ConfigurableObject
     Message incoming_command;
     BYTE target;    
     void copy_result(Message *data, Message *status);
+    int cart_mode;
     
 public:
     CommandInterface();
@@ -70,6 +71,7 @@ public:
     int poll(Event &ev);
     void dump_registers(void);
     int  fetch_task_items(IndexedList<PathObject*> &item_list);
+    void effectuate_settings(void);
 };
 
 extern CommandInterface cmd_if;
@@ -90,7 +92,6 @@ extern Message c_message_empty;
 
 class CommandTarget
 {
-
 public:
     CommandTarget() { }
     virtual ~CommandTarget() { }

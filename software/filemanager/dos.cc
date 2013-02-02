@@ -67,7 +67,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
         case DOS_CMD_CLOSE_FILE:
             *reply  = &c_message_empty;
             if (file) {
-                file->close();
+                root.fclose(file);
                 file = NULL;
                 *status = &c_status_ok; 
             } else {
@@ -138,7 +138,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             }    
             res = file->read((BYTE *)(addr | 0x01000000), len, &transferred);
             *reply  = &data_message;
-            sprintf((char *)data_message.message, "$%6X BYTES LOADED TO REU $%6X", transferred, addr);
+            sprintf((char *)data_message.message, "$%6x BYTES LOADED TO REU $%6x", transferred, addr);
             data_message.length = 35;
             data_message.last_part = true;
             if (res != FR_OK) {
@@ -166,7 +166,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             }    
             res = file->write((BYTE *)(addr | 0x01000000), len, &transferred);
             *reply  = &data_message;
-            sprintf((char *)data_message.message, "$%6X BYTES SAVED FROM REU $%6X", transferred, addr);
+            sprintf((char *)data_message.message, "$%6x BYTES SAVED FROM REU $%6x", transferred, addr);
             data_message.length = 36;
             data_message.last_part = true;
             if (res != FR_OK) {
@@ -268,8 +268,8 @@ void Dos :: get_more_data(Message **reply, Message **status)
         length = (remaining > 512)?512:remaining;        
         res = file->read(data_message.message, length, &transferred);
         data_message.length = (int)transferred;
-        remaining -= length;
-        if (remaining == 0) {
+        remaining -= transferred;
+        if ((transferred != length) || (remaining == 0)) {
             data_message.last_part = true;
             dos_state = e_dos_idle;
         } else {
@@ -290,14 +290,14 @@ void Dos :: get_more_data(Message **reply, Message **status)
             *status = &c_status_internal_error;
             *reply = &c_message_empty;
         } else {
-            fi = po->get_file_info();
+            fi = entry->get_file_info();
             if (fi) {
                 data_message.message[0] = fi->attrib;
             } else {
                 data_message.message[0] = 0x00;
             }                
             strcpy((char *)&data_message.message[1], entry->get_name());
-            data_message.length = 1+strlen((char*)data_message.message);
+            data_message.length = 1+strlen((char*)&data_message.message[1]);
             current_index++;
             if (current_index == dir_entries) {
                 data_message.last_part = true; 
