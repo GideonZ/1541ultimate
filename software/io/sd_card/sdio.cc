@@ -57,7 +57,7 @@ void sdio_read_block(BYTE *buf)
     }
 }
 
-void sdio_write_block(const BYTE *buf)
+bool sdio_write_block(const BYTE *buf)
 {
     DWORD *pul, ul;
     ul = (DWORD)buf;
@@ -77,12 +77,12 @@ void sdio_write_block(const BYTE *buf)
     SDIO_DATA = 0xFF;
     SDIO_DATA = 0xFF;
 
-    int time_out = 50000;
+    int time_out = 200000;
 
     while(SDIO_DATA != 0xFF) { // readback
     	--time_out;
 		if(!time_out)
-			break; // error!
+			return false; // error!
 	}
-
+    return true; // ok
 }

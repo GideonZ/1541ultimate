@@ -167,8 +167,8 @@ void CommandInterface :: copy_result(Message *data, Message *status)
 
 int  CommandInterface :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
-    item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_CMD_RUNCMDCART));  /* temporary item */
-    return 1;
+    //item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_CMD_RUNCMDCART));  /* temporary item */
+    return 0;
 }
     
 void CommandInterface :: dump_registers(void)

@@ -447,6 +447,8 @@ char *Screen :: get_pointer(void)
 void Screen :: set_char(int x, int y, char c)
 {
     char *scr = window_base;
+    scr -= border_v;
+    scr -= (size_x * border_h);
     scr += (y * size_x) + x;
     *scr = c;        
 }

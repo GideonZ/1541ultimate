@@ -467,7 +467,7 @@ void IecInterface :: get_warp_data(void)
     BYTE *dest = static_bin_image.get_sector_pointer(track, sector);
     BYTE *src = &temp[1];
     // printf("Sector {%b %b (%p -> %p}\n", track, sector, src, dest);
-    ui_window->window->set_char(track-1,sector,err?'-':'*');
+    ui_window->window->set_char(track-1,sector+1,err?'-':'*');
     last_track = track;
     if(dest) {
         for(int i=0;i<256;i++) {
@@ -528,7 +528,7 @@ void IecInterface :: get_warp_error(void)
 void IecInterface :: save_copied_disk()
 {
     char buffer[40];
-    bool save_result;
+    int save_result;
     File *f;
     int res;
     BinImage *bin;

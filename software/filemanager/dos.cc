@@ -1,6 +1,19 @@
 #include "dos.h"
 #include "userinterface.h"
 
+__inline DWORD cpu_to_32le(DWORD a)
+{
+    DWORD m1, m2;
+    m1 = (a & 0x00FF0000) >> 8;
+    m2 = (a & 0x0000FF00) << 8;
+    return (a >> 24) | (a << 24) | m1 | m2;
+}
+
+__inline WORD cpu_to_16le(WORD a)
+{
+    return (a >> 8) | (a << 8);
+}
+
 // crate and register ourselves!
 Dos dos1(1);
 Dos dos2(2);
@@ -105,9 +118,9 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
                 *status = &c_status_no_information;
                 break;
             }                    
-            dos_info.size   = fi->size;
-        	dos_info.date   = fi->date;
-        	dos_info.time   = fi->time;
+            dos_info.size   = cpu_to_32le(fi->size);
+        	dos_info.date   = cpu_to_16le(fi->date);
+        	dos_info.time   = cpu_to_16le(fi->time);
             dos_info.extension[0] = ' ';
             dos_info.extension[1] = ' ';
             dos_info.extension[2] = ' ';

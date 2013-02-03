@@ -317,16 +317,18 @@ DRESULT SdCard :: write(const BYTE* buf, DWORD address, BYTE sectors )
     	place=(sdhc)?(address):(address<<9);
     	sdio_send_command(CMDWRITE, (WORD)(place >> 16), (WORD) place);
     
-        // wait for 0.5 ms
+/*      // wait for 0.5 ms
         ITU_TIMER = 100;
         while(ITU_TIMER)
             ;
-        
+*/        
     	resp = Resp8b(); /* Card response */
     	Resp8bError(resp);
     
-        sdio_write_block(buf);
-    
+        if(!sdio_write_block(buf)) {
+            printf("Timeout error writing block %d\n", address);
+            return RES_ERROR;
+        }    
 #ifdef SD_VERIFY
         ver = verify(address, buf);
         if(ver)

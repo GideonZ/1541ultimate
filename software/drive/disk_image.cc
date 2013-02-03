@@ -763,7 +763,7 @@ int BinImage :: load(File *file)
 int BinImage :: save(File *file, bool report)
 {
 	UINT transferred = 0;
-	int res =  file->seek(0);
+	FRESULT res =  file->seek(0);
 	if(res != FR_OK) {
 		printf("SEEK ERROR: %d\n", res);
 		return -1;
@@ -773,18 +773,24 @@ int BinImage :: save(File *file, bool report)
     if(report) {
         for(int i=0;i<34;i++) {
         	res = file->write(data, 10 * 512, &transferred);
-        	if(res != FR_OK)
+        	if(res != FR_OK) {
+                printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
         		return -2;
+            }
             user_interface->update_status(NULL, 1);
             data += (10 * 512);
         }
     	res = file->write(data, 3 * 256, &transferred);
-    	if(res != FR_OK)
+    	if(res != FR_OK) {
+            printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
     		return -2;
+        }
     } else {
     	res = file->write(data, 683 * 256, &transferred);
-    	if(res != FR_OK)
+    	if(res != FR_OK) {
+            printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
     		return -2;
+        }
     }            
 
 	data = &bin_data[683*256];
@@ -793,14 +799,18 @@ int BinImage :: save(File *file, bool report)
 		res = file->write(data, 17*256, &transferred);
         if(report)
             user_interface->update_status(NULL, 1);
-		if(res != FR_OK)
+		if(res != FR_OK) {
+            printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
 			return -3;
+        }
 		data += 17*256;
 	}
 	if(errors) {
 		res = file->write(errors, error_size, &transferred);
-		if(res != FR_OK)
+		if(res != FR_OK) {
+            printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
 			return -4;
+	    }
 	}
 	return 0;
 }
