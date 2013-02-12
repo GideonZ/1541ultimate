@@ -4,7 +4,7 @@
 #include "integer.h"
 #include "flash.h"
 
-#define AT45_PAGE_CONFIG_START 4080
+//#define AT45_PAGE_CONFIG_START 4080
 #define AT45_NUM_CONFIG_PAGES  16
 
 #define AT45_MainMemoryPageRead                            0xD2
@@ -54,6 +54,7 @@ class AT45_Flash : public Flash
 	int sector_count;
     int total_size;
     int page_shift;
+    int config_start;
 
 	BYTE last_status;
     bool wait_ready(int time_out);

@@ -15,14 +15,15 @@ package cart_slot_pkg is
     constant c_cart_reu_enable          : unsigned(3 downto 0) := X"8";
     constant c_cart_reu_size            : unsigned(3 downto 0) := X"9";
 	constant c_cart_swap_buttons		: unsigned(3 downto 0) := X"A";
+    constant c_cart_timing              : unsigned(3 downto 0) := X"B";
+    constant c_cart_phi2_recover        : unsigned(3 downto 0) := X"C";
     constant c_cart_sampler_enable      : unsigned(3 downto 0) := X"E";
     constant c_cart_ethernet_enable     : unsigned(3 downto 0) := X"F";
 
     type t_cart_control is record
         c64_reset      : std_logic;
         c64_nmi        : std_logic;
-        c64_exrom      : std_logic;
-        c64_game       : std_logic;
+        c64_ultimax    : std_logic;
         c64_stop       : std_logic;
         c64_stop_mode  : std_logic_vector(1 downto 0);
         cartridge_type : std_logic_vector(3 downto 0);
@@ -33,6 +34,8 @@ package cart_slot_pkg is
         eth_enable     : std_logic;
         sampler_enable : std_logic;
 		swap_buttons   : std_logic;
+		timing_addr_valid   : unsigned(2 downto 0);
+		phi2_edge_recover   : std_logic;
     end record;
     
     type t_cart_status is record
@@ -43,8 +46,7 @@ package cart_slot_pkg is
     constant c_cart_control_init : t_cart_control := (
         c64_nmi        => '0',
         c64_reset      => '0',
-        c64_exrom      => '0',
-        c64_game       => '0',
+        c64_ultimax    => '0',
         c64_stop       => '0',
         c64_stop_mode  => "00",
         cartridge_type => X"0",
@@ -54,6 +56,8 @@ package cart_slot_pkg is
         reu_size       => "111",
         eth_enable     => '0',
         sampler_enable => '0',
+        timing_addr_valid => "100",
+		phi2_edge_recover => '1',
         swap_buttons   => '1' );
     
 

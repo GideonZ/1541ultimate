@@ -283,6 +283,9 @@ begin
         serve_enable    => serve_enable,
         serve_inhibit   => status.c64_stopped,
         allow_serve     => allow_serve,
+
+        timing_addr     => control.timing_addr_valid,
+        edge_recover    => control.phi2_edge_recover,
     
         phi2_tick       => phi2_tick_i,
         phi2_recovered  => phi2_recovered,
@@ -717,16 +720,16 @@ begin
     begin
         exrom_oc <= '1';
         game_oc  <= '1';
-        if force_ultimax = '1' then
+        if (force_ultimax = '1') or (control.c64_ultimax = '1') then
             game_oc <= '0';
         elsif kernal_probe = '1' then
             game_oc <= '0';
             exrom_oc <= '0';
         else
-            if (control.c64_exrom='1') or (serve_enable='1' and exrom_n='0') then
+            if (serve_enable='1' and exrom_n='0') then
                 exrom_oc <= '0';
             end if;
-            if (control.c64_game='1') or (serve_enable='1' and game_n='0') then
+            if (serve_enable='1' and game_n='0') then
                 game_oc <= '0';
             end if;
         end if;

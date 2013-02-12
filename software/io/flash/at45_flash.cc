@@ -59,6 +59,7 @@ AT45_Flash::AT45_Flash()
 	sector_count = 16;			// default to AT45DB161
     total_size   = 4096;		// in pages, default to AT45DB161
     page_shift   = 10;        	// offset in address reg
+    config_start = total_size - AT45_NUM_CONFIG_PAGES;
 
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     SPI_FLASH_DATA = 0xFF;
@@ -115,12 +116,14 @@ AT45_Flash *AT45_Flash :: tester()
 		sector_size  = 256;	
 		sector_count = 16;	
 	    total_size   = 4096;
+        config_start = total_size - AT45_NUM_CONFIG_PAGES;
 		return this;
 	}
 	if(dev_id == 0x27) { // AT45DB321
 		sector_size  = 128;	
 		sector_count = 64;	
 	    total_size   = 8192;
+        config_start = total_size - AT45_NUM_CONFIG_PAGES;
 		return this;
 	}
 
@@ -249,18 +252,18 @@ int  AT45_Flash :: get_number_of_config_pages(void)
 
 void AT45_Flash :: read_config_page(int page, int length, void *buffer)
 {
-    int device_addr = ((page + AT45_PAGE_CONFIG_START) << page_shift);
+    int device_addr = ((page + config_start) << page_shift);
 	read_dev_addr(device_addr, length, buffer);
 }
 
 void AT45_Flash :: write_config_page(int page, void *buffer)
 {
-	write_page(page + AT45_PAGE_CONFIG_START, buffer);
+	write_page(page + config_start, buffer);
 }
 
 void AT45_Flash :: clear_config_page(int page)
 {
-    page += AT45_PAGE_CONFIG_START;   
+    page += config_start;   
     int device_addr = (page << page_shift);
     
     debug(("Page erase. %b %b %b\n", BYTE(device_addr >> 16), BYTE(device_addr >> 8), BYTE(device_addr)));

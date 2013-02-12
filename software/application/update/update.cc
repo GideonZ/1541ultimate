@@ -373,6 +373,7 @@ int main()
         host = new C64;
     
 	host->reset();
+    wait_ms(500);
     host->freeze();
 
     screen = new Screen(host->get_screen(), host->get_color_map(), 40, 25);

@@ -29,7 +29,7 @@ port (
     -- data from memory
     drv_rdata       : in  std_logic_vector(7 downto 0);
     do_read         : out std_logic;
-	do_write	    : out std_logic;
+    do_write        : out std_logic;
     do_advance      : out std_logic;
     
     -- info about the head
@@ -70,20 +70,21 @@ architecture gideon of floppy_stream is
     signal byte_rdy_i  : std_logic;
     alias  mem_rd_bit  : std_logic is mem_shift(7);
 
-    signal track_c     : unsigned(6 downto 2);
+    --signal track_c     : unsigned(6 downto 2);
     signal track_i     : unsigned(6 downto 0);
     signal up, down    : std_logic;
     signal step_d      : std_logic_vector(1 downto 0);
     signal step_dd0    : std_logic;
     signal mode_d      : std_logic;
     signal write_delay : integer range 0 to 3;
+    signal random_data : std_logic_vector(15 downto 0);
 begin
     p_clock_div: process(clock)
     begin
         if rising_edge(clock) then
             bit_tick <= '0';
             if bit_timer = 0 then
-                bit_tick <= '1';
+                bit_tick <= motor_on;
                 bit_carry <= not bit_carry and bit_time(0); -- toggle if bit 0 is set
                 if bit_carry='1' then
                     bit_timer <= bit_time(8 downto 1);
@@ -118,13 +119,21 @@ begin
     
     -- stream from memory
     p_stream: process(clock)
+        variable new_bit : std_logic;
     begin
         if rising_edge(clock) then
             do_read <= '0';
             if bit_tick='1' then
+                new_bit := random_data(15) xor random_data(13) xor random_data(12) xor random_data(10);
+
                 mem_bit_cnt <= mem_bit_cnt + 1;
                 if mem_bit_cnt="000" then
-                    mem_shift <= drv_rdata;
+                    random_data <= random_data(14 downto 0) & new_bit;
+                    if drv_rdata = X"00" then
+                        mem_shift <= random_data(15 downto 8) and random_data(7 downto 0);
+                    else
+                        mem_shift <= drv_rdata;
+                    end if;
                         -- issue command to fifo
                     do_read <= mode; --'1'; does not pulse when in write mode
                 else
@@ -134,6 +143,7 @@ begin
             if reset='1' then
                 mem_shift    <= (others => '1');
                 mem_bit_cnt  <= "000";
+                random_data  <= X"ABCD";
             end if;
         end if;
     end process;
@@ -159,14 +169,14 @@ begin
             end if;
             
             do_write <= '0';
-			if rd_bit_cnt = "111" and mode='0' and bit_tick='1' then
+            if rd_bit_cnt = "111" and mode='0' and bit_tick='1' then
                 if write_delay = 0 then
-    				do_write <= floppy_inserted; --'1';
-    		    else
+                    do_write <= floppy_inserted; --'1';
+                else
                     do_advance <= '1';
-    		        write_delay <= write_delay - 1;
-    		    end if;
-			end if;
+                    write_delay <= write_delay - 1;
+                end if;
+            end if;
             
             if bit_tick='1' then
                 rd_shift   <= rd_shift(8 downto 0) & mem_rd_bit;
@@ -192,41 +202,34 @@ begin
             do_track_out <= '0';
             do_head_bang <= '0';
 
-            step_d <= step;
-            
-            st := step_d & step;
-            down      <= '0';
-            up        <= '0';
-
-			-- track counter logic
-			if st = "0011" then -- rollover down
-                if track_c /= 0 then
-                    track_c <= track_c - 1;
-				end if;
-			elsif st = "1100" then -- rollover up
-				if track_c /= 21 then
-					track_c <= track_c + 1;
-				end if;
-			end if;
-
-			-- sound logic
-			if st = "1100" or st = "0110" then
-				do_track_in <= '1';
-			elsif st = "0011" or st = "1001" then
-				if track_c = 0 then
-					do_track_out <= '1';
-				else
-					do_track_out <= '1';
-				end if;
-			end if;				
-				            
+            if motor_on='1' then
+                st := std_logic_vector(track_i(1 downto 0)) & step;
+                down      <= '0';
+                up        <= '0';
+    
+                case st is
+                when "0001" | "0110" | "1011" | "1100" => -- up
+                    do_track_in <= '1';
+                    if track_i /= 83 then
+                        track_i <= track_i + 1;
+                    end if;
+                when "0011" | "0100" | "1001" | "1110" => -- down
+                    do_track_out <= '1';
+                    if track_i /= 0 then
+                        track_i <= track_i - 1;
+                    end if;
+                when others =>
+                    null;
+                end case;
+            end if;
+                            
             if reset='1' then
-                track_c <= "01000";
+                track_i <= "0100000";
             end if;            
         end if;
     end process;
 
-	track_i    <= track_c & unsigned(step_d);
+    -- track_i    <= track_c & unsigned(step_d);
 
     -- outputs
     sync       <= sync_i;

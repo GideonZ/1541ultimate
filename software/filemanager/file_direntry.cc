@@ -81,7 +81,7 @@ int FileDirEntry :: fetch_children(void)
 	
     if(info->is_directory()) {
         printf("Opening dir %s.\n", info->lfname);
-        info->print_info();
+        // info->print_info();
         Directory *r = info->fs->dir_open(info);
         printf("Directory = %p\n", r);
 		if(!r) {

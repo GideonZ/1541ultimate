@@ -43,9 +43,8 @@ begin
                     elsif io_req.data(3)='1' then
                         control_i.c64_reset <= '0';
                     else
-                        control_i.c64_exrom <= io_req.data(0);
-                        control_i.c64_game  <= io_req.data(1);
-                        control_i.c64_nmi   <= io_req.data(4);
+                        control_i.c64_ultimax <= io_req.data(1);
+                        control_i.c64_nmi     <= io_req.data(4);
                     end if;
                 when c_cart_c64_stop =>
                     control_i.c64_stop  <= io_req.data(0);
@@ -63,6 +62,10 @@ begin
                     control_i.reu_size <= io_req.data(2 downto 0);
                 when c_cart_ethernet_enable =>
                     control_i.eth_enable <= io_req.data(0);
+                when c_cart_timing =>
+                    control_i.timing_addr_valid <= unsigned(io_req.data(2 downto 0)); 
+                when c_cart_phi2_recover =>
+                    control_i.phi2_edge_recover <= io_req.data(0);
                 when c_cart_swap_buttons =>
                 	control_i.swap_buttons <= io_req.data(0);
                 when c_cart_sampler_enable =>
@@ -74,8 +77,7 @@ begin
                 io_resp.ack <= '1';
                 case io_req.address(3 downto 0) is
                 when c_cart_c64_mode =>
-                    io_resp.data(0) <= control_i.c64_exrom;
-                    io_resp.data(1) <= control_i.c64_game;
+                    io_resp.data(1) <= control_i.c64_ultimax;
                     io_resp.data(2) <= control_i.c64_reset;
                     io_resp.data(4) <= control_i.c64_nmi;
                 when c_cart_c64_stop =>
@@ -99,6 +101,10 @@ begin
                     io_resp.data(0) <= control_i.eth_enable;
                 when c_cart_sampler_enable =>
                     io_resp.data(0) <= control_i.sampler_enable;
+                when c_cart_timing =>
+                    io_resp.data(2 downto 0) <= std_logic_vector(control_i.timing_addr_valid); 
+                when c_cart_phi2_recover =>
+                    io_resp.data(0) <= control_i.phi2_edge_recover;
                 when c_cart_swap_buttons =>
                 	io_resp.data(0) <= control_i.swap_buttons;
                 when others =>

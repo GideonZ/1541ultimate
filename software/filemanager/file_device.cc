@@ -9,10 +9,12 @@ FileDevice :: FileDevice(PathObject *p, BlockDevice *b, char *n, char *dn) : Fil
     display_name = dn;
     blk = b;
     disk = NULL; //new Disk(b, 512);
+    //printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s\n", this, disk, b, n, dn);
 }
 
 FileDevice :: ~FileDevice()
 {
+    //printf("Destructing FileDevice %p\n", this);
     detach_disk();
     if(info) {
         if(info->fs)
@@ -26,6 +28,8 @@ FileDevice :: ~FileDevice()
 
 void FileDevice :: attach_disk(int block_size)
 {
+    //printf("&&& ATTACH %p &&&\n", disk);
+    //printf("&&& %s &&&\n", get_name());
     if(disk) {
         printf("ERROR: DISK ALREADY EXISTS ON FILE DEVICE %s!\n", get_name());
         delete disk;
@@ -58,7 +62,7 @@ int FileDevice :: fetch_children(void)
     int p_count = disk->Init();
     
     if(p_count < 0) {
-        printf("Error initializing disk..\n");
+        printf("Error initializing disk..%d\n", p_count);
         return -1;
     }
     cleanup_children();

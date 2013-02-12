@@ -9,7 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_1541_400a is
 generic (
-    g_version       : unsigned(7 downto 0) := X"AC" );
+    g_version       : unsigned(7 downto 0) := X"F3" );
 port (
     CLOCK       : in    std_logic;
     
@@ -174,15 +174,15 @@ begin
         g_ram_expansion => true,
         g_extended_reu  => false,
         g_stereo_sid    => false,
-        g_hardware_iec  => false,
+        g_hardware_iec  => true,
         g_iec_prog_tim  => false,
         g_c2n_streamer  => false,
         g_c2n_recorder  => false,
         g_cartridge     => true,
-		g_command_intf  => false,
-        g_drive_sound   => true,
-        g_rtc_chip      => true,
-        g_rtc_timer     => true,
+		g_command_intf  => true,
+        g_drive_sound   => false,
+        g_rtc_chip      => false,
+        g_rtc_timer     => false,
         g_usb_host      => true,
         g_spi_flash     => true,
         g_vic_copper    => false,
@@ -298,7 +298,7 @@ begin
     IEC_CLOCK  <= '0' when iec_clock_o = '0' else 'Z';
     IEC_SRQ_IN <= '0' when iec_srq_o   = '0' else 'Z';
 
-	i_memctrl: entity work.ext_mem_ctrl_v4
+	i_memctrl: entity work.ext_mem_ctrl_v4b
     generic map (
         g_simulation => false,
     	A_Width	     => 15 )

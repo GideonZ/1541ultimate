@@ -30,13 +30,14 @@
 #define C64_REU_ENABLE          *((volatile BYTE *)(C64_CARTREGS_BASE + 0x8))
 #define C64_REU_SIZE            *((volatile BYTE *)(C64_CARTREGS_BASE + 0x9))
 #define C64_SWAP_CART_BUTTONS   *((volatile BYTE *)(C64_CARTREGS_BASE + 0xA))
+#define C64_TIMING_ADDR_VALID   *((volatile BYTE *)(C64_CARTREGS_BASE + 0xB))
+#define C64_PHI2_EDGE_RECOVER   *((volatile BYTE *)(C64_CARTREGS_BASE + 0xC))
 #define C64_SAMPLER_ENABLE      *((volatile BYTE *)(C64_CARTREGS_BASE + 0xE))
 #define C64_ETHERNET_ENABLE     *((volatile BYTE *)(C64_CARTREGS_BASE + 0xF))
 
 #define C64_KERNAL_BASE         0x0ECC000
 
-#define C64_MODE_EXROM     0x01
-#define C64_MODE_GAME      0x02
+#define C64_MODE_ULTIMAX   0x02
 #define C64_MODE_RESET     0x04
 #define C64_MODE_UNRESET   0x08
 #define C64_MODE_NMI       0x10
@@ -46,7 +47,7 @@
 #define STOP_COND_FORCE    0x02
 
 #define MODE_NORMAL        0
-#define MODE_ULTIMAX       C64_MODE_GAME
+#define MODE_ULTIMAX       C64_MODE_ULTIMAX
 
 #define C64_DO_STOP        0x01
 #define C64_HAS_STOPPED    0x02

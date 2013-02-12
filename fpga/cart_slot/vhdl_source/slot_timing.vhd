@@ -1,7 +1,6 @@
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_arith.all;
-use ieee.std_logic_unsigned.all;
+use ieee.numeric_std.all;
 
 entity slot_timing is
 port (
@@ -16,6 +15,9 @@ port (
     serve_enable    : in  std_logic;
     serve_inhibit   : in  std_logic;
 
+    timing_addr     : in  unsigned(2 downto 0) := "000";
+    edge_recover    : in  std_logic;
+    
     allow_serve     : out std_logic;
 
     phi2_tick       : out std_logic;
@@ -48,7 +50,7 @@ architecture gideon of slot_timing is
 
     constant c_memdelay    : integer := 5;
     
-    constant c_sample      : integer := 4;
+    constant c_sample      : integer := 6;
     constant c_probe_end   : integer := 11;
     constant c_sample_vic  : integer := 10;
     constant c_io          : integer := 19;
@@ -86,8 +88,9 @@ begin
 --            end if;
 
             -- related to rising edge
---            if phi2_d='0' and phi2_c='1' and allow_tick_h then  -- rising edge
-            if phase_l = 24 then
+--            if  then  -- rising edge
+            if ((edge_recover = '1') and (phase_l = 24)) or 
+               ((edge_recover = '0') and phi2_d='0' and phi2_c='1' and allow_tick_h) then
                 ba_hist      <= ba_hist(2 downto 0) & ba_c;
                 phi2_tick_i  <= '1';
                 phi2_rec_i   <= '1';
@@ -120,14 +123,14 @@ begin
             do_io_event <= phi2_falling;
 
             -- timing pulses
-            if phase_h = 0 then --(c_sample - c_memdelay) then
+            if phase_h = 0 then
                 inhibit <= serve_en_i;
             elsif phase_h = c_sample then
                 inhibit <= '0';
             end if;
 
             do_sample_addr <= '0';
-            if phase_h = (c_sample - 1) then
+            if phase_h = timing_addr then
                 do_sample_addr <= '1';
             end if;
             

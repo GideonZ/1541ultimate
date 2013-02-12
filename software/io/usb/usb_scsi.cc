@@ -84,6 +84,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 		scsi_blk_dev[i] = new UsbScsi(dev, i);
 		scsi_blk_dev[i]->reset();
 		path_dev[i] = new FileDevice(&root, scsi_blk_dev[i], scsi_blk_dev[i]->get_name(), scsi_blk_dev[i]->get_disp_name());
+        path_dev[i]->attach();
 		state_copy[i] = scsi_blk_dev[i]->get_state(); // returns unknown, most likely! :)
 		printf("*** LUN = %d *** Initial state = %d ***\n", i, state_copy[i]);
 		poll_interval[i] = i; // ;-) not all at the same time!
@@ -98,6 +99,7 @@ void UsbScsiDriver :: deinstall(UsbDevice *dev)
 {
 	for(int i=0;i<=max_lun;i++) {
         printf("DeInstalling SCSI Lun %d\n", i);
+        path_dev[i]->detach();
 		root.children.remove(path_dev[i]);
 		push_event(e_invalidate, path_dev[i]);
 		push_event(e_cleanup_path_object, path_dev[i]);
@@ -140,6 +142,7 @@ void UsbScsiDriver :: poll(void)
 	if(new_state == e_device_ready) {
         if(!media_seen[current_lun]) {
             if(blk->read_capacity(&capacity, &block_size) == RES_OK) {
+                printf("Path Dev %p %p. Current lun %d. BS = %d\n", path_dev, path_dev[current_lun], current_lun, block_size);
                 path_dev[current_lun]->attach_disk(int(block_size));
             } else {
                 blk->set_state(e_device_error);
@@ -478,7 +481,7 @@ DRESULT UsbScsi :: read_capacity(DWORD *num_blocks, DWORD *blk_size)
         memcpy(num_blocks, &buf[0], 4);
         ++(*num_blocks);
         memcpy(blk_size, &buf[4], 4);
-//        printf("Block Size: %d. Num Blocks: %d\n", *blk_size, *num_blocks);
+        printf("Block Size: %d. Num Blocks: %d\n", *blk_size, *num_blocks);
         this->block_size = int(*blk_size);
         this->capacity   = *num_blocks;
         return RES_OK;
@@ -817,11 +820,12 @@ DRESULT UsbScsi :: ioctl(BYTE command, void *pdata)
 {
     DWORD *data = (DWORD *)pdata;
     DWORD dummy;
+    DRESULT res;
 
     switch(command) {
         case GET_SECTOR_COUNT:
-//            printf("Get Sector Count...\n");
-            return read_capacity(data, &dummy);
+            res = read_capacity(data, &dummy);
+            return res;
         case GET_SECTOR_SIZE:
             return read_capacity(&dummy, data);
         default:

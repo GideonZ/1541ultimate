@@ -111,10 +111,13 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 #define CFG_C64_MAP_SAMP 0xC8
 #define CFG_C64_ALT_KERN 0xC9
 #define CFG_C64_KERNFILE 0xCA
+#define CFG_C64_TIMING   0xCB
+#define CFG_C64_PHI2_REC 0xCC
 
 char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };    
 char *en_dis2[] = { "Disabled", "Enabled" };
 char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
+char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
 
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 15, 4 },
@@ -126,6 +129,8 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis2,    0,  1, 0 },
     { CFG_C64_DMA_ID,   CFG_TYPE_VALUE,  "DMA Load Mimics ID:",          "%d", NULL,       8, 31, 8 },
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",                 "%s", buttons,    0,  1, 1 },
+    { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
+    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 1 },
 //    { CFG_C64_ETH_EN,   CFG_TYPE_ENUM,   "Ethernet CS8900A",        "%s", en_dis2,     0,  1, 0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
@@ -213,6 +218,9 @@ void C64 :: set_emulation_flags(cart_def *def)
             C64_ETHERNET_ENABLE = 1;
         }
     }
+
+    C64_PHI2_EDGE_RECOVER = cfg->get_value(CFG_C64_PHI2_REC);
+    C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
 }
 
 bool C64 :: exists(void)
@@ -356,7 +364,7 @@ void C64 :: stop(bool do_raster)
                 printf("Frozen on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
                 if(vic_irq_en & 0x01) { // Raster interrupt enabled
                     determine_d012();
-                    printf("Original d012/11 content = %02x %02X.\n", vic_d012, vic_d011);
+                    printf("Original d012/11 content = %02x %02x.\n", vic_d012, vic_d011);
                 } else {
                     vic_d011 = VIC_REG(17); // for all other bits
                 }
