@@ -37,6 +37,8 @@ end itu;
 architecture gideon of itu is
     constant c_timer_div : integer := g_frequency / g_timer_rate;
     constant c_baud_div  : integer := g_frequency / g_baudrate;
+    constant c_ms_div    : integer := g_timer_rate / 1000;
+    
     signal imask        : std_logic_vector(7 downto 0);
     signal iedge        : std_logic_vector(7 downto 0) := g_edge_init;
     signal timer        : unsigned(7 downto 0);
@@ -60,6 +62,9 @@ architecture gideon of itu is
     signal io_resp_it       : t_io_resp;
     signal io_req_uart      : t_io_req;
     signal io_resp_uart     : t_io_resp;
+
+    signal ms_timer_presc   : integer range 0 to c_ms_div-1 := 0;
+    signal ms_timer         : unsigned(15 downto 0) := (others => '0');
 begin
     process(clock)
         variable new_irq_edge_flag  : std_logic_vector(irq_edge_flag'range);
@@ -77,6 +82,12 @@ begin
                 if timer /= X"00" then
                     timer <= timer - 1;
                 end if;
+                if ms_timer_presc = 0 then
+                    ms_timer <= ms_timer + 1;
+                    ms_timer_presc <= c_ms_div - 1;
+                else
+                    ms_timer_presc <= ms_timer_presc - 1;
+                end if;                  
             end if;
 
             irq_c(7 downto 2) <= irq_in(7 downto 2);
@@ -101,7 +112,7 @@ begin
             new_irq_edge_flag := irq_edge_flag;
             if io_req_it.write='1' then
                 io_resp_it.ack <= '1';
-                case io_req_it.address(3 downto 0) is
+                case io_req_it.address(4 downto 0) is
                 when c_itu_irq_global =>
                     irq_en <= io_req_it.data(0);
                 when c_itu_irq_enable =>
@@ -132,7 +143,7 @@ begin
             elsif io_req_it.read='1' then
                 io_resp_it.ack  <= '1';
 
-                case io_req_it.address(3 downto 0) is
+                case io_req_it.address(4 downto 0) is
                 when c_itu_irq_global =>
                     io_resp_it.data(0) <= irq_en;
                 when c_itu_irq_enable =>
@@ -160,6 +171,10 @@ begin
                     io_resp_it.data <= g_capabilities(15 downto 8);
                 when c_itu_capabilities3 =>
                     io_resp_it.data <= g_capabilities( 7 downto 0);
+                when c_itu_ms_timer_lo =>
+                    io_resp_it.data <= std_logic_vector(ms_timer(7 downto 0));
+                when c_itu_ms_timer_hi =>
+                    io_resp_it.data <= std_logic_vector(ms_timer(15 downto 8));
                 when others =>
                     null;
                 end case;
@@ -189,6 +204,7 @@ begin
                 irq_timer_en  <= '0';
                 irq_timer_val <= X"8000";
                 irq_timer_cnt <= (others => '0');
+                ms_timer      <= (others => '0');
             end if;
         end if;
     end process;
