@@ -11,11 +11,14 @@
 #define ITU_IRQ_ACTIVE    *((volatile BYTE *)0x4000005)
 #define ITU_TIMER         *((volatile BYTE *)0x4000006)
 #define ITU_IRQ_TIMER_EN  *((volatile BYTE *)0x4000007)
-#define ITU_IRQ_TIMER_LO  *((volatile BYTE *)0x4000008)
-#define ITU_IRQ_TIMER_HI  *((volatile BYTE *)0x4000009)
+#define ITU_IRQ_TIMER_LO  *((volatile BYTE *)0x4000009)
+#define ITU_IRQ_TIMER_HI  *((volatile BYTE *)0x4000008)
 #define ITU_FPGA_VERSION  *((volatile BYTE *)0x400000B)
 #define ITU_CAPABILITIES  *((volatile DWORD*)0x500000C)
 #define CAPABILITIES      *((volatile DWORD*)0x500000C)
+#define ITU_MS_TIMER_LO   *((volatile BYTE *)0x4000011)
+#define ITU_MS_TIMER_HI   *((volatile BYTE *)0x4000010)
+#define ITU_MS_TIMER      *((volatile WORD *)0x5000010)
 
 #define CAPAB_UART          0x00000001
 #define CAPAB_DRIVE_1541_1  0x00000002
