@@ -9,6 +9,7 @@ extern "C" {
 #include "menu.h"
 #include "flash.h"
 #include "userinterface.h"
+#include "sampler.h"
 
 // static pointer
 AudioConfig audio_configurator;
@@ -104,3 +105,12 @@ void AudioConfig :: effectuate_settings()
     }
 }
 
+void AudioConfig :: clear_sampler_registers()
+{
+    volatile DWORD *sampler = (volatile DWORD *)SAMPLER_BASE;
+    if(CAPABILITIES & CAPAB_SAMPLER) {
+        for(int i=0;i<64;i++) {
+            *(sampler++) = 0;
+        }
+    }
+}

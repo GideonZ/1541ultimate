@@ -689,7 +689,7 @@ int Usb :: control_write(int addr, void *setup_out, int setup_len, void *data_ou
         return 0;
         
     memcpy((void *)&USB_BUFFER(0x20), data_out, data_len);
-    dump_hex((void *)&USB_BUFFER(0), 64);
+    //dump_hex((void *)&USB_BUFFER(0), 64);
 	USB_TRANSACTION(1) = 0x02000015 | (data_len << 9);  // data_len bytes to pipe 1, from buffer 0x020
 	transaction = &USB_TRANSACTION(1);
 
@@ -699,7 +699,6 @@ int Usb :: control_write(int addr, void *setup_out, int setup_len, void *data_ou
             // clear
             USB_TRANSACTION(0) = 0;
             USB_TRANSACTION(1) = 0;
-            USB_TRANSACTION(2) = 0;
 			USB_COMMAND = USB_CMD_ABORT;
 			wait_ms(1);
             return -1;
@@ -717,7 +716,7 @@ int Usb :: control_write(int addr, void *setup_out, int setup_len, void *data_ou
 
 	DWORD ta = *transaction;
     int transmitted = data_len - ((ta >> 9) & 0x7FF);
-	printf("Transaction: %8x DataLen=%d Transmitted=%d\n", ta, data_len, transmitted);
+	//printf("Transaction: %8x DataLen=%d Transmitted=%d\n", ta, data_len, transmitted);
     if(transmitted < 0)
         return -1;
 
@@ -748,6 +747,12 @@ int Usb :: bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len
     memcpy((void *)&USB_BUFFER(256+prefix_len), buf, len);
     return bulk_out_actual(prefix_len + len, pipe);
 }
+
+BYTE *Usb :: get_bulk_out_buffer(int pipe)
+{
+    return (BYTE *)&USB_BUFFER(256);
+}
+    
 
 int Usb :: bulk_out(void *buf, int len, int pipe)
 {
@@ -908,7 +913,7 @@ int Usb :: allocate_transaction(int len)
     if(len > 8) // bigger sizes not yet supported as we need an allocator or DMA mode
         return -1;
         
-    int offset = 1280 + (12 * index);
+    int offset = 1280 + (8 * index);
     transactions[index] = offset;
     
     printf("Allocated transaction %d at $%3x.\n", index, offset);
@@ -951,6 +956,36 @@ int Usb :: interrupt_in(int trans, int pipe, int len, BYTE *buf)
         return 0;
     } 
     return 0;    
+}
+
+// FIXME!! This function can only be used by one pipe, since we use static allocation of our buffer!
+int Usb :: start_bulk_in(int trans, int pipe, int len)
+{
+    volatile DWORD *tr = &USB_TRANSACTION(trans);
+    int offset = 0x600;
+    DWORD opcode = (offset << 20) | (len << 9) | (pipe << 4) | 0x05; // busy | bulk
+    *tr = opcode;
+}
+
+int Usb :: transaction_done(int trans)
+{
+    volatile DWORD *tr = &USB_TRANSACTION(trans);
+    DWORD readback_status = (*tr) & 3;
+    if (readback_status == 2)
+        return 1;
+    if (readback_status == 3)
+        return -1;
+    return 0;
+}
+
+int Usb :: get_bulk_in_data(int trans, BYTE **buf)
+{
+    volatile DWORD *tr = &USB_TRANSACTION(trans);
+    int datalen = 512 - (int)((*tr >> 9) & 0x7FF);
+    if(datalen < 0)
+        datalen = 0;
+    *buf = (BYTE *)&USB_BUFFER(0x600);
+    return datalen;
 }
 
 // =========================================================

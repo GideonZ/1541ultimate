@@ -5,9 +5,10 @@
 
 class FileTypeREU : public FileDirEntry
 {
+    int type;
 public:
     FileTypeREU(FileTypeFactory &fac);
-    FileTypeREU(PathObject *par, FileInfo *fi);
+    FileTypeREU(PathObject *par, FileInfo *fi, int);
     ~FileTypeREU();
 
     int   fetch_children(void);

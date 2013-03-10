@@ -239,9 +239,9 @@ begin
                 nmi_n     <= '1';
 
             when c_16k =>
-                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
-                    cart_en <= '0'; -- permanent off
-                end if;
+--                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
+--                    cart_en <= '0'; -- permanent off
+--                end if;
                 game_n    <= '0';
                 exrom_n   <= '0';
                 serve_rom <= '1';
@@ -428,10 +428,12 @@ begin
             end if;
 
         when c_8k | c_epyx =>
-            mem_addr_i(12 downto 0) <= slot_addr(12 downto 0);
+            mem_addr_i(27 downto 13) <= g_rom_base(27 downto 13);
+            mem_addr_i(12 downto 0)  <= slot_addr(12 downto 0);
             
         when c_16k | c_16k_umax =>
-            mem_addr_i(13 downto 0) <= slot_addr(13 downto 0);
+            mem_addr_i(27 downto 14) <= g_rom_base(27 downto 14);
+            mem_addr_i(13 downto 0)  <= slot_addr(13 downto 0);
         
         when c_ocean128 | c_system3 | c_domark | c_ocean256 =>
             mem_addr_i <= g_rom_base(27 downto 20) & slot_addr(13) & ext_bank & bank_bits & slot_addr(12 downto 0);

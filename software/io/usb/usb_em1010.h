@@ -1,5 +1,5 @@
-#ifndef USB_HUB_H
-#define USB_HUB_H
+#ifndef USB_EM1010_H
+#define USB_EM1010_H
 
 #include "usb.h"
 

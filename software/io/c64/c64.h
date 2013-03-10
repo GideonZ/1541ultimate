@@ -101,6 +101,9 @@
 #define CART_ETH 0x40
 #define CART_RAM 0x20
 
+#define C64_EVENT_MAX_REU  0x6477
+#define C64_EVENT_AUDIO_ON 0x6478
+
 typedef struct _cart
 {
     BYTE  id;

@@ -35,6 +35,7 @@ public:
     ~AudioConfig() {}
 
     void effectuate_settings();
+    void clear_sampler_registers();
 };
 
 extern AudioConfig audio_configurator;

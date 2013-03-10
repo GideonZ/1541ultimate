@@ -9,7 +9,7 @@ HEX2BIN = $(TOOLS)/hex2bin
 MAKEAPPL = $(TOOLS)/makeappl
 TASS = $(TOOLS)/64tass/64tass
 PARSE_IEC = $(TOOLS)/parse_iec.py
-
+LWIP = ../lwip/archive
 BOOT = ../2nd_boot
 
 # Configuration
@@ -48,8 +48,12 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/userinterface \
 			$(PATH_SW)/io/command_interface \
 			$(PATH_SW)/io/copper \
+			$(PATH_SW)/io/network \
 			$(PATH_SW)/io/iec \
 			$(PATH_SW)/6502 \
+			$(PATH_SW)/ModPlayer_16k \
+			$(PATH_SW)/lwip-1.4.1/src/include \
+			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
@@ -94,7 +98,8 @@ SRCS_CC	 =  stream.cc \
 			usb.cc \
 			usb_hub.cc \
 			usb_scsi.cc \
-			usb_em1010.cc \
+			usb_ax88772.cc \
+            network_interface.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
@@ -145,7 +150,7 @@ SRCS_ASM =  crt0_appl.s
 
 SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin
+SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
 
 SRCS_IEC = iec_code.txt
 
@@ -155,9 +160,9 @@ CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti
 LINK 	 = $(PATH_SW)/system/zpu.lds
 LINK_V1	 = $(PATH_SW)/system/zpu_v1.lds
 LLIB     =  -L $(ZPU_TOOLCHAIN)/install/lib/gcc/zpu-elf/3.4.2 \
-			-L $(ZPU_TOOLCHAIN)/install/zpu-elf/lib
-LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lc -lbcc --end-group -lgcc
-#LIBS     = -lstdc++ -lsupc++ --start-group -lbcc --end-group
+			-L $(ZPU_TOOLCHAIN)/install/zpu-elf/lib \
+			-L $(LWIP)
+LIBS     = -llwip -lstdc++ -lsupc++ -lgcc --start-group -lc -lbcc --end-group -lgcc
 LFLAGS   = --relax --gc-sections 
 
 VPATH   += $(OUTPUT) $(RESULT)

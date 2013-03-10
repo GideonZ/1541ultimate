@@ -173,7 +173,6 @@ class Usb
     bool install_device(UsbDevice *dev, bool draws_current);
     void deinstall_device(UsbDevice *dev);
 
-    int  bulk_out_actual(int len, int pipe);
 public:
     bool debug;
     int speed;
@@ -210,8 +209,14 @@ public:
     void unstall_pipe(int pipe);
     int  bulk_out(void *buf, int len, int pipe);
     int  bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe);
-    int  bulk_in(void *buf, int len, int pipe);
+    int  bulk_in(void *buf, int len, int pipe); // blocking
     int  interrupt_in(int trans, int pipe, int len, BYTE *buf);
+
+    int  start_bulk_in(int trans, int pipe, int len);
+    int  transaction_done(int trans);
+    int  get_bulk_in_data(int trans, BYTE **buf);    
+    BYTE *get_bulk_out_buffer(int pipe);
+    int  bulk_out_actual(int len, int pipe);
         
     // special bootloader function
     UsbDevice *init_simple(void);
@@ -284,6 +289,7 @@ public:
     	if(driver) {
     		driver->deinstall(this);
 			delete driver;
+            driver = NULL;
     	}
     }
 //    int init(void); // gets device descriptor, assigns address

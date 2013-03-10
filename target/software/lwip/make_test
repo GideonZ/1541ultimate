@@ -1,0 +1,121 @@
+# System tool locations
+
+HERE = $(shell pwd)
+TOOLS = ../../../tools
+ZPU_TOOLCHAIN ?= /cygdrive/d/Proj/zpu/git/toolchain
+BIN2HEX = $(TOOLS)/bin2hex
+HEX2BIN = $(TOOLS)/hex2bin
+MAKEAPPL = $(TOOLS)/makeappl
+
+# Configuration
+SHELL     = bash
+CROSS     = zpu-elf
+
+# Outputs
+ARCHIVE   = ./archive
+RESULT    = $(shell pwd)/result
+OUTPUT    = ./output
+OUTPUT_FP = $(shell pwd)/output
+
+PRJ      =  lwip_test
+PATH_SW  =  ../../../software
+
+VPATH     = $(PATH_SW)/lwip-1.4.1/src/ \
+			$(PATH_SW)/lwip-1.4.1/src/dummy/ \
+			$(PATH_SW)/lwip-1.4.1/src/core/ \
+			$(PATH_SW)/lwip-1.4.1/src/core/ipv4 \
+			$(PATH_SW)/lwip-1.4.1/src/core/snmp \
+			$(PATH_SW)/lwip-1.4.1/src/api \
+			$(PATH_SW)/lwip-1.4.1/src/netif \
+			$(PATH_SW)/lwip-1.4.1/src/include \
+			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
+			$(PATH_SW)/application/lwip \
+			$(PATH_SW)/system \
+			$(PATH_SW)/components
+
+INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
+
+
+SRCS_C   =	zpu.c \
+			itu.c \
+			dump_hex.c \
+			small_printf.c \
+			dummy_if.c \
+			lwip_test.c
+
+
+SRCS_ASM =  crt0_appl.s
+
+PATH_INC =  $(addprefix -I, $(VPATH))
+COPTIONS = -Os -DGCC_ZPU -ffunction-sections
+CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti
+LINK 	 = $(PATH_SW)/system/zpu.lds
+LLIB     =  -L $(ZPU_TOOLCHAIN)/install/lib/gcc/zpu-elf/3.4.2 \
+			-L $(ZPU_TOOLCHAIN)/install/zpu-elf/lib \
+			-L $(ARCHIVE)
+LIBS     = -llwip -lstdc++ -lsupc++ -lgcc --start-group -lc -lbcc --end-group -lgcc 
+LFLAGS   = --relax --gc-sections 
+
+VPATH   += $(OUTPUT) $(RESULT)
+
+CC		  = $(CROSS)-gcc
+CPP		  = $(CROSS)-g++
+LD		  = $(CROSS)-ld
+OBJDUMP   = $(CROSS)-objdump
+OBJCOPY	  = $(CROSS)-objcopy
+
+.SUFFIXES:
+
+OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
+OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
+OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
+
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
+ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
+
+
+.PHONY: hex clean all dep appl
+
+all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
+
+$(OUTPUT):
+	@mkdir $(OUTPUT)
+
+$(RESULT):
+	@mkdir $(RESULT)
+		
+$(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
+	@echo "Creating Binary $@"
+	@$(OBJCOPY) -O binary $< $@
+
+%.o: %.s
+	@echo "Compiling $<"
+	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
+
+%.o: %.c
+	@echo "Compiling $<"
+	@$(CC) $(COPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
+
+%.o: %.cc
+	@echo "Compiling $<"
+	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
+	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
+
+%.d: %.cc
+	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
+
+%.d: %.c
+	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
+
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM)
+	@echo "Linking..."
+	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
+
+# pull in dependency info for *existing* .o files
+-include $(ALL_DEP_OBJS:.o=.d)
+
+clean:
+	@-rm -rf $(OUTPUT)
+	@-rm -rf $(RESULT)
+
+dep:  $(OBJS_CC:.o=.d) $(OBJS_C:.o=.d)

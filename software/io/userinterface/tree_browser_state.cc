@@ -97,13 +97,13 @@ void TreeBrowserState :: draw()
 			browser->window->output_line("");
     }
 
+    if(selected_line < 0) {
+        printf("error! %d", selected_line);
+        selected_line = 0;
+    }
     selected = node->children[first_item_on_screen + selected_line];
 
-    if(selected_line < 0) {
-        printf("error!");
-    } else {
-        highlight(); // highlight selected item
-    }
+    highlight(); // highlight selected item
 }
 
 void TreeBrowserState :: update_selected(void)

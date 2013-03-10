@@ -50,6 +50,8 @@ architecture gideon of slot_master_v4 is
     signal rwn_c        : std_logic := '1';
     signal dma_n_i      : std_logic := '1';
     signal data_c       : std_logic_vector(7 downto 0) := (others => '1');
+    type t_byte_array is array(natural range <>) of std_logic_vector(7 downto 0);
+    signal data_d       : t_byte_array(0 to 7);
     signal addr_out     : std_logic_vector(15 downto 0) := (others => '1');
     signal drive_ah     : std_logic;
     signal drive_al     : std_logic;
@@ -74,7 +76,6 @@ architecture gideon of slot_master_v4 is
     
 --    attribute fsm_encoding : string;
 --    attribute fsm_encoding of state : signal is "sequential";
-    signal dma_rdata    : std_logic_vector(7 downto 0);
     signal dma_rack     : std_logic;
 
 begin
@@ -85,9 +86,10 @@ begin
             ba_c      <= BA;
             rwn_c     <= RWn_in;
             data_c    <= DATA_in;
+            data_d(0) <= data_c;
+            data_d(1 to 7) <= data_d(0 to 6);
             dma_rack  <= '0';
             phi2_dly  <= phi2_dly(phi2_dly'high-1 downto 0) & phi2_recovered;
-            dma_rdata <= X"00";
             
             -- consecutive write counter (match counter)
             if do_sample_addr='1' and phi2_recovered='1' then -- count CPU cycles only (sample might become true for VIC cycles)
@@ -155,7 +157,6 @@ begin
                 end if;
           
             when do_dma =>
-                dma_rdata <= data_c;
                 if phi2_recovered='0' then -- end of CPU cycle
                 --if do_io_event='1' then
                     dma_ack_i <= '1';
@@ -187,7 +188,7 @@ begin
     
     dma_resp.dack <= dma_ack_i and rwn_out_i; -- only data-acknowledge reads
     dma_resp.rack <= dma_rack;
-    dma_resp.data <= dma_rdata;
+    dma_resp.data <= data_d(3) when dma_ack_i='1' and rwn_out_i='1' else X"00";
     
     -- by shifting the phi2 and anding it with the original, we make the write enable narrower,
     -- starting only halfway through the cycle. We should not be too fast!

@@ -1,26 +1,37 @@
 #include "filetype_reu.h"
 #include "filemanager.h"
 #include "c64.h"
+#include "audio_select.h"
 #include "menu.h"
 #include "userinterface.h"
 
 // tester instance
 FileTypeREU tester_reu(file_type_factory);
 
+// cart definition
+extern BYTE _binary_module_bin_start;
+cart_def mod_cart  = { 0x00, (void *)0, 0x4000, 0x02 | CART_REU | CART_RAM };
+
 /*********************************************************************/
 /* REU File Browser Handling                                         */
 /*********************************************************************/
 #define REUFILE_LOAD      0x5201
+#define REUFILE_PLAYMOD   0x5202
+
+#define REU_TYPE_REU 0
+#define REU_TYPE_MOD 1
 
 FileTypeREU :: FileTypeREU(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
     fac.register_type(this);
     info = NULL;
+    type = 0;
 }
 
-FileTypeREU :: FileTypeREU(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeREU :: FileTypeREU(PathObject *par, FileInfo *fi, int type) : FileDirEntry(par, fi)
 {
     printf("Creating REU type from info: %s\n", fi->lfname);
+    this->type = type;
 }
 
 FileTypeREU :: ~FileTypeREU()
@@ -34,18 +45,22 @@ int FileTypeREU :: fetch_children(void)
 
 int FileTypeREU :: fetch_context_items(IndexedList<PathObject *> &list)
 {
+    int count = 1;
     list.append(new MenuItem(this, "Load into REU", REUFILE_LOAD));
-
-    return 1 + FileDirEntry :: fetch_context_items_actual(list);
+    if ((type == REU_TYPE_MOD) && (CAPABILITIES & CAPAB_SAMPLER)) {
+        list.append(new MenuItem(this, "Play MOD", REUFILE_PLAYMOD));
+        count++;
+    }
+    return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
 FileDirEntry *FileTypeREU :: test_type(PathObject *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "REU")==0)
-        return new FileTypeREU(obj->parent, inf);
+        return new FileTypeREU(obj->parent, inf, REU_TYPE_REU);
     if(strcmp(inf->extension, "MOD")==0)
-        return new FileTypeREU(obj->parent, inf);
+        return new FileTypeREU(obj->parent, inf, REU_TYPE_MOD);
     return NULL;
 }
 
@@ -65,6 +80,9 @@ void FileTypeREU :: execute(int selection)
     BYTE *dest;
     
 	switch(selection) {
+    case REUFILE_PLAYMOD:
+        audio_configurator.clear_sampler_registers();
+        // fallthrough
 	case REUFILE_LOAD:
 //		if(info->size > 0x100000)
 //			res = user_interface->popup("This might take a while. Continue?", BUTTON_OK | BUTTON_CANCEL );
@@ -95,14 +113,23 @@ void FileTypeREU :: execute(int selection)
     			file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
                 total_bytes_read += bytes_read;
     	    }
-			sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
 			root.fclose(file);
 			file = NULL;
-			user_interface->popup(buffer, BUTTON_OK);
+            if (selection == REUFILE_LOAD) {
+    			sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
+    			user_interface->popup(buffer, BUTTON_OK);
+            } else {
+                mod_cart.custom_addr = (void *)&_binary_module_bin_start;
+                push_event(e_unfreeze, (void *)&mod_cart, 1);
+                push_event(e_object_private_cmd, c64, C64_EVENT_MAX_REU);
+                push_event(e_object_private_cmd, c64, C64_EVENT_AUDIO_ON);
+                AUDIO_SELECT_LEFT   = 6;
+                AUDIO_SELECT_RIGHT  = 7;
+            }
 		} else {
 			printf("Error opening file.\n");
 		}
-		break;
+        break;
 	default:
 		FileDirEntry :: execute(selection);
     }

@@ -39,8 +39,6 @@ extern "C" {
 /* other external references */
 extern BYTE _binary_bootcrt_65_start;
 
-extern BYTE _binary_kernal_sx_251104_04_bin_start;
-
 cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
 
 // static pointer
@@ -858,6 +856,13 @@ void C64 :: poll(Event &e)
         case MENU_C64_BOOTFPGA:
             flash->get_image_addresses(FLASH_ID_CUSTOMFPGA, &addr);
             flash->reboot(addr.start);
+            break;
+        case C64_EVENT_MAX_REU:
+            C64_REU_SIZE = 7;
+            C64_REU_ENABLE = 1;
+            break;
+        case C64_EVENT_AUDIO_ON:
+            C64_SAMPLER_ENABLE = 1;
             break;
 		default:
 			printf("Unhandled C64 menu command %4x.\n", e.param);
