@@ -62,6 +62,8 @@ architecture gideon of itu is
     signal io_resp_it       : t_io_resp;
     signal io_req_uart      : t_io_req;
     signal io_resp_uart     : t_io_resp;
+    signal io_req_ms        : t_io_req;
+    signal io_resp_ms       : t_io_resp;
 
     signal ms_timer_presc   : integer range 0 to c_ms_div-1 := 0;
     signal ms_timer         : unsigned(15 downto 0) := (others => '0');
@@ -112,7 +114,7 @@ begin
             new_irq_edge_flag := irq_edge_flag;
             if io_req_it.write='1' then
                 io_resp_it.ack <= '1';
-                case io_req_it.address(4 downto 0) is
+                case io_req_it.address(3 downto 0) is
                 when c_itu_irq_global =>
                     irq_en <= io_req_it.data(0);
                 when c_itu_irq_enable =>
@@ -143,7 +145,7 @@ begin
             elsif io_req_it.read='1' then
                 io_resp_it.ack  <= '1';
 
-                case io_req_it.address(4 downto 0) is
+                case io_req_it.address(3 downto 0) is
                 when c_itu_irq_global =>
                     io_resp_it.data(0) <= irq_en;
                 when c_itu_irq_enable =>
@@ -171,10 +173,23 @@ begin
                     io_resp_it.data <= g_capabilities(15 downto 8);
                 when c_itu_capabilities3 =>
                     io_resp_it.data <= g_capabilities( 7 downto 0);
+                when others =>
+                    null;
+                end case;
+            end if;
+
+            io_resp_ms <= c_io_resp_init;
+            if io_req_ms.write='1' then
+                io_resp_ms.ack  <= '1';
+            
+            elsif io_req_ms.read='1' then
+                io_resp_ms.ack  <= '1';
+
+                case io_req_ms.address(3 downto 0) is
                 when c_itu_ms_timer_lo =>
-                    io_resp_it.data <= std_logic_vector(ms_timer(7 downto 0));
+                    io_resp_ms.data <= std_logic_vector(ms_timer(7 downto 0));
                 when c_itu_ms_timer_hi =>
-                    io_resp_it.data <= std_logic_vector(ms_timer(15 downto 8));
+                    io_resp_ms.data <= std_logic_vector(ms_timer(15 downto 8));
                 when others =>
                     null;
                 end case;
@@ -214,8 +229,8 @@ begin
     i_split: entity work.io_bus_splitter
     generic map (
         g_range_lo  => 4,
-        g_range_hi  => 4,
-        g_ports     => 2 )
+        g_range_hi  => 5,
+        g_ports     => 3 )
     port map (
         clock    => clock,
         
@@ -224,8 +239,10 @@ begin
         
         reqs(0)  => io_req_it,
         reqs(1)  => io_req_uart,
+        reqs(2)  => io_req_ms,
         resps(0) => io_resp_it,
-        resps(1) => io_resp_uart );
+        resps(1) => io_resp_uart,
+        resps(2) => io_resp_ms );
 
     r_uart: if g_uart generate
         uart: entity work.uart_peripheral_io

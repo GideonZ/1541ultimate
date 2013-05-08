@@ -16,9 +16,9 @@
 #define ITU_FPGA_VERSION  *((volatile BYTE *)0x400000B)
 #define ITU_CAPABILITIES  *((volatile DWORD*)0x500000C)
 #define CAPABILITIES      *((volatile DWORD*)0x500000C)
-#define ITU_MS_TIMER_LO   *((volatile BYTE *)0x4000011)
-#define ITU_MS_TIMER_HI   *((volatile BYTE *)0x4000010)
-#define ITU_MS_TIMER      *((volatile WORD *)0x5000010)
+#define ITU_MS_TIMER_LO   *((volatile BYTE *)0x4000023)
+#define ITU_MS_TIMER_HI   *((volatile BYTE *)0x4000022)
+#define ITU_MS_TIMER      *((volatile WORD *)0x5000022)
 
 #define CAPAB_UART          0x00000001
 #define CAPAB_DRIVE_1541_1  0x00000002

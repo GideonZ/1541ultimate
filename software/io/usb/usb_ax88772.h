@@ -38,6 +38,7 @@ public:
     
     bool  transmit_frame(BYTE *buffer, int length);
     err_t output_callback(struct netif *, struct pbuf *);
+    void  test_packet_out(int size, int filler);
 };
 
 #endif

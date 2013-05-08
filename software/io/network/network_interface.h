@@ -33,6 +33,7 @@ public:
     virtual err_t output_callback(struct netif *, struct pbuf *) {
         printf("Network Interface: Output Callback - Base\n");
     }
+    virtual void lwip_poll();
 };
 
 #endif

@@ -11,6 +11,7 @@ TASS = $(TOOLS)/64tass/64tass
 PARSE_IEC = $(TOOLS)/parse_iec.py
 LWIP = ../lwip/archive
 BOOT = ../2nd_boot
+LWIP_ARCH = $(LWIP)/liblwip.a
 
 # Configuration
 SHELL     = bash
@@ -244,7 +245,7 @@ $(RESULT)/$(PRJ)_V1.bin: $(OUTPUT)/$(PRJ)_V1.out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC)
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(LWIP_ARCH)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 

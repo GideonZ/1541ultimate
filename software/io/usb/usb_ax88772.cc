@@ -28,26 +28,6 @@ BYTE c_write_rx_control[]  = { 0x40, 0x10, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00 };
 BYTE c_read_rx_control[]   = { 0xC0, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
 BYTE c_read_medium_mode[]  = { 0xC0, 0x1A, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
 
-// FIXME: SHORTCUT:
-void lwip_poll(void)
-{
-    static int divider = 120;
-    if (divider == 0) {
-        dhcp_coarse_tmr();
-        divider = 120;
-    } else {
-        divider--;
-        dhcp_fine_tmr();
-    }
-
-    tcp_tmr();
-    ip_reass_tmr();
-    etharp_tmr();
-    // autoip_tmr();
-    // igmp_tmr();
-    dns_tmr();
-}
-// FIXME
 
 __inline DWORD cpu_to_32le(DWORD a)
 {
@@ -140,7 +120,6 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     host->control_exchange(device->current_address,
                            c_read_phy_addr, 8,
                            &dummy, 2, NULL);
-    printf("%4x\n", dummy);
     // * 40 22 01: Write Software Interface Selection Selection Register
     host->control_exchange(device->current_address,
                            c_write_softw_sel, 8,
@@ -166,13 +145,10 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     host->control_exchange(device->current_address,
                            c_read_rx_ctrl, 8,
                            &dummy, 2, NULL);
-    printf("%4x\n", dummy);
     // % c0 07 10 00 02: Read PHY ID 10, Register address 02 (resp: 3b 00)
     dummy = read_phy_register(2);
-    printf("%4x\n", dummy);
     // % c0 07 10 00 03: Read PHY 10, Reg 03 (resp: 61 18)
     dummy = read_phy_register(3);
-    printf("%4x\n", dummy);
     // * 40 20 08: Write Software reset register
     host->control_exchange(device->current_address,
                            c_write_softw_rst4, 8,
@@ -187,7 +163,6 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     write_phy_register(4, 0x01E1);
     // % c0 07 10 -- 00: Read PHY, Reg 00 (resp: 00 31) - Speed=100,AutoNeg,FullDup
     dummy = read_phy_register(0);
-    printf("%4x\n", dummy);
     // % 40 08 10 -- 00: Write PHY, Reg 00 (data phase: 00 33) - +restart autoneg - unreset
     write_phy_register(0, 0x3300);
     // * 40 1b 36 03 : Write medium mode register
@@ -206,23 +181,21 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     host->control_exchange(device->current_address,
                            c_read_rx_control, 8,
                            &dummy, 2, NULL);
-    printf("%4x\n", dummy);
     // * c0 1a : Read Medium Status register (response: 36 03)
     host->control_exchange(device->current_address,
                            c_read_medium_mode, 8,
                            &dummy, 2, NULL);
-    printf("%4x\n", dummy);
 
     // % c0 07 10 00 01: Read PHY reg 01 (resp: 09 78) 
-    dummy = read_phy_register(1); printf("%4x\n", dummy);
+    dummy = read_phy_register(1); 
     // % c0 07 10 00 01: Read PHY reg 01 (resp: 09 78)
-    dummy = read_phy_register(1); printf("%4x\n", dummy);
+    dummy = read_phy_register(1); 
     // % c0 07 10 00 00: Read PHY reg 00 (resp: 00 31)
-    dummy = read_phy_register(0); printf("%4x\n", dummy);
+    dummy = read_phy_register(0); 
     // % c0 07 10 00 01: Read PHY reg 01 (resp: 09 78)
-    dummy = read_phy_register(1); printf("%4x\n", dummy);
+    dummy = read_phy_register(1); 
     // % c0 07 10 00 04: Read PHY reg 04 (resp: e1 01)
-    dummy = read_phy_register(4); printf("%4x\n", dummy);
+    dummy = read_phy_register(4); 
 
     start_lwip();
 
@@ -287,24 +260,40 @@ WORD UsbAx88772Driver :: read_phy_register(BYTE reg) {
 void UsbAx88772Driver :: poll(void)
 {
     static int divider = 0;
+    static bool up = false;
+    static bool if_up = false;
     int resp;
+
+    if (netif_is_up(netif) && !if_up) {
+        printf("**** NETIF IS NOW UP ****\n");
+        if_up = true;
+        //etharp_request(netif, &(netif->gw));
+    } else if(!netif_is_up(netif) && if_up) {
+        printf("#### NETIF IS NOW DOWN ####\n");
+        if_up = false;
+    }
+
     if (--divider < 0) {
-        divider = 100;
+        divider = 1000;
         resp = host->interrupt_in(irq_transaction, device->pipe_numbers[0], 8, irq_data);
         if(resp) {
-            printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
+            /* printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
             for(int i=0;i<resp;i++) {
                 printf("%b ", irq_data[i]);
-            } printf("\n");
+            } printf("\n"); */
             if(irq_data[2] & 0x01) {
-                if (!netif_is_up(netif)) {
+                //if (!netif_is_up(netif)) {
+                if(!up) {
                     printf("Bringing link up.\n");
                     dhcp_start(netif); // netif_set_up(netif);
+                    up = true;
                 }
             } else {
-                if (netif_is_up(netif)) {
+                // if (netif_is_up(netif)) {
+                if(up) {
                     printf("Bringing link down.\n");
                     dhcp_stop(netif); // netif_set_down(netif);
+                    up = false;
                 }
             }
         }
@@ -318,19 +307,18 @@ void UsbAx88772Driver :: poll(void)
         host->start_bulk_in(bulk_transaction, bulk_in, 512);
     }
     
-    // FIXME: SHORTCUT!!
     lwip_poll();
-    wait_ms(20);
-    // FIXME
 }
 
 void UsbAx88772Driver :: process_data(void)
 {
     BYTE *usb_buffer;
     int len = host->get_bulk_in_data(bulk_transaction, &usb_buffer);
+
     DWORD *pul = (DWORD *)usb_buffer;
     DWORD first = *pul;
-    // printf("%8x\n", first);
+
+    //printf("%8x\n", first);
     if (((first >> 16) ^ 0xFFFF) != (first & 0xFFFF)) {
         printf("Invalid packet\n");
         printf("%d:%8x:%8x:%8x\n", len, first, (first >> 16) ^ 0xFFFF, first & 0xFFFF);
@@ -338,8 +326,10 @@ void UsbAx88772Driver :: process_data(void)
     }
     int size = first & 0xFFFF; // le16_to_cpu(first >> 16);
     if (size > 2000) {
+        printf("Invalid size!\n");
         return;
     }
+    usb_buffer += 0x1000000;
     // Now we know the packet is valid; allocate pbuf (chain)
     struct pbuf *p, *q;
     p = pbuf_alloc(PBUF_RAW, size, PBUF_POOL);
@@ -350,7 +340,7 @@ void UsbAx88772Driver :: process_data(void)
         pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
 #endif
         int usb_remain = (size > 508)?508:size;
-        usb_buffer += 4 + 0x1000000; 
+        usb_buffer += 4; 
         q = p;
         BYTE *qb = (BYTE *)q->payload;
         int q_remain = q->len;
@@ -359,11 +349,10 @@ void UsbAx88772Driver :: process_data(void)
            packet into the pbuf chain. Storing in pbuf chain. */
         while(size > 0) {
             int now = (q_remain < usb_remain)?q_remain:usb_remain;
-            printf("<- [%d:%d:%d:%p:%d]\n", size, usb_remain, q_remain, usb_buffer, now);
+            // printf("<- [%d:%d:%d:%p:%d]\n", size, usb_remain, q_remain, usb_buffer, now);
 
             // copy data
             memcpy(qb, usb_buffer, now);
-            //dump_hex(qb, now);
             size -= now;
             qb += now;
             q_remain -= now;
@@ -393,7 +382,7 @@ void UsbAx88772Driver :: process_data(void)
 
         struct eth_hdr *ethhdr = (eth_hdr *)p->payload;
         
-        dump_hex_relative(p->payload, p->len);
+        //dump_hex_relative(p->payload, p->len);
         switch (htons(ethhdr->type)) {
         /* IP or ARP packet? */
         case ETHTYPE_IP:
@@ -491,18 +480,25 @@ err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p)
     usb_buffer[1] = BYTE(size >> 8);
     usb_buffer[2] = usb_buffer[0] ^ 0xFF;
     usb_buffer[3] = usb_buffer[1] ^ 0xFF;
-    usb_buffer += 4;
+    usb_buffer += 0x1000004;
     int usb_remain = 508;
     struct pbuf *q = p;
     int q_remain = q->len;
     BYTE *qb = (BYTE *)q->payload;
-
+    /*qb[0] = 0xFF;
+    qb[1] = 0xFF;
+    qb[2] = 0xFF;
+    qb[3] = 0xFF;
+    qb[4] = 0xFF;
+    qb[5] = 0xFF;
+    */
     do {
-        printf("-> [%d:%d:%d]\n", size, usb_remain, q_remain);
+        // printf("-> [%d:%d:%d]\n", size, usb_remain, q_remain);
         int now = (q_remain < usb_remain)?q_remain:usb_remain;
 
         // copy data
-        memcpy(usb_buffer, q->payload, now);
+        memcpy(usb_buffer, qb, now);
+        // dump_hex(qb, now);
         size -= now;
         qb += now;
         q_remain -= now;
@@ -512,11 +508,55 @@ err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p)
         if (usb_remain == 0) {
             host->bulk_out_actual(512, bulk_out);
             usb_buffer = host->get_bulk_out_buffer(bulk_out);
+            usb_buffer += 0x1000000;
             usb_remain = 512;
         }
         if (q_remain == 0) {
             q = q->next;
+            qb = (BYTE *)q->payload;
             q_remain = q->len;
+        }
+    } while(size > 0);
+
+    host->bulk_out_actual(512-usb_remain, bulk_out);
+    return 0;
+}
+
+void UsbAx88772Driver :: test_packet_out(int size, int filler) 
+{
+    BYTE *usb_buffer = host->get_bulk_out_buffer(bulk_out);
+        
+    usb_buffer[0] = BYTE(size & 0xFF);
+    usb_buffer[1] = BYTE(size >> 8);
+    usb_buffer[2] = usb_buffer[0] ^ 0xFF;
+    usb_buffer[3] = usb_buffer[1] ^ 0xFF;
+    usb_buffer += 4;
+    usb_buffer[0] = 0xFF;
+    usb_buffer[1] = 0xFF;
+    usb_buffer[2] = 0xFF;
+    usb_buffer[3] = 0xFF;
+    usb_buffer[4] = 0xFF;
+    usb_buffer[5] = 0xFF;
+
+    int usb_remain = 508;
+    
+    do {
+        printf("->T [%d:%d]\n", size, usb_remain);
+        int now = (usb_remain < size)?usb_remain:size;
+
+        // copy data
+//        memset(usb_buffer, filler, now);
+//        memset(usb_buffer, 0xFF, 6);
+        
+        size -= now;
+        usb_buffer += now;
+        usb_remain -= now;
+
+        if (usb_remain == 0) {
+            printf("Usb full:");
+            host->bulk_out_actual(512, bulk_out);
+            usb_buffer = host->get_bulk_out_buffer(bulk_out);
+            usb_remain = 512;
         }
     } while(size > 0);
 
