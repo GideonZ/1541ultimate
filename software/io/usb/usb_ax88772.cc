@@ -9,6 +9,9 @@ extern "C" {
 #include "usb_ax88772.h"
 #include "event.h"
 
+#define DEBUG_RAW_PKT 0
+#define DEBUG_INVALID_PKT 0
+
 BYTE c_get_mac_address[]   = { 0xC0, 0x13, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00 };
 BYTE c_write_gpio[]        = { 0x40, 0x1f, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x00 };
 BYTE c_read_phy_addr[]     = { 0xC0, 0x19, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
@@ -108,8 +111,6 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     bulk_in  = dev->find_endpoint(0x82);
     bulk_out = dev->find_endpoint(0x02);
 
-//    write_mac_address();
-
     WORD dummy;
 
     // * 40 1f b0: Write GPIO register
@@ -186,6 +187,7 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
                            c_read_medium_mode, 8,
                            &dummy, 2, NULL);
 
+/*
     // % c0 07 10 00 01: Read PHY reg 01 (resp: 09 78) 
     dummy = read_phy_register(1); 
     // % c0 07 10 00 01: Read PHY reg 01 (resp: 09 78)
@@ -196,31 +198,17 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     dummy = read_phy_register(1); 
     // % c0 07 10 00 04: Read PHY reg 04 (resp: e1 01)
     dummy = read_phy_register(4); 
-
+*/
     start_lwip();
 
-/*
-    wait_ms(2000);
-    dummy = read_phy_register(1); printf("%4x\n", dummy);
-    if (dummy & 0x4) {
-        printf("Link up!\n");    
-        netif_set_up(netif);
-    }
-*/            
     host->start_bulk_in(bulk_transaction, bulk_in, 512);
     
-    // * 40 1b 34 01 : Write Medium Mode register - Enable flow control, disable full duplex??, Receive enable, expected: 36 01 
-    // * 40 16 : Write multicast.. blah
-    // * 40 16 : Write multicast.. blah
-    // * 40 10 98 00: Write Rx Control Register
-    // * 40 10 98 00: Write Rx Control Register
-    // -- many interrupts
-    // % c0 07 10 00 01: Read PHY Register 01 (resp: 0d 78)
-    // BULK OUT
 }
 
 void UsbAx88772Driver :: deinstall(UsbDevice *dev)
 {
+    stop_lwip();
+
     host->free_transaction(irq_transaction);
     host->free_transaction(bulk_transaction);
 }
@@ -260,18 +248,10 @@ WORD UsbAx88772Driver :: read_phy_register(BYTE reg) {
 void UsbAx88772Driver :: poll(void)
 {
     static int divider = 0;
-    static bool up = false;
-    static bool if_up = false;
+    static bool link_up = false;
     int resp;
 
-    if (netif_is_up(netif) && !if_up) {
-        printf("**** NETIF IS NOW UP ****\n");
-        if_up = true;
-        //etharp_request(netif, &(netif->gw));
-    } else if(!netif_is_up(netif) && if_up) {
-        printf("#### NETIF IS NOW DOWN ####\n");
-        if_up = false;
-    }
+    NetworkInterface :: poll();
 
     if (--divider < 0) {
         divider = 1000;
@@ -283,17 +263,17 @@ void UsbAx88772Driver :: poll(void)
             } printf("\n"); */
             if(irq_data[2] & 0x01) {
                 //if (!netif_is_up(netif)) {
-                if(!up) {
+                if(!link_up) {
                     printf("Bringing link up.\n");
                     dhcp_start(netif); // netif_set_up(netif);
-                    up = true;
+                    link_up = true;
                 }
             } else {
                 // if (netif_is_up(netif)) {
-                if(up) {
+                if(link_up) {
                     printf("Bringing link down.\n");
-                    dhcp_stop(netif); // netif_set_down(netif);
-                    up = false;
+                    stop_lwip();
+                    link_up = false;
                 }
             }
         }
@@ -320,8 +300,11 @@ void UsbAx88772Driver :: process_data(void)
 
     //printf("%8x\n", first);
     if (((first >> 16) ^ 0xFFFF) != (first & 0xFFFF)) {
+#if DEBUG_INVALID_PKT
         printf("Invalid packet\n");
         printf("%d:%8x:%8x:%8x\n", len, first, (first >> 16) ^ 0xFFFF, first & 0xFFFF);
+        dump_hex(usb_buffer, len);
+#endif
         return;
     }
     int size = first & 0xFFFF; // le16_to_cpu(first >> 16);
@@ -349,10 +332,14 @@ void UsbAx88772Driver :: process_data(void)
            packet into the pbuf chain. Storing in pbuf chain. */
         while(size > 0) {
             int now = (q_remain < usb_remain)?q_remain:usb_remain;
-            // printf("<- [%d:%d:%d:%p:%d]\n", size, usb_remain, q_remain, usb_buffer, now);
-
+#if DEBUG_RAW_PKT
+            printf("<- [%d:%d:%d:%p:%d]\n", size, usb_remain, q_remain, usb_buffer, now);
+#endif
             // copy data
             memcpy(qb, usb_buffer, now);
+#if DEBUG_RAW_PKT
+            dump_hex_relative(qb, now);
+#endif
             size -= now;
             qb += now;
             q_remain -= now;
@@ -363,12 +350,15 @@ void UsbAx88772Driver :: process_data(void)
                 if (q_remain == 0) {
                     q = q->next;
                     q_remain = q->len;
+                    qb = (BYTE *)q->payload;
                 }
                 if (usb_remain == 0) {
+                    printf("<%d:", size);
                     host->start_bulk_in(bulk_transaction, bulk_in, 512);
                     while(!host->transaction_done(bulk_transaction))
                         ;
                     usb_remain = host->get_bulk_in_data(bulk_transaction, &usb_buffer);
+                    printf("%d>", usb_remain);
                     usb_buffer += 0x1000000;
                 }
             }
@@ -394,7 +384,7 @@ void UsbAx88772Driver :: process_data(void)
 #endif /* PPPOE_SUPPORT */
             /* full packet send to tcpip_thread to process */
             if (netif->input(p, netif)!=ERR_OK) {
-                LWIP_DEBUGF(NETIF_DEBUG, ("dummy_if_input: IP input error\n"));
+                LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
                 pbuf_free(p);
             }
             break;
@@ -440,37 +430,6 @@ void UsbAx88772Driver :: write_mac_address(void)
     read_mac_address();
 }
 
-    
-bool UsbAx88772Driver :: transmit_frame(BYTE *buffer, int length)
-{
-    BYTE prefix[4];
-    prefix[0] = BYTE(length & 0xFF);
-    prefix[1] = BYTE(length >> 8);
-    prefix[2] = prefix[0] ^ 0xFF;
-    prefix[3] = prefix[1] ^ 0xFF;
-
-    int packet_size = (length > 508)?508:length;
-    int res;
-    res = host->bulk_out_with_prefix(prefix, 4, buffer, packet_size, bulk_out);
-    if(res < 0)
-        return false;
-
-    if(packet_size != 508) // first packet was already smaller than 512 in total
-        return true;
-
-    buffer += packet_size;
-    length -= packet_size;
-    do {
-        packet_size = (length > 512)?512:length;
-        res = host->bulk_out(buffer, packet_size, bulk_out);
-        if(res < 0)
-            return false;
-        length -= 512; // !! This causes the last packet to be always less than 512; even 0.
-        buffer += packet_size;
-    } while(length >= 0);
-    return true;
-}
-
 err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p) 
 {
     BYTE *usb_buffer = host->get_bulk_out_buffer(bulk_out);
@@ -493,12 +452,16 @@ err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p)
     qb[5] = 0xFF;
     */
     do {
-        // printf("-> [%d:%d:%d]\n", size, usb_remain, q_remain);
+#if DEBUG_RAW_PKT
+        printf("-> [%d:%d:%d]\n", size, usb_remain, q_remain);
+#endif
         int now = (q_remain < usb_remain)?q_remain:usb_remain;
 
         // copy data
         memcpy(usb_buffer, qb, now);
-        // dump_hex(qb, now);
+#if DEBUG_RAW_PKT
+        dump_hex(qb, now);
+#endif
         size -= now;
         qb += now;
         q_remain -= now;
@@ -522,43 +485,3 @@ err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p)
     return 0;
 }
 
-void UsbAx88772Driver :: test_packet_out(int size, int filler) 
-{
-    BYTE *usb_buffer = host->get_bulk_out_buffer(bulk_out);
-        
-    usb_buffer[0] = BYTE(size & 0xFF);
-    usb_buffer[1] = BYTE(size >> 8);
-    usb_buffer[2] = usb_buffer[0] ^ 0xFF;
-    usb_buffer[3] = usb_buffer[1] ^ 0xFF;
-    usb_buffer += 4;
-    usb_buffer[0] = 0xFF;
-    usb_buffer[1] = 0xFF;
-    usb_buffer[2] = 0xFF;
-    usb_buffer[3] = 0xFF;
-    usb_buffer[4] = 0xFF;
-    usb_buffer[5] = 0xFF;
-
-    int usb_remain = 508;
-    
-    do {
-        printf("->T [%d:%d]\n", size, usb_remain);
-        int now = (usb_remain < size)?usb_remain:size;
-
-        // copy data
-//        memset(usb_buffer, filler, now);
-//        memset(usb_buffer, 0xFF, 6);
-        
-        size -= now;
-        usb_buffer += now;
-        usb_remain -= now;
-
-        if (usb_remain == 0) {
-            printf("Usb full:");
-            host->bulk_out_actual(512, bulk_out);
-            usb_buffer = host->get_bulk_out_buffer(bulk_out);
-            usb_remain = 512;
-        }
-    } while(size > 0);
-
-    host->bulk_out_actual(512-usb_remain, bulk_out);
-}

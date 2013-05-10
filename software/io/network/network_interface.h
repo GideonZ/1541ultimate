@@ -24,16 +24,21 @@ public:
     struct ip_addr my_gateway;
     struct netif   my_net_if;
     struct netif  *netif;
+
+    bool   if_up;
     
     NetworkInterface() { }
     virtual ~NetworkInterface() { }
 
-    virtual bool start_lwip();
+    bool start_lwip();
+    void stop_lwip();
+    void lwip_poll();
+    void poll();
+    
     virtual void init_callback(struct netif *);
     virtual err_t output_callback(struct netif *, struct pbuf *) {
         printf("Network Interface: Output Callback - Base\n");
     }
-    virtual void lwip_poll();
 };
 
 #endif

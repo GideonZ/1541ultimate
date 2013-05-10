@@ -9,7 +9,9 @@
 #define LWIP_DHCP                       1
 #define LWIP_DNS                        1
 #define LWIP_ARP                        1
-
+#define LWIP_TCP                        1
+#define LWIP_UDP                        1
+#define LWIP_NETIF_HOSTNAME             1
 
 /* turn on debugging */
 // turn on the macro
@@ -21,8 +23,12 @@
 //#define MEMP_DEBUG   LWIP_DBG_ON
 //#define DHCP_DEBUG   LWIP_DBG_ON
 //#define PBUF_DEBUG   LWIP_DBG_ON
-#define NETIF_DEBUG  LWIP_DBG_ON
 //#define ETHARP_DEBUG LWIP_DBG_ON
+#define NETIF_DEBUG  LWIP_DBG_ON
+//#define TCP_DEBUG    LWIP_DBG_ON
+
+//#define TCP_OUTPUT_DEBUG LWIP_DBG_ON
+//#define TCP_INPUT_DEBUG  LWIP_DBG_ON
 
 #define _DEBUG LWIP_DBG_ON
 

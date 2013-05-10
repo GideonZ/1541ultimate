@@ -93,6 +93,7 @@ int Path :: cd_single(char *cd)
 int Path :: cd(char *pa_in)
 {
     int pa_len = strlen(pa_in);
+
     int fp_len = full_path.length();
     char *fp = full_path.c_str();
     char *last_part;
@@ -102,6 +103,13 @@ int Path :: cd(char *pa_in)
 	char *pa = pa_alloc;
 	
 	strcpy(pa, pa_in);
+    
+    // snoop last '/' (or '\')
+    if ((pa[pa_len-1] == '/')||(pa[pa_len-1] == '\\')) {
+        pa_len--;
+        pa[pa_len] = 0;
+    }
+
     // printf("CD '%s' (starting from %s)\n", pa, full_path.c_str());
 	
     // check for start from root

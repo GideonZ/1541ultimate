@@ -37,6 +37,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/flash \
 			$(PATH_SW)/drive \
 			$(PATH_SW)/components \
+			$(PATH_SW)/network \
 			$(PATH_SW)/io/stream \
 			$(PATH_SW)/io/c64 \
 			$(PATH_SW)/io/rtc \
@@ -63,6 +64,9 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 SRCS_C   =	zpu.c \
 			itu.c \
 			dump_hex.c \
+			echo.c \
+			ftpd.c \
+			time.c \
 			small_printf.c
 
 # the order of the files is important, because of the static constructors.
@@ -142,6 +146,7 @@ SRCS_CC	 =  stream.cc \
 			iec.cc \
 			command_intf.cc \
 			dos.cc \
+			vfs.cc \
 			$(PRJ).cc
 
 ####			sampler.cc \

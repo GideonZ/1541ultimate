@@ -1,5 +1,9 @@
 #include "network_interface.h"
 
+extern "C" {
+#include "echo.h"
+#include "ftpd.h"
+}
 
 err_t lwip_init_callback(struct netif *netif)
 {
@@ -27,8 +31,34 @@ bool NetworkInterface :: start_lwip()
     netif = netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway,
                         this, lwip_init_callback, ethernet_input);
 
+    netif->name[0] = 'U';
+    netif->name[1] = '2';
+
     netif_set_default(netif);
+
+    if_up = false;
 }
+
+void NetworkInterface :: stop_lwip()
+{
+    dhcp_stop(netif);
+    if_up = false;
+}
+
+void NetworkInterface :: poll()
+{
+    if (netif_is_up(netif) && !if_up) {
+        printf("**** NETIF IS NOW UP ****\n");
+        if_up = true;
+        echo_init();
+        ftpd_init();
+        //etharp_request(netif, &(netif->gw));
+    } else if(!netif_is_up(netif) && if_up) {
+        printf("#### NETIF IS NOW DOWN ####\n");
+        if_up = false;
+    }
+}
+        
        
 void NetworkInterface :: init_callback(struct netif *netif)
 {
@@ -61,8 +91,6 @@ void NetworkInterface :: init_callback(struct netif *netif)
      */
     NETIF_INIT_SNMP(netif, snmp_ifType_ethernet_csmacd, 100000000);
   
-    netif->name[0] = 'U';
-    netif->name[1] = '2';
     /* We directly use etharp_output() here to save a function call.
      * You can instead declare your own function an call etharp_output()
      * from it if you have to do some checks before sending (e.g. if link
