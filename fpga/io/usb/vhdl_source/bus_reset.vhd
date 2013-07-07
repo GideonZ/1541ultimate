@@ -22,9 +22,6 @@ port (
     status      : in    std_logic_vector(7 downto 0);
 	usb_busy	: out   std_logic;
     
-    -- other controls
-    gap_length  : out   std_logic_vector(7 downto 0);
-	
     -- command response interface
     cmd_empty   : in    std_logic;
     cmd_data    : in    std_logic_vector(7 downto 0);
@@ -163,8 +160,6 @@ begin
                             end if;                            
                             state <= send_resp;
                         end case;
---                    when "01" =>
---                        gap_length <= "00" & cmd_data(5 downto 0);
                     when "11" =>
                         state <= user_reg_write;
                     when "10" =>
@@ -348,7 +343,5 @@ begin
             end if;
         end if;
     end process;
-
-    gap_length   <= X"10";
 
 end functional;

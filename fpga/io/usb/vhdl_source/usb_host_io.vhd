@@ -101,7 +101,6 @@ architecture wrap of usb_host_io is
 	signal sof_enable	   : std_logic;
 	signal scan_enable     : std_logic;
     signal speed           : std_logic_vector(1 downto 0);
-    signal gap_length      : std_logic_vector(7 downto 0);
     signal abort           : std_logic;
 
     signal sys_addr_i       : std_logic_vector(sys_io_req.address'range);
@@ -239,12 +238,10 @@ begin
         tx_valid    => tx_valid,
         tx_next     => tx_next,
         tx_data     => tx_data,
-        rx_data     => rx_data,
         
         -- Status
         speed       => speed,
         status      => status,
-        gap_length  => gap_length,
         busy        => tx_busy,
         tx_ack      => tx_ack,         
         
@@ -347,7 +344,6 @@ begin
 
         -- status
         status      => status,
-        gap_length  => gap_length,
     	usb_busy	=> usb_busy,
     	
         -- register interface

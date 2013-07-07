@@ -13,12 +13,10 @@ port (
     tx_valid    : out   std_logic;
     tx_next     : in    std_logic;
     tx_data     : out   std_logic_vector(7 downto 0);
-    rx_data     : in    std_logic_vector(7 downto 0);
     
     -- Status
     status      : in    std_logic_vector(7 downto 0);
     speed       : in    std_logic_vector(1 downto 0);
-    gap_length  : in    std_logic_vector(7 downto 0);
     busy        : out   std_logic;
     tx_ack      : out   std_logic;
     
@@ -60,11 +58,8 @@ architecture gideon of ulpi_tx is
     signal crc_sync     : std_logic;
     signal data_crc     : std_logic_vector(15 downto 0);
     signal no_data_d    : std_logic;
---    constant c_gap_val  : integer := 0;
-    signal gap_count    : integer range 0 to 255;
-
-    signal debug_count  : integer range 0 to 255 := 0;
-    signal debug_error  : std_logic := '0';
+    constant c_gap_val  : integer := 15;
+    signal gap_count    : integer range 0 to 15;
 
     -- XILINX USB STICK:
     -- On high speed, gap values 0x05 - 0x25 WORK.. (bigger than 0x25 doesn't, smaller than 0x05 doesn't..)
@@ -180,7 +175,7 @@ begin
                 end if;
 
             when gap =>
-                gap_count <= to_integer(unsigned(gap_length));
+                gap_count <= c_gap_val;
                 if speed(1)='0' then
                     if status(1 downto 0)="00" or status(1 downto 0)="11" then --<-- :-o SE1 in low speed?! 
                         state <= gap2;
@@ -226,21 +221,6 @@ begin
 
             end case;                                    
 
----------------------------------------------------
---          DEBUG
----------------------------------------------------
-            if state /= token2 then
-                debug_count <= 0;
-                debug_error <= '0';
-            elsif debug_count = 255 then
-                debug_error <= '1';
-            else
-                debug_count <= debug_count + 1;
-            end if;
-            if debug_error='1' then -- this makes debug_error continue to exist
-                state <= idle;
-            end if;
----------------------------------------------------
             if reset='1' then
                 state  <= idle;
             end if;
