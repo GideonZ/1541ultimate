@@ -27,7 +27,8 @@ AudioConfig audio_configurator;
 #define CFG_AUDIO_SID_EXT_RIGHT  0x5F
 #define CFG_AUDIO_SAMPLER_IO     0x60
 
-char *aud_choices[] = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right" };
+char *aud_choices[]  = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right" };
+char *aud_choices2[] = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "Sampler Left", "Sampler Right" };
 
 char *sid_base[] = { "Snoop $D400", "Snoop $D420", "Snoop $D480", "Snoop $D500", "Snoop $D580", 
                      "Snoop $D600", "Snoop $D680", "Snoop $D700", "Snoop $D780",
@@ -59,25 +60,42 @@ struct t_cfg_definition audio_cfg[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,        0,  0, 0 } };
 
 struct t_cfg_definition audio_cfg_no_sid[] = {
-    { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  3, 0 },
-    { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices, 0,  3, 1 },
-    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,        0,  0, 0 } };
+    { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices2, 0,  3, 0 },
+    { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices2, 0,  3, 1 },
+    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
-struct t_cfg_definition audio_cfg_sampler_only[] = {
-    { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  7, 0 },
-    { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices, 0,  7, 1 },
-    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,        0,  0, 0 } };
-
+int normal_map[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+int skip_sid[8]   = { 0, 1, 2, 3, 6, 7, 6, 7 };
 
 AudioConfig :: AudioConfig()
 {
+    struct t_cfg_definition *def = audio_cfg;
+    DWORD store = 0x41554449;    
+
     if(CAPABILITIES & CAPAB_STEREO_SID) {
-        register_store(0x41554449, "Audio Output settings", audio_cfg);
-    } else if(CAPABILITIES & CAPAB_SAMPLER) {
-        register_store(0x4155444A, "Audio Output settings", audio_cfg_sampler_only);
-    } else {
-        register_store(0x4155444A, "Audio Output settings", audio_cfg_no_sid);
-    }
+        map = normal_map;
+        def = audio_cfg;
+        if(CAPABILITIES & CAPAB_SAMPLER) {
+            def[0].max = 7;
+            def[1].max = 7;
+        } else {
+            def[0].max = 5;
+            def[1].max = 5;
+        }
+    } else {// no sid
+        map = skip_sid;
+        def = audio_cfg_no_sid;
+        store = 0x4155444a;
+        if(CAPABILITIES & CAPAB_SAMPLER) {
+            def[0].max = 5;
+            def[1].max = 5;
+        } else {
+            def[0].max = 3;
+            def[1].max = 3;
+        }
+    }        
+    register_store(store, "Audio Output settings", def);
+
     effectuate_settings();
 }
     
@@ -86,8 +104,8 @@ void AudioConfig :: effectuate_settings()
     if(!cfg)
         return;
 
-    AUDIO_SELECT_LEFT   = cfg->get_value(CFG_AUDIO_SELECT_LEFT);
-    AUDIO_SELECT_RIGHT  = cfg->get_value(CFG_AUDIO_SELECT_RIGHT);
+    AUDIO_SELECT_LEFT   = map[cfg->get_value(CFG_AUDIO_SELECT_LEFT)];
+    AUDIO_SELECT_RIGHT  = map[cfg->get_value(CFG_AUDIO_SELECT_RIGHT)];
     
     if(CAPABILITIES & CAPAB_STEREO_SID) {
         printf("Number of SID voices implemented in FPGA: %d\n", SID_VOICES);

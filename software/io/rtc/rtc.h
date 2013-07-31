@@ -67,7 +67,7 @@ class Rtc
 {
 private:
 	void write_byte(int addr, BYTE val);
-	void read_all(BYTE *buf);
+	void read_all();
     bool capable;
 	BYTE rtc_regs[16];
 	RtcConfigStore *cfg;
@@ -77,7 +77,7 @@ public:
 
 	int  get_correction(void);
 	void get_time_from_chip(void);
-	void set_time_in_chip(int);
+	void set_time_in_chip(int, int y, int M, int D, int wd, int h, int m, int s);
 
 	void get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s);
 	void set_time(int y, int M, int D, int wd, int h, int m, int s);

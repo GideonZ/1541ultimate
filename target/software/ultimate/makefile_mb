@@ -18,8 +18,8 @@ ROMS = ../../../roms
 BOOT_250_BIN = ../1st_boot/result/1st_boot_250.bin
 
 # Outputs
-RESULT    = ./result
-OUTPUT    = ./output
+RESULT    = ./result_mb
+OUTPUT    = ./output_mb
 OUTPUT_FP = $(shell pwd)/output
 
 PRJ      =  ultimate
@@ -144,7 +144,7 @@ LD		  = $(CROSS)-ld
 OBJDUMP   = $(CROSS)-objdump
 OBJCOPY	  = $(CROSS)-objcopy
 
-TOOLCHAIN = C:/Xilinx/13.1/ISE_DS/EDK/gnu/microblaze/nt
+TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -ffunction-sections

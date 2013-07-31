@@ -57,7 +57,6 @@ architecture wrap of usb_host_io is
     signal no_data         : std_logic;
     signal user_data       : std_logic_vector(7 downto 0);
     signal user_last       : std_logic;
-    signal user_valid      : std_logic;
     signal user_next       : std_logic;
 
     signal rx_pid          : std_logic_vector(3 downto 0) := X"0";
@@ -163,7 +162,6 @@ begin
         no_data     => no_data,
         user_data   => user_data,
         user_last   => user_last,
-        user_valid  => user_valid,
         user_next   => user_next,
                 
         -- Interface to bus reset unit
@@ -255,7 +253,6 @@ begin
         send_data   => send_data,
         user_data   => user_data,
         user_last   => user_last,
-        user_valid  => user_valid,
         user_next   => user_next,
                 
         -- Interface to read/write registers and reset packets

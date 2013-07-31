@@ -71,10 +71,12 @@ Rtc :: Rtc()
 Rtc :: ~Rtc()
 {
     //printf("Destructor RTC\n");
-    //config_manager.dump();
-    config_manager.remove_store(cfg);
-	delete cfg;
-	//printf("RTC configuration store now gone..\n");
+    if (capable) {
+        //config_manager.dump();
+        config_manager.remove_store(cfg);
+    	delete cfg;
+    	//printf("RTC configuration store now gone..\n");
+    }
 }
 
 void Rtc :: write_byte(int addr, BYTE val)
@@ -87,34 +89,35 @@ void Rtc :: write_byte(int addr, BYTE val)
 }
 
 
-void Rtc :: read_all(BYTE *buf)
+void Rtc :: read_all(void)
 {
     RTC_CHIP_CTRL = SPI_CS_ON;
     RTC_CHIP_DATA = 0x90; // read + startbit
 
     for(int i=0;i<16;i++) {
-        buf[i] = RTC_CHIP_DATA;
+        rtc_regs[i] = RTC_CHIP_DATA;
     }
 	RTC_CHIP_CTRL = SPI_CS_OFF;
 }
 
 void Rtc :: get_time_from_chip(void)
 {
-	read_all(rtc_regs);
-	RTC_TIMER_LOCK = 1;
+	read_all();
 
-    RTC_TIMER_SECONDS    = bcd2bin(rtc_regs[RTC_ADDR_SECONDS]);
-    RTC_TIMER_MINUTES    = bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
-    RTC_TIMER_HOURS      = bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
-    RTC_TIMER_WEEKDAYS   = bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
-    RTC_TIMER_DAYS       = bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
-    RTC_TIMER_MONTHS     = bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
-    RTC_TIMER_YEARS      = bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
-
-	RTC_TIMER_LOCK = 0;
+    if (CAPABILITIES & CAPAB_RTC_TIMER) {
+    	RTC_TIMER_LOCK = 1;
+        RTC_TIMER_SECONDS    = bcd2bin(rtc_regs[RTC_ADDR_SECONDS]);
+        RTC_TIMER_MINUTES    = bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
+        RTC_TIMER_HOURS      = bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
+        RTC_TIMER_WEEKDAYS   = bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
+        RTC_TIMER_DAYS       = bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
+        RTC_TIMER_MONTHS     = bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
+        RTC_TIMER_YEARS      = bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
+    	RTC_TIMER_LOCK = 0;
+    }
 }
 
-void Rtc :: set_time_in_chip(int corr_ppm)
+void Rtc :: set_time_in_chip(int corr_ppm, int y, int M, int D, int wd, int h, int m, int s)
 {
 	// calculate correction register
 	BYTE corr_byte = 0;
@@ -134,18 +137,17 @@ void Rtc :: set_time_in_chip(int corr_ppm)
 	corr_byte |= BYTE(val);
 //	printf("Correction byte for %d ppm: %b\n", corr_ppm, corr_byte);
 	
-	RTC_TIMER_LOCK = 1;
 	write_byte(RTC_ADDR_CTRL1,    0x80);
-	write_byte(RTC_ADDR_SECONDS,  bin2bcd(RTC_TIMER_SECONDS));
-	write_byte(RTC_ADDR_MINUTES,  bin2bcd(RTC_TIMER_MINUTES));
-	write_byte(RTC_ADDR_HOURS,    bin2bcd(RTC_TIMER_HOURS));
-	write_byte(RTC_ADDR_WEEKDAYS, bin2bcd(RTC_TIMER_WEEKDAYS));
-	write_byte(RTC_ADDR_DAYS,     bin2bcd(RTC_TIMER_DAYS));
-	write_byte(RTC_ADDR_MONTHS,   bin2bcd(RTC_TIMER_MONTHS));
-	write_byte(RTC_ADDR_YEARS,    bin2bcd(RTC_TIMER_YEARS));
+	write_byte(RTC_ADDR_SECONDS,  bin2bcd(s));
+	write_byte(RTC_ADDR_MINUTES,  bin2bcd(m));
+	write_byte(RTC_ADDR_HOURS,    bin2bcd(h));
+	write_byte(RTC_ADDR_WEEKDAYS, bin2bcd(wd));
+	write_byte(RTC_ADDR_DAYS,     bin2bcd(D));
+	write_byte(RTC_ADDR_MONTHS,   bin2bcd(M));
+	write_byte(RTC_ADDR_YEARS,    bin2bcd(y));
 	write_byte(RTC_ADDR_OFFSET,   corr_byte);
 	write_byte(RTC_ADDR_CTRL1,    0x00);
-	RTC_TIMER_LOCK = 0;
+    
 }
 
 int  Rtc :: get_correction(void)
@@ -164,36 +166,51 @@ int  Rtc :: get_correction(void)
 
 void Rtc :: get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 {
-	RTC_TIMER_LOCK = 1;
-	y = (int)RTC_TIMER_YEARS;
-	M = (int)RTC_TIMER_MONTHS;
-	D = (int)RTC_TIMER_DAYS;
-	wd = (int)RTC_TIMER_WEEKDAYS;
-	h = (int)RTC_TIMER_HOURS;
-	m = (int)RTC_TIMER_MINUTES;
-	s = (int)RTC_TIMER_SECONDS;
-	RTC_TIMER_LOCK = 0;
+    if (CAPABILITIES & CAPAB_RTC_TIMER) {
+    	RTC_TIMER_LOCK = 1;
+    	y = (int)RTC_TIMER_YEARS;
+    	M = (int)RTC_TIMER_MONTHS;
+    	D = (int)RTC_TIMER_DAYS;
+    	wd = (int)RTC_TIMER_WEEKDAYS;
+    	h = (int)RTC_TIMER_HOURS;
+    	m = (int)RTC_TIMER_MINUTES;
+    	s = (int)RTC_TIMER_SECONDS;
+    	RTC_TIMER_LOCK = 0;
+    } else {
+        read_all(); // read directly from chip
+
+        s  = (int)bcd2bin(rtc_regs[RTC_ADDR_SECONDS]);
+        m  = (int)bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
+        h  = (int)bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
+        wd = (int)bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);
+        D  = (int)bcd2bin(rtc_regs[RTC_ADDR_DAYS]);
+        M  = (int)bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
+        y  = (int)bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
+    }
 }
 
 void Rtc :: set_time(int y, int M, int D, int wd, int h, int m, int s)
 {
-	RTC_TIMER_LOCK = 1;
-	RTC_TIMER_YEARS = (BYTE)y;
-	RTC_TIMER_MONTHS = (BYTE)M;
-	RTC_TIMER_DAYS = (BYTE)D;
-	RTC_TIMER_WEEKDAYS = (BYTE)wd;
-	RTC_TIMER_HOURS = (BYTE)h;
-	RTC_TIMER_MINUTES = (BYTE)m;
-	RTC_TIMER_SECONDS = (BYTE)s;
-	RTC_TIMER_LOCK = 0;
-
+    if (CAPABILITIES & CAPAB_RTC_TIMER) {
+    	RTC_TIMER_LOCK = 1;
+    	RTC_TIMER_YEARS = (BYTE)y;
+    	RTC_TIMER_MONTHS = (BYTE)M;
+    	RTC_TIMER_DAYS = (BYTE)D;
+    	RTC_TIMER_WEEKDAYS = (BYTE)wd;
+    	RTC_TIMER_HOURS = (BYTE)h;
+    	RTC_TIMER_MINUTES = (BYTE)m;
+    	RTC_TIMER_SECONDS = (BYTE)s;
+    	RTC_TIMER_LOCK = 0;
+    }
 }
 
 char * Rtc :: get_time_string(char *dest, int len)
 {
 	if(len < 9)
 		return "";
-	sprintf(dest, "%02d:%02d:%02d", RTC_TIMER_HOURS, RTC_TIMER_MINUTES, RTC_TIMER_SECONDS);
+    int y, M, D, wd, h, m, s;
+    get_time(y, M, D, wd, h, m, s);
+	sprintf(dest, "%02d:%02d:%02d", h, m, s);
 	return dest;
 }
 
@@ -202,7 +219,9 @@ char * Rtc :: get_date_string(char *dest, int len)
 {
 	if(len < 14)
 		return "";
-	sprintf(dest, "%s %2d, %4d", month_strings_short[RTC_TIMER_MONTHS], RTC_TIMER_DAYS, 1980+RTC_TIMER_YEARS);
+    int y, M, D, wd, h, m, s;
+    get_time(y, M, D, wd, h, m, s);
+	sprintf(dest, "%s %2d, %4d", month_strings_short[M], D, 1980+y);
 	return dest;
 }
 
@@ -211,23 +230,40 @@ char * Rtc :: get_long_date(char *dest, int len)
 	// Wednesday September 30, 2009
 	if(len < 29)
 		return "";
-	sprintf(dest, "%s %s %2d, %4d", weekday_strings[RTC_TIMER_WEEKDAYS], month_strings_long[RTC_TIMER_MONTHS], RTC_TIMER_DAYS, 1980+RTC_TIMER_YEARS);
+    int y, M, D, wd, h, m, s;
+    get_time(y, M, D, wd, h, m, s);
+	sprintf(dest, "%s %s %2d, %4d", weekday_strings[wd], month_strings_long[M], D, 1980+y);
 	return dest;
 }
 
 DWORD Rtc :: get_fat_time(void)
 {
-    if(capable)
-    	return RTC_TIMER_FAT_TIME;
+    if(!capable)
+        return 0x42FF9877;
 /*
-    30 << 25 = 0x3C000000
-    11 << 21 = 0x01600000
-     7 << 16 = 0x00070000
-    16 << 11 = 0x00008000
-    36 <<  5 = 0x00000480
+    33 << 25 = 0x42000000
+     7 << 21 = 0x00E00000
+    31 << 16 = 0x001F0000
+    19 << 11 = 0x00009800
+    03 <<  5 = 0x00000060
     23 <<  0 = 0x00000017
 */
-    return 0x3D678497;
+
+    if(CAPABILITIES & CAPAB_RTC_TIMER)
+    	return RTC_TIMER_FAT_TIME;
+
+    int y, M, D, wd, h, m, s;
+    get_time(y, M, D, wd, h, m, s);
+
+    DWORD result = 0;    
+    result |= (y << 25);
+    result |= (M << 21);
+    result |= (D << 16);
+    result |= (h << 11);
+    result |= (m <<  5);
+    result |= (s >>  1);
+
+    return result;
 }
 
 Rtc rtc; // global
@@ -327,7 +363,7 @@ void RtcConfigStore :: write(void)
 	}
     printf("Writing time: %d-%d-%d (%d) %02d:%02d:%02d\n", y, M, D, wd, h, m, s);
     rtc.set_time(y, M, D, wd, h, m, s);
-	rtc.set_time_in_chip(corr);
+	rtc.set_time_in_chip(corr, y, M, D, wd, h, m, s);
 	
 	dirty = false;
 }

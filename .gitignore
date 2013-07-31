@@ -2,6 +2,7 @@
 /*.bit
 /*.mcs
 /*.zip
+/audio
 fpga/io/sigma_delta_dac/sim
 fpga/ip/video/sim
 fpga/sid6581/sim/modelsim.ini

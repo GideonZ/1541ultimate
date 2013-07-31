@@ -31,7 +31,6 @@ port (
     no_data     : in    std_logic := '0';
     user_data   : in    std_logic_vector(7 downto 0);
     user_last   : in    std_logic;
-    user_valid  : in    std_logic;
     user_next   : out   std_logic;
             
     -- Interface to output reset packets

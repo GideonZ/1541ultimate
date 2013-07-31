@@ -30,6 +30,7 @@
 
 class AudioConfig : public ConfigurableObject
 {
+    int *map;
 public:
     AudioConfig();
     ~AudioConfig() {}
