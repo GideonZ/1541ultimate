@@ -45,6 +45,7 @@ void Editor :: line_breakdown(char *text_buffer)
     char *c = text_buffer;
     char last;
     int last_space;
+	linecount = 0;
 
     // printf("Line length = %d\n", line_length);
 
@@ -58,6 +59,7 @@ void Editor :: line_breakdown(char *text_buffer)
                 current.length = i;
                 // printf("adding returned line = %d\n", current.length);
                 text->append(current);
+				linecount++;
                 if(last == 0)
                     return;
                 c = c + i + 1;
@@ -82,6 +84,7 @@ void Editor :: line_breakdown(char *text_buffer)
         }
         // printf("adding line len = %d\n", current.length);
         text->append(current);
+		linecount++;
     }
 }
 
@@ -145,8 +148,10 @@ int Editor :: handle_key(char c)
             ret = -1;
             break;
         case 0x11: // down
-            first_line++;
-            draw();
+			if (first_line < linecount - height) {
+				first_line++;
+				draw();
+			}
             break;
         case 0x91: // up
             if(first_line>0) {
@@ -154,6 +159,22 @@ int Editor :: handle_key(char c)
                 draw();
             }
             break;
+        case 0x85: // F1 -> page up
+			first_line -= height + 1;
+			if (first_line < 0) {
+				first_line = 0;
+			}
+			draw();
+			break;
+        case 0x88: // F7 -> page down
+			first_line += height - 1;
+			if (first_line >= linecount - height) {
+				first_line = linecount - height;
+				if (first_line < 0)
+					first_line = 0;
+			}
+			draw();
+			break;
         case 0x14: // backspace
             break;
         case 0x20: // space

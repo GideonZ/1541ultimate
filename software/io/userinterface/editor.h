@@ -16,6 +16,7 @@ public:
     int line_length;
     int height;
     int first_line;
+	int linecount;
     
     Screen   *parent_win;
     Screen   *window;

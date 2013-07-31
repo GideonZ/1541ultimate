@@ -36,6 +36,7 @@ public:
     void move_to_index(int);
 
     virtual void into(void);
+	virtual bool into2(void);
     virtual void level_up(void);
 
     // functions only used for config menu state

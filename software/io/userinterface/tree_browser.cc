@@ -11,6 +11,28 @@
 #include "task_menu.h"
 #include "filemanager.h"
 #include "editor.h"
+#include "userinterface.h"
+
+static char *helptext=
+	"CRSR UP/DN: Selection up/down\n"
+	"CRSR LEFT:  Go one level up\n"
+	"            leave directory or disk\n"
+	"CRSR RIGHT: Go one level down\n"
+	"            enter directory or disk\n"
+	"RETURN/SPC: Selection context menu\n"
+	"RUN/STOP:   Leave menu / Back\n"
+	"\n"
+	"F1:         Selection Page up\n"
+	"F7:         Selection Page down\n"
+	"\n"
+	"F2:         Enter the setup menu\n"
+	"F5:         Action menu\n"
+	"\n"
+	"Quick seek: Use the keyboard to type\n"
+	"            the name to search for.\n"
+	"            You can use ? as a\n"
+	"            wildcard.\n"
+	"\nRUN/STOP to close this window.";
 
 /***********************/
 /* Tree Browser Object */
@@ -197,6 +219,10 @@ int TreeBrowser :: handle_key(char c)
 //            test_editor();
 //            ret = 0; // ## TODO
 //            break;
+        case 0x86: // F3 -> RUN
+        	reset_quick_seek();
+			user_interface->run_editor(helptext);
+            break;
 		case 0x87: // F5: Menu
 			task_menu();
 			break;
@@ -220,7 +246,7 @@ int TreeBrowser :: handle_key(char c)
             break;
         case 0x1D: // right
             reset_quick_seek();
-            state->into();
+			if (state->into2()) context(0);
             break;
         case 0x9D: // left
         	state->level_up();

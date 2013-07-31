@@ -258,6 +258,36 @@ void TreeBrowserState :: into(void)
     deeper->previous = this;
 }
 
+bool TreeBrowserState :: into2(void)
+{
+	// return True if should show context menu instead
+	if(!selected)
+		return(false);
+
+	printf("Going deeper into = %s\n", selected->get_name());
+    int child_count = selected->fetch_children();
+    reselect(); // might have been promoted..
+    if(child_count < 0)
+        return(true);
+        
+    printf("%d children fetched.\n", child_count);
+
+/*
+    if(selected->children.is_empty())
+        return;
+*/
+        
+	child_count = selected->children.get_elements();
+	for(int i=0;i<child_count;i++) {
+		selected->children[i]->attach(true);
+	}
+	deeper = new TreeBrowserState(selected, browser, level+1);
+    user_interface->set_path(selected);
+    browser->state = deeper;
+    deeper->previous = this;
+	return(false);
+}
+
 void TreeBrowserState :: level_up(void)
 {
     if(!previous)

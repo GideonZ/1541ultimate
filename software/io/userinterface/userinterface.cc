@@ -195,8 +195,15 @@ void UserInterface :: set_screen_title()
     sprintf(title, "\033\021    **** 1541 Ultimate %s (%b) ****\033\037\n", APPL_VERSION, ITU_FPGA_VERSION);
     screen->move_cursor(0,0);
     screen->output(title);
+    screen->move_cursor(0,1);
     for(int i=0;i<40;i++)
         screen->output('\002');
+    screen->move_cursor(0,24);
+	screen->no_scroll();
+    for(int i=0;i<40;i++)
+        screen->output('\002');
+    screen->move_cursor(32,24);
+	screen->output("\033\021F3=Help\033\037");		
 }
     
 /* Blocking variants of our simple objects follow: */
