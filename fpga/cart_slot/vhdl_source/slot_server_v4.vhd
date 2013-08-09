@@ -126,7 +126,8 @@ architecture structural of slot_server_v4 is
     signal epyx_timeout    : std_logic;
     
     signal reu_dma_n       : std_logic := '1'; -- direct from REC
-
+    signal cmd_if_freeze    : std_logic := '0'; -- same function as reu_dma_n, but then from CI
+    
     signal mask_buttons     : std_logic := '0';
     signal reset_button     : std_logic;
     signal freeze_button    : std_logic;
@@ -393,6 +394,7 @@ begin
         do_sample_io    => do_sample_io,
         do_io_event     => do_io_event,
         reu_dma_n       => reu_dma_n,
+        cmd_if_freeze   => cmd_if_freeze,
         
         -- request from the cpu to do a cycle on the cart bus
         dma_req         => dma_req,
@@ -539,6 +541,7 @@ begin
             -- C64 side interface
             slot_req        => slot_req,
             slot_resp       => slot_resp_cmd,
+            freeze          => cmd_if_freeze,
             
             -- io interface for local cpu
             io_req          => io_req_cmd, -- we get an 8K range

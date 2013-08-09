@@ -19,7 +19,8 @@ port (
     -- C64 side interface
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
-
+    freeze          : out std_logic;
+    
     -- block memory
     address         : out unsigned(10 downto 0);
     rdata           : in  std_logic_vector(7 downto 0);
@@ -141,6 +142,7 @@ begin
                             error_busy <= '0';
                         end if;
                         if slot_req.data(0)='1' then
+                            freeze <= slot_req.data(7);
                             if state = "00" then                            
                                 reset_response;
                                 state <= "01";
@@ -197,10 +199,12 @@ begin
                         handshake_in(2) <= '0';
                     end if;
                     if io_req.data(4)='1' then -- validate data
+                        freeze   <= '0';
                         state(1) <= '1';
                         state(0) <= io_req.data(5); -- more bit
                     end if;                        
                     if io_req.data(7)='1' then
+                        freeze   <= '0';
                         reset_response;
                         state <= "00";
                     end if;                        
@@ -261,6 +265,7 @@ begin
                 enabled          <= '0';
                 error_busy       <= '0';
                 slot_base        <= (others => '0');
+                freeze           <= '0';
             end if;
         end if;
     end process;

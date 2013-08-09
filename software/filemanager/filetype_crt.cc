@@ -288,12 +288,13 @@ bool FileTypeCRT :: read_chip_packet(File *f)
     constant c_retro        : X"6";
     constant c_action       : X"7";
     constant c_system3      : X"8";
-    constant c_ocean128     : X"9";
-    constant c_epyx         : X"A";
+    constant c_domark       : X"9";
+    constant c_ocean128     : X"A";
     constant c_ocean256     : X"B";
-    constant c_domark       : X"D";
     constant c_easy_flash   : X"C";
+    constant c_epyx         : X"E";
 */
+
 void FileTypeCRT :: configure_cart(void)
 {
     C64_MODE = C64_MODE_RESET;
@@ -344,7 +345,7 @@ void FileTypeCRT :: configure_cart(void)
             C64_CARTRIDGE_TYPE = 0x06; // Retro
             break;
         case CART_DOMARK:
-            C64_CARTRIDGE_TYPE = 0x0D; // Domark
+            C64_CARTRIDGE_TYPE = 0x09; // Domark
             break;
         case CART_OCEAN:
 //            if ((total_read > 0x20000)&&(total_read <= 0x40000)) { // 16K banks
@@ -363,7 +364,7 @@ void FileTypeCRT :: configure_cart(void)
             } else {
 //                DWORD mem_base = ((DWORD)C64_CARTRIDGE_RAM_BASE) << 16;
 //                memcpy((void *)(mem_base + 256*1024), (void *)(mem_base + 0*1024), 256*1024);
-                C64_CARTRIDGE_TYPE = 0x09; // Ocean 128K/512K
+                C64_CARTRIDGE_TYPE = 0x0A; // Ocean 128K/512K
             }                
             break;
         case CART_EASYFLASH:
@@ -373,7 +374,7 @@ void FileTypeCRT :: configure_cart(void)
             C64_CARTRIDGE_TYPE = 0x05; // Snappy
             break;
         case CART_EPYX:
-            C64_CARTRIDGE_TYPE = 0x0A; // Epyx
+            C64_CARTRIDGE_TYPE = 0x0E; // Epyx
             break;
         case CART_FINAL3:
             C64_CARTRIDGE_TYPE = 0x04; // Final3

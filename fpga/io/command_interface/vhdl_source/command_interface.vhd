@@ -14,7 +14,8 @@ port (
     -- C64 side interface
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
-    
+    freeze          : out std_logic;
+        
     -- io interface for local cpu
     io_req          : in  t_io_req; -- we get an 8K range
     io_resp         : out t_io_resp );
@@ -103,7 +104,8 @@ begin
         -- slot
         slot_req    => slot_req,
         slot_resp   => slot_resp,
-        
+        freeze      => freeze,
+            
         -- memory
         address     => b_address,
         rdata       => b_rdata,

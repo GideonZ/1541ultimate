@@ -33,7 +33,8 @@ port (
     do_sample_io    : in  std_logic;
     do_io_event     : in  std_logic;
     reu_dma_n       : in  std_logic := '1';
-    
+    cmd_if_freeze   : in  std_logic := '0';
+        
     -- request from the memory controller to do a cycle on the cart bus
     dma_req         : in  t_dma_req;
     dma_resp        : out t_dma_resp;
@@ -59,7 +60,7 @@ architecture gideon of slot_master_v4 is
     signal rwn_out_i    : std_logic;
     signal phi2_dly     : std_logic_vector(6 downto 0) := (others => '0');
     signal reu_active   : std_logic;
-    
+    signal cmd_if_active: std_logic;
     constant match_ptrn : std_logic_vector(1 downto 0) := "01"; -- read from left to right
     signal rwn_hist     : std_logic_vector(3 downto 0);
     signal ba_count     : integer range 0 to 15;
@@ -120,8 +121,14 @@ begin
                 
                 dma_n_i <= '1';                
                 reu_active <= '0';
+                cmd_if_active <= '0';
                 if reu_dma_n='0' then -- for software assited REU-debugging
                     reu_active <= '1';
+                    dma_n_i <= '0';
+                    c64_stopped <= '1';
+                    state <= stopped;
+                elsif cmd_if_freeze='1' then
+                    cmd_if_active <= '1';
                     dma_n_i <= '0';
                     c64_stopped <= '1';
                     state <= stopped;
@@ -145,6 +152,10 @@ begin
                     rwn_out_i <= dma_req.read_writen;
                     state     <= do_dma;
                 elsif reu_active='1' and reu_dma_n='1' and do_io_event='1' then
+                    c64_stopped <= '0';
+                    dma_n_i  <= '1';
+                    state   <= idle;
+                elsif cmd_if_active='1' and cmd_if_freeze='0' and do_io_event='1' then
                     c64_stopped <= '0';
                     dma_n_i  <= '1';
                     state   <= idle;

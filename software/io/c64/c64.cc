@@ -86,12 +86,12 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_RR38NTSC,  0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
                           { FLASH_ID_SS5NTSC,   0x000000, 0x10000,  0x05 | CART_REU },
                           { FLASH_ID_TAR_NTSC,  0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
-                          { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0A },
+                          { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0E },
                           { 0x00,               0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
                           { 0x00,               0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
 /*
                           { 0x00,               0x000000, 0x80000,  0x08 | CART_REU },
-                          { 0x00,               0x000000, 0x80000,  0x09 | CART_REU },
+                          { 0x00,               0x000000, 0x80000,  0x0A | CART_REU },
                           { 0x00,               0x000000, 0x80000,  0x0B | CART_REU },
                           { 0x00,               0x000000, 0x10000,  0x04 },
 */

@@ -79,11 +79,11 @@ architecture gideon of all_carts_v4 is
     constant c_retro        : std_logic_vector(3 downto 0) := "0110";
     constant c_action       : std_logic_vector(3 downto 0) := "0111";
     constant c_system3      : std_logic_vector(3 downto 0) := "1000";
-    constant c_ocean128     : std_logic_vector(3 downto 0) := "1001";
-    constant c_epyx         : std_logic_vector(3 downto 0) := "1010";
+    constant c_domark       : std_logic_vector(3 downto 0) := "1001";
+    constant c_ocean128     : std_logic_vector(3 downto 0) := "1010";
     constant c_ocean256     : std_logic_vector(3 downto 0) := "1011";
-    constant c_domark       : std_logic_vector(3 downto 0) := "1101";
     constant c_easy_flash   : std_logic_vector(3 downto 0) := "1100";
+    constant c_epyx         : std_logic_vector(3 downto 0) := "1110";
 
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
