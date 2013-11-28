@@ -35,6 +35,7 @@ architecture gideon of c2n_playback_io is
     signal fifo_almostfull  : std_logic;
     signal fifo_flush       : std_logic;
     signal fifo_write       : std_logic;
+    signal pulse            : std_logic;
     signal toggle           : std_logic;
     signal cnt2             : integer range 0 to 63;
     signal stream_en        : std_logic;
@@ -42,7 +43,7 @@ architecture gideon of c2n_playback_io is
     signal state            : t_state;
     signal state_enc        : std_logic_vector(1 downto 0);
     signal mode             : std_logic;
-    signal sel              : std_logic;
+    signal sel              : std_logic_vector(1 downto 0);
     signal c2n_out          : std_logic;
     
     attribute register_duplication  : string;
@@ -53,16 +54,20 @@ begin
     begin
         if rising_edge(clock) then
             -- c2n pin out and sync
-            c2n_sense <= enabled and not fifo_empty;
+            if sel = "00" then
+                c2n_sense <= enabled and not fifo_empty;
+            else
+                c2n_sense <= '0';
+            end if;
             stream_en <= enabled and c2n_motor;
 
             if fifo_empty='1' and enabled='1' then
                 error <= '1';
             end if;
 
-            -- create a pulse of 16 ticks
+            -- create a pulse of 50 ticks
             if cnt2 = 0 then
-                toggle <= '0';
+                pulse <= '0';
             elsif phi2_tick='1' then
                 cnt2 <= cnt2 - 1;
             end if;
@@ -78,7 +83,7 @@ begin
                     end if;
                     fifo_flush <= req.data(2);
                     mode <= req.data(3);
-                    sel  <= req.data(6);
+                    sel  <= req.data(7 downto 6);
                 end if;
             elsif req.read='1' then
                 resp.ack <= '1';
@@ -99,6 +104,8 @@ begin
                         counter <= unsigned("0000000000000" & fifo_dout & "000");
                         state <= count_down;
                     end if;
+                else
+                    toggle <= '0';
                 end if;
             
             when multi1 =>
@@ -128,7 +135,8 @@ begin
             when count_down =>
                 if phi2_tick='1' and stream_en='1' and c64_stopped='0' then
                     if (counter = 1) or (counter = 0) then
-                        toggle <= '1';
+                        pulse  <= '1';
+                        toggle <= not toggle;
                         cnt2   <= 49;
                         state  <= idle;
                     else
@@ -146,9 +154,10 @@ begin
             if reset='1' then
                 enabled <= '0';
                 counter <= (others => '0');
-                toggle  <= '0';
+                pulse  <= '0';
                 error   <= '0';
                 mode    <= '0';
+                sel     <= "00";
             end if;
         end if;
     end process;
@@ -189,10 +198,14 @@ begin
     status(6) <= stream_en;
     status(7) <= fifo_empty;
 
-    c2n_out   <= not toggle;
+    c2n_out   <= not pulse;
 
-    c2n_out_r <= c2n_out when sel='0' else '1';
-    c2n_out_w <= c2n_out when sel='1' else '1';
+    with sel select c2n_out_r <=
+        c2n_out when "00",
+        pulse   when "10",
+        '1' when others;
+        
+    c2n_out_w <= pulse when sel="01" else '1';
 
     with state select state_enc <=
         "00" when idle,

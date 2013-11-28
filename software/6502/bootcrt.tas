@@ -16,17 +16,18 @@ device  = $0163
 namelen = $0164
 name    = $0165
 
-RUNCODE_LOAD_BIT	  = %00000001
-RUNCODE_RUN_BIT           = %00000010
-RUNCODE_TAPE_BIT	  = %00100000
-RUNCODE_REAL_BIT	  = %01000000
-RUNCODE_MOUNT_BIT         = %10000000
+RUNCODE_LOAD_BIT      = %00000001
+RUNCODE_RUN_BIT       = %00000010
+RUNCODE_RECORD_BIT    = %00010000
+RUNCODE_TAPE_BIT      = %00100000
+RUNCODE_REAL_BIT      = %01000000
+RUNCODE_MOUNT_BIT     = %10000000
 
 RUNCODE_DMALOAD_RUN       = %00000011
 RUNCODE_DMALOAD           = %00000001
 RUNCODE_MOUNT_DMALOAD_RUN = %10000011
 RUNCODE_MOUNT_LOAD_RUN    = %11000011
-
+RUNCODE_TAPE_RECORD       = %01110000
 	
 ;**************************************************************************
 ;*
@@ -128,10 +129,12 @@ main_start
 kbuffer
 	.text	13,"RUN",13
 KBUFFER_LEN	= *-kbuffer
+
 ms_skp1
 	lda	runcode
 	and	#RUNCODE_TAPE_BIT
 	bne	ms_skp2
+
 	jsr	print_load
 	lda	#145		;CRSR-UP
 	jsr	$ffd2
@@ -153,6 +156,61 @@ kbuffer2
 	.text	"LOAD",13,"RUN",13
 KBUFFER2_LEN	= *-kbuffer2
 ms_skp2
+	lda runcode
+	and #RUNCODE_RECORD_BIT
+	beq do_load
+
+    ldx #0
+-   inx
+    lda $f0ea,x
+    pha
+    and #$7f
+    jsr $ffd2
+    pla
+    asl
+    bcc -
+    lda #$0d
+    jsr $ffd2
+    sei
+
+    lda #$27 ;; turn write pin to input
+    sta $00
+    lda #$37 ;; everything else is normal, motor off
+    sta $01
+
+    ldx #$00
+-   lda record_routine,x
+    sta $380,x
+    inx
+    cpx #RECORD_ROUTINE_LEN
+    bne -
+    jmp $380 ;; cartridge will be killed shortly, we have to be quick
+    
+record_routine
+	sta	$dfff		; disable boot cart
+    nop
+-   lda $01
+    and #$10 ;; sense input test, wait until button is pressed
+    bne -
+    
+    lda #$17
+    sta $01 ; turn on motor
+    
+    ldx #0
+-   lda $380 + (write_message - record_routine),x
+    jsr $ffd2
+    inx
+    cpx #WRITE_MSG_LEN
+    bne -
+self
+    jmp $380 + (self - record_routine)
+    
+write_message
+    .text "ULTIMATE IS WRITING TO TAPE - JUST WAIT", 13
+WRITE_MSG_LEN = *-write_message    
+RECORD_ROUTINE_LEN = *-record_routine
+
+do_load
 	lda	#145		;CRSR-UP
 	jsr	$ffd2
 	jsr	$ffd2
@@ -310,7 +368,7 @@ rp_skp1
 	ldx	#$fb
 	txs
 
-; turn of os messages for run
+; turn off os messages for run
 	lda	#$00
 	jsr	$ff90
 

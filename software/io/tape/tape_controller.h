@@ -5,6 +5,7 @@
 #include "event.h"
 #include "poll.h"
 #include "menu.h"
+#include "filetype_tap.h"
 
 #define PLAYBACK_STATUS  *((volatile BYTE *)0x40A0000)
 #define PLAYBACK_CONTROL *((volatile BYTE *)0x40A0000)
@@ -14,6 +15,10 @@
 #define C2N_CLEAR_ERROR 0x02
 #define C2N_FLUSH_FIFO  0x04
 #define C2N_MODE_SELECT 0x08
+#define C2N_OUT_READ    0x00
+#define C2N_OUT_WRITE   0x40
+#define C2N_OUT_WRITE_N 0x80
+#define C2N_OUT_TOGGLE  0xC0
 
 #define C2N_STAT_ENABLED    0x01
 #define C2N_STAT_ERROR      0x02
@@ -24,11 +29,12 @@
 
 class TapeController : public ObjectWithMenu
 {
-	File *file;
+	FileTypeTap *tap;
 	DWORD length;
 	int   block;
     int   mode;
 	int   paused;
+	int   recording;
 	
 	void read_block();
 public:
@@ -38,9 +44,9 @@ public:
 	int  fetch_task_items(IndexedList<PathObject*> &item_list);
 	
 	void stop();
-	void start();
+	void start(int);
 	void poll(Event &);
-	void set_file(File *, DWORD, int);
+	void set_file(FileTypeTap *tap, DWORD, int);
 };
 
 extern TapeController *tape_controller;

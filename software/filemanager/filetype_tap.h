@@ -17,6 +17,9 @@ public:
     int   fetch_context_items(IndexedList<PathObject *> &list);
     FileDirEntry *test_type(PathObject *obj);
     void execute(int);
+    
+    File *getFile() { return file; }
+    void  closeFile();
 };
 
 

@@ -19,8 +19,9 @@ static void poll_tape(Event &e)
 
 TapeController :: TapeController()
 {
+    tap = NULL;
 	paused = 0;
-	file = NULL;
+	recording = 0;
 	stop();
     poll_list.append(&poll_tape);
 	main_menu_objects.append(this);
@@ -35,7 +36,9 @@ TapeController :: ~TapeController()
 
 int  TapeController :: fetch_task_items(IndexedList<PathObject*> &item_list)
 {
-	if(!file)
+    if(!tap)
+        return 0;
+	if(!tap->getFile())
 		return 0;
 	if(paused)
 		item_list.append(new ObjectMenuItem(this, "Resume Tape", MENU_C2N_RESUME));
@@ -50,14 +53,14 @@ void TapeController :: stop()
 	PLAYBACK_CONTROL = C2N_CLEAR_ERROR | C2N_FLUSH_FIFO;
 	PLAYBACK_CONTROL = 0;
 
-	if(file) {	
+	if(tap) {	
 		printf("Closing tape file..\n");
-		root.fclose(file);
+        tap->closeFile();
 	}
-	file = NULL;
+	tap = NULL;
 }
 	
-void TapeController :: start()
+void TapeController :: start(int playout_pin)
 {
 	printf("Start Tape.. Status = %b. [", PLAYBACK_STATUS);
 	PLAYBACK_CONTROL = C2N_CLEAR_ERROR | C2N_FLUSH_FIFO;
@@ -70,24 +73,34 @@ void TapeController :: start()
 			
 		read_block();
 	}
-	PLAYBACK_CONTROL = C2N_ENABLE | BYTE(mode << 3);
+	PLAYBACK_CONTROL = C2N_ENABLE | BYTE(mode << 3) | BYTE(playout_pin << 6);
+    recording = playout_pin;
 	printf("] Status = %b.\n", PLAYBACK_STATUS);
 }
 	
 void TapeController :: read_block()
 {
-	if(!file)
+	if(!tap)
 		return;
+    if(!tap->getFile())
+        return;
 	
 	UINT bytes_read;
 
 	if(block > length)
 		block = length;
 
-	if(!block)
+	if(!block) {
+        if (PLAYBACK_STATUS & C2N_STAT_FIFO_EMPTY) {
+            wait_ms(400);
+            stop();
+            if (recording) {
+                push_event(e_freeze);
+            }
+        }
 		return;
-		
-	file->read((void *)PLAYBACK_DATA, block, &bytes_read);
+	}	
+	tap->getFile()->read((void *)PLAYBACK_DATA, block, &bytes_read);
 
 	printf(".");
 	length -= bytes_read;
@@ -96,11 +109,14 @@ void TapeController :: read_block()
 	
 void TapeController :: poll(Event &e)
 {
-	if(!file)
+    if(!tap) 
+        return;
+        
+	if(!tap->getFile())
 		return;
 
 	// close 
-	if(!file->node) {
+	if(!tap->getFile()->node) {
 		stop();
 		return;
 	}
@@ -137,9 +153,9 @@ void TapeController :: poll(Event &e)
 	}
 }
 	
-void TapeController :: set_file(File *f, DWORD len, int m)
+void TapeController :: set_file(FileTypeTap *tap_param, DWORD len, int m)
 {
-	file = f;
+    tap = tap_param;
 	length = len;
 	block = 512 - 20;
 	mode = m; 
