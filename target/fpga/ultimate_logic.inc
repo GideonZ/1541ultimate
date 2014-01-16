@@ -28,6 +28,10 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_slave.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_peripheral.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/real_time_clock.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_alu.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_cpu.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/audio_select/vhdl_source/audio_select.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/tx.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/rx.vhd \
@@ -53,6 +57,13 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/ulpi_host.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/bus_reset.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb_host_io.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/rxtx_to_buf.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/bridge_to_mem_ctrl.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_io_bank.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/mem_addr_counter.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/mem_remain_counter.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_memory_ctrl.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_contoller.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/icap/vhdl_source/icap_pkg.vhd \

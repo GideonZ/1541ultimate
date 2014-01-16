@@ -3,6 +3,7 @@ TOOLS = ../../../tools
 ZPU_TOOLCHAIN ?= /cygdrive/d/Proj/zpu/git/toolchain
 BIN2HEX = $(TOOLS)/bin2hex
 HEX2BIN = $(TOOLS)/hex2bin
+PARSE_NANO = $(TOOLS)/parse_nano.py
 
 # Configuration
 CROSS     = zpu-elf
@@ -45,6 +46,7 @@ SRCS_CC	 =  blockdev.cc \
 			disk.cc \
 			partition.cc \
 			usb.cc \
+			usb_device.cc \
 			usb_scsi.cc \
 			file_system.cc \
 			fat_fs.cc \
@@ -55,11 +57,13 @@ SRCS_CC	 =  blockdev.cc \
 			at45_flash.cc \
 			at49_flash.cc \
 			w25q_flash.cc \
+			s25fl_flash.cc \
 			sd_card.cc \
 			sdio.cc \
 			memory.cc \
 			boot.cc
 SRCS_ASM =  crt0_appl.s
+SRCS_NANO = nano_usb.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -DBOOTLOADER -D_FS_READONLY=1 -D_FS_MINIMIZE=3 -ffunction-sections
@@ -86,10 +90,12 @@ all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
 
 .SUFFIXES:
 
-OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
-OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
-OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
-ALL_OBJS = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
+OBJS_ASM  = $(notdir $(SRCS_ASM:%.s=%.o))
+OBJS_C    = $(notdir $(SRCS_C:%.c=%.o))
+OBJS_CC   = $(notdir $(SRCS_CC:%.cc=%.o))
+OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
+
+ALL_OBJS = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_NANO))
 
 $(OUTPUT):
 	@mkdir $(OUTPUT)
@@ -113,7 +119,15 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo "Compiling $<"
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM)
+%.b: %.nan
+	@echo "Assembling Nano processor code $(<F)"
+	@python $(PARSE_NANO) $< $(OUTPUT)/$(@F) >python_out_nano
+
+%.o: %.b
+	@echo "Converting $(<F) binary to .o"
+	@cd $(OUTPUT); $(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(<F) $@
+
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_NANO)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 

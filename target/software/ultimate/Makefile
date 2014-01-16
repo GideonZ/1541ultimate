@@ -9,6 +9,7 @@ HEX2BIN = $(TOOLS)/hex2bin
 MAKEAPPL = $(TOOLS)/makeappl
 TASS = $(TOOLS)/64tass/64tass
 PARSE_IEC = $(TOOLS)/parse_iec.py
+PARSE_NANO = $(TOOLS)/parse_nano.py
 BOOT = ../2nd_boot
 
 # Configuration
@@ -75,6 +76,7 @@ SRCS_CC	 =  stream.cc \
 			at45_flash.cc \
 			at49_flash.cc \
 			w25q_flash.cc \
+			s25fl_flash.cc \
 			config.cc \
 			event.cc \
 			main_loop.cc \
@@ -94,6 +96,8 @@ SRCS_CC	 =  stream.cc \
 			filetype_bit.cc \
 			rtc.cc \
 			usb.cc \
+			usb2.cc \
+			usb_device.cc \
 			usb_hub.cc \
 			usb_scsi.cc \
 			c64.cc \
@@ -151,7 +155,9 @@ SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
 SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
 
-SRCS_IEC = iec_code.txt
+SRCS_IEC = iec_code.iec
+
+SRCS_NANO = nano_usb.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -ffunction-sections
@@ -177,10 +183,11 @@ OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
 OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
 OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
 OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
-OBJS_IEC = $(notdir $(SRCS_IEC:%.txt=%.o))
+OBJS_IEC = $(notdir $(SRCS_IEC:%.iec=%.o))
+OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.bo))
 
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN) $(OBJS_IEC))
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO))
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
@@ -211,11 +218,15 @@ $(RESULT)/$(PRJ)_V1.bin: $(OUTPUT)/$(PRJ)_V1.out
 	@echo "Assembling $<"
 	@$(TASS) $< --m6502 --nostart -o $(OUTPUT)/$(@F)
 
-%.iec: %.txt
+%.b: %.iec
 	@echo "Assembling IEC processor code $(<F)"
-	@python $(PARSE_IEC) $< $(OUTPUT)/$(@F) >python_out
+	@python $(PARSE_IEC) $< $(OUTPUT)/$(@F) >python_out_iec
 
-%.o: %.iec
+%.b: %.nan
+	@echo "Assembling Nano processor code $(<F)"
+	@python $(PARSE_NANO) $< $(OUTPUT)/$(@F) >python_out_nano
+
+%.o: %.b
 	@echo "Converting $(<F) binary to .o"
 	@cd $(OUTPUT); $(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(<F) $@
 
@@ -242,7 +253,7 @@ $(RESULT)/$(PRJ)_V1.bin: $(OUTPUT)/$(PRJ)_V1.out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) 
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 

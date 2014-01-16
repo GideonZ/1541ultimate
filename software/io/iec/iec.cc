@@ -27,8 +27,8 @@ extern "C" {
    
 cart_def warp_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
-extern BYTE  _binary_iec_code_iec_start;
-extern DWORD _binary_iec_code_iec_size;
+extern BYTE  _binary_iec_code_b_start;
+extern DWORD _binary_iec_code_b_size;
 //extern BYTE _binary_warp_rom_65_start;
 extern BYTE _binary_ulticopy_65_start;
 extern DWORD _binary_ulticopy_65_size;
@@ -150,9 +150,9 @@ IecInterface :: IecInterface()
 
     HW_IEC_RESET_ENABLE = 0; // disable
 
-    int size = (int)&_binary_iec_code_iec_size;
+    int size = (int)&_binary_iec_code_b_size;
     printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
-    BYTE *src = &_binary_iec_code_iec_start;
+    BYTE *src = &_binary_iec_code_b_start;
     BYTE *dst = (BYTE *)HW_IEC_CODE_BE;
     for(int i=0;i<size;i++)
         *(dst++) = *(src++);

@@ -35,6 +35,7 @@ generic (
     g_rtc_chip      : boolean := false;
     g_rtc_timer     : boolean := false;
     g_usb_host      : boolean := false;
+    g_usb_host2     : boolean := false;
     g_spi_flash     : boolean := false;
     g_vic_copper    : boolean := false;
     g_sampler       : boolean := false;
@@ -192,6 +193,7 @@ architecture logic of ultimate_logic is
         cap(20) := to_std(g_video_overlay);
         cap(21) := to_std(g_sampler);
         cap(22) := to_std(g_analyzer);
+        cap(23) := to_std(g_usb_host2);
         cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -209,7 +211,8 @@ architecture logic of ultimate_logic is
     constant c_tag_cpu           : std_logic_vector(7 downto 0) := X"07";
     constant c_tag_slot          : std_logic_vector(7 downto 0) := X"08";
     constant c_tag_reu           : std_logic_vector(7 downto 0) := X"09";
-
+    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"0A";
+    
 	-- Memory interface
     signal mem_req_cpu      : t_mem_req := c_mem_req_init;
     signal mem_resp_cpu     : t_mem_resp := c_mem_resp_init;
@@ -221,6 +224,8 @@ architecture logic of ultimate_logic is
     signal mem_resp_cart    : t_mem_resp := c_mem_resp_init;
     signal mem_req_debug    : t_mem_req := c_mem_req_init;
     signal mem_resp_debug   : t_mem_resp := c_mem_resp_init;
+    signal mem_req_usb      : t_mem_req := c_mem_req_init;
+    signal mem_resp_usb     : t_mem_resp := c_mem_resp_init;
 
     -- IO Bus
     signal cpu_io_req       : t_io_req;
@@ -673,6 +678,33 @@ begin
             sys_io_resp => io_resp_usb );
     end generate;
 
+    r_usb2: if g_usb_host2 generate
+        i_usb: entity work.usb_controller 
+        generic map (
+            g_tag       => c_tag_usb2 )
+        port map (
+            ulpi_clock  => ULPI_CLOCK,
+            ulpi_reset  => ulpi_reset,
+        
+            -- ULPI Interface
+            ULPI_DATA   => ULPI_DATA,
+            ULPI_DIR    => ULPI_DIR,
+            ULPI_NXT    => ULPI_NXT,
+            ULPI_STP    => ULPI_STP,
+        
+			usb_busy	=> usb_busy, -- LED interface
+			
+            -- register interface bus
+            sys_clock   => sys_clock,
+            sys_reset   => sys_reset,
+            
+            sys_mem_req => mem_req_usb,
+            sys_mem_resp=> mem_resp_usb,
+
+            sys_io_req  => io_req_usb,
+            sys_io_resp => io_resp_usb );
+    end generate;
+
     i_sd: entity work.spi_peripheral_io
     generic map (
         g_fixed_rate => false,
@@ -897,7 +929,7 @@ begin
 
     i_mem_arb: entity work.mem_bus_arbiter_pri
     generic map (
-        g_ports      => 5,
+        g_ports      => 6,
         g_registered => false )
     port map (
         clock       => sys_clock,
@@ -906,14 +938,16 @@ begin
         reqs(0)     => mem_req_cart,
         reqs(1)     => mem_req_1541,
         reqs(2)     => mem_req_1541_2,
-        reqs(3)     => mem_req_debug,
-        reqs(4)     => mem_req_cpu,
+        reqs(3)     => mem_req_usb,
+        reqs(4)     => mem_req_debug,
+        reqs(5)     => mem_req_cpu,
 
         resps(0)    => mem_resp_cart,
         resps(1)    => mem_resp_1541,
         resps(2)    => mem_resp_1541_2,
-        resps(3)    => mem_resp_debug,
-        resps(4)    => mem_resp_cpu,
+        resps(3)    => mem_resp_usb,
+        resps(4)    => mem_resp_debug,
+        resps(5)    => mem_resp_cpu,
         
         req         => mem_req,
         resp        => mem_resp );        

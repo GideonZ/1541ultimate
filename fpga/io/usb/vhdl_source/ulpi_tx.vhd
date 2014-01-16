@@ -36,7 +36,7 @@ port (
     -- Interface to output reset packets
     send_reset_data : in std_logic;
     reset_last      : in std_logic;
-    reset_data      : in std_logic_vector(7 downto 0) );
+    reset_data      : in std_logic );
 
 end ulpi_tx;
 
@@ -202,7 +202,7 @@ begin
                 end if;
 
             when reset_pkt =>
-                tx_data_i <= reset_data;
+                tx_data_i <= (others => reset_data);
                 if reset_last='1' then
                     tx_last_i <= '1';
                 end if;

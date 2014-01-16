@@ -105,7 +105,7 @@ Flash *W25Q_Flash :: tester()
     
 //    printf("W25Q MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
 
-    if(manuf != 0xEF)
+    if (manuf != 0xEF) 
     	return NULL; // not Winbond
 
 	if(mem_type != 0x40) { // not the right type of flash

@@ -411,8 +411,8 @@ def parse_lines(lines):
     
 
 if __name__ == "__main__":
-    inputfile = 'iec_code.txt'
-    outputfile = 'iec_code.iec'
+    inputfile = 'iec_code.iec'
+    outputfile = 'iec_code.b'
     
     if len(sys.argv)>1:
         inputfile = sys.argv[1]

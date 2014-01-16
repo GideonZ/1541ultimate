@@ -2,6 +2,7 @@
 #define USBSCSI_H
 
 #include "usb.h"
+#include "usb_device.h"
 #include "blockdev.h"
 #include "file_device.h"
 

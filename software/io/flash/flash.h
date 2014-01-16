@@ -45,7 +45,7 @@ class Flash
 {
 public:    
     Flash() { }
-    ~Flash() { }
+    virtual ~Flash() { }
 
 	virtual Flash *tester(void) { return NULL; }
     

@@ -2,6 +2,7 @@
 #include "at45_flash.h"
 #include "at49_flash.h"
 #include "w25q_flash.h"
+#include "s25fl_flash.h"
 #include "itu.h"
 
 Flash *get_flash(void)
@@ -14,6 +15,9 @@ Flash *get_flash(void)
 	ret_val = at45_flash.tester();
 	if(!ret_val) {
 		ret_val = w25q_flash.tester();
+	}
+	if(!ret_val) {
+		ret_val = s25fl_flash.tester();
 	}
 	if(!ret_val) {
 		ret_val = at49_flash.tester();

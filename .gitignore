@@ -14,6 +14,7 @@ fpga/sid_old
 /old_flash_images
 /releases
 roms/JiffyDOS_1541_6.00_(rebadged_5.0).bin
+software/contrib-1.4.1
 target/fpga/*.xrpt
 target/fpga/_xmsgs
 target/fpga/boot400
@@ -33,7 +34,10 @@ target/simulation/sim/work
 target/software/1st_boot/output
 target/software/1st_boot/result
 target/software/2nd_boot/output
+target/software/2nd_boot/python_out_nano
 target/software/2nd_boot/result
+target/software/lwip/output
+target/software/lwip/result
 target/software/programmer/output
 target/software/programmer/result
 target/software/ultimate/output

@@ -37,12 +37,10 @@ class W25Q_Flash : public Flash
     int sector_size;
 	int sector_count;
     int total_size;
-	
-    bool wait_ready(int time_out);
 
 public:    
     W25Q_Flash();
-    ~W25Q_Flash();
+    virtual ~W25Q_Flash();
 
 	virtual Flash *tester(void);
 
@@ -79,6 +77,9 @@ public:
 	virtual void protect_disable(void);
 	virtual bool protect_configure(void);
 	virtual void protect_enable(void);
+
+    // internal, yet inheritable
+    virtual bool wait_ready(int time_out);
 };
 
 extern W25Q_Flash w25q_flash;

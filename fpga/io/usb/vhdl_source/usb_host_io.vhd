@@ -257,7 +257,7 @@ begin
                 
         -- Interface to read/write registers and reset packets
         send_reset_data => send_reset_data,
-        reset_data      => reset_data,
+        reset_data      => reset_data(0),
         reset_last      => reset_last );
         
 

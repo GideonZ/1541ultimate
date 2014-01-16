@@ -92,7 +92,7 @@ int main(int argc, char **argv)
     	SPI_FLASH_DATA_32 = 0x3D2A7FA9;
         SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     } else {
-        flash_type = 1; // assume Winbond
+        flash_type = 1; // assume Winbond or Spansion
         read_boot2 = 0x03054000;
         read_appl  = 0x03100000;
 
@@ -101,12 +101,12 @@ int main(int argc, char **argv)
     	SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
     	BYTE status = SPI_FLASH_DATA;
         SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-        if ((status & 0x7C) != 0x34) {
+        if ((status & 0x7C) != 0x34) { // on the spansion, this will protect 7/8 not 1/2
             SPI_FLASH_CTRL = 0;
         	SPI_FLASH_DATA = W25Q_WriteEnable;
             SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
         	SPI_FLASH_DATA = W25Q_WriteStatusRegister;
-        	SPI_FLASH_DATA = 0x34;
+        	SPI_FLASH_DATA = 0x34; // 7/8 on spansion!!
         	SPI_FLASH_DATA = 0x00;
             SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
         	w25q_wait_ready(10000);

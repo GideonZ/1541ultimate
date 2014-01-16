@@ -2,7 +2,7 @@
 #define USB_HUB_H
 
 #include "usb.h"
-
+#include "usb_device.h"
 
 class UsbHubDriver : public UsbDriver
 {
