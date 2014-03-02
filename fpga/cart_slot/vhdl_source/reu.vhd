@@ -134,9 +134,9 @@ begin
         "01111111" when "110",
         "11111111" when others;
 
-    masked_reu_addr(23 downto 19) <= (reu_base(23 downto 19) or not mask(7 downto 3)) when not g_extended else
-                                     (reu_addr(23 downto 19) or not mask(7 downto 3));
-    masked_reu_addr(18 downto 16) <= (reu_addr(18 downto 16) or not mask(2 downto 0));
+    masked_reu_addr(23 downto 19) <= (reu_base(23 downto 19) and mask(7 downto 3)) when not g_extended else
+                                     (reu_addr(23 downto 19) and mask(7 downto 3));
+    masked_reu_addr(18 downto 16) <= (reu_addr(18 downto 16) and mask(2 downto 0));
     masked_reu_addr(15 downto  0) <= reu_addr(15 downto 0);
     
     reu_rack <= '1' when mem_resp.rack_tag = g_ram_tag else '0';

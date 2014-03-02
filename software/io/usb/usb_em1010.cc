@@ -68,6 +68,10 @@ bool UsbEm1010Driver :: test_driver(UsbDevice *dev)
 	return true;
 }
 
+// Entry point for call-backs.
+void UsbEm1010Driver_interrupt_callback(BYTE *data, int data_length, void *object) {
+	((UsbEm1010Driver *)object)->interrupt_handler(data, data_length);
+}
 
 void UsbEm1010Driver :: install(UsbDevice *dev)
 {
@@ -77,8 +81,8 @@ void UsbEm1010Driver :: install(UsbDevice *dev)
     
 	dev->set_configuration(dev->device_config.config_value);
 
-    irq_transaction = host->allocate_transaction(8);
-//    host->interrupt_in(irq_transaction, device->pipe_numbers[0], 1, irq_data);
+    irq_transaction = host->allocate_input_pipe(8, device->pipe_numbers[2], UsbEm1010Driver_interrupt_callback, this);
+
     write_register(EMREG_EC1, 0x38); // 100M full duplex, reset MAC
     write_register(EMREG_EC2, 0x41); // SET EP3RC bit to clear interrupts on EP3 access
     write_register(EMREG_IPHYC, 0x03); // enable and reset PHY
@@ -130,20 +134,15 @@ void UsbEm1010Driver :: install(UsbDevice *dev)
 
 void UsbEm1010Driver :: deinstall(UsbDevice *dev)
 {
-    host->free_transaction(irq_transaction);
+    host->free_input_pipe(irq_transaction);
 }
 
-void UsbEm1010Driver :: poll(void)
+void UsbEm1010Driver :: interrupt_handler(BYTE *irq_data, int data_len)
 {
-    int resp = host->interrupt_in(irq_transaction, device->pipe_numbers[2], 8, irq_data);
-    if(resp) {
-        printf("EM1010 (ADDR=%d) IRQ data: ", device->current_address);
-        for(int i=0;i<resp;i++) {
-            printf("%b ", irq_data[i]);
-        } printf("\n");
-    } else {
-        return;
-    }
+	printf("EM1010 (ADDR=%d) IRQ data: ", device->current_address);
+	for(int i=0;i<data_len;i++) {
+		printf("%b ", irq_data[i]);
+	} printf("\n");
 }
 	
 //                         bmreq breq  __wValue__  __wIndex__  __wLength_

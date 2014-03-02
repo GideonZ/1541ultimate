@@ -581,6 +581,8 @@ test
     OUTP  MEM_TRANSFER_WRITE
     RET
 
+input_pipes      = 0x320 ; reserve 16 words (8 DWORDS) to define which pipes to scan
+	
 attrib_fifo      = 0x330 ; 128 entries (up to 3AF)
 block_fifo       = 0x3B0 ; 64 entries (up to 3EF)
 

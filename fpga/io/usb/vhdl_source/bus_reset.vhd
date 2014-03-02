@@ -54,7 +54,7 @@ architecture functional of bus_reset is
 
     type t_int_bool_array is array(boolean) of integer;
     constant c_reset_times   : t_int_bool_array := (false => 60000*15, true => 2097); -- 4194303 
-    constant c_latest_chirp  : t_int_bool_array := (false => 80000, true => 400);
+    constant c_latest_chirp  : t_int_bool_array := (false => 80000, true => 400); -- not used anymore, as we don't wait for the device chirp to end
     constant c_stop_chirp    : t_int_bool_array := (false => 20000, true => 100);
     constant c_chirp_jk      : t_int_bool_array := (false => 3000, true => 20);
     constant c_filter_times  : t_int_bool_array := (false => 255, true => 10);

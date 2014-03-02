@@ -22,9 +22,6 @@
 #define USB2_ATTR_FIFO_DATA8(x)  (*((volatile BYTE *)(USB2_CODE_BASE + 0x660 + x)))
 #define USB2_BLOCK_FIFO_DATA8(x) (*((volatile BYTE *)(USB2_CODE_BASE + 0x760 + x)))
 
-//#define USB2_ATTR_FIFO_DATA(x)   (DWORD)USB2_ATTR_FIFO_DATA8(x<<1) | (DWORD)(USB2_ATTR_FIFO_DATA8((x<<1)+1)) << 8
-//#define USB2_BLOCK_FIFO_DATA(x)  (DWORD)USB2_BLOCK_FIFO_DATA8(x<<1) | (DWORD)(USB2_BLOCK_FIFO_DATA8((x<<1)+1)) << 8
-
 #define USB2_ATTR_FIFO_MASK  0x7F
 #define USB2_BLOCK_FIFO_MASK 0x3F
 
@@ -45,6 +42,8 @@
 #define USB2_EVENT_ATTACH     0x8012
 #define USB2_EVENT_DISCONNECT 0x8013
 
+#define USB2_INPUT_PIPES       ((volatile DWORD *)(USB2_CODE_BASE + 0x640)) // indexable
+
 #define USB2_CMD_CMD          *((volatile BYTE *)(USB2_CODE_BASE + 0x7E0))
 #define USB2_CMD_MEM_ADDR     *((volatile DWORD *)(USB2_CODE_BASE + 0x7E4))
 #define USB2_CMD_DEV_ADDR     *((volatile DWORD *)(USB2_CODE_BASE + 0x7E8)) // also writes toggle state (0x800)
@@ -55,6 +54,8 @@
 class UsbDevice;
 class UsbDriver;
    
+#define MAX_INPUT_PIPES 8
+
 class Usb2 : public Usb
 {
     void clean_up(void);
@@ -63,6 +64,10 @@ class Usb2 : public Usb
     void deinstall_device(UsbDevice *dev);
 
     bool get_fifo(DWORD *);
+
+    DWORD inputPipeControlWords[MAX_INPUT_PIPES];
+    void  (*inputPipeCallBacks[MAX_INPUT_PIPES])(BYTE *buf, int len, void *obj);
+    void  *inputPipeObjects[MAX_INPUT_PIPES];
 
 public:
     bool initialized;
@@ -78,8 +83,8 @@ public:
 
     int  create_pipe(int addr, struct t_endpoint_descriptor *epd);
     void free_pipe(int index);
-//    int  allocate_transaction(int len); // for reoccuring transactions
-//    void free_transaction(int index);
+    int  allocate_input_pipe(int len, int pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object); // for reoccuring transactions
+    void free_input_pipe(int index);
     
     int  control_exchange(int addr, void *, int, void *, int, BYTE **);
     int  control_write(int addr, void *, int, void *, int);
@@ -88,7 +93,6 @@ public:
     int  bulk_out(void *buf, int len, int pipe);
     int  bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe);
     int  bulk_in(void *buf, int len, int pipe); // blocking
-    int  interrupt_in(int trans, int pipe, int len, BYTE *buf);
 
 //    int  start_bulk_in(int trans, int pipe, int len);
 //    int  transaction_done(int trans);

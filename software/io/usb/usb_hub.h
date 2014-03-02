@@ -28,7 +28,8 @@ public:
 	bool test_driver(UsbDevice *dev);
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
-	void poll(void);
+//	void poll(void);
+	void interrupt_handler(BYTE *, int);
 };
 
 #endif

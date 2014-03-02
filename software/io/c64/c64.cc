@@ -778,7 +778,8 @@ void C64 :: poll(Event &e)
 	UINT transferred;
     t_flash_address addr;
 	int run_code;
-
+    LONG reu_size;
+    
 	if(e.type == e_dma_load) {
 		f = (File *)e.object;
 		run_code = e.param;
@@ -827,10 +828,12 @@ void C64 :: poll(Event &e)
 //            break;
         case MENU_C64_SAVEREU:
             po = user_interface->get_path();
+            reu_size = 128 * 1024;
+            reu_size <<= cfg->get_value(CFG_C64_REU_SIZE);
             f = root.fcreate("memory.reu", po);
             if(f) {
                 printf("Opened file successfully.\n");
-                f->write((void *)REU_MEMORY_BASE, REU_MAX_SIZE, &transferred);
+                f->write((void *)REU_MEMORY_BASE, reu_size, &transferred);
                 printf("written: %d...", transferred);
                 f->close();
             } else {

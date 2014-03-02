@@ -71,7 +71,7 @@ SRCS_CC	 =  memory.cc \
 			at45_flash.cc \
 			at49_flash.cc \
 			w25q_flash.cc \
-            s25fl.flash.cc \
+            s25fl_flash.cc \
 			path.cc \
 			pattern.cc \
 			config.cc \

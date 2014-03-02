@@ -138,6 +138,8 @@ void Usb :: clear()
     for(int i=0;i<USB_MAX_TRANSACTIONS;i++) {
         USB_TRANSACTION(i) = 0;
         transactions[i] = 0;
+        callbacks[i] = 0;
+        objects[i] = 0;
     }
     for(int i=0;i<USB_MAX_PIPES;i++) {
         USB_PIPE(i) = 0;
@@ -167,6 +169,7 @@ int  Usb :: write_ulpi_register(int addr, int value)
     printf("Write reg %b with %b.\n", addr, value);
     USB_COMMAND = 0xC0 | (BYTE)addr;
     USB_COMMAND = (BYTE)value;
+    return 0;
 }
         
 int  Usb :: read_ulpi_register(int addr)
@@ -247,7 +250,7 @@ void Usb :: init(void)
     // power down (temporary.. better to check if we are already powered)
     USB_COMMAND = USB_CMD_DISABLE_HOST;
 	USB_COMMAND = USB_CMD_SOF_DISABLE;
-    write_ulpi_register(ULPI_OTG_CONTROL, OTG_DP_PD | OTG_DM_PD);
+    write_ulpi_register(ULPI_OTG_CONTROL, OTG_DP_PD | OTG_DM_PD | OTG_DISCHARGE);
     write_ulpi_register(ULPI_FUNC_CTRL, FUNC_SUSPENDM | FUNC_RESET | FUNC_TERM_SEL | FUNC_XCVR_FS);
     clean_up(); // delete all devices
     wait_ms(300);
@@ -257,6 +260,7 @@ void Usb :: init(void)
     s = read_ulpi_register(ULPI_IRQ_CURRENT);
     if(s & 2) {
         printf("*** There is already power on the bus!! *** Powered HUB?? ***\n");
+        write_ulpi_register(ULPI_OTG_CONTROL, OTG_DP_PD | OTG_DM_PD);
     } else {
         write_ulpi_register(ULPI_OTG_CONTROL, OTG_DRV_VBUS | OTG_DP_PD | OTG_DM_PD );
         wait_ms(700);
@@ -290,7 +294,7 @@ UsbDevice *Usb :: init_simple(void)
     // power down (temporary.. better to check if we are already powered)
     USB_COMMAND = USB_CMD_DISABLE_HOST;
 	USB_COMMAND = USB_CMD_SOF_DISABLE;
-    write_ulpi_register(ULPI_OTG_CONTROL, OTG_DP_PD | OTG_DM_PD);
+    write_ulpi_register(ULPI_OTG_CONTROL, OTG_DP_PD | OTG_DM_PD | OTG_DISCHARGE);
     write_ulpi_register(ULPI_FUNC_CTRL, FUNC_SUSPENDM | FUNC_RESET | FUNC_TERM_SEL | FUNC_XCVR_FS);
     wait_ms(300);
 
@@ -427,15 +431,23 @@ void Usb :: poll(Event &e)
             device_present = false;
             clean_up(); // since the root was removed, all devices need to be disabled
             USB_COMMAND = USB_CMD_DISABLE_HOST;
+            write_ulpi_register(ULPI_OTG_CONTROL, 0x0e);
             // default back to FS.
             write_ulpi_register(ULPI_FUNC_CTRL, FUNC_SUSPENDM | FUNC_RESET | FUNC_TERM_SEL | FUNC_XCVR_FS);
             speed = 1;
             read_ulpi_register(ULPI_IRQ_STATUS); // clear pending interrupts
+
             clear(); // we also prepare for re-insertion
             poll_delay = 10;
         } else {
 			UsbDevice *dev;
 			UsbDriver *drv;
+
+			for(int i=5;i<USB_MAX_TRANSACTIONS;i++) {
+				if (!transactions[i])
+					continue;
+				interrupt_in(i, input_pipe_numbers[i], 8); // may call callbacks
+			}
 			for(int i=0;i<USB_MAX_DEVICES;i++) {
 				dev = device_list[i];
 				if(dev) {
@@ -861,8 +873,8 @@ int Usb :: bulk_in(void *buf, int len, int pipe)
     return transferred;
 }
 
-/*
-int Usb :: allocate_transaction(int len)
+
+int Usb :: allocate_input_pipe(int len, int pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object)
 {
     // find free transaction
     int index = -1;
@@ -882,10 +894,15 @@ int Usb :: allocate_transaction(int len)
     transactions[index] = offset;
     
     printf("Allocated transaction %d at $%3x.\n", index, offset);
+
+    callbacks[index] = callback;
+    objects[index] = object;
+    input_pipe_numbers[index] = pipe;
+
     return index;
 }
 
-void Usb :: free_transaction(int index)
+void Usb :: free_input_pipe(int index)
 {
     if(index < 5)
         return;
@@ -896,16 +913,24 @@ void Usb :: free_transaction(int index)
         USB_TRANSACTION(index) = 0L;
     }
 }
-*/
-int Usb :: interrupt_in(int trans, int pipe, int len, BYTE *buf)
+
+int Usb :: interrupt_in(int trans, int pipe, int len)
 {
     int offset = transactions[trans];
     volatile DWORD *tr = &USB_TRANSACTION(trans);
+    void (*callback)(BYTE *buf, int len, void *obj);
+
     DWORD readback_status = (*tr) & 3;
     
     // first the good case.
     if (readback_status == 2) { // done
-        memcpy(buf, (void *)&USB_BUFFER(offset), len);
+        // memcpy(buf, (void *)&USB_BUFFER(offset), len);
+        callback = callbacks[trans];
+        if(callback) {
+        	callback((BYTE *)&USB_BUFFER(offset), len, objects[trans]);
+        } else {
+        	printf("Callback pointer is null! trans = %d\n", trans);
+        }
         DWORD opcode = (offset << 20) | (len << 9) | (pipe << 4) | 0x09; // busy | interrupt
         *tr = opcode; // restart
         return len;

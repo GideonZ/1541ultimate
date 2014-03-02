@@ -34,9 +34,11 @@ public:
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);
-    void process_data(void);
     err_t output_callback(struct netif *, struct pbuf *);
     
+    void interrupt_handler(BYTE *, int);
+    void bulk_handler(BYTE *, int);
+
     //bool  transmit_frame(BYTE *buffer, int length);
     //void  test_packet_out(int size, int filler);
 };

@@ -300,7 +300,7 @@ int UsbScsi :: request_sense(bool debug)
     }
 	if(debug)
 		print_sense_error();
-	return status_transport();
+	return status_transport(true);
 }
 
 void UsbScsi :: handle_sense_error(void)
@@ -348,7 +348,7 @@ int UsbScsi :: exec_command(int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *
     int st = host->bulk_out(&cbw, 31, bulk_out);
     if(st < 0) { // out failed.. let's see if we can get back in sync..
     	printf("Out failed.. let's see if we can get back in sync..\n");
-    	if(status_transport() == 0) {
+    	if(status_transport(true) == 0) {
             st = host->bulk_out(&cbw, 31, bulk_out);
             if(st < 0)
                 return -2;

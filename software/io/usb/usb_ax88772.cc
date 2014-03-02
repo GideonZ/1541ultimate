@@ -45,6 +45,16 @@ __inline WORD le16_to_cpu(WORD h)
     return (h >> 8) | (h << 8);
 }
 
+// Entry point for call-backs.
+void UsbAx88772Driver_interrupt_callback(BYTE *data, int data_length, void *object) {
+	((UsbAx88772Driver *)object)->interrupt_handler(data, data_length);
+}
+
+// Entry point for call-backs.
+void UsbAx88772Driver_bulk_callback(BYTE *data, int data_length, void *object) {
+	((UsbAx88772Driver *)object)->bulk_handler(data, data_length);
+}
+
 /*********************************************************************
 / The driver is the "bridge" between the system and the device
 / and necessary system objects
@@ -103,9 +113,6 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     
 	dev->set_configuration(dev->device_config.config_value);
 
-    irq_transaction = host->allocate_transaction(8);
-    bulk_transaction = host->allocate_transaction(8);
-    
     read_mac_address();
 
     bulk_in  = dev->find_endpoint(0x82);
@@ -199,9 +206,12 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     // % c0 07 10 00 04: Read PHY reg 04 (resp: e1 01)
     dummy = read_phy_register(4); 
 */
+    irq_transaction = host->allocate_input_pipe(8, device->pipe_numbers[0], UsbAx88772Driver_interrupt_callback, this);
+    bulk_transaction = host->allocate_input_pipe(8, device->pipe_numbers[2], UsbAx88772Driver_bulk_callback, this);
+
     start_lwip();
 
-    host->start_bulk_in(bulk_transaction, bulk_in, 512);
+    // host->start_bulk_in(bulk_transaction, bulk_in, 512);
     
 }
 
@@ -209,8 +219,8 @@ void UsbAx88772Driver :: deinstall(UsbDevice *dev)
 {
     stop_lwip();
 
-    host->free_transaction(irq_transaction);
-    host->free_transaction(bulk_transaction);
+    host->free_input_pipe(irq_transaction);
+    host->free_input_pipe(bulk_transaction);
 }
 
 void UsbAx88772Driver :: write_phy_register(BYTE reg, WORD value) {
@@ -247,54 +257,37 @@ WORD UsbAx88772Driver :: read_phy_register(BYTE reg) {
 
 void UsbAx88772Driver :: poll(void)
 {
-    static int divider = 0;
-    static bool link_up = false;
-    int resp;
-
     NetworkInterface :: poll();
-
-    if (--divider < 0) {
-        divider = 1000;
-        resp = host->interrupt_in(irq_transaction, device->pipe_numbers[0], 8, irq_data);
-        if(resp) {
-            /* printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
-            for(int i=0;i<resp;i++) {
-                printf("%b ", irq_data[i]);
-            } printf("\n"); */
-            if(irq_data[2] & 0x01) {
-                //if (!netif_is_up(netif)) {
-                if(!link_up) {
-                    printf("Bringing link up.\n");
-                    dhcp_start(netif); // netif_set_up(netif);
-                    link_up = true;
-                }
-            } else {
-                // if (netif_is_up(netif)) {
-                if(link_up) {
-                    printf("Bringing link down.\n");
-                    stop_lwip();
-                    link_up = false;
-                }
-            }
-        }
-    }
-    resp = host->transaction_done(bulk_transaction);
-    if (resp < 0) {
-        printf("BULK IN error occurred\n");
-    } else if(resp > 0) {
-        process_data();
-        // restart
-        host->start_bulk_in(bulk_transaction, bulk_in, 512);
-    }
-    
     lwip_poll();
 }
 
-void UsbAx88772Driver :: process_data(void)
+void UsbAx88772Driver :: interrupt_handler(BYTE *irq_data, int data_len)
 {
-    BYTE *usb_buffer;
-    int len = host->get_bulk_in_data(bulk_transaction, &usb_buffer);
+    static bool link_up = false;
 
+    printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
+	for(int i=0;i<data_len;i++) {
+		printf("%b ", irq_data[i]);
+	} printf("\n");
+
+	if(irq_data[2] & 0x01) {
+		if(!link_up) {
+			printf("Bringing link up.\n");
+			dhcp_start(netif); // netif_set_up(netif);
+			link_up = true;
+		}
+	} else {
+		// if (netif_is_up(netif)) {
+		if(link_up) {
+			printf("Bringing link down.\n");
+			stop_lwip();
+			link_up = false;
+		}
+	}
+}
+
+void UsbAx88772Driver :: bulk_handler(BYTE *usb_buffer, int data_len)
+{
     DWORD *pul = (DWORD *)usb_buffer;
     DWORD first = *pul;
 
@@ -354,10 +347,10 @@ void UsbAx88772Driver :: process_data(void)
                 }
                 if (usb_remain == 0) {
                     printf("<%d:", size);
-                    host->start_bulk_in(bulk_transaction, bulk_in, 512);
-                    while(!host->transaction_done(bulk_transaction))
-                        ;
-                    usb_remain = host->get_bulk_in_data(bulk_transaction, &usb_buffer);
+//                    host->start_bulk_in(bulk_transaction, bulk_in, 512);
+//                    while(!host->transaction_done(bulk_transaction))
+//                        ;
+//                    usb_remain = host->get_bulk_in_data(bulk_transaction, &usb_buffer);
                     printf("%d>", usb_remain);
                     usb_buffer += 0x1000000;
                 }
@@ -432,7 +425,8 @@ void UsbAx88772Driver :: write_mac_address(void)
 
 err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p) 
 {
-    BYTE *usb_buffer = host->get_bulk_out_buffer(bulk_out);
+/*
+	BYTE *usb_buffer = host->get_bulk_out_buffer(bulk_out);
     int size = p->tot_len;
     
     usb_buffer[0] = BYTE(size & 0xFF);
@@ -444,13 +438,7 @@ err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p)
     struct pbuf *q = p;
     int q_remain = q->len;
     BYTE *qb = (BYTE *)q->payload;
-    /*qb[0] = 0xFF;
-    qb[1] = 0xFF;
-    qb[2] = 0xFF;
-    qb[3] = 0xFF;
-    qb[4] = 0xFF;
-    qb[5] = 0xFF;
-    */
+
     do {
 #if DEBUG_RAW_PKT
         printf("-> [%d:%d:%d]\n", size, usb_remain, q_remain);
@@ -482,6 +470,7 @@ err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p)
     } while(size > 0);
 
     host->bulk_out_actual(512-usb_remain, bulk_out);
-    return 0;
+*/
+	return 0;
 }
 

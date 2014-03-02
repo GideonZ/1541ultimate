@@ -104,6 +104,11 @@ BYTE c_clear_port_feature[] = { 0x23, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 }
 #define BIT_PORT_OVER_CURRENT 0x08
 #define BIT_PORT_RESET        0x10
 
+// Entry point for call-backs.
+void UsbHubDriver_interrupt_handler(BYTE *irq_data, int data_length, void *object) {
+	((UsbHubDriver *)object)->interrupt_handler(irq_data, data_length);
+}
+
 void UsbHubDriver :: install(UsbDevice *dev)
 {
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
@@ -212,27 +217,23 @@ void UsbHubDriver :: install(UsbDevice *dev)
     }
     printf("-- Install Complete..HUB on address %d.. --\n", dev->current_address);
 
-    irq_transaction = host->allocate_transaction(1);
+    irq_transaction = host->allocate_input_pipe(1, device->pipe_numbers[0], UsbHubDriver_interrupt_handler, this);
 //    host->interrupt_in(irq_transaction, device->pipe_numbers[0], 1, irq_data);
 }
 
 void UsbHubDriver :: deinstall(UsbDevice *dev)
 {
-    host->free_transaction(irq_transaction);
+    host->free_input_pipe(irq_transaction);
 }
 
-void UsbHubDriver :: poll(void)
+void UsbHubDriver :: interrupt_handler(BYTE *irq_data, int data_length)
 {
-    int resp = host->interrupt_in(irq_transaction, device->pipe_numbers[0], 1, irq_data);
-    if(resp) {
-        printf("HUB (ADDR=%d) IRQ data: ", device->current_address);
-        for(int i=0;i<resp;i++) {
-            printf("%b ", irq_data[i]);
-        } printf("\n");
-    } else {
-        return;
-    }
-    if(!irq_data[0])
+    printf("HUB (ADDR=%d) IRQ data: ", device->current_address);
+    for(int i=0;i<data_length;i++) {
+        printf("%b ", irq_data[i]);
+    } printf("\n");
+
+	if(!irq_data[0])
         return;
 
     BYTE *usb_buf;

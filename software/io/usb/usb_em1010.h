@@ -99,7 +99,7 @@ public:
 	bool test_driver(UsbDevice *dev);
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
-	void poll(void);
+	void interrupt_handler(BYTE *, int);
 
     bool receive_frame(BYTE *buffer, int *length);
     bool transmit_frame(BYTE *buffer, int length);

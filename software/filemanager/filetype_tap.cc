@@ -48,8 +48,7 @@ FileTypeTap tester_tap(file_type_factory);
 
 #define TAPFILE_RUN 0x3101
 #define TAPFILE_START 0x3110
-#define TAPFILE_WRITE1 0x3111
-#define TAPFILE_WRITE2 0x3112
+#define TAPFILE_WRITE 0x3111
 
 
 /*************************************************************/
@@ -89,9 +88,8 @@ int FileTypeTap :: fetch_context_items(IndexedList<PathObject *> &list)
         count++;
         list.append(new MenuItem(this, "Start Tape", TAPFILE_START ));
         count++;
-        list.append(new MenuItem(this, "Write to Tape 1", TAPFILE_WRITE1 ));
-        list.append(new MenuItem(this, "Write to Tape 2", TAPFILE_WRITE2 ));
-        count+=2;
+        list.append(new MenuItem(this, "Write to Tape", TAPFILE_WRITE ));
+        count++;
     }
     return count + FileDirEntry :: fetch_context_items_actual(list);
 }
@@ -115,8 +113,7 @@ void FileTypeTap :: execute(int selection)
 	switch(selection) {
 	case TAPFILE_START:
 	case TAPFILE_RUN:
-    case TAPFILE_WRITE1:
-    case TAPFILE_WRITE2:
+    case TAPFILE_WRITE:
 		if(file) {
 			tape_controller->stop(); // also closes file
 		}
@@ -146,7 +143,7 @@ void FileTypeTap :: execute(int selection)
             }
         } else {
             C64Event::prepare_dma_load(0, NULL, 0, RUNCODE_TAPE_RECORD);
-            tape_controller->start(selection & 3); // careful: last two bits are used of the selection code
+            tape_controller->start(1);
             C64Event::perform_dma_load(0, RUNCODE_TAPE_RECORD);
         }
         

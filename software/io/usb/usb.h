@@ -48,9 +48,10 @@
 #define ULPI_IRQ_STATUS   0x14
 #define ULPI_LINE_STATE   0x15
 
-#define OTG_DP_PD    0x02
-#define OTG_DM_PD    0x04
-#define OTG_DRV_VBUS 0x20
+#define OTG_DP_PD     0x02
+#define OTG_DM_PD     0x04
+#define OTG_DRV_VBUS  0x20
+#define OTG_DISCHARGE 0x08
 
 #define FUNC_XCVR_HS   0x00
 #define FUNC_XCVR_FS   0x01
@@ -87,6 +88,10 @@ class Usb
 	int se0_seen;
     DWORD pipes[USB_MAX_PIPES];
     int   transactions[USB_MAX_TRANSACTIONS];
+    void  (*callbacks[USB_MAX_TRANSACTIONS])(BYTE *buf, int len, void *obj);
+    void  *objects[USB_MAX_TRANSACTIONS];
+    int   input_pipe_numbers[USB_MAX_TRANSACTIONS];
+
     //ConfigStore *cfg;
 
     void clean_up(void);
@@ -96,7 +101,7 @@ class Usb
     void deinstall_device(UsbDevice *dev);
 
     int  bulk_out_actual(int len, int pipe);
-
+    int  interrupt_in(int trans, int pipe, int len);
 public:
     bool debug;
     int speed;
@@ -125,8 +130,8 @@ public:
 
     int  create_pipe(int addr, struct t_endpoint_descriptor *epd);
     void free_pipe(int index);
-//    int  allocate_transaction(int len); // for reoccuring transactions
-//    void free_transaction(int index);
+    int  allocate_input_pipe(int len, int pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object); // for reoccuring transactions
+    void free_input_pipe(int index);
     
     int  control_exchange(int addr, void *, int, void *, int, BYTE **);
     int  control_write(int addr, void *, int, void *, int);
@@ -135,7 +140,6 @@ public:
     int  bulk_out(void *buf, int len, int pipe);
     int  bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe);
     int  bulk_in(void *buf, int len, int pipe); // blocking
-    int  interrupt_in(int trans, int pipe, int len, BYTE *buf);
 
 //    int  start_bulk_in(int trans, int pipe, int len);
 //    int  transaction_done(int trans);
@@ -146,6 +150,7 @@ public:
     UsbDevice *init_simple(void);
 
     friend class UsbHubDriver;
+    friend class Usb2;
 };
 
 extern Usb usb; // the always existing global
