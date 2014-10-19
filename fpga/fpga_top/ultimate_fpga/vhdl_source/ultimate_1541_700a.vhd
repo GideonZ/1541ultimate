@@ -168,11 +168,11 @@ begin
         g_icap          => true,
         g_uart          => true,
         g_drive_1541    => true,
-        g_drive_1541_2  => false,
+        g_drive_1541_2  => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
-        g_stereo_sid    => true,
+        g_stereo_sid    => false,
         g_hardware_iec  => true,
         g_iec_prog_tim  => false,
         g_c2n_streamer  => true,
@@ -186,7 +186,7 @@ begin
         g_spi_flash     => true,
         g_vic_copper    => false,
         g_video_overlay => false,
-        g_sampler       => true,
+        g_sampler       => false,
         g_analyzer      => false )
     port map (
         -- globals
