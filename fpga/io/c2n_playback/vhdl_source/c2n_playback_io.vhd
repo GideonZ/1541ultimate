@@ -25,6 +25,7 @@ end c2n_playback_io;
 
 architecture gideon of c2n_playback_io is
     signal enabled          : std_logic;
+    signal sense            : std_logic;
     signal counter          : unsigned(23 downto 0);
     signal error            : std_logic;
     signal status           : std_logic_vector(7 downto 0);
@@ -54,11 +55,6 @@ begin
     begin
         if rising_edge(clock) then
             -- c2n pin out and sync
-            if sel = "00" then
-                c2n_sense <= enabled and not fifo_empty;
-            else
-                c2n_sense <= '0';
-            end if;
             stream_en <= enabled and c2n_motor;
 
             if fifo_empty='1' and enabled='1' then
@@ -83,6 +79,7 @@ begin
                     end if;
                     fifo_flush <= req.data(2);
                     mode <= req.data(3);
+                    c2n_sense <= req.data(4);
                     sel  <= req.data(7 downto 6);
                 end if;
             elsif req.read='1' then
@@ -158,6 +155,7 @@ begin
                 error   <= '0';
                 mode    <= '0';
                 sel     <= "00";
+                c2n_sense <= '0';
             end if;
         end if;
     end process;

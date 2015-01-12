@@ -54,6 +54,10 @@ FileInfo *FileDirEntry :: get_file_info(void)
 
 bool FileDirEntry :: is_writable(void)
 {
+    if (!(info->fs)) {
+        printf("No file system on %s. => not writable\n", get_name());
+        return false;
+    }
     return (info->is_directory() && info->fs->is_writable());
 }
 
@@ -128,9 +132,13 @@ int FileDirEntry :: fetch_context_items_actual(IndexedList<PathObject *> &list)
 {
 	int count = 0;
 	FileInfo *info = get_file_info(); // parent-> removed!
-
+    if (!info) {
+        printf("No FileInfo structure. Cannot create context menu.\n");
+        return 0;
+    }
+            
 	if(info->attrib & AM_DIR) {
-		list.append(new MenuItem(this, "Enter", FILEDIR_ENTERDIR));
+        list.append(new MenuItem(this, "Enter", FILEDIR_ENTERDIR));
 		count++;
 	}
 	if(info && info->is_writable()) {
@@ -200,7 +208,7 @@ void FileDirEntry :: execute(int selection)
     File *f;
     UINT transferred = 0;
     
-    printf("FileDirEntry Execute option %4x\n", selection);
+    printf("FileDirEntry Execute. option=%4x\n", selection);
     switch(selection) {
         case FILEDIR_RENAME:
             strncpy(buffer, info->lfname, 38);
@@ -335,7 +343,7 @@ void FileDirEntry :: execute(int selection)
         	}
         	break;
         default:
-            PathObject :: execute(selection);
+        	PathObject :: execute(selection);
             break;
     }
 }

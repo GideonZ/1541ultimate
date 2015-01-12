@@ -37,8 +37,6 @@ VSIM_SOURCES 	= # is automatically generated from the source include files or au
 
 WORK_DIR		= work
 
-SOURCE_INCLUDES = secretblaze.sinc
-
 # AUTO_DEP_PATHS
 #
 # A space separated list of paths. These paths are searched for source
@@ -184,6 +182,26 @@ $(TESTBENCH)_DO_GUI_OVERRIDE	:=
 
 #### tb12 #####
 TESTBENCH 						:= dual_iec_processor_tb
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb13 #####
+TESTBENCH 						:= mblite_sdram_tb
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb14 #####
+TESTBENCH 						:= mblite_simu
 TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
 $(TESTBENCH)_SRC				:= 
 $(TESTBENCH)_ENTITY				:= 

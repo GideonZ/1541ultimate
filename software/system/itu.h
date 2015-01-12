@@ -61,7 +61,7 @@
 
 // Timer functions
 void wait_ms(int);
-
+void outbyte(int c);
 
 #define UART_DATA  *((volatile BYTE *)0x4000010)
 #define UART_GET   *((volatile BYTE *)0x4000011)

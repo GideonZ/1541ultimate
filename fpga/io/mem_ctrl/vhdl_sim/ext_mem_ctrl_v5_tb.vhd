@@ -2,7 +2,7 @@
 -- Title      : External Memory controller for SDRAM
 -------------------------------------------------------------------------------
 -- Description: This module implements a simple, single burst memory controller.
---              User interface is 16 bit (burst of 2), externally 4x 8 bit.
+--              User interface is 32 bit (single beat), externally 4x 8 bit.
 -------------------------------------------------------------------------------
  
 library ieee;
@@ -23,8 +23,8 @@ architecture tb of ext_mem_ctrl_v5_tb is
     signal reset       : std_logic := '0';
     signal inhibit     : std_logic := '0';
     signal is_idle     : std_logic;
-    signal req         : t_mem_burst_16_req;
-    signal resp        : t_mem_burst_16_resp;
+    signal req         : t_mem_req_32;
+    signal resp        : t_mem_resp_32;
 	signal SDRAM_CLK   : std_logic;
 	signal SDRAM_CKE   : std_logic;
     signal SDRAM_CSn   : std_logic := '1';
@@ -32,8 +32,9 @@ architecture tb of ext_mem_ctrl_v5_tb is
 	signal SDRAM_CASn  : std_logic := '1';
 	signal SDRAM_WEn   : std_logic := '1';
     signal SDRAM_DQM   : std_logic := '0';
-    signal MEM_A       : std_logic_vector(14 downto 0);
-    signal MEM_D       : std_logic_vector(7 downto 0) := (others => 'Z');
+    signal SDRAM_A     : std_logic_vector(12 downto 0);
+    signal SDRAM_BA    : std_logic_vector(1 downto 0);
+    signal SDRAM_DQ    : std_logic_vector(7 downto 0) := (others => 'Z');
 
 	signal logic_CLK   : std_logic;
 	signal logic_CKE   : std_logic;
@@ -42,7 +43,9 @@ architecture tb of ext_mem_ctrl_v5_tb is
 	signal logic_CASn  : std_logic := '1';
 	signal logic_WEn   : std_logic := '1';
     signal logic_DQM   : std_logic := '0';
-
+    signal logic_A     : std_logic_vector(12 downto 0);
+    signal logic_BA    : std_logic_vector(1 downto 0);
+    
     signal Q           : std_logic_vector(7 downto 0);
     signal Qd          : std_logic_vector(7 downto 0);
 begin
@@ -73,8 +76,9 @@ begin
     	SDRAM_WEn   => logic_WEn,
         SDRAM_DQM   => logic_DQM,
     
-        MEM_A       => logic_A,
-        MEM_D       => MEM_D );
+        SDRAM_A     => logic_A,
+        SDRAM_BA    => logic_BA,
+        SDRAM_DQ    => SDRAM_DQ );
 
 
     SDRAM_A     <= transport logic_A    after 6 ns;
@@ -88,18 +92,26 @@ begin
 
     p_test: process
     begin
-        req <= c_mem_burst_16_req_init;
+        req <= c_mem_req_32_init;
 
         wait until reset='0';
         wait until clock='1';
         
         req.read_writen <= '1'; -- read
+        req.read_writen <= '0'; -- write
         req.request <= '1';
+        req.size <= '1';
+        req.data <= X"44332211";
+        req.byte_en <= "0111";
+        req.tag <= X"34";
         
         while true loop
             wait until clock='1';
-            if resp.ready='1' then
-                req.address <= req.address + 4;
+            if resp.rack='1' then
+                if req.read_writen = '0' then
+                    req.address <= req.address + 4;
+                end if;
+                req.read_writen <= not req.read_writen;
             end if;
         end loop;
         
@@ -129,9 +141,9 @@ begin
 
             Qd <= Q;
             if Qd(0)='Z' then
-                MEM_D <= Qd after 3.6 ns;
+                SDRAM_DQ <= Qd after 3.6 ns;
             else
-                MEM_D <= Qd after 5.6 ns;
+                SDRAM_DQ <= Qd after 5.6 ns;
             end if;
             
             count := count + 1;                

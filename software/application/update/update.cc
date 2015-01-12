@@ -364,7 +364,10 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 int main()
 {
 	char time_buffer[32];
-	console_print(screen, "*** Ultimate Updater ***\n\n");
+
+	small_printf("*** Ultimate Updater ***\n\n");
+	flash = get_flash();
+    small_printf("Flash = %p\n", flash);
 
     GenericHost *host;
     if (ITU_CAPABILITIES & CAPAB_OVERLAY) 
@@ -385,8 +388,6 @@ int main()
     user_interface = new UserInterface;
     user_interface->init(host, host->get_keyboard());
     user_interface->set_screen(screen);
-
-	flash = get_flash();
 
 	console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
 	console_print(screen, "%s\n", rtc.get_time_string(time_buffer, 32));

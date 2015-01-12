@@ -7,9 +7,9 @@ library work;
 use work.mem_bus_pkg.all;
 use work.io_bus_pkg.all;
 
-entity ultimate_1541_700a is
+entity ultimate_mb_700a is
 generic (
-    g_version       : unsigned(7 downto 0) := X"F9" );
+    g_version       : unsigned(7 downto 0) := X"01" );
 port (
     CLOCK       : in    std_logic;
     
@@ -37,10 +37,10 @@ port (
     IRQn        : inout std_logic;
     NMIn        : inout std_logic;
     
-    -- local bus side
-    LB_ADDR     : out   std_logic_vector(14 downto 0); -- DRAM A
-    LB_DATA     : inout std_logic_vector(7 downto 0);
-    
+    -- memory
+    SDRAM_A     : out   std_logic_vector(12 downto 0); -- DRAM A
+    SDRAM_BA    : out   std_logic_vector(1 downto 0);
+    SDRAM_DQ    : inout std_logic_vector(7 downto 0);
     SDRAM_CSn   : out   std_logic;
     SDRAM_RASn  : out   std_logic;
     SDRAM_CASn  : out   std_logic;
@@ -105,20 +105,17 @@ port (
     -- Buttons
     BUTTON      : in    std_logic_vector(2 downto 0));
     
-end ultimate_1541_700a;
+end entity;
 
 
-architecture structural of ultimate_1541_700a is
-
-    attribute IFD_DELAY_VALUE : string;
-    attribute IFD_DELAY_VALUE of LB_DATA: signal is "0";
+architecture structural of ultimate_mb_700a is
 
     signal reset_in     : std_logic;
     signal dcm_lock     : std_logic;
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
     signal sys_clock_2x : std_logic;
-    signal sys_shifted  : std_logic;
+--    signal sys_shifted  : std_logic;
     signal button_i     : std_logic_vector(2 downto 0);
         
     -- miscellaneous interconnect
@@ -126,8 +123,8 @@ architecture structural of ultimate_1541_700a is
     
     -- memory controller interconnect
     signal memctrl_inhibit  : std_logic;
-    signal mem_req          : t_mem_req;
-    signal mem_resp         : t_mem_resp;
+    signal mem_req          : t_mem_req_32;
+    signal mem_resp         : t_mem_resp_32;
 
     -- IEC open drain
     signal iec_atn_o   : std_logic;
@@ -143,7 +140,7 @@ begin
     reset_in <= '1' when BUTTON="000" else '0'; -- all 3 buttons pressed
     button_i <= not BUTTON;
 
-    i_clkgen: entity work.s3e_clockgen
+    i_clkgen: entity work.s3a_clockgen
     port map (
         clk_50       => CLOCK,
         reset_in     => reset_in,
@@ -152,13 +149,9 @@ begin
         
         sys_clock    => sys_clock,    -- 50 MHz
         sys_reset    => sys_reset,
-        sys_shifted  => sys_shifted,
---        sys_clock_2x => sys_clock_2x,
+        sys_clock_2x => sys_clock_2x );
 
-        eth_clock    => open );
-
-
-    i_logic: entity work.ultimate_logic 
+    i_logic: entity work.ultimate_logic_32
     generic map (
         g_version       => g_version,
         g_simulation    => false,
@@ -168,7 +161,7 @@ begin
         g_icap          => true,
         g_uart          => true,
         g_drive_1541    => true,
-        g_drive_1541_2  => true,
+        g_drive_1541_2  => false,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
@@ -299,34 +292,31 @@ begin
     IEC_CLOCK  <= '0' when iec_clock_o = '0' else 'Z';
     IEC_SRQ_IN <= '0' when iec_srq_o   = '0' else 'Z';
 
-	i_memctrl: entity work.ext_mem_ctrl_v4b
+    i_mem_ctrl: entity work.ext_mem_ctrl_v5
     generic map (
-        g_simulation => false,
-    	A_Width	     => 15 )
-		
+        g_simulation => false )
     port map (
         clock       => sys_clock,
-        clk_shifted => sys_shifted,
+        clk_2x      => sys_clock_2x,
         reset       => sys_reset,
-
+    
         inhibit     => memctrl_inhibit,
-        is_idle     => open, --memctrl_idle,
-        
+        is_idle     => open,
+    
         req         => mem_req,
         resp        => mem_resp,
-        
-		SDRAM_CSn   => SDRAM_CSn,	
-	    SDRAM_RASn  => SDRAM_RASn,
-	    SDRAM_CASn  => SDRAM_CASn,
-	    SDRAM_WEn   => SDRAM_WEn,
-		SDRAM_CKE	=> SDRAM_CKE,
-		SDRAM_CLK	=> SDRAM_CLK,
-
-        MEM_A       => LB_ADDR,
-        MEM_D       => LB_DATA );
-
-    -- tie offs
-    SDRAM_DQM  <= '0';
+    
+        SDRAM_CLK   => SDRAM_CLK,
+        SDRAM_CKE   => SDRAM_CKE,
+        SDRAM_CSn   => SDRAM_CSn,
+        SDRAM_RASn  => SDRAM_RASn,
+        SDRAM_CASn  => SDRAM_CASn,
+        SDRAM_WEn   => SDRAM_WEn,
+        SDRAM_DQM   => SDRAM_DQM,
+    
+        SDRAM_BA    => SDRAM_BA,
+        SDRAM_A     => SDRAM_A,
+        SDRAM_DQ    => SDRAM_DQ );
 
     process(ulpi_clock, reset_in)
     begin

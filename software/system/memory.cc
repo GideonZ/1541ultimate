@@ -109,16 +109,33 @@ void MemManager :: qfree(void *p)
 MemManager mem_manager;
 #endif
 
-void * operator new(size_t size)
+extern char _heap[];
+
+void * get_mem(size_t size) 
 {
+    //printf("New operator for size = %d, returned: \n", size);
+    void *ret;
 #if USE_MEM_TRACE == 1
     if(mem_manager.enabled) {
-    	return mem_manager.qalloc(size);
+        ret = mem_manager.qalloc(size);
+    } else {
+        ret = malloc(size);
     }
-	return malloc(size);
 #else
-	return malloc(size);
+	ret = malloc(size);
 #endif
+    if (!ret) {
+        printf("** PANIC **: Error allocating memory..\n");
+        while(1)
+            ;
+    }
+    // printf("%p\n", ret);
+    return ret;
+}
+
+void * operator new(size_t size)
+{
+    return get_mem(size);
 }
 
 void operator delete(void *p)
@@ -136,14 +153,7 @@ void operator delete(void *p)
 
 void * operator new[](size_t size)
 {
-#if USE_MEM_TRACE == 1
-    if(mem_manager.enabled) {
-    	return mem_manager.qalloc(size);
-    }
-	return malloc(size);
-#else
-	return malloc(size);
-#endif
+    return get_mem(size);
 }
 
 void operator delete[](void *p)

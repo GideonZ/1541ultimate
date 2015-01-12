@@ -79,7 +79,6 @@ architecture Gideon of ext_mem_ctrl_v4b is
     signal sdram_d_o      : std_logic_vector(MEM_D'range) := (others => '1');
     signal sdram_d_t      : std_logic := '0';
     signal delay          : integer range 0 to 15;
-    signal inhibit_d      : std_logic;
     signal rwn_i	      : std_logic;
     signal tag		      : std_logic_vector(req.tag'range);
     signal mem_a_i        : std_logic_vector(MEM_A'range) := (others => '0');
@@ -88,9 +87,7 @@ architecture Gideon of ext_mem_ctrl_v4b is
     signal do_refresh     : std_logic := '0';
     signal refresh_inhibit: std_logic := '0';
     signal not_clock      : std_logic;
-    signal reg_out        : integer range 0 to 3 := 0;     
     signal rdata_i        : std_logic_vector(7 downto 0) := (others => '0');
-    signal dout_sel       : std_logic := '0';
     signal refr_delay     : integer range 0 to 3;
     signal boot_cnt       : integer range 0 to SDRAM_WakeupTime-1 := SDRAM_WakeupTime-1;
     signal init_cnt       : integer range 0 to c_init_array'high;
@@ -168,9 +165,6 @@ begin
                 count_out <= "00";
             end if;
 
-            dout_sel <= '0';
-            inhibit_d   <= inhibit;
-            
             rdata_i  <= MEM_D;  -- clock in
 
             sdram_cmd  <= c_cmd_inactive;

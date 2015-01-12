@@ -60,20 +60,30 @@ public:
 
 	// Interface for flashing images
     virtual int  get_number_of_pages(void) { return 1; }
-	virtual int  get_page_size(void) { return 1; } // programmable block
+	virtual int  get_page_size(void) { return 512; } // programmable block
     virtual int  get_sector_size(int addr) { return 1; }
     virtual bool erase_sector(int sector) { return false; }
 	virtual int  page_to_sector(int page) { return -1; }
-    virtual bool read_page(int page, void *buffer) { return false; }
+    virtual bool read_page(int page, void *buffer) {
+        int *dest = (int *)buffer;
+        for(int i=0;i<64;i++)
+            *(dest++) = -1;
+        return false;
+    }
 	virtual bool write_page(int page, void *buffer) { return false; }
 	virtual bool need_erase(void) { return false; }
 	
 //    virtual int  write_image(int id, void *buffer) { return 0; }
 
 	// Interface for configuration
-    virtual int  get_config_page_size(void) { return 1; }
+    virtual int  get_config_page_size(void) { return 512; }
 	virtual int  get_number_of_config_pages(void) { return 0; }
-    virtual void read_config_page(int page, int length, void *buffer) { }
+    virtual void read_config_page(int page, int length, void *buffer) {
+        char *dest = (char *)buffer;
+        for (int i=0;i<length;i++) 
+            *(dest++) = (char)-1;
+    }
+        
     virtual void write_config_page(int page, void *buffer) { }
     virtual void clear_config_page(int page) { }
     

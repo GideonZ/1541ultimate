@@ -20,7 +20,7 @@ use ieee.numeric_std.all;
 library work;
 use work.io_bus_pkg.all;
 
-entity cs8900a_bus
+entity cs8900a_bus is
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;

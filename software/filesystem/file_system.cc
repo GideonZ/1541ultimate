@@ -3,6 +3,9 @@
 
 bool FileInfo :: is_writable(void)
 {
+    if(!fs) { // there is no file system, so it's certainly not writable
+        return false;
+    }
 //    printf("Checking writability of %s.\n", lfname);
     if(!fs->is_writable()) {
         printf("%s: FileSystem is not writable..\n", lfname);

@@ -9,7 +9,8 @@ FileDevice :: FileDevice(PathObject *p, BlockDevice *b, char *n, char *dn) : Fil
     display_name = dn;
     blk = b;
     disk = NULL; //new Disk(b, 512);
-    //printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s\n", this, disk, b, n, dn);
+    info = new FileInfo(get_name());
+    //printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s, info = %p\n", this, disk, b, n, dn, get_file_info());
 }
 
 FileDevice :: ~FileDevice()
@@ -70,8 +71,6 @@ int FileDevice :: fetch_children(void)
     Partition *p = disk->partition_list;
     if(p_count == 1) { // do not create partition in browser; that's not necessary!
         printf("There is only one partition!! we can do this smarter!\n");
-        if(!info)
-            info = new FileInfo(get_name());
         if(info) {
             info->fs = p->attach_filesystem();
             info->cluster = 0; // indicate root dir

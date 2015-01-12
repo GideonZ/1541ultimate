@@ -2,7 +2,7 @@
 -- Title      : External Memory controller for SDRAM
 -------------------------------------------------------------------------------
 -- Description: This module implements a simple, single burst memory controller.
---              User interface is 16 bit (burst of 2), externally 4x 8 bit.
+--              User interface is 32 bit (single beat), externally 4x 8 bit.
 -------------------------------------------------------------------------------
  
 library ieee;
@@ -19,7 +19,6 @@ library work;
 entity ext_mem_ctrl_v5 is
 generic (
     g_simulation       : boolean := false;
-    A_Width            : integer := 15;
     SDRAM_WakeupTime   : integer := 40;     -- refresh periods
     SDRAM_Refr_period  : integer := 375 );
 port (
@@ -30,8 +29,8 @@ port (
     inhibit     : in  std_logic;
     is_idle     : out std_logic;
 
-    req         : in  t_mem_burst_16_req;
-    resp        : out t_mem_burst_16_resp;
+    req         : in  t_mem_req_32;
+    resp        : out t_mem_resp_32;
 
 	SDRAM_CLK	: out std_logic;
 	SDRAM_CKE	: out std_logic;
@@ -41,61 +40,52 @@ port (
 	SDRAM_WEn   : out std_logic := '1';
     SDRAM_DQM   : out std_logic := '0';
 
-    MEM_A       : out   std_logic_vector(A_Width-1 downto 0);
-    MEM_D       : inout std_logic_vector(7 downto 0) := (others => 'Z'));
+    SDRAM_A     : out   std_logic_vector(12 downto 0);
+    SDRAM_BA    : out   std_logic_vector(1 downto 0);
+    SDRAM_DQ    : inout std_logic_vector(7 downto 0) := (others => 'Z'));
 end ext_mem_ctrl_v5;    
 
 -- ADDR: 25 24 23 ...
 --        0  X  X ... SDRAM (32MB)
 
 architecture Gideon of ext_mem_ctrl_v5 is
+    constant c_cmd_inactive  : std_logic_vector(3 downto 0) := "1111";
+    constant c_cmd_nop       : std_logic_vector(3 downto 0) := "0111";
+    constant c_cmd_active    : std_logic_vector(3 downto 0) := "0011";
+    constant c_cmd_read      : std_logic_vector(3 downto 0) := "0101";
+    constant c_cmd_write     : std_logic_vector(3 downto 0) := "0100";
+    constant c_cmd_bterm     : std_logic_vector(3 downto 0) := "0110";
+    constant c_cmd_precharge : std_logic_vector(3 downto 0) := "0010";
+    constant c_cmd_refresh   : std_logic_vector(3 downto 0) := "0001";
+    constant c_cmd_mode_reg  : std_logic_vector(3 downto 0) := "0000";
+
     type t_init is record
         addr    : std_logic_vector(15 downto 0);
-        cmd     : std_logic_vector(2 downto 0);  -- we-cas-ras
+        cmd     : std_logic_vector(3 downto 0);
     end record;
     type t_init_array is array(natural range <>) of t_init;
     constant c_init_array : t_init_array(0 to 7) := (
-        ( X"0400", "010" ), -- auto precharge
-        ( X"002A", "000" ), -- mode register, burstlen=4, writelen=4, CAS lat = 2, interleaved
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ), -- auto refresh
-        ( X"0000", "001" ) );
+        ( X"0400", c_cmd_precharge ),
+        ( X"0032", c_cmd_mode_reg ), -- mode register, burstlen=4, writelen=4, CAS lat = 3
+        ( X"0000", c_cmd_refresh ),
+        ( X"0000", c_cmd_refresh ),
+        ( X"0000", c_cmd_refresh ),
+        ( X"0000", c_cmd_refresh ),
+        ( X"0000", c_cmd_refresh ),
+        ( X"0000", c_cmd_refresh ) );
 
-    type t_state is (boot, init, idle, sd_cas, sd_wait);
-    signal state          : t_state;
-    signal sram_d_o       : std_logic_vector(MEM_D'range) := (others => '1');
-    signal sram_d_t       : std_logic_vector(1 downto 0) := "00";
-    signal r_valid        : std_logic_vector(3 downto 0) := "0000";
-    signal delay          : integer range 0 to 15;
-    signal inhibit_d      : std_logic;
-    signal rwn_i	      : std_logic;
-    signal mem_a_i        : std_logic_vector(MEM_A'range) := (others => '0');
-    signal cs_n_i         : std_logic;
-    signal col_addr       : std_logic_vector(9 downto 0) := (others => '0');
-    signal refresh_cnt    : integer range 0 to SDRAM_Refr_period-1;
-    signal do_refresh     : std_logic := '0';
-    signal not_clock      : std_logic;
     signal not_clock_2x   : std_logic;
-    signal rdata_hi_d     : std_logic_vector(7 downto 0) := (others => '0');
-    signal rdata_hi       : std_logic_vector(7 downto 0) := (others => '0');
-    signal rdata_lo       : std_logic_vector(7 downto 0) := (others => '0');
-    signal refr_delay     : integer range 0 to 3;
-    signal boot_cnt       : integer range 0 to SDRAM_WakeupTime-1 := SDRAM_WakeupTime-1;
-    signal init_cnt       : integer range 0 to c_init_array'high;
-    signal enable_sdram   : std_logic := '1';
+    signal not_clock      : std_logic;
 
-    signal req_i          : std_logic;
-    signal dack           : std_logic;
-    signal rack           : std_logic;
-    signal dnext          : std_logic;
+    type t_state is (boot, init, idle, sd_read, sd_read_2, sd_read_3, sd_write, sd_write_2, sd_write_3);
 
-    signal last_bank      : std_logic_vector(1 downto 0) := "10";
-    signal addr_bank      : std_logic_vector(1 downto 0);
-    signal addr_row       : std_logic_vector(12 downto 0);
-    signal addr_column    : std_logic_vector(9 downto 0);
+
+    signal sdram_d_o      : std_logic_vector(7 downto 0);
+    signal sdram_t_o      : std_logic_vector(7 downto 0);
+    
+    signal rdata          : std_logic_vector(15 downto 0);
+    signal rdata_lo       : std_logic_vector(7 downto 0);
+    signal rdata_hi       : std_logic_vector(7 downto 0);
     
 --    attribute fsm_encoding : string;
 --    attribute fsm_encoding of state : signal is "sequential";
@@ -104,196 +94,260 @@ architecture Gideon of ext_mem_ctrl_v5 is
 --    attribute register_duplication of mem_a_i  : signal is "no";
 
     attribute iob : string;
-    attribute iob of SDRAM_CKE : signal is "false";
---    attribute iob of rdata_i : signal is "true"; -- the general memctrl/rdata must be packed in IOB
+    attribute iob of SDRAM_RASn : signal is "true";
+    attribute iob of SDRAM_CASn : signal is "true";
+    attribute iob of SDRAM_WEn  : signal is "true";
+    attribute iob of SDRAM_BA   : signal is "true";
+    attribute iob of SDRAM_A    : signal is "true";
+    attribute iob of SDRAM_CKE  : signal is "false";
 
+    attribute IFD_DELAY_VALUE : string;
+    attribute IFD_DELAY_VALUE of SDRAM_DQ : signal is "1";
+
+    type t_output is record
+        sdram_cmd       : std_logic_vector(3 downto 0);
+        sdram_cke       : std_logic;
+        sdram_a         : std_logic_vector(12 downto 0);
+        sdram_ba        : std_logic_vector(1 downto 0);
+
+        tri             : std_logic_vector(1 downto 0);
+        wmask_16        : std_logic_vector(1 downto 0);
+        wdata_16        : std_logic_vector(15 downto 0);
+    end record;
+    
+    type t_internal_state is record
+        state           : t_state;
+        enable_sdram    : std_logic;
+        col_addr        : std_logic_vector(9 downto 0);
+        bank_addr       : std_logic_vector(1 downto 0);
+        refresh_cnt     : integer range 0 to SDRAM_Refr_period-1;
+        refr_delay      : integer range 0 to 3;
+        delay           : integer range 0 to 7;
+        do_refresh      : std_logic;
+        refresh_inhibit : std_logic;
+        tag             : std_logic_vector(req.tag'range);
+        rack            : std_logic;
+        rack_tag        : std_logic_vector(req.tag'range);
+        dack            : std_logic;
+        dack_tag        : std_logic_vector(req.tag'range);
+        dack_pre        : std_logic;
+        dack_tag_pre    : std_logic_vector(req.tag'range);
+        boot_cnt        : integer range 0 to SDRAM_WakeupTime-1;
+        init_cnt        : integer range 0 to c_init_array'high;
+        wdata           : std_logic_vector(31 downto 0);
+        wmask           : std_logic_vector(3 downto 0);
+    end record;
+    
+    constant c_internal_state_init : t_internal_state := (
+        state           => boot,
+        enable_sdram    => '0',
+        col_addr        => (others => '0'),
+        bank_addr       => (others => '0'),
+        refresh_cnt     => SDRAM_Refr_period-1,
+        refr_delay      => 3,
+        delay           => 7,
+        do_refresh      => '0',
+        refresh_inhibit => '0',
+        tag             => (others => '0'),
+        rack            => '0',
+        rack_tag        => (others => '0'),
+        dack            => '0',
+        dack_tag        => (others => '0'),
+        dack_pre        => '0',
+        dack_tag_pre    => (others => '0'),
+        boot_cnt        => SDRAM_WakeupTime-1,
+        init_cnt        => c_init_array'high,
+        wdata           => (others => '0'),
+        wmask           => (others => '0')
+    );    
+
+    signal outp         : t_output;
+    signal cur          : t_internal_state := c_internal_state_init;
+    signal nxt          : t_internal_state;
 begin
-    addr_bank   <= std_logic_vector(req.address(3 downto 2));
-    addr_row    <= std_logic_vector(req.address(24 downto 12));
-    addr_column <= std_logic_vector(req.address(11 downto 4)) & std_logic_vector(req.address(1 downto 0));
+    is_idle <= '1' when cur.state = idle else '0';
 
-    is_idle <= '1' when state = idle else '0';
-
-    req_i <= req.request;
-
-    resp.data  <= rdata_hi_d & rdata_lo;
-    resp.rack  <= rack;
-    resp.dack  <= dack;
-    resp.dnext <= dnext;
-
-    process(clock)
+    resp.data     <= rdata & rdata_hi & rdata_lo;
+    resp.rack     <= cur.rack;
+    resp.rack_tag <= cur.rack_tag;
+    resp.dack_tag <= cur.dack_tag;
+    
+    process(req, inhibit, cur)
         procedure send_refresh_cmd is
         begin
-            do_refresh <= '0';
-            cs_n_i  <= '0';
-            SDRAM_RASn <= '0';
-            SDRAM_CASn <= '0';
-            SDRAM_WEn  <= '1'; -- Auto Refresh
-            refr_delay <= 3; 
+            outp.sdram_cmd  <= c_cmd_refresh;
+            nxt.do_refresh <= '0';
+            nxt.refr_delay <= 3; 
         end procedure;
 
         procedure accept_req is
         begin
-			rwn_i     <= req.read_writen;
-            last_bank <= addr_bank;
+            nxt.rack       <= '1';
+            nxt.rack_tag   <= req.tag;
+            nxt.tag        <= req.tag;
+            nxt.wdata      <= req.data;
+            nxt.wmask      <= not req.byte_en;
             
-            mem_a_i(12 downto 0)  <= addr_row;
-            mem_a_i(14 downto 13) <= addr_bank;
-            col_addr              <= addr_column;
-            cs_n_i     <= '0';
-            SDRAM_RASn <= '0';
-            SDRAM_CASn <= '1';
-            SDRAM_WEn  <= '1'; -- Command = ACTIVE
-            delay      <= 0;
-            state  <= sd_cas;                            
-            dnext  <= '1';   -- if we set delay to a value not equal to zero, we should not
-                             -- set the dnext here.
+            nxt.col_addr   <= std_logic_vector(req.address( 9 downto  0)); -- 10 column bits
+            nxt.bank_addr  <= std_logic_vector(req.address(11 downto 10)); --  2 bank bits
+            outp.sdram_ba  <= std_logic_vector(req.address(11 downto 10)); --  2 bank bits
+            outp.sdram_a   <= std_logic_vector(req.address(24 downto 12)); -- 13 row bits
+            outp.sdram_cmd <= c_cmd_active;
         end procedure;
     begin
-            
-        if rising_edge(clock) then
-			dack       <= '0';
-			dnext      <= '0';
-            inhibit_d  <= inhibit;
-            rdata_hi_d <= rdata_hi;
-            cs_n_i     <= '1';
-            SDRAM_CKE  <= enable_sdram;
-            
-            if refr_delay /= 0 then
-                refr_delay <= refr_delay - 1;
+        nxt <= cur; -- default no change
+
+        nxt.rack         <= '0';
+        nxt.rack_tag     <= (others => '0');
+        nxt.dack_pre     <= '0';
+        nxt.dack_tag_pre <= (others => '0');
+        nxt.dack         <= cur.dack_pre;
+        nxt.dack_tag     <= cur.dack_tag_pre;
+
+        outp.sdram_cmd    <= c_cmd_inactive;
+        outp.sdram_cke    <= cur.enable_sdram;
+        outp.sdram_ba     <= (others => 'X');
+        outp.sdram_a      <= (others => 'X');
+        outp.tri          <= "11";
+        outp.wmask_16     <= "00";
+        outp.wdata_16     <= (others => 'X');
+        
+        if cur.refr_delay /= 0 then
+            nxt.refr_delay <= cur.refr_delay - 1;
+        end if;
+
+        if cur.delay /= 0 then
+            nxt.delay <= cur.delay - 1;
+        end if;
+
+        if inhibit='1' then
+            nxt.refresh_inhibit <= '1';
+        end if;
+
+        case cur.state is
+        when boot =>
+            nxt.refresh_inhibit <= '0';
+            nxt.enable_sdram <= '1';
+            if cur.refresh_cnt = 0 then
+                nxt.boot_cnt <= cur.boot_cnt - 1;
+                if cur.boot_cnt = 1 then
+                    nxt.state <= init;
+                end if;
+            elsif g_simulation then
+                nxt.state <= idle;
             end if;
 
-            sram_d_t <= '0' & sram_d_t(1);
-            r_valid  <= '0' & r_valid(3 downto 1);
-
-            case state is
-            when boot =>
-                enable_sdram <= '1';
-                if refresh_cnt = 0 then
-                    boot_cnt <= boot_cnt - 1;
-                    if boot_cnt = 1 then
-                        state <= init;
-                    end if;
-                elsif g_simulation then
-                    state <= idle;
-                end if;
-
-            when init =>
-                mem_a_i    <= c_init_array(init_cnt).addr(mem_a_i'range);
-                SDRAM_RASn <= c_init_array(init_cnt).cmd(0);
-                SDRAM_CASn <= c_init_array(init_cnt).cmd(1);
-                SDRAM_WEn  <= c_init_array(init_cnt).cmd(2);
-                if delay = 0 then
-                    delay <= 7;
-                    cs_n_i <= '0';
-                    if init_cnt = c_init_array'high then
-                        state <= idle;
-                    else
-                        init_cnt <= init_cnt + 1;
-                    end if;
+        when init =>
+            nxt.do_refresh <= '0';
+            outp.sdram_a  <= c_init_array(cur.init_cnt).addr(12 downto 0);
+            outp.sdram_ba <= c_init_array(cur.init_cnt).addr(14 downto 13);
+            outp.sdram_cmd(3) <= '1';
+            outp.sdram_cmd(2 downto 0) <= c_init_array(cur.init_cnt).cmd(2 downto 0);
+            if cur.delay = 0 then
+                nxt.delay <= 7;
+                if cur.init_cnt = c_init_array'high then
+                    nxt.state <= idle;
                 else
-                    delay <= delay - 1;
+                    outp.sdram_cmd(3) <= '0';
+                    nxt.init_cnt <= cur.init_cnt + 1;
                 end if;
+            end if;
 
-            when idle =>
-                -- first cycle after inhibit goes 0, do not do refresh
-                -- this enables putting cartridge images in sdram
-				if do_refresh='1' and not (inhibit_d='1' or inhibit='1') then
-				    send_refresh_cmd;
-				elsif inhibit='0' then
-    				if req_i='1' and refr_delay = 0 then
-                        accept_req;
-                    end if;
-                end if;
-					
-            
-			when sd_cas =>
-                -- we always perform auto precharge.
-                -- If the next access is to ANOTHER bank, then
-                -- we do not have to wait AFTER issuing this CAS.
-                -- the delay after the CAS, causes the next RAS to
-                -- be further away in time. If there is NO access
-                -- pending, then we assume the same bank, and introduce
-                -- the delay.
-                if (req_i='1' and addr_bank=last_bank) or req_i='0' then
-                    refr_delay <= 2;
-                end if;
-
-                mem_a_i(10) <= '1'; -- auto precharge
-                mem_a_i(9 downto 0) <= col_addr;
-
-                if delay <= 1 then
-                    dnext <= '1';
-                end if;
-
-                if delay = 0 then
-                    if rwn_i='0' then
-                        sram_d_t <= "11";
+        when idle =>
+            -- first cycle after inhibit goes 1, should not be a refresh
+            -- this enables putting cartridge images in sdram, because we guarantee the first access after inhibit to be a cart cycle
+            if cur.do_refresh='1' and cur.refresh_inhibit='0' then
+                send_refresh_cmd;
+            elsif inhibit='0' then -- make sure we are allowed to start a new cycle
+                if req.request='1' and cur.refr_delay = 0 then
+                    accept_req;
+                    nxt.refresh_inhibit <= '0';
+                    if req.read_writen = '1' then
+                        nxt.state <= sd_read;
                     else
-                        r_valid(3 downto 2) <= "11";
+                        nxt.state <= sd_write;
                     end if;
-
-                    -- read or write with auto precharge
-                    cs_n_i   <= '0';
-                    SDRAM_RASn  <= '1';
-                    SDRAM_CASn  <= '0';
-                    SDRAM_WEn   <= rwn_i;
-                    if rwn_i='0' then -- write
-                        delay   <= 2;
-                    else
-                        delay   <= 1;
-                    end if;
-                    state   <= idle;
-                else
-                    delay <= delay - 1;
                 end if;
+            end if;
                 
-            when others =>
-                null;
+        when sd_read =>
+            outp.sdram_ba <= cur.bank_addr;
+            outp.sdram_a(12 downto 11) <= "00";
+            outp.sdram_a(10) <= '1'; -- auto precharge
+            outp.sdram_a(9 downto 0) <= cur.col_addr;
+            outp.sdram_cmd <= c_cmd_read;
+            nxt.state <= sd_read_2;
+            
+        when sd_read_2 =>
+            nxt.state <= sd_read_3;
+        
+        when sd_read_3 =>
+            nxt.dack_pre <= '1';
+            nxt.dack_tag_pre <= cur.tag;
+            nxt.state <= idle;
+                    
+        when sd_write =>
+            outp.sdram_ba <= cur.bank_addr;
+            outp.sdram_a(12 downto 11) <= "00";
+            outp.sdram_a(10) <= '1'; -- auto precharge
+            outp.sdram_a(9 downto 0) <= cur.col_addr;
+            outp.sdram_cmd <= c_cmd_write;
+            outp.wdata_16 <= cur.wdata(31 downto 24) & "XXXXXXXX";
+            outp.wmask_16 <= cur.wmask(3) & "0";
+            outp.tri      <= "01";
+            nxt.state <= sd_write_2;
 
-            end case;
+        when sd_write_2 =>
+            outp.tri  <= "00";
+            outp.wdata_16 <= cur.wdata(15 downto 8) & cur.wdata(23 downto 16);
+            outp.wmask_16 <= cur.wmask(1) & cur.wmask(2);
+            nxt.state <= sd_write_3;
+                            
+        when sd_write_3 =>
+            outp.tri      <= "10";
+            outp.wdata_16 <= "XXXXXXXX" & cur.wdata(7 downto 0);
+            outp.wmask_16 <= "0" & cur.wmask(0);
+            nxt.state <= idle;
 
-            if refresh_cnt = SDRAM_Refr_period-1 then
-                do_refresh  <= '1';
-                refresh_cnt <= 0;
-            else
-                refresh_cnt <= refresh_cnt + 1;
-            end if;
+        when others =>
+            null;
+
+        end case;
+
+        if cur.refresh_cnt = SDRAM_Refr_period-1 then
+            nxt.do_refresh  <= '1';
+            nxt.refresh_cnt <= 0;
+        else
+            nxt.refresh_cnt <= cur.refresh_cnt + 1;
+        end if;
+    end process;
+    
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            cur <= nxt;
+
+            SDRAM_A    <= outp.sdram_a;
+            SDRAM_BA   <= outp.sdram_ba;
+            SDRAM_RASn <= outp.sdram_cmd(2);
+            SDRAM_CASn <= outp.sdram_cmd(1);
+            SDRAM_WEn  <= outp.sdram_cmd(0);
+            SDRAM_CKE  <= cur.enable_sdram;
+            rdata      <= rdata_hi & rdata_lo;
 
             if reset='1' then
-                state        <= boot;
---				sram_d_t     <= (others => '0');
-				delay        <= 0;
-                do_refresh   <= '0';
-                boot_cnt     <= SDRAM_WakeupTime-1;
-                init_cnt     <= 0;
-                enable_sdram <= '1';
+                cur.state        <= boot;
+                cur.delay        <= 0;
+                cur.tag          <= (others => '0');
+                cur.do_refresh   <= '0';
+                cur.boot_cnt     <= SDRAM_WakeupTime-1;
+                cur.init_cnt     <= 0;
+                cur.enable_sdram <= '1';
+                cur.refresh_inhibit <= '0';
             end if;
         end if;
     end process;
     
-    process(state, do_refresh, inhibit, inhibit_d, req_i, refr_delay)
-    begin
-        rack <= '0';
-        case state is
-            when idle =>
-                -- first cycle after inhibit goes 0, do not do refresh
-                -- this enables putting cartridge images in sdram
-				if do_refresh='1' and not (inhibit_d='1' and inhibit='0') then
-				    null;
-				elsif inhibit='0' then
-    				if req_i='1' and refr_delay = 0 then
-                        rack <= '1';
-                    end if;
-                end if;
-            when others =>
-                null;
-        end case;
-    end process;
-
-    MEM_D       <= sram_d_o when sram_d_t(0)='1' else (others => 'Z');
-    MEM_A       <= mem_a_i;
-
     not_clock_2x <= not clk_2x;
     not_clock    <= not clock;
     
@@ -303,7 +357,7 @@ begin
 		C0 => clk_2x,
 		C1 => not_clock_2x,
 		D0 => '0',
-		D1 => enable_sdram,
+		D1 => cur.enable_sdram,
 		Q  => SDRAM_CLK,
 		R  => '0',
 		S  => '0' );
@@ -313,8 +367,8 @@ begin
 		CE => '1',
 		C0 => clock,
 		C1 => not_clock,
-		D0 => '1',
-		D1 => cs_n_i,
+		D0 => outp.sdram_cmd(3),
+		D1 => '1',
 		Q  => SDRAM_CSn,
 		R  => '0',
 		S  => '0' );
@@ -325,12 +379,12 @@ begin
     		DDR_ALIGNMENT => "NONE",
     		SRTYPE        => "SYNC"	)
     	port map (
-    		Q0 => rdata_lo(i),
-    		Q1 => rdata_hi(i),
+    		Q0 => rdata_hi(i),
+    		Q1 => rdata_lo(i),
     		C0 => clock,
     		C1 => not_clock,
     		CE => '1',
-    		D =>  MEM_D(i),
+    		D =>  SDRAM_DQ(i),
     		R =>  reset,
     		S =>  '0');
 
@@ -339,15 +393,74 @@ begin
     		DDR_ALIGNMENT => "NONE",
     		SRTYPE        => "SYNC" )
     	port map (
-    		Q  => sram_d_o(i),
+    		Q  => sdram_d_o(i),
     		C0 => clock,
     		C1 => not_clock,
     		CE => '1',
-    		D0 => req.data(8+i),
-    		D1 => req.data(i),
+    		D0 => outp.wdata_16(8+i),
+    		D1 => outp.wdata_16(i),
     		R  => reset,
     		S  => '0' );
 
+        i_out_t: ODDR2
+        generic map (
+            DDR_ALIGNMENT => "NONE",
+            SRTYPE        => "SYNC" )
+        port map (
+            Q  => sdram_t_o(i),
+            C0 => clock,
+            C1 => not_clock,
+            CE => '1',
+            D0 => outp.tri(1),
+            D1 => outp.tri(0),
+            R  => reset,
+            S  => '0' );
+
+        SDRAM_DQ(i) <= sdram_d_o(i) when sdram_t_o(i)='0' else 'Z';
+
     end generate;
 
+    mask_out: ODDR2
+    generic map (
+        DDR_ALIGNMENT => "NONE",
+        SRTYPE        => "SYNC" )
+    port map (
+        Q  => SDRAM_DQM,
+        C0 => clock,
+        C1 => not_clock,
+        CE => '1',
+        D0 => outp.wmask_16(1),
+        D1 => outp.wmask_16(0),
+        R  => reset,
+        S  => '0' );
+
 end Gideon;
+
+-- 100 MHz
+-- ACT to READ: tRCD = 20 ns ( = 2 CLKs)
+-- ACT to PRCH: tRAS = 44 ns ( = 5 CLKs)
+-- ACT to ACT:  tRC  = 66 ns ( = 7 CLKs)
+-- ACT to ACTb: tRRD = 15 ns ( = 2 CLKs)
+-- PRCH time;   tRP  = 20 ns ( = 2 CLKs)
+-- wr. recov.   tWR=8ns+1clk ( = 2 CLKs) (starting from last data word)
+
+-- CL=2
+--      0 1 2 3 4 5 6 7 8 9 
+-- BL1  A - R - - P + -      precharge on odd clock
+--      - - - - D d d -
+-- +: ONLY if same bank, a new ACT command can be given here. Otherwise we don't meet tRC.
+
+-- BL4  A - r - - - p - 
+--      - - - - D D D D
+
+-- BL1W A - W - - P + -  (precharge on odd clock)
+--      - - D - - - - -
+
+-- BL4W A - W - - - p -
+--      - - D D D D - -
+
+-- Conclusion: In order to meet tRC, without checking for the bank, we always need 80 ns.
+-- In order to optimize to 60 ns (using 20 ns logic ticks), we need to add both bank
+-- number checking, as well as differentiate between 1 byte and 4 bytes. I think that
+-- it is not worthwhile at this point to implement this, so we will use a very rigid
+-- 4-tick schedule: one fits all

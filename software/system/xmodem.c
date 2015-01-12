@@ -25,6 +25,7 @@
 
  */
 
+#include <string.h>
 #include "crc16.h"
 
 #define SOH  0x01
@@ -41,30 +42,16 @@
 #define _inbyte uart_get_byte
 #define _outbyte outbyte
 
-/*
-int _inbyte(unsigned short timeout) // msec timeout
-{
-        unsigned short c;
-        int delay = timeout << 4;
-
-        while (((c=readw(URX1)) & 0x2000) == 0) {
-                usleep(60); // 60 us * 16 = 960 us (~ 1 ms)
-                if (timeout) {
-                        if (--delay == 0) return -2;
-                }
-        }
-
-        return c & 0x0FF;
-}
-*/
 
 static int check(int crc, const unsigned char *buf, int sz)
 {
 	if (crc) {
-		unsigned short crc = crc16_ccitt(buf, sz);
+        return 1;
+/*		unsigned short crc = crc16_ccitt(buf, sz);
 		unsigned short tcrc = (buf[sz]<<8)+buf[sz+1];
 		if (crc == tcrc)
 			return 1;
+*/
 	}
 	else {
 		int i;

@@ -154,10 +154,9 @@ SHORT uart_write_buffer(const void *buf, USHORT count)
 SHORT uart_write_hex(BYTE b)
 {
     const char hex[] = "0123456789ABCDEF";
-    static char buffer[2];
-    buffer[0] = hex[b >> 4];
-    buffer[1] = hex[b & 15];
-    return uart_write_buffer(buffer, 2);
+    outbyte(hex[b >> 4]);
+    outbyte(hex[b & 15]);
+    return 2;
 }
 
 /*

@@ -12,18 +12,16 @@ port (
     reset_in     : in  std_logic;
     
     dcm_lock     : out std_logic;
+    soft_reset   : in  std_logic := '0';
     
     sys_clock    : out std_logic; -- 50 MHz
     sys_reset    : out std_logic;
     sys_clock_2x : out std_logic;
-    sys_clock_4x : out std_logic;
     
     drive_stop   : in  std_logic := '0';
     drv_clock_en : out std_logic; -- 1/12.5 (4 MHz)
     cpu_clock_en : out std_logic; -- 1/50   (1 MHz)
     
-    eth_clock    : out std_logic; -- / 2.5  (20 MHz)
-
     iec_reset_n  : in  std_logic := '1';
     iec_reset_o  : out std_logic );
     
@@ -47,8 +45,10 @@ architecture Gideon of s3a_clockgen is
     signal toggle           : std_logic := '0';
     signal reset_c          : std_logic;
     
+    signal soft_reset_r     : std_logic := '0';
     signal reset_out        : std_logic := '1';
-    signal sysrst_cnt       : integer range 0 to 63;
+    constant c_sys_reset_ticks : integer := 63;
+    signal sysrst_cnt       : integer range 0 to c_sys_reset_ticks;
 
     signal iec_reset_sh     : std_logic_vector(0 to 2) := "000";
 --    signal reset_sample_cnt : integer range 0 to 127 := 0;
@@ -56,10 +56,10 @@ architecture Gideon of s3a_clockgen is
     
     attribute register_duplication : string;
     attribute register_duplication of sys_reset_i : signal is "no";
+    attribute register_duplication of soft_reset_r : signal is "no";
 
     signal clk_0_pre       : std_logic;
     signal clk_2x_pre      : std_logic;
-    signal clk_4x_pre      : std_logic;
 begin
     dcm_lock <= dcm1_locked;
    
@@ -88,9 +88,6 @@ begin
 --		CLKOUT_PHASE_SHIFT => "FIXED",
 		CLK_FEEDBACK       => "1X",
 --		PHASE_SHIFT        => -20,
-        CLKDV_DIVIDE       => 2.5,
-        CLKFX_MULTIPLY     => 4,
-        CLKFX_DIVIDE       => 1,
 		STARTUP_WAIT       => true
 	)
 	port map
@@ -99,15 +96,12 @@ begin
 		CLKFB    => sys_clk_buf,
 		CLK0     => clk_0_pre,
         CLK2X    => clk_2x_pre,
-        CLKFX    => clk_4x_pre,
-        CLKDV    => eth_clock,
 		LOCKED   => dcm1_locked,
 		RST      => reset_dcm
 	);
 
 	bufg_sys:   BUFG port map (I => clk_0_pre,  O => sys_clk_buf);
 	bufg_sys2x: BUFG port map (I => clk_2x_pre, O => sys_clock_2x);
-	bufg_sys4x: BUFG port map (I => clk_4x_pre, O => sys_clock_4x);
 
     sys_clk_i   <= sys_clk_buf;
     sys_clock   <= sys_clk_buf;
@@ -115,12 +109,17 @@ begin
     process(sys_clk_i, dcm1_locked)
     begin
         if rising_edge(sys_clk_i) then
-            if sysrst_cnt = 63 then
+            soft_reset_r <= soft_reset;
+            sys_reset_p  <= sys_reset_i;
+
+            if soft_reset_r = '1' then
+                sysrst_cnt <= 0;
+                sys_reset_i <= '1';
+            elsif sysrst_cnt = c_sys_reset_ticks then 
                 sys_reset_i <= '0';
             else
                 sysrst_cnt <= sysrst_cnt + 1;
             end if;
-            sys_reset_p  <= sys_reset_i;
 
 			drv_clock_en <= '0';
 			cpu_cke_i    <= '0';

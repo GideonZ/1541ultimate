@@ -19,16 +19,18 @@ StreamMenu :: StreamMenu(Stream *s, PathObject *n)
 void StreamMenu :: print_items(int start, int stop)
 {
     PathObject *n = (menu) ? menu : node;
+    printf("Print items of %p..\n", n);
     if(stop > n->children.get_elements())
         stop = n->children.get_elements();
             
+    printf("%d-%d\n", start, stop);
     if(n->children.get_elements() == 0) {
         stream->format("< No Items >\n");
     } else if(start >= stop) {
         stream->format("< No more items.. >\n");
     } else {
         for(int i=start;i<stop;i++) {
-            stream->format("%3d. %s\n", 1+i, n->children[i]->get_display_string());
+            stream->format("%3d. %p\n", 1+i, n->children[i]); //s->get_display_string());
         }
     }
 }
@@ -36,8 +38,10 @@ void StreamMenu :: print_items(int start, int stop)
 int StreamMenu :: poll(Event &e)
 {
 	if(e.type == e_browse_into) {
-        into();
-        print_items(0, 9999);
+        printf("Into event...");
+		into();
+		printf("Into event done..\n");
+		print_items(0, 9999);
         return -1;
     } else if(e.type == e_invalidate) {
     	invalidate((PathObject *)e.object);
@@ -66,7 +70,11 @@ int StreamMenu :: into(void)
     if(selected < 1)
         return -1;
             
+    printf("Into: Node = %p. sel = %d ", node, selected);
+    printf("%s\n", node->get_name());
     node = node->children[selected-1];
+    printf("Into2: Node = %p. ", node);
+    printf("%s\n", node->get_name());
     return node->fetch_children();
 }
 
@@ -109,9 +117,14 @@ int StreamMenu :: process_command(char *command)
             menu = NULL;
             state = 0;
         }
-        else if(node->parent)
-            node = node->parent;
-        print_items(0, 9999);
+        else if(node->parent) {
+        	printf("Node = %p: ", node);
+        	printf("%s, ", node->get_name());
+        	node = node->parent;
+        	printf("Parent = %p: ", node);
+        	printf("%s\n", node->get_name());
+        }
+		print_items(0, 9999);
     }
     else if ((strncmp(command, "usbstat", 7))==0) {
         usb.print_status();
@@ -135,13 +148,16 @@ int StreamMenu :: process_command(char *command)
         state = 1;
     }
     else { 
-        selected = stream->convert_in(command, 10, decimals); 
+        int value = stream->convert_in(command, 10, decimals);
         switch(state) {
             case 0: // default browse
-                if((selected > 0)&&(selected <= node->children.get_elements())) {
-                    stream->format("You selected %s. Creating context.\n", node->children[selected-1]->get_name());
+            	if((value > 0)&&(value <= node->children.get_elements())) {
+                    selected = value;
+            		stream->format("You selected %s. Creating context.\n", node->children[selected-1]->get_name());
                     menu = new PathObject(NULL);
+                    printf("Menu = %p\n", menu);
                     items = node->children[selected-1]->fetch_context_items(menu->children);
+                    printf("Items = %d\n", items);
                     if(items == 0) { // no context available; try to browse into
                         stream->format("No context items. Browsing into item..\n");
                         items = into();
@@ -156,9 +172,9 @@ int StreamMenu :: process_command(char *command)
                 break;
             case 1: // task menu
             case 2: // context menu
-                if((selected > 0)&&(selected <= menu->children.get_elements())) {
+                if((value > 0)&&(value <= menu->children.get_elements())) {
                     // execute
-                    menu->children[selected-1]->execute(0);
+                    menu->children[value-1]->execute(0);
                     state = 0;
                     delete menu;
                     menu = NULL;
@@ -172,4 +188,5 @@ int StreamMenu :: process_command(char *command)
                 stream->format("Recovered from invalid state.\n");
         }
     }
+    return 1;
 }

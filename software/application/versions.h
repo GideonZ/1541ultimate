@@ -1,10 +1,10 @@
 #ifndef VERSIONS_H
 #define VERSIONS_H
 
-#define APPL_VERSION "2.6k"
+#define APPL_VERSION "2.6m"
 #define BOOT_VERSION "V1.4"
-#define FPGA_VERSION "FPGA U2 VF8 "
-#define MINIMUM_FPGA_REV 0xF8
+#define FPGA_VERSION "FPGA U2 VF9 "
+#define MINIMUM_FPGA_REV 0xF9
 
 #endif
 

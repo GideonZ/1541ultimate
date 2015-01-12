@@ -15,6 +15,7 @@
 #define C2N_CLEAR_ERROR 0x02
 #define C2N_FLUSH_FIFO  0x04
 #define C2N_MODE_SELECT 0x08
+#define C2N_SENSE		0x10
 #define C2N_OUT_READ    0x00
 #define C2N_OUT_WRITE   0x40
 #define C2N_OUT_WRITE_N 0x80
@@ -35,14 +36,15 @@ class TapeController : public ObjectWithMenu
     int   mode;
 	int   paused;
 	int   recording;
-	
+	BYTE  controlByte;
 	void read_block();
 public:
 	TapeController();
-	~TapeController();
+	virtual ~TapeController();
 	
 	int  fetch_task_items(IndexedList<PathObject*> &item_list);
 	
+	void close();
 	void stop();
 	void start(int);
 	void poll(Event &);

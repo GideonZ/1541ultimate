@@ -36,7 +36,7 @@ port (
     SpaceInFifo : out std_logic;
     AlmostFull  : out std_logic;
     DataInFifo  : out std_logic);
-end SRL_fifo;
+end srl_fifo;
 
 architecture  Gideon  of  srl_fifo  is
 

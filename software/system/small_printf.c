@@ -195,3 +195,11 @@ small_sprintf(char *str, const char *fmt, ...)
     va_end(ap);
     return (ret);
 }
+
+void my_small_puts(const char *str)
+{
+    while (*str) 
+        outbyte(*(str++));
+    outbyte('\r');
+    outbyte('\n');
+}        

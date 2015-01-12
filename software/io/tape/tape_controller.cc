@@ -22,6 +22,7 @@ TapeController :: TapeController()
     tap = NULL;
 	paused = 0;
 	recording = 0;
+	controlByte = 0;
 	stop();
     poll_list.append(&poll_tape);
 	main_menu_objects.append(this);
@@ -51,8 +52,11 @@ int  TapeController :: fetch_task_items(IndexedList<PathObject*> &item_list)
 void TapeController :: stop()
 {
 	PLAYBACK_CONTROL = C2N_CLEAR_ERROR | C2N_FLUSH_FIFO;
-	PLAYBACK_CONTROL = 0;
+	PLAYBACK_CONTROL = 0; // also clears sense pin
+}
 
+void TapeController :: close()
+{
 	if(tap) {	
 		printf("Closing tape file..\n");
         tap->closeFile();
@@ -73,7 +77,8 @@ void TapeController :: start(int playout_pin)
 			
 		read_block();
 	}
-	PLAYBACK_CONTROL = C2N_ENABLE | BYTE(mode << 3) | BYTE(playout_pin << 6);
+	controlByte = C2N_SENSE | C2N_ENABLE | BYTE(mode << 3) | BYTE(playout_pin << 6);
+	PLAYBACK_CONTROL = controlByte;
     recording = playout_pin;
 	printf("] Status = %b.\n", PLAYBACK_STATUS);
 }
@@ -93,7 +98,7 @@ void TapeController :: read_block()
 	if(!block) {
         if (PLAYBACK_STATUS & C2N_STAT_FIFO_EMPTY) {
             wait_ms(400);
-            stop();
+            close();
             if (recording) {
                 push_event(e_freeze);
             }
@@ -117,7 +122,7 @@ void TapeController :: poll(Event &e)
 
 	// close 
 	if(!tap->getFile()->node) {
-		stop();
+		close();
 		return;
 	}
 	
@@ -125,11 +130,11 @@ void TapeController :: poll(Event &e)
 		if(e.object == this) {
 			switch(e.param) {
 				case MENU_C2N_PAUSE:
-					PLAYBACK_CONTROL = (mode)?C2N_MODE_SELECT:0;
+					PLAYBACK_CONTROL = (controlByte & ~C2N_ENABLE);
 					paused = 1;
 					break;
 				case MENU_C2N_RESUME:
-					PLAYBACK_CONTROL = ((mode)?C2N_MODE_SELECT:0) | C2N_ENABLE;
+					PLAYBACK_CONTROL = controlByte;
 					paused = 0;
 					break;
                 case MENU_C2N_STATUS:
@@ -137,7 +142,8 @@ void TapeController :: poll(Event &e)
 //                    flash.reboot(0);
                     break;
                 case MENU_C2N_STOP:
-                    stop();
+                    close();
+                	stop();
                     break;
 				default:
 					break;

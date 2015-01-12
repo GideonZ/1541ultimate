@@ -10,11 +10,13 @@
 	void _diag_write_char(char c, void **param);
 	void _string_write_char(char c, void **param);
 	int _vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap);
+    void my_small_puts(const char *str);
 
 	#include "itu.h"
 //}
 
 #define printf  small_printf
 #define sprintf small_sprintf
+#define puts    my_small_puts
 
 #endif

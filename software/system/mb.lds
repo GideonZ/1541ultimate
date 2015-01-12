@@ -6,52 +6,53 @@ _HEAP_SIZE = DEFINED(_HEAP_SIZE) ? _HEAP_SIZE : 0x0;
 
 MEMORY
 {
-    BRAM (rx)  : ORIGIN = 0x00000000, LENGTH = 8k
-    DRAM (rwx) : ORIGIN = 0x00010000, LENGTH = 0x00EB0000
+    CACHE (rx)  : ORIGIN = 0x00000000, LENGTH = 2k
+    DRAM (rwx)  : ORIGIN = 0x00004000, LENGTH = 0x00E7C000 /* thus until 00E80000 */
 }
 
 SECTIONS
 {
-  .fixed_vectors (NOLOAD) :
-  {
-	. = .;
-    KEEP (*(.fixed_vectors))
-  } = 0
-
-  .startmeuk 0x20000:
+    . = 0x0000;
+    .vectors.reset : { *(.vectors.reset) }
+    . = 0x0008;
+    .vectors.sw_exception : { *(.vectors.sw_exception) }
+    . = 0x0010;
+    .vectors.interrupt : { *(.vectors.interrupt) }
+    . = 0x0018;
+    .vectors.breakpoint : { *(.vectors.breakpoint) }
+    . = 0x0020;
+    .vectors.hw_exception : { *(.vectors.hw_exception) }
+    . = 0x0028;
+  
+  .startmeuk . :
   {
     *(.mysection)
-  } > DRAM
-  
+  } > CACHE
+
   .init :
   {
     KEEP (*(.init))
-  } > DRAM
+  } > CACHE
   
   .text : {
     *(.text .stub .text.* .gnu.linkonce.t.*)
-  } > DRAM
+  } > CACHE
   .fini           :
   {
     KEEP (*(.fini))
-  } > DRAM
+  } > CACHE
 
-  .rodata      ALIGN(4)    :
+  end_of_text = .;
+
+  /* DATA */
+
+  .rodata :
   {
     *(.rodata .rodata.* .gnu.linkonce.r.*)
     *(.rodata1)
-  	. = ALIGN(4); /* Enforce alignment of .data below */
-  } > DRAM
+  	
+  } > CACHE
 
-    /* Now we want the data to load, but not to live in that
-       area of the ram. So we load the initialized data here,
-       but we try to let it live behind our loaded image. */
-
-    end_of_text = .;
-
-    __ram_start = .;
-    
-/*  .data 0x10000 : AT (end_of_text) */
   .data ALIGN(4) :
   {
     __data_start = . ;
@@ -67,8 +68,10 @@ SECTIONS
     KEEP (*(.jcr))
 /*     SORT(CONSTRUCTORS)  */
     __data_end = .;
-  }
+  } > CACHE
 
+  . = 0x4000;
+  
   __bss_start = .;
   __bss_start__ = .;
   .bss ALIGN(4) (NOLOAD) :
@@ -94,12 +97,7 @@ SECTIONS
      . += _HEAP_SIZE;
      _heap_end = .;
   }
-  _stack = 0x0ebfffc;
-  
-/*
-  .stack 0xff0000:
-  {
-    *(.stack)
-  }  
-*/
+  _stack = 0x00EBFFFC;
+  _SDA_BASE_ = 0x00E80000;
+  _SDA2_BASE_ = 0x00E90000;
 }
