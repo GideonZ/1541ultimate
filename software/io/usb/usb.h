@@ -6,15 +6,19 @@
 #include "filemanager.h"
 #include "indexed_list.h"
 #include "config.h"
+#include "iomap.h"
 
-#define USB_PIPE(i)         (((volatile DWORD *)0x4080000)[i])
-#define USB_TRANSACTION(i)  (((volatile DWORD *)0x4080100)[i])
-#define USB_BUFFER(i)       *((volatile BYTE *)(0x4081000 + i))
-#define USB_COMMAND         *((volatile BYTE *)0x4080800)
-#define USB_RESP_DATA       *((volatile BYTE *)0x4080800)
-#define USB_RESP_STATUS     *((volatile BYTE *)0x4080801)
-#define USB_CMD_QUEUE_STAT  *((volatile BYTE *)0x4080802)
-#define USB_RESP_GET        *((volatile BYTE *)0x4080803)
+#define USB_COMMAND_BASE (USB_BASE + 0x800)
+#define USB_BUFFER_BASE  (USB_BASE + 0x1000)
+
+#define USB_PIPE(i)         (((volatile DWORD *)(USB_BASE + 0x000))[i])
+#define USB_TRANSACTION(i)  (((volatile DWORD *)(USB_BASE + 0x100))[i])
+#define USB_BUFFER(i)       *((volatile BYTE *)(USB_BUFFER_BASE + i))
+#define USB_COMMAND         *((volatile BYTE *)(USB_COMMAND_BASE + 0x00))
+#define USB_RESP_DATA       *((volatile BYTE *)(USB_COMMAND_BASE + 0x00))
+#define USB_RESP_STATUS     *((volatile BYTE *)(USB_COMMAND_BASE + 0x01))
+#define USB_CMD_QUEUE_STAT  *((volatile BYTE *)(USB_COMMAND_BASE + 0x02))
+#define USB_RESP_GET        *((volatile BYTE *)(USB_COMMAND_BASE + 0x03))
 
 #define USB_CMD_GET_STATUS    1
 #define USB_CMD_GET_SPEED     2 

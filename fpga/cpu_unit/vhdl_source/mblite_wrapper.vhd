@@ -131,7 +131,7 @@ begin
                 end if;
 
             when mem_read =>
-                if mem_resp.rack = '1' then
+                if mem_resp.rack_tag = g_tag then
                     mem_req_i.request <= '0';
                 end if;
                 if mem_resp.dack_tag = g_tag then
@@ -140,7 +140,7 @@ begin
                 end if;
                 
             when mem_write =>
-                if mem_resp.rack = '1' then
+                if mem_resp.rack_tag = g_tag then
                     mem_req_i.request <= '0';
                     state <= idle;
                 end if;

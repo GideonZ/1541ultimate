@@ -60,7 +60,7 @@ FileTypeD64 :: FileTypeD64(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
 
 FileTypeD64 :: FileTypeD64(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
-    printf("Creating d64 type from info: %s\n", fi->lfname);
+//    printf("Creating d64 type from info: %s. This = %p. This.FileInfo = %p. Par = %s\n", fi->lfname, this, this->get_file_info(), par->get_name());
     // we'll create a file-mapped block device and a default
     // partition to attach our file system to
     blk = new BlockDevice_File(this, 256);

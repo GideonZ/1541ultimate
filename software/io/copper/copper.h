@@ -5,15 +5,16 @@
 #include "event.h"
 #include "poll.h"
 #include "menu.h"
+#include "iomap.h"
 
-#define COPPER_COMMAND     *((volatile BYTE *)0x4046000)
-#define COPPER_STATUS      *((volatile BYTE *)0x4046001)
-#define COPPER_MEASURE_L   *((volatile BYTE *)0x4046002)
-#define COPPER_MEASURE_H   *((volatile BYTE *)0x4046003)
-#define COPPER_FRAMELEN_L  *((volatile BYTE *)0x4046004)
-#define COPPER_FRAMELEN_H  *((volatile BYTE *)0x4046005)
-#define COPPER_BREAK       *((volatile BYTE *)0x4046006)
-#define COPPER_RAM(x)      *((volatile BYTE *)(0x4047000+x))
+#define COPPER_COMMAND     *((volatile BYTE *)(COPPER_BASE + 0x00))
+#define COPPER_STATUS      *((volatile BYTE *)(COPPER_BASE + 0x01))
+#define COPPER_MEASURE_L   *((volatile BYTE *)(COPPER_BASE + 0x02))
+#define COPPER_MEASURE_H   *((volatile BYTE *)(COPPER_BASE + 0x03))
+#define COPPER_FRAMELEN_L  *((volatile BYTE *)(COPPER_BASE + 0x04))
+#define COPPER_FRAMELEN_H  *((volatile BYTE *)(COPPER_BASE + 0x05))
+#define COPPER_BREAK       *((volatile BYTE *)(COPPER_BASE + 0x06))
+#define COPPER_RAM(x)      *((volatile BYTE *)(COPPER_BASE + 0x1000 + x))
 #define COPPER_RAM_SIZE    4096
 
 #define COPPER_CMD_PLAY    0x01

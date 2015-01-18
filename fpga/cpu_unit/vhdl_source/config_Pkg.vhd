@@ -24,10 +24,10 @@ package config_Pkg is
     constant CFG_INTERRUPT : boolean := true;      -- Disable or enable external interrupt [0,1]
 
      -- Implement hardware multiplier
-    constant CFG_USE_HW_MUL : boolean := true;     -- Disable or enable multiplier [0,1]
+    constant CFG_USE_HW_MUL : boolean := false;     -- Disable or enable multiplier [0,1]
 
     -- Implement hardware barrel shifter
-    constant CFG_USE_BARREL : boolean := true;     -- Disable or enable barrel shifter [0,1]
+    constant CFG_USE_BARREL : boolean := false;     -- Disable or enable barrel shifter [0,1]
 
     -- Debug mode
     constant CFG_DEBUG : boolean := false;         -- Resets some extra registers for better readability

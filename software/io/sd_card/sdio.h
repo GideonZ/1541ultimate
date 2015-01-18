@@ -2,13 +2,14 @@
 #define SDIO_H
 
 #include "integer.h"
+#include "iomap.h"
 
-#define SDIO_DATA     *((volatile BYTE *)0x4060000)
-#define SDIO_DATA_32  *((volatile DWORD*)0x4060000)
-#define SDIO_SPEED    *((volatile BYTE *)0x4060004)
-#define SDIO_CTRL     *((volatile BYTE *)0x4060008)
-#define SDIO_CRC      *((volatile BYTE *)0x406000C)
-#define SDIO_SWITCH   *((volatile BYTE *)0x4060008)
+#define SDIO_DATA     *((volatile BYTE *)(SDCARD_BASE + 0x00))
+#define SDIO_DATA_32  *((volatile DWORD*)(SDCARD_BASE + 0x00))
+#define SDIO_SPEED    *((volatile BYTE *)(SDCARD_BASE + 0x04))
+#define SDIO_CTRL     *((volatile BYTE *)(SDCARD_BASE + 0x08))
+#define SDIO_CRC      *((volatile BYTE *)(SDCARD_BASE + 0x0C))
+#define SDIO_SWITCH   *((volatile BYTE *)(SDCARD_BASE + 0x08))
 
 #define SPI_FORCE_SS 0x01
 #define SPI_LEVEL_SS 0x02

@@ -39,9 +39,9 @@
 #define AT45_ManufacturerandDeviceIDRead                   0x9F
 #define AT45_ReadSecurityRegister                          0x77
 
-#define SPI_FLASH_DATA     *((volatile BYTE *)0x4060200)
-#define SPI_FLASH_DATA_32  *((volatile DWORD*)0x4060200)
-#define SPI_FLASH_CTRL     *((volatile BYTE *)0x4060208)
+#define SPI_FLASH_DATA     *((volatile BYTE *)(FLASH_BASE + 0x00))
+#define SPI_FLASH_DATA_32  *((volatile DWORD*)(FLASH_BASE + 0x00))
+#define SPI_FLASH_CTRL     *((volatile BYTE *)(FLASH_BASE + 0x08))
 
 #define SPI_FORCE_SS 0x01
 #define SPI_LEVEL_SS 0x02

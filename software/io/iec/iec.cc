@@ -153,7 +153,7 @@ IecInterface :: IecInterface()
     int size = (int)&_binary_iec_code_b_size;
     printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
     BYTE *src = &_binary_iec_code_b_start;
-    BYTE *dst = (BYTE *)HW_IEC_CODE_BE;
+    BYTE *dst = (BYTE *)HW_IEC_CODE;
     for(int i=0;i<size;i++)
         *(dst++) = *(src++);
     printf("%d bytes loaded.\n", size);
@@ -451,7 +451,7 @@ void IecInterface :: get_warp_data(void)
     DWORD *dw = (DWORD *)&temp[0];
     int err = 0;
     for(int i=0;i<64;i++) {
-        GCR_DECODER_GCR_IN_32 = HW_IEC_RX_DATA_32;
+        GCR_DECODER_GCR_IN_32 = HW_IEC_RX_DATA_32; // first in first out, endianness OK
         GCR_DECODER_GCR_IN = HW_IEC_RX_DATA;
         *(dw++) = GCR_DECODER_BIN_OUT_32;
         if(GCR_DECODER_ERRORS)
@@ -815,7 +815,7 @@ void FileTypeIEC :: execute(int selection)
     		file = root.fopen(this, FA_READ);
     		if(file) {
                 HW_IEC_RESET_ENABLE = 0;
-                file->read((void *)HW_IEC_CODE_BE, 2048, &bytes_read);
+                file->read((void *)HW_IEC_CODE, 2048, &bytes_read);
                 printf("Read %d code bytes.\n", bytes_read);
                 HW_IEC_RESET_ENABLE = iec_if.iec_enable;
             }

@@ -19,6 +19,7 @@ target/fpga/*.xrpt
 target/fpga/_xmsgs
 target/fpga/boot400
 target/fpga/boot700
+target/fpga/mb700
 target/fpga/work1400
 target/fpga/work250
 target/fpga/work400
@@ -27,6 +28,7 @@ target/fpga/work700c
 target/fpga/xilinx_device_details.xml
 target/fpga/xlnx_auto_0_xdb
 target/simulation/packages/vhdl_bfm_local
+target/simulation/sim/mblite
 target/simulation/sim/modelsim.ini
 target/simulation/sim/transcript
 target/simulation/sim/vsim.wlf

@@ -2,9 +2,10 @@
 #define AUDIO_SELECT_H
 
 #include "config.h"
+#include "iomap.h"
 
-#define AUDIO_SELECT_LEFT   *((volatile BYTE *)0x4060700)
-#define AUDIO_SELECT_RIGHT  *((volatile BYTE *)0x4060701)
+#define AUDIO_SELECT_LEFT   *((volatile BYTE *)(AUDIO_SEL_BASE + 0x00))
+#define AUDIO_SELECT_RIGHT  *((volatile BYTE *)(AUDIO_SEL_BASE + 0x01))
 
 #define SOUND_DRIVE_0     0
 #define SOUND_DRIVE_1     1
@@ -15,18 +16,18 @@
 #define SOUND_SAMP_LEFT   6
 #define SOUND_SAMP_RIGHT  7
 
-#define SID_VOICES        *((volatile BYTE *)0x4042000)
-#define SID_FILTER_DIV    *((volatile BYTE *)0x4042001)
-#define SID_BASE_LEFT     *((volatile BYTE *)0x4042002)
-#define SID_BASE_RIGHT    *((volatile BYTE *)0x4042003)
-#define SID_SNOOP_LEFT    *((volatile BYTE *)0x4042004)
-#define SID_SNOOP_RIGHT   *((volatile BYTE *)0x4042005)
-#define SID_ENABLE_LEFT   *((volatile BYTE *)0x4042006)
-#define SID_ENABLE_RIGHT  *((volatile BYTE *)0x4042007)
-#define SID_EXTEND_LEFT   *((volatile BYTE *)0x4042008)
-#define SID_EXTEND_RIGHT  *((volatile BYTE *)0x4042009)
-#define SID_COMBSEL_LEFT  *((volatile BYTE *)0x404200A)
-#define SID_COMBSEL_RIGHT *((volatile BYTE *)0x404200B)
+#define SID_VOICES        *((volatile BYTE *)(SID_BASE + 0x00))
+#define SID_FILTER_DIV    *((volatile BYTE *)(SID_BASE + 0x01))
+#define SID_BASE_LEFT     *((volatile BYTE *)(SID_BASE + 0x02))
+#define SID_BASE_RIGHT    *((volatile BYTE *)(SID_BASE + 0x03))
+#define SID_SNOOP_LEFT    *((volatile BYTE *)(SID_BASE + 0x04))
+#define SID_SNOOP_RIGHT   *((volatile BYTE *)(SID_BASE + 0x05))
+#define SID_ENABLE_LEFT   *((volatile BYTE *)(SID_BASE + 0x06))
+#define SID_ENABLE_RIGHT  *((volatile BYTE *)(SID_BASE + 0x07))
+#define SID_EXTEND_LEFT   *((volatile BYTE *)(SID_BASE + 0x08))
+#define SID_EXTEND_RIGHT  *((volatile BYTE *)(SID_BASE + 0x09))
+#define SID_COMBSEL_LEFT  *((volatile BYTE *)(SID_BASE + 0x0A))
+#define SID_COMBSEL_RIGHT *((volatile BYTE *)(SID_BASE + 0x0B))
 
 class AudioConfig : public ConfigurableObject
 {

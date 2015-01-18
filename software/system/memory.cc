@@ -147,7 +147,8 @@ void operator delete(void *p)
     	free(p);
     }
 #else
-	free(p);
+    //printf("Freeing %p\n", p);
+    free(p);
 #endif
 }
 
@@ -165,6 +166,6 @@ void operator delete[](void *p)
     	free(p);
     }
 #else
-	free(p);
+	// free(p);
 #endif
 }

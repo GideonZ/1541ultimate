@@ -6,10 +6,10 @@
 #include "menu.h"
 #include "config.h"
 #include "userinterface.h"
+#include "iomap.h"
 
-#define HW_IEC_REGS      0x4028000
-#define HW_IEC_CODE      0x4028800
-#define HW_IEC_CODE_BE   0x5028800
+#define HW_IEC_REGS      IEC_BASE
+#define HW_IEC_CODE      (IEC_BASE + 0x800)
 
 #define HW_IEC_RAM(x)          *((volatile BYTE *)(HW_IEC_CODE +x))
 #define HW_IEC_RAM_DW           ((volatile DWORD *)(HW_IEC_CODE))
@@ -35,7 +35,7 @@
 #define IEC_FIFO_FULL  0x02
 #define IEC_FIFO_CTRL  0x80
 
-#define LOGGER_BASE            0x4060300
+#define LOGGER_BASE            DEBUG_BASE
 #define LOGGER_ADDRESS         *((volatile DWORD *)(LOGGER_BASE + 0x0)) // read
 #define LOGGER_LENGTH          *((volatile BYTE  *)(LOGGER_BASE + 0x4)) // read
 #define LOGGER_COMMAND         *((volatile BYTE  *)(LOGGER_BASE + 0x5)) // write

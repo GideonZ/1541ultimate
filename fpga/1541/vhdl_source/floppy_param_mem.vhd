@@ -60,7 +60,10 @@ begin
         ADDRB => param_addr,
 		DIB   => X"00000000",
 		DIPB  => X"0",
-		DOB   => param_data,
+		DOB(31 downto 24) => param_data(7 downto 0),   -- CPU writes big endian, bram is little endian
+		DOB(23 downto 16) => param_data(15 downto 8),
+        DOB(15 downto 8)  => param_data(23 downto 16),
+        DOB(7 downto 0)   => param_data(31 downto 24),
 		DOPB  => open );
 
     param_addr <= '0' & track & toggle;

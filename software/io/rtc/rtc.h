@@ -12,21 +12,22 @@
 */
 #include "integer.h"
 #include "config.h"
+#include "iomap.h"
 
-#define RTC_CHIP_DATA  *((volatile BYTE *)0x4060100)
-#define RTC_CHIP_SPEED *((volatile BYTE *)0x4060104)
-#define RTC_CHIP_CTRL  *((volatile BYTE *)0x4060108)
+#define RTC_CHIP_DATA  *((volatile BYTE *)(RTC_BASE + 0x00))
+#define RTC_CHIP_SPEED *((volatile BYTE *)(RTC_BASE + 0x04))
+#define RTC_CHIP_CTRL  *((volatile BYTE *)(RTC_BASE + 0x08))
 
-#define RTC_TIMER_HUNDREDTHS *((volatile BYTE *)0x4060407)
-#define RTC_TIMER_SECONDS    *((volatile BYTE *)0x4060406)
-#define RTC_TIMER_MINUTES    *((volatile BYTE *)0x4060405)
-#define RTC_TIMER_HOURS      *((volatile BYTE *)0x4060404)
-#define RTC_TIMER_WEEKDAYS   *((volatile BYTE *)0x4060403)
-#define RTC_TIMER_DAYS       *((volatile BYTE *)0x4060402)
-#define RTC_TIMER_MONTHS     *((volatile BYTE *)0x4060401)
-#define RTC_TIMER_YEARS      *((volatile BYTE *)0x4060400)
-#define RTC_TIMER_LOCK       *((volatile BYTE *)0x406040C)
-#define RTC_TIMER_FAT_TIME   *((volatile DWORD *)0x4060408)
+#define RTC_TIMER_HUNDREDTHS *((volatile BYTE *)(RTC_TIMER_BASE + 0x07))
+#define RTC_TIMER_SECONDS    *((volatile BYTE *)(RTC_TIMER_BASE + 0x06))
+#define RTC_TIMER_MINUTES    *((volatile BYTE *)(RTC_TIMER_BASE + 0x05))
+#define RTC_TIMER_HOURS      *((volatile BYTE *)(RTC_TIMER_BASE + 0x04))
+#define RTC_TIMER_WEEKDAYS   *((volatile BYTE *)(RTC_TIMER_BASE + 0x03))
+#define RTC_TIMER_DAYS       *((volatile BYTE *)(RTC_TIMER_BASE + 0x02))
+#define RTC_TIMER_MONTHS     *((volatile BYTE *)(RTC_TIMER_BASE + 0x01))
+#define RTC_TIMER_YEARS      *((volatile BYTE *)(RTC_TIMER_BASE + 0x00))
+#define RTC_TIMER_LOCK       *((volatile BYTE *)(RTC_TIMER_BASE + 0x0C))
+#define RTC_TIMER_FAT_TIME   *((volatile DWORD *)(RTC_TIMER_BASE + 0x08))
 
 #define SPI_BUSY        0x80
 #define SPI_FORCE_SS    0x01

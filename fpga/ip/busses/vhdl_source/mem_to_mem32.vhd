@@ -39,13 +39,13 @@ begin
     mem_req_32.request      <= mem_req_8.request;
     mem_req_32.read_writen  <= mem_req_8.read_writen;
     mem_req_32.address      <= mem_req_8.address;
-    mem_req_32.data         <= mem_req_8.data & mem_req_8.data & mem_req_8.data & mem_req_8.data;
-    
-    with mem_req_8.address(1 downto 0) select
-        mem_req_32.byte_en <= 
-            "1000" when "00",
-            "0100" when "01",
-            "0010" when "10",
-            "0001" when others;
+    mem_req_32.data         <= mem_req_8.data & X"000000";
+    mem_req_32.byte_en      <= "1000";
+--    with mem_req_8.address(1 downto 0) select
+--        mem_req_32.byte_en <= 
+--            "1000" when "00",
+--            "0100" when "01",
+--            "0010" when "10",
+--            "0001" when others;
 
 end architecture;

@@ -5,11 +5,12 @@
 #include "event.h"
 #include "poll.h"
 #include "menu.h"
+#include "iomap.h"
 
-#define RECORD_STATUS  *((volatile BYTE *)0x40C0000)
-#define RECORD_CONTROL *((volatile BYTE *)0x40C0000)
-#define RECORD_DATA     ((volatile BYTE *)0x40C0800)
-#define RECORD_DATA32  *((volatile DWORD*)0x40C0800)
+#define RECORD_STATUS  *((volatile BYTE *)(C2N_RECORD_BASE + 0x000))
+#define RECORD_CONTROL *((volatile BYTE *)(C2N_RECORD_BASE + 0x000))
+#define RECORD_DATA     ((volatile BYTE *)(C2N_RECORD_BASE + 0x800))
+#define RECORD_DATA32  *((volatile DWORD*)(C2N_RECORD_BASE + 0x800))
 
 #define REC_ENABLE       0x01
 #define REC_CLEAR_ERROR  0x02

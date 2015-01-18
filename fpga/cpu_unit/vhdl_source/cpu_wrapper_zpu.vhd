@@ -139,11 +139,11 @@ begin
     mem_rack <= '1' when mem_resp.rack_tag = g_mem_tag else '0';
     mem_dack <= '1' when mem_resp.dack_tag = g_mem_tag else '0';
 
-    io_req.address(19 downto 2) <= unsigned(cpu_address(19 downto 2));
-	with cpu_address(24) select
-    	io_req.address( 1 downto 0) <=
-    		unsigned(cpu_address(1 downto 0) xor cpu_size) when '0',
-    		unsigned(cpu_address(1 downto 0)) when others;
+    io_req.address(19 downto 0) <= unsigned(cpu_address(19 downto 0));
+--  with cpu_address(24) select
+--      io_req.address( 1 downto 0) <=
+--          unsigned(cpu_address(1 downto 0) xor cpu_size) when '0',
+--          unsigned(cpu_address(1 downto 0)) when others;
 	    
     io_req.data <= cpu_wdata;
     

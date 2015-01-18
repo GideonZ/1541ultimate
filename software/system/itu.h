@@ -1,24 +1,25 @@
 #ifndef ITU_H
 #define ITU_H
 #include "integer.h"
+#include "iomap.h"
 
 // Definitions for the ITU (Interrupt, Timer, Uart)
-#define ITU_IRQ_GLOBAL    *((volatile BYTE *)0x4000000)
-#define ITU_IRQ_ENABLE    *((volatile BYTE *)0x4000001)
-#define ITU_IRQ_DISABLE   *((volatile BYTE *)0x4000002)
-#define ITU_IRQ_EDGE      *((volatile BYTE *)0x4000003)
-#define ITU_IRQ_CLEAR     *((volatile BYTE *)0x4000004)
-#define ITU_IRQ_ACTIVE    *((volatile BYTE *)0x4000005)
-#define ITU_TIMER         *((volatile BYTE *)0x4000006)
-#define ITU_IRQ_TIMER_EN  *((volatile BYTE *)0x4000007)
-#define ITU_IRQ_TIMER_LO  *((volatile BYTE *)0x4000009)
-#define ITU_IRQ_TIMER_HI  *((volatile BYTE *)0x4000008)
-#define ITU_FPGA_VERSION  *((volatile BYTE *)0x400000B)
-#define ITU_CAPABILITIES  *((volatile DWORD*)0x500000C)
-#define CAPABILITIES      *((volatile DWORD*)0x500000C)
-#define ITU_MS_TIMER_LO   *((volatile BYTE *)0x4000023)
-#define ITU_MS_TIMER_HI   *((volatile BYTE *)0x4000022)
-#define ITU_MS_TIMER      *((volatile WORD *)0x5000022)
+#define ITU_IRQ_GLOBAL    *((volatile BYTE *)(ITU_BASE + 0x00))
+#define ITU_IRQ_ENABLE    *((volatile BYTE *)(ITU_BASE + 0x01))
+#define ITU_IRQ_DISABLE   *((volatile BYTE *)(ITU_BASE + 0x02))
+#define ITU_IRQ_EDGE      *((volatile BYTE *)(ITU_BASE + 0x03))
+#define ITU_IRQ_CLEAR     *((volatile BYTE *)(ITU_BASE + 0x04))
+#define ITU_IRQ_ACTIVE    *((volatile BYTE *)(ITU_BASE + 0x05))
+#define ITU_TIMER         *((volatile BYTE *)(ITU_BASE + 0x06))
+#define ITU_IRQ_TIMER_EN  *((volatile BYTE *)(ITU_BASE + 0x07))
+#define ITU_IRQ_TIMER_LO  *((volatile BYTE *)(ITU_BASE + 0x09))
+#define ITU_IRQ_TIMER_HI  *((volatile BYTE *)(ITU_BASE + 0x08))
+#define ITU_FPGA_VERSION  *((volatile BYTE *)(ITU_BASE + 0x0B))
+#define ITU_CAPABILITIES  *((volatile DWORD*)(ITU_BASE + 0x0C))
+#define CAPABILITIES      *((volatile DWORD*)(ITU_BASE + 0x0C))
+#define ITU_MS_TIMER_LO   *((volatile BYTE *)(ITU_BASE + 0x23))
+#define ITU_MS_TIMER_HI   *((volatile BYTE *)(ITU_BASE + 0x22))
+#define ITU_MS_TIMER      *((volatile WORD *)(ITU_BASE + 0x22))
 
 #define CAPAB_UART          0x00000001
 #define CAPAB_DRIVE_1541_1  0x00000002
@@ -63,10 +64,10 @@
 void wait_ms(int);
 void outbyte(int c);
 
-#define UART_DATA  *((volatile BYTE *)0x4000010)
-#define UART_GET   *((volatile BYTE *)0x4000011)
-#define UART_FLAGS *((volatile BYTE *)0x4000012)
-#define UART_ICTRL *((volatile BYTE *)0x4000013)
+#define UART_DATA  *((volatile BYTE *)(ITU_BASE + 0x10))
+#define UART_GET   *((volatile BYTE *)(ITU_BASE + 0x11))
+#define UART_FLAGS *((volatile BYTE *)(ITU_BASE + 0x12))
+#define UART_ICTRL *((volatile BYTE *)(ITU_BASE + 0x13))
 
 #define UART_Overflow    0x01
 #define UART_TxFifoFull  0x10

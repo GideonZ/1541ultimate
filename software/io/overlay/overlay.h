@@ -8,27 +8,28 @@ extern "C" {
 #include "integer.h"
 #include "host.h"
 #include "keyboard.h"
+#include "iomap.h"
 
-#define CHARGEN_LINE_CLOCKS_HI   *((volatile BYTE *)0x40E0000)
-#define CHARGEN_LINE_CLOCKS_LO   *((volatile BYTE *)0x40E0001)
-#define CHARGEN_CHAR_WIDTH       *((volatile BYTE *)0x40E0002)
-#define CHARGEN_CHAR_HEIGHT      *((volatile BYTE *)0x40E0003)
-#define CHARGEN_CHARS_PER_LINE   *((volatile BYTE *)0x40E0004)
-#define CHARGEN_ACTIVE_LINES     *((volatile BYTE *)0x40E0005)
-#define CHARGEN_X_ON_HI          *((volatile BYTE *)0x40E0006)
-#define CHARGEN_X_ON_LO          *((volatile BYTE *)0x40E0007)
-#define CHARGEN_Y_ON_HI          *((volatile BYTE *)0x40E0008)
-#define CHARGEN_Y_ON_LO          *((volatile BYTE *)0x40E0009)
-#define CHARGEN_POINTER_HI       *((volatile BYTE *)0x40E000A)
-#define CHARGEN_POINTER_LO       *((volatile BYTE *)0x40E000B)
-#define CHARGEN_PERFORM_SYNC     *((volatile BYTE *)0x40E000C)
-#define CHARGEN_TRANSPARENCY     *((volatile BYTE *)0x40E000D)
-#define CHARGEN_KEYB_ROW         *((volatile BYTE *)0x40E000E)
-#define CHARGEN_KEYB_COL         *((volatile BYTE *)0x40E000F)
+#define CHARGEN_LINE_CLOCKS_HI   *((volatile BYTE *)(OVERLAY_BASE + 0x00))
+#define CHARGEN_LINE_CLOCKS_LO   *((volatile BYTE *)(OVERLAY_BASE + 0x01))
+#define CHARGEN_CHAR_WIDTH       *((volatile BYTE *)(OVERLAY_BASE + 0x02))
+#define CHARGEN_CHAR_HEIGHT      *((volatile BYTE *)(OVERLAY_BASE + 0x03))
+#define CHARGEN_CHARS_PER_LINE   *((volatile BYTE *)(OVERLAY_BASE + 0x04))
+#define CHARGEN_ACTIVE_LINES     *((volatile BYTE *)(OVERLAY_BASE + 0x05))
+#define CHARGEN_X_ON_HI          *((volatile BYTE *)(OVERLAY_BASE + 0x06))
+#define CHARGEN_X_ON_LO          *((volatile BYTE *)(OVERLAY_BASE + 0x07))
+#define CHARGEN_Y_ON_HI          *((volatile BYTE *)(OVERLAY_BASE + 0x08))
+#define CHARGEN_Y_ON_LO          *((volatile BYTE *)(OVERLAY_BASE + 0x09))
+#define CHARGEN_POINTER_HI       *((volatile BYTE *)(OVERLAY_BASE + 0x0A))
+#define CHARGEN_POINTER_LO       *((volatile BYTE *)(OVERLAY_BASE + 0x0B))
+#define CHARGEN_PERFORM_SYNC     *((volatile BYTE *)(OVERLAY_BASE + 0x0C))
+#define CHARGEN_TRANSPARENCY     *((volatile BYTE *)(OVERLAY_BASE + 0x0D))
+#define CHARGEN_KEYB_ROW         *((volatile BYTE *)(OVERLAY_BASE + 0x0E))
+#define CHARGEN_KEYB_COL         *((volatile BYTE *)(OVERLAY_BASE + 0x0F))
 
 
-#define CHARGEN_SCREEN_RAM       (0x40E0800)
-#define CHARGEN_COLOR_RAM        (0x40E1000)
+#define CHARGEN_SCREEN_RAM       (OVERLAY_BASE + 0x0800)
+#define CHARGEN_COLOR_RAM        (OVERLAY_BASE + 0x1000)
 
 // This is a temporary fix, until there is a better build-up
 // of objects. In fact the overlay unit should be a variant of

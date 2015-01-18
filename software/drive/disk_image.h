@@ -5,24 +5,25 @@
 #include "file_system.h"
 #include "blockdev_ram.h"
 #include "filetype_d64.h"
+#include "iomap.h"
 
-#define GCR_DECODER_GCR_IN   (*(volatile BYTE *)0x4060500)
-#define GCR_DECODER_BIN_OUT0 (*(volatile BYTE *)0x4060500)
-#define GCR_DECODER_BIN_OUT1 (*(volatile BYTE *)0x4060501)
-#define GCR_DECODER_BIN_OUT2 (*(volatile BYTE *)0x4060502)
-#define GCR_DECODER_BIN_OUT3 (*(volatile BYTE *)0x4060503)
-#define GCR_DECODER_ERRORS   (*(volatile BYTE *)0x4060504)
+#define GCR_DECODER_GCR_IN   (*(volatile BYTE *)(GCR_CODER_BASE + 0x00))
+#define GCR_DECODER_BIN_OUT0 (*(volatile BYTE *)(GCR_CODER_BASE + 0x00))
+#define GCR_DECODER_BIN_OUT1 (*(volatile BYTE *)(GCR_CODER_BASE + 0x01))
+#define GCR_DECODER_BIN_OUT2 (*(volatile BYTE *)(GCR_CODER_BASE + 0x02))
+#define GCR_DECODER_BIN_OUT3 (*(volatile BYTE *)(GCR_CODER_BASE + 0x03))
+#define GCR_DECODER_ERRORS   (*(volatile BYTE *)(GCR_CODER_BASE + 0x04))
 
-#define GCR_ENCODER_BIN_IN   (*(volatile BYTE *)0x4060508)
-#define GCR_ENCODER_GCR_OUT0 (*(volatile BYTE *)0x4060508)
-#define GCR_ENCODER_GCR_OUT1 (*(volatile BYTE *)0x4060509)
-#define GCR_ENCODER_GCR_OUT2 (*(volatile BYTE *)0x406050A)
-#define GCR_ENCODER_GCR_OUT3 (*(volatile BYTE *)0x406050B)
-#define GCR_ENCODER_GCR_OUT4 (*(volatile BYTE *)0x406050C)
+#define GCR_ENCODER_BIN_IN   (*(volatile BYTE *)(GCR_CODER_BASE + 0x08))
+#define GCR_ENCODER_GCR_OUT0 (*(volatile BYTE *)(GCR_CODER_BASE + 0x08))
+#define GCR_ENCODER_GCR_OUT1 (*(volatile BYTE *)(GCR_CODER_BASE + 0x09))
+#define GCR_ENCODER_GCR_OUT2 (*(volatile BYTE *)(GCR_CODER_BASE + 0x0A))
+#define GCR_ENCODER_GCR_OUT3 (*(volatile BYTE *)(GCR_CODER_BASE + 0x0B))
+#define GCR_ENCODER_GCR_OUT4 (*(volatile BYTE *)(GCR_CODER_BASE + 0x0C))
 
-#define GCR_ENCODER_BIN_IN_32  (*(volatile DWORD *)0x5060508)
-#define GCR_DECODER_GCR_IN_32  (*(volatile DWORD *)0x4060500)
-#define GCR_DECODER_BIN_OUT_32 (*(volatile DWORD *)0x5060500)
+#define GCR_ENCODER_BIN_IN_32  (*(volatile DWORD *)(GCR_CODER_BASE + 0x08))
+#define GCR_DECODER_GCR_IN_32  (*(volatile DWORD *)(GCR_CODER_BASE + 0x00))
+#define GCR_DECODER_BIN_OUT_32 (*(volatile DWORD *)(GCR_CODER_BASE + 0x00))
 
 
 #define C1541_MAXTRACKS   84

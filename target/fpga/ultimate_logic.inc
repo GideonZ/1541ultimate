@@ -12,6 +12,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/slot_bus_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_to_dma_bridge.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/slot_to_io_bridge.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/endianness_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/sync_fifo/vhdl_source/sync_fifo.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/srl_fifo/vhdl_source/srl_fifo.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/stack/vhdl_source/distributed_stack.vhd \
@@ -66,7 +67,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/mem_addr_counter.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/mem_remain_counter.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_memory_ctrl.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_contoller.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_controller.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/icap/vhdl_source/icap_pkg.vhd \

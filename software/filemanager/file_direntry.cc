@@ -69,8 +69,8 @@ FileDirEntry *FileDirEntry :: attempt_promotion(void)
         parent->children.replace(this, promoted); // replace
 		detach(true);
 		promoted->attach(true);
-		//        promoted->parent = parent;
-        push_event(e_cleanup_path_object, this);
+		this->info = NULL; // prevent the file info to be detroyed, since we copied it to this new FileDirEntry! (dirty)
+		push_event(e_cleanup_path_object, this);
     }
     return promoted;
 }

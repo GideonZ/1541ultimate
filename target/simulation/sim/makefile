@@ -239,7 +239,7 @@ $(TESTCASE)_ENTITY			:= $(TESTCASE)
 $(TESTCASE)_TIME			:= 20 us;
 $(TESTCASE)_DO_GUI_BEFORE	:= 
 
-TESTCASE 					:= harness_v5
+TESTCASE 					:= harness_logic_32
 TESTCASES					:= $(TESTCASES) $(TESTCASE)
 $(TESTCASE)_SRC				:= $(TESTCASE).vhd
 $(TESTCASE)_ENTITY			:= $(TESTCASE)

@@ -6,10 +6,11 @@
 #include "poll.h"
 #include "menu.h"
 #include "filetype_tap.h"
+#include "iomap.h"
 
-#define PLAYBACK_STATUS  *((volatile BYTE *)0x40A0000)
-#define PLAYBACK_CONTROL *((volatile BYTE *)0x40A0000)
-#define PLAYBACK_DATA     ((volatile BYTE *)0x40A0800)
+#define PLAYBACK_STATUS  *((volatile BYTE *)(C2N_PLAY_BASE + 0x000))
+#define PLAYBACK_CONTROL *((volatile BYTE *)(C2N_PLAY_BASE + 0x000))
+#define PLAYBACK_DATA     ((volatile BYTE *)(C2N_PLAY_BASE + 0x800))
 
 #define C2N_ENABLE      0x01
 #define C2N_CLEAR_ERROR 0x02

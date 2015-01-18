@@ -30,7 +30,7 @@ void StreamMenu :: print_items(int start, int stop)
         stream->format("< No more items.. >\n");
     } else {
         for(int i=start;i<stop;i++) {
-            stream->format("%3d. %p\n", 1+i, n->children[i]); //s->get_display_string());
+            stream->format("%3d. %s\n", 1+i, n->children[i]->get_display_string());
         }
     }
 }

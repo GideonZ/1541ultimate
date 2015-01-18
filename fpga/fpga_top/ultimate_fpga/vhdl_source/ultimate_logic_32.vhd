@@ -685,32 +685,32 @@ begin
             sys_io_resp => io_resp_usb );
     end generate;
 
-    r_usb2: if g_usb_host2 generate
-        i_usb: entity work.usb_controller 
-        generic map (
-            g_tag       => c_tag_usb2 )
-        port map (
-            ulpi_clock  => ULPI_CLOCK,
-            ulpi_reset  => ulpi_reset,
-        
-            -- ULPI Interface
-            ULPI_DATA   => ULPI_DATA,
-            ULPI_DIR    => ULPI_DIR,
-            ULPI_NXT    => ULPI_NXT,
-            ULPI_STP    => ULPI_STP,
-        
-			usb_busy	=> usb_busy, -- LED interface
-			
-            -- register interface bus
-            sys_clock   => sys_clock,
-            sys_reset   => sys_reset,
-            
-            sys_mem_req => mem_req_usb,
-            sys_mem_resp=> mem_resp_usb,
-
-            sys_io_req  => io_req_usb,
-            sys_io_resp => io_resp_usb );
-    end generate;
+--    r_usb2: if g_usb_host2 generate
+--        i_usb: entity work.usb_controller 
+--        generic map (
+--            g_tag       => c_tag_usb2 )
+--        port map (
+--            ulpi_clock  => ULPI_CLOCK,
+--            ulpi_reset  => ulpi_reset,
+--        
+--            -- ULPI Interface
+--            ULPI_DATA   => ULPI_DATA,
+--            ULPI_DIR    => ULPI_DIR,
+--            ULPI_NXT    => ULPI_NXT,
+--            ULPI_STP    => ULPI_STP,
+--        
+--          usb_busy    => usb_busy, -- LED interface
+--          
+--            -- register interface bus
+--            sys_clock   => sys_clock,
+--            sys_reset   => sys_reset,
+--            
+--            sys_mem_req => mem_req_usb,
+--            sys_mem_resp=> mem_resp_usb,
+--
+--            sys_io_req  => io_req_usb,
+--            sys_io_resp => io_resp_usb );
+--    end generate;
 
     i_sd: entity work.spi_peripheral_io
     generic map (
@@ -839,6 +839,8 @@ begin
             clock           => sys_clock,
             reset           => sys_reset,
         
+            srq_i           => srq_i,
+            srq_o           => hw_srq_o,
             atn_i           => atn_i,
             atn_o           => hw_atn_o,
             clk_i           => clk_i,

@@ -5,6 +5,7 @@ use ieee.numeric_std.all;
 library work;
 use work.usb_pkg.all;
 use work.io_bus_pkg.all;
+use work.endianness_pkg.all;
 
 library unisim;
 use unisim.vcomponents.all;
@@ -39,6 +40,8 @@ architecture wrap of usb_host_io is
     signal descr_addr      : std_logic_vector(8 downto 0);
     signal descr_rdata     : std_logic_vector(31 downto 0);
     signal descr_wdata     : std_logic_vector(31 downto 0);
+    signal descr_rdata_le  : std_logic_vector(31 downto 0);
+    signal descr_wdata_le  : std_logic_vector(31 downto 0);
     signal descr_en        : std_logic;
     signal descr_we        : std_logic;
     signal buf_addr        : std_logic_vector(10 downto 0);
@@ -86,11 +89,6 @@ architecture wrap of usb_host_io is
     signal reg_ack         : std_logic;
     signal reg_addr        : std_logic_vector(5 downto 0);  
     signal reg_wdata       : std_logic_vector(7 downto 0);  
-
---    signal reset_pkt       : std_logic;
---    signal reset_valid     : std_logic;
---    signal reset_last      : std_logic;
---    signal reset_data      : std_logic_vector(7 downto 0);
 
     signal send_reset_data : std_logic;
     signal reset_last      : std_logic;
@@ -200,9 +198,12 @@ begin
 		ENB   => descr_en,
 		WEB   => descr_we,
         ADDRB => descr_addr,
-		DIB   => descr_wdata,
+		DIB   => descr_wdata_le,
 		DIPB  => X"0",
-		DOB   => descr_rdata );
+		DOB   => descr_rdata_le );
+
+    descr_wdata_le <= byte_swap(descr_wdata);
+    descr_rdata <= byte_swap(descr_rdata_le);
 
     i_buf_ram: RAMB16_S9_S9
     port map (

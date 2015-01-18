@@ -5,9 +5,9 @@
 #include "event.h"
 #include "menu.h"
 #include "config.h"
+#include "iomap.h"
 
-#define CMD_IF_BASE      0x4044000
-#define CMD_IF_RAM_BASE  0x5044800
+#define CMD_IF_RAM_BASE  (CMD_IF_BASE + 0x800)
 
 #define CMD_IF_RAM(x)          *((volatile BYTE *)(CMD_IF_RAM_BASE +x))
 

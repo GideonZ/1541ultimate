@@ -57,7 +57,7 @@ begin
             -- c2n pin out and sync
             stream_en <= enabled and c2n_motor;
 
-            if fifo_empty='1' and enabled='1' then
+            if fifo_empty='1' and stream_en='1' then
                 error <= '1';
             end if;
 
@@ -89,7 +89,7 @@ begin
 
             case state is
             when idle =>
-                if enabled='1' and fifo_empty='0' then
+                if stream_en='1' and fifo_empty='0' then
                     if fifo_dout=X"00" then
                         if mode='1' then
                             state <= multi1;
@@ -106,7 +106,7 @@ begin
                 end if;
             
             when multi1 =>
-                if fifo_empty='0' then
+                if stream_en='1' and fifo_empty='0' then
                     counter(7 downto 0) <= unsigned(fifo_dout);
                     state <= multi2;
                 elsif enabled = '0' then
@@ -114,7 +114,7 @@ begin
                 end if;
                 
             when multi2 =>
-                if fifo_empty='0' then
+                if stream_en='1' and fifo_empty='0' then
                     counter(15 downto 8) <= unsigned(fifo_dout);
                     state <= multi3;
                 elsif enabled = '0' then
@@ -122,7 +122,7 @@ begin
                 end if;
 
             when multi3 =>
-                if fifo_empty='0' then
+                if stream_en='1' and fifo_empty='0' then
                     counter(23 downto 16) <= unsigned(fifo_dout);
                     state <= count_down;
                 elsif enabled = '0' then
@@ -139,7 +139,7 @@ begin
                     else
                         counter <= counter - 1;
                     end if;
-                elsif enabled = '0' then
+                elsif enabled = '0' then -- software disabled the device
                     state <= idle;
                 end if;
 
@@ -161,7 +161,7 @@ begin
     end process;
     
     fifo_write <= req.write and req.address(11); -- 0x800-0xFFF (2K) 
-    fifo_read  <= '0' when state = count_down else (enabled and not fifo_empty);
+    fifo_read  <= '0' when state = count_down else (stream_en and not fifo_empty);
 
     fifo: entity work.sync_fifo
     generic map (
