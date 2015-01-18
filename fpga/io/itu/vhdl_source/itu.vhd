@@ -13,6 +13,7 @@ generic (
     g_frequency     : integer := 50_000_000;
     g_edge_init     : std_logic_vector(7 downto 0) := "00000001";
     g_capabilities  : std_logic_vector(31 downto 0) := X"5555AAAA";
+    g_flags         : std_logic_vector(7 downto 0) := "00000000";
     g_edge_write    : boolean := true;
     g_baudrate      : integer := 115_200;
     g_timer_rate    : integer := 200_000 ); -- 5µs (should not result in more than 8 bits div)
@@ -173,6 +174,8 @@ begin
                     io_resp_it.data <= g_capabilities(15 downto 8);
                 when c_itu_capabilities3 =>
                     io_resp_it.data <= g_capabilities( 7 downto 0);
+                when c_itu_hw_flags =>
+                    io_resp_it.data <= g_flags;
                 when others =>
                     null;
                 end case;
