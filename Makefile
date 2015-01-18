@@ -25,7 +25,13 @@ mk2:
 	@$(MAKE) -C target/software/update FPGA400=0
 	@cp target/software/update/result/update.bin .
 
-mk1:
+prog:
+	@$(MAKE) mk2
+	@$(MAKE) -C target/fpga -f makefile_boot_700a
+	@$(MAKE) -C target/software/programmer
+	@cp target/software/programmer/result/*.bit .
+
+k1:
 	@svn up
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/fpga -f makefile_250e
