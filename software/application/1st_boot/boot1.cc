@@ -46,12 +46,12 @@ void uart_write_hex_long(DWORD hex)
 
 int main(int argc, char **argv)
 {
-    if (CAPABILITIES & CAPAB_SIMULATION) {
+    if (getFpgaCapabilities() & CAPAB_SIMULATION) {
         UART_DATA = BYTE('*');
         jump_run(APPL_RUN_ADDR);
     }
 
-    if (!(CAPABILITIES & CAPAB_SPI_FLASH)) {
+    if (!(getFpgaCapabilities() & CAPAB_SPI_FLASH)) {
 /*
         AT49_COMMAND1 = 0xAA;
         AT49_COMMAND2 = 0x55;
