@@ -3,6 +3,12 @@
 /*.mcs
 /*.zip
 /audio
+fpga/cpu_unit/mblite/designs
+fpga/cpu_unit/mblite/doc
+fpga/cpu_unit/mblite/sw
+fpga/cpu_unit/mblite/tb
+fpga/cpu_unit/sim/mblite
+fpga/cpu_unit/tl_mblite
 fpga/io/sigma_delta_dac/sim
 fpga/ip/video/sim
 fpga/sid6581/sim/modelsim.ini
@@ -27,6 +33,7 @@ target/fpga/work700
 target/fpga/work700c
 target/fpga/xilinx_device_details.xml
 target/fpga/xlnx_auto_0_xdb
+target/sb_lib
 target/simulation/packages/vhdl_bfm_local
 target/simulation/sim/mblite
 target/simulation/sim/modelsim.ini
@@ -40,6 +47,16 @@ target/software/2nd_boot/python_out_nano
 target/software/2nd_boot/result
 target/software/lwip/output
 target/software/lwip/result
+target/software/mb_boot/output_mb
+target/software/mb_boot/result_mb
+target/software/mb_hello/output_mb
+target/software/mb_hello/result_mb
+target/software/mb_lib/output_mb
+target/software/mb_lib/result_mb
+target/software/mb_sim_boot/output_mb
+target/software/mb_sim_boot/result_mb
+target/software/mb_ultimate/output
+target/software/mb_ultimate/result
 target/software/programmer/output
 target/software/programmer/result
 target/software/ultimate/output

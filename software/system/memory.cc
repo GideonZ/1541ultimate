@@ -166,6 +166,6 @@ void operator delete[](void *p)
     	free(p);
     }
 #else
-	// free(p);
+	free(p);
 #endif
 }
