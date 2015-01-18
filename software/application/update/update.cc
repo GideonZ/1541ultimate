@@ -285,7 +285,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 	
 	flash->protect_disable();
 	last_sector = -1;
-    int fpga_type = (CAPABILITIES & CAPAB_FPGA_TYPE) >> FPGA_TYPE_SHIFT;
+    int fpga_type = (getFpgaCapabilities() & CAPAB_FPGA_TYPE) >> FPGA_TYPE_SHIFT;
 	if(do_update1) {
         bool ok;
         
@@ -367,10 +367,10 @@ int main()
 
 	small_printf("*** Ultimate Updater ***\n\n");
 	flash = get_flash();
-    small_printf("Flash = %p\n", flash);
+    small_printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
     GenericHost *host;
-    if (ITU_CAPABILITIES & CAPAB_OVERLAY) 
+    if (getFpgaCapabilities() & CAPAB_OVERLAY)
         host = new Overlay(true);
     else
         host = new C64;

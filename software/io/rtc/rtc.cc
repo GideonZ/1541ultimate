@@ -54,7 +54,7 @@ static BYTE bin2bcd(BYTE bin)
 
 Rtc :: Rtc()
 {
-    if(CAPABILITIES & CAPAB_RTC_CHIP) {
+    if(getFpgaCapabilities() & CAPAB_RTC_CHIP) {
         capable = true;
     	cfg = new RtcConfigStore("Clock Settings", rtc_config);
     	config_manager.add_custom_store(cfg);
@@ -104,7 +104,7 @@ void Rtc :: get_time_from_chip(void)
 {
 	read_all();
 
-    if (CAPABILITIES & CAPAB_RTC_TIMER) {
+    if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
     	RTC_TIMER_LOCK = 1;
         RTC_TIMER_SECONDS    = bcd2bin(rtc_regs[RTC_ADDR_SECONDS]);
         RTC_TIMER_MINUTES    = bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
@@ -166,7 +166,7 @@ int  Rtc :: get_correction(void)
 
 void Rtc :: get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 {
-    if (CAPABILITIES & CAPAB_RTC_TIMER) {
+    if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
     	RTC_TIMER_LOCK = 1;
     	y = (int)RTC_TIMER_YEARS;
     	M = (int)RTC_TIMER_MONTHS;
@@ -191,7 +191,7 @@ void Rtc :: get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
 
 void Rtc :: set_time(int y, int M, int D, int wd, int h, int m, int s)
 {
-    if (CAPABILITIES & CAPAB_RTC_TIMER) {
+    if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
     	RTC_TIMER_LOCK = 1;
     	RTC_TIMER_YEARS = (BYTE)y;
     	RTC_TIMER_MONTHS = (BYTE)M;
@@ -249,7 +249,7 @@ DWORD Rtc :: get_fat_time(void)
     23 <<  0 = 0x00000017
 */
 
-    if(CAPABILITIES & CAPAB_RTC_TIMER)
+    if(getFpgaCapabilities() & CAPAB_RTC_TIMER)
     	return RTC_TIMER_FAT_TIME;
 
     int y, M, D, wd, h, m, s;

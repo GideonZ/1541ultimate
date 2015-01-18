@@ -200,7 +200,7 @@ void C64 :: set_emulation_flags(cart_def *def)
         	C64_REU_ENABLE = 1;
             C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
         }
-        if(CAPABILITIES & CAPAB_SAMPLER) {
+        if(getFpgaCapabilities() & CAPAB_SAMPLER) {
             printf("Sampler found in FPGA... IO map: ");
             if(cfg->get_value(CFG_C64_MAP_SAMP)) {
                 printf("Enabled!\n");

@@ -14,9 +14,8 @@
 #define ITU_IRQ_TIMER_EN  *((volatile BYTE *)(ITU_BASE + 0x07))
 #define ITU_IRQ_TIMER_LO  *((volatile BYTE *)(ITU_BASE + 0x09))
 #define ITU_IRQ_TIMER_HI  *((volatile BYTE *)(ITU_BASE + 0x08))
+#define ITU_FPGA_FLAGS    *((volatile BYTE *)(ITU_BASE + 0x0A))
 #define ITU_FPGA_VERSION  *((volatile BYTE *)(ITU_BASE + 0x0B))
-#define ITU_CAPABILITIES  *((volatile DWORD*)(ITU_BASE + 0x0C))
-#define CAPABILITIES      *((volatile DWORD*)(ITU_BASE + 0x0C))
 #define ITU_MS_TIMER_LO   *((volatile BYTE *)(ITU_BASE + 0x23))
 #define ITU_MS_TIMER_HI   *((volatile BYTE *)(ITU_BASE + 0x22))
 #define ITU_MS_TIMER      *((volatile WORD *)(ITU_BASE + 0x22))
@@ -82,5 +81,6 @@ SHORT uart_write_hex(BYTE b);
 BOOL uart_data_available(void);
 int uart_get_byte(int delay);
 
+DWORD getFpgaCapabilities();
 
 #endif

@@ -47,7 +47,8 @@ int FileTypeREU :: fetch_context_items(IndexedList<PathObject *> &list)
 {
     int count = 1;
     list.append(new MenuItem(this, "Load into REU", REUFILE_LOAD));
-    if ((type == REU_TYPE_MOD) && (CAPABILITIES & CAPAB_SAMPLER)) {
+    DWORD capabilities = getFpgaCapabilities();
+    if ((type == REU_TYPE_MOD) && (capabilities & CAPAB_SAMPLER)) {
         list.append(new MenuItem(this, "Play MOD", REUFILE_PLAYMOD));
         count++;
     }

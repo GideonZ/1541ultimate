@@ -141,7 +141,7 @@ IecInterface :: IecInterface()
 {
     ui_window = NULL;
     
-    if(!(CAPABILITIES & CAPAB_HARDWARE_IEC))
+    if(!(getFpgaCapabilities() & CAPAB_HARDWARE_IEC))
         return;
 
     poll_list.append(&poll_iec_interface);
@@ -176,7 +176,7 @@ IecInterface :: IecInterface()
 
 IecInterface :: ~IecInterface()
 {
-    if(!(CAPABILITIES & CAPAB_HARDWARE_IEC))
+    if(!(getFpgaCapabilities() & CAPAB_HARDWARE_IEC))
         return;
 
     for(int i=0;i<16;i++)
@@ -229,7 +229,7 @@ int IecInterface :: fetch_task_items(IndexedList<PathObject *> &list)
     // list.append(new ObjectMenuItem(this, "Read status",    MENU_READ_STATUS));
     // list.append(new ObjectMenuItem(this, "Send command",   MENU_SEND_COMMAND));
 
-    if(!(CAPABILITIES & CAPAB_ANALYZER))
+    if(!(getFpgaCapabilities() & CAPAB_ANALYZER))
         return count;
 
 	list.append(new ObjectMenuItem(this, "Trace IEC",      MENU_IEC_TRACE_ON));

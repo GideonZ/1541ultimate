@@ -83,7 +83,8 @@ void FileTypeTap :: closeFile() {
 int FileTypeTap :: fetch_context_items(IndexedList<PathObject *> &list)
 {
     int count = 0;
-    if(CAPABILITIES & CAPAB_C2N_STREAMER) {
+    DWORD capabilities = getFpgaCapabilities();
+    if(capabilities & CAPAB_C2N_STREAMER) {
         list.append(new MenuItem(this, "Run Tape", TAPFILE_RUN ));
         count++;
         list.append(new MenuItem(this, "Start Tape", TAPFILE_START ));

@@ -43,7 +43,7 @@ static int readhead(File *f);
 
 FileTypeBIT :: FileTypeBIT(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
 {
-    if((ITU_CAPABILITIES & CAPAB_FPGA_TYPE) >> FPGA_TYPE_SHIFT) {
+    if((getFpgaCapabilities() & CAPAB_FPGA_TYPE) >> FPGA_TYPE_SHIFT) {
         printf("Bitfile loading only supported on S3-700A.\n");
     } else {
         fac.register_type(this);

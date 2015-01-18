@@ -85,8 +85,10 @@ void poll_c64(Event &e)
 int main()
 {
 	char time_buffer[32];
+	DWORD capabilities = getFpgaCapabilities();
+
 	printf("*** 1541 Ultimate V2.0 ***\n");
-    printf("*** FPGA Capabilities: %8x ***\n\n", ITU_CAPABILITIES);
+    printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
     
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
 	printf("%s\n", rtc.get_time_string(time_buffer, 32));
@@ -99,7 +101,7 @@ int main()
 	send_nop();
 	send_nop();
 
-    if(ITU_CAPABILITIES & CAPAB_CARTRIDGE)
+    if(capabilities & CAPAB_CARTRIDGE)
         c64     = new C64;
 
     if(c64 && c64->exists()) {
@@ -116,7 +118,7 @@ int main()
         // now that everything is running, initialize the C64 and C1541 drive
     	// which might load custom ROMs from the file system.
     	c64->init_cartridge();
-    } else if(ITU_CAPABILITIES & CAPAB_OVERLAY) {
+    } else if(capabilities & CAPAB_OVERLAY) {
         printf("Using Overlay module as user interface...\n");
         overlay = new Overlay(false);
         user_interface = new UserInterface;
@@ -132,13 +134,13 @@ int main()
         stream_interface->set_menu(root_menu); // root of all evil!
     }
 
-    if(ITU_CAPABILITIES & CAPAB_C2N_STREAMER)
+    if(capabilities & CAPAB_C2N_STREAMER)
 	    tape_controller = new TapeController;
-    if(ITU_CAPABILITIES & CAPAB_C2N_RECORDER)
+    if(capabilities & CAPAB_C2N_RECORDER)
 	    tape_recorder   = new TapeRecorder;
-    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_1)
+    if(capabilities & CAPAB_DRIVE_1541_1)
         c1541_A = new C1541(C1541_IO_LOC_DRIVE_1, 'A');
-    if(ITU_CAPABILITIES & CAPAB_DRIVE_1541_2) {
+    if(capabilities & CAPAB_DRIVE_1541_2) {
         c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
     }
 

@@ -72,7 +72,8 @@ int FileTypeG64 :: fetch_context_items(IndexedList<PathObject *> &list)
 {
 	printf("G64 context...\n");
     int count = 0;
-    if(CAPABILITIES & CAPAB_DRIVE_1541_1) {
+    DWORD capabilities = getFpgaCapabilities();
+    if(capabilities & CAPAB_DRIVE_1541_1) {
         list.append(new MenuItem(this, "Run Disk", G64FILE_RUN));
         list.append(new MenuItem(this, "Mount Disk", G64FILE_MOUNT));
         list.append(new MenuItem(this, "Mount Disk Read Only", G64FILE_MOUNT_RO));
@@ -80,7 +81,7 @@ int FileTypeG64 :: fetch_context_items(IndexedList<PathObject *> &list)
         count += 4;
     }
     
-    if(CAPABILITIES & CAPAB_DRIVE_1541_2) {
+    if(capabilities & CAPAB_DRIVE_1541_2) {
         list.append(new MenuItem(this, "Mount Disk on Drive B", G64FILE_MOUNT_B));
         list.append(new MenuItem(this, "Mount Disk R/O on Dr.B", G64FILE_MOUNT_RO_B));
         list.append(new MenuItem(this, "Mount Disk Unlnkd Dr.B", G64FILE_MOUNT_UL_B));

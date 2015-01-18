@@ -59,7 +59,7 @@ Usb :: Usb()
 	poll_delay = 0;
 	initialized = false;
     
-    if(CAPABILITIES & CAPAB_USB_HOST) {
+    if(getFpgaCapabilities() & CAPAB_USB_HOST) {
 	    clear();
 
 #ifndef BOOTLOADER

@@ -71,6 +71,7 @@ AudioConfig :: AudioConfig()
 {
     struct t_cfg_definition *def = audio_cfg;
     DWORD store = 0x41554449;    
+    DWORD CAPABILITIES = getFpgaCapabilities();
 
     if(CAPABILITIES & CAPAB_STEREO_SID) {
         map = normal_map;
@@ -107,7 +108,7 @@ void AudioConfig :: effectuate_settings()
     AUDIO_SELECT_LEFT   = map[cfg->get_value(CFG_AUDIO_SELECT_LEFT)];
     AUDIO_SELECT_RIGHT  = map[cfg->get_value(CFG_AUDIO_SELECT_RIGHT)];
     
-    if(CAPABILITIES & CAPAB_STEREO_SID) {
+    if(getFpgaCapabilities() & CAPAB_STEREO_SID) {
         printf("Number of SID voices implemented in FPGA: %d\n", SID_VOICES);
         SID_BASE_LEFT     = sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)];
         SID_SNOOP_LEFT    = (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)] & 0x80)?0:1;
@@ -126,7 +127,7 @@ void AudioConfig :: effectuate_settings()
 void AudioConfig :: clear_sampler_registers()
 {
     volatile DWORD *sampler = (volatile DWORD *)SAMPLER_BASE;
-    if(CAPABILITIES & CAPAB_SAMPLER) {
+    if(getFpgaCapabilities() & CAPAB_SAMPLER) {
         for(int i=0;i<64;i++) {
             *(sampler++) = 0;
         }

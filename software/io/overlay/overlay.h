@@ -42,7 +42,7 @@ public:
     Overlay(bool active) {
         keyb = NULL;
         
-        if(CAPABILITIES & CAPAB_OVERLAY) {
+        if(getFpgaCapabilities() & CAPAB_OVERLAY) {
             CHARGEN_CHAR_WIDTH       = 8;
             CHARGEN_CHAR_HEIGHT      = 9;
             CHARGEN_CHARS_PER_LINE   = 40;
@@ -65,7 +65,7 @@ public:
     }
 
     bool exists(void) {
-        if(CAPABILITIES & CAPAB_OVERLAY) {
+        if(getFpgaCapabilities() & CAPAB_OVERLAY) {
             return true;
         } else {
             return false;

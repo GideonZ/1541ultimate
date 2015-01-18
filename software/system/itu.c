@@ -2,6 +2,21 @@
 #include "itu.h"
 #include "keys.h"
 
+#define CAPABILITIES_0    *((volatile BYTE*)(ITU_BASE + 0x0C))
+#define CAPABILITIES_1    *((volatile BYTE*)(ITU_BASE + 0x0D))
+#define CAPABILITIES_2    *((volatile BYTE*)(ITU_BASE + 0x0E))
+#define CAPABILITIES_3    *((volatile BYTE*)(ITU_BASE + 0x0F))
+
+DWORD getFpgaCapabilities()
+{
+	DWORD res = 0;
+	res |= ((DWORD)CAPABILITIES_0 << 24);
+	res |= ((DWORD)CAPABILITIES_1 << 16);
+	res |= ((DWORD)CAPABILITIES_2 << 8);
+	res |= ((DWORD)CAPABILITIES_3);
+	return res;
+}
+
 /*
 -------------------------------------------------------------------------------
 							wait_ms

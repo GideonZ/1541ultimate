@@ -42,7 +42,7 @@ CommandInterface :: CommandInterface()
     for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
         command_targets[i] = &cmd_if_empty_target;
     
-    if(CAPABILITIES & CAPAB_COMMAND_INTF) {
+    if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
         register_store(0x434D4E44, "Ultimate Command Interface", cmd_config);
         CMD_IF_SLOT_BASE = 0x47; // $DF1C
         CMD_IF_SLOT_ENABLE = 0; // DISABLE until we know we can enable ourselves: cfg->get_value(CFG_CMD_ENABLE);
