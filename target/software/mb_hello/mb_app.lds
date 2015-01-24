@@ -10,17 +10,8 @@ MEMORY
 
 SECTIONS
 {
-  .startmeuk 0x10000 :
-  {
-    *(.mysection)
-  } > DRAM
-
-  .init :
-  {
-    KEEP (*(.init))
-  } > DRAM
-  
-  .text : {
+  .text 0x10000 : {
+    *(.text.start)
     *(.text .stub .text.* .gnu.linkonce.t.*)
   } > DRAM
   .fini           :
@@ -28,6 +19,11 @@ SECTIONS
     KEEP (*(.fini))
   } > DRAM
 
+  .init :
+  {
+    KEEP (*(.init))
+  } > DRAM
+  
   end_of_text = .;
 
   /* DATA */

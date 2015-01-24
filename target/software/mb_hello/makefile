@@ -46,15 +46,9 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/command_interface \
 			$(PATH_SW)/io/copper \
 			$(PATH_SW)/6502 \
-			$(PATH_SW)/../../newlib-2.2.0/newlib/libc/stdlib \
-			$(PATH_SW)/../../newlib-2.2.0/newlib/libc/errno \
-			$(PATH_SW)/../../newlib-2.2.0/newlib/libc/include \
-			$(PATH_SW)/../../newlib-2.2.0/newlib/libc/reent \
-			$(PATH_SW)/../../newlib-2.2.0/newlib/libc/machine/spu/sys \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
-
 
 SRCS_C   =	mbstart_app.c \
 			itu.c \
@@ -88,15 +82,15 @@ SIZE	  = $(CROSS)-size
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -ffunction-sections -Os -std=c99 -DHAVE_MMAP=0 -DLACKS_UNISTD_H -D_REENT_ONLY
-CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti
-LINK 	 = ./mb_app2.lds
-LLIB     =  -L ../mb_lib/result_mb \
-            -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
+OPTIONS  = -ffunction-sections -fdata-sections -O2 
+COPTIONS = $(OPTIONS) -std=c99
+CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti
+LINK 	 = ./mb_app.lds
+LLIB     =  -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
 #LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
 LIBS     =  -lc -lgcc
-LFLAGS   = --relax --gc-sections 
+LFLAGS   = --gc-sections 
 
 VPATH   += $(OUTPUT) $(RESULT)
 
@@ -116,7 +110,6 @@ ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 .PHONY: clean all dep
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).mem $(OUTPUT)/$(PRJ).m8
-#	$(MAKE) -C ../1st_boot
 
 $(OUTPUT):
 	@mkdir $(OUTPUT)
@@ -180,4 +173,3 @@ clean:
 	@-rm -rf $(RESULT)
 
 dep:  $(OBJS_CC:.o=.d) $(OBJS_C:.o=.d)
-
