@@ -166,8 +166,8 @@ LLIB     =  -L ../mb_lib/result_mb \
             -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
 #LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
-LIBS     =  -lc_u2 -lc -lgcc
-LFLAGS   = --relax --gc-sections 
+LIBS     =  -lc -lgcc
+LFLAGS   = --gc-sections 
 
 VPATH   += $(OUTPUT) $(RESULT)
 

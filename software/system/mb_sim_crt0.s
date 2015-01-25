@@ -74,7 +74,7 @@ _vector_interrupt:
 _vector_hw_exception:       
         brai    _hw_exception_handler
 
-        .section .text
+        .section .startup, "ax"
         .globl _start1
         .align 2
         .ent _start1

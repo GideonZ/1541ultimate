@@ -167,7 +167,7 @@ int main()
 	file_system_err = init_fat_on_sd();
 
     if(!file_system_err) { // will return error code, 0 = ok
-        res = try_loading("recover.bin");
+        res = try_loading("ultimate_" APPL_VERSION ".bin");
         if(res!=FR_OK)
             res = try_loading("update.bin");
         delete fs;

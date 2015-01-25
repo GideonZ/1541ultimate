@@ -21,11 +21,12 @@ RESULT    = ./result_mb
 OUTPUT    = ./output_mb
 OUTPUT_FP = $(shell pwd)/output_mb
 
-PRJ      =  mb_boot
+PRJ      =  irq_test
 PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/application \
-			$(PATH_SW)/application/mb_boot \
+			$(PATH_SW)/application/mb_hello \
+			$(PATH_SW)/benchmark \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
@@ -49,8 +50,10 @@ VPATH     = $(PATH_SW)/application \
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
-
-SRCS_C   =	
+SRCS_C   =	mbstart_app.c \
+			itu.c \
+			irq_test.c \
+			small_printf.c
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:
@@ -62,7 +65,7 @@ SRCS_C   =
 SRCS_CC	 =  
 
 #
-SRCS_ASM =  mb_sim_crt0.s
+SRCS_ASM =  
 
 SRCS_6502 = 
 
@@ -75,15 +78,17 @@ OBJDUMP   = $(CROSS)-objdump
 OBJCOPY	  = $(CROSS)-objcopy
 SIZE	  = $(CROSS)-size
 
-TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt
+TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -ffunction-sections -O1
-CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti
-LINK 	 = ./mb_boot.lds
-LLIB     =  -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2 \
-			-L $(TOOLCHAIN)/microblaze-xilinx-elf/lib
-LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
+OPTIONS  = -ffunction-sections -fdata-sections -O2 
+COPTIONS = $(OPTIONS) -std=c99
+CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti
+LINK 	 = ./mb_app.lds
+LLIB     =  -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
+            -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
+#LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
+LIBS     =  -lc -lgcc
 LFLAGS   = --gc-sections 
 
 VPATH   += $(OUTPUT) $(RESULT)
@@ -104,7 +109,6 @@ ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 .PHONY: clean all dep
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).mem $(OUTPUT)/$(PRJ).m8
-#	$(MAKE) -C ../1st_boot
 
 $(OUTPUT):
 	@mkdir $(OUTPUT)
@@ -154,11 +158,11 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OB
 
 $(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
 	@echo "Make mem..."
-	@$(MAKEMEM) -w $< 2048 >$@
+	@$(MAKEMEM) -w $< 65536 65536 >$@
 
 $(OUTPUT)/$(PRJ).m8: $(RESULT)/$(PRJ).bin
 	@echo "Make mem..."
-	@$(MAKEMEM) $< 2048 >$@
+	@$(MAKEMEM) $< 65536 65536 >$@
 
 # pull in dependency info for *existing* .o files
 -include $(ALL_DEP_OBJS:.o=.d)
@@ -168,4 +172,3 @@ clean:
 	@-rm -rf $(RESULT)
 
 dep:  $(OBJS_CC:.o=.d) $(OBJS_C:.o=.d)
-

@@ -12,7 +12,7 @@ MEMORY
 
 SECTIONS
 {
-    . = 0x0000;
+/*
     .vectors.reset : { *(.vectors.reset) }
     . = 0x0008;
     .vectors.sw_exception : { *(.vectors.sw_exception) }
@@ -23,20 +23,22 @@ SECTIONS
     . = 0x0020;
     .vectors.hw_exception : { *(.vectors.hw_exception) }
     . = 0x0028;
-  
-  .startmeuk . :
-  {
-    *(.mysection)
-  } > CACHE
+*/
+  . = 0x0000;
 
-  .init :
-  {
-    KEEP (*(.init))
+  .vectors 0x0 : {
+    *(.vectors.reset)
+    *(.vectors.sw_exception)
+    *(.vectors.interrupt)
+    *(.vectors.breakpoint)
+    *(.vectors.hw_exception)
   } > CACHE
   
-  .text : {
+  .text 0x28 : {
+    *(.startup)
     *(.text .stub .text.* .gnu.linkonce.t.*)
   } > CACHE
+
   .fini           :
   {
     KEEP (*(.fini))

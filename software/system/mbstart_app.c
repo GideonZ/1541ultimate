@@ -23,7 +23,7 @@ void _initIO();
 void __clear_bss();
 void __copy_data();
 
-void _premain() __attribute__ ((section(".mysection")));
+void _premain() __attribute__ ((section(".text.start")));
 
 typedef void(*fptr)(void);
 
@@ -132,12 +132,13 @@ void outbyte(int c)
 void *sbrk(int inc)
 {
     static int b = (int)_heap;
-    void *result = 0;
-    //printf("sbrk called with %d. b = %p returning ", inc, b);
+    void *result = (void *)-1;
     if ((b + inc) < (int)_heap_end) {
         result = (void *)b;
+        //printf("sbrk called with %6x. b = %p returning %p\n", inc, b, result);
         b += inc;
+    } else {
+        printf("Sbrk called with %6x. FAILED\n", inc);
     }
-    //printf("%p\n", result);
     return result;
 }
