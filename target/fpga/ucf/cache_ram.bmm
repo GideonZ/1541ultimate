@@ -1,0 +1,24 @@
+/***************************************************** 
+* 
+* FILE : cache_ram.bmm 
+* 
+* Define a BRAM map for the RAM memory space.
+* address space 0x00000000 - 0x07FF, 512 deep by 32 bits wide. 
+* 
+****************************************************/ 
+
+ADDRESS_SPACE icache RAMB16 [0x00000000:0x000007FF] 
+    BUS_BLOCK
+     
+        i_logic/i_cpu/i_proc/i_cache/i_cache_ram/Mram_ram [31:0];
+
+    END_BUS_BLOCK;
+END_ADDRESS_SPACE;
+
+ADDRESS_SPACE dcache RAMB16 [0x00000000:0x000007FF] 
+    BUS_BLOCK
+     
+        i_logic/i_cpu/i_proc/d_cache/i_cache_ram/Mram_ram [31:0];
+
+    END_BUS_BLOCK;
+END_ADDRESS_SPACE;
