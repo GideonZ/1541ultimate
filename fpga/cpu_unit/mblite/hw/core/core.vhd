@@ -88,6 +88,7 @@ begin
     decode_i.mem_result        <= dmem_i.dat_i;
     decode_i.alu_result        <= mem_o.alu_result;
     decode_i.interrupt         <= int_i;
+    decode_i.interrupt_enable  <= exec_o.interrupt_enable;
     decode_i.flush_id          <= exec_o.flush_id;
     int_o                      <= decode_o.int_ack;
 

@@ -115,7 +115,7 @@ architecture wrap of usb_controller is
     signal reg_addr        : std_logic_vector(5 downto 0);  
     signal reg_wdata       : std_logic_vector(7 downto 0);  
     
-    signal speed           : std_logic_vector(1 downto 0) := "10"; -- TODO!
+    signal speed           : std_logic_vector(1 downto 0) := "10";
 begin                             
     i_nano: entity work.nano 
     port map (

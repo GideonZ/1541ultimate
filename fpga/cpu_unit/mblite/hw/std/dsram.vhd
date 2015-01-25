@@ -15,7 +15,7 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_unsigned.all;
+use ieee.numeric_std.all;
 
 library mblite;
 use mblite.std_Pkg.all;
@@ -39,7 +39,7 @@ end dsram;
 
 architecture arch of dsram is
     type ram_type is array(2 ** SIZE - 1 downto 0) of std_logic_vector(WIDTH - 1 downto 0);
-    signal ram :  ram_type;
+    signal ram :  ram_type := (others => (others => '0'));
     attribute ram_style : string;
     attribute ram_style of ram : signal is "auto";
 begin

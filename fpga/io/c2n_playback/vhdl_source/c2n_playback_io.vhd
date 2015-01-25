@@ -38,7 +38,7 @@ architecture gideon of c2n_playback_io is
     signal fifo_write       : std_logic;
     signal pulse            : std_logic;
     signal toggle           : std_logic;
-    signal cnt2             : integer range 0 to 63;
+    signal cnt2             : integer range 0 to 127;
     signal stream_en        : std_logic;
     type t_state is (idle, multi1, multi2, multi3, count_down);
     signal state            : t_state;
@@ -134,7 +134,7 @@ begin
                     if (counter = 1) or (counter = 0) then
                         pulse  <= '1';
                         toggle <= not toggle;
-                        cnt2   <= 49;
+                        cnt2   <= 122;
                         state  <= idle;
                     else
                         counter <= counter - 1;

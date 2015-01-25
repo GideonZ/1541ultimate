@@ -32,12 +32,13 @@ package core_Pkg is
 ----------------------------------------------------------------------------------------------
 
     type alu_operation    is (ALU_ADD, ALU_OR, ALU_AND, ALU_XOR, ALU_SHIFT, ALU_SEXT8, ALU_SEXT16, ALU_MUL, ALU_BS);
-    type src_type_a       is (ALU_SRC_REGA, ALU_SRC_NOT_REGA, ALU_SRC_PC, ALU_SRC_ZERO);
+    type src_type_a       is (ALU_SRC_REGA, ALU_SRC_NOT_REGA, ALU_SRC_PC, ALU_SRC_SPR);
     type src_type_b       is (ALU_SRC_REGB, ALU_SRC_NOT_REGB, ALU_SRC_IMM, ALU_SRC_NOT_IMM);
     type carry_type       is (CARRY_ZERO, CARRY_ONE, CARRY_ALU, CARRY_ARITH);
     type carry_keep_type  is (CARRY_NOT_KEEP, CARRY_KEEP);
     type branch_condition is (NOP, BNC, BEQ, BNE, BLT, BLE, BGT, BGE);
     type transfer_size    is (WORD, HALFWORD, BYTE);
+    type msr_update       is (NOP, LOAD_MSR, MSR_SET, MSR_CLR, MSR_SET_I, MSR_CLR_I);
 
     type ctrl_execution is record
         alu_op      : alu_operation;
@@ -48,6 +49,7 @@ package core_Pkg is
         carry_keep  : carry_keep_type;
         branch_cond : branch_condition;
         delay       : std_logic;
+        msr_op      : msr_update;
     end record;
 
     type ctrl_memory is record
@@ -103,6 +105,7 @@ package core_Pkg is
         mem_result      : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
         alu_result      : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
         interrupt       : std_logic;
+        interrupt_enable: std_logic;
         flush_id        : std_logic;
     end record;
 
@@ -135,6 +138,7 @@ package core_Pkg is
         branch          : std_logic;
         program_counter : std_logic_vector(CFG_IMEM_SIZE - 1 downto 0);
         flush_id        : std_logic;
+        interrupt_enable: std_logic;
         ctrl_mem        : ctrl_memory;
         ctrl_wrb        : forward_type;
     end record;
@@ -364,7 +368,7 @@ package core_Pkg is
 -- FUNCTIONS USED IN MB-LITE
 ----------------------------------------------------------------------------------------------
 
-    function select_register_data (reg_dat, reg, wb_dat : std_logic_vector; write : std_logic) return std_logic_vector;
+    function select_register_data (reg_dat, wb_dat : std_logic_vector; write : std_logic) return std_logic_vector;
     function forward_condition (reg_write : std_logic; reg_a, reg_d : std_logic_vector) return std_logic;
     function align_mem_load (data : std_logic_vector; size : transfer_size; address : std_logic_vector) return std_logic_vector;
     function align_mem_store (data : std_logic_vector; size : transfer_size) return std_logic_vector;
@@ -378,12 +382,10 @@ package body core_Pkg is
     --      A) zero
     --      B) bypass value read from register file
     --      C) value from register file
-    function select_register_data (reg_dat, reg, wb_dat : std_logic_vector; write : std_logic) return std_logic_vector is
+    function select_register_data (reg_dat, wb_dat : std_logic_vector; write : std_logic) return std_logic_vector is
         variable tmp : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
     begin
-        if CFG_REG_FORCE_ZERO = true and is_zero(reg) = '1' then
-            tmp := (others => '0');
-        elsif CFG_REG_FWD_WRB = true and write = '1' then
+        if CFG_REG_FWD_WRB = true and write = '1' then
             tmp := wb_dat;
         else
             tmp := reg_dat;

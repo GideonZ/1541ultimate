@@ -41,8 +41,9 @@ end execute;
 architecture arch of execute is
 
     type execute_reg_type is record
-        carry    : std_logic;
-        flush_ex : std_logic;
+        carry               : std_logic;
+        break_in_progress   : std_logic;
+        flush_ex            : std_logic;
     end record;
 
     signal r, rin     : execute_out_type;
@@ -52,12 +53,7 @@ begin
 
     exec_o <= r;
 
-    execute_comb: process(exec_i,exec_i.fwd_mem,exec_i.ctrl_ex,
-            exec_i.ctrl_wrb,exec_i.ctrl_mem,
-            exec_i.ctrl_mem.transfer_size,
-            exec_i.ctrl_mem_wrb,exec_i.fwd_dec,
-            r,r.ctrl_mem,r.ctrl_mem.transfer_size,
-            r.ctrl_wrb,reg)
+    execute_comb: process(exec_i, r, reg)
 
         variable v : execute_out_type;
         variable v_reg : execute_reg_type;
@@ -73,14 +69,15 @@ begin
         variable dat_a, dat_b : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
         variable sel_dat_a, sel_dat_b, sel_dat_d : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
         variable mem_result : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
-
+        variable special_reg : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
     begin
 
         v := r;
-
-        sel_dat_a := select_register_data(exec_i.dat_a, exec_i.reg_a, exec_i.fwd_dec_result, forward_condition(exec_i.fwd_dec.reg_write, exec_i.fwd_dec.reg_d, exec_i.reg_a));
-        sel_dat_b := select_register_data(exec_i.dat_b, exec_i.reg_b, exec_i.fwd_dec_result, forward_condition(exec_i.fwd_dec.reg_write, exec_i.fwd_dec.reg_d, exec_i.reg_b));
-        sel_dat_d := select_register_data(exec_i.dat_d, exec_i.ctrl_wrb.reg_d, exec_i.fwd_dec_result, forward_condition(exec_i.fwd_dec.reg_write, exec_i.fwd_dec.reg_d, exec_i.ctrl_wrb.reg_d));
+        v_reg := reg;
+        
+        sel_dat_a := select_register_data(exec_i.dat_a, exec_i.fwd_dec_result, forward_condition(exec_i.fwd_dec.reg_write, exec_i.fwd_dec.reg_d, exec_i.reg_a));
+        sel_dat_b := select_register_data(exec_i.dat_b, exec_i.fwd_dec_result, forward_condition(exec_i.fwd_dec.reg_write, exec_i.fwd_dec.reg_d, exec_i.reg_b));
+        sel_dat_d := select_register_data(exec_i.dat_d, exec_i.fwd_dec_result, forward_condition(exec_i.fwd_dec.reg_write, exec_i.fwd_dec.reg_d, exec_i.ctrl_wrb.reg_d));
 
         if reg.flush_ex = '1' then
             v.ctrl_mem.mem_write := '0';
@@ -131,11 +128,18 @@ begin
             v.dat_d := align_mem_store(sel_dat_d, exec_i.ctrl_mem.transfer_size);
         end if;
 
+        -- In case more than just one special register needs to be supported, a multiplexer can be made here. For now, just MSR.
+        special_reg := (31 => reg.carry,
+                         3 => reg.break_in_progress,
+                         2 => reg.carry,
+                         1 => r.interrupt_enable,
+                         others => '0' );
+
         -- Set the first operand of the ALU
         case exec_i.ctrl_ex.alu_src_a is
             when ALU_SRC_PC       => alu_src_a := sign_extend(exec_i.program_counter, '0', 32);
             when ALU_SRC_NOT_REGA => alu_src_a := not dat_a;
-            when ALU_SRC_ZERO     => alu_src_a := (others => '0');
+            when ALU_SRC_SPR      => alu_src_a := special_reg;
             when others           => alu_src_a := dat_a;
         end case;
 
@@ -182,11 +186,35 @@ begin
                 report "Invalid ALU operation" severity FAILURE;
         end case;
 
-        -- Set carry register
-        if exec_i.ctrl_ex.carry_keep = CARRY_KEEP then
-            v_reg.carry := reg.carry;
-        else
-            v_reg.carry := result(CFG_DMEM_WIDTH);
+        if reg.flush_ex = '0' then
+            -- Set carry register
+            if exec_i.ctrl_ex.carry_keep = CARRY_KEEP then
+                v_reg.carry := reg.carry;
+            else
+                v_reg.carry := result(CFG_DMEM_WIDTH);
+            end if;
+    
+            -- MSR operations
+            case exec_i.ctrl_ex.msr_op is
+            when MSR_SET_I =>
+                v.interrupt_enable := '1';
+            when MSR_CLR_I =>
+                v.interrupt_enable := '0';
+            when LOAD_MSR =>
+                v_reg.break_in_progress := dat_a(3);
+                v_reg.carry             := dat_a(2);
+                v.interrupt_enable      := dat_a(1);
+            when MSR_SET =>
+                v_reg.break_in_progress := exec_i.imm(3) or reg.break_in_progress;
+                v_reg.carry             := exec_i.imm(2) or reg.carry;
+                v.interrupt_enable      := exec_i.imm(1) or r.interrupt_enable;
+            when MSR_CLR =>
+                v_reg.break_in_progress := not exec_i.imm(3) and reg.break_in_progress;
+                v_reg.carry             := not exec_i.imm(2) and reg.carry;
+                v.interrupt_enable      := not exec_i.imm(1) and r.interrupt_enable;
+            when others =>
+                null;
+            end case;
         end if;
 
         zero := is_zero(dat_a);
@@ -235,12 +263,14 @@ begin
             r.branch                 <= '0';
             r.program_counter        <= (others => '0');
             r.flush_id               <= '0';
+            r.interrupt_enable       <= '0';
             r.ctrl_mem.mem_write     <= '0';
             r.ctrl_mem.mem_read      <= '0';
             r.ctrl_mem.transfer_size <= WORD;
             r.ctrl_wrb.reg_d         <= (others => '0');
             r.ctrl_wrb.reg_write     <= '0';
             reg.carry                <= '0';
+            reg.break_in_progress    <= '0';
             reg.flush_ex             <= '0';
         end procedure proc_execute_reset;
     begin

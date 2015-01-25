@@ -48,6 +48,28 @@ BEGIN
         rst_i  => reset,
         clk_i  => clock );
 
+    -- IRQ generation @ 250 kHz (every 4 us)
+    process
+    begin
+        for i in 1 to 50 loop
+            wait for 4 us;
+            wait until clock='1';
+            irq_i <= '1';
+            wait until clock='1';
+            irq_i <= '0';
+        end loop;
+        for i in 1 to 10 loop
+            wait for 10 us;
+            wait until clock='1';
+            irq_i <= '1';
+            wait for 10 us;
+            wait until clock='1';
+            irq_i <= '0';
+        end loop;
+        wait;        
+    end process;
+
+
     -- memory and IO
     process(clock)
         variable s    : line;

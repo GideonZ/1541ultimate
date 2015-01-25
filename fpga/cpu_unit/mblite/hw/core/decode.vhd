@@ -28,6 +28,7 @@ entity decode is generic
     G_INTERRUPT  : boolean := CFG_INTERRUPT;
     G_USE_HW_MUL : boolean := CFG_USE_HW_MUL;
     G_USE_BARREL : boolean := CFG_USE_BARREL;
+    G_SUPPORT_SPR: boolean := true;
     G_DEBUG      : boolean := CFG_DEBUG
 );
 port
@@ -48,9 +49,9 @@ architecture arch of decode is
         program_counter      : std_logic_vector(CFG_IMEM_SIZE - 1 downto 0);
         immediate            : std_logic_vector(15 downto 0);
         is_immediate         : std_logic;
-        msr_interrupt_enable : std_logic;
         interrupt            : std_logic;
         delay_interrupt      : std_logic;
+        block_interrupt      : std_logic;
     end record;
 
     signal r, rin     : decode_out_type;
@@ -181,10 +182,11 @@ begin
 
         -- Register if an interrupt occurs
         if G_INTERRUPT = true then
-            if v_reg.msr_interrupt_enable = '1' and decode_i.interrupt = '1' then
+            if decode_i.interrupt_enable = '1' and decode_i.interrupt = '1' and reg.block_interrupt = '0' then
                 v_reg.interrupt := '1';
-                v_reg.msr_interrupt_enable := '0';
-                
+            end if;
+            if decode_i.interrupt_enable = '0' then
+                v_reg.block_interrupt := '0';
             end if;
         end if;
 
@@ -196,30 +198,32 @@ begin
         v.ctrl_ex.carry_keep := CARRY_KEEP;
         v.ctrl_ex.delay := '0';
         v.ctrl_ex.branch_cond := NOP;
+        v.ctrl_ex.msr_op := NOP;
         v.ctrl_mem.mem_write := '0';
         v.ctrl_mem.transfer_size := WORD;
         v.ctrl_mem.mem_read := '0';
         v.ctrl_wrb.reg_write := '0';
 
-        if G_INTERRUPT = true and (v_reg.interrupt = '1' and reg.delay_interrupt = '0' and decode_i.flush_id = '0' and v.hazard = '0' and r.ctrl_ex.delay = '0' and reg.is_immediate = '0') then
+        if G_INTERRUPT = true and (reg.interrupt = '1' and reg.delay_interrupt = '0' and decode_i.flush_id = '0' and v.hazard = '0' and r.ctrl_ex.delay = '0' and reg.is_immediate = '0') then
         -- IF an interrupt occured
         --    AND the current instruction is not a branch or return instruction,
         --    AND the current instruction is not in a delay slot,
         --    AND this is instruction is not preceded by an IMM instruction, than handle the interrupt.
-            v_reg.msr_interrupt_enable := '0';
             v_reg.interrupt := '0';
-
+            v_reg.block_interrupt := '1'; -- because interrupt enable is cleared in exec, we block here any new interrupts until MSR_I bit is cleared.
+            
             v.reg_a := (others => '0');
             v.reg_b := (others => '0');
 
             v.int_ack := '1';
             v.imm   := X"00000010";
-            v.ctrl_wrb.reg_d := "01110";
-
-            v.ctrl_ex.branch_cond := BNC;
-            v.ctrl_ex.alu_src_a := ALU_SRC_ZERO;
-            v.ctrl_ex.alu_src_b := ALU_SRC_IMM;
+            v.ctrl_wrb.reg_d := "01110"; -- link register is r14
             v.ctrl_wrb.reg_write := '1';
+
+            v.ctrl_ex.msr_op := MSR_CLR_I;
+            v.ctrl_ex.branch_cond := BNC;
+            v.ctrl_ex.alu_src_a := ALU_SRC_REGA; -- will read 0 because reg_a = 0
+            v.ctrl_ex.alu_src_b := ALU_SRC_IMM;
 
         elsif (decode_i.flush_id or v.hazard) = '1' then
             -- clearing these registers is not necessary, but facilitates debugging.
@@ -252,6 +256,7 @@ begin
                 v.ctrl_ex.alu_src_b := ALU_SRC_REGB;
             end if;
 
+            -- Pass modifier for CMP and CMPU
             if (compare(opcode, "000101") = '1') then
                 v.ctrl_ex.operation := instruction(1 downto 0);
             end if;
@@ -270,8 +275,8 @@ begin
                 v.ctrl_ex.carry_keep := CARRY_NOT_KEEP;
             end if;
 
-            -- Flag writeback if reg_d != 0
-            v.ctrl_wrb.reg_write := is_not_zero(v.ctrl_wrb.reg_d);
+            -- Flag writeback
+            v.ctrl_wrb.reg_write := '1';
 
         elsif (compare(opcode(5 downto 2), "1000") or compare(opcode(5 downto 2), "1010")) = '1' then
         -- OR, AND, XOR, ANDN
@@ -292,8 +297,8 @@ begin
                 v.ctrl_ex.alu_src_b := ALU_SRC_REGB;
             end if;
 
-            -- Flag writeback if reg_d != 0
-            v.ctrl_wrb.reg_write := is_not_zero(v.ctrl_wrb.reg_d);
+            -- Flag writeback
+            v.ctrl_wrb.reg_write := '1';
 
         elsif compare(opcode, "101100") = '1' then
         -- IMM instruction
@@ -318,12 +323,11 @@ begin
                 end case;
             end if;
 
-            -- Flag writeback if reg_d != 0
-            v.ctrl_wrb.reg_write := is_not_zero(v.ctrl_wrb.reg_d);
+            -- Flag writeback
+            v.ctrl_wrb.reg_write := '1';
 
         elsif (compare(opcode, "100110") or compare(opcode, "101110")) = '1' then
         -- BRANCH UNCONDITIONAL
-
             v.ctrl_ex.branch_cond := BNC;
 
             if opcode(3) = '1' then
@@ -332,14 +336,17 @@ begin
                 v.ctrl_ex.alu_src_b := ALU_SRC_REGB;
             end if;
 
-            -- WRITE THE RESULT ALSO TO REGISTER D
-            if v.reg_a(2) = '1' then
-                -- Flag writeback if reg_d != 0
-                v.ctrl_wrb.reg_write := is_not_zero(v.ctrl_wrb.reg_d);
+            v.ctrl_ex.delay := instruction(20);
+
+            -- Link: WRITE THE CURRENT PC TO REGISTER D. In the MEM stage, a multiplexer decides that PC is being written in case of a branch.
+            if instruction(18) = '1' then
+                -- Flag writeback
+                v.ctrl_wrb.reg_write := '1';
             end if;
 
-            if v.reg_a(3) = '1' then
-                v.ctrl_ex.alu_src_a := ALU_SRC_ZERO;
+            if instruction(19) = '1' then
+                v.ctrl_ex.alu_src_a := ALU_SRC_REGA;
+                v.reg_a := (others => '0'); -- select register 0 to emulate 0.
             else
                 v.ctrl_ex.alu_src_a := ALU_SRC_PC;
             end if;
@@ -347,7 +354,6 @@ begin
             if G_INTERRUPT = true then
                 v_reg.delay_interrupt := '1';
             end if;
-            v.ctrl_ex.delay := v.reg_a(4);
 
         elsif (compare(opcode, "100111") or compare(opcode, "101111")) = '1' then
         -- BRANCH CONDITIONAL
@@ -383,7 +389,7 @@ begin
 
             if G_INTERRUPT = true then
                 if v.ctrl_wrb.reg_d(0) = '1' then
-                    v_reg.msr_interrupt_enable := '1';
+                    v.ctrl_ex.msr_op := MSR_SET_I;
                 end if;
                 v_reg.delay_interrupt := '1';
             end if;
@@ -410,7 +416,7 @@ begin
                 -- Load
                 v.ctrl_mem.mem_write := '0';
                 v.ctrl_mem.mem_read  := '1';
-                v.ctrl_wrb.reg_write := is_not_zero(v.ctrl_wrb.reg_d);
+                v.ctrl_wrb.reg_write := '1';
             end if;
 
             case opcode(1 downto 0) is
@@ -431,7 +437,7 @@ begin
                 v.ctrl_ex.alu_src_b := ALU_SRC_REGB;
             end if;
 
-            v.ctrl_wrb.reg_write := is_not_zero(v.ctrl_wrb.reg_d);
+            v.ctrl_wrb.reg_write := '1';
 
         elsif G_USE_BARREL = true and (compare(opcode, "010001") or compare(opcode, "011001")) = '1' then
 
@@ -443,9 +449,30 @@ begin
                 v.ctrl_ex.alu_src_b := ALU_SRC_REGB;
             end if;
 
-            v.ctrl_wrb.reg_write := is_not_zero(v.ctrl_wrb.reg_d);
+            v.ctrl_wrb.reg_write := '1';
 
-        else
+        elsif G_SUPPORT_SPR and opcode = "100101" then
+
+            if instruction(15 downto 14) = "11" then -- MTS, SPR[Sd] := Ra
+                v.ctrl_ex.msr_op := LOAD_MSR; -- Ra will be written to the status bits
+
+            elsif instruction(15 downto 14) = "10" then -- MFS, Rd := SPR[Sd]
+                v.ctrl_wrb.reg_write := '1';
+                v.ctrl_ex.alu_src_a := ALU_SRC_SPR;
+                v.ctrl_ex.alu_op := ALU_SEXT16; -- does not use B
+
+            else -- 00 (MSRSET/MSRCLR) and 01 -> illegal
+                v.ctrl_ex.alu_src_a := ALU_SRC_SPR;
+                v.ctrl_ex.alu_op := ALU_SEXT16; -- does not use B
+                v.ctrl_wrb.reg_write := '1';
+
+                if instruction(16)='0' then -- SET
+                    v.ctrl_ex.msr_op := MSR_SET;
+                else -- CLR
+                    v.ctrl_ex.msr_op := MSR_CLR;
+                end if;
+            end if;
+        else        
             -- UNKNOWN OPCODE
             null;
         end if;
@@ -483,9 +510,9 @@ begin
             reg.program_counter      <= (others => '0');
             reg.immediate            <= (others => '0');
             reg.is_immediate         <= '0';
-            reg.msr_interrupt_enable <= '1';
             reg.interrupt            <= '0';
             reg.delay_interrupt      <= '0';
+            reg.block_interrupt      <= '0';
         end procedure proc_reset_decode;
     begin
         if rising_edge(clk_i) then

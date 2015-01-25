@@ -51,8 +51,8 @@ architecture structural of nano is
 begin
     i_split: entity work.io_bus_splitter
     generic map (
-        g_range_lo  => 12,
-        g_range_hi  => 12,
+        g_range_lo  => 11,
+        g_range_hi  => 11,
         g_ports     => 2 )
     port map (
         clock    => sys_clock,
@@ -60,8 +60,8 @@ begin
         req      => sys_io_req,
         resp     => sys_io_resp,
         
-        reqs(0)  => sys_io_req_bram,  -- 4080000
-        reqs(1)  => sys_io_req_regs,  -- 4081000
+        reqs(0)  => sys_io_req_bram, 
+        reqs(1)  => sys_io_req_regs, 
         
         resps(0) => sys_io_resp_bram,
         resps(1) => sys_io_resp_regs );

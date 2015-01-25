@@ -21,7 +21,7 @@ architecture structural of hf_noise is
     constant c_polynom     : std_logic_vector := X"E10000";
     constant c_seed        : std_logic_vector := X"000001";
     signal raw_lfsr        : std_logic_vector(c_polynom'length-1 downto 0);
-    signal noise           : signed(15 downto 0);
+    signal noyse           : signed(15 downto 0);
     signal hp              : signed(15 downto 0);
 begin
     i_lfsr: entity work.noise_generator
@@ -42,22 +42,22 @@ begin
 --    this reordering gives ~20dB dips at odd
 --    locations, depending on the reorder choice.
 
-    noise(15) <= raw_lfsr(1);
-    noise(14) <= raw_lfsr(4);
-    noise(13) <= raw_lfsr(7);
-    noise(12) <= raw_lfsr(10);
-    noise(11) <= raw_lfsr(13);
-    noise(10) <= raw_lfsr(16);
-    noise(09) <= raw_lfsr(19);
-    noise(08) <= raw_lfsr(22);
-    noise(07) <= raw_lfsr(20);
-    noise(06) <= raw_lfsr(17);
-    noise(05) <= raw_lfsr(14);
-    noise(04) <= raw_lfsr(11);
-    noise(03) <= raw_lfsr(8);
-    noise(02) <= raw_lfsr(5);
-    noise(01) <= raw_lfsr(2);
-    noise(00) <= raw_lfsr(18);
+    noyse(15) <= raw_lfsr(1);
+    noyse(14) <= raw_lfsr(4);
+    noyse(13) <= raw_lfsr(7);
+    noyse(12) <= raw_lfsr(10);
+    noyse(11) <= raw_lfsr(13);
+    noyse(10) <= raw_lfsr(16);
+    noyse(09) <= raw_lfsr(19);
+    noyse(08) <= raw_lfsr(22);
+    noyse(07) <= raw_lfsr(20);
+    noyse(06) <= raw_lfsr(17);
+    noyse(05) <= raw_lfsr(14);
+    noyse(04) <= raw_lfsr(11);
+    noyse(03) <= raw_lfsr(8);
+    noyse(02) <= raw_lfsr(5);
+    noyse(01) <= raw_lfsr(2);
+    noyse(00) <= raw_lfsr(18);
 
     -- taking an up-range or down range gives a reasonably
     -- flat frequency response, but lacks low frequencies (~20 dB)
@@ -81,7 +81,7 @@ begin
             enable          => enable,
             reset           => reset,
             
-            x               => noise(14 downto 0),
+            x               => noyse(14 downto 0),
 --           q               => hp_a );
 
 --        i_hp_b: entity work.high_pass
@@ -96,6 +96,6 @@ begin
 
     end generate;
 
-    q <= hp(15 downto 0) when g_hp_filter else noise;
+    q <= hp(15 downto 0) when g_hp_filter else noyse;
         
 end structural;

@@ -15,7 +15,7 @@
 
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_unsigned.all;
+use ieee.numeric_std.all;
 
 library mblite;
 use mblite.config_Pkg.all;
@@ -36,7 +36,10 @@ end gprf;
 -- architectures can be added while configurations can
 -- control the implemented architecture.
 architecture arch of gprf is
+    signal write : std_logic;
 begin
+    write <= '1' when (gprf_i.wre_i = '1') and (unsigned(gprf_i.adr_w_i) /= 0) else '0';
+    
     a : dsram generic map
     (
         WIDTH => CFG_DMEM_WIDTH,
@@ -49,7 +52,7 @@ begin
         ena_i   => ena_i,
         dat_w_i => gprf_i.dat_w_i,
         adr_w_i => gprf_i.adr_w_i,
-        wre_i   => gprf_i.wre_i,
+        wre_i   => write,
         clk_i   => clk_i
     );
 
@@ -65,7 +68,7 @@ begin
         ena_i   => ena_i,
         dat_w_i => gprf_i.dat_w_i,
         adr_w_i => gprf_i.adr_w_i,
-        wre_i   => gprf_i.wre_i,
+        wre_i   => write,
         clk_i   => clk_i
     );
 
@@ -81,7 +84,7 @@ begin
         ena_i   => ena_i,
         dat_w_i => gprf_i.dat_w_i,
         adr_w_i => gprf_i.adr_w_i,
-        wre_i   => gprf_i.wre_i,
+        wre_i   => write,
         clk_i   => clk_i
     );
 end arch;
