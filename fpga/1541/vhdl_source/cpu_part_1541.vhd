@@ -235,7 +235,6 @@ begin
 
             bank_is_io <= "0000" & not bank_is_ram(3 downto 1) & '1';
             mem_addr(25 downto 16) <= g_ram_base(25 downto 16);
-            mem_addr(15 downto  0) <= unsigned(cpu_addr(15 downto 0));
             
             clock_en_d <= clock_en;
             clock_en_dd <= clock_en_d;
@@ -253,6 +252,7 @@ begin
                 mem_state <= newcycle;
             
             when newcycle => -- we have a new address now
+                mem_addr(15 downto  0) <= unsigned(cpu_addr(15 downto 0));
                 io_select <= '0';
                 if bank_is_io(to_integer(unsigned(cpu_addr(15 downto 13))))='1' then
                     rdata_mux  <= '1'; -- io
@@ -327,46 +327,46 @@ begin
     -- correctly attach the VIA pins to the outside world
     
     -- pull up when not driven...
-    via1_port_a_i(7 downto 1) <= via1_port_a_o(7 downto 1) or not via1_port_a_t(7 downto 1);
+    via1_port_a_i(7 downto 1) <= (others => '1');
     via1_port_a_i(0)          <= track_is_0;
     
     via1_ca1 <= not atn_i;
     via1_port_b_i(7) <= not atn_i;
     -- the following bits should read 0 when the jumper is closed (drive select = 0) or when driven low by the VIA itself
-    via1_port_b_i(6) <= drive_address(1) and (not via1_port_b_t(6) or via1_port_b_o(6)); -- drive select
-    via1_port_b_i(5) <= drive_address(0) and (not via1_port_b_t(5) or via1_port_b_o(5)); -- drive select;
-    via1_port_b_i(4) <= via1_port_b_o(4) or not via1_port_b_t(4); -- atn a     - PUP
-    via1_port_b_i(3) <= via1_port_b_o(3) or not via1_port_b_t(3); -- clock out - PUP
-    via1_port_b_i(2) <= not clk_i;
-    via1_port_b_i(1) <= via1_port_b_o(1) or not via1_port_b_t(1); -- data out  - PUP
-    via1_port_b_i(0) <= not data_i;
+    via1_port_b_i(6) <= drive_address(1); -- drive select
+    via1_port_b_i(5) <= drive_address(0); -- drive select;
+    via1_port_b_i(4) <= '1'; -- atn a     - PUP
+    via1_port_b_i(3) <= '1'; -- clock out - PUP
+    via1_port_b_i(2) <= not (clk_i and (not (via1_port_b_o(3) or not via1_port_b_t(3))));
+    via1_port_b_i(1) <= '1'; -- data out  - PUP
+    via1_port_b_i(0) <= not (data_i and (not (via1_port_b_o(1) or not via1_port_b_t(1))) and (not ((via1_port_b_o(4) or not via1_port_b_t(4)) xor (not atn_i))));
 
---    auto_o <= not power or via1_port_b_i(4);
-    data_o <= not power or ((not via1_port_b_i(1)) and (not (via1_port_b_i(4) xor via1_port_b_i(7))));
-    clk_o  <= not power or not via1_port_b_i(3);
+    --auto_o <= not power or via1_port_b_i(4);
+    data_o <= not power or ((not (via1_port_b_o(1) or not via1_port_b_t(1))) and (not ((via1_port_b_o(4) or not via1_port_b_t(4)) xor (not atn_i))));
+    clk_o  <= not power or (not (via1_port_b_o(3) or not via1_port_b_t(3)));
     atn_o  <= '1';
     
-    -- Do the same for VIA 2
+    -- Do the same for VIA 2. Pin levels intead of output register.    
     via2_port_b_i(7) <= sync;
-    via2_port_b_i(6) <= via2_port_b_o(6) or not via2_port_b_t(6);    
-    via2_port_b_i(5) <= via2_port_b_o(5) or not via2_port_b_t(5);    
+    via2_port_b_i(6) <= '1'; --Density
+    via2_port_b_i(5) <= '1'; --Density
     via2_port_b_i(4) <= write_prot_n;    
-    via2_port_b_i(3) <= via2_port_b_o(3) or not via2_port_b_t(3);    
-    via2_port_b_i(2) <= via2_port_b_o(2) or not via2_port_b_t(2);    
-    via2_port_b_i(1) <= via2_port_b_o(1) or not via2_port_b_t(1);    
-    via2_port_b_i(0) <= via2_port_b_o(0) or not via2_port_b_t(0);    
+    via2_port_b_i(3) <= '1'; -- LED
+    via2_port_b_i(2) <= '1'; -- Motor
+    via2_port_b_i(1) <= '1'; -- Step
+    via2_port_b_i(0) <= '1'; -- Step   
     via2_cb1_i       <= via2_cb1_o       or not via2_cb1_t;
     via2_cb2_i       <= via2_cb2_o       or not via2_cb2_t;
     via2_ca2_i       <= via2_ca2_o       or not via2_ca2_t;
     
-    act_led      <= not via2_port_b_i(3) or not power;
+    act_led      <= not (via2_port_b_o(3) or not via2_port_b_t(3)) or not power;
     mode         <= via2_cb2_i;
-    step(0)      <= via2_port_b_i(0);
-    step(1)      <= via2_port_b_i(1);
-    motor_on     <= via2_port_b_i(2) and power;
+    step(0)      <= via2_port_b_o(0) or not via2_port_b_t(0);
+    step(1)      <= via2_port_b_o(1) or not via2_port_b_t(1);
+    motor_on     <= (via2_port_b_o(2) or not via2_port_b_t(2)) and power;
     soe          <= via2_ca2_i;
-    rate_ctrl(0) <= via2_port_b_i(5);
-    rate_ctrl(1) <= via2_port_b_i(6);
+    rate_ctrl(0) <= via2_port_b_o(5) or not via2_port_b_t(5);
+    rate_ctrl(1) <= via2_port_b_o(6) or not via2_port_b_t(6);
        
 
 end structural;
