@@ -29,6 +29,10 @@
 #define C1541_MAXTRACKLEN 0x1EF8
 #define C1541_MAX_D64_LEN 201216
 #define C1541_MAX_GCR_LEN (C1541_MAXTRACKLEN * C1541_MAXTRACKS)
+#define C1541_MAX_D64_35_NO_ERRORS (174848)
+#define C1541_MAX_D64_35_WITH_ERRORS (175531)
+#define C1541_MAX_D64_40_NO_ERRORS (196608)
+#define C1541_MAX_D64_40_WITH_ERRORS (197376)
 
 class BinImage;
 
@@ -47,7 +51,7 @@ class GcrImage
     BYTE *wrap(BYTE **, BYTE *, BYTE *, int);
     BYTE *find_sync(BYTE *, BYTE *, BYTE *);
     BYTE *convert_block_bin2gcr(BYTE *bin, BYTE *gcr, int len);
-    BYTE *convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr);
+    BYTE *convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr, BYTE *errors, int errors_size);
     int   find_track_start(int);
 public:
     GcrImage();
