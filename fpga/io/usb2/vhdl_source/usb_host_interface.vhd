@@ -6,6 +6,8 @@ use ieee.numeric_std.all;
 use work.usb_pkg.all;
 
 entity usb_host_interface is
+generic (
+    g_simulation    : boolean := false );
 port (
     clock       : in    std_logic;
     reset       : in    std_logic;
@@ -132,6 +134,7 @@ begin
 
     i_tx: entity work.ulpi_tx 
         generic map (
+            g_simulation     => g_simulation,
             g_support_split  => true,
             g_support_token  => true ) -- hosts do send tokens
         port map (
@@ -153,7 +156,7 @@ begin
             
             -- Status
             status      => status_i,
-            high_speed  => speed(1),
+            speed       => speed,
             
             -- Interface to send tokens and handshakes
             usb_tx_req  => usb_tx_req,

@@ -21,12 +21,11 @@ RESULT    = ./result_mb
 OUTPUT    = ./output_mb
 OUTPUT_FP = $(shell pwd)/output_mb
 
-PRJ      =  irq_test
+PRJ      =  usb_test
 PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/application/mb_hello \
-			$(PATH_SW)/benchmark \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
@@ -52,7 +51,8 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 SRCS_C   =	mbstart_app.c \
 			itu.c \
-			irq_test.c \
+			usb_test.c \
+			dump_hex.c \
 			small_printf.c
 
 # the order of the files is important, because of the static constructors.
@@ -80,13 +80,8 @@ SIZE	  = $(CROSS)-size
 
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 
-# -mcpu=cpu-type
-# Use features of, and schedule code for, the given CPU. Supported values are in the format ‘vX.YY.Z’,
-# where X is a major version, YY is the minor version, and Z is compatibility code. Example values are
-#‘v3.00.a’, ‘v4.00.b’, ‘v5.00.a’, ‘v5.00.b’, ‘v5.00.b’, ‘v6.00.a’. 
-
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -ffunction-sections -fdata-sections -O2 -mcpu=v3.00.a
+OPTIONS  = -ffunction-sections -fdata-sections -O2 
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti
 LINK 	 = ./mb_app.lds

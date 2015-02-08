@@ -1,5 +1,5 @@
 
-.PHONY: all mk1 mk2 special clean sw_clean loader
+.PHONY: all mk1 mk2 prog special clean sw_clean loader
 
 all:
 	@svn up
@@ -38,6 +38,12 @@ k1:
 	@$(MAKE) -C target/software/1st_boot mk1
 	@$(MAKE) -C target/software/ultimate appl
 	@cp target/software/ultimate/result/appl.bin .
+
+prog:
+	@$(MAKE) mk2
+	@$(MAKE) -C target/fpga -f makefile_boot_700a
+	@$(MAKE) -C target/software/programmer
+	@cp target/software/programmer/result/*.bit .
 
 special:
 	@svn up

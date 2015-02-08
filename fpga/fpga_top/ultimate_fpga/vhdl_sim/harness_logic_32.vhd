@@ -142,7 +142,7 @@ begin
         g_rtc_chip      => false,
         g_rtc_timer     => false,
         g_usb_host      => false,
-        g_usb_host2     => false,
+        g_usb_host2     => true,
         g_spi_flash     => true,
         g_vic_copper    => false,
         g_sampler       => false,

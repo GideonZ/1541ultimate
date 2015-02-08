@@ -36,7 +36,7 @@ void _premain()
     UART_DATA = 0x31;
     UART_DATA = 0x2e;
 
-    printf("Heap: %p-%p\n", _heap, _heap_end);
+//    printf("Heap: %p-%p\n", _heap, _heap_end);
 //	__copy_data();
 //	_initIO();
     __clear_bss();
@@ -46,7 +46,7 @@ void _premain()
 
     pul = (unsigned long *)&__constructor_list;
     end = (unsigned long *)&__end_of_constructors;
-    printf("\nconstructor list = (%p-%p)\n", pul, end);
+//    printf("\nconstructor list = (%p-%p)\n", pul, end);
 
     while(pul != end) {
         f = (fptr)*pul;
@@ -76,7 +76,7 @@ extern char __bss_start__[], __bss_end__[];
 
 void __clear_bss(void)
 {
-    printf("Clear BSS: %p-%p\n", __bss_start__, __bss_end__);
+    //printf("Clear BSS: %p-%p\n", __bss_start__, __bss_end__);
 	unsigned int *cptr;
 	cptr = (unsigned int*)__bss_start__;
 	do {

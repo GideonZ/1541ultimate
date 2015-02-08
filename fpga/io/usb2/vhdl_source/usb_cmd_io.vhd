@@ -19,6 +19,10 @@ entity usb_cmd_io is
         io_req      : in  t_io_req;
         io_resp     : out t_io_resp;
         
+        connected   : in  std_logic;
+        operational : in  std_logic;
+        speed       : in  std_logic_vector(1 downto 0);
+
         cmd_req     : out t_usb_cmd_req;
         cmd_resp    : in  t_usb_cmd_resp );
 
@@ -86,6 +90,12 @@ begin
 
                 when X"1" =>
                     io_resp.data <= std_logic_vector(cmd_resp.data_length(7 downto 0));            
+
+                when X"2" =>
+                    io_resp.data(0) <= connected;
+                    io_resp.data(1) <= operational;
+                    io_resp.data(5 downto 4) <= speed;
+
                 when others =>
                     null;
                 end case;

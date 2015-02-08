@@ -661,34 +661,10 @@ begin
         resps(7) => io_resp_aud_sel );
 
 
-    r_usb: if g_usb_host generate
-        i_usb: entity work.usb_host_io 
-        generic map (
-            g_simulation => g_simulation )
-        port map (
-            ulpi_clock  => ULPI_CLOCK,
-            ulpi_reset  => ulpi_reset,
-        
-            -- ULPI Interface
-            ULPI_DATA   => ULPI_DATA,
-            ULPI_DIR    => ULPI_DIR,
-            ULPI_NXT    => ULPI_NXT,
-            ULPI_STP    => ULPI_STP,
-        
-			usb_busy	=> usb_busy, -- LED interface
-			
-            -- register interface bus
-            sys_clock   => sys_clock,
-            sys_reset   => sys_reset,
-            
-            sys_io_req  => io_req_usb,
-            sys_io_resp => io_resp_usb );
-    end generate;
-
---    r_usb2: if g_usb_host2 generate
---        i_usb: entity work.usb_controller 
+--    r_usb: if g_usb_host generate
+--        i_usb: entity work.usb_host_io 
 --        generic map (
---            g_tag       => c_tag_usb2 )
+--            g_simulation => g_simulation )
 --        port map (
 --            ulpi_clock  => ULPI_CLOCK,
 --            ulpi_reset  => ulpi_reset,
@@ -699,18 +675,32 @@ begin
 --            ULPI_NXT    => ULPI_NXT,
 --            ULPI_STP    => ULPI_STP,
 --        
---          usb_busy    => usb_busy, -- LED interface
---          
+--			usb_busy	=> usb_busy, -- LED interface
+--			
 --            -- register interface bus
 --            sys_clock   => sys_clock,
 --            sys_reset   => sys_reset,
 --            
---            sys_mem_req => mem_req_usb,
---            sys_mem_resp=> mem_resp_usb,
---
 --            sys_io_req  => io_req_usb,
 --            sys_io_resp => io_resp_usb );
 --    end generate;
+--
+    r_usb2: if g_usb_host2 generate
+        i_usb2: entity work.usb_host_controller
+        generic map (
+            g_simulation => g_simulation )
+        port map(
+            clock        => ULPI_CLOCK,
+            reset        => ulpi_reset,
+            ulpi_nxt     => ulpi_nxt,
+            ulpi_dir     => ulpi_dir,
+            ulpi_stp     => ulpi_stp,
+            ulpi_data    => ulpi_data,
+            sys_clock    => sys_clock,
+            sys_reset    => sys_reset,
+            sys_io_req   => io_req_usb,
+            sys_io_resp  => io_resp_usb );
+    end generate;    
 
     i_sd: entity work.spi_peripheral_io
     generic map (

@@ -7,6 +7,7 @@ use work.usb_pkg.all;
 
 entity ulpi_tx is
 generic (
+    g_simulation      : boolean := false;
     g_support_split   : boolean := true;
     g_support_token   : boolean := true );
 port (
@@ -28,7 +29,7 @@ port (
 
     -- Status
     status      : in    std_logic_vector(7 downto 0);
-    high_speed  : in    std_logic;
+    speed       : in    std_logic_vector(1 downto 0);
 
     usb_tx_req  : in    t_usb_tx_req;
     usb_tx_resp : out   t_usb_tx_resp );
@@ -41,24 +42,25 @@ architecture gideon of ulpi_tx is
                      transmit, wait4next, write_end, handshake, gap, gap2);
     signal state    : t_state;
 
---    type t_tx_type is (none, dat, hsh, tok);
---    signal tx_type      : t_tx_type := none;
-    
     signal tx_data_i    : std_logic_vector(7 downto 0);
     signal tx_last_i    : std_logic;
     signal token_crc    : std_logic_vector(4 downto 0) := "00000";
     signal split_crc    : std_logic_vector(4 downto 0) := "00000";
     signal no_data_d    : std_logic;
-    constant c_gap_val  : integer := 15;
-    signal gap_count    : integer range 0 to 63;
+    signal gap_count    : integer range 0 to 2047;
 
     signal rd_data      : std_logic_vector(7 downto 0);
     signal rd_last      : std_logic;
     signal rd_next      : std_logic;
     signal token_vector : std_logic_vector(18 downto 0);
     signal long         : boolean;
-    
+    signal fifo_flush   : std_logic;
     signal busy         : std_logic;
+    
+    -- internal fifo is 3 bytes as it seems. 3 bytes is at max 40 bits incl. 1.5 SE0 EOP. at Full speed this is 40*5 = 200 clocks
+    -- at low speed this is 40*40 clocks = 1600 
+    type t_int_array is array (natural range <>) of integer;
+    constant c_gap_values : t_int_array(0 to 3) := ( 1599, 199, 15, 15 ); 
 
     -- XILINX USB STICK:
     -- On high speed, gap values 0x05 - 0x25 WORK.. (bigger than 0x25 doesn't, smaller than 0x05 doesn't..)
@@ -86,6 +88,7 @@ begin
                 tx_start  <= '0';
                 tx_valid  <= '0';
                 tx_last_i <= '0';
+                fifo_flush <= '0';
                 tx_data_i <= X"00";
                 no_data_d <= usb_tx_req.no_data;
                 long <= false;
@@ -146,6 +149,7 @@ begin
             when crc_1 =>
                 if tx_next = '1' then
                     tx_last_i <= '1';
+                    fifo_flush <= '1';
                     state <= crc_2;
                 end if;
             
@@ -189,36 +193,20 @@ begin
                 end if;
 
             when gap =>
-                gap_count <= c_gap_val;
-                if status(4)='1' then
-                    state <= idle;
-                elsif high_speed = '0' then
-                    if status(1 downto 0)="00" or status(1 downto 0)="11" then --<-- :-o SE1 in low speed?! 
-                        state <= gap2;
-                    end if;
-                else -- high speed
-                    state <= gap2;
+                if g_simulation then
+                    gap_count <= 15;
+                else
+                    gap_count <= c_gap_values(to_integer(unsigned(speed)));
                 end if;
+                state <= gap2;
                 
             when gap2 => -- TODO: look for squelch in high speed
                 if status(4)='1' then
                     state <= idle;
-                elsif high_speed = '0' then
-                    if status(1 downto 0) /= "00" then
-                        if gap_count = 0 then
-                            state <= idle;
-                        else
-                            gap_count <= gap_count - 1;
-                        end if;
-                    else
-                        gap_count <= 63;
-                    end if;
+                elsif gap_count = 0 then
+                    state <= idle;
                 else
-                    if gap_count = 0 then
-                        state <= idle;
-                    else
-                        gap_count <= gap_count - 1;
-                    end if;
+                    gap_count <= gap_count - 1;
                 end if;
 
             when transmit =>
@@ -232,6 +220,7 @@ begin
 
             if reset='1' then
                 state  <= idle;
+                fifo_flush <= '0';
             end if;
         end if;
     end process;
@@ -276,7 +265,7 @@ begin
         reset               => reset,
         GetElement          => rd_next,
         PutElement          => usb_tx_req.data_valid,
-        FlushFifo           => tx_last_i,
+        FlushFifo           => fifo_flush,
         DataIn(8)           => usb_tx_req.data_last,
         DataIn(7 downto 0)  => usb_tx_req.data,
         DataOut(8)          => rd_last,

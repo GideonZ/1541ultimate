@@ -15,7 +15,7 @@ use work.usb_pkg.all;
 package usb_cmd_pkg is
 
     -- Protocol Event
-    type t_usb_command is ( setup, out_data, in_request, ping, bus_reset );
+    type t_usb_command is ( setup, out_data, in_request, ping );
     type t_usb_result  is ( res_data, res_ack, res_nak, res_nyet, res_error );
      
     type t_usb_cmd_req is record
@@ -63,7 +63,7 @@ package usb_cmd_pkg is
 --        res_error => "111" );
 
     type t_usb_command_array is array(natural range <>) of t_usb_command;
-    constant c_usb_commands_decoded : t_usb_command_array(0 to 7) := ( setup, out_data, in_request, ping, bus_reset, bus_reset, bus_reset, bus_reset );
+    constant c_usb_commands_decoded : t_usb_command_array(0 to 3) := ( setup, out_data, in_request, ping );
     
     constant c_usb_cmd_init : t_usb_cmd_req := (
         request         => '0',

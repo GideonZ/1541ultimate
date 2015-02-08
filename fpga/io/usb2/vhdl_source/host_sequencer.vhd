@@ -32,7 +32,6 @@ port (
     -- mode selection
     sof_enable      : in  std_logic;
     speed           : in  std_logic_vector(1 downto 0);
-    do_reset        : out std_logic;
         
     -- low level command interface
     usb_cmd_req     : in  t_usb_cmd_req;
@@ -61,7 +60,7 @@ begin
     b_bram_control: block
         signal buffer_addr_i    : unsigned(9 downto 0) := (others => '1'); -- was undefined
 
-        type t_state is (idle, prefetch, transmit_msg);
+        type t_state is (idle, prefetch, transmit_msg, wait_tx_done);
         signal state : t_state;
         signal transmit_en      : std_logic := '0';
         signal tx_last_i        : std_logic;
@@ -114,12 +113,16 @@ begin
                 
                 when transmit_msg =>
                     if tx_send_packet = '0' and tx_no_data = '1' then
-                        data_transmission_done <= '1';
-                        state <= idle;
+                        state <= wait_tx_done;
                     elsif tx_last_i = '1' and tx_data_valid = '1' then
+                        state <= wait_tx_done;
+                    end if;
+
+                when wait_tx_done =>
+                    if usb_tx_resp.busy = '0' then
                         data_transmission_done <= '1';
                         state <= idle;
-                    end if;
+                    end if;                        
 
                 when others =>
                     null;
@@ -146,7 +149,7 @@ begin
     usb_tx_req <= usb_tx_req_i;
     
     b_replay: block
-        type t_state is (idle, wait_sof, wait_split_done, do_token, wait_token_done, do_data, wait_tx_done, wait_device_response, wait_device_data, wait_handshake_done );
+        type t_state is (idle, wait_sof, wait_split_done, do_token, wait_token_done, do_data, wait_tx_done, wait_device_response, wait_handshake_done );
                          
         signal state            : t_state;
         signal timeout          : boolean;
@@ -175,7 +178,6 @@ begin
             if rising_edge(clock) then
 
                 send_packet_cmd <= '0';
-                receive_en <= '0';
                 
                 if timer = 1 then
                     timeout <= true;
@@ -197,10 +199,10 @@ begin
                 end if;
 
                 cmd_done <= '0';
-                do_reset <= '0';
                 
                 case state is
                 when idle =>
+                    receive_en <= '0';
                     start_timer;
                     if do_sof='1' then
                         do_sof <= '0';
@@ -241,10 +243,7 @@ begin
                         usb_tx_req_i.token.device_addr <= std_logic_vector(usb_cmd_req.device_addr);
                         usb_tx_req_i.token.endpoint_addr <= std_logic_vector(usb_cmd_req.endp_addr);
 
-                        if usb_cmd_req.command = bus_reset then
-                            do_reset <= '1';
-                            cmd_done <= '1';
-                        elsif usb_cmd_req.do_split = '1' then
+                        if usb_cmd_req.do_split = '1' then
                             usb_tx_req_i.pid <= c_pid_split;
                             usb_tx_req_i.send_split <= '1';
                             state <= wait_split_done;
@@ -257,11 +256,14 @@ begin
                     if usb_tx_resp.request_ack = '1' then
                         usb_tx_req_i.send_token <= '0';
                         usb_tx_req_i.send_handsh <= '0';
+                        usb_tx_req_i.send_split <= '0';
                         state <= idle;
                     end if;
 
                 when wait_split_done =>
                     if usb_tx_resp.request_ack = '1' then
+                        usb_tx_req_i.send_token <= '0';
+                        usb_tx_req_i.send_handsh <= '0';
                         usb_tx_req_i.send_split <= '0';
                         state <= do_token;
                     end if;
@@ -283,10 +285,12 @@ begin
 
                 when wait_token_done =>
                     if usb_tx_resp.request_ack = '1' then
+                        usb_tx_req_i.send_token <= '0';
+                        usb_tx_req_i.send_handsh <= '0';
                         usb_tx_req_i.send_split <= '0';
                         state <= do_data;
                     end if;
-                
+                                    
                 when do_data =>
                     case usb_cmd_req.command is
                     when setup | out_data =>
@@ -305,12 +309,8 @@ begin
                         end if;                        
 
                     when in_request =>
-                        if usb_cmd_req.do_data = '1' then
-                            receive_en <= '1';
-                            state <= wait_device_data;
-                        else
-                            state <= wait_device_response;
-                        end if;                        
+                        receive_en <= usb_cmd_req.do_data;
+                        state <= wait_device_response;
 
                     when others =>
                         state <= wait_device_response;
@@ -326,22 +326,10 @@ begin
                     if usb_tx_resp.busy='1' or usb_rx.receiving='1' then
                         start_timer;
                     end if;
-                    if usb_rx.valid_handsh = '1' then
-                        usb_cmd_resp.result <= encode_result(usb_rx.pid);
-                        state <= idle;
-                    elsif timeout or usb_rx.error = '1' then
-                        usb_cmd_resp.result <= res_error;
-                        cmd_done <= '1';
-                        state <= idle;
-                    end if;
-
-                when wait_device_data =>
-                    if usb_tx_resp.busy='1' or usb_rx.receiving='1' then
-                        start_timer;
-                    end if;
                     usb_tx_req_i.pid <= c_pid_ack; 
                     if usb_rx.valid_handsh = '1' then
                         usb_cmd_resp.result <= encode_result(usb_rx.pid);
+                        cmd_done <= '1';
                         state <= idle;
                     elsif usb_rx.error='1' or timeout then
                         usb_cmd_resp.result <= res_error;
@@ -365,7 +353,9 @@ begin
 
                 when wait_handshake_done =>
                     if usb_tx_resp.request_ack = '1' then
+                        usb_tx_req_i.send_token <= '0';
                         usb_tx_req_i.send_handsh <= '0';
+                        usb_tx_req_i.send_split <= '0';
                         cmd_done <= '1';
                         state <= idle;
                     end if;                    

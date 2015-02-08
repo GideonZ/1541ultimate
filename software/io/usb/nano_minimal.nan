@@ -1,0 +1,385 @@
+
+; Read registers
+FILTERED_STAT_1 = $39
+DISCONNECTED    = $3E ; clear on write
+STATUS          = $3F
+
+DO_RESET        = $3FD
+DO_SUSPEND      = $3FC
+LinkSpeed       = $3FE
+Simulation      = $3FF
+
+; Write registers
+SPEED                = $26
+
+SET_DO_CHIRP         = $20
+SET_CHIRP_LEVEL      = $21
+SET_CONNECTED        = $22
+SET_OPERATIONAL      = $23
+SET_SUSPENDED        = $24
+SET_SOF_ENABLE       = $27
+CLR_DO_CHIRP         = $30
+CLR_CHIRP_LEVEL      = $31
+CLR_CONNECTED        = $32
+CLR_OPERATIONAL      = $33
+CLR_SUSPENDED        = $34
+CLR_SOF_ENABLE       = $37
+
+PULSE_WAKEUP         = $25
+PULSE_RESET_FILTER   = $29
+
+; Ulpi registers
+ULPI_REG_READ_0      = $80
+ULPI_REG_WRITE_0     = $C0
+ULPI_R_IRQ_STATUS  = $93
+ULPI_W_FUNC_CTRL   = $C4
+ULPI_W_OTG_CONTROL = $CA
+
+
+begin
+    ; turn off power first
+    LOAD  #$06
+    OUTP  ULPI_W_OTG_CONTROL
+    LOAD  #$45
+    OUTP  ULPI_W_FUNC_CTRL
+    OUTP  CLR_CONNECTED
+    OUTP  CLR_OPERATIONAL
+    OUTP  CLR_SUSPENDED
+    OUTP  CLR_SOF_ENABLE
+    LOAD  Simulation
+    BEQ   start  ; Normal mode
+
+    ; Simulation init
+    LOAD  #$66
+    OUTP  ULPI_W_OTG_CONTROL  ; turn on our power
+_sim_restart
+    OUTP  SET_CONNECTED
+    CALL  _reset_end
+    OUTP  SET_OPERATIONAL
+    OUTP  SET_SOF_ENABLE
+
+_waiting_for_reset_sim
+    LOAD  DO_RESET
+    BEQ   _waiting_for_reset_sim
+    LOAD  #0
+    STORE DO_RESET
+    OUTP  CLR_OPERATIONAL
+    OUTP  CLR_SOF_ENABLE
+    BRA   _sim_restart
+
+start
+    ; Turn off power and apply discharge
+    LOAD  #$0E
+    OUTP  ULPI_W_OTG_CONTROL
+    BRA   _no_power
+    
+_startup_power_check    
+    INP   ULPI_R_IRQ_STATUS
+    AND   #6
+    BEQ   _no_power
+    ; power detected. Wait to see if discharging helps the power to disappear
+    LOAD  #4000
+    CALL  delay
+    INP   ULPI_R_IRQ_STATUS
+    AND   #2
+    BEQ   _no_power
+
+    ; still power detected, we should NOT turn on our power
+    LOAD  #$06
+    OUTP  ULPI_W_OTG_CONTROL
+    BRA   _start2
+
+_no_power
+    LOAD  #$66
+    OUTP  ULPI_W_OTG_CONTROL  ; turn on our power
+
+_start2
+    ; initialize our function control in FS mode, reset the transceivers and all
+    LOAD  #$61
+    OUTP  ULPI_W_FUNC_CTRL
+
+    ; wait 700 ms for the power to get stable and all. a loop to check when the power is stable might be good here
+    LOAD  ResetDelay
+    CALL  delay
+    
+    ; now lets see if we can detect that there is a device already attached
+    INP   STATUS
+    AND   #3
+    BNE   _device_detected ; one of the bits is '1', so someone is pulling it up
+
+    OUTP  CLR_CONNECTED
+_wait_for_device_attachment
+    INP   STATUS
+    AND   #3
+    BEQ   _wait_for_device_attachment
+    BRA   _start2
+
+_device_detected
+    SUB   #1
+    XOR   #1
+    OUTP  SPEED
+    OUTP  DISCONNECTED
+    OUTP  SET_CONNECTED
+    
+_waiting_for_reset
+    CALL  check_disconnect
+    BNE   _start2
+    LOAD  DO_RESET
+    BEQ   _waiting_for_reset
+
+do_reset
+    ; there is a device present. Let's reset it
+    LOAD  #0
+    STORE DO_RESET
+    OUTP  CLR_SOF_ENABLE
+    OUTP  CLR_OPERATIONAL
+    CALL  bus_reset
+    OUTP  CLR_SUSPENDED
+    OUTP  SET_OPERATIONAL
+    OUTP  SET_SOF_ENABLE
+    LOAD  #2
+    CALL  delay
+    OUTP  DISCONNECTED
+    BRA   main_loop
+
+delay
+    STORE DelayTimer
+_delay
+    CALL  loop_timer
+    LOAD  DelayTimer
+    SUB   #1
+    STORE DelayTimer
+    BNE   _delay
+    RET    
+
+check_disconnect
+    INP   DISCONNECTED
+    BPL   _no_disconnect
+    OUTP  DISCONNECTED
+    OUTP  CLR_CONNECTED
+    OUTP  CLR_SOF_ENABLE
+    OUTP  CLR_OPERATIONAL
+_no_disconnect
+    RET
+
+main_loop
+    CALL  check_disconnect
+    BNE   _start2
+    LOAD  DO_RESET
+    BNE   do_reset
+    LOAD  DO_SUSPEND
+    BEQ   main_loop
+
+do_suspend
+    OUTP  SET_SUSPENDED
+    OUTP  CLR_SOF_ENABLE
+
+; Set PHY in the right suspend state
+    LOAD  LinkSpeed
+    AND   #3
+    ADD   #LinkRegisterMapSuspended
+    STORE _reset_temp
+    LOADI _reset_temp
+    OUTP  ULPI_W_FUNC_CTRL
+
+    LOAD  LinkSpeed
+    CMP   #2
+    BNE   suspend_loop
+    LOAD  #1
+    OUTP  SPEED  ; When we set the speed to 1 (HS), a different disconnect mechanism is selected.
+
+    LOAD  #4000
+    STORE _reset_temp
+_do_suspend_1
+    LOAD  _reset_temp
+    BEQ   _device_suspended ; timeout, recovery will take place due to the fact that we think the device is disconnected
+    SUB   #1
+    STORE _reset_temp
+    INP   STATUS
+    AND   #3
+    BNE   _device_suspended
+    CALL  loop_timer
+    BRA   _do_suspend_1
+
+_device_suspended
+    OUTP  DISCONNECTED
+    
+suspend_loop
+    CALL  check_disconnect
+    BNE   _start2
+    LOAD  DO_RESET
+    BNE   do_reset
+    LOAD  DO_SUSPEND
+    BEQ   do_unsuspend
+
+_chk_remote_wakekup
+    LOAD  LinkSpeed
+    BNE   _chk_remote_wakeup_fs
+
+_chk_remote_wakeup_ls
+    INP   STATUS
+    AND   #$03
+    CMP   #1
+    BNE   suspend_loop
+    CALL  loop_timer
+    INP   STATUS ; double check
+    AND   #$03
+    CMP   #1
+    BNE   suspend_loop
+    BRA   do_wakeup
+
+_chk_remote_wakeup_fs
+    INP   STATUS
+    AND   #$03
+    CMP   #2
+    BNE   suspend_loop
+    CALL  loop_timer
+    INP   STATUS ; double check
+    AND   #$03
+    CMP   #2
+    BNE   suspend_loop
+
+do_wakeup
+    OUTP  PULSE_WAKEUP
+    
+do_unsuspend
+    OUTP  CLR_CHIRP_LEVEL
+    ; Send K
+    OUTP  SET_DO_CHIRP
+    LOAD  #160
+    CALL  delay
+    OUTP  CLR_DO_CHIRP
+    CALL  _reset_end     ; set the mode register correctly (this also resets the SPEED register to 2 for HS)
+    LOAD  #32
+_do_unsuspend_1
+    SUB   #1
+    BPL   _do_unsuspend_1
+    OUTP  SET_SOF_ENABLE
+    CALL  loop_timer
+    CALL  loop_timer
+    OUTP  CLR_SUSPENDED
+    BRA   main_loop
+    
+; The following code issues a reset, and tries to get the device in high speed mode
+
+bus_reset
+    ; first we check the current status of the bus power.
+;    INP   STATUS
+;    AND   #$38 ; 3C
+;    CMP   #$08 ; 0C
+;    BEQ   _reset_chk_ls
+;    LOAD  #3
+;    STORE LinkSpeed
+;    BRA _reset_end
+;
+_reset_chk_ls
+    INP   STATUS
+    AND   #$02
+    BEQ   _reset_fs
+    LOAD  #0
+    STORE LinkSpeed
+    BRA   _do_reset
+_reset_fs
+    LOAD  #1
+    STORE LinkSpeed
+
+_do_reset
+; now we set up the ULPI register to output single ended zero.
+    LOAD  #$50
+    OUTP  ULPI_W_FUNC_CTRL
+
+    LOAD  #120
+    STORE ResetTimer
+    OUTP  PULSE_RESET_FILTER
+    OUTP  FILTERED_STAT_1
+    
+    LOAD  LinkSpeed
+    BEQ   _reset_simple
+
+_reset_1
+    INP   FILTERED_STAT_1
+    BMI   _reset_chirp_heard
+    CALL  loop_timer
+    LOAD  ResetTimer
+    SUB   #1
+    STORE ResetTimer
+    BNE   _reset_1
+_reset_end
+    LOAD  LinkSpeed
+    OUTP  SPEED
+    AND   #3
+    ADD   #LinkRegisterMap
+    STORE _reset_temp
+    LOADI _reset_temp
+    OUTP  ULPI_W_FUNC_CTRL
+    OUTP  DISCONNECTED
+    RET
+_reset_temp
+    .dw 0
+_reset_chirp_heard    
+    LOAD  #2
+    STORE LinkSpeed
+    ; Just go ahead and send our chirp back
+    OUTP  CLR_CHIRP_LEVEL
+    OUTP  SET_DO_CHIRP
+    LOAD  NumberOfChirps
+    STORE ResetTimer
+_chirp_loop
+    OUTP  CLR_CHIRP_LEVEL
+    LOAD  #750
+_chirp_k
+    SUB   #1
+    BNE   _chirp_k
+    LOAD  ResetTimer
+    SUB   #1
+    STORE ResetTimer
+    BEQ   _chirps_done
+    OUTP  SET_CHIRP_LEVEL
+    LOAD  #750
+_chirp_j
+    SUB   #1
+    BNE   _chirp_j
+    BRA   _chirp_loop
+; done chirping
+_chirps_done
+    OUTP  CLR_DO_CHIRP
+    LOAD  #3
+    STORE ResetTimer
+_reset_simple
+    CALL  loop_timer
+    LOAD  ResetTimer
+    SUB   #1
+    STORE ResetTimer
+    BNE   _reset_simple
+    BRA   _reset_end
+
+loop_timer
+    LOAD  #1873
+_loop_timer_1
+    SUB   #1
+    BPL   _loop_timer_1
+    RET
+
+temp
+    .dw 0
+
+ResetTimer
+DelayTimer
+    .dw 0
+
+LinkRegisterMap
+    .dw $46
+    .dw $45
+    .dw $40
+    .dw $50
+
+LinkRegisterMapSuspended
+    .dw $56
+    .dw $55
+    .dw $55
+    .dw $50
+
+ResetDelay
+    .dw 5600
+NumberOfChirps
+    .dw 75

@@ -33,15 +33,10 @@ port (
     chirp_data      : out std_logic;
 
     -- Functional Level
-    do_reset        : in  std_logic; -- pulse
-    do_suspend      : in  std_logic := '0'; -- pulse
-    do_unsuspend    : in  std_logic := '0'; -- pulse
-    
     connected       : out std_logic; -- '1' when a USB device is connected
     operational     : out std_logic; -- '1' when a USB device is successfully reset
     suspended       : out std_logic; -- '1' when the USB bus is in the suspended state
     sof_enable      : out std_logic; -- '1' when SOFs shall be generated
-    wakeup          : out std_logic; -- pulse when the USB device wants to talk on a suspended bus
     speed           : out std_logic_vector(1 downto 0) ); -- speed indicator of current link
 
 end entity;
@@ -54,9 +49,6 @@ architecture gideon of nano_minimal_io is
     signal filter_cnt2  : unsigned(8 downto 0);
     signal bus_low      : std_logic := '0';
     signal speed_i      : std_logic_vector(1 downto 0);
-    signal do_reset_latched     : std_logic;
-    signal do_suspend_latched   : std_logic;
-    signal do_unsuspend_latched : std_logic;
     signal reset_filter_st1     : std_logic;
     signal disconn              : std_logic;
     signal disconn_latched      : std_logic;
@@ -103,7 +95,6 @@ begin
                 stall_i    <= '0';
             end if;
 
-            wakeup <= '0'; -- pulse output
             reset_filter_st1 <= '0';
             
             if io_write='1' then
@@ -122,8 +113,6 @@ begin
                         operational <= '1';
                     when X"4" =>
                         suspended <= '1';
-                    when X"5" =>
-                        wakeup <= '1';
                     when X"6" =>
                         speed_i <= io_wdata(1 downto 0);
                     when X"7" =>
@@ -148,12 +137,6 @@ begin
                         suspended <= '0';
                     when X"7" =>
                         sof_enable <= '0';
-                    when X"B" =>
-                        do_unsuspend_latched <= '0';
-                    when X"C" =>
-                        do_reset_latched <= '0';
-                    when X"D" =>
-                        do_suspend_latched <= '0';
                     when X"E" =>
                         disconn_latched <= '0';
                     when others =>
@@ -176,15 +159,6 @@ begin
                 end if;
             end if;
 
-            if do_reset='1' then
-                do_reset_latched <= '1';
-            end if;
-            if do_suspend='1' and g_support_suspend then
-                do_suspend_latched <= '1';
-            end if;
-            if do_unsuspend='1' and g_support_suspend then
-                do_unsuspend_latched <= '1';
-            end if;
             if disconn='1' then
                 disconn_latched <= '1';
             end if;
@@ -196,9 +170,6 @@ begin
                 operational <= '0';
                 suspended <= '0';
                 sof_enable <= '0';
-                do_reset_latched <= '0';
-                do_suspend_latched <= '0';
-                do_unsuspend_latched <= '0';
                 disconn_latched <= '0';
                 filter_st1 <= '0';
                 reg_read <= '0';
@@ -212,7 +183,7 @@ begin
     ulpi_access <= io_addr(7);
     stall <= ((stall_i or io_read or io_write) and ulpi_access) and not reg_ack; -- stall right away, and continue right away also when the data is returned
     
-    process( reg_rdata, io_addr, status, do_suspend_latched, do_reset_latched, do_unsuspend_latched, disconn_latched, filter_st1)
+    process( reg_rdata, io_addr, status, disconn_latched, filter_st1)
         variable adlo   : unsigned(3 downto 0);
         variable adhi   : unsigned(7 downto 4);
     begin
@@ -225,12 +196,6 @@ begin
             case adlo(3 downto 0) is
             when X"9" =>
                 io_rdata(15) <= filter_st1;
-            when X"B" =>
-                io_rdata(15) <= do_unsuspend_latched;
-            when X"C" =>
-                io_rdata(15) <= do_reset_latched;
-            when X"D" =>
-                io_rdata(15) <= do_suspend_latched;
             when X"E" =>
                 io_rdata(15) <= disconn_latched;            
             when X"F" =>

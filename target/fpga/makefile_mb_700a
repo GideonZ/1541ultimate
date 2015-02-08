@@ -85,7 +85,7 @@ BITGEN_FLAGS     := 	-w -d \
 ################################################################################
 
 ULTIMATE_FPGA := ../../fpga
-include ultimate_logic.inc
+include ultimate_logic2.inc
 
 SYNTH_PROJ	:= 	$(ALL_ULTIMATE_LOGIC) \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/$(TARGET).vhd

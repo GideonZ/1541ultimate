@@ -49,6 +49,7 @@ WORK_DIR		= work
 
 AUTO_DEP_PATHS  = $(wildcard ../vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../vhdl_sim/)
+AUTO_DEP_PATHS += $(wildcard ../usb_stuff/)
 AUTO_DEP_PATHS += $(wildcard ../packages/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../../fpga/*/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../../fpga/*/*/vhdl_source/)
@@ -291,6 +292,7 @@ $(REGTEST)_TESTCASES	:= $(TESTCASES)
 
 all:	$(REGTESTS)												# default target may be changed
 
+tl_stream_bus_fifo_input_adapter.vc: tl_sync_fifo_ft-plain.vc
 
 info: vsim-info
 

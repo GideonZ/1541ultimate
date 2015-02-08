@@ -13,6 +13,8 @@ use work.usb_pkg.all;
 use work.usb_cmd_pkg.all;
 
 entity usb_host_controller is
+    generic (
+        g_simulation    : boolean := false );
 	port  (
         clock       : in  std_logic;
         reset       : in  std_logic;
@@ -49,11 +51,9 @@ architecture arch of usb_host_controller is
     signal speed           : std_logic_vector(1 downto 0) := "10";
     signal do_chirp        : std_logic;
     signal chirp_data      : std_logic;
-    signal do_reset        : std_logic;
     signal sof_enable      : std_logic;
     signal operational     : std_logic;
     signal connected       : std_logic;
-    signal wakeup          : std_logic;
     
     signal buf_address     : unsigned(10 downto 0);
     signal buf_en          : std_logic;
@@ -78,6 +78,8 @@ architecture arch of usb_host_controller is
     signal io_nano_resp         : t_io_resp;
     signal io_data_req          : t_io_req;
     signal io_data_resp         : t_io_resp;
+    signal io_usb_reg_req       : t_io_req;
+    signal io_usb_reg_resp      : t_io_resp;
 
 begin
     i_split: entity work.io_bus_splitter
@@ -96,8 +98,24 @@ begin
         resps(1)   => io_nano_resp,
         resps(2)   => io_data_resp );
 
+    i_bridge: entity work.io_bus_bridge
+    generic map (
+        g_addr_width => 4 )
+    port map (
+        clock_a      => sys_clock,
+        reset_a      => sys_reset,
+        req_a        => io_reg_req,
+        resp_a       => io_reg_resp,
+        
+        clock_b      => clock,
+        reset_b      => reset,
+        req_b        => io_usb_reg_req,
+        resp_b       => io_usb_reg_resp );
+    
 
     i_intf: entity work.usb_host_interface
+    generic map (
+        g_simulation => g_simulation )
     port map (
         clock       => clock,
         reset       => reset,
@@ -130,7 +148,6 @@ begin
         buf_wdata           => buf_wdata,
         sof_enable          => sof_enable,
         speed               => speed,
-        do_reset            => do_reset,
         usb_cmd_req         => usb_cmd_req,
         usb_cmd_resp        => usb_cmd_resp,
         usb_rx              => usb_rx,
@@ -159,12 +176,13 @@ begin
     process(sys_clock)
     begin
         if rising_edge(sys_clock) then
-            io_data_ack <= io_data_req.read;
+            io_data_ack <= io_data_req.read or io_data_req.write;
         end if;
     end process;
     io_data_en <= io_data_req.read or io_data_req.write;
     io_data_resp.data <= io_data_rdata when io_data_ack='1' else X"00";
-    
+    io_data_resp.ack <= io_data_ack;
+    io_data_resp.irq <= '0';
 
     i_nano_io: entity work.nano_minimal_io
     generic map (
@@ -172,29 +190,28 @@ begin
     port map (
         clock             => clock,
         reset             => reset,
+
         io_addr           => nano_addr,
         io_write          => nano_write,
         io_read           => nano_read,
         io_wdata          => nano_wdata,
         io_rdata          => nano_rdata,
         stall             => nano_stall,
+
         reg_read          => reg_read,
         reg_write         => reg_write,
         reg_ack           => reg_ack,
         reg_address       => reg_address,
         reg_wdata         => reg_wdata,
         reg_rdata         => reg_rdata,
+
         status            => status,
         do_chirp          => do_chirp,
         chirp_data        => chirp_data,
-        do_reset          => do_reset,
-        do_suspend        => '0',
-        do_unsuspend      => '0',
         connected         => connected,
         operational       => operational,
         suspended         => open,
         sof_enable        => sof_enable,
-        wakeup            => wakeup,
         speed             => speed );
 
     i_cmd_io: entity work.usb_cmd_io
@@ -202,8 +219,13 @@ begin
         clock       => clock,
         reset       => reset,
 
-        io_req      => io_reg_req,
-        io_resp     => io_reg_resp,
+        io_req      => io_usb_reg_req,
+        io_resp     => io_usb_reg_resp,
+
+        -- status (maybe only temporary)
+        connected   => connected,
+        operational => operational,
+        speed       => speed,
         
         cmd_req     => usb_cmd_req,
         cmd_resp    => usb_cmd_resp );
