@@ -5,12 +5,11 @@ use ieee.numeric_std.all;
 entity mem_addr_counter is
 port (
     clock       : in  std_logic;
-    load_value  : in  unsigned(25 downto 0);
+    load_value  : in  unsigned(25 downto 2);
     do_load     : in  std_logic;
     do_inc      : in  std_logic;
-    inc_by_4    : in  std_logic;
     
-    address     : out unsigned(25 downto 0) );
+    address     : out unsigned(25 downto 2) );
 end mem_addr_counter;
 
 architecture test of mem_addr_counter is
@@ -22,15 +21,10 @@ begin
             if do_load='1' then
                 addr_i <= load_value;
             elsif do_inc='1' then
-                if inc_by_4='1' then
-                    addr_i <= addr_i + 4;
-                else
-                    addr_i <= addr_i + 1;
-                end if;
+                addr_i <= addr_i + 1;
             end if;
         end if;
     end process;
 
     address <= addr_i;
-    
 end architecture;

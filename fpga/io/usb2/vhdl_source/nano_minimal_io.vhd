@@ -33,6 +33,7 @@ port (
     chirp_data      : out std_logic;
 
     -- Functional Level
+    mem_ctrl_ready  : in  std_logic := '0';
     connected       : out std_logic; -- '1' when a USB device is connected
     operational     : out std_logic; -- '1' when a USB device is successfully reset
     suspended       : out std_logic; -- '1' when the USB bus is in the suspended state
@@ -183,7 +184,7 @@ begin
     ulpi_access <= io_addr(7);
     stall <= ((stall_i or io_read or io_write) and ulpi_access) and not reg_ack; -- stall right away, and continue right away also when the data is returned
     
-    process( reg_rdata, io_addr, status, disconn_latched, filter_st1)
+    process( reg_rdata, io_addr, status, disconn_latched, filter_st1, mem_ctrl_ready)
         variable adlo   : unsigned(3 downto 0);
         variable adhi   : unsigned(7 downto 4);
     begin
@@ -196,6 +197,8 @@ begin
             case adlo(3 downto 0) is
             when X"9" =>
                 io_rdata(15) <= filter_st1;
+            when X"D" =>
+                io_rdata(15) <= mem_ctrl_ready;
             when X"E" =>
                 io_rdata(15) <= disconn_latched;            
             when X"F" =>
