@@ -1,13 +1,23 @@
-
-; Read registers
-FILTERED_STAT_1 = $39
-DISCONNECTED    = $3E ; clear on write
-STATUS          = $3F
-
+; Soft registers
 DO_RESET        = $3FD
 DO_SUSPEND      = $3FC
 LinkSpeed       = $3FE
 Simulation      = $3FF
+
+Command          = $3F0
+Command_DevEP    = $3F1
+Command_Length   = $3F2
+Command_MaxTrans = $3F3
+Command_MemHi    = $3F4
+Command_MemLo    = $3F5
+Command_SplitCtl = $3F6
+Command_Result   = $3F7
+
+; Read registers
+FILTERED_STAT_1 = $39
+MEM_CTRL_READY  = $3D
+DISCONNECTED    = $3E ; clear on write
+STATUS          = $3F
 
 ; Write registers
 SPEED                = $26
@@ -27,6 +37,34 @@ CLR_SOF_ENABLE       = $37
 
 PULSE_WAKEUP         = $25
 PULSE_RESET_FILTER   = $29
+
+; Command interface to USB sequencer
+CMD_REQUEST          = $60
+CMD_DATA_BUFFER_CTRL = $61
+CMD_DEVICE_ENDPOINT  = $62
+CMD_SPLIT_CONTROL    = $63
+CMD_RESPONSE         = $64
+
+CMD_REQ_MEMREAD      = $8000
+CMD_REQ_MEMWRITE     = $4000
+
+CMD_NO_DATA          = $2000
+
+CMD_RES_DATA         = $0000
+CMD_RES_ACK          = $1000
+CMD_RES_NAK          = $2000
+CMD_RES_NYET         = $3000
+CMD_RES_ERROR        = $4000
+CMD_RES_MASK         = $7000
+CMD_RES_NO_DATA      = $0400
+CMD_RES_LEN_MASK     = $03FF
+
+; Command interface to Memory Controller
+MEM_ADDR_LO          = $70
+MEM_ADDR_HI          = $71
+MEM_TRANSFER_WRITE   = $72
+MEM_TRANSFER_READ    = $73
+MEM_BUFFER_INDEX     = $74
 
 ; Ulpi registers
 ULPI_REG_READ_0      = $80
@@ -59,6 +97,7 @@ _sim_restart
     OUTP  SET_SOF_ENABLE
 
 _waiting_for_reset_sim
+    CALL  check_command
     LOAD  DO_RESET
     BEQ   _waiting_for_reset_sim
     LOAD  #0
@@ -168,7 +207,9 @@ main_loop
     LOAD  DO_RESET
     BNE   do_reset
     LOAD  DO_SUSPEND
-    BEQ   main_loop
+    BNE   do_suspend
+    CALL  check_command
+    BRA   main_loop
 
 do_suspend
     OUTP  SET_SUSPENDED
@@ -383,3 +424,171 @@ ResetDelay
     .dw 5600
 NumberOfChirps
     .dw 75
+
+; Command        = $3F0
+; Command_DevEP  = $3F1
+; Command_Length = $3F2
+; Command_MaxTrans = $3F3
+; Command_MemHi  = $3F4
+; Command_MemLo  = $3F5
+; Command_SplitCtl = $3F6
+; Command_Result   = $3F7
+
+check_command
+    LOAD Command
+    BNE  _parse_cmd
+    RET ; zero = no command
+
+_parse_cmd
+    LOAD Command_MemHi
+    OUTP MEM_ADDR_HI
+    LOAD Command_MemLo
+    OUTP MEM_ADDR_LO
+    LOAD Command_DevEP
+    OUTP CMD_DEVICE_ENDPOINT
+
+    LOAD Command
+    BMI  _out_command
+
+; If we get here, we assume that it is an IN command
+_next_in_chunk
+    LOAD CurrentBuffer
+    OUTP CMD_DATA_BUFFER_CTRL
+    LOAD Command
+    OUTP CMD_REQUEST ; Do it!!
+_wait_in_cmd
+    INP  CMD_RESPONSE
+    BPL  _wait_in_cmd
+    STORE Command_Result
+    AND  #CMD_RES_MASK
+    CMP  #CMD_RES_DATA
+    BEQ  _in_success
+    BRA  _done ; for now, we just break on anything else than DATA
+
+_in_success
+    LOAD Command_Result
+    AND  #CMD_RES_LEN_MASK
+    STORE CurrentLength
+
+_check_rx_toggle
+    LOAD Command
+    XOR  Command_Result
+    AND  #$800 ; toggle bit
+    BEQ  _toggle_ok
+    LOAD #0
+    STORE CurrentLength
+
+_toggle_ok
+    LOAD Command
+    AND  #CMD_REQ_MEMWRITE
+    BEQ  _no_mem_write
+
+_wait_mem2
+    INP  MEM_CTRL_READY
+    BPL  _wait_mem2
+
+    LOAD CurrentBuffer
+    OUTP MEM_BUFFER_INDEX
+    LOAD CurrentLength
+    BEQ  _no_mem_write
+    ADD  #3
+    OUTP MEM_TRANSFER_WRITE     
+    
+_no_mem_write
+    LOAD  Command
+    XOR   #$800 ; togglebit
+    STORE Command
+
+    LOAD  CurrentBuffer
+    ADD   #$4000
+    STORE CurrentBuffer
+
+    LOAD Command_Length
+    SUB  CurrentLength
+    STORE Command_Length
+    BEQ  _done
+    BMI  _done
+    LOAD CurrentLength
+    CMP  Command_MaxTrans
+    BPL  _next_in_chunk
+    
+_done
+    INP  MEM_CTRL_READY
+    BPL  _done
+    LOAD #0
+    STORE Command
+    RET
+    
+do_mem_read
+    LOAD CurrentBuffer
+    OUTP MEM_BUFFER_INDEX
+    CALL determine_length
+    ADD  #3
+    OUTP MEM_TRANSFER_READ
+    RET
+
+        
+_out_command
+    CALL do_mem_read ; first time
+_next_out_chunk
+    LOAD CurrentLength
+    BNE  _has_data
+    OR   #CMD_NO_DATA
+_has_data
+    OR   CurrentBuffer
+    OUTP CMD_DATA_BUFFER_CTRL
+
+_wait_mem1
+    INP  MEM_CTRL_READY
+    BPL  _wait_mem1
+
+    LOAD Command
+    OUTP CMD_REQUEST ; Do it!!
+
+    ; Next buffer, lets see if we need to read more
+    LOAD  CurrentBuffer
+    ADD   #$4000
+    STORE CurrentBuffer
+
+    LOAD  Command
+    XOR   #$800 ; togglebit
+    STORE Command
+
+    LOAD Command_Length
+    SUB  CurrentLength
+    STORE Command_Length
+    BEQ  _out_done
+
+    CALL do_mem_read ; second and subsequent times
+
+_wait_out_cmd
+    INP  CMD_RESPONSE
+    BPL  _wait_out_cmd
+    STORE Command_Result
+    AND  #CMD_RES_MASK
+    CMP  #CMD_RES_ACK
+    BNE  _done ; for now, we just break on anything else than ACK
+
+    BRA  _next_out_chunk
+
+_out_done
+    INP  CMD_RESPONSE
+    BPL  _out_done
+    STORE Command_Result
+    LOAD #0
+    STORE Command
+    RET
+
+determine_length
+    LOAD Command_Length
+    CMP  Command_MaxTrans
+    BMI  _no_truncate
+    LOAD Command_MaxTrans
+_no_truncate
+    STORE CurrentLength
+    RET
+
+CurrentLength
+    .dw 0
+CurrentBuffer
+    .dw 0
