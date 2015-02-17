@@ -51,7 +51,7 @@ begin
     filtered_push <= not full_i and push;
     full <= full_i;
     
-    process(filtered_push, pop, pointer, ram_data, data_in)
+    process(filtered_push, pop, pointer, ram_data, data_in, data_valid_i)
     begin
         we <= filtered_push;
         data_out <= ram_data;

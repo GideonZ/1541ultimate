@@ -1,20 +1,53 @@
 ; Soft registers
-DO_RESET        = $3FD
+
+Offset_Command           = 0
+Offset_Command_DevEP     = 1
+Offset_Command_Length    = 2
+Offset_Command_MaxTrans  = 3
+Offset_Command_Interval  = 4
+Offset_Command_LastFrame = 5
+Offset_Command_SplitCtl  = 6
+Offset_Command_Result    = 7
+
+; Max number of pipes = 8: 8x8 = $40
+NUM_PIPES = 8
+Pipes    = 0x2E0
+PipesEnd = 0x320
+
+attrib_fifo      = 0x320 ; 128 entries (up to 39F)
+block_fifo       = 0x3A0 ; 64 entries (up to 3DF)
+
+Circ_MemAddr_Start_High = 0x3E0
+Circ_MemAddr_Start_Low  = 0x3E1
+Circ_Size               = 0x3E2
+Circ_Offset             = 0x3E3
+
+MemBlock_Base_High      = 0x3E4
+MemBlock_Base_Low       = 0x3E5
+
+User_Command          = $3F0
+User_Command_DevEP    = $3F1
+User_Command_Length   = $3F2
+User_Command_MaxTrans = $3F3
+User_Command_MemHi    = $3F4
+User_Command_MemLo    = $3F5
+User_Command_SplitCtl = $3F6
+User_Command_Result   = $3F7
+
+tail_pointer_atr = 0x3F8 ; updated by software only
+head_pointer_atr = 0x3F9 ; updated by nano only 
+tail_pointer_blk = 0x3FA ; updated by nano only
+head_pointer_blk = 0x3FB ; updated by software only
+
 DO_SUSPEND      = $3FC
+DO_RESET        = $3FD
 LinkSpeed       = $3FE
 Simulation      = $3FF
 
-Command          = $3F0
-Command_DevEP    = $3F1
-Command_Length   = $3F2
-Command_MaxTrans = $3F3
-Command_MemHi    = $3F4
-Command_MemLo    = $3F5
-Command_SplitCtl = $3F6
-Command_Result   = $3F7
-
 ; Read registers
 FILTERED_STAT_1 = $39
+FRAME_COUNTER   = $3B
+FRAME_TICK      = $3C ; clear on write
 MEM_CTRL_READY  = $3D
 DISCONNECTED    = $3E ; clear on write
 STATUS          = $3F
@@ -47,8 +80,10 @@ CMD_RESPONSE         = $64
 
 CMD_REQ_MEMREAD      = $8000
 CMD_REQ_MEMWRITE     = $4000
+CMD_REQ_USEBLOCK     = $2000
+CMD_REQ_USECIRC      = $1000
 
-CMD_NO_DATA          = $2000
+CMD_BUF_NODATA       = $2000
 
 CMD_RES_DATA         = $0000
 CMD_RES_ACK          = $1000
@@ -98,10 +133,12 @@ _sim_restart
 
 _waiting_for_reset_sim
     CALL  check_command
+    CALL  check_pipes
     LOAD  DO_RESET
     BEQ   _waiting_for_reset_sim
     LOAD  #0
     STORE DO_RESET
+    CALL  clear_fifos
     OUTP  CLR_OPERATIONAL
     OUTP  CLR_SOF_ENABLE
     BRA   _sim_restart
@@ -172,6 +209,7 @@ do_reset
     STORE DO_RESET
     OUTP  CLR_SOF_ENABLE
     OUTP  CLR_OPERATIONAL
+    CALL  clear_fifos
     CALL  bus_reset
     OUTP  CLR_SUSPENDED
     OUTP  SET_OPERATIONAL
@@ -209,6 +247,7 @@ main_loop
     LOAD  DO_SUSPEND
     BNE   do_suspend
     CALL  check_command
+    CALL  check_pipes
     BRA   main_loop
 
 do_suspend
@@ -425,61 +464,79 @@ ResetDelay
 NumberOfChirps
     .dw 75
 
-; Command        = $3F0
-; Command_DevEP  = $3F1
-; Command_Length = $3F2
-; Command_MaxTrans = $3F3
-; Command_MemHi  = $3F4
-; Command_MemLo  = $3F5
-; Command_SplitCtl = $3F6
-; Command_Result   = $3F7
 
 check_command
-    LOAD Command
-    BNE  _parse_cmd
+    LOAD User_Command
+    BNE  _copy_user_cmd
     RET ; zero = no command
 
-_parse_cmd
-    LOAD Command_MemHi
+_copy_user_cmd
+    LOAD  User_Command
+    STORE Current_Command
+    LOAD  User_Command_DevEP
+    STORE Current_Command_DevEP    
+    LOAD  User_Command_Length
+    STORE Current_Command_Length   
+    LOAD  User_Command_MaxTrans
+    STORE Current_Command_MaxTrans 
+    LOAD  User_Command_MemHi
+    STORE Current_Command_MemHi    
+    LOAD  User_Command_MemLo
+    STORE Current_Command_MemLo    
+    LOAD  User_Command_SplitCtl
+    STORE Current_Command_SplitCtl 
+    CALL  _execute_cmd
+    LOAD  Current_Command_Result
+    STORE User_Command_Result
+    LOAD  Current_Command_Length
+    STORE User_Command_Length
+    LOAD  #0
+    STORE User_Command
+    RET
+    
+_execute_cmd
+    LOAD Current_Command_MemHi
     OUTP MEM_ADDR_HI
-    LOAD Command_MemLo
+    LOAD Current_Command_MemLo
     OUTP MEM_ADDR_LO
-    LOAD Command_DevEP
+    LOAD Current_Command_DevEP
     OUTP CMD_DEVICE_ENDPOINT
 
-    LOAD Command
-    BMI  _out_command
+    LOAD  #0
+    STORE Transferred
+    LOAD  Current_Command
+    BMI   _out_command
 
 ; If we get here, we assume that it is an IN command
 _next_in_chunk
     LOAD CurrentBuffer
     OUTP CMD_DATA_BUFFER_CTRL
-    LOAD Command
+    LOAD Current_Command
     OUTP CMD_REQUEST ; Do it!!
 _wait_in_cmd
     INP  CMD_RESPONSE
     BPL  _wait_in_cmd
-    STORE Command_Result
+    STORE Current_Command_Result
     AND  #CMD_RES_MASK
     CMP  #CMD_RES_DATA
     BEQ  _in_success
     BRA  _done ; for now, we just break on anything else than DATA
 
 _in_success
-    LOAD Command_Result
+    LOAD Current_Command_Result
     AND  #CMD_RES_LEN_MASK
     STORE CurrentLength
 
 _check_rx_toggle
-    LOAD Command
-    XOR  Command_Result
+    LOAD Current_Command
+    XOR  Current_Command_Result
     AND  #$800 ; toggle bit
     BEQ  _toggle_ok
     LOAD #0
     STORE CurrentLength
 
 _toggle_ok
-    LOAD Command
+    LOAD Current_Command
     AND  #CMD_REQ_MEMWRITE
     BEQ  _no_mem_write
 
@@ -493,30 +550,31 @@ _wait_mem2
     BEQ  _no_mem_write
     ADD  #3
     OUTP MEM_TRANSFER_WRITE     
+    LOAD  Transferred
+    ADD   CurrentLength
+    STORE Transferred
     
 _no_mem_write
-    LOAD  Command
+    LOAD  Current_Command
     XOR   #$800 ; togglebit
-    STORE Command
+    STORE Current_Command
 
     LOAD  CurrentBuffer
     ADD   #$4000
     STORE CurrentBuffer
 
-    LOAD Command_Length
+    LOAD Current_Command_Length
     SUB  CurrentLength
-    STORE Command_Length
+    STORE Current_Command_Length
     BEQ  _done
     BMI  _done
     LOAD CurrentLength
-    CMP  Command_MaxTrans
+    CMP  Current_Command_MaxTrans
     BPL  _next_in_chunk
     
 _done
     INP  MEM_CTRL_READY
     BPL  _done
-    LOAD #0
-    STORE Command
     RET
     
 do_mem_read
@@ -526,14 +584,13 @@ do_mem_read
     ADD  #3
     OUTP MEM_TRANSFER_READ
     RET
-
         
 _out_command
     CALL do_mem_read ; first time
 _next_out_chunk
     LOAD CurrentLength
     BNE  _has_data
-    OR   #CMD_NO_DATA
+    OR   #CMD_BUF_NODATA
 _has_data
     OR   CurrentBuffer
     OUTP CMD_DATA_BUFFER_CTRL
@@ -542,7 +599,7 @@ _wait_mem1
     INP  MEM_CTRL_READY
     BPL  _wait_mem1
 
-    LOAD Command
+    LOAD Current_Command
     OUTP CMD_REQUEST ; Do it!!
 
     ; Next buffer, lets see if we need to read more
@@ -550,13 +607,13 @@ _wait_mem1
     ADD   #$4000
     STORE CurrentBuffer
 
-    LOAD  Command
+    LOAD  Current_Command
     XOR   #$800 ; togglebit
-    STORE Command
+    STORE Current_Command
 
-    LOAD Command_Length
+    LOAD Current_Command_Length
     SUB  CurrentLength
-    STORE Command_Length
+    STORE Current_Command_Length
     BEQ  _out_done
 
     CALL do_mem_read ; second and subsequent times
@@ -564,31 +621,325 @@ _wait_mem1
 _wait_out_cmd
     INP  CMD_RESPONSE
     BPL  _wait_out_cmd
-    STORE Command_Result
+    STORE Current_Command_Result
     AND  #CMD_RES_MASK
     CMP  #CMD_RES_ACK
     BNE  _done ; for now, we just break on anything else than ACK
 
+    LOAD  Transferred
+    ADD   CurrentLength
+    STORE Transferred
     BRA  _next_out_chunk
 
 _out_done
     INP  CMD_RESPONSE
     BPL  _out_done
-    STORE Command_Result
-    LOAD #0
-    STORE Command
+    STORE Current_Command_Result
     RET
 
 determine_length
-    LOAD Command_Length
-    CMP  Command_MaxTrans
+    LOAD Current_Command_Length
+    CMP  Current_Command_MaxTrans
     BMI  _no_truncate
-    LOAD Command_MaxTrans
+    LOAD Current_Command_MaxTrans
 _no_truncate
     STORE CurrentLength
     RET
 
+Transferred
+    .dw 0
 CurrentLength
     .dw 0
 CurrentBuffer
+    .dw 0
+Current_Command
+    .dw 0          
+Current_Command_DevEP    
+    .dw 0          
+Current_Command_Length   
+    .dw 0          
+Current_Command_MaxTrans 
+    .dw 0          
+Current_Command_MemHi    
+    .dw 0          
+Current_Command_MemLo    
+    .dw 0          
+Current_Command_SplitCtl 
+    .dw 0          
+Current_Command_Result   
+    .dw 0          
+
+PipeAddr
+    .dw 0
+PipeNumber
+    .dw 0
+    
+; Pipe check loop
+check_pipes
+    LOAD  #Pipes
+    STORE PipeAddr
+    LOAD  #0
+    STORE PipeNumber
+_chk_pipe
+    LOADI PipeAddr
+    BNE   _valid_pipe
+
+_nxt_pipe
+    LOAD  PipeNumber
+    ADD   #1
+    STORE PipeNumber
+    LOAD  PipeAddr
+    ADD   #8
+    STORE PipeAddr
+    CMP   #PipesEnd
+    BNE   _chk_pipe
+_pipes_done
+    RET
+    
+Interval
+    .dw 0
+LastFrame
+    .dw 0
+BlockOffset
+    .dw 0
+    
+_valid_pipe
+    STORE Current_Command
+
+    ; check interval
+    LOAD  PipeAddr
+    ADD   #Offset_Command_Interval
+    STORE temp
+    LOADI temp
+    STORE Interval
+
+    LOAD  PipeAddr
+    ADD   #Offset_Command_LastFrame
+    STORE temp
+    LOADI temp
+    STORE LastFrame
+    
+    INP   FRAME_COUNTER
+    SUB   LastFrame
+    ;; accu now holds time since last
+    CMP   Interval
+    BPL   _interval_ok
+    BRA    _nxt_pipe    
+
+store_last_frame
+    STORE  Interval
+    LOAD   PipeAddr
+    ADD    #Offset_Command_LastFrame
+    STORE  temp
+    LOAD   Interval
+    STORI  temp
+    RET
+        
+store_updated_command
+    STORE  Interval ;; just a temporary
+    LOAD   PipeAddr
+    ADD    #Offset_Command
+    STORE  temp
+    LOAD   Interval
+    STORI  temp
+    RET
+
+_interval_ok
+    INP   FRAME_COUNTER
+    CALL   store_last_frame
+
+_need_to_exectue
+    CALL  attr_fifo_full
+    BEQ   _nxt_pipe
+
+    LOAD  Current_Command
+    AND   #CMD_REQ_USEBLOCK
+    BNE   _prepare_block
+    LOADI PipeAddr
+    AND   #CMD_REQ_USECIRC
+    BNE   _prepare_circ
+    ; invalid -> no memory address
+    BRA   _nxt_pipe    
+
+_prepare_block
+    CALL  blk_fifo_empty
+    BEQ   _nxt_pipe    
+    CALL  blk_fifo_read
+    STORE BlockOffset
+
+    ;; calculate memory address (= MemBlock_Base + 4*fifo_value)
+    ADD   MemBlock_Base_Low
+    STORE Current_Command_MemLo
+    LOAD  MemBlock_Base_High
+    ADDC  #0
+    STORE Current_Command_MemHi
+
+    LOAD  BlockOffset
+    ADD   Current_Command_MemLo
+    STORE Current_Command_MemLo
+    LOAD  Current_Command_MemHi
+    ADDC  #0
+    STORE Current_Command_MemHi
+
+    LOAD  BlockOffset
+    ADD   Current_Command_MemLo
+    STORE Current_Command_MemLo
+    LOAD  Current_Command_MemHi
+    ADDC  #0
+    STORE Current_Command_MemHi
+
+    LOAD  BlockOffset
+    ADD   Current_Command_MemLo
+    STORE Current_Command_MemLo
+    LOAD  Current_Command_MemHi
+    ADDC  #0
+    STORE Current_Command_MemHi
+    
+    CALL  _other_params
+    CALL  _execute_cmd
+
+    LOAD  Current_Command
+    CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
+
+    ;; Now what will we tell the host?  Was the transfer successful?
+    LOAD  Transferred
+    BEQ   _unsuccessful
+
+    LOAD  BlockOffset
+    OR    PipeNumber
+    CALL  attr_fifo_push
+    LOAD  Current_Command_Result
+    CALL  attr_fifo_push
+    CALL  blk_fifo_adv
+    BRA   _nxt_pipe
+
+_prepare_circ
+    LOAD  Circ_MemAddr_Start_Low
+    ADD   Circ_Offset
+    STORE Current_Command_MemLo
+    LOAD  Circ_MemAddr_Start_High
+    ADDC  #0
+    STORE Current_Command_MemHi
+    CALL  _other_params
+    CALL  _execute_cmd
+
+    LOAD  Current_Command
+    CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
+
+    ;; Now what will we tell the host?  Was the transfer successful?
+    LOAD  Transferred
+    BEQ   _unsuccessful
+
+    ;; report back to host
+    LOAD  Circ_Offset
+    OR    PipeNumber
+    CALL  attr_fifo_push ; address
+    LOAD  Transferred
+    CALL  attr_fifo_push ; length
+
+    LOAD  Circ_Offset
+    ADD   #16
+    STORE Circ_Offset
+    CMP   Circ_Size
+    BNE   _nxt_pipe
+    LOAD  #0
+    STORE Circ_Offset
+    BRA   _nxt_pipe
+    
+_unsuccessful
+    LOAD Current_Command_Result
+    AND  #CMD_RES_MASK
+    CMP  #CMD_RES_NAK
+    BEQ  _nxt_pipe   ; we just got NAK, no worries, don't report    
+
+    LOAD #$FFF0
+    OR   PipeNumber
+    CALL attr_fifo_push
+    LOAD Current_Command_Result
+    CALL attr_fifo_push
+    BRA  _nxt_pipe
+
+_other_params
+    LOAD  PipeAddr
+    ADD   #Offset_Command_DevEP
+    STORE temp
+    LOADI temp
+    STORE Current_Command_DevEP
+
+    LOAD  PipeAddr
+    ADD   #Offset_Command_Length
+    STORE temp
+    LOADI temp
+    STORE Current_Command_Length
+
+    LOAD  PipeAddr
+    ADD   #Offset_Command_MaxTrans
+    STORE temp
+    LOADI temp
+    STORE Current_Command_MaxTrans
+
+    LOAD  PipeAddr
+    ADD   #Offset_Command_SplitCtl
+    STORE temp
+    LOADI temp
+    STORE Current_Command_SplitCtl
+    RET
+
+; Buffer management:
+; Fifo with numeric values that are offsets to a base pointer, in dwords: 256K addressing space
+
+; BLOCK FIFO
+; check if fifo empty. Will return 0 (BEQ..) when fifo is empty
+blk_fifo_empty
+    LOAD head_pointer_blk
+    XOR  tail_pointer_blk
+    RET
+    
+; get a value from the fifo
+blk_fifo_read
+    LOAD  tail_pointer_blk
+    ADD   #block_fifo
+    STORE fifo_temp_addr
+    LOADI fifo_temp_addr
+    RET
+    
+blk_fifo_adv
+    LOAD  tail_pointer_blk
+    ADD   #1
+    AND   #$3F
+    STORE tail_pointer_blk
+    RET
+
+; ATTRIBUTE FIFO
+attr_fifo_full
+    LOAD head_pointer_atr
+    ADD  #1
+    AND  #$7F
+    XOR  tail_pointer_atr
+    RET
+
+attr_fifo_push
+    STORE  fifo_temp_data
+    LOAD   head_pointer_atr
+    ADD    #attrib_fifo
+    STORE  fifo_temp_addr
+    LOAD   fifo_temp_data
+    STORI  fifo_temp_addr
+    LOAD   head_pointer_atr
+    ADD    #1
+    AND    #$7F
+    STORE  head_pointer_atr
+    RET
+
+clear_fifos
+    LOAD   #0
+    STORE  tail_pointer_atr
+    STORE  head_pointer_atr
+    STORE  tail_pointer_blk
+    STORE  head_pointer_blk
+    RET
+    
+fifo_temp_data
+    .dw 0
+fifo_temp_addr
     .dw 0

@@ -30,7 +30,7 @@ architecture gideon of nano_cpu is
     signal inst         : std_logic_vector(15 downto 11) := (others => '0');
     signal accu         : unsigned(15 downto 0);
     signal branch_taken : boolean;
-    signal n, z         : boolean;
+    signal n, z, c      : boolean;
     signal stack_top    : std_logic_vector(i_addr'range);
     signal push         : std_logic;
     signal pop          : std_logic;
@@ -45,7 +45,9 @@ begin
         z     when c_br_eq,    
         not z when c_br_neq,   
         n     when c_br_mi,    
-        not n when c_br_pl,    
+        not n when c_br_pl,
+        c     when c_br_c,
+        not c when c_br_nc,    
         true  when c_br_always,
         true  when c_br_call,
         false when others;
@@ -160,7 +162,8 @@ begin
         update_flag => update_flag,
         accu        => accu,
         z           => z,
-        n           => n );
+        n           => n,
+        c           => c );
 
     i_stack : entity work.distributed_stack
     generic map (

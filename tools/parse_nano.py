@@ -161,7 +161,8 @@ mnemonics = {
     'ADD'   : ( _addr_imm, 0x4800 ),
     'SUB'   : ( _addr_imm, 0x5800 ),
     'CMP'   : ( _addr_imm, 0x5000 ),
-    'INP'   : ( _addr_io,  0x6800 ),
+    'ADDC'  : ( _addr_imm, 0x6800 ),
+    'INP'   : ( _addr_io,  0x7800 ),
     'OUTP'  : ( _addr_io,  0xA000 ),
     'RET'   : ( _no_addr,  0xB800 ),
     'BEQ'   : ( _addr,     0xC000 ),
@@ -170,6 +171,8 @@ mnemonics = {
     'BPL'   : ( _addr,     0xD800 ),
     'BRA'   : ( _addr,     0XE000 ),
     'CALL'  : ( _addr,     0xE800 ),
+    'BCS'   : ( _addr,     0xF000 ),
+    'BCC'   : ( _addr,     0xF800 ),
     '.dw'   : ( _data,     0x0000 ),
     '.blk'  : ( _block,    0x0000 )
     }

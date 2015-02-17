@@ -33,11 +33,13 @@ port (
     chirp_data      : out std_logic;
 
     -- Functional Level
+    frame_count     : in  unsigned(15 downto 0) := (others => '0');
     mem_ctrl_ready  : in  std_logic := '0';
     connected       : out std_logic; -- '1' when a USB device is connected
     operational     : out std_logic; -- '1' when a USB device is successfully reset
     suspended       : out std_logic; -- '1' when the USB bus is in the suspended state
     sof_enable      : out std_logic; -- '1' when SOFs shall be generated
+    sof_tick        : in  std_logic := '0';
     speed           : out std_logic_vector(1 downto 0) ); -- speed indicator of current link
 
 end entity;
@@ -53,6 +55,7 @@ architecture gideon of nano_minimal_io is
     signal reset_filter_st1     : std_logic;
     signal disconn              : std_logic;
     signal disconn_latched      : std_logic;
+    signal sof_tick_latch       : std_logic;
 begin
     disconn          <= '1' when (status(5 downto 4) = "10") or (bus_low = '1' and speed_i(1)='0') else '0';
     speed            <= speed_i;
@@ -97,7 +100,7 @@ begin
             end if;
 
             reset_filter_st1 <= '0';
-            
+
             if io_write='1' then
                 reg_address <= std_logic_vector(io_addr(5 downto 0));
                 case adhi is
@@ -140,6 +143,8 @@ begin
                         sof_enable <= '0';
                     when X"E" =>
                         disconn_latched <= '0';
+                    when X"C" =>
+                        sof_tick_latch <= '0';
                     when others =>
                         null;
                     end case;
@@ -150,6 +155,10 @@ begin
                 when others =>
                     null;
                 end case;
+            end if;
+
+            if sof_tick = '1' then
+                sof_tick_latch <= '1';
             end if;
 
             if io_read = '1' then
@@ -184,7 +193,7 @@ begin
     ulpi_access <= io_addr(7);
     stall <= ((stall_i or io_read or io_write) and ulpi_access) and not reg_ack; -- stall right away, and continue right away also when the data is returned
     
-    process( reg_rdata, io_addr, status, disconn_latched, filter_st1, mem_ctrl_ready)
+    process( reg_rdata, io_addr, status, disconn_latched, filter_st1, mem_ctrl_ready, frame_count, sof_tick_latch)
         variable adlo   : unsigned(3 downto 0);
         variable adhi   : unsigned(7 downto 4);
     begin
@@ -197,6 +206,10 @@ begin
             case adlo(3 downto 0) is
             when X"9" =>
                 io_rdata(15) <= filter_st1;
+            when X"B" =>
+                io_rdata <= std_logic_vector(frame_count);
+            when X"C" =>
+                io_rdata(15) <= sof_tick_latch;
             when X"D" =>
                 io_rdata(15) <= mem_ctrl_ready;
             when X"E" =>

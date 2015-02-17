@@ -15,7 +15,11 @@ package nano_cpu_pkg is
     constant c_add      : std_logic_vector(15 downto 11) := X"4" & '1'; -- add
     constant c_sub      : std_logic_vector(15 downto 11) := X"5" & '1'; -- sub
     constant c_compare  : std_logic_vector(15 downto 11) := X"5" & '0'; -- sub
-    constant c_in       : std_logic_vector(15 downto 11) := X"6" & '1'; -- ext
+    constant c_addc     : std_logic_vector(15 downto 11) := X"6" & '1'; -- addc
+    constant c_in       : std_logic_vector(15 downto 11) := X"7" & '1'; -- ext
+
+
+--    constant c_shr      : std_logic_vector(15 downto 11) := X"7" & '1'; -- shr
 
     -- no update flags
     constant c_store    : std_logic_vector(15 downto 11) := X"8" & '0'; -- xxx
@@ -34,6 +38,8 @@ package nano_cpu_pkg is
     constant c_br_pl    : std_logic_vector(13 downto 11) := "011"; -- not negative
     constant c_br_always: std_logic_vector(13 downto 11) := "100"; -- always (jump)
     constant c_br_call  : std_logic_vector(13 downto 11) := "101"; -- always (call)
+    constant c_br_c     : std_logic_vector(13 downto 11) := "110"; -- carry
+    constant c_br_nc    : std_logic_vector(13 downto 11) := "111"; -- not carry
 
     -- ALU operations
     constant c_alu_load : std_logic_vector(2 downto 0) := "000";
@@ -42,5 +48,6 @@ package nano_cpu_pkg is
     constant c_alu_xor  : std_logic_vector(2 downto 0) := "011";
     constant c_alu_add  : std_logic_vector(2 downto 0) := "100";
     constant c_alu_sub  : std_logic_vector(2 downto 0) := "101";
+    constant c_alu_addc : std_logic_vector(2 downto 0) := "110";
     
 end;

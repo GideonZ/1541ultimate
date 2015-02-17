@@ -31,7 +31,9 @@ port (
     
     -- mode selection
     sof_enable      : in  std_logic;
+    sof_tick        : out std_logic;
     speed           : in  std_logic_vector(1 downto 0);
+    frame_count     : out unsigned(15 downto 0);
         
     -- low level command interface
     usb_cmd_req     : in  t_usb_cmd_req;
@@ -157,7 +159,7 @@ begin
         signal cmd_done         : std_logic;
 
         signal frame_div        : integer range 0 to 8191;
-        signal frame_cnt        : unsigned(13 downto 0) := (others => '0');
+        signal frame_cnt        : unsigned(15 downto 0) := (others => '0');
         signal do_sof           : std_logic;
         signal sof_guard        : std_logic := '0';
         
@@ -199,12 +201,14 @@ begin
                 end if;
 
                 cmd_done <= '0';
+                sof_tick <= '0';
                 
                 case state is
                 when idle =>
                     receive_en <= '0';
                     start_timer;
                     if do_sof='1' then
+                        sof_tick <= '1';
                         do_sof <= '0';
                         usb_tx_req_i.pid <= c_pid_sof;
                         usb_tx_req_i.token.device_addr <= std_logic_vector(frame_cnt(9 downto 3));
@@ -374,6 +378,8 @@ begin
             end if;
         end process;
         usb_cmd_resp.done <= cmd_done;
+
+        frame_count <= frame_cnt;
     end block;
     
 end architecture;

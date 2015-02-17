@@ -92,6 +92,9 @@ architecture arch of usb_host_nano is
     
     signal usb_cmd_req     : t_usb_cmd_req;
     signal usb_cmd_resp    : t_usb_cmd_resp;
+
+    signal frame_count     : unsigned(15 downto 0);
+    signal sof_tick        : std_logic;
 begin
 
     i_intf: entity work.usb_host_interface
@@ -128,7 +131,9 @@ begin
         buf_rdata           => buf_rdata,
         buf_wdata           => buf_wdata,
         sof_enable          => sof_enable,
+        sof_tick            => sof_tick,
         speed               => speed,
+        frame_count         => frame_count,
         usb_cmd_req         => usb_cmd_req,
         usb_cmd_resp        => usb_cmd_resp,
         usb_rx              => usb_rx,
@@ -230,12 +235,14 @@ begin
 
         status            => status,
         mem_ctrl_ready    => mem_ctrl_ready,
+        frame_count       => frame_count,
         do_chirp          => do_chirp,
         chirp_data        => chirp_data,
         connected         => open,
         operational       => open,
         suspended         => open,
         sof_enable        => sof_enable,
+        sof_tick          => sof_tick,
         speed             => speed );
 
     i_cmd_io: entity work.usb_cmd_nano
