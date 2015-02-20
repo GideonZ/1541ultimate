@@ -1,13 +1,10 @@
+extern "C" {
+	#include "small_printf.h"
+	#include "itu.h"
+	#include "xmodem.h"
+}
 #include "w25q_flash.h"
 #include "at49_flash.h"
-
-extern "C" {
-    #include "itu.h"
-}
-
-#define BOOT2_RUN_ADDR 0x10000
-#define APPL_RUN_ADDR  0x10000
-#define APPL_RUN_MK1   0x30000
 
 void (*function)();
 
@@ -17,6 +14,35 @@ void jump_run(DWORD a)
     *dp = a;
     function();
 }
+
+#define BOOT2_RUN_ADDR 0x10000
+#define APPL_RUN_ADDR  0x10000
+#define APPL_RUN_MK1   0x30000
+/*
+int main(void)
+{
+	puts("Hello, world!");
+
+    BYTE *ram = (BYTE *)0x10000;
+
+    while(1) {
+    	int st = xmodemReceive((char *)ram, 1048576);
+        if (st > 0) {
+            puts("Receive done.");
+            puts("Going to start...");
+            wait_ms(2000);
+            //jump_run(0x10000);
+            UART_DATA = 0x2d;
+            asm("bralid r15, 0x10000");
+            asm("nop");
+            puts("Application exit.");
+        } else {
+            puts("Nothing received.");
+        }
+    }    
+    return 0;
+}
+*/
 
 bool w25q_wait_ready(int time_out)
 {
@@ -81,7 +107,7 @@ int main(int argc, char **argv)
 
     DWORD read_boot2, read_appl;
     DWORD *dest;
-    
+
     int flash_type = 0;
     if(manuf == 0x1F) { // Atmel
         read_boot2 = 0x030A2800;
@@ -115,13 +141,13 @@ int main(int argc, char **argv)
     }
 
     int length;
-    
+
 /*
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA_32 = read_boot2;
     length = (int)SPI_FLASH_DATA_32;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-   
+
     if(length != -1) {
         read_boot2 += 16;
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -132,10 +158,11 @@ int main(int argc, char **argv)
             length -= 4;
         }
 //        uart_write_hex_long(*(DWORD *)BOOT2_RUN_ADDR);
-//        uart_write_buffer("Running 2nd boot.\n\r", 19); 
+//        uart_write_buffer("Running 2nd boot.\n\r", 19);
         jump_run(BOOT2_RUN_ADDR);
         while(1);
     }
+
 */
     puts("No bootloader, trying application.");
 
@@ -143,16 +170,19 @@ int main(int argc, char **argv)
     SPI_FLASH_DATA_32 = read_appl;
     length = (int)SPI_FLASH_DATA_32;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-   
+
     if(length != -1) {
         read_appl += 16;
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
         SPI_FLASH_DATA_32 = read_appl;
         dest = (DWORD *)APPL_RUN_ADDR;
+        uart_write_hex_long((DWORD)dest);
         while(length > 0) {
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
+        UART_DATA = '-';
+        uart_write_hex_long((DWORD)dest);
         jump_run(APPL_RUN_ADDR);
         while(1);
     }

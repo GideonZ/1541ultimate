@@ -62,7 +62,6 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 SRCS_C   =	mbstart.c \
 			itu.c \
-			mb_boot.c \
 			xmodem.c \
 			small_printf.c
 
@@ -73,7 +72,7 @@ SRCS_C   =	mbstart.c \
 # root of the application. Devices can register themselves in the file system tree.
 # Therefore, the file manager needs to exist.
 
-SRCS_CC	 =  
+SRCS_CC	 =  mb_boot.cc
 
 #
 SRCS_ASM =  mb_crt0.s

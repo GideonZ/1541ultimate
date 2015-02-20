@@ -1,7 +1,7 @@
 #ifndef USB2_H
 #define USB2_H
 
-#include "___usb.h"
+#include "usb_base.h"
 #include "integer.h"
 #include "event.h"
 #include "filemanager.h"

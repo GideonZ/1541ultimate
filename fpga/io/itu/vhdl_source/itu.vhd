@@ -25,8 +25,9 @@ port (
     io_resp         : out t_io_resp;
 
     irq_timer_tick  : in  std_logic := '0';
-
     irq_in          : in  std_logic_vector(7 downto 2);
+
+    busy_led        : out std_logic;
                     
     uart_txd        : out std_logic;
     uart_rxd        : in  std_logic := '1';
@@ -66,6 +67,9 @@ architecture gideon of itu is
 
     signal ms_timer_presc   : integer range 0 to c_ms_div-1 := 0;
     signal ms_timer         : unsigned(15 downto 0) := (others => '0');
+    
+    signal usb_busy         : std_logic;
+    signal sd_busy          : std_logic;
 begin
     process(clock)
         variable new_irq_edge_flag  : std_logic_vector(irq_edge_flag'range);
@@ -182,7 +186,14 @@ begin
             io_resp_ms <= c_io_resp_init;
             if io_req_ms.write='1' then
                 io_resp_ms.ack  <= '1';
-            
+                case io_req_ms.address(3 downto 0) is
+                when c_itu_usb_busy =>
+                    usb_busy <= io_req_ms.data(0);
+                when c_itu_sd_busy =>
+                    sd_busy <= io_req_ms.data(0);
+                when others =>
+                    null;
+                end case;            
             elsif io_req_ms.read='1' then
                 io_resp_ms.ack  <= '1';
 
@@ -223,6 +234,8 @@ begin
                 irq_timer_val <= X"8000";
                 irq_timer_cnt <= (others => '0');
                 ms_timer      <= (others => '0');
+                usb_busy      <= '0';
+                sd_busy       <= '0';
             end if;
         end if;
     end process;
@@ -274,4 +287,5 @@ begin
         end process;
     end generate;
     
+    busy_led <= usb_busy or sd_busy;
 end architecture;

@@ -76,12 +76,26 @@ void Usb2 :: poll(Event &e)
 	if (prev_status != usb_status) {
 		prev_status = usb_status;
 		if (usb_status & USTAT_CONNECTED) {
-			attach_root();
+			if (!device_present) {
+				device_present = true;
+				attach_root();
+			}
         } else {
-            device_present = false;
-            clean_up();
-        }
+        	if (device_present) {
+				device_present = false;
+				clean_up();
+        	}
+		}
     }
+	for(int i=0;i<USB_MAX_DEVICES;i++) {
+		UsbDevice *dev = device_list[i];
+		if(dev) {
+			UsbDriver *drv = dev->driver;
+			if(drv) {
+				drv->poll();
+			}
+		}
+	}
 }
 
 WORD *attr_fifo_data = (WORD *)ATTR_FIFO_BASE;
@@ -242,7 +256,7 @@ void Usb2 :: unstall_pipe(struct t_pipe *pipe)
 
 int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 {
-	printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
+	//printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
 	DWORD addr = (DWORD)buf;
 	int total_trans = 0;
 
@@ -254,7 +268,9 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 	do {
 		int current_len = (len > 49152) ? 49152 : len;
 		USB2_CMD_Length = current_len;
-		USB2_CMD_Command = pipe->Command | UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT;
+		WORD cmd = pipe->Command | UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT;
+		//printf("%d: %4x ", len, cmd);
+		USB2_CMD_Command = cmd;
 
 		// wait until it gets zero again
 		while(USB2_CMD_Command)
@@ -266,11 +282,12 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 			break;
 		}
 
+		//printf("Res = %4x\n", result);
 		int transferred = current_len - USB2_CMD_Length;
 		total_trans += transferred;
 		addr += transferred;
 		len -= transferred;
-		pipe->Command = result & URES_TOGGLE; // that's what we start with next time.
+		pipe->Command = (result & URES_TOGGLE); // that's what we start with next time.
 
 	} while (len > 0);
 
@@ -301,7 +318,7 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
 int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 {
-	printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
+	//printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
 	DWORD addr = (DWORD)buf;
 	int total_trans = 0;
 
@@ -314,7 +331,7 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		int current_len = (len > 49152) ? 49152 : len;
 		USB2_CMD_Length = current_len;
 		WORD cmd = pipe->Command | UCMD_MEMWRITE | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN;
-		printf("%d: %4x ", len, cmd);
+		//printf("%d: %4x ", len, cmd);
 		USB2_CMD_Command = cmd;
 
 		// wait until it gets zero again
@@ -327,12 +344,12 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 			break;
 		}
 
-		printf("Res = %4x\n", result);
+		//printf("Res = %4x\n", result);
 		int transferred = current_len - USB2_CMD_Length;
 		total_trans += transferred;
 		addr += transferred;
 		len -= transferred;
-		pipe->Command = result & URES_TOGGLE; // that's what we start with next time.
+		pipe->Command = (result & URES_TOGGLE) ^ URES_TOGGLE; // that's what we start with next time.
 	} while (len > 0);
 
 	return total_trans;

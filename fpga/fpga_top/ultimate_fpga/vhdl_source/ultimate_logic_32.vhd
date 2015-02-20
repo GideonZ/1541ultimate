@@ -312,8 +312,8 @@ architecture logic of ultimate_logic_32 is
     signal c2n_sense_in     : std_logic := '0';
     signal c2n_out_r		: std_logic := '1';
     signal c2n_out_w		: std_logic := '1';
-	signal sd_busy			: std_logic;
-	signal usb_busy			: std_logic;
+	signal busy_led			: std_logic;
+	signal sd_busy          : std_logic;
 	signal sd_act_stretched : std_logic;
 	signal error			: std_logic;
 	signal act_led_n		: std_logic := '1';
@@ -396,6 +396,8 @@ begin
         irq_in(3)   => '0',
         irq_in(2)   => sys_irq_usb,
         
+        busy_led    => busy_led,
+
         uart_txd    => UART_TXD,
         uart_rxd    => UART_RXD );
 
@@ -1026,7 +1028,7 @@ begin
 	DISK_ACTn   <= act_led_n xor error;
 	MOTOR_LEDn  <= motor_led_n xor error;
     CART_LEDn   <= cart_led_n xor error;
-	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or usb_busy)) xor error;
+	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or busy_led)) xor error;
 
 --	DISK_ACTn   <= not freezer_state(1);
 --	MOTOR_LEDn  <= not freezer_state(0);

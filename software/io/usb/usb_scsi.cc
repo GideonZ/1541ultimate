@@ -5,7 +5,6 @@ extern "C" {
     #include "small_printf.h"
 }
 #include "integer.h"
-#include "___usb.h"
 #include "usb_scsi.h"
 #include "event.h"
 
@@ -115,10 +114,10 @@ void UsbScsiDriver :: deinstall(UsbDevice *dev)
 void UsbScsiDriver :: poll(void)
 {
 	const int c_intervals[] = { 0,     // unknown
-								30,    // no media
-								2,     // not ready
-								30,    // ready
-								100 }; // error
+								250,   // no media
+								20,    // not ready
+								500,   // ready
+								500 }; // error
 	UsbScsi *blk;
 	t_device_state old_state, new_state;
 
@@ -126,10 +125,13 @@ void UsbScsiDriver :: poll(void)
 
 	// poll intervals are meant to lower the unnecessary
 	// traffic on the USB bus.
-	if(poll_interval[current_lun] > 0) {
-		poll_interval[current_lun] --;
+    WORD now = ITU_MS_TIMER;
+    WORD passed_time = now - poll_interval[current_lun];
+    if(passed_time < c_intervals[int(state_copy[current_lun])]) {
 		goto next_lun;
 	}
+
+	poll_interval[current_lun] = now;
 	blk = scsi_blk_dev[current_lun];
 	blk->test_unit_ready();
 	old_state = state_copy[current_lun];
@@ -158,9 +160,6 @@ void UsbScsiDriver :: poll(void)
 	if(old_state != new_state) {
 		push_event(e_refresh_browser, &root);
 	}
-
-	// lookup new poll interval
-	poll_interval[current_lun] = c_intervals[int(new_state)]; // dirty but fast
 
 next_lun:
 	// cycle through the luns
@@ -769,15 +768,14 @@ DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, BYTE num_sectors)
     
     int len, stat_len;
 
-	USB_COMMAND = USB_CMD_SET_BUSY;
+    ITU_USB_BUSY = 1;
 //    for(int s=0;s<num_sectors;s++) {
         //ST_DWORD(&cbw.cmd[2], sector);
         memcpy(&read_10_command[2], &sector, 4);
         
         for(int retry=0;retry<10;retry++) {
-            USB_COMMAND = USB_CMD_SET_DEBUG;
             if(exec_command(10, false, read_10_command, block_size*num_sectors, buf, false) != block_size*num_sectors) {
-        		USB_COMMAND = USB_CMD_CLEAR_BUSY;
+                ITU_USB_BUSY = 0;
                 return RES_ERROR;
             } else
                 break;
@@ -787,7 +785,7 @@ DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, BYTE num_sectors)
 //        sector ++;
 //    }
 
-	USB_COMMAND = USB_CMD_CLEAR_BUSY;
+	ITU_USB_BUSY = 0;
     return RES_OK;
 }
 
@@ -803,7 +801,7 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, BYTE num_sectors)
     
     int len, stat_len;
 
-	USB_COMMAND = USB_CMD_SET_BUSY;
+    ITU_USB_BUSY = 1;
 
     printf("USB: Writing %d sectors from %d.\n", num_sectors, sector);
 //    for(int s=0;s<num_sectors;s++) {
@@ -814,7 +812,7 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, BYTE num_sectors)
         	len = exec_command(10, true, write_10_command, block_size*num_sectors, (BYTE *)buf, false);
         	if(len != block_size*num_sectors) {
         		printf("Error %d.\n", len);
-        		USB_COMMAND = USB_CMD_CLEAR_BUSY;
+        	    ITU_USB_BUSY = 0;
                 return RES_ERROR;
         	} else
                 break;
@@ -823,7 +821,7 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, BYTE num_sectors)
 //        buf += block_size;
 //        sector ++;
 //    }
-	USB_COMMAND = USB_CMD_CLEAR_BUSY;
+	ITU_USB_BUSY = 0;
     return RES_OK;
 }
 

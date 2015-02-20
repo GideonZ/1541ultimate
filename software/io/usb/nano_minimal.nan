@@ -86,6 +86,7 @@ CMD_REQ_MEMWRITE     = $4000
 CMD_REQ_USEBLOCK     = $2000
 CMD_REQ_USECIRC      = $1000
 CMD_TOGGLE_BIT       = $0800
+CMD_TOGGLE_BIT_NOT   = $F7FF
 CMD_REQ_RETRY_ON_NAK = $0400
 
 CMD_BUF_NODATA       = $2000
@@ -644,10 +645,6 @@ _wait_mem1
     ADD   #$4000
     STORE CurrentBuffer
 
-    LOAD  Current_Command
-    XOR   #CMD_TOGGLE_BIT
-    STORE Current_Command
-
     LOAD Current_Command_Length
     SUB  CurrentLength
     STORE Current_Command_Length
@@ -669,6 +666,10 @@ _wait_out_cmd
     BRA  _out_done  ; exit
     
 _out_success
+    LOAD  Current_Command
+    XOR   #CMD_TOGGLE_BIT
+    STORE Current_Command
+
     LOAD  Transferred
     ADD   CurrentLength
     STORE Transferred
@@ -676,6 +677,13 @@ _out_success
     LOAD  Current_Command_Length
     BNE  _next_out_chunk
 _out_done
+    LOAD  Current_Command
+    AND   #CMD_TOGGLE_BIT
+    STORE temp
+    LOAD  Current_Command_Result
+    AND   #CMD_TOGGLE_BIT_NOT
+    OR    temp
+    STORE Current_Command_Result
     RET
 
 _check_nak_response_out

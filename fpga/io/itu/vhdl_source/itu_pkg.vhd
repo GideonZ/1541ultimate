@@ -24,5 +24,6 @@ package itu_pkg is
     -- second block
 	constant c_itu_ms_timer_hi   : unsigned(3 downto 0) := X"2";
 	constant c_itu_ms_timer_lo   : unsigned(3 downto 0) := X"3";
-	
+    constant c_itu_usb_busy      : unsigned(3 downto 0) := X"4";
+    constant c_itu_sd_busy       : unsigned(3 downto 0) := X"5";
 end package;
