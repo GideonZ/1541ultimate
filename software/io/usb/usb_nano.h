@@ -56,15 +56,6 @@
 #define PIPE_OFFS_SplitCtl   6
 #define PIPE_OFFS_Result     7
 
-struct t_pipe {
-	WORD Command;
-	WORD DevEP;
-	WORD Length;
-	WORD MaxTrans;
-	WORD Interval;
-	WORD SplitCtl;
-};
-
 #define NANO_DO_RESET	    (*(volatile BYTE *)(NANO_BASE + 0x7FB))
 #define NANO_DO_SUSPEND	    (*(volatile BYTE *)(NANO_BASE + 0x7F9))
 #define NANO_LINK_SPEED	    (*(volatile BYTE *)(NANO_BASE + 0x7FD))

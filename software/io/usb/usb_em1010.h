@@ -1,7 +1,7 @@
 #ifndef USB_EM1010_H
 #define USB_EM1010_H
 
-#include "usb.h"
+#include "___usb.h"
 
 #define EMREG_EC0      0x00
 #define EMREG_EC1      0x01

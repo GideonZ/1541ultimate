@@ -143,8 +143,8 @@ def dump_nan_file(filename):
     f = open(filename, "wb")
     for i in range(len(program)):
         inst = int(program[i], 16)
-        b0 = inst & 0xFF
-        b1 = (inst >> 8) & 0xFF
+        b1 = inst & 0xFF
+        b0 = (inst >> 8) & 0xFF
         f.write("%c%c" % (b0, b1))
     
     f.close()

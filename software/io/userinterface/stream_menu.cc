@@ -1,7 +1,6 @@
+#include "menu.h"
 #include "stream_menu.h"
 #include "task_menu.h"
-
-#include "usb.h"
 
 char *decimals = "0123456789";
 
@@ -125,9 +124,6 @@ int StreamMenu :: process_command(char *command)
         	printf("%s\n", node->get_name());
         }
 		print_items(0, 9999);
-    }
-    else if ((strncmp(command, "usbstat", 7))==0) {
-        usb.print_status();
     }
     else if ((strncmp(command, "into ", 5))==0) {
         selected = stream->convert_in(&command[5], 10, decimals); 

@@ -93,9 +93,9 @@ SRCS_CC	 =  stream.cc \
 			filetype_crt.cc \
 			filetype_bit.cc \
 			rtc.cc \
-			usb.cc \
+			usb_base.cc \
+			usb2.cc \
 			usb_device.cc \
-			usb_hub.cc \
 			usb_scsi.cc \
 			c64.cc \
 			screen.cc \
@@ -154,7 +154,7 @@ SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
 
 SRCS_IEC = iec_code.iec
 
-SRCS_NANO = nano_usb.nan
+SRCS_NANO = nano_minimal.nan
 
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 
@@ -176,6 +176,7 @@ CPP		  = $(CROSS)-g++
 LD		  = $(CROSS)-ld
 OBJDUMP   = $(CROSS)-objdump
 OBJCOPY	  = $(CROSS)-objcopy
+SIZE	  = $(CROSS)-size
 
 .SUFFIXES:
 
@@ -254,6 +255,7 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
+	@$(SIZE) $(OUTPUT)/$(PRJ).out
 
 $(OUTPUT)/$(PRJ)_V1.out: $(LINK_V1) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC)
 	@echo "Linking..."

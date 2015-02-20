@@ -5,7 +5,7 @@ extern "C" {
     #include "small_printf.h"
 }
 #include "integer.h"
-#include "usb.h"
+#include "___usb.h"
 #include "usb_scsi.h"
 #include "event.h"
 
@@ -29,11 +29,15 @@ UsbScsiDriver usb_scsi_driver_tester(usb_drivers);
 
 UsbScsiDriver :: UsbScsiDriver(IndexedList<UsbDriver*> &list)
 {
+	current_lun = 0;
+	max_lun = 0;
 	list.append(this); // add tester
 }
 
 UsbScsiDriver :: UsbScsiDriver()
 {
+	current_lun = 0;
+	max_lun = 0;
 }
 
 UsbScsiDriver :: ~UsbScsiDriver()
@@ -186,12 +190,18 @@ UsbScsi :: UsbScsi(UsbDevice *d, int unit)
     cbw.signature = 0x55534243;
     cbw.lun = (BYTE)lun;
 
+    int bi = d->find_endpoint(0x82);
+    int bo = d->find_endpoint(0x02);
     if(d) {
         host = d->host;
-        bulk_in  = d->find_endpoint(0x82);
-        bulk_out = d->find_endpoint(0x02);
+        bulk_in.DevEP  = ((d->current_address) << 8) | bi;
+        bulk_out.DevEP = ((d->current_address) << 8) | d->find_endpoint(0x02);
+        bulk_in.MaxTrans = 512; // TODO: Should depend on speed
+        bulk_out.MaxTrans = 512; // TODO: Should depend on speed
+        bulk_in.Command = 0; // used to store toggle bit
+        bulk_out.Command = 0; // used to store toggle bit
     }
-    if((bulk_in > 0) && (bulk_out > 0) && (host) && (d))
+    if((bi > 0) && (bo > 0) && (host) && (d))
         initialized = true;
 }
 
@@ -201,16 +211,16 @@ UsbScsi :: ~UsbScsi()
 
 void UsbScsi :: reset(void)
 {
-    BYTE *buf;
+    BYTE buf[8];
     
     if(!initialized)
         return;
 
     if(lun == 0) {
 		printf("Executing reset...\n");
-		int i = host->control_exchange(device->current_address,
+		int i = host->control_exchange(&(device->control_pipe),
 									   c_scsi_reset, 8,
-									   NULL, 8, &buf);
+									   buf, 8);
 
 		printf("Device reset. (returned %d bytes)\n", i);
 	    wait_ms(100);
@@ -237,9 +247,10 @@ int UsbScsi :: status_transport(bool do_bulk_in=true)
 	DWORD *signature = (DWORD *)stat_resp;
 	*signature = 0;
 	int len;
+	BYTE buf[8];
 
 	if(do_bulk_in)	
-		len = host->bulk_in(stat_resp, 16, bulk_in);
+		len = host->bulk_in(&bulk_in, stat_resp, 13);
 	else
 		len = 13; // has already been received in error
 		
@@ -254,15 +265,15 @@ int UsbScsi :: status_transport(bool do_bulk_in=true)
 	return (int)stat_resp[12]; // OK, or other error
 
 do_reset:
-	i =  host->control_exchange(device->current_address,
+	i =  host->control_exchange(&(device->control_pipe),
 								c_scsi_reset, 8,
-								NULL, 8, NULL);
+								buf, 8);
 
 	if(i != 0)
 		return -2; // reset failed
 
-	host->unstall_pipe(bulk_in);
-	host->unstall_pipe(bulk_out);
+	host->unstall_pipe(&bulk_in);
+	host->unstall_pipe(&bulk_out);
 
 //	state = e_st_ready;
 
@@ -289,8 +300,8 @@ int UsbScsi :: request_sense(bool debug)
     for(int i=6;i<16;i++)
     	cbw.cmd[i] = 0;
     
-    host->bulk_out(&cbw, 31, bulk_out);
-    int len = host->bulk_in(sense_data, 18, bulk_in);
+    host->bulk_out(&bulk_out, &cbw, 31);
+    int len = host->bulk_in(&bulk_in, sense_data, 18);
     if(debug) {
         printf("%d bytes sense data returned: ", len);
         for(int i=0;i<len;i++) {
@@ -345,11 +356,11 @@ int UsbScsi :: exec_command(int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *
         } printf("\n");
     }
     int len = 0;
-    int st = host->bulk_out(&cbw, 31, bulk_out);
+    int st = host->bulk_out(&bulk_out, &cbw, 31);
     if(st < 0) { // out failed.. let's see if we can get back in sync..
     	printf("Out failed.. let's see if we can get back in sync..\n");
     	if(status_transport(true) == 0) {
-            st = host->bulk_out(&cbw, 31, bulk_out);
+            st = host->bulk_out(&bulk_out, &cbw, 31);
             if(st < 0)
                 return -2;
         } else {
@@ -361,12 +372,12 @@ int UsbScsi :: exec_command(int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *
     /* DATA PHASE */
     if((data)&&(datalen)) {
     	if(out) {
-			len = host->bulk_out(data, datalen, bulk_out);
+			len = host->bulk_out(&bulk_out, data, datalen);
 			if(debug) {
 				printf("%d data bytes sent.\n", len);
 			}
     	} else { // in
-			len = host->bulk_in(data, datalen, bulk_in);
+			len = host->bulk_in(&bulk_in, data, datalen);
 			if(debug) {
 				printf("%d data bytes received: ", len);
 				for(int i=0;i<len;i++)
@@ -382,7 +393,7 @@ int UsbScsi :: exec_command(int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *
 					memcpy(stat_resp, data, 16); // 16 is likely to be faster than 13
 					read_status = false;
 				}
-			    host->unstall_pipe(bulk_in);
+			    host->unstall_pipe(&bulk_in);
 			}
 		}
 	}

@@ -9,6 +9,7 @@
 #include "small_printf.h"
 #include "itu.h"
 #include "usb_nano.h"
+#include "usb2.h"
 #include "dump_hex.h"
 #include <string.h>
 

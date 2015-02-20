@@ -6,8 +6,8 @@ extern "C" {
 #include "usb2.h"
 #include <stdlib.h>
 
-extern BYTE  _binary_nano_usb_b_start;
-extern DWORD _binary_nano_usb_b_size;
+extern BYTE  _binary_nano_minimal_b_start;
+extern DWORD _binary_nano_minimal_b_size;
 
 Usb2 usb2; // the global
 
@@ -25,12 +25,13 @@ static void poll_usb2(Event &e)
 Usb2 :: Usb2()
 {
     initialized = false;
+    prev_status = 0xFF;
     
-    if(CAPABILITIES & CAPAB_USB_HOST2) {
+    if(getFpgaCapabilities() & CAPAB_USB_HOST2) {
 	    init();
 
 #ifndef BOOTLOADER
-        poll_list.append(&poll_usb2);
+	    poll_list.append(&poll_usb2);
 #endif
     }
 }
@@ -51,297 +52,233 @@ void Usb2 :: init(void)
         device_list[i] = NULL;
     }
     device_present = false;
-    for(int i=0;i<MAX_INPUT_PIPES;i++) {
-    	inputPipeControlWords[i] = 0;
-    }
 
     // load the nano CPU code and start it.
-    int size = (int)&_binary_nano_usb_b_size;
-    BYTE *src = &_binary_nano_usb_b_start;
-    BYTE *dst = (BYTE *)HW_USB2_CODE_BE;
+    int size = (int)&_binary_nano_minimal_b_size;
+    BYTE *src = &_binary_nano_minimal_b_start;
+    BYTE *dst = (BYTE *)NANO_BASE;
     for(int i=0;i<size;i++)
         *(dst++) = *(src++);
     printf("Nano CPU based USB Controller: %d bytes loaded.\n", size);
 
-    USB2_NANO_ENABLE = 1;
+    NANO_START = 1;
 
     initialized = true;
 }
 
-void Usb2 :: clean_up()
-{
-    // destruct all devices (possibly shutting down the attached devices) 
-    for(int i=0;i<USB_MAX_DEVICES;i++) {
-        if(device_list[i]) {
-        	device_list[i]->deinstall();
-        	delete device_list[i]; // call destructor of device
-            device_list[i] = NULL;
-        }
-    }
-    // stop Nano CPU by putting it in reset
-    USB2_NANO_ENABLE = 0;
-}
-
-
-void Usb2 :: attach_root(void)
-{
-    printf("Attach root!!\n");
-
-    UsbDevice *dev = new UsbDevice(this);
-	install_device(dev, true);
-}
-
-bool Usb2 :: install_device(UsbDevice *dev, bool draws_current)
-{
-    int idx = get_device_slot();
-    
-    bool ok = false;
-    for(int i=0;i<20;i++) { // try 20 times!
-        if(dev->init(idx+1)) {
-            ok = true;
-            break;
-        }
-    }
-    if(!ok)
-        return false;
-
-    int device_curr = int(dev->device_config.max_power) * 2;
-    printf("Device needs %d mA\n", device_curr);
-    device_list[idx] = dev;
-    dev->install();
-    return true; // actually install should be able to return false too
-}
-
-void Usb2 :: deinstall_device(UsbDevice *dev)
-{
-    dev->deinstall();
-    for(int i=0;i<USB_MAX_DEVICES;i++) {
-        if(device_list[i] == dev) {
-        	device_list[i] = NULL;
-        	delete dev;
-        	break;
-        }
-    }
-}
-    
 void Usb2 :: poll(Event &e)
 {
 	if(!initialized) {
 		init();
         return;
     }
-    DWORD fifo_data;
-    static BYTE buffertje[64];
-    if (get_fifo(&fifo_data)) {
-        printf("USB2 attr fifo: %8x\n", fifo_data);
-        if (fifo_data == USB2_EVENT_ATTACH ) { // connect!
-            get_fifo(&fifo_data);
-            if (fifo_data == 2) {
-                printf("High speed device connected\n");
-            } else if(fifo_data == 1) {
-                printf("Full speed device connected\n");
-            } else if(fifo_data == 0) {
-                printf("Low speed device connected\n");
-            } else {
-                printf("Error connecting device\n");
-            }
-            attach_root();
+	BYTE usb_status = USB2_STATUS;
+	if (prev_status != usb_status) {
+		prev_status = usb_status;
+		if (usb_status & USTAT_CONNECTED) {
+			attach_root();
+        } else {
+            device_present = false;
+            clean_up();
         }
     }
 }
 
-bool Usb2 :: get_fifo(DWORD *out)
+WORD *attr_fifo_data = (WORD *)ATTR_FIFO_BASE;
+
+bool Usb2 :: get_fifo(WORD *out)
 {
-    BYTE tail = USB2_ATTR_FIFO_TAIL;
-    BYTE head = USB2_ATTR_FIFO_HEAD;
-    BYTE count = head - tail;
-    DWORD d = 0;
-    if (count) {
-        int offset = ((int)tail) << 1;
-        d = USB2_ATTR_FIFO_DATA8(offset);
-        d |= ((DWORD)USB2_ATTR_FIFO_DATA8(offset+1)) << 8;
-        USB2_ATTR_FIFO_TAIL = (tail + 1) & USB2_ATTR_FIFO_MASK;
-        *out = d;
-        return true;        
-    }
-    return false;
+	WORD tail = ATTR_FIFO_TAIL;
+	WORD head = ATTR_FIFO_HEAD;
+	if (tail == head) {
+		return false;
+	}
+	*out = attr_fifo_data[tail];
+	tail ++;
+	if (tail == ATTR_FIFO_ENTRIES)
+		tail = 0;
+	ATTR_FIFO_TAIL = tail;
+	return true;
 }
 
-/*
-#define USB2_CMD_CMD      *((volatile BYTE *)(USB2_CODE_BASE + 0x7E0))
-#define USB2_CMD_DEV_ADDR *((volatile WORD *)(USB2_CODE_BASE + 0x7E2))
-#define USB2_CMD_MEM_ADDR *((volatile DWORD *)(USB2_CODE_BASE + 0x7E4))
-#define USB2_CMD_LENGTH   *((volatile WORD *)(USB2_CODE_BASE + 0x7E8))
-*/
-static BYTE temp_usb_buffer[600];
-
-int Usb2 :: create_pipe(int dev_addr, struct t_endpoint_descriptor *epd)
+int Usb2 :: open_pipe()
 {
-    DWORD pipe = 0L;
-    
-    // find free pipe
-    int index = -1;
-    for(int i=0;i<USB_MAX_PIPES;i++) {
-        if(!pipes[i]) {
-            index = i;
-            break;
-        }
-    }
-    if(index == -1)
-        return -1;
-
-    DWORD pipe_code = (DWORD)dev_addr;
-    pipe_code |= ((int)(epd->endpoint_address & 0x0f)) << 7;
-    pipe_code |= ((DWORD)le16_to_cpu(epd->max_packet_size)) << 16;
-
-    pipes[index] = pipe_code;
-    printf("Pipe with value %8x created. Index = %d.\n", pipe_code, index);
-    return index;
-}
-
-void Usb2 :: free_pipe(int index)
-{
-    if(index >= USB_MAX_PIPES)
-        return;
-    if(index < 0)
-        return;
-    pipes[index] = 0;
-}
-
-int Usb2 :: control_exchange(int addr, void *out, int outlen, void *in, int inlen, BYTE **buf)
-{
-    // endpoint is 0
-    DWORD dev_addr = (addr << 4) + 0 + 0x400000; // max length = 64, toggle = 0
-
-    USB2_CMD_MEM_ADDR = (DWORD)out;
-    USB2_CMD_DEV_ADDR = dev_addr;
-    USB2_CMD_LENGTH   = outlen;
-    USB2_CMD_CMD      = USB2_CMD_SETUP;
-    
-    while (USB2_CMD_CMD)
-        ;
-        
-    DWORD d;
-    get_fifo(&d);
-    
-    if (in) {
-        USB2_CMD_MEM_ADDR = (DWORD)in;
-    } else {
-        USB2_CMD_MEM_ADDR = (DWORD)temp_usb_buffer;
-    }
-            
-    USB2_CMD_LENGTH   = inlen;
-     
-    do {
-        USB2_CMD_CMD      = USB2_CMD_DATA_IN;
-        while (USB2_CMD_CMD)
-            ;
-        get_fifo(&d);
-    } while(d == USB2_EVENT_RETRY);
-        
-    if (buf) {
-        *buf = temp_usb_buffer;
-    }
-    return (int)USB2_CMD_TRANSFERRED;    
-}
-
-int Usb2 :: control_write(int addr, void *setup_out, int setup_len, void *data_out, int data_len)
-{
-    // endpoint is 0
-    DWORD dev_addr = (addr << 4) + 0 + 0x400000; // max length = 64, toggle = 0
-
-    USB2_CMD_MEM_ADDR = (DWORD)setup_out;
-    USB2_CMD_DEV_ADDR = dev_addr;
-    USB2_CMD_LENGTH   = setup_len;
-    USB2_CMD_CMD      = USB2_CMD_SETUP;
-
-    while (USB2_CMD_CMD)
-        ;
-
-    DWORD d;
-    get_fifo(&d);
-
-    if(!data_len)
-        return 0;
-
-    // now follow by out transaction
-    USB2_CMD_MEM_ADDR = (DWORD)data_out;
-    USB2_CMD_LENGTH   = data_len;
-
-    do {
-        USB2_CMD_CMD      = USB2_CMD_DATA_OUT;
-        while (USB2_CMD_CMD)
-            ;
-        get_fifo(&d);
-    } while(d == USB2_EVENT_RETRY);
-
-    int transmitted = (int)USB2_CMD_TRANSFERRED;
-
-    // and do a turnaround to indicate that we are done (and read status)
-	USB2_CMD_MEM_ADDR = (DWORD)temp_usb_buffer;
-    USB2_CMD_LENGTH   = 64;
-
-    do {
-        USB2_CMD_CMD      = USB2_CMD_DATA_IN;
-        while (USB2_CMD_CMD)
-            ;
-        get_fifo(&d);
-    } while(d == USB2_EVENT_RETRY);
-
-    return transmitted;
-}
-
-int  Usb2 :: allocate_input_pipe(int len, int pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object)
-{
-	for(int i=0;i<MAX_INPUT_PIPES;i++) {
-		if (inputPipeControlWords[i] == 0) {
-			// set inputPipeControlWords[i] to a sensible value
-			inputPipeControlWords[i] = 1;
-			inputPipeCallBacks[i] = callback;
-			inputPipeObjects[i] = object;
-			// write the inputPipeControlWord into the nano cpu memory space
-			USB2_INPUT_PIPES[i] = pipes[pipe];
+	WORD *pipe = (WORD *)USB2_PIPES_BASE;
+	for(int i=0;i<USB2_NUM_PIPES;i++) {
+		if (*pipe == 0) {
 			return i;
 		}
+		pipe += 8;
 	}
+	return -1;
+}
+
+void Usb2 :: init_pipe(int index, struct t_pipe *init)
+{
+	WORD *pipe = (WORD *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
+	pipe[PIPE_OFFS_DevEP]    = init->DevEP;
+	pipe[PIPE_OFFS_Length]   = init->Length;
+	pipe[PIPE_OFFS_MaxTrans] = init->MaxTrans;
+	pipe[PIPE_OFFS_Interval] = init->Interval;
+	pipe[PIPE_OFFS_SplitCtl] = init->SplitCtl;
+	pipe[PIPE_OFFS_Command]  = init->Command;
+}
+
+void Usb2 :: close_pipe(int pipe)
+{
+	WORD *p = (WORD *)USB2_PIPES_BASE;
+	p[(8 * pipe)] = 0;
+}
+
+int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
+{
+	USB2_CMD_DevEP  = pipe->DevEP;
+	USB2_CMD_Length = outlen;
+	USB2_CMD_MaxTrans = pipe->MaxTrans;
+	USB2_CMD_MemHi = ((DWORD)out) >> 16;
+	USB2_CMD_MemLo = ((DWORD)out) & 0xFFFF;
+	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
+
+	// wait until it gets zero again
+	while(USB2_CMD_Command)
+		;
+
+	// printf("Setup Result: %04x\n", USB2_CMD_Result);
+
+	USB2_CMD_Length = inlen;
+	WORD command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT;// start with toggle bit 1
+
+	if (in) {
+		USB2_CMD_MemHi = ((DWORD)in) >> 16;
+		USB2_CMD_MemLo = ((DWORD)in) & 0xFFFF;
+		command |= UCMD_MEMWRITE;
+	}
+	USB2_CMD_Command = command;
+
+	// wait until it gets zero again
+	while(USB2_CMD_Command)
+		;
+
+	DWORD transferred = inlen - USB2_CMD_Length;
+	// printf("In: %d bytes (Result = %4x)\n", transferred, USB2_CMD_Result);
+	// dump_hex(read_buf, transferred);
+
+	if (transferred) {
+		USB2_CMD_Length = 0;
+		USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // send zero bytes as out packet
+
+		// wait until it gets zero again
+		while(USB2_CMD_Command)
+			;
+		// printf("Out Result = %4x\n", USB2_CMD_Result);
+	}
+	return transferred;
+}
+
+int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len)
+{
+	USB2_CMD_DevEP  = pipe->DevEP;
+	USB2_CMD_Length = setup_len;
+	USB2_CMD_MaxTrans = pipe->MaxTrans;
+	USB2_CMD_MemHi = ((DWORD)setup_out) >> 16;
+	USB2_CMD_MemLo = ((DWORD)setup_out) & 0xFFFF;
+	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
+
+	// wait until it gets zero again
+	while(USB2_CMD_Command)
+		;
+
+	// printf("Setup Result: %04x\n", USB2_CMD_Result);
+
+	USB2_CMD_Length = data_len;
+	USB2_CMD_MemHi = ((DWORD)data_out) >> 16;
+	USB2_CMD_MemLo = ((DWORD)data_out) & 0xFFFF;
+	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // start with toggle bit 1;
+
+	// wait until it gets zero again
+	while(USB2_CMD_Command)
+		;
+
+	DWORD transferred = data_len - USB2_CMD_Length;
+	// printf("Out: %d bytes (Result = %4x)\n", transferred, USB2_CMD_Result);
+	// dump_hex(read_buf, transferred);
+
+	USB2_CMD_Length = 0;
+	USB2_CMD_Command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT; // do an in transfer to end control write
+
+	// wait until it gets zero again
+	while(USB2_CMD_Command)
+		;
+	// printf("In Result = %4x\n", USB2_CMD_Result);
+	return transferred;
+}
+
+int  Usb2 :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object)
+{
+	int index = open_pipe();
+	if (index < 0)
+		return -1;
+
+	inputPipeCallBacks[index] = callback;
+	inputPipeObjects[index] = object;
+
+	init_pipe(index, pipe);
 	return -1;
 }
 
 void Usb2 :: free_input_pipe(int index)
 {
-	// check bounds
-	if ((index < 0) || (index >= MAX_INPUT_PIPES))
-		return;
-
-	// write a zero to the nano cpu memory space to indicate a free slot
-	USB2_INPUT_PIPES[index] = 0;
-	inputPipeControlWords[index] = 0;
+	close_pipe(index);
+	inputPipeCallBacks[index] = 0;
+	inputPipeObjects[index] = 0;
 }
 
-void Usb2 :: unstall_pipe(int pipe)
+void Usb2 :: unstall_pipe(struct t_pipe *pipe)
 {
 	printf("Unstalling pipe not yet supported. (Panic)");
 	while(1)
 		;
 }
 
-int  Usb2 :: bulk_out(void *buf, int len, int pipe)
+int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 {
-    USB2_CMD_MEM_ADDR = (DWORD)buf;
-    USB2_CMD_DEV_ADDR = pipes[pipe];
-    USB2_CMD_LENGTH   = (DWORD)len;
-    USB2_CMD_CMD      = USB2_CMD_DATA_OUT;
+	printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
+	DWORD addr = (DWORD)buf;
+	int total_trans = 0;
 
-    while (USB2_CMD_CMD)
-        ;
+	USB2_CMD_DevEP    = pipe->DevEP;
+	USB2_CMD_MaxTrans = pipe->MaxTrans;
+	USB2_CMD_MemHi = addr >> 16;
+	USB2_CMD_MemLo = addr & 0xFFFF;
 
-    DWORD d;
-    get_fifo(&d); // from this code we should retrieve the toggle state and store it in pipes[pipe]
+	do {
+		int current_len = (len > 49152) ? 49152 : len;
+		USB2_CMD_Length = current_len;
+		USB2_CMD_Command = pipe->Command | UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT;
 
-    return (int)USB2_CMD_TRANSFERRED;
+		// wait until it gets zero again
+		while(USB2_CMD_Command)
+			;
+
+		WORD result = USB2_CMD_Result;
+		if (((result & URES_RESULT_MSK) != URES_ACK) && ((result & URES_RESULT_MSK) != URES_NYET)) {
+			printf("Bulk Out error: $%4x, Transferred: %d\n", result, total_trans);
+			break;
+		}
+
+		int transferred = current_len - USB2_CMD_Length;
+		total_trans += transferred;
+		addr += transferred;
+		len -= transferred;
+		pipe->Command = result & URES_TOGGLE; // that's what we start with next time.
+
+	} while (len > 0);
+
+
+	return total_trans;
 }
 
-int  Usb2 :: bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe)
+/*int  Usb2 :: bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe)
 {
 	BYTE *pre_buf = (BYTE *)((BYTE *)buf - (BYTE *)prefix_len);
 	BYTE *bprefix = (BYTE *)prefix;
@@ -360,20 +297,74 @@ int  Usb2 :: bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int l
 		pre_buf[i] = temp_usb_buffer[i];
 	}
 	return transferred;
+}*/
+
+int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
+{
+	printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
+	DWORD addr = (DWORD)buf;
+	int total_trans = 0;
+
+	USB2_CMD_DevEP    = pipe->DevEP;
+	USB2_CMD_MaxTrans = pipe->MaxTrans;
+	USB2_CMD_MemHi = addr >> 16;
+	USB2_CMD_MemLo = addr & 0xFFFF;
+
+	do {
+		int current_len = (len > 49152) ? 49152 : len;
+		USB2_CMD_Length = current_len;
+		WORD cmd = pipe->Command | UCMD_MEMWRITE | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN;
+		printf("%d: %4x ", len, cmd);
+		USB2_CMD_Command = cmd;
+
+		// wait until it gets zero again
+		while(USB2_CMD_Command)
+			;
+
+		WORD result = USB2_CMD_Result;
+		if ((result & URES_RESULT_MSK) != URES_PACKET) {
+			printf("Bulk IN error: $%4x, Transferred: %d\n", result, total_trans);
+			break;
+		}
+
+		printf("Res = %4x\n", result);
+		int transferred = current_len - USB2_CMD_Length;
+		total_trans += transferred;
+		addr += transferred;
+		len -= transferred;
+		pipe->Command = result & URES_TOGGLE; // that's what we start with next time.
+	} while (len > 0);
+
+	return total_trans;
 }
 
-int  Usb2 :: bulk_in(void *buf, int len, int pipe) // blocking
+void Usb2 :: bus_reset()
 {
-    USB2_CMD_MEM_ADDR = (DWORD)buf;
-    USB2_CMD_DEV_ADDR = pipes[pipe];
-    USB2_CMD_LENGTH   = (DWORD)len;
-    USB2_CMD_CMD      = USB2_CMD_DATA_IN;
+	NANO_DO_RESET = 1;
 
-    while (USB2_CMD_CMD)
-        ;
+	for (int i=0; i<3; i++) {
+		wait_ms(50);
+		printf("Reset status: %b\n", USB2_STATUS);
+		if (USB2_STATUS & USTAT_OPERATIONAL)
+			break;
+	}
+}
 
-    DWORD d;
-    get_fifo(&d); // from this code we should retrieve the toggle state and store it in pipes[pipe]
-
-    return (int)USB2_CMD_TRANSFERRED;
+UsbDevice *Usb2 :: init_simple(void)
+{
+	init();
+	bus_reset();
+	wait_ms(1000);
+	BYTE usb_status = USB2_STATUS;
+	if (usb_status & USTAT_CONNECTED) {
+		UsbDevice *dev = new UsbDevice(this);
+		if(dev) {
+			if(!dev->init(1)) {
+				delete dev;
+				return NULL;
+			}
+		}
+		return dev;
+	}
+	return NULL;
 }

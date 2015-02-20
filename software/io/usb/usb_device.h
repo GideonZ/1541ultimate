@@ -3,7 +3,7 @@
 
 #include "integer.h"
 #include "indexed_list.h"
-#include "usb.h"
+#include "usb_base.h"
 
 #define DESCR_DEVICE            0x01
 #define DESCR_CONFIGURATION     0x02
@@ -113,17 +113,18 @@ public:
     char manufacturer[32];
     char product[32];
     char serial[32];
-    int  pipe_numbers[4];
 
-    Usb       *host;
+    struct t_pipe control_pipe;
+
+    UsbBase   *host;
     UsbDevice *parent;  // in case of being connected to a hub
     UsbDriver *driver;  //
 
-    UsbDevice(Usb *u);
+    UsbDevice(UsbBase *u);
     ~UsbDevice();
 
     void get_string(int index, char *dest, int len);
-    bool get_device_descriptor(bool slow);
+    bool get_device_descriptor();
     void set_address(int address);
     bool get_configuration(BYTE index);
     void set_configuration(BYTE config);

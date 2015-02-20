@@ -1,7 +1,7 @@
 #ifndef USBSCSI_H
 #define USBSCSI_H
 
-#include "usb.h"
+#include "usb_base.h"
 #include "usb_device.h"
 #include "blockdev.h"
 #include "file_device.h"
@@ -50,15 +50,15 @@ class UsbScsi : public BlockDevice
 {
     DWORD      id;
     bool       initialized;
-    Usb       *host;
+    UsbBase   *host;
     UsbDevice *device;
     int        lun;
     int		   removable;
     DWORD      capacity;
     int        block_size;
     
-    int        bulk_in;
-    int        bulk_out;
+    struct t_pipe bulk_in;
+    struct t_pipe bulk_out;
 
     BYTE       stat_resp[32];
     BYTE       sense_data[32];

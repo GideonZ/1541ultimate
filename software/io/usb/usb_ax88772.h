@@ -1,7 +1,7 @@
 #ifndef USB_88772_H
 #define USB_88772_H
 
-#include "usb.h"
+#include "___usb.h"
 #include "network_interface.h"
 
 class UsbAx88772Driver : public UsbDriver, NetworkInterface 
