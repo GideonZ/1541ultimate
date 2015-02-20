@@ -26,6 +26,9 @@ port (
     irq_i           : in    std_logic := '0';
     irq_o           : out   std_logic;
     
+    invalidate      : in    std_logic := '0';
+    inv_addr        : in    std_logic_vector(31 downto 0);
+
     io_req          : out   t_io_req;
     io_resp         : in    t_io_resp;
     
@@ -51,12 +54,14 @@ architecture arch of mblite_wrapper is
 begin
     i_proc: entity mblite.cached_mblite
     port map (
-        clock  => clock,
-        reset  => reset,
-        mmem_o => mmem_o,
-        mmem_i => mmem_i,
-        irq_i  => irq_i,
-        irq_o  => irq_o );
+        clock       => clock,
+        reset       => reset,
+        invalidate  => invalidate,
+        inv_addr    => inv_addr,
+        mmem_o      => mmem_o,
+        mmem_i      => mmem_i,
+        irq_i       => irq_i,
+        irq_o       => irq_o );
 
     mem_req <= mem_req_i;
     io_req  <= io_req_i;

@@ -1,4 +1,5 @@
 #include "small_printf.h"
+#include "itu.h"
 
 int irq_count = 0;
 
@@ -17,8 +18,13 @@ int main()
     // enable interrupts
     __asm__ ("msrset r0, 0x02");
     
+    ITU_IRQ_TIMER_LO  = 0x4B;
+	ITU_IRQ_TIMER_HI  = 0x4C;
+    ITU_IRQ_TIMER_EN  = 0x01;
+    ITU_IRQ_ENABLE    = 0x01;
+
     while(1) {
-        printf("IRQ_Count = %d\n", irq_count * 1000);
+        printf("IRQ_Count = %d\r", irq_count);
     }
     return 0;
 }
@@ -27,4 +33,5 @@ int main()
 void myISR(void)
 {
     irq_count ++;
+    ITU_IRQ_CLEAR = 0x01;
 }

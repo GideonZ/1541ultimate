@@ -51,7 +51,7 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 SRCS_C   =	mbstart_app.c \
 			itu.c \
-			usb_test.c \
+			usb_test_nano.c \
 			dump_hex.c \
 			small_printf.c
 

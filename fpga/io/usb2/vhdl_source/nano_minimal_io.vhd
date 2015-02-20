@@ -40,6 +40,7 @@ port (
     suspended       : out std_logic; -- '1' when the USB bus is in the suspended state
     sof_enable      : out std_logic; -- '1' when SOFs shall be generated
     sof_tick        : in  std_logic := '0';
+    interrupt_out   : out std_logic := '0';
     speed           : out std_logic_vector(1 downto 0) ); -- speed indicator of current link
 
 end entity;
@@ -99,6 +100,7 @@ begin
                 stall_i    <= '0';
             end if;
 
+            interrupt_out <= '0';
             reset_filter_st1 <= '0';
 
             if io_write='1' then
@@ -121,6 +123,8 @@ begin
                         speed_i <= io_wdata(1 downto 0);
                     when X"7" =>
                         sof_enable <= '1';
+                    when X"8" =>
+                        interrupt_out <= '1';
                     when X"9" =>
                         reset_filter_st1 <= '1';
                     when others =>

@@ -248,18 +248,6 @@ begin
 
 	PHI2  <= not PHI2 after 507.5 ns; -- 0.98525 MHz
     RSTn  <= '0', 'H' after 6 us, '0' after 100 us, 'H' after 105 us;
-    
---    i_ulpi_phy: entity work.ulpi_phy_bfm
---    generic map (
---        g_rx_interval => 100000 )
---    port map (
---        clock       => ULPI_CLOCK,
---        reset       => ULPI_RESET,
---        
---        ULPI_DATA   => ULPI_DATA,
---        ULPI_DIR    => ULPI_DIR,
---        ULPI_NXT    => ULPI_NXT,
---        ULPI_STP    => ULPI_STP );
 
     i_io_bfm: entity work.io_bus_bfm
     generic map (
@@ -323,6 +311,20 @@ begin
         DQM           => SDRAM_DQM,
         DQ            => SDRAM_DQ
     );
+
+    i_ulpi_phy: entity work.ulpi_master_bfm
+    generic map (
+        g_given_name    => "device" )
+
+    port map (
+        clock           => ULPI_CLOCK,
+        reset           => ULPI_RESET,
+        ulpi_nxt        => ulpi_nxt,
+        ulpi_stp        => ulpi_stp,
+        ulpi_dir        => ulpi_dir,
+        ulpi_data       => ulpi_data );
+
+    i_device: entity work.usb_device_model;
 
     i_rx: entity work.rx
     generic map (c_uart_divisor)

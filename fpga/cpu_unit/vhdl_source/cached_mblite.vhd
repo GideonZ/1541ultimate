@@ -13,6 +13,9 @@ port (
     clock       : in  std_logic;
     reset       : in  std_logic;
 
+    invalidate  : in  std_logic := '0';
+    inv_addr    : in  std_logic_vector(31 downto 0);
+
     mmem_o      : out dmem_out_type;
     mmem_i      : in  dmem_in_type;
 
@@ -67,21 +70,21 @@ BEGIN
         mem_o  => imem_o,
         mem_i  => imem_i );
     
-    d_cache: entity work.dm_simple
-    generic map (
---        g_address_swap  => X"00010000",
-        g_data_register  => false,
-        g_mem_direct     => true,
-        g_registered_out => true )
+    d_cache: entity work.dm_with_invalidate
+--    generic map (
+--        g_address_swap  => X"00010000"
     port map (
-        clock  => clock,
-        reset  => reset,
+        clock      => clock,
+        reset      => reset,
 
-        dmem_i => cdmem_o,
-        dmem_o => cdmem_i,
+        invalidate => invalidate,
+        inv_addr   => inv_addr,
 
-        mem_o  => dmem_o,
-        mem_i  => dmem_i );
+        dmem_i     => cdmem_o,
+        dmem_o     => cdmem_i,
+                   
+        mem_o      => dmem_o,
+        mem_i      => dmem_i );
 
     arb: entity work.dmem_arbiter
     port map (

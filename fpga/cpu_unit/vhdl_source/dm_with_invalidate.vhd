@@ -1,10 +1,10 @@
 --------------------------------------------------------------------------------
--- Entity: dm_simple
+-- Entity: dm_with_invalidate
 -- Date: 2014-12-08  
 -- Author: Gideon     
 --
 -- Description: Simple direct mapped cache controller, compatible with the
---              I/D buses of the mblite 
+--              D bus of the mblite. This version has an invalidate port. 
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -13,39 +13,16 @@ use ieee.numeric_std.all;
 library mblite;
 use mblite.core_Pkg.all;
 
---    type dmem_in_type is record
---        dat_i : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
---        ena_i : std_logic;
---    end record;
---
---    type dmem_out_type is record
---        dat_o : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
---        adr_o : std_logic_vector(CFG_DMEM_SIZE - 1 downto 0);
---        sel_o : std_logic_vector(3 downto 0);
---        we_o  : std_logic;
---        ena_o : std_logic;
---    end record;
-
---    type imem_in_type is record
---        dat_i : std_logic_vector(CFG_dmem_WIDTH - 1 downto 0);
---        ena_i : std_logic;
---    end record;
---
---    type imem_out_type is record
---        adr_o : std_logic_vector(CFG_dmem_SIZE - 1 downto 0);
---        ena_o : std_logic;
---    end record;
-
-entity dm_simple is
+entity dm_with_invalidate is
     generic (
-        g_address_swap  : std_logic_vector(31 downto 0) := X"00000000";
-        g_registered_out: boolean := false;
-        g_data_register : boolean := true;
-        g_mem_direct    : boolean := false );
+        g_address_swap  : std_logic_vector(31 downto 0) := X"00000000" );
     port  (
         clock       : in  std_logic;
         reset       : in  std_logic;
         
+        invalidate  : in  std_logic;
+        inv_addr    : in  std_logic_vector(31 downto 0);
+
         dmem_i      : in  dmem_out_type;
         dmem_o      : out dmem_in_type;
         
@@ -54,10 +31,9 @@ entity dm_simple is
 
 end entity;
 
-architecture arch of dm_simple is
+architecture arch of dm_with_invalidate is
     constant c_cachable_area_bits : natural := 25;
     constant c_cache_size_bits    : natural := 11; -- 2**11 bytes = 2KB
---    constant c_tag_compare_width  : natural := c_cachable_area_bits - c_cache_size_bits;
     constant c_tag_size_bits      : natural := c_cache_size_bits - 2; -- 4 bytes per cache entry
 
     type t_tag is record
@@ -113,9 +89,6 @@ architecture arch of dm_simple is
         return unsigned(v_addr(31 downto c_cachable_area_bits)) = 0;
     end function;
 
---    type t_tag_ram is record
---    
---    end record;
 
     signal tag_ram_a_address    : unsigned(c_tag_size_bits-1 downto 0);
     signal tag_ram_a_rdata      : std_logic_vector(c_tag_width-1 downto 0);
@@ -143,13 +116,12 @@ architecture arch of dm_simple is
 
     signal d_tag_ram_out        : t_tag;
     signal d_miss               : std_logic;
-    signal data_reg             : std_logic_vector(31 downto 0);    
     signal dmem_r               : dmem_out_type;
 
     signal dmem_o_comb          : dmem_in_type;
     signal dmem_o_reg           : dmem_in_type;
 
-    type t_state is (idle, fill, reg);
+    type t_state is (idle, fill);
     signal state        : t_state;
 begin
     i_tag_ram: entity work.dpram_sc
@@ -197,13 +169,9 @@ begin
     d_tag_ram_out <= vector_to_tag(tag_ram_a_rdata);
 
     -- handle the dmem address request here; split it up
-    process(state, dmem_i, dmem_r, mem_i, d_tag_ram_out, cache_ram_a_rdata, data_reg)
+    process(state, dmem_i, dmem_r, mem_i, d_tag_ram_out, cache_ram_a_rdata, invalidate, inv_addr)
     begin
-        if g_registered_out then
-            dmem_o_comb.ena_i <= '0'; -- registered out, use this signal as register load enable
-        else
-            dmem_o_comb.ena_i <= '1'; -- direct out, use this signal as enable output
-        end if;
+        dmem_o_comb.ena_i <= '0'; -- registered out, use this signal as register load enable
         dmem_o_comb.dat_i <= (others => 'X');
         d_miss <= '0';
         
@@ -227,7 +195,13 @@ begin
         cache_ram_b_we      <= '0';
         cache_ram_b_en      <= '0';
 
-        if dmem_i.ena_o = '1' then -- processor address is valid, let's do our thing
+        if invalidate = '1' then
+            tag_ram_a_address <= get_tag_index(inv_addr);
+            tag_ram_a_wdata   <= tag_to_vector(address_to_tag(inv_addr, '0')); -- invalid
+            tag_ram_a_en      <= '1';
+            tag_ram_a_we      <= '1';
+            
+        elsif dmem_i.ena_o = '1' then -- processor address is valid, let's do our thing
             if dmem_i.we_o = '0' then -- read
                 tag_ram_a_en <= '1';
                 cache_ram_a_en <= '1';
@@ -261,10 +235,9 @@ begin
         when fill =>
             dmem_o_comb.ena_i <= '0';
             if mem_i.ena_i = '1' then
-                if g_mem_direct then
-                    dmem_o_comb.dat_i <= mem_i.dat_i; -- ouch, 32-bit multiplexer!
-                    dmem_o_comb.ena_i <= '1';
-                end if;
+                dmem_o_comb.dat_i <= mem_i.dat_i; -- ouch, 32-bit multiplexer!
+                dmem_o_comb.ena_i <= '1';
+
                 if dmem_r.we_o='0' then -- was a read
                     tag_ram_b_en <= '1';
                     cache_ram_b_en <= '1';
@@ -272,29 +245,12 @@ begin
                     cache_ram_b_we <= '1';
                 end if;
             end if;
-
-        when reg =>
-            dmem_o_comb.dat_i <= data_reg; -- ouch, 3rd input to 32-bit multiplexer!
-            dmem_o_comb.ena_i <= '1';
-
         end case;                
         
     end process;
 
---    type dmem_out_type is record
---        dat_o : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
---        adr_o : std_logic_vector(CFG_DMEM_SIZE - 1 downto 0);
---        sel_o : std_logic_vector(3 downto 0);
---        we_o  : std_logic;
---        ena_o : std_logic;
---    end record;
-
-    r_comb: if not g_registered_out generate
-        dmem_o <= dmem_o_comb;
-    end generate;
-    r_reg: if g_registered_out generate
-        dmem_o <= dmem_o_reg;
-    end generate;
+    dmem_o.dat_i <= dmem_o_reg.dat_i;
+    dmem_o.ena_i <= dmem_o_reg.ena_i and not invalidate;
 
     process(state, dmem_r, d_miss)
     begin
@@ -314,29 +270,8 @@ begin
 
             when fill =>
                 if mem_i.ena_i = '1' then
-                    data_reg <= mem_i.dat_i; -- ouch, 32-bit register    
                     dmem_r.ena_o <= '0';
-                    if g_registered_out then
-                        state <= idle;
-                    elsif dmem_i.ena_o = '0' then
-                        if g_data_register then
-                            state <= reg;
-                        else
-                            report "No data register support, but it seems to be needed!"
-                            severity error;
-                        end if;
-                    else
-                        state <= idle;
-                    end if;                
-                end if;
-
-            when reg =>
-                if dmem_i.ena_o = '1' then
-                    if d_miss = '1' then
-                        state <= fill;
-                    else
-                        state <= idle;
-                    end if;
+                    state <= idle;
                 end if;
             end case;
 

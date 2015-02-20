@@ -20,5 +20,6 @@ vcom -work mblite ../../../fpga/cpu_unit/mblite/hw/core/core_wb.vhd
 
 vcom -work mblite ../../../fpga/ip/memory/vhdl_source/dpram_sc.vhd
 vcom -work mblite ../../../fpga/cpu_unit/vhdl_source/dm_simple.vhd
+vcom -work mblite ../../../fpga/cpu_unit/vhdl_source/dm_with_invalidate.vhd
 vcom -work mblite ../../../fpga/cpu_unit/vhdl_source/dmem_arbiter.vhd
 vcom -work mblite ../../../fpga/cpu_unit/vhdl_source/cached_mblite.vhd

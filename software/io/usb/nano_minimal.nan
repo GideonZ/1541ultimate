@@ -17,13 +17,15 @@ PipesEnd = 0x320
 attrib_fifo      = 0x320 ; 128 entries (up to 39F)
 block_fifo       = 0x3A0 ; 64 entries (up to 3DF)
 
-Circ_MemAddr_Start_High = 0x3E0
-Circ_MemAddr_Start_Low  = 0x3E1
-Circ_Size               = 0x3E2
-Circ_Offset             = 0x3E3
+Circ_MemAddr_Start_High = $3E0
+Circ_MemAddr_Start_Low  = $3E1
+Circ_Size               = $3E2
+Circ_Offset             = $3E3
 
-MemBlock_Base_High      = 0x3E4
-MemBlock_Base_Low       = 0x3E5
+MemBlock_Base_High      = $3E4
+MemBlock_Base_Low       = $3E5
+
+RAM_STATUS            = $3E6
 
 User_Command          = $3F0
 User_Command_DevEP    = $3F1
@@ -57,15 +59,16 @@ SPEED                = $26
 
 SET_DO_CHIRP         = $20
 SET_CHIRP_LEVEL      = $21
-SET_CONNECTED        = $22
-SET_OPERATIONAL      = $23
-SET_SUSPENDED        = $24
+;SET_CONNECTED        = $22
+;SET_OPERATIONAL      = $23
+;SET_SUSPENDED        = $24
 SET_SOF_ENABLE       = $27
+SEND_INTERRUPT       = $28
 CLR_DO_CHIRP         = $30
 CLR_CHIRP_LEVEL      = $31
-CLR_CONNECTED        = $32
-CLR_OPERATIONAL      = $33
-CLR_SUSPENDED        = $34
+;CLR_CONNECTED        = $32
+;CLR_OPERATIONAL      = $33
+;CLR_SUSPENDED        = $34
 CLR_SOF_ENABLE       = $37
 
 PULSE_WAKEUP         = $25
@@ -82,6 +85,8 @@ CMD_REQ_MEMREAD      = $8000
 CMD_REQ_MEMWRITE     = $4000
 CMD_REQ_USEBLOCK     = $2000
 CMD_REQ_USECIRC      = $1000
+CMD_TOGGLE_BIT       = $0800
+CMD_REQ_RETRY_ON_NAK = $0400
 
 CMD_BUF_NODATA       = $2000
 
@@ -115,9 +120,11 @@ begin
     OUTP  ULPI_W_OTG_CONTROL
     LOAD  #$45
     OUTP  ULPI_W_FUNC_CTRL
-    OUTP  CLR_CONNECTED
-    OUTP  CLR_OPERATIONAL
-    OUTP  CLR_SUSPENDED
+    LOAD  #0
+    STORE RAM_STATUS
+;    OUTP  CLR_CONNECTED
+;    OUTP  CLR_OPERATIONAL
+;    OUTP  CLR_SUSPENDED
     OUTP  CLR_SOF_ENABLE
     LOAD  Simulation
     BEQ   start  ; Normal mode
@@ -126,11 +133,14 @@ begin
     LOAD  #$66
     OUTP  ULPI_W_OTG_CONTROL  ; turn on our power
 _sim_restart
-    OUTP  SET_CONNECTED
+;    OUTP  SET_CONNECTED
     CALL  _reset_end
-    OUTP  SET_OPERATIONAL
+;    OUTP  SET_OPERATIONAL
+    LOAD  #3
+    STORE RAM_STATUS 
     OUTP  SET_SOF_ENABLE
-
+    OUTP  SEND_INTERRUPT
+    
 _waiting_for_reset_sim
     CALL  check_command
     CALL  check_pipes
@@ -138,9 +148,10 @@ _waiting_for_reset_sim
     BEQ   _waiting_for_reset_sim
     LOAD  #0
     STORE DO_RESET
+    STORE RAM_STATUS
     CALL  clear_fifos
-    OUTP  CLR_OPERATIONAL
-    OUTP  CLR_SOF_ENABLE
+;    OUTP  CLR_OPERATIONAL
+;    OUTP  CLR_SOF_ENABLE
     BRA   _sim_restart
 
 start
@@ -183,7 +194,9 @@ _start2
     AND   #3
     BNE   _device_detected ; one of the bits is '1', so someone is pulling it up
 
-    OUTP  CLR_CONNECTED
+    LOAD  #0
+    STORE RAM_STATUS
+    
 _wait_for_device_attachment
     INP   STATUS
     AND   #3
@@ -195,24 +208,33 @@ _device_detected
     XOR   #1
     OUTP  SPEED
     OUTP  DISCONNECTED
-    OUTP  SET_CONNECTED
+    LOAD  #1
+    STORE RAM_STATUS
+    OUTP  SEND_INTERRUPT
+;    OUTP  SET_CONNECTED
     
 _waiting_for_reset
-    CALL  check_disconnect
-    BNE   _start2
     LOAD  DO_RESET
+    BNE   do_reset
+    CALL  check_disconnect
     BEQ   _waiting_for_reset
-
+_disconnected
+    OUTP  SEND_INTERRUPT
+    BRA   _start2
+    
 do_reset
     ; there is a device present. Let's reset it
     LOAD  #0
     STORE DO_RESET
-    OUTP  CLR_SOF_ENABLE
-    OUTP  CLR_OPERATIONAL
+    STORE RAM_STATUS
+;    OUTP  CLR_SOF_ENABLE
+;    OUTP  CLR_OPERATIONAL
     CALL  clear_fifos
     CALL  bus_reset
-    OUTP  CLR_SUSPENDED
-    OUTP  SET_OPERATIONAL
+;    OUTP  CLR_SUSPENDED
+    LOAD  #3 ; cannot come without connected
+    STORE RAM_STATUS
+;    OUTP  SET_OPERATIONAL
     OUTP  SET_SOF_ENABLE
     LOAD  #2
     CALL  delay
@@ -233,15 +255,16 @@ check_disconnect
     INP   DISCONNECTED
     BPL   _no_disconnect
     OUTP  DISCONNECTED
-    OUTP  CLR_CONNECTED
+    STORE RAM_STATUS
+;    OUTP  CLR_CONNECTED
+;    OUTP  CLR_OPERATIONAL
     OUTP  CLR_SOF_ENABLE
-    OUTP  CLR_OPERATIONAL
 _no_disconnect
     RET
 
 main_loop
     CALL  check_disconnect
-    BNE   _start2
+    BNE   _disconnected
     LOAD  DO_RESET
     BNE   do_reset
     LOAD  DO_SUSPEND
@@ -251,7 +274,10 @@ main_loop
     BRA   main_loop
 
 do_suspend
-    OUTP  SET_SUSPENDED
+;    OUTP  SET_SUSPENDED
+    LOAD  RAM_STATUS
+    OR    #4
+    STORE RAM_STATUS
     OUTP  CLR_SOF_ENABLE
 
 ; Set PHY in the right suspend state
@@ -337,7 +363,10 @@ _do_unsuspend_1
     OUTP  SET_SOF_ENABLE
     CALL  loop_timer
     CALL  loop_timer
-    OUTP  CLR_SUSPENDED
+    LOAD  RAM_STATUS
+    AND   #$FFFB
+    STORE RAM_STATUS
+;    OUTP  CLR_SUSPENDED
     BRA   main_loop
     
 ; The following code issues a reset, and tries to get the device in high speed mode
@@ -520,7 +549,15 @@ _wait_in_cmd
     AND  #CMD_RES_MASK
     CMP  #CMD_RES_DATA
     BEQ  _in_success
-    BRA  _done ; for now, we just break on anything else than DATA
+    CMP  #CMD_RES_NAK
+    BEQ  _check_nak_response_in
+    BRA  _in_done ; for now, we just break on anything else than DATA
+
+_check_nak_response_in
+    LOAD Current_Command
+    AND  #CMD_REQ_RETRY_ON_NAK
+    BNE  _next_in_chunk
+    BRA  _in_done    
 
 _in_success
     LOAD Current_Command_Result
@@ -530,7 +567,7 @@ _in_success
 _check_rx_toggle
     LOAD Current_Command
     XOR  Current_Command_Result
-    AND  #$800 ; toggle bit
+    AND  #CMD_TOGGLE_BIT
     BEQ  _toggle_ok
     LOAD #0
     STORE CurrentLength
@@ -556,7 +593,7 @@ _wait_mem2
     
 _no_mem_write
     LOAD  Current_Command
-    XOR   #$800 ; togglebit
+    XOR   #CMD_TOGGLE_BIT
     STORE Current_Command
 
     LOAD  CurrentBuffer
@@ -566,15 +603,15 @@ _no_mem_write
     LOAD Current_Command_Length
     SUB  CurrentLength
     STORE Current_Command_Length
-    BEQ  _done
-    BMI  _done
+    BEQ  _in_done
+    BMI  _in_done
     LOAD CurrentLength
     CMP  Current_Command_MaxTrans
     BPL  _next_in_chunk
     
-_done
+_in_done
     INP  MEM_CTRL_READY
-    BPL  _done
+    BPL  _in_done
     RET
     
 do_mem_read
@@ -608,13 +645,13 @@ _wait_mem1
     STORE CurrentBuffer
 
     LOAD  Current_Command
-    XOR   #$800 ; togglebit
+    XOR   #CMD_TOGGLE_BIT
     STORE Current_Command
 
     LOAD Current_Command_Length
     SUB  CurrentLength
     STORE Current_Command_Length
-    BEQ  _out_done
+    BEQ  _wait_out_cmd
 
     CALL do_mem_read ; second and subsequent times
 
@@ -624,18 +661,30 @@ _wait_out_cmd
     STORE Current_Command_Result
     AND  #CMD_RES_MASK
     CMP  #CMD_RES_ACK
-    BNE  _done ; for now, we just break on anything else than ACK
-
+    BEQ  _out_success
+    CMP  #CMD_RES_NYET
+    BEQ  _out_success ; actually we should ping now, but we just ignore that for now
+    CMP  #CMD_RES_NAK
+    BEQ  _check_nak_response_out
+    BRA  _out_done  ; exit
+    
+_out_success
     LOAD  Transferred
     ADD   CurrentLength
     STORE Transferred
-    BRA  _next_out_chunk
 
+    LOAD  Current_Command_Length
+    BNE  _next_out_chunk
 _out_done
-    INP  CMD_RESPONSE
-    BPL  _out_done
-    STORE Current_Command_Result
     RET
+
+_check_nak_response_out
+    LOAD Current_Command
+    AND  #CMD_REQ_RETRY_ON_NAK
+    BEQ  _out_done
+    LOAD Current_Command
+    OUTP CMD_REQUEST ; Do it!!
+    BRA  _wait_out_cmd
 
 determine_length
     LOAD Current_Command_Length
@@ -808,8 +857,9 @@ _prepare_block
     LOAD  BlockOffset
     OR    PipeNumber
     CALL  attr_fifo_push
-    LOAD  Current_Command_Result
+    LOAD  Transferred
     CALL  attr_fifo_push
+    OUTP  SEND_INTERRUPT
     CALL  blk_fifo_adv
     BRA   _nxt_pipe
 
@@ -836,6 +886,7 @@ _prepare_circ
     CALL  attr_fifo_push ; address
     LOAD  Transferred
     CALL  attr_fifo_push ; length
+    OUTP  SEND_INTERRUPT
 
     LOAD  Circ_Offset
     ADD   #16
@@ -857,6 +908,7 @@ _unsuccessful
     CALL attr_fifo_push
     LOAD Current_Command_Result
     CALL attr_fifo_push
+    OUTP  SEND_INTERRUPT
     BRA  _nxt_pipe
 
 _other_params

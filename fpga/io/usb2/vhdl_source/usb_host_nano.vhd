@@ -13,6 +13,7 @@ use work.io_bus_pkg.all;
 use work.usb_pkg.all;
 use work.usb_cmd_pkg.all;
 use work.mem_bus_pkg.all;
+use work.endianness_pkg.all;
 
 library unisim;
 use unisim.vcomponents.all;
@@ -38,7 +39,8 @@ entity usb_host_nano is
         sys_mem_resp: in  t_mem_resp_32;
 
         sys_io_req  : in  t_io_req;
-        sys_io_resp : out t_io_resp );
+        sys_io_resp : out t_io_resp;
+        sys_irq     : out std_logic );
 
 end entity;
 
@@ -85,6 +87,8 @@ architecture arch of usb_host_nano is
     signal sys_buf_we      : std_logic;
     signal sys_buf_wdata   : std_logic_vector(31 downto 0);
     signal sys_buf_rdata   : std_logic_vector(31 downto 0);
+    signal sys_buf_wdata_le: std_logic_vector(31 downto 0);
+    signal sys_buf_rdata_le: std_logic_vector(31 downto 0);
 
     signal usb_tx_req      : t_usb_tx_req;
     signal usb_tx_resp     : t_usb_tx_resp;
@@ -95,6 +99,7 @@ architecture arch of usb_host_nano is
 
     signal frame_count     : unsigned(15 downto 0);
     signal sof_tick        : std_logic;
+    signal interrupt       : std_logic;
 begin
 
     i_intf: entity work.usb_host_interface
@@ -156,9 +161,12 @@ begin
         ENB   => sys_buf_en,
         WEB   => sys_buf_we,
         ADDRB => sys_buf_addr,
-        DIB   => sys_buf_wdata,
+        DIB   => sys_buf_wdata_le,
         DIPB  => "0000",
-        DOB   => sys_buf_rdata );
+        DOB   => sys_buf_rdata_le );
+
+    sys_buf_wdata_le <= byte_swap(sys_buf_wdata);
+    sys_buf_rdata <= byte_swap(sys_buf_rdata_le);
         
     i_bridge_to_mem_ctrl: entity work.bridge_to_mem_ctrl
     port map (
@@ -243,7 +251,16 @@ begin
         suspended         => open,
         sof_enable        => sof_enable,
         sof_tick          => sof_tick,
-        speed             => speed );
+        speed             => speed,
+        interrupt_out     => interrupt );
+
+    i_sync2: entity work.pulse_synchronizer
+    port map (
+        clock_in    => clock,
+        pulse_in    => interrupt,
+
+        clock_out   => sys_clock,
+        pulse_out   => sys_irq );
 
     i_cmd_io: entity work.usb_cmd_nano
     port map (

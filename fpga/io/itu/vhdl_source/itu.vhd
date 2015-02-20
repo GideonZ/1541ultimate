@@ -57,8 +57,6 @@ architecture gideon of itu is
     signal irq_edge_flag    : std_logic_vector(7 downto 0);
     signal irq_active       : std_logic_vector(7 downto 0);
     
-    signal uart_irq         : std_logic := '0';
-    
     signal io_req_it        : t_io_req;
     signal io_resp_it       : t_io_resp;
     signal io_req_uart      : t_io_req;
@@ -94,7 +92,7 @@ begin
             end if;
 
             irq_c(7 downto 2) <= irq_in(7 downto 2);
-            irq_c(1) <= uart_irq;
+            irq_c(1) <= io_resp_uart.irq;
             irq_c(0) <= '0';
             if irq_timer_en='1' then
                 if irq_timer_cnt = 0 then
@@ -218,8 +216,10 @@ begin
                 irq_en        <= '1';
                 imask         <= (others => '0');
                 iedge         <= g_edge_init;
+                irq_edge_flag <= (others => '0');
                 timer         <= (others => '0');
                 irq_timer_en  <= '0';
+                irq_timer_select <= '0';
                 irq_timer_val <= X"8000";
                 irq_timer_cnt <= (others => '0');
                 ms_timer      <= (others => '0');

@@ -154,8 +154,8 @@ begin
         type t_state is (idle, wait_sof, wait_split_done, do_token, wait_token_done, do_data, wait_tx_done, wait_device_response, wait_handshake_done );
                          
         signal state            : t_state;
-        signal timeout          : boolean;
-        signal timer            : integer range 0 to 1023 := 0;
+        signal timeout          : std_logic;
+        signal start_timer      : std_logic;
         signal cmd_done         : std_logic;
 
         signal frame_div        : integer range 0 to 8191;
@@ -170,30 +170,17 @@ begin
         complete_split_active <= (usb_cmd_req.do_split = '1') and (usb_cmd_req.split_sc = '1') and (speed = "10");
 
         process(clock)
-            procedure start_timer(value : integer := 767) is
-            begin
-                timeout <= false;
-                timer <= value;
-            end procedure;
-
         begin
             if rising_edge(clock) then
 
                 send_packet_cmd <= '0';
                 
-                if timer = 1 then
-                    timeout <= true;
-                end if;
-                if timer /= 0 then
-                    timer <= timer - 1;
-                end if;
-
                 if frame_div = 800 then -- the last ~10% is unused for new transactions (test)
                     sof_guard <= '1';
                 end if;
                 if frame_div = 0 then
                     frame_div <= 7499; -- microframes
-                    do_sof <= sof_enable; --operational and not suspended;                
+                    do_sof <= sof_enable;               
                     sof_guard <= '0';
                     frame_cnt <= frame_cnt + 1;
                 else
@@ -206,7 +193,6 @@ begin
                 case state is
                 when idle =>
                     receive_en <= '0';
-                    start_timer;
                     if do_sof='1' then
                         sof_tick <= '1';
                         do_sof <= '0';
@@ -321,21 +307,17 @@ begin
                     end case;
                     
                 when wait_tx_done =>
-                    start_timer;
                     if data_transmission_done = '1' then
                         state <= wait_device_response;
                     end if;
 
                 when wait_device_response =>
-                    if usb_tx_resp.busy='1' or usb_rx.receiving='1' then
-                        start_timer;
-                    end if;
                     usb_tx_req_i.pid <= c_pid_ack; 
                     if usb_rx.valid_handsh = '1' then
                         usb_cmd_resp.result <= encode_result(usb_rx.pid);
                         cmd_done <= '1';
                         state <= idle;
-                    elsif usb_rx.error='1' or timeout then
+                    elsif usb_rx.error='1' or timeout='1' then
                         usb_cmd_resp.result <= res_error;
                         cmd_done <= '1';
                         state <= idle;
@@ -378,8 +360,20 @@ begin
             end if;
         end process;
         usb_cmd_resp.done <= cmd_done;
-
         frame_count <= frame_cnt;
+
+        start_timer <= usb_tx_resp.busy or usb_rx.receiving;
+        
+        i_timer: entity work.timer
+        generic map (
+            g_width     => 10 )
+        port map (
+            clock       => clock,
+            reset       => reset,
+            start       => start_timer,
+            start_value => to_unsigned(767, 10),
+            timeout     => timeout );
+        
     end block;
     
 end architecture;

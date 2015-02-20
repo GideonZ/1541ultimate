@@ -595,7 +595,7 @@ data_length      = 0x3F6 ; data length to transfer
 transferred      = 0x3F8 ; amount of data actually transferred
 
 address_high     = 0x3FB ; updated by software only
-tail_pointer_atr = 0x3FC ; updated by software only    
+tail_pointer_atr = 0x3FC ; updated by software only
 head_pointer_atr = 0x3FD ; updated by nano only 
 tail_pointer_blk = 0x3FE ; updated by nano only
 head_pointer_blk = 0x3FF ; updated by software only

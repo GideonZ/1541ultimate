@@ -225,8 +225,6 @@ architecture logic of ultimate_logic_32 is
     signal mem_resp_cart         : t_mem_resp := c_mem_resp_init;
     signal mem_req_debug         : t_mem_req := c_mem_req_init;
     signal mem_resp_debug        : t_mem_resp := c_mem_resp_init;
-    signal mem_req_usb           : t_mem_req := c_mem_req_init;
-    signal mem_resp_usb          : t_mem_resp := c_mem_resp_init;
 
     -- converted to 32 bits
     signal mem_req_32_1541       : t_mem_req_32 := c_mem_req_32_init;
@@ -306,7 +304,6 @@ architecture logic of ultimate_logic_32 is
     signal hw_srq_o         : std_logic := '1';
     
     -- miscellaneous interconnect
-    signal irq_i            : std_logic := '0';
     signal c64_irq_n        : std_logic;
     signal c64_irq          : std_logic;
     signal phi2_tick        : std_logic;
@@ -332,8 +329,10 @@ architecture logic of ultimate_logic_32 is
     signal samp_pwm_right   : std_logic;
     signal trigger_1        : std_logic;
     signal trigger_2        : std_logic;
+    signal sys_irq_usb      : std_logic;
+    signal invalidate       : std_logic;
+    signal inv_addr         : std_logic_vector(31 downto 0);
 begin
-
     i_cpu: entity work.mblite_wrapper
     generic map (
         g_tag       => c_tag_cpu )
@@ -341,6 +340,10 @@ begin
         clock       => sys_clock,
         reset       => sys_reset,
         
+        irq_i       => cpu_io_resp.irq,
+        invalidate  => invalidate,
+        inv_addr    => inv_addr,
+
         -- memory interface
         mem_req     => mem_req_32_cpu,
         mem_resp    => mem_resp_32_cpu,
@@ -348,6 +351,9 @@ begin
         io_req      => cpu_io_req,
         io_resp     => cpu_io_resp );
 
+    invalidate <= '1' when (mem_resp_32_usb.rack_tag = c_tag_usb2) and (mem_req_32_usb.read_writen = '0') else '0';
+    inv_addr(31 downto 26) <= (others => '0');
+    inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_usb.address);
 		
     i_io_arb: entity work.io_bus_arbiter_pri
     generic map (
@@ -372,7 +378,7 @@ begin
         g_capabilities  => c_capabilities,
         g_uart          => g_uart,
         g_frequency     => g_clock_freq,
-        g_edge_init     => "00000001",
+        g_edge_init     => "00000101",
         g_edge_write    => false,
         g_baudrate      => g_baud_rate,
         g_timer_rate    => g_timer_rate)
@@ -388,7 +394,7 @@ begin
         irq_in(5)   => button(0),
         irq_in(4)   => c64_irq,
         irq_in(3)   => '0',
-        irq_in(2)   => '0',
+        irq_in(2)   => sys_irq_usb,
         
         uart_txd    => UART_TXD,
         uart_rxd    => UART_RXD );
@@ -686,10 +692,11 @@ begin
 --    end generate;
 --
     r_usb2: if g_usb_host2 generate
-        i_usb2: entity work.usb_host_controller
+        i_usb2: entity work.usb_host_nano
         generic map (
+            g_tag        => c_tag_usb2,
             g_simulation => g_simulation )
-        port map(
+        port map (
             clock        => ULPI_CLOCK,
             reset        => ulpi_reset,
             ulpi_nxt     => ulpi_nxt,
@@ -698,8 +705,11 @@ begin
             ulpi_data    => ulpi_data,
             sys_clock    => sys_clock,
             sys_reset    => sys_reset,
+            sys_mem_req  => mem_req_32_usb,
+            sys_mem_resp => mem_resp_32_usb,
             sys_io_req   => io_req_usb,
-            sys_io_resp  => io_resp_usb );
+            sys_io_resp  => io_resp_usb,
+            sys_irq      => sys_irq_usb );
     end generate;    
 
     i_sd: entity work.spi_peripheral_io
@@ -960,15 +970,6 @@ begin
         mem_resp_8  => mem_resp_debug,
         mem_req_32  => mem_req_32_debug,
         mem_resp_32 => mem_resp_32_debug );
-
-    i_conv32_usb: entity work.mem_to_mem32(route_through)
-    port map(
-        clock       => sys_clock,
-        reset       => sys_reset,
-        mem_req_8   => mem_req_usb,
-        mem_resp_8  => mem_resp_usb,
-        mem_req_32  => mem_req_32_usb,
-        mem_resp_32 => mem_resp_32_usb );
 
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
