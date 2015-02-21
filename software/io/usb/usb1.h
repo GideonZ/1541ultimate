@@ -7,6 +7,7 @@
 #include "indexed_list.h"
 #include "config.h"
 #include "iomap.h"
+#include "usb_base.h"
 
 #define USB_COMMAND_BASE (USB_BASE + 0x800)
 #define USB_BUFFER_BASE  (USB_BASE + 0x1000)
@@ -79,15 +80,9 @@
 class UsbDevice;
 class UsbDriver;
    
-#ifndef BOOTLOADER
-class Usb : public ConfigurableObject
+class Usb1 : public UsbBase
 {
-#else
-class Usb
-{
-    ConfigStore *cfg;
-#endif
-    int gap;
+	int gap;
     int poll_delay;
 	int se0_seen;
     DWORD pipes[USB_MAX_PIPES];
@@ -96,13 +91,14 @@ class Usb
     void  *objects[USB_MAX_TRANSACTIONS];
     int   input_pipe_numbers[USB_MAX_TRANSACTIONS];
 
+    int  write_ulpi_register(int, int);
+    int  read_ulpi_register(int);
+    int  get_ulpi_status(void);
+    int  get_speed(void);
+
     //ConfigStore *cfg;
 
-    void clean_up(void);
     void clear(void);
-    void attach_root(void);
-    bool install_device(UsbDevice *dev, bool draws_current);
-    void deinstall_device(UsbDevice *dev);
 
     int  bulk_out_actual(int len, int pipe);
     int  interrupt_in(int trans, int pipe, int len);
@@ -114,49 +110,36 @@ public:
 
     bool initialized;
     bool device_present;
-    UsbDevice *device_list[USB_MAX_DEVICES];
-    UsbDevice *first_device(void);
     
-    Usb();
-    ~Usb();
+    Usb1();
+    virtual ~Usb1();
     
-    int get_device_slot(void);
     void print_status(void);
-    int  write_ulpi_register(int, int);
-    int  read_ulpi_register(int);
-    int  get_ulpi_status(void);
-    int  get_speed(void);
     
     void poll(Event &e);
     void init(void);
-    void bus_reset(bool);
-//    void enumerate(void);
+    void bus_reset();
 
-    int  create_pipe(int addr, struct t_endpoint_descriptor *epd);
-    void free_pipe(int index);
-    int  allocate_input_pipe(int len, int pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object); // for reoccuring transactions
+    void attach_root(void);
+    int  control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen);
+    int  control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len);
+    int  allocate_input_pipe(struct t_pipe *pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object);
     void free_input_pipe(int index);
-    
-    int  control_exchange(int addr, void *, int, void *, int, BYTE **);
-    int  control_write(int addr, void *, int, void *, int);
-    
-    void unstall_pipe(int pipe);
-    int  bulk_out(void *buf, int len, int pipe);
-    int  bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe);
-    int  bulk_in(void *buf, int len, int pipe); // blocking
+    void unstall_pipe(struct t_pipe *);
+    int  bulk_out(struct t_pipe *pipe, void *buf, int len);
+    int  bulk_in(struct t_pipe *pipe, void *buf, int len); // blocking
 
-//    int  start_bulk_in(int trans, int pipe, int len);
-//    int  transaction_done(int trans);
-//    int  get_bulk_in_data(int trans, BYTE **buf);    
-//    BYTE *get_bulk_out_buffer(int pipe);
-        
+//    int  create_pipe(int addr, struct t_endpoint_descriptor *epd);
+//    void free_pipe(int index);
+    
+//    int  bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe);
+
     // special bootloader function
     UsbDevice *init_simple(void);
 
     friend class UsbHubDriver;
-    friend class Usb2;
 };
 
-extern Usb usb; // the always existing global
+extern Usb1 usb1; // the always existing global
 
 #endif

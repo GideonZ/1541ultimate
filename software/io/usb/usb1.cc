@@ -3,7 +3,7 @@ extern "C" {
     #include "dump_hex.h"
     #include "small_printf.h"
 }
-#include "usb.h"
+#include "usb1.h"
 #include "usb_device.h"
 
 #include <stdlib.h>
@@ -18,12 +18,12 @@ BYTE c_clear_feature_stall[]   = { 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0
 #define CFG_USB_MAXCUR   0x52
 #define CFG_USB_BOOT     0x53
 
-char *usb_speed[] = { "Full Speed", "High Speed" };
+//char *usb_speed[] = { "Full Speed", "High Speed" };
 char *usb_yesno[] = { "No", "Yes" };
 
 struct t_cfg_definition usb_config[] = {
 	{ CFG_USB_MAXCUR,   CFG_TYPE_VALUE,  "Maximum Bus Current",     "%d0 mA", NULL,       5, 35, 25 },
-	{ CFG_USB_SPEED,    CFG_TYPE_ENUM,   "Bus Speed",                   "%s", usb_speed,  0,  1,  1 },
+//	{ CFG_USB_SPEED,    CFG_TYPE_ENUM,   "Bus Speed",                   "%s", usb_speed,  0,  1,  1 },
 	{ CFG_USB_BOOT,     CFG_TYPE_ENUM,   "Load boot images from USB",   "%s", usb_yesno,  0,  1,  0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
@@ -46,14 +46,14 @@ void my_memcpy(void *a, void *b, int len)
 
 #define memcpy my_memcpy
 
-Usb usb; // the global
+Usb1 usb1; // the global
 
 static void poll_usb(Event &e)
 {
-	usb.poll(e);
+	usb1.poll(e);
 }
 
-Usb :: Usb()
+Usb1 :: Usb1()
 {
     debug = false;
 	poll_delay = 0;
@@ -64,14 +64,14 @@ Usb :: Usb()
 
 #ifndef BOOTLOADER
         poll_list.append(&poll_usb);
-        register_store(0x55534232, "USB settings", usb_config);
+        register_store(0x55534231, "USB1 settings", usb_config);
         if (cfg->get_value(CFG_USB_BOOT) ==0 )
             poll_delay = 6;
 #endif
     }
 }
 
-Usb :: ~Usb()
+Usb1 :: ~Usb1()
 {
 #ifndef BOOTLOADER
 	poll_list.remove(&poll_usb);
@@ -80,7 +80,7 @@ Usb :: ~Usb()
 	initialized = false;
 }
 
-void Usb :: print_status(void)
+void Usb1 :: print_status(void)
 {
     int i, p;
     DWORD transact, pipe;
@@ -118,22 +118,7 @@ void Usb :: print_status(void)
 }
 
 
-UsbDevice *Usb :: first_device(void)
-{
-    return device_list[0];
-}
-
-void Usb :: clean_up()
-{
-    for(int i=0;i<USB_MAX_DEVICES;i++) {
-        if(device_list[i]) {
-        	device_list[i]->deinstall();
-        	delete device_list[i]; // call destructor of device
-        }
-    }
-}
-
-void Usb :: clear()
+void Usb1 :: clear()
 {
     for(int i=0;i<USB_MAX_TRANSACTIONS;i++) {
         USB_TRANSACTION(i) = 0;
@@ -152,16 +137,7 @@ void Usb :: clear()
 	initialized = false;
 }
 
-int Usb :: get_device_slot(void)
-{
-    for(int i=0;i<USB_MAX_DEVICES;i++) {
-        if(!device_list[i])
-            return i;
-    }
-    return -1; // no empty slots
-}
-
-int  Usb :: write_ulpi_register(int addr, int value)
+int  Usb1 :: write_ulpi_register(int addr, int value)
 {
     if(USB_CMD_QUEUE_STAT & USB_CMD_QUEUE_FULL)
         return -1; 
@@ -172,7 +148,7 @@ int  Usb :: write_ulpi_register(int addr, int value)
     return 0;
 }
         
-int  Usb :: read_ulpi_register(int addr)
+int  Usb1 :: read_ulpi_register(int addr)
 {
     if(USB_CMD_QUEUE_STAT & USB_CMD_QUEUE_FULL)
         return -1; 
@@ -191,7 +167,7 @@ int  Usb :: read_ulpi_register(int addr)
     return -2;
 }
 
-int  Usb :: get_ulpi_status(void)
+int  Usb1 :: get_ulpi_status(void)
 {
     if(USB_CMD_QUEUE_STAT & USB_CMD_QUEUE_FULL)
         return -1; 
@@ -206,7 +182,7 @@ int  Usb :: get_ulpi_status(void)
     return (BYTE)value;    
 }
 
-int  Usb :: get_speed(void)
+int  Usb1 :: get_speed(void)
 {
     if(USB_CMD_QUEUE_STAT & USB_CMD_QUEUE_FULL)
         return -1; 
@@ -221,7 +197,7 @@ int  Usb :: get_speed(void)
     return (int)value;
 }
     
-void Usb :: bus_reset(bool hs)
+void Usb1 :: bus_reset()
 {
     // terminate all outstanding transactions
     USB_COMMAND = USB_CMD_DISABLE_HOST;
@@ -234,16 +210,13 @@ void Usb :: bus_reset(bool hs)
     wait_ms(2);
     write_ulpi_register(ULPI_FUNC_CTRL, FUNC_SUSPENDM | FUNC_RESET | FUNC_TERM_SEL | FUNC_XCVR_FS);
     wait_ms(100);
-    if(hs)
-        USB_COMMAND = USB_CMD_BUSRESET_HS;
-    else
-        USB_COMMAND = USB_CMD_BUSRESET_FS;
+	USB_COMMAND = USB_CMD_BUSRESET_HS;
     
     wait_ms(100);
     speed = get_speed();
 }
     
-void Usb :: init(void)
+void Usb1 :: init(void)
 {
     int s;
 
@@ -278,7 +251,7 @@ void Usb :: init(void)
         device_present = true;
 		USB_COMMAND = USB_CMD_SOF_ENABLE;
         wait_ms(30);
-        bus_reset(cfg->get_value(CFG_USB_SPEED) > 0); // set to true for high speed
+        bus_reset();
         wait_ms(30);
         write_ulpi_register(ULPI_IRQEN_RISING, IRQ_HOST_DISCONNECT);
         read_ulpi_register(ULPI_IRQ_STATUS); // clear pending interrupts
@@ -287,7 +260,7 @@ void Usb :: init(void)
     initialized = true;
 }
     
-UsbDevice *Usb :: init_simple(void)
+UsbDevice *Usb1 :: init_simple(void)
 {
     int s;
 
@@ -311,7 +284,7 @@ UsbDevice *Usb :: init_simple(void)
     }
 	initialized = true;
 	USB_COMMAND = USB_CMD_SOF_ENABLE;
-	bus_reset(false); // set to true for high speed
+	bus_reset();
 	wait_ms(30);
 	UsbDevice *dev = new UsbDevice(this);
 	if(dev) {
@@ -323,7 +296,7 @@ UsbDevice *Usb :: init_simple(void)
 	return dev;
 }
 
-void Usb :: attach_root(void)
+void Usb1 :: attach_root(void)
 {
     printf("Attach root!!\n");
     max_current = cfg->get_value(CFG_USB_MAXCUR) * 10;
@@ -336,69 +309,13 @@ void Usb :: attach_root(void)
 		printf("USB Bus Voltage low..\n");
 		return;
 	}
-/*	    
-    if(i != 0) {
-        printf("For some reason i am not getting slot 0.. \n Internal error\n");
-        return;
-    }
-*/
-    UsbDevice *dev = new UsbDevice(this);
+
+	UsbDevice *dev = new UsbDevice(this);
 	install_device(dev, true);
 }
 
-bool Usb :: install_device(UsbDevice *dev, bool draws_current)
-{
-    int idx = get_device_slot();
     
-//    if(!dev->init(idx+1)) {
-//    	printf("Failed to init USB device. Not installed.\n");
-//    	return false;
-//    }
-    bool ok = false;
-    for(int i=0;i<20;i++) { // try 20 times!
-        if(dev->init(idx+1)) {
-            ok = true;
-            break;
-        }
-    }
-    if(!ok)
-        return false;
-
-    if(!draws_current) {
-        device_list[idx] = dev;
-        dev->install();
-        return true; // actually install should be able to return false too
-    } else {
-        int device_curr = int(dev->device_config.max_power) * 2;
-
-        if(device_curr > remaining_current) {
-        	printf("Device current (%d mA) exceeds maximum remaining current (%d mA).\n", device_curr, remaining_current);
-//            delete dev;
-//            return false;
-        }
-//        else {
-        device_list[idx] = dev;
-        remaining_current -= device_curr;
-        dev->install();
-        return true; // actually install should be able to return false too
-//        }
-    }
-    return false;
-}
-
-void Usb :: deinstall_device(UsbDevice *dev)
-{
-    dev->deinstall();
-    for(int i=0;i<USB_MAX_DEVICES;i++) {
-        if(device_list[i] == dev) {
-        	device_list[i] = NULL;
-        	delete dev;
-        	break;
-        }
-    }
-}
-    
-void Usb :: poll(Event &e)
+void Usb1 :: poll(Event &e)
 {
 	if(poll_delay > 0) {
 		--poll_delay;
@@ -464,7 +381,7 @@ void Usb :: poll(Event &e)
             printf("Connected!\n");
             device_present = true;
     		USB_COMMAND = USB_CMD_SOF_ENABLE;
-            bus_reset(cfg->get_value(CFG_USB_SPEED) > 0); // set to true for high speed
+            bus_reset();
             wait_ms(30);
             if(speed == 2) { // this is the method to see if a high speed device is disconnected
 				write_ulpi_register(ULPI_IRQEN_RISING, IRQ_HOST_DISCONNECT);
@@ -475,8 +392,8 @@ void Usb :: poll(Event &e)
         }
     }
 }
-
-int Usb :: create_pipe(int dev_addr, struct t_endpoint_descriptor *epd)
+/*
+int Usb1 :: create_pipe(int dev_addr, struct t_endpoint_descriptor *epd)
 {
     DWORD pipe = 0L;
     
@@ -505,7 +422,7 @@ int Usb :: create_pipe(int dev_addr, struct t_endpoint_descriptor *epd)
     return index+2; // value to be used in transactions
 }
 
-void Usb :: free_pipe(int index)
+void Usb1 :: free_pipe(int index)
 {
     if(index >= (USB_MAX_PIPES+2))
         return;
@@ -513,8 +430,8 @@ void Usb :: free_pipe(int index)
         return;
     pipes[index-2] = 0;
 }
-
-int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen, BYTE **buf)
+*/
+int Usb1 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
 {
     memcpy((void *)&USB_BUFFER(0), out, outlen);
 
@@ -525,24 +442,17 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
     USB_COMMAND = USB_CMD_SCAN_DISABLE;
     wait_ms(1);
 
-    DWORD a = ((DWORD)addr)<<3;
+    DWORD a = ((DWORD)(pipe->DevEP & 0x7F00))>>5;
 	USB_PIPE(0) = 0x04100005 | a; // Dev address a, Endpoint 0, Control Out
 	USB_PIPE(1) = 0x04100001 | a; // Dev address a, Endpoint 0, Control In
 
 	volatile DWORD *transaction;
 	
-//    USB_TRANSACTION(0) = 0x80000001 | (outlen << 9); // outlen bytes to pipe 0, from buffer 0x000, LINK TO NEXT
-//	USB_TRANSACTION(1) = 0x82000015 | (inlen << 9);  // inlen bytes from pipe 1, to buffer 0x020, LINK TO NEXT
-//    USB_TRANSACTION(2) = 0x00800005;                // outlen bytes to pipe 0, zero bytes
-    
+
     USB_TRANSACTION(0) = 0x00000001 | (outlen << 9); // outlen bytes to pipe 0, from buffer 0x000, LINK TO NEXT
 	transaction = &USB_TRANSACTION(0);
 
     USB_COMMAND = USB_CMD_SCAN_ENABLE; // go!
-//    if(debug) {
-//        USB_COMMAND = USB_CMD_SET_DEBUG;
-//        debug = false;
-//    }
     
     int timeout = 100; // 25 ms
 	while((*transaction & 0x3) == 0x01) {
@@ -606,13 +516,10 @@ int Usb :: control_exchange(int addr, void *out, int outlen, void *in, int inlen
     if(in) // user requested copy
         memcpy(in, (void *)&USB_BUFFER(32), received);
 
-    if(buf) // user requested pointer to usb buffer
-        *buf = (BYTE *)&USB_BUFFER(32);
-        
     return received;
 }
 
-int Usb :: control_write(int addr, void *setup_out, int setup_len, void *data_out, int data_len)
+int Usb1 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len)
 {
     memcpy((void *)&USB_BUFFER(0), setup_out, setup_len);
 
@@ -623,7 +530,7 @@ int Usb :: control_write(int addr, void *setup_out, int setup_len, void *data_ou
     USB_COMMAND = USB_CMD_SCAN_DISABLE;
     wait_ms(1);
 
-    DWORD a = ((DWORD)addr)<<3;
+    DWORD a = ((DWORD)(pipe->DevEP & 0x7F00))>>5;
 	USB_PIPE(0) = 0x04100005 | a; // Dev address a, Endpoint 0, Control Out
 	USB_PIPE(1) = 0x02100005 | a; // Dev address a, Endpoint 0, Generic Out, Toggle-bit=1
 
@@ -698,11 +605,12 @@ int Usb :: control_write(int addr, void *setup_out, int setup_len, void *data_ou
     return transmitted;
 }
 
-void Usb :: unstall_pipe(int pipe)
+void Usb1 :: unstall_pipe(struct t_pipe *pipe)
 {
-    DWORD p = USB_PIPE(pipe);
-    int addr = (p >> 3) & 0x7F;
-    int endp = ((p >> 10) & 0x0F);
+    int addr = (pipe->DevEP & 0x7F00) >> 8;
+    int endp = (pipe->DevEP & 0x0F);
+    int index = (pipe->Command);
+    DWORD p = USB_PIPE(index);
 
     if((p&3)==2) {
     	printf("STALLED: ");
@@ -711,33 +619,29 @@ void Usb :: unstall_pipe(int pipe)
 	}
 	printf("Unstalling pipe. Addr = %d. EP = %b\n", addr, endp);
 	c_clear_feature_stall[4] = (BYTE)endp;
-	control_exchange(addr, c_clear_feature_stall, 8, NULL, 8, NULL);
+	control_exchange(pipe, c_clear_feature_stall, 8, NULL, 8);
 	p = (p & -4) | 1;
-	USB_PIPE(pipe) = p;
+	USB_PIPE(index) = p;
 }
 
-int Usb :: bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe)
+/*
+int Usb1 :: bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe)
 {
     memcpy((void *)&USB_BUFFER(256), prefix, prefix_len);
     memcpy((void *)&USB_BUFFER(256+prefix_len), buf, len);
     return bulk_out_actual(prefix_len + len, pipe);
 }
+*/
 
-/*
-BYTE *Usb :: get_bulk_out_buffer(int pipe)
-{
-    return (BYTE *)&USB_BUFFER(256);
-}
-*/    
 
-int Usb :: bulk_out(void *buf, int len, int pipe)
+int Usb1 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 {
     int total = 0;
     char *b = (char *)buf;
     while(len > 0) {
         int len_now = (len > 512)?512:len;
         memcpy((void *)&USB_BUFFER(256), b, len_now);
-        int res = bulk_out_actual(len_now, pipe);
+        int res = bulk_out_actual(len_now, pipe->Command);
         if (res <= 0)
             return total;
         b += res;
@@ -747,37 +651,18 @@ int Usb :: bulk_out(void *buf, int len, int pipe)
     return total;
 }
     
-int Usb :: bulk_out_actual(int len, int pipe)
+int Usb1 :: bulk_out_actual(int len, int pipe)
 {
-
-//    printf("Pipe = %08x\n", USB_PIPE(pipe));
-//    USB_PIPE(pipe) ^= 0x02000000; // toggle data (debug)
-
     // clear pipe's stall status, if any
     DWORD p = USB_PIPE(pipe);
-/*
-    if((p&3)==2) {
-        int addr = (p >> 3) & 0x7F;
-        int endp = ((p >> 10) & 0x0F);
-        printf("Unstalling OUT pipe. Addr = %d. EP = %b\n", addr, endp);
-        c_clear_feature_stall[4] = (BYTE)endp;
-        control_exchange(addr, c_clear_feature_stall, 8, NULL, 8, NULL);
-        p = (p & -4) | 1;
-        USB_PIPE(pipe) = p;
-    }
-*/
-	// remove abort condition
+
+    // remove abort condition
 	if((p&3)==3) {
         p = (p & -4) | 1;
         USB_PIPE(pipe) = p;
 	}
-/*
-    printf("Bulk out: ");
-    for(int i=0;i<len;i++) 
-        printf("%b ", ((BYTE *)buf)[i]);
-    printf(".\n");
-*/
-    volatile DWORD *transaction = &USB_TRANSACTION(4);
+
+	volatile DWORD *transaction = &USB_TRANSACTION(4);
     USB_TRANSACTION(4) = 0x10000005 | (DWORD)(len << 9) | (DWORD)(pipe << 4);
     
     int timeout = 5000;
@@ -800,30 +685,19 @@ int Usb :: bulk_out_actual(int len, int pipe)
     return len;
 }
 
-int Usb :: bulk_in(void *buf, int len, int pipe)
+int Usb1 :: bulk_in(struct t_pipe *pipe, void *buf, int len)
 {
     int new_len;
     BYTE *buffer = (BYTE*)buf;
     
-	// clear pipe's stall status, if any
-    DWORD p = USB_PIPE(pipe);
-
-    if((p&3)==2) {
-    	printf("*** WARNING IN-PIPE IS STALLED ***\n");
-
-    	int addr = (p >> 3) & 0x7F;
-        int endp = ((p >> 10) & 0x0F) | 0x80;
-        printf("Unstalling IN pipe. Addr = %d. EP = %b\n", addr, endp);
-        c_clear_feature_stall[4] = (BYTE)endp;
-        control_exchange(addr, c_clear_feature_stall, 8, NULL, 8, NULL);
-        p = (p & -4) | 1;
-        USB_PIPE(pipe) = p;
-    }
+    int index = pipe->Command;
+    // clear pipe's stall status, if any
+    DWORD p = USB_PIPE(index);
 
 	// remove abort condition
 	if((p&3)==3) {
         p = (p & -4) | 1;
-        USB_PIPE(pipe) = p;
+        USB_PIPE(index) = p;
 	}
 
     volatile DWORD *transaction = &USB_TRANSACTION(3);
@@ -836,8 +710,8 @@ int Usb :: bulk_in(void *buf, int len, int pipe)
         if(current > 512)  // or max pipe, but hardware should already split into small chunks
             current = 512;
 
-        USB_TRANSACTION(3) = 0x30000005 | (DWORD)(current << 9) | (DWORD)(pipe << 4);
-//        USB_TRANSACTION(3) = 0x30000005 | (DWORD)(len << 9) | (DWORD)(pipe << 4);
+        USB_TRANSACTION(3) = 0x30000005 | (DWORD)(current << 9) | (DWORD)(index << 4);
+//        USB_TRANSACTION(3) = 0x30000005 | (DWORD)(len << 9) | (DWORD)(index << 4);
         
         int timeout = 5000; 
         while((*transaction & 0x3) == 0x01) {
@@ -852,7 +726,7 @@ int Usb :: bulk_in(void *buf, int len, int pipe)
         }
     
         if((*transaction & 0x3) == 0x03) { // error
-            printf("ERROR IN: pipe status = %8x\n", USB_PIPE(pipe));
+            printf("ERROR IN: pipe status = %8x\n", USB_PIPE(index));
             return 0;
         }
 
@@ -863,7 +737,7 @@ int Usb :: bulk_in(void *buf, int len, int pipe)
     
     //    printf("len = %d. new len = %d\n", len, new_len);
         if(!new_len)
-            printf("No data. Pipe: %8x\n", USB_PIPE(pipe));
+            printf("No data. Pipe: %8x\n", USB_PIPE(index));
     
         memcpy(buffer, (void *)&USB_BUFFER(768), new_len);
         buffer += new_len;
@@ -874,7 +748,7 @@ int Usb :: bulk_in(void *buf, int len, int pipe)
 }
 
 
-int Usb :: allocate_input_pipe(int len, int pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object)
+int Usb1 :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object)
 {
     // find free transaction
     int index = -1;
@@ -887,7 +761,7 @@ int Usb :: allocate_input_pipe(int len, int pipe, void(*callback)(BYTE *buf, int
     if(index == -1)
         return -1;
 
-    if(len > 8) // bigger sizes not yet supported as we need an allocator or DMA mode
+    if(pipe->Length > 8) // bigger sizes not yet supported as we need an allocator or DMA mode
         return -1;
         
     int offset = 1280 + (8 * index);
@@ -897,12 +771,12 @@ int Usb :: allocate_input_pipe(int len, int pipe, void(*callback)(BYTE *buf, int
 
     callbacks[index] = callback;
     objects[index] = object;
-    input_pipe_numbers[index] = pipe;
+    input_pipe_numbers[index] = pipe->Command;
 
     return index;
 }
 
-void Usb :: free_input_pipe(int index)
+void Usb1 :: free_input_pipe(int index)
 {
     if(index < 5)
         return;
@@ -914,7 +788,7 @@ void Usb :: free_input_pipe(int index)
     }
 }
 
-int Usb :: interrupt_in(int trans, int pipe, int len)
+int Usb1 :: interrupt_in(int trans, int pipe, int len)
 {
     int offset = transactions[trans];
     volatile DWORD *tr = &USB_TRANSACTION(trans);
@@ -947,34 +821,3 @@ int Usb :: interrupt_in(int trans, int pipe, int len)
     } 
     return 0;    
 }
-/*
-// FIXME!! This function can only be used by one pipe, since we use static allocation of our buffer!
-int Usb :: start_bulk_in(int trans, int pipe, int len)
-{
-    volatile DWORD *tr = &USB_TRANSACTION(trans);
-    int offset = 0x600;
-    DWORD opcode = (offset << 20) | (len << 9) | (pipe << 4) | 0x05; // busy | bulk
-    *tr = opcode;
-}
-
-int Usb :: transaction_done(int trans)
-{
-    volatile DWORD *tr = &USB_TRANSACTION(trans);
-    DWORD readback_status = (*tr) & 3;
-    if (readback_status == 2)
-        return 1;
-    if (readback_status == 3)
-        return -1;
-    return 0;
-}
-
-int Usb :: get_bulk_in_data(int trans, BYTE **buf)
-{
-    volatile DWORD *tr = &USB_TRANSACTION(trans);
-    int datalen = 512 - (int)((*tr >> 9) & 0x7FF);
-    if(datalen < 0)
-        datalen = 0;
-    *buf = (BYTE *)&USB_BUFFER(0x600);
-    return datalen;
-}
-*/

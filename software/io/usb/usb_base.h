@@ -45,7 +45,7 @@ public:
     UsbDevice *first_device(void);
 
     void clean_up(void);
-    void attach_root(void);
+    virtual void attach_root(void);
     bool install_device(UsbDevice *dev, bool draws_current);
     void deinstall_device(UsbDevice *dev);
 
