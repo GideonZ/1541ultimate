@@ -3,7 +3,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 library work;
-use work.usb_pkg.all;
+use work.usb1_pkg.all;
 use work.tl_vector_pkg.all;
 use work.tl_string_util_pkg.all;
 use work.tl_flat_memory_model_pkg.all;
@@ -47,7 +47,7 @@ architecture tb of tb_ulpi_host is
     signal rx_error        : std_logic := '0';
 begin
 
-    i_mut: entity work.ulpi_host
+    i_mut: entity work.usb1_ulpi_host
     port map (
         clock       => clock,
         reset       => reset,

@@ -2,7 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-entity ulpi_phy_bfm is
+entity usb1_ulpi_phy_bfm is
 generic (
     g_rx_interval   : integer := 100 );
 port (
@@ -14,9 +14,9 @@ port (
     ULPI_NXT    : out   std_logic;
     ULPI_STP    : in    std_logic );
 
-end ulpi_phy_bfm;
+end usb1_ulpi_phy_bfm;
     
-architecture gideon of ulpi_phy_bfm is
+architecture gideon of usb1_ulpi_phy_bfm is
 
     type t_state is (idle, sending, receiving, read_reg, read_reg2, read_reg3, write_reg, status_update);
     signal state            : t_state;

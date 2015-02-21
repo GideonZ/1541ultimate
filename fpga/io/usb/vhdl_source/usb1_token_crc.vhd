@@ -14,16 +14,16 @@
 library ieee;
 use ieee.std_logic_1164.all;
 
-entity token_crc is
+entity usb1_token_crc is
 port (
     clock       : in  std_logic;
     sync        : in  std_logic;
     token_in    : in  std_logic_vector(10 downto 0);
     
     crc         : out std_logic_vector(4 downto 0) );
-end token_crc;
+end usb1_token_crc;
 
-architecture Gideon of token_crc is
+architecture Gideon of usb1_token_crc is
 --    signal crc_reg   : std_logic_vector(4 downto 0) := (others => '0');
     constant polynom : std_logic_vector(4 downto 0) := "00100";
 -- CRC-5 = x5 + x2 + 1

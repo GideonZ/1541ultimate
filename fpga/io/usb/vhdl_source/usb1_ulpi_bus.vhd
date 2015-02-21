@@ -2,7 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-entity ulpi_bus is
+entity usb1_ulpi_bus is
 port (
     clock       : in    std_logic;
     reset       : in    std_logic;
@@ -36,11 +36,11 @@ port (
     rx_store    : out   std_logic );
 
     attribute keep_hierarchy : string;
-    attribute keep_hierarchy of ulpi_bus : entity is "yes";
+    attribute keep_hierarchy of usb1_ulpi_bus : entity is "yes";
 
-end ulpi_bus;
+end usb1_ulpi_bus;
     
-architecture gideon of ulpi_bus is
+architecture gideon of usb1_ulpi_bus is
     signal ulpi_data_out    : std_logic_vector(7 downto 0);
 
     signal ulpi_data_in     : std_logic_vector(7 downto 0);

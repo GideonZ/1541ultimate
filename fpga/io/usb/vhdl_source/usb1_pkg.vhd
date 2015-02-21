@@ -3,7 +3,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-package usb_pkg is
+package usb1_pkg is
 
     type t_transaction_type  is ( control, bulk, interrupt, isochronous );
     type t_transaction_state is ( none, busy, done, error );
@@ -82,7 +82,7 @@ package usb_pkg is
 
 end package;
 
-package body usb_pkg is
+package body usb1_pkg is
     function data_to_t_pipe(i: std_logic_vector(31 downto 0)) return t_pipe is
         variable ret : t_pipe;
     begin

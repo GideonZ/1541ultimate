@@ -2,7 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-entity ulpi_tx is
+entity usb1_ulpi_tx is
 port (
     clock       : in    std_logic;
     reset       : in    std_logic;
@@ -38,9 +38,9 @@ port (
     reset_last      : in std_logic;
     reset_data      : in std_logic );
 
-end ulpi_tx;
+end usb1_ulpi_tx;
 
-architecture gideon of ulpi_tx is
+architecture gideon of usb1_ulpi_tx is
     type t_state is (idle, crc_1, crc_2, token1, token2, token3,
                      reset_pkt, transmit,
                      wait4next, write_end, handshake, gap, gap2);
@@ -230,14 +230,14 @@ begin
     crc_sync     <= '1' when (state = idle) else '0';
     busy         <= '0' when (state = idle) else '1'; -- or (state = gap) else '1';
         
-    i_token_crc: entity work.token_crc
+    i_token_crc: entity work.usb1_token_crc
     port map (
         clock       => clock,
         sync        => '1',
         token_in    => token,
         crc         => token_crc );
 
-    i_data_crc: entity work.data_crc
+    i_data_crc: entity work.usb1_data_crc
     port map (
         clock       => clock,
         sync        => crc_sync,

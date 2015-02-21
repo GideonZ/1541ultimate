@@ -3,9 +3,9 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 library work;
-use work.usb_pkg.all;
+use work.usb1_pkg.all;
 
-entity ulpi_host is
+entity usb1_ulpi_host is
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
@@ -62,9 +62,9 @@ port (
 
     rx_error        : in  std_logic );
         
-end ulpi_host;
+end usb1_ulpi_host;
 
-architecture functional of ulpi_host is
+architecture functional of usb1_ulpi_host is
     signal frame_div    : integer range 0 to 65535;
     signal frame_cnt    : unsigned(13 downto 0) := (others => '0');
     signal do_sof       : std_logic;

@@ -10,7 +10,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 
-entity data_crc is
+entity usb1_data_crc is
 port (
     clock       : in  std_logic;
     sync        : in  std_logic;
@@ -18,9 +18,9 @@ port (
     data_in     : in  std_logic_vector(7 downto 0);
     
     crc         : out std_logic_vector(15 downto 0) );
-end data_crc;
+end usb1_data_crc;
 
-architecture Gideon of data_crc is
+architecture Gideon of usb1_data_crc is
     constant polynom : std_logic_vector(15 downto 0) := X"8004";
 -- CRC-5 = x5 + x2 + 1
 

@@ -3,10 +3,10 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 library work;
-use work.usb_pkg.all;
+use work.usb1_pkg.all;
 
 
-entity bus_reset is
+entity usb1_bus_reset is
 generic (
     g_simulation    : boolean := false );
 port (
@@ -44,9 +44,9 @@ port (
     user_last   : out   std_logic;
     user_valid  : out   std_logic );
 
-end bus_reset;
+end usb1_bus_reset;
 
-architecture functional of bus_reset is
+architecture functional of usb1_bus_reset is
     type t_state is (idle, start_reset, set_se0, listen_chirp,
                      wait_chirp_end, setup_chirp, hub_chirp_k, hub_chirp_j,
                      reset_end, reset_finished,

@@ -26,7 +26,7 @@ architecture tb of data_crc_tb is
         X"80", X"06", X"00", X"01", X"00", X"00", X"40", X"00" );
 begin
 
-    i_mut: entity work.data_crc
+    i_mut: entity work.usb1_data_crc
     port map (
         clock       => clock,
         sync        => sync,

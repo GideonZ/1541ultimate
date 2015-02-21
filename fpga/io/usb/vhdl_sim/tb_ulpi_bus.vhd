@@ -31,7 +31,7 @@ begin
     clock <= not clock after 10 ns;
     reset <= '1', '0' after 100 ns;
 
-    i_mut: entity work.ulpi_bus
+    i_mut: entity work.usb1_ulpi_bus
     port map (
         clock       => clock,
         reset       => reset,
@@ -56,7 +56,7 @@ begin
         rx_store    => rx_store,
         rx_valid    => rx_valid );
 
-    i_bfm: entity work.ulpi_phy_bfm
+    i_bfm: entity work.usb1_ulpi_phy_bfm
     port map (
         clock       => clock,
         reset       => reset,

@@ -29,7 +29,7 @@ begin
     clock <= not clock after 10 ns;
     reset <= '1', '0' after 100 ns;
 
-    i_rx: entity work.ulpi_rx
+    i_rx: entity work.usb1_ulpi_rx
     port map (
         clock           => clock,
         reset           => reset,

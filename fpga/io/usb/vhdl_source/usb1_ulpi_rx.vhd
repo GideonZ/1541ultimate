@@ -3,9 +3,9 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 library work;
-use work.usb_pkg.all;
+use work.usb1_pkg.all;
 
-entity ulpi_rx is
+entity usb1_ulpi_rx is
 generic (
     g_allow_token   : boolean := true );
 port (
@@ -29,9 +29,9 @@ port (
 
     error           : out std_logic );
 
-end ulpi_rx;
+end usb1_ulpi_rx;
 
-architecture gideon of ulpi_rx is
+architecture gideon of usb1_ulpi_rx is
     type t_state is (idle, token1, token2, check_token, check_token2, resync,
                      data, data_check, handshake );
     signal state        : t_state;
@@ -158,7 +158,7 @@ begin
     end process;
 
     r_token: if g_allow_token generate
-        i_token_crc: entity work.token_crc
+        i_token_crc: entity work.usb1_token_crc
         port map (
             clock       => clock,
             sync        => '1',
@@ -169,7 +169,7 @@ begin
     crc_sync <= '1' when state = idle else '0';
     crc_dvalid <= rx_store when state = data else '0';
     
-    i_data_crc: entity work.data_crc
+    i_data_crc: entity work.usb1_data_crc
     port map (
         clock       => clock,
         sync        => crc_sync,

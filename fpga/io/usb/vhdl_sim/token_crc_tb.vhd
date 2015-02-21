@@ -21,7 +21,7 @@ architecture tb of token_crc_tb is
     signal total    : std_logic_vector(15 downto 0);
 begin
 
-    i_mut: entity work.token_crc
+    i_mut: entity work.usb1_token_crc
     port map (
         clock       => clock,
         sync        => '1',
