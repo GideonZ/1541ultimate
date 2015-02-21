@@ -1,6 +1,7 @@
 ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_bus_splitter.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_bus_bridge.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_dummy.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/mem_bus_pkg.vhd \
@@ -19,6 +20,8 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/oc_pusher/vhdl_source/oc_pusher.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/synchroniser/vhdl_source/synchroniser.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/synchroniser/vhdl_source/level_synchronizer.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/async_fifo/vhdl_source/gray_code_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/async_fifo/vhdl_source/async_fifo.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/fall_through/vhdl_source/fall_through_add_on.vhd \
@@ -31,6 +34,10 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_slave.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_peripheral.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/real_time_clock.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_alu.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_cpu.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/audio_select/vhdl_source/audio_select.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/tx.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/rx.vhd \
@@ -48,15 +55,26 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v4b.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v5.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/spike_filter/vhdl_source/spike_filter.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb1_pkg.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb1_ulpi_bus.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb1_token_crc.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb1_data_crc.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb1_ulpi_tx.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb1_ulpi_rx.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb1_ulpi_host.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb1_bus_reset.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/io/usb/vhdl_source/usb1_host_io.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/data_crc.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/timer.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/host_sequencer.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/nano_minimal_io.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/token_crc.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/token_crc_19.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/token_crc_check.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/ulpi_bus.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/ulpi_pkg.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/ulpi_rx.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/ulpi_tx.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_cmd_nano.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_cmd_pkg.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_host_nano.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_host_interface.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/bridge_to_mem_ctrl.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/mem_addr_counter.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/mem_remain_counter.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_memory_ctrl.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/icap/vhdl_source/icap_pkg.vhd \
@@ -125,9 +143,30 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/zpu/vhdl_source/zpu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/zpu/vhdl_source/zpu_profiler.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/cpu_wrapper_zpu.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/mblite_wrapper.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/mem32k.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/mem16k.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/mem4k.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/config_pkg.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/std/std_Pkg.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/std/dsram.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/std/sram.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/std/sram_4en.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/core_Pkg.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/decode.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/execute.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/fetch.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/gprf.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/mem.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/core.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/core_address_decoder.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/core_wb_adapter.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/mblite/hw/core/core_wb.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/ip/memory/vhdl_source/dpram_sc.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/dm_simple.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/dm_with_invalidate.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/dmem_arbiter.vhd \
+				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/cached_mblite.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/cart_slot_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/cart_slot_registers.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_timing.vhd \
@@ -140,4 +179,4 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/reu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/s3e_clockgen.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/s3a_clockgen.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic.vhd
+				vhdl,work,$(ULTIMATE_FPGA)/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic_32.vhd \
