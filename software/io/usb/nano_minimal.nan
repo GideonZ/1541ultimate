@@ -531,7 +531,8 @@ _execute_cmd
     OUTP MEM_ADDR_LO
     LOAD Current_Command_DevEP
     OUTP CMD_DEVICE_ENDPOINT
-
+    LOAD #3
+    STORE AllowedErrors
     LOAD  #0
     STORE Transferred
     LOAD  Current_Command
@@ -552,7 +553,14 @@ _wait_in_cmd
     BEQ  _in_success
     CMP  #CMD_RES_NAK
     BEQ  _check_nak_response_in
-    BRA  _in_done ; for now, we just break on anything else than DATA
+    CMP  #CMD_RES_ERROR
+    BNE  _in_done ; I don't know how to handle this
+_check_in_error
+    LOAD  AllowedErrors
+    BEQ   _in_done ; no more!
+    SUB   #1
+    STORE AllowedErrors
+    BRA   _next_in_chunk ; Retry!
 
 _check_nak_response_in
     LOAD Current_Command
@@ -564,6 +572,8 @@ _in_success
     LOAD Current_Command_Result
     AND  #CMD_RES_LEN_MASK
     STORE CurrentLength
+    LOAD #3
+    STORE AllowedErrors
 
 _check_rx_toggle
     LOAD Current_Command
@@ -663,13 +673,24 @@ _wait_out_cmd
     BEQ  _out_success ; actually we should ping now, but we just ignore that for now
     CMP  #CMD_RES_NAK
     BEQ  _check_nak_response_out
+    CMP  #CMD_RES_ERROR
     BRA  _out_done  ; exit
+
+_check_out_error
+    LOAD AllowedErrors
+    BEQ  _out_done ; exit
+    SUB  #1
+    STORE AllowedErrors
+    BRA  _retry_out
     
 _out_success
     LOAD  Current_Command
     XOR   #CMD_TOGGLE_BIT
     STORE Current_Command
 
+    LOAD  #3
+    STORE AllowedErrors
+    
     LOAD  Transferred
     ADD   CurrentLength
     STORE Transferred
@@ -690,6 +711,7 @@ _check_nak_response_out
     LOAD Current_Command
     AND  #CMD_REQ_RETRY_ON_NAK
     BEQ  _out_done
+_retry_out
     LOAD Current_Command
     OUTP CMD_REQUEST ; Do it!!
     BRA  _wait_out_cmd
@@ -703,6 +725,8 @@ _no_truncate
     STORE CurrentLength
     RET
 
+AllowedErrors
+    .dw 0
 Transferred
     .dw 0
 CurrentLength
