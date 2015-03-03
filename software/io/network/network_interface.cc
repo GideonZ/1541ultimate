@@ -51,7 +51,7 @@ void NetworkInterface :: poll()
         printf("**** NETIF IS NOW UP ****\n");
         if_up = true;
         echo_init();
-        ftpd_init();
+//        ftpd_init();
         //etharp_request(netif, &(netif->gw));
     } else if(!netif_is_up(netif) && if_up) {
         printf("#### NETIF IS NOW DOWN ####\n");

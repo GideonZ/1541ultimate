@@ -43,9 +43,9 @@ typedef unsigned long   mem_ptr_t;
 #define X8_F  "b"
 #define U16_F "d"
 #define S16_F "d"
-#define X16_F "x"
+#define X16_F "4x"
 #define U32_F "d"
 #define S32_F "d"
-#define X32_F "x"
+#define X32_F "8x"
 
 #endif

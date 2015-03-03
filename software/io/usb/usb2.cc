@@ -9,23 +9,41 @@ extern "C" {
 extern BYTE  _binary_nano_minimal_b_start;
 extern DWORD _binary_nano_minimal_b_size;
 
+WORD *attr_fifo_data = (WORD *)ATTR_FIFO_BASE;
+WORD *block_fifo_data = (WORD *)BLOCK_FIFO_BASE;
+
 Usb2 usb2; // the global
+
+volatile int irq_count;
+
+void usb_irq(void) __attribute__ ((interrupt_handler));
 
 __inline WORD le16_to_cpu(WORD h)
 {
     return (h >> 8) | (h << 8);
 }
 
-
 static void poll_usb2(Event &e)
 {
 	usb2.poll(e);
+}
+
+void usb_irq() {
+	BYTE act = ITU_IRQ_ACTIVE;
+
+	irq_count ++;
+	//if (act & 1) {
+		usb2.irq_handler();
+	//}
+	ITU_IRQ_CLEAR = act;
 }
 
 Usb2 :: Usb2()
 {
     initialized = false;
     prev_status = 0xFF;
+    blockBufferBase = NULL;
+    circularBufferBase = NULL;
     
     if(getFpgaCapabilities() & CAPAB_USB_HOST2) {
 	    init();
@@ -53,6 +71,10 @@ void Usb2 :: init(void)
     }
     device_present = false;
 
+    // initialize the buffers
+    blockBufferBase = new DWORD[384 * BLOCK_FIFO_ENTRIES];
+    circularBufferBase = new BYTE[4096];
+
     // load the nano CPU code and start it.
     int size = (int)&_binary_nano_minimal_b_size;
     BYTE *src = &_binary_nano_minimal_b_start;
@@ -60,10 +82,41 @@ void Usb2 :: init(void)
     for(int i=0;i<size;i++)
         *(dst++) = *(src++);
     printf("Nano CPU based USB Controller: %d bytes loaded.\n", size);
+    printf("Circular Buffer Base = %p\n", circularBufferBase);
+    memset (circularBufferBase, 0xe0, 4096);
 
-    NANO_START = 1;
+	USB2_CIRC_MEMADDR_START_HI  = ((DWORD)circularBufferBase) >> 16;
+	USB2_CIRC_MEMADDR_START_LO  = ((DWORD)circularBufferBase) & 0xFFFF;
+	USB2_CIRC_BUF_SIZE		  	= 4096;
+	USB2_CIRC_BUF_OFFSET		= 0;
+	USB2_BLOCK_BASE_HI 			= ((DWORD)blockBufferBase) >> 16;
+	USB2_BLOCK_BASE_LO  		= ((DWORD)blockBufferBase) & 0xFFFF;
+
+	for (int i=0;i<BLOCK_FIFO_ENTRIES;i++) {
+		block_fifo_data[i] = WORD(i * 384);
+	}
+	BLOCK_FIFO_HEAD = BLOCK_FIFO_ENTRIES - 1;
+
+	NANO_START = 1;
 
     initialized = true;
+
+/* quick and dirty initialization of USB irq on microblaze */
+    unsigned int pointer = (unsigned int)&usb_irq;
+    unsigned int *vector = (unsigned int *)0x10;
+    vector[0] = (0xB0000000 | (pointer >> 16));
+    vector[1] = (0xB8080000 | (pointer & 0xFFFF));
+
+    // enable interrupts
+    __asm__ ("msrset r0, 0x02");
+
+    ITU_IRQ_TIMER_LO  = 0x4B;
+	ITU_IRQ_TIMER_HI  = 0x4C;
+    ITU_IRQ_TIMER_EN  = 0x01;
+    ITU_IRQ_ENABLE    = 0x04; // usb interrupt
+
+    ITU_MISC_IO = 1; // coherency is on
+
 }
 
 void Usb2 :: poll(Event &e)
@@ -72,6 +125,7 @@ void Usb2 :: poll(Event &e)
 		init();
         return;
     }
+
 	BYTE usb_status = USB2_STATUS;
 	if (prev_status != usb_status) {
 		prev_status = usb_status;
@@ -98,13 +152,48 @@ void Usb2 :: poll(Event &e)
 	}
 }
 
-WORD *attr_fifo_data = (WORD *)ATTR_FIFO_BASE;
+void Usb2 :: irq_handler(void)
+{
+	WORD read1, read2;
+	bool success = true;
+	success &= get_fifo(&read1);
+	success &= get_fifo(&read2);
+
+	if (!success) {
+		printf(":(");
+		return;
+	}
+
+	int pipe = read1 & 0x0F;
+	if ((read1 & 0xFFF0) == 0xFFF0) {
+		if (pipe == 15) {
+			printf("USB Other IRQ. Status = %b\n", USB2_STATUS);
+		} else {
+			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, read2);
+			((UsbDriver *)this->inputPipeObjects[pipe])->pipe_error(pipe);
+		}
+		return;
+	}
+	//printf("%4x,%4x,%d\n", read1, read2, success);
+
+	BYTE *buffer = 0;
+	if (inputPipeBufferMethod[pipe] == e_block) {
+		buffer = (BYTE *) & blockBufferBase[read1 & 0xFFF0];
+	} else {
+		buffer = (BYTE *) & circularBufferBase[read1 & 0xFFF0];
+	}
+	//printf("Calling pipe %d callback... ", pipe);
+	inputPipeCallBacks[pipe](buffer, read2, inputPipeObjects[pipe]);
+}
+
 
 bool Usb2 :: get_fifo(WORD *out)
 {
 	WORD tail = ATTR_FIFO_TAIL;
 	WORD head = ATTR_FIFO_HEAD;
+//	printf("Head: %d, Tail: %d\n", head, tail);
 	if (tail == head) {
+		*out = 0xFFFF;
 		return false;
 	}
 	*out = attr_fifo_data[tail];
@@ -112,6 +201,22 @@ bool Usb2 :: get_fifo(WORD *out)
 	if (tail == ATTR_FIFO_ENTRIES)
 		tail = 0;
 	ATTR_FIFO_TAIL = tail;
+	return true;
+}
+
+
+bool Usb2 :: put_block_fifo(WORD in)
+{
+	WORD tail = BLOCK_FIFO_TAIL;
+	WORD head = BLOCK_FIFO_HEAD;
+	WORD head_next = head + 1;
+	if (head_next == BLOCK_FIFO_ENTRIES)
+		head_next = 0;
+	if (head_next == tail)
+		return false;
+
+	block_fifo_data[head] = in;
+	BLOCK_FIFO_HEAD = head_next;
 	return true;
 }
 
@@ -135,8 +240,48 @@ void Usb2 :: init_pipe(int index, struct t_pipe *init)
 	pipe[PIPE_OFFS_MaxTrans] = init->MaxTrans;
 	pipe[PIPE_OFFS_Interval] = init->Interval;
 	pipe[PIPE_OFFS_SplitCtl] = init->SplitCtl;
-	pipe[PIPE_OFFS_Command]  = init->Command;
+	if (init->Command) {
+		pipe[PIPE_OFFS_Command]  = init->Command;
+		inputPipeCommand[index] = init->Command;
+	} else {
+		WORD command = UCMD_MEMWRITE | UCMD_DO_DATA | UCMD_IN;
+		if (init->Length <= 16) {
+			command |=  UCMD_USE_CIRC;
+			inputPipeBufferMethod[index] = e_circular;
+		} else {
+			command |= UCMD_USE_BLOCK;
+			inputPipeBufferMethod[index] = e_block;
+		}
+		pipe[PIPE_OFFS_Command] = command;
+		inputPipeCommand[index] = command;
+	}
 }
+
+void Usb2 :: pause_input_pipe(int index)
+{
+	WORD *pipe = (WORD *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
+	WORD command = pipe[PIPE_OFFS_Command];
+	if (command != UCMD_PAUSED)
+		inputPipeCommand[index] = command;
+	pipe[PIPE_OFFS_Command] = UCMD_PAUSED; // UCMD_PAUSED is an unused bit to make sure the value != 0
+}
+
+void Usb2 :: resume_input_pipe(int index)
+{
+	WORD *pipe = (WORD *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
+	pipe[PIPE_OFFS_Command] = inputPipeCommand[index];
+}
+
+void Usb2 :: free_input_buffer(int inpipe, BYTE *buffer)
+{
+	if (inputPipeBufferMethod[inpipe] != e_block)
+		return;
+
+	// block returned to queue!
+	unsigned int offset = (unsigned int)buffer - (unsigned int)blockBufferBase;
+	put_block_fifo(WORD(offset >> 2));
+}
+
 
 void Usb2 :: close_pipe(int pipe)
 {
@@ -154,8 +299,10 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
 
 	// wait until it gets zero again
-	while(USB2_CMD_Command)
-		;
+	while(USB2_CMD_Command) {
+//		UART_DATA = '(';
+		wait_ms(1);
+	}
 
 	// printf("Setup Result: %04x\n", USB2_CMD_Result);
 
@@ -170,7 +317,10 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 	USB2_CMD_Command = command;
 
 	// wait until it gets zero again
-	while(USB2_CMD_Command)
+	while(USB2_CMD_Command) {
+//		UART_DATA = '-';
+		wait_ms(1);
+	}
 		;
 
 	DWORD transferred = inlen - USB2_CMD_Length;
@@ -182,8 +332,10 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 		USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // send zero bytes as out packet
 
 		// wait until it gets zero again
-		while(USB2_CMD_Command)
-			;
+		while(USB2_CMD_Command) {
+//			UART_DATA = ')';
+			wait_ms(1);
+		}
 		// printf("Out Result = %4x\n", USB2_CMD_Result);
 	}
 	return transferred;
@@ -237,11 +389,14 @@ int  Usb2 :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(BYTE *buf,
 	inputPipeObjects[index] = object;
 
 	init_pipe(index, pipe);
-	return -1;
+	return index;
 }
 
 void Usb2 :: free_input_pipe(int index)
 {
+	if (index < 0) {
+		return;
+	}
 	close_pipe(index);
 	inputPipeCallBacks[index] = 0;
 	inputPipeObjects[index] = 0;

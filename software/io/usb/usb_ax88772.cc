@@ -55,6 +55,11 @@ void UsbAx88772Driver_bulk_callback(BYTE *data, int data_length, void *object) {
 	((UsbAx88772Driver *)object)->bulk_handler(data, data_length);
 }
 
+void UsbAx88772Driver_free_my_pbuf(void *v) {
+	struct pbuf_custom *p = (struct pbuf_custom *)v;
+	((UsbAx88772Driver *)p->custom_obj)->free_pbuf(p);
+}
+
 /*********************************************************************
 / The driver is the "bridge" between the system and the device
 / and necessary system objects
@@ -118,96 +123,117 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     bulk_in  = dev->find_endpoint(0x82);
     bulk_out = dev->find_endpoint(0x02);
 
-    WORD dummy;
+	bulk_out_pipe.DevEP = (device->current_address << 8) | 3;
+	bulk_out_pipe.MaxTrans = 512;
+	bulk_out_pipe.SplitCtl = 0;
+	bulk_out_pipe.Command = 0;
+
+    WORD dummy_read;
 
     // * 40 1f b0: Write GPIO register
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_gpio, 8,
-                           NULL, 1, NULL);
+                           temp_buffer, 1);
     // * c0 19   : Read PHY address register  (response: e0 10)
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_read_phy_addr, 8,
-                           &dummy, 2, NULL);
+                           temp_buffer, 2);
     // * 40 22 01: Write Software Interface Selection Selection Register
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_softw_sel, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
     // * 40 20 48: Write software reset register
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_softw_rst1, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
     // * 40 20 00: Write software reset register
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_softw_rst2, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
     // * 40 20 20: Write software reset register
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_softw_rst3, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
     // * c0 0f   : Read Rx Control register (response: 18 03)
     // * 40 10 00 00 : write Rx Control register
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_clear_rx_ctrl, 8,
-                           NULL, 1, NULL);
-    // * c0 0f   : read Rx Control regsiter (response: 00 00)
-    host->control_exchange(device->current_address,
+						   temp_buffer, 1);
+    // * c0 0f   : read Rx Control register (response: 00 00)
+    host->control_exchange(&device->control_pipe,
                            c_read_rx_ctrl, 8,
-                           &dummy, 2, NULL);
+                           temp_buffer, 2);
     // % c0 07 10 00 02: Read PHY ID 10, Register address 02 (resp: 3b 00)
-    dummy = read_phy_register(2);
+    dummy_read = read_phy_register(2);
     // % c0 07 10 00 03: Read PHY 10, Reg 03 (resp: 61 18)
-    dummy = read_phy_register(3);
+    dummy_read = read_phy_register(3);
     // * 40 20 08: Write Software reset register
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_softw_rst4, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
     // * 40 20 28: Write Software reset register
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_softw_rst5, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
     // % 40 08 10 -- 00: Write PHY, Reg 00 (data phase: 00 80) - Reset PHY
     write_phy_register(0, 0x8000);
     // % 40 08 10 -- 04: Write PHY, Reg 04 (data phase: e1 01) - Capabilities
     write_phy_register(4, 0x01E1);
     // % c0 07 10 -- 00: Read PHY, Reg 00 (resp: 00 31) - Speed=100,AutoNeg,FullDup
-    dummy = read_phy_register(0);
+    dummy_read = read_phy_register(0);
     // % 40 08 10 -- 00: Write PHY, Reg 00 (data phase: 00 33) - +restart autoneg - unreset
     write_phy_register(0, 0x3300);
     // * 40 1b 36 03 : Write medium mode register
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_medium_mode, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
     // * 40 12 1d 00 12: Write IPG registers
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_ipg_regs, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
     // * 40 10 88 00 : Write Rx Control register, start operation, enable broadcast
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_write_rx_control, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
     // * c0 0f : Read Rx Control Register (response: 88 00)
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_read_rx_control, 8,
-                           &dummy, 2, NULL);
+						   temp_buffer, 2);
     // * c0 1a : Read Medium Status register (response: 36 03)
-    host->control_exchange(device->current_address,
+    host->control_exchange(&device->control_pipe,
                            c_read_medium_mode, 8,
-                           &dummy, 2, NULL);
+                           temp_buffer, 2);
 
 /*
     // % c0 07 10 00 01: Read PHY reg 01 (resp: 09 78) 
-    dummy = read_phy_register(1); 
+    temp_buffer = read_phy_register(1);
     // % c0 07 10 00 01: Read PHY reg 01 (resp: 09 78)
-    dummy = read_phy_register(1); 
+    temp_buffer = read_phy_register(1);
     // % c0 07 10 00 00: Read PHY reg 00 (resp: 00 31)
-    dummy = read_phy_register(0); 
+    temp_buffer = read_phy_register(0);
     // % c0 07 10 00 01: Read PHY reg 01 (resp: 09 78)
-    dummy = read_phy_register(1); 
+    temp_buffer = read_phy_register(1);
     // % c0 07 10 00 04: Read PHY reg 04 (resp: e1 01)
-    dummy = read_phy_register(4); 
+    temp_buffer = read_phy_register(4);
 */
-    irq_transaction = host->allocate_input_pipe(8, device->pipe_numbers[0], UsbAx88772Driver_interrupt_callback, this);
-    bulk_transaction = host->allocate_input_pipe(8, device->pipe_numbers[2], UsbAx88772Driver_bulk_callback, this);
+    struct t_pipe ipipe;
+    ipipe.DevEP = WORD((device->current_address << 8) | 1);
+    ipipe.Interval = 8000; // 1 Hz
+    ipipe.Length = 16; // just read 16 bytes max
+    ipipe.MaxTrans = 64;
+    ipipe.SplitCtl = 0;
+    ipipe.Command = 0; // driver will fill in the command
+
+    irq_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_interrupt_callback, this);
+
+    ipipe.DevEP = WORD((device->current_address << 8) | 2);
+    ipipe.Interval = 1; // fast!
+    ipipe.Length = 1536; // big blocks!
+    ipipe.MaxTrans = 512;
+    ipipe.SplitCtl = 0;
+    ipipe.Command = 0; // driver will fill in the command
+
+    bulk_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_bulk_callback, this);
 
     start_lwip();
 
@@ -226,32 +252,35 @@ void UsbAx88772Driver :: deinstall(UsbDevice *dev)
 void UsbAx88772Driver :: write_phy_register(BYTE reg, WORD value) {
     BYTE c_write_phy_reg[8] = { 0x40, 0x08, 0x10, 0x00, 0xFF, 0x00, 0x02, 0x00 };
     c_write_phy_reg[4] = reg;
-    WORD value_le = le16_to_cpu(value);
-    host->control_exchange(device->current_address,
+
+    host->control_exchange(&device->control_pipe,
                            c_req_phy_access, 8,
-                           NULL, 1, NULL);
-    host->control_write(device->current_address,
+						   temp_buffer, 1);
+    temp_buffer[0] = BYTE(value & 0xFF);
+    temp_buffer[1] = BYTE(value >> 8);
+    host->control_write(&device->control_pipe,
                            c_write_phy_reg, 8,
-                           &value_le, 2);
-    host->control_exchange(device->current_address,
+						   temp_buffer, 2);
+    host->control_exchange(&device->control_pipe,
                            c_release_access, 8,
-                           NULL, 1, NULL);
+						   temp_buffer, 1);
 }
 
 WORD UsbAx88772Driver :: read_phy_register(BYTE reg) {
     BYTE c_read_phy_reg[8] = { 0xC0, 0x07, 0x10, 0x00, 0xFF, 0x00, 0x02, 0x00 };
     c_read_phy_reg[4] = reg;
-    WORD value_le;
-    host->control_exchange(device->current_address,
+
+    host->control_exchange(&device->control_pipe,
                            c_req_phy_access, 8,
-                           NULL, 1, NULL);
-    host->control_exchange(device->current_address,
+						   temp_buffer, 1);
+    host->control_exchange(&device->control_pipe,
                            c_read_phy_reg, 8,
-                           &value_le, 2, NULL);
-    host->control_exchange(device->current_address,
+						   temp_buffer, 2);
+    WORD retval = WORD(temp_buffer[0]) | (WORD(temp_buffer[1]) << 8);
+    host->control_exchange(&device->control_pipe,
                            c_release_access, 8,
-                           NULL, 1, NULL);
-    return le16_to_cpu(value_le);
+						   temp_buffer, 1);
+    return retval;
 }
 
 
@@ -288,119 +317,67 @@ void UsbAx88772Driver :: interrupt_handler(BYTE *irq_data, int data_len)
 
 void UsbAx88772Driver :: bulk_handler(BYTE *usb_buffer, int data_len)
 {
-    DWORD *pul = (DWORD *)usb_buffer;
-    DWORD first = *pul;
+	//printf("Packet %p Len: %d\n", usb_buffer, data_len);
 
-    //printf("%8x\n", first);
-    if (((first >> 16) ^ 0xFFFF) != (first & 0xFFFF)) {
-#if DEBUG_INVALID_PKT
-        printf("Invalid packet\n");
-        printf("%d:%8x:%8x:%8x\n", len, first, (first >> 16) ^ 0xFFFF, first & 0xFFFF);
-        dump_hex(usb_buffer, len);
-#endif
-        return;
-    }
-    int size = first & 0xFFFF; // le16_to_cpu(first >> 16);
-    if (size > 2000) {
-        printf("Invalid size!\n");
-        return;
-    }
-    usb_buffer += 0x1000000;
-    // Now we know the packet is valid; allocate pbuf (chain)
-    struct pbuf *p, *q;
-    p = pbuf_alloc(PBUF_RAW, size, PBUF_POOL);
-  
-    if (p != NULL) {
+	WORD pkt_size  = WORD(usb_buffer[0]) | (WORD(usb_buffer[1])) << 8;
+	WORD pkt_size2 = (WORD(usb_buffer[2]) | (WORD(usb_buffer[3])) << 8) ^ 0xFFFF;
 
-#if ETH_PAD_SIZE
-        pbuf_header(p, -ETH_PAD_SIZE); /* drop the padding word */
-#endif
-        int usb_remain = (size > 508)?508:size;
-        usb_buffer += 4; 
-        q = p;
-        BYTE *qb = (BYTE *)q->payload;
-        int q_remain = q->len;
+	//printf("Packet_sizes: %d %d\n", pkt_size, pkt_size2);
 
-        /* We iterate over the usb chunks, until we have read the entire
-           packet into the pbuf chain. Storing in pbuf chain. */
-        while(size > 0) {
-            int now = (q_remain < usb_remain)?q_remain:usb_remain;
-#if DEBUG_RAW_PKT
-            printf("<- [%d:%d:%d:%p:%d]\n", size, usb_remain, q_remain, usb_buffer, now);
-#endif
-            // copy data
-            memcpy(qb, usb_buffer, now);
-#if DEBUG_RAW_PKT
-            dump_hex_relative(qb, now);
-#endif
-            size -= now;
-            qb += now;
-            q_remain -= now;
-            usb_buffer += now;
-            usb_remain -= now;
-
-            if (size > 0) {
-                if (q_remain == 0) {
-                    q = q->next;
-                    q_remain = q->len;
-                    qb = (BYTE *)q->payload;
-                }
-                if (usb_remain == 0) {
-                    printf("<%d:", size);
-//                    host->start_bulk_in(bulk_transaction, bulk_in, 512);
-//                    while(!host->transaction_done(bulk_transaction))
-//                        ;
-//                    usb_remain = host->get_bulk_in_data(bulk_transaction, &usb_buffer);
-                    printf("%d>", usb_remain);
-                    usb_buffer += 0x1000000;
-                }
-            }
-        }
-    
-#if ETH_PAD_SIZE
-        pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
-#endif
-
-        LINK_STATS_INC(link.recv);
-
-        struct eth_hdr *ethhdr = (eth_hdr *)p->payload;
-        
-        //dump_hex_relative(p->payload, p->len);
-        switch (htons(ethhdr->type)) {
-        /* IP or ARP packet? */
-        case ETHTYPE_IP:
-        case ETHTYPE_ARP:
-#if PPPOE_SUPPORT
-        /* PPPoE packet? */
-        case ETHTYPE_PPPOEDISC:
-        case ETHTYPE_PPPOE:
-#endif /* PPPOE_SUPPORT */
-            /* full packet send to tcpip_thread to process */
-            if (netif->input(p, netif)!=ERR_OK) {
-                LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
-                pbuf_free(p);
-            }
-            break;
-      
-        default:
-            pbuf_free(p);
-            break;
-        }
-
-
-    } else {
-        // drop packet
-        LINK_STATS_INC(link.memerr);
+	if (pkt_size != pkt_size2) {
+		printf("ERROR: Corrupted packet\n");
+		host->free_input_buffer(bulk_transaction, usb_buffer);
         LINK_STATS_INC(link.drop);
-    }
+		return;
+	}
 
+	if (int(pkt_size) != (data_len - 4)) {
+		printf("ERROR: Wrong length?\n");
+		host->free_input_buffer(bulk_transaction, usb_buffer);
+        LINK_STATS_INC(link.drop);
+		return;
+	}
+
+	LINK_STATS_INC(link.recv);
+
+	struct pbuf_custom *pbuf = (struct pbuf_custom *)malloc(sizeof(struct pbuf_custom));
+	if (!pbuf) {
+		printf("No memory");
+		host->free_input_buffer(bulk_transaction, usb_buffer);
+		return;
+	}
+	pbuf->custom_obj = this;
+	pbuf->custom_free_function = UsbAx88772Driver_free_my_pbuf;
+	pbuf->buffer_start = usb_buffer;
+
+	struct pbuf *p = &(pbuf->pbuf);
+	p->flags |= PBUF_FLAG_IS_CUSTOM;
+	p->len = p->tot_len = pkt_size;
+	p->next = NULL;
+	p->payload = usb_buffer + 4;
+	p->ref = 1;
+	p->type = PBUF_REF;
+
+	if (netif->input(p, netif)!=ERR_OK) {
+		LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
+		host->free_input_buffer(bulk_transaction, usb_buffer);
+		pbuf_free(p);
+	}
 }
  	
+void UsbAx88772Driver :: free_pbuf(struct pbuf_custom *p)
+{
+	//printf("FREE PBUF CALLED %p!\n", p->buffer_start);
+	host->free_input_buffer(bulk_transaction, (BYTE *)p->buffer_start);
+	free(p);
+}
+
+
 bool UsbAx88772Driver :: read_mac_address()
 {
-	int i = device->host->control_exchange(device->current_address,
+	int i = device->host->control_exchange(&device->control_pipe,
                                            c_get_mac_address, 8,
-                                           mac_address, 6, NULL);
+                                           mac_address, 6);
     if(i == 6) {
         printf("MAC address:  ");
         for(int i=0;i<6;i++) {
@@ -416,7 +393,7 @@ void UsbAx88772Driver :: write_mac_address(void)
     BYTE c_write_mac[] = { 0x40, 0x14, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00 };
     BYTE new_mac[] = { 0x00, 0x4c, 0x49, 0x4c, 0x49, 0x00 };
 
-    host->control_write(device->current_address,
+    host->control_write(&device->control_pipe,
                         c_write_mac, 8,
                         new_mac, 6);
 
@@ -425,52 +402,22 @@ void UsbAx88772Driver :: write_mac_address(void)
 
 err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p) 
 {
-/*
-	BYTE *usb_buffer = host->get_bulk_out_buffer(bulk_out);
-    int size = p->tot_len;
-    
-    usb_buffer[0] = BYTE(size & 0xFF);
-    usb_buffer[1] = BYTE(size >> 8);
-    usb_buffer[2] = usb_buffer[0] ^ 0xFF;
-    usb_buffer[3] = usb_buffer[1] ^ 0xFF;
-    usb_buffer += 0x1000004;
-    int usb_remain = 508;
-    struct pbuf *q = p;
-    int q_remain = q->len;
-    BYTE *qb = (BYTE *)q->payload;
+	printf("OUTPUT: pbuf = %p. size = %d. p->payload = %p. Size = %d\n", p, sizeof(struct pbuf), p->payload, p->len);
 
-    do {
-#if DEBUG_RAW_PKT
-        printf("-> [%d:%d:%d]\n", size, usb_remain, q_remain);
-#endif
-        int now = (q_remain < usb_remain)?q_remain:usb_remain;
+	BYTE size[4];
+    size[0] = BYTE(p->len & 0xFF);
+    size[1] = BYTE(p->len >> 8);
+    size[2] = size[0] ^ 0xFF;
+    size[3] = size[1] ^ 0xFF;
 
-        // copy data
-        memcpy(usb_buffer, qb, now);
-#if DEBUG_RAW_PKT
-        dump_hex(qb, now);
-#endif
-        size -= now;
-        qb += now;
-        q_remain -= now;
-        usb_buffer += now;
-        usb_remain -= now;
+	if(pbuf_header(p, 4) == 0) {
+		*((DWORD *)p->payload) = *((DWORD *)size);
+	}
 
-        if (usb_remain == 0) {
-            host->bulk_out_actual(512, bulk_out);
-            usb_buffer = host->get_bulk_out_buffer(bulk_out);
-            usb_buffer += 0x1000000;
-            usb_remain = 512;
-        }
-        if (q_remain == 0) {
-            q = q->next;
-            qb = (BYTE *)q->payload;
-            q_remain = q->len;
-        }
-    } while(size > 0);
+	//dump_hex(p, p->len + sizeof(struct pbuf));
 
-    host->bulk_out_actual(512-usb_remain, bulk_out);
-*/
+	host->bulk_out(&bulk_out_pipe, p->payload, p->len);
+
 	return 0;
 }
 

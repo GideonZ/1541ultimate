@@ -196,10 +196,14 @@ small_sprintf(char *str, const char *fmt, ...)
     return (ret);
 }
 
-void my_small_puts(const char *str)
+int my_small_puts(const char *str)
 {
-    while (*str) 
+	int i = 0;
+	while (*str) {
         outbyte(*(str++));
+        i++;
+	}
     outbyte('\r');
     outbyte('\n');
+    return i+1;
 }        

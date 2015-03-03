@@ -97,6 +97,7 @@ public:
 	virtual void install(UsbDevice *dev)     { }
 	virtual void deinstall(UsbDevice *dev)   { }
 	virtual void poll(void)                  { }
+	virtual void pipe_error(int pipe)		 { }
 };
 
 extern IndexedList<UsbDriver *> usb_drivers;

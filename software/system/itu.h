@@ -21,6 +21,7 @@
 #define ITU_MS_TIMER      *((volatile WORD *)(ITU_BASE + 0x22))
 #define ITU_USB_BUSY	  *((volatile BYTE *)(ITU_BASE + 0x24))
 #define ITU_SD_BUSY	      *((volatile BYTE *)(ITU_BASE + 0x25))
+#define ITU_MISC_IO	      *((volatile BYTE *)(ITU_BASE + 0x26))
 
 #define CAPAB_UART          0x00000001
 #define CAPAB_DRIVE_1541_1  0x00000002

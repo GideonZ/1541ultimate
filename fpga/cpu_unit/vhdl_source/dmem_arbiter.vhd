@@ -99,9 +99,9 @@ begin
                 next_state <= idle;
                 delayed_inst <= '0';
             end if;
-        else
+        else -- memory controller cannot process request
             next_state <= state;
-            delayed_inst <= delayed_inst_r;
+            delayed_inst <= delayed_inst_r or imem_i.ena_o;
         end if;
 
         -- input multiplexer

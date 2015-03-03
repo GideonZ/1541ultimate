@@ -28,6 +28,7 @@ port (
     irq_in          : in  std_logic_vector(7 downto 2);
 
     busy_led        : out std_logic;
+    misc_io         : out std_logic_vector(7 downto 0);
                     
     uart_txd        : out std_logic;
     uart_rxd        : in  std_logic := '1';
@@ -191,6 +192,8 @@ begin
                     usb_busy <= io_req_ms.data(0);
                 when c_itu_sd_busy =>
                     sd_busy <= io_req_ms.data(0);
+                when c_itu_misc_io =>
+                    misc_io <= io_req_ms.data;
                 when others =>
                     null;
                 end case;            
@@ -236,6 +239,7 @@ begin
                 ms_timer      <= (others => '0');
                 usb_busy      <= '0';
                 sd_busy       <= '0';
+                misc_io       <= (others => '0');
             end if;
         end if;
     end process;

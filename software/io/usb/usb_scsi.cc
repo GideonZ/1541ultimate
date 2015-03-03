@@ -194,7 +194,7 @@ UsbScsi :: UsbScsi(UsbDevice *d, int unit)
     if(d) {
         host = d->host;
         bulk_in.DevEP  = ((d->current_address) << 8) | bi;
-        bulk_out.DevEP = ((d->current_address) << 8) | d->find_endpoint(0x02);
+        bulk_out.DevEP = ((d->current_address) << 8) | bo;
         bulk_in.MaxTrans = 512; // TODO: Should depend on speed
         bulk_out.MaxTrans = 512; // TODO: Should depend on speed
         bulk_in.Command = 0; // used to store toggle bit

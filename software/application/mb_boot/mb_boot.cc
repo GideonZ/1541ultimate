@@ -13,6 +13,9 @@ void jump_run(DWORD a)
     DWORD *dp = (DWORD *)&function;
     *dp = a;
     function();
+    puts("Application exit.");
+    while(1)
+    	;
 }
 
 #define BOOT2_RUN_ADDR 0x10000

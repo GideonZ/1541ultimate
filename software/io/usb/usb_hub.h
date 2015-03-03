@@ -1,7 +1,7 @@
 #ifndef USB_HUB_H
 #define USB_HUB_H
 
-#include "___usb.h"
+#include "usb_base.h"
 #include "usb_device.h"
 
 class UsbHubDriver : public UsbDriver
@@ -14,11 +14,15 @@ class UsbHubDriver : public UsbDriver
     bool compound;
 
     int  irq_transaction;
+
+    BYTE buf[64];
+    BYTE dummy[16];
     BYTE irq_data[4];
     
-    Usb       *host;
+    UsbBase   *host;
     UsbDevice *device;
-    UsbDevice *children[4];
+    UsbDevice *children[7];
+
 public:
 	UsbHubDriver(IndexedList<UsbDriver *> &list);
 	UsbHubDriver();
@@ -28,7 +32,7 @@ public:
 	bool test_driver(UsbDevice *dev);
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
-//	void poll(void);
+	void poll(void);
 	void interrupt_handler(BYTE *, int);
 };
 

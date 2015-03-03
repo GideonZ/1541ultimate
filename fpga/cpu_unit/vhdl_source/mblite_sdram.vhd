@@ -16,6 +16,12 @@ library work;
 library mblite;
     use mblite.core_Pkg.all;
 
+library std;
+    use std.textio.all;
+
+library work;
+    use work.tl_string_util_pkg.all;
+
 entity mblite_sdram is
 port (
     CLOCK_50        : in    std_logic;
@@ -32,8 +38,6 @@ port (
     SDRAM_DQ        : inout std_logic_vector(7 downto 0) := (others => 'Z');
 
     BUTTON          : in    std_logic_vector(0 to 2);
-    UART_TXD        : out   std_logic;
-    UART_RXD        : in    std_logic;
 
     MOTOR_LEDn      : out   std_logic;
     DISK_ACTn       : out   std_logic ); 
@@ -41,153 +45,31 @@ port (
 end entity;
 
 architecture arch of mblite_sdram is
-    type t_state is (idle, mem_read, mem_write, io_access);
-    signal state        : t_state;
 
-    constant c_tag      : std_logic_vector(7 downto 0) := X"11";
+    constant c_tag_i    : std_logic_vector(7 downto 0) := X"10";
+    constant c_tag_d    : std_logic_vector(7 downto 0) := X"11";
+    constant c_tag_test : std_logic_vector(7 downto 0) := X"91";
     signal reset_in    : std_logic;
     signal clock       : std_logic := '1';
     signal clk_2x      : std_logic := '1';
     signal reset       : std_logic := '0';
     signal inhibit     : std_logic := '0';
     signal is_idle     : std_logic := '0';
-    signal req         : t_mem_req_32 := c_mem_req_32_init;
-    signal resp        : t_mem_resp_32;
+
+    signal mem_req_32_cpu   : t_mem_req_32 := c_mem_req_32_init;
+    signal mem_resp_32_cpu  : t_mem_resp_32 := c_mem_resp_32_init;
+    signal mem_req_32_test  : t_mem_req_32 := c_mem_req_32_init;
+    signal mem_resp_32_test : t_mem_resp_32 := c_mem_resp_32_init;
+    
+    signal mem_req     : t_mem_req_32 := c_mem_req_32_init;
+    signal mem_resp    : t_mem_resp_32;
     signal io_req      : t_io_req;
     signal io_resp     : t_io_resp;
-    signal mmem_o      : dmem_out_type;
-    signal mmem_i      : dmem_in_type;
-
-    type t_int4_array is array(natural range <>) of integer range 0 to 3;
-    --                                               0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F  => 1,2,4,8 byte, 3,C word, F dword
-    constant c_remain   : t_int4_array(0 to 15) := ( 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3 );
-    signal remain       : integer range 0 to 3;
+    signal txd, rxd     : std_logic := '1';
+    signal invalidate      : std_logic := '0';
+    signal inv_addr        : std_logic_vector(31 downto 0) := (others => '0');
 
 begin
-    process(state, resp)
-    begin
-        mmem_i.ena_i <= '0';
-        case state is
-        when idle =>
-            mmem_i.ena_i <= '1';
-        when mem_read | io_access =>
-            mmem_i.ena_i <= '0';
-        when mem_write =>
---            if resp.rack = '1' then
---                mmem_i.ena_i <= '1';
---            end if;
-        when others =>
-            mmem_i.ena_i <= '0';
-        end case;
-    end process;
-    
-    process(clock)
-        impure function get_next_io_byte(a : unsigned(1 downto 0)) return std_logic_vector is
-        begin
-            case a is
-            when "00" =>
-                return mmem_o.dat_o(23 downto 16);
-            when "01" =>
-                return mmem_o.dat_o(15 downto 8);
-            when "10" =>
-                return mmem_o.dat_o(7 downto 0);
-            when "11" =>
-                return mmem_o.dat_o(31 downto 24);
-            when others =>
-                return "XXXXXXXX";
-            end case;                            
-        end function;
-    begin
-        if rising_edge(clock) then
-            io_req.read <= '0';
-            io_req.write <= '0';
-            
-            case state is
-            when idle =>
-                mmem_i.dat_i <= (others => 'X');
-                if mmem_o.ena_o = '1' then
-                    req.address <= unsigned(mmem_o.adr_o(req.address'range));
-                    req.address(1 downto 0) <= "00";
-                    req.byte_en <= mmem_o.sel_o;
-                    req.data <= mmem_o.dat_o;
-                    req.read_writen <= not mmem_o.we_o;
-                    req.tag <= c_tag;
-                    io_req.address <= unsigned(mmem_o.adr_o(19 downto 0));
-                    io_req.data <= get_next_io_byte("11");
-                    
-                    if mmem_o.adr_o(26) = '0' then
-                        req.request <= '1';
-                        if mmem_o.we_o = '1' then
-                            state <= mem_write;
-                        else
-                            state <= mem_read;
-                        end if;
-                    else -- I/O
-                        remain <= c_remain(to_integer(unsigned(mmem_o.sel_o)));
-                        if mmem_o.we_o = '1' then
-                            io_req.write <= '1';
-                        else
-                            io_req.read <= '1';
-                        end if;
-                        state <= io_access;
-                    end if;
-                end if;
-
-            when mem_read =>
-                if resp.rack = '1' then
-                    req.request <= '0';
-                end if;
-                if resp.dack_tag = c_tag then
-                    mmem_i.dat_i <= resp.data;
-                    state <= idle;
-                end if;
-                
-            when mem_write =>
-                if resp.rack = '1' then
-                    req.request <= '0';
-                    state <= idle;
-                end if;
-
-            when io_access =>
-                case io_req.address(1 downto 0) is
-                when "00" =>
-                    mmem_i.dat_i(31 downto 24) <= io_resp.data;
-                when "01" =>
-                    mmem_i.dat_i(23 downto 16) <= io_resp.data;
-                when "10" =>
-                    mmem_i.dat_i(15 downto 8) <= io_resp.data;
-                when "11" =>
-                    mmem_i.dat_i(7 downto 0) <= io_resp.data;
-                when others =>
-                    null;
-                end case;
-
-                if io_resp.ack = '1' then
-                    io_req.data <= get_next_io_byte(io_req.address(1 downto 0));
-
-                    if remain = 0 then
-                        state <= idle;
-                    else
-                        remain <= remain - 1;
-                        io_req.address(1 downto 0) <= io_req.address(1 downto 0) + 1;
-                        if req.read_writen = '0' then
-                            io_req.write <= '1';
-                        else
-                            io_req.read <= '1';
-                        end if;
-                    end if;
-                end if;
-
-            when others =>
-                null;
-            end case;
-
-            if reset='1' then
-                state <= idle;
-            end if;
-        end if;
-    end process;
-
     reset_in <= not BUTTON(1);
 
     i_clk: entity work.s3a_clockgen
@@ -202,6 +84,45 @@ begin
         sys_reset    => reset,
         sys_clock_2x => clk_2x );
 
+
+    i_proc: entity work.mblite_wrapper
+    generic map (
+        g_tag_i    => c_tag_i,
+        g_tag_d    => c_tag_d )
+    port map(
+        clock      => clock,
+        reset      => reset,
+        irq_i      => io_resp.irq,
+        irq_o      => open,
+        invalidate => invalidate,
+        inv_addr   => inv_addr,
+        io_req     => io_req,
+        io_resp    => io_resp,
+        mem_req    => mem_req_32_cpu,
+        mem_resp   => mem_resp_32_cpu   );
+
+    invalidate <= '1' when (mem_resp_32_test.rack_tag = c_tag_test) and (mem_req_32_test.read_writen = '0') else '0';
+    inv_addr(31 downto 26) <= (others => '0');
+    inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_test.address);
+
+
+    i_mem_arb: entity work.mem_bus_arbiter_pri_32
+    generic map (
+        g_ports      => 2,
+        g_registered => false )
+    port map (
+        clock       => clock,
+        reset       => reset,
+        
+        reqs(0)     => mem_req_32_test,
+        reqs(1)     => mem_req_32_cpu,
+
+        resps(0)    => mem_resp_32_test,
+        resps(1)    => mem_resp_32_cpu,
+        
+        req         => mem_req,
+        resp        => mem_resp );        
+
     i_mem_ctrl: entity work.ext_mem_ctrl_v5
     generic map (
         g_simulation => false )
@@ -213,8 +134,8 @@ begin
         inhibit     => inhibit,
         is_idle     => is_idle,
     
-        req         => req,
-        resp        => resp,
+        req         => mem_req,
+        resp        => mem_resp,
     
         SDRAM_CLK   => SDRAM_CLK,
         SDRAM_CKE   => SDRAM_CKE,
@@ -228,15 +149,6 @@ begin
         SDRAM_A     => SDRAM_A,
         SDRAM_DQ    => SDRAM_DQ );
 
-    i_proc: entity mblite.cached_mblite
-    port map (
-        clock  => clock,
-        reset  => reset,
-        mmem_o => mmem_o,
-        mmem_i => mmem_i,
-        irq_i  => '0',
-        irq_o  => open );
-
     MOTOR_LEDn <= '1';
     DISK_ACTn  <= '0';
 
@@ -244,7 +156,8 @@ begin
     generic map (
         g_version      => X"00",
         g_uart         => true,
-        g_capabilities => X"1234ABCD"
+        g_baudrate     => 5_000_000,
+        g_capabilities => X"80000000"
     )
     port map (
         clock          => clock,
@@ -253,7 +166,63 @@ begin
         io_resp        => io_resp,
         irq_timer_tick => '0',
         irq_in         => "000000",
-        uart_txd       => UART_TXD,
-        uart_rxd       => UART_RXD );
+        uart_txd       => txd,
+        uart_rxd       => rxd );
+
+    -- IO
+    process(clock)
+        variable s    : line;
+        variable char : character;
+        variable byte : std_logic_vector(7 downto 0);
+    begin
+        if rising_edge(clock) then
+            if io_req.write = '1' then -- write
+                case io_req.address is
+                when X"00010" => -- UART_DATA
+                    byte := io_req.data;
+                    char := character'val(to_integer(unsigned(byte)));
+                    if byte = X"0D" then
+                        -- Ignore character 13
+                    elsif byte = X"0A" then
+                        -- Writeline on character 10 (newline)
+                        writeline(output, s);
+                    else
+                        -- Write to buffer
+                        write(s, char);
+                    end if;
+                when others =>
+                    null;
+                end case;
+            end if;
+        end if;
+    end process;
     
+
+    process
+        --constant c_test : std_logic_vector(1 to 10) := "1111111110";
+    begin
+        mem_req_32_test.address <= to_unsigned(16#40000#, mem_req_32_test.address'length);
+        mem_req_32_test.tag <= c_tag_test;
+
+        wait;
+        wait for 600 us;
+        for i in 1 to 10000 loop
+            wait until clock = '1';
+            mem_req_32_test.byte_en <= "1111";
+            mem_req_32_test.data <= X"12345678";
+            mem_req_32_test.read_writen <= '0'; --c_test(i);
+            mem_req_32_test.request <= '1';
+            L1: while true loop
+                wait until clock = '1';
+                if mem_resp_32_test.rack_tag = c_tag_test then
+                    exit L1;
+                end if;
+            end loop;
+            mem_req_32_test.request <= '0';
+            mem_req_32_test.address <= mem_req_32_test.address + 0;
+            wait until clock = '1';
+            wait until clock = '1';
+        end loop;
+        wait;
+    end process;
 end arch;

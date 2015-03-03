@@ -208,10 +208,11 @@ architecture logic of ultimate_logic_32 is
     constant c_tag_1541_cpu_2    : std_logic_vector(7 downto 0) := X"04";
     constant c_tag_1541_floppy_2 : std_logic_vector(7 downto 0) := X"05";
     constant c_tag_1541_audio_2  : std_logic_vector(7 downto 0) := X"06";    
-    constant c_tag_cpu           : std_logic_vector(7 downto 0) := X"07";
-    constant c_tag_slot          : std_logic_vector(7 downto 0) := X"08";
-    constant c_tag_reu           : std_logic_vector(7 downto 0) := X"09";
-    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"0A";
+    constant c_tag_slot          : std_logic_vector(7 downto 0) := X"07";
+    constant c_tag_reu           : std_logic_vector(7 downto 0) := X"08";
+    constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"09";
+    constant c_tag_cpu_i         : std_logic_vector(7 downto 0) := X"0A";
+    constant c_tag_cpu_d         : std_logic_vector(7 downto 0) := X"0B";
     
 	-- Memory interface
     signal mem_req_32_cpu        : t_mem_req_32 := c_mem_req_32_init;
@@ -332,10 +333,13 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_usb      : std_logic;
     signal invalidate       : std_logic;
     signal inv_addr         : std_logic_vector(31 downto 0);
+    signal stuck            : std_logic;
+    signal misc_io          : std_logic_vector(7 downto 0);
 begin
     i_cpu: entity work.mblite_wrapper
     generic map (
-        g_tag       => c_tag_cpu )
+        g_tag_i     => c_tag_cpu_i,
+        g_tag_d     => c_tag_cpu_d )
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
@@ -343,7 +347,7 @@ begin
         irq_i       => cpu_io_resp.irq,
         invalidate  => invalidate,
         inv_addr    => inv_addr,
-
+        
         -- memory interface
         mem_req     => mem_req_32_cpu,
         mem_resp    => mem_resp_32_cpu,
@@ -351,7 +355,7 @@ begin
         io_req      => cpu_io_req,
         io_resp     => cpu_io_resp );
 
-    invalidate <= '1' when (mem_resp_32_usb.rack_tag = c_tag_usb2) and (mem_req_32_usb.read_writen = '0') else '0';
+    invalidate <= misc_io(0) when (mem_resp_32_usb.rack_tag = c_tag_usb2) and (mem_req_32_usb.read_writen = '0') else '0';
     inv_addr(31 downto 26) <= (others => '0');
     inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_usb.address);
 		
@@ -397,6 +401,7 @@ begin
         irq_in(2)   => sys_irq_usb,
         
         busy_led    => busy_led,
+        misc_io     => misc_io,
 
         uart_txd    => UART_TXD,
         uart_rxd    => UART_RXD );
@@ -1025,7 +1030,7 @@ begin
         
     error <= sys_reset;
 
-	DISK_ACTn   <= act_led_n xor error;
+	DISK_ACTn   <= act_led_n xor stuck;
 	MOTOR_LEDn  <= motor_led_n xor error;
     CART_LEDn   <= cart_led_n xor error;
 	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or busy_led)) xor error;

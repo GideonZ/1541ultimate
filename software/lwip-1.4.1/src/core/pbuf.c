@@ -215,18 +215,18 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
   switch (layer) {
   case PBUF_TRANSPORT:
     /* add room for transport (often TCP) layer header */
-    offset = PBUF_LINK_HLEN + PBUF_IP_HLEN + PBUF_TRANSPORT_HLEN;
+    offset = PBUF_MEDIUM_PREFIX + PBUF_LINK_HLEN + PBUF_IP_HLEN + PBUF_TRANSPORT_HLEN;
     break;
   case PBUF_IP:
     /* add room for IP layer header */
-    offset = PBUF_LINK_HLEN + PBUF_IP_HLEN;
+    offset = PBUF_MEDIUM_PREFIX + PBUF_LINK_HLEN + PBUF_IP_HLEN;
     break;
   case PBUF_LINK:
     /* add room for link layer header */
-    offset = PBUF_LINK_HLEN;
+    offset = PBUF_MEDIUM_PREFIX + PBUF_LINK_HLEN;
     break;
   case PBUF_RAW:
-    offset = 0;
+    offset = PBUF_MEDIUM_PREFIX;
     break;
   default:
     LWIP_ASSERT("pbuf_alloc: bad pbuf layer", 0);
@@ -557,15 +557,20 @@ pbuf_header(struct pbuf *p, s16_t header_size_increment)
     }
   /* pbuf types refering to external payloads? */
   } else if (type == PBUF_REF || type == PBUF_ROM) {
-    /* hide a header in the payload? */
+	  // just ALWAYS do this, since references are only used to read!
+      p->payload = (u8_t *)p->payload - header_size_increment;
+
+/*
+	  // hide a header in the payload?
     if ((header_size_increment < 0) && (increment_magnitude <= p->len)) {
-      /* increase payload pointer */
+      // increase payload pointer
       p->payload = (u8_t *)p->payload - header_size_increment;
     } else {
-      /* cannot expand payload to front (yet!)
-       * bail out unsuccesfully */
+      // cannot expand payload to front (yet!)
+      // bail out unsuccesfully
       return 1;
     }
+*/
   } else {
     /* Unknown type */
     LWIP_ASSERT("bad pbuf type", 0);

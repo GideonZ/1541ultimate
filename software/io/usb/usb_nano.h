@@ -73,6 +73,7 @@
 #define UCMD_USE_CIRC     0x1000
 #define UCMD_TOGGLEBIT	  0x0800
 #define UCMD_RETRY_ON_NAK 0x0400
+#define UCMD_PAUSED		  0x0200
 #define UCMD_DO_SPLIT	  0x0080
 #define UCMD_DO_DATA	  0x0040
 #define UCMD_SETUP		  0x0000

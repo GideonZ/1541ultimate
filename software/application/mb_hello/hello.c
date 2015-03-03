@@ -7,7 +7,10 @@ int main()
 
     puts("Hello world.");
 
-/*
+    for (int i=0;i<1000;i++) {
+    	printf("Iteration %d\n", i);
+    }
+    /*
     puts("Going to do a dhrystone test run..\n");
     for (int i=0;i<10;i++) {
         int j = ITU_MS_TIMER;

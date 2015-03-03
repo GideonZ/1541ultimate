@@ -51,6 +51,8 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/iec \
 			$(PATH_SW)/6502 \
 			$(PATH_SW)/ModPlayer_16k \
+			$(PATH_SW)/lwip-1.4.1/src/include \
+			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
@@ -59,7 +61,9 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 SRCS_C   =	mbstart_app.c \
 			itu.c \
 			dump_hex.c \
-			small_printf.c
+			small_printf.c \
+			echo.c 
+##			ftpd.c
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:
@@ -97,6 +101,9 @@ SRCS_CC	 =  stream.cc \
 			usb2.cc \
 			usb_device.cc \
 			usb_scsi.cc \
+			usb_hub.cc \
+			usb_ax88772.cc \
+			network_interface.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
@@ -143,8 +150,6 @@ SRCS_CC	 =  stream.cc \
 
 ####			sampler.cc \
 ####			copper.cc \
-####			usb_ax88772.cc \
-####            network_interface.cc \
 
 SRCS_ASM =  mb_crt0.s
 
@@ -162,11 +167,11 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -g -ffunction-sections -Os -std=c99 
 CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti
 LINK 	 = ./mb_app.lds
-LLIB     =  -L ../mb_lib/result_mb \
+LLIB     =  -L ../mb_lwip/result \
             -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
 #LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
-LIBS     =  -lc -lgcc
+LIBS     =  -lc -lgcc -llwip
 LFLAGS   = --gc-sections 
 
 VPATH   += $(OUTPUT) $(RESULT)

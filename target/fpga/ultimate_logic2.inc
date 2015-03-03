@@ -167,6 +167,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/dm_with_invalidate.vhd \
 				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/dmem_arbiter.vhd \
 				vhdl,mblite,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/cached_mblite.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/cpu_unit/vhdl_source/dmem_splitter.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/cart_slot_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/cart_slot_registers.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/cart_slot/vhdl_source/slot_timing.vhd \

@@ -88,6 +88,8 @@ CMD_REQ_USECIRC      = $1000
 CMD_TOGGLE_BIT       = $0800
 CMD_TOGGLE_BIT_NOT   = $F7FF
 CMD_REQ_RETRY_ON_NAK = $0400
+CMD_REQ_PAUSED       = $0200
+CMD_REQ_NOT_PAUSED   = $FDFF
 
 CMD_BUF_NODATA       = $2000
 
@@ -150,7 +152,6 @@ _waiting_for_reset_sim
     LOAD  #0
     STORE DO_RESET
     STORE RAM_STATUS
-    CALL  clear_fifos
 ;    OUTP  CLR_OPERATIONAL
 ;    OUTP  CLR_SOF_ENABLE
     BRA   _sim_restart
@@ -230,7 +231,6 @@ do_reset
     STORE RAM_STATUS
 ;    OUTP  CLR_SOF_ENABLE
 ;    OUTP  CLR_OPERATIONAL
-    CALL  clear_fifos
     CALL  bus_reset
 ;    OUTP  CLR_SUSPENDED
     LOAD  #3 ; cannot come without connected
@@ -497,6 +497,9 @@ NumberOfChirps
 
 check_command
     LOAD User_Command
+;    CMP  User_Command
+;    BNE  check_command
+;    LOAD User_Command
     BNE  _copy_user_cmd
     RET ; zero = no command
 
@@ -563,6 +566,8 @@ _check_in_error
     BRA   _next_in_chunk ; Retry!
 
 _check_nak_response_in
+    LOAD Transferred
+    BNE  _next_in_chunk
     LOAD Current_Command
     AND  #CMD_REQ_RETRY_ON_NAK
     BNE  _next_in_chunk
@@ -763,6 +768,11 @@ check_pipes
     STORE PipeNumber
 _chk_pipe
     LOADI PipeAddr
+    STORE temp
+    LOADI PipeAddr
+    CMP   temp
+    BNE   _chk_pipe
+    AND   #CMD_REQ_NOT_PAUSED
     BNE   _valid_pipe
 
 _nxt_pipe
@@ -842,6 +852,15 @@ _need_to_exectue
     ; invalid -> no memory address
     BRA   _nxt_pipe    
 
+_add_block_offset
+    LOAD  BlockOffset
+    ADD   Current_Command_MemLo
+    STORE Current_Command_MemLo
+    LOAD  Current_Command_MemHi
+    ADDC  #0
+    STORE Current_Command_MemHi
+    RET
+    
 _prepare_block
     CALL  blk_fifo_empty
     BEQ   _nxt_pipe    
@@ -855,27 +874,9 @@ _prepare_block
     ADDC  #0
     STORE Current_Command_MemHi
 
-    LOAD  BlockOffset
-    ADD   Current_Command_MemLo
-    STORE Current_Command_MemLo
-    LOAD  Current_Command_MemHi
-    ADDC  #0
-    STORE Current_Command_MemHi
-
-    LOAD  BlockOffset
-    ADD   Current_Command_MemLo
-    STORE Current_Command_MemLo
-    LOAD  Current_Command_MemHi
-    ADDC  #0
-    STORE Current_Command_MemHi
-
-    LOAD  BlockOffset
-    ADD   Current_Command_MemLo
-    STORE Current_Command_MemLo
-    LOAD  Current_Command_MemHi
-    ADDC  #0
-    STORE Current_Command_MemHi
-    
+    CALL  _add_block_offset ; *2
+    CALL  _add_block_offset ; *3
+    CALL  _add_block_offset ; *4
     CALL  _other_params
     CALL  _execute_cmd
 
@@ -1013,14 +1014,6 @@ attr_fifo_push
     ADD    #1
     AND    #$7F
     STORE  head_pointer_atr
-    RET
-
-clear_fifos
-    LOAD   #0
-    STORE  tail_pointer_atr
-    STORE  head_pointer_atr
-    STORE  tail_pointer_blk
-    STORE  head_pointer_blk
     RET
     
 fifo_temp_data

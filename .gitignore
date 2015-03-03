@@ -65,6 +65,8 @@ target/software/mb_ultimate/output
 target/software/mb_ultimate/result
 target/software/mb_usb_test/output_mb
 target/software/mb_usb_test/result_mb
+target/software/mb_xmodem/output_mb
+target/software/mb_xmodem/result_mb
 target/software/programmer/output
 target/software/programmer/result
 target/software/ultimate/output

@@ -35,7 +35,7 @@
 /* Keep everything at default */
 
 #define MEM_SIZE                        65536
-#define MEM_ALIGNMENT 4
+#define MEM_ALIGNMENT 1
 
 //#define TCP_SND_QUEUELEN                40
 //#define MEMP_NUM_TCP_SEG                TCP_SND_QUEUELEN

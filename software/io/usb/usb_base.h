@@ -17,6 +17,15 @@ struct t_pipe {
 	WORD SplitCtl;
 };
 
+typedef enum {
+	e_control = 0,
+	e_isochronous,
+	e_bulk,
+	e_interrupt
+} t_endpoint_type;
+
+typedef void (*usb_callback)(BYTE *buf, int len, void *obj);
+
 class UsbDevice;
 class UsbDriver;
    
@@ -55,11 +64,16 @@ public:
 
     virtual int  control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen) { return -1; }
     virtual int  control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len) { return -1; }
-    virtual int  allocate_input_pipe(struct t_pipe *pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object) { return -1; }
+    virtual int  allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, void *object) { return -1; }
     virtual void free_input_pipe(int index) {}
+    virtual void pause_input_pipe(int index) {}
+    virtual void resume_input_pipe(int index) {}
+
     virtual void unstall_pipe(struct t_pipe *pipe) {}
     virtual int  bulk_out(struct t_pipe *pipe, void *buf, int len) { return -1; };
     virtual int  bulk_in(struct t_pipe *pipe, void *buf, int len) { return -1; }; // blocking
+
+    virtual void free_input_buffer(int inpipe, BYTE *buffer) { }
 
     virtual int  create_pipe(int addr, struct t_endpoint_descriptor *epd) { return -1; }
     virtual void free_pipe(int index) {}

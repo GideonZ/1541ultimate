@@ -44,6 +44,7 @@ extern "C" {
  * of IP_FRAG */
 #define LWIP_SUPPORT_CUSTOM_PBUF (IP_FRAG && !IP_FRAG_USES_STATIC_BUF && !LWIP_NETIF_TX_SINGLE_PBUF)
 
+#define PBUF_MEDIUM_PREFIX   4
 #define PBUF_TRANSPORT_HLEN 20
 #define PBUF_IP_HLEN        20
 
@@ -111,7 +112,7 @@ struct pbuf {
 
 #if LWIP_SUPPORT_CUSTOM_PBUF
 /** Prototype for a function to free a custom pbuf */
-typedef void (*pbuf_free_custom_fn)(struct pbuf *p);
+typedef void (*pbuf_free_custom_fn)(void *p);
 
 /** A custom pbuf: like a pbuf, but following a function pointer to free it. */
 struct pbuf_custom {
@@ -119,6 +120,8 @@ struct pbuf_custom {
   struct pbuf pbuf;
   /** This function is called when pbuf_free deallocates this pbuf(_custom) */
   pbuf_free_custom_fn custom_free_function;
+  void *custom_obj;
+  void *buffer_start;
 };
 #endif /* LWIP_SUPPORT_CUSTOM_PBUF */
 

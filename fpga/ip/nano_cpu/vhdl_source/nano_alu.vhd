@@ -69,9 +69,9 @@ begin
             if update_flag='1' then
                 z <= alu_z;
                 n <= alu_n;
-            end if;
-            if upd_carry then
-                c_flag <= add_res(17);
+                if upd_carry then
+                    c_flag <= add_res(17);
+                end if;
             end if;
             if reset='1' then
                 c_flag <= '0';

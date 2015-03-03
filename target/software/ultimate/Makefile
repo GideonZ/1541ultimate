@@ -95,7 +95,8 @@ SRCS_CC	 =  stream.cc \
 			filetype_crt.cc \
 			filetype_bit.cc \
 			rtc.cc \
-			usb.cc \
+			usb_base.cc \
+			usb1.cc \
 			usb_device.cc \
 			usb_hub.cc \
 			usb_scsi.cc \

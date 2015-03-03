@@ -270,7 +270,7 @@ begin
 
             when fill =>
                 if mem_i.ena_i = '1' then
-                    dmem_r.ena_o <= '0';
+--                    dmem_r.ena_o <= '0';
                     state <= idle;
                 end if;
             end case;
@@ -280,6 +280,7 @@ begin
             elsif dmem_o_comb.ena_i = '1' then
                 dmem_o_reg.dat_i <= dmem_o_comb.dat_i;
                 dmem_o_reg.ena_i <= '1';
+                dmem_r.ena_o <= '0';
             end if;
             
             if dmem_i.ena_o = '1' then

@@ -29,7 +29,6 @@ architecture arch of mblite_sdram_tb is
     signal DISK_ACTn       : std_logic; 
 
     signal BUTTON          : std_logic_vector(0 to 2) := "111";
-    signal uart            : std_logic;
 begin
     CLOCK_50 <= not CLOCK_50 after 10 ns;
 
@@ -46,8 +45,6 @@ begin
         SDRAM_A    => SDRAM_A,
         SDRAM_BA   => SDRAM_BA,
         SDRAM_DQ   => SDRAM_DQ,
-        UART_TXD   => uart,
-        UART_RXD   => uart,
         BUTTON     => BUTTON,
         MOTOR_LEDn => MOTOR_LEDn,
         DISK_ACTn  => DISK_ACTn );
@@ -73,5 +70,5 @@ begin
         DQM           => SDRAM_DQM,
         DQ            => SDRAM_DQ
     );
-    
+
 end arch;
