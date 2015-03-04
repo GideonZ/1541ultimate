@@ -90,7 +90,7 @@
 /* Tasks are started with a critical section nesting of 0 - however prior
 to the scheduler being commenced we don't want the critical nesting level
 to reach zero, so it is initialised to a high value. */
-#define portINITIAL_NESTING_VALUE	( 0x00 )
+#define portINITIAL_NESTING_VALUE	( 0xff )
 
 /* Our hardware setup only uses one counter. */
 #define portCOUNTER_0 				0
@@ -254,7 +254,7 @@ extern void ( vStartFirstTask )( void );
 		memset( pulISRStack, portISR_STACK_FILL_VALUE, configMINIMAL_STACK_SIZE * sizeof( StackType_t ) );
 		pulISRStack += ( configMINIMAL_STACK_SIZE - 1 );
 
-		microblaze_enable_interrupts();
+		portENABLE_INTERRUPTS();
 
 		/* Kick off the first task. */
 		vStartFirstTask();

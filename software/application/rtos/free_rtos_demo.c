@@ -16,11 +16,22 @@ SemaphoreHandle_t xSemaphore;
 
 void vLedFlash()
 {
+	for( ;; )
+	{
+		ITU_USB_BUSY = 1;
+		vTaskDelay( 50 );
+
+		ITU_USB_BUSY = 0;
+		vTaskDelay( 50 );
+	}
+}
+
+void vPrintSomething1()
+{
 	int count = 0;
 	for( ;; )
 	{
-		if (xSemaphoreTake(xSemaphore, portMAX_DELAY )) {
-			ITU_USB_BUSY = 1;
+		if (xSemaphoreTake(xSemaphore, 100 )) {
 			printf("Task 1 %6x\n", count++);
 			xSemaphoreGive(xSemaphore);
 			vTaskDelay( 1 );
@@ -31,18 +42,17 @@ void vLedFlash()
 	}
 }
 
-void vPrintSomething()
+void vPrintSomething2()
 {
 	int count = 0;
 	for( ;; )
 	{
-		if (xSemaphoreTake(xSemaphore, portMAX_DELAY )) {
-			ITU_USB_BUSY = 0;
+		if (xSemaphoreTake(xSemaphore, 100 )) {
 			printf("Task 2 %6x\n", count++);
 			xSemaphoreGive(xSemaphore);
 			vTaskDelay( 1 );
 		} else {
-			printf("@");
+			printf("#");
 		}
 	}
 }
@@ -57,7 +67,9 @@ int main (void)
 	portDISABLE_INTERRUPTS();
 
 	xTaskCreate( vLedFlash, "Flash my LED!", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY, NULL );
-	xTaskCreate( vPrintSomething, "Print Something", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY, NULL );
+	xTaskCreate( vPrintSomething1, "Print Something 1", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY, NULL );
+	xTaskCreate( vPrintSomething2, "Print Something 2", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY, NULL );
+
 	xSemaphore = xSemaphoreCreateMutex();
 
 	/* Finally start the scheduler. */

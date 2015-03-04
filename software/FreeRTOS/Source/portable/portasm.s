@@ -233,13 +233,13 @@ VPortYieldASM:
 vStartFirstTask:
 	portRESTORE_CONTEXT
 	
-microblaze_enable_interrupts:
-    msrset r0, 0x02
-    rtsd r15, 8
-    nop
-
-microblaze_disable_interrupts:
-    msrclr r0, 0x02
-    rtsd r15, 8
-    nop
+;microblaze_enable_interrupts:
+;    msrset r0, 0x02
+;    rtsd r15, 8
+;    nop
+;
+;microblaze_disable_interrupts:
+;    msrclr r0, 0x02
+;    rtsd r15, 8
+;    nop
 

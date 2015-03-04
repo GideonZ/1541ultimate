@@ -63,9 +63,6 @@ begin
 
         v := r;
         v.ctrl_wrb := mem_i.ctrl_wrb;
-        if mem_i.ctrl_wrb.reg_d = "00000" then
-            v.ctrl_wrb.reg_write := '0';
-        end if;
 
         if mem_i.branch = '1' then
             -- set alu result for branch and load instructions

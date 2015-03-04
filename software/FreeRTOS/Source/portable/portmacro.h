@@ -111,10 +111,11 @@ typedef unsigned long UBaseType_t;
 /*-----------------------------------------------------------*/
 
 /* Interrupt control macros. */
-void microblaze_disable_interrupts( void );
-void microblaze_enable_interrupts( void );
-#define portDISABLE_INTERRUPTS()	microblaze_disable_interrupts()
-#define portENABLE_INTERRUPTS()		microblaze_enable_interrupts()
+//void microblaze_disable_interrupts( void );
+//void microblaze_enable_interrupts( void );
+
+#define portDISABLE_INTERRUPTS()	{ __asm__ ("msrclr r0, 2\n\t") ; }
+#define portENABLE_INTERRUPTS()		{ __asm__ ("msrset r0, 2\n\t") ; } //microblaze_enable_interrupts()
 /*-----------------------------------------------------------*/
 
 /* Critical section macros. */
@@ -122,7 +123,7 @@ void vPortEnterCritical( void );
 void vPortExitCritical( void );
 #define portENTER_CRITICAL()		{														\
 										extern volatile UBaseType_t uxCriticalNesting;	\
-										microblaze_disable_interrupts();					\
+										portDISABLE_INTERRUPTS();						\
 										uxCriticalNesting++;								\
 									}
 

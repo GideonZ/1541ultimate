@@ -87,6 +87,9 @@ begin
         else
             v.ctrl_mem := exec_i.ctrl_mem;
             v.ctrl_wrb := exec_i.ctrl_wrb;
+            if exec_i.ctrl_wrb.reg_d = "00000" then
+                v.ctrl_wrb.reg_write := '0';
+            end if;
         end if;
 
         if exec_i.ctrl_mem_wrb.mem_read = '1' then
