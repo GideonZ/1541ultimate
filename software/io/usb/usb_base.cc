@@ -11,6 +11,11 @@ extern "C" {
 
 UsbBase :: UsbBase()
 {
+	max_current = 500;
+	remaining_current = 500;
+	device_present = false;
+	initialized = false;
+	bus_speed = -1;
 }
 
 UsbBase :: ~UsbBase()
@@ -51,7 +56,7 @@ void UsbBase :: attach_root(void)
     remaining_current = 500; //max_current;
     bus_reset();
 
-    UsbDevice *dev = new UsbDevice(this);
+    UsbDevice *dev = new UsbDevice(this, get_bus_speed());
 	install_device(dev, true);
 }
 
@@ -60,10 +65,12 @@ bool UsbBase :: install_device(UsbDevice *dev, bool draws_current)
     int idx = get_device_slot();
     
     bool ok = false;
-    for(int i=0;i<20;i++) { // try 20 times!
+    for(int i=0;i<5;i++) { // try 5 times!
         if(dev->init(idx+1)) {
             ok = true;
             break;
+        } else {
+        	wait_ms(100*i);
         }
     }
     if(!ok)
@@ -74,7 +81,7 @@ bool UsbBase :: install_device(UsbDevice *dev, bool draws_current)
         dev->install();
         return true; // actually install should be able to return false too
     } else {
-        int device_curr = int(dev->device_config.max_power) * 2;
+        int device_curr = int(dev->get_device_config()->max_power) * 2;
 
         if(device_curr > remaining_current) {
         	printf("Device current (%d mA) exceeds maximum remaining current (%d mA).\n", device_curr, remaining_current);

@@ -5,6 +5,7 @@ extern "C" {
 }
 #include "usb2.h"
 #include <stdlib.h>
+#include <string.h>
 
 extern BYTE  _binary_nano_minimal_b_start;
 extern DWORD _binary_nano_minimal_b_size;
@@ -289,6 +290,21 @@ void Usb2 :: close_pipe(int pipe)
 	p[(8 * pipe)] = 0;
 }
 
+WORD Usb2 :: getSplitControl(int addr, int port, int speed, int type)
+{
+	WORD retval = (addr << 8) | (port & 0x0F) | ((type & 0x03) << 4);
+	switch(speed) {
+	case 1:
+		break;
+	case 0:
+		retval |= SPLIT_SPEED;
+		break;
+	default:
+		retval = 0;
+	}
+	return retval;
+}
+
 int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
 {
 	USB2_CMD_DevEP  = pipe->DevEP;
@@ -296,18 +312,18 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 	USB2_CMD_MaxTrans = pipe->MaxTrans;
 	USB2_CMD_MemHi = ((DWORD)out) >> 16;
 	USB2_CMD_MemLo = ((DWORD)out) & 0xFFFF;
-	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
+	USB2_CMD_SplitCtl = pipe->SplitCtl;
+	WORD do_split = (pipe->SplitCtl) ? UCMD_DO_SPLIT : 0;
+	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP | do_split;
 
 	// wait until it gets zero again
-	while(USB2_CMD_Command) {
-//		UART_DATA = '(';
-		wait_ms(1);
-	}
+	while(USB2_CMD_Command)
+		;
 
 	// printf("Setup Result: %04x\n", USB2_CMD_Result);
 
 	USB2_CMD_Length = inlen;
-	WORD command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT;// start with toggle bit 1
+	WORD command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT | do_split;// start with toggle bit 1
 
 	if (in) {
 		USB2_CMD_MemHi = ((DWORD)in) >> 16;
@@ -317,10 +333,7 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 	USB2_CMD_Command = command;
 
 	// wait until it gets zero again
-	while(USB2_CMD_Command) {
-//		UART_DATA = '-';
-		wait_ms(1);
-	}
+	while(USB2_CMD_Command)
 		;
 
 	DWORD transferred = inlen - USB2_CMD_Length;
@@ -329,13 +342,11 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 
 	if (transferred) {
 		USB2_CMD_Length = 0;
-		USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // send zero bytes as out packet
+		USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT | do_split; // send zero bytes as out packet
 
 		// wait until it gets zero again
-		while(USB2_CMD_Command) {
-//			UART_DATA = ')';
-			wait_ms(1);
-		}
+		while(USB2_CMD_Command)
+			;
 		// printf("Out Result = %4x\n", USB2_CMD_Result);
 	}
 	return transferred;
@@ -348,7 +359,9 @@ int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, v
 	USB2_CMD_MaxTrans = pipe->MaxTrans;
 	USB2_CMD_MemHi = ((DWORD)setup_out) >> 16;
 	USB2_CMD_MemLo = ((DWORD)setup_out) & 0xFFFF;
-	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
+	USB2_CMD_SplitCtl = pipe->SplitCtl;
+	WORD do_split = (pipe->SplitCtl) ? UCMD_DO_SPLIT : 0;
+	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP | do_split;
 
 	// wait until it gets zero again
 	while(USB2_CMD_Command)
@@ -359,7 +372,7 @@ int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, v
 	USB2_CMD_Length = data_len;
 	USB2_CMD_MemHi = ((DWORD)data_out) >> 16;
 	USB2_CMD_MemLo = ((DWORD)data_out) & 0xFFFF;
-	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // start with toggle bit 1;
+	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT | do_split; // start with toggle bit 1;
 
 	// wait until it gets zero again
 	while(USB2_CMD_Command)
@@ -370,7 +383,7 @@ int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, v
 	// dump_hex(read_buf, transferred);
 
 	USB2_CMD_Length = 0;
-	USB2_CMD_Command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT; // do an in transfer to end control write
+	USB2_CMD_Command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT | do_split; // do an in transfer to end control write
 
 	// wait until it gets zero again
 	while(USB2_CMD_Command)
@@ -520,6 +533,7 @@ void Usb2 :: bus_reset()
 		if (USB2_STATUS & USTAT_OPERATIONAL)
 			break;
 	}
+	set_bus_speed(NANO_LINK_SPEED);
 }
 
 UsbDevice *Usb2 :: init_simple(void)
@@ -529,7 +543,7 @@ UsbDevice *Usb2 :: init_simple(void)
 	wait_ms(1000);
 	BYTE usb_status = USB2_STATUS;
 	if (usb_status & USTAT_CONNECTED) {
-		UsbDevice *dev = new UsbDevice(this);
+		UsbDevice *dev = new UsbDevice(this, get_bus_speed());
 		if(dev) {
 			if(!dev->init(1)) {
 				delete dev;

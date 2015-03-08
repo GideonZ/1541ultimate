@@ -7,6 +7,7 @@ HEX2BIN   = $(TOOLS)/hex2bin
 MAKEMEM   = $(TOOLS)/make_mem
 MYPROMGEN = $(TOOLS)/promgen
 MAKEAPPL  = $(TOOLS)/makeappl
+PARSE_NANO = $(TOOLS)/parse_nano.py
 TASS      = $(TOOLS)/64tass/64tass
 
 # Configuration
@@ -29,21 +30,8 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
-			$(PATH_SW)/io/flash \
-			$(PATH_SW)/drive \
 			$(PATH_SW)/components \
-			$(PATH_SW)/io/stream \
-			$(PATH_SW)/io/c64 \
-			$(PATH_SW)/io/rtc \
 			$(PATH_SW)/io/usb \
-			$(PATH_SW)/io/tape \
-			$(PATH_SW)/io/icap \
-			$(PATH_SW)/io/sd_card \
-			$(PATH_SW)/io/audio \
-			$(PATH_SW)/io/overlay \
-			$(PATH_SW)/io/userinterface \
-			$(PATH_SW)/io/command_interface \
-			$(PATH_SW)/io/copper \
 			$(PATH_SW)/6502 \
 			$(ROMS)
 
@@ -51,7 +39,6 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 SRCS_C   =	mbstart_app.c \
 			itu.c \
-			usb_test_nano.c \
 			dump_hex.c \
 			small_printf.c
 
@@ -62,14 +49,22 @@ SRCS_C   =	mbstart_app.c \
 # root of the application. Devices can register themselves in the file system tree.
 # Therefore, the file manager needs to exist.
 
-SRCS_CC	 =  
-
+SRCS_CC	 =  memory.cc \
+			event.cc \
+			main_loop.cc \
+			usb_base.cc \
+			usb2.cc \
+			usb_device.cc \
+			usb_hub.cc \
+			usb_driver_test.cc
 #
 SRCS_ASM =  
 
 SRCS_6502 = 
 
-SRCS_BIN =  
+SRCS_BIN = 
+
+SRCS_NANO = nano_minimal.nan
 
 CC		  = $(CROSS)-gcc
 CPP		  = $(CROSS)-g++
@@ -96,13 +91,14 @@ VPATH   += $(OUTPUT) $(RESULT)
 
 .SUFFIXES:
 
-OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
-OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
-OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
+OBJS_ASM  = $(notdir $(SRCS_ASM:%.s=%.o))
+OBJS_C    = $(notdir $(SRCS_C:%.c=%.o))
+OBJS_CC   = $(notdir $(SRCS_CC:%.cc=%.o))
 OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
-OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.bo))
+OBJS_BIN  = $(notdir $(SRCS_BIN:%.bin=%.bo))
+OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN))
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN) $(OBJS_NANO))
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
@@ -128,10 +124,18 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo "Assembling $<"
 	$(TASS) $< --m6502 --nostart -o $(OUTPUT)/$(@F)
 
+%.b: %.nan
+	@echo "Assembling Nano processor code $(<F)"
+	@python $(PARSE_NANO) $< $(OUTPUT)/$(@F) >python_out_nano
+
 %.o: %.65
 	@echo "Converting .65 binary to .o"
 	@cd $(OUTPUT); $(OBJCOPY) -I binary -O elf32-microblaze --binary-architecture microblaze $(<F) $@
     	
+%.o: %.b
+	@echo "Converting $(<F) binary to .o"
+	@cd $(OUTPUT); $(OBJCOPY) -I binary -O elf32-microblaze --binary-architecture MicroBlaze $(<F) $@
+
 %.o: %.s
 	@echo "Compiling $<"
 	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
@@ -151,7 +155,7 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN)
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_NANO)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out

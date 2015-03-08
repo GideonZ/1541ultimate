@@ -16,6 +16,7 @@ __inline DWORD cpu_to_32le(DWORD a)
     return (a >> 24) | (a << 24) | m1 | m2;
 }
 
+BYTE c_scsi_getmaxlun[] = { 0xA1, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
 BYTE c_scsi_reset[]     = { 0x21, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 /*********************************************************************
@@ -74,11 +75,26 @@ bool UsbScsiDriver :: test_driver(UsbDevice *dev)
 	return true;
 }
 
+int UsbDevice :: get_max_lun(void)
+{
+    BYTE dummy_buffer[8];
+
+    int i = host->control_exchange(&control_pipe,
+                                   c_scsi_getmaxlun, 8,
+                                   dummy_buffer, 8);
+
+    if(!i)
+        return 0;
+
+    printf("Got %d bytes. Max lun: %b\n", i, dummy_buffer[0]);
+    return (int)dummy_buffer[0];
+}
+
 void UsbScsiDriver :: install(UsbDevice *dev)
 {
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
 
-	dev->set_configuration(dev->device_config.config_value);
+	dev->set_configuration(dev->get_device_config()->config_value);
 	max_lun = dev->get_max_lun();
 	printf("max lun = %d\n", max_lun);
 
@@ -183,7 +199,6 @@ UsbScsi :: UsbScsi(UsbDevice *d, int unit)
     lun = unit;
     removable = 0;
     block_size = 512;
-    
 
     memset(&cbw, 0, sizeof(cbw));
     cbw.signature = 0x55534243;

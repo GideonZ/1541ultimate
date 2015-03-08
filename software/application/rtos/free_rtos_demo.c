@@ -38,7 +38,6 @@ void vPrintSomething1()
 		} else {
 			printf("@");
 		}
-		//vTaskDelay( 1234 );
 	}
 }
 
@@ -68,7 +67,7 @@ int main (void)
 
 	xTaskCreate( vLedFlash, "Flash my LED!", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY, NULL );
 	xTaskCreate( vPrintSomething1, "Print Something 1", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY, NULL );
-	xTaskCreate( vPrintSomething2, "Print Something 2", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY, NULL );
+	xTaskCreate( vPrintSomething2, "Print Something 2", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY + 1, NULL );
 
 	xSemaphore = xSemaphoreCreateMutex();
 

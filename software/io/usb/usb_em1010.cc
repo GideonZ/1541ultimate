@@ -79,7 +79,7 @@ void UsbEm1010Driver :: install(UsbDevice *dev)
     host = dev->host;
     device = dev;
     
-	dev->set_configuration(dev->device_config.config_value);
+	dev->set_configuration(dev->get_device_config()->config_value);
 
     irq_transaction = host->allocate_input_pipe(8, device->pipe_numbers[2], UsbEm1010Driver_interrupt_callback, this);
 

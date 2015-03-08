@@ -116,7 +116,7 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     host = dev->host;
     device = dev;
     
-	dev->set_configuration(dev->device_config.config_value);
+	dev->set_configuration(dev->get_device_config()->config_value);
 
     read_mac_address();
 

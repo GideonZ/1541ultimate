@@ -5,7 +5,7 @@ extern "C" {
 }
 #include "usb_device.h"
 #include <stdlib.h>
-
+#include <string.h>
 
 __inline WORD le16_to_cpu(WORD h)
 {
@@ -41,34 +41,51 @@ char *unicode_to_ascii(BYTE *in, char *out, int maxlen)
 // =========================================================
 // USB DEVICE
 // =========================================================
-BYTE c_get_device_descriptor[] = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
-BYTE c_get_device_descr_slow[] = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x08, 0x00 };
-BYTE c_get_string_descriptor[] = { 0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0x40, 0x00 };
-BYTE c_get_configuration[]     = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x40, 0x00 };
-BYTE c_set_address[]           = { 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_set_configuration[]     = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_scsi_getmaxlun[]        = { 0xA1, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
+BYTE c_get_device_descriptor[]     = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
+BYTE c_get_device_descr_slow[]     = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x08, 0x00 };
+BYTE c_get_string_descriptor[]     = { 0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0x40, 0x00 };
+BYTE c_get_configuration[]         = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00 };
+BYTE c_set_address[]               = { 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+BYTE c_set_configuration[]         = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-UsbDevice :: UsbDevice(UsbBase *u)
+BYTE c_get_interface[]			   = { 0x21, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
+BYTE c_get_hid_report_descriptor[] = { 0x81, 0x06, 0x00, 0x22, 0x00, 0x00, 0x00, 0x00 };
+
+UsbDevice :: UsbDevice(UsbBase *u, int speed)
 {
     parent = NULL;
+    parent_port = 0;
     driver = NULL;
     host = u;
     device_state = dev_st_invalid;
     current_address = 0;
+    config_descriptor = NULL;
+    hid_descriptor = NULL;
 
     device_descr.length = 0;
-    device_config.length = 0;
-    interface_descr.length = 0;
     for(int i=0;i<4;i++) {
-        endpoints[4].length = 0;
+        endpoints[i].length = 0;
     }
+    for(int i=0;i<4;i++) {
+    	interfaces[i] = NULL;
+    }
+    num_interfaces = 0;
     control_pipe.DevEP = 0;
-    control_pipe.MaxTrans = 64; // should depend on speed
+    this->speed = speed;
+    if (speed == 0) {
+    	control_pipe.MaxTrans = 8;
+    } else {
+    	control_pipe.MaxTrans = 64;
+    }
+	control_pipe.SplitCtl = 0;
 }
 
 UsbDevice :: ~UsbDevice()
 {
+	if(config_descriptor)
+		delete config_descriptor;
+	if(hid_descriptor)
+		delete hid_descriptor;
 }
 
 
@@ -100,25 +117,19 @@ bool UsbDevice :: get_device_descriptor()
 		return false;
 	}
                
-    printf("Len: %d\n", device_descr.length);
-    printf("Type: %d\n", device_descr.type);
-    printf("Version: %d\n", device_descr.version);
-    printf("Class: %d\n", device_descr.device_class);
-    printf("SubClass: %d\n", device_descr.sub_class);
-    printf("Protocol: %d\n", device_descr.protocol);
+	printf("Vendor/Product: %4x %4x\n", le16_to_cpu(device_descr.vendor), le16_to_cpu(device_descr.product));
+    printf("Class / SubClass / Protocol: %d %d %d\n", device_descr.device_class, device_descr.sub_class, device_descr.protocol);
     printf("MaxPacket: %d\n", device_descr.max_packet_size);
 
-	printf("Vendor: %4x\n", le16_to_cpu(device_descr.vendor));
-	printf("Product: %4x\n", le16_to_cpu(device_descr.product));
-	if(le16_to_cpu(device_descr.vendor) == 0x6e2b) {
-//		host->debug = true;
-	}
 	get_string(device_descr.manuf_string, manufacturer, 32);
 	get_string(device_descr.product_string, product, 32);
 	get_string(device_descr.serial_string, serial, 32);
-	printf("Manufacturer: %s\n", manufacturer);
-	printf("Product: %s\n", product);
-	printf("Serial #: %s\n", serial);
+	if (*manufacturer)
+		printf("Manufacturer: %s\n", manufacturer);
+	if (*product)
+		printf("Product: %s\n", product);
+	if (*serial)
+		printf("Serial #: %s\n", serial);
 	printf("Configurations: %d\n", device_descr.num_configurations);
     return true;
 }
@@ -143,57 +154,130 @@ bool UsbDevice :: get_configuration(BYTE index)
 {
     printf ("Get configuration %d: \n", index);
     c_get_configuration[2] = index;
-    
-    BYTE buf[128];
+    c_get_configuration[6] = 9;
+    c_get_configuration[7] = 0;
+    BYTE buf[12];
 
-    int len_descr = host->control_exchange(&control_pipe, c_get_configuration, 8, buf, 128);
+    config_descriptor = NULL;
+    int len_descr = host->control_exchange(&control_pipe, c_get_configuration, 8, buf, 9);
     if(len_descr < 0)
     	return false;
     
-    int i, len, type, ep;
+    if ((buf[0] == 9) && (buf[1] == DESCR_CONFIGURATION)) {
+        len_descr = int(buf[2]) + 256*int(buf[3]);
+        printf("Total configuration length: %d\n", len_descr);
+    	config_descriptor = new BYTE[len_descr];
+    	if (!config_descriptor)
+    		return false;
+    } else {
+    	printf("Invalid configuration descriptor\n");
+    	return false;
+    }
 
-    for(i = 0;i < len_descr;i++)
-        printf("%b ", buf[i]);
-    printf("\n");    
+    // copy length
+    c_get_configuration[6] = buf[2];
+    c_get_configuration[7] = buf[3];
+    int read = host->control_exchange(&control_pipe, c_get_configuration, 8, config_descriptor, len_descr);
+
+    if (read != len_descr) {
+    	printf("Error reading complete config descriptor. Got %d bytes out of %d.\n", read, len_descr);
+    	return false;
+    }
+
+    //dump_hex(config_descriptor, len_descr);
+
+    BYTE *pnt = config_descriptor;
+    int i, len, type, ep;
 
     i = 0;
     ep = 0;
+    num_interfaces = 0;
+
     while(i < len_descr) {
-        len = (int)buf[i];
-        type = (int)buf[i+1];
+        len = (int)pnt[0];
+        if (!len) {
+        	printf("Invalid descriptor length 0. exit\n");
+        	break;
+        }
+        type = (int)pnt[1];
+        //dump_hex(pnt, len);
         switch(type) {
-            case DESCR_CONFIGURATION:
-                if(len == 9) {
-                    memcpy((void *)&device_config, (void *)&buf[i], len);
-                } else {
-                    printf("Invalid length of configuration descriptor.\n");
-                }
-                break;
-            case DESCR_INTERFACE:                                    
-                if(len == 9) {
-                    memcpy((void *)&interface_descr, (void *)&buf[i], len);
-                } else {
-                    printf("Invalid length of interface descriptor.\n");
-                }
-                break;
-            case DESCR_ENDPOINT:                                    
-                if(len == 7) {
-                    memcpy((void *)&endpoints[ep], (void *)&buf[i], len);
+        	case DESCR_CONFIGURATION:
+        		break;
+        	case DESCR_INTERFACE:
+        		if(len == 9) {
+        			printf("Interface descriptor #%d, with %d endpoints. Class = %d:%d\n", pnt[2], pnt[4], pnt[5], pnt[6]);
+        			if (pnt[4] != 0) {
+        				interfaces[num_interfaces] = (struct t_interface_descriptor *)pnt;
+        				num_interfaces++;
+        			}
+        		}
+        		break;
+        	case DESCR_ENDPOINT:
+                if ((len == 7)||(len == 9)) {
+                	printf("Endpoint found with address %b, attr: %b\n", pnt[2], pnt[3]);
+                	if (ep < 4) {
+                		memcpy((void *)&endpoints[ep], (void *)pnt, len);
+                	}
                     // pipe_numbers[ep] = host->create_pipe(current_address, &endpoints[ep]);
                     ep++;
                 } else {
                     printf("Invalid length of endpoint descriptor.\n");
                 }
                 break;
+            case DESCR_HID:
+            	if(len == 9) {
+            		int hid_len = int(pnt[7]) + 256*int(pnt[8]);
+            		printf("Device has a HID descriptor with length %d!\n", hid_len);
+
+            		/* THIS MAY ONLY BE DONE AFTER SET_CONFIGURATION.
+            		if (!hid_descriptor) {
+            			hid_descriptor = new BYTE[hid_len];
+            			if (hid_descriptor) {
+            				BYTE current_interface = interfaces[num_interfaces-1]->interface_number;
+            				printf("Current interface number = %b\n", current_interface);
+
+            				c_get_interface[4] = current_interface;
+            				host->control_exchange(&control_pipe, c_get_interface, 8, buf, 1);
+
+            				c_get_hid_report_descriptor[4] = current_interface;
+            				c_get_hid_report_descriptor[6] = pnt[7];
+            				c_get_hid_report_descriptor[7] = pnt[8];
+            				hid_len = host->control_exchange(&control_pipe, c_get_hid_report_descriptor, 8, hid_descriptor, hid_len);
+            				dump_hex(hid_descriptor, hid_len);
+            			}
+            		}
+            		*/
+            	} else {
+            		printf("Invalid length of HID descriptor.\n");
+            	}
+            	break;
+            case DESCR_CS_INTERFACE:
+            	if ((len >= 9) && (pnt[2] == 1)) {
+            		//printf("Device has a class specific interface descriptor #%d with length %d!\n", pnt[8], int(pnt[5]) + 256*int(pnt[6]));
+            	}
+            	break;
+            case DESCR_CS_ENDPOINT:
+				//printf("Device has an class specific endpoint descriptor\n");
+            	break;
+
             default:
                 printf("Unknown type of descriptor: %d.\n", type);
-                i = len_descr; // break out of loop
+                //i = len_descr; // break out of loop
+                break;
         }
         i += len;
+        pnt += len;
     }
-    printf ("Number of endpoints descriptors found: %d.\n", ep);
+    printf ("Number of interfaces found: %d.\n", num_interfaces);
+    printf ("Number of endpoints found: %d.\n", ep);
 
     return true;
+}
+
+struct t_device_configuration *UsbDevice :: get_device_config()
+{
+	return (struct t_device_configuration *)config_descriptor;
 }
 
 void UsbDevice :: set_configuration(BYTE config)
@@ -209,8 +293,10 @@ void UsbDevice :: set_configuration(BYTE config)
 bool UsbDevice :: init(int address)
 {
     // first we get the device descriptor
-    if(!get_device_descriptor()) // assume full/high speed
+    if(!get_device_descriptor()) { // assume full/high speed
+    	device_reset();
     	return false;
+    }
     
     // set address and create new control pipes for this address
     set_address(address);
@@ -232,21 +318,6 @@ int UsbDevice :: find_endpoint(BYTE code)
         }
     }
     return -1;
-}
-
-int UsbDevice :: get_max_lun(void)
-{
-    BYTE dummy_buffer[8];
-
-    int i = host->control_exchange(&control_pipe,
-                                   c_scsi_getmaxlun, 8,
-                                   dummy_buffer, 8);
-
-    if(!i)
-        return 0;
-
-    printf("Got %d bytes. Max lun: %b\n", i, dummy_buffer[0]);
-    return (int)dummy_buffer[0];
 }
 
 

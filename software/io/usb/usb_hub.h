@@ -34,6 +34,7 @@ public:
 	void deinstall(UsbDevice *dev);
 	void poll(void);
 	void interrupt_handler(BYTE *, int);
+	void reset_port(int port);
 };
 
 #endif

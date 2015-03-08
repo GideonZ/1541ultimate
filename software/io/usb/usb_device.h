@@ -13,6 +13,10 @@
 #define DESCR_DEVICE_QUALIFIER  0x06
 #define DESCR_OTHER_SPEED       0x07
 #define DESCR_INTERFACE_POWER   0x08
+#define DESCR_HID				0x21
+#define DESCR_HID_REPORT		0x22
+#define DESCR_CS_INTERFACE		0x24
+#define DESCR_CS_ENDPOINT		0x25
 
 extern BYTE c_get_device_descriptor[];
 
@@ -98,6 +102,7 @@ public:
 	virtual void deinstall(UsbDevice *dev)   { }
 	virtual void poll(void)                  { }
 	virtual void pipe_error(int pipe)		 { }
+	virtual void reset_port(int port)		 { }
 };
 
 extern IndexedList<UsbDriver *> usb_drivers;
@@ -107,31 +112,52 @@ class UsbDevice
 public:
     int current_address;
     enum e_dev_state                device_state;
-    struct t_device_descriptor      device_descr;
-    struct t_device_configuration   device_config;
-    struct t_interface_descriptor   interface_descr;
+    BYTE *config_descriptor;
+    BYTE *hid_descriptor; // should we support more than one?
+
+    //struct t_device_configuration   device_config;
+    //struct t_interface_descriptor   interface_descr;
     struct t_endpoint_descriptor    endpoints[4];
+    struct t_interface_descriptor *interfaces[4];
+    int num_interfaces;
+
     char manufacturer[32];
     char product[32];
     char serial[32];
 
+    struct t_device_descriptor      device_descr;
     struct t_pipe control_pipe;
 
     UsbBase   *host;
+    int		   speed;
     UsbDevice *parent;  // in case of being connected to a hub
-    UsbDriver *driver;  //
+    int        parent_port;
+    UsbDriver *driver;
 
-    UsbDevice(UsbBase *u);
+    UsbDevice(UsbBase *u, int speed);
     ~UsbDevice();
+
+    void set_parent(UsbDevice *p, int port) {
+    	parent = p;
+    	parent_port = port;
+    	control_pipe.SplitCtl = host->getSplitControl(parent->current_address, parent_port + 1, speed, 0);
+    }
+
+    void device_reset() {
+    	if (!parent)
+    		host->bus_reset();
+    	else
+    		parent->driver->reset_port(parent_port);
+    }
 
     void get_string(int index, char *dest, int len);
     bool get_device_descriptor();
+    struct t_device_configuration *get_device_config();
     void set_address(int address);
     bool get_configuration(BYTE index);
     void set_configuration(BYTE config);
     bool init(int address);
     int  find_endpoint(BYTE code);
-    int  get_max_lun(void);
 
     // functions that arrange attachment to the system
     void install(void) {

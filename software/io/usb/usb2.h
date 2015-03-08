@@ -2,11 +2,6 @@
 #define USB2_H
 
 #include "usb_base.h"
-#include "integer.h"
-#include "event.h"
-#include "filemanager.h"
-#include "indexed_list.h"
-#include "config.h"
 #include "usb_device.h"
 #include "usb_nano.h"
 
@@ -49,6 +44,7 @@ public:
     void init(void);
     void bus_reset();
 
+    WORD getSplitControl(int addr, int port, int speed, int type);
     int  control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen);
     int  control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len);
     int  allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, void *object);

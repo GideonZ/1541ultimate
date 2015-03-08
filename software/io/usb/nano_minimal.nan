@@ -90,6 +90,8 @@ CMD_TOGGLE_BIT_NOT   = $F7FF
 CMD_REQ_RETRY_ON_NAK = $0400
 CMD_REQ_PAUSED       = $0200
 CMD_REQ_NOT_PAUSED   = $FDFF
+CMD_REQ_DO_DATA      = $0040
+CMD_REQ_NOT_DO_DATA  = $FFBF
 
 CMD_BUF_NODATA       = $2000
 
@@ -101,6 +103,8 @@ CMD_RES_ERROR        = $4000
 CMD_RES_MASK         = $7000
 CMD_RES_NO_DATA      = $0400
 CMD_RES_LEN_MASK     = $03FF
+
+SPLIT_COMPLETE       = $0080
 
 ; Command interface to Memory Controller
 MEM_ADDR_LO          = $70
@@ -545,8 +549,12 @@ _execute_cmd
 _next_in_chunk
     LOAD CurrentBuffer
     OUTP CMD_DATA_BUFFER_CTRL
+    LOAD Current_Command_SplitCtl
+    OUTP CMD_SPLIT_CONTROL
     LOAD Current_Command
     OUTP CMD_REQUEST ; Do it!!
+    LOAD Current_Command_SplitCtl
+    BNE  _wait_in_cmd_ssplit
 _wait_in_cmd
     INP  CMD_RESPONSE
     BPL  _wait_in_cmd
@@ -556,6 +564,8 @@ _wait_in_cmd
     BEQ  _in_success
     CMP  #CMD_RES_NAK
     BEQ  _check_nak_response_in
+    CMP  #CMD_RES_NYET
+    BEQ  _try_complete_split_in
     CMP  #CMD_RES_ERROR
     BNE  _in_done ; I don't know how to handle this
 _check_in_error
@@ -564,6 +574,24 @@ _check_in_error
     SUB   #1
     STORE AllowedErrors
     BRA   _next_in_chunk ; Retry!
+
+_wait_in_cmd_ssplit
+    INP  CMD_RESPONSE
+    BPL  _wait_in_cmd_ssplit
+    STORE Current_Command_Result
+    AND  #CMD_RES_MASK
+    CMP  #CMD_RES_ACK
+    BNE  _check_in_error
+; ssplit got acked! yey!    
+
+_try_complete_split_in
+    CALL loop_timer
+    LOAD Current_Command_SplitCtl
+    OR   #SPLIT_COMPLETE
+    OUTP CMD_SPLIT_CONTROL
+    LOAD Current_Command
+    OUTP CMD_REQUEST ; Do it!!
+    BRA  _wait_in_cmd    
 
 _check_nak_response_in
     LOAD Transferred
@@ -647,6 +675,8 @@ _next_out_chunk
 _has_data
     OR   CurrentBuffer
     OUTP CMD_DATA_BUFFER_CTRL
+    LOAD Current_Command_SplitCtl
+    OUTP CMD_SPLIT_CONTROL
 
 _wait_mem1
     INP  MEM_CTRL_READY
@@ -663,10 +693,13 @@ _wait_mem1
     LOAD Current_Command_Length
     SUB  CurrentLength
     STORE Current_Command_Length
-    BEQ  _wait_out_cmd
+    BEQ  _no_more_read_out
 
     CALL do_mem_read ; second and subsequent times
 
+_no_more_read_out
+    LOAD Current_Command_SplitCtl
+    BNE  _wait_out_cmd_ssplit
 _wait_out_cmd
     INP  CMD_RESPONSE
     BPL  _wait_out_cmd
@@ -675,11 +708,30 @@ _wait_out_cmd
     CMP  #CMD_RES_ACK
     BEQ  _out_success
     CMP  #CMD_RES_NYET
-    BEQ  _out_success ; actually we should ping now, but we just ignore that for now
+    BEQ  _check_nyet_response_out
     CMP  #CMD_RES_NAK
     BEQ  _check_nak_response_out
     CMP  #CMD_RES_ERROR
     BRA  _out_done  ; exit
+
+_wait_out_cmd_ssplit
+    INP   CMD_RESPONSE
+    BPL   _wait_out_cmd_ssplit
+    STORE Current_Command_Result
+    AND   #CMD_RES_MASK
+    CMP   #CMD_RES_ACK
+    BNE   _out_done ; exit
+
+    ; start split successful
+    LOAD  Current_Command_SplitCtl    
+    OR    #SPLIT_COMPLETE
+    OUTP  CMD_SPLIT_CONTROL
+_try_complete_out
+    CALL  loop_timer
+    LOAD  Current_Command
+    AND   #CMD_REQ_NOT_DO_DATA
+    OUTP  CMD_REQUEST
+    BRA   _wait_out_cmd
 
 _check_out_error
     LOAD AllowedErrors
@@ -720,6 +772,11 @@ _retry_out
     LOAD Current_Command
     OUTP CMD_REQUEST ; Do it!!
     BRA  _wait_out_cmd
+
+_check_nyet_response_out
+    LOAD Current_Command_SplitCtl
+    BEQ  _out_success ; Should switch to PING, but we ignore that for now
+    BRA  _try_complete_out
 
 determine_length
     LOAD Current_Command_Length

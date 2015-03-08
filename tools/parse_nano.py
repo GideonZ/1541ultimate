@@ -202,7 +202,10 @@ def parse_lines(lines):
             (f, code) = mnemonics[mnem]
         except KeyError,e:
             raise NameError("Unknown Mnemonic %s in line %d" % (mnem, nr))
-        code = f(line_split[1].strip(), mnem, code)
+        try:
+            code = f(line_split[1].strip(), mnem, code)
+        except IndexError,e:
+            raise ValueError("Value error in line %d" % (nr,))
         if (phase == 2):
             print "%03X: %04X | " % (pc-1, code),line
     
