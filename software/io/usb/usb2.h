@@ -4,6 +4,8 @@
 #include "usb_base.h"
 #include "usb_device.h"
 #include "usb_nano.h"
+#include "FreeRTOS.h"
+#include "queue.h"
 
 class UsbDevice;
 class UsbDriver;
@@ -19,6 +21,9 @@ typedef enum {
 
 class Usb2 : public UsbBase
 {
+#ifdef OS
+	QueueHandle_t queue;
+#endif
     void  (*inputPipeCallBacks[USB2_NUM_PIPES])(BYTE *buf, int len, void *obj);
     void  *inputPipeObjects[USB2_NUM_PIPES];
     BYTE   inputPipeBufferMethod[USB2_NUM_PIPES];

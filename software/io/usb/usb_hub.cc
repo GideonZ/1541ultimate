@@ -302,7 +302,7 @@ void UsbHubDriver :: poll()
 	                    	int speed = (buf[1] & BIT1_PORT_HIGH_SPEED) ? 2 :
 	                    		     	(buf[1] & BIT1_PORT_LOW_SPEED) ? 0 : 1;
 							wait_ms(power_on_time);
-							printf("Going to create a new device.\n");
+							printf("Going to create a new device with speed %d.\n", speed);
 							UsbDevice *d = new UsbDevice(host, speed);
 							d->set_parent(device, j);
 							printf("Going to install device\n");

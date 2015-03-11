@@ -44,7 +44,7 @@ begin
                     cmd_req.request <= '1';
                     done_latch <=  '0';
                     cmd_req.togglebit <= io_wdata(11);
-                    cmd_req.do_split <= io_wdata(7);
+                    --cmd_req.do_split <= io_wdata(7);
                     cmd_req.do_data <= io_wdata(6);
                     cmd_req.command <= c_usb_commands_decoded(to_integer(unsigned(io_wdata(2 downto 0))));
     
@@ -58,6 +58,7 @@ begin
                     cmd_req.endp_addr <= unsigned(io_wdata(3 downto 0));
     
                 when X"63" => -- split info
+                    cmd_req.do_split <= io_wdata(15);
                     cmd_req.split_hub_addr <= unsigned(io_wdata(14 downto 8));
                     cmd_req.split_port_addr <= unsigned(io_wdata(3 downto 0));
                     cmd_req.split_sc <= io_wdata(7);

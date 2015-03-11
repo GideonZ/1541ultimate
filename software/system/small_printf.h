@@ -1,22 +1,29 @@
 #ifndef SMALL_PRINTF_H
 #define SMALL_PRINTF_H
 
-//extern "C" {
-	#include <stdarg.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-    int small_printf(const char *fmt, ...);
-    int small_sprintf(char *, const char *fmt, ...);
+#include <stdarg.h>
 
-	void _diag_write_char(char c, void **param);
-	void _string_write_char(char c, void **param);
-	int _vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap);
-    int  my_small_puts(const char *str);
+int printf(const char *fmt, ...);
+int sprintf(char *, const char *fmt, ...);
 
-	#include "itu.h"
-//}
+void _diag_write_char(char c, void **param);
+void _string_write_char(char c, void **param);
+int _vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap);
+int  puts(const char *str);
+//int  putchar(int a);
 
-#define printf  small_printf
-#define sprintf small_sprintf
-#define puts    my_small_puts
+#include "itu.h"
+
+//#define printf  small_printf
+//#define sprintf small_sprintf
+//#define puts    my_small_puts
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

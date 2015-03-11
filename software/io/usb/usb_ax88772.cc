@@ -55,9 +55,14 @@ void UsbAx88772Driver_bulk_callback(BYTE *data, int data_length, void *object) {
 	((UsbAx88772Driver *)object)->bulk_handler(data, data_length);
 }
 
-void UsbAx88772Driver_free_my_pbuf(void *v) {
-	struct pbuf_custom *p = (struct pbuf_custom *)v;
-	((UsbAx88772Driver *)p->custom_obj)->free_pbuf(p);
+// entry point for free buffer callback
+void UsbAx88772Driver_free_buffer(void *drv, void *b) {
+	((UsbAx88772Driver *)drv)->free_buffer((BYTE *)b);
+}
+
+// entry point for output packet callback
+BYTE UsbAx88772Driver_output(void *drv, void *b, int len) {
+	return ((UsbAx88772Driver *)drv)->output_packet((BYTE *)b, len);
 }
 
 /*********************************************************************
@@ -70,21 +75,21 @@ UsbAx88772Driver usb_ax88772_driver_tester(usb_drivers);
 UsbAx88772Driver :: UsbAx88772Driver(IndexedList<UsbDriver*> &list)
 {
 	list.append(this); // add tester
-	
-	// FIXME: THIS IS A SHORTCUT
-    lwip_init();
-    // FIXME
 }
 
 UsbAx88772Driver :: UsbAx88772Driver()
 {
     device = NULL;
     host = NULL;
+    netstack = NULL;
+    link_up = false;
 }
 
 UsbAx88772Driver :: ~UsbAx88772Driver()
 {
-
+	if(netstack)
+		releaseNetworkStack(netstack);
+    printf("AX88772 destroyed.\n");
 }
 
 UsbAx88772Driver *UsbAx88772Driver :: create_instance(void)
@@ -117,6 +122,11 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     device = dev;
     
 	dev->set_configuration(dev->get_device_config()->config_value);
+
+    netstack = getNetworkStack(this, UsbAx88772Driver_output, UsbAx88772Driver_free_buffer);
+    if(!netstack) {
+    	puts("** Warning! No network stack available!");
+    }
 
     read_mac_address();
 
@@ -216,37 +226,41 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     // % c0 07 10 00 04: Read PHY reg 04 (resp: e1 01)
     temp_buffer = read_phy_register(4);
 */
-    struct t_pipe ipipe;
-    ipipe.DevEP = WORD((device->current_address << 8) | 1);
-    ipipe.Interval = 8000; // 1 Hz
-    ipipe.Length = 16; // just read 16 bytes max
-    ipipe.MaxTrans = 64;
-    ipipe.SplitCtl = 0;
-    ipipe.Command = 0; // driver will fill in the command
-
-    irq_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_interrupt_callback, this);
-
-    ipipe.DevEP = WORD((device->current_address << 8) | 2);
-    ipipe.Interval = 1; // fast!
-    ipipe.Length = 1536; // big blocks!
-    ipipe.MaxTrans = 512;
-    ipipe.SplitCtl = 0;
-    ipipe.Command = 0; // driver will fill in the command
-
-    bulk_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_bulk_callback, this);
-
-    start_lwip();
-
-    // host->start_bulk_in(bulk_transaction, bulk_in, 512);
     
+    if (netstack) {
+    	printf("Network stack: %s\n", netstack->identify());
+    	struct t_pipe ipipe;
+		ipipe.DevEP = WORD((device->current_address << 8) | 1);
+		ipipe.Interval = 8000; // 1 Hz
+		ipipe.Length = 16; // just read 16 bytes max
+		ipipe.MaxTrans = 64;
+		ipipe.SplitCtl = 0;
+		ipipe.Command = 0; // driver will fill in the command
+
+		irq_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_interrupt_callback, this);
+
+		ipipe.DevEP = WORD((device->current_address << 8) | 2);
+		ipipe.Interval = 1; // fast!
+		ipipe.Length = 1536; // big blocks!
+		ipipe.MaxTrans = 512;
+		ipipe.SplitCtl = 0;
+		ipipe.Command = 0; // driver will fill in the command
+
+		bulk_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_bulk_callback, this);
+
+		netstack->start();
+    }
 }
 
 void UsbAx88772Driver :: deinstall(UsbDevice *dev)
 {
-    stop_lwip();
+    if (netstack) {
+    	netstack->stop();
 
-    host->free_input_pipe(irq_transaction);
-    host->free_input_pipe(bulk_transaction);
+		host->free_input_pipe(irq_transaction);
+		host->free_input_pipe(bulk_transaction);
+    }
+    printf("AX88772 Deinstalled.\n");
 }
 
 void UsbAx88772Driver :: write_phy_register(BYTE reg, WORD value) {
@@ -286,30 +300,29 @@ WORD UsbAx88772Driver :: read_phy_register(BYTE reg) {
 
 void UsbAx88772Driver :: poll(void)
 {
-    NetworkInterface :: poll();
-    lwip_poll();
+	if(netstack)
+		netstack->poll();
 }
 
 void UsbAx88772Driver :: interrupt_handler(BYTE *irq_data, int data_len)
 {
-    static bool link_up = false;
-
-    printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
-	for(int i=0;i<data_len;i++) {
-		printf("%b ", irq_data[i]);
-	} printf("\n");
+    //printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
+	//for(int i=0;i<data_len;i++) {
+	//	printf("%b ", irq_data[i]);
+	//} printf("\n");
 
 	if(irq_data[2] & 0x01) {
 		if(!link_up) {
 			printf("Bringing link up.\n");
-			dhcp_start(netif); // netif_set_up(netif);
+			if (netstack)
+				netstack->link_up();
 			link_up = true;
 		}
 	} else {
-		// if (netif_is_up(netif)) {
 		if(link_up) {
 			printf("Bringing link down.\n");
-			stop_lwip();
+			if (netstack)
+				netstack->link_down();
 			link_up = false;
 		}
 	}
@@ -319,6 +332,11 @@ void UsbAx88772Driver :: bulk_handler(BYTE *usb_buffer, int data_len)
 {
 	//printf("Packet %p Len: %d\n", usb_buffer, data_len);
 
+	if (!link_up) {
+		host->free_input_buffer(bulk_transaction, usb_buffer);
+		return;
+	}
+
 	WORD pkt_size  = WORD(usb_buffer[0]) | (WORD(usb_buffer[1])) << 8;
 	WORD pkt_size2 = (WORD(usb_buffer[2]) | (WORD(usb_buffer[3])) << 8) ^ 0xFFFF;
 
@@ -327,62 +345,48 @@ void UsbAx88772Driver :: bulk_handler(BYTE *usb_buffer, int data_len)
 	if (pkt_size != pkt_size2) {
 		printf("ERROR: Corrupted packet\n");
 		host->free_input_buffer(bulk_transaction, usb_buffer);
-        LINK_STATS_INC(link.drop);
+        //LINK_STATS_INC(link.drop);
 		return;
 	}
 
-	if (int(pkt_size) != (data_len - 4)) {
-		printf("ERROR: Wrong length?\n");
+	if (int(pkt_size) > (data_len - 4)) {
+		printf("ERROR: Not enough data?\n");
 		host->free_input_buffer(bulk_transaction, usb_buffer);
-        LINK_STATS_INC(link.drop);
+        //LINK_STATS_INC(link.drop);
 		return;
 	}
 
-	LINK_STATS_INC(link.recv);
+	//LINK_STATS_INC(link.recv);
 
-	struct pbuf_custom *pbuf = (struct pbuf_custom *)malloc(sizeof(struct pbuf_custom));
-	if (!pbuf) {
-		printf("No memory");
+	if(netstack) {
+		if (!netstack->input(usb_buffer, usb_buffer+4, pkt_size)) {
+			host->free_input_buffer(bulk_transaction, usb_buffer);
+		}
+	} else {
 		host->free_input_buffer(bulk_transaction, usb_buffer);
-		return;
-	}
-	pbuf->custom_obj = this;
-	pbuf->custom_free_function = UsbAx88772Driver_free_my_pbuf;
-	pbuf->buffer_start = usb_buffer;
-
-	struct pbuf *p = &(pbuf->pbuf);
-	p->flags |= PBUF_FLAG_IS_CUSTOM;
-	p->len = p->tot_len = pkt_size;
-	p->next = NULL;
-	p->payload = usb_buffer + 4;
-	p->ref = 1;
-	p->type = PBUF_REF;
-
-	if (netif->input(p, netif)!=ERR_OK) {
-		LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
-		host->free_input_buffer(bulk_transaction, usb_buffer);
-		pbuf_free(p);
 	}
 }
  	
-void UsbAx88772Driver :: free_pbuf(struct pbuf_custom *p)
+void UsbAx88772Driver :: free_buffer(BYTE *buffer)
 {
-	//printf("FREE PBUF CALLED %p!\n", p->buffer_start);
-	host->free_input_buffer(bulk_transaction, (BYTE *)p->buffer_start);
-	free(p);
+//	printf("FREE PBUF CALLED %p!\n", buffer);
+	host->free_input_buffer(bulk_transaction, buffer);
 }
 
 
 bool UsbAx88772Driver :: read_mac_address()
 {
+	BYTE local_mac[8];
 	int i = device->host->control_exchange(&device->control_pipe,
                                            c_get_mac_address, 8,
-                                           mac_address, 6);
+                                           local_mac, 6);
     if(i == 6) {
         printf("MAC address:  ");
         for(int i=0;i<6;i++) {
-            printf("%b%c", mac_address[i], (i==5)?' ':':');
+            printf("%b%c", local_mac[i], (i==5)?' ':':');
         } printf("\n");
+        if (netstack)
+        	netstack->set_mac_address(local_mac);
         return true;
     }
     return false;
@@ -400,24 +404,45 @@ void UsbAx88772Driver :: write_mac_address(void)
     read_mac_address();
 }
 
-err_t UsbAx88772Driver :: output_callback(struct netif *netif, struct pbuf *p) 
+void UsbAx88772Driver :: pipe_error(int pipe) // called from IRQ!
 {
-	printf("OUTPUT: pbuf = %p. size = %d. p->payload = %p. Size = %d\n", p, sizeof(struct pbuf), p->payload, p->len);
+	bool stop_stack = false;
+	printf("UsbAx88772 ERROR ");
+	if (pipe == irq_transaction) {
+		printf("on IRQ pipe. ");
+		stop_stack = true;
+	} else if (pipe == bulk_transaction) {
+		printf("on bulk pipe. ");
+		stop_stack = true;
+	} else {
+		printf("Internal error.\n");
+	}
+	if (stop_stack) {
+		// FIXME: push message in queue from interrupt
+		if (netstack) {
+			netstack->stop();
+		}
+		printf("Net stack stopped\n");
+	}
+}
 
-	BYTE size[4];
-    size[0] = BYTE(p->len & 0xFF);
-    size[1] = BYTE(p->len >> 8);
+
+BYTE UsbAx88772Driver :: output_packet(BYTE *buffer, int pkt_len)
+{
+	//printf("OUTPUT: payload = %p. Size = %d\n", buffer, pkt_len);
+	if (!link_up)
+		return 0;
+	//dump_hex(buffer, 32);
+
+	BYTE *size = buffer - 4;
+    size[0] = BYTE(pkt_len & 0xFF);
+    size[1] = BYTE(pkt_len >> 8);
     size[2] = size[0] ^ 0xFF;
     size[3] = size[1] ^ 0xFF;
 
-	if(pbuf_header(p, 4) == 0) {
-		*((DWORD *)p->payload) = *((DWORD *)size);
-	}
-
 	//dump_hex(p, p->len + sizeof(struct pbuf));
 
-	host->bulk_out(&bulk_out_pipe, p->payload, p->len);
+	host->bulk_out(&bulk_out_pipe, size, pkt_len + 4);
 
 	return 0;
 }
-

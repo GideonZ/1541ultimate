@@ -57,6 +57,7 @@
 #include "lwip/timers.h"
 #include "netif/etharp.h"
 #include "lwip/api.h"
+#include "small_printf.h"
 
 /* Compile-time sanity checks for configuration errors.
  * These can be done independently of LWIP_DEBUG, without penalty.
@@ -289,44 +290,62 @@ void
 lwip_init(void)
 {
   /* Modules initialization */
+  char c = 0x41;
+  printf("%c", c++);
   stats_init();
 #if !NO_SYS
   sys_init();
 #endif /* !NO_SYS */
+  printf("%c", c++);
   mem_init();
+  printf("%c", c++);
   memp_init();
+  printf("%c", c++);
   pbuf_init();
+  printf("%c", c++);
   netif_init();
 #if LWIP_SOCKET
+  printf("%c", c++);
   lwip_socket_init();
 #endif /* LWIP_SOCKET */
+  printf("%c", c++);
   ip_init();
 #if LWIP_ARP
+  printf("%c", c++);
   etharp_init();
 #endif /* LWIP_ARP */
 #if LWIP_RAW
+  printf("%c", c++);
   raw_init();
 #endif /* LWIP_RAW */
 #if LWIP_UDP
+  printf("%c", c++);
   udp_init();
 #endif /* LWIP_UDP */
 #if LWIP_TCP
+  printf("%c", c++);
   tcp_init();
 #endif /* LWIP_TCP */
 #if LWIP_SNMP
+  printf("%c", c++);
   snmp_init();
 #endif /* LWIP_SNMP */
 #if LWIP_AUTOIP
+  printf("%c", c++);
   autoip_init();
 #endif /* LWIP_AUTOIP */
 #if LWIP_IGMP
+  printf("%c", c++);
   igmp_init();
 #endif /* LWIP_IGMP */
 #if LWIP_DNS
+  printf("%c", c++);
   dns_init();
 #endif /* LWIP_DNS */
 
 #if LWIP_TIMERS
+  printf("%c", c++);
   sys_timeouts_init();
+  printf("<\n");
 #endif /* LWIP_TIMERS */
 }

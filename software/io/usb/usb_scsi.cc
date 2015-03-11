@@ -53,17 +53,19 @@ UsbScsiDriver *UsbScsiDriver :: create_instance(void)
 bool UsbScsiDriver :: test_driver(UsbDevice *dev)
 {
 	printf("** Test UsbScsiDriver **\n");
-	printf("Dev class: %d\n", dev->device_descr.device_class);
+	if (dev->num_interfaces < 1)
+		return false;
+	//printf("Dev class: %d\n", dev->device_descr.device_class);
 	if((dev->device_descr.device_class != 0x08)&&(dev->device_descr.device_class != 0x00)) {
 		printf("Device is not mass storage..\n");
 		return false;
 	}
-	if(dev->interface_descr.interface_class != 0x08) {
-		printf("Interface class is not mass storage. [%b]\n", dev->interface_descr.interface_class);
+	if(dev->interfaces[0]->interface_class != 0x08) {
+		printf("Interface class is not mass storage. [%b]\n", dev->interfaces[0]->interface_class);
 		return false;
 	}
-	if(dev->interface_descr.protocol != 0x50) {
-		printf("Protocol is not bulk only. [%b]\n", dev->interface_descr.protocol);
+	if(dev->interfaces[0]->protocol != 0x50) {
+		printf("Protocol is not bulk only. [%b]\n", dev->interfaces[0]->protocol);
 		return false;
 	}
 //	if(dev->interface_descr.sub_class != 0x06) {

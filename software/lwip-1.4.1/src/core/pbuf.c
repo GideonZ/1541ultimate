@@ -246,9 +246,10 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
     p->next = NULL;
 
     /* make the payload pointer point 'offset' bytes into pbuf data memory */
-    p->payload = LWIP_MEM_ALIGN((void *)((u8_t *)p + (SIZEOF_STRUCT_PBUF + offset)));
-    LWIP_ASSERT("pbuf_alloc: pbuf p->payload properly aligned",
-            ((mem_ptr_t)p->payload % MEM_ALIGNMENT) == 0);
+    //p->payload = LWIP_MEM_ALIGN((void *)((u8_t *)p + (SIZEOF_STRUCT_PBUF + offset)));
+    //LWIP_ASSERT("pbuf_alloc: pbuf p->payload properly aligned",
+    //        ((mem_ptr_t)p->payload % MEM_ALIGNMENT) == 0);
+    p->payload = (u8_t *)p + (SIZEOF_STRUCT_PBUF + offset);
     /* the total length of the pbuf chain is the requested size */
     p->tot_len = length;
     /* set the length of the first pbuf in the chain */
@@ -310,13 +311,14 @@ pbuf_alloc(pbuf_layer layer, u16_t length, pbuf_type type)
       return NULL;
     }
     /* Set up internal structure of the pbuf. */
-    p->payload = LWIP_MEM_ALIGN((void *)((u8_t *)p + SIZEOF_STRUCT_PBUF + offset));
+    // p->payload = LWIP_MEM_ALIGN((void *)((u8_t *)p + SIZEOF_STRUCT_PBUF + offset));
+    p->payload = (u8_t *)p + (SIZEOF_STRUCT_PBUF + offset);
     p->len = p->tot_len = length;
     p->next = NULL;
     p->type = type;
 
-    LWIP_ASSERT("pbuf_alloc: pbuf->payload properly aligned",
-           ((mem_ptr_t)p->payload % MEM_ALIGNMENT) == 0);
+//    LWIP_ASSERT("pbuf_alloc: pbuf->payload properly aligned",
+//           ((mem_ptr_t)p->payload % MEM_ALIGNMENT) == 0);
     break;
   /* pbuf references existing (non-volatile static constant) ROM payload? */
   case PBUF_ROM:
@@ -667,7 +669,7 @@ pbuf_free(struct pbuf *p)
       if ((p->flags & PBUF_FLAG_IS_CUSTOM) != 0) {
         struct pbuf_custom *pc = (struct pbuf_custom*)p;
         LWIP_ASSERT("pc->custom_free_function != NULL", pc->custom_free_function != NULL);
-        pc->custom_free_function(p);
+        pc->custom_free_function(pc);
       } else
 #endif /* LWIP_SUPPORT_CUSTOM_PBUF */
       {

@@ -19,7 +19,6 @@ PRJ      =  liblwip
 PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/lwip-1.4.1/src/ \
-			$(PATH_SW)/lwip-1.4.1/src/dummy/ \
 			$(PATH_SW)/lwip-1.4.1/src/core/ \
 			$(PATH_SW)/lwip-1.4.1/src/core/ipv4 \
 			$(PATH_SW)/lwip-1.4.1/src/core/snmp \
@@ -27,9 +26,13 @@ VPATH     = $(PATH_SW)/lwip-1.4.1/src/ \
 			$(PATH_SW)/lwip-1.4.1/src/netif \
 			$(PATH_SW)/lwip-1.4.1/src/include \
 			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
-			$(PATH_SW)/application/lwip \
-			$(PATH_SW)/system \
-			$(PATH_SW)/components
+			$(PATH_SW)/FreeRTOS/Source \
+			$(PATH_SW)/FreeRTOS/Source/include \
+			$(PATH_SW)/FreeRTOS/Source/portable \
+			$(PATH_SW)/FreeRTOS/Source/MemMang \
+			$(PATH_SW)/network \
+			$(PATH_SW)/network/config \
+			$(PATH_SW)/system
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
@@ -74,7 +77,6 @@ SRCS_C   =	sys_arch.c \
 			sockets.c \
 			tcpip.c \
 			etharp.c \
-			dummy_if.c \
 			slipif.c 
 
 # the order of the files is important, because of the static constructors.
@@ -119,9 +121,11 @@ ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC))
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
-.PHONY: hex clean all dep appl
+.PHONY: hex clean all dep test
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).a
+
+test: sys_arch.p
 
 $(OUTPUT):
 	@mkdir $(OUTPUT)
@@ -149,6 +153,10 @@ $(RESULT)/$(PRJ).a: $(LINK) $(OBJS_C)
 	@echo "Compiling $<"
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
+
+%.p: %.c
+	@echo "Running preprocessor on $<"
+	@$(CC) $(COPTIONS) $(PATH_INC) -B. -E -o $(OUTPUT)/$(@F) $<
 
 %.d: %.cc
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)

@@ -57,6 +57,7 @@
 #endif
 
 #include <string.h>
+#include <errno.h>
 
 #define NUM_SOCKETS MEMP_NUM_NETCONN
 

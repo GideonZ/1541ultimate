@@ -46,8 +46,8 @@ SRCS_ASM =  mb_crt0.s portasm.s
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -g -ffunction-sections -Os -std=c99 
-CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti
+COPTIONS = -g -ffunction-sections -Os -std=c99 -DOS
+CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -DOS
 LINK 	 = ./mb_app.lds
 LLIB     =  -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2

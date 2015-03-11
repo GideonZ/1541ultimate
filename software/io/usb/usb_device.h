@@ -141,6 +141,7 @@ public:
     	parent = p;
     	parent_port = port;
     	control_pipe.SplitCtl = host->getSplitControl(parent->current_address, parent_port + 1, speed, 0);
+    	printf("SplitCtl = %4x\n", control_pipe.SplitCtl);
     }
 
     void device_reset() {

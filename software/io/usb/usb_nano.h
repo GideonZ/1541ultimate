@@ -74,7 +74,6 @@
 #define UCMD_TOGGLEBIT	  0x0800
 #define UCMD_RETRY_ON_NAK 0x0400
 #define UCMD_PAUSED		  0x0200
-#define UCMD_DO_SPLIT	  0x0080
 #define UCMD_DO_DATA	  0x0040
 #define UCMD_SETUP		  0x0000
 #define UCMD_OUT		  0x0001
@@ -89,6 +88,8 @@
 #define SPLIT_INTERRUPT 0x0030
 #define SPLIT_PORT_MSK  0x000F
 #define SPLIT_HUBAD_MSK 0x7F00
+#define SPLIT_DO_SPLIT	0x8000
+
 
 #define URES_DONE	    0x8000
 #define URES_PACKET	    0x0000

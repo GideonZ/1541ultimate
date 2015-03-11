@@ -2,8 +2,10 @@
 
 extern void outbyte(int);
 
+static const char hexchar[] = "0123456789ABCDEF";
+
 static int
-_cvt(int val, char *buf, int radix, char *digits, int leading_zeros, int width)
+_cvt(int val, char *buf, int radix, const char *digits, int leading_zeros, int width)
 {
     char temp[80];
     char *cp = temp;
@@ -45,7 +47,6 @@ _cvt(int val, char *buf, int radix, char *digits, int leading_zeros, int width)
 static void
 _hex(int val, char *buf, int len)
 {
-    static char hexchar[] = "0123456789ABCDEF";
     if(!len)
         return;
         
@@ -63,7 +64,7 @@ _hex(int val, char *buf, int len)
 int
 _vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap)
 {
-    char buf[sizeof(long long)*8];
+    char buf[128];
     char c, sign, *cp=buf;
     int  i;
     long long val = 0;
@@ -87,7 +88,7 @@ _vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_l
             switch (c) {
             case 'd':
                 val = va_arg(ap, int); // up to dword
-                length = _cvt(val, buf, 10, "0123456789", leading_zeros, width);
+                length = _cvt(val, buf, 10, hexchar, leading_zeros, width);
                 if(length < width)
                     prepad = width - length;
                 cp = buf;
@@ -171,7 +172,7 @@ _string_write_char(char c, void **param)
 }
 
 int
-small_printf(const char *fmt, ...)
+printf(const char *fmt, ...)
 {
     va_list ap;
     int ret;
@@ -183,7 +184,7 @@ small_printf(const char *fmt, ...)
 }
 
 int
-small_sprintf(char *str, const char *fmt, ...)
+sprintf(char *str, const char *fmt, ...)
 {
     va_list ap;
     int ret;
@@ -196,7 +197,7 @@ small_sprintf(char *str, const char *fmt, ...)
     return (ret);
 }
 
-int my_small_puts(const char *str)
+int puts(const char *str)
 {
 	int i = 0;
 	while (*str) {
@@ -207,3 +208,9 @@ int my_small_puts(const char *str)
     outbyte('\n');
     return i+1;
 }        
+
+int  putchar(int a)
+{
+	outbyte(a);
+	return a;
+}

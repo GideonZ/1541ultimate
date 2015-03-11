@@ -22,7 +22,7 @@ RESULT    = ./result_mb
 OUTPUT    = ./output_mb
 OUTPUT_FP = $(shell pwd)/output_mb
 
-PRJ      =  usb_test
+PRJ      =  network_rtos
 PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/application \
@@ -31,10 +31,14 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
 			$(PATH_SW)/components \
+			$(PATH_SW)/network \
+			$(PATH_SW)/network/config \
 			$(PATH_SW)/io/usb \
 			$(PATH_SW)/io/network \
-			$(PATH_SW)/network \
-			$(PATH_SW)/6502 \
+			$(PATH_SW)/FreeRTOS/Source \
+			$(PATH_SW)/FreeRTOS/Source/include \
+			$(PATH_SW)/FreeRTOS/Source/portable \
+			$(PATH_SW)/FreeRTOS/Source/MemMang \
 			$(PATH_SW)/lwip-1.4.1/src/include \
 			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
 			$(ROMS)
@@ -44,7 +48,16 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 SRCS_C   =	mbstart_app.c \
 			itu.c \
 			dump_hex.c \
-			small_printf.c 
+			small_printf.c \
+			croutine.c \
+            event_groups.c \
+            list.c \
+            queue.c \
+            tasks.c \
+            timers.c \
+            port.c \
+            heap_3.c
+#			echo.c
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:
@@ -61,10 +74,11 @@ SRCS_CC	 =  memory.cc \
 			usb_device.cc \
 			usb_hub.cc \
 			usb_ax88772.cc \
-			usb_driver_test.cc \
-			network_interface.cc
-#
-SRCS_ASM =  
+			network_rtos.cc \
+			network_interface.cc \
+			network_lwip.cc
+
+SRCS_ASM =  mb_crt0.s portasm.s
 
 SRCS_6502 = 
 
@@ -82,8 +96,8 @@ SIZE	  = $(CROSS)-size
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -ffunction-sections -fdata-sections -O2 
-COPTIONS = $(OPTIONS) -std=c99
+OPTIONS  = -ffunction-sections -fdata-sections -O2 -DOS
+COPTIONS = $(OPTIONS) -std=c99 -DOS
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti
 LINK 	 = ./mb_app.lds
 LLIB     =  -L ../mb_lwip/result \
@@ -109,9 +123,11 @@ ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
-.PHONY: clean all dep
+.PHONY: clean all dep test
 
 all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).mem $(OUTPUT)/$(PRJ).m8
+
+test: $(OUTPUT)/dhcp.p
 
 $(OUTPUT):
 	@mkdir $(OUTPUT)

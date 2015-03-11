@@ -307,10 +307,14 @@ mem_init(void)
  * @param rmem is the data portion of a struct mem as returned by a previous
  *             call to mem_malloc()
  */
+//#include "small_printf.h"
+
 void
 mem_free(void *rmem)
 {
   struct mem *mem;
+  //printf("mem_free %p\n", rmem);
+
   LWIP_MEM_FREE_DECL_PROTECT();
 
   if (rmem == NULL) {

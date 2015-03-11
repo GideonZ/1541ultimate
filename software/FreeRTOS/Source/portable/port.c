@@ -119,7 +119,7 @@ static void prvSetupTimerInterrupt( void )
 	ITU_IRQ_TIMER_HI = 3;
 	ITU_IRQ_TIMER_LO = 208;
 	ITU_IRQ_TIMER_EN = 1;
-	ITU_IRQ_ENABLE = 1;
+	ITU_IRQ_ENABLE = 5; // usb + timer
 }
 /*-----------------------------------------------------------*/
 
@@ -313,6 +313,7 @@ void vTickISR( void )
 */
 }
 /*-----------------------------------------------------------*/
+void _Z7usb_irqv();
 
 void vTaskISRHandler( void )
 {
@@ -326,7 +327,7 @@ static uint8_t pending;
 		vTickISR();
 	}
 	if (pending & 0x04) {
-		//usb!
+		_Z7usb_irqv();
 	}
 }
 /*-----------------------------------------------------------*/

@@ -5,9 +5,9 @@
 #include "usb_device.h"
 #include "network_interface.h"
 
-class UsbAx88772Driver : public UsbDriver, NetworkInterface 
+class UsbAx88772Driver : public UsbDriver
 {
-    int  irq_transaction;
+	int  irq_transaction;
     int  bulk_transaction;
 
     BYTE irq_data[8];
@@ -15,12 +15,13 @@ class UsbAx88772Driver : public UsbDriver, NetworkInterface
     
     UsbBase   *host;
     UsbDevice *device;
+    NetworkInterface *netstack;
 
     int  bulk_in;
     int  bulk_out;
     struct t_pipe bulk_out_pipe;
 
-    BYTE rx_buffer[2000];
+    bool link_up;
 
     bool read_mac_address();
     void write_mac_address();
@@ -38,14 +39,14 @@ public:
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);
-    err_t output_callback(struct netif *, struct pbuf *);
-    
+	void pipe_error(int pipe);
+
+    //BYTE output_callback(struct netif *, struct pbuf *);
+    BYTE output_packet(BYTE *buffer, int pkt_len);
+
     void interrupt_handler(BYTE *, int);
     void bulk_handler(BYTE *, int);
-    void free_pbuf(struct pbuf_custom *p);
-
-    //bool  transmit_frame(BYTE *buffer, int length);
-    //void  test_packet_out(int size, int filler);
+    void free_buffer(BYTE *b);
 };
 
 #endif
