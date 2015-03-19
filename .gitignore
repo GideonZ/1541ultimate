@@ -63,6 +63,8 @@ target/software/mb_lwip/output
 target/software/mb_lwip/result
 target/software/mb_rtos/output
 target/software/mb_rtos/result
+target/software/mb_rtos_netw/output_mb
+target/software/mb_rtos_netw/result_mb
 target/software/mb_sim_boot/output_mb
 target/software/mb_sim_boot/result_mb
 target/software/mb_ultimate/output

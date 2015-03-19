@@ -228,7 +228,6 @@ void UsbHubDriver :: poll()
 
     int i;
     
-    wait_ms(150);
     for(int j=0;j<num_ports;j++) {
     	irq_data[0] >>=1;
         if(irq_data[0] & 1) {
@@ -335,6 +334,12 @@ void UsbHubDriver :: poll()
         }        
     }
     host->resume_input_pipe(this->irq_transaction);
+}
+
+void UsbHubDriver :: pipe_error(int pipe) // called from IRQ!
+{
+	printf("HUB IRQ pipe error, ignoring.\n");
+	host->resume_input_pipe(pipe);
 }
 
 void UsbHubDriver :: reset_port(int port)

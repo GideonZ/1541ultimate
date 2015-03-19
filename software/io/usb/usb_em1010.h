@@ -1,7 +1,9 @@
 #ifndef USB_EM1010_H
 #define USB_EM1010_H
 
-#include "___usb.h"
+#include "usb_base.h"
+#include "usb_device.h"
+#include "network_interface.h"
 
 #define EMREG_EC0      0x00
 #define EMREG_EC1      0x01
@@ -64,14 +66,17 @@
 class UsbEm1010Driver : public UsbDriver
 {
     int  irq_transaction;
-    BYTE irq_data[8];
+    int  bulk_transaction;
     
-    Usb       *host;
+    UsbBase   *host;
     UsbDevice *device;
+    NetworkInterface *netstack;
 
     int  bulk_in;
     int  bulk_out;
-    BYTE mac_address[6];
+    int  irq_in;
+    struct t_pipe bulk_out_pipe;
+    bool link_up;
 
     bool read_register(BYTE offset, BYTE &data);
     bool read_registers(BYTE offset, BYTE *data, int len);
@@ -79,16 +84,7 @@ class UsbEm1010Driver : public UsbDriver
     bool write_register(BYTE offset, BYTE data);
     bool read_phy_register(BYTE offset, WORD *data);
     bool write_phy_register(BYTE offset, WORD data);
-
-    // for testing only //
-    int  prepare_dhcp_discover(void);
-    WORD udp_sum_calc(WORD len_udp, BYTE *header, BYTE *buff);
-    int  udp_header(BYTE *buf, WORD len, WORD src, WORD dst);
-    int  ip_header(BYTE *buf, WORD len, BYTE prot, DWORD src, DWORD dst);
-    int  eth_header(BYTE *buf, WORD type); // makes IP header for broadcast
-
-    BYTE tx_buffer[1600];
-    BYTE rx_buffer[1600];
+    bool read_mac_address();
 
 public:
 	UsbEm1010Driver(IndexedList<UsbDriver *> &list);
@@ -99,10 +95,13 @@ public:
 	bool test_driver(UsbDevice *dev);
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
-	void interrupt_handler(BYTE *, int);
+	void poll(void);
+	void pipe_error(int pipe);
 
-    bool receive_frame(BYTE *buffer, int *length);
-    bool transmit_frame(BYTE *buffer, int length);
+    void bulk_handler(BYTE *buffer, int length);
+    void interrupt_handler(BYTE *, int);
+    BYTE output_packet(BYTE *buffer, int length);
+    void free_buffer(BYTE *b);
 };
 
 #endif

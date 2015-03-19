@@ -10,6 +10,7 @@ port (
     do_dec      : in  std_logic;
     
     remain      : out unsigned(7 downto 0);
+    remain_is_1 : out std_logic;
     remain_is_0 : out std_logic );
     
 end mem_remain_counter;
@@ -32,6 +33,7 @@ begin
     remain       <= rem_i;
     small        <= '1' when (rem_i(rem_i'high downto 2) = 0) else '0';
     remain_is_0  <= small when (rem_i(1 downto 0) = 0) else '0';
+    remain_is_1  <= small when (rem_i(1 downto 0) = 1) else '0';
 --    remain_less4 <= small;
     
 end architecture;

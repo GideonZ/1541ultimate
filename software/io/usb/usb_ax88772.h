@@ -10,7 +10,6 @@ class UsbAx88772Driver : public UsbDriver
 	int  irq_transaction;
     int  bulk_transaction;
 
-    BYTE irq_data[8];
     BYTE temp_buffer[16];
     
     UsbBase   *host;

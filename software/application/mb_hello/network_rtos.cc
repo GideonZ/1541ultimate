@@ -16,6 +16,8 @@ extern "C" {
 	#include "small_printf.h"
 }
 
+#include "init_function.h"
+
 void main_loop(void);
 
 #define MAIN_LOOP_TASK_PRIORITY		( tskIDLE_PRIORITY + 2 )
@@ -24,10 +26,11 @@ SemaphoreHandle_t xSemaphore;
 
 void run_main_loop(void *a)
 {
+	puts("Executing init functions.");
+	InitFunction :: executeAll();
 	puts("Starting main loop.");
 	main_loop();
 }
-
 
 int main (void)
 {

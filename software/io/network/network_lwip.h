@@ -1,7 +1,7 @@
 #ifndef NETWORK_LWIP_H
 #define NETWORK_LWIP_H
 
-extern "C" {
+//#include "ipv4/lwip/ip_addr.h"
 #include "lwip/init.h"
 #include "lwip/tcpip.h"
 #include "lwip/ip_frag.h"
@@ -14,6 +14,7 @@ extern "C" {
 #include "lwip/udp.h"
 #include "lwip/pbuf.h"
 #include <lwip/stats.h>
+extern "C" {
 #include "small_printf.h"
 #include "arch/sys_arch.h"
 }
@@ -22,7 +23,7 @@ extern "C" {
 
 class NetworkLWIP : public NetworkInterface
 {
-    void lwip_poll();
+	void lwip_poll();
 public:
     struct ip_addr my_ip;
     struct ip_addr my_netmask;

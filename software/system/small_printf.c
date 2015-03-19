@@ -211,6 +211,6 @@ int puts(const char *str)
 
 int  putchar(int a)
 {
-	outbyte(a);
+	_diag_write_char((char)a, 0);
 	return a;
 }

@@ -532,10 +532,6 @@ _copy_user_cmd
     RET
     
 _execute_cmd
-    LOAD Current_Command_MemHi
-    OUTP MEM_ADDR_HI
-    LOAD Current_Command_MemLo
-    OUTP MEM_ADDR_LO
     LOAD Current_Command_DevEP
     OUTP CMD_DEVICE_ENDPOINT
     LOAD #3
@@ -545,6 +541,11 @@ _execute_cmd
     LOAD  Current_Command
     BMI   _out_command
 
+_start_in
+    LOAD Current_Command_MemHi
+    OUTP MEM_ADDR_HI
+    LOAD Current_Command_MemLo
+    OUTP MEM_ADDR_LO
 ; If we get here, we assume that it is an IN command
 _next_in_chunk
     LOAD CurrentBuffer
@@ -659,11 +660,32 @@ _in_done
     RET
     
 do_mem_read
+    LOAD Current_Command_MemHi
+    OUTP MEM_ADDR_HI
+    LOAD Current_Command_MemLo
+    OUTP MEM_ADDR_LO
+    AND  #3
+    STORE Current_Word_Offset
     LOAD CurrentBuffer
     OUTP MEM_BUFFER_INDEX
-    CALL determine_length
-    ADD  #3
-    OUTP MEM_TRANSFER_READ
+determine_length
+    LOAD Current_Command_Length
+    CMP  Current_Command_MaxTrans
+    BMI  _no_truncate
+    LOAD Current_Command_MaxTrans
+_no_truncate
+    STORE CurrentLength
+    ADD   #3
+    AND   #$FFFC
+    ADD   Current_Word_Offset
+    ADD   #3
+    OUTP  MEM_TRANSFER_READ
+    LOAD  Current_Command_MemLo
+    ADD   CurrentLength
+    STORE Current_Command_MemLo
+    LOAD  Current_Command_MemHi
+    ADDC  #0
+    STORE Current_Command_MemHi
     RET
         
 _out_command
@@ -778,14 +800,6 @@ _check_nyet_response_out
     BEQ  _out_success ; Should switch to PING, but we ignore that for now
     BRA  _try_complete_out
 
-determine_length
-    LOAD Current_Command_Length
-    CMP  Current_Command_MaxTrans
-    BMI  _no_truncate
-    LOAD Current_Command_MaxTrans
-_no_truncate
-    STORE CurrentLength
-    RET
 
 AllowedErrors
     .dw 0
@@ -811,7 +825,9 @@ Current_Command_SplitCtl
     .dw 0          
 Current_Command_Result   
     .dw 0          
-
+Current_Word_Offset
+    .dw 0
+    
 PipeAddr
     .dw 0
 PipeNumber

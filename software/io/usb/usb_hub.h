@@ -33,8 +33,10 @@ public:
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);
-	void interrupt_handler(BYTE *, int);
+	void pipe_error(int pipe);
 	void reset_port(int port);
+
+	void interrupt_handler(BYTE *, int);
 };
 
 #endif

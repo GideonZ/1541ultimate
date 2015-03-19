@@ -20,7 +20,7 @@ use unisim.vcomponents.all;
 
 entity usb_host_nano is
     generic (
-        g_tag          : std_logic_vector(7 downto 0) := X"55";
+        g_tag          : std_logic_vector(7 downto 0) := X"05";
         g_simulation   : boolean := false );
 	port  (
         clock       : in  std_logic;
@@ -84,7 +84,7 @@ architecture arch of usb_host_nano is
 
     signal sys_buf_addr    : std_logic_vector(10 downto 2);
     signal sys_buf_en      : std_logic;
-    signal sys_buf_we      : std_logic;
+    signal sys_buf_we      : std_logic_vector(3 downto 0);
     signal sys_buf_wdata   : std_logic_vector(31 downto 0);
     signal sys_buf_rdata   : std_logic_vector(31 downto 0);
     signal sys_buf_wdata_le: std_logic_vector(31 downto 0);
@@ -145,25 +145,25 @@ begin
         usb_tx_req          => usb_tx_req,
         usb_tx_resp         => usb_tx_resp );
 
-    i_buf_ram: RAMB16_S9_S36
+    i_buf_ram: RAMB16BWE_S36_S9
     port map (
-        CLKA  => clock,
-        SSRA  => reset,
-        ENA   => buf_en,
-        WEA   => buf_we,
-        ADDRA => std_logic_vector(buf_address),
-        DIA   => buf_wdata,
-        DIPA  => "0",
-        DOA   => buf_rdata,
+        CLKB  => clock,
+        SSRB  => reset,
+        ENB   => buf_en,
+        WEB   => buf_we,
+        ADDRB => std_logic_vector(buf_address),
+        DIB   => buf_wdata,
+        DIPB  => "0",
+        DOB   => buf_rdata,
 
-        CLKB  => sys_clock,
-        SSRB  => sys_reset,
-        ENB   => sys_buf_en,
-        WEB   => sys_buf_we,
-        ADDRB => sys_buf_addr,
-        DIB   => sys_buf_wdata_le,
-        DIPB  => "0000",
-        DOB   => sys_buf_rdata_le );
+        CLKA  => sys_clock,
+        SSRA  => sys_reset,
+        ENA   => sys_buf_en,
+        WEA   => sys_buf_we,
+        ADDRA => sys_buf_addr,
+        DIA   => sys_buf_wdata_le,
+        DIPA  => "0000",
+        DOA   => sys_buf_rdata_le );
 
     sys_buf_wdata_le <= byte_swap(sys_buf_wdata);
     sys_buf_rdata <= byte_swap(sys_buf_rdata_le);

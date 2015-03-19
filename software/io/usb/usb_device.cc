@@ -116,7 +116,7 @@ bool UsbDevice :: get_device_descriptor()
 		printf("Error: Expected 18 bytes on device descriptor.. got %d.\n", i);
 		return false;
 	}
-               
+
 	printf("Vendor/Product: %4x %4x\n", le16_to_cpu(device_descr.vendor), le16_to_cpu(device_descr.product));
     printf("Class / SubClass / Protocol: %d %d %d\n", device_descr.device_class, device_descr.sub_class, device_descr.protocol);
     printf("MaxPacket: %d\n", device_descr.max_packet_size);
@@ -170,7 +170,8 @@ bool UsbDevice :: get_configuration(BYTE index)
     	if (!config_descriptor)
     		return false;
     } else {
-    	printf("Invalid configuration descriptor\n");
+    	printf("Invalid configuration descriptor. Received: %d bytes.\n", len_descr);
+    	dump_hex(buf, len_descr);
     	return false;
     }
 
@@ -320,5 +321,19 @@ int UsbDevice :: find_endpoint(BYTE code)
     return -1;
 }
 
+void UsbDevice :: get_pathname(char *dest, int len)
+{
+	char buf[16];
+	memset(buf, 0, 16);
+	UsbDevice *d = this;
+	int i=15;
+	while(d->parent != NULL) {
+		buf[--i] = 0x30 + d->parent_port;
+		buf[--i] = 0x2E;
+		d = d->parent;
+	}
+	strncpy(dest, "Usb", 3);
+	strncpy(dest+3, (const char *)&buf[i], len-3);
+}
 
 IndexedList<UsbDriver *> usb_drivers(16, NULL);

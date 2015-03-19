@@ -47,14 +47,14 @@ begin
         
         procedure io_write_word(addr : unsigned(19 downto 0); word : std_logic_vector(15 downto 0)) is
         begin
-            io_write(io => io, addr => addr, data => word(7 downto 0));
-            io_write(io => io, addr => (addr + 1), data => word(15 downto 8));
+            io_write(io => io, addr => (addr + 1), data => word(7 downto 0));
+            io_write(io => io, addr => (addr + 0), data => word(15 downto 8));
         end procedure;
 
         procedure io_read_word(addr : unsigned(19 downto 0); word : out std_logic_vector(15 downto 0)) is
         begin
-            io_read(io => io, addr => addr, data => word(7 downto 0));
-            io_read(io => io, addr => (addr + 1), data => word(15 downto 8));
+            io_read(io => io, addr => (addr + 1), data => word(7 downto 0));
+            io_read(io => io, addr => (addr + 0), data => word(15 downto 8));
         end procedure;
 
         procedure wait_command_done is
@@ -73,14 +73,14 @@ begin
         sctb_set_log_level(c_log_level_trace);
         wait for 70 ns;
         io_write(io => io, addr => X"007fe", data => X"01"  ); -- set nano to simulation mode
-        io_write(io => io, addr => X"007fc", data => X"02"  ); -- set bus speed to HS
+        io_write(io => io, addr => X"007fd", data => X"02"  ); -- set bus speed to HS
         io_write(io => io, addr => X"00800", data => X"01"  ); -- enable nano
         wait for 4 us;
 
         io_write_word(Command_DevEP,    X"0000");
         io_write_word(Command_MaxTrans, X"0040");
-        io_write_word(Command_MemHi,    X"0001");
-        io_write_word(Command_MemLo,    X"0400");
+        io_write_word(Command_MemHi,    X"0004");
+        io_write_word(Command_MemLo,    X"132A");
         io_write_word(Command_Length,   X"0008");
         io_write_word(Command,          X"8040"); -- setup with mem read
 
@@ -129,6 +129,8 @@ begin
         sctb_open_region("Testing Out request", 0);
 
         start := now;
+        io_write_word(Command_MemHi,    X"0001");
+        io_write_word(Command_MemLo,    X"0402");
         io_write_word(Command_MaxTrans, X"0200");
         io_write_word(Command_DevEP,    X"0005");
         io_write_word(Command_Length,   std_logic_vector(to_unsigned(c_tx_size, 16)));

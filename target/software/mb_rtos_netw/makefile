@@ -41,6 +41,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/FreeRTOS/Source/MemMang \
 			$(PATH_SW)/lwip-1.4.1/src/include \
 			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
+			$(PATH_SW)/lwip-1.4.1/src/include/posix/sys \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
@@ -56,7 +57,8 @@ SRCS_C   =	mbstart_app.c \
             tasks.c \
             timers.c \
             port.c \
-            heap_3.c
+            heap_3.c \
+            sock_echo.c
 #			echo.c
 
 # the order of the files is important, because of the static constructors.
@@ -67,6 +69,7 @@ SRCS_C   =	mbstart_app.c \
 # Therefore, the file manager needs to exist.
 
 SRCS_CC	 =  memory.cc \
+			init_function.cc \
 			event.cc \
 			main_loop.cc \
 			usb_base.cc \
@@ -74,6 +77,7 @@ SRCS_CC	 =  memory.cc \
 			usb_device.cc \
 			usb_hub.cc \
 			usb_ax88772.cc \
+			usb_em1010.cc \
 			network_rtos.cc \
 			network_interface.cc \
 			network_lwip.cc

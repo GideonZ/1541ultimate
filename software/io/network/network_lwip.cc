@@ -1,8 +1,20 @@
 #include "network_lwip.h"
+#include "init_function.h"
 #include <stdlib.h>
+#include <string.h>
 extern "C" {
 #include "dump_hex.h"
+#include "FreeRTOS.h"
+#include "FreeRTOSConfig.h"
+#include "task.h"
 }
+
+void initLwip(void *a, void *b)
+{
+	printf("Going to call init function of LWIP.\n");
+	tcpip_init(NULL, NULL);
+}
+InitFunction lwIP_initializer(initLwip, NULL, NULL);
 
 err_t lwip_init_callback(struct netif *netif)
 {
@@ -15,7 +27,9 @@ err_t lwip_init_callback(struct netif *netif)
 err_t lwip_output_callback(struct netif *netif, struct pbuf *pbuf)
 {
     NetworkLWIP *ni = (NetworkLWIP *)netif->state;
-    return ni->driver_output_function(ni->driver, pbuf->payload, pbuf->len);
+    //printf("Output Callback len=%d tot_len=%d Pad=%d\n", pbuf->len, pbuf->tot_len, ETH_PAD_SIZE);
+    //dump_hex(pbuf->payload, pbuf->len);
+    return ni->driver_output_function(ni->driver, ((BYTE *)pbuf->payload) + ETH_PAD_SIZE, (pbuf->len - ETH_PAD_SIZE));
 }
 
 void lwip_free_callback(void *p)
@@ -50,7 +64,9 @@ NetworkLWIP :: NetworkLWIP(void *driver,
 
 NetworkLWIP :: ~NetworkLWIP()
 {
-	stop();
+    dhcp_stop(&my_net_if);
+	netif_set_down(&my_net_if);
+	netif_remove(&my_net_if);
 	printf("NetworkLWIP destroyed.\n");
 }
 
@@ -61,15 +77,15 @@ void ethernet_init_inside_thread(void *classPointer)
 
 bool NetworkLWIP :: start()
 {
-    memset( &my_net_if, 0, sizeof(my_net_if));
-    tcpip_init( ethernet_init_inside_thread, this);
+	// has LWIP already started?
+	memset(&my_net_if, 0, sizeof(my_net_if));
+	init_callback();
     if_up = false;
     return true;
 }
 
 void NetworkLWIP :: stop()
 {
-    //dhcp_stop(netif);
     //if_up = false;
 }
 
@@ -86,6 +102,10 @@ void NetworkLWIP :: poll()
         if_up = false;
     }
 //    lwip_poll();
+}
+
+extern "C" {
+void echo_task(void *a);
 }
 
 void NetworkLWIP :: init_callback( )
@@ -129,7 +149,7 @@ void NetworkLWIP :: init_callback( )
      * The last argument should be replaced with your link speed, in units
      * of bits per second.
      */
-    NETIF_INIT_SNMP(netif, snmp_ifType_ethernet_csmacd, 100000000);
+    NETIF_INIT_SNMP(&my_net_if, snmp_ifType_ethernet_csmacd, 100000000);
   
     /* We directly use etharp_output() here to save a function call.
      * You can instead declare your own function an call etharp_output()
@@ -140,8 +160,11 @@ void NetworkLWIP :: init_callback( )
 
     /* device capabilities */
 	my_net_if.flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
-    struct netif *nif = netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway,
-              this, lwip_init_callback, ethernet_input);
+
+//	struct netif *nif = netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway,
+//              this, lwip_init_callback, ethernet_input);
+	struct netif *nif = netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway,
+              this, lwip_init_callback, tcpip_input);
 
     /* device capabilities */
 	my_net_if.flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
@@ -154,6 +177,8 @@ void NetworkLWIP :: init_callback( )
     		printf("** GOT OTHER POINTER **\n");
     	}
     	netif_set_default(nif);
+    } else {
+    	printf("Netif_add failed.\n");
     }
 }
 
@@ -224,6 +249,16 @@ bool NetworkLWIP :: input(BYTE *raw_buffer, BYTE *payload, int pkt_size)
 	p->ref = 1;
 	p->type = PBUF_REF;
 
+/*
+	struct pbuf *p = pbuf_alloc(PBUF_RAW, pkt_size + ETH_PAD_SIZE, PBUF_RAM);
+	if (p == NULL) {
+		printf("Help, no pbuf for incoming packet.");
+		return false;
+	}
+	p->payload = ((BYTE *)p->payload) - 2;
+	memcpy(p->payload, payload, pkt_size);
+*/
+
 	if (my_net_if.input(p, &my_net_if)!=ERR_OK) {
 		LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
 		pbuf_free(p);
@@ -237,16 +272,18 @@ void NetworkLWIP :: link_up()
     // Enable the network interface
     netif_set_up(&my_net_if);
 	dhcp_start(&my_net_if);
+	xTaskCreate( echo_task, "Echo task", configMINIMAL_STACK_SIZE, NULL, 2, NULL );
 }
 
 void NetworkLWIP :: link_down()
 {
+	// Disable the network interface
 	netif_set_link_down(&my_net_if);
 	dhcp_stop(&my_net_if);
 }
 
 void NetworkLWIP :: set_mac_address(BYTE *mac)
 {
-	memcpy(mac_address, mac, 6);
+	memcpy((void *)mac_address, (const void *)mac, 6);
 }
 

@@ -48,6 +48,23 @@ end align_read_to_bram;
 --    END.
 --    So in this way we only need to generate the correct write strobes and address advance.
 -- 
+-- Note on count generation:
+-- Bytes Offset | Words
+--   1     x    |   1
+--   2     0    |   1
+--   2     1    |   1
+--   2     2    |   1
+--   2     3    |   2
+--   3     0    |   1
+--   3     1    |   1
+--   3     2    |   2
+--   3     3    |   2
+--   4     0    |   1
+--   4     1    |   2
+--   4     2    |   2
+--   4     3    |   2
+-- (bytes + 3 + offset) and ~3
+-- 
 architecture arch of align_read_to_bram is
     signal need_second  : std_logic;
     signal second_cycle : std_logic;
@@ -65,33 +82,44 @@ begin
             when "00" => -- direct fit
                 byte_en <= "1111";
                 advance <= '1';
-                need_second <= '0';
             when "01" =>
-                byte_en <= "0111";
-                need_second <= not first_word;
-                advance <= not first_word;
+                if first_word='1' then
+                    byte_en <= "0111";
+                else
+                    byte_en <= "1000";
+                    advance <= '1';
+                    need_second <= '1';
+                end if;
             when "10" =>
-                byte_en <= "0011";
-                need_second <= not first_word;
-                advance <= not first_word;
+                if first_word='1' then
+                    byte_en <= "0011";
+                else
+                    byte_en <= "1100";
+                    advance <= '1';
+                    need_second <= '1';
+                end if;
             when "11" =>
-                byte_en <= "0001";
-                need_second <= not first_word;
-                advance <= not first_word;
+                if first_word='1' then
+                    byte_en <= "0001";
+                else
+                    byte_en <= "1110";
+                    advance <= '1';
+                    need_second <= '1';
+                end if;
             when others =>
                 null;
             end case;
-            if last_word = '1' and first_word = '0' and offset /= "00" then
-                byte_en <= "0000";
+            if last_word='1' then
+                need_second <= '0';
             end if;
         elsif second_cycle='1' then
             case offset is
             when "01" =>
-                byte_en <= "1000";
+                byte_en <= "0111";
             when "10" =>
-                byte_en <= "1100";
+                byte_en <= "0011";
             when "11" =>
-                byte_en <= "1110";
+                byte_en <= "0001";
             when others =>
                 null;
             end case;

@@ -62,7 +62,7 @@ typedef u32_t sys_prot_t;
 //#define ALIGN_STRUCT_8_BEGIN #pragma pack(1,8,0)
 //#define ALIGN_STRUCT_END #pragma pack()
 #define PACK_STRUCT_END
-#define PACK_STRUCT_FIELD(x) x __attribute__((__packed__))
+#define PACK_STRUCT_FIELD(x) x //__attribute__((__packed__))
 
 /* prototypes for printf() and abort() */
 #include <stdio.h>

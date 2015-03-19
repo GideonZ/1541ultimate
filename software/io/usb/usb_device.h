@@ -152,6 +152,7 @@ public:
     }
 
     void get_string(int index, char *dest, int len);
+    void get_pathname(char *dest, int len);
     bool get_device_descriptor();
     struct t_device_configuration *get_device_config();
     void set_address(int address);

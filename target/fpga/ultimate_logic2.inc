@@ -74,6 +74,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/mem_addr_counter.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/mem_remain_counter.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_memory_ctrl.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/align_read_to_bram.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/usb2/vhdl_source/usb_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/itu/vhdl_source/itu.vhd \

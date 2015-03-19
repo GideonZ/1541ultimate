@@ -355,7 +355,7 @@ begin
         io_req      => cpu_io_req,
         io_resp     => cpu_io_resp );
 
-    invalidate <= misc_io(0) when (mem_resp_32_usb.rack_tag = c_tag_usb2) and (mem_req_32_usb.read_writen = '0') else '0';
+    invalidate <= misc_io(0) when (mem_resp_32_usb.rack_tag(5 downto 0) = c_tag_usb2(5 downto 0)) and (mem_req_32_usb.read_writen = '0') else '0';
     inv_addr(31 downto 26) <= (others => '0');
     inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_usb.address);
 		

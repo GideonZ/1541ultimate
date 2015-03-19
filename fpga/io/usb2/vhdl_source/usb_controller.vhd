@@ -23,9 +23,6 @@ port (
     ULPI_NXT    : in    std_logic;
     ULPI_STP    : out   std_logic;
 
-	-- LED interface
-	usb_busy	: out   std_logic;
-	
     -- register interface bus
     sys_clock   : in    std_logic;
     sys_reset   : in    std_logic;

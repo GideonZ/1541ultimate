@@ -63,7 +63,10 @@ void UsbBase :: attach_root(void)
 bool UsbBase :: install_device(UsbDevice *dev, bool draws_current)
 {
     int idx = get_device_slot();
-    
+    char buf[16];
+    dev->get_pathname(buf, 16);
+    printf("Installing %s Parent = %p, ParentPort = %d\n", buf, dev->parent, dev->parent_port);
+
     bool ok = false;
     for(int i=0;i<5;i++) { // try 5 times!
         if(dev->init(idx+1)) {
