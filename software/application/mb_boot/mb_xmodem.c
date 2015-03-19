@@ -21,8 +21,6 @@ int main(void)
     	int st = xmodemReceive(ram, 1048576);
         if (st > 0) {
             puts("Receive done.");
-            puts("Going to start...");
-            wait_ms(2000);
             //jump_run(0x10000);
             UART_DATA = 0x2d;
             asm("bralid r15, 0x10000");

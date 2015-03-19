@@ -52,12 +52,13 @@ UsbScsiDriver *UsbScsiDriver :: create_instance(void)
 
 bool UsbScsiDriver :: test_driver(UsbDevice *dev)
 {
-	printf("** Test UsbScsiDriver **\n");
+	//printf("** Test UsbScsiDriver **\n");
 	if (dev->num_interfaces < 1)
 		return false;
+
 	//printf("Dev class: %d\n", dev->device_descr.device_class);
 	if((dev->device_descr.device_class != 0x08)&&(dev->device_descr.device_class != 0x00)) {
-		printf("Device is not mass storage..\n");
+		//printf("Device is not mass storage..\n");
 		return false;
 	}
 	if(dev->interfaces[0]->interface_class != 0x08) {
@@ -72,16 +73,15 @@ bool UsbScsiDriver :: test_driver(UsbDevice *dev)
 //		printf("SubClass is not transparent SCSI. [%b]\n", dev->interface_descr.sub_class);
 //		return false;
 //	}
-
-	// TODO: More tests needed here?
+	printf("** Mass storage device found **\n");
 	return true;
 }
 
-int UsbDevice :: get_max_lun(void)
+int UsbScsiDriver :: get_max_lun(UsbDevice *dev)
 {
     BYTE dummy_buffer[8];
 
-    int i = host->control_exchange(&control_pipe,
+    int i = dev->host->control_exchange(&dev->control_pipe,
                                    c_scsi_getmaxlun, 8,
                                    dummy_buffer, 8);
 
@@ -97,7 +97,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
 
 	dev->set_configuration(dev->get_device_config()->config_value);
-	max_lun = dev->get_max_lun();
+	max_lun = get_max_lun(dev);
 	printf("max lun = %d\n", max_lun);
 
     // create a device for each LUN

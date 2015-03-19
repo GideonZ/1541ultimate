@@ -283,12 +283,12 @@ struct t_device_configuration *UsbDevice :: get_device_config()
 
 void UsbDevice :: set_configuration(BYTE config)
 {
-    printf("Setting configuration %d.\n", config);
+//    printf("Setting configuration %d.\n", config);
     c_set_configuration[2] = config;
 
     BYTE dummy_buffer[8];
     int i = host->control_exchange(&control_pipe, c_set_configuration, 8, dummy_buffer, 0);
-    printf("Set Configuration result:%d\n", i);
+//    printf("Set Configuration result:%d\n", i);
 }
 
 bool UsbDevice :: init(int address)

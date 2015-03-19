@@ -37,13 +37,9 @@ int main (void)
 	/* When re-starting a debug session (rather than cold booting) we want
 	to ensure the installed interrupt handlers do not execute until after the
 	scheduler has been started. */
-	puts("Hello FreeRTOS!");
-
 	portDISABLE_INTERRUPTS();
 
 	xTaskCreate( run_main_loop, "Main Event Loop", configMINIMAL_STACK_SIZE, NULL, MAIN_LOOP_TASK_PRIORITY, NULL );
-	//xTaskCreate( vPrintSomething1, "Print Something 1", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY, NULL );
-	//xTaskCreate( vPrintSomething2, "Print Something 2", configMINIMAL_STACK_SIZE, NULL, mainLED_TASK_PRIORITY + 1, NULL );
 
 	xSemaphore = xSemaphoreCreateMutex();
 

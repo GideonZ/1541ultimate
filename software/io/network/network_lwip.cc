@@ -7,28 +7,34 @@ extern "C" {
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 #include "task.h"
+
+void echo_task(void *a);
 }
 
+/**
+ * Initialization
+ */
 void initLwip(void *a, void *b)
 {
-	printf("Going to call init function of LWIP.\n");
+	printf("Initializing lwIP.\n");
 	tcpip_init(NULL, NULL);
+	printf("Starting network services.\n");
+	xTaskCreate( echo_task, "Echo task", configMINIMAL_STACK_SIZE, NULL, 2, NULL );
 }
+
 InitFunction lwIP_initializer(initLwip, NULL, NULL);
 
+/**
+ * Callbacks
+ */
 err_t lwip_init_callback(struct netif *netif)
 {
-	printf("Low level init callback, just return success.\n");
-	//    NetworkLWIP *ni = (NetworkLWIP *)netif->state;
-//    ni->init_callback();
     return ERR_OK;
 }
 
 err_t lwip_output_callback(struct netif *netif, struct pbuf *pbuf)
 {
     NetworkLWIP *ni = (NetworkLWIP *)netif->state;
-    //printf("Output Callback len=%d tot_len=%d Pad=%d\n", pbuf->len, pbuf->tot_len, ETH_PAD_SIZE);
-    //dump_hex(pbuf->payload, pbuf->len);
     return ni->driver_output_function(ni->driver, ((BYTE *)pbuf->payload) + ETH_PAD_SIZE, (pbuf->len - ETH_PAD_SIZE));
 }
 
@@ -40,11 +46,13 @@ void lwip_free_callback(void *p)
     free(pbuf);
 }
 
+/**
+ * Factory
+ */
 NetworkInterface *getNetworkStack(void *driver,
 								  driver_output_function_t out,
 								  driver_free_function_t free)
 {
-	puts("** get network stack **");
 	return new NetworkLWIP (driver, out, free);
 }
 
@@ -53,6 +61,9 @@ void releaseNetworkStack(void *netstack)
 	delete ((NetworkLWIP *)netstack);
 }
 
+/**
+ * Class / instance functions
+ */
 NetworkLWIP :: NetworkLWIP(void *driver,
 							driver_output_function_t out,
 							driver_free_function_t free)
@@ -67,7 +78,6 @@ NetworkLWIP :: ~NetworkLWIP()
     dhcp_stop(&my_net_if);
 	netif_set_down(&my_net_if);
 	netif_remove(&my_net_if);
-	printf("NetworkLWIP destroyed.\n");
 }
 
 void ethernet_init_inside_thread(void *classPointer)
@@ -77,7 +87,6 @@ void ethernet_init_inside_thread(void *classPointer)
 
 bool NetworkLWIP :: start()
 {
-	// has LWIP already started?
 	memset(&my_net_if, 0, sizeof(my_net_if));
 	init_callback();
     if_up = false;
@@ -92,26 +101,17 @@ void NetworkLWIP :: stop()
 void NetworkLWIP :: poll()
 {
     if (netif_is_up(&my_net_if) && !if_up) {
-        printf("**** NETIF IS NOW UP ****\n");
+        //printf("**** NETIF IS NOW UP ****\n");
         if_up = true;
-//        echo_init();
-//        ftpd_init();
-        //etharp_request(netif, &(netif->gw));
     } else if(!netif_is_up(&my_net_if) && if_up) {
-        printf("#### NETIF IS NOW DOWN ####\n");
+        //printf("#### NETIF IS NOW DOWN ####\n");
         if_up = false;
     }
-//    lwip_poll();
 }
 
-extern "C" {
-void echo_task(void *a);
-}
 
 void NetworkLWIP :: init_callback( )
 {
-	printf("LWIP init_callback inside thread\n");
-
 	/* initialization of IP addresses */
 	IP4_ADDR(&my_ip, 0,0,0,0);
     IP4_ADDR(&my_netmask, 0,0,0,0);
@@ -172,7 +172,6 @@ void NetworkLWIP :: init_callback( )
 	//dump_hex(nif, sizeof(struct netif));
 
     if(nif) {
-    	printf("Netif_add was successful.\n");
     	if (nif != &my_net_if) {
     		printf("** GOT OTHER POINTER **\n");
     	}
@@ -182,8 +181,8 @@ void NetworkLWIP :: init_callback( )
     }
 }
 
+/*
 __inline static bool check_time(DWORD timer, DWORD &variable, DWORD interval, char dbg)
-
 {
     if (timer < variable) {
         if (((timer + 65536) - variable) > interval) {
@@ -227,6 +226,7 @@ void NetworkLWIP :: lwip_poll()
     // autoip_tmr();
     // igmp_tmr();
 }
+*/
 
 bool NetworkLWIP :: input(BYTE *raw_buffer, BYTE *payload, int pkt_size)
 {
@@ -272,7 +272,6 @@ void NetworkLWIP :: link_up()
     // Enable the network interface
     netif_set_up(&my_net_if);
 	dhcp_start(&my_net_if);
-	xTaskCreate( echo_task, "Echo task", configMINIMAL_STACK_SIZE, NULL, 2, NULL );
 }
 
 void NetworkLWIP :: link_down()

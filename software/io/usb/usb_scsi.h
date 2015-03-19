@@ -33,7 +33,7 @@ class UsbScsiDriver : public UsbDriver
 	
 	int max_lun;
 	int current_lun;
-    int get_max_lun(void);
+    int get_max_lun(UsbDevice *dev);
 public:
 	UsbScsiDriver(IndexedList<UsbDriver *> &list);
 	UsbScsiDriver();

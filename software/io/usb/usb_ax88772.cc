@@ -89,7 +89,6 @@ UsbAx88772Driver :: ~UsbAx88772Driver()
 {
 	if(netstack)
 		releaseNetworkStack(netstack);
-    printf("AX88772 destroyed.\n");
 }
 
 UsbAx88772Driver *UsbAx88772Driver :: create_instance(void)
@@ -99,7 +98,7 @@ UsbAx88772Driver *UsbAx88772Driver :: create_instance(void)
 
 bool UsbAx88772Driver :: test_driver(UsbDevice *dev)
 {
-	printf("** Test USB Asix AX88772 Driver **\n");
+	//printf("** Test USB Asix AX88772 Driver **\n");
 
     if(le16_to_cpu(dev->device_descr.vendor) != 0x0b95) {
 		printf("Device is not from Asix..\n");
@@ -110,7 +109,7 @@ bool UsbAx88772Driver :: test_driver(UsbDevice *dev)
 		return false;
 	}
 
-    printf("Asix AX88772A found!!\n");
+    printf("** Asix AX88772A found **\n");
 	// TODO: More tests needed here?
 	return true;
 }
@@ -228,7 +227,7 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
 */
     
     if (netstack) {
-    	printf("Network stack: %s\n", netstack->identify());
+    	//printf("Network stack: %s\n", netstack->identify());
     	struct t_pipe ipipe;
 		ipipe.DevEP = WORD((device->current_address << 8) | 1);
 		ipipe.Interval = 8000; // 1 Hz

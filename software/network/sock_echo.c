@@ -28,7 +28,7 @@ void echo_task( void *a )
 	sLocalAddr.sin_family = AF_INET;
 	sLocalAddr.sin_len = sizeof(sLocalAddr);
 	sLocalAddr.sin_addr.s_addr = 0L; //htonl(IP_ADDR_ANY);
-	sLocalAddr.sin_port = 2323;
+	sLocalAddr.sin_port = 23;
 
 	if (lwip_bind(lSocket, (struct sockaddr *)&sLocalAddr, sizeof(sLocalAddr)) < 0) {
 		lwip_close(lSocket);
@@ -49,11 +49,9 @@ void echo_task( void *a )
 		char buffer[1024];
 		int nbytes;
 
-		vTaskDelay(1000);
-		puts("Going to accept");
 		clientfd = lwip_accept(lSocket, (struct sockaddr*)&client_addr, (socklen_t *)&addrlen);
 		if (clientfd > 0) {
-			puts("Accepted");
+			puts("Accepted Echo Connection");
 			do {
 				nbytes=lwip_recv(clientfd, buffer, sizeof(buffer),0);
 				if (nbytes>0)

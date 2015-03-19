@@ -68,7 +68,6 @@ UsbEm1010Driver :: ~UsbEm1010Driver()
 {
 	if(netstack)
 		releaseNetworkStack(netstack);
-    printf("EM1010 destroyed.\n");
 }
 
 UsbEm1010Driver *UsbEm1010Driver :: create_instance(void)
@@ -78,7 +77,7 @@ UsbEm1010Driver *UsbEm1010Driver :: create_instance(void)
 
 bool UsbEm1010Driver :: test_driver(UsbDevice *dev)
 {
-	printf("** Test USB Eminent EM1010 Driver **\n");
+	//printf("** Test USB Eminent EM1010 Driver **\n");
 
 	WORD vendor = le16_to_cpu(dev->device_descr.vendor);
 	WORD product = le16_to_cpu(dev->device_descr.product);
@@ -90,7 +89,7 @@ bool UsbEm1010Driver :: test_driver(UsbDevice *dev)
 		found = true;
 
 	if (found)
-		printf("Eminent EM1010 found!!\n");
+		printf("** Eminent EM1010 (ADM8515 chip) found!!\n");
 	return found;
 }
 
@@ -129,7 +128,7 @@ void UsbEm1010Driver :: install(UsbDevice *dev)
     dump_registers();
 
     if (netstack) {
-    	printf("Network stack: %s\n", netstack->identify());
+    	//printf("Network stack: %s\n", netstack->identify());
     	struct t_pipe ipipe;
 		ipipe.DevEP = WORD((device->current_address << 8) | irq_in);
 		ipipe.Interval = 8000; // 1 Hz
