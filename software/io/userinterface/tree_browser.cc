@@ -191,7 +191,7 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
     return ret;
 }
 
-int TreeBrowser :: handle_key(char c)
+int TreeBrowser :: handle_key(BYTE c)
 {           
     int ret = 0;
     

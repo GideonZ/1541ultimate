@@ -13,7 +13,7 @@ typedef enum _context_state {
 class ContextMenu : public TreeBrowser
 {
     // private functions:
-    virtual int handle_key(char c);
+    virtual int handle_key(BYTE c);
 
 public:
 	PathObject *object;

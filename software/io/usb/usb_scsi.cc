@@ -1,12 +1,13 @@
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 extern "C" {
 	#include "itu.h"
-    #include "small_printf.h"
 }
 #include "integer.h"
 #include "usb_scsi.h"
 #include "event.h"
+#include "filemanager.h"
 
 __inline DWORD cpu_to_32le(DWORD a)
 {
@@ -145,42 +146,40 @@ void UsbScsiDriver :: poll(void)
 	// traffic on the USB bus.
     WORD now = ITU_MS_TIMER;
     WORD passed_time = now - poll_interval[current_lun];
-    if(passed_time < c_intervals[int(state_copy[current_lun])]) {
-		goto next_lun;
-	}
+    if(passed_time >= c_intervals[int(state_copy[current_lun])]) {
 
-	poll_interval[current_lun] = now;
-	blk = scsi_blk_dev[current_lun];
-	blk->test_unit_ready();
-	old_state = state_copy[current_lun];
-	new_state = blk->get_state();
-	state_copy[current_lun] = new_state;
+    	poll_interval[current_lun] = now;
+		blk = scsi_blk_dev[current_lun];
+		blk->test_unit_ready();
+		old_state = state_copy[current_lun];
+		new_state = blk->get_state();
+		state_copy[current_lun] = new_state;
 
-	if(media_seen[current_lun] && (new_state==e_device_no_media)) { // removal!
-        //printf("Media seen[%d]=%d and new_state=%d. old_state=%d.\n", current_lun, media_seen[current_lun], new_state, old_state);
-		media_seen[current_lun] = false;
-		push_event(e_invalidate, path_dev[current_lun]);
-		push_event(e_detach_disk, path_dev[current_lun]);
-	}
+		if(media_seen[current_lun] && (new_state==e_device_no_media)) { // removal!
+			//printf("Media seen[%d]=%d and new_state=%d. old_state=%d.\n", current_lun, media_seen[current_lun], new_state, old_state);
+			media_seen[current_lun] = false;
+			push_event(e_invalidate, path_dev[current_lun]);
+			push_event(e_detach_disk, path_dev[current_lun]);
+		}
 
-	if(new_state == e_device_ready) {
-        if(!media_seen[current_lun]) {
-            if(blk->read_capacity(&capacity, &block_size) == RES_OK) {
-                printf("Path Dev %p %p. Current lun %d. BS = %d\n", path_dev, path_dev[current_lun], current_lun, block_size);
-                path_dev[current_lun]->attach_disk(int(block_size));
-            } else {
-                blk->set_state(e_device_error);
-            }
-        }
-		media_seen[current_lun] = true;
-	}
+		if(new_state == e_device_ready) {
+			if(!media_seen[current_lun]) {
+				if(blk->read_capacity(&capacity, &block_size) == RES_OK) {
+					printf("Path Dev %p %p. Current lun %d. BS = %d\n", path_dev, path_dev[current_lun], current_lun, block_size);
+					path_dev[current_lun]->attach_disk(int(block_size));
+				} else {
+					blk->set_state(e_device_error);
+				}
+			}
+			media_seen[current_lun] = true;
+		}
 
-	if(old_state != new_state) {
-		push_event(e_refresh_browser, &root);
-	}
+		if(old_state != new_state) {
+			push_event(e_refresh_browser, &root);
+		}
+    }
 
-next_lun:
-	// cycle through the luns
+    // cycle through the luns
 	if(current_lun >= max_lun)
 		current_lun = 0;
 	else
@@ -216,6 +215,8 @@ UsbScsi :: UsbScsi(UsbDevice *d, int unit)
         bulk_out.MaxTrans = 512; // TODO: Should depend on speed
         bulk_in.Command = 0; // used to store toggle bit
         bulk_out.Command = 0; // used to store toggle bit
+        bulk_in.SplitCtl = 0;
+        bulk_out.SplitCtl = 0;
     }
     if((bi > 0) && (bo > 0) && (host) && (d))
         initialized = true;

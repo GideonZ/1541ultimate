@@ -24,7 +24,7 @@ int  UserInterfaceStream :: popup(char *msg, BYTE flags)
     
     int c;
     while(1) {
-        c = stream->getchar();
+        c = stream->get_char();
         switch(c) {
             case 'o':
             case 'O':

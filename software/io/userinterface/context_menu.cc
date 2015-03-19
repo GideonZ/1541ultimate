@@ -107,7 +107,7 @@ int ContextMenu :: poll(int dummy, Event &e)
     return ret;
 }
 
-int ContextMenu :: handle_key(char c)
+int ContextMenu :: handle_key(BYTE c)
 {
     int ret = 0;
     

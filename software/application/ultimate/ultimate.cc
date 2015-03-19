@@ -1,8 +1,9 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 extern "C" {
-    #include "small_printf.h"
+#include "itu.h"
 }
 #include "c64.h"
 #include "c1541.h"
@@ -23,6 +24,11 @@ extern "C" {
 #include "stream_menu.h"
 #include "audio_select.h"
 #include "overlay.h"
+#include "init_function.h"
+
+#include "FreeRTOS.h"
+#include "FreeRTOSConfig.h"
+#include "task.h"
 
 // these should move to main_loop.h
 void main_loop(void);
@@ -82,7 +88,7 @@ void poll_c64(Event &e)
 	c64->poll(e);
 }
 
-int main()
+void start_ultimate(void *a)
 {
 	char time_buffer[32];
 	DWORD capabilities = getFpgaCapabilities();
@@ -93,7 +99,10 @@ int main()
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
 	printf("%s\n", rtc.get_time_string(time_buffer, 32));
 
-    Stream my_stream;
+	puts("Executing init functions.");
+	InitFunction :: executeAll();
+
+	Stream my_stream;
     UserInterfaceStream *stream_interface;
     
  	// start the file system, scan the sd-card etc..
@@ -183,4 +192,24 @@ int main()
     //root.dump();
     
     printf("Graceful exit!!\n");
+}
+
+int main (void)
+{
+	/* When re-starting a debug session (rather than cold booting) we want
+	to ensure the installed interrupt handlers do not execute until after the
+	scheduler has been started. */
+	portDISABLE_INTERRUPTS();
+
+	xTaskCreate( start_ultimate, "Ultimate-II Main Loop", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL );
+
+	//xSemaphore = xSemaphoreCreateMutex();
+
+	/* Finally start the scheduler. */
+	vTaskStartScheduler();
+
+	/* Should not get here as the processor is now under control of the
+	scheduler! */
+
+   	return 0;
 }

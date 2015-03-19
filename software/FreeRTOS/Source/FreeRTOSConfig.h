@@ -53,6 +53,7 @@ your application. */
 //#define configMAX_API_CALL_INTERRUPT_PRIORITY   0x03
 
 /* Define to trap errors during development. */
+void vAssertCalled( char* fileName, uint16_t lineNo );
 #define configASSERT( x )     if( ( x ) == 0 ) vAssertCalled( __FILE__, __LINE__ )
 
 /* FreeRTOS MPU specific definitions. */

@@ -131,7 +131,7 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 {
     DWORD idx = d->handle;
 	BYTE read_buf[32], c;
-	char *p;
+	BYTE *p;
 	FRESULT fres;
 	UINT bytes_read;
 
@@ -197,7 +197,7 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 				
 				// eui: no trailing spaces please
 				for(int s=v-1; s>=0; s--) {
-					p = &f->lfname[s]; 
+					p = (BYTE *)&f->lfname[s];
 	                if((*p == ' ') || (*p == 0xA0) || (*p == 0xE0)) {
 						*p = 0;
 	                }

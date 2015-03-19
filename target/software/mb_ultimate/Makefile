@@ -48,11 +48,17 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/command_interface \
 			$(PATH_SW)/io/copper \
 			$(PATH_SW)/io/network \
+			$(PATH_SW)/network/config \
 			$(PATH_SW)/io/iec \
 			$(PATH_SW)/6502 \
 			$(PATH_SW)/ModPlayer_16k \
+			$(PATH_SW)/FreeRTOS/Source \
+			$(PATH_SW)/FreeRTOS/Source/include \
+			$(PATH_SW)/FreeRTOS/Source/portable \
+			$(PATH_SW)/FreeRTOS/Source/MemMang \
 			$(PATH_SW)/lwip-1.4.1/src/include \
 			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
+			$(PATH_SW)/lwip-1.4.1/src/include/posix/sys \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
@@ -62,7 +68,16 @@ SRCS_C   =	mbstart_app.c \
 			itu.c \
 			dump_hex.c \
 			small_printf.c \
-			echo.c 
+			croutine.c \
+            event_groups.c \
+            list.c \
+            queue.c \
+            tasks.c \
+            timers.c \
+            port.c \
+            heap_3.c \
+            sock_echo.c
+
 ##			ftpd.c
 
 # the order of the files is important, because of the static constructors.
@@ -74,6 +89,7 @@ SRCS_C   =	mbstart_app.c \
 
 SRCS_CC	 =  stream.cc \
 			memory.cc \
+			init_function.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \
@@ -104,6 +120,7 @@ SRCS_CC	 =  stream.cc \
 			usb_hub.cc \
 			usb_ax88772.cc \
 			network_interface.cc \
+			network_lwip.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
@@ -151,7 +168,7 @@ SRCS_CC	 =  stream.cc \
 ####			sampler.cc \
 ####			copper.cc \
 
-SRCS_ASM =  mb_crt0.s
+SRCS_ASM =  mb_crt0.s portasm.s
 
 SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
@@ -164,14 +181,14 @@ SRCS_NANO = nano_minimal.nan
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -g -ffunction-sections -Os -std=c99 
-CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti
+COPTIONS = -g -ffunction-sections -Os -std=c99 -DOS
+CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -DOS
 LINK 	 = ./mb_app.lds
 LLIB     =  -L ../mb_lwip/result \
             -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
 #LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
-LIBS     =  -lc -lgcc -llwip
+LIBS     =  -llwip -lc -lgcc 
 LFLAGS   = --gc-sections 
 
 VPATH   += $(OUTPUT) $(RESULT)

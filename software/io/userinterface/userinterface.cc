@@ -333,7 +333,7 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
 
 int UIPopup :: poll(int dummy, Event &e)
 {
-    char c = keyboard->getch();
+    BYTE c = keyboard->getch();
     
     for(int i=0;i<btns_active;i++) {
         if(c == button_key[i]) {
@@ -424,7 +424,7 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
 
 int UIStringBox :: poll(int dummy, Event &e)
 {
-    char key;
+    BYTE key;
     int i;
 
     key = keyboard->getch();

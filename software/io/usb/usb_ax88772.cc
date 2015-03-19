@@ -1,8 +1,8 @@
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 extern "C" {
 	#include "itu.h"
-    #include "small_printf.h"
     #include "dump_hex.h"
 }
 #include "integer.h"

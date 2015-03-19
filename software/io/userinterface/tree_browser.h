@@ -28,7 +28,7 @@ public:
     void deinit(void);
 
     virtual int poll(int, Event &e);
-    virtual int handle_key(char);
+    virtual int handle_key(BYTE);
 
     void reset_quick_seek(void);
     bool perform_quick_seek(void);

@@ -1,6 +1,4 @@
-extern "C" {
-    #include "small_printf.h"
-}
+#include <stdio.h>
 #include "filemanager.h"
 #include "file_system.h"
 #include "directory.h"
@@ -187,10 +185,10 @@ char *FileDirEntry :: get_display_string()
         return "FileDirEntry_display";
 
     if(info->is_directory()) {
-        small_sprintf(buffer, "%29s\032 DIR", info->lfname);
+        sprintf(buffer, "%29s\032 DIR", info->lfname);
     } else {
         size_to_string_bytes(info->size, sizebuf);
-        small_sprintf(buffer, "%29s\027 %3s %s", info->lfname, info->extension, sizebuf);
+        sprintf(buffer, "%29s\027 %3s %s", info->lfname, info->extension, sizebuf);
     }
     
     return buffer;

@@ -110,7 +110,7 @@ private:
 
     int  button_len[NUM_BUTTONS];
     int  button_pos[NUM_BUTTONS];
-    char button_key[NUM_BUTTONS];
+    BYTE button_key[NUM_BUTTONS];
     int  btns_active;
     int  active_button;
     Screen  *window;

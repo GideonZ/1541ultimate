@@ -14,7 +14,7 @@ int Stream :: write(BYTE *buffer, int length)
     return (int)uart_write_buffer(buffer, (USHORT)length);
 }
 
-int Stream :: getchar(void)
+int Stream :: get_char(void)
 {
 	if (UART_FLAGS & UART_RxDataAv)
         return uart_get_byte(0);
@@ -232,7 +232,7 @@ int Stream :: getstr(char *buffer, int length)
         str_state = 1;
     }
     
-    int c = getchar();
+    int c = get_char();
     if(c < 0)
         return -1;
         

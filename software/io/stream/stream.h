@@ -25,7 +25,7 @@ public:
 
     virtual int read(BYTE *buffer, int length);    
     virtual int write(BYTE *buffer, int length);
-    virtual int getchar(void);
+    virtual int get_char(void);
     virtual void charout(int c);
     virtual int format(char *fmt, ...);
     virtual int getstr(char *buffer, int length); // non blocking
