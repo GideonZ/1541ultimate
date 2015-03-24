@@ -131,7 +131,6 @@ private:
     Screen   *window;
     Keyboard *keyboard;
 
-    char *scr;
     int   cur;
     int   len;
 

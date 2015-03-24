@@ -59,12 +59,19 @@ Usb2 :: Usb2()
 	    poll_list.append(&poll_usb2);
 #endif
     }
+
+#ifdef OS
+    mutex = xSemaphoreCreateMutex();
+#endif
 }
 
 Usb2 :: ~Usb2()
 {
 #ifndef BOOTLOADER
 	poll_list.remove(&poll_usb2);
+#endif
+#ifdef OS
+    vSemaphoreDelete(mutex);
 #endif
 	clean_up();
 	initialized = false;
@@ -340,6 +347,13 @@ WORD Usb2 :: getSplitControl(int addr, int port, int speed, int type)
 
 int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
 {
+#ifdef OS
+    if (!xSemaphoreTake(mutex, 5000)) {
+    	printf("USB unavailable.\n");
+    	return -9;
+    }
+#endif
+
 	USB2_CMD_DevEP  = pipe->DevEP;
 	USB2_CMD_Length = outlen;
 	USB2_CMD_MaxTrans = pipe->MaxTrans;
@@ -381,11 +395,20 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 			;
 		// printf("Out Result = %4x\n", USB2_CMD_Result);
 	}
+#ifdef OS
+    xSemaphoreGive(mutex);
+#endif
 	return transferred;
 }
 
 int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len)
 {
+#ifdef OS
+    if (!xSemaphoreTake(mutex, 5000)) {
+    	printf("USB unavailable.\n");
+    	return -9;
+    }
+#endif
 	USB2_CMD_DevEP  = pipe->DevEP;
 	USB2_CMD_Length = setup_len;
 	USB2_CMD_MaxTrans = pipe->MaxTrans;
@@ -420,19 +443,30 @@ int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, v
 	while(USB2_CMD_Command)
 		;
 	// printf("In Result = %4x\n", USB2_CMD_Result);
+#ifdef OS
+    xSemaphoreGive(mutex);
+#endif
 	return transferred;
 }
 
 int  Usb2 :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object)
 {
+#ifdef OS
+    if (!xSemaphoreTake(mutex, 5000)) {
+    	printf("USB unavailable.\n");
+    	return -9;
+    }
+#endif
 	int index = open_pipe();
-	if (index < 0)
-		return -1;
+	if (index >= 0) {
+		inputPipeCallBacks[index] = callback;
+		inputPipeObjects[index] = object;
 
-	inputPipeCallBacks[index] = callback;
-	inputPipeObjects[index] = object;
-
-	init_pipe(index, pipe);
+		init_pipe(index, pipe);
+	}
+#ifdef OS
+    xSemaphoreGive(mutex);
+#endif
 	return index;
 }
 
@@ -441,9 +475,18 @@ void Usb2 :: free_input_pipe(int index)
 	if (index < 0) {
 		return;
 	}
+#ifdef OS
+    if (!xSemaphoreTake(mutex, 5000)) {
+    	printf("USB unavailable.\n");
+    	return;
+    }
+#endif
 	close_pipe(index);
 	inputPipeCallBacks[index] = 0;
 	inputPipeObjects[index] = 0;
+#ifdef OS
+    xSemaphoreGive(mutex);
+#endif
 }
 
 void Usb2 :: unstall_pipe(struct t_pipe *pipe)
@@ -455,6 +498,12 @@ void Usb2 :: unstall_pipe(struct t_pipe *pipe)
 
 int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 {
+#ifdef OS
+    if (!xSemaphoreTake(mutex, 5000)) {
+    	printf("USB unavailable.\n");
+    	return -9;
+    }
+#endif
 	//printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
 	DWORD addr = (DWORD)buf;
 	int total_trans = 0;
@@ -491,12 +540,21 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
 	} while (len > 0);
 
+#ifdef OS
+    xSemaphoreGive(mutex);
+#endif
 
 	return total_trans;
 }
 
 int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 {
+#ifdef OS
+    if (!xSemaphoreTake(mutex, 5000)) {
+    	printf("USB unavailable.\n");
+    	return -9;
+    }
+#endif
 	//printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
 	DWORD addr = (DWORD)buf;
 	int total_trans = 0;
@@ -532,6 +590,9 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		pipe->Command = (result & URES_TOGGLE) ^ URES_TOGGLE; // that's what we start with next time.
 	} while (len > 0);
 
+#ifdef OS
+    xSemaphoreGive(mutex);
+#endif
 	return total_trans;
 }
 

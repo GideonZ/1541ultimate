@@ -40,7 +40,7 @@ DSTATUS BlockDevice_File::status(void)
         return STA_NODISK;
 }
     
-DRESULT BlockDevice_File::read(BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice_File::read(BYTE *buffer, DWORD sector, int count)
 {
 //    printf("BlockDevice_File read sector: %d.\n", sector);
 
@@ -55,7 +55,7 @@ DRESULT BlockDevice_File::read(BYTE *buffer, DWORD sector, BYTE count)
     return RES_OK;
 }
 
-DRESULT BlockDevice_File::write(const BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice_File::write(const BYTE *buffer, DWORD sector, int count)
 {
     if(file->seek(sector << shift))
         return RES_PARERR;

@@ -16,8 +16,8 @@ public:
 
     virtual DSTATUS init(void);
     virtual DSTATUS status(void);
-    virtual DRESULT read(BYTE *, DWORD, BYTE);
-    virtual DRESULT write(const BYTE *, DWORD, BYTE);
+    virtual DRESULT read(BYTE *, DWORD, int);
+    virtual DRESULT write(const BYTE *, DWORD, int);
     virtual DRESULT ioctl(BYTE, void *);
 };
 

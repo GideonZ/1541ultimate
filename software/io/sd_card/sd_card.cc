@@ -225,11 +225,10 @@ DSTATUS SdCard :: init(void)
  * 		CHKS (2B)
  */
 
-DRESULT SdCard :: read(BYTE* buf, DWORD address, BYTE sectors)
+DRESULT SdCard :: read(BYTE* buf, DWORD address, int sectors)
 {
 	BYTE cardresp;
 	BYTE firstblock;
-	WORD fb_timeout=0x1fff;
 	DWORD place;
 
 //	DBG((TXT("sd_readSector::Trying to read sector %u and store it at %p.\n"),address,&buf[0]));
@@ -246,22 +245,15 @@ DRESULT SdCard :: read(BYTE* buf, DWORD address, BYTE sectors)
     	
     	cardresp=Resp8b(); /* Card response */ 
     
-    	/* Wait for startblock */
-    	do {
-    		firstblock=Resp8b(); 
-        }
-    	while(firstblock==0xff && fb_timeout--);
-    
-    	if(cardresp!=0x00 || firstblock!=0xfe) {
-    		Resp8bError(firstblock);
+    	if (cardresp != 0x00) {
+    		Resp8bError(cardresp);
     		return RES_ERROR;
     	}
     
-        sdio_read_block(buf);
-    	
-    	/* Checksum (2 byte) - ignore for now */
-    	SDIO_DATA = 0xff;
-    	SDIO_DATA = 0xff;
+        if ((cardresp = sdio_read_block(buf)) != 0x00) {
+        	Resp8bError(cardresp);
+        	return RES_ERROR;
+    	}
     	
     	address ++;
     	buf += SD_SECTOR_SIZE;
@@ -301,7 +293,7 @@ DRESULT SdCard :: read(BYTE* buf, DWORD address, BYTE sectors)
  * BUSY...
  */
 
-DRESULT SdCard :: write(const BYTE* buf, DWORD address, BYTE sectors )
+DRESULT SdCard :: write(const BYTE* buf, DWORD address, int sectors )
 {
 	DWORD place;
 	BYTE  resp;

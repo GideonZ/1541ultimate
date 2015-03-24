@@ -41,9 +41,22 @@ void sdio_set_speed(int speed)
     SDIO_SPEED = (BYTE)speed;
 }
 
-void sdio_read_block(BYTE *buf)
+BYTE sdio_read_block(BYTE *buf)
 {
-    DWORD *pul, ul;
+	// timeout is 100 ms max.
+	// as with  write block
+	int  fb_timeout = 240000;
+	BYTE b;
+
+    while((b = SDIO_DATA) == 0xFF) {
+    	--fb_timeout;
+		if(!fb_timeout)
+			return 0xFF; // timeout
+	}
+    if (b != 0xFE)
+    	return b;
+
+	DWORD *pul, ul;
     ul = (DWORD)buf;
     pul = (DWORD *)buf;
     if((ul & 3)==0) {
@@ -55,6 +68,12 @@ void sdio_read_block(BYTE *buf)
 			*(buf++) = SDIO_DATA;
 		}
     }
+
+	/* Checksum (2 byte) - ignore for now */
+	SDIO_DATA = 0xff;
+	SDIO_DATA = 0xff;
+
+    return 0;
 }
 
 bool sdio_write_block(const BYTE *buf)
@@ -77,7 +96,15 @@ bool sdio_write_block(const BYTE *buf)
     SDIO_DATA = 0xFF;
     SDIO_DATA = 0xFF;
 
-    int time_out = 200000;
+    // Timeout for SD writes = 250 ms (fixed by SDA).
+    // Because the SPI read is in the loop below, running at 25 MHz,
+    // we can estimate that each cycle of the while takes 8.5 bits * 40 ns = 360 ns
+    // plus a few instructions to make the loop (let's say 6 clocks) = 120 ns
+    // So the loop is approx 480 ns (minimum), if executed from cache.
+    // A safe timeout value is therefore 250e6 / 480 = 520833.
+    // Let's round it up to 600000.
+
+    int time_out = 600000;
 
     while(SDIO_DATA != 0xFF) { // readback
     	--time_out;

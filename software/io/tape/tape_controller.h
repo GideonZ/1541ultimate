@@ -38,6 +38,7 @@ class TapeController : public ObjectWithMenu
 	int   paused;
 	int   recording;
 	BYTE  controlByte;
+	BYTE  *blockBuffer;
 	void read_block();
 public:
 	TapeController();

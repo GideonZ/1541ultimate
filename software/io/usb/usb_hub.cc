@@ -46,6 +46,7 @@ UsbHubDriver :: UsbHubDriver()
     device = NULL;
     host = NULL;
     memset(irq_data, 0, 4);
+    port_in_reset = 0;
 }
 
 UsbHubDriver :: ~UsbHubDriver()
@@ -255,20 +256,28 @@ void UsbHubDriver :: poll()
 
                 if(buf[2] & BIT_PORT_CONNECTION) {
                     //printf("* CONNECTION CHANGE *\n");
-                    c_clear_port_feature[2] = C_PORT_CONNECTION;
-                	i = host->control_exchange(&device->control_pipe,
-                							   c_clear_port_feature, 8,
-                							   dummy, 8);
                     if(buf[0] & BIT_PORT_CONNECTION) { // if connected, let's reset it!
-                        // this reset is expected to cause a port enable event!
-                        c_set_port_feature[2] = PORT_RESET;
-                        c_set_port_feature[4] = BYTE(j+1); 
-                        wait_ms(power_on_time);        
-                        printf("Issuing reset on port %d.\n", j+1);
-                    	i = host->control_exchange(&device->control_pipe,
-               								       c_set_port_feature, 8,
-                								   dummy, 8);
+                    	if (port_in_reset <= 0) {
+							c_clear_port_feature[2] = C_PORT_CONNECTION;
+							i = host->control_exchange(&device->control_pipe,
+													   c_clear_port_feature, 8,
+													   dummy, 8);
+
+							// this reset is expected to cause a port enable event!
+							c_set_port_feature[2] = PORT_RESET;
+							c_set_port_feature[4] = BYTE(j+1);
+							wait_ms(power_on_time);
+							printf("Issuing reset on port %d.\n", j+1);
+							i = host->control_exchange(&device->control_pipe,
+													   c_set_port_feature, 8,
+													   dummy, 8);
+							port_in_reset = j+1;
+                    	}
                     } else { // disconnect
+                        c_clear_port_feature[2] = C_PORT_CONNECTION;
+                    	i = host->control_exchange(&device->control_pipe,
+                    							   c_clear_port_feature, 8,
+                    							   dummy, 8);
                         if(children[j]) {
                             host->deinstall_device(children[j]);
                         }
@@ -298,7 +307,8 @@ void UsbHubDriver :: poll()
                 }
                 if(buf[2] & BIT_PORT_RESET) {
                     //printf("* RESET CHANGE *\n");
-                    if(buf[0] & BIT_PORT_ENABLE) {
+                	port_in_reset = 0;
+                	if(buf[0] & BIT_PORT_ENABLE) {
 						if(children[j]) {
 							printf("*** ERROR *** Device already present! ***\n");
 							host->deinstall_device(children[j]);
@@ -310,7 +320,8 @@ void UsbHubDriver :: poll()
 						} else {
 	                    	int speed = (buf[1] & BIT1_PORT_HIGH_SPEED) ? 2 :
 	                    		     	(buf[1] & BIT1_PORT_LOW_SPEED) ? 0 : 1;
-							wait_ms(power_on_time);
+	                    	printf("Port reset to %s speed\n", (speed==2)?"high":(speed==1)?"full":"low");
+	                    	wait_ms(power_on_time);
 							UsbDevice *d = new UsbDevice(host, speed);
 							d->set_parent(device, j);
 							if(!host->install_device(d, false)) {  // false = assume powered hub for now

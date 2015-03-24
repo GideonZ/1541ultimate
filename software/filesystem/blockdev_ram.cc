@@ -30,7 +30,7 @@ DSTATUS BlockDevice_Ram::status(void)
         return STA_NODISK;
 }
     
-DRESULT BlockDevice_Ram::read(BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice_Ram::read(BYTE *buffer, DWORD sector, int count)
 {
     if(sector >= number_of_sectors)
         return RES_PARERR;
@@ -39,7 +39,7 @@ DRESULT BlockDevice_Ram::read(BYTE *buffer, DWORD sector, BYTE count)
     return RES_OK;
 }
 
-DRESULT BlockDevice_Ram::write(const BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice_Ram::write(const BYTE *buffer, DWORD sector, int count)
 {
     if(sector >= number_of_sectors)
         return RES_PARERR;

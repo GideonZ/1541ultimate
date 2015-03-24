@@ -119,8 +119,8 @@ SRCS_CC	 =  stream.cc \
 			usb_scsi.cc \
 			usb_hub.cc \
 			usb_ax88772.cc \
+			usb_em1010.cc \
 			network_interface.cc \
-			network_lwip.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \

@@ -756,7 +756,7 @@ void UltiCopy :: deinit(void)
         delete window;
 }
 
-int UltiCopy :: handle_key(char c)
+int UltiCopy :: handle_key(BYTE c)
 {
 }
 

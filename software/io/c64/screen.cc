@@ -29,6 +29,7 @@ Screen :: Screen(char *b, char *c, int sx, int sy)
     allow_scroll = true;
     escape       = false;
     parent       = NULL;
+    cursor_on	 = 0;
     backup();
 }
 
@@ -60,6 +61,7 @@ Screen :: Screen(Screen *scr, int x1, int y1, int sx, int sy)
     allow_scroll = true;
     escape       = false;
     parent       = scr;
+    cursor_on	 = 0;
     backup();
 }
 
@@ -203,7 +205,10 @@ void Screen :: no_scroll(void)
     
 void Screen :: move_cursor(int x, int y)
 {
-    if(x >= window_x)
+	if(cursor_on)
+		window_base[pointer] ^= 0x80;
+
+	if(x >= window_x)
         x = window_x-1;
     if(y >= window_y)
         y = window_y-1;
@@ -215,6 +220,9 @@ void Screen :: move_cursor(int x, int y)
     cursor_x = x;
     cursor_y = y;
     pointer = (y * size_x) + x;
+
+	if(cursor_on)
+		window_base[pointer] ^= 0x80;
 }
 
 void Screen :: scroll_up()
@@ -264,6 +272,10 @@ void Screen :: output(char c)
 		return;
 	}
 		
+	if (cursor_on) {
+		char *p = window_base + pointer;
+		*p ^= 0x80; // remove cursor
+	}
 	switch(c) {
         case 0x0A:
             if(cursor_y == window_y-1) {
@@ -273,6 +285,7 @@ void Screen :: output(char c)
                 pointer += size_x;
                 cursor_y++;
             }
+            break;
         case 0x0D:
             pointer -= cursor_x;
             cursor_x = 0;
@@ -305,6 +318,10 @@ void Screen :: output(char c)
                 }
             }
     }
+	if (cursor_on) {
+		char *p = window_base + pointer;
+		*p ^= 0x80; // place cursor
+	}
 }
     
 void Screen :: output(char *string)
@@ -316,9 +333,13 @@ void Screen :: output(char *string)
 
 void Screen :: output_length(char *string, int len)
 {
-    int temp = pointer - cursor_x;
+	if(cursor_on)
+		window_base[pointer] ^= 0x80;
+
+	int temp = pointer - cursor_x;
     char c;
-    for(int i=0;i<window_x;string++) {
+    int i;
+    for(i=0;i<window_x;string++) {
         c = *string;
         if(i == len) {
 			for(int j=i;j<window_x;j++)
@@ -330,6 +351,24 @@ void Screen :: output_length(char *string, int len)
         temp++;
         i++;
     }
+    pointer = temp;
+    cursor_x = i;
+
+	if(cursor_on)
+		window_base[pointer] ^= 0x80;
+}
+
+void Screen :: repeat(char a, int len)
+{
+	if(cursor_on)
+		window_base[pointer] ^= 0x80;
+
+	for(int i=0;i<len;i++) {
+		window_base[pointer++] = a;
+	}
+
+	if(cursor_on)
+		window_base[pointer] ^= 0x80;
 }
 
 void Screen :: output_line(char *string)
@@ -438,11 +477,6 @@ int Screen :: get_size_y(void)
     return window_y;
 }
 
-
-char *Screen :: get_pointer(void)
-{
-    return &window_base[pointer];
-}
 
 void Screen :: set_char(int x, int y, char c)
 {

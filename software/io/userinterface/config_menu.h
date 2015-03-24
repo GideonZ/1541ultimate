@@ -26,7 +26,7 @@ public:
     virtual ~ConfigBrowser();
 
     virtual void init(Screen *screen, Keyboard *k);
-    virtual int handle_key(char);
+    virtual int handle_key(BYTE);
 };
 
 

@@ -14,7 +14,7 @@ class UsbHubDriver : public UsbDriver
     bool compound;
 
     int  irq_transaction;
-
+    int  port_in_reset;
     BYTE buf[64];
     BYTE dummy[16];
     BYTE irq_data[4];

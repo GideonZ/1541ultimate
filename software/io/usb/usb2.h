@@ -6,6 +6,7 @@
 #include "usb_nano.h"
 #include "FreeRTOS.h"
 #include "queue.h"
+#include "semphr.h"
 
 class UsbDevice;
 class UsbDriver;
@@ -23,6 +24,7 @@ class Usb2 : public UsbBase
 {
 #ifdef OS
 	QueueHandle_t queue;
+	SemaphoreHandle_t mutex;
 #endif
     void  (*inputPipeCallBacks[USB2_NUM_PIPES])(BYTE *buf, int len, void *obj);
     void  *inputPipeObjects[USB2_NUM_PIPES];

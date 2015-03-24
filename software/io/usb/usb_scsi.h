@@ -85,8 +85,8 @@ public:
 
     DSTATUS init(void);
     DSTATUS status(void);
-    DRESULT read(BYTE *, DWORD, BYTE);
-    DRESULT write(const BYTE *, DWORD, BYTE);
+    DRESULT read(BYTE *, DWORD, int);
+    DRESULT write(const BYTE *, DWORD, int);
     DRESULT ioctl(BYTE, void *);
 
 };

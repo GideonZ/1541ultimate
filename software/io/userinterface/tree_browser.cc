@@ -129,7 +129,7 @@ void TreeBrowser :: test_editor(void)
 
 int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
 {
-    char c;
+    BYTE c;
     int ret = 0;
 
     if(e.type == e_invalidate) {

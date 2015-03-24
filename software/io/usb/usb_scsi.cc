@@ -772,7 +772,7 @@ DSTATUS UsbScsi :: status(void)
         return STA_NODISK;
 }
 
-DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, BYTE num_sectors)
+DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, int num_sectors)
 {
     if(!initialized)
         return RES_NOTRDY;
@@ -807,7 +807,7 @@ DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, BYTE num_sectors)
     return RES_OK;
 }
 
-DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, BYTE num_sectors)
+DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, int num_sectors)
 {
     if(!initialized)
         return RES_NOTRDY;

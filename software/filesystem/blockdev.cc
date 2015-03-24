@@ -22,13 +22,13 @@ DSTATUS BlockDevice::status(void)
     return STA_NODISK;
 }
     
-DRESULT BlockDevice::read(BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice::read(BYTE *buffer, DWORD sector, int count)
 {
     return RES_NOTRDY;
 }
 
 #if	_READONLY == 0
-DRESULT BlockDevice::write(const BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice::write(const BYTE *buffer, DWORD sector, int count)
 {
     return RES_NOTRDY;
 }

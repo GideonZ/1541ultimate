@@ -3,14 +3,21 @@
 
 class Screen
 {
-    Screen *parent;
     char *root_base;
     char *root_base_col;
     char *window_base;
     char *window_base_col;
+
+    char *backup_chars;
+    char *backup_color;
+    void backup(void);
+    void restore(void);
+
+protected:
+    Screen *parent;
     bool allow_scroll;
     bool escape;
-    
+    int cursor_on;
     int size_x;
     int size_y;
     int window_x;
@@ -24,36 +31,41 @@ class Screen
     int border_h;
     int border_v;
     int reverse;
-    
-    char *backup_chars;
-    char *backup_color;
-    void backup(void);
-    void restore(void);
+
 public:
     Screen(char *, char *, int, int);
     Screen(Screen*, int, int, int, int);
-    ~Screen();
-    void  dump(void);    
-    void  set_color(int);
-    int   get_color(void);
-    void  set_color(int, int, int, int, int, bool stop=false);
-    void  clear();
-    void  move_cursor(int, int);
-    void  no_scroll(void);
-    void  scroll_up();
-    void  scroll_down();
-    void  output(char);
-    void  output(char *);
-    void  output_line(char *);
-    void  output_length(char *, int);
-    void  draw_border(void);
-    void  draw_border_horiz(void);
-    void  reverse_mode(int);
-    void  make_reverse(int x, int y, int len);
-    int   get_size_x(void);
-    int   get_size_y(void);
-    void  set_char(int x, int y, char);
-    char *get_pointer(void);
+    virtual ~Screen();
+
+    void  cursor_visible(int a) {
+    	if (cursor_on != a) {
+    		char *p = window_base + pointer;
+    		*p ^= 0x80; // remove or place cursor
+    	}
+    	cursor_on = a;
+    }
+    virtual void  set_color(int);
+    virtual int   get_color(void);
+    virtual void  set_color(int, int, int, int, int, bool stop=false);
+    virtual void  clear();
+    virtual void  move_cursor(int, int);
+    virtual void  no_scroll(void);
+    virtual void  scroll_up();
+    virtual void  scroll_down();
+    virtual void  output(char);
+    virtual void  output(char *);
+    virtual void  output_line(char *);
+    virtual void  output_length(char *, int);
+    virtual void  repeat(char a, int len);
+    virtual void  draw_border(void);
+    virtual void  draw_border_horiz(void);
+    virtual void  reverse_mode(int);
+    virtual void  make_reverse(int x, int y, int len);
+    virtual int   get_size_x(void);
+    virtual int   get_size_y(void);
+    virtual void  set_char(int x, int y, char);
+
+    void  dump(void);
 };
 
 int console_print(Screen *screen, const char *fmt, ...);

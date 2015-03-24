@@ -26,7 +26,6 @@ class SdCard : public BlockDevice
     BYTE    Resp8b(void);
     WORD    Resp16b(void);
     void    Resp8bError(BYTE value);
-//    int     get_state(void);
     DRESULT verify(const BYTE* buf, DWORD address );
     DRESULT get_drive_size(DWORD* drive_size);
 
@@ -36,8 +35,8 @@ public: /* block device api */
 
     DSTATUS init(void);
     DSTATUS status(void);
-    DRESULT read(BYTE *, DWORD, BYTE);
-    DRESULT write(const BYTE *, DWORD, BYTE);
+    DRESULT read(BYTE *, DWORD, int);
+    DRESULT write(const BYTE *, DWORD, int);
     DRESULT ioctl(BYTE, void *);
 };
 

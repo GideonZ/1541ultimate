@@ -22,7 +22,7 @@ int  sdio_sense(void);
 void sdio_init(void);
 void sdio_send_command(BYTE, WORD, WORD);
 void sdio_set_speed(int);
-void sdio_read_block(BYTE *);
+BYTE sdio_read_block(BYTE *);
 bool sdio_write_block(const BYTE *);
 
 #endif

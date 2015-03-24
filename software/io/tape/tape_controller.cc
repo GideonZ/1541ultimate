@@ -23,6 +23,7 @@ TapeController :: TapeController()
 	paused = 0;
 	recording = 0;
 	controlByte = 0;
+	blockBuffer = new BYTE[512];
 	stop();
     poll_list.append(&poll_tape);
 	main_menu_objects.append(this);
@@ -32,6 +33,7 @@ TapeController :: ~TapeController()
 {
 	poll_list.remove(&poll_tape);
 	main_menu_objects.remove(this);
+	delete blockBuffer;
 }
 	
 
@@ -105,7 +107,9 @@ void TapeController :: read_block()
         }
 		return;
 	}	
-	tap->getFile()->read((void *)PLAYBACK_DATA, block, &bytes_read);
+	tap->getFile()->read(blockBuffer, block, &bytes_read);
+	for(int i=0;i<bytes_read;i++)// not sure if memcpy copies the bytes in the right order.
+		*PLAYBACK_DATA = blockBuffer[i];
 
 	printf(".");
 	length -= bytes_read;

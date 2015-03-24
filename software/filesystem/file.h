@@ -32,7 +32,7 @@ public:
         fs = f;
     }
 
-    ~File() { }
+    virtual ~File() { }
 
     // functions for reading and writing files
     void invalidate(void) { node = NULL; }

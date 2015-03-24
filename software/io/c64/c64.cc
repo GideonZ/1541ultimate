@@ -913,6 +913,7 @@ int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)
         }
     }
     load_address = le2cpu(load_address); // make sure we can interpret the word correctly (endianness)
+    int block = 510;
 
     printf("File load location: %4x\n", load_address);
     if(reloc)
@@ -926,7 +927,9 @@ int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)
 
 	C64_POKE(2, 0x40);  // signal cart ready for DMA load
 
-    if ( !(run_code & RUNCODE_REAL_BIT) ) {
+	BYTE dma_load_buffer[512];
+
+	if ( !(run_code & RUNCODE_REAL_BIT) ) {
 
         int timeout = 0;
         while(C64_PEEK(2) != 0x01) {
@@ -941,10 +944,23 @@ int C64 :: dma_load(File *f, BYTE run_code, WORD reloc)
             stop(false);
         }
         printf("Now loading...");
+        BYTE *dest = (BYTE *)(C64_MEMORY_BASE + load_address);
 
         /* Now actually load the file */
-        f->read((BYTE *)(C64_MEMORY_BASE + load_address), max_length, &transferred);
-        WORD end_address = load_address + transferred;
+        int total_trans = 0;
+        while (max_length > 0) {
+        	f->read(dma_load_buffer, block, &transferred);
+        	total_trans += transferred;
+        	for (int i=0;i<transferred;i++) {
+        		*(dest++) = dma_load_buffer[i];
+        	}
+        	if (transferred < block) {
+        		break;
+        	}
+        	max_length -= transferred;
+        	block = 512;
+        }
+        WORD end_address = load_address + total_trans;
         printf("DMA load complete: $%4x-$%4x Run Code: %b\n", load_address, end_address, run_code);
 
         C64_POKE(2, 0); // signal DMA load done

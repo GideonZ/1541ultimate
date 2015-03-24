@@ -397,7 +397,7 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
     window->output_line(message.c_str());
 
     window->move_cursor(0, 2);
-    scr = window->get_pointer();
+    //scr = window->get_pointer();
 
 /// Now prefill the box...
     len = 0;
@@ -410,16 +410,16 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
         cur = max_len;
     }
     len = cur;
-    char *sp = buffer;
-    char *dp = scr;
-    for(;*sp;) {
-        *(dp++) = *(sp++);
-    } *(dp) = '\0';
+    //char *sp = buffer;
+    //char *dp = scr;
+    //for(;*sp;) {
+    //    *(dp++) = *(sp++);
+    //} *(dp) = '\0';
 //    strcpy(scr, buffer); // Goes wrong because of big-endianness CPU
 /// Default to old string
-    
-    // place cursor
-    scr[cur] |= 0x80;
+    window->output_length(buffer, len);
+    window->move_cursor(cur, 2);
+    window->cursor_visible(1);
 }
 
 int UIStringBox :: poll(int dummy, Event &e)
@@ -433,63 +433,59 @@ int UIStringBox :: poll(int dummy, Event &e)
 
     switch(key) {
     case 0x0D: // CR
-        scr[cur] &= 0x7F;
-        for(i=0;i<len;i++)
-            buffer[i] = scr[i];
-        buffer[i] = 0;
-        if(!i)
+        window->cursor_visible(0);
+        if(!len)
             return -1; // cancel
         return 1; // done
     case 0x9D: // left
-        if (cur > 0) {
-            scr[cur] &= 0x7F;
+    	if (cur > 0) {
             cur--;
-            scr[cur] |= 0x80;
+        	window->move_cursor(cur, 2);
         }                
         break;
     case 0x1D: // right
         if (cur < len) {
-            scr[cur] &= 0x7F;
             cur++;
-            scr[cur] |= 0x80;
+        	window->move_cursor(cur, 2);
         }
         break;
     case 0x14: // backspace
         if (cur > 0) {
-            scr[cur] &= 0x7F;
             cur--;
             len--;
             for(i=cur;i<len;i++) {
-                scr[i] = scr[i+1];
-            } scr[i] = 0x20;
-            scr[cur] |= 0x80;
+                buffer[i] = buffer[i+1];
+            } buffer[i] = 0;
+//            window->move_cursor(0, 2);
+            window->output_length(buffer, len);
+            window->move_cursor(cur, 2);
         }
         break;
     case 0x93: // clear
-        for(i=0;i<max_len;i++)
-            scr[i] = 0x20;
         len = 0;
         cur = 0;
-        scr[cur] |= 0x80;
+        window->move_cursor(0, 2);
+        window->repeat(' ', max_len);
+        window->move_cursor(cur, 2);
         break;
     case 0x94: // del
         if(cur < len) {
             len--;
             for(i=cur;i<len;i++) {
-                scr[i] = scr[i+1];
-            } scr[i] = 0x20;
-            scr[cur] |= 0x80;
+            	buffer[i] = buffer[i+1];
+            } buffer[i] = 0x20;
+//            window->move_cursor(0, 2);
+            window->output_length(buffer, len);
+            window->move_cursor(cur, 2);
         }
         break;
     case 0x13: // home
-        scr[cur] &= 0x7F;
         cur = 0;
-        scr[cur] |= 0x80;
+        window->move_cursor(cur, 2);
         break;        
     case 0x11: // down = end
-        scr[cur] &= 0x7F;
         cur = len;
-        scr[cur] |= 0x80;
+        window->move_cursor(cur, 2);
         break;
     case 0x03: // break
         return -1; // cancel
@@ -499,14 +495,15 @@ int UIStringBox :: poll(int dummy, Event &e)
             break;
         }
         if (len < max_len) {
-            scr[cur] &= 0x7F;
-            for(i=len-1; i>=cur; i--) { // insert if necessary
-                scr[i+1] = scr[i];
+            for(i=len; i>=cur; i--) { // insert if necessary
+                buffer[i+1] = buffer[i];
             }
-            scr[cur] = key;
+            buffer[cur] = key;
             cur++;
-            scr[cur] |= 0x80;
             len++;
+            window->move_cursor(0, 2);
+            window->output_length(buffer, len);
+            window->move_cursor(cur, 2);
         }
         break;
     }
