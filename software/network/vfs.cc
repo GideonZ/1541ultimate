@@ -103,6 +103,8 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
 {
     Path *path = (Path *)fs->path;
     printf("OpenDIR: fs = %p, name arg = '%s'\n", fs, name);
+    root.dump();
+
     // do the actual fetching of the directory
     PathObject *po = path->get_path_object();
     po->fetch_children();
@@ -137,13 +139,14 @@ vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
 {
     printf("READDIR: %p %d\n", dir, dir->index);
     PathObject *dir_po = (PathObject *)dir->path_object;
-    dir->index++;
+
     if(dir->index < dir_po->children.get_elements()) {
         PathObject *ent_po = dir_po->children[dir->index];
         dir->entry->path_object = ent_po;
         dir->entry->name = ent_po->get_name();
         dir->parent_fs->last_direntry = dir->entry;
         printf("Read: %s\n", dir->entry->name);
+        dir->index++;
         return dir->entry;
     }
     return NULL;

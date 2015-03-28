@@ -76,9 +76,9 @@ SRCS_C   =	mbstart_app.c \
             timers.c \
             port.c \
             heap_3.c \
-            sock_echo.c
-
-##			ftpd.c
+            sock_echo.c \
+            time.c \
+			ftpd.c 
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:
@@ -121,6 +121,7 @@ SRCS_CC	 =  stream.cc \
 			usb_ax88772.cc \
 			usb_em1010.cc \
 			network_interface.cc \
+			network_lwip.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \

@@ -3,6 +3,9 @@
 #include "fifo.h"
 #include "indexed_list.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 IndexedList<PollFunction> poll_list(24, 0 );
 
 void nop(Event& e) {}
@@ -22,6 +25,7 @@ void main_loop(void)
         }
         if(!empty)
             event_queue.pop();
+        vTaskDelay(10);
     } while(event.type != e_terminate);
 }
 

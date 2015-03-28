@@ -25,6 +25,7 @@ class Usb2 : public UsbBase
 #ifdef OS
 	QueueHandle_t queue;
 	SemaphoreHandle_t mutex;
+
 #endif
     void  (*inputPipeCallBacks[USB2_NUM_PIPES])(BYTE *buf, int len, void *obj);
     void  *inputPipeObjects[USB2_NUM_PIPES];
@@ -42,10 +43,13 @@ class Usb2 : public UsbBase
     void  init_pipe(int index, struct t_pipe *init);
     void  close_pipe(int pipe);
 
+	void input_task_impl(void);
 public:
     Usb2();
     virtual ~Usb2();
     
+    static void input_task_start(void *);
+
     void poll(Event &e);
     void irq_handler(void);
     void init(void);
@@ -59,7 +63,6 @@ public:
     void pause_input_pipe(int index);
     void resume_input_pipe(int index);
 
-    void unstall_pipe(struct t_pipe *);
     int  bulk_out(struct t_pipe *pipe, void *buf, int len);
     int  bulk_in(struct t_pipe *pipe, void *buf, int len); // blocking
 

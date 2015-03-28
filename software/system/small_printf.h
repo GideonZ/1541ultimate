@@ -9,6 +9,8 @@ extern "C" {
 
 int printf(const char *fmt, ...);
 int sprintf(char *, const char *fmt, ...);
+int sscanf(const char *, const char *fmt, ...);
+int vsprintf(char *dest, const char *fmt, va_list ap);
 
 void _diag_write_char(char c, void **param);
 void _string_write_char(char c, void **param);

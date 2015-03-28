@@ -3,11 +3,14 @@
 #include <stdlib.h>
 extern "C" {
 	#include "itu.h"
+	#include "dump_hex.h"
 }
 #include "integer.h"
 #include "usb_scsi.h"
 #include "event.h"
 #include "filemanager.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 __inline DWORD cpu_to_32le(DWORD a)
 {
@@ -101,9 +104,28 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	max_lun = get_max_lun(dev);
 	printf("max lun = %d\n", max_lun);
 
-    // create a device for each LUN
+	// Initialize standard command structures
+	memset(&cbw, 0, sizeof(cbw));
+    cbw.signature = 0x55534243;
+
+    int bi = dev->find_endpoint(0x82);
+    int bo = dev->find_endpoint(0x02);
+    if(dev) {
+    	host = dev->host;
+    	device = dev;
+    	bulk_in.DevEP  = ((dev->current_address) << 8) | bi;
+        bulk_out.DevEP = ((dev->current_address) << 8) | bo;
+        bulk_in.MaxTrans = 512; // TODO: Should depend on speed
+        bulk_out.MaxTrans = 512; // TODO: Should depend on speed
+        bulk_in.Command = 0; // used to store toggle bit
+        bulk_out.Command = 0; // used to store toggle bit
+        bulk_in.SplitCtl = 0;
+        bulk_out.SplitCtl = 0;
+    }
+
+	// create a block device for each LUN
 	for(int i=0;i<=max_lun;i++) {
-		scsi_blk_dev[i] = new UsbScsi(dev, i);
+		scsi_blk_dev[i] = new UsbScsi(this, i, max_lun);
 		scsi_blk_dev[i]->reset();
 		path_dev[i] = new FileDevice(&root, scsi_blk_dev[i], scsi_blk_dev[i]->get_name(), scsi_blk_dev[i]->get_disp_name());
         path_dev[i]->attach();
@@ -191,35 +213,15 @@ void UsbScsiDriver :: poll(void)
 /*********************************************************************/
 /* The actual block device object, working on a usb device
 /*********************************************************************/
-UsbScsi :: UsbScsi(UsbDevice *d, int unit)
+UsbScsi :: UsbScsi(UsbScsiDriver *drv, int unit, int ml)
 {
-    id = 1;
-    initialized = false;
-    host = NULL;
-    device = d;
+	initialized = true;
+	driver = drv;
     lun = unit;
+    max_lun = ml;
     removable = 0;
     block_size = 512;
-
-    memset(&cbw, 0, sizeof(cbw));
-    cbw.signature = 0x55534243;
-    cbw.lun = (BYTE)lun;
-
-    int bi = d->find_endpoint(0x82);
-    int bo = d->find_endpoint(0x02);
-    if(d) {
-        host = d->host;
-        bulk_in.DevEP  = ((d->current_address) << 8) | bi;
-        bulk_out.DevEP = ((d->current_address) << 8) | bo;
-        bulk_in.MaxTrans = 512; // TODO: Should depend on speed
-        bulk_out.MaxTrans = 512; // TODO: Should depend on speed
-        bulk_in.Command = 0; // used to store toggle bit
-        bulk_out.Command = 0; // used to store toggle bit
-        bulk_in.SplitCtl = 0;
-        bulk_out.SplitCtl = 0;
-    }
-    if((bi > 0) && (bo > 0) && (host) && (d))
-        initialized = true;
+    capacity = 0;
 }
 
 UsbScsi :: ~UsbScsi()
@@ -230,58 +232,48 @@ void UsbScsi :: reset(void)
 {
     BYTE buf[8];
     
-    if(!initialized)
-        return;
-
     if(lun == 0) {
 		printf("Executing reset...\n");
-		int i = host->control_exchange(&(device->control_pipe),
+		int i = driver->device->host->control_exchange(&(driver->device->control_pipe),
 									   c_scsi_reset, 8,
 									   buf, 8);
 
 		printf("Device reset. (returned %d bytes)\n", i);
-	    wait_ms(100);
     }
 
 	set_state(e_device_unknown);
-/*
-    printf("Unstalling pipes..\n");
-    host->unstall_pipe(bulk_in);
-	host->unstall_pipe(bulk_out);
-*/
-    printf("Going to do inquiry..\n");
+
+	printf("Going to do inquiry..\n");
     inquiry();
-
-/*
-    host->unstall_pipe(bulk_in);
-	host->unstall_pipe(bulk_out);
-*/
-
+    test_unit_ready();
 }
 
-int UsbScsi :: status_transport(bool do_bulk_in=true)
+int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
 {
 	DWORD *signature = (DWORD *)stat_resp;
 	*signature = 0;
 	int len;
 	BYTE buf[8];
+	bool do_reset = false;
 
-	if(do_bulk_in)	
+	if(do_bulk_in) {
 		len = host->bulk_in(&bulk_in, stat_resp, 13);
-	else
+	}	else {
 		len = 13; // has already been received in error
-		
+	}
+
 	int i;
 	if((len != 13)||(*signature != 0x55534253)) {
 		printf("Invalid status (len = %d, signature = %8x)... performing reset..\n", len, *signature);
-		goto do_reset;
+		do_reset = true;
 	} else if(stat_resp[12] == 2) {
 		printf("Phase error.. performing reset.\n");
-		goto do_reset;
+		do_reset = true;
 	}
-	return (int)stat_resp[12]; // OK, or other error
 
-do_reset:
+	if (!do_reset)
+		return (int)stat_resp[12]; // OK, or other error
+
 	i =  host->control_exchange(&(device->control_pipe),
 								c_scsi_reset, 8,
 								buf, 8);
@@ -289,19 +281,11 @@ do_reset:
 	if(i != 0)
 		return -2; // reset failed
 
-	host->unstall_pipe(&bulk_in);
-	host->unstall_pipe(&bulk_out);
-
-//	state = e_st_ready;
-
 	return 0; // OK
 }
 
-int UsbScsi :: request_sense(bool debug)
+int UsbScsiDriver :: request_sense(int lun, bool debug)
 {
-    if(!initialized)
-        return -5;
-
     cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(18);
     cbw.flags = CBW_IN;
@@ -331,7 +315,7 @@ int UsbScsi :: request_sense(bool debug)
 	return status_transport(true);
 }
 
-void UsbScsi :: handle_sense_error(void)
+void UsbScsi :: handle_sense_error(BYTE *sense_data)
 {
 	if(!sense_data[2]) {
 		set_state(e_device_ready);
@@ -352,11 +336,8 @@ void UsbScsi :: handle_sense_error(void)
 	}
 }
 
-int UsbScsi :: exec_command(int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *data, bool debug)
+int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *data, bool debug)
 {
-    if(!initialized)
-        return -1;
-
     cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(datalen);
     cbw.flags = (out)?CBW_OUT:CBW_IN;
@@ -385,7 +366,11 @@ int UsbScsi :: exec_command(int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *
         }
     }
 
-	bool read_status = true;
+    if(cmd[0] == 0x12) {
+        vTaskDelay(100);
+    }
+
+    bool read_status = true;
     /* DATA PHASE */
     if((data)&&(datalen)) {
     	if(out) {
@@ -396,21 +381,19 @@ int UsbScsi :: exec_command(int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *
     	} else { // in
 			len = host->bulk_in(&bulk_in, data, datalen);
 			if(debug) {
-				printf("%d data bytes received: ", len);
-				for(int i=0;i<len;i++)
-					printf("%b ", data[i]);
-				printf(" (");
-				for(int i=0;i<len;i++)
-					printf("%c", data[i]<32?'.':data[i]);
-				printf(")\n");
+				printf("%d data bytes received:\n", len);
+				dump_hex(data, len);
 			}
-			if(len != datalen) {
-				printf("expected %d bytes, got %d.. unstalling pipe..", datalen, len);
+			if (len < 0) {
+				printf("In Pipe stalled. Unstalling pipe, and reading status.\n");
+			    device->unstall_pipe((BYTE)(bulk_in.DevEP & 0xFF));
+			    bulk_in.Command = 0; // reset toggle
+			} else if(len != datalen) {
+				printf("expected %d bytes, got %d...", datalen, len);
 				if(len == 13) { // could be a status!
 					memcpy(stat_resp, data, 16); // 16 is likely to be faster than 13
 					read_status = false;
 				}
-			    host->unstall_pipe(&bulk_in);
 			}
 		}
 	}
@@ -418,9 +401,8 @@ int UsbScsi :: exec_command(int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *
     /* STATUS PHASE */
     st = status_transport(read_status);
    	if(st == 1) {
-//		printf("Command error. now issueing REQUEST SENSE.\n");
-		request_sense(debug);
-		handle_sense_error();
+		request_sense(true); // was debug
+		scsi_blk_dev[lun]->handle_sense_error(sense_data);
 		return -7;
 	}
 	if(st < 0) {
@@ -436,13 +418,16 @@ void UsbScsi :: inquiry(void)
     BYTE response[64];
     int len, i;
 
-    if(!initialized)
-        return;
+    driver->device->get_pathname(name, 13);
+    // create file system name
+    if (max_lun) { // more than one lun?
+    	sprintf(name + strlen(name), "L%d", lun);
+    }
 
     BYTE inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
-    inquiry_command[1] = BYTE(lun << 5);
+    //inquiry_command[1] = BYTE(lun << 5);
 
-    if((len = exec_command(6, false, inquiry_command, 36, response, false)) < 0) {
+    if((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) {
     	printf("Inquiry failed. %d\n", len);
     	initialized = false; // don't try again
     	return;
@@ -455,9 +440,6 @@ void UsbScsi :: inquiry(void)
     }
     response[36] = 0;
     printf("Device: %s\n", (char *)&response[8]);
-
-    // create file system name
-    sprintf(name, "USB%d.%d", device->current_address, lun);
     
     // copy display name
     char *n = disp_name;
@@ -468,6 +450,7 @@ void UsbScsi :: inquiry(void)
     for(int i=16;i<32;i++)
     	n[j++] = (char)response[i];
     n[j++] = 0;
+
 }
 
 bool UsbScsi :: test_unit_ready(void)
@@ -479,7 +462,7 @@ bool UsbScsi :: test_unit_ready(void)
         return false;
 
     BYTE test_ready_command[6] = { 0x00, BYTE(lun << 5), 0, 0, 0, 0 };
-    int res = exec_command(6, false, test_ready_command, 0, NULL, false);
+    int res = driver->exec_command(lun, 6, false, test_ready_command, 0, NULL, false);
 	if(res == -7) {
 		return true; // handled by sense
 	}
@@ -503,7 +486,7 @@ DRESULT UsbScsi :: read_capacity(DWORD *num_blocks, DWORD *blk_size)
 
     BYTE read_cap_command[] = { 0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     printf("Read capacity.\n");
-    int stat = exec_command(10, false, read_cap_command, 8, buf, false);
+    int stat = driver->exec_command(lun, 10, false, read_cap_command, 8, buf, false);
     
     if(stat >= 0) {
         memcpy(num_blocks, &buf[0], 4);
@@ -734,7 +717,7 @@ struct t_sense_code sense_codes[] = {
 	{ 0xFF, 0xFF, "End of list" } };
 
  
-void UsbScsi :: print_sense_error(void)
+void UsbScsiDriver :: print_sense_error(void)
 {
 	printf("Sense code: %b (%s)\n", sense_data[2], sense_strings[sense_data[2]] );
 	for(int i=0; sense_codes[i].major != 0xFF; i++) {
@@ -746,7 +729,7 @@ void UsbScsi :: print_sense_error(void)
 	}
 }
 #else
-void UsbScsi :: print_sense_error(void)
+void UsbScsiDriver :: print_sense_error(void)
 {
 	printf("Sense code: %b, (%b.%b)", sense_data[2], sense_data[12], sense_data[13]);
 }
@@ -770,6 +753,7 @@ DSTATUS UsbScsi :: status(void)
 {
     if(!initialized)
         return STA_NODISK;
+    return RES_OK;
 }
 
 DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, int num_sectors)
@@ -792,7 +776,7 @@ DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, int num_sectors)
         memcpy(&read_10_command[2], &sector, 4);
         
         for(int retry=0;retry<10;retry++) {
-            if(exec_command(10, false, read_10_command, block_size*num_sectors, buf, false) != block_size*num_sectors) {
+            if(driver->exec_command(lun, 10, false, read_10_command, block_size*num_sectors, buf, false) != block_size*num_sectors) {
                 ITU_USB_BUSY = 0;
                 return RES_ERROR;
             } else
@@ -821,13 +805,13 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, int num_sectors)
 
     ITU_USB_BUSY = 1;
 
-    printf("USB: Writing %d sectors from %d.\n", num_sectors, sector);
+    //printf("USB: Writing %d sectors from %d.\n", num_sectors, sector);
 //    for(int s=0;s<num_sectors;s++) {
         //ST_DWORD(&cbw.cmd[2], sector);
         memcpy(&write_10_command[2], &sector, 4);
 
         for(int retry=0;retry<10;retry++) {
-        	len = exec_command(10, true, write_10_command, block_size*num_sectors, (BYTE *)buf, false);
+        	len = driver->exec_command(lun, 10, true, write_10_command, block_size*num_sectors, (BYTE *)buf, false);
         	if(len != block_size*num_sectors) {
         		printf("Error %d.\n", len);
         	    ITU_USB_BUSY = 0;

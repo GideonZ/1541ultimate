@@ -29,7 +29,6 @@ public:
     struct ip_addr my_netmask;
     struct ip_addr my_gateway;
     struct netif   my_net_if;
-
     bool   if_up;
 
     void *driver;

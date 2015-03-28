@@ -142,7 +142,7 @@ void *sbrk(int inc)
     }
     return result;
 }
-/*
+
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -202,7 +202,7 @@ int read(int file, char *ptr, int len)
 {
 	return 0;
 }
-
+/*
 int open(char *path, int flags, ...)
 {
 	// Pretend like we always fail

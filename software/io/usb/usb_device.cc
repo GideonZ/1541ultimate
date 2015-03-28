@@ -50,6 +50,7 @@ BYTE c_set_configuration[]         = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00,
 
 BYTE c_get_interface[]			   = { 0x21, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
 BYTE c_get_hid_report_descriptor[] = { 0x81, 0x06, 0x00, 0x22, 0x00, 0x00, 0x00, 0x00 };
+BYTE c_unstall_pipe[]			   = { 0x02, 0x01, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
 
 UsbDevice :: UsbDevice(UsbBase *u, int speed)
 {
@@ -291,6 +292,12 @@ void UsbDevice :: set_configuration(BYTE config)
 //    printf("Set Configuration result:%d\n", i);
 }
 
+void UsbDevice :: unstall_pipe(BYTE ep)
+{
+	c_unstall_pipe[4] = ep;
+	host->control_exchange(&control_pipe, c_unstall_pipe, 8, NULL, 0);
+}
+
 bool UsbDevice :: init(int address)
 {
     // first we get the device descriptor
@@ -329,7 +336,7 @@ void UsbDevice :: get_pathname(char *dest, int len)
 	int i=15;
 	while(d->parent != NULL) {
 		buf[--i] = 0x30 + d->parent_port;
-		buf[--i] = 0x2E;
+		//buf[--i] = 0x2E;
 		d = d->parent;
 	}
 	strncpy(dest, "Usb", 3);

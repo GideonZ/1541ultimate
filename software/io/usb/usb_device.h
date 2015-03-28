@@ -158,6 +158,8 @@ public:
     void set_address(int address);
     bool get_configuration(BYTE index);
     void set_configuration(BYTE config);
+    void unstall_pipe(BYTE ep);
+
     bool init(int address);
     int  find_endpoint(BYTE code);
 

@@ -7,6 +7,7 @@ extern "C" {
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 #include "task.h"
+#include "ftpd.h"
 
 void echo_task(void *a);
 }
@@ -14,13 +15,21 @@ void echo_task(void *a);
 /**
  * Initialization
  */
+void initLwipCallback(void *a)
+{
+	printf("Lwip TCP init callback.\n");
+	ftpd_init();
+	printf("FTPDaemon initialized\n");
+}
+
 void initLwip(void *a, void *b)
 {
 	printf("Initializing lwIP.\n");
-	tcpip_init(NULL, NULL);
+	tcpip_init(initLwipCallback, NULL);
 	printf("Starting network services.\n");
 	xTaskCreate( echo_task, "Echo task", configMINIMAL_STACK_SIZE, NULL, 2, NULL );
 }
+
 
 InitFunction lwIP_initializer(initLwip, NULL, NULL);
 
@@ -32,10 +41,30 @@ err_t lwip_init_callback(struct netif *netif)
     return ERR_OK;
 }
 
+static BYTE temporary_out_buffer[1536];
+
 err_t lwip_output_callback(struct netif *netif, struct pbuf *pbuf)
 {
     NetworkLWIP *ni = (NetworkLWIP *)netif->state;
-    return ni->driver_output_function(ni->driver, ((BYTE *)pbuf->payload) + ETH_PAD_SIZE, (pbuf->len - ETH_PAD_SIZE));
+    if (pbuf->len == pbuf->tot_len) {
+    	return ni->driver_output_function(ni->driver, (BYTE *)pbuf->payload, pbuf->len);
+    }
+    if (pbuf->next == NULL) {
+    	return ERR_BUF;
+    }
+    BYTE *temp = temporary_out_buffer;
+    int total = pbuf->tot_len;
+    if (total > 1536) {
+    	return ERR_ARG;
+    }
+    while(pbuf) {
+    	memcpy(temp, pbuf->payload, pbuf->len);
+    	temp += pbuf->len;
+    	if (pbuf->len == pbuf->tot_len)
+    		break;
+    	pbuf = pbuf->next;
+    }
+    return ni->driver_output_function(ni->driver, temporary_out_buffer, total);
 }
 
 void lwip_free_callback(void *p)

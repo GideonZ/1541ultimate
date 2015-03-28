@@ -71,7 +71,6 @@ public:
     virtual void pause_input_pipe(int index) {}
     virtual void resume_input_pipe(int index) {}
 
-    virtual void unstall_pipe(struct t_pipe *pipe) {}
     virtual int  bulk_out(struct t_pipe *pipe, void *buf, int len) { return -1; };
     virtual int  bulk_in(struct t_pipe *pipe, void *buf, int len) { return -1; }; // blocking
 

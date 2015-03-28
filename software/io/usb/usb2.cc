@@ -1,11 +1,13 @@
+#include <stdlib.h>
+#include <string.h>
+
 extern "C" {
 	#include "itu.h"
     #include "dump_hex.h"
     #include "small_printf.h"
 }
 #include "usb2.h"
-#include <stdlib.h>
-#include <string.h>
+#include "task.h"
 
 extern BYTE  _binary_nano_minimal_b_start;
 extern DWORD _binary_nano_minimal_b_size;
@@ -53,7 +55,7 @@ Usb2 :: Usb2()
     circularBufferBase = NULL;
     
     if(getFpgaCapabilities() & CAPAB_USB_HOST2) {
-	    init();
+//	    init();
 
 #ifndef BOOTLOADER
 	    poll_list.append(&poll_usb2);
@@ -83,6 +85,25 @@ struct usb_packet {
 	WORD  length;
 	WORD  pipe;
 };
+
+void Usb2 :: input_task_start(void *u)
+{
+	Usb2 *usb = (Usb2 *)u;
+	usb->input_task_impl();
+}
+
+void Usb2 :: input_task_impl(void)
+{
+	printf("USB input task is now running. this = %p\n", this);
+	struct usb_packet pkt;
+	while(1) {
+		if (xQueueReceive(queue, &pkt, 5000) == pdTRUE) {
+			inputPipeCallBacks[pkt.pipe](pkt.data, pkt.length, pkt.object);
+		} else {
+			printf("@");
+		}
+	}
+}
 
 void Usb2 :: init(void)
 {
@@ -138,7 +159,8 @@ void Usb2 :: init(void)
     ITU_IRQ_ENABLE    = 0x04; // usb interrupt
 #else
     queue = xQueueCreate(16, sizeof(struct usb_packet));
-    printf("Queue = %p\n", queue);
+    printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
+	xTaskCreate( Usb2 :: input_task_start, "USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, NULL );
 #endif
     ITU_MISC_IO = 1; // coherency is on
 }
@@ -149,13 +171,6 @@ void Usb2 :: poll(Event &e)
 		init();
         return;
     }
-
-#ifdef OS
-	struct usb_packet pkt;
-	if (xQueueReceive(queue, &pkt, 0) == pdTRUE) {
-		inputPipeCallBacks[pkt.pipe](pkt.data, pkt.length, pkt.object);
-	}
-#endif
 
 	BYTE usb_status = USB2_STATUS;
 	if (prev_status != usb_status) {
@@ -489,13 +504,6 @@ void Usb2 :: free_input_pipe(int index)
 #endif
 }
 
-void Usb2 :: unstall_pipe(struct t_pipe *pipe)
-{
-	printf("Unstalling pipe not yet supported. (Panic)");
-	while(1)
-		;
-}
-
 int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 {
 #ifdef OS
@@ -569,7 +577,7 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		int current_len = (len > 49152) ? 49152 : len;
 		USB2_CMD_Length = current_len;
 		WORD cmd = pipe->Command | UCMD_MEMWRITE | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN;
-		//printf("%d: %4x ", len, cmd);
+		//printf("%d: %4x \n", len, cmd);
 		USB2_CMD_Command = cmd;
 
 		// wait until it gets zero again
@@ -579,6 +587,11 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		WORD result = USB2_CMD_Result;
 		if ((result & URES_RESULT_MSK) != URES_PACKET) {
 			printf("Bulk IN error: $%4x, Transferred: %d\n", result, total_trans);
+			if ((result & URES_RESULT_MSK) == URES_STALL) {
+				total_trans = -4; // error code
+			} else {
+				total_trans = -1; // error code
+			}
 			break;
 		}
 

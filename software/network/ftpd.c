@@ -40,11 +40,9 @@
 #include "lwip/tcp.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <stdarg.h>
 #include <malloc.h>
-#ifdef _WIN32
-#include <string.h>
-#endif
 #include <ctype.h>
 #include <errno.h>
 #include <time.h>
@@ -573,7 +571,7 @@ static void send_next_directory(struct ftpd_datastate *fsd, struct tcp_pcb *pcb,
 static err_t ftpd_datasent(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
     if(arg == NULL) {
-        small_printf("ftpd_datasent: ARG = NULL\n");
+        printf("ftpd_datasent: ARG = NULL\n");
         return ERR_OK;
     }
 	struct ftpd_datastate *fsd = arg;
@@ -849,7 +847,7 @@ static void cmd_retr(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate 
 	vfs_stat_t st;
 
 	int ret = vfs_stat(fsm->vfs, arg, &st);
-    small_printf("RET %d t%d s%d m%d\n", ret, st.st_mtime, st.st_size, st.st_mode);
+    printf("RET %d t%d s%d m%d\n", ret, st.st_mtime, st.st_size, st.st_mode);
 	if (!VFS_ISREG(st.st_mode)) {
 		send_msg(pcb, fsm, msg550);
 		return;
@@ -1200,7 +1198,7 @@ static void send_msg(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm, char *msg, 
 	if (sfifo_space(&fsm->fifo) < len)
 		return;
 	sfifo_write(&fsm->fifo, buffer, len);
-	small_printf("response: %s", buffer);
+	printf("response: %s", buffer);
 	send_msgdata(pcb, fsm);
 }
 
@@ -1282,7 +1280,7 @@ static err_t ftpd_msgrecv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t 
 			while (((*pt == '\r') || (*pt == '\n')) && pt >= text)
 				*pt-- = '\0';
 
-			small_printf("query: %s\n", text);
+			printf("query: %s\n", text);
 
 			strncpy(cmd, text, 4);
 			for (pt = cmd; isalpha(*pt) && pt < &cmd[4]; pt++)

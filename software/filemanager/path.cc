@@ -13,7 +13,7 @@ Path :: Path() : full_path("/")
 	root_obj = &root;
     current  = &root;
     root.attach();
-	cd("SD");
+//	cd("SD");
 }
 
 Path :: Path(PathObject *obj) : full_path("/")
@@ -61,7 +61,7 @@ int Path :: cd_single(char *cd)
     if(strcmp(cd, "..") == 0) {
     	if(p_len > 1) {
             for(int i=p_len-2;i>=0;i--) {
-                if((p[i] == '/')||(p[i] == '\\')) {
+                if((p[i] == '/')||(p[i] == '\\')||(i==0)) {
                     p[i] = '\0';
                     t = current->parent;
                     t->cleanup_children();

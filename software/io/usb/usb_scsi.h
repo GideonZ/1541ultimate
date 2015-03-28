@@ -34,7 +34,17 @@ class UsbScsiDriver : public UsbDriver
 	int max_lun;
 	int current_lun;
     int get_max_lun(UsbDevice *dev);
+
+    DWORD      id;
+    struct t_pipe bulk_in;
+    struct t_pipe bulk_out;
+    BYTE       stat_resp[32];
+    BYTE       sense_data[32];
+    struct t_cbw    cbw;
+
+    UsbBase *host;
 public:
+    UsbDevice *device;
 	UsbScsiDriver(IndexedList<UsbDriver *> &list);
 	UsbScsiDriver();
 	~UsbScsiDriver();
@@ -44,43 +54,39 @@ public:
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);
+
+    int status_transport(bool);
+    int  request_sense(int lun, bool debug = false);
+    int  exec_command(int lun, int cmdlen, bool out, BYTE *cmd, int resplen, BYTE *response, bool debug = false);
+	void print_sense_error(void);
 };
 #endif
 
 class UsbScsi : public BlockDevice
 {
-    DWORD      id;
     bool       initialized;
-    UsbBase   *host;
-    UsbDevice *device;
+    //UsbDevice *device;
+    UsbScsiDriver *driver;
     int        lun;
+    int		   max_lun;
     int		   removable;
     DWORD      capacity;
     int        block_size;
-    
-    struct t_pipe bulk_in;
-    struct t_pipe bulk_out;
 
-    BYTE       stat_resp[32];
-    BYTE       sense_data[32];
     char	   name[16];
     char       disp_name[32];
     
-    struct t_cbw    cbw;
 public:
-    UsbScsi(UsbDevice *d, int unit);
+    UsbScsi(UsbScsiDriver *drv, int unit, int max_lun);
     ~UsbScsi();
     
-    int status_transport(bool);
     void reset(void);
     char *get_name(void) { return name; }
     char *get_disp_name(void) { return disp_name; }
-    int  request_sense(bool debug = false);
-    void handle_sense_error(void);
-    int  exec_command(int cmdlen, bool out, BYTE *cmd, int resplen, BYTE *response, bool debug = false);
+
     void inquiry(void);
 	bool test_unit_ready(void);
-	void print_sense_error(void);
+    void handle_sense_error(BYTE *);
     DRESULT read_capacity(DWORD *num_blocks, DWORD *block_size);
 
     DSTATUS init(void);

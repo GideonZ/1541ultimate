@@ -99,7 +99,8 @@ CMD_RES_DATA         = $0000
 CMD_RES_ACK          = $1000
 CMD_RES_NAK          = $2000
 CMD_RES_NYET         = $3000
-CMD_RES_ERROR        = $4000
+CMD_RES_STALL        = $4000
+CMD_RES_ERROR        = $5000
 CMD_RES_MASK         = $7000
 CMD_RES_NO_DATA      = $0400
 CMD_RES_LEN_MASK     = $03FF
@@ -567,6 +568,8 @@ _wait_in_cmd
     BEQ  _check_nak_response_in
     CMP  #CMD_RES_NYET
     BEQ  _try_complete_split_in
+    CMP  #CMD_RES_STALL
+    BEQ  _in_done
     CMP  #CMD_RES_ERROR
     BNE  _in_done ; I don't know how to handle this
 _check_in_error

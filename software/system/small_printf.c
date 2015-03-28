@@ -1,4 +1,7 @@
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 
 extern void outbyte(int);
 
@@ -183,6 +186,13 @@ printf(const char *fmt, ...)
     return (ret);
 }
 
+int vsprintf(char *dest, const char *fmt, va_list ap)
+{
+    int ret = _vprintf(_string_write_char, (void **)&dest, fmt, ap);
+    _string_write_char(0, (void **)&dest);
+    return ret;
+}
+
 int
 sprintf(char *str, const char *fmt, ...)
 {
@@ -196,6 +206,98 @@ sprintf(char *str, const char *fmt, ...)
     va_end(ap);
     return (ret);
 }
+
+int _conv(const char *buf, int pos, int radix, int *result)
+{
+	*result = 0;
+	char c;
+	int nega = 0;
+	if (buf[pos] == '-') {
+		nega = 1;
+		pos++;
+	}
+
+	while(buf[pos]) {
+		c = buf[pos++];
+		if (isdigit(c)) {
+			*result *= radix;
+			*result += ((int)c) - 48;
+		} else if ( (radix > 10) && (((c >= 'A') && (c <= 'F')) || ((c >= 'a') && (c <= 'f')))) {
+			*result *= radix;
+			*result += ((int)(c & 0x0F)) + 9;
+		} else if ((c == ' ') || (c == '\n') || (c == '\r') || (c == '\t')) {
+			continue;
+		} else {
+			break;
+		}
+	}
+	if (nega)
+		*result = -(*result);
+
+	return pos;
+}
+
+int _vscanf(const char *buf, const char *fmt, va_list ap)
+{
+	int do_conv = 0;
+	int pos = 0;
+	int result = 0;
+	char *dest;
+	int count = 0;
+
+	int len = strlen(fmt);
+	for (int i=0;i<len;i++) {
+		if (fmt[i] == '%') {
+			do_conv = 1;
+			continue;
+		}
+		if (do_conv) {
+			do_conv = 0;
+			void *pntr = va_arg(ap, void *); // get pointer parameter to store result
+			switch(fmt[i]) {
+			case 'd': // scan for integer
+				pos = _conv(buf, pos, 10, &result);
+				*((int *)pntr) = result;
+				count++;
+				break;
+			case 'x': // scan for integer from hex
+				pos = _conv(buf, pos, 16, &result);
+				*((int *)pntr) = result;
+				count++;
+				break;
+			case 's': // up to white space
+				dest = (char *)pntr;
+				while(buf[pos]) {
+					if ((buf[pos] == ' ') || (buf[pos] == '\n') || (buf[pos] == '\r') || (buf[pos] == '\t')) {
+						pos ++;
+						break;
+					}
+					*(dest++) = buf[pos++];
+				}
+				*(dest) = 0;
+				count++;
+				break;
+			default:
+				*((int *)pntr) = 0;
+			}
+			continue;
+		}
+	}
+	return count;
+}
+
+int
+sscanf(char *buf, const char *fmt, ...)
+{
+    va_list ap;
+    int ret;
+
+    va_start(ap, fmt);
+    ret = _vscanf(buf, fmt, ap);
+    va_end(ap);
+    return (ret);
+}
+
 
 int puts(const char *str)
 {

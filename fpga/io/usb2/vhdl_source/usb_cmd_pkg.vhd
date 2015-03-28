@@ -16,7 +16,7 @@ package usb_cmd_pkg is
 
     -- Protocol Event
     type t_usb_command is ( setup, out_data, in_request, ping );
-    type t_usb_result  is ( res_data, res_ack, res_nak, res_nyet, res_error );
+    type t_usb_result  is ( res_data, res_ack, res_nak, res_nyet, res_stall, res_error );
      
     type t_usb_cmd_req is record
         request         : std_logic;
@@ -95,6 +95,7 @@ package body usb_cmd_pkg is
             when c_pid_ack => res := res_ack;
             when c_pid_nak => res := res_nak;
             when c_pid_nyet => res := res_nyet;
+            when c_pid_stall => res := res_stall;
             when others => res := res_error;
         end case;
         return res;    
