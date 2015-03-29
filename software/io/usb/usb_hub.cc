@@ -121,18 +121,9 @@ void UsbHubDriver :: install(UsbDevice *dev)
     
 	dev->set_configuration(dev->get_device_config()->config_value);
 
-//	printf("Getting hub descriptor ADDR=%d...\n", dev->current_address);
 	int i = dev->host->control_exchange(&dev->control_pipe,
 								   c_get_hub_descriptor, 8,
 								   buf, 64);
-
-/*
-	printf("Hub descriptor: (returned %d bytes)\n", i);
-    for(int j=0;j<i;j++) {
-        printf("%b ", buf[j]);
-    }
-    printf("\n");
-*/
 
     num_ports = int(buf[2]);
     individual_power_switch = ((buf[3] & 0x03) == 1);

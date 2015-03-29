@@ -25,7 +25,7 @@ AT45_Flash at45_flash;
 
 static const t_flash_address flash_addresses[] = {
 	{ FLASH_ID_BOOTAPP,    0x01, 0x053CA0, 0x0A2800, 0x0F360 }, // 118 pages
-	{ FLASH_ID_APPL,       0x01, 0x108000, 0x200000, 0x80000 }, // sector 8 (W25QDB161D)
+	{ FLASH_ID_APPL,       0x01, 0x108000, 0x200000, 0xF0000 }, // sector 8 (W25QDB161D)
 	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x53CA0 },
 	{ FLASH_ID_AR5PAL,     0x00, 0x063000, 0x0C0000, 0x08000 },
 	{ FLASH_ID_AR6PAL,     0x00, 0x06B000, 0x0CF820, 0x08000 },
@@ -45,7 +45,7 @@ static const t_flash_address flash_addresses[] = {
 	{ FLASH_ID_TAR_PAL,    0x00, 0x0E3000, 0x1B8200, 0x10000 },
 	{ FLASH_ID_TAR_NTSC,   0x00, 0x0F3000, 0x1D7430, 0x10000 },
     { FLASH_ID_ALL_ROMS,   0x00, 0x063000, 0x0C0000, 0xA0000 },
-	{ FLASH_ID_CUSTOMFPGA, 0x01, 0x18C000, 0x300000, 0x53CA0 }, // sector 12
+//	{ FLASH_ID_CUSTOMFPGA, 0x01, 0x18C000, 0x300000, 0x53CA0 }, // sector 12
 	{ FLASH_ID_CONFIG,     0x00, 0x20DF00, 0x3FC000, 0x02100 },
 	{ FLASH_ID_LIST_END,   0x00, 0x20DCF0, 0x3FBC00, 0x00210 } };
 

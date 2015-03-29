@@ -9,7 +9,7 @@ PROMGEN = $(TOOLS)/promgen
 CHECKSUM = $(TOOLS)/checksum
 
 1ST_BOOT = $(HERE)/../mb_boot
-2ND_BOOT = $(HERE)/../2nd_boot
+2ND_BOOT = $(HERE)/../mb_boot2
 ULTIMATE = $(HERE)/../mb_ultimate
 
 # Configuration
@@ -88,7 +88,7 @@ SRCS_ASM =  crt0_appl.s
 SRCS_BIN =  ultimate.bin \
 			mb_boot_700.bin \
 			chars.bin \
-			2nd_boot.bin \
+			mb_boot2.bin \
 			1541-ii.bin \
 			1541.bin \
 			1541c.bin \
@@ -110,8 +110,8 @@ ifeq	($(FPGA400), 1)
 endif
     
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -Os -DGCC_ZPU -ffunction-sections
-CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 -D_FPGA400=$(FPGA400)
+COPTIONS = -Os -DGCC_ZPU -ffunction-sections -std=c99
+CPPOPT   = -Os -DGCC_ZPU -ffunction-sections -fno-exceptions -fno-rtti -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 -D_FPGA400=$(FPGA400)
 LINK 	 = $(PATH_SW)/system/zpu.lds
 LLIB     =  -L $(ZPU_TOOLCHAIN)/install/lib/gcc/zpu-elf/3.4.2 \
 			-L $(ZPU_TOOLCHAIN)/install/zpu-elf/lib

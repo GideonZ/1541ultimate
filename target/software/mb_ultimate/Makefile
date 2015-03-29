@@ -111,7 +111,7 @@ SRCS_CC	 =  stream.cc \
 			filetype_reu.cc \
 			filetype_iso.cc \
 			filetype_crt.cc \
-			filetype_bit.cc \
+			filetype_u2u.cc \
 			rtc.cc \
 			usb_base.cc \
 			usb2.cc \

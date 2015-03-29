@@ -8,7 +8,10 @@ FileDevice :: FileDevice(PathObject *p, BlockDevice *b, char *n, char *dn) : Fil
     blk = b;
     disk = NULL; //new Disk(b, 512);
     info = new FileInfo(get_name());
-    //printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s, info = %p\n", this, disk, b, n, dn, get_file_info());
+    info->fs = NULL;
+    info->cluster = 0; // indicate root dir
+    info->attrib = AM_DIR; // ;-)
+//printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s, info = %p\n", this, disk, b, n, dn, get_file_info());
 }
 
 FileDevice :: ~FileDevice()

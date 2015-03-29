@@ -285,6 +285,8 @@ void Screen :: output(char c)
                 pointer += size_x;
                 cursor_y++;
             }
+            pointer -= cursor_x;
+            cursor_x = 0;
             break;
         case 0x0D:
             pointer -= cursor_x;

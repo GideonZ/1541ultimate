@@ -9,8 +9,10 @@
 FilePartition :: FilePartition(PathObject *par, Partition *p, char *n) : FileDirEntry(par, n) //, name(n)
 {
     prt = p; // link to partition object.
-    info = new FileInfo(16);
-    strcpy(info->lfname, n); // redundant, oh well!
+    info = new FileInfo(n);
+//    strcpy(info->lfname, n); // redundant, oh well!
+    info->cluster = 0; // indicate root dir
+    info->attrib = AM_DIR; // ;-)
 }
 
 FilePartition :: ~FilePartition()
@@ -53,8 +55,6 @@ char *FilePartition :: get_display_string(void)
 void FilePartition :: init()
 {
     info->fs = prt->attach_filesystem();
-    info->cluster = 0; // indicate root dir
-    info->attrib = AM_DIR; // ;-)
 }
     
 int FilePartition :: fetch_children(void)

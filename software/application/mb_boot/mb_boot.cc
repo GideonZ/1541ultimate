@@ -18,34 +18,8 @@ void jump_run(DWORD a)
     	;
 }
 
-#define BOOT2_RUN_ADDR 0x10000
+#define BOOT2_RUN_ADDR 0x1000
 #define APPL_RUN_ADDR  0x10000
-#define APPL_RUN_MK1   0x30000
-/*
-int main(void)
-{
-	puts("Hello, world!");
-
-    BYTE *ram = (BYTE *)0x10000;
-
-    while(1) {
-    	int st = xmodemReceive((char *)ram, 1048576);
-        if (st > 0) {
-            puts("Receive done.");
-            puts("Going to start...");
-            wait_ms(2000);
-            //jump_run(0x10000);
-            UART_DATA = 0x2d;
-            asm("bralid r15, 0x10000");
-            asm("nop");
-            puts("Application exit.");
-        } else {
-            puts("Nothing received.");
-        }
-    }    
-    return 0;
-}
-*/
 
 bool w25q_wait_ready(int time_out)
 {
@@ -78,22 +52,6 @@ int main(int argc, char **argv)
     if (getFpgaCapabilities() & CAPAB_SIMULATION) {
         UART_DATA = BYTE('*');
         jump_run(APPL_RUN_ADDR);
-    }
-
-    if (!(getFpgaCapabilities() & CAPAB_SPI_FLASH)) {
-/*
-        AT49_COMMAND1 = 0xAA;
-        AT49_COMMAND2 = 0x55;
-        AT49_COMMAND1 = 0x90;
-    	BYTE manuf  = AT49_MEM_ARRAY(0);
-    	BYTE dev_id = AT49_MEM_ARRAY(2);
-        AT49_COMMAND1 = 0xAA;
-        AT49_COMMAND2 = 0x55;
-        AT49_COMMAND1 = 0xF0;
-        uart_write_hex(manuf);
-        uart_write_hex(dev_id);
-*/
-        jump_run(APPL_RUN_MK1);
     }
 
     puts("**Primary Boot**");
@@ -138,14 +96,13 @@ int main(int argc, char **argv)
         	SPI_FLASH_DATA = 0x34; // 7/8 on spansion!!
         	SPI_FLASH_DATA = 0x00;
             SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-        	w25q_wait_ready(10000);
+        	w25q_wait_ready(100000);
         	SPI_FLASH_DATA = W25Q_WriteDisable;
         }
     }
 
     int length;
 
-/*
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA_32 = read_boot2;
     length = (int)SPI_FLASH_DATA_32;
@@ -160,13 +117,12 @@ int main(int argc, char **argv)
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
-//        uart_write_hex_long(*(DWORD *)BOOT2_RUN_ADDR);
-//        uart_write_buffer("Running 2nd boot.\n\r", 19);
+        uart_write_hex_long(*(DWORD *)BOOT2_RUN_ADDR);
+        uart_write_buffer("Running 2nd boot.\n\r", 19);
         jump_run(BOOT2_RUN_ADDR);
         while(1);
     }
 
-*/
     puts("No bootloader, trying application.");
 
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low

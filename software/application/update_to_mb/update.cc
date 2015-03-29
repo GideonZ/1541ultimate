@@ -29,8 +29,8 @@ extern BYTE _binary_ultimate_bin_start;
 extern BYTE _binary_ultimate_bin_end;
 extern BYTE _binary_mb_boot_700_bin_start;
 extern BYTE _binary_mb_boot_700_bin_end;
-extern BYTE _binary_2nd_boot_bin_start;
-extern BYTE _binary_2nd_boot_bin_end;
+extern BYTE _binary_mb_boot2_bin_start;
+extern BYTE _binary_mb_boot2_bin_end;
 
 extern BYTE _binary_1541_ii_bin_start;
 extern BYTE _binary_1541_bin_start;
@@ -298,7 +298,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
                 user_interface->popup("Critical update failed. Retry?", BUTTON_OK);
         } while(!ok);
         do {
-            ok = flash_buffer(FLASH_ID_BOOTAPP, &_binary_2nd_boot_bin_start, &_binary_2nd_boot_bin_end, BOOT_VERSION, "Secondary bootloader");
+            ok = flash_buffer(FLASH_ID_BOOTAPP, &_binary_mb_boot2_bin_start, &_binary_mb_boot2_bin_end, BOOT_VERSION, "Secondary bootloader");
             if(!ok)
                 user_interface->popup("Critical update failed. Retry?", BUTTON_OK);
         } while(!ok);
@@ -356,9 +356,9 @@ int main()
 {
 	char time_buffer[32];
 
-	small_printf("*** Ultimate Updater ***\n\n");
+	printf("*** Ultimate Updater ***\n\n");
 	flash = get_flash();
-    small_printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
+    printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
     GenericHost *host;
     if (getFpgaCapabilities() & CAPAB_OVERLAY)
@@ -403,7 +403,7 @@ int main()
         console_print(screen, check_error);
         while(1);
     }
-    if(calc_checksum(&_binary_2nd_boot_bin_start, &_binary_2nd_boot_bin_end) == CHK_2nd_boot_bin)
+    if(calc_checksum(&_binary_mb_boot2_bin_start, &_binary_mb_boot2_bin_end) == CHK_mb_boot2_bin)
         console_print(screen, "Checksum of Bootloader:   OK..\n");
     else {
         console_print(screen, check_error);
@@ -417,6 +417,7 @@ int main()
     }
     console_print(screen, "\n\n\n\n\n\n\n\n");
             
+/*
 	bool do_update1 = false;
 	bool do_update2 = false;
     bool virgin = false;
@@ -450,19 +451,22 @@ int main()
             program_flash(false, true, false);
         }
 	}
-
+*/
+    if(user_interface->popup("Updating to 3.x. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+        program_flash(true, true, true);
+    }
 	console_print(screen, "\nConfiguring Flash write protection..\n");
 	flash->protect_configure();
 	flash->protect_enable();
 
-    if(!virgin) {
+//    if(!virgin) {
         if (user_interface->popup("Reset configuration?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
             int num = flash->get_number_of_config_pages();
             for(int i=0;i<num;i++) {
                 flash->clear_config_page(i);
             }
         }
-    }
+//    }
 
     console_print(screen, "\nTo avoid loading this updater again,\ndelete it from your media.\n");
 	

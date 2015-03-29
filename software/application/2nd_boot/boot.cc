@@ -4,7 +4,7 @@
 #include "disk.h"
 #include "fat_fs.h"
 #include "fatfile.h"
-#include "usb_scsi.h"
+//#include "usb_scsi.h"
 #include "versions.h"
 
 extern "C" {
@@ -13,21 +13,22 @@ extern "C" {
     #include "small_printf.h"
 }
 
-#define APPLICATION_RUN_ADDRESS 0x20000
+#define APPLICATION_RUN_ADDRESS 0x10000
 #define APPLICATION_MAX_LENGTH  0x400000
+#define UPDATER_RUN_ADDRESS 	0x1000000
 
 BlockDevice  *blk;
 Disk         *dsk;
 Partition    *prt;
 FATFS        *fs;
-UsbDevice	 *usbdev;
+//UsbDevice	 *usbdev;
 
 void (*function)();
 
-void jump_run(void)
+void jump_run(DWORD run_address)
 {
     DWORD *dp = (DWORD *)&function;
-    *dp = APPLICATION_RUN_ADDRESS;
+    *dp = run_address;
     function();
 }
 
@@ -65,6 +66,7 @@ int init_fat_on_sd(void)
     return init_fat();
 }
 
+/*
 int init_fat_on_usb(void)
 {
 	usbdev = usb.init_simple();
@@ -87,6 +89,7 @@ int init_fat_on_usb(void)
 	}
 	return -1;
 }
+*/
 
 
 FRESULT try_loading(char *filename)
@@ -107,7 +110,7 @@ FRESULT try_loading(char *filename)
 
     if(bytes_read) {
         //execute
-        jump_run();
+        jump_run(UPDATER_RUN_ADDRESS);
         return FR_OK;
     }
     return FR_INVALID_OBJECT;
@@ -128,7 +131,7 @@ int try_flash(void)
     printf("Application length = %08x, version %s\n", length, version);
     if(length != 0xFFFFFFFF) {
         flash->read_dev_addr(image_addr.device_addr+16, length, (void *)APPLICATION_RUN_ADDRESS); // we should use flash->read_image here
-        jump_run();
+        jump_run(APPLICATION_RUN_ADDRESS);
         return 1;
     }
     return 0; // fail
@@ -142,7 +145,7 @@ int try_xmodem(void)
 		return st;
 	}
 	printf ("Xmodem successfully received %d bytes\n", st);
-    jump_run();
+    jump_run(APPLICATION_RUN_ADDRESS);
     return 1;
 }
 
@@ -154,6 +157,7 @@ int main()
     FRESULT res = FR_DISK_ERR;
     int file_system_err;
 	bool skip_flash = false;
+/*
     BYTE buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
     if(buttons & ITU_BUTTON2) {
     	file_system_err = init_fat_on_usb();
@@ -161,11 +165,13 @@ int main()
     } else {
     	file_system_err = init_fat_on_sd();
     }
+*/
+	file_system_err = init_fat_on_sd();
 
     if(!file_system_err) { // will return error code, 0 = ok
-        res = try_loading("recover.bin");
+        res = try_loading("recover.u2u");
         if(res!=FR_OK)
-            res = try_loading("update.bin");
+            res = try_loading("update.u2u");
         delete fs;
         delete prt;
         delete dsk;
@@ -181,6 +187,7 @@ int main()
             }
         }
     } else {
-        printf("Application successfully executed.\n");
+        while(1)
+        	;
     }
 }

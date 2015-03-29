@@ -6,7 +6,7 @@
 #define FLASH_ID_BOOTFPGA   0x00
 #define FLASH_ID_BOOTAPP    0x01
 #define FLASH_ID_APPL       0x02
-#define FLASH_ID_CUSTOMFPGA 0x03
+//#define FLASH_ID_CUSTOMFPGA 0x03
 
 #define FLASH_ID_ROM1541    0x10
 #define FLASH_ID_ROM1541C   0x11

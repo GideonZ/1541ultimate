@@ -91,8 +91,9 @@ SIZE	  = $(CROSS)-size
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -ffunction-sections -O1
-CPPOPT   = $(COPTIONS) -fno-exceptions -fno-rtti
+APPL_OPT = -DBOOTLOADER -D_FS_READONLY=1 -D_FS_MINIMIZE=3
+COPTIONS = -ffunction-sections -Os -std=c99 $(APPL_OPT)
+CPPOPT   = -ffunction-sections -Os -fno-exceptions -fno-rtti $(APPL_OPT)
 LINK 	 = ./mb_boot.lds
 LLIB     =  -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2 \
 			-L $(TOOLCHAIN)/microblaze-xilinx-elf/lib

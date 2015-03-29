@@ -23,7 +23,7 @@
 // beta  = \021
 
 #define APPL_VERSION "3.0\020"
-#define BOOT_VERSION "V2.0"
+#define BOOT_VERSION "V3.0"
 #define FPGA_VERSION "FPGA U2 V101"
 #define MINIMUM_FPGA_REV 0x01
 

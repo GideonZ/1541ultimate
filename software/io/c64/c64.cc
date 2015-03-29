@@ -139,6 +139,7 @@ struct t_cfg_definition c64_config[] = {
 #define MENU_C64_SAVEREU    0x6403
 #define MENU_C64_SAVEFLASH  0x6404
 #define MENU_C64_BOOTFPGA   0x6408
+#define MENU_C64_HARD_BOOT  0x6409
 
 extern BYTE _binary_chars_bin_start;
 
@@ -233,9 +234,10 @@ int  C64 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 //    item_list.append(new ObjectMenuItem(this, "Boot Alternate FPGA", MENU_C64_BOOTFPGA));
 //    item_list.append(new ObjectMenuItem(this, "Save SID Trace", MENU_C64_TRACE));
     item_list.append(new ObjectMenuItem(this, "Save REU Memory", MENU_C64_SAVEREU));
+    item_list.append(new ObjectMenuItem(this, "Hard FPGA reboot", MENU_C64_HARD_BOOT));
    
 //    item_list.append(new ObjectMenuItem(this, "Save Flash", MENU_C64_SAVEFLASH));
-	return 3;
+	return 4;
 }
 		
 void C64 :: determine_d012(void)
@@ -856,10 +858,15 @@ void C64 :: poll(Event &e)
                 printf("Couldn't open file..\n");
             }
             break;
+/*
         case MENU_C64_BOOTFPGA:
             flash->get_image_addresses(FLASH_ID_CUSTOMFPGA, &addr);
             flash->reboot(addr.start);
             break;
+*/
+		case MENU_C64_HARD_BOOT:
+			flash->reboot(0);
+			break;
         case C64_EVENT_MAX_REU:
             C64_REU_SIZE = 7;
             C64_REU_ENABLE = 1;

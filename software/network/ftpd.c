@@ -72,7 +72,7 @@ int dbg_printf(const char *fmt, ...);
 #define msg120 "120 Service ready in nnn minutes."
 #define msg125 "125 Data connection already open; transfer starting."
 #define msg150 "150 File status okay; about to open data connection."
-#define msg150recv "150 Opening BINARY mode data connection for %s (%i bytes)."
+#define msg150recv "150 Opening BINARY mode data connection for %s (%d bytes)."
 #define msg150stor "150 Opening BINARY mode data connection for %s."
 #define msg200 "200 Command okay."
 #define msg202 "202 Command not implemented, superfluous at this site."
@@ -1206,7 +1206,7 @@ static void ftpd_msgerr(void *arg, err_t err)
 {
 	struct ftpd_msgstate *fsm = arg;
 
-	dbg_printf("ftpd_msgerr: %s (%i)\n", lwip_strerr(err), err);
+	dbg_printf("ftpd_msgerr: %s (%d)\n", lwip_strerr(err), err);
 	if (fsm == NULL)
 		return;
 	if (fsm->datafs)
