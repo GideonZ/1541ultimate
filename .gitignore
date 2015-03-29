@@ -53,6 +53,8 @@ target/software/lwip/output
 target/software/lwip/result
 target/software/mb_boot/output_mb
 target/software/mb_boot/result_mb
+target/software/mb_boot2/output
+target/software/mb_boot2/result
 target/software/mb_hello/output_mb
 target/software/mb_hello/result_mb
 target/software/mb_irq/output_mb
@@ -71,6 +73,8 @@ target/software/mb_ultimate/output
 target/software/mb_ultimate/python_out_iec
 target/software/mb_ultimate/python_out_nano
 target/software/mb_ultimate/result
+target/software/mb_update/output
+target/software/mb_update/result
 target/software/mb_usb_test/output_mb
 target/software/mb_usb_test/result_mb
 target/software/mb_xmodem/output_mb
