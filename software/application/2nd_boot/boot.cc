@@ -170,8 +170,8 @@ int main()
 
     if(!file_system_err) { // will return error code, 0 = ok
         res = try_loading("recover.u2u");
-        if(res!=FR_OK)
-            res = try_loading("update.u2u");
+//        if(res!=FR_OK)
+//            res = try_loading("update.u2u");
         delete fs;
         delete prt;
         delete dsk;
