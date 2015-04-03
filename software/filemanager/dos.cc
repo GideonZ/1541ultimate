@@ -129,7 +129,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
         	strncpy(dos_info.filename, fi->lfname, 63);
             data_message.length = strlen(dos_info.filename) + 4 + 2 + 2 + 4;
             data_message.last_part = true;
-            data_message.message = (BYTE *)&dos_info;
+            memcpy(data_message.message, &dos_info, data_message.length);
             *reply = &data_message;
             break;
         case DOS_CMD_LOAD_REU:

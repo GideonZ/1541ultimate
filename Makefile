@@ -17,13 +17,26 @@ all:
 
 mk2:
 	@svn up
+	@$(MAKE) -C legacy/2.6k/tools
+	@$(MAKE) -C legacy/2.6k/target/fpga -f makefile_700a
+	@$(MAKE) -C legacy/2.6k/target/software/1st_boot mk2
+	@$(MAKE) -C legacy/2.6k/target/software/2nd_boot
+	@$(MAKE) -C legacy/2.6k/target/software/ultimate
+	@$(MAKE) -C legacy/2.6k/target/software/update FPGA400=0
+
+mk3:
+	@svn up
 	@$(MAKE) -C tools
-	@$(MAKE) -C target/fpga -f makefile_700a
-	@$(MAKE) -C target/software/1st_boot mk2
-	@$(MAKE) -C target/software/2nd_boot
-	@$(MAKE) -C target/software/ultimate
-	@$(MAKE) -C target/software/update FPGA400=0
-	@cp target/software/update/result/update.bin .
+	@$(MAKE) -C target/fpga -f makefile_mb_700a
+	@$(MAKE) -C target/software/mb_boot
+	@$(MAKE) -C target/software/mb_boot2
+	@$(MAKE) -C target/software/mb_ultimate
+	@$(MAKE) -C target/software/mb_revert
+	@$(MAKE) -C target/software/mb_update
+	@$(MAKE) -C target/software/update_to_mb
+	@cp target/software/update_to_mb/result/update.bin .
+	@cp target/software/mb_revert/result/revert.u2u .
+	@cp target/software/mb_update/result/update.u2u .
 
 prog:
 	@$(MAKE) mk2

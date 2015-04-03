@@ -1,67 +1,56 @@
 # System tool locations
 
 HERE = $(shell pwd)
-TOOLS = ../../../tools
+TOOLS = $(shell pwd)/../../../tools
+LEGACY = ../../../legacy/2.6k
 BIN2HEX = $(TOOLS)/bin2hex
 HEX2BIN = $(TOOLS)/hex2bin
+PROMGEN = $(TOOLS)/promgen
 MAKEAPPL = $(TOOLS)/makeappl
 MAKEMEM   = $(TOOLS)/make_mem
 TASS = $(TOOLS)/64tass/64tass
 PARSE_IEC = $(TOOLS)/parse_iec.py
 PARSE_NANO = $(TOOLS)/parse_nano.py
-BOOT = ../2nd_boot
+1ST_BOOT = $(LEGACY)/target/software/1st_boot
+2ND_BOOT = $(LEGACY)/target/software/2nd_boot
+ULTIMATE = $(LEGACY)/target/software/ultimate
+CHECKSUM = $(TOOLS)/checksum
 
 # Configuration
 SHELL     = bash
 CROSS     = mb
 
 # External inputs
-ROMS = ../../../roms
-BOOT_250_BIN = ../1st_boot/result/1st_boot_250.bin
+ROMS = $(LEGACY)/roms
 
 # Outputs
-RESULT    = ./result
-OUTPUT    = ./output
+RESULT = ./result
+OUTPUT = ./output
 
 RESULT_FP = $(shell pwd)/result
 OUTPUT_FP = $(shell pwd)/output
 
-PRJ      =  ultimate
+PRJ      =  revert
 PATH_SW  =  ../../../software
 
-VPATH     = $(PATH_SW)/application \
-			$(PATH_SW)/application/ultimate \
+VPATH     = $(LEGACY)/software/application \
+			$(PATH_SW)/application/mb_update \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
 			$(PATH_SW)/io/flash \
 			$(PATH_SW)/drive \
 			$(PATH_SW)/components \
-			$(PATH_SW)/network \
 			$(PATH_SW)/io/stream \
 			$(PATH_SW)/io/c64 \
 			$(PATH_SW)/io/rtc \
-			$(PATH_SW)/io/usb \
-			$(PATH_SW)/io/tape \
 			$(PATH_SW)/io/icap \
 			$(PATH_SW)/io/sd_card \
 			$(PATH_SW)/io/audio \
 			$(PATH_SW)/io/overlay \
 			$(PATH_SW)/io/userinterface \
-			$(PATH_SW)/io/command_interface \
-			$(PATH_SW)/io/copper \
-			$(PATH_SW)/io/network \
-			$(PATH_SW)/network/config \
-			$(PATH_SW)/io/iec \
-			$(PATH_SW)/6502 \
-			$(PATH_SW)/ModPlayer_16k \
-			$(PATH_SW)/FreeRTOS/Source \
-			$(PATH_SW)/FreeRTOS/Source/include \
-			$(PATH_SW)/FreeRTOS/Source/portable \
-			$(PATH_SW)/FreeRTOS/Source/MemMang \
-			$(PATH_SW)/lwip-1.4.1/src/include \
-			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
-			$(PATH_SW)/lwip-1.4.1/src/include/posix/sys \
+            $(ULTIMATE)/result \
+            $(2ND_BOOT)/result \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
@@ -70,18 +59,7 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 SRCS_C   =	mbstart_app.c \
 			itu.c \
 			dump_hex.c \
-			small_printf.c \
-			croutine.c \
-            event_groups.c \
-            list.c \
-            queue.c \
-            tasks.c \
-            timers.c \
-            port.c \
-            heap_3.c \
-            sock_echo.c \
-            time.c \
-			ftpd.c 
+			small_printf.c
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:
@@ -90,109 +68,67 @@ SRCS_C   =	mbstart_app.c \
 # root of the application. Devices can register themselves in the file system tree.
 # Therefore, the file manager needs to exist.
 
-SRCS_CC	 =  stream.cc \
-			memory.cc \
-			init_function.cc \
+SRCS_CC	 =  memory.cc \
+			event.cc \
+			main_loop.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \
 			w25q_flash.cc \
-			s25fl_flash.cc \
+            s25fl_flash.cc \
+			path.cc \
+			pattern.cc \
 			config.cc \
-			event.cc \
-			main_loop.cc \
-			filemanager.cc \
-			file_device.cc \
-			file_partition.cc \
-			file_direntry.cc \
-			filetype_d64.cc \
-			filetype_g64.cc \
-			filetype_t64.cc \
-			filetype_prg.cc \
-			filetype_tap.cc \
-			filetype_sid.cc \
-			filetype_reu.cc \
-			filetype_iso.cc \
-			filetype_crt.cc \
-			filetype_u2u.cc \
-			rtc.cc \
-			usb_base.cc \
-			usb2.cc \
-			usb_device.cc \
-			usb_scsi.cc \
-			usb_hub.cc \
-			usb_ax88772.cc \
-			usb_em1010.cc \
-			network_interface.cc \
-			network_lwip.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
-			disk_image.cc \
-			c1541.cc \
-			bam_header.cc \
 			mystring.cc \
-			path.cc \
-			pattern.cc \
-			blockdev.cc \
-			blockdev_file.cc \
-			blockdev_ram.cc \
-			disk.cc \
-			partition.cc \
-			file_system.cc \
-			directory.cc \
-			file.cc \
-			fat_fs.cc \
-			fat_dir.cc \
-			fatfile.cc \
-			ccsbcs.cc \
-			iso9660.cc \
-			sd_card.cc \
-			sdio.cc \
-			sdcard_manager.cc \
-			tape_controller.cc \
-			tape_recorder.cc \
 			size_str.cc \
-			userinterface.cc \
-			editor.cc \
-			ui_stream.cc \
-			tree_browser.cc \
-			tree_browser_state.cc \
-			stream_menu.cc \
-			config_menu.cc \
-			context_menu.cc \
+			rtc.cc \
 			task_menu.cc \
-			audio_select.cc \
-			iec.cc \
-			command_intf.cc \
-			dos.cc \
-			vfs.cc \
+			userinterface.cc \
 			$(PRJ).cc
 
-####			sampler.cc \
-####			copper.cc \
 
-SRCS_ASM =  mb_crt0.s portasm.s
+SRCS_ASM =  mb_crt0.s
 
-SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = 
 
-SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
+SRCS_BIN =  ultimate.bin \
+			fpga.bin \
+			2nd_boot.bin \
+			chars.bin \
+			1541-ii.bin \
+			1541.bin \
+			1541c.bin \
+			ar5ntsc.bin \
+			ar5pal.bin \
+			ar6pal.bin \
+			epyx.bin \
+			final3.bin \
+			rr38ntsc.bin \
+			rr38pal.bin \
+			sounds.bin \
+			ss5ntsc.bin \
+			ss5pal.bin \
+			tar_ntsc.bin \
+			tar_pal.bin 
 
-SRCS_IEC = iec_code.iec
+SRCS_IEC = 
 
-SRCS_NANO = nano_minimal.nan
+SRCS_NANO = 
 
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -g -ffunction-sections -Os -std=c99 -DOS
-CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -DOS
-LINK 	 = ./mb_app.lds
-LLIB     =  -L ../mb_lwip/result \
-            -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
+APP_OPTS = -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 
+COPTIONS = -g -ffunction-sections -Os -std=c99 $(APP_OPTS)
+CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti $(APP_OPTS)
+LINK 	 = ./mb_update.lds
+LLIB     =  -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
 #LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
-LIBS     =  -llwip -lc -lgcc 
+LIBS     =  -lc -lgcc 
 LFLAGS   = --gc-sections 
 
 VPATH   += $(OUTPUT) $(RESULT)
@@ -213,6 +149,7 @@ OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
 OBJS_IEC = $(notdir $(SRCS_IEC:%.iec=%.o))
 OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.bo))
+CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 
 ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO))
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
@@ -220,8 +157,7 @@ ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 .PHONY: hex clean all dep
 
-all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).mem
-#	$(MAKE) -C ../1st_boot
+all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).u2u 
 
 $(OUTPUT):
 	@mkdir $(OUTPUT)
@@ -229,15 +165,13 @@ $(OUTPUT):
 $(RESULT):
 	@mkdir $(RESULT)
 		
-$(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
-	@echo "Creating Binary $@"
+$(RESULT)/$(PRJ).u2u: $(OUTPUT)/$(PRJ).out
+	@echo "Creating Updater Binary $@"
 	$(OBJCOPY) -O binary $< $@
 
-%.bo: %.bin
-	@echo "Converting $(<F) binary to $(@F).."
-	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(OBJCOPY) -I binary -O elf32-microblaze --binary-architecture MicroBlaze $(<F) $(@F); mv $(@F) $(OUTPUT_FP); cd $(HERE)
-
-#	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(OBJCOPY) -I binary -O elf32-microblaze --binary-architecture MicroBlaze $(<F) $(OUTPUT_FP)/$(@F); cd $(HERE)
+fpga.bin: $(1ST_BOOT)/output/1st_boot_700.bit
+	@echo "Converting $(<F) bitfile to $(@F)"
+	@cd $(dir $<); $(PROMGEN) -r $(<F) $(OUTPUT_FP)/$(@F) >/dev/null; cd $(HERE)
 
 %.65: %.tas
 	@echo "Assembling $<"
@@ -259,6 +193,14 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo "Converting .65 binary to .o"
 	@cd $(OUTPUT); $(OBJCOPY) -I binary -O elf32-microblaze --binary-architecture MicroBlaze $(<F) $@
     	
+%.bo: %.bin
+	@echo "Converting $(<F) binary to $(@F).."
+	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(OBJCOPY) -I binary -O elf32-microblaze --binary-architecture MicroBlaze $(<F) $(@F); mv $(@F) $(OUTPUT_FP); cd $(HERE)
+
+%.chk: %.bin
+	@echo "Calculating checksum of $(<F) binary to $(@F).."
+	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(CHECKSUM) $(<F) $(OUTPUT_FP)/$(@F); cd $(HERE)
+
 %.o: %.s
 	@echo "Compiling $<"
 	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
@@ -272,6 +214,11 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
+revert.o: revert.cc $(INCLUDES) $(CHK_BIN)
+	@echo "Compiling $(notdir $<)"
+	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) >$(OUTPUT)/checksums.h
+	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
+
 %.d: %.cc
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
@@ -283,14 +230,6 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OB
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out
 
-$(OUTPUT)/$(PRJ)_V1.out: $(LINK_V1) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC)
-	@echo "Linking..."
-	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK_V1) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ)_V1.out $(ALL_OBJS) $(LIBS)
-
-$(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
-	@echo "Make mem..."
-	@$(MAKEMEM) -w $< 1000000 65536 >$@
-
 # pull in dependency info for *existing* .o files
 -include $(ALL_DEP_OBJS:.o=.d)
 
@@ -299,4 +238,4 @@ clean:
 	@-rm -rf $(RESULT)
 
 dep:  $(OBJS_CC:.o=.d) $(OBJS_C:.o=.d)
-    
+   
