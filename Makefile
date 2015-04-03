@@ -30,6 +30,7 @@ mk3:
 	@$(MAKE) -C target/fpga -f makefile_mb_700a
 	@$(MAKE) -C target/software/mb_boot
 	@$(MAKE) -C target/software/mb_boot2
+	@$(MAKE) -C target/software/mb_lwip
 	@$(MAKE) -C target/software/mb_ultimate
 	@$(MAKE) -C target/software/mb_revert
 	@$(MAKE) -C target/software/mb_update
