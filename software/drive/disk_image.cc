@@ -60,6 +60,15 @@ int track_to_region(int track)
     return 3; // illegal
 }
 
+int total_sectors_before_track(int track)
+{
+int count = 0;	
+	for(int i=0;i<track;i++) {
+		int region = track_to_region(i);
+		count += sectors_per_track[region];		
+	}
+	return count;
+}
 
 GcrImage :: GcrImage(void)
 {
@@ -154,43 +163,74 @@ BYTE *GcrImage :: convert_block_bin2gcr(BYTE *bin, BYTE *gcr, int len)
     return gcr;
 }
 
-BYTE *GcrImage :: convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr)
+BYTE *GcrImage :: convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr, BYTE *errors, int errors_size)
 {
-    sector_buffer[0] = 7;
-    sector_buffer[258] = 0;
-    sector_buffer[259] = 0;
+	int track_errors_index = total_sectors_before_track(track);	
+	BYTE errorcode;
 
-    header[0] = 8;
-    header[3] = (BYTE)track+1;
-    header[4] = id2;
-    header[5] = id1;
-    header[6] = 0x0f;
-    header[7] = 0x0f;
-
-    int region = track_to_region(track);
-
+	int region = track_to_region(track);
+	
     BYTE *bp, chk, b;
     BYTE *end = gcr + track_lengths[region];
 
     for(int s=0;s<sectors_per_track[region];s++) {
+		sector_buffer[0] = 7;
+		sector_buffer[258] = 0;
+		sector_buffer[259] = 0;
+
+		header[0] = 8;
+		header[3] = (BYTE)track+1;
+		header[4] = id2;
+		header[5] = id1;
+		header[6] = 0x0f;
+		header[7] = 0x0f;
+		errorcode = 0;
+		if (errors != NULL && (track_errors_index + s) < errors_size){
+			errorcode = errors[track_errors_index + s];
+		}
         header[2] = (BYTE)s;
         // calculate header checksum
         header[1] = header[2] ^ header[3] ^ header[4] ^ header[5];
 
-        // put 5 sync bytes
-        for(int i=0;i<5;i++)
-            *(gcr++) = 0xFF;
-
+		switch (errorcode){
+			case 2:
+				header[0] = 0;
+				break;
+			case 4:
+				sector_buffer[0] = 0;
+				break;
+			case 9:
+				header[1] = ~header[1];
+				break;
+			case 11:
+				header[4] = (id2 ^ ~(s+0x55)) & 0xFF;
+				header[5] = (id1 ^ ~(s+0xAA)) & 0xFF;
+				break;
+		}		
+		if (errorcode != 3) {
+			// put 5 sync bytes
+			for(int i=0;i<5;i++)
+				*(gcr++) = 0xFF;
+		}
+		else{
+			for(int i=0;i<5;i++)
+				*(gcr++) = 0x00;
+		}
         gcr = convert_block_bin2gcr(header, gcr, 8);
 
         // put 9 gap bytes
         for(int i=0;i<9;i++)
             *(gcr++) = 0x55;
 
-        // put 5 sync bytes
-        for(int i=0;i<5;i++)
-            *(gcr++) = 0xFF;
-
+		if (errorcode != 3) {
+			// put 5 sync bytes
+			for(int i=0;i<5;i++)
+				*(gcr++) = 0xFF;
+		}
+		else {
+			for(int i=0;i<5;i++)
+				*(gcr++) = 0x00;
+		}
         // encapsulate sector with '7' byte as header and checksum at the end
         bp = &sector_buffer[1];
         chk = 0;
@@ -199,7 +239,12 @@ BYTE *GcrImage :: convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr)
             chk ^= b;
             *(bp++) = b;
         }
-        *(bp) = chk;
+		if (errorcode != 5) {
+			*(bp) = chk;
+		}
+		else {
+			*(bp) = ~chk;
+		}
 
         // insert (converted) sector
         gcr = convert_block_bin2gcr(sector_buffer, gcr, 260);
@@ -384,7 +429,7 @@ void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, bool report)
     for(int i=0;i<bin_image->num_tracks;i++) {
 //        printf("Track %d starts at: %7x\n", i+1, gcr);
         track_address[2*i] = gcr;
-        newgcr = convert_track_bin2gcr(i, bin_image->track_start[i], gcr);
+        newgcr = convert_track_bin2gcr(i, bin_image->track_start[i], gcr, bin_image->errors, bin_image->error_size);
         track_length[2*i] = int(newgcr - gcr);
 		track_address[2*i + 1] = dummy_track;
         track_length[2*i + 1] = int(newgcr - gcr);
@@ -741,12 +786,12 @@ int BinImage :: load(File *file)
 		return -2;
 
 	printf("Transferred: %d bytes\n", transferred);
-	if(transferred < (683*256)) {
+	if(transferred < C1541_MAX_D64_35_NO_ERRORS) {
 		return -3;
 	}
-	transferred -= (683*256);
+	transferred -= (C1541_MAX_D64_35_NO_ERRORS);
 	num_tracks = 35;
-	errors = &bin_data[683*256];
+	errors = &bin_data[C1541_MAX_D64_35_NO_ERRORS];
 	while(transferred >= 17*256) {
 		num_tracks ++;
 		transferred -= 17*256;
