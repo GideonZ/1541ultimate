@@ -10,6 +10,7 @@ TASS = $(TOOLS)/64tass/64tass
 PARSE_IEC = $(TOOLS)/parse_iec.py
 PARSE_NANO = $(TOOLS)/parse_nano.py
 BOOT = ../2nd_boot
+LWIPLIB = ../mb_lwip/result/liblwip.a
 
 # Configuration
 SHELL     = bash
@@ -167,6 +168,7 @@ SRCS_CC	 =  stream.cc \
 			command_intf.cc \
 			dos.cc \
 			vfs.cc \
+			socket_test.cc \
 			$(PRJ).cc
 
 ####			sampler.cc \
@@ -278,14 +280,10 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO)
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(LWIPLIB)
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out
-
-$(OUTPUT)/$(PRJ)_V1.out: $(LINK_V1) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC)
-	@echo "Linking..."
-	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK_V1) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ)_V1.out $(ALL_OBJS) $(LIBS)
 
 $(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
 	@echo "Make mem..."

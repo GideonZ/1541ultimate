@@ -112,7 +112,7 @@ _vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_l
                 continue;
             case 'p': // pointer
                 addr = va_arg(ap, int);
-                length = 7;
+                length = 8;
                 _hex(addr, buf, length);
                 cp = buf;
                 break;
@@ -246,7 +246,8 @@ int _vscanf(const char *buf, const char *fmt, va_list ap)
 	int count = 0;
 
 	int len = strlen(fmt);
-	for (int i=0;i<len;i++) {
+	int i;
+	for (i=0;i<len;i++) {
 		if (fmt[i] == '%') {
 			do_conv = 1;
 			continue;

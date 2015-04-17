@@ -115,6 +115,11 @@ bool UsbDevice :: get_device_descriptor()
 	i = host->control_exchange(&control_pipe, c_get_device_descriptor, 8, &device_descr, 18);
 	if(i != 18) {
 		printf("Error: Expected 18 bytes on device descriptor.. got %d.\n", i);
+		if (i == 8) {
+			dump_hex(&device_descr, i);
+			control_pipe.MaxTrans = 8;
+			printf("Switched to 8 byte control pipe.\n");
+		}
 		return false;
 	}
 

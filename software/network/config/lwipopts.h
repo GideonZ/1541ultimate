@@ -54,7 +54,7 @@
  * critical regions during buffer allocation, deallocation and memory
  * allocation and deallocation.
  */
-#define SYS_LIGHTWEIGHT_PROT            0
+#define SYS_LIGHTWEIGHT_PROT            1
 
 /** 
  * NO_SYS==1: Provides VERY minimal functionality. Otherwise,
@@ -108,7 +108,7 @@
  * MEM_SIZE: the size of the heap memory. If the application will send
  * a lot of data that needs to be copied, this should be set high.
  */
-#define MEM_SIZE                        3200
+#define MEM_SIZE                        16384
 
 /**
  * MEMP_OVERFLOW_CHECK: memp overflow protection reserves a configurable
@@ -167,7 +167,7 @@
  * - pbuf_free_callback(p);
  * - mem_free_callback(m);
  */
-#define LWIP_ALLOW_MEM_FREE_FROM_OTHER_CONTEXT 0
+#define LWIP_ALLOW_MEM_FREE_FROM_OTHER_CONTEXT 1
 
 /*
    ------------------------------------------------
@@ -179,7 +179,7 @@
  * If the application sends a lot of data out of ROM (or other static memory),
  * this should be set high.
  */
-#define MEMP_NUM_PBUF                   8
+#define MEMP_NUM_PBUF                   1
 
 /**
  * MEMP_NUM_RAW_PCB: Number of raw connection PCBs
@@ -269,7 +269,7 @@
 /**
  * PBUF_POOL_SIZE: the number of buffers in the pbuf pool. 
  */
-#define PBUF_POOL_SIZE                  8
+#define PBUF_POOL_SIZE                  64
 
 /*
    ---------------------------------
@@ -603,7 +603,7 @@
  * TCP_WND: The size of a TCP window.  This must be at least 
  * (2 * TCP_MSS) for things to work well
  */
-#define TCP_WND                         2048
+#define TCP_WND                         (12 * TCP_MSS)
 
 /**
  * TCP_MAXRTX: Maximum number of retransmissions of data segments.
@@ -1227,12 +1227,12 @@
 /**
  * CHECKSUM_CHECK_UDP==1: Check checksums in software for incoming UDP packets.
  */
-#define CHECKSUM_CHECK_UDP              1
+#define CHECKSUM_CHECK_UDP              0
 
 /**
  * CHECKSUM_CHECK_TCP==1: Check checksums in software for incoming TCP packets.
  */
-#define CHECKSUM_CHECK_TCP              1
+#define CHECKSUM_CHECK_TCP              0
 
 /*
    ---------------------------------------

@@ -36,6 +36,8 @@
 
 #include "lwip/opt.h"
 
+#define LWIP_SOCKET 1 // just to make Eclispe happy
+
 #if LWIP_SOCKET /* don't build if not configured for use in lwipopts.h */
 
 #include <stddef.h> /* for size_t */

@@ -22,8 +22,10 @@ class UsbAx88772Driver : public UsbDriver
 
     bool link_up;
 
+    void read_srom();
+    void write_srom();
     bool read_mac_address();
-    void write_mac_address();
+    bool write_mac_address();
     
     void write_phy_register(BYTE reg, WORD value);
     WORD read_phy_register(BYTE reg);

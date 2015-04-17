@@ -625,7 +625,7 @@ u8_t
 pbuf_free(struct pbuf *p)
 {
   u16_t type;
-  struct pbuf *q;
+  struct pbuf *q, *prev = 0;
   u8_t count;
 
   if (p == NULL) {
@@ -654,6 +654,12 @@ pbuf_free(struct pbuf *p)
      * further protection. */
     SYS_ARCH_PROTECT(old_level);
     /* all pbufs in a chain are referenced at least once */
+    if (p->ref <= 0) {
+    	printf("p->ref = %d. p = %p. payload = %p. prev = %p\n", p->ref, p, p->payload, prev);
+    	dump_hex(p, sizeof(struct pbuf));
+    	dump_hex(prev, sizeof(struct pbuf));
+    }
+    prev = p;
     LWIP_ASSERT("pbuf_free: p->ref > 0", p->ref > 0);
     /* decrease reference count (number of pointers to pbuf) */
     ref = --(p->ref);
