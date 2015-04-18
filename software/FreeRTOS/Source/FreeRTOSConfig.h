@@ -4,7 +4,7 @@
 /* Here is a good place to include header files that are required across
 your application. */
 
-#define configUSE_PREEMPTION                    0
+#define configUSE_PREEMPTION                    1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 0
 #define configUSE_TICKLESS_IDLE                 0
 #define configCPU_CLOCK_HZ                      50000000
@@ -22,7 +22,7 @@ your application. */
 #define configUSE_ALTERNATIVE_API               0 /* Deprecated! */
 #define configQUEUE_REGISTRY_SIZE               10
 #define configUSE_QUEUE_SETS                    0
-#define configUSE_TIME_SLICING                  0
+#define configUSE_TIME_SLICING                  1
 #define configUSE_NEWLIB_REENTRANT              0
 #define configENABLE_BACKWARD_COMPATIBILITY     0
 

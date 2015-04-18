@@ -26,10 +26,6 @@ extern "C" {
 #include "overlay.h"
 #include "init_function.h"
 
-#include "FreeRTOS.h"
-#include "FreeRTOSConfig.h"
-#include "task.h"
-
 // these should move to main_loop.h
 void main_loop(void);
 void send_nop(void);
@@ -42,36 +38,6 @@ TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
 Overlay *overlay;
 
-/*
-char *en_dis[] = { "Disabled", "Enabled" };
-//char *on_off[] = { "Off", "On" };
-char *yes_no[] = { "No", "Yes" };
-char *pal_ntsc[] = { "PAL", "NTSC" };
-
-char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Load from SD" };
-
-struct t_cfg_definition old_items[] = {
-    { 0xC1, CFG_TYPE_STRING, "Owner",                   "%s", NULL,       1, 31, (int)"Pietje puk" },
-    { 0xC2, CFG_TYPE_STRING, "Application to boot",     "%s", NULL,       1, 31, (int)"appl.bin" },
-    { 0xC3, CFG_TYPE_ENUM,   "Video System",            "%s", pal_ntsc,   0,  1, 0 },
-    { 0xC4, CFG_TYPE_ENUM,   "1541 Drive",              "%s", en_dis,     0,  1, 1 },
-    { 0xC5, CFG_TYPE_VALUE,  "1541 Drive Bus ID",       "%d", NULL,       8, 11, 8 },
-    { 0xC6, CFG_TYPE_ENUM,   "1541 ROM Select",         "%s", rom_sel,    0,  3, 2 },
-    { 0xC7, CFG_TYPE_ENUM,   "1541 RAMBOard",           "%s", en_dis,     0,  1, 0 },
-    { 0xC8, CFG_TYPE_ENUM,   "Load last mounted disk",  "%s", yes_no,     0,  1, 0 },
-    { 0xC9, CFG_TYPE_VALUE,  "1541 Disk swap delay",    "%d00 ms", NULL,  1, 10, 1 },
-    { 0xCA, CFG_TYPE_ENUM,   "IEC SDCard I/F",          "%s", en_dis,     0,  1, 1 },
-    { 0xCB, CFG_TYPE_VALUE,  "IEC SDCard I/F Bus ID",   "%d", NULL,       8, 30, 9 },
-    { 0xD0, CFG_TYPE_ENUM,   "Pull SD = remove floppy", "%s", en_dis,     0,  1, 1 },
-    { 0xD1, CFG_TYPE_ENUM,   "Swap reset/freeze btns",  "%s", yes_no,     0,  1, 0 },
-    { 0xD2, CFG_TYPE_ENUM,   "Hide '.'-files",          "%s", yes_no,     0,  1, 1 },
-    { 0xD3, CFG_TYPE_ENUM,   "Scroller in menu",        "%s", en_dis,     0,  1, 1 },
-    { 0xD4, CFG_TYPE_ENUM,   "Startup in menu",         "%s", yes_no,     0,  1, 0 },
-    { 0xD5, CFG_TYPE_ENUM,   "Ethernet Interface",      "%s", en_dis,     0,  1, 0 },
-    { 0xD6, CFG_TYPE_VALUE,  "Number of boots",         "%d", NULL,       0, 99999, 0 },
-    { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
-};
-*/
 
 void poll_drive_1(Event &e)
 {
@@ -88,12 +54,12 @@ void poll_c64(Event &e)
 	c64->poll(e);
 }
 
-void start_ultimate(void *a)
+int main(void *a)
 {
 	char time_buffer[32];
 	DWORD capabilities = getFpgaCapabilities();
 
-	printf("*** 1541 Ultimate V2.0 ***\n");
+	printf("*** 1541 Ultimate V3.0 ***\n");
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
     
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
@@ -192,24 +158,7 @@ void start_ultimate(void *a)
     //root.dump();
     
     printf("Graceful exit!!\n");
+    return 0;
 }
 
-int main (void)
-{
-	/* When re-starting a debug session (rather than cold booting) we want
-	to ensure the installed interrupt handlers do not execute until after the
-	scheduler has been started. */
-	portDISABLE_INTERRUPTS();
 
-	xTaskCreate( start_ultimate, "Ultimate-II Main Loop", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL );
-
-	//xSemaphore = xSemaphoreCreateMutex();
-
-	/* Finally start the scheduler. */
-	vTaskStartScheduler();
-
-	/* Should not get here as the processor is now under control of the
-	scheduler! */
-
-   	return 0;
-}

@@ -68,7 +68,7 @@ VPATH     = $(PATH_SW)/application \
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 
-SRCS_C   =	mbstart_app.c \
+SRCS_C   =	mbstart_rtos.c \
 			itu.c \
 			dump_hex.c \
 			small_printf.c \
@@ -92,7 +92,7 @@ SRCS_C   =	mbstart_app.c \
 # Therefore, the file manager needs to exist.
 
 SRCS_CC	 =  stream.cc \
-			memory.cc \
+			memory_rtos.cc \
 			init_function.cc \
 			flash.cc \
 			at45_flash.cc \

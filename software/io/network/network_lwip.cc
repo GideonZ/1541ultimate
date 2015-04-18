@@ -9,6 +9,7 @@ extern "C" {
 #include "task.h"
 #include "ftpd.h"
 
+
 void echo_task(void *a);
 }
 
@@ -72,7 +73,7 @@ void lwip_free_callback(void *p)
 	struct pbuf_custom *pbuf = (struct pbuf_custom *)p;
 	NetworkLWIP *ni = (NetworkLWIP *)pbuf->custom_obj;
     ni->driver_free_function(ni->driver, pbuf->buffer_start);
-    free(pbuf);
+    ni->free_pbuf(pbuf);
 }
 
 /**
@@ -95,11 +96,15 @@ void releaseNetworkStack(void *netstack)
  */
 NetworkLWIP :: NetworkLWIP(void *driver,
 							driver_output_function_t out,
-							driver_free_function_t free)
+							driver_free_function_t free) : pbuf_fifo(64, NULL)
 {
 	this->driver = driver;
 	this->driver_free_function = free;
 	this->driver_output_function = out;
+	if_up = false;
+	for(int i=0;i<63;i++) {
+		pbuf_fifo.push(&pbuf_array[i]);
+	}
 }
 
 NetworkLWIP :: ~NetworkLWIP()
@@ -261,7 +266,9 @@ bool NetworkLWIP :: input(BYTE *raw_buffer, BYTE *payload, int pkt_size)
 {
 	//dump_hex(payload, pkt_size);
 
-	struct pbuf_custom *pbuf = (struct pbuf_custom *)malloc(sizeof(struct pbuf_custom));
+	//struct pbuf_custom *pbuf = (struct pbuf_custom *)malloc(sizeof(struct pbuf_custom));
+	struct pbuf_custom *pbuf = pbuf_fifo.pop();
+
 	if (!pbuf) {
 		printf("No memory");
 		return false;
@@ -313,5 +320,10 @@ void NetworkLWIP :: link_down()
 void NetworkLWIP :: set_mac_address(BYTE *mac)
 {
 	memcpy((void *)mac_address, (const void *)mac, 6);
+}
+
+void NetworkLWIP :: free_pbuf(struct pbuf_custom *pbuf)
+{
+	pbuf_fifo.push(pbuf);
 }
 

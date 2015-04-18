@@ -20,9 +20,13 @@ extern "C" {
 }
 
 #include "network_interface.h"
+#include "fifo.h" // my oh so cool fifo! :)
 
 class NetworkLWIP : public NetworkInterface
 {
+	struct pbuf_custom pbuf_array[64];
+	Fifo<struct pbuf_custom *> pbuf_fifo;
+
 	void lwip_poll();
 public:
     struct ip_addr my_ip;
@@ -54,6 +58,8 @@ public:
     virtual BYTE output_callback(struct netif *, struct pbuf *) {
         printf("Network Interface: Output Callback - Base\n");
     }
+
+    void free_pbuf(struct pbuf_custom *pbuf);
 };
 
 NetworkInterface *getNetworkStack(void *driver,
