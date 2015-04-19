@@ -302,15 +302,11 @@ extern void VPortYieldASM( void );
 void vTickISR( void )
 {
 	/* Increment the RTOS tick - this might cause a task to unblock. */
-	xTaskIncrementTick();
-	vTaskSwitchContext();
 
-/*
 	if( xTaskIncrementTick() != pdFALSE )
 	{
 		vTaskSwitchContext();
 	}
-*/
 }
 /*-----------------------------------------------------------*/
 void _Z7usb_irqv();

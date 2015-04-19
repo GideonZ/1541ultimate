@@ -9,7 +9,6 @@ extern "C" {
 #include "task.h"
 #include "ftpd.h"
 
-
 void echo_task(void *a);
 }
 
@@ -147,13 +146,15 @@ void NetworkLWIP :: poll()
 void NetworkLWIP :: init_callback( )
 {
 	/* initialization of IP addresses */
-	IP4_ADDR(&my_ip, 192, 168, 2, 64);
-    IP4_ADDR(&my_netmask, 255, 255, 255, 0);
-    IP4_ADDR(&my_gateway, 192, 168, 2, 1);
+//	  IP4_ADDR(&my_ip, 192, 168, 2, 64);
+//    IP4_ADDR(&my_netmask, 255, 255, 255, 0);
+//    IP4_ADDR(&my_gateway, 192, 168, 2, 1);
 
 	/* reset */
 	my_net_if.state = NULL;
 	my_net_if.next = NULL;
+
+	effectuate_settings();
 
 	/* set name */
 	my_net_if.name[0] = 'U';
@@ -175,7 +176,7 @@ void NetworkLWIP :: init_callback( )
     
 #if LWIP_NETIF_HOSTNAME
     /* Initialize interface hostname */
-	my_net_if.hostname = "Ultimate-II";
+	my_net_if.hostname = cfg->get_string(CFG_NET_HOSTNAME); // "Ultimate-II";
 #endif /* LWIP_NETIF_HOSTNAME */
 
     /*
@@ -215,58 +216,11 @@ void NetworkLWIP :: init_callback( )
     }
 }
 
-/*
-__inline static bool check_time(DWORD timer, DWORD &variable, DWORD interval, char dbg)
-{
-    if (timer < variable) {
-        if (((timer + 65536) - variable) > interval) {
-            variable = timer;
-            //printf("%c", dbg);
-            return true;
-        }
-    } else if ((timer - variable) > interval) {
-            variable = timer;
-            //printf("%c", dbg);
-            return true;
-    }
-    return false;
-}
-
-void NetworkLWIP :: lwip_poll()
-{
-    // these variables say when was the last event
-    static DWORD dhcp_coarse = 0;
-    static DWORD dhcp_fine = 0;
-    static DWORD tcp_timer = 0;
-    static DWORD dns_timer = 0;
-    static DWORD arp_timer = 0;
-    static DWORD ip_timer = 0;
-    
-    DWORD timer = (DWORD)ITU_MS_TIMER;
-
-    if (check_time(timer, dhcp_coarse, DHCP_COARSE_TIMER_MSECS, 'C'))
-        dhcp_coarse_tmr();
-    if (check_time(timer, dhcp_fine, DHCP_FINE_TIMER_MSECS, 'F'))
-        dhcp_fine_tmr();
-    if (check_time(timer, tcp_timer, TCP_TMR_INTERVAL, 't'))
-        tcp_tmr();
-    if (check_time(timer, dns_timer, DNS_TMR_INTERVAL, 'd'))
-        dns_tmr();
-    if (check_time(timer, arp_timer, ARP_TMR_INTERVAL, 'a'))
-        etharp_tmr();
-    if (check_time(timer, ip_timer, IP_TMR_INTERVAL, 'i'))                
-        ip_reass_tmr();
-
-    // autoip_tmr();
-    // igmp_tmr();
-}
-*/
 
 bool NetworkLWIP :: input(BYTE *raw_buffer, BYTE *payload, int pkt_size)
 {
 	//dump_hex(payload, pkt_size);
 
-	//struct pbuf_custom *pbuf = (struct pbuf_custom *)malloc(sizeof(struct pbuf_custom));
 	struct pbuf_custom *pbuf = pbuf_fifo.pop();
 
 	if (!pbuf) {
@@ -285,16 +239,6 @@ bool NetworkLWIP :: input(BYTE *raw_buffer, BYTE *payload, int pkt_size)
 	p->ref = 1;
 	p->type = PBUF_REF;
 
-/*
-	struct pbuf *p = pbuf_alloc(PBUF_RAW, pkt_size + ETH_PAD_SIZE, PBUF_RAM);
-	if (p == NULL) {
-		printf("Help, no pbuf for incoming packet.");
-		return false;
-	}
-	p->payload = ((BYTE *)p->payload) - 2;
-	memcpy(p->payload, payload, pkt_size);
-*/
-
 	if (my_net_if.input(p, &my_net_if)!=ERR_OK) {
 		LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
 		pbuf_free(p);
@@ -307,7 +251,8 @@ void NetworkLWIP :: link_up()
 {
     // Enable the network interface
     netif_set_up(&my_net_if);
-	dhcp_start(&my_net_if);
+    if (dhcp_enable)
+    	dhcp_start(&my_net_if);
 }
 
 void NetworkLWIP :: link_down()
@@ -325,5 +270,28 @@ void NetworkLWIP :: set_mac_address(BYTE *mac)
 void NetworkLWIP :: free_pbuf(struct pbuf_custom *pbuf)
 {
 	pbuf_fifo.push(pbuf);
+}
+
+void NetworkLWIP :: effectuate_settings(void)
+{
+	my_ip.addr = inet_addr(cfg->get_string(CFG_NET_IP));
+	my_netmask.addr = inet_addr(cfg->get_string(CFG_NET_NETMASK));
+	my_gateway.addr = inet_addr(cfg->get_string(CFG_NET_GATEWAY));
+	dhcp_enable = cfg->get_value(CFG_NET_DHCP_EN);
+
+/* 3 states:
+ * NetIF is not added yet. State = NULL. We only need to set our own ip addresses, since they will be copied upon net_if_add
+ * NetIF is added, but there is no link. State != NULL. DHCP is not started yet. We can just call netif_set_addr
+ * NetIF is running (link up). State != NULL. DHCP may be started and may need to be restarted.
+ */
+	if (my_net_if.state) { // is it initialized?
+		netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
+		if (netif_is_link_up(&my_net_if)) {
+			dhcp_stop(&my_net_if);
+			if (dhcp_enable) {
+				dhcp_start(&my_net_if);
+			}
+		}
+	}
 }
 

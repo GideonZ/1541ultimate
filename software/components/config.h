@@ -140,7 +140,6 @@ public:
         return (cfg != NULL);
     }
     
-    virtual void fetch_settings() { }
     virtual void effectuate_settings() { }
 };
 

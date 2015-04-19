@@ -7,6 +7,7 @@
 #include "lwip/ip_frag.h"
 #include "netif/etharp.h"
 #include "lwip/dhcp.h"
+#include "lwip/inet.h"
 #include "lwip/autoip.h"
 #include "lwip/igmp.h"
 #include "lwip/dns.h"
@@ -29,10 +30,14 @@ class NetworkLWIP : public NetworkInterface
 
 	void lwip_poll();
 public:
+    struct netif   my_net_if;
+
+    // fields that are filled in by the configuration
     struct ip_addr my_ip;
     struct ip_addr my_netmask;
     struct ip_addr my_gateway;
-    struct netif   my_net_if;
+    int dhcp_enable;
+
     bool   if_up;
 
     void *driver;
@@ -60,6 +65,9 @@ public:
     }
 
     void free_pbuf(struct pbuf_custom *pbuf);
+
+    // from ConfigurableObject
+    void effectuate_settings(void);
 };
 
 NetworkInterface *getNetworkStack(void *driver,

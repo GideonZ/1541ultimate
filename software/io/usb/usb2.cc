@@ -160,7 +160,7 @@ void Usb2 :: init(void)
 #else
     queue = xQueueCreate(16, sizeof(struct usb_packet));
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
-	xTaskCreate( Usb2 :: input_task_start, "USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, NULL );
+	xTaskCreate( Usb2 :: input_task_start, "USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
 #endif
     ITU_MISC_IO = 1; // coherency is on
 }
