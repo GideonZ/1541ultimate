@@ -147,9 +147,9 @@ void NetworkLWIP :: poll()
 void NetworkLWIP :: init_callback( )
 {
 	/* initialization of IP addresses */
-	IP4_ADDR(&my_ip, 0,0,0,0);
-    IP4_ADDR(&my_netmask, 0,0,0,0);
-    IP4_ADDR(&my_gateway, 0,0,0,0);
+	IP4_ADDR(&my_ip, 192, 168, 2, 64);
+    IP4_ADDR(&my_netmask, 255, 255, 255, 0);
+    IP4_ADDR(&my_gateway, 192, 168, 2, 1);
 
 	/* reset */
 	my_net_if.state = NULL;

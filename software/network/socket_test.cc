@@ -26,8 +26,9 @@ SocketTest::~SocketTest() {
 
 int  SocketTest::fetch_task_items(IndexedList<PathObject*> &item_list)
 {
-	item_list.append(new ObjectMenuItem(this, "Socket Test", 0));
-	return 1;
+	item_list.append(new ObjectMenuItem(this, "Socket Test Server", 0));
+	item_list.append(new ObjectMenuItem(this, "Socket Test Client", 1));
+	return 2;
 }
 
 void SocketTest::poll(Event &e)
@@ -35,8 +36,10 @@ void SocketTest::poll(Event &e)
 	if ((e.type == e_object_private_cmd) && (e.object == this)) {
 		switch(e.param) {
 		case 0:
-			printf("You selected socket test.\n");
 			doTest1();
+			break;
+		case 1:
+			doTest2();
 			break;
 		default:
 			break;
@@ -116,5 +119,47 @@ void SocketTest::doTest1()
     }
 
     close(newsockfd);
+    close(sockfd);
+}
+
+void SocketTest::doTest2()
+{
+    int sockfd, newsockfd, portno;
+	unsigned long int clilen;
+    char buffer[256];
+    struct sockaddr_in serv_addr, cli_addr;
+    int  n;
+
+    /* First call to socket() function */
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (sockfd < 0)
+	{
+    	puts("ERROR opening socket");
+    	return;
+	}
+
+    printf("Sockfd = %8x\n", sockfd);
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = inet_addr("192.168.2.2");
+    serv_addr.sin_port = htons(5001);
+
+    if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+        puts("Error connecting.");
+
+    char *mempntr = (char *)0x1000000; // REU memory
+    WORD start_time = ITU_MS_TIMER;
+
+    for (int i=0; i < 1000; i++) {
+    	n = send(sockfd, mempntr, 2048, 0);
+    	mempntr += n;
+    } while(n > 0);
+
+    WORD stop_time = ITU_MS_TIMER;
+    WORD receive_time = stop_time - start_time;
+
+    printf("Sent %d bytes in %d ms\n", int(mempntr) - 0x1000000, receive_time);
+
     close(sockfd);
 }

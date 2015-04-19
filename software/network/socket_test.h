@@ -13,6 +13,7 @@
 
 class SocketTest: public ObjectWithMenu {
 	void doTest1();
+	void doTest2();
 public:
 	SocketTest();
 	virtual ~SocketTest();
