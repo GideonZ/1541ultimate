@@ -6,22 +6,18 @@
 #include "size_str.h"
 
 
-FilePartition :: FilePartition(PathObject *par, Partition *p, char *n) : FileDirEntry(par, n) //, name(n)
+FilePartition :: FilePartition(CachedTreeNode *par, Partition *p, char *n) : FileDirEntry(par, n) //, name(n)
 {
     prt = p; // link to partition object.
-    info = new FileInfo(n);
-//    strcpy(info->lfname, n); // redundant, oh well!
-    info->cluster = 0; // indicate root dir
-    info->attrib = AM_DIR; // ;-)
+    info.cluster = 0; // indicate root dir
+    info.attrib = AM_DIR; // ;-)
 }
 
 FilePartition :: ~FilePartition()
 {
 	cleanup_children();
-	if(info) {
-		if(info->fs)
-	        delete info->fs;
-//		delete info; /* INFO will be deleted when we destruct the base class */
+	if(info.fs) {
+		delete info.fs;
 	}
 }
 
@@ -54,13 +50,13 @@ char *FilePartition :: get_display_string(void)
 
 void FilePartition :: init()
 {
-    info->fs = prt->attach_filesystem();
+    info.fs = prt->attach_filesystem();
 }
     
 int FilePartition :: fetch_children(void)
 {
     init();
-    if(!info->fs)
+    if(!info.fs)
         return -1;
 
     int count = FileDirEntry :: fetch_children();  // we are just a normal directory, so..

@@ -271,12 +271,6 @@ Rtc rtc; // global
 // ============================================================
 // == Functions that link the RTC to the configuration manager
 // ============================================================
-int RtcConfigStore :: fetch_children(void)
-{
-	ConfigStore :: fetch_children();
-	read();
-}
-
 void RtcConfigStore :: read(void)
 {
 	printf("** Cfg RTC Read **\n");
@@ -285,8 +279,8 @@ void RtcConfigStore :: read(void)
 	int corr = rtc.get_correction();
     ConfigItem *i;
 
-    for(int n = 0;n < children.get_elements(); n++) {
-    	i = (ConfigItem *)children[n];
+    for(int n = 0;n < items.get_elements(); n++) {
+    	i = items[n];
 		switch(i->definition->id) {
 		case CFG_RTC_YEAR:
 			i->value = 1980 + y;
@@ -330,8 +324,8 @@ void RtcConfigStore :: write(void)
 
     ConfigItem *i;
 
-    for(int n = 0;n < children.get_elements(); n++) {
-    	i = (ConfigItem *)children[n];
+    for(int n = 0;n < items.get_elements(); n++) {
+    	i = items[n];
 		switch(i->definition->id) {
 		case CFG_RTC_YEAR:
 			y = i->value - 1980;

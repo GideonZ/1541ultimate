@@ -79,7 +79,7 @@ void TreeBrowser :: config(void)
     printf("Creating config menu...\n");
         
     menu_browser = new ConfigBrowser();
-    menu_node    = new PathObject(NULL, "Dummy node for attaching Config Menu");
+    menu_node    = new CachedTreeNode(NULL, "Dummy node for attaching Config Menu");
     menu_browser->init(window, keyb);
     user_interface->activate_uiobject(menu_browser);
     // from this moment on, we loose focus.. polls will go directly to config menu!
@@ -91,7 +91,7 @@ void TreeBrowser :: context(int initial)
 		return;
 
     printf("Creating context menu for %s\n", state->selected->get_name());
-    menu_node    = new PathObject(NULL);
+    menu_node    = new CachedTreeNode(NULL);
     menu_browser = new ContextMenu(menu_node, state->selected, initial, state->selected_line);
     menu_browser->init(window, keyb);
     state->reselect();
@@ -104,7 +104,7 @@ void TreeBrowser :: task_menu(void)
 	if(!state->node)
 		return;
     printf("Creating task menu for %s\n", state->node->get_name());
-    menu_node    = new PathObject(NULL);
+    menu_node    = new CachedTreeNode(NULL);
     menu_browser = new TaskMenu(menu_node, state->node);
     menu_browser->init(window, keyb);
 //    state->reselect();
@@ -133,10 +133,10 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
     int ret = 0;
 
     if(e.type == e_invalidate) {
-    	invalidate((PathObject *)e.object);
+    	invalidate((CachedTreeNode *)e.object);
     	return 0;
     } else if(e.type == e_refresh_browser) {
-    	PathObject *obj = (PathObject *)e.object;
+    	CachedTreeNode *obj = (CachedTreeNode *)e.object;
     	if(!obj || (obj == state->node)) {
     		state->refresh = true;
     	}
@@ -281,7 +281,7 @@ bool TreeBrowser :: perform_quick_seek(void)
 
     int num_el = state->node->children.get_elements();
     for(int i=0;i<num_el;i++) {
-    	PathObject *t = state->node->children[i];
+    	CachedTreeNode *t = state->node->children[i];
 		if(pattern_match(quick_seek_string, t->get_name(), false)) {
 			state->move_to_index(i);
 			return true;
@@ -295,7 +295,7 @@ void TreeBrowser :: reset_quick_seek(void)
     quick_seek_length = 0;
 }
 
-void TreeBrowser :: invalidate(PathObject *obj)
+void TreeBrowser :: invalidate(CachedTreeNode *obj)
 {
 	// we just have to take care of ourselves.. which means, that we have to check
 	// if the current browser state is dependent on the object that is going to be

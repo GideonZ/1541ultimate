@@ -51,7 +51,7 @@ FileTypePRG :: FileTypePRG(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     info = NULL;
 }
 
-FileTypePRG :: FileTypePRG(PathObject *par, FileInfo *fi, bool hdr) : FileDirEntry(par, fi)
+FileTypePRG :: FileTypePRG(CachedTreeNode *par, FileInfo *fi, bool hdr) : FileDirEntry(par, fi)
 {
     printf("Creating PRG type from info: %s\n", fi->lfname);
     has_header = hdr;
@@ -66,7 +66,7 @@ int FileTypePRG :: fetch_children(void)
   return -1;
 }
 
-int FileTypePRG :: fetch_context_items(IndexedList<PathObject *> &list)
+int FileTypePRG :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     list.append(new MenuItem(this, "Run",  PRGFILE_RUN));
     list.append(new MenuItem(this, "Load", PRGFILE_LOAD));
@@ -84,7 +84,7 @@ int FileTypePRG :: fetch_context_items(IndexedList<PathObject *> &list)
     return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypePRG :: test_type(PathObject *obj)
+FileDirEntry *FileTypePRG :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "PRG")==0)

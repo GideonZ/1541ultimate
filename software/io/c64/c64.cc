@@ -227,7 +227,7 @@ bool C64 :: exists(void)
     return (C64_CLOCK_DETECT != 0);
 }
     
-int  C64 :: fetch_task_items(IndexedList<PathObject*> &item_list)
+int  C64 :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
 {
 	item_list.append(new ObjectMenuItem(this, "Reset C64", MENU_C64_RESET));
 	item_list.append(new ObjectMenuItem(this, "Reboot C64", MENU_C64_REBOOT));
@@ -775,7 +775,7 @@ void C64 :: poll(Event &e)
 {
 #ifndef _NO_FILE_ACCESS
 	File *f;
-	PathObject *po;
+	CachedTreeNode *po;
 	DWORD size;
 	UINT transferred;
     t_flash_address addr;

@@ -117,7 +117,7 @@ uint32_t *pulISRStack;
 static void prvSetupTimerInterrupt( void )
 {
 	ITU_IRQ_TIMER_HI = 3;
-	ITU_IRQ_TIMER_LO = 208;
+	ITU_IRQ_TIMER_LO = 208; // 0x03D0 => 200 Hz
 	ITU_IRQ_TIMER_EN = 1;
 	ITU_IRQ_ENABLE = 5; // usb + timer
 }
@@ -230,7 +230,7 @@ extern void ( __FreeRTOS_interrupt_Handler )( void );
 extern void ( vStartFirstTask )( void );
 
 
-	/* Setup the FreeRTOS interrupt handler.  Code copied from crt0.s. */
+	/* Setup the FreeRTOS interrupt handler.   */
 	__asm__ volatile ( 	"la	r6, r0, __FreeRTOS_interrupt_handler	\n\t" \
 					"sw	  r6, r1, r0								\n\t" \
 					"lhu  r7, r1, r0								\n\t" \
@@ -238,7 +238,7 @@ extern void ( vStartFirstTask )( void );
 					"swi  r7, r0, 0x10								\n\t" \
 					"andi r6, r6, 0xFFFF							\n\t" \
 					"ori  r6, r6, 0xB8080000						\n\t" \
-					"swi  r6, r0, 0x16 " );
+					"swi  r6, r0, 0x14 " );
 
 	/* Setup the hardware to generate the tick.  Interrupts are disabled when
 	this function is called. */
@@ -299,31 +299,41 @@ extern void VPortYieldASM( void );
 /*
  * Handler for the timer interrupt.
  */
-void vTickISR( void )
+/*void vTickISR( void )
 {
-	/* Increment the RTOS tick - this might cause a task to unblock. */
-
+	// Increment the RTOS tick - this might cause a task to unblock.
 	if( xTaskIncrementTick() != pdFALSE )
 	{
 		vTaskSwitchContext();
 	}
 }
+*/
 /*-----------------------------------------------------------*/
 void _Z7usb_irqv();
+
+#include "profiler.h"
 
 void vTaskISRHandler( void )
 {
 static uint8_t pending;
 
-	/* Which interrupts are pending? */
+	PROFILER_SUB = 1;
+/* Which interrupts are pending? */
 	pending = ITU_IRQ_ACTIVE;
 	ITU_IRQ_CLEAR = pending;
 
-	if (pending & 0x01) {
-		vTickISR();
-	}
+	BaseType_t do_switch_usb = pdFALSE;
+	BaseType_t do_switch_timer = pdFALSE;
+
 	if (pending & 0x04) {
 		_Z7usb_irqv();
+		do_switch_usb = pdTRUE;
+	}
+	if (pending & 0x01) {
+		do_switch_timer = xTaskIncrementTick();
+	}
+	if ((do_switch_timer != pdFALSE) || (do_switch_usb != pdFALSE)) {
+		vTaskSwitchContext();
 	}
 }
 /*-----------------------------------------------------------*/
@@ -333,7 +343,3 @@ void vAssertCalled( char* fileName, uint16_t lineNo )
 	while(1)
 		;
 }
-
-
-
-

@@ -9,19 +9,19 @@ class TreeBrowserState
 public:
 	TreeBrowser *browser;
 	int level;
-	PathObject *selected;
+	CachedTreeNode *selected;
     int first_item_on_screen;
     int selected_line; // y-cursor
 
     int initial_index;
     bool refresh;
 
-    PathObject *node;
+    CachedTreeNode *node;
     TreeBrowserState *previous;
     TreeBrowserState *deeper;
 
     // Member functions
-    TreeBrowserState(PathObject *node, TreeBrowser *b, int lev);
+    TreeBrowserState(CachedTreeNode *node, TreeBrowser *b, int lev);
     virtual ~TreeBrowserState();
 
     void do_refresh();

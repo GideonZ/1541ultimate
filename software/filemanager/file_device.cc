@@ -2,15 +2,14 @@
 #include "file_partition.h"
 #include <stdio.h>
 
-FileDevice :: FileDevice(PathObject *p, BlockDevice *b, char *n, char *dn) : FileDirEntry(p, n)
+FileDevice :: FileDevice(CachedTreeNode *p, BlockDevice *b, char *n, char *dn) : FileDirEntry(p, n)
 {
     display_name = dn;
     blk = b;
     disk = NULL; //new Disk(b, 512);
-    info = new FileInfo(get_name());
-    info->fs = NULL;
-    info->cluster = 0; // indicate root dir
-    info->attrib = AM_DIR; // ;-)
+    info.fs = NULL;
+    info.cluster = 0; // indicate root dir
+    info.attrib = AM_DIR; // ;-)
 //printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s, info = %p\n", this, disk, b, n, dn, get_file_info());
 }
 
@@ -18,14 +17,9 @@ FileDevice :: ~FileDevice()
 {
     //printf("Destructing FileDevice %p\n", this);
     detach_disk();
-    if(info) {
-        if(info->fs)
-            delete info->fs;
-        delete info;
+	if(info.fs) {
+		delete info.fs;
     }
-	// now the children will be cleaned again the base class destructor.. (so be it)
-    info = NULL;
-//    printf("Done destructing %s\n", get_name());
 }
 
 void FileDevice :: attach_disk(int block_size)
@@ -72,18 +66,15 @@ int FileDevice :: fetch_children(void)
     Partition *p = disk->partition_list;
     if(p_count == 1) { // do not create partition in browser; that's not necessary!
         printf("There is only one partition!! we can do this smarter!\n");
-        if(info) {
-            info->fs = p->attach_filesystem();
-            info->cluster = 0; // indicate root dir
-            info->attrib = AM_DIR; // ;-)  (not read only of course, removed!!)
-            if(!info->fs)
-                return -1;
-            int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..
-            sort_children();
-            return count;
-        } else {
-            return -1;
-        }
+		info.fs = p->attach_filesystem();
+		printf("FileSystem = %p\n", info.fs);
+		info.cluster = 0; // indicate root dir
+		info.attrib = AM_DIR; // ;-)  (not read only of course, removed!!)
+		if(!info.fs)
+			return -1;
+		int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..
+		sort_children();
+		return count;
     }
 
     int i = 0;

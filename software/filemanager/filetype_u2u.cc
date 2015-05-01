@@ -46,7 +46,7 @@ FileTypeUpdate :: FileTypeUpdate(FileTypeFactory &fac) : FileDirEntry(NULL, (Fil
     fac.register_type(this);
 }
 
-FileTypeUpdate :: FileTypeUpdate(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeUpdate :: FileTypeUpdate(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
     printf("Creating Update type from info: %s\n", fi->lfname);
 }
@@ -57,7 +57,7 @@ FileTypeUpdate :: ~FileTypeUpdate()
 }
 
 
-int FileTypeUpdate :: fetch_context_items(IndexedList<PathObject *> &list)
+int FileTypeUpdate :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     int count = 0;
 	list.append(new MenuItem(this, "Run Update", UPDATE_RUN ));
@@ -65,7 +65,7 @@ int FileTypeUpdate :: fetch_context_items(IndexedList<PathObject *> &list)
     return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypeUpdate :: test_type(PathObject *obj)
+FileDirEntry *FileTypeUpdate :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "U2U")==0)

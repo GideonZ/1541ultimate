@@ -26,6 +26,7 @@ port (
 
     irq_timer_tick  : in  std_logic := '0';
     irq_in          : in  std_logic_vector(7 downto 2);
+    irq_flags       : out std_logic_vector(7 downto 0);
 
     busy_led        : out std_logic;
     misc_io         : out std_logic_vector(7 downto 0);
@@ -292,4 +293,6 @@ begin
     end generate;
     
     busy_led <= usb_busy or sd_busy;
+    
+    irq_flags <= irq_active;
 end architecture;

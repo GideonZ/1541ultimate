@@ -43,7 +43,7 @@ FileTypeSID :: FileTypeSID(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     file = NULL;
 }
 
-FileTypeSID :: FileTypeSID(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeSID :: FileTypeSID(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
     printf("Creating SID type from info: %s\n", fi->lfname);
     file = NULL;
@@ -103,7 +103,7 @@ int FileTypeSID :: fetch_children(void)
         for(i=0;i<len;i++) {
             new_name[i] |= 0x80;
         }
-		children.append(new PathObject(this, new_name));
+		children.append(new CachedTreeNode(this, new_name));
     }    
 
     // number of tunes is in 0x0F (assuming never more than 256 tunes)
@@ -116,14 +116,14 @@ int FileTypeSID :: fetch_children(void)
 	return children.get_elements();
 }
 
-int FileTypeSID :: fetch_context_items(IndexedList<PathObject *> &list)
+int FileTypeSID :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     list.append(new MenuItem(this, "Play Main Tune", SIDFILE_PLAY_MAIN ));
     list.append(new MenuItem(this, "Select Sub Tune", SIDFILE_SHOW_SUB ));
     return 2 + FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypeSID :: test_type(PathObject *obj)
+FileDirEntry *FileTypeSID :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "SID")==0)
@@ -309,7 +309,7 @@ handle_error:
  * Operations on a single tune..
  ******************************************************/
  
-int SidTune :: fetch_context_items(IndexedList<PathObject *> &list)
+int SidTune :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     list.append(new MenuItem(parent, "Play Tune", SIDFILE_PLAY_TUNE + index ));
     return 1;

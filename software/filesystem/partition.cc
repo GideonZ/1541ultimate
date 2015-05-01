@@ -41,36 +41,14 @@ DSTATUS Partition::status(void)
 
 FileSystem *Partition :: attach_filesystem(void)
 {
-    FileSystem *fs = NULL;
-    DWORD sec_size;
-    ioctl(GET_SECTOR_SIZE, &sec_size);
-    
-    bool iso;
-    if(sec_size == 2048) { // if 2K, assume ISO9660
-        iso = FileSystem_ISO9660 :: check(this);
-        if(iso) {
-            fs = new FileSystem_ISO9660(this);
-            if(!fs->init()) {
-                delete fs;
-                fs = NULL;
-            }
-        }
-    }    
-
-    if(fs)
-        return fs;
-
-    // for quick fix: Assume FATFS:
-    BYTE res = FATFS :: check_fs(this);
-    printf("Checked FATFS: Result = %d\n", res);
-    if(!res) {
-        fs = new FATFS(this);
-        if(!fs->init()) {
-            delete fs;
-            fs = NULL;
-        }
-    }
-    return fs;
+	FileSystem *fs = file_system_factory.create(this);
+	if(fs) {
+		if (fs->init()) {
+			return fs;
+		}
+		delete fs;
+	}
+	return NULL;
 }
     
 DRESULT Partition::read(BYTE *buffer, DWORD sector, BYTE count)

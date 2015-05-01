@@ -13,14 +13,14 @@ class FileTypeISO : public FileDirEntry
     FileSystem *fs;
 public:
     FileTypeISO(FileTypeFactory &fac);
-    FileTypeISO(PathObject *par, FileInfo *fi);
+    FileTypeISO(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeISO();
 
     bool  is_writable(void) { return false; }
     int   fetch_children(void);
 	int   get_header_lines(void) { return 0; }
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    FileDirEntry *test_type(CachedTreeNode *obj);
 };
 
 #endif

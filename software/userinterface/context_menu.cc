@@ -1,7 +1,7 @@
 #include "context_menu.h"
 #include <string.h>
 
-ContextMenu :: ContextMenu(PathObject *n, PathObject *obj, int initial, int y)
+ContextMenu :: ContextMenu(CachedTreeNode *n, CachedTreeNode *obj, int initial, int y)
 {
     parent_win = NULL;
     object = obj;
@@ -46,7 +46,7 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
         
         max_len = 0;
         for(int i=0;i<state->node->children.get_elements();i++) {
-        	PathObject *it = state->node->children[i];
+        	CachedTreeNode *it = state->node->children[i];
 			//it->attach();
             len = strlen(it->get_name());
             if(len > max_len)
@@ -82,7 +82,7 @@ int ContextMenu :: poll(int dummy, Event &e)
     }
 
     if(e.type == e_invalidate) {
-    	invalidate((PathObject *)e.object);
+    	invalidate((CachedTreeNode *)e.object);
     	return 0;
     }
 

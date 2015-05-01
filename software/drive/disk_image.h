@@ -78,7 +78,7 @@ public:
 };
 
 
-class BinImage : public PathObject
+class BinImage : public CachedTreeNode
 {
     BYTE *track_start[C1541_MAXTRACKS];
     int   track_sectors[C1541_MAXTRACKS];

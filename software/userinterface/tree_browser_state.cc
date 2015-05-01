@@ -14,7 +14,7 @@
 /*****************************/
 /* Tree Browser State Object */
 /*****************************/
-TreeBrowserState :: TreeBrowserState(PathObject *n, TreeBrowser *b, int lev)
+TreeBrowserState :: TreeBrowserState(CachedTreeNode *n, TreeBrowser *b, int lev)
 {
 	browser = b;
 	level = lev;
@@ -86,7 +86,7 @@ void TreeBrowserState :: draw()
     if(first_item_on_screen < 0)
         return;
     
-    PathObject *t;
+    CachedTreeNode *t;
     for(int i=0;i<y;i++) {
     	t = node->children[i+first_item_on_screen];
 

@@ -181,7 +181,8 @@ begin
         g_vic_copper    => false,
         g_video_overlay => false,
         g_sampler       => false,
-        g_analyzer      => false )
+        g_analyzer      => false,
+        g_profiler      => true )
     port map (
         -- globals
         sys_clock   => sys_clock,

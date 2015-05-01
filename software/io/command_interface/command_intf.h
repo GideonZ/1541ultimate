@@ -70,7 +70,7 @@ public:
     
     int poll(Event &ev);
     void dump_registers(void);
-    int  fetch_task_items(IndexedList<PathObject*> &item_list);
+    int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
     void effectuate_settings(void);
 };
 

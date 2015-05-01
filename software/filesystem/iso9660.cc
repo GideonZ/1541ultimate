@@ -34,18 +34,17 @@ void FileSystem_ISO9660 :: get_dir_record(void *p)
     dir_record.identifier[ident_len] = 0;
 }
     
-bool FileSystem_ISO9660 :: check(Partition *p)        // check if file system is present on this partition
+FileSystem* FileSystem_ISO9660 :: test(Partition *p)        // check if file system is present on this partition
 {
-    // we can't use local variables here
     DWORD secsize;
     DRESULT status = p->ioctl(GET_SECTOR_SIZE, &secsize);
     BYTE *buf;
     if(status)
-        return false;
+        return NULL;
     if(secsize > 4096)
-        return false;
+        return NULL;
     if(secsize < 512)
-        return false;
+        return NULL;
         
     buf = new BYTE[secsize];
 
@@ -54,18 +53,18 @@ bool FileSystem_ISO9660 :: check(Partition *p)        // check if file system is
     status = p->read(buf, first_sector, 1);
     if(status) {
         delete buf;
-        return false;
+        return NULL;
     }
     // check for volume descriptor
     t_iso9660_volume_descriptor *volume = (t_iso9660_volume_descriptor *)buf;
 
     if(memcmp(volume->key, c_volume_key, 8)) {
         delete buf;
-        return false;
+        return NULL;
     }
     printf("Correct volume key!");
     delete buf;
-    return true;
+    return new FileSystem_ISO9660(p);
 }
 
 bool    FileSystem_ISO9660 :: init(void)              // Initialize file system
@@ -337,3 +336,7 @@ FRESULT FileSystem_ISO9660 :: file_seek(File *f, DWORD pos)
 
     return FR_OK;        
 }
+
+//FileSystemRegistrator iso_tester(FileSystem_ISO9660 :: test);
+
+FactoryRegistrator<Partition *, FileSystem *> iso_tester(file_system_factory, FileSystem_ISO9660 :: test);

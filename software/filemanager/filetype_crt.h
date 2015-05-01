@@ -18,12 +18,12 @@ class FileTypeCRT : public FileDirEntry
 
 public:
     FileTypeCRT(FileTypeFactory &fac);
-    FileTypeCRT(PathObject *par, FileInfo *fi);
+    FileTypeCRT(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeCRT();
 
     int   fetch_children(void);
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    FileDirEntry *test_type(CachedTreeNode *obj);
 
     void  execute(int selection);
 };

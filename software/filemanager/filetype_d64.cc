@@ -58,7 +58,7 @@ FileTypeD64 :: FileTypeD64(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     info = NULL;
 }
 
-FileTypeD64 :: FileTypeD64(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeD64 :: FileTypeD64(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
 //    printf("Creating d64 type from info: %s. This = %p. This.FileInfo = %p. Par = %s\n", fi->lfname, this, this->get_file_info(), par->get_name());
     // we'll create a file-mapped block device and a default
@@ -101,7 +101,7 @@ int FileTypeD64 :: fetch_children()
     return i;
 }
 
-int FileTypeD64 :: fetch_context_items(IndexedList<PathObject *> &list)
+int FileTypeD64 :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     int count = 0;
     DWORD capabilities = getFpgaCapabilities();
@@ -126,7 +126,7 @@ int FileTypeD64 :: fetch_context_items(IndexedList<PathObject *> &list)
     return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypeD64 :: test_type(PathObject *obj)
+FileDirEntry *FileTypeD64 :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "D64")==0)

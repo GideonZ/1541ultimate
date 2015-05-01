@@ -14,20 +14,20 @@ class StreamMenu
 {
     int state;
     int selected;
-    PathObject *node;
-    PathObject *menu;
+    CachedTreeNode *node;
+    CachedTreeNode *menu;
     Stream *stream;
     char user_input[32];
 
     void print_items(int, int);
 public:
-    StreamMenu(Stream *s, PathObject *node);
+    StreamMenu(Stream *s, CachedTreeNode *node);
     virtual ~StreamMenu() {}
 
     virtual int poll(Event &e);
     virtual int process_command(char *cmd);
     virtual int into(void);
-    virtual void invalidate(PathObject *obj);
+    virtual void invalidate(CachedTreeNode *obj);
 };
 
 #endif

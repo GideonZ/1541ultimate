@@ -152,7 +152,7 @@ void C1541 :: init(void)
     effectuate_settings();
 }
 
-int  C1541 :: fetch_task_items(IndexedList<PathObject*> &item_list)
+int  C1541 :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
 {
 	int items = 1;
     char buffer[32];
@@ -164,7 +164,7 @@ int  C1541 :: fetch_task_items(IndexedList<PathObject*> &item_list)
 		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_REMOVE));
 		items++;
 
-        PathObject *po = user_interface->get_path();
+        CachedTreeNode *po = user_interface->get_path();
         if(po && po->get_file_info()) {
             sprintf(buffer, "Save disk in drive %c as D64", drive_letter);
     		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_SAVED64));
@@ -545,7 +545,7 @@ void C1541 :: poll(Event &e)
 
 void C1541 :: save_disk_to_file(bool g64)
 {
-    PathObject *po;
+    CachedTreeNode *po;
     static char buffer[32];
 	File *file;
 	int res;

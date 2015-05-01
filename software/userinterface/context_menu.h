@@ -16,7 +16,7 @@ class ContextMenu : public TreeBrowser
     virtual int handle_key(BYTE c);
 
 public:
-	PathObject *object;
+	CachedTreeNode *object;
 
     Screen *parent_win;
     
@@ -27,7 +27,7 @@ public:
     int len, max_len;
     int corner;
 
-    ContextMenu(PathObject *node, PathObject *obj, int initial, int y);
+    ContextMenu(CachedTreeNode *node, CachedTreeNode *obj, int initial, int y);
     virtual ~ContextMenu(void);
     
     virtual void init(Screen *pwin, Keyboard *keyb);

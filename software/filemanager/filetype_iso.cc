@@ -20,7 +20,7 @@ FileTypeISO :: FileTypeISO(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     fs = NULL;
 }
 
-FileTypeISO :: FileTypeISO(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeISO :: FileTypeISO(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
     printf("Creating ISO type from info: %s\n", fi->lfname);
     // we'll create a file-mapped filesystem here and attach the ISO file system
@@ -79,12 +79,12 @@ int FileTypeISO :: fetch_children()
     return i;
 }
 
-int   FileTypeISO :: fetch_context_items(IndexedList<PathObject *> &list)
+int   FileTypeISO :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     return FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypeISO :: test_type(PathObject *obj)
+FileDirEntry *FileTypeISO :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "ISO")==0)

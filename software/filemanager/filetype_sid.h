@@ -17,24 +17,24 @@ class FileTypeSID : public FileDirEntry
 	void load(void);
 public:
     FileTypeSID(FileTypeFactory &fac);
-    FileTypeSID(PathObject *par, FileInfo *fi);
+    FileTypeSID(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeSID();
 
     int   fetch_children(void);
 	int   get_header_lines(void) { return 3; }
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    FileDirEntry *test_type(CachedTreeNode *obj);
     void execute(int);
 };
 
-class SidTune : public PathObject
+class SidTune : public CachedTreeNode
 {
 	int index;
 public:
-	SidTune(PathObject *par, int idx) : PathObject(par), index(idx) { }
+	SidTune(CachedTreeNode *par, int idx) : CachedTreeNode(par), index(idx) { }
 	~SidTune() { }
 
-    int   fetch_context_items(IndexedList<PathObject *> &list);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
     char *get_name() { return get_display_string(); }
     char *get_display_string();
 };

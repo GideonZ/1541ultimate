@@ -12,7 +12,7 @@ class BlockDevice_File : public BlockDevice
     int sector_size;
     int shift;
 public:
-    BlockDevice_File(PathObject *obj, int sec_size);
+    BlockDevice_File(CachedTreeNode *obj, int sec_size);
     ~BlockDevice_File();
 
     virtual DSTATUS init(void);

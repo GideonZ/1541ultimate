@@ -1,6 +1,11 @@
 #ifndef ITU_H
 #define ITU_H
+
 #include "integer.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "iomap.h"
 
 // Definitions for the ITU (Interrupt, Timer, Uart)
@@ -22,6 +27,7 @@
 #define ITU_USB_BUSY	  *((volatile BYTE *)(ITU_BASE + 0x24))
 #define ITU_SD_BUSY	      *((volatile BYTE *)(ITU_BASE + 0x25))
 #define ITU_MISC_IO	      *((volatile BYTE *)(ITU_BASE + 0x26))
+
 
 #define CAPAB_UART          0x00000001
 #define CAPAB_DRIVE_1541_1  0x00000002
@@ -85,5 +91,9 @@ BOOL uart_data_available(void);
 int uart_get_byte(int delay);
 
 DWORD getFpgaCapabilities();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

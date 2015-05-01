@@ -39,6 +39,7 @@ generic (
     g_spi_flash     : boolean := false;
     g_vic_copper    : boolean := false;
     g_sampler       : boolean := false;
+    g_profiler      : boolean := false;
     g_analyzer      : boolean := false );
 port (
     -- globals
@@ -192,7 +193,7 @@ architecture logic of ultimate_logic_32 is
         cap(19) := to_std(g_vic_copper);
         cap(20) := to_std(g_video_overlay);
         cap(21) := to_std(g_sampler);
-        cap(22) := to_std(g_analyzer);
+        cap(22) := to_std(g_analyzer) or to_std(g_profiler);
         cap(23) := to_std(g_usb_host2);
         cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
@@ -335,6 +336,7 @@ architecture logic of ultimate_logic_32 is
     signal inv_addr         : std_logic_vector(31 downto 0);
     signal stuck            : std_logic;
     signal misc_io          : std_logic_vector(7 downto 0);
+    signal profiler_irq_flags   : std_logic_vector(7 downto 0);
 begin
     i_cpu: entity work.mblite_wrapper
     generic map (
@@ -400,6 +402,8 @@ begin
         irq_in(3)   => '0',
         irq_in(2)   => sys_irq_usb,
         
+        irq_flags   => profiler_irq_flags,
+
         busy_led    => busy_led,
         misc_io     => misc_io,
 
@@ -969,15 +973,6 @@ begin
         mem_req_32  => mem_req_32_1541_2,
         mem_resp_32 => mem_resp_32_1541_2 );
 
-    i_conv32_debug: entity work.mem_to_mem32(route_through)
-    port map(
-        clock       => sys_clock,
-        reset       => sys_reset,
-        mem_req_8   => mem_req_debug,
-        mem_resp_8  => mem_resp_debug,
-        mem_req_32  => mem_req_32_debug,
-        mem_resp_32 => mem_resp_32_debug );
-
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
         g_ports      => 6,
@@ -989,16 +984,16 @@ begin
         reqs(0)     => mem_req_32_cart,
         reqs(1)     => mem_req_32_1541,
         reqs(2)     => mem_req_32_1541_2,
-        reqs(3)     => mem_req_32_usb,
-        reqs(4)     => mem_req_32_debug,
-        reqs(5)     => mem_req_32_cpu,
+        reqs(3)     => mem_req_32_debug,
+        reqs(4)     => mem_req_32_cpu,
+        reqs(5)     => mem_req_32_usb,
 
         resps(0)    => mem_resp_32_cart,
         resps(1)    => mem_resp_32_1541,
         resps(2)    => mem_resp_32_1541_2,
-        resps(3)    => mem_resp_32_usb,
-        resps(4)    => mem_resp_32_debug,
-        resps(5)    => mem_resp_32_cpu,
+        resps(3)    => mem_resp_32_debug,
+        resps(4)    => mem_resp_32_cpu,
+        resps(5)    => mem_resp_32_usb,
         
         req         => mem_req,
         resp        => mem_resp );        
@@ -1072,8 +1067,40 @@ begin
             io_req      => io_req_debug,
             io_resp     => io_resp_debug );
          
+        i_conv32_debug: entity work.mem_to_mem32(route_through)
+        port map(
+            clock       => sys_clock,
+            reset       => sys_reset,
+            mem_req_8   => mem_req_debug,
+            mem_resp_8  => mem_resp_debug,
+            mem_req_32  => mem_req_32_debug,
+            mem_resp_32 => mem_resp_32_debug );
+    
         ev_data <= srq_i & atn_i & data_i & clk_i & '1' & atn_o_2 & data_o_2 & clk_o_2 &
                    '0' & atn_o & data_o & clk_o & hw_srq_o & hw_atn_o & hw_data_o & hw_clk_o;
     end generate;
     
+    g_ela32: if g_profiler generate
+        signal ev_data  : std_logic_vector(7 downto 0);
+    begin
+        i_ela: entity work.logic_analyzer_32
+        generic map (
+            g_timer_div    => 25 )
+        port map (
+            clock       => sys_clock,
+            reset       => sys_reset,
+            
+            ev_dav      => '0',
+            ev_data     => ev_data,
+            
+            ---
+            mem_req     => mem_req_32_debug,
+            mem_resp    => mem_resp_32_debug,
+            
+            io_req      => io_req_debug,
+            io_resp     => io_resp_debug );
+         
+        ev_data <= profiler_irq_flags;
+    end generate;
+
 end logic;

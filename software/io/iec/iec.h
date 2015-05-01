@@ -35,7 +35,7 @@
 #define IEC_FIFO_FULL  0x02
 #define IEC_FIFO_CTRL  0x80
 
-#define LOGGER_BASE            DEBUG_BASE
+#define LOGGER_BASE            TRACE_BASE
 #define LOGGER_ADDRESS         *((volatile DWORD *)(LOGGER_BASE + 0x0)) // read
 #define LOGGER_LENGTH          *((volatile BYTE  *)(LOGGER_BASE + 0x4)) // read
 #define LOGGER_COMMAND         *((volatile BYTE  *)(LOGGER_BASE + 0x5)) // write
@@ -77,7 +77,7 @@ public:
     ~IecInterface();
     
     int poll(Event &ev);
-    int fetch_task_items(IndexedList<PathObject *> &list);
+    int fetch_task_items(IndexedList<CachedTreeNode *> &list);
     void effectuate_settings(void); // from ConfigurableObject
     int get_last_error(char *); // writes string into buffer
 };
@@ -116,11 +116,11 @@ class FileTypeIEC : public FileDirEntry
 {
 public:
     FileTypeIEC(FileTypeFactory &fac);
-    FileTypeIEC(PathObject *par, FileInfo *fi);
+    FileTypeIEC(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeIEC();
 
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    FileDirEntry *test_type(CachedTreeNode *obj);
     void execute(int selection);
 };
 

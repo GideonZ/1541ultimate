@@ -165,7 +165,7 @@ start
     ; Turn off power and apply discharge
     LOAD  #$0E
     OUTP  ULPI_W_OTG_CONTROL
-    BRA   _no_power
+;    BRA   _no_power
     
 _startup_power_check    
     INP   ULPI_R_IRQ_STATUS

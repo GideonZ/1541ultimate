@@ -19,37 +19,29 @@
 class File
 {
 public:
-	Path   *path;     // refers to the path, if any
-	PathObject *node; // refers to the path object, if any
-    FileSystem *fs;   // temporary public... TODO
-    DWORD handle;     // could be a pointer to an object used in the derived class
+	FileInfo *info; // refers to a structure with file information, when set to null, this file is invalidated
+    DWORD handle;   // could be a pointer to an object used in the derived class
 
-
-    File(FileSystem *f, DWORD h) {
-        path = NULL;
-        node = NULL;
+    File(FileInfo *n, DWORD h) {
+        info = n;
         handle = h;
-        fs = f;
     }
 
     virtual ~File() { }
 
     // functions for reading and writing files
-    void invalidate(void) { node = NULL; }
+    void invalidate(void) { info = NULL; }
     virtual void    close(void);
     virtual FRESULT sync(void);
     virtual FRESULT read(void *buffer, DWORD len, UINT *transferred);
     virtual FRESULT write(void *buffer, DWORD len, UINT *transferred);
     virtual FRESULT seek(DWORD pos);
-    virtual void print_info() { fs->file_print_info(this); }
-    virtual int get_size(void)
+    virtual void print_info() { info->fs->file_print_info(this); }
+    virtual DWORD get_size(void)
     {
-        if(!node)
+    	if(!info)
             return -1;
-        FileInfo *fi = node->get_file_info();
-        if(!fi)
-            return -2;
-        return (int)fi->size; 
+    	return info->size;
     }
     
 };

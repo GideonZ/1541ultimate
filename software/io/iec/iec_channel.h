@@ -35,7 +35,7 @@ class IecChannel
     int  last_command;
     int  dir_index;
     int  dir_last;
-    PathObject *dir_obj;
+    CachedTreeNode *dir_obj;
     
     t_channel_state state;
 
@@ -110,7 +110,7 @@ public:
         }
         //printf("Dir index = %d\n", dir_index);
         //printf("Dir Obj %p %s\n", dir_obj, dir_obj->get_name());
-        PathObject *entry = dir_obj->children[dir_index++];
+        CachedTreeNode *entry = dir_obj->children[dir_index++];
         //printf("entry = %p\n", entry);
         FileInfo *info = entry->get_file_info();
         //printf("info = %p\n", info);
@@ -284,7 +284,7 @@ private:
         printf("Filename after parsing: '%s'. Extension = '%s'. Write = %d\n", buffer, extension, write);
         strcat((char *)buffer, extension);
 
-        PathObject *dir = interface->path->get_path_object();
+        CachedTreeNode *dir = interface->path->get_path_object();
         BYTE flags = FA_READ;
         if(write)
             flags |= (FA_WRITE | FA_CREATE_NEW);

@@ -214,7 +214,7 @@ void IecInterface :: effectuate_settings(void)
 }
     
 
-int IecInterface :: fetch_task_items(IndexedList<PathObject *> &list)
+int IecInterface :: fetch_task_items(IndexedList<CachedTreeNode *> &list)
 {
     int count = 3;
 	list.append(new ObjectMenuItem(this, "Reset IEC",      MENU_IEC_RESET));
@@ -326,7 +326,7 @@ int IecInterface :: poll(Event &e)
     }
 
 	File *f;
-	PathObject *po;
+	CachedTreeNode *po;
 	UINT transferred;
 
 	if((e.type == e_object_private_cmd)&&(e.object == this)) {
@@ -532,7 +532,7 @@ void IecInterface :: save_copied_disk()
     File *f;
     int res;
     BinImage *bin;
-    PathObject *po;
+    CachedTreeNode *po;
     
     static_bin_image.num_tracks = 35; // standard!
 
@@ -782,7 +782,7 @@ FileTypeIEC :: FileTypeIEC(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     fac.register_type(this);
 }
 
-FileTypeIEC :: FileTypeIEC(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeIEC :: FileTypeIEC(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
 }
 
@@ -790,13 +790,13 @@ FileTypeIEC :: ~FileTypeIEC()
 {
 }
 
-int   FileTypeIEC :: fetch_context_items(IndexedList<PathObject *> &list)
+int   FileTypeIEC :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
 	list.append(new MenuItem(this, "Load Code", IECFILE_LOAD));
     return 1+ (FileDirEntry :: fetch_context_items_actual(list));
 }
 
-FileDirEntry *FileTypeIEC :: test_type(PathObject *obj)
+FileDirEntry *FileTypeIEC :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "IEC")==0)

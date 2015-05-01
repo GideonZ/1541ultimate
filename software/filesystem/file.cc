@@ -8,30 +8,30 @@
 
 void    File :: close(void)
 {
-	if(!node) return; // TODO: how about deleting the handle?! Memory leak!!
-    fs->file_close(this);
+	if(!info) return;
+    info->fs->file_close(this);
 }
 
 FRESULT File :: sync(void)
 {
-	if(!node) return FR_INVALID_OBJECT;
-	return fs->file_sync(this);
+	if(!info) return FR_INVALID_OBJECT;
+	return info->fs->file_sync(this);
 }
 
 FRESULT File :: read(void *buffer, DWORD len, UINT *transferred)
 {
-	if(!node) return FR_INVALID_OBJECT;
-	return fs->file_read(this, buffer, len, transferred);
+	if(!info) return FR_INVALID_OBJECT;
+	return info->fs->file_read(this, buffer, len, transferred);
 }
 
 FRESULT File :: write(void *buffer, DWORD len, UINT *transferred)
 {
-	if(!node) return FR_INVALID_OBJECT;
-    return fs->file_write(this, buffer, len, transferred);
+	if(!info) return FR_INVALID_OBJECT;
+    return info->fs->file_write(this, buffer, len, transferred);
 }
 
 FRESULT File :: seek(DWORD pos)
 {
-	if(!node) return FR_INVALID_OBJECT;
-    return fs->file_seek(this, pos);
+	if(!info) return FR_INVALID_OBJECT;
+    return info->fs->file_seek(this, pos);
 }

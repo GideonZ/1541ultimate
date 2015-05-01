@@ -56,7 +56,7 @@ public:
 	TapeRecorder();
 	~TapeRecorder();
 
-	int  fetch_task_items(IndexedList<PathObject*> &item_list);
+	int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
 	
     void flush();
 	void stop(int);

@@ -23,7 +23,9 @@
 
 #include "integer.h"
 #include "flash.h"
-#include "path.h"
+#include "indexed_list.h"
+#include "mystring.h"
+//#include "path.h"
 
 #define CFG_TYPE_VALUE  0x01
 #define CFG_TYPE_ENUM   0x02
@@ -44,8 +46,19 @@ struct t_cfg_definition
 
 class ConfigStore;
 class ConfigurableObject;
+class ConfigItem;
 
-class ConfigItem : public PathObject
+class ConfigSetting
+{
+public:
+	int	setting_index;
+	ConfigItem *parent;
+	string setting_name;
+
+	ConfigSetting(int index, ConfigItem *parent, char *name);
+};
+
+class ConfigItem
 {
 public:    
     ConfigStore *store;
@@ -59,24 +72,23 @@ public:
     int pack(BYTE *buffer, int len);
     void unpack(BYTE *buffer, int len);
 
-    char *get_name()  { return "blah"; } //definition->item_text; }
     char *get_display_string();
-    int  fetch_context_items(IndexedList<PathObject*> &list);
+    int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
 };
 
-class ConfigStore : public PathObject
+class ConfigStore
 {
     int    flash_page;
     BYTE  *mem_block;
     int    block_size;
     ConfigurableObject *obj;
+    char  *store_name;
     
     void pack(void);
     void unpack(void);
 public:
-//    t_cfg_definition *definitions;
-//    List <ConfigItem*> items;
+    IndexedList <ConfigItem*> items;
     DWORD id;
     bool  dirty;
 
@@ -96,13 +108,12 @@ public:
     void dump(void);
     void check_bounds(void);
     
-// Browse functions:    
-    virtual int  fetch_children(void);
+    IndexedList <ConfigItem *> *getItems() { return &items; }
 };
     
-class ConfigManager : public PathObject
+class ConfigManager
 {
-//    List<ConfigStore*> stores;
+	IndexedList<ConfigStore*> stores;
     int num_pages;
     Flash *flash;
 public:
@@ -115,14 +126,10 @@ public:
     void remove_store(ConfigStore *cfg);
 
 	Flash *get_flash_access(void) { return flash; }
-
-// Browser functions
-    int  fetch_children(void);
-    char *get_display_string()  { return "Configuration"; }
+	IndexedList<ConfigStore*> *getStores() { return &stores; }
 };
 
 extern ConfigManager config_manager; // global!
-//extern TreeNode config_root;
 
 // Base class for any configurable object
 

@@ -5,8 +5,9 @@
 #include "event.h"
 #include "poll.h"
 #include "file_system.h"
-#include "menu.h"
+#include "cached_tree_node.h"
 
+//#include "menu.h"
 #define MENU_DUMP_ROOT     0x30FD
 
 void poll_filemanager(Event &e);
@@ -14,50 +15,70 @@ void poll_filemanager(Event &e);
 void set_extension(char *buffer, char *ext, int buf_size);
 void fix_filename(char *buffer);
 
-class FileManager : public PathObject
+struct FileNodePair
+{
+	File *file;
+	CachedTreeNode *node;
+};
+const FileNodePair empty_pair = { NULL, NULL };
+
+class FileManager
 {
     FRESULT last_error;
-	IndexedList<File *>open_file_list;
+	IndexedList<Path *>used_paths;
+	IndexedList<FileNodePair>open_file_list;
+	CachedTreeNode *root;
+    File *fopen_impl(Path *path, char *filename, BYTE flags);
 public:
-    FileManager(char *n) : PathObject(NULL, n), open_file_list(16, NULL) {
+    FileManager() : open_file_list(16, empty_pair), used_paths(8, NULL) {
         poll_list.append(&poll_filemanager);
         last_error = FR_OK;
+        root = new CachedTreeNode(NULL, "RootNode");
     }
 
     ~FileManager() {
         poll_list.remove(&poll_filemanager);
-        cleanup_children();
+        for(int i=0;i<open_file_list.get_elements();i++) {
+        	delete open_file_list[i].file;
+        }
+        for(int i=0;i<used_paths.get_elements();i++) {
+        	delete used_paths[i];
+        }
+        delete root;
     }
     
+    void dump(void) {
+    	root->dump(0);
+    }
+
+    void handle_event(Event &e);
+    CachedTreeNode *get_root();
+    void add_root_entry(CachedTreeNode *obj);
+    void remove_root_entry(CachedTreeNode *obj);
+
     FRESULT get_last_error(void) {
         return last_error;
     }
     
-    void handle_event(Event &e);
-
-	int  fetch_children()  {
-		return children.get_elements(); // just return the number of elements that
-			// are added to the file manager by other threads (event polls)
-	}
-
-    int fetch_task_items(IndexedList<PathObject*> &item_list) {
-//        item_list.append(new MenuItem(this, "Dump Root", MENU_DUMP_ROOT));
-//        return 1;
-        return 0;
+    Path *get_new_path() {
+    	Path *p = new Path();
+    	used_paths.append(p);
+    	return p;
     }
-	
-    void execute(int select) {
-        dump();
+    void  release_path(Path *p) {
+    	used_paths.remove(p);
+    	delete p;
     }
 
-    File *fopen(char *filename, BYTE flags);
-    File *fopen(char *filename, PathObject *dir, BYTE flags);
-    File *fopen(PathObject *obj, BYTE flags);
-    File *fcreate(char *filename, PathObject *dir);
-    
+    File *fopen(Path *path, char *filename, BYTE flags);
+//    File *fopen(char *filename, CachedTreeNode *dir, BYTE flags);
+//    File *fopen(CachedTreeNode *obj, BYTE flags);
+//    File *fcreate(char *filename, CachedTreeNode *dir);
+//    File *fcreate(char *filename, char *dirname);
+
     void fclose(File *f);
 };
 
-extern FileManager root;
+extern FileManager file_manager;
 
 #endif

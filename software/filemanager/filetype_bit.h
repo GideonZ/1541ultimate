@@ -4,20 +4,19 @@
 #include "file_direntry.h"
 #include "flash.h"
 
-class FileTypeBIT : public FileDirEntry
+class FileTypeBIT : public FileType
 {
     Flash *flash;
     void boot(void);
     bool program(int id, void *buffer, int length, char *version, char *descr);
 
 public:
-    FileTypeBIT(FileTypeFactory &fac);
-    FileTypeBIT(PathObject *par, FileInfo *fi);
+    FileTypeBIT(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeBIT();
 
     int   fetch_children(void);
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    static FileType *test_type(CachedTreeNode *obj);
 
     void  execute(int selection);
 };

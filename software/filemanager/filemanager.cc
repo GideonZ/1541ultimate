@@ -1,7 +1,4 @@
 #include <stdio.h>
-extern "C" {
-    #include "small_printf.h"
-}
 #include "event.h"
 #include "poll.h"
 #include "path.h"
@@ -9,21 +6,22 @@ extern "C" {
 #include "file_device.h"
 
 /* Instantiation of root system */
-FileManager root("Root");
+FileManager file_manager;
 
 /* Poll function for main loop */
 void poll_filemanager(Event &e)
 {
-	root.handle_event(e);
+	file_manager.handle_event(e);
 }
 
 void FileManager :: handle_event(Event &e)
 {
-	PathObject *o, *c;
-    o = (PathObject *)e.object;
+	CachedTreeNode *o, *c;
+    o = (CachedTreeNode *)e.object;
     BlockDevice *blk;
     File *f;
     FileDevice *fd;
+    FileNodePair pair;
     
 	switch(e.type) {
 	case e_cleanup_path_object:
@@ -41,18 +39,17 @@ void FileManager :: handle_event(Event &e)
 	case e_invalidate:
 		printf("Invalidate event.. Checking %d files.\n", open_file_list.get_elements());
 		for(int i=0;i<open_file_list.get_elements();i++) {
-			f = open_file_list[i];
-			if(!f) {// should never occur
+			pair = open_file_list[i];
+			if(!pair.file) {// should never occur
 				printf("INTERR: null pointer in list.\n");
 				continue;
-			} else if(!f->node) { // already invalidated.
+			} else if(!pair.file->info) { // already invalidated.
 				continue;
 			}
-			c = f->node;
+			c = pair.node;
 			while(c) {
 				if(c == o) {
-					printf("Due to invalidation of %s, file %s is being invalidated.\n", o->get_name(), f->node->get_name());
-					f->node->detach();
+					printf("Due to invalidation of %s, file %s is being invalidated.\n", o->get_name(), pair.node->get_name());
 					f->invalidate();
 					break;
 				}
@@ -63,12 +60,96 @@ void FileManager :: handle_event(Event &e)
     case e_detach_disk:
         fd = (FileDevice *)e.object;
         fd->detach_disk();
+        break;
 	default:
 		break;
 	}
 }
 
-File *FileManager :: fcreate(char *filename, PathObject *dir)
+File *FileManager :: fopen(Path *path, char *filename, BYTE flags)
+{
+	int filename_length = strlen(filename);
+	if (!filename_length)
+		return NULL;
+
+	// Copy the filename + path into a temporary buffer
+	char *copy = new char[filename_length + 1];
+	strcpy(copy, filename);
+
+	// find the last separator
+	int separator_pos = -1;
+	for(int i=filename_length-1; i >= 1; i--) {
+		if ((copy[i] == '/') || (copy[i] == '\\')) {
+			separator_pos = i;
+			break;
+		}
+	}
+
+	// separate path and filename in two different strings
+	char *purename = copy;
+	char *pathname = NULL;
+	if (separator_pos >= 0) {
+		copy[separator_pos] = 0;
+		pathname = copy;
+		purename = &copy[separator_pos + 1];
+	}
+
+	// create a path that is either relative to root, or relative to current
+	Path *temppath = this->get_new_path();
+	if ((filename[0] != '/') && (filename[0] != '\\')) {
+		temppath->cd(path->get_path());
+	}
+	if (pathname) {
+		temppath->cd(pathname);
+	}
+
+	// now do the actual thing
+	File *ret = fopen_impl(temppath, purename, flags);
+
+	// remove the temporary strings and path
+	delete[] copy;
+	this->release_path(temppath);
+	return ret;
+}
+
+File *FileManager :: fopen_impl(Path *path, char *filename, BYTE flags)
+{
+	FileInfo *dirinfo = path->current_dir_node->get_file_info();
+	CachedTreeNode *existing = path->current_dir_node->find_child(filename);
+	File *file;
+
+	// file does not exist, and we would like it to exist: create.
+	if ((!existing) && (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS))) {
+		CachedTreeNode *newNode = new CachedTreeNode(path->current_dir_node, filename);
+		FileInfo *newInfo = newNode->get_file_info();
+		newInfo->dir_clust = dirinfo->cluster;
+		newInfo->fs = dirinfo->fs;
+		fix_filename(newInfo->lfname);
+		file = dirinfo->fs->file_open(newInfo, flags);
+		if(file) {
+			path->current_dir_node->children.append(newNode);
+			existing = newNode;
+		} else {
+			last_error = dirinfo->fs->get_last_error();
+			delete newNode;
+		}
+	} else { // no creation
+		file = dirinfo->fs->file_open(existing->get_file_info(), flags);
+		last_error = dirinfo->fs->get_last_error();
+	}
+
+	if(!file) {
+		FileNodePair pair;
+		pair.file = file;
+		pair.node = existing;
+		open_file_list.append(pair);
+	}
+
+	return file;
+}
+
+/*
+File *FileManager :: fcreate(char *filename, CachedTreeNode *dir)
 {
     FileInfo *info;
     info = dir->get_file_info();
@@ -104,18 +185,28 @@ File *FileManager :: fcreate(char *filename, PathObject *dir)
     f->print_info();
     printf("File creation successful so far!\n");
 
-    PathObject *node = new PathObject(dir, filename);
+    CachedTreeNode *node = new CachedTreeNode(dir, filename);
     f->node = node;
     //dir->children.append(node);
     open_file_list.append(f);    
-    node->attach();
     return f;
 }
 
-File *FileManager :: fopen(char *filename, PathObject *dir, BYTE flags)
+File *FileManager :: fcreate(char *filename, char *dirname)
+{
+	Path *path = new Path;
+	//dump(); // dumps file system from root..
+	if(path->cd(dirname)) {
+		CachedTreeNode *po = path->get_path_object();
+		return fcreate(filename, po);
+	}
+	return NULL;
+}
+
+File *FileManager :: fopen(char *filename, CachedTreeNode *dir, BYTE flags)
 {
     last_error = FR_OK;
-    PathObject *obj = dir->find_child(filename);
+    CachedTreeNode *obj = dir->find_child(filename);
     if(obj) {
         return fopen(obj, flags);
     }
@@ -134,12 +225,11 @@ File *FileManager :: fopen(char *filename, BYTE flags)
 	Path *path = new Path;
 	//dump(); // dumps file system from root..
 	if(path->cd(filename)) {
-		PathObject *po = path->get_path_object();
+		CachedTreeNode *po = path->get_path_object();
 		FileInfo *fi = po->get_file_info();
 		if(fi) {
 			File *f = fi->fs->file_open(fi, flags);
 			if(f) {
-				po->attach();
 				f->node = po;
 				f->path = path;
 				open_file_list.append(f);
@@ -160,13 +250,12 @@ File *FileManager :: fopen(char *filename, BYTE flags)
 	return 0;
 }
 
-File *FileManager :: fopen(PathObject *obj, BYTE flags)
+File *FileManager :: fopen(CachedTreeNode *obj, BYTE flags)
 {
 	FileInfo *fi = obj->get_file_info();
 	if(fi) {
 		File *f = fi->fs->file_open(fi, flags);
 		if(f) {
-			obj->attach();
 			f->node = obj;
 			f->path = NULL;
 			open_file_list.append(f);
@@ -179,25 +268,40 @@ File *FileManager :: fopen(PathObject *obj, BYTE flags)
     last_error = FR_NO_FILESYSTEM;
 	return 0;
 }
+*/
 
 void FileManager :: fclose(File *f)
 {
-	PathObject *obj = f->node;
-	Path *p = f->path;
-	if(obj) {
-		printf("Closing %s...\n", obj->get_name());
-		obj->detach();
+	FileInfo *inf = f->info;
+	if(inf) {
+		printf("Closing %s...\n", inf->lfname);
 	}
-	else
+	else {
 		printf("Closing invalidated file.\n");
-	open_file_list.remove(f);
-	f->close();
-
-	if(p) {
-		printf("File closed, now destructing path.\n");
-		delete p;
-		printf("ok!\n");
 	}
+	for(int i=0;i<open_file_list.get_elements();i++) {
+		if (open_file_list[i].file == f) {
+			open_file_list.mark_for_removal(i);
+		}
+	}
+	open_file_list.purge_list();
+	f->close();
+}
+
+void FileManager :: add_root_entry(CachedTreeNode *obj)
+{
+	root->children.append(obj);
+	obj->parent = root;
+}
+
+void FileManager :: remove_root_entry(CachedTreeNode *obj)
+{
+	root->children.remove(obj);
+}
+
+CachedTreeNode *FileManager :: get_root()
+{
+	return root;
 }
 
 /* some handy functions */

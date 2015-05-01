@@ -13,13 +13,13 @@ class FileTypeD64 : public FileDirEntry
     FileSystem *fs;
 public:
     FileTypeD64(FileTypeFactory &fac);
-    FileTypeD64(PathObject *par, FileInfo *fi);
+    FileTypeD64(CachedTreeNode *par, FileInfo *fi);
     virtual ~FileTypeD64();
 
     int   fetch_children(void);
 	int   get_header_lines(void) { return 1; }
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    FileDirEntry *test_type(CachedTreeNode *obj);
 
     void  execute(int selection);
 };

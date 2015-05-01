@@ -72,14 +72,10 @@ const char *FileSystem :: get_error_string(FRESULT res)
 }
 
 
-bool FileSystem :: check(Partition *p)
-{
-    return false; // base class never gives a match
-}
-    
 bool FileSystem :: init(void)
 {
-    return false;
+    printf("Maybe you should not try to initialize a base class file system?\n");
+	return false;
 }
     
 Directory *FileSystem :: dir_open(FileInfo *)
@@ -141,3 +137,6 @@ FRESULT FileSystem :: file_delete(FileInfo *)
 {
     return FR_DENIED;
 }
+
+//FileSystemFactory file_system_factory;
+Factory<Partition *, FileSystem *> file_system_factory;

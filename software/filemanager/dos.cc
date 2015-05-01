@@ -56,7 +56,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
     DWORD pos, addr, len;
     UINT transferred = 0;
     FRESULT res = FR_OK;
-    PathObject *po;
+    CachedTreeNode *po;
     FileInfo *fi;
     string str;
     
@@ -268,7 +268,7 @@ void Dos :: get_more_data(Message **reply, Message **status)
     UINT transferred = 0;
     FRESULT res;
     int length;
-    PathObject *po, *entry;
+    CachedTreeNode *po, *entry;
     FileInfo *fi;
     
     switch (dos_state) {

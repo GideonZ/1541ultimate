@@ -10,12 +10,12 @@ class FileTypeTap : public FileDirEntry
 	File *file;
 public:
     FileTypeTap(FileTypeFactory &fac);
-    FileTypeTap(PathObject *par, FileInfo *fi);
+    FileTypeTap(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeTap();
 
     int   fetch_children(void) { return -1; }
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    FileDirEntry *test_type(CachedTreeNode *obj);
     void execute(int);
     
     File *getFile() { return file; }

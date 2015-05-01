@@ -66,17 +66,15 @@
  * MEMCPY: override this if you have a faster implementation at hand than the
  * one included in your C library
  */
-#ifndef MEMCPY
-#define MEMCPY(dst,src,len)             memcpy(dst,src,len)
-#endif
+#include "profiler.h"
+
+#define MEMCPY(dst,src,len)             profiled_memcpy(dst,src,len)
 
 /**
  * SMEMCPY: override this with care! Some compilers (e.g. gcc) can inline a
  * call to memcpy() if the length is known at compile time and is small.
  */
-#ifndef SMEMCPY
 #define SMEMCPY(dst,src,len)            memcpy(dst,src,len)
-#endif
 
 /*
    ------------------------------------
@@ -195,7 +193,7 @@
 #define MEMP_NUM_UDP_PCB                4
 
 /**
- * MEMP_NUM_TCP_PCB: the number of simulatenously active TCP connections.
+ * MEMP_NUM_TCP_PCB: the number of simultaneously active TCP connections.
  * (requires the LWIP_TCP option)
  */
 #define MEMP_NUM_TCP_PCB                5
@@ -603,7 +601,7 @@
  * TCP_WND: The size of a TCP window.  This must be at least 
  * (2 * TCP_MSS) for things to work well
  */
-#define TCP_WND                         (12 * TCP_MSS)
+#define TCP_WND                         (5 * TCP_MSS)
 
 /**
  * TCP_MAXRTX: Maximum number of retransmissions of data segments.
@@ -638,7 +636,7 @@
  * Setting this to 1 enables code that checks TCP_MSS against the MTU of the
  * netif used for a connection and limits the MSS if it would be too big otherwise.
  */
-#define TCP_CALCULATE_EFF_SEND_MSS      1
+#define TCP_CALCULATE_EFF_SEND_MSS      0
 
 
 /**
@@ -833,7 +831,7 @@
  * The priority value itself is platform-dependent, but is passed to
  * sys_thread_new() when the thread is created.
  */
-#define TCPIP_THREAD_PRIO               3
+#define TCPIP_THREAD_PRIO               2
 
 /**
  * TCPIP_MBOX_SIZE: The mailbox size for the tcpip thread messages
@@ -964,7 +962,7 @@
  * Disable this option if you use a POSIX operating system that uses the same
  * names (read, write & close). (only used if you use sockets.c)
  */
-#define LWIP_POSIX_SOCKETS_IO_NAMES     1
+#define LWIP_POSIX_SOCKETS_IO_NAMES     0
 
 /**
  * LWIP_TCP_KEEPALIVE==1: Enable TCP_KEEPIDLE, TCP_KEEPINTVL and TCP_KEEPCNT

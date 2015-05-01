@@ -215,7 +215,7 @@ public:
     FileSystem_ISO9660(Partition *p);
     ~FileSystem_ISO9660();
 
-    static  bool check(Partition *p);        // check if file system is present on this partition
+    static FileSystem* test(Partition *p);        // check if file system is present on this partition
     bool    init(void);              // Initialize file system
     
     // functions for reading directories

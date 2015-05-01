@@ -92,7 +92,7 @@ public:
     
 	void init(void);
 
-    int  fetch_task_items(IndexedList<PathObject*> &item_list); // from ObjectWithMenu
+    int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list); // from ObjectWithMenu
     void effectuate_settings(void); // from ConfigurableObject
     
     void drive_power(bool on);

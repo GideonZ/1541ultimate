@@ -698,7 +698,7 @@ bool GcrImage :: test(void)
 //--------------------------------------------------------------
 // Binary Image Class
 //--------------------------------------------------------------
-BinImage :: BinImage(char *name) : PathObject(NULL, name)
+BinImage :: BinImage(char *name) : CachedTreeNode(NULL, name)
 {
 	bin_data = new BYTE[C1541_MAX_D64_LEN];
 

@@ -106,7 +106,7 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
     root.dump();
 
     // do the actual fetching of the directory
-    PathObject *po = path->get_path_object();
+    CachedTreeNode *po = path->get_path_object();
     po->fetch_children();
 
     // create objects
@@ -138,10 +138,10 @@ void vfs_closedir(vfs_dir_t *dir)
 vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
 {
     printf("READDIR: %p %d\n", dir, dir->index);
-    PathObject *dir_po = (PathObject *)dir->path_object;
+    CachedTreeNode *dir_po = (CachedTreeNode *)dir->path_object;
 
     if(dir->index < dir_po->children.get_elements()) {
-        PathObject *ent_po = dir_po->children[dir->index];
+        CachedTreeNode *ent_po = dir_po->children[dir->index];
         dir->entry->path_object = ent_po;
         dir->entry->name = ent_po->get_name();
         dir->parent_fs->last_direntry = dir->entry;
@@ -155,16 +155,16 @@ vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
 int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
 {
     printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
-    PathObject *po = NULL;
+    CachedTreeNode *po = NULL;
     if(fs->last_direntry) {
-        po = (PathObject *)fs->last_direntry->path_object;
+        po = (CachedTreeNode *)fs->last_direntry->path_object;
         printf("Last po: %s\n", po->get_name());
         if(strcmp(po->get_name(), name) != 0) {
             po = NULL;
         }
     }
     if(!po) {
-        PathObject *parent_obj = ((Path *)fs->path)->get_path_object();
+        CachedTreeNode *parent_obj = ((Path *)fs->path)->get_path_object();
         printf("Finding %s in %s.\n", name, parent_obj->get_name());
         po = parent_obj->find_child((char *)name);
         printf("po = %p\n", po);

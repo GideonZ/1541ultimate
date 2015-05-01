@@ -427,33 +427,37 @@ FRESULT FATFS::chk_mounted (
 /*-----------------------------------------------------------------------*/
 /* Load boot record and check if it is an FAT boot record                */
 /*-----------------------------------------------------------------------*/
-/* 0:The FAT boot record,
-   1:Valid boot record but not an FAT
-   2:Not a boot record
-   3:Error */
-BYTE FATFS::check_fs (Partition *prt)
+FileSystem *FATFS::test (Partition *prt)
 {
-    static BYTE my_win[512];
-    
-	if (prt->read(my_win, 0, 1) != RES_OK)	/* Load boot record */
-		return 3;
-/*
-    printf("Loaded boot sector:\n");
-    for(int i=0;i<512;i++) {
-        printf("%b ", my_win[i]);
-        if((i & 15)==15)
-            printf("\n");
+	DWORD secsize;
+    DRESULT status = prt->ioctl(GET_SECTOR_SIZE, &secsize);
+    BYTE *buf;
+    if(status)
+        return NULL;
+    if(secsize > 4096)
+        return NULL;
+    if(secsize < 512)
+        return NULL;
+
+    buf = new BYTE[secsize];
+
+    DRESULT dr = prt->read(buf, 0, 1);
+    if (dr != RES_OK) {	/* Load boot record */
+    	printf("FATFS::test failed, because reading sector failed: %d\n", dr);
+    	return NULL;
     }
-*/
-	if (LD_WORD(&my_win[BS_55AA]) != 0xAA55)	/* Check record signature (always placed at offset 510 even if the sector size is >512) */
-		return 2;
 
-	if ((LD_DWORD(&my_win[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	/* Check "FAT" string */
-		return 0;
-	if ((LD_DWORD(&my_win[BS_FilSysType32]) & 0xFFFFFF) == 0x544146)
-		return 0;
+	if (LD_WORD(&buf[BS_55AA]) != 0xAA55) {	/* Check record signature (always placed at offset 510 even if the sector size is >512) */
+		delete buf;
+		return NULL;
+	}
+	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	/* Check "FAT" string */
+		return new FATFS(prt);
+	if ((LD_DWORD(&buf[BS_FilSysType32]) & 0xFFFFFF) == 0x544146)
+		return new FATFS(prt);
 
-	return 1;
+	delete buf;
+	return NULL;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -463,8 +467,11 @@ bool FATFS::init(void)
 {
     DWORD fsize, tsect, mclst;
     
-	if (prt->read(win, 0, 1) != RES_OK)	/* Load boot record */
-		return false;
+    DRESULT dr = prt->read(win, 0, 1);
+    if (dr != RES_OK) {	/* Load boot record */
+    	printf("FATFS::init failed: %d\n", dr);
+    	return false;
+    }
 
 	/* Initialize the file system object */
 	fsize = LD_WORD(win+BPB_FATSz16);				/* Number of sectors per FAT */
@@ -935,6 +942,7 @@ Directory *FATFS::dir_open(FileInfo *f)
     if(res == FR_OK)
         return d;
     
+    last_error = res;
     delete fd;
     delete d;
     return NULL;
@@ -974,7 +982,7 @@ FRESULT FATFS::dir_create(FileInfo *f)
 File *FATFS::file_open(FileInfo *info, BYTE flags)  
 {
 	FATFIL *ff = new FATFIL(this);
-    File *f = new File(this, (DWORD)ff);
+    File *f = new File(info, (DWORD)ff);
     FRESULT res = ff->open(info, flags);
     last_error = res;
     if(res == FR_OK) {
@@ -1093,4 +1101,7 @@ void FATFS::file_print_info(File *f)
 	FATFIL *ff = (FATFIL *)f->handle;
 	ff->print_info();
 }
+
+FactoryRegistrator<Partition *, FileSystem *> fat_tester(file_system_factory, FATFS :: test);
+
 #endif

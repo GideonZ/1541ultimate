@@ -49,7 +49,7 @@ private:
     UIObject *ui_objects[MAX_UI_OBJECTS];
     
     void set_screen_title(void);
-    PathObject *current_path;
+    CachedTreeNode *current_path;
     UIStatusBox *status_box;
 public:
     int color_border, color_bg, color_fg, color_sel;
@@ -73,8 +73,8 @@ public:
     
     // interface to find the current path from any object, they can ask the user interface
     // This is intended for menu options that do not pass the path object.
-    void set_path(PathObject *po) { current_path = po; /*printf("Set current path to %s\n", po->get_name());*/  }
-    PathObject *get_path(void)    { return current_path; }
+    void set_path(CachedTreeNode *po) { current_path = po; /*printf("Set current path to %s\n", po->get_name());*/  }
+    CachedTreeNode *get_path(void)    { return current_path; }
     // end workaround
     
     void init(GenericHost *h, Keyboard *k);

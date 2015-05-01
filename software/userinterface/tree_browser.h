@@ -17,7 +17,7 @@ public:
     TreeBrowserState *state;
 
     // link to temporary popup
-    PathObject  *menu_node;    // dummy root to browse children
+    CachedTreeNode  *menu_node;    // dummy root to browse children
     TreeBrowser *menu_browser; // anchor for menu that pops up
 
     // Member functions
@@ -38,6 +38,6 @@ public:
     void config(void);
     void test_editor(void);
     
-    void invalidate(PathObject *obj);
+    void invalidate(CachedTreeNode *obj);
 };
 #endif

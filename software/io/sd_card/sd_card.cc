@@ -22,7 +22,6 @@
 #include <stdio.h>
 #include "integer.h"
 #include "sd_card.h"
-#include "profiler.h"
 
 extern "C" {
     #include "itu.h"
@@ -232,25 +231,28 @@ DRESULT SdCard :: read(BYTE* buf, DWORD address, int sectors)
 	DWORD place;
 
 //	DBG((TXT("sd_readSector::Trying to read sector %u and store it at %p.\n"),address,&buf[0]));
-//    printf("Trying to read sector %lu to %p.\n",address,buf);
+//    printf("Trying to read sector %d to %p.\n",address,buf);
 
 /*
     // wait a bit?
 */
-    PROFILER_SECTION = 1;
-    
-    for(int j=0;j<sectors;j++) {
+	for(int j=0;j<sectors;j++) {
     	place=(sdhc)?(address):(address<<9);
+
+    	ENTER_SAFE_SECTION
     	sdio_send_command(CMDREAD, (WORD) (place >> 16), (WORD) place);
     	
     	cardresp=Resp8b(); /* Card response */ 
     
     	if (cardresp != 0x00) {
     		Resp8bError(cardresp);
+    		LEAVE_SAFE_SECTION
     		return RES_ERROR;
     	}
-    
-        if ((cardresp = sdio_read_block(buf)) != 0x00) {
+    	cardresp = sdio_read_block(buf);
+		LEAVE_SAFE_SECTION
+
+		if (cardresp != 0x00) {
         	Resp8bError(cardresp);
         	return RES_ERROR;
     	}
@@ -258,8 +260,6 @@ DRESULT SdCard :: read(BYTE* buf, DWORD address, int sectors)
     	address ++;
     	buf += SD_SECTOR_SIZE;
     }
-
-    PROFILER_SECTION = 0;
 
 	return RES_OK;
 }
@@ -307,6 +307,7 @@ DRESULT SdCard :: write(const BYTE* buf, DWORD address, int sectors )
 */
     for(int j=0;j<sectors;j++) {
     	place=(sdhc)?(address):(address<<9);
+    	ENTER_SAFE_SECTION
     	sdio_send_command(CMDWRITE, (WORD)(place >> 16), (WORD) place);
     
 /*      // wait for 0.5 ms
@@ -317,7 +318,9 @@ DRESULT SdCard :: write(const BYTE* buf, DWORD address, int sectors )
     	resp = Resp8b(); /* Card response */
     	Resp8bError(resp);
     
-        if(!sdio_write_block(buf)) {
+        bool success = sdio_write_block(buf);
+    	LEAVE_SAFE_SECTION
+        if (!success) {
             printf("Timeout error writing block %d\n", address);
             return RES_ERROR;
         }    

@@ -8,7 +8,7 @@
 #ifndef SDCARD_MANAGER_H_
 #define SDCARD_MANAGER_H_
 
-#include "userinterface.h"
+//#include "userinterface.h"
 #include "filemanager.h"
 #include "sd_card.h"
 #include "file_device.h"

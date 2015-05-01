@@ -38,7 +38,7 @@ public:
     ~Sampler();
 
     void poll(Event &e);
-	int  fetch_task_items(IndexedList<PathObject*> &item_list);
+	int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
 };
 
 #endif

@@ -58,10 +58,10 @@ TapeRecorder :: ~TapeRecorder()
     delete[] cache;
 }
 	
-int  TapeRecorder :: fetch_task_items(IndexedList<PathObject*> &item_list)
+int  TapeRecorder :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
 {
 	int items = 0;
-    PathObject *po;
+    CachedTreeNode *po;
     FileInfo *info;
 	if(recording) {
 		item_list.append(new ObjectMenuItem(this, "Finish Rec. to TAP", MENU_REC_FINISH));

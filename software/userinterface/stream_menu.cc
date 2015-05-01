@@ -4,7 +4,7 @@
 
 char *decimals = "0123456789";
 
-StreamMenu :: StreamMenu(Stream *s, PathObject *n)
+StreamMenu :: StreamMenu(Stream *s, CachedTreeNode *n)
 {
     stream = s;
     state = 0;
@@ -17,7 +17,7 @@ StreamMenu :: StreamMenu(Stream *s, PathObject *n)
 
 void StreamMenu :: print_items(int start, int stop)
 {
-    PathObject *n = (menu) ? menu : node;
+    CachedTreeNode *n = (menu) ? menu : node;
     printf("Print items of %p..\n", n);
     if(stop > n->children.get_elements())
         stop = n->children.get_elements();
@@ -43,7 +43,7 @@ int StreamMenu :: poll(Event &e)
 		print_items(0, 9999);
         return -1;
     } else if(e.type == e_invalidate) {
-    	invalidate((PathObject *)e.object);
+    	invalidate((CachedTreeNode *)e.object);
     	return -1;
     }
         
@@ -77,11 +77,11 @@ int StreamMenu :: into(void)
     return node->fetch_children();
 }
 
-void StreamMenu :: invalidate(PathObject *obj)
+void StreamMenu :: invalidate(CachedTreeNode *obj)
 {
     stream->format("Invalidation event: %s\n", obj->get_name());
 
-    PathObject *n = node;
+    CachedTreeNode *n = node;
     bool found = false;
     while(n) {
         printf("Considering %s\n", n->get_name());
@@ -135,7 +135,7 @@ int StreamMenu :: process_command(char *command)
         }                                    
     } 
     else if ((strcmp(command, "task")==0) and (state == 0)) {
-        menu = new PathObject(NULL);
+        menu = new CachedTreeNode(NULL);
         items = node->fetch_task_items(menu->children);
         for(int i=0;i<main_menu_objects.get_elements();i++) {
         	items += main_menu_objects[i]->fetch_task_items(menu->children);
@@ -150,7 +150,7 @@ int StreamMenu :: process_command(char *command)
             	if((value > 0)&&(value <= node->children.get_elements())) {
                     selected = value;
             		stream->format("You selected %s. Creating context.\n", node->children[selected-1]->get_name());
-                    menu = new PathObject(NULL);
+                    menu = new CachedTreeNode(NULL);
                     printf("Menu = %p\n", menu);
                     items = node->children[selected-1]->fetch_context_items(menu->children);
                     printf("Items = %d\n", items);

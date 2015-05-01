@@ -54,7 +54,7 @@ FileTypeG64 :: FileTypeG64(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     info = NULL;
 }
 
-FileTypeG64 :: FileTypeG64(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeG64 :: FileTypeG64(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
     printf("Creating g64 type from info: %s\n", fi->lfname);
 }
@@ -68,7 +68,7 @@ int FileTypeG64 :: fetch_children()
 	return -1;
 }
 
-int FileTypeG64 :: fetch_context_items(IndexedList<PathObject *> &list)
+int FileTypeG64 :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
 	printf("G64 context...\n");
     int count = 0;
@@ -91,7 +91,7 @@ int FileTypeG64 :: fetch_context_items(IndexedList<PathObject *> &list)
     return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypeG64 :: test_type(PathObject *obj)
+FileDirEntry *FileTypeG64 :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "G64")==0)

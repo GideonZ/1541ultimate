@@ -14,7 +14,7 @@
 #define SDCARD_BASE        0x4060000
 #define RTC_BASE           0x4060100
 #define FLASH_BASE         0x4060200
-#define DEBUG_BASE         0x4060300
+#define TRACE_BASE         0x4060300
 #define RTC_TIMER_BASE     0x4060400
 #define GCR_CODER_BASE     0x4060500
 #define ICAP_BASE          0x4060600

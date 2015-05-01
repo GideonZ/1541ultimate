@@ -53,6 +53,7 @@ public:
     void poll(Event &e);
     void irq_handler(void);
     void init(void);
+    void deinit(void);
     void bus_reset();
 
     WORD getSplitControl(int addr, int port, int speed, int type);

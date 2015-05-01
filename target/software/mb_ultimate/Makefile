@@ -72,6 +72,7 @@ SRCS_C   =	mbstart_rtos.c \
 			itu.c \
 			dump_hex.c \
 			small_printf.c \
+			profiler.c \
 			croutine.c \
             event_groups.c \
             list.c \

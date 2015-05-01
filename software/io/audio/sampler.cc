@@ -24,7 +24,7 @@ Sampler :: ~Sampler()
     poll_list.remove(&poll_sampler);
 }
                         
-int Sampler :: fetch_task_items(IndexedList<PathObject*> &item_list)
+int Sampler :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
 {
     item_list.append(new ObjectMenuItem(this, "Play 8bit REU sample", MENU_SAMP_PLAY8B));
     item_list.append(new ObjectMenuItem(this, "Play 16bit REU sample", MENU_SAMP_PLAY16B));

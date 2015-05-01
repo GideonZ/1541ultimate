@@ -8,6 +8,7 @@ extern "C" {
 #include "FreeRTOSConfig.h"
 #include "task.h"
 #include "ftpd.h"
+#include "profiler.h"
 
 void echo_task(void *a);
 }
@@ -221,10 +222,12 @@ bool NetworkLWIP :: input(BYTE *raw_buffer, BYTE *payload, int pkt_size)
 {
 	//dump_hex(payload, pkt_size);
 
+	PROFILER_SUB = 7;
 	struct pbuf_custom *pbuf = pbuf_fifo.pop();
 
 	if (!pbuf) {
 		printf("No memory");
+		PROFILER_SUB = 0;
 		return false;
 	}
 	pbuf->custom_obj = this;
@@ -244,6 +247,7 @@ bool NetworkLWIP :: input(BYTE *raw_buffer, BYTE *payload, int pkt_size)
 		pbuf_free(p);
 		return false;
 	}
+	PROFILER_SUB = 15;
 	return true;
 }
 

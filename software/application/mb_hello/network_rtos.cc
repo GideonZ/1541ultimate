@@ -18,19 +18,11 @@ extern "C" {
 
 #include "init_function.h"
 
-void main_loop(void);
-
 #define MAIN_LOOP_TASK_PRIORITY		( tskIDLE_PRIORITY + 2 )
 
 SemaphoreHandle_t xSemaphore;
 
-void run_main_loop(void *a)
-{
-	puts("Executing init functions.");
-	InitFunction :: executeAll();
-	puts("Starting main loop.");
-	main_loop();
-}
+void main_loop(void *a);
 
 int main (void)
 {
@@ -39,7 +31,7 @@ int main (void)
 	scheduler has been started. */
 	portDISABLE_INTERRUPTS();
 
-	xTaskCreate( run_main_loop, "Main Event Loop", configMINIMAL_STACK_SIZE, NULL, MAIN_LOOP_TASK_PRIORITY, NULL );
+	xTaskCreate( main_loop, "Main Event Loop", configMINIMAL_STACK_SIZE, NULL, MAIN_LOOP_TASK_PRIORITY, NULL );
 
 	xSemaphore = xSemaphoreCreateMutex();
 

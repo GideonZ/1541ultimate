@@ -24,12 +24,11 @@ extern "C" {
 }
 #include "config.h"
 #include <string.h>
-#include "menu.h"
 
 ConfigManager config_manager; // global!
 
 /*** CONFIGURATION MANAGER ***/
-ConfigManager :: ConfigManager() : PathObject(NULL, "ConfigManager")
+ConfigManager :: ConfigManager() : stores(16, NULL)
 {
 	flash = get_flash();
 	if(!flash) {
@@ -45,13 +44,11 @@ ConfigManager :: ~ConfigManager()
 {
     printf("Destructor ConfigManger...\n");
     ConfigStore *s;
-    for(int n = 0; n < children.get_elements();n++) {
-        s = (ConfigStore *)children[n];
-		s->detach();
+    for(int n = 0; n < stores.get_elements();n++) {
+        s = (ConfigStore *)stores[n];
 		delete s;
     }
-    children.clear_list();
-//    printf("Destructor ConfigManager done..\n");
+    stores.clear_list();
 }
 
 ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
@@ -75,8 +72,7 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
             s = new ConfigStore(store_id, name, i, page_size, defs, ob); // TODO
             s->read();
             //printf("APPENDING STORE %p %s\n", s, s->get_name());
-            children.append(s);
-			s->attach();
+            stores.append(s);
             return s;
         }
     }
@@ -87,8 +83,7 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
             //printf("Found empty spot on config page %d, for ID=%8x. Size=%d. Defs=%p. Name=%s\n", i, store_id, page_size, defs, name);
             s = new ConfigStore(store_id, name, i, page_size, defs, ob); // TODO
             s->write();
-            children.append(s);
-			s->attach();
+            stores.append(s);
             return s;
         }
     }
@@ -96,45 +91,37 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
     // create a temporary one in memory.
     s = new ConfigStore(store_id, name, -1, page_size, defs, ob); // TODO
     if(s) {
-        children.append(s);
-    	s->attach();
+        stores.append(s);
     }
     return s;
 }
 
 void ConfigManager :: add_custom_store(ConfigStore *cfg)
 {
-	children.append(cfg);
-	cfg->attach();
+	stores.append(cfg);
 }
 
 void ConfigManager :: remove_store(ConfigStore *cfg)
 {
-	children.remove(cfg);
-	cfg->detach();
+	stores.remove(cfg);
 }
 
 ConfigStore *ConfigManager :: open_store(DWORD id)
 {
     ConfigStore *s;
-    for(int n = 0; n < children.get_elements();n++) {
-        s = (ConfigStore *)children[n];
+    for(int n = 0; n < stores.get_elements();n++) {
+        s = stores[n];
         if(s->id == id)
             return s;
     }
     return NULL;
 }
 
-int ConfigManager :: fetch_children()
-{
-    return children.get_elements();
-}
-
 //   ===================
 /*** CONFIGURATION STORE ***/
 //   ===================
 ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
-                           t_cfg_definition *defs, ConfigurableObject *ob) : PathObject(NULL, name)  //, items(32, NULL)
+                           t_cfg_definition *defs, ConfigurableObject *ob) : items(16, NULL)
 {
     //printf("Create configstore %8x with size %d..", store_id, page_size);
     if(page_size)
@@ -147,7 +134,7 @@ ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
     id = store_id;
     obj = ob;
     dirty = false;
-//    definitions = def;
+    store_name = name;
     
     for(int i=0;i<32;i++) {
         if(defs[i].type == CFG_TYPE_END)
@@ -155,11 +142,8 @@ ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
         if(defs[i].id == 0xFF)
             break;
         ConfigItem *item = new ConfigItem(this, &defs[i]);
-//        items.append(item);
-        children.append(item);
-		item->attach();
+        items.append(item);
     }
-//    printf(".. done\n");
 }
 
 ConfigStore :: ~ConfigStore()
@@ -169,12 +153,11 @@ ConfigStore :: ~ConfigStore()
     }
         
     ConfigItem *i;
-    for(int n = 0; n < children.get_elements();n++) {
-    	i = (ConfigItem *)children[n];
-		i->detach();
+    for(int n = 0; n < items.get_elements();n++) {
+    	i = items[n];
 		delete i;
     }
-    children.clear_list();
+    items.clear_list();
     if(mem_block)
     	delete mem_block;
 }
@@ -187,11 +170,11 @@ void ConfigStore :: pack()
     ConfigItem *i;
     int len;
     (*(DWORD *)mem_block) = id;
-//    printf("Packing ConfigStore %s.\n", get_name());
-    for(int n = 0; n < children.get_elements();n++) {
-    	i = (ConfigItem *)children[n];
+
+    //    printf("Packing ConfigStore %s.\n", store_name);
+    for(int n = 0; n < items.get_elements();n++) {
+    	i = items[n];
     	len = i->pack(b, remain);
-//        dump_hex(b, len);
         b += len;
         remain -= len;
         if(remain < 1) {
@@ -200,11 +183,6 @@ void ConfigStore :: pack()
         }
     }
     *b = 0xFF;
-    
-/*
-    len = (b-mem_block)+1;
-    dump_hex(mem_block, len);
-*/
 }
 
 void ConfigStore :: effectuate()
@@ -215,7 +193,7 @@ void ConfigStore :: effectuate()
     
 void ConfigStore :: write()
 {
-	printf("Writing configstore '%s' to flash, page %d..", get_name(), flash_page);
+	printf("Writing config store '%s' to flash, page %d..", store_name, flash_page);
 
 	pack();
 	Flash *flash = config_manager.get_flash_access();
@@ -246,8 +224,8 @@ void ConfigStore :: unpack()
             break;
         }            
         // find ID in our store        
-        for(int n = 0;n < children.get_elements(); n++) {
-        	i = (ConfigItem *)children[n];
+        for(int n = 0;n < items.get_elements(); n++) {
+        	i = items[n];
         	if(id == i->definition->id) {
                 i->unpack(&mem_block[index+1], len);
             }
@@ -269,8 +247,8 @@ void ConfigStore :: read()
 ConfigItem *ConfigStore :: find_item(BYTE id)
 {
     ConfigItem *i;
-    for(int n = 0;n < children.get_elements(); n++) {
-    	i = (ConfigItem *)children[n];
+    for(int n = 0;n < items.get_elements(); n++) {
+    	i = items[n];
         if(i->definition->id == id) {
             return i;
         }
@@ -317,8 +295,8 @@ void ConfigStore :: set_string(BYTE id, char *s)
 void ConfigStore :: dump(void)
 {
     ConfigItem *i;
-    for(int n = 0;n < children.get_elements(); n++) {
-    	i = (ConfigItem *)children[n];
+    for(int n = 0; n < items.get_elements(); n++) {
+    	i = items[n];
         printf("ID %02x: ", i->definition->id);
         if(i->definition->type == CFG_TYPE_STRING) {
             printf("%s = '%s'\n", i->definition->item_text, i->string);
@@ -333,8 +311,8 @@ void ConfigStore :: dump(void)
 void ConfigStore :: check_bounds(void)
 {
     ConfigItem *i;
-    for(int n = 0;n < children.get_elements(); n++) {
-    	i = (ConfigItem *)children[n];
+    for(int n = 0; n < items.get_elements(); n++) {
+    	i = items[n];
 		if((i->definition->type == CFG_TYPE_ENUM) || 
 		   (i->definition->type == CFG_TYPE_VALUE)) {
 			if(i->value < i->definition->min) {
@@ -348,14 +326,9 @@ void ConfigStore :: check_bounds(void)
 	}
 }
 
-int ConfigStore :: fetch_children(void)
-{
-	return children.get_elements();
-}
-  
 
 /*** CONFIGURATION ITEM ***/
-ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d) : PathObject(s)
+ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d)
 {
     definition = d;
     store = s;
@@ -496,23 +469,23 @@ char *ConfigItem :: get_display_string()
     return tmp;
 }
 
-int   ConfigItem :: fetch_context_items(IndexedList<PathObject*> &list)
+int   ConfigItem :: fetch_possible_settings(IndexedList<ConfigSetting *> &list)
 {
-    static char buf[32];
+    char buf[32];
     int i,ret = 0;
     
     switch(definition->type) {
         case CFG_TYPE_VALUE:
             for(i=definition->min;i<=definition->max;i++) {
                 sprintf(buf, definition->item_format, i);
-                list.append(new MenuItem(this, buf, i));
+                list.append(new ConfigSetting(i, this, buf));
             }
             ret = definition->max - definition->min + 1;
             break;
         case CFG_TYPE_ENUM:
             for(i=definition->min;i<=definition->max;i++) {
                 sprintf(buf, definition->item_format, definition->items[i]);
-                list.append(new MenuItem(this, buf, i));
+                list.append(new ConfigSetting(i, this, buf));
             }
             ret = definition->max - definition->min + 1;
             break;
@@ -527,4 +500,10 @@ void ConfigItem :: execute(int sel)
     printf("Setting option to %d.\n", sel);
     value = sel;
     store->dirty = true;
+}
+
+ConfigSetting :: ConfigSetting(int index, ConfigItem *p, char *name) : setting_name(name)
+{
+	parent = p;
+	setting_index = index;
 }

@@ -1,8 +1,23 @@
 #ifndef PROFILER_H
 #define PROFILER_H
 
-#define PROFILER_MATCH    (*(volatile unsigned char *)0x4000016)
-#define PROFILER_SECTION  (*(volatile unsigned char *)0x4000017)
-#define PROFILER_DATA(x)  (*(volatile unsigned long *)(0x4090000 + 4*x))
+#ifdef __cplusplus
+extern "C" {
+#endif
 
+#include "integer.h"
+#include "iomap.h"
+#include <stddef.h>
+
+#define PROFILER_SUB   *((volatile BYTE *)(TRACE_BASE + 0x04))
+#define PROFILER_TASK  *((volatile BYTE *)(TRACE_BASE + 0x05))
+#define PROFILER_STOP  *((volatile BYTE *)(TRACE_BASE + 0x06))
+#define PROFILER_START *((volatile BYTE *)(TRACE_BASE + 0x07))
+#define PROFILER_ADDR *((volatile DWORD *)(TRACE_BASE + 0x00))
+
+void *profiled_memcpy(void *str1, const void *str2, size_t n);
+
+#ifdef __cplusplus
+}
+#endif
 #endif

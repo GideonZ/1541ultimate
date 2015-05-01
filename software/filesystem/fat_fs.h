@@ -88,7 +88,8 @@ public:
     ~FATFS() { }                              /* Destructor */
     
     FRESULT get_last_error() { return last_error; }
-    static BYTE check_fs (Partition *p);      /* Load boot record and check if it is an FAT boot record */
+    static FileSystem *test (Partition *p);      /* Load boot record and check if it is an FAT boot record */
+
     bool    is_writable(void) { return true; } // ###
     bool    init (void);                      /* Initialize file system object based on boot record */
     void    print_info (void);                /* Print information to console about FAT filesystem */

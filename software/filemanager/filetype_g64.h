@@ -7,12 +7,12 @@ class FileTypeG64 : public FileDirEntry
 {
 public:
     FileTypeG64(FileTypeFactory &fac);
-    FileTypeG64(PathObject *par, FileInfo *fi);
+    FileTypeG64(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeG64();
 
     int   fetch_children(void);
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    FileDirEntry *test_type(CachedTreeNode *obj);
 
     void  execute(int selection);
 };

@@ -31,7 +31,7 @@ void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 	state->do_refresh();
 }
 
-ConfigBrowserState :: ConfigBrowserState(PathObject *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
+ConfigBrowserState :: ConfigBrowserState(CachedTreeNode *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
 {
     //default_color = 7;
 }

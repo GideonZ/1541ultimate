@@ -37,7 +37,7 @@ TapeController :: ~TapeController()
 }
 	
 
-int  TapeController :: fetch_task_items(IndexedList<PathObject*> &item_list)
+int  TapeController :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
 {
     if(!tap)
         return 0;

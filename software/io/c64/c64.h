@@ -148,7 +148,7 @@ public:
     ~C64();
 
     /* Object With Menu */
-    int  fetch_task_items(IndexedList<PathObject*> &item_list);
+    int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
     /* Configurable Object */
     void effectuate_settings(void);
     

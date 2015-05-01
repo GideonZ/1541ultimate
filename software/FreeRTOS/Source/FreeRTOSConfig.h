@@ -79,4 +79,8 @@ void vAssertCalled( char* fileName, uint16_t lineNo );
 
 /* A header file that defines trace macro can be included here. */
 
+#include "profiler.h"
+#define traceTASK_SWITCHED_OUT(x)  PROFILER_TASK = 0;
+#define traceTASK_SWITCHED_IN(x)   PROFILER_TASK = pxCurrentTCB->pcTaskName[0];
+
 #endif /* FREERTOS_CONFIG_H */

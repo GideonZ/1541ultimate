@@ -89,7 +89,7 @@ FileTypeCRT :: FileTypeCRT(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     info = NULL;
 }
 
-FileTypeCRT :: FileTypeCRT(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeCRT :: FileTypeCRT(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
     printf("Creating CRT type from info: %s\n", fi->lfname);
 }
@@ -103,14 +103,14 @@ int FileTypeCRT :: fetch_children(void)
   return -1;
 }
 
-int FileTypeCRT :: fetch_context_items(IndexedList<PathObject *> &list)
+int FileTypeCRT :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     list.append(new MenuItem(this, "Run Cart",  CRTFILE_RUN));
 
     return 1 + FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypeCRT :: test_type(PathObject *obj)
+FileDirEntry *FileTypeCRT :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "CRT")==0)

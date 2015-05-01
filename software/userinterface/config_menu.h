@@ -7,7 +7,7 @@
 class ConfigBrowserState : public TreeBrowserState
 {
 public:
-	ConfigBrowserState(PathObject *node, TreeBrowser *tb, int level);
+	ConfigBrowserState(CachedTreeNode *node, TreeBrowser *tb, int level);
 	~ConfigBrowserState();
 
 	void into(void);

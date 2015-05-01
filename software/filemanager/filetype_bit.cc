@@ -51,7 +51,7 @@ FileTypeBIT :: FileTypeBIT(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     info = NULL;
 }
 
-FileTypeBIT :: FileTypeBIT(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeBIT :: FileTypeBIT(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
     printf("Creating BIT type from info: %s\n", fi->lfname);
 }
@@ -65,14 +65,14 @@ int FileTypeBIT :: fetch_children(void)
     return -1;
 }
 
-int FileTypeBIT :: fetch_context_items(IndexedList<PathObject *> &list)
+int FileTypeBIT :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     list.append(new MenuItem(this, "Flash",  BITFILE_FLASH));
 
     return 1 + FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypeBIT :: test_type(PathObject *obj)
+FileDirEntry *FileTypeBIT :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "BIT")==0)

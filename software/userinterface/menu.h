@@ -11,13 +11,13 @@
 #include "path.h"
 #include "event.h"
 
-class MenuItem : public PathObject
+class MenuItem : public CachedTreeNode
 {
-    PathObject *object;
+    CachedTreeNode *object;
 public:
     int function;
 
-    MenuItem(PathObject *o, char *n, int f) : PathObject(NULL, n),
+    MenuItem(CachedTreeNode *o, char *n, int f) : CachedTreeNode(NULL, n),
          function(f), object(o) {  }
     ~MenuItem() { }
 
@@ -48,7 +48,7 @@ public:
 	ObjectWithMenu() {}
 	~ObjectWithMenu() {}
 
-    virtual int fetch_task_items(IndexedList<PathObject*> &item_list) { }
+    virtual int fetch_task_items(IndexedList<CachedTreeNode*> &item_list) { }
 };
 
 extern IndexedList<ObjectWithMenu*> main_menu_objects;

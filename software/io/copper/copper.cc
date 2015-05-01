@@ -38,7 +38,7 @@ Copper :: ~Copper()
 	main_menu_objects.remove(this);
 }
 	
-int  Copper :: fetch_task_items(IndexedList<PathObject*> &item_list)
+int  Copper :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
 {
 	item_list.append(new ObjectMenuItem(this, "Copper Measure Frame", COPPER_MENU_MEASURE));
 	item_list.append(new ObjectMenuItem(this, "Copper Sync", COPPER_MENU_SYNC));
@@ -280,7 +280,7 @@ void Copper :: timed_write(void)
 void Copper :: write_state(void)
 {
     UINT written;
-    PathObject *po = user_interface->get_path();
+    CachedTreeNode *po = user_interface->get_path();
     File *f = root.fcreate("image.vic", po);
     if(f) {
         printf("Opened file successfully.\n");

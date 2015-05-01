@@ -1,7 +1,9 @@
+#include <stdio.h>
 #include "event.h"
 #include "poll.h"
 #include "fifo.h"
 #include "indexed_list.h"
+#include "init_function.h"
 
 #ifdef OS
 #include "FreeRTOS.h"
@@ -13,9 +15,15 @@ IndexedList<PollFunction> poll_list(24, 0 );
 void nop(Event& e) {}
 
 
-void main_loop(void)
+extern "C" void main_loop(void *a)
 {
-    PollFunction func;
+/*
+	puts("Executing init functions.");
+	InitFunction :: executeAll();
+	puts("Starting main loop.");
+*/
+
+	PollFunction func;
     Event event;
     bool empty;
     do {

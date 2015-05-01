@@ -14,11 +14,13 @@
 class SocketTest: public ObjectWithMenu {
 	void doTest1();
 	void doTest2();
+	void sendTrace(int size);
+	static void restartThread(void *a);
 public:
 	SocketTest();
 	virtual ~SocketTest();
 
-    int  fetch_task_items(IndexedList<PathObject*> &item_list);
+    int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
     void poll(Event &e);
 };
 

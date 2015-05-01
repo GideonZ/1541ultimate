@@ -20,7 +20,7 @@ FileTypeT64 :: FileTypeT64(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     file = NULL;
 }
 
-FileTypeT64 :: FileTypeT64(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeT64 :: FileTypeT64(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
     printf("Creating T64 type from info: %s\n", fi->lfname);
     // we'll create a file-mapped filesystem here and attach the T64 file system
@@ -67,13 +67,13 @@ int FileTypeT64 :: fetch_children()
     return i;
 }
 
-int   FileTypeT64 :: fetch_context_items(IndexedList<PathObject *> &list)
+int   FileTypeT64 :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
 	list.append(new MenuItem(this, "Enter", FILEDIR_ENTERDIR));
     return 1+ (FileDirEntry :: fetch_context_items_actual(list));
 }
 
-FileDirEntry *FileTypeT64 :: test_type(PathObject *obj)
+FileDirEntry *FileTypeT64 :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "T64")==0)

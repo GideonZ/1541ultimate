@@ -62,6 +62,7 @@ public:
 
     virtual void poll(Event &e) { }
     virtual void init(void) { }
+    virtual void deinit(void) { }
     virtual void bus_reset() { }
     virtual WORD getSplitControl(int addr, int port, int speed, int type) { return 0; }
     virtual int  control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen) { return -1; }

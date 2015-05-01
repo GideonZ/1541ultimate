@@ -32,3 +32,16 @@ int main(void)
     }    
     return 0;
 }
+
+void restart(void)
+{
+	DWORD *src = (DWORD *)0x1C00000;
+	DWORD *dst = (DWORD *)0x10000;
+	int size = (int)(*(src++));
+	while(size--) {
+		*(dst++) = *(src++);
+	}
+    puts("Restarting....");
+    asm("bralid r15, 0x10000");
+    asm("nop");
+}

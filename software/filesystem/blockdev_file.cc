@@ -5,7 +5,7 @@ extern "C" {
 #include "blockdev_file.h"
 #include "filemanager.h"
 
-BlockDevice_File::BlockDevice_File(PathObject *obj, int sec_size)
+BlockDevice_File::BlockDevice_File(CachedTreeNode *obj, int sec_size)
 {
 	FileInfo *f = obj->get_file_info();
     shift = 0;

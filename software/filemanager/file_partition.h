@@ -21,7 +21,7 @@ class FilePartition : public FileDirEntry
     
     void init(void);
 public:
-    FilePartition(PathObject *par, Partition *p, char *n);
+    FilePartition(CachedTreeNode *par, Partition *p, char *n);
     virtual ~FilePartition();
 
     char *get_type_string(BYTE typ);

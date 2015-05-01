@@ -171,15 +171,16 @@ FRESULT FATDIR::dir_seek (
 
     index = idx;
     clst = sclust;
-    if (clst == 1 || clst >= fs->max_clust) /* Check start cluster range */
-        return FR_INT_ERR;
+    if (clst == 1 || clst >= fs->max_clust) { /* Check start cluster range */
+    	return FR_INT_ERR;
+    }
     if (!clst && fs->fs_type == FS_FAT32)   /* Replace cluster# 0 with root cluster# if in FAT32 */
         clst = fs->dirbase;
 
     if (clst == 0) {    /* Static table */
         clust = clst;
         if (idx >= fs->n_rootdir) {      /* Index is out of range */
-            return FR_INT_ERR;
+        	return FR_INT_ERR;
         }
         sect = fs->dirbase + idx / (REF_SECSIZE(fs) / 32);  /* Sector# */
     }
@@ -188,8 +189,9 @@ FRESULT FATDIR::dir_seek (
         while (idx >= ic) { /* Follow cluster chain */
             clst = fs->get_fat(clst);               /* Get next cluster */
             if (clst == 0xFFFFFFFF) return FR_DISK_ERR; /* Disk error */
-            if (clst < 2 || clst >= fs->max_clust)  /* Reached to end of table or int error */
-                return FR_INT_ERR;
+            if (clst < 2 || clst >= fs->max_clust) { /* Reached to end of table or int error */
+            	return FR_INT_ERR;
+            }
             idx -= ic;
         }
         clust = clst;

@@ -8,6 +8,7 @@ extern "C" {
 #include "integer.h"
 #include "usb_ax88772.h"
 #include "event.h"
+#include "profiler.h"
 
 #define DEBUG_RAW_PKT 0
 #define DEBUG_INVALID_PKT 0
@@ -353,9 +354,11 @@ void UsbAx88772Driver :: interrupt_handler(BYTE *irq_data, int data_len)
 void UsbAx88772Driver :: bulk_handler(BYTE *usb_buffer, int data_len)
 {
 	//printf("Packet %p Len: %d\n", usb_buffer, data_len);
+	PROFILER_SUB = 6;
 
 	if (!link_up) {
 		host->free_input_buffer(bulk_transaction, usb_buffer);
+		PROFILER_SUB = 0;
 		return;
 	}
 
@@ -368,13 +371,15 @@ void UsbAx88772Driver :: bulk_handler(BYTE *usb_buffer, int data_len)
 		printf("ERROR: Corrupted packet\n");
 		host->free_input_buffer(bulk_transaction, usb_buffer);
         //LINK_STATS_INC(link.drop);
+		PROFILER_SUB = 0;
 		return;
 	}
 
 	if (int(pkt_size) > (data_len - 4)) {
-		printf("ERROR: Not enough data?\n");
+		printf("ERROR: Not enough data? %d %d\n", pkt_size, data_len);
 		host->free_input_buffer(bulk_transaction, usb_buffer);
         //LINK_STATS_INC(link.drop);
+		PROFILER_SUB = 0;
 		return;
 	}
 

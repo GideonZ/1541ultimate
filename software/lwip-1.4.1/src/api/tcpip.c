@@ -49,6 +49,8 @@
 #include "netif/etharp.h"
 #include "netif/ppp_oe.h"
 
+#include "profiler.h"
+
 /* global variables */
 static tcpip_init_done_fn tcpip_init_done;
 static void *tcpip_init_done_arg;
@@ -70,6 +72,7 @@ sys_mutex_t lock_tcpip_core;
  *
  * @param arg unused argument
  */
+
 static void
 tcpip_thread(void *arg)
 {
@@ -86,6 +89,7 @@ tcpip_thread(void *arg)
     LWIP_TCPIP_THREAD_ALIVE();
     /* wait for a message, timeouts are processed while waiting */
     sys_timeouts_mbox_fetch(&mbox, (void **)&msg);
+	PROFILER_SUB = 10;
     LOCK_TCPIP_CORE();
     switch (msg->type) {
 #if LWIP_NETCONN
@@ -146,6 +150,7 @@ tcpip_thread(void *arg)
       LWIP_ASSERT("tcpip_thread: invalid message", 0);
       break;
     }
+	PROFILER_SUB = 11;
   }
 }
 
@@ -160,6 +165,7 @@ tcpip_thread(void *arg)
 err_t
 tcpip_input(struct pbuf *p, struct netif *inp)
 {
+	PROFILER_SUB = 8;
 #if LWIP_TCPIP_CORE_LOCKING_INPUT
   err_t ret;
   LWIP_DEBUGF(TCPIP_DEBUG, ("tcpip_input: PACKET %p/%p\n", (void *)p, (void *)inp));
@@ -188,6 +194,7 @@ tcpip_input(struct pbuf *p, struct netif *inp)
   msg->type = TCPIP_MSG_INPKT;
   msg->msg.inp.p = p;
   msg->msg.inp.netif = inp;
+  PROFILER_SUB = 9;
   if (sys_mbox_trypost(&mbox, msg) != ERR_OK) {
     memp_free(MEMP_TCPIP_MSG_INPKT, msg);
     return ERR_MEM;
@@ -467,7 +474,7 @@ tcpip_init(tcpip_init_done_fn initfunc, void *arg)
   }
 #endif /* LWIP_TCPIP_CORE_LOCKING */
 
-  sys_thread_new(TCPIP_THREAD_NAME, tcpip_thread, NULL, TCPIP_THREAD_STACKSIZE, TCPIP_THREAD_PRIO);
+  sys_thread_new("\010" TCPIP_THREAD_NAME, tcpip_thread, NULL, TCPIP_THREAD_STACKSIZE, TCPIP_THREAD_PRIO);
 }
 
 /**

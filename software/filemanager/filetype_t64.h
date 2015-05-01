@@ -39,14 +39,14 @@ class FileTypeT64 : public FileDirEntry
     FileSystemT64 *fs;
 public:
     FileTypeT64(FileTypeFactory &fac);
-    FileTypeT64(PathObject *par, FileInfo *fi);
+    FileTypeT64(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeT64();
 
     bool  is_writable(void) { return false; }
     int   fetch_children(void);
 	int   get_header_lines(void) { return 1; }
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    FileDirEntry *test_type(CachedTreeNode *obj);
 };
 
 class FileInT64

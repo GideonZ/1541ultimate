@@ -4,7 +4,7 @@
 
 IndexedList<ObjectWithMenu*> main_menu_objects(16, NULL);
 
-TaskMenu :: TaskMenu(PathObject *n, PathObject *obj) : ContextMenu(n, obj, 0, 0)
+TaskMenu :: TaskMenu(CachedTreeNode *n, CachedTreeNode *obj) : ContextMenu(n, obj, 0, 0)
 {
     parent_win = NULL;
     context_state = e_new;
@@ -48,7 +48,7 @@ void TaskMenu :: init(Screen *scr, Keyboard *key)
         
         max_len = 0;
         for(int i=0;i<state->node->children.get_elements();i++) {
-        	PathObject *it = state->node->children[i];
+        	CachedTreeNode *it = state->node->children[i];
             len = strlen(it->get_name());
             if(len > max_len)
                 max_len = len;

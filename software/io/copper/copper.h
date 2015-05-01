@@ -48,7 +48,7 @@ public:
 	Copper();
 	~Copper();
 
-	int  fetch_task_items(IndexedList<PathObject*> &item_list);
+	int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
 	void poll(Event &);
 	
 };

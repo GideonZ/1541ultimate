@@ -8,6 +8,7 @@ extern "C" {
 }
 #include "usb2.h"
 #include "task.h"
+#include "profiler.h"
 
 extern BYTE  _binary_nano_minimal_b_start;
 extern DWORD _binary_nano_minimal_b_size;
@@ -98,7 +99,9 @@ void Usb2 :: input_task_impl(void)
 	struct usb_packet pkt;
 	while(1) {
 		if (xQueueReceive(queue, &pkt, 5000) == pdTRUE) {
+			PROFILER_SUB = 5;
 			inputPipeCallBacks[pkt.pipe](pkt.data, pkt.length, pkt.object);
+			PROFILER_SUB = 12;
 		} else {
 			printf("@");
 		}
@@ -158,11 +161,24 @@ void Usb2 :: init(void)
     ITU_IRQ_TIMER_EN  = 0x01;
     ITU_IRQ_ENABLE    = 0x04; // usb interrupt
 #else
-    queue = xQueueCreate(16, sizeof(struct usb_packet));
+    queue = xQueueCreate(64, sizeof(struct usb_packet));
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
-	xTaskCreate( Usb2 :: input_task_start, "USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
+	xTaskCreate( Usb2 :: input_task_start, "\004USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
 #endif
     ITU_MISC_IO = 1; // coherency is on
+}
+
+void Usb2 :: deinit(void)
+{
+	NANO_START = 0;
+
+	// clear RAM
+	BYTE *dst = (BYTE *)NANO_BASE;
+    for(int i=0;i<2048;i++)
+        *(dst++) = 0;
+
+	ITU_IRQ_DISABLE = 0x04;
+	ITU_IRQ_CLEAR = 0x04;
 }
 
 void Usb2 :: poll(Event &e)
@@ -200,6 +216,7 @@ void Usb2 :: poll(Event &e)
 
 void Usb2 :: irq_handler(void)
 {
+	PROFILER_SUB = 2;
 	WORD read1, read2;
 	bool success = true;
 	success &= get_fifo(&read1);
@@ -207,6 +224,7 @@ void Usb2 :: irq_handler(void)
 
 	if (!success) {
 		printf(":(");
+		PROFILER_SUB = 0;
 		return;
 	}
 
@@ -239,7 +257,9 @@ void Usb2 :: irq_handler(void)
 	inputPipeCallBacks[pipe](pkt.data, pkt.length, pkt.object);
 #else
 	BaseType_t retval;
+	PROFILER_SUB = 3;
 	xQueueSendFromISR(queue, &pkt, &retval);
+	PROFILER_SUB = 4;
 #endif
 }
 
@@ -513,7 +533,9 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
     }
 #endif
 	//printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
-	DWORD addr = (DWORD)buf;
+    BYTE sub = PROFILER_SUB; PROFILER_SUB = 13;
+
+    DWORD addr = (DWORD)buf;
 	int total_trans = 0;
 
 	USB2_CMD_DevEP    = pipe->DevEP;
@@ -551,6 +573,7 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 #ifdef OS
     xSemaphoreGive(mutex);
 #endif
+    PROFILER_SUB = sub;
 
 	return total_trans;
 }

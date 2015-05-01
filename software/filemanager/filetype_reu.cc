@@ -28,7 +28,7 @@ FileTypeREU :: FileTypeREU(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     type = 0;
 }
 
-FileTypeREU :: FileTypeREU(PathObject *par, FileInfo *fi, int type) : FileDirEntry(par, fi)
+FileTypeREU :: FileTypeREU(CachedTreeNode *par, FileInfo *fi, int type) : FileDirEntry(par, fi)
 {
     printf("Creating REU type from info: %s\n", fi->lfname);
     this->type = type;
@@ -43,7 +43,7 @@ int FileTypeREU :: fetch_children(void)
   return -1;
 }
 
-int FileTypeREU :: fetch_context_items(IndexedList<PathObject *> &list)
+int FileTypeREU :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     int count = 1;
     list.append(new MenuItem(this, "Load into REU", REUFILE_LOAD));
@@ -55,7 +55,7 @@ int FileTypeREU :: fetch_context_items(IndexedList<PathObject *> &list)
     return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypeREU :: test_type(PathObject *obj)
+FileDirEntry *FileTypeREU :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "REU")==0)

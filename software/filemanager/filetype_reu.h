@@ -8,12 +8,12 @@ class FileTypeREU : public FileDirEntry
     int type;
 public:
     FileTypeREU(FileTypeFactory &fac);
-    FileTypeREU(PathObject *par, FileInfo *fi, int);
+    FileTypeREU(CachedTreeNode *par, FileInfo *fi, int);
     ~FileTypeREU();
 
     int   fetch_children(void);
-    int   fetch_context_items(IndexedList<PathObject *> &list);
-    FileDirEntry *test_type(PathObject *obj);
+    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    FileDirEntry *test_type(CachedTreeNode *obj);
 
     void  execute(int selection);
 };

@@ -61,7 +61,7 @@ FileTypeTap :: FileTypeTap(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo 
     file = NULL;
 }
 
-FileTypeTap :: FileTypeTap(PathObject *par, FileInfo *fi) : FileDirEntry(par, fi)
+FileTypeTap :: FileTypeTap(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
     printf("Creating Tap type from info: %s\n", fi->lfname);
     file = NULL;
@@ -80,7 +80,7 @@ void FileTypeTap :: closeFile() {
 }
 
 
-int FileTypeTap :: fetch_context_items(IndexedList<PathObject *> &list)
+int FileTypeTap :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     int count = 0;
     DWORD capabilities = getFpgaCapabilities();
@@ -95,7 +95,7 @@ int FileTypeTap :: fetch_context_items(IndexedList<PathObject *> &list)
     return count + FileDirEntry :: fetch_context_items_actual(list);
 }
 
-FileDirEntry *FileTypeTap :: test_type(PathObject *obj)
+FileDirEntry *FileTypeTap :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "TAP")==0)

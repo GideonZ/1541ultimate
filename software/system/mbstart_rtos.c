@@ -109,7 +109,7 @@ void start_rtos (void)
 	scheduler has been started. */
 	portDISABLE_INTERRUPTS();
 
-	xTaskCreate( _construct_and_go, "Ultimate-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL );
+	xTaskCreate( _construct_and_go, "\002Ultimate-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL );
 
 	// Finally start the scheduler.
 	vTaskStartScheduler();
@@ -170,100 +170,3 @@ void *sbrk(int inc)
     }
     return result;
 }
-
-#include <sys/stat.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <stdio.h>
-#include <signal.h>
-#include <time.h>
-#include <sys/time.h>
-#include <sys/times.h>
-
-int getpid(void)
-{
-	return 1;
-}
-
-int kill(int pid, int sig)
-{
-	errno = EINVAL;
-	return -1;
-}
-
-int write(int file, char *ptr, int len)
-{
-	   int todo;
-
-	   for (todo = 0; todo < len; todo++)
-	   {
-		   outbyte( *ptr++ );
-	   }
-
-	// Implement your write code here, this is used by puts and printf for example
-	return len;
-}
-
-int close(int file)
-{
-	return -1;
-}
-
-
-int fstat(int file, struct stat *st)
-{
-	st->st_mode = S_IFCHR;
-	return 0;
-}
-
-int isatty(int file)
-{
-	return 1;
-}
-
-int lseek(int file, int ptr, int dir)
-{
-	return 0;
-}
-
-int read(int file, char *ptr, int len)
-{
-	return 0;
-}
-/*
-int open(char *path, int flags, ...)
-{
-	// Pretend like we always fail
-	return -1;
-}
-
-int wait(int *status)
-{
-	errno = ECHILD;
-	return -1;
-}
-
-int unlink(char *name)
-{
-	errno = ENOENT;
-	return -1;
-}
-
-int link(char *old, char *new)
-{
-	errno = EMLINK;
-	return -1;
-}
-
-int fork(void)
-{
-	errno = EAGAIN;
-	return -1;
-}
-
-int execve(char *name, char **argv, char **env)
-{
-	errno = ENOMEM;
-	return -1;
-}
-*/
