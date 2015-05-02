@@ -120,6 +120,10 @@ architecture Gideon of via6522 is
     
     signal write_t1c_h      : std_logic;
     signal write_t2c_h      : std_logic;
+    signal write_acr        : std_logic;
+    signal write_t1_latch_l : std_logic;
+    signal write_t1_latch_h : std_logic;
+    signal write_t2_latch_l : std_logic;
 
     signal ca1_c, ca2_c     : std_logic;
     signal cb1_c, cb2_c     : std_logic;
@@ -135,6 +139,10 @@ begin
     
     write_t1c_h <= '1' when addr = X"5" and wen='1' else '0';
     write_t2c_h <= '1' when addr = X"9" and wen='1' else '0';
+    write_acr <= '1' when addr = X"B" and wen='1' else '0';
+    write_t1_latch_l <= '1' when (addr = X"4" or addr = X"6") and wen='1' else '0';
+    write_t1_latch_h <= '1' when (addr = X"5" or addr = X"7") and wen='1' else '0';
+    write_t2_latch_l <= '1' when addr = X"8" and wen='1' else '0';    
 
 --    input latches
     ira <= port_a_i when pa_latch_ready='0';
@@ -142,8 +150,7 @@ begin
     pa_latch_ready <= '1' when (ca1_event='1') and (pa_latch_en='1') and (pa_latch_ready='0') else
         '0' when (pa_latch_en='0') or (ren='1' and addr=X"1");
     pb_latch_ready <= '1' when (cb1_event='1') and (pb_latch_en='1') and (pb_latch_ready='0') else
-        '0' when (pb_latch_en='0') or (ren='1' and addr=X"0");
-
+        '0' when (pb_latch_en='0') or (ren='1' and addr=X"0");        
 
     ca1_event <= (ca1_c xor ca1_d) and (ca1_d xor ca1_edge_select);
     ca2_event <= (ca2_c xor ca2_d) and (ca2_d xor ca2_edge_select);
@@ -157,7 +164,7 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then            
-            -- CA1/CA2/CB1/CB2 edge detect flipflops
+            -- CA1/CA2/CB1/CB2 edge detect flip flops
             ca1_c <= To_X01(ca1_i);
             ca2_c <= To_X01(ca2_i);
             cb1_c <= To_X01(cb1_i);
@@ -167,8 +174,6 @@ begin
             ca2_d <= ca2_c;
             cb1_d <= cb1_c;
             cb2_d <= cb2_c;
-
-            
 
             -- CA2 output logic
             case ca2_out_mode is
@@ -272,6 +277,7 @@ begin
                     
                 when X"7" => -- TA HI latch
                     timer_a_latch(15 downto 8) <= data_in;
+                    timer_a_flag <= '0';
                     
                 when X"8" => -- TB LO latch
                     timer_b_latch(7 downto 0) <= data_in;
@@ -300,7 +306,11 @@ begin
                 
                 when X"F" => -- ORA no handshake
                     pio_i.pra <= data_in;
-                
+                    if ca2_no_irq_clr='0' then
+                        ca2_flag <= '0';
+                    end if;
+                    ca1_flag <= '0';
+
                 when others =>
                     null;
                 end case;
@@ -318,7 +328,8 @@ begin
                 data_out(4) <= (pio_i.prb(4) and pio_i.ddrb(4)) or (irb(4) and not pio_i.ddrb(4));
                 data_out(5) <= (pio_i.prb(5) and pio_i.ddrb(5)) or (irb(5) and not pio_i.ddrb(5));
                 data_out(6) <= (pio_i.prb(6) and pio_i.ddrb(6)) or (irb(6) and not pio_i.ddrb(6));
-                data_out(7) <= (pio_i.prb(7) and (pio_i.ddrb(7) or tmr_a_output_en)) or (irb(7) and not (pio_i.ddrb(7) or tmr_a_output_en));
+                data_out(7) <= (((pio_i.prb(7) and pio_i.ddrb(7)) or (irb(7) and not pio_i.ddrb(7))) and (not tmr_a_output_en)) or (tmr_a_output_en and timer_a_out);
+                
                 if cb2_no_irq_clr='0' and ren='1' then
                     cb2_flag <= '0';
                 end if;
@@ -407,14 +418,13 @@ begin
     end process;
 
     -- PIO Out select --
+	--PB7 in timer out mode: When acr bit 7 is 1 then the CPU always reads the timer output on port b reads of bit 7, however if the pin is in input mode then the pin PB7 will not be driven by the timer but will output a 1 as normal for pins set to input.
     port_a_o             <= pio_i.pra;
-    port_b_o(6 downto 0) <= pio_i.prb(6 downto 0);    
-    port_b_o(7) <= pio_i.prb(7) when tmr_a_output_en='0' else timer_a_out;
+    port_b_o(6 downto 0) <= pio_i.prb(6 downto 0);
+    port_b_o(7) <= pio_i.prb(7) when tmr_a_output_en='0' or pio_i.ddrb(7)='0' else timer_a_out;
     
     port_a_t             <= pio_i.ddra;
-    port_b_t(6 downto 0) <= pio_i.ddrb(6 downto 0);
-    port_b_t(7)          <= pio_i.ddrb(7) or tmr_a_output_en;
-    
+    port_b_t             <= pio_i.ddrb;    
 
     -- Timer A
     tmr_a: block
@@ -427,41 +437,53 @@ begin
                 timer_a_event <= '0';
     
                 if clock_en='1' then
-                    -- always count, or load
+                    -- Always count, or load
                         
                     if timer_a_reload = '1' then
-                        timer_a_count  <= timer_a_latch;
-                        timer_a_reload <= '0';
-                    else
+                        -- Handle case where the latch is written by the CPU in the clock before reloading.
+                        if write_t1_latch_l = '1' then
+                            timer_a_count <= timer_a_latch(15 downto 8) & data_in;
+                        elsif write_t1_latch_h = '1' then
+                             timer_a_count <= data_in & timer_a_latch(7 downto 0);
+                        else 
+                            timer_a_count <= timer_a_latch;
+                        end if;
+                        timer_a_reload <= '0';                        
+                    else                        
                         if timer_a_count = X"0000" then
-                            -- generate an event if we were triggered
-                            if tmr_a_freerun = '1' then
+                            -- Generate an event if we were triggered
+                            -- Timer a reloads in both free run and one shot
+                            timer_a_reload <= '1';
+                            if tmr_a_freerun = '1' and timer_a_post_oneshot = '0' then
                                 timer_a_event  <= '1';
-                                -- if in free running mode, set a flag to reload
-                                timer_a_reload <= tmr_a_freerun;
+                                -- toggle output
+                                timer_a_out    <= not timer_a_out;
                             else
                                 if (timer_a_post_oneshot = '0') then
                                     timer_a_post_oneshot <= '1';
                                     timer_a_event  <= '1';
+                                    -- Toggle output
+                                    timer_a_out    <= not timer_a_out;
                                 end if;
-                            end if;                                                                             
-                            -- toggle output
-                            timer_a_out    <= not timer_a_out;                        
+                            end if;
                         end if;
-                        --Timer coutinues to count in both free run and one shot.                        
+                        -- Timer continues to count in both free run and one shot.
                         timer_a_count <= timer_a_count - X"0001";
-                    end if;                    
+                    end if;
                 end if;
                 
                 if write_t1c_h = '1' then
-                    timer_a_out   <= '0';
                     timer_a_count <= data_in & timer_a_latch(7 downto 0);
                     timer_a_reload <= '0';
-                    timer_a_post_oneshot <= '0';
+                    timer_a_post_oneshot <= '0';                    
+                end if;
+                                                    
+                if write_acr = '1' or write_t1c_h = '1' then
+                    timer_a_out    <= not tmr_a_output_en;
                 end if;
 
                 if reset='1' then
-                    timer_a_out    <= '1';
+                    timer_a_out    <= '0';
                     timer_a_count  <= latch_reset_pattern;
                     timer_a_reload <= '0';
                     timer_a_post_oneshot <= '0';
@@ -490,14 +512,19 @@ begin
                     pb6_d <= pb6_c;
 
                     if timer_b_reload = '1' then
-                        timer_b_count <= X"00" & timer_b_latch(7 downto 0);
+                        -- Handle case where the latch is written by the CPU in the clock before reloading.
+                        if write_t2_latch_l = '1' then 
+                            timer_b_count <= X"00" & data_in;
+                        else
+                            timer_b_count <= X"00" & timer_b_latch(7 downto 0);
+                        end if;
                         timer_b_reload <= '0';
                     else
                         if tmr_b_count_mode = '1' then
                             if (pb6_d='0' and pb6_c='1') then
                                  timer_b_decrement := '1';
                             end if;
-                        else -- one shot or used for shirt register
+                        else -- one shot or used for shift register
                             timer_b_decrement := '1';
                         end if;    
                         
@@ -529,7 +556,7 @@ begin
                 if reset='1' then
                     timer_b_count  <= latch_reset_pattern;
                     timer_b_reload <= '0';
-                    timer_b_post_oneshot <= '0';                    
+                    timer_b_post_oneshot <= '0';
                 end if;
             end if;
         end process;
