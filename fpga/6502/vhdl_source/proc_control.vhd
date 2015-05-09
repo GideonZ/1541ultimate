@@ -10,9 +10,11 @@ entity proc_control is
 port (
     clock        : in  std_logic;
     clock_en     : in  std_logic;
+    ready        : in  std_logic;
     reset        : in  std_logic;
                  
     interrupt    : in  std_logic;
+    vect_sel     : in  std_logic_vector(2 downto 1);
     i_reg        : in  std_logic_vector(7 downto 0);
     index_carry  : in  std_logic;
     pc_carry     : in  std_logic;
@@ -20,12 +22,13 @@ port (
       
     sync         : out std_logic;
     dummy_cycle  : out std_logic;
-    set_b        : out std_logic;
     latch_dreg   : out std_logic;
     copy_d2p     : out std_logic;
     reg_update   : out std_logic;
     rwn          : out std_logic;
-    vect_bit     : out std_logic := '0';
+    vect_addr    : out std_logic_vector(3 downto 0);
+    irq_done     : out std_logic;
+    vectoring    : out std_logic;
     a16          : out std_logic;
     a_mux        : out t_amux := c_amux_pc;
     dout_mux     : out t_dout_mux;
@@ -41,26 +44,45 @@ architecture gideon of proc_control is
 
     type t_state is (fetch, decode, absolute, abs_hi, abs_fix, branch, branch_fix,
                      indir1, indir2, jump_sub, jump, retrn, rmw1, rmw2, vector, startup,
-                     zp, zp_idx, zp_indir, push1, push2, push3, pull1, pull2, pull3 );
+                     zp, zp_idx, zp_indir, push1, push2, push3, pull1, pull2, pull3, pre_irq );
     
     signal state        : t_state;
     signal next_state   : t_state;
 
+    signal rwn_i        : std_logic;
     signal next_cp_p    : std_logic;
     signal next_rwn     : std_logic;
     signal next_dreg    : std_logic;
     signal next_amux    : t_amux;
     signal next_dout    : t_dout_mux;
-    signal next_set_b   : std_logic;
     signal next_dummy   : std_logic;        
-    signal vectoring    : std_logic;
+    signal vectoring_i  : std_logic;
+    signal vect_bit_i   : std_logic;
+    signal vect_reg     : std_logic_vector(2 downto 1);
+    signal sync_i       : std_logic;
+    signal interrupt_d  : std_logic := '0';
+    signal interrupt_dd : std_logic := '0';
+    signal trigger_upd  : boolean;
+    signal ready_d      : std_logic := '1';
 begin
     -- combinatroial process
-    process(state, i_reg, index_carry, pc_carry, branch_taken, interrupt, vectoring)
+    process(state, i_reg, index_carry, pc_carry, branch_taken, interrupt, vectoring_i, interrupt_d)
         variable v_stack_idx : std_logic_vector(1 downto 0);
+
+        procedure check_irq is
+        begin
+            if interrupt='1' then
+                pc_oper    <= keep;
+                next_state <= pre_irq;
+            else
+                pc_oper    <= increment;
+                next_state <= decode;
+                sync_i     <= '1';
+            end if;
+        end procedure;
     begin
         -- defaults
-        sync       <= '0';
+        sync_i     <= '0';
         pc_oper    <= increment;
         next_amux  <= c_amux_pc;
         next_rwn   <= '1';
@@ -71,26 +93,21 @@ begin
         next_dreg  <= '1';
         next_cp_p  <= '0';
         next_dout  <= reg_d;
-        next_set_b <= '0';
         next_dummy <= '0';
         
         v_stack_idx := stack_idx(i_reg);
 
         case state is
         when fetch =>
-            sync       <= '1';
-
-            if interrupt='1' then
-                pc_oper    <= keep;
-                next_rwn   <= '0';
-                next_dout  <= reg_pch;
-                next_state <= push1;
-                next_amux  <= c_amux_stack;
-            else
-                next_state <= decode;
-                next_set_b <= '1';
-            end if;
+            check_irq;
                         
+        when pre_irq =>
+            pc_oper    <= keep;
+            next_rwn   <= '0';
+            next_dout  <= reg_pch;
+            next_state <= push1;
+            next_amux  <= c_amux_stack;
+            
         when decode =>
             adl_oper   <= load_bus;
             adh_oper   <= clear;
@@ -144,7 +161,6 @@ begin
                 next_amux <= c_amux_stack;
                 case v_stack_idx is
                 when c_stack_idx_brk =>
---                    next_set_b <= '1';   
                     next_rwn   <= '0';
                     next_dout  <= reg_pch;
                     next_state <= push1;
@@ -235,9 +251,7 @@ begin
                 pc_oper    <= from_alu; -- add offset
                 next_state <= branch_fix;
             else
-                pc_oper    <= increment;
-                next_state <= decode;
-                sync       <= '1';
+                check_irq; -- correct
             end if;
                             
         when branch_fix =>
@@ -247,9 +261,13 @@ begin
                 next_state <= fetch;
                 pc_oper    <= keep; -- this will fix the PCH, since the carry is set
             else
-                sync       <= '1';
-                next_state <= decode;
-                pc_oper    <= increment;
+                if interrupt_d='1' then
+                    check_irq;
+                else
+                    pc_oper    <= increment;
+                    next_state <= decode;
+                    sync_i     <= '1';
+                end if;
             end if;            
 
         when indir1 =>
@@ -288,7 +306,7 @@ begin
         when jump =>
             pc_oper    <= copy;
             next_amux  <= c_amux_pc;
-            if is_stack(i_reg) and v_stack_idx=c_stack_idx_rts and vectoring='0' then
+            if is_stack(i_reg) and v_stack_idx=c_stack_idx_rts and vectoring_i='0' then
                 next_state <= retrn;
             else
                 next_state <= fetch;
@@ -335,7 +353,7 @@ begin
         when push2 =>
             pc_oper    <= keep;
             s_oper     <= decrement;
-            if (v_stack_idx=c_stack_idx_jsr) and vectoring='0' then
+            if (v_stack_idx=c_stack_idx_jsr) and vectoring_i='0' then
                 next_state <= jump;
                 next_amux  <= c_amux_pc;
             else
@@ -348,7 +366,7 @@ begin
         when push3 =>
             pc_oper    <= keep;
             s_oper     <= decrement;
-            if is_implied(i_reg) and vectoring='0' then -- PHP, PHA
+            if is_implied(i_reg) and vectoring_i='0' then -- PHP, PHA
                 next_amux  <= c_amux_pc;
                 next_state <= fetch;
             else
@@ -426,47 +444,58 @@ begin
         end case;
     end process;
     
-    reg_update <= '1' when (state = fetch) and vectoring='0' and
-                           not is_stack(i_reg) and not is_relative(i_reg) else '0';
+    reg_update <= '1' when (state = fetch) and vectoring_i='0' and trigger_upd else '0';
                            
-    vect_bit   <= '0' when state = vector else '1';
+    irq_done   <= '1' when state = vector else '0';
+    vect_bit_i <= '0' when state = vector else '1';
+    vect_addr  <= '1' & vect_reg & vect_bit_i;
     
     process(clock)
     begin
         if rising_edge(clock) then
             if clock_en='1' then
-                state       <= next_state;
-                a_mux       <= next_amux;
-                dout_mux    <= next_dout;
-                rwn         <= next_rwn;
-                latch_dreg  <= next_dreg and next_rwn; -- disable dreg latch for writes
-                copy_d2p    <= next_cp_p;
-                set_b       <= next_set_b;
-                dummy_cycle <= next_dummy;
-                
-                if next_amux = c_amux_vector or next_amux = c_amux_pc then
-                    a16 <= '1';
-                else
-                    a16 <= '0';
-                end if;
-
-                if state = fetch then
-                    vectoring <= interrupt;
+                ready_d <= ready;
+                if ready='1' or rwn_i='0' then
+                    state        <= next_state;
+                    a_mux        <= next_amux;
+                    dout_mux     <= next_dout;
+                    rwn_i        <= next_rwn;
+                    latch_dreg   <= next_dreg and next_rwn; -- disable dreg latch for writes
+                    copy_d2p     <= next_cp_p;
+                    dummy_cycle  <= next_dummy;
+                    interrupt_d  <= interrupt;-- and ready_d;
+                    interrupt_dd <= interrupt_d;
+                    trigger_upd  <= affect_registers(i_reg);
+                                    
+                    if next_amux = c_amux_vector or next_amux = c_amux_pc then
+                        a16 <= '1';
+                    else
+                        a16 <= '0';
+                    end if;
+                    if sync_i='1' then
+                        vectoring_i <= '0';
+                    elsif state = pre_irq then
+                        vectoring_i <= '1';
+                        vect_reg <= vect_sel;
+                    end if;
                 end if;
             end if;
             if reset='1' then
                 a16         <= '1';
                 state       <= startup; --vector;
+                vect_reg    <= vect_sel;
                 a_mux       <= c_amux_vector;
-                rwn         <= '1';
+                rwn_i       <= '1';
                 latch_dreg  <= '1';
                 dout_mux    <= reg_d;
                 copy_d2p    <= '0';
-                set_b       <= '0';
-                vectoring   <= '0';
+                vectoring_i <= '0';
                 dummy_cycle <= '0';
             end if;
         end if;    
     end process;
+    vectoring <= vectoring_i;
+    sync      <= sync_i;
+    rwn       <= rwn_i;
 end gideon;
 

@@ -73,7 +73,6 @@ architecture gideon of data_oper is
     signal shift_en  : std_logic;
     signal alu_en    : std_logic;
     signal impl_en   : std_logic;
-    signal impl_flags: boolean;
 begin
     shift_sel <= shifter_in_select(inst);
     with shift_sel select shift_din <=
@@ -150,14 +149,13 @@ begin
     mem_out <= shift_dout;    
 
     impl_en    <= '1' when is_implied(inst) else '0';
-    impl_flags <= is_implied(inst) and (inst(4)='1' or inst(7)='1');
-    
+   
     impl: entity work.implied
     port map (
         inst      => inst,
         enable    => impl_en,
         
-        c_in      => c_in,
+        c_in      => shft_c,
         i_in      => i_in,
         n_in      => n_in,
         z_in      => z_in,
@@ -168,6 +166,7 @@ begin
         reg_x     => x_reg,
         reg_y     => y_reg,
         reg_s     => s_reg,
+        shift_data=> shift_dout,
         
         i_out     => impl_i,
         d_out     => impl_d,
@@ -183,11 +182,11 @@ begin
         
         data_out  => impl_out );
     
-    n_out <= impl_n when impl_flags else row0_n when inst(1 downto 0)="00" else alu_n;
-    v_out <= impl_v when impl_flags else row0_v when inst(1 downto 0)="00" else alu_v;
-    z_out <= impl_z when impl_flags else row0_z when inst(1 downto 0)="00" else alu_z;
-    c_out <= impl_c when impl_flags else row0_c when inst(1 downto 0)="00" else alu_c;
-    i_out <= impl_i when impl_flags else i_in;
-    d_out <= impl_d when impl_flags else d_in;
+    n_out <= impl_n when is_implied(inst) else row0_n when inst(1 downto 0)="00" else alu_n;
+    v_out <= impl_v when is_implied(inst) else row0_v when inst(1 downto 0)="00" else alu_v;
+    z_out <= impl_z when is_implied(inst) else row0_z when inst(1 downto 0)="00" else alu_z;
+    c_out <= impl_c when is_implied(inst) else row0_c when inst(1 downto 0)="00" else alu_c;
+    i_out <= impl_i when is_implied(inst) else i_in;
+    d_out <= impl_d when is_implied(inst) else d_in;
      
 end gideon;

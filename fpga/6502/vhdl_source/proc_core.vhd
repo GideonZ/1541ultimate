@@ -12,13 +12,19 @@ generic (
     support_bcd  : boolean := true );
 port(
     clock        : in  std_logic;
-    clock_en     : in  std_logic;
+    clock_en     : in  std_logic := '1';
+    clock_en_f   : in  std_logic := '1';
+    
     reset        : in  std_logic;
 
+    ready        : in  std_logic := '1';
     irq_n        : in  std_logic := '1';
     nmi_n        : in  std_logic := '1';
     so_n         : in  std_logic := '1';
     
+    read_strobe  : out std_logic;
+    write_strobe : out std_logic;
+
     sync_out     : out std_logic;
     pc_out       : out std_logic_vector(15 downto 0);
     addr_out     : out std_logic_vector(16 downto 0);
@@ -29,6 +35,9 @@ port(
 end proc_core;
 
 architecture structural of proc_core is
+    signal clock_en_i   : std_logic;
+    signal clock_en_d   : std_logic := '0';
+
     signal index_carry  : std_logic;
     signal pc_carry     : std_logic;
     signal branch_taken : boolean;
@@ -45,7 +54,6 @@ architecture structural of proc_core is
     signal copy_d2p     : std_logic;
     signal sync         : std_logic;
     signal rwn          : std_logic;
-    signal vect_bit     : std_logic;
     signal a_mux        : t_amux;
     signal pc_oper      : t_pc_oper;
     signal s_oper       : t_sp_oper;
@@ -64,7 +72,10 @@ architecture structural of proc_core is
     
     signal vect_addr    : std_logic_vector(3 downto 0);
     signal interrupt    : std_logic;
-
+    signal vectoring    : std_logic;
+    signal irq_done     : std_logic;
+    signal vect_sel     : std_logic_vector(2 downto 1);
+    
     signal new_flags    : std_logic_vector(7 downto 0);
     signal n_out        : std_logic;
     signal v_out        : std_logic;
@@ -72,9 +83,10 @@ architecture structural of proc_core is
     signal z_out        : std_logic;
     signal d_out        : std_logic;
     signal i_out        : std_logic;
-    signal set_b        : std_logic;
-    signal clear_b      : std_logic;
     signal a16          : std_logic;
+
+    attribute keep : string;
+    attribute keep of interrupt : signal is "true";
 begin
     new_flags(7) <= n_out;
     new_flags(6) <= v_out;
@@ -85,13 +97,31 @@ begin
     new_flags(1) <= z_out;
     new_flags(0) <= c_out;
 
+    clock_en_i <= clock_en and (ready or not rwn);
+
+    write_strobe <= clock_en_d and not rwn;
+    read_strobe  <= clock_en_d and rwn;
+    
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            clock_en_d <= clock_en_i;
+        end if;
+    end process;
+
     ctrl: entity work.proc_control
     port map (
         clock        => clock,
         clock_en     => clock_en,
+        ready        => ready,
         reset        => reset,
                                     
         interrupt    => interrupt,
+        vectoring    => vectoring,
+        vect_sel     => vect_sel,
+        irq_done     => irq_done,
+        vect_addr    => vect_addr,
+
         i_reg        => i_reg,
         index_carry  => index_carry,
         pc_carry     => pc_carry,
@@ -100,9 +130,7 @@ begin
         sync         => sync,
         latch_dreg   => latch_dreg,
         reg_update   => reg_update,
-        set_b        => set_b,
         copy_d2p     => copy_d2p,
-        vect_bit     => vect_bit,
         a16          => a16,
         rwn          => rwn,
         a_mux        => a_mux,
@@ -153,6 +181,7 @@ begin
     port map (
         clock        => clock,
         clock_en     => clock_en,
+        ready        => ready,
         reset        => reset,
                      
         -- package pins
@@ -175,13 +204,13 @@ begin
         -- from interrupt controller
         vect_addr    => vect_addr,
         interrupt    => interrupt,
-        set_b        => set_b,
-        clear_b      => clear_b,
         
         -- from processor state machine and decoder
         sync         => sync,
+        rwn          => rwn,
         latch_dreg   => latch_dreg,
-        vect_bit     => vect_bit,
+        irq_done     => irq_done,
+        vectoring    => vectoring,
         reg_update   => reg_update,
         copy_d2p     => copy_d2p,
         a_mux        => a_mux,
@@ -212,17 +241,19 @@ begin
     port map (
         clock       => clock,
         clock_en    => clock_en,
+        clock_en_f  => clock_en_f,
+        
+        ready       => ready,
         reset       => reset,
         
         irq_n       => irq_n,
         nmi_n       => nmi_n,
         
         i_flag      => p_reg(2),
-        clear_b     => clear_b,
-        
-        vect_bit    => vect_bit,
+
         interrupt   => interrupt,
-        vect_addr   => vect_addr );
+        irq_done    => irq_done,
+        vect_sel    => vect_sel );
     
     read_write_n <= rwn;
     addr_out(16) <= a16;

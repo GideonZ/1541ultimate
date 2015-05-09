@@ -85,4 +85,13 @@ constant opcode_array : t_opcode_array := (
     "SED          ", "SBC $nnnn,Y  ", "NOP*         ", "INS*$nnnn,Y  ", 
     "RDM*$nnnn,X  ", "SBC $nnnn,X  ", "INC $nnnn,X  ", "INS*$nnnn,X  " );
 
+type t_oper_array is array(0 to 7) of string(1 to 4);
+
+constant c_shift_oper_array : t_oper_array := (
+    "ASL ", "ROL ", "LSR ", "ROR ", "NOP ", "TST ", "DEC ", "INC " );
+    
+constant c_alu_oper_array : t_oper_array := (
+    "OR  ", "AND ", "XOR ", "ADD ", "NOP ", "TST ", "CMP ", "SUB " );
+    
+
 end;

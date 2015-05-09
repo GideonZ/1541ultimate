@@ -33,11 +33,12 @@ package pkg_6502_decode is
 
     function select_index_y (inst: std_logic_vector(7 downto 0)) return boolean;
     function store_a_from_alu (inst: std_logic_vector(7 downto 0)) return boolean;
-    function load_a (inst: std_logic_vector(7 downto 0)) return boolean;
+--    function load_a (inst: std_logic_vector(7 downto 0)) return boolean;
     function load_x (inst: std_logic_vector(7 downto 0)) return boolean;
     function load_y (inst: std_logic_vector(7 downto 0)) return boolean;
     function shifter_in_select (inst: std_logic_vector(7 downto 0)) return std_logic_vector;
     function x_to_alu (inst: std_logic_vector(7 downto 0)) return boolean;
+    function affect_registers(inst: std_logic_vector(7 downto 0)) return boolean;
 end;
 
 package body pkg_6502_decode is
@@ -79,7 +80,8 @@ package body pkg_6502_decode is
     function is_stack(inst: std_logic_vector(7 downto 0)) return boolean is
     begin
         -- 76543210
-        -- 0xx0x000
+        -- 0xx0x000 => 00, 08, 20, 28, 40, 48, 60, 68
+        --             BRK,PHP,JSR,PLP,RTI,PHA,RTS,PLA
         return inst(7)='0' and inst(4)='0' and inst(2 downto 0)="000";
     end function;
 
@@ -190,8 +192,8 @@ package body pkg_6502_decode is
         -- 0XXXXXX1 or alu operations "lo"
         -- 1X100001 or alu operations "hi" (except store and cmp)
         -- 0XX01010 (implied)
-        return (inst(7)='0' and inst(4 downto 0)="01010") or
-               (inst(7)='0' and inst(0)='1') or
+        -- return (inst(7)='0' and inst(4 downto 0)="01010") or
+        return (inst(7)='0' and inst(0)='1') or
                (inst(7)='1' and inst(0)='1' and inst(5)='1');
     end function;
 
@@ -207,14 +209,14 @@ package body pkg_6502_decode is
     function load_y (inst: std_logic_vector(7 downto 0)) return boolean is
     begin
         -- 101XXX00
-        return inst(7 downto 5)="101" and inst(1 downto 0)="00" and not is_implied(inst);
+        return inst(7 downto 5)="101" and inst(1 downto 0)="00" and not is_implied(inst) and not is_relative(inst);
     end function;
 
     function shifter_in_select (inst: std_logic_vector(7 downto 0)) return std_logic_vector is
     begin
         -- 00 = none, 01 = memory, 10 = A, 11 = A & M
-        if inst(4 downto 2)="010" and inst(7)='0' then
-            return inst(1 downto 0);
+        if inst(4 downto 1)="0101" and inst(7)='0' then -- 0xx0101x: 0A, 0B, 2A, 2B, 4A, 4B, 6A, 6B
+            return inst(1 downto 0); -- 10 or 11
         end if;
         return "01";
     end function;
@@ -245,4 +247,14 @@ package body pkg_6502_decode is
         return inst(5 downto 1)="00101" and inst(7)='1';
     end function;
     
+    function affect_registers(inst: std_logic_vector(7 downto 0)) return boolean is
+    begin
+        if is_implied(inst) then
+            return true;
+        end if;
+        if is_stack(inst) or is_relative(inst) then
+            return false;
+        end if;
+        return true;
+    end function;
 end;
