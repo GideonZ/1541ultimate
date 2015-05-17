@@ -12,6 +12,7 @@
 #include "filemanager.h"
 #include "editor.h"
 #include "userinterface.h"
+#include "browsable_root.h"
 
 static char *helptext=
 	"CRSR UP/DN: Selection up/down\n"
@@ -37,26 +38,29 @@ static char *helptext=
 /***********************/
 /* Tree Browser Object */
 /***********************/
-TreeBrowser :: TreeBrowser()
+TreeBrowser :: TreeBrowser(Browsable *root)
 {
 	// initialize state
     window = NULL;
     keyb = NULL;
-    state = new TreeBrowserState(&root, this, 0);
-    menu_node = NULL;
-    menu_browser = NULL;
+    contextMenu = NULL;
+    configBrowser = NULL;
     quick_seek_length = 0;
     quick_seek_string[0] = '\0';
+    initState(root);
+
+    //path = file_manager.get_new_path("Tree Browser");
+}
+
+void TreeBrowser :: initState(Browsable *root)
+{
+    state = new TreeBrowserState(root, this, 0);
 }
 
 TreeBrowser :: ~TreeBrowser()
 {
 	delete state;
-
-	if(menu_node) {
-		delete menu_node;
-	}
-//	deinit();
+	//file_manager.release_path(path);
 }
 
 void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
@@ -78,24 +82,23 @@ void TreeBrowser :: config(void)
 {
     printf("Creating config menu...\n");
         
-    menu_browser = new ConfigBrowser();
-    menu_node    = new CachedTreeNode(NULL, "Dummy node for attaching Config Menu");
-    menu_browser->init(window, keyb);
-    user_interface->activate_uiobject(menu_browser);
+    Browsable *configRoot = new BrowsableConfigRoot();
+    configBrowser = new ConfigBrowser(configRoot);
+    configBrowser->init(window, keyb);
+    user_interface->activate_uiobject(configBrowser);
     // from this moment on, we loose focus.. polls will go directly to config menu!
 }
 
 void TreeBrowser :: context(int initial)
 {
-	if(!state->selected)
+	if(!state->under_cursor)
 		return;
 
-    printf("Creating context menu for %s\n", state->selected->get_name());
-    menu_node    = new CachedTreeNode(NULL);
-    menu_browser = new ContextMenu(menu_node, state->selected, initial, state->selected_line);
-    menu_browser->init(window, keyb);
-    state->reselect();
-    user_interface->activate_uiobject(menu_browser);
+    printf("Creating context menu for %s\n", state->under_cursor->getName());
+    contextMenu = new ContextMenu(state->under_cursor, initial, state->selected_line);
+    contextMenu->init(window, keyb);
+//    state->reselect();
+    user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to context menu!
 }
 
@@ -103,15 +106,12 @@ void TreeBrowser :: task_menu(void)
 {
 	if(!state->node)
 		return;
-    printf("Creating task menu for %s\n", state->node->get_name());
-    menu_node    = new CachedTreeNode(NULL);
-    menu_browser = new TaskMenu(menu_node, state->node);
-    menu_browser->init(window, keyb);
+    printf("Creating task menu for %s\n", state->node->getName());
+    contextMenu = new TaskMenu();
+    contextMenu->init(window, keyb);
 //    state->reselect();
-    user_interface->activate_uiobject(menu_browser);
+    user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to menu!
-
-//    printf("Menu Node = %p. Menu_browser = %p.\n", menu_node, menu_browser);
 }
 
 void TreeBrowser :: test_editor(void)
@@ -129,24 +129,27 @@ void TreeBrowser :: test_editor(void)
 
 int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
 {
-    BYTE c;
+	BYTE c;
     int ret = 0;
 
+/*
     if(e.type == e_invalidate) {
     	invalidate((CachedTreeNode *)e.object);
     	return 0;
-    } else if(e.type == e_refresh_browser) {
-    	CachedTreeNode *obj = (CachedTreeNode *)e.object;
+    } else
+*/
+
+    if(e.type == e_refresh_browser) {
+    	Browsable *obj = (Browsable *)e.object;
     	if(!obj || (obj == state->node)) {
     		state->refresh = true;
     	}
 	}
 	
-    if(menu_node) {
+    if(contextMenu) {
         if(sub_returned < 0) {
-        	delete menu_browser;
-            delete menu_node;
-            menu_node = NULL;
+        	delete contextMenu;
+            contextMenu = NULL;
         } else if(sub_returned > 0) {
             // printf("Pointer to selected context/menu item: %p\n", menu_browser->state->selected);
             // 0 is dummy, bec it is of the type ConfigItem. ConfigItem
@@ -156,17 +159,15 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
             // with that immediately.
 //            printf("Menu Node = %p. Menu_browser = %p.\n", menu_node, menu_browser);
 //            dump_hex(menu_node, 0x80);
-            menu_browser->state->selected->execute(0);
+            contextMenu->executeAction();
 //            printf("Menu Node = %p. Menu_browser = %p.\n", menu_node, menu_browser);
 //            dump_hex(menu_node, 0x80);
             state->update_selected(); //refresh = true;
-            state->reselect();
+//            state->reselect();
 //            printf("A");
-            delete menu_browser;
+            delete contextMenu;
 //            printf("B");
-            delete menu_node;
-//            printf("C");
-            menu_node = NULL;
+            contextMenu = NULL;
         }
         return ret;
     }
@@ -199,7 +200,7 @@ int TreeBrowser :: handle_key(BYTE c)
         case 0x03: // runstop
             push_event(e_unfreeze);
             break;
-        case 0x8C: // exit
+        case 0x8C: // exit (F8)
             push_event(e_unfreeze);
 //            push_event(e_terminate);
             break;
@@ -215,10 +216,6 @@ int TreeBrowser :: handle_key(BYTE c)
         	reset_quick_seek();
             state->up(window->get_size_y()/2);
             break;
-//        case 0x86: // F3 -> RUN
-//            test_editor();
-//            ret = 0; // ## TODO
-//            break;
         case 0x86: // F3 -> RUN
         	reset_quick_seek();
 			user_interface->run_editor(helptext);
@@ -272,17 +269,17 @@ int TreeBrowser :: handle_key(BYTE c)
 
 bool TreeBrowser :: perform_quick_seek(void)
 {
-    if(!state->selected)
+    if(!state->under_cursor)
         return false;
 
     quick_seek_string[quick_seek_length] = '*';
     quick_seek_string[quick_seek_length+1] = 0;
     printf("Performing seek: '%s'\n", quick_seek_string);
 
-    int num_el = state->node->children.get_elements();
+    int num_el = state->children.get_elements();
     for(int i=0;i<num_el;i++) {
-    	CachedTreeNode *t = state->node->children[i];
-		if(pattern_match(quick_seek_string, t->get_name(), false)) {
+    	Browsable *t = state->children[i];
+		if(pattern_match(quick_seek_string, t->getName(), false)) {
 			state->move_to_index(i);
 			return true;
 		}
@@ -295,7 +292,8 @@ void TreeBrowser :: reset_quick_seek(void)
     quick_seek_length = 0;
 }
 
-void TreeBrowser :: invalidate(CachedTreeNode *obj)
+/*
+void TreeBrowser :: invalidate(Browsable *obj)
 {
 	// we just have to take care of ourselves.. which means, that we have to check
 	// if the current browser state is dependent on the object that is going to be
@@ -309,13 +307,13 @@ void TreeBrowser :: invalidate(CachedTreeNode *obj)
 		return;
 	}
 
-	printf("The object to be invalidated is: %s\n", obj->get_name());
+	printf("The object to be invalidated is: %s\n", obj->getName());
 
 	TreeBrowserState *st, *found;
 	st = state;
 	found = NULL;
 	while(st) {
-		printf("checking %s...\n", st->node->get_name());
+		printf("checking %s...\n", st->node->getName());
 		if(st->node == obj) {
 			found = st;
 			break;
@@ -325,13 +323,12 @@ void TreeBrowser :: invalidate(CachedTreeNode *obj)
 
 	if(found) { // need to roll back
 		printf("Rolling back browser...");
-		if(menu_node) {
+		if(contextMenu) {
 			printf("(first, remove open windows)...");
-			menu_browser->deinit();
+			contextMenu->deinit();
 			user_interface->focus--;
-			delete menu_browser;
-			delete menu_node;
-			menu_node = NULL;
+			delete contextMenu;
+			contextMenu = NULL;
 		}
 		do {
 			st = state;
@@ -344,3 +341,5 @@ void TreeBrowser :: invalidate(CachedTreeNode *obj)
 		printf("Did not rewind, because the object invalidated is not in my path.\n");
 	}
 }
+*/
+

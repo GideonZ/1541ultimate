@@ -543,7 +543,7 @@ FRESULT FATDIR::dir_read (void) /* Read entry that the object describes/points t
         if (c == 0) { res = FR_NO_FILE; break; }    /* Reached to end of table */
 #if _USE_LFN    /* LFN configuration */
         a = dirbyte[FATDIR_Attr] & AM_MASK;
-        if (c == 0xE5 || (!_FS_RPATH && c == '.') || ((a & AM_VOL) && a != AM_LFN)) {   /* An entry without valid data */
+        if (c == 0xE5 || (!_FS_RPATH && c == '.') ) { //|| ((a & AM_VOL) && a != AM_LFN)) {   /* An entry without valid data */
             ord = 0xFF;
         } else {
             if (a == AM_LFN) {          /* An LFN entry is found */

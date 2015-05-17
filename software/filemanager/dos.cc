@@ -31,18 +31,18 @@ Message c_status_cannot_read_dir     = { 23, true, (BYTE *)"86,CAN'T READ DIRECT
 Message c_status_internal_error      = { 17, true, (BYTE *)"87,INTERNAL ERROR" };
 Message c_status_no_information      = { 27, true, (BYTE *)"88,NO INFORMATION AVAILABLE" };
 
-Dos :: Dos(int id)
+Dos :: Dos(int id) : directoryList(16, NULL)
 {
     command_targets[id] = this;
     data_message.message = new BYTE[512];
     status_message.message = new BYTE[80];
-    path = new Path();
+    path = file_manager.get_new_path("Dos");
 }
    
 
 Dos :: ~Dos()
 {
-    delete path;
+    file_manager.release_path(path);
     delete[] data_message.message;
     delete[] status_message.message;
     // officially we should deregister ourselves, but as this will only occur at application exit, there is no need
@@ -67,10 +67,10 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             break;
         case DOS_CMD_OPEN_FILE:
             command->message[command->length] = 0;
-            file = root.fopen((char *)&command->message[3], path->get_path_object(), command->message[2]);
+            file = file_manager.fopen(path, (char *)&command->message[3], command->message[2]);
             *reply  = &c_message_empty;
             if(!file) {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(root.get_last_error()));
+                strcpy((char *)status_message.message, FileSystem::get_error_string(file_manager.get_last_error()));
                 status_message.length = strlen((char *)status_message.message);
                 *status = &status_message; 
             } else {
@@ -80,7 +80,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
         case DOS_CMD_CLOSE_FILE:
             *reply  = &c_message_empty;
             if (file) {
-                root.fclose(file);
+                file_manager.fclose(file);
                 file = NULL;
                 *status = &c_status_ok; 
             } else {
@@ -110,11 +110,8 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
                 *status = &c_status_file_not_open;
                 break;
             } 
-            po = file->node;
-            if(po) {
-                fi = po->get_file_info();
-            }
-            if(!po || !fi) {
+            fi = file->info;
+            if(!fi) {
                 *status = &c_status_no_information;
                 break;
             }                    
@@ -199,10 +196,12 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             break;
         case DOS_CMD_COPY_UI_PATH:
             *reply  = &c_message_empty;
+/* FIXME path
             if(!path->cd(user_interface->get_path()->get_full_path(str))) {
                 *status = &c_status_no_such_dir;
                 break;
             } // fallthrough
+*/
         case DOS_CMD_GET_PATH:
             strcpy((char *)data_message.message, path->get_path());
             data_message.length = strlen((char *)data_message.message);
@@ -211,10 +210,9 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             *status = &c_status_ok; 
             break;
         case DOS_CMD_OPEN_DIR:
-            po = path->get_path_object();
+        	cleanupDirectory();
+        	dir_entries = path->get_directory(directoryList);
             *reply  = &c_message_empty;
-            po->cleanup_children();
-            dir_entries = po->fetch_children(); // children.get_elements(); 
             if (dir_entries < 0) {
                 *status = &c_status_cannot_read_dir; 
             } else if(dir_entries == 0) {
@@ -263,12 +261,18 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
     }
 }
     
+void Dos :: cleanupDirectory() {
+	for (int i=0;i<directoryList.get_elements();i++) {
+		delete directoryList[i];
+	}
+	directoryList.clear_list();
+}
+
 void Dos :: get_more_data(Message **reply, Message **status)
 {
     UINT transferred = 0;
     FRESULT res;
     int length;
-    CachedTreeNode *po, *entry;
     FileInfo *fi;
     
     switch (dos_state) {
@@ -297,19 +301,13 @@ void Dos :: get_more_data(Message **reply, Message **status)
         *reply = &data_message;
         break;
     case e_dos_in_directory:
-        po = path->get_path_object();
-        entry = po->children[current_index];
-        if (!entry) {
+        fi = directoryList[current_index];
+        if (!fi) {
             *status = &c_status_internal_error;
             *reply = &c_message_empty;
         } else {
-            fi = entry->get_file_info();
-            if (fi) {
-                data_message.message[0] = fi->attrib;
-            } else {
-                data_message.message[0] = 0x00;
-            }                
-            strcpy((char *)&data_message.message[1], entry->get_name());
+			data_message.message[0] = fi->attrib;
+            strcpy((char *)&data_message.message[1], fi->lfname);
             data_message.length = 1+strlen((char*)&data_message.message[1]);
             current_index++;
             if (current_index == dir_entries) {

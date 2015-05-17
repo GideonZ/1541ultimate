@@ -24,10 +24,18 @@
 
 #include "integer.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void dump_hex(void *pp, int len);
 void dump_hex_relative(void *pp, int len);
 void dump_hex_actual(void *pp, int len, int relative);
 void dump_hex_dirty(void *p, int len, BYTE ptrn);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 

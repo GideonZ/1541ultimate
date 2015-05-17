@@ -110,7 +110,7 @@
         WORD  volume_sequence_number;       // 0x1C
         WORD  be_volume_sequence_number;    // 0x1E
         BYTE  identifier_length;            // 0x20
-    };
+    } __attribute__((packed));
 
     struct t_iso9660_volume_descriptor
     {
@@ -135,7 +135,7 @@
         DWORD be_second_path_table_sector;      // 0x98
         struct t_directory_record root_dir_rec; // 0x9C
         
-    };
+    } __attribute__((packed));
 
 #else // big endian
 
@@ -160,7 +160,7 @@
         WORD  le_volume_sequence_number;    // 0x1C
         WORD  volume_sequence_number;       // 0x1E
         BYTE  identifier_length;            // 0x20
-    };
+    } __attribute__((packed));
 
     struct t_iso9660_volume_descriptor
     {
@@ -185,14 +185,15 @@
         DWORD second_path_table_sector;         // 0x98
         struct t_directory_record root_dir_rec; // 0x9C
         
-    };
+    } __attribute__((packed));
 #endif
 
 struct t_aligned_directory_record {
     BYTE dummy[2];
     struct t_directory_record actual;
     char identifier[256];
-};    
+} __attribute__((packed));
+
 #pragma pack(4)
 
 const BYTE c_volume_key[8] = { 0x01, 0x43, 0x44, 0x30, 0x30, 0x31, 0x01, 0x00 };
@@ -242,6 +243,6 @@ public:
 struct t_iso_handle {
     DWORD start;
     DWORD sector;
-    DWORD remaining;
-    DWORD offset;
+    int   remaining;
+    int   offset;
 };

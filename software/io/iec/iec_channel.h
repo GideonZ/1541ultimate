@@ -2,9 +2,10 @@
 #define IEC_CHANNEL_H
 
 #include "integer.h"
-#include "filemanager.h"
 #include "iec.h"
 #include <ctype.h>
+#include <stdio.h>
+#include "file_utils.h"
 
 typedef enum _t_channel_state {
     e_idle, e_filename, e_file, e_dir, e_complete, e_error
@@ -31,7 +32,7 @@ class IecChannel
     BYTE buffer[256];
     int  size;
     int  pointer;
-    File *f;
+    FILE *f;
     int  last_command;
     int  dir_index;
     int  dir_last;
@@ -46,7 +47,6 @@ class IecChannel
 
     // temporaries
     UINT bytes;
-    FRESULT res;
 
 public:
     IecChannel(IecInterface *intf, int ch)
@@ -148,12 +148,11 @@ public:
     
     int read_block(void)
     {
-        res = FR_INVALID_OBJECT;
         if(f) {
-            res = f->read(buffer, 256, &bytes);
+            bytes = fread(buffer, 1, 256, f);
             printf("\nSize was %d. Read %d bytes. ", size, bytes);
         }
-        if(res != FR_OK) {
+        if(ferror(f)) {
             state = e_error;
             return IEC_READ_ERROR;
         }
@@ -173,7 +172,6 @@ public:
     virtual int push_data(BYTE b)
     {
         UINT bytes;
-        res = FR_INVALID_OBJECT;
 
         switch(state) {
             case e_filename:
@@ -184,15 +182,18 @@ public:
                 buffer[pointer++] = b;
                 if(pointer == 256) {
                     if(f) {
-                        res = f->write(buffer, 256, &bytes);
+                        bytes = fwrite(buffer, 1, 256, f);
                     }
-                    if(res != FR_OK) {
-                        root.fclose(f);
+                    if(ferror(f)) {
+                        fclose(f);
+                        f = NULL;
                         state = e_error;
                         return IEC_WRITE_ERROR;
                     }
                     pointer = 0;
                 }
+                return IEC_BYTE_LOST;
+
             default:
                 return IEC_BYTE_LOST;
         }
@@ -213,12 +214,16 @@ public:
                 printf("close %d %d\n", pointer, write);
                 if(write) {
                     dump_hex(buffer, pointer);
-                    res = (pointer > 0)?FR_INVALID_OBJECT:FR_OK;
-                    if ((f) && (pointer > 0)) {
-                        res = f->write(buffer, pointer, &bytes);
-                    }
-                    close_file(); //root.fclose(f);
-                    if(res != FR_OK) {
+                    if (f) {
+                    	if (pointer > 0) {
+                    		bytes = fwrite(buffer, 1, pointer, f);
+                    		if (ferror(f)) {
+                                state = e_error;
+                                return IEC_WRITE_ERROR;
+                    		}
+                    	}
+                        close_file();
+                    } else {
                         state = e_error;
                         return IEC_WRITE_ERROR;
                     }
@@ -284,11 +289,9 @@ private:
         printf("Filename after parsing: '%s'. Extension = '%s'. Write = %d\n", buffer, extension, write);
         strcat((char *)buffer, extension);
 
-        CachedTreeNode *dir = interface->path->get_path_object();
         BYTE flags = FA_READ;
-        if(write)
-            flags |= (FA_WRITE | FA_CREATE_NEW);
             
+/* TODO
         if(buffer[0] == '$') {
             printf("Opening directory...\n");
             state = e_dir;
@@ -309,15 +312,16 @@ private:
             dir_index = 0;
             return 0;
         }
+*/
 
-        f = root.fopen((char *)buffer, dir, flags);
+        f = fopen((char *)buffer, (write)?"wb":"rb");
         if(f) {
             printf("Successfully opened file %s in %s\n", buffer, interface->path->get_path());
             last_byte = -1;
             pointer = 0;
             state = e_file;
             if(!write) {
-                size = f->get_size();
+                size = fgetsize(f);
                 return read_block();
             }
         } else {
@@ -330,9 +334,10 @@ private:
     int close_file(void) // file should be open
     {
         if(f)
-            root.fclose(f);
+            fclose(f);
         f = NULL;
         state = e_idle;
+        return 0;
     }
     friend class IecCommandChannel;
 };

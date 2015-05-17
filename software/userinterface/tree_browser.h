@@ -1,8 +1,12 @@
 #ifndef TREEBROWSER_H
 #define TREEBROWSER_H
+
 #include "userinterface.h"
+#include "browsable.h"
 
 class TreeBrowserState;
+class ContextMenu;
+class ConfigBrowser;
 
 class TreeBrowser : public UIObject
 {
@@ -12,16 +16,17 @@ public:
 
     Screen   *window;
     Keyboard *keyb;
-    Path 	 *path;
+    //Path 	 *path;
 
     TreeBrowserState *state;
 
     // link to temporary popup
-    CachedTreeNode  *menu_node;    // dummy root to browse children
-    TreeBrowser *menu_browser; // anchor for menu that pops up
+    ContextMenu *contextMenu; // anchor for menu that pops up
+    ConfigBrowser *configBrowser;
 
     // Member functions
-    TreeBrowser();
+    TreeBrowser(Browsable *);
+    virtual void initState(Browsable *);
     virtual ~TreeBrowser();
 
     virtual void init(Screen *win, Keyboard *k);
@@ -38,6 +43,7 @@ public:
     void config(void);
     void test_editor(void);
     
-    void invalidate(CachedTreeNode *obj);
+    //void invalidate(Browsable *obj);
+
 };
 #endif

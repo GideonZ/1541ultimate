@@ -10,6 +10,8 @@
 
 #include <ctype.h>
 #include <string.h>
+#include <unistd.h>
+
 extern "C" {
 	#include "dump_hex.h"
 }
@@ -329,7 +331,7 @@ int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, bool report)
         if(result)
             errors ++;
         if(report)
-            user_interface->update_status(NULL, 1);
+            user_interface->update_progress(NULL, 1);
     }
     return errors;
 }
@@ -435,23 +437,22 @@ void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, bool report)
         track_length[2*i + 1] = int(newgcr - gcr);
         gcr = newgcr;
         if(report)
-            user_interface->update_status(NULL, 1);
+            user_interface->update_progress(NULL, 1);
     }
 }
 
-bool GcrImage :: load(File *f)
+bool GcrImage :: load(FILE *f)
 {
     // first just load the whole damn thing in memory, up to C1541_MAX_GCR_LEN in length
     UINT  bytes_read;
     DWORD *pul, offset;
     BYTE *tr;
-    FRESULT fres;
     WORD w;
 
-    fres = f->read(gcr_data, C1541_MAX_GCR_LEN, &bytes_read);
+    bytes_read = fread(gcr_data, 1, C1541_MAX_GCR_LEN, f);
 
     printf("Total bytes read: %d.\n", bytes_read);
-    if(fres != FR_OK) {
+    if(ferror(f)) {
     	return false;
     }
     // check signature
@@ -513,7 +514,7 @@ int GcrImage :: find_track_start(int track)
     return 0;    
 }
     
-bool GcrImage :: save(File *f, bool report, bool align)
+bool GcrImage :: save(FILE *f, bool report, bool align)
 {
     BYTE *header = new BYTE[16 + C1541_MAXTRACKS * 8];
 
@@ -550,10 +551,10 @@ bool GcrImage :: save(File *f, bool report, bool align)
     }
 
     UINT bytes_written;
-    FRESULT res = f->write(header, 12 + C1541_MAXTRACKS * 8, &bytes_written);
+    bytes_written = fwrite(header, 1, 12 + C1541_MAXTRACKS * 8, f);
     delete header;
     
-    if(res != FR_OK)
+    if(bytes_written != 12 + C1541_MAXTRACKS * 8)
         return false;
         
     BYTE *filler_bytes = new BYTE[C1541_MAXTRACKLEN];
@@ -569,39 +570,39 @@ bool GcrImage :: save(File *f, bool report, bool align)
         int reported_length = track_length[i];
         size[0] = (BYTE)reported_length;
         size[1] = (BYTE)(reported_length >> 8);
-        res = f->write(size, 2, &bytes_written);
-        if(res != FR_OK)
+        bytes_written = fwrite(size, 1, 2, f);
+        if(bytes_written != 2)
             break;
         // find alignment
         int start = 0;
         if(align)
             start = find_track_start(i);
         if(start > 0) {
-            res = f->write(track_address[i]+start, track_length[i]-start, &bytes_written);
-            if(res != FR_OK)
+            bytes_written = fwrite(track_address[i]+start, 1, track_length[i]-start, f);
+            if(bytes_written != (track_length[i]-start))
                 break;
-            res = f->write(track_address[i], start, &bytes_written);
+            bytes_written = fwrite(track_address[i], 1, start, f);
         } else {
-            res = f->write(track_address[i], track_length[i], &bytes_written);
+        	bytes_written = fwrite(track_address[i], 1, track_length[i], f);
         }
-        if(res != FR_OK)
+        if(ferror(f))
             break;
-        res = f->write(filler_bytes, C1541_MAXTRACKLEN - track_length[i], &bytes_written);
+        bytes_written = fwrite(filler_bytes, 1, C1541_MAXTRACKLEN - track_length[i], f);
         if(report)
-            user_interface->update_status(NULL, 1 + skipped);
-        if(res != FR_OK)
+            user_interface->update_progress(NULL, 1 + skipped);
+        if(ferror(f))
             break;
         skipped = 0;
     }
     
     delete filler_bytes;
     
-    if(res != FR_OK)
+    if(ferror(f))
         return false;
     return true;
 }
     
-bool GcrImage :: write_track(int track, File *f, bool align)
+bool GcrImage :: write_track(int track, FILE *f, bool align)
 {
 	if(track_address[track] == dummy_track)
 		return false;
@@ -609,25 +610,24 @@ bool GcrImage :: write_track(int track, File *f, bool align)
 	DWORD offset = DWORD(track_address[track]) - DWORD(gcr_data);
 	UINT bytes_written, bw2;
 
-	FRESULT fres = f->seek(offset);
-	if(fres != FR_OK)
+	int fres = fseek(f, offset, SEEK_SET);
+	if(ferror(f))
 		return false;
 
     int start = 0;
     if(align)
         start = find_track_start(track);
     if(start > 0) {
-        fres = f->write(track_address[track]+start, track_length[track]-start, &bytes_written);
-        if(fres != FR_OK)
+    	bytes_written = fwrite(track_address[track]+start, 1, track_length[track]-start, f);
+        if(ferror(f))
     		return false;
-        fres = f->write(track_address[track], start, &bw2);
-        bytes_written += bw2;
+        bytes_written += fwrite(track_address[track], 1, start, f);
     } else {
-        fres = f->write(track_address[track], track_length[track], &bytes_written);
+    	bytes_written = fwrite(track_address[track], 1, track_length[track], f);
     }
-	if(fres != FR_OK)
+	if(ferror(f))
 		return false;
-    f->sync();
+    fsync(fileno(f));
 	printf("%d bytes written at offset %6x.\n", bytes_written, offset);
 	return true;
 }
@@ -698,7 +698,7 @@ bool GcrImage :: test(void)
 //--------------------------------------------------------------
 // Binary Image Class
 //--------------------------------------------------------------
-BinImage :: BinImage(char *name) : CachedTreeNode(NULL, name)
+BinImage :: BinImage(char *name)
 {
 	bin_data = new BYTE[C1541_MAX_D64_LEN];
 
@@ -711,6 +711,7 @@ BinImage :: BinImage(char *name) : CachedTreeNode(NULL, name)
 		track += (256 * sects);
 	}
 	errors = NULL;
+	error_size = 0;
 	num_tracks = 35;
 	
     // we'll create a ram-mapped block device and a default
@@ -720,10 +721,6 @@ BinImage :: BinImage(char *name) : CachedTreeNode(NULL, name)
     blk = new BlockDevice_Ram(bin_data, 256, 768);
     prt = new Partition(blk, 0, 768, 0);
     fs  = new FileSystemD64(prt);
-
-    // lets try this
-	//root.children.append(this);
-	//this->attach();
 }
 
 BinImage :: ~BinImage()
@@ -772,17 +769,17 @@ BYTE * BinImage :: get_sector_pointer(int track, int sector)
     return track_start[track-1] + (sector << 8);
 }
 
-int BinImage :: load(File *file)
+int BinImage :: load(FILE *file)
 {
 	num_tracks = 0;
 
 	int res;
 	UINT transferred = 0;
-	res =  file->seek(0);
-	if(res != FR_OK)
+	res =  fseek(file, 0, SEEK_SET);
+	if(res != 0)
 		return -1;
-	res = file->read(bin_data, C1541_MAX_D64_LEN, &transferred);
-	if(res != FR_OK)
+	transferred = fread(bin_data, 1, C1541_MAX_D64_LEN, file);
+	if(ferror(file))
 		return -2;
 
 	printf("Transferred: %d bytes\n", transferred);
@@ -805,11 +802,11 @@ int BinImage :: load(File *file)
 	return 0;
 }
 
-int BinImage :: save(File *file, bool report)
+int BinImage :: save(FILE *file, bool report)
 {
 	UINT transferred = 0;
-	FRESULT res =  file->seek(0);
-	if(res != FR_OK) {
+	int res =  fseek(file, 0, SEEK_SET);
+	if(res != 0) {
 		printf("SEEK ERROR: %d\n", res);
 		return -1;
 	}
@@ -817,23 +814,23 @@ int BinImage :: save(File *file, bool report)
 	BYTE *data = bin_data;
     if(report) {
         for(int i=0;i<34;i++) {
-        	res = file->write(data, 10 * 512, &transferred);
-        	if(res != FR_OK) {
-                printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
+        	transferred = fwrite(data, 1, 10 * 512, file);
+        	if((res = ferror(file)) != 0) {
+                printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
         		return -2;
             }
-            user_interface->update_status(NULL, 1);
+            user_interface->update_progress(NULL, 1);
             data += (10 * 512);
         }
-    	res = file->write(data, 3 * 256, &transferred);
-    	if(res != FR_OK) {
-            printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
+    	transferred = fwrite(data, 1, 3 * 256, file);
+    	if((res = ferror(file)) != 0) {
+            printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
     		return -2;
         }
     } else {
-    	res = file->write(data, 683 * 256, &transferred);
-    	if(res != FR_OK) {
-            printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
+    	transferred = fwrite(data, 1, 683 * 256, file);
+    	if((res = ferror(file)) != 0) {
+            printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
     		return -2;
         }
     }            
@@ -841,19 +838,19 @@ int BinImage :: save(File *file, bool report)
 	data = &bin_data[683*256];
 	num_tracks -= 35;
 	while(num_tracks--) {
-		res = file->write(data, 17*256, &transferred);
+		transferred = fwrite(data, 1, 17*256, file);
         if(report)
-            user_interface->update_status(NULL, 1);
-		if(res != FR_OK) {
-            printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
+            user_interface->update_progress(NULL, 1);
+    	if((res = ferror(file)) != 0) {
+            printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
 			return -3;
         }
 		data += 17*256;
 	}
 	if(errors) {
-		res = file->write(errors, error_size, &transferred);
-		if(res != FR_OK) {
-            printf("WRITE ERROR: %s\n", FileSystem::get_error_string(res));
+		transferred = fwrite(errors, 1, error_size, file);
+    	if((res = ferror(file)) != 0) {
+            printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
 			return -4;
 	    }
 	}
@@ -894,7 +891,7 @@ int BinImage :: format(char *name)
     return 0;
 }
 
-int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
+int BinImage :: write_track(int track, GcrImage *gcr_image, FILE *file)
 {
 	int res = gcr_image->convert_track_gcr2bin(track, this);
 	if(res) {
@@ -902,38 +899,16 @@ int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
 		return res;
 	}
 	DWORD offset = DWORD(track_start[track] - bin_data);
-	res = file->seek(offset);
-	if(res != FR_OK) {
+	res = fseek(file, offset, SEEK_SET);
+	if(res != 0) {
         printf("While trying to write track %d, seek offset $%6x failed with error %d.\n", track+1, offset, res);
 		return res;
 	}
 	UINT transferred;
-	res = file->write(track_start[track], 256*track_sectors[track], &transferred);
-//    printf("Writing track %d. Trying %d bytes from offset $%06x, written: %d. Result=%d.\n", track+1, 256*track_sectors[track], offset, transferred, res);
-	if(res != FR_OK)
+	fwrite(track_start[track], 1, 256*track_sectors[track], file);
+	if(ferror(file))
 		return res;
-    return file->sync();
-}
-
-int BinImage :: fetch_children()
-{
-    printf("Fetch binimage children.\n");
-    if(!fs)
-        return -1;
-        
-    cleanup_children();
-
-    // now getting the root directory
-    Directory *r = fs->dir_open(NULL);
-    FileInfo fi(32);    
-
-    int i=0;        
-    while(r->get_entry(fi) == FR_OK) {
-        children.append(new FileDirEntry(this, &fi));
-        ++i;
-    }
-    fs->dir_close(r);
-    return i;
+    return fsync(fileno(file));
 }
 
 void BinImage :: get_sensible_name(char *buffer)

@@ -159,7 +159,8 @@ IecInterface :: IecInterface()
     printf("%d bytes loaded.\n", size);
 
     atn = false;
-    path = new Path; // starts in SdCard root ;)
+    path = file_manager.get_new_path("IEC");
+    path->cd("SD");
 
     for(int i=0;i<15;i++) {
         channels[i] = new IecChannel(this, i);
@@ -181,7 +182,7 @@ IecInterface :: ~IecInterface()
 
     for(int i=0;i<16;i++)
         delete channels[i];
-    delete path;
+    file_manager.release_path(path);
 	poll_list.remove(&poll_iec_interface);
 }
 
@@ -214,7 +215,7 @@ void IecInterface :: effectuate_settings(void)
 }
     
 
-int IecInterface :: fetch_task_items(IndexedList<CachedTreeNode *> &list)
+int IecInterface :: fetch_task_items(IndexedList<Action *> &list)
 {
     int count = 3;
 	list.append(new ObjectMenuItem(this, "Reset IEC",      MENU_IEC_RESET));
@@ -325,7 +326,7 @@ int IecInterface :: poll(Event &e)
         }
     }
 
-	File *f;
+	FILE *f;
 	CachedTreeNode *po;
 	UINT transferred;
 
@@ -379,13 +380,13 @@ int IecInterface :: poll(Event &e)
                 printf("Logic Analyzer stopped. Address = %p\n", end_address);
                 if(start_address == end_address)
                     break;
-                po = user_interface->get_path();
-                f = root.fcreate("iectrace.bin", po);
+                // po = user_interface->get_path();
+                f = fopen("iectrace.bin", "wb"); // TODO: path
                 if(f) {
                     printf("Opened file successfully.\n");
-                    f->write((void *)start_address, end_address - start_address, &transferred);
+                    transferred = fwrite((void *)start_address, 1, end_address - start_address, f);
                     printf("written: %d...", transferred);
-                    f->close();
+                    fclose(f);
                 } else {
                     printf("Couldn't open file..\n");
                 }
@@ -529,7 +530,7 @@ void IecInterface :: save_copied_disk()
 {
     char buffer[40];
     int save_result;
-    File *f;
+    FILE *f;
     int res;
     BinImage *bin;
     CachedTreeNode *po;
@@ -543,14 +544,14 @@ void IecInterface :: save_copied_disk()
 		fix_filename(buffer);
 	    bin = &static_bin_image;
 		set_extension(buffer, ".d64", 32);
-        po = user_interface->get_path();
-        f = root.fcreate(buffer, po);
+        // po = user_interface->get_path(); FIXME
+        f = fopen(buffer, "wb");
 		if(f) {
-            user_interface->show_status("Saving D64..", 35);
+            user_interface->show_progress("Saving D64..", 35);
             save_result = bin->save(f, true);
-            user_interface->hide_status();
+            user_interface->hide_progress();
     		printf("Result of save: %d.\n", save_result);
-            root.fclose(f);
+            fclose(f);
     		push_event(e_reload_browser);
 		} else {
 			printf("Can't create file '%s'\n", buffer);
@@ -643,6 +644,7 @@ bool IecInterface :: master_send_cmd(int device, BYTE *cmd, int length)
             printf("Huh? Didn't expect data: %b\n", code);
         }        
     }
+    return true;
 }
 
 void IecInterface :: master_read_status(int device)
@@ -678,7 +680,7 @@ bool IecInterface :: run_drive_code(int device, WORD addr, BYTE *code, int lengt
     strcpy((char*)buffer, "M-E");
     buffer[3] = (BYTE)(addr & 0xFF);
     buffer[4] = (BYTE)(addr >> 8);
-    master_send_cmd(device, buffer, 5);
+    return master_send_cmd(device, buffer, 5);
 }
 
 void IecInterface :: test_master(int test)
@@ -758,6 +760,7 @@ void UltiCopy :: deinit(void)
 
 int UltiCopy :: handle_key(BYTE c)
 {
+	return 0;
 }
 
 int UltiCopy :: poll(int a, Event& e)
@@ -773,14 +776,10 @@ void UltiCopy :: close(void)
 /*********************************************************************/
 /* IEC File Browser Handling                                         */
 /*********************************************************************/
+/*
 #define IECFILE_LOAD 0xCA01
 
 FileTypeIEC tester_iec(file_type_factory);
-
-FileTypeIEC :: FileTypeIEC(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
-{
-    fac.register_type(this);
-}
 
 FileTypeIEC :: FileTypeIEC(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
 {
@@ -790,7 +789,7 @@ FileTypeIEC :: ~FileTypeIEC()
 {
 }
 
-int   FileTypeIEC :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
+int   FileTypeIEC :: fetch_context_items(IndexedList<Action *> &list)
 {
 	list.append(new MenuItem(this, "Load Code", IECFILE_LOAD));
     return 1+ (FileDirEntry :: fetch_context_items_actual(list));
@@ -824,4 +823,5 @@ void FileTypeIEC :: execute(int selection)
             break;
     }
 }
+*/
 

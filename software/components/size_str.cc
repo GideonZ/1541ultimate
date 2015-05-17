@@ -1,4 +1,5 @@
-#include "size_str.h"
+#include "../components/size_str.h"
+
 #include <stdio.h>
 #include <string.h>
 

@@ -1,21 +1,23 @@
 #ifndef TASK_MENU_H
 #define TASK_MENU_H
 
+#include "menu.h"
 #include "context_menu.h"
 
 class TaskMenu : public ContextMenu
 {
     // private functions:
 public:    
-    TaskMenu(CachedTreeNode *node, CachedTreeNode *obj);
+    TaskMenu();
     ~TaskMenu(void);
     
     void init(Screen *pwin, Keyboard *keyb);
 };
 
-extern IndexedList<CachedTreeNode*> main_menu_static_items;
+extern IndexedList<ObjectWithMenu*> main_menu_static_items;
 
-class TaskMenuManager /* just here because we need automatic clean up on exit */
+/*
+class TaskMenuManager  just here because we need automatic clean up on exit
 {
 public:
     TaskMenuManager() {}
@@ -28,5 +30,6 @@ public:
         }
     }
 };
+*/
 
 #endif

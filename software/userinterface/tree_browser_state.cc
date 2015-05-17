@@ -14,26 +14,41 @@
 /*****************************/
 /* Tree Browser State Object */
 /*****************************/
-TreeBrowserState :: TreeBrowserState(CachedTreeNode *n, TreeBrowser *b, int lev)
+TreeBrowserState :: TreeBrowserState(Browsable *n, TreeBrowser *b, int lev)
+	: children(0, NULL)
 {
 	browser = b;
 	level = lev;
 	node = n;
-    first_item_on_screen = -1;
+
+	first_item_on_screen = -1;
     selected_line = 0;
-    selected = NULL;
+
+    cursor_pos = 0;
+    under_cursor = NULL;
 
     refresh = true;
     initial_index = -1;
     previous = NULL;
     deeper = NULL;
+
+    reload();
 //    printf("Constructor tree browser state: Node = %p\n", node);
 }
 
 TreeBrowserState :: ~TreeBrowserState()
 {
+	cleanup();
 	if(previous)
 		delete previous;
+}
+
+void TreeBrowserState :: cleanup()
+{
+	for(int i=0;children.get_elements();i++) {
+		delete children[i];
+	}
+	children.clear_list();
 }
 
 /*
@@ -48,13 +63,19 @@ void TreeBrowserState :: do_refresh()
         return;
     }
 
-    if(!selected) {
+    if(!under_cursor) {
         browser->reset_quick_seek();
         draw();
         if(initial_index >= 0) {
             move_to_index(initial_index);
         } else {
-        	move_to_index(node->get_header_lines());
+        	move_to_index(0);
+        	for(int i=0;i<children.get_elements();i++) {
+        		if (children[i]->isSelectable()) {
+        			move_to_index(i);
+        			break;
+        		}
+        	}
         }
     } else {
         draw(); // just draw.. we don't need to move anything
@@ -67,16 +88,16 @@ void TreeBrowserState :: draw()
 	if(!browser->window)
 		return;
 		
-//	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, node->children.get_elements());
+//	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children.get_elements());
 //	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
 	// this functions initializes the screen
     browser->window->set_color(user_interface->color_fg);
 
-    if(node->children.get_elements() == 0) {
+    if(children.get_elements() == 0) {
 		browser->window->clear();
     	browser->window->move_cursor(0, 0);
-    	browser->window->output("\033\025< No Items >");
-    	selected = NULL;
+    	browser->window->output("\033[32m< No Items >");
+    	under_cursor = NULL;
     	return;
     }
 
@@ -86,174 +107,116 @@ void TreeBrowserState :: draw()
     if(first_item_on_screen < 0)
         return;
     
-    CachedTreeNode *t;
+    Browsable *t;
     for(int i=0;i<y;i++) {
-    	t = node->children[i+first_item_on_screen];
+    	t = children[i+first_item_on_screen];
 
         browser->window->move_cursor(0, i);
-        if(t)
-			browser->window->output_line(t->get_display_string());
-		else
+        if(t) {
+        	if ((i + first_item_on_screen) == cursor_pos) {
+        		browser->window->set_color(user_interface->color_sel);
+        	} else if(t->isSelectable()) {
+        		browser->window->set_color(user_interface->color_fg);
+        	} else { // non selectable item
+        		browser->window->set_color(12); // TODO
+        	}
+        	browser->window->output_line(t->getDisplayString());
+        }
+		else {
 			browser->window->output_line("");
+		}
     }
 
     if(selected_line < 0) {
         printf("error! %d", selected_line);
         selected_line = 0;
     }
-    selected = node->children[first_item_on_screen + selected_line];
-
-    highlight(); // highlight selected item
+    cursor_pos = first_item_on_screen + selected_line;
+    under_cursor = children[cursor_pos];
 }
 
 void TreeBrowserState :: update_selected(void)
 {
-    if(!selected)
+    if(!under_cursor)
         return;
 
     browser->window->move_cursor(0, selected_line);
     browser->window->set_color(user_interface->color_sel); // highlighted
-    browser->window->output_line(selected->get_display_string());
+    browser->window->output_line(under_cursor->getDisplayString());
 }
     
-void TreeBrowserState :: unhighlight()
-{
-    browser->window->set_color(user_interface->color_fg, 0, selected_line, 30, 1, false);
-//    window->reverse(0, selection_index, 40);
-}
-    
-void TreeBrowserState :: highlight()
-{
-    browser->window->set_color(0x60+user_interface->color_sel, 0, selected_line, 30, 1, false);
-//    window->reverse(0, selection_index, 40);
-//    window->set_color(1, 0, selection_index, quick_seek_length, 1);
-}
-
 void TreeBrowserState :: up(int num)
 {
-    if(first_item_on_screen < 0)
-        return;
+	int original = cursor_pos;
+	int previous = cursor_pos;
 
-    if(first_item_on_screen + selected_line <= node->get_header_lines())
-    	return;
-
-    // first, un-hilite the selection
-    unhighlight();
-    
-    while(num--) {
-        if(first_item_on_screen + selected_line <= node->get_header_lines())
-        	break;
-
-    	if(selected_line == 0) {
-			browser->window->scroll_down();
-			first_item_on_screen--;
-			browser->window->move_cursor(0,0);
-			browser->window->set_color(user_interface->color_fg);
-			reselect();
-			browser->window->output_line(selected->get_display_string());
-		} else {
-			selected_line--;
+	while(num--) {
+		cursor_pos--;
+		if (cursor_pos < 0) {
+			cursor_pos = previous;
+			break;
 		}
-    }
-	reselect();
-    // finally, highlight selection.
-    highlight();
+		if (children[cursor_pos]->isSelectable()) {
+			previous = cursor_pos; // store last selectable item
+		} else {
+			num++; // try to jump by moving one extra step
+		}
+	}
+
+	under_cursor = children[cursor_pos];
+	move_to_index(cursor_pos);
 }
 
 void TreeBrowserState :: down(int num)
 {
-    if(first_item_on_screen < 0)
-        return;
+	int original = cursor_pos;
+	int previous = cursor_pos;
 
-    int last_el = node->children.get_elements()-1;
-    if(first_item_on_screen + selected_line >= last_el)
-    	return;
-
-    // first, un-hilite the selection
-    unhighlight();
-    
-    // determine at what index we need to scroll
-    int max_y = browser->window->get_size_y() - 1;
-
-    while(num--) {
-        if(first_item_on_screen + selected_line >= last_el)
-        	break;
-
-        if(selected_line == max_y) {
-			browser->window->scroll_up();
-			first_item_on_screen++;
-			browser->window->move_cursor(0,max_y);
-			browser->window->set_color(user_interface->color_fg);
-			reselect();
-			browser->window->output_line(selected->get_display_string());
-		} else {
-			selected_line++;
+	while(num--) {
+		cursor_pos++;
+		if (cursor_pos >= children.get_elements()) {
+			cursor_pos = previous;
+			break;
 		}
-    }
-	reselect();
-
-    // finally, highlight selection.
-    highlight();
-}
-
-void TreeBrowserState :: reselect(void)
-{
-    int header = node->get_header_lines();
-// ####    
-	if(selected_line + first_item_on_screen >= node->children.get_elements()) {
-		move_to_index(node->children.get_elements()-1);
+		if (children[cursor_pos]->isSelectable()) {
+			previous = cursor_pos; // store last selectable item
+		} else {
+			num++; // try to jump by moving one extra step
+		}
 	}
-	selected = node->children[selected_line + first_item_on_screen];
+
+	under_cursor = children[cursor_pos];
+	move_to_index(cursor_pos);
 }
 
 void TreeBrowserState :: reload(void)
 {
-//	printf("Reload. Before: \n");
-//	root.dump();
+	cleanup();
+	node->getSubItems(children);
+	/*
 	int child_count = node->children.get_elements();
-	for(int i=0;i<child_count;i++) {
-		node->children[i]->detach(true);
-	}
-//	printf("After detach of children:\n");
-//	root.dump();
 	node->cleanup_children();
-//	printf("After cleanup of children:\n");
-//	root.dump();
 	node->fetch_children();
-//	printf("After fetch of children:\n");
-//	root.dump();
 	child_count = node->children.get_elements();
-	for(int i=0;i<child_count;i++) {
-		node->children[i]->attach(true);
-	}
 	reselect();
 	refresh = true;
+*/
 }
 
 void TreeBrowserState :: into(void)
 {
-	if(!selected)
+	if(!under_cursor)
 		return;
 
-	printf("Going deeper into = %s\n", selected->get_name());
-    int child_count = selected->fetch_children();
-    reselect(); // might have been promoted..
+	printf("Going deeper into = %s\n", under_cursor->getName());
+    int child_count = under_cursor->getSubItems(children);
     if(child_count < 0)
         return;
         
     printf("%d children fetched.\n", child_count);
-
-/*
-    if(selected->children.is_empty())
-        return;
-*/
         
-	child_count = selected->children.get_elements();
-	for(int i=0;i<child_count;i++) {
-		selected->children[i]->attach(true);
-	}
-	deeper = new TreeBrowserState(selected, browser, level+1);
-    user_interface->set_path(selected);
+	deeper = new TreeBrowserState(under_cursor, browser, level+1);
+    //user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
 }
@@ -261,28 +224,19 @@ void TreeBrowserState :: into(void)
 bool TreeBrowserState :: into2(void)
 {
 	// return True if should show context menu instead
-	if(!selected)
+	if(!under_cursor)
 		return(false);
 
-	printf("Going deeper into = %s\n", selected->get_name());
-    int child_count = selected->fetch_children();
-    reselect(); // might have been promoted..
+	printf("Going deeper into = %s\n", under_cursor->getName());
+    int child_count = under_cursor->getSubItems(children);
+
     if(child_count < 0)
         return(true);
         
     printf("%d children fetched.\n", child_count);
 
-/*
-    if(selected->children.is_empty())
-        return;
-*/
-        
-	child_count = selected->children.get_elements();
-	for(int i=0;i<child_count;i++) {
-		selected->children[i]->attach(true);
-	}
-	deeper = new TreeBrowserState(selected, browser, level+1);
-    user_interface->set_path(selected);
+	deeper = new TreeBrowserState(under_cursor, browser, level+1);
+    // user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
 	return(false);
@@ -293,13 +247,7 @@ void TreeBrowserState :: level_up(void)
     if(!previous)
         return;
 
-	int child_count = previous->selected->children.get_elements();
-	for(int i=0;i<child_count;i++) {
-		previous->selected->children[i]->detach(true);
-	}
-	previous->selected->cleanup_children();
     browser->state = previous;
-    user_interface->set_path(previous->node);
     previous->refresh = true;
     previous = NULL; // unlink;
     delete this;
@@ -308,7 +256,9 @@ void TreeBrowserState :: level_up(void)
 
 void TreeBrowserState :: move_to_index(int idx)
 {
-	int num_el = node->children.get_elements();
+	cursor_pos = idx;
+
+	int num_el = children.get_elements();
 	if(num_el == 0) {
 		first_item_on_screen = -1;
 		draw();

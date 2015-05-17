@@ -8,23 +8,20 @@ extern "C" {
 }
 
 // tester instance
-FileTypeISO tester_iso(file_type_factory);
+FactoryRegistrator<CachedTreeNode *, FileType *> tester_iso(file_type_factory, FileTypeISO :: test_type);
 
 /*********************************************************************/
 /* ISO File Browser Handling                                         */
 /*********************************************************************/
 
-FileTypeISO :: FileTypeISO(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
+FileTypeISO :: FileTypeISO(CachedTreeNode *filenode)
 {
-    fac.register_type(this);
-    fs = NULL;
-}
+	fs = NULL;
+	FileInfo *fi = filenode->get_file_info();
 
-FileTypeISO :: FileTypeISO(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
-{
-    printf("Creating ISO type from info: %s\n", fi->lfname);
+	printf("Creating ISO type from info: %s\n", fi->lfname);
     // we'll create a file-mapped filesystem here and attach the ISO file system
-    blk = new BlockDevice_File(this, 2048);
+    blk = new BlockDevice_File(filenode, 2048);
     if(blk->status()) {
         printf("Can't open file.\n");
     } else {
@@ -46,48 +43,18 @@ FileTypeISO :: FileTypeISO(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par
 
 FileTypeISO :: ~FileTypeISO()
 {
-	if(info) {
-		if(fs) {
-			delete fs;
-			delete prt;
-			delete blk;
-			fs = NULL; // invalidate object
-		}
+	if(fs) {
+		delete fs;
+		delete prt;
+		delete blk;
+		fs = NULL; // invalidate object
 	}
 }
 
-int FileTypeISO :: fetch_children()
-{
-    printf("Fetch ISO children. %p\n", this);
-    if(!fs)
-        return -1;
-        
-    cleanup_children();
-
-    // now getting the root directory
-    Directory *r = fs->dir_open(NULL);
-    FileInfo fi(32);    
-
-    int i=0;        
-    while(r->get_entry(fi) == FR_OK) {
-        children.append(new FileDirEntry(this, &fi));
-        ++i;
-    }
-    fs->dir_close(r);
-    sort_children();
-    remove_duplicates();
-    return i;
-}
-
-int   FileTypeISO :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
-{
-    return FileDirEntry :: fetch_context_items_actual(list);
-}
-
-FileDirEntry *FileTypeISO :: test_type(CachedTreeNode *obj)
+FileType *FileTypeISO :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "ISO")==0)
-        return new FileTypeISO(obj->parent, inf);
+        return new FileTypeISO(obj);
     return NULL;
 }

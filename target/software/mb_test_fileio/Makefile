@@ -102,6 +102,7 @@ SRCS_CC	 =  memory_rtos.cc \
 			sdcard_manager.cc \
 			usb_stub.cc \
 			sys_calls.cc \
+			file_utils.cc \
 			fileio.cc \
 			$(PRJ).cc
 

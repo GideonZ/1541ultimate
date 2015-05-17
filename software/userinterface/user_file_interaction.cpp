@@ -165,18 +165,18 @@ void FileDirEntry :: execute(int selection)
                             gcr = new GcrImage;
                             if(gcr) {
                                 bin->num_tracks = 40;
-                                user_interface->show_status("Converting..", 120);
+                                user_interface->show_progress("Converting..", 120);
                                 gcr->convert_disk_bin2gcr(bin, true);
-                                user_interface->update_status("Saving...", 0);
+                                user_interface->update_progress("Saving...", 0);
                                 save_result = gcr->save(f, true, false); // create image, without alignment, we are aligned already
-                                user_interface->hide_status();
+                                user_interface->hide_progress();
                             } else {
                                 printf("No memory to create gcr image.\n");
                             }
                         } else {
-                            user_interface->show_status("Creating D64..", 35);
+                            user_interface->show_progress("Creating D64..", 35);
                             save_result = bin->save(f, true);
-                            user_interface->hide_status();
+                            user_interface->hide_progress();
                         }
                 		printf("Result of save: %d.\n", save_result);
                         root.fclose(f);

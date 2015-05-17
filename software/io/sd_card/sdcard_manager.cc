@@ -76,7 +76,7 @@ void SdCardManager :: poll()
 		
 		case e_device_ready:
 			if(!(sense & SD_CARD_DETECT)) { // removal
-				push_event(e_invalidate, sd_dev);
+				push_event(e_invalidate, sd_dev, 1);
 				push_event(e_detach_disk, sd_dev);
 				sd_card->set_state(e_device_no_media);
 				push_event(e_refresh_browser, file_manager.get_root());
@@ -85,7 +85,7 @@ void SdCardManager :: poll()
 
 		case e_device_error:
 			if(!(sense & SD_CARD_DETECT)) { // removal
-				push_event(e_invalidate, sd_dev);
+				push_event(e_invalidate, sd_dev, 1);
 				push_event(e_detach_disk, sd_dev);
 				sd_card->set_state(e_device_no_media);
 				push_event(e_refresh_browser, file_manager.get_root());

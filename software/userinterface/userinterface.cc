@@ -3,10 +3,7 @@
 /* Configuration */
 char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
                    "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
-
                           
-static char *en_dis[] = { "Disabled", "Enabled" };
-
 #define CFG_USERIF_BACKGROUND 0x01
 #define CFG_USERIF_BORDER     0x02
 #define CFG_USERIF_FOREGROUND 0x03
@@ -102,7 +99,6 @@ void UserInterface :: handle_event(Event &e)
     switch(state) {
         case ui_idle:
         	if ((e.type == e_button_press)||(e.type == e_freeze)) {
-				// root.dump();
                 host->freeze();
                 host->set_colors(color_bg, color_border);
                 screen = new Screen(host->get_screen(), host->get_color_map(), 40, 25);
@@ -116,9 +112,6 @@ void UserInterface :: handle_event(Event &e)
                 else
                     state = ui_host_owned;
 
-                if(ITU_FPGA_VERSION < MINIMUM_FPGA_REV) {
-                    popup("WARNING: FPGA too old..", BUTTON_OK);
-                }
                 push_event(e_enter_menu, 0);
             }
             else if((e.type == e_invalidate) && (focus >= 0)) { // even if we are inactive, the tree browser should execute this!!
@@ -192,7 +185,7 @@ void UserInterface :: set_screen_title()
 {
     static char title[48];
     // precondition: screen is cleared.  // \020 = alpha \021 = beta
-    sprintf(title, "\033\021    **** 1541 Ultimate %s (%b) ****\033\037\n", APPL_VERSION, ITU_FPGA_VERSION);
+    sprintf(title, "\033[37m    **** 1541 Ultimate %s (%b) ****\033[0m\n", APPL_VERSION, ITU_FPGA_VERSION);
     screen->move_cursor(0,0);
     screen->output(title);
     screen->move_cursor(0,1);
@@ -203,7 +196,7 @@ void UserInterface :: set_screen_title()
     for(int i=0;i<40;i++)
         screen->output('\002');
     screen->move_cursor(32,24);
-	screen->output("\033\021F3=Help\033\037");		
+	screen->output("\033[37mF3=Help\033[0m");
 }
     
 /* Blocking variants of our simple objects follow: */
@@ -211,9 +204,7 @@ int  UserInterface :: popup(char *msg, BYTE flags)
 {
 	Event e(e_nop, 0, 0);
     UIPopup *pop = new UIPopup(msg, flags);
-    printf("popup created.\n");
     pop->init(screen, keyboard);
-    printf("popup initialized.\n");
     int ret;
     do {
         ret = pop->poll(0, e);
@@ -235,18 +226,18 @@ int UserInterface :: string_box(char *msg, char *buffer, int maxlen)
     return ret;
 }
 
-int  UserInterface :: show_status(char *msg, int steps)
+void UserInterface :: show_progress(char *msg, int steps)
 {
     status_box = new UIStatusBox(msg, steps);
     status_box->init(screen);
 }
 
-int  UserInterface :: update_status(char *msg, int steps)
+void UserInterface :: update_progress(char *msg, int steps)
 {
     status_box->update(msg, steps);
 }
 
-int  UserInterface :: hide_status(void)
+void UserInterface :: hide_progress(void)
 {
     status_box->deinit();
     delete status_box;
@@ -269,6 +260,11 @@ void UserInterface :: run_editor(char *text_buf)
 UIPopup :: UIPopup(char *msg, BYTE btns) : message(msg)
 {
     buttons = btns;
+    btns_active = 0;
+    active_button = 0; // we can change this
+    button_start_x = 0;
+    window = NULL;
+    keyboard = NULL;
 }    
 
 void UIPopup :: init(Screen *screen, Keyboard *k)
@@ -279,7 +275,6 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     keyboard = k;
 
     BYTE b = buttons;
-    btns_active = 0;
     for(int i=0;i<NUM_BUTTONS;i++) {
         if(b & 1) {
             btns_active ++;
@@ -288,14 +283,6 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
         b >>= 1;
     }
         
-/*
-    if(!btns_active) {
-        wait_ms(3000);
-        done = true;
-        return;
-    }
-*/
-
     int window_width = message_width;
     if (button_width > message_width)
         window_width = button_width;
@@ -304,30 +291,32 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     int y1 = (screen->get_size_y() - 5) / 2;
     int x_m = (window_width - message_width) / 2;
     int x_b = (window_width - button_width) / 2;
+    button_start_x = x_b;
 
     window = new Screen(screen, x1, y1, window_width+2, 5);
     window->draw_border();
     window->no_scroll();
     window->move_cursor(x_m, 0);
     window->output(message.c_str());
-    window->move_cursor(x_b, 2);
-        
+
+    active_button = 0; // we can change this
+    draw_buttons();
+}
+
+void UIPopup :: draw_buttons()
+{
+    window->move_cursor(button_start_x, 2);
     int j=0;
-    b = buttons;
+    int b = buttons;
     for(int i=0;i<NUM_BUTTONS;i++) {
         if(b & 1) {
-            window->output((char *)c_button_names[i]);
-            button_pos[j] = x_b;
-            x_b += c_button_widths[i];
-            button_len[j] = c_button_widths[i];
+			window->reverse_mode((j == active_button)? 1 : 0);
+        	window->output((char *)c_button_names[i]);
             button_key[j++] = c_button_keys[i];
         }
         b >>= 1;
     }
-
-    active_button = 0; // we can change this
     
-    window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
     keyboard->clear_buffer();
 }
 
@@ -351,17 +340,15 @@ int UIPopup :: poll(int dummy, Event &e)
         return 0;
     }
     if(c == 0x1D) {
-        window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
         active_button ++;
         if(active_button >= btns_active)
             active_button = btns_active-1;
-        window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
+        draw_buttons();
     } else if(c == 0x9D) {
-        window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
         active_button --;
         if(active_button < 0)
             active_button = 0;
-        window->make_reverse(button_pos[active_button], 2, button_len[active_button]);
+        draw_buttons();
     }
     return 0;
 }    
@@ -376,6 +363,9 @@ UIStringBox :: UIStringBox(char *msg, char *buf, int max) : message(msg)
 {
     buffer = buf;
     max_len = max;
+    window = NULL;
+    keyboard = NULL;
+    cur = len = 0;
 }
 
 void UIStringBox :: init(Screen *screen, Keyboard *keyb)
@@ -410,12 +400,6 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
         cur = max_len;
     }
     len = cur;
-    //char *sp = buffer;
-    //char *dp = scr;
-    //for(;*sp;) {
-    //    *(dp++) = *(sp++);
-    //} *(dp) = '\0';
-//    strcpy(scr, buffer); // Goes wrong because of big-endianness CPU
 /// Default to old string
     window->output_length(buffer, len);
     window->move_cursor(cur, 2);
@@ -474,7 +458,6 @@ int UIStringBox :: poll(int dummy, Event &e)
             for(i=cur;i<len;i++) {
             	buffer[i] = buffer[i+1];
             } buffer[i] = 0x20;
-//            window->move_cursor(0, 2);
             window->output_length(buffer, len);
             window->move_cursor(cur, 2);
         }
@@ -491,7 +474,6 @@ int UIStringBox :: poll(int dummy, Event &e)
         return -1; // cancel
     default:
         if ((key < 32)||(key > 127)) {
-//                printf("unknown char: %02x.\n", key);
             break;
         }
         if (len < max_len) {
@@ -512,7 +494,8 @@ int UIStringBox :: poll(int dummy, Event &e)
 
 void UIStringBox :: deinit(void)
 {
-    delete window;
+	if (window)
+		delete window;
 }
 
 /* Status Box */
@@ -520,6 +503,7 @@ UIStatusBox :: UIStatusBox(char *msg, int steps) : message(msg)
 {
     total_steps = steps;
     progress = 0;
+    window = NULL;
 }
     
 void UIStatusBox :: init(Screen *screen)
@@ -562,7 +546,4 @@ void UIStatusBox :: update(char *msg, int steps)
         terminate = 32;
     bar[terminate] = 0; // terminate
     window->output_line(bar);
-
-//    sprintf(percent, "%d%", (100 * progress) / total_steps);
-//    window->output(percent);
 }

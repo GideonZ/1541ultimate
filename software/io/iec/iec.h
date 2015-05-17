@@ -77,7 +77,7 @@ public:
     ~IecInterface();
     
     int poll(Event &ev);
-    int fetch_task_items(IndexedList<CachedTreeNode *> &list);
+    int fetch_task_items(IndexedList<Action *> &list);
     void effectuate_settings(void); // from ConfigurableObject
     int get_last_error(char *); // writes string into buffer
 };
@@ -112,17 +112,18 @@ public:
 // FileType to load code
 #include "file_direntry.h"
 
+/*
 class FileTypeIEC : public FileDirEntry
 {
 public:
-    FileTypeIEC(FileTypeFactory &fac);
     FileTypeIEC(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeIEC();
 
-    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
+    int   fetch_context_items(IndexedList<Action *> &list);
     FileDirEntry *test_type(CachedTreeNode *obj);
     void execute(int selection);
 };
+*/
 
 #define ERR_OK							00
 #define ERR_FILES_SCRATCHED				01

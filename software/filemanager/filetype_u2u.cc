@@ -114,16 +114,16 @@ void FileTypeUpdate :: execute(int selection)
             total_bytes_read = 0;
 			// load file in REU memory
             if(progress) {
-                user_interface->show_status("Loading Update..", 32);
+                user_interface->show_progress("Loading Update..", 32);
                 dest = (BYTE *)(REU_MEMORY_BASE);
                 while(remain >= 0) {
         			file->read(dest, bytes_per_step, &bytes_read);
                     total_bytes_read += bytes_read;
-                    user_interface->update_status(NULL, 1);
+                    user_interface->update_progress(NULL, 1);
         			remain -= bytes_per_step;
         			dest += bytes_per_step;
         	    }
-        	    user_interface->hide_status();
+        	    user_interface->hide_progress();
         	} else {
     			file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
                 total_bytes_read += bytes_read;

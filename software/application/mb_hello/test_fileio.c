@@ -14,7 +14,9 @@ int main()
 	xTaskCreate( main_loop, "\002Main Event Loop", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 4, NULL );
 
 	vTaskDelay(100);
-	test_from_cpp();
+//	test_from_cpp();
+
+//	chdir("SD");
 
 	FILE *fi;
     const char *filename = "checksum.txt";

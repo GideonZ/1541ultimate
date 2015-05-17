@@ -14,9 +14,12 @@ class Screen
     void restore(void);
 
 protected:
+    char escape_cmd_data[16];
     Screen *parent;
     bool allow_scroll;
     bool escape;
+    bool escape_cmd;
+    int  escape_cmd_pos;
     int cursor_on;
     int size_x;
     int size_y;
@@ -44,14 +47,15 @@ public:
     	}
     	cursor_on = a;
     }
+    virtual void  parseAttr();
+    virtual void  doAttr(int);
     virtual void  set_color(int);
-    virtual int   get_color(void);
-    virtual void  set_color(int, int, int, int, int, bool stop=false);
+    // virtual int   get_color(void);
     virtual void  clear();
     virtual void  move_cursor(int, int);
     virtual void  no_scroll(void);
-    virtual void  scroll_up();
-    virtual void  scroll_down();
+    virtual void  scroll_up(); // only used privately
+    // virtual void  scroll_down();
     virtual void  output(char);
     virtual void  output(char *);
     virtual void  output_line(char *);
@@ -60,7 +64,6 @@ public:
     virtual void  draw_border(void);
     virtual void  draw_border_horiz(void);
     virtual void  reverse_mode(int);
-    virtual void  make_reverse(int x, int y, int len);
     virtual int   get_size_x(void);
     virtual int   get_size_y(void);
     virtual void  set_char(int x, int y, char);

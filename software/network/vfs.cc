@@ -16,8 +16,9 @@ void  vfs_load_plugin()
 vfs_t *vfs_openfs()
 {
     vfs_t *vfs = new vfs_t;
-    vfs->path = new Path;
+    vfs->path = file_manager.get_new_path();
     vfs->last_direntry = NULL;
+    vfs->last_dir = NULL;
     vfs->open_file = NULL;
     return vfs;
 }
@@ -25,7 +26,7 @@ vfs_t *vfs_openfs()
 void vfs_closefs(vfs_t *vfs)
 {
     Path *p = (Path *)vfs->path;
-    delete p;
+    file_manager.release_path(p);
     delete vfs;
 }
 
@@ -41,7 +42,7 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags)
     if(flags[0] == 'w')
         bfl = FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS;
         
-    File *file = root.fopen((char *)name, path->get_path_object(), bfl);
+    File *file = file_manager.fopen(path, (char *)name, bfl);
     if (!file)
         return NULL;
 
@@ -60,7 +61,7 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags)
 
 void vfs_close(vfs_file_t *file)
 {
-    root.fclose((File *)file->file);
+    file_manager.fclose((File *)file->file);
     printf("File closed. clearing open file link.\n");
     file->parent_fs->open_file = NULL;    
 }
@@ -103,25 +104,24 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
 {
     Path *path = (Path *)fs->path;
     printf("OpenDIR: fs = %p, name arg = '%s'\n", fs, name);
-    root.dump();
-
-    // do the actual fetching of the directory
-    CachedTreeNode *po = path->get_path_object();
-    po->fetch_children();
 
     // create objects
     vfs_dir_t *dir = (vfs_dir_t *)new vfs_dir_t;
     vfs_dirent_t *ent = (vfs_dirent_t *)new vfs_dirent_t;
 
     // fill in wrapper pointer for directory
-    dir->path_object = po;
+    IndexedList<FileInfo *> *listOfEntries = new IndexedList<FileInfo *>(16, NULL);
+    dir->entries = listOfEntries;
     dir->index = 0;
     dir->entry = ent;
     dir->parent_fs = fs;
     fs->last_direntry = NULL;
+    fs->last_dir = dir;
+
+    path->get_directory(*listOfEntries);
     
-    // clear wrapper for dir entry
-    ent->path_object = NULL;
+    // clear wrapper for file info
+    ent->file_info = NULL;
     return dir;
 }
 
@@ -130,7 +130,14 @@ void vfs_closedir(vfs_dir_t *dir)
     printf("CloseDIR (%p)\n", dir);
     if(dir) {
         dir->parent_fs->last_direntry = NULL;
-        delete dir->entry;
+        dir->parent_fs->last_dir = NULL;
+        if (dir->entries) {
+        	IndexedList<FileInfo *> *listOfEntries = (IndexedList<FileInfo *> *)(dir->entries);
+        	for(int i=0;i<listOfEntries->get_elements();i++) {
+        		delete (*listOfEntries)[i];
+        	}
+        	delete listOfEntries;
+        }
         delete dir;
     }
 }
@@ -138,12 +145,12 @@ void vfs_closedir(vfs_dir_t *dir)
 vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
 {
     printf("READDIR: %p %d\n", dir, dir->index);
-    CachedTreeNode *dir_po = (CachedTreeNode *)dir->path_object;
+	IndexedList<FileInfo *> *listOfEntries = (IndexedList<FileInfo *> *)(dir->entries);
 
-    if(dir->index < dir_po->children.get_elements()) {
-        CachedTreeNode *ent_po = dir_po->children[dir->index];
-        dir->entry->path_object = ent_po;
-        dir->entry->name = ent_po->get_name();
+    if(dir->index < listOfEntries->get_elements()) {
+        FileInfo *inf = (*listOfEntries)[dir->index];
+        dir->entry->file_info = inf;
+        dir->entry->name = inf->lfname;
         dir->parent_fs->last_direntry = dir->entry;
         printf("Read: %s\n", dir->entry->name);
         dir->index++;
@@ -155,30 +162,35 @@ vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
 int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
 {
     printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
-    CachedTreeNode *po = NULL;
+    FileInfo *inf = NULL;
     if(fs->last_direntry) {
-        po = (CachedTreeNode *)fs->last_direntry->path_object;
-        printf("Last po: %s\n", po->get_name());
-        if(strcmp(po->get_name(), name) != 0) {
-            po = NULL;
+        inf = (FileInfo *)fs->last_direntry->file_info;
+        printf("Last inf: %s\n", inf->lfname);
+        if(strcmp(inf->lfname, name) != 0) {
+            inf = NULL;
         }
     }
-    if(!po) {
-        CachedTreeNode *parent_obj = ((Path *)fs->path)->get_path_object();
-        printf("Finding %s in %s.\n", name, parent_obj->get_name());
-        po = parent_obj->find_child((char *)name);
-        printf("po = %p\n", po);
+    if(!inf) {
+    	if (fs->last_dir) {
+	        printf("Finding %s in cached directory listing.\n", name);
+    		vfs_dir *last_dir = fs->last_dir;
+    		IndexedList<FileInfo *> *listOfEntries = (IndexedList<FileInfo *> *)(last_dir->entries);
+    		for(int i=0;i<listOfEntries->get_elements();i++) {
+    			if (strcmp((*listOfEntries)[i]->lfname, name) == 0) {
+    				inf = (*listOfEntries)[i];
+    				break;
+    			}
+    		}
+    	} else {
+    		printf("There is no cached directory??\n");
+    	}
     }
-    if(!po)
+    if(!inf)
         return -1;        
     
-    FileInfo *fi = po->get_file_info(); 
-    if(!fi)
-        return -2;
-
-    st->st_size = fi->size;
+    st->st_size = inf->size;
     st->st_mtime = 1359763200;
-    st->st_mode = (fi->attrib & AM_DIR)?1:2;
+    st->st_mode = (inf->attrib & AM_DIR)?1:2;
 
     return 0;
 }

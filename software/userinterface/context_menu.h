@@ -1,8 +1,10 @@
 #ifndef CONTEXT_MENU_H
 #define CONTEXT_MENU_H
 
-#include "tree_browser.h"
-#include "tree_browser_state.h"
+#include "indexed_list.h"
+#include "action.h"
+#include "contextable.h"
+#include "userinterface.h"
 
 typedef enum _context_state {
     e_new = 0,
@@ -10,28 +12,41 @@ typedef enum _context_state {
     e_finished
 } t_context_state;
 
-class ContextMenu : public TreeBrowser
+class ContextMenu : public UIObject
 {
-    // private functions:
+/* Quick Seek */
+	char quick_seek_string[MAX_SEARCH_LEN];
+    int  quick_seek_length;
+    void reset_quick_seek(void);
+    bool perform_quick_seek(void);
+
+	// private functions:
     virtual int handle_key(BYTE c);
 
-public:
-	CachedTreeNode *object;
+    Contextable *contextable;
 
     Screen *parent_win;
+    Screen   *window;
+    Keyboard *keyb;
+
     
     // some things we like to keep track
     t_context_state context_state;
-    int items;
-    int rows, y_offs, size_y;
-    int len, max_len;
+    IndexedList<Action *> actions;
+    int item_index;
+    int y_offs;
     int corner;
-
-    ContextMenu(CachedTreeNode *node, CachedTreeNode *obj, int initial, int y);
+public:
+    ContextMenu(Contextable *node, int initial, int y);
     virtual ~ContextMenu(void);
     
+    void executeAction();
+
     virtual void init(Screen *pwin, Keyboard *keyb);
     virtual int poll(int, Event &e);
+    virtual void draw();
+
+    friend class TaskMenu;
 };
 
 #endif

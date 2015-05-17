@@ -11,16 +11,20 @@ extern "C" {
 /************************/
 /* ConfigBrowser Object */
 /************************/
-ConfigBrowser :: ConfigBrowser()
+ConfigBrowser :: ConfigBrowser(Browsable *root) : TreeBrowser(root)
 {
     printf("Constructor config browser\n");
-    delete state; // we don't use the standard state, but our own state.
-    state = new ConfigBrowserState(&config_manager, this, 0);
+}
+
+void ConfigBrowser :: initState(Browsable *root)
+{
+    state = new ConfigBrowserState(root, this, 0);
 }
 
 ConfigBrowser :: ~ConfigBrowser()
 {
     printf("Destructing config browser..\n");
+
 }
 
 void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!
@@ -31,7 +35,7 @@ void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 	state->do_refresh();
 }
 
-ConfigBrowserState :: ConfigBrowserState(CachedTreeNode *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
+ConfigBrowserState :: ConfigBrowserState(Browsable *node, TreeBrowser *tb, int level) : TreeBrowserState(node, tb, level)
 {
     //default_color = 7;
 }
@@ -43,16 +47,25 @@ ConfigBrowserState :: ~ConfigBrowserState()
 
 void ConfigBrowserState :: into(void)
 {
-	selected->fetch_children();
-	deeper = new ConfigBrowserState(selected, browser, level+1);
+	if(!under_cursor)
+		return;
+
+	deeper = new ConfigBrowserState(under_cursor, browser, level+1);
     browser->state = deeper;
     deeper->previous = this;
+
+	printf("Going deeper into = %s\n", under_cursor->getName());
+    int child_count = under_cursor->getSubItems(deeper->children);
+    if(child_count < 1) {
+    	browser->state = this;
+    	delete deeper;
+    }
 }
 
 void ConfigBrowserState :: level_up(void)
 {
 	if(level == 1) { // going to level 0, we need to store in flash
-		ConfigStore *st = (ConfigStore *)previous->selected;
+		ConfigStore *st = (ConfigStore *)previous->under_cursor;
 		if(st->dirty) {
 			st->write();
 			st->effectuate();
@@ -66,7 +79,7 @@ void ConfigBrowserState :: level_up(void)
            
 void ConfigBrowserState :: change(void)
 {
-    ConfigItem *it = (ConfigItem *)selected;
+    ConfigItem *it = (ConfigItem *)under_cursor;
     it->store->dirty = true;
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
@@ -83,7 +96,7 @@ void ConfigBrowserState :: change(void)
 
 void ConfigBrowserState :: increase(void)
 {
-    ConfigItem *it = (ConfigItem *)selected;
+    ConfigItem *it = (ConfigItem *)under_cursor;
     it->store->dirty = true;
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
@@ -102,7 +115,7 @@ void ConfigBrowserState :: increase(void)
     
 void ConfigBrowserState :: decrease(void)
 {
-    ConfigItem *it = (ConfigItem *)selected;
+    ConfigItem *it = (ConfigItem *)under_cursor;
     it->store->dirty = true;
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
@@ -127,7 +140,7 @@ int ConfigBrowser :: handle_key(BYTE c)
         case 0x8C: // exit
         case 0x03: // runstop
         	if(state->level == 1) { // going to level 0, we need to store in flash
-        		ConfigStore *st = (ConfigStore *)state->previous->selected;
+        		ConfigStore *st = (ConfigStore *)state->previous->under_cursor;
         		if(st->dirty) {
         			st->write();
         			st->effectuate();
@@ -182,16 +195,18 @@ int ConfigBrowser :: handle_key(BYTE c)
     return ret;
 }
 
+/*
 void ConfigBrowserState :: unhighlight()
 {
     browser->window->move_cursor(0, selected_line);
     browser->window->set_color(user_interface->color_fg); // highlighted
-    browser->window->output_line(selected->get_display_string());
+    browser->window->output_line(under_cursor->get_display_string());
 }
     
 void ConfigBrowserState :: highlight()
 {
     browser->window->move_cursor(0, selected_line);
     browser->window->set_color(user_interface->color_sel); // highlighted
-    browser->window->output_line(selected->get_display_string());
+    browser->window->output_line(under_cursor->get_display_string());
 }
+*/

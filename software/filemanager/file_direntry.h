@@ -9,6 +9,7 @@ class FileType;
 class FileDirEntry : public CachedTreeNode
 {
 	FileType *discovered_type;
+	int fetch_directory(FileInfo &fi);
 public:
     FileDirEntry(CachedTreeNode *par, char *name);
     FileDirEntry(CachedTreeNode *par, FileInfo *fi);

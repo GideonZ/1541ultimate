@@ -60,8 +60,9 @@ public:
         return last_error;
     }
     
-    Path *get_new_path() {
+    Path *get_new_path(const char *owner) {
     	Path *p = new Path();
+    	p->owner = owner;
     	used_paths.append(p);
     	return p;
     }
@@ -71,11 +72,7 @@ public:
     }
 
     File *fopen(Path *path, char *filename, BYTE flags);
-//    File *fopen(char *filename, CachedTreeNode *dir, BYTE flags);
-//    File *fopen(CachedTreeNode *obj, BYTE flags);
-//    File *fcreate(char *filename, CachedTreeNode *dir);
-//    File *fcreate(char *filename, char *dirname);
-
+    File *fopen_node(CachedTreeNode *node, BYTE flags);
     void fclose(File *f);
 };
 

@@ -25,8 +25,6 @@
 #define MAX_SEARCH_LEN 32
 #define MAX_UI_OBJECTS  8
 
-//#define RES_BUSY    0
-//#define RES_CANCEL -1
 
 typedef enum {
     ui_idle,
@@ -67,16 +65,10 @@ public:
     virtual int  popup(char *msg, BYTE flags); // blocking
     virtual int  string_box(char *msg, char *buffer, int maxlen); // blocking
 
-    virtual int  show_status(char *msg, int steps); // not blocking
-    virtual int  update_status(char *msg, int steps); // not blocking
-    virtual int  hide_status(void); // not blocking (of course)
-    
-    // interface to find the current path from any object, they can ask the user interface
-    // This is intended for menu options that do not pass the path object.
-    void set_path(CachedTreeNode *po) { current_path = po; /*printf("Set current path to %s\n", po->get_name());*/  }
-    CachedTreeNode *get_path(void)    { return current_path; }
-    // end workaround
-    
+    virtual void show_progress(char *msg, int steps); // not blocking
+    virtual void update_progress(char *msg, int steps); // not blocking
+    virtual void hide_progress(void); // not blocking (of course)
+
     void init(GenericHost *h, Keyboard *k);
     void set_screen(Screen *s); /* Only used in updater */
     int  activate_uiobject(UIObject *obj);
@@ -108,13 +100,15 @@ private:
     string   message;
     BYTE buttons;
 
-    int  button_len[NUM_BUTTONS];
-    int  button_pos[NUM_BUTTONS];
     BYTE button_key[NUM_BUTTONS];
     int  btns_active;
     int  active_button;
+    int  button_start_x;
     Screen  *window;
     Keyboard *keyboard;
+
+    void draw_buttons();
+
 public:
     UIPopup(char *msg, BYTE flags);
     ~UIPopup() { }

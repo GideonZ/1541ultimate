@@ -9,7 +9,7 @@ class Path
 {
 private:
     friend class FileManager;
-	string full_path;
+    string full_path;
     CachedTreeNode *current_dir_node;
 
     int cd_single(char *p);
@@ -18,6 +18,7 @@ private:
     ~Path();
 
 public:
+    const char *owner;
     int cd(char *p);
     char *get_path(void);
     int get_directory(IndexedList<FileInfo *> &target);

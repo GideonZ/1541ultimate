@@ -31,7 +31,7 @@ SocketTest::~SocketTest() {
 	main_menu_objects.remove(this);
 }
 
-int  SocketTest::fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
+int  SocketTest::fetch_task_items(IndexedList<Action*> &item_list)
 {
 	item_list.append(new ObjectMenuItem(this, "Socket Test Server", 0));
 	item_list.append(new ObjectMenuItem(this, "Socket Test Client", 1));
@@ -43,7 +43,7 @@ int  SocketTest::fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
 
 void SocketTest::poll(Event &e)
 {
-	File *f;
+	FILE *f;
 	DWORD start_address = 0x1000000;
 	DWORD end_address = 0x1000000;
 	UINT transferred;
@@ -65,12 +65,12 @@ void SocketTest::poll(Event &e)
 		case 4:
             end_address = PROFILER_ADDR;
             printf("Logic Analyzer stopped. Address = %p\n", end_address);
-            f = root.fcreate("rtostrac.bin", "/SD");
+            f = fopen("rtostrac.bin", "wb");
             if(f) {
                 printf("Opened file successfully.\n");
-                f->write((void *)start_address, end_address - start_address, &transferred);
+                transferred = fwrite((void *)start_address, 1, end_address - start_address, f);
                 printf("written: %d...", transferred);
-                f->close();
+                fclose(f);
             } else {
                 printf("Couldn't open file..\n");
             }

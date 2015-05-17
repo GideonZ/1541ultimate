@@ -127,15 +127,16 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	for(int i=0;i<=max_lun;i++) {
 		scsi_blk_dev[i] = new UsbScsi(this, i, max_lun);
 		scsi_blk_dev[i]->reset();
-		path_dev[i] = new FileDevice(&root, scsi_blk_dev[i], scsi_blk_dev[i]->get_name(), scsi_blk_dev[i]->get_disp_name());
-        path_dev[i]->attach();
+		path_dev[i] = new FileDevice(file_manager.get_root(), scsi_blk_dev[i], scsi_blk_dev[i]->get_name(), scsi_blk_dev[i]->get_disp_name());
+
+		// path_dev[i]->attach();
 		state_copy[i] = scsi_blk_dev[i]->get_state(); // returns unknown, most likely! :)
 		printf("*** LUN = %d *** Initial state = %d ***\n", i, state_copy[i]);
 		poll_interval[i] = i; // ;-) not all at the same time!
 		media_seen[i] = false;
-		root.children.append(path_dev[i]);
+		file_manager.add_root_entry(path_dev[i]);
 	}
-	push_event(e_refresh_browser, &root);
+	push_event(e_refresh_browser, file_manager.get_root());
 	current_lun = 0;
 }
 
@@ -143,13 +144,12 @@ void UsbScsiDriver :: deinstall(UsbDevice *dev)
 {
 	for(int i=0;i<=max_lun;i++) {
         printf("DeInstalling SCSI Lun %d\n", i);
-        path_dev[i]->detach();
-		root.children.remove(path_dev[i]);
-		push_event(e_invalidate, path_dev[i]);
+        file_manager.remove_root_entry(path_dev[i]);
+		push_event(e_invalidate, path_dev[i], 0);  // node no longer exists.
 		push_event(e_cleanup_path_object, path_dev[i]);
 		push_event(e_cleanup_block_device, scsi_blk_dev[i]);
 	}
-	push_event(e_refresh_browser, &root);
+	push_event(e_refresh_browser, file_manager.get_root());
 }
 
 void UsbScsiDriver :: poll(void)
@@ -180,7 +180,7 @@ void UsbScsiDriver :: poll(void)
 		if(media_seen[current_lun] && (new_state==e_device_no_media)) { // removal!
 			//printf("Media seen[%d]=%d and new_state=%d. old_state=%d.\n", current_lun, media_seen[current_lun], new_state, old_state);
 			media_seen[current_lun] = false;
-			push_event(e_invalidate, path_dev[current_lun]);
+			push_event(e_invalidate, path_dev[current_lun], 1);
 			push_event(e_detach_disk, path_dev[current_lun]);
 		}
 
@@ -197,7 +197,7 @@ void UsbScsiDriver :: poll(void)
 		}
 
 		if(old_state != new_state) {
-			push_event(e_refresh_browser, &root);
+			push_event(e_refresh_browser, file_manager.get_root());
 		}
     }
 

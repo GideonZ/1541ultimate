@@ -1,7 +1,7 @@
 /*************************************************************/
 /* Tape Recorder Control                                     */
 /*************************************************************/
-#include "file_system.h"
+#include <stdio.h>
 #include "event.h"
 #include "poll.h"
 #include "menu.h"
@@ -39,7 +39,7 @@
 
 class TapeRecorder : public ObjectWithMenu
 {
-	File *file;
+	FILE *file;
     int   error_code;
 	int   recording;
     int   select;
@@ -54,9 +54,10 @@ class TapeRecorder : public ObjectWithMenu
     DWORD *cache_blocks[REC_NUM_CACHE_BLOCKS];
 public:
 	TapeRecorder();
-	~TapeRecorder();
+	virtual ~TapeRecorder();
 
-	int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
+	int  fetch_task_items(IndexedList<Action*> &item_list);
+	static void exec(void *obj, void *param);
 	
     void flush();
 	void stop(int);

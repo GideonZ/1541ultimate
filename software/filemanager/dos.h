@@ -44,13 +44,15 @@ class Dos : CommandTarget
     e_dos_state dos_state;
     t_dos_info dos_info;
     File *file;
-    Directory *dir;
     Path *path;
+    IndexedList<FileInfo *>directoryList;
     Message data_message;
     Message status_message;
     int remaining;
     int dir_entries;
     int current_index;
+    void cleanupDirectory();
+
 public:
     Dos(int id);
     ~Dos();

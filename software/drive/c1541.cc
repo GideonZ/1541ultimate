@@ -1,17 +1,16 @@
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 extern "C" {
 	#include "itu.h"
 	#include "dump_hex.h"
-    #include "small_printf.h"
 }
 #include "c1541.h"
 #include "disk_image.h"
 #include "userinterface.h"
-
-//#include "fatfile.h"
-#include "filemanager.h"
+#include "filemanager.h" // for filename functions, may need to move elsewhere FIXME
 
 char *en_dis[] = { "Disabled", "Enabled" };
 char *yes_no[] = { "No", "Yes" };
@@ -130,7 +129,7 @@ C1541 :: ~C1541()
 	main_menu_objects.remove(this);
 
 	if(mount_file)
-		root.fclose(mount_file);
+		fclose(mount_file);
 
 	// turn the drive off on destruction
     drive_power(false);
@@ -152,7 +151,7 @@ void C1541 :: init(void)
     effectuate_settings();
 }
 
-int  C1541 :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
+int  C1541 :: fetch_task_items(IndexedList<Action*> &item_list)
 {
 	int items = 1;
     char buffer[32];
@@ -164,8 +163,10 @@ int  C1541 :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
 		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_REMOVE));
 		items++;
 
-        CachedTreeNode *po = user_interface->get_path();
-        if(po && po->get_file_info()) {
+
+		/*CachedTreeNode *po = user_interface->get_path();
+        if(po && po->get_file_info()) * FIXME */
+        {
             sprintf(buffer, "Save disk in drive %c as D64", drive_letter);
     		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_SAVED64));
     		items++;
@@ -239,10 +240,8 @@ int  C1541 :: get_current_iec_address(void)
 void C1541 :: set_rom(t_1541_rom rom, char *custom)
 {
     large_rom = false;
-    File *f;
+    FILE *f;
     UINT transferred;
-    FRESULT res;
-	FileInfo *info;
 	int offset;
 	
 	current_rom = rom;
@@ -269,23 +268,21 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
             memcpy((void *)&memory_map[0xC000], &_binary_1541c_bin_start, 0x4000);
             break;
         default: // custom
-            f = root.fopen(custom, FA_READ);
+            f = fopen(custom, "rb");
             printf("1541 rom file: %p\n", f);
 			if(f) {
-				info = f->node->get_file_info();
-				if (info->size > 0x8000)
+				struct stat st;
+				fstat(fileno(f), &st);
+				if (st.st_size > 0x8000)
 					offset = 0x8000;
 				else
-					offset = 0x10000 - info->size;
+					offset = 0x10000 - st.st_size;
 
 //				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
                 memcpy((void *)&memory_map[0xC000], &_binary_1541_ii_bin_start, 0x4000);
-				res = f->read((void *)&memory_map[offset], 0x8000, &transferred);
-				root.fclose(f);
-				if(res != FR_OK) {
-					printf("Error loading file.\n");
-				}
-				if(info->size > 0x4000) {
+				transferred = fread((void *)&memory_map[offset], 1, 0x8000, f);
+				fclose(f);
+				if(transferred > 0x4000) {
 					large_rom = true;
 				}
 			} else {
@@ -370,10 +367,10 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
     disk_state = e_alien_image;
 }
 
-void C1541 :: mount_d64(bool protect, File *file)
+void C1541 :: mount_d64(bool protect, FILE *file)
 {
 	if(mount_file) {
-		root.fclose(mount_file);
+		fclose(mount_file);
 	}
 	mount_file = file;
 	remove_disk();
@@ -388,10 +385,10 @@ void C1541 :: mount_d64(bool protect, File *file)
 	disk_state = e_d64_disk;
 }
 
-void C1541 :: mount_g64(bool protect, File *file)
+void C1541 :: mount_g64(bool protect, FILE *file)
 {
 	if(mount_file) {
-		root.fclose(mount_file);
+		fclose(mount_file);
 	}
 	mount_file = file;
 	remove_disk();
@@ -407,7 +404,7 @@ void C1541 :: mount_g64(bool protect, File *file)
 void C1541 :: mount_blank()
 {
 	if(mount_file) {
-		root.fclose(mount_file);
+		fclose(mount_file);
 	}
 	mount_file = NULL;
 	remove_disk();
@@ -459,7 +456,7 @@ void C1541 :: poll(Event &e)
         	case MENU_1541_UNLINK:
         		disk_state = e_disk_file_closed;
         		if(mount_file) {
-        			root.fclose(mount_file);
+        			fclose(mount_file);
         			mount_file = NULL;
         		}
         		break;
@@ -470,7 +467,7 @@ void C1541 :: poll(Event &e)
 			case MENU_1541_REMOVE:
                 check_if_save_needed();
 				if(mount_file) {
-					root.fclose(mount_file);
+					fclose(mount_file);
 					mount_file = NULL;
 				}
 				remove_disk();
@@ -498,10 +495,10 @@ void C1541 :: poll(Event &e)
 	if(!mount_file) {
 		return;
 	}
-    if(!mount_file->node) {
+	if (ferror(mount_file) == -EBADFD) {
         printf("C1541: File was invalidated..\n");
         disk_state = e_disk_file_closed;
-        root.fclose(mount_file);
+        fclose(mount_file);
         mount_file = NULL;
         return;
     }
@@ -547,29 +544,30 @@ void C1541 :: save_disk_to_file(bool g64)
 {
     CachedTreeNode *po;
     static char buffer[32];
-	File *file;
+	FILE *file;
 	int res;
 
-    po = user_interface->get_path();
-    if(po && po->get_file_info()) {
+    /* po = user_interface->get_path();
+    if(po && po->get_file_info()) *FIXME */
+	{
     	res = user_interface->string_box("Give name for image file..", buffer, 24);
     	if(res > 0) {
     		set_extension(buffer, (g64)?(char *)".g64":(char *)".d64", 32);
     		fix_filename(buffer);
-            file = root.fcreate(buffer, user_interface->get_path());
+            file = fopen(buffer, "wb");
             if(file) {
                 if(g64) {
-                    user_interface->show_status("Saving G64...", 84);
+                    user_interface->show_progress("Saving G64...", 84);
                     gcr_image->save(file, true, (cfg->get_value(CFG_C1541_GCRALIGN)!=0));
-                    user_interface->hide_status();
+                    user_interface->hide_progress();
                 } else {
-                    user_interface->show_status("Converting disk...", 2*bin_image->num_tracks);
+                    user_interface->show_progress("Converting disk...", 2*bin_image->num_tracks);
                     gcr_image->convert_disk_gcr2bin(bin_image, true);
-                    user_interface->update_status("Saving D64...", 0);
+                    user_interface->update_progress("Saving D64...", 0);
                     bin_image->save(file, true);
-                    user_interface->hide_status();
+                    user_interface->hide_progress();
                 }
-                root.fclose(file);
+                fclose(file);
         		push_event(e_reload_browser);
             } else {
             	user_interface->popup("Unable to open file..", BUTTON_OK);

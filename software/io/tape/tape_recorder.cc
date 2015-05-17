@@ -2,8 +2,9 @@
 /* Tape Recorder Control                                     */
 /*************************************************************/
 #include "tape_recorder.h"
-#include "filemanager.h"
 #include "userinterface.h"
+#include "filemanager.h" // FIXME: For file extension utility
+
 extern "C" {
     #include "dump_hex.h"
 }
@@ -58,17 +59,22 @@ TapeRecorder :: ~TapeRecorder()
     delete[] cache;
 }
 	
-int  TapeRecorder :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
+void TapeRecorder :: exec(void *obj, void *param)
+{
+	push_event(e_object_private_cmd, obj, (int)param);
+}
+
+int  TapeRecorder :: fetch_task_items(IndexedList<Action*> &item_list)
 {
 	int items = 0;
-    CachedTreeNode *po;
+    CachedTreeNode *po = NULL;
     FileInfo *info;
 	if(recording) {
-		item_list.append(new ObjectMenuItem(this, "Finish Rec. to TAP", MENU_REC_FINISH));
+		item_list.append(new Action("Finish Rec. to TAP", TapeRecorder :: exec, this, (void *)MENU_REC_FINISH));
 		items = 1;
 	}
     else {
-        po = user_interface->get_path();
+        // FIXME po = user_interface->get_path();
 
         if(po) {
             printf("Current DIR: %s\n", po->get_name());
@@ -83,8 +89,8 @@ int  TapeRecorder :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
         if(po && po->get_file_info()) {
             info = po->get_file_info();
             if(info->is_writable()) {
-        		item_list.append(new ObjectMenuItem(this, "Sample tape to TAP", MENU_REC_SAMPLE_TAPE));
-        		item_list.append(new ObjectMenuItem(this, "Capture save to TAP", MENU_REC_RECORD_TO_TAP));
+        		item_list.append(new Action("Sample tape to TAP", TapeRecorder :: exec, this, (void *)MENU_REC_SAMPLE_TAPE));
+        		item_list.append(new Action("Capture save to TAP", TapeRecorder :: exec, this, (void *)MENU_REC_RECORD_TO_TAP));
         		items = 2;
             }
     	}
@@ -106,7 +112,7 @@ void TapeRecorder :: stop(int error)
         printf("Flush TAP..\n");
         flush();
 		printf("Closing tape file..\n");
-		root.fclose(file);
+		fclose(file);
 	} else {
 	    printf("Stopping. File = NULL. ERR = %d\n", error);
     }
@@ -132,7 +138,7 @@ void TapeRecorder :: start()
     block_out = 0;
     blocks_cached = 0;
     blocks_written = 0;
-    CPU_IRQ_VECTOR = (DWORD)&tape_req_irq;	// FIXME
+//    CPU_IRQ_VECTOR = (DWORD)&tape_req_irq;	// FIXME
 
 	LEAVE_SAFE_SECTION;
 	
@@ -175,7 +181,7 @@ int TapeRecorder :: write_block()
 	UINT bytes_written;
 
     DWORD *block = cache_blocks[block_out];
-	file->write((void *)block, 512, &bytes_written);
+	bytes_written = fwrite((void *)block, 1, 512, file);
     total_length += 512;
 	if(bytes_written == 0) {
 		return REC_ERR_WRITE_ERROR;
@@ -204,17 +210,24 @@ void TapeRecorder :: flush()
         error_code = write_block();
     }
 
-	UINT bytes_written;
-	while(RECORD_STATUS & REC_STAT_BYTE_AV) {
-		file->write((void *)RECORD_DATA, 1, &bytes_written);
-        total_length ++;
-	}
-	
-    file->seek(16);
+    while (RECORD_STATUS & REC_STAT_BYTE_AV) {
+		BYTE *block = (BYTE *)cache_blocks[block_in];
+		int i;
+		for(i=0;i<512;i++) {
+			if (RECORD_STATUS & REC_STAT_BYTE_AV)
+				*(block++) = RECORD_DATA32;
+			else
+				break;
+		}
+		printf("Writing out remaining %d bytes.\n", i);
+		int bytes_written = fwrite((void *)cache_blocks[block_in], 1, i, file);
+		total_length += bytes_written;
+    }
+    fseek(file, 16, SEEK_SET);
     DWORD le_size = cpu_to_le_32(total_length);
-    file->write(&le_size, 4, &bytes_written);
+    fwrite(&le_size, 1, 4, file);
 
-	root.fclose(file);
+	fclose(file);
 	push_event(e_reload_browser);
 	file = NULL;
 
@@ -222,7 +235,6 @@ void TapeRecorder :: flush()
 	RECORD_CONTROL = REC_CLEAR_ERROR | REC_FLUSH_FIFO;
 	RECORD_CONTROL = 0; // make sure the interrupt has been cleared too.
 }
-	
 	
 void TapeRecorder :: poll(Event &e)
 {
@@ -255,7 +267,7 @@ void TapeRecorder :: poll(Event &e)
 		}
 	}
 	if (file) { // check for invalidation
-	    if (!file->node) {
+		if(ferror(file)) {
             printf("TapeRecorder: Our file got killed...\n");
             file = NULL;
 	        stop(REC_ERR_NO_FILE);
@@ -289,9 +301,9 @@ bool TapeRecorder :: request_file(void)
         total_length = 0;
 		set_extension(buffer, ".tap", 32);
 		fix_filename(buffer);
-        file = root.fcreate(buffer, user_interface->get_path());
+        file = fopen(buffer, "wb");
         if(file) {
-            file->write(signature, 20, &dummy);
+            dummy = fwrite(signature, 1, 20, file);
             if(dummy != 20) {
                 user_interface->popup("Error writing signature", BUTTON_OK);
                 return false;

@@ -10,11 +10,11 @@ extern "C" {
 }
 #include "usb_driver_test.h"
 
-void main_loop(void);
+extern "C" void main_loop(void *a);
 
 int main()
 {
 	puts("Starting main loop.");
-	main_loop();
+	main_loop(0);
 	return 0;
 }

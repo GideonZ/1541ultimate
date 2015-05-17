@@ -13,6 +13,10 @@ FileSystem_ISO9660 :: FileSystem_ISO9660(Partition *p) : FileSystem(p)
             sector_buffer = new BYTE[sector_size];
         }
     }
+    joliet = false;
+    last_read_sector = 0;
+    root_dir_sector = 0;
+    root_dir_size = 0;
 }
 
 FileSystem_ISO9660 :: ~FileSystem_ISO9660()
@@ -153,12 +157,18 @@ FRESULT FileSystem_ISO9660 :: dir_read(Directory *d, FileInfo *f) // reads next 
     t_iso_handle *handle = (t_iso_handle *)d->handle;
 
 try_next:
-    if(last_read_sector != handle->sector) {
+//	printf("Handle: Sector: %d. Offset: %d Remaining: %d\n", handle->sector, handle->offset, handle->remaining);
+
+	if (handle->remaining <= handle->offset) {
+		return FR_NO_FILE;
+	}
+
+	if(last_read_sector != handle->sector) {
         DRESULT status = prt->read(sector_buffer, handle->sector, 1);
         //dump_hex(sector_buffer, sector_size);
         last_read_sector = handle->sector;
     }
-    get_dir_record(&sector_buffer[handle->offset]);
+	get_dir_record(&sector_buffer[handle->offset]);
 
     if((!dir_record.actual.record_length)||(handle->offset >= sector_size)) {
         // lets try the following sector, in case offset != 0
@@ -167,9 +177,7 @@ try_next:
         handle->sector ++;
         handle->offset = 0;
         handle->remaining -= sector_size;
-        if(handle->remaining >= sector_size)
-            goto try_next;
-        return FR_NO_FILE;
+		goto try_next;
     }
 
     // skip . and ..
@@ -181,8 +189,6 @@ try_next:
     }
 
     f->cluster    = dir_record.actual.sector;
-//    f->dir_sector = handle->sector;
-//    f->dir_offset = handle->offset;
     f->dir_clust  = handle->start;
     f->attrib     = (dir_record.actual.flags & 0x02)?(AM_DIR):0;
     f->fs         = this;
@@ -250,7 +256,7 @@ File   *FileSystem_ISO9660 :: file_open(FileInfo *info, BYTE flags)  // Opens fi
     handle->start     = handle->sector;
     handle->offset    = 0;
 
-    File *f = new File(this, (DWORD)handle);
+    File *f = new File(info, (DWORD)handle);
     return f;    
 }
 

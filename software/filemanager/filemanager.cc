@@ -22,6 +22,8 @@ void FileManager :: handle_event(Event &e)
     File *f;
     FileDevice *fd;
     FileNodePair pair;
+    Path *path;
+    string pathString;
     
 	switch(e.type) {
 	case e_cleanup_path_object:
@@ -33,17 +35,15 @@ void FileManager :: handle_event(Event &e)
         printf("Cleaning up Blockdevice %p\n", blk);
         delete blk;
         break;
-	case e_path_object_exec_cmd:
-		o->execute(e.param);
-		break;
 	case e_invalidate:
-		printf("Invalidate event.. Checking %d files.\n", open_file_list.get_elements());
+		printf("Invalidate event.. Param = %d. Checking %d files.\n", e.param, open_file_list.get_elements());
 		for(int i=0;i<open_file_list.get_elements();i++) {
 			pair = open_file_list[i];
+			printf("%2d. %s %p\n", i, pair.file->info->lfname, pair.node);
 			if(!pair.file) {// should never occur
 				printf("INTERR: null pointer in list.\n");
 				continue;
-			} else if(!pair.file->info) { // already invalidated.
+			} else if(!(f->isValid())) { // already invalidated.
 				continue;
 			}
 			c = pair.node;
@@ -56,6 +56,31 @@ void FileManager :: handle_event(Event &e)
 				c = c->parent;
 			}
 		}
+		for(int i=0;i<used_paths.get_elements();i++) {
+			path = used_paths[i];
+			c = path->current_dir_node;
+			printf("%2d. %s (%s)\n", i, path->get_path(), path->owner);
+			while(c) {
+				if(c == o) {
+					printf("Due to invalidation of %s, path %s is being invalidated.\n", o->get_name(), path->get_path());
+					if (c->parent) {
+						printf("c = %s c->parent = %s\n", c->get_name(), c->parent->get_name());
+						if (e.param) { // if > 0, the node itself still exists, but the contents are removed.
+							c->get_full_path(pathString);
+						} else { // if == 0, the node itself gets removed, including the contents
+							c->parent->get_full_path(pathString);
+						}
+						printf("Path will be reset to: %s\n", pathString.c_str());
+						path->cd(pathString.c_str());
+					} else {
+						printf("c = %s c->parent = NULL\n", c->get_name() );
+					}
+					break;
+				}
+				c = c->parent;
+			}
+		}
+
 		break;
     case e_detach_disk:
         fd = (FileDevice *)e.object;
@@ -95,7 +120,7 @@ File *FileManager :: fopen(Path *path, char *filename, BYTE flags)
 	}
 
 	// create a path that is either relative to root, or relative to current
-	Path *temppath = this->get_new_path();
+	Path *temppath = this->get_new_path("FM temp");
 	if ((filename[0] != '/') && (filename[0] != '\\')) {
 		temppath->cd(path->get_path());
 	}
@@ -116,7 +141,7 @@ File *FileManager :: fopen_impl(Path *path, char *filename, BYTE flags)
 {
 	FileInfo *dirinfo = path->current_dir_node->get_file_info();
 	CachedTreeNode *existing = path->current_dir_node->find_child(filename);
-	File *file;
+	File *file = NULL;
 
 	// file does not exist, and we would like it to exist: create.
 	if ((!existing) && (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS))) {
@@ -138,10 +163,26 @@ File *FileManager :: fopen_impl(Path *path, char *filename, BYTE flags)
 		last_error = dirinfo->fs->get_last_error();
 	}
 
-	if(!file) {
+	if(file) {
 		FileNodePair pair;
 		pair.file = file;
 		pair.node = existing;
+		open_file_list.append(pair);
+	}
+
+	return file;
+}
+
+File *FileManager :: fopen_node(CachedTreeNode *node, BYTE flags)
+{
+	FileInfo *inf = node->get_file_info();
+	File *file = inf->fs->file_open(node->get_file_info(), flags);
+	last_error = inf->fs->get_last_error();
+
+	if(file) {
+		FileNodePair pair;
+		pair.file = file;
+		pair.node = node;
 		open_file_list.append(pair);
 	}
 

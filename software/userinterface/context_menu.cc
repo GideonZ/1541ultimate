@@ -1,18 +1,17 @@
 #include "context_menu.h"
 #include <string.h>
 
-ContextMenu :: ContextMenu(CachedTreeNode *n, CachedTreeNode *obj, int initial, int y)
+ContextMenu :: ContextMenu(Contextable *node, int initial, int y) : actions(2, 0)
 {
     parent_win = NULL;
-    object = obj;
+    contextable = node;
     context_state = e_new;
     keyb = NULL;
     window = NULL;
     y_offs = y-1;
     corner = y;
 
-    state->initial_index = initial;
-    state->node = n;
+    item_index = initial;
 }
 
 // y_offs = line above selected, relative to window
@@ -24,17 +23,22 @@ ContextMenu :: ~ContextMenu(void)
 
 void ContextMenu :: init(Screen *scr, Keyboard *key)
 {
+    int len, max_len;
+    int rows, size_y;
+
     parent_win = scr;
     keyb = key;
 
     if(context_state == e_new) {
-        items = object->fetch_context_items(state->node->children);
-        if(!items) {
+    	contextable->fetch_context_items(actions);
+
+    	int item_count = actions.get_elements();
+    	if(!item_count) {
             printf("No items.. exit.\n");
             context_state = e_finished;
             return;
         }
-        rows = items + 2;
+        rows = item_count + 2;
         size_y = parent_win->get_size_y();
         if(rows > size_y) {
             rows = size_y;
@@ -45,10 +49,9 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
             y_offs = 0;
         
         max_len = 0;
-        for(int i=0;i<state->node->children.get_elements();i++) {
-        	CachedTreeNode *it = state->node->children[i];
-			//it->attach();
-            len = strlen(it->get_name());
+        for(int i=0;i<actions.get_elements();i++) {
+        	Action *it = actions[i];
+            len = strlen(it->getName());
             if(len > max_len)
                 max_len = len;
         }
@@ -57,19 +60,21 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
     }        
 
     window = new Screen(parent_win, parent_win->get_size_x()-2-max_len, y_offs+2, max_len+2, rows);
-    //window->move_cursor(0, corner-y_offs);
-    //char *hook = window->get_pointer();
+
     window->draw_border();
     if((corner == y_offs)||(corner == (y_offs+rows-1)))
         window->set_char(0, corner-y_offs, 2);
-        //*hook = 2;
     else
         window->set_char(0, corner-y_offs, 3);
-        //*hook = 3;
     context_state = e_active;
-	state->do_refresh();
+
+    draw();
 }
     
+void ContextMenu :: executeAction()
+{
+	actions[item_index]->execute();
+}
 
 int ContextMenu :: poll(int dummy, Event &e)
 {
@@ -81,16 +86,8 @@ int ContextMenu :: poll(int dummy, Event &e)
         return -1;
     }
 
-    if(e.type == e_invalidate) {
-    	invalidate((CachedTreeNode *)e.object);
-    	return 0;
-    }
-
     switch(context_state) {
         case e_active:
-            if(state->refresh)
-                state->do_refresh();
-
             c = keyb->getch();
             if(c) {
                 printf("%c", c);
@@ -124,18 +121,26 @@ int ContextMenu :: handle_key(BYTE c)
 //            push_event(e_terminate, 0);
             break;
         case 0x11: // down
-        	reset_quick_seek();
-            state->down(1);
+        	//reset_quick_seek();
+        	if (item_index < actions.get_elements()-1) {
+            	item_index++;
+            	draw();
+        	}
             break;
         case 0x91: // up
-        	reset_quick_seek();
-            state->up(1);
-            break;
+        	// reset_quick_seek();
+        	if (item_index > 0) {
+        		item_index --;
+        		draw();
+        	}
+        	break;
         case 0x14: // backspace
+/*
             if(quick_seek_length) {
                 quick_seek_length--;
                 perform_quick_seek();
             }
+*/
             break;
         case 0x20: // space
         case 0x0D: // return
@@ -147,8 +152,11 @@ int ContextMenu :: handle_key(BYTE c)
             if((c >= '!')&&(c < 0x80)) {
                 if(quick_seek_length < (MAX_SEARCH_LEN-2)) {
                     quick_seek_string[quick_seek_length++] = c;
-                    if(!perform_quick_seek())
+                    if(!perform_quick_seek()) {
                         quick_seek_length--;
+                    } else {
+                    	draw();
+                    }
                 }
             } else {
                 printf("Unhandled context key: %b\n", c);
@@ -156,3 +164,31 @@ int ContextMenu :: handle_key(BYTE c)
     }    
     return ret;
 }
+
+bool ContextMenu :: perform_quick_seek(void)
+{
+    quick_seek_string[quick_seek_length] = '*';
+    quick_seek_string[quick_seek_length+1] = 0;
+    printf("ContextMenu Performing seek: '%s'\n", quick_seek_string);
+
+    int num_el = this->actions.get_elements();
+    for(int i=0;i<num_el;i++) {
+    	Action *t = actions[i];
+		if(pattern_match(quick_seek_string, t->getName(), false)) {
+			item_index = i;
+			return true;
+		}
+    }
+    return false;
+}
+
+void ContextMenu :: reset_quick_seek(void)
+{
+    quick_seek_length = 0;
+}
+
+void ContextMenu :: draw()
+{
+	printf("Drawing context menu.\n"); // TODO
+}
+

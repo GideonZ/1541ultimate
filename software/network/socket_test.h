@@ -20,7 +20,7 @@ public:
 	SocketTest();
 	virtual ~SocketTest();
 
-    int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
+    int  fetch_task_items(IndexedList<Action*> &item_list);
     void poll(Event &e);
 };
 

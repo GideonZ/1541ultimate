@@ -11,6 +11,7 @@ extern "C" {
 #include "keyboard.h"
 #include "userinterface.h"
 #include "tree_browser.h"
+#include "browsable_root.h"
 #include "filemanager.h"
 #include "sd_card.h"
 #include "file_device.h"
@@ -27,7 +28,7 @@ extern "C" {
 #include "init_function.h"
 
 // these should move to main_loop.h
-void main_loop(void);
+extern "C" void main_loop(void *a);
 void send_nop(void);
 
 C1541 *c1541_A;
@@ -84,7 +85,8 @@ int main(void *a)
         user_interface->init(c64, c64->get_keyboard());
     
     	// Instantiate and attach the root tree browser
-    	root_tree_browser = new TreeBrowser();
+        Browsable *root = new BrowsableRoot();
+    	root_tree_browser = new TreeBrowser(root);
         user_interface->activate_uiobject(root_tree_browser); // root of all evil!
     	
     	// add the C64 to the 'OS' (the event loop)
@@ -98,14 +100,15 @@ int main(void *a)
         overlay = new Overlay(false);
         user_interface = new UserInterface;
         user_interface->init(overlay, overlay->get_keyboard());
-    	root_tree_browser = new TreeBrowser();
+        Browsable *root = new BrowsableRoot();
+    	root_tree_browser = new TreeBrowser(root);
         user_interface->activate_uiobject(root_tree_browser); // root of all evil!
         // push_event(e_button_press, NULL, 1);
     } else {
         // stand alone mode
         stream_interface = new UserInterfaceStream(&my_stream);
         user_interface = stream_interface;
-        root_menu = new StreamMenu(&my_stream, &root);
+        root_menu = new StreamMenu(&my_stream, new BrowsableRoot());
         stream_interface->set_menu(root_menu); // root of all evil!
     }
 
@@ -135,7 +138,7 @@ int main(void *a)
     printf("All linked modules have been initialized.\n");
     printf("Starting main loop...\n");
 
-    main_loop();
+    main_loop(0);
 
     if(overlay)
         delete overlay;

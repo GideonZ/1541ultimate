@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include "file_device.h"
 #include "file_partition.h"
+
+#include "../components/size_str.h"
 #include "file_system.h"
 #include "file_direntry.h"
-#include "size_str.h"
 
 
 FilePartition :: FilePartition(CachedTreeNode *par, Partition *p, char *n) : FileDirEntry(par, n) //, name(n)

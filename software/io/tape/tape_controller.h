@@ -1,11 +1,10 @@
 /*************************************************************/
 /* Tape Emulator / Recorder Control                          */
 /*************************************************************/
-#include "file_system.h"
+#include <stdio.h>
 #include "event.h"
 #include "poll.h"
 #include "menu.h"
-#include "filetype_tap.h"
 #include "iomap.h"
 
 #define PLAYBACK_STATUS  *((volatile BYTE *)(C2N_PLAY_BASE + 0x000))
@@ -31,7 +30,7 @@
 
 class TapeController : public ObjectWithMenu
 {
-	FileTypeTap *tap;
+	FILE *file;
 	DWORD length;
 	int   block;
     int   mode;
@@ -44,13 +43,14 @@ public:
 	TapeController();
 	virtual ~TapeController();
 	
-	int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
+	int  fetch_task_items(IndexedList<Action*> &item_list);
+	static void exec(void *obj, void *param);
 	
 	void close();
 	void stop();
 	void start(int);
 	void poll(Event &);
-	void set_file(FileTypeTap *tap, DWORD, int);
+	void set_file(FILE *f, DWORD, int);
 };
 
 extern TapeController *tape_controller;

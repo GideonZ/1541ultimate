@@ -98,7 +98,7 @@ int FileDevice :: fetch_children(void)
 
 char *FileDevice :: get_display_string(void)
 {
-    static char buffer[44];
+    static char buffer[54];
 //    static char sizebuf[8];
 
 	const char *c_state_string[] = { "Unknown", "No media", "Not ready", "Ready", "Error!" };
@@ -109,6 +109,6 @@ char *FileDevice :: get_display_string(void)
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
 */
-    sprintf(buffer, "%8s:%20s \025%s", get_name(), display_name, c_state_string[(int)state]);
+    sprintf(buffer, "\x1B[0m%8s%22s \x1B[32m%s", get_name(), display_name, c_state_string[(int)state]);
     return buffer;
 }

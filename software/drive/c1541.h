@@ -1,6 +1,7 @@
 #ifndef C1541_H
 #define C1541_H
 
+#include <stdio.h>
 #include "integer.h"
 #include "event.h"
 #include "file_system.h"
@@ -25,7 +26,7 @@
 struct t_drive_command
 {
     int  command;
-    File *file;
+    FILE *file;
     bool protect;
 };
 
@@ -82,7 +83,7 @@ class C1541 : public ConfigurableObject, ObjectWithMenu
 	int write_skip;
 	
 	Flash *flash;
-    File *mount_file;
+    FILE *mount_file;
     t_disk_state disk_state;
     GcrImage *gcr_image;
     BinImage *bin_image;
@@ -92,7 +93,7 @@ public:
     
 	void init(void);
 
-    int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list); // from ObjectWithMenu
+    int  fetch_task_items(IndexedList<Action*> &item_list); // from ObjectWithMenu
     void effectuate_settings(void); // from ConfigurableObject
     
     void drive_power(bool on);
@@ -104,8 +105,8 @@ public:
     void set_ram(t_1541_ram ram);
     void remove_disk(void);
     void insert_disk(bool protect, GcrImage *image);
-    void mount_d64(bool protect, File *);
-    void mount_g64(bool protect, File *);
+    void mount_d64(bool protect, FILE *);
+    void mount_g64(bool protect, FILE *);
     void mount_blank(void);
     void poll(Event &e);
 
@@ -114,22 +115,33 @@ public:
 };
 
 
-class DriveMenuItem : public ObjectMenuItem
+class DriveMenuItem : public Action
 {
 	void *obj;
-    t_drive_command *cmd;
+	int function;
+	char *nameString;
+	t_drive_command *cmd;
 public:
-	DriveMenuItem(void *o, char *n, int f) : ObjectMenuItem(NULL, n, f), obj(o) {
+	DriveMenuItem(void *o, char *n, int f) : Action(NULL, NULL, NULL) {
+		obj = o;
+		function = f;
+		cmd = NULL;
+		nameString = new char[strlen(n+1)];
+		strcpy(nameString, n);
 	}
 
 	~DriveMenuItem() { 
+		delete nameString;
 	}
 
-	virtual void execute(int dummy) {
+	const char *getName() {
+		return (const char *)nameString;
+	}
+
+	void execute() {
 	    cmd = new t_drive_command;
 	    cmd->command = function;
 	    cmd->file = NULL;
-//        cmd->location = location;
 	    cmd->protect = false;
 		push_event(e_object_private_cmd, obj, (int)cmd);
 	}

@@ -19,7 +19,7 @@ static void poll_tape(Event &e)
 
 TapeController :: TapeController()
 {
-    tap = NULL;
+    file = NULL;
 	paused = 0;
 	recording = 0;
 	controlByte = 0;
@@ -35,21 +35,28 @@ TapeController :: ~TapeController()
 	main_menu_objects.remove(this);
 	delete blockBuffer;
 }
-	
 
-int  TapeController :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
+int  TapeController :: fetch_task_items(IndexedList<Action*> &item_list)
 {
-    if(!tap)
+    if(!file)
         return 0;
-	if(!tap->getFile())
+	if(ferror(file)) {
+    	close();
 		return 0;
+	}
 	if(paused)
-		item_list.append(new ObjectMenuItem(this, "Resume Tape", MENU_C2N_RESUME));
+		item_list.append(new Action("Resume Tape Playback", TapeController :: exec, this, (void *)MENU_C2N_RESUME));
 	else
-		item_list.append(new ObjectMenuItem(this, "Pause Tape", MENU_C2N_PAUSE));
-    item_list.append(new ObjectMenuItem(this, "Stop tape playback", MENU_C2N_STOP));
+		item_list.append(new Action("Pause Tape Playback", TapeController :: exec, this, (void *)MENU_C2N_PAUSE));
+    item_list.append(new Action("Stop Tape Playback", TapeController :: exec, this, (void *)MENU_C2N_STOP));
 	return 2;
 }
+
+void TapeController :: exec(void *obj, void *param)
+{
+	push_event(e_object_private_cmd, obj, (int)param);
+}
+
 
 void TapeController :: stop()
 {
@@ -59,11 +66,11 @@ void TapeController :: stop()
 
 void TapeController :: close()
 {
-	if(tap) {	
+	if(file) {
 		printf("Closing tape file..\n");
-        tap->closeFile();
+        fclose(file);
 	}
-	tap = NULL;
+	file = NULL;
 }
 	
 void TapeController :: start(int playout_pin)
@@ -87,10 +94,12 @@ void TapeController :: start(int playout_pin)
 	
 void TapeController :: read_block()
 {
-	if(!tap)
+	if(!file)
 		return;
-    if(!tap->getFile())
+    if(ferror(file)) {
+    	close();
         return;
+    }
 	
 	UINT bytes_read;
 
@@ -107,7 +116,7 @@ void TapeController :: read_block()
         }
 		return;
 	}	
-	tap->getFile()->read(blockBuffer, block, &bytes_read);
+	bytes_read = fread(blockBuffer, 1, block, file);
 	for(int i=0;i<bytes_read;i++)// not sure if memcpy copies the bytes in the right order.
 		*PLAYBACK_DATA = blockBuffer[i];
 
@@ -118,17 +127,13 @@ void TapeController :: read_block()
 	
 void TapeController :: poll(Event &e)
 {
-    if(!tap) 
+	if(!file)
+		return;
+	// Maybe we should catch the event here to close the file?
+	if(ferror(file)) {
+    	close();
         return;
-        
-	if(!tap->getFile())
-		return;
-
-	// close 
-	if(!tap->getFile()->node) {
-		close();
-		return;
-	}
+    }
 	
 	if(e.type == e_object_private_cmd) {
 		if(e.object == this) {
@@ -143,7 +148,6 @@ void TapeController :: poll(Event &e)
 					break;
                 case MENU_C2N_STATUS:
                     printf("Tape status = %b\n", PLAYBACK_STATUS);
-//                    flash.reboot(0);
                     break;
                 case MENU_C2N_STOP:
                     close();
@@ -163,9 +167,9 @@ void TapeController :: poll(Event &e)
 	}
 }
 	
-void TapeController :: set_file(FileTypeTap *tap_param, DWORD len, int m)
+void TapeController :: set_file(FILE *f, DWORD len, int m)
 {
-    tap = tap_param;
+    file = f;
 	length = len;
 	block = 512 - 20;
 	mode = m; 

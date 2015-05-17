@@ -72,6 +72,7 @@ public:
     int pack(BYTE *buffer, int len);
     void unpack(BYTE *buffer, int len);
 
+    char *get_item_name() { return definition->item_text; }
     char *get_display_string();
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
@@ -102,6 +103,7 @@ public:
 
     ConfigItem *find_item(BYTE id);
     int  get_value(BYTE id);
+    char *get_store_name() { return store_name; }
     char *get_string(BYTE id);
     void set_value(BYTE id, int value);
     void set_string(BYTE id, char *s);

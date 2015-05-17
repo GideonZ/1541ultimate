@@ -8,49 +8,31 @@
 #ifndef MENU_H_
 #define MENU_H_
 
-#include "path.h"
+#include "action.h"
+#include "indexed_list.h"
 #include "event.h"
-
-class MenuItem : public CachedTreeNode
-{
-    CachedTreeNode *object;
-public:
-    int function;
-
-    MenuItem(CachedTreeNode *o, char *n, int f) : CachedTreeNode(NULL, n),
-         function(f), object(o) {  }
-    ~MenuItem() { }
-
-    virtual void execute(int dummy) {
-        if(object)
-            object->execute(function);
-    }
-};
-
-class ObjectMenuItem : public MenuItem
-{
-	void *obj;
-public:
-	ObjectMenuItem(void *o, char *n, int f) : MenuItem(NULL, n, f), obj(o) {
-		attach();
-	}
-	~ObjectMenuItem() { }
-
-	virtual void execute(int dummy) {
-		push_event(e_object_private_cmd, obj, function);
-	}
-};
-
 
 class ObjectWithMenu
 {
 public:
 	ObjectWithMenu() {}
-	~ObjectWithMenu() {}
+	virtual ~ObjectWithMenu() {}
 
-    virtual int fetch_task_items(IndexedList<CachedTreeNode*> &item_list) { }
+    virtual int fetch_task_items(IndexedList<Action*> &item_list) { return 0; }
 };
 
 extern IndexedList<ObjectWithMenu*> main_menu_objects;
 
+// Backward compatibility class
+class ObjectMenuItem : public Action
+{
+public:
+	ObjectMenuItem(ObjectWithMenu *obj, const char *text, int code) : Action(text, ObjectMenuItem :: run, obj, (void *)code)
+	{
+	}
+
+	static void run(void *obj, void *prm) {
+		push_event(e_object_private_cmd, obj, (int)prm);
+	}
+};
 #endif /* MENU_H_ */

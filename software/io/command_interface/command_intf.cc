@@ -61,6 +61,7 @@ CommandInterface :: CommandInterface()
         
     }
     target = CMD_TARGET_NONE;
+    cart_mode = 0;
 }
 
 CommandInterface :: ~CommandInterface()
@@ -165,7 +166,7 @@ void CommandInterface :: copy_result(Message *data, Message *status)
     }    
 }
 
-int  CommandInterface :: fetch_task_items(IndexedList<CachedTreeNode*> &item_list)
+int  CommandInterface :: fetch_task_items(IndexedList<Action*> &item_list)
 {
     //item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_CMD_RUNCMDCART));  /* temporary item */
     //return 1;

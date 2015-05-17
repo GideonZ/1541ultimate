@@ -1,12 +1,12 @@
 #ifndef C64_H
 #define C64_H
 
+#include <stdio.h>
 #include "host.h"
 #include "event.h"
 #include "integer.h"
 #include "keyboard.h"
 #include "config.h"
-#include "filemanager.h"
 #include "menu.h"
 #include "iomap.h"
 
@@ -148,7 +148,10 @@ public:
     ~C64();
 
     /* Object With Menu */
-    int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
+    int  fetch_task_items(IndexedList<Action *> &item_list);
+    static void execute(void *obj, void *action);
+    void execute(int command);
+
     /* Configurable Object */
     void effectuate_settings(void);
     
@@ -167,8 +170,8 @@ public:
     /* C64 specifics */
     void init_cartridge(void);
     void cartridge_test(void);
-    int  dma_load(File *f, BYTE run_mode, WORD reloc=0);
-    bool write_vic_state(File *f);
+    int  dma_load(FILE *f, BYTE run_mode, WORD reloc=0);
+    bool write_vic_state(FILE *f);
         
     friend class FileTypeSID; // sid load does some tricks
 };
@@ -178,8 +181,8 @@ extern C64   *c64;
 class C64Event
 {
  public:
-    static int prepare_dma_load(File *f, const char *name, int len, BYTE run_mode, WORD reloc=0);
-    static int perform_dma_load(File *f, BYTE run_mode, WORD reloc=0);
+    static int prepare_dma_load(FILE *f, const char *name, int len, BYTE run_mode, WORD reloc=0);
+    static int perform_dma_load(FILE *f, BYTE run_mode, WORD reloc=0);
 };
 
 #endif

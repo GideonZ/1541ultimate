@@ -4,7 +4,7 @@
 #include "integer.h"
 #include "file_system.h"
 #include "blockdev_ram.h"
-#include "filetype_d64.h"
+#include "d64_filesystem.h"
 #include "iomap.h"
 
 #define GCR_DECODER_GCR_IN   (*(volatile BYTE *)(GCR_CODER_BASE + 0x00))
@@ -65,9 +65,9 @@ public:
     int    track_length[C1541_MAXTRACKS];
 
     void blank(void);
-    bool load(File *f);
-    bool save(File *f, bool, bool);
-    bool write_track(int, File *f, bool);
+    bool load(FILE *f);
+    bool save(FILE *f, bool, bool);
+    bool write_track(int, FILE *f, bool);
     void convert_disk_bin2gcr(BinImage *bin_image, bool report);
     int  convert_disk_gcr2bin(BinImage *bin_image, bool);
     int  convert_track_gcr2bin(int track, BinImage *bin_image);
@@ -78,7 +78,7 @@ public:
 };
 
 
-class BinImage : public CachedTreeNode
+class BinImage
 {
     BYTE *track_start[C1541_MAXTRACKS];
     int   track_sectors[C1541_MAXTRACKS];
@@ -96,18 +96,15 @@ public:
     ~BinImage();
 
     int format(char *diskname);
-    int load(File *);
-    int save(File *, bool);
-    int write_track(int track, GcrImage *, File *);
+    int load(FILE *);
+    int save(FILE *, bool);
+    int write_track(int track, GcrImage *, FILE *);
 
     // int get_absolute_sector(int track, int sector);
     BYTE * get_sector_pointer(int track, int sector);
 
     friend class GcrImage;
 
-    // functions that override virtual functions of PathObject
-    int fetch_children();
-	int get_header_lines() { return 1; }
     void get_sensible_name(char *buffer);
 };
 

@@ -9,10 +9,18 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <stdio.h>
+//#include <unistd.h>
 #include <signal.h>
 #include <time.h>
 #include <sys/time.h>
 #include <sys/times.h>
+
+
+extern "C" int *__errno()
+{
+	return &(_impure_ptr->_errno);
+}
+
 
 extern "C" void outbyte(int c);
 
@@ -69,6 +77,7 @@ extern "C" int read(int file, char *ptr, int len)
 
 extern "C" int open(char *path, int flags, ...)
 {
+	printf("Open stub called with '%s' and flags = %4x\n", path, flags);
 	// Pretend like we always fail
 	return -1;
 }
@@ -100,5 +109,11 @@ extern "C" int fork(void)
 extern "C" int execve(char *name, char **argv, char **env)
 {
 	errno = ENOMEM;
+	return -1;
+}
+
+extern "C" int fsync(int filedes)
+{
+	errno = EBADF;
 	return -1;
 }

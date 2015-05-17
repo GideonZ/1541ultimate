@@ -1,39 +1,44 @@
 #ifndef TREEBROWSER_STATE_H
 #define TREEBROWSER_STATE_H
+
 #include "userinterface.h"
+#include "browsable.h"
 
 class TreeBrowser;
 
 class TreeBrowserState
 {
 public:
-	TreeBrowser *browser;
 	int level;
-	CachedTreeNode *selected;
-    int first_item_on_screen;
+	TreeBrowser *browser; // owner
+
+	int cursor_pos;
+	Browsable *under_cursor; // on cursor
+
+	int first_item_on_screen;
     int selected_line; // y-cursor
 
     int initial_index;
     bool refresh;
 
-    CachedTreeNode *node;
+    Browsable *node;
     TreeBrowserState *previous;
     TreeBrowserState *deeper;
+    IndexedList<Browsable *>children;
 
     // Member functions
-    TreeBrowserState(CachedTreeNode *node, TreeBrowser *b, int lev);
+    TreeBrowserState(Browsable *node, TreeBrowser *b, int lev);
     virtual ~TreeBrowserState();
+    virtual void cleanup();
 
-    void do_refresh();
-    void update_selected();
-    void draw();
-    void reselect();
-    void reload(void);
-    virtual void highlight();
-    virtual void unhighlight();
-    void up(int);
-    void down(int);
-    void move_to_index(int);
+    virtual void do_refresh();
+    virtual void update_selected();
+    virtual void draw();
+//    virtual void reselect();
+    virtual void reload(void);
+    virtual void up(int);
+    virtual void down(int);
+    virtual void move_to_index(int);
 
     virtual void into(void);
 	virtual bool into2(void);

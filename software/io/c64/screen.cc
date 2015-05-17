@@ -1,8 +1,9 @@
 #include "screen.h"
 #include "integer.h"
+
 extern "C" {
     #include "itu.h"
-    #include "small_printf.h"
+	#include "small_printf.h"
 }
 
 Screen :: Screen(char *b, char *c, int sx, int sy)
@@ -28,6 +29,8 @@ Screen :: Screen(char *b, char *c, int sx, int sy)
     backup_color = NULL;
     allow_scroll = true;
     escape       = false;
+    escape_cmd	 = false;
+    escape_cmd_pos = 0;
     parent       = NULL;
     cursor_on	 = 0;
     backup();
@@ -60,6 +63,8 @@ Screen :: Screen(Screen *scr, int x1, int y1, int sx, int sy)
     backup_color = NULL;
     allow_scroll = true;
     escape       = false;
+    escape_cmd	 = false;
+    escape_cmd_pos = 0;
     parent       = scr;
     cursor_on	 = 0;
     backup();
@@ -147,38 +152,6 @@ void Screen :: set_color(int c)
     color = c;
 }
     
-int Screen :: get_color(void)
-{
-    return color;
-}
-
-void Screen :: set_color(int col, int x1, int y1, int sx, int sy, bool stop_on_change)
-{
-    if(x1 < 0)
-        x1 = 0;
-    if(y1 < 0)
-        y1 = 0;
-    if((sx+x1) > window_x)
-        sx = window_x - x1;
-    if((sy+y1) > window_y)
-        sy = window_y - y1;
-    if(sx < 1)
-        return;
-    if(sy < 1)
-        return;
-    int local_pointer = (y1 * size_x) + x1;
-    char *c = &window_base_col[local_pointer];
-    char first = (*c) & 0x0F;
-    for(int y=0;y<sy;y++) {
-        for(int x=0;x<sx;x++) {
-            if(stop_on_change && ((c[x]&0x0F) != first))
-                break;
-            c[x] = (char)col;
-        }
-        c+=size_x;
-    }
-}
-    
 void Screen :: clear(void)
 {
     char *b = window_base;
@@ -241,7 +214,7 @@ void Screen :: scroll_up()
         b[x] = 0;
 }
 
-void Screen :: scroll_down()
+/*void Screen :: scroll_down()
 {
     char *b = &window_base[(window_y-2)*size_x];
     char *c = &window_base_col[(window_y-2)*size_x];
@@ -255,19 +228,80 @@ void Screen :: scroll_down()
     }
     for(int x=0;x<window_x;x++)
         b[x+size_x] = 0;
-}
+}*/
 
 void Screen :: reverse_mode(int r)
 {
     reverse = r;
 }
     
+const short bright_map[16] = { 0, 1, 10, 3, 10, 13, 14, 7, 7, 8, 10, 15, 15, 13, 14,  1 };
+const short dim_map[16]    = { 0, 15, 2, 3,  4,  5,  6, 8, 9, 9,  2, 11, 11,  5,  6, 15 };
+
+void Screen :: doAttr(int val)
+{
+	switch(val) {
+	case 0:
+		color = 15; // should return to foreground color TODO
+		reverse = 0;
+		break;
+	case 1:
+		color = bright_map[color & 15];
+		break;
+	case 2:
+		color = dim_map[color & 15];
+		break;
+	case 7:
+		reverse = 1;
+		break;
+	case 30: color = 0; break;
+	case 31: color = 2; break;
+	case 32: color = 5; break;
+	case 33: color = 7; break;
+	case 34: color = 6; break;
+	case 35: color = 4; break;
+	case 36: color = 3; break;
+	case 37: color = 1; break;
+	default:
+		printf("Unhandled VT100 attribute %d\n", val);
+		break;
+	}
+}
+
+void Screen :: parseAttr()
+{
+	int value = 0;
+	for(int i=0;i<escape_cmd_pos;i++) {
+		char c = escape_cmd_data[i];
+		if ((c >= '0') && (c <= '9')) {
+			value *= 10;
+			value += (c - '0');
+		} else if (c == ';') {
+			doAttr(value);
+			value = 0;
+		}
+	}
+	doAttr(value);
+}
+
+
 void Screen :: output(char c)
 {
 	if(escape) {
-		escape = false;
-		if((c >= 0x10)&&(c <= 0x1F)) {
-			color = int(c - 0x10);
+		if ((!escape_cmd) && (c == '[')) {
+			escape_cmd_pos = 0;
+			escape_cmd = true;
+			return;
+		}
+
+		if (((c >= 'A')&&(c <= 'Z')) || ((c >= 'a')&&(c <= 'z')) || (escape_cmd_pos == 15)) {
+			escape = false;
+			escape_cmd = false;
+			if (c == 'm') {
+				parseAttr();
+			}
+		} else {
+			escape_cmd_data[escape_cmd_pos++] = c;
 		}
 		return;
 	}
@@ -460,15 +494,6 @@ void Screen :: draw_border_horiz(void)
     border_h ++;
 }
 
-void Screen :: make_reverse(int x, int y, int len)
-{
-    char *scr = window_base;
-    scr += (y * size_x) + x;
-    for(int i=0;i<len;i++) {
-        *(scr++) ^= 0x80;
-    }
-}
-
 int Screen :: get_size_x(void)
 {
     return window_x;
@@ -478,7 +503,6 @@ int Screen :: get_size_y(void)
 {
     return window_y;
 }
-
 
 void Screen :: set_char(int x, int y, char c)
 {

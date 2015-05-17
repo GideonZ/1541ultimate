@@ -19,8 +19,9 @@ struct vfs_dir;
 struct vfs_dirent;
 
 struct vfs {
-    void *path; // owned
+    void *path; // owned by file manager
     struct vfs_dirent *last_direntry; // reference only
+    struct vfs_dir *last_dir; // reference only
     struct vfs_file *open_file; // reference only
 };
 
@@ -31,12 +32,12 @@ struct vfs_file {
 };
 
 struct vfs_dirent {
-    void *path_object;    
+    void *file_info;
     char *name;
 };
 
 struct vfs_dir {
-    void *path_object;   // reference only 
+    void *entries;   // owned only
     int index;
     struct vfs_dirent *entry; // owned
     struct vfs *parent_fs;    // reference only

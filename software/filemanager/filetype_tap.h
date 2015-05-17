@@ -7,9 +7,7 @@
 
 class FileTypeTap : public FileDirEntry
 {
-	File *file;
 public:
-    FileTypeTap(FileTypeFactory &fac);
     FileTypeTap(CachedTreeNode *par, FileInfo *fi);
     ~FileTypeTap();
 
@@ -17,9 +15,6 @@ public:
     int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
     FileDirEntry *test_type(CachedTreeNode *obj);
     void execute(int);
-    
-    File *getFile() { return file; }
-    void  closeFile();
 };
 
 

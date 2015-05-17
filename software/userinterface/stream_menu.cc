@@ -4,33 +4,53 @@
 
 char *decimals = "0123456789";
 
-StreamMenu :: StreamMenu(Stream *s, CachedTreeNode *n)
+StreamMenu :: StreamMenu(Stream *s, Browsable *n) : listStack(20, NULL), actionList(0, NULL)
 {
     stream = s;
     state = 0;
     node = n;
-    menu = NULL;
     user_input[0] = 0;
     
+    currentList = new IndexedList<Browsable *>(0, NULL);
+    // listStack.push(currentList);
+    n->getSubItems(*currentList);
+
     print_items(0, 9999);
+}
+
+StreamMenu :: ~StreamMenu()
+{
+	IndexedList<Browsable *> *list;
+	cleanupBrowsables(*currentList);
+	while ((list = listStack.pop()) != NULL) {
+		cleanupBrowsables(*list);
+		delete list;
+	}
+	cleanupActions();
 }
 
 void StreamMenu :: print_items(int start, int stop)
 {
-    CachedTreeNode *n = (menu) ? menu : node;
-    printf("Print items of %p..\n", n);
-    if(stop > n->children.get_elements())
-        stop = n->children.get_elements();
+    if(stop > currentList->get_elements())
+        stop = currentList->get_elements();
             
     printf("%d-%d\n", start, stop);
-    if(n->children.get_elements() == 0) {
+    if(currentList->get_elements() == 0) {
         stream->format("< No Items >\n");
     } else if(start >= stop) {
         stream->format("< No more items.. >\n");
     } else {
         for(int i=start;i<stop;i++) {
-            stream->format("%3d. %s\n", 1+i, n->children[i]->get_display_string());
+            stream->format("%3d. %s\n", 1+i, (*currentList)[i]->getDisplayString());
         }
+    }
+    printf("State = %d. Depth: %d\n", state, listStack.get_count());
+}
+
+void StreamMenu :: print_actions()
+{
+    for(int i=0;i<actionList.get_elements();i++) {
+        stream->format("%3d. %s\n", 1+i, actionList[i]->getName());
     }
 }
 
@@ -42,11 +62,11 @@ int StreamMenu :: poll(Event &e)
 		printf("Into event done..\n");
 		print_items(0, 9999);
         return -1;
-    } else if(e.type == e_invalidate) {
+    } /*else if(e.type == e_invalidate) {
     	invalidate((CachedTreeNode *)e.object);
     	return -1;
     }
-        
+*/
     if(stream->getstr(user_input, 31) >= 0) {
         stream->format("You entered: %s\n", user_input);
         int res = process_command(user_input);
@@ -58,25 +78,33 @@ int StreamMenu :: poll(Event &e)
 
 int StreamMenu :: into(void)
 {
-    if(menu) {
-        delete menu;
-        menu = NULL;
+    if(state > 0) {
+    	cleanupActions();
         state = 0;
     }
         
-    if(selected > node->children.get_elements())
+    if(selected > currentList->get_elements())
         return -1;
     if(selected < 1)
         return -1;
+
+    Browsable *selNode = (*currentList)[selected-1];
+
+    IndexedList<Browsable *>*newList = new IndexedList<Browsable *>(0, NULL);
+
+    int result = selNode->getSubItems(*newList);
+    if (result < 0) {
+    	printf("Browsing into %s is not possible.\n", selNode->getName());
+    	delete newList;
+    	return result;
+    }
             
-    printf("Into: Node = %p. sel = %d ", node, selected);
-    printf("%s\n", node->get_name());
-    node = node->children[selected-1];
-    printf("Into2: Node = %p. ", node);
-    printf("%s\n", node->get_name());
-    return node->fetch_children();
+    listStack.push(currentList);
+    currentList = newList;
+    return currentList->get_elements();
 }
 
+/*
 void StreamMenu :: invalidate(CachedTreeNode *obj)
 {
     stream->format("Invalidation event: %s\n", obj->get_name());
@@ -106,22 +134,20 @@ void StreamMenu :: invalidate(CachedTreeNode *obj)
     node->fetch_children();
     print_items(0, 9999);
 }
+*/
     
 int StreamMenu :: process_command(char *command)
 {
     int items;
     
     if (strcmp(command, "up")==0) {
-        if(menu) { // if inside menu
-            menu = NULL;
+        if(state > 0) { // if inside menu
+        	cleanupActions();
             state = 0;
         }
-        else if(node->parent) {
-        	printf("Node = %p: ", node);
-        	printf("%s, ", node->get_name());
-        	node = node->parent;
-        	printf("Parent = %p: ", node);
-        	printf("%s\n", node->get_name());
+        else if(listStack.get_count() > 0) {
+        	cleanupBrowsables(*currentList);
+        	currentList = listStack.pop();
         }
 		print_items(0, 9999);
     }
@@ -135,32 +161,31 @@ int StreamMenu :: process_command(char *command)
         }                                    
     } 
     else if ((strcmp(command, "task")==0) and (state == 0)) {
-        menu = new CachedTreeNode(NULL);
-        items = node->fetch_task_items(menu->children);
+        items = 0;// node->fetch_task_items(menu->children);
         for(int i=0;i<main_menu_objects.get_elements();i++) {
-        	items += main_menu_objects[i]->fetch_task_items(menu->children);
+        	items += main_menu_objects[i]->fetch_task_items(actionList);
         }
-        print_items(0, items);
+        print_actions();
         state = 1;
     }
     else { 
         int value = stream->convert_in(command, 10, decimals);
         switch(state) {
             case 0: // default browse
-            	if((value > 0)&&(value <= node->children.get_elements())) {
+            	if((value > 0)&&(value <= currentList->get_elements())) {
                     selected = value;
-            		stream->format("You selected %s. Creating context.\n", node->children[selected-1]->get_name());
-                    menu = new CachedTreeNode(NULL);
-                    printf("Menu = %p\n", menu);
-                    items = node->children[selected-1]->fetch_context_items(menu->children);
-                    printf("Items = %d\n", items);
-                    if(items == 0) { // no context available; try to browse into
+                    Browsable *b = (*currentList)[selected-1];
+                    stream->format("You selected %s. Creating context.\n", b->getName());
+                    b->fetch_context_items(actionList);
+                    items = actionList.get_elements();
+                    if(items < 1) { // no context available; try to browse into
                         stream->format("No context items. Browsing into item..\n");
                         items = into();
+                        print_items(0, items);
                     } else {
                         state = 2;
+                        print_actions();
                     }
-                    print_items(0, items);
                 } else {
                     stream->format("Invalid choice.. Try again.\n");
                     print_items(0, 9999);
@@ -168,21 +193,37 @@ int StreamMenu :: process_command(char *command)
                 break;
             case 1: // task menu
             case 2: // context menu
-                if((value > 0)&&(value <= menu->children.get_elements())) {
+                if((value > 0)&&(value <= actionList.get_elements())) {
                     // execute
-                    menu->children[value-1]->execute(0);
+                    actionList[value-1]->execute();
+                    cleanupActions();
                     state = 0;
-                    delete menu;
-                    menu = NULL;
                 } else {
                     stream->format("Invalid task or context choice.. Try again.\n");
-                    print_items(0, 9999);
+                    print_actions();
                 }
                 break;
             default:
                 state = 0;
+                cleanupActions();
                 stream->format("Recovered from invalid state.\n");
         }
     }
     return 1;
+}
+
+void StreamMenu :: cleanupBrowsables(IndexedList<Browsable *> &list)
+{
+	for (int i=0;i<list.get_elements();i++) {
+		delete list[i];
+	}
+	list.clear_list();
+}
+
+void StreamMenu :: cleanupActions()
+{
+	for (int i=0;i<actionList.get_elements();i++) {
+		delete actionList[i];
+	}
+	actionList.clear_list();
 }

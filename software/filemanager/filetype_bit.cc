@@ -175,7 +175,7 @@ bool FileTypeBIT :: program(int id, void *buffer, int length, char *version, cha
 	bool do_erase = flash->need_erase();
 	int sector;
     int last_sector = -1;
-    user_interface->show_status("Flashing..", length);
+    user_interface->show_progress("Flashing..", length);
     while(length > 0) {
 		if (do_erase) {
 			sector = flash->page_to_sector(page);
@@ -183,7 +183,7 @@ bool FileTypeBIT :: program(int id, void *buffer, int length, char *version, cha
 				last_sector = sector;
 //				printf("Erase %d   \r", sector);
 				if(!flash->erase_sector(sector)) {
-                    user_interface->hide_status();
+                    user_interface->hide_progress();
 			        user_interface->popup("Erasing failed...", BUTTON_CANCEL);
 			        return false;
 				}
@@ -191,17 +191,17 @@ bool FileTypeBIT :: program(int id, void *buffer, int length, char *version, cha
 		}
         printf("Page %d  \r", page);
         if(!flash->write_page(page, p)) {
-            user_interface->hide_status();
+            user_interface->hide_progress();
             user_interface->popup("Programming failed...", BUTTON_CANCEL);
             return false;
         }
         page ++;
         p += page_size;
         length -= page_size;
-        user_interface->update_status(NULL, page_size);
+        user_interface->update_progress(NULL, page_size);
     }
     printf("            \n");
-    user_interface->hide_status();
+    user_interface->hide_progress();
     return true;
 }
     

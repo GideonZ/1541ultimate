@@ -26,11 +26,11 @@ OUTPUT    = ./output
 RESULT_FP = $(shell pwd)/result
 OUTPUT_FP = $(shell pwd)/output
 
-PRJ      =  ultimate
+PRJ      =  mb_ui
 PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/application \
-			$(PATH_SW)/application/ultimate \
+			$(PATH_SW)/application/mb_hello \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
@@ -80,9 +80,7 @@ SRCS_C   =	mbstart_rtos.c \
             timers.c \
             port.c \
             heap_3.c \
-            sock_echo.c \
-            time.c \
-			ftpd.c 
+            time.c 
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:
@@ -91,22 +89,7 @@ SRCS_C   =	mbstart_rtos.c \
 # root of the application. Devices can register themselves in the file system tree.
 # Therefore, the file manager needs to exist.
 
-#			filetype_d64.cc \
-#			filetype_g64.cc \
-#			filetype_t64.cc \
-#			filetype_prg.cc \
-#			filetype_tap.cc \
-#			filetype_sid.cc \
-#			filetype_reu.cc \
-#			filetype_crt.cc \
-#			filetype_u2u.cc \
-#			vfs.cc \
-#			socket_test.cc \
-#			usb_ax88772.cc \
-#			usb_em1010.cc \
-#			network_interface.cc \
-#			network_lwip.cc \
-#
+
 SRCS_CC	 =  stream.cc \
 			memory_rtos.cc \
 			init_function.cc \
@@ -118,67 +101,23 @@ SRCS_CC	 =  stream.cc \
 			config.cc \
 			event.cc \
 			main_loop.cc \
-			filemanager.cc \
-			filetypes.cc \
 			sys_calls.cc \
-			file_utils.cc \
-			file_device.cc \
-			file_partition.cc \
-			file_direntry.cc \
-			rtc.cc \
-			usb_base.cc \
-			usb2.cc \
-			usb_device.cc \
-			usb_scsi.cc \
-			usb_hub.cc \
 			c64.cc \
 			screen.cc \
 			keyboard.cc \
-			disk_image.cc \
-			c1541.cc \
-			bam_header.cc \
 			mystring.cc \
-			path.cc \
-			pattern.cc \
-			blockdev.cc \
-			blockdev_file.cc \
-			blockdev_ram.cc \
-			disk.cc \
-			partition.cc \
-			file_system.cc \
-			directory.cc \
-			file.cc \
-			fat_fs.cc \
-			fat_dir.cc \
-			fatfile.cc \
-			ccsbcs.cc \
-			iso9660.cc \
-			d64_filesystem.cc \
-			sd_card.cc \
-			sdio.cc \
-			sdcard_manager.cc \
-			tape_controller.cc \
-			tape_recorder.cc \
-			size_str.cc \
-			filetype_iso.cc \
-			filetype_d64.cc \
 			userinterface.cc \
 			editor.cc \
+			pattern.cc \
 			ui_stream.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
-			stream_menu.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
-			audio_select.cc \
-			iec.cc \
-			command_intf.cc \
-			dos.cc \
+			usb_stub.cc \
 			$(PRJ).cc
 
-####			sampler.cc \
-####			copper.cc \
 
 SRCS_ASM =  mb_crt0.s portasm.s
 

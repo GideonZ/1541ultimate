@@ -1,7 +1,5 @@
 
-extern "C" {
-    #include "small_printf.h"
-}
+#include <stdio.h>
 #include "blockdev_file.h"
 #include "filemanager.h"
 
@@ -18,12 +16,12 @@ BlockDevice_File::BlockDevice_File(CachedTreeNode *obj, int sec_size)
     }
     sector_size = (1 << shift);
     file_size = f->size;
-	file = root.fopen(obj, FA_READ); // TODO: | FA_WRITE
+	file = file_manager.fopen_node(obj, FA_READ | FA_WRITE);
 }
     
 BlockDevice_File::~BlockDevice_File()
 {
-	root.fclose(file);
+	file_manager.fclose(file);
 }
 
 DSTATUS BlockDevice_File::init(void)

@@ -31,6 +31,7 @@ public:
 
     // functions for reading and writing files
     void invalidate(void) { info = NULL; }
+    bool isValid(void) { return info != NULL; }
     virtual void    close(void);
     virtual FRESULT sync(void);
     virtual FRESULT read(void *buffer, DWORD len, UINT *transferred);
