@@ -5,6 +5,9 @@
 
 extern void outbyte(int);
 
+void _diag_write_char(char c, void **param);
+void _string_write_char(char c, void **param);
+
 static const char hexchar[] = "0123456789ABCDEF";
 
 static int
@@ -64,8 +67,8 @@ _hex(int val, char *buf, int len)
 #define is_digit(c) ((c >= '0') && (c <= '9'))
 
 
-int
-_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap)
+extern "C" int
+_my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap)
 {
     char buf[128];
     char c, sign, *cp=buf;
@@ -90,6 +93,7 @@ _vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_l
             // Process output
             switch (c) {
             case 'd':
+            case 'i':
                 val = va_arg(ap, int); // up to dword
                 length = _cvt(val, buf, 10, hexchar, leading_zeros, width);
                 if(length < width)
@@ -117,6 +121,7 @@ _vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_l
                 cp = buf;
                 break;
             case 'x': // any hex length
+            case 'X': // any hex length
                 addr = va_arg(ap, int); // up to dword
                 _hex(addr, buf, width);
                 length = width;
@@ -174,34 +179,32 @@ _string_write_char(char c, void **param)
 	(*pnt)++;
 }
 
-int
-printf(const char *fmt, ...)
+extern "C" int printf(const char *fmt, ...)
 {
     va_list ap;
     int ret;
 
     va_start(ap, fmt);
-    ret = _vprintf(_diag_write_char, (void **)0, fmt, ap);
+    ret = _my_vprintf(_diag_write_char, (void **)0, fmt, ap);
     va_end(ap);
     return (ret);
 }
 
-int vsprintf(char *dest, const char *fmt, va_list ap)
+extern "C" int vsprintf(char *dest, const char *fmt, va_list ap)
 {
-    int ret = _vprintf(_string_write_char, (void **)&dest, fmt, ap);
+    int ret = _my_vprintf(_string_write_char, (void **)&dest, fmt, ap);
     _string_write_char(0, (void **)&dest);
     return ret;
 }
 
-int
-sprintf(char *str, const char *fmt, ...)
+extern "C" int sprintf(char *str, const char *fmt, ...)
 {
     va_list ap;
     int ret;
 	char *pnt = str;
 	
     va_start(ap, fmt);
-    ret = _vprintf(_string_write_char, (void **)&pnt, fmt, ap);
+    ret = _my_vprintf(_string_write_char, (void **)&pnt, fmt, ap);
     _string_write_char(0, (void **)&pnt);
     va_end(ap);
     return (ret);
@@ -237,7 +240,7 @@ int _conv(const char *buf, int pos, int radix, int *result)
 	return pos;
 }
 
-int _vscanf(const char *buf, const char *fmt, va_list ap)
+extern "C" int _vscanf(const char *buf, const char *fmt, va_list ap)
 {
 	int do_conv = 0;
 	int pos = 0;
@@ -287,8 +290,7 @@ int _vscanf(const char *buf, const char *fmt, va_list ap)
 	return count;
 }
 
-int
-sscanf(char *buf, const char *fmt, ...)
+extern "C" int sscanf(char *buf, const char *fmt, ...)
 {
     va_list ap;
     int ret;
@@ -300,7 +302,7 @@ sscanf(char *buf, const char *fmt, ...)
 }
 
 
-int puts(const char *str)
+extern "C" int puts(const char *str)
 {
 	int i = 0;
 	while (*str) {
@@ -312,7 +314,7 @@ int puts(const char *str)
     return i+1;
 }        
 
-int  putchar(int a)
+extern "C" int putchar(int a)
 {
 	_diag_write_char((char)a, 0);
 	return a;

@@ -3,6 +3,7 @@
 
 #include "userinterface.h"
 #include "browsable.h"
+#include "ui_elements.h"
 
 class TreeBrowserState;
 class ContextMenu;
@@ -14,7 +15,8 @@ public:
     char quick_seek_string[MAX_SEARCH_LEN];
     int  quick_seek_length;
 
-    Screen   *window;
+    Screen   *screen;
+    Window   *window;
     Keyboard *keyb;
     //Path 	 *path;
 
@@ -29,7 +31,7 @@ public:
     virtual void initState(Browsable *);
     virtual ~TreeBrowser();
 
-    virtual void init(Screen *win, Keyboard *k);
+    virtual void init(Screen *scr, Keyboard *k);
     void deinit(void);
 
     virtual int poll(int, Event &e);

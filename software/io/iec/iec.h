@@ -91,7 +91,7 @@ class UltiCopy : public UIObject
 {
 public:
     Screen   *parent_win;
-    Screen   *window;
+    Window   *window;
     Keyboard *keyb;
     int return_code;
 

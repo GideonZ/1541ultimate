@@ -18,7 +18,7 @@ struct Line empty_line = { NULL, 0 };
 
 Editor :: Editor(char *text_buffer)
 {
-    parent_win = NULL;
+    screen = NULL;
     keyb = NULL;
     window = NULL;
     line_length = 38;
@@ -90,15 +90,15 @@ void Editor :: line_breakdown(char *text_buffer)
 
 void Editor :: init(Screen *scr, Keyboard *key)
 {
-    parent_win = scr;
+    screen = scr;
     keyb = key;
 
-    line_length = parent_win->get_size_x();
-    height = parent_win->get_size_y()-1;
+    line_length = screen->get_size_x();
+    height = screen->get_size_y()-1;
 
     printf("Line length: %d. Height: %d\n", line_length, height);
     
-    window = new Screen(parent_win, 0, 1, line_length, height);
+    window = new Window(screen, 0, 1, line_length, height);
     window->draw_border();
     height -= 2;
     first_line = 0;

@@ -4,35 +4,31 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
-#include "integer.h"
-
-// base class uses UART as I/O...
+#include <stdint.h>
 
 class Stream
 {
-    int vprintf(char *fmt, va_list ap);
-
     // for non-blocking string input
     int str_index;
     int str_state;
+    static void putc(char c, void **param) {
+    	((Stream *)param)->charout((int)c);
+    }
 public:
     Stream() {
-        str_index = 0;
-        str_state = 0;
+    	str_index = 0;
+    	str_state = 0;
     }
     
     virtual ~Stream() {}
 
-    virtual int read(BYTE *buffer, int length);    
-    virtual int write(BYTE *buffer, int length);
-    virtual int get_char(void);
-    virtual void charout(int c);
-    virtual int format(char *fmt, ...);
+    virtual int read(char *buffer, int length) { return 0; }
+    virtual int write(char *buffer, int length) { return 0; }
+    virtual int get_char(void) { return -1; }
+    virtual void charout(int c) { }
+
+    virtual int format(const char *fmt, ...);
     virtual int getstr(char *buffer, int length); // non blocking
-    
-    int  convert_out(int val, char *buf, int radix, char *digits, int leading_zeros, int width);
-    int  convert_in(char *buf, int radix, char *digits);
-    void hex(int val, char *buf, int len);
 };
 
 #endif

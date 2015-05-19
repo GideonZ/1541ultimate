@@ -26,7 +26,40 @@ public:
 
 class Screen
 {
+protected:
 	VT100_Parser *term;
+	friend class VT100_Parser;
+	virtual void output_raw(char c) { }
+public:
+    Screen();
+    virtual ~Screen();
+
+    void enableVT100Parsing();
+
+    // Static
+    static void putc(char c, void **obj) {
+    	((Screen *)obj)->output(c);
+    }
+
+    // functions called directly, or from a window
+    virtual void  cursor_visible(int a) { }
+    virtual void set_color(int c) { }
+    virtual int  get_color() { return 0; }
+    virtual void reverse_mode(int r) { }
+    virtual void scroll_mode(bool b) { }
+    virtual int   get_size_x(void) { return 0; }
+    virtual int   get_size_y(void) { return 0; }
+
+    // draw functions
+    virtual void move_cursor(int x, int y) { }
+    virtual int  output(char c) { return 0; }
+    virtual int  output(char *c) { return 0; }
+    virtual void repeat(char c, int rep) { }
+    virtual void output_fixed_length(char *string, int offset_x, int width) { }
+};
+
+class Screen_MemMappedCharMatrix : public Screen
+{
 	char *char_base;
     char *color_base;
 
@@ -37,9 +70,6 @@ class Screen
     int cursor_x;
 	int cursor_y;
 	int pointer;
-
-	friend class VT100_Parser;
-	void output_raw(char c);
 
 	// private stuff
 	void scroll_up(void);
@@ -52,29 +82,26 @@ protected:
     int cursor_on;
     bool allow_scroll;
 
+    void output_raw(char c);
 public:
-    Screen(char *, char *, int, int);
-    virtual ~Screen();
-    void enableVT100Parsing();
+    Screen_MemMappedCharMatrix(char *, char *, int, int);
+    ~Screen_MemMappedCharMatrix() { }
 
 // functions called directly, or from a window
-    void  cursor_visible(int a) {
-    	if (cursor_on != a) {
-    		char *p = char_base + pointer;
-    		*p ^= 0x80; // remove or place cursor
-    	}
-    	cursor_on = a;
-    }
-    virtual void set_color(int c) {color=c;}
-    virtual int  get_color() { return color; }
-    virtual void reverse_mode(int r) {reverse=r;}
-    virtual void scroll_mode(bool b) {allow_scroll=b;}
+    void  cursor_visible(int a);
+    void set_color(int c) {color=c;}
+    int  get_color() { return color; }
+    void reverse_mode(int r) {reverse=r;}
+    void scroll_mode(bool b) {allow_scroll=b;}
+    int   get_size_x(void) {return size_x;}
+    int   get_size_y(void) {return size_y;}
 
     // draw functions
-    virtual void move_cursor(int x, int y);
-    virtual int  output(char c);
-    virtual void repeat(char c, int rep);
-    virtual void output_fixed_length(char *string, int offset_x, int width);
+    void move_cursor(int x, int y);
+    int  output(char c);
+    int  output(char *c);
+    void repeat(char c, int rep);
+    void output_fixed_length(char *string, int offset_x, int width);
 };
 
 class Window

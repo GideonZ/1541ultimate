@@ -747,7 +747,7 @@ void UltiCopy :: init(Screen *scr, Keyboard *key)
 {
     parent_win = scr;
     keyb = key;
-    window = new Screen(parent_win, 0, 1, 40, 23);
+    window = new Window(parent_win, 0, 1, 40, 23);
     window->draw_border_horiz();
     window->clear();
 }

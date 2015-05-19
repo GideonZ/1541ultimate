@@ -5,7 +5,7 @@ IndexedList<ObjectWithMenu*> main_menu_objects(16, NULL);
 
 TaskMenu :: TaskMenu() : ContextMenu(NULL, 0, 0)
 {
-    parent_win = NULL;
+    screen = NULL;
     context_state = e_new;
     keyb = NULL;
     window = NULL;
@@ -20,7 +20,7 @@ TaskMenu :: ~TaskMenu(void)
 
 void TaskMenu :: init(Screen *scr, Keyboard *key)
 {
-    parent_win = scr;
+    screen = scr;
     keyb = key;
 
     int len, max_len;
@@ -42,7 +42,7 @@ void TaskMenu :: init(Screen *scr, Keyboard *key)
             printf("Number of items: %d\n", items);
         }
         rows = items + 2;
-        size_y = parent_win->get_size_y();
+        size_y = screen->get_size_y();
         if(rows > size_y) {
             rows = size_y;
         }
@@ -59,7 +59,7 @@ void TaskMenu :: init(Screen *scr, Keyboard *key)
             max_len = 30;
     }
 
-    window = new Screen(parent_win, 19-(max_len>>1), y_offs+2, max_len+2, rows);
+    window = new Window(screen, 19-(max_len>>1), y_offs+2, max_len+2, rows);
     window->draw_border();
     context_state = e_active;
 

@@ -25,8 +25,8 @@ class ContextMenu : public UIObject
 
     Contextable *contextable;
 
-    Screen *parent_win;
-    Screen   *window;
+    Screen   *screen;
+    Window   *window;
     Keyboard *keyb;
 
     

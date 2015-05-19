@@ -65,7 +65,8 @@ TreeBrowser :: ~TreeBrowser()
 
 void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 {
-	window = new Screen(screen, 0, 2, 40, 22);
+	this->screen = screen;
+	window = new Window(screen, 0, 2, 40, 22);
 	keyb = k;
 	state->do_refresh();
 }
@@ -84,7 +85,7 @@ void TreeBrowser :: config(void)
         
     Browsable *configRoot = new BrowsableConfigRoot();
     configBrowser = new ConfigBrowser(configRoot);
-    configBrowser->init(window, keyb);
+    configBrowser->init(screen, keyb);
     user_interface->activate_uiobject(configBrowser);
     // from this moment on, we loose focus.. polls will go directly to config menu!
 }
@@ -96,7 +97,7 @@ void TreeBrowser :: context(int initial)
 
     printf("Creating context menu for %s\n", state->under_cursor->getName());
     contextMenu = new ContextMenu(state->under_cursor, initial, state->selected_line);
-    contextMenu->init(window, keyb);
+    contextMenu->init(screen, keyb);
 //    state->reselect();
     user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to context menu!
@@ -108,7 +109,7 @@ void TreeBrowser :: task_menu(void)
 		return;
     printf("Creating task menu for %s\n", state->node->getName());
     contextMenu = new TaskMenu();
-    contextMenu->init(window, keyb);
+    contextMenu->init(screen, keyb);
 //    state->reselect();
     user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to menu!
@@ -118,7 +119,7 @@ void TreeBrowser :: test_editor(void)
 {
 	Event e(e_nop, 0, 0);
     Editor *edit = new Editor(NULL); // use built-in text
-    edit->init(window, keyb);
+    edit->init(screen, keyb);
     int ret;
     do {
         ret = edit->poll(0, e);

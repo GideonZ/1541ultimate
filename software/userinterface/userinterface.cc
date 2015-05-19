@@ -19,11 +19,6 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-const char *c_button_names[NUM_BUTTONS] = { " Ok ", " Yes ", " No ", " All ", " Cancel " };
-const char c_button_keys[NUM_BUTTONS] = { 'o', 'y', 'n', 'c', 'a' };
-const int c_button_widths[NUM_BUTTONS] = { 4, 5, 4, 5, 8 };
-
-/* COMPILER BUG: static data members are not declared, and do not appear in the linker */
 
 void poll_user_interface(Event &e)
 {
@@ -101,7 +96,7 @@ void UserInterface :: handle_event(Event &e)
         	if ((e.type == e_button_press)||(e.type == e_freeze)) {
                 host->freeze();
                 host->set_colors(color_bg, color_border);
-                screen = new Screen(host->get_screen(), host->get_color_map(), 40, 25);
+                screen = new Screen_MemMappedCharMatrix(host->get_screen(), host->get_color_map(), 40, 25);
                 set_screen_title();
                 for(i=0;i<=focus;i++) {  // build up
                     //printf("Going to (re)init objects %d.\n", i);
@@ -192,7 +187,7 @@ void UserInterface :: set_screen_title()
     for(int i=0;i<40;i++)
         screen->output('\002');
     screen->move_cursor(0,24);
-	screen->no_scroll();
+	screen->scroll_mode(false);
     for(int i=0;i<40;i++)
         screen->output('\002');
     screen->move_cursor(32,24);
@@ -218,10 +213,12 @@ int UserInterface :: string_box(char *msg, char *buffer, int maxlen)
 	Event e(e_nop, 0, 0);
     UIStringBox *box = new UIStringBox(msg, buffer, maxlen);
     box->init(screen, keyboard);
+    screen->cursor_visible(1);
     int ret;
     do {
         ret = box->poll(0, e);
     } while(!ret);
+    screen->cursor_visible(0);
     box->deinit();
     return ret;
 }
@@ -253,297 +250,4 @@ void UserInterface :: run_editor(char *text_buf)
         ret = edit->poll(0, e);
     } while(!ret);
     edit->deinit();
-}
-
-/* User Interface Objects */
-/* Popup */
-UIPopup :: UIPopup(char *msg, BYTE btns) : message(msg)
-{
-    buttons = btns;
-    btns_active = 0;
-    active_button = 0; // we can change this
-    button_start_x = 0;
-    window = NULL;
-    keyboard = NULL;
-}    
-
-void UIPopup :: init(Screen *screen, Keyboard *k)
-{
-    // first, determine how wide our popup needs to be
-    int button_width = 0;
-    int message_width = message.length();
-    keyboard = k;
-
-    BYTE b = buttons;
-    for(int i=0;i<NUM_BUTTONS;i++) {
-        if(b & 1) {
-            btns_active ++;
-            button_width += c_button_widths[i];
-        }
-        b >>= 1;
-    }
-        
-    int window_width = message_width;
-    if (button_width > message_width)
-        window_width = button_width;
-
-    int x1 = (screen->get_size_x() - window_width) / 2;
-    int y1 = (screen->get_size_y() - 5) / 2;
-    int x_m = (window_width - message_width) / 2;
-    int x_b = (window_width - button_width) / 2;
-    button_start_x = x_b;
-
-    window = new Screen(screen, x1, y1, window_width+2, 5);
-    window->draw_border();
-    window->no_scroll();
-    window->move_cursor(x_m, 0);
-    window->output(message.c_str());
-
-    active_button = 0; // we can change this
-    draw_buttons();
-}
-
-void UIPopup :: draw_buttons()
-{
-    window->move_cursor(button_start_x, 2);
-    int j=0;
-    int b = buttons;
-    for(int i=0;i<NUM_BUTTONS;i++) {
-        if(b & 1) {
-			window->reverse_mode((j == active_button)? 1 : 0);
-        	window->output((char *)c_button_names[i]);
-            button_key[j++] = c_button_keys[i];
-        }
-        b >>= 1;
-    }
-    
-    keyboard->clear_buffer();
-}
-
-int UIPopup :: poll(int dummy, Event &e)
-{
-    BYTE c = keyboard->getch();
-    
-    for(int i=0;i<btns_active;i++) {
-        if(c == button_key[i]) {
-            return (1 << i);
-        }
-    }
-    if((c == 0x0D)||(c == 0x20)) {
-		for(int i=0,j=0;i<NUM_BUTTONS;i++) {
-			if(buttons & (1 << i)) {
-				if(active_button == j)
-					return (1 << i);
-				j++;
-			}
-		}
-        return 0;
-    }
-    if(c == 0x1D) {
-        active_button ++;
-        if(active_button >= btns_active)
-            active_button = btns_active-1;
-        draw_buttons();
-    } else if(c == 0x9D) {
-        active_button --;
-        if(active_button < 0)
-            active_button = 0;
-        draw_buttons();
-    }
-    return 0;
-}    
-
-void UIPopup :: deinit()
-{
-	delete window;
-}
-
-
-UIStringBox :: UIStringBox(char *msg, char *buf, int max) : message(msg)
-{
-    buffer = buf;
-    max_len = max;
-    window = NULL;
-    keyboard = NULL;
-    cur = len = 0;
-}
-
-void UIStringBox :: init(Screen *screen, Keyboard *keyb)
-{
-    int message_width = message.length();
-    int window_width = message_width;
-    if (max_len > message_width)
-        window_width = max_len;
-    window_width += 2; // compensate for border
-    
-    int x1 = (screen->get_size_x() - window_width) / 2;
-    int y1 = (screen->get_size_y() - 5) / 2;
-    int x_m = (window_width - message_width) / 2;
-
-    keyboard = keyb;
-    window = new Screen(screen, x1, y1, window_width, 5);
-    window->draw_border();
-    window->move_cursor(x_m, 0);
-    window->output_line(message.c_str());
-
-    window->move_cursor(0, 2);
-    //scr = window->get_pointer();
-
-/// Now prefill the box...
-    len = 0;
-    cur = 0;
-        
-/// Default to old string
-    cur = strlen(buffer); // assume it is prefilled, set cursor at the end.
-    if(cur > max_len) {
-        buffer[cur]=0;
-        cur = max_len;
-    }
-    len = cur;
-/// Default to old string
-    window->output_length(buffer, len);
-    window->move_cursor(cur, 2);
-    window->cursor_visible(1);
-}
-
-int UIStringBox :: poll(int dummy, Event &e)
-{
-    BYTE key;
-    int i;
-
-    key = keyboard->getch();
-    if(!key)
-        return 0;
-
-    switch(key) {
-    case 0x0D: // CR
-        window->cursor_visible(0);
-        if(!len)
-            return -1; // cancel
-        return 1; // done
-    case 0x9D: // left
-    	if (cur > 0) {
-            cur--;
-        	window->move_cursor(cur, 2);
-        }                
-        break;
-    case 0x1D: // right
-        if (cur < len) {
-            cur++;
-        	window->move_cursor(cur, 2);
-        }
-        break;
-    case 0x14: // backspace
-        if (cur > 0) {
-            cur--;
-            len--;
-            for(i=cur;i<len;i++) {
-                buffer[i] = buffer[i+1];
-            } buffer[i] = 0;
-//            window->move_cursor(0, 2);
-            window->output_length(buffer, len);
-            window->move_cursor(cur, 2);
-        }
-        break;
-    case 0x93: // clear
-        len = 0;
-        cur = 0;
-        window->move_cursor(0, 2);
-        window->repeat(' ', max_len);
-        window->move_cursor(cur, 2);
-        break;
-    case 0x94: // del
-        if(cur < len) {
-            len--;
-            for(i=cur;i<len;i++) {
-            	buffer[i] = buffer[i+1];
-            } buffer[i] = 0x20;
-            window->output_length(buffer, len);
-            window->move_cursor(cur, 2);
-        }
-        break;
-    case 0x13: // home
-        cur = 0;
-        window->move_cursor(cur, 2);
-        break;        
-    case 0x11: // down = end
-        cur = len;
-        window->move_cursor(cur, 2);
-        break;
-    case 0x03: // break
-        return -1; // cancel
-    default:
-        if ((key < 32)||(key > 127)) {
-            break;
-        }
-        if (len < max_len) {
-            for(i=len; i>=cur; i--) { // insert if necessary
-                buffer[i+1] = buffer[i];
-            }
-            buffer[cur] = key;
-            cur++;
-            len++;
-            window->move_cursor(0, 2);
-            window->output_length(buffer, len);
-            window->move_cursor(cur, 2);
-        }
-        break;
-    }
-    return 0; // still busy
-}
-
-void UIStringBox :: deinit(void)
-{
-	if (window)
-		delete window;
-}
-
-/* Status Box */
-UIStatusBox :: UIStatusBox(char *msg, int steps) : message(msg)
-{
-    total_steps = steps;
-    progress = 0;
-    window = NULL;
-}
-    
-void UIStatusBox :: init(Screen *screen)
-{
-    int window_width = 32;
-    int message_width = message.length();
-    int x1 = (screen->get_size_x() - window_width) / 2;
-    int y1 = (screen->get_size_y() - 5) / 2;
-    int x_m = (window_width - message_width) / 2;
-
-    window = new Screen(screen, x1, y1, window_width, 5);
-    window->draw_border();
-    window->move_cursor(x_m, 0);
-    window->output_line(message.c_str());
-    window->move_cursor(0, 2);
-}
-
-void UIStatusBox :: deinit(void)
-{
-    delete window;
-}
-
-void UIStatusBox :: update(char *msg, int steps)
-{
-    static char percent[8];
-    static char bar[40];
-    progress += steps;
-
-    if(msg) {
-        message = msg;
-        window->clear();
-        window->output_line(message.c_str());
-    }
-    
-    memset(bar, 32, 36);
-    window->move_cursor(0, 2);
-    window->reverse_mode(1);
-    int terminate = (32 * progress) / total_steps;
-    if(terminate > 32)
-        terminate = 32;
-    bar[terminate] = 0; // terminate
-    window->output_line(bar);
 }

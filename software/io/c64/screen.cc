@@ -1,13 +1,12 @@
 #include "screen.h"
 #include <stdarg.h>
-#include <stdio.h>
+#include "small_printf.h"
 
 /*
 #include "integer.h"
 
 extern "C" {
     #include "itu.h"
-	#include "small_printf.h"
 }
 */
 
@@ -88,12 +87,27 @@ int VT100_Parser :: processChar(char c)
 }
 
 /**
- * Basic screen implementation, assuming a memory mapped character grid and a memory mapped attribute grid
+ * Basic screen implementation, on a memory mapped character grid and a memory mapped attribute grid
  */
-Screen :: Screen(char *b, char *c, int sx, int sy)
+Screen :: Screen()
 {
 	term = 0;
+}
 
+Screen :: ~Screen()
+{
+	if (term)
+		delete term;
+}
+
+void Screen :: enableVT100Parsing()
+{
+	term = new VT100_Parser(this);
+}
+
+
+Screen_MemMappedCharMatrix :: Screen_MemMappedCharMatrix(char *b, char *c, int sx, int sy)
+{
 	char_base  = b;
     color_base = c;
 
@@ -110,18 +124,15 @@ Screen :: Screen(char *b, char *c, int sx, int sy)
     pointer = 0;
 }
 
-Screen :: ~Screen()
-{
-	if (term)
-		delete term;
+void  Screen_MemMappedCharMatrix :: cursor_visible(int a) {
+	if (cursor_on != a) {
+		char *p = char_base + pointer;
+		*p ^= 0x80; // remove or place cursor
+	}
+	cursor_on = a;
 }
 
-void Screen :: enableVT100Parsing()
-{
-	term = new VT100_Parser(this);
-}
-
-void Screen :: move_cursor(int x, int y)
+void Screen_MemMappedCharMatrix :: move_cursor(int x, int y)
 {
 	if(cursor_on)
 		char_base[pointer] ^= 0x80;
@@ -135,7 +146,7 @@ void Screen :: move_cursor(int x, int y)
 
 }
 
-void Screen :: scroll_up()
+void Screen_MemMappedCharMatrix :: scroll_up()
 {
     char *b = char_base;
     char *c = color_base;
@@ -151,7 +162,7 @@ void Screen :: scroll_up()
         b[x] = 0;
 }
 
-void Screen :: scroll_down()
+void Screen_MemMappedCharMatrix :: scroll_down()
 {
     char *b = &char_base[(size_y-2)*size_x];
     char *c = &color_base[(size_y-2)*size_x];
@@ -167,7 +178,7 @@ void Screen :: scroll_down()
         b[x+size_x] = 0;
 }
 
-void Screen :: repeat(char a, int len)
+void Screen_MemMappedCharMatrix :: repeat(char a, int len)
 {
 	if(cursor_on)
 		char_base[pointer] ^= 0x80;
@@ -180,16 +191,24 @@ void Screen :: repeat(char a, int len)
 		char_base[pointer] ^= 0x80;
 }
 
-int  Screen :: output(char c)
+int  Screen_MemMappedCharMatrix :: output(char c)
 {
-	int h = (!term) ? 1 : (term ->processChar(c));
-	if (h) {
+	if (!term) {
 		output_raw(c);
+		return 1;
+	}
+	return term ->processChar(c);
+}
+
+int  Screen_MemMappedCharMatrix :: output(char *c) {
+	int h = 0;
+	while(*c) {
+		h += output(*(c++));
 	}
 	return h;
 }
 
-void Screen :: output_raw(char c)
+void Screen_MemMappedCharMatrix :: output_raw(char c)
 {
 	if (cursor_on) {
 		char *p = char_base + pointer;
@@ -250,7 +269,7 @@ void Screen :: output_raw(char c)
 	}
 }
 
-void Screen :: output_fixed_length(char *string, int offset_x, int width)
+void Screen_MemMappedCharMatrix :: output_fixed_length(char *string, int offset_x, int width)
 {
 	if (cursor_on) {
 		char *p = char_base + pointer;
@@ -282,10 +301,10 @@ void Screen :: output_fixed_length(char *string, int offset_x, int width)
  */
 Window :: Window(Screen *parent, int x1, int y1, int sx, int sy)
 {
-	window_x   = sx; // default to full screen
+	window_x   = sx;
     window_y   = sy;
-    offset_x   = 0;
-    offset_y   = 0;
+    offset_x   = x1;
+    offset_y   = y1;
     cursor_x   = 0;
     cursor_y   = 0;
     border_h   = 0;
@@ -342,7 +361,10 @@ void Window :: reverse_mode(int r)
 	parent->reverse_mode(r);
 }
 
-    
+void Window :: output(char c) {
+	parent->output(c);
+}
+
 void Window :: output(char *string)
 {
     while(*string) {
@@ -385,12 +407,15 @@ void Window :: draw_border(void)
     	parent->output(4);
     }
 
+    offset_x ++;
+    offset_y ++;
     window_x  -= 2;
     window_y  -= 2;
     cursor_x   = 0;
     cursor_y   = 0;
     border_h ++;
     border_v ++;
+    move_cursor(0, 0);
 }
 
 void Window :: draw_border_horiz(void)
@@ -422,24 +447,15 @@ void Window :: set_char(int x, int y, char c)
 	parent->output(c);
 }
     
-/*
-int console_print(Window *w, const char *fmt, ...)
+int console_print(Screen *s, const char *fmt, ...)
 {
-	static char str[256];
-
     va_list ap;
     int ret;
-	char *pnt = str;
 	
     va_start(ap, fmt);
-	if(w) {
-	    ret = _vprintf(_string_write_char, (void **)&pnt, fmt, ap);
-	    _string_write_char(0, (void **)&pnt);
-	    w->output(str);
-	} else {
-		ret = _vprintf(_diag_write_char, (void **)&pnt, fmt, ap);
+	if(s) {
+	    ret = _my_vprintf(Screen :: putc, (void **)s, fmt, ap);
 	}
     va_end(ap);
     return (ret);
 }
-*/

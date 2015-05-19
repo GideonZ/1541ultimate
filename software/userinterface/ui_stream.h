@@ -1,8 +1,8 @@
 #ifndef UI_STREAM_H
 #define UI_STREAM_H
 
-#include "userinterface.h"
 #include "stream.h"
+#include "userinterface.h"
 
 class StreamMenu;
 

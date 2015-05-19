@@ -18,8 +18,8 @@ public:
     int first_line;
 	int linecount;
     
-    Screen   *parent_win;
-    Screen   *window;
+    Screen   *screen;
+    Window   *window;
     Keyboard *keyb;
 	IndexedList<Line> *text;
 

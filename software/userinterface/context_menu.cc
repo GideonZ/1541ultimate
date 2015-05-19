@@ -3,9 +3,9 @@
 
 ContextMenu :: ContextMenu(Contextable *node, int initial, int y) : actions(2, 0)
 {
-    parent_win = NULL;
     contextable = node;
     context_state = e_new;
+    screen = NULL;
     keyb = NULL;
     window = NULL;
     y_offs = y-1;
@@ -26,7 +26,6 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
     int len, max_len;
     int rows, size_y;
 
-    parent_win = scr;
     keyb = key;
 
     if(context_state == e_new) {
@@ -39,7 +38,7 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
             return;
         }
         rows = item_count + 2;
-        size_y = parent_win->get_size_y();
+        size_y = scr->get_size_y();
         if(rows > size_y) {
             rows = size_y;
         }
@@ -59,7 +58,8 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
             max_len = 25;
     }        
 
-    window = new Screen(parent_win, parent_win->get_size_x()-2-max_len, y_offs+2, max_len+2, rows);
+    this->screen = scr;
+    window = new Window(scr, scr->get_size_x()-2-max_len, y_offs+2, max_len+2, rows);
 
     window->draw_border();
     if((corner == y_offs)||(corner == (y_offs+rows-1)))
