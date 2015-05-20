@@ -5,8 +5,8 @@
 #include "menu.h"
 #include "userinterface.h"
 
-extern BYTE _binary_sidcrt_65_start;
-extern BYTE _binary_sidcrt_65_end;
+extern uint8_t _binary_sidcrt_65_start;
+extern uint8_t _binary_sidcrt_65_end;
 
 // tester instance
 FileTypeSID tester_sid(file_type_factory);
@@ -18,8 +18,8 @@ FileTypeSID tester_sid(file_type_factory);
 #define SIDFILE_SHOW_SUB  0x5403
 #define SIDFILE_LOADNRUN  0x54FF
 
-const DWORD magic_psid = 0x50534944; // big endian assumed
-const DWORD magic_rsid = 0x52534944; // big endian assumed
+const uint32_t magic_psid = 0x50534944; // big endian assumed
+const uint32_t magic_rsid = 0x52534944; // big endian assumed
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
 cart_def sid_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_RAM }; 
@@ -59,7 +59,7 @@ int FileTypeSID :: fetch_children(void)
 {
     int b, i, entries;
     UINT bytes_read;
-    DWORD *magic;
+    uint32_t *magic;
 	FRESULT fres;
     
 	// if we fetched them, we don't need to do it again.
@@ -86,7 +86,7 @@ int FileTypeSID :: fetch_children(void)
 	}
 	
     // header checks
-    magic = (DWORD *)sid_header;
+    magic = (uint32_t *)sid_header;
     if((*magic != magic_rsid)&&(*magic != magic_psid)) {
         printf("Filetype not as expected. (%08x)\n", *magic); 
 		root.fclose(file);
@@ -172,7 +172,7 @@ int FileTypeSID :: prepare(bool use_default)
 	int  length;
 	
 	// reload header, reset state of file
-	DWORD *magic = (DWORD *)sid_header;
+	uint32_t *magic = (uint32_t *)sid_header;
 	if(!file)
 		file = root.fopen(this, FA_READ);
 	if(!file) {

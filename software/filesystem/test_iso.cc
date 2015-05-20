@@ -15,7 +15,7 @@
 
 void test_file_system(FileSystem *fs)
 {
-    BYTE *buffer = new BYTE[3000];
+    uint8_t *buffer = new uint8_t[3000];
     UINT trans;
     Directory *dir = fs->dir_open(NULL);
     if(!dir) {
@@ -57,7 +57,7 @@ int main(int argc, char **argv)
         delete blk;
         return -2;
     }
-    DWORD sec_count;
+    uint32_t sec_count;
     DRESULT dres = blk->ioctl(GET_SECTOR_COUNT, &sec_count);
     printf("Sector count: %d.\n", sec_count);
     Partition *prt = new Partition(blk, 0, sec_count, 0);

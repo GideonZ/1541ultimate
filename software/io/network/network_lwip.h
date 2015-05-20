@@ -42,7 +42,7 @@ public:
 
     void *driver;
     void (*driver_free_function)(void *driver, void *buffer);
-    BYTE (*driver_output_function)(void *driver, void *buffer, int pkt_len);
+    uint8_t (*driver_output_function)(void *driver, void *buffer, int pkt_len);
 
     NetworkLWIP(void *driver,
 				driver_output_function_t out,
@@ -56,11 +56,11 @@ public:
     void poll();
     void link_up();
     void link_down();
-    void set_mac_address(BYTE *mac);
-    bool input(BYTE *raw_buffer, BYTE *payload, int pkt_size);
+    void set_mac_address(uint8_t *mac);
+    bool input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size);
 
     virtual void init_callback();
-    virtual BYTE output_callback(struct netif *, struct pbuf *) {
+    virtual uint8_t output_callback(struct netif *, struct pbuf *) {
         printf("Network Interface: Output Callback - Base\n");
     }
 

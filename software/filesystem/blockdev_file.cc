@@ -38,7 +38,7 @@ DSTATUS BlockDevice_File::status(void)
         return STA_NODISK;
 }
     
-DRESULT BlockDevice_File::read(BYTE *buffer, DWORD sector, int count)
+DRESULT BlockDevice_File::read(uint8_t *buffer, uint32_t sector, int count)
 {
 //    printf("BlockDevice_File read sector: %d.\n", sector);
 
@@ -53,22 +53,22 @@ DRESULT BlockDevice_File::read(BYTE *buffer, DWORD sector, int count)
     return RES_OK;
 }
 
-DRESULT BlockDevice_File::write(const BYTE *buffer, DWORD sector, int count)
+DRESULT BlockDevice_File::write(const uint8_t *buffer, uint32_t sector, int count)
 {
     if(file->seek(sector << shift))
         return RES_PARERR;
         
     UINT written;
-    if(file->write((BYTE *)buffer, sector_size * (int)count, &written) != FR_OK)
+    if(file->write((uint8_t *)buffer, sector_size * (int)count, &written) != FR_OK)
         return RES_ERROR;
     
     return RES_OK;
 }
 
-DRESULT BlockDevice_File::ioctl(BYTE command, void *data)
+DRESULT BlockDevice_File::ioctl(uint8_t command, void *data)
 {
-    DWORD size;
-    DWORD *dest = (DWORD *)data;
+    uint32_t size;
+    uint32_t *dest = (uint32_t *)data;
     
     switch(command) {
         case GET_SECTOR_COUNT:
@@ -78,10 +78,10 @@ DRESULT BlockDevice_File::ioctl(BYTE command, void *data)
             *dest = size;
             break;
         case GET_SECTOR_SIZE:
-            (*(DWORD *)data) = sector_size;
+            (*(uint32_t *)data) = sector_size;
             break;
         case GET_BLOCK_SIZE:
-            (*(DWORD *)data) = 128*1024;
+            (*(uint32_t *)data) = 128*1024;
             break;
         default:
             printf("IOCTL %d.\n", command);

@@ -10,6 +10,9 @@ Flash *get_flash(void)
 	// we test all known flashes here..
 	// Because we don't have a 'new' in the 1st boot, we simply
 	// instatiate all possible flash classes and return the pointer to the right one..
+#if RUNS_ON_PC
+	return new Flash(); // on PC, return stubbed class
+#endif
 	Flash *ret_val = NULL;
 
 	ret_val = at45_flash.tester();

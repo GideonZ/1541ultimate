@@ -18,19 +18,19 @@ FRESULT File :: sync(void)
 	return info->fs->file_sync(this);
 }
 
-FRESULT File :: read(void *buffer, DWORD len, UINT *transferred)
+FRESULT File :: read(void *buffer, uint32_t len, UINT *transferred)
 {
 	if(!info) return FR_INVALID_OBJECT;
 	return info->fs->file_read(this, buffer, len, transferred);
 }
 
-FRESULT File :: write(void *buffer, DWORD len, UINT *transferred)
+FRESULT File :: write(void *buffer, uint32_t len, UINT *transferred)
 {
 	if(!info) return FR_INVALID_OBJECT;
     return info->fs->file_write(this, buffer, len, transferred);
 }
 
-FRESULT File :: seek(DWORD pos)
+FRESULT File :: seek(uint32_t pos)
 {
 	if(!info) return FR_INVALID_OBJECT;
     return info->fs->file_seek(this, pos);

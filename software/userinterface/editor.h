@@ -31,7 +31,7 @@ public:
     virtual void deinit(void);
 
     virtual int poll(int, Event &e);
-    virtual int handle_key(BYTE);
+    virtual int handle_key(uint8_t);
 };
 
 #endif

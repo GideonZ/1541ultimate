@@ -8,9 +8,11 @@
 #ifndef USERINTERFACE_UI_ELEMENTS_H_
 #define USERINTERFACE_UI_ELEMENTS_H_
 
+#include <stdint.h>
 #include "screen.h"
 #include "keyboard.h"
 #include "mystring.h"
+#include "event.h"
 
 #define NUM_BUTTONS 5
 
@@ -38,10 +40,10 @@ public:
 class UIPopup : public UIObject
 {
 private:
-    string   message;
-    BYTE buttons;
+    mstring   message;
+    uint8_t buttons;
 
-    BYTE button_key[NUM_BUTTONS];
+    uint8_t button_key[NUM_BUTTONS];
     int  btns_active;
     int  active_button;
     int  button_start_x;
@@ -51,7 +53,7 @@ private:
     void draw_buttons();
 
 public:
-    UIPopup(char *msg, BYTE flags);
+    UIPopup(char *msg, uint8_t flags);
     ~UIPopup() { }
 
     void init(Screen *screen, Keyboard *keyb);
@@ -62,7 +64,7 @@ public:
 class UIStringBox : public UIObject
 {
 private:
-    string    message;
+    mstring   message;
     Window   *window;
     Keyboard *keyboard;
 
@@ -84,7 +86,7 @@ public:
 class UIStatusBox : public UIObject
 {
 private:
-    string   message;
+    mstring  message;
     int      total_steps;
     int      progress;
     Window  *window;

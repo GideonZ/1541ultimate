@@ -35,7 +35,7 @@ public:
     void deinit(void);
 
     virtual int poll(int, Event &e);
-    virtual int handle_key(BYTE);
+    virtual int handle_key(int);
 
     void reset_quick_seek(void);
     bool perform_quick_seek(void);

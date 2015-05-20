@@ -10,7 +10,7 @@ Disk::Disk(BlockDevice *b, int sec = 512)
 {
     dev = b;
     sector_size = sec;
-    buf = new BYTE[sec];
+    buf = new uint8_t[sec];
     partition_list = NULL;
 }
 
@@ -35,8 +35,8 @@ int Disk::Init(void)
     // if present, delete existing partition list
     Partition *prt;
     Partition **prt_list;
-    DWORD lba, start, size, next;
-    BYTE *tbl;
+    uint32_t lba, start, size, next;
+    uint8_t *tbl;
     
 #ifdef BOOTLOADER
     if(dev->init())
@@ -108,12 +108,12 @@ int Disk::Init(void)
     return p_count;        
 }
 
-int Disk :: read_ebr(Partition ***prt_list, DWORD lba)
+int Disk :: read_ebr(Partition ***prt_list, uint32_t lba)
 {
-    BYTE *local_buf = new BYTE[sector_size];
+    uint8_t *local_buf = new uint8_t[sector_size];
     Partition *prt;
-    DWORD start, size;
-    BYTE *tbl;
+    uint32_t start, size;
+    uint8_t *tbl;
 
     if(dev->read(local_buf, lba, 1) != RES_OK) {
         delete local_buf;

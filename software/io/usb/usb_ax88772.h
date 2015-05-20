@@ -10,7 +10,7 @@ class UsbAx88772Driver : public UsbDriver
 	int  irq_transaction;
     int  bulk_transaction;
 
-    BYTE temp_buffer[16];
+    uint8_t temp_buffer[16];
     
     UsbBase   *host;
     UsbDevice *device;
@@ -27,8 +27,8 @@ class UsbAx88772Driver : public UsbDriver
     bool read_mac_address();
     bool write_mac_address();
     
-    void write_phy_register(BYTE reg, WORD value);
-    WORD read_phy_register(BYTE reg);
+    void write_phy_register(uint8_t reg, WORD value);
+    WORD read_phy_register(uint8_t reg);
 
 public:
 	UsbAx88772Driver(IndexedList<UsbDriver *> &list);
@@ -43,11 +43,11 @@ public:
 	void pipe_error(int pipe);
 
     //BYTE output_callback(struct netif *, struct pbuf *);
-    BYTE output_packet(BYTE *buffer, int pkt_len);
+    uint8_t output_packet(uint8_t *buffer, int pkt_len);
 
-    void interrupt_handler(BYTE *, int);
-    void bulk_handler(BYTE *, int);
-    void free_buffer(BYTE *b);
+    void interrupt_handler(uint8_t *, int);
+    void bulk_handler(uint8_t *, int);
+    void free_buffer(uint8_t *b);
 };
 
 #endif

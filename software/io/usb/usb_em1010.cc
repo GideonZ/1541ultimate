@@ -9,9 +9,9 @@ extern "C" {
 #include "usb_em1010.h"
 #include "event.h"
 
-__inline DWORD cpu_to_32le(DWORD a)
+__inline uint32_t cpu_to_32le(uint32_t a)
 {
-    DWORD m1, m2;
+    uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
@@ -30,23 +30,23 @@ __inline WORD le16_to_cpu(WORD h)
 UsbEm1010Driver usb_em1010_driver_tester(usb_drivers);
 
 // Entry point for call-backs.
-void UsbEm1010Driver_interrupt_callback(BYTE *data, int data_length, void *object) {
+void UsbEm1010Driver_interrupt_callback(uint8_t *data, int data_length, void *object) {
 	((UsbEm1010Driver *)object)->interrupt_handler(data, data_length);
 }
 
 // Entry point for call-backs.
-void UsbEm1010Driver_bulk_callback(BYTE *data, int data_length, void *object) {
+void UsbEm1010Driver_bulk_callback(uint8_t *data, int data_length, void *object) {
 	((UsbEm1010Driver *)object)->bulk_handler(data, data_length);
 }
 
 // entry point for free buffer callback
 void UsbEm1010Driver_free_buffer(void *drv, void *b) {
-	((UsbEm1010Driver *)drv)->free_buffer((BYTE *)b);
+	((UsbEm1010Driver *)drv)->free_buffer((uint8_t *)b);
 }
 
 // entry point for output packet callback
-BYTE UsbEm1010Driver_output(void *drv, void *b, int len) {
-	return ((UsbEm1010Driver *)drv)->output_packet((BYTE *)b, len);
+uint8_t UsbEm1010Driver_output(void *drv, void *b, int len) {
+	return ((UsbEm1010Driver *)drv)->output_packet((uint8_t *)b, len);
 }
 
 
@@ -160,7 +160,7 @@ void UsbEm1010Driver :: deinstall(UsbDevice *dev)
 
 bool UsbEm1010Driver :: read_mac_address()
 {
-	BYTE local_mac[8];
+	uint8_t local_mac[8];
 
 	printf("MAC address:  ");
 	for(int i=0;i<6;i++) {
@@ -174,7 +174,7 @@ bool UsbEm1010Driver :: read_mac_address()
     return false;
 }
 
-void UsbEm1010Driver :: interrupt_handler(BYTE *irq_data, int data_len)
+void UsbEm1010Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 {
 /*
 	printf("EM1010 (ADDR=%d) IRQ data: ", device->current_address);
@@ -202,13 +202,13 @@ void UsbEm1010Driver :: interrupt_handler(BYTE *irq_data, int data_len)
 }
 	
 //                         bmreq breq  __wValue__  __wIndex__  __wLength_
-BYTE c_get_register[]  = { 0xC0, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
-BYTE c_set_register[]  = { 0x40, 0xF1, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
-BYTE c_get_registers[] = { 0xC0, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
+uint8_t c_get_register[]  = { 0xC0, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
+uint8_t c_set_register[]  = { 0x40, 0xF1, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
+uint8_t c_get_registers[] = { 0xC0, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
 
-bool UsbEm1010Driver :: read_register(BYTE offset, BYTE &data)
+bool UsbEm1010Driver :: read_register(uint8_t offset, uint8_t &data)
 {
-    BYTE read_value[4];
+    uint8_t read_value[4];
     
     c_get_register[4] = offset;
 	int i = device->host->control_exchange(&device->control_pipe,
@@ -220,7 +220,7 @@ bool UsbEm1010Driver :: read_register(BYTE offset, BYTE &data)
 
 bool UsbEm1010Driver :: dump_registers(void)
 {
-    BYTE read_values[128];
+    uint8_t read_values[128];
     
     for(int i=0;i<128;i+=16) {
         read_registers(i, &read_values[i], 16);
@@ -229,10 +229,10 @@ bool UsbEm1010Driver :: dump_registers(void)
     return true;
 }
 
-bool UsbEm1010Driver :: read_registers(BYTE offset, BYTE *data, int len)
+bool UsbEm1010Driver :: read_registers(uint8_t offset, uint8_t *data, int len)
 {
     c_get_registers[4] = offset;
-    c_get_registers[6] = BYTE(len);
+    c_get_registers[6] = uint8_t(len);
     
 	int i = device->host->control_exchange(&device->control_pipe,
                                            c_get_registers, 8,
@@ -241,7 +241,7 @@ bool UsbEm1010Driver :: read_registers(BYTE offset, BYTE *data, int len)
     return (i==len);
 }
 
-bool UsbEm1010Driver :: write_register(BYTE offset, BYTE data)
+bool UsbEm1010Driver :: write_register(uint8_t offset, uint8_t data)
 {
     c_set_register[4] = offset;
     c_set_register[2] = data;
@@ -253,26 +253,26 @@ bool UsbEm1010Driver :: write_register(BYTE offset, BYTE data)
     return (i==0);
 }
 
-bool UsbEm1010Driver :: read_phy_register(BYTE offset, WORD *data)
+bool UsbEm1010Driver :: read_phy_register(uint8_t offset, WORD *data)
 {
-    BYTE status;
+    uint8_t status;
     if(!write_register(EMREG_PHYAC, offset | 0x40)) // RDPHY
         return false;
     if(!read_register(EMREG_PHYAC, status))
         return false;
     if(status & 0x80) { // done
-        return read_registers(EMREG_PHYDL, (BYTE*)data, 2);
+        return read_registers(EMREG_PHYDL, (uint8_t*)data, 2);
     }
     printf("Not done? %b\n", status);
     return false;
 }
     
-bool UsbEm1010Driver :: write_phy_register(BYTE offset, WORD data)
+bool UsbEm1010Driver :: write_phy_register(uint8_t offset, WORD data)
 {
 	return false;
 }
     
-void UsbEm1010Driver :: bulk_handler(BYTE *usb_buffer, int pkt_size)
+void UsbEm1010Driver :: bulk_handler(uint8_t *usb_buffer, int pkt_size)
 {
 //	printf("EM1010: Receive packet: %d\n", pkt_size);
 
@@ -290,14 +290,14 @@ void UsbEm1010Driver :: bulk_handler(BYTE *usb_buffer, int pkt_size)
 	}
 }
 
-BYTE UsbEm1010Driver :: output_packet(BYTE *buffer, int pkt_len)
+uint8_t UsbEm1010Driver :: output_packet(uint8_t *buffer, int pkt_len)
 {
 	if (!link_up)
 		return 0;
 
-	BYTE *size = buffer - 2;
-    size[0] = BYTE(pkt_len & 0xFF);
-    size[1] = BYTE(pkt_len >> 8);
+	uint8_t *size = buffer - 2;
+    size[0] = uint8_t(pkt_len & 0xFF);
+    size[1] = uint8_t(pkt_len >> 8);
 
 	host->bulk_out(&bulk_out_pipe, size, pkt_len + 2);
 	return 0;
@@ -314,7 +314,7 @@ void UsbEm1010Driver :: pipe_error(int pipe)
 
 }
 
-void UsbEm1010Driver :: free_buffer(BYTE *buffer)
+void UsbEm1010Driver :: free_buffer(uint8_t *buffer)
 {
 //	printf("FREE PBUF CALLED %p!\n", buffer);
 	host->free_input_buffer(bulk_transaction, buffer);

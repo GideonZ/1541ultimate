@@ -105,7 +105,7 @@ char *FileDevice :: get_display_string(void)
 
 	t_device_state state = blk->get_state();
 /*
-    DWORD length;
+    uint32_t length;
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
 */

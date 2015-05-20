@@ -13,7 +13,7 @@ const int c_button_widths[NUM_BUTTONS] = { 4, 5, 4, 5, 8 };
 
 /* User Interface Objects */
 /* Popup */
-UIPopup :: UIPopup(char *msg, BYTE btns) : message(msg)
+UIPopup :: UIPopup(char *msg, uint8_t btns) : message(msg)
 {
     buttons = btns;
     btns_active = 0;
@@ -30,7 +30,7 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     int message_width = message.length();
     keyboard = k;
 
-    BYTE b = buttons;
+    uint8_t b = buttons;
     for(int i=0;i<NUM_BUTTONS;i++) {
         if(b & 1) {
             btns_active ++;
@@ -78,14 +78,14 @@ void UIPopup :: draw_buttons()
 
 int UIPopup :: poll(int dummy, Event &e)
 {
-    BYTE c = keyboard->getch();
+    uint8_t c = keyboard->getch();
 
     for(int i=0;i<btns_active;i++) {
         if(c == button_key[i]) {
             return (1 << i);
         }
     }
-    if((c == 0x0D)||(c == 0x20)) {
+    if((c == KEY_RETURN)||(c == KEY_SPACE)) {
 		for(int i=0,j=0;i<NUM_BUTTONS;i++) {
 			if(buttons & (1 << i)) {
 				if(active_button == j)
@@ -95,12 +95,12 @@ int UIPopup :: poll(int dummy, Event &e)
 		}
         return 0;
     }
-    if(c == 0x1D) {
+    if(c == KEY_RIGHT) {
         active_button ++;
         if(active_button >= btns_active)
             active_button = btns_active-1;
         draw_buttons();
-    } else if(c == 0x9D) {
+    } else if(c == KEY_LEFT) {
         active_button --;
         if(active_button < 0)
             active_button = 0;
@@ -163,7 +163,7 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
 
 int UIStringBox :: poll(int dummy, Event &e)
 {
-    BYTE key;
+    uint8_t key;
     int i;
 
     key = keyboard->getch();
@@ -171,60 +171,61 @@ int UIStringBox :: poll(int dummy, Event &e)
         return 0;
 
     switch(key) {
-    case 0x0D: // CR
+    case KEY_RETURN: // CR
         if(!len)
             return -1; // cancel
         return 1; // done
-    case 0x9D: // left
+    case KEY_LEFT: // left
     	if (cur > 0) {
             cur--;
         	window->move_cursor(cur, 2);
         }
         break;
-    case 0x1D: // right
+    case KEY_RIGHT: // right
         if (cur < len) {
             cur++;
         	window->move_cursor(cur, 2);
         }
         break;
-    case 0x14: // backspace
+    case KEY_BACK: // backspace
         if (cur > 0) {
             cur--;
             len--;
             for(i=cur;i<len;i++) {
                 buffer[i] = buffer[i+1];
-            } buffer[i] = 0;
+            } buffer[i] = 32;
 //            window->move_cursor(0, 2);
-            window->output_length(buffer, len);
+            window->output_length(buffer, len+1);
             window->move_cursor(cur, 2);
         }
         break;
-    case 0x93: // clear
+    case KEY_CLEAR: // clear
         len = 0;
         cur = 0;
         window->move_cursor(0, 2);
         window->repeat(' ', max_len);
         window->move_cursor(cur, 2);
         break;
-    case 0x94: // del
+    case KEY_DELETE: // del
         if(cur < len) {
             len--;
             for(i=cur;i<len;i++) {
             	buffer[i] = buffer[i+1];
             } buffer[i] = 0x20;
-            window->output_length(buffer, len);
+            window->output_length(buffer, len+1);
             window->move_cursor(cur, 2);
         }
         break;
-    case 0x13: // home
+    case KEY_HOME: // home
         cur = 0;
         window->move_cursor(cur, 2);
         break;
-    case 0x11: // down = end
+    case KEY_DOWN: // down = end
+    case KEY_END:
         cur = len;
         window->move_cursor(cur, 2);
         break;
-    case 0x03: // break
+    case KEY_BREAK: // break
         return -1; // cancel
     default:
         if ((key < 32)||(key > 127)) {
@@ -262,7 +263,7 @@ UIStatusBox :: UIStatusBox(char *msg, int steps) : message(msg)
 
 void UIStatusBox :: init(Screen *screen)
 {
-    int window_width = 32;
+    int window_width = 34;
     int message_width = message.length();
     int x1 = (screen->get_size_x() - window_width) / 2;
     int y1 = (screen->get_size_y() - 5) / 2;
@@ -282,7 +283,6 @@ void UIStatusBox :: deinit(void)
 
 void UIStatusBox :: update(char *msg, int steps)
 {
-    static char percent[8];
     static char bar[40];
     progress += steps;
 
@@ -299,6 +299,6 @@ void UIStatusBox :: update(char *msg, int steps)
     if(terminate > 32)
         terminate = 32;
     bar[terminate] = 0; // terminate
-    window->output_line(bar);
+    window->output(bar);
 }
 

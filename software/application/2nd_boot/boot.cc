@@ -25,9 +25,9 @@ FATFS        *fs;
 
 void (*function)();
 
-void jump_run(DWORD run_address)
+void jump_run(uint32_t run_address)
 {
-    DWORD *dp = (DWORD *)&function;
+    uint32_t *dp = (uint32_t *)&function;
     *dp = run_address;
     function();
 }
@@ -118,7 +118,7 @@ FRESULT try_loading(char *filename)
 
 int try_flash(void)
 {
-    DWORD length;
+    uint32_t length;
 	Flash *flash = get_flash();
 	t_flash_address image_addr;
     
@@ -139,7 +139,7 @@ int try_flash(void)
 
 int try_xmodem(void)
 {
-    int st = xmodemReceive((BYTE *)APPLICATION_RUN_ADDRESS, APPLICATION_MAX_LENGTH);
+    int st = xmodemReceive((uint8_t *)APPLICATION_RUN_ADDRESS, APPLICATION_MAX_LENGTH);
 	if (st < 0) {
 		printf ("Xmodem receive error: status: %d\n", st);
 		return st;

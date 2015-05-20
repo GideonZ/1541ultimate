@@ -41,7 +41,7 @@ public:
 
 class BrowsableNamed : public Browsable
 {
-	string name;
+	mstring name;
 public:
 	BrowsableNamed(bool s, char *n) : Browsable(s), name(n) { }
 	virtual ~BrowsableNamed() {}
@@ -57,18 +57,25 @@ public:
 	virtual ~BrowsableTest() {}
 
 	virtual int getSubItems(IndexedList<Browsable *>&list) {
-		char temp[16];
-		for(int i=0;i<numberOfSubItems;i++) {
-			sprintf(temp, "SubItem %d", i+1);
+		char temp[32];
+		list.append(new BrowsableTest(1, true, "Top Row"));
+		for(int i=0;i<numberOfSubItems/2;i++) {
+			sprintf(temp, "First SubItem %d", i+1);
 			list.append(new BrowsableNamed((((i*5)%7)!=2), temp));
 			//list.append(new BrowsableNamed(true, temp));
 		}
-		list.append(new BrowsableTest(6, true, "Oh lala!"));
+		list.append(new BrowsableTest(3, true, "Somewhere in the middle"));
+		for(int i=0;i<numberOfSubItems/2;i++) {
+			sprintf(temp, "Second SubItem %d", i+1);
+			list.append(new BrowsableNamed(((i%17)!=2), temp));
+			//list.append(new BrowsableNamed(true, temp));
+		}
+		list.append(new BrowsableTest(6, true, "Oh lala! Last!"));
 		return numberOfSubItems+1;
 	}
 
 	virtual void fetch_context_items(IndexedList<Action *>&items) {
-		char temp[16];
+		//char temp[16];
 		for(int i=0;i<10;i++) {
 			items.append(new Action("Action", BrowsableTest :: action, this, (void *)i));
 		}

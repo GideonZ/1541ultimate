@@ -22,7 +22,7 @@ typedef enum {
 	e_interrupt
 } t_endpoint_type;
 
-typedef void (*usb_callback)(BYTE *buf, int len, void *obj);
+typedef void (*usb_callback)(uint8_t *buf, int len, void *obj);
 
 class UsbDevice;
 class UsbDriver;
@@ -75,7 +75,7 @@ public:
     virtual int  bulk_out(struct t_pipe *pipe, void *buf, int len) { return -1; };
     virtual int  bulk_in(struct t_pipe *pipe, void *buf, int len) { return -1; }; // blocking
 
-    virtual void free_input_buffer(int inpipe, BYTE *buffer) { }
+    virtual void free_input_buffer(int inpipe, uint8_t *buffer) { }
 
     virtual int  create_pipe(int addr, struct t_endpoint_descriptor *epd) { return -1; }
     virtual void free_pipe(int index) {}

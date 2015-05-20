@@ -51,11 +51,12 @@ public:
     virtual int   get_size_y(void) { return 0; }
 
     // draw functions
+    virtual void clear() { }
     virtual void move_cursor(int x, int y) { }
     virtual int  output(char c) { return 0; }
-    virtual int  output(char *c) { return 0; }
+    virtual int  output(const char *c) { return 0; }
     virtual void repeat(char c, int rep) { }
-    virtual void output_fixed_length(char *string, int offset_x, int width) { }
+    virtual void output_fixed_length(const char *string, int offset_x, int width) { }
 };
 
 class Screen_MemMappedCharMatrix : public Screen
@@ -89,19 +90,20 @@ public:
 
 // functions called directly, or from a window
     void  cursor_visible(int a);
-    void set_color(int c) {color=c;}
-    int  get_color() { return color; }
-    void reverse_mode(int r) {reverse=r;}
-    void scroll_mode(bool b) {allow_scroll=b;}
+    void  set_color(int c) {color=c;}
+    int   get_color() { return color; }
+    void  reverse_mode(int r) {reverse=r;}
+    void  scroll_mode(bool b) {allow_scroll=b;}
     int   get_size_x(void) {return size_x;}
     int   get_size_y(void) {return size_y;}
 
     // draw functions
+    void clear() { }
     void move_cursor(int x, int y);
     int  output(char c);
-    int  output(char *c);
+    int  output(const char *c);
     void repeat(char c, int rep);
-    void output_fixed_length(char *string, int offset_x, int width);
+    void output_fixed_length(const char *string, int offset_x, int width);
 };
 
 class Window
@@ -132,9 +134,9 @@ public:
     virtual void  clear();
     virtual void  move_cursor(int, int);
     virtual void  output(char);
-    virtual void  output(char *);
-    virtual void  output_line(char *);
-    virtual void  output_length(char *, int);
+    virtual void  output(const char *);
+    virtual void  output_line(const char *);
+    virtual void  output_length(const char *, int);
     virtual void  repeat(char a, int len);
     virtual void  draw_border(void);
     virtual void  draw_border_horiz(void);

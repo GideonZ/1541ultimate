@@ -22,19 +22,19 @@ DSTATUS BlockDevice::status(void)
     return STA_NODISK;
 }
     
-DRESULT BlockDevice::read(BYTE *buffer, DWORD sector, int count)
+DRESULT BlockDevice::read(uint8_t *buffer, uint32_t sector, int count)
 {
     return RES_NOTRDY;
 }
 
 #if	_READONLY == 0
-DRESULT BlockDevice::write(const BYTE *buffer, DWORD sector, int count)
+DRESULT BlockDevice::write(const uint8_t *buffer, uint32_t sector, int count)
 {
     return RES_NOTRDY;
 }
 #endif
 
-DRESULT BlockDevice::ioctl(BYTE command, void *data)
+DRESULT BlockDevice::ioctl(uint8_t command, void *data)
 {
     return RES_NOTRDY;
 }

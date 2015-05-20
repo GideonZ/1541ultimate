@@ -91,48 +91,48 @@
 #ifdef LITTLE_ENDIAN
     struct t_directory_record
     {
-        BYTE  record_length;                // 0x00
-        BYTE  sectors_in_extended_attr;     // 0x01
-        DWORD sector;                       // 0x02
-        DWORD be_sector;                    // 0x06
-        DWORD file_size;                    // 0x0A
-        DWORD be_file_size;                 // 0x0E
-        BYTE  years;                        // 0x12
-        BYTE  month;                        // 0x13
-        BYTE  day;                          // 0x14
-        BYTE  hour;                         // 0x15
-        BYTE  minute;                       // 0x16
-        BYTE  second;                       // 0x17
+        uint8_t  record_length;                // 0x00
+        uint8_t  sectors_in_extended_attr;     // 0x01
+        uint32_t sector;                       // 0x02
+        uint32_t be_sector;                    // 0x06
+        uint32_t file_size;                    // 0x0A
+        uint32_t be_file_size;                 // 0x0E
+        uint8_t  years;                        // 0x12
+        uint8_t  month;                        // 0x13
+        uint8_t  day;                          // 0x14
+        uint8_t  hour;                         // 0x15
+        uint8_t  minute;                       // 0x16
+        uint8_t  second;                       // 0x17
         char  time_offset;                  // 0x18
-        BYTE  flags;                        // 0x19
-        BYTE  file_unit_size;               // 0x1A
-        BYTE  interleave_gap;               // 0x1B
+        uint8_t  flags;                        // 0x19
+        uint8_t  file_unit_size;               // 0x1A
+        uint8_t  interleave_gap;               // 0x1B
         WORD  volume_sequence_number;       // 0x1C
         WORD  be_volume_sequence_number;    // 0x1E
-        BYTE  identifier_length;            // 0x20
+        uint8_t  identifier_length;            // 0x20
     } __attribute__((packed));
 
     struct t_iso9660_volume_descriptor
     {
-        BYTE key[8];                            // 0x00
+        uint8_t key[8];                            // 0x00
         char system_identifier[32];             // 0x08
         char volume_identifier[32];             // 0x28
-        BYTE padding1[8];                       // 0x48
-        DWORD sector_count;                     // 0x50
-        DWORD be_sector_count;                  // 0x54
-        BYTE padding2[32];                      // 0x58
+        uint8_t padding1[8];                       // 0x48
+        uint32_t sector_count;                     // 0x50
+        uint32_t be_sector_count;                  // 0x54
+        uint8_t padding2[32];                      // 0x58
         WORD  volume_set_size;                  // 0x78
         WORD  be_volume_set_size;               // 0x7A
         WORD  volume_sequence_number;           // 0x7C
         WORD  be_volume_sequence_number;        // 0x7E
         WORD  sector_size;                      // 0x80
         WORD  be_sector_size;                   // 0x82
-        DWORD path_table_length;                // 0x84
-        DWORD be_path_table_length;             // 0x88
-        DWORD first_path_table_sector;          // 0x8C
-        DWORD second_path_table_sector;         // 0x90
-        DWORD be_first_path_table_sector;       // 0x94
-        DWORD be_second_path_table_sector;      // 0x98
+        uint32_t path_table_length;                // 0x84
+        uint32_t be_path_table_length;             // 0x88
+        uint32_t first_path_table_sector;          // 0x8C
+        uint32_t second_path_table_sector;         // 0x90
+        uint32_t be_first_path_table_sector;       // 0x94
+        uint32_t be_second_path_table_sector;      // 0x98
         struct t_directory_record root_dir_rec; // 0x9C
         
     } __attribute__((packed));
@@ -141,72 +141,72 @@
 
     struct t_directory_record
     {
-        BYTE  record_length;                // 0x00
-        BYTE  sectors_in_extended_attr;     // 0x01
-        DWORD le_sector;                    // 0x02
-        DWORD sector;                       // 0x06
-        DWORD le_file_size;                 // 0x0A
-        DWORD file_size;                    // 0x0E
-        BYTE  years;                        // 0x12
-        BYTE  month;                        // 0x13
-        BYTE  day;                          // 0x14
-        BYTE  hour;                         // 0x15
-        BYTE  minute;                       // 0x16
-        BYTE  second;                       // 0x17
+        uint8_t  record_length;                // 0x00
+        uint8_t  sectors_in_extended_attr;     // 0x01
+        uint32_t le_sector;                    // 0x02
+        uint32_t sector;                       // 0x06
+        uint32_t le_file_size;                 // 0x0A
+        uint32_t file_size;                    // 0x0E
+        uint8_t  years;                        // 0x12
+        uint8_t  month;                        // 0x13
+        uint8_t  day;                          // 0x14
+        uint8_t  hour;                         // 0x15
+        uint8_t  minute;                       // 0x16
+        uint8_t  second;                       // 0x17
         char  time_offset;                  // 0x18
-        BYTE  flags;                        // 0x19
-        BYTE  file_unit_size;               // 0x1A
-        BYTE  interleave_gap;               // 0x1B
+        uint8_t  flags;                        // 0x19
+        uint8_t  file_unit_size;               // 0x1A
+        uint8_t  interleave_gap;               // 0x1B
         WORD  le_volume_sequence_number;    // 0x1C
         WORD  volume_sequence_number;       // 0x1E
-        BYTE  identifier_length;            // 0x20
+        uint8_t  identifier_length;            // 0x20
     } __attribute__((packed));
 
     struct t_iso9660_volume_descriptor
     {
-        BYTE key[8];                            // 0x00
+        uint8_t key[8];                            // 0x00
         char system_identifier[32];             // 0x08
         char volume_identifier[32];             // 0x28
-        BYTE padding1[8];                       // 0x48
-        DWORD le_sector_count;                  // 0x50
-        DWORD sector_count;                     // 0x54
-        BYTE padding2[32];                      // 0x58
+        uint8_t padding1[8];                       // 0x48
+        uint32_t le_sector_count;                  // 0x50
+        uint32_t sector_count;                     // 0x54
+        uint8_t padding2[32];                      // 0x58
         WORD  le_volume_set_size;               // 0x78
         WORD  volume_set_size;                  // 0x7A
         WORD  le_volume_sequence_number;        // 0x7C
         WORD  volume_sequence_number;           // 0x7E
         WORD  le_sector_size;                   // 0x80
         WORD  sector_size;                      // 0x82
-        DWORD le_path_table_length;             // 0x84
-        DWORD path_table_length;                // 0x88
-        DWORD le_first_path_table_sector;       // 0x8C
-        DWORD le_second_path_table_sector;      // 0x90
-        DWORD first_path_table_sector;          // 0x94
-        DWORD second_path_table_sector;         // 0x98
+        uint32_t le_path_table_length;             // 0x84
+        uint32_t path_table_length;                // 0x88
+        uint32_t le_first_path_table_sector;       // 0x8C
+        uint32_t le_second_path_table_sector;      // 0x90
+        uint32_t first_path_table_sector;          // 0x94
+        uint32_t second_path_table_sector;         // 0x98
         struct t_directory_record root_dir_rec; // 0x9C
         
     } __attribute__((packed));
 #endif
 
 struct t_aligned_directory_record {
-    BYTE dummy[2];
+    uint8_t dummy[2];
     struct t_directory_record actual;
     char identifier[256];
 } __attribute__((packed));
 
 #pragma pack(4)
 
-const BYTE c_volume_key[8] = { 0x01, 0x43, 0x44, 0x30, 0x30, 0x31, 0x01, 0x00 };
+const uint8_t c_volume_key[8] = { 0x01, 0x43, 0x44, 0x30, 0x30, 0x31, 0x01, 0x00 };
 
 class FileSystem_ISO9660 : public FileSystem 
 {
 protected:
     Partition *prt;
-    BYTE *sector_buffer;
-    DWORD last_read_sector;
-    DWORD sector_size;
-    DWORD root_dir_sector;
-    DWORD root_dir_size;
+    uint8_t *sector_buffer;
+    uint32_t last_read_sector;
+    uint32_t sector_size;
+    uint32_t root_dir_sector;
+    uint32_t root_dir_size;
     t_aligned_directory_record dir_record;
     bool initialized;
     bool joliet;
@@ -225,12 +225,12 @@ public:
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
     
     // functions for reading and writing files
-    File   *file_open(FileInfo *, BYTE flags);  // Opens file (creates file object)
+    File   *file_open(FileInfo *, uint8_t flags);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, DWORD len, UINT *transferred);
-    FRESULT file_seek(File *f, DWORD pos);
+    FRESULT file_read(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_seek(File *f, uint32_t pos);
 
-    FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred) {
+    FRESULT file_write(File *f, void *buffer, uint32_t len, UINT *transferred) {
         *transferred = 0;
         return FR_WRITE_PROTECTED;
     }
@@ -241,8 +241,8 @@ public:
 };
 
 struct t_iso_handle {
-    DWORD start;
-    DWORD sector;
+    uint32_t start;
+    uint32_t sector;
     int   remaining;
     int   offset;
 };

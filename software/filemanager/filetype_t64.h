@@ -16,7 +16,7 @@ public:
     FileSystemT64(Partition *p);
     ~FileSystemT64();
     
-    FRESULT get_free (DWORD*);        // Get number of free sectors on the file system
+    FRESULT get_free (uint32_t*);        // Get number of free sectors on the file system
 
     // functions for reading directories
     Directory *dir_open(FileInfo *); // Opens directory (creates dir object, NULL = root)
@@ -24,11 +24,11 @@ public:
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
     
     // functions for reading and writing files
-    File   *file_open(FileInfo *, BYTE flags);  // Opens file (creates file object)
+    File   *file_open(FileInfo *, uint8_t flags);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, DWORD len, UINT *transferred);
-    FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred);
-    FRESULT file_seek(File *f, DWORD pos);
+    FRESULT file_read(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_write(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_seek(File *f, uint32_t pos);
     
     friend class FileInT64;
 };
@@ -60,11 +60,11 @@ public:
     FileInT64(FileSystemT64 *);
     ~FileInT64() { }
 
-    FRESULT open(FileInfo *info, BYTE flags);
+    FRESULT open(FileInfo *info, uint8_t flags);
     FRESULT close(void);
-    FRESULT read(void *buffer, DWORD len, UINT *transferred);
-    FRESULT write(void *buffer, DWORD len, UINT *transferred);
-    FRESULT seek(DWORD pos);
+    FRESULT read(void *buffer, uint32_t len, UINT *transferred);
+    FRESULT write(void *buffer, uint32_t len, UINT *transferred);
+    FRESULT seek(uint32_t pos);
 };
 
 

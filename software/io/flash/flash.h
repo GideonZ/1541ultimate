@@ -33,8 +33,8 @@
 #define FLASH_ID_LIST_END	0xFF
 
 typedef struct t_flash_address {
-	BYTE id;
-	BYTE has_header;
+	uint8_t id;
+	uint8_t has_header;
 	int  start;
 	int  device_addr;
 	int  max_length;
@@ -99,27 +99,5 @@ public:
 };
 
 Flash *get_flash(void);
-
-/*
-class FlashFactory
-{
-	IndexedList<Flash *> flash_types(8, NULL);
-public:
-	FlashFactory() { }
-	~FlashFactory() { }
-
-	Flash *get_actual_type(void) {
-		Flash *retval;
-		for(int i=0;i<flash_types.get_elements();i++) {
-			retval = flash_types[i]->tester();
-				return retval;
-		}
-		return NULL;
-	}
-	void   register_type(Flash *t) {
-		flash_types.append(t);
-	}
-};
-*/
 
 #endif

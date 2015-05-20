@@ -95,7 +95,7 @@ FileSystemT64 :: ~FileSystemT64()
 
 
 // Get number of free sectors on the file system
-FRESULT FileSystemT64 :: get_free (DWORD* free)
+FRESULT FileSystemT64 :: get_free (uint32_t* free)
 {
 	*free = 0;	
     return FR_OK;
@@ -129,9 +129,9 @@ void FileSystemT64 :: dir_close(Directory *d)
 // reads next entry from dir
 FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 {
-    DWORD idx = d->handle;
-	BYTE read_buf[32], c;
-	BYTE *p;
+    uint32_t idx = d->handle;
+	uint8_t read_buf[32], c;
+	uint8_t *p;
 	FRESULT fres;
 	UINT bytes_read;
 
@@ -197,7 +197,7 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 				
 				// eui: no trailing spaces please
 				for(int s=v-1; s>=0; s--) {
-					p = (BYTE *)&f->lfname[s];
+					p = (uint8_t *)&f->lfname[s];
 	                if((*p == ' ') || (*p == 0xA0) || (*p == 0xE0)) {
 						*p = 0;
 	                }
@@ -232,10 +232,10 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 
 // functions for reading and writing files
 // Opens file (creates file object)
-File   *FileSystemT64 :: file_open(FileInfo *info, BYTE flags)
+File   *FileSystemT64 :: file_open(FileInfo *info, uint8_t flags)
 {
 	FileInT64 *ff = new FileInT64(this);
-	File *f = new File(this, (DWORD)ff);
+	File *f = new File(this, (uint32_t)ff);
 	FRESULT res = ff->open(info, flags);
 	if(res == FR_OK) {
 		return f;
@@ -254,19 +254,19 @@ void FileSystemT64::file_close(File *f)
     delete f;
 }
 
-FRESULT FileSystemT64::file_read(File *f, void *buffer, DWORD len, UINT *bytes_read)
+FRESULT FileSystemT64::file_read(File *f, void *buffer, uint32_t len, UINT *bytes_read)
 {
     FileInT64 *ff = (FileInT64 *)f->handle;
     return ff->read(buffer, len, bytes_read);
 }
 
-FRESULT FileSystemT64::file_write(File *f, void *buffer, DWORD len, UINT *bytes_written)
+FRESULT FileSystemT64::file_write(File *f, void *buffer, uint32_t len, UINT *bytes_written)
 {
     FileInT64 *ff = (FileInT64 *)f->handle;
     return ff->write(buffer, len, bytes_written);
 }
 
-FRESULT FileSystemT64::file_seek(File *f, DWORD pos)
+FRESULT FileSystemT64::file_seek(File *f, uint32_t pos)
 {
     FileInT64 *ff = (FileInT64 *)f->handle;
     return ff->seek(pos);
@@ -284,7 +284,7 @@ FileInT64 :: FileInT64(FileSystemT64 *f)
     fs = f;
 }
     
-FRESULT FileInT64 :: open(FileInfo *info, BYTE flags)
+FRESULT FileInT64 :: open(FileInfo *info, uint8_t flags)
 {
 	if(info->fs != fs)
 		return FR_INVALID_OBJECT;
@@ -303,11 +303,11 @@ FRESULT FileInT64 :: close(void)
 	//flag = 0;
 }
 
-FRESULT FileInT64 :: read(void *buffer, DWORD len, UINT *transferred)
+FRESULT FileInT64 :: read(void *buffer, uint32_t len, UINT *transferred)
 {
     FRESULT res;
     
-    BYTE *dst = (BYTE *)buffer;
+    uint8_t *dst = (uint8_t *)buffer;
     UINT bytes_read;
     *transferred = 0;
 
@@ -316,7 +316,7 @@ FRESULT FileInT64 :: read(void *buffer, DWORD len, UINT *transferred)
 
 	// pre-pend the start address, as for any other PRG.
 	if(offset == 0) {
-		*(dst++) = BYTE(start_addr); // LSB
+		*(dst++) = uint8_t(start_addr); // LSB
 		len--;
 		offset ++;
 	    ++(*transferred);
@@ -325,7 +325,7 @@ FRESULT FileInT64 :: read(void *buffer, DWORD len, UINT *transferred)
         return FR_OK;
 
 	if(offset == 1) {
-		*(dst++) = BYTE(start_addr >> 8); // MSB
+		*(dst++) = uint8_t(start_addr >> 8); // MSB
 		len--;
 		offset ++;
 	    ++(*transferred);
@@ -342,12 +342,12 @@ FRESULT FileInT64 :: read(void *buffer, DWORD len, UINT *transferred)
 	return res;
 }
 
-FRESULT  FileInT64 :: write(void *buffer, DWORD len, UINT *transferred)
+FRESULT  FileInT64 :: write(void *buffer, uint32_t len, UINT *transferred)
 {
 	return FR_DENIED;
 }
 
-FRESULT FileInT64 :: seek(DWORD pos)
+FRESULT FileInT64 :: seek(uint32_t pos)
 {
 	return FR_DENIED;
 }

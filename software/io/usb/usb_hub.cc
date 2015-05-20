@@ -9,9 +9,9 @@ extern "C" {
 #include "usb_hub.h"
 #include "event.h"
 
-__inline DWORD cpu_to_32le(DWORD a)
+__inline uint32_t cpu_to_32le(uint32_t a)
 {
-    DWORD m1, m2;
+    uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
@@ -24,13 +24,13 @@ __inline DWORD cpu_to_32le(DWORD a)
 // tester instance
 UsbHubDriver usb_hub_driver_tester(usb_drivers);
 
-BYTE c_get_hub_descriptor[] = { 0xA0, 0x06, 0x00, 0x29, 0x00, 0x00, 0x40, 0x00 };
-BYTE c_get_hub_status[]     = { 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00 };
-BYTE c_get_port_status[]    = { 0xA3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00 };
-BYTE c_set_hub_feature[]    = { 0x20, 0x03, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_set_port_feature[]   = { 0x23, 0x03, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_clear_hub_feature[]  = { 0x20, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_clear_port_feature[] = { 0x23, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_get_hub_descriptor[] = { 0xA0, 0x06, 0x00, 0x29, 0x00, 0x00, 0x40, 0x00 };
+uint8_t c_get_hub_status[]     = { 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00 };
+uint8_t c_get_port_status[]    = { 0xA3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00 };
+uint8_t c_set_hub_feature[]    = { 0x20, 0x03, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_set_port_feature[]   = { 0x23, 0x03, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_clear_hub_feature[]  = { 0x20, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_clear_port_feature[] = { 0x23, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 UsbHubDriver :: UsbHubDriver(IndexedList<UsbDriver*> &list)
 {
@@ -108,7 +108,7 @@ bool UsbHubDriver :: test_driver(UsbDevice *dev)
 #define BIT1_PORT_HIGH_SPEED  0x04
 
 // Entry point for call-backs.
-void UsbHubDriver_interrupt_handler(BYTE *irq_data_in, int data_length, void *object) {
+void UsbHubDriver_interrupt_handler(uint8_t *irq_data_in, int data_length, void *object) {
 	((UsbHubDriver *)object)->interrupt_handler(irq_data_in, data_length);
 }
 
@@ -157,7 +157,7 @@ void UsbHubDriver :: install(UsbDevice *dev)
     // Turn on port power for each port
     c_set_port_feature[2] = PORT_POWER;
     for(int j=0;j<num_ports;j++) {
-        c_set_port_feature[4] = BYTE(j+1);
+        c_set_port_feature[4] = uint8_t(j+1);
     	i = dev->host->control_exchange(&dev->control_pipe,
     								    c_set_port_feature, 8,
     								    buf, 64);
@@ -210,7 +210,7 @@ void UsbHubDriver :: deinstall(UsbDevice *dev)
     host->free_input_pipe(irq_transaction);
 }
 
-void UsbHubDriver :: interrupt_handler(BYTE *irq_data_in, int data_length)
+void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
 {
     host->pause_input_pipe(this->irq_transaction);
     //printf("This = %p. HUB (ADDR=%d) IRQ data (%d bytes), at %p: ", this, device->current_address, data_length, irq_data_in);
@@ -231,7 +231,7 @@ void UsbHubDriver :: poll()
     for(int j=0;j<num_ports;j++) {
     	irq_data[0] >>=1;
         if(irq_data[0] & 1) {
-            c_get_port_status[4] = BYTE(j+1);
+            c_get_port_status[4] = uint8_t(j+1);
             i = host->control_exchange(&device->control_pipe,
 										c_get_port_status, 8,
 										buf, 8);
@@ -243,7 +243,7 @@ void UsbHubDriver :: poll()
                 } printf("\n");
 */
 
-                c_clear_port_feature[4] = BYTE(j+1);
+                c_clear_port_feature[4] = uint8_t(j+1);
 
                 if(buf[2] & BIT_PORT_CONNECTION) {
                     //printf("* CONNECTION CHANGE *\n");
@@ -256,7 +256,7 @@ void UsbHubDriver :: poll()
 
 							// this reset is expected to cause a port enable event!
 							c_set_port_feature[2] = PORT_RESET;
-							c_set_port_feature[4] = BYTE(j+1);
+							c_set_port_feature[4] = uint8_t(j+1);
 							wait_ms(power_on_time);
 							printf("Issuing reset on port %d.\n", j+1);
 							i = host->control_exchange(&device->control_pipe,
@@ -355,7 +355,7 @@ void UsbHubDriver :: pipe_error(int pipe) // called from IRQ!
 void UsbHubDriver :: reset_port(int port)
 {
     c_set_port_feature[2] = PORT_RESET;
-    c_set_port_feature[4] = BYTE(port+1);
+    c_set_port_feature[4] = uint8_t(port+1);
     printf("HUB: Issuing reset on port %d.\n", port+1);
 	host->control_exchange(&device->control_pipe,
 					       c_set_port_feature, 8,

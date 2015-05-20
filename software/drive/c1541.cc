@@ -54,10 +54,10 @@ struct t_cfg_definition c1541_config[] = {
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-extern BYTE _binary_1541_bin_start;
-extern BYTE _binary_1541c_bin_start;
-extern BYTE _binary_1541_ii_bin_start;
-extern BYTE _binary_sounds_bin_start;
+extern uint8_t _binary_1541_bin_start;
+extern uint8_t _binary_1541c_bin_start;
+extern uint8_t _binary_1541_ii_bin_start;
+extern uint8_t _binary_sounds_bin_start;
 
 //--------------------------------------------------------------
 // C1541 Drive Class
@@ -84,7 +84,7 @@ void C1541 :: effectuate_settings(void)
 }
     
 
-C1541 :: C1541(volatile BYTE *regs, char letter)
+C1541 :: C1541(volatile uint8_t *regs, char letter)
 {
     registers  = regs;
     mount_file = NULL;
@@ -96,14 +96,14 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
     c1541_config[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
     c1541_config[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
         
-    DWORD mem_address = ((DWORD)registers[C1541_MEM_ADDR]) << 16;
-    memory_map = (volatile BYTE *)mem_address;
+    uint32_t mem_address = ((uint32_t)registers[C1541_MEM_ADDR]) << 16;
+    memory_map = (volatile uint8_t *)mem_address;
     printf("C1541 Memory address: %p\n", mem_address);
 
     write_skip = 0;
     
 	if(flash) {
-	    void *audio_address = (void *)(((DWORD)registers[C1541_AUDIO_ADDR]) << 16);
+	    void *audio_address = (void *)(((uint32_t)registers[C1541_AUDIO_ADDR]) << 16);
 	    printf("C1541 Audio address: %p, loading... \n", audio_address);
 //	    flash->read_image(FLASH_ID_SOUNDS, audio_address, 0x4800);
         memcpy(audio_address, &_binary_sounds_bin_start, 0x4800);
@@ -116,7 +116,7 @@ C1541 :: C1541(volatile BYTE *regs, char letter)
     bin_image = new BinImage(drive_name.c_str());
     
     sprintf(buffer, "1541 Drive %c Settings", letter);    
-    register_store((DWORD)regs, buffer, c1541_config);
+    register_store((uint32_t)regs, buffer, c1541_config);
 }
 
 C1541 :: ~C1541()
@@ -195,7 +195,7 @@ void C1541 :: drive_reset(void)
 {
     registers[C1541_RESET] = 1;
     wait_ms(1);
-    BYTE reg = 0;
+    uint8_t reg = 0;
     
     if(cfg->get_value(CFG_C1541_STOPFREEZ))
         reg |= 4;
@@ -207,7 +207,7 @@ void C1541 :: drive_reset(void)
 
 void C1541 :: set_hw_address(int addr)
 {
-    registers[C1541_HW_ADDR] = BYTE(addr & 3);
+    registers[C1541_HW_ADDR] = uint8_t(addr & 3);
     iec_address = 8 + (addr & 3);
 }
 
@@ -224,8 +224,8 @@ void C1541 :: set_sw_address(int addr)
 // EB47: 49 60     EOR #$60        ; erase bit 6, set bit 5
 // EB49: 85 77     STA $77         ; device number + $20 for LISTEN
 
-    memory_map[0x78] = BYTE((addr & 0x1F) + 0x40);
-    memory_map[0x77] = BYTE((addr & 0x1F) + 0x20);
+    memory_map[0x78] = uint8_t((addr & 0x1F) + 0x40);
+    memory_map[0x77] = uint8_t((addr & 0x1F) + 0x20);
     iec_address = addr & 0x1F;
 }
 
@@ -302,7 +302,7 @@ void C1541 :: set_ram(t_1541_ram ram_setting)
 {
     ram = ram_setting;
     
-    BYTE bank_is_ram = BYTE(ram);
+    uint8_t bank_is_ram = uint8_t(ram);
     if(large_rom) {
         bank_is_ram &= 0x0F;
     }
@@ -348,9 +348,9 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
 
     volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
 
-    DWORD rotation_speed = 2500000; // 1/8 track time => 10 ns steps
+    uint32_t rotation_speed = 2500000; // 1/8 track time => 10 ns steps
     for(int i=0;i<C1541_MAXTRACKS;i++) {
-        DWORD bit_time = rotation_speed / image->track_length[i];
+        uint32_t bit_time = rotation_speed / image->track_length[i];
     	// printf("%2d %08x %08x %d\n", i, image->track_address[i], image->track_length[i], bit_time);
     	*(param++) = (ULONG)image->track_address[i];
         *(param++) = (image->track_length[i]-1) | (bit_time << 16);

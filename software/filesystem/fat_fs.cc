@@ -137,10 +137,10 @@ FATFS::~FATFS(void)
 /* Change window offset                                                  */
 /*-----------------------------------------------------------------------*/
 FRESULT FATFS::move_window (
-    DWORD sector    /* Sector number to make apperance in the win[] */
+    uint32_t sector    /* Sector number to make apperance in the win[] */
 )                   /* Move to zero only writes back dirty window */
 {
-    DWORD wsect;
+    uint32_t wsect;
 
     wsect = winsect;
     if (wsect != sector) {  /* Changed current window */
@@ -150,7 +150,7 @@ FRESULT FATFS::move_window (
                 return FR_DISK_ERR;
             wflag = 0;
             if (wsect < (fatbase + sects_fat)) {    /* In FAT area */
-                BYTE nf;
+                uint8_t nf;
                 for (nf = n_fats; nf > 1; nf--) {   /* Refrect the change to all FAT copies */
                     wsect += sects_fat;
                     prt->write(win, wsect, 1);
@@ -202,12 +202,12 @@ FRESULT FATFS::sync(void)   /* FR_OK: successful, FR_DISK_ERR: failed */
 /*-----------------------------------------------------------------------*/
 /* FAT access - Read value of a FAT entry                                */
 /*-----------------------------------------------------------------------*/
-DWORD FATFS::get_fat (  /* 0xFFFFFFFF:Disk error, 1:Interal error, Else:Cluster status */
-    DWORD clst  /* Cluster# to get the link information */
+uint32_t FATFS::get_fat (  /* 0xFFFFFFFF:Disk error, 1:Interal error, Else:Cluster status */
+    uint32_t clst  /* Cluster# to get the link information */
 )
 {
     UINT wc, bc;
-    DWORD fsect;
+    uint32_t fsect;
 
     if (clst < 2 || clst >= max_clust)  /* Range check */
         return 1;
@@ -241,13 +241,13 @@ DWORD FATFS::get_fat (  /* 0xFFFFFFFF:Disk error, 1:Interal error, Else:Cluster 
 #if !_FS_READONLY
 
 FRESULT FATFS::put_fat (
-    DWORD clst, /* Cluster# to be changed in range of 2 to max_clust - 1 */
-    DWORD val   /* New value to mark the cluster */
+    uint32_t clst, /* Cluster# to be changed in range of 2 to max_clust - 1 */
+    uint32_t val   /* New value to mark the cluster */
 )
 {
     UINT bc;
-    BYTE *p;
-    DWORD fsect;
+    uint8_t *p;
+    uint32_t fsect;
     FRESULT res;
 
 
@@ -262,13 +262,13 @@ FRESULT FATFS::put_fat (
             res = move_window(fsect + (bc / SECSIZE));
             if (res != FR_OK) break;
             p = &win[bc & (SECSIZE - 1)];
-            *p = (clst & 1) ? ((*p & 0x0F) | ((BYTE)val << 4)) : (BYTE)val;
+            *p = (clst & 1) ? ((*p & 0x0F) | ((uint8_t)val << 4)) : (uint8_t)val;
             bc++;
             wflag = 1;
             res = move_window(fsect + (bc / SECSIZE));
             if (res != FR_OK) break;
             p = &win[bc & (SECSIZE - 1)];
-            *p = (clst & 1) ? (BYTE)(val >> 4) : ((*p & 0xF0) | ((BYTE)(val >> 8) & 0x0F));
+            *p = (clst & 1) ? (uint8_t)(val >> 4) : ((*p & 0xF0) | ((uint8_t)(val >> 8) & 0x0F));
             break;
 
         case FS_FAT16 :
@@ -299,11 +299,11 @@ FRESULT FATFS::put_fat (
 /*-----------------------------------------------------------------------*/
 #if !_FS_READONLY
 FRESULT FATFS::remove_chain (
-    DWORD clst          /* Cluster# to remove a chain from */
+    uint32_t clst          /* Cluster# to remove a chain from */
 )
 {
     FRESULT res;
-    DWORD nxt;
+    uint32_t nxt;
 
 
     if (clst < 2 || clst >= max_clust) {    /* Check the range of cluster# */
@@ -334,11 +334,11 @@ FRESULT FATFS::remove_chain (
 /* FAT handling - Stretch or Create a cluster chain                      */
 /*-----------------------------------------------------------------------*/
 #if !_FS_READONLY
-DWORD FATFS::create_chain ( /* 0:No free cluster, 1:Internal error, 0xFFFFFFFF:Disk error, >=2:New cluster# */
-    DWORD clst          /* Cluster# to stretch. 0 means create a new chain. */
+uint32_t FATFS::create_chain ( /* 0:No free cluster, 1:Internal error, 0xFFFFFFFF:Disk error, >=2:New cluster# */
+    uint32_t clst          /* Cluster# to stretch. 0 means create a new chain. */
 )
 {
-    DWORD cs, ncl, scl, mcl;
+    uint32_t cs, ncl, scl, mcl;
 
     mcl = max_clust;
     if (clst == 0) {        /* Create new chain */
@@ -389,8 +389,8 @@ DWORD FATFS::create_chain ( /* 0:No free cluster, 1:Internal error, 0xFFFFFFFF:D
 /*-----------------------------------------------------------------------*/
 /* Get sector# from cluster#                                             */
 /*-----------------------------------------------------------------------*/
-DWORD FATFS::clust2sect (  /* !=0: Sector number, 0: Failed - invalid cluster# */
-    DWORD clst      /* Cluster# to be converted */
+uint32_t FATFS::clust2sect (  /* !=0: Sector number, 0: Failed - invalid cluster# */
+    uint32_t clst      /* Cluster# to be converted */
 )
 {
     clst -= 2;
@@ -403,7 +403,7 @@ DWORD FATFS::clust2sect (  /* !=0: Sector number, 0: Failed - invalid cluster# *
 /*-----------------------------------------------------------------------*/
 /* FR_OK(0): successful, !=0: any error occured */
 FRESULT FATFS::chk_mounted (
-    BYTE chk_wp         /* !=0: Check media write protection for write access */
+    uint8_t chk_wp         /* !=0: Check media write protection for write access */
 )
 {
     DSTATUS stat;
@@ -429,9 +429,9 @@ FRESULT FATFS::chk_mounted (
 /*-----------------------------------------------------------------------*/
 FileSystem *FATFS::test (Partition *prt)
 {
-	DWORD secsize;
+	uint32_t secsize;
     DRESULT status = prt->ioctl(GET_SECTOR_SIZE, &secsize);
-    BYTE *buf;
+    uint8_t *buf;
     if(status)
         return NULL;
     if(secsize > 4096)
@@ -439,7 +439,7 @@ FileSystem *FATFS::test (Partition *prt)
     if(secsize < 512)
         return NULL;
 
-    buf = new BYTE[secsize];
+    buf = new uint8_t[secsize];
 
     DRESULT dr = prt->read(buf, 0, 1);
     if (dr != RES_OK) {	/* Load boot record */
@@ -465,7 +465,7 @@ FileSystem *FATFS::test (Partition *prt)
 /*-----------------------------------------------------------------------*/
 bool FATFS::init(void)
 {
-    DWORD fsize, tsect, mclst;
+    uint32_t fsize, tsect, mclst;
     
     DRESULT dr = prt->read(win, 0, 1);
     if (dr != RES_OK) {	/* Load boot record */
@@ -570,13 +570,13 @@ FRESULT FATFS::validate (void)
 /*-----------------------------------------------------------------------*/
 
 FRESULT FATFS::getfree (
-    DWORD *nclst       /* Pointer to the variable to return number of free clusters */
+    uint32_t *nclst       /* Pointer to the variable to return number of free clusters */
 )
 {
     FRESULT res;
-    DWORD n, clst, sect, stat;
+    uint32_t n, clst, sect, stat;
     UINT i;
-    BYTE fat, *p;
+    uint8_t fat, *p;
 
 
     /* Get drive number */
@@ -646,16 +646,16 @@ FRESULT FATFS::getfree (
 
 
 FRESULT FATFS::format (
-    BYTE partition,     /* Partitioning rule 0:FDISK, 1:SFD */
+    uint8_t partition,     /* Partitioning rule 0:FDISK, 1:SFD */
     WORD allocsize      /* Allocation unit size [bytes] */
 )
 {
-    static const DWORD sstbl[] = { 2048000, 1024000, 512000, 256000, 128000, 64000, 32000, 16000, 8000, 4000,   0 };
+    static const uint32_t sstbl[] = { 2048000, 1024000, 512000, 256000, 128000, 64000, 32000, 16000, 8000, 4000,   0 };
     static const WORD cstbl[] =  {   32768,   16384,   8192,   4096,   2048, 16384,  8192,  4096, 2048, 1024, 512 };
-    BYTE fmt, m, *tbl;
-    DWORD b_part, b_fat, b_dir, b_data;     /* Area offset (LBA) */
-    DWORD n_part, n_rsv, n_fat, n_dir;      /* Area size */
-    DWORD n_clst, d, n;
+    uint8_t fmt, m, *tbl;
+    uint32_t b_part, b_fat, b_dir, b_data;     /* Area offset (LBA) */
+    uint32_t n_part, n_rsv, n_fat, n_dir;      /* Area size */
+    uint32_t n_clst, d, n;
     WORD as;
     FATFS *fs;
     DSTATUS stat;
@@ -738,15 +738,15 @@ FRESULT FATFS::format (
 
     /* Create partition table if needed */
     if (!partition) {
-        DWORD n_disk = b_part + n_part;
+        uint32_t n_disk = b_part + n_part;
 
         mem_set(fs->win, 0, REF_SECSIZE(fs));
         tbl = fs->win+MBR_Table;
         ST_DWORD(tbl, 0x00010180);      /* Partition start in CHS */
         if (n_disk < 63UL * 255 * 1024) {   /* Partition end in CHS */
             n_disk = n_disk / 63 / 255;
-            tbl[7] = (BYTE)n_disk;
-            tbl[6] = (BYTE)((n_disk >> 2) | 63);
+            tbl[7] = (uint8_t)n_disk;
+            tbl[6] = (uint8_t)((n_disk >> 2) | 63);
         } else {
             ST_WORD(&tbl[6], 0xFFFF);
         }
@@ -770,7 +770,7 @@ FRESULT FATFS::format (
     mem_set(tbl, 0, REF_SECSIZE(fs));
     ST_DWORD(tbl+BS_jmpBoot, 0x90FEEB);         /* Boot code (jmp $, nop) */
     ST_WORD(tbl+BPB_BytsPerSec, REF_SECSIZE(fs));        /* Sector size */
-    tbl[BPB_SecPerClus] = (BYTE)allocsize;      /* Sectors per cluster */
+    tbl[BPB_SecPerClus] = (uint8_t)allocsize;      /* Sectors per cluster */
     ST_WORD(tbl+BPB_RsvdSecCnt, n_rsv);         /* Reserved sectors */
     tbl[BPB_NumFATs] = N_FATS;                  /* Number of FATs */
     ST_WORD(tbl+BPB_RootEntCnt, REF_SECSIZE(fs) / 32 * n_dir); /* Number of rootdir entries */
@@ -831,7 +831,7 @@ FRESULT FATFS::format (
     }
 
     /* Initialize Root directory */
-    m = (BYTE)((fmt == FS_FAT32) ? allocsize : n_dir);
+    m = (uint8_t)((fmt == FS_FAT32) ? allocsize : n_dir);
     do {
         if (disk_write(drv, tbl, b_fat++, 1) != RES_OK)
             return FR_DISK_ERR;
@@ -936,7 +936,7 @@ Directory *FATFS::dir_open(FileInfo *f)
 {
 //    f->print_info();
     FATDIR *fd = new FATDIR(this);
-    Directory *d = new Directory(this, (DWORD)fd);
+    Directory *d = new Directory(this, (uint32_t)fd);
     
     FRESULT res = fd->open(f);
     if(res == FR_OK)
@@ -979,10 +979,10 @@ FRESULT FATFS::dir_create(FileInfo *f)
 
 // functions for reading and writing files
 // Opens file (creates file object)
-File *FATFS::file_open(FileInfo *info, BYTE flags)  
+File *FATFS::file_open(FileInfo *info, uint8_t flags)  
 {
 	FATFIL *ff = new FATFIL(this);
-    File *f = new File(info, (DWORD)ff);
+    File *f = new File(info, (uint32_t)ff);
     FRESULT res = ff->open(info, flags);
     last_error = res;
     if(res == FR_OK) {
@@ -1002,13 +1002,13 @@ void FATFS::file_close(File *f)
     delete f;
 }
 
-FRESULT FATFS::file_read(File *f, void *buffer, DWORD len, UINT *bytes_read)
+FRESULT FATFS::file_read(File *f, void *buffer, uint32_t len, UINT *bytes_read)
 {
     FATFIL *ff = (FATFIL *)f->handle;
     return ff->read(buffer, len, bytes_read);
 }
 
-FRESULT FATFS::file_write(File *f, void *buffer, DWORD len, UINT *bytes_written)
+FRESULT FATFS::file_write(File *f, void *buffer, uint32_t len, UINT *bytes_written)
 {
     FATFIL *ff = (FATFIL *)f->handle;
 //    printf("Writing %d bytes from %p...\n", len, buffer);
@@ -1017,7 +1017,7 @@ FRESULT FATFS::file_write(File *f, void *buffer, DWORD len, UINT *bytes_written)
     return res;
 }
 
-FRESULT FATFS::file_seek(File *f, DWORD pos)
+FRESULT FATFS::file_seek(File *f, uint32_t pos)
 {
     FATFIL *ff = (FATFIL *)f->handle;
     return ff->lseek(pos);

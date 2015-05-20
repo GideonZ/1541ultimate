@@ -9,7 +9,7 @@ class Path
 {
 private:
     friend class FileManager;
-    string full_path;
+    mstring full_path;
     CachedTreeNode *current_dir_node;
 
     int cd_single(char *p);

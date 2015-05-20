@@ -124,7 +124,7 @@ void Editor :: deinit()
 int Editor :: poll(int dummy, Event &e)
 {
     int ret = 0;
-    BYTE c;
+    uint8_t c;
         
     if(!keyb) {
         printf("Editor: Keyboard not initialized.. exit.\n");
@@ -138,7 +138,7 @@ int Editor :: poll(int dummy, Event &e)
     return ret;
 }
 
-int Editor :: handle_key(BYTE c)
+int Editor :: handle_key(uint8_t c)
 {
     int ret = 0;
     

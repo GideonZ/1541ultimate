@@ -42,18 +42,18 @@ err_t lwip_init_callback(struct netif *netif)
     return ERR_OK;
 }
 
-static BYTE temporary_out_buffer[1536];
+static uint8_t temporary_out_buffer[1536];
 
 err_t lwip_output_callback(struct netif *netif, struct pbuf *pbuf)
 {
     NetworkLWIP *ni = (NetworkLWIP *)netif->state;
     if (pbuf->len == pbuf->tot_len) {
-    	return ni->driver_output_function(ni->driver, (BYTE *)pbuf->payload, pbuf->len);
+    	return ni->driver_output_function(ni->driver, (uint8_t *)pbuf->payload, pbuf->len);
     }
     if (pbuf->next == NULL) {
     	return ERR_BUF;
     }
-    BYTE *temp = temporary_out_buffer;
+    uint8_t *temp = temporary_out_buffer;
     int total = pbuf->tot_len;
     if (total > 1536) {
     	return ERR_ARG;
@@ -218,7 +218,7 @@ void NetworkLWIP :: init_callback( )
 }
 
 
-bool NetworkLWIP :: input(BYTE *raw_buffer, BYTE *payload, int pkt_size)
+bool NetworkLWIP :: input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size)
 {
 	//dump_hex(payload, pkt_size);
 
@@ -266,7 +266,7 @@ void NetworkLWIP :: link_down()
 	dhcp_stop(&my_net_if);
 }
 
-void NetworkLWIP :: set_mac_address(BYTE *mac)
+void NetworkLWIP :: set_mac_address(uint8_t *mac)
 {
 	memcpy((void *)mac_address, (const void *)mac, 6);
 }

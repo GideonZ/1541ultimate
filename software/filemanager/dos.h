@@ -31,11 +31,11 @@ typedef enum _e_dos_state {
 } e_dos_state;
 
 typedef struct _dos_info {
-    DWORD	size;	 /* File size */
+    uint32_t	size;	 /* File size */
 	WORD	date;	 /* Last modified date */
 	WORD	time;	 /* Last modified time */
     char    extension[3];
-	BYTE	attrib;	 /* Attribute */
+	uint8_t	attrib;	 /* Attribute */
     char    filename[64];
 } t_dos_info;
 

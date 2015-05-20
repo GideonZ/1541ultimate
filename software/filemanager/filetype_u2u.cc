@@ -75,9 +75,9 @@ FileDirEntry *FileTypeUpdate :: test_type(CachedTreeNode *obj)
 
 void (*function)();
 
-void jump_run(DWORD a)
+void jump_run(uint32_t a)
 {
-    DWORD *dp = (DWORD *)&function;
+    uint32_t *dp = (uint32_t *)&function;
     *dp = a;
     ITU_IRQ_GLOBAL = 0;
     function();
@@ -97,7 +97,7 @@ void FileTypeUpdate :: execute(int selection)
     int remain;
 
 	static char buffer[36];
-    BYTE *dest;
+    uint8_t *dest;
 
 	switch(selection) {
 	case UPDATE_RUN:
@@ -115,7 +115,7 @@ void FileTypeUpdate :: execute(int selection)
 			// load file in REU memory
             if(progress) {
                 user_interface->show_progress("Loading Update..", 32);
-                dest = (BYTE *)(REU_MEMORY_BASE);
+                dest = (uint8_t *)(REU_MEMORY_BASE);
                 while(remain >= 0) {
         			file->read(dest, bytes_per_step, &bytes_read);
                     total_bytes_read += bytes_read;
@@ -130,7 +130,7 @@ void FileTypeUpdate :: execute(int selection)
     	    }
 			root.fclose(file);
 			file = NULL;
-			if ((*(DWORD *)REU_MEMORY_BASE) != 0x3021FFD8) {
+			if ((*(uint32_t *)REU_MEMORY_BASE) != 0x3021FFD8) {
 				user_interface->popup("Signature check failed.", BUTTON_OK);
 			} else {
 				jump_run(REU_MEMORY_BASE);

@@ -28,7 +28,7 @@ class FileManager
 	IndexedList<Path *>used_paths;
 	IndexedList<FileNodePair>open_file_list;
 	CachedTreeNode *root;
-    File *fopen_impl(Path *path, char *filename, BYTE flags);
+    File *fopen_impl(Path *path, char *filename, uint8_t flags);
 public:
     FileManager() : open_file_list(16, empty_pair), used_paths(8, NULL) {
         poll_list.append(&poll_filemanager);
@@ -71,8 +71,8 @@ public:
     	delete p;
     }
 
-    File *fopen(Path *path, char *filename, BYTE flags);
-    File *fopen_node(CachedTreeNode *node, BYTE flags);
+    File *fopen(Path *path, char *filename, uint8_t flags);
+    File *fopen_node(CachedTreeNode *node, uint8_t flags);
     void fclose(File *f);
 };
 

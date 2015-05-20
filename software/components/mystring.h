@@ -5,45 +5,45 @@
 #define NULL (0)
 #endif
 
-class string
+class mstring
 {
 private:
     short temporary;
     short alloc;
     char *cp;
 public:
-    string();
-    string(char *k);
-    string(string &k);
-    ~string();
+    mstring();
+    mstring(char *k);
+    mstring(mstring &k);
+    ~mstring();
     
     char *c_str(void);
     int length(void);
     int allocated_space(void);
 
-    string& operator=(char *rhs);
-    string& operator=(string &rhs);
+    mstring& operator=(char *rhs);
+    mstring& operator=(mstring &rhs);
 
-    string& operator+=(char rhs);
-    string& operator+=(char *rhs);
-    string& operator+=(string &rhs);
-    bool operator==(string &rhs);
+    mstring& operator+=(char rhs);
+    mstring& operator+=(char *rhs);
+    mstring& operator+=(mstring &rhs);
+    bool operator==(mstring &rhs);
     bool operator==(char *rhs);
 
-    friend string& operator+(string &, string &);
-    friend string& operator+(string &, char *);
-    friend string& operator+(char *, string &);
-    friend int strcmp(string &a, string &b);
-    friend int stricmp(string &a, string &b);
-    friend string& int_to_string(int i);
+    friend mstring& operator+(mstring &, mstring &);
+    friend mstring& operator+(mstring &, char *);
+    friend mstring& operator+(char *, mstring &);
+    friend int strcmp(mstring &a, mstring &b);
+    friend int strinscmp(mstring &a, mstring &b);
+    friend mstring& int_to_mstring(int i);
 };
 
-string& operator+(string &left, string &right);
-string& operator+(string &left, char *rhs);
-string& operator+(char *left, string &rhs);
-//string& operator+(char *left, char *right);
-int strcmp(string &a, string &b);
-int stricmp(string &a, string &b);
-string& int_to_string(int i);
+mstring& operator+(mstring &left, mstring &right);
+mstring& operator+(mstring &left, char *rhs);
+mstring& operator+(char *left, mstring &rhs);
+//mstring& operator+(char *left, char *right);
+int strcmp(mstring &a, mstring &b);
+int stricmp(mstring &a, mstring &b);
+mstring& int_to_mstring(int i);
 
 #endif

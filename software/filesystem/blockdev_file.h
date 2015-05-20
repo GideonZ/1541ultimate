@@ -18,9 +18,9 @@ public:
 
     virtual DSTATUS init(void);
     virtual DSTATUS status(void);
-    virtual DRESULT read(BYTE *, DWORD, int);
-    virtual DRESULT write(const BYTE *, DWORD, int);
-    virtual DRESULT ioctl(BYTE, void *);
+    virtual DRESULT read(uint8_t *, uint32_t, int);
+    virtual DRESULT write(const uint8_t *, uint32_t, int);
+    virtual DRESULT ioctl(uint8_t, void *);
 };
 
 #endif

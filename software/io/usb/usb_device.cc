@@ -12,10 +12,10 @@ __inline WORD le16_to_cpu(WORD h)
     return (h >> 8) | (h << 8);
 }
 
-char *unicode_to_ascii(BYTE *in, char *out, int maxlen)
+char *unicode_to_ascii(uint8_t *in, char *out, int maxlen)
 {
     char *buf;
-    BYTE len = (*in);
+    uint8_t len = (*in);
     
     buf = out;
     in += 2;
@@ -41,16 +41,16 @@ char *unicode_to_ascii(BYTE *in, char *out, int maxlen)
 // =========================================================
 // USB DEVICE
 // =========================================================
-BYTE c_get_device_descriptor[]     = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
-BYTE c_get_device_descr_slow[]     = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x08, 0x00 };
-BYTE c_get_string_descriptor[]     = { 0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0x40, 0x00 };
-BYTE c_get_configuration[]         = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00 };
-BYTE c_set_address[]               = { 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_set_configuration[]         = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_get_device_descriptor[]     = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
+uint8_t c_get_device_descr_slow[]     = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x08, 0x00 };
+uint8_t c_get_string_descriptor[]     = { 0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0x40, 0x00 };
+uint8_t c_get_configuration[]         = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00 };
+uint8_t c_set_address[]               = { 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_set_configuration[]         = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-BYTE c_get_interface[]			   = { 0x21, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
-BYTE c_get_hid_report_descriptor[] = { 0x81, 0x06, 0x00, 0x22, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_unstall_pipe[]			   = { 0x02, 0x01, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
+uint8_t c_get_interface[]			   = { 0x21, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
+uint8_t c_get_hid_report_descriptor[] = { 0x81, 0x06, 0x00, 0x22, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_unstall_pipe[]			   = { 0x02, 0x01, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
 
 UsbDevice :: UsbDevice(UsbBase *u, int speed)
 {
@@ -97,9 +97,9 @@ void UsbDevice :: get_string(int index, char *dest, int len)
         return;
     }
         
-    BYTE usb_buffer[64];
+    uint8_t usb_buffer[64];
     
-    c_get_string_descriptor[2] = (BYTE)index;
+    c_get_string_descriptor[2] = (uint8_t)index;
 
     if(host->control_exchange(&control_pipe, c_get_string_descriptor, 8, usb_buffer, 64) > 0)
         unicode_to_ascii(usb_buffer, dest, len);
@@ -144,9 +144,9 @@ void UsbDevice :: set_address(int address)
 {
     printf ("Setting address to %d: \n", address);
 
-    BYTE dummy_buffer[8];
+    uint8_t dummy_buffer[8];
 
-    c_set_address[2] = (BYTE)address;
+    c_set_address[2] = (uint8_t)address;
     int i = host->control_exchange(&control_pipe, c_set_address, 8, dummy_buffer, 0);
     //printf("Got %d bytes back.\n", i);
     
@@ -156,13 +156,13 @@ void UsbDevice :: set_address(int address)
     }
 }
 
-bool UsbDevice :: get_configuration(BYTE index)
+bool UsbDevice :: get_configuration(uint8_t index)
 {
     printf ("Get configuration %d: \n", index);
     c_get_configuration[2] = index;
     c_get_configuration[6] = 9;
     c_get_configuration[7] = 0;
-    BYTE buf[12];
+    uint8_t buf[12];
 
     config_descriptor = NULL;
     int len_descr = host->control_exchange(&control_pipe, c_get_configuration, 8, buf, 9);
@@ -172,7 +172,7 @@ bool UsbDevice :: get_configuration(BYTE index)
     if ((buf[0] == 9) && (buf[1] == DESCR_CONFIGURATION)) {
         len_descr = int(buf[2]) + 256*int(buf[3]);
         printf("Total configuration length: %d\n", len_descr);
-    	config_descriptor = new BYTE[len_descr];
+    	config_descriptor = new uint8_t[len_descr];
     	if (!config_descriptor)
     		return false;
     } else {
@@ -193,7 +193,7 @@ bool UsbDevice :: get_configuration(BYTE index)
 
     //dump_hex(config_descriptor, len_descr);
 
-    BYTE *pnt = config_descriptor;
+    uint8_t *pnt = config_descriptor;
     int i, len, type, ep;
 
     i = 0;
@@ -287,17 +287,17 @@ struct t_device_configuration *UsbDevice :: get_device_config()
 	return (struct t_device_configuration *)config_descriptor;
 }
 
-void UsbDevice :: set_configuration(BYTE config)
+void UsbDevice :: set_configuration(uint8_t config)
 {
 //    printf("Setting configuration %d.\n", config);
     c_set_configuration[2] = config;
 
-    BYTE dummy_buffer[8];
+    uint8_t dummy_buffer[8];
     int i = host->control_exchange(&control_pipe, c_set_configuration, 8, dummy_buffer, 0);
 //    printf("Set Configuration result:%d\n", i);
 }
 
-void UsbDevice :: unstall_pipe(BYTE ep)
+void UsbDevice :: unstall_pipe(uint8_t ep)
 {
 	c_unstall_pipe[4] = ep;
 	host->control_exchange(&control_pipe, c_unstall_pipe, 8, NULL, 0);
@@ -318,9 +318,9 @@ bool UsbDevice :: init(int address)
     return get_configuration(0);
 }
 
-int UsbDevice :: find_endpoint(BYTE code)
+int UsbDevice :: find_endpoint(uint8_t code)
 {
-    BYTE ep_code;
+    uint8_t ep_code;
     
     for(int i=0;i<4;i++) {
         if(endpoints[i].length) {

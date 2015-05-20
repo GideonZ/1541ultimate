@@ -36,7 +36,7 @@ DSTATUS BlockDevice_Emulated::status(void)
         return STA_NODISK;
 }
     
-DRESULT BlockDevice_Emulated::read(BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice_Emulated::read(uint8_t *buffer, uint32_t sector, uint8_t count)
 {
 //    printf("Device read sector %d.\n", sector);
 
@@ -51,7 +51,7 @@ DRESULT BlockDevice_Emulated::read(BYTE *buffer, DWORD sector, BYTE count)
 }
 
 #if	_READONLY == 0
-DRESULT BlockDevice_Emulated::write(const BYTE *buffer, DWORD sector, BYTE count)
+DRESULT BlockDevice_Emulated::write(const uint8_t *buffer, uint32_t sector, uint8_t count)
 {
 //    printf("Device write sector %d. ", sector);
 
@@ -67,10 +67,10 @@ DRESULT BlockDevice_Emulated::write(const BYTE *buffer, DWORD sector, BYTE count
 }
 #endif
 
-DRESULT BlockDevice_Emulated::ioctl(BYTE command, void *data)
+DRESULT BlockDevice_Emulated::ioctl(uint8_t command, void *data)
 {
-    DWORD size;
-    DWORD *dest = (DWORD *)data;
+    uint32_t size;
+    uint32_t *dest = (uint32_t *)data;
     
     switch(command) {
         case GET_SECTOR_COUNT:
@@ -80,10 +80,10 @@ DRESULT BlockDevice_Emulated::ioctl(BYTE command, void *data)
             *dest = size;
             break;
         case GET_SECTOR_SIZE:
-            (*(DWORD *)data) = sector_size;
+            (*(uint32_t *)data) = sector_size;
             break;
         case GET_BLOCK_SIZE:
-            (*(DWORD *)data) = 128*1024;
+            (*(uint32_t *)data) = 128*1024;
             break;
         default:
             printf("IOCTL %d.\n", command);

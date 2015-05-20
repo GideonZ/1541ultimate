@@ -38,7 +38,7 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags)
         return NULL;
     }
     Path *path = (Path *)fs->path;
-    BYTE bfl = FA_READ;
+    uint8_t bfl = FA_READ;
     if(flags[0] == 'w')
         bfl = FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS;
         
@@ -70,7 +70,7 @@ int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
 {
     File *f = (File *)file->file;
     UINT trans = 0;
-    DWORD len = chunks*chunk_len;
+    uint32_t len = chunks*chunk_len;
     printf("R(%d,%d)",chunks,chunk_len);
     if(f->read(buffer, len, &trans) != FR_OK)
         return -1;
@@ -86,7 +86,7 @@ int  vfs_write(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
 {
     File *f = (File *)file->file;
     UINT trans = 0;
-    DWORD len = chunks*chunk_len;
+    uint32_t len = chunks*chunk_len;
     if(f->write(buffer, len, &trans) != FR_OK)
         return -1;
     

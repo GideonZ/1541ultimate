@@ -8,13 +8,13 @@
 
 struct t_cbw
 {
-    DWORD signature;
-    DWORD tag;
-    DWORD data_length;
-    BYTE  flags;
-    BYTE  lun;
-    BYTE  cmd_length;
-    BYTE  cmd[16];
+    uint32_t signature;
+    uint32_t tag;
+    uint32_t data_length;
+    uint8_t  flags;
+    uint8_t  lun;
+    uint8_t  cmd_length;
+    uint8_t  cmd[16];
 };
 
 #define CBW_IN  0x80
@@ -35,11 +35,11 @@ class UsbScsiDriver : public UsbDriver
 	int current_lun;
     int get_max_lun(UsbDevice *dev);
 
-    DWORD      id;
+    uint32_t      id;
     struct t_pipe bulk_in;
     struct t_pipe bulk_out;
-    BYTE       stat_resp[32];
-    BYTE       sense_data[32];
+    uint8_t       stat_resp[32];
+    uint8_t       sense_data[32];
     struct t_cbw    cbw;
 
     UsbBase *host;
@@ -57,7 +57,7 @@ public:
 
     int status_transport(bool);
     int  request_sense(int lun, bool debug = false);
-    int  exec_command(int lun, int cmdlen, bool out, BYTE *cmd, int resplen, BYTE *response, bool debug = false);
+    int  exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, int resplen, uint8_t *response, bool debug = false);
 	void print_sense_error(void);
 };
 #endif
@@ -70,7 +70,7 @@ class UsbScsi : public BlockDevice
     int        lun;
     int		   max_lun;
     int		   removable;
-    DWORD      capacity;
+    uint32_t      capacity;
     int        block_size;
 
     char	   name[16];
@@ -86,14 +86,14 @@ public:
 
     void inquiry(void);
 	bool test_unit_ready(void);
-    void handle_sense_error(BYTE *);
-    DRESULT read_capacity(DWORD *num_blocks, DWORD *block_size);
+    void handle_sense_error(uint8_t *);
+    DRESULT read_capacity(uint32_t *num_blocks, uint32_t *block_size);
 
     DSTATUS init(void);
     DSTATUS status(void);
-    DRESULT read(BYTE *, DWORD, int);
-    DRESULT write(const BYTE *, DWORD, int);
-    DRESULT ioctl(BYTE, void *);
+    DRESULT read(uint8_t *, uint32_t, int);
+    DRESULT write(const uint8_t *, uint32_t, int);
+    DRESULT ioctl(uint8_t, void *);
 
 };
 

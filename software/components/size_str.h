@@ -3,7 +3,7 @@
 
 #include "integer.h"
 
-void size_to_string_bytes(DWORD size, char *buffer);
-void size_to_string_sectors(DWORD size, char *buffer);
+void size_to_string_bytes(uint32_t size, char *buffer);
+void size_to_string_sectors(uint32_t size, char *buffer);
 
 #endif

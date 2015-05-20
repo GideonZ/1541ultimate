@@ -9,7 +9,7 @@ extern "C" {
     #include "small_printf.h"
 }
 
-Partition::Partition(BlockDevice *blk, DWORD offset, DWORD size, BYTE t)
+Partition::Partition(BlockDevice *blk, uint32_t offset, uint32_t size, uint8_t t)
 {
 	next_partition = NULL;
 
@@ -51,7 +51,7 @@ FileSystem *Partition :: attach_filesystem(void)
 	return NULL;
 }
     
-DRESULT Partition::read(BYTE *buffer, DWORD sector, BYTE count)
+DRESULT Partition::read(uint8_t *buffer, uint32_t sector, uint8_t count)
 {
     if(!dev)
         return RES_NOTRDY;
@@ -59,7 +59,7 @@ DRESULT Partition::read(BYTE *buffer, DWORD sector, BYTE count)
 }
 
 #if	_READONLY == 0
-DRESULT Partition::write(const BYTE *buffer, DWORD sector, BYTE count)
+DRESULT Partition::write(const uint8_t *buffer, uint32_t sector, uint8_t count)
 {
     if(!dev)
         return RES_NOTRDY;
@@ -68,13 +68,13 @@ DRESULT Partition::write(const BYTE *buffer, DWORD sector, BYTE count)
 }
 #endif
 
-DRESULT Partition::ioctl(BYTE command, void *data)
+DRESULT Partition::ioctl(uint8_t command, void *data)
 {
 	if(command == CTRL_SYNC) {
 		return RES_OK; // we don't implement any caches yet
 	}
 	if(command == GET_SECTOR_COUNT) {
-        *((DWORD *)data) = length;
+        *((uint32_t *)data) = length;
         return RES_OK;
     }
     if(!dev)

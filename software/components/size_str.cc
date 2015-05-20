@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-void size_to_string_bytes(DWORD size, char *buffer)
+void size_to_string_bytes(uint32_t size, char *buffer)
 {
     if(size < 1000) {
         sprintf(buffer, "%4d ", size);
@@ -21,7 +21,7 @@ void size_to_string_bytes(DWORD size, char *buffer)
     sprintf(buffer, "%4dM", size);
 }
 
-void size_to_string_sectors(DWORD size, char *buffer)
+void size_to_string_sectors(uint32_t size, char *buffer)
 {
     size++;
     size >>= 1;

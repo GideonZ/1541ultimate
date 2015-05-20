@@ -15,9 +15,9 @@ class UsbHubDriver : public UsbDriver
 
     int  irq_transaction;
     int  port_in_reset;
-    BYTE buf[64];
-    BYTE dummy[16];
-    BYTE irq_data[4];
+    uint8_t buf[64];
+    uint8_t dummy[16];
+    uint8_t irq_data[4];
     
     UsbBase   *host;
     UsbDevice *device;
@@ -36,7 +36,7 @@ public:
 	void pipe_error(int pipe);
 	void reset_port(int port);
 
-	void interrupt_handler(BYTE *, int);
+	void interrupt_handler(uint8_t *, int);
 };
 
 #endif

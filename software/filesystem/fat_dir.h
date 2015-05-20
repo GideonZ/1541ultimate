@@ -14,12 +14,12 @@ class FATDIR
 {
     FATFS*  fs;         /* Pointer to the owner file system object */
     WORD    index;      /* Current read/write index number */
-    DWORD   sclust;     /* Table start cluster (0:Static table) */
-    DWORD   clust;      /* Current cluster */
-    DWORD   sect;       /* Current sector */
-    BYTE*   dir;        /* Pointer to the current SFN entry in the win[] */
-    BYTE    fn[16];     /* Pointer to the SFN (in/out) {file[8],ext[3],status[1]} */
-    BYTE    valid;      /* Indicates validity of open directory. */
+    uint32_t   sclust;     /* Table start cluster (0:Static table) */
+    uint32_t   clust;      /* Current cluster */
+    uint32_t   sect;       /* Current sector */
+    uint8_t*   dir;        /* Pointer to the current SFN entry in the win[] */
+    uint8_t    fn[16];     /* Pointer to the SFN (in/out) {file[8],ext[3],status[1]} */
+    uint8_t    valid;      /* Indicates validity of open directory. */
 #if _USE_LFN
     WCHAR*  lfn;        /* Pointer to the LFN working buffer */
     WORD    lfn_idx;    /* Last matched LFN index number (0xFFFF:No LFN) */
@@ -38,10 +38,10 @@ protected:
     FRESULT dir_register (void);	    /* Register an object to the directory       */
     FRESULT dir_remove (void);          /* Remove an object from the directory       */
     FRESULT create_name (XCHAR **path); /* Pick a segment and create the object name in directory form */
-    FRESULT follow_path (XCHAR *, DWORD d=0); /* Follow a file path */
+    FRESULT follow_path (XCHAR *, uint32_t d=0); /* Follow a file path */
 
 public:
-    FATDIR(FATFS *, DWORD start=0);  /* constructor */
+    FATDIR(FATFS *, uint32_t start=0);  /* constructor */
     ~FATDIR();        /* destructor */
 
     void    print_info(void);           /* Dump contents of FATDIR structure to console */

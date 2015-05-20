@@ -15,13 +15,13 @@
 
 void myISR(void) __attribute__ ((interrupt_handler));
 
-const BYTE c_get_device_descriptor[] = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
-const BYTE c_get_config_descriptor[] = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00 };
-const BYTE c_set_address[]           = { 0x00, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
-const BYTE c_set_configuration[]     = { 0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
+const uint8_t c_get_device_descriptor[] = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
+const uint8_t c_get_config_descriptor[] = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00 };
+const uint8_t c_set_address[]           = { 0x00, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
+const uint8_t c_set_configuration[]     = { 0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 int irq_count;
-BYTE big_buffer[16384];
+uint8_t big_buffer[16384];
 
 WORD *attr_fifo_data = (WORD *)ATTR_FIFO_BASE;
 
@@ -64,7 +64,7 @@ void usb_irq() {
 
 void myISR(void)
 {
-	BYTE act = ITU_IRQ_ACTIVE;
+	uint8_t act = ITU_IRQ_ACTIVE;
 	if (act & 1) {
 		irq_count ++;
 	}
@@ -100,8 +100,8 @@ void usb_control_transfer(WORD DevEP, WORD maxtrans, const void *setup, void *re
 	USB2_CMD_DevEP  = DevEP; // device 0, endpoint 0
 	USB2_CMD_Length = 8;
 	USB2_CMD_MaxTrans = maxtrans;
-	USB2_CMD_MemHi = ((DWORD)setup) >> 16;
-	USB2_CMD_MemLo = ((DWORD)setup) & 0xFFFF;
+	USB2_CMD_MemHi = ((uint32_t)setup) >> 16;
+	USB2_CMD_MemLo = ((uint32_t)setup) & 0xFFFF;
 	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
 
 	// wait until it gets zero again
@@ -111,15 +111,15 @@ void usb_control_transfer(WORD DevEP, WORD maxtrans, const void *setup, void *re
 	printf("Setup Result: %04x\n", USB2_CMD_Result);
 
 	USB2_CMD_Length = read_len;
-	USB2_CMD_MemHi = ((DWORD)read_buf) >> 16;
-	USB2_CMD_MemLo = ((DWORD)read_buf) & 0xFFFF;
+	USB2_CMD_MemHi = ((uint32_t)read_buf) >> 16;
+	USB2_CMD_MemLo = ((uint32_t)read_buf) & 0xFFFF;
 	USB2_CMD_Command = UCMD_MEMWRITE | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT; // start with toggle bit 1
 
 	// wait until it gets zero again
 	while(USB2_CMD_Command)
 		;
 
-	DWORD transferred = read_len - USB2_CMD_Length;
+	uint32_t transferred = read_len - USB2_CMD_Length;
 	printf("In: %d bytes (Result = %4x)\n", transferred, USB2_CMD_Result);
 	dump_hex(read_buf, transferred);
 
@@ -161,7 +161,7 @@ int close_pipe(int pipe)
 
 int main()
 {
-	DWORD small_buffer[32];
+	uint32_t small_buffer[32];
 
 	struct t_pipe my_pipe;
 
@@ -173,8 +173,8 @@ int main()
 
 	puts("Hello USB2!");
 
-	USB2_CIRC_MEMADDR_START_HI  = ((DWORD)&big_buffer) >> 16;
-	USB2_CIRC_MEMADDR_START_LO  = ((DWORD)&big_buffer) & 0xFFFF;
+	USB2_CIRC_MEMADDR_START_HI  = ((uint32_t)&big_buffer) >> 16;
+	USB2_CIRC_MEMADDR_START_LO  = ((uint32_t)&big_buffer) & 0xFFFF;
 	USB2_CIRC_BUF_SIZE		  	= 16384;
 	USB2_CIRC_BUF_OFFSET		= 0;
 

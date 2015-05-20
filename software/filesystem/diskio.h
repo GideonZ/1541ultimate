@@ -11,7 +11,7 @@
 
 
 /* Status of Disk Functions */
-typedef BYTE	DSTATUS;
+typedef uint8_t	DSTATUS;
 
 /* Results of Disk Functions */
 typedef enum {
@@ -27,13 +27,13 @@ typedef enum {
 /* Prototypes for disk control functions */
 
 BOOL assign_drives (int argc, char *argv[]);
-DSTATUS disk_initialize (BYTE);
-DSTATUS disk_status (BYTE);
-DRESULT disk_read (BYTE, BYTE*, DWORD, BYTE);
+DSTATUS disk_initialize (uint8_t);
+DSTATUS disk_status (uint8_t);
+DRESULT disk_read (uint8_t, uint8_t*, uint32_t, uint8_t);
 #if	_READONLY == 0
-DRESULT disk_write (BYTE, const BYTE*, DWORD, BYTE);
+DRESULT disk_write (uint8_t, const uint8_t*, uint32_t, uint8_t);
 #endif
-DRESULT disk_ioctl (BYTE, BYTE, void*);
+DRESULT disk_ioctl (uint8_t, uint8_t, void*);
 
 
 

@@ -23,8 +23,8 @@ void Screen_VT100::set_color(int c)
 {
 	color = c;
 
-	const char *set_color[] = { "\e[0;30m", "\e[0;37m", "\e[0;31m", "\e[0;36m", "\e[0;35m", "\e[0;32m", "\e[0;34m", "\e[0;33m",
-								"\e[33;2m", "\e[31;2m", "\e[31;1m", "\e[37;2m", "\e[37;2m", "\e[32;1m", "\e[34;1m", "\e[37;2m" };
+	const char *set_color[] = { "\e[0;30m", "\e[0;37;1m", "\e[0;31m", "\e[0;36m", "\e[0;35m", "\e[0;32m", "\e[0;34m", "\e[0;33m",
+								"\e[0;33;2m", "\e[0;31;2m", "\e[0;31;1m", "\e[0;31;2m", "\e[0;31;2m", "\e[0;32;1m", "\e[0;34;1m", "\e[0;37;2m" };
 	output((char *)set_color[c & 15]);
 }
 
@@ -44,6 +44,13 @@ void Screen_VT100::scroll_mode(bool b)
 }
 
 // draw functions
+void Screen_VT100::clear()
+{
+	output("\ec");
+	set_color(color);
+	move_cursor(0, 0);
+}
+
 void Screen_VT100::move_cursor(int x, int y)
 {
 	stream->format("\e[%d;%dH", y+1, x+1);
@@ -53,7 +60,7 @@ int  Screen_VT100::output(char c)
 {
 	const char mapping[33] = " lqkxmjlwktnumvjABCDEFGHIJKLMNOP";
 
-	if (c >= 32) {
+	if ((c >= 32) || (c == 27) || (c == 13) || (c == 10)) {
 		if (draw_mode) {
 			stream->write("\e(B", 3);
 			draw_mode = false;
@@ -69,11 +76,13 @@ int  Screen_VT100::output(char c)
 	return 1;
 }
 
-int  Screen_VT100::output(char *c)
+int  Screen_VT100::output(const char *c)
 {
-	int len = strlen(c);
-	stream->write(c, len);
-	return len;
+	int h = 0;
+	while(*c) {
+		h += output(*(c++));
+	}
+	return h;
 }
 
 void Screen_VT100::repeat(char c, int rep)
@@ -83,15 +92,19 @@ void Screen_VT100::repeat(char c, int rep)
 	}
 }
 
-void Screen_VT100::output_fixed_length(char *string, int offset_x, int width)
+void Screen_VT100::output_fixed_length(const char *string, int offset_x, int width)
 {
 	stream->format("\r\e[%dC", offset_x);
-	repeat(' ', offset_x);
+	//repeat(' ', offset_x);
 	int len = strlen(string);
 	if (len >= width) {
-		stream->write(string, width);
+		for(int i=0;i<width;i++) {
+			output(*(string++));
+		}
 	} else {
-		stream->write(string, len);
+		for(int i=0;i<len;i++) {
+			output(*(string++));
+		}
 		repeat(' ', width-len);
 	}
 }

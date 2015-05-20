@@ -37,7 +37,7 @@ char *sid_base[] = { "Snoop $D400", "Snoop $D420", "Snoop $D480", "Snoop $D500",
                      "IO $DF00", "IO $DF20", "IO $DF40", "IO $DF60",
                      "IO $DF80", "IO $DFA0", "IO $DFC0", "IO $DFE0" };
 
-BYTE sid_offsets[] = { 0x40, 0x42, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78,
+uint8_t sid_offsets[] = { 0x40, 0x42, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78,
                        0xe0, 0xe2, 0xe4, 0xe6, 0xe8, 0xea, 0xec, 0xee,
                        0xf0, 0xf2, 0xf4, 0xf6, 0xf8, 0xfa, 0xfc, 0xfe };
                        
@@ -70,8 +70,8 @@ int skip_sid[8]   = { 0, 1, 2, 3, 6, 7, 6, 7 };
 AudioConfig :: AudioConfig()
 {
     struct t_cfg_definition *def = audio_cfg;
-    DWORD store = 0x41554449;    
-    DWORD CAPABILITIES = getFpgaCapabilities();
+    uint32_t store = 0x41554449;    
+    uint32_t CAPABILITIES = getFpgaCapabilities();
 
     if(CAPABILITIES & CAPAB_STEREO_SID) {
         map = normal_map;
@@ -126,7 +126,7 @@ void AudioConfig :: effectuate_settings()
 
 void AudioConfig :: clear_sampler_registers()
 {
-    volatile DWORD *sampler = (volatile DWORD *)SAMPLER_BASE;
+    volatile uint32_t *sampler = (volatile uint32_t *)SAMPLER_BASE;
     if(getFpgaCapabilities() & CAPAB_SAMPLER) {
         for(int i=0;i<64;i++) {
             *(sampler++) = 0;

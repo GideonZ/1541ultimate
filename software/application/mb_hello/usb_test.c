@@ -12,11 +12,11 @@
 #include "dump_hex.h"
 #include <string.h>
 
-const BYTE c_get_device_descriptor[] = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
+const uint8_t c_get_device_descriptor[] = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
 
 void my_memcpy(void *dst, const void *src, int len) {
-	DWORD *d = (DWORD *)dst;
-	DWORD *s = (DWORD *)src;
+	uint32_t *d = (uint32_t *)dst;
+	uint32_t *s = (uint32_t *)src;
 	len = (len + 3) >> 2;
 	for(int i=0;i<len;i++) {
 		d[i] = s[i];

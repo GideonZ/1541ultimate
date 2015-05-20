@@ -1,4 +1,4 @@
-#include "editor.h"
+#include "userinterface.h"
 
 /* Configuration */
 char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
@@ -69,10 +69,10 @@ void UserInterface :: effectuate_settings(void)
     push_event(e_refresh_browser);
 }
     
-void UserInterface :: init(GenericHost *h, Keyboard *k)
+void UserInterface :: init(GenericHost *h)
 {
     host = h;
-    keyboard = k;
+    keyboard = h->getKeyboard();
     screen = NULL;
     initialized = true;
 }
@@ -88,7 +88,7 @@ void UserInterface :: handle_event(Event &e)
     if(!initialized)
         return;
 */
-    static BYTE button_prev;
+    static uint8_t button_prev;
     int ret, i;
 
     switch(state) {
@@ -96,7 +96,7 @@ void UserInterface :: handle_event(Event &e)
         	if ((e.type == e_button_press)||(e.type == e_freeze)) {
                 host->freeze();
                 host->set_colors(color_bg, color_border);
-                screen = new Screen_MemMappedCharMatrix(host->get_screen(), host->get_color_map(), 40, 25);
+                screen = host->getScreen();
                 set_screen_title();
                 for(i=0;i<=focus;i++) {  // build up
                     //printf("Going to (re)init objects %d.\n", i);
@@ -119,7 +119,7 @@ void UserInterface :: handle_event(Event &e)
                 for(i=focus;i>=0;i--) {  // tear down
                     ui_objects[i]->deinit();
                 }
-                delete screen;
+                host->releaseScreen();
                 host->unfreeze(e); // e.param, (cart_def *)e.object
                 state = ui_idle;
                 break;
@@ -138,7 +138,7 @@ void UserInterface :: handle_event(Event &e)
                     //printf("Restored focus to level %d.\n", focus);
                 }
                 else {
-                    delete screen;
+                    host->releaseScreen();
                     host->unfreeze((Event &)c_empty_event);
                     state = ui_idle;
                     break;
@@ -149,7 +149,8 @@ void UserInterface :: handle_event(Event &e)
             break;
     }            
 
-    BYTE buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
+/*
+    uint8_t buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
     if((buttons & ~button_prev) & ITU_BUTTON1) {
         if(state == ui_idle) { // this is nasty, but at least we know that it's executed FIRST
             // and that it has no effect when no copper exists.
@@ -158,6 +159,7 @@ void UserInterface :: handle_event(Event &e)
         push_event(e_button_press, 0);
     }
     button_prev = buttons;
+*/
 }
 
 bool UserInterface :: is_available(void)
@@ -180,7 +182,7 @@ void UserInterface :: set_screen_title()
 {
     static char title[48];
     // precondition: screen is cleared.  // \020 = alpha \021 = beta
-    sprintf(title, "\033[37m    **** 1541 Ultimate %s (%b) ****\033[0m\n", APPL_VERSION, ITU_FPGA_VERSION);
+    sprintf(title, "\033[37m    **** 1541 Ultimate %s (%b) ****\033[0m\n", APPL_VERSION, getFpgaVersion());
     screen->move_cursor(0,0);
     screen->output(title);
     screen->move_cursor(0,1);
@@ -195,7 +197,7 @@ void UserInterface :: set_screen_title()
 }
     
 /* Blocking variants of our simple objects follow: */
-int  UserInterface :: popup(char *msg, BYTE flags)
+int  UserInterface :: popup(char *msg, uint8_t flags)
 {
 	Event e(e_nop, 0, 0);
     UIPopup *pop = new UIPopup(msg, flags);

@@ -5,11 +5,11 @@
 
 class FileTypeCRT : public FileDirEntry
 {
-    BYTE  crt_header[0x20]; 
-    BYTE  chip_header[0x10];
+    uint8_t  crt_header[0x20]; 
+    uint8_t  chip_header[0x10];
     WORD  type_select;
     WORD  max_bank;
-    DWORD total_read;
+    uint32_t total_read;
     bool  load_at_a000;    
     char *name;
     bool  check_header(File *f);

@@ -17,7 +17,7 @@ enum t_channel_retval {
     IEC_READ_ERROR=-4, IEC_WRITE_ERROR=-5, IEC_BYTE_LOST=-6 
 };
 
-static BYTE c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
+static uint8_t c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
                             32, 32, 32, 32, 32, 32, 32, 32,
                             32, 32, 32, 32, 32, 32, 32, 32,
                             34, 32, 48, 48, 32, 50, 65,  0 };
@@ -29,7 +29,7 @@ class IecChannel
     IecInterface *interface;
     int  channel;
     int  write;
-    BYTE buffer[256];
+    uint8_t buffer[256];
     int  size;
     int  pointer;
     FILE *f;
@@ -66,7 +66,7 @@ public:
         close_file();
     }
 
-    virtual int pop_data(BYTE& b)
+    virtual int pop_data(uint8_t& b)
     {
         switch(state) {
             case e_file:
@@ -114,8 +114,8 @@ public:
         //printf("entry = %p\n", entry);
         FileInfo *info = entry->get_file_info();
         //printf("info = %p\n", info);
-        DWORD size = 0;
-        DWORD size2 = 0;
+        uint32_t size = 0;
+        uint32_t size2 = 0;
         if(info) {
             size = info->size;
         }
@@ -169,7 +169,7 @@ public:
         return 0;
     }
             
-    virtual int push_data(BYTE b)
+    virtual int push_data(uint8_t b)
     {
         UINT bytes;
 
@@ -200,7 +200,7 @@ public:
         return IEC_OK;
     }
     
-    virtual int push_command(BYTE b)
+    virtual int push_command(uint8_t b)
     {
         if(b)
             last_command = b;
@@ -283,13 +283,13 @@ private:
                         printf("Unknown control char in filename: %c\n", buffer[i+1]);
                 }
             } else {
-                buffer[i] = BYTE(tolower(int(buffer[i])));
+                buffer[i] = uint8_t(tolower(int(buffer[i])));
             }
         }
         printf("Filename after parsing: '%s'. Extension = '%s'. Write = %d\n", buffer, extension, write);
         strcat((char *)buffer, extension);
 
-        BYTE flags = FA_READ;
+        uint8_t flags = FA_READ;
             
 /* TODO
         if(buffer[0] == '$') {
@@ -364,7 +364,7 @@ public:
     	interface->last_error = ERR_OK;
     }
 
-    int pop_data(BYTE& b)
+    int pop_data(uint8_t& b)
     {
         if(pointer > last_byte) {
             return IEC_NO_FILE;
@@ -378,7 +378,7 @@ public:
         return IEC_OK;
     }
 
-    int push_data(BYTE b)
+    int push_data(uint8_t b)
     {
         if(pointer < 64) {
             buffer[pointer++] = b;
@@ -387,7 +387,7 @@ public:
         return IEC_BYTE_LOST;
     }
 
-    int push_command(BYTE b)
+    int push_command(uint8_t b)
     {
         switch(b) {
             case 0x60:

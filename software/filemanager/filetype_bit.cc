@@ -112,7 +112,7 @@ void FileTypeBIT :: execute(int selection)
 
         if((length > 0)&&(length <= addr.max_length)) {
             printf("Valid bitfile. Size = %d. Flash position: %8x\n", length, addr.start);
-            BYTE *buffer = new BYTE[length];
+            uint8_t *buffer = new uint8_t[length];
             res = file->read(buffer, length, &bytes_read);
             if((res != FR_OK)||(bytes_read != length)) {
                 delete[] buffer;
@@ -157,10 +157,10 @@ bool FileTypeBIT :: program(int id, void *buffer, int length, char *version, cha
     
     if(image_address.has_header) {
         printf("Flashing  %s, version %s..\n", descr, version);
-        BYTE *bin = new BYTE[length+16];
-        DWORD *pul;
-        pul = (DWORD *)bin;
-        *(pul++) = (DWORD)length;
+        uint8_t *bin = new uint8_t[length+16];
+        uint32_t *pul;
+        pul = (uint32_t *)bin;
+        *(pul++) = (uint32_t)length;
         memset(pul, 0, 12);
         strcpy((char*)pul, version);
         memcpy(bin+16, buffer, length);
@@ -208,7 +208,7 @@ bool FileTypeBIT :: program(int id, void *buffer, int length, char *version, cha
 
 
 /* first 13 bytes of a bit file */
-static BYTE head13[] = {0, 9, 15, 240, 15, 240, 15, 240, 15, 240, 0, 0, 1};
+static uint8_t head13[] = {0, 9, 15, 240, 15, 240, 15, 240, 15, 240, 0, 0, 1};
 
 /* readhead13
  *
@@ -220,7 +220,7 @@ static BYTE head13[] = {0, 9, 15, 240, 15, 240, 15, 240, 15, 240, 0, 0, 1};
 static int readhead13 (File *f)
 {
 	int t;
-	BYTE buf[13];
+	uint8_t buf[13];
     UINT bytes_read;
     FRESULT res;
 
@@ -248,7 +248,7 @@ static int readhead13 (File *f)
  *
  * Return -1 if an error occurs, '0' otherwise.
  */
-static int readsecthead(BYTE *buf, File *f)
+static int readsecthead(uint8_t *buf, File *f)
 {
 	int t;
     UINT bytes_read;
@@ -269,7 +269,7 @@ static int readsecthead(BYTE *buf, File *f)
  *
  * Return -1 if an error occurs, '0' otherwise.
  */
-static int readstring(BYTE *buf, int bufsize, File *f)
+static int readstring(uint8_t *buf, int bufsize, File *f)
 {
 	char lenbuf[2];
     int len, t;
@@ -308,7 +308,7 @@ static int readstring(BYTE *buf, int bufsize, File *f)
 static int readlength(File *f)
 {
 	char s = 0;
-	BYTE buf[4];
+	uint8_t buf[4];
     UINT bytes_read;
     FRESULT res;
 	int length;
@@ -341,8 +341,8 @@ static int readhead(File *f)
 #define BUFSIZE 500
 
 	int t, len;
-	BYTE typ;
-    BYTE *buffer = new BYTE[BUFSIZE];
+	uint8_t typ;
+    uint8_t *buffer = new uint8_t[BUFSIZE];
     	
 	/* get first 13 bytes */
 	t = readhead13(f);

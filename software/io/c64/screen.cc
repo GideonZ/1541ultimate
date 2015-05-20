@@ -200,7 +200,7 @@ int  Screen_MemMappedCharMatrix :: output(char c)
 	return term ->processChar(c);
 }
 
-int  Screen_MemMappedCharMatrix :: output(char *c) {
+int  Screen_MemMappedCharMatrix :: output(const char *c) {
 	int h = 0;
 	while(*c) {
 		h += output(*(c++));
@@ -269,7 +269,7 @@ void Screen_MemMappedCharMatrix :: output_raw(char c)
 	}
 }
 
-void Screen_MemMappedCharMatrix :: output_fixed_length(char *string, int offset_x, int width)
+void Screen_MemMappedCharMatrix :: output_fixed_length(const char *string, int offset_x, int width)
 {
 	if (cursor_on) {
 		char *p = char_base + pointer;
@@ -310,6 +310,7 @@ Window :: Window(Screen *parent, int x1, int y1, int sx, int sy)
     border_h   = 0;
     border_v   = 0;
     this->parent = parent;
+    parent->set_color(15); // default
 }
 
 Window :: ~Window()
@@ -365,7 +366,7 @@ void Window :: output(char c) {
 	parent->output(c);
 }
 
-void Window :: output(char *string)
+void Window :: output(const char *string)
 {
     while(*string) {
         output(*(string++));
@@ -378,12 +379,12 @@ void Window :: repeat(char a, int len)
 }
 
 
-void Window :: output_line(char *string)
+void Window :: output_line(const char *string)
 {
 	parent->output_fixed_length(string, offset_x, window_x);
 }
 
-void Window :: output_length(char *string, int len)
+void Window :: output_length(const char *string, int len)
 {
 	parent->output_fixed_length(string, offset_x, len);
 }
@@ -443,7 +444,7 @@ int Window :: get_size_y(void)
 
 void Window :: set_char(int x, int y, char c)
 {
-	parent->move_cursor(x + offset_x, y + offset_y);
+	parent->move_cursor(x + offset_x - border_v, y + offset_y - border_h);
 	parent->output(c);
 }
     

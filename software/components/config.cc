@@ -51,7 +51,7 @@ ConfigManager :: ~ConfigManager()
     stores.clear_list();
 }
 
-ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
+ConfigStore *ConfigManager :: register_store(uint32_t store_id, char *name,
                                 t_cfg_definition *defs, ConfigurableObject *ob) 
 {
 	if(!flash)
@@ -63,7 +63,7 @@ ConfigStore *ConfigManager :: register_store(DWORD store_id, char *name,
     }
 
     int page_size = flash->get_page_size();
-    DWORD id;
+    uint32_t id;
     ConfigStore *s;
 
     for(int i=0;i<num_pages;i++) {
@@ -106,7 +106,7 @@ void ConfigManager :: remove_store(ConfigStore *cfg)
 	stores.remove(cfg);
 }
 
-ConfigStore *ConfigManager :: open_store(DWORD id)
+ConfigStore *ConfigManager :: open_store(uint32_t id)
 {
     ConfigStore *s;
     for(int n = 0; n < stores.get_elements();n++) {
@@ -120,12 +120,12 @@ ConfigStore *ConfigManager :: open_store(DWORD id)
 //   ===================
 /*** CONFIGURATION STORE ***/
 //   ===================
-ConfigStore :: ConfigStore(DWORD store_id, char *name, int page, int page_size,
+ConfigStore :: ConfigStore(uint32_t store_id, char *name, int page, int page_size,
                            t_cfg_definition *defs, ConfigurableObject *ob) : items(16, NULL)
 {
     //printf("Create configstore %8x with size %d..", store_id, page_size);
     if(page_size)
-        mem_block = new BYTE[page_size];
+        mem_block = new uint8_t[page_size];
     else
         mem_block = NULL;
         
@@ -166,10 +166,10 @@ void ConfigStore :: pack()
 {
     int remain = block_size;
 	memset(mem_block, 0xFF, block_size);
-    BYTE *b = &mem_block[4];
+    uint8_t *b = &mem_block[4];
     ConfigItem *i;
     int len;
-    (*(DWORD *)mem_block) = id;
+    (*(uint32_t *)mem_block) = id;
 
     //    printf("Packing ConfigStore %s.\n", store_name);
     for(int n = 0; n < items.get_elements();n++) {
@@ -209,7 +209,7 @@ void ConfigStore :: write()
 void ConfigStore :: unpack()
 {
     int index = 4;
-    BYTE id;
+    uint8_t id;
     int len;
     ConfigItem *i;
     
@@ -244,7 +244,7 @@ void ConfigStore :: read()
 	check_bounds();
 }
 
-ConfigItem *ConfigStore :: find_item(BYTE id)
+ConfigItem *ConfigStore :: find_item(uint8_t id)
 {
     ConfigItem *i;
     for(int n = 0;n < items.get_elements(); n++) {
@@ -256,7 +256,7 @@ ConfigItem *ConfigStore :: find_item(BYTE id)
     return NULL;
 }
 
-int ConfigStore :: get_value(BYTE id)
+int ConfigStore :: get_value(uint8_t id)
 {
     ConfigItem *i = find_item(id);
     if(i)
@@ -264,7 +264,7 @@ int ConfigStore :: get_value(BYTE id)
     return -1;
 }
     
-char *ConfigStore :: get_string(BYTE id)
+char *ConfigStore :: get_string(uint8_t id)
 {
     ConfigItem *i = find_item(id);
     if(i)
@@ -276,14 +276,14 @@ char *ConfigStore :: get_string(BYTE id)
     return "__id not found__";
 }
 
-void ConfigStore :: set_value(BYTE id, int value)
+void ConfigStore :: set_value(uint8_t id, int value)
 {
     ConfigItem *i = find_item(id);
     if(i)
         i->value = value;
 }
 
-void ConfigStore :: set_string(BYTE id, char *s)
+void ConfigStore :: set_string(uint8_t id, char *s)
 {
     ConfigItem *i = find_item(id);
     if(i)
@@ -348,7 +348,7 @@ ConfigItem :: ~ConfigItem()
         delete[] string;
 }
 
-void ConfigItem :: unpack(BYTE *buffer, int len)
+void ConfigItem :: unpack(uint8_t *buffer, int len)
 {
     // first byte we get is the type
     if(*buffer != definition->type) {
@@ -381,7 +381,7 @@ void ConfigItem :: unpack(BYTE *buffer, int len)
     }
 }
 
-int ConfigItem :: pack(BYTE *buffer, int len)
+int ConfigItem :: pack(uint8_t *buffer, int len)
 {
     // first byte we get is the id, then type, then length
     if(len > 0) {
@@ -399,11 +399,11 @@ int ConfigItem :: pack(BYTE *buffer, int len)
                 printf("Int doesn't fit anymore.\n");
                 return 0;
             }
-            *(buffer++) = (BYTE)4;
-            *(buffer++) = (BYTE)(value >> 24);
-            *(buffer++) = (BYTE)(value >> 16);
-            *(buffer++) = (BYTE)(value >> 8);
-            *(buffer++) = (BYTE)(value >> 0);
+            *(buffer++) = (uint8_t)4;
+            *(buffer++) = (uint8_t)(value >> 24);
+            *(buffer++) = (uint8_t)(value >> 16);
+            *(buffer++) = (uint8_t)(value >> 8);
+            *(buffer++) = (uint8_t)(value >> 0);
             return 7;
         case CFG_TYPE_ENUM:
 //            printf("Enum %s = %s\n", definition->item_text, definition->items[value]);
@@ -411,8 +411,8 @@ int ConfigItem :: pack(BYTE *buffer, int len)
                 printf("Enum doesn't fit anymore.\n");
                 return 0;
             }
-            *(buffer++) = (BYTE)1;
-            *(buffer++) = (BYTE)(value >> 0);
+            *(buffer++) = (uint8_t)1;
+            *(buffer++) = (uint8_t)(value >> 0);
             return 4;
         case CFG_TYPE_STRING:
 //            printf("String %s = %s\n", definition->item_text, string);
@@ -420,7 +420,7 @@ int ConfigItem :: pack(BYTE *buffer, int len)
                 printf("String doesn't fit.\n");
                 return 0;
             }
-            *(buffer++) = (BYTE)strlen(string);
+            *(buffer++) = (uint8_t)strlen(string);
             strcpy((char *)buffer, string);
             return 3+strlen(string);
         default:

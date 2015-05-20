@@ -28,7 +28,7 @@ public:
 	virtual ~ConfigBrowser();
 
     virtual void init(Screen *screen, Keyboard *k);
-    virtual int handle_key(BYTE);
+    virtual int handle_key(uint8_t);
 };
 
 class BrowsableConfigItem : public Browsable

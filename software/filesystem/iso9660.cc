@@ -10,7 +10,7 @@ FileSystem_ISO9660 :: FileSystem_ISO9660(Partition *p) : FileSystem(p)
     sector_buffer = NULL;
     if(status == 0) {
         if(sector_size <= 4096) { // we shouldn't try to allocate more
-            sector_buffer = new BYTE[sector_size];
+            sector_buffer = new uint8_t[sector_size];
         }
     }
     joliet = false;
@@ -27,22 +27,22 @@ FileSystem_ISO9660 :: ~FileSystem_ISO9660()
 
 void FileSystem_ISO9660 :: get_dir_record(void *p)
 {
-    BYTE *buf = (BYTE *)p;
+    uint8_t *buf = (uint8_t *)p;
     if(buf[0] == 0) {
         dir_record.actual.record_length = 0;
         return;
     }
     memcpy(&dir_record.actual, p, int(buf[0]));
     // end identifier with \0:
-    BYTE ident_len = dir_record.actual.identifier_length;
+    uint8_t ident_len = dir_record.actual.identifier_length;
     dir_record.identifier[ident_len] = 0;
 }
     
 FileSystem* FileSystem_ISO9660 :: test(Partition *p)        // check if file system is present on this partition
 {
-    DWORD secsize;
+    uint32_t secsize;
     DRESULT status = p->ioctl(GET_SECTOR_SIZE, &secsize);
-    BYTE *buf;
+    uint8_t *buf;
     if(status)
         return NULL;
     if(secsize > 4096)
@@ -50,10 +50,10 @@ FileSystem* FileSystem_ISO9660 :: test(Partition *p)        // check if file sys
     if(secsize < 512)
         return NULL;
         
-    buf = new BYTE[secsize];
+    buf = new uint8_t[secsize];
 
     // the first 32K are unused.
-    DWORD first_sector = 32768 / secsize;
+    uint32_t first_sector = 32768 / secsize;
     status = p->read(buf, first_sector, 1);
     if(status) {
         delete buf;
@@ -76,7 +76,7 @@ bool    FileSystem_ISO9660 :: init(void)              // Initialize file system
     initialized = false;
     joliet = false;
     
-    DWORD first_sector = 32768 / sector_size;
+    uint32_t first_sector = 32768 / sector_size;
     DRESULT status = prt->read(sector_buffer, first_sector, 1);
     last_read_sector = first_sector;
     if(status) {
@@ -141,7 +141,7 @@ Directory *FileSystem_ISO9660 :: dir_open(FileInfo *info) // Opens directory (cr
 
     handle->start  = handle->sector;
     handle->offset = 0;
-    Directory *dir = new Directory(this, (DWORD)handle);
+    Directory *dir = new Directory(this, (uint32_t)handle);
     return dir;    
 }
 
@@ -245,7 +245,7 @@ try_next:
 }
 
 // functions for reading files
-File   *FileSystem_ISO9660 :: file_open(FileInfo *info, BYTE flags)  // Opens file (creates file object)
+File   *FileSystem_ISO9660 :: file_open(FileInfo *info, uint8_t flags)  // Opens file (creates file object)
 {
 //    if(flags & FA_ANY_WRITE_FLAG)
 //        return NULL;
@@ -256,7 +256,7 @@ File   *FileSystem_ISO9660 :: file_open(FileInfo *info, BYTE flags)  // Opens fi
     handle->start     = handle->sector;
     handle->offset    = 0;
 
-    File *f = new File(info, (DWORD)handle);
+    File *f = new File(info, (uint32_t)handle);
     return f;    
 }
 
@@ -267,19 +267,19 @@ void    FileSystem_ISO9660 :: file_close(File *f)                // Closes file 
     delete f;
 }
 
-FRESULT FileSystem_ISO9660 :: file_read(File *f, void *buffer, DWORD len, UINT *transferred)
+FRESULT FileSystem_ISO9660 :: file_read(File *f, void *buffer, uint32_t len, UINT *transferred)
 {
     t_iso_handle *handle = (t_iso_handle *)f->handle;
     
-    DWORD file_remain = handle->remaining - handle->offset;
+    uint32_t file_remain = handle->remaining - handle->offset;
     if (len > file_remain)
         len = file_remain;
 
-    BYTE *dest = (BYTE *)buffer;
+    uint8_t *dest = (uint8_t *)buffer;
 
     // calculate which sector to start reading
-    DWORD sect        = (handle->offset / sector_size);
-    DWORD sect_offset = handle->offset - (sector_size * sect);
+    uint32_t sect        = (handle->offset / sector_size);
+    uint32_t sect_offset = handle->offset - (sector_size * sect);
     sect += handle->start;
 
 //    printf("File read: Offset = %d, Len = %d. Sect = %d. Sect_offset = %d.\n", handle->offset, len, sect, sect_offset);
@@ -309,8 +309,8 @@ FRESULT FileSystem_ISO9660 :: file_read(File *f, void *buffer, DWORD len, UINT *
                 else
                     return FR_DISK_ERR;
             }
-            DWORD sect_remain = sector_size - sect_offset;
-            DWORD take_now = sect_remain;
+            uint32_t sect_remain = sector_size - sect_offset;
+            uint32_t take_now = sect_remain;
             if(sect_remain > len)
                 take_now = len;
 //            printf("ISO9660: Taking now %d bytes from buffer offset %d.\n", take_now, sect_offset);
@@ -331,7 +331,7 @@ FRESULT FileSystem_ISO9660 :: file_read(File *f, void *buffer, DWORD len, UINT *
     return FR_OK;
 }
 
-FRESULT FileSystem_ISO9660 :: file_seek(File *f, DWORD pos)
+FRESULT FileSystem_ISO9660 :: file_seek(File *f, uint32_t pos)
 {
     t_iso_handle *handle = (t_iso_handle *)f->handle;
 

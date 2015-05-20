@@ -37,7 +37,7 @@ extern "C" {
 #include "userinterface.h"
 
 /* other external references */
-extern BYTE _binary_bootcrt_65_start;
+extern uint8_t _binary_bootcrt_65_start;
 
 cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
 
@@ -141,7 +141,7 @@ struct t_cfg_definition c64_config[] = {
 #define MENU_C64_BOOTFPGA   0x6408
 #define MENU_C64_HARD_BOOT  0x6409
 
-extern BYTE _binary_chars_bin_start;
+extern uint8_t _binary_chars_bin_start;
 
     
 C64 :: C64()
@@ -151,7 +151,7 @@ C64 :: C64()
 
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
-    char_set = (BYTE *)&_binary_chars_bin_start;
+    char_set = (uint8_t *)&_binary_chars_bin_start;
     keyb = new Keyboard(this, &CIA1_DPB, &CIA1_DPA);
 
     if(C64_CLOCK_DETECT == 0)
@@ -241,7 +241,7 @@ int  C64 :: fetch_task_items(IndexedList<Action *> &item_list)
 		
 void C64 :: determine_d012(void)
 {
-    BYTE b;
+    uint8_t b;
     // pre-condition: C64 is already in the stopped state, and IRQ registers have already been saved
     //                C64 IRQn to SD-IRQ is not enabled.
     
@@ -384,8 +384,8 @@ void C64 :: stop(bool do_raster)
 void C64 :: resume(void)
 {
     int dummy=0;
-    BYTE rast_lo;
-    BYTE rast_hi;
+    uint8_t rast_lo;
+    uint8_t rast_hi;
     
     if(!raster && !raster_hi) {
         rast_lo = 0;
@@ -678,7 +678,7 @@ void C64 :: set_cartridge(cart_def *def)
     
     set_emulation_flags(def);
 
-    DWORD mem_addr = ((DWORD)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
     if(def->type & CART_RAM) {
         printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, mem_addr); 
         memcpy((void *)mem_addr, def->custom_addr, def->length);
@@ -686,7 +686,7 @@ void C64 :: set_cartridge(cart_def *def)
         printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
         flash->read_image(def->id, (void *)mem_addr, def->length);
     } else if (def->length) { // not ram, not flash.. then it has to be custom
-        *(BYTE *)(mem_addr+5) = 0; // disable previously started roms.
+        *(uint8_t *)(mem_addr+5) = 0; // disable previously started roms.
 
         char *n = cfg->get_string(CFG_C64_CUSTOM);
         printf("Now loading '%s' as cartridge.\n", n);
@@ -713,8 +713,8 @@ void C64 :: set_cartridge(cart_def *def)
 }
 
 void C64 :: set_colors(int background, int border) {
-    BORDER     = BYTE(border);
-    BACKGROUND = BYTE(background);
+    BORDER     = uint8_t(border);
+    BACKGROUND = uint8_t(background);
 }
 
 void C64 :: init_cartridge()
@@ -733,7 +733,7 @@ void C64 :: init_cartridge()
         FILE *f = fopen(n, "rb");
 		if(f) {
 			UINT transferred;
-            BYTE *temp = new BYTE[8192];
+            uint8_t *temp = new uint8_t[8192];
 			transferred = fread(temp, 1, 8192, f);
             C64_KERNAL_ENABLE = 1;
 			if (transferred != 8192) {
@@ -742,8 +742,8 @@ void C64 :: init_cartridge()
 			}
 			fclose(f);
             // BYTE *src = (BYTE *)&_binary_kernal_sx_251104_04_bin_start;
-            BYTE *src = temp;
-            BYTE *dst = (BYTE *)(C64_KERNAL_BASE+1);
+            uint8_t *src = temp;
+            uint8_t *dst = (uint8_t *)(C64_KERNAL_BASE+1);
             for(int i=0;i<8192;i++) {
                 *(dst) = *(src++);
                 dst += 2;
@@ -776,7 +776,7 @@ void C64 :: poll(Event &e)
 {
 #ifndef _NO_FILE_ACCESS
 	FILE *f;
-	DWORD size;
+	uint32_t size;
     t_flash_address addr;
 	int run_code;
     LONG reu_size;
@@ -854,7 +854,7 @@ void C64 :: execute(int command)
         if(f) {
             int pages = flash->get_number_of_pages();
             int page_size = flash->get_page_size();
-            BYTE *page_buf = new BYTE[page_size];
+            uint8_t *page_buf = new uint8_t[page_size];
             for(int i=0;i<pages;i++) {
                 flash->read_page(i, page_buf);
                 transferred = fwrite(page_buf, 1, page_size, f);
@@ -874,7 +874,7 @@ void C64 :: execute(int command)
 }
 
 // static member
-int C64Event :: prepare_dma_load(FILE *f, const char *name, int len, BYTE run_code, WORD reloc)
+int C64Event :: prepare_dma_load(FILE *f, const char *name, int len, uint8_t run_code, WORD reloc)
 {
     C64_POKE(0x162, run_code);
 
@@ -890,7 +890,7 @@ int C64Event :: prepare_dma_load(FILE *f, const char *name, int len, BYTE run_co
 }
 
 // static member
-int C64Event :: perform_dma_load(FILE *f, BYTE run_code, WORD reloc)
+int C64Event :: perform_dma_load(FILE *f, uint8_t run_code, WORD reloc)
 {
     push_event(e_dma_load, f, run_code);
     return 0;
@@ -898,7 +898,7 @@ int C64Event :: perform_dma_load(FILE *f, BYTE run_code, WORD reloc)
 
 
 
-int C64 :: dma_load(FILE *f, BYTE run_code, WORD reloc)
+int C64 :: dma_load(FILE *f, uint8_t run_code, WORD reloc)
 {
 	// First, check if we have file access
     UINT transferred;
@@ -926,7 +926,7 @@ int C64 :: dma_load(FILE *f, BYTE run_code, WORD reloc)
 
 	C64_POKE(2, 0x40);  // signal cart ready for DMA load
 
-	BYTE dma_load_buffer[512];
+	uint8_t dma_load_buffer[512];
 
 	if ( !(run_code & RUNCODE_REAL_BIT) ) {
 
@@ -943,7 +943,7 @@ int C64 :: dma_load(FILE *f, BYTE run_code, WORD reloc)
             stop(false);
         }
         printf("Now loading...");
-        BYTE *dest = (BYTE *)(C64_MEMORY_BASE + load_address);
+        uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE + load_address);
 
         /* Now actually load the file */
         int total_trans = 0;
@@ -992,19 +992,19 @@ int C64 :: dma_load(FILE *f, BYTE run_code, WORD reloc)
 bool C64 :: write_vic_state(FILE *f)
 {
     UINT transferred;
-    BYTE mode = C64_MODE;
+    uint8_t mode = C64_MODE;
     C64_MODE = 0;
 
     // find bank
-    BYTE bank = 3 - (cia_backup[1] & 0x03);
-    DWORD addr = C64_MEMORY_BASE + (DWORD(bank) << 14);
+    uint8_t bank = 3 - (cia_backup[1] & 0x03);
+    uint32_t addr = C64_MEMORY_BASE + (uint32_t(bank) << 14);
     if(bank == 0) {
-        fwrite((BYTE *)C64_MEMORY_BASE, 1, 0x0400, f);
+        fwrite((uint8_t *)C64_MEMORY_BASE, 1, 0x0400, f);
         fwrite(screen_backup, 1, 0x0400, f);
         fwrite(ram_backup, 1, 0x0800, f);
-        fwrite((BYTE *)(C64_MEMORY_BASE + 0x1000), 1, 0x3000, f);
+        fwrite((uint8_t *)(C64_MEMORY_BASE + 0x1000), 1, 0x3000, f);
     } else {        
-        fwrite((BYTE *)addr, 1, 16384, f);
+        fwrite((uint8_t *)addr, 1, 16384, f);
     }    
     fwrite(color_backup, 1, 0x0400, f);
     fwrite(vic_backup, 1, NUM_VICREGS, f);

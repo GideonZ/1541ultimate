@@ -27,7 +27,7 @@ void (*function)();
 
 void jump_run(void)
 {
-    DWORD *dp = (DWORD *)&function;
+    uint32_t *dp = (uint32_t *)&function;
     *dp = APPLICATION_RUN_ADDRESS;
     function();
 }
@@ -117,7 +117,7 @@ FRESULT try_loading(char *filename)
 
 int try_flash(void)
 {
-    DWORD length;
+    uint32_t length;
 	Flash *flash = get_flash();
 	t_flash_address image_addr;
     
@@ -146,7 +146,7 @@ int try_flash(void)
 
 int try_xmodem(void)
 {
-    int st = xmodemReceive((BYTE *)APPLICATION_RUN_ADDRESS, APPLICATION_MAX_LENGTH);
+    int st = xmodemReceive((uint8_t *)APPLICATION_RUN_ADDRESS, APPLICATION_MAX_LENGTH);
 	if (st < 0) {
 		printf ("Xmodem receive error: status: %d\n", st);
 		return st;
@@ -163,7 +163,7 @@ int main()
     FRESULT res = FR_DISK_ERR;
     int file_system_err;
 	bool skip_flash = false;
-    BYTE buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
+    uint8_t buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
 	file_system_err = init_fat_on_sd();
 
     if(!file_system_err) { // will return error code, 0 = ok

@@ -132,7 +132,7 @@ void ConfigBrowserState :: decrease(void)
     }
 }
     
-int ConfigBrowser :: handle_key(BYTE c)
+int ConfigBrowser :: handle_key(uint8_t c)
 {
     int ret = 0;
     

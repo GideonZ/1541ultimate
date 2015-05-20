@@ -8,9 +8,9 @@
 #define AT49_NUM_CONFIG_PAGES  7
 
 #define AT49_BASE         0x2000000
-#define AT49_MEM_ARRAY(x) (*(volatile BYTE *)(AT49_BASE + x))
-#define AT49_COMMAND1     (*(volatile BYTE *)(AT49_BASE + 0x0AAA))
-#define AT49_COMMAND2     (*(volatile BYTE *)(AT49_BASE + 0x1554))
+#define AT49_MEM_ARRAY(x) (*(volatile uint8_t *)(AT49_BASE + x))
+#define AT49_COMMAND1     (*(volatile uint8_t *)(AT49_BASE + 0x0AAA))
+#define AT49_COMMAND2     (*(volatile uint8_t *)(AT49_BASE + 0x1554))
 
 class AT49_Flash : public Flash
 {
@@ -18,7 +18,7 @@ class AT49_Flash : public Flash
 	int sector_count;
     int total_size;
 
-	BYTE last_status;
+	uint8_t last_status;
     bool wait_ready(int time_out);
     int sector_to_addr(int sector);
 public:    

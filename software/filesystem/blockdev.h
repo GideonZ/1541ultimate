@@ -10,7 +10,7 @@
 #include "integer.h"
 
 /* Status of Disk Functions */
-typedef BYTE	DSTATUS;
+typedef uint8_t	DSTATUS;
 
 /* Results of Disk Functions */
 typedef enum {
@@ -62,11 +62,11 @@ public:
 
     virtual DSTATUS init(void);
     virtual DSTATUS status(void);
-    virtual DRESULT read(BYTE *, DWORD, int);
+    virtual DRESULT read(uint8_t *, uint32_t, int);
 #if	_READONLY == 0
-    virtual DRESULT write(const BYTE *, DWORD, int);
+    virtual DRESULT write(const uint8_t *, uint32_t, int);
 #endif
-    virtual DRESULT ioctl(BYTE, void *);
+    virtual DRESULT ioctl(uint8_t, void *);
     
 };
 

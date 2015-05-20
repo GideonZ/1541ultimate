@@ -12,16 +12,16 @@ extern "C" {
 #include "FreeRTOS.h"
 #include "task.h"
 
-__inline DWORD cpu_to_32le(DWORD a)
+__inline uint32_t cpu_to_32le(uint32_t a)
 {
-    DWORD m1, m2;
+    uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
 }
 
-BYTE c_scsi_getmaxlun[] = { 0xA1, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
-BYTE c_scsi_reset[]     = { 0x21, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_scsi_getmaxlun[] = { 0xA1, 0xFE, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
+uint8_t c_scsi_reset[]     = { 0x21, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 /*********************************************************************
 / The driver is the "bridge" between the system and the device
@@ -83,7 +83,7 @@ bool UsbScsiDriver :: test_driver(UsbDevice *dev)
 
 int UsbScsiDriver :: get_max_lun(UsbDevice *dev)
 {
-    BYTE dummy_buffer[8];
+    uint8_t dummy_buffer[8];
 
     int i = dev->host->control_exchange(&dev->control_pipe,
                                    c_scsi_getmaxlun, 8,
@@ -162,7 +162,7 @@ void UsbScsiDriver :: poll(void)
 	UsbScsi *blk;
 	t_device_state old_state, new_state;
 
-    DWORD capacity, block_size;
+    uint32_t capacity, block_size;
 
 	// poll intervals are meant to lower the unnecessary
 	// traffic on the USB bus.
@@ -230,7 +230,7 @@ UsbScsi :: ~UsbScsi()
 
 void UsbScsi :: reset(void)
 {
-    BYTE buf[8];
+    uint8_t buf[8];
     
     if(lun == 0) {
 		printf("Executing reset...\n");
@@ -250,10 +250,10 @@ void UsbScsi :: reset(void)
 
 int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
 {
-	DWORD *signature = (DWORD *)stat_resp;
+	uint32_t *signature = (uint32_t *)stat_resp;
 	*signature = 0;
 	int len;
-	BYTE buf[8];
+	uint8_t buf[8];
 	bool do_reset = false;
 
 	if(do_bulk_in) {
@@ -289,10 +289,10 @@ int UsbScsiDriver :: request_sense(int lun, bool debug)
     cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(18);
     cbw.flags = CBW_IN;
-    cbw.lun = (BYTE)lun;
+    cbw.lun = (uint8_t)lun;
     cbw.cmd_length = 6; // windows uses 12!
     cbw.cmd[0] = 0x03; // REQUEST SENSE
-    cbw.cmd[1] = BYTE(lun << 5);
+    cbw.cmd[1] = uint8_t(lun << 5);
     cbw.cmd[2] = 0; // reserved
     cbw.cmd[3] = 0; // reserved
     cbw.cmd[4] = 18; // allocated return length
@@ -315,7 +315,7 @@ int UsbScsiDriver :: request_sense(int lun, bool debug)
 	return status_transport(true);
 }
 
-void UsbScsi :: handle_sense_error(BYTE *sense_data)
+void UsbScsi :: handle_sense_error(uint8_t *sense_data)
 {
 	if(!sense_data[2]) {
 		set_state(e_device_ready);
@@ -336,17 +336,17 @@ void UsbScsi :: handle_sense_error(BYTE *sense_data)
 	}
 }
 
-int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, BYTE *cmd, int datalen, BYTE *data, bool debug)
+int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, int datalen, uint8_t *data, bool debug)
 {
     cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(datalen);
     cbw.flags = (out)?CBW_OUT:CBW_IN;
-    cbw.lun = (BYTE)lun;
+    cbw.lun = (uint8_t)lun;
     cbw.cmd_length = cmdlen;
     memcpy(&cbw.cmd[0], cmd, cmdlen);
     
     /* CBW PHASE */
-    BYTE *b = (BYTE *)&cbw;
+    uint8_t *b = (uint8_t *)&cbw;
     if(debug) {
         printf("Command: ");
         for(int i=0;i<31;i++) {
@@ -386,7 +386,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, BYTE *cmd, int 
 			}
 			if (len < 0) {
 				printf("In Pipe stalled. Unstalling pipe, and reading status.\n");
-			    device->unstall_pipe((BYTE)(bulk_in.DevEP & 0xFF));
+			    device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
 			    bulk_in.Command = 0; // reset toggle
 			} else if(len != datalen) {
 				printf("expected %d bytes, got %d...", datalen, len);
@@ -415,7 +415,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, BYTE *cmd, int 
 
 void UsbScsi :: inquiry(void)
 {
-    BYTE response[64];
+    uint8_t response[64];
     int len, i;
 
     driver->device->get_pathname(name, 13);
@@ -424,7 +424,7 @@ void UsbScsi :: inquiry(void)
     	sprintf(name + strlen(name), "L%d", lun);
     }
 
-    BYTE inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
+    uint8_t inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
     //inquiry_command[1] = BYTE(lun << 5);
 
     if((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) {
@@ -455,13 +455,13 @@ void UsbScsi :: inquiry(void)
 
 bool UsbScsi :: test_unit_ready(void)
 {
-    BYTE response[32];
+    uint8_t response[32];
     int len, i;
 
     if(!initialized)
         return false;
 
-    BYTE test_ready_command[6] = { 0x00, BYTE(lun << 5), 0, 0, 0, 0 };
+    uint8_t test_ready_command[6] = { 0x00, uint8_t(lun << 5), 0, 0, 0, 0 };
     int res = driver->exec_command(lun, 6, false, test_ready_command, 0, NULL, false);
 	if(res == -7) {
 		return true; // handled by sense
@@ -474,9 +474,9 @@ bool UsbScsi :: test_unit_ready(void)
 	return false;
 }
 
-DRESULT UsbScsi :: read_capacity(DWORD *num_blocks, DWORD *blk_size)
+DRESULT UsbScsi :: read_capacity(uint32_t *num_blocks, uint32_t *blk_size)
 {
-    BYTE buf[8];
+    uint8_t buf[8];
     
     if(!initialized)
         return RES_NOTRDY;
@@ -484,7 +484,7 @@ DRESULT UsbScsi :: read_capacity(DWORD *num_blocks, DWORD *blk_size)
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;
 
-    BYTE read_cap_command[] = { 0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    uint8_t read_cap_command[] = { 0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     printf("Read capacity.\n");
     int stat = driver->exec_command(lun, 10, false, read_cap_command, 8, buf, false);
     
@@ -522,7 +522,7 @@ const char *sense_strings[] = {
 
 struct t_sense_code
 {
-    BYTE major, minor;
+    uint8_t major, minor;
     char *string;
 };
 
@@ -756,7 +756,7 @@ DSTATUS UsbScsi :: status(void)
     return RES_OK;
 }
 
-DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, int num_sectors)
+DRESULT UsbScsi :: read(uint8_t *buf, uint32_t sector, int num_sectors)
 {
     if(!initialized)
         return RES_NOTRDY;
@@ -766,7 +766,7 @@ DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, int num_sectors)
 
         // printf("Read USB sector: %d (%d).\n", sector, num_sectors);
 
-    BYTE read_10_command[] = { 0x28, BYTE(lun << 5), 0,0,0,0, 0x00, 0, num_sectors, 0 };
+    uint8_t read_10_command[] = { 0x28, uint8_t(lun << 5), 0,0,0,0, 0x00, 0, num_sectors, 0 };
     
     int len, stat_len;
 
@@ -791,7 +791,7 @@ DRESULT UsbScsi :: read(BYTE *buf, DWORD sector, int num_sectors)
     return RES_OK;
 }
 
-DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, int num_sectors)
+DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
 {
     if(!initialized)
         return RES_NOTRDY;
@@ -799,7 +799,7 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, int num_sectors)
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;
 
-    BYTE write_10_command[] = { 0x2A, BYTE(lun << 5), 0,0,0,0, 0x00, 0, num_sectors, 0 };
+    uint8_t write_10_command[] = { 0x2A, uint8_t(lun << 5), 0,0,0,0, 0x00, 0, num_sectors, 0 };
     
     int len, stat_len;
 
@@ -811,7 +811,7 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, int num_sectors)
         memcpy(&write_10_command[2], &sector, 4);
 
         for(int retry=0;retry<10;retry++) {
-        	len = driver->exec_command(lun, 10, true, write_10_command, block_size*num_sectors, (BYTE *)buf, false);
+        	len = driver->exec_command(lun, 10, true, write_10_command, block_size*num_sectors, (uint8_t *)buf, false);
         	if(len != block_size*num_sectors) {
         		printf("Error %d.\n", len);
         	    ITU_USB_BUSY = 0;
@@ -827,10 +827,10 @@ DRESULT UsbScsi :: write(const BYTE *buf, DWORD sector, int num_sectors)
     return RES_OK;
 }
 
-DRESULT UsbScsi :: ioctl(BYTE command, void *pdata)
+DRESULT UsbScsi :: ioctl(uint8_t command, void *pdata)
 {
-    DWORD *data = (DWORD *)pdata;
-    DWORD dummy;
+    uint32_t *data = (uint32_t *)pdata;
+    uint32_t dummy;
     DRESULT res;
 
     switch(command) {

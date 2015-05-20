@@ -13,18 +13,18 @@ class IndexedList
 private:
 	T *element_array;
 	T empty;
-	BYTE *removal;
+	uint8_t *removal;
 	int size;
 	int elements;
 	void expand(void) {
 		T *new_array;
-		BYTE *new_removal;
+		uint8_t *new_removal;
 		if(!size)
 			size = 16;
 		else
 			size *= 2;
 		new_array = new T[size];
-		new_removal = new BYTE[size];
+		new_removal = new uint8_t[size];
 		for(int i=0;i<elements;i++) {
 			new_array[i] = element_array[i];
 			new_removal[i] = removal[i];
@@ -40,7 +40,7 @@ public:
     IndexedList(int initial, T def) : empty(def) {
 		if(initial) {
 			element_array = new T[initial];
-			removal = new BYTE[initial];
+			removal = new uint8_t[initial];
 		} else {
 			element_array = NULL;
 			removal = NULL;
@@ -122,7 +122,7 @@ public:
 		temp = element_array[j];
 		element_array[j] = element_array[i];
 		element_array[i] = temp;
-		BYTE temp2;
+		uint8_t temp2;
 		temp2 = removal[j];
 		removal[j] = removal[i];
 		removal[i] = temp2;

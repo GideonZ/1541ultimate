@@ -13,31 +13,31 @@ extern "C" {
 #define DEBUG_RAW_PKT 0
 #define DEBUG_INVALID_PKT 0
 
-BYTE c_req_phy_access[]    = { 0x40, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_read_phy_reg[8]     = { 0xC0, 0x07, 0x10, 0x00, 0xFF, 0x00, 0x02, 0x00 };
-BYTE c_write_phy_reg[8]    = { 0x40, 0x08, 0x10, 0x00, 0xFF, 0x00, 0x02, 0x00 };
-BYTE c_release_access[]    = { 0x40, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_req_phy_access[]    = { 0x40, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_read_phy_reg[8]     = { 0xC0, 0x07, 0x10, 0x00, 0xFF, 0x00, 0x02, 0x00 };
+uint8_t c_write_phy_reg[8]    = { 0x40, 0x08, 0x10, 0x00, 0xFF, 0x00, 0x02, 0x00 };
+uint8_t c_release_access[]    = { 0x40, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-BYTE c_srom_read_reg[8]    = { 0xC0, 0x0B, 0xAA, 0x00, 0x00, 0x00, 0x02, 0x00 };
-BYTE c_srom_write_reg[8]   = { 0x40, 0x0C, 0xAA, 0x00, 0xCC, 0xDD, 0x00, 0x00 };
-BYTE c_srom_write_enable[] = { 0x40, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_srom_write_disable[]= { 0x40, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_srom_read_reg[8]    = { 0xC0, 0x0B, 0xAA, 0x00, 0x00, 0x00, 0x02, 0x00 };
+uint8_t c_srom_write_reg[8]   = { 0x40, 0x0C, 0xAA, 0x00, 0xCC, 0xDD, 0x00, 0x00 };
+uint8_t c_srom_write_enable[] = { 0x40, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_srom_write_disable[]= { 0x40, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-BYTE c_read_rx_ctrl[]      = { 0xC0, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
-BYTE c_write_rx_control[]  = { 0x40, 0x10, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_clear_rx_ctrl[]     = { 0x40, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_write_ipg_regs[]    = { 0x40, 0x12, 0x1D, 0x00, 0x12, 0x00, 0x00, 0x00 };
-BYTE c_get_mac_address[]   = { 0xC0, 0x13, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00 };
-BYTE c_read_phy_addr[]     = { 0xC0, 0x19, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
-BYTE c_read_medium_mode[]  = { 0xC0, 0x1A, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
-BYTE c_write_medium_mode[] = { 0x40, 0x1B, 0x36, 0x03, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_write_gpio[]        = { 0x40, 0x1f, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_write_softw_rst1[]  = { 0x40, 0x20, 0x48, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_write_softw_rst2[]  = { 0x40, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_write_softw_rst3[]  = { 0x40, 0x20, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_write_softw_rst4[]  = { 0x40, 0x20, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_write_softw_rst5[]  = { 0x40, 0x20, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00 };
-BYTE c_write_softw_sel[]   = { 0x40, 0x22, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_read_rx_ctrl[]      = { 0xC0, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
+uint8_t c_write_rx_control[]  = { 0x40, 0x10, 0x88, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_clear_rx_ctrl[]     = { 0x40, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_write_ipg_regs[]    = { 0x40, 0x12, 0x1D, 0x00, 0x12, 0x00, 0x00, 0x00 };
+uint8_t c_get_mac_address[]   = { 0xC0, 0x13, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00 };
+uint8_t c_read_phy_addr[]     = { 0xC0, 0x19, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
+uint8_t c_read_medium_mode[]  = { 0xC0, 0x1A, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
+uint8_t c_write_medium_mode[] = { 0x40, 0x1B, 0x36, 0x03, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_write_gpio[]        = { 0x40, 0x1f, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_write_softw_rst1[]  = { 0x40, 0x20, 0x48, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_write_softw_rst2[]  = { 0x40, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_write_softw_rst3[]  = { 0x40, 0x20, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_write_softw_rst4[]  = { 0x40, 0x20, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_write_softw_rst5[]  = { 0x40, 0x20, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_write_softw_sel[]   = { 0x40, 0x22, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 
 const WORD good_srom[] = {
@@ -58,9 +58,9 @@ const WORD good_srom[] = {
 	0x2E00, 0x1203, 0x4100, 0x5800, 0x3800, 0x3800, 0x7800, 0x3700,
 	0x3200, 0x4100, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF };
 
-__inline DWORD cpu_to_32le(DWORD a)
+__inline uint32_t cpu_to_32le(uint32_t a)
 {
-    DWORD m1, m2;
+    uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
@@ -72,23 +72,23 @@ __inline WORD le16_to_cpu(WORD h)
 }
 
 // Entry point for call-backs.
-void UsbAx88772Driver_interrupt_callback(BYTE *data, int data_length, void *object) {
+void UsbAx88772Driver_interrupt_callback(uint8_t *data, int data_length, void *object) {
 	((UsbAx88772Driver *)object)->interrupt_handler(data, data_length);
 }
 
 // Entry point for call-backs.
-void UsbAx88772Driver_bulk_callback(BYTE *data, int data_length, void *object) {
+void UsbAx88772Driver_bulk_callback(uint8_t *data, int data_length, void *object) {
 	((UsbAx88772Driver *)object)->bulk_handler(data, data_length);
 }
 
 // entry point for free buffer callback
 void UsbAx88772Driver_free_buffer(void *drv, void *b) {
-	((UsbAx88772Driver *)drv)->free_buffer((BYTE *)b);
+	((UsbAx88772Driver *)drv)->free_buffer((uint8_t *)b);
 }
 
 // entry point for output packet callback
-BYTE UsbAx88772Driver_output(void *drv, void *b, int len) {
-	return ((UsbAx88772Driver *)drv)->output_packet((BYTE *)b, len);
+uint8_t UsbAx88772Driver_output(void *drv, void *b, int len) {
+	return ((UsbAx88772Driver *)drv)->output_packet((uint8_t *)b, len);
 }
 
 /*********************************************************************
@@ -288,14 +288,14 @@ void UsbAx88772Driver :: deinstall(UsbDevice *dev)
     printf("AX88772 Deinstalled.\n");
 }
 
-void UsbAx88772Driver :: write_phy_register(BYTE reg, WORD value) {
+void UsbAx88772Driver :: write_phy_register(uint8_t reg, WORD value) {
     c_write_phy_reg[4] = reg;
 
     host->control_exchange(&device->control_pipe,
                            c_req_phy_access, 8,
 						   temp_buffer, 1);
-    temp_buffer[0] = BYTE(value & 0xFF);
-    temp_buffer[1] = BYTE(value >> 8);
+    temp_buffer[0] = uint8_t(value & 0xFF);
+    temp_buffer[1] = uint8_t(value >> 8);
     host->control_write(&device->control_pipe,
                            c_write_phy_reg, 8,
 						   temp_buffer, 2);
@@ -304,7 +304,7 @@ void UsbAx88772Driver :: write_phy_register(BYTE reg, WORD value) {
 						   temp_buffer, 1);
 }
 
-WORD UsbAx88772Driver :: read_phy_register(BYTE reg) {
+WORD UsbAx88772Driver :: read_phy_register(uint8_t reg) {
     c_read_phy_reg[4] = reg;
 
     host->control_exchange(&device->control_pipe,
@@ -327,7 +327,7 @@ void UsbAx88772Driver :: poll(void)
 		netstack->poll();
 }
 
-void UsbAx88772Driver :: interrupt_handler(BYTE *irq_data, int data_len)
+void UsbAx88772Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 {
     //printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
 	//for(int i=0;i<data_len;i++) {
@@ -351,7 +351,7 @@ void UsbAx88772Driver :: interrupt_handler(BYTE *irq_data, int data_len)
 	}
 }
 
-void UsbAx88772Driver :: bulk_handler(BYTE *usb_buffer, int data_len)
+void UsbAx88772Driver :: bulk_handler(uint8_t *usb_buffer, int data_len)
 {
 	//printf("Packet %p Len: %d\n", usb_buffer, data_len);
 	PROFILER_SUB = 6;
@@ -394,7 +394,7 @@ void UsbAx88772Driver :: bulk_handler(BYTE *usb_buffer, int data_len)
 	}
 }
  	
-void UsbAx88772Driver :: free_buffer(BYTE *buffer)
+void UsbAx88772Driver :: free_buffer(uint8_t *buffer)
 {
 //	printf("FREE PBUF CALLED %p!\n", buffer);
 	host->free_input_buffer(bulk_transaction, buffer);
@@ -402,10 +402,10 @@ void UsbAx88772Driver :: free_buffer(BYTE *buffer)
 
 void UsbAx88772Driver :: read_srom()
 {
-	DWORD temp_buf = 0;
+	uint32_t temp_buf = 0;
 	//BYTE local_buffer[128];
 	for(int i=0;i<256;i++) {
-		c_srom_read_reg[2] = (BYTE)i;
+		c_srom_read_reg[2] = (uint8_t)i;
 		device->host->control_exchange(&device->control_pipe,
 										c_srom_read_reg, 8,
 	                                    &temp_buf, 2);
@@ -415,7 +415,7 @@ void UsbAx88772Driver :: read_srom()
 
 void UsbAx88772Driver :: write_srom()
 {
-	BYTE c_srom_write_reg[8]   = { 0x40, 0x0C, 0xAA, 0x00, 0xCC, 0xDD, 0x00, 0x00 };
+	uint8_t c_srom_write_reg[8]   = { 0x40, 0x0C, 0xAA, 0x00, 0xCC, 0xDD, 0x00, 0x00 };
 
 	device->host->control_exchange(&device->control_pipe,
 									c_srom_write_enable, 8,
@@ -423,7 +423,7 @@ void UsbAx88772Driver :: write_srom()
 
 	for(int i=0;i<128;i++) {
 		WORD data = good_srom[i];
-		c_srom_write_reg[2] = (BYTE)i;
+		c_srom_write_reg[2] = (uint8_t)i;
 		*((WORD *)&c_srom_write_reg[4]) = data;
 		device->host->control_exchange(&device->control_pipe,
 										c_srom_write_reg, 8,
@@ -437,11 +437,11 @@ void UsbAx88772Driver :: write_srom()
 
 bool UsbAx88772Driver :: read_mac_address()
 {
-	BYTE local_mac[8];
+	uint8_t local_mac[8];
 	int i = device->host->control_exchange(&device->control_pipe,
                                            c_get_mac_address, 8,
                                            local_mac, 6);
-	BYTE check = 0;
+	uint8_t check = 0;
 	if(i == 6) {
         printf("MAC address:  ");
         for(int i=0;i<6;i++) {
@@ -465,8 +465,8 @@ bool UsbAx88772Driver :: read_mac_address()
 
 bool UsbAx88772Driver :: write_mac_address(void)
 {
-    BYTE c_write_mac[] = { 0x40, 0x14, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00 };
-    BYTE new_mac[] = { 0x00, 0x4c, 0x49, 0x4c, 0x49, 0x00 };
+    uint8_t c_write_mac[] = { 0x40, 0x14, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00 };
+    uint8_t new_mac[] = { 0x00, 0x4c, 0x49, 0x4c, 0x49, 0x00 };
 
     host->control_write(&device->control_pipe,
                         c_write_mac, 8,
@@ -498,16 +498,16 @@ void UsbAx88772Driver :: pipe_error(int pipe) // called from IRQ!
 }
 
 
-BYTE UsbAx88772Driver :: output_packet(BYTE *buffer, int pkt_len)
+uint8_t UsbAx88772Driver :: output_packet(uint8_t *buffer, int pkt_len)
 {
 	//printf("OUTPUT: payload = %p. Size = %d\n", buffer, pkt_len);
 	if (!link_up)
 		return 0;
 	//dump_hex(buffer, 32);
 
-	BYTE *size = buffer - 4;
-    size[0] = BYTE(pkt_len & 0xFF);
-    size[1] = BYTE(pkt_len >> 8);
+	uint8_t *size = buffer - 4;
+    size[0] = uint8_t(pkt_len & 0xFF);
+    size[1] = uint8_t(pkt_len >> 8);
     size[2] = size[0] ^ 0xFF;
     size[3] = size[1] ^ 0xFF;
 

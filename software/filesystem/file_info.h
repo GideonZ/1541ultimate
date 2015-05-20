@@ -28,15 +28,15 @@ class FileInfo
 {
 public:
 	FileSystem *fs;  /* Reference to file system, to uniquely identify file */
-    DWORD   cluster; /* Start cluster, easy for open! */
-    DWORD	size;	 /* File size */
-	WORD	date;	 /* Last modified date */
-	WORD	time;	 /* Last modified time */
-	DWORD   dir_clust;  /* Start of directory, needed to reopen dir */
-    WORD    dir_index;  /* Entry of the directory we have our directory item. */
-    WORD    lfsize;
+    uint32_t  cluster; /* Start cluster, easy for open! */
+    uint32_t  size;	 /* File size */
+	uint16_t  date;	 /* Last modified date */
+	uint16_t  time;	 /* Last modified time */
+	uint32_t  dir_clust;  /* Start of directory, needed to reopen dir */
+    uint16_t  dir_index;  /* Entry of the directory we have our directory item. */
+    uint16_t  lfsize;
     char   *lfname;
-	BYTE	attrib;	 /* Attribute */
+	uint8_t	attrib;	 /* Attribute */
     char    extension[4];
 
     FileInfo()

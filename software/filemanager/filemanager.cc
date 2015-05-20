@@ -91,7 +91,7 @@ void FileManager :: handle_event(Event &e)
 	}
 }
 
-File *FileManager :: fopen(Path *path, char *filename, BYTE flags)
+File *FileManager :: fopen(Path *path, char *filename, uint8_t flags)
 {
 	int filename_length = strlen(filename);
 	if (!filename_length)
@@ -137,7 +137,7 @@ File *FileManager :: fopen(Path *path, char *filename, BYTE flags)
 	return ret;
 }
 
-File *FileManager :: fopen_impl(Path *path, char *filename, BYTE flags)
+File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
 {
 	FileInfo *dirinfo = path->current_dir_node->get_file_info();
 	CachedTreeNode *existing = path->current_dir_node->find_child(filename);
@@ -173,7 +173,7 @@ File *FileManager :: fopen_impl(Path *path, char *filename, BYTE flags)
 	return file;
 }
 
-File *FileManager :: fopen_node(CachedTreeNode *node, BYTE flags)
+File *FileManager :: fopen_node(CachedTreeNode *node, uint8_t flags)
 {
 	FileInfo *inf = node->get_file_info();
 	File *file = inf->fs->file_open(node->get_file_info(), flags);

@@ -60,9 +60,6 @@ AT45_Flash::AT45_Flash()
     total_size   = 4096;		// in pages, default to AT45DB161
     page_shift   = 10;        	// offset in address reg
     config_start = total_size - AT45_NUM_CONFIG_PAGES;
-
-    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    SPI_FLASH_DATA = 0xFF;
 }
     
 AT45_Flash::~AT45_Flash()
@@ -89,11 +86,11 @@ void AT45_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
 {
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = AT45_ContinuousArrayRead_LowFrequency;
-    SPI_FLASH_DATA = BYTE(device_addr >> 16);
-    SPI_FLASH_DATA = BYTE(device_addr >> 8);
-    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
 
-    BYTE *buf = (BYTE *)buffer;
+    uint8_t *buf = (uint8_t *)buffer;
     for(int i=0;i<len;i++) {
         *(buf++) = SPI_FLASH_DATA;
     }
@@ -102,11 +99,13 @@ void AT45_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
     
 AT45_Flash *AT45_Flash :: tester()
 {
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    SPI_FLASH_DATA = 0xFF;
     SPI_FLASH_CTRL = SPI_FORCE_SS;
 
 	SPI_FLASH_DATA = AT45_ManufacturerandDeviceIDRead;
-	BYTE manuf = SPI_FLASH_DATA;
-	BYTE dev_id = SPI_FLASH_DATA;
+	uint8_t manuf = SPI_FLASH_DATA;
+	uint8_t dev_id = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     
     if(manuf != 0x1F)
@@ -161,7 +160,7 @@ void AT45_Flash :: read_linear_addr(int addr, int len, void *buffer)
     int device_addr = (page << page_shift) | offset;
     
     debug(("Requested addr: %6x. Page: %d. Offset = %d. ADDR: %6x\n", addr, page, offset, device_addr));
-    debug(("%b %b %b\n", BYTE(device_addr >> 16), BYTE(device_addr >> 8), BYTE(device_addr)));
+    debug(("%b %b %b\n", uint8_t(device_addr >> 16), uint8_t(device_addr >> 8), uint8_t(device_addr)));
     read_dev_addr(device_addr, len, buffer);
 }
 
@@ -225,7 +224,7 @@ bool AT45_Flash :: wait_ready(int time_out)
     
 void AT45_Flash :: read_serial(void *buffer)
 {
-    BYTE *buf = (BYTE *)buffer;
+    uint8_t *buf = (uint8_t *)buffer;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = AT45_ReadSecurityRegister;
     SPI_FLASH_DATA = 0;
@@ -266,12 +265,12 @@ void AT45_Flash :: clear_config_page(int page)
     page += config_start;   
     int device_addr = (page << page_shift);
     
-    debug(("Page erase. %b %b %b\n", BYTE(device_addr >> 16), BYTE(device_addr >> 8), BYTE(device_addr)));
+    debug(("Page erase. %b %b %b\n", uint8_t(device_addr >> 16), uint8_t(device_addr >> 8), uint8_t(device_addr)));
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = AT45_PageErase;
-    SPI_FLASH_DATA = BYTE(device_addr >> 16);
-    SPI_FLASH_DATA = BYTE(device_addr >> 8);
-    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     wait_ready(250000);
 }
@@ -280,13 +279,13 @@ bool AT45_Flash :: read_page(int page, void *buffer)
 {
     int device_addr = (page << page_shift);
     int len = (page_size >> 2);
-    DWORD *buf = (DWORD *)buffer;
+    uint32_t *buf = (uint32_t *)buffer;
     
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = AT45_ContinuousArrayRead_LowFrequency;
-    SPI_FLASH_DATA = BYTE(device_addr >> 16);
-    SPI_FLASH_DATA = BYTE(device_addr >> 8);
-    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
     for(int i=0;i<len;i++) {
         *(buf++) = SPI_FLASH_DATA_32;
     }
@@ -298,13 +297,13 @@ bool AT45_Flash :: write_page(int page, void *buffer)
 {
     int device_addr = (page << page_shift);
     int len = (page_size >> 2);
-    DWORD *buf = (DWORD *)buffer;
+    uint32_t *buf = (uint32_t *)buffer;
     
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = AT45_MainMemoryPageProgramThroughBuffer2;
-    SPI_FLASH_DATA = BYTE(device_addr >> 16);
-    SPI_FLASH_DATA = BYTE(device_addr >> 8);
-    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
     for(int i=0;i<len;i++) {
         SPI_FLASH_DATA_32 = *(buf++);
     }
@@ -314,9 +313,9 @@ bool AT45_Flash :: write_page(int page, void *buffer)
 		return ret;
 	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = AT45_MainMemoryPagetoBuffer2Compare;
-    SPI_FLASH_DATA = BYTE(device_addr >> 16);
-    SPI_FLASH_DATA = BYTE(device_addr >> 8);
-    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     ret = wait_ready(50000);
 	if(!ret)
@@ -333,12 +332,12 @@ bool AT45_Flash :: erase_sector(int sector)
     int page = sector * sector_size;
     int device_addr = (page << page_shift);
     
-    debug(("Sector erase. %b %b %b\n", BYTE(device_addr >> 16), BYTE(device_addr >> 8), BYTE(device_addr)));
+    debug(("Sector erase. %b %b %b\n", uint8_t(device_addr >> 16), uint8_t(device_addr >> 8), uint8_t(device_addr)));
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = AT45_SectorErase;
-    SPI_FLASH_DATA = BYTE(device_addr >> 16);
-    SPI_FLASH_DATA = BYTE(device_addr >> 8);
-    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     return wait_ready(250000);
 }
@@ -365,7 +364,7 @@ void AT45_Flash :: reboot(int addr)
     int offset = addr - (page * page_size);
     int device_addr = (page << page_shift) | offset;
 
-    BYTE icap_sequence[20] = { 0xAA, 0x99, 0x32, 0x61,    0,    0, 0x32, 0x81,    0,    0,
+    uint8_t icap_sequence[20] = { 0xAA, 0x99, 0x32, 0x61,    0,    0, 0x32, 0x81,    0,    0,
                                0x32, 0xA1, 0x00, 0x4F, 0x30, 0xA1, 0x00, 0x0E, 0x20, 0x00 };
 
     icap_sequence[4] = device_addr >> 8;
@@ -418,7 +417,7 @@ bool AT45_Flash :: protect_configure(void)
 
 void AT45_Flash :: protect_show_status(void)
 {
-    BYTE *buffer = new BYTE[sector_count];
+    uint8_t *buffer = new uint8_t[sector_count];
 
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA_32 = 0x32323232;

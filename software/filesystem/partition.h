@@ -17,27 +17,27 @@ class Partition
 {
 private:
     BlockDevice *dev;
-    DWORD   start;
-    DWORD   length;
-    BYTE    type;
+    uint32_t   start;
+    uint32_t   length;
+    uint8_t    type;
 public:
     Partition   *next_partition;
 
     /* constructor */
-    Partition(BlockDevice *blk, DWORD offset, DWORD size, BYTE type);
+    Partition(BlockDevice *blk, uint32_t offset, uint32_t size, uint8_t type);
     ~Partition();                 /* destructor */
     
     void print_info(void);
-    BYTE get_type(void) { return type; }
+    uint8_t get_type(void) { return type; }
     FileSystem *attach_filesystem(void);
     
     // Fall through:
     DSTATUS status(void);
-    DRESULT read(BYTE *, DWORD, BYTE);
+    DRESULT read(uint8_t *, uint32_t, uint8_t);
 #if	_READONLY == 0
-    DRESULT write(const BYTE *, DWORD, BYTE);
+    DRESULT write(const uint8_t *, uint32_t, uint8_t);
 #endif
-    DRESULT ioctl(BYTE, void *);
+    DRESULT ioctl(uint8_t, void *);
 };
 
 #endif

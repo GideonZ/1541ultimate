@@ -8,9 +8,9 @@ extern "C" {
 
 void (*function)();
 
-void jump_run(DWORD a)
+void jump_run(uint32_t a)
 {
-    DWORD *dp = (DWORD *)&function;
+    uint32_t *dp = (uint32_t *)&function;
     *dp = a;
     function();
     puts("Application exit.");
@@ -38,19 +38,19 @@ bool w25q_wait_ready(int time_out)
     return ret;
 }
 
-void uart_write_hex_long(DWORD hex)
+void uart_write_hex_long(uint32_t hex)
 {
-    uart_write_hex(BYTE(hex >> 24));
-    uart_write_hex(BYTE(hex >> 16));
-    uart_write_hex(BYTE(hex >> 8));
-    uart_write_hex(BYTE(hex));
+    uart_write_hex(uint8_t(hex >> 24));
+    uart_write_hex(uint8_t(hex >> 16));
+    uart_write_hex(uint8_t(hex >> 8));
+    uart_write_hex(uint8_t(hex));
 }
 
 
 int main(int argc, char **argv)
 {
     if (getFpgaCapabilities() & CAPAB_SIMULATION) {
-        UART_DATA = BYTE('*');
+        UART_DATA = uint8_t('*');
         jump_run(APPL_RUN_ADDR);
     }
 
@@ -62,12 +62,12 @@ int main(int argc, char **argv)
     // check flash
     SPI_FLASH_CTRL = SPI_FORCE_SS;
     SPI_FLASH_DATA = 0x9F; // JEDEC Get ID
-	BYTE manuf = SPI_FLASH_DATA;
-	BYTE dev_id = SPI_FLASH_DATA;
+	uint8_t manuf = SPI_FLASH_DATA;
+	uint8_t dev_id = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
 
-    DWORD read_boot2, read_appl;
-    DWORD *dest;
+    uint32_t read_boot2, read_appl;
+    uint32_t *dest;
 
     int flash_type = 0;
     if(manuf == 0x1F) { // Atmel
@@ -86,7 +86,7 @@ int main(int argc, char **argv)
         // protect flash the Winbond way
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     	SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
-    	BYTE status = SPI_FLASH_DATA;
+    	uint8_t status = SPI_FLASH_DATA;
         SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
         if ((status & 0x7C) != 0x34) { // on the spansion, this will protect 7/8 not 1/2
             SPI_FLASH_CTRL = 0;
@@ -112,12 +112,12 @@ int main(int argc, char **argv)
         read_boot2 += 16;
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
         SPI_FLASH_DATA_32 = read_boot2;
-        dest = (DWORD *)BOOT2_RUN_ADDR;
+        dest = (uint32_t *)BOOT2_RUN_ADDR;
         while(length > 0) {
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
-        uart_write_hex_long(*(DWORD *)BOOT2_RUN_ADDR);
+        uart_write_hex_long(*(uint32_t *)BOOT2_RUN_ADDR);
         uart_write_buffer("Running 2nd boot.\n\r", 19);
         jump_run(BOOT2_RUN_ADDR);
         while(1);
@@ -134,14 +134,14 @@ int main(int argc, char **argv)
         read_appl += 16;
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
         SPI_FLASH_DATA_32 = read_appl;
-        dest = (DWORD *)APPL_RUN_ADDR;
-        uart_write_hex_long((DWORD)dest);
+        dest = (uint32_t *)APPL_RUN_ADDR;
+        uart_write_hex_long((uint32_t)dest);
         while(length > 0) {
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
         UART_DATA = '-';
-        uart_write_hex_long((DWORD)dest);
+        uart_write_hex_long((uint32_t)dest);
         jump_run(APPL_RUN_ADDR);
         while(1);
     }

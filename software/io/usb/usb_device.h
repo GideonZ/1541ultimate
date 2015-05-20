@@ -18,24 +18,24 @@
 #define DESCR_CS_INTERFACE		0x24
 #define DESCR_CS_ENDPOINT		0x25
 
-extern BYTE c_get_device_descriptor[];
+extern uint8_t c_get_device_descriptor[];
 
 struct t_device_descriptor
 {
-    BYTE length;
-    BYTE type;
+    uint8_t length;
+    uint8_t type;
     WORD version;
-    BYTE device_class;
-    BYTE sub_class;
-    BYTE protocol;
-    BYTE max_packet_size;
+    uint8_t device_class;
+    uint8_t sub_class;
+    uint8_t protocol;
+    uint8_t max_packet_size;
     WORD vendor;
     WORD product;
     WORD release;
-    BYTE manuf_string;
-    BYTE product_string;
-    BYTE serial_string;
-    BYTE num_configurations;
+    uint8_t manuf_string;
+    uint8_t product_string;
+    uint8_t serial_string;
+    uint8_t num_configurations;
 };
 
 // Eminent 1010:
@@ -47,37 +47,37 @@ struct t_device_descriptor
  
 struct t_device_configuration
 {
-    BYTE length;
-    BYTE type;
+    uint8_t length;
+    uint8_t type;
     WORD total_length;
-    BYTE num_interfaces;
-    BYTE config_value;
-    BYTE config_string;
-    BYTE attributes;
-    BYTE max_power;
+    uint8_t num_interfaces;
+    uint8_t config_value;
+    uint8_t config_string;
+    uint8_t attributes;
+    uint8_t max_power;
 };
 
 struct t_interface_descriptor
 {
-    BYTE length;
-    BYTE type;
-    BYTE interface_number;
-    BYTE alternate_setting;
-    BYTE num_endpoints;
-    BYTE interface_class;
-    BYTE sub_class;
-    BYTE protocol;
-    BYTE interface_string;
+    uint8_t length;
+    uint8_t type;
+    uint8_t interface_number;
+    uint8_t alternate_setting;
+    uint8_t num_endpoints;
+    uint8_t interface_class;
+    uint8_t sub_class;
+    uint8_t protocol;
+    uint8_t interface_string;
 };
 
 struct t_endpoint_descriptor
 {
-    BYTE length;
-    BYTE type;
-    BYTE endpoint_address;
-    BYTE attributes;
+    uint8_t length;
+    uint8_t type;
+    uint8_t endpoint_address;
+    uint8_t attributes;
     WORD max_packet_size;
-    BYTE interval;
+    uint8_t interval;
 };
 
 typedef enum e_dev_state {
@@ -112,8 +112,8 @@ class UsbDevice
 public:
     int current_address;
     enum e_dev_state                device_state;
-    BYTE *config_descriptor;
-    BYTE *hid_descriptor; // should we support more than one?
+    uint8_t *config_descriptor;
+    uint8_t *hid_descriptor; // should we support more than one?
 
     //struct t_device_configuration   device_config;
     //struct t_interface_descriptor   interface_descr;
@@ -156,12 +156,12 @@ public:
     bool get_device_descriptor();
     struct t_device_configuration *get_device_config();
     void set_address(int address);
-    bool get_configuration(BYTE index);
-    void set_configuration(BYTE config);
-    void unstall_pipe(BYTE ep);
+    bool get_configuration(uint8_t index);
+    void set_configuration(uint8_t config);
+    void unstall_pipe(uint8_t ep);
 
     bool init(int address);
-    int  find_endpoint(BYTE code);
+    int  find_endpoint(uint8_t code);
 
     // functions that arrange attachment to the system
     void install(void) {
@@ -188,6 +188,6 @@ public:
 //    int init(void); // gets device descriptor, assigns address
 };    
 
-char *unicode_to_ascii(BYTE *in, char *out);
+char *unicode_to_ascii(uint8_t *in, char *out);
 
 #endif

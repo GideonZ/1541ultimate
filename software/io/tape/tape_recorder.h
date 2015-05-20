@@ -7,10 +7,10 @@
 #include "menu.h"
 #include "iomap.h"
 
-#define RECORD_STATUS  *((volatile BYTE *)(C2N_RECORD_BASE + 0x000))
-#define RECORD_CONTROL *((volatile BYTE *)(C2N_RECORD_BASE + 0x000))
-#define RECORD_DATA     ((volatile BYTE *)(C2N_RECORD_BASE + 0x800))
-#define RECORD_DATA32  *((volatile DWORD*)(C2N_RECORD_BASE + 0x800))
+#define RECORD_STATUS  *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
+#define RECORD_CONTROL *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
+#define RECORD_DATA     ((volatile uint8_t *)(C2N_RECORD_BASE + 0x800))
+#define RECORD_DATA32  *((volatile uint32_t*)(C2N_RECORD_BASE + 0x800))
 
 #define REC_ENABLE       0x01
 #define REC_CLEAR_ERROR  0x02
@@ -50,8 +50,8 @@ class TapeRecorder : public ObjectWithMenu
     int   total_length;
 	int   write_block();
     void  cache_block();
-    BYTE *cache;
-    DWORD *cache_blocks[REC_NUM_CACHE_BLOCKS];
+    uint8_t *cache;
+    uint32_t *cache_blocks[REC_NUM_CACHE_BLOCKS];
 public:
 	TapeRecorder();
 	virtual ~TapeRecorder();

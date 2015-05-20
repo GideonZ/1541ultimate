@@ -51,7 +51,7 @@ SdCard :: ~SdCard(void)
 DSTATUS SdCard :: status(void)
 {
     int sense = sdio_sense();
-    BYTE status = 0;
+    uint8_t status = 0;
     if(!(sense & SD_CARD_DETECT))
         status |= STA_NODISK;
     else if (sense & SD_CARD_PROTECT)
@@ -80,7 +80,7 @@ DSTATUS SdCard :: status(void)
 DSTATUS SdCard :: init(void)
 {
 	int i;
-	BYTE resp;
+	uint8_t resp;
 	
 
     sdhc = false;
@@ -224,11 +224,11 @@ DSTATUS SdCard :: init(void)
  * 		CHKS (2B)
  */
 
-DRESULT SdCard :: read(BYTE* buf, DWORD address, int sectors)
+DRESULT SdCard :: read(uint8_t* buf, uint32_t address, int sectors)
 {
-	BYTE cardresp;
-	BYTE firstblock;
-	DWORD place;
+	uint8_t cardresp;
+	uint8_t firstblock;
+	uint32_t place;
 
 //	DBG((TXT("sd_readSector::Trying to read sector %u and store it at %p.\n"),address,&buf[0]));
 //    printf("Trying to read sector %d to %p.\n",address,buf);
@@ -293,10 +293,10 @@ DRESULT SdCard :: read(BYTE* buf, DWORD address, int sectors)
  * BUSY...
  */
 
-DRESULT SdCard :: write(const BYTE* buf, DWORD address, int sectors )
+DRESULT SdCard :: write(const uint8_t* buf, uint32_t address, int sectors )
 {
-	DWORD place;
-	BYTE  resp;
+	uint32_t place;
+	uint8_t  resp;
 #ifdef SD_VERIFY
     int   ver;
 #endif    
@@ -335,17 +335,17 @@ DRESULT SdCard :: write(const BYTE* buf, DWORD address, int sectors )
 	return RES_OK;
 }
 
-DRESULT SdCard :: ioctl(BYTE command, void *data)
+DRESULT SdCard :: ioctl(uint8_t command, void *data)
 {
     switch(command) {
         case GET_SECTOR_COUNT:
-            return get_drive_size((DWORD *)data);
+            return get_drive_size((uint32_t *)data);
             break;
         case GET_SECTOR_SIZE:
-            (*(DWORD *)data) = 512;
+            (*(uint32_t *)data) = 512;
             break;
         case GET_BLOCK_SIZE:
-            (*(DWORD *)data) = 128*1024;
+            (*(uint32_t *)data) = 128*1024;
             break;
         default:
             printf("IOCTL %d.\n", command);
@@ -374,10 +374,10 @@ PRIVATE FUNCIONS
 	resp:		the 8bits response
 -------------------------------------------------------------------------------
 */
-BYTE SdCard :: Resp8b(void)
+uint8_t SdCard :: Resp8b(void)
 {
-	BYTE i;
-	BYTE resp;
+	uint8_t i;
+	uint8_t resp;
 	
 	/* Respone will come after 1 - 8 pings */
 //    printf("Resp: ");
@@ -424,7 +424,7 @@ WORD SdCard :: Resp16b(void)
 	value:		error code
 -------------------------------------------------------------------------------
 */
-void SdCard :: Resp8bError(BYTE value)
+void SdCard :: Resp8bError(uint8_t value)
 {
     if(value == 0xFF) {
         DBG((TXT("Unexpected IDLE byte.\n")));
@@ -504,9 +504,9 @@ int SdCard :: get_state(void)
 							verify
 -------------------------------------------------------------------------------
 */
-DRESULT SdCard :: verify(const BYTE* buf, DWORD address )
+DRESULT SdCard :: verify(const uint8_t* buf, uint32_t address )
 {
-    static BYTE rb_buffer[SD_SECTOR_SIZE];
+    static uint8_t rb_buffer[SD_SECTOR_SIZE];
     DRESULT read_resp;
     int i;
     
@@ -542,10 +542,10 @@ DRESULT SdCard :: verify(const BYTE* buf, DWORD address )
 #define SD_DRIVE_SIZE
 #ifdef SD_DRIVE_SIZE
 
-DRESULT SdCard :: get_drive_size(DWORD* drive_size)
+DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
 {
-	BYTE cardresp, i, by, q;
-	BYTE iob[16];
+	uint8_t cardresp, i, by, q;
+	uint8_t iob[16];
 	WORD c_size;
     int sector_power;
 	
@@ -609,14 +609,14 @@ DRESULT SdCard :: get_drive_size(DWORD* drive_size)
         sector_power  = (c_size_power + read_bl_power) - 9; // divide by 512 to get sector count
         printf("read_bl_power = %d. size_power = %d. c_size = %d.\n", read_bl_power, c_size_power, c_size);
     } else { // assume 2.0 CSD
-        c_size = (DWORD)iob[9];
-        c_size += ((DWORD)iob[8]) << 8;
-        c_size += ((DWORD)(iob[7] & 0x3F)) << 16;
+        c_size = (uint32_t)iob[9];
+        c_size += ((uint32_t)iob[8]) << 8;
+        c_size += ((uint32_t)(iob[7] & 0x3F)) << 16;
         sector_power = 10; // 512K per c_size, by definition. 512 bytes per sector, thus 2^10 sectors per c_size count
         printf("CSD 2.0: c_size = %d.\n", c_size);
     }
 
-	*drive_size = (DWORD)(c_size+1) << sector_power;
+	*drive_size = (uint32_t)(c_size+1) << sector_power;
 	
 	return RES_OK;
 }

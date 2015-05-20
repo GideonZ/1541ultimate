@@ -9,19 +9,19 @@
 
 void *profiled_memcpy(void *str1, const void *str2, size_t n)
 {
-	BYTE tmp = PROFILER_SUB;
+	uint8_t tmp = PROFILER_SUB;
 	PROFILER_SUB = 14;
 //	memcpy(str1, str2, n);
-	DWORD src_addr = (DWORD)str2;
-	DWORD dest_addr = (DWORD)str1;
-	DWORD overlap = (src_addr | dest_addr);
+	uint32_t src_addr = (uint32_t)str2;
+	uint32_t dest_addr = (uint32_t)str1;
+	uint32_t overlap = (src_addr | dest_addr);
 	int remain = 0;
 	int size;
 	if ((overlap & 3) == 0) {
 		remain = (n & 3);
 		size = (n >> 2);
-		DWORD *src = (DWORD *)str2;
-		DWORD *dest = (DWORD *)str1;
+		uint32_t *src = (uint32_t *)str2;
+		uint32_t *dest = (uint32_t *)str1;
 		for (int i=0;i<size;i++) {
 			*(dest++) = *(src++);
 		}
@@ -45,8 +45,8 @@ void *profiled_memcpy(void *str1, const void *str2, size_t n)
 		remain = n;
 	}
 	if (remain) {
-		BYTE *src = (BYTE *)src_addr;
-		BYTE *dest = (BYTE *)dest_addr;
+		uint8_t *src = (uint8_t *)src_addr;
+		uint8_t *dest = (uint8_t *)dest_addr;
 		for(int i=0;i<remain;i++) {
 			*(dest++) = *(src++);
 		}

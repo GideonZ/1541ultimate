@@ -44,8 +44,8 @@ int  SocketTest::fetch_task_items(IndexedList<Action*> &item_list)
 void SocketTest::poll(Event &e)
 {
 	FILE *f;
-	DWORD start_address = 0x1000000;
-	DWORD end_address = 0x1000000;
+	uint32_t start_address = 0x1000000;
+	uint32_t end_address = 0x1000000;
 	UINT transferred;
 
 	if ((e.type == e_object_private_cmd) && (e.object == this)) {
@@ -240,7 +240,7 @@ void SocketTest::doTest1()
     }
 
 	PROFILER_STOP = 1;
-	DWORD profile_size = PROFILER_ADDR - 0x1000000;
+	uint32_t profile_size = PROFILER_ADDR - 0x1000000;
 
     lwip_close(newsockfd);
     lwip_close(sockfd);

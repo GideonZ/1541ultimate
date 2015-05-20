@@ -13,10 +13,10 @@ class Disk
 {
     BlockDevice     *dev;
     int              sector_size;
-    BYTE            *buf;
+    uint8_t            *buf;
     int              p_count;
     
-    int read_ebr(Partition ***prt_list, DWORD lba);
+    int read_ebr(Partition ***prt_list, uint32_t lba);
     
 public:
     Partition       *partition_list;

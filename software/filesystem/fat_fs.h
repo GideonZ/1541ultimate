@@ -52,11 +52,11 @@ class FATFS : public FileSystem
 {
 private:    
 //    Partition *prt;     /* Pointer to partition class */  (now defined in base class)
-    BYTE    fs_type;    /* FAT sub type */
-    BYTE    csize;      /* Number of sectors per cluster */
-    BYTE    n_fats;     /* Number of FAT copies */
-    BYTE    wflag;      /* win[] dirty flag (1:must be written back) */
-    BYTE    fsi_flag;   /* fsinfo dirty flag (1:must be written back) */
+    uint8_t    fs_type;    /* FAT sub type */
+    uint8_t    csize;      /* Number of sectors per cluster */
+    uint8_t    n_fats;     /* Number of FAT copies */
+    uint8_t    wflag;      /* win[] dirty flag (1:must be written back) */
+    uint8_t    fsi_flag;   /* fsinfo dirty flag (1:must be written back) */
     WORD    n_rootdir;  /* Number of root directory entries (0 on FAT32) */
 #if _FS_REENTRANT
     _SYNC_t sobj;       /* Identifier of sync object */
@@ -64,20 +64,20 @@ private:
 #if _MAX_SS != 512
     WORD    s_size;     /* Sector size */
 #endif
-    DWORD   last_clust; /* Last allocated cluster */
-    DWORD   free_clust; /* Number of free clusters */
-    DWORD   fsi_sector; /* fsinfo sector */
+    uint32_t   last_clust; /* Last allocated cluster */
+    uint32_t   free_clust; /* Number of free clusters */
+    uint32_t   fsi_sector; /* fsinfo sector */
 
 #if _FS_RPATH
-    DWORD   cdir;       /* Current directory (0:root)*/
+    uint32_t   cdir;       /* Current directory (0:root)*/
 #endif
-    DWORD   sects_fat;  /* Sectors per fat */
-    DWORD   max_clust;  /* Maximum cluster# + 1. Number of clusters is max_clust - 2 */
-    DWORD   fatbase;    /* FAT start sector */
-    DWORD   dirbase;    /* Root directory start sector (Cluster# on FAT32) */
-    DWORD   database;   /* Data start sector */
-    DWORD   winsect;    /* Current sector appearing in the win[] */
-    BYTE    win[_MAX_SS];/* Disk access window for Directory/FAT */
+    uint32_t   sects_fat;  /* Sectors per fat */
+    uint32_t   max_clust;  /* Maximum cluster# + 1. Number of clusters is max_clust - 2 */
+    uint32_t   fatbase;    /* FAT start sector */
+    uint32_t   dirbase;    /* Root directory start sector (Cluster# on FAT32) */
+    uint32_t   database;   /* Data start sector */
+    uint32_t   winsect;    /* Current sector appearing in the win[] */
+    uint8_t    win[_MAX_SS];/* Disk access window for Directory/FAT */
 
     FRESULT last_error;
 public:
@@ -93,7 +93,7 @@ public:
     bool    is_writable(void) { return true; } // ###
     bool    init (void);                      /* Initialize file system object based on boot record */
     void    print_info (void);                /* Print information to console about FAT filesystem */
-    FRESULT getfree (DWORD*);                 /* Get number of free clusters on the drive */
+    FRESULT getfree (uint32_t*);                 /* Get number of free clusters on the drive */
 #if _FS_READONLY != 1
     FRESULT sync(void);                       /* Clean-up cached data */
 #endif
@@ -106,27 +106,27 @@ public:
     FRESULT dir_create(FileInfo *f);  // Creates a directory as specified by finfo
     
     // functions for reading and writing files
-    File   *file_open(FileInfo *, BYTE flags);  // Opens file (creates file object)
+    File   *file_open(FileInfo *, uint8_t flags);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
     FRESULT file_rename(FileInfo *, char *new_name); // Renames a file
 	FRESULT file_delete(FileInfo *); // deletes a file
-    FRESULT file_read(File *f, void *buffer, DWORD len, UINT *transferred);
-    FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred);
-    FRESULT file_seek(File *f, DWORD pos);
+    FRESULT file_read(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_write(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_seek(File *f, uint32_t pos);
     FRESULT file_sync(File *f);
     void    file_print_info(File *f); // debug
 #endif
 
 private:
-    FRESULT move_window(DWORD sector);        /* Sector number to make apperance in the fs->win[] */
-    DWORD   get_fat(DWORD clst);              /* FAT access - Read value of a FAT entry */    
-    FRESULT put_fat (DWORD clst, DWORD val);  /* FAT access - Write value of a FAT entry */
-    FRESULT remove_chain (DWORD clst);        /* FAT handling - Remove a cluster chain */
-    DWORD   create_chain (DWORD clst);        /* FAT handling - Stretch or Create a cluster chain */
-    DWORD   clust2sect (DWORD clst);          /* Get sector# from cluster# */
+    FRESULT move_window(uint32_t sector);        /* Sector number to make apperance in the fs->win[] */
+    uint32_t   get_fat(uint32_t clst);              /* FAT access - Read value of a FAT entry */    
+    FRESULT put_fat (uint32_t clst, uint32_t val);  /* FAT access - Write value of a FAT entry */
+    FRESULT remove_chain (uint32_t clst);        /* FAT handling - Remove a cluster chain */
+    uint32_t   create_chain (uint32_t clst);        /* FAT handling - Stretch or Create a cluster chain */
+    uint32_t   clust2sect (uint32_t clst);          /* Get sector# from cluster# */
     FRESULT validate (void);                  /* Check if the file system object is valid or not */
-    FRESULT chk_mounted (BYTE chk_wp);        /* Make sure that the file system or object using it is valid */
-    FRESULT f_mkfs (BYTE, BYTE, WORD);        /* Create a file system on the drive */
+    FRESULT chk_mounted (uint8_t chk_wp);        /* Make sure that the file system or object using it is valid */
+    FRESULT f_mkfs (uint8_t, uint8_t, WORD);        /* Create a file system on the drive */
     FRESULT f_rename (FileInfo *, char *);    // new function for renaming
 
     friend class FATDIR;

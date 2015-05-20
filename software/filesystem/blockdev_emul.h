@@ -19,11 +19,11 @@ public:
 
     virtual DSTATUS init(void);
     virtual DSTATUS status(void);
-    virtual DRESULT read(BYTE *, DWORD, BYTE);
+    virtual DRESULT read(uint8_t *, uint32_t, uint8_t);
 #if	_READONLY == 0
-    virtual DRESULT write(const BYTE *, DWORD, BYTE);
+    virtual DRESULT write(const uint8_t *, uint32_t, uint8_t);
 #endif
-    virtual DRESULT ioctl(BYTE, void *);
+    virtual DRESULT ioctl(uint8_t, void *);
     
 };
 

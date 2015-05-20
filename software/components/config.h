@@ -35,8 +35,8 @@
 
 struct t_cfg_definition
 {
-    BYTE id;
-    BYTE type;
+    uint8_t id;
+    uint8_t type;
     char *item_text;
     char *item_format;
     char **items;
@@ -53,7 +53,7 @@ class ConfigSetting
 public:
 	int	setting_index;
 	ConfigItem *parent;
-	string setting_name;
+	mstring setting_name;
 
 	ConfigSetting(int index, ConfigItem *parent, char *name);
 };
@@ -69,8 +69,8 @@ public:
     ConfigItem(ConfigStore *s, t_cfg_definition *d);
     ~ConfigItem();
 
-    int pack(BYTE *buffer, int len);
-    void unpack(BYTE *buffer, int len);
+    int pack(uint8_t *buffer, int len);
+    void unpack(uint8_t *buffer, int len);
 
     char *get_item_name() { return definition->item_text; }
     char *get_display_string();
@@ -81,7 +81,7 @@ public:
 class ConfigStore
 {
     int    flash_page;
-    BYTE  *mem_block;
+    uint8_t  *mem_block;
     int    block_size;
     ConfigurableObject *obj;
     char  *store_name;
@@ -90,10 +90,10 @@ class ConfigStore
     void unpack(void);
 public:
     IndexedList <ConfigItem*> items;
-    DWORD id;
+    uint32_t id;
     bool  dirty;
 
-    ConfigStore(DWORD id, char *name, int page, int page_size, t_cfg_definition *defs, ConfigurableObject *obj);
+    ConfigStore(uint32_t id, char *name, int page, int page_size, t_cfg_definition *defs, ConfigurableObject *obj);
     virtual ~ConfigStore();
 
 // Interface functions
@@ -101,12 +101,12 @@ public:
     virtual void write(void);
     virtual void effectuate(void);
 
-    ConfigItem *find_item(BYTE id);
-    int  get_value(BYTE id);
+    ConfigItem *find_item(uint8_t id);
+    int  get_value(uint8_t id);
     char *get_store_name() { return store_name; }
-    char *get_string(BYTE id);
-    void set_value(BYTE id, int value);
-    void set_string(BYTE id, char *s);
+    char *get_string(uint8_t id);
+    void set_value(uint8_t id, int value);
+    void set_string(uint8_t id, char *s);
     void dump(void);
     void check_bounds(void);
     
@@ -122,8 +122,8 @@ public:
     ConfigManager();
     ~ConfigManager();
     
-    ConfigStore *register_store(DWORD store_id, char *name, t_cfg_definition *defs, ConfigurableObject *ob);
-    ConfigStore *open_store(DWORD store_id);
+    ConfigStore *register_store(uint32_t store_id, char *name, t_cfg_definition *defs, ConfigurableObject *ob);
+    ConfigStore *open_store(uint32_t store_id);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
 
@@ -143,7 +143,7 @@ public:
     ConfigurableObject() { }
     virtual ~ConfigurableObject() { }
     
-    virtual bool register_store(DWORD store_id, char *name, t_cfg_definition *defs)
+    virtual bool register_store(uint32_t store_id, char *name, t_cfg_definition *defs)
     {
         cfg = config_manager.register_store(store_id, name, defs, this);
         return (cfg != NULL);

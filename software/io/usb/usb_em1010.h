@@ -78,12 +78,12 @@ class UsbEm1010Driver : public UsbDriver
     struct t_pipe bulk_out_pipe;
     bool link_up;
 
-    bool read_register(BYTE offset, BYTE &data);
-    bool read_registers(BYTE offset, BYTE *data, int len);
+    bool read_register(uint8_t offset, uint8_t &data);
+    bool read_registers(uint8_t offset, uint8_t *data, int len);
     bool dump_registers(void);
-    bool write_register(BYTE offset, BYTE data);
-    bool read_phy_register(BYTE offset, WORD *data);
-    bool write_phy_register(BYTE offset, WORD data);
+    bool write_register(uint8_t offset, uint8_t data);
+    bool read_phy_register(uint8_t offset, WORD *data);
+    bool write_phy_register(uint8_t offset, WORD data);
     bool read_mac_address();
 
 public:
@@ -98,10 +98,10 @@ public:
 	void poll(void);
 	void pipe_error(int pipe);
 
-    void bulk_handler(BYTE *buffer, int length);
-    void interrupt_handler(BYTE *, int);
-    BYTE output_packet(BYTE *buffer, int length);
-    void free_buffer(BYTE *b);
+    void bulk_handler(uint8_t *buffer, int length);
+    void interrupt_handler(uint8_t *, int);
+    uint8_t output_packet(uint8_t *buffer, int length);
+    void free_buffer(uint8_t *b);
 };
 
 #endif

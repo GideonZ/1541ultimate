@@ -20,9 +20,6 @@ S25FL_Flash::S25FL_Flash()
 	sector_size  = 16;			// in pages, default to S25FL16BV
 	sector_count = 512;			// default to S25FL16BV
     total_size   = 8192;		// in pages, default to S25FL16BV
-
-    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    SPI_FLASH_DATA = 0xFF;
 }
     
 S25FL_Flash::~S25FL_Flash()
@@ -32,12 +29,15 @@ S25FL_Flash::~S25FL_Flash()
     
 Flash *S25FL_Flash :: tester()
 {
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    SPI_FLASH_DATA = 0xFF;
+
     SPI_FLASH_CTRL = SPI_FORCE_SS;
 
 	SPI_FLASH_DATA = S25FL_JEDEC_ID;
-	BYTE manuf = SPI_FLASH_DATA;
-	BYTE mem_type = SPI_FLASH_DATA;
-	BYTE capacity = SPI_FLASH_DATA;
+	uint8_t manuf = SPI_FLASH_DATA;
+	uint8_t mem_type = SPI_FLASH_DATA;
+	uint8_t capacity = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     
 //    printf("S25FL MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
@@ -117,7 +117,7 @@ void S25FL_Flash :: protect_enable(void)
 {
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = S25FL_ReadStatusRegister1;
-	BYTE status = SPI_FLASH_DATA;
+	uint8_t status = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     if ((status & 0x7C) != 0x34)
     	protect_configure();

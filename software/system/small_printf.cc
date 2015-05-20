@@ -3,7 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
-extern void outbyte(int);
+extern "C" void outbyte(int);
 
 void _diag_write_char(char c, void **param);
 void _string_write_char(char c, void **param);

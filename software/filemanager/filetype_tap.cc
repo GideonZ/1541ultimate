@@ -35,9 +35,9 @@ extern "C" {
 }
 #include "tape_controller.h"
 
-__inline DWORD le_to_cpu_32(DWORD a)
+__inline uint32_t le_to_cpu_32(uint32_t a)
 {
-    DWORD m1, m2;
+    uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
@@ -83,7 +83,7 @@ void FileTypeTap :: closeFile() {
 int FileTypeTap :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     int count = 0;
-    DWORD capabilities = getFpgaCapabilities();
+    uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_C2N_STREAMER) {
         list.append(new MenuItem(this, "Run Tape", TAPFILE_RUN ));
         count++;
@@ -106,9 +106,9 @@ FileDirEntry *FileTypeTap :: test_type(CachedTreeNode *obj)
 void FileTypeTap :: execute(int selection)
 {
 	FRESULT fres;
-	BYTE read_buf[20];
+	uint8_t read_buf[20];
 	char *signature = "C64-TAPE-RAW";
-	DWORD *pul;
+	uint32_t *pul;
 	UINT bytes_read;
 	
 	switch(selection) {
@@ -132,7 +132,7 @@ void FileTypeTap :: execute(int selection)
 			user_interface->popup("TAP file: invalid signature.", BUTTON_OK);
 			return;
 	    }
-		pul = (DWORD *)&read_buf[16];
+		pul = (uint32_t *)&read_buf[16];
 		tape_controller->set_file(this, le_to_cpu_32(*pul), int(read_buf[12]));
         if (selection == TAPFILE_RUN) {
             C64Event::prepare_dma_load(0, NULL, 0, RUNCODE_TAPE_LOAD_RUN);

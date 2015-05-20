@@ -13,8 +13,8 @@
 
 class FileSystemD64 : public FileSystem
 {
-    BYTE sect_buffer[256]; // one sector
-    BYTE bam_buffer[256];
+    uint8_t sect_buffer[256]; // one sector
+    uint8_t bam_buffer[256];
     bool bam_valid;
     bool bam_dirty;
     int  image_mode;
@@ -35,7 +35,7 @@ public:
 
     static  bool check(Partition *p); // check if file system is present on this partition
     bool    init(void);               // Initialize file system
-    FRESULT get_free (DWORD*);        // Get number of free sectors on the file system
+    FRESULT get_free (uint32_t*);        // Get number of free sectors on the file system
     FRESULT sync(void);               // Clean-up cached data
 
     // functions for reading directories
@@ -44,11 +44,11 @@ public:
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
 
     // functions for reading and writing files
-    File   *file_open(FileInfo *, BYTE flags);  // Opens file (creates file object)
+    File   *file_open(FileInfo *, uint8_t flags);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, DWORD len, UINT *transferred);
-    FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred);
-    FRESULT file_seek(File *f, DWORD pos);
+    FRESULT file_read(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_write(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_seek(File *f, uint32_t pos);
 
     friend class DirInD64;
     friend class FileInD64;
@@ -57,7 +57,7 @@ public:
 class DirInD64
 {
     int idx;
-    BYTE *visited;  // this should probably be a bit vector
+    uint8_t *visited;  // this should probably be a bit vector
 
     FileSystemD64 *fs;
 public:
@@ -77,7 +77,7 @@ class FileInD64
     int num_blocks;
     int dir_sect;
     int dir_entry_offset;
-    BYTE *visited;  // this should probably be a bit vector
+    uint8_t *visited;  // this should probably be a bit vector
 
     FileSystemD64 *fs;
 
@@ -86,11 +86,11 @@ public:
     FileInD64(FileSystemD64 *);
     ~FileInD64() { }
 
-    FRESULT open(FileInfo *info, BYTE flags);
+    FRESULT open(FileInfo *info, uint8_t flags);
     FRESULT close(void);
-    FRESULT read(void *buffer, DWORD len, UINT *transferred);
-    FRESULT write(void *buffer, DWORD len, UINT *transferred);
-    FRESULT seek(DWORD pos);
+    FRESULT read(void *buffer, uint32_t len, UINT *transferred);
+    FRESULT write(void *buffer, uint32_t len, UINT *transferred);
+    FRESULT seek(uint32_t pos);
 };
 
 #endif /* FILESYSTEM_D64_FILESYSTEM_H_ */

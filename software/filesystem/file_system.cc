@@ -97,7 +97,7 @@ FRESULT FileSystem :: dir_create(FileInfo *f)
     return FR_DENIED;
 }
     
-File   *FileSystem :: file_open(FileInfo *, BYTE flags)
+File   *FileSystem :: file_open(FileInfo *, uint8_t flags)
 {
     return NULL;
 }
@@ -106,19 +106,19 @@ void    FileSystem :: file_close(File *f)
 {
 }
 
-FRESULT FileSystem :: file_read(File *f, void *buffer, DWORD len, UINT *transferred)
+FRESULT FileSystem :: file_read(File *f, void *buffer, uint32_t len, UINT *transferred)
 {
     *transferred = 0;
     return FR_DENIED;
 }
 
-FRESULT FileSystem :: file_write(File *f, void *buffer, DWORD len, UINT *transferred)
+FRESULT FileSystem :: file_write(File *f, void *buffer, uint32_t len, UINT *transferred)
 {
     *transferred = 0;
     return FR_DENIED;
 }
 
-FRESULT FileSystem :: file_seek(File *f, DWORD pos)
+FRESULT FileSystem :: file_seek(File *f, uint32_t pos)
 {
     return FR_DENIED;
 }

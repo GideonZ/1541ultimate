@@ -72,7 +72,7 @@ int FileTypeG64 :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
 	printf("G64 context...\n");
     int count = 0;
-    DWORD capabilities = getFpgaCapabilities();
+    uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_DRIVE_1541_1) {
         list.append(new MenuItem(this, "Run Disk", G64FILE_RUN));
         list.append(new MenuItem(this, "Mount Disk", G64FILE_MOUNT));
@@ -103,7 +103,7 @@ void FileTypeG64 :: execute(int selection)
 {
     bool protect;
     File *file;
-    BYTE flags;
+    uint8_t flags;
     t_drive_command *drive_command;
 
 	switch(selection) {

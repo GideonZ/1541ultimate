@@ -20,9 +20,9 @@ class File
 {
 public:
 	FileInfo *info; // refers to a structure with file information, when set to null, this file is invalidated
-    DWORD handle;   // could be a pointer to an object used in the derived class
+    uint32_t handle;   // could be a pointer to an object used in the derived class
 
-    File(FileInfo *n, DWORD h) {
+    File(FileInfo *n, uint32_t h) {
         info = n;
         handle = h;
     }
@@ -34,11 +34,11 @@ public:
     bool isValid(void) { return info != NULL; }
     virtual void    close(void);
     virtual FRESULT sync(void);
-    virtual FRESULT read(void *buffer, DWORD len, UINT *transferred);
-    virtual FRESULT write(void *buffer, DWORD len, UINT *transferred);
-    virtual FRESULT seek(DWORD pos);
+    virtual FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
+    virtual FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);
+    virtual FRESULT seek(uint32_t pos);
     virtual void print_info() { info->fs->file_print_info(this); }
-    virtual DWORD get_size(void)
+    virtual uint32_t get_size(void)
     {
     	if(!info)
             return -1;

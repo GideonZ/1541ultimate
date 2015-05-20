@@ -9,7 +9,7 @@
 FileTypeREU tester_reu(file_type_factory);
 
 // cart definition
-extern BYTE _binary_module_bin_start;
+extern uint8_t _binary_module_bin_start;
 cart_def mod_cart  = { 0x00, (void *)0, 0x4000, 0x02 | CART_REU | CART_RAM };
 
 /*********************************************************************/
@@ -47,7 +47,7 @@ int FileTypeREU :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
 {
     int count = 1;
     list.append(new MenuItem(this, "Load into REU", REUFILE_LOAD));
-    DWORD capabilities = getFpgaCapabilities();
+    uint32_t capabilities = getFpgaCapabilities();
     if ((type == REU_TYPE_MOD) && (capabilities & CAPAB_SAMPLER)) {
         list.append(new MenuItem(this, "Play MOD", REUFILE_PLAYMOD));
         count++;
@@ -78,7 +78,7 @@ void FileTypeREU :: execute(int selection)
     int remain;
     
 	static char buffer[36];
-    BYTE *dest;
+    uint8_t *dest;
     
 	switch(selection) {
     case REUFILE_PLAYMOD:
@@ -101,7 +101,7 @@ void FileTypeREU :: execute(int selection)
 			// load file in REU memory
             if(progress) {
                 user_interface->show_progress("Loading REU file..", 32);
-                dest = (BYTE *)(REU_MEMORY_BASE);
+                dest = (uint8_t *)(REU_MEMORY_BASE);
                 while(remain >= 0) {
         			file->read(dest, bytes_per_step, &bytes_read);
                     total_bytes_read += bytes_read;

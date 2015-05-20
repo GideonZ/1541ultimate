@@ -58,7 +58,7 @@ void poll_c64(Event &e)
 int main(void *a)
 {
 	char time_buffer[32];
-	DWORD capabilities = getFpgaCapabilities();
+	uint32_t capabilities = getFpgaCapabilities();
 
 	printf("*** 1541 Ultimate V3.0 ***\n");
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);

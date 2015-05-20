@@ -50,17 +50,17 @@ typedef struct _message
 {
     int   length;
     bool  last_part;
-    BYTE *message;
+    uint8_t *message;
 } Message;
 
 class CommandInterface : public ObjectWithMenu, ConfigurableObject
 {
-    BYTE *command_buffer;
-    BYTE *response_buffer;
-    BYTE *status_buffer;
+    uint8_t *command_buffer;
+    uint8_t *response_buffer;
+    uint8_t *status_buffer;
 
     Message incoming_command;
-    BYTE target;    
+    uint8_t target;    
     void copy_result(Message *data, Message *status);
     int cart_mode;
     

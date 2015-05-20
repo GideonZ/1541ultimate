@@ -41,7 +41,7 @@ public:
 		}
 	}
 
-	virtual BYTE get_attributes() {
+	virtual uint8_t get_attributes() {
 		return info.attrib;
 	}
 
@@ -96,12 +96,12 @@ public:
 
 	// default compare function, just by name!
 	virtual int compare(CachedTreeNode *obj) {
-		return stricmp(get_name(), obj->get_name());
+		return strcmp(get_name(), obj->get_name()); // FIXME
 	}
 
-    char *get_full_path(string& out) {
+    char *get_full_path(mstring& out) {
         CachedTreeNode *po = this;
-        string sep("/");
+        mstring sep("/");
 
         out = "/";
 

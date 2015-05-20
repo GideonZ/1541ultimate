@@ -23,30 +23,30 @@ void sdio_init(void)
     SDIO_CTRL = 0;
 }
 
-void sdio_send_command(BYTE cmd, WORD paramx, WORD paramy)
+void sdio_send_command(uint8_t cmd, WORD paramx, WORD paramy)
 {
     SDIO_DATA = 0xff;
 
     SDIO_CRC  = 0; // clear CRC
     SDIO_DATA = 0x40 | cmd;
-	SDIO_DATA = (BYTE)(paramx >> 8); /* MSB of parameter x */
-	SDIO_DATA = (BYTE)(paramx);      /* LSB of parameter x */
-	SDIO_DATA = (BYTE)(paramy >> 8); /* MSB of parameter y */
-	SDIO_DATA = (BYTE)(paramy);      /* LSB of parameter y */
+	SDIO_DATA = (uint8_t)(paramx >> 8); /* MSB of parameter x */
+	SDIO_DATA = (uint8_t)(paramx);      /* LSB of parameter x */
+	SDIO_DATA = (uint8_t)(paramy >> 8); /* MSB of parameter y */
+	SDIO_DATA = (uint8_t)(paramy);      /* LSB of parameter y */
     SDIO_DATA = SDIO_CRC;
 }
 
 void sdio_set_speed(int speed)
 {
-    SDIO_SPEED = (BYTE)speed;
+    SDIO_SPEED = (uint8_t)speed;
 }
 
-BYTE sdio_read_block(BYTE *buf)
+uint8_t sdio_read_block(uint8_t *buf)
 {
 	// timeout is 100 ms max.
 	// as with  write block
 	int  fb_timeout = 240000;
-	BYTE b;
+	uint8_t b;
 
     while((b = SDIO_DATA) == 0xFF) {
     	--fb_timeout;
@@ -56,9 +56,9 @@ BYTE sdio_read_block(BYTE *buf)
     if (b != 0xFE)
     	return b;
 
-	DWORD *pul, ul;
-    ul = (DWORD)buf;
-    pul = (DWORD *)buf;
+	uint32_t *pul, ul;
+    ul = (uint32_t)buf;
+    pul = (uint32_t *)buf;
     if((ul & 3)==0) {
 		for(int i=0;i<128;i++) {
 			*(pul++) = SDIO_DATA_32;
@@ -76,11 +76,11 @@ BYTE sdio_read_block(BYTE *buf)
     return 0;
 }
 
-bool sdio_write_block(const BYTE *buf)
+bool sdio_write_block(const uint8_t *buf)
 {
-    DWORD *pul, ul;
-    ul = (DWORD)buf;
-    pul = (DWORD *)buf;
+    uint32_t *pul, ul;
+    ul = (uint32_t)buf;
+    pul = (uint32_t *)buf;
 
     SDIO_DATA = 0xFE; // start of block
     if((ul & 3)==0) {

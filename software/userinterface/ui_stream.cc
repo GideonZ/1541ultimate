@@ -12,7 +12,7 @@ void UserInterfaceStream :: handle_event(Event &e)
         menu->poll(e);
 }
 
-int  UserInterfaceStream :: popup(char *msg, BYTE flags)
+int  UserInterfaceStream :: popup(char *msg, uint8_t flags)
 {
     stream->format("Popup: %s, options: ", msg);
     if(flags & BUTTON_OK)     stream->format("(O)k  ");

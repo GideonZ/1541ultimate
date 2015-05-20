@@ -89,7 +89,7 @@ void AT49_Flash :: get_image_addresses(int id, t_flash_address *addr)
 
 void AT49_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
 {
-    BYTE *src = (BYTE *)(AT49_BASE + device_addr);
+    uint8_t *src = (uint8_t *)(AT49_BASE + device_addr);
     printf("Memcpy %d bytes from %p to %p.\n", len, src, buffer);
     memcpy(buffer, src, len);
 }
@@ -99,8 +99,8 @@ AT49_Flash *AT49_Flash :: tester()
     AT49_COMMAND1 = 0xAA;
     AT49_COMMAND2 = 0x55;
     AT49_COMMAND1 = 0x90;
-	BYTE manuf  = AT49_MEM_ARRAY(0);
-	BYTE dev_id = AT49_MEM_ARRAY(2);
+	uint8_t manuf  = AT49_MEM_ARRAY(0);
+	uint8_t dev_id = AT49_MEM_ARRAY(2);
     // exit ProductID
     AT49_COMMAND1 = 0xAA;
     AT49_COMMAND2 = 0x55;
@@ -221,8 +221,8 @@ bool AT49_Flash :: write_page(int page, void *buffer)
 {
     // pre-condition: page is erased, status register mode = 01
 
-    BYTE *src = (BYTE *)buffer;
-    volatile BYTE *dest = &(AT49_MEM_ARRAY(page * page_size));
+    uint8_t *src = (uint8_t *)buffer;
+    volatile uint8_t *dest = &(AT49_MEM_ARRAY(page * page_size));
 
     printf("AT49: Write page %d. Addr = %p..", page, dest);
 

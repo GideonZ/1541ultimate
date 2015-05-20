@@ -39,9 +39,9 @@
 #define AT45_ManufacturerandDeviceIDRead                   0x9F
 #define AT45_ReadSecurityRegister                          0x77
 
-#define SPI_FLASH_DATA     *((volatile BYTE *)(FLASH_BASE + 0x00))
-#define SPI_FLASH_DATA_32  *((volatile DWORD*)(FLASH_BASE + 0x00))
-#define SPI_FLASH_CTRL     *((volatile BYTE *)(FLASH_BASE + 0x08))
+#define SPI_FLASH_DATA     *((volatile uint8_t *)(FLASH_BASE + 0x00))
+#define SPI_FLASH_DATA_32  *((volatile uint32_t*)(FLASH_BASE + 0x00))
+#define SPI_FLASH_CTRL     *((volatile uint8_t *)(FLASH_BASE + 0x08))
 
 #define SPI_FORCE_SS 0x01
 #define SPI_LEVEL_SS 0x02
@@ -56,7 +56,7 @@ class AT45_Flash : public Flash
     int page_shift;
     int config_start;
 
-	BYTE last_status;
+	uint8_t last_status;
     bool wait_ready(int time_out);
 
 public:    

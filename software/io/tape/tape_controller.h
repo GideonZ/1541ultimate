@@ -31,13 +31,13 @@
 class TapeController : public ObjectWithMenu
 {
 	FILE *file;
-	DWORD length;
+	uint32_t length;
 	int   block;
     int   mode;
 	int   paused;
 	int   recording;
-	BYTE  controlByte;
-	BYTE  *blockBuffer;
+	uint8_t  controlByte;
+	uint8_t  *blockBuffer;
 	void read_block();
 public:
 	TapeController();
@@ -50,7 +50,7 @@ public:
 	void stop();
 	void start(int);
 	void poll(Event &);
-	void set_file(FILE *f, DWORD, int);
+	void set_file(FILE *f, uint32_t, int);
 };
 
 extern TapeController *tape_controller;

@@ -15,7 +15,7 @@ extern "C" {
 #define mem_cmp memcmp
 #define mem_cpy memcpy
 
-DWORD get_fattime (void)	/* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 20-16: Day(1-31) */
+uint32_t get_fattime (void)	/* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 20-16: Day(1-31) */
 						    /* 15-11: Hour(0-23), 10-5: Minute(0-59), 4-0: Second(0-29 *2) */
 {
 	return rtc.get_fat_time();
@@ -45,7 +45,7 @@ FATFIL::FATFIL(FATFS *pfs) /* default constructor */
 #endif
 }
 
-FATFIL::FATFIL(FATFS *pfs, XCHAR *path, BYTE mode)
+FATFIL::FATFIL(FATFS *pfs, XCHAR *path, uint8_t mode)
 {
     fs = pfs;
     WORD dummy;
@@ -79,13 +79,13 @@ FRESULT FATFIL::validate(void)
 /*-----------------------------------------------------------------------*/
 FRESULT FATFIL::open (
     XCHAR *path,  /* Pointer to the file name */
-    DWORD dir_clust,  /* if given, this is where we start with the path */
-    BYTE mode,   /* Access mode and file open mode flags */
+    uint32_t dir_clust,  /* if given, this is where we start with the path */
+    uint8_t mode,   /* Access mode and file open mode flags */
     WORD *dir_index  /* return value: index of dir entry that was found */
 )
 {
     FRESULT res;
-    BYTE *dir;
+    uint8_t *dir;
 
     valid = 0;
     *dir_index = 0xFFFF;
@@ -114,7 +114,7 @@ FRESULT FATFIL::open (
 #if !_FS_READONLY
     /* Create or Open a file */
     if (mode & (FA_CREATE_ALWAYS | FA_OPEN_ALWAYS | FA_CREATE_NEW)) {
-        DWORD ps, cl;
+        uint32_t ps, cl;
 
         if (res != FR_OK) {         /* No file, create new */
             if (res == FR_NO_FILE)  /* There is no file to open, create a new entry */
@@ -130,7 +130,7 @@ FRESULT FATFIL::open (
             if (!dir || (dir[FATDIR_Attr] & (AM_RDO | AM_DIR)))    /* Cannot overwrite it (R/O or FATDIR) */
                 LEAVE_FF(fs, FR_DENIED);
             if (mode & FA_CREATE_ALWAYS) {      /* Resize it to zero on over write mode */
-                cl = ((DWORD)LD_WORD(dir+FATDIR_FstClusHI) << 16) | LD_WORD(dir+FATDIR_FstClusLO);    /* Get start cluster */
+                cl = ((uint32_t)LD_WORD(dir+FATDIR_FstClusHI) << 16) | LD_WORD(dir+FATDIR_FstClusLO);    /* Get start cluster */
                 ST_WORD(dir+FATDIR_FstClusHI, 0);  /* cluster = 0 */
                 ST_WORD(dir+FATDIR_FstClusLO, 0);
                 ST_DWORD(dir+FATDIR_FileSize, 0);  /* size = 0 */
@@ -171,7 +171,7 @@ FRESULT FATFIL::open (
 #endif
     flag = mode;                    /* File access mode */
     org_clust =                     /* File start cluster */
-        ((DWORD)LD_WORD(dir+FATDIR_FstClusHI) << 16) | LD_WORD(dir+FATDIR_FstClusLO);
+        ((uint32_t)LD_WORD(dir+FATDIR_FstClusHI) << 16) | LD_WORD(dir+FATDIR_FstClusLO);
     fsize = LD_DWORD(dir+FATDIR_FileSize); /* File size */
     fptr = 0; csect = 255;      /* File pointer */
     dsect = 0;
@@ -186,7 +186,7 @@ FRESULT FATFIL::open (
 
 FRESULT FATFIL::open (
     FileInfo *info, /* File Info, as previously read from directory */
-    BYTE mode       /* Access mode and file open mode flags */
+    uint8_t mode       /* Access mode and file open mode flags */
 )
 {
     FRESULT res;
@@ -253,9 +253,9 @@ FRESULT FATFIL::read (
 )
 {
     FRESULT res;
-    DWORD clst, sect, remain;
+    uint32_t clst, sect, remain;
     UINT rcnt, cc;
-    BYTE *rbuff = (BYTE *)buff;
+    uint8_t *rbuff = (uint8_t *)buff;
 
 
     *br = 0;    /* Initialize bytes read */
@@ -287,7 +287,7 @@ FRESULT FATFIL::read (
             if (cc) {                               /* Read maximum contiguous sectors directly */
                 if (csect + cc > fs->csize) /* Clip at cluster boundary */
                     cc = fs->csize - csect;
-                if (fs->prt->read(rbuff, sect, (BYTE)cc) != RES_OK)
+                if (fs->prt->read(rbuff, sect, (uint8_t)cc) != RES_OK)
                     ABORT(fs, FR_DISK_ERR);
 #if !_FS_READONLY && _FS_MINIMIZE <= 2
 #if _FS_TINY
@@ -298,7 +298,7 @@ FRESULT FATFIL::read (
                     mem_cpy(rbuff + ((dsect - sect) * REF_SECSIZE(fs)), buf, REF_SECSIZE(fs));
 #endif
 #endif
-                csect += (BYTE)cc;              /* Next sector address in the cluster */
+                csect += (uint8_t)cc;              /* Next sector address in the cluster */
                 rcnt = REF_SECSIZE(fs) * cc;             /* Number of bytes transferred */
                 continue;
             }
@@ -347,9 +347,9 @@ FRESULT FATFIL::write (
 )
 {
     FRESULT res;
-    DWORD clst, sect;
+    uint32_t clst, sect;
     UINT wcnt, cc;
-    const BYTE *wbuff = (BYTE *)buff;
+    const uint8_t *wbuff = (uint8_t *)buff;
 
     *bw = 0;    /* Initialize bytes written */
 
@@ -396,7 +396,7 @@ FRESULT FATFIL::write (
             if (cc) {                               /* Write maximum contiguous sectors directly */
                 if (csect + cc > fs->csize) /* Clip at cluster boundary */
                     cc = fs->csize - csect;
-                if (fs->prt->write(wbuff, sect, (BYTE)cc) != RES_OK)
+                if (fs->prt->write(wbuff, sect, (uint8_t)cc) != RES_OK)
                     ABORT(fs, FR_DISK_ERR);
 #if _FS_TINY
                 if (fs->winsect - sect < cc) {  /* Refill sector cache if it gets dirty by the direct write */
@@ -409,7 +409,7 @@ FRESULT FATFIL::write (
                     flag &= ~FA__DIRTY;
                 }
 #endif
-                csect += (BYTE)cc;              /* Next sector address in the cluster */
+                csect += (uint8_t)cc;              /* Next sector address in the cluster */
                 wcnt = REF_SECSIZE(fs) * cc;             /* Number of bytes transferred */
                 continue;
             }
@@ -454,8 +454,8 @@ FRESULT FATFIL::write (
 FRESULT FATFIL::sync (void)
 {
     FRESULT res;
-    DWORD tim;
-    BYTE *dir;
+    uint32_t tim;
+    uint8_t *dir;
 
     res = validate();
     if (res == FR_OK) {
@@ -520,11 +520,11 @@ FRESULT FATFIL::close (void)
 /*-----------------------------------------------------------------------*/
 
 FRESULT FATFIL::lseek (
-    DWORD ofs       /* File pointer from top of file */
+    uint32_t ofs       /* File pointer from top of file */
 )
 {
     FRESULT res;
-    DWORD clst, bcs, nsect, ifptr;
+    uint32_t clst, bcs, nsect, ifptr;
 
 
     res = validate();                   /* Check validity of the object */
@@ -540,7 +540,7 @@ FRESULT FATFIL::lseek (
     ifptr = fptr;
     fptr = nsect = 0; csect = 255;
     if (ofs > 0) {
-        bcs = (DWORD)fs->csize * REF_SECSIZE(fs);    /* Cluster size (byte) */
+        bcs = (uint32_t)fs->csize * REF_SECSIZE(fs);    /* Cluster size (byte) */
         if (ifptr > 0 &&
             (ofs - 1) / bcs >= (ifptr - 1) / bcs) { /* When seek to same or following cluster, */
             fptr = (ifptr - 1) & ~(bcs - 1);    /* start from the current cluster */
@@ -576,7 +576,7 @@ FRESULT FATFIL::lseek (
                 ofs -= bcs;
             }
             fptr += ofs;
-            csect = (BYTE)(ofs / REF_SECSIZE(fs));   /* Sector offset in the cluster */
+            csect = (uint8_t)(ofs / REF_SECSIZE(fs));   /* Sector offset in the cluster */
             if (ofs % REF_SECSIZE(fs)) {
                 nsect = fs->clust2sect(clst);   /* Current sector */
                 if (!nsect) ABORT(fs, FR_INT_ERR);
@@ -616,7 +616,7 @@ FRESULT FATFIL::lseek (
 FRESULT FATFIL::truncate (void)
 {
     FRESULT res;
-    DWORD ncl;
+    uint32_t ncl;
 
     res = validate();     /* Check validity of the object */
     if (res != FR_OK) LEAVE_FF(fs, res);

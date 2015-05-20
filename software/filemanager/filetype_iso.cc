@@ -25,7 +25,7 @@ FileTypeISO :: FileTypeISO(CachedTreeNode *filenode)
     if(blk->status()) {
         printf("Can't open file.\n");
     } else {
-        DWORD sec_count;
+        uint32_t sec_count;
         DRESULT dres = blk->ioctl(GET_SECTOR_COUNT, &sec_count);
         printf("Sector count: %d.\n", sec_count);
         prt = new Partition(blk, 0, sec_count, 0);

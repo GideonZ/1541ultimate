@@ -30,8 +30,8 @@
 void dump_hex_actual(void *pp, int len, int relative)
 {
     int w,t;
-    BYTE c;
-    BYTE *p = (BYTE *)pp;
+    uint8_t c;
+    uint8_t *p = (uint8_t *)pp;
     
 	for(w=0;w<len;w+=DUMP_BYTES) {
         if(relative)
@@ -71,10 +71,10 @@ void dump_hex_relative(void *pp, int len)
     dump_hex_actual(pp, len, 1);
 }
 
-void dump_hex_dirty(void *pp, int len, BYTE ptrn)
+void dump_hex_dirty(void *pp, int len, uint8_t ptrn)
 {
 	int w,t,d;
-    BYTE *p = (BYTE *)pp;
+    uint8_t *p = (uint8_t *)pp;
 	for(w=0;w<len;w+=DUMP_BYTES) {
 		for(d=0,t=0;t<DUMP_BYTES;t++) {
 			if(p[w+t] != ptrn)

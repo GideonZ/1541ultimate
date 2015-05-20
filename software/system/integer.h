@@ -5,25 +5,10 @@
 #ifndef _INTEGER
 #define _INTEGER
 
-/* These types must be 16-bit, 32-bit or larger integer */
-typedef int				INT;
-typedef unsigned int	UINT;
-
-/* These types must be 8-bit integer */
-typedef signed char		CHAR;
-typedef unsigned char	UCHAR;
-typedef unsigned char	BYTE;
+#include <stdint.h>
 
 /* These types must be 16-bit integer */
-typedef short			SHORT;
-typedef unsigned short	USHORT;
-typedef unsigned short	WORD;
 typedef unsigned short	WCHAR;
-
-/* These types must be 32-bit integer */
-typedef long			LONG;
-typedef unsigned long	ULONG;
-typedef unsigned long	DWORD;
 
 /* Boolean type */
 typedef enum { FALSE = 0, TRUE } BOOL;
@@ -36,16 +21,16 @@ typedef enum { FALSE = 0, TRUE } BOOL;
 /*--------------------------------*/
 /* Multi-byte word access macros  */
 
-#if _WORD_ACCESS == 1   /* Enable word access to the FAT structure */
-#define LD_WORD(ptr)        (WORD)(*(WORD*)(BYTE*)(ptr))
-#define LD_DWORD(ptr)       (DWORD)(*(DWORD*)(BYTE*)(ptr))
-#define ST_WORD(ptr,val)    *(WORD*)(BYTE*)(ptr)=(WORD)(val)
-#define ST_DWORD(ptr,val)   *(DWORD*)(BYTE*)(ptr)=(DWORD)(val)
+#if _uint16_t_ACCESS == 1   /* Enable word access to the FAT structure */
+#define LD_WORD(ptr)        (uint16_t)(*(uint16_t*)(uint8_t*)(ptr))
+#define LD_DWORD(ptr)       (uint32_t)(*(uint32_t*)(uint8_t*)(ptr))
+#define ST_WORD(ptr,val)    *(uint16_t*)(uint8_t*)(ptr)=(uint16_t)(val)
+#define ST_DWORD(ptr,val)   *(uint32_t*)(uint8_t*)(ptr)=(uint32_t)(val)
 #else                   /* Use byte-by-byte access to the FAT structure */
-#define LD_WORD(ptr)        (WORD)(((WORD)*(BYTE*)((ptr)+1)<<8)|(WORD)*(BYTE*)(ptr))
-#define LD_DWORD(ptr)       (DWORD)(((DWORD)*(BYTE*)((ptr)+3)<<24)|((DWORD)*(BYTE*)((ptr)+2)<<16)|((WORD)*(BYTE*)((ptr)+1)<<8)|*(BYTE*)(ptr))
-#define ST_WORD(ptr,val)    *(BYTE*)(ptr)=(BYTE)(val); *(BYTE*)((ptr)+1)=(BYTE)((WORD)(val)>>8)
-#define ST_DWORD(ptr,val)   *(BYTE*)(ptr)=(BYTE)(val); *(BYTE*)((ptr)+1)=(BYTE)((WORD)(val)>>8); *(BYTE*)((ptr)+2)=(BYTE)((DWORD)(val)>>16); *(BYTE*)((ptr)+3)=(BYTE)((DWORD)(val)>>24)
+#define LD_WORD(ptr)        (uint16_t)(((uint16_t)*(uint8_t*)((ptr)+1)<<8)|(uint16_t)*(uint8_t*)(ptr))
+#define LD_DWORD(ptr)       (uint32_t)(((uint32_t)*(uint8_t*)((ptr)+3)<<24)|((uint32_t)*(uint8_t*)((ptr)+2)<<16)|((uint16_t)*(uint8_t*)((ptr)+1)<<8)|*(uint8_t*)(ptr))
+#define ST_WORD(ptr,val)    *(uint8_t*)(ptr)=(uint8_t)(val); *(uint8_t*)((ptr)+1)=(uint8_t)((uint16_t)(val)>>8)
+#define ST_DWORD(ptr,val)   *(uint8_t*)(ptr)=(uint8_t)(val); *(uint8_t*)((ptr)+1)=(uint8_t)((uint16_t)(val)>>8); *(uint8_t*)((ptr)+2)=(uint8_t)((uint32_t)(val)>>16); *(uint8_t*)((ptr)+3)=(uint8_t)((uint32_t)(val)>>24)
 #endif
 
 #define NR_OF_EL(a)		(sizeof(a) / sizeof(a[0]))

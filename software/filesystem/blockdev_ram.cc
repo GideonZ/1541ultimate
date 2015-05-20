@@ -5,7 +5,7 @@ extern "C" {
 #include "blockdev_ram.h"
 #include "filemanager.h"
 
-BlockDevice_Ram::BlockDevice_Ram(BYTE *mem, int sec_size, int num_sectors)
+BlockDevice_Ram::BlockDevice_Ram(uint8_t *mem, int sec_size, int num_sectors)
 {
     memory = mem;
     sector_size = sec_size;
@@ -30,7 +30,7 @@ DSTATUS BlockDevice_Ram::status(void)
         return STA_NODISK;
 }
     
-DRESULT BlockDevice_Ram::read(BYTE *buffer, DWORD sector, int count)
+DRESULT BlockDevice_Ram::read(uint8_t *buffer, uint32_t sector, int count)
 {
     if(sector >= number_of_sectors)
         return RES_PARERR;
@@ -39,7 +39,7 @@ DRESULT BlockDevice_Ram::read(BYTE *buffer, DWORD sector, int count)
     return RES_OK;
 }
 
-DRESULT BlockDevice_Ram::write(const BYTE *buffer, DWORD sector, int count)
+DRESULT BlockDevice_Ram::write(const uint8_t *buffer, uint32_t sector, int count)
 {
     if(sector >= number_of_sectors)
         return RES_PARERR;
@@ -48,10 +48,10 @@ DRESULT BlockDevice_Ram::write(const BYTE *buffer, DWORD sector, int count)
     return RES_OK;
 }
 
-DRESULT BlockDevice_Ram::ioctl(BYTE command, void *data)
+DRESULT BlockDevice_Ram::ioctl(uint8_t command, void *data)
 {
-    DWORD size;
-    DWORD *dest = (DWORD *)data;
+    uint32_t size;
+    uint32_t *dest = (uint32_t *)data;
     
     switch(command) {
         case GET_SECTOR_COUNT:

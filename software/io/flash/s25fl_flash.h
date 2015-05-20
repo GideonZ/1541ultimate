@@ -22,9 +22,9 @@
 #define S25FL_WriteStatusRegister					0x01
 #define S25FL_PageProgram							0x02
 
-#define SPI_FLASH_DATA     *((volatile BYTE *)(FLASH_BASE + 0x00))
-#define SPI_FLASH_DATA_32  *((volatile DWORD*)(FLASH_BASE + 0x00))
-#define SPI_FLASH_CTRL     *((volatile BYTE *)(FLASH_BASE + 0x08))
+#define SPI_FLASH_DATA     *((volatile uint8_t *)(FLASH_BASE + 0x00))
+#define SPI_FLASH_DATA_32  *((volatile uint32_t*)(FLASH_BASE + 0x00))
+#define SPI_FLASH_CTRL     *((volatile uint8_t *)(FLASH_BASE + 0x08))
 
 #define SPI_FORCE_SS 0x01
 #define SPI_LEVEL_SS 0x02

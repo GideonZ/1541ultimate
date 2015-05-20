@@ -4,9 +4,9 @@
 
 void (*function)();
 
-void jump_run(DWORD a)
+void jump_run(uint32_t a)
 {
-    DWORD *dp = (DWORD *)&function;
+    uint32_t *dp = (uint32_t *)&function;
     *dp = a;
     function();
 }
@@ -15,7 +15,7 @@ int main(void)
 {
 	puts("Hello, world!");
 
-    BYTE *ram = (BYTE *)0x10000;
+    uint8_t *ram = (uint8_t *)0x10000;
 
     while(1) {
     	int st = xmodemReceive(ram, 1048576);
@@ -35,8 +35,8 @@ int main(void)
 
 void restart(void)
 {
-	DWORD *src = (DWORD *)0x1C00000;
-	DWORD *dst = (DWORD *)0x10000;
+	uint32_t *src = (uint32_t *)0x1C00000;
+	uint32_t *dst = (uint32_t *)0x10000;
 	int size = (int)(*(src++));
 	while(size--) {
 		*(dst++) = *(src++);

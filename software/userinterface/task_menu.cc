@@ -60,6 +60,7 @@ void TaskMenu :: init(Screen *scr, Keyboard *key)
     }
 
     window = new Window(screen, 19-(max_len>>1), y_offs+2, max_len+2, rows);
+    window->set_color(user_interface->color_fg);
     window->draw_border();
     context_state = e_active;
 

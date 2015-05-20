@@ -32,7 +32,7 @@ TreeBrowserState :: TreeBrowserState(Browsable *n, TreeBrowser *b, int lev)
     previous = NULL;
     deeper = NULL;
 
-    reload();
+//    reload();
 //    printf("Constructor tree browser state: Node = %p\n", node);
 }
 
@@ -45,7 +45,7 @@ TreeBrowserState :: ~TreeBrowserState()
 
 void TreeBrowserState :: cleanup()
 {
-	for(int i=0;children.get_elements();i++) {
+	for(int i=0;i<children.get_elements();i++) {
 		delete children[i];
 	}
 	children.clear_list();
@@ -209,14 +209,17 @@ void TreeBrowserState :: into(void)
 		return;
 
 	printf("Going deeper into = %s\n", under_cursor->getName());
-    int child_count = under_cursor->getSubItems(children);
-    if(child_count < 0)
-        return;
-        
-    printf("%d children fetched.\n", child_count);
         
 	deeper = new TreeBrowserState(under_cursor, browser, level+1);
-    //user_interface->set_path(under_cursor);
+
+    int child_count = under_cursor->getSubItems(deeper->children);
+    if(child_count < 0) {
+    	delete deeper;
+    	return;
+    }
+    printf("%d children fetched.\n", child_count);
+
+	//user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;
 }
@@ -227,15 +230,17 @@ bool TreeBrowserState :: into2(void)
 	if(!under_cursor)
 		return(false);
 
-	printf("Going deeper into = %s\n", under_cursor->getName());
-    int child_count = under_cursor->getSubItems(children);
+	deeper = new TreeBrowserState(under_cursor, browser, level+1);
 
-    if(child_count < 0)
-        return(true);
-        
+	printf("Going deeper into = %s\n", under_cursor->getName());
+    int child_count = under_cursor->getSubItems(deeper->children);
+
+    if(child_count < 0) {
+    	delete deeper;
+    	return(true);
+    }
     printf("%d children fetched.\n", child_count);
 
-	deeper = new TreeBrowserState(under_cursor, browser, level+1);
     // user_interface->set_path(under_cursor);
     browser->state = deeper;
     deeper->previous = this;

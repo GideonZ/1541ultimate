@@ -53,9 +53,6 @@ W25Q_Flash::W25Q_Flash()
 	sector_size  = 16;			// in pages, default to W25Q16BV
 	sector_count = 512;			// default to W25Q16BV
     total_size   = 8192;		// in pages, default to W25Q16BV
-
-    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    SPI_FLASH_DATA = 0xFF;
 }
     
 W25Q_Flash::~W25Q_Flash()
@@ -82,11 +79,11 @@ void W25Q_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
 {
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;
-    SPI_FLASH_DATA = BYTE(device_addr >> 16);
-    SPI_FLASH_DATA = BYTE(device_addr >> 8);
-    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
 
-    BYTE *buf = (BYTE *)buffer;
+    uint8_t *buf = (uint8_t *)buffer;
     for(int i=0;i<len;i++) {
         *(buf++) = SPI_FLASH_DATA;
     }
@@ -95,12 +92,14 @@ void W25Q_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
     
 Flash *W25Q_Flash :: tester()
 {
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    SPI_FLASH_DATA = 0xFF;
     SPI_FLASH_CTRL = SPI_FORCE_SS;
 
 	SPI_FLASH_DATA = W25Q_JEDEC_ID;
-	BYTE manuf = SPI_FLASH_DATA;
-	BYTE mem_type = SPI_FLASH_DATA;
-	BYTE capacity = SPI_FLASH_DATA;
+	uint8_t manuf = SPI_FLASH_DATA;
+	uint8_t mem_type = SPI_FLASH_DATA;
+	uint8_t capacity = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     
 //    printf("W25Q MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
@@ -160,7 +159,7 @@ void W25Q_Flash :: read_linear_addr(int addr, int len, void *buffer)
 
 void W25Q_Flash :: read_serial(void *buffer)
 {
-    BYTE *buf = (BYTE *)buffer;
+    uint8_t *buf = (uint8_t *)buffer;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ReadUniqueIDNumber;
     SPI_FLASH_DATA_32 = 0;
@@ -208,13 +207,13 @@ bool W25Q_Flash :: read_page(int page, void *buffer)
 {
     int device_addr = (page << W25Q_PageShift);
     int len = 1 << (W25Q_PageShift - 2);
-    DWORD *buf = (DWORD *)buffer;
+    uint32_t *buf = (uint32_t *)buffer;
     
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;
-    SPI_FLASH_DATA = BYTE(device_addr >> 16);
-    SPI_FLASH_DATA = BYTE(device_addr >> 8);
-    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
     for(int i=0;i<len;i++) {
         *(buf++) = SPI_FLASH_DATA_32;
     }
@@ -226,16 +225,16 @@ bool W25Q_Flash :: write_page(int page, void *buffer)
 {
     int device_addr = (page << W25Q_PageShift);
     int len = 1 << (W25Q_PageShift - 2);
-    DWORD *buf = (DWORD *)buffer;
+    uint32_t *buf = (uint32_t *)buffer;
     
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
 
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_PageProgram;
-    SPI_FLASH_DATA = BYTE(device_addr >> 16);
-    SPI_FLASH_DATA = BYTE(device_addr >> 8);
-    SPI_FLASH_DATA = BYTE(device_addr);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 16);
+    SPI_FLASH_DATA = uint8_t(device_addr >> 8);
+    SPI_FLASH_DATA = uint8_t(device_addr);
     for(int i=0;i<len;i++) {
         SPI_FLASH_DATA_32 = *(buf++);
     }
@@ -253,12 +252,12 @@ bool W25Q_Flash :: erase_sector(int sector)
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
-    debug(("Sector erase. %b %b %b\n", BYTE(addr >> 16), BYTE(addr >> 8), BYTE(addr)));
+    debug(("Sector erase. %b %b %b\n", uint8_t(addr >> 16), uint8_t(addr >> 8), uint8_t(addr)));
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_SectorErase;
-    SPI_FLASH_DATA = BYTE(addr >> 16);
-    SPI_FLASH_DATA = BYTE(addr >> 8);
-    SPI_FLASH_DATA = BYTE(addr);
+    SPI_FLASH_DATA = uint8_t(addr >> 16);
+    SPI_FLASH_DATA = uint8_t(addr >> 8);
+    SPI_FLASH_DATA = uint8_t(addr);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     bool ret = wait_ready(50000);
     SPI_FLASH_CTRL = 0;
@@ -274,7 +273,7 @@ int W25Q_Flash :: page_to_sector(int page)
 	
 void W25Q_Flash :: reboot(int addr)
 {
-    BYTE icap_sequence[20] = { 0xAA, 0x99, 0x32, 0x61,    0,    0, 0x32, 0x81,    0,    0,
+    uint8_t icap_sequence[20] = { 0xAA, 0x99, 0x32, 0x61,    0,    0, 0x32, 0x81,    0,    0,
                                0x32, 0xA1, 0x00, 0x4F, 0x30, 0xA1, 0x00, 0x0E, 0x20, 0x00 };
 
     icap_sequence[4] = (addr >> 8);
@@ -344,7 +343,7 @@ void W25Q_Flash :: protect_enable(void)
 {
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
-	BYTE status = SPI_FLASH_DATA;
+	uint8_t status = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     if ((status & 0x7C) != 0x34)
     	protect_configure();

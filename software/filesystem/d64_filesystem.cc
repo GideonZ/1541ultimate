@@ -13,7 +13,7 @@
 
 FileSystemD64 :: FileSystemD64(Partition *p) : FileSystem(p)
 {
-    DWORD sectors;
+    uint32_t sectors;
     image_mode = 0;
     current_sector = -1;
     dirty = 0;
@@ -184,7 +184,7 @@ bool FileSystemD64 :: is_free(int abs)
 
 bool FileSystemD64 :: allocate_sector_on_track(int track, int &sector)
 {
-    BYTE k,b,*m;
+    uint8_t k,b,*m;
 
     if(bam_buffer[4*track]) {
         m = &bam_buffer[1 + 4*track];
@@ -268,7 +268,7 @@ bool FileSystemD64 :: init(void)
 }
 
 // Get number of free sectors on the file system
-FRESULT FileSystemD64 :: get_free (DWORD*)
+FRESULT FileSystemD64 :: get_free (uint32_t*)
 {
     return FR_DENIED; // not yet implemented
 }
@@ -286,7 +286,7 @@ Directory *FileSystemD64 :: dir_open(FileInfo *info)
 //        return NULL;
 //    }
 	DirInD64 *dd = new DirInD64(this);
-    Directory *dir = new Directory(this, (DWORD)dd);
+    Directory *dir = new Directory(this, (uint32_t)dd);
 	FRESULT res = dd->open(info);
 	if(res == FR_OK) {
 		return dir;
@@ -315,10 +315,10 @@ FRESULT FileSystemD64 :: dir_read(Directory *d, FileInfo *f)
 
 // functions for reading and writing files
 // Opens file (creates file object)
-File   *FileSystemD64 :: file_open(FileInfo *info, BYTE flags)
+File   *FileSystemD64 :: file_open(FileInfo *info, uint8_t flags)
 {
 	FileInD64 *ff = new FileInD64(this);
-	File *f = new File(info, (DWORD)ff);
+	File *f = new File(info, (uint32_t)ff);
 	FRESULT res = ff->open(info, flags);
 	if(res == FR_OK) {
 		return f;
@@ -337,19 +337,19 @@ void FileSystemD64::file_close(File *f)
     delete f;
 }
 
-FRESULT FileSystemD64::file_read(File *f, void *buffer, DWORD len, UINT *bytes_read)
+FRESULT FileSystemD64::file_read(File *f, void *buffer, uint32_t len, UINT *bytes_read)
 {
     FileInD64 *ff = (FileInD64 *)f->handle;
     return ff->read(buffer, len, bytes_read);
 }
 
-FRESULT FileSystemD64::file_write(File *f, void *buffer, DWORD len, UINT *bytes_written)
+FRESULT FileSystemD64::file_write(File *f, void *buffer, uint32_t len, UINT *bytes_written)
 {
     FileInD64 *ff = (FileInD64 *)f->handle;
     return ff->write(buffer, len, bytes_written);
 }
 
-FRESULT FileSystemD64::file_seek(File *f, DWORD pos)
+FRESULT FileSystemD64::file_seek(File *f, uint32_t pos)
 {
     FileInD64 *ff = (FileInD64 *)f->handle;
     return ff->seek(pos);
@@ -367,7 +367,7 @@ FRESULT DirInD64 :: open(FileInfo *info)
 {
     idx = 0;
 
-    visited = new BYTE[fs->num_sectors];
+    visited = new uint8_t[fs->num_sectors];
     for (int i=0; i<fs->num_sectors; i++) {
         visited[i] = 0;
     }
@@ -439,7 +439,7 @@ FRESULT DirInD64 :: read(FileInfo *f)
                     return FR_DISK_ERR;
                 }
             }
-            BYTE *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
+            uint8_t *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
             //dump_hex(p, 32);
             if((p[2] & 0x0f) == 0x02) { // PRG
                 int j = 0;
@@ -478,7 +478,7 @@ FileInD64 :: FileInD64(FileSystemD64 *f)
     fs = f;
 }
 
-FRESULT FileInD64 :: open(FileInfo *info, BYTE flags)
+FRESULT FileInD64 :: open(FileInfo *info, uint8_t flags)
 {
 	if(info->fs != fs)
 		return FR_INVALID_OBJECT;
@@ -492,7 +492,7 @@ FRESULT FileInD64 :: open(FileInfo *info, BYTE flags)
 //	dir_sect = info->dir_sector;
 //	dir_entry_offset = info->dir_offset;
 
-    visited = new BYTE[fs->num_sectors];
+    visited = new uint8_t[fs->num_sectors];
     for (int i=0; i<fs->num_sectors; i++) {
         visited[i] = 0;
     }
@@ -524,12 +524,12 @@ FRESULT FileInD64 :: visit(void)
     return FR_OK;
 }
 
-FRESULT FileInD64 :: read(void *buffer, DWORD len, UINT *transferred)
+FRESULT FileInD64 :: read(void *buffer, uint32_t len, UINT *transferred)
 {
     FRESULT res;
 
-    BYTE *dst = (BYTE *)buffer;
-    BYTE *src;
+    uint8_t *dst = (uint8_t *)buffer;
+    uint8_t *src;
 
     int bytes_left;
     int tr;
@@ -585,12 +585,12 @@ FRESULT FileInD64 :: read(void *buffer, DWORD len, UINT *transferred)
     return FR_OK;
 }
 
-FRESULT  FileInD64 :: write(void *buffer, DWORD len, UINT *transferred)
+FRESULT  FileInD64 :: write(void *buffer, uint32_t len, UINT *transferred)
 {
     FRESULT res;
 
-    BYTE *src = (BYTE *)buffer;
-    BYTE *dst;
+    uint8_t *src = (uint8_t *)buffer;
+    uint8_t *dst;
 
     int bytes_left;
     int tr;
@@ -658,7 +658,7 @@ FRESULT  FileInD64 :: write(void *buffer, DWORD len, UINT *transferred)
 
         if(fs->sect_buffer[0] == 0) { // last sector (still)
             if((offset_in_sector-1) > fs->sect_buffer[1]) // we extended the file
-                fs->sect_buffer[1] = (BYTE)(offset_in_sector - 1);
+                fs->sect_buffer[1] = (uint8_t)(offset_in_sector - 1);
         }
     }
     fs->sync();
@@ -667,7 +667,7 @@ FRESULT  FileInD64 :: write(void *buffer, DWORD len, UINT *transferred)
     return FR_OK;
 }
 
-FRESULT FileInD64 :: seek(DWORD pos)
+FRESULT FileInD64 :: seek(uint32_t pos)
 {
 	return FR_DENIED;
 }

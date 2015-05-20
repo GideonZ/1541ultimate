@@ -9,7 +9,7 @@ ContextMenu :: ContextMenu(Contextable *node, int initial, int y) : actions(2, 0
     keyb = NULL;
     window = NULL;
     y_offs = y-1;
-    corner = y;
+    corner = y+2;
 
     item_index = initial;
 }
@@ -38,14 +38,14 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
             return;
         }
         rows = item_count + 2;
-        size_y = scr->get_size_y();
+        size_y = scr->get_size_y()-1;
         if(rows > size_y) {
             rows = size_y;
         }
         if((rows + y_offs) > size_y)
             y_offs = size_y - rows;
-        if(y_offs < 0)
-            y_offs = 0;
+        if(y_offs < 2)
+            y_offs = 2;
         
         max_len = 0;
         for(int i=0;i<actions.get_elements();i++) {
@@ -59,13 +59,16 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
     }        
 
     this->screen = scr;
-    window = new Window(scr, scr->get_size_x()-2-max_len, y_offs+2, max_len+2, rows);
-
+    window = new Window(scr, scr->get_size_x()-2-max_len, y_offs, max_len+2, rows);
+    window->set_color(user_interface->color_fg);
     window->draw_border();
-    if((corner == y_offs)||(corner == (y_offs+rows-1)))
+    if((corner == y_offs)||(corner == (y_offs+rows-1))) {
         window->set_char(0, corner-y_offs, 2);
-    else
+    } else if(corner == 2) {
+    	window->set_char(0, corner-y_offs, 8);
+    } else {
         window->set_char(0, corner-y_offs, 3);
+    }
     context_state = e_active;
 
     draw();
@@ -79,7 +82,7 @@ void ContextMenu :: executeAction()
 int ContextMenu :: poll(int dummy, Event &e)
 {
     int ret = 0;
-    char c;
+    int c;
         
     if(!keyb) {
         printf("ContextMenu: Keyboard not initialized.. exit.\n");
@@ -89,8 +92,7 @@ int ContextMenu :: poll(int dummy, Event &e)
     switch(context_state) {
         case e_active:
             c = keyb->getch();
-            if(c) {
-                printf("%c", c);
+            if(c > 0) {
                 ret = handle_key(c);
                 if(ret)
                     context_state = e_finished;
@@ -104,37 +106,37 @@ int ContextMenu :: poll(int dummy, Event &e)
     return ret;
 }
 
-int ContextMenu :: handle_key(BYTE c)
+int ContextMenu :: handle_key(int c)
 {
     int ret = 0;
     
     switch(c) {
-        case 0x9D: // left
-        case 0x03: // runstop
+        case KEY_LEFT: // left
+        case KEY_BREAK: // runstop
             //clean_up();
             ret = -1;
             break;
-        case 0x8C: // exit
+        case KEY_F8: // exit
             ret = -1;
             //clean_up();
             push_event(e_unfreeze, 0);
 //            push_event(e_terminate, 0);
             break;
-        case 0x11: // down
+        case KEY_DOWN: // down
         	//reset_quick_seek();
         	if (item_index < actions.get_elements()-1) {
             	item_index++;
             	draw();
         	}
             break;
-        case 0x91: // up
+        case KEY_UP: // up
         	// reset_quick_seek();
         	if (item_index > 0) {
         		item_index --;
         		draw();
         	}
         	break;
-        case 0x14: // backspace
+        case KEY_BACK: // backspace
 /*
             if(quick_seek_length) {
                 quick_seek_length--;
@@ -142,8 +144,8 @@ int ContextMenu :: handle_key(BYTE c)
             }
 */
             break;
-        case 0x20: // space
-        case 0x0D: // return
+        case KEY_SPACE: // space
+        case KEY_RETURN: // return
             //clean_up();
             ret = 1;
             break;
@@ -189,6 +191,16 @@ void ContextMenu :: reset_quick_seek(void)
 
 void ContextMenu :: draw()
 {
-	printf("Drawing context menu.\n"); // TODO
+	printf("Drawing context menu. Window height = %d\n", window->get_size_y()); // TODO
+	for (int i=0;i<window->get_size_y();i++) {
+		Action *t = actions[i];
+		window->move_cursor(0, i);
+		if (i == item_index) {
+			window->set_color(user_interface->color_sel);
+		} else {
+			window->set_color(user_interface->color_fg);
+		}
+		window->output_line(t->getName());
+	}
 }
 

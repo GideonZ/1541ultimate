@@ -36,14 +36,14 @@ struct t_cfg_definition rtc_config[] = {
 	{ CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-static BYTE bcd2bin(BYTE bcd)
+static uint8_t bcd2bin(uint8_t bcd)
 {
 	return (((bcd & 0xF0) >> 4) * 10) + (bcd & 0x0F);
 }
 
-static BYTE bin2bcd(BYTE bin)
+static uint8_t bin2bcd(uint8_t bin)
 {
-	BYTE bcd = 0;
+	uint8_t bcd = 0;
 	while(bin >= 10) { // division is probably slower
 		bin -= 10;
 		bcd += 0x10;
@@ -79,10 +79,10 @@ Rtc :: ~Rtc()
     }
 }
 
-void Rtc :: write_byte(int addr, BYTE val)
+void Rtc :: write_byte(int addr, uint8_t val)
 {
 	RTC_CHIP_CTRL = SPI_CS_ON;
-    RTC_CHIP_DATA = (BYTE)(0x10 + addr);
+    RTC_CHIP_DATA = (uint8_t)(0x10 + addr);
     RTC_CHIP_DATA = val;
     RTC_CHIP_CTRL = SPI_CS_OFF;
 	rtc_regs[addr] = val; // update internal structure as well.
@@ -120,7 +120,7 @@ void Rtc :: get_time_from_chip(void)
 void Rtc :: set_time_in_chip(int corr_ppm, int y, int M, int D, int wd, int h, int m, int s)
 {
 	// calculate correction register
-	BYTE corr_byte = 0;
+	uint8_t corr_byte = 0;
 	int div;
 	if((corr_ppm > 136)||(corr_ppm < -136)) {
 		div = 434;
@@ -134,7 +134,7 @@ void Rtc :: set_time_in_chip(int corr_ppm, int y, int M, int D, int wd, int h, i
 	else
 		if(val & 1) val--;
 	val = (val >> 1) & 0x7F;
-	corr_byte |= BYTE(val);
+	corr_byte |= uint8_t(val);
 //	printf("Correction byte for %d ppm: %b\n", corr_ppm, corr_byte);
 	
 	write_byte(RTC_ADDR_CTRL1,    0x80);
@@ -152,7 +152,7 @@ void Rtc :: set_time_in_chip(int corr_ppm, int y, int M, int D, int wd, int h, i
 
 int  Rtc :: get_correction(void)
 {
-	BYTE corr_byte = rtc_regs[RTC_ADDR_OFFSET];
+	uint8_t corr_byte = rtc_regs[RTC_ADDR_OFFSET];
 	int mul = (corr_byte & 0x80)?434:217;
 	int val = (corr_byte & 0x40)?(int(corr_byte) | -128):int(corr_byte & 0x3F);
 //	printf("Mul = %d. Val = $%b (%d)\n", mul, val, val);
@@ -193,13 +193,13 @@ void Rtc :: set_time(int y, int M, int D, int wd, int h, int m, int s)
 {
     if (getFpgaCapabilities() & CAPAB_RTC_TIMER) {
     	RTC_TIMER_LOCK = 1;
-    	RTC_TIMER_YEARS = (BYTE)y;
-    	RTC_TIMER_MONTHS = (BYTE)M;
-    	RTC_TIMER_DAYS = (BYTE)D;
-    	RTC_TIMER_WEEKDAYS = (BYTE)wd;
-    	RTC_TIMER_HOURS = (BYTE)h;
-    	RTC_TIMER_MINUTES = (BYTE)m;
-    	RTC_TIMER_SECONDS = (BYTE)s;
+    	RTC_TIMER_YEARS = (uint8_t)y;
+    	RTC_TIMER_MONTHS = (uint8_t)M;
+    	RTC_TIMER_DAYS = (uint8_t)D;
+    	RTC_TIMER_WEEKDAYS = (uint8_t)wd;
+    	RTC_TIMER_HOURS = (uint8_t)h;
+    	RTC_TIMER_MINUTES = (uint8_t)m;
+    	RTC_TIMER_SECONDS = (uint8_t)s;
     	RTC_TIMER_LOCK = 0;
     }
 }
@@ -236,7 +236,7 @@ char * Rtc :: get_long_date(char *dest, int len)
 	return dest;
 }
 
-DWORD Rtc :: get_fat_time(void)
+uint32_t Rtc :: get_fat_time(void)
 {
     if(!capable)
         return 0x42FF9877;
@@ -255,7 +255,7 @@ DWORD Rtc :: get_fat_time(void)
     int y, M, D, wd, h, m, s;
     get_time(y, M, D, wd, h, m, s);
 
-    DWORD result = 0;    
+    uint32_t result = 0;    
     result |= (y << 25);
     result |= (M << 21);
     result |= (D << 16);

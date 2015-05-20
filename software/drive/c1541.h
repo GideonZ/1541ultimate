@@ -71,8 +71,8 @@ typedef enum { e_no_disk,
 
 class C1541 : public ConfigurableObject, ObjectWithMenu
 {
-    volatile BYTE *memory_map;
-    volatile BYTE *registers;
+    volatile uint8_t *memory_map;
+    volatile uint8_t *registers;
     string drive_name;
     
     int iec_address;
@@ -88,7 +88,7 @@ class C1541 : public ConfigurableObject, ObjectWithMenu
     GcrImage *gcr_image;
     BinImage *bin_image;
 public:
-    C1541(volatile BYTE *regs, char letter);
+    C1541(volatile uint8_t *regs, char letter);
     ~C1541();
     
 	void init(void);

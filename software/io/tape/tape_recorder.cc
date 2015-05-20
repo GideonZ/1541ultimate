@@ -28,9 +28,9 @@ static void tape_req_irq(void)
     tape_recorder->irq();
 }
 
-__inline DWORD cpu_to_le_32(DWORD a)
+__inline uint32_t cpu_to_le_32(uint32_t a)
 {
-    DWORD m1, m2;
+    uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
@@ -45,9 +45,9 @@ TapeRecorder :: TapeRecorder()
     poll_list.append(&poll_tape_rec);
 	main_menu_objects.append(this);
 	
-	cache = new BYTE[REC_CACHE_SIZE];
+	cache = new uint8_t[REC_CACHE_SIZE];
     for(int i=0;i<REC_NUM_CACHE_BLOCKS;i++) {
-        cache_blocks[i] = (DWORD *)&cache[512*i];
+        cache_blocks[i] = (uint32_t *)&cache[512*i];
     }
 }
 
@@ -161,7 +161,7 @@ void TapeRecorder :: irq()
 	
 void TapeRecorder :: cache_block()
 {
-    DWORD *block = cache_blocks[block_in];
+    uint32_t *block = cache_blocks[block_in];
     for(int i=0;i<128;i++) {
         *(block++) = RECORD_DATA32;
     }
@@ -180,7 +180,7 @@ int TapeRecorder :: write_block()
 	
 	UINT bytes_written;
 
-    DWORD *block = cache_blocks[block_out];
+    uint32_t *block = cache_blocks[block_out];
 	bytes_written = fwrite((void *)block, 1, 512, file);
     total_length += 512;
 	if(bytes_written == 0) {
@@ -211,7 +211,7 @@ void TapeRecorder :: flush()
     }
 
     while (RECORD_STATUS & REC_STAT_BYTE_AV) {
-		BYTE *block = (BYTE *)cache_blocks[block_in];
+		uint8_t *block = (uint8_t *)cache_blocks[block_in];
 		int i;
 		for(i=0;i<512;i++) {
 			if (RECORD_STATUS & REC_STAT_BYTE_AV)
@@ -224,7 +224,7 @@ void TapeRecorder :: flush()
 		total_length += bytes_written;
     }
     fseek(file, 16, SEEK_SET);
-    DWORD le_size = cpu_to_le_32(total_length);
+    uint32_t le_size = cpu_to_le_32(total_length);
     fwrite(&le_size, 1, 4, file);
 
 	fclose(file);

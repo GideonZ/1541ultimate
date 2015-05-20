@@ -80,7 +80,7 @@ FileTypeD64 :: ~FileTypeD64()
 int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;
-    DWORD capabilities = getFpgaCapabilities();
+    uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_DRIVE_1541_1) {
 /*
         list.append(new MenuItem(this, "Run Disk", D64FILE_RUN));

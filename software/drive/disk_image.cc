@@ -17,9 +17,9 @@ extern "C" {
 }
 #include "userinterface.h" // for showing status information only
 
-__inline DWORD le_to_cpu_32(DWORD a)
+__inline uint32_t le_to_cpu_32(uint32_t a)
 {
-    DWORD m1, m2;
+    uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
@@ -28,12 +28,12 @@ __inline DWORD le_to_cpu_32(DWORD a)
 #define cpu_to_le_32 le_to_cpu_32
 
 
-extern BYTE bam_header[];
+extern uint8_t bam_header[];
 
 #define HARDWARE_ENCODING 1
 
 // Single nibble GCR table
-const BYTE gcr_table[] = { 0x0A, 0x0B, 0x12, 0x13, 0x0E, 0x0F, 0x16, 0x17,
+const uint8_t gcr_table[] = { 0x0A, 0x0B, 0x12, 0x13, 0x0E, 0x0F, 0x16, 0x17,
                            0x09, 0x19, 0x1A, 0x1B, 0x0D, 0x1D, 0x1E, 0x15 };
 
 const int track_lengths[] =      { 0x1E00, 0x1BE0, 0x1A00, 0x1860, 0x1E00, 0x1BE0, 0x1A00, 0x1860 };
@@ -42,14 +42,14 @@ const int region_end[] =         { 17, 24, 30, 35, 52, 59, 65, 70 };
 const int sector_gap_lengths[] = {  9, 19, 13, 10,  9, 19, 13, 10 };
 
 #if HARDWARE_ENCODING == 0
-static BYTE gcr_table_hi_0[256];
-static BYTE gcr_table_lo_0[256];
-static BYTE gcr_table_hi_2[256];
-static BYTE gcr_table_lo_2[256];
-static BYTE gcr_table_hi_4[256];
-static BYTE gcr_table_lo_4[256];
-static BYTE gcr_table_hi_6[256];
-static BYTE gcr_table_lo_6[256];
+static uint8_t gcr_table_hi_0[256];
+static uint8_t gcr_table_lo_0[256];
+static uint8_t gcr_table_hi_2[256];
+static uint8_t gcr_table_lo_2[256];
+static uint8_t gcr_table_hi_4[256];
+static uint8_t gcr_table_lo_4[256];
+static uint8_t gcr_table_hi_6[256];
+static uint8_t gcr_table_lo_6[256];
 static bool gcr_table_initialized = false;
 #endif
 
@@ -79,17 +79,17 @@ GcrImage :: GcrImage(void)
     if(!(gcr_table_initialized)) {
         for(int i=0;i<256;i++) {
             gcr = gcr_table[i & 15] | (WORD(gcr_table[i >> 4]) << 5);
-            gcr_table_hi_0[i] = BYTE(gcr >> 8);
-            gcr_table_lo_0[i] = BYTE(gcr & 0xFF);
+            gcr_table_hi_0[i] = uint8_t(gcr >> 8);
+            gcr_table_lo_0[i] = uint8_t(gcr & 0xFF);
             gcr <<= 2;
-            gcr_table_hi_2[i] = BYTE(gcr >> 8);
-            gcr_table_lo_2[i] = BYTE(gcr & 0xFF);
+            gcr_table_hi_2[i] = uint8_t(gcr >> 8);
+            gcr_table_lo_2[i] = uint8_t(gcr & 0xFF);
             gcr <<= 2;
-            gcr_table_hi_4[i] = BYTE(gcr >> 8);
-            gcr_table_lo_4[i] = BYTE(gcr & 0xFF);
+            gcr_table_hi_4[i] = uint8_t(gcr >> 8);
+            gcr_table_lo_4[i] = uint8_t(gcr & 0xFF);
             gcr <<= 2;
-            gcr_table_hi_6[i] = BYTE(gcr >> 8);
-            gcr_table_lo_6[i] = BYTE(gcr & 0xFF);
+            gcr_table_hi_6[i] = uint8_t(gcr >> 8);
+            gcr_table_lo_6[i] = uint8_t(gcr & 0xFF);
         }
         gcr_table_initialized = true;
     }
@@ -116,7 +116,7 @@ void GcrImage :: blank(void)
 {
 	memset(gcr_data, 0x00, C1541_MAX_GCR_LEN);
 
-    BYTE *gcr = gcr_image; // internal storage
+    uint8_t *gcr = gcr_image; // internal storage
     int length;
     
     for(int i=0;i<C1541_MAXTRACKS;i+=2) {
@@ -143,9 +143,9 @@ GcrImage :: ~GcrImage(void)
 // ef => 2/3, shift = 2;
 // gh => 3/4, shift = 0;
 
-BYTE *GcrImage :: convert_block_bin2gcr(BYTE *bin, BYTE *gcr, int len)
+uint8_t *GcrImage :: convert_block_bin2gcr(uint8_t *bin, uint8_t *gcr, int len)
 {
-    DWORD *dw = (DWORD *)bin;
+    uint32_t *dw = (uint32_t *)bin;
 	for(int i=0;i<len;i+=4) {
 #if HARDWARE_ENCODING > 0
     	GCR_ENCODER_BIN_IN_32 = *(dw++);
@@ -165,15 +165,15 @@ BYTE *GcrImage :: convert_block_bin2gcr(BYTE *bin, BYTE *gcr, int len)
     return gcr;
 }
 
-BYTE *GcrImage :: convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr, BYTE *errors, int errors_size)
+uint8_t *GcrImage :: convert_track_bin2gcr(int track, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size)
 {
 	int track_errors_index = total_sectors_before_track(track);	
-	BYTE errorcode;
+	uint8_t errorcode;
 
 	int region = track_to_region(track);
 	
-    BYTE *bp, chk, b;
-    BYTE *end = gcr + track_lengths[region];
+    uint8_t *bp, chk, b;
+    uint8_t *end = gcr + track_lengths[region];
 
     for(int s=0;s<sectors_per_track[region];s++) {
 		sector_buffer[0] = 7;
@@ -181,7 +181,7 @@ BYTE *GcrImage :: convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr, BYTE *e
 		sector_buffer[259] = 0;
 
 		header[0] = 8;
-		header[3] = (BYTE)track+1;
+		header[3] = (uint8_t)track+1;
 		header[4] = id2;
 		header[5] = id1;
 		header[6] = 0x0f;
@@ -190,7 +190,7 @@ BYTE *GcrImage :: convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr, BYTE *e
 		if (errors != NULL && (track_errors_index + s) < errors_size){
 			errorcode = errors[track_errors_index + s];
 		}
-        header[2] = (BYTE)s;
+        header[2] = (uint8_t)s;
         // calculate header checksum
         header[1] = header[2] ^ header[3] ^ header[4] ^ header[5];
 
@@ -262,7 +262,7 @@ BYTE *GcrImage :: convert_track_bin2gcr(int track, BYTE *bin, BYTE *gcr, BYTE *e
     return gcr;
 }
 
-BYTE *GcrImage :: find_sync(BYTE *gcr_data, BYTE *begin, BYTE *end)
+uint8_t *GcrImage :: find_sync(uint8_t *gcr_data, uint8_t *begin, uint8_t *end)
 {
     bool wrap = false;
     int sync_count = 0;
@@ -286,9 +286,9 @@ BYTE *GcrImage :: find_sync(BYTE *gcr_data, BYTE *begin, BYTE *end)
     } while(1);
 }
 
-inline void conv_5bytes_gcr2bin(BYTE **gcr, BYTE *bin)
+inline void conv_5bytes_gcr2bin(uint8_t **gcr, uint8_t *bin)
 {
-	BYTE *b = *gcr;
+	uint8_t *b = *gcr;
 //	printf("[%p: %b %b %b %b %b]\n", b, b[0], b[1], b[2], b[3], b[4]);
 	GCR_DECODER_GCR_IN = *(b++);
 	GCR_DECODER_GCR_IN = *(b++);
@@ -302,14 +302,14 @@ inline void conv_5bytes_gcr2bin(BYTE **gcr, BYTE *bin)
 	*gcr = b;
 }
 
-BYTE *GcrImage :: wrap(BYTE **current, BYTE *begin, BYTE *end, int count)
+uint8_t *GcrImage :: wrap(uint8_t **current, uint8_t *begin, uint8_t *end, int count)
 {
-    BYTE *gcr = *current;
+    uint8_t *gcr = *current;
 //    printf("[%p-%p-%p:%d]", begin, gcr, end, count);
     if(gcr > (end - count)) {
 //		printf("Wrap(%d)..", count);
-		BYTE *d = sector_buffer;
-		BYTE *s = gcr;
+		uint8_t *d = sector_buffer;
+		uint8_t *s = gcr;
         *current = (gcr + count) - (end - begin);
 		while((s < end)&&(count--))
 			*(d++) = *(s++);
@@ -338,17 +338,17 @@ int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, bool report)
 
 int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 {
-	static BYTE header[8];
+	static uint8_t header[8];
 	int t, s;
 
 	int expected_secs = bin_image->track_sectors[track];
-	BYTE *bin = bin_image->track_start[track];
-	BYTE *gcr;
-    BYTE *begin;
-	BYTE *end;
-	BYTE *dest;
-    BYTE *gcr_data;
-	BYTE *new_gcr;
+	uint8_t *bin = bin_image->track_start[track];
+	uint8_t *gcr;
+    uint8_t *begin;
+	uint8_t *end;
+	uint8_t *dest;
+    uint8_t *gcr_data;
+	uint8_t *new_gcr;
 	bool  expect_data = false;
 	bool  wrapped = false;
     begin = track_address[2*track];
@@ -423,8 +423,8 @@ void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, bool report)
 	id1 = bin_image->bin_data[91554];
     id2 = bin_image->bin_data[91555];
 
-    BYTE *gcr = gcr_image; // internal storage
-    BYTE *newgcr;
+    uint8_t *gcr = gcr_image; // internal storage
+    uint8_t *newgcr;
 
     invalidate();
 
@@ -445,8 +445,8 @@ bool GcrImage :: load(FILE *f)
 {
     // first just load the whole damn thing in memory, up to C1541_MAX_GCR_LEN in length
     UINT  bytes_read;
-    DWORD *pul, offset;
-    BYTE *tr;
+    uint32_t *pul, offset;
+    uint8_t *tr;
     WORD w;
 
     bytes_read = fread(gcr_data, 1, C1541_MAX_GCR_LEN, f);
@@ -456,7 +456,7 @@ bool GcrImage :: load(FILE *f)
     	return false;
     }
     // check signature
-    pul = (DWORD *)gcr_data;
+    pul = (uint32_t *)gcr_data;
 /*
 	printf("Header: %8x %8x\n", pul[0], pul[1]);
 	dump_hex(gcr_data, 64);
@@ -491,10 +491,10 @@ bool GcrImage :: load(FILE *f)
 
 int GcrImage :: find_track_start(int track)
 {
-    BYTE *begin = track_address[track];
-    BYTE *end   = track_address[track] + track_length[track];
-    BYTE *gcr = begin;
-    BYTE *gcr_data;
+    uint8_t *begin = track_address[track];
+    uint8_t *end   = track_address[track] + track_length[track];
+    uint8_t *gcr = begin;
+    uint8_t *gcr_data;
     int offset;
     
     for(int j=0;j<42;j++) { // try at maximum twice for each sector (two syncs per sector!)
@@ -516,17 +516,17 @@ int GcrImage :: find_track_start(int track)
     
 bool GcrImage :: save(FILE *f, bool report, bool align)
 {
-    BYTE *header = new BYTE[16 + C1541_MAXTRACKS * 8];
+    uint8_t *header = new uint8_t[16 + C1541_MAXTRACKS * 8];
 
     memcpy(header, "GCR-1541", 8);
     header[8] = 0;
     header[9] = C1541_MAXTRACKS;
-    header[10] = (BYTE)C1541_MAXTRACKLEN;
-    header[11] = (BYTE)(C1541_MAXTRACKLEN >> 8);
+    header[10] = (uint8_t)C1541_MAXTRACKLEN;
+    header[11] = (uint8_t)(C1541_MAXTRACKLEN >> 8);
 
-    DWORD *pul = (DWORD *)&header[12]; // because 12 is a multiple of 4, we can do this
+    uint32_t *pul = (uint32_t *)&header[12]; // because 12 is a multiple of 4, we can do this
 
-    DWORD track_start = 12 + C1541_MAXTRACKS * 8;
+    uint32_t track_start = 12 + C1541_MAXTRACKS * 8;
     
     for(int i=0;i<C1541_MAXTRACKS;i++) {
         if((track_address[i] == dummy_track)||(!track_address[i]))
@@ -557,10 +557,10 @@ bool GcrImage :: save(FILE *f, bool report, bool align)
     if(bytes_written != 12 + C1541_MAXTRACKS * 8)
         return false;
         
-    BYTE *filler_bytes = new BYTE[C1541_MAXTRACKLEN];
+    uint8_t *filler_bytes = new uint8_t[C1541_MAXTRACKLEN];
     memset(filler_bytes, 0xFF, C1541_MAXTRACKLEN);
     
-    BYTE size[2];
+    uint8_t size[2];
     int skipped = 0;
     for(int i=0;i<C1541_MAXTRACKS;i++) {
         if((track_address[i] == dummy_track)||(!track_address[i])) {
@@ -568,8 +568,8 @@ bool GcrImage :: save(FILE *f, bool report, bool align)
             continue;
         }
         int reported_length = track_length[i];
-        size[0] = (BYTE)reported_length;
-        size[1] = (BYTE)(reported_length >> 8);
+        size[0] = (uint8_t)reported_length;
+        size[1] = (uint8_t)(reported_length >> 8);
         bytes_written = fwrite(size, 1, 2, f);
         if(bytes_written != 2)
             break;
@@ -607,7 +607,7 @@ bool GcrImage :: write_track(int track, FILE *f, bool align)
 	if(track_address[track] == dummy_track)
 		return false;
 
-	DWORD offset = DWORD(track_address[track]) - DWORD(gcr_data);
+	uint32_t offset = uint32_t(track_address[track]) - uint32_t(gcr_data);
 	UINT bytes_written, bw2;
 
 	int fres = fseek(f, offset, SEEK_SET);
@@ -639,7 +639,7 @@ bool GcrImage :: test(void)
     BinImage *bin = new BinImage("Test");
     bin->format("diskname");
     
-    BYTE *bin_track0 = bin->track_start[0];
+    uint8_t *bin_track0 = bin->track_start[0];
 
     bin_track0[260] = 0; // 0x104 = 0
     bin_track0[261] = 0; // 0x105 = 0
@@ -647,8 +647,8 @@ bool GcrImage :: test(void)
     int sectors = bin->track_sectors[0];
     int bytes = sectors * 256;
     
-    BYTE b = 1;
-    BYTE *dst = bin_track0;
+    uint8_t b = 1;
+    uint8_t *dst = bin_track0;
     for(int i=0;i<bytes;i++) {
         *(dst++) = b++;
         if(b == 45)
@@ -660,10 +660,10 @@ bool GcrImage :: test(void)
 
     // now let's say we decode back to another location:
     bin->track_start[0] = bin->track_start[2];
-    BYTE *decoded = bin->track_start[2];
+    uint8_t *decoded = bin->track_start[2];
 
     // determine where to put the wrap byte
-    BYTE *gcr_next = track_address[0] + track_length[0];
+    uint8_t *gcr_next = track_address[0] + track_length[0];
     
     printf("GCR Image ready to decode...\n");
     
@@ -700,10 +700,10 @@ bool GcrImage :: test(void)
 //--------------------------------------------------------------
 BinImage :: BinImage(char *name)
 {
-	bin_data = new BYTE[C1541_MAX_D64_LEN];
+	bin_data = new uint8_t[C1541_MAX_D64_LEN];
 
 	int sects;
-	BYTE *track = bin_data;
+	uint8_t *track = bin_data;
 	for(int i=0;i<C1541_MAXTRACKS;i++) {
 		sects = sectors_per_track[track_to_region(i)];
 		track_start[i] = track;
@@ -758,7 +758,7 @@ int BinImage :: get_absolute_sector(int track, int sector)
 }
 */
 
-BYTE * BinImage :: get_sector_pointer(int track, int sector)
+uint8_t * BinImage :: get_sector_pointer(int track, int sector)
 {
 /*
     int sec = get_absolute_sector(track, sector);
@@ -811,7 +811,7 @@ int BinImage :: save(FILE *file, bool report)
 		return -1;
 	}
 
-	BYTE *data = bin_data;
+	uint8_t *data = bin_data;
     if(report) {
         for(int i=0;i<34;i++) {
         	transferred = fwrite(data, 1, 10 * 512, file);
@@ -859,8 +859,8 @@ int BinImage :: save(FILE *file, bool report)
 
 int BinImage :: format(char *name)
 {
-	BYTE *track_18 = &bin_data[17*21*256];
-	BYTE *bam_name = track_18 + 144;
+	uint8_t *track_18 = &bin_data[17*21*256];
+	uint8_t *bam_name = track_18 + 144;
 
 	memset(bin_data, 0, C1541_MAX_D64_LEN);
 	memcpy(track_18, bam_header, 144);
@@ -883,7 +883,7 @@ int BinImage :: format(char *name)
         	t = 17;
         	continue;
         }
-		bam_name[t] = (BYTE)c;
+		bam_name[t] = (uint8_t)c;
     }
     track_18[257] = 0xFF; // second byte of second sector 00 FF .. .. ..
 
@@ -898,7 +898,7 @@ int BinImage :: write_track(int track, GcrImage *gcr_image, FILE *file)
         printf("Decode failed with error %d.\n", res);
 		return res;
 	}
-	DWORD offset = DWORD(track_start[track] - bin_data);
+	uint32_t offset = uint32_t(track_start[track] - bin_data);
 	res = fseek(file, offset, SEEK_SET);
 	if(res != 0) {
         printf("While trying to write track %d, seek offset $%6x failed with error %d.\n", track+1, offset, res);

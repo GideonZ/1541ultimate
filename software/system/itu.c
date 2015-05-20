@@ -7,15 +7,27 @@
 #define CAPABILITIES_2    *((volatile BYTE*)(ITU_BASE + 0x0E))
 #define CAPABILITIES_3    *((volatile BYTE*)(ITU_BASE + 0x0F))
 
-DWORD getFpgaCapabilities()
+uint32_t getFpgaCapabilities()
 {
-	DWORD res = 0;
-	res |= ((DWORD)CAPABILITIES_0 << 24);
-	res |= ((DWORD)CAPABILITIES_1 << 16);
-	res |= ((DWORD)CAPABILITIES_2 << 8);
-	res |= ((DWORD)CAPABILITIES_3);
+	uint32_t res = 0;
+#if !RUNS_ON_PC
+	res  = ((uint32_t)CAPABILITIES_0 << 24);
+	res |= ((uint32_t)CAPABILITIES_1 << 16);
+	res |= ((uint32_t)CAPABILITIES_2 << 8);
+	res |= ((uint32_t)CAPABILITIES_3);
+#endif
 	return res;
 }
+
+uint8_t getFpgaVersion()
+{
+#if RUNS_ON_PC
+	return 0x33;
+#else
+	return ITU_FPGA_VERSION;
+#endif
+}
+
 
 /*
 -------------------------------------------------------------------------------
@@ -80,12 +92,12 @@ BOOL uart_data_available(void)
 	i:		number of bytes read
 -------------------------------------------------------------------------------
 */
-SHORT uart_read_buffer(const void *buf, USHORT count)
+uint16_t uart_read_buffer(const void *buf, uint16_t count)
 {
-    volatile BYTE st;
-    BYTE *pnt = (BYTE *)buf;
-    SHORT i = 0;
-    BYTE d;
+    volatile uint8_t st;
+    uint8_t *pnt = (uint8_t *)buf;
+    uint16_t i = 0;
+    uint8_t d;
 
 	d = 0;   
     do {
@@ -126,10 +138,10 @@ SHORT uart_read_buffer(const void *buf, USHORT count)
 	i:		number of bytes read
 -------------------------------------------------------------------------------
 */
-SHORT uart_write_buffer(const void *buf, USHORT count)
+uint16_t uart_write_buffer(const void *buf, uint16_t count)
 {
-    SHORT i;
-    BYTE *pnt = (BYTE *)buf;
+    uint16_t i;
+    uint8_t *pnt = (uint8_t *)buf;
 
     for(i=0;i<count;i++) {
         while(UART_FLAGS & UART_TxFifoFull);
@@ -166,7 +178,7 @@ SHORT uart_write_buffer(const void *buf, USHORT count)
 	i:		number of bytes read
 -------------------------------------------------------------------------------
 */
-SHORT uart_write_hex(BYTE b)
+uint16_t uart_write_hex(uint8_t b)
 {
     const char hex[] = "0123456789ABCDEF";
     outbyte(hex[b >> 4]);
@@ -191,7 +203,7 @@ SHORT uart_write_hex(BYTE b)
 */
 int uart_get_byte(int delay)
 {
-    BYTE d;
+    uint8_t d;
     
     while(!(UART_FLAGS & UART_RxDataAv)) {
         ITU_TIMER = 240;

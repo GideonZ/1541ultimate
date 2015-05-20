@@ -11,19 +11,19 @@
 #define HW_IEC_REGS      IEC_BASE
 #define HW_IEC_CODE      (IEC_BASE + 0x800)
 
-#define HW_IEC_RAM(x)          *((volatile BYTE *)(HW_IEC_CODE +x))
-#define HW_IEC_RAM_DW           ((volatile DWORD *)(HW_IEC_CODE))
+#define HW_IEC_RAM(x)          *((volatile uint8_t *)(HW_IEC_CODE +x))
+#define HW_IEC_RAM_DW           ((volatile uint32_t *)(HW_IEC_CODE))
 
-#define HW_IEC_VERSION         *((volatile BYTE *)(HW_IEC_REGS + 0x0))
-#define HW_IEC_TX_FIFO_STATUS  *((volatile BYTE *)(HW_IEC_REGS + 0x1)) // 1: full 0: empty
-#define HW_IEC_RX_FIFO_STATUS  *((volatile BYTE *)(HW_IEC_REGS + 0x2)) // 7: ctrlcode 1: full 0: empty
-#define HW_IEC_RESET_ENABLE    *((volatile BYTE *)(HW_IEC_REGS + 0x3)) // 0 = reset, 1 = run (and reset)
-#define HW_IEC_TX_DATA         *((volatile BYTE *)(HW_IEC_REGS + 0x4)) // push data byte
-#define HW_IEC_TX_CTRL         *((volatile BYTE *)(HW_IEC_REGS + 0x5)) // push control byte
-#define HW_IEC_RX_DATA         *((volatile BYTE *)(HW_IEC_REGS + 0x6)) // read+clear
-#define HW_IEC_RX_CTRL         *((volatile BYTE *)(HW_IEC_REGS + 0x7)) // read
-#define HW_IEC_RX_DATA_32      *((volatile DWORD *)(HW_IEC_REGS + 0x8)) // read+clear
-#define HW_IEC_IRQ             *((volatile BYTE *)(HW_IEC_REGS + 0xC)) // write=ack, bit0=irq enable
+#define HW_IEC_VERSION         *((volatile uint8_t *)(HW_IEC_REGS + 0x0))
+#define HW_IEC_TX_FIFO_STATUS  *((volatile uint8_t *)(HW_IEC_REGS + 0x1)) // 1: full 0: empty
+#define HW_IEC_RX_FIFO_STATUS  *((volatile uint8_t *)(HW_IEC_REGS + 0x2)) // 7: ctrlcode 1: full 0: empty
+#define HW_IEC_RESET_ENABLE    *((volatile uint8_t *)(HW_IEC_REGS + 0x3)) // 0 = reset, 1 = run (and reset)
+#define HW_IEC_TX_DATA         *((volatile uint8_t *)(HW_IEC_REGS + 0x4)) // push data byte
+#define HW_IEC_TX_CTRL         *((volatile uint8_t *)(HW_IEC_REGS + 0x5)) // push control byte
+#define HW_IEC_RX_DATA         *((volatile uint8_t *)(HW_IEC_REGS + 0x6)) // read+clear
+#define HW_IEC_RX_CTRL         *((volatile uint8_t *)(HW_IEC_REGS + 0x7)) // read
+#define HW_IEC_RX_DATA_32      *((volatile uint32_t *)(HW_IEC_REGS + 0x8)) // read+clear
+#define HW_IEC_IRQ             *((volatile uint8_t *)(HW_IEC_REGS + 0xC)) // write=ack, bit0=irq enable
 
 #define IEC_CMD_GO_WARP     0x57
 #define IEC_CMD_GO_MASTER   0x4D
@@ -36,9 +36,9 @@
 #define IEC_FIFO_CTRL  0x80
 
 #define LOGGER_BASE            TRACE_BASE
-#define LOGGER_ADDRESS         *((volatile DWORD *)(LOGGER_BASE + 0x0)) // read
-#define LOGGER_LENGTH          *((volatile BYTE  *)(LOGGER_BASE + 0x4)) // read
-#define LOGGER_COMMAND         *((volatile BYTE  *)(LOGGER_BASE + 0x5)) // write
+#define LOGGER_ADDRESS         *((volatile uint32_t *)(LOGGER_BASE + 0x0)) // read
+#define LOGGER_LENGTH          *((volatile uint8_t  *)(LOGGER_BASE + 0x4)) // read
+#define LOGGER_COMMAND         *((volatile uint8_t  *)(LOGGER_BASE + 0x5)) // write
 
 #define LOGGER_CMD_START       0x33
 #define LOGGER_CMD_STOP        0x44
@@ -52,8 +52,8 @@ class IecInterface : public ObjectWithMenu,  ConfigurableObject
     bool wait_irq;
     bool atn;
     bool talking;
-    DWORD start_address;
-    DWORD end_address;
+    uint32_t start_address;
+    uint32_t end_address;
     IecChannel *channels[16];
     int current_channel;
     int warp_drive;
@@ -63,15 +63,15 @@ class IecInterface : public ObjectWithMenu,  ConfigurableObject
     void get_warp_error(void);
     void save_copied_disk(void);
     void master_open_file(int device, int channel, char *filename, bool write);
-    bool master_send_cmd(int device, BYTE *cmd, int length);
+    bool master_send_cmd(int device, uint8_t *cmd, int length);
     void master_read_status(int device);
-    bool run_drive_code(int device, WORD addr, BYTE *code, int length);
+    bool run_drive_code(int device, WORD addr, uint8_t *code, int length);
     UltiCopy *ui_window;
-    BYTE last_track;
+    uint8_t last_track;
 public:
     int last_error;
     Path *path;
-    BYTE iec_enable;
+    uint8_t iec_enable;
 
     IecInterface();
     ~IecInterface();
@@ -103,7 +103,7 @@ public:
     virtual void deinit(void);
 
     virtual int poll(int, Event &e);
-    virtual int handle_key(BYTE);
+    virtual int handle_key(uint8_t);
 
     void close(void);
 };
@@ -154,9 +154,9 @@ public:
 #define ERR_UNIMPLEMENTED				76
 
 typedef struct {
-	BYTE nr;
+	uint8_t nr;
 	CHAR* msg;
-	BYTE len;
+	uint8_t len;
 } IEC_ERROR_MSG;
 
 

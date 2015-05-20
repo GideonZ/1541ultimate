@@ -10,8 +10,8 @@ extern "C" {
 #include "task.h"
 #include "profiler.h"
 
-extern BYTE  _binary_nano_minimal_b_start;
-extern DWORD _binary_nano_minimal_b_size;
+extern uint8_t  _binary_nano_minimal_b_start;
+extern uint32_t _binary_nano_minimal_b_size;
 
 WORD *attr_fifo_data = (WORD *)ATTR_FIFO_BASE;
 WORD *block_fifo_data = (WORD *)BLOCK_FIFO_BASE;
@@ -38,7 +38,7 @@ void usb_irq() {
 #ifdef OS
 	usb2.irq_handler();
 #else
-	BYTE act = ITU_IRQ_ACTIVE;
+	uint8_t act = ITU_IRQ_ACTIVE;
 
 	irq_count ++;
 	//if (act & 1) {
@@ -81,7 +81,7 @@ Usb2 :: ~Usb2()
 }
 
 struct usb_packet {
-	BYTE *data;
+	uint8_t *data;
 	void *object;
 	WORD  length;
 	WORD  pipe;
@@ -117,25 +117,25 @@ void Usb2 :: init(void)
     device_present = false;
 
     // initialize the buffers
-    blockBufferBase = new DWORD[384 * BLOCK_FIFO_ENTRIES];
-    circularBufferBase = new BYTE[4096];
+    blockBufferBase = new uint32_t[384 * BLOCK_FIFO_ENTRIES];
+    circularBufferBase = new uint8_t[4096];
 
     // load the nano CPU code and start it.
     int size = (int)&_binary_nano_minimal_b_size;
-    BYTE *src = &_binary_nano_minimal_b_start;
-    BYTE *dst = (BYTE *)NANO_BASE;
+    uint8_t *src = &_binary_nano_minimal_b_start;
+    uint8_t *dst = (uint8_t *)NANO_BASE;
     for(int i=0;i<size;i++)
         *(dst++) = *(src++);
     printf("Nano CPU based USB Controller: %d bytes loaded.\n", size);
     printf("Circular Buffer Base = %p\n", circularBufferBase);
     memset (circularBufferBase, 0xe0, 4096);
 
-	USB2_CIRC_MEMADDR_START_HI  = ((DWORD)circularBufferBase) >> 16;
-	USB2_CIRC_MEMADDR_START_LO  = ((DWORD)circularBufferBase) & 0xFFFF;
+	USB2_CIRC_MEMADDR_START_HI  = ((uint32_t)circularBufferBase) >> 16;
+	USB2_CIRC_MEMADDR_START_LO  = ((uint32_t)circularBufferBase) & 0xFFFF;
 	USB2_CIRC_BUF_SIZE		  	= 4096;
 	USB2_CIRC_BUF_OFFSET		= 0;
-	USB2_BLOCK_BASE_HI 			= ((DWORD)blockBufferBase) >> 16;
-	USB2_BLOCK_BASE_LO  		= ((DWORD)blockBufferBase) & 0xFFFF;
+	USB2_BLOCK_BASE_HI 			= ((uint32_t)blockBufferBase) >> 16;
+	USB2_BLOCK_BASE_LO  		= ((uint32_t)blockBufferBase) & 0xFFFF;
 
 	for (int i=0;i<BLOCK_FIFO_ENTRIES;i++) {
 		block_fifo_data[i] = WORD(i * 384);
@@ -173,7 +173,7 @@ void Usb2 :: deinit(void)
 	NANO_START = 0;
 
 	// clear RAM
-	BYTE *dst = (BYTE *)NANO_BASE;
+	uint8_t *dst = (uint8_t *)NANO_BASE;
     for(int i=0;i<2048;i++)
         *(dst++) = 0;
 
@@ -188,7 +188,7 @@ void Usb2 :: poll(Event &e)
         return;
     }
 
-	BYTE usb_status = USB2_STATUS;
+	uint8_t usb_status = USB2_STATUS;
 	if (prev_status != usb_status) {
 		prev_status = usb_status;
 		if (usb_status & USTAT_CONNECTED) {
@@ -241,11 +241,11 @@ void Usb2 :: irq_handler(void)
 	}
 	//printf("%4x,%4x,%d\n", read1, read2, success);
 
-	BYTE *buffer = 0;
+	uint8_t *buffer = 0;
 	if (inputPipeBufferMethod[pipe] == e_block) {
-		buffer = (BYTE *) & blockBufferBase[read1 & 0xFFF0];
+		buffer = (uint8_t *) & blockBufferBase[read1 & 0xFFF0];
 	} else {
-		buffer = (BYTE *) & circularBufferBase[read1 & 0xFFF0];
+		buffer = (uint8_t *) & circularBufferBase[read1 & 0xFFF0];
 	}
 	//printf("Calling pipe %d callback... ", pipe);
 	struct usb_packet pkt;
@@ -348,7 +348,7 @@ void Usb2 :: resume_input_pipe(int index)
 	pipe[PIPE_OFFS_Command] = inputPipeCommand[index];
 }
 
-void Usb2 :: free_input_buffer(int inpipe, BYTE *buffer)
+void Usb2 :: free_input_buffer(int inpipe, uint8_t *buffer)
 {
 	if (inputPipeBufferMethod[inpipe] != e_block)
 		return;
@@ -392,8 +392,8 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 	USB2_CMD_DevEP  = pipe->DevEP;
 	USB2_CMD_Length = outlen;
 	USB2_CMD_MaxTrans = pipe->MaxTrans;
-	USB2_CMD_MemHi = ((DWORD)out) >> 16;
-	USB2_CMD_MemLo = ((DWORD)out) & 0xFFFF;
+	USB2_CMD_MemHi = ((uint32_t)out) >> 16;
+	USB2_CMD_MemLo = ((uint32_t)out) & 0xFFFF;
 	USB2_CMD_SplitCtl = pipe->SplitCtl;
 	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
 
@@ -407,8 +407,8 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 	WORD command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT;// start with toggle bit 1
 
 	if (in) {
-		USB2_CMD_MemHi = ((DWORD)in) >> 16;
-		USB2_CMD_MemLo = ((DWORD)in) & 0xFFFF;
+		USB2_CMD_MemHi = ((uint32_t)in) >> 16;
+		USB2_CMD_MemLo = ((uint32_t)in) & 0xFFFF;
 		command |= UCMD_MEMWRITE;
 	}
 	USB2_CMD_Command = command;
@@ -417,7 +417,7 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 	while(USB2_CMD_Command)
 		;
 
-	DWORD transferred = inlen - USB2_CMD_Length;
+	uint32_t transferred = inlen - USB2_CMD_Length;
 	// printf("In: %d bytes (Result = %4x)\n", transferred, USB2_CMD_Result);
 	// dump_hex(read_buf, transferred);
 
@@ -447,8 +447,8 @@ int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, v
 	USB2_CMD_DevEP  = pipe->DevEP;
 	USB2_CMD_Length = setup_len;
 	USB2_CMD_MaxTrans = pipe->MaxTrans;
-	USB2_CMD_MemHi = ((DWORD)setup_out) >> 16;
-	USB2_CMD_MemLo = ((DWORD)setup_out) & 0xFFFF;
+	USB2_CMD_MemHi = ((uint32_t)setup_out) >> 16;
+	USB2_CMD_MemLo = ((uint32_t)setup_out) & 0xFFFF;
 	USB2_CMD_SplitCtl = pipe->SplitCtl;
 	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
 
@@ -459,15 +459,15 @@ int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, v
 	// printf("Setup Result: %04x\n", USB2_CMD_Result);
 
 	USB2_CMD_Length = data_len;
-	USB2_CMD_MemHi = ((DWORD)data_out) >> 16;
-	USB2_CMD_MemLo = ((DWORD)data_out) & 0xFFFF;
+	USB2_CMD_MemHi = ((uint32_t)data_out) >> 16;
+	USB2_CMD_MemLo = ((uint32_t)data_out) & 0xFFFF;
 	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // start with toggle bit 1;
 
 	// wait until it gets zero again
 	while(USB2_CMD_Command)
 		;
 
-	DWORD transferred = data_len - USB2_CMD_Length;
+	uint32_t transferred = data_len - USB2_CMD_Length;
 	// printf("Out: %d bytes (Result = %4x)\n", transferred, USB2_CMD_Result);
 	// dump_hex(read_buf, transferred);
 
@@ -484,7 +484,7 @@ int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, v
 	return transferred;
 }
 
-int  Usb2 :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(BYTE *buf, int len, void *obj), void *object)
+int  Usb2 :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(uint8_t *buf, int len, void *obj), void *object)
 {
 #ifdef OS
     if (!xSemaphoreTake(mutex, 5000)) {
@@ -533,9 +533,9 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
     }
 #endif
 	//printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
-    BYTE sub = PROFILER_SUB; PROFILER_SUB = 13;
+    uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
 
-    DWORD addr = (DWORD)buf;
+    uint32_t addr = (uint32_t)buf;
 	int total_trans = 0;
 
 	USB2_CMD_DevEP    = pipe->DevEP;
@@ -587,7 +587,7 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
     }
 #endif
 	//printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
-	DWORD addr = (DWORD)buf;
+	uint32_t addr = (uint32_t)buf;
 	int total_trans = 0;
 
 	USB2_CMD_DevEP    = pipe->DevEP;
@@ -650,7 +650,7 @@ UsbDevice *Usb2 :: init_simple(void)
 	init();
 	bus_reset();
 	wait_ms(1000);
-	BYTE usb_status = USB2_STATUS;
+	uint8_t usb_status = USB2_STATUS;
 	if (usb_status & USTAT_CONNECTED) {
 		UsbDevice *dev = new UsbDevice(this, get_bus_speed());
 		if(dev) {

@@ -7,7 +7,7 @@
 
 class NetworkInterface : public ConfigurableObject {
 public:
-    BYTE mac_address[6];
+    uint8_t mac_address[6];
 
     NetworkInterface();
     virtual ~NetworkInterface() { }
@@ -18,15 +18,15 @@ public:
     virtual void poll() { }
     virtual void link_up() { }
     virtual void link_down() { }
-    virtual void set_mac_address(BYTE *mac) {
+    virtual void set_mac_address(uint8_t *mac) {
     	memcpy(mac_address, mac, 6);
     }
-    virtual bool input(BYTE *raw_buffer, BYTE *payload, int pkt_size) { return false; }
+    virtual bool input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size) { return false; }
     virtual void effectuate_settings(void) { }
 };
 
 typedef void (*driver_free_function_t)(void *driver, void *buffer);
-typedef BYTE (*driver_output_function_t)(void *driver, void *buffer, int length);
+typedef uint8_t (*driver_output_function_t)(void *driver, void *buffer, int length);
 
 NetworkInterface *getNetworkStack(void *driver,
 								  driver_output_function_t out,

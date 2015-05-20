@@ -22,7 +22,7 @@ FilePartition :: ~FilePartition()
 	}
 }
 
-char *FilePartition :: get_type_string(BYTE typ)
+char *FilePartition :: get_type_string(uint8_t typ)
 {
     switch(typ) {
         case 0x00: return "None";
@@ -42,7 +42,7 @@ char *FilePartition :: get_display_string(void)
 {
     static char buffer[44];
     static char sizebuf[8];
-    DWORD length;
+    uint32_t length;
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
     sprintf(buffer, "%24s \027%s \032%s", get_name(), sizebuf, get_type_string(prt->get_type()));

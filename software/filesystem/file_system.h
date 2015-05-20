@@ -62,7 +62,7 @@ public:
 	static  const char *get_error_string(FRESULT res);
 
     virtual bool    init(void);              // Initialize file system
-    virtual FRESULT get_free (DWORD *e) { *e = 0; return FR_OK; } // Get number of free sectors on the file system
+    virtual FRESULT get_free (uint32_t *e) { *e = 0; return FR_OK; } // Get number of free sectors on the file system
     virtual bool is_writable() { return false; } // by default a file system is not writable, unless we implement it
     virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
     
@@ -73,13 +73,13 @@ public:
     virtual FRESULT dir_create(FileInfo *);  // Creates a directory as specified by finfo
     
     // functions for reading and writing files
-    virtual File   *file_open(FileInfo *, BYTE flags);  // Opens file (creates file object)
+    virtual File   *file_open(FileInfo *, uint8_t flags);  // Opens file (creates file object)
     virtual FRESULT file_rename(FileInfo *, char *new_name); // Renames a file
 	virtual FRESULT file_delete(FileInfo *); // deletes a file
     virtual void    file_close(File *f);                // Closes file (and destructs file object)
-    virtual FRESULT file_read(File *f, void *buffer, DWORD len, UINT *transferred);
-    virtual FRESULT file_write(File *f, void *buffer, DWORD len, UINT *transferred);
-    virtual FRESULT file_seek(File *f, DWORD pos);
+    virtual FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
+    virtual FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);
+    virtual FRESULT file_seek(File *f, uint32_t pos);
     virtual FRESULT file_sync(File *f);             // Clean-up cached data
     virtual void    file_print_info(File *f) { } // debug
     

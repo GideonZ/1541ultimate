@@ -9,11 +9,11 @@ extern "C" {
 #include "iomap.h"
 #include <stddef.h>
 
-#define PROFILER_SUB   *((volatile BYTE *)(TRACE_BASE + 0x04))
-#define PROFILER_TASK  *((volatile BYTE *)(TRACE_BASE + 0x05))
-#define PROFILER_STOP  *((volatile BYTE *)(TRACE_BASE + 0x06))
-#define PROFILER_START *((volatile BYTE *)(TRACE_BASE + 0x07))
-#define PROFILER_ADDR *((volatile DWORD *)(TRACE_BASE + 0x00))
+#define PROFILER_SUB   *((volatile uint8_t *)(TRACE_BASE + 0x04))
+#define PROFILER_TASK  *((volatile uint8_t *)(TRACE_BASE + 0x05))
+#define PROFILER_STOP  *((volatile uint8_t *)(TRACE_BASE + 0x06))
+#define PROFILER_START *((volatile uint8_t *)(TRACE_BASE + 0x07))
+#define PROFILER_ADDR *((volatile uint32_t *)(TRACE_BASE + 0x00))
 
 void *profiled_memcpy(void *str1, const void *str2, size_t n);
 

@@ -18,16 +18,16 @@
 #define RTC_CHIP_SPEED *((volatile BYTE *)(RTC_BASE + 0x04))
 #define RTC_CHIP_CTRL  *((volatile BYTE *)(RTC_BASE + 0x08))
 
-#define RTC_TIMER_HUNDREDTHS *((volatile BYTE *)(RTC_TIMER_BASE + 0x07))
-#define RTC_TIMER_SECONDS    *((volatile BYTE *)(RTC_TIMER_BASE + 0x06))
-#define RTC_TIMER_MINUTES    *((volatile BYTE *)(RTC_TIMER_BASE + 0x05))
-#define RTC_TIMER_HOURS      *((volatile BYTE *)(RTC_TIMER_BASE + 0x04))
-#define RTC_TIMER_WEEKDAYS   *((volatile BYTE *)(RTC_TIMER_BASE + 0x03))
-#define RTC_TIMER_DAYS       *((volatile BYTE *)(RTC_TIMER_BASE + 0x02))
-#define RTC_TIMER_MONTHS     *((volatile BYTE *)(RTC_TIMER_BASE + 0x01))
-#define RTC_TIMER_YEARS      *((volatile BYTE *)(RTC_TIMER_BASE + 0x00))
-#define RTC_TIMER_LOCK       *((volatile BYTE *)(RTC_TIMER_BASE + 0x0C))
-#define RTC_TIMER_FAT_TIME   *((volatile DWORD *)(RTC_TIMER_BASE + 0x08))
+#define RTC_TIMER_HUNDREDTHS *((volatile uint8_t *)(RTC_TIMER_BASE + 0x07))
+#define RTC_TIMER_SECONDS    *((volatile uint8_t *)(RTC_TIMER_BASE + 0x06))
+#define RTC_TIMER_MINUTES    *((volatile uint8_t *)(RTC_TIMER_BASE + 0x05))
+#define RTC_TIMER_HOURS      *((volatile uint8_t *)(RTC_TIMER_BASE + 0x04))
+#define RTC_TIMER_WEEKDAYS   *((volatile uint8_t *)(RTC_TIMER_BASE + 0x03))
+#define RTC_TIMER_DAYS       *((volatile uint8_t *)(RTC_TIMER_BASE + 0x02))
+#define RTC_TIMER_MONTHS     *((volatile uint8_t *)(RTC_TIMER_BASE + 0x01))
+#define RTC_TIMER_YEARS      *((volatile uint8_t *)(RTC_TIMER_BASE + 0x00))
+#define RTC_TIMER_LOCK       *((volatile uint8_t *)(RTC_TIMER_BASE + 0x0C))
+#define RTC_TIMER_FAT_TIME   *((volatile uint32_t *)(RTC_TIMER_BASE + 0x08))
 
 #define SPI_BUSY        0x80
 #define SPI_FORCE_SS    0x01
@@ -66,10 +66,10 @@ public:
 class Rtc
 {
 private:
-	void write_byte(int addr, BYTE val);
+	void write_byte(int addr, uint8_t val);
 	void read_all();
     bool capable;
-	BYTE rtc_regs[16];
+	uint8_t rtc_regs[16];
 	RtcConfigStore *cfg;
 public:
 	Rtc();
@@ -84,7 +84,7 @@ public:
 	char* get_time_string(char *dest, int len);
 	char* get_date_string(char *dest, int len);
 	char* get_long_date(char *dest, int len);
-	DWORD get_fat_time(void);
+	uint32_t get_fat_time(void);
 };
 
 

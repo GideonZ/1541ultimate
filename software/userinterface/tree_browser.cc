@@ -55,6 +55,7 @@ TreeBrowser :: TreeBrowser(Browsable *root)
 void TreeBrowser :: initState(Browsable *root)
 {
     state = new TreeBrowserState(root, this, 0);
+    state->reload();
 }
 
 TreeBrowser :: ~TreeBrowser()
@@ -87,6 +88,7 @@ void TreeBrowser :: config(void)
     configBrowser = new ConfigBrowser(configRoot);
     configBrowser->init(screen, keyb);
     user_interface->activate_uiobject(configBrowser);
+
     // from this moment on, we loose focus.. polls will go directly to config menu!
 }
 
@@ -130,7 +132,7 @@ void TreeBrowser :: test_editor(void)
 
 int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
 {
-	BYTE c;
+	int c;
     int ret = 0;
 
 /*
@@ -151,6 +153,7 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
         if(sub_returned < 0) {
         	delete contextMenu;
             contextMenu = NULL;
+            state->draw();
         } else if(sub_returned > 0) {
             // printf("Pointer to selected context/menu item: %p\n", menu_browser->state->selected);
             // 0 is dummy, bec it is of the type ConfigItem. ConfigItem
@@ -158,17 +161,10 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
             // browser!) needs to be called with. It would be better to just
             // create a return value of a GUI object, and call execute
             // with that immediately.
-//            printf("Menu Node = %p. Menu_browser = %p.\n", menu_node, menu_browser);
-//            dump_hex(menu_node, 0x80);
             contextMenu->executeAction();
-//            printf("Menu Node = %p. Menu_browser = %p.\n", menu_node, menu_browser);
-//            dump_hex(menu_node, 0x80);
-            state->update_selected(); //refresh = true;
-//            state->reselect();
-//            printf("A");
             delete contextMenu;
-//            printf("B");
             contextMenu = NULL;
+            state->draw();
         }
         return ret;
     }
@@ -185,7 +181,7 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
         state->do_refresh();
 
     c = keyb->getch();
-    if(!c)
+    if(c < 0)
         return 0;
 
     ret = handle_key(c);
@@ -193,67 +189,64 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
     return ret;
 }
 
-int TreeBrowser :: handle_key(BYTE c)
+int TreeBrowser :: handle_key(int c)
 {           
     int ret = 0;
     
     switch(c) {
-        case 0x03: // runstop
+        case KEY_BREAK: // runstop
             push_event(e_unfreeze);
             break;
-        case 0x8C: // exit (F8)
+        case KEY_F8: // exit (F8)
             push_event(e_unfreeze);
 //            push_event(e_terminate);
             break;
-        case 0x11: // down
+        case KEY_DOWN: // down
         	reset_quick_seek();
             state->down(1);
             break;
-        case 0x91: // up
+        case KEY_UP: // up
         	reset_quick_seek();
             state->up(1);
             break;
-        case 0x85: // F1 -> page up
+        case KEY_F1: // F1 -> page up
+        case KEY_PAGEUP:
         	reset_quick_seek();
             state->up(window->get_size_y()/2);
             break;
-        case 0x86: // F3 -> RUN
+        case KEY_F3: // F3 -> RUN
         	reset_quick_seek();
 			user_interface->run_editor(helptext);
             break;
-		case 0x87: // F5: Menu
+		case KEY_F5: // F5: Menu
 			task_menu();
 			break;
-        case 0x88: // F7 -> page down
+        case KEY_F7: // F7 -> page down
+        case KEY_PAGEDOWN:
         	reset_quick_seek();
             state->down(window->get_size_y()/2);
             break;
-        case 0x89: // F2 -> config
+        case KEY_F2: // F2 -> config
             config();
             break;
-        case 0x14: // backspace
+        case KEY_BACK: // backspace
             if(quick_seek_length) {
                 quick_seek_length--;
                 perform_quick_seek();
             }
             break;
-        case 0x20: // space = select
-        case 0x0D: // CR = select
+        case KEY_SPACE: // space = select
+        case KEY_RETURN: // CR = select
             reset_quick_seek();
             context(0);
             break;
-        case 0x1D: // right
+        case KEY_RIGHT: // right
             reset_quick_seek();
 			if (state->into2()) context(0);
             break;
-        case 0x9D: // left
+        case KEY_LEFT: // left
         	state->level_up();
             break;
-//	        case 0x2F: // '/'
-//              reset_quick_seek();
-//	            menu_dir_depth = 1;
-//	            dir_up();
-//	            break;
         default:
             if((c >= '!')&&(c < 0x80)) {
                 if(quick_seek_length < (MAX_SEARCH_LEN-2)) {

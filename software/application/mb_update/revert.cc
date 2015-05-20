@@ -25,44 +25,44 @@ extern "C" {
 #include "userinterface.h"
 #include "checksums.h"
 
-extern BYTE _binary_ultimate_bin_start;
-extern BYTE _binary_ultimate_bin_end;
-extern BYTE _binary_fpga_bin_start;
-extern BYTE _binary_fpga_bin_end;
-extern BYTE _binary_2nd_boot_bin_start;
-extern BYTE _binary_2nd_boot_bin_end;
+extern uint8_t _binary_ultimate_bin_start;
+extern uint8_t _binary_ultimate_bin_end;
+extern uint8_t _binary_fpga_bin_start;
+extern uint8_t _binary_fpga_bin_end;
+extern uint8_t _binary_2nd_boot_bin_start;
+extern uint8_t _binary_2nd_boot_bin_end;
 
-extern BYTE _binary_1541_ii_bin_start;
-extern BYTE _binary_1541_bin_start;
-extern BYTE _binary_1541c_bin_start;
-extern BYTE _binary_ar5ntsc_bin_start;
-extern BYTE _binary_ar5pal_bin_start;
-extern BYTE _binary_ar6pal_bin_start;
-extern BYTE _binary_epyx_bin_start;
-extern BYTE _binary_final3_bin_start;
-extern BYTE _binary_rr38ntsc_bin_start;
-extern BYTE _binary_rr38pal_bin_start;
-extern BYTE _binary_sounds_bin_start;
-extern BYTE _binary_ss5ntsc_bin_start;
-extern BYTE _binary_ss5pal_bin_start;
-extern BYTE _binary_tar_ntsc_bin_start;
-extern BYTE _binary_tar_pal_bin_start;
+extern uint8_t _binary_1541_ii_bin_start;
+extern uint8_t _binary_1541_bin_start;
+extern uint8_t _binary_1541c_bin_start;
+extern uint8_t _binary_ar5ntsc_bin_start;
+extern uint8_t _binary_ar5pal_bin_start;
+extern uint8_t _binary_ar6pal_bin_start;
+extern uint8_t _binary_epyx_bin_start;
+extern uint8_t _binary_final3_bin_start;
+extern uint8_t _binary_rr38ntsc_bin_start;
+extern uint8_t _binary_rr38pal_bin_start;
+extern uint8_t _binary_sounds_bin_start;
+extern uint8_t _binary_ss5ntsc_bin_start;
+extern uint8_t _binary_ss5pal_bin_start;
+extern uint8_t _binary_tar_ntsc_bin_start;
+extern uint8_t _binary_tar_pal_bin_start;
 
-extern BYTE _binary_1541_ii_bin_end;
-extern BYTE _binary_1541_bin_end;
-extern BYTE _binary_1541c_bin_end;
-extern BYTE _binary_ar5ntsc_bin_end;
-extern BYTE _binary_ar5pal_bin_end;
-extern BYTE _binary_ar6pal_bin_end;
-extern BYTE _binary_epyx_bin_end;
-extern BYTE _binary_final3_bin_end;
-extern BYTE _binary_rr38ntsc_bin_end;
-extern BYTE _binary_rr38pal_bin_end;
-extern BYTE _binary_sounds_bin_end;
-extern BYTE _binary_ss5ntsc_bin_end;
-extern BYTE _binary_ss5pal_bin_end;
-extern BYTE _binary_tar_ntsc_bin_end;
-extern BYTE _binary_tar_pal_bin_end;
+extern uint8_t _binary_1541_ii_bin_end;
+extern uint8_t _binary_1541_bin_end;
+extern uint8_t _binary_1541c_bin_end;
+extern uint8_t _binary_ar5ntsc_bin_end;
+extern uint8_t _binary_ar5pal_bin_end;
+extern uint8_t _binary_ar6pal_bin_end;
+extern uint8_t _binary_epyx_bin_end;
+extern uint8_t _binary_final3_bin_end;
+extern uint8_t _binary_rr38ntsc_bin_end;
+extern uint8_t _binary_rr38pal_bin_end;
+extern uint8_t _binary_sounds_bin_end;
+extern uint8_t _binary_ss5ntsc_bin_end;
+extern uint8_t _binary_ss5pal_bin_end;
+extern uint8_t _binary_tar_ntsc_bin_end;
+extern uint8_t _binary_tar_pal_bin_end;
 
 Screen *screen;
 UserInterface *user_interface;
@@ -72,7 +72,7 @@ Flash *flash;
 #undef printf
 //#define printf(x) console_print(screen, x)
 
-int calc_checksum(BYTE *buffer, BYTE *buffer_end)
+int calc_checksum(uint8_t *buffer, uint8_t *buffer_end)
 {
     int check = 0;
     int b;
@@ -108,8 +108,8 @@ bool need_update(int id, char *version, char *descr)
 
 bool my_memcmp(void *a, void *b, int len)
 {
-    DWORD *pula = (DWORD *)a;
-    DWORD *pulb = (DWORD *)b;
+    uint32_t *pula = (uint32_t *)a;
+    uint32_t *pulb = (uint32_t *)b;
     len >>= 2;
     while(len--) {
         if(*pula != *pulb) {
@@ -138,10 +138,10 @@ bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
     //console_print(screen, "            \n");
     if(image_address.has_header) {
         console_print(screen, "Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
-        BYTE *bin = new BYTE[length+16];
-        DWORD *pul;
-        pul = (DWORD *)bin;
-        *(pul++) = (DWORD)length;
+        uint8_t *bin = new uint8_t[length+16];
+        uint32_t *pul;
+        pul = (uint32_t *)bin;
+        *(pul++) = (uint32_t)length;
         memset(pul, 0, 12);
         strcpy((char*)pul, version);
         memcpy(bin+16, buffer, length);
@@ -197,7 +197,7 @@ bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
     return true;    
 }
 
-void copy_rom(BYTE *roms, int id, int *min, int *max, BYTE *source, BYTE *source_end)
+void copy_rom(uint8_t *roms, int id, int *min, int *max, uint8_t *source, uint8_t *source_end)
 {
 	t_flash_address image_address;
 	flash->get_image_addresses(id, &image_address);
@@ -211,7 +211,7 @@ void copy_rom(BYTE *roms, int id, int *min, int *max, BYTE *source, BYTE *source
 
 bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 {
-	BYTE *roms;
+	uint8_t *roms;
 	
 	flash->protect_disable();
 	last_sector = -1;
@@ -244,7 +244,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 	}
     if(do_roms) {
         if(flash->get_page_size() == 528) { // atmel 45.. we should program the roms in one block!
-            roms = (BYTE *)malloc(0x210000);
+            roms = (uint8_t *)malloc(0x210000);
             memset(roms, 0xFF, 0x210000);
             int min = 0x210000;
             int max = 0x000000;
@@ -294,7 +294,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 int main()
 {
 	char time_buffer[32];
-	BYTE byte_buffer[32];
+	uint8_t byte_buffer[32];
 
 	printf("*** Ultimate Updater ***\n\n");
 	flash = get_flash();

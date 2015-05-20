@@ -6,6 +6,7 @@
  */
 
 #include "keyboard_vt100.h"
+#include <stdio.h>
 
 #define ENTER_SAFE_SECTION // FIXME
 #define LEAVE_SAFE_SECTION
@@ -14,7 +15,7 @@ int Keyboard_VT100 :: parseEscapes()
 {
 	const short cursor[] = { KEY_UP, KEY_DOWN, KEY_RIGHT, KEY_LEFT };
 	const short numeric[] = {
-			0, KEY_HOME, KEY_INS, 0, KEY_END, KEY_PAGEUP, KEY_PAGEDOWN, 0, 0, 0,
+			0, KEY_HOME, KEY_INSERT, 0, KEY_END, KEY_PAGEUP, KEY_PAGEDOWN, 0, 0, 0,
 			0, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, 0, KEY_F6, KEY_F7, KEY_F8,
 			KEY_F9, KEY_F10, 0, KEY_F11, KEY_F12, 0, 0, 0, 0, 0, 0 };
 
@@ -52,6 +53,8 @@ int Keyboard_VT100 :: parseEscapes()
 		        keyb_buffer[i] = keyb_buffer[i+5];
 		    }
 			keyb_offset -= 5; // eat it
+		} else {
+			printf("Key value %d unknown.\n", value);
 		}
 		return value;
 	} else if((c >= 'A') && (c <= 'D')) {
@@ -79,16 +82,19 @@ int  Keyboard_VT100 :: getch(void)
         return -1;
     }
     ENTER_SAFE_SECTION
-	if (keyb_buffer[0] == 0x1B) {
+	if (keyb_buffer[0] == '\e') {
 		if (keyb_offset < 2) { // there is only an escape char in the buffer. We cannot handle it yet.
 			LEAVE_SAFE_SECTION
 			return -1;
 		}
 		int ch ;
-		if (keyb_buffer[1] == 0x5B) {
+		if (keyb_buffer[1] == '[') {
 			ch = parseEscapes();
 			if (ch != 0) { // -1 = not yet, 0 = no match
 				LEAVE_SAFE_SECTION
+				if (ch > 0) {
+					printf("%02x\n", ch);
+				}
 				return ch;
 			}
 		}
@@ -99,6 +105,10 @@ int  Keyboard_VT100 :: getch(void)
     }
     keyb_offset--;
     LEAVE_SAFE_SECTION
+
+	if (key > 0) {
+		printf("%02x\n", key);
+	}
 
     return (int)key;
 }

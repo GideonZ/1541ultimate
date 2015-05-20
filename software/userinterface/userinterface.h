@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "itu.h"
 #include "integer.h"
 #include "screen.h"
 #include "host.h"
@@ -13,6 +14,7 @@
 #include "versions.h"
 #include "config.h"
 #include "ui_elements.h"
+#include "editor.h"
 
 #define MAX_SEARCH_LEN 32
 #define MAX_UI_OBJECTS  8
@@ -52,14 +54,14 @@ public:
 
     virtual bool is_available(void);
     virtual void handle_event(Event &e);
-    virtual int  popup(char *msg, BYTE flags); // blocking
+    virtual int  popup(char *msg, uint8_t flags); // blocking
     virtual int  string_box(char *msg, char *buffer, int maxlen); // blocking
 
     virtual void show_progress(char *msg, int steps); // not blocking
     virtual void update_progress(char *msg, int steps); // not blocking
     virtual void hide_progress(void); // not blocking (of course)
 
-    void init(GenericHost *h, Keyboard *k);
+    void init(GenericHost *h);
     void set_screen(Screen *s); /* Only used in updater */
     int  activate_uiobject(UIObject *obj);
         

@@ -21,7 +21,7 @@ class ContextMenu : public UIObject
     bool perform_quick_seek(void);
 
 	// private functions:
-    virtual int handle_key(BYTE c);
+    virtual int handle_key(int c);
 
     Contextable *contextable;
 

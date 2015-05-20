@@ -19,7 +19,7 @@ int chk_chr (const char* str, int chr) {
     return *str;
 }
 
-FATDIR::FATDIR(FATFS *filesys, DWORD start)
+FATDIR::FATDIR(FATFS *filesys, uint32_t start)
 {
     fs = filesys;
     valid = 0;
@@ -77,7 +77,7 @@ FRESULT FATDIR::open (
 )
 {
     FRESULT res;
-    BYTE *dirbyte;
+    uint8_t *dirbyte;
 
     res = fs->chk_mounted(0);
     if (res == FR_OK) {
@@ -86,7 +86,7 @@ FRESULT FATDIR::open (
             dirbyte = dir;
             if (dirbyte) {                  /* It is not the root dir */
                 if (dirbyte[FATDIR_Attr] & AM_DIR) {   /* The object is a directory */
-                    sclust = ((DWORD)LD_WORD(dirbyte+FATDIR_FstClusHI) << 16) | LD_WORD(dirbyte+FATDIR_FstClusLO);
+                    sclust = ((uint32_t)LD_WORD(dirbyte+FATDIR_FstClusHI) << 16) | LD_WORD(dirbyte+FATDIR_FstClusLO);
                 } else {                    /* The object is not a directory */
                     res = FR_NO_PATH;
                 }
@@ -166,7 +166,7 @@ FRESULT FATDIR::dir_seek (
     WORD idx        /* Directory index number */
 )
 {
-    DWORD clst;
+    uint32_t clst;
     WORD ic;
 
     index = idx;
@@ -211,7 +211,7 @@ FRESULT FATDIR::dir_next ( /* FR_OK:Succeeded, FR_NO_FILE:End of table, FR_DENIE
     bool stretch    /* FALSE: Do not stretch table, TRUE: stretch table if needed */
 )
 {
-    DWORD clst;
+    uint32_t clst;
     WORD i;
 
     i = index + 1;
@@ -232,7 +232,7 @@ FRESULT FATDIR::dir_next ( /* FR_OK:Succeeded, FR_NO_FILE:End of table, FR_DENIE
                 if (clst == 0xFFFFFFFF) return FR_DISK_ERR;
                 if (clst >= fs->max_clust) {                /* When it reached end of dynamic table */
 #if !_FS_READONLY
-                    BYTE c;
+                    uint8_t c;
                     if (!stretch) return FR_NO_FILE;        /* When do not stretch, report EOT */
                     clst = fs->create_chain(clust);         /* stretch cluster chain */
                     if (clst == 0) return FR_DENIED;        /* No free cluster */
@@ -270,13 +270,13 @@ FRESULT FATDIR::dir_next ( /* FR_OK:Succeeded, FR_NO_FILE:End of table, FR_DENIE
 /*-----------------------------------------------------------------------*/
 #if _USE_LFN
 static
-const BYTE LfnOfs[] = {1,3,5,7,9,14,16,18,20,22,24,28,30};  /* Offset of LFN chars in the directory entry */
+const uint8_t LfnOfs[] = {1,3,5,7,9,14,16,18,20,22,24,28,30};  /* Offset of LFN chars in the directory entry */
 
 
 static
 BOOL cmp_lfn (          /* TRUE:Matched, FALSE:Not matched */
     WCHAR *lfnbuf,      /* Pointer to the LFN to be compared */
-    BYTE *dir           /* Pointer to the directory entry containing a part of LFN */
+    uint8_t *dir           /* Pointer to the directory entry containing a part of LFN */
 )
 {
     int i, s;
@@ -307,7 +307,7 @@ BOOL cmp_lfn (          /* TRUE:Matched, FALSE:Not matched */
 static
 BOOL pick_lfn (         /* TRUE:Succeeded, FALSE:Buffer overflow */
     WCHAR *lfnbuf,      /* Pointer to the Unicode-LFN buffer */
-    BYTE *dir           /* Pointer to the directory entry */
+    uint8_t *dir           /* Pointer to the directory entry */
 )
 {
     int i, s;
@@ -340,9 +340,9 @@ BOOL pick_lfn (         /* TRUE:Succeeded, FALSE:Buffer overflow */
 static
 void fit_lfn (
     const WCHAR *lfnbuf,    /* Pointer to the LFN buffer */
-    BYTE *dir,              /* Pointer to the directory entry */
-    BYTE ord,               /* LFN order (1-20) */
-    BYTE sum                /* SFN sum */
+    uint8_t *dir,              /* Pointer to the directory entry */
+    uint8_t ord,               /* LFN order (1-20) */
+    uint8_t sum                /* SFN sum */
 )
 {
     int i, s;
@@ -375,8 +375,8 @@ void fit_lfn (
 /*-----------------------------------------------------------------------*/
 #if _USE_LFN
 void gen_numname (
-    BYTE *dst,          /* Pointer to genartated SFN */
-    const BYTE *src,    /* Pointer to source SFN to be modified */
+    uint8_t *dst,          /* Pointer to genartated SFN */
+    const uint8_t *src,    /* Pointer to source SFN to be modified */
     const WCHAR *lfn,   /* Pointer to LFN */
     WORD num            /* Sequense number */
 )
@@ -420,11 +420,11 @@ void gen_numname (
 /*-----------------------------------------------------------------------*/
 #if _USE_LFN
 static
-BYTE sum_sfn (
-    const BYTE *dir     /* Ptr to directory entry */
+uint8_t sum_sfn (
+    const uint8_t *dir     /* Ptr to directory entry */
 )
 {
-    BYTE sum = 0;
+    uint8_t sum = 0;
     int n = 11;
 
     do sum = (sum >> 1) + (sum << 7) + *dir++; while (--n);
@@ -439,12 +439,12 @@ FRESULT FATDIR::dir_find_lfn_start(void) // will set lfn_index correctly, based 
     if((dir[FATDIR_Attr] & AM_MASK) == AM_LFN)
         return FR_INT_ERR;
 
-    BYTE sum = sum_sfn(dir);
+    uint8_t sum = sum_sfn(dir);
     lfn_idx = 0xFFFF;
     WORD idx = index;
     WORD sfn_idx = index;
     FRESULT res;
-    BYTE attr;
+    uint8_t attr;
     
     while(--idx) {
         res = dir_seek(idx);
@@ -471,9 +471,9 @@ FRESULT FATDIR::dir_find_lfn_start(void) // will set lfn_index correctly, based 
 FRESULT FATDIR::dir_find (void) /* link to file name in object */
 {
     FRESULT res;
-    BYTE c, *dirbyte;
+    uint8_t c, *dirbyte;
 #if _USE_LFN
-    BYTE a, ord, sum;
+    uint8_t a, ord, sum;
 #endif
 
     res = dir_seek(0);          /* Rewind directory object */
@@ -529,9 +529,9 @@ FRESULT FATDIR::dir_find (void) /* link to file name in object */
 FRESULT FATDIR::dir_read (void) /* Read entry that the object describes/points to */
 {
     FRESULT res;
-    BYTE c, *dirbyte;
+    uint8_t c, *dirbyte;
 #if _USE_LFN
-    BYTE a, ord = 0xFF, sum = 0xFF;
+    uint8_t a, ord = 0xFF, sum = 0xFF;
 #endif
 
     res = FR_NO_FILE;
@@ -584,10 +584,10 @@ FRESULT FATDIR::dir_read (void) /* Read entry that the object describes/points t
 FRESULT FATDIR::dir_register (void)    /* Objects points to directory with object name to be created */
 {
     FRESULT res;
-    BYTE c, *dirbyte;
+    uint8_t c, *dirbyte;
 #if _USE_LFN    /* LFN configuration */
     WORD n, ne, is = 0xFFFF;
-    BYTE tmp_sn[12], *tmp_fn, sum;
+    uint8_t tmp_sn[12], *tmp_fn, sum;
     WCHAR *tmp_lfn;
 
     tmp_fn  = fn;
@@ -646,7 +646,7 @@ FRESULT FATDIR::dir_register (void)    /* Objects points to directory with objec
             do {                    /* Store LFN entries in bottom first */
                 res = fs->move_window(sect);
                 if (res != FR_OK) break;
-                fit_lfn(lfn, dir, (BYTE)ne, sum);
+                fit_lfn(lfn, dir, (uint8_t)ne, sum);
                 fs->wflag = 1;
                 res = dir_next(false);  /* Next entry */
             } while (res == FR_OK && --ne);
@@ -736,11 +736,11 @@ FRESULT FATDIR::create_name (
 )
 {
 #ifdef _EXCVT
-    static const BYTE cvt[] = _EXCVT;
+    static const uint8_t cvt[] = _EXCVT;
 #endif
 
 #if _USE_LFN    /* LFN configuration */
-    BYTE b, cf;
+    uint8_t b, cf;
     WCHAR w, *tmp_lfn;
     int i, ni, si, di;
     XCHAR *p;
@@ -828,7 +828,7 @@ FRESULT FATDIR::create_name (
             if (i >= ni - 1) {
                 cf |= NS_LOSS | NS_LFN; i = ni; continue;
             }
-            fn[i++] = (BYTE)(w >> 8);
+            fn[i++] = (uint8_t)(w >> 8);
         } else {                        /* Single byte char */
             if (!w || chk_chr("+,;[=]", w)) {       /* Replace illegal chars for SFN */
                 w = '_'; cf |= NS_LOSS | NS_LFN;    /* Lossy conversion */
@@ -842,7 +842,7 @@ FRESULT FATDIR::create_name (
                 }
             }
         }
-        fn[i++] = (BYTE)w;
+        fn[i++] = (uint8_t)w;
     }
 
     if (fn[0] == 0xE5) fn[0] = 0x05;    /* If the first char collides with deleted mark, replace it with 0x05 */
@@ -861,7 +861,7 @@ FRESULT FATDIR::create_name (
 
 
 #else   /* Non-LFN configuration */
-    BYTE b, c, d, *tmp_sfn;
+    uint8_t b, c, d, *tmp_sfn;
     int ni, si, i;
     char *p;
 
@@ -946,7 +946,7 @@ void FATDIR::get_fileinfo( /* No return code */
 )
 {
     int i;
-    BYTE c, nt, *dirbyte;
+    uint8_t c, nt, *dirbyte;
     char *p;
 
     fno->fs = fs;
@@ -982,7 +982,7 @@ void FATDIR::get_fileinfo( /* No return code */
         fno->size    = LD_DWORD(dirbyte+FATDIR_FileSize);    /* Size */
         fno->date    = LD_WORD(dirbyte+FATDIR_WrtDate);      /* Date */
         fno->time    = LD_WORD(dirbyte+FATDIR_WrtTime);      /* Time */
-        fno->cluster = ((DWORD)LD_WORD(dirbyte+FATDIR_FstClusHI) << 16) |
+        fno->cluster = ((uint32_t)LD_WORD(dirbyte+FATDIR_FstClusHI) << 16) |
                                LD_WORD(dirbyte+FATDIR_FstClusLO);
         
         p = fno->extension;
@@ -1065,11 +1065,11 @@ void FATDIR::get_fileinfo( /* No return code */
 /*-----------------------------------------------------------------------*/
 FRESULT FATDIR::follow_path (  /* FR_OK(0): successful, !=0: error code */
     XCHAR *path,   /* Full-path string to find a file or directory */
-    DWORD start_clust
+    uint32_t start_clust
 )
 {
     FRESULT res;
-    BYTE *dirbyte, last;
+    uint8_t *dirbyte, last;
 
     while (!_USE_LFN && *path == ' ') path++;   /* Skip leading spaces */
 #if _FS_RPATH
@@ -1104,7 +1104,7 @@ FRESULT FATDIR::follow_path (  /* FR_OK(0): successful, !=0: error code */
             if (!(dirbyte[FATDIR_Attr] & AM_DIR)) { /* Cannot follow because it is a file */
                 res = FR_NO_PATH; break;
             }
-            sclust = ((DWORD)LD_WORD(dirbyte+FATDIR_FstClusHI) << 16) | LD_WORD(dirbyte+FATDIR_FstClusLO);
+            sclust = ((uint32_t)LD_WORD(dirbyte+FATDIR_FstClusHI) << 16) | LD_WORD(dirbyte+FATDIR_FstClusLO);
         }
     }
 
@@ -1118,8 +1118,8 @@ FRESULT FATDIR::follow_path (  /* FR_OK(0): successful, !=0: error code */
 FRESULT FATDIR :: mkdir (XCHAR *newname)       /* Pointer to the directory path */
 {
     FRESULT res;
-    BYTE *dir_byte, n;
-    DWORD dsect, dclst, pclst, tim;
+    uint8_t *dir_byte, n;
+    uint32_t dsect, dclst, pclst, tim;
 
     res = fs->chk_mounted(1);
     if (res != FR_OK)

@@ -8,7 +8,7 @@
 class FileTypeSID : public FileDirEntry
 {
 	File *file;
-	BYTE sid_header[0x80];
+	uint8_t sid_header[0x80];
 	WORD song;
 	WORD start;
 	WORD end;

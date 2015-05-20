@@ -13,24 +13,24 @@
 #define REU_MEMORY_BASE 0x1000000
 #define REU_MAX_SIZE    0x1000000
 
-//#define SID_TRACE_END           *((volatile DWORD *)(C64_TRACE_BASE + 0x80))
-//#define SID_REGS(x)             *((volatile BYTE *)(C64_TRACE_BASE + x))
+//#define SID_TRACE_END           *((volatile uint32_t *)(C64_TRACE_BASE + 0x80))
+//#define SID_REGS(x)             *((volatile uint8_t *)(C64_TRACE_BASE + x))
 
-#define C64_MODE                *((volatile BYTE *)(C64_CARTREGS_BASE + 0x0))
-#define C64_STOP                *((volatile BYTE *)(C64_CARTREGS_BASE + 0x1))
-#define C64_STOP_MODE           *((volatile BYTE *)(C64_CARTREGS_BASE + 0x2))
-#define C64_CLOCK_DETECT        *((volatile BYTE *)(C64_CARTREGS_BASE + 0x3))
-#define C64_CARTRIDGE_RAM_BASE  *((volatile BYTE *)(C64_CARTREGS_BASE + 0x4))
-#define C64_CARTRIDGE_TYPE      *((volatile BYTE *)(C64_CARTREGS_BASE + 0x5))
-#define C64_CARTRIDGE_KILL      *((volatile BYTE *)(C64_CARTREGS_BASE + 0x6))
-#define C64_KERNAL_ENABLE       *((volatile BYTE *)(C64_CARTREGS_BASE + 0x7))
-#define C64_REU_ENABLE          *((volatile BYTE *)(C64_CARTREGS_BASE + 0x8))
-#define C64_REU_SIZE            *((volatile BYTE *)(C64_CARTREGS_BASE + 0x9))
-#define C64_SWAP_CART_BUTTONS   *((volatile BYTE *)(C64_CARTREGS_BASE + 0xA))
-#define C64_TIMING_ADDR_VALID   *((volatile BYTE *)(C64_CARTREGS_BASE + 0xB))
-#define C64_PHI2_EDGE_RECOVER   *((volatile BYTE *)(C64_CARTREGS_BASE + 0xC))
-#define C64_SAMPLER_ENABLE      *((volatile BYTE *)(C64_CARTREGS_BASE + 0xE))
-#define C64_ETHERNET_ENABLE     *((volatile BYTE *)(C64_CARTREGS_BASE + 0xF))
+#define C64_MODE                *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x0))
+#define C64_STOP                *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x1))
+#define C64_STOP_MODE           *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x2))
+#define C64_CLOCK_DETECT        *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x3))
+#define C64_CARTRIDGE_RAM_BASE  *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x4))
+#define C64_CARTRIDGE_TYPE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x5))
+#define C64_CARTRIDGE_KILL      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x6))
+#define C64_KERNAL_ENABLE       *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x7))
+#define C64_REU_ENABLE          *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x8))
+#define C64_REU_SIZE            *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x9))
+#define C64_SWAP_CART_BUTTONS   *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xA))
+#define C64_TIMING_ADDR_VALID   *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xB))
+#define C64_PHI2_EDGE_RECOVER   *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xC))
+#define C64_SAMPLER_ENABLE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xE))
+#define C64_ETHERNET_ENABLE     *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xF))
 
 #define C64_KERNAL_BASE         0x0ECC000
 
@@ -105,10 +105,10 @@
 
 typedef struct _cart
 {
-    BYTE  id;
+    uint8_t  id;
     void *custom_addr; // dynamically filled in
-    DWORD length;
-    BYTE  type;
+    uint32_t length;
+    uint8_t  type;
 } cart_def;
 
 class Keyboard;
@@ -118,20 +118,20 @@ class C64 : public GenericHost, ObjectWithMenu, ConfigurableObject
     Flash *flash;
     Keyboard *keyb;
     
-    BYTE *char_set; //[CHARSET_SIZE];
-    BYTE vic_backup[NUM_VICREGS];
-    BYTE ram_backup[BACKUP_SIZE];
-    BYTE screen_backup[COLOR_SIZE]; // only used now for vic state write
-    BYTE color_backup[COLOR_SIZE];
-    BYTE cia_backup[5];
+    uint8_t *char_set; //[CHARSET_SIZE];
+    uint8_t vic_backup[NUM_VICREGS];
+    uint8_t ram_backup[BACKUP_SIZE];
+    uint8_t screen_backup[COLOR_SIZE]; // only used now for vic state write
+    uint8_t color_backup[COLOR_SIZE];
+    uint8_t cia_backup[5];
     
-    BYTE stop_mode;
-    BYTE raster;
-    BYTE raster_hi;
-    BYTE vic_irq_en;
-    BYTE vic_irq;
-    BYTE vic_d011;
-    BYTE vic_d012;
+    uint8_t stop_mode;
+    uint8_t raster;
+    uint8_t raster_hi;
+    uint8_t vic_irq_en;
+    uint8_t vic_irq;
+    uint8_t vic_d011;
+    uint8_t vic_d012;
 
     bool stopped;
     void determine_d012(void);
@@ -163,14 +163,14 @@ public:
     void freeze(void);
     void unfreeze(Event &e);
     void set_colors(int background, int border);
-    char *get_screen(void);     // should be obsoleted!
-    char *get_color_map(void);  // should be obsoleted!
-    Keyboard *get_keyboard(void);
+    Screen *getScreen(void);
+    void    releaseScreen(void);
+    Keyboard *getKeyboard(void);
 
     /* C64 specifics */
     void init_cartridge(void);
     void cartridge_test(void);
-    int  dma_load(FILE *f, BYTE run_mode, WORD reloc=0);
+    int  dma_load(FILE *f, uint8_t run_mode, WORD reloc=0);
     bool write_vic_state(FILE *f);
         
     friend class FileTypeSID; // sid load does some tricks
@@ -181,8 +181,8 @@ extern C64   *c64;
 class C64Event
 {
  public:
-    static int prepare_dma_load(FILE *f, const char *name, int len, BYTE run_mode, WORD reloc=0);
-    static int perform_dma_load(FILE *f, BYTE run_mode, WORD reloc=0);
+    static int prepare_dma_load(FILE *f, const char *name, int len, uint8_t run_mode, WORD reloc=0);
+    static int perform_dma_load(FILE *f, uint8_t run_mode, WORD reloc=0);
 };
 
 #endif

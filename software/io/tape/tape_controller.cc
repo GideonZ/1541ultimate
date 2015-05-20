@@ -23,7 +23,7 @@ TapeController :: TapeController()
 	paused = 0;
 	recording = 0;
 	controlByte = 0;
-	blockBuffer = new BYTE[512];
+	blockBuffer = new uint8_t[512];
 	stop();
     poll_list.append(&poll_tape);
 	main_menu_objects.append(this);
@@ -86,7 +86,7 @@ void TapeController :: start(int playout_pin)
 			
 		read_block();
 	}
-	controlByte = C2N_SENSE | C2N_ENABLE | BYTE(mode << 3) | BYTE(playout_pin << 6);
+	controlByte = C2N_SENSE | C2N_ENABLE | uint8_t(mode << 3) | uint8_t(playout_pin << 6);
 	PLAYBACK_CONTROL = controlByte;
     recording = playout_pin;
 	printf("] Status = %b.\n", PLAYBACK_STATUS);
@@ -159,7 +159,7 @@ void TapeController :: poll(Event &e)
 		}
 	}
 		
-	BYTE st = PLAYBACK_STATUS;
+	uint8_t st = PLAYBACK_STATUS;
 	if(st & C2N_STAT_ENABLED) { // we are enabled
 		if(!(st & C2N_STAT_FIFO_AF)) {
 			read_block();
@@ -167,7 +167,7 @@ void TapeController :: poll(Event &e)
 	}
 }
 	
-void TapeController :: set_file(FILE *f, DWORD len, int m)
+void TapeController :: set_file(FILE *f, uint32_t len, int m)
 {
     file = f;
 	length = len;

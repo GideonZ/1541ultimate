@@ -18,7 +18,7 @@ CommandInterface cmd_if;
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 
 // cart definition
-extern BYTE _binary_cmd_test_rom_65_start;
+extern uint8_t _binary_cmd_test_rom_65_start;
 cart_def cmd_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 #define MENU_CMD_RUNCMDCART 0xC180
@@ -52,9 +52,9 @@ CommandInterface :: CommandInterface()
     
         // dump_registers();
     
-        response_buffer = (BYTE *)(CMD_IF_RAM_BASE + (8*CMD_IF_RESPONSE_START));
-        status_buffer   = (BYTE *)(CMD_IF_RAM_BASE + (8*CMD_IF_STATUS_START));
-        command_buffer  = (BYTE *)(CMD_IF_RAM_BASE + (8*CMD_IF_COMMAND_START));
+        response_buffer = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_RESPONSE_START));
+        status_buffer   = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_STATUS_START));
+        command_buffer  = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_COMMAND_START));
     
         incoming_command.message = command_buffer;
         incoming_command.length = 0;
@@ -106,7 +106,7 @@ int CommandInterface :: poll(Event &e)
   
     Message *data, *status;
     
-    BYTE status_byte = CMD_IF_STATUSBYTE;
+    uint8_t status_byte = CMD_IF_STATUSBYTE;
 
     if(status_byte & CMD_ABORT_DATA) {
         printf("Abort received.\n");
@@ -155,8 +155,8 @@ void CommandInterface :: copy_result(Message *data, Message *status)
     //dump_hex_relative((void *)status->message, status->length);
     memcpy(response_buffer, data->message, data->length);
     memcpy(status_buffer, status->message, status->length);
-    CMD_IF_RESPONSE_LEN_H = BYTE(data->length >> 8);
-    CMD_IF_RESPONSE_LEN_L = BYTE(data->length);
+    CMD_IF_RESPONSE_LEN_H = uint8_t(data->length >> 8);
+    CMD_IF_RESPONSE_LEN_L = uint8_t(data->length);
     CMD_IF_STATUS_LENGTH = status->length;
     if(data->last_part) {
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
@@ -192,7 +192,7 @@ void CommandInterface :: dump_registers(void)
     printf("CMD_IF_COMMAND_LEN_H   %b\n", CMD_IF_COMMAND_LEN_H );
 }
 
-Message c_message_no_target      = {  9, true, (BYTE *)"NO TARGET" }; 
-Message c_status_ok              = {  5, true, (BYTE *)"00,OK" };
-Message c_status_unknown_command = { 18, true, (BYTE *)"21,UNKNOWN COMMAND" };
-Message c_message_empty          = {  0, true, (BYTE *)"" };
+Message c_message_no_target      = {  9, true, (uint8_t *)"NO TARGET" }; 
+Message c_status_ok              = {  5, true, (uint8_t *)"00,OK" };
+Message c_status_unknown_command = { 18, true, (uint8_t *)"21,UNKNOWN COMMAND" };
+Message c_message_empty          = {  0, true, (uint8_t *)"" };

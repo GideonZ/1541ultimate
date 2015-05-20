@@ -101,7 +101,7 @@ void Copper :: poll(Event &e)
 
 void Copper :: measure()
 {
-    static BYTE copper_list[] = { // init
+    static uint8_t copper_list[] = { // init
                            COPCODE_WRITE_REG + 0x1A, 0x01,
                            COPCODE_WRITE_REG + 0x12, 0x00,
                            COPCODE_WRITE_REG + 0x11, 0x1B,
@@ -138,7 +138,7 @@ void Copper :: measure()
     while(COPPER_STATUS & 0x01)
         ;
 
-    DWORD cycles = (DWORD(COPPER_MEASURE_H) << 8) | COPPER_MEASURE_L;
+    uint32_t cycles = (uint32_t(COPPER_MEASURE_H) << 8) | COPPER_MEASURE_L;
     
     printf("Cycles measured: %d.\n", cycles);
     COPPER_FRAMELEN_H = COPPER_MEASURE_H;
@@ -147,7 +147,7 @@ void Copper :: measure()
 
 void Copper :: sync()
 {
-    static BYTE copper_list[] = { // init
+    static uint8_t copper_list[] = { // init
                            COPCODE_WRITE_REG + 0x1A, 0x01,
                            COPCODE_WRITE_REG + 0x12, 0x01,
                            COPCODE_WRITE_REG + 0x11, 0x1B,
@@ -201,7 +201,7 @@ void Copper :: capture(void)
     while(COPPER_STATUS & 0x01)
         ;
     
-    BYTE b1,b2,b3,b4;
+    uint8_t b1,b2,b3,b4;
     WORD w1;
     int line, cycle;
     for(int i=0;i<COPPER_RAM_SIZE;i+=4) {
@@ -225,7 +225,7 @@ void Copper :: timed_write(void)
     static char before_string[8];
     static char after_string[8];
 
-    static BYTE copper_list[] = { // init
+    static uint8_t copper_list[] = { // init
                            COPCODE_WAIT_SYNC,
                            COPCODE_TRIGGER_2,
                            COPCODE_WAIT_UNTIL, 0xE8, 0x03,
@@ -256,12 +256,12 @@ void Copper :: timed_write(void)
     VIC_REG(0x20) = 14;
     VIC_REG(0x21) = 6;
 
-    copper_list[3] = BYTE(cycle & 0xFF);
-    copper_list[4] = BYTE(cycle >> 8);
-    copper_list[5] = BYTE(reg);
-    copper_list[6] = BYTE(before);
-    copper_list[10] = BYTE(reg);
-    copper_list[11] = BYTE(after);
+    copper_list[3] = uint8_t(cycle & 0xFF);
+    copper_list[4] = uint8_t(cycle >> 8);
+    copper_list[5] = uint8_t(reg);
+    copper_list[6] = uint8_t(before);
+    copper_list[10] = uint8_t(reg);
+    copper_list[11] = uint8_t(after);
      
     COPPER_BREAK = 1;
 
@@ -287,7 +287,7 @@ void Copper :: write_state(void)
         if(!c64->write_vic_state(f)) {
             printf("Write unsuccessful.\n");
         } else {
-            f->write((BYTE *)&COPPER_RAM(0), COPPER_RAM_SIZE, &written);
+            f->write((uint8_t *)&COPPER_RAM(0), COPPER_RAM_SIZE, &written);
         }
         f->close();
     } else {
@@ -297,7 +297,7 @@ void Copper :: write_state(void)
 
 void Copper :: sweep(void)
 {
-    static BYTE copper_list[] = { // init
+    static uint8_t copper_list[] = { // init
        COPCODE_WAIT_SYNC, // 0
        COPCODE_WAIT_UNTIL, 0x0F, 0x0C, // 1, 2, 3
 //       COPCODE_WRITE_REG + 0x21, 0x0D,
@@ -330,7 +330,7 @@ void Copper :: sweep(void)
 
     COPPER_COMMAND = COPPER_CMD_PLAY;
 
-    BYTE a, b, c;
+    uint8_t a, b, c;
     int cycle = 3495;
     do {
         c = keyb->getch();
@@ -351,8 +351,8 @@ void Copper :: sweep(void)
                 break;
         }
         if(c != 0) {
-            a = BYTE(cycle & 0xFF);
-            b = BYTE(cycle >> 8);
+            a = uint8_t(cycle & 0xFF);
+            b = uint8_t(cycle >> 8);
             COPPER_RAM(3) = b;
             COPPER_RAM(2) = a;
             printf("Line: %d. Cycle: %d.\n", 1+(cycle/63), 1+(cycle%63));

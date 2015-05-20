@@ -27,15 +27,15 @@ class Usb2 : public UsbBase
 	SemaphoreHandle_t mutex;
 
 #endif
-    void  (*inputPipeCallBacks[USB2_NUM_PIPES])(BYTE *buf, int len, void *obj);
+    void  (*inputPipeCallBacks[USB2_NUM_PIPES])(uint8_t *buf, int len, void *obj);
     void  *inputPipeObjects[USB2_NUM_PIPES];
-    BYTE   inputPipeBufferMethod[USB2_NUM_PIPES];
+    uint8_t   inputPipeBufferMethod[USB2_NUM_PIPES];
     WORD   inputPipeCommand[USB2_NUM_PIPES];
 
-    DWORD *blockBufferBase;
-    BYTE  *circularBufferBase;
+    uint32_t *blockBufferBase;
+    uint8_t  *circularBufferBase;
 
-    BYTE  prev_status;
+    uint8_t  prev_status;
     bool  get_fifo(WORD *out);
     bool  put_block_fifo(WORD in);
 
@@ -67,7 +67,7 @@ public:
     int  bulk_out(struct t_pipe *pipe, void *buf, int len);
     int  bulk_in(struct t_pipe *pipe, void *buf, int len); // blocking
 
-    void free_input_buffer(int inpipe, BYTE *buffer);
+    void free_input_buffer(int inpipe, uint8_t *buffer);
 
     //    int  create_pipe(int addr, struct t_endpoint_descriptor *epd);
 //    void free_pipe(int index);

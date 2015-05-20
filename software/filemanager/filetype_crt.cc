@@ -118,14 +118,14 @@ FileDirEntry *FileTypeCRT :: test_type(CachedTreeNode *obj)
     return NULL;
 }
 
-__inline static WORD get_word(BYTE *p)
+__inline static WORD get_word(uint8_t *p)
 {
     return (WORD(p[0]) << 8) + p[1];
 }
 
-__inline static DWORD get_dword(BYTE *p)
+__inline static uint32_t get_dword(uint8_t *p)
 {
-    return DWORD(get_word(p) << 16) + get_word(p+2);
+    return uint32_t(get_word(p) << 16) + get_word(p+2);
 }
 
 void FileTypeCRT :: execute(int selection)
@@ -147,7 +147,7 @@ void FileTypeCRT :: execute(int selection)
 
     printf("Cartridge Load.. %s FileSize = %d\n", get_name(), info->size);
     file = root.fopen(this, FA_READ);
-    DWORD dw;
+    uint32_t dw;
     FRESULT fres;
     total_read = 0;
     max_bank = 0;
@@ -199,7 +199,7 @@ bool FileTypeCRT :: check_header(File *f)
     printf("CRT Hardware type: %b ", crt_header[0x17]);
     int idx = 0;
     while(c_recognized_carts[idx].hw_type != 0xFFFF) {
-        if(BYTE(c_recognized_carts[idx].hw_type) == crt_header[0x17]) {
+        if(uint8_t(c_recognized_carts[idx].hw_type) == crt_header[0x17]) {
             name = c_recognized_carts[idx].cart_name;
             printf("%s\n", name);
             type_select = c_recognized_carts[idx].type_select;
@@ -223,7 +223,7 @@ bool FileTypeCRT :: read_chip_packet(File *f)
         return false;
     if(strncmp((char*)chip_header, "CHIP", 4))
         return false;
-    DWORD total_length = get_dword(chip_header + 4);
+    uint32_t total_length = get_dword(chip_header + 4);
     WORD bank = get_word(chip_header + 10);
     WORD load = get_word(chip_header + 12);
     WORD size = get_word(chip_header + 14);
@@ -242,11 +242,11 @@ bool FileTypeCRT :: read_chip_packet(File *f)
         if((type_select == CART_OCEAN)||(type_select == CART_EASYFLASH)||(type_select == CART_DOMARK)||(type_select == CART_SYSTEM3))
             split = true;
 
-    DWORD mem_addr = ((DWORD)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
     if(split)
-        mem_addr += 0x2000 * DWORD(bank);
+        mem_addr += 0x2000 * uint32_t(bank);
     else
-        mem_addr += DWORD(size) * DWORD(bank);
+        mem_addr += uint32_t(size) * uint32_t(bank);
 
     if(load == 0xA000) {
         mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
@@ -257,17 +257,17 @@ bool FileTypeCRT :: read_chip_packet(File *f)
     if(size) {
         if(split) {
             res = f->read((void *)mem_addr, 0x2000, &bytes_read);
-            total_read += DWORD(bytes_read);
+            total_read += uint32_t(bytes_read);
             if(bytes_read != 0x2000) {
                 printf("Just read %4x bytes, expecting 8K\n", bytes_read);
                 return false;
             }
             mem_addr += 512 * 1024; // interleaved
             res = f->read((void *)mem_addr, size-0x2000, &bytes_read);
-            total_read += DWORD(bytes_read);
+            total_read += uint32_t(bytes_read);
         } else {            
             res = f->read((void *)mem_addr, size, &bytes_read);
-            total_read += DWORD(bytes_read);
+            total_read += uint32_t(bytes_read);
             if(bytes_read != UINT(size)) {
                 printf("Just read %4x bytes\n", bytes_read);
                 return false;
@@ -303,7 +303,7 @@ void FileTypeCRT :: configure_cart(void)
 
     C64_CARTRIDGE_TYPE = 0;
 
-    DWORD len = total_read;
+    uint32_t len = total_read;
     if(!len)
         type_select = CART_NOT_IMPL;
 
@@ -352,7 +352,7 @@ void FileTypeCRT :: configure_cart(void)
 //                C64_CARTRIDGE_TYPE = 0x0B; // Ocean 256K
 //                if(!load_at_a000) { // error! There is no data for upper range
 //                    printf("Fixing Ocean 256, by copying second 128K to A000 range\n");
-//                    DWORD mem_base = ((DWORD)C64_CARTRIDGE_RAM_BASE) << 16;
+//                    uint32_t mem_base = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
 //                    memcpy((void *)(mem_base + 512*1024), (void *)(mem_base + 128*1024), 128*1024);
 //                }
 //            } else {
@@ -362,7 +362,7 @@ void FileTypeCRT :: configure_cart(void)
             if (load_at_a000) {
                 C64_CARTRIDGE_TYPE = 0x0B; // Ocean 256K
             } else {
-//                DWORD mem_base = ((DWORD)C64_CARTRIDGE_RAM_BASE) << 16;
+//                uint32_t mem_base = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
 //                memcpy((void *)(mem_base + 256*1024), (void *)(mem_base + 0*1024), 256*1024);
                 C64_CARTRIDGE_TYPE = 0x0A; // Ocean 128K/512K
             }                
