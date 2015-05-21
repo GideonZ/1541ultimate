@@ -16,9 +16,17 @@ class Factory
 	typedef Treturn (*function_t)(Tobj p);
 
 	IndexedList<function_t> types;
-public:
     Factory() : types(4, 0) { }
     ~Factory() { }
+
+    static Factory <Tobj, Treturn>* factory;
+public:
+    static Factory <Tobj, Treturn>* getFactory() {
+    	if (!factory) {
+    		factory = new Factory <Tobj, Treturn>();
+    	}
+    	return factory;
+    }
 
     void register_type(function_t tester) {
     	types.append(tester);
@@ -40,8 +48,9 @@ class FactoryRegistrator
 {
 	typedef Treturn (*function_t)(Tobj p);
 public:
-	FactoryRegistrator(Factory<Tobj, Treturn> &factory, function_t func) {
-		factory.register_type(func);
+	FactoryRegistrator(function_t func) {
+		Factory<Tobj, Treturn> *f = Factory<Tobj, Treturn> :: getFactory();
+		f->register_type(func);
 	}
 };
 
