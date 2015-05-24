@@ -11,7 +11,7 @@ class Stream
     // for non-blocking string input
     int str_index;
     int str_state;
-    static void putc(char c, void **param) {
+    static void _put(char c, void **param) {
     	((Stream *)param)->charout((int)c);
     }
 public:

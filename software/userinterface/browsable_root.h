@@ -11,6 +11,7 @@
 #include "browsable.h"
 #include "filemanager.h"
 #include "filetypes.h"
+#include "globals.h"
 
 class BrowsableDirEntry : public Browsable
 {
@@ -48,7 +49,7 @@ public:
 	}
 	virtual void fetch_context_items(IndexedList<Action *>&items) {
 		if (!type)
-			type = file_type_factory.create(node);
+			type = Globals :: getFileTypeFactory()->create(node);
 		if (type)
 			type->fetch_context_items(items);
 	}
@@ -61,7 +62,7 @@ public:
 	virtual ~BrowsableRoot() { }
 
 	virtual int getSubItems(IndexedList<Browsable *>&list) {
-		CachedTreeNode *root = file_manager.get_root();
+		CachedTreeNode *root = FileManager :: getFileManager() -> get_root();
 		for(int i=0;i<root->children.get_elements();i++) {
 			list.append(new BrowsableDirEntry(root->children[i]));
 		}

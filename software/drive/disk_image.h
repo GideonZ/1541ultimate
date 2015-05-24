@@ -65,9 +65,9 @@ public:
     int    track_length[C1541_MAXTRACKS];
 
     void blank(void);
-    bool load(FILE *f);
-    bool save(FILE *f, bool, bool);
-    bool write_track(int, FILE *f, bool);
+    bool load(File *f);
+    bool save(File *f, bool, bool);
+    bool write_track(int, File *f, bool);
     void convert_disk_bin2gcr(BinImage *bin_image, bool report);
     int  convert_disk_gcr2bin(BinImage *bin_image, bool);
     int  convert_track_gcr2bin(int track, BinImage *bin_image);
@@ -96,9 +96,9 @@ public:
     ~BinImage();
 
     int format(char *diskname);
-    int load(FILE *);
-    int save(FILE *, bool);
-    int write_track(int track, GcrImage *, FILE *);
+    int load(File *);
+    int save(File *, bool);
+    int write_track(int track, GcrImage *, File *);
 
     // int get_absolute_sector(int track, int sector);
     uint8_t * get_sector_pointer(int track, int sector);

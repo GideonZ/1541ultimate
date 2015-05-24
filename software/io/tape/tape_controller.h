@@ -6,10 +6,11 @@
 #include "poll.h"
 #include "menu.h"
 #include "iomap.h"
+#include "filemanager.h"
 
-#define PLAYBACK_STATUS  *((volatile BYTE *)(C2N_PLAY_BASE + 0x000))
-#define PLAYBACK_CONTROL *((volatile BYTE *)(C2N_PLAY_BASE + 0x000))
-#define PLAYBACK_DATA     ((volatile BYTE *)(C2N_PLAY_BASE + 0x800))
+#define PLAYBACK_STATUS  *((volatile uint8_t *)(C2N_PLAY_BASE + 0x000))
+#define PLAYBACK_CONTROL *((volatile uint8_t *)(C2N_PLAY_BASE + 0x000))
+#define PLAYBACK_DATA     ((volatile uint8_t *)(C2N_PLAY_BASE + 0x800))
 
 #define C2N_ENABLE      0x01
 #define C2N_CLEAR_ERROR 0x02
@@ -30,7 +31,8 @@
 
 class TapeController : public ObjectWithMenu
 {
-	FILE *file;
+	FileManager *fm;
+	File *file;
 	uint32_t length;
 	int   block;
     int   mode;
@@ -39,6 +41,7 @@ class TapeController : public ObjectWithMenu
 	uint8_t  controlByte;
 	uint8_t  *blockBuffer;
 	void read_block();
+	static void poll_static(Event &);
 public:
 	TapeController();
 	virtual ~TapeController();
@@ -50,7 +53,7 @@ public:
 	void stop();
 	void start(int);
 	void poll(Event &);
-	void set_file(FILE *f, uint32_t, int);
+	void set_file(File *f, uint32_t, int);
 };
 
 extern TapeController *tape_controller;

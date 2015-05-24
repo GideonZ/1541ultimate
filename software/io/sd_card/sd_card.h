@@ -24,7 +24,7 @@ class SdCard : public BlockDevice
     /* Private functions */
 
     uint8_t    Resp8b(void);
-    WORD    Resp16b(void);
+    uint16_t   Resp16b(void);
     void    Resp8bError(uint8_t value);
     DRESULT verify(const uint8_t* buf, uint32_t address );
     DRESULT get_drive_size(uint32_t* drive_size);

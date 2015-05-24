@@ -1,5 +1,6 @@
 #include "small_printf.h"
 #include "itu.h"
+#include <stdlib.h>
 
 /*
 int _use_syscall;
@@ -7,9 +8,6 @@ extern int _syscall(int *foo, int ID, ...);
 */
 
 extern int main(int argc, char **argv);
-
-//static char *args[]={"dummy.exe"};
-//unsigned int _memreg[4];
 
 extern unsigned char __constructor_list, __end_of_constructors;
 extern unsigned char __destructor_list, __end_of_destructors;
@@ -19,57 +17,74 @@ extern char _heap_end[];
 void *sbrk(int inc);
 
 //extern void _init(void);
-void _initIO();
 void __clear_bss();
-void __copy_data();
+//void __copy_data();
 
 void _premain() __attribute__ ((section(".text.start")));
 
 typedef void(*fptr)(void);
 
-void _premain()
+void _do_dtors(void)
 {
-	int t;
-	unsigned long *pul, *end;
+	unsigned long *pul;
 	fptr f;
 
-    UART_DATA = 0x31;
-    UART_DATA = 0x2e;
+	pul = (unsigned long *)&__end_of_destructors;
 
-//    printf("Heap: %p-%p\n", _heap, _heap_end);
-//	__copy_data();
-//	_initIO();
-    __clear_bss();
-
-    UART_DATA = 0x32;
-    UART_DATA = 0x2e;
-
-    pul = (unsigned long *)&__constructor_list;
-    end = (unsigned long *)&__end_of_constructors;
-//    printf("\nconstructor list = (%p-%p)\n", pul, end);
-
-    while(pul != end) {
-        f = (fptr)*pul;
-        printf("Con %p\n", f);
-        f();
-        pul++;
-    }
-
-    UART_DATA = 0x33;
-    UART_DATA = 0x2e;
-
-	t=main(0, 0);
-
-    pul = (unsigned long *)&__end_of_destructors;
     do {
         pul--;
         if(pul < (unsigned long *)&__destructor_list)
         	break;
         f = (fptr)*pul;
+//        printf("Destr %p\n", f);
         f();
     } while(1);
-    
+}
+
+void _do_ctors(void)
+{
+	unsigned long *pul, *end;
+	fptr f;
+
+	pul = (unsigned long *)&__constructor_list;
+    end = (unsigned long *)&__end_of_constructors;
+//    printf("\nconstructor list = (%p-%p)\n", pul, end);
+
+    while(pul != end) {
+        f = (fptr)*pul;
+//        printf("Con %p\n", f);
+        f();
+        pul++;
+    }
+}
+
+void _exit()
+{
     puts("Done!");
+	while(1);
+}
+
+void _premain()
+{
+	int t;
+
+    UART_DATA = 0x31;
+    UART_DATA = 0x2e;
+
+    __clear_bss();
+
+    UART_DATA = 0x32;
+    UART_DATA = 0x2e;
+
+    _do_ctors();
+
+    UART_DATA = 0x33;
+    UART_DATA = 0x2e;
+
+    atexit(_do_dtors);
+    t=main(0, 0);
+    exit(0);
+    
 }
 
 extern char __bss_start__[], __bss_end__[];
@@ -85,8 +100,8 @@ void __clear_bss(void)
     } while(cptr < (unsigned int *)(__bss_end__));
 }
 
-extern unsigned char __ram_start,__data_start,__data_end;
 /*
+extern unsigned char __ram_start,__data_start,__data_end;
 extern unsigned char ___jcr_start,___jcr_begin,___jcr_end;
 
 */
@@ -143,4 +158,16 @@ void *sbrk(int inc)
     return result;
 }
 
+void restart(void)
+{
+	uint32_t *src = (uint32_t *)0x1C00000;
+	uint32_t *dst = (uint32_t *)0x10000;
+	int size = (int)(*(src++));
+	while(size--) {
+		*(dst++) = *(src++);
+	}
+    puts("Restarting....");
+    __asm__("bralid r15, 0x10000");
+    __asm__("nop");
+}
 

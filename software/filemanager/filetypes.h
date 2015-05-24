@@ -24,9 +24,6 @@ public:
 	virtual int fetch_context_items(IndexedList<Action *> &list) {
 		return 0;
 	}
-
 };
-
-extern Factory<CachedTreeNode *, FileType *> file_type_factory;
 
 #endif /* FILEMANAGER_FILETYPES_H_ */

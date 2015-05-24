@@ -7,25 +7,25 @@ extern "C" {
 
 #include "integer.h"
 #include "host.h"
-#include "keyboard.h"
+#include "keyboard_c64.h"
 #include "iomap.h"
 
-#define CHARGEN_LINE_CLOCKS_HI   *((volatile BYTE *)(OVERLAY_BASE + 0x00))
-#define CHARGEN_LINE_CLOCKS_LO   *((volatile BYTE *)(OVERLAY_BASE + 0x01))
-#define CHARGEN_CHAR_WIDTH       *((volatile BYTE *)(OVERLAY_BASE + 0x02))
-#define CHARGEN_CHAR_HEIGHT      *((volatile BYTE *)(OVERLAY_BASE + 0x03))
-#define CHARGEN_CHARS_PER_LINE   *((volatile BYTE *)(OVERLAY_BASE + 0x04))
-#define CHARGEN_ACTIVE_LINES     *((volatile BYTE *)(OVERLAY_BASE + 0x05))
-#define CHARGEN_X_ON_HI          *((volatile BYTE *)(OVERLAY_BASE + 0x06))
-#define CHARGEN_X_ON_LO          *((volatile BYTE *)(OVERLAY_BASE + 0x07))
-#define CHARGEN_Y_ON_HI          *((volatile BYTE *)(OVERLAY_BASE + 0x08))
-#define CHARGEN_Y_ON_LO          *((volatile BYTE *)(OVERLAY_BASE + 0x09))
-#define CHARGEN_POINTER_HI       *((volatile BYTE *)(OVERLAY_BASE + 0x0A))
-#define CHARGEN_POINTER_LO       *((volatile BYTE *)(OVERLAY_BASE + 0x0B))
-#define CHARGEN_PERFORM_SYNC     *((volatile BYTE *)(OVERLAY_BASE + 0x0C))
-#define CHARGEN_TRANSPARENCY     *((volatile BYTE *)(OVERLAY_BASE + 0x0D))
-#define CHARGEN_KEYB_ROW         *((volatile BYTE *)(OVERLAY_BASE + 0x0E))
-#define CHARGEN_KEYB_COL         *((volatile BYTE *)(OVERLAY_BASE + 0x0F))
+#define CHARGEN_LINE_CLOCKS_HI   *((volatile uint8_t *)(OVERLAY_BASE + 0x00))
+#define CHARGEN_LINE_CLOCKS_LO   *((volatile uint8_t *)(OVERLAY_BASE + 0x01))
+#define CHARGEN_CHAR_WIDTH       *((volatile uint8_t *)(OVERLAY_BASE + 0x02))
+#define CHARGEN_CHAR_HEIGHT      *((volatile uint8_t *)(OVERLAY_BASE + 0x03))
+#define CHARGEN_CHARS_PER_LINE   *((volatile uint8_t *)(OVERLAY_BASE + 0x04))
+#define CHARGEN_ACTIVE_LINES     *((volatile uint8_t *)(OVERLAY_BASE + 0x05))
+#define CHARGEN_X_ON_HI          *((volatile uint8_t *)(OVERLAY_BASE + 0x06))
+#define CHARGEN_X_ON_LO          *((volatile uint8_t *)(OVERLAY_BASE + 0x07))
+#define CHARGEN_Y_ON_HI          *((volatile uint8_t *)(OVERLAY_BASE + 0x08))
+#define CHARGEN_Y_ON_LO          *((volatile uint8_t *)(OVERLAY_BASE + 0x09))
+#define CHARGEN_POINTER_HI       *((volatile uint8_t *)(OVERLAY_BASE + 0x0A))
+#define CHARGEN_POINTER_LO       *((volatile uint8_t *)(OVERLAY_BASE + 0x0B))
+#define CHARGEN_PERFORM_SYNC     *((volatile uint8_t *)(OVERLAY_BASE + 0x0C))
+#define CHARGEN_TRANSPARENCY     *((volatile uint8_t *)(OVERLAY_BASE + 0x0D))
+#define CHARGEN_KEYB_ROW         *((volatile uint8_t *)(OVERLAY_BASE + 0x0E))
+#define CHARGEN_KEYB_COL         *((volatile uint8_t *)(OVERLAY_BASE + 0x0F))
 
 
 #define CHARGEN_SCREEN_RAM       (OVERLAY_BASE + 0x0800)
@@ -56,7 +56,7 @@ public:
             CHARGEN_PERFORM_SYNC     = 0;
             CHARGEN_TRANSPARENCY     = (active)?0x84:0x04;
 
-            keyb = new Keyboard(this, &CHARGEN_KEYB_ROW, &CHARGEN_KEYB_COL);
+            keyb = new Keyboard_C64(this, &CHARGEN_KEYB_ROW, &CHARGEN_KEYB_COL);
         }
     }
     ~Overlay() {

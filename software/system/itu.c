@@ -2,10 +2,10 @@
 #include "itu.h"
 #include "keys.h"
 
-#define CAPABILITIES_0    *((volatile BYTE*)(ITU_BASE + 0x0C))
-#define CAPABILITIES_1    *((volatile BYTE*)(ITU_BASE + 0x0D))
-#define CAPABILITIES_2    *((volatile BYTE*)(ITU_BASE + 0x0E))
-#define CAPABILITIES_3    *((volatile BYTE*)(ITU_BASE + 0x0F))
+#define CAPABILITIES_0    *((volatile uint8_t*)(ITU_BASE + 0x0C))
+#define CAPABILITIES_1    *((volatile uint8_t*)(ITU_BASE + 0x0D))
+#define CAPABILITIES_2    *((volatile uint8_t*)(ITU_BASE + 0x0E))
+#define CAPABILITIES_3    *((volatile uint8_t*)(ITU_BASE + 0x0F))
 
 uint32_t getFpgaCapabilities()
 {

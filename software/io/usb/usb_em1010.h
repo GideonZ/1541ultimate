@@ -82,17 +82,16 @@ class UsbEm1010Driver : public UsbDriver
     bool read_registers(uint8_t offset, uint8_t *data, int len);
     bool dump_registers(void);
     bool write_register(uint8_t offset, uint8_t data);
-    bool read_phy_register(uint8_t offset, WORD *data);
-    bool write_phy_register(uint8_t offset, WORD data);
+    bool read_phy_register(uint8_t offset, uint16_t *data);
+    bool write_phy_register(uint8_t offset, uint16_t data);
     bool read_mac_address();
 
 public:
-	UsbEm1010Driver(IndexedList<UsbDriver *> &list);
+	static UsbDriver *test_driver(UsbDevice *dev);
+
 	UsbEm1010Driver();
 	~UsbEm1010Driver();
 
-	UsbEm1010Driver *create_instance(void);
-	bool test_driver(UsbDevice *dev);
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);

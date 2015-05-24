@@ -14,9 +14,9 @@
 #include "config.h"
 #include "iomap.h"
 
-#define RTC_CHIP_DATA  *((volatile BYTE *)(RTC_BASE + 0x00))
-#define RTC_CHIP_SPEED *((volatile BYTE *)(RTC_BASE + 0x04))
-#define RTC_CHIP_CTRL  *((volatile BYTE *)(RTC_BASE + 0x08))
+#define RTC_CHIP_DATA  *((volatile uint8_t *)(RTC_BASE + 0x00))
+#define RTC_CHIP_SPEED *((volatile uint8_t *)(RTC_BASE + 0x04))
+#define RTC_CHIP_CTRL  *((volatile uint8_t *)(RTC_BASE + 0x08))
 
 #define RTC_TIMER_HUNDREDTHS *((volatile uint8_t *)(RTC_TIMER_BASE + 0x07))
 #define RTC_TIMER_SECONDS    *((volatile uint8_t *)(RTC_TIMER_BASE + 0x06))

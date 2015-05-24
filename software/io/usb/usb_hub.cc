@@ -21,8 +21,6 @@ __inline uint32_t cpu_to_32le(uint32_t a)
 / The driver is the "bridge" between the system and the device
 / and necessary system objects
 /*********************************************************************/
-// tester instance
-UsbHubDriver usb_hub_driver_tester(usb_drivers);
 
 uint8_t c_get_hub_descriptor[] = { 0xA0, 0x06, 0x00, 0x29, 0x00, 0x00, 0x40, 0x00 };
 uint8_t c_get_hub_status[]     = { 0xA0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00 };
@@ -32,10 +30,8 @@ uint8_t c_set_port_feature[]   = { 0x23, 0x03, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x0
 uint8_t c_clear_hub_feature[]  = { 0x20, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_clear_port_feature[] = { 0x23, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-UsbHubDriver :: UsbHubDriver(IndexedList<UsbDriver*> &list)
-{
-	list.append(this); // add tester
-}
+// tester instance
+FactoryRegistrator<UsbDevice *, UsbDriver *> hub_tester(UsbDevice :: getUsbDriverFactory(), UsbHubDriver :: test_driver);
 
 UsbHubDriver :: UsbHubDriver()
 {
@@ -54,29 +50,25 @@ UsbHubDriver :: ~UsbHubDriver()
 
 }
 
-UsbHubDriver *UsbHubDriver :: create_instance(void)
-{
-	return new UsbHubDriver();
-}
 
-bool UsbHubDriver :: test_driver(UsbDevice *dev)
+UsbDriver *UsbHubDriver :: test_driver(UsbDevice *dev)
 {
 	//printf("** Test UsbHubDriver **\n");
 	if(dev->device_descr.device_class != 0x09) {
 		printf("Device is not a hub..\n");
-		return false;
+		return 0;
 	}
 	if((dev->device_descr.protocol != 0x01)&&(dev->device_descr.protocol != 0x02)) {
 		printf("Device protocol: no TT's. [%b]\n", dev->device_descr.protocol);
-		return false;
+		return 0;
 	}
 //	if(dev->interface_descr.sub_class != 0x00) {
 //		printf("SubClass is not zero... [%b]\n", dev->interface_descr.sub_class);
-//		return false;
+//		return 0;
 //	}
 	printf("** USB HUB Found! **\n");
 	// TODO: More tests needed here?
-	return true;
+	return new UsbHubDriver();
 }
 
 
@@ -194,7 +186,7 @@ void UsbHubDriver :: install(UsbDevice *dev)
     		endpoint = 1;
     }
     struct t_pipe ipipe;
-    ipipe.DevEP = WORD((dev->current_address << 8) | endpoint);
+    ipipe.DevEP = uint16_t((dev->current_address << 8) | endpoint);
     ipipe.Interval = 1160; // 50 Hz; // added 1000 for making it slower
     ipipe.Length = 2; // just read 2 bytes max (max 15 port hub)
     ipipe.MaxTrans = 64;

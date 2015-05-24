@@ -24,17 +24,21 @@
  *
  */
 
-#include "menu.h"
-#include "integer.h"
-extern "C" {
-	#include "dump_hex.h"
-    #include "small_printf.h"
-}
-#include "c64.h"
-#include "flash.h"
+#include <stdio.h>
 #include <string.h>
 #include "menu.h"
+#include "integer.h"
+#include "dump_hex.h"
+#include "c64.h"
+#include "flash.h"
+#include "menu.h"
 #include "userinterface.h"
+#include "keyboard_c64.h"
+#include "globals.h"
+
+#ifndef _NO_FILE_ACCESS
+# include "filemanager.h"
+#endif
 
 /* other external references */
 extern uint8_t _binary_bootcrt_65_start;
@@ -44,9 +48,9 @@ cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 // static pointer
 C64   *c64;
 
-static inline WORD le2cpu(WORD p)
+static inline uint16_t le2cpu(uint16_t p)
 {
-	WORD out = (p >> 8) | (p << 8);
+	uint16_t out = (p >> 8) | (p << 8);
 	return out;
 }
 
@@ -143,7 +147,6 @@ struct t_cfg_definition c64_config[] = {
 
 extern uint8_t _binary_chars_bin_start;
 
-    
 C64 :: C64()
 {
     flash = get_flash();
@@ -152,18 +155,21 @@ C64 :: C64()
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
     char_set = (uint8_t *)&_binary_chars_bin_start;
-    keyb = new Keyboard(this, &CIA1_DPB, &CIA1_DPA);
+    keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
+    screen = new Screen_MemMappedCharMatrix((char *)C64_SCREEN, (char *)C64_COLORRAM, 40, 25);
 
     if(C64_CLOCK_DETECT == 0)
         printf("No PHI2 clock detected.. Stand alone mode.\n");
 	else
-		main_menu_objects.append(this);
+		Globals :: getObjectsWithMenu() -> append(this);
 	
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
 	C64_STOP = 0;
 	stopped = false;
     C64_MODE = C64_MODE_RESET;
+
+    fm = FileManager :: getFileManager();
 }
     
 C64 :: ~C64()
@@ -175,7 +181,9 @@ C64 :: ~C64()
 	}
 
     delete keyb;
-//    delete[] char_set;
+
+    if (screen)
+    	delete screen;
 }
 
 void C64 :: effectuate_settings(void)
@@ -644,14 +652,24 @@ void C64 :: unfreeze(Event &e)
     push_event(e_unfreeze, this);
 }
 
-char *C64 :: get_screen(void)
+Screen *C64 :: getScreen(void)
 {
-    return (char *)C64_SCREEN;
+/*
+    if (!screen)
+    	screen = new Screen_MemMappedCharMatrix(C64_SCREEN, C64_COLORRAM, 40, 25);
+*/
+	screen->clear();
+    return screen;
 }
     
-char *C64 :: get_color_map(void)
+void C64 :: releaseScreen()
 {
-    return (char *)C64_COLORRAM;
+/*
+	if(screen) {
+		delete screen;
+		screen = 0;
+	}
+*/
 }
 
 bool C64 :: is_accessible(void)
@@ -659,7 +677,7 @@ bool C64 :: is_accessible(void)
     return stopped;
 }
 
-Keyboard *C64 :: get_keyboard(void)
+Keyboard *C64 :: getKeyboard(void)
 {
     return keyb;
 }
@@ -692,16 +710,16 @@ void C64 :: set_cartridge(cart_def *def)
         printf("Now loading '%s' as cartridge.\n", n);
 
 #ifndef _NO_FILE_ACCESS
-        FILE *f = fopen(n, "rb");
+        File *f = fm->fopen(NULL, n, FA_READ);
 		if(f) {
 			printf("File: %p\n", f);
-			UINT transferred;
-			transferred = fread((void *)mem_addr, 1, def->length, f);
-			if(transferred < 4096) {
+			uint32_t transferred;
+			FRESULT res = f->read((void *)mem_addr, def->length, &transferred);
+			if((res != FR_OK) || (transferred < 4096)) {
 				printf("Error loading file.. disabling cart.\n");
 				C64_CARTRIDGE_TYPE = 0;
 			}
-			fclose(f);
+			fm->fclose(f);
 		} else {
 			printf("Open file failed.\n");
 		}
@@ -730,17 +748,17 @@ void C64 :: init_cartridge()
         char *n = cfg->get_string(CFG_C64_KERNFILE);
         printf("Now loading '%s' as KERNAL ROM.\n", n);
 
-        FILE *f = fopen(n, "rb");
+        File *f = fm->fopen(NULL, n, FA_READ);
 		if(f) {
-			UINT transferred;
+			uint32_t transferred;
             uint8_t *temp = new uint8_t[8192];
-			transferred = fread(temp, 1, 8192, f);
+			FRESULT res = f->read(temp, 8192, &transferred);
             C64_KERNAL_ENABLE = 1;
 			if (transferred != 8192) {
 				printf("Error loading file.. [%d bytes read] disabling custom kernal.\n", transferred);
                 C64_KERNAL_ENABLE = 0;
 			}
-			fclose(f);
+			fm->fclose(f);
             // BYTE *src = (BYTE *)&_binary_kernal_sx_251104_04_bin_start;
             uint8_t *src = temp;
             uint8_t *dst = (uint8_t *)(C64_KERNAL_BASE+1);
@@ -775,18 +793,18 @@ void C64 :: cartridge_test(void)
 void C64 :: poll(Event &e)
 {
 #ifndef _NO_FILE_ACCESS
-	FILE *f;
+	File *f;
 	uint32_t size;
+    uint32_t reu_size;
     t_flash_address addr;
 	int run_code;
-    LONG reu_size;
     
 	if(e.type == e_dma_load) {
-		f = (FILE *)e.object;
+		f = (File *)e.object;
 		run_code = e.param;
 		dma_load(f, run_code);
         if (f) {
-            fclose(f);
+            fm->fclose(f);
         }
 	} else if((e.type == e_object_private_cmd)&&(e.object == this)) {
 		switch(e.param) {
@@ -812,12 +830,12 @@ void C64 :: execute(void *obj, void *param)
 
 void C64 :: execute(int command)
 {
-	FILE *f;
+	File *f;
 	CachedTreeNode *po;
-	UINT transferred;
+	uint32_t transferred;
 	int ram_size;
 
-	switch(command) {
+    switch(command) {
 	case MENU_C64_RESET:
 		if(is_accessible()) { // we can't execute this yet
 			push_event(e_unfreeze);
@@ -834,38 +852,40 @@ void C64 :: execute(int command)
 			init_cartridge();
 		}
 		break;
-    case MENU_C64_SAVEREU:
+#ifndef _NO_FILE_ACCESS
+	case MENU_C64_SAVEREU:
 //        po = user_interface->get_path(); FIXME
         ram_size = 128 * 1024;
         ram_size <<= cfg->get_value(CFG_C64_REU_SIZE);
-        f = fopen("memory.reu", "wb");
+        f = fm->fopen(NULL, "memory.reu", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
         if(f) {
             printf("Opened file successfully.\n");
-            transferred = fwrite((void *)REU_MEMORY_BASE, 1, ram_size, f);
+            f->write((void *)REU_MEMORY_BASE, ram_size, &transferred);
             printf("written: %d...", transferred);
-            fclose(f);
+            fm->fclose(f);
         } else {
             printf("Couldn't open file..\n");
         }
         break;
     case MENU_C64_SAVEFLASH: // doesn't belong here, but i need it fast
 //        po = user_interface->get_path(); FIXME
-        f = fopen("flash_dump.bin", "wb");
+        f = fm->fopen(NULL, "flash_dump.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
         if(f) {
             int pages = flash->get_number_of_pages();
             int page_size = flash->get_page_size();
             uint8_t *page_buf = new uint8_t[page_size];
             for(int i=0;i<pages;i++) {
                 flash->read_page(i, page_buf);
-                transferred = fwrite(page_buf, 1, page_size, f);
+                f->write(page_buf, page_size, &transferred);
             }
             delete[] page_buf;
-            fclose(f);
+            fm->fclose(f);
         } else {
             printf("Couldn't open file..\n");
         }
         break;
-	case MENU_C64_HARD_BOOT:
+#endif
+    case MENU_C64_HARD_BOOT:
 		flash->reboot(0);
 		break;
 	default:
@@ -874,7 +894,7 @@ void C64 :: execute(int command)
 }
 
 // static member
-int C64Event :: prepare_dma_load(FILE *f, const char *name, int len, uint8_t run_code, WORD reloc)
+int C64Event :: prepare_dma_load(File *f, const char *name, int len, uint8_t run_code, uint16_t reloc)
 {
     C64_POKE(0x162, run_code);
 
@@ -890,7 +910,7 @@ int C64Event :: prepare_dma_load(FILE *f, const char *name, int len, uint8_t run
 }
 
 // static member
-int C64Event :: perform_dma_load(FILE *f, uint8_t run_code, WORD reloc)
+int C64Event :: perform_dma_load(File *f, uint8_t run_code, uint16_t reloc)
 {
     push_event(e_dma_load, f, run_code);
     return 0;
@@ -898,13 +918,13 @@ int C64Event :: perform_dma_load(FILE *f, uint8_t run_code, WORD reloc)
 
 
 
-int C64 :: dma_load(FILE *f, uint8_t run_code, WORD reloc)
+int C64 :: dma_load(File *f, uint8_t run_code, uint16_t reloc)
 {
 	// First, check if we have file access
-    UINT transferred;
-	WORD load_address;
+    uint32_t transferred;
+	uint16_t load_address;
     if (f) {
-        transferred = fread(&load_address, 1, 2, f);
+        f->read(&load_address, 2, &transferred);
         printf("Load address: %4x...", load_address);
         if(transferred != 2) {
             printf("Can't read from file..\n");
@@ -948,7 +968,7 @@ int C64 :: dma_load(FILE *f, uint8_t run_code, WORD reloc)
         /* Now actually load the file */
         int total_trans = 0;
         while (max_length > 0) {
-        	transferred = fread(dma_load_buffer, 1, block, f);
+        	f->read(dma_load_buffer, block, &transferred);
         	total_trans += transferred;
         	for (int i=0;i<transferred;i++) {
         		*(dest++) = dma_load_buffer[i];
@@ -959,7 +979,7 @@ int C64 :: dma_load(FILE *f, uint8_t run_code, WORD reloc)
         	max_length -= transferred;
         	block = 512;
         }
-        WORD end_address = load_address + total_trans;
+        uint16_t end_address = load_address + total_trans;
         printf("DMA load complete: $%4x-$%4x Run Code: %b\n", load_address, end_address, run_code);
 
         C64_POKE(2, 0); // signal DMA load done
@@ -989,9 +1009,9 @@ int C64 :: dma_load(FILE *f, uint8_t run_code, WORD reloc)
     return 0;
 }
 
-bool C64 :: write_vic_state(FILE *f)
+bool C64 :: write_vic_state(File *f)
 {
-    UINT transferred;
+    uint32_t transferred;
     uint8_t mode = C64_MODE;
     C64_MODE = 0;
 
@@ -999,15 +1019,15 @@ bool C64 :: write_vic_state(FILE *f)
     uint8_t bank = 3 - (cia_backup[1] & 0x03);
     uint32_t addr = C64_MEMORY_BASE + (uint32_t(bank) << 14);
     if(bank == 0) {
-        fwrite((uint8_t *)C64_MEMORY_BASE, 1, 0x0400, f);
-        fwrite(screen_backup, 1, 0x0400, f);
-        fwrite(ram_backup, 1, 0x0800, f);
-        fwrite((uint8_t *)(C64_MEMORY_BASE + 0x1000), 1, 0x3000, f);
+        f->write((uint8_t *)C64_MEMORY_BASE, 0x0400, &transferred);
+        f->write(screen_backup, 0x0400, &transferred);
+        f->write(ram_backup, 0x0800, &transferred);
+        f->write((uint8_t *)(C64_MEMORY_BASE + 0x1000), 0x3000, &transferred);
     } else {        
-        fwrite((uint8_t *)addr, 1, 16384, f);
+        f->write((uint8_t *)addr, 16384, &transferred);
     }    
-    fwrite(color_backup, 1, 0x0400, f);
-    fwrite(vic_backup, 1, NUM_VICREGS, f);
+    f->write(color_backup, 0x0400, &transferred);
+    f->write(vic_backup, NUM_VICREGS, &transferred);
     
     C64_MODE = mode;
     return true;

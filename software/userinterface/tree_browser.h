@@ -15,6 +15,7 @@ public:
     char quick_seek_string[MAX_SEARCH_LEN];
     int  quick_seek_length;
 
+    Browsable *root;
     Screen   *screen;
     Window   *window;
     Keyboard *keyb;
@@ -28,7 +29,6 @@ public:
 
     // Member functions
     TreeBrowser(Browsable *);
-    virtual void initState(Browsable *);
     virtual ~TreeBrowser();
 
     virtual void init(Screen *scr, Keyboard *k);

@@ -45,7 +45,7 @@ char *FilePartition :: get_display_string(void)
     uint32_t length;
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
-    sprintf(buffer, "%24s \027%s \032%s", get_name(), sizebuf, get_type_string(prt->get_type()));
+    sprintf(buffer, "%24s \e7%s \eJ%s", get_name(), sizebuf, get_type_string(prt->get_type()));
     return buffer;
 }
 

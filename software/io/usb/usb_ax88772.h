@@ -27,16 +27,15 @@ class UsbAx88772Driver : public UsbDriver
     bool read_mac_address();
     bool write_mac_address();
     
-    void write_phy_register(uint8_t reg, WORD value);
-    WORD read_phy_register(uint8_t reg);
+    void write_phy_register(uint8_t reg, uint16_t value);
+    uint16_t read_phy_register(uint8_t reg);
 
 public:
-	UsbAx88772Driver(IndexedList<UsbDriver *> &list);
+	static UsbDriver *test_driver(UsbDevice *dev);
+
 	UsbAx88772Driver();
 	~UsbAx88772Driver();
 
-	UsbAx88772Driver *create_instance(void);
-	bool test_driver(UsbDevice *dev);
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);

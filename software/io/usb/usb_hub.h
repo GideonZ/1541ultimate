@@ -24,12 +24,11 @@ class UsbHubDriver : public UsbDriver
     UsbDevice *children[7];
 
 public:
-	UsbHubDriver(IndexedList<UsbDriver *> &list);
+	static UsbDriver *test_driver(UsbDevice *dev);
+
 	UsbHubDriver();
 	~UsbHubDriver();
 
-	UsbHubDriver *create_instance(void);
-	bool test_driver(UsbDevice *dev);
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);

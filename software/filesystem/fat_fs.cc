@@ -82,10 +82,9 @@
 / fat chaining and all.
 /---------------------------------------------------------------------------*/
 
-extern "C" {
-    #include "small_printf.h"
-    #include "dump_hex.h"
-}
+#include <stdio.h>
+#include "dump_hex.h"
+#include "globals.h"
 #include "fat_fs.h"         /* FatFs configurations and declarations */
 #include "fat_dir.h"
 #include "fatfile.h"
@@ -206,7 +205,7 @@ uint32_t FATFS::get_fat (  /* 0xFFFFFFFF:Disk error, 1:Interal error, Else:Clust
     uint32_t clst  /* Cluster# to get the link information */
 )
 {
-    UINT wc, bc;
+    uint32_t wc, bc;
     uint32_t fsect;
 
     if (clst < 2 || clst >= max_clust)  /* Range check */
@@ -219,16 +218,16 @@ uint32_t FATFS::get_fat (  /* 0xFFFFFFFF:Disk error, 1:Interal error, Else:Clust
         if (move_window(fsect + (bc / SECSIZE))) break;
         wc = win[bc & (SECSIZE - 1)]; bc++;
         if (move_window(fsect + (bc / SECSIZE))) break;
-        wc |= (WORD)win[bc & (SECSIZE - 1)] << 8;
+        wc |= (uint16_t)win[bc & (SECSIZE - 1)] << 8;
         return (clst & 1) ? (wc >> 4) : (wc & 0xFFF);
 
     case FS_FAT16 :
         if (move_window(fsect + (clst / (SECSIZE / 2)))) break;
-        return LD_WORD(&win[((WORD)clst * 2) & (SECSIZE - 1)]);
+        return LD_WORD(&win[((uint16_t)clst * 2) & (SECSIZE - 1)]);
 
     case FS_FAT32 :
         if (move_window(fsect + (clst / (SECSIZE / 4)))) break;
-        return LD_DWORD(&win[((WORD)clst * 4) & (SECSIZE - 1)]) & 0x0FFFFFFF;
+        return LD_DWORD(&win[((uint16_t)clst * 4) & (SECSIZE - 1)]) & 0x0FFFFFFF;
     }
 
     return 0xFFFFFFFF;  /* An error occured at the disk I/O layer */
@@ -245,7 +244,7 @@ FRESULT FATFS::put_fat (
     uint32_t val   /* New value to mark the cluster */
 )
 {
-    UINT bc;
+    uint32_t bc;
     uint8_t *p;
     uint32_t fsect;
     FRESULT res;
@@ -274,13 +273,13 @@ FRESULT FATFS::put_fat (
         case FS_FAT16 :
             res = move_window(fsect + (clst / (SECSIZE / 2)));
             if (res != FR_OK) break;
-            ST_WORD(&win[((WORD)clst * 2) & (SECSIZE - 1)], (WORD)val);
+            ST_WORD(&win[((uint16_t)clst * 2) & (SECSIZE - 1)], (uint16_t)val);
             break;
 
         case FS_FAT32 :
             res = move_window(fsect + (clst / (SECSIZE / 4)));
             if (res != FR_OK) break;
-            ST_DWORD(&win[((WORD)clst * 4) & (SECSIZE - 1)], val);
+            ST_DWORD(&win[((uint16_t)clst * 4) & (SECSIZE - 1)], val);
             break;
 
         default :
@@ -575,7 +574,7 @@ FRESULT FATFS::getfree (
 {
     FRESULT res;
     uint32_t n, clst, sect, stat;
-    UINT i;
+    uint32_t i;
     uint8_t fat, *p;
 
 
@@ -656,7 +655,7 @@ FRESULT FATFS::format (
     uint32_t b_part, b_fat, b_dir, b_data;     /* Area offset (LBA) */
     uint32_t n_part, n_rsv, n_fat, n_dir;      /* Area size */
     uint32_t n_clst, d, n;
-    WORD as;
+    uint16_t as;
     FATFS *fs;
     DSTATUS stat;
 
@@ -1002,13 +1001,13 @@ void FATFS::file_close(File *f)
     delete f;
 }
 
-FRESULT FATFS::file_read(File *f, void *buffer, uint32_t len, UINT *bytes_read)
+FRESULT FATFS::file_read(File *f, void *buffer, uint32_t len, uint32_t *bytes_read)
 {
     FATFIL *ff = (FATFIL *)f->handle;
     return ff->read(buffer, len, bytes_read);
 }
 
-FRESULT FATFS::file_write(File *f, void *buffer, uint32_t len, UINT *bytes_written)
+FRESULT FATFS::file_write(File *f, void *buffer, uint32_t len, uint32_t *bytes_written)
 {
     FATFIL *ff = (FATFIL *)f->handle;
 //    printf("Writing %d bytes from %p...\n", len, buffer);
@@ -1102,6 +1101,6 @@ void FATFS::file_print_info(File *f)
 	ff->print_info();
 }
 
-FactoryRegistrator<Partition *, FileSystem *> fat_tester(file_system_factory, FATFS :: test);
+FactoryRegistrator<Partition *, FileSystem *> fat_tester(Globals :: getFileSystemFactory(), FATFS :: test);
 
 #endif

@@ -13,7 +13,7 @@
 class FATDIR
 {
     FATFS*  fs;         /* Pointer to the owner file system object */
-    WORD    index;      /* Current read/write index number */
+    uint16_t    index;      /* Current read/write index number */
     uint32_t   sclust;     /* Table start cluster (0:Static table) */
     uint32_t   clust;      /* Current cluster */
     uint32_t   sect;       /* Current sector */
@@ -22,13 +22,13 @@ class FATDIR
     uint8_t    valid;      /* Indicates validity of open directory. */
 #if _USE_LFN
     WCHAR*  lfn;        /* Pointer to the LFN working buffer */
-    WORD    lfn_idx;    /* Last matched LFN index number (0xFFFF:No LFN) */
+    uint16_t    lfn_idx;    /* Last matched LFN index number (0xFFFF:No LFN) */
 #endif
 
 protected:
     void    get_fileinfo(FileInfo *fno); /* Convert directory into usable structure   */
     FRESULT validate(void);             /* Check if a directory is open and file system is ok */
-    FRESULT dir_seek (WORD idx);        /* Directory handling - Seek directory index */
+    FRESULT dir_seek (uint16_t idx);        /* Directory handling - Seek directory index */
     FRESULT dir_next (bool);            /* Directory handling - Move directory index next */
     FRESULT dir_find (void);            /* Finds filename */
 #if _USE_LFN
@@ -82,7 +82,7 @@ public:
 
 /* Unicode - OEM code conversion */
 #if _USE_LFN
-WCHAR ff_convert (WCHAR, UINT);
+WCHAR ff_convert (WCHAR, uint32_t);
 WCHAR ff_wtoupper (WCHAR);
 #endif
 

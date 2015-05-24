@@ -10,8 +10,8 @@
 #include <stdio.h>
 
 // static variable instantiation of factory pointer
-template<class Ta, class Tb>
-Factory<Ta, Tb>* Factory<Ta, Tb> :: factory;
+// template<class Ta, class Tb>
+// Factory<Ta, Tb>* Factory<Ta, Tb> :: factory;
 
 int test_aap(const char *val) {
 	if (strcmp(val, "aap") == 0)
@@ -40,4 +40,12 @@ int main()
 	printf("%d\n", f->create("koe"));
 
 	return 0;
+}
+
+
+class UserInterface *user_interface;
+
+void outbyte(int b)
+{
+	fputc(b, stdout);
 }

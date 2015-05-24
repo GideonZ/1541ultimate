@@ -164,7 +164,7 @@ void Keyboard_C64 :: scan(void)
     }
 }
 
-uint8_t Keyboard_C64 :: getch(void)
+int Keyboard_C64 :: getch(void)
 {
 #ifdef NO_IRQ
     scan();
@@ -172,7 +172,7 @@ uint8_t Keyboard_C64 :: getch(void)
 #endif
 
     if(!key_count) {
-        return 0;
+        return -1;
     }
     ENTER_SAFE_SECTION
     uint8_t key = key_buffer[0];
@@ -182,7 +182,7 @@ uint8_t Keyboard_C64 :: getch(void)
     key_count--;
     LEAVE_SAFE_SECTION
 
-    return key;    
+    return (int)key;
 }
 
 void Keyboard_C64 :: wait_free(void)

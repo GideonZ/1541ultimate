@@ -267,7 +267,7 @@ void    FileSystem_ISO9660 :: file_close(File *f)                // Closes file 
     delete f;
 }
 
-FRESULT FileSystem_ISO9660 :: file_read(File *f, void *buffer, uint32_t len, UINT *transferred)
+FRESULT FileSystem_ISO9660 :: file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred)
 {
     t_iso_handle *handle = (t_iso_handle *)f->handle;
     
@@ -345,4 +345,5 @@ FRESULT FileSystem_ISO9660 :: file_seek(File *f, uint32_t pos)
 
 //FileSystemRegistrator iso_tester(FileSystem_ISO9660 :: test);
 
-FactoryRegistrator<Partition *, FileSystem *> iso_tester(file_system_factory, FileSystem_ISO9660 :: test);
+#include "globals.h"
+FactoryRegistrator<Partition *, FileSystem *> iso_tester(Globals :: getFileSystemFactory(), FileSystem_ISO9660 :: test);

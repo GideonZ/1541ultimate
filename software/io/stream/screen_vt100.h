@@ -15,6 +15,7 @@ class Screen_VT100: public Screen {
 	Stream *stream;
 	int color;
 	bool draw_mode;
+	bool expect_color;
 public:
 	Screen_VT100(Stream *s);
 	virtual ~Screen_VT100();

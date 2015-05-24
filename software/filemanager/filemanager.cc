@@ -5,14 +5,8 @@
 #include "filemanager.h"
 #include "file_device.h"
 
-/* Instantiation of root system */
-FileManager file_manager;
-
 /* Poll function for main loop */
-void poll_filemanager(Event &e)
-{
-	file_manager.handle_event(e);
-}
+//FileManager *FileManager :: file_manager;
 
 void FileManager :: handle_event(Event &e)
 {
@@ -23,7 +17,7 @@ void FileManager :: handle_event(Event &e)
     FileDevice *fd;
     FileNodePair pair;
     Path *path;
-    string pathString;
+    mstring pathString;
     
 	switch(e.type) {
 	case e_cleanup_path_object:

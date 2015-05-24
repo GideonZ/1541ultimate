@@ -139,7 +139,6 @@ __done:
 /* 
     _exit
     Our simple _exit
-*/    
     .globl _exit
     .align 2
     .ent _exit
@@ -147,4 +146,5 @@ __done:
 _exit:
     bri     0
 	.end _exit
+*/
 

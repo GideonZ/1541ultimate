@@ -29,10 +29,10 @@ public:
 
     void print_info(void);			// prints all variables for debug
     FRESULT validate(void);                    /* Check if everything is still ok */
-    FRESULT open(XCHAR*, uint32_t s, uint8_t, WORD *dir_index);  /* Open or create a file */
+    FRESULT open(XCHAR*, uint32_t s, uint8_t, uint16_t *dir_index);  /* Open or create a file */
     FRESULT open(FileInfo *fi, uint8_t);          /* Open or create a file, using a known dir entry */
-    FRESULT read(void*, UINT, UINT*);          /* Read data from a file */
-    FRESULT write(const void*, UINT, UINT*);   /* Write data to a file */
+    FRESULT read(void*, uint32_t, uint32_t*);          /* Read data from a file */
+    FRESULT write(const void*, uint32_t, uint32_t*);   /* Write data to a file */
     FRESULT lseek(uint32_t);                      /* Move file pointer of a file object */
     FRESULT close(void);                       /* Close an open file object */
     FRESULT truncate(void);                    /* Truncate file */

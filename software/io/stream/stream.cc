@@ -9,7 +9,7 @@ int Stream :: format(const char *fmt, ...)
     int ret;
 
     va_start(ap, fmt);
-    ret = _my_vprintf(Stream :: putc, (void **)this, fmt, ap);
+    ret = _my_vprintf(Stream :: _put, (void **)this, fmt, ap);
     va_end(ap);
 
     return (ret);

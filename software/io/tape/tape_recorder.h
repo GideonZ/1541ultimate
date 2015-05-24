@@ -6,6 +6,7 @@
 #include "poll.h"
 #include "menu.h"
 #include "iomap.h"
+#include "filemanager.h"
 
 #define RECORD_STATUS  *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
 #define RECORD_CONTROL *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
@@ -39,7 +40,8 @@
 
 class TapeRecorder : public ObjectWithMenu
 {
-	FILE *file;
+	FileManager *fm;
+	File *file;
     int   error_code;
 	int   recording;
     int   select;
@@ -52,6 +54,7 @@ class TapeRecorder : public ObjectWithMenu
     void  cache_block();
     uint8_t *cache;
     uint32_t *cache_blocks[REC_NUM_CACHE_BLOCKS];
+    static void poll_tape_rec(Event &ev);
 public:
 	TapeRecorder();
 	virtual ~TapeRecorder();

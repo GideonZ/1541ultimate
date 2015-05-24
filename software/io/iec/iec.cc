@@ -51,101 +51,102 @@ IecInterface iec_if;
 // Error,ErrorText(,Track,Sector\015) 
 // The track and sector will be send seperately
 
-const CHAR msg00[] = " OK";						//00
-const CHAR msg01[] = "FILES SCRATCHED";			//01	Track number shows how many files were removed
-const CHAR msg20[] = "READ ERROR"; 				//20 (Block Header Not Found)
-//const CHAR msg21[] = "READ ERROR"; 				//21 (No Sync Character)
-//const CHAR msg22[] = "READ ERROR"; 				//22 (Data Block not Present)
-//const CHAR msg23[] = "READ ERROR"; 				//23 (Checksum Error in Data Block)
-//const CHAR msg24[] = "READ ERROR"; 				//24 (Byte Decoding Error)
-const CHAR msg25[] = "WRITE ERROR";				//25 (Write/Verify Error)
-const CHAR msg26[] = "WRITE PROTECT ON";		//26
-//const CHAR msg27[] = "READ ERROR"; 				//27 (Checksum Error in Header)
-//const CHAR msg28[] = "WRITE ERROR"; 			//28 (Long Data Block)
-const CHAR msg29[] = "DISK ID MISMATCH";		//29
-const CHAR msg30[] = "SYNTAX ERROR";			//30 (General)
-const CHAR msg31[] = "SYNTAX ERROR";			//31 (Invalid Command)
-const CHAR msg32[] = "SYNTAX ERROR";			//32 (Command Line > 58 Characters)
-const CHAR msg33[] = "SYNTAX ERROR";			//33 (Invalid Filename)
-const CHAR msg34[] = "SYNTAX ERROR";			//34 (No File Given)
-const CHAR msg39[] = "SYNTAX ERROR";			//39 (Invalid Command)
-const CHAR msg50[] = "RECORD NOT PRESENT";		//50
-const CHAR msg51[] = "OVERFLOW IN RECORD";		//51
-//const CHAR msg52[] = "FILE TOO LARGE";			//52
-const CHAR msg60[] = "WRITE FILE OPEN";			//60
-const CHAR msg61[] = "FILE NOT OPEN";			//61
-const CHAR msg62[] = "FILE NOT FOUND";			//62
-const CHAR msg63[] = "FILE EXISTS";				//63
-const CHAR msg64[] = "FILE TYPE MISMATCH";		//64
-//const CHAR msg65[] = "NO BLOCK";				//65
-//const CHAR msg66[] = "ILLEGAL TRACK AND SECTOR";//66
-//const CHAR msg67[] = "ILLEGAL SYSTEM T OR S";	//67
-const CHAR msg70[] = "NO CHANNEL";	            //70
-const CHAR msg71[] = "DIRECTORY ERROR";			//71
-const CHAR msg72[] = "DISK FULL";				//72
-const CHAR msg73[] = "ULTIMATE IEC DOS V0.5";	//73 DOS MISMATCH(Returns DOS Version)
-const CHAR msg74[] = "DRIVE NOT READY";			//74
+const char msg00[] = " OK";						//00
+const char msg01[] = "FILES SCRATCHED";			//01	Track number shows how many files were removed
+const char msg20[] = "READ ERROR"; 				//20 (Block Header Not Found)
+//const char msg21[] = "READ ERROR"; 				//21 (No Sync Character)
+//const char msg22[] = "READ ERROR"; 				//22 (Data Block not Present)
+//const char msg23[] = "READ ERROR"; 				//23 (Checksum Error in Data Block)
+//const char msg24[] = "READ ERROR"; 				//24 (Byte Decoding Error)
+const char msg25[] = "WRITE ERROR";				//25 (Write/Verify Error)
+const char msg26[] = "WRITE PROTECT ON";		//26
+//const char msg27[] = "READ ERROR"; 				//27 (Checksum Error in Header)
+//const char msg28[] = "WRITE ERROR"; 			//28 (Long Data Block)
+const char msg29[] = "DISK ID MISMATCH";		//29
+const char msg30[] = "SYNTAX ERROR";			//30 (General)
+const char msg31[] = "SYNTAX ERROR";			//31 (Invalid Command)
+const char msg32[] = "SYNTAX ERROR";			//32 (Command Line > 58 Characters)
+const char msg33[] = "SYNTAX ERROR";			//33 (Invalid Filename)
+const char msg34[] = "SYNTAX ERROR";			//34 (No File Given)
+const char msg39[] = "SYNTAX ERROR";			//39 (Invalid Command)
+const char msg50[] = "RECORD NOT PRESENT";		//50
+const char msg51[] = "OVERFLOW IN RECORD";		//51
+//const char msg52[] = "FILE TOO LARGE";			//52
+const char msg60[] = "WRITE FILE OPEN";			//60
+const char msg61[] = "FILE NOT OPEN";			//61
+const char msg62[] = "FILE NOT FOUND";			//62
+const char msg63[] = "FILE EXISTS";				//63
+const char msg64[] = "FILE TYPE MISMATCH";		//64
+//const char msg65[] = "NO BLOCK";				//65
+//const char msg66[] = "ILLEGAL TRACK AND SECTOR";//66
+//const char msg67[] = "ILLEGAL SYSTEM T OR S";	//67
+const char msg70[] = "NO CHANNEL";	            //70
+const char msg71[] = "DIRECTORY ERROR";			//71
+const char msg72[] = "DISK FULL";				//72
+const char msg73[] = "ULTIMATE IEC DOS V0.5";	//73 DOS MISMATCH(Returns DOS Version)
+const char msg74[] = "DRIVE NOT READY";			//74
 
-const CHAR msg_c1[] = "BAD COMMAND";			//custom
-const CHAR msg_c2[] = "UNIMPLEMENTED";			//custom
+const char msg_c1[] = "BAD COMMAND";			//custom
+const char msg_c2[] = "UNIMPLEMENTED";			//custom
 
 
 const IEC_ERROR_MSG last_error_msgs[] = {
-		{ 00,(CHAR*)msg00,NR_OF_EL(msg00) - 1 },
-		{ 01,(CHAR*)msg01,NR_OF_EL(msg01) - 1 },
-		{ 20,(CHAR*)msg20,NR_OF_EL(msg20) - 1 },
-//		{ 21,(CHAR*)msg21,NR_OF_EL(msg21) - 1 },
-//		{ 22,(CHAR*)msg22,NR_OF_EL(msg22) - 1 },
-//		{ 23,(CHAR*)msg23,NR_OF_EL(msg23) - 1 },
-//		{ 24,(CHAR*)msg24,NR_OF_EL(msg24) - 1 },
-		{ 25,(CHAR*)msg25,NR_OF_EL(msg25) - 1 },
-		{ 26,(CHAR*)msg26,NR_OF_EL(msg26) - 1 },
-//		{ 27,(CHAR*)msg27,NR_OF_EL(msg27) - 1 },
-//		{ 28,(CHAR*)msg28,NR_OF_EL(msg28) - 1 },
-		{ 29,(CHAR*)msg29,NR_OF_EL(msg29) - 1 },
-		{ 30,(CHAR*)msg30,NR_OF_EL(msg30) - 1 },
-		{ 31,(CHAR*)msg31,NR_OF_EL(msg31) - 1 },
-		{ 32,(CHAR*)msg32,NR_OF_EL(msg32) - 1 },
-		{ 33,(CHAR*)msg33,NR_OF_EL(msg33) - 1 },
-		{ 34,(CHAR*)msg34,NR_OF_EL(msg34) - 1 },
-		{ 39,(CHAR*)msg39,NR_OF_EL(msg39) - 1 },
-		{ 50,(CHAR*)msg50,NR_OF_EL(msg50) - 1 },
-		{ 51,(CHAR*)msg51,NR_OF_EL(msg51) - 1 },
-//		{ 52,(CHAR*)msg52,NR_OF_EL(msg52) - 1 },
-		{ 60,(CHAR*)msg60,NR_OF_EL(msg60) - 1 },
-		{ 61,(CHAR*)msg61,NR_OF_EL(msg61) - 1 },
-		{ 62,(CHAR*)msg62,NR_OF_EL(msg62) - 1 },
-		{ 63,(CHAR*)msg63,NR_OF_EL(msg63) - 1 },
-		{ 64,(CHAR*)msg64,NR_OF_EL(msg64) - 1 },
-//		{ 65,(CHAR*)msg65,NR_OF_EL(msg65) - 1 },
-//		{ 66,(CHAR*)msg66,NR_OF_EL(msg66) - 1 },
-//		{ 67,(CHAR*)msg67,NR_OF_EL(msg67) - 1 },
-		{ 70,(CHAR*)msg70,NR_OF_EL(msg70) - 1 },
-		{ 71,(CHAR*)msg71,NR_OF_EL(msg71) - 1 },
-		{ 72,(CHAR*)msg72,NR_OF_EL(msg72) - 1 },
-		{ 73,(CHAR*)msg73,NR_OF_EL(msg73) - 1 },
-		{ 74,(CHAR*)msg74,NR_OF_EL(msg74) - 1 },
+		{ 00,(char*)msg00,NR_OF_EL(msg00) - 1 },
+		{ 01,(char*)msg01,NR_OF_EL(msg01) - 1 },
+		{ 20,(char*)msg20,NR_OF_EL(msg20) - 1 },
+//		{ 21,(char*)msg21,NR_OF_EL(msg21) - 1 },
+//		{ 22,(char*)msg22,NR_OF_EL(msg22) - 1 },
+//		{ 23,(char*)msg23,NR_OF_EL(msg23) - 1 },
+//		{ 24,(char*)msg24,NR_OF_EL(msg24) - 1 },
+		{ 25,(char*)msg25,NR_OF_EL(msg25) - 1 },
+		{ 26,(char*)msg26,NR_OF_EL(msg26) - 1 },
+//		{ 27,(char*)msg27,NR_OF_EL(msg27) - 1 },
+//		{ 28,(char*)msg28,NR_OF_EL(msg28) - 1 },
+		{ 29,(char*)msg29,NR_OF_EL(msg29) - 1 },
+		{ 30,(char*)msg30,NR_OF_EL(msg30) - 1 },
+		{ 31,(char*)msg31,NR_OF_EL(msg31) - 1 },
+		{ 32,(char*)msg32,NR_OF_EL(msg32) - 1 },
+		{ 33,(char*)msg33,NR_OF_EL(msg33) - 1 },
+		{ 34,(char*)msg34,NR_OF_EL(msg34) - 1 },
+		{ 39,(char*)msg39,NR_OF_EL(msg39) - 1 },
+		{ 50,(char*)msg50,NR_OF_EL(msg50) - 1 },
+		{ 51,(char*)msg51,NR_OF_EL(msg51) - 1 },
+//		{ 52,(char*)msg52,NR_OF_EL(msg52) - 1 },
+		{ 60,(char*)msg60,NR_OF_EL(msg60) - 1 },
+		{ 61,(char*)msg61,NR_OF_EL(msg61) - 1 },
+		{ 62,(char*)msg62,NR_OF_EL(msg62) - 1 },
+		{ 63,(char*)msg63,NR_OF_EL(msg63) - 1 },
+		{ 64,(char*)msg64,NR_OF_EL(msg64) - 1 },
+//		{ 65,(char*)msg65,NR_OF_EL(msg65) - 1 },
+//		{ 66,(char*)msg66,NR_OF_EL(msg66) - 1 },
+//		{ 67,(char*)msg67,NR_OF_EL(msg67) - 1 },
+		{ 70,(char*)msg70,NR_OF_EL(msg70) - 1 },
+		{ 71,(char*)msg71,NR_OF_EL(msg71) - 1 },
+		{ 72,(char*)msg72,NR_OF_EL(msg72) - 1 },
+		{ 73,(char*)msg73,NR_OF_EL(msg73) - 1 },
+		{ 74,(char*)msg74,NR_OF_EL(msg74) - 1 },
 
-		{ 75,(CHAR*)msg_c1,NR_OF_EL(msg_c1) - 1 },
-		{ 76,(CHAR*)msg_c2,NR_OF_EL(msg_c2) - 1 }
+		{ 75,(char*)msg_c1,NR_OF_EL(msg_c1) - 1 },
+		{ 76,(char*)msg_c2,NR_OF_EL(msg_c2) - 1 }
 };
 
 
 
-void poll_iec_interface(Event &ev)
+void IecInterface :: poll_iec_interface(Event &ev)
 {
     iec_if.poll(ev);
 }
 
 IecInterface :: IecInterface()
 {
-    ui_window = NULL;
+	fm = FileManager :: getFileManager();
+	ui_window = NULL;
     
     if(!(getFpgaCapabilities() & CAPAB_HARDWARE_IEC))
         return;
 
-    poll_list.append(&poll_iec_interface);
-	main_menu_objects.append(this);
+    MainLoop :: addPollFunction(poll_iec_interface);
+	Globals :: getObjectsWithMenu() -> append(this);
     register_store(0x49454300, "Software IEC Settings", iec_config);
 
     HW_IEC_RESET_ENABLE = 0; // disable
@@ -159,7 +160,7 @@ IecInterface :: IecInterface()
     printf("%d bytes loaded.\n", size);
 
     atn = false;
-    path = file_manager.get_new_path("IEC");
+    path = fm->get_new_path("IEC");
     path->cd("SD");
 
     for(int i=0;i<15;i++) {
@@ -182,8 +183,9 @@ IecInterface :: ~IecInterface()
 
     for(int i=0;i<16;i++)
         delete channels[i];
-    file_manager.release_path(path);
-	poll_list.remove(&poll_iec_interface);
+    fm->release_path(path);
+	Globals :: getObjectsWithMenu() -> remove(this);
+    MainLoop :: removePollFunction(poll_iec_interface);
 }
 
 void IecInterface :: effectuate_settings(void)
@@ -328,7 +330,7 @@ int IecInterface :: poll(Event &e)
 
 	FILE *f;
 	CachedTreeNode *po;
-	UINT transferred;
+	uint32_t transferred;
 
 	if((e.type == e_object_private_cmd)&&(e.object == this)) {
 		switch(e.param) {
@@ -530,7 +532,7 @@ void IecInterface :: save_copied_disk()
 {
     char buffer[40];
     int save_result;
-    FILE *f;
+    File *f;
     int res;
     BinImage *bin;
     CachedTreeNode *po;
@@ -544,14 +546,13 @@ void IecInterface :: save_copied_disk()
 		fix_filename(buffer);
 	    bin = &static_bin_image;
 		set_extension(buffer, ".d64", 32);
-        // po = user_interface->get_path(); FIXME
-        f = fopen(buffer, "wb");
+        f = fm->fopen(path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
 		if(f) {
             user_interface->show_progress("Saving D64..", 35);
             save_result = bin->save(f, true);
             user_interface->hide_progress();
     		printf("Result of save: %d.\n", save_result);
-            fclose(f);
+            fm->fclose(f);
     		push_event(e_reload_browser);
 		} else {
 			printf("Can't create file '%s'\n", buffer);
@@ -656,11 +657,11 @@ void IecInterface :: master_read_status(int device)
     HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_RX;
 }
 
-bool IecInterface :: run_drive_code(int device, WORD addr, uint8_t *code, int length)
+bool IecInterface :: run_drive_code(int device, uint16_t addr, uint8_t *code, int length)
 {
     printf("Load drive code. Length = %d\n", length);
     uint8_t buffer[40];
-    WORD address = addr;
+    uint16_t address = addr;
     int size;
     strcpy((char*)buffer, "M-W");
     while(length > 0) {
@@ -806,7 +807,7 @@ FileDirEntry *FileTypeIEC :: test_type(CachedTreeNode *obj)
 void FileTypeIEC :: execute(int selection)
 {
     File *file;
-    UINT bytes_read;
+    uint32_t bytes_read;
     
 	switch(selection) {
         case IECFILE_LOAD:

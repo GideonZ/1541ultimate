@@ -1,19 +1,13 @@
 #include "small_printf.h"
 #include "itu.h"
+#include <stdlib.h>
+
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 #include "task.h"
 
-/*
-int _use_syscall;
-extern int _syscall(int *foo, int ID, ...);
-*/
-
 extern int main(int argc, char **argv);
 void start_rtos (void);
-
-//static char *args[]={"dummy.exe"};
-//unsigned int _memreg[4];
 
 extern unsigned char __constructor_list, __end_of_constructors;
 extern unsigned char __destructor_list, __end_of_destructors;
@@ -23,38 +17,19 @@ extern char _heap_end[];
 void *sbrk(int inc);
 
 //extern void _init(void);
-void _initIO();
 void __clear_bss();
-void __copy_data();
+//void __copy_data();
 
 void _premain() __attribute__ ((section(".text.start")));
 
 typedef void(*fptr)(void);
 
-void _premain()
+void _do_ctors(void)
 {
-    UART_DATA = 0x31;
-    UART_DATA = 0x2e;
-
-//    printf("Heap: %p-%p\n", _heap, _heap_end);
-//	__copy_data();
-//	_initIO();
-    __clear_bss();
-
-    UART_DATA = 0x32;
-    UART_DATA = 0x2e;
-
-    start_rtos();
-}
-
-void _construct_and_go(void *a)
-{
-	// this part runs as part of the main task!
-	int t;
 	unsigned long *pul, *end;
 	fptr f;
 
-    pul = (unsigned long *)&__constructor_list;
+	pul = (unsigned long *)&__constructor_list;
     end = (unsigned long *)&__end_of_constructors;
 //    printf("\nconstructor list = (%p-%p)\n", pul, end);
 
@@ -64,22 +39,59 @@ void _construct_and_go(void *a)
         f();
         pul++;
     }
+}
 
-    UART_DATA = 0x33;
-    UART_DATA = 0x2e;
+void _do_dtors(void)
+{
+	unsigned long *pul;
+	fptr f;
 
-	t=main(0, 0);
+	pul = (unsigned long *)&__end_of_destructors;
 
-    pul = (unsigned long *)&__end_of_destructors;
     do {
         pul--;
         if(pul < (unsigned long *)&__destructor_list)
         	break;
         f = (fptr)*pul;
+        printf("Destr %p\n", f);
         f();
     } while(1);
-    
+}
+
+void _exit()
+{
     puts("Done!");
+	while(1);
+}
+
+void _premain()
+{
+    UART_DATA = 0x31;
+    UART_DATA = 0x2e;
+
+    __clear_bss();
+
+    UART_DATA = 0x32;
+    UART_DATA = 0x2e;
+
+    atexit(_do_dtors);
+
+    start_rtos();
+}
+
+void _construct_and_go()
+{
+	int t;
+
+	_do_ctors();
+
+    UART_DATA = 0x33;
+    UART_DATA = 0x2e;
+
+    t=main(0, 0);
+
+    // TODO: Kill all tasks?
+    exit(0);
 }
 
 extern char __bss_start__[], __bss_end__[];
@@ -95,29 +107,11 @@ void __clear_bss(void)
     } while(cptr < (unsigned int *)(__bss_end__));
 }
 
-extern unsigned char __ram_start,__data_start,__data_end;
-
 /*
+extern unsigned char __ram_start,__data_start,__data_end;
 extern unsigned char ___jcr_start,___jcr_begin,___jcr_end;
+
 */
-
-
-void start_rtos (void)
-{
-	/* When re-starting a debug session (rather than cold booting) we want
-	to ensure the installed interrupt handlers do not execute until after the
-	scheduler has been started. */
-	portDISABLE_INTERRUPTS();
-
-	xTaskCreate( _construct_and_go, "\002Ultimate-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL );
-
-	// Finally start the scheduler.
-	vTaskStartScheduler();
-
-	// Should not get here as the processor is now under control of the
-	// scheduler!
-}
-
 
 /*
 void __copy_data(void)
@@ -148,6 +142,21 @@ void __copy_data(void)
  */
 //void outbyte(int c);
 
+void start_rtos (void)
+{
+	/* When re-starting a debug session (rather than cold booting) we want
+	to ensure the installed interrupt handlers do not execute until after the
+	scheduler has been started. */
+	portDISABLE_INTERRUPTS();
+
+	xTaskCreate( _construct_and_go, "\002Ultimate-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL );
+
+	// Finally start the scheduler.
+	vTaskStartScheduler();
+
+	// Should not get here as the processor is now under control of the
+	// scheduler!
+}
 
 void outbyte(int c)
 {
@@ -169,4 +178,17 @@ void *sbrk(int inc)
         printf("Sbrk called with %6x. FAILED\n", inc);
     }
     return result;
+}
+
+void restart(void)
+{
+	uint32_t *src = (uint32_t *)0x1C00000;
+	uint32_t *dst = (uint32_t *)0x10000;
+	int size = (int)(*(src++));
+	while(size--) {
+		*(dst++) = *(src++);
+	}
+    puts("Restarting....");
+    __asm__("bralid r15, 0x10000");
+    __asm__("nop");
 }

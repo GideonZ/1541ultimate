@@ -10,9 +10,11 @@
 #include "file_info.h"
 #include <string.h>
 
+static FileManager *file_manager = FileManager :: getFileManager();
+
 Path :: Path() : full_path("/")
 {
-    current_dir_node = file_manager.get_root();
+    current_dir_node = file_manager->get_root();
 //	cd("SD");
 }
 
@@ -29,9 +31,9 @@ int Path :: cd_single(char *cd)
 	printf("CD Single: %s\n", cd);
     if(strcmp(cd, "..") == 0) {
     	if ((current_dir_node->parent == NULL) ||
-    		(current_dir_node->parent == file_manager.get_root())) { // we'll end up in root.
+    		(current_dir_node->parent == file_manager->get_root())) { // we'll end up in root.
     		full_path = "/";
-    		current_dir_node = file_manager.get_root();
+    		current_dir_node = file_manager->get_root();
     	} else {
             for(int i=p_len-2;i>=0;i--) {
                 if((p[i] == '/')||(p[i] == '\\')||(i==0)) {
@@ -88,7 +90,7 @@ int Path :: cd(char *pa_in)
 	    ((*pa == '/')||(*pa == '\\')) ) {
         --pa_len;
         pa++;
-        current_dir_node = file_manager.get_root();
+        current_dir_node = file_manager->get_root();
         full_path = "/";
     }
     if(!pa_len) {

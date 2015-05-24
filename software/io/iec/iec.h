@@ -48,7 +48,8 @@ class UltiCopy;
 
 class IecInterface : public ObjectWithMenu,  ConfigurableObject
 {
-    int last_addr;
+	FileManager *fm;
+	int last_addr;
     bool wait_irq;
     bool atn;
     bool talking;
@@ -65,9 +66,10 @@ class IecInterface : public ObjectWithMenu,  ConfigurableObject
     void master_open_file(int device, int channel, char *filename, bool write);
     bool master_send_cmd(int device, uint8_t *cmd, int length);
     void master_read_status(int device);
-    bool run_drive_code(int device, WORD addr, uint8_t *code, int length);
+    bool run_drive_code(int device, uint16_t addr, uint8_t *code, int length);
     UltiCopy *ui_window;
     uint8_t last_track;
+    static void poll_iec_interface(Event &ev);
 public:
     int last_error;
     Path *path;
@@ -155,7 +157,7 @@ public:
 
 typedef struct {
 	uint8_t nr;
-	CHAR* msg;
+	char* msg;
 	uint8_t len;
 } IEC_ERROR_MSG;
 

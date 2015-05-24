@@ -30,14 +30,14 @@ class Usb2 : public UsbBase
     void  (*inputPipeCallBacks[USB2_NUM_PIPES])(uint8_t *buf, int len, void *obj);
     void  *inputPipeObjects[USB2_NUM_PIPES];
     uint8_t   inputPipeBufferMethod[USB2_NUM_PIPES];
-    WORD   inputPipeCommand[USB2_NUM_PIPES];
+    uint16_t   inputPipeCommand[USB2_NUM_PIPES];
 
     uint32_t *blockBufferBase;
     uint8_t  *circularBufferBase;
 
     uint8_t  prev_status;
-    bool  get_fifo(WORD *out);
-    bool  put_block_fifo(WORD in);
+    bool  get_fifo(uint16_t *out);
+    bool  put_block_fifo(uint16_t in);
 
     int   open_pipe();
     void  init_pipe(int index, struct t_pipe *init);
@@ -56,7 +56,7 @@ public:
     void deinit(void);
     void bus_reset();
 
-    WORD getSplitControl(int addr, int port, int speed, int type);
+    uint16_t getSplitControl(int addr, int port, int speed, int type);
     int  control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen);
     int  control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len);
     int  allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, void *object);

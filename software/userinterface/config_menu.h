@@ -24,11 +24,10 @@ class ConfigBrowser : public TreeBrowser
 {
 public:
 	ConfigBrowser(Browsable *);
-	virtual void initState(Browsable *);
 	virtual ~ConfigBrowser();
 
     virtual void init(Screen *screen, Keyboard *k);
-    virtual int handle_key(uint8_t);
+    virtual int handle_key(int);
 };
 
 class BrowsableConfigItem : public Browsable
@@ -40,6 +39,7 @@ public:
 	}
 	~BrowsableConfigItem() {}
 
+	ConfigItem *getItem() { return item; }
 	char *getName() { return item->get_item_name(); }
 	char *getDisplayString() { return item->get_display_string(); };
 };
@@ -60,6 +60,7 @@ public:
 		}
 		return itemList->get_elements();
 	}
+	ConfigStore *getStore() { return store; }
 	char *getName() { return store->get_store_name(); }
 };
 
@@ -70,7 +71,7 @@ public:
 	~BrowsableConfigRoot() {}
 
 	int getSubItems(IndexedList<Browsable *>&list) {
-		IndexedList<ConfigStore *> *storeList = config_manager.getStores();
+		IndexedList<ConfigStore *> *storeList = ConfigManager :: getConfigManager()->getStores();
 		for (int i=0; i < storeList->get_elements(); i++) {
 			list.append(new BrowsableConfigStore((*storeList)[i]));
 		}

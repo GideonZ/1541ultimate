@@ -11,7 +11,8 @@ Screen_VT100::Screen_VT100(Stream *m) {
 
 	stream = m;
 	draw_mode = false;
-	output("\ec");
+	expect_color = false;
+	stream->write("\ec", 2);
 	set_color(15);
 }
 
@@ -25,28 +26,29 @@ void Screen_VT100::set_color(int c)
 
 	const char *set_color[] = { "\e[0;30m", "\e[0;37;1m", "\e[0;31m", "\e[0;36m", "\e[0;35m", "\e[0;32m", "\e[0;34m", "\e[0;33m",
 								"\e[0;33;2m", "\e[0;31;2m", "\e[0;31;1m", "\e[0;31;2m", "\e[0;31;2m", "\e[0;32;1m", "\e[0;34;1m", "\e[0;37;2m" };
-	output((char *)set_color[c & 15]);
+	const char *sequence = set_color[c & 15];
+	stream->write((char *)sequence, strlen(sequence));
 }
 
 void Screen_VT100::reverse_mode(int r)
 {
 	if (r)
-		output("\e[7m");
+		stream->write("\e[7m", 3);
 	else
-		output("\e[27m");
+		stream->write("\e[27m", 4);
 }
 
 void Screen_VT100::scroll_mode(bool b)
 {
 	if (b) {
-		output("\e[r");
+		stream->write("\e[r", 3);
 	}
 }
 
 // draw functions
 void Screen_VT100::clear()
 {
-	output("\ec");
+	stream->write("\ec", 2);
 	set_color(color);
 	move_cursor(0, 0);
 }
@@ -60,7 +62,16 @@ int  Screen_VT100::output(char c)
 {
 	const char mapping[33] = " lqkxmjlwktnumvjABCDEFGHIJKLMNOP";
 
-	if ((c >= 32) || (c == 27) || (c == 13) || (c == 10)) {
+	if (c == 27) { // escape = set color
+		expect_color = true;
+		return 0;
+	}
+	if (expect_color) {
+		expect_color = false;
+		this->set_color(c);
+		return 0;
+	}
+	if ((c >= 32) || (c == 13) || (c == 10)) {
 		if (draw_mode) {
 			stream->write("\e(B", 3);
 			draw_mode = false;
@@ -94,17 +105,19 @@ void Screen_VT100::repeat(char c, int rep)
 
 void Screen_VT100::output_fixed_length(const char *string, int offset_x, int width)
 {
-	stream->format("\r\e[%dC", offset_x);
+	if (offset_x)
+		stream->format("\r\e[%dC", offset_x);
+	else
+		stream->format("\r");
+
 	//repeat(' ', offset_x);
-	int len = strlen(string);
-	if (len >= width) {
-		for(int i=0;i<width;i++) {
-			output(*(string++));
+	while(width > 0) {
+		if (*string == 0) {
+			break;
 		}
-	} else {
-		for(int i=0;i<len;i++) {
-			output(*(string++));
-		}
-		repeat(' ', width-len);
+		width -= output(*(string++));
+	}
+	if (width > 0) {
+		repeat(' ', width);
 	}
 }

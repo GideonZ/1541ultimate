@@ -5,7 +5,7 @@
 #include "iec.h"
 #include <ctype.h>
 #include <stdio.h>
-#include "file_utils.h"
+#include "filemanager.h"
 
 typedef enum _t_channel_state {
     e_idle, e_filename, e_file, e_dir, e_complete, e_error
@@ -27,12 +27,15 @@ class IecCommandChannel;
 class IecChannel
 {
     IecInterface *interface;
-    int  channel;
+    FileManager *fm;
+
+    IndexedList<FileInfo *> *dirlist;
+	int  channel;
     int  write;
     uint8_t buffer[256];
     int  size;
     int  pointer;
-    FILE *f;
+    File *f;
     int  last_command;
     int  dir_index;
     int  dir_last;
@@ -46,12 +49,14 @@ class IecChannel
 //    int  block, last_block;
 
     // temporaries
-    UINT bytes;
+    uint32_t bytes;
 
 public:
     IecChannel(IecInterface *intf, int ch)
     {
-        interface = intf;
+    	dirlist = 0;
+    	fm = FileManager :: getFileManager();
+    	interface = intf;
         channel = ch;
         f = NULL;
         pointer = 0;
@@ -61,9 +66,22 @@ public:
         dir_last = 0;
     }
     
-    ~IecChannel()
+    virtual ~IecChannel()
     {
-        close_file();
+    	if (dirlist) {
+    		cleanupDir();
+    		delete dirlist;
+    	}
+    	close_file();
+    }
+
+    void cleanupDir() {
+    	if (!dirlist)
+    		return;
+    	for(int i=0;i < dirlist->get_elements();i++) {
+    		delete (*dirlist)[i];
+    	}
+    	dirlist->clear_list();
     }
 
     virtual int pop_data(uint8_t& b)
@@ -148,11 +166,13 @@ public:
     
     int read_block(void)
     {
+        FRESULT res = FR_DENIED;
+        uint32_t bytes;
         if(f) {
-            bytes = fread(buffer, 1, 256, f);
+            res = f->read(buffer, 256, &bytes);
             printf("\nSize was %d. Read %d bytes. ", size, bytes);
         }
-        if(ferror(f)) {
+        if(res != FR_OK) {
             state = e_error;
             return IEC_READ_ERROR;
         }
@@ -171,7 +191,7 @@ public:
             
     virtual int push_data(uint8_t b)
     {
-        UINT bytes;
+        uint32_t bytes;
 
         switch(state) {
             case e_filename:
@@ -181,11 +201,12 @@ public:
             case e_file:
                 buffer[pointer++] = b;
                 if(pointer == 256) {
-                    if(f) {
-                        bytes = fwrite(buffer, 1, 256, f);
+                    FRESULT res = FR_DENIED;
+                	if(f) {
+                        f->write(buffer, 256, &bytes);
                     }
-                    if(ferror(f)) {
-                        fclose(f);
+                    if(res != FR_OK) {
+                        fm->fclose(f);
                         f = NULL;
                         state = e_error;
                         return IEC_WRITE_ERROR;
@@ -204,6 +225,7 @@ public:
     {
         if(b)
             last_command = b;
+
         switch(b) {
             case 0xF0: // open
                 close_file();
@@ -216,8 +238,8 @@ public:
                     dump_hex(buffer, pointer);
                     if (f) {
                     	if (pointer > 0) {
-                    		bytes = fwrite(buffer, 1, pointer, f);
-                    		if (ferror(f)) {
+                    		FRESULT res = f->write(buffer, pointer, &bytes);
+                    		if (res != FR_OK) {
                                 state = e_error;
                                 return IEC_WRITE_ERROR;
                     		}
@@ -290,38 +312,39 @@ private:
         strcat((char *)buffer, extension);
 
         uint8_t flags = FA_READ;
-            
-/* TODO
+
         if(buffer[0] == '$') {
-            printf("Opening directory...\n");
+            printf("IEC Channel: Opening directory...\n");
+            if(dirlist) {
+            	cleanupDir();
+            } else {
+            	dirlist = new IndexedList<FileInfo *>(8, NULL);
+            }
+            interface->path->get_directory(*dirlist);
             state = e_dir;
             pointer = 0;
             last_byte = -1;
             size = 32;
             memcpy(buffer, c_header, 32);
-            dir_obj = dir;
-            char *name = dir_obj->get_name();
+
+            char *name = interface->path->get_path();
             int pos = 8;
             while((pos < 23) && (*name))
                 buffer[pos++] = toupper(*(name++));
             dump_hex(buffer, 32);
-            dir_obj = dir;
-            //printf("fetch...");
-            dir_last = dir_obj->fetch_children();
-            //printf("%d\n", dir_last);
+            dir_last = dirlist->get_elements();
             dir_index = 0;
             return 0;
         }
-*/
 
-        f = fopen((char *)buffer, (write)?"wb":"rb");
+        f = fm->fopen(interface->path, (char *)buffer, (write)?(FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS):(FA_READ));
         if(f) {
             printf("Successfully opened file %s in %s\n", buffer, interface->path->get_path());
             last_byte = -1;
             pointer = 0;
             state = e_file;
             if(!write) {
-                size = fgetsize(f);
+                size = f->get_size();
                 return read_block();
             }
         } else {
@@ -334,7 +357,7 @@ private:
     int close_file(void) // file should be open
     {
         if(f)
-            fclose(f);
+            fm->fclose(f);
         f = NULL;
         state = e_idle;
         return 0;

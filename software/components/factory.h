@@ -9,6 +9,7 @@
 #define COMPONENTS_FACTORY_H_
 
 #include "indexed_list.h"
+#include <stdio.h>
 
 template <class Tobj, class Treturn>
 class Factory
@@ -16,16 +17,12 @@ class Factory
 	typedef Treturn (*function_t)(Tobj p);
 
 	IndexedList<function_t> types;
-    Factory() : types(4, 0) { }
-    ~Factory() { }
-
-    static Factory <Tobj, Treturn>* factory;
 public:
-    static Factory <Tobj, Treturn>* getFactory() {
-    	if (!factory) {
-    		factory = new Factory <Tobj, Treturn>();
-    	}
-    	return factory;
+    Factory() : types(4, 0) {
+		printf("Constructor of Factory.\n");
+    }
+    ~Factory() {
+    	printf("Destructor of Factory\n");
     }
 
     void register_type(function_t tester) {
@@ -48,9 +45,12 @@ class FactoryRegistrator
 {
 	typedef Treturn (*function_t)(Tobj p);
 public:
-	FactoryRegistrator(function_t func) {
-		Factory<Tobj, Treturn> *f = Factory<Tobj, Treturn> :: getFactory();
-		f->register_type(func);
+	FactoryRegistrator(Factory<Tobj, Treturn> *factory, function_t func) {
+		printf("Constructor of registrator.\n");
+		factory->register_type(func);
+	}
+	~FactoryRegistrator() {
+		printf("Destructor of registrator.\n");
 	}
 };
 

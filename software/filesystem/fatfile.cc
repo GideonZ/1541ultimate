@@ -48,7 +48,7 @@ FATFIL::FATFIL(FATFS *pfs) /* default constructor */
 FATFIL::FATFIL(FATFS *pfs, XCHAR *path, uint8_t mode)
 {
     fs = pfs;
-    WORD dummy;
+    uint16_t dummy;
 #if !_FS_READONLY
     dir_obj = NULL;
 #endif
@@ -81,7 +81,7 @@ FRESULT FATFIL::open (
     XCHAR *path,  /* Pointer to the file name */
     uint32_t dir_clust,  /* if given, this is where we start with the path */
     uint8_t mode,   /* Access mode and file open mode flags */
-    WORD *dir_index  /* return value: index of dir entry that was found */
+    uint16_t *dir_index  /* return value: index of dir entry that was found */
 )
 {
     FRESULT res;
@@ -190,7 +190,7 @@ FRESULT FATFIL::open (
 )
 {
     FRESULT res;
-    WORD dir_index;
+    uint16_t dir_index;
     
 //    small_printf("File open: Flags=%b\n", mode);
 //    info->print_info();
@@ -208,7 +208,7 @@ FRESULT FATFIL::open (
 #if !_FS_READONLY
         info->dir_index  = dir_index;
 //    	info->dir_sector = dir_sect;
-//    	info->dir_offset = WORD(dir_ptr - fs->win);
+//    	info->dir_offset = uint16_t(dir_ptr - fs->win);
 #endif
     	info->size = 0;
     	return FR_OK;
@@ -248,13 +248,13 @@ FRESULT FATFIL::open (
 
 FRESULT FATFIL::read (
     void *buff,     /* Pointer to data buffer */
-    UINT btr,       /* Number of bytes to read */
-    UINT *br        /* Pointer to number of bytes read */
+    uint32_t btr,       /* Number of bytes to read */
+    uint32_t *br        /* Pointer to number of bytes read */
 )
 {
     FRESULT res;
     uint32_t clst, sect, remain;
-    UINT rcnt, cc;
+    uint32_t rcnt, cc;
     uint8_t *rbuff = (uint8_t *)buff;
 
 
@@ -267,7 +267,7 @@ FRESULT FATFIL::read (
     if (!(flag & FA_READ))                      /* Check access mode */
         LEAVE_FF(fs, FR_DENIED);
     remain = fsize - fptr;
-    if (btr > remain) btr = (UINT)remain;           /* Truncate btr by remaining bytes */
+    if (btr > remain) btr = (uint32_t)remain;           /* Truncate btr by remaining bytes */
 
     for ( ;  btr;                                   /* Repeat until all data transferred */
         rbuff += rcnt, fptr += rcnt, *br += rcnt, btr -= rcnt) {
@@ -342,13 +342,13 @@ FRESULT FATFIL::read (
 
 FRESULT FATFIL::write (
     const void *buff,   /* Pointer to the data to be written */
-    UINT btw,           /* Number of bytes to write */
-    UINT *bw            /* Pointer to number of bytes written */
+    uint32_t btw,           /* Number of bytes to write */
+    uint32_t *bw            /* Pointer to number of bytes written */
 )
 {
     FRESULT res;
     uint32_t clst, sect;
-    UINT wcnt, cc;
+    uint32_t wcnt, cc;
     const uint8_t *wbuff = (uint8_t *)buff;
 
     *bw = 0;    /* Initialize bytes written */
@@ -663,7 +663,7 @@ char* FATFIL::fgets (
 {
     int i = 0;
     char *p = buff;
-    UINT rc;
+    uint32_t rc;
 
 
     while (i < len - 1) {           /* Read bytes until buffer gets filled */
@@ -689,7 +689,7 @@ int FATFIL::fputc (
     int chr    /* A character to be output */
 )
 {
-    UINT bw;
+    uint32_t bw;
     char c;
 
 #if _USE_STRFUNC >= 2

@@ -17,7 +17,7 @@ __inline uint32_t cpu_to_32le(uint32_t a)
     return (a >> 24) | (a << 24) | m1 | m2;
 }
 
-__inline WORD le16_to_cpu(WORD h)
+__inline uint16_t le16_to_cpu(uint16_t h)
 {
     return (h >> 8) | (h << 8);
 }
@@ -27,7 +27,7 @@ __inline WORD le16_to_cpu(WORD h)
 / and necessary system objects
 /*********************************************************************/
 // tester instance
-UsbEm1010Driver usb_em1010_driver_tester(usb_drivers);
+FactoryRegistrator<UsbDevice *, UsbDriver *> em1010_tester(UsbDevice :: getUsbDriverFactory(), UsbEm1010Driver :: test_driver);
 
 // Entry point for call-backs.
 void UsbEm1010Driver_interrupt_callback(uint8_t *data, int data_length, void *object) {
@@ -51,11 +51,6 @@ uint8_t UsbEm1010Driver_output(void *drv, void *b, int len) {
 
 
 
-UsbEm1010Driver :: UsbEm1010Driver(IndexedList<UsbDriver*> &list)
-{
-	list.append(this); // add tester
-}
-
 UsbEm1010Driver :: UsbEm1010Driver()
 {
     device = NULL;
@@ -70,17 +65,12 @@ UsbEm1010Driver :: ~UsbEm1010Driver()
 		releaseNetworkStack(netstack);
 }
 
-UsbEm1010Driver *UsbEm1010Driver :: create_instance(void)
-{
-	return new UsbEm1010Driver();
-}
-
-bool UsbEm1010Driver :: test_driver(UsbDevice *dev)
+UsbDriver *UsbEm1010Driver :: test_driver(UsbDevice *dev)
 {
 	//printf("** Test USB Eminent EM1010 Driver **\n");
 
-	WORD vendor = le16_to_cpu(dev->device_descr.vendor);
-	WORD product = le16_to_cpu(dev->device_descr.product);
+	uint16_t vendor = le16_to_cpu(dev->device_descr.vendor);
+	uint16_t product = le16_to_cpu(dev->device_descr.product);
 
 	bool found = false;
 	if (((vendor & 0xF7FF) == 0x662b) && (product == 0x4efe))
@@ -88,9 +78,11 @@ bool UsbEm1010Driver :: test_driver(UsbDevice *dev)
 	if ((vendor == 0x07a6) && (product == 0x8515))
 		found = true;
 
-	if (found)
+	if (found) {
 		printf("** Eminent EM1010 (ADM8515 chip) found!!\n");
-	return found;
+		return new UsbEm1010Driver();
+	}
+	return 0;
 }
 
 void UsbEm1010Driver :: install(UsbDevice *dev)
@@ -130,7 +122,7 @@ void UsbEm1010Driver :: install(UsbDevice *dev)
     if (netstack) {
     	//printf("Network stack: %s\n", netstack->identify());
     	struct t_pipe ipipe;
-		ipipe.DevEP = WORD((device->current_address << 8) | irq_in);
+		ipipe.DevEP = uint16_t((device->current_address << 8) | irq_in);
 		ipipe.Interval = 8000; // 1 Hz
 		ipipe.Length = 16; // just read 16 bytes max
 		ipipe.MaxTrans = 64;
@@ -139,7 +131,7 @@ void UsbEm1010Driver :: install(UsbDevice *dev)
 
 		irq_transaction = host->allocate_input_pipe(&ipipe, UsbEm1010Driver_interrupt_callback, this);
 
-		ipipe.DevEP = WORD((device->current_address << 8) | bulk_in);
+		ipipe.DevEP = uint16_t((device->current_address << 8) | bulk_in);
 		ipipe.Interval = 1; // fast!
 		ipipe.Length = 1536; // big blocks!
 		ipipe.MaxTrans = 512;
@@ -253,7 +245,7 @@ bool UsbEm1010Driver :: write_register(uint8_t offset, uint8_t data)
     return (i==0);
 }
 
-bool UsbEm1010Driver :: read_phy_register(uint8_t offset, WORD *data)
+bool UsbEm1010Driver :: read_phy_register(uint8_t offset, uint16_t *data)
 {
     uint8_t status;
     if(!write_register(EMREG_PHYAC, offset | 0x40)) // RDPHY
@@ -267,7 +259,7 @@ bool UsbEm1010Driver :: read_phy_register(uint8_t offset, WORD *data)
     return false;
 }
     
-bool UsbEm1010Driver :: write_phy_register(uint8_t offset, WORD data)
+bool UsbEm1010Driver :: write_phy_register(uint8_t offset, uint16_t data)
 {
 	return false;
 }

@@ -47,8 +47,8 @@ CommandInterface :: CommandInterface()
         CMD_IF_SLOT_BASE = 0x47; // $DF1C
         CMD_IF_SLOT_ENABLE = 0; // DISABLE until we know we can enable ourselves: cfg->get_value(CFG_CMD_ENABLE);
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
-        poll_list.append(&poll_command_interface);
-    	main_menu_objects.append(this);
+        MainLoop :: addPollFunction(poll_command_interface);
+    	Globals :: getObjectsWithMenu() -> append(this);
     
         // dump_registers();
     
@@ -66,7 +66,7 @@ CommandInterface :: CommandInterface()
 
 CommandInterface :: ~CommandInterface()
 {
-	poll_list.remove(&poll_command_interface);
+    MainLoop :: removePollFunction(poll_command_interface);
 
     CMD_IF_SLOT_ENABLE = 0;
 }

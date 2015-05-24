@@ -91,6 +91,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter)
     drive_letter = letter;
     current_rom = e_rom_unset;
 	flash = get_flash();
+    fm = FileManager :: getFileManager();
 
     char buffer[32];
     c1541_config[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
@@ -108,7 +109,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter)
 //	    flash->read_image(FLASH_ID_SOUNDS, audio_address, 0x4800);
         memcpy(audio_address, &_binary_sounds_bin_start, 0x4800);
 	}    
-	main_menu_objects.append(this);
+	Globals ::getObjectsWithMenu() -> append(this);
     drive_name = "Drive ";
     drive_name += letter;
 
@@ -126,10 +127,10 @@ C1541 :: ~C1541()
 	if(bin_image)
 		delete bin_image;
 
-	main_menu_objects.remove(this);
+	Globals ::getObjectsWithMenu() -> remove(this);
 
 	if(mount_file)
-		fclose(mount_file);
+		fm->fclose(mount_file);
 
 	// turn the drive off on destruction
     drive_power(false);
@@ -139,9 +140,9 @@ void C1541 :: init(void)
 {
     printf("Init C1541. Cfg = %p\n", cfg);
     
-    volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
+    volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
     for(int i=0;i<C1541_MAXTRACKS;i++) {
-    	*(param++) = (ULONG)gcr_image->dummy_track;
+    	*(param++) = (uint32_t)gcr_image->dummy_track;
         *(param++) = 0x01450010;
     }
 	registers[C1541_SENSOR] = SENSOR_LIGHT;
@@ -240,8 +241,8 @@ int  C1541 :: get_current_iec_address(void)
 void C1541 :: set_rom(t_1541_rom rom, char *custom)
 {
     large_rom = false;
-    FILE *f;
-    UINT transferred;
+    File *f;
+    uint32_t transferred;
 	int offset;
 	
 	current_rom = rom;
@@ -268,20 +269,19 @@ void C1541 :: set_rom(t_1541_rom rom, char *custom)
             memcpy((void *)&memory_map[0xC000], &_binary_1541c_bin_start, 0x4000);
             break;
         default: // custom
-            f = fopen(custom, "rb");
+            f = fm->fopen(NULL, custom, FA_READ);
             printf("1541 rom file: %p\n", f);
 			if(f) {
-				struct stat st;
-				fstat(fileno(f), &st);
-				if (st.st_size > 0x8000)
+				uint32_t size = f->get_size();
+				if (size > 0x8000)
 					offset = 0x8000;
 				else
-					offset = 0x10000 - st.st_size;
+					offset = 0x10000 - size;
 
 //				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
                 memcpy((void *)&memory_map[0xC000], &_binary_1541_ii_bin_start, 0x4000);
-				transferred = fread((void *)&memory_map[offset], 1, 0x8000, f);
-				fclose(f);
+				f->read((void *)&memory_map[offset], 0x8000, &transferred);
+				fm->fclose(f);
 				if(transferred > 0x4000) {
 					large_rom = true;
 				}
@@ -331,9 +331,9 @@ void C1541 :: remove_disk(void)
     registers[C1541_SENSOR] = SENSOR_DARK;
     wait_ms(100 * cfg->get_value(CFG_C1541_SWAPDELAY));
 
-    volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
+    volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
     for(int i=0;i<C1541_MAXTRACKS;i++) {
-    	*(param++) = (ULONG)gcr_image->dummy_track;
+    	*(param++) = (uint32_t)gcr_image->dummy_track;
         *(param++) = 0x01450010;
     }
 
@@ -346,13 +346,13 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
     registers[C1541_SENSOR] = SENSOR_DARK;
     wait_ms(150);
 
-    volatile ULONG *param = (volatile ULONG *)&registers[C1541_PARAM_RAM];
+    volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
 
     uint32_t rotation_speed = 2500000; // 1/8 track time => 10 ns steps
     for(int i=0;i<C1541_MAXTRACKS;i++) {
         uint32_t bit_time = rotation_speed / image->track_length[i];
     	// printf("%2d %08x %08x %d\n", i, image->track_address[i], image->track_length[i], bit_time);
-    	*(param++) = (ULONG)image->track_address[i];
+    	*(param++) = (uint32_t)image->track_address[i];
         *(param++) = (image->track_length[i]-1) | (bit_time << 16);
         registers[C1541_DIRTYFLAGS + i/2] = 0;
     }            
@@ -367,10 +367,10 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
     disk_state = e_alien_image;
 }
 
-void C1541 :: mount_d64(bool protect, FILE *file)
+void C1541 :: mount_d64(bool protect, File *file)
 {
 	if(mount_file) {
-		fclose(mount_file);
+		fm->fclose(mount_file);
 	}
 	mount_file = file;
 	remove_disk();
@@ -385,10 +385,10 @@ void C1541 :: mount_d64(bool protect, FILE *file)
 	disk_state = e_d64_disk;
 }
 
-void C1541 :: mount_g64(bool protect, FILE *file)
+void C1541 :: mount_g64(bool protect, File *file)
 {
 	if(mount_file) {
-		fclose(mount_file);
+		fm->fclose(mount_file);
 	}
 	mount_file = file;
 	remove_disk();
@@ -404,7 +404,7 @@ void C1541 :: mount_g64(bool protect, FILE *file)
 void C1541 :: mount_blank()
 {
 	if(mount_file) {
-		fclose(mount_file);
+		fm->fclose(mount_file);
 	}
 	mount_file = NULL;
 	remove_disk();
@@ -456,7 +456,7 @@ void C1541 :: poll(Event &e)
         	case MENU_1541_UNLINK:
         		disk_state = e_disk_file_closed;
         		if(mount_file) {
-        			fclose(mount_file);
+        			fm->fclose(mount_file);
         			mount_file = NULL;
         		}
         		break;
@@ -467,7 +467,7 @@ void C1541 :: poll(Event &e)
 			case MENU_1541_REMOVE:
                 check_if_save_needed();
 				if(mount_file) {
-					fclose(mount_file);
+					fm->fclose(mount_file);
 					mount_file = NULL;
 				}
 				remove_disk();
@@ -495,10 +495,10 @@ void C1541 :: poll(Event &e)
 	if(!mount_file) {
 		return;
 	}
-	if (ferror(mount_file) == -EBADFD) {
+	if (!mount_file->info) {
         printf("C1541: File was invalidated..\n");
         disk_state = e_disk_file_closed;
-        fclose(mount_file);
+        fm->fclose(mount_file);
         mount_file = NULL;
         return;
     }
@@ -544,7 +544,7 @@ void C1541 :: save_disk_to_file(bool g64)
 {
     CachedTreeNode *po;
     static char buffer[32];
-	FILE *file;
+	File *file;
 	int res;
 
     /* po = user_interface->get_path();
@@ -554,7 +554,7 @@ void C1541 :: save_disk_to_file(bool g64)
     	if(res > 0) {
     		set_extension(buffer, (g64)?(char *)".g64":(char *)".d64", 32);
     		fix_filename(buffer);
-            file = fopen(buffer, "wb");
+            file = fm->fopen(NULL, buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW);
             if(file) {
                 if(g64) {
                     user_interface->show_progress("Saving G64...", 84);
@@ -567,7 +567,7 @@ void C1541 :: save_disk_to_file(bool g64)
                     bin_image->save(file, true);
                     user_interface->hide_progress();
                 }
-                fclose(file);
+                fm->fclose(file);
         		push_event(e_reload_browser);
             } else {
             	user_interface->popup("Unable to open file..", BUTTON_OK);

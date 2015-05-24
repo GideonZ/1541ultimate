@@ -11,8 +11,8 @@
 #include "flash.h"
 #include "iomap.h"
 
-#define C1541_IO_LOC_DRIVE_1 ((volatile BYTE *)DRIVE_A_BASE)
-#define C1541_IO_LOC_DRIVE_2 ((volatile BYTE *)DRIVE_B_BASE)
+#define C1541_IO_LOC_DRIVE_1 ((volatile uint8_t *)DRIVE_A_BASE)
+#define C1541_IO_LOC_DRIVE_2 ((volatile uint8_t *)DRIVE_B_BASE)
 
 #define MENU_1541_RESET     0x1501
 #define MENU_1541_REMOVE    0x1502
@@ -26,7 +26,7 @@
 struct t_drive_command
 {
     int  command;
-    FILE *file;
+    File *file;
     bool protect;
 };
 
@@ -73,7 +73,8 @@ class C1541 : public ConfigurableObject, ObjectWithMenu
 {
     volatile uint8_t *memory_map;
     volatile uint8_t *registers;
-    string drive_name;
+    mstring drive_name;
+    FileManager *fm;
     
     int iec_address;
     char drive_letter;
@@ -83,7 +84,7 @@ class C1541 : public ConfigurableObject, ObjectWithMenu
 	int write_skip;
 	
 	Flash *flash;
-    FILE *mount_file;
+    File *mount_file;
     t_disk_state disk_state;
     GcrImage *gcr_image;
     BinImage *bin_image;
@@ -105,8 +106,8 @@ public:
     void set_ram(t_1541_ram ram);
     void remove_disk(void);
     void insert_disk(bool protect, GcrImage *image);
-    void mount_d64(bool protect, FILE *);
-    void mount_g64(bool protect, FILE *);
+    void mount_d64(bool protect, File *);
+    void mount_g64(bool protect, File *);
     void mount_blank(void);
     void poll(Event &e);
 

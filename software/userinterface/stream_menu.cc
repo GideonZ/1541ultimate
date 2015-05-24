@@ -1,6 +1,7 @@
 #include "menu.h"
 #include "stream_menu.h"
 #include "task_menu.h"
+#include "globals.h"
 
 char *decimals = "0123456789";
 
@@ -152,7 +153,8 @@ int StreamMenu :: process_command(char *command)
 		print_items(0, 9999);
     }
     else if ((strncmp(command, "into ", 5))==0) {
-        selected = stream->convert_in(&command[5], 10, decimals); 
+        //selected = stream->convert_in(&command[5], 10, decimals);
+        sscanf(&command[5], "%d", &selected);
         items = into();
         if(items < 0) {
             stream->format("Invalid choice: %d\n", selected);
@@ -162,14 +164,18 @@ int StreamMenu :: process_command(char *command)
     } 
     else if ((strcmp(command, "task")==0) and (state == 0)) {
         items = 0;// node->fetch_task_items(menu->children);
-        for(int i=0;i<main_menu_objects.get_elements();i++) {
-        	items += main_menu_objects[i]->fetch_task_items(actionList);
+        IndexedList<ObjectWithMenu *>*objects = Globals ::getObjectsWithMenu();
+
+        for(int i=0;i<objects->get_elements();i++) {
+        	items += (*objects)[i]->fetch_task_items(actionList);
         }
         print_actions();
         state = 1;
     }
     else { 
-        int value = stream->convert_in(command, 10, decimals);
+        // int value = stream->convert_in(command, 10, decimals);
+    	int value = 0;
+    	sscanf(command, "%d", &value);
         switch(state) {
             case 0: // default browse
             	if((value > 0)&&(value <= currentList->get_elements())) {

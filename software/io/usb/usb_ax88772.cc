@@ -1,10 +1,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-extern "C" {
-	#include "itu.h"
-    #include "dump_hex.h"
-}
+#include "itu.h"
+#include "dump_hex.h"
 #include "integer.h"
 #include "usb_ax88772.h"
 #include "event.h"
@@ -40,7 +38,7 @@ uint8_t c_write_softw_rst5[]  = { 0x40, 0x20, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00
 uint8_t c_write_softw_sel[]   = { 0x40, 0x22, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 
-const WORD good_srom[] = {
+const uint16_t good_srom[] = {
 	0x155A, 0xED71, 0x2012, 0x2927, 0x000E, 0xAA00, 0x4A4A, 0x0904,
 	0x6022, 0x7112, 0x190E, 0x3D04, 0x3D04, 0x3D04, 0x3D04, 0x9C05,
 	0x0006, 0x10E0, 0x4224, 0x4012, 0x4927, 0xFFFF, 0x0000, 0xFFFF,
@@ -66,7 +64,7 @@ __inline uint32_t cpu_to_32le(uint32_t a)
     return (a >> 24) | (a << 24) | m1 | m2;
 }
 
-__inline WORD le16_to_cpu(WORD h)
+__inline uint16_t le16_to_cpu(uint16_t h)
 {
     return (h >> 8) | (h << 8);
 }
@@ -96,12 +94,8 @@ uint8_t UsbAx88772Driver_output(void *drv, void *b, int len) {
 / and necessary system objects
 /*********************************************************************/
 // tester instance
-UsbAx88772Driver usb_ax88772_driver_tester(usb_drivers);
+FactoryRegistrator<UsbDevice *, UsbDriver *> ax88772_tester(UsbDevice :: getUsbDriverFactory(), UsbAx88772Driver :: test_driver);
 
-UsbAx88772Driver :: UsbAx88772Driver(IndexedList<UsbDriver*> &list)
-{
-	list.append(this); // add tester
-}
 
 UsbAx88772Driver :: UsbAx88772Driver()
 {
@@ -117,27 +111,22 @@ UsbAx88772Driver :: ~UsbAx88772Driver()
 		releaseNetworkStack(netstack);
 }
 
-UsbAx88772Driver *UsbAx88772Driver :: create_instance(void)
-{
-	return new UsbAx88772Driver();
-}
-
-bool UsbAx88772Driver :: test_driver(UsbDevice *dev)
+UsbDriver * UsbAx88772Driver :: test_driver(UsbDevice *dev)
 {
 	//printf("** Test USB Asix AX88772 Driver **\n");
 
     if(le16_to_cpu(dev->device_descr.vendor) != 0x0b95) {
 		printf("Device is not from Asix..\n");
-		return false;
+		return 0;
 	}
 	if((le16_to_cpu(dev->device_descr.product) & 0xFFFE) != 0x772A) {
 		printf("Device product ID is not AX88772A.\n");
-		return false;
+		return 0;
 	}
 
     printf("** Asix AX88772A found **\n");
 	// TODO: More tests needed here?
-	return true;
+	return new UsbAx88772Driver();
 }
 
 void UsbAx88772Driver :: install(UsbDevice *dev)
@@ -163,7 +152,7 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
 	bulk_out_pipe.SplitCtl = 0;
 	bulk_out_pipe.Command = 0;
 
-    WORD dummy_read;
+    uint16_t dummy_read;
 
     // * 40 1f b0: Write GPIO register
     host->control_exchange(&device->control_pipe,
@@ -255,7 +244,7 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     if (netstack) {
     	//printf("Network stack: %s\n", netstack->identify());
     	struct t_pipe ipipe;
-		ipipe.DevEP = WORD((device->current_address << 8) | 1);
+		ipipe.DevEP = uint16_t((device->current_address << 8) | 1);
 		ipipe.Interval = 8000; // 1 Hz
 		ipipe.Length = 16; // just read 16 bytes max
 		ipipe.MaxTrans = 64;
@@ -264,7 +253,7 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
 
 		irq_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_interrupt_callback, this);
 
-		ipipe.DevEP = WORD((device->current_address << 8) | 2);
+		ipipe.DevEP = uint16_t((device->current_address << 8) | 2);
 		ipipe.Interval = 1; // fast!
 		ipipe.Length = 1536; // big blocks!
 		ipipe.MaxTrans = 512;
@@ -288,7 +277,7 @@ void UsbAx88772Driver :: deinstall(UsbDevice *dev)
     printf("AX88772 Deinstalled.\n");
 }
 
-void UsbAx88772Driver :: write_phy_register(uint8_t reg, WORD value) {
+void UsbAx88772Driver :: write_phy_register(uint8_t reg, uint16_t value) {
     c_write_phy_reg[4] = reg;
 
     host->control_exchange(&device->control_pipe,
@@ -304,7 +293,7 @@ void UsbAx88772Driver :: write_phy_register(uint8_t reg, WORD value) {
 						   temp_buffer, 1);
 }
 
-WORD UsbAx88772Driver :: read_phy_register(uint8_t reg) {
+uint16_t UsbAx88772Driver :: read_phy_register(uint8_t reg) {
     c_read_phy_reg[4] = reg;
 
     host->control_exchange(&device->control_pipe,
@@ -313,7 +302,7 @@ WORD UsbAx88772Driver :: read_phy_register(uint8_t reg) {
     host->control_exchange(&device->control_pipe,
                            c_read_phy_reg, 8,
 						   temp_buffer, 2);
-    WORD retval = WORD(temp_buffer[0]) | (WORD(temp_buffer[1]) << 8);
+    uint16_t retval = uint16_t(temp_buffer[0]) | (uint16_t(temp_buffer[1]) << 8);
     host->control_exchange(&device->control_pipe,
                            c_release_access, 8,
 						   temp_buffer, 1);
@@ -362,8 +351,8 @@ void UsbAx88772Driver :: bulk_handler(uint8_t *usb_buffer, int data_len)
 		return;
 	}
 
-	WORD pkt_size  = WORD(usb_buffer[0]) | (WORD(usb_buffer[1])) << 8;
-	WORD pkt_size2 = (WORD(usb_buffer[2]) | (WORD(usb_buffer[3])) << 8) ^ 0xFFFF;
+	uint16_t pkt_size  = uint16_t(usb_buffer[0]) | (uint16_t(usb_buffer[1])) << 8;
+	uint16_t pkt_size2 = (uint16_t(usb_buffer[2]) | (uint16_t(usb_buffer[3])) << 8) ^ 0xFFFF;
 
 	//printf("Packet_sizes: %d %d\n", pkt_size, pkt_size2);
 
@@ -422,9 +411,9 @@ void UsbAx88772Driver :: write_srom()
                                     NULL, 0);
 
 	for(int i=0;i<128;i++) {
-		WORD data = good_srom[i];
+		uint16_t data = good_srom[i];
 		c_srom_write_reg[2] = (uint8_t)i;
-		*((WORD *)&c_srom_write_reg[4]) = data;
+		*((uint16_t *)&c_srom_write_reg[4]) = data;
 		device->host->control_exchange(&device->control_pipe,
 										c_srom_write_reg, 8,
 	                                    NULL, 0);

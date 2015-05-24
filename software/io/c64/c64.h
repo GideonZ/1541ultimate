@@ -6,9 +6,11 @@
 #include "event.h"
 #include "integer.h"
 #include "keyboard.h"
+#include "screen.h"
 #include "config.h"
 #include "menu.h"
 #include "iomap.h"
+#include "filemanager.h"
 
 #define REU_MEMORY_BASE 0x1000000
 #define REU_MAX_SIZE    0x1000000
@@ -63,33 +65,33 @@
 #define RUNCODE_TAPE_LOAD_RUN     (RUNCODE_TAPE_BIT | RUNCODE_REAL_BIT | RUNCODE_LOAD_BIT | RUNCODE_RUN_BIT)
 #define RUNCODE_TAPE_RECORD       (RUNCODE_TAPE_BIT | RUNCODE_RECORD_BIT | RUNCODE_REAL_BIT)
 
-#define VIC_REG(x)   *((volatile BYTE *)(C64_MEMORY_BASE + 0xD000 + x))
-#define CIA1_REG(x)  *((volatile BYTE *)(C64_MEMORY_BASE + 0xDC00 + x))
-#define CIA2_REG(x)  *((volatile BYTE *)(C64_MEMORY_BASE + 0xDD00 + x))
-#define SID_VOLUME   *((volatile BYTE *)(C64_MEMORY_BASE + 0xD418))
-#define SID_DUMMY    *((volatile BYTE *)(C64_MEMORY_BASE + 0xD43F))
-#define MEM_LOC(x)   *((volatile BYTE *)(C64_MEMORY_BASE + 0x0800 + x))
-#define COLOR_RAM(x) *((volatile BYTE *)(C64_MEMORY_BASE + 0xD800 + x))
-#define CHAR_DEST(x) *((volatile BYTE *)(C64_MEMORY_BASE + 0x0800 + x))
-#define VIC_CTRL     *((volatile BYTE *)(C64_MEMORY_BASE + 0xD011))
-#define BORDER       *((volatile BYTE *)(C64_MEMORY_BASE + 0xD020))
-#define BACKGROUND   *((volatile BYTE *)(C64_MEMORY_BASE + 0xD021))
-#define VIC_MMAP     *((volatile BYTE *)(C64_MEMORY_BASE + 0xD018))
-#define CIA2_DPA     *((volatile BYTE *)(C64_MEMORY_BASE + 0xDD00))
-#define CIA2_DDRA    *((volatile BYTE *)(C64_MEMORY_BASE + 0xDD02))
-#define CIA1_DPA     *((volatile BYTE *)(C64_MEMORY_BASE + 0xDC00))
-#define CIA1_DPB     *((volatile BYTE *)(C64_MEMORY_BASE + 0xDC01))
-#define CIA1_DDRA    *((volatile BYTE *)(C64_MEMORY_BASE + 0xDC02))
-#define CIA1_DDRB    *((volatile BYTE *)(C64_MEMORY_BASE + 0xDC03))
-#define CIA1_ICR     *((volatile BYTE *)(C64_MEMORY_BASE + 0xDC0D))
-#define CIA2_ICR     *((volatile BYTE *)(C64_MEMORY_BASE + 0xDD0D))
+#define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
+#define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
+#define CIA2_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD00 + x))
+#define SID_VOLUME   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD418))
+#define SID_DUMMY    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD43F))
+#define MEM_LOC(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0800 + x))
+#define COLOR_RAM(x) *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD800 + x))
+#define CHAR_DEST(x) *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0800 + x))
+#define VIC_CTRL     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD011))
+#define BORDER       *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD020))
+#define BACKGROUND   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD021))
+#define VIC_MMAP     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD018))
+#define CIA2_DPA     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD00))
+#define CIA2_DDRA    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD02))
+#define CIA1_DPA     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00))
+#define CIA1_DPB     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC01))
+#define CIA1_DDRA    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC02))
+#define CIA1_DDRB    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC03))
+#define CIA1_ICR     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC0D))
+#define CIA2_ICR     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD0D))
 #define C64_SCREEN    (volatile char *)(C64_MEMORY_BASE + 0x0400)
 #define C64_COLORRAM  (volatile char *)(C64_MEMORY_BASE + 0xD800)
 
-#define C64_IRQ_SOFT_VECTOR_LO *((volatile BYTE *)(C64_MEMORY_BASE + 0x0314))
-#define C64_IRQ_SOFT_VECTOR_HI *((volatile BYTE *)(C64_MEMORY_BASE + 0x0315))
-#define C64_POKE(x,y) *((volatile BYTE *)(C64_MEMORY_BASE + x)) = y;
-#define C64_PEEK(x)   (*((volatile BYTE *)(C64_MEMORY_BASE + x)))
+#define C64_IRQ_SOFT_VECTOR_LO *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0314))
+#define C64_IRQ_SOFT_VECTOR_HI *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0315))
+#define C64_POKE(x,y) *((volatile uint8_t *)(C64_MEMORY_BASE + x)) = y;
+#define C64_PEEK(x)   (*((volatile uint8_t *)(C64_MEMORY_BASE + x)))
 
 #define NUM_VICREGS    48
 #define COLOR_SIZE   1024
@@ -111,12 +113,13 @@ typedef struct _cart
     uint8_t  type;
 } cart_def;
 
-class Keyboard;
 
 class C64 : public GenericHost, ObjectWithMenu, ConfigurableObject
 {
     Flash *flash;
     Keyboard *keyb;
+    Screen *screen;
+    FileManager *fm;
     
     uint8_t *char_set; //[CHARSET_SIZE];
     uint8_t vic_backup[NUM_VICREGS];
@@ -170,8 +173,8 @@ public:
     /* C64 specifics */
     void init_cartridge(void);
     void cartridge_test(void);
-    int  dma_load(FILE *f, uint8_t run_mode, WORD reloc=0);
-    bool write_vic_state(FILE *f);
+    int  dma_load(File *f, uint8_t run_mode, uint16_t reloc=0);
+    bool write_vic_state(File *f);
         
     friend class FileTypeSID; // sid load does some tricks
 };
@@ -181,8 +184,8 @@ extern C64   *c64;
 class C64Event
 {
  public:
-    static int prepare_dma_load(FILE *f, const char *name, int len, uint8_t run_mode, WORD reloc=0);
-    static int perform_dma_load(FILE *f, uint8_t run_mode, WORD reloc=0);
+    static int prepare_dma_load(File *f, const char *name, int len, uint8_t run_mode, uint16_t reloc=0);
+    static int perform_dma_load(File *f, uint8_t run_mode, uint16_t reloc=0);
 };
 
 #endif

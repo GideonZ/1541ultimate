@@ -337,13 +337,13 @@ void FileSystemD64::file_close(File *f)
     delete f;
 }
 
-FRESULT FileSystemD64::file_read(File *f, void *buffer, uint32_t len, UINT *bytes_read)
+FRESULT FileSystemD64::file_read(File *f, void *buffer, uint32_t len, uint32_t *bytes_read)
 {
     FileInD64 *ff = (FileInD64 *)f->handle;
     return ff->read(buffer, len, bytes_read);
 }
 
-FRESULT FileSystemD64::file_write(File *f, void *buffer, uint32_t len, UINT *bytes_written)
+FRESULT FileSystemD64::file_write(File *f, void *buffer, uint32_t len, uint32_t *bytes_written)
 {
     FileInD64 *ff = (FileInD64 *)f->handle;
     return ff->write(buffer, len, bytes_written);
@@ -524,7 +524,7 @@ FRESULT FileInD64 :: visit(void)
     return FR_OK;
 }
 
-FRESULT FileInD64 :: read(void *buffer, uint32_t len, UINT *transferred)
+FRESULT FileInD64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
 {
     FRESULT res;
 
@@ -585,7 +585,7 @@ FRESULT FileInD64 :: read(void *buffer, uint32_t len, UINT *transferred)
     return FR_OK;
 }
 
-FRESULT  FileInD64 :: write(void *buffer, uint32_t len, UINT *transferred)
+FRESULT  FileInD64 :: write(void *buffer, uint32_t len, uint32_t *transferred)
 {
     FRESULT res;
 

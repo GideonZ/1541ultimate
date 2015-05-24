@@ -7,12 +7,12 @@
 #include "poll.h"
 
 struct t_pipe {
-	WORD Command;
-	WORD DevEP;
-	WORD Length;
-	WORD MaxTrans;
-	WORD Interval;
-	WORD SplitCtl;
+	uint16_t Command;
+	uint16_t DevEP;
+	uint16_t Length;
+	uint16_t MaxTrans;
+	uint16_t Interval;
+	uint16_t SplitCtl;
 };
 
 typedef enum {
@@ -64,7 +64,7 @@ public:
     virtual void init(void) { }
     virtual void deinit(void) { }
     virtual void bus_reset() { }
-    virtual WORD getSplitControl(int addr, int port, int speed, int type) { return 0; }
+    virtual uint16_t getSplitControl(int addr, int port, int speed, int type) { return 0; }
     virtual int  control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen) { return -1; }
     virtual int  control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len) { return -1; }
     virtual int  allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, void *object) { return -1; }

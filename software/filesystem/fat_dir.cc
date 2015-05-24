@@ -163,11 +163,11 @@ FRESULT FATDIR::read_entry (
 /* Directory handling - Seek directory index                             */
 /*-----------------------------------------------------------------------*/
 FRESULT FATDIR::dir_seek (
-    WORD idx        /* Directory index number */
+    uint16_t idx        /* Directory index number */
 )
 {
     uint32_t clst;
-    WORD ic;
+    uint16_t ic;
 
     index = idx;
     clst = sclust;
@@ -212,7 +212,7 @@ FRESULT FATDIR::dir_next ( /* FR_OK:Succeeded, FR_NO_FILE:End of table, FR_DENIE
 )
 {
     uint32_t clst;
-    WORD i;
+    uint16_t i;
 
     i = index + 1;
     if (!i || !sect)    /* Report EOT when index has reached 65535 */
@@ -378,7 +378,7 @@ void gen_numname (
     uint8_t *dst,          /* Pointer to genartated SFN */
     const uint8_t *src,    /* Pointer to source SFN to be modified */
     const WCHAR *lfn,   /* Pointer to LFN */
-    WORD num            /* Sequense number */
+    uint16_t num            /* Sequense number */
 )
 {
     char ns[8];
@@ -388,7 +388,7 @@ void gen_numname (
     mem_cpy(dst, src, 11);
 
     if (num > 5) {  /* On many collisions, generate a hash number instead of sequencial number */
-        do num = (num >> 1) + (num << 15) + (WORD)*lfn++; while (*lfn);
+        do num = (num >> 1) + (num << 15) + (uint16_t)*lfn++; while (*lfn);
     }
 
     /* itoa */
@@ -441,8 +441,8 @@ FRESULT FATDIR::dir_find_lfn_start(void) // will set lfn_index correctly, based 
 
     uint8_t sum = sum_sfn(dir);
     lfn_idx = 0xFFFF;
-    WORD idx = index;
-    WORD sfn_idx = index;
+    uint16_t idx = index;
+    uint16_t sfn_idx = index;
     FRESULT res;
     uint8_t attr;
     
@@ -586,7 +586,7 @@ FRESULT FATDIR::dir_register (void)    /* Objects points to directory with objec
     FRESULT res;
     uint8_t c, *dirbyte;
 #if _USE_LFN    /* LFN configuration */
-    WORD n, ne, is = 0xFFFF;
+    uint16_t n, ne, is = 0xFFFF;
     uint8_t tmp_sn[12], *tmp_fn, sum;
     WCHAR *tmp_lfn;
 
@@ -695,10 +695,10 @@ FRESULT FATDIR::dir_remove (void)  /* Directory object pointing the entry to be 
 {
     FRESULT res;
 #if _USE_LFN    /* LFN configuration */
-    WORD i;
+    uint16_t i;
 
     i = index;  /* SFN index */
-    res = dir_seek((WORD)((lfn_idx == 0xFFFF) ? i : lfn_idx));  /* Goto the SFN or top of the LFN entries */
+    res = dir_seek((uint16_t)((lfn_idx == 0xFFFF) ? i : lfn_idx));  /* Goto the SFN or top of the LFN entries */
 	
     if (res == FR_OK) {
         do {
@@ -974,7 +974,7 @@ void FATDIR::get_fileinfo( /* No return code */
         }
 */
         fno->dir_clust = this->sclust;
-//        fno->dir_offset = (WORD)(dir - fs->win);
+//        fno->dir_offset = (uint16_t)(dir - fs->win);
 //        fno->dir_sector = sect;
 //        fno->lfn_index = lfn_idx;
         fno->dir_index = index;
@@ -1084,7 +1084,7 @@ FRESULT FATDIR::follow_path (  /* FR_OK(0): successful, !=0: error code */
     sclust = start_clust;               /* Start from the root dir (if no parameter is given) */
 #endif
 
-    if ((UINT)*path < ' ') {            /* Null path means the start directory itself */
+    if ((uint32_t)*path < ' ') {            /* Null path means the start directory itself */
         res = dir_seek(0);
         dir = NULL;
 

@@ -7,7 +7,7 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 
-__inline WORD le16_to_cpu(WORD h)
+__inline uint16_t le16_to_cpu(uint16_t h)
 {
     return (h >> 8) | (h << 8);
 }

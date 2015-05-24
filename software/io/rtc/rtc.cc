@@ -1,7 +1,5 @@
 #include "rtc.h"
-extern "C" {
-    #include "small_printf.h"
-}
+#include "small_printf.h"
 
 char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
 										"Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -57,7 +55,7 @@ Rtc :: Rtc()
     if(getFpgaCapabilities() & CAPAB_RTC_CHIP) {
         capable = true;
     	cfg = new RtcConfigStore("Clock Settings", rtc_config);
-    	config_manager.add_custom_store(cfg);
+    	ConfigManager :: getConfigManager() -> add_custom_store(cfg);
     	get_time_from_chip();
     
     	// Check and correct clock out setting
@@ -73,7 +71,7 @@ Rtc :: ~Rtc()
     //printf("Destructor RTC\n");
     if (capable) {
         //config_manager.dump();
-        config_manager.remove_store(cfg);
+    	ConfigManager :: getConfigManager() -> remove_store(cfg);
     	delete cfg;
     	//printf("RTC configuration store now gone..\n");
     }

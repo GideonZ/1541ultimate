@@ -94,11 +94,12 @@ void Editor :: init(Screen *scr, Keyboard *key)
     keyb = key;
 
     line_length = screen->get_size_x();
-    height = screen->get_size_y()-1;
+    height = screen->get_size_y()-3;
 
     printf("Line length: %d. Height: %d\n", line_length, height);
     
-    window = new Window(screen, 0, 1, line_length, height);
+    window = new Window(screen, 0, 2, line_length, height);
+    window->set_color(14);
     window->draw_border();
     height -= 2;
     first_line = 0;
@@ -108,10 +109,15 @@ void Editor :: init(Screen *scr, Keyboard *key)
 void Editor :: draw(void)
 {
     struct Line line;
+    int width = window->get_size_x();
     for(int i=0;i<height;i++) {
         window->move_cursor(0, i);
         line = (*text)[i + first_line];
-        window->output_length(line.buffer, line.length);
+        if (line.buffer) {
+        	window->output_length(line.buffer, line.length);
+        } else {
+        	window->output_length("", width);
+    	}
     }
 }
 
@@ -124,7 +130,7 @@ void Editor :: deinit()
 int Editor :: poll(int dummy, Event &e)
 {
     int ret = 0;
-    uint8_t c;
+    int c;
         
     if(!keyb) {
         printf("Editor: Keyboard not initialized.. exit.\n");
@@ -132,7 +138,7 @@ int Editor :: poll(int dummy, Event &e)
     }
 
     c = keyb->getch();
-    if(c) {
+    if(c > 0) {
         ret = handle_key(c);
     }
     return ret;

@@ -118,9 +118,14 @@ class ConfigManager
 	IndexedList<ConfigStore*> stores;
     int num_pages;
     Flash *flash;
-public:
+
     ConfigManager();
     ~ConfigManager();
+public:
+	static ConfigManager* getConfigManager() {
+		static ConfigManager config_manager;
+		return &config_manager;
+	}
     
     ConfigStore *register_store(uint32_t store_id, char *name, t_cfg_definition *defs, ConfigurableObject *ob);
     ConfigStore *open_store(uint32_t store_id);
@@ -131,21 +136,22 @@ public:
 	IndexedList<ConfigStore*> *getStores() { return &stores; }
 };
 
-extern ConfigManager config_manager; // global!
+
 
 // Base class for any configurable object
-
 class ConfigurableObject
 {
 public:
     ConfigStore *cfg;
 
-    ConfigurableObject() { }
+    ConfigurableObject() {
+    	cfg = NULL;
+    }
     virtual ~ConfigurableObject() { }
     
     virtual bool register_store(uint32_t store_id, char *name, t_cfg_definition *defs)
     {
-        cfg = config_manager.register_store(store_id, name, defs, this);
+        cfg = ConfigManager :: getConfigManager()->register_store(store_id, name, defs, this);
         return (cfg != NULL);
     }
     

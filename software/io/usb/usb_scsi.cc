@@ -28,20 +28,15 @@ uint8_t c_scsi_reset[]     = { 0x21, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 / and necessary device objects
 /*********************************************************************/
 #ifndef BOOTLOADER
-// tester instance
-UsbScsiDriver usb_scsi_driver_tester(usb_drivers);
 
-UsbScsiDriver :: UsbScsiDriver(IndexedList<UsbDriver*> &list)
-{
-	current_lun = 0;
-	max_lun = 0;
-	list.append(this); // add tester
-}
+// tester instance
+FactoryRegistrator<UsbDevice *, UsbDriver *> scsi_tester(UsbDevice :: getUsbDriverFactory(), UsbScsiDriver :: test_driver);
 
 UsbScsiDriver :: UsbScsiDriver()
 {
 	current_lun = 0;
 	max_lun = 0;
+	file_manager = FileManager :: getFileManager();
 }
 
 UsbScsiDriver :: ~UsbScsiDriver()
@@ -49,36 +44,31 @@ UsbScsiDriver :: ~UsbScsiDriver()
 
 }
 
-UsbScsiDriver *UsbScsiDriver :: create_instance(void)
-{
-	return new UsbScsiDriver();
-}
-
-bool UsbScsiDriver :: test_driver(UsbDevice *dev)
+UsbDriver *UsbScsiDriver :: test_driver(UsbDevice *dev)
 {
 	//printf("** Test UsbScsiDriver **\n");
 	if (dev->num_interfaces < 1)
-		return false;
+		return 0;
 
 	//printf("Dev class: %d\n", dev->device_descr.device_class);
 	if((dev->device_descr.device_class != 0x08)&&(dev->device_descr.device_class != 0x00)) {
 		//printf("Device is not mass storage..\n");
-		return false;
+		return 0;
 	}
 	if(dev->interfaces[0]->interface_class != 0x08) {
 		printf("Interface class is not mass storage. [%b]\n", dev->interfaces[0]->interface_class);
-		return false;
+		return 0;
 	}
 	if(dev->interfaces[0]->protocol != 0x50) {
 		printf("Protocol is not bulk only. [%b]\n", dev->interfaces[0]->protocol);
-		return false;
+		return 0;
 	}
 //	if(dev->interface_descr.sub_class != 0x06) {
 //		printf("SubClass is not transparent SCSI. [%b]\n", dev->interface_descr.sub_class);
 //		return false;
 //	}
 	printf("** Mass storage device found **\n");
-	return true;
+	return new UsbScsiDriver();
 }
 
 int UsbScsiDriver :: get_max_lun(UsbDevice *dev)
@@ -127,16 +117,16 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	for(int i=0;i<=max_lun;i++) {
 		scsi_blk_dev[i] = new UsbScsi(this, i, max_lun);
 		scsi_blk_dev[i]->reset();
-		path_dev[i] = new FileDevice(file_manager.get_root(), scsi_blk_dev[i], scsi_blk_dev[i]->get_name(), scsi_blk_dev[i]->get_disp_name());
+		path_dev[i] = new FileDevice(file_manager->get_root(), scsi_blk_dev[i], scsi_blk_dev[i]->get_name(), scsi_blk_dev[i]->get_disp_name());
 
 		// path_dev[i]->attach();
 		state_copy[i] = scsi_blk_dev[i]->get_state(); // returns unknown, most likely! :)
 		printf("*** LUN = %d *** Initial state = %d ***\n", i, state_copy[i]);
 		poll_interval[i] = i; // ;-) not all at the same time!
 		media_seen[i] = false;
-		file_manager.add_root_entry(path_dev[i]);
+		file_manager->add_root_entry(path_dev[i]);
 	}
-	push_event(e_refresh_browser, file_manager.get_root());
+	push_event(e_refresh_browser, file_manager->get_root());
 	current_lun = 0;
 }
 
@@ -144,12 +134,12 @@ void UsbScsiDriver :: deinstall(UsbDevice *dev)
 {
 	for(int i=0;i<=max_lun;i++) {
         printf("DeInstalling SCSI Lun %d\n", i);
-        file_manager.remove_root_entry(path_dev[i]);
+        file_manager->remove_root_entry(path_dev[i]);
 		push_event(e_invalidate, path_dev[i], 0);  // node no longer exists.
 		push_event(e_cleanup_path_object, path_dev[i]);
 		push_event(e_cleanup_block_device, scsi_blk_dev[i]);
 	}
-	push_event(e_refresh_browser, file_manager.get_root());
+	push_event(e_refresh_browser, file_manager->get_root());
 }
 
 void UsbScsiDriver :: poll(void)
@@ -166,8 +156,8 @@ void UsbScsiDriver :: poll(void)
 
 	// poll intervals are meant to lower the unnecessary
 	// traffic on the USB bus.
-    WORD now = ITU_MS_TIMER;
-    WORD passed_time = now - poll_interval[current_lun];
+    uint16_t now = ITU_MS_TIMER;
+    uint16_t passed_time = now - poll_interval[current_lun];
     if(passed_time >= c_intervals[int(state_copy[current_lun])]) {
 
     	poll_interval[current_lun] = now;
@@ -197,7 +187,7 @@ void UsbScsiDriver :: poll(void)
 		}
 
 		if(old_state != new_state) {
-			push_event(e_refresh_browser, file_manager.get_root());
+			push_event(e_refresh_browser, file_manager->get_root());
 		}
     }
 

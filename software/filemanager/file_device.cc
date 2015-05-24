@@ -109,6 +109,6 @@ char *FileDevice :: get_display_string(void)
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
 */
-    sprintf(buffer, "\x1B[0m%8s%22s \x1B[32m%s", get_name(), display_name, c_state_string[(int)state]);
+    sprintf(buffer, "%8s%22s \eE%s", get_name(), display_name, c_state_string[(int)state]);
     return buffer;
 }

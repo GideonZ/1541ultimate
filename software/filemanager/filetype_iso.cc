@@ -8,7 +8,7 @@ extern "C" {
 }
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileType *> tester_iso(file_type_factory, FileTypeISO :: test_type);
+FactoryRegistrator<CachedTreeNode *, FileType *> tester_iso(Globals :: getFileTypeFactory(), FileTypeISO :: test_type);
 
 /*********************************************************************/
 /* ISO File Browser Handling                                         */

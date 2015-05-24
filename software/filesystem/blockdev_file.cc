@@ -16,12 +16,12 @@ BlockDevice_File::BlockDevice_File(CachedTreeNode *obj, int sec_size)
     }
     sector_size = (1 << shift);
     file_size = f->size;
-	file = file_manager.fopen_node(obj, FA_READ | FA_WRITE);
+	file = FileManager :: getFileManager() -> fopen_node(obj, FA_READ | FA_WRITE);
 }
     
 BlockDevice_File::~BlockDevice_File()
 {
-	file_manager.fclose(file);
+	FileManager :: getFileManager() -> fclose(file);
 }
 
 DSTATUS BlockDevice_File::init(void)
@@ -45,7 +45,7 @@ DRESULT BlockDevice_File::read(uint8_t *buffer, uint32_t sector, int count)
     if(file->seek(sector << shift))
         return RES_PARERR;
         
-    UINT read;
+    uint32_t read;
     if(file->read(buffer, sector_size * (int)count, &read) != FR_OK)
         return RES_ERROR;
     
@@ -58,7 +58,7 @@ DRESULT BlockDevice_File::write(const uint8_t *buffer, uint32_t sector, int coun
     if(file->seek(sector << shift))
         return RES_PARERR;
         
-    UINT written;
+    uint32_t written;
     if(file->write((uint8_t *)buffer, sector_size * (int)count, &written) != FR_OK)
         return RES_ERROR;
     

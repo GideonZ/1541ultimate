@@ -30,6 +30,7 @@ PRJ      =  mb_ui
 PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/application \
+			$(PATH_SW)/application/ultimate \
 			$(PATH_SW)/application/mb_hello \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
@@ -104,9 +105,10 @@ SRCS_CC	 =  stream.cc \
 			sys_calls.cc \
 			c64.cc \
 			screen.cc \
-			keyboard.cc \
+			keyboard_c64.cc \
 			mystring.cc \
 			userinterface.cc \
+			ui_elements.cc \
 			editor.cc \
 			pattern.cc \
 			ui_stream.cc \
@@ -132,8 +134,9 @@ SRCS_NANO = nano_minimal.nan
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -g -ffunction-sections -Os -std=c99 -DOS
-CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -DOS
+OPTIONS  = -g -ffunction-sections -Os -DOS -D_NO_FILE_ACCESS
+COPTIONS = $(OPTIONS) -std=c99
+CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
 LLIB     =  -L ../mb_lwip/result \
             -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \

@@ -71,12 +71,12 @@ AudioConfig :: AudioConfig()
 {
     struct t_cfg_definition *def = audio_cfg;
     uint32_t store = 0x41554449;    
-    uint32_t CAPABILITIES = getFpgaCapabilities();
+    uint32_t capabilities = getFpgaCapabilities();
 
-    if(CAPABILITIES & CAPAB_STEREO_SID) {
-        map = normal_map;
+    if(capabilities & CAPAB_STEREO_SID) {
+    	map = normal_map;
         def = audio_cfg;
-        if(CAPABILITIES & CAPAB_SAMPLER) {
+        if(capabilities & CAPAB_SAMPLER) {
             def[0].max = 7;
             def[1].max = 7;
         } else {
@@ -87,7 +87,7 @@ AudioConfig :: AudioConfig()
         map = skip_sid;
         def = audio_cfg_no_sid;
         store = 0x4155444a;
-        if(CAPABILITIES & CAPAB_SAMPLER) {
+        if(capabilities & CAPAB_SAMPLER) {
             def[0].max = 5;
             def[1].max = 5;
         } else {

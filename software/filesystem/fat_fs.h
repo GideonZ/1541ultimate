@@ -57,12 +57,12 @@ private:
     uint8_t    n_fats;     /* Number of FAT copies */
     uint8_t    wflag;      /* win[] dirty flag (1:must be written back) */
     uint8_t    fsi_flag;   /* fsinfo dirty flag (1:must be written back) */
-    WORD    n_rootdir;  /* Number of root directory entries (0 on FAT32) */
+    uint16_t    n_rootdir;  /* Number of root directory entries (0 on FAT32) */
 #if _FS_REENTRANT
     _SYNC_t sobj;       /* Identifier of sync object */
 #endif
 #if _MAX_SS != 512
-    WORD    s_size;     /* Sector size */
+    uint16_t    s_size;     /* Sector size */
 #endif
     uint32_t   last_clust; /* Last allocated cluster */
     uint32_t   free_clust; /* Number of free clusters */
@@ -110,8 +110,8 @@ public:
     void    file_close(File *f);                // Closes file (and destructs file object)
     FRESULT file_rename(FileInfo *, char *new_name); // Renames a file
 	FRESULT file_delete(FileInfo *); // deletes a file
-    FRESULT file_read(File *f, void *buffer, uint32_t len, UINT *transferred);
-    FRESULT file_write(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
     FRESULT file_sync(File *f);
     void    file_print_info(File *f); // debug
@@ -126,7 +126,7 @@ private:
     uint32_t   clust2sect (uint32_t clst);          /* Get sector# from cluster# */
     FRESULT validate (void);                  /* Check if the file system object is valid or not */
     FRESULT chk_mounted (uint8_t chk_wp);        /* Make sure that the file system or object using it is valid */
-    FRESULT f_mkfs (uint8_t, uint8_t, WORD);        /* Create a file system on the drive */
+    FRESULT f_mkfs (uint8_t, uint8_t, uint16_t);        /* Create a file system on the drive */
     FRESULT f_rename (FileInfo *, char *);    // new function for renaming
 
     friend class FATDIR;

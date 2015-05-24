@@ -30,7 +30,7 @@ public:
     
     void scan(void);
     void set_delays(int, int);
-    uint8_t getch(void);
+    int  getch(void);
     void wait_free(void);
     void clear_buffer(void);
 };

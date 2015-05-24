@@ -27,103 +27,13 @@ typedef void(*fptr)(void);
 void _premain()
 {
 	int t;
-	unsigned long *pul;
-	fptr f;
 
     UART_DATA = 0x31;
     UART_DATA = 0x2e;
 
-//  __cache_to_sdram();
-
-//	__copy_data();
-//	_initIO();
-//    __clear_bss();
-
-//    UART_DATA = 0x32;
-//    UART_DATA = 0x2e;
-
-/*
-    pul = (unsigned long *)&__constructor_list;
-    while(pul != (unsigned long *)&__end_of_constructors) {
-        f = (fptr)*pul;
-        f();
-        pul++;
-    }
-*/        
-    UART_DATA = 0x32;
-    UART_DATA = 0x2e;
-
 	t=main(0, 0);
 
-/*
-    pul = (unsigned long *)&__end_of_destructors;
-    do {
-        pul--;
-        if(pul < (unsigned long *)&__destructor_list)
-        	break;
-        f = (fptr)*pul;
-        f();
-    } while(1);
-*/
-//	exit(t);
-//  for (;;);
 }
-
-/*void __construct(void)
-{
-}
-*/
-
-extern unsigned char __bss_start__, __bss_end__;
-
-/*
-void __clear_bss(void)
-{
-	unsigned int *cptr;
-	cptr = (unsigned int*)&__bss_start__;
-	do {
-        *cptr = 0;
-        cptr++;
-    } while(cptr < (unsigned int *)(&__bss_end__));
-}
-
-void __cache_to_sdram(void)
-{
-    volatile unsigned int *ptr = 0;
-    int i;
-    for(i=0;i<512;i++) {
-        *ptr = *ptr;
-        ptr++;
-    }
-}
-*/
-extern unsigned char __ram_start,__data_start,__data_end;
-/*
-extern unsigned char ___jcr_start,___jcr_begin,___jcr_end;
-
-*/
-
-/*
-void __copy_data(void)
-{
-	unsigned int *cptr;
-	cptr = (unsigned int*)&__ram_start;
-	unsigned int *dptr;
-	dptr = (unsigned int*)&__data_start;
-
-	do {
-		*(dptr++) = *(cptr++);
-	} while (dptr<(unsigned int*)(&__data_end));
-
-	cptr = (unsigned int*)&___jcr_start;
-	dptr = (unsigned int*)&___jcr_begin;
-
-	while (dptr<(unsigned int*)(&___jcr_end)) {
-		*dptr = *cptr;
-		cptr++,dptr++;
-	}
-}
-*/
 
 
 /*
@@ -140,9 +50,10 @@ int inbyte()
 		{
 			val = UART_DATA;
 			UART_GET = 0;
-			return val;
+			break;
 		}
 	}
+	return val;
 }
 
 /* 
@@ -150,16 +61,25 @@ int inbyte()
  * 
  * 
  */
-//void outbyte(int c);
-
-
 void outbyte(int c)
 {
 	// Wait for space in FIFO
 	while (UART_FLAGS & UART_TxFifoFull);
-	UART_DATA = c;
+	UART_DATA = (uint8_t)c;
 }
 
+void restart(void)
+{
+	uint32_t *src = (uint32_t *)0x1C00000;
+	uint32_t *dst = (uint32_t *)0x10000;
+	int size = (int)(*(src++));
+	while(size--) {
+		*(dst++) = *(src++);
+	}
+    //puts("Restarting....");
+    __asm__("bralid r15, 0x10000");
+    __asm__("nop");
+}
 
 /*
 void *sbrk(int inc)

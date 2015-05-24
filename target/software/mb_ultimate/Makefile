@@ -117,9 +117,8 @@ SRCS_CC	 =  stream.cc \
 			s25fl_flash.cc \
 			config.cc \
 			event.cc \
-			main_loop.cc \
+			poll.cc \
 			filemanager.cc \
-			filetypes.cc \
 			sys_calls.cc \
 			file_utils.cc \
 			file_device.cc \
@@ -133,7 +132,7 @@ SRCS_CC	 =  stream.cc \
 			usb_hub.cc \
 			c64.cc \
 			screen.cc \
-			keyboard.cc \
+			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
 			bam_header.cc \
@@ -163,6 +162,7 @@ SRCS_CC	 =  stream.cc \
 			filetype_iso.cc \
 			filetype_d64.cc \
 			userinterface.cc \
+			ui_elements.cc \
 			editor.cc \
 			ui_stream.cc \
 			tree_browser.cc \
@@ -193,8 +193,9 @@ SRCS_NANO = nano_minimal.nan
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -g -ffunction-sections -Os -std=c99 -DOS
-CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -DOS
+OPTIONS  = -g -ffunction-sections -Os -DOS 
+COPTIONS = $(OPTIONS) -std=c99
+CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
 LLIB     =  -L ../mb_lwip/result \
             -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \

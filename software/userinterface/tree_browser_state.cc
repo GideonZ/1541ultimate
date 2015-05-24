@@ -96,7 +96,7 @@ void TreeBrowserState :: draw()
     if(children.get_elements() == 0) {
 		browser->window->clear();
     	browser->window->move_cursor(0, 0);
-    	browser->window->output("\033[32m< No Items >");
+    	browser->window->output("\033E< No Items >");
     	under_cursor = NULL;
     	return;
     }

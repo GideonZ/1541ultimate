@@ -107,8 +107,8 @@
         uint8_t  flags;                        // 0x19
         uint8_t  file_unit_size;               // 0x1A
         uint8_t  interleave_gap;               // 0x1B
-        WORD  volume_sequence_number;       // 0x1C
-        WORD  be_volume_sequence_number;    // 0x1E
+        uint16_t  volume_sequence_number;       // 0x1C
+        uint16_t  be_volume_sequence_number;    // 0x1E
         uint8_t  identifier_length;            // 0x20
     } __attribute__((packed));
 
@@ -121,12 +121,12 @@
         uint32_t sector_count;                     // 0x50
         uint32_t be_sector_count;                  // 0x54
         uint8_t padding2[32];                      // 0x58
-        WORD  volume_set_size;                  // 0x78
-        WORD  be_volume_set_size;               // 0x7A
-        WORD  volume_sequence_number;           // 0x7C
-        WORD  be_volume_sequence_number;        // 0x7E
-        WORD  sector_size;                      // 0x80
-        WORD  be_sector_size;                   // 0x82
+        uint16_t  volume_set_size;                  // 0x78
+        uint16_t  be_volume_set_size;               // 0x7A
+        uint16_t  volume_sequence_number;           // 0x7C
+        uint16_t  be_volume_sequence_number;        // 0x7E
+        uint16_t  sector_size;                      // 0x80
+        uint16_t  be_sector_size;                   // 0x82
         uint32_t path_table_length;                // 0x84
         uint32_t be_path_table_length;             // 0x88
         uint32_t first_path_table_sector;          // 0x8C
@@ -157,8 +157,8 @@
         uint8_t  flags;                        // 0x19
         uint8_t  file_unit_size;               // 0x1A
         uint8_t  interleave_gap;               // 0x1B
-        WORD  le_volume_sequence_number;    // 0x1C
-        WORD  volume_sequence_number;       // 0x1E
+        uint16_t  le_volume_sequence_number;    // 0x1C
+        uint16_t  volume_sequence_number;       // 0x1E
         uint8_t  identifier_length;            // 0x20
     } __attribute__((packed));
 
@@ -171,12 +171,12 @@
         uint32_t le_sector_count;                  // 0x50
         uint32_t sector_count;                     // 0x54
         uint8_t padding2[32];                      // 0x58
-        WORD  le_volume_set_size;               // 0x78
-        WORD  volume_set_size;                  // 0x7A
-        WORD  le_volume_sequence_number;        // 0x7C
-        WORD  volume_sequence_number;           // 0x7E
-        WORD  le_sector_size;                   // 0x80
-        WORD  sector_size;                      // 0x82
+        uint16_t  le_volume_set_size;               // 0x78
+        uint16_t  volume_set_size;                  // 0x7A
+        uint16_t  le_volume_sequence_number;        // 0x7C
+        uint16_t  volume_sequence_number;           // 0x7E
+        uint16_t  le_sector_size;                   // 0x80
+        uint16_t  sector_size;                      // 0x82
         uint32_t le_path_table_length;             // 0x84
         uint32_t path_table_length;                // 0x88
         uint32_t le_first_path_table_sector;       // 0x8C
@@ -227,10 +227,10 @@ public:
     // functions for reading and writing files
     File   *file_open(FileInfo *, uint8_t flags);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
 
-    FRESULT file_write(File *f, void *buffer, uint32_t len, UINT *transferred) {
+    FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred) {
         *transferred = 0;
         return FR_WRITE_PROTECTED;
     }

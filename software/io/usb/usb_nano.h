@@ -14,40 +14,40 @@
 #define USB2_BASE    USB_BASE
 #define NANO_BASE    USB_BASE
 
-#define USB2_CMD_Command  (*(volatile WORD *)(NANO_BASE + 0x7E0))
-#define USB2_CMD_DevEP    (*(volatile WORD *)(NANO_BASE + 0x7E2))
-#define USB2_CMD_Length   (*(volatile WORD *)(NANO_BASE + 0x7E4))
-#define USB2_CMD_MaxTrans (*(volatile WORD *)(NANO_BASE + 0x7E6))
-#define USB2_CMD_MemHi    (*(volatile WORD *)(NANO_BASE + 0x7E8))
-#define USB2_CMD_MemLo    (*(volatile WORD *)(NANO_BASE + 0x7EA))
-#define USB2_CMD_SplitCtl (*(volatile WORD *)(NANO_BASE + 0x7EC))
-#define USB2_CMD_Result   (*(volatile WORD *)(NANO_BASE + 0x7EE))
+#define USB2_CMD_Command  (*(volatile uint16_t *)(NANO_BASE + 0x7E0))
+#define USB2_CMD_DevEP    (*(volatile uint16_t *)(NANO_BASE + 0x7E2))
+#define USB2_CMD_Length   (*(volatile uint16_t *)(NANO_BASE + 0x7E4))
+#define USB2_CMD_MaxTrans (*(volatile uint16_t *)(NANO_BASE + 0x7E6))
+#define USB2_CMD_MemHi    (*(volatile uint16_t *)(NANO_BASE + 0x7E8))
+#define USB2_CMD_MemLo    (*(volatile uint16_t *)(NANO_BASE + 0x7EA))
+#define USB2_CMD_SplitCtl (*(volatile uint16_t *)(NANO_BASE + 0x7EC))
+#define USB2_CMD_Result   (*(volatile uint16_t *)(NANO_BASE + 0x7EE))
 
 #define ATTR_FIFO_BASE    (NANO_BASE + 0x640)
 #define BLOCK_FIFO_BASE	  (NANO_BASE + 0x740)
 #define ATTR_FIFO_ENTRIES  128
 #define BLOCK_FIFO_ENTRIES 64
 
-#define USB2_CIRC_MEMADDR_START_HI  (*(volatile WORD *)(NANO_BASE + 0x7C0))
-#define USB2_CIRC_MEMADDR_START_LO  (*(volatile WORD *)(NANO_BASE + 0x7C2))
-#define USB2_CIRC_BUF_SIZE		  	(*(volatile WORD *)(NANO_BASE + 0x7C4))
-#define USB2_CIRC_BUF_OFFSET		(*(volatile WORD *)(NANO_BASE + 0x7C6))
+#define USB2_CIRC_MEMADDR_START_HI  (*(volatile uint16_t *)(NANO_BASE + 0x7C0))
+#define USB2_CIRC_MEMADDR_START_LO  (*(volatile uint16_t *)(NANO_BASE + 0x7C2))
+#define USB2_CIRC_BUF_SIZE		  	(*(volatile uint16_t *)(NANO_BASE + 0x7C4))
+#define USB2_CIRC_BUF_OFFSET		(*(volatile uint16_t *)(NANO_BASE + 0x7C6))
 
-#define USB2_BLOCK_BASE_HI	(*(volatile WORD *)(NANO_BASE + 0x7C8))
-#define USB2_BLOCK_BASE_LO	(*(volatile WORD *)(NANO_BASE + 0x7CA))
+#define USB2_BLOCK_BASE_HI	(*(volatile uint16_t *)(NANO_BASE + 0x7C8))
+#define USB2_BLOCK_BASE_LO	(*(volatile uint16_t *)(NANO_BASE + 0x7CA))
 
-#define USB2_STATUS 	    (*(volatile BYTE *)(NANO_BASE + 0x7CD)) // low byte of 3E6
+#define USB2_STATUS 	    (*(volatile uint8_t *)(NANO_BASE + 0x7CD)) // low byte of 3E6
 
-#define ATTR_FIFO_TAIL		(*(volatile WORD *)(NANO_BASE + 0x7F0)) // updated by software only
-#define ATTR_FIFO_HEAD		(*(volatile WORD *)(NANO_BASE + 0x7F2)) // updated by nano only
-#define BLOCK_FIFO_TAIL		(*(volatile WORD *)(NANO_BASE + 0x7F4)) // updated by nano only
-#define BLOCK_FIFO_HEAD		(*(volatile WORD *)(NANO_BASE + 0x7F6)) // updated by software only
+#define ATTR_FIFO_TAIL		(*(volatile uint16_t *)(NANO_BASE + 0x7F0)) // updated by software only
+#define ATTR_FIFO_HEAD		(*(volatile uint16_t *)(NANO_BASE + 0x7F2)) // updated by nano only
+#define BLOCK_FIFO_TAIL		(*(volatile uint16_t *)(NANO_BASE + 0x7F4)) // updated by nano only
+#define BLOCK_FIFO_HEAD		(*(volatile uint16_t *)(NANO_BASE + 0x7F6)) // updated by software only
 
 #define USB2_NUM_PIPES	8
 #define USB2_PIPES_BASE (NANO_BASE + 0x5C0)
 #define USB2_PIPE_SIZE  (0x10)
 
-#define PIPE_OFFS_Command    0 // note: WORD offsets!
+#define PIPE_OFFS_Command    0 // note: uint16_t offsets!
 #define PIPE_OFFS_DevEP      1
 #define PIPE_OFFS_Length     2
 #define PIPE_OFFS_MaxTrans   3
@@ -56,11 +56,11 @@
 #define PIPE_OFFS_SplitCtl   6
 #define PIPE_OFFS_Result     7
 
-#define NANO_DO_RESET	    (*(volatile BYTE *)(NANO_BASE + 0x7FB))
-#define NANO_DO_SUSPEND	    (*(volatile BYTE *)(NANO_BASE + 0x7F9))
-#define NANO_LINK_SPEED	    (*(volatile BYTE *)(NANO_BASE + 0x7FD))
-#define NANO_SIMULATION	    (*(volatile BYTE *)(NANO_BASE + 0x7FF))
-#define NANO_START  		(*(volatile BYTE *)(NANO_BASE + 0x800))
+#define NANO_DO_RESET	    (*(volatile uint8_t *)(NANO_BASE + 0x7FB))
+#define NANO_DO_SUSPEND	    (*(volatile uint8_t *)(NANO_BASE + 0x7F9))
+#define NANO_LINK_SPEED	    (*(volatile uint8_t *)(NANO_BASE + 0x7FD))
+#define NANO_SIMULATION	    (*(volatile uint8_t *)(NANO_BASE + 0x7FF))
+#define NANO_START  		(*(volatile uint8_t *)(NANO_BASE + 0x800))
 
 // Bit definitions
 #define USTAT_CONNECTED		0x01

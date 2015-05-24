@@ -50,6 +50,7 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     button_start_x = x_b;
 
     window = new Window(screen, x1, y1, window_width+2, 5);
+    window->clear();
     window->draw_border();
     window->no_scroll();
     window->move_cursor(x_m, 0);
@@ -138,6 +139,7 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
 
     keyboard = keyb;
     window = new Window(screen, x1, y1, window_width, 5);
+    window->clear();
     window->draw_border();
     window->move_cursor(x_m, 0);
     window->output_line(message.c_str());
@@ -270,6 +272,7 @@ void UIStatusBox :: init(Screen *screen)
     int x_m = (window_width - message_width) / 2;
 
     window = new Window(screen, x1, y1, window_width, 5);
+    window->clear();
     window->draw_border();
     window->move_cursor(x_m, 0);
     window->output_line(message.c_str());

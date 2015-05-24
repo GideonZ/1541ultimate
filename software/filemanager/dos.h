@@ -32,8 +32,8 @@ typedef enum _e_dos_state {
 
 typedef struct _dos_info {
     uint32_t	size;	 /* File size */
-	WORD	date;	 /* Last modified date */
-	WORD	time;	 /* Last modified time */
+    uint16_t	date;	 /* Last modified date */
+    uint16_t	time;	 /* Last modified time */
     char    extension[3];
 	uint8_t	attrib;	 /* Attribute */
     char    filename[64];
@@ -41,7 +41,8 @@ typedef struct _dos_info {
 
 class Dos : CommandTarget
 {
-    e_dos_state dos_state;
+	FileManager *fm;
+	e_dos_state dos_state;
     t_dos_info dos_info;
     File *file;
     Path *path;

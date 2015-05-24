@@ -29,7 +29,6 @@ extern "C" {
 
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
-void send_nop(void);
 
 C1541 *c1541_A;
 C1541 *c1541_B;
@@ -73,16 +72,16 @@ int main(void *a)
     UserInterfaceStream *stream_interface;
     
  	// start the file system, scan the sd-card etc..
-	send_nop();
-	send_nop();
-	send_nop();
+	MainLoop :: nop();
+	MainLoop :: nop();
+	MainLoop :: nop();
 
     if(capabilities & CAPAB_CARTRIDGE)
         c64     = new C64;
 
     if(c64 && c64->exists()) {
         user_interface = new UserInterface;
-        user_interface->init(c64, c64->get_keyboard());
+        user_interface->init(c64);
     
     	// Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
@@ -90,7 +89,7 @@ int main(void *a)
         user_interface->activate_uiobject(root_tree_browser); // root of all evil!
     	
     	// add the C64 to the 'OS' (the event loop)
-        poll_list.append(&poll_c64);
+        MainLoop :: addPollFunction(poll_c64);
     
         // now that everything is running, initialize the C64 and C1541 drive
     	// which might load custom ROMs from the file system.
@@ -99,7 +98,7 @@ int main(void *a)
         printf("Using Overlay module as user interface...\n");
         overlay = new Overlay(false);
         user_interface = new UserInterface;
-        user_interface->init(overlay, overlay->get_keyboard());
+        user_interface->init(overlay);
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(root);
         user_interface->activate_uiobject(root_tree_browser); // root of all evil!
@@ -126,12 +125,12 @@ int main(void *a)
     printf("C1541A: %p, C1541B: %p\n", c1541_A, c1541_B);
 
     if(c1541_A) {
-        poll_list.append(&poll_drive_1);
+        MainLoop :: addPollFunction(poll_drive_1);
     	c1541_A->init();
     }
 
     if(c1541_B) {
-        poll_list.append(&poll_drive_2);
+        MainLoop :: addPollFunction(poll_drive_2);
     	c1541_B->init();
     }
 	

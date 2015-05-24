@@ -5,7 +5,7 @@
 #include "file_direntry.h"
 #include "filetypes.h"
 #include "../components/size_str.h"
-
+#include "globals.h"
 
 FileDirEntry :: FileDirEntry(CachedTreeNode *par, char *name) : CachedTreeNode(par, name)
 {
@@ -43,7 +43,7 @@ int FileDirEntry :: fetch_children(void)
     	return fetch_directory(info);
     } else {
     	if (!discovered_type) {
-    		discovered_type = file_type_factory.create(this);
+    		discovered_type = Globals :: getFileTypeFactory() -> create(this);
     	}
     	if (discovered_type) {
     		if((fs = discovered_type->getFileSystem()) != NULL) {
@@ -98,12 +98,12 @@ char *FileDirEntry :: get_display_string()
     static char sizebuf[8];
     
     if (info.attrib & AM_VOL) {
-        sprintf(buffer, "\x1B[0;7m%29s\x1B[0;32m VOLUME", info.lfname);
+        sprintf(buffer, "\eR%29s\er VOLUME", info.lfname);
     } else if(info.is_directory()) {
-        sprintf(buffer, "\x1B[0m%29s\x1B[35m DIR", info.lfname);
+        sprintf(buffer, "%29s\eJ DIR", info.lfname);
     } else {
         size_to_string_bytes(info.size, sizebuf);
-        sprintf(buffer, "\x1B[0m%29s\x1B[33m %3s %s", info.lfname, info.extension, sizebuf);
+        sprintf(buffer, "%29s\e7 %3s %s", info.lfname, info.extension, sizebuf);
     }
     
     return buffer;

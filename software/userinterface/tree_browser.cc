@@ -47,15 +47,8 @@ TreeBrowser :: TreeBrowser(Browsable *root)
     configBrowser = NULL;
     quick_seek_length = 0;
     quick_seek_string[0] = '\0';
-    initState(root);
-
+    this->root = root;
     //path = file_manager.get_new_path("Tree Browser");
-}
-
-void TreeBrowser :: initState(Browsable *root)
-{
-    state = new TreeBrowserState(root, this, 0);
-    state->reload();
 }
 
 TreeBrowser :: ~TreeBrowser()
@@ -69,6 +62,8 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 	this->screen = screen;
 	window = new Window(screen, 0, 2, 40, 22);
 	keyb = k;
+    state = new TreeBrowserState(root, this, 0);
+    state->reload();
 	state->do_refresh();
 }
 
@@ -87,6 +82,7 @@ void TreeBrowser :: config(void)
     Browsable *configRoot = new BrowsableConfigRoot();
     configBrowser = new ConfigBrowser(configRoot);
     configBrowser->init(screen, keyb);
+    state->refresh = true; // refresh as soon as we come back
     user_interface->activate_uiobject(configBrowser);
 
     // from this moment on, we loose focus.. polls will go directly to config menu!
@@ -100,7 +96,6 @@ void TreeBrowser :: context(int initial)
     printf("Creating context menu for %s\n", state->under_cursor->getName());
     contextMenu = new ContextMenu(state->under_cursor, initial, state->selected_line);
     contextMenu->init(screen, keyb);
-//    state->reselect();
     user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to context menu!
 }
@@ -112,7 +107,6 @@ void TreeBrowser :: task_menu(void)
     printf("Creating task menu for %s\n", state->node->getName());
     contextMenu = new TaskMenu();
     contextMenu->init(screen, keyb);
-//    state->reselect();
     user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to menu!
 }
@@ -216,7 +210,8 @@ int TreeBrowser :: handle_key(int c)
             break;
         case KEY_F3: // F3 -> RUN
         	reset_quick_seek();
-			user_interface->run_editor(helptext);
+        	state->refresh = true;
+        	user_interface->run_editor(helptext);
             break;
 		case KEY_F5: // F5: Menu
 			task_menu();

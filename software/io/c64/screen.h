@@ -1,43 +1,14 @@
 #ifndef SCREEN_H
 #define SCREEN_H
 
-class Screen;
-
-class VT100_Parser // can be used / reused for C64 screen, VDC or other character grid screen
-{
-    // processing state
-	char escape_cmd_data[16];
-    bool escape;
-    bool escape_cmd;
-    int  escape_cmd_pos;
-
-    Screen *owner; // it will call the functions to set color / mode on this object
-
-    void  parseAttr();
-    void  doAttr(int);
-public:
-    VT100_Parser(Screen *owner) : owner(owner) {
-    	escape = false;
-    	escape_cmd = false;
-    	escape_cmd_pos = 0;
-    }
-    int processChar(char c); // returns 1 when char is printed, 0 otherwise.
-};
-
 class Screen
 {
-protected:
-	VT100_Parser *term;
-	friend class VT100_Parser;
-	virtual void output_raw(char c) { }
 public:
-    Screen();
-    virtual ~Screen();
-
-    void enableVT100Parsing();
+    Screen() { }
+    virtual ~Screen() { }
 
     // Static
-    static void putc(char c, void **obj) {
+    static void _put(char c, void **obj) {
     	((Screen *)obj)->output(c);
     }
 
@@ -57,10 +28,15 @@ public:
     virtual int  output(const char *c) { return 0; }
     virtual void repeat(char c, int rep) { }
     virtual void output_fixed_length(const char *string, int offset_x, int width) { }
+
+    // raw
+    virtual void output_raw(char c) { }
 };
 
 class Screen_MemMappedCharMatrix : public Screen
 {
+	bool escape;
+
 	char *char_base;
     char *color_base;
 
@@ -98,7 +74,7 @@ public:
     int   get_size_y(void) {return size_y;}
 
     // draw functions
-    void clear() { }
+    void clear();
     void move_cursor(int x, int y);
     int  output(char c);
     int  output(const char *c);

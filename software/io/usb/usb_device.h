@@ -4,6 +4,7 @@
 #include "integer.h"
 #include "indexed_list.h"
 #include "usb_base.h"
+#include "factory.h"
 
 #define DESCR_DEVICE            0x01
 #define DESCR_CONFIGURATION     0x02
@@ -24,14 +25,14 @@ struct t_device_descriptor
 {
     uint8_t length;
     uint8_t type;
-    WORD version;
+    uint16_t version;
     uint8_t device_class;
     uint8_t sub_class;
     uint8_t protocol;
     uint8_t max_packet_size;
-    WORD vendor;
-    WORD product;
-    WORD release;
+    uint16_t vendor;
+    uint16_t product;
+    uint16_t release;
     uint8_t manuf_string;
     uint8_t product_string;
     uint8_t serial_string;
@@ -49,7 +50,7 @@ struct t_device_configuration
 {
     uint8_t length;
     uint8_t type;
-    WORD total_length;
+    uint16_t total_length;
     uint8_t num_interfaces;
     uint8_t config_value;
     uint8_t config_string;
@@ -76,7 +77,7 @@ struct t_endpoint_descriptor
     uint8_t type;
     uint8_t endpoint_address;
     uint8_t attributes;
-    WORD max_packet_size;
+    uint16_t max_packet_size;
     uint8_t interval;
 };
 
@@ -92,12 +93,9 @@ class UsbDevice;
 class UsbDriver
 {
 public:
-	UsbDriver(IndexedList<UsbDriver *> &list);
 	UsbDriver() { }
 	virtual ~UsbDriver() { }
 
-	virtual UsbDriver *create_instance(void) { return NULL; }
-	virtual bool test_driver(UsbDevice *dev) { return false; }
 	virtual void install(UsbDevice *dev)     { }
 	virtual void deinstall(UsbDevice *dev)   { }
 	virtual void poll(void)                  { }
@@ -105,12 +103,15 @@ public:
 	virtual void reset_port(int port)		 { }
 };
 
-extern IndexedList<UsbDriver *> usb_drivers;
-
 class UsbDevice
 {
 public:
-    int current_address;
+    static Factory<UsbDevice *, UsbDriver *>* getUsbDriverFactory() {
+		static Factory<UsbDevice *, UsbDriver *> usb_driver_factory;
+		return &usb_driver_factory;
+	}
+
+	int current_address;
     enum e_dev_state                device_state;
     uint8_t *config_descriptor;
     uint8_t *hid_descriptor; // should we support more than one?
@@ -167,13 +168,7 @@ public:
     void install(void) {
     	if(driver)
     		deinstall();
-    	// factory pattern
-    	for(int i=0;i<usb_drivers.get_elements();i++) {
-    		if(usb_drivers[i]->test_driver(this)) {
-    			driver = usb_drivers[i]->create_instance();
-    			break;
-    		}
-    	}
+    	driver = getUsbDriverFactory()->create(this);
     	if(driver)
     		driver->install(this);
     }

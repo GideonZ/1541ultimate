@@ -13,8 +13,8 @@ extern "C" {
 extern uint8_t  _binary_nano_minimal_b_start;
 extern uint32_t _binary_nano_minimal_b_size;
 
-WORD *attr_fifo_data = (WORD *)ATTR_FIFO_BASE;
-WORD *block_fifo_data = (WORD *)BLOCK_FIFO_BASE;
+uint16_t *attr_fifo_data = (uint16_t *)ATTR_FIFO_BASE;
+uint16_t *block_fifo_data = (uint16_t *)BLOCK_FIFO_BASE;
 
 Usb2 usb2; // the global
 
@@ -24,7 +24,7 @@ volatile int irq_count;
 void usb_irq(void) __attribute__ ((interrupt_handler));
 #endif
 
-__inline WORD le16_to_cpu(WORD h)
+__inline uint16_t le16_to_cpu(uint16_t h)
 {
     return (h >> 8) | (h << 8);
 }
@@ -59,7 +59,7 @@ Usb2 :: Usb2()
 //	    init();
 
 #ifndef BOOTLOADER
-	    poll_list.append(&poll_usb2);
+	    MainLoop :: addPollFunction(poll_usb2);
 #endif
     }
 
@@ -71,7 +71,7 @@ Usb2 :: Usb2()
 Usb2 :: ~Usb2()
 {
 #ifndef BOOTLOADER
-	poll_list.remove(&poll_usb2);
+	MainLoop :: removePollFunction(poll_usb2);
 #endif
 #ifdef OS
     vSemaphoreDelete(mutex);
@@ -83,8 +83,8 @@ Usb2 :: ~Usb2()
 struct usb_packet {
 	uint8_t *data;
 	void *object;
-	WORD  length;
-	WORD  pipe;
+	uint16_t  length;
+	uint16_t  pipe;
 };
 
 void Usb2 :: input_task_start(void *u)
@@ -138,7 +138,7 @@ void Usb2 :: init(void)
 	USB2_BLOCK_BASE_LO  		= ((uint32_t)blockBufferBase) & 0xFFFF;
 
 	for (int i=0;i<BLOCK_FIFO_ENTRIES;i++) {
-		block_fifo_data[i] = WORD(i * 384);
+		block_fifo_data[i] = uint16_t(i * 384);
 	}
 	BLOCK_FIFO_HEAD = BLOCK_FIFO_ENTRIES - 1;
 
@@ -217,7 +217,7 @@ void Usb2 :: poll(Event &e)
 void Usb2 :: irq_handler(void)
 {
 	PROFILER_SUB = 2;
-	WORD read1, read2;
+	uint16_t read1, read2;
 	bool success = true;
 	success &= get_fifo(&read1);
 	success &= get_fifo(&read2);
@@ -263,10 +263,10 @@ void Usb2 :: irq_handler(void)
 #endif
 }
 
-bool Usb2 :: get_fifo(WORD *out)
+bool Usb2 :: get_fifo(uint16_t *out)
 {
-	WORD tail = ATTR_FIFO_TAIL;
-	WORD head = ATTR_FIFO_HEAD;
+	uint16_t tail = ATTR_FIFO_TAIL;
+	uint16_t head = ATTR_FIFO_HEAD;
 //	printf("Head: %d, Tail: %d\n", head, tail);
 	if (tail == head) {
 		*out = 0xFFFF;
@@ -281,11 +281,11 @@ bool Usb2 :: get_fifo(WORD *out)
 }
 
 
-bool Usb2 :: put_block_fifo(WORD in)
+bool Usb2 :: put_block_fifo(uint16_t in)
 {
-	WORD tail = BLOCK_FIFO_TAIL;
-	WORD head = BLOCK_FIFO_HEAD;
-	WORD head_next = head + 1;
+	uint16_t tail = BLOCK_FIFO_TAIL;
+	uint16_t head = BLOCK_FIFO_HEAD;
+	uint16_t head_next = head + 1;
 	if (head_next == BLOCK_FIFO_ENTRIES)
 		head_next = 0;
 	if (head_next == tail)
@@ -298,7 +298,7 @@ bool Usb2 :: put_block_fifo(WORD in)
 
 int Usb2 :: open_pipe()
 {
-	WORD *pipe = (WORD *)USB2_PIPES_BASE;
+	uint16_t *pipe = (uint16_t *)USB2_PIPES_BASE;
 	for(int i=0;i<USB2_NUM_PIPES;i++) {
 		if (*pipe == 0) {
 			return i;
@@ -310,7 +310,7 @@ int Usb2 :: open_pipe()
 
 void Usb2 :: init_pipe(int index, struct t_pipe *init)
 {
-	WORD *pipe = (WORD *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
+	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
 	pipe[PIPE_OFFS_DevEP]    = init->DevEP;
 	pipe[PIPE_OFFS_Length]   = init->Length;
 	pipe[PIPE_OFFS_MaxTrans] = init->MaxTrans;
@@ -320,7 +320,7 @@ void Usb2 :: init_pipe(int index, struct t_pipe *init)
 		pipe[PIPE_OFFS_Command]  = init->Command;
 		inputPipeCommand[index] = init->Command;
 	} else {
-		WORD command = UCMD_MEMWRITE | UCMD_DO_DATA | UCMD_IN;
+		uint16_t command = UCMD_MEMWRITE | UCMD_DO_DATA | UCMD_IN;
 		if (init->Length <= 16) {
 			command |=  UCMD_USE_CIRC;
 			inputPipeBufferMethod[index] = e_circular;
@@ -335,8 +335,8 @@ void Usb2 :: init_pipe(int index, struct t_pipe *init)
 
 void Usb2 :: pause_input_pipe(int index)
 {
-	WORD *pipe = (WORD *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
-	WORD command = pipe[PIPE_OFFS_Command];
+	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
+	uint16_t command = pipe[PIPE_OFFS_Command];
 	if (command != UCMD_PAUSED)
 		inputPipeCommand[index] = command;
 	pipe[PIPE_OFFS_Command] = UCMD_PAUSED; // UCMD_PAUSED is an unused bit to make sure the value != 0
@@ -344,7 +344,7 @@ void Usb2 :: pause_input_pipe(int index)
 
 void Usb2 :: resume_input_pipe(int index)
 {
-	WORD *pipe = (WORD *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
+	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
 	pipe[PIPE_OFFS_Command] = inputPipeCommand[index];
 }
 
@@ -355,19 +355,19 @@ void Usb2 :: free_input_buffer(int inpipe, uint8_t *buffer)
 
 	// block returned to queue!
 	unsigned int offset = (unsigned int)buffer - (unsigned int)blockBufferBase;
-	put_block_fifo(WORD(offset >> 2));
+	put_block_fifo(uint16_t(offset >> 2));
 }
 
 
 void Usb2 :: close_pipe(int pipe)
 {
-	WORD *p = (WORD *)USB2_PIPES_BASE;
+	uint16_t *p = (uint16_t *)USB2_PIPES_BASE;
 	p[(8 * pipe)] = 0;
 }
 
-WORD Usb2 :: getSplitControl(int addr, int port, int speed, int type)
+uint16_t Usb2 :: getSplitControl(int addr, int port, int speed, int type)
 {
-	WORD retval = SPLIT_DO_SPLIT | (addr << 8) | (port & 0x0F) | ((type & 0x03) << 4);
+	uint16_t retval = SPLIT_DO_SPLIT | (addr << 8) | (port & 0x0F) | ((type & 0x03) << 4);
 	switch(speed) {
 	case 1:
 		break;
@@ -404,7 +404,7 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 	// printf("Setup Result: %04x\n", USB2_CMD_Result);
 
 	USB2_CMD_Length = inlen;
-	WORD command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT;// start with toggle bit 1
+	uint16_t command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT;// start with toggle bit 1
 
 	if (in) {
 		USB2_CMD_MemHi = ((uint32_t)in) >> 16;
@@ -547,7 +547,7 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 	do {
 		int current_len = (len > 49152) ? 49152 : len;
 		USB2_CMD_Length = current_len;
-		WORD cmd = pipe->Command | UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT;
+		uint16_t cmd = pipe->Command | UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT;
 		//printf("%d: %4x ", len, cmd);
 		USB2_CMD_Command = cmd;
 
@@ -555,7 +555,7 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 		while(USB2_CMD_Command)
 			;
 
-		WORD result = USB2_CMD_Result;
+		uint16_t result = USB2_CMD_Result;
 		if (((result & URES_RESULT_MSK) != URES_ACK) && ((result & URES_RESULT_MSK) != URES_NYET)) {
 			printf("Bulk Out error: $%4x, Transferred: %d\n", result, total_trans);
 			break;
@@ -599,7 +599,7 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 	do {
 		int current_len = (len > 49152) ? 49152 : len;
 		USB2_CMD_Length = current_len;
-		WORD cmd = pipe->Command | UCMD_MEMWRITE | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN;
+		uint16_t cmd = pipe->Command | UCMD_MEMWRITE | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN;
 		//printf("%d: %4x \n", len, cmd);
 		USB2_CMD_Command = cmd;
 
@@ -607,7 +607,7 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		while(USB2_CMD_Command)
 			;
 
-		WORD result = USB2_CMD_Result;
+		uint16_t result = USB2_CMD_Result;
 		if ((result & URES_RESULT_MSK) != URES_PACKET) {
 			printf("Bulk IN error: $%4x, Transferred: %d\n", result, total_trans);
 			if ((result & URES_RESULT_MSK) == URES_STALL) {

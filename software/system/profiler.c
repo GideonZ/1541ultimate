@@ -32,8 +32,8 @@ void *profiled_memcpy(void *str1, const void *str2, size_t n)
 	} else if((overlap & 1) == 0) {
 		remain = (n & 1);
 		size = (n >> 1);
-		WORD *src = (WORD *)str2;
-		WORD *dest = (WORD *)str1;
+		uint16_t *src = (uint16_t *)str2;
+		uint16_t *dest = (uint16_t *)str1;
 		for (int i=0;i<size;i++) {
 			*(dest++) = *(src++);
 		}

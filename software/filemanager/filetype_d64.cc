@@ -36,7 +36,7 @@ extern "C" {
 }
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileType *> tester_d64(file_type_factory, FileTypeD64 :: test_type);
+FactoryRegistrator<CachedTreeNode *, FileType *> tester_d64(Globals :: getFileTypeFactory(), FileTypeD64 :: test_type);
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;

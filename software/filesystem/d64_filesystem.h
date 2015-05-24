@@ -46,8 +46,8 @@ public:
     // functions for reading and writing files
     File   *file_open(FileInfo *, uint8_t flags);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
-    FRESULT file_read(File *f, void *buffer, uint32_t len, UINT *transferred);
-    FRESULT file_write(File *f, void *buffer, uint32_t len, UINT *transferred);
+    FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
 
     friend class DirInD64;
@@ -88,8 +88,8 @@ public:
 
     FRESULT open(FileInfo *info, uint8_t flags);
     FRESULT close(void);
-    FRESULT read(void *buffer, uint32_t len, UINT *transferred);
-    FRESULT write(void *buffer, uint32_t len, UINT *transferred);
+    FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
 };
 

@@ -106,13 +106,13 @@ void    FileSystem :: file_close(File *f)
 {
 }
 
-FRESULT FileSystem :: file_read(File *f, void *buffer, uint32_t len, UINT *transferred)
+FRESULT FileSystem :: file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred)
 {
     *transferred = 0;
     return FR_DENIED;
 }
 
-FRESULT FileSystem :: file_write(File *f, void *buffer, uint32_t len, UINT *transferred)
+FRESULT FileSystem :: file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred)
 {
     *transferred = 0;
     return FR_DENIED;

@@ -18,13 +18,13 @@ FRESULT File :: sync(void)
 	return info->fs->file_sync(this);
 }
 
-FRESULT File :: read(void *buffer, uint32_t len, UINT *transferred)
+FRESULT File :: read(void *buffer, uint32_t len, uint32_t *transferred)
 {
 	if(!info) return FR_INVALID_OBJECT;
 	return info->fs->file_read(this, buffer, len, transferred);
 }
 
-FRESULT File :: write(void *buffer, uint32_t len, UINT *transferred)
+FRESULT File :: write(void *buffer, uint32_t len, uint32_t *transferred)
 {
 	if(!info) return FR_INVALID_OBJECT;
     return info->fs->file_write(this, buffer, len, transferred);

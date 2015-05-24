@@ -441,26 +441,23 @@ void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, bool report)
     }
 }
 
-bool GcrImage :: load(FILE *f)
+bool GcrImage :: load(File *f)
 {
     // first just load the whole damn thing in memory, up to C1541_MAX_GCR_LEN in length
-    UINT  bytes_read;
+    uint32_t bytes_read;
     uint32_t *pul, offset;
     uint8_t *tr;
-    WORD w;
+    uint16_t w;
 
-    bytes_read = fread(gcr_data, 1, C1541_MAX_GCR_LEN, f);
+    FRESULT res = f->read(gcr_data, C1541_MAX_GCR_LEN, &bytes_read);
 
     printf("Total bytes read: %d.\n", bytes_read);
-    if(ferror(f)) {
+    if(res != FR_OK) {
     	return false;
     }
     // check signature
     pul = (uint32_t *)gcr_data;
-/*
-	printf("Header: %8x %8x\n", pul[0], pul[1]);
-	dump_hex(gcr_data, 64);
-*/	
+
     if((pul[0] != 0x4743522D)||(pul[1] != 0x31353431)) { // big endianness assumed
         printf("Wrong header.\n");
         return false;
@@ -476,7 +473,7 @@ bool GcrImage :: load(FILE *f)
     	}
     	tr = gcr_data + offset;
     	if(offset) {
-    		w = tr[0] | (WORD(tr[1]) << 8);
+    		w = tr[0] | (uint16_t(tr[1]) << 8);
 	    	track_address[i] = tr + 2;
     		track_length[i] = (int)w;
             printf("Set track %d.%d to 0x%6x / 0x%4x.\n", (i>>1)+1, (i&1)?5:0, track_address[i], w);
@@ -514,7 +511,7 @@ int GcrImage :: find_track_start(int track)
     return 0;    
 }
     
-bool GcrImage :: save(FILE *f, bool report, bool align)
+bool GcrImage :: save(File *f, bool report, bool align)
 {
     uint8_t *header = new uint8_t[16 + C1541_MAXTRACKS * 8];
 
@@ -550,8 +547,9 @@ bool GcrImage :: save(FILE *f, bool report, bool align)
             *(pul++) = cpu_to_le_32(speed);
     }
 
-    UINT bytes_written;
-    bytes_written = fwrite(header, 1, 12 + C1541_MAXTRACKS * 8, f);
+    uint32_t bytes_written;
+    FRESULT res;
+    f->write(header, 12 + C1541_MAXTRACKS * 8, &bytes_written);
     delete header;
     
     if(bytes_written != 12 + C1541_MAXTRACKS * 8)
@@ -570,7 +568,7 @@ bool GcrImage :: save(FILE *f, bool report, bool align)
         int reported_length = track_length[i];
         size[0] = (uint8_t)reported_length;
         size[1] = (uint8_t)(reported_length >> 8);
-        bytes_written = fwrite(size, 1, 2, f);
+        f->write(size, 2, &bytes_written);
         if(bytes_written != 2)
             break;
         // find alignment
@@ -578,56 +576,58 @@ bool GcrImage :: save(FILE *f, bool report, bool align)
         if(align)
             start = find_track_start(i);
         if(start > 0) {
-            bytes_written = fwrite(track_address[i]+start, 1, track_length[i]-start, f);
+            res = f->write(track_address[i]+start, track_length[i]-start, &bytes_written);
             if(bytes_written != (track_length[i]-start))
                 break;
-            bytes_written = fwrite(track_address[i], 1, start, f);
+            res = f->write(track_address[i], start, &bytes_written);
         } else {
-        	bytes_written = fwrite(track_address[i], 1, track_length[i], f);
+        	res = f->write(track_address[i], track_length[i], &bytes_written);
         }
-        if(ferror(f))
+        if(res != FR_OK)
             break;
-        bytes_written = fwrite(filler_bytes, 1, C1541_MAXTRACKLEN - track_length[i], f);
+        res = f->write(filler_bytes, C1541_MAXTRACKLEN - track_length[i], &bytes_written);
         if(report)
             user_interface->update_progress(NULL, 1 + skipped);
-        if(ferror(f))
+        if(res != FR_OK)
             break;
         skipped = 0;
     }
     
     delete filler_bytes;
     
-    if(ferror(f))
+    if(res != FR_OK)
         return false;
     return true;
 }
     
-bool GcrImage :: write_track(int track, FILE *f, bool align)
+bool GcrImage :: write_track(int track, File *f, bool align)
 {
 	if(track_address[track] == dummy_track)
 		return false;
 
 	uint32_t offset = uint32_t(track_address[track]) - uint32_t(gcr_data);
-	UINT bytes_written, bw2;
+	uint32_t bytes_written, bw2;
 
-	int fres = fseek(f, offset, SEEK_SET);
-	if(ferror(f))
+	//int fres = fseek(f, offset, SEEK_SET);
+	FRESULT res = f->seek(offset);
+	if(res != FR_OK)
 		return false;
 
     int start = 0;
     if(align)
         start = find_track_start(track);
     if(start > 0) {
-    	bytes_written = fwrite(track_address[track]+start, 1, track_length[track]-start, f);
-        if(ferror(f))
+    	res = f->write(track_address[track]+start, track_length[track]-start, &bytes_written);
+        if(res != FR_OK)
     		return false;
-        bytes_written += fwrite(track_address[track], 1, start, f);
+        res = f->write(track_address[track], start, &bw2);
+        bytes_written += bw2;
     } else {
-    	bytes_written = fwrite(track_address[track], 1, track_length[track], f);
+    	res = f->write(track_address[track], track_length[track], &bytes_written);
     }
-	if(ferror(f))
+	if(res != FR_OK)
 		return false;
-    fsync(fileno(f));
+    f->sync();
 	printf("%d bytes written at offset %6x.\n", bytes_written, offset);
 	return true;
 }
@@ -769,17 +769,18 @@ uint8_t * BinImage :: get_sector_pointer(int track, int sector)
     return track_start[track-1] + (sector << 8);
 }
 
-int BinImage :: load(FILE *file)
+int BinImage :: load(File *file)
 {
 	num_tracks = 0;
 
-	int res;
-	UINT transferred = 0;
-	res =  fseek(file, 0, SEEK_SET);
-	if(res != 0)
+	FRESULT  res;
+	uint32_t transferred = 0;
+
+	res = file->seek(0);
+	if(res != FR_OK)
 		return -1;
-	transferred = fread(bin_data, 1, C1541_MAX_D64_LEN, file);
-	if(ferror(file))
+	res = file->read(bin_data, C1541_MAX_D64_LEN, &transferred);
+	if(res != FR_OK)
 		return -2;
 
 	printf("Transferred: %d bytes\n", transferred);
@@ -802,11 +803,11 @@ int BinImage :: load(FILE *file)
 	return 0;
 }
 
-int BinImage :: save(FILE *file, bool report)
+int BinImage :: save(File *file, bool report)
 {
-	UINT transferred = 0;
-	int res =  fseek(file, 0, SEEK_SET);
-	if(res != 0) {
+	uint32_t transferred = 0;
+	FRESULT res = file->seek(0);
+	if(res != FR_OK) {
 		printf("SEEK ERROR: %d\n", res);
 		return -1;
 	}
@@ -814,22 +815,22 @@ int BinImage :: save(FILE *file, bool report)
 	uint8_t *data = bin_data;
     if(report) {
         for(int i=0;i<34;i++) {
-        	transferred = fwrite(data, 1, 10 * 512, file);
-        	if((res = ferror(file)) != 0) {
+        	res = file->write(data, 10 * 512, &transferred);
+        	if(res != FR_OK) {
                 printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
         		return -2;
             }
             user_interface->update_progress(NULL, 1);
             data += (10 * 512);
         }
-    	transferred = fwrite(data, 1, 3 * 256, file);
-    	if((res = ferror(file)) != 0) {
+    	res = file->write(data, 3 * 256, &transferred);
+    	if(res != FR_OK) {
             printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
     		return -2;
         }
     } else {
-    	transferred = fwrite(data, 1, 683 * 256, file);
-    	if((res = ferror(file)) != 0) {
+    	res = file->write(data, 683 * 256, &transferred);
+    	if(res != FR_OK) {
             printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
     		return -2;
         }
@@ -838,18 +839,18 @@ int BinImage :: save(FILE *file, bool report)
 	data = &bin_data[683*256];
 	num_tracks -= 35;
 	while(num_tracks--) {
-		transferred = fwrite(data, 1, 17*256, file);
+		res = file->write(data, 17*256, &transferred);
         if(report)
             user_interface->update_progress(NULL, 1);
-    	if((res = ferror(file)) != 0) {
+    	if(res != FR_OK) {
             printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
 			return -3;
         }
 		data += 17*256;
 	}
 	if(errors) {
-		transferred = fwrite(errors, 1, error_size, file);
-    	if((res = ferror(file)) != 0) {
+		res = file->write(errors, error_size, &transferred);
+    	if(res != FR_OK) {
             printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
 			return -4;
 	    }
@@ -891,7 +892,7 @@ int BinImage :: format(char *name)
     return 0;
 }
 
-int BinImage :: write_track(int track, GcrImage *gcr_image, FILE *file)
+int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
 {
 	int res = gcr_image->convert_track_gcr2bin(track, this);
 	if(res) {
@@ -899,16 +900,16 @@ int BinImage :: write_track(int track, GcrImage *gcr_image, FILE *file)
 		return res;
 	}
 	uint32_t offset = uint32_t(track_start[track] - bin_data);
-	res = fseek(file, offset, SEEK_SET);
+	res = file->seek(offset);
 	if(res != 0) {
         printf("While trying to write track %d, seek offset $%6x failed with error %d.\n", track+1, offset, res);
 		return res;
 	}
-	UINT transferred;
-	fwrite(track_start[track], 1, 256*track_sectors[track], file);
-	if(ferror(file))
+	uint32_t transferred;
+	FRESULT fres = file->write(track_start[track], 256*track_sectors[track], &transferred);
+	if(fres != FR_OK)
 		return res;
-    return fsync(fileno(file));
+    return file->sync();
 }
 
 void BinImage :: get_sensible_name(char *buffer)

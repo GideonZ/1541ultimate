@@ -12,35 +12,38 @@ TapeController *tape_controller = NULL; // globally static
 #define MENU_C2N_STATUS        0x3203
 #define MENU_C2N_STOP          0x3204
 
-static void poll_tape(Event &e)
-{
-	tape_controller->poll(e);
-}
-
 TapeController :: TapeController()
 {
-    file = NULL;
+    fm = FileManager :: getFileManager();
+	file = NULL;
 	paused = 0;
 	recording = 0;
 	controlByte = 0;
 	blockBuffer = new uint8_t[512];
 	stop();
-    poll_list.append(&poll_tape);
-	main_menu_objects.append(this);
+    MainLoop :: addPollFunction(poll_static);
+	Globals :: getObjectsWithMenu() -> append(this);
 }
 
 TapeController :: ~TapeController()
 {
-	poll_list.remove(&poll_tape);
-	main_menu_objects.remove(this);
+    MainLoop :: removePollFunction(poll_static);
+	Globals :: getObjectsWithMenu() -> remove(this);
 	delete blockBuffer;
+}
+
+void TapeController :: poll_static(Event &ev)
+{
+	if (tape_controller) {
+		tape_controller->poll(ev);
+	}
 }
 
 int  TapeController :: fetch_task_items(IndexedList<Action*> &item_list)
 {
     if(!file)
         return 0;
-	if(ferror(file)) {
+	if(!file->info) {
     	close();
 		return 0;
 	}
@@ -68,7 +71,7 @@ void TapeController :: close()
 {
 	if(file) {
 		printf("Closing tape file..\n");
-        fclose(file);
+        fm->fclose(file);
 	}
 	file = NULL;
 }
@@ -96,12 +99,12 @@ void TapeController :: read_block()
 {
 	if(!file)
 		return;
-    if(ferror(file)) {
+    if(!file->info) {
     	close();
         return;
     }
 	
-	UINT bytes_read;
+	uint32_t bytes_read;
 
 	if(block > length)
 		block = length;
@@ -116,7 +119,7 @@ void TapeController :: read_block()
         }
 		return;
 	}	
-	bytes_read = fread(blockBuffer, 1, block, file);
+	file->read(blockBuffer, block, &bytes_read);
 	for(int i=0;i<bytes_read;i++)// not sure if memcpy copies the bytes in the right order.
 		*PLAYBACK_DATA = blockBuffer[i];
 
@@ -129,8 +132,8 @@ void TapeController :: poll(Event &e)
 {
 	if(!file)
 		return;
-	// Maybe we should catch the event here to close the file?
-	if(ferror(file)) {
+
+	if(!file->info) {
     	close();
         return;
     }
@@ -167,7 +170,7 @@ void TapeController :: poll(Event &e)
 	}
 }
 	
-void TapeController :: set_file(FILE *f, uint32_t len, int m)
+void TapeController :: set_file(File *f, uint32_t len, int m)
 {
     file = f;
 	length = len;

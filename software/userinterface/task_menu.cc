@@ -1,7 +1,6 @@
 #include "task_menu.h"
+#include "globals.h"
 #include <string.h>
-
-IndexedList<ObjectWithMenu*> main_menu_objects(16, NULL);
 
 TaskMenu :: TaskMenu() : ContextMenu(NULL, 0, 0)
 {
@@ -26,9 +25,11 @@ void TaskMenu :: init(Screen *scr, Keyboard *key)
     int len, max_len;
     int rows, size_y;
 
+    IndexedList<ObjectWithMenu*> *objects = Globals :: getObjectsWithMenu();
+
     if(context_state == e_new) {
-        for(int i=0;i<main_menu_objects.get_elements();i++) {
-        	main_menu_objects[i]->fetch_task_items(actions);
+        for(int i=0;i<objects->get_elements();i++) {
+        	(*objects)[i]->fetch_task_items(actions);
         }
         // debug
         // items += root.fetch_task_items(state->node->children);

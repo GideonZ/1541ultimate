@@ -25,6 +25,7 @@ class UsbScsi;
 #ifndef BOOTLOADER
 class UsbScsiDriver : public UsbDriver
 {
+	FileManager *file_manager;
 	FileDevice *path_dev[16];
 	UsbScsi *scsi_blk_dev[16];
 	t_device_state state_copy[16];
@@ -45,12 +46,11 @@ class UsbScsiDriver : public UsbDriver
     UsbBase *host;
 public:
     UsbDevice *device;
-	UsbScsiDriver(IndexedList<UsbDriver *> &list);
+
+    static UsbDriver *test_driver(UsbDevice *dev);
 	UsbScsiDriver();
 	~UsbScsiDriver();
 
-	UsbScsiDriver *create_instance(void);
-	bool test_driver(UsbDevice *dev);
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);

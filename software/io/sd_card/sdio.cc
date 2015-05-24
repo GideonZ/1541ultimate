@@ -23,7 +23,7 @@ void sdio_init(void)
     SDIO_CTRL = 0;
 }
 
-void sdio_send_command(uint8_t cmd, WORD paramx, WORD paramy)
+void sdio_send_command(uint8_t cmd, uint16_t paramx, uint16_t paramy)
 {
     SDIO_DATA = 0xff;
 

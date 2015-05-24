@@ -29,7 +29,6 @@ extern "C" {
 #include "FreeRTOS.h"
 #include "task.h"
 
-//using namespace std;
 #include "mystring.h"
 
 extern "C" void main_loop(void *a);
@@ -40,7 +39,7 @@ Flash *flash;
 
 int main()
 {
-	string work;
+	mstring work;
 
 	printf("*** Ultimate User Interface Test ***\n\n");
     printf("FPGA Capabilities = %8x\n", getFpgaCapabilities());
@@ -53,28 +52,30 @@ int main()
     wait_ms(500);
     host->freeze();
 
-    screen = new Screen(host->get_screen(), host->get_color_map(), 40, 25);
+    screen = host->getScreen();
     screen->move_cursor(0,0);
     screen->output("**** 1541 Ultimate II UI Test ****\n"); // \020 = alpha \021 = beta
     for(int i=0;i<40;i++)
         screen->output('\002');
-    screen->output("\x1B[31mRED\n");
-    screen->output("\x1B[32mGREEN\n");
-    screen->output("\x1B[33mYELLOW\n");
-    screen->output("\x1B[34mBLUE\n");
-    screen->output("\x1B[35mMAGENTA\n");
-    screen->output("\x1B[36mCYAN\n");
-    screen->output("\x1B[37mWHITE\n");
-    screen->output("\x1B[2mDIM\n");
-    screen->output("\x1B[7mREVERSE\n");
-    screen->output("\x1B[35;1mBRIGHT MAGENTA\n");
-    screen->output("\x1B[0mRESET\n");
+    screen->output("\e2RED\n");
+    screen->output("\e5GREEN\n");
+    screen->output("\e7YELLOW\n");
+    screen->output("\e6BLUE\n");
+    screen->output("\e4MAGENTA\n");
+    screen->output("\e3CYAN\n");
+    screen->output("\e1WHITE\n");
+    screen->output("\eLDIM\n");
+    screen->reverse_mode(1);
+    screen->output("\eNREVERSE\n");
+    screen->reverse_mode(0);
+    screen->output("\eJBRIGHT MAGENTA\n");
+    screen->output("\eORESET\n");
 
-    user_interface->init(host, host->get_keyboard());
+    user_interface->init(host);
     user_interface->set_screen(screen);
 
 /* Test popup */
-	user_interface->popup("This is a PopUp", BUTTON_OK);
+	user_interface->popup("This is a PopUp", BUTTON_OK | BUTTON_CANCEL);
 
 /* Test progress bar */
 	user_interface->show_progress("Wait for 5 seconds...", 50);
@@ -98,7 +99,6 @@ int main()
 	dump_hex(name_string, 20);
 
 /* Test Tree Browser */
-
 	Browsable *root = new BrowsableTest(100, true, "Root");
 	TreeBrowser *tree_browser = new TreeBrowser(root);
     user_interface->activate_uiobject(tree_browser);

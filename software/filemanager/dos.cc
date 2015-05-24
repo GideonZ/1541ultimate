@@ -9,7 +9,7 @@ __inline uint32_t cpu_to_32le(uint32_t a)
     return (a >> 24) | (a << 24) | m1 | m2;
 }
 
-__inline WORD cpu_to_16le(WORD a)
+__inline uint16_t cpu_to_16le(uint16_t a)
 {
     return (a >> 8) | (a << 8);
 }
@@ -36,13 +36,14 @@ Dos :: Dos(int id) : directoryList(16, NULL)
     command_targets[id] = this;
     data_message.message = new uint8_t[512];
     status_message.message = new uint8_t[80];
-    path = file_manager.get_new_path("Dos");
+    fm = FileManager :: getFileManager();
+    path = fm->get_new_path("Dos");
 }
    
 
 Dos :: ~Dos()
 {
-    file_manager.release_path(path);
+    fm->release_path(path);
     delete[] data_message.message;
     delete[] status_message.message;
     // officially we should deregister ourselves, but as this will only occur at application exit, there is no need
@@ -54,11 +55,11 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
     // the second byte is the command byte for the DOS; the third and forth byte are the length
     // data follows after the 4th byte and is thus aligned for copy.    
     uint32_t pos, addr, len;
-    UINT transferred = 0;
+    uint32_t transferred = 0;
     FRESULT res = FR_OK;
     CachedTreeNode *po;
     FileInfo *fi;
-    string str;
+    mstring str;
     
     switch(command->message[1]) {
         case DOS_CMD_IDENTIFY:
@@ -67,10 +68,10 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             break;
         case DOS_CMD_OPEN_FILE:
             command->message[command->length] = 0;
-            file = file_manager.fopen(path, (char *)&command->message[3], command->message[2]);
+            file = fm->fopen(path, (char *)&command->message[3], command->message[2]);
             *reply  = &c_message_empty;
             if(!file) {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(file_manager.get_last_error()));
+                strcpy((char *)status_message.message, FileSystem::get_error_string(fm->get_last_error()));
                 status_message.length = strlen((char *)status_message.message);
                 *status = &status_message; 
             } else {
@@ -80,7 +81,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
         case DOS_CMD_CLOSE_FILE:
             *reply  = &c_message_empty;
             if (file) {
-                file_manager.fclose(file);
+                fm->fclose(file);
                 file = NULL;
                 *status = &c_status_ok; 
             } else {
@@ -270,7 +271,7 @@ void Dos :: cleanupDirectory() {
 
 void Dos :: get_more_data(Message **reply, Message **status)
 {
-    UINT transferred = 0;
+    uint32_t transferred = 0;
     FRESULT res;
     int length;
     FileInfo *fi;

@@ -25,8 +25,6 @@ extern "C" {
 #include "config.h"
 #include <string.h>
 
-ConfigManager config_manager; // global!
-
 /*** CONFIGURATION MANAGER ***/
 ConfigManager :: ConfigManager() : stores(16, NULL)
 {
@@ -196,7 +194,7 @@ void ConfigStore :: write()
 	printf("Writing config store '%s' to flash, page %d..", store_name, flash_page);
 
 	pack();
-	Flash *flash = config_manager.get_flash_access();
+	Flash *flash = ConfigManager :: getConfigManager()->get_flash_access();
 	if(flash) {
 	    flash->write_config_page(flash_page, mem_block);
 	    dirty = false;
@@ -236,7 +234,7 @@ void ConfigStore :: unpack()
 
 void ConfigStore :: read()
 {
-	Flash *flash = config_manager.get_flash_access();
+	Flash *flash = ConfigManager :: getConfigManager()->get_flash_access();
 	if(flash) {
 	    flash->read_config_page(flash_page, block_size, mem_block);
 	    unpack();
@@ -464,8 +462,8 @@ char *ConfigItem :: get_display_string()
     dst = &tmp[39];
     for(int b = len-1; b >= 0; b--)
         *(dst--) = buf[b];
-    *(dst--) = '\037'; // color code
-    *(dst--) = '\033'; // escape code
+    *(dst--) = 7;
+    *(dst--) = '\033'; // escape code = set color
     return tmp;
 }
 

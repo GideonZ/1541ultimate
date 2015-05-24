@@ -240,7 +240,7 @@ DRESULT SdCard :: read(uint8_t* buf, uint32_t address, int sectors)
     	place=(sdhc)?(address):(address<<9);
 
     	ENTER_SAFE_SECTION
-    	sdio_send_command(CMDREAD, (WORD) (place >> 16), (WORD) place);
+    	sdio_send_command(CMDREAD, (uint16_t) (place >> 16), (uint16_t) place);
     	
     	cardresp=Resp8b(); /* Card response */ 
     
@@ -308,7 +308,7 @@ DRESULT SdCard :: write(const uint8_t* buf, uint32_t address, int sectors )
     for(int j=0;j<sectors;j++) {
     	place=(sdhc)?(address):(address<<9);
     	ENTER_SAFE_SECTION
-    	sdio_send_command(CMDWRITE, (WORD)(place >> 16), (WORD) place);
+    	sdio_send_command(CMDWRITE, (uint16_t)(place >> 16), (uint16_t) place);
     
 /*      // wait for 0.5 ms
         ITU_TIMER = 100;
@@ -402,11 +402,11 @@ uint8_t SdCard :: Resp8b(void)
 	resp:		the 16bits response
 -------------------------------------------------------------------------------
 */
-WORD SdCard :: Resp16b(void)
+uint16_t SdCard :: Resp16b(void)
 {
-	WORD resp;
+	uint16_t resp;
 	
-	resp = ( ((WORD)Resp8b()) << 8 ) & 0xff00;
+	resp = ( ((uint16_t)Resp8b()) << 8 ) & 0xff00;
 	resp |= SDIO_DATA;
 	
 	return(resp);
@@ -546,7 +546,7 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
 {
 	uint8_t cardresp, i, by, q;
 	uint8_t iob[16];
-	WORD c_size;
+	uint16_t c_size;
     int sector_power;
 	
 	sdio_send_command(CMDREADCID, 0, 0);
@@ -596,7 +596,7 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
     if((iob[0] & 0x03) == 0) { // type 1.0 CSD
     	c_size = iob[6] & 0x03; // bits 1..0
     	c_size <<= 10;
-    	c_size += (WORD)iob[7]<<2;
+    	c_size += (uint16_t)iob[7]<<2;
     	c_size += iob[8]>>6;
     
     	int read_bl_power = (int)(iob[5] & 0x0F);
