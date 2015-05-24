@@ -137,6 +137,3 @@ FRESULT FileSystem :: file_delete(FileInfo *)
 {
     return FR_DENIED;
 }
-
-//FileSystemFactory file_system_factory;
-Factory<Partition *, FileSystem *> file_system_factory;

@@ -4,10 +4,9 @@
 #include "partition.h"
 #include "fat_fs.h"
 #include "iso9660.h"
+#include "globals.h"
 
-extern "C" {
-    #include "small_printf.h"
-}
+#include <stdio.h>
 
 Partition::Partition(BlockDevice *blk, uint32_t offset, uint32_t size, uint8_t t)
 {
@@ -41,7 +40,7 @@ DSTATUS Partition::status(void)
 
 FileSystem *Partition :: attach_filesystem(void)
 {
-	FileSystem *fs = file_system_factory.create(this);
+	FileSystem *fs = Globals :: getFileSystemFactory() -> create(this);
 	if(fs) {
 		if (fs->init()) {
 			return fs;

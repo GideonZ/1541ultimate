@@ -70,9 +70,6 @@
 #define CIA2_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD00 + x))
 #define SID_VOLUME   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD418))
 #define SID_DUMMY    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD43F))
-#define MEM_LOC(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0800 + x))
-#define COLOR_RAM(x) *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD800 + x))
-#define CHAR_DEST(x) *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0800 + x))
 #define VIC_CTRL     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD011))
 #define BORDER       *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD020))
 #define BACKGROUND   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD021))
@@ -87,6 +84,11 @@
 #define CIA2_ICR     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD0D))
 #define C64_SCREEN    (volatile char *)(C64_MEMORY_BASE + 0x0400)
 #define C64_COLORRAM  (volatile char *)(C64_MEMORY_BASE + 0xD800)
+
+#define MEM_LOC       ((volatile uint32_t *)(C64_MEMORY_BASE + 0x0800))
+#define SCREEN_RAM    ((volatile uint32_t *)(C64_MEMORY_BASE + 0x0400))
+#define COLOR_RAM     ((volatile uint32_t *)(C64_MEMORY_BASE + 0xD800))
+#define CHAR_DEST     ((volatile uint32_t *)(C64_MEMORY_BASE + 0x0800))
 
 #define C64_IRQ_SOFT_VECTOR_LO *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0314))
 #define C64_IRQ_SOFT_VECTOR_HI *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0315))
@@ -121,11 +123,11 @@ class C64 : public GenericHost, ObjectWithMenu, ConfigurableObject
     Screen *screen;
     FileManager *fm;
     
-    uint8_t *char_set; //[CHARSET_SIZE];
+    uint32_t *char_set; //[CHARSET_SIZE];
     uint8_t vic_backup[NUM_VICREGS];
-    uint8_t ram_backup[BACKUP_SIZE];
-    uint8_t screen_backup[COLOR_SIZE]; // only used now for vic state write
-    uint8_t color_backup[COLOR_SIZE];
+    uint32_t ram_backup[BACKUP_SIZE/4];
+    uint32_t screen_backup[COLOR_SIZE/4]; // only used now for vic state write
+    uint32_t color_backup[COLOR_SIZE/4];
     uint8_t cia_backup[5];
     
     uint8_t stop_mode;

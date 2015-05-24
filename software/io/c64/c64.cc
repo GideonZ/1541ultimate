@@ -154,7 +154,7 @@ C64 :: C64()
 
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
-    char_set = (uint8_t *)&_binary_chars_bin_start;
+    char_set = (uint32_t *)&_binary_chars_bin_start;
     keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
     screen = new Screen_MemMappedCharMatrix((char *)C64_SCREEN, (char *)C64_COLORRAM, 40, 25);
 
@@ -512,13 +512,19 @@ void C64 :: backup_io(void)
     } printf("\n");
 
 	// back up 3 kilobytes of RAM to do our thing 
-	for(i=0;i<BACKUP_SIZE;i++) {
-		ram_backup[i] = MEM_LOC(i);
+	for(i=0;i<BACKUP_SIZE/4;i++) {
+		ram_backup[i] = MEM_LOC[i];
 	}
+    for(i=0;i<COLOR_SIZE/4;i++) {
+    	color_backup[i] = COLOR_RAM[i];
+    }
+    for(i=0;i<COLOR_SIZE/4;i++) {
+    	screen_backup[i] = SCREEN_RAM[i];
+    }
 
 	// now copy our own character map into that piece of ram at 0800
-	for(i=0;i<CHARSET_SIZE;i++) {
-		CHAR_DEST(i) = char_set[i];
+	for(i=0;i<CHARSET_SIZE/4;i++) {
+		CHAR_DEST[i] = char_set[i];
 	}
 	
 	// backup CIA registers
@@ -600,8 +606,14 @@ void C64 :: restore_io(void)
     VIC_CTRL = 0;
 
     // restore memory
-    for(i=0;i<BACKUP_SIZE;i++) {
-        MEM_LOC(i) = ram_backup[i];
+    for(i=0;i<BACKUP_SIZE/4;i++) {
+        MEM_LOC[i] = ram_backup[i];
+    }
+    for(i=0;i<COLOR_SIZE/4;i++) {
+    	COLOR_RAM[i] = color_backup[i];
+    }
+    for(i=0;i<COLOR_SIZE/4;i++) {
+    	SCREEN_RAM[i] = screen_backup[i];
     }
 
     // restore the cia registers
