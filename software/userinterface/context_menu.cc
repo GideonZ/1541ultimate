@@ -3,13 +3,14 @@
 
 ContextMenu :: ContextMenu(Contextable *node, int initial, int y) : actions(2, 0)
 {
-    contextable = node;
+	contextable = node;
     context_state = e_new;
     screen = NULL;
     keyb = NULL;
     window = NULL;
     y_offs = y-1;
-    corner = y+2;
+    corner = y;
+    first = 0;
 
     item_index = initial;
 }
@@ -21,12 +22,16 @@ ContextMenu :: ~ContextMenu(void)
 {
 }
 
-void ContextMenu :: init(Screen *scr, Keyboard *key)
+void ContextMenu :: init(Window *parwin, Keyboard *key)
 {
-    int len, max_len;
+	Screen *scr = parwin->getScreen();
+	int len, max_len;
     int rows, size_y;
 
     keyb = key;
+
+    int ox, oy;
+    parwin->getOffsets(ox, oy);
 
     if(context_state == e_new) {
     	contextable->fetch_context_items(actions);
@@ -38,15 +43,18 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
             return;
         }
         rows = item_count + 2;
-        size_y = scr->get_size_y()-1;
+        size_y = parwin->get_size_y();
         if(rows > size_y) {
             rows = size_y;
         }
         if((rows + y_offs) > size_y)
             y_offs = size_y - rows;
-        if(y_offs < 2)
-            y_offs = 2;
+
+        if(y_offs < 0)
+            y_offs = 0;
         
+        y_offs += oy;
+
         max_len = 0;
         for(int i=0;i<actions.get_elements();i++) {
         	Action *it = actions[i];
@@ -59,12 +67,13 @@ void ContextMenu :: init(Screen *scr, Keyboard *key)
     }        
 
     this->screen = scr;
-    window = new Window(scr, scr->get_size_x()-2-max_len, y_offs, max_len+2, rows);
+    window = new Window(scr, ox + parwin->get_size_x()-2-max_len, y_offs, max_len+2, rows);
     window->set_color(user_interface->color_fg);
     window->draw_border();
+    y_offs -= oy;
     if((corner == y_offs)||(corner == (y_offs+rows-1))) {
         window->set_char(0, corner-y_offs, 2);
-    } else if(corner == 2) {
+    } else if(corner == 0) {
     	window->set_char(0, corner-y_offs, 8);
     } else {
         window->set_char(0, corner-y_offs, 3);
@@ -191,11 +200,16 @@ void ContextMenu :: reset_quick_seek(void)
 
 void ContextMenu :: draw()
 {
-	printf("Drawing context menu. Window height = %d\n", window->get_size_y()); // TODO
+	if ((item_index - first) >= window->get_size_y()) {
+		first = item_index - window->get_size_y() + 1;
+	} else if (item_index < first) {
+		first = item_index;
+	}
+
 	for (int i=0;i<window->get_size_y();i++) {
-		Action *t = actions[i];
+		Action *t = actions[i + first];
 		window->move_cursor(0, i);
-		if (i == item_index) {
+		if ((i + first) == item_index) {
 			window->set_color(user_interface->color_sel);
 		} else {
 			window->set_color(user_interface->color_fg);
@@ -203,4 +217,3 @@ void ContextMenu :: draw()
 		window->output_line(t->getName());
 	}
 }
-

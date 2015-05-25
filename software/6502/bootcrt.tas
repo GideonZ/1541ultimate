@@ -130,10 +130,24 @@ kbuffer
 	.text	13,"RUN",13
 KBUFFER_LEN	= *-kbuffer
 
+extra_delay
+    ldx #0
+    ldy #0
+-   dey
+    bne -
+    dex
+    bne -
+    rts
+    
 ms_skp1
 	lda	runcode
 	and	#RUNCODE_TAPE_BIT
 	bne	ms_skp2
+
+    jsr extra_delay
+    jsr extra_delay
+    jsr extra_delay
+    jsr extra_delay
 
 	jsr	print_load
 	lda	#145		;CRSR-UP

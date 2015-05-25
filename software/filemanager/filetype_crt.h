@@ -1,14 +1,16 @@
 #ifndef FILETYPE_CRT_H
 #define FILETYPE_CRT_H
 
-#include "file_direntry.h"
+#include "filetypes.h"
+#include "filemanager.h"
 
-class FileTypeCRT : public FileDirEntry
+class FileTypeCRT : public FileType
 {
-    uint8_t  crt_header[0x20]; 
+    CachedTreeNode *node;
+	uint8_t  crt_header[0x20];
     uint8_t  chip_header[0x10];
-    WORD  type_select;
-    WORD  max_bank;
+    uint16_t  type_select;
+    uint16_t  max_bank;
     uint32_t total_read;
     bool  load_at_a000;    
     char *name;
@@ -16,16 +18,14 @@ class FileTypeCRT : public FileDirEntry
     void  configure_cart(void);
     bool  read_chip_packet(File *file);
 
+    void execute(int);
+    static void execute_st(void *obj, void *param);
 public:
-    FileTypeCRT(FileTypeFactory &fac);
-    FileTypeCRT(CachedTreeNode *par, FileInfo *fi);
+    FileTypeCRT(CachedTreeNode *node);
     ~FileTypeCRT();
 
-    int   fetch_children(void);
-    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
-    FileDirEntry *test_type(CachedTreeNode *obj);
-
-    void  execute(int selection);
+    int   fetch_context_items(IndexedList<Action *> &list);
+    static FileType *test_type(CachedTreeNode *obj);
 };
 
 

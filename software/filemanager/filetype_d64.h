@@ -18,11 +18,9 @@ public:
     virtual ~FileTypeD64();
 
     FileSystem *getFileSystem() { return fs; }
-//	int   get_header_lines(void) { return 1; }
     int   fetch_context_items(IndexedList<Action *> &list);
 
     static FileType *test_type(CachedTreeNode *obj);
-    static void test_action(void *obj, void *prm);
 };
 
 #endif

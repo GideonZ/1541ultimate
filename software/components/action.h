@@ -10,39 +10,54 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 
 typedef void (*actionFunction_t)(void *obj, void *param);
 
 class Action
 {
-	const char *actionName;
+	char *actionName;
 	actionFunction_t callback;
 	void *object;
 	void *param;
 public:
 
 	Action(const char *name, actionFunction_t func, void *obj, void *prm) {
-		actionName = name;
+		if(name) {
+			actionName = new char[strlen(name)+1];
+			strcpy(actionName, name);
+		} else {
+			actionName = 0;
+		}
 		callback = func;
 		object = obj;
 		param = prm;
 	}
 
 	Action(const char *name, actionFunction_t func, void *obj) {
-		actionName = name;
+		if(name) {
+			actionName = new char[strlen(name)+1];
+			strcpy(actionName, name);
+		} else {
+			actionName = 0;
+		}
 		callback = func;
 		object = obj;
 		param = NULL;
 	}
 
-	virtual ~Action() { }
+	virtual ~Action() {
+		if (actionName) {
+			delete actionName;
+		}
+	}
 
 	virtual void execute() {
 		callback(object, param);
 	}
 
 	virtual const char *getName() {
-		return actionName;
+		return (const char *)actionName;
 	}
 };
 

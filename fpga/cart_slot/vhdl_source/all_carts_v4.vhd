@@ -23,6 +23,7 @@ port (
     freeze_trig     : in  std_logic; -- goes '1' when the button has been pressed and we're waiting to enter the freezer
     freeze_act      : in  std_logic; -- goes '1' when we need to switch in the cartridge for freeze mode
     unfreeze        : out std_logic; -- indicates the freeze logic to switch back to non-freeze mode.
+    cart_active     : out std_logic; -- indicates that the cartridge is active
     
     cart_kill       : in  std_logic;
     cart_logic      : in  std_logic_vector(3 downto 0);   -- 1 out of 16 logic emulations
@@ -96,6 +97,7 @@ architecture gideon of all_carts_v4 is
     signal io_wdata         : std_logic_vector(7 downto 0);
 begin
     serve_enable <= cart_en or kernal_enable;
+    cart_active  <= cart_en;
 
     slot_addr <= std_logic_vector(slot_req.bus_address);
     io_write  <= slot_req.io_write;

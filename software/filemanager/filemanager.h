@@ -27,6 +27,7 @@ class FileManager
 	IndexedList<FileNodePair>open_file_list;
 	IndexedList<Path *>used_paths;
 	CachedTreeNode *root;
+
     File *fopen_impl(Path *path, char *filename, uint8_t flags);
 
     FileManager() : open_file_list(16, empty_pair), used_paths(8, NULL) {

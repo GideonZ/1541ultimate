@@ -11,6 +11,7 @@ package cart_slot_pkg is
     constant c_cart_cartridge_rom_base  : unsigned(3 downto 0) := X"4";
     constant c_cart_cartridge_type      : unsigned(3 downto 0) := X"5";
     constant c_cart_cartridge_kill      : unsigned(3 downto 0) := X"6";
+    constant c_cart_cartridge_active    : unsigned(3 downto 0) := X"6";
     constant c_cart_kernal_enable       : unsigned(3 downto 0) := X"7";
     constant c_cart_reu_enable          : unsigned(3 downto 0) := X"8";
     constant c_cart_reu_size            : unsigned(3 downto 0) := X"9";
@@ -41,6 +42,7 @@ package cart_slot_pkg is
     type t_cart_status is record
         c64_stopped    : std_logic;
         clock_detect   : std_logic;
+        cart_active    : std_logic;
     end record;
 
     constant c_cart_control_init : t_cart_control := (

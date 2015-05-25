@@ -119,7 +119,7 @@ ConfigStore *ConfigManager :: open_store(uint32_t id)
 /*** CONFIGURATION STORE ***/
 //   ===================
 ConfigStore :: ConfigStore(uint32_t store_id, char *name, int page, int page_size,
-                           t_cfg_definition *defs, ConfigurableObject *ob) : items(16, NULL)
+                           t_cfg_definition *defs, ConfigurableObject *ob) : store_name(name), items(16, NULL)
 {
     //printf("Create configstore %8x with size %d..", store_id, page_size);
     if(page_size)
@@ -132,7 +132,6 @@ ConfigStore :: ConfigStore(uint32_t store_id, char *name, int page, int page_siz
     id = store_id;
     obj = ob;
     dirty = false;
-    store_name = name;
     
     for(int i=0;i<32;i++) {
         if(defs[i].type == CFG_TYPE_END)
@@ -191,7 +190,7 @@ void ConfigStore :: effectuate()
     
 void ConfigStore :: write()
 {
-	printf("Writing config store '%s' to flash, page %d..", store_name, flash_page);
+	printf("Writing config store '%s' to flash, page %d..", store_name.c_str(), flash_page);
 
 	pack();
 	Flash *flash = ConfigManager :: getConfigManager()->get_flash_access();

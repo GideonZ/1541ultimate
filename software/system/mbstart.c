@@ -35,6 +35,10 @@ void _premain()
 
 }
 
+void _exit(void) {
+	while(1)
+		;
+}
 
 /*
  * Wait indefinitely for input byte

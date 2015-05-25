@@ -25,6 +25,7 @@
 #define C64_CARTRIDGE_RAM_BASE  *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x4))
 #define C64_CARTRIDGE_TYPE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x5))
 #define C64_CARTRIDGE_KILL      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x6))
+#define C64_CARTRIDGE_ACTIVE    *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x6))
 #define C64_KERNAL_ENABLE       *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x7))
 #define C64_REU_ENABLE          *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x8))
 #define C64_REU_SIZE            *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x9))

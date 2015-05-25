@@ -11,7 +11,7 @@ public:
     TaskMenu();
     ~TaskMenu(void);
     
-    void init(Screen *pwin, Keyboard *keyb);
+    void init(Window *pwin, Keyboard *keyb);
 };
 
 extern IndexedList<ObjectWithMenu*> main_menu_static_items;

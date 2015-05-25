@@ -1,20 +1,17 @@
 #ifndef FILETYPE_G64_H
 #define FILETYPE_G64_H
 
-#include "file_direntry.h"
+#include "filetypes.h"
 
-class FileTypeG64 : public FileDirEntry
+class FileTypeG64 : public FileType
 {
+	CachedTreeNode *node;
 public:
-    FileTypeG64(FileTypeFactory &fac);
-    FileTypeG64(CachedTreeNode *par, FileInfo *fi);
+    FileTypeG64(CachedTreeNode *n);
     ~FileTypeG64();
 
-    int   fetch_children(void);
-    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
-    FileDirEntry *test_type(CachedTreeNode *obj);
-
-    void  execute(int selection);
+    int   fetch_context_items(IndexedList<Action *> &list);
+    static FileType *test_type(CachedTreeNode *obj);
 };
 
 #endif

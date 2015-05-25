@@ -91,6 +91,8 @@ begin
                     io_resp.data <= std_logic_vector(g_rom_base(23 downto 16));
                 when c_cart_cartridge_type =>
                     io_resp.data(3 downto 0) <= control_i.cartridge_type;
+                when c_cart_cartridge_active =>
+                    io_resp.data(0) <= status.cart_active;
                 when c_cart_kernal_enable =>
                     io_resp.data(0) <= control_i.kernal_enable;
                 when c_cart_reu_enable =>

@@ -17,9 +17,9 @@ TaskMenu :: ~TaskMenu(void)
 {
 }
 
-void TaskMenu :: init(Screen *scr, Keyboard *key)
+void TaskMenu :: init(Window *pwin, Keyboard *key)
 {
-    screen = scr;
+    screen = pwin->getScreen();
     keyb = key;
 
     int len, max_len;

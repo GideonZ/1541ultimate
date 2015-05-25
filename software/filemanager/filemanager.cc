@@ -116,7 +116,11 @@ File *FileManager :: fopen(Path *path, char *filename, uint8_t flags)
 	// create a path that is either relative to root, or relative to current
 	Path *temppath = this->get_new_path("FM temp");
 	if ((filename[0] != '/') && (filename[0] != '\\')) {
-		temppath->cd(path->get_path());
+		if(path) {
+			temppath->cd(path->get_path());
+		} else {
+			temppath->cd("/SD"); // TODO: Make this configurable
+		}
 	}
 	if (pathname) {
 		temppath->cd(pathname);

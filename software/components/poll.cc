@@ -11,6 +11,8 @@
 #include "task.h"
 #endif
 
+#define DEBUG 1
+
 void nop(Event& e) {}
 
 extern "C" void main_loop(void *a)
@@ -27,7 +29,10 @@ void MainLoop :: run(void *a)
     bool empty;
     do {
     	empty = event_queue.is_empty();
-        event = event_queue.head();
+    	event = event_queue.head();
+        if(DEBUG && !empty)
+            printf("Event %2d %p %d\n", event.type, event.object, event.param);
+
 		for(int i=0;i<poll_list->get_elements();i++) {
 	        func = (*poll_list)[i];
             func(event);

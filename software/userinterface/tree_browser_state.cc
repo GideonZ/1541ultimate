@@ -28,6 +28,7 @@ TreeBrowserState :: TreeBrowserState(Browsable *n, TreeBrowser *b, int lev)
     under_cursor = NULL;
 
     refresh = true;
+    needs_reload = false;
     initial_index = -1;
     previous = NULL;
     deeper = NULL;
@@ -63,20 +64,26 @@ void TreeBrowserState :: do_refresh()
         return;
     }
 
-    if(!under_cursor) {
+    if(needs_reload) {
+    	reload();
+        cursor_pos = first_item_on_screen + selected_line;
+        under_cursor = children[cursor_pos];
+    }
+
+    if(!under_cursor) { // initial state or reset state
         browser->reset_quick_seek();
-        draw();
-        if(initial_index >= 0) {
-            move_to_index(initial_index);
-        } else {
-        	move_to_index(0);
-        	for(int i=0;i<children.get_elements();i++) {
-        		if (children[i]->isSelectable()) {
-        			move_to_index(i);
-        			break;
-        		}
-        	}
-        }
+        // draw();
+        int target_index = 0;
+        if(initial_index > 0)
+        	target_index = initial_index;
+
+        for(int i=initial_index;i<children.get_elements();i++) {
+			if (children[i]->isSelectable()) {
+				target_index = i;
+				break;
+			}
+		}
+		move_to_index(target_index);
     } else {
         draw(); // just draw.. we don't need to move anything
     }
@@ -252,6 +259,7 @@ void TreeBrowserState :: level_up(void)
     if(!previous)
         return;
 
+    cleanup();
     browser->state = previous;
     previous->refresh = true;
     previous = NULL; // unlink;

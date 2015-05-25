@@ -30,7 +30,7 @@
 #include <ctype.h>
 
 // tester instance
-FileTypeCRT tester_crt(file_type_factory);
+FactoryRegistrator<CachedTreeNode *, FileType *> tester_crt(Globals :: getFileTypeFactory(), FileTypeCRT :: test_type);
 
 /*********************************************************************/
 /* PRG File Browser Handling                                         */
@@ -39,8 +39,8 @@ FileTypeCRT tester_crt(file_type_factory);
 #define CRTFILE_CONFIGURE      0x2C02
 
 struct t_cart {
-    WORD hw_type;
-    WORD type_select;
+    uint16_t hw_type;
+    uint16_t type_select;
     char *cart_name;
 };
 
@@ -83,44 +83,34 @@ const struct t_cart c_recognized_carts[] = {
     { 0xFFFF, 0xFFFF, "" } }; 
     
 
-FileTypeCRT :: FileTypeCRT(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
+FileTypeCRT :: FileTypeCRT(CachedTreeNode *n)
 {
-    fac.register_type(this);
-    info = NULL;
-}
-
-FileTypeCRT :: FileTypeCRT(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
-{
-    printf("Creating CRT type from info: %s\n", fi->lfname);
+	node = n;
+	printf("Creating CRT type from info: %s\n", n->get_name());
 }
 
 FileTypeCRT :: ~FileTypeCRT()
 {
 }
 
-int FileTypeCRT :: fetch_children(void)
+int FileTypeCRT :: fetch_context_items(IndexedList<Action *> &list)
 {
-  return -1;
+    list.append(new Action("Run Cart", FileTypeCRT :: execute_st, this, (void *)CRTFILE_RUN));
+    return 1;
 }
 
-int FileTypeCRT :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
-{
-    list.append(new MenuItem(this, "Run Cart",  CRTFILE_RUN));
-
-    return 1 + FileDirEntry :: fetch_context_items_actual(list);
-}
-
-FileDirEntry *FileTypeCRT :: test_type(CachedTreeNode *obj)
+// static member
+FileType *FileTypeCRT :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "CRT")==0)
-        return new FileTypeCRT(obj->parent, inf);
+        return new FileTypeCRT(obj);
     return NULL;
 }
 
-__inline static WORD get_word(uint8_t *p)
+__inline static uint16_t get_word(uint8_t *p)
 {
-    return (WORD(p[0]) << 8) + p[1];
+    return (uint16_t(p[0]) << 8) + p[1];
 }
 
 __inline static uint32_t get_dword(uint8_t *p)
@@ -128,9 +118,16 @@ __inline static uint32_t get_dword(uint8_t *p)
     return uint32_t(get_word(p) << 16) + get_word(p+2);
 }
 
+// static member
+void FileTypeCRT :: execute_st(void *obj, void *param)
+{
+	int selection = (int)param;
+	printf("CRT Select: %4x\n", selection);
+	((FileTypeCRT *)obj)->execute(selection);
+}
+
 void FileTypeCRT :: execute(int selection)
 {
-	printf("CRT Select: %4x\n", selection);
 	File *file;
 	FileInfo *inf;
 	
@@ -141,12 +138,13 @@ void FileTypeCRT :: execute(int selection)
     }
 
     if(selection != CRTFILE_RUN) {
-		FileDirEntry :: execute(selection);
         return;
     }        
 
-    printf("Cartridge Load.. %s FileSize = %d\n", get_name(), info->size);
-    file = root.fopen(this, FA_READ);
+    FileManager *fm = FileManager :: getFileManager();
+
+    printf("Cartridge Load.. %s FileSize = %d\n", node->get_name(), node->get_file_info()->size);
+    file = fm->fopen_node(node, FA_READ);
     uint32_t dw;
     FRESULT fres;
     total_read = 0;
@@ -179,7 +177,7 @@ void FileTypeCRT :: execute(int selection)
 		push_event(e_path_object_exec_cmd, this, CRTFILE_CONFIGURE);
 
 fail:
-        root.fclose(file);
+        fm->fclose(file);
     } else {
         printf("Error opening file.\n");
     }
@@ -187,7 +185,7 @@ fail:
 
 bool FileTypeCRT :: check_header(File *f)
 {
-    UINT bytes_read;
+    uint32_t bytes_read;
     FRESULT res = f->read(crt_header, 0x20, &bytes_read);
     if(res != FR_OK)
         return false;
@@ -217,16 +215,16 @@ bool FileTypeCRT :: check_header(File *f)
 
 bool FileTypeCRT :: read_chip_packet(File *f)
 {
-    UINT bytes_read;
+    uint32_t bytes_read;
     FRESULT res = f->read(chip_header, 0x10, &bytes_read);
     if((res != FR_OK)||(!bytes_read))
         return false;
     if(strncmp((char*)chip_header, "CHIP", 4))
         return false;
     uint32_t total_length = get_dword(chip_header + 4);
-    WORD bank = get_word(chip_header + 10);
-    WORD load = get_word(chip_header + 12);
-    WORD size = get_word(chip_header + 14);
+    uint16_t bank = get_word(chip_header + 10);
+    uint16_t load = get_word(chip_header + 12);
+    uint16_t size = get_word(chip_header + 14);
 
     if(bank > 0x3f)
         return false;
@@ -268,7 +266,7 @@ bool FileTypeCRT :: read_chip_packet(File *f)
         } else {            
             res = f->read((void *)mem_addr, size, &bytes_read);
             total_read += uint32_t(bytes_read);
-            if(bytes_read != UINT(size)) {
+            if(bytes_read != size) {
                 printf("Just read %4x bytes\n", bytes_read);
                 return false;
             }
@@ -313,8 +311,8 @@ void FileTypeCRT :: configure_cart(void)
         bits--;
     }
 
-    WORD b = max_bank;
-    WORD mask = 0;
+    uint16_t b = max_bank;
+    uint16_t mask = 0;
     while(b) {
         mask <<= 1;
         mask |= 1;
@@ -381,6 +379,7 @@ void FileTypeCRT :: configure_cart(void)
             break;
         case CART_SYSTEM3:
             C64_CARTRIDGE_TYPE = 0x08; // System3
+            break;
         default:
             break;
     }

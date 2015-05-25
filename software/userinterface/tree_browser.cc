@@ -95,7 +95,7 @@ void TreeBrowser :: context(int initial)
 
     printf("Creating context menu for %s\n", state->under_cursor->getName());
     contextMenu = new ContextMenu(state->under_cursor, initial, state->selected_line);
-    contextMenu->init(screen, keyb);
+    contextMenu->init(window, keyb);
     user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to context menu!
 }
@@ -106,7 +106,7 @@ void TreeBrowser :: task_menu(void)
 		return;
     printf("Creating task menu for %s\n", state->node->getName());
     contextMenu = new TaskMenu();
-    contextMenu->init(screen, keyb);
+    contextMenu->init(window, keyb);
     user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to menu!
 }
@@ -129,18 +129,19 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
 	int c;
     int ret = 0;
 
-/*
+
     if(e.type == e_invalidate) {
-    	invalidate((CachedTreeNode *)e.object);
+    	invalidate(e.object);
     	return 0;
     } else
-*/
-
     if(e.type == e_refresh_browser) {
-    	Browsable *obj = (Browsable *)e.object;
-    	if(!obj || (obj == state->node)) {
-    		state->refresh = true;
-    	}
+		TreeBrowserState *st = state;
+		while(st) {
+			if (st->node->invalidateMatch(e.object)) {
+				st->needs_reload = true;
+				st->refresh = true;
+			}
+		}
 	}
 	
     if(contextMenu) {
@@ -171,8 +172,9 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
         state->into();
 	}
 
-	if(state->refresh)
+	if(state->refresh) {
         state->do_refresh();
+	}
 
     c = keyb->getch();
     if(c < 0)
@@ -281,8 +283,7 @@ void TreeBrowser :: reset_quick_seek(void)
     quick_seek_length = 0;
 }
 
-/*
-void TreeBrowser :: invalidate(Browsable *obj)
+void TreeBrowser :: invalidate(void *obj)
 {
 	// we just have to take care of ourselves.. which means, that we have to check
 	// if the current browser state is dependent on the object that is going to be
@@ -296,14 +297,14 @@ void TreeBrowser :: invalidate(Browsable *obj)
 		return;
 	}
 
-	printf("The object to be invalidated is: %s\n", obj->getName());
+	// printf("The object to be invalidated is: %s\n", obj->get_name());
 
 	TreeBrowserState *st, *found;
 	st = state;
 	found = NULL;
 	while(st) {
 		printf("checking %s...\n", st->node->getName());
-		if(st->node == obj) {
+		if(st->node->invalidateMatch(obj)) {
 			found = st;
 			break;
 		}
@@ -313,22 +314,43 @@ void TreeBrowser :: invalidate(Browsable *obj)
 	if(found) { // need to roll back
 		printf("Rolling back browser...");
 		if(contextMenu) {
-			printf("(first, remove open windows)...");
+			printf("(first, remove open context)...");
 			contextMenu->deinit();
 			user_interface->focus--;
-			delete contextMenu;
-			contextMenu = NULL;
+        	delete contextMenu;
+            contextMenu = NULL;
 		}
+		if(configBrowser) {
+			printf("(first, remove open config)...");
+			configBrowser->deinit();
+			user_interface->focus--;
+        	delete configBrowser;
+        	configBrowser = NULL;
+		}
+
 		do {
 			st = state;
 			state->level_up();
 		} while(st != found);
-		printf(" done");
-		state->reselect();
-		printf("...\n");
+		state->reload();
+		printf(" done\n");
 	} else {
 		printf("Did not rewind, because the object invalidated is not in my path.\n");
+		// still, the item might be somewhere else in the tree.
+		st = state;
+		while(st) {
+			for(int i=0;i<st->children.get_elements();i++) {
+				if (st->children[i]->invalidateMatch(obj)) {
+					st->needs_reload = true;
+					st = 0; // break outer
+					break;
+				}
+			}
+			if (st)
+				st = st->previous;
+		}
+
 	}
+	printf("** There are now %d browsable objects.\n", *(Browsable :: getCount()));
 }
-*/
 

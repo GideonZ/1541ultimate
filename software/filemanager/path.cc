@@ -15,7 +15,7 @@ static FileManager *file_manager = FileManager :: getFileManager();
 Path :: Path() : full_path("/")
 {
     current_dir_node = file_manager->get_root();
-//	cd("SD");
+    owner = "Unknown";
 }
 
 Path :: ~Path()

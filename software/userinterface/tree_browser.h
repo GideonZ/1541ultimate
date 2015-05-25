@@ -45,7 +45,7 @@ public:
     void config(void);
     void test_editor(void);
     
-    //void invalidate(Browsable *obj);
+    void invalidate(void *obj);
 
 };
 #endif

@@ -21,6 +21,9 @@ public:
 	BrowsableDirEntry(CachedTreeNode *node)
 		: Browsable(), node(node) {
 		type = NULL;
+		if (node->get_file_info()->attrib & AM_VOL) {
+			this->selectable = false;
+		}
 	}
 
 	virtual ~BrowsableDirEntry() {
@@ -53,6 +56,10 @@ public:
 		if (type)
 			type->fetch_context_items(items);
 	}
+	virtual bool invalidateMatch(void *obj) {
+		CachedTreeNode *n = (CachedTreeNode *)obj;
+		return (n == node);
+	}
 };
 
 class BrowsableRoot : public Browsable
@@ -69,7 +76,12 @@ public:
 		return root->children.get_elements();
 	}
 	virtual char *getName() { return "Root"; }
-};
 
+	virtual bool invalidateMatch(void *obj) {
+		CachedTreeNode *n = (CachedTreeNode *)obj;
+		CachedTreeNode *root = FileManager :: getFileManager() -> get_root();
+		return (n == root);
+	}
+};
 
 #endif /* USERINTERFACE_BROWSABLE_ROOT_H_ */

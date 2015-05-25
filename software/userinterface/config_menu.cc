@@ -24,6 +24,7 @@ ConfigBrowser :: ~ConfigBrowser()
 
 void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 {
+	this->screen = screen;
 	window = new Window(screen, 0, 2, 40, 20);
 	window->draw_border();
 	keyb = k;

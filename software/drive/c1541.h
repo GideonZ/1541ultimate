@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include "integer.h"
 #include "event.h"
+#include "filemanager.h"
 #include "file_system.h"
 #include "config.h"
 #include "disk_image.h"
@@ -23,11 +24,20 @@
 #define MENU_1541_MOUNT_GCR 0x1512
 #define MENU_1541_UNLINK    0x1513
 
+#define D64FILE_RUN        0x2101
+#define D64FILE_MOUNT      0x2102
+#define D64FILE_MOUNT_RO   0x2103
+#define D64FILE_MOUNT_UL   0x2104
+
+#define G64FILE_RUN        0x2121
+#define G64FILE_MOUNT      0x2122
+#define G64FILE_MOUNT_RO   0x2123
+#define G64FILE_MOUNT_UL   0x2124
+
 struct t_drive_command
 {
     int  command;
-    File *file;
-    bool protect;
+    CachedTreeNode *node;
 };
 
 typedef enum { e_rom_1541=0, e_rom_1541c=1, e_rom_1541ii=2, e_rom_custom=3, e_rom_unset=99 } t_1541_rom;
@@ -97,6 +107,8 @@ public:
     int  fetch_task_items(IndexedList<Action*> &item_list); // from ObjectWithMenu
     void effectuate_settings(void); // from ConfigurableObject
     
+    void executeCommand(t_drive_command *drive_command);
+
     void drive_power(bool on);
     void drive_reset(void);
     void set_hw_address(int addr);
@@ -106,6 +118,7 @@ public:
     void set_ram(t_1541_ram ram);
     void remove_disk(void);
     void insert_disk(bool protect, GcrImage *image);
+    void unlink(void);
     void mount_d64(bool protect, File *);
     void mount_g64(bool protect, File *);
     void mount_blank(void);
@@ -121,9 +134,11 @@ class DriveMenuItem : public Action
 	void *obj;
 	int function;
 	char *nameString;
+	CachedTreeNode *node;
 	t_drive_command *cmd;
 public:
-	DriveMenuItem(void *o, char *n, int f) : Action(NULL, NULL, NULL) {
+	DriveMenuItem(char *n, void *o, int f, CachedTreeNode *nd) : Action(NULL, NULL, NULL) {
+		node = nd;
 		obj = o;
 		function = f;
 		cmd = NULL;
@@ -142,12 +157,10 @@ public:
 	void execute() {
 	    cmd = new t_drive_command;
 	    cmd->command = function;
-	    cmd->file = NULL;
-	    cmd->protect = false;
+	    cmd->node = node;
 		push_event(e_object_private_cmd, obj, (int)cmd);
 	}
 };
-
 
 #endif
 

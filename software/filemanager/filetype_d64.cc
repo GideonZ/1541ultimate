@@ -44,13 +44,6 @@ extern C1541 *c1541_B;
 /*********************************************************************/
 /* D64/D71/D81 File Browser Handling                                 */
 /*********************************************************************/
-#define D64FILE_RUN        0x2101
-#define D64FILE_MOUNT      0x2102
-#define D64FILE_MOUNT_RO   0x2103
-#define D64FILE_MOUNT_UL   0x2104
-#define D64FILE_MOUNT_B    0x2111
-#define D64FILE_MOUNT_RO_B 0x2112
-#define D64FILE_MOUNT_UL_B 0x2113
 
 
 FileTypeD64 :: FileTypeD64(CachedTreeNode *node)
@@ -82,26 +75,19 @@ int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_DRIVE_1541_1) {
-/*
-        list.append(new MenuItem(this, "Run Disk", D64FILE_RUN));
-        list.append(new MenuItem(this, "Mount Disk", D64FILE_MOUNT));
-        list.append(new MenuItem(this, "Mount Disk Read Only", D64FILE_MOUNT_RO));
-        list.append(new MenuItem(this, "Mount Disk Unlinked", D64FILE_MOUNT_UL));
+        list.append(new DriveMenuItem("Run Disk", c1541_A, D64FILE_RUN, node));
+        list.append(new DriveMenuItem("Mount Disk", c1541_A, D64FILE_MOUNT, node));
+        list.append(new DriveMenuItem("Mount Disk Read Only", c1541_A, D64FILE_MOUNT_RO, node));
+        list.append(new DriveMenuItem("Mount Disk Unlinked", c1541_A, D64FILE_MOUNT_UL, node));
         count += 4;
-*/
     }
     
     if(capabilities & CAPAB_DRIVE_1541_2) {
-/*
-        list.append(new MenuItem(this, "Mount Disk on Drive B", D64FILE_MOUNT_B));
-        list.append(new MenuItem(this, "Mount Disk R/O on Dr.B", D64FILE_MOUNT_RO_B));
-        list.append(new MenuItem(this, "Mount Disk Unlnkd Dr.B", D64FILE_MOUNT_UL_B));
+        list.append(new DriveMenuItem("Mount Disk on B", c1541_B, D64FILE_MOUNT, node));
+        list.append(new DriveMenuItem("Mount Disk R/O on B", c1541_B, D64FILE_MOUNT_RO, node));
+        list.append(new DriveMenuItem("Mount Disk Unl. on B", c1541_B, D64FILE_MOUNT_UL, node));
         count += 3;
-*/
     }
-
-	list.append(new Action("Test Action", FileTypeD64 :: test_action, this, node));
-    count++;
     
     return count;
 }
@@ -117,106 +103,3 @@ FileType *FileTypeD64 :: test_type(CachedTreeNode *obj)
 //        return new FileTypeD64(NULL, inf);
     return NULL;
 }
-
-void FileTypeD64 :: test_action(void *obj, void *prm)
-{
-	CachedTreeNode *node = (CachedTreeNode *)prm;
-	printf("Test action for node %s\n", node->get_name());
-}
-
-/*
-void FileTypeD64 :: execute(int selection)
-{
-    bool protect;
-    File *file;
-    BYTE flags;
-    t_drive_command *drive_command;
-    
-	switch(selection) {
-	case D64FILE_MOUNT_UL:
-	case D64FILE_MOUNT_UL_B:
-		protect = false;
-		flags = FA_READ;
-		break;
-	case D64FILE_MOUNT_RO:
-	case D64FILE_MOUNT_RO_B:
-		protect = true;
-		flags = FA_READ;
-		break;
-	case D64FILE_RUN:
-	case D64FILE_MOUNT:
-	case D64FILE_MOUNT_B:
-        protect = (info->attrib & AM_RDO);
-        flags = (protect)?FA_READ:(FA_READ | FA_WRITE);
-	default:
-		break;
-	}
-
-	switch(selection) {
-	case D64FILE_RUN:
-	case D64FILE_MOUNT:
-	case D64FILE_MOUNT_RO:
-	case D64FILE_MOUNT_UL:
-		printf("Mounting disk.. %s\n", get_name());
-		file = root.fopen(this, flags);
-		if(file) {
-            // unfortunately, we need to insert this here, because we have to make sure we still have
-            // a user interface available, to ask if a save is needed.
-            c1541_A->check_if_save_needed();
-            drive_command = new t_drive_command;
-            drive_command->file = file;
-            drive_command->protect = protect;
-            drive_command->command = MENU_1541_MOUNT;
-//			push_event(e_mount_drv1, file, protect);
-			if(selection == D64FILE_RUN) {
-                C64Event::prepare_dma_load(NULL, "*", 1, RUNCODE_MOUNT_LOAD_RUN);
-                push_event(e_object_private_cmd, c1541_A, (int)drive_command);
-                C64Event::perform_dma_load(NULL, RUNCODE_MOUNT_LOAD_RUN);
-
-            } else {
-                push_event(e_unfreeze);
-                push_event(e_object_private_cmd, c1541_A, (int)drive_command);
-                if(selection != D64FILE_MOUNT) {
-                    drive_command = new t_drive_command;
-                    drive_command->command = MENU_1541_UNLINK;
-                    //				push_event(e_unlink_drv1);
-                    push_event(e_object_private_cmd, c1541_A, (int)drive_command);
-                }
-            }
-		} else {
-			printf("Error opening file.\n");
-		}
-		break;
-	case D64FILE_MOUNT_B:
-	case D64FILE_MOUNT_RO_B:
-	case D64FILE_MOUNT_UL_B:
-		printf("Mounting disk.. %s\n", get_name());
-		file = root.fopen(this, flags);
-		if(file) {
-            // unfortunately, we need to insert this here, because we have to make sure we still have
-            // a user interface available, to ask if a save is needed.
-            c1541_B->check_if_save_needed();
-            push_event(e_unfreeze);
-            drive_command = new t_drive_command;
-            drive_command->file = file;
-            drive_command->protect = protect;
-            drive_command->command = MENU_1541_MOUNT;
-//			push_event(e_mount_drv1, file, protect);
-			push_event(e_object_private_cmd, c1541_B, (int)drive_command);
-
-			if(selection != D64FILE_MOUNT_B) {
-                drive_command = new t_drive_command;
-                drive_command->command = MENU_1541_UNLINK;
-//				push_event(e_unlink_drv1);
-    			push_event(e_object_private_cmd, c1541_B, (int)drive_command);
-			}
-		} else {
-			printf("Error opening file.\n");
-		}
-		break;
-	default:
-		FileDirEntry :: execute(selection);
-    }
-}
-
-*/

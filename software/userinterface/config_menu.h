@@ -42,6 +42,36 @@ public:
 	ConfigItem *getItem() { return item; }
 	char *getName() { return item->get_item_name(); }
 	char *getDisplayString() { return item->get_display_string(); };
+
+	static void contextSelect(void *obj, void *param) {
+		ConfigItem *it = (ConfigItem *)obj;
+		printf("ContextSelect of item %s, set value to %d.\n", it->get_item_name(), (int)param);
+		it->value = (int)param;
+	}
+
+	void fetch_context_items(IndexedList<Action *>&items) {
+		static char buf[32];
+		int i,ret = 0;
+
+		switch(item->definition->type) {
+			case CFG_TYPE_VALUE:
+				printf("CFG_TYPE_VALUE\n");
+				for(i=item->definition->min;i<=item->definition->max;i++) {
+					sprintf(buf, item->definition->item_format, i);
+					items.append(new Action(buf, contextSelect, item, (void *)i));
+				}
+				break;
+			case CFG_TYPE_ENUM:
+				for(i=item->definition->min;i<=item->definition->max;i++) {
+					sprintf(buf, item->definition->item_format, item->definition->items[i]);
+					items.append(new Action(buf, contextSelect, item, (void *)i));
+				}
+				break;
+			default:
+				printf("Item not contextable\n");
+		}
+	}
+
 };
 
 class BrowsableConfigStore : public Browsable

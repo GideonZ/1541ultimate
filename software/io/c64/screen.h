@@ -102,6 +102,9 @@ public:
     Window(Screen*, int, int, int, int);
     virtual ~Window();
 
+    Screen *getScreen() { return parent; }
+    void getOffsets(int &ox, int &oy) { ox = offset_x; oy = offset_y; }
+
     virtual void  set_color(int);
     virtual void  reverse_mode(int);
     virtual void  no_scroll(void);

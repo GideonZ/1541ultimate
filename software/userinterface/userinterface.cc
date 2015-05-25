@@ -88,7 +88,6 @@ void UserInterface :: handle_event(Event &e)
     if(!initialized)
         return;
 */
-    static uint8_t button_prev;
     int ret, i;
 
     switch(state) {
@@ -148,18 +147,6 @@ void UserInterface :: handle_event(Event &e)
         default:
             break;
     }            
-
-#if !RUNS_ON_PC
-    uint8_t buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
-    if((buttons & ~button_prev) & ITU_BUTTON1) {
-        if(state == ui_idle) { // this is nasty, but at least we know that it's executed FIRST
-            // and that it has no effect when no copper exists.
-            push_event(e_copper_capture, 0);
-        }
-        push_event(e_button_press, 0);
-    }
-    button_prev = buttons;
-#endif
 }
 
 bool UserInterface :: is_available(void)
@@ -182,7 +169,7 @@ void UserInterface :: set_screen_title()
 {
     static char title[48];
     // precondition: screen is cleared.  // \020 = alpha \021 = beta
-    sprintf(title, "\033A    **** 1541 Ultimate %s (%b) ****\033O", APPL_VERSION, getFpgaVersion());
+    sprintf(title, "\eA    **** 1541 Ultimate %s (%b) ****\eO", APPL_VERSION, getFpgaVersion());
     screen->move_cursor(0,0);
     screen->output(title);
     screen->move_cursor(0,1);
@@ -193,7 +180,7 @@ void UserInterface :: set_screen_title()
     for(int i=0;i<40;i++)
         screen->output('\002');
     screen->move_cursor(32,24);
-	screen->output("\033AF3=Help\033O");
+	screen->output("\eAF3=Help\eO");
 }
     
 /* Blocking variants of our simple objects follow: */

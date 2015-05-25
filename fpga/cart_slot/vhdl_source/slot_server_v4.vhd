@@ -438,6 +438,7 @@ begin
         freeze_trig     => freeze_trig,
         freeze_act      => freeze_act, 
         unfreeze        => unfreeze,
+        cart_active     => status.cart_active,
         
         cart_logic      => control.cartridge_type,
         cart_kill       => control.cartridge_kill,

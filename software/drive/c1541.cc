@@ -3,14 +3,13 @@
 #include <sys/stat.h>
 #include <errno.h>
 
-extern "C" {
-	#include "itu.h"
-	#include "dump_hex.h"
-}
+#include "itu.h"
+#include "dump_hex.h"
 #include "c1541.h"
+#include "c64.h"
 #include "disk_image.h"
 #include "userinterface.h"
-#include "filemanager.h" // for filename functions, may need to move elsewhere FIXME
+#include "filemanager.h"
 
 char *en_dis[] = { "Disabled", "Enabled" };
 char *yes_no[] = { "No", "Yes" };
@@ -118,6 +117,11 @@ C1541 :: C1541(volatile uint8_t *regs, char letter)
     
     sprintf(buffer, "1541 Drive %c Settings", letter);    
     register_store((uint32_t)regs, buffer, c1541_config);
+
+    disk_state = e_no_disk;
+    iec_address = 8 + int(letter - 'A');
+    ram = e_ram_none;
+    large_rom = false;
 }
 
 C1541 :: ~C1541()
@@ -157,28 +161,27 @@ int  C1541 :: fetch_task_items(IndexedList<Action*> &item_list)
 	int items = 1;
     char buffer[32];
     sprintf(buffer, "Reset 1541 Drive %c", drive_letter);
-	item_list.append(new DriveMenuItem(this, buffer, MENU_1541_RESET));
+	item_list.append(new DriveMenuItem(buffer, this, MENU_1541_RESET, 0));
 
 	if(disk_state != e_no_disk) {
         sprintf(buffer, "Remove disk from Drive %c", drive_letter);
-		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_REMOVE));
+		item_list.append(new DriveMenuItem(buffer, this, MENU_1541_REMOVE, 0));
 		items++;
-
 
 		/*CachedTreeNode *po = user_interface->get_path();
         if(po && po->get_file_info()) * FIXME */
         {
             sprintf(buffer, "Save disk in drive %c as D64", drive_letter);
-    		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_SAVED64));
+    		item_list.append(new DriveMenuItem(buffer, this, MENU_1541_SAVED64, 0));
     		items++;
     
             sprintf(buffer, "Save disk in drive %c as G64", drive_letter);
-    		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_SAVEG64));
+    		item_list.append(new DriveMenuItem(buffer, this, MENU_1541_SAVEG64, 0));
     		items++;
     	}
 	} else {
         sprintf(buffer, "Insert blank disk in drive %c", drive_letter);
-		item_list.append(new DriveMenuItem(this, buffer, MENU_1541_BLANK));
+		item_list.append(new DriveMenuItem(buffer, this, MENU_1541_BLANK, 0));
 		items++;
     }	    
 	return items;
@@ -420,72 +423,14 @@ void C1541 :: poll(Event &e)
 {
 	int tr;
 	int written;
-	bool g64;
-	bool protect;
-    t_drive_command *drive_command;
+
+	t_drive_command *drive_command;
     
 	switch(e.type) {
-//	case e_mount_drv1:
-//		f = (File *)e.object;
-//		protect = (bool)e.param;
-//		mount_d64(protect, f);
-//		break;
-//	case e_mount_drv1_gcr:
-//		f = (File *)e.object;
-//		protect = (bool)e.param;
-//		mount_g64(protect, f);
-//		break;
-//	case e_unlink_drv1:
-//		disk_state = e_disk_file_closed;
-//		if(mount_file) {
-//			root.fclose(mount_file);
-//			mount_file = NULL;
-//		}
-//		break;
 	case e_object_private_cmd:
 		if(e.object == this) {
-            drive_command = (t_drive_command *)e.param;
-//			switch(e.param) {
-            switch(drive_command->command) {
-        	case MENU_1541_MOUNT:
-        		mount_d64(drive_command->protect, drive_command->file);
-        		break;
-        	case MENU_1541_MOUNT_GCR:
-        		mount_g64(drive_command->protect, drive_command->file);
-        		break;
-        	case MENU_1541_UNLINK:
-        		disk_state = e_disk_file_closed;
-        		if(mount_file) {
-        			fm->fclose(mount_file);
-        			mount_file = NULL;
-        		}
-        		break;
-			case MENU_1541_RESET:
-			    set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
-			    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
-				break;
-			case MENU_1541_REMOVE:
-                check_if_save_needed();
-				if(mount_file) {
-					fm->fclose(mount_file);
-					mount_file = NULL;
-				}
-				remove_disk();
-				break;
-            case MENU_1541_BLANK:
-                mount_blank();
-                break;
-            case MENU_1541_SAVED64:
-            case MENU_1541_SAVEG64:
-                g64 = (drive_command->command == MENU_1541_SAVEG64);
-                save_disk_to_file(g64);
-                break;    
-			default:
-				printf("Unhandled menu item for C1541.\n");
-			}
-			delete drive_command; // cleanup
+			executeCommand((t_drive_command *)e.param);
 		}
-		break;
 	default:
 		break;
 	}
@@ -540,6 +485,123 @@ void C1541 :: poll(Event &e)
 	}
 }
 
+void C1541 :: executeCommand(t_drive_command *drive_command)
+{
+	bool g64;
+	bool protect;
+	uint8_t flags = 0;
+	File *newFile;
+
+	switch(drive_command->command) {
+	case D64FILE_MOUNT_UL:
+	case G64FILE_MOUNT_UL:
+		protect = false;
+		flags = FA_READ;
+		break;
+	case D64FILE_MOUNT_RO:
+	case G64FILE_MOUNT_RO:
+		protect = true;
+		flags = FA_READ;
+		break;
+	case D64FILE_RUN:
+	case D64FILE_MOUNT:
+	case G64FILE_RUN:
+	case G64FILE_MOUNT:
+        protect = (drive_command->node->get_file_info()->attrib & AM_RDO);
+        flags = (protect)?(FA_READ):(FA_READ | FA_WRITE);
+        break;
+	default:
+		break;
+	}
+
+	switch(drive_command->command) {
+	case D64FILE_RUN:
+	case D64FILE_MOUNT:
+	case D64FILE_MOUNT_UL:
+	case D64FILE_MOUNT_RO:
+		printf("Mounting disk.. %s\n", drive_command->node->get_name());
+		newFile = fm->fopen_node(drive_command->node, flags);
+		if(newFile) {
+			check_if_save_needed();
+            mount_d64(protect, newFile);
+            if ((drive_command->command == D64FILE_MOUNT_UL) ||
+            	(drive_command->command == D64FILE_MOUNT_RO)) {
+            	unlink();
+            }
+            if(drive_command->command == D64FILE_RUN) {
+                C64Event::prepare_dma_load(NULL, "*", 1, RUNCODE_MOUNT_LOAD_RUN);
+                C64Event::perform_dma_load(NULL, RUNCODE_MOUNT_LOAD_RUN);
+            } else {
+                push_event(e_unfreeze);
+            }
+		} else {
+			printf("Error opening file.\n");
+		}
+		break;
+	case G64FILE_RUN:
+	case G64FILE_MOUNT:
+	case G64FILE_MOUNT_UL:
+	case G64FILE_MOUNT_RO:
+		printf("Mounting disk.. %s\n", drive_command->node->get_name());
+		newFile = fm->fopen_node(drive_command->node, flags);
+		if(newFile) {
+			check_if_save_needed();
+            mount_g64(protect, newFile);
+            if ((drive_command->command == G64FILE_MOUNT_UL) ||
+            	(drive_command->command == G64FILE_MOUNT_RO)) {
+            	unlink();
+            }
+            if(drive_command->command == G64FILE_RUN) {
+                C64Event::prepare_dma_load(NULL, "*", 1, RUNCODE_MOUNT_LOAD_RUN);
+                C64Event::perform_dma_load(NULL, RUNCODE_MOUNT_LOAD_RUN);
+            } else {
+                push_event(e_unfreeze);
+            }
+		} else {
+			printf("Error opening file.\n");
+		}
+		break;
+	case MENU_1541_MOUNT_GCR:
+		mount_g64(protect, newFile);
+		break;
+	case MENU_1541_UNLINK:
+		unlink();
+		break;
+	case MENU_1541_RESET:
+	    set_hw_address(cfg->get_value(CFG_C1541_BUS_ID));
+	    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
+		break;
+	case MENU_1541_REMOVE:
+        check_if_save_needed();
+		if(mount_file) {
+			fm->fclose(mount_file);
+			mount_file = NULL;
+		}
+		remove_disk();
+		break;
+    case MENU_1541_BLANK:
+        mount_blank();
+        break;
+    case MENU_1541_SAVED64:
+    case MENU_1541_SAVEG64:
+        g64 = (drive_command->command == MENU_1541_SAVEG64);
+        save_disk_to_file(g64);
+        break;
+	default:
+		printf("Unhandled menu item for C1541.\n");
+	}
+
+	delete drive_command; // cleanup
+}
+
+void C1541 :: unlink(void)
+{
+	disk_state = e_disk_file_closed;
+	if(mount_file) {
+		fm->fclose(mount_file);
+		mount_file = NULL;
+	}
+}
 void C1541 :: save_disk_to_file(bool g64)
 {
     CachedTreeNode *po;

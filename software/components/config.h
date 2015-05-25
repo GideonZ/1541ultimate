@@ -84,7 +84,7 @@ class ConfigStore
     uint8_t  *mem_block;
     int    block_size;
     ConfigurableObject *obj;
-    char  *store_name;
+    mstring store_name;
     
     void pack(void);
     void unpack(void);
@@ -103,7 +103,7 @@ public:
 
     ConfigItem *find_item(uint8_t id);
     int  get_value(uint8_t id);
-    char *get_store_name() { return store_name; }
+    char *get_store_name() { return store_name.c_str(); }
     char *get_string(uint8_t id);
     void set_value(uint8_t id, int value);
     void set_string(uint8_t id, char *s);

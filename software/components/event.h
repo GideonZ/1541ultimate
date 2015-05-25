@@ -21,7 +21,8 @@ typedef enum _event_type {
     e_cart_mode_change,
     e_dma_load,
     e_object_private_cmd,
-    e_path_object_exec_cmd
+    e_path_object_exec_cmd,
+	e_restore_cart
 } t_event_type;
 
 class Event

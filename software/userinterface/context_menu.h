@@ -34,6 +34,7 @@ class ContextMenu : public UIObject
     t_context_state context_state;
     IndexedList<Action *> actions;
     int item_index;
+    int first;
     int y_offs;
     int corner;
 public:
@@ -42,7 +43,7 @@ public:
     
     void executeAction();
 
-    virtual void init(Screen *pwin, Keyboard *keyb);
+    virtual void init(Window *pwin, Keyboard *keyb);
     virtual int poll(int, Event &e);
     virtual void draw();
 

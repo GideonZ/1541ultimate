@@ -20,6 +20,7 @@ public:
 
     int initial_index;
     bool refresh;
+    bool needs_reload;
 
     Browsable *node;
     TreeBrowserState *previous;

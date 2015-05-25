@@ -804,6 +804,13 @@ void C64 :: cartridge_test(void)
 
 void C64 :: poll(Event &e)
 {
+    static uint8_t button_prev;
+    uint8_t buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
+    if((buttons & ~button_prev) & ITU_BUTTON1) {
+        push_event(e_button_press, 0);
+    }
+    button_prev = buttons;
+
 #ifndef _NO_FILE_ACCESS
 	File *f;
 	uint32_t size;
@@ -811,25 +818,42 @@ void C64 :: poll(Event &e)
     t_flash_address addr;
 	int run_code;
     
-	if(e.type == e_dma_load) {
+	switch(e.type) {
+	case e_dma_load:
 		f = (File *)e.object;
 		run_code = e.param;
 		dma_load(f, run_code);
         if (f) {
             fm->fclose(f);
         }
-	} else if((e.type == e_object_private_cmd)&&(e.object == this)) {
-		switch(e.param) {
-		case C64_EVENT_MAX_REU:
-            C64_REU_SIZE = 7;
-            C64_REU_ENABLE = 1;
-            break;
-        case C64_EVENT_AUDIO_ON:
-            C64_SAMPLER_ENABLE = 1;
-            break;
-		default:
-			execute(e.param);
+        break;
+
+	case e_object_private_cmd:
+		if(e.object == this) {
+			switch(e.param) {
+			case C64_EVENT_MAX_REU:
+				C64_REU_SIZE = 7;
+				C64_REU_ENABLE = 1;
+				break;
+			case C64_EVENT_AUDIO_ON:
+				C64_SAMPLER_ENABLE = 1;
+				break;
+			default:
+				execute(e.param);
+			}
 		}
+		break;
+	case e_restore_cart:
+		if (C64_CARTRIDGE_ACTIVE) {
+			// rethrow event
+			push_event(e_restore_cart);
+		} else {
+			printf("Cart got disabled, now restoring.\n");
+			set_cartridge(NULL);
+		}
+		break;
+	default:
+		break;
 	}
 #endif
 }
@@ -934,19 +958,18 @@ int C64 :: dma_load(File *f, uint8_t run_code, uint16_t reloc)
 {
 	// First, check if we have file access
     uint32_t transferred;
-	uint16_t load_address;
+	uint16_t load_address = 0;
     if (f) {
         f->read(&load_address, 2, &transferred);
-        printf("Load address: %4x...", load_address);
         if(transferred != 2) {
             printf("Can't read from file..\n");
             return -1;
         }
+        load_address = le2cpu(load_address); // make sure we can interpret the word correctly (endianness)
+        printf("Load address: %4x...", load_address);
     }
-    load_address = le2cpu(load_address); // make sure we can interpret the word correctly (endianness)
     int block = 510;
 
-    printf("File load location: %4x\n", load_address);
     if(reloc)
     	load_address = reloc;
 
@@ -1015,9 +1038,7 @@ int C64 :: dma_load(File *f, uint8_t run_code, uint16_t reloc)
     printf("Resuming..\n");
     resume();
 	
-	wait_ms(400);
-	set_cartridge(NULL); // reset to default cart
-
+    push_event(e_restore_cart);
     return 0;
 }
 
