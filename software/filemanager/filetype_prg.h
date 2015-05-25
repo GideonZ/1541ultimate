@@ -1,22 +1,23 @@
 #ifndef FILETYPE_PRG_H
 #define FILETYPE_PRG_H
 
-#include "file_direntry.h"
+#include "filemanager.h"
+#include "filetypes.h"
 
-class FileTypePRG : public FileDirEntry
+class FileTypePRG : public FileType
 {
-    bool    has_header;
+	CachedTreeNode *node;
+	bool    has_header;
     bool    check_header(File *f);
+
+    static void execute_st(void *obj, void *param);
+    void  execute(int selection);
 public:
-    FileTypePRG(FileTypeFactory &fac);
-    FileTypePRG(CachedTreeNode *par, FileInfo *fi, bool header);
+    FileTypePRG(CachedTreeNode *n, bool header);
     ~FileTypePRG();
 
-    int   fetch_children(void);
-    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
-    FileDirEntry *test_type(CachedTreeNode *obj);
-
-    void  execute(int selection);
+    int   fetch_context_items(IndexedList<Action *> &list);
+    static FileType *test_type(CachedTreeNode *obj);
 };
 
 

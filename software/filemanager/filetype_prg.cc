@@ -35,7 +35,7 @@
 extern C1541 *c1541_A;
 
 // tester instance
-FileTypePRG tester_prg(file_type_factory);
+FactoryRegistrator<CachedTreeNode *, FileType *> tester_prg(Globals :: getFileTypeFactory(), FileTypePRG :: test_type);
 
 /*********************************************************************/
 /* PRG File Browser Handling                                         */
@@ -45,15 +45,10 @@ FileTypePRG tester_prg(file_type_factory);
 #define PRGFILE_MOUNT_RUN 0x2203
 #define PRGFILE_MOUNT_REAL_RUN 0x2204
 
-FileTypePRG :: FileTypePRG(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
+FileTypePRG :: FileTypePRG(CachedTreeNode *n, bool hdr)
 {
-    fac.register_type(this);
-    info = NULL;
-}
-
-FileTypePRG :: FileTypePRG(CachedTreeNode *par, FileInfo *fi, bool hdr) : FileDirEntry(par, fi)
-{
-    printf("Creating PRG type from info: %s\n", fi->lfname);
+    printf("Creating PRG type from info: %s\n", n->get_name());
+    node = n;
     has_header = hdr;
 }
 
@@ -61,37 +56,34 @@ FileTypePRG :: ~FileTypePRG()
 {
 }
 
-int FileTypePRG :: fetch_children(void)
+int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 {
-  return -1;
-}
-
-int FileTypePRG :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
-{
-    list.append(new MenuItem(this, "Run",  PRGFILE_RUN));
-    list.append(new MenuItem(this, "Load", PRGFILE_LOAD));
+    list.append(new Action("Run",  FileTypePRG :: execute_st, this, (void *)PRGFILE_RUN));
+    list.append(new Action("Load", FileTypePRG :: execute_st, this, (void *)PRGFILE_LOAD));
 	int count = 2;
 
-	// a little dirty
-	FileInfo *inf = parent->get_file_info();
-    if(strcmp(inf->extension, "D64")==0) {
-    	list.append(new MenuItem(this, "Mount & Run", PRGFILE_MOUNT_RUN));
+	if (!c1541_A)
+		return count;
+
+	FileInfo *pinfo = node->parent->get_file_info();
+    if(strcmp(pinfo->extension, "D64")==0) {
+    	list.append(new Action("Mount & Run", FileTypePRG :: execute_st, this, (void *)PRGFILE_MOUNT_RUN));
     	count++;
-    	list.append(new MenuItem(this, "Real Run", PRGFILE_MOUNT_REAL_RUN));
+    	list.append(new Action("Real Run", FileTypePRG :: execute_st, this, (void *)PRGFILE_MOUNT_REAL_RUN));
     	count++;
     }
-
-    return count + FileDirEntry :: fetch_context_items_actual(list);
+    return count;
 }
 
-FileDirEntry *FileTypePRG :: test_type(CachedTreeNode *obj)
+// static member
+FileType *FileTypePRG :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "PRG")==0)
-        return new FileTypePRG(obj->parent, inf, false);
+        return new FileTypePRG(obj, false);
     if(inf->extension[0] == 'P') {
         if(isdigit(inf->extension[1]) && isdigit(inf->extension[2])) {
-            return new FileTypePRG(obj->parent, inf, true);
+            return new FileTypePRG(obj, true);
         }
     }
     return NULL;
@@ -103,13 +95,19 @@ bool FileTypePRG :: check_header(File *f)
 
     if(!has_header)
         return true;
-    UINT bytes_read;
+    uint32_t bytes_read;
     FRESULT res = f->read(p00_header, 0x1A, &bytes_read);
     if(res != FR_OK)
         return false;
     if(strncmp(p00_header, "C64File", 7))
         return false;
     return true;        
+}
+
+void FileTypePRG :: execute_st(void *obj, void *param)
+{
+	// fall through in original execute method
+	((FileTypePRG *)obj)->execute((int)param);
 }
 
 void FileTypePRG :: execute(int selection)
@@ -134,16 +132,16 @@ void FileTypePRG :: execute(int selection)
         run_code = RUNCODE_MOUNT_LOAD_RUN;
         break;
     default:
-		FileDirEntry :: execute(selection);
         return;
     }
 
-    printf("DMA Load.. %s\n", get_name());
-    file = root.fopen(this, FA_READ);
+    printf("DMA Load.. %s\n", node->get_name());
+    FileManager *fm = FileManager :: getFileManager();
+    file = fm->fopen_node(node, FA_READ);
     if(file) {
         if(check_header(file)) {
 
-            char *name = get_name();
+            char *name = node->get_name();
             int len = strlen(name);
 
             /* heuristic name length (kill trailing spaces) */
@@ -153,30 +151,22 @@ void FileTypePRG :: execute(int selection)
                 }
                 len--;
             }
-            C64Event::prepare_dma_load(file, name, len, run_code);
 
             if (run_code & RUNCODE_MOUNT_BIT) {
-                inf = parent->get_file_info();
-                d64 = root.fopen(parent, FA_READ);
-                if(d64) { // mount read only only if file is read only
-                    drive_command = new t_drive_command;
-                    drive_command->command = MENU_1541_MOUNT;
-                    drive_command->protect = ((inf->attrib & AM_RDO) != 0);
-                    drive_command->file = d64;
-                    push_event(e_object_private_cmd, c1541_A, (int)drive_command);
-                }
-                else
-                    printf("Can't open D64 file..\n");
-            }
+				drive_command = new t_drive_command;
+				drive_command->command = MENU_1541_MOUNT;
+				drive_command->node = node->parent;
+				c1541_A->executeCommand(drive_command);
+			}
 
+            C64Event::prepare_dma_load(file, name, len, run_code);
             C64Event::perform_dma_load(file, run_code);
 
         } else {
             printf("Header of P00 file not correct.\n");
-            root.fclose(file);
+            fm->fclose(file);
         }
     } else {
         printf("Error opening file.\n");
     }
-
 }

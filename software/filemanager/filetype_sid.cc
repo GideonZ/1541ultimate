@@ -6,10 +6,10 @@
 #include "userinterface.h"
 
 extern uint8_t _binary_sidcrt_65_start;
-extern uint8_t _binary_sidcrt_65_end;
+//extern uint8_t _binary_sidcrt_65_end;
 
 // tester instance
-FileTypeSID tester_sid(file_type_factory);
+FactoryRegistrator<CachedTreeNode *, FileType *> tester_sid(Globals :: getFileTypeFactory(), FileTypeSID :: test_type);
 
 #define SIDFILE_PLAY_MAIN 0x5301
 #define SIDFILE_PLAY_TUNE 0x5302
@@ -24,9 +24,9 @@ const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
 cart_def sid_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_RAM }; 
 
-static inline WORD swap_word(WORD p)
+static inline uint16_t swap_word(uint16_t p)
 {
-	WORD out = (p >> 8) | (p << 8);
+	uint16_t out = (p >> 8) | (p << 8);
 	return out;
 }
 #define le2cpu swap_word
@@ -37,28 +37,24 @@ static inline WORD swap_word(WORD p)
 /* SID File Browser Handling                                 */
 /*************************************************************/
 
-FileTypeSID :: FileTypeSID(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
+FileTypeSID :: FileTypeSID(CachedTreeNode *node)
 {
-    fac.register_type(this);
-    file = NULL;
-}
-
-FileTypeSID :: FileTypeSID(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
-{
-    printf("Creating SID type from info: %s\n", fi->lfname);
+    fm = FileManager :: getFileManager();
+	this->node = node;
+	printf("Creating SID type from info: %s\n", node->get_name());
     file = NULL;
 }
 
 FileTypeSID :: ~FileTypeSID()
 {
 	if(file)
-		root.fclose(file);
+		fm -> fclose(file);
 }
 
 int FileTypeSID :: fetch_children(void)
 {
     int b, i, entries;
-    UINT bytes_read;
+    uint32_t bytes_read;
     uint32_t *magic;
 	FRESULT fres;
     
@@ -69,10 +65,10 @@ int FileTypeSID :: fetch_children(void)
 
 	// if we didn't open the file yet, open it now
 	if(!file)
-		file = root.fopen(this, FA_READ);
+		file = fm->fopen_node(node, FA_READ);
 	else {		
 		if(file->seek(0) != FR_OK) {
-			root.fclose(file);
+			fm->fclose(file);
 			file = NULL;
 			return -1;
 		}
@@ -80,7 +76,7 @@ int FileTypeSID :: fetch_children(void)
 		
     fres = file->read(sid_header, 0x7e, &bytes_read);
 	if(fres != FR_OK) {
-		root.fclose(file);
+		fm->fclose(file);
 		file = NULL;
 		return -1;
 	}
@@ -89,7 +85,7 @@ int FileTypeSID :: fetch_children(void)
     magic = (uint32_t *)sid_header;
     if((*magic != magic_rsid)&&(*magic != magic_psid)) {
         printf("Filetype not as expected. (%08x)\n", *magic); 
-		root.fclose(file);
+		fm->fclose(file);
 		file = NULL;
         return -1;
     }
@@ -110,24 +106,24 @@ int FileTypeSID :: fetch_children(void)
     for(b=1;b<=sid_header[0x0f];b++) {
 		children.append(new SidTune(this, b));
     }
-	root.fclose(file);
+	fm->fclose(file);
 	file = NULL;
 
 	return children.get_elements();
 }
 
-int FileTypeSID :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
+int FileTypeSID :: fetch_context_items(IndexedList<Action *> &list)
 {
-    list.append(new MenuItem(this, "Play Main Tune", SIDFILE_PLAY_MAIN ));
-    list.append(new MenuItem(this, "Select Sub Tune", SIDFILE_SHOW_SUB ));
-    return 2 + FileDirEntry :: fetch_context_items_actual(list);
+    list.append(new Action("Play Main Tune", FileTypeSID :: execute_st, this, (void *)SIDFILE_PLAY_MAIN ));
+    list.append(new Action("Select Sub Tune", FileTypeSID :: execute_st, this, (void *)SIDFILE_SHOW_SUB ));
+    return 2;
 }
 
-FileDirEntry *FileTypeSID :: test_type(CachedTreeNode *obj)
+FileType *FileTypeSID :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "SID")==0)
-        return new FileTypeSID(obj->parent, inf);
+        return new FileTypeSID(obj);
     return NULL;
 }
 
@@ -144,12 +140,11 @@ void FileTypeSID :: execute(int selection)
     } else if(selection == SIDFILE_PLAY_MAIN) {
 		error = prepare(true);
 	} else if((selection >= SIDFILE_PLAY_TUNE) && (selection <= SIDFILE_PLAY_LAST)) {
-		song = WORD(selection) - SIDFILE_PLAY_TUNE;
+		song = uint16_t(selection) - SIDFILE_PLAY_TUNE;
 		error = prepare(false);
 	} else if(selection == SIDFILE_LOADNRUN) {
 		load();
 	} else {
-		FileDirEntry :: execute(selection);
 		return;
 	}
 	if(error)
@@ -159,22 +154,22 @@ void FileTypeSID :: execute(int selection)
 int FileTypeSID :: prepare(bool use_default)
 {
     if(use_default) {
-        printf("PREPARE DEFAULT SONG in %s.\n", get_name());
+        printf("PREPARE DEFAULT SONG in %s.\n", node->get_name());
     } else {
-	   printf("PREPARE SONG #%d in %s.\n", song, get_name());
+	   printf("PREPARE SONG #%d in %s.\n", song, node->get_name());
 	}
 	
 	FileInfo *info;
-	UINT bytes_read;
-	WORD *pus;
-	WORD offset;
+	uint32_t bytes_read;
+	uint16_t *pus;
+	uint16_t offset;
 	int  error = 0;
 	int  length;
 	
 	// reload header, reset state of file
 	uint32_t *magic = (uint32_t *)sid_header;
 	if(!file)
-		file = root.fopen(this, FA_READ);
+		file = fm->fopen_node(node, FA_READ);
 	if(!file) {
 		error = 1;
 		goto handle_error;
@@ -195,7 +190,7 @@ int FileTypeSID :: prepare(bool use_default)
 
 	// extract default song
 	if(use_default) {
-		pus = (WORD *)&sid_header[0x10];
+		pus = (uint16_t *)&sid_header[0x10];
 		song = *pus;
 		printf("Default song = %d\n", song);
 		if(!song)
@@ -203,17 +198,17 @@ int FileTypeSID :: prepare(bool use_default)
 	}
 	
 	// write back the default song, for some players that only look here
-	pus = (WORD *)&sid_header[0x10];
+	pus = (uint16_t *)&sid_header[0x10];
 	*pus = song-1;
 
 	// get offset, file start, file end, update header.
-	pus = (WORD *)&sid_header[0x06];
+	pus = (uint16_t *)&sid_header[0x06];
 	offset = *pus;
 	if(file->seek(offset) != FR_OK) {
 		error = 2;
 		goto handle_error;
 	}
-    pus = (WORD *)&sid_header[0x08];
+    pus = (uint16_t *)&sid_header[0x08];
     start = *pus;
     if(start == 0) {
     	if(file->read(&start, 2, &bytes_read) != FR_OK) {
@@ -223,14 +218,14 @@ int FileTypeSID :: prepare(bool use_default)
     }
     start = le2cpu(start);
 
-	info = file->node->get_file_info();
+	info = node->get_file_info();
 	if(!info) {
 		error = 5;
 		goto handle_error;
 	}
 	length = (info->size - offset) - 2;
 	end = start + length;
-	pus = (WORD *)&sid_header[0x7e];
+	pus = (uint16_t *)&sid_header[0x7e];
 	*pus = cpu2le(end);
 
 	// Now determine where to put the SID player header
@@ -264,13 +259,13 @@ int FileTypeSID :: prepare(bool use_default)
 				error = 6;
 				goto handle_error;
 			}
-            player = ((WORD)sid_header[0x78]) << 8;
+            player = ((uint16_t)sid_header[0x78]) << 8;
         }            
     }
     printf("Player address: %04x.\n", player);
 
 	// convert big endian to little endian format
-	pus = (WORD *)&sid_header[4];
+	pus = (uint16_t *)&sid_header[4];
 	for(int i=0;i<7;i++,pus++)
 		*pus = swap(*pus);
 
@@ -301,7 +296,7 @@ int FileTypeSID :: prepare(bool use_default)
 handle_error:
     printf("Error = %d... ", error);
 	if(file)
-		root.fclose(file);
+		fm->fclose(file);
 	return error;
 }
 
@@ -330,7 +325,7 @@ char *SidTune :: get_display_string()
 // file is open, and positioned at data position
 void FileTypeSID :: load(void)
 {
-	UINT bytes_read;
+	uint32_t bytes_read;
 	
 	// handshake with sid player cart
 	c64->stop(false);
@@ -345,7 +340,7 @@ void FileTypeSID :: load(void)
 		timeout++;
 		if(timeout == 30) {
             printf("Time out!\n");
-			root.fclose(file);
+			fm->fclose(file);
 			file = NULL;
 			c64->init_cartridge();
 			return;
@@ -396,7 +391,7 @@ void FileTypeSID :: load(void)
     
 	c64->resume();
 
-	root.fclose(file);
+	fm->fclose(file);
 	file = NULL;
 
 	wait_ms(400);

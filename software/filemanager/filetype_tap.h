@@ -1,19 +1,21 @@
 #ifndef FILETYPE_TAP_H
 #define FILETYPE_TAP_H
 
-#include "file_direntry.h"
-#include "file_system.h"
+#include "filetypes.h"
+#include "filemanager.h"
 
-
-class FileTypeTap : public FileDirEntry
+class FileTypeTap : public FileType
 {
+	CachedTreeNode *node;
+	File *file;
+	void closeFile();
 public:
-    FileTypeTap(CachedTreeNode *par, FileInfo *fi);
+    FileTypeTap(CachedTreeNode *par);
     ~FileTypeTap();
 
-    int   fetch_children(void) { return -1; }
-    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
-    FileDirEntry *test_type(CachedTreeNode *obj);
+    int   fetch_context_items(IndexedList<Action *> &list);
+    static FileType *test_type(CachedTreeNode *obj);
+    static void execute_st(void *, void *);
     void execute(int);
 };
 

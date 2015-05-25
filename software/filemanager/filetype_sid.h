@@ -1,29 +1,28 @@
 #ifndef FILETYPE_SID_H
 #define FILETYPE_SID_H
 
-#include "file_direntry.h"
-#include "file_system.h"
+#include "filetypes.h"
+#include "filemanager.h"
 
-
-class FileTypeSID : public FileDirEntry
+class FileTypeSID : public FileType
 {
+	FileManager *fm;
+	CachedTreeNode *node;
 	File *file;
 	uint8_t sid_header[0x80];
-	WORD song;
-	WORD start;
-	WORD end;
-	WORD player;
+	uint16_t song;
+	uint16_t start;
+	uint16_t end;
+	uint16_t player;
 	int  prepare(bool);
 	void load(void);
 public:
-    FileTypeSID(FileTypeFactory &fac);
-    FileTypeSID(CachedTreeNode *par, FileInfo *fi);
+    FileTypeSID(CachedTreeNode *n);
     ~FileTypeSID();
 
     int   fetch_children(void);
-	int   get_header_lines(void) { return 3; }
-    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
-    FileDirEntry *test_type(CachedTreeNode *obj);
+    int   fetch_context_items(IndexedList<Action *> &list);
+    static FileType *test_type(CachedTreeNode *obj);
     void execute(int);
 };
 

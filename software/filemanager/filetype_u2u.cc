@@ -33,7 +33,7 @@ extern "C" {
 }
 
 // tester instance
-FileTypeUpdate tester_u2u(file_type_factory);
+FactoryRegistrator<CachedTreeNode *, FileType *> tester_u2u(Globals :: getFileTypeFactory(), FileTypeUpdate :: test_type);
 
 #define UPDATE_RUN 0x7501
 
@@ -41,35 +41,30 @@ FileTypeUpdate tester_u2u(file_type_factory);
 /* Update File Browser Handling                              */
 /*************************************************************/
 
-FileTypeUpdate :: FileTypeUpdate(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
+FileTypeUpdate :: FileTypeUpdate(CachedTreeNode *node)
 {
-    fac.register_type(this);
-}
-
-FileTypeUpdate :: FileTypeUpdate(CachedTreeNode *par, FileInfo *fi) : FileDirEntry(par, fi)
-{
-    printf("Creating Update type from info: %s\n", fi->lfname);
+    this->node = node;
+	printf("Creating Update type from info: %s\n", node->get_name());
 }
 
 FileTypeUpdate :: ~FileTypeUpdate()
 {
-    printf("Destructor of FileTypeUpdate.\n");
 }
 
 
-int FileTypeUpdate :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
+int FileTypeUpdate :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;
-	list.append(new MenuItem(this, "Run Update", UPDATE_RUN ));
+	list.append(new Action("Run Update", FileTypeUpdate :: execute, node, (void *)UPDATE_RUN ));
 	count++;
-    return count + FileDirEntry :: fetch_context_items_actual(list);
+    return count;
 }
 
-FileDirEntry *FileTypeUpdate :: test_type(CachedTreeNode *obj)
+FileType *FileTypeUpdate :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "U2U")==0)
-        return new FileTypeUpdate(obj->parent, inf);
+        return new FileTypeUpdate(obj);
     return NULL;
 }
 
@@ -85,10 +80,10 @@ void jump_run(uint32_t a)
     	;
 }
 
-void FileTypeUpdate :: execute(int selection)
+void FileTypeUpdate :: execute(void *obj, void *param)
 {
 	File *file;
-	UINT bytes_read;
+	uint32_t bytes_read;
 	bool progress;
 	int sectors;
     int secs_per_step;
@@ -99,49 +94,45 @@ void FileTypeUpdate :: execute(int selection)
 	static char buffer[36];
     uint8_t *dest;
 
-	switch(selection) {
-	case UPDATE_RUN:
-        sectors = (info->size >> 9);
-        if(sectors >= 128)
-            progress = true;
-        secs_per_step = (sectors + 31) >> 5;
-        bytes_per_step = secs_per_step << 9;
-        remain = info->size;
+    CachedTreeNode *node = (CachedTreeNode *)obj;
+    FileManager *fm = FileManager :: getFileManager();
 
-		printf("Update Load.. %s\n", get_name());
-		file = root.fopen(this, FA_READ);
-		if(file) {
-            total_bytes_read = 0;
-			// load file in REU memory
-            if(progress) {
-                user_interface->show_progress("Loading Update..", 32);
-                dest = (uint8_t *)(REU_MEMORY_BASE);
-                while(remain >= 0) {
-        			file->read(dest, bytes_per_step, &bytes_read);
-                    total_bytes_read += bytes_read;
-                    user_interface->update_progress(NULL, 1);
-        			remain -= bytes_per_step;
-        			dest += bytes_per_step;
-        	    }
-        	    user_interface->hide_progress();
-        	} else {
-    			file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
-                total_bytes_read += bytes_read;
-    	    }
-			root.fclose(file);
-			file = NULL;
-			if ((*(uint32_t *)REU_MEMORY_BASE) != 0x3021FFD8) {
-				user_interface->popup("Signature check failed.", BUTTON_OK);
-			} else {
-				jump_run(REU_MEMORY_BASE);
+	sectors = (node->get_file_info()->size >> 9);
+	if(sectors >= 128)
+		progress = true;
+	secs_per_step = (sectors + 31) >> 5;
+	bytes_per_step = secs_per_step << 9;
+	remain = node->get_file_info()->size;
+
+	printf("Update Load.. %s\n", node->get_name());
+	file = fm->fopen_node(node, FA_READ);
+	if(file) {
+		total_bytes_read = 0;
+		// load file in REU memory
+		if(progress) {
+			user_interface->show_progress("Loading Update..", 32);
+			dest = (uint8_t *)(REU_MEMORY_BASE);
+			while(remain >= 0) {
+				file->read(dest, bytes_per_step, &bytes_read);
+				total_bytes_read += bytes_read;
+				user_interface->update_progress(NULL, 1);
+				remain -= bytes_per_step;
+				dest += bytes_per_step;
 			}
+			user_interface->hide_progress();
 		} else {
-			printf("Error opening file.\n");
+			file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
+			total_bytes_read += bytes_read;
 		}
-        break;
-	default:
-		FileDirEntry :: execute(selection);
-		break;
+		fm->fclose(file);
+		file = NULL;
+		if ((*(uint32_t *)REU_MEMORY_BASE) != 0x3021FFD8) {
+			user_interface->popup("Signature check failed.", BUTTON_OK);
+		} else {
+			jump_run(REU_MEMORY_BASE);
+		}
+	} else {
+		printf("Error opening file.\n");
 	}
 }
 

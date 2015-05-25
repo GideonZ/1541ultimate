@@ -1,20 +1,21 @@
 #ifndef FILETYPE_REU_H
 #define FILETYPE_REU_H
 
-#include "file_direntry.h"
+#include "filetypes.h"
+#include "filemanager.h"
 
-class FileTypeREU : public FileDirEntry
+class FileTypeREU : public FileType
 {
-    int type;
+	CachedTreeNode *node;
+	int type;
 public:
-    FileTypeREU(FileTypeFactory &fac);
-    FileTypeREU(CachedTreeNode *par, FileInfo *fi, int);
+    FileTypeREU(CachedTreeNode *par, int);
     ~FileTypeREU();
 
-    int   fetch_children(void);
-    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
-    FileDirEntry *test_type(CachedTreeNode *obj);
+    int   fetch_context_items(IndexedList<Action *> &list);
+    static FileType *test_type(CachedTreeNode *obj);
 
+    static void execute_st(void *obj, void *param);
     void  execute(int selection);
 };
 

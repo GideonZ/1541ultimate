@@ -6,7 +6,7 @@
 #include "userinterface.h"
 
 // tester instance
-FileTypeREU tester_reu(file_type_factory);
+FactoryRegistrator<CachedTreeNode *, FileType *> tester_reu(Globals :: getFileTypeFactory(), FileTypeREU :: test_type);
 
 // cart definition
 extern uint8_t _binary_module_bin_start;
@@ -21,16 +21,10 @@ cart_def mod_cart  = { 0x00, (void *)0, 0x4000, 0x02 | CART_REU | CART_RAM };
 #define REU_TYPE_REU 0
 #define REU_TYPE_MOD 1
 
-FileTypeREU :: FileTypeREU(FileTypeFactory &fac) : FileDirEntry(NULL, (FileInfo *)NULL)
+FileTypeREU :: FileTypeREU(CachedTreeNode *node, int type)
 {
-    fac.register_type(this);
-    info = NULL;
-    type = 0;
-}
-
-FileTypeREU :: FileTypeREU(CachedTreeNode *par, FileInfo *fi, int type) : FileDirEntry(par, fi)
-{
-    printf("Creating REU type from info: %s\n", fi->lfname);
+    printf("Creating REU type from info: %s\n", node->get_name());
+    this->node = node;
     this->type = type;
 }
 
@@ -38,30 +32,32 @@ FileTypeREU :: ~FileTypeREU()
 {
 }
 
-int FileTypeREU :: fetch_children(void)
+void FileTypeREU :: execute_st(void *obj, void *param)
 {
-  return -1;
+	// fall through in original execute method
+	((FileTypeREU *)obj)->execute((int)param);
 }
 
-int FileTypeREU :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
+int FileTypeREU :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 1;
-    list.append(new MenuItem(this, "Load into REU", REUFILE_LOAD));
+
+    list.append(new Action("Load into REU", FileTypeREU :: execute_st, this, (void *)REUFILE_LOAD));
     uint32_t capabilities = getFpgaCapabilities();
     if ((type == REU_TYPE_MOD) && (capabilities & CAPAB_SAMPLER)) {
-        list.append(new MenuItem(this, "Play MOD", REUFILE_PLAYMOD));
+        list.append(new Action("Play MOD", FileTypeREU :: execute_st, this, (void *)REUFILE_PLAYMOD));
         count++;
     }
-    return count + FileDirEntry :: fetch_context_items_actual(list);
+    return count;
 }
 
-FileDirEntry *FileTypeREU :: test_type(CachedTreeNode *obj)
+FileType *FileTypeREU :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "REU")==0)
-        return new FileTypeREU(obj->parent, inf, REU_TYPE_REU);
+        return new FileTypeREU(obj, REU_TYPE_REU);
     if(strcmp(inf->extension, "MOD")==0)
-        return new FileTypeREU(obj->parent, inf, REU_TYPE_MOD);
+        return new FileTypeREU(obj, REU_TYPE_MOD);
     return NULL;
 }
 
@@ -69,7 +65,7 @@ void FileTypeREU :: execute(int selection)
 {
 	printf("REU Select: %4x\n", selection);
 	File *file;
-	UINT bytes_read;
+	uint32_t bytes_read;
 	bool progress;
 	int sectors;
     int secs_per_step;
@@ -79,8 +75,10 @@ void FileTypeREU :: execute(int selection)
     
 	static char buffer[36];
     uint8_t *dest;
-    
-	switch(selection) {
+    FileInfo *info = node->get_file_info();
+    FileManager *fm = FileManager :: getFileManager();
+
+    switch(selection) {
     case REUFILE_PLAYMOD:
         audio_configurator.clear_sampler_registers();
         // fallthrough
@@ -94,8 +92,8 @@ void FileTypeREU :: execute(int selection)
         bytes_per_step = secs_per_step << 9;
         remain = info->size;
         
-		printf("REU Load.. %s\n", get_name());
-		file = root.fopen(this, FA_READ);
+		printf("REU Load.. %s\n", node->get_name());
+		file = fm->fopen_node(node, FA_READ);
 		if(file) {
             total_bytes_read = 0;
 			// load file in REU memory
@@ -114,7 +112,7 @@ void FileTypeREU :: execute(int selection)
     			file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
                 total_bytes_read += bytes_read;
     	    }
-			root.fclose(file);
+			fm->fclose(file);
 			file = NULL;
             if (selection == REUFILE_LOAD) {
     			sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
@@ -132,6 +130,6 @@ void FileTypeREU :: execute(int selection)
 		}
         break;
 	default:
-		FileDirEntry :: execute(selection);
+		break;
     }
 }

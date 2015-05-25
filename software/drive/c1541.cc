@@ -507,6 +507,8 @@ void C1541 :: executeCommand(t_drive_command *drive_command)
 	case D64FILE_MOUNT:
 	case G64FILE_RUN:
 	case G64FILE_MOUNT:
+	case MENU_1541_MOUNT:
+	case MENU_1541_MOUNT_GCR:
         protect = (drive_command->node->get_file_info()->attrib & AM_RDO);
         flags = (protect)?(FA_READ):(FA_READ | FA_WRITE);
         break;
@@ -561,7 +563,12 @@ void C1541 :: executeCommand(t_drive_command *drive_command)
 			printf("Error opening file.\n");
 		}
 		break;
+	case MENU_1541_MOUNT:
+		newFile = fm->fopen_node(drive_command->node, flags);
+		mount_d64(protect, newFile);
+		break;
 	case MENU_1541_MOUNT_GCR:
+		newFile = fm->fopen_node(drive_command->node, flags);
 		mount_g64(protect, newFile);
 		break;
 	case MENU_1541_UNLINK:
@@ -583,9 +590,10 @@ void C1541 :: executeCommand(t_drive_command *drive_command)
         mount_blank();
         break;
     case MENU_1541_SAVED64:
+        save_disk_to_file(false);
+        break;
     case MENU_1541_SAVEG64:
-        g64 = (drive_command->command == MENU_1541_SAVEG64);
-        save_disk_to_file(g64);
+        save_disk_to_file(true);
         break;
 	default:
 		printf("Unhandled menu item for C1541.\n");

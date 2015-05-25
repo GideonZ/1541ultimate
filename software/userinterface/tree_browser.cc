@@ -48,12 +48,14 @@ TreeBrowser :: TreeBrowser(Browsable *root)
     quick_seek_length = 0;
     quick_seek_string[0] = '\0';
     this->root = root;
+    state = 0;
     //path = file_manager.get_new_path("Tree Browser");
 }
 
 TreeBrowser :: ~TreeBrowser()
 {
-	delete state;
+	if(state)
+		delete state;
 	//file_manager.release_path(path);
 }
 
@@ -62,7 +64,8 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 	this->screen = screen;
 	window = new Window(screen, 0, 2, 40, 22);
 	keyb = k;
-    state = new TreeBrowserState(root, this, 0);
+	if(!state)
+		state = new TreeBrowserState(root, this, 0);
     state->reload();
 	state->do_refresh();
 }

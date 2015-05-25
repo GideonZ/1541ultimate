@@ -1,21 +1,21 @@
 #ifndef FILETYPE_U2U_H
 #define FILETYPE_U2U_H
 
-#include "file_direntry.h"
-#include "file_system.h"
+#include "filetypes.h"
+#include "filemanager.h"
 
 
-class FileTypeUpdate : public FileDirEntry
+class FileTypeUpdate : public FileType
 {
+	CachedTreeNode *node;
 public:
-	FileTypeUpdate(FileTypeFactory &fac);
-	FileTypeUpdate(CachedTreeNode *par, FileInfo *fi);
+	FileTypeUpdate(CachedTreeNode *par);
     ~FileTypeUpdate();
 
-    int   fetch_children(void) { return -1; }
-    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
-    FileDirEntry *test_type(CachedTreeNode *obj);
-    void execute(int);
+    int   fetch_context_items(IndexedList<Action *> &list);
+    static FileType *test_type(CachedTreeNode *obj);
+
+    static void execute(void *obj, void *param);
 };
 
 
