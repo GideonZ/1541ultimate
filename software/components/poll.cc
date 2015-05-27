@@ -4,7 +4,6 @@
 #include "fifo.h"
 #include "indexed_list.h"
 #include "init_function.h"
-#include "globals.h"
 
 #ifdef OS
 #include "FreeRTOS.h"

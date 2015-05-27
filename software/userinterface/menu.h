@@ -11,12 +11,17 @@
 #include "action.h"
 #include "indexed_list.h"
 #include "event.h"
+#include "globals.h"
 
 class ObjectWithMenu
 {
 public:
-	ObjectWithMenu() {}
-	virtual ~ObjectWithMenu() {}
+	ObjectWithMenu() {
+		Globals :: getObjectsWithMenu() -> append(this);
+	}
+	virtual ~ObjectWithMenu() {
+		Globals :: getObjectsWithMenu() -> remove(this);
+	}
 
     virtual int fetch_task_items(IndexedList<Action*> &item_list) { return 0; }
 };

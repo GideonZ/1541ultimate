@@ -283,7 +283,8 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
     signal io_req_debug     : t_io_req;
     signal io_resp_debug    : t_io_resp := c_io_resp_init;
-
+    signal io_irq           : std_logic;
+    
     -- Audio routing
     signal pwm              : std_logic;
     signal pwm_2            : std_logic := '0';
@@ -332,6 +333,8 @@ architecture logic of ultimate_logic_32 is
     signal trigger_1        : std_logic;
     signal trigger_2        : std_logic;
     signal sys_irq_usb      : std_logic;
+    signal sys_irq_tape     : std_logic;
+    signal sys_irq_iec      : std_logic;
     signal invalidate       : std_logic;
     signal inv_addr         : std_logic_vector(31 downto 0);
     signal stuck            : std_logic;
@@ -346,7 +349,7 @@ begin
         clock       => sys_clock,
         reset       => sys_reset,
         
-        irq_i       => cpu_io_resp.irq,
+        irq_i       => io_irq,
         invalidate  => invalidate,
         inv_addr    => inv_addr,
         
@@ -399,8 +402,10 @@ begin
         irq_in(6)   => button(1),
         irq_in(5)   => button(0),
         irq_in(4)   => c64_irq,
-        irq_in(3)   => '0',
+        irq_in(3)   => sys_irq_tape,
         irq_in(2)   => sys_irq_usb,
+        
+        irq_out     => io_irq,
         
         irq_flags   => profiler_irq_flags,
 
@@ -859,6 +864,7 @@ begin
             data_i          => data_i,
             data_o          => hw_data_o,
         
+            irq             => sys_irq_iec, -- TODO: is not connected anywhere
             req             => io_req_iec,
             resp            => io_resp_iec );
     end generate;
@@ -886,6 +892,7 @@ begin
             clock           => sys_clock,
             reset           => sys_reset,
         
+            irq             => sys_irq_tape,
             req             => io_req_c2n_rec,
             resp            => io_resp_c2n_rec,
 

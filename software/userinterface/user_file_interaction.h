@@ -11,7 +11,7 @@
 #include "userinterface.h"
 #include "c1541.h"
 
-class UserFileInteraction {
+class UserFileInteraction : public ObjectWithMenu {
 public:
 	UserFileInteraction();
 	virtual ~UserFileInteraction();

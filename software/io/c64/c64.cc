@@ -160,8 +160,6 @@ C64 :: C64()
 
     if(C64_CLOCK_DETECT == 0)
         printf("No PHI2 clock detected.. Stand alone mode.\n");
-	else
-		Globals :: getObjectsWithMenu() -> append(this);
 	
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;

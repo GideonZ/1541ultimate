@@ -146,7 +146,6 @@ IecInterface :: IecInterface()
         return;
 
     MainLoop :: addPollFunction(poll_iec_interface);
-	Globals :: getObjectsWithMenu() -> append(this);
     register_store(0x49454300, "Software IEC Settings", iec_config);
 
     HW_IEC_RESET_ENABLE = 0; // disable
@@ -184,7 +183,7 @@ IecInterface :: ~IecInterface()
     for(int i=0;i<16;i++)
         delete channels[i];
     fm->release_path(path);
-	Globals :: getObjectsWithMenu() -> remove(this);
+	// Globals :: getObjectsWithMenu() -> remove(this);
     MainLoop :: removePollFunction(poll_iec_interface);
 }
 

@@ -14,6 +14,7 @@ port (
     
     req             : in  t_io_req;
     resp            : out t_io_resp;
+    irq             : out std_logic;
     
     phi2_tick       : in  std_logic;
     c64_stopped		: in  std_logic;
@@ -119,7 +120,7 @@ begin
                 end if;
             end if;
 
-            resp.irq <= irq_en and fifo_almostfull;
+            irq <= irq_en and fifo_almostfull;
             
             -- listening process
             if stream_en='1' then

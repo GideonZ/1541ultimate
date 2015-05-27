@@ -23,7 +23,8 @@ port (
                     
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
-
+    irq_out         : out std_logic;
+    
     irq_timer_tick  : in  std_logic := '0';
     irq_in          : in  std_logic_vector(7 downto 2);
     irq_flags       : out std_logic_vector(7 downto 0);
@@ -60,6 +61,8 @@ architecture gideon of itu is
     signal irq_edge_flag    : std_logic_vector(7 downto 0);
     signal irq_active       : std_logic_vector(7 downto 0);
     
+    signal uart_irq         : std_logic;
+
     signal io_req_it        : t_io_req;
     signal io_resp_it       : t_io_resp;
     signal io_req_uart      : t_io_req;
@@ -98,7 +101,7 @@ begin
             end if;
 
             irq_c(7 downto 2) <= irq_in(7 downto 2);
-            irq_c(1) <= io_resp_uart.irq;
+            irq_c(1) <= uart_irq;
             irq_c(0) <= '0';
             if irq_timer_en='1' then
                 if irq_timer_cnt = 0 then
@@ -220,10 +223,10 @@ begin
             end loop;
             irq_edge_flag <= new_irq_edge_flag;
             
-            io_resp_it.irq <= '0';
+            irq_out <= '0';
             if irq_en = '1' then
                 if (irq_active and imask) /= X"00" then
-                    io_resp_it.irq <= '1';
+                    irq_out <= '1';
                 end if;
             end if;
                             
@@ -275,6 +278,7 @@ begin
             
             io_req      => io_req_uart,
             io_resp     => io_resp_uart,
+            irq         => uart_irq,
             
             rts         => uart_rts,
             cts         => uart_cts,

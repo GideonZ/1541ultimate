@@ -48,7 +48,6 @@ CommandInterface :: CommandInterface()
         CMD_IF_SLOT_ENABLE = 0; // DISABLE until we know we can enable ourselves: cfg->get_value(CFG_CMD_ENABLE);
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
         MainLoop :: addPollFunction(poll_command_interface);
-    	Globals :: getObjectsWithMenu() -> append(this);
     
         // dump_registers();
     

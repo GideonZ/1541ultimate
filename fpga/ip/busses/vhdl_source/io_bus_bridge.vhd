@@ -96,7 +96,6 @@ begin
     
     resp_a.data <= X"00" when resp_ackr = '0' else from_rd_dout;
     resp_a.ack  <= resp_ack;
-    resp_a.irq  <= '0';
     
     process (state_a, to_wr_full, from_rd_empty, req_a)
     begin

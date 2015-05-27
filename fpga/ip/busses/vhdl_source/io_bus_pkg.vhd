@@ -14,7 +14,6 @@ package io_bus_pkg is
     type t_io_resp is record
         data    : std_logic_vector(7 downto 0);
         ack     : std_logic;
-        irq     : std_logic;
     end record;
 
     constant c_io_req_init : t_io_req := (
@@ -25,7 +24,6 @@ package io_bus_pkg is
      
     constant c_io_resp_init : t_io_resp := (
         data    => X"00",
-        irq     => '0',
         ack     => '0' );
         
     type t_io_req_array is array(natural range <>) of t_io_req;
@@ -41,7 +39,6 @@ package body io_bus_pkg is
         ret := c_io_resp_init;
         for i in ar'range loop
             ret.ack := ret.ack or ar(i).ack;
-            ret.irq := ret.irq or ar(i).irq;
             ret.data := ret.data or ar(i).data;
         end loop;
         return ret;        

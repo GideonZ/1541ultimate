@@ -19,7 +19,8 @@ port (
     
     req             : in  t_io_req;
     resp            : out t_io_resp;
-
+    irq             : out std_logic;
+    
     clk_o           : out std_logic;
     clk_i           : in  std_logic;
     data_o          : out std_logic;
@@ -248,7 +249,7 @@ begin
             if irq_event='1' then
                 irq_status <= '1';
             end if;
-            resp.irq <= irq_enable and irq_status;
+            irq <= irq_enable and irq_status;
             
             if reset='1' then
                 proc_reset <= '1';

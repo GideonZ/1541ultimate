@@ -39,7 +39,6 @@ TapeRecorder :: TapeRecorder()
 	file = NULL;
 	stop(REC_ERR_OK);
     MainLoop :: addPollFunction(poll_tape_rec);
-	Globals :: getObjectsWithMenu() -> append(this);
 	
 	cache = new uint8_t[REC_CACHE_SIZE];
     for(int i=0;i<REC_NUM_CACHE_BLOCKS;i++) {
@@ -50,7 +49,6 @@ TapeRecorder :: TapeRecorder()
 TapeRecorder :: ~TapeRecorder()
 {
     MainLoop :: removePollFunction(poll_tape_rec);
-	Globals :: getObjectsWithMenu() -> remove(this);
 	stop(REC_ERR_OK);
     delete[] cache;
 }

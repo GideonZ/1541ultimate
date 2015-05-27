@@ -474,5 +474,4 @@ begin
     slot_resp.data(0) <= '0';
     
     slot_resp.reg_output <= '1' when (slot_addr(8 downto 1)="00000000") and (cart_logic_d = c_retro) else '0';
-    slot_resp.irq <= '0';
 end gideon;

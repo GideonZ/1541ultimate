@@ -22,13 +22,11 @@ TapeController :: TapeController()
 	blockBuffer = new uint8_t[512];
 	stop();
     MainLoop :: addPollFunction(poll_static);
-	Globals :: getObjectsWithMenu() -> append(this);
 }
 
 TapeController :: ~TapeController()
 {
     MainLoop :: removePollFunction(poll_static);
-	Globals :: getObjectsWithMenu() -> remove(this);
 	delete blockBuffer;
 }
 

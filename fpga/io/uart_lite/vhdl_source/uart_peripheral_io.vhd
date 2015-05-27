@@ -15,6 +15,7 @@ port (
 	
     io_req      : in  t_io_req;
     io_resp     : out t_io_resp;
+	irq         : out std_logic;
 	
 	txd			: out std_logic;
 	rxd			: in  std_logic := '1';
@@ -158,9 +159,9 @@ begin
 			end if;
 
             if (flags(7 downto 6) and imask) /= "00" then
-            	io_resp.irq <= '1';
+            	irq <= '1';
             else
-                io_resp.irq <= '0';
+                irq <= '0';
             end if;
 
 

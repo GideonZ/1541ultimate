@@ -55,7 +55,8 @@ architecture arch of mblite_sdram is
     signal reset       : std_logic := '0';
     signal inhibit     : std_logic := '0';
     signal is_idle     : std_logic := '0';
-
+    signal irq         : std_logic;
+    
     signal mem_req_32_cpu   : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_32_cpu  : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_req_32_test  : t_mem_req_32 := c_mem_req_32_init;
@@ -92,7 +93,7 @@ begin
     port map(
         clock      => clock,
         reset      => reset,
-        irq_i      => io_resp.irq,
+        irq_i      => irq,
         irq_o      => open,
         invalidate => invalidate,
         inv_addr   => inv_addr,
@@ -166,6 +167,7 @@ begin
         io_resp        => io_resp,
         irq_timer_tick => '0',
         irq_in         => "000000",
+        irq_out        => irq,
         uart_txd       => txd,
         uart_rxd       => rxd );
 

@@ -26,6 +26,7 @@ port (
     mem_req     : out t_mem_req;
     mem_resp    : in  t_mem_resp;
     
+    irq         : in  std_logic;
     io_req      : out t_io_req;
     io_resp     : in  t_io_resp );
 
@@ -72,7 +73,7 @@ begin
     port map (
         clock        => clock,
         reset        => reset_cpu,
-        interrupt_i  => io_resp.irq,
+        interrupt_i  => irq,
         break_o      => break_o_i,
 
         mem_address  => cpu_address,

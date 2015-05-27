@@ -108,7 +108,6 @@ C1541 :: C1541(volatile uint8_t *regs, char letter)
 //	    flash->read_image(FLASH_ID_SOUNDS, audio_address, 0x4800);
         memcpy(audio_address, &_binary_sounds_bin_start, 0x4800);
 	}    
-	Globals ::getObjectsWithMenu() -> append(this);
     drive_name = "Drive ";
     drive_name += letter;
 
@@ -131,7 +130,6 @@ C1541 :: ~C1541()
 	if(bin_image)
 		delete bin_image;
 
-	Globals ::getObjectsWithMenu() -> remove(this);
 
 	if(mount_file)
 		fm->fclose(mount_file);

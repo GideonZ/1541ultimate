@@ -163,7 +163,6 @@ begin
     bram_reset <= not sys_enable;
 
     sys_io_resp_bram.data <= bram_data when sys_io_resp_bram.ack = '1' else X"00";
-    sys_io_resp_bram.irq <= '0';
             
     process(sys_clock)
     begin

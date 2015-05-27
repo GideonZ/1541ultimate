@@ -10,16 +10,20 @@
 
 #include "indexed_list.h"
 #include "factory.h"
-#include "cached_tree_node.h"
+//#include "cached_tree_node.h"
 //#include "filemanager.h"
-#include "partition.h"
-#include "indexed_list.h"
-#include "event.h"
-#include "config.h"
-#include "menu.h"
-#include "filetypes.h"
+//#include "partition.h"
+//#include "indexed_list.h"
+//#include "event.h"
+//#include "config.h"
+//#include "menu.h"
+//#include "filetypes.h"
 
-typedef void(*PollFunction)(Event&);
+class ObjectWithMenu;
+class CachedTreeNode;
+class FileType;
+class Partition;
+class FileSystem;
 
 class Globals
 {
@@ -40,8 +44,6 @@ public:
 		static Factory<Partition *, FileSystem *> file_system_factory;
 		return &file_system_factory;
 	}
-
-
 };
 
 
