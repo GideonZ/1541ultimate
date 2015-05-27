@@ -7,6 +7,7 @@
 extern "C" void main_loop(void *a);
 
 typedef void(*PollFunction)(Event&);
+typedef void(*FunctionCall)(void *);
 
 void nop(Event& e);
 

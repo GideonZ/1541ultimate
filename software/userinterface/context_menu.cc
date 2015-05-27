@@ -20,6 +20,9 @@ ContextMenu :: ContextMenu(Contextable *node, int initial, int y) : actions(2, 0
 
 ContextMenu :: ~ContextMenu(void)
 {
+	for(int i=0;i<actions.get_elements();i++) {
+		delete actions[i];
+	}
 }
 
 void ContextMenu :: init(Window *parwin, Keyboard *key)

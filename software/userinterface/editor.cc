@@ -99,7 +99,7 @@ void Editor :: init(Screen *scr, Keyboard *key)
     printf("Line length: %d. Height: %d\n", line_length, height);
     
     window = new Window(screen, 0, 2, line_length, height);
-    window->set_color(14);
+    window->set_color(user_interface->color_fg);
     window->draw_border();
     height -= 2;
     first_line = 0;

@@ -77,7 +77,7 @@ void TreeBrowserState :: do_refresh()
         if(initial_index > 0)
         	target_index = initial_index;
 
-        for(int i=initial_index;i<children.get_elements();i++) {
+        for(int i=target_index;i<children.get_elements();i++) {
 			if (children[i]->isSelectable()) {
 				target_index = i;
 				break;

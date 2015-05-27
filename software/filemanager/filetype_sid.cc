@@ -1,9 +1,11 @@
+#include <stdio.h>
 #include "filetype_sid.h"
 #include "filemanager.h"
 #include "c64.h"
 #include "flash.h"
 #include "menu.h"
 #include "userinterface.h"
+#include "stream_textlog.h"
 
 extern uint8_t _binary_sidcrt_65_start;
 //extern uint8_t _binary_sidcrt_65_end;
@@ -13,10 +15,9 @@ FactoryRegistrator<CachedTreeNode *, FileType *> tester_sid(Globals :: getFileTy
 
 #define SIDFILE_PLAY_MAIN 0x5301
 #define SIDFILE_PLAY_TUNE 0x5302
-// all codes starting from 0x5303 until 5401 are execution codes for a specific subtune 
+// all codes starting from 0x0000 until 0xFF are execution codes for a specific subtune
 #define SIDFILE_PLAY_LAST 0x5402
-#define SIDFILE_SHOW_SUB  0x5403
-#define SIDFILE_LOADNRUN  0x54FF
+#define SIDFILE_SHOW_INFO 0x5403
 
 const uint32_t magic_psid = 0x50534944; // big endian assumed
 const uint32_t magic_rsid = 0x52534944; // big endian assumed
@@ -43,6 +44,8 @@ FileTypeSID :: FileTypeSID(CachedTreeNode *node)
 	this->node = node;
 	printf("Creating SID type from info: %s\n", node->get_name());
     file = NULL;
+    header_valid = false;
+    numberOfSongs = 0;
 }
 
 FileTypeSID :: ~FileTypeSID()
@@ -51,18 +54,13 @@ FileTypeSID :: ~FileTypeSID()
 		fm -> fclose(file);
 }
 
-int FileTypeSID :: fetch_children(void)
+int FileTypeSID :: readHeader(void)
 {
     int b, i, entries;
     uint32_t bytes_read;
     uint32_t *magic;
 	FRESULT fres;
     
-	// if we fetched them, we don't need to do it again.
-	entries = children.get_elements();
-	if(entries)
-		return entries;
-
 	// if we didn't open the file yet, open it now
 	if(!file)
 		file = fm->fopen_node(node, FA_READ);
@@ -90,32 +88,50 @@ int FileTypeSID :: fetch_children(void)
         return -1;
     }
 
+    numberOfSongs = (int)sid_header[0x0f];
+	fm->fclose(file);
+	file = NULL;
+	header_valid = true;
+	return numberOfSongs;
+}
+
+void FileTypeSID :: showInfo()
+{
+	StreamTextLog stream(1024);
+
 	char new_name[36];
-	
-    for(b=0;b<3;b++) {
+    for(int b=0;b<3;b++) {
 		int len = string_offsets[b+1]-string_offsets[b];
         memcpy(new_name, &sid_header[string_offsets[b]], len);
 		new_name[len] = 0;
-        for(i=0;i<len;i++) {
-            new_name[i] |= 0x80;
-        }
-		children.append(new CachedTreeNode(this, new_name));
+		stream.format("%s\n", new_name);
     }    
+	stream.format("\nSID version: %b\n", sid_header[4]);
+    stream.format("\nNumber of songs: %d\n", numberOfSongs);
+	stream.format("Default song = %d\n", *((uint16_t *)&sid_header[0x10]));
 
-    // number of tunes is in 0x0F (assuming never more than 256 tunes)
-    for(b=1;b<=sid_header[0x0f];b++) {
-		children.append(new SidTune(this, b));
-    }
-	fm->fclose(file);
-	file = NULL;
-
-	return children.get_elements();
+	user_interface->run_editor(stream.getText());
+	// stream gets out of scope.
 }
 
 int FileTypeSID :: fetch_context_items(IndexedList<Action *> &list)
 {
-    list.append(new Action("Play Main Tune", FileTypeSID :: execute_st, this, (void *)SIDFILE_PLAY_MAIN ));
-    list.append(new Action("Select Sub Tune", FileTypeSID :: execute_st, this, (void *)SIDFILE_SHOW_SUB ));
+	if (!header_valid) {
+		readHeader();
+	}
+	if (!header_valid) {
+		return 0;
+	}
+	list.append(new Action("Play Main Tune", FileTypeSID :: execute_st, this, (void *)SIDFILE_PLAY_MAIN ));
+    list.append(new Action("Show Info", FileTypeSID :: execute_st, this, (void *)SIDFILE_SHOW_INFO ));
+    if (numberOfSongs > 1) {
+		char buffer[16];
+		for(int i=0;i<numberOfSongs;i++) {
+			sprintf(buffer, "Play Song %d", i+1);
+			list.append(new Action(buffer, FileTypeSID :: execute_st, this, (void *)(i+1) ));
+		}
+		return numberOfSongs + 2;
+    }
     return 2;
 }
 
@@ -127,6 +143,14 @@ FileType *FileTypeSID :: test_type(CachedTreeNode *obj)
     return NULL;
 }
 
+void FileTypeSID :: execute_st(void *obj, void *param) {
+	((FileTypeSID *)obj)->execute((int)param);
+}
+
+void FileTypeSID :: loadAndRun(void *obj) {
+	((FileTypeSID *)obj)->load();
+}
+
 void FileTypeSID :: execute(int selection)
 {
 	int error = 0;
@@ -135,25 +159,31 @@ void FileTypeSID :: execute(int selection)
 		"File type error", "Internal error",
 		"No memory location for player data" };
 		
-    if(selection == SIDFILE_SHOW_SUB) {
-        push_event(e_browse_into);
-    } else if(selection == SIDFILE_PLAY_MAIN) {
+    if(selection == SIDFILE_PLAY_MAIN) {
 		error = prepare(true);
-	} else if((selection >= SIDFILE_PLAY_TUNE) && (selection <= SIDFILE_PLAY_LAST)) {
-		song = uint16_t(selection) - SIDFILE_PLAY_TUNE;
+	} else if(selection == SIDFILE_SHOW_INFO) {
+		showInfo();
+	} else if(selection <= 0x100) {
+		song = uint16_t(selection);
 		error = prepare(false);
-	} else if(selection == SIDFILE_LOADNRUN) {
-		load();
 	} else {
 		return;
 	}
-	if(error)
+	if(error) {
+		printf("doing a popup with error %d\n", error);
 		user_interface->popup((char*)errors[error], BUTTON_OK);
+		printf("And closing the file after the error\n");
+		if(file) {
+			fm->fclose(file);
+		}
+	} else {
+		printf("no errors.\n");
+	}
 }
 
 int FileTypeSID :: prepare(bool use_default)
 {
-    if(use_default) {
+	if(use_default) {
         printf("PREPARE DEFAULT SONG in %s.\n", node->get_name());
     } else {
 	   printf("PREPARE SONG #%d in %s.\n", song, node->get_name());
@@ -162,7 +192,6 @@ int FileTypeSID :: prepare(bool use_default)
 	FileInfo *info;
 	uint32_t bytes_read;
 	uint16_t *pus;
-	uint16_t offset;
 	int  error = 0;
 	int  length;
 	
@@ -171,21 +200,17 @@ int FileTypeSID :: prepare(bool use_default)
 	if(!file)
 		file = fm->fopen_node(node, FA_READ);
 	if(!file) {
-		error = 1;
-		goto handle_error;
+		return 1;
 	}
 	if(file->seek(0) != FR_OK) {
-		error = 2;
-		goto handle_error;
+		return 2;
 	}
 	if(file->read(sid_header, 0x7E, &bytes_read) != FR_OK) {
-		error = 3;
-		goto handle_error;
+		return 3;
 	}
     if((*magic != magic_rsid)&&(*magic != magic_psid)) {
         printf("Filetype not as expected. (%08x)\n", *magic); 
-		error = 4;
-		goto handle_error;
+		return 4;
     }
 
 	// extract default song
@@ -203,25 +228,23 @@ int FileTypeSID :: prepare(bool use_default)
 
 	// get offset, file start, file end, update header.
 	pus = (uint16_t *)&sid_header[0x06];
-	offset = *pus;
+	offset = (uint32_t)*pus;
 	if(file->seek(offset) != FR_OK) {
-		error = 2;
-		goto handle_error;
+		return 2;
 	}
     pus = (uint16_t *)&sid_header[0x08];
     start = *pus;
     if(start == 0) {
     	if(file->read(&start, 2, &bytes_read) != FR_OK) {
-    		error = 3;
-    		goto handle_error;
+    		return 3;
     	}
     }
+    offset += 2;
     start = le2cpu(start);
 
 	info = node->get_file_info();
 	if(!info) {
-		error = 5;
-		goto handle_error;
+		return 5;
 	}
 	length = (info->size - offset) - 2;
 	end = start + length;
@@ -241,8 +264,7 @@ int FileTypeSID :: prepare(bool use_default)
         // version 2 and higher
         if(sid_header[0x78] == 0xFF) {
             printf("No reloc space.\n");
-			error = 6;
-			goto handle_error;
+			return 6;
 		}
         if(sid_header[0x78] == 0x00) {
             printf("Clean SID file.. checking start/stop\n");
@@ -256,8 +278,7 @@ int FileTypeSID :: prepare(bool use_default)
         } else {
             if(sid_header[0x79] < 1) {
                 printf("Space for driver too small.\n");
-				error = 6;
-				goto handle_error;
+				return 6;
 			}
             player = ((uint16_t)sid_header[0x78]) << 8;
         }            
@@ -268,6 +289,7 @@ int FileTypeSID :: prepare(bool use_default)
 	pus = (uint16_t *)&sid_header[4];
 	for(int i=0;i<7;i++,pus++)
 		*pus = swap(*pus);
+	header_valid = false;
 
 	memset((void *)C64_MEMORY_BASE, 0, 1024);
 	C64_POKE(0x0165, player >> 8); // Important: Store player header loc!
@@ -289,34 +311,11 @@ int FileTypeSID :: prepare(bool use_default)
 	push_event(e_unfreeze, (void *)&sid_cart, 1);
 
 	// call us back after the cartridge has been started
-	push_event(e_path_object_exec_cmd, this, SIDFILE_LOADNRUN); 
+	push_event(e_function_call, (void *)(FileTypeSID :: loadAndRun), (int)this);
 
 	return 0;
-
-handle_error:
-    printf("Error = %d... ", error);
-	if(file)
-		fm->fclose(file);
-	return error;
 }
 
-/******************************************************
- * Operations on a single tune..
- ******************************************************/
- 
-int SidTune :: fetch_context_items(IndexedList<CachedTreeNode *> &list)
-{
-    list.append(new MenuItem(parent, "Play Tune", SIDFILE_PLAY_TUNE + index ));
-    return 1;
-}
-// That was simple, eh?
-
-char *SidTune :: get_display_string()
-{
-	static char buf[16];
-	sprintf(buf, "Tune #%d", index);
-	return buf;
-}
 /******************************************************
  * Invoking the SID player
  ******************************************************/
@@ -327,6 +326,8 @@ void FileTypeSID :: load(void)
 {
 	uint32_t bytes_read;
 	
+	printf("Loading SID..\n");
+
 	// handshake with sid player cart
 	c64->stop(false);
 
@@ -357,19 +358,27 @@ void FileTypeSID :: load(void)
 	memcpy((void *)(C64_MEMORY_BASE + player), sid_header, 0x80);
 
 	// load file in C64 memory
-	file->read((void *)(C64_MEMORY_BASE + start), 65536, &bytes_read);
-	printf("Bytes loaded: %d. $%4x-$%4x\n", bytes_read, start, end);
+    /* Now actually load the file */
+    int total_trans = 0;
+    int max_length = 65536 - start;
 
-/*
-	// clear the other parts of the memory
-	int start_d = start & -4;
-	int end_d = (end + 3) & -4;
-	printf("Clearing memory from $0400, length: %4x\n", (start_d - 0x400));
-	printf("Clearing memory from $%4x, length: %4x\n", end_d, 0x10000-end_d);
-	
-	memset((void *)(C64_MEMORY_BASE + 0x0400), 0x00, (start_d - 0x400));
-	memset((void *)(C64_MEMORY_BASE + end_d), 0x00, (0x10000-end_d));
-*/
+    int block = (8192 - offset) & 0x1FF;
+
+	uint8_t dma_load_buffer[512];
+	uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE + start);
+	while (max_length > 0) {
+    	file->read(dma_load_buffer, block, &bytes_read);
+    	total_trans += bytes_read;
+    	memcpy(dest, dma_load_buffer, bytes_read);
+    	dest += bytes_read;
+    	if (bytes_read < block) {
+    		break;
+    	}
+    	max_length -= bytes_read;
+    	block = 512;
+    }
+
+	printf("Bytes loaded: %d. $%4x-$%4x\n", total_trans, start, end);
 
 	C64_POKE(0x002D, end);
 	C64_POKE(0x002E, end >> 8);
@@ -394,8 +403,7 @@ void FileTypeSID :: load(void)
 	fm->fclose(file);
 	file = NULL;
 
-	wait_ms(400);
-	c64->set_cartridge(NULL); // reset to default cart
+    push_event(e_restore_cart);
 	
 	return;
 }

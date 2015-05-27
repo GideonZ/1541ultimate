@@ -160,7 +160,9 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
             // create a return value of a GUI object, and call execute
             // with that immediately.
             contextMenu->executeAction();
+            printf("Context action executed.\n");
             delete contextMenu;
+            printf("Context action deleted. state = %p\n", state);
             contextMenu = NULL;
             state->draw();
         }

@@ -25,6 +25,8 @@ void MainLoop :: run(void *a)
 	IndexedList<PollFunction> *poll_list = getPollList();
 
 	PollFunction func;
+	FunctionCall call;
+
     Event event;
     bool empty;
     do {
@@ -33,7 +35,14 @@ void MainLoop :: run(void *a)
         if(DEBUG && !empty)
             printf("Event %2d %p %d\n", event.type, event.object, event.param);
 
-		for(int i=0;i<poll_list->get_elements();i++) {
+        if(!empty && (event.type == e_function_call)) {
+        	call = (FunctionCall)event.object;
+        	call((void *)event.param);
+            event_queue.pop();
+        	continue;
+        }
+
+        for(int i=0;i<poll_list->get_elements();i++) {
 	        func = (*poll_list)[i];
             func(event);
         }

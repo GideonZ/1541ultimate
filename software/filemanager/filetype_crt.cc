@@ -174,7 +174,7 @@ void FileTypeCRT :: execute(int selection)
         }
 
 		push_event(e_unfreeze);
-		push_event(e_path_object_exec_cmd, this, CRTFILE_CONFIGURE);
+		push_event(e_function_call, this, CRTFILE_CONFIGURE);
 
 fail:
         fm->fclose(file);

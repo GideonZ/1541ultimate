@@ -208,9 +208,10 @@ begin
             else -- write
                 tag_ram_a_en <= '1';
                 cache_ram_a_en <= '1';
-                tag_ram_a_we <= '1';
-                cache_ram_a_we <= '1';
-                
+                if is_cacheable(dmem_i.adr_o) then
+                    tag_ram_a_we <= '1';
+                    cache_ram_a_we <= '1';
+                end if;                
                 if dmem_i.sel_o = "1111" then -- full word results in a valid cache line
                     tag_ram_a_wdata <= tag_to_vector(address_to_tag(dmem_i.adr_o, '1')); -- valid
                 else

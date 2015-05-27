@@ -123,7 +123,7 @@ void FileTypeBIT :: execute(int selection)
             flash->protect_enable();
             delete[] buffer;         
             if(okay) {            
-        		push_event(e_path_object_exec_cmd, this, BITFILE_BOOT);
+        		push_event(e_function_call, this, BITFILE_BOOT);
             }
         } else {
             user_interface->popup("Invalid FPGA bitfile.", BUTTON_OK);

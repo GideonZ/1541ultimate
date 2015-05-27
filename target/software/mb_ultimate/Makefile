@@ -91,16 +91,9 @@ SRCS_C   =	mbstart_rtos.c \
 # root of the application. Devices can register themselves in the file system tree.
 # Therefore, the file manager needs to exist.
 
-#			filetype_prg.cc \
-#			filetype_tap.cc \
-#			filetype_sid.cc \
-#			filetype_reu.cc \
-#			filetype_u2u.cc \
+
 #			vfs.cc \
 #			socket_test.cc \
-#			usb_ax88772.cc \
-#			usb_em1010.cc \
-#			network_interface.cc \
 #			network_lwip.cc \
 #
 SRCS_CC	 =  stream.cc \
@@ -161,6 +154,11 @@ SRCS_CC	 =  stream.cc \
 			filetype_g64.cc \
 			filetype_crt.cc \
 			filetype_t64.cc \
+			filetype_prg.cc \
+			filetype_reu.cc \
+			filetype_u2u.cc \
+			filetype_tap.cc \
+			filetype_sid.cc \
 			userinterface.cc \
 			ui_elements.cc \
 			editor.cc \
@@ -175,6 +173,9 @@ SRCS_CC	 =  stream.cc \
 			iec.cc \
 			command_intf.cc \
 			dos.cc \
+			usb_ax88772.cc \
+			usb_em1010.cc \
+			network_interface.cc \
 			$(PRJ).cc
 
 ####			sampler.cc \

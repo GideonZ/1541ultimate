@@ -100,7 +100,7 @@ void FileDirEntry :: execute(int selection)
             res = user_interface->popup("Are you sure?", BUTTON_YES | BUTTON_NO);
 			if(res == BUTTON_YES) {
 				push_event(e_invalidate, this);
-				push_event(e_path_object_exec_cmd, this, FILEDIR_DELETE_CONTINUED);
+				push_event(e_function_call, this, FILEDIR_DELETE_CONTINUED);
 			}
 			break;
 

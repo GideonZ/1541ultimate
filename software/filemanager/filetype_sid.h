@@ -14,28 +14,23 @@ class FileTypeSID : public FileType
 	uint16_t start;
 	uint16_t end;
 	uint16_t player;
+	uint32_t offset;
+	bool header_valid;
+	int numberOfSongs;
+
 	int  prepare(bool);
 	void load(void);
 public:
     FileTypeSID(CachedTreeNode *n);
     ~FileTypeSID();
 
-    int   fetch_children(void);
+    int   readHeader(void);
+    void  showInfo(void);
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(CachedTreeNode *obj);
+    static void execute_st(void *obj, void *param);
+    static void loadAndRun(void *obj);
     void execute(int);
-};
-
-class SidTune : public CachedTreeNode
-{
-	int index;
-public:
-	SidTune(CachedTreeNode *par, int idx) : CachedTreeNode(par), index(idx) { }
-	~SidTune() { }
-
-    int   fetch_context_items(IndexedList<CachedTreeNode *> &list);
-    char *get_name() { return get_display_string(); }
-    char *get_display_string();
 };
 
 #endif
