@@ -15,9 +15,7 @@ TapeRecorder *tape_recorder = NULL; // globally static
 #define MENU_REC_RECORD_TO_TAP 0x3212
 #define MENU_REC_FINISH        0x3213
 
-#define CPU_IRQ_VECTOR      *((DWORD *)0x10)
-
-static void tape_req_irq(void)
+void tape_recorder_irq(void)
 {
     UART_DATA = 0x2D;
     tape_recorder->irq();

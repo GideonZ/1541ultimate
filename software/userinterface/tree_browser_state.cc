@@ -200,7 +200,10 @@ void TreeBrowserState :: reload(void)
 {
 	cleanup();
 	node->getSubItems(children);
-	/*
+	printf("State %s reloaded. # of children = %d\n", node->getName(), children.get_elements());
+	needs_reload = false;
+	move_to_index(cursor_pos);
+/*
 	int child_count = node->children.get_elements();
 	node->cleanup_children();
 	node->fetch_children();
@@ -269,17 +272,20 @@ void TreeBrowserState :: level_up(void)
 
 void TreeBrowserState :: move_to_index(int idx)
 {
+	int num_el = children.get_elements();
+	if (idx > num_el) {
+		idx = num_el;
+	}
 	cursor_pos = idx;
 
-	int num_el = children.get_elements();
 	if(num_el == 0) {
 		first_item_on_screen = -1;
 		draw();
 		return;
 	}
 
-	if((first_item_on_screen + selected_line)==idx) // duh!
-        return;
+//	if((first_item_on_screen + selected_line)==idx) // duh!
+//        return;
 
     // Try to determine the first item on the screen, by
     // stepping half of the screen size up.

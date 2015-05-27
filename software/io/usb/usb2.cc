@@ -20,10 +20,6 @@ Usb2 usb2; // the global
 
 volatile int irq_count;
 
-#ifndef OS
-void usb_irq(void) __attribute__ ((interrupt_handler));
-#endif
-
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
     return (h >> 8) | (h << 8);
@@ -34,19 +30,16 @@ static void poll_usb2(Event &e)
 	usb2.poll(e);
 }
 
-void usb_irq() {
-#ifdef OS
+extern "C" void usb_irq() {
 	usb2.irq_handler();
-#else
-	uint8_t act = ITU_IRQ_ACTIVE;
-
-	irq_count ++;
-	//if (act & 1) {
-		usb2.irq_handler();
-	//}
-	ITU_IRQ_CLEAR = act;
-#endif
 }
+
+struct usb_packet {
+	uint8_t *data;
+	void *object;
+	uint16_t  length;
+	uint16_t  pipe;
+};
 
 Usb2 :: Usb2()
 {
@@ -62,10 +55,8 @@ Usb2 :: Usb2()
 	    MainLoop :: addPollFunction(poll_usb2);
 #endif
     }
-
-#ifdef OS
     mutex = xSemaphoreCreateMutex();
-#endif
+    queue = xQueueCreate(64, sizeof(struct usb_packet));
 }
 
 Usb2 :: ~Usb2()
@@ -73,19 +64,12 @@ Usb2 :: ~Usb2()
 #ifndef BOOTLOADER
 	MainLoop :: removePollFunction(poll_usb2);
 #endif
-#ifdef OS
-    vSemaphoreDelete(mutex);
-#endif
-	clean_up();
+
+	vSemaphoreDelete(mutex);
+	vQueueDelete(queue);
+    clean_up();
 	initialized = false;
 }
-
-struct usb_packet {
-	uint8_t *data;
-	void *object;
-	uint16_t  length;
-	uint16_t  pipe;
-};
 
 void Usb2 :: input_task_start(void *u)
 {
@@ -146,26 +130,10 @@ void Usb2 :: init(void)
 
     initialized = true;
 
-#ifndef OS
-    /* quick and dirty initialization of USB irq on microblaze */
-    unsigned int pointer = (unsigned int)&usb_irq;
-    unsigned int *vector = (unsigned int *)0x10;
-    vector[0] = (0xB0000000 | (pointer >> 16));
-    vector[1] = (0xB8080000 | (pointer & 0xFFFF));
-
-    // enable interrupts
-    __asm__ ("msrset r0, 0x02");
-
-    ITU_IRQ_TIMER_LO  = 0x4B;
-	ITU_IRQ_TIMER_HI  = 0x4C;
-    ITU_IRQ_TIMER_EN  = 0x01;
-    ITU_IRQ_ENABLE    = 0x04; // usb interrupt
-#else
-    queue = xQueueCreate(64, sizeof(struct usb_packet));
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
 	xTaskCreate( Usb2 :: input_task_start, "\004USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
-#endif
-    ITU_MISC_IO = 1; // coherency is on
+
+	ITU_MISC_IO = 1; // coherency is on
 }
 
 void Usb2 :: deinit(void)

@@ -67,7 +67,7 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 	if(!state)
 		state = new TreeBrowserState(root, this, 0);
     state->reload();
-	state->do_refresh();
+	// state->do_refresh();
 }
 
 void TreeBrowser :: deinit(void)
@@ -144,6 +144,7 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
 				st->needs_reload = true;
 				st->refresh = true;
 			}
+			st = st->previous;
 		}
 	}
 	
@@ -159,12 +160,10 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
             // browser!) needs to be called with. It would be better to just
             // create a return value of a GUI object, and call execute
             // with that immediately.
-            contextMenu->executeAction();
-            printf("Context action executed.\n");
-            delete contextMenu;
-            printf("Context action deleted. state = %p\n", state);
-            contextMenu = NULL;
             state->draw();
+            contextMenu->executeAction();
+            delete contextMenu;
+            contextMenu = NULL;
         }
         return ret;
     }
@@ -346,6 +345,7 @@ void TreeBrowser :: invalidate(void *obj)
 		while(st) {
 			for(int i=0;i<st->children.get_elements();i++) {
 				if (st->children[i]->invalidateMatch(obj)) {
+					printf("Found invalidate match %s in %s.\n", st->children[i]->getName(), st->node->getName());
 					st->needs_reload = true;
 					st = 0; // break outer
 					break;

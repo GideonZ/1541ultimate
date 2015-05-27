@@ -13,7 +13,7 @@ class UsbDriver;
 
 #define USB2_MAX_DEVICES 16
 
-extern void usb_irq(void);
+extern "C" void usb_irq(void);
 
 typedef enum {
 	e_circular = 0,
@@ -22,11 +22,9 @@ typedef enum {
 
 class Usb2 : public UsbBase
 {
-#ifdef OS
 	QueueHandle_t queue;
 	SemaphoreHandle_t mutex;
 
-#endif
     void  (*inputPipeCallBacks[USB2_NUM_PIPES])(uint8_t *buf, int len, void *obj);
     void  *inputPipeObjects[USB2_NUM_PIPES];
     uint8_t   inputPipeBufferMethod[USB2_NUM_PIPES];

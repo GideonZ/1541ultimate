@@ -158,6 +158,10 @@ IecInterface :: IecInterface()
         *(dst++) = *(src++);
     printf("%d bytes loaded.\n", size);
 
+    printf("Word 0: %8x\n", HW_IEC_RAM_DW[0]);
+    printf("Word 1: %8x\n", HW_IEC_RAM_DW[1]);
+    printf("Word 2: %8x\n", HW_IEC_RAM_DW[2]);
+
     atn = false;
     path = fm->get_new_path("IEC");
     path->cd("SD");
