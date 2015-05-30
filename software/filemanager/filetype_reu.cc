@@ -122,8 +122,8 @@ void FileTypeREU :: execute(int selection)
                 push_event(e_unfreeze, (void *)&mod_cart, 1);
                 push_event(e_object_private_cmd, c64, C64_EVENT_MAX_REU);
                 push_event(e_object_private_cmd, c64, C64_EVENT_AUDIO_ON);
-                AUDIO_SELECT_LEFT   = 6;
-                AUDIO_SELECT_RIGHT  = 7;
+                ioWrite8(AUDIO_SELECT_LEFT, 6);
+                ioWrite8(AUDIO_SELECT_RIGHT, 7);
             }
 		} else {
 			printf("Error opening file.\n");

@@ -20,15 +20,14 @@ void poll_socket_test(Event &e) {
 }
 
 SocketTest::SocketTest() {
-	main_menu_objects.append(this);
-	poll_list.append(poll_socket_test);
+	MainLoop :: addPollFunction(poll_socket_test);
+	fm = FileManager :: getFileManager();
 
 	xTaskCreate( restartThread, "\007Reload Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
 }
 
 SocketTest::~SocketTest() {
-	poll_list.remove(poll_socket_test);
-	main_menu_objects.remove(this);
+	MainLoop :: removePollFunction(poll_socket_test);
 }
 
 int  SocketTest::fetch_task_items(IndexedList<Action*> &item_list)
@@ -43,10 +42,10 @@ int  SocketTest::fetch_task_items(IndexedList<Action*> &item_list)
 
 void SocketTest::poll(Event &e)
 {
-	FILE *f;
+	File *f;
 	uint32_t start_address = 0x1000000;
 	uint32_t end_address = 0x1000000;
-	UINT transferred;
+	uint32_t transferred;
 
 	if ((e.type == e_object_private_cmd) && (e.object == this)) {
 		switch(e.param) {
@@ -65,12 +64,12 @@ void SocketTest::poll(Event &e)
 		case 4:
             end_address = PROFILER_ADDR;
             printf("Logic Analyzer stopped. Address = %p\n", end_address);
-            f = fopen("rtostrac.bin", "wb");
+            f = fm->fopen(NULL, "rtostrac.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
             if(f) {
                 printf("Opened file successfully.\n");
-                transferred = fwrite((void *)start_address, 1, end_address - start_address, f);
+                f->write((void *)start_address, end_address - start_address, &transferred);
                 printf("written: %d...", transferred);
-                fclose(f);
+                f->close();
             } else {
                 printf("Couldn't open file..\n");
             }
@@ -136,15 +135,15 @@ void SocketTest::restartThread(void *a)
 
     /* If connection is established then start communicating */
     char *mempntr = (char *)0x1C00004; // REU memory
-    WORD start_time = ITU_MS_TIMER;
+    uint16_t start_time = getMsTimer();
 
     do {
     	n = recv(newsockfd, mempntr, 32768, 0);
     	mempntr += n;
     } while(n > 0);
 
-    WORD stop_time = ITU_MS_TIMER;
-    WORD receive_time = stop_time - start_time;
+    uint16_t stop_time = getMsTimer();
+    uint16_t receive_time = stop_time - start_time;
 
     int received = int(mempntr) - 0x1C00004;
     printf("restartThread Received %d bytes in %d ms\n", received, receive_time);
@@ -221,15 +220,15 @@ void SocketTest::doTest1()
 
     /* If connection is established then start communicating */
     char *mempntr = (char *)0x1800000; // REU memory
-    WORD start_time = ITU_MS_TIMER;
+    uint16_t start_time = getMsTimer();
 
     do {
     	n = recv(newsockfd, mempntr, 32768, 0);
     	mempntr += n;
     } while(n > 0);
 
-    WORD stop_time = ITU_MS_TIMER;
-    WORD receive_time = stop_time - start_time;
+    uint16_t stop_time = getMsTimer();
+    uint16_t receive_time = stop_time - start_time;
 
     printf("Received %d bytes in %d ms\n", int(mempntr) - 0x1800000, receive_time);
 
@@ -275,15 +274,15 @@ void SocketTest::doTest2()
         puts("Error connecting.");
 
     char *mempntr = (char *)0x1800000; // REU memory
-    WORD start_time = ITU_MS_TIMER;
+    uint16_t start_time = getMsTimer();
 
     for (int i=0; i < 1000; i++) {
     	n = send(sockfd, mempntr, 2048, 0);
     	mempntr += n;
     } while(n > 0);
 
-    WORD stop_time = ITU_MS_TIMER;
-    WORD receive_time = stop_time - start_time;
+    uint16_t stop_time = getMsTimer();
+    uint16_t receive_time = stop_time - start_time;
 
     printf("Sent %d bytes in %d ms\n", int(mempntr) - 0x1000000, receive_time);
 
@@ -345,7 +344,7 @@ void SocketTest::sendTrace(int size)
 
     /* If connection is established then start communicating */
     char *mempntr = (char *)0x1000000; // REU memory
-    WORD start_time = ITU_MS_TIMER;
+    uint16_t start_time = getMsTimer();
 
     while(size > 0) {
     	n = (size > 1024) ? 1024 : size;
@@ -356,8 +355,8 @@ void SocketTest::sendTrace(int size)
     	size -= n;
     }
 
-    WORD stop_time = ITU_MS_TIMER;
-    WORD receive_time = stop_time - start_time;
+    uint16_t stop_time = getMsTimer();
+    uint16_t receive_time = stop_time - start_time;
 
     printf("Sent %d bytes in %d ms\n", int(mempntr) - 0x1000000, receive_time);
 

@@ -10,8 +10,10 @@
 
 #include "poll.h"
 #include "menu.h"
+#include "filemanager.h"
 
 class SocketTest: public ObjectWithMenu {
+	FileManager *fm;
 	void doTest1();
 	void doTest2();
 	void sendTrace(int size);

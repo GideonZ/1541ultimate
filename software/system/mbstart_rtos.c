@@ -66,13 +66,13 @@ void _exit()
 
 void _premain()
 {
-    UART_DATA = 0x31;
-    UART_DATA = 0x2e;
+    ioWrite8(UART_DATA, 0x31);
+    ioWrite8(UART_DATA, 0x2e);
 
     __clear_bss();
 
-    UART_DATA = 0x32;
-    UART_DATA = 0x2e;
+    ioWrite8(UART_DATA, 0x32);
+    ioWrite8(UART_DATA, 0x2e);
 
     atexit(_do_dtors);
 
@@ -85,8 +85,8 @@ void _construct_and_go()
 
 	_do_ctors();
 
-    UART_DATA = 0x33;
-    UART_DATA = 0x2e;
+    ioWrite8(UART_DATA, 0x33);
+    ioWrite8(UART_DATA, 0x2e);
 
     t=main(0, 0);
 
@@ -161,8 +161,8 @@ void start_rtos (void)
 void outbyte(int c)
 {
 	// Wait for space in FIFO
-	while (UART_FLAGS & UART_TxFifoFull);
-	UART_DATA = c;
+	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+	ioWrite8(UART_DATA, c);
 }
 
 

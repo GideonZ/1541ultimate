@@ -17,7 +17,7 @@ TapeRecorder *tape_recorder = NULL; // globally static
 
 void tape_recorder_irq(void)
 {
-    UART_DATA = 0x2D;
+    ioWrite8(UART_DATA, 0x2D);
     tape_recorder->irq();
 }
 
@@ -148,7 +148,7 @@ void TapeRecorder :: irq()
 		cache_block();
 	else
 	    printf("?");
-    UART_DATA = 0x2B;
+    ioWrite8(UART_DATA, 0x2B);
 }
 	
 void TapeRecorder :: cache_block()

@@ -10,6 +10,7 @@ extern "C" {
 #include "filemanager.h"
 #include "userinterface.h"
 #include "disk_image.h"
+#include "pattern.h"
 
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
@@ -165,6 +166,8 @@ IecInterface :: IecInterface()
     atn = false;
     path = fm->get_new_path("IEC");
     path->cd("SD");
+	dirlist = new IndexedList<FileInfo *>(8, NULL);
+	iecNames = new IndexedList<char *>(8, NULL);
 
     for(int i=0;i<15;i++) {
         channels[i] = new IecChannel(this, i);
@@ -187,7 +190,6 @@ IecInterface :: ~IecInterface()
     for(int i=0;i<16;i++)
         delete channels[i];
     fm->release_path(path);
-	// Globals :: getObjectsWithMenu() -> remove(this);
     MainLoop :: removePollFunction(poll_iec_interface);
 }
 
@@ -212,7 +214,7 @@ void IecInterface :: effectuate_settings(void)
                 replaced ++;
             }
         }  
-        //printf("Replaced: %d words.\n", replaced);
+        printf("Replaced: %d words.\n", replaced);
         last_addr = bus_id;    
     }
     iec_enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
@@ -269,7 +271,7 @@ int IecInterface :: poll(Event &e)
                     wait_irq = true;
                     return 0;
                 case 0xAD:
-                    UART_DATA = 0x23; // printf("{warp_end}");
+                    ioWrite8(UART_DATA, 0x23); // printf("{warp_end}");
                     break;
                 case 0xDE:
                     get_warp_error();
@@ -314,7 +316,7 @@ int IecInterface :: poll(Event &e)
     int st;
     if(talking) {
         if(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
-            st = channels[current_channel]->pop_data(data);
+        	st = channels[current_channel]->pop_data(data);
             if(st == IEC_OK)
                 HW_IEC_TX_DATA = data;
             else if(st == IEC_LAST) {
@@ -331,7 +333,7 @@ int IecInterface :: poll(Event &e)
         }
     }
 
-	FILE *f;
+	File *f;
 	CachedTreeNode *po;
 	uint32_t transferred;
 
@@ -386,12 +388,12 @@ int IecInterface :: poll(Event &e)
                 if(start_address == end_address)
                     break;
                 // po = user_interface->get_path();
-                f = fopen("iectrace.bin", "wb"); // TODO: path
+                f = fm->fopen(NULL, "iectrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS); // TODO: Path
                 if(f) {
                     printf("Opened file successfully.\n");
-                    transferred = fwrite((void *)start_address, 1, end_address - start_address, f);
+                    f->write((void *)start_address, end_address - start_address, &transferred);
                     printf("written: %d...", transferred);
-                    fclose(f);
+                    f->close();
                 } else {
                     printf("Couldn't open file..\n");
                 }
@@ -732,6 +734,58 @@ void IecInterface :: test_master(int test)
     }
 }
 
+void IecInterface :: cleanupDir() {
+	if (!dirlist)
+		return;
+	for(int i=0;i < dirlist->get_elements();i++) {
+		delete (*dirlist)[i];
+		delete (*iecNames)[i];
+
+	}
+	dirlist->clear_list();
+	iecNames->clear_list();
+}
+
+void IecInterface :: readDirectory()
+{
+	cleanupDir();
+	path->get_directory(*dirlist);
+	for(int i=0;i<dirlist->get_elements();i++) {
+		iecNames->append(getIecName((*dirlist)[i]->lfname));
+	}
+}
+
+char *IecInterface :: getIecName(char *in)
+{
+	char *out = new char[20];
+	memset(out, 0, 20);
+
+	for(int i=0;i<16;i++) {
+		char o;
+		if(in[i] == 0) {
+			break;
+		} else if(in[i] == '_') {
+			o = 164;
+		} else if(in[i] < 32) {
+			o = 32;
+		} else {
+			o = toupper(in[i]);
+		}
+		out[i] = o;
+	}
+	return out;
+}
+
+int IecInterface :: findIecName(char *name, char *ext)
+{
+	for(int i=0;i<iecNames->get_elements();i++) {
+		if (pattern_match(name, (*iecNames)[i], true)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 /*********************************************************************/
 /* Copier user interface screen
 /*********************************************************************/
@@ -777,6 +831,7 @@ void UltiCopy :: close(void)
     return_code = 1;
 }
     
+
 /*********************************************************************/
 /* IEC File Browser Handling                                         */
 /*********************************************************************/

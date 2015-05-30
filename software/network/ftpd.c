@@ -598,7 +598,7 @@ static err_t ftpd_datarecv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t
 
 	if (err == ERR_OK && p != NULL) {
 		struct pbuf *q;
-		u16_t tot_len;
+		u16_t tot_len = 0;
 
 		for (q = p; q != NULL; q = q->next) {
 			int len;

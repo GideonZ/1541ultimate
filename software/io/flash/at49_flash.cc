@@ -160,7 +160,7 @@ void AT49_Flash :: read_linear_addr(int addr, int len, void *buffer)
 
 bool AT49_Flash :: wait_ready(int time_out)
 {
-    ITU_TIMER = 200;
+    ioWrite8(ITU_TIMER, 200);
 	bool ret = true;
     do {
 		last_status = AT49_MEM_ARRAY(0);
@@ -173,14 +173,14 @@ bool AT49_Flash :: wait_ready(int time_out)
 			ret = true;
 			break;
 		}
-        if(!ITU_TIMER) {
+        if(!ioRead8(ITU_TIMER)) {
             if(!time_out) {
                 debug(("Flash timeout.\n"));
                 ret = false;
 			    break;
 			}
 			time_out--;
-			ITU_TIMER = 200;
+			ioWrite8(ITU_TIMER, 200);
         }
     } while(true);
     return ret;

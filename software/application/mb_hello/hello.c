@@ -24,9 +24,9 @@ int main()
 /*
     puts("Going to do a dhrystone test run..\n");
     for (int i=0;i<10;i++) {
-        int j = ITU_MS_TIMER;
+        int j = getMsTimer();
         dhrystone();
-        int k = ITU_MS_TIMER;
+        int k = getMsTimer();
         printf("Drhystone run %d took %d ms\n", i, k-j);
     }
 */

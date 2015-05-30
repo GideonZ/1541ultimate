@@ -133,7 +133,7 @@ void Usb2 :: init(void)
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
 	xTaskCreate( Usb2 :: input_task_start, "\004USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
 
-	ITU_MISC_IO = 1; // coherency is on
+	ioWrite8(ITU_MISC_IO, 1); // coherency is on
 }
 
 void Usb2 :: deinit(void)
@@ -145,8 +145,6 @@ void Usb2 :: deinit(void)
     for(int i=0;i<2048;i++)
         *(dst++) = 0;
 
-	ITU_IRQ_DISABLE = 0x04;
-	ITU_IRQ_CLEAR = 0x04;
 }
 
 void Usb2 :: poll(Event &e)

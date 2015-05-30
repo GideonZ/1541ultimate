@@ -15,6 +15,7 @@ start
 # IRQ is at address 1
 ATN_IRQ
             SET CLK=1  # release clock
+            WAIT FOR 20 us
             SET DATA=0 # not ready to receive
             WAIT UNTIL CLK=0 
 
@@ -23,6 +24,9 @@ ATN_IRQ
             LOAD $41
             PUSHC
 
+            WAIT UNTIL CLK=1
+            SUB RECEIVE_BYTE
+            JUMP _no_push2
 _atn_loop
             WAIT UNTIL CLK=1
             SUB RECEIVE_BYTE
@@ -416,6 +420,4 @@ get_68
             SUB get_32
             SUB get_4
             RET
-  
-
                         

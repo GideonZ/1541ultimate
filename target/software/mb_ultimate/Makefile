@@ -108,7 +108,6 @@ SRCS_CC	 =  stream.cc \
 			event.cc \
 			poll.cc \
 			filemanager.cc \
-			sys_calls.cc \
 			file_utils.cc \
 			file_device.cc \
 			file_partition.cc \

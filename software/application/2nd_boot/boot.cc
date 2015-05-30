@@ -47,10 +47,8 @@ int init_fat(void)
 
     Partition *prt;
     prt = dsk->partition_list; // get first partition
-    fs = new FATFS(prt);
-    if(fs->check_fs(prt)) {
+    if(!(fs = FATFS :: test(prt))) {
         printf("Did not find FAT file system.\n");
-        delete fs;
         delete prt;
         delete dsk;
         delete blk;
@@ -66,43 +64,17 @@ int init_fat_on_sd(void)
     return init_fat();
 }
 
-/*
-int init_fat_on_usb(void)
-{
-	usbdev = usb.init_simple();
-	usbdev->set_configuration(usbdev->device_config.config_value);
-
-	if(usbdev) {
-		UsbScsi *blk2 = new UsbScsi(usbdev, 0); // root device on LUN 0
-		blk2->reset();
-		for(int i=0;i<10;i++) {
-			if(!blk2->test_unit_ready()) {
-				delete blk2;
-				return -2;
-			}
-			if(blk2->get_state() == e_device_ready) {
-				blk = blk2;
-				return init_fat();
-			}
-		}
-		return -3;
-	}
-	return -1;
-}
-*/
-
-
 FRESULT try_loading(char *filename)
 {
     FATFIL *file = new FATFIL(fs);
-    WORD dummy;
+    uint16_t dummy;
     FRESULT res = file->open(filename, 0, FA_READ, &dummy);
     printf("File %s open result = %d.\n", filename, res);
     if(res != FR_OK) {
         return res;
     }
-    UINT bytes_read = 0;
-    res = file->read((void *)APPLICATION_RUN_ADDRESS, APPLICATION_MAX_LENGTH, &bytes_read);
+    uint32_t bytes_read = 0;
+    res = file->read((void *)UPDATER_RUN_ADDRESS, APPLICATION_MAX_LENGTH, &bytes_read);
     printf("Bytes read: %d (0x%6x)\n", bytes_read, bytes_read);
     
     file->close();
@@ -152,26 +124,16 @@ int try_xmodem(void)
 int main()
 {
     printf("*** 1541 Ultimate-II - Bootloader %s - FPGA Version: %2x ***\n\n",
-            BOOT_VERSION, ITU_FPGA_VERSION);
+            BOOT_VERSION, getFpgaVersion());
 
     FRESULT res = FR_DISK_ERR;
     int file_system_err;
 	bool skip_flash = false;
-/*
-    BYTE buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
-    if(buttons & ITU_BUTTON2) {
-    	file_system_err = init_fat_on_usb();
-		skip_flash = true;
-    } else {
-    	file_system_err = init_fat_on_sd();
-    }
-*/
+
 	file_system_err = init_fat_on_sd();
 
     if(!file_system_err) { // will return error code, 0 = ok
         res = try_loading("recover.u2u");
-//        if(res!=FR_OK)
-//            res = try_loading("update.u2u");
         delete fs;
         delete prt;
         delete dsk;

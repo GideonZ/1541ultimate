@@ -362,7 +362,7 @@ def dump_iec_file(filename):
         b1 = (inst >> 8) & 0xFF
         b2 = (inst >> 16) & 0xFF
         b3 = (inst >> 24) & 0xFF
-        f.write("%c%c%c%c" % (b0, b1, b2, b3))
+        f.write("%c%c%c%c" % (b3, b2, b1, b0))
     
     f.close()
         

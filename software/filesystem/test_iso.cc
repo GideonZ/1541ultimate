@@ -15,13 +15,13 @@
 
 void test_file_system(FileSystem *fs)
 {
-    uint8_t *buffer = new uint8_t[3000];
     UINT trans;
     Directory *dir = fs->dir_open(NULL);
     if(!dir) {
         printf("Can't open directory.\n");
         return;
     }
+    uint8_t *buffer = new uint8_t[3000];
     FileInfo *info = new FileInfo(40);
     FRESULT fres;
     do {

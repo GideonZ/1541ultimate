@@ -74,7 +74,7 @@ void jump_run(uint32_t a)
 {
     uint32_t *dp = (uint32_t *)&function;
     *dp = a;
-    ITU_IRQ_GLOBAL = 0;
+    ioWrite8(ITU_IRQ_GLOBAL, 0);
     function();
     while(1)
     	;

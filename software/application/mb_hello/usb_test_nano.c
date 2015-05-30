@@ -23,16 +23,16 @@ const uint8_t c_set_configuration[]     = { 0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 
 int irq_count;
 uint8_t big_buffer[16384];
 
-WORD *attr_fifo_data = (WORD *)ATTR_FIFO_BASE;
+uint16_t *attr_fifo_data = (uint16_t *)ATTR_FIFO_BASE;
 
-WORD usb_read_queue()
+uint16_t usb_read_queue()
 {
-	WORD tail = ATTR_FIFO_TAIL;
-	WORD head = ATTR_FIFO_HEAD;
+	uint16_t tail = ATTR_FIFO_TAIL;
+	uint16_t head = ATTR_FIFO_HEAD;
 	if (tail == head) {
 		return 0xFFFF;
 	}
-	WORD ret = attr_fifo_data[tail];
+	uint16_t ret = attr_fifo_data[tail];
 	tail ++;
 	if (tail == ATTR_FIFO_ENTRIES)
 		tail = 0;
@@ -43,7 +43,7 @@ WORD usb_read_queue()
 int mouse_x, mouse_y;
 
 void usb_irq() {
-	WORD read1, read2;
+	uint16_t read1, read2;
 	read1 = usb_read_queue();
 	read2 = usb_read_queue();
 	if ((read1 & 0xFFF0) == 0xFFF0) {
@@ -64,14 +64,14 @@ void usb_irq() {
 
 void myISR(void)
 {
-	uint8_t act = ITU_IRQ_ACTIVE;
+	uint8_t act = ioRead8(ITU_IRQ_ACTIVE);
 	if (act & 1) {
 		irq_count ++;
 	}
 	if (act & 4) {
 		usb_irq();
 	}
-	ITU_IRQ_CLEAR = act;
+	ioWrite8(ITU_IRQ_CLEAR, act);
 }
 
 int enable_irqs()
@@ -87,15 +87,15 @@ int enable_irqs()
     // enable interrupts
     __asm__ ("msrset r0, 0x02");
 
-    ITU_IRQ_TIMER_LO  = 0x4B;
-	ITU_IRQ_TIMER_HI  = 0x4C;
-    ITU_IRQ_TIMER_EN  = 0x01;
-    ITU_IRQ_ENABLE    = 0x05; // timer and usb interrupts
+    ioWrite8(ITU_IRQ_TIMER_LO, 0x4B);
+	ioWrite8(ITU_IRQ_TIMER_HI, 0x4C);
+    ioWrite8(ITU_IRQ_TIMER_EN, 0x01);
+    ioWrite8(ITU_IRQ_ENABLE  , 0x05); // timer and usb interrupts
 
     return 0;
 }
 
-void usb_control_transfer(WORD DevEP, WORD maxtrans, const void *setup, void *read_buf, WORD read_len) {
+void usb_control_transfer(uint16_t DevEP, uint16_t maxtrans, const void *setup, void *read_buf, uint16_t read_len) {
 
 	USB2_CMD_DevEP  = DevEP; // device 0, endpoint 0
 	USB2_CMD_Length = 8;
@@ -136,7 +136,7 @@ void usb_control_transfer(WORD DevEP, WORD maxtrans, const void *setup, void *re
 
 int open_pipe(struct t_pipe *init)
 {
-	WORD *pipe = (WORD *)USB2_PIPES_BASE;
+	uint16_t *pipe = (uint16_t *)USB2_PIPES_BASE;
 	for(int i=0;i<USB2_NUM_PIPES;i++) {
 		if (*pipe == 0) {
 			pipe[PIPE_OFFS_DevEP]    = init->DevEP;
@@ -154,7 +154,7 @@ int open_pipe(struct t_pipe *init)
 
 int close_pipe(int pipe)
 {
-	WORD *p = (WORD *)USB2_PIPES_BASE;
+	uint16_t *p = (uint16_t *)USB2_PIPES_BASE;
 	p[(8 * pipe)] = 0;
 	return pipe;
 }

@@ -261,8 +261,8 @@ void C64 :: determine_d012(void)
 
     b = 0;
     while(!(VIC_REG(25) & 0x81)) {
-        if(!ITU_TIMER) {
-            ITU_TIMER = 200;
+        if(!ioRead8(ITU_TIMER)) {
+            ioWrite8(ITU_TIMER, 200);
             b++;
             if(b == 40)
                 break;
@@ -296,7 +296,7 @@ void C64 :: stop(bool do_raster)
 
     if(do_raster) {
         // wait maximum for 25 ms (that is 1/40 of a second; there should be a bad line in this time frame
-        ITU_TIMER = 200; // 1 ms
+        ioWrite8(ITU_TIMER, 200); // 1 ms
     
     	// request to stop the c-64
     	C64_STOP = 1;
@@ -317,8 +317,8 @@ void C64 :: stop(bool do_raster)
                 printf("Mode=1\n");
                 break;
             }
-            if(!ITU_TIMER) {
-                ITU_TIMER = 200; // 1 ms
+            if(!ioRead8(ITU_TIMER)) {
+                ioWrite8(ITU_TIMER, 200); // 1 ms
                 b++;
             }
         }
@@ -333,7 +333,7 @@ void C64 :: stop(bool do_raster)
     	// request to stop the c-64
     	C64_STOP = 1; // again, in case we had to stop without trying raster first
 
-        ITU_TIMER = 200; // 1 ms
+        ioWrite8(ITU_TIMER, 200); // 1 ms
     
         for(w=0;w<100;) { // was 1500
             if(C64_STOP & C64_HAS_STOPPED) {
@@ -341,8 +341,8 @@ void C64 :: stop(bool do_raster)
                 break;
             }
 //            printf("#%b^%b ", ITU_TIMER, w);
-            if(!ITU_TIMER) {
-                ITU_TIMER = 200; // 1 ms
+            if(!ioRead8(ITU_TIMER)) {
+            	ioWrite8(ITU_TIMER, 200); // 1 ms
                 w++;
             }
         }
@@ -412,8 +412,8 @@ void C64 :: resume(void)
             VIC_REG(18) = rast_lo;
             VIC_REG(17) = rast_hi;
             while((VIC_REG(18) != rast_lo)&&((VIC_REG(17)&0x80) != rast_hi)) {
-                if(!ITU_TIMER) {
-                    ITU_TIMER = 200;
+                if(!ioRead8(ITU_TIMER)) {
+                	ioWrite8(ITU_TIMER, 200); // 1 ms
                     dummy++;
                     if(dummy == 40)
                         break;
@@ -423,8 +423,8 @@ void C64 :: resume(void)
             VIC_REG(17) = vic_d011;
         } else {
             while((VIC_REG(18) != rast_lo)&&((VIC_REG(17)&0x80) != rast_hi)) {
-                if(!ITU_TIMER) {
-                    ITU_TIMER = 200;
+                if(!ioRead8(ITU_TIMER)) {
+                	ioWrite8(ITU_TIMER, 200); // 1 ms
                     dummy++;
                     if(dummy == 40)
                         break;
@@ -466,8 +466,8 @@ void C64 :: resume(void)
 void C64 :: reset(void)
 {
     C64_MODE = C64_MODE_RESET;
-    ITU_TIMER = 20;
-    while(ITU_TIMER)
+    ioWrite8(ITU_TIMER, 20);
+    while(ioRead8(ITU_TIMER))
         ;
     C64_MODE = C64_MODE_UNRESET;
 }
@@ -803,7 +803,7 @@ void C64 :: cartridge_test(void)
 void C64 :: poll(Event &e)
 {
     static uint8_t button_prev;
-    uint8_t buttons = ITU_IRQ_ACTIVE & ITU_BUTTONS;
+    uint8_t buttons = ioRead8(ITU_IRQ_ACTIVE) & ITU_BUTTONS;
     if((buttons & ~button_prev) & ITU_BUTTON1) {
         push_event(e_button_press, 0);
     }

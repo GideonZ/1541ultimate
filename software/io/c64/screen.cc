@@ -380,7 +380,7 @@ void Window :: set_char(int x, int y, char c)
 int console_print(Screen *s, const char *fmt, ...)
 {
     va_list ap;
-    int ret;
+    int ret = -1;
 	
     va_start(ap, fmt);
 	if(s) {

@@ -49,6 +49,10 @@ class UltiCopy;
 class IecInterface : public ObjectWithMenu,  ConfigurableObject
 {
 	FileManager *fm;
+    IndexedList<FileInfo *> *dirlist;
+    IndexedList<char *> *iecNames;
+    Path *path;
+
 	int last_addr;
     bool wait_irq;
     bool atn;
@@ -70,9 +74,10 @@ class IecInterface : public ObjectWithMenu,  ConfigurableObject
     UltiCopy *ui_window;
     uint8_t last_track;
     static void poll_iec_interface(Event &ev);
+    void cleanupDir(void);
+    char *getIecName(char *in);
 public:
     int last_error;
-    Path *path;
     uint8_t iec_enable;
 
     IecInterface();
@@ -82,6 +87,12 @@ public:
     int fetch_task_items(IndexedList<Action *> &list);
     void effectuate_settings(void); // from ConfigurableObject
     int get_last_error(char *); // writes string into buffer
+
+    void readDirectory(void);
+    int findIecName(char *name, char *ext);
+
+    friend class IecChannel;
+    friend class IecCommandChannel;
 };
 
 extern IecInterface HW_IEC;

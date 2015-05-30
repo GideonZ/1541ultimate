@@ -105,31 +105,30 @@ void AudioConfig :: effectuate_settings()
     if(!cfg)
         return;
 
-    AUDIO_SELECT_LEFT   = map[cfg->get_value(CFG_AUDIO_SELECT_LEFT)];
-    AUDIO_SELECT_RIGHT  = map[cfg->get_value(CFG_AUDIO_SELECT_RIGHT)];
+    ioWrite8(AUDIO_SELECT_LEFT,  map[cfg->get_value(CFG_AUDIO_SELECT_LEFT)]);
+    ioWrite8(AUDIO_SELECT_RIGHT, map[cfg->get_value(CFG_AUDIO_SELECT_RIGHT)]);
     
     if(getFpgaCapabilities() & CAPAB_STEREO_SID) {
         printf("Number of SID voices implemented in FPGA: %d\n", SID_VOICES);
-        SID_BASE_LEFT     = sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)];
-        SID_SNOOP_LEFT    = (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)] & 0x80)?0:1;
-        SID_ENABLE_LEFT   = cfg->get_value(CFG_AUDIO_SID_ENABLE_L);
-        SID_EXTEND_LEFT   = cfg->get_value(CFG_AUDIO_SID_EXT_LEFT);
-        SID_COMBSEL_LEFT  = cfg->get_value(CFG_AUDIO_SID_WAVE_LEFT);
+        ioWrite8(SID_BASE_LEFT,    sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)]);
+        ioWrite8(SID_SNOOP_LEFT,   (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)] & 0x80)?0:1);
+        ioWrite8(SID_ENABLE_LEFT,  cfg->get_value(CFG_AUDIO_SID_ENABLE_L));
+        ioWrite8(SID_EXTEND_LEFT,  cfg->get_value(CFG_AUDIO_SID_EXT_LEFT));
+        ioWrite8(SID_COMBSEL_LEFT, cfg->get_value(CFG_AUDIO_SID_WAVE_LEFT));
     
-        SID_BASE_RIGHT    = sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_RIGHT)];
-        SID_SNOOP_RIGHT   = (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_RIGHT)] & 0x80)?0:1;
-        SID_ENABLE_RIGHT  = cfg->get_value(CFG_AUDIO_SID_ENABLE_R);
-        SID_EXTEND_RIGHT  = cfg->get_value(CFG_AUDIO_SID_EXT_RIGHT);
-        SID_COMBSEL_RIGHT = cfg->get_value(CFG_AUDIO_SID_WAVE_RIGHT);
+        ioWrite8(SID_BASE_RIGHT,    sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_RIGHT)]);
+        ioWrite8(SID_SNOOP_RIGHT,   (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_RIGHT)] & 0x80)?0:1);
+        ioWrite8(SID_ENABLE_RIGHT,  cfg->get_value(CFG_AUDIO_SID_ENABLE_R));
+        ioWrite8(SID_EXTEND_RIGHT,  cfg->get_value(CFG_AUDIO_SID_EXT_RIGHT));
+        ioWrite8(SID_COMBSEL_RIGHT, cfg->get_value(CFG_AUDIO_SID_WAVE_RIGHT));
     }
 }
 
 void AudioConfig :: clear_sampler_registers()
 {
-    volatile uint32_t *sampler = (volatile uint32_t *)SAMPLER_BASE;
     if(getFpgaCapabilities() & CAPAB_SAMPLER) {
         for(int i=0;i<64;i++) {
-            *(sampler++) = 0;
+            ioWrite8(SAMPLER_BASE + i, 0);
         }
     }
 }

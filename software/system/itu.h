@@ -9,24 +9,24 @@ extern "C" {
 #include "iomap.h"
 
 // Definitions for the ITU (Interrupt, Timer, Uart)
-#define ITU_IRQ_GLOBAL    *((volatile uint8_t *)(ITU_BASE + 0x00))
-#define ITU_IRQ_ENABLE    *((volatile uint8_t *)(ITU_BASE + 0x01))
-#define ITU_IRQ_DISABLE   *((volatile uint8_t *)(ITU_BASE + 0x02))
-#define ITU_IRQ_EDGE      *((volatile uint8_t *)(ITU_BASE + 0x03))
-#define ITU_IRQ_CLEAR     *((volatile uint8_t *)(ITU_BASE + 0x04))
-#define ITU_IRQ_ACTIVE    *((volatile uint8_t *)(ITU_BASE + 0x05))
-#define ITU_TIMER         *((volatile uint8_t *)(ITU_BASE + 0x06))
-#define ITU_IRQ_TIMER_EN  *((volatile uint8_t *)(ITU_BASE + 0x07))
-#define ITU_IRQ_TIMER_LO  *((volatile uint8_t *)(ITU_BASE + 0x09))
-#define ITU_IRQ_TIMER_HI  *((volatile uint8_t *)(ITU_BASE + 0x08))
-#define ITU_FPGA_FLAGS    *((volatile uint8_t *)(ITU_BASE + 0x0A))
-#define ITU_FPGA_VERSION  *((volatile uint8_t *)(ITU_BASE + 0x0B))
-#define ITU_MS_TIMER_LO   *((volatile uint8_t *)(ITU_BASE + 0x23))
-#define ITU_MS_TIMER_HI   *((volatile uint8_t *)(ITU_BASE + 0x22))
-#define ITU_MS_TIMER      *((volatile uint16_t *)(ITU_BASE + 0x22))
-#define ITU_USB_BUSY	  *((volatile uint8_t *)(ITU_BASE + 0x24))
-#define ITU_SD_BUSY	      *((volatile uint8_t *)(ITU_BASE + 0x25))
-#define ITU_MISC_IO	      *((volatile uint8_t *)(ITU_BASE + 0x26))
+#define ITU_IRQ_GLOBAL    (ITU_BASE + 0x00)
+#define ITU_IRQ_ENABLE    (ITU_BASE + 0x01)
+#define ITU_IRQ_DISABLE   (ITU_BASE + 0x02)
+#define ITU_IRQ_EDGE      (ITU_BASE + 0x03)
+#define ITU_IRQ_CLEAR     (ITU_BASE + 0x04)
+#define ITU_IRQ_ACTIVE    (ITU_BASE + 0x05)
+#define ITU_TIMER         (ITU_BASE + 0x06)
+#define ITU_IRQ_TIMER_EN  (ITU_BASE + 0x07)
+#define ITU_IRQ_TIMER_LO  (ITU_BASE + 0x09)
+#define ITU_IRQ_TIMER_HI  (ITU_BASE + 0x08)
+#define ITU_FPGA_FLAGS    (ITU_BASE + 0x0A)
+#define ITU_FPGA_VERSION  (ITU_BASE + 0x0B)
+#define ITU_MS_TIMER_LO   (ITU_BASE + 0x23)
+#define ITU_MS_TIMER_HI   (ITU_BASE + 0x22)
+#define __ITU_MS_TIMER    (ITU_BASE + 0x22)
+#define ITU_USB_BUSY	  (ITU_BASE + 0x24)
+#define ITU_SD_BUSY	      (ITU_BASE + 0x25)
+#define ITU_MISC_IO	      (ITU_BASE + 0x26)
 
 
 #define CAPAB_UART          0x00000001
@@ -63,8 +63,8 @@ extern "C" {
 # define ENTER_SAFE_SECTION
 # define LEAVE_SAFE_SECTION
 #else
-# define ENTER_SAFE_SECTION ITU_IRQ_GLOBAL=0;
-# define LEAVE_SAFE_SECTION ITU_IRQ_GLOBAL=1;
+# define ENTER_SAFE_SECTION ioWrite8(ITU_IRQ_GLOBAL,0);
+# define LEAVE_SAFE_SECTION ioWrite8(ITU_IRQ_GLOBAL,1);
 #endif
 
 #define ITU_C64_IRQ 0x10
@@ -77,10 +77,10 @@ extern "C" {
 void wait_ms(int);
 void outbyte(int c);
 
-#define UART_DATA  *((volatile uint8_t *)(ITU_BASE + 0x10))
-#define UART_GET   *((volatile uint8_t *)(ITU_BASE + 0x11))
-#define UART_FLAGS *((volatile uint8_t *)(ITU_BASE + 0x12))
-#define UART_ICTRL *((volatile uint8_t *)(ITU_BASE + 0x13))
+#define UART_DATA  (ITU_BASE + 0x10)
+#define UART_GET   (ITU_BASE + 0x11)
+#define UART_FLAGS (ITU_BASE + 0x12)
+#define UART_ICTRL (ITU_BASE + 0x13)
 
 #define UART_Overflow    0x01
 #define UART_TxFifoFull  0x10
@@ -94,7 +94,7 @@ uint16_t uart_write_buffer(const void *buf, uint16_t count);
 uint16_t uart_write_hex(uint8_t b);
 BOOL uart_data_available(void);
 int uart_get_byte(int delay);
-
+uint16_t getMsTimer();
 uint32_t getFpgaCapabilities();
 uint8_t  getFpgaVersion();
 

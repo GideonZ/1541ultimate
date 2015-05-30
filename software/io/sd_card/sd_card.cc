@@ -311,8 +311,8 @@ DRESULT SdCard :: write(const uint8_t* buf, uint32_t address, int sectors )
     	sdio_send_command(CMDWRITE, (uint16_t)(place >> 16), (uint16_t) place);
     
 /*      // wait for 0.5 ms
-        ITU_TIMER = 100;
-        while(ITU_TIMER)
+        ioWrite8(ITU_TIMER, 100);
+        while(ioRead8(ITU_TIMER))
             ;
 */        
     	resp = Resp8b(); /* Card response */

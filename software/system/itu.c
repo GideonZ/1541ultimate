@@ -24,7 +24,7 @@ uint8_t getFpgaVersion()
 #if RUNS_ON_PC
 	return 0x33;
 #else
-	return ITU_FPGA_VERSION;
+	return ioRead8(ITU_FPGA_VERSION);
 #endif
 }
 
@@ -44,14 +44,17 @@ uint8_t getFpgaVersion()
 */
 void wait_ms(int time)
 {
-    int i;
+	int i;
     for(i=0;i<time;i++) {
-        ITU_TIMER = 200;
-        while(ITU_TIMER)
+        ioWrite8(ITU_TIMER, 200);
+        while(ioRead8(ITU_TIMER))
             ;
     }
 }
 
+uint16_t getMsTimer() {
+	return ioRead16(__ITU_MS_TIMER);
+}
 /*
 -------------------------------------------------------------------------------
 							uart_data_available
@@ -72,7 +75,7 @@ void wait_ms(int time)
 */
 BOOL uart_data_available(void)
 {
-	return (UART_FLAGS & UART_RxDataAv);
+	return (ioRead8(UART_FLAGS) & UART_RxDataAv);
 }
 
 /*
@@ -101,13 +104,13 @@ uint16_t uart_read_buffer(const void *buf, uint16_t count)
 
 	d = 0;   
     do {
-        st = UART_FLAGS;
+        st = ioRead8(UART_FLAGS);
         if (st & UART_RxDataAv) {
             if (count) {
-                d = UART_DATA;
-                UART_DATA = d; // echo
+                d = ioRead8(UART_DATA);
+                ioWrite8(UART_DATA, d); // echo
                	*(pnt++) = d;
-                UART_GET = 0;
+                ioWrite8(UART_GET, 0);
                 count --;
                 i++;
             }
@@ -144,7 +147,7 @@ uint16_t uart_write_buffer(const void *buf, uint16_t count)
     uint8_t *pnt = (uint8_t *)buf;
 
     for(i=0;i<count;i++) {
-        while(UART_FLAGS & UART_TxFifoFull);
+        while(ioRead8(UART_FLAGS) & UART_TxFifoFull);
 //        while(!(st & UART_TxReady));
 
 //        if(*pnt == 0x0A) {
@@ -156,7 +159,7 @@ uint16_t uart_write_buffer(const void *buf, uint16_t count)
 //            UART_DATA = 0x0A;
 //			continue;
 //        }
-        UART_DATA = *pnt++;
+        ioWrite8(UART_DATA, *pnt++);
     }
 
     return count;
@@ -205,16 +208,16 @@ int uart_get_byte(int delay)
 {
     uint8_t d;
     
-    while(!(UART_FLAGS & UART_RxDataAv)) {
-        ITU_TIMER = 240;
-        while(ITU_TIMER)
+    while(!(ioRead8(UART_FLAGS) & UART_RxDataAv)) {
+        ioWrite8(ITU_TIMER, 240);
+        while(ioRead8(ITU_TIMER))
             ;
         delay--;
         if(delay <= 0)
             return -2;
     }
-    d = UART_DATA;
-    UART_GET = 0;
+    d = ioRead8(UART_DATA);
+    ioWrite8(UART_GET, 0);
     return (int)d;
 }
 /*

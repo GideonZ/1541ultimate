@@ -5,7 +5,9 @@
 #include "iec.h"
 #include <ctype.h>
 #include <stdio.h>
+#include <string.h>
 #include "filemanager.h"
+#include "mystring.h"
 
 typedef enum _t_channel_state {
     e_idle, e_filename, e_file, e_dir, e_complete, e_error
@@ -29,7 +31,6 @@ class IecChannel
     IecInterface *interface;
     FileManager *fm;
 
-    IndexedList<FileInfo *> *dirlist;
 	int  channel;
     int  write;
     uint8_t buffer[256];
@@ -39,14 +40,10 @@ class IecChannel
     int  last_command;
     int  dir_index;
     int  dir_last;
-    CachedTreeNode *dir_obj;
     
     t_channel_state state;
 
     int  last_byte;
-
-//    int  flags; // read, write, dirty
-//    int  block, last_block;
 
     // temporaries
     uint32_t bytes;
@@ -54,7 +51,6 @@ class IecChannel
 public:
     IecChannel(IecInterface *intf, int ch)
     {
-    	dirlist = 0;
     	fm = FileManager :: getFileManager();
     	interface = intf;
         channel = ch;
@@ -64,25 +60,17 @@ public:
         state = e_idle;
         dir_index = 0;
         dir_last = 0;
+        bytes = 0;
+        last_byte = 0;
+        size = 0;
+        last_command = 0;
     }
     
     virtual ~IecChannel()
     {
-    	if (dirlist) {
-    		cleanupDir();
-    		delete dirlist;
-    	}
     	close_file();
     }
 
-    void cleanupDir() {
-    	if (!dirlist)
-    		return;
-    	for(int i=0;i < dirlist->get_elements();i++) {
-    		delete (*dirlist)[i];
-    	}
-    	dirlist->clear_list();
-    }
 
     virtual int pop_data(uint8_t& b)
     {
@@ -126,11 +114,9 @@ public:
             pointer = 0;
             return 0;
         }
-        //printf("Dir index = %d\n", dir_index);
-        //printf("Dir Obj %p %s\n", dir_obj, dir_obj->get_name());
-        CachedTreeNode *entry = dir_obj->children[dir_index++];
-        //printf("entry = %p\n", entry);
-        FileInfo *info = entry->get_file_info();
+        printf("Dir index = %d %s\n", dir_index, (*interface->iecNames)[dir_index]);
+        FileInfo *info = (*interface->dirlist)[dir_index];
+
         //printf("info = %p\n", info);
         uint32_t size = 0;
         uint32_t size2 = 0;
@@ -138,30 +124,39 @@ public:
             size = info->size;
         }
         size /= 254;
-        if(size > 65535)
-            size = 65535;
+        if(size > 9999)
+            size = 9999;
         size2 = size;
         int chars=1;
         while(size2 >= 10) {
             size2 /= 10;
             chars ++;
         }        
-        int spaces=4-chars;
+        int spaces=3-chars;
         buffer[2] = size & 255;
         buffer[3] = size >> 8;
         int pos = 4;
         while((spaces--)>=0)
             buffer[pos++] = 32;
         buffer[pos++]=34;
-        char *name = entry->get_name();
-        while((*name)&&(pos < 24))
-            buffer[pos++] = toupper(*(name++));
+        char *name = (*interface->iecNames)[dir_index];
+        while(*name)
+            buffer[pos++] = *(name++);
         buffer[pos++] = 34;
-        while(pos < 31)
+        while(pos < 32)
             buffer[pos++] = 32;
+
+        if (info->is_directory()) {
+        	memcpy(&buffer[27-chars], "DIR", 3);
+        } else if(strcmp(info->extension, "PRG") != 0) {
+        	memcpy(&buffer[27-chars], "SEQ", 3);
+        } else {
+        	memcpy(&buffer[27-chars], "PRG", 3);
+        }
         buffer[31] = 0;
         pointer = 0;
-        return 0;        
+        dir_index ++;
+        return 0;
     }
     
     int read_block(void)
@@ -260,7 +255,8 @@ public:
                 break;
             default:
                 printf("Error on channel %d. Unknown command: %b\n", channel, b);
-        }              
+        }
+        return IEC_OK;
     }
     
 private:
@@ -304,23 +300,17 @@ private:
                     default:
                         printf("Unknown control char in filename: %c\n", buffer[i+1]);
                 }
-            } else {
-                buffer[i] = uint8_t(tolower(int(buffer[i])));
+                break;
             }
         }
         printf("Filename after parsing: '%s'. Extension = '%s'. Write = %d\n", buffer, extension, write);
-        strcat((char *)buffer, extension);
+        // strcat((char *)buffer, extension);
 
         uint8_t flags = FA_READ;
 
         if(buffer[0] == '$') {
             printf("IEC Channel: Opening directory...\n");
-            if(dirlist) {
-            	cleanupDir();
-            } else {
-            	dirlist = new IndexedList<FileInfo *>(8, NULL);
-            }
-            interface->path->get_directory(*dirlist);
+            interface->readDirectory();
             state = e_dir;
             pointer = 0;
             last_byte = -1;
@@ -332,12 +322,20 @@ private:
             while((pos < 23) && (*name))
                 buffer[pos++] = toupper(*(name++));
             dump_hex(buffer, 32);
-            dir_last = dirlist->get_elements();
+            dir_last = interface->dirlist->get_elements();
             dir_index = 0;
             return 0;
         }
 
-        f = fm->fopen(interface->path, (char *)buffer, (write)?(FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS):(FA_READ));
+        interface->readDirectory();
+        int pos = interface->findIecName((char *)buffer, extension);
+        // TODO: what about create (write)?
+        if (pos < 0) {
+        	return 0; // no error state?
+        }
+        FileInfo *info = (*interface->dirlist)[pos];
+
+        f = fm->fopen(interface->path, info->lfname, (write)?(FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS):(FA_READ));
         if(f) {
             printf("Successfully opened file %s in %s\n", buffer, interface->path->get_path());
             last_byte = -1;
@@ -421,11 +419,35 @@ public:
             case 0x00: // end of data, command received in buffer
                 buffer[pointer]=0;
                 printf("Command received: %s\n", buffer);
-                get_last_error(ERR_SYNTAX_ERROR_CMD);
+                if (strncmp((char *)buffer, "CD:", 3) == 0) {
+                	cd((char *)&buffer[3]);
+                } else { // unknown command
+                	get_last_error(ERR_SYNTAX_ERROR_CMD);
+                }
                 break;
             default:
                 printf("Error on channel %d. Unknown command: %b\n", channel, b);
         }
+        return IEC_OK;
+    }
+
+    bool cd(char *name) {
+    	int p = interface->findIecName(name, "DIR");
+    	if (p < 0) {
+        	get_last_error(ERR_FILE_NOT_FOUND);
+    		return false;
+    	}
+    	FileInfo *info = (*interface->dirlist)[p];
+    	if (!info->is_directory()) {
+        	get_last_error(ERR_FILE_TYPE_MISMATCH);
+        	return false;
+    	}
+
+    	if (!interface->path->cd(info->lfname)) {
+        	get_last_error(ERR_DIRECTORY_ERROR);
+        	return false;
+    	}
+    	return true;
     }
 };
 

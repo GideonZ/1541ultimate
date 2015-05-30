@@ -18,10 +18,10 @@ void vLedFlash()
 {
 	for( ;; )
 	{
-		ITU_USB_BUSY = 1;
+		ioWrite8(ITU_USB_BUSY, 1);
 		vTaskDelay( 50 );
 
-		ITU_USB_BUSY = 0;
+		ioWrite8(ITU_USB_BUSY, 0);
 		vTaskDelay( 50 );
 	}
 }

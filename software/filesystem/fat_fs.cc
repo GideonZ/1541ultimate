@@ -980,6 +980,7 @@ FRESULT FATFS::dir_create(FileInfo *f)
 // Opens file (creates file object)
 File *FATFS::file_open(FileInfo *info, uint8_t flags)  
 {
+	info->print_info();
 	FATFIL *ff = new FATFIL(this);
     File *f = new File(info, (uint32_t)ff);
     FRESULT res = ff->open(info, flags);
@@ -987,6 +988,7 @@ File *FATFS::file_open(FileInfo *info, uint8_t flags)
     if(res == FR_OK) {
         return f;
     }
+    printf("FATFS: No such file.\n");
     delete ff;
     delete f;
     return NULL;    

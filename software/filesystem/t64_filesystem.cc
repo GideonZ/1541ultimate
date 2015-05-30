@@ -102,10 +102,10 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 		if(fres != FR_OK)
 			return fres;
 
-		read_buf[32] = 0;
+		read_buf[31] = 0;
 		f->lfname[24] = 0;
 	    for(int b=0;b<24;b++) {
-	        f->lfname[b] = char(read_buf[b+8] | 0x80); // actually this is a form of formatting but I let it go
+	        f->lfname[b] = char(read_buf[b+8]); 
 	    }
 
 	    max  = LD_WORD(&read_buf[2]);

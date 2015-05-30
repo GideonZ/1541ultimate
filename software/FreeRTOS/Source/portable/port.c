@@ -116,10 +116,10 @@ uint32_t *pulISRStack;
  */
 static void prvSetupTimerInterrupt( void )
 {
-	ITU_IRQ_TIMER_HI = 3;
-	ITU_IRQ_TIMER_LO = 208; // 0x03D0 => 200 Hz
-	ITU_IRQ_TIMER_EN = 1;
-	ITU_IRQ_ENABLE = 0x0D; // tape, usb + timer
+	ioWrite8(ITU_IRQ_TIMER_HI, 3);
+	ioWrite8(ITU_IRQ_TIMER_LO, 208); // 0x03D0 => 200 Hz
+	ioWrite8(ITU_IRQ_TIMER_EN, 1);
+	ioWrite8(ITU_IRQ_ENABLE, 0x0D); // tape, usb + timer
 }
 /*-----------------------------------------------------------*/
 
@@ -333,8 +333,8 @@ static uint8_t pending;
 
 	PROFILER_SUB = 1;
 /* Which interrupts are pending? */
-	pending = ITU_IRQ_ACTIVE;
-	ITU_IRQ_CLEAR = pending;
+	pending = ioRead8(ITU_IRQ_ACTIVE);
+	ioWrite8(ITU_IRQ_CLEAR, pending);
 
 	BaseType_t do_switch = pdFALSE;
 	BaseType_t do_switch_timer = pdFALSE;

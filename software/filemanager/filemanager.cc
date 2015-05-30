@@ -156,9 +156,11 @@ File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
 			last_error = dirinfo->fs->get_last_error();
 			delete newNode;
 		}
-	} else { // no creation
+	} else if(existing) { // no creation
 		file = dirinfo->fs->file_open(existing->get_file_info(), flags);
 		last_error = dirinfo->fs->get_last_error();
+	} else {
+		return 0;
 	}
 
 	if(file) {

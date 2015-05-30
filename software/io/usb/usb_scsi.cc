@@ -156,7 +156,7 @@ void UsbScsiDriver :: poll(void)
 
 	// poll intervals are meant to lower the unnecessary
 	// traffic on the USB bus.
-    uint16_t now = ITU_MS_TIMER;
+    uint16_t now = getMsTimer();
     uint16_t passed_time = now - poll_interval[current_lun];
     if(passed_time >= c_intervals[int(state_copy[current_lun])]) {
 
@@ -760,14 +760,14 @@ DRESULT UsbScsi :: read(uint8_t *buf, uint32_t sector, int num_sectors)
     
     int len, stat_len;
 
-    ITU_USB_BUSY = 1;
+    ioWrite8(ITU_USB_BUSY, 1);
 //    for(int s=0;s<num_sectors;s++) {
         //ST_DWORD(&cbw.cmd[2], sector);
         memcpy(&read_10_command[2], &sector, 4);
         
         for(int retry=0;retry<10;retry++) {
             if(driver->exec_command(lun, 10, false, read_10_command, block_size*num_sectors, buf, false) != block_size*num_sectors) {
-                ITU_USB_BUSY = 0;
+            	ioWrite8(ITU_USB_BUSY, 0);
                 return RES_ERROR;
             } else
                 break;
@@ -777,7 +777,7 @@ DRESULT UsbScsi :: read(uint8_t *buf, uint32_t sector, int num_sectors)
 //        sector ++;
 //    }
 
-	ITU_USB_BUSY = 0;
+	ioWrite8(ITU_USB_BUSY, 0);
     return RES_OK;
 }
 
@@ -793,7 +793,7 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
     
     int len, stat_len;
 
-    ITU_USB_BUSY = 1;
+    ioWrite8(ITU_USB_BUSY, 1);
 
     //printf("USB: Writing %d sectors from %d.\n", num_sectors, sector);
 //    for(int s=0;s<num_sectors;s++) {
@@ -804,7 +804,7 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
         	len = driver->exec_command(lun, 10, true, write_10_command, block_size*num_sectors, (uint8_t *)buf, false);
         	if(len != block_size*num_sectors) {
         		printf("Error %d.\n", len);
-        	    ITU_USB_BUSY = 0;
+        		ioWrite8(ITU_USB_BUSY, 0);
                 return RES_ERROR;
         	} else
                 break;
@@ -813,7 +813,7 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
 //        buf += block_size;
 //        sector ++;
 //    }
-	ITU_USB_BUSY = 0;
+	ioWrite8(ITU_USB_BUSY, 0);
     return RES_OK;
 }
 
