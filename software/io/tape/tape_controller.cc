@@ -41,7 +41,7 @@ int  TapeController :: fetch_task_items(IndexedList<Action*> &item_list)
 {
     if(!file)
         return 0;
-	if(!file->info) {
+	if(!file->isValid()) {
     	close();
 		return 0;
 	}
@@ -97,7 +97,7 @@ void TapeController :: read_block()
 {
 	if(!file)
 		return;
-    if(!file->info) {
+	if(!file->isValid()) {
     	close();
         return;
     }
@@ -131,7 +131,7 @@ void TapeController :: poll(Event &e)
 	if(!file)
 		return;
 
-	if(!file->info) {
+	if(!file->isValid()) {
     	close();
         return;
     }

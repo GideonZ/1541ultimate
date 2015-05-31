@@ -99,6 +99,7 @@ void TreeBrowserState :: draw()
 //	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
 	// this functions initializes the screen
     browser->window->set_color(user_interface->color_fg);
+    browser->window->reverse_mode(0);
 
     if(children.get_elements() == 0) {
 		browser->window->clear();

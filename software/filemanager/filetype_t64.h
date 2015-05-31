@@ -7,7 +7,6 @@
 class FileTypeT64 : public FileType
 {
 	CachedTreeNode *node;
-	File *file;
     FileSystem *fs;
 public:
     FileTypeT64(CachedTreeNode *obj);

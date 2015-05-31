@@ -18,21 +18,35 @@
 
 class File
 {
-public:
 	FileInfo *info; // refers to a structure with file information, when set to null, this file is invalidated
+
+	// the following function shall only be called by the file manager
+	friend class FileManager;
+	virtual void    close(void);
+public:
     uint32_t handle;   // could be a pointer to an object used in the derived class
 
     File(FileInfo *n, uint32_t h) {
-        info = n;
+    	info = new FileInfo(*n); // copy data!
         handle = h;
     }
 
-    virtual ~File() { }
+    virtual ~File() {
+    	if(info) {
+    		delete info;
+    	}
+    }
 
     // functions for reading and writing files
-    void invalidate(void) { info = NULL; }
-    bool isValid(void) { return info != NULL; }
-    virtual void    close(void);
+    void invalidate(void) {
+    	if(info) {
+    		delete info;
+    		info = NULL;
+    	}
+    }
+    bool isValid(void) { return (info != NULL); }
+    FileInfo *getFileInfo() { return info; }
+
     virtual FRESULT sync(void);
     virtual FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     virtual FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);

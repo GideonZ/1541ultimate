@@ -12,6 +12,7 @@
 #include "filemanager.h"
 #include "filetypes.h"
 #include "globals.h"
+#include "user_file_interaction.h"
 
 class BrowsableDirEntry : public Browsable
 {
@@ -55,7 +56,13 @@ public:
 			type = Globals :: getFileTypeFactory()->create(node);
 		if (type)
 			type->fetch_context_items(items);
+		UserFileInteraction :: fetch_context_items(node, items);
 	}
+
+	virtual int fetch_task_items(IndexedList<Action *> &list) {
+		return UserFileInteraction :: fetch_task_items(node, list);
+	}
+
 	virtual bool invalidateMatch(void *obj) {
 		CachedTreeNode *n = (CachedTreeNode *)obj;
 		return (n == node);

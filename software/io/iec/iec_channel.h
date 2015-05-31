@@ -198,7 +198,7 @@ public:
                 if(pointer == 256) {
                     FRESULT res = FR_DENIED;
                 	if(f) {
-                        f->write(buffer, 256, &bytes);
+                        res = f->write(buffer, 256, &bytes);
                     }
                     if(res != FR_OK) {
                         fm->fclose(f);
@@ -300,11 +300,11 @@ private:
                     default:
                         printf("Unknown control char in filename: %c\n", buffer[i+1]);
                 }
+                buffer[i] = tolower(buffer[i]);
                 break;
             }
         }
         printf("Filename after parsing: '%s'. Extension = '%s'. Write = %d\n", buffer, extension, write);
-        // strcat((char *)buffer, extension);
 
         uint8_t flags = FA_READ;
 
@@ -329,13 +329,29 @@ private:
 
         interface->readDirectory();
         int pos = interface->findIecName((char *)buffer, extension);
-        // TODO: what about create (write)?
-        if (pos < 0) {
-        	return 0; // no error state?
-        }
-        FileInfo *info = (*interface->dirlist)[pos];
 
-        f = fm->fopen(interface->path, info->lfname, (write)?(FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS):(FA_READ));
+        char *filename;
+
+        if(write) {
+        	if (pos >= 0) {
+        		interface->last_error = ERR_FILE_EXISTS;
+        		state = e_error;
+        		return 0;
+        	} else {
+        		strcat((char *)buffer, extension);
+        		filename = (char *)buffer;
+        	}
+        } else { // read
+            if (pos < 0) {
+            	interface->last_error = ERR_FILE_NOT_FOUND;
+        		state = e_error;
+            	return 0;
+            }
+            FileInfo *info = (*interface->dirlist)[pos];
+            filename = info->lfname;
+        }
+
+        f = fm->fopen(interface->path, filename, (write)?(FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS):(FA_READ));
         if(f) {
             printf("Successfully opened file %s in %s\n", buffer, interface->path->get_path());
             last_byte = -1;
@@ -347,6 +363,7 @@ private:
             }
         } else {
             printf("Can't open file %s in %s\n", buffer, interface->path->get_path());
+    		state = e_error;
         }            
         return 0;
     }
@@ -434,8 +451,12 @@ public:
     bool cd(char *name) {
     	int p = interface->findIecName(name, "DIR");
     	if (p < 0) {
-        	get_last_error(ERR_FILE_NOT_FOUND);
-    		return false;
+    		if(!interface->path->cd(name)) {
+    			get_last_error(ERR_FILE_NOT_FOUND);
+    			return false;
+    		} else {
+    			return true;
+    		}
     	}
     	FileInfo *info = (*interface->dirlist)[p];
     	if (!info->is_directory()) {

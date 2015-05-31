@@ -20,6 +20,7 @@ class FileTypeCRT : public FileType
 
     void execute(int);
     static void execute_st(void *obj, void *param);
+    static void configure_st(int);
 public:
     FileTypeCRT(CachedTreeNode *node);
     ~FileTypeCRT();

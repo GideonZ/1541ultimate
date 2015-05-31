@@ -39,7 +39,7 @@ private:
     UIObject *ui_objects[MAX_UI_OBJECTS];
     
     void set_screen_title(void);
-    CachedTreeNode *current_path;
+    //CachedTreeNode *current_path;
     UIStatusBox *status_box;
 public:
     int color_border, color_bg, color_fg, color_sel;

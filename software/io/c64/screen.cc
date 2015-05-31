@@ -106,7 +106,13 @@ void Screen_MemMappedCharMatrix :: repeat(char a, int len)
 int  Screen_MemMappedCharMatrix :: output(char c)
 {
 	if (escape) {
-		set_color(c & 15);
+		if (c == 'R') {
+			reverse_mode(1);
+		} else if (c == 'r') {
+			reverse_mode(0);
+		} else {
+			set_color(c & 15);
+		}
 		escape = false;
 		return 0;
 	}

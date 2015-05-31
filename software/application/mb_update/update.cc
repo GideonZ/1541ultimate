@@ -93,66 +93,6 @@ int calc_checksum(uint8_t *buffer, uint8_t *buffer_end)
     return check;
 }
 
-/*
-int init_fat(void)
-{
-    dsk   = new Disk(blk, 512);
-
-    int res = dsk->Init();
-    console_print(screen, "Disk initialized. Returned: %d\n", res);
-
-    if(res < 1) {
-        delete dsk;
-        delete blk;
-        return -1;
-    }    
-
-    Partition *prt;
-    prt = dsk->partition_list; // get first partition
-    fs = new FATFS(prt);
-    if(fs->check_fs(prt)) {
-        console_print(screen, "Did not find FAT file system.\n");
-        delete fs;
-        delete prt;
-        delete dsk;
-        delete blk;
-        return -2;
-    }
-    fs->init();
-    return 0;
-}
-
-int init_fat_on_sd(void)
-{
-    blk = new SdCard();
-	if(!blk->init())
-		blk->set_state(e_device_ready);
-
-    return init_fat();
-}
-
-int save_flash(char *filename)
-{
-    FATFIL *file = new FATFIL(fs);
-    int res = file->open(filename, 0, FA_READ | FA_WRITE | FA_CREATE_ALWAYS );
-    console_print(screen, "File %s open result = %d.\n", filename, res);
-    if(res != FR_OK) {
-        return 0;
-    }
-    UINT bytes_written = 0;
-	BYTE *buffer = new BYTE[33 * 512];
-	int addr = 0;
-	for(int i=0;i<128;i++) {
-		flash.read(addr, 33*512, buffer);
-	    res = file->write(buffer, 33*512, &bytes_written);
-	    console_print(screen, "Bytes written: %d (0x%6x)\n", bytes_written, addr);
-	    addr += (33*512);
-	}    
-    file->close();
-    delete file;
-    delete buffer;
-}
-*/
 
 bool need_update(int id, char *version, char *descr)
 {
@@ -376,14 +316,14 @@ int main()
     wait_ms(500);
     host->freeze();
 
-    screen = new Screen(host->get_screen(), host->get_color_map(), 40, 25);
+    screen = host->getScreen();
     screen->move_cursor(0,0);
     screen->output("\033\021   **** 1541 Ultimate II Updater ****\n\033\037"); // \020 = alpha \021 = beta
     for(int i=0;i<40;i++)
         screen->output('\002');
 
     user_interface = new UserInterface;
-    user_interface->init(host, host->get_keyboard());
+    user_interface->init(host);
     user_interface->set_screen(screen);
 
 	console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));

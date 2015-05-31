@@ -100,6 +100,12 @@ int FileTypeCRT :: fetch_context_items(IndexedList<Action *> &list)
 }
 
 // static member
+void FileTypeCRT :: configure_st(int param)
+{
+	((FileTypeCRT *)param)->execute(CRTFILE_CONFIGURE);
+}
+
+// static member
 FileType *FileTypeCRT :: test_type(CachedTreeNode *obj)
 {
 	FileInfo *inf = obj->get_file_info();
@@ -143,6 +149,9 @@ void FileTypeCRT :: execute(int selection)
 
     FileManager *fm = FileManager :: getFileManager();
 
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+    memset((void *)mem_addr, 0, 1024*1024); // clear all cart memory
+
     printf("Cartridge Load.. %s FileSize = %d\n", node->get_name(), node->get_file_info()->size);
     file = fm->fopen_node(node, FA_READ);
     uint32_t dw;
@@ -158,10 +167,9 @@ void FileTypeCRT :: execute(int selection)
             dw = get_dword(crt_header + 16);
             printf("Header OK. Now reading chip packets starting from %6x.\n", dw);
             fres = file->seek(dw);
-            if(fres != FR_OK)
-                goto fail;
-            while(read_chip_packet(file))
-                ;
+            if(fres == FR_OK)
+				while(read_chip_packet(file))
+					;
 
         } else {
             if(name) {
@@ -171,12 +179,12 @@ void FileTypeCRT :: execute(int selection)
             } else {
                 user_interface->popup("Header of CRT file not correct.", BUTTON_OK);
             }
+            return;
         }
 
 		push_event(e_unfreeze);
-		push_event(e_function_call, this, CRTFILE_CONFIGURE);
+		push_event(e_function_call, (void *)FileTypeCRT :: configure_st, (int)this);
 
-fail:
         fm->fclose(file);
     } else {
         printf("Error opening file.\n");
@@ -226,7 +234,7 @@ bool FileTypeCRT :: read_chip_packet(File *f)
     uint16_t load = get_word(chip_header + 12);
     uint16_t size = get_word(chip_header + 14);
 
-    if(bank > 0x3f)
+    if(bank > 0x7f)
         return false;
 
     if((type_select == CART_OCEAN)&&(load == 0xA000))
@@ -250,7 +258,7 @@ bool FileTypeCRT :: read_chip_packet(File *f)
         mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
         load_at_a000 = true;
     }
-    printf("Reading chip data for bank %d to $%4x with size $%4x to 0x%8x. %s\n", bank, load, size, mem_addr, (split)?"Split":"Contiguous");
+    printf("Reading chip data bank %d to $%4x with size $%4x to 0x%8x. %s\n", bank, load, size, mem_addr, (split)?"Split":"Contiguous");
     
     if(size) {
         if(split) {
@@ -276,30 +284,13 @@ bool FileTypeCRT :: read_chip_packet(File *f)
     return true;
 }
 
-/*
-    constant c_none         : X"0";
-    constant c_8k           : X"1";
-    constant c_16k          : X"2";
-    constant c_16k_umax     : X"3";
-    constant c_fc3          : X"4";
-    constant c_ss5          : X"5";
-    constant c_retro        : X"6";
-    constant c_action       : X"7";
-    constant c_system3      : X"8";
-    constant c_domark       : X"9";
-    constant c_ocean128     : X"A";
-    constant c_ocean256     : X"B";
-    constant c_easy_flash   : X"C";
-    constant c_epyx         : X"E";
-*/
-
 void FileTypeCRT :: configure_cart(void)
 {
     C64_MODE = C64_MODE_RESET;
     C64_REU_ENABLE = 0;
     C64_ETHERNET_ENABLE = 0;
 
-    C64_CARTRIDGE_TYPE = 0;
+    C64_CARTRIDGE_TYPE = CART_TYPE_NONE;
 
     uint32_t len = total_read;
     if(!len)
@@ -323,27 +314,27 @@ void FileTypeCRT :: configure_cart(void)
 
     switch(type_select) {
         case CART_NORMAL:
-            if ((crt_header[0x18] == 0) && (crt_header[0x19] == 1)) {
-                C64_CARTRIDGE_TYPE = 0x03; // Ultimax
-            } else if ((crt_header[0x18] == 1) && (crt_header[0x19] == 1)) {
-                C64_CARTRIDGE_TYPE = 0x02; // 16K
-            } else if ((crt_header[0x18] == 1) && (crt_header[0x19] == 0)) {
-                C64_CARTRIDGE_TYPE = 0x01; // 8K
-            } else {
+            if ((crt_header[0x18] == 1) && (crt_header[0x19] == 0)) {  // only special case that we check
+                C64_CARTRIDGE_TYPE = CART_TYPE_16K_UMAX;
+            } /*else if ((crt_header[0x18] == 0) && (crt_header[0x19] == 0)) {
+                C64_CARTRIDGE_TYPE = CART_TYPE_16K;
+            } else if ((crt_header[0x18] == 0) && (crt_header[0x19] == 1)) {
+                C64_CARTRIDGE_TYPE = CART_TYPE_8K;
+            } */else {
                 if (total_read > 8192)
-                    C64_CARTRIDGE_TYPE = 0x02; // 16K
+                    C64_CARTRIDGE_TYPE = CART_TYPE_16K; // 16K
                 else
-                    C64_CARTRIDGE_TYPE = 0x01; // 8K
+                    C64_CARTRIDGE_TYPE = CART_TYPE_8K; // 8K
             }
             break;
         case CART_ACTION:
-            C64_CARTRIDGE_TYPE = 0x07; // Action
+            C64_CARTRIDGE_TYPE = CART_TYPE_ACTION;
             break;
         case CART_RETRO:
-            C64_CARTRIDGE_TYPE = 0x06; // Retro
+            C64_CARTRIDGE_TYPE = CART_TYPE_RETRO;
             break;
         case CART_DOMARK:
-            C64_CARTRIDGE_TYPE = 0x09; // Domark
+            C64_CARTRIDGE_TYPE = CART_TYPE_DOMARK;
             break;
         case CART_OCEAN:
 //            if ((total_read > 0x20000)&&(total_read <= 0x40000)) { // 16K banks
@@ -358,27 +349,27 @@ void FileTypeCRT :: configure_cart(void)
 //            }                
 //
             if (load_at_a000) {
-                C64_CARTRIDGE_TYPE = 0x0B; // Ocean 256K
+                C64_CARTRIDGE_TYPE = CART_TYPE_OCEAN256; // Ocean 256K
             } else {
 //                uint32_t mem_base = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
 //                memcpy((void *)(mem_base + 256*1024), (void *)(mem_base + 0*1024), 256*1024);
-                C64_CARTRIDGE_TYPE = 0x0A; // Ocean 128K/512K
+                C64_CARTRIDGE_TYPE = CART_TYPE_OCEAN128; // Ocean 128K/512K
             }                
             break;
         case CART_EASYFLASH:
-            C64_CARTRIDGE_TYPE = 0x0C; // EasyFlash
+            C64_CARTRIDGE_TYPE = CART_TYPE_EASY_FLASH; // EasyFlash
             break;
         case CART_SUPERSNAP:
-            C64_CARTRIDGE_TYPE = 0x05; // Snappy
+            C64_CARTRIDGE_TYPE = CART_TYPE_SS5; // Snappy
             break;
         case CART_EPYX:
-            C64_CARTRIDGE_TYPE = 0x0E; // Epyx
+            C64_CARTRIDGE_TYPE = CART_TYPE_EPYX; // Epyx
             break;
         case CART_FINAL3:
-            C64_CARTRIDGE_TYPE = 0x04; // Final3
+            C64_CARTRIDGE_TYPE = CART_TYPE_FC3; // Final3
             break;
         case CART_SYSTEM3:
-            C64_CARTRIDGE_TYPE = 0x08; // System3
+            C64_CARTRIDGE_TYPE = CART_TYPE_SYSTEM3; // System3
             break;
         default:
             break;

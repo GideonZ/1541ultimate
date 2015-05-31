@@ -47,7 +47,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/sd_card \
 			$(PATH_SW)/io/audio \
 			$(PATH_SW)/io/overlay \
-			$(PATH_SW)/io/userinterface \
+			$(PATH_SW)/userinterface \
             $(ULTIMATE)/result \
             $(1ST_BOOT)/result_mb \
             $(2ND_BOOT)/result \
@@ -70,7 +70,7 @@ SRCS_C   =	mbstart_app.c \
 
 SRCS_CC	 =  memory.cc \
 			event.cc \
-			main_loop.cc \
+			poll.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \
@@ -81,12 +81,13 @@ SRCS_CC	 =  memory.cc \
 			config.cc \
 			c64.cc \
 			screen.cc \
-			keyboard.cc \
+			keyboard_c64.cc \
 			mystring.cc \
 			size_str.cc \
 			rtc.cc \
 			task_menu.cc \
 			userinterface.cc \
+			ui_elements.cc \
 			$(PRJ).cc
 
 
@@ -123,7 +124,7 @@ TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 PATH_INC =  $(addprefix -I, $(VPATH))
 APP_OPTS = -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 
 COPTIONS = -g -ffunction-sections -Os -std=c99 $(APP_OPTS)
-CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti $(APP_OPTS)
+CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -fno-threadsafe-statics $(APP_OPTS)
 LINK 	 = ./mb_update.lds
 LLIB     =  -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2

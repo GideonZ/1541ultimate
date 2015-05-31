@@ -1,6 +1,6 @@
 
-Tv = 200
-Ts = 200
+Tv = 275
+Ts = 275
 Ttk = 200
 Tda = 80
 T0 = 80
@@ -174,9 +174,10 @@ _wait1
             IF UPFIFOFULL THEN _wait1
             SET DATA=1
 
-            WAIT UNTIL CLK=0 FOR 200 us
+            WAIT UNTIL CLK=0 FOR Tv
             SET EOI=TIMEOUT  # If there was a timeout, set the EOI flag
             IF NOT EOI THEN _recv0
+            IF NOT ATN THEN _recv0
             SET DATA=0
             WAIT FOR 70 us
             SET DATA=1

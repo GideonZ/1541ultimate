@@ -10,7 +10,7 @@
 
 void FileManager :: handle_event(Event &e)
 {
-	CachedTreeNode *o, *c;
+	CachedTreeNode *o, *c, *par;
     o = (CachedTreeNode *)e.object;
     BlockDevice *blk;
     File *f;
@@ -31,8 +31,10 @@ void FileManager :: handle_event(Event &e)
         break;
 	case e_invalidate:
 		printf("Invalidate event.. Param = %d. Checking %d files.\n", e.param, open_file_list.get_elements());
+		par = o->parent;
 		for(int i=0;i<open_file_list.get_elements();i++) {
 			pair = open_file_list[i];
+			f = pair.file;
 			printf("%2d. %s %p\n", i, pair.file->info->lfname, pair.node);
 			if(!pair.file) {// should never occur
 				printf("INTERR: null pointer in list.\n");
@@ -74,7 +76,11 @@ void FileManager :: handle_event(Event &e)
 				c = c->parent;
 			}
 		}
-
+		if(par && (par != root)) {
+			printf("Removing %s from %s\n", o->get_name(), par->get_name());
+			par->children.remove(o);
+		}
+		printf("Invalidation complete.\n");
 		break;
     case e_detach_disk:
         fd = (FileDevice *)e.object;
@@ -143,11 +149,12 @@ File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
 
 	// file does not exist, and we would like it to exist: create.
 	if ((!existing) && (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS))) {
-		CachedTreeNode *newNode = new CachedTreeNode(path->current_dir_node, filename);
+		CachedTreeNode *newNode = new FileDirEntry(path->current_dir_node, filename);
 		FileInfo *newInfo = newNode->get_file_info();
 		newInfo->dir_clust = dirinfo->cluster;
 		newInfo->fs = dirinfo->fs;
 		fix_filename(newInfo->lfname);
+		get_extension(newInfo->lfname, newInfo->extension);
 		file = dirinfo->fs->file_open(newInfo, flags);
 		if(file) {
 			path->current_dir_node->children.append(newNode);
@@ -189,128 +196,6 @@ File *FileManager :: fopen_node(CachedTreeNode *node, uint8_t flags)
 	return file;
 }
 
-/*
-File *FileManager :: fcreate(char *filename, CachedTreeNode *dir)
-{
-    FileInfo *info;
-    info = dir->get_file_info();
-    
-    // printf("fcreate: DIR=%p (%s) info = %p\n", dir, dir->get_name(), info);
-    
-    if(!info) { // can't create file if I don't know how
-        last_error = FR_NO_FILESYSTEM;
-        return NULL;
-    }
-            
-    if(!(info->attrib & AM_DIR)) {  // can't create a file in a file - it should be a dir.
-        last_error = FR_DENIED;
-        return NULL;
-    }
-            
-    // info->print_info();
-    
-    // create a copy of the file info object
-    FileInfo *fi = new FileInfo(info, filename);
-    fi->dir_clust = info->cluster; // the new file will be located in the directory DIR_CLUST!
-    // remember: our reference object was the directory, so the cluster of that object is our new dir_clust!
-    fix_filename(fi->lfname);
-    fi->attrib = 0;
-
-    File *f = fi->fs->file_open(fi, FA_CREATE_NEW | FA_WRITE);
-    if(!f) {
-        last_error = fi->fs->get_last_error();
-        return NULL;
-    }        
-    last_error = FR_OK;
-    
-    f->print_info();
-    printf("File creation successful so far!\n");
-
-    CachedTreeNode *node = new CachedTreeNode(dir, filename);
-    f->node = node;
-    //dir->children.append(node);
-    open_file_list.append(f);    
-    return f;
-}
-
-File *FileManager :: fcreate(char *filename, char *dirname)
-{
-	Path *path = new Path;
-	//dump(); // dumps file system from root..
-	if(path->cd(dirname)) {
-		CachedTreeNode *po = path->get_path_object();
-		return fcreate(filename, po);
-	}
-	return NULL;
-}
-
-File *FileManager :: fopen(char *filename, CachedTreeNode *dir, BYTE flags)
-{
-    last_error = FR_OK;
-    CachedTreeNode *obj = dir->find_child(filename);
-    if(obj) {
-        return fopen(obj, flags);
-    }
-
-    // file not found. Check flags if we are allowed to create it
-    if(flags & FA_CREATE_NEW) {
-        return fcreate(filename, dir);
-    }
-    last_error = FR_NO_FILE;
-    return NULL;    
-}
-
-
-File *FileManager :: fopen(char *filename, BYTE flags)
-{
-	Path *path = new Path;
-	//dump(); // dumps file system from root..
-	if(path->cd(filename)) {
-		CachedTreeNode *po = path->get_path_object();
-		FileInfo *fi = po->get_file_info();
-		if(fi) {
-			File *f = fi->fs->file_open(fi, flags);
-			if(f) {
-				f->node = po;
-				f->path = path;
-				open_file_list.append(f);
-                last_error = FR_OK;
-				return f; // could be 0
-			} else {
-                last_error = FR_NO_FILE;
-	        }		    
-		} else {
-            last_error = FR_NO_FILESYSTEM;
-			delete path;
-			return 0;
-		}
-	} else {
-        last_error = FR_NO_FILE;
-    }
-	delete path;
-	return 0;
-}
-
-File *FileManager :: fopen(CachedTreeNode *obj, BYTE flags)
-{
-	FileInfo *fi = obj->get_file_info();
-	if(fi) {
-		File *f = fi->fs->file_open(fi, flags);
-		if(f) {
-			f->node = obj;
-			f->path = NULL;
-			open_file_list.append(f);
-            last_error = FR_OK;
-			return f; // could be 0
-		} else {
-		    last_error = fi->fs->get_last_error();
-		}
-	}
-    last_error = FR_NO_FILESYSTEM;
-	return 0;
-}
-*/
-
 void FileManager :: fclose(File *f)
 {
 	FileInfo *inf = f->info;
@@ -344,6 +229,46 @@ CachedTreeNode *FileManager :: get_root()
 {
 	return root;
 }
+
+FRESULT FileManager :: delete_file_by_node(CachedTreeNode *node)
+{
+	FileInfo *info = node->get_file_info();
+
+	FRESULT fres = info->fs->file_delete(info);
+	if(fres != FR_OK) {
+		return fres;
+	} else {
+		push_event(e_invalidate, node);
+		push_event(e_cleanup_path_object, node);
+		push_event(e_reload_browser);
+	}
+	return FR_OK;
+}
+
+FRESULT FileManager :: create_dir_in_node(CachedTreeNode *node, char *name)
+{
+	FileInfo *info = node->get_file_info();
+
+	if (!info) {
+		return FR_NO_PATH;
+	}
+	if(!(info->attrib & AM_DIR)) {
+		printf("I don't know what you are trying to do, but the info doesn't point to a DIR!\n");
+		return FR_INVALID_OBJECT;
+	}
+	if (!info->fs) {
+		return FR_NO_FILESYSTEM;
+	}
+
+	FileInfo *fi = new FileInfo(info, name);
+	fi->attrib = 0;
+	FRESULT fres = fi->fs->dir_create(fi);
+	printf("Result of mkdir: %d\n", fres);
+	node->cleanup_children(); // force reload from medium
+	push_event(e_reload_browser);
+	return fres;
+}
+
 
 /* some handy functions */
 void set_extension(char *buffer, char *ext, int buf_size)
@@ -380,4 +305,22 @@ void fix_filename(char *buffer)
 			if(buffer[i] == illegal[j])
 				buffer[i] = '_';
 
+}
+
+void get_extension(const char *name, char *ext)
+{
+	int len = strlen(name);
+	ext[0] = 0;
+
+	for (int i=len-1;i>=0;i--) {
+		if (name[i] == '.') { // last . found
+			for(int j=0;j<3;j++) { // copy max 3 chars
+				ext[j+1] = 0; // the char after the current is always end
+				if (!name[i+1+j])
+					break;
+				ext[j] = toupper(name[i+1+j]);
+			}
+			break;
+		}
+	}
 }

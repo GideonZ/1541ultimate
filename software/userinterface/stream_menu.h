@@ -35,7 +35,7 @@ public:
     virtual int poll(Event &e);
     virtual int process_command(char *cmd);
     virtual int into(void);
-    //virtual void invalidate(CachedTreeNode *obj);
+    //virtual void invalidate(void *obj);
 };
 
 #endif

@@ -176,6 +176,7 @@ int UIStringBox :: poll(int dummy, Event &e)
     case KEY_RETURN: // CR
         if(!len)
             return -1; // cancel
+        buffer[len] = 0;
         return 1; // done
     case KEY_LEFT: // left
     	if (cur > 0) {

@@ -102,8 +102,8 @@ public:
 
 	~FileInfo()
 	{
-	    if(lfname)
-	        delete lfname;
+		if(lfname)
+	        delete[] lfname;
     }
 
 	bool is_directory(void) {

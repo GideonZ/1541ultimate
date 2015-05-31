@@ -111,7 +111,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
                 *status = &c_status_file_not_open;
                 break;
             } 
-            fi = file->info;
+            fi = file->getFileInfo();
             if(!fi) {
                 *status = &c_status_no_information;
                 break;

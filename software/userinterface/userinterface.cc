@@ -31,7 +31,7 @@ UserInterface :: UserInterface()
     MainLoop :: addPollFunction(poll_user_interface);
     focus = -1;
     state = ui_idle;
-    current_path = NULL;
+//    current_path = NULL;
     host = NULL;
     keyboard = NULL;
     screen = NULL;

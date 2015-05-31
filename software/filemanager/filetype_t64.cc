@@ -20,15 +20,12 @@ FileTypeT64 :: FileTypeT64(CachedTreeNode *n)
 	printf("Creating T64 type from info: %s\n", n->get_name());
     // we'll create a file-mapped filesystem here and attach the T64 file system
     fs  = new FileSystemT64(NULL, n);
-    file = NULL;
 }
 
 FileTypeT64 :: ~FileTypeT64()
 {
 	if(fs)
 		delete fs;
-	if(file)
-		file->close();
 }
 
 int   FileTypeT64 :: fetch_context_items(IndexedList<Action *> &list)

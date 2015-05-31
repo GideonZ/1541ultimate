@@ -11,24 +11,17 @@
 #include "userinterface.h"
 #include "c1541.h"
 
-class UserFileInteraction : public ObjectWithMenu {
+class UserFileInteraction {
+	static void S_enter(void *obj, void *param);
+	static void S_rename(void *obj, void *param);
+	static void S_delete(void *obj, void *param);
+	static void S_view(void *obj, void *param);
+	static void S_createD64(void *obj, void *param);
+	static void S_createDir(void *obj, void *param);
+
 public:
-	UserFileInteraction();
-	virtual ~UserFileInteraction();
+	static int fetch_context_items(CachedTreeNode *node, IndexedList<Action *> &list);
+	static int fetch_task_items(CachedTreeNode *node, IndexedList<Action *> &list);
 };
-
-#define FILEDIR_RENAME   			0x2001
-#define FILEDIR_DELETE   			0x2002
-#define FILEDIR_ENTERDIR 			0x2003
-#define FILEDIR_DELETE_CONTINUED   	0x2004
-#define FILEDIR_VIEW                0x2005
-
-#define MENU_CREATE_D64    0x3001
-#define MENU_CREATE_DIR    0x3002
-#define MENU_CREATE_G64    0x3003
-
-/* Debug options */
-#define MENU_DUMP_INFO     0x30FE
-#define MENU_DUMP_OBJECT   0x30FF
 
 #endif /* USERINTERFACE_USER_FILE_INTERACTION_H_ */

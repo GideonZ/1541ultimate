@@ -160,6 +160,7 @@ SRCS_CC	 =  stream.cc \
 			filetype_sid.cc \
 			userinterface.cc \
 			ui_elements.cc \
+            user_file_interaction.cc \
 			editor.cc \
 			ui_stream.cc \
 			tree_browser.cc \

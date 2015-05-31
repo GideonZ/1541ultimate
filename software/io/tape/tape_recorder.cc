@@ -266,7 +266,7 @@ void TapeRecorder :: poll(Event &e)
 		}
 	}
 	if (file) { // check for invalidation
-		if(!file->info) {
+		if(!file->isValid()) {
             printf("TapeRecorder: Our file got killed...\n");
             file = NULL;
 	        stop(REC_ERR_NO_FILE);

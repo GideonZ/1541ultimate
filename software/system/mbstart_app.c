@@ -68,18 +68,9 @@ void _premain()
 {
 	int t;
 
-    UART_DATA = 0x31;
-    UART_DATA = 0x2e;
-
     __clear_bss();
 
-    UART_DATA = 0x32;
-    UART_DATA = 0x2e;
-
     _do_ctors();
-
-    UART_DATA = 0x33;
-    UART_DATA = 0x2e;
 
     atexit(_do_dtors);
     t=main(0, 0);
@@ -139,8 +130,8 @@ void __copy_data(void)
 void outbyte(int c)
 {
 	// Wait for space in FIFO
-	while (UART_FLAGS & UART_TxFifoFull);
-	UART_DATA = c;
+	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+	ioWrite8(UART_DATA, c);
 }
 
 

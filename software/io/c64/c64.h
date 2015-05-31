@@ -66,6 +66,21 @@
 #define RUNCODE_TAPE_LOAD_RUN     (RUNCODE_TAPE_BIT | RUNCODE_REAL_BIT | RUNCODE_LOAD_BIT | RUNCODE_RUN_BIT)
 #define RUNCODE_TAPE_RECORD       (RUNCODE_TAPE_BIT | RUNCODE_RECORD_BIT | RUNCODE_REAL_BIT)
 
+#define CART_TYPE_NONE        0x00
+#define CART_TYPE_8K          0x01
+#define CART_TYPE_16K         0x02
+#define CART_TYPE_16K_UMAX    0x03
+#define CART_TYPE_FC3         0x04
+#define CART_TYPE_SS5         0x05
+#define CART_TYPE_RETRO       0x06
+#define CART_TYPE_ACTION      0x07
+#define CART_TYPE_SYSTEM3     0x08
+#define CART_TYPE_DOMARK      0x09
+#define CART_TYPE_OCEAN128    0x0A
+#define CART_TYPE_OCEAN256    0x0B
+#define CART_TYPE_EASY_FLASH  0x0C
+#define CART_TYPE_EPYX        0x0E
+
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
 #define CIA2_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD00 + x))

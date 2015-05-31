@@ -438,7 +438,7 @@ void C1541 :: poll(Event &e)
 	if(!mount_file) {
 		return;
 	}
-	if (!mount_file->info) {
+	if (!mount_file->isValid()) {
         printf("C1541: File was invalidated..\n");
         disk_state = e_disk_file_closed;
         fm->fclose(mount_file);

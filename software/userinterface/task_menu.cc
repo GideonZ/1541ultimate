@@ -1,10 +1,12 @@
 #include "task_menu.h"
 #include "globals.h"
 #include <string.h>
+#include "user_file_interaction.h"
 
-TaskMenu :: TaskMenu() : ContextMenu(NULL, 0, 0)
+TaskMenu :: TaskMenu(Browsable *b) : ContextMenu(NULL, 0, 0)
 {
-    screen = NULL;
+	browsable = b;
+	screen = NULL;
     context_state = e_new;
     keyb = NULL;
     window = NULL;
@@ -28,7 +30,9 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
     IndexedList<ObjectWithMenu*> *objects = Globals :: getObjectsWithMenu();
 
     if(context_state == e_new) {
-        for(int i=0;i<objects->get_elements();i++) {
+    	if(browsable)
+    		browsable->fetch_task_items(actions);
+    	for(int i=0;i<objects->get_elements();i++) {
         	(*objects)[i]->fetch_task_items(actions);
         }
         // debug

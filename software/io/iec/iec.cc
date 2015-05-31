@@ -84,7 +84,7 @@ const char msg64[] = "FILE TYPE MISMATCH";		//64
 const char msg70[] = "NO CHANNEL";	            //70
 const char msg71[] = "DIRECTORY ERROR";			//71
 const char msg72[] = "DISK FULL";				//72
-const char msg73[] = "ULTIMATE IEC DOS V0.5";	//73 DOS MISMATCH(Returns DOS Version)
+const char msg73[] = "ULTIMATE IEC DOS V0.7";	//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 
 const char msg_c1[] = "BAD COMMAND";			//custom
@@ -168,18 +168,18 @@ IecInterface :: IecInterface()
     path->cd("SD");
 	dirlist = new IndexedList<FileInfo *>(8, NULL);
 	iecNames = new IndexedList<char *>(8, NULL);
+    last_error = ERR_DOS;
+    current_channel = 0;
+    talking = false;
+    last_addr = 10;
+    wait_irq = false;
+
+    effectuate_settings();
 
     for(int i=0;i<15;i++) {
         channels[i] = new IecChannel(this, i);
     }
     channels[15] = new IecCommandChannel(this, 15);
-    
-    current_channel = 0;
-    talking = false;
-    last_addr = 10;
-    last_error = ERR_DOS;
-    wait_irq = false;
-    effectuate_settings();
 }
 
 IecInterface :: ~IecInterface()
@@ -315,7 +315,7 @@ int IecInterface :: poll(Event &e)
 
     int st;
     if(talking) {
-        if(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
+        while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
         	st = channels[current_channel]->pop_data(data);
             if(st == IEC_OK)
                 HW_IEC_TX_DATA = data;
@@ -325,10 +325,12 @@ int IecInterface :: poll(Event &e)
                     ;
                 HW_IEC_TX_DATA = data;
                 talking = false;
+                break;
             } else { 
                 printf("Talk Error = %d\n", st);
                 HW_IEC_TX_CTRL = 0x10;
                 talking = false;
+                break;
             }
         }
     }
@@ -393,7 +395,7 @@ int IecInterface :: poll(Event &e)
                     printf("Opened file successfully.\n");
                     f->write((void *)start_address, end_address - start_address, &transferred);
                     printf("written: %d...", transferred);
-                    f->close();
+                    fm->fclose(f);
                 } else {
                     printf("Couldn't open file..\n");
                 }

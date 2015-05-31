@@ -12,6 +12,7 @@
 #define MENU_DUMP_ROOT     0x30FD
 
 void set_extension(char *buffer, char *ext, int buf_size);
+void get_extension(const char *name, char *ext);
 void fix_filename(char *buffer);
 
 struct FileNodePair
@@ -89,6 +90,8 @@ public:
     File *fopen(Path *path, char *filename, uint8_t flags);
     File *fopen_node(CachedTreeNode *node, uint8_t flags);
     void fclose(File *f);
+    FRESULT delete_file_by_node(CachedTreeNode *node);
+    FRESULT create_dir_in_node(CachedTreeNode *node, char *name);
 };
 
 #endif
