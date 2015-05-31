@@ -34,7 +34,7 @@ public:
     bool isRoot() { return parent == NULL; }
 
 	virtual ~CachedTreeNode() {
-		//printf("destructor %p %s (%d)\n", this, get_name(), ref_count);
+		// printf("destructor %p %s\n", this, get_name());
 		int el = children.get_elements();
 		for(int i=0;i<el;i++) {
 			delete children[i];

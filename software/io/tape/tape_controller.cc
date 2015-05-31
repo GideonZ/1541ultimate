@@ -76,6 +76,7 @@ void TapeController :: close()
 	
 void TapeController :: start(int playout_pin)
 {
+	stop();
 	printf("Start Tape.. Status = %b. [", PLAYBACK_STATUS);
 	PLAYBACK_CONTROL = C2N_CLEAR_ERROR | C2N_FLUSH_FIFO;
 	PLAYBACK_CONTROL = 0;
@@ -118,6 +119,9 @@ void TapeController :: read_block()
 		return;
 	}	
 	file->read(blockBuffer, block, &bytes_read);
+	if(bytes_read != block) {
+		printf("[%d of %d]", bytes_read, block);
+	}
 	for(int i=0;i<bytes_read;i++)// not sure if memcpy copies the bytes in the right order.
 		*PLAYBACK_DATA = blockBuffer[i];
 
@@ -170,7 +174,8 @@ void TapeController :: poll(Event &e)
 	
 void TapeController :: set_file(File *f, uint32_t len, int m)
 {
-    file = f;
+	close();
+	file = f;
 	length = len;
 	block = 512 - 20;
 	mode = m; 

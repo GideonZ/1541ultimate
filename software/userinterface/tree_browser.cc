@@ -132,7 +132,6 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
 	int c;
     int ret = 0;
 
-
     if(e.type == e_invalidate) {
     	invalidate(e.object);
     	return 0;
@@ -311,7 +310,6 @@ void TreeBrowser :: invalidate(void *obj)
 		printf("checking %s...\n", st->node->getName());
 		if(st->node->invalidateMatch(obj)) {
 			found = st;
-			break;
 		}
 		st = st->previous;
 	}
@@ -333,10 +331,15 @@ void TreeBrowser :: invalidate(void *obj)
         	configBrowser = NULL;
 		}
 
-		do {
+		while(state) {
+			printf("'%d' ", state->level);
 			st = state;
 			state->level_up();
-		} while(st != found);
+			if (st == found)
+				break;
+		}
+		printf("** There are now %d browsable objects.\n", *(Browsable :: getCount()));
+		printf("Going to reload %s\n", state->node->getName());
 		state->reload();
 		printf(" done\n");
 	} else {
@@ -357,6 +360,5 @@ void TreeBrowser :: invalidate(void *obj)
 		}
 
 	}
-	printf("** There are now %d browsable objects.\n", *(Browsable :: getCount()));
 }
 

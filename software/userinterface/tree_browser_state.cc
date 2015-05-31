@@ -85,16 +85,18 @@ void TreeBrowserState :: do_refresh()
 		}
 		move_to_index(target_index);
     } else {
-        draw(); // just draw.. we don't need to move anything
+        move_to_index(cursor_pos); // just draw.. we don't need to move anything
     }
 //	printf("RefreshOut.");
 }
 
 void TreeBrowserState :: draw()
 {
-	if(!browser->window)
+	if(!browser->window) {
+		printf("Draw. No window to draw on.\n");
 		return;
-		
+	}
+
 //	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children.get_elements());
 //	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
 	// this functions initializes the screen
@@ -203,7 +205,8 @@ void TreeBrowserState :: reload(void)
 	node->getSubItems(children);
 	printf("State %s reloaded. # of children = %d\n", node->getName(), children.get_elements());
 	needs_reload = false;
-	move_to_index(cursor_pos);
+	refresh = true;
+//	move_to_index(cursor_pos);
 /*
 	int child_count = node->children.get_elements();
 	node->cleanup_children();

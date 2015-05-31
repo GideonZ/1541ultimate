@@ -133,6 +133,7 @@ void FileTypeTap :: execute(int selection)
 	    }
 		pul = (uint32_t *)&read_buf[16];
 		tape_controller->set_file(file, le_to_cpu_32(*pul), int(read_buf[12]));
+		file = NULL; // after set file, the tape controller is now owner of the File object :)
         if (selection == TAPFILE_RUN) {
             C64Event::prepare_dma_load(0, NULL, 0, RUNCODE_TAPE_LOAD_RUN);
             tape_controller->start(0);

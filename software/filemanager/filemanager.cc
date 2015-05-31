@@ -4,6 +4,7 @@
 #include "path.h"
 #include "filemanager.h"
 #include "file_device.h"
+#include <cctype>
 
 /* Poll function for main loop */
 //FileManager *FileManager :: file_manager;
@@ -157,7 +158,8 @@ File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
 		get_extension(newInfo->lfname, newInfo->extension);
 		file = dirinfo->fs->file_open(newInfo, flags);
 		if(file) {
-			path->current_dir_node->children.append(newNode);
+			// path->current_dir_node->children.append(newNode);
+			path->current_dir_node->cleanup_children(); // force reload from media
 			existing = newNode;
 		} else {
 			last_error = dirinfo->fs->get_last_error();
@@ -264,7 +266,7 @@ FRESULT FileManager :: create_dir_in_node(CachedTreeNode *node, char *name)
 	fi->attrib = 0;
 	FRESULT fres = fi->fs->dir_create(fi);
 	printf("Result of mkdir: %d\n", fres);
-	node->cleanup_children(); // force reload from medium
+	node->cleanup_children(); // force reload from media
 	push_event(e_reload_browser);
 	return fres;
 }

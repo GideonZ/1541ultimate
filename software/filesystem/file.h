@@ -15,6 +15,7 @@
  * the file is invalid. This can be caused by a tree cleanup,
  * at the removal of a media.
  */
+#define COPY_INFO 1
 
 class File
 {
@@ -27,22 +28,30 @@ public:
     uint32_t handle;   // could be a pointer to an object used in the derived class
 
     File(FileInfo *n, uint32_t h) {
+#if COPY_INFO
     	info = new FileInfo(*n); // copy data!
+#else
+    	info = n; // no copy
+#endif
         handle = h;
     }
 
     virtual ~File() {
+#if COPY_INFO
     	if(info) {
     		delete info;
     	}
+#endif
     }
 
     // functions for reading and writing files
     void invalidate(void) {
+#if COPY_INFO
     	if(info) {
     		delete info;
-    		info = NULL;
     	}
+#endif
+		info = NULL;
     }
     bool isValid(void) { return (info != NULL); }
     FileInfo *getFileInfo() { return info; }

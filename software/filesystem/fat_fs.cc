@@ -980,7 +980,7 @@ FRESULT FATFS::dir_create(FileInfo *f)
 // Opens file (creates file object)
 File *FATFS::file_open(FileInfo *info, uint8_t flags)  
 {
-	info->print_info();
+	// info->print_info();
 	FATFIL *ff = new FATFIL(this);
     File *f = new File(info, (uint32_t)ff);
     FRESULT res = ff->open(info, flags);
@@ -1015,6 +1015,7 @@ FRESULT FATFS::file_write(File *f, void *buffer, uint32_t len, uint32_t *bytes_w
 //    printf("Writing %d bytes from %p...\n", len, buffer);
     FRESULT res = ff->write(buffer, len, bytes_written);
 //    printf("... written: %d\n", *bytes_written);
+    ff->update_info(f->getFileInfo());
     return res;
 }
 
@@ -1027,6 +1028,7 @@ FRESULT FATFS::file_seek(File *f, uint32_t pos)
 FRESULT FATFS::file_sync(File *f)
 {
     FATFIL *ff = (FATFIL *)f->handle;
+    ff->update_info(f->getFileInfo());
     return ff->sync();
 }
 

@@ -3,6 +3,7 @@
 
 #include "fat_fs.h"
 #include "fat_dir.h"
+#include "file_info.h"
 
 /* File object structure */
 class FATFIL { /* this is a FAT file.. and should be derived from generic FILE class. */
@@ -37,6 +38,12 @@ public:
     FRESULT close(void);                       /* Close an open file object */
     FRESULT truncate(void);                    /* Truncate file */
     FRESULT sync(void);                        /* Flush cached data of a writing file */
+
+    void update_info(FileInfo *info) {
+    	if(!info)
+    		return;
+    	info->size = fsize;
+    }
 
 #if _USE_STRFUNC
     int     fputc (int);                       /* Put a character to the file */
