@@ -71,6 +71,7 @@ architecture gideon of data_oper is
     signal impl_d    : std_logic;
 
     signal shift_en  : std_logic;
+    signal shift_no_data_shift  : std_logic;
     signal alu_en    : std_logic;
     signal impl_en   : std_logic;
 begin
@@ -83,7 +84,11 @@ begin
 
     shift_en <= '1' when is_shift(inst) else '0';
     alu_en   <= '1' when is_alu(inst) else '0';
-    
+    -- ANC 0B 2B fix where the shifted result is not used.
+    with inst select shift_no_data_shift <=
+        '1'  when X"2B" | X"0B",
+        '0'  when others;
+
     row0: entity work.bit_cpx_cpy 
     port map (
         operation  => inst(7 downto 5),
@@ -108,6 +113,7 @@ begin
     port map (
         operation  => inst(7 downto 5),
         enable     => shift_en,
+        no_data_shift => shift_no_data_shift,
         
         c_in       => c_in,
         n_in       => n_in,

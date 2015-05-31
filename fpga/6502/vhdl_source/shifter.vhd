@@ -7,6 +7,7 @@ entity shifter is
 port (
     operation       : in  std_logic_vector(2 downto 0);
     enable          : in  std_logic := '1'; -- instruction(1)
+    no_data_shift : in  std_logic := '0';
     
     c_in            : in  std_logic;
     n_in            : in  std_logic;
@@ -29,13 +30,13 @@ architecture gideon of shifter is
 begin
 -- ASL $nn	ROL $nn	LSR $nn	ROR $nn	STX $nn	LDX $nn	DEC $nn	INC $nn
 
-    with operation select data_out_i <= 
-        data_in(6 downto 0) & '0'   when "000",
-        data_in(6 downto 0) & c_in  when "001",
-        '0' & data_in(7 downto 1)   when "010",
-        c_in & data_in(7 downto 1)  when "011",
-        data_in - 1                 when "110",
-        data_in + 1                 when "111",
+    with operation & no_data_shift select data_out_i <= 
+        data_in(6 downto 0) & '0'   when "0000",
+        data_in(6 downto 0) & c_in  when "0010",
+        '0' & data_in(7 downto 1)   when "0100",
+        c_in & data_in(7 downto 1)  when "0110",
+        data_in - 1                 when "1100",
+        data_in + 1                 when "1110",
         data_in                     when others;
         
     zero <= '1' when data_out_i = X"00" else '0';
@@ -55,6 +56,6 @@ begin
         data_out_i(7) when "1000" | "1001" | "1010" | "1011" | "1101" | "1110" | "1111",
         n_in          when others;
     
-    data_out <= data_out_i when enable='1' else data_in;
+    data_out <= data_out_i when enable='1' and no_data_shift='0' else data_in;
 
 end gideon;
