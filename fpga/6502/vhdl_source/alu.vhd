@@ -54,6 +54,7 @@ begin
         variable b     : std_logic_vector(7 downto 0);
         variable sum_l : std_logic_vector(4 downto 0);
         variable sum_h : std_logic_vector(4 downto 0);
+        variable sum_h_nocarry  : std_logic_vector(4 downto 0);
     begin
         -- for subtraction invert second operand
         if operation(2)='1' then -- invert b
@@ -61,10 +62,11 @@ begin
         else
             b := data_b;
         end if;    
-
+        
         -- sum_l(4) = carry of lower end, carry in is masked to '1' for CMP
         sum_l := ('0' & data_a(3 downto 0)) + ('0' & b(3 downto 0)) + (c_in or not operation(0));
-        sum_h := ('0' & data_a(7 downto 4)) + ('0' & b(7 downto 4)) + sum_l(4);        
+        sum_h_nocarry := ('0' & data_a(7 downto 4)) + ('0' & b(7 downto 4));
+        sum_h := sum_h_nocarry + ("0000" & sum_l(4));
 
         if sum_l(3 downto 0)="0000" and sum_h(3 downto 0)="0000" then
             sum_z <= '1';
@@ -74,36 +76,39 @@ begin
 
         sum_n  <= sum_h(3);
         sum_c  <= sum_h(4);
-        sum_v  <= (sum_h(3) xor data_a(7)) and (sum_h(3) xor data_b(7) xor operation(2)); 
+        sum_v  <= (data_a(7) xor sum_h(3)) and (data_a(7) xor data_b(7) xor (not operation(2))); 
 
         -- fix up in decimal mode (not for CMP!)
         if d_in='1' and support_bcd then
             if operation(2)='0' then -- ADC
                 if sum_l(4) = '1' or sum_l(3 downto 2)="11" or sum_l(3 downto 1)="101" then -- >9 (10-11, 12-15)
-                    sum_l := sum_l + (sum_l(4) & X"6"); -- adding sum_l(4) another time, prevents
-                                                        -- double fixup of high nibble.
-                end if;
-                -- negative when sum_h + sum_l(4) = 8
-                sum_h := sum_h + sum_l(4);
-                sum_n <= sum_h(3);
-
-                if sum_h(4) = '1' or sum_h(3 downto 2)="11" or sum_h(3 downto 1)="101" or
-                    (sum_l(4)='1' and sum_h(3 downto 0)="1001") then -- >9 (10-11, 12-15)
-                    sum_h := sum_h + 6;
+                    sum_l := sum_l + 6;
+                    sum_h := sum_h_nocarry + "00001";
+                else
+                    sum_h := sum_h_nocarry;
                 end if;
                 
-                -- carry and overflow are output after fix
-                sum_c  <= sum_h(4);
---                sum_v  <= (sum_h(3) xor data_a(7)) and (sum_h(3) xor data_b(7) xor operation(2)); 
-
+                sum_n  <= sum_h(3);
+                sum_v  <= (sum_h(3) xor data_a(7)) and not (data_a(7) xor data_b(7)); 
+                if sum_h(4) = '1' or sum_h(3 downto 2)="11" or sum_h(3 downto 1)="101" then -- >9 (10-11, 12-15)
+                    sum_h := sum_h + 6;
+                    sum_c <= '1';
+                else
+                    sum_c <= '0';
+                end if;                
             elsif operation(0)='1' then -- SBC
                 -- flags are not adjusted in subtract mode
-                if sum_l(4) = '0' then
+                sum_l := ('0' & data_a(3 downto 0)) + ('1' & b(3 downto 0)) + (c_in);
+                if sum_l(4) = '1' then
                     sum_l := sum_l - 6;
+                    sum_h := ('0' & data_a(7 downto 4)) + ('1' & b(7 downto 4));
+                else
+                    sum_h := ('0' & data_a(7 downto 4)) + ('1' & b(7 downto 4)) + "00001";
                 end if;
-                if sum_h(4) = '0' then
+                
+                if sum_h(4) = '1' then
                     sum_h := sum_h - 6;
-                end if;
+                end if;                
             end if;
         end if;
 
