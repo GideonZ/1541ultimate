@@ -10,7 +10,7 @@
 
 #include "factory.h"
 #include "action.h"
-#include "cached_tree_node.h"
+#include "file_info.h"
 
 class FileSystem;
 
@@ -20,7 +20,6 @@ public:
 	FileType() { }
 	virtual ~FileType() { }
 
-	virtual FileSystem *getFileSystem() { return NULL; }
 	virtual int fetch_context_items(IndexedList<Action *> &list) {
 		return 0;
 	}

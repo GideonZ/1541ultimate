@@ -21,6 +21,9 @@ Path :: ~Path()
 
 void Path :: update(char *p)
 {
+	if (full_path == p)
+		return;
+
 	full_path = p;
 }
 

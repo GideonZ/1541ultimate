@@ -13,7 +13,7 @@ public:
     ~FileTypeUpdate();
 
     int   fetch_context_items(IndexedList<Action *> &list);
-    static FileType *test_type(CachedTreeNode *obj);
+    static FileType *test_type(FileInfo *inf);
 
     static void execute(void *obj, void *param);
 };

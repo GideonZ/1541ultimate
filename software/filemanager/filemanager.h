@@ -32,6 +32,10 @@ public:
 		return (const char *)full_path.c_str();
 	}
 
+	File *get_file() {
+		return file;
+	}
+
 	FileSystemInFile *get_embedded() {
 		return emb;
 	}

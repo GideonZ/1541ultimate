@@ -33,7 +33,7 @@ extern "C" {
 }
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileType *> tester_u2u(Globals :: getFileTypeFactory(), FileTypeUpdate :: test_type);
+FactoryRegistrator<FileInfo *, FileType *> tester_u2u(Globals :: getFileTypeFactory(), FileTypeUpdate :: test_type);
 
 #define UPDATE_RUN 0x7501
 
@@ -60,11 +60,10 @@ int FileTypeUpdate :: fetch_context_items(IndexedList<Action *> &list)
     return count;
 }
 
-FileType *FileTypeUpdate :: test_type(CachedTreeNode *obj)
+FileType *FileTypeUpdate :: test_type(FileInfo *inf)
 {
-	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "U2U")==0)
-        return new FileTypeUpdate(obj);
+        return new FileTypeUpdate(inf);
     return NULL;
 }
 

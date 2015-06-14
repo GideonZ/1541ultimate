@@ -43,15 +43,20 @@ int FileManager :: validatePath(Path *p, CachedTreeNode **node)
 
 void FileManager :: handle_event(Event &e)
 {
-	CachedTreeNode *o, *c, *par;
+	CachedTreeNode *o, *par;
     o = (CachedTreeNode *)e.object;
     BlockDevice *blk;
+    MountPoint *m;
     File *f;
     FileDevice *fd;
     Path *path;
     mstring pathString;
+    char *pathStringC;
+    int len;
+
+    par = o->parent;
     
-	switch(e.type) {
+    switch(e.type) {
 	case e_cleanup_path_object:
         printf("Cleaning up %s\n", o->get_name());
         delete o;
@@ -63,7 +68,26 @@ void FileManager :: handle_event(Event &e)
         break;
 	case e_invalidate:
 		printf("Invalidate event.. Param = %d. Checking %d files.\n", e.param, open_file_list.get_elements());
-		par = o->parent;
+		pathStringC = o->get_full_path(pathString);
+		len = strlen(pathStringC);
+
+		for (int i=0;i<mount_points.get_elements();i++) {
+			m = mount_points[i];
+			if(!m) {// should never occur
+				printf("INTERR: null pointer in mount point list.\n");
+				continue;
+			}
+			f = m->get_file();
+			printf("%2d. %s\n", i, m->get_path());
+			if (strncmp(f->get_path(), pathStringC, len) == 0) {
+				printf("Match!\n");
+				fclose(f);
+			}
+			delete m;
+			mount_points.mark_for_removal(i);
+		}
+		mount_points.purge_list();
+
 		for(int i=0;i<open_file_list.get_elements();i++) {
 			f = open_file_list[i];
 			if(!f) {// should never occur
@@ -73,22 +97,14 @@ void FileManager :: handle_event(Event &e)
 				continue;
 			}
 			printf("%2d. %s %p\n", i, f->info->lfname, f);
-
-/*
-			while(c) {
-				if(c == o) {
-					printf("Due to invalidation of %s, file %s is being invalidated.\n", o->get_name(), pair.node->get_name());
-					f->invalidate();
-					break;
-				}
-				c = c->parent;
+			if (strncmp(f->get_path(), pathStringC, len) == 0) {
+				printf("Match!\n");
+				f->invalidate();
 			}
-*/
 		}
 /*
 		for(int i=0;i<used_paths.get_elements();i++) {
 			path = used_paths[i];
-			c = path->cached_dir_node;
 			printf("%2d. %s (%s)\n", i, path->get_path(), path->owner);
 			while(c) {
 				if(c == o) {
@@ -111,6 +127,7 @@ void FileManager :: handle_event(Event &e)
 			}
 		}
 */
+
 		if(par && (par != root)) {
 			printf("Removing %s from %s\n", o->get_name(), par->get_name());
 			par->children.remove(o);
