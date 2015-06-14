@@ -71,8 +71,7 @@ extern "C" int
 _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap)
 {
     char buf[128];
-    char c, sign, *cp=buf;
-    int  i;
+    char c, *cp=buf;
     long long val = 0;
     int res = 0, length, width;
     int prepad, postpad, leading_zeros;

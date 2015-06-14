@@ -8,9 +8,8 @@
 #include "user_file_interaction.h"
 
 // member
-int UserFileInteraction :: fetch_context_items(CachedTreeNode *node, IndexedList<Action *> &list)
+int UserFileInteraction :: fetch_context_items(FileInfo *info, IndexedList<Action *> &list)
 {
-	FileInfo *info = node->get_file_info();
 	int count = 0;
     if (!info) {
         printf("No FileInfo structure. Cannot create context menu.\n");
@@ -22,11 +21,11 @@ int UserFileInteraction :: fetch_context_items(CachedTreeNode *node, IndexedList
 		count++;
 	}
 	if(info->is_writable()) {
-		list.append(new Action("Rename", UserFileInteraction :: S_rename, node, 0));
-	    list.append(new Action("Delete", UserFileInteraction :: S_delete, node, 0));
+		list.append(new Action("Rename", UserFileInteraction :: S_rename, info, 0));
+	    list.append(new Action("Delete", UserFileInteraction :: S_delete, info, 0));
 		count+=2;
         if((info->size <= 262144)&&(!(info->attrib & AM_DIR))) {
-            list.append(new Action("View", UserFileInteraction :: S_view, node, 0));
+            list.append(new Action("View", UserFileInteraction :: S_view, info, 0));
             count++;
         }
 	}
@@ -34,12 +33,13 @@ int UserFileInteraction :: fetch_context_items(CachedTreeNode *node, IndexedList
 }
 
 // member
-int UserFileInteraction :: fetch_task_items(CachedTreeNode *node, IndexedList<Action*> &list)
+int UserFileInteraction :: fetch_task_items(Path *path, IndexedList<Action*> &list)
 {
-    if(node->get_file_info()->is_writable()) {
-        list.append(new Action("Create D64", UserFileInteraction :: S_createD64, node, 0));
-        list.append(new Action("Create G64", UserFileInteraction :: S_createD64, node, (void *)1));
-        list.append(new Action("Create Directory", UserFileInteraction :: S_createDir, node, 0));
+
+	if(FileManager :: getFileManager() -> is_path_writable(path)) {
+        list.append(new Action("Create D64", UserFileInteraction :: S_createD64, path, 0));
+        list.append(new Action("Create G64", UserFileInteraction :: S_createD64, path, (void *)1));
+        list.append(new Action("Create Directory", UserFileInteraction :: S_createDir, path, 0));
         return 3;
     }
     return 0;
@@ -55,8 +55,7 @@ void UserFileInteraction :: S_rename(void *obj, void *param)
 	int res;
 	char buffer[64];
 	FRESULT fres;
-	CachedTreeNode *node = (CachedTreeNode *)obj;
-	FileInfo *info = node->get_file_info();
+	FileInfo *info = (FileInfo *)obj;
 	strncpy(buffer, info->lfname, 38);
     buffer[38] = 0;
 
@@ -75,10 +74,10 @@ void UserFileInteraction :: S_rename(void *obj, void *param)
 void UserFileInteraction :: S_delete(void *obj, void *param)
 {
 	char buffer[64];
-	CachedTreeNode *node = (CachedTreeNode *)obj;
+	FileInfo *info = (FileInfo *)obj;
     int res = user_interface->popup("Are you sure?", BUTTON_YES | BUTTON_NO);
 	if(res == BUTTON_YES) {
-		FRESULT fres = FileManager :: getFileManager() -> delete_file_by_node(node);
+		FRESULT fres = FileManager :: getFileManager() -> delete_file_by_info(info);
 		if (fres != FR_OK) {
 			sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
 			user_interface->popup(buffer, BUTTON_OK);
@@ -88,8 +87,9 @@ void UserFileInteraction :: S_delete(void *obj, void *param)
 
 void UserFileInteraction :: S_view(void *obj, void *param)
 {
-	CachedTreeNode *node = (CachedTreeNode *)obj;
-	File *f = FileManager :: getFileManager() -> fopen_node(node, FA_READ);
+/*
+	FileInfo *info = (FileInfo *)obj;
+	File *f = FileManager :: getFileManager() -> fopen_info(info, FA_READ);
 	uint32_t transferred;
 	if(f != NULL) {
     	uint32_t size = f->get_size();
@@ -100,6 +100,7 @@ void UserFileInteraction :: S_view(void *obj, void *param)
         user_interface->run_editor(text_buf);
         delete text_buf;
     }
+*/
 }
 
 void UserFileInteraction :: S_createD64(void *obj, void *param)
@@ -108,22 +109,12 @@ void UserFileInteraction :: S_createD64(void *obj, void *param)
 	char buffer[64];
 
 	buffer[0] = 0;
-	CachedTreeNode *node = (CachedTreeNode *)obj;
-	FileInfo *info = node->get_file_info();
+	Path *path = (Path *)obj;
 	int res;
 	BinImage *bin;
 	GcrImage *gcr;
 	FileManager *fm = FileManager :: getFileManager();
 	bool save_result;
-
-	if(!(info->attrib & AM_DIR)) {
-		printf("I don't know what you are trying to do, but the info doesn't point to a DIR!\n");
-		return;
-	}
-
-	Path *currentPath = fm->get_new_path("S_createD64");
-	mstring work;
-	currentPath->cd(node->get_full_path(work));
 
 	res = user_interface->string_box("Give name for new disk..", buffer, 22);
 	if(res > 0) {
@@ -132,7 +123,7 @@ void UserFileInteraction :: S_createD64(void *obj, void *param)
 		if(bin) {
     		bin->format(buffer);
 			set_extension(buffer, (doG64)?(char *)".g64":(char *)".d64", 32);
-            File *f = FileManager :: getFileManager() -> fopen(currentPath, buffer, FA_WRITE | FA_CREATE_NEW );
+            File *f = fm -> fopen(path, buffer, FA_WRITE | FA_CREATE_NEW );
 			if(f) {
                 if(doG64) {
                     gcr = new GcrImage;
@@ -163,25 +154,18 @@ void UserFileInteraction :: S_createD64(void *obj, void *param)
 			printf("No memory to create bin.\n");
 		}
 	}
-	fm->release_path(currentPath);
 }
 
 void UserFileInteraction :: S_createDir(void *obj, void *param)
 {
 	char buffer[64];
 	buffer[0] = 0;
-	CachedTreeNode *node = (CachedTreeNode *)obj;
-	FileInfo *info = node->get_file_info();
-
-	if(!(info->attrib & AM_DIR)) {
-		printf("I don't know what you are trying to do, but the info doesn't point to a DIR!\n");
-		return;
-	}
+	Path *path = (Path *)obj;
 
 	int res = user_interface->string_box("Give name for new directory..", buffer, 22);
 	if(res > 0) {
 		FileManager *fm = FileManager :: getFileManager();
-		FRESULT fres = fm->create_dir_in_node(node, buffer);
+		FRESULT fres = fm->create_dir_in_path(path, buffer);
 		if(fres != FR_OK) {
 			sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
 			user_interface->popup(buffer, BUTTON_OK);

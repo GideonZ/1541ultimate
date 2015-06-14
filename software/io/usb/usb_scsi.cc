@@ -117,7 +117,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	for(int i=0;i<=max_lun;i++) {
 		scsi_blk_dev[i] = new UsbScsi(this, i, max_lun);
 		scsi_blk_dev[i]->reset();
-		path_dev[i] = new FileDevice(file_manager->get_root(), scsi_blk_dev[i], scsi_blk_dev[i]->get_name(), scsi_blk_dev[i]->get_disp_name());
+		path_dev[i] = new FileDevice(scsi_blk_dev[i], scsi_blk_dev[i]->get_name(), scsi_blk_dev[i]->get_disp_name());
 
 		// path_dev[i]->attach();
 		state_copy[i] = scsi_blk_dev[i]->get_state(); // returns unknown, most likely! :)
@@ -126,7 +126,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 		media_seen[i] = false;
 		file_manager->add_root_entry(path_dev[i]);
 	}
-	push_event(e_refresh_browser, file_manager->get_root());
+	push_event(e_refresh_browser, "/");
 	current_lun = 0;
 }
 
@@ -139,7 +139,7 @@ void UsbScsiDriver :: deinstall(UsbDevice *dev)
 		push_event(e_cleanup_path_object, path_dev[i]);
 		push_event(e_cleanup_block_device, scsi_blk_dev[i]);
 	}
-	push_event(e_refresh_browser, file_manager->get_root());
+	push_event(e_refresh_browser, "/");
 }
 
 void UsbScsiDriver :: poll(void)
@@ -187,7 +187,7 @@ void UsbScsiDriver :: poll(void)
 		}
 
 		if(old_state != new_state) {
-			push_event(e_refresh_browser, file_manager->get_root());
+			push_event(e_refresh_browser, "/");
 		}
     }
 

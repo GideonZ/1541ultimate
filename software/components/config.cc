@@ -264,12 +264,12 @@ int ConfigStore :: get_value(uint8_t id)
 char *ConfigStore :: get_string(uint8_t id)
 {
     ConfigItem *i = find_item(id);
-    if(i)
+    if(i) {
         if(i->string)
             return i->string;
         else
             return "__not a string__";
-            
+    }
     return "__id not found__";
 }
 

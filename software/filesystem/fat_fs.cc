@@ -935,7 +935,7 @@ Directory *FATFS::dir_open(FileInfo *f)
 {
 //    f->print_info();
     FATDIR *fd = new FATDIR(this);
-    Directory *d = new Directory(this, (uint32_t)fd);
+    Directory *d = new Directory(this, fd);
     
     FRESULT res = fd->open(f);
     if(res == FR_OK)

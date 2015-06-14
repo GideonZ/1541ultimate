@@ -6,33 +6,75 @@
  */
 
 #include "filemanager.h"
+#include "dump_hex.h"
+
+void show_first_file(Path *path)
+{
+	FileManager *fm = FileManager :: getFileManager();
+	File *f = fm->fopen(path, "*", FA_READ);
+
+	if (f) {
+		printf("File successfully opened. Path of file = '%s'.\nFilename = '%s'\n", f->get_path(), f->getFileInfo()->lfname);
+		uint32_t t;
+		char buf[256];
+		//f->print_info();
+		f->read(buf, 256, &t);
+		dump_hex_relative(buf, t);
+		fm->fclose(f);
+	} else {
+		printf("File not found.\n");
+	}
+
+}
+
+void test_emb(Path *path, char *filename)
+{
+	IndexedList<FileInfo *>dir_list(0, NULL);
+	path->cd(filename);
+
+	FRESULT res = path->get_directory(dir_list);
+	if (res == FR_OK) {
+		printf("Directory of %s:\n", path->get_path());
+		for(int i=0;i<dir_list.get_elements();i++) {
+			printf("%9d: %s\n", dir_list[i]->size, dir_list[i]->lfname);
+		}
+	} else {
+		printf("Result: %s\n", FileSystem :: get_error_string(res));
+	}
+	show_first_file(path);
+	path->cd("..");
+}
 
 extern "C" void test_from_cpp() {
 
 	IndexedList<FileInfo *>dir_list(0, NULL);
 
-	Path *path = file_manager.get_new_path();
-	printf("New path: '%s'\n", path->get_path());
+	FileManager *fm = FileManager :: getFileManager();
+	Path *path = fm->get_new_path("test");
 
-	file_manager.dump();
+	path->cd("SD");
 
-	printf("CD to sd: %d, '%s'\n", path->cd("SD/DCIM"), path->get_path());
-	path->get_directory(dir_list);
-	for(int i=0;i<dir_list.get_elements();i++) {
-		printf("%9d: %s\n", dir_list[i]->size, dir_list[i]->lfname);
-	}
+	FRESULT res = path->get_directory(dir_list);
 
-//	File *f = file_manager.fopen(path, "checksum.txt", FA_READ);
-//	File *f = file_manager.fopen(path, "../checksum.txt", FA_READ);
-	File *f = file_manager.fopen(path, "/SD/checksum.txt", FA_READ);
-	if (f) {
-		UINT t;
-		char buf[256];
-		//f->print_info();
-		f->read(buf, 256, &t);
-		puts(buf);
-		f->close();
+	if (res == FR_OK) {
+		for(int i=0;i<dir_list.get_elements();i++) {
+			printf("%9d: %s\n", dir_list[i]->size, dir_list[i]->lfname);
+
+			if(strcmp(dir_list[i]->extension, "D64")==0) {
+				test_emb(path, dir_list[i]->lfname);
+			}
+		}
 	} else {
-		printf("File not found.\n");
+		printf("Result: %s\n", FileSystem :: get_error_string(res));
 	}
+	fm->dump();
+
+	printf("Now doing it a second time..\n");
+	for(int i=0;i<dir_list.get_elements();i++) {
+		if(strcmp(dir_list[i]->extension, "D64")==0) {
+			test_emb(path, dir_list[i]->lfname);
+		}
+	}
+
+	fm->dump();
 }

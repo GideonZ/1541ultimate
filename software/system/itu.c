@@ -236,3 +236,32 @@ void uart_put_byte(BYTE c)
     UART_DATA = c;
 }
 */
+
+#ifdef RUNS_ON_PC
+#include <stdio.h>
+void ioWrite8(uint32_t addr, uint8_t value) {
+	printf("Write %02x to %08x\n", value, addr);
+}
+
+void ioWrite16(uint32_t addr, uint16_t value) {
+	printf("Write %04x to %08x\n", value, addr);
+}
+
+void ioWrite32(uint32_t addr, uint32_t value) {
+	printf("Write %08x to %08x\n", value, addr);
+}
+
+uint8_t  ioRead8(uint32_t addr) {
+	return 0;
+}
+uint16_t ioRead16(uint32_t addr) {
+	return 0;
+}
+uint32_t ioRead32(uint32_t addr) {
+	return 0;
+}
+void outbyte(int a) {
+	fputc(a, stdout);
+}
+#endif
+

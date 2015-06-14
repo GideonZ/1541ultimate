@@ -4,7 +4,6 @@
 #include "blockdev.h"
 #include "file_system.h"
 #include "file.h"
-#include "filemanager.h"
 
 class BlockDevice_File : public BlockDevice
 {
@@ -13,7 +12,7 @@ class BlockDevice_File : public BlockDevice
     int sector_size;
     int shift;
 public:
-    BlockDevice_File(CachedTreeNode *obj, int sec_size);
+    BlockDevice_File(File *file, int sec_size);
     ~BlockDevice_File();
 
     virtual DSTATUS init(void);

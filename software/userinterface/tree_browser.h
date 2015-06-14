@@ -45,7 +45,7 @@ public:
     void config(void);
     void test_editor(void);
     
-    void invalidate(void *obj);
+    void invalidate(const void *obj);
 
 };
 #endif

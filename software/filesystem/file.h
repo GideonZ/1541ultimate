@@ -20,6 +20,7 @@
 class File
 {
 	FileInfo *info; // refers to a structure with file information, when set to null, this file is invalidated
+	mstring pathString;
 
 	// the following function shall only be called by the file manager
 	friend class FileManager;
@@ -55,6 +56,12 @@ public:
     }
     bool isValid(void) { return (info != NULL); }
     FileInfo *getFileInfo() { return info; }
+    void set_path(char *n) {
+    	pathString = n;
+    }
+    char *get_path() {
+    	return pathString.c_str();
+    }
 
     virtual FRESULT sync(void);
     virtual FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);

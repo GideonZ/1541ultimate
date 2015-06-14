@@ -62,8 +62,10 @@ public:
 
 	virtual void cleanup_children(void) {
 		int el = children.get_elements();
+/*
 		if (el > 0)
 			printf("Cleaning up children of %s\n", this->get_name());
+*/
 		for(int i=0;i<el;i++) {
 			children[i]->cleanup_children();
 			children.mark_for_removal(i);
@@ -74,7 +76,7 @@ public:
 
 	// this will automatically add children, if any, and store them in the children list
 	virtual int  fetch_children()  {
-		return -1; // default: we don't know how to fetch children...
+		return children.get_elements(); // default: we just have childen or we don't. We cannot fetch ourselves.
 	}
 
 	// the following function will return a new FileInfo, based on the name.
@@ -83,6 +85,8 @@ public:
 		if (children.is_empty())
 			fetch_children();
 		for(int i=0;i<children.get_elements();i++) {
+			if(children[i]->get_file_info()->attrib & AM_VOL)
+				continue;
 			if(pattern_match(find_me, children[i]->get_name(), false))
 				return children[i];
 		}
@@ -91,7 +95,7 @@ public:
 
 	// TODO: Sorting is part of the user interface, not of the cache, unless the sorting is used for faster find
 	virtual void sort_children(void) {
-    	children.sort(path_object_compare);
+//    	children.sort(path_object_compare);
     }
 
 	// default compare function, just by name!

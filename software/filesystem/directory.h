@@ -10,9 +10,9 @@ class Directory
 {
     FileSystem *fs;
 public:
-    uint32_t handle;    // could be a pointer to an object used in the derived class
+    void *handle;
 
-    Directory(FileSystem *f, uint32_t h) {
+    Directory(FileSystem *f, void *h) {
         handle = h;
         fs = f;
     }

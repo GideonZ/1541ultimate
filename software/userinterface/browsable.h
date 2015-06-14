@@ -45,7 +45,7 @@ public:
 	bool isSelectable() { return selectable; }
 
 	virtual int fetch_task_items(IndexedList<Action *> &list) { return 0; }
-	virtual bool invalidateMatch(void *a) { return false; }
+	virtual bool invalidateMatch(const void *a) { return false; }
 	virtual int getSubItems(IndexedList<Browsable *>&list) { return 0; }
 	virtual char *getName() { return "Browsable"; }
 	virtual char *getDisplayString() { return getName(); }

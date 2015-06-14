@@ -12,130 +12,120 @@
 #include "filemanager.h"
 #include "filetypes.h"
 #include "globals.h"
+#include "size_str.h"
 #include "user_file_interaction.h"
 
-class BrowsableFileTree : public Browsable
+class BrowsableDirEntry : public Browsable
 {
-public:
-	virtual BrowsableFileTree *getParent() {
-		return NULL;
-	}
-	virtual CachedTreeNode *getNode() {
-		return NULL;
-	}
-};
-
-class BrowsableDirEntry : public BrowsableFileTree
-{
-	BrowsableFileTree *parent;
-	int cacheEntryIndex;
+	FileInfo *info;
 	FileType *type;
+	Path *path;
+	Path *parent_path;
 public:
-	BrowsableDirEntry(BrowsableFileTree *par, int idx, bool sel) {
-		this->parent = par;
+	BrowsableDirEntry(Path *pp, FileInfo *info, bool sel) {
+		this->info = info;
 		this->type = NULL;
 		this->selectable = sel;
-		this->cacheEntryIndex = idx;
+		this->path = 0;
+		this->parent_path = pp;
 	}
 
 	virtual ~BrowsableDirEntry() {
 		if (type)
 			delete type;
-	}
-
-	BrowsableFileTree *getParent() {
-		return parent;
-	}
-
-	CachedTreeNode *getNode() {
-		CachedTreeNode *parentNode = getParent()->getNode();
-		if (parentNode)
-			return parentNode->children[cacheEntryIndex];
-		return 0;
+		if (info)
+			delete info;
+		if (path)
+			FileManager :: getFileManager() -> release_path(path);
 	}
 
 	virtual int getSubItems(IndexedList<Browsable *>&list) {
-		int retval = 0;
-		CachedTreeNode *node = getNode();
-		if (node->children.get_elements() == 0)
-			retval = node->fetch_children();
-		else
-			retval = node->children.get_elements();
-
-		for(int i=0;i<node->children.get_elements();i++) {
-			CachedTreeNode *o = node->children[i];
-			if (o) {
-				list.append(new BrowsableDirEntry(this, i, !(o->get_file_info()->attrib & AM_VOL)));
-			}
+		if (!path) {
+			path = FileManager :: getFileManager() -> get_new_path(info->lfname);
+			path->cd(parent_path->get_path());
+			path->cd(info->lfname);
 		}
-		return retval;
+		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
+		path->get_directory(*infos);
+
+		for(int i=0;i<infos->get_elements();i++) {
+			FileInfo *inf = (*infos)[i];
+			list.append(new BrowsableDirEntry(path, inf, true)); // pass ownership of the FileInfo to the browsable object
+		}
+		delete infos; // deletes the indexed list, but not the FileInfos
+		return list.get_elements();
 	}
 
 	virtual char *getName() {
-		CachedTreeNode *node = getNode();
-		if (node)
-			return node->get_name();
-		return "Invalid node";
+		return info->lfname;
 	}
 
 	virtual char *getDisplayString() {
-		CachedTreeNode *node = getNode();
-		if (node)
-			return node->get_display_string();
-		return "Invalid node";
+	    static char buffer[48];
+	    static char sizebuf[8];
+
+	    if (info->attrib & AM_VOL) {
+	        sprintf(buffer, "\eR%29s\er VOLUME", info->lfname);
+	    } else if(info->is_directory()) {
+	        sprintf(buffer, "%29s\eJ DIR", info->lfname);
+	    } else {
+	        size_to_string_bytes(info->size, sizebuf);
+	        sprintf(buffer, "%29s\e7 %3s %s", info->lfname, info->extension, sizebuf);
+	    }
+	    return buffer;
 	}
+
 	virtual void fetch_context_items(IndexedList<Action *>&items) {
-		CachedTreeNode *node = getNode();
-		if (!node)
-			return;
+/*
 		if (!type)
-			type = Globals :: getFileTypeFactory()->create(node);
+			type = Globals :: getFileTypeFactory()->create(info);
 		if (type)
 			type->fetch_context_items(items);
-		UserFileInteraction :: fetch_context_items(node, items);
+*/
+		UserFileInteraction :: fetch_context_items(info, items);
 	}
 
 	virtual int fetch_task_items(IndexedList<Action *> &list) {
-		CachedTreeNode *node = getNode();
-		if(!node)
-			return 0;
-		return UserFileInteraction :: fetch_task_items(node, list);
+		return 0; // UserFileInteraction :: fetch_task_items(info, list);
 	}
 
-	virtual bool invalidateMatch(void *obj) {
-		CachedTreeNode *n = (CachedTreeNode *)obj;
-		CachedTreeNode *node = getNode();
-		return (!node) || (n == node) ;
+	virtual bool invalidateMatch(const void *obj) {
+		return false;
 	}
 };
 
-class BrowsableRoot : public BrowsableFileTree
+class BrowsableRoot : public Browsable
 {
+	Path *root;
 public:
-	BrowsableRoot() { }
-	virtual ~BrowsableRoot() { }
-
-	virtual int getSubItems(IndexedList<Browsable *>&list) {
-		CachedTreeNode *root = FileManager :: getFileManager() -> get_root();
-		for(int i=0;i<root->children.get_elements();i++) {
-			CachedTreeNode *o = root->children[i];
-			if (o) {
-				list.append(new BrowsableDirEntry(this, i, true));
-			}
-		}
-		return root->children.get_elements();
+	BrowsableRoot() {
+		root = FileManager :: getFileManager() -> get_new_path("Browsable Root");
+	}
+	virtual ~BrowsableRoot() {
+		FileManager :: getFileManager() -> release_path(root);
 	}
 
-	virtual CachedTreeNode *getNode() {
-		return FileManager :: getFileManager() -> get_root();
+	virtual int getSubItems(IndexedList<Browsable *>&list) {
+		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
+		FileManager :: getFileManager() -> get_directory(root, *infos);
+
+		for(int i=0;i<infos->get_elements();i++) {
+			FileInfo *inf = (*infos)[i];
+			list.append(new BrowsableDirEntry(root, inf, true)); // pass ownership of the FileInfo to the browsable object
+		}
+		delete infos; // deletes the indexed list, but not the FileInfos
+		return list.get_elements();
 	}
 
 	virtual char *getName() { return "Root"; }
 
 	virtual bool invalidateMatch(void *obj) {
+		return false;
+/*
 		CachedTreeNode *n = (CachedTreeNode *)obj;
 		CachedTreeNode *root = FileManager :: getFileManager() -> get_root();
 		return (n == root);
+*/
 	}
 };
 

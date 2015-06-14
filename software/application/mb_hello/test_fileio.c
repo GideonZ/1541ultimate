@@ -11,13 +11,16 @@ int main()
 {
     puts("Hello world.");
 
-	xTaskCreate( main_loop, "\002Main Event Loop", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 4, NULL );
+	xTaskCreate( main_loop, "\002Main Event Loop", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL );
 
-	vTaskDelay(100);
-//	test_from_cpp();
+	vTaskDelay(500);
+
+	test_from_cpp();
+
+	vTaskDelay(100000);
 
 //	chdir("SD");
-
+/*
 	FILE *fi;
     const char *filename = "checksum.txt";
     int chunks;
@@ -42,6 +45,7 @@ int main()
     for(int i=0;i<chunks;i++) {
     	printf("%08x ", buffer[i]);
     } printf("\n");
-    
+*/
     return 0;
+    
 }

@@ -141,7 +141,7 @@ Directory *FileSystem_ISO9660 :: dir_open(FileInfo *info) // Opens directory (cr
 
     handle->start  = handle->sector;
     handle->offset = 0;
-    Directory *dir = new Directory(this, (uint32_t)handle);
+    Directory *dir = new Directory(this, handle);
     return dir;    
 }
 

@@ -4,24 +4,21 @@
 #include "directory.h"
 #include "file_direntry.h"
 #include "filetypes.h"
-#include "../components/size_str.h"
+#include "size_str.h"
 #include "globals.h"
+#include "embedded_fs.h"
 
 FileDirEntry :: FileDirEntry(CachedTreeNode *par, char *name) : CachedTreeNode(par, name)
 {
-    discovered_type = NULL;
 }
    
 
 FileDirEntry :: FileDirEntry(CachedTreeNode *par, FileInfo *i) : CachedTreeNode(par, *i)
 {
-    discovered_type = NULL;
 }
 
 FileDirEntry :: ~FileDirEntry()
 {
-	if(discovered_type)
-		delete discovered_type;
 }
 
 bool FileDirEntry :: is_writable(void)
@@ -37,22 +34,45 @@ int FileDirEntry :: fetch_children(void)
 {
     cleanup_children();
     FileSystem *fs;
+    mstring work;
+
+	FileSystemInFile *embedded_fs;
 
     if(info.is_directory()) {
-    	printf("Opening dir %s.\n", info.lfname);
+    	// printf("Opening dir %s.\n", info.lfname);
     	return fetch_directory(info);
     } else {
-    	if (!discovered_type) {
-    		discovered_type = Globals :: getFileTypeFactory() -> create(this);
+		FileManager *fm = FileManager :: getFileManager();
+    	embedded_fs = fm->find_mount_point(get_full_path(work));
+    	if (embedded_fs) {
+		    FileInfo fi(16);
+		    fi.attrib = AM_DIR;
+		    fi.fs = embedded_fs->getFileSystem();
+		    if (!fi.fs) {
+		    	printf("Internal error. FileSystem = 0.\n");
+		    	return -1; // internal error!
+		    }
+		    return fetch_directory(fi);
+    	} else {
+    		embedded_fs = Globals :: getEmbeddedFileSystemFactory() -> create(this);
     	}
-    	if (discovered_type) {
-    		if((fs = discovered_type->getFileSystem()) != NULL) {
+    	if (embedded_fs) {
+			// printf("Opening filesystem in %s.\n", info.lfname);
+
+    		File *file = fm -> fopen_node(this, FA_READ | FA_WRITE);
+    		embedded_fs->init(file);
+
+    		if((fs = embedded_fs->getFileSystem()) != NULL) {
+    			fm -> add_mount_point(file, embedded_fs);
     			info.attrib |= AM_HASCHILDREN;
-    			printf("Opening filesystem in %s.\n", info.lfname);
     		    FileInfo fi(16);
     		    fi.attrib = AM_DIR;
     		    fi.fs = fs;
     		    return fetch_directory(fi);
+    		} else {
+    			fm->fclose(file);
+    			delete embedded_fs;
+    			return -1;
     		}
     	}
     }
@@ -61,18 +81,19 @@ int FileDirEntry :: fetch_children(void)
 
 int FileDirEntry :: fetch_directory(FileInfo &info)
 {
-    FileInfo fi(64);
+	// printf("Fetch directory...\n");
+
+	FileInfo fi(64);
 	FRESULT fres;
 
     Directory *r = info.fs->dir_open(&info);
-    printf("Directory = %p\n", r);
 	if(!r) {
 		printf("Error opening directory! Error: %s\n", info.fs->get_error_string(info.fs->get_last_error()));
 		return -1;
 	}
     int i=0;
     while((fres = r->get_entry(fi)) == FR_OK) {
-        printf(".");
+        // printf(".");
 		if((fi.lfname[0] != '.') && !(fi.attrib & AM_HID)) {
             children.append(new FileDirEntry(this, &fi));
             ++i;
@@ -94,19 +115,7 @@ char *FileDirEntry :: get_name()
 
 char *FileDirEntry :: get_display_string()
 {
-    static char buffer[48];
-    static char sizebuf[8];
-    
-    if (info.attrib & AM_VOL) {
-        sprintf(buffer, "\eR%29s\er VOLUME", info.lfname);
-    } else if(info.is_directory()) {
-        sprintf(buffer, "%29s\eJ DIR", info.lfname);
-    } else {
-        size_to_string_bytes(info.size, sizebuf);
-        sprintf(buffer, "%29s\e7 %3s %s", info.lfname, info.extension, sizebuf);
-    }
-    
-    return buffer;
+	return (char *)"haha!";
 }
 
 
@@ -120,7 +129,7 @@ int FileDirEntry :: compare(CachedTreeNode *obj)
 	if (groupA != groupB)
 		return groupB - groupA;
 
-    int by_name = stricmp(get_name(), b->get_name());
+    int by_name = strcmp(get_name(), b->get_name()); // FIXME: Was stricmp
     if(by_name)
 	    return by_name;
 	return 0;

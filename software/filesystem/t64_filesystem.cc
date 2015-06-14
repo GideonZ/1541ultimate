@@ -11,24 +11,14 @@
 /* T64 File System implementation                            */
 /*************************************************************/
 
-FileSystemT64 :: FileSystemT64(Partition *p, CachedTreeNode *n) : FileSystem(p)
+FileSystemT64 :: FileSystemT64(File *f) : FileSystem(0)
 {
-	t64_file = 0;
-	node = n;
+	t64_file = f;
 }
 
 FileSystemT64 :: ~FileSystemT64()
 {
-	if(t64_file) {
-		FileManager :: getFileManager() -> fclose(t64_file);
-	}
-}
 
-void FileSystemT64 :: openT64File()
-{
-	if(!t64_file) {
-		t64_file = FileManager :: getFileManager() -> fopen_node(node, FA_READ | FA_WRITE);
-	}
 }
 
 // Get number of free sectors on the file system
@@ -39,12 +29,10 @@ FRESULT FileSystemT64 :: get_free (uint32_t* free)
 }
 
 // Clean-up cached data
-/*
 FRESULT FileSystemT64 :: sync(void)
 {
-    return FR_OK;
+    return t64_file->sync();
 }
-*/
 
 // Opens directory (creates dir object, NULL = root)
 Directory *FileSystemT64 :: dir_open(FileInfo *info)
@@ -66,16 +54,11 @@ void FileSystemT64 :: dir_close(Directory *d)
 // reads next entry from dir
 FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 {
-    uint32_t idx = d->handle;
+    uint32_t idx = (uint32_t)d->handle;
 	uint8_t read_buf[32], c;
 	uint8_t *p;
 	FRESULT fres;
 	uint32_t bytes_read;
-
-	openT64File();
-	if (!t64_file) {
-		return FR_NO_FILESYSTEM;
-	}
 
 	// Fields that are always the same, or needs initialization.
     f->fs      = this;
@@ -168,7 +151,8 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 			return FR_NO_FILE;
 		}
 	}
-    d->handle++;
+    idx++;
+    d->handle = (void*)idx;
 	return FR_OK;
 }
 
@@ -176,11 +160,6 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 // Opens file (creates file object)
 File   *FileSystemT64 :: file_open(FileInfo *info, uint8_t flags)
 {
-	openT64File();
-	if (!t64_file) {
-		return NULL;
-	}
-
 	FileInT64 *ff = new FileInT64(this);
 	File *f = new File(info, (uint32_t)ff);
 	FRESULT res = ff->open(info, flags);
@@ -298,6 +277,3 @@ FRESULT FileInT64 :: seek(uint32_t pos)
 {
 	return FR_DENIED;
 }
-
-
-

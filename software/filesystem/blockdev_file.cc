@@ -1,11 +1,11 @@
 
 #include <stdio.h>
 #include "blockdev_file.h"
-#include "filemanager.h"
 
-BlockDevice_File::BlockDevice_File(CachedTreeNode *obj, int sec_size)
+BlockDevice_File::BlockDevice_File(File *file, int sec_size)
 {
-	FileInfo *f = obj->get_file_info();
+	this->file = file; // reference only
+	FileInfo *f = file->getFileInfo();
     shift = 0;
     while(sec_size > 1) {
         shift++;
@@ -16,12 +16,10 @@ BlockDevice_File::BlockDevice_File(CachedTreeNode *obj, int sec_size)
     }
     sector_size = (1 << shift);
     file_size = f->size;
-	file = FileManager :: getFileManager() -> fopen_node(obj, FA_READ | FA_WRITE);
 }
     
 BlockDevice_File::~BlockDevice_File()
 {
-	FileManager :: getFileManager() -> fclose(file);
 }
 
 DSTATUS BlockDevice_File::init(void)
@@ -40,8 +38,6 @@ DSTATUS BlockDevice_File::status(void)
     
 DRESULT BlockDevice_File::read(uint8_t *buffer, uint32_t sector, int count)
 {
-//    printf("BlockDevice_File read sector: %d.\n", sector);
-
     if(file->seek(sector << shift))
         return RES_PARERR;
         
@@ -49,7 +45,6 @@ DRESULT BlockDevice_File::read(uint8_t *buffer, uint32_t sector, int count)
     if(file->read(buffer, sector_size * (int)count, &read) != FR_OK)
         return RES_ERROR;
     
-//    printf("Read ok!\n");
     return RES_OK;
 }
 

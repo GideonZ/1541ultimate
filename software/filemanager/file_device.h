@@ -13,7 +13,7 @@ class FileDevice : public FileDirEntry
     Disk *disk;
     char *display_name;
 public:
-    FileDevice(CachedTreeNode *p, BlockDevice *b, char *n, char *dispn);
+    FileDevice(BlockDevice *b, char *n, char *dispn);
     virtual ~FileDevice();
     
     void attach_disk(int block_size);

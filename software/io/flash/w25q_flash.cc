@@ -337,6 +337,7 @@ bool W25Q_Flash :: protect_configure(void)
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
+	return true;
 }
 
 void W25Q_Flash :: protect_enable(void)

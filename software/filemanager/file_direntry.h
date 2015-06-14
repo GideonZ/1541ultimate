@@ -4,11 +4,8 @@
 #include "path.h"
 #include "file_system.h"
 
-class FileType;
-
 class FileDirEntry : public CachedTreeNode
 {
-	FileType *discovered_type;
 	int fetch_directory(FileInfo &fi);
 public:
     FileDirEntry(CachedTreeNode *par, char *name);

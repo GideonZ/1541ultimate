@@ -2,7 +2,7 @@
 #include "file_partition.h"
 #include <stdio.h>
 
-FileDevice :: FileDevice(CachedTreeNode *p, BlockDevice *b, char *n, char *dn) : FileDirEntry(p, n)
+FileDevice :: FileDevice(BlockDevice *b, char *n, char *dn) : FileDirEntry(NULL, n)
 {
     display_name = dn;
     blk = b;
@@ -65,9 +65,9 @@ int FileDevice :: fetch_children(void)
 
     Partition *p = disk->partition_list;
     if(p_count == 1) { // do not create partition in browser; that's not necessary!
-        printf("There is only one partition!! we can do this smarter!\n");
+        //printf("There is only one partition!! we can do this smarter!\n");
 		info.fs = p->attach_filesystem();
-		printf("FileSystem = %p\n", info.fs);
+		// printf("FileSystem = %p\n", info.fs);
 		info.cluster = 0; // indicate root dir
 		info.attrib = AM_DIR; // ;-)  (not read only of course, removed!!)
 		if(!info.fs)

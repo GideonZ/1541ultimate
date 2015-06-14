@@ -1,31 +1,16 @@
-/*
- * t64_filesystem.h
- *
- *  Created on: May 25, 2015
- *      Author: Gideon
- */
+#ifndef CYGWIN_FS_H
+#define CYGWIN_FS_H
 
-#ifndef FILESYSTEM_T64_FILESYSTEM_H_
-#define FILESYSTEM_T64_FILESYSTEM_H_
-
-#include "file_direntry.h"
-#include "blockdev_file.h"
-#include "partition.h"
 #include "file_system.h"
+#include "partition.h"
 
-class FileSystemT64 : public FileSystem
+class FileSystemCygwin : public FileSystem
 {
-	File *t64_file;
-	CachedTreeNode *node;
-	int max, used;
-	uint16_t strt, stop;
-
-	void    openT64File();
 public:
-    FileSystemT64(File *file);
-    ~FileSystemT64();
+	FileSystemCygwin();
+    ~FileSystemCygwin();
 
-    FRESULT get_free (uint32_t*);        // Get number of free sectors on the file system
+    bool    init(void);               // Initialize file system
 
     // functions for reading directories
     Directory *dir_open(FileInfo *); // Opens directory (creates dir object, NULL = root)
@@ -38,21 +23,34 @@ public:
     FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
-    FRESULT sync();
 
-    friend class FileInT64;
+/*
+    friend class DirInCygwin;
+    friend class FileInCygwin;
+*/
 };
 
-class FileInT64
+/*
+class DirInCygwin
 {
-    FileSystemT64 *fs;
-    int file_offset;
-    int offset;
-    int length;
-    uint16_t start_addr;
+    FileSystemCygwin *fs;
 public:
-    FileInT64(FileSystemT64 *);
-    ~FileInT64() { }
+    DirInCygwin(FileSystemCygwin *);
+    ~DirInCygwin() { }
+
+    FRESULT open(FileInfo *info);
+    FRESULT close(void);
+    FRESULT read(FileInfo *f);
+};
+
+class FileInCygwin
+{
+	FileSystemCygwin *fs;
+
+    FRESULT visit(void);
+public:
+    FileInCygwin(FileSystemCygwin *);
+    ~FileInCygwin() { }
 
     FRESULT open(FileInfo *info, uint8_t flags);
     FRESULT close(void);
@@ -60,6 +58,6 @@ public:
     FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
 };
+*/
 
-
-#endif /* FILESYSTEM_T64_FILESYSTEM_H_ */
+#endif

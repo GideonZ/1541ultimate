@@ -231,7 +231,7 @@ bool FileSystemD64 :: get_next_free_sector(int &track, int &sector)
 
 FRESULT FileSystemD64 :: move_window(int abs)
 {
-    DRESULT res;
+	DRESULT res;
     if (abs < 0) {
         // usually because of a bad link passed to get_abs_sector().
         return FR_INT_ERR;
@@ -286,7 +286,7 @@ Directory *FileSystemD64 :: dir_open(FileInfo *info)
 //        return NULL;
 //    }
 	DirInD64 *dd = new DirInD64(this);
-    Directory *dir = new Directory(this, (uint32_t)dd);
+    Directory *dir = new Directory(this, dd);
 	FRESULT res = dd->open(info);
 	if(res == FR_OK) {
 		return dir;
@@ -339,7 +339,7 @@ void FileSystemD64::file_close(File *f)
 
 FRESULT FileSystemD64::file_read(File *f, void *buffer, uint32_t len, uint32_t *bytes_read)
 {
-    FileInD64 *ff = (FileInD64 *)f->handle;
+	FileInD64 *ff = (FileInD64 *)f->handle;
     return ff->read(buffer, len, bytes_read);
 }
 
@@ -361,6 +361,8 @@ FRESULT FileSystemD64::file_seek(File *f, uint32_t pos)
 DirInD64 :: DirInD64(FileSystemD64 *f)
 {
     fs = f;
+    visited = 0;
+    idx = 0;
 }
 
 FRESULT DirInD64 :: open(FileInfo *info)
@@ -377,7 +379,8 @@ FRESULT DirInD64 :: open(FileInfo *info)
 
 FRESULT DirInD64 :: close(void)
 {
-    delete [] visited;
+	if (visited)
+		delete [] visited;
 
     return FR_OK;
 }
@@ -398,7 +401,8 @@ FRESULT DirInD64 :: read(FileInfo *f)
         f->extension[0] = '\0';
 
         /* Volume name extraction */
-        if(fs->prt->read(fs->sect_buffer, fs->get_root_sector(), 1) == RES_OK) {
+//        if(fs->prt->read(fs->sect_buffer, fs->get_root_sector(), 1) == RES_OK) {
+		if(fs->move_window(fs->get_root_sector()) == FR_OK) {
             for(int i=0;i<24;i++) {
                 if(i < f->lfsize)
                     f->lfname[i] = char(fs->sect_buffer[144+i] & 0x7F);
@@ -435,7 +439,7 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 }
                 visited[abs_sect] = 1;
 
-                if(fs->prt->read(fs->sect_buffer, abs_sect, 1) != RES_OK) {
+        		if(fs->move_window(abs_sect) != FR_OK) {
                     return FR_DISK_ERR;
                 }
             }
@@ -444,7 +448,9 @@ FRESULT DirInD64 :: read(FileInfo *f)
             if((p[2] & 0x0f) == 0x02) { // PRG
                 int j = 0;
                 for(int i=5;i<21;i++) {
-                    if(j < f->lfsize)
+                	if (p[i] == 0xA0)
+                		break;
+                	if(j < f->lfsize)
                         f->lfname[j++] = char(p[i] & 0x7F);
                 }
                 if(j < f->lfsize)
@@ -526,7 +532,8 @@ FRESULT FileInD64 :: visit(void)
 
 FRESULT FileInD64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
 {
-    FRESULT res;
+
+	FRESULT res;
 
     uint8_t *dst = (uint8_t *)buffer;
     uint8_t *src;

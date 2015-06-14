@@ -13,7 +13,6 @@
 */
 bool pattern_match(char *pattern, const char *fixed, bool case_sensitive)
 {
-	bool match = true;
     char *p;
     const char *f;
     char cp, cf;

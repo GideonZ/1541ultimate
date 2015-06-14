@@ -52,7 +52,7 @@ FileSystem *Partition :: attach_filesystem(void)
     
 DRESULT Partition::read(uint8_t *buffer, uint32_t sector, uint8_t count)
 {
-    if(!dev)
+	if(!dev)
         return RES_NOTRDY;
     return dev->read(buffer,start + sector,count);
 }

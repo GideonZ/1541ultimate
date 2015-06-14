@@ -35,6 +35,7 @@ public:
 	uint32_t  dir_clust;  /* Start of directory, needed to reopen dir */
     uint16_t  dir_index;  /* Entry of the directory we have our directory item. */
     uint16_t  lfsize;
+    void   *object;
     char   *lfname;
 	uint8_t	attrib;	 /* Attribute */
     char    extension[4];
@@ -82,6 +83,7 @@ public:
         strncpy(extension, i.extension, 4);
         attrib = i.attrib;
         extension[3] = 0;
+        object = i.object;
     }
 
     FileInfo(FileInfo *i, char *new_name)
@@ -98,6 +100,7 @@ public:
         strcpy(lfname, new_name);
         attrib = i->attrib;
         extension[0] = 0;
+        object = i->object;
     }
 
 	~FileInfo()

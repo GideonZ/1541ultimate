@@ -29,7 +29,7 @@ class Event
 {
 public:
     t_event_type type;
-    void *object;
+    const void *object;
     int param;
 
     Event() {
@@ -38,7 +38,7 @@ public:
         param = 0;
     }
     
-    Event(t_event_type t, void *obj, int prm) {
+    Event(t_event_type t, const void *obj, int prm) {
         type = t;
         object = obj;
         param = prm;
@@ -47,7 +47,7 @@ public:
 
 extern Fifo<Event> event_queue;
 
-void push_event(t_event_type ev, void *obj=0, int prm=0);
+void push_event(t_event_type ev, const void *obj=0, int prm=0);
 
 const Event c_empty_event(e_nop, 0, 0);
 

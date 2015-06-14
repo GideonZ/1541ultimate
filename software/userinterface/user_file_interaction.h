@@ -20,8 +20,8 @@ class UserFileInteraction {
 	static void S_createDir(void *obj, void *param);
 
 public:
-	static int fetch_context_items(CachedTreeNode *node, IndexedList<Action *> &list);
-	static int fetch_task_items(CachedTreeNode *node, IndexedList<Action *> &list);
+	static int fetch_context_items(FileInfo *node, IndexedList<Action *> &list);
+	static int fetch_task_items(Path *path, IndexedList<Action *> &list);
 };
 
 #endif /* USERINTERFACE_USER_FILE_INTERACTION_H_ */

@@ -111,6 +111,7 @@ bool S25FL_Flash :: protect_configure(void)
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = S25FL_WriteDisable;
+	return true;
 }
 
 void S25FL_Flash :: protect_enable(void)

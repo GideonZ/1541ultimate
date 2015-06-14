@@ -287,7 +287,7 @@ void TreeBrowser :: reset_quick_seek(void)
     quick_seek_length = 0;
 }
 
-void TreeBrowser :: invalidate(void *obj)
+void TreeBrowser :: invalidate(const void *obj)
 {
 	// we just have to take care of ourselves.. which means, that we have to check
 	// if the current browser state is dependent on the object that is going to be

@@ -24,6 +24,7 @@ class CachedTreeNode;
 class FileType;
 class Partition;
 class FileSystem;
+class FileSystemInFile;
 
 class Globals
 {
@@ -35,7 +36,12 @@ public:
     	return &objects_with_menu;
     }
 
-    static Factory<CachedTreeNode *, FileType *>* getFileTypeFactory() {
+    static Factory<CachedTreeNode *, FileSystemInFile *>* getEmbeddedFileSystemFactory() {
+		static Factory<CachedTreeNode *, FileSystemInFile *> embedded_fs_factory;
+		return &embedded_fs_factory;
+	}
+
+	static Factory<CachedTreeNode *, FileType *>* getFileTypeFactory() {
 		static Factory<CachedTreeNode *, FileType *> file_type_factory;
 		return &file_type_factory;
 	}
