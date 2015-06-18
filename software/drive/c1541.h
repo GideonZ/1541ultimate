@@ -8,9 +8,11 @@
 #include "file_system.h"
 #include "config.h"
 #include "disk_image.h"
+#include "subsys.h"
 #include "menu.h" // to add menu items
 #include "flash.h"
 #include "iomap.h"
+#include "browsable_root.h"
 
 #define C1541_IO_LOC_DRIVE_1 ((volatile uint8_t *)DRIVE_A_BASE)
 #define C1541_IO_LOC_DRIVE_2 ((volatile uint8_t *)DRIVE_B_BASE)
@@ -33,12 +35,6 @@
 #define G64FILE_MOUNT      0x2122
 #define G64FILE_MOUNT_RO   0x2123
 #define G64FILE_MOUNT_UL   0x2124
-
-struct t_drive_command
-{
-    int  command;
-    CachedTreeNode *node;
-};
 
 typedef enum { e_rom_1541=0, e_rom_1541c=1, e_rom_1541ii=2, e_rom_custom=3, e_rom_unset=99 } t_1541_rom;
 typedef enum { e_ram_none      = 0x00,
@@ -79,7 +75,15 @@ typedef enum { e_no_disk,
 #define DRVSTAT_MOTOR   0x01
 #define DRVSTAT_WRITING 0x02
 
-class C1541 : public ConfigurableObject, ObjectWithMenu
+struct t_drive_command
+{
+   int  command;
+   Path *path;
+   FileInfo *info;
+};
+
+
+class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
 {
     volatile uint8_t *memory_map;
     volatile uint8_t *registers;
@@ -107,14 +111,15 @@ public:
     int  fetch_task_items(IndexedList<Action*> &item_list); // from ObjectWithMenu
     void effectuate_settings(void); // from ConfigurableObject
     
-    void executeCommand(t_drive_command *drive_command);
+    int  executeCommand(SubsysCommand *cmd);
+    void save_disk_to_file(SubsysCommand *cmd);
 
     void drive_power(bool on);
     void drive_reset(void);
     void set_hw_address(int addr);
     void set_sw_address(int addr);
     int  get_current_iec_address(void);
-    void set_rom(t_1541_rom rom, char *);
+    void set_rom(t_1541_rom rom, const char *);
     void set_ram(t_1541_ram ram);
     void remove_disk(void);
     void insert_disk(bool protect, GcrImage *image);
@@ -124,43 +129,44 @@ public:
     void mount_blank(void);
     void poll(Event &e);
 
-    void check_if_save_needed(void);
-    void save_disk_to_file(bool g64);
+    void check_if_save_needed(SubsysCommand *cmd);
 };
 
+extern C1541 *c1541_A;
+extern C1541 *c1541_B;
 
+/*
 class DriveMenuItem : public Action
 {
-	void *obj;
+	C1541 *drv;
 	int function;
-	char *nameString;
-	CachedTreeNode *node;
+	BrowsableDirEntry *node;
 	t_drive_command *cmd;
 public:
-	DriveMenuItem(char *n, void *o, int f, CachedTreeNode *nd) : Action(NULL, NULL, NULL) {
+	DriveMenuItem(const char *n, C1541 *d, int f, BrowsableDirEntry *nd) : Action(n, NULL, NULL) {
 		node = nd;
-		obj = o;
+		drv = d;
 		function = f;
 		cmd = NULL;
-		nameString = new char[strlen(n+1)];
-		strcpy(nameString, n);
 	}
 
 	~DriveMenuItem() { 
-		delete nameString;
-	}
-
-	const char *getName() {
-		return (const char *)nameString;
 	}
 
 	void execute() {
 	    cmd = new t_drive_command;
 	    cmd->command = function;
-	    cmd->node = node;
-		push_event(e_object_private_cmd, obj, (int)cmd);
+	    if (node) {
+			cmd->path = node->getPath();
+			cmd->info = node->getInfo();
+	    } else {
+	    	cmd->path = 0;
+	    	cmd->info = 0;
+	    }
+		push_event(e_object_private_cmd, drv, (int)cmd);
 	}
 };
+*/
 
 #endif
 

@@ -7,6 +7,7 @@
 #include "menu.h"
 #include "iomap.h"
 #include "filemanager.h"
+#include "subsys.h"
 
 #define PLAYBACK_STATUS  *((volatile uint8_t *)(C2N_PLAY_BASE + 0x000))
 #define PLAYBACK_CONTROL *((volatile uint8_t *)(C2N_PLAY_BASE + 0x000))
@@ -29,7 +30,7 @@
 #define C2N_STAT_STREAM_EN  0x40
 #define C2N_STAT_FIFO_EMPTY 0x80
 
-class TapeController : public ObjectWithMenu
+class TapeController : public SubSystem, ObjectWithMenu
 {
 	FileManager *fm;
 	File *file;
@@ -47,7 +48,7 @@ public:
 	virtual ~TapeController();
 	
 	int  fetch_task_items(IndexedList<Action*> &item_list);
-	static void exec(void *obj, void *param);
+	int executeCommand(SubsysCommand *cmd);
 	
 	void close();
 	void stop();

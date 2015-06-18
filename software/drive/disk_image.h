@@ -6,6 +6,7 @@
 #include "blockdev_ram.h"
 #include "d64_filesystem.h"
 #include "iomap.h"
+#include "userinterface.h"
 
 #define GCR_DECODER_GCR_IN   (*(volatile uint8_t *)(GCR_CODER_BASE + 0x00))
 #define GCR_DECODER_BIN_OUT0 (*(volatile uint8_t *)(GCR_CODER_BASE + 0x00))
@@ -66,10 +67,10 @@ public:
 
     void blank(void);
     bool load(File *f);
-    bool save(File *f, bool, bool);
+    bool save(File *f, bool, UserInterface *ui);
     bool write_track(int, File *f, bool);
-    void convert_disk_bin2gcr(BinImage *bin_image, bool report);
-    int  convert_disk_gcr2bin(BinImage *bin_image, bool);
+    void convert_disk_bin2gcr(BinImage *bin_image, UserInterface *ui);
+    int  convert_disk_gcr2bin(BinImage *bin_image, UserInterface *ui);
     int  convert_track_gcr2bin(int track, BinImage *bin_image);
     void invalidate(void);
     bool test(void);
@@ -92,12 +93,12 @@ public:
     int   num_tracks;
     uint8_t *bin_data;
 
-    BinImage(char *);
+    BinImage(const char *);
     ~BinImage();
 
-    int format(char *diskname);
+    int format(const char *diskname);
     int load(File *);
-    int save(File *, bool);
+    int save(File *, UserInterface *ui);
     int write_track(int track, GcrImage *, File *);
 
     // int get_absolute_sector(int track, int sector);

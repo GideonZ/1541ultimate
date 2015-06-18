@@ -9,15 +9,8 @@
 #define APPLICATION_ULTIMATE_GLOBALS_H_
 
 #include "indexed_list.h"
+#include "managed_array.h"
 #include "factory.h"
-//#include "cached_tree_node.h"
-//#include "filemanager.h"
-//#include "partition.h"
-//#include "indexed_list.h"
-//#include "event.h"
-//#include "config.h"
-//#include "menu.h"
-//#include "filetypes.h"
 
 class ObjectWithMenu;
 class CachedTreeNode;
@@ -26,6 +19,8 @@ class FileType;
 class Partition;
 class FileSystem;
 class FileSystemInFile;
+class BrowsableDirEntry;
+class SubSystem;
 
 class Globals
 {
@@ -37,13 +32,18 @@ public:
     	return &objects_with_menu;
     }
 
-    static Factory<CachedTreeNode *, FileSystemInFile *>* getEmbeddedFileSystemFactory() {
+	static ManagedArray<SubSystem *>* getSubSystems() {
+		static ManagedArray<SubSystem *> subsystem_array(16, NULL);
+		return &subsystem_array;
+	}
+
+	static Factory<CachedTreeNode *, FileSystemInFile *>* getEmbeddedFileSystemFactory() {
 		static Factory<CachedTreeNode *, FileSystemInFile *> embedded_fs_factory;
 		return &embedded_fs_factory;
 	}
 
-	static Factory<FileInfo *, FileType *>* getFileTypeFactory() {
-		static Factory<FileInfo *, FileType *> file_type_factory;
+	static Factory<BrowsableDirEntry *, FileType *>* getFileTypeFactory() {
+		static Factory<BrowsableDirEntry *, FileType *> file_type_factory;
 		return &file_type_factory;
 	}
 

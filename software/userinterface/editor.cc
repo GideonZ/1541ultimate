@@ -16,9 +16,10 @@ const char *test_text =
 
 struct Line empty_line = { NULL, 0 };
 
-Editor :: Editor(char *text_buffer)
+Editor :: Editor(UserInterface *ui, const char *text_buffer)
 {
-    screen = NULL;
+	user_interface = ui;
+	screen = NULL;
     keyb = NULL;
     window = NULL;
     line_length = 38;
@@ -38,11 +39,11 @@ Editor :: ~Editor(void)
     delete text;
 }
 
-void Editor :: line_breakdown(char *text_buffer)
+void Editor :: line_breakdown(const char *text_buffer)
 {
     Line current;
 
-    char *c = text_buffer;
+    const char *c = text_buffer;
     char last;
     int last_space;
 	linecount = 0;

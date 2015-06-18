@@ -84,11 +84,15 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             width = 0;
             prepad = 0;
             postpad = 0;
-            while((c >= '0')&&(c <= '9')) {
-                width = (width * 10) + (int)(c-'0');
-                c = *fmt++;
+            if (c == '#') {
+            	width = va_arg(ap, int); // take width parameter from stack
+				c = *fmt++;
+            } else {
+				while((c >= '0')&&(c <= '9')) {
+					width = (width * 10) + (int)(c-'0');
+					c = *fmt++;
+				}
             }
-
             // Process output
             switch (c) {
             case 'd':

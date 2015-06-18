@@ -56,10 +56,10 @@ public:
     }
     bool isValid(void) { return (info != NULL); }
     FileInfo *getFileInfo() { return info; }
-    void set_path(char *n) {
+    void set_path(const char *n) {
     	pathString = n;
     }
-    char *get_path() {
+    const char *get_path() {
     	return pathString.c_str();
     }
 

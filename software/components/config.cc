@@ -49,7 +49,7 @@ ConfigManager :: ~ConfigManager()
     stores.clear_list();
 }
 
-ConfigStore *ConfigManager :: register_store(uint32_t store_id, char *name,
+ConfigStore *ConfigManager :: register_store(uint32_t store_id, const char *name,
                                 t_cfg_definition *defs, ConfigurableObject *ob) 
 {
 	if(!flash)
@@ -118,7 +118,7 @@ ConfigStore *ConfigManager :: open_store(uint32_t id)
 //   ===================
 /*** CONFIGURATION STORE ***/
 //   ===================
-ConfigStore :: ConfigStore(uint32_t store_id, char *name, int page, int page_size,
+ConfigStore :: ConfigStore(uint32_t store_id, const char *name, int page, int page_size,
                            t_cfg_definition *defs, ConfigurableObject *ob) : store_name(name), items(16, NULL)
 {
     //printf("Create configstore %8x with size %d..", store_id, page_size);
@@ -261,7 +261,7 @@ int ConfigStore :: get_value(uint8_t id)
     return -1;
 }
     
-char *ConfigStore :: get_string(uint8_t id)
+const char *ConfigStore :: get_string(uint8_t id)
 {
     ConfigItem *i = find_item(id);
     if(i) {
@@ -426,7 +426,7 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
     return 0;
 }
 
-char *ConfigItem :: get_display_string()
+const char *ConfigItem :: get_display_string()
 {
     static char tmp[44];
     static char buf[32];
@@ -450,7 +450,8 @@ char *ConfigItem :: get_display_string()
 
     int len = strlen(buf);
 
-    char *src, *dst;
+    const char *src;
+    char *dst;
     // left align copy
     src = definition->item_text;
     dst = tmp;

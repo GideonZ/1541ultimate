@@ -2,6 +2,7 @@
 #define C64_H
 
 #include <stdio.h>
+#include "subsys.h"
 #include "host.h"
 #include "event.h"
 #include "integer.h"
@@ -14,6 +15,19 @@
 
 #define REU_MEMORY_BASE 0x1000000
 #define REU_MAX_SIZE    0x1000000
+
+#define MENU_C64_RESET      0x6401
+#define MENU_C64_REBOOT     0x6402
+//#define MENU_C64_TRACE    0x6581
+#define MENU_C64_SAVEREU    0x6403
+#define MENU_C64_SAVEFLASH  0x6404
+#define MENU_C64_BOOTFPGA   0x6408
+#define MENU_C64_HARD_BOOT  0x6409
+#define C64_DMA_LOAD		0x6464
+#define C64_DRIVE_LOAD	    0x6465
+#define C64_EVENT_MAX_REU   0x6477
+#define C64_EVENT_AUDIO_ON  0x6478
+#define C64_START_CART      0x6479
 
 //#define SID_TRACE_END           *((volatile uint32_t *)(C64_TRACE_BASE + 0x80))
 //#define SID_REGS(x)             *((volatile uint8_t *)(C64_TRACE_BASE + x))
@@ -120,9 +134,6 @@
 #define CART_ETH 0x40
 #define CART_RAM 0x20
 
-#define C64_EVENT_MAX_REU  0x6477
-#define C64_EVENT_AUDIO_ON 0x6478
-
 typedef struct _cart
 {
     uint8_t  id;
@@ -132,8 +143,9 @@ typedef struct _cart
 } cart_def;
 
 
-class C64 : public GenericHost, ObjectWithMenu, ConfigurableObject
+class C64 : public GenericHost, SubSystem, ObjectWithMenu, ConfigurableObject
 {
+    HostClient *client;
     Flash *flash;
     Keyboard *keyb;
     Screen *screen;
@@ -168,21 +180,32 @@ public:
     C64();
     ~C64();
 
+    /* Subsystem */
+	const char *identify(void) { return "C64 Machine"; }
+	int executeCommand(SubsysCommand *cmd);
+
     /* Object With Menu */
     int  fetch_task_items(IndexedList<Action *> &item_list);
-    static void execute(void *obj, void *action);
-    void execute(int command);
 
     /* Configurable Object */
     void effectuate_settings(void);
     
     /* Generic Host */
+    void take_ownership(HostClient *client) {
+    	this->client = client;
+    	freeze();
+    }
+    void release_ownership(void) {
+    	unfreeze(0, 0); // continue where we left off
+    	this->client = 0;
+    }
+
     bool exists(void);
     bool is_accessible(void);
     void poll(Event &e);
     void reset(void);
     void freeze(void);
-    void unfreeze(Event &e);
+    void unfreeze(cart_def *def, int mode);
     void set_colors(int background, int border);
     Screen *getScreen(void);
     void    releaseScreen(void);
@@ -191,19 +214,19 @@ public:
     /* C64 specifics */
     void init_cartridge(void);
     void cartridge_test(void);
-    int  dma_load(File *f, uint8_t run_mode, uint16_t reloc=0);
+    int  dma_load(File *f, const char *name, uint8_t run_mode, uint16_t reloc=0);
     bool write_vic_state(File *f);
         
     friend class FileTypeSID; // sid load does some tricks
 };
 
-extern C64   *c64;
-
+/*
 class C64Event
 {
  public:
     static int prepare_dma_load(File *f, const char *name, int len, uint8_t run_mode, uint16_t reloc=0);
     static int perform_dma_load(File *f, uint8_t run_mode, uint16_t reloc=0);
 };
+*/
 
 #endif

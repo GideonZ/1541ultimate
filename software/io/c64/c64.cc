@@ -26,6 +26,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include "menu.h"
 #include "integer.h"
 #include "dump_hex.h"
@@ -45,9 +46,6 @@ extern uint8_t _binary_bootcrt_65_start;
 
 cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM }; 
 
-// static pointer
-C64   *c64;
-
 static inline uint16_t le2cpu(uint16_t p)
 {
 	uint16_t out = (p >> 8) | (p << 8);
@@ -55,7 +53,7 @@ static inline uint16_t le2cpu(uint16_t p)
 }
 
 /* Configuration */
-char *cart_mode[] = { "None",
+const char *cart_mode[] = { "None",
                       "Final Cart III",
                       "Action Replay V4.2 PAL",
                       "Action Replay V6.0 PAL",
@@ -116,10 +114,10 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 #define CFG_C64_TIMING   0xCB
 #define CFG_C64_PHI2_REC 0xCC
 
-char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };    
-char *en_dis2[] = { "Disabled", "Enabled" };
-char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
-char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
+const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
+const char *en_dis2[] = { "Disabled", "Enabled" };
+const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
+const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
 
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 15, 4 },
@@ -137,17 +135,9 @@ struct t_cfg_definition c64_config[] = {
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-#define MENU_C64_RESET      0x6401
-#define MENU_C64_REBOOT     0x6402
-//#define MENU_C64_TRACE    0x6581
-#define MENU_C64_SAVEREU    0x6403
-#define MENU_C64_SAVEFLASH  0x6404
-#define MENU_C64_BOOTFPGA   0x6408
-#define MENU_C64_HARD_BOOT  0x6409
-
 extern uint8_t _binary_chars_bin_start;
 
-C64 :: C64()
+C64 :: C64() : SubSystem(SUBSYSID_C64)
 {
     flash = get_flash();
     register_store(0x43363420, "C64 and cartridge settings", c64_config);
@@ -235,13 +225,13 @@ bool C64 :: exists(void)
     
 int  C64 :: fetch_task_items(IndexedList<Action *> &item_list)
 {
-	item_list.append(new Action("Reset C64", C64 :: execute, this, (void *)MENU_C64_RESET));
-	item_list.append(new Action("Reboot C64", C64 :: execute, this, (void *)MENU_C64_REBOOT));
-    //item_list.append(new Action("Boot Alternate FPGA", C64 :: execute, this, (void *)MENU_C64_BOOTFPGA));
-    //item_list.append(new Action("Save SID Trace", C64 :: execute, this, (void *)MENU_C64_TRACE));
-    item_list.append(new Action("Save REU Memory", C64 :: execute, this, (void *)MENU_C64_SAVEREU));
-    item_list.append(new Action("Hard System Reboot", C64 :: execute, this, (void *)MENU_C64_HARD_BOOT));
-    item_list.append(new Action("Save Flash", C64 :: execute, this, (void *)MENU_C64_SAVEFLASH));
+	item_list.append(new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET));
+	item_list.append(new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT));
+    //item_list.append(new Action("Boot Alternate FPGA", SUBSYSID_C64, MENU_C64_BOOTFPGA));
+    //item_list.append(new Action("Save SID Trace", SUBSYSID_C64, MENU_C64_TRACE));
+    item_list.append(new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU));
+    item_list.append(new Action("Hard System Reboot", SUBSYSID_C64, MENU_C64_HARD_BOOT));
+    item_list.append(new Action("Save Flash", SUBSYSID_C64, MENU_C64_SAVEFLASH));
 	return 4;
 }
 		
@@ -634,11 +624,8 @@ void C64 :: restore_io(void)
     SID_DUMMY  = 0;   // clear internal charge on databus!
 }
 
-void C64 :: unfreeze(Event &e)
+void C64 :: unfreeze(cart_def *def, int mode)
 {
-    int mode = e.param;
-    cart_def *def = (cart_def *)e.object;
-    
     keyb->wait_free();
     
 	if(mode == 0) {
@@ -716,11 +703,11 @@ void C64 :: set_cartridge(cart_def *def)
     } else if (def->length) { // not ram, not flash.. then it has to be custom
         *(uint8_t *)(mem_addr+5) = 0; // disable previously started roms.
 
-        char *n = cfg->get_string(CFG_C64_CUSTOM);
+        const char *n = cfg->get_string(CFG_C64_CUSTOM);
         printf("Now loading '%s' as cartridge.\n", n);
 
 #ifndef _NO_FILE_ACCESS
-        File *f = fm->fopen(NULL, n, FA_READ);
+        File *f = fm->fopen((const char *)NULL, n, FA_READ);
 		if(f) {
 			printf("File: %p\n", f);
 			uint32_t transferred;
@@ -755,10 +742,10 @@ void C64 :: init_cartridge()
 
 #ifndef _NO_FILE_ACCESS
     if (cfg->get_value(CFG_C64_ALT_KERN)) {
-        char *n = cfg->get_string(CFG_C64_KERNFILE);
+        const char *n = cfg->get_string(CFG_C64_KERNFILE);
         printf("Now loading '%s' as KERNAL ROM.\n", n);
 
-        File *f = fm->fopen(NULL, n, FA_READ);
+        File *f = fm->fopen((const char *)0, n, FA_READ);
 		if(f) {
 			uint32_t transferred;
             uint8_t *temp = new uint8_t[8192];
@@ -817,30 +804,7 @@ void C64 :: poll(Event &e)
 	int run_code;
     
 	switch(e.type) {
-	case e_dma_load:
-		f = (File *)e.object;
-		run_code = e.param;
-		dma_load(f, run_code);
-        if (f) {
-            fm->fclose(f);
-        }
-        break;
 
-	case e_object_private_cmd:
-		if(e.object == this) {
-			switch(e.param) {
-			case C64_EVENT_MAX_REU:
-				C64_REU_SIZE = 7;
-				C64_REU_ENABLE = 1;
-				break;
-			case C64_EVENT_AUDIO_ON:
-				C64_SAMPLER_ENABLE = 1;
-				break;
-			default:
-				execute(e.param);
-			}
-		}
-		break;
 	case e_restore_cart:
 		if (C64_CARTRIDGE_ACTIVE) {
 			// rethrow event
@@ -856,42 +820,42 @@ void C64 :: poll(Event &e)
 #endif
 }
 
-// static member
-void C64 :: execute(void *obj, void *param)
-{
-	((C64 *)obj)->execute((int)param);
-}
-
-void C64 :: execute(int command)
+int C64 :: executeCommand(SubsysCommand *cmd)
 {
 	File *f;
 	CachedTreeNode *po;
 	uint32_t transferred;
 	int ram_size;
 
-    switch(command) {
+    switch(cmd->functionID) {
 	case MENU_C64_RESET:
-		if(is_accessible()) { // we can't execute this yet
-			push_event(e_unfreeze);
-			push_event(e_object_private_cmd, this, MENU_C64_RESET); // rethrow event
-		} else {
-			reset();
+		if(client) { // we can't execute this yet
+			client->release_host(); // disconnect from user interface
+			client = 0;
 		}
+		unfreeze(0, 0);
+		reset();
 		break;
 	case MENU_C64_REBOOT:
-		if(is_accessible()) { // we can't execute this yet
-			push_event(e_unfreeze);
-			push_event(e_object_private_cmd, this, MENU_C64_REBOOT); // rethrow event
-		} else {
-			init_cartridge();
+		if(client) { // we can't execute this yet
+			client->release_host(); // disconnect from user interface
+			client = 0;
 		}
+		unfreeze(0, 0);
+		init_cartridge();
+		break;
+	case C64_START_CART:
+		if(client) { // we can't execute this yet
+			client->release_host(); // disconnect from user interface
+			client = 0;
+		}
+		unfreeze((cart_def *)cmd->mode, 1);
 		break;
 #ifndef _NO_FILE_ACCESS
 	case MENU_C64_SAVEREU:
-//        po = user_interface->get_path(); FIXME
         ram_size = 128 * 1024;
         ram_size <<= cfg->get_value(CFG_C64_REU_SIZE);
-        f = fm->fopen(NULL, "memory.reu", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
+        f = fm->fopen(cmd->path.c_str(), "memory.reu", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
         if(f) {
             printf("Opened file successfully.\n");
             f->write((void *)REU_MEMORY_BASE, ram_size, &transferred);
@@ -902,8 +866,7 @@ void C64 :: execute(int command)
         }
         break;
     case MENU_C64_SAVEFLASH: // doesn't belong here, but i need it fast
-//        po = user_interface->get_path(); FIXME
-        f = fm->fopen(NULL, "flash_dump.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
+        f = fm->fopen(cmd->path.c_str(), "flash_dump.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
         if(f) {
             int pages = flash->get_number_of_pages();
             int page_size = flash->get_page_size();
@@ -918,6 +881,16 @@ void C64 :: execute(int command)
             printf("Couldn't open file..\n");
         }
         break;
+    case C64_DMA_LOAD:
+    	f = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
+    	if(f) {
+        	dma_load(f, cmd->filename.c_str(), cmd->mode);
+        	fm->fclose(f);
+        }
+    	break;
+    case C64_DRIVE_LOAD:
+    	dma_load(0, cmd->filename.c_str(), cmd->mode);
+    	break;
 #endif
     case MENU_C64_HARD_BOOT:
 		flash->reboot(0);
@@ -925,36 +898,36 @@ void C64 :: execute(int command)
 	default:
 		break;
 	}
+
+    delete cmd;
+    return 0;
 }
 
-// static member
-int C64Event :: prepare_dma_load(File *f, const char *name, int len, uint8_t run_code, uint16_t reloc)
+int C64 :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t reloc)
 {
-    C64_POKE(0x162, run_code);
+	// prepare DMA load
+	C64_POKE(0x162, run_code);
 
-    for (int i=0; i < len; i++) {
-        C64_POKE(0x165+i, name[i]);
+	int len = strlen(name);
+	if (len > 30)
+		len = 30;
+
+	for (int i=0; i < len; i++) {
+        C64_POKE(0x165+i, toupper(name[i]));
     }
     C64_POKE(0x164, len);
 
     C64_POKE(2, 0x80); // initial boot cart handshake
+
+    if(client) { // we are locked by a client, likely: user interface
+		client->release_host(); // disconnect from user interface
+		client = 0;
+	}
     boot_cart.custom_addr = (void *)&_binary_bootcrt_65_start;
-    push_event(e_unfreeze, (void *)&boot_cart, 1);
-    return 0;
-}
+    unfreeze(&boot_cart, 1);
 
-// static member
-int C64Event :: perform_dma_load(File *f, uint8_t run_code, uint16_t reloc)
-{
-    push_event(e_dma_load, f, run_code);
-    return 0;
-}
-
-
-
-int C64 :: dma_load(File *f, uint8_t run_code, uint16_t reloc)
-{
-	// First, check if we have file access
+	// perform DMA load
+    // First, check if we have file access
     uint32_t transferred;
 	uint16_t load_address = 0;
     if (f) {

@@ -3,7 +3,6 @@
 #include "file_system.h"
 #include "directory.h"
 #include "file_direntry.h"
-#include "filetypes.h"
 #include "size_str.h"
 #include "globals.h"
 #include "embedded_fs.h"
@@ -43,8 +42,9 @@ int FileDirEntry :: fetch_children(void)
     	return fetch_directory(info);
     } else {
 		FileManager *fm = FileManager :: getFileManager();
-    	embedded_fs = fm->find_mount_point(get_full_path(work));
-    	if (embedded_fs) {
+		MountPoint *mp = fm->find_mount_point(get_full_path(work));
+    	if (mp) {
+    		embedded_fs = mp->get_embedded();
 		    FileInfo fi(16);
 		    fi.attrib = AM_DIR;
 		    fi.fs = embedded_fs->getFileSystem();
@@ -79,6 +79,7 @@ int FileDirEntry :: fetch_children(void)
 	return -1;
 }
 
+
 int FileDirEntry :: fetch_directory(FileInfo &info)
 {
 	// printf("Fetch directory...\n");
@@ -106,18 +107,17 @@ int FileDirEntry :: fetch_directory(FileInfo &info)
     return i;
 }
 
-char *FileDirEntry :: get_name()
+bool FileDirEntry :: is_ready(void)
+{
+    return true;
+}
+
+const char *FileDirEntry :: get_name()
 {
 	if(info.lfname)
 		return info.lfname;
     return CachedTreeNode :: get_name();
 }
-
-char *FileDirEntry :: get_display_string()
-{
-	return (char *)"haha!";
-}
-
 
 int FileDirEntry :: compare(CachedTreeNode *obj)
 {

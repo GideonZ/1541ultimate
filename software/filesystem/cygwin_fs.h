@@ -12,6 +12,9 @@ public:
 
     bool    init(void);               // Initialize file system
 
+    // Status
+    bool is_writable() { return true; }
+
     // functions for reading directories
     Directory *dir_open(FileInfo *); // Opens directory (creates dir object, NULL = root)
     void dir_close(Directory *d);    // Closes (and destructs dir object)

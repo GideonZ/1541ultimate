@@ -85,7 +85,7 @@ int SocketStream :: get_char()
 	return -1;
 }
 
-int SocketStream :: write(char *buffer, int out_length)
+int SocketStream :: write(const char *buffer, int out_length)
 {
 	if (actual_socket < 0) {
 		return -6;
@@ -215,7 +215,7 @@ int main()
 
 //    Browsable *root = new BrowsableTest(100, true, "Root");
     Browsable *root = new BrowsableRoot();
-	TreeBrowser *tree_browser = new TreeBrowser(root);
+	TreeBrowser *tree_browser = new TreeBrowser(user_interface, root);
 	user_interface->activate_uiobject(tree_browser);
     push_event(e_button_press, NULL, 1);
 

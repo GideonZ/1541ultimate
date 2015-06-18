@@ -2,12 +2,14 @@
 #define FILETYPE_SID_H
 
 #include "filetypes.h"
-#include "filemanager.h"
+#include "browsable_root.h"
 
 class FileTypeSID : public FileType
 {
 	FileManager *fm;
-	CachedTreeNode *node;
+	BrowsableDirEntry *node;
+	SubsysCommand *cmd;
+
 	File *file;
 	uint8_t sid_header[0x80];
 	uint16_t song;
@@ -20,17 +22,16 @@ class FileTypeSID : public FileType
 
 	int  prepare(bool);
 	void load(void);
-public:
-    FileTypeSID(CachedTreeNode *n);
-    ~FileTypeSID();
-
+    int execute(SubsysCommand *cmd);
+    static int execute_st(SubsysCommand *cmd);
     int   readHeader(void);
     void  showInfo(void);
+public:
+    FileTypeSID(BrowsableDirEntry *n);
+    ~FileTypeSID();
+
     int   fetch_context_items(IndexedList<Action *> &list);
-    static FileType *test_type(CachedTreeNode *obj);
-    static void execute_st(void *obj, void *param);
-    static void loadAndRun(void *obj);
-    void execute(int);
+    static FileType *test_type(BrowsableDirEntry *obj);
 };
 
 #endif

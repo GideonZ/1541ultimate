@@ -7,7 +7,7 @@ int Stream_UART :: read(char *buffer, int length)
     return (int)uart_read_buffer(buffer, (uint16_t)length);
 }
 
-int Stream_UART :: write(char *buffer, int length)
+int Stream_UART :: write(const char *buffer, int length)
 {
     return (int)uart_write_buffer(buffer, (uint16_t)length);
 }

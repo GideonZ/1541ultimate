@@ -12,8 +12,6 @@
 #include "action.h"
 #include "file_info.h"
 
-class FileSystem;
-
 class FileType
 {
 public:

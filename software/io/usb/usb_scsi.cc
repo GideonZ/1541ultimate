@@ -126,7 +126,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 		media_seen[i] = false;
 		file_manager->add_root_entry(path_dev[i]);
 	}
-	push_event(e_refresh_browser, "/");
+	push_event(e_reload_browser, "/");
 	current_lun = 0;
 }
 
@@ -139,7 +139,7 @@ void UsbScsiDriver :: deinstall(UsbDevice *dev)
 		push_event(e_cleanup_path_object, path_dev[i]);
 		push_event(e_cleanup_block_device, scsi_blk_dev[i]);
 	}
-	push_event(e_refresh_browser, "/");
+	push_event(e_reload_browser, "/");
 }
 
 void UsbScsiDriver :: poll(void)

@@ -8,6 +8,7 @@
 #include "path.h"
 #include "event.h"
 #include "browsable.h"
+#include "userinterface.h"
 
 // Base class menu, is capable of listing items from a list
 // number them, wait for user choice and return it.
@@ -19,6 +20,8 @@ class StreamMenu
     Browsable *node;
     Stream *stream;
     char user_input[32];
+    Path *currentPath;
+    UserInterface *user_interface;
 
     Stack<IndexedList<Browsable *>*> listStack;
     IndexedList<Browsable *>*currentList;
@@ -29,7 +32,7 @@ class StreamMenu
     void cleanupBrowsables(IndexedList<Browsable *> &list);
     void cleanupActions();
 public:
-    StreamMenu(Stream *s, Browsable *node);
+    StreamMenu(UserInterface *ui, Stream *s, Browsable *node);
     virtual ~StreamMenu();
 
     virtual int poll(Event &e);

@@ -41,7 +41,7 @@ __inline uint32_t le_to_cpu_32(uint32_t a)
 }
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileType *> tester_tap(Globals :: getFileTypeFactory(), FileTypeTap :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(Globals :: getFileTypeFactory(), FileTypeTap :: test_type);
 
 #define TAPFILE_RUN 0x3101
 #define TAPFILE_START 0x3110
@@ -53,104 +53,89 @@ FactoryRegistrator<CachedTreeNode *, FileType *> tester_tap(Globals :: getFileTy
 /*************************************************************/
 
 
-FileTypeTap :: FileTypeTap(CachedTreeNode *node)
+FileTypeTap :: FileTypeTap(BrowsableDirEntry *node)
 {
 	this->node = node;
-	printf("Creating Tap type from info: %s\n", node->get_name());
-    file = NULL;
+	printf("Creating Tap type from: %s\n", node->getName());
 }
 
 FileTypeTap :: ~FileTypeTap()
 {
     printf("Destructor of FileTypeTap.\n");
-    closeFile();
 }
-
-void FileTypeTap :: closeFile() {
-	if(file)
-		FileManager :: getFileManager() -> fclose(file);
-	file = NULL;
-}
-
 
 int FileTypeTap :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_C2N_STREAMER) {
-        list.append(new Action("Run Tape", FileTypeTap :: execute_st, this, (void *)TAPFILE_RUN ));
+        list.append(new Action("Run Tape", FileTypeTap :: execute_st, TAPFILE_RUN, 0 ));
         count++;
-        list.append(new Action("Start Tape", FileTypeTap :: execute_st, this, (void *)TAPFILE_START ));
+        list.append(new Action("Start Tape", FileTypeTap :: execute_st, TAPFILE_START, 0 ));
         count++;
-        list.append(new Action("Write to Tape", FileTypeTap :: execute_st, this, (void *)TAPFILE_WRITE ));
+        list.append(new Action("Write to Tape", FileTypeTap :: execute_st, TAPFILE_WRITE, 0 ));
         count++;
     }
     return count;
 }
 
-FileType *FileTypeTap :: test_type(CachedTreeNode *obj)
+FileType *FileTypeTap :: test_type(BrowsableDirEntry *obj)
 {
-	FileInfo *inf = obj->get_file_info();
+	FileInfo *inf = obj->getInfo();
     if(strcmp(inf->extension, "TAP")==0)
         return new FileTypeTap(obj);
     return NULL;
 }
 
-void FileTypeTap :: execute_st(void *obj, void *param)
-{
-	// fall through in original execute method
-	((FileTypeTap *)obj)->execute((int)param);
-}
-
-void FileTypeTap :: execute(int selection)
+int FileTypeTap :: execute_st(SubsysCommand *cmd)
 {
 	FRESULT fres;
 	uint8_t read_buf[20];
 	char *signature = "C64-TAPE-RAW";
 	uint32_t *pul;
 	uint32_t bytes_read;
+	SubsysCommand *c64_command;
 	
-	switch(selection) {
+	tape_controller->stop();
+	tape_controller->close();
+
+	File *file = FileManager :: getFileManager() -> fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
+	if(!file) {
+		cmd->user_interface->popup("Can't open TAP file.", BUTTON_OK);
+		return -1;
+	}
+	fres = file->read(read_buf, 20, &bytes_read);
+	if(fres != FR_OK) {
+		cmd->user_interface->popup("Error reading TAP file header.", BUTTON_OK);
+		return -2;
+	}
+	if((bytes_read != 20) || (memcmp(read_buf, signature, 12))) {
+		cmd->user_interface->popup("TAP file: invalid signature.", BUTTON_OK);
+		return -3;
+	}
+	pul = (uint32_t *)&read_buf[16];
+	tape_controller->set_file(file, le_to_cpu_32(*pul), int(read_buf[12]));
+	file = NULL; // after set file, the tape controller is now owner of the File object :)
+
+	switch(cmd->functionID) {
 	case TAPFILE_START:
+		if(cmd->user_interface->popup("Tape emulation starts now..", BUTTON_OK | BUTTON_CANCEL) == BUTTON_OK) {
+			tape_controller->start(0);
+		}
+		break;
 	case TAPFILE_RUN:
+        c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_LOAD_RUN, "", "");
+        c64_command->execute();
+		tape_controller->start(0);
+		break;
     case TAPFILE_WRITE:
-		if(file) {
-			tape_controller->stop(); // also closes file
-		}
-		file = FileManager :: getFileManager() -> fopen_node(node, FA_READ);
-		if(!file) {
-			user_interface->popup("Can't open TAP file.", BUTTON_OK);
-			return;
-		}
-	    fres = file->read(read_buf, 20, &bytes_read);
-		if(fres != FR_OK) {
-			user_interface->popup("Error reading TAP file header.", BUTTON_OK);
-			return;
-		}	
-	    if((bytes_read != 20) || (memcmp(read_buf, signature, 12))) {
-			user_interface->popup("TAP file: invalid signature.", BUTTON_OK);
-			return;
-	    }
-		pul = (uint32_t *)&read_buf[16];
-		tape_controller->set_file(file, le_to_cpu_32(*pul), int(read_buf[12]));
-		file = NULL; // after set file, the tape controller is now owner of the File object :)
-        if (selection == TAPFILE_RUN) {
-            C64Event::prepare_dma_load(0, NULL, 0, RUNCODE_TAPE_LOAD_RUN);
-            tape_controller->start(0);
-            C64Event::perform_dma_load(0, RUNCODE_TAPE_LOAD_RUN);
-        } else if (selection == TAPFILE_START) {
-            if(user_interface->popup("Tape emulation starts now..", BUTTON_OK | BUTTON_CANCEL) == BUTTON_OK) {
-                tape_controller->start(0);
-            }
-        } else {
-            C64Event::prepare_dma_load(0, NULL, 0, RUNCODE_TAPE_RECORD);
-            tape_controller->start(1);
-            C64Event::perform_dma_load(0, RUNCODE_TAPE_RECORD);
-        }
-        
+        c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_RECORD, "", "");
+        c64_command->execute();
+		tape_controller->start(1);
 		break;
 	default:
 		break;
 	}
+	return 0;
 }
 

@@ -13,7 +13,7 @@ const int c_button_widths[NUM_BUTTONS] = { 4, 5, 4, 5, 8 };
 
 /* User Interface Objects */
 /* Popup */
-UIPopup :: UIPopup(char *msg, uint8_t btns) : message(msg)
+UIPopup :: UIPopup(const char *msg, uint8_t btns) : message(msg)
 {
     buttons = btns;
     btns_active = 0;
@@ -116,7 +116,7 @@ void UIPopup :: deinit()
 }
 
 
-UIStringBox :: UIStringBox(char *msg, char *buf, int max) : message(msg)
+UIStringBox :: UIStringBox(const char *msg, char *buf, int max) : message(msg)
 {
     buffer = buf;
     max_len = max;
@@ -257,7 +257,7 @@ void UIStringBox :: deinit(void)
 }
 
 /* Status Box */
-UIStatusBox :: UIStatusBox(char *msg, int steps) : message(msg)
+UIStatusBox :: UIStatusBox(const char *msg, int steps) : message(msg)
 {
     total_steps = steps;
     progress = 0;
@@ -285,7 +285,7 @@ void UIStatusBox :: deinit(void)
     delete window;
 }
 
-void UIStatusBox :: update(char *msg, int steps)
+void UIStatusBox :: update(const char *msg, int steps)
 {
     static char bar[40];
     progress += steps;

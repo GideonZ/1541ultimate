@@ -11,7 +11,7 @@ extern "C" {
 /************************/
 /* ConfigBrowser Object */
 /************************/
-ConfigBrowser :: ConfigBrowser(Browsable *root) : TreeBrowser(root)
+ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root) : TreeBrowser(ui, root)
 {
     printf("Constructor config browser\n");
 }
@@ -84,7 +84,7 @@ void ConfigBrowserState :: change(void)
             browser->context(it->value);
             break;
         case CFG_TYPE_STRING:
-            if(user_interface->string_box(it->definition->item_text, it->string, it->definition->max))
+            if(browser->user_interface->string_box(it->definition->item_text, it->string, it->definition->max))
             	update_selected();
             break;
         default:
@@ -192,17 +192,9 @@ int ConfigBrowser :: handle_key(int c)
 }
 
 /*
-void ConfigBrowserState :: unhighlight()
+// ConfigContextMenu
+ConfigContextMenu :: ConfigContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y) :
+	ContextMenu(ui, state, initial, y)
 {
-    browser->window->move_cursor(0, selected_line);
-    browser->window->set_color(user_interface->color_fg); // highlighted
-    browser->window->output_line(under_cursor->get_display_string());
-}
-    
-void ConfigBrowserState :: highlight()
-{
-    browser->window->move_cursor(0, selected_line);
-    browser->window->set_color(user_interface->color_sel); // highlighted
-    browser->window->output_line(under_cursor->get_display_string());
 }
 */

@@ -12,6 +12,7 @@ FilePartition :: FilePartition(CachedTreeNode *par, Partition *p, char *n) : Fil
     prt = p; // link to partition object.
     info.cluster = 0; // indicate root dir
     info.attrib = AM_DIR; // ;-)
+    info.special_display = 1;
 }
 
 FilePartition :: ~FilePartition()
@@ -22,7 +23,7 @@ FilePartition :: ~FilePartition()
 	}
 }
 
-char *FilePartition :: get_type_string(uint8_t typ)
+const char *FilePartition :: get_type_string(uint8_t typ)
 {
     switch(typ) {
         case 0x00: return "None";
@@ -38,15 +39,13 @@ char *FilePartition :: get_type_string(uint8_t typ)
     return "";
 }
 
-char *FilePartition :: get_display_string(void)
+void FilePartition :: get_display_string(char *buffer, int width)
 {
-    static char buffer[44];
     static char sizebuf[8];
     uint32_t length;
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
-    sprintf(buffer, "%24s \e7%s \eJ%s", get_name(), sizebuf, get_type_string(prt->get_type()));
-    return buffer;
+    sprintf(buffer, "%#s \e7%s \eJ%s", width-16, get_name(), sizebuf, get_type_string(prt->get_type()));
 }
 
 void FilePartition :: init()

@@ -7,6 +7,7 @@
 #include "config.h"
 #include "userinterface.h"
 #include "iomap.h"
+#include "subsys.h"
 
 #define HW_IEC_REGS      IEC_BASE
 #define HW_IEC_CODE      (IEC_BASE + 0x800)
@@ -46,12 +47,14 @@
 class IecChannel;
 class UltiCopy;
 
-class IecInterface : public ObjectWithMenu,  ConfigurableObject
+class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
 {
 	FileManager *fm;
     IndexedList<FileInfo *> *dirlist;
     IndexedList<char *> *iecNames;
     Path *path;
+    Path *cmd_path;
+    UserInterface *cmd_ui;
 
 	int last_addr;
     bool wait_irq;
@@ -83,6 +86,8 @@ public:
     IecInterface();
     ~IecInterface();
     
+    int executeCommand(SubsysCommand *cmd); // from SubSystem
+
     int poll(Event &ev);
     int fetch_task_items(IndexedList<Action *> &list);
     void effectuate_settings(void); // from ConfigurableObject

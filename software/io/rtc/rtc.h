@@ -56,7 +56,7 @@
 class RtcConfigStore : public ConfigStore
 {
 public:
-	RtcConfigStore(char *name, t_cfg_definition *defs) : ConfigStore(0, name, -1, 0, defs, NULL) { }
+	RtcConfigStore(const char *name, t_cfg_definition *defs) : ConfigStore(0, name, -1, 0, defs, NULL) { }
 	~RtcConfigStore() { if(dirty) write(); }
 
 	void read(void);
@@ -81,9 +81,9 @@ public:
 
 	void get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s);
 	void set_time(int y, int M, int D, int wd, int h, int m, int s);
-	char* get_time_string(char *dest, int len);
-	char* get_date_string(char *dest, int len);
-	char* get_long_date(char *dest, int len);
+	const char* get_time_string(char *dest, int len);
+	const char* get_date_string(char *dest, int len);
+	const char* get_long_date(char *dest, int len);
 	uint32_t get_fat_time(void);
 };
 

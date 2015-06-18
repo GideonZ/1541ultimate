@@ -11,9 +11,9 @@
 
 -------------------------------------------------------------------------------
 */
-bool pattern_match(char *pattern, const char *fixed, bool case_sensitive)
+bool pattern_match(const char *pattern, const char *fixed, bool case_sensitive)
 {
-    char *p;
+    const char *p;
     const char *f;
     char cp, cf;
     	

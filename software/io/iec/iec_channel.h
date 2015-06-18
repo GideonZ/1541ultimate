@@ -317,7 +317,7 @@ private:
             size = 32;
             memcpy(buffer, c_header, 32);
 
-            char *name = interface->path->get_path();
+            const char *name = interface->path->get_path();
             int pos = 8;
             while((pos < 23) && (*name))
                 buffer[pos++] = toupper(*(name++));

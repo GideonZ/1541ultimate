@@ -2,10 +2,15 @@
 #include "globals.h"
 #include <string.h>
 #include "user_file_interaction.h"
+#include "tree_browser_state.h"
 
-TaskMenu :: TaskMenu(Browsable *b) : ContextMenu(NULL, 0, 0)
+TaskMenu :: TaskMenu(UserInterface *ui, TreeBrowserState *state) : ContextMenu(ui, state, 0, 0)
 {
-	browsable = b;
+	this->state = state;
+	if(state)
+		browsable = state->node;
+	else
+		browsable = NULL;
 	screen = NULL;
     context_state = e_new;
     keyb = NULL;

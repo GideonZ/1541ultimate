@@ -14,7 +14,7 @@
 #include "userinterface.h"
 #include "browsable_root.h"
 
-static char *helptext=
+static const char *helptext=
 	"CRSR UP/DN: Selection up/down\n"
 	"CRSR LEFT:  Go one level up\n"
 	"            leave directory or disk\n"
@@ -38,10 +38,11 @@ static char *helptext=
 /***********************/
 /* Tree Browser Object */
 /***********************/
-TreeBrowser :: TreeBrowser(Browsable *root)
+TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
 {
 	// initialize state
-    window = NULL;
+	user_interface = ui;
+	window = NULL;
     keyb = NULL;
     contextMenu = NULL;
     configBrowser = NULL;
@@ -49,14 +50,14 @@ TreeBrowser :: TreeBrowser(Browsable *root)
     quick_seek_string[0] = '\0';
     this->root = root;
     state = 0;
-    //path = file_manager.get_new_path("Tree Browser");
+    path = FileManager :: getFileManager() -> get_new_path("Tree Browser");
 }
 
 TreeBrowser :: ~TreeBrowser()
 {
 	if(state)
 		delete state;
-	//file_manager.release_path(path);
+	FileManager :: getFileManager() -> release_path(path);
 }
 
 void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
@@ -83,7 +84,7 @@ void TreeBrowser :: config(void)
     printf("Creating config menu...\n");
         
     Browsable *configRoot = new BrowsableConfigRoot();
-    configBrowser = new ConfigBrowser(configRoot);
+    configBrowser = new ConfigBrowser(user_interface, configRoot);
     configBrowser->init(screen, keyb);
     state->refresh = true; // refresh as soon as we come back
     user_interface->activate_uiobject(configBrowser);
@@ -96,8 +97,8 @@ void TreeBrowser :: context(int initial)
 	if(!state->under_cursor)
 		return;
 
-    printf("Creating context menu for %s\n", state->under_cursor->getName());
-    contextMenu = new ContextMenu(state->under_cursor, initial, state->selected_line);
+    //printf("Creating context menu for %s\n", state->under_cursor->getName());
+    contextMenu = new ContextMenu(user_interface, state, initial, state->selected_line);
     contextMenu->init(window, keyb);
     user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to context menu!
@@ -107,8 +108,8 @@ void TreeBrowser :: task_menu(void)
 {
 	if(!state->node)
 		return;
-    printf("Creating task menu for %s\n", state->node->getName());
-    contextMenu = new TaskMenu(state->node);
+    //printf("Creating task menu for %s\n", state->node->getName());
+    contextMenu = new TaskMenu(user_interface, state);
     contextMenu->init(window, keyb);
     user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to menu!
@@ -117,7 +118,7 @@ void TreeBrowser :: task_menu(void)
 void TreeBrowser :: test_editor(void)
 {
 	Event e(e_nop, 0, 0);
-    Editor *edit = new Editor(NULL); // use built-in text
+    Editor *edit = new Editor(user_interface, NULL); // use built-in text
     edit->init(screen, keyb);
     int ret;
     do {
@@ -137,14 +138,7 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
     	return 0;
     } else
     if(e.type == e_refresh_browser) {
-		TreeBrowserState *st = state;
-		while(st) {
-			if (st->node->invalidateMatch(e.object)) {
-				st->needs_reload = true;
-				st->refresh = true;
-			}
-			st = st->previous;
-		}
+		state->refresh = true;
 	}
 	
     if(contextMenu) {
@@ -305,11 +299,13 @@ void TreeBrowser :: invalidate(const void *obj)
 
 	TreeBrowserState *st, *found;
 	st = state;
-	found = NULL;
+	found = 0;
 	while(st) {
 		printf("checking %s...\n", st->node->getName());
-		if(st->node->invalidateMatch(obj)) {
+
+		if(st->node->isValid()) {
 			found = st;
+			break;
 		}
 		st = st->previous;
 	}
@@ -344,6 +340,7 @@ void TreeBrowser :: invalidate(const void *obj)
 		printf(" done\n");
 	} else {
 		printf("Did not rewind, because the object invalidated is not in my path.\n");
+/*
 		// still, the item might be somewhere else in the tree.
 		st = state;
 		while(st) {
@@ -358,7 +355,10 @@ void TreeBrowser :: invalidate(const void *obj)
 			if (st)
 				st = st->previous;
 		}
-
+*/
 	}
 }
 
+const char *TreeBrowser :: getPath() {
+	return path->get_path();
+}

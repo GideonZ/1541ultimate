@@ -35,7 +35,7 @@ void Screen_VT100::set_color(int c)
 		return;
 	}
 	const char *sequence = set_color[c & 15];
-	stream->write((char *)sequence, strlen(sequence));
+	stream->write(sequence, strlen(sequence));
 }
 
 void Screen_VT100::reverse_mode(int r)

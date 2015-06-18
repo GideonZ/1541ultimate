@@ -12,38 +12,30 @@
 #include <stddef.h>
 #include <string.h>
 
-typedef void (*actionFunction_t)(void *obj, void *param);
+class SubsysCommand;
+
+typedef int (*actionFunction_t)(SubsysCommand *cmd);
 
 class Action
 {
 	char *actionName;
-	actionFunction_t callback;
-	void *object;
-	void *param;
 public:
-
-	Action(const char *name, actionFunction_t func, void *obj, void *prm) {
+	Action(const char *name, int ID, int f, int m=0) : subsys(ID), function(f), mode(m), func(0) {
 		if(name) {
 			actionName = new char[strlen(name)+1];
 			strcpy(actionName, name);
 		} else {
 			actionName = 0;
 		}
-		callback = func;
-		object = obj;
-		param = prm;
 	}
 
-	Action(const char *name, actionFunction_t func, void *obj) {
+	Action(const char *name, actionFunction_t func, int f, int m=0) : subsys(-1), function(f), mode(m), func(func) {
 		if(name) {
 			actionName = new char[strlen(name)+1];
 			strcpy(actionName, name);
 		} else {
 			actionName = 0;
 		}
-		callback = func;
-		object = obj;
-		param = NULL;
 	}
 
 	virtual ~Action() {
@@ -52,13 +44,14 @@ public:
 		}
 	}
 
-	virtual void execute() {
-		callback(object, param);
-	}
-
 	virtual const char *getName() {
 		return (const char *)actionName;
 	}
+
+	const actionFunction_t func;
+	const int   subsys;
+	const int   function;
+	const int   mode;
 };
 
 

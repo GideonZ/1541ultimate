@@ -53,7 +53,7 @@ private:
     void draw_buttons();
 
 public:
-    UIPopup(char *msg, uint8_t flags);
+    UIPopup(const char *msg, uint8_t flags);
     ~UIPopup() { }
 
     void init(Screen *screen, Keyboard *keyb);
@@ -75,7 +75,7 @@ private:
     int   max_len;
     char *buffer;
 public:
-    UIStringBox(char *msg, char *buf, int max);
+    UIStringBox(const char *msg, char *buf, int max);
     ~UIStringBox() { }
 
     void init(Screen *screen, Keyboard *keyb);
@@ -91,12 +91,12 @@ private:
     int      progress;
     Window  *window;
 public:
-    UIStatusBox(char *msg, int steps);
+    UIStatusBox(const char *msg, int steps);
     ~UIStatusBox() { }
 
     void init(Screen *screen);
     void deinit(void);
-    void update(char *msg, int steps);
+    void update(const char *msg, int steps);
 };
 
 

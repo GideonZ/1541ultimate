@@ -10,7 +10,8 @@ FileDevice :: FileDevice(BlockDevice *b, char *n, char *dn) : FileDirEntry(NULL,
     info.fs = NULL;
     info.cluster = 0; // indicate root dir
     info.attrib = AM_DIR; // ;-)
-//printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s, info = %p\n", this, disk, b, n, dn, get_file_info());
+    info.special_display = 1;
+    //printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s, info = %p\n", this, disk, b, n, dn, get_file_info());
 }
 
 FileDevice :: ~FileDevice()
@@ -42,6 +43,12 @@ void FileDevice :: detach_disk(void)
     disk = NULL;
 }
     
+bool FileDevice :: is_ready(void)
+{
+    t_device_state state = blk->get_state();
+    return (state == e_device_ready);
+}
+
 int FileDevice :: fetch_children(void)
 {
     t_device_state state = blk->get_state();
@@ -96,11 +103,8 @@ int FileDevice :: fetch_children(void)
     return p_count;
 }
 
-char *FileDevice :: get_display_string(void)
+void FileDevice :: get_display_string(char *buffer, int width)
 {
-    static char buffer[54];
-//    static char sizebuf[8];
-
 	const char *c_state_string[] = { "Unknown", "No media", "Not ready", "Ready", "Error!" };
 
 	t_device_state state = blk->get_state();
@@ -109,6 +113,5 @@ char *FileDevice :: get_display_string(void)
     prt->ioctl(GET_SECTOR_COUNT, &length);
     size_to_string_sectors(length, sizebuf);
 */
-    sprintf(buffer, "%8s%22s \eE%s", get_name(), display_name, c_state_string[(int)state]);
-    return buffer;
+    sprintf(buffer, "%8s%#s \eE%s", get_name(), width-18, display_name, c_state_string[(int)state]);
 }

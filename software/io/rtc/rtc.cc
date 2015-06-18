@@ -1,13 +1,13 @@
 #include "rtc.h"
 #include "small_printf.h"
 
-char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
 										"Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
-char *month_strings_long[] = { "", "January", "February", "March", "April", "May", "June",
+const char *month_strings_long[] = { "", "January", "February", "March", "April", "May", "June",
 									"July", "August", "September", "October", "November", "December" };
 
-char *weekday_strings[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+const char *weekday_strings[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 
 // =================
 //   Configuration
@@ -202,7 +202,7 @@ void Rtc :: set_time(int y, int M, int D, int wd, int h, int m, int s)
     }
 }
 
-char * Rtc :: get_time_string(char *dest, int len)
+const char * Rtc :: get_time_string(char *dest, int len)
 {
 	if(len < 9)
 		return "";
@@ -213,7 +213,7 @@ char * Rtc :: get_time_string(char *dest, int len)
 }
 
 
-char * Rtc :: get_date_string(char *dest, int len)
+const char * Rtc :: get_date_string(char *dest, int len)
 {
 	if(len < 14)
 		return "";
@@ -223,7 +223,7 @@ char * Rtc :: get_date_string(char *dest, int len)
 	return dest;
 }
 
-char * Rtc :: get_long_date(char *dest, int len)
+const char * Rtc :: get_long_date(char *dest, int len)
 {
 	// Wednesday September 30, 2009
 	if(len < 29)

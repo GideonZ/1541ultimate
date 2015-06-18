@@ -33,7 +33,9 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/application/ultimate \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
+			$(PATH_SW)/filetypes \
 			$(PATH_SW)/system \
+			$(PATH_SW)/infra \
 			$(PATH_SW)/io/flash \
 			$(PATH_SW)/drive \
 			$(PATH_SW)/components \
@@ -96,6 +98,8 @@ SRCS_C   =	mbstart_rtos.c \
 #			socket_test.cc \
 #			network_lwip.cc \
 #
+#			filetype_iso.cc \
+
 SRCS_CC	 =  stream.cc \
 			memory_rtos.cc \
 			init_function.cc \
@@ -108,10 +112,12 @@ SRCS_CC	 =  stream.cc \
 			event.cc \
 			poll.cc \
 			filemanager.cc \
-			file_utils.cc \
 			file_device.cc \
 			file_partition.cc \
 			file_direntry.cc \
+			embedded_d64.cc \
+			embedded_t64.cc \
+			embedded_iso.cc \
 			rtc.cc \
 			usb_base.cc \
 			usb2.cc \
@@ -148,16 +154,6 @@ SRCS_CC	 =  stream.cc \
 			tape_controller.cc \
 			tape_recorder.cc \
 			size_str.cc \
-			filetype_iso.cc \
-			filetype_d64.cc \
-			filetype_g64.cc \
-			filetype_crt.cc \
-			filetype_t64.cc \
-			filetype_prg.cc \
-			filetype_reu.cc \
-			filetype_u2u.cc \
-			filetype_tap.cc \
-			filetype_sid.cc \
 			userinterface.cc \
 			ui_elements.cc \
             user_file_interaction.cc \
@@ -176,6 +172,14 @@ SRCS_CC	 =  stream.cc \
 			usb_ax88772.cc \
 			usb_em1010.cc \
 			network_interface.cc \
+			filetype_d64.cc \
+			filetype_g64.cc \
+			filetype_prg.cc \
+			filetype_u2u.cc \
+			filetype_reu.cc \
+			filetype_crt.cc \
+			filetype_tap.cc \
+			filetype_sid.cc \
 			$(PRJ).cc
 
 ####			sampler.cc \

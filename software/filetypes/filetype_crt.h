@@ -2,11 +2,11 @@
 #define FILETYPE_CRT_H
 
 #include "filetypes.h"
-#include "filemanager.h"
+#include "browsable_root.h"
 
 class FileTypeCRT : public FileType
 {
-    CachedTreeNode *node;
+	BrowsableDirEntry *node;
 	uint8_t  crt_header[0x20];
     uint8_t  chip_header[0x10];
     uint16_t  type_select;
@@ -18,15 +18,14 @@ class FileTypeCRT : public FileType
     void  configure_cart(void);
     bool  read_chip_packet(File *file);
 
-    void execute(int);
-    static void execute_st(void *obj, void *param);
-    static void configure_st(int);
+    static int execute_st(SubsysCommand *cmd);
+    int execute(SubsysCommand *cmd);
 public:
-    FileTypeCRT(CachedTreeNode *node);
+    FileTypeCRT(BrowsableDirEntry *node);
     ~FileTypeCRT();
 
     int   fetch_context_items(IndexedList<Action *> &list);
-    static FileType *test_type(CachedTreeNode *obj);
+    static FileType *test_type(BrowsableDirEntry *obj);
 };
 
 

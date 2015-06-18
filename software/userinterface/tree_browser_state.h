@@ -49,7 +49,6 @@ public:
     virtual void change(void) { }
     virtual void increase(void) { }
     virtual void decrease(void) { }
-
 };
 
 #endif

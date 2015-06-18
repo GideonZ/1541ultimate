@@ -12,7 +12,7 @@ TapeController *tape_controller = NULL; // globally static
 #define MENU_C2N_STATUS        0x3203
 #define MENU_C2N_STOP          0x3204
 
-TapeController :: TapeController()
+TapeController :: TapeController() : SubSystem(SUBSYSID_TAPE_PLAYER)
 {
     fm = FileManager :: getFileManager();
 	file = NULL;
@@ -46,18 +46,12 @@ int  TapeController :: fetch_task_items(IndexedList<Action*> &item_list)
 		return 0;
 	}
 	if(paused)
-		item_list.append(new Action("Resume Tape Playback", TapeController :: exec, this, (void *)MENU_C2N_RESUME));
+		item_list.append(new Action("Resume Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_RESUME));
 	else
-		item_list.append(new Action("Pause Tape Playback", TapeController :: exec, this, (void *)MENU_C2N_PAUSE));
-    item_list.append(new Action("Stop Tape Playback", TapeController :: exec, this, (void *)MENU_C2N_STOP));
+		item_list.append(new Action("Pause Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_PAUSE));
+    item_list.append(new Action("Stop Tape Playback", SUBSYSID_TAPE_PLAYER, MENU_C2N_STOP));
 	return 2;
 }
-
-void TapeController :: exec(void *obj, void *param)
-{
-	push_event(e_object_private_cmd, obj, (int)param);
-}
-
 
 void TapeController :: stop()
 {
@@ -140,30 +134,6 @@ void TapeController :: poll(Event &e)
         return;
     }
 	
-	if(e.type == e_object_private_cmd) {
-		if(e.object == this) {
-			switch(e.param) {
-				case MENU_C2N_PAUSE:
-					PLAYBACK_CONTROL = (controlByte & ~C2N_ENABLE);
-					paused = 1;
-					break;
-				case MENU_C2N_RESUME:
-					PLAYBACK_CONTROL = controlByte;
-					paused = 0;
-					break;
-                case MENU_C2N_STATUS:
-                    printf("Tape status = %b\n", PLAYBACK_STATUS);
-                    break;
-                case MENU_C2N_STOP:
-                    close();
-                	stop();
-                    break;
-				default:
-					break;
-			}
-		}
-	}
-		
 	uint8_t st = PLAYBACK_STATUS;
 	if(st & C2N_STAT_ENABLED) { // we are enabled
 		if(!(st & C2N_STAT_FIFO_AF)) {
@@ -172,6 +142,31 @@ void TapeController :: poll(Event &e)
 	}
 }
 	
+int TapeController :: executeCommand(SubsysCommand *cmd)
+{
+	switch(cmd->functionID) {
+		case MENU_C2N_PAUSE:
+			PLAYBACK_CONTROL = (controlByte & ~C2N_ENABLE);
+			paused = 1;
+			break;
+		case MENU_C2N_RESUME:
+			PLAYBACK_CONTROL = controlByte;
+			paused = 0;
+			break;
+		case MENU_C2N_STATUS:
+			printf("Tape status = %b\n", PLAYBACK_STATUS);
+			break;
+		case MENU_C2N_STOP:
+			close();
+			stop();
+			break;
+		default:
+			break;
+	}
+	delete cmd; // cleanup
+	return 0;
+}
+
 void TapeController :: set_file(File *f, uint32_t len, int m)
 {
 	close();

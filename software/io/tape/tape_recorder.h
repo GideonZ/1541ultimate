@@ -7,6 +7,7 @@
 #include "menu.h"
 #include "iomap.h"
 #include "filemanager.h"
+#include "subsys.h"
 
 #define RECORD_STATUS  *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
 #define RECORD_CONTROL *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
@@ -41,6 +42,7 @@
 class TapeRecorder : public ObjectWithMenu
 {
 	FileManager *fm;
+    UserInterface *last_user_interface;
 	File *file;
     int   error_code;
 	int   recording;
@@ -60,13 +62,13 @@ public:
 	virtual ~TapeRecorder();
 
 	int  fetch_task_items(IndexedList<Action*> &item_list);
-	static void exec(void *obj, void *param);
+	int executeCommand(SubsysCommand *cmd);
 	
     void flush();
 	void stop(int);
 	void start();
 	void poll(Event &);
-	bool request_file();
+	bool request_file(SubsysCommand *);
     void irq();
 };
 

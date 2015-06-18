@@ -2,12 +2,13 @@
 #include "stream_menu.h"
 #include "task_menu.h"
 #include "globals.h"
+#include "filemanager.h"
+#include "subsys.h"
 
-char *decimals = "0123456789";
-
-StreamMenu :: StreamMenu(Stream *s, Browsable *n) : listStack(20, NULL), actionList(0, NULL)
+StreamMenu :: StreamMenu(UserInterface *ui, Stream *s, Browsable *n) : listStack(20, NULL), actionList(0, NULL)
 {
-    stream = s;
+	user_interface = ui;
+	stream = s;
     state = 0;
     node = n;
     user_input[0] = 0;
@@ -15,7 +16,7 @@ StreamMenu :: StreamMenu(Stream *s, Browsable *n) : listStack(20, NULL), actionL
     currentList = new IndexedList<Browsable *>(0, NULL);
     // listStack.push(currentList);
     n->getSubItems(*currentList);
-
+    currentPath = FileManager :: getFileManager() -> get_new_path("Stream Menu");
     print_items(0, 9999);
 }
 
@@ -28,6 +29,7 @@ StreamMenu :: ~StreamMenu()
 		delete list;
 	}
 	cleanupActions();
+	FileManager :: getFileManager() -> release_path(currentPath);
 }
 
 void StreamMenu :: print_items(int start, int stop)
@@ -35,6 +37,8 @@ void StreamMenu :: print_items(int start, int stop)
     if(stop > currentList->get_elements())
         stop = currentList->get_elements();
             
+    char buffer[52];
+
     printf("%d-%d\n", start, stop);
     if(currentList->get_elements() == 0) {
         stream->format("< No Items >\n");
@@ -42,7 +46,8 @@ void StreamMenu :: print_items(int start, int stop)
         stream->format("< No more items.. >\n");
     } else {
         for(int i=start;i<stop;i++) {
-            stream->format("%3d. %s\n", 1+i, (*currentList)[i]->getDisplayString());
+        	(*currentList)[i]->getDisplayString(buffer, 40);
+        	stream->format("%3d. %s\n", 1+i, buffer);
         }
     }
     printf("State = %d. Depth: %d\n", state, listStack.get_count());
@@ -100,6 +105,7 @@ int StreamMenu :: into(void)
     	return result;
     }
             
+    currentPath->cd(selNode->getName());
     listStack.push(currentList);
     currentList = newList;
     return currentList->get_elements();
@@ -140,6 +146,8 @@ void StreamMenu :: invalidate(CachedTreeNode *obj)
 int StreamMenu :: process_command(char *command)
 {
     int items;
+    Action *act;
+    SubsysCommand *cmd;
     
     if (strcmp(command, "up")==0) {
         if(state > 0) { // if inside menu
@@ -149,11 +157,11 @@ int StreamMenu :: process_command(char *command)
         else if(listStack.get_count() > 0) {
         	cleanupBrowsables(*currentList);
         	currentList = listStack.pop();
+            currentPath->cd("..");
         }
 		print_items(0, 9999);
     }
     else if ((strncmp(command, "into ", 5))==0) {
-        //selected = stream->convert_in(&command[5], 10, decimals);
         sscanf(&command[5], "%d", &selected);
         items = into();
         if(items < 0) {
@@ -173,7 +181,6 @@ int StreamMenu :: process_command(char *command)
         state = 1;
     }
     else { 
-        // int value = stream->convert_in(command, 10, decimals);
     	int value = 0;
     	sscanf(command, "%d", &value);
         switch(state) {
@@ -200,8 +207,12 @@ int StreamMenu :: process_command(char *command)
             case 1: // task menu
             case 2: // context menu
                 if((value > 0)&&(value <= actionList.get_elements())) {
-                    // execute
-                    actionList[value-1]->execute();
+                	Browsable *b = (*currentList)[selected-1];
+                	// execute
+                	act = actionList[value-1];
+                	SubsysCommand *cmd = new SubsysCommand(user_interface, act, currentPath->get_path(), b->getName());
+                	cmd->print();
+                	cmd->execute();
                     cleanupActions();
                     state = 0;
                 } else {

@@ -9,6 +9,8 @@
 #define FILESYSTEM_FILE_INFO_H_
 
 #include "integer.h"
+#include <stdio.h>
+#include <string.h>
 
 /* File attribute bits for directory entry */
 
@@ -38,7 +40,8 @@ public:
     void   *object;
     char   *lfname;
 	uint8_t	attrib;	 /* Attribute */
-    char    extension[4];
+	uint8_t special_display;
+	char    extension[4];
 
     FileInfo()
     {
@@ -60,7 +63,7 @@ public:
 		}
     }
 
-    FileInfo(char *name)
+    FileInfo(const char *name)
     {
     	init();
 		lfsize = strlen(name)+1;
@@ -70,20 +73,7 @@ public:
 
     FileInfo(FileInfo &i)
     {
-    	fs = i.fs;
-        cluster = i.cluster;
-        size = i.size;
-        date = i.date;
-        time = i.time;
-        dir_clust = i.dir_clust;
-        dir_index = i.dir_index;
-        lfsize = i.lfsize;
-        lfname = new char[lfsize];
-        strncpy(lfname, i.lfname, lfsize);
-        strncpy(extension, i.extension, 4);
-        attrib = i.attrib;
-        extension[3] = 0;
-        object = i.object;
+    	copyfrom(&i);
     }
 
     FileInfo(FileInfo *i, char *new_name)
@@ -101,6 +91,7 @@ public:
         attrib = i->attrib;
         extension[0] = 0;
         object = i->object;
+        special_display = i->special_display;
     }
 
 	~FileInfo()
@@ -108,6 +99,24 @@ public:
 		if(lfname)
 	        delete[] lfname;
     }
+
+	void copyfrom(FileInfo *i) {
+    	fs = i->fs;
+        cluster = i->cluster;
+        size = i->size;
+        date = i->date;
+        time = i->time;
+        dir_clust = i->dir_clust;
+        dir_index = i->dir_index;
+        lfsize = i->lfsize;
+        lfname = new char[lfsize];
+        strncpy(lfname, i->lfname, lfsize);
+        strncpy(extension, i->extension, 4);
+        attrib = i->attrib;
+        extension[3] = 0;
+        object = i->object;
+        special_display = i->special_display;
+	}
 
 	bool is_directory(void) {
 	    return (attrib & AM_DIR);

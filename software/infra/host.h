@@ -6,18 +6,21 @@
 #include "screen.h"
 #include "keyboard.h"
 
+class HostClient;
+
 class GenericHost
 {
 public:
     GenericHost() { }
     virtual ~GenericHost() { }
 
+    virtual void take_ownership(HostClient *) { }
+    virtual void release_ownership() { }
+
     virtual bool exists(void) { return false; }
     virtual bool is_accessible(void) { return false; }
     virtual void poll(Event &e) { }
     virtual void reset(void) { }
-    virtual void freeze(void) { }
-    virtual void unfreeze(Event &e) { }
     virtual void set_colors(int background, int border) { }
 
     virtual Screen   *getScreen(void) { return NULL; }
@@ -25,5 +28,12 @@ public:
     virtual Keyboard *getKeyboard(void) { return NULL; }
 };
 
+class HostClient
+{
+public:
+	virtual ~HostClient() { }
+
+	virtual void release_host() { }
+};
 
 #endif

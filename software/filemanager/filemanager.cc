@@ -10,7 +10,7 @@
 int FileManager :: validatePath(Path *p, CachedTreeNode **node)
 {
 	CachedTreeNode *n = root;
-	char *pstr = p->get_path();
+	const char *pstr = p->get_path();
 	int len = strlen(pstr);
 	char *copy = new char[len + 1];
 	strcpy(copy, pstr);
@@ -51,11 +51,9 @@ void FileManager :: handle_event(Event &e)
     FileDevice *fd;
     Path *path;
     mstring pathString;
-    char *pathStringC;
+    const char *pathStringC;
     int len;
 
-    par = o->parent;
-    
     switch(e.type) {
 	case e_cleanup_path_object:
         printf("Cleaning up %s\n", o->get_name());
@@ -67,6 +65,8 @@ void FileManager :: handle_event(Event &e)
         delete blk;
         break;
 	case e_invalidate:
+	    par = o->parent;
+
 		printf("Invalidate event.. Param = %d. Checking %d files.\n", e.param, open_file_list.get_elements());
 		pathStringC = o->get_full_path(pathString);
 		len = strlen(pathStringC);
@@ -102,35 +102,20 @@ void FileManager :: handle_event(Event &e)
 				f->invalidate();
 			}
 		}
-/*
+
 		for(int i=0;i<used_paths.get_elements();i++) {
 			path = used_paths[i];
-			printf("%2d. %s (%s)\n", i, path->get_path(), path->owner);
-			while(c) {
-				if(c == o) {
-					printf("Due to invalidation of %s, path %s is being invalidated.\n", o->get_name(), path->get_path());
-					if (c->parent) {
-						printf("c = %s c->parent = %s\n", c->get_name(), c->parent->get_name());
-						if (e.param) { // if > 0, the node itself still exists, but the contents are removed.
-							c->get_full_path(pathString);
-						} else { // if == 0, the node itself gets removed, including the contents
-							c->parent->get_full_path(pathString);
-						}
-						printf("Path will be reset to: %s\n", pathString.c_str());
-						path->cd(pathString.c_str());
-					} else {
-						printf("c = %s c->parent = NULL\n", c->get_name() );
-					}
-					break;
-				}
-				c = c->parent;
-			}
+			// path->invalidate(); // clear the validated state  (comment: not yet implemented)
 		}
-*/
 
-		if(par && (par != root)) {
-			printf("Removing %s from %s\n", o->get_name(), par->get_name());
-			par->children.remove(o);
+		if(e.param) { // 1: the object still exists, just clean up the children
+			o->cleanup_children();
+		} else { // 0: the node itself disappears
+			// if the node is in root, the remove_root_node shall be called.
+			if(par && (par != root)) {
+				printf("Removing %s from %s\n", o->get_name(), par->get_name());
+				par->children.remove(o);
+			}
 		}
 		printf("Invalidation complete.\n");
 		break;
@@ -151,14 +136,40 @@ bool FileManager :: is_path_writable(Path *p)
 	return n->get_file_info()->is_writable();
 }
 
-File *FileManager :: fopen(Path *path, char *filename, uint8_t flags)
+bool FileManager :: is_path_valid(Path *p)
+{
+	CachedTreeNode *n;
+	if (!validatePath(p, &n))
+		return false;
+	return n->is_ready();
+}
+
+void FileManager :: get_display_string(Path *p, const char *filename, char *buffer, int width)
+{
+	CachedTreeNode *n;
+	if (!validatePath(p, &n)) {
+		strncpy(buffer, "Invalid path", width);
+		return;
+	}
+	CachedTreeNode *existing = n->find_child(filename);
+	if(existing) {
+		existing->get_display_string(buffer, width);
+	} else {
+		strncpy(buffer, "File doesn't exist in path", width);
+	}
+}
+
+bool FileManager :: reworkPath(Path *path, const char *pathstr, const char *filename, reworked_t& rwp)
 {
 	int filename_length = strlen(filename);
 	if (!filename_length)
-		return NULL;
+		return false;
+	if (path && pathstr) // use either path, or path str, not both
+		return false;
 
 	// Copy the filename + path into a temporary buffer
 	char *copy = new char[filename_length + 1];
+	rwp.copy = copy;
 	strcpy(copy, filename);
 
 	// find the last separator
@@ -184,6 +195,8 @@ File *FileManager :: fopen(Path *path, char *filename, uint8_t flags)
 	if ((filename[0] != '/') && (filename[0] != '\\')) {
 		if(path) {
 			temppath->cd(path->get_path());
+		} else if(pathstr) {
+			temppath->cd(pathstr);
 		} else {
 			temppath->cd("/SD"); // TODO: Make this configurable
 		}
@@ -191,13 +204,39 @@ File *FileManager :: fopen(Path *path, char *filename, uint8_t flags)
 	if (pathname) {
 		temppath->cd(pathname);
 	}
+	rwp.copy = copy;
+	rwp.purename = purename;
+	rwp.path = temppath;
+	return true;
+}
+
+File *FileManager :: fopen(Path *path, const char *filename, uint8_t flags)
+{
+	reworked_t rwp;
+	if (!reworkPath(path, 0, filename, rwp))
+		return NULL;
 
 	// now do the actual thing
-	File *ret = fopen_impl(temppath, purename, flags);
+	File *ret = fopen_impl(rwp.path, rwp.purename, flags);
 
 	// remove the temporary strings and path
-	delete[] copy;
-	this->release_path(temppath);
+	delete[] rwp.copy;
+	this->release_path(rwp.path);
+	return ret;
+}
+
+File *FileManager :: fopen(const char *path, const char *filename, uint8_t flags)
+{
+	reworked_t rwp;
+	if (!reworkPath(0, path, filename, rwp))
+		return NULL;
+
+	// now do the actual thing
+	File *ret = fopen_impl(rwp.path, rwp.purename, flags);
+
+	// remove the temporary strings and path
+	delete[] rwp.copy;
+	this->release_path(rwp.path);
 	return ret;
 }
 
@@ -242,6 +281,26 @@ File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
 	}
 
 	return file;
+}
+
+bool FileManager :: fstat(FileInfo &info, const char *path, const char *filename)
+{
+	reworked_t rwp;
+	if (!reworkPath(0, path, filename, rwp))
+		return false;
+
+	bool ret = false;
+	CachedTreeNode *n, *w;
+	if (validatePath(rwp.path, &n)) {
+		w = n->find_child(rwp.purename);
+		if (w) {
+			info.copyfrom(w->get_file_info());
+			ret = true;
+		}
+	}
+	delete[] rwp.copy;
+	this->release_path(rwp.path);
+	return ret;
 }
 
 File *FileManager :: fopen_node(CachedTreeNode *node, uint8_t flags)
@@ -289,14 +348,14 @@ void FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
 	mount_points.append(new MountPoint(file, emb));
 }
 
-FileSystemInFile *FileManager :: find_mount_point(char *full_path)
+MountPoint *FileManager :: find_mount_point(const char *full_path)
 {
 //	printf("FileManager :: find_mount_point: '%s'\n", full_path);
 	// TODO: walk known mount points and return it, when the path matches
 	for(int i=0;i<mount_points.get_elements();i++) {
 		if(mount_points[i]->match(full_path)) {
 			// printf("Found!\n");
-			return mount_points[i]->get_embedded();
+			return mount_points[i];
 		}
 	}
 

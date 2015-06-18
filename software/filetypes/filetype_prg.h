@@ -1,23 +1,23 @@
 #ifndef FILETYPE_PRG_H
 #define FILETYPE_PRG_H
 
-#include "filemanager.h"
 #include "filetypes.h"
+#include "browsable_root.h"
+
+class SubsysCommand;
 
 class FileTypePRG : public FileType
 {
-	CachedTreeNode *node;
+	BrowsableDirEntry *node;
 	bool    has_header;
-    bool    check_header(File *f);
-
-    static void execute_st(void *obj, void *param);
-    void  execute(int selection);
+    static bool check_header(File *f, bool has_header);
+    static int  execute_st(SubsysCommand *);
 public:
-    FileTypePRG(CachedTreeNode *n, bool header);
+    FileTypePRG(BrowsableDirEntry *n, bool header);
     ~FileTypePRG();
 
     int   fetch_context_items(IndexedList<Action *> &list);
-    static FileType *test_type(CachedTreeNode *obj);
+    static FileType *test_type(BrowsableDirEntry *obj);
 };
 
 

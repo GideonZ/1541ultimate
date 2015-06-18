@@ -1,9 +1,19 @@
 #include "context_menu.h"
+#include "subsys.h"
 #include <string.h>
+#include "tree_browser.h"
+#include "tree_browser_state.h"
 
-ContextMenu :: ContextMenu(Contextable *node, int initial, int y) : actions(2, 0)
+ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y) : actions(2, 0)
 {
-	contextable = node;
+	user_interface = ui;
+	this->state = state;
+
+	if (state)
+		contextable = state->under_cursor;
+	else
+		contextable = NULL;
+
     context_state = e_new;
     screen = NULL;
     keyb = NULL;
@@ -11,7 +21,7 @@ ContextMenu :: ContextMenu(Contextable *node, int initial, int y) : actions(2, 0
     y_offs = y-1;
     corner = y;
     first = 0;
-
+    quick_seek_length = 0;
     item_index = initial;
 }
 
@@ -88,7 +98,12 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
     
 void ContextMenu :: executeAction()
 {
-	actions[item_index]->execute();
+	Action *act = actions[item_index];
+	const char *filename = (contextable)?(contextable->getName()):"";
+	TreeBrowser *bb = state->browser;
+	SubsysCommand *cmd = new SubsysCommand(user_interface, act, bb->getPath(), filename);
+	cmd->execute();
+	// TODO: do something with return value / data
 }
 
 int ContextMenu :: poll(int dummy, Event &e)

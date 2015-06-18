@@ -13,16 +13,17 @@ private:
     mstring full_path;
 
     int cd_single(char *p);
-    void update(char *p);
+    void update(const char *p);
     Path();
     ~Path();
 
 public:
     const char *owner;
-    int cd(char *p);
-    char *get_path(void);
+    int cd(const char *p);
+    const char *get_path(void);
     FRESULT get_directory(IndexedList<FileInfo *> &target);
-
+    void get_display_string(const char *filename, char *buffer, int width);
+    bool isValid();
 };
 
 

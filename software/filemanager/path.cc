@@ -19,7 +19,7 @@ Path :: ~Path()
 {
 }
 
-void Path :: update(char *p)
+void Path :: update(const char *p)
 {
 	if (full_path == p)
 		return;
@@ -30,11 +30,11 @@ void Path :: update(char *p)
 int Path :: cd_single(char *cd)
 {
     int p_len = full_path.length();
-    char *p = full_path.c_str();
+    char *p = (char *)full_path.c_str();
 
 	// printf("CD Single: %s\n", cd);
     if(strcmp(cd, "..") == 0) {
-		for(int i=p_len-2;i>=1;i--) {
+		for(int i=p_len-2;i>=0;i--) {
 			if((p[i] == '/')||(p[i] == '\\')||(i==0)) {
 				p[i+1] = '\0';
 				break;
@@ -51,12 +51,12 @@ int Path :: cd_single(char *cd)
 	return 1;
 }
 
-int Path :: cd(char *pa_in)
+int Path :: cd(const char *pa_in)
 {
 	int pa_len = strlen(pa_in);
 
-    int fp_len = full_path.length();
-    char *fp = full_path.c_str();
+    //int fp_len = full_path.length();
+    //const char *fp = full_path.c_str();
     char *last_part;
 
 	char *pa_alloc = new char[pa_len+1];
@@ -106,7 +106,7 @@ int Path :: cd(char *pa_in)
     return 1;
 }
 
-char *Path :: get_path(void)
+const char *Path :: get_path(void)
 {
 	return full_path.c_str();
 }
@@ -114,6 +114,16 @@ char *Path :: get_path(void)
 FRESULT Path :: get_directory(IndexedList<FileInfo *> &target)
 {
 	return FileManager :: getFileManager() -> get_directory(this, target);
+}
+
+bool Path :: isValid()
+{
+	return FileManager :: getFileManager() -> is_path_valid(this);
+}
+
+void Path :: get_display_string(const char *filename, char *buffer, int width)
+{
+	FileManager :: getFileManager() -> get_display_string(this, filename, buffer, width);
 }
 
 // =======================

@@ -40,19 +40,26 @@ public:
 		return emb;
 	}
 
-	bool match(char *name) {
+	bool match(const char *name) {
 		return (full_path == name);
 	}
 };
 
 class FileManager
 {
-    FRESULT last_error;
+	struct reworked_t {
+		char *copy;
+		char *purename;
+		Path *path;
+	};
+
+	FRESULT last_error;
     IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
 	IndexedList<Path *>used_paths;
 	CachedTreeNode *root;
 
+	bool  reworkPath(Path *path, const char *pathname, const char *filename, reworked_t& rwp);
     File *fopen_impl(Path *path, char *filename, uint8_t flags);
 
     FileManager() : mount_points(8, NULL), open_file_list(16, NULL), used_paths(8, NULL) {
@@ -103,6 +110,11 @@ public:
     		File *f = open_file_list[i];
     		printf("'%s' (%d) in '%s'\n", f->info->lfname, f->get_size(), f->get_path());
     	}
+    	printf("\nUsed paths:\n");
+    	for(int i=0;i<used_paths.get_elements();i++) {
+    		Path *p = used_paths[i];
+    		printf("'%s'\n", p->get_path());
+    	}
     	printf("\nMount Points:\n");
     	for(int i=0;i<mount_points.get_elements();i++) {
     		MountPoint *f = mount_points[i];
@@ -114,12 +126,13 @@ public:
     void add_root_entry(CachedTreeNode *obj);
     void remove_root_entry(CachedTreeNode *obj);
     void add_mount_point(File *, FileSystemInFile *);
-    FileSystemInFile *find_mount_point(char *full_path);
+    MountPoint *find_mount_point(const char *full_path);
 
     FRESULT get_last_error(void) {
         return last_error;
     }
     
+    // Functions to use / handle path objects:
     Path *get_new_path(const char *owner) {
     	Path *p = new Path();
     	p->owner = owner;
@@ -130,10 +143,14 @@ public:
     	used_paths.remove(p);
     	delete p;
     }
-
+    bool  is_path_valid(Path *p);
     bool  is_path_writable(Path *p);
 
-    File *fopen(Path *path, char *filename, uint8_t flags);
+    void  get_display_string(Path *p, const char *filename, char *buffer, int width);
+
+    bool fstat(FileInfo &info, const char *path, const char *filename);
+    File *fopen(Path *path, const char *filename, uint8_t flags);
+    File *fopen(const char *path, const char *filename, uint8_t flags);
     void fclose(File *f);
     FRESULT delete_file_by_info(FileInfo *info);
     FRESULT create_dir_in_path(Path *path, char *name);

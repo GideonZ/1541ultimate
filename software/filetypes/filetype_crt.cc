@@ -30,7 +30,9 @@
 #include <ctype.h>
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileType *> tester_crt(Globals :: getFileTypeFactory(), FileTypeCRT :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_crt(Globals :: getFileTypeFactory(), FileTypeCRT :: test_type);
+
+extern C64 *c64;
 
 /*********************************************************************/
 /* PRG File Browser Handling                                         */
@@ -83,10 +85,10 @@ const struct t_cart c_recognized_carts[] = {
     { 0xFFFF, 0xFFFF, "" } }; 
     
 
-FileTypeCRT :: FileTypeCRT(CachedTreeNode *n)
+FileTypeCRT :: FileTypeCRT(BrowsableDirEntry *n)
 {
 	node = n;
-	printf("Creating CRT type from info: %s\n", n->get_name());
+	printf("Creating CRT type from info: %s\n", n->getName());
 }
 
 FileTypeCRT :: ~FileTypeCRT()
@@ -95,20 +97,16 @@ FileTypeCRT :: ~FileTypeCRT()
 
 int FileTypeCRT :: fetch_context_items(IndexedList<Action *> &list)
 {
-    list.append(new Action("Run Cart", FileTypeCRT :: execute_st, this, (void *)CRTFILE_RUN));
+    if(c64) {
+    	list.append(new Action("Run Cart", FileTypeCRT :: execute_st, CRTFILE_RUN, (int)this));
+    }
     return 1;
 }
 
 // static member
-void FileTypeCRT :: configure_st(int param)
+FileType *FileTypeCRT :: test_type(BrowsableDirEntry *obj)
 {
-	((FileTypeCRT *)param)->execute(CRTFILE_CONFIGURE);
-}
-
-// static member
-FileType *FileTypeCRT :: test_type(CachedTreeNode *obj)
-{
-	FileInfo *inf = obj->get_file_info();
+	FileInfo *inf = obj->getInfo();
     if(strcmp(inf->extension, "CRT")==0)
         return new FileTypeCRT(obj);
     return NULL;
@@ -125,35 +123,24 @@ __inline static uint32_t get_dword(uint8_t *p)
 }
 
 // static member
-void FileTypeCRT :: execute_st(void *obj, void *param)
+int FileTypeCRT :: execute_st(SubsysCommand *cmd)
 {
-	int selection = (int)param;
-	printf("CRT Select: %4x\n", selection);
-	((FileTypeCRT *)obj)->execute(selection);
+	return ((FileTypeCRT *)cmd->mode)->execute(cmd);
 }
 
-void FileTypeCRT :: execute(int selection)
+// non-static member
+int FileTypeCRT :: execute(SubsysCommand *cmd)
 {
 	File *file;
 	FileInfo *inf;
 	
-    // second pass, after unfreeze
-    if(selection == CRTFILE_CONFIGURE) {
-        configure_cart();
-        return;
-    }
-
-    if(selection != CRTFILE_RUN) {
-        return;
-    }        
-
     FileManager *fm = FileManager :: getFileManager();
 
     uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
     memset((void *)mem_addr, 0, 1024*1024); // clear all cart memory
 
-    printf("Cartridge Load.. %s FileSize = %d\n", node->get_name(), node->get_file_info()->size);
-    file = fm->fopen_node(node, FA_READ);
+    printf("Cartridge Load.. %s\n", cmd->filename.c_str());
+    file = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
     uint32_t dw;
     FRESULT fres;
     total_read = 0;
@@ -175,20 +162,22 @@ void FileTypeCRT :: execute(int selection)
             if(name) {
                 strcpy(str, name);
                 strcat(str, ". Not Implemented.");
-                user_interface->popup(str, BUTTON_OK);
+                cmd->user_interface->popup(str, BUTTON_OK);
             } else {
-                user_interface->popup("Header of CRT file not correct.", BUTTON_OK);
+                cmd->user_interface->popup("Header of CRT file not correct.", BUTTON_OK);
             }
-            return;
+            return -1;
         }
 
-		push_event(e_unfreeze);
-		push_event(e_function_call, (void *)FileTypeCRT :: configure_st, (int)this);
+        c64->unfreeze(0, 0);
+        configure_cart();
 
         fm->fclose(file);
     } else {
         printf("Error opening file.\n");
+        return -2;
     }
+    return 0;
 }
 
 bool FileTypeCRT :: check_header(File *f)

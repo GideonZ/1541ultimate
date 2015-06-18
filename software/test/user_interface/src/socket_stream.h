@@ -26,7 +26,7 @@ public:
 	void close();
 
 	// stream interface
-	int write(char *buffer, int n);
+	int write(const char *buffer, int n);
 	int get_char(void);
     void charout(int c)
     {

@@ -23,7 +23,7 @@ public:
     virtual ~Stream() {}
 
     virtual int read(char *buffer, int length) { return 0; }
-    virtual int write(char *buffer, int length) { return 0; }
+    virtual int write(const char *buffer, int length) { return 0; }
     virtual int get_char(void) { return -1; }
     virtual void charout(int c) { }
 

@@ -5,16 +5,17 @@
 #include "browsable.h"
 #include "context_menu.h"
 
+class TreeBrowserState;
+
 class TaskMenu : public ContextMenu
 {
+	TreeBrowserState *state;
 	Browsable *browsable;
 public:    
-    TaskMenu(Browsable *b);
+    TaskMenu(UserInterface *ui, TreeBrowserState *state);
     ~TaskMenu(void);
     
     void init(Window *pwin, Keyboard *keyb);
 };
-
-extern IndexedList<ObjectWithMenu*> main_menu_static_items;
 
 #endif

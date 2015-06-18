@@ -10,7 +10,7 @@ public:
     ~Stream_UART() { }
 
     int read(char *buffer, int length);
-    int write(char *buffer, int length);
+    int write(const char *buffer, int length);
     int get_char(void);
     void charout(int c);
 };

@@ -37,7 +37,7 @@ extern uint32_t _binary_ulticopy_65_size;
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
 
-static char *en_dis[] = { "Disabled", "Enabled" };
+static const char *en_dis[] = { "Disabled", "Enabled" };
 static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",                 "%s", en_dis,     0,  1, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",         "%d", NULL,       8, 30, 10 },
@@ -138,7 +138,7 @@ void IecInterface :: poll_iec_interface(Event &ev)
     iec_if.poll(ev);
 }
 
-IecInterface :: IecInterface()
+IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
 {
 	fm = FileManager :: getFileManager();
 	ui_window = NULL;
@@ -166,7 +166,10 @@ IecInterface :: IecInterface()
     atn = false;
     path = fm->get_new_path("IEC");
     path->cd("SD");
-	dirlist = new IndexedList<FileInfo *>(8, NULL);
+    cmd_path = fm->get_new_path("IEC Gui Path");
+    cmd_ui = 0;
+
+    dirlist = new IndexedList<FileInfo *>(8, NULL);
 	iecNames = new IndexedList<char *>(8, NULL);
     last_error = ERR_DOS;
     current_channel = 0;
@@ -190,6 +193,7 @@ IecInterface :: ~IecInterface()
     for(int i=0;i<16;i++)
         delete channels[i];
     fm->release_path(path);
+    fm->release_path(cmd_path);
     MainLoop :: removePollFunction(poll_iec_interface);
 }
 
@@ -225,23 +229,23 @@ void IecInterface :: effectuate_settings(void)
 int IecInterface :: fetch_task_items(IndexedList<Action *> &list)
 {
     int count = 3;
-	list.append(new ObjectMenuItem(this, "Reset IEC",      MENU_IEC_RESET));
-	list.append(new ObjectMenuItem(this, "UltiCopy 8",     MENU_IEC_WARP_8));
-	list.append(new ObjectMenuItem(this, "UltiCopy 9",     MENU_IEC_WARP_9));
-	// list.append(new ObjectMenuItem(this, "IEC Test 1",     MENU_IEC_MASTER_1));
-	// list.append(new ObjectMenuItem(this, "IEC Test 2",     MENU_IEC_MASTER_2));
-	// list.append(new ObjectMenuItem(this, "IEC Test 3",     MENU_IEC_MASTER_3));
-	// list.append(new ObjectMenuItem(this, "IEC Test 4",     MENU_IEC_MASTER_4));
-    // list.append(new ObjectMenuItem(this, "Load $",         MENU_IEC_LOADDIR));
-    // list.append(new ObjectMenuItem(this, "Load *",         MENU_IEC_LOADFIRST));
-    // list.append(new ObjectMenuItem(this, "Read status",    MENU_READ_STATUS));
-    // list.append(new ObjectMenuItem(this, "Send command",   MENU_SEND_COMMAND));
+	list.append(new Action("Reset IEC",      SUBSYSID_IEC, MENU_IEC_RESET));
+	list.append(new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8));
+	list.append(new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9));
+	// list.append(new Action("IEC Test 1",     SUBSYSID_IEC, MENU_IEC_MASTER_1));
+	// list.append(new Action("IEC Test 2",     SUBSYSID_IEC, MENU_IEC_MASTER_2));
+	// list.append(new Action("IEC Test 3",     SUBSYSID_IEC, MENU_IEC_MASTER_3));
+	// list.append(new Action("IEC Test 4",     SUBSYSID_IEC, MENU_IEC_MASTER_4));
+    // list.append(new Action("Load $",         SUBSYSID_IEC, MENU_IEC_LOADDIR));
+    // list.append(new Action("Load *",         SUBSYSID_IEC, MENU_IEC_LOADFIRST));
+    // list.append(new Action("Read status",    SUBSYSID_IEC, MENU_READ_STATUS));
+    // list.append(new Action("Send command",   SUBSYSID_IEC, MENU_SEND_COMMAND));
 
     if(!(getFpgaCapabilities() & CAPAB_ANALYZER))
         return count;
 
-	list.append(new ObjectMenuItem(this, "Trace IEC",      MENU_IEC_TRACE_ON));
-    list.append(new ObjectMenuItem(this, "Dump IEC Trace", MENU_IEC_TRACE_OFF));
+	list.append(new Action("Trace IEC",      SUBSYSID_IEC, MENU_IEC_TRACE_ON));
+    list.append(new Action("Dump IEC Trace", SUBSYSID_IEC, MENU_IEC_TRACE_OFF));
     count += 2;
 	return count;
 }
@@ -258,9 +262,6 @@ int IecInterface :: poll(Event &e)
         }
         return 0;
     }
-    char buffer[24];
-    int res;
-    
     uint8_t a;
     while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
         data = HW_IEC_RX_DATA;
@@ -334,75 +335,79 @@ int IecInterface :: poll(Event &e)
             }
         }
     }
+}
 
+int IecInterface :: executeCommand(SubsysCommand *cmd)
+{
 	File *f;
-	CachedTreeNode *po;
 	uint32_t transferred;
+    char buffer[24];
+    int res;
 
-	if((e.type == e_object_private_cmd)&&(e.object == this)) {
-		switch(e.param) {
-            case MENU_IEC_RESET:
-                HW_IEC_RESET_ENABLE = iec_enable;
-                break;
-            case MENU_IEC_WARP_8:
-                start_warp(8);
-                break;
-            case MENU_IEC_WARP_9:
-                start_warp(9);
-                break;
-            case MENU_IEC_MASTER_1:
-                test_master(1);
-                break;
-            case MENU_IEC_MASTER_2:
-                test_master(2);
-                break;
-            case MENU_IEC_MASTER_3:
-                test_master(3);
-                break;
-            case MENU_IEC_MASTER_4:
-                test_master(4);
-                break;
-            case MENU_IEC_LOADDIR:
-                master_open_file(8, 0, "$", false);
-                break;
-            case MENU_IEC_LOADFIRST:
-                master_open_file(8, 0, "*", false);
-                break;
-            case MENU_READ_STATUS:
-                master_read_status(8);
-                break;
-            case MENU_SEND_COMMAND:
-            	buffer[0] = 0;
-                res = user_interface->string_box("Command", buffer, 22);
-                if (res > 0) {
-                    master_send_cmd(8, (uint8_t*)buffer, strlen(buffer));
-                }
-                break;
-            case MENU_IEC_TRACE_ON :
-                LOGGER_COMMAND = LOGGER_CMD_START;
-                start_address = (LOGGER_ADDRESS & 0xFFFFFFFCL);
-                printf("Logic Analyzer started. Address = %p. Length=%b\n", start_address, LOGGER_LENGTH);
-                break;
-            case MENU_IEC_TRACE_OFF:
-                LOGGER_COMMAND = LOGGER_CMD_STOP;
-                end_address = LOGGER_ADDRESS;
-                printf("Logic Analyzer stopped. Address = %p\n", end_address);
-                if(start_address == end_address)
-                    break;
-                // po = user_interface->get_path();
-                f = fm->fopen(NULL, "iectrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS); // TODO: Path
-                if(f) {
-                    printf("Opened file successfully.\n");
-                    f->write((void *)start_address, end_address - start_address, &transferred);
-                    printf("written: %d...", transferred);
-                    fm->fclose(f);
-                } else {
-                    printf("Couldn't open file..\n");
-                }
-                break;
-            default:
-                break;
-        }
+    cmd_path->cd(cmd->path.c_str());
+    cmd_ui = cmd->user_interface;
+
+	switch(cmd->functionID) {
+		case MENU_IEC_RESET:
+			HW_IEC_RESET_ENABLE = iec_enable;
+			break;
+		case MENU_IEC_WARP_8:
+			start_warp(8);
+			break;
+		case MENU_IEC_WARP_9:
+			start_warp(9);
+			break;
+		case MENU_IEC_MASTER_1:
+			test_master(1);
+			break;
+		case MENU_IEC_MASTER_2:
+			test_master(2);
+			break;
+		case MENU_IEC_MASTER_3:
+			test_master(3);
+			break;
+		case MENU_IEC_MASTER_4:
+			test_master(4);
+			break;
+		case MENU_IEC_LOADDIR:
+			master_open_file(8, 0, "$", false);
+			break;
+		case MENU_IEC_LOADFIRST:
+			master_open_file(8, 0, "*", false);
+			break;
+		case MENU_READ_STATUS:
+			master_read_status(8);
+			break;
+		case MENU_SEND_COMMAND:
+			buffer[0] = 0;
+			res = cmd->user_interface->string_box("Command", buffer, 22);
+			if (res > 0) {
+				master_send_cmd(8, (uint8_t*)buffer, strlen(buffer));
+			}
+			break;
+		case MENU_IEC_TRACE_ON :
+			LOGGER_COMMAND = LOGGER_CMD_START;
+			start_address = (LOGGER_ADDRESS & 0xFFFFFFFCL);
+			printf("Logic Analyzer started. Address = %p. Length=%b\n", start_address, LOGGER_LENGTH);
+			break;
+		case MENU_IEC_TRACE_OFF:
+			LOGGER_COMMAND = LOGGER_CMD_STOP;
+			end_address = LOGGER_ADDRESS;
+			printf("Logic Analyzer stopped. Address = %p\n", end_address);
+			if(start_address == end_address)
+				break;
+			f = fm->fopen(cmd->path.c_str(), "iectrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS); // TODO: Path
+			if(f) {
+				printf("Opened file successfully.\n");
+				f->write((void *)start_address, end_address - start_address, &transferred);
+				printf("written: %d...", transferred);
+				fm->fclose(f);
+			} else {
+				printf("Couldn't open file..\n");
+			}
+			break;
+		default:
+			break;
     }
     return 0;
 }
@@ -425,14 +430,14 @@ void IecInterface :: start_warp(int drive)
     }
     
     ui_window = new UltiCopy();
-    ui_window->init(user_interface->screen, user_interface->keyboard);
-    user_interface->activate_uiobject(ui_window); // now we have focus
+    ui_window->init(cmd_ui->screen, cmd_ui->keyboard);
+    cmd_ui->activate_uiobject(ui_window); // now we have focus
     ui_window->window->move_cursor(15,10);
     ui_window->window->output("Loading...");
     HW_IEC_RESET_ENABLE = 1; // reset the IEC controller, just in case
     
     if(!run_drive_code(warp_drive, 0x400, &_binary_ulticopy_65_start, (int)&_binary_ulticopy_65_size)) {
-        user_interface->popup("Error accessing drive..", BUTTON_OK);
+        cmd_ui->popup("Error accessing drive..", BUTTON_OK);
         ui_window->close();
         push_event(e_refresh_browser);
         if (c1541_A) {
@@ -505,7 +510,7 @@ void IecInterface :: get_warp_error(void)
         printf("Error on track %d.\n", last_track);
     } else if(err == 0) {
         save_copied_disk();
-        if(user_interface->popup("Another disk?", BUTTON_YES|BUTTON_NO) == BUTTON_YES) {
+        if(cmd_ui->popup("Another disk?", BUTTON_YES|BUTTON_NO) == BUTTON_YES) {
             ui_window->window->clear();
             run_drive_code(warp_drive, 0x403, NULL, 0); // restart
             // clear pending interrupt if any
@@ -519,7 +524,7 @@ void IecInterface :: get_warp_error(void)
             re_enable = true;
         }
     } else if(err < 0x20) {
-        user_interface->popup("Error reading disk..", BUTTON_OK);
+        cmd_ui->popup("Error reading disk..", BUTTON_OK);
         ui_window->close();
         re_enable = true;
     }
@@ -548,22 +553,22 @@ void IecInterface :: save_copied_disk()
 
 	// buffer[0] = 0;
 	static_bin_image.get_sensible_name(buffer);
-	res = user_interface->string_box("Give name for copied disk..", buffer, 22);
+	res = cmd_ui->string_box("Give name for copied disk..", buffer, 22);
 	if(res > 0) {
 		fix_filename(buffer);
 	    bin = &static_bin_image;
 		set_extension(buffer, ".d64", 32);
-        f = fm->fopen(path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
+        f = fm->fopen(cmd_path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
 		if(f) {
-            user_interface->show_progress("Saving D64..", 35);
-            save_result = bin->save(f, true);
-            user_interface->hide_progress();
+            cmd_ui->show_progress("Saving D64..", 35);
+            save_result = bin->save(f, cmd_ui);
+            cmd_ui->hide_progress();
     		printf("Result of save: %d.\n", save_result);
             fm->fclose(f);
     		push_event(e_reload_browser);
 		} else {
 			printf("Can't create file '%s'\n", buffer);
-			user_interface->popup("Can't create file.", BUTTON_OK);
+			cmd_ui->popup("Can't create file.", BUTTON_OK);
 		}
 	}
 }

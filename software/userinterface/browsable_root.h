@@ -21,6 +21,14 @@ class BrowsableDirEntry : public Browsable
 	FileType *type;
 	Path *path;
 	Path *parent_path;
+
+	void setPath(void) {
+		if (!path) {
+			path = FileManager :: getFileManager() -> get_new_path(info->lfname);
+			path->cd(parent_path->get_path());
+			path->cd(info->lfname);
+		}
+	}
 public:
 	BrowsableDirEntry(Path *pp, FileInfo *info, bool sel) {
 		this->info = info;
@@ -28,6 +36,14 @@ public:
 		this->selectable = sel;
 		this->path = 0;
 		this->parent_path = pp;
+	}
+
+	FileInfo *getInfo(void) {
+		return this->info;
+	}
+
+	Path *getPath(void) {
+		return parent_path;
 	}
 
 	virtual ~BrowsableDirEntry() {
@@ -40,57 +56,51 @@ public:
 	}
 
 	virtual int getSubItems(IndexedList<Browsable *>&list) {
-		if (!path) {
-			path = FileManager :: getFileManager() -> get_new_path(info->lfname);
-			path->cd(parent_path->get_path());
-			path->cd(info->lfname);
-		}
+		setPath();
 		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
 		path->get_directory(*infos);
 
 		for(int i=0;i<infos->get_elements();i++) {
 			FileInfo *inf = (*infos)[i];
-			list.append(new BrowsableDirEntry(path, inf, true)); // pass ownership of the FileInfo to the browsable object
+			list.append(new BrowsableDirEntry(path, inf, !(inf->attrib & AM_VOL))); // pass ownership of the FileInfo to the browsable object
 		}
 		delete infos; // deletes the indexed list, but not the FileInfos
 		return list.get_elements();
 	}
 
-	virtual char *getName() {
+	virtual const char *getName() {
 		return info->lfname;
 	}
 
-	virtual char *getDisplayString() {
-	    static char buffer[48];
-	    static char sizebuf[8];
-
-	    if (info->attrib & AM_VOL) {
-	        sprintf(buffer, "\eR%29s\er VOLUME", info->lfname);
-	    } else if(info->is_directory()) {
-	        sprintf(buffer, "%29s\eJ DIR", info->lfname);
-	    } else {
-	        size_to_string_bytes(info->size, sizebuf);
-	        sprintf(buffer, "%29s\e7 %3s %s", info->lfname, info->extension, sizebuf);
-	    }
-	    return buffer;
+	virtual void getDisplayString(char *buffer, int width) {
+		static char sizebuf[8];
+		if (info->special_display) {
+			parent_path->get_display_string(info->lfname, buffer, width);
+		} else {
+			if (info->attrib & AM_VOL) {
+				sprintf(buffer, "\eR%#s\er VOLUME", width-11, info->lfname);
+			} else if(info->is_directory()) {
+				sprintf(buffer, "%#s\eJ DIR", width-11, info->lfname);
+			} else {
+				size_to_string_bytes(info->size, sizebuf);
+				sprintf(buffer, "%#s\e7 %3s %s", width-11, info->lfname, info->extension, sizebuf);
+			}
+		}
 	}
 
 	virtual void fetch_context_items(IndexedList<Action *>&items) {
-/*
 		if (!type)
-			type = Globals :: getFileTypeFactory()->create(info);
-		if (type)
+			type = Globals :: getFileTypeFactory()->create(this);
+		if (type) {
 			type->fetch_context_items(items);
-*/
-		UserFileInteraction :: fetch_context_items(info, items);
+		}
+
+		UserFileInteraction :: getUserFileInteractionObject() -> fetch_context_items(this, items);
 	}
 
-	virtual int fetch_task_items(IndexedList<Action *> &list) {
-		return 0; // UserFileInteraction :: fetch_task_items(info, list);
-	}
-
-	virtual bool invalidateMatch(const void *obj) {
-		return false;
+	virtual bool checkValid() {
+		setPath();
+		return path->isValid();
 	}
 };
 
@@ -117,15 +127,10 @@ public:
 		return list.get_elements();
 	}
 
-	virtual char *getName() { return "Root"; }
+	virtual const char *getName() { return "*Root*"; }
 
-	virtual bool invalidateMatch(void *obj) {
-		return false;
-/*
-		CachedTreeNode *n = (CachedTreeNode *)obj;
-		CachedTreeNode *root = FileManager :: getFileManager() -> get_root();
-		return (n == root);
-*/
+	virtual bool checkValid() {
+		return true;
 	}
 };
 

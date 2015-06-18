@@ -97,10 +97,14 @@ void TreeBrowserState :: draw()
 		return;
 	}
 
-//	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children.get_elements());
+    browser->window->set_color(12);
+    browser->window->getScreen()->move_cursor(0, 24);
+    browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, 31);
+
+    //	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children.get_elements());
 //	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
 	// this functions initializes the screen
-    browser->window->set_color(user_interface->color_fg);
+    browser->window->set_color(browser->user_interface->color_fg);
     browser->window->reverse_mode(0);
 
     if(children.get_elements() == 0) {
@@ -111,6 +115,7 @@ void TreeBrowserState :: draw()
     	return;
     }
 
+
     int y = browser->window->get_size_y(); // how many can I show?
 //    printf("TreeBrowserState::Draw: first=%d, y=%d, selected_line=%d\n", first_item_on_screen, y, selected_line);
 
@@ -118,19 +123,22 @@ void TreeBrowserState :: draw()
         return;
     
     Browsable *t;
+    char buffer[96];
+
     for(int i=0;i<y;i++) {
     	t = children[i+first_item_on_screen];
 
         browser->window->move_cursor(0, i);
         if(t) {
         	if ((i + first_item_on_screen) == cursor_pos) {
-        		browser->window->set_color(user_interface->color_sel);
+        		browser->window->set_color(browser->user_interface->color_sel);
         	} else if(t->isSelectable()) {
-        		browser->window->set_color(user_interface->color_fg);
+        		browser->window->set_color(browser->user_interface->color_fg);
         	} else { // non selectable item
         		browser->window->set_color(12); // TODO
         	}
-        	browser->window->output_line(t->getDisplayString());
+            t->getDisplayString(buffer, browser->window->get_size_x());
+            browser->window->output_line(buffer);
         }
 		else {
 			browser->window->output_line("");
@@ -150,9 +158,12 @@ void TreeBrowserState :: update_selected(void)
     if(!under_cursor)
         return;
 
+    char buffer[96];
+
     browser->window->move_cursor(0, selected_line);
-    browser->window->set_color(user_interface->color_sel); // highlighted
-    browser->window->output_line(under_cursor->getDisplayString());
+    browser->window->set_color(browser->user_interface->color_sel); // highlighted
+    under_cursor->getDisplayString(buffer, browser->window->get_size_x());
+    browser->window->output_line(buffer);
 }
     
 void TreeBrowserState :: up(int num)
@@ -231,6 +242,7 @@ void TreeBrowserState :: into(void)
     	delete deeper;
     	return;
     }
+	browser->path->cd(under_cursor->getName());
     printf("%d children fetched.\n", child_count);
 
 	//user_interface->set_path(under_cursor);
@@ -253,6 +265,7 @@ bool TreeBrowserState :: into2(void)
     	delete deeper;
     	return(true);
     }
+	browser->path->cd(under_cursor->getName());
     printf("%d children fetched.\n", child_count);
 
     // user_interface->set_path(under_cursor);
@@ -268,6 +281,10 @@ void TreeBrowserState :: level_up(void)
 
     cleanup();
     browser->state = previous;
+    printf("Path before: %s\n", browser->path->get_path());
+    browser->path->cd("..");
+    printf("Path after: %s\n", browser->path->get_path());
+
     previous->refresh = true;
     previous = NULL; // unlink;
     delete this;

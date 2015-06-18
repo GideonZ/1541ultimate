@@ -23,7 +23,7 @@ cart_def cmd_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 #define MENU_CMD_RUNCMDCART 0xC180
 
-char *en_dis4[] = { "Disabled", "Enabled" };
+static const char *en_dis4[] = { "Disabled", "Enabled" };
 
 #define CFG_CMD_ENABLE  0x71
 struct t_cfg_definition cmd_config[] = {

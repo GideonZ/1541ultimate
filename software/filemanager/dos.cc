@@ -189,7 +189,8 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
         case DOS_CMD_CHANGE_DIR:
             *reply  = &c_message_empty;
             command->message[command->length] = 0;
-            if (path->cd((char *)&command->message[2])) {
+            path->cd((char *)&command->message[2]);
+            if(path->isValid()) {
                 *status = &c_status_ok;
             } else {
                 *status = &c_status_no_such_dir; 

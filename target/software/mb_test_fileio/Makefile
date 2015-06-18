@@ -78,7 +78,7 @@ SRCS_CC	 =  memory_rtos.cc \
 			config.cc \
 			rtc.cc \
 			event.cc \
-			main_loop.cc \
+			poll.cc \
 			mystring.cc \
 			size_str.cc \
 			pattern.cc \
@@ -87,7 +87,11 @@ SRCS_CC	 =  memory_rtos.cc \
 			file_device.cc \
 			file_partition.cc \
 			file_direntry.cc \
+			embedded_d64.cc \
+			embedded_t64.cc \
+			embedded_iso.cc \
 			blockdev.cc \
+			blockdev_file.cc \
 			disk.cc \
 			partition.cc \
 			file_system.cc \
@@ -97,12 +101,12 @@ SRCS_CC	 =  memory_rtos.cc \
 			fat_dir.cc \
 			fatfile.cc \
 			ccsbcs.cc \
+			d64_filesystem.cc \
+			t64_filesystem.cc \
+			iso9660.cc \
 			sd_card.cc \
 			sdio.cc \
 			sdcard_manager.cc \
-			usb_stub.cc \
-			sys_calls.cc \
-			file_utils.cc \
 			fileio.cc \
 			$(PRJ).cc
 
@@ -119,8 +123,8 @@ SRCS_NANO = nano_minimal.nan
 TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -g -ffunction-sections -Os -std=c99 -DOS
-CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -DOS
+COPTIONS = -g -ffunction-sections -Os -std=c99 
+CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -fno-threadsafe-statics 
 LINK 	 = ./mb_app.lds
 LLIB     =  -L ../mb_lwip/result \
             -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \

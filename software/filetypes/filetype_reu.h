@@ -2,21 +2,20 @@
 #define FILETYPE_REU_H
 
 #include "filetypes.h"
-#include "filemanager.h"
+#include "browsable_root.h"
 
 class FileTypeREU : public FileType
 {
-	CachedTreeNode *node;
+	BrowsableDirEntry *node;
 	int type;
 public:
-    FileTypeREU(CachedTreeNode *par, int);
+    FileTypeREU(BrowsableDirEntry *par, int);
     ~FileTypeREU();
 
     int   fetch_context_items(IndexedList<Action *> &list);
-    static FileType *test_type(CachedTreeNode *obj);
+    static FileType *test_type(BrowsableDirEntry *obj);
 
-    static void execute_st(void *obj, void *param);
-    void  execute(int selection);
+    static int execute_st(SubsysCommand *cmd);
 };
 
 

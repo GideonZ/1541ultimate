@@ -33,11 +33,10 @@ extern "C" void main_loop(void *a);
 C1541 *c1541_A;
 C1541 *c1541_B;
 
-UserInterface *user_interface;
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
 Overlay *overlay;
-
+C64 *c64;
 
 void poll_drive_1(Event &e)
 {
@@ -69,7 +68,7 @@ int main(void *a)
 	InitFunction :: executeAll();
 
 	Stream my_stream;
-    UserInterfaceStream *stream_interface;
+	UserInterface *ui = 0;
     
  	// start the file system, scan the sd-card etc..
 	MainLoop :: nop();
@@ -80,13 +79,13 @@ int main(void *a)
         c64     = new C64;
 
     if(c64 && c64->exists()) {
-        user_interface = new UserInterface;
-        user_interface->init(c64);
+        ui = new UserInterface;
+        ui->init(c64);
     
     	// Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
-    	root_tree_browser = new TreeBrowser(root);
-        user_interface->activate_uiobject(root_tree_browser); // root of all evil!
+    	root_tree_browser = new TreeBrowser(ui, root);
+        ui->activate_uiobject(root_tree_browser); // root of all evil!
     	
     	// add the C64 to the 'OS' (the event loop)
         MainLoop :: addPollFunction(poll_c64);
@@ -97,18 +96,18 @@ int main(void *a)
     } else if(capabilities & CAPAB_OVERLAY) {
         printf("Using Overlay module as user interface...\n");
         overlay = new Overlay(false);
-        user_interface = new UserInterface;
-        user_interface->init(overlay);
+        ui = new UserInterface;
+        ui->init(overlay);
         Browsable *root = new BrowsableRoot();
-    	root_tree_browser = new TreeBrowser(root);
-        user_interface->activate_uiobject(root_tree_browser); // root of all evil!
+    	root_tree_browser = new TreeBrowser(ui, root);
+        ui->activate_uiobject(root_tree_browser); // root of all evil!
         // push_event(e_button_press, NULL, 1);
     } else {
         // stand alone mode
-        stream_interface = new UserInterfaceStream(&my_stream);
-        user_interface = stream_interface;
-        root_menu = new StreamMenu(&my_stream, new BrowsableRoot());
-        stream_interface->set_menu(root_menu); // root of all evil!
+        UserInterfaceStream *ui_str = new UserInterfaceStream(&my_stream);
+        root_menu = new StreamMenu(ui_str, &my_stream, new BrowsableRoot());
+        ui_str->set_menu(root_menu); // root of all evil!
+        ui = ui_str;
     }
 
     if(capabilities & CAPAB_C2N_STREAMER)
@@ -143,8 +142,8 @@ int main(void *a)
         delete overlay;
     if(root_tree_browser)
         delete root_tree_browser;
-    if(user_interface)
-        delete user_interface;
+    if(ui)
+        delete ui;
     if(c64)
         delete c64;
     if(c1541_A)

@@ -12,13 +12,11 @@ public:
     FileDirEntry(CachedTreeNode *par, FileInfo *fi);
     virtual ~FileDirEntry();
 
+    virtual bool is_ready(void);
     virtual bool is_writable(void);
     virtual int fetch_children(void);
-    virtual char *get_name(void);
-    virtual char *get_display_string(void);
+    virtual const char *get_name(void);
 	virtual int compare(CachedTreeNode *obj);
-
 };
-
 
 #endif

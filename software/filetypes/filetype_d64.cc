@@ -30,43 +30,28 @@
 #include "menu.h"
 #include "c64.h"
 #include "c1541.h"
+#include "subsys.h"
 
 extern "C" {
     #include "dump_hex.h"
 }
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileType *> tester_d64(Globals :: getFileTypeFactory(), FileTypeD64 :: test_type);
-
-extern C1541 *c1541_A;
-extern C1541 *c1541_B;
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_d64(Globals :: getFileTypeFactory(), FileTypeD64 :: test_type);
 
 /*********************************************************************/
 /* D64/D71/D81 File Browser Handling                                 */
 /*********************************************************************/
 
 
-FileTypeD64 :: FileTypeD64(CachedTreeNode *node)
+FileTypeD64 :: FileTypeD64(BrowsableDirEntry *node)
 {
 	this->node = node; // link
-	FileInfo *fi = node->get_file_info();
-	printf("Creating d64 type from info: %s. Node = %p. This.FileInfo = %p. NodeName = %s\n",
-			fi->lfname, node, node->get_file_info(), node->get_name());
-    // we'll create a file-mapped block device and a default
-    // partition to attach our file system to
-    blk = new BlockDevice_File(node, 256);
-    prt = new Partition(blk, 0, (fi->size)>>8, 0);
-    fs  = new FileSystemD64(prt);
 }
 
 FileTypeD64 :: ~FileTypeD64()
 {
-	if(fs) {
-		delete fs;
-		delete prt;
-		delete blk;
-		fs = NULL; // invalidate object
-	}
+
 }
 
 
@@ -75,31 +60,27 @@ int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_DRIVE_1541_1) {
-        list.append(new DriveMenuItem("Run Disk", c1541_A, D64FILE_RUN, node));
-        list.append(new DriveMenuItem("Mount Disk", c1541_A, D64FILE_MOUNT, node));
-        list.append(new DriveMenuItem("Mount Disk Read Only", c1541_A, D64FILE_MOUNT_RO, node));
-        list.append(new DriveMenuItem("Mount Disk Unlinked", c1541_A, D64FILE_MOUNT_UL, node));
+        list.append(new Action("Run Disk", SUBSYSID_DRIVE_A, D64FILE_RUN));
+        list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, D64FILE_MOUNT));
+        list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, D64FILE_MOUNT_RO));
+        list.append(new Action("Mount Disk Unlinked", SUBSYSID_DRIVE_A, D64FILE_MOUNT_UL));
         count += 4;
     }
     
     if(capabilities & CAPAB_DRIVE_1541_2) {
-        list.append(new DriveMenuItem("Mount Disk on B", c1541_B, D64FILE_MOUNT, node));
-        list.append(new DriveMenuItem("Mount Disk R/O on B", c1541_B, D64FILE_MOUNT_RO, node));
-        list.append(new DriveMenuItem("Mount Disk Unl. on B", c1541_B, D64FILE_MOUNT_UL, node));
+        list.append(new Action("Mount Disk on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT));
+        list.append(new Action("Mount Disk R/O on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT_RO));
+        list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT_UL));
         count += 3;
     }
     
     return count;
 }
 
-FileType *FileTypeD64 :: test_type(CachedTreeNode *obj)
+FileType *FileTypeD64 :: test_type(BrowsableDirEntry *obj)
 {
-	FileInfo *inf = obj->get_file_info();
+	FileInfo *inf = obj->getInfo();
     if(strcmp(inf->extension, "D64")==0)
         return new FileTypeD64(obj);
-//    if(strcmp(inf->extension, "D71")==0)
-//        return new FileTypeD64(NULL, inf);
-//    if(strcmp(inf->extension, "D81")==0)
-//        return new FileTypeD64(NULL, inf);
     return NULL;
 }

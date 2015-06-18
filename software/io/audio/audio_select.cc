@@ -27,23 +27,23 @@ AudioConfig audio_configurator;
 #define CFG_AUDIO_SID_EXT_RIGHT  0x5F
 #define CFG_AUDIO_SAMPLER_IO     0x60
 
-char *aud_choices[]  = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right" };
-char *aud_choices2[] = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "Sampler Left", "Sampler Right" };
+const char *aud_choices[]  = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right" };
+const char *aud_choices2[] = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "Sampler Left", "Sampler Right" };
 
-char *sid_base[] = { "Snoop $D400", "Snoop $D420", "Snoop $D480", "Snoop $D500", "Snoop $D580", 
-                     "Snoop $D600", "Snoop $D680", "Snoop $D700", "Snoop $D780",
-                     "IO $DE00", "IO $DE20", "IO $DE40", "IO $DE60",
-                     "IO $DE80", "IO $DEA0", "IO $DEC0", "IO $DEE0",
-                     "IO $DF00", "IO $DF20", "IO $DF40", "IO $DF60",
-                     "IO $DF80", "IO $DFA0", "IO $DFC0", "IO $DFE0" };
+const char *sid_base[] = { "Snoop $D400", "Snoop $D420", "Snoop $D480", "Snoop $D500", "Snoop $D580",
+                           "Snoop $D600", "Snoop $D680", "Snoop $D700", "Snoop $D780",
+                           "IO $DE00", "IO $DE20", "IO $DE40", "IO $DE60",
+                           "IO $DE80", "IO $DEA0", "IO $DEC0", "IO $DEE0",
+                           "IO $DF00", "IO $DF20", "IO $DF40", "IO $DF60",
+                           "IO $DF80", "IO $DFA0", "IO $DFC0", "IO $DFE0" };
 
 uint8_t sid_offsets[] = { 0x40, 0x42, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78,
                        0xe0, 0xe2, 0xe4, 0xe6, 0xe8, 0xea, 0xec, 0xee,
                        0xf0, 0xf2, 0xf4, 0xf6, 0xf8, 0xfa, 0xfc, 0xfe };
                        
-char *sid_voices[] = { "Standard", "8 Voices" };
-char *en_dis3[] = { "Disabled", "Enabled" };
-char *sidchip_sel[] = { "6581", "8580" };
+const char *sid_voices[] = { "Standard", "8 Voices" };
+const char *en_dis3[] = { "Disabled", "Enabled" };
+const char *sidchip_sel[] = { "6581", "8580" };
 
 struct t_cfg_definition audio_cfg[] = {
     { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  7, 0 },

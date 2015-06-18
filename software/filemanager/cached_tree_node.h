@@ -29,7 +29,7 @@ public:
 
     CachedTreeNode(CachedTreeNode *par) : parent(par), children(0, NULL) { }
     CachedTreeNode(CachedTreeNode *par, FileInfo &inf) : parent(par), children(0, NULL), info(inf) { }
-    CachedTreeNode(CachedTreeNode *par, char *name) : parent(par), children(0, NULL), info(name) { }
+    CachedTreeNode(CachedTreeNode *par, const char *name) : parent(par), children(0, NULL), info(name) { }
 
     bool isRoot() { return parent == NULL; }
 
@@ -46,18 +46,22 @@ public:
 	}
 
 	// allow derivates to handle the sub items differently.
-	virtual char *get_name() {
+	virtual const char *get_name() {
 		if(info.lfname)
 			return info.lfname;
 		return "base - no name";
 	}
 
-	virtual char *get_display_string() {
-		return get_name();
+	virtual void get_display_string(char *buffer, int width) {
+		strncpy(buffer, get_name(), width-1);
 	}
 
 	virtual int get_header_lines(void) {
 		return 0;
+	}
+
+	virtual bool is_ready(void) {
+		return false; // by default we're not ready
 	}
 
 	virtual void cleanup_children(void) {
@@ -80,7 +84,7 @@ public:
 	}
 
 	// the following function will return a new FileInfo, based on the name.
-	virtual CachedTreeNode *find_child(char *find_me) {
+	virtual CachedTreeNode *find_child(const char *find_me) {
 		// printf("Trying to find child %s. Name of this: %s\n", find_me, get_name());
 		if (children.is_empty())
 			fetch_children();
@@ -103,7 +107,7 @@ public:
 		return strcmp(get_name(), obj->get_name()); // FIXME
 	}
 
-    char *get_full_path(mstring& out) {
+    const char *get_full_path(mstring& out) {
         CachedTreeNode *po = this;
         mstring sep("/");
 
@@ -132,7 +136,7 @@ public:
 			if(!obj) {
 				printf("(null)\n");
 			} else {
-				char *str = obj->get_name();
+				const char *str = obj->get_name();
 				if(!str)
 					str = "(null name)";
 				printf("%s\n", str);

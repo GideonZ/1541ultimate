@@ -35,6 +35,7 @@ TapeRecorder :: TapeRecorder()
     recording = 0;
     select = 0;
 	file = NULL;
+	last_user_interface = 0;
 	stop(REC_ERR_OK);
     MainLoop :: addPollFunction(poll_tape_rec);
 	
@@ -51,9 +52,29 @@ TapeRecorder :: ~TapeRecorder()
     delete[] cache;
 }
 	
-void TapeRecorder :: exec(void *obj, void *param)
+int TapeRecorder :: executeCommand(SubsysCommand *cmd)
 {
-	push_event(e_object_private_cmd, obj, (int)param);
+	last_user_interface = cmd->user_interface;
+
+	switch(cmd->functionID) {
+		case MENU_REC_FINISH:
+			flush();
+			break;
+		case MENU_REC_SAMPLE_TAPE:
+			select = 0;
+			if(request_file(cmd))
+				start();
+			break;
+		case MENU_REC_RECORD_TO_TAP:
+			select = 1;
+			if(request_file(cmd))
+				start();
+			break;
+		default:
+			break;
+	}
+	delete cmd; // cleanup
+	return 0;
 }
 
 int  TapeRecorder :: fetch_task_items(IndexedList<Action*> &item_list)
@@ -62,27 +83,16 @@ int  TapeRecorder :: fetch_task_items(IndexedList<Action*> &item_list)
     CachedTreeNode *po = NULL;
     FileInfo *info;
 	if(recording) {
-		item_list.append(new Action("Finish Rec. to TAP", TapeRecorder :: exec, this, (void *)MENU_REC_FINISH));
+		item_list.append(new Action("Finish Rec. to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_FINISH));
 		items = 1;
 	}
     else {
-        // FIXME po = user_interface->get_path();
-
-        if(po) {
-            printf("Current DIR: %s\n", po->get_name());
-            FileInfo *info = po->get_file_info();
-            if(info)
-                info->print_info();
-        } else {
-            printf("Path not set.\n");
-            return items;
-        }
-
+    	// FIXME
         if(po && po->get_file_info()) {
             info = po->get_file_info();
             if(info->is_writable()) {
-        		item_list.append(new Action("Sample tape to TAP", TapeRecorder :: exec, this, (void *)MENU_REC_SAMPLE_TAPE));
-        		item_list.append(new Action("Capture save to TAP", TapeRecorder :: exec, this, (void *)MENU_REC_RECORD_TO_TAP));
+        		item_list.append(new Action("Sample tape to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_SAMPLE_TAPE));
+        		item_list.append(new Action("Capture save to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_RECORD_TO_TAP));
         		items = 2;
             }
     	}
@@ -237,35 +247,17 @@ void TapeRecorder :: poll_tape_rec(Event &e)
 
 void TapeRecorder :: poll(Event &e)
 {
-    if((error_code != REC_ERR_OK) && user_interface->is_available()) {
-        user_interface->popup("Error during tape capture.", BUTTON_OK);
+    if((error_code != REC_ERR_OK) && last_user_interface && last_user_interface->is_available()) {
+    	last_user_interface->popup("Error during tape capture.", BUTTON_OK);
         error_code = REC_ERR_OK;
     } else if ((recording >0) && (e.type == e_enter_menu)) {
-        if(user_interface->popup("End tape capture?", BUTTON_YES | BUTTON_NO) == BUTTON_YES)
-            flush();
+    	if (last_user_interface) {
+			if(last_user_interface->popup("End tape capture?", BUTTON_YES | BUTTON_NO) == BUTTON_YES)
+				flush();
+    	}
     }        
-	if(e.type == e_object_private_cmd) {
-		if(e.object == this) {
-			switch(e.param) {
-				case MENU_REC_FINISH:
-					flush();
-					break;
-				case MENU_REC_SAMPLE_TAPE:
-					select = 0;
-					if(request_file())
-						start();
-					break;
-				case MENU_REC_RECORD_TO_TAP:
-					select = 1;
-					if(request_file())
-						start();
-					break;
-				default:
-					break;
-			}
-		}
-	}
-	if (file) { // check for invalidation
+
+    if (file) { // check for invalidation
 		if(!file->isValid()) {
             printf("TapeRecorder: Our file got killed...\n");
             file = NULL;
@@ -282,7 +274,7 @@ void TapeRecorder :: poll(Event &e)
     }
 }
 
-bool TapeRecorder :: request_file(void)
+bool TapeRecorder :: request_file(SubsysCommand *cmd)
 {
     char buffer[40];
     
@@ -295,21 +287,21 @@ bool TapeRecorder :: request_file(void)
     uint32_t dummy;
     char *signature = "C64-TAPE-RAW\001\0\0\0\0\0\0\0";
 
-	int res = user_interface->string_box("Give name for tap file..", buffer, 22);
+	int res = cmd->user_interface->string_box("Give name for tap file..", buffer, 22);
 	if(res > 0) {
         total_length = 0;
 		set_extension(buffer, ".tap", 32);
 		fix_filename(buffer);
-        file = fm->fopen(NULL, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
+        file = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
         if(file) {
             FRESULT res = file->write(signature, 20, &dummy);
             if(res != FR_OK) {
-                user_interface->popup("Error writing signature", BUTTON_OK);
+                cmd->user_interface->popup("Error writing signature", BUTTON_OK);
                 return false;
             }
             return true;
         } else {
-            user_interface->popup("Error opening file", BUTTON_OK);
+            cmd->user_interface->popup("Error opening file", BUTTON_OK);
         }            
 	}
 	return false;

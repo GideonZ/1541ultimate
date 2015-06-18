@@ -26,53 +26,55 @@
 
 #include "filetype_g64.h"
 #include "directory.h"
-#include "c1541.h"
-#include "c64.h"
 #include "filemanager.h"
+#include "menu.h"
+#include "c64.h"
+#include "c1541.h"
+#include "subsys.h"
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileType *> tester_g64(Globals :: getFileTypeFactory(), FileTypeG64 :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_g64(Globals :: getFileTypeFactory(), FileTypeG64 :: test_type);
 
-extern C1541 *c1541_A;
-extern C1541 *c1541_B;
+/*************************************************************/
+/* G64 File Browser Handling                                 */
+/*************************************************************/
 
-/*********************************************************************/
-/* G64 File Browser Handling                                         */
-/*********************************************************************/
-FileTypeG64 :: FileTypeG64(CachedTreeNode *node)
+FileTypeG64 :: FileTypeG64(BrowsableDirEntry *node)
 {
 	this->node = node; // link
 }
 
 FileTypeG64 :: ~FileTypeG64()
 {
+
 }
+
 
 int FileTypeG64 :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_DRIVE_1541_1) {
-		list.append(new DriveMenuItem("Run Disk", c1541_A, G64FILE_RUN, node));
-		list.append(new DriveMenuItem("Mount Disk", c1541_A, G64FILE_MOUNT, node));
-		list.append(new DriveMenuItem("Mount Disk Read Only", c1541_A, G64FILE_MOUNT_RO, node));
-		list.append(new DriveMenuItem("Mount Disk Unlinked", c1541_A, G64FILE_MOUNT_UL, node));
-		count += 4;
-	}
+        list.append(new Action("Run Disk", SUBSYSID_DRIVE_A, G64FILE_RUN));
+        list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, G64FILE_MOUNT));
+        list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, G64FILE_MOUNT_RO));
+        list.append(new Action("Mount Disk Unlinked", SUBSYSID_DRIVE_A, G64FILE_MOUNT_UL));
+        count += 4;
+    }
 
-	if(capabilities & CAPAB_DRIVE_1541_2) {
-		list.append(new DriveMenuItem("Mount Disk on B", c1541_B, G64FILE_MOUNT, node));
-		list.append(new DriveMenuItem("Mount Disk R/O on B", c1541_B, G64FILE_MOUNT_RO, node));
-		list.append(new DriveMenuItem("Mount Disk Unl. on B", c1541_B, G64FILE_MOUNT_UL, node));
-		count += 3;
-	}
+    if(capabilities & CAPAB_DRIVE_1541_2) {
+        list.append(new Action("Mount Disk on B", SUBSYSID_DRIVE_B, G64FILE_MOUNT));
+        list.append(new Action("Mount Disk R/O on B", SUBSYSID_DRIVE_B, G64FILE_MOUNT_RO));
+        list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, G64FILE_MOUNT_UL));
+        count += 3;
+    }
 
-	return count;
+    return count;
 }
 
-FileType *FileTypeG64 :: test_type(CachedTreeNode *obj)
+FileType *FileTypeG64 :: test_type(BrowsableDirEntry *obj)
 {
-	FileInfo *inf = obj->get_file_info();
+	FileInfo *inf = obj->getInfo();
     if(strcmp(inf->extension, "G64")==0)
         return new FileTypeG64(obj);
     return NULL;

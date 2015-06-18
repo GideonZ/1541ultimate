@@ -3,8 +3,10 @@
 
 #include "indexed_list.h"
 #include "action.h"
-#include "contextable.h"
+#include "browsable.h"
 #include "userinterface.h"
+
+class TreeBrowserState;
 
 typedef enum _context_state {
     e_new = 0,
@@ -23,7 +25,9 @@ class ContextMenu : public UIObject
 	// private functions:
     virtual int handle_key(int c);
 
-    Contextable *contextable;
+    UserInterface *user_interface;
+    TreeBrowserState *state;
+    Browsable *contextable;
 
     Screen   *screen;
     Window   *window;
@@ -38,10 +42,10 @@ class ContextMenu : public UIObject
     int y_offs;
     int corner;
 public:
-    ContextMenu(Contextable *node, int initial, int y);
+    ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y);
     virtual ~ContextMenu(void);
     
-    void executeAction();
+    virtual void executeAction();
 
     virtual void init(Window *pwin, Keyboard *keyb);
     virtual int poll(int, Event &e);

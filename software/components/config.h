@@ -37,9 +37,9 @@ struct t_cfg_definition
 {
     uint8_t id;
     uint8_t type;
-    char *item_text;
-    char *item_format;
-    char **items;
+    const char *item_text;
+    const char *item_format;
+    const char **items;
     int  min, max;
     int  def;
 };
@@ -72,8 +72,8 @@ public:
     int pack(uint8_t *buffer, int len);
     void unpack(uint8_t *buffer, int len);
 
-    char *get_item_name() { return definition->item_text; }
-    char *get_display_string();
+    const char *get_item_name() { return definition->item_text; }
+    const char *get_display_string();
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
 };
@@ -93,7 +93,7 @@ public:
     uint32_t id;
     bool  dirty;
 
-    ConfigStore(uint32_t id, char *name, int page, int page_size, t_cfg_definition *defs, ConfigurableObject *obj);
+    ConfigStore(uint32_t id, const char *name, int page, int page_size, t_cfg_definition *defs, ConfigurableObject *obj);
     virtual ~ConfigStore();
 
 // Interface functions
@@ -103,8 +103,8 @@ public:
 
     ConfigItem *find_item(uint8_t id);
     int  get_value(uint8_t id);
-    char *get_store_name() { return store_name.c_str(); }
-    char *get_string(uint8_t id);
+    const char *get_store_name() { return store_name.c_str(); }
+    const char *get_string(uint8_t id);
     void set_value(uint8_t id, int value);
     void set_string(uint8_t id, char *s);
     void dump(void);
@@ -127,7 +127,7 @@ public:
 		return &config_manager;
 	}
     
-    ConfigStore *register_store(uint32_t store_id, char *name, t_cfg_definition *defs, ConfigurableObject *ob);
+    ConfigStore *register_store(uint32_t store_id, const char *name, t_cfg_definition *defs, ConfigurableObject *ob);
     ConfigStore *open_store(uint32_t store_id);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
@@ -149,7 +149,7 @@ public:
     }
     virtual ~ConfigurableObject() { }
     
-    virtual bool register_store(uint32_t store_id, char *name, t_cfg_definition *defs)
+    virtual bool register_store(uint32_t store_id, const char *name, t_cfg_definition *defs)
     {
         cfg = ConfigManager :: getConfigManager()->register_store(store_id, name, defs, this);
         return (cfg != NULL);

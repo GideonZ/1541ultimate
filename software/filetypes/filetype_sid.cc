@@ -7,11 +7,12 @@
 #include "userinterface.h"
 #include "stream_textlog.h"
 
+extern C64 *c64;
 extern uint8_t _binary_sidcrt_65_start;
 //extern uint8_t _binary_sidcrt_65_end;
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileType *> tester_sid(Globals :: getFileTypeFactory(), FileTypeSID :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(Globals :: getFileTypeFactory(), FileTypeSID :: test_type);
 
 #define SIDFILE_PLAY_MAIN 0x5301
 #define SIDFILE_PLAY_TUNE 0x5302
@@ -38,14 +39,15 @@ static inline uint16_t swap_word(uint16_t p)
 /* SID File Browser Handling                                 */
 /*************************************************************/
 
-FileTypeSID :: FileTypeSID(CachedTreeNode *node)
+FileTypeSID :: FileTypeSID(BrowsableDirEntry *node)
 {
     fm = FileManager :: getFileManager();
 	this->node = node;
-	printf("Creating SID type from info: %s\n", node->get_name());
+	printf("Creating SID type from info: %s\n", node->getName());
     file = NULL;
     header_valid = false;
     numberOfSongs = 0;
+    cmd = NULL;
 }
 
 FileTypeSID :: ~FileTypeSID()
@@ -63,7 +65,7 @@ int FileTypeSID :: readHeader(void)
     
 	// if we didn't open the file yet, open it now
 	if(!file)
-		file = fm->fopen_node(node, FA_READ);
+		file = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
 	else {		
 		if(file->seek(0) != FR_OK) {
 			fm->fclose(file);
@@ -71,7 +73,10 @@ int FileTypeSID :: readHeader(void)
 			return -1;
 		}
 	}
-		
+	if (!file) {
+		printf("opening file was not successful.\n");
+		return -3;
+	}
     fres = file->read(sid_header, 0x7e, &bytes_read);
 	if(fres != FR_OK) {
 		fm->fclose(file);
@@ -110,7 +115,7 @@ void FileTypeSID :: showInfo()
     stream.format("\nNumber of songs: %d\n", numberOfSongs);
 	stream.format("Default song = %d\n", *((uint16_t *)&sid_header[0x10]));
 
-	user_interface->run_editor(stream.getText());
+	cmd->user_interface->run_editor(stream.getText());
 	// stream gets out of scope.
 }
 
@@ -122,36 +127,33 @@ int FileTypeSID :: fetch_context_items(IndexedList<Action *> &list)
 	if (!header_valid) {
 		return 0;
 	}
-	list.append(new Action("Play Main Tune", FileTypeSID :: execute_st, this, (void *)SIDFILE_PLAY_MAIN ));
-    list.append(new Action("Show Info", FileTypeSID :: execute_st, this, (void *)SIDFILE_SHOW_INFO ));
+	list.append(new Action("Play Main Tune", FileTypeSID :: execute_st, SIDFILE_PLAY_MAIN, (int)this ));
+    list.append(new Action("Show Info", FileTypeSID :: execute_st, SIDFILE_SHOW_INFO, (int)this ));
     if (numberOfSongs > 1) {
 		char buffer[16];
 		for(int i=0;i<numberOfSongs;i++) {
 			sprintf(buffer, "Play Song %d", i+1);
-			list.append(new Action(buffer, FileTypeSID :: execute_st, this, (void *)(i+1) ));
+			list.append(new Action(buffer, FileTypeSID :: execute_st, i+1, (int)this ));
 		}
 		return numberOfSongs + 2;
     }
     return 2;
 }
 
-FileType *FileTypeSID :: test_type(CachedTreeNode *obj)
+FileType *FileTypeSID :: test_type(BrowsableDirEntry *obj)
 {
-	FileInfo *inf = obj->get_file_info();
+	FileInfo *inf = obj->getInfo();
     if(strcmp(inf->extension, "SID")==0)
         return new FileTypeSID(obj);
     return NULL;
 }
 
-void FileTypeSID :: execute_st(void *obj, void *param) {
-	((FileTypeSID *)obj)->execute((int)param);
+int FileTypeSID :: execute_st(SubsysCommand *cmd) {
+	printf("FileTypeSID :: execute_st: Mode = %p\n", cmd->mode);
+	return ((FileTypeSID *)cmd->mode)->execute(cmd);
 }
 
-void FileTypeSID :: loadAndRun(void *obj) {
-	((FileTypeSID *)obj)->load();
-}
-
-void FileTypeSID :: execute(int selection)
+int FileTypeSID :: execute(SubsysCommand *cmd)
 {
 	int error = 0;
 	const char *errors[] = { "", "Can't open file",
@@ -159,7 +161,10 @@ void FileTypeSID :: execute(int selection)
 		"File type error", "Internal error",
 		"No memory location for player data" };
 		
-    if(selection == SIDFILE_PLAY_MAIN) {
+	int selection = cmd->functionID;
+	this->cmd = cmd;
+
+	if(selection == SIDFILE_PLAY_MAIN) {
 		error = prepare(true);
 	} else if(selection == SIDFILE_SHOW_INFO) {
 		showInfo();
@@ -167,26 +172,35 @@ void FileTypeSID :: execute(int selection)
 		song = uint16_t(selection);
 		error = prepare(false);
 	} else {
-		return;
+		delete cmd;
+		this->cmd = 0;
+		return -2;
 	}
 	if(error) {
 		printf("doing a popup with error %d\n", error);
-		user_interface->popup((char*)errors[error], BUTTON_OK);
+		cmd->user_interface->popup((char*)errors[error], BUTTON_OK);
 		printf("And closing the file after the error\n");
 		if(file) {
 			fm->fclose(file);
+			file = NULL;
 		}
+		delete cmd;
+		this->cmd = 0;
+		return -3;
 	} else {
 		printf("no errors.\n");
 	}
+	delete cmd;
+	this->cmd = 0;
+	return 0;
 }
 
 int FileTypeSID :: prepare(bool use_default)
 {
 	if(use_default) {
-        printf("PREPARE DEFAULT SONG in %s.\n", node->get_name());
+        printf("PREPARE DEFAULT SONG in %s.\n", node->getName());
     } else {
-	   printf("PREPARE SONG #%d in %s.\n", song, node->get_name());
+	   printf("PREPARE SONG #%d in %s.\n", song, node->getName());
 	}
 	
 	FileInfo *info;
@@ -198,7 +212,7 @@ int FileTypeSID :: prepare(bool use_default)
 	// reload header, reset state of file
 	uint32_t *magic = (uint32_t *)sid_header;
 	if(!file)
-		file = fm->fopen_node(node, FA_READ);
+		file = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
 	if(!file) {
 		return 1;
 	}
@@ -242,7 +256,7 @@ int FileTypeSID :: prepare(bool use_default)
     offset += 2;
     start = le2cpu(start);
 
-	info = node->get_file_info();
+	info = file->getFileInfo();
 	if(!info) {
 		return 5;
 	}
@@ -308,10 +322,11 @@ int FileTypeSID :: prepare(bool use_default)
 	// leave the browser, and smoothly transition to
 	// sid cart.
     sid_cart.custom_addr = (void *)&_binary_sidcrt_65_start;
-	push_event(e_unfreeze, (void *)&sid_cart, 1);
 
-	// call us back after the cartridge has been started
-	push_event(e_function_call, (void *)(FileTypeSID :: loadAndRun), (int)this);
+	SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&sid_cart, "", "");
+	c64_command->execute();
+
+	load();
 
 	return 0;
 }

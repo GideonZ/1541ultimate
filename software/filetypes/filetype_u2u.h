@@ -3,19 +3,19 @@
 
 #include "filetypes.h"
 #include "filemanager.h"
-
+#include "subsys.h"
 
 class FileTypeUpdate : public FileType
 {
-	CachedTreeNode *node;
+	BrowsableDirEntry *browsable;
 public:
-	FileTypeUpdate(CachedTreeNode *par);
+	FileTypeUpdate(BrowsableDirEntry *par);
     ~FileTypeUpdate();
 
     int   fetch_context_items(IndexedList<Action *> &list);
-    static FileType *test_type(FileInfo *inf);
+    static FileType *test_type(BrowsableDirEntry *inf);
 
-    static void execute(void *obj, void *param);
+    static int execute(SubsysCommand *);
 };
 
 

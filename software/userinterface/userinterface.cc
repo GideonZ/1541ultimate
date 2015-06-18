@@ -1,8 +1,8 @@
 #include "userinterface.h"
 
 /* Configuration */
-char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
-                   "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
+const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
+                         "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
                           
 #define CFG_USERIF_BACKGROUND 0x01
 #define CFG_USERIF_BORDER     0x02
@@ -20,21 +20,27 @@ struct t_cfg_definition user_if_config[] = {
 };
 
 
+IndexedList<UserInterface *>user_interfaces(2, 0);
+
 void poll_user_interface(Event &e)
 {
-	user_interface->handle_event(e);
+	for(int i=0;i<user_interfaces.get_elements();i++) {
+		user_interfaces[i]->handle_event(e);
+	}
 }
 
 UserInterface :: UserInterface()
 {
     initialized = false;
-    MainLoop :: addPollFunction(poll_user_interface);
     focus = -1;
     state = ui_idle;
-//    current_path = NULL;
     host = NULL;
     keyboard = NULL;
     screen = NULL;
+
+    MainLoop :: removePollFunction(poll_user_interface); // quick hack to make sure there is only one in the list
+    MainLoop :: addPollFunction(poll_user_interface);
+    user_interfaces.append(this);
 
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
@@ -42,9 +48,6 @@ UserInterface :: UserInterface()
 
 UserInterface :: ~UserInterface()
 {
-//	if(host->has_stopped())
-//		printf("WARNING: Host is still frozen!!\n");
-
 	printf("Destructing user interface..\n");
     MainLoop :: removePollFunction(poll_user_interface);
     do {
@@ -52,7 +55,6 @@ UserInterface :: ~UserInterface()
     	delete ui_objects[focus--];
     } while(focus>=0);
 
-//    delete browser_path;
     printf(" bye UI!\n");
 }
 
@@ -93,7 +95,7 @@ void UserInterface :: handle_event(Event &e)
     switch(state) {
         case ui_idle:
         	if ((e.type == e_button_press)||(e.type == e_freeze)) {
-                host->freeze();
+        		host->take_ownership(this);
                 host->set_colors(color_bg, color_border);
                 screen = host->getScreen();
                 set_screen_title();
@@ -115,12 +117,8 @@ void UserInterface :: handle_event(Event &e)
 
         case ui_host_owned:
         	if ((e.type == e_button_press)||(e.type == e_unfreeze)) {
-                for(i=focus;i>=0;i--) {  // tear down
-                    ui_objects[i]->deinit();
-                }
-                host->releaseScreen();
-                host->unfreeze(e); // e.param, (cart_def *)e.object
-                state = ui_idle;
+        		release_host(); // FIXME: No longer a way to pass cartridge mode here
+                host->release_ownership();
                 break;
             }
         // fall through from host_owned:
@@ -138,7 +136,7 @@ void UserInterface :: handle_event(Event &e)
                 }
                 else {
                     host->releaseScreen();
-                    host->unfreeze((Event &)c_empty_event);
+                    host->release_ownership();
                     state = ui_idle;
                     break;
                 }
@@ -147,6 +145,15 @@ void UserInterface :: handle_event(Event &e)
         default:
             break;
     }            
+}
+
+void UserInterface :: release_host(void)
+{
+	for(int i=focus;i>=0;i--) {  // tear down
+        ui_objects[i]->deinit();
+    }
+    host->releaseScreen();
+    state = ui_idle;
 }
 
 bool UserInterface :: is_available(void)
@@ -184,7 +191,7 @@ void UserInterface :: set_screen_title()
 }
     
 /* Blocking variants of our simple objects follow: */
-int  UserInterface :: popup(char *msg, uint8_t flags)
+int  UserInterface :: popup(const char *msg, uint8_t flags)
 {
 	Event e(e_nop, 0, 0);
     UIPopup *pop = new UIPopup(msg, flags);
@@ -197,7 +204,7 @@ int  UserInterface :: popup(char *msg, uint8_t flags)
     return ret;
 }
     
-int UserInterface :: string_box(char *msg, char *buffer, int maxlen)
+int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 {
 	Event e(e_nop, 0, 0);
     UIStringBox *box = new UIStringBox(msg, buffer, maxlen);
@@ -212,13 +219,13 @@ int UserInterface :: string_box(char *msg, char *buffer, int maxlen)
     return ret;
 }
 
-void UserInterface :: show_progress(char *msg, int steps)
+void UserInterface :: show_progress(const char *msg, int steps)
 {
     status_box = new UIStatusBox(msg, steps);
     status_box->init(screen);
 }
 
-void UserInterface :: update_progress(char *msg, int steps)
+void UserInterface :: update_progress(const char *msg, int steps)
 {
     status_box->update(msg, steps);
 }
@@ -229,10 +236,10 @@ void UserInterface :: hide_progress(void)
     delete status_box;
 }
 
-void UserInterface :: run_editor(char *text_buf)
+void UserInterface :: run_editor(const char *text_buf)
 {
 	Event e(e_nop, 0, 0);
-    Editor *edit = new Editor(text_buf);
+    Editor *edit = new Editor(this, text_buf);
     edit->init(screen, keyboard);
     int ret;
     do {

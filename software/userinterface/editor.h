@@ -4,13 +4,16 @@
 
 struct Line
 {
-    char *buffer;
+    const char *buffer;
     int  length;
 };
 
+class UserInterface;
+
 class Editor : public UIObject
 {
-    void line_breakdown(char *text_buffer);
+	UserInterface *user_interface;
+	void line_breakdown(const char *text_buffer);
     void draw();
 public:
     int line_length;
@@ -24,7 +27,7 @@ public:
 	IndexedList<Line> *text;
 
     // Member functions
-    Editor(char *text_buffer);
+    Editor(UserInterface *ui, const char *text_buffer);
     virtual ~Editor();
 
     virtual void init(Screen *win, Keyboard *k);

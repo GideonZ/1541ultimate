@@ -27,7 +27,7 @@ void releaseNetworkStack(void *s)
 }
 
 //-----------------------------------
-char *net_en_dis[] = { "Disabled", "Enabled" };
+const char *net_en_dis[] = { "Disabled", "Enabled" };
 #define CFG_NET_DHCP_EN		0xE0
 #define CFG_NET_IP          0xE1
 #define CFG_NET_NETMASK		0xE2

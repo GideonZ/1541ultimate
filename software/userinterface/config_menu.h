@@ -3,7 +3,10 @@
 
 #include "tree_browser.h"
 #include "tree_browser_state.h"
+#include "context_menu.h"
 #include "config.h"
+#include "subsys.h"
+
 
 class ConfigBrowserState : public TreeBrowserState
 {
@@ -23,7 +26,7 @@ public:
 class ConfigBrowser : public TreeBrowser
 {
 public:
-	ConfigBrowser(Browsable *);
+	ConfigBrowser(UserInterface *ui, Browsable *);
 	virtual ~ConfigBrowser();
 
     virtual void init(Screen *screen, Keyboard *k);
@@ -40,13 +43,13 @@ public:
 	~BrowsableConfigItem() {}
 
 	ConfigItem *getItem() { return item; }
-	char *getName() { return item->get_item_name(); }
-	char *getDisplayString() { return item->get_display_string(); };
+	const char *getName() { return item->get_item_name(); }
+	const char *getDisplayString() { return item->get_display_string(); };
 
-	static void contextSelect(void *obj, void *param) {
-		ConfigItem *it = (ConfigItem *)obj;
-		printf("ContextSelect of item %s, set value to %d.\n", it->get_item_name(), (int)param);
-		it->value = (int)param;
+	static int contextSelect(SubsysCommand *cmd) {
+		ConfigItem *it = (ConfigItem *)cmd->functionID;
+		printf("ContextSelect of item %s, set value to %d.\n", it->get_item_name(), cmd->mode);
+		it->value = cmd->mode;
 	}
 
 	void fetch_context_items(IndexedList<Action *>&items) {
@@ -58,13 +61,13 @@ public:
 				printf("CFG_TYPE_VALUE\n");
 				for(i=item->definition->min;i<=item->definition->max;i++) {
 					sprintf(buf, item->definition->item_format, i);
-					items.append(new Action(buf, contextSelect, item, (void *)i));
+					items.append(new Action(buf, BrowsableConfigItem :: contextSelect, (int)item, i));
 				}
 				break;
 			case CFG_TYPE_ENUM:
 				for(i=item->definition->min;i<=item->definition->max;i++) {
 					sprintf(buf, item->definition->item_format, item->definition->items[i]);
-					items.append(new Action(buf, contextSelect, item, (void *)i));
+					items.append(new Action(buf, (int)item, i, 0));
 				}
 				break;
 			default:
@@ -91,7 +94,7 @@ public:
 		return itemList->get_elements();
 	}
 	ConfigStore *getStore() { return store; }
-	char *getName() { return store->get_store_name(); }
+	const char *getName() { return store->get_store_name(); }
 };
 
 class BrowsableConfigRoot : public Browsable
@@ -107,7 +110,7 @@ public:
 		}
 		return storeList->get_elements();
 	}
-	char *getName() { return "Browsable Config Root"; }
+	const char *getName() { return "Browsable Config Root"; }
 };
 
 

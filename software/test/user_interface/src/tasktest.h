@@ -10,15 +10,19 @@
 
 #include "menu.h"
 #include "globals.h"
+#include "subsys.h"
 
-class TaskTest : public ObjectWithMenu {
+class TaskTest : public SubSystem, ObjectWithMenu {
 public:
-	TaskTest() {
+	TaskTest() : SubSystem(15) {
 	}
 	virtual ~TaskTest() {
 	}
 
     virtual int fetch_task_items(IndexedList<Action*> &item_list);
+
+    const char *identify(void) { return "TaskTest"; };
+    int executeCommand(SubsysCommand *cmd);
 
     static void runTestTask(void *obj, void *param);
 };

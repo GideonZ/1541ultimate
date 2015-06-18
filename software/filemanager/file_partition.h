@@ -24,8 +24,8 @@ public:
     FilePartition(CachedTreeNode *par, Partition *p, char *n);
     virtual ~FilePartition();
 
-    char *get_type_string(uint8_t typ);
-    char *get_display_string(void);
+    const char *get_type_string(uint8_t typ);
+    void  get_display_string(char *buffer, int width);
     int   fetch_children(void);
 };
 

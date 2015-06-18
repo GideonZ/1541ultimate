@@ -15,11 +15,12 @@ public:
     char quick_seek_string[MAX_SEARCH_LEN];
     int  quick_seek_length;
 
+    UserInterface *user_interface;
     Browsable *root;
     Screen   *screen;
     Window   *window;
     Keyboard *keyb;
-    //Path 	 *path;
+    Path 	 *path;
 
     TreeBrowserState *state;
 
@@ -28,7 +29,7 @@ public:
     ConfigBrowser *configBrowser;
 
     // Member functions
-    TreeBrowser(Browsable *);
+    TreeBrowser(UserInterface *ui, Browsable *);
     virtual ~TreeBrowser();
 
     virtual void init(Screen *scr, Keyboard *k);
@@ -46,6 +47,6 @@ public:
     void test_editor(void);
     
     void invalidate(const void *obj);
-
+    const char *getPath();
 };
 #endif

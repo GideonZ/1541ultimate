@@ -322,7 +322,7 @@ uint8_t *GcrImage :: wrap(uint8_t **current, uint8_t *begin, uint8_t *end, int c
 	return gcr;
 }
     
-int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, bool report)
+int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, UserInterface *user_interface)
 {
     int errors = 0;
     int result = 0;
@@ -330,7 +330,7 @@ int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, bool report)
         result = convert_track_gcr2bin(track, bin_image);
         if(result)
             errors ++;
-        if(report)
+        if(user_interface)
             user_interface->update_progress(NULL, 1);
     }
     return errors;
@@ -418,7 +418,7 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 	return 0;
 }
 
-void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, bool report)
+void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, UserInterface *user_interface)
 {
 	id1 = bin_image->bin_data[91554];
     id2 = bin_image->bin_data[91555];
@@ -436,7 +436,7 @@ void GcrImage :: convert_disk_bin2gcr(BinImage *bin_image, bool report)
 		track_address[2*i + 1] = dummy_track;
         track_length[2*i + 1] = int(newgcr - gcr);
         gcr = newgcr;
-        if(report)
+        if(user_interface)
             user_interface->update_progress(NULL, 1);
     }
 }
@@ -511,7 +511,7 @@ int GcrImage :: find_track_start(int track)
     return 0;    
 }
     
-bool GcrImage :: save(File *f, bool report, bool align)
+bool GcrImage :: save(File *f, bool align, UserInterface *user_interface)
 {
     uint8_t *header = new uint8_t[16 + C1541_MAXTRACKS * 8];
 
@@ -586,7 +586,7 @@ bool GcrImage :: save(File *f, bool report, bool align)
         if(res != FR_OK)
             break;
         res = f->write(filler_bytes, C1541_MAXTRACKLEN - track_length[i], &bytes_written);
-        if(report)
+        if(user_interface)
             user_interface->update_progress(NULL, 1 + skipped);
         if(res != FR_OK)
             break;
@@ -656,7 +656,7 @@ bool GcrImage :: test(void)
     }
 
     // convert it to gcr
-    convert_disk_bin2gcr(bin, false);
+    convert_disk_bin2gcr(bin, NULL);
 
     // now let's say we decode back to another location:
     bin->track_start[0] = bin->track_start[2];
@@ -698,7 +698,7 @@ bool GcrImage :: test(void)
 //--------------------------------------------------------------
 // Binary Image Class
 //--------------------------------------------------------------
-BinImage :: BinImage(char *name)
+BinImage :: BinImage(const char *name)
 {
 	bin_data = new uint8_t[C1541_MAX_D64_LEN];
 
@@ -803,7 +803,7 @@ int BinImage :: load(File *file)
 	return 0;
 }
 
-int BinImage :: save(File *file, bool report)
+int BinImage :: save(File *file, UserInterface *user_interface)
 {
 	uint32_t transferred = 0;
 	FRESULT res = file->seek(0);
@@ -813,7 +813,7 @@ int BinImage :: save(File *file, bool report)
 	}
 
 	uint8_t *data = bin_data;
-    if(report) {
+    if(user_interface) {
         for(int i=0;i<34;i++) {
         	res = file->write(data, 10 * 512, &transferred);
         	if(res != FR_OK) {
@@ -840,7 +840,7 @@ int BinImage :: save(File *file, bool report)
 	num_tracks -= 35;
 	while(num_tracks--) {
 		res = file->write(data, 17*256, &transferred);
-        if(report)
+        if(user_interface)
             user_interface->update_progress(NULL, 1);
     	if(res != FR_OK) {
             printf("WRITE ERROR: %d. Transferred = %d\n", res, transferred);
@@ -858,7 +858,7 @@ int BinImage :: save(File *file, bool report)
 	return 0;
 }
 
-int BinImage :: format(char *name)
+int BinImage :: format(const char *name)
 {
 	uint8_t *track_18 = &bin_data[17*21*256];
 	uint8_t *bam_name = track_18 + 144;

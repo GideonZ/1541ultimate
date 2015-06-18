@@ -16,10 +16,11 @@ public:
     FileDevice(BlockDevice *b, char *n, char *dispn);
     virtual ~FileDevice();
     
+	bool is_ready(void);
     void attach_disk(int block_size);
     void detach_disk(void);
     int fetch_children(void);
-    char *get_display_string(void);
+    void get_display_string(char *buffer, int width);
 };
 
 #endif
