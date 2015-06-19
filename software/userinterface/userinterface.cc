@@ -41,6 +41,7 @@ UserInterface :: UserInterface()
     MainLoop :: removePollFunction(poll_user_interface); // quick hack to make sure there is only one in the list
     MainLoop :: addPollFunction(poll_user_interface);
     user_interfaces.append(this);
+    printf("There are now %d user interfaces in the list.\n", user_interfaces.get_elements());
 
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();

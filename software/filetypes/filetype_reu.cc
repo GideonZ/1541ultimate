@@ -68,7 +68,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
     int total_bytes_read;
     int remain;
     
-	static char buffer[36];
+	static char buffer[48];
     uint8_t *dest;
     FileManager *fm = FileManager :: getFileManager();
     FileInfo info;
@@ -85,7 +85,10 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 	bytes_per_step = secs_per_step << 9;
 	remain = info.size;
 
-	printf("REU Load.. %s\n", cmd->filename.c_str());
+	printf("REU Load.. %s\nUI = %p", cmd->filename.c_str(), cmd->user_interface);
+	if (!cmd->user_interface)
+		progress = false;
+
 	file = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
 	if(file) {
 		total_bytes_read = 0;
@@ -93,7 +96,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 		if(progress) {
 			cmd->user_interface->show_progress("Loading REU file..", 32);
 			dest = (uint8_t *)(REU_MEMORY_BASE);
-			while(remain >= 0) {
+			while(remain > 0) {
 				file->read(dest, bytes_per_step, &bytes_read);
 				total_bytes_read += bytes_read;
 				cmd->user_interface->update_progress(NULL, 1);
@@ -105,8 +108,11 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 			file->read((void *)(REU_MEMORY_BASE), (REU_MAX_SIZE), &bytes_read);
 			total_bytes_read += bytes_read;
 		}
+		printf("\nClosing file. ");
 		fm->fclose(file);
 		file = NULL;
+		printf("done.\n");
+
 		if (cmd->functionID == REUFILE_LOAD) {
 			sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
 			cmd->user_interface->popup(buffer, BUTTON_OK);

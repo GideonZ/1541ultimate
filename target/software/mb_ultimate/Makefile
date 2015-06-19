@@ -101,6 +101,7 @@ SRCS_C   =	mbstart_rtos.c \
 #			filetype_iso.cc \
 
 SRCS_CC	 =  stream.cc \
+			stream_uart.cc \
 			memory_rtos.cc \
 			init_function.cc \
 			flash.cc \

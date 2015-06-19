@@ -10,9 +10,11 @@ void UserInterfaceStream :: handle_event(Event &e)
 {
     if(menu)
         menu->poll(e);
+    else
+    	printf("No menu set!\n");
 }
 
-int  UserInterfaceStream :: popup(char *msg, uint8_t flags)
+int  UserInterfaceStream :: popup(const char *msg, uint8_t flags)
 {
     stream->format("Popup: %s, options: ", msg);
     if(flags & BUTTON_OK)     stream->format("(O)k  ");
@@ -61,7 +63,7 @@ int  UserInterfaceStream :: popup(char *msg, uint8_t flags)
     }
 }
 
-int  UserInterfaceStream :: string_box(char *msg, char *buffer, int maxlen)
+int  UserInterfaceStream :: string_box(const char *msg, char *buffer, int maxlen)
 {
     stream->format("%s\n:");
     int ret;
@@ -69,4 +71,20 @@ int  UserInterfaceStream :: string_box(char *msg, char *buffer, int maxlen)
         ;
 //    stream->format("Stringbox result=%d, String=%s\n", ret, buffer);
     return strlen(buffer);
+}
+
+void UserInterfaceStream :: show_progress(const char *msg, int steps)
+{
+	if(msg)
+		stream->format(msg);
+}
+
+void UserInterfaceStream :: update_progress(const char *msg, int steps)
+{
+	stream->charout('.');
+}
+
+void UserInterfaceStream :: hide_progress(void)
+{
+
 }

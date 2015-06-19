@@ -28,9 +28,6 @@ void _premain()
 {
 	int t;
 
-    UART_DATA = 0x31;
-    UART_DATA = 0x2e;
-
 	t=main(0, 0);
 
 }
@@ -49,11 +46,11 @@ int inbyte()
 	int val;
 	for (;;)
 	{
-		val=UART_FLAGS;
+		val=ioRead8(UART_FLAGS);
 		if ((val&UART_RxDataAv)!=0)
 		{
 			val = UART_DATA;
-			UART_GET = 0;
+			ioWrite8(UART_GET, 0);
 			break;
 		}
 	}
@@ -68,8 +65,8 @@ int inbyte()
 void outbyte(int c)
 {
 	// Wait for space in FIFO
-	while (UART_FLAGS & UART_TxFifoFull);
-	UART_DATA = (uint8_t)c;
+	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+	ioWrite8(UART_DATA, (uint8_t)c);
 }
 
 void restart(void)

@@ -50,7 +50,7 @@ void uart_write_hex_long(uint32_t hex)
 int main(int argc, char **argv)
 {
     if (getFpgaCapabilities() & CAPAB_SIMULATION) {
-        UART_DATA = uint8_t('*');
+        ioWrite8(UART_DATA, '*');
         jump_run(APPL_RUN_ADDR);
     }
 
@@ -140,7 +140,7 @@ int main(int argc, char **argv)
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
-        UART_DATA = '-';
+        ioWrite8(UART_DATA, '-');
         uart_write_hex_long((uint32_t)dest);
         jump_run(APPL_RUN_ADDR);
         while(1);

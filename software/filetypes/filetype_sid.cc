@@ -65,7 +65,7 @@ int FileTypeSID :: readHeader(void)
     
 	// if we didn't open the file yet, open it now
 	if(!file)
-		file = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
+		file = fm->fopen(node->getPath(), node->getName(), FA_READ);
 	else {		
 		if(file->seek(0) != FR_OK) {
 			fm->fclose(file);

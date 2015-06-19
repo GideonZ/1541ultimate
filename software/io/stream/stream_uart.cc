@@ -14,7 +14,7 @@ int Stream_UART :: write(const char *buffer, int length)
 
 int Stream_UART :: get_char(void)
 {
-	if (UART_FLAGS & UART_RxDataAv)
+	if (ioRead8(UART_FLAGS) & UART_RxDataAv)
         return uart_get_byte(0);
     else
         return -1;
@@ -23,9 +23,9 @@ int Stream_UART :: get_char(void)
 void Stream_UART :: charout(int c)
 {
     if(c == '\n') {
-    	while (UART_FLAGS & UART_TxFifoFull);
-    	UART_DATA = '\r';
+    	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+    	ioWrite8(UART_DATA, '\r');
     }
-	while (UART_FLAGS & UART_TxFifoFull);
-	UART_DATA = c;
+	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+	ioWrite8(UART_DATA, c);
 }

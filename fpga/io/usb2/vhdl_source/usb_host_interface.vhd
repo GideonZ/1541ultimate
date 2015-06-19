@@ -147,6 +147,7 @@ begin
             tx_valid    => tx_valid,
             tx_next     => tx_next,
             tx_data     => tx_data,
+            rx_busy     => rx_store,
             
             -- interface to DATA CRC (shared resource)
             crc_sync    => tx_crc_sync,

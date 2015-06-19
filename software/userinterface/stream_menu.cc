@@ -5,7 +5,7 @@
 #include "filemanager.h"
 #include "subsys.h"
 
-StreamMenu :: StreamMenu(UserInterface *ui, Stream *s, Browsable *n) : listStack(20, NULL), actionList(0, NULL)
+StreamMenu :: StreamMenu(UserInterface *ui, Stream *s, Browsable *n) : nodeStack(20, NULL), listStack(20, NULL), actionList(0, NULL)
 {
 	user_interface = ui;
 	stream = s;
@@ -15,6 +15,7 @@ StreamMenu :: StreamMenu(UserInterface *ui, Stream *s, Browsable *n) : listStack
     
     currentList = new IndexedList<Browsable *>(0, NULL);
     // listStack.push(currentList);
+
     n->getSubItems(*currentList);
     currentPath = FileManager :: getFileManager() -> get_new_path("Stream Menu");
     print_items(0, 9999);
@@ -107,6 +108,9 @@ int StreamMenu :: into(void)
             
     currentPath->cd(selNode->getName());
     listStack.push(currentList);
+    nodeStack.push(node);
+
+    node = selNode;
     currentList = newList;
     return currentList->get_elements();
 }
@@ -156,8 +160,14 @@ int StreamMenu :: process_command(char *command)
         }
         else if(listStack.get_count() > 0) {
         	cleanupBrowsables(*currentList);
+        	delete currentList;
+
         	currentList = listStack.pop();
-            currentPath->cd("..");
+        	node = nodeStack.pop();
+        	currentPath->cd("..");
+
+        	cleanupBrowsables(*currentList); // reload
+        	node->getSubItems(*currentList); // reload
         }
 		print_items(0, 9999);
     }
@@ -243,4 +253,25 @@ void StreamMenu :: cleanupActions()
 		delete actionList[i];
 	}
 	actionList.clear_list();
+}
+
+void StreamMenu :: testStack()
+{
+	printf("There are now %d elements on the stack.\n", nodeStack.get_count());
+    Browsable *b1, *b2, *b3;
+    b1 = nodeStack.pop();
+    b2 = nodeStack.pop();
+    b3 = nodeStack.pop();
+    if (b1) { printf("B1: %s\n", b1->getName()); }
+    if (b2) { printf("B2: %s\n", b2->getName()); }
+    if (b3) { printf("B3: %s\n", b3->getName()); }
+    if(b3) {
+    	nodeStack.push(b3);
+    }
+    if(b2) {
+    	nodeStack.push(b2);
+    }
+    if(b1) {
+    	nodeStack.push(b1);
+    }
 }

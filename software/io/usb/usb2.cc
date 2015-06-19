@@ -590,6 +590,10 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		addr += transferred;
 		len -= transferred;
 		pipe->Command = (result & URES_TOGGLE) ^ URES_TOGGLE; // that's what we start with next time.
+		if (transferred != current_len) { // some bytes remained?
+			total_trans = -8;
+			break;
+		}
 	} while (len > 0);
 
 #ifdef OS

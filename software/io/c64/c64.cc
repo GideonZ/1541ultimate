@@ -906,7 +906,12 @@ int C64 :: executeCommand(SubsysCommand *cmd)
 int C64 :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t reloc)
 {
 	// prepare DMA load
-	C64_POKE(0x162, run_code);
+    if(client) { // we are locked by a client, likely: user interface
+		client->release_host(); // disconnect from user interface
+		client = 0;
+	}
+
+    C64_POKE(0x162, run_code);
 
 	int len = strlen(name);
 	if (len > 30)
@@ -916,13 +921,8 @@ int C64 :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t reloc)
         C64_POKE(0x165+i, toupper(name[i]));
     }
     C64_POKE(0x164, len);
-
     C64_POKE(2, 0x80); // initial boot cart handshake
 
-    if(client) { // we are locked by a client, likely: user interface
-		client->release_host(); // disconnect from user interface
-		client = 0;
-	}
     boot_cart.custom_addr = (void *)&_binary_bootcrt_65_start;
     unfreeze(&boot_cart, 1);
 
@@ -938,6 +938,8 @@ int C64 :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t reloc)
         }
         load_address = le2cpu(load_address); // make sure we can interpret the word correctly (endianness)
         printf("Load address: %4x...", load_address);
+    } else {
+    	wait_ms(100);
     }
     int block = 510;
 

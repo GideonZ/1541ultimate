@@ -11,6 +11,7 @@ use ieee.numeric_std.all;
 
 entity timer is
     generic (
+        g_reset     : std_logic := '0';
         g_width     : natural := 10 );
 	port  (
         clock       : in  std_logic;
@@ -46,7 +47,7 @@ begin
             if reset='1' then
                 count <= (others => '0');
                 running <= '0';
-                timeout <= '0'; 
+                timeout <= g_reset; 
             end if;
         end if;
     end process;

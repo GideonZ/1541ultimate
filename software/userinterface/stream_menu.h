@@ -23,6 +23,7 @@ class StreamMenu
     Path *currentPath;
     UserInterface *user_interface;
 
+    Stack<Browsable *> nodeStack;
     Stack<IndexedList<Browsable *>*> listStack;
     IndexedList<Browsable *>*currentList;
     IndexedList<Action *>actionList;
@@ -31,6 +32,7 @@ class StreamMenu
     void print_actions();
     void cleanupBrowsables(IndexedList<Browsable *> &list);
     void cleanupActions();
+    void testStack();
 public:
     StreamMenu(UserInterface *ui, Stream *s, Browsable *node);
     virtual ~StreamMenu();

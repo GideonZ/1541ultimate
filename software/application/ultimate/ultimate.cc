@@ -26,6 +26,7 @@ extern "C" {
 #include "audio_select.h"
 #include "overlay.h"
 #include "init_function.h"
+#include "stream_uart.h"
 
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
@@ -67,7 +68,7 @@ int main(void *a)
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
 
-	Stream my_stream;
+	Stream_UART my_stream;
 	UserInterface *ui = 0;
     
  	// start the file system, scan the sd-card etc..
@@ -104,6 +105,7 @@ int main(void *a)
         // push_event(e_button_press, NULL, 1);
     } else {
         // stand alone mode
+        printf("Using Stream module as user interface...\n");
         UserInterfaceStream *ui_str = new UserInterfaceStream(&my_stream);
         root_menu = new StreamMenu(ui_str, &my_stream, new BrowsableRoot());
         ui_str->set_menu(root_menu); // root of all evil!
