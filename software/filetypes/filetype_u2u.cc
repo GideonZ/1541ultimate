@@ -127,11 +127,14 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		}
 		fm->fclose(file);
 		file = NULL;
+/*
 		if ((*(uint32_t *)REU_MEMORY_BASE) != 0x3021FFD8) {
 			cmd->user_interface->popup("Signature check failed.", BUTTON_OK);
 		} else {
 			jump_run(REU_MEMORY_BASE);
 		}
+*/
+		jump_run(REU_MEMORY_BASE);
 	} else {
 		printf("Error opening file.\n");
 		return -1;

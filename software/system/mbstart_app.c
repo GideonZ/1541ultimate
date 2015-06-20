@@ -68,7 +68,7 @@ void _premain()
 {
 	int t;
 
-    __clear_bss();
+	__clear_bss();
 
     _do_ctors();
 

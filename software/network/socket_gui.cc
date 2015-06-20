@@ -44,6 +44,8 @@ void socket_gui_task(void *a)
 	TreeBrowser *tree_browser = new TreeBrowser(user_interface, root);
 	user_interface->activate_uiobject(tree_browser);
 
+	Event start_gui(e_button_press, 0, 1);
+	user_interface->handle_event(start_gui);
 	while(1) {
 		user_interface->handle_event((Event &)c_empty_event);
 		vTaskDelay(4);

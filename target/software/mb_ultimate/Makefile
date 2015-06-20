@@ -185,10 +185,10 @@ SRCS_CC	 =  stream.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
-			socket_test.cc \
 			sys_calls.cc \
 			$(PRJ).cc
 
+#			socket_test.cc \
 ####			sampler.cc \
 ####			copper.cc \
 
