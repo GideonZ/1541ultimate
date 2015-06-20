@@ -12,6 +12,7 @@
 #include "indexed_list.h"
 #include "event.h"
 #include "globals.h"
+#include "path.h"
 
 class ObjectWithMenu
 {
@@ -23,7 +24,7 @@ public:
 		Globals :: getObjectsWithMenu() -> remove(this);
 	}
 
-    virtual int fetch_task_items(IndexedList<Action*> &item_list) { return 0; }
+    virtual int fetch_task_items(Path *p, IndexedList<Action*> &item_list) { return 0; }
 };
 
 #endif /* MENU_H_ */

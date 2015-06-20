@@ -64,6 +64,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/lwip-1.4.1/src/include \
 			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
 			$(PATH_SW)/lwip-1.4.1/src/include/posix/sys \
+			$(PATH_SW)/lwip-1.4.1/src/include/posix \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
@@ -83,8 +84,7 @@ SRCS_C   =	mbstart_rtos.c \
             port.c \
             heap_3.c \
             sock_echo.c \
-            time.c \
-			ftpd.c 
+            time.c
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:
@@ -94,11 +94,7 @@ SRCS_C   =	mbstart_rtos.c \
 # Therefore, the file manager needs to exist.
 
 
-#			vfs.cc \
-#			socket_test.cc \
-#			network_lwip.cc \
 #
-#			filetype_iso.cc \
 
 SRCS_CC	 =  stream.cc \
 			stream_uart.cc \
@@ -173,6 +169,7 @@ SRCS_CC	 =  stream.cc \
 			usb_ax88772.cc \
 			usb_em1010.cc \
 			network_interface.cc \
+			network_lwip.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
 			filetype_prg.cc \
@@ -181,6 +178,15 @@ SRCS_CC	 =  stream.cc \
 			filetype_crt.cc \
 			filetype_tap.cc \
 			filetype_sid.cc \
+			vfs.cc \
+			ftpd.cc \
+            socket_stream.cc \
+            socket_gui.cc \
+            host_stream.cc \
+            keyboard_vt100.cc \
+            screen_vt100.cc \
+			socket_test.cc \
+			sys_calls.cc \
 			$(PRJ).cc
 
 ####			sampler.cc \

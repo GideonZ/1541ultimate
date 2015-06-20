@@ -11,19 +11,20 @@
 #include "poll.h"
 #include "menu.h"
 #include "filemanager.h"
+#include "subsys.h"
 
 class SocketTest: public ObjectWithMenu {
-	FileManager *fm;
-	void doTest1();
-	void doTest2();
-	void sendTrace(int size);
+	static int doTest1(SubsysCommand *cmd);
+	static int doTest2(SubsysCommand *cmd);
+	static int profiler(SubsysCommand *cmd);
+	static int saveTrace(SubsysCommand *cmd);
+	static int sendTrace(int size);
 	static void restartThread(void *a);
 public:
 	SocketTest();
 	virtual ~SocketTest();
 
-    int  fetch_task_items(IndexedList<Action*> &item_list);
-    void poll(Event &e);
+    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
 };
 
 #endif /* NETWORK_SOCKET_TEST_H_ */

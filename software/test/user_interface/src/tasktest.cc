@@ -8,7 +8,7 @@
 #include "tasktest.h"
 #include <stdio.h>
 
-int TaskTest :: fetch_task_items(IndexedList<Action*> &item_list)
+int TaskTest :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 {
 	char buf[16];
 	for(int i=0;i<10;i++) {

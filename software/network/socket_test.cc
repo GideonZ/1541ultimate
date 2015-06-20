@@ -15,69 +15,56 @@
 #include "usb2.h"
 
 SocketTest socket_test; // global that causes the object to exist
-void poll_socket_test(Event &e) {
-	socket_test.poll(e);
-}
 
 SocketTest::SocketTest() {
-	MainLoop :: addPollFunction(poll_socket_test);
-	fm = FileManager :: getFileManager();
-
 	xTaskCreate( restartThread, "\007Reload Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
 }
 
 SocketTest::~SocketTest() {
-	MainLoop :: removePollFunction(poll_socket_test);
+
 }
 
-int  SocketTest::fetch_task_items(IndexedList<Action*> &item_list)
+int  SocketTest::fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
-	item_list.append(new ObjectMenuItem(this, "Socket Test Server", 0));
-	item_list.append(new ObjectMenuItem(this, "Socket Test Client", 1));
-	//item_list.append(new ObjectMenuItem(this, "Start RTOS Trace", 2));
-	//item_list.append(new ObjectMenuItem(this, "Stop RTOS Trace", 3));
-	item_list.append(new ObjectMenuItem(this, "Save RTOS Trace", 4));
+	item_list.append(new Action("Socket Test Server", SocketTest :: doTest1, 0, 0));
+	item_list.append(new Action("Socket Test Client", SocketTest :: doTest2, 1, 0));
+	item_list.append(new Action("Start RTOS Trace", SocketTest :: profiler, 2, 1));
+	item_list.append(new Action("Stop RTOS Trace", SocketTest :: profiler, 2, 0));
+	item_list.append(new Action("Save RTOS Trace", SocketTest :: saveTrace, 3, 0));
 	return 3;
 }
 
-void SocketTest::poll(Event &e)
+int SocketTest :: profiler(SubsysCommand *cmd) {
+	if (cmd->mode) {
+		PROFILER_START = 1;
+	} else {
+		PROFILER_STOP = 1;
+	}
+	return 0;
+}
+
+int SocketTest :: saveTrace(SubsysCommand *cmd)
 {
 	File *f;
 	uint32_t start_address = 0x1000000;
 	uint32_t end_address = 0x1000000;
 	uint32_t transferred;
 
-	if ((e.type == e_object_private_cmd) && (e.object == this)) {
-		switch(e.param) {
-		case 0:
-			doTest1();
-			break;
-		case 1:
-			doTest2();
-			break;
-		case 2:
-			PROFILER_START = 1;
-			break;
-		case 3:
-			PROFILER_STOP = 1;
-			break;
-		case 4:
-            end_address = PROFILER_ADDR;
-            printf("Logic Analyzer stopped. Address = %p\n", end_address);
-            f = fm->fopen(NULL, "rtostrac.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
-            if(f) {
-                printf("Opened file successfully.\n");
-                f->write((void *)start_address, end_address - start_address, &transferred);
-                printf("written: %d...", transferred);
-                f->close();
-            } else {
-                printf("Couldn't open file..\n");
-            }
-			break;
-		default:
-			break;
-		}
+	FileManager *fm = FileManager :: getFileManager();
+
+	end_address = PROFILER_ADDR;
+	printf("Logic Analyzer stopped. Address = %p\n", end_address);
+	f = fm->fopen(cmd->path.c_str(), "rtostrac.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
+	if(f) {
+		printf("Opened file successfully.\n");
+		f->write((void *)start_address, end_address - start_address, &transferred);
+		printf("written: %d...", transferred);
+		fm->fclose(f);
+	} else {
+		printf("Couldn't open file..\n");
+		return -1;
 	}
+	return 0;
 }
 
 void SocketTest::restartThread(void *a)
@@ -159,13 +146,13 @@ void SocketTest::restartThread(void *a)
 
     portDISABLE_INTERRUPTS(); // disable interrupts
     usb2.deinit();
-    ITU_IRQ_DISABLE = 0xFF;
-    ITU_IRQ_CLEAR = 0xFF;
+    ioWrite8(ITU_IRQ_DISABLE, 0xFF);
+    ioWrite8(ITU_IRQ_CLEAR, 0xFF);
     asm("bralid r15, 8"); // restart!
     asm("nop");
 }
 
-void SocketTest::doTest1()
+int SocketTest::doTest1(SubsysCommand *cmd)
 {
     int sockfd, newsockfd, portno;
 	unsigned long int clilen;
@@ -181,7 +168,7 @@ void SocketTest::doTest1()
     if (sockfd < 0)
 	{
     	puts("ERROR opening socket");
-    	return;
+    	return -1;
 	}
 
     printf("Sockfd = %8x\n", sockfd);
@@ -198,7 +185,7 @@ void SocketTest::doTest1()
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
     {
  	    puts("ERROR on binding");
-	    return;
+	    return -2;
     }
 
     /* Now start listening for the clients, here process will
@@ -213,7 +200,7 @@ void SocketTest::doTest1()
     if (newsockfd < 0)
     {
     	puts("ERROR on accept");
-    	return;
+    	return -3;
     }
 
     printf("newsockfd = %8x\n", newsockfd);
@@ -235,7 +222,7 @@ void SocketTest::doTest1()
     if (n < 0)
 	{
 	    puts("ERROR reading from socket");
-	    return;
+	    return -4;
     }
 
 	PROFILER_STOP = 1;
@@ -247,7 +234,7 @@ void SocketTest::doTest1()
     sendTrace(int(profile_size));
 }
 
-void SocketTest::doTest2()
+int SocketTest::doTest2(SubsysCommand *cmd)
 {
     int sockfd, newsockfd, portno;
 	unsigned long int clilen;
@@ -261,7 +248,7 @@ void SocketTest::doTest2()
     if (sockfd < 0)
 	{
     	puts("ERROR opening socket");
-    	return;
+    	return -1;
 	}
 
     printf("Sockfd = %8x\n", sockfd);
@@ -289,7 +276,7 @@ void SocketTest::doTest2()
     lwip_close(sockfd);
 }
 
-void SocketTest::sendTrace(int size)
+int SocketTest::sendTrace(int size)
 {
     int sockfd, newsockfd, portno;
 	unsigned long int clilen;
@@ -305,7 +292,7 @@ void SocketTest::sendTrace(int size)
     if (sockfd < 0)
 	{
     	puts("ERROR opening socket");
-    	return;
+    	return -1;
 	}
 
     printf("Sockfd = %8x\n", sockfd);
@@ -322,7 +309,7 @@ void SocketTest::sendTrace(int size)
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
     {
  	    puts("ERROR on binding");
-	    return;
+	    return -2;
     }
 
     /* Now start listening for the clients, here process will
@@ -337,7 +324,7 @@ void SocketTest::sendTrace(int size)
     if (newsockfd < 0)
     {
     	puts("ERROR on accept");
-    	return;
+    	return -3;
     }
 
     printf("newsockfd = %8x\n", newsockfd);
@@ -363,10 +350,9 @@ void SocketTest::sendTrace(int size)
     if (n < 0)
 	{
 	    printf("ERROR sending to socket, %d", n);
-	    return;
+	    return -4;
     }
 
     lwip_close(newsockfd);
     lwip_close(sockfd);
 }
-

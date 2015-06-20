@@ -314,7 +314,7 @@ int main()
     
 	host->reset();
     wait_ms(500);
-    host->freeze();
+    host->take_ownership(0);
 
     screen = host->getScreen();
     screen->move_cursor(0,0);
@@ -331,7 +331,7 @@ int main()
 
 	if(!flash) {
 		user_interface->popup("Flash device not recognized.", BUTTON_CANCEL);
-		host->unfreeze((Event &)c_empty_event);
+		host->release_ownership();
 		delete user_interface;
 		delete screen;
 	 	screen = NULL;

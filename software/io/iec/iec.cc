@@ -226,7 +226,7 @@ void IecInterface :: effectuate_settings(void)
 }
     
 
-int IecInterface :: fetch_task_items(IndexedList<Action *> &list)
+int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
 {
     int count = 3;
 	list.append(new Action("Reset IEC",      SUBSYSID_IEC, MENU_IEC_RESET));

@@ -99,7 +99,7 @@ public:
 
 	// TODO: Sorting is part of the user interface, not of the cache, unless the sorting is used for faster find
 	virtual void sort_children(void) {
-//    	children.sort(path_object_compare);
+    	children.sort(path_object_compare);
     }
 
 	// default compare function, just by name!

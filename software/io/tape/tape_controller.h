@@ -47,7 +47,7 @@ public:
 	TapeController();
 	virtual ~TapeController();
 	
-	int  fetch_task_items(IndexedList<Action*> &item_list);
+	int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
 	int executeCommand(SubsysCommand *cmd);
 	
 	void close();

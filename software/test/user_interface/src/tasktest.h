@@ -11,6 +11,7 @@
 #include "menu.h"
 #include "globals.h"
 #include "subsys.h"
+#include "path.h"
 
 class TaskTest : public SubSystem, ObjectWithMenu {
 public:
@@ -19,7 +20,7 @@ public:
 	virtual ~TaskTest() {
 	}
 
-    virtual int fetch_task_items(IndexedList<Action*> &item_list);
+    virtual int fetch_task_items(Path *path, IndexedList<Action*> &item_list);
 
     const char *identify(void) { return "TaskTest"; };
     int executeCommand(SubsysCommand *cmd);

@@ -185,7 +185,7 @@ int StreamMenu :: process_command(char *command)
         IndexedList<ObjectWithMenu *>*objects = Globals ::getObjectsWithMenu();
 
         for(int i=0;i<objects->get_elements();i++) {
-        	items += (*objects)[i]->fetch_task_items(actionList);
+        	items += (*objects)[i]->fetch_task_items(currentPath, actionList);
         }
         print_actions();
         state = 1;

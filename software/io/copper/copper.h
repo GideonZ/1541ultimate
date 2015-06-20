@@ -6,6 +6,7 @@
 #include "poll.h"
 #include "menu.h"
 #include "iomap.h"
+#include "path.h"
 
 #define COPPER_COMMAND     *((volatile BYTE *)(COPPER_BASE + 0x00))
 #define COPPER_STATUS      *((volatile BYTE *)(COPPER_BASE + 0x01))
@@ -48,7 +49,7 @@ public:
 	Copper();
 	~Copper();
 
-	int  fetch_task_items(IndexedList<CachedTreeNode*> &item_list);
+	int  fetch_task_items(Path *path, IndexedList<CachedTreeNode*> &item_list);
 	void poll(Event &);
 	
 };

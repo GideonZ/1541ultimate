@@ -223,15 +223,19 @@ bool C64 :: exists(void)
     return (C64_CLOCK_DETECT != 0);
 }
     
-int  C64 :: fetch_task_items(IndexedList<Action *> &item_list)
+int  C64 :: fetch_task_items(Path *path, IndexedList<Action *> &item_list)
 {
 	item_list.append(new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET));
 	item_list.append(new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT));
+    item_list.append(new Action("Hard System Reboot", SUBSYSID_C64, MENU_C64_HARD_BOOT));
     //item_list.append(new Action("Boot Alternate FPGA", SUBSYSID_C64, MENU_C64_BOOTFPGA));
     //item_list.append(new Action("Save SID Trace", SUBSYSID_C64, MENU_C64_TRACE));
-    item_list.append(new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU));
-    item_list.append(new Action("Hard System Reboot", SUBSYSID_C64, MENU_C64_HARD_BOOT));
-    item_list.append(new Action("Save Flash", SUBSYSID_C64, MENU_C64_SAVEFLASH));
+#ifndef _NO_FILE_ACCESS
+    if(fm->is_path_writable(path)) {
+    	item_list.append(new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU));
+        // item_list.append(new Action("Save Flash", SUBSYSID_C64, MENU_C64_SAVEFLASH));
+    }
+#endif
 	return 4;
 }
 		

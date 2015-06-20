@@ -87,8 +87,9 @@ int main(void *a)
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
-    	
-    	// add the C64 to the 'OS' (the event loop)
+        ui->add_to_poll();
+
+        // add the C64 to the 'OS' (the event loop)
         MainLoop :: addPollFunction(poll_c64);
     
         // now that everything is running, initialize the C64 and C1541 drive
@@ -102,6 +103,7 @@ int main(void *a)
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
+        ui->add_to_poll();
         // push_event(e_button_press, NULL, 1);
     } else {
         // stand alone mode
@@ -110,6 +112,7 @@ int main(void *a)
         root_menu = new StreamMenu(ui_str, &my_stream, new BrowsableRoot());
         ui_str->set_menu(root_menu); // root of all evil!
         ui = ui_str;
+        ui->add_to_poll();
     }
 
     if(capabilities & CAPAB_C2N_STREAMER)

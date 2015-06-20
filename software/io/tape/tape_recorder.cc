@@ -77,24 +77,18 @@ int TapeRecorder :: executeCommand(SubsysCommand *cmd)
 	return 0;
 }
 
-int  TapeRecorder :: fetch_task_items(IndexedList<Action*> &item_list)
+int  TapeRecorder :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
 	int items = 0;
-    CachedTreeNode *po = NULL;
-    FileInfo *info;
 	if(recording) {
 		item_list.append(new Action("Finish Rec. to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_FINISH));
 		items = 1;
 	}
     else {
-    	// FIXME
-        if(po && po->get_file_info()) {
-            info = po->get_file_info();
-            if(info->is_writable()) {
-        		item_list.append(new Action("Sample tape to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_SAMPLE_TAPE));
-        		item_list.append(new Action("Capture save to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_RECORD_TO_TAP));
-        		items = 2;
-            }
+    	if (fm->is_path_writable(path)) {
+			item_list.append(new Action("Sample tape to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_SAMPLE_TAPE));
+			item_list.append(new Action("Capture save to TAP", SUBSYSID_TAPE_RECORDER, MENU_REC_RECORD_TO_TAP));
+			items = 2;
     	}
 	}
 	return items;

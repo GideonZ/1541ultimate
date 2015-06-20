@@ -38,9 +38,9 @@ UserInterface :: UserInterface()
     keyboard = NULL;
     screen = NULL;
 
-    MainLoop :: removePollFunction(poll_user_interface); // quick hack to make sure there is only one in the list
-    MainLoop :: addPollFunction(poll_user_interface);
-    user_interfaces.append(this);
+    MainLoop :: removePollFunction(poll_user_interface);
+	MainLoop :: addPollFunction(poll_user_interface);
+
     printf("There are now %d user interfaces in the list.\n", user_interfaces.get_elements());
 
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
@@ -57,6 +57,11 @@ UserInterface :: ~UserInterface()
     } while(focus>=0);
 
     printf(" bye UI!\n");
+}
+
+void UserInterface :: add_to_poll(void)
+{
+	user_interfaces.append(this);
 }
 
 void UserInterface :: effectuate_settings(void)

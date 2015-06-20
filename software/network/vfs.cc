@@ -16,7 +16,7 @@ void  vfs_load_plugin()
 vfs_t *vfs_openfs()
 {
     vfs_t *vfs = new vfs_t;
-    vfs->path = file_manager.get_new_path();
+    vfs->path = FileManager :: getFileManager() -> get_new_path("vfs");
     vfs->last_direntry = NULL;
     vfs->last_dir = NULL;
     vfs->open_file = NULL;
@@ -26,7 +26,7 @@ vfs_t *vfs_openfs()
 void vfs_closefs(vfs_t *vfs)
 {
     Path *p = (Path *)vfs->path;
-    file_manager.release_path(p);
+    FileManager :: getFileManager() -> release_path(p);
     delete vfs;
 }
 
@@ -42,7 +42,7 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags)
     if(flags[0] == 'w')
         bfl = FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS;
         
-    File *file = file_manager.fopen(path, (char *)name, bfl);
+    File *file = FileManager :: getFileManager() -> fopen(path, (char *)name, bfl);
     if (!file)
         return NULL;
 
@@ -61,7 +61,7 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags)
 
 void vfs_close(vfs_file_t *file)
 {
-    file_manager.fclose((File *)file->file);
+    FileManager :: getFileManager() -> fclose((File *)file->file);
     printf("File closed. clearing open file link.\n");
     file->parent_fs->open_file = NULL;    
 }
@@ -69,7 +69,7 @@ void vfs_close(vfs_file_t *file)
 int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
 {
     File *f = (File *)file->file;
-    UINT trans = 0;
+    uint32_t trans = 0;
     uint32_t len = chunks*chunk_len;
     printf("R(%d,%d)",chunks,chunk_len);
     if(f->read(buffer, len, &trans) != FR_OK)
@@ -85,7 +85,7 @@ int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
 int  vfs_write(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
 {
     File *f = (File *)file->file;
-    UINT trans = 0;
+    uint32_t trans = 0;
     uint32_t len = chunks*chunk_len;
     if(f->write(buffer, len, &trans) != FR_OK)
         return -1;
@@ -207,7 +207,7 @@ int  vfs_chdir(vfs_t *fs, const char *name)
 char *vfs_getcwd(vfs_t *fs, void *args, int dummy)
 {
     Path *p = (Path *)fs->path;
-    char *full_path = p->get_path();
+    const char *full_path = p->get_path();
     // now copy the string to output
     char *retval = (char *)malloc(strlen(full_path)+1);
     strcpy(retval, full_path);

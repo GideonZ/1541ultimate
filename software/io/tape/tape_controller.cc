@@ -37,7 +37,7 @@ void TapeController :: poll_static(Event &ev)
 	}
 }
 
-int  TapeController :: fetch_task_items(IndexedList<Action*> &item_list)
+int  TapeController :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
     if(!file)
         return 0;

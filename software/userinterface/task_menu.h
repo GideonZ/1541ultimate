@@ -4,6 +4,7 @@
 #include "menu.h"
 #include "browsable.h"
 #include "context_menu.h"
+#include "path.h"
 
 class TreeBrowserState;
 
@@ -11,8 +12,9 @@ class TaskMenu : public ContextMenu
 {
 	TreeBrowserState *state;
 	Browsable *browsable;
+	Path *path;
 public:    
-    TaskMenu(UserInterface *ui, TreeBrowserState *state);
+    TaskMenu(UserInterface *ui, TreeBrowserState *state, Path *p);
     ~TaskMenu(void);
     
     void init(Window *pwin, Keyboard *keyb);

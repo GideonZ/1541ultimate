@@ -70,7 +70,7 @@ public:
     
     int poll(Event &ev);
     void dump_registers(void);
-    int  fetch_task_items(IndexedList<Action*> &item_list);
+    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
     void effectuate_settings(void);
 };
 

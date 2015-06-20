@@ -185,7 +185,7 @@ public:
 	int executeCommand(SubsysCommand *cmd);
 
     /* Object With Menu */
-    int  fetch_task_items(IndexedList<Action *> &item_list);
+    int  fetch_task_items(Path *p, IndexedList<Action *> &item_list);
 
     /* Configurable Object */
     void effectuate_settings(void);

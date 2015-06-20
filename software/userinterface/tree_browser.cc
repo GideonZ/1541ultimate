@@ -109,7 +109,7 @@ void TreeBrowser :: task_menu(void)
 	if(!state->node)
 		return;
     //printf("Creating task menu for %s\n", state->node->getName());
-    contextMenu = new TaskMenu(user_interface, state);
+    contextMenu = new TaskMenu(user_interface, state, path);
     contextMenu->init(window, keyb);
     user_interface->activate_uiobject(contextMenu);
     // from this moment on, we loose focus.. polls will go directly to menu!

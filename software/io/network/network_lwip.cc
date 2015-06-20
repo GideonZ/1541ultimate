@@ -2,12 +2,12 @@
 #include "init_function.h"
 #include <stdlib.h>
 #include <string.h>
+#include "ftpd.h"
 extern "C" {
 #include "dump_hex.h"
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 #include "task.h"
-#include "ftpd.h"
 #include "profiler.h"
 
 void echo_task(void *a);
@@ -177,7 +177,7 @@ void NetworkLWIP :: init_callback( )
     
 #if LWIP_NETIF_HOSTNAME
     /* Initialize interface hostname */
-	my_net_if.hostname = cfg->get_string(CFG_NET_HOSTNAME); // "Ultimate-II";
+	my_net_if.hostname = (char *)cfg->get_string(CFG_NET_HOSTNAME); // "Ultimate-II";
 #endif /* LWIP_NETIF_HOSTNAME */
 
     /*

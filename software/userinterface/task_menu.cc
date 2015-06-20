@@ -4,8 +4,9 @@
 #include "user_file_interaction.h"
 #include "tree_browser_state.h"
 
-TaskMenu :: TaskMenu(UserInterface *ui, TreeBrowserState *state) : ContextMenu(ui, state, 0, 0)
+TaskMenu :: TaskMenu(UserInterface *ui, TreeBrowserState *state, Path *p) : ContextMenu(ui, state, 0, 0)
 {
+	path = p;
 	this->state = state;
 	if(state)
 		browsable = state->node;
@@ -38,7 +39,7 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
     	if(browsable)
     		browsable->fetch_task_items(actions);
     	for(int i=0;i<objects->get_elements();i++) {
-        	(*objects)[i]->fetch_task_items(actions);
+        	(*objects)[i]->fetch_task_items(path, actions);
         }
         // debug
         // items += root.fetch_task_items(state->node->children);

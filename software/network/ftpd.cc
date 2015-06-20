@@ -42,7 +42,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
-#include <malloc.h>
 #include <ctype.h>
 #include <errno.h>
 #include <time.h>
@@ -276,7 +275,7 @@ static int sfifo_init(sfifo_t *f, int size)
 		;
 
 	/* Get buffer */
-	if( 0 == (f->buffer = (void *)malloc(f->size)) )
+	if( 0 == (f->buffer = new char[f->size]) )
 		return -ENOMEM;
 
 	return 0;
@@ -288,7 +287,7 @@ static int sfifo_init(sfifo_t *f, int size)
 static void sfifo_close(sfifo_t *f)
 {
 	if(f->buffer)
-		free(f->buffer);
+		delete f->buffer;
 }
 
 /*
@@ -397,14 +396,14 @@ static void send_msg(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm, char *msg, 
 
 static void ftpd_dataerr(void *arg, err_t err)
 {
-	struct ftpd_datastate *fsd = arg;
+	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
 
 	dbg_printf("ftpd_dataerr: %s (%d)\n", lwip_strerr(err), err);
 	if (fsd == NULL)
 		return;
 	fsd->msgfs->datafs = NULL;
 	fsd->msgfs->state = FTPD_IDLE;
-	free(fsd);
+	delete fsd;
 }
 
 static void ftpd_dataclose(struct tcp_pcb *pcb, struct ftpd_datastate *fsd)
@@ -414,7 +413,7 @@ static void ftpd_dataclose(struct tcp_pcb *pcb, struct ftpd_datastate *fsd)
 	tcp_recv(pcb, NULL);
 	fsd->msgfs->datafs = NULL;
 	sfifo_close(&fsd->fifo);
-	free(fsd);
+	delete fsd;
 	tcp_arg(pcb, NULL);
 	tcp_close(pcb);
 }
@@ -574,7 +573,7 @@ static err_t ftpd_datasent(void *arg, struct tcp_pcb *pcb, u16_t len)
         printf("ftpd_datasent: ARG = NULL\n");
         return ERR_OK;
     }
-	struct ftpd_datastate *fsd = arg;
+	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
 
 	switch (fsd->msgfs->state) {
 	case FTPD_LIST:
@@ -594,7 +593,7 @@ static err_t ftpd_datasent(void *arg, struct tcp_pcb *pcb, u16_t len)
 
 static err_t ftpd_datarecv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
-	struct ftpd_datastate *fsd = arg;
+	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
 
 	if (err == ERR_OK && p != NULL) {
 		struct pbuf *q;
@@ -635,7 +634,7 @@ static err_t ftpd_datarecv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t
 
 static err_t ftpd_dataconnected(void *arg, struct tcp_pcb *pcb, err_t err)
 {
-	struct ftpd_datastate *fsd = arg;
+	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
 
 	fsd->msgfs->datapcb = pcb;
 	fsd->connected = 1;
@@ -669,7 +668,7 @@ static err_t ftpd_dataconnected(void *arg, struct tcp_pcb *pcb, err_t err)
 
 static err_t ftpd_dataaccept(void *arg, struct tcp_pcb *pcb, err_t err)
 {
-	struct ftpd_datastate *fsd = arg;
+	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
 
 	fsd->msgfs->datapcb = pcb;
 	fsd->connected = 1;
@@ -708,7 +707,7 @@ static int open_dataconnection(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
 
 	/* Allocate memory for the structure that holds the state of the
 	   connection. */
-	fsm->datafs = malloc(sizeof(struct ftpd_datastate));
+	fsm->datafs = new struct ftpd_datastate;
 
 	if (fsm->datafs == NULL) {
 		send_msg(pcb, fsm, msg451);
@@ -795,7 +794,7 @@ static void cmd_pwd(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *
 
 	if (path = vfs_getcwd(fsm->vfs, NULL, 0)) {
 		send_msg(pcb, fsm, msg257PWD, path);
-		free(path);
+		delete path;
 	}
 }
 
@@ -810,7 +809,7 @@ static void cmd_list_common(const char *arg, struct tcp_pcb *pcb, struct ftpd_ms
 		return;
 	}
 	vfs_dir = vfs_opendir(fsm->vfs, cwd);
-	free(cwd);
+	delete cwd;
 	if (!vfs_dir) {
 		send_msg(pcb, fsm, msg451);
 		return;
@@ -908,7 +907,7 @@ static void cmd_pasv(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate 
 
 	/* Allocate memory for the structure that holds the state of the
 	   connection. */
-	fsm->datafs = malloc(sizeof(struct ftpd_datastate));
+	fsm->datafs = new struct ftpd_datastate;
 
 	if (fsm->datafs == NULL) {
 		send_msg(pcb, fsm, msg451);
@@ -918,7 +917,7 @@ static void cmd_pasv(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate 
 
 	fsm->datapcb = tcp_new();
 	if (!fsm->datapcb) {
-		free(fsm->datafs);
+		delete fsm->datafs;
 		send_msg(pcb, fsm, msg451);
 		return;
 	}
@@ -980,7 +979,7 @@ static void cmd_abrt(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate 
 		tcp_arg(fsm->datapcb, NULL);
 		tcp_abort(pcb);
 		sfifo_close(&fsm->datafs->fifo);
-		free(fsm->datafs);
+		delete fsm->datafs;
 		fsm->datafs = NULL;
 	}
 	fsm->state = FTPD_IDLE;
@@ -1009,8 +1008,8 @@ static void cmd_rnfr(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate 
 		return;
 	}
 	if (fsm->renamefrom)
-		free(fsm->renamefrom);
-	fsm->renamefrom = malloc(strlen(arg) + 1);
+		delete fsm->renamefrom;
+	fsm->renamefrom = new char[strlen(arg) + 1];
 	if (fsm->renamefrom == NULL) {
 		send_msg(pcb, fsm, msg451);
 		return;
@@ -1204,7 +1203,7 @@ static void send_msg(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm, char *msg, 
 
 static void ftpd_msgerr(void *arg, err_t err)
 {
-	struct ftpd_msgstate *fsm = arg;
+	struct ftpd_msgstate *fsm = (struct ftpd_msgstate *)arg;
 
 	dbg_printf("ftpd_msgerr: %s (%d)\n", lwip_strerr(err), err);
 	if (fsm == NULL)
@@ -1215,9 +1214,9 @@ static void ftpd_msgerr(void *arg, err_t err)
 	vfs_closefs(fsm->vfs);
 	fsm->vfs = NULL;
 	if (fsm->renamefrom)
-		free(fsm->renamefrom);
+		delete fsm->renamefrom;
 	fsm->renamefrom = NULL;
-	free(fsm);
+	delete fsm;
 }
 
 static void ftpd_msgclose(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
@@ -1231,16 +1230,16 @@ static void ftpd_msgclose(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
 	vfs_closefs(fsm->vfs);
 	fsm->vfs = NULL;
 	if (fsm->renamefrom)
-		free(fsm->renamefrom);
+		delete fsm->renamefrom;
 	fsm->renamefrom = NULL;
-	free(fsm);
+	delete fsm;
 	tcp_arg(pcb, NULL);
 	tcp_close(pcb);
 }
 
 static err_t ftpd_msgsent(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
-	struct ftpd_msgstate *fsm = arg;
+	struct ftpd_msgstate *fsm = (struct ftpd_msgstate *)arg;
 
 	if (pcb->state > ESTABLISHED)
 		return ERR_OK;
@@ -1256,14 +1255,14 @@ static err_t ftpd_msgsent(void *arg, struct tcp_pcb *pcb, u16_t len)
 static err_t ftpd_msgrecv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
 	char *text;
-	struct ftpd_msgstate *fsm = arg;
+	struct ftpd_msgstate *fsm = (struct ftpd_msgstate *)arg;
 
 	if (err == ERR_OK && p != NULL) {
 
 		/* Inform TCP that we have taken the data. */
 		tcp_recved(pcb, p->tot_len);
 
-		text = malloc(p->tot_len + 1);
+		text = new char[p->tot_len + 1];
 		if (text) {
 			char cmd[5];
 			struct pbuf *q;
@@ -1302,7 +1301,7 @@ static err_t ftpd_msgrecv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t 
 			else
 				send_msg(pcb, fsm, msg502);
 
-			free(text);
+			delete text;
 		}
 		pbuf_free(p);
 	}
@@ -1312,7 +1311,7 @@ static err_t ftpd_msgrecv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t 
 
 static err_t ftpd_msgpoll(void *arg, struct tcp_pcb *pcb)
 {
-	struct ftpd_msgstate *fsm = arg;
+	struct ftpd_msgstate *fsm = (struct ftpd_msgstate *)arg;
 
 	if (fsm == NULL)
 		return ERR_OK;
@@ -1344,7 +1343,7 @@ static err_t ftpd_msgaccept(void *arg, struct tcp_pcb *pcb, err_t err)
 
 	/* Allocate memory for the structure that holds the state of the
 	   connection. */
-	fsm = malloc(sizeof(struct ftpd_msgstate));
+	fsm = new struct ftpd_msgstate;
 
 	if (fsm == NULL) {
 		dbg_printf("ftpd_msgaccept: Out of memory\n");
@@ -1357,7 +1356,7 @@ static err_t ftpd_msgaccept(void *arg, struct tcp_pcb *pcb, err_t err)
 	fsm->state = FTPD_IDLE;
 	fsm->vfs = vfs_openfs();
 	if (!fsm->vfs) {
-		free(fsm);
+		delete fsm;
 		return ERR_CLSD;
 	}
 

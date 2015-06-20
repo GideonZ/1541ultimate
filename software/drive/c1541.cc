@@ -155,7 +155,7 @@ void C1541 :: init(void)
     effectuate_settings();
 }
 
-int  C1541 :: fetch_task_items(IndexedList<Action*> &item_list)
+int  C1541 :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
 	int items = 1;
     char buffer[32];
@@ -167,8 +167,7 @@ int  C1541 :: fetch_task_items(IndexedList<Action*> &item_list)
 		item_list.append(new Action(buffer, getID(), MENU_1541_REMOVE, 0));
 		items++;
 
-		/*CachedTreeNode *po = user_interface->get_path();
-        if(po && po->get_file_info()) * FIXME */
+		if (fm->is_path_writable(path))
         {
             sprintf(buffer, "Save disk in drive %c as D64", drive_letter);
     		item_list.append(new Action(buffer, getID(), MENU_1541_SAVED64, 0));

@@ -50,6 +50,7 @@ public:
 
     UserInterface();
     virtual ~UserInterface();
+    void add_to_poll(void);
 
     // from HostClient
     virtual void release_host();
@@ -71,6 +72,7 @@ public:
 
 //    UIObject *get_current_ui_object(void) { return ui_objects[focus]; }
     UIObject *get_root_object(void) { return ui_objects[0]; }
+
 };
 
 void poll_user_interface(Event &e);

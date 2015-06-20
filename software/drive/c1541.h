@@ -108,7 +108,7 @@ public:
     
 	void init(void);
 
-    int  fetch_task_items(IndexedList<Action*> &item_list); // from ObjectWithMenu
+    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list); // from ObjectWithMenu
     void effectuate_settings(void); // from ConfigurableObject
     
     int  executeCommand(SubsysCommand *cmd);

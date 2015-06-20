@@ -89,7 +89,7 @@ public:
     int executeCommand(SubsysCommand *cmd); // from SubSystem
 
     int poll(Event &ev);
-    int fetch_task_items(IndexedList<Action *> &list);
+    int fetch_task_items(Path *path, IndexedList<Action *> &list);
     void effectuate_settings(void); // from ConfigurableObject
     int get_last_error(char *); // writes string into buffer
 
