@@ -192,3 +192,18 @@ void restart(void)
     __asm__("bralid r15, 0x10000");
     __asm__("nop");
 }
+
+
+int *__errno()
+{
+	return &(_impure_ptr->_errno);
+}
+
+void __cxa_guard_acquire(void)
+{
+}
+
+void __cxa_guard_release(void)
+{
+}
+

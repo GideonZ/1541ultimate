@@ -7,6 +7,7 @@
 #define DRIVE_A_BASE       0x4020000
 #define DRIVE_B_BASE       0x4024000
 #define IEC_BASE           0x4028000
+#define LED_BASE		   0x402C000
 #define C64_CARTREGS_BASE  0x4040000
 #define SID_BASE           0x4042000
 #define CMD_IF_BASE        0x4044000

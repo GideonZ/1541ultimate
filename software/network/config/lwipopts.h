@@ -262,7 +262,7 @@
  * for incoming packets. 
  * (only needed if you use tcpip.c)
  */
-#define MEMP_NUM_TCPIP_MSG_INPKT        8
+#define MEMP_NUM_TCPIP_MSG_INPKT        64
 
 /**
  * PBUF_POOL_SIZE: the number of buffers in the pbuf pool. 
@@ -728,7 +728,7 @@
 /**
  * LWIP_NETIF_API==1: Support netif api (in netifapi.c)
  */
-#define LWIP_NETIF_API                  0
+#define LWIP_NETIF_API                  1
 
 /**
  * LWIP_NETIF_STATUS_CALLBACK==1: Support a callback function whenever an interface
@@ -838,7 +838,7 @@
  * The queue size value itself is platform-dependent, but is passed to
  * sys_mbox_new() when tcpip_init is called.
  */
-#define TCPIP_MBOX_SIZE                 16
+#define TCPIP_MBOX_SIZE                 80
 
 /**
  * SLIPIF_THREAD_NAME: The name assigned to the slipif_loop thread.
@@ -974,7 +974,7 @@
 /**
  * LWIP_SO_RCVTIMEO==1: Enable SO_RCVTIMEO processing.
  */
-#define LWIP_SO_RCVTIMEO                0
+#define LWIP_SO_RCVTIMEO                1
 
 /**
  * LWIP_SO_RCVBUF==1: Enable SO_RCVBUF processing.

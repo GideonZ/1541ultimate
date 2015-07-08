@@ -60,7 +60,7 @@ public:
     void set_bus_speed(int sp) { bus_speed = sp; }
     int  get_bus_speed(void)   { return bus_speed; }
 
-    virtual void poll(Event &e) { }
+    virtual void poll() { }
     virtual void init(void) { }
     virtual void deinit(void) { }
     virtual void bus_reset() { }

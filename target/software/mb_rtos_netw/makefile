@@ -35,6 +35,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/network/config \
 			$(PATH_SW)/io/usb \
 			$(PATH_SW)/io/network \
+			$(PATH_SW)/io/flash \
 			$(PATH_SW)/FreeRTOS/Source \
 			$(PATH_SW)/FreeRTOS/Source/include \
 			$(PATH_SW)/FreeRTOS/Source/portable \
@@ -46,7 +47,8 @@ VPATH     = $(PATH_SW)/application \
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
-SRCS_C   =	mbstart_app.c \
+SRCS_C   =	mbstart_rtos.c \
+			profiler.c \
 			itu.c \
 			dump_hex.c \
 			small_printf.c \
@@ -70,8 +72,8 @@ SRCS_C   =	mbstart_app.c \
 
 SRCS_CC	 =  memory.cc \
 			init_function.cc \
-			event.cc \
-			main_loop.cc \
+			config.cc \
+			mystring.cc \
 			usb_base.cc \
 			usb2.cc \
 			usb_device.cc \

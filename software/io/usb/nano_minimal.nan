@@ -504,7 +504,6 @@ check_command
     LOAD User_Command
 ;    CMP  User_Command
 ;    BNE  check_command
-;    LOAD User_Command
     BNE  _copy_user_cmd
     RET ; zero = no command
 
@@ -1053,7 +1052,9 @@ _other_params
 ; check if fifo empty. Will return 0 (BEQ..) when fifo is empty
 blk_fifo_empty
     LOAD head_pointer_blk
-    XOR  tail_pointer_blk
+	CMP  head_pointer_blk
+	BNE  blk_fifo_empty
+    CMP  tail_pointer_blk
     RET
     
 ; get a value from the fifo

@@ -505,3 +505,10 @@ ConfigSetting :: ConfigSetting(int index, ConfigItem *p, char *name) : setting_n
 	parent = p;
 	setting_index = index;
 }
+
+Flash *get_flash(void) __attribute__((weak));
+
+Flash *get_flash(void)
+{
+	return new Flash(); // stubbed base
+}

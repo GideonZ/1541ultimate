@@ -37,6 +37,7 @@ uint8_t c_write_softw_rst4[]  = { 0x40, 0x20, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00
 uint8_t c_write_softw_rst5[]  = { 0x40, 0x20, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_write_softw_sel[]   = { 0x40, 0x22, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
+uint8_t c_write_rx_burst[]    = { 0x40, 0x2A, 0x00, 0x80, 0x01, 0x80, 0x00, 0x00 }; // set burst to 2K
 
 const uint16_t good_srom[] = {
 	0x155A, 0xED71, 0x2012, 0x2927, 0x000E, 0xAA00, 0x4A4A, 0x0904,
@@ -178,7 +179,6 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     host->control_exchange(&device->control_pipe,
                            c_write_softw_rst3, 8,
 						   temp_buffer, 1);
-    // * c0 0f   : Read Rx Control register (response: 18 03)
     // * 40 10 00 00 : write Rx Control register
     host->control_exchange(&device->control_pipe,
                            c_clear_rx_ctrl, 8,
@@ -215,6 +215,11 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     host->control_exchange(&device->control_pipe,
                            c_write_ipg_regs, 8,
 						   temp_buffer, 1);
+    // * 40 2A 8000 8001 : Write Rx Burst Length register. Set it to 2K
+    host->control_exchange(&device->control_pipe,
+    					   c_write_rx_burst, 8,
+						   temp_buffer, 1);
+
     // * 40 10 88 00 : Write Rx Control register, start operation, enable broadcast
     host->control_exchange(&device->control_pipe,
                            c_write_rx_control, 8,
@@ -354,10 +359,13 @@ void UsbAx88772Driver :: bulk_handler(uint8_t *usb_buffer, int data_len)
 	uint16_t pkt_size  = uint16_t(usb_buffer[0]) | (uint16_t(usb_buffer[1])) << 8;
 	uint16_t pkt_size2 = (uint16_t(usb_buffer[2]) | (uint16_t(usb_buffer[3])) << 8) ^ 0xFFFF;
 
+	pkt_size &= 0x7FF;
+	pkt_size2 &= 0x7FF;
+
 	//printf("Packet_sizes: %d %d\n", pkt_size, pkt_size2);
 
 	if (pkt_size != pkt_size2) {
-		printf("ERROR: Corrupted packet\n");
+		printf("ERROR: Corrupted packet %4x %4x\n", pkt_size, pkt_size2);
 		host->free_input_buffer(bulk_transaction, usb_buffer);
         //LINK_STATS_INC(link.drop);
 		PROFILER_SUB = 0;
@@ -377,7 +385,9 @@ void UsbAx88772Driver :: bulk_handler(uint8_t *usb_buffer, int data_len)
 	if(netstack) {
 		if (!netstack->input(usb_buffer, usb_buffer+4, pkt_size)) {
 			host->free_input_buffer(bulk_transaction, usb_buffer);
-		}
+		} /*else { // this else is to free immediately. this is temporary in order to test. free from lwip is not performed
+			host->free_input_buffer(bulk_transaction, usb_buffer);
+		}*/
 	} else {
 		host->free_input_buffer(bulk_transaction, usb_buffer);
 	}

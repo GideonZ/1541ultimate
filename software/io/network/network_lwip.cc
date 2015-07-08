@@ -19,7 +19,7 @@ void echo_task(void *a);
 void initLwipCallback(void *a)
 {
 	printf("Lwip TCP init callback.\n");
-	ftpd_init();
+	// ftpd_init();
 	printf("FTPDaemon initialized\n");
 }
 
@@ -96,13 +96,13 @@ void releaseNetworkStack(void *netstack)
  */
 NetworkLWIP :: NetworkLWIP(void *driver,
 							driver_output_function_t out,
-							driver_free_function_t free) : pbuf_fifo(64, NULL)
+							driver_free_function_t free) : pbuf_fifo(PBUF_FIFO_SIZE, NULL)
 {
 	this->driver = driver;
 	this->driver_free_function = free;
 	this->driver_output_function = out;
 	if_up = false;
-	for(int i=0;i<63;i++) {
+	for(int i=0;i<PBUF_FIFO_SIZE-1;i++) {
 		pbuf_fifo.push(&pbuf_array[i]);
 	}
 }
@@ -197,21 +197,16 @@ void NetworkLWIP :: init_callback( )
     /* device capabilities */
 	my_net_if.flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
 
-//	struct netif *nif = netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway,
-//              this, lwip_init_callback, ethernet_input);
-	struct netif *nif = netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway,
+	err_t err = netifapi_netif_add(&my_net_if, &my_ip, &my_netmask, &my_gateway,
               this, lwip_init_callback, tcpip_input);
 
-    /* device capabilities */
+	/* device capabilities */
 	my_net_if.flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
 
 	//dump_hex(nif, sizeof(struct netif));
 
-    if(nif) {
-    	if (nif != &my_net_if) {
-    		printf("** GOT OTHER POINTER **\n");
-    	}
-    	netif_set_default(nif);
+    if(err == ERR_OK) {
+    	netifapi_netif_set_default(&my_net_if);
     } else {
     	printf("Netif_add failed.\n");
     }
@@ -244,7 +239,9 @@ bool NetworkLWIP :: input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size)
 
 	if (my_net_if.input(p, &my_net_if)!=ERR_OK) {
 		LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
-		pbuf_free(p);
+		printf("é");
+		pbuf_fifo.push(pbuf);
+//		pbuf_free(p);
 		return false;
 	}
 	PROFILER_SUB = 15;
@@ -254,16 +251,16 @@ bool NetworkLWIP :: input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size)
 void NetworkLWIP :: link_up()
 {
     // Enable the network interface
-    netif_set_up(&my_net_if);
+	netifapi_netif_set_up(&my_net_if);
     if (dhcp_enable)
-    	dhcp_start(&my_net_if);
+    	netifapi_dhcp_start(&my_net_if);
 }
 
 void NetworkLWIP :: link_down()
 {
 	// Disable the network interface
-	netif_set_link_down(&my_net_if);
-	dhcp_stop(&my_net_if);
+	netifapi_netif_set_down(&my_net_if);
+	netifapi_dhcp_stop(&my_net_if);
 }
 
 void NetworkLWIP :: set_mac_address(uint8_t *mac)
@@ -289,11 +286,11 @@ void NetworkLWIP :: effectuate_settings(void)
  * NetIF is running (link up). State != NULL. DHCP may be started and may need to be restarted.
  */
 	if (my_net_if.state) { // is it initialized?
-		netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
+		netifapi_netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
 		if (netif_is_link_up(&my_net_if)) {
-			dhcp_stop(&my_net_if);
+			netifapi_dhcp_stop(&my_net_if);
 			if (dhcp_enable) {
-				dhcp_start(&my_net_if);
+				netifapi_dhcp_start(&my_net_if);
 			}
 		}
 	}

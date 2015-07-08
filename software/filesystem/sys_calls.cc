@@ -16,12 +16,6 @@
 #include <sys/times.h>
 
 
-extern "C" int *__errno()
-{
-	return &(_impure_ptr->_errno);
-}
-
-
 extern "C" void outbyte(int c);
 
 extern "C" int getpid(void)

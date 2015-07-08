@@ -52,6 +52,8 @@ PACK_STRUCT_END
 #  include "arch/epstruct.h"
 #endif
 
+typedef struct ip_addr ip_addr_t;
+
 /*
  * struct ipaddr2 is used in the definition of the ARP packet format in
  * order to support compilers that don't have structure packing.

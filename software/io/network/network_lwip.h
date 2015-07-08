@@ -14,6 +14,7 @@
 #include "lwip/tcp_impl.h"
 #include "lwip/udp.h"
 #include "lwip/pbuf.h"
+#include "lwip/netifapi.h"
 #include <lwip/stats.h>
 extern "C" {
 #include "small_printf.h"
@@ -22,10 +23,11 @@ extern "C" {
 
 #include "network_interface.h"
 #include "fifo.h" // my oh so cool fifo! :)
+#define PBUF_FIFO_SIZE 70
 
 class NetworkLWIP : public NetworkInterface
 {
-	struct pbuf_custom pbuf_array[64];
+	struct pbuf_custom pbuf_array[PBUF_FIFO_SIZE];
 	Fifo<struct pbuf_custom *> pbuf_fifo;
 
 	void lwip_poll();

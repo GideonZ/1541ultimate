@@ -77,7 +77,7 @@ int dbg_printf(const char *fmt, ...);
 #define msg202 "202 Command not implemented, superfluous at this site."
 #define msg211 "211 System status, or system help reply."
 #define msg212 "212 Directory status."
-#define msg213 "213 File status."
+#define msg213 "213 %d"
 #define msg214 "214 %s."
 /*
              214 Help message.
@@ -524,20 +524,16 @@ static void send_next_directory(struct ftpd_datastate *fsd, struct tcp_pcb *pcb,
     			fsd->vfs_dirent = NULL;
     		} else {
     			vfs_stat_t st;
-    			time_t current_time;
-    			int current_year;
-    			struct tm *s_time;
-    
-    			time(&current_time);
-    			s_time = gmtime(&current_time);
-    			current_year = s_time->tm_year;
+    			int current_year = 2015; // FIXME
     
     			vfs_stat(fsd->msgfs->vfs, fsd->vfs_dirent->name, &st);
-    			s_time = gmtime(&st.st_mtime);
-    			if (s_time->tm_year == current_year)
-    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size, month_table[s_time->tm_mon], s_time->tm_mday, s_time->tm_hour, s_time->tm_min, fsd->vfs_dirent->name);
+
+    			if (st.year == current_year)
+    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
+    						month_table[st.month], st.day, st.hr, st.min, fsd->vfs_dirent->name);
     			else
-    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size, month_table[s_time->tm_mon], s_time->tm_mday, s_time->tm_year + 1900, fsd->vfs_dirent->name);
+    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
+    						month_table[st.month], st.day, st.year, fsd->vfs_dirent->name);
     			if (VFS_ISDIR(st.st_mode))
     				buffer[0] = 'd';
     			if (sfifo_space(&fsd->fifo) < len) {
@@ -846,7 +842,7 @@ static void cmd_retr(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate 
 	vfs_stat_t st;
 
 	int ret = vfs_stat(fsm->vfs, arg, &st);
-    printf("RET %d t%d s%d m%d\n", ret, st.st_mtime, st.st_size, st.st_mode);
+    printf("RET %d s%d m%d\n", ret, st.st_size, st.st_mode);
 	if (!VFS_ISREG(st.st_mode)) {
 		send_msg(pcb, fsm, msg550);
 		return;
@@ -1112,6 +1108,27 @@ static void cmd_dele(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate 
 	}
 }
 
+static void cmd_size(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
+{
+	vfs_stat_t st;
+	char buffer[20];
+
+	if (arg == NULL) {
+		send_msg(pcb, fsm, msg501);
+		return;
+	}
+	if (*arg == '\0') {
+		send_msg(pcb, fsm, msg501);
+		return;
+	}
+	if (vfs_stat(fsm->vfs, arg, &st) != 0) {
+		send_msg(pcb, fsm, msg550);
+		return;
+	}
+	sprintf(buffer, msg213, st.st_size);
+	send_msg(pcb, fsm, buffer);
+}
+
 struct ftpd_command {
 	char *cmd;
 	void (*func) (const char *arg, struct tcp_pcb * pcb, struct ftpd_msgstate * fsm);
@@ -1142,6 +1159,7 @@ static struct ftpd_command ftpd_commands[] = {
 	"RMD", cmd_rmd,
 	"XRMD", cmd_rmd,
 	"DELE", cmd_dele,
+	"SIZE", cmd_size,
 	//"PASV", cmd_pasv,
 	NULL
 };

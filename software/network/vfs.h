@@ -13,6 +13,8 @@
 #define EXTERNC
 #endif
  
+#include <stdint.h>
+
 struct vfs;
 struct vfs_file;
 struct vfs_dir;
@@ -48,12 +50,15 @@ typedef struct vfs_file   vfs_file_t;
 typedef struct vfs_dir    vfs_dir_t;   
 typedef struct vfs_dirent vfs_dirent_t;
 
-//
-
 typedef struct _vfs_stat_t {
     int st_size;
-    time_t st_mtime;
     int st_mode;
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hr;
+    uint8_t min;
+    uint8_t sec;
 } vfs_stat_t;
 
 EXTERNC void   vfs_load_plugin();

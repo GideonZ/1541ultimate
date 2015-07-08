@@ -170,26 +170,21 @@ int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
             inf = NULL;
         }
     }
+    FileInfo localInfo;
     if(!inf) {
-    	if (fs->last_dir) {
-	        printf("Finding %s in cached directory listing.\n", name);
-    		vfs_dir *last_dir = fs->last_dir;
-    		IndexedList<FileInfo *> *listOfEntries = (IndexedList<FileInfo *> *)(last_dir->entries);
-    		for(int i=0;i<listOfEntries->get_elements();i++) {
-    			if (strcmp((*listOfEntries)[i]->lfname, name) == 0) {
-    				inf = (*listOfEntries)[i];
-    				break;
-    			}
-    		}
-    	} else {
-    		printf("There is no cached directory??\n");
-    	}
+    	if(FileManager :: getFileManager() -> fstat(localInfo, ((Path *)fs->path)->get_path(), name))
+    		inf = &localInfo;
     }
     if(!inf)
         return -1;        
     
+    st->year  = (inf->date >> 9) + 1980;
+    st->month = (inf->date >> 5) & 0x0F;
+    st->day   = (inf->date) & 0x1F;
+    st->hr    = (inf->time >> 11);
+    st->min   = (inf->time >> 5) & 0x3F;
+    st->sec   = ((inf->time) & 0x1F) << 1;
     st->st_size = inf->size;
-    st->st_mtime = 1359763200;
     st->st_mode = (inf->attrib & AM_DIR)?1:2;
 
     return 0;

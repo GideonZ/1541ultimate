@@ -32,6 +32,7 @@ class Usb2 : public UsbBase
 
     uint32_t *blockBufferBase;
     uint8_t  *circularBufferBase;
+    uint8_t free_map[BLOCK_FIFO_ENTRIES];
 
     uint8_t  prev_status;
     bool  get_fifo(uint16_t *out);
@@ -48,7 +49,7 @@ public:
     
     static void input_task_start(void *);
 
-    void poll(Event &e);
+    void poll();
     void irq_handler(void);
     void init(void);
     void deinit(void);

@@ -25,9 +25,13 @@ __inline uint16_t le16_to_cpu(uint16_t h)
     return (h >> 8) | (h << 8);
 }
 
-static void poll_usb2(Event &e)
+static void poll_usb2(void *a)
 {
-	usb2.poll(e);
+	usb2.init();
+	while(1) {
+		usb2.poll();
+		vTaskDelay(20);
+	}
 }
 
 extern "C" void usb_irq() {
@@ -43,32 +47,23 @@ struct usb_packet {
 
 Usb2 :: Usb2()
 {
-    initialized = false;
     prev_status = 0xFF;
     blockBufferBase = NULL;
     circularBufferBase = NULL;
     
     if(getFpgaCapabilities() & CAPAB_USB_HOST2) {
-//	    init();
+    	mutex = xSemaphoreCreateMutex();
+        queue = xQueueCreate(64, sizeof(struct usb_packet));
 
-#ifndef BOOTLOADER
-	    MainLoop :: addPollFunction(poll_usb2);
-#endif
+        xTaskCreate( poll_usb2, "\006USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     }
-    mutex = xSemaphoreCreateMutex();
-    queue = xQueueCreate(64, sizeof(struct usb_packet));
 }
 
 Usb2 :: ~Usb2()
 {
-#ifndef BOOTLOADER
-	MainLoop :: removePollFunction(poll_usb2);
-#endif
-
 	vSemaphoreDelete(mutex);
 	vQueueDelete(queue);
     clean_up();
-	initialized = false;
 }
 
 void Usb2 :: input_task_start(void *u)
@@ -123,12 +118,11 @@ void Usb2 :: init(void)
 
 	for (int i=0;i<BLOCK_FIFO_ENTRIES;i++) {
 		block_fifo_data[i] = uint16_t(i * 384);
+		free_map[i] = 0;
 	}
 	BLOCK_FIFO_HEAD = BLOCK_FIFO_ENTRIES - 1;
 
 	NANO_START = 1;
-
-    initialized = true;
 
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
 	xTaskCreate( Usb2 :: input_task_start, "\004USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
@@ -147,13 +141,8 @@ void Usb2 :: deinit(void)
 
 }
 
-void Usb2 :: poll(Event &e)
+void Usb2 :: poll()
 {
-	if(!initialized) {
-		init();
-        return;
-    }
-
 	uint8_t usb_status = USB2_STATUS;
 	if (prev_status != usb_status) {
 		prev_status = usb_status;
@@ -209,6 +198,8 @@ void Usb2 :: irq_handler(void)
 
 	uint8_t *buffer = 0;
 	if (inputPipeBufferMethod[pipe] == e_block) {
+		uint16_t idx = (read1 & 0xFFF0) / 384;
+		free_map[idx] = 1; // allocated
 		buffer = (uint8_t *) & blockBufferBase[read1 & 0xFFF0];
 	} else {
 		buffer = (uint8_t *) & circularBufferBase[read1 & 0xFFF0];
@@ -232,7 +223,12 @@ void Usb2 :: irq_handler(void)
 bool Usb2 :: get_fifo(uint16_t *out)
 {
 	uint16_t tail = ATTR_FIFO_TAIL;
-	uint16_t head = ATTR_FIFO_HEAD;
+	uint16_t head;
+
+	do {
+		head = ATTR_FIFO_HEAD;
+	} while(head != ATTR_FIFO_HEAD);
+
 //	printf("Head: %d, Tail: %d\n", head, tail);
 	if (tail == head) {
 		*out = 0xFFFF;
@@ -249,13 +245,27 @@ bool Usb2 :: get_fifo(uint16_t *out)
 
 bool Usb2 :: put_block_fifo(uint16_t in)
 {
-	uint16_t tail = BLOCK_FIFO_TAIL;
+	uint16_t tail;
+
+	do {
+		tail = BLOCK_FIFO_TAIL;
+	} while(tail != BLOCK_FIFO_TAIL);
+
+	uint16_t idx = (in / 384);
+	if (!free_map[idx]) {
+		ioWrite8(UART_DATA, '^');
+		return true;
+	}
+	free_map[idx] = 0;
+
 	uint16_t head = BLOCK_FIFO_HEAD;
 	uint16_t head_next = head + 1;
 	if (head_next == BLOCK_FIFO_ENTRIES)
 		head_next = 0;
-	if (head_next == tail)
+	if (head_next == tail) {
+		printf("block fifo full! free dropped\n");
 		return false;
+	}
 
 	block_fifo_data[head] = in;
 	BLOCK_FIFO_HEAD = head_next;
