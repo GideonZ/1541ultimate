@@ -5,8 +5,6 @@
  *      Author: Gideon
  */
 
-#include "FreeRTOS.h"
-#include "task.h"
 #include "socket.h"
 #include "socket_gui.h"
 #include "socket_stream.h"
@@ -23,43 +21,92 @@
 
 SocketGui socket_gui; // global that causes us to exist
 
+static void socket_gui_listen_task(void *a)
+{
+	SocketGui *gui = (SocketGui *)a;
+	gui->listenTask();
+	vTaskDelete(gui->listenTaskHandle);
+}
+
 SocketGui :: SocketGui()
 {
-	xTaskCreate( socket_gui_task, "\006Socket Gui", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
+	xTaskCreate( socket_gui_listen_task, "\006Socket Gui Listener", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &listenTaskHandle );
 }
+
+// The code below runs once for every socket gui instance
 
 void socket_gui_task(void *a)
 {
-	SocketStream str;
-	str.setup_socket();
+	SocketStream *str = (SocketStream *)a;
 
-	Screen *scr = new Screen_VT100(&str);
-	Keyboard *keyb = new Keyboard_VT100(&str);
+	HostStream *host = new HostStream(str);
+	Screen *scr = host->getScreen();
+	Keyboard *keyb = host->getKeyboard();
 
 	UserInterface *user_interface = new UserInterface();
-    HostStream *host = new HostStream(&str);
 	user_interface->init(host);
 
-    Browsable *root = new BrowsableRoot();
+	Browsable *root = new BrowsableRoot();
 	TreeBrowser *tree_browser = new TreeBrowser(user_interface, root);
 	user_interface->activate_uiobject(tree_browser);
 
-	Event start_gui(e_button_press, 0, 1);
-	user_interface->handle_event(start_gui);
-	while(1) {
-		user_interface->handle_event((Event &)c_empty_event);
-		vTaskDelay(4);
-	}
+	user_interface->run();
 
-	str.close();
+	puts("User Interface on stream returned.");
+	str->close();
 
-	user_interface->release_host();
-	delete tree_browser;
-	delete root;
-	delete host;
 	delete user_interface;
-	delete keyb;
-	delete scr;
+	puts("user_interface gone");
+	delete root;
+	puts("root gone");
+	delete host;
+	puts("host gone");
+	delete str;
+	puts("str gone");
+
+	vTaskSuspend(NULL);
+	puts("You shouldn't ever see this.");
 }
 
+int SocketGui :: listenTask(void)
+{
+	int sockfd, portno;
+	socklen_t clilen;
+    struct sockaddr_in serv_addr, cli_addr;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+       puts("ERROR opening socket");
+       return -1;
+    }
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
+    portno = 12345;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_port = htons(portno);
+    if (bind(sockfd, (struct sockaddr *) &serv_addr,
+             sizeof(serv_addr)) < 0) {
+        puts("ERROR on binding");
+        return -2;
+    }
+
+    listen(sockfd, 2);
+
+    while(1) {
+    	clilen = sizeof(cli_addr);
+		int actual_socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+		if (actual_socket < 0) {
+			 puts("ERROR on accept");
+			 return -3;
+		}
+
+		struct timeval tv;
+		tv.tv_sec = 500; // bug in lwip; this is just used directly as tick value
+		tv.tv_usec = 500;
+		setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+
+		SocketStream *stream = new SocketStream(actual_socket);
+		xTaskCreate( socket_gui_task, "\003Socket Gui Task", configMINIMAL_STACK_SIZE, stream, tskIDLE_PRIORITY + 1, NULL );
+    }
+}
 

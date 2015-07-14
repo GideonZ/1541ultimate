@@ -11,14 +11,14 @@ void _string_write_char(char c, void **param);
 static const char hexchar[] = "0123456789ABCDEF";
 
 static int
-_cvt(int val, char *buf, int radix, const char *digits, int leading_zeros, int width)
+_cvt(int val, char *buf, int radix, const char *digits, int leading_zeros, int width, bool signd)
 {
     char temp[80];
     char *cp = temp;
     int length = 0;
 
     unsigned int v;
-	if(val < 0) {
+	if((signd) && (val < 0)) {
 		*buf++ = '-';
 		length++;
 		v = -val;
@@ -96,9 +96,10 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             // Process output
             switch (c) {
             case 'd':
+            case 'u':
             case 'i':
                 val = va_arg(ap, int); // up to dword
-                length = _cvt(val, buf, 10, hexchar, leading_zeros, width);
+                length = _cvt(val, buf, 10, hexchar, leading_zeros, width, (c != 'u'));
                 if(length < width)
                     prepad = width - length;
                 cp = buf;

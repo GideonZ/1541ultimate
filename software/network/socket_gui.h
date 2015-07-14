@@ -8,12 +8,16 @@
 #ifndef NETWORK_SOCKET_GUI_H_
 #define NETWORK_SOCKET_GUI_H_
 
-void socket_gui_task(void *a);
+#include "FreeRTOS.h"
+#include "task.h"
 
 class SocketGui
 {
 public:
+	TaskHandle_t listenTaskHandle;
+
 	SocketGui();
+	int listenTask(void);
 };
 
 #endif /* NETWORK_SOCKET_GUI_H_ */

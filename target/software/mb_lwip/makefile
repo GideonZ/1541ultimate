@@ -147,6 +147,7 @@ $(RESULT)/$(PRJ).a: $(LINK) $(OBJS_C)
 
 %.o: %.c
 	@echo "Compiling $<"
+	@$(CC) $(COPTIONS) $(PATH_INC) -E -o $(OUTPUT)/$(@F:.o=.pre) $<
 	@$(CC) $(COPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
 %.o: %.cc
@@ -154,7 +155,7 @@ $(RESULT)/$(PRJ).a: $(LINK) $(OBJS_C)
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-%.p: %.c
+%.pre: %.c
 	@echo "Running preprocessor on $<"
 	@$(CC) $(COPTIONS) $(PATH_INC) -B. -E -o $(OUTPUT)/$(@F) $<
 

@@ -76,6 +76,8 @@ int  Keyboard_VT100 :: getch(void)
 		if (k >= 0) {
 			keyb_buffer[keyb_offset ++] = (char)k;
 		}
+		if (k < -1)
+			return k;
 	}
 	// do we have anything to process?
 	if(!keyb_offset) {
@@ -92,9 +94,6 @@ int  Keyboard_VT100 :: getch(void)
 			ch = parseEscapes();
 			if (ch != 0) { // -1 = not yet, 0 = no match
 				LEAVE_SAFE_SECTION
-				if (ch > 0) {
-					printf("%02x\n", ch);
-				}
 				return ch;
 			}
 		}
@@ -105,10 +104,6 @@ int  Keyboard_VT100 :: getch(void)
     }
     keyb_offset--;
     LEAVE_SAFE_SECTION
-
-	if (key > 0) {
-		printf("%02x\n", key);
-	}
 
     return (int)key;
 }

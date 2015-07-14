@@ -1,4 +1,6 @@
 #include "userinterface.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 /* Configuration */
 const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
@@ -19,16 +21,6 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-
-IndexedList<UserInterface *>user_interfaces(2, 0);
-
-void poll_user_interface(Event &e)
-{
-	for(int i=0;i<user_interfaces.get_elements();i++) {
-		user_interfaces[i]->handle_event(e);
-	}
-}
-
 UserInterface :: UserInterface()
 {
     initialized = false;
@@ -38,11 +30,6 @@ UserInterface :: UserInterface()
     keyboard = NULL;
     screen = NULL;
 
-    MainLoop :: removePollFunction(poll_user_interface);
-	MainLoop :: addPollFunction(poll_user_interface);
-
-    printf("There are now %d user interfaces in the list.\n", user_interfaces.get_elements());
-
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -50,18 +37,12 @@ UserInterface :: UserInterface()
 UserInterface :: ~UserInterface()
 {
 	printf("Destructing user interface..\n");
-    MainLoop :: removePollFunction(poll_user_interface);
     do {
     	ui_objects[focus]->deinit();
     	delete ui_objects[focus--];
     } while(focus>=0);
 
     printf(" bye UI!\n");
-}
-
-void UserInterface :: add_to_poll(void)
-{
-	user_interfaces.append(this);
 }
 
 void UserInterface :: effectuate_settings(void)
@@ -74,7 +55,7 @@ void UserInterface :: effectuate_settings(void)
     if(host && host->is_accessible())
         host->set_colors(color_bg, color_border);
 
-    push_event(e_refresh_browser);
+    // push_event(e_refresh_browser); TODO
 }
     
 void UserInterface :: init(GenericHost *h)
@@ -90,67 +71,75 @@ void UserInterface :: set_screen(Screen *s)
     screen = s;
 }
 
-void UserInterface :: handle_event(Event &e)
+void UserInterface :: run(void)
 {
-/*
-    if(!initialized)
-        return;
-*/
-    int ret, i;
+    while(1) {
+		switch(state) {
+			case ui_idle:
+				if (!host->hasButton()) {
+					appear();
+					state = ui_host_permanent;
+				} else if (host->buttonPush()) {
+					appear();
+					state = ui_host_owned;
+				}
+				break;
 
-    switch(state) {
-        case ui_idle:
-        	if ((e.type == e_button_press)||(e.type == e_freeze)) {
-        		host->take_ownership(this);
-                host->set_colors(color_bg, color_border);
-                screen = host->getScreen();
-                set_screen_title();
-                for(i=0;i<=focus;i++) {  // build up
-                    //printf("Going to (re)init objects %d.\n", i);
-                    ui_objects[i]->init(screen, keyboard);
-                }
-                if(e.param)
-                    state = ui_host_permanent;
-                else
-                    state = ui_host_owned;
+			case ui_host_owned:
+				if (host->buttonPush()) {
+					release_host();
+					host->release_ownership();
+				} else {
+					if (!pollFocussed()) {
+						host->releaseScreen();
+						host->release_ownership();
+						state = ui_idle;
+					}
+				}
+				break;
 
-                push_event(e_enter_menu, 0);
-            }
-            else if((e.type == e_invalidate) && (focus >= 0)) { // even if we are inactive, the tree browser should execute this!!
-            	ui_objects[0]->poll(0, e);
-            }
-            break;
+			// fall through from host_owned:
+			case ui_host_permanent:
+				if (!pollFocussed()) {
+					host->releaseScreen();
+					return;
+				}
+				break;
 
-        case ui_host_owned:
-        	if ((e.type == e_button_press)||(e.type == e_unfreeze)) {
-        		release_host(); // FIXME: No longer a way to pass cartridge mode here
-                host->release_ownership();
-                break;
-            }
-        // fall through from host_owned:
-        case ui_host_permanent:
-            ret = 0;
-            do {
-                ret = ui_objects[focus]->poll(ret, e); // param pass chain
-                if(!ret) // return value of 0 keeps us in the same state
-                    break;
-                printf("Object level %d returned %d.\n", focus, ret);
-                ui_objects[focus]->deinit();
-                if(focus) {
-                    focus--;
-                    //printf("Restored focus to level %d.\n", focus);
-                }
-                else {
-                    host->releaseScreen();
-                    host->release_ownership();
-                    state = ui_idle;
-                    break;
-                }
-            } while(1);    
-            break;
-        default:
-            break;
-    }            
+			default:
+				break;
+		}
+		vTaskDelay(3);
+    }
+}
+
+bool UserInterface :: pollFocussed(void)
+{
+	int ret = 0;
+    do {
+        ret = ui_objects[focus]->poll(ret); // param pass chain
+        if(!ret) // return value of 0 keeps us in the same state
+            return true;
+        printf("Object level %d returned %d.\n", focus, ret);
+        ui_objects[focus]->deinit();
+        if(focus) {
+            focus--;
+        } else {
+        	return false;
+        }
+    } while(1);
+}
+
+void UserInterface :: appear(void)
+{
+	host->take_ownership(this);
+	host->set_colors(color_bg, color_border);
+	screen = host->getScreen();
+	set_screen_title();
+	for(int i=0;i<=focus;i++) {  // build up
+		//printf("Going to (re)init objects %d.\n", i);
+		ui_objects[i]->init(screen, keyboard);
+	}
 }
 
 void UserInterface :: release_host(void)
@@ -180,31 +169,33 @@ int UserInterface :: activate_uiobject(UIObject *obj)
 
 void UserInterface :: set_screen_title()
 {
-    static char title[48];
+    int width = screen->get_size_x();
+    int height = screen->get_size_y();
+	static char title[48];
     // precondition: screen is cleared.  // \020 = alpha \021 = beta
-    sprintf(title, "\eA    **** 1541 Ultimate %s (%b) ****\eO", APPL_VERSION, getFpgaVersion());
-    screen->move_cursor(0,0);
+    // screen->clear();
+    sprintf(title, "\eA**** 1541 Ultimate %s (%b) ****\eO", APPL_VERSION, getFpgaVersion());
+    int len = strlen(title)-4;
+    int hpos = (width - len) / 2;
+    screen->move_cursor(hpos, 0);
     screen->output(title);
-    screen->move_cursor(0,1);
-    for(int i=0;i<40;i++)
-        screen->output('\002');
-    screen->move_cursor(0,24);
+    screen->move_cursor(0, 1);
+	screen->repeat('\002', width);
+    screen->move_cursor(0, height-1);
 	screen->scroll_mode(false);
-    for(int i=0;i<40;i++)
-        screen->output('\002');
-    screen->move_cursor(32,24);
+	screen->repeat('\002', width);
+    screen->move_cursor(width-8,height-1);
 	screen->output("\eAF3=Help\eO");
 }
     
 /* Blocking variants of our simple objects follow: */
 int  UserInterface :: popup(const char *msg, uint8_t flags)
 {
-	Event e(e_nop, 0, 0);
     UIPopup *pop = new UIPopup(msg, flags);
     pop->init(screen, keyboard);
     int ret;
     do {
-        ret = pop->poll(0, e);
+        ret = pop->poll(0);
     } while(!ret);
     pop->deinit();
     return ret;
@@ -212,13 +203,12 @@ int  UserInterface :: popup(const char *msg, uint8_t flags)
     
 int UserInterface :: string_box(const char *msg, char *buffer, int maxlen)
 {
-	Event e(e_nop, 0, 0);
     UIStringBox *box = new UIStringBox(msg, buffer, maxlen);
     box->init(screen, keyboard);
     screen->cursor_visible(1);
     int ret;
     do {
-        ret = box->poll(0, e);
+        ret = box->poll(0);
     } while(!ret);
     screen->cursor_visible(0);
     box->deinit();
@@ -244,12 +234,11 @@ void UserInterface :: hide_progress(void)
 
 void UserInterface :: run_editor(const char *text_buf)
 {
-	Event e(e_nop, 0, 0);
     Editor *edit = new Editor(this, text_buf);
     edit->init(screen, keyboard);
     int ret;
     do {
-        ret = edit->poll(0, e);
+        ret = edit->poll(0);
     } while(!ret);
     edit->deinit();
 }

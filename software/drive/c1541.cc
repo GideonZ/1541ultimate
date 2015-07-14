@@ -99,6 +99,8 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     iec_address = 8 + int(letter - 'A');
     ram = e_ram_none;
     large_rom = false;
+
+    taskHandle = 0;
 }
 
 C1541 :: ~C1541()
@@ -108,17 +110,23 @@ C1541 :: ~C1541()
 	if(bin_image)
 		delete bin_image;
 
-
 	if(mount_file)
 		fm->fclose(mount_file);
 
 	// turn the drive off on destruction
     drive_power(false);
+
+    if (taskHandle) {
+    	vTaskDelete(taskHandle);
+    }
 }
 
 void C1541 :: effectuate_settings(void)
 {
-    printf("Effectuate 1541 settings:\n");
+	if(!lock(this->drive_name.c_str()))
+		return;
+
+	printf("Effectuate 1541 settings:\n");
     ram = ram_modes[cfg->get_value(CFG_C1541_RAMBOARD)];
     set_ram(ram);
 
@@ -135,8 +143,9 @@ void C1541 :: effectuate_settings(void)
     if(registers[C1541_POWER] != cfg->get_value(CFG_C1541_POWERED)) {
         drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
     }
-}
 
+    unlock();
+}
 
 
 void C1541 :: init(void)
@@ -152,6 +161,7 @@ void C1541 :: init(void)
     registers[C1541_INSERTED] = 0;
     disk_state = e_no_disk;
 
+	xTaskCreate( C1541 :: run, (const char *)(this->drive_name.c_str()), configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &taskHandle );
     effectuate_settings();
 }
 
@@ -418,7 +428,20 @@ void C1541 :: mount_blank()
 	disk_state = e_disk_file_closed;
 }
 
-void C1541 :: poll(Event &e)
+// static member
+void C1541 :: run(void *a)
+{
+	C1541 *drv = (C1541 *)a;
+	while(1) {
+		if(drv->lock(drv->drive_name.c_str())) {
+			drv->poll();
+			drv->unlock();
+		}
+		vTaskDelay(50);
+	}
+}
+
+void C1541 :: poll() // called under mutex
 {
 	int tr;
 	int written;
@@ -522,6 +545,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 		break;
 	}
 
+
 	SubsysCommand *c64_command;
 
 	switch(cmd->functionID) {
@@ -543,7 +567,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
                 		C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
                 c64_command->execute();
             } else {
-                push_event(e_unfreeze);
+                c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
+                		C64_UNFREEZE, 0, "", "");
+                c64_command->execute();
             }
 		} else {
 			printf("Error opening file.\n");
@@ -567,7 +593,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
                 		C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
                 c64_command->execute();
             } else {
-                push_event(e_unfreeze);
+                c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
+                		C64_UNFREEZE, 0, "", "");
+                c64_command->execute();
             }
 		} else {
 			printf("Error opening file.\n");
@@ -609,9 +637,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
         break;
 	default:
 		printf("Unhandled menu item for C1541.\n");
+		return -1;
 	}
-
-	delete cmd; // cleanup
+	return 0;
 }
 
 void C1541 :: unlink(void)
@@ -622,6 +650,7 @@ void C1541 :: unlink(void)
 		mount_file = NULL;
 	}
 }
+
 void C1541 :: save_disk_to_file(SubsysCommand *cmd)
 {
     static char buffer[32];
@@ -646,7 +675,6 @@ void C1541 :: save_disk_to_file(SubsysCommand *cmd)
 				cmd->user_interface->hide_progress();
 			}
 			fm->fclose(file);
-			push_event(e_reload_browser);
 		} else {
 			cmd->user_interface->popup("Unable to open file..", BUTTON_OK);
 		}

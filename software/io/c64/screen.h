@@ -7,11 +7,6 @@ public:
     Screen() { }
     virtual ~Screen() { }
 
-    // Static
-    static void _put(char c, void **obj) {
-    	((Screen *)obj)->output(c);
-    }
-
     // functions called directly, or from a window
     virtual void  cursor_visible(int a) { }
     virtual void set_color(int c) { }
@@ -31,6 +26,14 @@ public:
 
     // raw
     virtual void output_raw(char c) { }
+
+    // Synchronization
+    virtual void sync(void) { }
+
+    // Static
+    static void _put(char c, void **obj) {
+    	((Screen *)obj)->output(c);
+    }
 };
 
 class Screen_MemMappedCharMatrix : public Screen

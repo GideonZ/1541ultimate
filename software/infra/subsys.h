@@ -12,6 +12,11 @@
 #include "mystring.h"
 #include "action.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "semphr.h"
+
 class SubsysCommand;
 class UserInterface;
 
@@ -22,20 +27,37 @@ class UserInterface;
 #define SUBSYSID_TAPE_PLAYER     4
 #define SUBSYSID_TAPE_RECORDER   5
 #define SUBSYSID_IEC             6
+#define SUBSYSID_CMD_IF			 7
 
 class SubSystem  // implements function "executeCommand"
 {
 	int myID;
+	SemaphoreHandle_t myMutex;
+	friend class SubsysCommand;
+
+	virtual int executeCommand(SubsysCommand *cmd) { return -2; }
 public:
 	SubSystem(int id) {
 		myID = id;
+		myMutex = xSemaphoreCreateMutex();
 		Globals :: getSubSystems() -> set(myID, this);
 	}
 	virtual ~SubSystem() {
 		Globals :: getSubSystems() -> unset(myID);
+		vSemaphoreDelete(myMutex);
 	}
 	virtual const char *identify(void) { return "Unknown Subsystem"; }
-	virtual int executeCommand(SubsysCommand *cmd) { return -2; }
+
+	int  lock(const char *name) {
+		int retval = xSemaphoreTake(myMutex, 5000);
+		if (!retval) {
+			printf("Lock: %s not available.\n", name);
+		}
+		return retval;
+	}
+	void unlock() {
+		xSemaphoreGive(myMutex);
+	}
 
 	int getID() { return myID; }
 };
@@ -72,14 +94,25 @@ public:
 	}
 
 	int execute(void) {
+		int retval = -5;
 		if(direct_call) {
-			return direct_call(this);
+			retval = direct_call(this);
+		} else {
+			subsys = (*Globals :: getSubSystems())[subsysID];
+			if (subsys) {
+				printf("About to execute a command in subsys %s (%p)\n", subsys->identify(), subsys->myMutex);
+				if (xSemaphoreTake(subsys->myMutex, portMAX_DELAY)) {
+					retval = subsys->executeCommand(this);
+					puts("before give");
+					xSemaphoreGive(subsys->myMutex);
+					puts("after give");
+				}
+			}
 		}
-		subsys = (*Globals :: getSubSystems())[subsysID];
-		if (subsys) {
-			return subsys->executeCommand(this);
-		}
-		return -1;
+		puts("before delete");
+		delete this;
+		printf("Command executed. Returning %d.\n", retval);
+		return retval;
 	}
 
 	void print(void) {

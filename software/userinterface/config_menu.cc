@@ -19,7 +19,6 @@ ConfigBrowser :: ConfigBrowser(UserInterface *ui, Browsable *root) : TreeBrowser
 ConfigBrowser :: ~ConfigBrowser()
 {
     printf("Destructing config browser..\n");
-
 }
 
 void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!

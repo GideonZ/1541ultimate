@@ -37,6 +37,7 @@ package cart_slot_pkg is
 		swap_buttons   : std_logic;
 		timing_addr_valid   : unsigned(2 downto 0);
 		phi2_edge_recover   : std_logic;
+		tick_ntsc           : std_logic;
     end record;
     
     type t_cart_status is record
@@ -60,7 +61,8 @@ package cart_slot_pkg is
         sampler_enable => '0',
         timing_addr_valid => "100",
 		phi2_edge_recover => '1',
-        swap_buttons   => '1' );
+        swap_buttons   => '1',
+        tick_ntsc      => '0' );
     
 
 end cart_slot_pkg;

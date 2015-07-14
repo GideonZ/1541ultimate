@@ -439,7 +439,6 @@ void IecInterface :: start_warp(int drive)
     if(!run_drive_code(warp_drive, 0x400, &_binary_ulticopy_65_start, (int)&_binary_ulticopy_65_size)) {
         cmd_ui->popup("Error accessing drive..", BUTTON_OK);
         ui_window->close();
-        push_event(e_refresh_browser);
         if (c1541_A) {
             c1541_A->effectuate_settings();
         }
@@ -520,7 +519,6 @@ void IecInterface :: get_warp_error(void)
             last_track = 0;
         } else {
             ui_window->close();
-            push_event(e_reload_browser);
             re_enable = true;
         }
     } else if(err < 0x20) {
@@ -565,7 +563,6 @@ void IecInterface :: save_copied_disk()
             cmd_ui->hide_progress();
     		printf("Result of save: %d.\n", save_result);
             fm->fclose(f);
-    		push_event(e_reload_browser);
 		} else {
 			printf("Can't create file '%s'\n", buffer);
 			cmd_ui->popup("Can't create file.", BUTTON_OK);

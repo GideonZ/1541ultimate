@@ -8,7 +8,8 @@
 #include "user_file_interaction.h"
 #include "userinterface.h"
 #include "c1541.h"
-
+#include "tree_browser.h"
+#include "tree_browser_state.h"
 
 // member
 int UserFileInteraction :: fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list)
@@ -52,8 +53,15 @@ int UserFileInteraction :: fetch_task_items(Path *path, IndexedList<Action*> &li
 
 int UserFileInteraction :: S_enter(SubsysCommand *cmd)
 {
-	push_event(e_browse_into);
-	return 0;
+	// because we know that the command can only be caused by a TreeBrowser, we can safely cast
+	TreeBrowser *browser = (TreeBrowser *)(cmd->user_interface->get_root_object());
+	if (browser) {
+		if (browser->state) {
+			browser->state->into2();
+			return 0;
+		}
+	}
+	return -1;
 }
 
 int UserFileInteraction :: S_rename(SubsysCommand *cmd)
@@ -68,7 +76,7 @@ int UserFileInteraction :: S_rename(SubsysCommand *cmd)
 		printf("Cannot find file %s in %s.\n", cmd->filename.c_str(), cmd->path.c_str());
 		return -5;
 	}
-	strncpy(buffer, cmd->filename.c_str(), 38);
+	strncpy(buffer, info.lfname, 38);
     buffer[38] = 0;
 
     res = cmd->user_interface->string_box("Give a new name..", buffer, 38);
@@ -77,8 +85,8 @@ int UserFileInteraction :: S_rename(SubsysCommand *cmd)
 		if(fres != FR_OK) {
 			sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
 			cmd->user_interface->popup(buffer, BUTTON_OK);
-		} else {
-    		push_event(e_refresh_browser);
+		} else { // FIXME: rename should move to filemanager, we should not be calling file system functions here directly!
+			fm->sendEventToObservers(eNodeUpdated, cmd->path.c_str(), cmd->filename.c_str());
 		}
     }
     return 0;
@@ -163,7 +171,6 @@ int UserFileInteraction :: S_createD64(SubsysCommand *cmd)
                 }
         		printf("Result of save: %d.\n", save_result);
                 fm->fclose(f);
-        		push_event(e_reload_browser);
 			} else {
 				printf("Can't create file '%s'\n", buffer);
 				cmd->user_interface->popup("Can't create file.", BUTTON_OK);
@@ -193,8 +200,6 @@ int UserFileInteraction :: S_createDir(SubsysCommand *cmd)
 		if(fres != FR_OK) {
 			sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
 			cmd->user_interface->popup(buffer, BUTTON_OK);
-		} else {
-    		push_event(e_reload_browser);
 		}
 	}
 	return 0;

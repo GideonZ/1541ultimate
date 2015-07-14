@@ -106,8 +106,6 @@ SRCS_CC	 =  stream.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			config.cc \
-			event.cc \
-			poll.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
@@ -185,10 +183,10 @@ SRCS_CC	 =  stream.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
-			socket_test.cc \
 			$(PRJ).cc
 
 #			sys_calls.cc \
+#			socket_test.cc \
 ####			sampler.cc \
 ####			copper.cc \
 

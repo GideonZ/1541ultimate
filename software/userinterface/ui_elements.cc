@@ -77,9 +77,14 @@ void UIPopup :: draw_buttons()
     keyboard->clear_buffer();
 }
 
-int UIPopup :: poll(int dummy, Event &e)
+int UIPopup :: poll(int dummy)
 {
-    uint8_t c = keyboard->getch();
+    int c = keyboard->getch();
+
+    if (c == -1) // nothing pressed
+    	return 0;
+    if (c == -2) // error
+    	return -1;
 
     for(int i=0;i<btns_active;i++) {
         if(c == button_key[i]) {
@@ -163,14 +168,16 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
     window->move_cursor(cur, 2);
 }
 
-int UIStringBox :: poll(int dummy, Event &e)
+int UIStringBox :: poll(int dummy)
 {
-    uint8_t key;
+    int key;
     int i;
 
     key = keyboard->getch();
-    if(!key)
-        return 0;
+    if (key == -1) // nothing pressed
+		return 0;
+	if (key == -2) // error
+		return -1;
 
     switch(key) {
     case KEY_RETURN: // CR
@@ -278,6 +285,7 @@ void UIStatusBox :: init(Screen *screen)
     window->move_cursor(x_m, 0);
     window->output_line(message.c_str());
     window->move_cursor(0, 2);
+    screen->sync();
 }
 
 void UIStatusBox :: deinit(void)
@@ -304,5 +312,5 @@ void UIStatusBox :: update(const char *msg, int steps)
         terminate = 32;
     bar[terminate] = 0; // terminate
     window->output(bar);
+    window->getScreen()->sync();
 }
-

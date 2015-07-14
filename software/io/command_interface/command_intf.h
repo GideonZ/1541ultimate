@@ -2,10 +2,10 @@
 #define COMMAND_INTF_H
 
 #include "integer.h"
-#include "event.h"
 #include "menu.h"
 #include "config.h"
 #include "iomap.h"
+#include "subsys.h"
 
 #define CMD_IF_RAM_BASE  (CMD_IF_BASE + 0x800)
 
@@ -53,7 +53,7 @@ typedef struct _message
     uint8_t *message;
 } Message;
 
-class CommandInterface : public ObjectWithMenu, ConfigurableObject
+class CommandInterface : public SubSystem, ObjectWithMenu
 {
     uint8_t *command_buffer;
     uint8_t *response_buffer;
@@ -64,14 +64,15 @@ class CommandInterface : public ObjectWithMenu, ConfigurableObject
     void copy_result(Message *data, Message *status);
     int cart_mode;
     
+    int executeCommand(SubsysCommand *cmd);
 public:
     CommandInterface();
     ~CommandInterface();
     
-    int poll(Event &ev);
+    int poll(void);
     void dump_registers(void);
     int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
-    void effectuate_settings(void);
+    const char *identify(void) { return "Command Interface"; }
 };
 
 extern CommandInterface cmd_if;

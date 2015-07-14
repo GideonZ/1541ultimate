@@ -6,7 +6,6 @@
 #include "file_device.h"
 #include <cctype>
 
-
 int FileManager :: validatePath(Path *p, CachedTreeNode **node)
 {
 	CachedTreeNode *n = root;
@@ -264,6 +263,7 @@ File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
 		file = dirinfo->fs->file_open(newInfo, flags);
 		if(file) {
 			pathnode->cleanup_children(); // force reload from media
+			sendEventToObservers(eNodeAdded, path->get_path(), filename);
 		} else {
 			last_error = dirinfo->fs->get_last_error();
 		}
@@ -335,10 +335,12 @@ void FileManager :: add_root_entry(CachedTreeNode *obj)
 {
 	root->children.append(obj);
 	obj->parent = root;
+	sendEventToObservers(eNodeAdded, "/", obj->get_name());
 }
 
 void FileManager :: remove_root_entry(CachedTreeNode *obj)
 {
+	sendEventToObservers(eNodeRemoved, "/", obj->get_name());
 	root->children.remove(obj);
 }
 
@@ -369,9 +371,7 @@ FRESULT FileManager :: delete_file_by_info(FileInfo *info)
 	if(fres != FR_OK) {
 		return fres;
 	} else {
-//		push_event(e_invalidate, node);
-//		push_event(e_cleanup_path_object, node);
-		push_event(e_reload_browser);
+		sendEventToObservers(eNodeRemoved, "/", info->lfname); // FIXME: Path is unknown
 	}
 	return FR_OK;
 }
@@ -396,8 +396,10 @@ FRESULT FileManager :: create_dir_in_path(Path *path, char *name)
 	fi->attrib = 0;
 	FRESULT fres = fi->fs->dir_create(fi);
 	printf("Result of mkdir: %d\n", fres);
-	node->cleanup_children(); // force reload from media
-	push_event(e_reload_browser);
+	if (fres == FR_OK) {
+		node->cleanup_children(); // force reload from media
+		sendEventToObservers(eNodeAdded, path->get_path(), name);
+	}
 	return fres;
 }
 

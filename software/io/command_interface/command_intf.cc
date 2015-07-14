@@ -23,31 +23,16 @@ cart_def cmd_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 #define MENU_CMD_RUNCMDCART 0xC180
 
-static const char *en_dis4[] = { "Disabled", "Enabled" };
-
-#define CFG_CMD_ENABLE  0x71
-struct t_cfg_definition cmd_config[] = {
-    { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis4,    0,  1, 0 },
-    { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
-};
-
-
-void poll_command_interface(Event &ev)
-{
-    cmd_if.poll(ev);
-}
-
-CommandInterface :: CommandInterface()
+CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
 {
     for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
         command_targets[i] = &cmd_if_empty_target;
     
+    cmd_cart.custom_addr = (void *)&_binary_cmd_test_rom_65_start;
+
     if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
-        register_store(0x434D4E44, "Ultimate Command Interface", cmd_config);
         CMD_IF_SLOT_BASE = 0x47; // $DF1C
-        CMD_IF_SLOT_ENABLE = 0; // DISABLE until we know we can enable ourselves: cfg->get_value(CFG_CMD_ENABLE);
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
-        MainLoop :: addPollFunction(poll_command_interface);
     
         // dump_registers();
     
@@ -61,48 +46,24 @@ CommandInterface :: CommandInterface()
     }
     target = CMD_TARGET_NONE;
     cart_mode = 0;
+
 }
 
 CommandInterface :: ~CommandInterface()
 {
-    MainLoop :: removePollFunction(poll_command_interface);
-
-    CMD_IF_SLOT_ENABLE = 0;
-}
-
-void CommandInterface :: effectuate_settings(void)
-{
-    printf("CMD_IF: Effectuate\n");
-    if(cart_mode & CART_REU) {
-        CMD_IF_SLOT_ENABLE = cfg->get_value(CFG_CMD_ENABLE);
-    } else {
-        CMD_IF_SLOT_ENABLE = 0;
-    }                    
 }
     
-int CommandInterface :: poll(Event &e)
+int CommandInterface :: executeCommand(SubsysCommand *cmd)
 {
-    int length;
+    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
+	SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&cmd_cart, "", "");
+	return c64_command->execute();
+}
 
-    if(e.type == e_cart_mode_change) {
-        printf("CommandInterface received a cart mode change to %b.\n", e.param);
-        cart_mode = e.param;
-        effectuate_settings();
-	} else if((e.type == e_object_private_cmd)&&(e.object == this)) {
-        switch(e.param) {
-        case MENU_CMD_RUNCMDCART:
-            cmd_cart.custom_addr = (void *)&_binary_cmd_test_rom_65_start;
-            push_event(e_unfreeze, (void *)&cmd_cart, 1);
-            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;    
-            //sprintf((char *)response_buffer, "ULTIMATE-II V2.6");
-            //CMD_IF_RESPONSE_LEN_H = 0;
-            //CMD_IF_RESPONSE_LEN_L = 16;
-            break;
-        default:
-            break;
-        }      
-    }
-  
+int CommandInterface :: poll()
+{
+	int length;
+
     Message *data, *status;
     
     uint8_t status_byte = CMD_IF_STATUSBYTE;
@@ -167,9 +128,8 @@ void CommandInterface :: copy_result(Message *data, Message *status)
 
 int  CommandInterface :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
-    //item_list.append(new ObjectMenuItem(this, "Run Command Cart", MENU_CMD_RUNCMDCART));  /* temporary item */
-    //return 1;
-    return 0;
+    item_list.append(new Action("Run Command Cart", getID(), MENU_CMD_RUNCMDCART, 0));
+    return 1;
 }
     
 void CommandInterface :: dump_registers(void)

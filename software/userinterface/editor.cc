@@ -128,7 +128,7 @@ void Editor :: deinit()
         delete window;
 }
     
-int Editor :: poll(int dummy, Event &e)
+int Editor :: poll(int dummy)
 {
     int ret = 0;
     int c;

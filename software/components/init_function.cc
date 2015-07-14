@@ -7,14 +7,17 @@
 
 #include "init_function.h"
 
-IndexedList<InitFunction *> InitFunction :: initFunctions(24, 0);
+static IndexedList<InitFunction *> *getInitFunctionList(void) {
+	static IndexedList<InitFunction *> initFunctions(24, 0);
+	return &initFunctions;
+}
 
 InitFunction::InitFunction(initFunction_t func, void *obj, void *prm) {
 	function = func;
 	object = obj;
 	param = prm;
 
-	initFunctions.append(this);
+	getInitFunctionList()->append(this);
 }
 
 InitFunction::~InitFunction() {
@@ -22,9 +25,9 @@ InitFunction::~InitFunction() {
 }
 
 void InitFunction::executeAll() {
-	int elements = initFunctions.get_elements();
+	int elements = getInitFunctionList()->get_elements();
 	for (int i=0; i < elements; i++) {
-		InitFunction *func = initFunctions[i];
+		InitFunction *func = (*getInitFunctionList())[i];
 		func->function(func->object, func->param);
 	}
 }

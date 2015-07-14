@@ -26,6 +26,9 @@ public:
 		if (keyboard) {
 			delete keyboard;
 		}
+		if (screen) {
+			delete screen;
+		}
 	}
 
     bool exists(void) { return true; }

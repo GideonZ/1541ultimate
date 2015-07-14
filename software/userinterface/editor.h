@@ -33,7 +33,7 @@ public:
     virtual void init(Screen *win, Keyboard *k);
     virtual void deinit(void);
 
-    virtual int poll(int, Event &e);
+    virtual int poll(int);
     virtual int handle_key(uint8_t);
 };
 

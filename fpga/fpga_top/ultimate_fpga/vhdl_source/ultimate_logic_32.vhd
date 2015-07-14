@@ -112,6 +112,10 @@ port (
     SD_CARDDETn : in    std_logic;
     SD_DATA     : inout std_logic_vector(2 downto 1) := "ZZ";
     
+    -- LED interface
+    LED_CLK     : out   std_logic;
+    LED_DATA    : out   std_logic;
+
     -- RTC Interface
     RTC_CS      : out   std_logic;
     RTC_SCK     : out   std_logic;
@@ -283,6 +287,8 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
     signal io_req_debug     : t_io_req;
     signal io_resp_debug    : t_io_resp := c_io_resp_init;
+    signal io_req_led       : t_io_req;
+    signal io_resp_led      : t_io_resp := c_io_resp_init;
     signal io_irq           : std_logic;
     
     -- Audio routing
@@ -638,7 +644,7 @@ begin
     generic map (
         g_range_lo  => 14,
         g_range_hi  => 15,
-        g_ports     => 3 )
+        g_ports     => 4 )
     port map (
         clock    => sys_clock,
         
@@ -648,10 +654,12 @@ begin
         reqs(0)  => io_req_1541_1,  -- 4020000
         reqs(1)  => io_req_1541_2,  -- 4024000
         reqs(2)  => io_req_iec,     -- 4028000
-        
+        reqs(3)  => io_req_led,     -- 402C000
+
         resps(0) => io_resp_1541_1,
         resps(1) => io_resp_1541_2,
-        resps(2) => io_resp_iec );
+        resps(2) => io_resp_iec,
+        resps(3) => io_resp_led );
 
     i_split3: entity work.io_bus_splitter
     generic map (
@@ -748,6 +756,30 @@ begin
         SPI_CLK     => SD_CLK,
         SPI_MOSI    => SD_MOSI,
         SPI_MISO    => SD_MISO );
+
+--    -- playing around
+--    i_led: entity work.spi_peripheral_io
+--    generic map (
+--        g_fixed_rate => true,
+--        g_init_rate  => 40,
+--        g_crc        => false )
+--    port map (
+--        clock       => sys_clock,
+--        reset       => sys_reset,
+--        
+--        io_req      => io_req_led,
+--        io_resp     => io_resp_led,
+--            
+--        busy        => open,
+--        
+--        SD_DETECTn  => '0',
+--        SD_WRPROTn  => '1',
+--        SPI_SSn     => open,
+--        SPI_CLK     => LED_CLK,
+--        SPI_MOSI    => LED_DATA,
+--        SPI_MISO    => '1' );
+    LED_CLK <= 'Z';
+    LED_DATA <= 'Z';
 
 	i_stretch: entity work.pulse_stretch
 	generic map ( g_clock_freq / 200) -- 5 ms

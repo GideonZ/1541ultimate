@@ -19,13 +19,15 @@ public:
 
     virtual bool exists(void) { return false; }
     virtual bool is_accessible(void) { return false; }
-    virtual void poll(Event &e) { }
-    virtual void reset(void) { }
+//    virtual void reset(void) { }
     virtual void set_colors(int background, int border) { }
 
     virtual Screen   *getScreen(void) { return NULL; }
     virtual void releaseScreen(void) { }
     virtual Keyboard *getKeyboard(void) { return NULL; }
+
+    virtual bool buttonPush(void) { return false; }
+    virtual bool hasButton(void) { return false; }
 };
 
 class HostClient

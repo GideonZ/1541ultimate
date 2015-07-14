@@ -106,7 +106,7 @@ void ContextMenu :: executeAction()
 	// TODO: do something with return value / data
 }
 
-int ContextMenu :: poll(int dummy, Event &e)
+int ContextMenu :: poll(int dummy)
 {
     int ret = 0;
     int c;
@@ -123,6 +123,8 @@ int ContextMenu :: poll(int dummy, Event &e)
                 ret = handle_key(c);
                 if(ret)
                     context_state = e_finished;
+            } else if(c == -2) {
+            	ret = -1;
             }
             break;
         
@@ -140,14 +142,10 @@ int ContextMenu :: handle_key(int c)
     switch(c) {
         case KEY_LEFT: // left
         case KEY_BREAK: // runstop
-            //clean_up();
             ret = -1;
             break;
         case KEY_F8: // exit
             ret = -1;
-            //clean_up();
-            push_event(e_unfreeze, 0);
-//            push_event(e_terminate, 0);
             break;
         case KEY_DOWN: // down
         	//reset_quick_seek();

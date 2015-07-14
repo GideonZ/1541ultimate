@@ -22,7 +22,7 @@ public:
 
     // functions called directly, or from a window
     int  get_color() { return color; }
-    int   get_size_x(void) { return 40; }
+    int   get_size_x(void) { return 60; }
     int   get_size_y(void) { return 25; }
     void  cursor_visible(int a) { }
     void set_color(int c);
@@ -36,6 +36,9 @@ public:
     int  output(const char *c);
     void repeat(char c, int rep);
     void output_fixed_length(const char *string, int offset_x, int width);
+
+    // Synchronization
+    void sync(void);
 };
 
 #endif /* IO_STREAM_SCREEN_VT100_H_ */

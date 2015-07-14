@@ -2,12 +2,14 @@
 /* Tape Emulator / Recorder Control                          */
 /*************************************************************/
 #include <stdio.h>
-#include "event.h"
-#include "poll.h"
 #include "menu.h"
 #include "iomap.h"
 #include "filemanager.h"
 #include "subsys.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
 
 #define PLAYBACK_STATUS  *((volatile uint8_t *)(C2N_PLAY_BASE + 0x000))
 #define PLAYBACK_CONTROL *((volatile uint8_t *)(C2N_PLAY_BASE + 0x000))
@@ -41,19 +43,22 @@ class TapeController : public SubSystem, ObjectWithMenu
 	int   recording;
 	uint8_t  controlByte;
 	uint8_t  *blockBuffer;
+	TaskHandle_t taskHandle;
+
 	void read_block();
-	static void poll_static(Event &);
+	static void poll_static(void *a);
 public:
 	TapeController();
 	virtual ~TapeController();
 	
 	int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
+    const char *identify(void) { return "Tape Player"; }
 	int executeCommand(SubsysCommand *cmd);
 	
 	void close();
 	void stop();
 	void start(int);
-	void poll(Event &);
+	void poll();
 	void set_file(File *f, uint32_t, int);
 };
 

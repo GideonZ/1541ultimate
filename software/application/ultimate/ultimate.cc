@@ -2,9 +2,10 @@
 #include <string.h>
 #include <stdio.h>
 
-extern "C" {
+#include "FreeRTOS.h"
+#include "task.h"
+
 #include "itu.h"
-}
 #include "c64.h"
 #include "c1541.h"
 #include "screen.h"
@@ -39,21 +40,6 @@ StreamMenu *root_menu;
 Overlay *overlay;
 C64 *c64;
 
-void poll_drive_1(Event &e)
-{
-	c1541_A->poll(e);
-}
-
-void poll_drive_2(Event &e)
-{
-	c1541_B->poll(e);
-}
-
-void poll_c64(Event &e)
-{
-	c64->poll(e);
-}
-
 int main(void *a)
 {
 	char time_buffer[32];
@@ -71,30 +57,22 @@ int main(void *a)
 	Stream_UART my_stream;
 	UserInterface *ui = 0;
     
- 	// start the file system, scan the sd-card etc..
-	MainLoop :: nop();
-	MainLoop :: nop();
-	MainLoop :: nop();
-
     if(capabilities & CAPAB_CARTRIDGE)
         c64     = new C64;
 
     if(c64 && c64->exists()) {
         ui = new UserInterface;
         ui->init(c64);
-    
+
     	// Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
-        ui->add_to_poll();
 
-        // add the C64 to the 'OS' (the event loop)
-        MainLoop :: addPollFunction(poll_c64);
-    
-        // now that everything is running, initialize the C64 and C1541 drive
+        // now that everything is running, initialize the C64
     	// which might load custom ROMs from the file system.
-    	c64->init_cartridge();
+        c64->init_cartridge();
+
     } else if(capabilities & CAPAB_OVERLAY) {
         printf("Using Overlay module as user interface...\n");
         overlay = new Overlay(false);
@@ -103,8 +81,6 @@ int main(void *a)
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
-        ui->add_to_poll();
-        // push_event(e_button_press, NULL, 1);
     } else {
         // stand alone mode
         printf("Using Stream module as user interface...\n");
@@ -112,7 +88,7 @@ int main(void *a)
         root_menu = new StreamMenu(ui_str, &my_stream, new BrowsableRoot());
         ui_str->set_menu(root_menu); // root of all evil!
         ui = ui_str;
-        ui->add_to_poll();
+        //ui->add_to_poll();
     }
 
     if(capabilities & CAPAB_C2N_STREAMER)
@@ -125,23 +101,28 @@ int main(void *a)
         c1541_B = new C1541(C1541_IO_LOC_DRIVE_2, 'B');
     }
 
-	// add the drive(s) to the 'OS' (the event loop)
-    printf("C1541A: %p, C1541B: %p\n", c1541_A, c1541_B);
-
     if(c1541_A) {
-        MainLoop :: addPollFunction(poll_drive_1);
     	c1541_A->init();
     }
 
     if(c1541_B) {
-        MainLoop :: addPollFunction(poll_drive_2);
     	c1541_B->init();
     }
 	
-    printf("All linked modules have been initialized.\n");
-    printf("Starting main loop...\n");
+    printf("All linked modules have been initialized and are now running.\n");
+    static char buffer[8192];
+    vTaskList(buffer);
+    puts(buffer);
 
-    main_loop(0);
+    if(ui) {
+    	ui->run();
+    }
+
+    printf("GUI running on C64 host has terminated? This should not happen.\n");
+
+    vTaskSuspend(NULL); // Stop executing init task
+
+    // We will never come here.
 
     if(overlay)
         delete overlay;
@@ -159,9 +140,6 @@ int main(void *a)
 	    delete tape_controller;
     if(tape_recorder)
 	    delete tape_recorder;
-
-    //printf("Cleaned up main components.. now.. what's left??\n");
-    //root.dump();
     
     printf("Graceful exit!!\n");
     return 0;

@@ -8,21 +8,32 @@
 #ifndef SOCKET_STREAM_H_
 #define SOCKET_STREAM_H_
 
-#define OUT_BUFFER_SIZE 1024
+#define OUT_BUFFER_SIZE 2048
 
 #include "stream.h"
 
 class SocketStream : public Stream
 {
 	int  actual_socket;
+	int  purge();
+	int  transmit(const char *buffer, int n);
+
+	int buf_size;
+	int buf_remaining;
+	char *buf_pos;
+	char *buf_start;
 public:
-
-	SocketStream() {
-		actual_socket = -1;
+	SocketStream(int sock) {
+		actual_socket = sock;
+		buf_size = OUT_BUFFER_SIZE;
+		buf_start = new char[buf_size];
+		buf_pos = buf_start;
+		buf_remaining = buf_size;
 	}
-	~SocketStream() { }
+	~SocketStream() {
+		delete[] buf_start;
+	}
 
-	int setup_socket();
 	void close();
 
 	// stream interface
@@ -32,6 +43,11 @@ public:
     {
     	char cc = (char)c;
     	write(&cc, 1);
+    }
+
+    void sync(void)
+    {
+    	purge();
     }
 };
 

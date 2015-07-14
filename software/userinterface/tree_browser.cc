@@ -50,7 +50,10 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
     quick_seek_string[0] = '\0';
     this->root = root;
     state = 0;
-    path = FileManager :: getFileManager() -> get_new_path("Tree Browser");
+    fm = FileManager :: getFileManager();
+    path = fm->get_new_path("Tree Browser");
+    observerQueue = new ObserverQueue();
+    fm->registerObserver(observerQueue);
 }
 
 TreeBrowser :: ~TreeBrowser()
@@ -58,12 +61,16 @@ TreeBrowser :: ~TreeBrowser()
 	if(state)
 		delete state;
 	FileManager :: getFileManager() -> release_path(path);
+	if (observerQueue) {
+	    fm->deregisterObserver(observerQueue);
+		delete observerQueue;
+	}
 }
 
 void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 {
 	this->screen = screen;
-	window = new Window(screen, 0, 2, 40, 22);
+	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
 	keyb = k;
 	if(!state)
 		state = new TreeBrowserState(root, this, 0);
@@ -117,30 +124,21 @@ void TreeBrowser :: task_menu(void)
 
 void TreeBrowser :: test_editor(void)
 {
-	Event e(e_nop, 0, 0);
     Editor *edit = new Editor(user_interface, NULL); // use built-in text
     edit->init(screen, keyb);
     int ret;
     do {
-        ret = edit->poll(0, e);
+        ret = edit->poll(0);
     } while(!ret);
     edit->deinit();
 }
     
 
-int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
+int TreeBrowser :: poll(int sub_returned)
 {
 	int c;
     int ret = 0;
 
-    if(e.type == e_invalidate) {
-    	invalidate(e.object);
-    	return 0;
-    } else
-    if(e.type == e_refresh_browser) {
-		state->refresh = true;
-	}
-	
     if(contextMenu) {
         if(sub_returned < 0) {
         	delete contextMenu;
@@ -161,22 +159,21 @@ int TreeBrowser :: poll(int sub_returned, Event &e) // call on root possible
         }
         return ret;
     }
-        
-	if(e.type == e_reload_browser)
-		state->reload();
 
-	if(e.type == e_browse_into) {
-	    reset_quick_seek();
-        state->into();
-	}
+    FileManagerEvent *event = (FileManagerEvent *)observerQueue->waitForEvent(0);
+    if (event) {
+    	printf("Event %d on %s\n", event->eventType, event->pathName.c_str() );
+    }
 
-	if(state->refresh) {
+    if(state->refresh) {
         state->do_refresh();
 	}
 
     c = keyb->getch();
+    if(c == -2) // error
+        return -2;
     if(c < 0)
-        return 0;
+    	return 0;
 
     ret = handle_key(c);
 
@@ -189,11 +186,10 @@ int TreeBrowser :: handle_key(int c)
     
     switch(c) {
         case KEY_BREAK: // runstop
-            push_event(e_unfreeze);
+            ret = -1;
             break;
         case KEY_F8: // exit (F8)
-            push_event(e_unfreeze);
-//            push_event(e_terminate);
+            ret = -1;
             break;
         case KEY_DOWN: // down
         	reset_quick_seek();

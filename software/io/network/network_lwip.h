@@ -2,19 +2,20 @@
 #define NETWORK_LWIP_H
 
 //#include "ipv4/lwip/ip_addr.h"
+/*
 #include "lwip/init.h"
-#include "lwip/tcpip.h"
 #include "lwip/ip_frag.h"
-#include "netif/etharp.h"
 #include "lwip/dhcp.h"
-#include "lwip/inet.h"
 #include "lwip/autoip.h"
 #include "lwip/igmp.h"
 #include "lwip/dns.h"
 #include "lwip/tcp_impl.h"
 #include "lwip/udp.h"
+*/
+#include "netif/etharp.h"
+#include "lwip/inet.h"
+#include "lwip/tcpip.h"
 #include "lwip/pbuf.h"
-#include "lwip/netifapi.h"
 #include <lwip/stats.h>
 extern "C" {
 #include "small_printf.h"

@@ -61,19 +61,8 @@ void StreamMenu :: print_actions()
     }
 }
 
-int StreamMenu :: poll(Event &e)
+int StreamMenu :: poll()
 {
-	if(e.type == e_browse_into) {
-        printf("Into event...");
-		into();
-		printf("Into event done..\n");
-		print_items(0, 9999);
-        return -1;
-    } /*else if(e.type == e_invalidate) {
-    	invalidate((CachedTreeNode *)e.object);
-    	return -1;
-    }
-*/
     if(stream->getstr(user_input, 31) >= 0) {
         stream->format("You entered: %s\n", user_input);
         int res = process_command(user_input);

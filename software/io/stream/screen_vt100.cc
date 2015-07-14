@@ -129,3 +129,8 @@ void Screen_VT100::output_fixed_length(const char *string, int offset_x, int wid
 		repeat(' ', width);
 	}
 }
+
+void Screen_VT100::sync(void)
+{
+	stream->sync();
+}

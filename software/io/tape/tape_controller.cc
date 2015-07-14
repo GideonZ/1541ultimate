@@ -4,6 +4,7 @@
 #include "tape_controller.h"
 #include "menu.h"
 #include "filemanager.h"
+#include "c64.h"
 
 TapeController *tape_controller = NULL; // globally static
 
@@ -21,19 +22,29 @@ TapeController :: TapeController() : SubSystem(SUBSYSID_TAPE_PLAYER)
 	controlByte = 0;
 	blockBuffer = new uint8_t[512];
 	stop();
-    MainLoop :: addPollFunction(poll_static);
+	taskHandle = 0;
+	if (getFpgaCapabilities() & CAPAB_C2N_STREAMER) {
+		xTaskCreate( TapeController :: poll_static, "TapePlayer", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
+	}
 }
 
 TapeController :: ~TapeController()
 {
-    MainLoop :: removePollFunction(poll_static);
+	if (taskHandle) {
+		vTaskDelete(taskHandle);
+	}
 	delete blockBuffer;
 }
 
-void TapeController :: poll_static(Event &ev)
+void TapeController :: poll_static(void *a)
 {
-	if (tape_controller) {
-		tape_controller->poll(ev);
+	while(1) {
+		tape_controller->poll();
+		if (PLAYBACK_STATUS & C2N_STAT_ENABLED) {
+			vTaskDelay(5);
+		} else {
+			vTaskDelay(250);
+		}
 	}
 }
 
@@ -104,10 +115,10 @@ void TapeController :: read_block()
 
 	if(!block) {
         if (PLAYBACK_STATUS & C2N_STAT_FIFO_EMPTY) {
-            wait_ms(400);
+        	vTaskDelay(100);
             close();
             if (recording) {
-                push_event(e_freeze);
+            	c64->setButtonPushed();
             }
         }
 		return;
@@ -124,7 +135,7 @@ void TapeController :: read_block()
 	block = 512;
 }
 	
-void TapeController :: poll(Event &e)
+void TapeController :: poll()
 {
 	if(!file)
 		return;
@@ -163,7 +174,6 @@ int TapeController :: executeCommand(SubsysCommand *cmd)
 		default:
 			break;
 	}
-	delete cmd; // cleanup
 	return 0;
 }
 

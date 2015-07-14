@@ -14,7 +14,7 @@ public:
     UserInterfaceStream(Stream *s);
     virtual ~UserInterfaceStream() { };
 
-    virtual void handle_event(Event &e);
+    virtual void run();
     virtual int popup(const char *msg, uint8_t flags); // blocking
     virtual int string_box(const char *msg, char *buffer, int maxlen); // blocking
     

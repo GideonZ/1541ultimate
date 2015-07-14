@@ -12,12 +12,15 @@
 #include "filemanager.h"
 #include "sd_card.h"
 #include "file_device.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 class SdCardManager //: public DeviceManager
 {
 	FileManager *fm;
 	SdCard *sd_card;
 	FileDevice *sd_dev;
+	TaskHandle_t task_handle;
 public:
 	SdCardManager();
 	~SdCardManager();

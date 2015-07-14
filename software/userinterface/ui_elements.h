@@ -30,7 +30,7 @@ public:
 
     virtual void init(Screen *scr, Keyboard *key) { }
     virtual void deinit(void) { }
-    virtual int  poll(int, Event &e)
+    virtual int  poll(int)
     {
         return -1;
     }
@@ -58,7 +58,7 @@ public:
 
     void init(Screen *screen, Keyboard *keyb);
     void deinit(void);
-    int  poll(int, Event &e);
+    int  poll(int);
 };
 
 class UIStringBox : public UIObject
@@ -80,7 +80,7 @@ public:
 
     void init(Screen *screen, Keyboard *keyb);
     void deinit(void);
-    int  poll(int, Event &e);
+    int  poll(int);
 };
 
 class UIStatusBox : public UIObject

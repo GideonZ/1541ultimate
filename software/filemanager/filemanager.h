@@ -7,6 +7,7 @@
 #include "file_system.h"
 #include "cached_tree_node.h"
 #include "globals.h"
+#include "observer.h"
 
 void set_extension(char *buffer, char *ext, int buf_size);
 void get_extension(const char *name, char *ext);
@@ -45,6 +46,24 @@ public:
 	}
 };
 
+typedef enum  {
+	eNodeAdded,			// New Node
+	eNodeRemoved,       // Node no longer exists (deleted)
+	eNodeMediaRemoved,  // Node lost all its children
+	eNodeUpdated,		// Node status changed (= redraw line)
+} eFileManagerEventType;
+
+class FileManagerEvent
+{
+public:
+	eFileManagerEventType eventType;
+	mstring pathName;
+	mstring newName;
+
+	FileManagerEvent(eFileManagerEventType e, const char *p, const char *n = "") : eventType(e), pathName(p), newName(n) { }
+};
+
+
 class FileManager
 {
 	struct reworked_t {
@@ -54,15 +73,16 @@ class FileManager
 	};
 
 	FRESULT last_error;
-    IndexedList<MountPoint *>mount_points;
+	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
 	IndexedList<Path *>used_paths;
+	IndexedList<ObserverQueue *>observers;
 	CachedTreeNode *root;
 
 	bool  reworkPath(Path *path, const char *pathname, const char *filename, reworked_t& rwp);
     File *fopen_impl(Path *path, char *filename, uint8_t flags);
 
-    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), used_paths(8, NULL) {
+    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), used_paths(8, NULL), observers(4, NULL) {
         MainLoop :: addPollFunction(poll_filemanager);
         last_error = FR_OK;
         root = new CachedTreeNode(NULL, "RootNode");
@@ -169,6 +189,20 @@ public:
     		target.append(new FileInfo(*(n->children[i]->get_file_info())));
     	}
     	return FR_OK;
+    }
+
+    void registerObserver(ObserverQueue *q) {
+    	observers.append(q);
+    }
+    void deregisterObserver(ObserverQueue *q) {
+    	observers.remove(q);
+    }
+    void sendEventToObservers(eFileManagerEventType e, const char *p, const char *n="") {
+    	printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
+    	for(int i=0;i<observers.get_elements();i++) {
+    		FileManagerEvent *ev = new FileManagerEvent(e, p, n);
+    		observers[i]->putEvent(ev);
+    	}
     }
 };
 

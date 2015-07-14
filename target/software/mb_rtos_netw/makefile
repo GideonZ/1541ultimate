@@ -175,6 +175,7 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 
 %.o: %.cc
 	@echo "Compiling $<"
+	@$(CPP) $(CPPOPT) $(PATH_INC) -E -o $(OUTPUT)/$(@F:.o=.pre) $<
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 

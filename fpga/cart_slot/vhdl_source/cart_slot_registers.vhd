@@ -66,6 +66,7 @@ begin
                     control_i.timing_addr_valid <= unsigned(io_req.data(2 downto 0)); 
                 when c_cart_phi2_recover =>
                     control_i.phi2_edge_recover <= io_req.data(0);
+                    control_i.tick_ntsc <= io_req.data(1);
                 when c_cart_swap_buttons =>
                 	control_i.swap_buttons <= io_req.data(0);
                 when c_cart_sampler_enable =>
@@ -107,6 +108,7 @@ begin
                     io_resp.data(2 downto 0) <= std_logic_vector(control_i.timing_addr_valid); 
                 when c_cart_phi2_recover =>
                     io_resp.data(0) <= control_i.phi2_edge_recover;
+                    io_resp.data(1) <= control_i.tick_ntsc;
                 when c_cart_swap_buttons =>
                 	io_resp.data(0) <= control_i.swap_buttons;
                 when others =>

@@ -14,6 +14,10 @@
 #include "iomap.h"
 #include "browsable_root.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
 #define C1541_IO_LOC_DRIVE_1 ((volatile uint8_t *)DRIVE_A_BASE)
 #define C1541_IO_LOC_DRIVE_2 ((volatile uint8_t *)DRIVE_B_BASE)
 
@@ -75,14 +79,6 @@ typedef enum { e_no_disk,
 #define DRVSTAT_MOTOR   0x01
 #define DRVSTAT_WRITING 0x02
 
-struct t_drive_command
-{
-   int  command;
-   Path *path;
-   FileInfo *info;
-};
-
-
 class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
 {
     volatile uint8_t *memory_map;
@@ -102,23 +98,16 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     t_disk_state disk_state;
     GcrImage *gcr_image;
     BinImage *bin_image;
-public:
-    C1541(volatile uint8_t *regs, char letter);
-    ~C1541();
-    
-	void init(void);
 
-    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list); // from ObjectWithMenu
-    void effectuate_settings(void); // from ConfigurableObject
-    
-    int  executeCommand(SubsysCommand *cmd);
+    TaskHandle_t taskHandle;
+
+    void poll();
+    static void run(void *a);
+
     void save_disk_to_file(SubsysCommand *cmd);
-
-    void drive_power(bool on);
     void drive_reset(void);
     void set_hw_address(int addr);
     void set_sw_address(int addr);
-    int  get_current_iec_address(void);
     void set_rom(t_1541_rom rom, const char *);
     void set_ram(t_1541_ram ram);
     void remove_disk(void);
@@ -127,46 +116,27 @@ public:
     void mount_d64(bool protect, File *);
     void mount_g64(bool protect, File *);
     void mount_blank(void);
-    void poll(Event &e);
-
     void check_if_save_needed(SubsysCommand *cmd);
+public:
+    C1541(volatile uint8_t *regs, char letter);
+    ~C1541();
+
+	void init(void);
+
+    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list); // from ObjectWithMenu
+    void effectuate_settings(void); // from ConfigurableObject
+
+    // subsys
+    const char *identify(void) { return drive_name.c_str(); }
+    int  executeCommand(SubsysCommand *cmd);
+
+    // called from IEC (UltiCopy)
+    int  get_current_iec_address(void);
+    void drive_power(bool on);
 };
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
-
-/*
-class DriveMenuItem : public Action
-{
-	C1541 *drv;
-	int function;
-	BrowsableDirEntry *node;
-	t_drive_command *cmd;
-public:
-	DriveMenuItem(const char *n, C1541 *d, int f, BrowsableDirEntry *nd) : Action(n, NULL, NULL) {
-		node = nd;
-		drv = d;
-		function = f;
-		cmd = NULL;
-	}
-
-	~DriveMenuItem() { 
-	}
-
-	void execute() {
-	    cmd = new t_drive_command;
-	    cmd->command = function;
-	    if (node) {
-			cmd->path = node->getPath();
-			cmd->info = node->getInfo();
-	    } else {
-	    	cmd->path = 0;
-	    	cmd->info = 0;
-	    }
-		push_event(e_object_private_cmd, drv, (int)cmd);
-	}
-};
-*/
 
 #endif
 

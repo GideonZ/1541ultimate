@@ -13,8 +13,6 @@ typedef void (*initFunction_t)(void *object, void *param);
 #include "indexed_list.h"
 
 class InitFunction {
-	static IndexedList<InitFunction *> initFunctions;
-
 	initFunction_t function;
 	void *object;
 	void *param;

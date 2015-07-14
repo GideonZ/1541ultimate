@@ -2,12 +2,14 @@
 /* Tape Recorder Control                                     */
 /*************************************************************/
 #include <stdio.h>
-#include "event.h"
-#include "poll.h"
 #include "menu.h"
 #include "iomap.h"
 #include "filemanager.h"
 #include "subsys.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
 
 #define RECORD_STATUS  *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
 #define RECORD_CONTROL *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
@@ -42,6 +44,7 @@
 class TapeRecorder : public ObjectWithMenu
 {
 	FileManager *fm;
+	TaskHandle_t taskHandle;
     UserInterface *last_user_interface;
 	File *file;
     int   error_code;
@@ -56,18 +59,19 @@ class TapeRecorder : public ObjectWithMenu
     void  cache_block();
     uint8_t *cache;
     uint32_t *cache_blocks[REC_NUM_CACHE_BLOCKS];
-    static void poll_tape_rec(Event &ev);
+    static void poll_tape_rec(void *a);
+	void poll(void);
 public:
 	TapeRecorder();
 	virtual ~TapeRecorder();
 
 	int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
 	int executeCommand(SubsysCommand *cmd);
+    const char *identify(void) { return "Tape Recorder"; }
 	
     void flush();
 	void stop(int);
 	void start();
-	void poll(Event &);
 	bool request_file(SubsysCommand *);
     void irq();
 };

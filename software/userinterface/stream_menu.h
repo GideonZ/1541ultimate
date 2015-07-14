@@ -37,7 +37,7 @@ public:
     StreamMenu(UserInterface *ui, Stream *s, Browsable *node);
     virtual ~StreamMenu();
 
-    virtual int poll(Event &e);
+    virtual int poll();
     virtual int process_command(char *cmd);
     virtual int into(void);
     //virtual void invalidate(void *obj);

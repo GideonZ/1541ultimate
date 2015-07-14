@@ -9,12 +9,15 @@
 #include "init_function.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include <errno.h>
 
 int main (void)
 {
 	printf("Main function.\n");
 	InitFunction::executeAll();
 
-	vTaskDelay(-1);
+	vTaskSuspend(NULL);
+
+	errno = 77;
 	return 1;
 }

@@ -49,13 +49,16 @@ int FileSystemD64 :: get_abs_sector(int track, int sector)
     --track;
 
     if (image_mode > 1) {
-        if(sector >= 40) {
-            return -1;
+    	printf("T/S:%d:%d => ", track, sector);
+    	if(sector >= 40) {
+            result = -1;
+        } else {
+			result = (track * 40) + sector;
         }
-        result = (track * 40) + sector;
-        if (result >= num_sectors) {
-            return -1;
+		if (result >= num_sectors) {
+            result = -1;
         }
+        printf("%d\n", result);
         return result;
     }
 
@@ -237,6 +240,7 @@ FRESULT FileSystemD64 :: move_window(int abs)
         return FR_INT_ERR;
     }
 
+    printf("Moving to sector %d\n", abs);
     if(current_sector != abs) {
     	if(dirty) {
     		res = prt->write(sect_buffer, current_sector, 1);
@@ -362,12 +366,12 @@ DirInD64 :: DirInD64(FileSystemD64 *f)
 {
     fs = f;
     visited = 0;
-    idx = 0;
+    idx = -1;
 }
 
 FRESULT DirInD64 :: open(FileInfo *info)
 {
-    idx = 0;
+    idx = -1;
 
     visited = new uint8_t[fs->num_sectors];
     for (int i=0; i<fs->num_sectors; i++) {
@@ -395,33 +399,33 @@ FRESULT DirInD64 :: read(FileInfo *f)
 	f->date    = 0;
 	f->time    = 0;
 
-	if(idx == 0) {
-	    f->attrib  = AM_VOL;
+	if(idx == -1) {
+		f->attrib  = AM_VOL;
         f->cluster = fs->get_root_sector();
         f->extension[0] = '\0';
 
         /* Volume name extraction */
-//        if(fs->prt->read(fs->sect_buffer, fs->get_root_sector(), 1) == RES_OK) {
 		if(fs->move_window(fs->get_root_sector()) == FR_OK) {
-            for(int i=0;i<24;i++) {
+			int offset = (fs->image_mode==2)?4:144;
+			for(int i=0;i<24;i++) {
                 if(i < f->lfsize)
-                    f->lfname[i] = char(fs->sect_buffer[144+i] & 0x7F);
+                    f->lfname[i] = char(fs->sect_buffer[offset+i] & 0x7F);
             }
             if(f->lfsize > 24)
                 f->lfname[24] = 0;
         	f->size    = 0;
-        	idx        = 1;
+        	idx        = 0;
         	return FR_OK;
         } else {
             return FR_DISK_ERR;
         }
+		printf("D64/71/81 title now read.");
     } else {
-        --idx; // adjust for header
         do {
             if((idx & 7)==0) {
                 if(idx == 0) {
             	    next_t = (fs->image_mode==2)?40:18;
-            	    next_s = 1;
+            	    next_s = (fs->image_mode==2)?3:1;
                 } else {
                     next_t = (int)fs->sect_buffer[0];
                     next_s = (int)fs->sect_buffer[1];
@@ -443,15 +447,16 @@ FRESULT DirInD64 :: read(FileInfo *f)
                     return FR_DISK_ERR;
                 }
             }
+            printf("Index = %d\n", idx);
             uint8_t *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
             //dump_hex(p, 32);
             if((p[2] & 0x0f) == 0x02) { // PRG
                 int j = 0;
                 for(int i=5;i<21;i++) {
-                	if (p[i] == 0xA0)
+                	if ((p[i] == 0xA0) || (p[i] < 0x20))
                 		break;
                 	if(j < f->lfsize)
-                        f->lfname[j++] = char(p[i] & 0x7F);
+                		f->lfname[j++] = char(p[i] & 0x7F);
                 }
                 if(j < f->lfsize)
                     f->lfname[j] = 0;
@@ -460,7 +465,7 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 f->cluster = fs->get_abs_sector((int)p[3], (int)p[4]);
                 f->size = (int)p[30] + 256*(int)p[31];
                 strncpy(f->extension, "PRG", 4);
-                idx += 2; // continue after this next time (readjust for header)
+                idx ++;
                 return FR_OK;
             }
             idx++;

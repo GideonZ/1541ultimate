@@ -36,6 +36,7 @@
 #include "userinterface.h"
 #include "keyboard_c64.h"
 #include "globals.h"
+#include "command_intf.h"
 
 #ifndef _NO_FILE_ACCESS
 # include "filemanager.h"
@@ -113,11 +114,14 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 #define CFG_C64_KERNFILE 0xCA
 #define CFG_C64_TIMING   0xCB
 #define CFG_C64_PHI2_REC 0xCC
+#define CFG_C64_RATE	 0xCD
+#define CFG_CMD_ENABLE   0x71
 
 const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 const char *en_dis2[] = { "Disabled", "Enabled" };
 const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
+const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
 
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 15, 4 },
@@ -131,6 +135,8 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",                 "%s", buttons,    0,  1, 1 },
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 1 },
+    { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis2,    0,  1, 0 },
+	{ CFG_C64_RATE,     CFG_TYPE_ENUM,   "Stand-Alone Tick Rate",        "%s", tick_rates, 0,  1, 0 },
 //    { CFG_C64_ETH_EN,   CFG_TYPE_ENUM,   "Ethernet CS8900A",        "%s", en_dis2,     0,  1, 0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
@@ -148,16 +154,18 @@ C64 :: C64() : SubSystem(SUBSYSID_C64)
     keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
     screen = new Screen_MemMappedCharMatrix((char *)C64_SCREEN, (char *)C64_COLORRAM, 40, 25);
 
-    if(C64_CLOCK_DETECT == 0)
-        printf("No PHI2 clock detected.. Stand alone mode.\n");
-	
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
 	C64_STOP = 0;
 	stopped = false;
     C64_MODE = C64_MODE_RESET;
+    buttonPushSeen = false;
 
     fm = FileManager :: getFileManager();
+    client = 0;
+
+    if(C64_CLOCK_DETECT == 0)
+        printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
 }
     
 C64 :: ~C64()
@@ -190,6 +198,7 @@ void C64 :: set_emulation_flags(cart_def *def)
 {
     C64_REU_ENABLE = 0;
 	C64_SAMPLER_ENABLE = 0;
+	CMD_IF_SLOT_ENABLE = 0;
 
     if(def->type & CART_REU) {
         if(cfg->get_value(CFG_C64_REU_EN)) {
@@ -205,6 +214,10 @@ void C64 :: set_emulation_flags(cart_def *def)
             } else {
                 printf("disabled.\n");
             }
+        }
+        if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+        	CMD_IF_SLOT_ENABLE = cfg->get_value(CFG_CMD_ENABLE);
+            CMD_IF_SLOT_BASE = 0x47; // $DF1C
         }
     }
     C64_ETHERNET_ENABLE = 0;
@@ -562,6 +575,9 @@ void C64 :: init_io(void)
 
 void C64 :: freeze(void)
 {
+    if(C64_CLOCK_DETECT == 0)
+    	return;
+
     stop();
 
     // turn off button interrupts on SD-CPU
@@ -572,7 +588,6 @@ void C64 :: freeze(void)
     backup_io();
     init_io();
     
-    push_event(e_freeze, this);
     stopped = true;
 }
 
@@ -630,6 +645,9 @@ void C64 :: restore_io(void)
 
 void C64 :: unfreeze(cart_def *def, int mode)
 {
+    if(C64_CLOCK_DETECT == 0)
+    	return;
+
     keyb->wait_free();
     
 	if(mode == 0) {
@@ -650,7 +668,6 @@ void C64 :: unfreeze(cart_def *def, int mode)
 		C64_MODE = C64_MODE_UNRESET;
 	}
     stopped = false;
-    push_event(e_unfreeze, this);
 }
 
 Screen *C64 :: getScreen(void)
@@ -693,7 +710,7 @@ void C64 :: set_cartridge(cart_def *def)
 	
     printf("Setting cart mode %b. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
     C64_CARTRIDGE_TYPE = def->type & 0x1F;
-    push_event(e_cart_mode_change, NULL, def->type);
+//    push_event(e_cart_mode_change, NULL, def->type);
     
     set_emulation_flags(def);
 
@@ -791,37 +808,35 @@ void C64 :: cartridge_test(void)
     }
 }
 
-void C64 :: poll(Event &e)
+bool C64 :: buttonPush(void)
+{
+	bool ret = buttonPushSeen;
+	buttonPushSeen = false;
+	return ret;
+}
+
+void C64 :: setButtonPushed(void)
+{
+	buttonPushSeen = true;
+}
+
+void C64 :: poll()
 {
     static uint8_t button_prev;
     uint8_t buttons = ioRead8(ITU_IRQ_ACTIVE) & ITU_BUTTONS;
     if((buttons & ~button_prev) & ITU_BUTTON1) {
-        push_event(e_button_press, 0);
+    	buttonPushSeen = true;
     }
     button_prev = buttons;
+}
 
-#ifndef _NO_FILE_ACCESS
-	File *f;
-	uint32_t size;
-    uint32_t reu_size;
-    t_flash_address addr;
-	int run_code;
-    
-	switch(e.type) {
-
-	case e_restore_cart:
-		if (C64_CARTRIDGE_ACTIVE) {
-			// rethrow event
-			push_event(e_restore_cart);
-		} else {
-			printf("Cart got disabled, now restoring.\n");
-			set_cartridge(NULL);
-		}
-		break;
-	default:
-		break;
+void C64 :: restoreCart(void)
+{
+	while (C64_CARTRIDGE_ACTIVE) {
+		vTaskDelay(2);
 	}
-#endif
+	printf("Cart got disabled, now restoring.\n");
+	set_cartridge(NULL);
 }
 
 int C64 :: executeCommand(SubsysCommand *cmd)
@@ -832,7 +847,14 @@ int C64 :: executeCommand(SubsysCommand *cmd)
 	int ram_size;
 
     switch(cmd->functionID) {
-	case MENU_C64_RESET:
+    case C64_UNFREEZE:
+		if(client) { // we can't execute this yet
+			client->release_host(); // disconnect from user interface
+			client = 0;
+		}
+		unfreeze(0, 0);
+    	break;
+    case MENU_C64_RESET:
 		if(client) { // we can't execute this yet
 			client->release_host(); // disconnect from user interface
 			client = 0;
@@ -903,7 +925,6 @@ int C64 :: executeCommand(SubsysCommand *cmd)
 		break;
 	}
 
-    delete cmd;
     return 0;
 }
 
@@ -1015,7 +1036,7 @@ int C64 :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t reloc)
     printf("Resuming..\n");
     resume();
 	
-    push_event(e_restore_cart);
+    restoreCart();
     return 0;
 }
 

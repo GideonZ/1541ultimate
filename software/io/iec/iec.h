@@ -87,6 +87,7 @@ public:
     ~IecInterface();
     
     int executeCommand(SubsysCommand *cmd); // from SubSystem
+    const char *identify(void) { return "IEC"; }
 
     int poll(Event &ev);
     int fetch_task_items(Path *path, IndexedList<Action *> &list);

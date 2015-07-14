@@ -37,17 +37,19 @@ TapeRecorder :: TapeRecorder()
 	file = NULL;
 	last_user_interface = 0;
 	stop(REC_ERR_OK);
-    MainLoop :: addPollFunction(poll_tape_rec);
-	
+	taskHandle = 0;
+
 	cache = new uint8_t[REC_CACHE_SIZE];
     for(int i=0;i<REC_NUM_CACHE_BLOCKS;i++) {
         cache_blocks[i] = (uint32_t *)&cache[512*i];
     }
+	if (getFpgaCapabilities() & CAPAB_C2N_RECORDER) {
+		xTaskCreate( TapeRecorder :: poll_tape_rec, "TapeRecorder", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
+	}
 }
 
 TapeRecorder :: ~TapeRecorder()
 {
-    MainLoop :: removePollFunction(poll_tape_rec);
 	stop(REC_ERR_OK);
     delete[] cache;
 }
@@ -73,7 +75,6 @@ int TapeRecorder :: executeCommand(SubsysCommand *cmd)
 		default:
 			break;
 	}
-	delete cmd; // cleanup
 	return 0;
 }
 
@@ -102,7 +103,7 @@ void TapeRecorder :: stop(int error)
     recording = 0;
     
     if (error != REC_ERR_OK) {
-    	push_event(e_freeze);
+    	// FIXME: freeze
     }
 	if(file) {	
         printf("Flush TAP..\n");
@@ -134,11 +135,9 @@ void TapeRecorder :: start()
     block_out = 0;
     blocks_cached = 0;
     blocks_written = 0;
-//    CPU_IRQ_VECTOR = (DWORD)&tape_req_irq;	// FIXME
 
 	LEAVE_SAFE_SECTION;
 	
-	push_event(e_unfreeze);
 }
 
 void TapeRecorder :: irq()
@@ -226,7 +225,6 @@ void TapeRecorder :: flush()
     file->write(&le_size, 4, &bytes_written);
 
 	fm->fclose(file);
-	push_event(e_reload_browser);
 	file = NULL;
 
 	recording = 0;
@@ -234,38 +232,41 @@ void TapeRecorder :: flush()
 	RECORD_CONTROL = 0; // make sure the interrupt has been cleared too.
 }
 	
-void TapeRecorder :: poll_tape_rec(Event &e)
+void TapeRecorder :: poll_tape_rec(void *a)
 {
-	tape_recorder->poll(e);
+	tape_recorder->poll();
 }
 
-void TapeRecorder :: poll(Event &e)
+void TapeRecorder :: poll()
 {
-    if((error_code != REC_ERR_OK) && last_user_interface && last_user_interface->is_available()) {
-    	last_user_interface->popup("Error during tape capture.", BUTTON_OK);
-        error_code = REC_ERR_OK;
-    } else if ((recording >0) && (e.type == e_enter_menu)) {
-    	if (last_user_interface) {
-			if(last_user_interface->popup("End tape capture?", BUTTON_YES | BUTTON_NO) == BUTTON_YES)
-				flush();
-    	}
-    }        
+	while(1) {
+		if((error_code != REC_ERR_OK) && last_user_interface && last_user_interface->is_available()) {
+			last_user_interface->popup("Error during tape capture.", BUTTON_OK);
+			error_code = REC_ERR_OK;
+		} /*else if ((recording >0) && (e.type == e_enter_menu)) {
+			if (last_user_interface) {
+				if(last_user_interface->popup("End tape capture?", BUTTON_YES | BUTTON_NO) == BUTTON_YES)
+					flush();
+			}
+		}   */
 
-    if (file) { // check for invalidation
-		if(!file->isValid()) {
-            printf("TapeRecorder: Our file got killed...\n");
-            file = NULL;
-	        stop(REC_ERR_NO_FILE);
-	    }
+		if (file) { // check for invalidation
+			if(!file->isValid()) {
+				printf("TapeRecorder: Our file got killed...\n");
+				file = NULL;
+				stop(REC_ERR_NO_FILE);
+			}
+		}
+		if (recording > 0) {
+			if(blocks_cached >= (blocks_written+REC_NUM_CACHE_BLOCKS)) {
+				stop(REC_ERR_OVERFLOW);
+			}
+			while (blocks_cached > blocks_written) {
+				error_code = write_block();
+			}
+		}
+		vTaskDelay(10);
 	}
-    if (recording > 0) {
-        if(blocks_cached >= (blocks_written+REC_NUM_CACHE_BLOCKS)) {
-            stop(REC_ERR_OVERFLOW);
-        }
-        while (blocks_cached > blocks_written) {
-            error_code = write_block();
-        }
-    }
 }
 
 bool TapeRecorder :: request_file(SubsysCommand *cmd)

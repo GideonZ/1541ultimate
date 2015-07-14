@@ -1,17 +1,20 @@
 #include "ui_stream.h"
 #include "stream_menu.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 UserInterfaceStream :: UserInterfaceStream(Stream *s)
 {
     stream = s;
 }
     
-void UserInterfaceStream :: handle_event(Event &e)
+void UserInterfaceStream :: run(void)
 {
-    if(menu)
-        menu->poll(e);
-    else
-    	printf("No menu set!\n");
+	while(1) {
+		if(menu)
+			menu->poll();
+		vTaskDelay(10);
+	}
 }
 
 int  UserInterfaceStream :: popup(const char *msg, uint8_t flags)

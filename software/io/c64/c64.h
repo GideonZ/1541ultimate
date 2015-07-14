@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include "subsys.h"
 #include "host.h"
-#include "event.h"
 #include "integer.h"
 #include "keyboard.h"
 #include "screen.h"
@@ -12,6 +11,10 @@
 #include "menu.h"
 #include "iomap.h"
 #include "filemanager.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
 
 #define REU_MEMORY_BASE 0x1000000
 #define REU_MAX_SIZE    0x1000000
@@ -28,6 +31,7 @@
 #define C64_EVENT_MAX_REU   0x6477
 #define C64_EVENT_AUDIO_ON  0x6478
 #define C64_START_CART      0x6479
+#define C64_UNFREEZE		0x647A
 
 //#define SID_TRACE_END           *((volatile uint32_t *)(C64_TRACE_BASE + 0x80))
 //#define SID_REGS(x)             *((volatile uint8_t *)(C64_TRACE_BASE + x))
@@ -166,6 +170,8 @@ class C64 : public GenericHost, SubSystem, ObjectWithMenu, ConfigurableObject
     uint8_t vic_d011;
     uint8_t vic_d012;
 
+    volatile bool buttonPushSeen;
+
     bool stopped;
     void determine_d012(void);
     void backup_io(void);
@@ -176,6 +182,12 @@ class C64 : public GenericHost, SubSystem, ObjectWithMenu, ConfigurableObject
 
     void stop(bool do_raster = true);
     void resume(void);
+    void restoreCart(void);
+
+    void poll(void);
+    void reset(void);
+    void freeze(void);
+
 public:
     C64();
     ~C64();
@@ -199,19 +211,23 @@ public:
     	unfreeze(0, 0); // continue where we left off
     	this->client = 0;
     }
+    bool hasButton(void) {
+    	return true;
+    }
+    bool buttonPush(void);
+    void setButtonPushed(void);
 
     bool exists(void);
     bool is_accessible(void);
-    void poll(Event &e);
-    void reset(void);
-    void freeze(void);
-    void unfreeze(cart_def *def, int mode);
+
     void set_colors(int background, int border);
     Screen *getScreen(void);
     void    releaseScreen(void);
     Keyboard *getKeyboard(void);
 
     /* C64 specifics */
+    void unfreeze(cart_def *def, int mode);  // called from crt... hmm
+
     void init_cartridge(void);
     void cartridge_test(void);
     int  dma_load(File *f, const char *name, uint8_t run_mode, uint16_t reloc=0);
@@ -220,13 +236,6 @@ public:
     friend class FileTypeSID; // sid load does some tricks
 };
 
-/*
-class C64Event
-{
- public:
-    static int prepare_dma_load(File *f, const char *name, int len, uint8_t run_mode, uint16_t reloc=0);
-    static int perform_dma_load(File *f, uint8_t run_mode, uint16_t reloc=0);
-};
-*/
+extern C64 *c64;
 
 #endif

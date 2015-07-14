@@ -4,6 +4,8 @@
 #include "userinterface.h"
 #include "browsable.h"
 #include "ui_elements.h"
+#include "observer.h"
+#include "filemanager.h"
 
 class TreeBrowserState;
 class ContextMenu;
@@ -15,7 +17,9 @@ public:
     char quick_seek_string[MAX_SEARCH_LEN];
     int  quick_seek_length;
 
+    FileManager *fm;
     UserInterface *user_interface;
+    ObserverQueue *observerQueue;
     Browsable *root;
     Screen   *screen;
     Window   *window;
@@ -35,7 +39,7 @@ public:
     virtual void init(Screen *scr, Keyboard *k);
     void deinit(void);
 
-    virtual int poll(int, Event &e);
+    virtual int poll(int);
     virtual int handle_key(int);
 
     void reset_quick_seek(void);

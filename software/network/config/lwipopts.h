@@ -38,6 +38,9 @@
 #ifndef __LWIPOPTS_H__
 #define __LWIPOPTS_H__
 
+// Use ERRNO! (nowhere to be found in the documentation!)
+#define ERRNO 				1
+
 //  Altera TSE requires 2 byte padding for use with lwIP!
 #define ETH_PAD_SIZE        0
 
@@ -242,7 +245,7 @@
  * MEMP_NUM_NETBUF: the number of struct netbufs.
  * (only needed if you use the sequential API, like api_lib.c)
  */
-#define MEMP_NUM_NETBUF                 2
+#define MEMP_NUM_NETBUF                 4
 
 /**
  * MEMP_NUM_NETCONN: the number of struct netconns.

@@ -23,58 +23,23 @@
 #include <errno.h>
 #include <unistd.h>
 
-int SocketStream :: setup_socket()
-{
-	int sockfd, portno;
-	socklen_t clilen;
-    struct sockaddr_in serv_addr, cli_addr;
-
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-       puts("ERROR opening socket");
-       return -1;
-    }
-    memset((char *) &serv_addr, 0, sizeof(serv_addr));
-    portno = 12345;
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(portno);
-    if (bind(sockfd, (struct sockaddr *) &serv_addr,
-             sizeof(serv_addr)) < 0) {
-        puts("ERROR on binding");
-        return -2;
-    }
-
-    listen(sockfd, 2);
-
-    clilen = sizeof(cli_addr);
-    actual_socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-    if (actual_socket < 0) {
-         puts("ERROR on accept");
-         return -3;
-    }
-
-    int status = fcntl(actual_socket, F_SETFL, fcntl(actual_socket, F_GETFL, 0) | O_NONBLOCK);
-
-    if (status == -1){
-        puts("calling fcntl");
-        return -4;
-    }
-
-    return 0;
-}
-
 int SocketStream :: get_char()
 {
+	purge();
+
 	char buffer[4];
-	memset(buffer, 0, 16);
+	memset(buffer, 0, 4);
 	int n = recv(actual_socket, buffer, 1, 0);
 	if (n > 0) {
 		return (int)buffer[0];
-	}
-	if ((n < 0) && (errno != EWOULDBLOCK)) {
+	} else if (n < 0) {
+		if (errno == EAGAIN)
+			return -1;
 		printf("ERROR reading from socket %d. Errno = %d", n, errno);
-		return -4;
+		return -1;
+	} else { // n == 0
+		printf("Socket got closed\n");
+		return -2;
 	}
 	return -1;
 }
@@ -84,11 +49,47 @@ int SocketStream :: write(const char *buffer, int out_length)
 	if (actual_socket < 0) {
 		return -6;
 	}
+	// first see if we can buffer the data locally
+	if (buf_remaining >= out_length) {
+		memcpy(buf_pos, buffer, out_length);
+		buf_pos += out_length;
+		buf_remaining -= out_length;
+		return 0;
+	}
+
+	int ret = purge();
+	if (ret)
+		return ret;
+
+	if (buf_remaining >= out_length) {
+		memcpy(buf_pos, buffer, out_length);
+		buf_pos += out_length;
+		buf_remaining -= out_length;
+		return 0;
+	}
+
+	// too large to store in buffer
+	return transmit(buffer, out_length);
+}
+
+int SocketStream :: purge() {
+	int len = buf_size - buf_remaining;
+	if (!len)
+		return 0;
+
+	int ret = transmit(buf_start, len);
+	buf_remaining = buf_size;
+	buf_pos = buf_start;
+	return ret;
+}
+
+int SocketStream :: transmit(const char *buffer, int out_length)
+{
 	while(out_length > 0) {
 		int n = send(actual_socket, buffer, out_length, 0);
 		if (n == out_length) {
 			return 0; // OK!
-		} else if ((n < 0) && (errno != EWOULDBLOCK)) {
+		} else if (n < 0) {
 			puts("ERROR writing to socket");
 			return -5;
 		} else {

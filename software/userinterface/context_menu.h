@@ -48,7 +48,7 @@ public:
     virtual void executeAction();
 
     virtual void init(Window *pwin, Keyboard *keyb);
-    virtual int poll(int, Event &e);
+    virtual int poll(int);
     virtual void draw();
 
     friend class TaskMenu;

@@ -196,6 +196,9 @@ architecture structural of slot_server_v4 is
     signal sample_L         : signed(17 downto 0);
     signal sample_R         : signed(17 downto 0);
 
+    signal phi2_tick_avail  : std_logic;
+    signal stand_alone_tick : std_logic;
+    signal tick_div         : integer range 0 to 63;
 begin
     reset_button  <= buttons(0) when control.swap_buttons='0' else buttons(2);
     freeze_button <= buttons(2) when control.swap_buttons='0' else buttons(0);
@@ -501,7 +504,7 @@ begin
             slot_req     => slot_req,
             slot_resp    => slot_resp_sid,
         
-            start_iter   => phi2_tick_i,
+            start_iter   => phi2_tick_avail,
             sample_left  => sid_sample_left,
             sample_right => sid_sample_right );
 
@@ -786,7 +789,7 @@ begin
         resp        => mem_resp );
 
     -- Delay the inhibit one clock cycle, because our
-    -- arbited introduces one clock cycle delay as well.
+    -- arbiter introduces one clock cycle delay as well.
     process(clock)
     begin
         if rising_edge(clock) then
@@ -794,6 +797,26 @@ begin
         end if;
     end process;
 
-    phi2_tick   <= phi2_tick_i;
+    -- Stand alone tick output
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            stand_alone_tick <= '0';
+            if tick_div = 0 then
+                stand_alone_tick <= '1';
+                if control.tick_ntsc = '1' then
+                    tick_div <= 48; -- 49 => 1.0204 MHz (-0.15%)
+                else
+                    tick_div <= 50; -- 51 => 0.9804 MHz (-0.49%)
+                end if;
+            else
+                tick_div <= tick_div - 1;
+            end if;
+        end if;
+    end process;
+
+    phi2_tick_avail <= stand_alone_tick when status.clock_detect = '0' else phi2_tick_i;
+    phi2_tick <= phi2_tick_avail;
+    
 	c64_stopped <= status.c64_stopped;
 end structural;

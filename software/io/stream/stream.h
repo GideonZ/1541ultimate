@@ -29,6 +29,8 @@ public:
 
     virtual int format(const char *fmt, ...);
     virtual int getstr(char *buffer, int length); // non blocking
+
+    virtual void sync(void) { }
 };
 
 #endif

@@ -2,6 +2,7 @@
 #include "init_function.h"
 #include <stdlib.h>
 #include <string.h>
+#include "lwip/netifapi.h"
 #include "ftpd.h"
 extern "C" {
 #include "dump_hex.h"

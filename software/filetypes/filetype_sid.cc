@@ -418,7 +418,7 @@ void FileTypeSID :: load(void)
 	fm->fclose(file);
 	file = NULL;
 
-    push_event(e_restore_cart);
+    c64->restoreCart();
 	
 	return;
 }
