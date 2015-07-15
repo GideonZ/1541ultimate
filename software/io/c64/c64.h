@@ -149,6 +149,7 @@ typedef struct _cart
 
 class C64 : public GenericHost, SubSystem, ObjectWithMenu, ConfigurableObject
 {
+    TaskHandle_t taskHandle;
     HostClient *client;
     Flash *flash;
     Keyboard *keyb;
@@ -184,7 +185,7 @@ class C64 : public GenericHost, SubSystem, ObjectWithMenu, ConfigurableObject
     void resume(void);
     void restoreCart(void);
 
-    void poll(void);
+    static void poll(void *a);
     void reset(void);
     void freeze(void);
 

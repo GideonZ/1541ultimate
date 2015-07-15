@@ -41,7 +41,7 @@ UsbHubDriver :: UsbHubDriver()
     }
     device = NULL;
     host = NULL;
-    memset(irq_data, 0, 4);
+    memset((void *)irq_data, 0, 4);
     port_in_reset = 0;
 }
 
@@ -194,7 +194,7 @@ void UsbHubDriver :: install(UsbDevice *dev)
     ipipe.Command = 0; // driver will fill in the command
 
     irq_transaction = host->allocate_input_pipe(&ipipe, UsbHubDriver_interrupt_handler, this);
-    //printf("Poll installed on irq_transaction %d\n", irq_transaction);
+    printf("Poll installed on irq_transaction %d\n", irq_transaction);
 }
 
 void UsbHubDriver :: deinstall(UsbDevice *dev)
@@ -215,14 +215,15 @@ void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
 
 void UsbHubDriver :: poll()
 {
-	if(!irq_data[0])
+	uint8_t irqd = irq_data[0];
+	if(!irqd)
         return;
 
     int i;
     
     for(int j=0;j<num_ports;j++) {
-    	irq_data[0] >>=1;
-        if(irq_data[0] & 1) {
+    	irqd >>=1;
+        if(irqd & 1) {
             c_get_port_status[4] = uint8_t(j+1);
             i = host->control_exchange(&device->control_pipe,
 										c_get_port_status, 8,

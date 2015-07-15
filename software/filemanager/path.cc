@@ -10,13 +10,15 @@
 #include "file_info.h"
 #include <string.h>
 
-Path :: Path() : full_path("/")
+Path :: Path() : full_path("/"), elements(10, NULL)
 {
     owner = "Unknown";
+    depth = 0;
 }
 
 Path :: ~Path()
 {
+	cleanupElements();
 }
 
 void Path :: update(const char *p)
@@ -25,6 +27,29 @@ void Path :: update(const char *p)
 		return;
 
 	full_path = p;
+}
+
+void Path :: update(int i, const char *p)
+{
+	if (!elements[i]) {
+		elements.set(i, new mstring(p));
+		return;
+	}
+
+	if (*(elements[i]) == p)
+		return;
+
+	*(elements[i]) = p;
+}
+
+void Path :: cleanupElements() {
+	for(int i=0;i<depth;i++) {
+		if (elements[i]) {
+			delete elements[i];
+			elements.set(i, 0);
+		}
+	}
+	depth = 0;
 }
 
 int Path :: cd_single(char *cd)
@@ -37,6 +62,9 @@ int Path :: cd_single(char *cd)
 		for(int i=p_len-2;i>=0;i--) {
 			if((p[i] == '/')||(p[i] == '\\')||(i==0)) {
 				p[i+1] = '\0';
+				depth--;
+				delete elements[depth];
+				elements.set(depth, 0);
 				break;
 			}
 		}
@@ -46,7 +74,9 @@ int Path :: cd_single(char *cd)
         return 1;
     }
 
-	full_path += cd;
+    update(depth, cd);
+    depth++;
+    full_path += cd;
 	full_path += "/";
 	return 1;
 }
@@ -78,6 +108,7 @@ int Path :: cd(const char *pa_in)
         --pa_len;
         pa++;
         full_path = "/";
+        cleanupElements();
     }
     if(!pa_len) {
 		delete[] pa_alloc;
@@ -109,6 +140,19 @@ int Path :: cd(const char *pa_in)
 const char *Path :: get_path(void)
 {
 	return full_path.c_str();
+}
+
+int Path :: getDepth()
+{
+	return depth;
+}
+
+const char *Path :: getElement(int a)
+{
+	if ((a >= depth) || (a < 0)) {
+		return "illegal!";
+	}
+	return (elements[a])->c_str();
 }
 
 FRESULT Path :: get_directory(IndexedList<FileInfo *> &target)

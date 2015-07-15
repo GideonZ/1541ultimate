@@ -79,7 +79,11 @@ void Usb2 :: input_task_impl(void)
 	while(1) {
 		if (xQueueReceive(queue, &pkt, 5000) == pdTRUE) {
 			PROFILER_SUB = 5;
-			inputPipeCallBacks[pkt.pipe](pkt.data, pkt.length, pkt.object);
+			if (!pkt.data) { // error code
+				((UsbDriver *)pkt.object)->pipe_error(pkt.pipe);
+			} else {
+				inputPipeCallBacks[pkt.pipe](pkt.data, pkt.length, pkt.object);
+			}
 			PROFILER_SUB = 12;
 		} else {
 			printf("@");
@@ -184,40 +188,42 @@ void Usb2 :: irq_handler(void)
 	}
 
 	int pipe = read1 & 0x0F;
+	int error = 0;
 	if ((read1 & 0xFFF0) == 0xFFF0) {
 		if (pipe == 15) {
 			printf("USB Other IRQ. Status = %b\n", USB2_STATUS);
+			return;
 		} else {
 			pause_input_pipe(pipe);
 			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, read2);
-			((UsbDriver *)this->inputPipeObjects[pipe])->pipe_error(pipe);
+			error = 1;
 		}
-		return;
 	}
 	//printf("%4x,%4x,%d\n", read1, read2, success);
 
 	uint8_t *buffer = 0;
-	if (inputPipeBufferMethod[pipe] == e_block) {
-		uint16_t idx = (read1 & 0xFFF0) / 384;
-		free_map[idx] = 1; // allocated
-		buffer = (uint8_t *) & blockBufferBase[read1 & 0xFFF0];
-	} else {
-		buffer = (uint8_t *) & circularBufferBase[read1 & 0xFFF0];
+	if (!error) {
+		if (inputPipeBufferMethod[pipe] == e_block) {
+			uint16_t idx = (read1 & 0xFFF0) / 384;
+			free_map[idx] = 1; // allocated
+			buffer = (uint8_t *) & blockBufferBase[read1 & 0xFFF0];
+		} else {
+			buffer = (uint8_t *) & circularBufferBase[read1 & 0xFFF0];
+		}
 	}
-	//printf("Calling pipe %d callback... ", pipe);
+
 	struct usb_packet pkt;
-	pkt.data = buffer;
+	pkt.data = buffer; // will be 0 upon error!
 	pkt.length = read2;
 	pkt.object = inputPipeObjects[pipe];
 	pkt.pipe = pipe;
-#ifndef OS
-	inputPipeCallBacks[pipe](pkt.data, pkt.length, pkt.object);
-#else
+//#ifndef OS
+//	inputPipeCallBacks[pipe](pkt.data, pkt.length, pkt.object);
+
 	BaseType_t retval;
 	PROFILER_SUB = 3;
 	xQueueSendFromISR(queue, &pkt, &retval);
 	PROFILER_SUB = 4;
-#endif
 }
 
 bool Usb2 :: get_fifo(uint16_t *out)
@@ -313,15 +319,20 @@ void Usb2 :: pause_input_pipe(int index)
 {
 	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
 	uint16_t command = pipe[PIPE_OFFS_Command];
-	if (command != UCMD_PAUSED)
-		inputPipeCommand[index] = command;
-	pipe[PIPE_OFFS_Command] = UCMD_PAUSED; // UCMD_PAUSED is an unused bit to make sure the value != 0
+	if (command & UCMD_PAUSED) {
+		printf("Pause was already set\n");
+		return;
+	}
+	command |= UCMD_PAUSED;
+	pipe[PIPE_OFFS_Command] = command;
 }
 
 void Usb2 :: resume_input_pipe(int index)
 {
 	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
-	pipe[PIPE_OFFS_Command] = inputPipeCommand[index];
+	uint16_t command = pipe[PIPE_OFFS_Command];
+	command &= ~UCMD_PAUSED;
+	pipe[PIPE_OFFS_Command] = command;
 }
 
 void Usb2 :: free_input_buffer(int inpipe, uint8_t *buffer)
@@ -358,12 +369,10 @@ uint16_t Usb2 :: getSplitControl(int addr, int port, int speed, int type)
 
 int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
 {
-#ifdef OS
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
     	return -9;
     }
-#endif
 
 	USB2_CMD_DevEP  = pipe->DevEP;
 	USB2_CMD_Length = outlen;
@@ -406,20 +415,16 @@ int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *i
 			;
 		// printf("Out Result = %4x\n", USB2_CMD_Result);
 	}
-#ifdef OS
     xSemaphoreGive(mutex);
-#endif
 	return transferred;
 }
 
 int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len)
 {
-#ifdef OS
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
     	return -9;
     }
-#endif
 	USB2_CMD_DevEP  = pipe->DevEP;
 	USB2_CMD_Length = setup_len;
 	USB2_CMD_MaxTrans = pipe->MaxTrans;
@@ -454,20 +459,16 @@ int Usb2 :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, v
 	while(USB2_CMD_Command)
 		;
 	// printf("In Result = %4x\n", USB2_CMD_Result);
-#ifdef OS
     xSemaphoreGive(mutex);
-#endif
 	return transferred;
 }
 
 int  Usb2 :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(uint8_t *buf, int len, void *obj), void *object)
 {
-#ifdef OS
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
     	return -9;
     }
-#endif
 	int index = open_pipe();
 	if (index >= 0) {
 		inputPipeCallBacks[index] = callback;
@@ -475,9 +476,10 @@ int  Usb2 :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(uint8_t *b
 
 		init_pipe(index, pipe);
 	}
-#ifdef OS
-    xSemaphoreGive(mutex);
-#endif
+	for(int i=0;i<8;i++) {
+		printf(" OBJ: %p CB: %p CMB: %4x\n", inputPipeObjects[i], inputPipeCallBacks[i], inputPipeCommand[i]);
+	}
+	xSemaphoreGive(mutex);
 	return index;
 }
 
@@ -486,28 +488,22 @@ void Usb2 :: free_input_pipe(int index)
 	if (index < 0) {
 		return;
 	}
-#ifdef OS
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
     	return;
     }
-#endif
 	close_pipe(index);
 	inputPipeCallBacks[index] = 0;
 	inputPipeObjects[index] = 0;
-#ifdef OS
     xSemaphoreGive(mutex);
-#endif
 }
 
 int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 {
-#ifdef OS
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
     	return -9;
     }
-#endif
 	//printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
     uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
 
@@ -546,9 +542,8 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
 	} while (len > 0);
 
-#ifdef OS
     xSemaphoreGive(mutex);
-#endif
+
     PROFILER_SUB = sub;
 
 	return total_trans;
@@ -556,13 +551,12 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
 int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 {
-#ifdef OS
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
     	return -9;
     }
-#endif
-	//printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
+
+    //printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
 	uint32_t addr = (uint32_t)buf;
 	int total_trans = 0;
 
@@ -601,14 +595,13 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		len -= transferred;
 		pipe->Command = (result & URES_TOGGLE) ^ URES_TOGGLE; // that's what we start with next time.
 		if (transferred != current_len) { // some bytes remained?
+			printf("CMD res: %4x\n", result);
 			total_trans = -8;
 			break;
 		}
 	} while (len > 0);
 
-#ifdef OS
     xSemaphoreGive(mutex);
-#endif
 	return total_trans;
 }
 
@@ -618,7 +611,7 @@ void Usb2 :: bus_reset()
 
 	for (int i=0; i<3; i++) {
 		wait_ms(50);
-		printf("Reset status: %b\n", USB2_STATUS);
+		printf("Reset status: %b Speed: %b\n", USB2_STATUS, NANO_LINK_SPEED);
 		if (USB2_STATUS & USTAT_OPERATIONAL)
 			break;
 	}

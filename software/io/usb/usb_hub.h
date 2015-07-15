@@ -17,7 +17,7 @@ class UsbHubDriver : public UsbDriver
     int  port_in_reset;
     uint8_t buf[64];
     uint8_t dummy[16];
-    uint8_t irq_data[4];
+    volatile uint8_t irq_data[4];
     
     UsbBase   *host;
     UsbDevice *device;

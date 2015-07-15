@@ -2,8 +2,8 @@
 #include "itu.h"
 #include "keyboard_c64.h"
 #include "c64.h"
-
-#define NO_IRQ 1
+#include "FreeRTOS.h"
+#include "task.h"
 
 const uint8_t modifier_map[] = {
     0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
@@ -166,10 +166,10 @@ void Keyboard_C64 :: scan(void)
 
 int Keyboard_C64 :: getch(void)
 {
-#ifdef NO_IRQ
+    static TickType_t previousWake = 0;
+    vTaskDelayUntil(&previousWake, 4);
+
     scan();
-    wait_ms(20);
-#endif
 
     if(!key_count) {
         return -1;

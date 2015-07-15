@@ -91,3 +91,8 @@ void UserInterfaceStream :: hide_progress(void)
 {
 
 }
+
+int UserInterfaceStream :: enterSelection(void)
+{
+	return menu->into();
+}

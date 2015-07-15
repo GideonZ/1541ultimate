@@ -11,10 +11,12 @@ class TreeBrowserState;
 class ContextMenu;
 class ConfigBrowser;
 
+#define MAX_SEARCH_LEN_TB 32
+
 class TreeBrowser : public UIObject
 {
 public:
-    char quick_seek_string[MAX_SEARCH_LEN];
+    char quick_seek_string[MAX_SEARCH_LEN_TB];
     int  quick_seek_length;
 
     FileManager *fm;
@@ -26,6 +28,7 @@ public:
     Keyboard *keyb;
     Path 	 *path;
 
+    TreeBrowserState *state_root;
     TreeBrowserState *state;
 
     // link to temporary popup

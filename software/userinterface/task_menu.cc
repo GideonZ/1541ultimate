@@ -70,7 +70,7 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
             max_len = 30;
     }
 
-    window = new Window(screen, 19-(max_len>>1), y_offs+2, max_len+2, rows);
+    window = new Window(screen, (screen->get_size_x() - max_len - 2) >> 1, y_offs+2, max_len+2, rows);
     window->set_color(user_interface->color_fg);
     window->draw_border();
     context_state = e_active;

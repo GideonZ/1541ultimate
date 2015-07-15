@@ -73,7 +73,7 @@ public:
     void unpack(uint8_t *buffer, int len);
 
     const char *get_item_name() { return definition->item_text; }
-    const char *get_display_string();
+    const char *get_display_string(char *buffer, int width);
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
 };

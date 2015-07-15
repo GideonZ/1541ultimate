@@ -55,7 +55,8 @@ int FileTypeG64 :: fetch_context_items(IndexedList<Action *> &list)
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_DRIVE_1541_1) {
-        list.append(new Action("Run Disk", SUBSYSID_DRIVE_A, G64FILE_RUN));
+    	if (c64->exists())
+    		list.append(new Action("Run Disk", SUBSYSID_DRIVE_A, G64FILE_RUN));
         list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, G64FILE_MOUNT));
         list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, G64FILE_MOUNT_RO));
         list.append(new Action("Mount Disk Unlinked", SUBSYSID_DRIVE_A, G64FILE_MOUNT_UL));

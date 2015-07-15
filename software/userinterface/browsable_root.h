@@ -17,8 +17,10 @@
 
 class BrowsableDirEntry : public Browsable
 {
+	Browsable *parent;
 	FileInfo *info;
 	FileType *type;
+
 	Path *path;
 	Path *parent_path;
 
@@ -30,20 +32,13 @@ class BrowsableDirEntry : public Browsable
 		}
 	}
 public:
-	BrowsableDirEntry(Path *pp, FileInfo *info, bool sel) {
+	BrowsableDirEntry(Path *pp, Browsable *parent, FileInfo *info, bool sel) {
 		this->info = info;
 		this->type = NULL;
 		this->selectable = sel;
 		this->path = 0;
+		this->parent = parent;
 		this->parent_path = pp;
-	}
-
-	FileInfo *getInfo(void) {
-		return this->info;
-	}
-
-	Path *getPath(void) {
-		return parent_path;
 	}
 
 	virtual ~BrowsableDirEntry() {
@@ -55,17 +50,37 @@ public:
 			FileManager :: getFileManager() -> release_path(path);
 	}
 
-	virtual int getSubItems(IndexedList<Browsable *>&list) {
+	FileInfo *getInfo(void) {
+		return this->info;
+	}
+
+	Path *getPath(void) {
+		return parent_path;
+	}
+
+	Browsable *getParent(void) {
+		return parent;
+	}
+
+	virtual IndexedList<Browsable *> *getSubItems(int &error) {
+		if (children.get_elements() != 0) {
+			error = 0;
+			return &children; // cached version OK
+		}
+
 		setPath();
 		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-		path->get_directory(*infos);
-
-		for(int i=0;i<infos->get_elements();i++) {
-			FileInfo *inf = (*infos)[i];
-			list.append(new BrowsableDirEntry(path, inf, !(inf->attrib & AM_VOL))); // pass ownership of the FileInfo to the browsable object
+		if (path->get_directory(*infos) != FR_OK) {
+			delete infos;
+			error = -1;
+		} else {
+			for(int i=0;i<infos->get_elements();i++) {
+				FileInfo *inf = (*infos)[i];
+				children.append(new BrowsableDirEntry(path, this, inf, !(inf->attrib & AM_VOL))); // pass ownership of the FileInfo to the browsable object
+			}
+			delete infos; // deletes the indexed list, but not the FileInfos
 		}
-		delete infos; // deletes the indexed list, but not the FileInfos
-		return list.get_elements();
+		return &children;
 	}
 
 	virtual const char *getName() {
@@ -97,41 +112,41 @@ public:
 
 		UserFileInteraction :: getUserFileInteractionObject() -> fetch_context_items(this, items);
 	}
-
-	virtual bool checkValid() {
-		setPath();
-		return path->isValid();
-	}
 };
 
 class BrowsableRoot : public Browsable
 {
 	Path *root;
+	FileManager *fm;
 public:
-	BrowsableRoot() {
-		root = FileManager :: getFileManager() -> get_new_path("Browsable Root");
+	BrowsableRoot()  {
+		fm = FileManager :: getFileManager();
+		root = fm -> get_new_path("Browsable Root");
 	}
 	virtual ~BrowsableRoot() {
-		FileManager :: getFileManager() -> release_path(root);
+		fm -> release_path(root);
 	}
 
-	virtual int getSubItems(IndexedList<Browsable *>&list) {
-		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-		FileManager :: getFileManager() -> get_directory(root, *infos);
+	// get parent function not implemented; there is no parent, see base class
 
-		for(int i=0;i<infos->get_elements();i++) {
-			FileInfo *inf = (*infos)[i];
-			list.append(new BrowsableDirEntry(root, inf, true)); // pass ownership of the FileInfo to the browsable object
+	virtual IndexedList<Browsable *> *getSubItems(int &error) {
+		printf("ROOT GET SUBITEMS\n");
+		if (children.get_elements() == 0) {
+			IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
+			fm -> get_directory(root, *infos);
+			// printf("Root get sub items: get_directory of %s returned %d elements.\n", root->get_path(), infos->get_elements());
+			for(int i=0;i<infos->get_elements();i++) {
+				FileInfo *inf = (*infos)[i];
+				children.append(new BrowsableDirEntry(root, this, inf, true)); // pass ownership of the FileInfo to the browsable object
+			}
+			delete infos; // deletes the indexed list, but not the FileInfos
 		}
-		delete infos; // deletes the indexed list, but not the FileInfos
-		return list.get_elements();
+		error = 0;
+		printf("ROOT GET SUBITEMS DONE\n");
+		return &children;
 	}
 
 	virtual const char *getName() { return "*Root*"; }
-
-	virtual bool checkValid() {
-		return true;
-	}
 };
 
 #endif /* USERINTERFACE_BROWSABLE_ROOT_H_ */

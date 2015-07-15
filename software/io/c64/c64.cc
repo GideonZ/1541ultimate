@@ -145,7 +145,8 @@ extern uint8_t _binary_chars_bin_start;
 
 C64 :: C64() : SubSystem(SUBSYSID_C64)
 {
-    flash = get_flash();
+	taskHandle = 0;
+	flash = get_flash();
     register_store(0x43363420, "C64 and cartridge settings", c64_config);
 
     // char_set = new BYTE[CHARSET_SIZE];
@@ -166,11 +167,18 @@ C64 :: C64() : SubSystem(SUBSYSID_C64)
 
     if(C64_CLOCK_DETECT == 0)
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
+
+	xTaskCreate( C64 :: poll, "C64 Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &taskHandle );
+    effectuate_settings();
 }
     
 C64 :: ~C64()
 {
-	if(stopped) {
+    if (taskHandle) {
+    	vTaskDelete(taskHandle);
+    }
+
+    if(stopped) {
 	    restore_io();
 	    resume();
 	    stopped = false;
@@ -820,14 +828,19 @@ void C64 :: setButtonPushed(void)
 	buttonPushSeen = true;
 }
 
-void C64 :: poll()
+void C64 :: poll(void *a)
 {
-    static uint8_t button_prev;
-    uint8_t buttons = ioRead8(ITU_IRQ_ACTIVE) & ITU_BUTTONS;
-    if((buttons & ~button_prev) & ITU_BUTTON1) {
-    	buttonPushSeen = true;
-    }
-    button_prev = buttons;
+	C64 *c64 = (C64 *)a;
+
+	static uint8_t button_prev;
+	while(1) {
+		uint8_t buttons = ioRead8(ITU_IRQ_ACTIVE) & ITU_BUTTONS;
+		if((buttons & ~button_prev) & ITU_BUTTON1) {
+			c64->buttonPushSeen = true;
+		}
+		button_prev = buttons;
+		vTaskDelay(5);
+	}
 }
 
 void C64 :: restoreCart(void)
@@ -935,6 +948,9 @@ int C64 :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t reloc)
 		client->release_host(); // disconnect from user interface
 		client = 0;
 	}
+    if(!stopped) {
+    	stop();
+    }
 
     C64_POKE(0x162, run_code);
 

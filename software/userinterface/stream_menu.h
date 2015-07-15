@@ -17,6 +17,7 @@ class StreamMenu
 {
     int state;
     int selected;
+    Browsable *root;
     Browsable *node;
     Stream *stream;
     char user_input[32];

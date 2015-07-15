@@ -495,7 +495,7 @@ LinkRegisterMapSuspended
     .dw $50
 
 ResetDelay
-    .dw 5600
+    .dw 5601
 NumberOfChirps
     .dw 75
 
@@ -618,7 +618,8 @@ _check_rx_toggle
     BEQ  _toggle_ok
     LOAD #0
     STORE CurrentLength
-
+	BRA   _toggle_error
+	
 _toggle_ok
     LOAD Current_Command
     AND  #CMD_REQ_MEMWRITE
@@ -643,6 +644,7 @@ _no_mem_write
     XOR   #CMD_TOGGLE_BIT
     STORE Current_Command
 
+_toggle_error
     LOAD  CurrentBuffer
     ADD   #$4000
     STORE CurrentBuffer
@@ -843,13 +845,10 @@ check_pipes
     STORE PipeNumber
 _chk_pipe
     LOADI PipeAddr
-    STORE temp
-    LOADI PipeAddr
-    CMP   temp
-    BNE   _chk_pipe
-    AND   #CMD_REQ_NOT_PAUSED
-    BNE   _valid_pipe
-
+    STORE Current_Command
+    AND   #CMD_REQ_PAUSED
+    BEQ   _valid_pipe
+	
 _nxt_pipe
     LOAD  PipeNumber
     ADD   #1
@@ -870,8 +869,6 @@ BlockOffset
     .dw 0
     
 _valid_pipe
-    STORE Current_Command
-
     ; check interval
     LOAD  PipeAddr
     ADD   #Offset_Command_Interval
@@ -981,12 +978,13 @@ _prepare_circ
     CALL  _other_params
     CALL  _execute_cmd
 
-    LOAD  Current_Command
-    CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
-
     ;; Now what will we tell the host?  Was the transfer successful?
     LOAD  Transferred
     BEQ   _unsuccessful
+
+    LOAD  Current_Command
+	OR    #CMD_REQ_PAUSED ; we add the pause bit, so that it will only occur once
+    CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
 
     ;; report back to host
     LOAD  Circ_Offset

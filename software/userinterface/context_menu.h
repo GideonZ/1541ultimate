@@ -8,6 +8,8 @@
 
 class TreeBrowserState;
 
+#define MAX_SEARCH_LEN 20
+
 typedef enum _context_state {
     e_new = 0,
     e_active,

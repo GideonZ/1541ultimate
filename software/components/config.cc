@@ -426,13 +426,14 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
     return 0;
 }
 
-const char *ConfigItem :: get_display_string()
+// note:the buffer needs to be at least 3 bytes bigger than what width indicates
+// width is the actual width in characters on the screen, and two additional bytes are needed to set the color
+const char *ConfigItem :: get_display_string(char *buffer, int width)
 {
-    static char tmp[44];
-    static char buf[32];
+	static char buf[32];
 
-    memset(tmp, ' ', 40);
-    tmp[40] = '\0';
+    memset(buffer, ' ', width+2);
+    buffer[width+2] = '\0';
     
     switch(definition->type) {
         case CFG_TYPE_VALUE:
@@ -454,17 +455,17 @@ const char *ConfigItem :: get_display_string()
     char *dst;
     // left align copy
     src = definition->item_text;
-    dst = tmp;
+    dst = buffer;
     while(*src) {
         *(dst++) = *(src++);
     }
     // right align copy
-    dst = &tmp[39];
+    dst = &buffer[width+1];
     for(int b = len-1; b >= 0; b--)
         *(dst--) = buf[b];
     *(dst--) = 7;
     *(dst--) = '\033'; // escape code = set color
-    return tmp;
+    return (const char *)buffer;
 }
 
 int   ConfigItem :: fetch_possible_settings(IndexedList<ConfigSetting *> &list)

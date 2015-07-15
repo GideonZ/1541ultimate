@@ -5,6 +5,9 @@
 #include "usb_device.h"
 #include "blockdev.h"
 #include "file_device.h"
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "semphr.h"
 
 struct t_cbw
 {
@@ -31,6 +34,7 @@ class UsbScsiDriver : public UsbDriver
 	t_device_state state_copy[16];
 	int poll_interval[16];
 	bool media_seen[16];
+	SemaphoreHandle_t mutex;
 	
 	int max_lun;
 	int current_lun;

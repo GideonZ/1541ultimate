@@ -22,13 +22,15 @@ class Browsable
 protected:
 	bool selectable;
 public:
-	Browsable() {
+	IndexedList <Browsable *>children;
+
+	Browsable() : children(0, NULL) {
 		selected = false;
 		selectable = true;
 		(*getCount())++;
 	}
 
-	Browsable(bool s) {
+	Browsable(bool s) : children(0, NULL) {
 		selected = false;
 		selectable = s;
 		(*getCount())++;
@@ -41,6 +43,22 @@ public:
 
 	virtual ~Browsable() {
 		(*getCount())--;
+		killChildren();
+	}
+
+	void killChildren(void) {
+		for (int i=0;i<children.get_elements();i++) {
+			delete children[i];
+		}
+		children.clear_list();
+	}
+
+	Browsable *findChild(const char *n) {
+		for (int i=0;i<children.get_elements();i++) {
+			if (strcmp(children[i]->getName(), n) == 0)
+				return children[i];
+		}
+		return 0;
 	}
 
 	void setSelection(bool s) { selected = s; }
@@ -49,12 +67,11 @@ public:
 
 	virtual void fetch_context_items(IndexedList<Action *>&items) { }
 	virtual int fetch_task_items(IndexedList<Action *> &list) { return 0; }
-	virtual bool isValid() { return false; }
-	virtual int getSubItems(IndexedList<Browsable *>&list) { return 0; }
+	virtual IndexedList<Browsable *> *getSubItems(int &error) { error = 0; return &children; }
+	virtual Browsable *getParent() { return 0; }
 	virtual const char *getName() { return "Browsable"; }
 	virtual void getDisplayString(char *buffer, int width) { strncpy(buffer, getName(), width-1); }
 };
-
 
 
 #endif /* USERINTERFACE_BROWSABLE_H_ */

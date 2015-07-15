@@ -50,6 +50,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
     quick_seek_string[0] = '\0';
     this->root = root;
     state = 0;
+    state_root = 0;
     fm = FileManager :: getFileManager();
     path = fm->get_new_path("Tree Browser");
     observerQueue = new ObserverQueue();
@@ -72,8 +73,10 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 	this->screen = screen;
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
 	keyb = k;
-	if(!state)
+	if(!state) {
 		state = new TreeBrowserState(root, this, 0);
+		state_root = state;
+	}
     state->reload();
 	// state->do_refresh();
 }
@@ -163,7 +166,97 @@ int TreeBrowser :: poll(int sub_returned)
     FileManagerEvent *event = (FileManagerEvent *)observerQueue->waitForEvent(0);
     if (event) {
     	printf("Event %d on %s\n", event->eventType, event->pathName.c_str() );
+
+    	// example: browser path = /SD/Hallo  Event = media removed /SD/
+
+		Path *path = fm->get_new_path("handleEvent");
+		path->cd(event->pathName.c_str()); // now we have a path object, with indexable elements :)
+
+		TreeBrowserState *st = state_root;
+		// TreeBrowserState *nst = state_root;
+
+		bool match_dir = true;
+		bool match_entry = false;
+
+		for (int i=0; i<path->getDepth();i++) {
+			if (st->deeper) {
+				st = st -> deeper;
+			} else {
+				match_dir = false;
+				break;
+			}
+			if (strcmp(st->node->getName(), path->getElement(i)) != 0) {
+				match_dir = false;
+			}
+		}
+		if (match_dir) {
+			if (st->deeper) {
+				printf("$%p:", st->deeper);
+				printf("%p:", st->deeper->node);
+				printf("%s -> %s\n", st->deeper->node->getName(), event->newName.c_str());
+				if (strcmp(st->deeper->node->getName(), event->newName.c_str()) == 0) {
+					match_entry = true;
+				}
+			}
+		}
+
+		printf("DIR %sMATCHED, ENTRY %sMATCHED, st = %s\n", match_dir?"":"NOT ", match_entry?"":"NOT ", st->node->getName());
+		Browsable *b;
+
+    	switch (event->eventType) {
+    	case eNodeAdded:
+    		if (event->pathName == getPath()) { // are we seeing the change?
+    			printf("Refresh because event path and current path are equal.\n");
+    			state->refresh = true;
+    		}
+    		if (match_dir) {
+    			st->needs_reload = true;
+    		}
+			break;
+
+    	case eNodeRemoved: // node itself is gone
+    		if (event->pathName == getPath()) { // are we only seeing the change?
+    			printf("Refresh because event path and current path are equal.\n");
+    			state->refresh = true;
+    		} else {
+    			if (match_entry) {
+    				while ((state->previous) && (state != st)) {
+    					state->level_up();
+    				}
+    			}
+    			state->refresh = true;
+    		}
+    		if (match_dir) {
+    			b = st->node->findChild(event->newName.c_str());
+    			if (b) {
+    				printf("Removing %s\n", b->getName());
+    				st->node->children.remove(b);
+    			}
+    		}
+    		break;
+
+    	case eNodeMediaRemoved: // node loses all children
+    		if (event->pathName == getPath()) {
+    			state->refresh = true;
+    		}
+			if (match_entry) {
+				while ((state->previous) && (state != st)) {
+					state->level_up();
+				}
+			}
+			state->refresh = true;
+    		break;
+
+    	case eNodeUpdated: // one element in the list got updated
+    		if (event->pathName == getPath()) {
+    			state->refresh = true;
+    		}
+    		break;
+    	default:
+    		break;
+    	}
     }
+
 
     if(state->refresh) {
         state->do_refresh();
@@ -240,7 +333,7 @@ int TreeBrowser :: handle_key(int c)
             break;
         default:
             if((c >= '!')&&(c < 0x80)) {
-                if(quick_seek_length < (MAX_SEARCH_LEN-2)) {
+                if(quick_seek_length < (MAX_SEARCH_LEN_TB-2)) {
                     quick_seek_string[quick_seek_length++] = c;
                     if(!perform_quick_seek())
                         quick_seek_length--;
@@ -261,9 +354,9 @@ bool TreeBrowser :: perform_quick_seek(void)
     quick_seek_string[quick_seek_length+1] = 0;
     printf("Performing seek: '%s'\n", quick_seek_string);
 
-    int num_el = state->children.get_elements();
+    int num_el = state->children->get_elements();
     for(int i=0;i<num_el;i++) {
-    	Browsable *t = state->children[i];
+    	Browsable *t = (*state->children)[i];
 		if(pattern_match(quick_seek_string, t->getName(), false)) {
 			state->move_to_index(i);
 			return true;
@@ -296,6 +389,7 @@ void TreeBrowser :: invalidate(const void *obj)
 	TreeBrowserState *st, *found;
 	st = state;
 	found = 0;
+/*
 	while(st) {
 		printf("checking %s...\n", st->node->getName());
 
@@ -305,6 +399,7 @@ void TreeBrowser :: invalidate(const void *obj)
 		}
 		st = st->previous;
 	}
+*/
 
 	if(found) { // need to roll back
 		printf("Rolling back browser...");

@@ -59,9 +59,14 @@ int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 {
 	int mode = (has_header)?1:0;
 
+	int count = 0;
+	if (!c64->exists()) {
+		return 0;
+	}
+
 	list.append(new Action("Run",  FileTypePRG :: execute_st, PRGFILE_RUN, mode));
-    list.append(new Action("Load", FileTypePRG :: execute_st, PRGFILE_LOAD, mode));
-	int count = 2;
+	list.append(new Action("Load", FileTypePRG :: execute_st, PRGFILE_LOAD, mode));
+	count += 2;
 
 	if (!c1541_A)
 		return count;

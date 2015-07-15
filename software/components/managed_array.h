@@ -35,6 +35,9 @@ public:
 			element_array = NULL;
 		}
 		size = initial;
+		for(int i=0;i<size;i++) {
+			element_array[i] = def;
+		}
     }
     
     ~ManagedArray() {

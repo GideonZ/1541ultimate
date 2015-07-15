@@ -25,7 +25,7 @@ public:
     Browsable *node;
     TreeBrowserState *previous;
     TreeBrowserState *deeper;
-    IndexedList<Browsable *>children;
+    IndexedList<Browsable *> *children;
 
     // Member functions
     TreeBrowserState(Browsable *node, TreeBrowser *b, int lev);

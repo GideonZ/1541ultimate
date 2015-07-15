@@ -24,7 +24,7 @@ ConfigBrowser :: ~ConfigBrowser()
 void ConfigBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 {
 	this->screen = screen;
-	window = new Window(screen, 0, 2, 40, 20);
+	window = new Window(screen, (screen->get_size_x() - 40) >> 1, 2, 40, 20);
 	window->draw_border();
 	keyb = k;
     state = new ConfigBrowserState(root, this, 0);
@@ -51,8 +51,10 @@ void ConfigBrowserState :: into(void)
     browser->state = deeper;
     deeper->previous = this;
 
-	printf("Going deeper into = %s\n", under_cursor->getName());
-    int child_count = under_cursor->getSubItems(deeper->children);
+    int error;
+    printf("Going deeper into = %s\n", under_cursor->getName());
+	deeper->children = under_cursor->getSubItems(error);
+	int child_count = deeper->children->get_elements();
     if(child_count < 1) {
     	browser->state = this;
     	delete deeper;

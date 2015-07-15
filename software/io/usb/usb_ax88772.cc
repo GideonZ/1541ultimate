@@ -343,6 +343,7 @@ void UsbAx88772Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 			link_up = false;
 		}
 	}
+	host->resume_input_pipe(this->irq_transaction);
 }
 
 void UsbAx88772Driver :: bulk_handler(uint8_t *usb_buffer, int data_len)

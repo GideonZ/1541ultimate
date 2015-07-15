@@ -19,8 +19,6 @@ public:
     void change(void);
     void increase(void);
     void decrease(void);
-    void unhighlight(void);
-    void highlight(void);
 };
 
 class ConfigBrowser : public TreeBrowser
@@ -44,12 +42,16 @@ public:
 
 	ConfigItem *getItem() { return item; }
 	const char *getName() { return item->get_item_name(); }
-	const char *getDisplayString() { return item->get_display_string(); };
+
+	void getDisplayString(char *buffer, int width) {
+		item->get_display_string(buffer, width);
+	}
 
 	static int contextSelect(SubsysCommand *cmd) {
 		ConfigItem *it = (ConfigItem *)cmd->functionID;
 		printf("ContextSelect of item %s, set value to %d.\n", it->get_item_name(), cmd->mode);
 		it->value = cmd->mode;
+		return 0;
 	}
 
 	void fetch_context_items(IndexedList<Action *>&items) {
@@ -80,40 +82,51 @@ public:
 class BrowsableConfigStore : public Browsable
 {
 	ConfigStore *store;
+	IndexedList<Browsable *>children;
 public:
-	BrowsableConfigStore(ConfigStore *s) {
+	BrowsableConfigStore(ConfigStore *s) : children(4, NULL) {
 		store = s;
 	}
-	~BrowsableConfigStore() {}
-
-	int getSubItems(IndexedList<Browsable *>&list) {
-		IndexedList<ConfigItem *> *itemList = store->getItems();
-		for (int i=0; i < itemList->get_elements(); i++) {
-			list.append(new BrowsableConfigItem((*itemList)[i]));
+	~BrowsableConfigStore() {
+		for (int i=0; i < children.get_elements(); i++) {
+			delete children[i];
 		}
-		return itemList->get_elements();
 	}
+
+	IndexedList<Browsable *> *getSubItems(int &error) {
+		if (children.get_elements() == 0) {
+			IndexedList<ConfigItem *> *itemList = store->getItems();
+			for (int i=0; i < itemList->get_elements(); i++) {
+				children.append(new BrowsableConfigItem((*itemList)[i]));
+			}
+		}
+		return &children;
+	}
+
 	ConfigStore *getStore() { return store; }
 	const char *getName() { return store->get_store_name(); }
 };
 
 class BrowsableConfigRoot : public Browsable
 {
+	IndexedList<Browsable *>children;
 public:
-	BrowsableConfigRoot() {}
+	BrowsableConfigRoot()  : children(4, NULL) {
+
+	}
 	~BrowsableConfigRoot() {}
 
-	int getSubItems(IndexedList<Browsable *>&list) {
-		IndexedList<ConfigStore *> *storeList = ConfigManager :: getConfigManager()->getStores();
-		for (int i=0; i < storeList->get_elements(); i++) {
-			list.append(new BrowsableConfigStore((*storeList)[i]));
+	IndexedList<Browsable *> *getSubItems(int &error) {
+		if (children.get_elements() == 0) {
+			IndexedList<ConfigStore *> *storeList = ConfigManager :: getConfigManager()->getStores();
+			for (int i=0; i < storeList->get_elements(); i++) {
+				children.append(new BrowsableConfigStore((*storeList)[i]));
+			}
 		}
-		return storeList->get_elements();
+		return &children;
 	}
 	const char *getName() { return "Browsable Config Root"; }
 };
-
-
 
 
 #endif

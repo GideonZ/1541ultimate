@@ -127,8 +127,12 @@ int FileTypeSID :: fetch_context_items(IndexedList<Action *> &list)
 	if (!header_valid) {
 		return 0;
 	}
+	if (!c64->exists()) {
+		return 0;
+	}
 	list.append(new Action("Play Main Tune", FileTypeSID :: execute_st, SIDFILE_PLAY_MAIN, (int)this ));
-    list.append(new Action("Show Info", FileTypeSID :: execute_st, SIDFILE_SHOW_INFO, (int)this ));
+	list.append(new Action("Show Info", FileTypeSID :: execute_st, SIDFILE_SHOW_INFO, (int)this ));
+
     if (numberOfSongs > 1) {
 		char buffer[16];
 		for(int i=0;i<numberOfSongs;i++) {

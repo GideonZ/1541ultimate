@@ -8,8 +8,6 @@
 #include "user_file_interaction.h"
 #include "userinterface.h"
 #include "c1541.h"
-#include "tree_browser.h"
-#include "tree_browser_state.h"
 
 // member
 int UserFileInteraction :: fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list)
@@ -53,13 +51,8 @@ int UserFileInteraction :: fetch_task_items(Path *path, IndexedList<Action*> &li
 
 int UserFileInteraction :: S_enter(SubsysCommand *cmd)
 {
-	// because we know that the command can only be caused by a TreeBrowser, we can safely cast
-	TreeBrowser *browser = (TreeBrowser *)(cmd->user_interface->get_root_object());
-	if (browser) {
-		if (browser->state) {
-			browser->state->into2();
-			return 0;
-		}
+	if(cmd->user_interface) {
+		return cmd->user_interface->enterSelection();
 	}
 	return -1;
 }

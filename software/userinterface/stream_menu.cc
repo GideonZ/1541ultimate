@@ -5,18 +5,21 @@
 #include "filemanager.h"
 #include "subsys.h"
 
+IndexedList<Browsable *>emptyListB(0, NULL);
+
 StreamMenu :: StreamMenu(UserInterface *ui, Stream *s, Browsable *n) : nodeStack(20, NULL), listStack(20, NULL), actionList(0, NULL)
 {
 	user_interface = ui;
 	stream = s;
     state = 0;
+    root = n;
     node = n;
     user_input[0] = 0;
     
-    currentList = new IndexedList<Browsable *>(0, NULL);
+    int error;
+    currentList = n->getSubItems(error);
     // listStack.push(currentList);
 
-    n->getSubItems(*currentList);
     currentPath = FileManager :: getFileManager() -> get_new_path("Stream Menu");
     print_items(0, 9999);
 }
@@ -24,11 +27,7 @@ StreamMenu :: StreamMenu(UserInterface *ui, Stream *s, Browsable *n) : nodeStack
 StreamMenu :: ~StreamMenu()
 {
 	IndexedList<Browsable *> *list;
-	cleanupBrowsables(*currentList);
-	while ((list = listStack.pop()) != NULL) {
-		cleanupBrowsables(*list);
-		delete list;
-	}
+	root->killChildren();
 	cleanupActions();
 	FileManager :: getFileManager() -> release_path(currentPath);
 }
@@ -86,12 +85,11 @@ int StreamMenu :: into(void)
 
     Browsable *selNode = (*currentList)[selected-1];
 
-    IndexedList<Browsable *>*newList = new IndexedList<Browsable *>(0, NULL);
-
-    int result = selNode->getSubItems(*newList);
+    int result;
+    IndexedList<Browsable *>*newList;
+    newList  = selNode->getSubItems(result);
     if (result < 0) {
     	printf("Browsing into %s is not possible.\n", selNode->getName());
-    	delete newList;
     	return result;
     }
             
@@ -138,7 +136,7 @@ void StreamMenu :: invalidate(CachedTreeNode *obj)
     
 int StreamMenu :: process_command(char *command)
 {
-    int items;
+    int items, result;
     Action *act;
     SubsysCommand *cmd;
     
@@ -155,8 +153,8 @@ int StreamMenu :: process_command(char *command)
         	node = nodeStack.pop();
         	currentPath->cd("..");
 
-        	cleanupBrowsables(*currentList); // reload
-        	node->getSubItems(*currentList); // reload
+        	node->killChildren(); // reload
+        	currentList = node->getSubItems(result); // reload
         }
 		print_items(0, 9999);
     }

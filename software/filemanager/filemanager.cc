@@ -9,28 +9,12 @@
 int FileManager :: validatePath(Path *p, CachedTreeNode **node)
 {
 	CachedTreeNode *n = root;
-	const char *pstr = p->get_path();
-	int len = strlen(pstr);
-	char *copy = new char[len + 1];
-	strcpy(copy, pstr);
-	int i=0;
-	if ((copy[0] == '/') || (copy[0] == '\\'))
-		i++;
-	char *start = copy + i;
-	for(;i<len;i++) {
-		bool sep = (copy[i] == '/') || (copy[i] == '\\');
-		if (sep)
-			copy[i] = 0;
-		if (sep || (i == (len-1)) ) {
-			if (strlen(start) > 0) {
-				n = n->find_child(start);
-			}
-			if (!n) {
-				delete[] copy;
-				return 0;
-			}
-			start = copy + i + 1;
-		}
+
+	for (int i=0;i<p->getDepth();i++) {
+		n = n->find_child(p->getElement(i));
+		if (!n)
+			return 0;
+		p->update(i, n->get_name());
 	}
 	*node = n;
 
@@ -54,15 +38,6 @@ void FileManager :: handle_event(Event &e)
     int len;
 
     switch(e.type) {
-	case e_cleanup_path_object:
-        printf("Cleaning up %s\n", o->get_name());
-        delete o;
-        break;
-    case e_cleanup_block_device:
-        blk = (BlockDevice *)e.object;
-        printf("Cleaning up Blockdevice %p\n", blk);
-        delete blk;
-        break;
 	case e_invalidate:
 	    par = o->parent;
 
@@ -118,10 +93,6 @@ void FileManager :: handle_event(Event &e)
 		}
 		printf("Invalidation complete.\n");
 		break;
-    case e_detach_disk:
-        fd = (FileDevice *)e.object;
-        fd->detach_disk();
-        break;
 	default:
 		break;
 	}

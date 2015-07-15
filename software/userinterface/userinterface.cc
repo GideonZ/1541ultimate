@@ -2,6 +2,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include "tree_browser.h"
+#include "tree_browser_state.h"
+
 /* Configuration */
 const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
                          "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
@@ -241,4 +244,17 @@ void UserInterface :: run_editor(const char *text_buf)
         ret = edit->poll(0);
     } while(!ret);
     edit->deinit();
+}
+
+int UserInterface :: enterSelection()
+{
+	// because we know that the command can only be caused by a TreeBrowser, we can safely cast
+	TreeBrowser *browser = (TreeBrowser *)(get_root_object());
+	if (browser) {
+		if (browser->state) {
+			browser->state->into2();
+			return 0;
+		}
+	}
+	return -1;
 }

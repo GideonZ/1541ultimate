@@ -57,8 +57,7 @@ int main(void *a)
 	Stream_UART my_stream;
 	UserInterface *ui = 0;
     
-    if(capabilities & CAPAB_CARTRIDGE)
-        c64     = new C64;
+    c64 = new C64;
 
     if(c64 && c64->exists()) {
         ui = new UserInterface;

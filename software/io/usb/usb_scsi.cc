@@ -37,6 +37,7 @@ UsbScsiDriver :: UsbScsiDriver()
 	current_lun = 0;
 	max_lun = 0;
 	file_manager = FileManager :: getFileManager();
+	mutex = xSemaphoreCreateMutex();
 }
 
 UsbScsiDriver :: ~UsbScsiDriver()
@@ -273,7 +274,12 @@ int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
 
 int UsbScsiDriver :: request_sense(int lun, bool debug)
 {
-    cbw.tag = ++id;
+    if (!xSemaphoreTake(mutex, 5000)) {
+    	printf("UsbScsiDriver unavailable.\n");
+    	return -9;
+    }
+
+	cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(18);
     cbw.flags = CBW_IN;
     cbw.lun = (uint8_t)lun;
@@ -299,7 +305,9 @@ int UsbScsiDriver :: request_sense(int lun, bool debug)
     }
 	if(debug)
 		print_sense_error();
-	return status_transport(true);
+	int retval = status_transport(true);
+	xSemaphoreGive(mutex);
+	return retval;
 }
 
 void UsbScsi :: handle_sense_error(uint8_t *sense_data)
@@ -325,7 +333,12 @@ void UsbScsi :: handle_sense_error(uint8_t *sense_data)
 
 int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, int datalen, uint8_t *data, bool debug)
 {
-    cbw.tag = ++id;
+    if (!xSemaphoreTake(mutex, 5000)) {
+    	printf("UsbScsiDriver unavailable.\n");
+    	return -9;
+    }
+
+	cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(datalen);
     cbw.flags = (out)?CBW_OUT:CBW_IN;
     cbw.lun = (uint8_t)lun;
@@ -341,16 +354,22 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
         } printf("\n");
     }
     int len = 0;
+    int retval = 0;
     int st = host->bulk_out(&bulk_out, &cbw, 31);
     if(st < 0) { // out failed.. let's see if we can get back in sync..
     	printf("Out failed.. let's see if we can get back in sync..\n");
     	if(status_transport(true) == 0) {
             st = host->bulk_out(&bulk_out, &cbw, 31);
             if(st < 0)
-                return -2;
+                retval = -2;
         } else {
-        	return -6;
+        	retval = -6;
         }
+    }
+
+    if (retval) {
+    	xSemaphoreGive(mutex);
+    	return retval;
     }
 
     if(cmd[0] == 0x12) {
@@ -385,18 +404,21 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 		}
 	}
 
+    retval = len;
+
     /* STATUS PHASE */
     st = status_transport(read_status);
    	if(st == 1) {
 		request_sense(true); // was debug
 		scsi_blk_dev[lun]->handle_sense_error(sense_data);
-		return -7;
+		retval = -7;
 	}
 	if(st < 0) {
-		return st;
+		retval = st;
 	}
 
-	return len; // response ok, return number of bytes read or written
+	xSemaphoreGive(mutex);
+	return retval; // if response ok, return number of bytes read or written
 }
 
 
