@@ -125,7 +125,7 @@ C64 :: C64()
 
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
-    char_set = (uint32_t *)&_binary_chars_bin_start;
+    char_set = (uint8_t *)&_binary_chars_bin_start;
     keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
     screen = new Screen_MemMappedCharMatrix((char *)C64_SCREEN, (char *)C64_COLORRAM, 40, 25);
 
@@ -488,7 +488,7 @@ void C64 :: backup_io(void)
     }
 
 	// now copy our own character map into that piece of ram at 0800
-	for(i=0;i<CHARSET_SIZE/4;i++) {
+	for(i=0;i<CHARSET_SIZE;i++) {
 		CHAR_DEST[i] = char_set[i];
 	}
 	

@@ -115,7 +115,7 @@
 #define MEM_LOC       ((volatile uint32_t *)(C64_MEMORY_BASE + 0x0800))
 #define SCREEN_RAM    ((volatile uint32_t *)(C64_MEMORY_BASE + 0x0400))
 #define COLOR_RAM     ((volatile uint32_t *)(C64_MEMORY_BASE + 0xD800))
-#define CHAR_DEST     ((volatile uint32_t *)(C64_MEMORY_BASE + 0x0800))
+#define CHAR_DEST     ((volatile uint8_t *)(C64_MEMORY_BASE + 0x0800))
 
 #define C64_IRQ_SOFT_VECTOR_LO *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0314))
 #define C64_IRQ_SOFT_VECTOR_HI *((volatile uint8_t *)(C64_MEMORY_BASE + 0x0315))
@@ -162,7 +162,7 @@ class C64 : public GenericHost, ConfigurableObject
     Keyboard *keyb;
     Screen *screen;
     
-    uint32_t *char_set; //[CHARSET_SIZE];
+    uint8_t *char_set; //[CHARSET_SIZE];
     uint8_t vic_backup[NUM_VICREGS];
     uint32_t ram_backup[BACKUP_SIZE/4];
     uint32_t screen_backup[COLOR_SIZE/4]; // only used now for vic state write
