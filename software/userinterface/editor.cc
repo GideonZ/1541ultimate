@@ -1,5 +1,6 @@
 #include "editor.h"
 #include <string.h>
+#include <stdio.h>
 
 const char *test_text =
                   "Een editor is iemand die verantwoordelijk is voor de verwerking, bewerking en/of samenstelling "

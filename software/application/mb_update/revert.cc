@@ -300,7 +300,7 @@ int main()
 	flash = get_flash();
     printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
-    C64 *host;
+    GenericHost *host;
     if (getFpgaCapabilities() & CAPAB_OVERLAY)
         host = new Overlay(true);
     else
