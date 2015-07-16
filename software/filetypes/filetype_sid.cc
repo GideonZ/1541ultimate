@@ -2,6 +2,7 @@
 #include "filetype_sid.h"
 #include "filemanager.h"
 #include "c64.h"
+#include "c64_subsys.h"
 #include "flash.h"
 #include "menu.h"
 #include "userinterface.h"
@@ -419,7 +420,7 @@ void FileTypeSID :: load(void)
 	fm->fclose(file);
 	file = NULL;
 
-    c64->restoreCart();
+    c64_subsys->restoreCart();
 	
 	return;
 }

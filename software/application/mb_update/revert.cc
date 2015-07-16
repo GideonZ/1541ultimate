@@ -296,28 +296,25 @@ int main()
 	char time_buffer[32];
 	uint8_t byte_buffer[32];
 
-	printf("*** Ultimate Updater ***\n\n");
+	printf("*** Ultimate Reverter ***\n\n");
 	flash = get_flash();
     printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
-    GenericHost *host;
+    C64 *host;
     if (getFpgaCapabilities() & CAPAB_OVERLAY)
         host = new Overlay(true);
     else
         host = new C64;
     
-	host->reset();
-    wait_ms(500);
-    host->freeze();
+	host->take_ownership(NULL);
 
-    screen = new Screen(host->get_screen(), host->get_color_map(), 40, 25);
+    screen = host->getScreen();
     screen->move_cursor(0,0);
     screen->output("\033\021   **** 1541 Ultimate II Reverter ****\n\033\037"); // \020 = alpha \021 = beta
-    for(int i=0;i<40;i++)
-        screen->output('\002');
+    screen->repeat('\002', 40);
 
     user_interface = new UserInterface;
-    user_interface->init(host, host->get_keyboard());
+    user_interface->init(host);
     user_interface->set_screen(screen);
 
 	console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
@@ -325,9 +322,8 @@ int main()
 
 	if(!flash) {
 		user_interface->popup("Flash device not recognized.", BUTTON_CANCEL);
-		host->unfreeze((Event &)c_empty_event);
+		host->release_ownership();
 		delete user_interface;
-		delete screen;
 	 	screen = NULL;
     	delete host;
 	    while(1)
@@ -379,8 +375,6 @@ int main()
     user_interface->popup("Remove SDCard. Reboot?", BUTTON_OK);
     flash->reboot(0);
     
-//	console_print(screen, "\nPlease remove the SD card, and switch\noff your machine...\n");
-
     while(1)
         ;
 }

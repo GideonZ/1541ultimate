@@ -2,19 +2,12 @@
 #define C64_H
 
 #include <stdio.h>
-#include "subsys.h"
 #include "host.h"
 #include "integer.h"
 #include "keyboard.h"
 #include "screen.h"
 #include "config.h"
-#include "menu.h"
 #include "iomap.h"
-#include "filemanager.h"
-
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
 
 #define REU_MEMORY_BASE 0x1000000
 #define REU_MAX_SIZE    0x1000000
@@ -138,6 +131,21 @@
 #define CART_ETH 0x40
 #define CART_RAM 0x20
 
+#define CFG_C64_CART     0xC1
+#define CFG_C64_CUSTOM   0xC2
+#define CFG_C64_REU_EN   0xC3
+#define CFG_C64_REU_SIZE 0xC4
+#define CFG_C64_ETH_EN   0xC5
+#define CFG_C64_SWAP_BTN 0xC6
+#define CFG_C64_DMA_ID   0xC7
+#define CFG_C64_MAP_SAMP 0xC8
+#define CFG_C64_ALT_KERN 0xC9
+#define CFG_C64_KERNFILE 0xCA
+#define CFG_C64_TIMING   0xCB
+#define CFG_C64_PHI2_REC 0xCC
+#define CFG_C64_RATE	 0xCD
+#define CFG_CMD_ENABLE   0x71
+
 typedef struct _cart
 {
     uint8_t  id;
@@ -147,14 +155,12 @@ typedef struct _cart
 } cart_def;
 
 
-class C64 : public GenericHost, SubSystem, ObjectWithMenu, ConfigurableObject
+class C64 : public GenericHost, ConfigurableObject
 {
-    TaskHandle_t taskHandle;
     HostClient *client;
     Flash *flash;
     Keyboard *keyb;
     Screen *screen;
-    FileManager *fm;
     
     uint32_t *char_set; //[CHARSET_SIZE];
     uint8_t vic_backup[NUM_VICREGS];
@@ -183,22 +189,13 @@ class C64 : public GenericHost, SubSystem, ObjectWithMenu, ConfigurableObject
 
     void stop(bool do_raster = true);
     void resume(void);
-    void restoreCart(void);
 
-    static void poll(void *a);
     void reset(void);
     void freeze(void);
 
 public:
     C64();
     ~C64();
-
-    /* Subsystem */
-	const char *identify(void) { return "C64 Machine"; }
-	int executeCommand(SubsysCommand *cmd);
-
-    /* Object With Menu */
-    int  fetch_task_items(Path *p, IndexedList<Action *> &item_list);
 
     /* Configurable Object */
     void effectuate_settings(void);
@@ -227,14 +224,13 @@ public:
     Keyboard *getKeyboard(void);
 
     /* C64 specifics */
-    void unfreeze(cart_def *def, int mode);  // called from crt... hmm
+    void unfreeze(cart_def *def, int mode);  // called from crt... hmm FIXME
 
     void init_cartridge(void);
     void cartridge_test(void);
-    int  dma_load(File *f, const char *name, uint8_t run_mode, uint16_t reloc=0);
-    bool write_vic_state(File *f);
         
     friend class FileTypeSID; // sid load does some tricks
+    friend class C64_Subsys; // the wrapper with file access
 };
 
 extern C64 *c64;

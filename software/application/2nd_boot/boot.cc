@@ -20,7 +20,7 @@ extern "C" {
 BlockDevice  *blk;
 Disk         *dsk;
 Partition    *prt;
-FATFS        *fs;
+FileSystem   *fs;
 //UsbDevice	 *usbdev;
 
 void (*function)();
@@ -66,7 +66,7 @@ int init_fat_on_sd(void)
 
 FRESULT try_loading(char *filename)
 {
-    FATFIL *file = new FATFIL(fs);
+    FATFIL *file = new FATFIL((FATFS*)fs);
     uint16_t dummy;
     FRESULT res = file->open(filename, 0, FA_READ, &dummy);
     printf("File %s open result = %d.\n", filename, res);

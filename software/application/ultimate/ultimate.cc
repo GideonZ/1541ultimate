@@ -7,6 +7,7 @@
 
 #include "itu.h"
 #include "c64.h"
+#include "c64_subsys.h"
 #include "c1541.h"
 #include "screen.h"
 #include "keyboard.h"
@@ -39,6 +40,7 @@ TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
 Overlay *overlay;
 C64 *c64;
+C64_Subsys *c64_subsys;
 
 int main(void *a)
 {
@@ -58,6 +60,7 @@ int main(void *a)
 	UserInterface *ui = 0;
     
     c64 = new C64;
+    c64_subsys = new C64_Subsys;
 
     if(c64 && c64->exists()) {
         ui = new UserInterface;
@@ -129,6 +132,8 @@ int main(void *a)
         delete root_tree_browser;
     if(ui)
         delete ui;
+    if(c64_subsys)
+    	delete c64_subsys;
     if(c64)
         delete c64;
     if(c1541_A)
