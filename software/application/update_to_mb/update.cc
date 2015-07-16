@@ -366,18 +366,15 @@ int main()
     else
         host = new C64;
     
-	host->reset();
-    wait_ms(500);
-    host->freeze();
+	host->take_ownership(NULL);
 
-    screen = new Screen(host->get_screen(), host->get_color_map(), 40, 25);
+    screen = host->getScreen();
     screen->move_cursor(0,0);
     screen->output("\033\021   **** 1541 Ultimate II Updater ****\n\033\037"); // \020 = alpha \021 = beta
-    for(int i=0;i<40;i++)
-        screen->output('\002');
+    screen->repeat('\002', 40);
 
     user_interface = new UserInterface;
-    user_interface->init(host, host->get_keyboard());
+    user_interface->init(host);
     user_interface->set_screen(screen);
 
 	console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
@@ -385,9 +382,8 @@ int main()
 
 	if(!flash) {
 		user_interface->popup("Flash device not recognized.", BUTTON_CANCEL);
-		host->unfreeze((Event &)c_empty_event);
+		host->release_ownership();
 		delete user_interface;
-		delete screen;
 	 	screen = NULL;
     	delete host;
 	    while(1)

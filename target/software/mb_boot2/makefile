@@ -10,9 +10,6 @@ MAKEAPPL  = $(TOOLS)/makeappl
 TASS      = $(TOOLS)/64tass/64tass
 
 # Configuration
-CROSS     = zpu-elf
-
-# Configuration
 SHELL     = bash
 CROSS     = mb
 
@@ -32,6 +29,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
+			$(PATH_SW)/infra \
 			$(PATH_SW)/io/flash \
 			$(PATH_SW)/drive \
 			$(PATH_SW)/components \

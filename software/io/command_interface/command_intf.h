@@ -11,8 +11,10 @@
 
 #define CMD_IF_RAM(x)          *((volatile uint8_t *)(CMD_IF_RAM_BASE +x))
 
+#ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
 #define CMD_IF_SLOT_ENABLE     *((volatile uint8_t *)(CMD_IF_BASE + 0x1))
+#endif
 #define CMD_IF_HANDSHAKE_OUT   *((volatile uint8_t *)(CMD_IF_BASE + 0x2))
 #define CMD_IF_STATUSBYTE      *((volatile uint8_t *)(CMD_IF_BASE + 0x3))
 #define CMD_IF_COMMAND_START   *((volatile uint8_t *)(CMD_IF_BASE + 0x4))
@@ -52,6 +54,9 @@ typedef struct _message
     bool  last_part;
     uint8_t *message;
 } Message;
+
+class SubSystem;
+class ObjectWithMenu;
 
 class CommandInterface : public SubSystem, ObjectWithMenu
 {

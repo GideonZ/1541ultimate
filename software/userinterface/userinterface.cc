@@ -1,9 +1,14 @@
 #include "userinterface.h"
+#include <stdio.h>
+
+#ifndef _NO_FILE_ACCESS
 #include "FreeRTOS.h"
 #include "task.h"
 
 #include "tree_browser.h"
 #include "tree_browser_state.h"
+#include "path.h"
+#endif
 
 /* Configuration */
 const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
@@ -76,6 +81,7 @@ void UserInterface :: set_screen(Screen *s)
 
 void UserInterface :: run(void)
 {
+#ifndef _NO_FILE_ACCESS
     while(1) {
 		switch(state) {
 			case ui_idle:
@@ -114,6 +120,7 @@ void UserInterface :: run(void)
 		}
 		vTaskDelay(3);
     }
+#endif
 }
 
 bool UserInterface :: pollFocussed(void)
@@ -248,6 +255,7 @@ void UserInterface :: run_editor(const char *text_buf)
 
 int UserInterface :: enterSelection()
 {
+#ifndef _NO_FILE_ACCESS
 	// because we know that the command can only be caused by a TreeBrowser, we can safely cast
 	TreeBrowser *browser = (TreeBrowser *)(get_root_object());
 	if (browser) {
@@ -256,5 +264,6 @@ int UserInterface :: enterSelection()
 			return 0;
 		}
 	}
+#endif
 	return -1;
 }

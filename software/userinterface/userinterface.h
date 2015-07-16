@@ -8,9 +8,6 @@
 #include "screen.h"
 #include "host.h"
 #include "keyboard.h"
-#include "path.h"
-#include "poll.h"
-#include "event.h"
 #include "versions.h"
 #include "config.h"
 #include "ui_elements.h"
@@ -74,7 +71,5 @@ public:
 
     UIObject *get_root_object(void) { return ui_objects[0]; }
 };
-
-void poll_user_interface(Event &e);
 
 #endif

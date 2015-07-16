@@ -27,16 +27,17 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include "menu.h"
 #include "integer.h"
 #include "dump_hex.h"
 #include "c64.h"
 #include "flash.h"
-#include "menu.h"
-#include "userinterface.h"
 #include "keyboard_c64.h"
 #include "globals.h"
-#include "command_intf.h"
+
+#ifndef CMD_IF_SLOT_BASE
+#define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
+#define CMD_IF_SLOT_ENABLE     *((volatile uint8_t *)(CMD_IF_BASE + 0x1))
+#endif
 
 #ifndef _NO_FILE_ACCESS
 # include "filemanager.h"

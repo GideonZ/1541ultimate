@@ -33,15 +33,11 @@ void _premain()
 	unsigned long *pul;
 	fptr f;
 
-    UART_DATA = 0x31;
-    UART_DATA = 0x2e;
 
 //	__copy_data();
 //	_initIO();
     __clear_bss();
 
-    UART_DATA = 0x32;
-    UART_DATA = 0x2e;
 
 //    printf("\nCalling constructors...\n");
 
@@ -53,8 +49,6 @@ void _premain()
         pul++;
     }
         
-    UART_DATA = 0x33;
-    UART_DATA = 0x2e;
 
 //    printf("\nStarting Main...\n");
 
@@ -123,7 +117,6 @@ void __copy_data(void)
 
 /*
  * Wait indefinitely for input byte
- */
 
 int inbyte()
 {
@@ -139,6 +132,7 @@ int inbyte()
 		}
 	}
 }
+ */
 
 /* 
  * Output one character to the serial port 
@@ -151,9 +145,10 @@ int inbyte()
 void outbyte(int c)
 {
 	// Wait for space in FIFO
-	while (UART_FLAGS & UART_TxFifoFull);
-	UART_DATA = c;
+	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+	ioWrite8(UART_DATA, c);
 }
+
 
 
 /*

@@ -14,6 +14,7 @@ ULTIMATE = $(HERE)/../mb_ultimate
 
 # Configuration
 CROSS     = zpu-elf
+LEGACY = ../../../legacy/2.6k/software
 
 # External inputs
 ROMS     = ../../../roms
@@ -30,18 +31,18 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/application/update_to_mb \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
+			$(PATH_SW)/infra \
 			$(PATH_SW)/system \
+			$(PATH_SW)/system/zpu \
 			$(PATH_SW)/io/flash \
 			$(PATH_SW)/drive \
 			$(PATH_SW)/components \
 			$(PATH_SW)/io/c64 \
 			$(PATH_SW)/io/rtc \
-			$(PATH_SW)/io/usb \
-			$(PATH_SW)/io/audio \
 			$(PATH_SW)/io/overlay \
 			$(PATH_SW)/io/icap \
 			$(PATH_SW)/io/sd_card \
-			$(PATH_SW)/io/userinterface \
+			$(PATH_SW)/userinterface \
 			$(ROMS) \
 			$(ULTIMATE)/result \
 			$(2ND_BOOT)/result
@@ -64,23 +65,21 @@ SRCS_C   =	zpu.c \
 
 SRCS_CC	 =  memory.cc \
 			event.cc \
-			main_loop.cc \
+			poll.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \
 			w25q_flash.cc \
             s25fl_flash.cc \
-			path.cc \
-			pattern.cc \
 			config.cc \
 			c64.cc \
 			screen.cc \
-			keyboard.cc \
+			keyboard_c64.cc \
 			mystring.cc \
 			size_str.cc \
 			rtc.cc \
-			task_menu.cc \
 			userinterface.cc \
+			ui_elements.cc \
 			$(PRJ).cc
 
 SRCS_ASM =  crt0_appl.s

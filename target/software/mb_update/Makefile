@@ -21,6 +21,7 @@ CROSS     = mb
 
 # External inputs
 ROMS = ../../../roms
+LEGACY = ../../../legacy/2.6k
 
 # Outputs
 RESULT = ./result
@@ -32,7 +33,7 @@ OUTPUT_FP = $(shell pwd)/output
 PRJ      =  update
 PATH_SW  =  ../../../software
 
-VPATH     = $(PATH_SW)/application \
+VPATH     = $(LEGACY)/software/application \
 			$(PATH_SW)/application/mb_update \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
@@ -48,19 +49,32 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/sd_card \
 			$(PATH_SW)/io/audio \
 			$(PATH_SW)/io/overlay \
+			$(PATH_SW)/io/command_interface \
 			$(PATH_SW)/userinterface \
+			$(PATH_SW)/FreeRTOS/Source \
+			$(PATH_SW)/FreeRTOS/Source/include \
+			$(PATH_SW)/FreeRTOS/Source/portable \
+			$(PATH_SW)/FreeRTOS/Source/MemMang \
             $(ULTIMATE)/result \
-            $(1ST_BOOT)/result_mb \
             $(2ND_BOOT)/result \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 
-SRCS_C   =	mbstart_app.c \
+SRCS_C   =	mbstart_rtos.c \
 			itu.c \
 			dump_hex.c \
-			small_printf.c
+			small_printf.c \
+			profiler.c \
+			croutine.c \
+            event_groups.c \
+            list.c \
+            queue.c \
+            tasks.c \
+            timers.c \
+            port.c \
+            heap_3.c
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:
@@ -69,15 +83,12 @@ SRCS_C   =	mbstart_app.c \
 # root of the application. Devices can register themselves in the file system tree.
 # Therefore, the file manager needs to exist.
 
-SRCS_CC	 =  memory.cc \
-			event.cc \
-			poll.cc \
+SRCS_CC	 =  memory_rtos.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \
 			w25q_flash.cc \
             s25fl_flash.cc \
-			path.cc \
 			pattern.cc \
 			config.cc \
 			c64.cc \
@@ -91,8 +102,7 @@ SRCS_CC	 =  memory.cc \
 			ui_elements.cc \
 			$(PRJ).cc
 
-
-SRCS_ASM =  mb_crt0.s
+SRCS_ASM =  mb_crt0.s portasm.s
 
 SRCS_6502 = 
 

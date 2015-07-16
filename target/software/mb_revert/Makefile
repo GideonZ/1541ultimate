@@ -38,6 +38,7 @@ VPATH     = $(LEGACY)/software/application \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
+			$(PATH_SW)/infra \
 			$(PATH_SW)/io/flash \
 			$(PATH_SW)/drive \
 			$(PATH_SW)/components \
@@ -48,7 +49,12 @@ VPATH     = $(LEGACY)/software/application \
 			$(PATH_SW)/io/sd_card \
 			$(PATH_SW)/io/audio \
 			$(PATH_SW)/io/overlay \
-			$(PATH_SW)/io/userinterface \
+			$(PATH_SW)/io/command_interface \
+			$(PATH_SW)/userinterface \
+			$(PATH_SW)/FreeRTOS/Source \
+			$(PATH_SW)/FreeRTOS/Source/include \
+			$(PATH_SW)/FreeRTOS/Source/portable \
+			$(PATH_SW)/FreeRTOS/Source/MemMang \
             $(ULTIMATE)/result \
             $(2ND_BOOT)/result \
 			$(ROMS)
@@ -56,10 +62,19 @@ VPATH     = $(LEGACY)/software/application \
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 
-SRCS_C   =	mbstart_app.c \
+SRCS_C   =	mbstart_rtos.c \
 			itu.c \
 			dump_hex.c \
-			small_printf.c
+			small_printf.c \
+			profiler.c \
+			croutine.c \
+            event_groups.c \
+            list.c \
+            queue.c \
+            tasks.c \
+            timers.c \
+            port.c \
+            heap_3.c
 
 # the order of the files is important, because of the static constructors.
 # main loop defines two important globals that define the event based polling mechanism:
@@ -68,29 +83,26 @@ SRCS_C   =	mbstart_app.c \
 # root of the application. Devices can register themselves in the file system tree.
 # Therefore, the file manager needs to exist.
 
-SRCS_CC	 =  memory.cc \
-			event.cc \
-			main_loop.cc \
+SRCS_CC	 =  memory_rtos.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \
 			w25q_flash.cc \
             s25fl_flash.cc \
-			path.cc \
 			pattern.cc \
 			config.cc \
 			c64.cc \
 			screen.cc \
-			keyboard.cc \
+			keyboard_c64.cc \
 			mystring.cc \
 			size_str.cc \
 			rtc.cc \
 			task_menu.cc \
 			userinterface.cc \
+			ui_elements.cc \
 			$(PRJ).cc
 
-
-SRCS_ASM =  mb_crt0.s
+SRCS_ASM =  mb_crt0.s portasm.s
 
 SRCS_6502 = 
 
