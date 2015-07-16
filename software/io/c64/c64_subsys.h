@@ -21,6 +21,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
 {
     TaskHandle_t taskHandle;
     FileManager *fm;
+    C64 *c64;
     static void poll(void *a);
 
     /* Subsystem */
@@ -36,7 +37,7 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
     void restoreCart(void);
 
 public:
-	C64_Subsys();
+	C64_Subsys(C64 *machine);
 	virtual ~C64_Subsys();
 
     friend class FileTypeSID; // sid load does some tricks

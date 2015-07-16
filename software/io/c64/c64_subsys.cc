@@ -20,10 +20,11 @@ static inline uint16_t le2cpu(uint16_t p)
 	return out;
 }
 
-C64_Subsys::C64_Subsys()  : SubSystem(SUBSYSID_C64) {
+C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
 	taskHandle = 0;
-    fm = FileManager :: getFileManager();
-	xTaskCreate( C64_Subsys :: poll, "C64 Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &taskHandle );
+	c64 = machine;
+	fm = FileManager :: getFileManager();
+	xTaskCreate( C64_Subsys :: poll, "C64 Server", configMINIMAL_STACK_SIZE, machine, tskIDLE_PRIORITY + 1, &taskHandle );
 }
 
 C64_Subsys::~C64_Subsys() {
