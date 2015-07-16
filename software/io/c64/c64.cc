@@ -142,6 +142,7 @@ C64 :: C64()
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
 
     effectuate_settings();
+    reset();
 }
     
 C64 :: ~C64()
@@ -174,7 +175,9 @@ void C64 :: set_emulation_flags(cart_def *def)
 {
     C64_REU_ENABLE = 0;
 	C64_SAMPLER_ENABLE = 0;
-	CMD_IF_SLOT_ENABLE = 0;
+    if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+    	CMD_IF_SLOT_ENABLE = 0;
+    }
 
     if(def->type & CART_REU) {
         if(cfg->get_value(CFG_C64_REU_EN)) {
