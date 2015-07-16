@@ -21,7 +21,6 @@ CROSS     = mb
 
 # External inputs
 ROMS = ../../../roms
-LEGACY = ../../../legacy/2.6k
 
 # Outputs
 RESULT = ./result
@@ -33,7 +32,7 @@ OUTPUT_FP = $(shell pwd)/output
 PRJ      =  update
 PATH_SW  =  ../../../software
 
-VPATH     = $(LEGACY)/software/application \
+VPATH     = $(PATH_SW)/software/application \
 			$(PATH_SW)/application/mb_update \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
