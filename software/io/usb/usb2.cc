@@ -476,9 +476,11 @@ int  Usb2 :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(uint8_t *b
 
 		init_pipe(index, pipe);
 	}
+/*
 	for(int i=0;i<8;i++) {
 		printf(" OBJ: %p CB: %p CMB: %4x\n", inputPipeObjects[i], inputPipeCallBacks[i], inputPipeCommand[i]);
 	}
+*/
 	xSemaphoreGive(mutex);
 	return index;
 }

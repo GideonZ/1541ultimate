@@ -176,7 +176,6 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 		song = uint16_t(selection);
 		error = prepare(false);
 	} else {
-		delete cmd;
 		this->cmd = 0;
 		return -2;
 	}
@@ -188,13 +187,11 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 			fm->fclose(file);
 			file = NULL;
 		}
-		delete cmd;
 		this->cmd = 0;
 		return -3;
 	} else {
 		printf("no errors.\n");
 	}
-	delete cmd;
 	this->cmd = 0;
 	return 0;
 }

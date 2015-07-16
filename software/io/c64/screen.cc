@@ -242,12 +242,15 @@ Window :: Window(Screen *parent, int x1, int y1, int sx, int sy)
     border_h   = 0;
     border_v   = 0;
     this->parent = parent;
+    old_color = parent->get_color();
     parent->set_color(15); // default
     parent->reverse_mode(0);
 }
 
 Window :: ~Window()
 {
+	parent->set_color(old_color);
+	parent->reverse_mode(0);
 }
 
 void Window :: set_color(int c)

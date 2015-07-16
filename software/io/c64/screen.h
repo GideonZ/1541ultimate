@@ -88,6 +88,7 @@ public:
 class Window
 {
     Screen *parent;
+	int old_color;
 
     // limits
     int window_x;
@@ -100,7 +101,6 @@ class Window
     // current position
     int cursor_x;
     int cursor_y;
-
 public:
     Window(Screen*, int, int, int, int);
     virtual ~Window();

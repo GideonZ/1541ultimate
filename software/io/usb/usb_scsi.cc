@@ -168,6 +168,7 @@ void UsbScsiDriver :: poll(void)
 		if(media_seen[current_lun] && (new_state==e_device_no_media)) { // removal!
 			//printf("Media seen[%d]=%d and new_state=%d. old_state=%d.\n", current_lun, media_seen[current_lun], new_state, old_state);
 			media_seen[current_lun] = false;
+			file_manager->invalidate(path_dev[current_lun], 0);
 			file_manager->sendEventToObservers(eNodeMediaRemoved, "/", path_dev[current_lun]->get_name());
 			path_dev[current_lun]->detach_disk();
 		}

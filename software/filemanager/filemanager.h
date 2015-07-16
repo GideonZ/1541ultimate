@@ -2,12 +2,12 @@
 #define FILEMANAGER_H
 
 #include "path.h"
-#include "event.h"
-#include "poll.h"
 #include "file_system.h"
 #include "cached_tree_node.h"
 #include "globals.h"
 #include "observer.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
 
 void set_extension(char *buffer, char *ext, int buf_size);
 void get_extension(const char *name, char *ext);
@@ -18,7 +18,6 @@ class MountPoint
 	mstring full_path;
 	File *file;
 	FileSystemInFile *emb;
-	// int ref_count;
 public:
 	MountPoint(File *f, FileSystemInFile *e) {
 		file = f;
@@ -72,6 +71,8 @@ class FileManager
 		Path *path;
 	};
 
+	SemaphoreHandle_t serializer;
+
 	FRESULT last_error;
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
@@ -83,14 +84,14 @@ class FileManager
     File *fopen_impl(Path *path, char *filename, uint8_t flags);
 
     FileManager() : mount_points(8, NULL), open_file_list(16, NULL), used_paths(8, NULL), observers(4, NULL) {
-        MainLoop :: addPollFunction(poll_filemanager);
         last_error = FR_OK;
         root = new CachedTreeNode(NULL, "RootNode");
+        serializer = xSemaphoreCreateRecursiveMutex();
     }
 
     ~FileManager() {
-    	MainLoop :: removePollFunction(poll_filemanager);
-        for(int i=0;i<open_file_list.get_elements();i++) {
+    	vSemaphoreDelete(serializer);
+    	for(int i=0;i<open_file_list.get_elements();i++) {
         	delete open_file_list[i];
         }
         for(int i=0;i<used_paths.get_elements();i++) {
@@ -106,6 +107,12 @@ class FileManager
     int validatePath(Path *p, CachedTreeNode **n);
     File *fopen_node(CachedTreeNode *info, uint8_t flags);
 
+    void lock() {
+    	xSemaphoreTake(serializer, portMAX_DELAY);
+    }
+    void unlock() {
+    	xSemaphoreGive(serializer);
+    }
 public:
 	static FileManager* getFileManager() {
 #ifndef _NO_FILE_ACCESS
@@ -116,14 +123,10 @@ public:
 #endif
 	}
 
-	static void poll_filemanager(Event &e)
-	{
-		static FileManager *fm = getFileManager();
-		fm->handle_event(e);
-	}
-
 	void dump(void) {
-    	root->dump(0);
+		lock();
+		printf("** This is a dump of the state of the file manager **\n");
+		root->dump(0);
 
     	printf("\nOpen files:\n");
     	for(int i=0;i<open_file_list.get_elements();i++) {
@@ -140,9 +143,10 @@ public:
     		MountPoint *f = mount_points[i];
     		printf("%p: '%s'\n", mount_points[i]->get_embedded(), mount_points[i]->get_path());
     	}
-
+		unlock();
 	}
-    void handle_event(Event &e);
+
+	void invalidate(CachedTreeNode *obj, int includeSelf);
     void add_root_entry(CachedTreeNode *obj);
     void remove_root_entry(CachedTreeNode *obj);
     void add_mount_point(File *, FileSystemInFile *);
@@ -174,22 +178,7 @@ public:
     void fclose(File *f);
     FRESULT delete_file_by_info(FileInfo *info);
     FRESULT create_dir_in_path(Path *path, char *name);
-
-    FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target)
-    {
-    	CachedTreeNode *n;
-    	if (!validatePath(p, &n)) {
-    		return FR_NO_PATH;
-    	}
-    	int result = n->fetch_children();
-    	if (result < 0) {
-    		return FR_NO_FILE;
-    	}
-    	for (int i=0;i<n->children.get_elements();i++) {
-    		target.append(new FileInfo(*(n->children[i]->get_file_info())));
-    	}
-    	return FR_OK;
-    }
+    FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target);
 
     void registerObserver(ObserverQueue *q) {
     	observers.append(q);

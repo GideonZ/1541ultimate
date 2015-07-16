@@ -1,6 +1,4 @@
 #include <stdio.h>
-#include "event.h"
-#include "poll.h"
 #include "path.h"
 #include "filemanager.h"
 #include "file_device.h"
@@ -24,10 +22,9 @@ int FileManager :: validatePath(Path *p, CachedTreeNode **node)
 	return 1;
 }
 
-void FileManager :: handle_event(Event &e)
+void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 {
-	CachedTreeNode *o, *par;
-    o = (CachedTreeNode *)e.object;
+	CachedTreeNode *par;
     BlockDevice *blk;
     MountPoint *m;
     File *f;
@@ -37,65 +34,59 @@ void FileManager :: handle_event(Event &e)
     const char *pathStringC;
     int len;
 
-    switch(e.type) {
-	case e_invalidate:
-	    par = o->parent;
+	par = o->parent;
 
-		printf("Invalidate event.. Param = %d. Checking %d files.\n", e.param, open_file_list.get_elements());
-		pathStringC = o->get_full_path(pathString);
-		len = strlen(pathStringC);
+	printf("Invalidate event.. Param = %d. Checking %d files.\n", includeSelf, open_file_list.get_elements());
+	pathStringC = o->get_full_path(pathString);
+	len = strlen(pathStringC);
 
-		for (int i=0;i<mount_points.get_elements();i++) {
-			m = mount_points[i];
-			if(!m) {// should never occur
-				printf("INTERR: null pointer in mount point list.\n");
-				continue;
-			}
-			f = m->get_file();
-			printf("%2d. %s\n", i, m->get_path());
-			if (strncmp(f->get_path(), pathStringC, len) == 0) {
-				printf("Match!\n");
-				fclose(f);
-			}
-			delete m;
-			mount_points.mark_for_removal(i);
+	for (int i=0;i<mount_points.get_elements();i++) {
+		m = mount_points[i];
+		if(!m) {// should never occur
+			printf("INTERR: null pointer in mount point list.\n");
+			continue;
 		}
-		mount_points.purge_list();
-
-		for(int i=0;i<open_file_list.get_elements();i++) {
-			f = open_file_list[i];
-			if(!f) {// should never occur
-				printf("INTERR: null pointer in list.\n");
-				continue;
-			} else if(!(f->isValid())) { // already invalidated.
-				continue;
-			}
-			printf("%2d. %s %p\n", i, f->info->lfname, f);
-			if (strncmp(f->get_path(), pathStringC, len) == 0) {
-				printf("Match!\n");
-				f->invalidate();
-			}
+		f = m->get_file();
+		printf("%2d. %s\n", i, m->get_path());
+		if (strncmp(f->get_path(), pathStringC, len) == 0) {
+			printf("Match!\n");
+			fclose(f);
 		}
-
-		for(int i=0;i<used_paths.get_elements();i++) {
-			path = used_paths[i];
-			// path->invalidate(); // clear the validated state  (comment: not yet implemented)
-		}
-
-		if(e.param) { // 1: the object still exists, just clean up the children
-			o->cleanup_children();
-		} else { // 0: the node itself disappears
-			// if the node is in root, the remove_root_node shall be called.
-			if(par && (par != root)) {
-				printf("Removing %s from %s\n", o->get_name(), par->get_name());
-				par->children.remove(o);
-			}
-		}
-		printf("Invalidation complete.\n");
-		break;
-	default:
-		break;
+		delete m;
+		mount_points.mark_for_removal(i);
 	}
+	mount_points.purge_list();
+
+	for(int i=0;i<open_file_list.get_elements();i++) {
+		f = open_file_list[i];
+		if(!f) {// should never occur
+			printf("INTERR: null pointer in list.\n");
+			continue;
+		} else if(!(f->isValid())) { // already invalidated.
+			continue;
+		}
+		printf("%2d. %s %p\n", i, f->info->lfname, f);
+		if (strncmp(f->get_path(), pathStringC, len) == 0) {
+			printf("Match!\n");
+			f->invalidate();
+		}
+	}
+
+	for(int i=0;i<used_paths.get_elements();i++) {
+		path = used_paths[i];
+		// path->invalidate(); // clear the validated state  (comment: not yet implemented)
+	}
+
+	if(includeSelf == 0) { // 0: the object still exists, just clean up the children
+		o->cleanup_children();
+	} else { // 1: the node itself disappears
+		// if the node is in root, the remove_root_node shall be called.
+		if(par && (par != root)) {
+			printf("Removing %s from %s\n", o->get_name(), par->get_name());
+			par->children.remove(o);
+		}
+	}
+	printf("Invalidation complete.\n");
 }
 
 bool FileManager :: is_path_writable(Path *p)
@@ -180,18 +171,40 @@ bool FileManager :: reworkPath(Path *path, const char *pathstr, const char *file
 	return true;
 }
 
+FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target)
+{
+	lock();
+	CachedTreeNode *n;
+	if (!validatePath(p, &n)) {
+    	unlock();
+		return FR_NO_PATH;
+	}
+	int result = n->fetch_children();
+	if (result < 0) {
+    	unlock();
+		return FR_NO_FILE;
+	}
+	for (int i=0;i<n->children.get_elements();i++) {
+		target.append(new FileInfo(*(n->children[i]->get_file_info())));
+	}
+	unlock();
+	return FR_OK;
+}
+
 File *FileManager :: fopen(Path *path, const char *filename, uint8_t flags)
 {
 	reworked_t rwp;
 	if (!reworkPath(path, 0, filename, rwp))
 		return NULL;
 
+	lock();
 	// now do the actual thing
 	File *ret = fopen_impl(rwp.path, rwp.purename, flags);
 
 	// remove the temporary strings and path
 	delete[] rwp.copy;
 	this->release_path(rwp.path);
+	unlock();
 	return ret;
 }
 
@@ -201,12 +214,14 @@ File *FileManager :: fopen(const char *path, const char *filename, uint8_t flags
 	if (!reworkPath(0, path, filename, rwp))
 		return NULL;
 
+	lock();
 	// now do the actual thing
 	File *ret = fopen_impl(rwp.path, rwp.purename, flags);
 
 	// remove the temporary strings and path
 	delete[] rwp.copy;
 	this->release_path(rwp.path);
+	unlock();
 	return ret;
 }
 
@@ -260,6 +275,7 @@ bool FileManager :: fstat(FileInfo &info, const char *path, const char *filename
 	if (!reworkPath(0, path, filename, rwp))
 		return false;
 
+	lock();
 	bool ret = false;
 	CachedTreeNode *n, *w;
 	if (validatePath(rwp.path, &n)) {
@@ -271,11 +287,14 @@ bool FileManager :: fstat(FileInfo &info, const char *path, const char *filename
 	}
 	delete[] rwp.copy;
 	this->release_path(rwp.path);
+	unlock();
 	return ret;
 }
 
 File *FileManager :: fopen_node(CachedTreeNode *node, uint8_t flags)
 {
+	lock();
+
 	FileInfo *info = node->get_file_info();
 	File *file = info->fs->file_open(info, flags);
 	last_error = info->fs->get_last_error();
@@ -286,11 +305,13 @@ File *FileManager :: fopen_node(CachedTreeNode *node, uint8_t flags)
 		file->set_path(node->parent->get_full_path(work));
 	}
 
+	unlock();
 	return file;
 }
 
 void FileManager :: fclose(File *f)
 {
+	lock();
 	FileInfo *inf = f->info;
 	if(inf) {
 		// printf("Closing %s...\n", inf->lfname);
@@ -300,19 +321,25 @@ void FileManager :: fclose(File *f)
 	}
 	open_file_list.remove(f);
 	f->close();
+	unlock();
 }
 
 void FileManager :: add_root_entry(CachedTreeNode *obj)
 {
+	lock();
 	root->children.append(obj);
 	obj->parent = root;
 	sendEventToObservers(eNodeAdded, "/", obj->get_name());
+	unlock();
 }
 
 void FileManager :: remove_root_entry(CachedTreeNode *obj)
 {
+	lock();
+	invalidate(obj, 1); // cleanup!
 	sendEventToObservers(eNodeRemoved, "/", obj->get_name());
 	root->children.remove(obj);
+	unlock();
 }
 
 void FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
@@ -324,26 +351,30 @@ void FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
 MountPoint *FileManager :: find_mount_point(const char *full_path)
 {
 //	printf("FileManager :: find_mount_point: '%s'\n", full_path);
-	// TODO: walk known mount points and return it, when the path matches
+	lock();
 	for(int i=0;i<mount_points.get_elements();i++) {
 		if(mount_points[i]->match(full_path)) {
 			// printf("Found!\n");
+			unlock();
 			return mount_points[i];
 		}
 	}
-
+	unlock();
 	return 0;
 }
 
 
 FRESULT FileManager :: delete_file_by_info(FileInfo *info)
 {
+	lock();
 	FRESULT fres = info->fs->file_delete(info);
 	if(fres != FR_OK) {
+		unlock();
 		return fres;
 	} else {
 		sendEventToObservers(eNodeRemoved, "/", info->lfname); // FIXME: Path is unknown
 	}
+	unlock();
 	return FR_OK;
 }
 
@@ -363,6 +394,7 @@ FRESULT FileManager :: create_dir_in_path(Path *path, char *name)
 		return FR_NO_FILESYSTEM;
 	}
 
+	lock();
 	FileInfo *fi = new FileInfo(info, name);
 	fi->attrib = 0;
 	FRESULT fres = fi->fs->dir_create(fi);
@@ -371,6 +403,7 @@ FRESULT FileManager :: create_dir_in_path(Path *path, char *name)
 		node->cleanup_children(); // force reload from media
 		sendEventToObservers(eNodeAdded, path->get_path(), name);
 	}
+	unlock();
 	return fres;
 }
 
