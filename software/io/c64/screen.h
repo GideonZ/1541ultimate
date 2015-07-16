@@ -30,6 +30,10 @@ public:
     // Synchronization
     virtual void sync(void) { }
 
+    // for character mapped screens. Does not work for VT100.
+    virtual void backup(void) { }
+    virtual void restore(void) { }
+
     // Static
     static void _put(char c, void **obj) {
     	((Screen *)obj)->output(c);
@@ -61,13 +65,18 @@ protected:
     int reverse;
     int cursor_on;
     bool allow_scroll;
-
+    char *backup_chars;
+    char *backup_color;
+    int backup_x, backup_y;
     void output_raw(char c);
 public:
     Screen_MemMappedCharMatrix(char *, char *, int, int);
     ~Screen_MemMappedCharMatrix() { }
 
-// functions called directly, or from a window
+    void backup(void);
+    void restore(void);
+
+    // functions called directly, or from a window
     void  cursor_visible(int a);
     void  set_color(int c) {color=c;}
     int   get_color() { return color; }

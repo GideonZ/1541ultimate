@@ -17,7 +17,7 @@ your application. */
 #define configIDLE_SHOULD_YIELD                 1
 #define configUSE_TASK_NOTIFICATIONS            1
 #define configUSE_MUTEXES                       1
-#define configUSE_RECURSIVE_MUTEXES             0
+#define configUSE_RECURSIVE_MUTEXES             1
 #define configUSE_COUNTING_SEMAPHORES           0
 #define configUSE_ALTERNATIVE_API               0 /* Deprecated! */
 #define configQUEUE_REGISTRY_SIZE               10

@@ -16,7 +16,6 @@
 class FileSystemT64 : public FileSystem
 {
 	File *t64_file;
-	CachedTreeNode *node;
 	int max, used;
 	uint16_t strt, stop;
 

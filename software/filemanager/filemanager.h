@@ -108,10 +108,10 @@ class FileManager
     File *fopen_node(CachedTreeNode *info, uint8_t flags);
 
     void lock() {
-    	xSemaphoreTake(serializer, portMAX_DELAY);
+    	xSemaphoreTakeRecursive(serializer, portMAX_DELAY);
     }
     void unlock() {
-    	xSemaphoreGive(serializer);
+    	xSemaphoreGiveRecursive(serializer);
     }
 public:
 	static FileManager* getFileManager() {

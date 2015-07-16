@@ -60,7 +60,7 @@ int main(void *a)
 	UserInterface *ui = 0;
     
     c64 = new C64;
-    c64_subsys = new C64_Subsys;
+    c64_subsys = new C64_Subsys(c64);
 
     if(c64 && c64->exists()) {
         ui = new UserInterface;

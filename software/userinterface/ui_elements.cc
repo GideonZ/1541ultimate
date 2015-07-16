@@ -49,10 +49,11 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     int x_b = (window_width - button_width) / 2;
     button_start_x = x_b;
 
+    screen->backup();
     window = new Window(screen, x1, y1, window_width+2, 5);
     window->clear();
     window->draw_border();
-    window->no_scroll();
+    // window->no_scroll();
     window->move_cursor(x_m, 0);
     window->output(message.c_str());
 
@@ -117,6 +118,7 @@ int UIPopup :: poll(int dummy)
 
 void UIPopup :: deinit()
 {
+    window->getScreen()->restore();
 	delete window;
 }
 
@@ -143,6 +145,7 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
     int x_m = (window_width - message_width) / 2;
 
     keyboard = keyb;
+    screen->backup();
     window = new Window(screen, x1, y1, window_width, 5);
     window->clear();
     window->draw_border();
@@ -259,8 +262,10 @@ int UIStringBox :: poll(int dummy)
 
 void UIStringBox :: deinit(void)
 {
-	if (window)
+	if (window) {
+	    window->getScreen()->restore();
 		delete window;
+	}
 }
 
 /* Status Box */
@@ -279,6 +284,7 @@ void UIStatusBox :: init(Screen *screen)
     int y1 = (screen->get_size_y() - 5) / 2;
     int x_m = (window_width - message_width) / 2;
 
+    screen->backup();
     window = new Window(screen, x1, y1, window_width, 5);
     window->clear();
     window->draw_border();
@@ -290,6 +296,7 @@ void UIStatusBox :: init(Screen *screen)
 
 void UIStatusBox :: deinit(void)
 {
+    window->getScreen()->restore();
     delete window;
 }
 
