@@ -53,10 +53,9 @@ void Screen_MemMappedCharMatrix :: backup(void)
 void Screen_MemMappedCharMatrix :: restore(void)
 {
 	int size = size_x * size_y;
-	cursor_x = backup_x;
-	cursor_y = backup_y;
 	memcpy(char_base, backup_chars, size);
 	memcpy(color_base, backup_color, size);
+	move_cursor(backup_x, backup_y);
 	delete[] backup_chars;
 	delete[] backup_color;
 }
