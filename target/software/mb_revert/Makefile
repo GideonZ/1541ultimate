@@ -135,7 +135,7 @@ TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt64
 PATH_INC =  $(addprefix -I, $(VPATH))
 APP_OPTS = -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 
 COPTIONS = -g -ffunction-sections -Os -std=c99 $(APP_OPTS)
-CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti $(APP_OPTS)
+CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -fno-threadsafe-statics $(APP_OPTS)
 LINK 	 = ./mb_update.lds
 LLIB     =  -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2

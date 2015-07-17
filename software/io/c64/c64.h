@@ -190,7 +190,6 @@ class C64 : public GenericHost, ConfigurableObject
     void stop(bool do_raster = true);
     void resume(void);
 
-    void reset(void);
     void freeze(void);
 
 public:
@@ -228,6 +227,7 @@ public:
 
     void init_cartridge(void);
     void cartridge_test(void);
+    void reset(void);
         
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access

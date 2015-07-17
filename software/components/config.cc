@@ -34,6 +34,7 @@ ConfigManager :: ConfigManager() : stores(16, NULL)
 		num_pages = 0;
 	} else {
     	num_pages = flash->get_number_of_config_pages();
+    	printf("ConfigManager opened flash: %p\n", flash);
     }
 //    root.add_child(this); // make ourselves visible in the browser
 }
@@ -52,9 +53,12 @@ ConfigManager :: ~ConfigManager()
 ConfigStore *ConfigManager :: register_store(uint32_t store_id, const char *name,
                                 t_cfg_definition *defs, ConfigurableObject *ob) 
 {
-	if(!flash)
+	if(!flash) {
+        printf("register_store %s: Can't open flash\n", name);
+        flash = get_flash();
+        printf("register_store %s: Can't open flash\n", name);
 		return NULL; // fail
-		
+	}
     if(store_id == 0) {
         printf("ERROR: Requesting to register a store with ID=0\n");
         return NULL;

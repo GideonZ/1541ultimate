@@ -32,7 +32,7 @@ OUTPUT_FP = $(shell pwd)/output
 PRJ      =  update
 PATH_SW  =  ../../../software
 
-VPATH     = $(PATH_SW)/software/application \
+VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/application/mb_update \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \

@@ -76,30 +76,24 @@ loader:
 clean:
 	@$(MAKE) -C tools clean
 	@rm -f ./update.bin
+	@rm -f ./update.u2u
+	@rm -f ./revert.u2u
 	@rm -f ./flash_700.mcs
 	@rm -rf target/fpga/work1400
 	@rm -rf target/fpga/work400
 	@rm -rf target/fpga/work700
 	@rm -rf target/fpga/boot_700
 	@rm -rf target/fpga/work250
+	@rm -rf target/fpga/mb700
 	@rm -rf target/fpga/_xm*
 	@rm -rf target/fpga/x*
 	@rm -rf target/fpga/*.x*
-	@rm -rf target/software/1st_boot/result
-	@rm -rf target/software/1st_boot/output
-	@rm -rf target/software/2nd_boot/result
-	@rm -rf target/software/2nd_boot/output
-	@rm -rf target/software/ultimate/result
-	@rm -rf target/software/ultimate/output
-	@rm -rf target/software/update/result
-	@rm -rf target/software/update/output
+	@rm -rf `find target/software -name result`
+	@rm -rf `find target/software -name output`
 
 sw_clean:
-	@rm -rf target/software/1st_boot/result
-	@rm -rf target/software/1st_boot/output
-	@rm -rf target/software/2nd_boot/result
-	@rm -rf target/software/2nd_boot/output
-	@rm -rf target/software/ultimate/result
-	@rm -rf target/software/ultimate/output
-	@rm -rf target/software/update/result
-	@rm -rf target/software/update/output
+	@rm -f ./update.bin
+	@rm -f ./update.u2u
+	@rm -f ./revert.u2u
+	@rm -rf `find target/software -name result`
+	@rm -rf `find target/software -name output`
