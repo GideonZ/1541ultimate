@@ -306,13 +306,19 @@ int main()
 	flash = get_flash();
     printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
+    C64 *host = new C64;
+/*
     GenericHost *host;
     if (getFpgaCapabilities() & CAPAB_OVERLAY)
         host = new Overlay(true);
     else
         host = new C64;
+*/
     
+    host->reset();
+    printf("host = %p\n", host);
 	host->take_ownership(NULL);
+    printf("Now get screen etc..\n");
 
     screen = host->getScreen();
     screen->move_cursor(0,0);
