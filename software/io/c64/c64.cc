@@ -116,7 +116,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-extern uint8_t _binary_chars_bin_start;
+extern uint8_t _chars_bin_start;
 
 C64 :: C64()
 {
@@ -125,7 +125,7 @@ C64 :: C64()
 
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
-    char_set = (uint8_t *)&_binary_chars_bin_start;
+    char_set = (uint8_t *)&_chars_bin_start;
     keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
     screen = new Screen_MemMappedCharMatrix((char *)C64_SCREEN, (char *)C64_COLORRAM, 40, 25);
 

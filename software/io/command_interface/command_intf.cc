@@ -18,7 +18,7 @@ CommandInterface cmd_if;
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 
 // cart definition
-extern uint8_t _binary_cmd_test_rom_65_start;
+extern uint8_t _cmd_test_rom_65_start;
 cart_def cmd_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 #define MENU_CMD_RUNCMDCART 0xC180
@@ -28,7 +28,7 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
     for(int i=0;i<=CMD_IF_MAX_TARGET;i++)
         command_targets[i] = &cmd_if_empty_target;
     
-    cmd_cart.custom_addr = (void *)&_binary_cmd_test_rom_65_start;
+    cmd_cart.custom_addr = (void *)&_cmd_test_rom_65_start;
 
     if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
         CMD_IF_SLOT_BASE = 0x47; // $DF1C

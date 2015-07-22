@@ -10,7 +10,7 @@
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_reu(Globals :: getFileTypeFactory(), FileTypeREU :: test_type);
 
 // cart definition
-extern uint8_t _binary_module_bin_start;
+extern uint8_t _module_bin_start;
 cart_def mod_cart  = { 0x00, (void *)0, 0x4000, 0x02 | CART_REU | CART_RAM };
 
 /*********************************************************************/
@@ -117,7 +117,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 			sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
 			cmd->user_interface->popup(buffer, BUTTON_OK);
 		} else {
-			mod_cart.custom_addr = (void *)&_binary_module_bin_start;
+			mod_cart.custom_addr = (void *)&_module_bin_start;
 
 			C64_REU_SIZE = 7;
 			C64_REU_ENABLE = 1;

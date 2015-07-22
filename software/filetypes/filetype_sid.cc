@@ -9,8 +9,8 @@
 #include "stream_textlog.h"
 
 extern C64 *c64;
-extern uint8_t _binary_sidcrt_65_start;
-//extern uint8_t _binary_sidcrt_65_end;
+extern uint8_t _sidcrt_65_start;
+//extern uint8_t _sidcrt_65_end;
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(Globals :: getFileTypeFactory(), FileTypeSID :: test_type);
@@ -323,7 +323,7 @@ int FileTypeSID :: prepare(bool use_default)
 
 	// leave the browser, and smoothly transition to
 	// sid cart.
-    sid_cart.custom_addr = (void *)&_binary_sidcrt_65_start;
+    sid_cart.custom_addr = (void *)&_sidcrt_65_start;
 
 	SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&sid_cart, "", "");
 	c64_command->execute();

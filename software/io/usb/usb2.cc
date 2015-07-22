@@ -10,8 +10,8 @@ extern "C" {
 #include "task.h"
 #include "profiler.h"
 
-extern uint8_t  _binary_nano_minimal_b_start;
-extern uint32_t _binary_nano_minimal_b_size;
+extern uint8_t  _nano_minimal_b_start;
+extern uint32_t _nano_minimal_b_size;
 
 uint16_t *attr_fifo_data = (uint16_t *)ATTR_FIFO_BASE;
 uint16_t *block_fifo_data = (uint16_t *)BLOCK_FIFO_BASE;
@@ -104,8 +104,8 @@ void Usb2 :: init(void)
     circularBufferBase = new uint8_t[4096];
 
     // load the nano CPU code and start it.
-    int size = (int)&_binary_nano_minimal_b_size;
-    uint8_t *src = &_binary_nano_minimal_b_start;
+    int size = (int)&_nano_minimal_b_size;
+    uint8_t *src = &_nano_minimal_b_start;
     uint8_t *dst = (uint8_t *)NANO_BASE;
     for(int i=0;i<size;i++)
         *(dst++) = *(src++);

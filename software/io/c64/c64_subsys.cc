@@ -10,7 +10,7 @@
 #include <ctype.h>
 
 /* other external references */
-extern uint8_t _binary_bootcrt_65_start;
+extern uint8_t _bootcrt_65_start;
 
 cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
@@ -186,7 +186,7 @@ int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t
     C64_POKE(0x164, len);
     C64_POKE(2, 0x80); // initial boot cart handshake
 
-    boot_cart.custom_addr = (void *)&_binary_bootcrt_65_start;
+    boot_cart.custom_addr = (void *)&_bootcrt_65_start;
     c64->unfreeze(&boot_cart, 1);
 
 	// perform DMA load

@@ -28,11 +28,11 @@ extern "C" {
    
 cart_def warp_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
-extern uint8_t  _binary_iec_code_b_start;
-extern uint32_t _binary_iec_code_b_size;
-//extern BYTE _binary_warp_rom_65_start;
-extern uint8_t _binary_ulticopy_65_start;
-extern uint32_t _binary_ulticopy_65_size;
+extern uint8_t  _iec_code_b_start;
+extern uint32_t _iec_code_b_size;
+//extern BYTE _warp_rom_65_start;
+extern uint8_t _ulticopy_65_start;
+extern uint32_t _ulticopy_65_size;
 
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
@@ -151,9 +151,9 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
 
     HW_IEC_RESET_ENABLE = 0; // disable
 
-    int size = (int)&_binary_iec_code_b_size;
+    int size = (int)&_iec_code_b_size;
     printf("IEC Processor found: Version = %b. Loading code...", HW_IEC_VERSION);
-    uint8_t *src = &_binary_iec_code_b_start;
+    uint8_t *src = &_iec_code_b_start;
     uint8_t *dst = (uint8_t *)HW_IEC_CODE;
     for(int i=0;i<size;i++)
         *(dst++) = *(src++);
@@ -436,7 +436,7 @@ void IecInterface :: start_warp(int drive)
     ui_window->window->output("Loading...");
     HW_IEC_RESET_ENABLE = 1; // reset the IEC controller, just in case
     
-    if(!run_drive_code(warp_drive, 0x400, &_binary_ulticopy_65_start, (int)&_binary_ulticopy_65_size)) {
+    if(!run_drive_code(warp_drive, 0x400, &_ulticopy_65_start, (int)&_ulticopy_65_size)) {
         cmd_ui->popup("Error accessing drive..", BUTTON_OK);
         ui_window->close();
         if (c1541_A) {
