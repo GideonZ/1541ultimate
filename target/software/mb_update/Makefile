@@ -71,8 +71,9 @@ SRCS_IEC =
 
 SRCS_NANO = 
 
+VPATH   += $(PATH_SW)/application/mb_update
 VPATH   += ../mb_ultimate/result
-VPATH   += ../mb_boot/result_mb
+VPATH   += ../mb_boot/result
 VPATH   += ../mb_boot2/result
 
 PATH_INC =  $(addprefix -I, $(VPATH) $(OUTPUT))

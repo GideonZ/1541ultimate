@@ -1,55 +1,10 @@
-# System tool locations
-HERE = $(shell pwd)
-TOOLS = $(shell pwd)/../../../tools
-ZPU_TOOLCHAIN ?= /cygdrive/d/Proj/zpu/git/toolchain
-#TOOLCHAIN = /home/gideon/Proj/zpu/toolchain/toolchain
-BIN2HEX = $(TOOLS)/bin2hex
-HEX2BIN = $(TOOLS)/hex2bin
-PROMGEN = $(TOOLS)/promgen
-CHECKSUM = $(TOOLS)/checksum
 
-1ST_BOOT = $(HERE)/../mb_boot
-2ND_BOOT = $(HERE)/../mb_boot2
-ULTIMATE = $(HERE)/../mb_ultimate
-
-# Configuration
 CROSS     = zpu-elf
-LEGACY = ../../../legacy/2.6k/software
 
-# External inputs
-ROMS     = ../../../roms
-
-
-# Outputs
-RESULT = $(shell pwd)/result
-OUTPUT = $(shell pwd)/output
+include ../common/environment.mk
 
 PRJ      =  update
-PATH_SW  =  $(HERE)/../../../software
-
-VPATH     = $(PATH_SW)/application \
-			$(PATH_SW)/application/update_to_mb \
-			$(PATH_SW)/filesystem \
-			$(PATH_SW)/filemanager \
-			$(PATH_SW)/infra \
-			$(PATH_SW)/system \
-			$(PATH_SW)/system/zpu \
-			$(PATH_SW)/io/flash \
-			$(PATH_SW)/drive \
-			$(PATH_SW)/components \
-			$(PATH_SW)/io/c64 \
-			$(PATH_SW)/io/rtc \
-			$(PATH_SW)/io/overlay \
-			$(PATH_SW)/io/icap \
-			$(PATH_SW)/io/sd_card \
-			$(PATH_SW)/userinterface \
-			$(ROMS) \
-			$(ULTIMATE)/result \
-			$(2ND_BOOT)/result
-
-INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
-
-FPGA400 ?= 0
+FINAL    =  $(RESULT)/$(PRJ).bin
 
 SRCS_C   =	zpu.c \
 			itu.c \
@@ -84,10 +39,12 @@ SRCS_CC	 =  memory.cc \
 
 SRCS_ASM =  crt0_appl.s
 
+SRCS_6502 = 
+
 SRCS_BIN =  ultimate.bin \
 			mb_boot_700.bin \
-			chars.bin \
 			mb_boot2.bin \
+			chars.bin \
 			1541-ii.bin \
 			1541.bin \
 			1541c.bin \
@@ -104,10 +61,15 @@ SRCS_BIN =  ultimate.bin \
 			tar_ntsc.bin \
 			tar_pal.bin 
 
-ifeq	($(FPGA400), 1)
-	SRCS_BIN += 1st_boot_400.bin
-endif
-    
+SRCS_IEC = 
+
+SRCS_NANO = 
+
+VPATH   += $(PATH_SW)/application/update_to_mb
+VPATH   += ../mb_ultimate/result
+VPATH   += ../mb_boot/result
+VPATH   += ../mb_boot2/result
+
 PATH_INC =  $(addprefix -I, $(VPATH))
 COPTIONS = -Os -DGCC_ZPU -ffunction-sections -std=c99
 CPPOPT   = -Os -DGCC_ZPU -ffunction-sections -fno-exceptions -fno-rtti -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 -D_FPGA400=$(FPGA400)
@@ -118,74 +80,10 @@ LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lc -lbcc --end-group -lgcc
 #LIBS     = -lstdc++ -lsupc++ --start-group -lbcc --end-group
 LFLAGS   = --relax --gc-sections 
 
-VPATH   += $(OUTPUT) $(RESULT)
-
-CC		  = $(CROSS)-gcc
-CPP		  = $(CROSS)-g++
-LD		  = $(CROSS)-ld
-OBJDUMP   = $(CROSS)-objdump
-OBJCOPY	  = $(CROSS)-objcopy
-
-.SUFFIXES:
-
-OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
-OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
-OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
-OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.bo))
-CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
-ALL_OBJS = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN))
-
-
-.PHONY: clean all
-
-	
-all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin
-#	$(MAKE) -C ../1st_boot
-
-$(OUTPUT):
-	@mkdir $(OUTPUT)
-
-$(RESULT):
-	@mkdir $(RESULT)
-		
-$(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
-	@echo "Creating Binary $@"
-	@$(OBJCOPY) -O binary $< $@
-
-mb_boot_700.bin: $(1ST_BOOT)/output_mb/mb_boot_700.bit
-	@echo "Converting $(<F) bitfile to $(@F)"
-	@cd $(dir $<); $(PROMGEN) -r $(<F) $(OUTPUT)/$(@F) >/dev/null; cd $(HERE)
-
-%.bo: %.bin
-	@echo "Converting $(<F) binary to $(@F).."
-	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(<F) $(OUTPUT)/$(@F); cd $(HERE)
-
-%.chk: %.bin
-	@echo "Calculating checksum of $(<F) binary to $(@F).."
-	@cd $(dir $(shell find $(VPATH)  -maxdepth 1 -name $(<F))); $(CHECKSUM) $(<F) $(OUTPUT)/$(@F); cd $(HERE)
-
-%.o: %.s
-	@echo "Compiling $(notdir $<)"
-	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
-
-%.o: %.c $(INCLUDES)
-	@echo "Compiling $(notdir $<)"
-	@$(CC) $(COPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
-
-%.o: %.cc $(INCLUDES)
-	@echo "Compiling $(notdir $<)"
-	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
-
+include ../common/rules_zpu.mk
+ 
 update.o: update.cc $(INCLUDES) $(CHK_BIN)
 	@echo "Compiling $(notdir $<)"
 	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) >$(OUTPUT)/checksums.h
 	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_BIN)
-	@echo "Linking..."
-	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
-
-
-clean:
-	@-rm -rf $(OUTPUT)
-	@-rm -rf $(RESULT)

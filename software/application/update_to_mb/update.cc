@@ -25,44 +25,44 @@ extern "C" {
 #include "userinterface.h"
 #include "checksums.h"
 
-extern uint8_t _binary_ultimate_bin_start;
-extern uint8_t _binary_ultimate_bin_end;
-extern uint8_t _binary_mb_boot_700_bin_start;
-extern uint8_t _binary_mb_boot_700_bin_end;
-extern uint8_t _binary_mb_boot2_bin_start;
-extern uint8_t _binary_mb_boot2_bin_end;
+extern uint8_t _ultimate_bin_start;
+extern uint8_t _ultimate_bin_end;
+extern uint8_t _mb_boot_700_b_start;
+extern uint8_t _mb_boot_700_b_end;
+extern uint8_t _mb_boot2_bin_start;
+extern uint8_t _mb_boot2_bin_end;
 
-extern uint8_t _binary_1541_ii_bin_start;
-extern uint8_t _binary_1541_bin_start;
-extern uint8_t _binary_1541c_bin_start;
-extern uint8_t _binary_ar5ntsc_bin_start;
-extern uint8_t _binary_ar5pal_bin_start;
-extern uint8_t _binary_ar6pal_bin_start;
-extern uint8_t _binary_epyx_bin_start;
-extern uint8_t _binary_final3_bin_start;
-extern uint8_t _binary_rr38ntsc_bin_start;
-extern uint8_t _binary_rr38pal_bin_start;
-extern uint8_t _binary_sounds_bin_start;
-extern uint8_t _binary_ss5ntsc_bin_start;
-extern uint8_t _binary_ss5pal_bin_start;
-extern uint8_t _binary_tar_ntsc_bin_start;
-extern uint8_t _binary_tar_pal_bin_start;
+extern uint8_t _1541_ii_bin_start;
+extern uint8_t _1541_bin_start;
+extern uint8_t _1541c_bin_start;
+extern uint8_t _ar5ntsc_bin_start;
+extern uint8_t _ar5pal_bin_start;
+extern uint8_t _ar6pal_bin_start;
+extern uint8_t _epyx_bin_start;
+extern uint8_t _final3_bin_start;
+extern uint8_t _rr38ntsc_bin_start;
+extern uint8_t _rr38pal_bin_start;
+extern uint8_t _sounds_bin_start;
+extern uint8_t _ss5ntsc_bin_start;
+extern uint8_t _ss5pal_bin_start;
+extern uint8_t _tar_ntsc_bin_start;
+extern uint8_t _tar_pal_bin_start;
 
-extern uint8_t _binary_1541_ii_bin_end;
-extern uint8_t _binary_1541_bin_end;
-extern uint8_t _binary_1541c_bin_end;
-extern uint8_t _binary_ar5ntsc_bin_end;
-extern uint8_t _binary_ar5pal_bin_end;
-extern uint8_t _binary_ar6pal_bin_end;
-extern uint8_t _binary_epyx_bin_end;
-extern uint8_t _binary_final3_bin_end;
-extern uint8_t _binary_rr38ntsc_bin_end;
-extern uint8_t _binary_rr38pal_bin_end;
-extern uint8_t _binary_sounds_bin_end;
-extern uint8_t _binary_ss5ntsc_bin_end;
-extern uint8_t _binary_ss5pal_bin_end;
-extern uint8_t _binary_tar_ntsc_bin_end;
-extern uint8_t _binary_tar_pal_bin_end;
+extern uint8_t _1541_ii_bin_end;
+extern uint8_t _1541_bin_end;
+extern uint8_t _1541c_bin_end;
+extern uint8_t _ar5ntsc_bin_end;
+extern uint8_t _ar5pal_bin_end;
+extern uint8_t _ar6pal_bin_end;
+extern uint8_t _epyx_bin_end;
+extern uint8_t _final3_bin_end;
+extern uint8_t _rr38ntsc_bin_end;
+extern uint8_t _rr38pal_bin_end;
+extern uint8_t _sounds_bin_end;
+extern uint8_t _ss5ntsc_bin_end;
+extern uint8_t _ss5pal_bin_end;
+extern uint8_t _tar_ntsc_bin_end;
+extern uint8_t _tar_pal_bin_end;
 
 Screen *screen;
 UserInterface *user_interface;
@@ -288,7 +288,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
         do {
             switch(fpga_type) {
                 case 0:
-        	        ok = flash_buffer(FLASH_ID_BOOTFPGA, &_binary_mb_boot_700_bin_start, &_binary_mb_boot_700_bin_end, FPGA_VERSION, "FPGA");
+        	        ok = flash_buffer(FLASH_ID_BOOTFPGA, &_mb_boot_700_b_start, &_mb_boot_700_b_end, FPGA_VERSION, "FPGA");
         	        break;
                 default:
                     console_print(screen, "ERROR: Unknown FPGA type detected.\n");
@@ -298,7 +298,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
                 user_interface->popup("Critical update failed. Retry?", BUTTON_OK);
         } while(!ok);
         do {
-            ok = flash_buffer(FLASH_ID_BOOTAPP, &_binary_mb_boot2_bin_start, &_binary_mb_boot2_bin_end, BOOT_VERSION, "Secondary bootloader");
+            ok = flash_buffer(FLASH_ID_BOOTAPP, &_mb_boot2_bin_start, &_mb_boot2_bin_end, BOOT_VERSION, "Secondary bootloader");
             if(!ok)
                 user_interface->popup("Critical update failed. Retry?", BUTTON_OK);
         } while(!ok);
@@ -309,44 +309,44 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
             memset(roms, 0xFF, 0x210000);
             int min = 0x210000;
             int max = 0x000000;
-            copy_rom(roms, FLASH_ID_AR5PAL,    &min, &max, &_binary_ar5pal_bin_start,   &_binary_ar5pal_bin_end   );
-            copy_rom(roms, FLASH_ID_AR6PAL,    &min, &max, &_binary_ar6pal_bin_start,   &_binary_ar6pal_bin_end   );
-            copy_rom(roms, FLASH_ID_FINAL3,    &min, &max, &_binary_final3_bin_start,   &_binary_final3_bin_end   );
-            copy_rom(roms, FLASH_ID_SOUNDS,    &min, &max, &_binary_sounds_bin_start,   &_binary_sounds_bin_end   );
-            copy_rom(roms, FLASH_ID_EPYX,      &min, &max, &_binary_epyx_bin_start,     &_binary_epyx_bin_end     );
-            copy_rom(roms, FLASH_ID_ROM1541,   &min, &max, &_binary_1541_bin_start,     &_binary_1541_bin_end     );
-            copy_rom(roms, FLASH_ID_RR38PAL,   &min, &max, &_binary_rr38pal_bin_start,  &_binary_rr38pal_bin_end  );
-            copy_rom(roms, FLASH_ID_SS5PAL,    &min, &max, &_binary_ss5pal_bin_start,   &_binary_ss5pal_bin_end   );
-            copy_rom(roms, FLASH_ID_AR5NTSC,   &min, &max, &_binary_ar5ntsc_bin_start,  &_binary_ar5ntsc_bin_end  );
-            copy_rom(roms, FLASH_ID_ROM1541C,  &min, &max, &_binary_1541c_bin_start,    &_binary_1541c_bin_end    );
-            copy_rom(roms, FLASH_ID_ROM1541II, &min, &max, &_binary_1541_ii_bin_start,  &_binary_1541_ii_bin_end  );
-            copy_rom(roms, FLASH_ID_RR38NTSC,  &min, &max, &_binary_rr38ntsc_bin_start, &_binary_rr38ntsc_bin_end );
-            copy_rom(roms, FLASH_ID_SS5NTSC,   &min, &max, &_binary_ss5ntsc_bin_start,  &_binary_ss5ntsc_bin_end  );
-            copy_rom(roms, FLASH_ID_TAR_PAL,   &min, &max, &_binary_tar_pal_bin_start,  &_binary_tar_pal_bin_end  );
-            copy_rom(roms, FLASH_ID_TAR_NTSC,  &min, &max, &_binary_tar_ntsc_bin_start, &_binary_tar_ntsc_bin_end );
+            copy_rom(roms, FLASH_ID_AR5PAL,    &min, &max, &_ar5pal_bin_start,   &_ar5pal_bin_end   );
+            copy_rom(roms, FLASH_ID_AR6PAL,    &min, &max, &_ar6pal_bin_start,   &_ar6pal_bin_end   );
+            copy_rom(roms, FLASH_ID_FINAL3,    &min, &max, &_final3_bin_start,   &_final3_bin_end   );
+            copy_rom(roms, FLASH_ID_SOUNDS,    &min, &max, &_sounds_bin_start,   &_sounds_bin_end   );
+            copy_rom(roms, FLASH_ID_EPYX,      &min, &max, &_epyx_bin_start,     &_epyx_bin_end     );
+            copy_rom(roms, FLASH_ID_ROM1541,   &min, &max, &_1541_bin_start,     &_1541_bin_end     );
+            copy_rom(roms, FLASH_ID_RR38PAL,   &min, &max, &_rr38pal_bin_start,  &_rr38pal_bin_end  );
+            copy_rom(roms, FLASH_ID_SS5PAL,    &min, &max, &_ss5pal_bin_start,   &_ss5pal_bin_end   );
+            copy_rom(roms, FLASH_ID_AR5NTSC,   &min, &max, &_ar5ntsc_bin_start,  &_ar5ntsc_bin_end  );
+            copy_rom(roms, FLASH_ID_ROM1541C,  &min, &max, &_1541c_bin_start,    &_1541c_bin_end    );
+            copy_rom(roms, FLASH_ID_ROM1541II, &min, &max, &_1541_ii_bin_start,  &_1541_ii_bin_end  );
+            copy_rom(roms, FLASH_ID_RR38NTSC,  &min, &max, &_rr38ntsc_bin_start, &_rr38ntsc_bin_end );
+            copy_rom(roms, FLASH_ID_SS5NTSC,   &min, &max, &_ss5ntsc_bin_start,  &_ss5ntsc_bin_end  );
+            copy_rom(roms, FLASH_ID_TAR_PAL,   &min, &max, &_tar_pal_bin_start,  &_tar_pal_bin_end  );
+            copy_rom(roms, FLASH_ID_TAR_NTSC,  &min, &max, &_tar_ntsc_bin_start, &_tar_ntsc_bin_end );
             // console_print(screen, "All roms located from %p to %p.\n", min, max);
             flash_buffer(FLASH_ID_ALL_ROMS, roms + min, roms + max, "", "all roms");
             free(roms);
         } else {
-    	    flash_buffer(FLASH_ID_AR5PAL,    &_binary_ar5pal_bin_start,   &_binary_ar5pal_bin_end,   "", "ar5pal");
-    	    flash_buffer(FLASH_ID_AR6PAL,    &_binary_ar6pal_bin_start,   &_binary_ar6pal_bin_end,   "", "ar6pal");
-    	    flash_buffer(FLASH_ID_FINAL3,    &_binary_final3_bin_start,   &_binary_final3_bin_end,   "", "final3");
-    	    flash_buffer(FLASH_ID_SOUNDS,    &_binary_sounds_bin_start,   &_binary_sounds_bin_end,   "", "sounds");
-    	    flash_buffer(FLASH_ID_EPYX,      &_binary_epyx_bin_start,     &_binary_epyx_bin_end,     "", "epyx");
-    	    flash_buffer(FLASH_ID_ROM1541,   &_binary_1541_bin_start,     &_binary_1541_bin_end,     "", "1541");
-    	    flash_buffer(FLASH_ID_RR38PAL,   &_binary_rr38pal_bin_start,  &_binary_rr38pal_bin_end,  "", "rr38pal");
-    	    flash_buffer(FLASH_ID_SS5PAL,    &_binary_ss5pal_bin_start,   &_binary_ss5pal_bin_end,   "", "ss5pal");
-    	    flash_buffer(FLASH_ID_AR5NTSC,   &_binary_ar5ntsc_bin_start,  &_binary_ar5ntsc_bin_end,  "", "ar5ntsc");
-    	    flash_buffer(FLASH_ID_ROM1541C,  &_binary_1541c_bin_start,    &_binary_1541c_bin_end,    "", "1541c");
-    	    flash_buffer(FLASH_ID_ROM1541II, &_binary_1541_ii_bin_start,  &_binary_1541_ii_bin_end,  "", "1541-ii");
-    	    flash_buffer(FLASH_ID_RR38NTSC,  &_binary_rr38ntsc_bin_start, &_binary_rr38ntsc_bin_end, "", "rr38ntsc");
-    	    flash_buffer(FLASH_ID_SS5NTSC,   &_binary_ss5ntsc_bin_start,  &_binary_ss5ntsc_bin_end,  "", "ss5ntsc");
-    	    flash_buffer(FLASH_ID_TAR_PAL,   &_binary_tar_pal_bin_start,  &_binary_tar_pal_bin_end,  "", "tar_pal");
-    	    flash_buffer(FLASH_ID_TAR_NTSC,  &_binary_tar_ntsc_bin_start, &_binary_tar_ntsc_bin_end, "", "tar_ntsc");
+    	    flash_buffer(FLASH_ID_AR5PAL,    &_ar5pal_bin_start,   &_ar5pal_bin_end,   "", "ar5pal");
+    	    flash_buffer(FLASH_ID_AR6PAL,    &_ar6pal_bin_start,   &_ar6pal_bin_end,   "", "ar6pal");
+    	    flash_buffer(FLASH_ID_FINAL3,    &_final3_bin_start,   &_final3_bin_end,   "", "final3");
+    	    flash_buffer(FLASH_ID_SOUNDS,    &_sounds_bin_start,   &_sounds_bin_end,   "", "sounds");
+    	    flash_buffer(FLASH_ID_EPYX,      &_epyx_bin_start,     &_epyx_bin_end,     "", "epyx");
+    	    flash_buffer(FLASH_ID_ROM1541,   &_1541_bin_start,     &_1541_bin_end,     "", "1541");
+    	    flash_buffer(FLASH_ID_RR38PAL,   &_rr38pal_bin_start,  &_rr38pal_bin_end,  "", "rr38pal");
+    	    flash_buffer(FLASH_ID_SS5PAL,    &_ss5pal_bin_start,   &_ss5pal_bin_end,   "", "ss5pal");
+    	    flash_buffer(FLASH_ID_AR5NTSC,   &_ar5ntsc_bin_start,  &_ar5ntsc_bin_end,  "", "ar5ntsc");
+    	    flash_buffer(FLASH_ID_ROM1541C,  &_1541c_bin_start,    &_1541c_bin_end,    "", "1541c");
+    	    flash_buffer(FLASH_ID_ROM1541II, &_1541_ii_bin_start,  &_1541_ii_bin_end,  "", "1541-ii");
+    	    flash_buffer(FLASH_ID_RR38NTSC,  &_rr38ntsc_bin_start, &_rr38ntsc_bin_end, "", "rr38ntsc");
+    	    flash_buffer(FLASH_ID_SS5NTSC,   &_ss5ntsc_bin_start,  &_ss5ntsc_bin_end,  "", "ss5ntsc");
+    	    flash_buffer(FLASH_ID_TAR_PAL,   &_tar_pal_bin_start,  &_tar_pal_bin_end,  "", "tar_pal");
+    	    flash_buffer(FLASH_ID_TAR_NTSC,  &_tar_ntsc_bin_start, &_tar_ntsc_bin_end, "", "tar_ntsc");
         }
     }
 	if(do_update2) {
-    	flash_buffer(FLASH_ID_APPL, &_binary_ultimate_bin_start, &_binary_ultimate_bin_end, APPL_VERSION, "Ultimate application");
+    	flash_buffer(FLASH_ID_APPL, &_ultimate_bin_start, &_ultimate_bin_end, APPL_VERSION, "Ultimate application");
     }
 	console_print(screen, "                       \nDone!\n");
 	return true;
@@ -399,19 +399,19 @@ int main()
     /* Extra check on the loaded images */
     const char *check_error = "\033\032\nChecksum error... Not flashing.\n";
     console_print(screen, "\033\027Checking checksums loaded images..\033\037\n");
-    if(calc_checksum(&_binary_mb_boot_700_bin_start, &_binary_mb_boot_700_bin_end) == CHK_mb_boot_700_bin)
+    if(calc_checksum(&_mb_boot_700_b_start, &_mb_boot_700_b_end) == CHK_mb_boot_700_b)
         console_print(screen, "Checksum of FPGA image:   OK..\n");
     else {
         console_print(screen, check_error);
         while(1);
     }
-    if(calc_checksum(&_binary_mb_boot2_bin_start, &_binary_mb_boot2_bin_end) == CHK_mb_boot2_bin)
+    if(calc_checksum(&_mb_boot2_bin_start, &_mb_boot2_bin_end) == CHK_mb_boot2_bin)
         console_print(screen, "Checksum of Bootloader:   OK..\n");
     else {
         console_print(screen, check_error);
         while(1);
     }
-    if(calc_checksum(&_binary_ultimate_bin_start, &_binary_ultimate_bin_end) == CHK_ultimate_bin)
+    if(calc_checksum(&_ultimate_bin_start, &_ultimate_bin_end) == CHK_ultimate_bin)
         console_print(screen, "Checksum of Application:  OK..\n\n");
     else {
         console_print(screen, check_error);

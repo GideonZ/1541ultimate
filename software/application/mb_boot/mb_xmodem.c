@@ -22,9 +22,9 @@ int main(void)
         if (st > 0) {
             puts("Receive done.");
             //jump_run(0x10000);
-            UART_DATA = 0x2d;
-            asm("bralid r15, 0x10000");
-            asm("nop");
+            ioWrite8(UART_DATA, 0x2d);
+            __asm__("bralid r15, 0x10000");
+            __asm__("nop");
             puts("Application exit.");
         } else {
             puts("Nothing received.");

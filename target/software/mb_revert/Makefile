@@ -76,6 +76,7 @@ SRCS_IEC =
 
 SRCS_NANO = 
 
+VPATH   += $(PATH_SW)/application/mb_update
 VPATH   += $(1ST_BOOT)/output
 VPATH   += $(2ND_BOOT)/result
 VPATH   += $(ULTIMATE)/result

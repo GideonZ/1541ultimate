@@ -16,7 +16,7 @@ BOOT = ../2nd_boot
 LWIPLIB = ../mb_lwip/result/liblwip.a
 
 # Configuration
-CROSS     = mb
+CROSS     ?= mb
 
 # External inputs
 ROMS = ../../../roms
@@ -32,7 +32,6 @@ PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/application/ultimate \
-			$(PATH_SW)/application/mb_update \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/filetypes \
@@ -73,6 +72,8 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 XILINX ?= C:/Xilinx/13.2
 TOOLCHAIN = $(XILINX)/ISE_DS/EDK/gnu/microblaze/nt
+XILINXBIN = $(XILINX)/ISE_DS/ISE/bin/nt
+
 PATH_INC =  $(addprefix -I, $(VPATH))
 # VPATH   += $(OUTPUT) $(RESULT)
 

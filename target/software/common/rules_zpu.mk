@@ -44,7 +44,7 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo Converting $(<F) binary to $(@F)..
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
 	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
-	@$(OBJCOPY) -I binary -O elf32-microblaze --binary-architecture MicroBlaze $< $(OUTPUT)/$@ \
+	@$(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $< $(OUTPUT)/$@ \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
@@ -70,7 +70,7 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@$(eval fn := $(OUTPUT)/$(<F))
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$(fn)))))
 	@$(eval becomes := _$(subst .,_,$(subst /,_,$(<F))))
-	@$(OBJCOPY) -I binary -O elf32-microblaze --binary-architecture MicroBlaze $(fn) $(OUTPUT)/$@ \
+	@$(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(fn) $(OUTPUT)/$@ \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
@@ -80,7 +80,7 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@$(eval fn := $(OUTPUT)/$(<F))
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$(fn)))))
 	@$(eval becomes := _$(subst .,_,$(subst /,_,$(<F))))
-	@$(OBJCOPY) -I binary -O elf32-microblaze --binary-architecture MicroBlaze $(fn) $(OUTPUT)/$@ \
+	@$(OBJCOPY) -I binary -O elf32-zpu --binary-architecture zpu $(fn) $(OUTPUT)/$@ \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end

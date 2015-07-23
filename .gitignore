@@ -23,6 +23,8 @@ fpga/sid_old
 roms/JiffyDOS_1541_6.00_(rebadged_5.0).bin
 software/contrib-1.4.1
 software/libc
+software/libzip-0.11.2
+software/zlib-1.2.8
 target/fpga/*.xrpt
 target/fpga/_xmsgs
 target/fpga/boot400
@@ -51,7 +53,9 @@ target/software/checker/output
 target/software/checker/result
 target/software/lwip/output
 target/software/lwip/result
+target/software/mb_boot/output
 target/software/mb_boot/output_mb
+target/software/mb_boot/result
 target/software/mb_boot/result_mb
 target/software/mb_boot2/output
 target/software/mb_boot2/result
@@ -79,7 +83,9 @@ target/software/mb_update/output
 target/software/mb_update/result
 target/software/mb_usb_test/output_mb
 target/software/mb_usb_test/result_mb
+target/software/mb_xmodem/output
 target/software/mb_xmodem/output_mb
+target/software/mb_xmodem/result
 target/software/mb_xmodem/result_mb
 target/software/programmer/output
 target/software/programmer/result
@@ -91,4 +97,3 @@ target/software/update/output
 target/software/update/result
 target/software/update_to_mb/output
 target/software/update_to_mb/result
-tools/*.exe
