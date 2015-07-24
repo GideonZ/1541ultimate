@@ -15,10 +15,14 @@ package command_if_pkg is
     constant c_cif_io_status_start      : unsigned(3 downto 0) := X"8"; -- read only; tells software where the buffers are.
     constant c_cif_io_status_end        : unsigned(3 downto 0) := X"9";
     constant c_cif_io_status_length     : unsigned(3 downto 0) := X"A"; -- write will reset status readout
+    constant c_cif_io_irq_mask          : unsigned(3 downto 0) := X"B"; -- read/write
     constant c_cif_io_response_len_l    : unsigned(3 downto 0) := X"C"; -- write will reset response readout
     constant c_cif_io_response_len_h    : unsigned(3 downto 0) := X"D";
     constant c_cif_io_command_len_l     : unsigned(3 downto 0) := X"E"; -- read only
     constant c_cif_io_command_len_h     : unsigned(3 downto 0) := X"F"; 
+
+    constant c_cif_io_irq_mask_set      : unsigned(3 downto 0) := X"4"; -- write only
+    constant c_cif_io_irq_mask_clear    : unsigned(3 downto 0) := X"5"; -- write only
 
     constant c_cif_slot_control         : unsigned(1 downto 0) := "00"; -- R/W
     constant c_cif_slot_command         : unsigned(1 downto 0) := "01"; -- WO

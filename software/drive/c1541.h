@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include "integer.h"
-#include "event.h"
 #include "filemanager.h"
 #include "file_system.h"
 #include "config.h"

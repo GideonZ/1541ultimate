@@ -15,7 +15,8 @@ port (
     -- io interface for local cpu
     io_req          : in  t_io_req; -- we get a 2K range
     io_resp         : out t_io_resp;
-
+    io_irq          : out std_logic;
+    
     -- C64 side interface
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
@@ -64,6 +65,7 @@ architecture gideon of command_protocol is
     signal slot_base        : unsigned(6 downto 0);
     signal do_write         : std_logic;
     
+    signal irq_mask         : std_logic_vector(2 downto 0);
     signal command_pointer  : unsigned(10 downto 0);
     signal response_pointer : unsigned(10 downto 0);
     signal status_pointer   : unsigned(10 downto 0);
@@ -216,6 +218,12 @@ begin
                     response_length(7 downto 0) <= unsigned(io_req.data);
                 when c_cif_io_response_len_h =>
                     response_length(10 downto 8) <= unsigned(io_req.data(2 downto 0));
+                when c_cif_io_irq_mask =>
+                    irq_mask <= io_req.data(2 downto 0);
+                when c_cif_io_irq_mask_set =>
+                    irq_mask <= irq_mask or io_req.data(2 downto 0);
+                when c_cif_io_irq_mask_clear =>
+                    irq_mask <= irq_mask and not io_req.data(2 downto 0);
                 when others =>
                     null;
                 end case;
@@ -252,6 +260,8 @@ begin
                     io_resp.data <= std_logic_vector(command_length(7 downto 0));
                 when c_cif_io_command_len_h  =>
                     io_resp.data(2 downto 0) <= std_logic_vector(command_length(10 downto 8));
+                when c_cif_io_irq_mask =>
+                    io_resp.data(2 downto 0) <= irq_mask;
                 when others =>
                     null;
                 end case;
@@ -260,6 +270,7 @@ begin
             if reset='1' then
                 command_pointer  <= c_cmd_if_command_buffer_addr;
                 reset_response;
+                irq_mask         <= "111";
                 handshake_in     <= "000";
                 state            <= "00";
                 enabled          <= '0';
@@ -269,4 +280,6 @@ begin
             end if;
         end if;
     end process;
+    
+    io_irq <= '1' when (handshake_in and not irq_mask) /= "000" else '0';
 end architecture;

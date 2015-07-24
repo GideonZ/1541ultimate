@@ -13,7 +13,7 @@ class UsbDriver;
 
 #define USB2_MAX_DEVICES 16
 
-extern "C" void usb_irq(void);
+extern "C" BaseType_t usb_irq(void);
 
 typedef enum {
 	e_circular = 0,
@@ -50,7 +50,7 @@ public:
     static void input_task_start(void *);
 
     void poll();
-    void irq_handler(void);
+    BaseType_t irq_handler(void);
     void init(void);
     void deinit(void);
     void bus_reset();

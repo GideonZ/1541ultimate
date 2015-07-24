@@ -119,7 +119,7 @@ static void prvSetupTimerInterrupt( void )
 	ioWrite8(ITU_IRQ_TIMER_HI, 3);
 	ioWrite8(ITU_IRQ_TIMER_LO, 208); // 0x03D0 => 200 Hz
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
-	ioWrite8(ITU_IRQ_ENABLE, 0x0D); // tape, usb + timer
+	ioWrite8(ITU_IRQ_ENABLE, 0x1D); // uci, tape, usb + timer
 }
 /*-----------------------------------------------------------*/
 
@@ -309,20 +309,29 @@ extern void VPortYieldASM( void );
 }
 */
 /*-----------------------------------------------------------*/
-void uart_irq() __attribute__ ((weak));
-void usb_irq() __attribute__ ((weak));
-void tape_recorder_irq() __attribute__ ((weak));
+BaseType_t uart_irq() __attribute__ ((weak));
+BaseType_t usb_irq() __attribute__ ((weak));
+BaseType_t tape_recorder_irq() __attribute__ ((weak));
+BaseType_t command_interface_irq() __attribute__ ((weak));
 
-void uart_irq()
+BaseType_t uart_irq()
 {
+	return pdFALSE;
 }
 
-void usb_irq()
+BaseType_t usb_irq()
 {
+	return pdFALSE;
 }
 
-void tape_recorder_irq()
+BaseType_t tape_recorder_irq()
 {
+	return pdFALSE;
+}
+
+BaseType_t command_interface_irq()
+{
+	return pdFALSE;
 }
 
 #include "profiler.h"
@@ -337,23 +346,23 @@ static uint8_t pending;
 	ioWrite8(ITU_IRQ_CLEAR, pending);
 
 	BaseType_t do_switch = pdFALSE;
-	BaseType_t do_switch_timer = pdFALSE;
 
+	if (pending & 0x10) {
+		do_switch = command_interface_irq();
+	}
 	if (pending & 0x08) {
-		tape_recorder_irq();
-		do_switch = pdTRUE;
+		do_switch |= tape_recorder_irq();
 	}
 	if (pending & 0x04) {
-		usb_irq();
-		do_switch = pdTRUE;
+		do_switch |= usb_irq();
 	}
 	if (pending & 0x02) {
-		uart_irq();
+		do_switch |= uart_irq();
 	}
 	if (pending & 0x01) {
-		do_switch_timer = xTaskIncrementTick();
+		do_switch |= xTaskIncrementTick();
 	}
-	if ((do_switch_timer != pdFALSE) || (do_switch != pdFALSE)) {
+	if (do_switch != pdFALSE) {
 		vTaskSwitchContext();
 	}
 }

@@ -34,8 +34,8 @@ static void poll_usb2(void *a)
 	}
 }
 
-extern "C" void usb_irq() {
-	usb2.irq_handler();
+extern "C" BaseType_t usb_irq() {
+	return usb2.irq_handler();
 }
 
 struct usb_packet {
@@ -173,7 +173,7 @@ void Usb2 :: poll()
 	}
 }
 
-void Usb2 :: irq_handler(void)
+BaseType_t Usb2 :: irq_handler(void)
 {
 	PROFILER_SUB = 2;
 	uint16_t read1, read2;
@@ -184,7 +184,7 @@ void Usb2 :: irq_handler(void)
 	if (!success) {
 		printf(":(");
 		PROFILER_SUB = 0;
-		return;
+		return pdFALSE;
 	}
 
 	int pipe = read1 & 0x0F;
@@ -192,7 +192,7 @@ void Usb2 :: irq_handler(void)
 	if ((read1 & 0xFFF0) == 0xFFF0) {
 		if (pipe == 15) {
 			printf("USB Other IRQ. Status = %b\n", USB2_STATUS);
-			return;
+			return pdFALSE;
 		} else {
 			pause_input_pipe(pipe);
 			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, read2);
@@ -224,6 +224,7 @@ void Usb2 :: irq_handler(void)
 	PROFILER_SUB = 3;
 	xQueueSendFromISR(queue, &pkt, &retval);
 	PROFILER_SUB = 4;
+	return retval;
 }
 
 bool Usb2 :: get_fifo(uint16_t *out)

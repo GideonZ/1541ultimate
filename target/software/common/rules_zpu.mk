@@ -109,9 +109,13 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OB
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out
 
-$(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
+$(OUTPUT)/$(PRJ).sim: $(RESULT)/$(PRJ).bin
 	@echo Make mem...
 	@$(MAKEMEM) -w $< $@ 1000000 65536 
+
+$(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
+	@echo Make mem...
+	@$(MAKEMEM) $< $@ 2048
 
 # pull in dependency info for *existing* .o files
 -include $(ALL_DEP_OBJS:.o=.d)

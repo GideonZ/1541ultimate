@@ -24,10 +24,13 @@
 #define CMD_IF_STATUS_START    *((volatile uint8_t *)(CMD_IF_BASE + 0x8))
 #define CMD_IF_STATUS_END      *((volatile uint8_t *)(CMD_IF_BASE + 0x9))
 #define CMD_IF_STATUS_LENGTH   *((volatile uint8_t *)(CMD_IF_BASE + 0xA))
+#define CMD_IF_IRQMASK         *((volatile uint8_t *)(CMD_IF_BASE + 0xB))
 #define CMD_IF_RESPONSE_LEN_L  *((volatile uint8_t *)(CMD_IF_BASE + 0xC))
 #define CMD_IF_RESPONSE_LEN_H  *((volatile uint8_t *)(CMD_IF_BASE + 0xD))
 #define CMD_IF_COMMAND_LEN_L   *((volatile uint8_t *)(CMD_IF_BASE + 0xE))
 #define CMD_IF_COMMAND_LEN_H   *((volatile uint8_t *)(CMD_IF_BASE + 0xF))
+#define CMD_IF_IRQMASK_SET     *((volatile uint8_t *)(CMD_IF_BASE + 0x4))
+#define CMD_IF_IRQMASK_CLEAR   *((volatile uint8_t *)(CMD_IF_BASE + 0x5))
 
 #define CMD_NEW_COMMAND           0x01
 #define CMD_DATA_ACCEPTED         0x02
@@ -60,7 +63,9 @@ class ObjectWithMenu;
 
 class CommandInterface : public SubSystem, ObjectWithMenu
 {
-    uint8_t *command_buffer;
+	TaskHandle_t taskHandle;
+
+	uint8_t *command_buffer;
     uint8_t *response_buffer;
     uint8_t *status_buffer;
 
@@ -69,12 +74,16 @@ class CommandInterface : public SubSystem, ObjectWithMenu
     void copy_result(Message *data, Message *status);
     int cart_mode;
     
+    static void start_task(void *a);
+    void run_task(void);
+
     int executeCommand(SubsysCommand *cmd);
 public:
-    CommandInterface();
+	QueueHandle_t queue; // needed from IRQ
+
+	CommandInterface();
     ~CommandInterface();
     
-    int poll(void);
     void dump_registers(void);
     int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
     const char *identify(void) { return "Command Interface"; }
@@ -82,7 +91,6 @@ public:
 
 extern CommandInterface cmd_if;
  
-void poll_command_interface(Event &ev);
 
 /* Command Targets */
 

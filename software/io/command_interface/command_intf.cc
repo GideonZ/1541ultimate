@@ -4,7 +4,6 @@ extern "C" {
     #include "small_printf.h"
 }
 #include "command_intf.h"
-#include "poll.h"
 #include "c64.h"
 #include "dos.h"
 
@@ -47,6 +46,8 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
     target = CMD_TARGET_NONE;
     cart_mode = 0;
 
+    queue = xQueueCreate(16, sizeof(uint8_t));
+    xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
 }
 
 CommandInterface :: ~CommandInterface()
@@ -60,51 +61,72 @@ int CommandInterface :: executeCommand(SubsysCommand *cmd)
 	return c64_command->execute();
 }
 
-int CommandInterface :: poll()
+void CommandInterface :: start_task(void *a)
+{
+	CommandInterface *uci = (CommandInterface *)a;
+	uci->run_task();
+}
+
+extern "C" BaseType_t command_interface_irq(void) {
+
+	uint8_t status_byte = CMD_IF_STATUSBYTE;
+	uint8_t new_flags = status_byte & ~CMD_IF_IRQMASK;
+	CMD_IF_IRQMASK_SET = status_byte;
+
+	BaseType_t retval;
+	xQueueSendFromISR(cmd_if.queue, &new_flags, &retval);
+	return retval;
+}
+
+void CommandInterface :: run_task(void)
 {
 	int length;
-
     Message *data, *status;
-    
-    uint8_t status_byte = CMD_IF_STATUSBYTE;
+    uint8_t status_byte;
 
-    if(status_byte & CMD_ABORT_DATA) {
-        printf("Abort received.\n");
-        if (target != CMD_TARGET_NONE) {
-            command_targets[target]->abort();
-        }
-        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
+    while(1) {
+		xQueueReceive(queue, &status_byte, portMAX_DELAY);
+
+		if(status_byte & CMD_ABORT_DATA) {
+			printf("Abort received.\n");
+			if (target != CMD_TARGET_NONE) {
+				command_targets[target]->abort();
+			}
+			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
+			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA;
+		}
+		if(status_byte & CMD_DATA_ACCEPTED) {
+			if (target != CMD_TARGET_NONE) {
+				command_targets[target]->get_more_data(&data, &status);
+				copy_result(data, status);
+			}
+			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+			CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
+		}
+
+		if(status_byte & CMD_NEW_COMMAND) {
+			length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
+
+			if (length) {
+				//printf("Command received:\n");
+				//dump_hex_relative((void *)command_buffer, length);
+
+				incoming_command.length = length;
+				target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
+				command_targets[target]->parse_command(&incoming_command, &data, &status);
+				CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
+				copy_result(data, status);
+
+			} else {
+				printf("Null command.\n");
+				CMD_IF_RESPONSE_LEN_H = 0;
+				CMD_IF_RESPONSE_LEN_L = 0;
+				CMD_IF_STATUS_LENGTH = 0;
+				CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
+			}
+			CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;
+		}
     }
-    if(status_byte & CMD_DATA_ACCEPTED) {
-        if (target != CMD_TARGET_NONE) {
-            command_targets[target]->get_more_data(&data, &status);
-            copy_result(data, status);
-        }
-        CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
-    }
-
-    if(status_byte & CMD_NEW_COMMAND) {
-        length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
-
-        if (length) {
-            //printf("Command received:\n");
-            //dump_hex_relative((void *)command_buffer, length);
-    
-            incoming_command.length = length;
-            target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
-            command_targets[target]->parse_command(&incoming_command, &data, &status);
-            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
-            copy_result(data, status);
-
-        } else {
-            printf("Null command.\n");
-            CMD_IF_RESPONSE_LEN_H = 0;
-            CMD_IF_RESPONSE_LEN_L = 0;
-            CMD_IF_STATUS_LENGTH = 0;
-            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
-        }
-    }
-    return 0;
 }
 
 void CommandInterface :: copy_result(Message *data, Message *status)

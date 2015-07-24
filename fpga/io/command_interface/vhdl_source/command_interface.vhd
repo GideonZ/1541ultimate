@@ -18,7 +18,8 @@ port (
         
     -- io interface for local cpu
     io_req          : in  t_io_req; -- we get an 8K range
-    io_resp         : out t_io_resp );
+    io_resp         : out t_io_resp;
+    io_irq          : out std_logic );
 
 end entity;
 
@@ -100,6 +101,7 @@ begin
         -- Local CPU side
         io_req      => io_req_regs,
         io_resp     => io_resp_regs,
+        io_irq      => io_irq,
 
         -- slot
         slot_req    => slot_req,

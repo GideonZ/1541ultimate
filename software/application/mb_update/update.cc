@@ -315,19 +315,12 @@ int main()
     } else {
     	host = new HostStream(stream);
     }
-    /*
-    GenericHost *host;
-    if (getFpgaCapabilities() & CAPAB_OVERLAY)
-        host = new Overlay(true);
-    else
-        host = new C64;
-*/
     
     printf("host = %p\n", host);
 	host->take_ownership(NULL);
 
     screen = host->getScreen();
-    screen->move_cursor(0,0);
+    screen->clear();
     screen->output("\033\021   **** 1541 Ultimate II Updater ****\n\033\037"); // \020 = alpha \021 = beta
     screen->repeat('\002', 40);
 

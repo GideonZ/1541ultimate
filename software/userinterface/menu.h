@@ -10,7 +10,6 @@
 
 #include "action.h"
 #include "indexed_list.h"
-#include "event.h"
 #include "globals.h"
 #include "path.h"
 

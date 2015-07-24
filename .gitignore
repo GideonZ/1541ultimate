@@ -21,6 +21,7 @@ fpga/sid_old
 /old_flash_images
 /releases
 roms/JiffyDOS_1541_6.00_(rebadged_5.0).bin
+software/chan_fat
 software/contrib-1.4.1
 software/libc
 software/libzip-0.11.2
@@ -59,6 +60,7 @@ target/software/mb_boot/result
 target/software/mb_boot/result_mb
 target/software/mb_boot2/output
 target/software/mb_boot2/result
+target/software/mb_chan
 target/software/mb_hello/output_mb
 target/software/mb_hello/result_mb
 target/software/mb_irq/output_mb

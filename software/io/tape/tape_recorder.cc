@@ -15,10 +15,11 @@ TapeRecorder *tape_recorder = NULL; // globally static
 #define MENU_REC_RECORD_TO_TAP 0x3212
 #define MENU_REC_FINISH        0x3213
 
-void tape_recorder_irq(void)
+extern "C" BaseType_t tape_recorder_irq(void)
 {
     ioWrite8(UART_DATA, 0x2D);
     tape_recorder->irq();
+    return pdFALSE; // it will get polled, no immediate action
 }
 
 __inline uint32_t cpu_to_le_32(uint32_t a)

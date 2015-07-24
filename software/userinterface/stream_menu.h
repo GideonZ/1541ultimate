@@ -6,7 +6,6 @@
 #include "stream.h"
 #include "stack.h"
 #include "path.h"
-#include "event.h"
 #include "browsable.h"
 #include "userinterface.h"
 

@@ -29,12 +29,18 @@ SRCS_CC	 =  memory.cc \
 			config.cc \
 			c64.cc \
 			screen.cc \
+			screen_vt100.cc \
 			keyboard_c64.cc \
+			keyboard_vt100.cc \
 			mystring.cc \
 			size_str.cc \
 			rtc.cc \
+			task_menu.cc \
 			userinterface.cc \
 			ui_elements.cc \
+			stream.cc \
+			host_stream.cc \
+			stream_uart.cc \
 			$(PRJ).cc
 
 SRCS_ASM =  crt0_appl.s

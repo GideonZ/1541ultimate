@@ -9,7 +9,6 @@
 #include "socket_gui.h"
 #include "socket_stream.h"
 
-#include "event.h"
 #include "screen.h"
 #include "screen_vt100.h"
 #include "keyboard_vt100.h"

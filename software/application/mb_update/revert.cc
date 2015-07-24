@@ -16,14 +16,13 @@ extern "C" {
 #include "flash.h"
 #include "screen.h"
 #include "keyboard.h"
-#include "sd_card.h"
-#include "disk.h"
-#include "fat_fs.h"
-#include "fatfile.h"
 #include "config.h"
 #include "rtc.h"
 #include "userinterface.h"
 #include "checksums.h"
+#include "stream.h"
+#include "stream_uart.h"
+#include "host_stream.h"
 
 extern uint8_t _ultimate_bin_start;
 extern uint8_t _ultimate_bin_end;
@@ -300,22 +299,22 @@ int main()
 	flash = get_flash();
     printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
-    C64 *host = new C64;
-/*
-    GenericHost *host;
-    if (getFpgaCapabilities() & CAPAB_OVERLAY)
-        host = new Overlay(true);
-    else
-        host = new C64;
-*/
-    
-    host->reset();
+    GenericHost *host = 0;
+    Stream *stream = new Stream_UART;
+    C64 *c64 = new C64;
+    c64->reset();
+
+    if (c64->exists()) {
+    	host = c64;
+    } else {
+    	host = new HostStream(stream);
+    }
+
     printf("host = %p\n", host);
 	host->take_ownership(NULL);
-    printf("Now get screen etc..\n");
 
     screen = host->getScreen();
-    screen->move_cursor(0,0);
+    screen->clear();
     screen->output("\033\021   **** 1541 Ultimate II Reverter ****\n\033\037"); // \020 = alpha \021 = beta
     screen->repeat('\002', 40);
 

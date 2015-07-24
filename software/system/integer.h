@@ -21,7 +21,7 @@ typedef enum { FALSE = 0, TRUE } BOOL;
 /*--------------------------------*/
 /* Multi-byte word access macros  */
 
-#if _uint16_t_ACCESS == 1   /* Enable word access to the FAT structure */
+#if _WORD_ACCESS == 1   /* Enable word access to the FAT structure */
 #define LD_WORD(ptr)        (uint16_t)(*(uint16_t*)(uint8_t*)(ptr))
 #define LD_DWORD(ptr)       (uint32_t)(*(uint32_t*)(uint8_t*)(ptr))
 #define ST_WORD(ptr,val)    *(uint16_t*)(uint8_t*)(ptr)=(uint16_t)(val)

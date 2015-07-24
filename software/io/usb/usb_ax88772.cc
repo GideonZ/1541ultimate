@@ -5,7 +5,6 @@
 #include "dump_hex.h"
 #include "integer.h"
 #include "usb_ax88772.h"
-#include "event.h"
 #include "profiler.h"
 
 #define DEBUG_RAW_PKT 0

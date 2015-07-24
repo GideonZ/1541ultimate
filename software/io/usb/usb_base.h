@@ -2,9 +2,7 @@
 #define USB_BASE_H
 
 #include "integer.h"
-#include "event.h"
 #include "indexed_list.h"
-#include "poll.h"
 
 struct t_pipe {
 	uint16_t Command;

@@ -5,7 +5,6 @@ extern "C" {
 }
 #include "iec.h"
 #include "iec_channel.h"
-#include "poll.h"
 #include "c64.h"
 #include "filemanager.h"
 #include "userinterface.h"
@@ -133,9 +132,12 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 
 
 
-void IecInterface :: poll_iec_interface(Event &ev)
+void IecInterface :: iec_task(void *a)
 {
-    iec_if.poll(ev);
+	while(1) {
+		iec_if.poll();
+		vTaskDelay(2);
+	}
 }
 
 IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
@@ -146,7 +148,6 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     if(!(getFpgaCapabilities() & CAPAB_HARDWARE_IEC))
         return;
 
-    MainLoop :: addPollFunction(poll_iec_interface);
     register_store(0x49454300, "Software IEC Settings", iec_config);
 
     HW_IEC_RESET_ENABLE = 0; // disable
@@ -183,6 +184,8 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
         channels[i] = new IecChannel(this, i);
     }
     channels[15] = new IecCommandChannel(this, 15);
+
+	xTaskCreate( IecInterface :: iec_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
 }
 
 IecInterface :: ~IecInterface()
@@ -190,11 +193,13 @@ IecInterface :: ~IecInterface()
     if(!(getFpgaCapabilities() & CAPAB_HARDWARE_IEC))
         return;
 
+    if (taskHandle) {
+    	vTaskDelete(taskHandle);
+    }
     for(int i=0;i<16;i++)
         delete channels[i];
     fm->release_path(path);
     fm->release_path(cmd_path);
-    MainLoop :: removePollFunction(poll_iec_interface);
 }
 
 void IecInterface :: effectuate_settings(void)
@@ -252,7 +257,7 @@ int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
 
 //BYTE dummy_prg[] = { 0x01, 0x08, 0x0C, 0x08, 0xDC, 0x07, 0x99, 0x22, 0x48, 0x4F, 0x49, 0x22, 0x00, 0x00, 0x00 };
 
-int IecInterface :: poll(Event &e)
+int IecInterface :: poll()
 {
     uint8_t data;
 
@@ -825,7 +830,7 @@ int UltiCopy :: handle_key(uint8_t c)
 	return 0;
 }
 
-int UltiCopy :: poll(int a, Event& e)
+int UltiCopy :: poll(int a)
 {
     return return_code;
 }

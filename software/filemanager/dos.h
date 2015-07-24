@@ -2,7 +2,6 @@
 #define DOS_H
 
 #include "integer.h"
-#include "event.h"
 #include "filemanager.h"
 #include "indexed_list.h"
 #include "config.h"

@@ -1,8 +1,6 @@
 #ifndef SAMPLER_H
 #define SAMPLER_H
 
-#include "event.h"
-#include "poll.h"
 #include "menu.h"
 #include "iomap.h"
 
@@ -27,6 +25,7 @@
 #define VOICE_CTRL_8BIT     0x00
 #define VOICE_CTRL_16BIT    0x10
 
+/*
 #define MENU_SAMP_PLAY8B  0x8301
 #define MENU_SAMP_PLAY16B 0x8302
 
@@ -39,5 +38,6 @@ public:
     void poll(Event &e);
 	int  fetch_task_items(IndexedList<Action*> &item_list);
 };
+*/
 
 #endif

@@ -7,7 +7,6 @@ extern "C" {
 }
 #include "integer.h"
 #include "usb_em1010.h"
-#include "event.h"
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {

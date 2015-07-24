@@ -1,5 +1,6 @@
 #include "dos.h"
 #include "userinterface.h"
+#include <string.h>
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
@@ -38,6 +39,9 @@ Dos :: Dos(int id) : directoryList(16, NULL)
     status_message.message = new uint8_t[80];
     fm = FileManager :: getFileManager();
     path = fm->get_new_path("Dos");
+    file = 0;
+    dir_entries = remaining = current_index = 0;
+    dos_state = e_dos_idle;
 }
    
 
@@ -57,7 +61,6 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
     uint32_t pos, addr, len;
     uint32_t transferred = 0;
     FRESULT res = FR_OK;
-    CachedTreeNode *po;
     FileInfo *fi;
     mstring str;
     

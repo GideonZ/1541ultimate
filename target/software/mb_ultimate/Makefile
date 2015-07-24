@@ -89,6 +89,7 @@ SRCS_CC	 =  small_printf.cc \
 			iec.cc \
 			command_intf.cc \
 			dos.cc \
+			network_target.cc \
 			usb_ax88772.cc \
 			usb_em1010.cc \
 			network_interface.cc \

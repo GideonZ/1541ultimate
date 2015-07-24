@@ -2,12 +2,15 @@
 #define IEC_H
 
 #include "integer.h"
-#include "event.h"
 #include "menu.h"
 #include "config.h"
 #include "userinterface.h"
 #include "iomap.h"
 #include "subsys.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
 
 #define HW_IEC_REGS      IEC_BASE
 #define HW_IEC_CODE      (IEC_BASE + 0x800)
@@ -49,6 +52,7 @@ class UltiCopy;
 
 class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
 {
+    TaskHandle_t taskHandle;
 	FileManager *fm;
     IndexedList<FileInfo *> *dirlist;
     IndexedList<char *> *iecNames;
@@ -76,7 +80,7 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     bool run_drive_code(int device, uint16_t addr, uint8_t *code, int length);
     UltiCopy *ui_window;
     uint8_t last_track;
-    static void poll_iec_interface(Event &ev);
+    static void iec_task(void *a);
     void cleanupDir(void);
     char *getIecName(char *in);
 public:
@@ -89,7 +93,7 @@ public:
     int executeCommand(SubsysCommand *cmd); // from SubSystem
     const char *identify(void) { return "IEC"; }
 
-    int poll(Event &ev);
+    int poll(void);
     int fetch_task_items(Path *path, IndexedList<Action *> &list);
     void effectuate_settings(void); // from ConfigurableObject
     int get_last_error(char *); // writes string into buffer
@@ -103,9 +107,6 @@ public:
 
 extern IecInterface HW_IEC;
  
-void poll_iec_interface(Event &ev);
-
-
 class UltiCopy : public UIObject
 {
 public:
@@ -121,7 +122,7 @@ public:
     virtual void init(Screen *win, Keyboard *k);
     virtual void deinit(void);
 
-    virtual int poll(int, Event &e);
+    virtual int poll(int);
     virtual int handle_key(uint8_t);
 
     void close(void);

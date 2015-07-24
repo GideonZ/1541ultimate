@@ -76,12 +76,12 @@ public:
         return true;
     }
     
-    void poll(Event &e) { }
+    void poll() { }
     void reset(void) { }
     void freeze(void) {
         CHARGEN_TRANSPARENCY = 0x86;
     }
-    void unfreeze(Event &e) {
+    void unfreeze() {
         CHARGEN_TRANSPARENCY = 0x06;
     }
 

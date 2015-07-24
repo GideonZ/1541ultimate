@@ -24,6 +24,10 @@ $(OUTPUT):
 $(RESULT):
 	@mkdir $(RESULT)
 		
+$(RESULT)/$(PRJ).a: $(OBJS_C)
+	@echo Creating Archive $@
+	$(AR) -rc $@ $(ALL_OBJS)
+
 $(RESULT)/$(PRJ).u2u: $(OUTPUT)/$(PRJ).out
 	@echo Creating Updater Binary $@
 	@$(OBJCOPY) -O binary $< $@
@@ -109,9 +113,13 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OB
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out
 
-$(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
+$(OUTPUT)/$(PRJ).sim: $(RESULT)/$(PRJ).bin
 	@echo Make mem...
 	@$(MAKEMEM) -w $< $@ 1000000 65536 
+
+$(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
+	@echo Make mem...
+	@$(MAKEMEM) $< $@ 2048
 
 # pull in dependency info for *existing* .o files
 -include $(ALL_DEP_OBJS:.o=.d)

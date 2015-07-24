@@ -12,7 +12,6 @@
 #include "screen.h"
 #include "keyboard.h"
 #include "mystring.h"
-#include "event.h"
 
 #define NUM_BUTTONS 5
 

@@ -75,7 +75,8 @@ port (
     
     -- slave on io bus
     io_req          : in    t_io_req;
-    io_resp         : out   t_io_resp );
+    io_resp         : out   t_io_resp;
+    io_irq_cmd      : out   std_logic );
 
 end slot_server_v4;    
 
@@ -549,7 +550,8 @@ begin
             
             -- io interface for local cpu
             io_req          => io_req_cmd, -- we get an 8K range
-            io_resp         => io_resp_cmd );
+            io_resp         => io_resp_cmd,
+            io_irq          => io_irq_cmd );
 
     end generate;
 

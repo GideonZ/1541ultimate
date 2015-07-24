@@ -7,7 +7,6 @@ extern "C" {
 }
 #include "integer.h"
 #include "usb_scsi.h"
-#include "event.h"
 #include "filemanager.h"
 #include "FreeRTOS.h"
 #include "task.h"

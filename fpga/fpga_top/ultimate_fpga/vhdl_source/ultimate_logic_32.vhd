@@ -341,6 +341,7 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_usb      : std_logic;
     signal sys_irq_tape     : std_logic;
     signal sys_irq_iec      : std_logic;
+    signal sys_irq_cmdif    : std_logic;
     signal invalidate       : std_logic;
     signal inv_addr         : std_logic_vector(31 downto 0);
     signal stuck            : std_logic;
@@ -407,7 +408,7 @@ begin
         irq_in(7)   => button(2),
         irq_in(6)   => button(1),
         irq_in(5)   => button(0),
-        irq_in(4)   => c64_irq,
+        irq_in(4)   => sys_irq_cmdif,
         irq_in(3)   => sys_irq_tape,
         irq_in(2)   => sys_irq_usb,
         
@@ -607,7 +608,8 @@ begin
             
             -- slave on io bus
             io_req          => io_req_cart,
-            io_resp         => io_resp_cart );
+            io_resp         => io_resp_cart,
+            io_irq_cmd      => sys_irq_cmdif );
     end generate;
 
     i_split1: entity work.io_bus_splitter

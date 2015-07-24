@@ -1,7 +1,6 @@
 #ifndef HOST_H
 #define HOST_H
 
-#include "event.h"
 #include "integer.h"
 #include "screen.h"
 #include "keyboard.h"
