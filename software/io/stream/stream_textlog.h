@@ -30,6 +30,14 @@ public:
     }
 
     void charout(int c) {
+    	if (c == 27) {
+    		c = '<';
+    	} else if (c == 9) {
+    		c = ' ';
+    	} else if ((c < 32) && (c != 10) && (c != 13)) {
+    		return;
+    	}
+
     	if (offset < (size-1)) {
     		buffer[offset++] = (char)c;
     	}

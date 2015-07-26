@@ -83,7 +83,7 @@ void S25FL_Flash :: protect_disable(void)
 	SPI_FLASH_DATA = 0x00;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
 
-	wait_ready(10000);
+	wait_ready(50); // datasheet: 5 ms
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = S25FL_WriteDisable;
@@ -107,7 +107,7 @@ bool S25FL_Flash :: protect_configure(void)
 	SPI_FLASH_DATA = 0x00;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
 
-	wait_ready(10000);
+	wait_ready(50);
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = S25FL_WriteDisable;

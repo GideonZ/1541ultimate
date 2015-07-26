@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 
 class Stream
 {
@@ -25,7 +26,7 @@ public:
     virtual int read(char *buffer, int length) { return 0; }
     virtual int write(const char *buffer, int length) { return 0; }
     virtual int get_char(void) { return -1; }
-    virtual void charout(int c) { }
+    virtual void charout(int c) { printf("[SBco%b]", c); }
 
     virtual int format(const char *fmt, ...);
     virtual int getstr(char *buffer, int length); // non blocking

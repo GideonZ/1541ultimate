@@ -92,13 +92,14 @@ public:
 		if (info->special_display) {
 			parent_path->get_display_string(info->lfname, buffer, width);
 		} else {
+			char sel = getSelection() ? '\x13': ' ';
 			if (info->attrib & AM_VOL) {
 				sprintf(buffer, "\eR%#s\er VOLUME", width-11, info->lfname);
 			} else if(info->is_directory()) {
-				sprintf(buffer, "%#s\eJ DIR", width-11, info->lfname);
+				sprintf(buffer, "%#s\eJ DIR%c", width-11, info->lfname, sel);
 			} else {
 				size_to_string_bytes(info->size, sizebuf);
-				sprintf(buffer, "%#s\e7 %3s %s", width-11, info->lfname, info->extension, sizebuf);
+				sprintf(buffer, "%#s\e7 %3s%c%s", width-11, info->lfname, info->extension, sel, sizebuf);
 			}
 		}
 	}

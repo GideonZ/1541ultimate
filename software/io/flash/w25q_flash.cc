@@ -239,7 +239,7 @@ bool W25Q_Flash :: write_page(int page, void *buffer)
         SPI_FLASH_DATA_32 = *(buf++);
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    bool ret = wait_ready(5000);
+    bool ret = wait_ready(15); // datasheet: max 3 ms for page write, spansion: 5 ms max
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
@@ -259,7 +259,7 @@ bool W25Q_Flash :: erase_sector(int sector)
     SPI_FLASH_DATA = uint8_t(addr >> 8);
     SPI_FLASH_DATA = uint8_t(addr);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    bool ret = wait_ready(50000);
+    bool ret = wait_ready(1000); // datasheet: max 400 ms, spansion: 200 ms
     SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
@@ -309,7 +309,7 @@ void W25Q_Flash :: protect_disable(void)
 	SPI_FLASH_DATA = 0x00;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
 
-	wait_ready(10000);
+	wait_ready(50); // datasheet: max 15 ms
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
@@ -333,7 +333,7 @@ bool W25Q_Flash :: protect_configure(void)
 	SPI_FLASH_DATA = 0x00;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
 
-	wait_ready(10000);
+	wait_ready(50);
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
@@ -352,15 +352,17 @@ void W25Q_Flash :: protect_enable(void)
 
 bool W25Q_Flash :: wait_ready(int time_out)
 {
-// TODO: FOR Microblaze or any faster CPU, we need to insert wait cycles here
-    int i=time_out;
 	bool ret = true;
     SPI_FLASH_CTRL = SPI_FORCE_SS;
     SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
+    uint16_t start = getMsTimer();
+	uint16_t now;
     while(SPI_FLASH_DATA & 0x01) {
-        if(!(i--)) {
-            debug(("Flash timeout.\n"));
+    	now = getMsTimer();
+    	if ((now - start) > time_out) {
+    		debug(("Flash timeout.\n"));
             ret = false;
+            break;
         }
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;

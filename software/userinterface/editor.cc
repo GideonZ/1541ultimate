@@ -24,12 +24,15 @@ Editor :: Editor(UserInterface *ui, const char *text_buffer)
     keyb = NULL;
     window = NULL;
     line_length = 38;
+    height = 0;
+    linecount = 0;
+    first_line = 0;
+    complete_text = text_buffer;
     
     text = new IndexedList<Line>(16, empty_line);
     if(!text_buffer)
         text_buffer = (char *)test_text;
         
-    line_breakdown(text_buffer);
 }
 
 // y_offs = line above selected, relative to window
@@ -50,7 +53,7 @@ void Editor :: line_breakdown(const char *text_buffer)
 	linecount = 0;
 
     // printf("Line length = %d\n", line_length);
-
+	text->clear_list();
     while(c) {
         current.buffer = c;
         last_space = -1;
@@ -105,6 +108,8 @@ void Editor :: init(Screen *scr, Keyboard *key)
     window->draw_border();
     height -= 2;
     first_line = 0;
+    line_length -= 2;
+    line_breakdown(complete_text);
     draw();
 }
     
@@ -151,31 +156,33 @@ int Editor :: handle_key(uint8_t c)
     int ret = 0;
     
     switch(c) {
-        case 0x9D: // left
-        case 0x03: // runstop
+        case KEY_LEFT: // left
+        case KEY_BREAK: // runstop
             ret = -1;
             break;
-        case 0x11: // down
+        case KEY_DOWN: // down
 			if (first_line < linecount - height) {
 				first_line++;
 				draw();
 			}
             break;
-        case 0x91: // up
+        case KEY_UP: // up
             if(first_line>0) {
                 first_line--;
                 draw();
             }
             break;
-        case 0x85: // F1 -> page up
+        case KEY_F1: // F1 -> page up
+        case KEY_PAGEUP:
 			first_line -= height + 1;
 			if (first_line < 0) {
 				first_line = 0;
 			}
 			draw();
 			break;
-        case 0x88: // F7 -> page down
-			first_line += height - 1;
+        case KEY_F7: // F7 -> page down
+        case KEY_PAGEDOWN:
+        	first_line += height - 1;
 			if (first_line >= linecount - height) {
 				first_line = linecount - height;
 				if (first_line < 0)
@@ -183,10 +190,10 @@ int Editor :: handle_key(uint8_t c)
 			}
 			draw();
 			break;
-        case 0x14: // backspace
+        case KEY_BACK: // backspace
             break;
-        case 0x20: // space
-        case 0x0D: // return
+        case KEY_SPACE: // space
+        case KEY_RETURN: // return
             ret = 1;
             break;
             

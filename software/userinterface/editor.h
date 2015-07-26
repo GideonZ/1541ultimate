@@ -20,7 +20,8 @@ public:
     int height;
     int first_line;
 	int linecount;
-    
+    const char *complete_text;
+
     Screen   *screen;
     Window   *window;
     Keyboard *keyb;

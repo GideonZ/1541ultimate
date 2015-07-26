@@ -64,7 +64,7 @@ int init_fat_on_sd(void)
     return init_fat();
 }
 
-FRESULT try_loading(char *filename)
+FRESULT try_loading(char *filename, uint32_t run_address)
 {
     FATFIL *file = new FATFIL((FATFS*)fs);
     uint16_t dummy;
@@ -74,7 +74,7 @@ FRESULT try_loading(char *filename)
         return res;
     }
     uint32_t bytes_read = 0;
-    res = file->read((void *)UPDATER_RUN_ADDRESS, APPLICATION_MAX_LENGTH, &bytes_read);
+    res = file->read((void *)run_address, APPLICATION_MAX_LENGTH, &bytes_read);
     printf("Bytes read: %d (0x%6x)\n", bytes_read, bytes_read);
     
     file->close();
@@ -82,7 +82,7 @@ FRESULT try_loading(char *filename)
 
     if(bytes_read) {
         //execute
-        jump_run(UPDATER_RUN_ADDRESS);
+        jump_run(run_address);
         return FR_OK;
     }
     return FR_INVALID_OBJECT;
@@ -133,7 +133,8 @@ int main()
 	file_system_err = init_fat_on_sd();
 
     if(!file_system_err) { // will return error code, 0 = ok
-        res = try_loading("recover.u2u");
+        res = try_loading("recover.u2u", UPDATER_RUN_ADDRESS);
+        res = try_loading("ultimate.bin", APPLICATION_RUN_ADDRESS);
         delete fs;
         delete prt;
         delete dsk;

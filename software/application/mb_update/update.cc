@@ -411,11 +411,11 @@ int main()
         }
     }
 
-    console_print(screen, "\nTo avoid loading this updater again,\ndelete it from your media.\n");
+//    console_print(screen, "\nTo avoid loading this updater again,\ndelete it from your media.\n");
 	
-    wait_ms(2000);
+//    wait_ms(2000);
     
-    user_interface->popup("Remove SDCard. Reboot?", BUTTON_OK);
+//    user_interface->popup("Remove SDCard. Reboot?", BUTTON_OK);
     flash->reboot(0);
     
 //	console_print(screen, "\nPlease remove the SD card, and switch\noff your machine...\n");

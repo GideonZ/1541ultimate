@@ -23,15 +23,17 @@ void jump_run(uint32_t a)
 
 bool w25q_wait_ready(int time_out)
 {
-// TODO: FOR Microblaze or any faster CPU, we need to insert wait cycles here
-    int i=time_out;
 	bool ret = true;
     SPI_FLASH_CTRL = SPI_FORCE_SS;
     SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
+    uint16_t start = getMsTimer();
+	uint16_t now;
     while(SPI_FLASH_DATA & 0x01) {
-        if(!(i--)) {
-            puts("Flash timeout.");
+    	now = getMsTimer();
+    	if ((now - start) > time_out) {
+    		puts("Flash timeout.");
             ret = false;
+            break;
         }
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
@@ -96,7 +98,7 @@ int main(int argc, char **argv)
         	SPI_FLASH_DATA = 0x34; // 7/8 on spansion!!
         	SPI_FLASH_DATA = 0x00;
             SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-        	w25q_wait_ready(100000);
+        	w25q_wait_ready(50); // datasheet winbond: 15 ms max
         	SPI_FLASH_DATA = W25Q_WriteDisable;
         }
     }

@@ -70,7 +70,7 @@ void UserInterface :: init(GenericHost *h)
 {
     host = h;
     keyboard = h->getKeyboard();
-    screen = NULL;
+	screen = h->getScreen();
     initialized = true;
 }
 
@@ -144,7 +144,6 @@ void UserInterface :: appear(void)
 {
 	host->take_ownership(this);
 	host->set_colors(color_bg, color_border);
-	screen = host->getScreen();
 	set_screen_title();
 	for(int i=0;i<=focus;i++) {  // build up
 		//printf("Going to (re)init objects %d.\n", i);
@@ -184,9 +183,10 @@ void UserInterface :: set_screen_title()
 	static char title[48];
     // precondition: screen is cleared.  // \020 = alpha \021 = beta
     // screen->clear();
-    sprintf(title, "\eA**** 1541 Ultimate %s (%b) ****\eO", APPL_VERSION, getFpgaVersion());
+    sprintf(title, "\eA**** 1541 Ultimate %s (%b) #***\eO", APPL_VERSION, getFpgaVersion());
     int len = strlen(title)-4;
     int hpos = (width - len) / 2;
+    printf("Title = %s (%d)\n", title, len);
     screen->move_cursor(hpos, 0);
     screen->output(title);
     screen->move_cursor(0, 1);

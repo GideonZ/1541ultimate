@@ -5,7 +5,7 @@
  *      Author: Gideon
  */
 
-#include <screen_vt100.h>
+#include "screen_vt100.h"
 
 Screen_VT100::Screen_VT100(Stream *m) {
 
@@ -68,7 +68,7 @@ void Screen_VT100::move_cursor(int x, int y)
 
 int  Screen_VT100::output(char c)
 {
-	const char mapping[33] = " lqkxmjlwktnumvjABCDEFGHIJKLMNOP";
+	const char mapping[33] = " lqkxmjlwktnumvjABa`EFGHIJKLMNOP";
 
 	if (c == 27) { // escape = set color
 		expect_color = true;
@@ -79,7 +79,7 @@ int  Screen_VT100::output(char c)
 		this->set_color(c);
 		return 0;
 	}
-	if ((c >= 32) || (c < 0) || (c == 13) || (c == 10)) {
+	if ((c >= 32) || (c < 0) || (c == 13) || (c == 10) || (c == 9)) {
 		if (draw_mode) {
 			stream->write("\e(B", 3);
 			draw_mode = false;

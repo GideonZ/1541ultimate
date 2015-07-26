@@ -372,7 +372,6 @@ int main()
     
     printf("host = %p\n", host);
 	host->take_ownership(NULL);
-    printf("Now get screen etc..\n");
 
     screen = host->getScreen();
     screen->move_cursor(0,0);
@@ -417,68 +416,26 @@ int main()
         console_print(screen, check_error);
         while(1);
     }
-    console_print(screen, "\n\n\n\n\n\n\n\n");
             
-/*
-	bool do_update1 = false;
-	bool do_update2 = false;
-    bool virgin = false;
-
-//	flash->protect_disable();
-//    console_print(screen, "Flash protection disabled.\n");
-//    while(1);
-//
-    // virginity check
-	t_flash_address image_address;
-	flash->get_image_addresses(FLASH_ID_AR5PAL, &image_address);
-    flash->read_linear_addr(image_address.start, 2, time_buffer);
-    if(time_buffer[0] == 0xFF)
-        virgin = true;
-        
-    do_update1 = need_update(FLASH_ID_BOOTFPGA, FPGA_VERSION, "FPGA") ||
-                 need_update(FLASH_ID_BOOTAPP, BOOT_VERSION, "Secondary bootloader");
-    do_update2 = need_update(FLASH_ID_APPL, APPL_VERSION, "Ultimate application");
-
-    if(virgin) {
-        program_flash(do_update1, do_update2, true);
-    } else if(do_update1 || do_update2) {
-        if(user_interface->popup("Update required. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            program_flash(do_update1, do_update2, false);
-        }
-    } else {
-        int response = user_interface->popup("Update NOT required. Force?", BUTTON_ALL | BUTTON_YES | BUTTON_NO);
-        if(response == BUTTON_ALL) {
-            program_flash(true, true, true);
-        } else if(response == BUTTON_YES) {
-            program_flash(false, true, false);
-        }
-	}
-*/
     if(user_interface->popup("Updating to 3.x. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+        console_print(screen, "\n\n\n\n\n\n\n\n");
         program_flash(true, true, true);
+    } else {
+        console_print(screen, "\n\n\n\n\n\n\n\n");
     }
 	console_print(screen, "\nConfiguring Flash write protection..\n");
 	flash->protect_configure();
 	flash->protect_enable();
 
-//    if(!virgin) {
-        if (user_interface->popup("Reset configuration?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            int num = flash->get_number_of_config_pages();
-            for(int i=0;i<num;i++) {
-                flash->clear_config_page(i);
-            }
-        }
-//    }
-
-    console_print(screen, "\nTo avoid loading this updater again,\ndelete it from your media.\n");
-	
-    wait_ms(2000);
-    
-    user_interface->popup("Remove SDCard. Reboot?", BUTTON_OK);
+	if (user_interface->popup("Reset configuration?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+		int num = flash->get_number_of_config_pages();
+		for(int i=0;i<num;i++) {
+			flash->clear_config_page(i);
+		}
+	}
+	wait_ms(20);
     flash->reboot(0);
     
-//	console_print(screen, "\nPlease remove the SD card, and switch\noff your machine...\n");
-
     while(1)
         ;
 }

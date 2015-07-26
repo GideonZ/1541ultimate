@@ -19,8 +19,6 @@ SRCS_C   =	zpu.c \
 # Therefore, the file manager needs to exist.
 
 SRCS_CC	 =  memory.cc \
-			event.cc \
-			poll.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \

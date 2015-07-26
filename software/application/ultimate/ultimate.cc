@@ -23,12 +23,14 @@
 #include "tape_controller.h"
 #include "tape_recorder.h"
 #include "stream.h"
+#include "host_stream.h"
 #include "ui_stream.h"
 #include "stream_menu.h"
 #include "audio_select.h"
 #include "overlay.h"
 #include "init_function.h"
 #include "stream_uart.h"
+#include "stream_textlog.h"
 
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
@@ -42,6 +44,15 @@ Overlay *overlay;
 C64 *c64;
 C64_Subsys *c64_subsys;
 
+StreamTextLog textLog(65536);
+
+extern "C" void (*custom_outbyte)(int c);
+
+void outbyte_log(int c)
+{
+	textLog.charout(c);
+}
+
 int main(void *a)
 {
 	char time_buffer[32];
@@ -53,10 +64,12 @@ int main(void *a)
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
 	printf("%s\n", rtc.get_time_string(time_buffer, 32));
 
+	// from now on, log to memory
+	custom_outbyte = outbyte_log;
+
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
 
-	Stream_UART my_stream;
 	UserInterface *ui = 0;
     
     c64 = new C64;
@@ -83,11 +96,36 @@ int main(void *a)
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
+    } else if(custom_outbyte) {
+        Stream *stream = new Stream_UART;
+        GenericHost *host = new HostStream(stream);
+/*
+        stream->write("Hello, I am a little dog\n", 25);
+        for(int i='A'; i <= 'Z'; i++)
+        	stream->charout(i);
+        stream->write("\nHello, I am a little cat\n", 26);
+        stream->format("This should be formatted. %d %s %3x\n", 15, "rabbit", 64);
+        Keyboard *kb = host->getKeyboard();
+        for(int i=20; i>=0; ) {
+        	int k = kb->getch();
+        	if (k != -1) {
+        		stream->format("%b ", k);
+        		i--;
+        	}
+        }
+*/
+        ui = new UserInterface;
+        ui->init(host);
+        // Instantiate and attach the root tree browser
+        Browsable *root = new BrowsableRoot();
+    	root_tree_browser = new TreeBrowser(ui, root);
+        ui->activate_uiobject(root_tree_browser); // root of all evil!
     } else {
-        // stand alone mode
+        Stream *stream = new Stream_UART;
+    	// stand alone mode
         printf("Using Stream module as user interface...\n");
-        UserInterfaceStream *ui_str = new UserInterfaceStream(&my_stream);
-        root_menu = new StreamMenu(ui_str, &my_stream, new BrowsableRoot());
+        UserInterfaceStream *ui_str = new UserInterfaceStream(stream);
+        root_menu = new StreamMenu(ui_str, stream, new BrowsableRoot());
         ui_str->set_menu(root_menu); // root of all evil!
         ui = ui_str;
         //ui->add_to_poll();
@@ -120,7 +158,11 @@ int main(void *a)
     	ui->run();
     }
 
+    custom_outbyte = 0; // stop logging
     printf("GUI running on C64 host has terminated? This should not happen.\n");
+
+    vTaskDelay(400);
+    puts(textLog.getText());
 
     vTaskSuspend(NULL); // Stop executing init task
 

@@ -158,11 +158,17 @@ void start_rtos (void)
 	// scheduler!
 }
 
+void (*custom_outbyte)(int c) = 0;
+
 void outbyte(int c)
 {
-	// Wait for space in FIFO
-	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
-	ioWrite8(UART_DATA, c);
+	if (custom_outbyte) {
+		custom_outbyte(c);
+	} else {
+		// Wait for space in FIFO
+		while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+		ioWrite8(UART_DATA, c);
+	}
 }
 
 

@@ -35,7 +35,9 @@ public:
     virtual void do_refresh();
     virtual void update_selected();
     virtual void draw();
-//    virtual void reselect();
+    virtual void draw_item(Browsable *t, int line, bool selected);
+
+    //    virtual void reselect();
     virtual void reload(void);
     virtual void up(int);
     virtual void down(int);
@@ -44,6 +46,8 @@ public:
     virtual void into(void);
 	virtual bool into2(void);
     virtual void level_up(void);
+    virtual void select(void);
+    virtual void select_all(bool);
 
     // functions only used for config menu state
     virtual void change(void) { }

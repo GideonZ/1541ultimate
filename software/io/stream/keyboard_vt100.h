@@ -11,20 +11,26 @@
 #include "keyboard.h"
 #include "stream.h"
 
-#define KEYB_BUFFER_SIZE 32
-
 class Keyboard_VT100 : public Keyboard
 {
 	Stream *stream;
-	char keyb_buffer[KEYB_BUFFER_SIZE];
-	int  keyb_offset;
 
-	int parseEscapes();
+	typedef enum {
+		e_esc_idle,
+		e_esc_escape,
+		e_esc_bracket,
+	} escape_state_t;
+
+	escape_state_t escape_state;
+	int escape_value;
+
 public:
 	Keyboard_VT100(Stream *s) {
 		stream = s;
-		keyb_offset = 0;
+		escape_state = e_esc_idle;
+		escape_value = 0;
 	}
+
     ~Keyboard_VT100() {
 
     }

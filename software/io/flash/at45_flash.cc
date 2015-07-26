@@ -194,11 +194,12 @@ void AT45_Flash :: write(int addr, int len, void *buffer)
 
 bool AT45_Flash :: wait_ready(int time_out)
 {
-// TODO: FOR Microblaze or any faster CPU, we need to insert wait cycles here
-    int i=time_out;
 	bool ret = true;
     SPI_FLASH_CTRL = SPI_FORCE_SS;
     SPI_FLASH_DATA = AT45_StatusRegisterRead;
+    uint16_t start = getMsTimer();
+	uint16_t now;
+
     do {
 		last_status = SPI_FLASH_DATA;
 /* it turns out that bit 1 is always set when protection is enabled, no matter whether this particular page was written or not.
@@ -212,10 +213,11 @@ bool AT45_Flash :: wait_ready(int time_out)
 			ret = true;
 			break;
 		}
-        if((--i)<0) {
-            error(("Flash timeout.\n"));
+    	now = getMsTimer();
+    	if ((now - start) > time_out) {
+    		debug(("Flash timeout.\n"));
             ret = false;
-			break;
+            break;
         }
     } while(true);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
@@ -272,7 +274,7 @@ void AT45_Flash :: clear_config_page(int page)
     SPI_FLASH_DATA = uint8_t(device_addr >> 8);
     SPI_FLASH_DATA = uint8_t(device_addr);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    wait_ready(250000);
+    wait_ready(500); // datasheet: 35
 }
 
 bool AT45_Flash :: read_page(int page, void *buffer)
@@ -308,7 +310,7 @@ bool AT45_Flash :: write_page(int page, void *buffer)
         SPI_FLASH_DATA_32 = *(buf++);
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    bool ret = wait_ready(50000);
+    bool ret = wait_ready(500); // datasheet: 40, including erase
 	if(!ret)
 		return ret;
 	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -317,7 +319,7 @@ bool AT45_Flash :: write_page(int page, void *buffer)
     SPI_FLASH_DATA = uint8_t(device_addr >> 8);
     SPI_FLASH_DATA = uint8_t(device_addr);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    ret = wait_ready(50000);
+    ret = wait_ready(500); // datasheet: 40, including erase
 	if(!ret)
 		return ret;
 	if(last_status & 0x40) { // compare failed
@@ -339,7 +341,7 @@ bool AT45_Flash :: erase_sector(int sector)
     SPI_FLASH_DATA = uint8_t(device_addr >> 8);
     SPI_FLASH_DATA = uint8_t(device_addr);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
-    return wait_ready(250000);
+    return wait_ready(15000); // datasheet: 5 seconds!
 }
 
 int AT45_Flash :: page_to_sector(int page)
@@ -391,7 +393,7 @@ bool AT45_Flash :: protect_configure(void)
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA_32 = 0x3D2A7FCF;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
-	if(!wait_ready(10000))
+	if(!wait_ready(100)) // datasheet doesn't specify
 		return false;
 
 	// program sector protection regsiter
@@ -409,7 +411,7 @@ bool AT45_Flash :: protect_configure(void)
 	}
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
 
-	if(!wait_ready(10000))
+	if(!wait_ready(100))
 		return false;
 
 	return true;

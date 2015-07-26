@@ -22,10 +22,13 @@ int Stream_UART :: get_char(void)
 
 void Stream_UART :: charout(int c)
 {
-    if(c == '\n') {
-    	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+	if(c == '\n') {
+    	while (ioRead8(UART_FLAGS) & UART_TxFifoFull)
+    		;
     	ioWrite8(UART_DATA, '\r');
     }
-	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+
+	while (ioRead8(UART_FLAGS) & UART_TxFifoFull)
+		;
 	ioWrite8(UART_DATA, c);
 }

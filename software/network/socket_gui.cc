@@ -39,8 +39,8 @@ void socket_gui_task(void *a)
 	SocketStream *str = (SocketStream *)a;
 
 	HostStream *host = new HostStream(str);
-	Screen *scr = host->getScreen();
-	Keyboard *keyb = host->getKeyboard();
+//	Screen *scr = host->getScreen();
+//	Keyboard *keyb = host->getKeyboard();
 
 	UserInterface *user_interface = new UserInterface();
 	user_interface->init(host);

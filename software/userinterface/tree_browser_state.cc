@@ -59,7 +59,6 @@ void TreeBrowserState :: cleanup()
 void TreeBrowserState :: do_refresh()
 {
 //	printf("RefreshIn.");
-	refresh = false;
     if(!(browser->window)) {
         printf("INTERNAL ERROR: NO WINDOW TO DO REFRESH ON!!\n");
         return;
@@ -88,6 +87,7 @@ void TreeBrowserState :: do_refresh()
     } else {
         move_to_index(cursor_pos); // just draw.. we don't need to move anything
     }
+	refresh = false;
 //	printf("RefreshOut.");
 }
 
@@ -100,7 +100,7 @@ void TreeBrowserState :: draw()
 
     browser->window->set_color(12);
     browser->window->getScreen()->move_cursor(0, 24);
-    browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, 31);
+    browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->get_size_x()-9);
 
     //	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children->get_elements());
 //	printf("Window = %p. WindowBase: %p\n", browser->window, browser->window->get_pointer());
@@ -111,11 +111,10 @@ void TreeBrowserState :: draw()
     if(children->get_elements() == 0) {
 		browser->window->clear();
     	browser->window->move_cursor(0, 0);
-    	browser->window->output("\033E< No Items >");
+    	browser->window->output("\eE< No Items >");
     	under_cursor = NULL;
     	return;
     }
-
 
     int y = browser->window->get_size_y(); // how many can I show?
 //    printf("TreeBrowserState::Draw: first=%d, y=%d, selected_line=%d\n", first_item_on_screen, y, selected_line);
@@ -124,26 +123,10 @@ void TreeBrowserState :: draw()
         return;
     
     Browsable *t;
-    char buffer[96];
 
     for(int i=0;i<y;i++) {
     	t = (*children)[i+first_item_on_screen];
-
-        browser->window->move_cursor(0, i);
-        if(t) {
-        	if ((i + first_item_on_screen) == cursor_pos) {
-        		browser->window->set_color(browser->user_interface->color_sel);
-        	} else if(t->isSelectable()) {
-        		browser->window->set_color(browser->user_interface->color_fg);
-        	} else { // non selectable item
-        		browser->window->set_color(12); // TODO
-        	}
-            t->getDisplayString(buffer, browser->window->get_size_x());
-            browser->window->output_line(buffer);
-        }
-		else {
-			browser->window->output_line("");
-		}
+		draw_item(t, i, (i + first_item_on_screen) == cursor_pos);
     }
 
     if(selected_line < 0) {
@@ -152,6 +135,27 @@ void TreeBrowserState :: draw()
     }
     cursor_pos = first_item_on_screen + selected_line;
     under_cursor = (*children)[cursor_pos];
+}
+
+void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
+{
+    char buffer[96];
+
+    browser->window->move_cursor(0, line);
+    if (t) {
+		if (selected) {
+			browser->window->set_color(browser->user_interface->color_sel);
+		} else if(t->isSelectable()) {
+			browser->window->set_color(browser->user_interface->color_fg);
+		} else { // non selectable item
+			browser->window->set_color(12); // TODO
+		}
+		t->getDisplayString(buffer, browser->window->get_size_x());
+		browser->window->output_line(buffer);
+    } else {
+		// draw an empty line
+		browser->window->output_line("");
+    }
 }
 
 void TreeBrowserState :: update_selected(void)
@@ -184,8 +188,6 @@ void TreeBrowserState :: up(int num)
 			num++; // try to jump by moving one extra step
 		}
 	}
-
-	under_cursor = (*children)[cursor_pos];
 	move_to_index(cursor_pos);
 }
 
@@ -206,8 +208,6 @@ void TreeBrowserState :: down(int num)
 			num++; // try to jump by moving one extra step
 		}
 	}
-
-	under_cursor = (*children)[cursor_pos];
 	move_to_index(cursor_pos);
 }
 
@@ -296,6 +296,26 @@ void TreeBrowserState :: level_up(void)
     delete this;
 }
 
+void TreeBrowserState :: select(void)
+{
+	if(!under_cursor)
+		return;
+	if (under_cursor->isSelectable()) {
+		under_cursor->setSelection(!under_cursor->getSelection());
+		update_selected();
+	}
+}
+
+void TreeBrowserState :: select_all(bool yesno)
+{
+	for (int i=0;i<children->get_elements();i++) {
+		Browsable *t = (*children)[i];
+		if (t->isSelectable()) {
+			t->setSelection(yesno);
+		}
+	}
+	draw();
+}
 
 void TreeBrowserState :: move_to_index(int idx)
 {
@@ -313,6 +333,8 @@ void TreeBrowserState :: move_to_index(int idx)
 
 //	if((first_item_on_screen + selected_line)==idx) // duh!
 //        return;
+	int previous_first_item_on_screen = first_item_on_screen;
+	int previous_selected = selected_line;
 
     // Try to determine the first item on the screen, by
     // stepping half of the screen size up.
@@ -320,21 +342,22 @@ void TreeBrowserState :: move_to_index(int idx)
 	if(idx < y) {
 		first_item_on_screen = 0;
 		selected_line = idx;
-	    draw();
-		return;
-	}
-	if(num_el <= browser->window->get_size_y()) {
+	} else if(num_el <= browser->window->get_size_y()) {
 		first_item_on_screen = 0;
 		selected_line = idx;
-	    draw();
-		return;
+	} else {
+		first_item_on_screen = idx - y;
+
+		if(first_item_on_screen + browser->window->get_size_y() >= num_el)
+			first_item_on_screen = num_el - browser->window->get_size_y();
+
+		selected_line = idx - first_item_on_screen;
 	}
-	first_item_on_screen = idx - y;
-
-	if(first_item_on_screen + browser->window->get_size_y() >= num_el)
-		first_item_on_screen = num_el - browser->window->get_size_y();
-
-	selected_line = idx - first_item_on_screen;
-
-    draw();    
+	if ((first_item_on_screen != previous_first_item_on_screen)||(refresh)) { // scroll!
+		draw();
+	} else {
+		draw_item(under_cursor, previous_selected, false);
+		under_cursor = (*children)[idx];
+		draw_item(under_cursor, selected_line, true);
+	}
 }

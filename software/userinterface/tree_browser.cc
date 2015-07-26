@@ -15,25 +15,36 @@
 #include "browsable_root.h"
 
 static const char *helptext=
-	"CRSR UP/DN: Selection up/down\n"
-	"CRSR LEFT:  Go one level up\n"
-	"            leave directory or disk\n"
-	"CRSR RIGHT: Go one level down\n"
-	"            enter directory or disk\n"
-	"RETURN/SPC: Selection context menu\n"
-	"RUN/STOP:   Leave menu / Back\n"
-	"\n"
-	"F1:         Selection Page up\n"
-	"F7:         Selection Page down\n"
-	"\n"
-	"F2:         Enter the setup menu\n"
-	"F5:         Action menu\n"
-	"\n"
-	"Quick seek: Use the keyboard to type\n"
-	"            the name to search for.\n"
-	"            You can use ? as a\n"
-	"            wildcard.\n"
-	"\nRUN/STOP to close this window.";
+		"CRSR UP/DN: Selection up/down\n"
+		"CRSR LEFT:  Go one level up\n"
+		"            leave directory or disk\n"
+		"CRSR RIGHT: Go one level down\n"
+		"            enter directory or disk\n"
+		"RETURN:     Selection context menu\n"
+		"RUN/STOP:   Leave menu / Back\n"
+		"\n"
+		"F1:         Selection Page up\n"
+		"F7:         Selection Page down\n"
+		"\n"
+		"F2:         Enter the setup menu\n"
+		"F5:         Action menu\n"
+		"\n"
+		"SPACE:      Select file / directory\n"
+		"C=-A        Select all\n"
+		"C=-Q        Deselect all\n"
+		"C=-C        Copy current selection\n"
+		"C=-V        Paste selection here.\n"
+		"\n"
+		"Quick seek: Use the keyboard to type\n"
+		"            the name to search for.\n"
+		"            You can use ? as a\n"
+		"            wildcard.\n"
+		"\n"
+		"F6:         Show debug log\n"
+		"\nRUN/STOP to close this window.";
+
+#include "stream_textlog.h"
+extern StreamTextLog textLog; // the global log
 
 /***********************/
 /* Tree Browser Object */
@@ -263,8 +274,10 @@ int TreeBrowser :: poll(int sub_returned)
 	}
 
     c = keyb->getch();
-    if(c == -2) // error
+    if(c == -2) { // error
+        printf("Keyboard returned -2\n");
         return -2;
+    }
     if(c < 0)
     	return 0;
 
@@ -277,6 +290,7 @@ int TreeBrowser :: handle_key(int c)
 {           
     int ret = 0;
     
+    printf("Key: %b\n", c);
     switch(c) {
         case KEY_BREAK: // runstop
             ret = -1;
@@ -297,7 +311,7 @@ int TreeBrowser :: handle_key(int c)
         	reset_quick_seek();
             state->up(window->get_size_y()/2);
             break;
-        case KEY_F3: // F3 -> RUN
+        case KEY_F3: // F3 -> help
         	reset_quick_seek();
         	state->refresh = true;
         	user_interface->run_editor(helptext);
@@ -313,6 +327,11 @@ int TreeBrowser :: handle_key(int c)
         case KEY_F2: // F2 -> config
             config();
             break;
+        case KEY_F6: // F6 -> show log
+        	reset_quick_seek();
+        	state->refresh = true;
+        	user_interface->run_editor(textLog.getText());
+        	break;
         case KEY_BACK: // backspace
             if(quick_seek_length) {
                 quick_seek_length--;
@@ -320,6 +339,14 @@ int TreeBrowser :: handle_key(int c)
             }
             break;
         case KEY_SPACE: // space = select
+        	state->select();
+        	break;
+        case KEY_CTRL_A: // select all
+        	state->select_all(true);
+        	break;
+        case KEY_CTRL_N: // select none
+        	state->select_all(false);
+        	break;
         case KEY_RETURN: // CR = select
             reset_quick_seek();
             context(0);
