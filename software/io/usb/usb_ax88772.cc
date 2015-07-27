@@ -144,11 +144,15 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
 
     read_mac_address();
 
-    bulk_in  = dev->find_endpoint(0x82);
-    bulk_out = dev->find_endpoint(0x02);
+    struct t_endpoint_descriptor *iin = dev->find_endpoint(0x83);
+    struct t_endpoint_descriptor *bin = dev->find_endpoint(0x82);
+    struct t_endpoint_descriptor *bout = dev->find_endpoint(0x02);
+    bulk_in  = (bin->endpoint_address & 0x0F);
+    bulk_out = (bout->endpoint_address & 0x0F);
+    irq_in   = (iin->endpoint_address & 0x0F);
 
-	bulk_out_pipe.DevEP = (device->current_address << 8) | 3;
-	bulk_out_pipe.MaxTrans = 512;
+	bulk_out_pipe.DevEP = (device->current_address << 8) | bulk_out;
+	bulk_out_pipe.MaxTrans = bout->max_packet_size;
 	bulk_out_pipe.SplitCtl = 0;
 	bulk_out_pipe.Command = 0;
 
@@ -248,19 +252,19 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     if (netstack) {
     	//printf("Network stack: %s\n", netstack->identify());
     	struct t_pipe ipipe;
-		ipipe.DevEP = uint16_t((device->current_address << 8) | 1);
+		ipipe.DevEP = uint16_t((device->current_address << 8) | irq_in);
 		ipipe.Interval = 8000; // 1 Hz
 		ipipe.Length = 16; // just read 16 bytes max
-		ipipe.MaxTrans = 64;
+		ipipe.MaxTrans = iin->max_packet_size;
 		ipipe.SplitCtl = 0;
 		ipipe.Command = 0; // driver will fill in the command
 
 		irq_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_interrupt_callback, this);
 
-		ipipe.DevEP = uint16_t((device->current_address << 8) | 2);
+		ipipe.DevEP = uint16_t((device->current_address << 8) | bulk_in);
 		ipipe.Interval = 1; // fast!
 		ipipe.Length = 1536; // big blocks!
-		ipipe.MaxTrans = 512;
+		ipipe.MaxTrans = bin->max_packet_size;
 		ipipe.SplitCtl = 0;
 		ipipe.Command = 0; // driver will fill in the command
 

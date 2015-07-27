@@ -176,8 +176,9 @@ public:
     File *fopen(Path *path, const char *filename, uint8_t flags);
     File *fopen(const char *path, const char *filename, uint8_t flags);
     void fclose(File *f);
+    FRESULT fcopy(const char *path, const char *filename, const char *dest);
     FRESULT delete_file_by_info(FileInfo *info);
-    FRESULT create_dir_in_path(Path *path, char *name);
+    FRESULT create_dir_in_path(Path *path, const char *name);
     FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target);
 
     void registerObserver(ObserverQueue *q) {

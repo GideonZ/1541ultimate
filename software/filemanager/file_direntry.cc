@@ -129,7 +129,7 @@ int FileDirEntry :: compare(CachedTreeNode *obj)
 	if (groupA != groupB)
 		return groupB - groupA;
 
-    int by_name = strcmp(get_name(), b->get_name()); // FIXME: Was stricmp
+    int by_name = stricmp(get_name(), b->get_name());
     if(by_name)
 	    return by_name;
 	return 0;

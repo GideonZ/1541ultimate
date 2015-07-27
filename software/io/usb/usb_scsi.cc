@@ -98,15 +98,18 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	memset(&cbw, 0, sizeof(cbw));
     cbw.signature = 0x55534243;
 
-    int bi = dev->find_endpoint(0x82);
-    int bo = dev->find_endpoint(0x02);
+    struct t_endpoint_descriptor *bin = dev->find_endpoint(0x82);
+    struct t_endpoint_descriptor *bout = dev->find_endpoint(0x02);
+
+    int bi = bin->endpoint_address & 0x0F;
+    int bo = bout->endpoint_address & 0x0F;
     if(dev) {
     	host = dev->host;
     	device = dev;
     	bulk_in.DevEP  = ((dev->current_address) << 8) | bi;
         bulk_out.DevEP = ((dev->current_address) << 8) | bo;
-        bulk_in.MaxTrans = 512; // TODO: Should depend on speed
-        bulk_out.MaxTrans = 512; // TODO: Should depend on speed
+        bulk_in.MaxTrans = bin->max_packet_size;
+        bulk_out.MaxTrans = bout->max_packet_size;
         bulk_in.Command = 0; // used to store toggle bit
         bulk_out.Command = 0; // used to store toggle bit
         bulk_in.SplitCtl = 0;

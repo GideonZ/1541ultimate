@@ -76,7 +76,7 @@ public:
     	copyfrom(&i);
     }
 
-    FileInfo(FileInfo *i, char *new_name)
+    FileInfo(FileInfo *i, const char *new_name)
     {
         fs = i->fs;
         cluster = i->cluster;

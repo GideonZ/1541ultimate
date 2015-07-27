@@ -178,7 +178,8 @@ void UsbHubDriver :: install(UsbDevice *dev)
 
     printf("-- Install Complete.. HUB on address %d.. --\n", dev->current_address);
 
-    int endpoint = dev->find_endpoint(0x83) & 0x0F;
+    struct t_endpoint_descriptor *iin = dev->find_endpoint(0x83);
+    int endpoint = iin->endpoint_address & 0x0F;
     if (endpoint != 1) {
     	printf("Warning, somehow, the interrupt endpoint is not 1 but %d.\n", endpoint);
     	if (endpoint < 1)

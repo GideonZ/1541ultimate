@@ -64,9 +64,6 @@ int main(void *a)
 	printf("%s ", rtc.get_long_date(time_buffer, 32));
 	printf("%s\n", rtc.get_time_string(time_buffer, 32));
 
-	// from now on, log to memory
-	custom_outbyte = outbyte_log;
-
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
 
@@ -96,31 +93,21 @@ int main(void *a)
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
-    } else if(custom_outbyte) {
-        Stream *stream = new Stream_UART;
+    } else {
+    	// from now on, log to memory, freeing the uart
+    	custom_outbyte = outbyte_log;
+
+    	Stream *stream = new Stream_UART;
         GenericHost *host = new HostStream(stream);
-/*
-        stream->write("Hello, I am a little dog\n", 25);
-        for(int i='A'; i <= 'Z'; i++)
-        	stream->charout(i);
-        stream->write("\nHello, I am a little cat\n", 26);
-        stream->format("This should be formatted. %d %s %3x\n", 15, "rabbit", 64);
-        Keyboard *kb = host->getKeyboard();
-        for(int i=20; i>=0; ) {
-        	int k = kb->getch();
-        	if (k != -1) {
-        		stream->format("%b ", k);
-        		i--;
-        	}
-        }
-*/
         ui = new UserInterface;
         ui->init(host);
         // Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
-    } else {
+    }
+/*
+    else {
         Stream *stream = new Stream_UART;
     	// stand alone mode
         printf("Using Stream module as user interface...\n");
@@ -128,8 +115,8 @@ int main(void *a)
         root_menu = new StreamMenu(ui_str, stream, new BrowsableRoot());
         ui_str->set_menu(root_menu); // root of all evil!
         ui = ui_str;
-        //ui->add_to_poll();
     }
+*/
 
     if(capabilities & CAPAB_C2N_STREAMER)
 	    tape_controller = new TapeController;

@@ -18,6 +18,7 @@ class UsbAx88772Driver : public UsbDriver
 
     int  bulk_in;
     int  bulk_out;
+    int  irq_in;
     struct t_pipe bulk_out_pipe;
 
     bool link_up;

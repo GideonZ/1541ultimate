@@ -240,6 +240,11 @@ File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
 
 	// file does not exist, and we would like it to exist: create.
 	if ((!existing) && (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS))) {
+		if (!(dirinfo->attrib & AM_DIR)) {
+			last_error = FR_INVALID_OBJECT;
+			return 0;
+		}
+
 		FileInfo *newInfo = new FileInfo(filename);
 		newInfo->dir_clust = dirinfo->cluster;
 		newInfo->fs = dirinfo->fs;
@@ -258,6 +263,7 @@ File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
 		file = fileinfo->fs->file_open(existing->get_file_info(), flags);
 		last_error = fileinfo->fs->get_last_error();
 	} else {
+		last_error = FR_NO_FILE;
 		return 0;
 	}
 
@@ -378,7 +384,7 @@ FRESULT FileManager :: delete_file_by_info(FileInfo *info)
 	return FR_OK;
 }
 
-FRESULT FileManager :: create_dir_in_path(Path *path, char *name)
+FRESULT FileManager :: create_dir_in_path(Path *path, const char *name)
 {
 	CachedTreeNode *node;
 	if (!validatePath(path, &node))
@@ -407,6 +413,81 @@ FRESULT FileManager :: create_dir_in_path(Path *path, char *name)
 	return fres;
 }
 
+FRESULT FileManager :: fcopy(const char *path, const char *filename, const char *dest)
+{
+	printf("Copying %s to %s\n", filename, dest);
+	FileInfo *info = new FileInfo(64); // I do not use the stack here for the whole structure, because
+	// we might recurse deeply. Our stack is maybe small.
+
+	FRESULT ret = FR_OK;
+	if (fstat(*info, path, filename)) {
+		if (info->attrib & AM_DIR) {
+			// create a new directory in our destination path
+			Path *dp = get_new_path("copy destination");
+			Path *sp = get_new_path("copy source");
+			sp->cd(path);
+			dp->cd(dest);
+			FRESULT dir_create_result = create_dir_in_path(dp, filename);
+			if (dir_create_result == FR_OK) {
+				IndexedList<FileInfo *> *dirlist = new IndexedList<FileInfo *>(16, NULL);
+				sp->cd(filename);
+				FRESULT get_dir_result = get_directory(sp, *dirlist);
+				if (get_dir_result == FR_OK) {
+					dp->cd(filename);
+					for (int i=0;i<dirlist->get_elements();i++) {
+						FileInfo *el = (*dirlist)[i];
+						ret = fcopy(sp->get_path(), el->lfname, dp->get_path());
+					}
+				} else {
+					ret = get_dir_result;
+				}
+			} else {
+				ret = dir_create_result;
+			}
+			release_path(sp);
+			release_path(dp);
+		} else if ((info->attrib & AM_VOL) == 0) { // it is a file!
+			File *fi = fopen(path, filename, FA_READ);
+			if (fi) {
+				File *fo = fopen(dest, filename, FA_CREATE_NEW | FA_WRITE);
+				if (fo) {
+					uint8_t *buffer = new uint8_t[32768];
+					uint32_t transferred, written;
+					do {
+						FRESULT frd_result = fi->read(buffer, 32768, &transferred);
+						if (frd_result == FR_OK) {
+							FRESULT fwr_result = fo->write(buffer, transferred, &written);
+							if (fwr_result != FR_OK) {
+								ret = fwr_result;
+								break;
+							}
+						} else {
+							ret = frd_result;
+							break;
+						}
+					} while(transferred > 0);
+
+					delete[] buffer;
+					fclose(fo);
+					fclose(fi);
+				} else { // no output file
+					printf("Cannot open output file %s\n", filename);
+					ret = get_last_error();
+					fclose(fi);
+				}
+			} else {
+				printf("Cannot open input file %s\n", filename);
+				ret = get_last_error();
+			}
+		} // is file?
+	} else {
+		printf("Could not stat %s\n", filename);
+		ret = FR_NO_FILE;
+	}
+
+	delete info;
+	return ret;
+}
 
 /* some handy functions */
 void set_extension(char *buffer, char *ext, int buf_size)

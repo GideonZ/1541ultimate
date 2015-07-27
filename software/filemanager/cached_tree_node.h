@@ -104,7 +104,7 @@ public:
 
 	// default compare function, just by name!
 	virtual int compare(CachedTreeNode *obj) {
-		return strcmp(get_name(), obj->get_name()); // FIXME
+		return stricmp(get_name(), obj->get_name());
 	}
 
     const char *get_full_path(mstring& out) {

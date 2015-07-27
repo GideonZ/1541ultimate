@@ -240,7 +240,6 @@ FRESULT FileSystemD64 :: move_window(int abs)
         return FR_INT_ERR;
     }
 
-    printf("Moving to sector %d\n", abs);
     if(current_sector != abs) {
     	if(dirty) {
     		res = prt->write(sect_buffer, current_sector, 1);
@@ -447,7 +446,6 @@ FRESULT DirInD64 :: read(FileInfo *f)
                     return FR_DISK_ERR;
                 }
             }
-            printf("Index = %d\n", idx);
             uint8_t *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
             //dump_hex(p, 32);
             if((p[2] & 0x0f) == 0x02) { // PRG

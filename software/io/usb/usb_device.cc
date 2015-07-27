@@ -222,9 +222,14 @@ bool UsbDevice :: get_configuration(uint8_t index)
         		break;
         	case DESCR_ENDPOINT:
                 if ((len == 7)||(len == 9)) {
-                	printf("Endpoint found with address %b, attr: %b\n", pnt[2], pnt[3]);
                 	if (ep < 4) {
                 		memcpy((void *)&endpoints[ep], (void *)pnt, len);
+                		endpoints[ep].max_packet_size = (uint16_t(pnt[5]) << 8) | pnt[4];
+                		printf("Endpoint found with address %b, attr: %b, maxpkt: %04x\n",
+                    			endpoints[ep].endpoint_address, endpoints[ep].attributes,
+								endpoints[ep].max_packet_size);
+                	} else {
+                    	printf("Endpoint found with address %b, attr: %b, not stored\n", pnt[2], pnt[3]);
                 	}
                     // pipe_numbers[ep] = host->create_pipe(current_address, &endpoints[ep]);
                     ep++;
@@ -318,7 +323,7 @@ bool UsbDevice :: init(int address)
     return get_configuration(0);
 }
 
-int UsbDevice :: find_endpoint(uint8_t code)
+struct t_endpoint_descriptor *UsbDevice :: find_endpoint(uint8_t code)
 {
     uint8_t ep_code;
     
@@ -327,10 +332,10 @@ int UsbDevice :: find_endpoint(uint8_t code)
             ep_code = (endpoints[i].attributes & 0x03) |
                       (endpoints[i].endpoint_address & 0x80);
             if (ep_code == code)
-                return endpoints[i].endpoint_address;
+                return &endpoints[i];
         }
     }
-    return -1;
+    return 0;
 }
 
 void UsbDevice :: get_pathname(char *dest, int len)

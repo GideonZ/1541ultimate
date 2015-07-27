@@ -162,7 +162,7 @@ public:
     void unstall_pipe(uint8_t ep);
 
     bool init(int address);
-    int  find_endpoint(uint8_t code);
+    struct t_endpoint_descriptor *find_endpoint(uint8_t code);
 
     // functions that arrange attachment to the system
     void install(void) {

@@ -149,7 +149,7 @@ void start_rtos (void)
 	scheduler has been started. */
 	portDISABLE_INTERRUPTS();
 
-	xTaskCreate( _construct_and_go, "\002Ultimate-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL );
+	xTaskCreate( _construct_and_go, "U-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL );
 
 	// Finally start the scheduler.
 	vTaskStartScheduler();
@@ -205,6 +205,19 @@ int *__errno()
 	return &(_impure_ptr->_errno);
 }
 
+/*
+void __malloc_lock()
+{
+	portENTER_CRITICAL();
+}
+
+void __malloc_unlock()
+{
+	portEXIT_CRITICAL();
+}
+*/
+
+/*
 void __cxa_guard_acquire(void)
 {
 }
@@ -212,4 +225,5 @@ void __cxa_guard_acquire(void)
 void __cxa_guard_release(void)
 {
 }
+*/
 

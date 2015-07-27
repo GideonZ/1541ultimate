@@ -207,7 +207,7 @@ int strinscmp(mstring &a, mstring &b)
         return -1;
     if(!b.cp)
         return 1;
-    return strcmp(a.cp, b.cp); // FIXME
+    return stricmp(a.cp, b.cp);
 }
 
 mstring& int_to_mstring(int i)

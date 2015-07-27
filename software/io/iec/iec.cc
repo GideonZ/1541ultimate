@@ -401,7 +401,7 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 			printf("Logic Analyzer stopped. Address = %p\n", end_address);
 			if(start_address == end_address)
 				break;
-			f = fm->fopen(cmd->path.c_str(), "iectrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS); // TODO: Path
+			f = fm->fopen(cmd->path.c_str(), "iectrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
 			if(f) {
 				printf("Opened file successfully.\n");
 				f->write((void *)start_address, end_address - start_address, &transferred);

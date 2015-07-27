@@ -31,7 +31,7 @@ static const char *helptext=
 		"\n"
 		"SPACE:      Select file / directory\n"
 		"C=-A        Select all\n"
-		"C=-Q        Deselect all\n"
+		"C=-N        Deselect all\n"
 		"C=-C        Copy current selection\n"
 		"C=-V        Paste selection here.\n"
 		"\n"
@@ -290,7 +290,6 @@ int TreeBrowser :: handle_key(int c)
 {           
     int ret = 0;
     
-    printf("Key: %b\n", c);
     switch(c) {
         case KEY_BREAK: // runstop
             ret = -1;
@@ -347,6 +346,12 @@ int TreeBrowser :: handle_key(int c)
         case KEY_CTRL_N: // select none
         	state->select_all(false);
         	break;
+        case KEY_CTRL_C: // copy
+        	copy_selection();
+        	break;
+        case KEY_CTRL_V: // paste
+        	paste();
+        	break;
         case KEY_RETURN: // CR = select
             reset_quick_seek();
             context(0);
@@ -397,6 +402,45 @@ void TreeBrowser :: reset_quick_seek(void)
     quick_seek_length = 0;
 }
 
+void TreeBrowser :: copy_selection(void)
+{
+	clipboard.reset();
+	clipboard.setPath(path->get_path());
+	for(int i=0;i<state->children->get_elements();i++) {
+		Browsable *t = (*state->children)[i];
+		if (t && t->getSelection()) {
+			clipboard.addFile(t->getName());
+		}
+	}
+	if (clipboard.getNumberOfFiles() == 0) {
+		Browsable *t = state->under_cursor;
+		clipboard.addFile(t->getName());
+	}
+	printf("Copied %d files in path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
+}
+
+void TreeBrowser :: paste(void)
+{
+	printf("Going to paste %d files from path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
+
+	int items = clipboard.getNumberOfFiles();
+	user_interface->show_progress("Copying...", items);
+	for (int i=0;i<items;i++) {
+		const char *fn = clipboard.getFileNameByIndex(i);
+		FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath());  // from path, filename, dest path
+		if (res != FR_OK) {
+			printf("Error while copying: %d %s to %s\n", res, fn, this->getPath());
+			int resp = user_interface->popup("Copy error occurred. Continue?", BUTTON_YES | BUTTON_NO);
+			if (resp == BUTTON_NO)
+				break;
+		}
+		user_interface->update_progress(0, 1);
+	}
+	user_interface->hide_progress();
+	state->refresh = true;
+}
+
+/*
 void TreeBrowser :: invalidate(const void *obj)
 {
 	// we just have to take care of ourselves.. which means, that we have to check
@@ -416,7 +460,7 @@ void TreeBrowser :: invalidate(const void *obj)
 	TreeBrowserState *st, *found;
 	st = state;
 	found = 0;
-/*
+
 	while(st) {
 		printf("checking %s...\n", st->node->getName());
 
@@ -426,7 +470,7 @@ void TreeBrowser :: invalidate(const void *obj)
 		}
 		st = st->previous;
 	}
-*/
+
 
 	if(found) { // need to roll back
 		printf("Rolling back browser...");
@@ -458,7 +502,7 @@ void TreeBrowser :: invalidate(const void *obj)
 		printf(" done\n");
 	} else {
 		printf("Did not rewind, because the object invalidated is not in my path.\n");
-/*
+
 		// still, the item might be somewhere else in the tree.
 		st = state;
 		while(st) {
@@ -473,9 +517,10 @@ void TreeBrowser :: invalidate(const void *obj)
 			if (st)
 				st = st->previous;
 		}
-*/
+
 	}
 }
+*/
 
 const char *TreeBrowser :: getPath() {
 	return path->get_path();

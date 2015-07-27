@@ -3,7 +3,7 @@
 /*************************************************************/
 #include "tape_recorder.h"
 #include "userinterface.h"
-#include "filemanager.h" // FIXME: For file extension utility
+#include "filemanager.h"
 
 extern "C" {
     #include "dump_hex.h"

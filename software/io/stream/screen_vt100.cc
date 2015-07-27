@@ -17,7 +17,7 @@ Screen_VT100::Screen_VT100(Stream *m) {
 }
 
 Screen_VT100::~Screen_VT100() {
-	// TODO Auto-generated destructor stub
+
 }
 
 void Screen_VT100::set_color(int c)
