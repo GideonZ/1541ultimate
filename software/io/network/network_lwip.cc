@@ -303,9 +303,9 @@ void NetworkLWIP :: effectuate_settings(void)
 
 void NetworkLWIP :: getIpAddr(uint8_t *buf)
 {
-	dump_hex(&my_net_if.ip_addr, 16);
-	dump_hex(&my_net_if.netmask, 16);
-	dump_hex(&my_net_if.gw, 16);
+	memcpy(&buf[0], &my_net_if.ip_addr, 4);
+	memcpy(&buf[4], &my_net_if.netmask, 4);
+	memcpy(&buf[8], &my_net_if.gw, 4);
 }
 
 void NetworkLWIP :: getMacAddr(uint8_t *buf)

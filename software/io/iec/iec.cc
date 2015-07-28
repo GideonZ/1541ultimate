@@ -236,8 +236,8 @@ int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
 {
     int count = 3;
 	list.append(new Action("Reset IEC",      SUBSYSID_IEC, MENU_IEC_RESET));
-	list.append(new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8));
-	list.append(new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9));
+	//list.append(new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8));
+	//list.append(new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9));
 	// list.append(new Action("IEC Test 1",     SUBSYSID_IEC, MENU_IEC_MASTER_1));
 	// list.append(new Action("IEC Test 2",     SUBSYSID_IEC, MENU_IEC_MASTER_2));
 	// list.append(new Action("IEC Test 3",     SUBSYSID_IEC, MENU_IEC_MASTER_3));
@@ -247,7 +247,7 @@ int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
     // list.append(new Action("Read status",    SUBSYSID_IEC, MENU_READ_STATUS));
     // list.append(new Action("Send command",   SUBSYSID_IEC, MENU_SEND_COMMAND));
 
-    if(!(getFpgaCapabilities() & CAPAB_ANALYZER))
+//    if(!(getFpgaCapabilities() & CAPAB_ANALYZER))
         return count;
 
 	list.append(new Action("Trace IEC",      SUBSYSID_IEC, MENU_IEC_TRACE_ON));

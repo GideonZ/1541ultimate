@@ -181,9 +181,9 @@ void UserInterface :: set_screen_title()
     int width = screen->get_size_x();
     int height = screen->get_size_y();
 	static char title[48];
-    // precondition: screen is cleared.  // \020 = alpha \021 = beta
-    // screen->clear();
-    sprintf(title, "\eA**** 1541 Ultimate %s (%b) #***\eO", APPL_VERSION, getFpgaVersion());
+
+    screen->clear();
+    sprintf(title, "\eA**** 1541 Ultimate %s (1%b) ****\eO", APPL_VERSION, getFpgaVersion());
     int len = strlen(title)-4;
     int hpos = (width - len) / 2;
     printf("Title = %s (%d)\n", title, len);

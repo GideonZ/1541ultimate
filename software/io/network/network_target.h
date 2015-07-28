@@ -27,6 +27,7 @@
 class NetworkTarget : public CommandTarget {
     Message data_message;
     Message status_message;
+    int interface_number;
     uint8_t buffer[NET_CMD_BUFSIZE];
     void open_socket(Message *command, Message **reply, Message **status, int);
     void read_socket(Message *command, Message **reply, Message **status);

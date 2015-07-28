@@ -22,7 +22,7 @@ public:
 		vQueueDelete(queue);
 	}
 	void putEvent(void *el) {
-		if (!xQueueSend(queue, &el, 500)) {
+		if (!xQueueSend(queue, &el, 5)) {
 			puts("Failed to post message.");
 		}
 	}

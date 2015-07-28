@@ -28,6 +28,7 @@ NetworkTarget::NetworkTarget(int id)
     command_targets[id] = this;
     data_message.message = new uint8_t[512];
     status_message.message = new uint8_t[80];
+    interface_number = 0;
 }
 
 NetworkTarget::~NetworkTarget()
@@ -39,8 +40,7 @@ NetworkTarget::~NetworkTarget()
 
 void NetworkTarget :: parse_command(Message *command, Message **reply, Message **status)
 {
-	NetworkInterface *interface;
-
+	NetworkInterface *interface = NetworkInterface :: getInterface(interface_number);
 	switch(command->message[1]) {
         case NET_CMD_IDENTIFY:
             *reply  = &c_net_message_identification;
@@ -57,10 +57,10 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
         	*reply = &c_message_empty;
         	if (command->length != 3)
         		*status = &c_status_invalid_params;
-        	else if (command->message[2] > (uint8_t)NetworkInterface :: getNumberOfInterfaces())
+        	else if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces())
         		*status = &c_status_param_out_of_range;
         	else
-        		interface = NetworkInterface :: getInterface(command->message[2]);
+        		interface_number = command->message[2];
         	break;
         case NET_CMD_GET_IPADDR:
         	if (interface) {
