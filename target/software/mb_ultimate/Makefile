@@ -86,10 +86,6 @@ SRCS_CC	 =  small_printf.cc \
 			context_menu.cc \
 			task_menu.cc \
 			audio_select.cc \
-			iec.cc \
-			command_intf.cc \
-			dos.cc \
-			network_target.cc \
 			usb_ax88772.cc \
 			usb_em1010.cc \
 			network_interface.cc \
@@ -109,6 +105,10 @@ SRCS_CC	 =  small_printf.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
+			iec.cc \
+			command_intf.cc \
+			dos.cc \
+			network_target.cc \
 			$(PRJ).cc
 
 #			sys_calls.cc \

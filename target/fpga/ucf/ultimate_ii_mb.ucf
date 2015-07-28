@@ -105,8 +105,8 @@ NET "CAS_SENSE"     LOC = T10;
 NET "CAS_READ"      LOC = T11;
 NET "CAS_WRITE"     LOC = R11;
 
-#NET "LED_DATA"      LOC = T11;
-#NET "LED_CLK"       LOC = R11;
+NET "LED_DATA"      LOC = J12;
+NET "LED_CLK"       LOC = F13;
 NET "DMAn"          LOC = H16;
 NET "DOTCLK"        LOC = M15;
 NET "EXROMn"        LOC = L13;
