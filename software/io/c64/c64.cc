@@ -670,7 +670,6 @@ void C64 :: set_cartridge(cart_def *def)
 		int cart = cfg->get_value(CFG_C64_CART);
 		def = &cartridges[cart];
 	}
-	
     printf("Setting cart mode %b. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
     C64_CARTRIDGE_TYPE = def->type & 0x1F;
 //    push_event(e_cart_mode_change, NULL, def->type);

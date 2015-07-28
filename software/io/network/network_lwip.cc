@@ -106,11 +106,15 @@ NetworkLWIP :: NetworkLWIP(void *driver,
 	for(int i=0;i<PBUF_FIFO_SIZE-1;i++) {
 		pbuf_fifo.push(&pbuf_array[i]);
 	}
+	dhcp_enable = false;
+
+	NetworkInterface :: registerNetworkInterface(this);
 }
 
 NetworkLWIP :: ~NetworkLWIP()
 {
-    dhcp_stop(&my_net_if);
+	NetworkInterface :: unregisterNetworkInterface(this);
+	netifapi_dhcp_stop(&my_net_if);
 	netif_set_down(&my_net_if);
 	netif_remove(&my_net_if);
 }
@@ -297,3 +301,25 @@ void NetworkLWIP :: effectuate_settings(void)
 	}
 }
 
+void NetworkLWIP :: getIpAddr(uint8_t *buf)
+{
+	dump_hex(&my_net_if.ip_addr, 16);
+	dump_hex(&my_net_if.netmask, 16);
+	dump_hex(&my_net_if.gw, 16);
+}
+
+void NetworkLWIP :: getMacAddr(uint8_t *buf)
+{
+	memcpy(buf, &my_net_if.hwaddr, 6);
+}
+
+void NetworkLWIP :: setIpAddr(uint8_t *buf)
+{
+	memcpy(&my_ip.addr, &buf[0], 4);
+	memcpy(&my_netmask.addr, &buf[4], 4);
+	memcpy(&my_gateway.addr, &buf[8], 4);
+
+	if (my_net_if.state) { // is it initialized?
+		netifapi_netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
+	}
+}

@@ -26,6 +26,8 @@ void releaseNetworkStack(void *s)
 
 }
 
+IndexedList<NetworkInterface *>NetworkInterface :: netInterfaces(2, 0);
+
 //-----------------------------------
 const char *net_en_dis[] = { "Disabled", "Enabled" };
 #define CFG_NET_DHCP_EN		0xE0

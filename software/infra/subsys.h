@@ -101,11 +101,13 @@ public:
 			subsys = (*Globals :: getSubSystems())[subsysID];
 			if (subsys) {
 				printf("About to execute a command in subsys %s (%p)\n", subsys->identify(), subsys->myMutex);
-				if (xSemaphoreTake(subsys->myMutex, portMAX_DELAY)) {
+				if (xSemaphoreTake(subsys->myMutex, 1000)) {
 					retval = subsys->executeCommand(this);
 					puts("before give");
 					xSemaphoreGive(subsys->myMutex);
 					puts("after give");
+				} else {
+					printf("Could not get lock on %s. Command not executed.\n", subsys->identify());
 				}
 			}
 		}

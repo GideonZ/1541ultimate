@@ -48,6 +48,7 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
 
     queue = xQueueCreate(16, sizeof(uint8_t));
     xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
+    CMD_IF_IRQMASK_CLEAR = 7;
 }
 
 CommandInterface :: ~CommandInterface()
@@ -57,6 +58,7 @@ CommandInterface :: ~CommandInterface()
 int CommandInterface :: executeCommand(SubsysCommand *cmd)
 {
     CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
+    CMD_IF_IRQMASK_CLEAR = 7;
 	SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&cmd_cart, "", "");
 	return c64_command->execute();
 }

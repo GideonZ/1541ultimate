@@ -10,7 +10,7 @@ your application. */
 #define configCPU_CLOCK_HZ                      50000000
 #define configTICK_RATE_HZ                      200
 #define configMAX_PRIORITIES                    5
-#define configMINIMAL_STACK_SIZE                1024
+#define configMINIMAL_STACK_SIZE                1600
 #define configTOTAL_HEAP_SIZE                   10240
 #define configMAX_TASK_NAME_LEN                 16
 #define configUSE_16_BIT_TICKS                  0
@@ -81,6 +81,6 @@ void vAssertCalled( char* fileName, uint16_t lineNo );
 
 #include "profiler.h"
 #define traceTASK_SWITCHED_OUT(x)  PROFILER_TASK = 0;
-#define traceTASK_SWITCHED_IN(x)   PROFILER_TASK = pxCurrentTCB->pcTaskName[0];
+#define traceTASK_SWITCHED_IN(x)   PROFILER_TASK = pxCurrentTCB->uxTaskNumber;
 
 #endif /* FREERTOS_CONFIG_H */

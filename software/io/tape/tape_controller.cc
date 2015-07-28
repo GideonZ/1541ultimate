@@ -38,8 +38,9 @@ TapeController :: ~TapeController()
 
 void TapeController :: poll_static(void *a)
 {
+	TapeController *tc = (TapeController *)a;
 	while(1) {
-		tape_controller->poll();
+		tc->poll();
 		if (PLAYBACK_STATUS & C2N_STAT_ENABLED) {
 			vTaskDelay(5);
 		} else {

@@ -6,8 +6,22 @@
 #include "config.h"
 
 class NetworkInterface : public ConfigurableObject {
+	static IndexedList<NetworkInterface *>netInterfaces;
 public:
-    uint8_t mac_address[6];
+	static void registerNetworkInterface(NetworkInterface *intf) {
+		netInterfaces.append(intf);
+	}
+	static void unregisterNetworkInterface(NetworkInterface *intf) {
+		netInterfaces.remove(intf);
+	}
+	static int getNumberOfInterfaces(void) {
+		return netInterfaces.get_elements();
+	}
+	static NetworkInterface *getInterface(int i) {
+		return netInterfaces[i];
+	}
+
+	uint8_t mac_address[6];
 
     NetworkInterface();
     virtual ~NetworkInterface() { }
@@ -23,6 +37,10 @@ public:
     }
     virtual bool input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size) { return false; }
     virtual void effectuate_settings(void) { }
+
+	virtual void getIpAddr(uint8_t *a)  { bzero(a, 12); }
+	virtual void getMacAddr(uint8_t *a) { bzero(a, 6); }
+	virtual void setIpAddr(uint8_t *a)  { }
 };
 
 typedef void (*driver_free_function_t)(void *driver, void *buffer);

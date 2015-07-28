@@ -45,14 +45,14 @@ class TapeRecorder : public ObjectWithMenu
 {
 	FileManager *fm;
 	TaskHandle_t taskHandle;
-    UserInterface *last_user_interface;
+    volatile UserInterface *last_user_interface;
 	File *file;
-    int   error_code;
-	int   recording;
+    volatile int   error_code;
+	volatile int   recording;
     int   select;
     int   block_in;
     int   block_out;
-    int   blocks_cached;
+    volatile int   blocks_cached;
     int   blocks_written;
     int   total_length;
 	int   write_block();

@@ -18,7 +18,8 @@ TapeRecorder *tape_recorder = NULL; // globally static
 extern "C" BaseType_t tape_recorder_irq(void)
 {
     ioWrite8(UART_DATA, 0x2D);
-    tape_recorder->irq();
+    if(tape_recorder)
+    	tape_recorder->irq();
     return pdFALSE; // it will get polled, no immediate action
 }
 
@@ -110,7 +111,7 @@ void TapeRecorder :: stop(int error)
         printf("Flush TAP..\n");
         flush();
 		printf("Closing tape file..\n");
-		fm->fclose(file);
+		fm->fclose((File *)file);
 	} else {
 	    printf("Stopping. File = NULL. ERR = %d\n", error);
     }
@@ -235,15 +236,31 @@ void TapeRecorder :: flush()
 	
 void TapeRecorder :: poll_tape_rec(void *a)
 {
-	tape_recorder->poll();
+	TapeRecorder *tr = (TapeRecorder *)a;
+	tr->poll();
 }
 
+#include "profiler.h"
 void TapeRecorder :: poll()
 {
+	volatile void *aap = this;
+
+	printf("** tape recorder this = %p\n", this);
 	while(1) {
-		if((error_code != REC_ERR_OK) && last_user_interface && last_user_interface->is_available()) {
-			last_user_interface->popup("Error during tape capture.", BUTTON_OK);
-			error_code = REC_ERR_OK;
+		if (this != aap)
+			PROFILER_SUB = 14;
+
+		if(error_code != REC_ERR_OK) {
+			PROFILER_SUB = 15;
+			if (last_user_interface) {
+				printf("** tape recorder this = %p\n", this);
+				printf("Last User Interface = %p\n");
+				UserInterface *ui = (UserInterface *)last_user_interface;
+				if (ui->is_available()) {
+					ui->popup("Error during tape capture.", BUTTON_OK);
+					error_code = REC_ERR_OK;
+				}
+			}
 		} /*else if ((recording >0) && (e.type == e_enter_menu)) {
 			if (last_user_interface) {
 				if(last_user_interface->popup("End tape capture?", BUTTON_YES | BUTTON_NO) == BUTTON_YES)

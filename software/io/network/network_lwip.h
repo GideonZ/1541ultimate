@@ -71,6 +71,10 @@ public:
 
     // from ConfigurableObject
     void effectuate_settings(void);
+
+	void getIpAddr(uint8_t *a);
+	void getMacAddr(uint8_t *a);
+	void setIpAddr(uint8_t *a);
 };
 
 NetworkInterface *getNetworkStack(void *driver,

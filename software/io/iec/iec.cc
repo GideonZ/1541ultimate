@@ -134,8 +134,9 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 
 void IecInterface :: iec_task(void *a)
 {
+	IecInterface *iec = (IecInterface *)a;
 	while(1) {
-		iec_if.poll();
+		iec->poll();
 		vTaskDelay(2);
 	}
 }
@@ -461,6 +462,10 @@ void IecInterface :: start_warp(int drive)
     // push warp command into down-fifo
     HW_IEC_TX_CTRL = IEC_CMD_GO_WARP;
     last_track = 0;
+
+    // FIXME: This is called from a GUI thread, which is not a good thing.
+    // We should either wait here, or post a message in a queue of the IEC thread and wait for a signal
+    // from the IEC thread, that the GUI can continue.
 }
 
 void IecInterface :: get_warp_data(void)
