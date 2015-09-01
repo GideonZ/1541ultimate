@@ -305,8 +305,8 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
         total_length = 0;
 		set_extension(buffer, ".tap", 32);
 		fix_filename(buffer);
-        file = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
-        if(file) {
+        FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &file);
+        if(fres == FR_OK) {
             FRESULT res = file->write(signature, 20, &dummy);
             if(res != FR_OK) {
                 cmd->user_interface->popup("Error writing signature", BUTTON_OK);
@@ -314,7 +314,7 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
             }
             return true;
         } else {
-            cmd->user_interface->popup("Error opening file", BUTTON_OK);
+            cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
         }            
 	}
 	return false;

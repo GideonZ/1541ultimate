@@ -78,7 +78,8 @@ void C64_Subsys :: restoreCart(void)
 
 int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 {
-	File *f;
+	File *f = 0;
+	FRESULT res;
 	CachedTreeNode *po;
 	uint32_t transferred;
 	int ram_size;
@@ -117,8 +118,8 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 	case MENU_C64_SAVEREU:
         ram_size = 128 * 1024;
         ram_size <<= c64->cfg->get_value(CFG_C64_REU_SIZE);
-        f = fm->fopen(cmd->path.c_str(), "memory.reu", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
-        if(f) {
+        res = fm->fopen(cmd->path.c_str(), "memory.reu", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+        if(res == FR_OK) {
             printf("Opened file successfully.\n");
             f->write((void *)REU_MEMORY_BASE, ram_size, &transferred);
             printf("written: %d...", transferred);
@@ -128,8 +129,8 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         }
         break;
     case MENU_C64_SAVEFLASH: // doesn't belong here, but i need it fast
-        f = fm->fopen(cmd->path.c_str(), "flash_dump.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
-        if(f) {
+        res = fm->fopen(cmd->path.c_str(), "flash_dump.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+        if(res == FR_OK) {
             int pages = c64->flash->get_number_of_pages();
             int page_size = c64->flash->get_page_size();
             uint8_t *page_buf = new uint8_t[page_size];
@@ -144,8 +145,8 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         }
         break;
     case C64_DMA_LOAD:
-    	f = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
-    	if(f) {
+    	res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
+        if(res == FR_OK) {
         	dma_load(f, cmd->filename.c_str(), cmd->mode);
         	fm->fclose(f);
         }

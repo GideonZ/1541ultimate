@@ -8,7 +8,7 @@
 #ifndef FILESYSTEM_FILE_INFO_H_
 #define FILESYSTEM_FILE_INFO_H_
 
-#include "integer.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 

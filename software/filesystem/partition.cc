@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include "blockdev.h"
 #include "partition.h"
-#include "fat_fs.h"
 #include "iso9660.h"
 #include "globals.h"
 

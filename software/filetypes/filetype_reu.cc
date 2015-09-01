@@ -59,7 +59,7 @@ FileType *FileTypeREU :: test_type(BrowsableDirEntry *obj)
 int FileTypeREU :: execute_st(SubsysCommand *cmd)
 {
 	printf("REU Select: %4x\n", cmd->functionID);
-	File *file;
+	File *file = 0;
 	uint32_t bytes_read;
 	bool progress;
 	int sectors;
@@ -89,7 +89,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 	if (!cmd->user_interface)
 		progress = false;
 
-	file = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
+	FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 	if(file) {
 		total_bytes_read = 0;
 		// load file in REU memory
@@ -130,6 +130,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 		}
 	} else {
 		printf("Error opening file.\n");
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
 		return -2;
 	}
 	return 0;

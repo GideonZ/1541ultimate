@@ -691,7 +691,8 @@ void C64 :: set_cartridge(cart_def *def)
 
 #ifndef _NO_FILE_ACCESS
         FileManager *fm = FileManager :: getFileManager();
-        File *f = fm->fopen((const char *)NULL, n, FA_READ);
+        File *f = 0;
+        fm->fopen((const char *)NULL, n, FA_READ, &f);
 		if(f) {
 			printf("File: %p\n", f);
 			uint32_t transferred;
@@ -730,7 +731,8 @@ void C64 :: init_cartridge()
         printf("Now loading '%s' as KERNAL ROM.\n", n);
 
         FileManager *fm = FileManager :: getFileManager();
-        File *f = fm->fopen((const char *)0, n, FA_READ);
+        File *f = 0;
+        fm->fopen((const char *)0, n, FA_READ, &f);
 		if(f) {
 			uint32_t transferred;
             uint8_t *temp = new uint8_t[8192];

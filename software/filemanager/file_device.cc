@@ -2,8 +2,9 @@
 #include "file_partition.h"
 #include <stdio.h>
 
-FileDevice :: FileDevice(BlockDevice *b, char *n, char *dn) : FileDirEntry(NULL, n)
+FileDevice :: FileDevice(BlockDevice *b, char *n, char *dn) : CachedTreeNode(NULL, n)
 {
+    initialized = false;
     display_name = dn;
     blk = b;
     disk = NULL; //new Disk(b, 512);
@@ -32,6 +33,7 @@ void FileDevice :: attach_disk(int block_size)
         delete disk;
     }
     disk = new Disk(blk, block_size);
+    initialized = false;
 }
 
 void FileDevice :: detach_disk(void)
@@ -41,6 +43,7 @@ void FileDevice :: detach_disk(void)
         delete disk;
     }
     disk = NULL;
+    initialized = false;
 }
     
 bool FileDevice :: is_ready(void)
@@ -49,9 +52,11 @@ bool FileDevice :: is_ready(void)
     return (state == e_device_ready);
 }
 
-int FileDevice :: fetch_children(void)
-{
-    t_device_state state = blk->get_state();
+int FileDevice :: probe(void) {
+	if (initialized)
+		return children.get_elements();
+
+	t_device_state state = blk->get_state();
     if(state != e_device_ready) {
         printf("Device is not ready to fetch children.\n");
         return -2;
@@ -68,7 +73,8 @@ int FileDevice :: fetch_children(void)
         printf("Error initializing disk..%d\n", p_count);
         return -1;
     }
-    cleanup_children();
+
+    initialized = true;
 
     Partition *p = disk->partition_list;
     if(p_count == 1) { // do not create partition in browser; that's not necessary!
@@ -79,29 +85,33 @@ int FileDevice :: fetch_children(void)
 		info.attrib = AM_DIR; // ;-)  (not read only of course, removed!!)
 		if(!info.fs)
 			return -1;
-		int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..
-		sort_children();
-		return count;
     }
+
+    info.fs = 0;
 
     int i = 0;
     while(p) {
         char pname[] = "Partx";
         pname[4] = '0'+i;
 
-		bool found = false;
-		for(int x=0;x<children.get_elements();x++) {
-			if(pattern_match(pname, children[x]->get_name(), false))
-				found = true;
-        }
-        if(!found)
-            children.append(new FilePartition(this, p, pname));
-
+        children.append(new FilePartition(this, p, pname));
         p = p->next_partition;
         ++i;
     }
+    return i;
+}
+
+/*
+int FileDevice :: fetch_children(void)
+{
+	int count = FileDirEntry :: fetch_children();  // we are in this case just a normal directory, so..
+		sort_children();
+		return count;
+    }
+
     return p_count;
 }
+*/
 
 void FileDevice :: get_display_string(char *buffer, int width)
 {

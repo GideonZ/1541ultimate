@@ -42,7 +42,8 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags)
     if(flags[0] == 'w')
         bfl = FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS;
         
-    File *file = FileManager :: getFileManager() -> fopen(path, (char *)name, bfl);
+    File *file = 0;
+    FRESULT fres = FileManager :: getFileManager() -> fopen(path, (char *)name, bfl, &file);
     if (!file)
         return NULL;
 

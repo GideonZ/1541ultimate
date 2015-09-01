@@ -351,7 +351,7 @@ private:
             filename = info->lfname;
         }
 
-        f = fm->fopen(interface->path, filename, (write)?(FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS):(FA_READ));
+        FRESULT fres = fm->fopen(interface->path, filename, (write)?(FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS):(FA_READ), &f);
         if(f) {
             printf("Successfully opened file %s in %s\n", buffer, interface->path->get_path());
             last_byte = -1;
@@ -362,7 +362,7 @@ private:
                 return read_block();
             }
         } else {
-            printf("Can't open file %s in %s\n", buffer, interface->path->get_path());
+            printf("Can't open file %s in %s: %s\n", buffer, interface->path->get_path(), FileSystem :: get_error_string(fres));
     		state = e_error;
         }            
         return 0;

@@ -155,6 +155,32 @@ const char *Path :: getElement(int a)
 	return (elements[a])->c_str();
 }
 
+void Path :: removeFirst()
+{
+	if(!depth)
+		return;
+
+	mstring *old = elements[0];
+	delete old;
+
+	for(int i=1;i<depth;i++) {
+		elements.set(i-1, elements[i]);
+	}
+	depth--;
+
+	regenerateFullPath();
+}
+
+void Path :: regenerateFullPath()
+{
+	full_path = "/";
+	for(int i=0;i<depth;i++) {
+		full_path += (elements[i])->c_str();
+		full_path += "/";
+	}
+}
+
+
 FRESULT Path :: get_directory(IndexedList<FileInfo *> &target)
 {
 	return FileManager :: getFileManager() -> get_directory(this, target);

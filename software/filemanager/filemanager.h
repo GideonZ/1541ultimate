@@ -3,6 +3,7 @@
 
 #include "path.h"
 #include "file_system.h"
+#include "filesystem_root.h"
 #include "cached_tree_node.h"
 #include "globals.h"
 #include "observer.h"
@@ -40,8 +41,9 @@ public:
 		return emb;
 	}
 
-	bool match(const char *name) {
-		return (full_path == name);
+	bool match(FileSystem *fs, uint32_t cluster) {
+		FileInfo *inf = file->getFileInfo();
+		return (inf->fs == fs) && (inf->cluster == cluster);
 	}
 };
 
@@ -73,19 +75,19 @@ class FileManager
 
 	SemaphoreHandle_t serializer;
 
-	FRESULT last_error;
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
 	IndexedList<Path *>used_paths;
 	IndexedList<ObserverQueue *>observers;
 	CachedTreeNode *root;
+	FileSystem *rootfs;
 
 	bool  reworkPath(Path *path, const char *pathname, const char *filename, reworked_t& rwp);
-    File *fopen_impl(Path *path, char *filename, uint8_t flags);
+    FRESULT fopen_impl(Path *path, char *filename, uint8_t flags, File **);
 
     FileManager() : mount_points(8, NULL), open_file_list(16, NULL), used_paths(8, NULL), observers(4, NULL) {
-        last_error = FR_OK;
         root = new CachedTreeNode(NULL, "RootNode");
+        rootfs = new FileSystem_Root(root);
         serializer = xSemaphoreCreateRecursiveMutex();
     }
 
@@ -100,12 +102,13 @@ class FileManager
         for(int i=0;i<mount_points.get_elements();i++) {
         	delete mount_points[i];
         }
+        delete rootfs;
         delete root;
     }
 
     friend class FileDirEntry;
     int validatePath(Path *p, CachedTreeNode **n);
-    File *fopen_node(CachedTreeNode *info, uint8_t flags);
+    // FRESULT fopen_node(CachedTreeNode *info, uint8_t flags, File **);
 
     void lock() {
     	xSemaphoreTakeRecursive(serializer, portMAX_DELAY);
@@ -149,13 +152,10 @@ public:
 	void invalidate(CachedTreeNode *obj, int includeSelf);
     void add_root_entry(CachedTreeNode *obj);
     void remove_root_entry(CachedTreeNode *obj);
-    void add_mount_point(File *, FileSystemInFile *);
-    MountPoint *find_mount_point(const char *full_path);
 
-    FRESULT get_last_error(void) {
-        return last_error;
-    }
-    
+    MountPoint *add_mount_point(File *, FileSystemInFile *);
+    MountPoint *find_mount_point(FileInfo *info, Path *path);
+
     // Functions to use / handle path objects:
     Path *get_new_path(const char *owner) {
     	Path *p = new Path();
@@ -173,8 +173,8 @@ public:
     void  get_display_string(Path *p, const char *filename, char *buffer, int width);
 
     bool fstat(FileInfo &info, const char *path, const char *filename);
-    File *fopen(Path *path, const char *filename, uint8_t flags);
-    File *fopen(const char *path, const char *filename, uint8_t flags);
+    FRESULT fopen(Path *path, const char *filename, uint8_t flags, File **);
+    FRESULT fopen(const char *path, const char *filename, uint8_t flags, File **);
     void fclose(File *f);
     FRESULT fcopy(const char *path, const char *filename, const char *dest);
     FRESULT delete_file_by_info(FileInfo *info);

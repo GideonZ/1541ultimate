@@ -9,7 +9,7 @@
 #include "globals.h"
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileSystemInFile *>
+FactoryRegistrator<FileInfo *, FileSystemInFile *>
 	tester_emb_iso(Globals :: getEmbeddedFileSystemFactory(), FileSystemInFile_ISO :: test_type);
 
 FileSystemInFile_ISO :: FileSystemInFile_ISO() {
@@ -53,9 +53,8 @@ void FileSystemInFile_ISO :: init(File *f)
     }
 }
 
-FileSystemInFile *FileSystemInFile_ISO :: test_type(CachedTreeNode *obj)
+FileSystemInFile *FileSystemInFile_ISO :: test_type(FileInfo *inf)
 {
-	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "ISO")==0)
         return new FileSystemInFile_ISO();
     return NULL;

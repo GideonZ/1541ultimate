@@ -72,7 +72,7 @@ int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 		return count;
 
 	// if this file is inside of a D64, then there should be a mount point already of this D64.
-	MountPoint *mp = FileManager :: getFileManager() -> find_mount_point(node->getPath()->get_path());
+	MountPoint *mp = FileManager :: getFileManager() -> find_mount_point(node->getInfo(), node->getPath());
 	if(mp) {
     	list.append(new Action("Mount & Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_RUN, mode));
     	count++;
@@ -114,7 +114,7 @@ bool FileTypePRG :: check_header(File *f, bool has_header)
 int FileTypePRG :: execute_st(SubsysCommand *cmd)
 {
 	printf("PRG Select: %4x\n", cmd->functionID);
-	File *file, *d64;
+	File *file = 0, *d64;
 	FileInfo *inf;
 	SubsysCommand *drive_command;
 	SubsysCommand *c64_command;
@@ -140,12 +140,12 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
     const char *name = cmd->filename.c_str();
     printf("DMA Load.. %s\n", name);
     FileManager *fm = FileManager :: getFileManager();
-    file = fm->fopen(cmd->path.c_str(), name, FA_READ);
+    FRESULT fres = fm->fopen(cmd->path.c_str(), name, FA_READ, &file);
     if(file) {
         if(check_header(file, cmd->mode)) {
 
             if (run_code & RUNCODE_MOUNT_BIT) {
-            	MountPoint *mp = fm -> find_mount_point(cmd->path.c_str());
+            	MountPoint *mp = fm -> find_mount_point(file->getFileInfo(), 0);
             	if (mp) {
 					Path *d64_path = fm -> get_new_path("temp_prg");
 					d64_path->cd(cmd->path.c_str());
@@ -168,7 +168,7 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
             fm->fclose(file);
         }
     } else {
-        printf("Error opening file.\n");
+        printf("Error opening file. %s\n", FileSystem :: get_error_string(fres));
         return -2;
     }
     return 0;

@@ -58,6 +58,9 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/iec \
 			$(PATH_SW)/6502 \
 			$(PATH_SW)/ModPlayer_16k \
+			$(PATH_SW)/chan_fat \
+			$(PATH_SW)/chan_fat/option \
+			$(PATH_SW)/chan_fat/full \
 			$(PATH_SW)/FreeRTOS/Source \
 			$(PATH_SW)/FreeRTOS/Source/include \
 			$(PATH_SW)/FreeRTOS/Source/portable \

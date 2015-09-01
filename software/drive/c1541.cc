@@ -252,7 +252,8 @@ int  C1541 :: get_current_iec_address(void)
 void C1541 :: set_rom(t_1541_rom rom, const char *custom_filename)
 {
     large_rom = false;
-    File *f;
+    File *f = 0;
+    FRESULT res;
     uint32_t transferred;
 	int offset;
 	
@@ -280,9 +281,9 @@ void C1541 :: set_rom(t_1541_rom rom, const char *custom_filename)
             memcpy((void *)&memory_map[0xC000], &_1541c_bin_start, 0x4000);
             break;
         default: // custom
-            f = fm->fopen((const char *)NULL, custom_filename, FA_READ);
-            printf("1541 rom file: %p\n", f);
-			if(f) {
+            res = fm->fopen((const char *)NULL, custom_filename, FA_READ, &f);
+            printf("1541 rom file: %p (%d)\n", f, res);
+			if(res == FR_OK) {
 				uint32_t size = f->get_size();
 				if (size > 0x8000)
 					offset = 0x8000;
@@ -501,7 +502,8 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	bool g64;
 	bool protect;
 	uint8_t flags = 0;
-	File *newFile;
+	File *newFile = 0;
+	FRESULT res;
 	FileInfo info;
 
 	switch(cmd->functionID) {
@@ -554,8 +556,8 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	case D64FILE_MOUNT_UL:
 	case D64FILE_MOUNT_RO:
 		printf("Mounting disk.. %s\n", cmd->filename.c_str());
-		newFile = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags);
-		if(newFile) {
+		res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
+		if(res == FR_OK) {
 			check_if_save_needed(cmd);
             mount_d64(protect, newFile);
             if ((cmd->functionID == D64FILE_MOUNT_UL) ||
@@ -580,8 +582,8 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	case G64FILE_MOUNT_UL:
 	case G64FILE_MOUNT_RO:
 		printf("Mounting disk.. %s\n", cmd->filename.c_str());
-		newFile = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags);
-		if(newFile) {
+		res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
+		if(res == FR_OK) {
 			check_if_save_needed(cmd);
             mount_g64(protect, newFile);
             if ((cmd->functionID == G64FILE_MOUNT_UL) ||
@@ -602,11 +604,11 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 		}
 		break;
 	case MENU_1541_MOUNT:
-		newFile = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags);
+		res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
 		mount_d64(protect, newFile);
 		break;
 	case MENU_1541_MOUNT_GCR:
-		newFile = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags);
+		res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
 		mount_g64(protect, newFile);
 		break;
 	case MENU_1541_UNLINK:
@@ -654,15 +656,16 @@ void C1541 :: unlink(void)
 void C1541 :: save_disk_to_file(SubsysCommand *cmd)
 {
     static char buffer[32];
-	File *file;
+	File *file = 0;
+	FRESULT fres;
 	int res;
 
 	res = cmd->user_interface->string_box("Give name for image file..", buffer, 24);
 	if(res > 0) {
 		set_extension(buffer, (cmd->mode)?(char *)".g64":(char *)".d64", 32);
 		fix_filename(buffer);
-		file = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW);
-		if(file) {
+		fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW, &file);
+		if(res == FR_OK) {
 			if(cmd->mode) {
 				cmd->user_interface->show_progress("Saving G64...", 84);
 				gcr_image->save(file, (cfg->get_value(CFG_C1541_GCRALIGN)!=0), cmd->user_interface);
@@ -676,7 +679,7 @@ void C1541 :: save_disk_to_file(SubsysCommand *cmd)
 			}
 			fm->fclose(file);
 		} else {
-			cmd->user_interface->popup("Unable to open file..", BUTTON_OK);
+			cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
 		}
 	}
 }

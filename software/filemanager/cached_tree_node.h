@@ -23,6 +23,10 @@ class CachedTreeNode
 {
 protected:
 	FileInfo info;
+
+	virtual uint8_t get_attributes() {
+		return info.attrib;
+	}
 public:
 	IndexedList<CachedTreeNode*> children;
 	CachedTreeNode *parent;
@@ -39,10 +43,6 @@ public:
 		for(int i=0;i<el;i++) {
 			delete children[i];
 		}
-	}
-
-	virtual uint8_t get_attributes() {
-		return info.attrib;
 	}
 
 	// allow derivates to handle the sub items differently.
@@ -78,9 +78,14 @@ public:
 		children.purge_list();
 	}
 
+	// calling 'probe', will try to access the hardware device, and attempt to attach the file system
+	virtual int probe(void) {
+		return children.get_elements();
+	}
+
 	// this will automatically add children, if any, and store them in the children list
 	virtual int  fetch_children()  {
-		return children.get_elements(); // default: we just have childen or we don't. We cannot fetch ourselves.
+		return children.get_elements(); // default: we just have children or we don't. We cannot fetch ourselves.
 	}
 
 	// the following function will return a new FileInfo, based on the name.

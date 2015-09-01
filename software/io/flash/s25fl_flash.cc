@@ -7,7 +7,10 @@ extern "C" {
 #ifdef BOOTLOADER
 #define debug(x)
 #define error(x)
+#define portENTER_CRITICAL()
+#define portEXIT_CRITICAL()
 #else
+#include "FreeRTOS.h"
 #define debug(x)
 #define error(x) printf x
 #endif
@@ -29,6 +32,7 @@ S25FL_Flash::~S25FL_Flash()
     
 Flash *S25FL_Flash :: tester()
 {
+	portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     SPI_FLASH_DATA = 0xFF;
 
@@ -40,7 +44,9 @@ Flash *S25FL_Flash :: tester()
 	uint8_t capacity = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     
-//    printf("S25FL MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
+	portEXIT_CRITICAL();
+
+    //    printf("S25FL MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
 
     if (manuf != 0x01) 
     	return NULL; // not Spansion
@@ -75,6 +81,7 @@ void S25FL_Flash :: protect_disable(void)
 	//  0     0    1   0    0    0    0     0
 	
 	// program status register with value 0x20
+	portENTER_CRITICAL();
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = S25FL_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -87,6 +94,7 @@ void S25FL_Flash :: protect_disable(void)
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = S25FL_WriteDisable;
+	portEXIT_CRITICAL();
 }
 
 bool S25FL_Flash :: protect_configure(void)
@@ -99,6 +107,7 @@ bool S25FL_Flash :: protect_configure(void)
 	//  0     0    1   1    0    1    0     0
 	
 	// program status register with value 0x34
+	portENTER_CRITICAL();
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = S25FL_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -111,15 +120,19 @@ bool S25FL_Flash :: protect_configure(void)
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = S25FL_WriteDisable;
+	portEXIT_CRITICAL();
 	return true;
 }
 
 void S25FL_Flash :: protect_enable(void)
 {
+	portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = S25FL_ReadStatusRegister1;
 	uint8_t status = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+	portEXIT_CRITICAL();
+
     if ((status & 0x7C) != 0x34)
     	protect_configure();
 }

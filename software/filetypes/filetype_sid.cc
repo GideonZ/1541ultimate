@@ -66,7 +66,7 @@ int FileTypeSID :: readHeader(void)
     
 	// if we didn't open the file yet, open it now
 	if(!file)
-		file = fm->fopen(node->getPath(), node->getName(), FA_READ);
+		fres = fm->fopen(node->getPath(), node->getName(), FA_READ, &file);
 	else {		
 		if(file->seek(0) != FR_OK) {
 			fm->fclose(file);
@@ -75,7 +75,7 @@ int FileTypeSID :: readHeader(void)
 		}
 	}
 	if (!file) {
-		printf("opening file was not successful.\n");
+		printf("opening file was not successful. %s\n", FileSystem :: get_error_string(fres));
 		return -3;
 	}
     fres = file->read(sid_header, 0x7e, &bytes_read);
@@ -213,10 +213,11 @@ int FileTypeSID :: prepare(bool use_default)
 	
 	// reload header, reset state of file
 	uint32_t *magic = (uint32_t *)sid_header;
-	if(!file)
-		file = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
 	if(!file) {
-		return 1;
+		if(fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file) != FR_OK) {
+			file = 0;
+			return 1;
+		}
 	}
 	if(file->seek(0) != FR_OK) {
 		return 2;

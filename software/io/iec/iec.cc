@@ -345,10 +345,11 @@ int IecInterface :: poll()
 
 int IecInterface :: executeCommand(SubsysCommand *cmd)
 {
-	File *f;
+	File *f = 0;
 	uint32_t transferred;
     char buffer[24];
     int res;
+    FRESULT fres;
 
     cmd_path->cd(cmd->path.c_str());
     cmd_ui = cmd->user_interface;
@@ -402,14 +403,14 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 			printf("Logic Analyzer stopped. Address = %p\n", end_address);
 			if(start_address == end_address)
 				break;
-			f = fm->fopen(cmd->path.c_str(), "iectrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
+			fres = fm->fopen(cmd->path.c_str(), "iectrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
 			if(f) {
 				printf("Opened file successfully.\n");
 				f->write((void *)start_address, end_address - start_address, &transferred);
 				printf("written: %d...", transferred);
 				fm->fclose(f);
 			} else {
-				printf("Couldn't open file..\n");
+				printf("Couldn't open file.. %s\n", FileSystem :: get_error_string(fres));
 			}
 			break;
 		default:
@@ -552,7 +553,7 @@ void IecInterface :: save_copied_disk()
 {
     char buffer[40];
     int save_result;
-    File *f;
+    File *f = 0;
     int res;
     BinImage *bin;
     CachedTreeNode *po;
@@ -566,7 +567,7 @@ void IecInterface :: save_copied_disk()
 		fix_filename(buffer);
 	    bin = &static_bin_image;
 		set_extension(buffer, ".d64", 32);
-        f = fm->fopen(cmd_path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
+        FRESULT fres = fm->fopen(cmd_path, buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
 		if(f) {
             cmd_ui->show_progress("Saving D64..", 35);
             save_result = bin->save(f, cmd_ui);
@@ -574,7 +575,7 @@ void IecInterface :: save_copied_disk()
     		printf("Result of save: %d.\n", save_result);
             fm->fclose(f);
 		} else {
-			printf("Can't create file '%s'\n", buffer);
+			printf("Can't create file '%s': %s\n", buffer, FileSystem::get_error_string(fres));
 			cmd_ui->popup("Can't create file.", BUTTON_OK);
 		}
 	}

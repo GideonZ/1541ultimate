@@ -9,7 +9,7 @@
 #include "d64_filesystem.h"
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileSystemInFile *>
+FactoryRegistrator<FileInfo *, FileSystemInFile *>
 	tester_emb_d64(Globals :: getEmbeddedFileSystemFactory(), FileSystemInFile_D64 :: test_type);
 
 FileSystemInFile_D64::FileSystemInFile_D64(int mode) {
@@ -44,9 +44,8 @@ void FileSystemInFile_D64 :: init(File *f)
 }
 
 
-FileSystemInFile *FileSystemInFile_D64 :: test_type(CachedTreeNode *obj)
+FileSystemInFile *FileSystemInFile_D64 :: test_type(FileInfo *inf)
 {
-	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "D64")==0)
         return new FileSystemInFile_D64(0);
     if(strcmp(inf->extension, "D71")==0)

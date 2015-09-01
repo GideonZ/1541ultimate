@@ -8,7 +8,6 @@
 #ifndef FILESYSTEM_T64_FILESYSTEM_H_
 #define FILESYSTEM_T64_FILESYSTEM_H_
 
-#include "file_direntry.h"
 #include "blockdev_file.h"
 #include "partition.h"
 #include "file_system.h"

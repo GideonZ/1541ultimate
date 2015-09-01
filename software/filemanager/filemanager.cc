@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "path.h"
 #include "filemanager.h"
+#include "embedded_fs.h"
 #include "file_device.h"
 #include <cctype>
 
@@ -191,58 +192,105 @@ FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target)
 	return FR_OK;
 }
 
-File *FileManager :: fopen(Path *path, const char *filename, uint8_t flags)
+FRESULT FileManager :: fopen(Path *path, const char *filename, uint8_t flags, File **file)
 {
 	reworked_t rwp;
 	if (!reworkPath(path, 0, filename, rwp))
-		return NULL;
+		return FR_INVALID_NAME;
 
 	lock();
 	// now do the actual thing
-	File *ret = fopen_impl(rwp.path, rwp.purename, flags);
+	FRESULT res = fopen_impl(rwp.path, rwp.purename, flags, file);
 
 	// remove the temporary strings and path
 	delete[] rwp.copy;
 	this->release_path(rwp.path);
 	unlock();
-	return ret;
+	return res;
 }
 
-File *FileManager :: fopen(const char *path, const char *filename, uint8_t flags)
+FRESULT FileManager :: fopen(const char *path, const char *filename, uint8_t flags, File **file)
 {
 	reworked_t rwp;
 	if (!reworkPath(0, path, filename, rwp))
-		return NULL;
+		return FR_INVALID_NAME;
 
 	lock();
 	// now do the actual thing
-	File *ret = fopen_impl(rwp.path, rwp.purename, flags);
+	FRESULT res = fopen_impl(rwp.path, rwp.purename, flags, file);
 
 	// remove the temporary strings and path
 	delete[] rwp.copy;
 	this->release_path(rwp.path);
 	unlock();
-	return ret;
+	return res;
 }
 
-File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
+FRESULT FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags, File **file)
 {
+
+	// pass complete path to the file system's "walk path" function. This function
+	// attempts to search through its directory entries. There are various cases:
+
+	// * Entry not found. No match, return status only
+	// * Entry not found. Last entry is a valid directory. This is a valid situation for file create.
+	// * Entry found. Return: FileInfo structure of entry. This might be an invalid situation when existing files should not get overwritten.
+	// * Search terminated. Entry is a file, but there are more entries in the path. Return file info, and remaining path
+	// * Search terminated. Entry is a mount point, and the remaining path should be searched in the resulting file system. Return file system and remaining path.
+
+	bool ready;
+	FileSystem *fs = rootfs;
+	PathInfo pathInfo;
+	pathInfo.remainingPath.cd(path->get_path());
+	MountPoint *mp;
+
+	FRESULT fres = FR_OK;
+	while(!ready) {
+		ready = true;
+		PathStatus_t ps = fs->walk_path(path, filename, pathInfo);
+		switch(ps) {
+		case e_DirNotFound:
+			fres = FR_NO_PATH;
+			break;
+		case e_EntryNotFound:
+			fres = FR_NO_FILE;
+			break;
+		case e_EntryFound:
+			break;
+		case e_TerminatedOnFile:
+			mp = find_mount_point(&pathInfo.fileInfo, &pathInfo.pathFromRootOfFileSystem);
+			if(mp) {
+				fs = mp->get_embedded()->getFileSystem();
+				ready = false;
+				path = &pathInfo.remainingPath;
+			} else {
+				fres = FR_NO_FILESYSTEM;
+			}
+			break;
+		case e_TerminatedOnMount:
+			fs = pathInfo.fileSystem;
+			break;
+		default:
+			break;
+		}
+	}
+
+/*
 	CachedTreeNode *pathnode = NULL;
 	if(!validatePath(path, &pathnode)) {
-		last_error = FR_NO_PATH;
-		return NULL;
+		return FR_NO_PATH;
 	}
 
 	FileInfo *dirinfo = pathnode->get_file_info();
 	CachedTreeNode *existing = pathnode->find_child(filename);
 
-	File *file = NULL;
+	*file = NULL;
+	FRESULT res;
 
 	// file does not exist, and we would like it to exist: create.
 	if ((!existing) && (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS))) {
 		if (!(dirinfo->attrib & AM_DIR)) {
-			last_error = FR_INVALID_OBJECT;
-			return 0;
+			return FR_INVALID_OBJECT;
 		}
 
 		FileInfo *newInfo = new FileInfo(filename);
@@ -251,28 +299,27 @@ File *FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags)
 		fix_filename(newInfo->lfname);
 		get_extension(newInfo->lfname, newInfo->extension);
 
-		file = dirinfo->fs->file_open(newInfo, flags);
-		if(file) {
+		res = dirinfo->fs->file_open(newInfo, flags, file);
+		if(res == FR_OK) {
 			pathnode->cleanup_children(); // force reload from media
 			sendEventToObservers(eNodeAdded, path->get_path(), filename);
 		} else {
-			last_error = dirinfo->fs->get_last_error();
+			return res;
 		}
 	} else if(existing) { // no creation
 		FileInfo *fileinfo = existing->get_file_info();
-		file = fileinfo->fs->file_open(existing->get_file_info(), flags);
-		last_error = fileinfo->fs->get_last_error();
+		res = fileinfo->fs->file_open(existing->get_file_info(), flags, file);
 	} else {
-		last_error = FR_NO_FILE;
-		return 0;
+		res = FR_NO_FILE;
 	}
 
-	if(file) {
-		file->set_path(path->get_path());
-		open_file_list.append(file);
+	if(*file) {
+		(*file)->set_path(path->get_path());
+		open_file_list.append(*file);
 	}
+*/
 
-	return file;
+	return fres;
 }
 
 bool FileManager :: fstat(FileInfo &info, const char *path, const char *filename)
@@ -297,23 +344,24 @@ bool FileManager :: fstat(FileInfo &info, const char *path, const char *filename
 	return ret;
 }
 
-File *FileManager :: fopen_node(CachedTreeNode *node, uint8_t flags)
+/*
+FRESULT FileManager :: fopen_node(CachedTreeNode *node, uint8_t flags, File **file)
 {
 	lock();
 
 	FileInfo *info = node->get_file_info();
-	File *file = info->fs->file_open(info, flags);
-	last_error = info->fs->get_last_error();
+	FRESULT res = info->fs->file_open(info, flags, file);
 
-	if(file) {
-		open_file_list.append(file);
+	if(*file) {
+		open_file_list.append(*file);
 		mstring work;
-		file->set_path(node->parent->get_full_path(work));
+		(*file)->set_path(node->parent->get_full_path(work));
 	}
 
 	unlock();
-	return file;
+	return res;
 }
+*/
 
 void FileManager :: fclose(File *f)
 {
@@ -348,12 +396,15 @@ void FileManager :: remove_root_entry(CachedTreeNode *obj)
 	unlock();
 }
 
-void FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
+MountPoint *FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
 {
 	// printf("FileManager :: add_mount_point: '%s' (%p)\n", file->get_path(), emb);
-	mount_points.append(new MountPoint(file, emb));
+	MountPoint *mp = new MountPoint(file, emb);
+	mount_points.append(mp);
+	return mp;
 }
 
+/*
 MountPoint *FileManager :: find_mount_point(const char *full_path)
 {
 //	printf("FileManager :: find_mount_point: '%s'\n", full_path);
@@ -368,10 +419,39 @@ MountPoint *FileManager :: find_mount_point(const char *full_path)
 	unlock();
 	return 0;
 }
+*/
+MountPoint *FileManager :: find_mount_point(FileInfo *info, Path *path)
+{
+	printf("FileManager :: find_mount_point: '%s'\n", info->lfname);
+	lock();
+	for(int i=0;i<mount_points.get_elements();i++) {
+		if(mount_points[i]->match(info->fs, info->cluster)) {
+			// printf("Found!\n");
+			unlock();
+			return mount_points[i];
+		}
+	}
+	if (!path) {
+		unlock();
+		return 0;
+	}
+	File *file;
+	FileSystemInFile *emb = 0;
+	MountPoint *mp = 0;
+	FRESULT fr = fopen(path, info->lfname, FA_READ | FA_WRITE, &file);
+	if (fr == FR_OK) {
+		emb = Globals :: getEmbeddedFileSystemFactory() -> create(info);
+		if (emb)
+			mp = add_mount_point(file, emb);
+	}
+	unlock();
+	return mp;
+}
 
 
 FRESULT FileManager :: delete_file_by_info(FileInfo *info)
 {
+/*
 	lock();
 	FRESULT fres = info->fs->file_delete(info);
 	if(fres != FR_OK) {
@@ -381,11 +461,13 @@ FRESULT FileManager :: delete_file_by_info(FileInfo *info)
 		sendEventToObservers(eNodeRemoved, "/", info->lfname); // FIXME: Path is unknown
 	}
 	unlock();
+*/
 	return FR_OK;
 }
 
 FRESULT FileManager :: create_dir_in_path(Path *path, const char *name)
 {
+/*
 	CachedTreeNode *node;
 	if (!validatePath(path, &node))
 		return FR_NO_PATH;
@@ -411,6 +493,8 @@ FRESULT FileManager :: create_dir_in_path(Path *path, const char *name)
 	}
 	unlock();
 	return fres;
+*/
+	return FR_DENIED;
 }
 
 FRESULT FileManager :: fcopy(const char *path, const char *filename, const char *dest)
@@ -447,9 +531,11 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 			release_path(sp);
 			release_path(dp);
 		} else if ((info->attrib & AM_VOL) == 0) { // it is a file!
-			File *fi = fopen(path, filename, FA_READ);
+			File *fi = 0;
+			ret = fopen(path, filename, FA_READ, &fi);
 			if (fi) {
-				File *fo = fopen(dest, filename, FA_CREATE_NEW | FA_WRITE);
+				File *fo = 0;
+				ret = fopen(dest, filename, FA_CREATE_NEW | FA_WRITE, &fo);
 				if (fo) {
 					uint8_t *buffer = new uint8_t[32768];
 					uint32_t transferred, written;
@@ -472,12 +558,10 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 					fclose(fi);
 				} else { // no output file
 					printf("Cannot open output file %s\n", filename);
-					ret = get_last_error();
 					fclose(fi);
 				}
 			} else {
 				printf("Cannot open input file %s\n", filename);
-				ret = get_last_error();
 			}
 		} // is file?
 	} else {

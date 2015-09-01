@@ -13,7 +13,6 @@
 #include "factory.h"
 
 class ObjectWithMenu;
-class CachedTreeNode;
 class FileInfo;
 class FileType;
 class Partition;
@@ -37,8 +36,8 @@ public:
 		return &subsystem_array;
 	}
 
-	static Factory<CachedTreeNode *, FileSystemInFile *>* getEmbeddedFileSystemFactory() {
-		static Factory<CachedTreeNode *, FileSystemInFile *> embedded_fs_factory;
+	static Factory<FileInfo *, FileSystemInFile *>* getEmbeddedFileSystemFactory() {
+		static Factory<FileInfo *, FileSystemInFile *> embedded_fs_factory;
 		return &embedded_fs_factory;
 	}
 

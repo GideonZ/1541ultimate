@@ -4,10 +4,9 @@
 
 #include "../components/size_str.h"
 #include "file_system.h"
-#include "file_direntry.h"
 
 
-FilePartition :: FilePartition(CachedTreeNode *par, Partition *p, char *n) : FileDirEntry(par, n) //, name(n)
+FilePartition :: FilePartition(CachedTreeNode *par, Partition *p, char *n) : CachedTreeNode(par, n)
 {
     prt = p; // link to partition object.
     info.cluster = 0; // indicate root dir
@@ -53,6 +52,7 @@ void FilePartition :: init()
     info.fs = prt->attach_filesystem();
 }
     
+/*
 int FilePartition :: fetch_children(void)
 {
     init();
@@ -63,3 +63,4 @@ int FilePartition :: fetch_children(void)
     sort_children();
     return count;
 }
+*/

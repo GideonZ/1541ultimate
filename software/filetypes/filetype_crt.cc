@@ -131,7 +131,7 @@ int FileTypeCRT :: execute_st(SubsysCommand *cmd)
 // non-static member
 int FileTypeCRT :: execute(SubsysCommand *cmd)
 {
-	File *file;
+	File *file = 0;
 	FileInfo *inf;
 	
     FileManager *fm = FileManager :: getFileManager();
@@ -140,9 +140,8 @@ int FileTypeCRT :: execute(SubsysCommand *cmd)
     memset((void *)mem_addr, 0, 1024*1024); // clear all cart memory
 
     printf("Cartridge Load.. %s\n", cmd->filename.c_str());
-    file = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
+    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
     uint32_t dw;
-    FRESULT fres;
     total_read = 0;
     max_bank = 0;
     load_at_a000 = false;
@@ -175,6 +174,7 @@ int FileTypeCRT :: execute(SubsysCommand *cmd)
         fm->fclose(file);
     } else {
         printf("Error opening file.\n");
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
         return -2;
     }
     return 0;

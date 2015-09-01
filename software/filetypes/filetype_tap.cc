@@ -99,7 +99,8 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
 	tape_controller->stop();
 	tape_controller->close();
 
-	File *file = FileManager :: getFileManager() -> fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
+	File *file = 0;
+	fres = FileManager :: getFileManager() -> fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 	if(!file) {
 		cmd->user_interface->popup("Can't open TAP file.", BUTTON_OK);
 		return -1;

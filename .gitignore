@@ -77,6 +77,8 @@ target/software/mb_rtos_netw/output_mb
 target/software/mb_rtos_netw/result_mb
 target/software/mb_sim_boot/output_mb
 target/software/mb_sim_boot/result_mb
+target/software/mb_test_fileio/output
+target/software/mb_ui/output
 target/software/mb_ultimate/output
 target/software/mb_ultimate/python_out_iec
 target/software/mb_ultimate/python_out_nano

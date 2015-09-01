@@ -71,6 +71,39 @@ const char *FileSystem :: get_error_string(FRESULT res)
 	return "";
 }
 
+PathStatus_t FileSystem :: walk_path(Path *path, const char *fn, PathInfo& pathInfo)
+{
+	printf("WalkPath: '%s':'%s'\n", path->get_path(), fn);
+	FRESULT fres;
+
+	// example1: /sd/somedir/somefile.d64/hello.prg
+	// first phase, the /sd is taken away from the path by the root file system.
+	// second phase:
+	// should terminate with e_TerminatedOnFile, where the remaining path = "/hello.prg",
+
+	pathInfo.remainingPath.cd(path->get_path());
+	for(int i=0;i<path->getDepth();i++) {
+		fres = file_stat(&pathInfo.pathFromRootOfFileSystem, path->getElement(i), &pathInfo.fileInfo);
+		if (fres != FR_OK) {
+			return e_DirNotFound;
+		}
+		pathInfo.pathFromRootOfFileSystem.cd(path->getElement(i));
+		pathInfo.remainingPath.removeFirst();
+		if (!(pathInfo.fileInfo.attrib & AM_DIR)) {
+			return e_TerminatedOnFile;
+		}
+	}
+	fres = file_stat(&pathInfo.pathFromRootOfFileSystem, fn, &pathInfo.fileInfo);
+	if (fres == FR_OK) {
+		return e_EntryFound;
+	}
+	return e_EntryNotFound;
+}
+
+FRESULT FileSystem :: file_stat(Path *path, const char *fn, FileInfo *inf)
+{
+	return FR_NO_FILESYSTEM;
+}
 
 bool FileSystem :: init(void)
 {
@@ -78,9 +111,9 @@ bool FileSystem :: init(void)
 	return false;
 }
     
-Directory *FileSystem :: dir_open(FileInfo *)
+FRESULT FileSystem :: dir_open(const char *path, Directory **)
 {
-    return NULL;
+    return FR_NO_FILESYSTEM;
 }
 
 void FileSystem :: dir_close(Directory *d)
@@ -89,17 +122,17 @@ void FileSystem :: dir_close(Directory *d)
 
 FRESULT FileSystem :: dir_read(Directory *d, FileInfo *f)
 {
-    return FR_DENIED;
+    return FR_NO_FILESYSTEM;
 }
 
-FRESULT FileSystem :: dir_create(FileInfo *f)
+FRESULT FileSystem :: dir_create(const char *path)
 {
-    return FR_DENIED;
+    return FR_NO_FILESYSTEM;
 }
     
-File   *FileSystem :: file_open(FileInfo *, uint8_t flags)
+FRESULT FileSystem :: file_open(const char *path, uint8_t flags, File **)
 {
-    return NULL;
+    return FR_NO_FILESYSTEM;
 }
 
 void    FileSystem :: file_close(File *f)
@@ -109,31 +142,31 @@ void    FileSystem :: file_close(File *f)
 FRESULT FileSystem :: file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred)
 {
     *transferred = 0;
-    return FR_DENIED;
+    return FR_NO_FILESYSTEM;
 }
 
 FRESULT FileSystem :: file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred)
 {
     *transferred = 0;
-    return FR_DENIED;
+    return FR_NO_FILESYSTEM;
 }
 
 FRESULT FileSystem :: file_seek(File *f, uint32_t pos)
 {
-    return FR_DENIED;
+    return FR_NO_FILESYSTEM;
 }
 
 FRESULT FileSystem :: file_sync(File *f)
 {
-    return FR_DENIED;
+    return FR_NO_FILESYSTEM;
 }
 
-FRESULT FileSystem :: file_rename(FileInfo *, char *new_name)
+FRESULT FileSystem :: file_rename(const char *old_name, const char *new_name)
 {
-    return FR_DENIED;
+    return FR_NO_FILESYSTEM;
 }
 
-FRESULT FileSystem :: file_delete(FileInfo *)
+FRESULT FileSystem :: file_delete(const char *name)
 {
-    return FR_DENIED;
+    return FR_NO_FILESYSTEM;
 }

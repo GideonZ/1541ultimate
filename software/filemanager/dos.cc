@@ -71,10 +71,10 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             break;
         case DOS_CMD_OPEN_FILE:
             command->message[command->length] = 0;
-            file = fm->fopen(path, (char *)&command->message[3], command->message[2]);
+            res = fm->fopen(path, (char *)&command->message[3], command->message[2], &file);
             *reply  = &c_message_empty;
             if(!file) {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(fm->get_last_error()));
+                strcpy((char *)status_message.message, FileSystem::get_error_string(res));
                 status_message.length = strlen((char *)status_message.message);
                 *status = &status_message; 
             } else {

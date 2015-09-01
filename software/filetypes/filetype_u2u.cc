@@ -83,7 +83,7 @@ void jump_run(uint32_t a)
 
 int FileTypeUpdate :: execute(SubsysCommand *cmd)
 {
-	File *file;
+	File *file = 0;
 	uint32_t bytes_read;
 	bool progress;
 	int sectors;
@@ -105,7 +105,7 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 	remain = inf.size;
 
 	printf("Update Load.. %s\n", cmd->filename.c_str());
-	file = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
+	FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 
 	if(file) {
 		total_bytes_read = 0;
@@ -137,6 +137,7 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		jump_run(REU_MEMORY_BASE);
 	} else {
 		printf("Error opening file.\n");
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
 		return -1;
 	}
 	return 0;

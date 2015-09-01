@@ -79,23 +79,27 @@ Rtc :: ~Rtc()
 
 void Rtc :: write_byte(int addr, uint8_t val)
 {
+	ENTER_SAFE_SECTION
 	RTC_CHIP_CTRL = SPI_CS_ON;
     RTC_CHIP_DATA = (uint8_t)(0x10 + addr);
     RTC_CHIP_DATA = val;
     RTC_CHIP_CTRL = SPI_CS_OFF;
+	LEAVE_SAFE_SECTION
 	rtc_regs[addr] = val; // update internal structure as well.
 }
 
 
 void Rtc :: read_all(void)
 {
-    RTC_CHIP_CTRL = SPI_CS_ON;
+	ENTER_SAFE_SECTION
+	RTC_CHIP_CTRL = SPI_CS_ON;
     RTC_CHIP_DATA = 0x90; // read + startbit
 
     for(int i=0;i<16;i++) {
         rtc_regs[i] = RTC_CHIP_DATA;
     }
 	RTC_CHIP_CTRL = SPI_CS_OFF;
+	LEAVE_SAFE_SECTION
 }
 
 void Rtc :: get_time_from_chip(void)
@@ -358,4 +362,20 @@ void RtcConfigStore :: write(void)
 	rtc.set_time_in_chip(corr, y, M, D, wd, h, m, s);
 	
 	dirty = false;
+}
+
+uint32_t get_fattime (void)	/* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 20-16: Day(1-31) */
+						    /* 15-11: Hour(0-23), 10-5: Minute(0-59), 4-0: Second(0-29 *2) */
+{
+	return rtc.get_fat_time();
+
+	/*
+    29 << 25 = 0x3A000000
+     4 << 21 = 0x00800000
+     4 << 16 = 0x00040000
+     9 << 11 = 0x00004800
+    36 <<  5 = 0x00000480
+    23 <<  0 = 0x00000017
+    return 0x3A844C97;
+*/
 }

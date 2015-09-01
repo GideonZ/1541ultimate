@@ -7,7 +7,10 @@ extern "C" {
 #ifdef BOOTLOADER
 #define debug(x)
 #define error(x)
+#define portENTER_CRITICAL()
+#define portEXIT_CRITICAL()
 #else
+#include "FreeRTOS.h"
 #define debug(x)
 #define error(x) printf x
 #endif
@@ -77,7 +80,8 @@ void W25Q_Flash :: get_image_addresses(int id, t_flash_address *addr)
 
 void W25Q_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
 {
-    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+	portENTER_CRITICAL();
+	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;
     SPI_FLASH_DATA = uint8_t(device_addr >> 16);
     SPI_FLASH_DATA = uint8_t(device_addr >> 8);
@@ -88,10 +92,12 @@ void W25Q_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
         *(buf++) = SPI_FLASH_DATA;
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    portEXIT_CRITICAL();
 }
     
 Flash *W25Q_Flash :: tester()
 {
+	portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     SPI_FLASH_DATA = 0xFF;
     SPI_FLASH_CTRL = SPI_FORCE_SS;
@@ -101,6 +107,7 @@ Flash *W25Q_Flash :: tester()
 	uint8_t mem_type = SPI_FLASH_DATA;
 	uint8_t capacity = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    portEXIT_CRITICAL();
     
 //    printf("W25Q MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
 
@@ -160,6 +167,7 @@ void W25Q_Flash :: read_linear_addr(int addr, int len, void *buffer)
 void W25Q_Flash :: read_serial(void *buffer)
 {
     uint8_t *buf = (uint8_t *)buffer;
+    portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ReadUniqueIDNumber;
     SPI_FLASH_DATA_32 = 0;
@@ -167,6 +175,7 @@ void W25Q_Flash :: read_serial(void *buffer)
         *(buf++) = SPI_FLASH_DATA;
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    portEXIT_CRITICAL();
     //return 8;
 }
 
@@ -209,6 +218,7 @@ bool W25Q_Flash :: read_page(int page, void *buffer)
     int len = 1 << (W25Q_PageShift - 2);
     uint32_t *buf = (uint32_t *)buffer;
     
+    portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;
     SPI_FLASH_DATA = uint8_t(device_addr >> 16);
@@ -218,6 +228,8 @@ bool W25Q_Flash :: read_page(int page, void *buffer)
         *(buf++) = SPI_FLASH_DATA_32;
     }
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    portEXIT_CRITICAL();
+
     return true;
 }
 
@@ -227,6 +239,7 @@ bool W25Q_Flash :: write_page(int page, void *buffer)
     int len = 1 << (W25Q_PageShift - 2);
     uint32_t *buf = (uint32_t *)buffer;
     
+    portENTER_CRITICAL();
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
 
@@ -243,6 +256,7 @@ bool W25Q_Flash :: write_page(int page, void *buffer)
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    portEXIT_CRITICAL();
 	return ret;
 }
 
@@ -250,6 +264,7 @@ bool W25Q_Flash :: erase_sector(int sector)
 {
 	int addr = (sector * sector_size) << W25Q_PageShift;
 
+    portENTER_CRITICAL();
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
     debug(("Sector erase. %b %b %b\n", uint8_t(addr >> 16), uint8_t(addr >> 8), uint8_t(addr)));
@@ -263,6 +278,7 @@ bool W25Q_Flash :: erase_sector(int sector)
     SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+    portEXIT_CRITICAL();
 	return ret;
 }
 
@@ -301,6 +317,7 @@ void W25Q_Flash :: protect_disable(void)
 	//  0     0    1   0    0    0    0     0
 	
 	// program status register with value 0x20
+    portENTER_CRITICAL();
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -313,6 +330,7 @@ void W25Q_Flash :: protect_disable(void)
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
+    portEXIT_CRITICAL();
 }
 
 bool W25Q_Flash :: protect_configure(void)
@@ -325,6 +343,7 @@ bool W25Q_Flash :: protect_configure(void)
 	//  0     0    1   1    0    1    0     0
 	
 	// program status register with value 0x34
+    portENTER_CRITICAL();
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
@@ -337,15 +356,19 @@ bool W25Q_Flash :: protect_configure(void)
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
+    portEXIT_CRITICAL();
 	return true;
 }
 
 void W25Q_Flash :: protect_enable(void)
 {
+    portENTER_CRITICAL();
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
 	uint8_t status = SPI_FLASH_DATA;
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    portEXIT_CRITICAL();
+
     if ((status & 0x7C) != 0x34)
     	protect_configure();
 }

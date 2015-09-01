@@ -74,7 +74,7 @@ int UserFileInteraction :: S_rename(SubsysCommand *cmd)
 
     res = cmd->user_interface->string_box("Give a new name..", buffer, 38);
     if(res > 0) {
-    	fres = info.fs->file_rename(&info, buffer);
+    	fres = info.fs->file_rename(cmd->filename.c_str(), buffer);
 		if(fres != FR_OK) {
 			sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
 			cmd->user_interface->popup(buffer, BUTTON_OK);
@@ -109,7 +109,8 @@ int UserFileInteraction :: S_view(SubsysCommand *cmd)
 {
 	FileInfo info;
 	FileManager *fm = FileManager :: getFileManager();
-	File *f = FileManager :: getFileManager() -> fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ);
+	File *f = 0;
+	FRESULT fres = fm -> fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
 	uint32_t transferred;
 	if(f != NULL) {
     	uint32_t size = f->get_size();
@@ -142,7 +143,8 @@ int UserFileInteraction :: S_createD64(SubsysCommand *cmd)
 		if(bin) {
     		bin->format(buffer);
 			set_extension(buffer, (doG64)?(char *)".g64":(char *)".d64", 32);
-            File *f = fm -> fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW );
+            File *f = 0;
+            FRESULT fres = fm -> fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW, &f);
 			if(f) {
                 if(doG64) {
                     gcr = new GcrImage;
@@ -166,7 +168,7 @@ int UserFileInteraction :: S_createD64(SubsysCommand *cmd)
                 fm->fclose(f);
 			} else {
 				printf("Can't create file '%s'\n", buffer);
-				cmd->user_interface->popup("Can't create file.", BUTTON_OK);
+				cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
 				return -2;
 			}
 			// delete bin;

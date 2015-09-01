@@ -457,7 +457,7 @@ PROMGEN_FLAGS_DEP_VARS	= PROMGEN_FLAGS
 ifeq ($(IGNORE_TIMING_PIN_ERRORS),yes)
    PINCHECK_ERROR_CMD 	= true
 else
-   PINCHECK_ERROR_CMD 	= false
+   PINCHECK_ERROR_CMD 	= true
 endif
 
 TIMING_CHK_CMD 	= grep "All constraints were met" $(XWORK_DIR)/$(TARGET).twr > \

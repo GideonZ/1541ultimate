@@ -9,7 +9,7 @@
 #include "globals.h"
 
 // tester instance
-FactoryRegistrator<CachedTreeNode *, FileSystemInFile *>
+FactoryRegistrator<FileInfo *, FileSystemInFile *>
 	tester_emb_t64(Globals :: getEmbeddedFileSystemFactory(), FileSystemInFile_T64 :: test_type);
 
 
@@ -27,9 +27,8 @@ void FileSystemInFile_T64 :: init(File *f)
 	fs  = new FileSystemT64(f);
 }
 
-FileSystemInFile *FileSystemInFile_T64 :: test_type(CachedTreeNode *obj)
+FileSystemInFile *FileSystemInFile_T64 :: test_type(FileInfo *inf)
 {
-	FileInfo *inf = obj->get_file_info();
     if(strcmp(inf->extension, "T64")==0)
         return new FileSystemInFile_T64();
     return NULL;

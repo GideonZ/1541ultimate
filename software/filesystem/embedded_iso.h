@@ -24,7 +24,7 @@ public:
 	void init(File *f);
 	FileSystem *getFileSystem() { return fs; }
 
-	static FileSystemInFile *test_type(CachedTreeNode *obj);
+	static FileSystemInFile *test_type(FileInfo *inf);
 };
 
 #endif /* FILESYSTEM_EMBEDDED_ISO_H_ */

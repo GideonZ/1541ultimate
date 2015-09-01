@@ -129,21 +129,6 @@ public:
 };
 
 
-// FileType to load code
-#include "file_direntry.h"
-
-/*
-class FileTypeIEC : public FileDirEntry
-{
-public:
-    FileTypeIEC(CachedTreeNode *par, FileInfo *fi);
-    ~FileTypeIEC();
-
-    int   fetch_context_items(IndexedList<Action *> &list);
-    FileDirEntry *test_type(CachedTreeNode *obj);
-    void execute(int selection);
-};
-*/
 
 #define ERR_OK							00
 #define ERR_FILES_SCRATCHED				01
