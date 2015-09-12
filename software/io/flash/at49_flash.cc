@@ -5,7 +5,7 @@ extern "C" {
 #include "at49_flash.h"
 #include <string.h>
 
-#ifdef BOOTLOADER
+#ifndef OS
 #define debug(x)
 #define error(x)
 #else

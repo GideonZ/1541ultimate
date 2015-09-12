@@ -58,7 +58,7 @@ public:
 
     virtual uint32_t get_file_size(File *f) { return 0; }
     virtual uint32_t get_inode(File *f) { return 0; }
-//    virtual void     collect_file_info(File *f, FileInfo *inf) { }
+    virtual bool     needs_sorting() { return false; }
 };
 
 #include "factory.h"
@@ -81,7 +81,7 @@ public:
 	FileInfo *last;
 	FileInfo *previous;
 
-	PathInfo(FileSystem *fs) : fileInfo1(32), fileInfo2(32) {
+	PathInfo(FileSystem *fs) : fileInfo1(128), fileInfo2(128) {
 		index = 0;
 		indexFromStartOfFileSystem = 0;
 		last = 0;

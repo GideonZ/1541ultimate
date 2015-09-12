@@ -1,5 +1,5 @@
 
-CROSS     = zpu-elf
+CROSS     = zpu-elf-
 
 include ../common/environment.mk
 
@@ -70,6 +70,8 @@ SRCS_IEC =
 SRCS_NANO = 
 
 VPATH   += $(PATH_SW)/application/update_to_mb
+VPATH   += $(PATH_SW)/system/cross
+
 VPATH   += ../mb_ultimate/result
 VPATH   += ../mb_boot/result
 VPATH   += ../mb_boot2/result

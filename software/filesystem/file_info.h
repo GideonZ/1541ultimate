@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "indexed_list.h"
 
 /* File attribute bits for directory entry */
 
@@ -32,6 +33,18 @@ class FileInfo
     {
     	init();
     }
+
+	int compare_impl(FileInfo *other)
+	{
+		if ((attrib & AM_DIR) && !(other->attrib & AM_DIR))
+			return -1;
+		if (!(attrib & AM_DIR) && (other->attrib & AM_DIR))
+			return 1;
+
+	    int by_name = strcasecmp(lfname, other->lfname);
+		return by_name;
+	}
+
 public:
 	FileSystem *fs;  /* Reference to file system, to uniquely identify file */
     uint32_t  cluster; /* Start cluster, easy for open! */
@@ -127,6 +140,20 @@ public:
 		printf("LFname     : %s\n", lfname);
 		printf("Attrib:    : %b\n", attrib);
 		printf("Extension  : %s\n", extension);
+	}
+
+	static int compare(IndexedList<FileInfo *> *list, int a, int b)
+	{
+	//	printf("Compare %d and %d: ", a, b);
+		FileInfo *obj_a = (*list)[a];
+		FileInfo *obj_b = (*list)[b];
+
+		if(!obj_b)
+			return 1;
+		if(!obj_a)
+			return -1;
+
+		return obj_a->compare_impl(obj_b);
 	}
 };
 

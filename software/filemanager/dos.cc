@@ -114,7 +114,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             	break;
             }
             *status = &c_status_ok;
-            ffi = new FileInfo(32);
+            ffi = new FileInfo(INFO_SIZE);
             res = fm->fstat(file->get_path(), *ffi);
             if(res != FR_OK) {
                 *status = &c_status_file_not_found;
@@ -140,7 +140,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
         case DOS_CMD_FILE_STAT:
             *reply  = &c_message_empty;
             *status = &c_status_ok; 
-            ffi = new FileInfo(32);
+            ffi = new FileInfo(INFO_SIZE);
             res = fm->fstat(path, (char *)&command->message[2], *ffi);
             if(res != FR_OK) {
                 *status = &c_status_file_not_found;

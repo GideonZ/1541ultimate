@@ -28,11 +28,12 @@ class UsbScsi;
 #ifndef BOOTLOADER
 class UsbScsiDriver : public UsbDriver
 {
+	bool poll_enable;
 	FileManager *file_manager;
 	FileDevice *path_dev[16];
 	UsbScsi *scsi_blk_dev[16];
 	t_device_state state_copy[16];
-	int poll_interval[16];
+	uint16_t poll_interval[16];
 	bool media_seen[16];
 	SemaphoreHandle_t mutex;
 	

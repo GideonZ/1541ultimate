@@ -47,6 +47,7 @@ uint8_t c_get_string_descriptor[]     = { 0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0x
 uint8_t c_get_configuration[]         = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00 };
 uint8_t c_set_address[]               = { 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_set_configuration[]         = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_set_interface[]             = { 0x01, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 uint8_t c_get_interface[]			   = { 0x21, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
 uint8_t c_get_hid_report_descriptor[] = { 0x81, 0x06, 0x00, 0x22, 0x00, 0x00, 0x00, 0x00 };
@@ -296,6 +297,16 @@ void UsbDevice :: set_configuration(uint8_t config)
 {
 //    printf("Setting configuration %d.\n", config);
     c_set_configuration[2] = config;
+
+    uint8_t dummy_buffer[8];
+    int i = host->control_exchange(&control_pipe, c_set_configuration, 8, dummy_buffer, 0);
+//    printf("Set Configuration result:%d\n", i);
+}
+
+void UsbDevice :: set_interface(uint8_t interface)
+{
+//    printf("Setting interface %d.\n", interface);
+    c_set_interface[4] = interface;
 
     uint8_t dummy_buffer[8];
     int i = host->control_exchange(&control_pipe, c_set_configuration, 8, dummy_buffer, 0);

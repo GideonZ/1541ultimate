@@ -507,8 +507,9 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
     	printf("USB unavailable.\n");
     	return -9;
     }
-	//printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
-    uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
+	// printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
+
+	uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
 
     uint32_t addr = (uint32_t)buf;
 	int total_trans = 0;
@@ -545,10 +546,10 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
 	} while (len > 0);
 
+    // printf("Bulk out done: %d\n", total_trans);
     xSemaphoreGive(mutex);
 
     PROFILER_SUB = sub;
-
 	return total_trans;
 }
 
@@ -559,7 +560,7 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
     	return -9;
     }
 
-    //printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
+    // printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
 	uint32_t addr = (uint32_t)buf;
 	int total_trans = 0;
 
@@ -604,6 +605,7 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		}
 	} while (len > 0);
 
+    // printf("Bulk in done: %d\n", total_trans);
     xSemaphoreGive(mutex);
 	return total_trans;
 }

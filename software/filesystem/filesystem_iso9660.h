@@ -198,6 +198,13 @@ struct t_aligned_directory_record {
 
 const uint8_t c_volume_key[8] = { 0x01, 0x43, 0x44, 0x30, 0x30, 0x31, 0x01, 0x00 };
 
+struct t_iso_handle {
+    uint32_t start;
+    uint32_t sector;
+    int   remaining;
+    int   offset;
+};
+
 class FileSystem_ISO9660 : public FileSystem 
 {
 protected:
@@ -238,11 +245,17 @@ public:
     FRESULT file_sync(File *f) {              // Clean-up cached data
         return FR_OK;
     }
-};
 
-struct t_iso_handle {
-    uint32_t start;
-    uint32_t sector;
-    int   remaining;
-    int   offset;
+    uint32_t get_file_size(File *f) {
+        t_iso_handle *handle = (t_iso_handle *)f->handle;
+        return (uint32_t)(handle->remaining);
+    }
+
+    uint32_t get_inode(File *f) {
+        t_iso_handle *handle = (t_iso_handle *)f->handle;
+        return (uint32_t)(handle->start);
+    }
+
+    bool     needs_sorting() { return false; } // aren't files already sorted in an ISO?
+
 };

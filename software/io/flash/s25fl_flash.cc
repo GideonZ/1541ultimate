@@ -4,7 +4,7 @@ extern "C" {
     #include "small_printf.h"
 }
 
-#ifdef BOOTLOADER
+#ifndef OS
 #define debug(x)
 #define error(x)
 #define portENTER_CRITICAL()

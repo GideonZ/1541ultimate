@@ -198,17 +198,22 @@ FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target)
 	mstring pathFromFSRoot;
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
 	res = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir, pathInfo.getLastInfo());
-	FileInfo info(32);
+	FileInfo info(INFO_SIZE);
 	if (res == FR_OK) {
 		while(1) {
 			res = dir->get_entry(info);
 			if (res != FR_OK)
 				break;
+			if ((info.lfname[0] == '.') || (info.attrib & AM_HID))
+				continue; // skip files to be hidden.
 			target.append(new FileInfo(info));
 		}
 		fs->dir_close(dir);
 	}
 	unlock();
+	if (fs->needs_sorting()) {
+		target.sort(FileInfo :: compare);
+	}
 	return FR_OK;
 }
 
@@ -226,7 +231,7 @@ FRESULT FileManager :: print_directory(const char *path)
 		printf("%s\n***\n", FileSystem :: get_error_string(fres));
 	} else {
 		Directory *dir;
-		FileInfo info(32);
+		FileInfo info(INFO_SIZE);
 		mstring pathFromFSRoot;
 		fs = pathInfo.getLastInfo()->fs;
 		fres = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir, pathInfo.getLastInfo());
@@ -645,7 +650,7 @@ FRESULT FileManager :: create_dir(Path *path, const char *name)
 FRESULT FileManager :: fcopy(const char *path, const char *filename, const char *dest)
 {
 	printf("Copying %s to %s\n", filename, dest);
-	FileInfo *info = new FileInfo(64); // I do not use the stack here for the whole structure, because
+	FileInfo *info = new FileInfo(INFO_SIZE); // I do not use the stack here for the whole structure, because
 	// we might recurse deeply. Our stack is maybe small.
 
 	Path *sp = get_new_path("copy source");

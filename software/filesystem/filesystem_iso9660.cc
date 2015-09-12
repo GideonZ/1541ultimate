@@ -248,7 +248,7 @@ try_next:
 // functions for reading files
 FRESULT FileSystem_ISO9660 :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **f)  // Opens file (creates file object)
 {
-	FileInfo info(32);
+	FileInfo info(128);
 	do {
 		FRESULT fres = dir_read(dir, &info);
 		if (fres != FR_OK) {

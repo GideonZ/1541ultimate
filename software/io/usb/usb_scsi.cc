@@ -33,6 +33,7 @@ FactoryRegistrator<UsbDevice *, UsbDriver *> scsi_tester(UsbDevice :: getUsbDriv
 
 UsbScsiDriver :: UsbScsiDriver()
 {
+	poll_enable = false;
 	current_lun = 0;
 	max_lun = 0;
 	file_manager = FileManager :: getFileManager();
@@ -91,6 +92,8 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
 
 	dev->set_configuration(dev->get_device_config()->config_value);
+	dev->set_interface(0);
+
 	max_lun = get_max_lun(dev);
 	printf("max lun = %d\n", max_lun);
 
@@ -125,11 +128,15 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 		// path_dev[i]->attach();
 		state_copy[i] = scsi_blk_dev[i]->get_state(); // returns unknown, most likely! :)
 		printf("*** LUN = %d *** Initial state = %d ***\n", i, state_copy[i]);
-		poll_interval[i] = i; // ;-) not all at the same time!
+		uint16_t now = getMsTimer();
+		now += 500 + (i * 100);
+		poll_interval[i] = now;
 		media_seen[i] = false;
 		file_manager->add_root_entry(path_dev[i]);
 	}
 	current_lun = 0;
+	printf("Now enabling poll.\n");
+	poll_enable = true;
 }
 
 void UsbScsiDriver :: deinstall(UsbDevice *dev)
@@ -144,7 +151,7 @@ void UsbScsiDriver :: deinstall(UsbDevice *dev)
 
 void UsbScsiDriver :: poll(void)
 {
-	const int c_intervals[] = { 0,     // unknown
+	const int c_intervals[] = { 10,    // unknown
 								250,   // no media
 								20,    // not ready
 								500,   // ready
@@ -154,7 +161,10 @@ void UsbScsiDriver :: poll(void)
 
     uint32_t capacity, block_size;
 
-	// poll intervals are meant to lower the unnecessary
+    if (!poll_enable)
+    	return;
+
+    // poll intervals are meant to lower the unnecessary
 	// traffic on the USB bus.
     uint16_t now = getMsTimer();
     uint16_t passed_time = now - poll_interval[current_lun];
@@ -236,7 +246,10 @@ void UsbScsi :: reset(void)
 
 	printf("Going to do inquiry..\n");
     inquiry();
-    test_unit_ready();
+    driver->request_sense(lun, true);
+
+//    test_unit_ready();
+	printf("Reset Done..\n");
 }
 
 int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
@@ -278,7 +291,7 @@ int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
 int UsbScsiDriver :: request_sense(int lun, bool debug)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("UsbScsiDriver unavailable.\n");
+    	printf("UsbScsiDriver unavailable (SR).\n");
     	return -9;
     }
 
@@ -328,6 +341,10 @@ void UsbScsi :: handle_sense_error(uint8_t *sense_data)
 		case 0x3A:  // no media			
 			set_state(e_device_no_media);
 			break;
+		case 0x25: // LUN not supported
+			printf("Logical Unit not supported (%d).\n", lun);
+			// set_state(e_device_ready);
+			break;
 		default:
 			printf("Unhandled sense code %b/%b.\n", sense_data[2], sense_data[12]);
 		}
@@ -337,11 +354,11 @@ void UsbScsi :: handle_sense_error(uint8_t *sense_data)
 int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, int datalen, uint8_t *data, bool debug)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("UsbScsiDriver unavailable.\n");
+    	printf("UsbScsiDriver unavailable (EX).\n");
     	return -9;
     }
 
-	cbw.tag = ++id;
+    cbw.tag = ++id;
     cbw.data_length = cpu_to_32le(datalen);
     cbw.flags = (out)?CBW_OUT:CBW_IN;
     cbw.lun = (uint8_t)lun;
@@ -411,7 +428,9 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 
     /* STATUS PHASE */
     st = status_transport(read_status);
-   	if(st == 1) {
+
+	xSemaphoreGive(mutex);
+	if(st == 1) {
 		request_sense(true); // was debug
 		scsi_blk_dev[lun]->handle_sense_error(sense_data);
 		retval = -7;
@@ -419,11 +438,8 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 	if(st < 0) {
 		retval = st;
 	}
-
-	xSemaphoreGive(mutex);
 	return retval; // if response ok, return number of bytes read or written
 }
-
 
 void UsbScsi :: inquiry(void)
 {
@@ -473,7 +489,8 @@ bool UsbScsi :: test_unit_ready(void)
     if(!initialized)
         return false;
 
-    uint8_t test_ready_command[6] = { 0x00, uint8_t(lun << 5), 0, 0, 0, 0 };
+    uint8_t test_ready_command[12] = { 0x00, uint8_t(lun << 5), 0, 0, 0, 0,
+                                          0, 0, 0, 0, 0, 0 };
     int res = driver->exec_command(lun, 6, false, test_ready_command, 0, NULL, false);
 	if(res == -7) {
 		return true; // handled by sense

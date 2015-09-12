@@ -6,7 +6,7 @@ extern "C" {
     #include "dump_hex.h"
 }
 
-#ifdef BOOTLOADER
+#ifndef OS
 #define debug(x)
 #define error(x)
 #define portENTER_CRITICAL()

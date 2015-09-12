@@ -1,6 +1,7 @@
 
 #include "file_system.h"
 #include "pattern.h"
+#include "filemanager.h"
 
 bool FileInfo :: is_writable(void)
 {
@@ -84,7 +85,7 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 
 	pathInfo.enterFileSystem(this);
 
-	FileInfo info(32);
+	FileInfo info(INFO_SIZE);
 	Directory *dir;
 	FileInfo *ninf;
 	mstring workdir;

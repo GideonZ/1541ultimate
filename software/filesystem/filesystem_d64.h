@@ -11,6 +11,51 @@
 #include "file_system.h"
 #include "partition.h"
 
+class FileSystemD64;
+
+class DirInD64
+{
+    int idx;
+    uint8_t *visited;  // this should probably be a bit vector
+
+    FileSystemD64 *fs;
+public:
+    DirInD64(FileSystemD64 *);
+    ~DirInD64() { }
+
+    FRESULT open(FileInfo *info);
+    FRESULT close(void);
+    FRESULT read(FileInfo *f);
+};
+
+class FileInD64
+{
+	friend class FileSystemD64;
+
+	int start_cluster;
+	int current_track;
+    int current_sector;
+    int offset_in_sector;
+    int num_blocks;
+    int dir_sect;
+    int dir_entry_offset;
+    uint8_t *visited;  // this should probably be a bit vector
+
+    FileSystemD64 *fs;
+
+    FRESULT visit(void);
+public:
+    FileInD64(FileSystemD64 *);
+    ~FileInD64() { }
+
+    FRESULT open(FileInfo *info, uint8_t flags);
+    FRESULT close(void);
+    FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT seek(uint32_t pos);
+};
+
+
 class FileSystemD64 : public FileSystem
 {
     uint8_t sect_buffer[256]; // one sector
@@ -50,52 +95,19 @@ public:
     FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
 
-//    void    collect_file_info(File *f, FileInfo *inf);
+    uint32_t get_file_size(File *f) {
+        FileInD64 *handle = (FileInD64 *)f->handle;
+        return (uint32_t)(254 * handle->num_blocks);
+    }
+
+    uint32_t get_inode(File *f) {
+        FileInD64 *handle = (FileInD64 *)f->handle;
+        return (uint32_t)(handle->start_cluster);
+    }
 
     friend class DirInD64;
     friend class FileInD64;
 };
 
-class DirInD64
-{
-    int idx;
-    uint8_t *visited;  // this should probably be a bit vector
-
-    FileSystemD64 *fs;
-public:
-    DirInD64(FileSystemD64 *);
-    ~DirInD64() { }
-
-    FRESULT open(FileInfo *info);
-    FRESULT close(void);
-    FRESULT read(FileInfo *f);
-};
-
-class FileInD64
-{
-	int start_cluster;
-	int current_track;
-    int current_sector;
-    int offset_in_sector;
-    int num_blocks;
-    int dir_sect;
-    int dir_entry_offset;
-    uint8_t *visited;  // this should probably be a bit vector
-
-    FileSystemD64 *fs;
-
-    FRESULT visit(void);
-public:
-    FileInD64(FileSystemD64 *);
-    ~FileInD64() { }
-
-    FRESULT open(FileInfo *info, uint8_t flags);
-    FRESULT close(void);
-    FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT seek(uint32_t pos);
-
-//    void    collect_info(FileInfo *inf);
-};
 
 #endif /* FILESYSTEM_D64_FILESYSTEM_H_ */

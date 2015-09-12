@@ -46,7 +46,7 @@ public:
 
     uint32_t get_file_size(File *f);
     uint32_t get_inode(File *f);
-//    void     collect_file_info(File *f, FileInfo *inf);
+    bool     needs_sorting() { return true; }
 };
 
 
