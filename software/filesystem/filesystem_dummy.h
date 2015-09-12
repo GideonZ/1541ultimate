@@ -32,13 +32,21 @@ public:
 		pathInfo.enterFileSystem(this);
 		mstring work;
 		printf("Walk path on dummy FS: %s\n", pathInfo.workPath.getTail(pathInfo.index, work));
+		if (pathInfo.hasMore()) {
+			printf("Connect to: %s\n", pathInfo.workPath.getElement(pathInfo.index));
+			pathInfo.index ++;
+		}
+		if (pathInfo.hasMore()) {
+			printf("STAT: %s\n", pathInfo.workPath.getTail(pathInfo.index, work));
+		}
 		return e_EntryFound;
 	}
 
 	// functions for reading directories
     FRESULT dir_open(const char *path, Directory **dir, FileInfo *inf = 0) {
     	printf("Dummy open dir: %s\n", path);
-    	return FR_DENIED;
+    	*dir = new Directory(this, 0);
+    	return FR_OK;
     }
 
     // functions for reading and writing files

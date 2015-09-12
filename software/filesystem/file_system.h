@@ -157,6 +157,10 @@ public:
 		return workPath.getSub(indexFromStartOfFileSystem, index, work);
 	}
 
+	const char *getDirectoryFromLastFS(mstring &work) {
+		return workPath.getSub(indexFromStartOfFileSystem, index-1, work);
+	}
+
 	const char *getFileName() {
 		int depth = workPath.getDepth();
 		if (depth == 0)

@@ -20,14 +20,18 @@ int main()
 	FileDevice *dev = new FileDevice(blk, (char *)"img", (char *)"Image");
 	dev->attach_disk(512);
 	FileSystem *dummy_fs = new FileSystemDummy();
-	Node_DirectFS *dummy = new Node_DirectFS(dummy_fs, "dummy");
+	Node_DirectFS *dummy = new Node_DirectFS(dummy_fs, "ftp");
 	fm->add_root_entry(dev);
 	fm->add_root_entry(dummy);
 
-
+	File *dummyFile;
 	fm->print_directory("/");
-	fm->print_directory("/dummy");
-	fm->print_directory("/dummy/gideon@1541ultimate.net:password/aapje.txt");
+	fm->print_directory("/ftp");
+	fm->print_directory("/ftp/gideon@1541ultimate.net:password");
+
+	fm->fopen("/ftp/gideon@1541ultimate.net:password/aapje.txt", FA_READ, &dummyFile);
+	fm->fopen("/ftp/gideon@1541ultimate.net:password/some_dir/aapje.txt", FA_READ, &dummyFile);
+	fm->fopen("/ftp/gideon@1541ultimate.net:password/some_dir/deeper/aapje.txt", FA_READ, &dummyFile);
 
 	fm->print_directory("/img");
 	fm->print_directory("/img/iso");
@@ -41,6 +45,17 @@ int main()
 	fm->print_directory("/img/Stuff/FLOWERPO.D64/*");
 	fm->print_directory("/img/Stuff/bestaat_niet");
 
+	FRESULT fres;
+	fres = fm->rename("/img/Stuff/FLIP2.T64", "/img/Stuff/FLIP3.T64");
+	printf("Rename1: %s\n", FileSystem :: get_error_string(fres));
+	fres = fm->rename("/img/Stuff/FLIP3.T64", "/img/Stuff/../iso/FLIP3.T64");
+	printf("Rename2: %s\n", FileSystem :: get_error_string(fres));
+	fres = fm->rename("/img/iso/FLIP3.T64",   "/img/canon.fat/FLIP3.T64"); // not possible
+	printf("Rename3: %s\n", FileSystem :: get_error_string(fres));
+	fres = fm->rename("/img/iso/FLIP3.T64",   "/img/Stuff/FLIP2.T64");
+	printf("Rename4: %s\n", FileSystem :: get_error_string(fres));
+	fres = fm->rename("/img/Stuff/FLIP2.T64", "/img/Stuff/FLIX.T64"); // already exists
+	printf("Rename5: %s\n", FileSystem :: get_error_string(fres));
 
 	File *f;
 	uint8_t *buffer = new uint8_t[192 * 1024];
@@ -48,8 +63,11 @@ int main()
 
 	//	fm->fopen("/img/Stuff/FLOWERPO.D64/", "FLOWERPOWER", FA_READ, &f);
 	// FRESULT fres = fm->fopen("/img/canon.fat/REU/BETACOPY.D64", "*", FA_READ, &f);
-	FRESULT fres = fm->fopen("/img/iso/d*/IND*", FA_READ, &f);
+//	FRESULT fres = fm->fopen("/img/iso/d*/IND*", FA_READ, &f);
 //	FRESULT fres = fm->fopen("/img/testdir", "test.9?4", FA_READ, &f);
+
+	fres = fm->fopen("/img/Stuff/10*.T64/*", FA_READ, &f);
+
 	if (fres == FR_OK) {
 		fres = f->read(buffer, 192 * 1024, &trans);
 		puts(FileSystem :: get_error_string(fres));

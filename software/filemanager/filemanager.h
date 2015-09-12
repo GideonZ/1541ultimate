@@ -96,6 +96,7 @@ class FileManager
 
 	FRESULT find_pathentry(PathInfo &pathInfo, bool enter_mount);
 	FRESULT fopen_impl(PathInfo &pathInfo, uint8_t flags, File **);
+	FRESULT rename_impl(PathInfo &from, PathInfo &to);
 
 //	friend class FileDirEntry;
 
@@ -148,7 +149,7 @@ public:
     void remove_root_entry(CachedTreeNode *obj);
 
     MountPoint *add_mount_point(File *, FileSystemInFile *);
-    MountPoint *find_mount_point(FileInfo *info, FileInfo *parent, const char *filepath);
+    MountPoint *find_mount_point(FileInfo *info, FileInfo *parent, const char *dirpath, const char *filepath);
 
     // Functions to use / handle path objects:
     Path *get_new_path(const char *owner) {
@@ -175,6 +176,9 @@ public:
 
     void 	fclose(File *f);
     FRESULT fcopy(const char *path, const char *filename, const char *dest);
+
+    FRESULT rename(Path *path, const char *old_name, const char *new_name);
+    FRESULT rename(const char *old_name, const char *new_name);
 
     FRESULT delete_file(Path *path, const char *name);
     FRESULT delete_file(const char *pathname);

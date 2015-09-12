@@ -288,6 +288,7 @@ FRESULT FileManager :: find_pathentry(PathInfo &pathInfo, bool open_mount)
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
 	MountPoint *mp;
 	mstring pathFromFSRoot;
+	mstring dirFromFSRoot;
 
 	FRESULT fres = FR_OK;
 	while(!ready) {
@@ -305,7 +306,9 @@ FRESULT FileManager :: find_pathentry(PathInfo &pathInfo, bool open_mount)
 			fres = FR_OK;
 			// we end on a file, and we're requested to force open it
 			if (open_mount && !(pathInfo.last->attrib & AM_DIR)) {
-				mp = find_mount_point(pathInfo.last, pathInfo.previous, pathInfo.getPathFromLastFS(pathFromFSRoot));
+				mp = find_mount_point(pathInfo.last, pathInfo.previous,
+						pathInfo.getDirectoryFromLastFS(dirFromFSRoot),
+						pathInfo.getPathFromLastFS(pathFromFSRoot));
 				if(mp) {
 					fs = mp->get_embedded()->getFileSystem();
 					pathInfo.enterFileSystem(fs);
@@ -315,7 +318,9 @@ FRESULT FileManager :: find_pathentry(PathInfo &pathInfo, bool open_mount)
 			}
 			break;
 		case e_TerminatedOnFile:
-			mp = find_mount_point(pathInfo.last, pathInfo.previous, pathInfo.getPathFromLastFS(pathFromFSRoot));
+			mp = find_mount_point(pathInfo.last, pathInfo.previous,
+					pathInfo.getDirectoryFromLastFS(dirFromFSRoot),
+					pathInfo.getPathFromLastFS(pathFromFSRoot));
 			if(mp) {
 				fs = mp->get_embedded()->getFileSystem();
 				pathInfo.enterFileSystem(fs);
@@ -356,10 +361,13 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 
 	Directory *dir;
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
+
+	mstring workpath;
+
 	if (create) {
-		fres = fs->dir_open(NULL, &dir, pathInfo.getLastInfo());
+		fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getLastInfo());
 	} else {
-		fres = fs->dir_open(NULL, &dir, pathInfo.getParentInfo());
+		fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getParentInfo());
 	}
 	if (fres != FR_OK)
 		return fres;
@@ -438,7 +446,7 @@ MountPoint *FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
 	return mp;
 }
 
-MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent, const char *filepath)
+MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent, const char *dirpath, const char *filepath)
 {
 	// printf("FileManager :: find_mount_point: '%s' (parent: %s)\n", info->lfname, parent->lfname);
 	lock();
@@ -458,7 +466,7 @@ MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent, co
 	MountPoint *mp = 0;
 
 	Directory *dir;
-	FRESULT frd = info->fs->dir_open(NULL, &dir, parent);
+	FRESULT frd = info->fs->dir_open(dirpath, &dir, parent);
 	if (frd != FR_OK) {
 		unlock();
 		return 0;
@@ -489,11 +497,10 @@ FRESULT FileManager :: delete_file(const char *pathname)
 	}
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
 	mstring work;
-	pathInfo.getPathFromLastFS(work);
-	fres = fs->file_delete(work.c_str());
+	fres = fs->file_delete(pathInfo.getPathFromLastFS(work));
 	if (fres == FR_OK) {
 		pathInfo.workPath.getHead(work);
-		sendEventToObservers(eNodeRemoved, "/", pathInfo.getFileName());
+		sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index-1, work), pathInfo.getFileName());
 	}
 // LOCK & UNLOCK
 	return fres;
@@ -509,16 +516,58 @@ FRESULT FileManager :: delete_file(Path *path, const char *name)
 	}
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
 	mstring work;
-	pathInfo.getPathFromLastFS(work);
-	fres = fs->file_delete(work.c_str());
+	fres = fs->file_delete(pathInfo.getPathFromLastFS(work));
 	if (fres == FR_OK) {
 		pathInfo.workPath.getHead(work);
-		sendEventToObservers(eNodeRemoved, "/", pathInfo.getFileName());
+		sendEventToObservers(eNodeRemoved, pathInfo.workPath.getSub(0, pathInfo.index-1, work), pathInfo.getFileName());
 	}
 // LOCK & UNLOCK
 	return fres;
 }
 
+FRESULT FileManager :: rename(Path *path, const char *old_name, const char *new_name)
+{
+	PathInfo pathInfoFrom(rootfs);
+	pathInfoFrom.init(path, old_name);
+	PathInfo pathInfoTo(rootfs);
+	pathInfoTo.init(path, new_name);
+	return rename_impl(pathInfoFrom, pathInfoTo);
+}
+
+FRESULT FileManager :: rename(const char *old_name, const char *new_name)
+{
+	PathInfo pathInfoFrom(rootfs);
+	pathInfoFrom.init(old_name);
+	PathInfo pathInfoTo(rootfs);
+	pathInfoTo.init(new_name);
+	return rename_impl(pathInfoFrom, pathInfoTo);
+}
+
+FRESULT FileManager :: rename_impl(PathInfo &from, PathInfo &to)
+{
+	FRESULT fres = find_pathentry(from, false);
+	if (fres != FR_OK)
+		return fres;
+
+	// source file was found
+	fres = find_pathentry(to, false);
+	if (fres == FR_NO_PATH)
+		return fres;
+
+	if (fres == FR_NO_FILE) { // we MAY be able to do this..
+		if (to.getLastInfo()->fs != from.getLastInfo()->fs) {
+			printf("Trying to move a file from one file system to another.\n");
+			return FR_INVALID_DRIVE;
+		}
+		mstring work1, work2;
+		return from.getLastInfo()->fs->file_rename(
+					from.getPathFromLastFS(work1),
+					to.getPathFromLastFS(work2));
+	}
+	if (fres == FR_OK)
+		return FR_EXIST;
+	return fres;
+}
 
 FRESULT FileManager :: create_dir(const char *pathname)
 {

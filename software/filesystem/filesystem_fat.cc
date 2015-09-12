@@ -67,6 +67,8 @@ FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInf
 {
 	*dirout = 0;
 
+//	printf("FAT Open DIR: %s\n", path);
+
 	DIR *dp = new DIR;
 	FRESULT res;
 	if (inf) {

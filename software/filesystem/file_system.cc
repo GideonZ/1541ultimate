@@ -87,9 +87,10 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 	FileInfo info(32);
 	Directory *dir;
 	FileInfo *ninf;
+	mstring workdir;
 
 	while(pathInfo.hasMore()) {
-		fres = dir_open(NULL, &dir, pathInfo.getLastInfo());
+		fres = dir_open(pathInfo.getPathFromLastFS(workdir), &dir, pathInfo.getLastInfo());
 		if (fres == FR_OK) {
 			while(1) {
 				fres = dir_read(dir, &info);
