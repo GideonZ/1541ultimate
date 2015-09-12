@@ -26,12 +26,12 @@ public:
     FRESULT get_free (uint32_t*);        // Get number of free sectors on the file system
 
     // functions for reading directories
-    Directory *dir_open(FileInfo *); // Opens directory (creates dir object, NULL = root)
-    void dir_close(Directory *d);    // Closes (and destructs dir object)
+    FRESULT dir_open(const char *path, Directory **, FileInfo *inf = 0); // Opens directory (creates dir object, NULL = root)
+    void    dir_close(Directory *d);    // Closes (and destructs dir object)
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
 
     // functions for reading and writing files
-    File   *file_open(FileInfo *, uint8_t flags);  // Opens file (creates file object)
+    FRESULT file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
     FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);

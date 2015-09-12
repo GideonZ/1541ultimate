@@ -6,7 +6,7 @@
  */
 
 #include "embedded_d64.h"
-#include "d64_filesystem.h"
+#include "filesystem_d64.h"
 
 // tester instance
 FactoryRegistrator<FileInfo *, FileSystemInFile *>

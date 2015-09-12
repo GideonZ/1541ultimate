@@ -9,7 +9,7 @@
 #define FILESYSTEM_EMBEDDED_T64_H_
 
 #include "embedded_fs.h"
-#include "t64_filesystem.h"
+#include "filesystem_t64.h"
 
 class FileSystemInFile_T64: public FileSystemInFile {
 	FileSystemT64 *fs;

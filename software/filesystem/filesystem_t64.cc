@@ -5,7 +5,8 @@
  *      Author: Gideon
  */
 
-#include "t64_filesystem.h"
+#include "filesystem_t64.h"
+#include "pattern.h"
 
 /*************************************************************/
 /* T64 File System implementation                            */
@@ -34,16 +35,28 @@ FRESULT FileSystemT64 :: sync(void)
     return t64_file->sync();
 }
 
-// Opens directory (creates dir object, NULL = root)
-Directory *FileSystemT64 :: dir_open(FileInfo *info)
+FRESULT FileSystemT64 :: dir_open(const char *path, Directory **dir, FileInfo *inf) // Opens directory (creates dir object, NULL = root)
 {
-//    if(info) { // can only get root directory, T64 does not allow sub directories
-//        return NULL;
-//    }
-    Directory *dir = new Directory(this, 0); // use handle as index in dir. reset to 0
-    return dir;
-}
+	// Block anything invalid
+	if (inf) {
+		if (inf->cluster != 0) {
+			return FR_NO_PATH;
+		}
+	} else { // no info
+		if (strlen(path) > 0) {
+			if ((path[0] != '/') && (path[0] != '\\')) {
+				return FR_NO_PATH;
+			} else {
+				if (strlen(path) > 1) {
+					return FR_NO_PATH;
+				}
+			}
+		}
+	}
 
+	*dir = new Directory(this, 0); // use handle as index in dir. reset to 0
+    return FR_OK;
+}
 
 // Closes (and destructs dir object)
 void FileSystemT64 :: dir_close(Directory *d)
@@ -158,17 +171,34 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 
 // functions for reading and writing files
 // Opens file (creates file object)
-File   *FileSystemT64 :: file_open(FileInfo *info, uint8_t flags)
+FRESULT FileSystemT64 :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)  // Opens file (creates file object)
 {
+	FileInfo info(24);
+	do {
+		FRESULT fres = dir_read(dir, &info);
+		if (fres != FR_OK) {
+			dir_close(dir);
+			return FR_NO_FILE;
+		}
+		if (info.attrib & AM_VOL)
+			continue;
+		if (pattern_match(filename, info.lfname)) {
+			break;
+		}
+	} while(1);
+
+	dir_close(dir);
+
 	FileInT64 *ff = new FileInT64(this);
-	File *f = new File(this, ff);
-	FRESULT res = ff->open(info, flags);
+	*file = new File(this, ff);
+
+	FRESULT res = ff->open(&info, flags);
 	if(res == FR_OK) {
-		return f;
+		return res;
 	}
 	delete ff;
-	delete f;
-	return NULL;
+	delete *file;
+	return res;
 }
 
 // Closes file (and destructs file object)

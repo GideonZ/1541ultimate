@@ -139,6 +139,8 @@ FRESULT FileSystem :: dir_open(const char *path, Directory **, FileInfo *inf)
 
 void FileSystem :: dir_close(Directory *d)
 {
+	if (d)
+		delete d;
 }
 
 FRESULT FileSystem :: dir_read(Directory *d, FileInfo *f)

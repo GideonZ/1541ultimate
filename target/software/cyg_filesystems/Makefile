@@ -63,11 +63,11 @@ SRCS_CC	 =  mystring.cc \
 			diskio.cc \
 			directory.cc \
 			file.cc \
-			iso9660.cc \
             filesystem_root.cc \
-			fat_filesystem.cc \
-			d64_filesystem.cc \
-			t64_filesystem.cc \
+			filesystem_fat.cc \
+			filesystem_d64.cc \
+			filesystem_t64.cc \
+			filesystem_iso9660.cc \
 			size_str.cc \
 			test.cc
 

@@ -9,7 +9,7 @@
 #define FILESYSTEM_EMBEDDED_ISO_H_
 
 #include "embedded_fs.h"
-#include "iso9660.h"
+#include "filesystem_iso9660.h"
 #include "blockdev_file.h"
 #include "partition.h"
 

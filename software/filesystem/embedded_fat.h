@@ -9,7 +9,7 @@
 #define FILESYSTEM_EMBEDDED_FAT_H_
 
 #include "embedded_fs.h"
-#include "fat_filesystem.h"
+#include "filesystem_fat.h"
 #include "blockdev_file.h"
 #include "partition.h"
 

@@ -10,6 +10,8 @@
 #include "blockdev_emul.h"
 #include "file_device.h"
 #include "dump_hex.h"
+#include "node_directfs.h"
+#include "filesystem_dummy.h"
 
 int main()
 {
@@ -17,9 +19,16 @@ int main()
 	BlockDevice *blk = new BlockDevice_Emulated("image/black_stick.img", 512);
 	FileDevice *dev = new FileDevice(blk, (char *)"img", (char *)"Image");
 	dev->attach_disk(512);
+	FileSystem *dummy_fs = new FileSystemDummy();
+	Node_DirectFS *dummy = new Node_DirectFS(dummy_fs, "dummy");
 	fm->add_root_entry(dev);
+	fm->add_root_entry(dummy);
+
 
 	fm->print_directory("/");
+	fm->print_directory("/dummy");
+	fm->print_directory("/dummy/gideon@1541ultimate.net:password/aapje.txt");
+
 	fm->print_directory("/img");
 	fm->print_directory("/img/iso");
 	fm->print_directory("/img/iso/d*");
@@ -93,6 +102,7 @@ int main()
 	fres = fm->delete_file(testdir2);
 	printf("Deleting %s: %s\n", testdir2, FileSystem :: get_error_string(fres));
 
+	fm->remove_root_entry(dummy);
 	fm->remove_root_entry(dev);
 	delete buffer;
 	delete dev;

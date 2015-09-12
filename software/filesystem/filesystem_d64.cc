@@ -5,7 +5,7 @@
  *      Author: Gideon
  */
 
-#include "d64_filesystem.h"
+#include "filesystem_d64.h"
 #include "pattern.h"
 
 /*********************************************************************/
