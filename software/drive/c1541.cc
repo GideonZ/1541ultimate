@@ -504,7 +504,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	uint8_t flags = 0;
 	File *newFile = 0;
 	FRESULT res;
-	FileInfo info;
+	FileInfo info(32);
 
 	switch(cmd->functionID) {
 	case D64FILE_MOUNT_UL:
@@ -517,7 +517,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	case G64FILE_MOUNT:
 	case MENU_1541_MOUNT:
 	case MENU_1541_MOUNT_GCR:
-		fm->fstat(info, cmd->path.c_str(), cmd->filename.c_str());
+		fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
         break;
 	default:
 		break;

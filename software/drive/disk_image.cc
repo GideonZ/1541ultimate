@@ -915,7 +915,8 @@ int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
 void BinImage :: get_sensible_name(char *buffer)
 {
     buffer[0] = 0;
-    Directory *r = fs->dir_open(NULL);
+    Directory *r;
+    fs->dir_open(NULL, &r);
     char *n;
     FileInfo fi(32);    
     r->get_entry(fi); // title

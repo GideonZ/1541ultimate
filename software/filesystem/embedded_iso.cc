@@ -30,7 +30,7 @@ FileSystemInFile_ISO :: ~FileSystemInFile_ISO() {
 
 void FileSystemInFile_ISO :: init(File *f)
 {
-	printf("Creating ISO file system in File: %s.\n", f->get_name());
+	printf("Creating ISO file system in File: %s.\n", f->get_path());
 
     blk = new BlockDevice_File(f, 2048);
     if(blk->status()) {

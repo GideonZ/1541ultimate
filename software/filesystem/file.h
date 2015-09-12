@@ -19,7 +19,6 @@
 
 class File
 {
-	//FileInfo *info; // refers to a structure with file information, when set to null, this file is invalidated
 	FileSystem *filesystem;
 	mstring pathString;
 
@@ -30,53 +29,32 @@ public:
     void *handle;   // could be a pointer to an object used in the derived class
 
     File(FileSystem *fs, void *h) {
-/*
-#if COPY_INFO
-    	info = new FileInfo(*n); // copy data!
-#else
-    	info = n; // no copy
-#endif
-*/
     	filesystem = fs;
     	handle = h;
     }
 
     virtual ~File() {
-/*
-#if COPY_INFO
-    	if(info) {
-    		delete info;
-    	}
-#endif
-*/
     }
 
     // functions for reading and writing files
     void invalidate(void) {
-/*
-#if COPY_INFO
-    	if(info) {
-    		delete info;
-    	}
-#endif
-		info = NULL;
-*/
     	filesystem = NULL;
     }
+
     bool isValid(void) { return (filesystem != NULL); }
-//    FileInfo *getFileInfo() { return filesystem; }
-    void set_path(const char *n) {
-    	pathString = n;
-    }
+
     const char *get_path() {
     	return pathString.c_str();
+    }
+    mstring &get_path_reference() {
+    	return pathString;
     }
 
     virtual FRESULT sync(void);
     virtual FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     virtual FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);
     virtual FRESULT seek(uint32_t pos);
-    virtual void print_info() { filesystem->file_print_info(this); }
+//    virtual void print_info() { filesystem->file_print_info(this); }
     virtual uint32_t get_size(void)
     {
     	if(!filesystem)
@@ -85,7 +63,6 @@ public:
     }
     FileSystem *get_file_system() { return filesystem; }
     uint32_t 	get_inode() { return filesystem->get_inode(this); }
-    const char *get_name() { return "get_name"; } // TODO: Not yet implemented
 };
 
 #endif

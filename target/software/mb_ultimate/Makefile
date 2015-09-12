@@ -19,6 +19,7 @@ SRCS_C   =	mbstart_rtos.c \
             sock_echo.c \
             ff2.c \
             ccsbcs.c \
+            ffsyscall.c \
             time.c
 
 SRCS_CC	 =  small_printf.cc \
@@ -38,6 +39,7 @@ SRCS_CC	 =  small_printf.cc \
 			embedded_d64.cc \
 			embedded_t64.cc \
 			embedded_iso.cc \
+			embedded_fat.cc \
 			rtc.cc \
 			usb_base.cc \
 			usb2.cc \
@@ -63,10 +65,11 @@ SRCS_CC	 =  small_printf.cc \
 			diskio.cc \
 			directory.cc \
 			file.cc \
-			iso9660.cc \
+			filesystem_iso9660.cc \
             filesystem_root.cc \
-			d64_filesystem.cc \
-			t64_filesystem.cc \
+			filesystem_d64.cc \
+			filesystem_t64.cc \
+			filesystem_fat.cc \
 			sd_card.cc \
 			sdio.cc \
 			sdcard_manager.cc \

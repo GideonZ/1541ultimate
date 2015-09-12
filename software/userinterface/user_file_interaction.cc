@@ -63,51 +63,46 @@ int UserFileInteraction :: S_rename(SubsysCommand *cmd)
 	char buffer[64];
 	FRESULT fres;
 
-	FileInfo info;
 	FileManager *fm = FileManager :: getFileManager();
-	if (! fm->fstat(info, cmd->path.c_str(), cmd->filename.c_str())) {
-		printf("Cannot find file %s in %s.\n", cmd->filename.c_str(), cmd->path.c_str());
-		return -5;
-	}
-	strncpy(buffer, info.lfname, 38);
+
+	Path *p = fm->get_new_path("S_rename");
+	p->cd(cmd->path.c_str());
+
+	strncpy(buffer, cmd->filename.c_str(), 38);
     buffer[38] = 0;
 
     res = cmd->user_interface->string_box("Give a new name..", buffer, 38);
     if(res > 0) {
-    	fres = info.fs->file_rename(cmd->filename.c_str(), buffer);
+    	fres = fm->rename(p, cmd->filename.c_str(), buffer);
 		if(fres != FR_OK) {
 			sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
 			cmd->user_interface->popup(buffer, BUTTON_OK);
-		} else { // FIXME: rename should move to filemanager, we should not be calling file system functions here directly!
-			fm->sendEventToObservers(eNodeUpdated, cmd->path.c_str(), cmd->filename.c_str());
 		}
     }
+    fm->release_path(p);
     return 0;
 }
 
 int UserFileInteraction :: S_delete(SubsysCommand *cmd)
 {
 	char buffer[64];
-	FileInfo info;
 	FileManager *fm = FileManager :: getFileManager();
-	if (! fm->fstat(info, cmd->path.c_str(), cmd->filename.c_str())) {
-		printf("Cannot find file %s in %s.\n", cmd->filename.c_str(), cmd->path.c_str());
-		return -5;
-	}
     int res = cmd->user_interface->popup("Are you sure?", BUTTON_YES | BUTTON_NO);
-	if(res == BUTTON_YES) {
-		FRESULT fres = FileManager :: getFileManager() -> delete_file_by_info(&info);
+    Path *p = fm->get_new_path("S_delete");
+    p->cd(cmd->path.c_str());
+    if(res == BUTTON_YES) {
+		FRESULT fres = FileManager :: getFileManager() -> delete_file(p, cmd->filename.c_str());
 		if (fres != FR_OK) {
 			sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
 			cmd->user_interface->popup(buffer, BUTTON_OK);
 		}
 	}
+    fm->release_path(p);
 	return 0;
 }
 
 int UserFileInteraction :: S_view(SubsysCommand *cmd)
 {
-	FileInfo info;
 	FileManager *fm = FileManager :: getFileManager();
 	File *f = 0;
 	FRESULT fres = fm -> fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
@@ -191,11 +186,12 @@ int UserFileInteraction :: S_createDir(SubsysCommand *cmd)
 
 	int res = cmd->user_interface->string_box("Give name for new directory..", buffer, 22);
 	if(res > 0) {
-		FRESULT fres = fm->create_dir_in_path(path, buffer);
+		FRESULT fres = fm->create_dir(path, buffer);
 		if(fres != FR_OK) {
 			sprintf(buffer, "Error: %s", FileSystem :: get_error_string(fres));
 			cmd->user_interface->popup(buffer, BUTTON_OK);
 		}
 	}
+	fm->release_path(path);
 	return 0;
 }

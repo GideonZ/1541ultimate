@@ -171,9 +171,9 @@ int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
             inf = NULL;
         }
     }
-    FileInfo localInfo;
+    FileInfo localInfo(32);
     if(!inf) {
-    	if(FileManager :: getFileManager() -> fstat(localInfo, ((Path *)fs->path)->get_path(), name))
+    	if((FileManager :: getFileManager() -> fstat((Path *)fs->path, name, localInfo)) == FR_OK)
     		inf = &localInfo;
     }
     if(!inf)

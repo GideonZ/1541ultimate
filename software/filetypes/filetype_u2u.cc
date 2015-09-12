@@ -95,8 +95,8 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
     uint8_t *dest;
 
     FileManager *fm = FileManager :: getFileManager();
-    FileInfo inf;
-    fm->fstat(inf, cmd->path.c_str(), cmd->filename.c_str());
+    FileInfo inf(32);
+    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), inf);
     sectors = (inf.size >> 9);
 	if(sectors >= 128)
 		progress = true;

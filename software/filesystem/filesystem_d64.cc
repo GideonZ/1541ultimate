@@ -376,6 +376,14 @@ FRESULT FileSystemD64::file_seek(File *f, uint32_t pos)
     return ff->seek(pos);
 }
 
+/*
+void FileSystemD64 :: collect_file_info(File *f, FileInfo *inf)
+{
+    FileInD64 *ff = (FileInD64 *)f->handle;
+    ff->collect_info(inf);
+}
+*/
+
 /*********************************************************************/
 /* D64/D71/D81 File System implementation                            */
 /*********************************************************************/
@@ -495,7 +503,8 @@ FRESULT DirInD64 :: read(FileInfo *f)
 
 FileInD64 :: FileInD64(FileSystemD64 *f)
 {
-    current_track = 0;
+	start_cluster = 0;
+	current_track = 0;
     current_sector = 0;
     offset_in_sector = 0;
     num_blocks = 0;
@@ -509,6 +518,8 @@ FRESULT FileInD64 :: open(FileInfo *info, uint8_t flags)
 {
 	if(info->fs != fs)
 		return FR_INVALID_OBJECT;
+
+	start_cluster = info->cluster;
 
 	if(!(fs->get_track_sector(info->cluster, current_track, current_sector)))
 		return FR_INT_ERR;
@@ -697,5 +708,33 @@ FRESULT  FileInD64 :: write(void *buffer, uint32_t len, uint32_t *transferred)
 
 FRESULT FileInD64 :: seek(uint32_t pos)
 {
-	return FR_DENIED;
+	fs->sync();
+	fs->get_track_sector(start_cluster, current_track, current_sector);
+
+	while (pos >= 254) {
+		FRESULT res = visit();
+		if (res != FR_OK)
+			return res;
+
+		res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
+        if(res != FR_OK)
+            return res;
+
+        current_track = fs->sect_buffer[0];
+        current_sector = fs->sect_buffer[1];
+        pos -= 254;
+	}
+	offset_in_sector = pos + 2;
+	return FR_OK;
 }
+
+/*
+void FileInD64 :: collect_info(FileInfo *inf)
+{
+	inf->cluster = start_cluster;
+	inf->date = 0;
+	inf->time = 0;
+	inf->fs = this->fs;
+	inf->size = 254 * this->num_blocks;
+}
+*/

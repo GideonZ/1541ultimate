@@ -129,7 +129,7 @@ public:
     	printf("\nOpen files:\n");
     	for(int i=0;i<open_file_list.get_elements();i++) {
     		File *f = open_file_list[i];
-    		printf("'%s' (%d)\n", f->get_name(), f->get_size());
+    		printf("'%s' (%d)\n", f->get_path(), f->get_size());
     	}
     	printf("\nUsed paths:\n");
     	for(int i=0;i<used_paths.get_elements();i++) {
@@ -169,9 +169,11 @@ public:
     void  get_display_string(Path *p, const char *filename, char *buffer, int width);
 
     FRESULT fstat(Path *path, const char *filename, FileInfo &info);
+    FRESULT fstat(const char *path, const char *name, FileInfo &info);
     FRESULT fstat(const char *pathname, FileInfo &info);
 
     FRESULT fopen(Path *path, const char *filename, uint8_t flags, File **);
+    FRESULT fopen(const char *path, const char *filename, uint8_t flags, File **);
     FRESULT fopen(const char *pathname, uint8_t flags, File **);
 
     void 	fclose(File *f);

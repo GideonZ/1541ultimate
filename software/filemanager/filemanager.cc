@@ -68,7 +68,7 @@ void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 		} else if(!(f->isValid())) { // already invalidated.
 			continue;
 		}
-		printf("%2d. %p:%s\n", i, f, f->get_name());
+		printf("%2d. %p:%s\n", i, f, f->get_path());
 		if (strncmp(f->get_path(), pathStringC, len) == 0) {
 			printf("Match!\n");
 			f->invalidate();
@@ -258,6 +258,19 @@ FRESULT FileManager :: fopen(Path *path, const char *filename, uint8_t flags, Fi
 	return res;
 }
 
+FRESULT FileManager :: fopen(const char *path, const char *filename, uint8_t flags, File **file)
+{
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(path, filename);
+
+	lock();
+	// now do the actual thing
+	FRESULT res = fopen_impl(pathInfo, flags, file);
+
+	unlock();
+	return res;
+}
+
 FRESULT FileManager :: fopen(const char *pathname, uint8_t flags, File **file)
 {
 	PathInfo pathInfo(rootfs);
@@ -379,10 +392,26 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 	}
 
 	// TODO: sendEventToObservers(eNodeAdded, path->get_path(), filename);
-	return fs->file_open(pathInfo.getPathFromLastFS(workPathFromFSRoot), dir, filename, flags, file);
+	fres = fs->file_open(pathInfo.getPathFromLastFS(workPathFromFSRoot), dir, filename, flags, file);
+	if (fres == FR_OK) {
+//		fs->collect_file_info(*file, (*file)->getFileInfo());
+		pathInfo.workPath.getTail(0, (*file)->get_path_reference());
+	}
 }
 
 FRESULT FileManager :: fstat(Path *path, const char *filename, FileInfo &info)
+{
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(path, filename);
+	FRESULT fres = find_pathentry(pathInfo, false);
+	if (fres != FR_OK) {
+		return fres;
+	}
+	info.copyfrom(pathInfo.getLastInfo());
+	return FR_OK;
+}
+
+FRESULT FileManager :: fstat(const char *path, const char *filename, FileInfo &info)
 {
 	PathInfo pathInfo(rootfs);
 	pathInfo.init(path, filename);

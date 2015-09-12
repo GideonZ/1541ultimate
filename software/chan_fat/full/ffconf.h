@@ -1,8 +1,10 @@
 /*---------------------------------------------------------------------------/
 /  FatFs - FAT file system module configuration file  R0.11 (C)ChaN, 2015
 /---------------------------------------------------------------------------*/
-//#include "FreeRTOS.h"
-//#include "semphr.h"
+#ifdef OS
+#include "FreeRTOS.h"
+#include "semphr.h"
+#endif
 
 #define _FFCONF 32020	/* Revision ID */
 

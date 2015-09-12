@@ -4,7 +4,7 @@
 #include "integer.h"
 #include "file_system.h"
 #include "blockdev_ram.h"
-#include "d64_filesystem.h"
+#include "filesystem_d64.h"
 #include "iomap.h"
 #include "userinterface.h"
 

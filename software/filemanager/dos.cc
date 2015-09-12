@@ -61,7 +61,7 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
     uint32_t pos, addr, len;
     uint32_t transferred = 0;
     FRESULT res = FR_OK;
-    FileInfo *fi;
+    FileInfo *ffi;
     mstring str;
     
     switch(command->message[1]) {
@@ -109,29 +109,58 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             break;
         case DOS_CMD_FILE_INFO:
             *reply  = &c_message_empty;
-            *status = &c_status_ok; 
-            if(!file) {
-                *status = &c_status_file_not_open;
+            if (!file) {
+            	*status = &c_status_file_not_open;
+            	break;
+            }
+            *status = &c_status_ok;
+            ffi = new FileInfo(32);
+            res = fm->fstat(file->get_path(), *ffi);
+            if(res != FR_OK) {
+                *status = &c_status_file_not_found;
+                delete ffi;
                 break;
-            } 
-            fi = file->getFileInfo();
-            if(!fi) {
-                *status = &c_status_no_information;
-                break;
-            }                    
-            dos_info.size   = cpu_to_32le(fi->size);
-        	dos_info.date   = cpu_to_16le(fi->date);
-        	dos_info.time   = cpu_to_16le(fi->time);
+            }
+            dos_info.size   = cpu_to_32le(ffi->size);
+        	dos_info.date   = cpu_to_16le(ffi->date);
+        	dos_info.time   = cpu_to_16le(ffi->time);
             dos_info.extension[0] = ' ';
             dos_info.extension[1] = ' ';
             dos_info.extension[2] = ' ';
-            strncpy(dos_info.extension, fi->extension, 3);
-        	dos_info.attrib = fi->attrib; 
-        	strncpy(dos_info.filename, fi->lfname, 63);
+            strncpy(dos_info.extension, ffi->extension, 3);
+        	dos_info.attrib = ffi->attrib;
+        	strncpy(dos_info.filename, ffi->lfname, 63);
             data_message.length = strlen(dos_info.filename) + 4 + 2 + 2 + 4;
             data_message.last_part = true;
             memcpy(data_message.message, &dos_info, data_message.length);
             *reply = &data_message;
+            delete ffi;
+            break;
+
+        case DOS_CMD_FILE_STAT:
+            *reply  = &c_message_empty;
+            *status = &c_status_ok; 
+            ffi = new FileInfo(32);
+            res = fm->fstat(path, (char *)&command->message[2], *ffi);
+            if(res != FR_OK) {
+                *status = &c_status_file_not_found;
+                delete ffi;
+                break;
+            } 
+            dos_info.size   = cpu_to_32le(ffi->size);
+        	dos_info.date   = cpu_to_16le(ffi->date);
+        	dos_info.time   = cpu_to_16le(ffi->time);
+            dos_info.extension[0] = ' ';
+            dos_info.extension[1] = ' ';
+            dos_info.extension[2] = ' ';
+            strncpy(dos_info.extension, ffi->extension, 3);
+        	dos_info.attrib = ffi->attrib;
+        	strncpy(dos_info.filename, ffi->lfname, 63);
+            data_message.length = strlen(dos_info.filename) + 4 + 2 + 2 + 4;
+            data_message.last_part = true;
+            memcpy(data_message.message, &dos_info, data_message.length);
+            *reply = &data_message;
+            delete ffi;
             break;
         case DOS_CMD_LOAD_REU:
             if(!file) {

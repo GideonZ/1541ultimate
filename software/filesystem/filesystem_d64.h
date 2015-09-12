@@ -50,6 +50,8 @@ public:
     FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
 
+//    void    collect_file_info(File *f, FileInfo *inf);
+
     friend class DirInD64;
     friend class FileInD64;
 };
@@ -71,7 +73,8 @@ public:
 
 class FileInD64
 {
-    int current_track;
+	int start_cluster;
+	int current_track;
     int current_sector;
     int offset_in_sector;
     int num_blocks;
@@ -91,6 +94,8 @@ public:
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
+
+//    void    collect_info(FileInfo *inf);
 };
 
 #endif /* FILESYSTEM_D64_FILESYSTEM_H_ */

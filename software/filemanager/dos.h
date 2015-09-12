@@ -14,6 +14,7 @@
 #define DOS_CMD_WRITE_DATA   0x05
 #define DOS_CMD_FILE_SEEK    0x06
 #define DOS_CMD_FILE_INFO    0x07
+#define DOS_CMD_FILE_STAT    0x08
 #define DOS_CMD_CHANGE_DIR   0x11
 #define DOS_CMD_GET_PATH     0x12
 #define DOS_CMD_OPEN_DIR     0x13

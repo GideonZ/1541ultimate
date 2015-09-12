@@ -55,8 +55,10 @@ public:
     virtual FRESULT file_seek(File *f, uint32_t pos);
     virtual FRESULT file_sync(File *f);             // Clean-up cached data
     virtual void    file_print_info(File *f) { } // debug
+
     virtual uint32_t get_file_size(File *f) { return 0; }
     virtual uint32_t get_inode(File *f) { return 0; }
+//    virtual void     collect_file_info(File *f, FileInfo *inf) { }
 };
 
 #include "factory.h"

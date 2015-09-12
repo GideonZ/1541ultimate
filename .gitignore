@@ -52,6 +52,7 @@ target/software/2nd_boot/python_out_nano
 target/software/2nd_boot/result
 target/software/checker/output
 target/software/checker/result
+target/software/cyg_filesystems/output
 target/software/lwip/output
 target/software/lwip/result
 target/software/mb_boot/output

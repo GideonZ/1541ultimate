@@ -259,11 +259,7 @@ int FileTypeSID :: prepare(bool use_default)
     offset += 2;
     start = le2cpu(start);
 
-	info = file->getFileInfo();
-	if(!info) {
-		return 5;
-	}
-	length = (info->size - offset) - 2;
+	length = (file->get_size() - offset) - 2;
 	end = start + length;
 	pus = (uint16_t *)&sid_header[0x7e];
 	*pus = cpu2le(end);

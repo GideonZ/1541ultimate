@@ -33,7 +33,7 @@ void FileSystemInFile_D64 :: init(File *f)
 {
 	this->file = f;
 
-	printf("Creating D64 file system in File: %s.\n", f->get_name());
+	printf("Creating D64 file system in File: %s.\n", f->get_path());
 
 	blk = new BlockDevice_File(file, 256);
 	if(blk)

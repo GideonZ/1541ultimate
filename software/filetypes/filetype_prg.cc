@@ -71,8 +71,10 @@ int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 	if (!c1541_A)
 		return count;
 
-	// if this file is inside of a D64, then there should be a mount point already of this D64.
-	MountPoint *mp = FileManager :: getFileManager() -> find_mount_point(node->getInfo(), node->getPath());
+	// if this file is inside of a D64, then there should be a mount point already of this D64,
+	// otherwise we would not even know that this PRG (that is part of a D64) exists, right?
+
+	MountPoint *mp = FileManager :: getFileManager() -> find_mount_point(((BrowsableDirEntry *)(node->getParent()))->getInfo(), 0, 0, 0);
 	if(mp) {
     	list.append(new Action("Mount & Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_RUN, mode));
     	count++;
@@ -145,19 +147,21 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
         if(check_header(file, cmd->mode)) {
 
             if (run_code & RUNCODE_MOUNT_BIT) {
-            	MountPoint *mp = fm -> find_mount_point(file->getFileInfo(), 0);
-            	if (mp) {
-					Path *d64_path = fm -> get_new_path("temp_prg");
-					d64_path->cd(cmd->path.c_str());
-					d64_path->cd("..");
-					const char *pathname = d64_path->get_path();
-					const char *filename = mp->get_file()->getFileInfo()->lfname;
-					printf("Mounting %s in %s to drive A\n", filename, pathname);
-					drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT, 0, pathname, filename);
-					drive_command->execute();
-					fm->release_path(d64_path);
-            	} else {
-            		printf("INTERR: Can't find mount point anymore?\n");
+            	printf("Runcode mount bit set. trying to find mount point '%s' resulted: ", cmd->path.c_str());
+            	FileInfo info(32);
+            	fres = fm->fstat(cmd->path.c_str(), info);
+            	printf("%s\n", FileSystem :: get_error_string(fres));
+
+            	if (fres == FR_OK) {
+                	MountPoint *mp = fm -> find_mount_point(&info, 0, 0, 0);
+                	if (mp) {
+    					printf("Mounting %s to drive A\n", mp->get_file()->get_path());
+
+    					drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT, 0, 0, mp->get_file()->get_path());
+    					drive_command->execute();
+                	} else {
+                		printf("INTERR: Can't find mount point anymore?\n");
+                	}
             	}
             }
             c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());

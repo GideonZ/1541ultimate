@@ -71,8 +71,8 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 	static char buffer[48];
     uint8_t *dest;
     FileManager *fm = FileManager :: getFileManager();
-    FileInfo info;
-    fm->fstat(info, cmd->path.c_str(), cmd->filename.c_str());
+    FileInfo info(32);
+    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
     if (cmd->functionID == REUFILE_PLAYMOD) {
         audio_configurator.clear_sampler_registers();

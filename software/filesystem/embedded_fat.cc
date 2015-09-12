@@ -30,7 +30,7 @@ FileSystemInFile_FAT :: ~FileSystemInFile_FAT() {
 
 void FileSystemInFile_FAT :: init(File *f)
 {
-	printf("Creating FAT file system in File: %s.\n", f->get_name());
+	printf("Creating FAT file system in File: %s.\n", f->get_path());
 
     blk = new BlockDevice_File(f, 512);
     if(blk->status()) {
