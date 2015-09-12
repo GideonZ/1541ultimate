@@ -136,25 +136,6 @@ FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 }
 
 
-/*
-// functions for reading and writing files
-FRESULT FileSystemFAT :: file_stat(const char *fn, FileInfo *inf)
-{
-	FILINFO fi;
-	fi.lfname = inf->lfname;
-	fi.lfsize = inf->lfsize;
-
-	printf("Going to do fstat on FAT: %s\n", fn);
-	FRESULT res = fs_stat(&fatfs, fn, &fi);
-
-	if(res != FR_OK)
-		return res;
-
-	copy_info(&fi, inf);
-	return FR_OK;
-}
-*/
-
 FRESULT FileSystemFAT :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)
 {
 //	printf("FAT Open file: %s (%s)\n", path, filename);

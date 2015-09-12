@@ -479,7 +479,9 @@ MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent, co
 		emb = Globals :: getEmbeddedFileSystemFactory() -> create(info);
 		if (emb) {
 			emb->init(file);
-			mp = add_mount_point(file, emb);
+			if (emb->getFileSystem()) {
+				mp = add_mount_point(file, emb);
+			}
 		}
 	}
 	unlock();

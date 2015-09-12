@@ -24,6 +24,10 @@ int main()
 	fm->add_root_entry(dev);
 	fm->add_root_entry(dummy);
 
+	dev->probe();
+	FileSystem *fat = dev->get_file_info()->fs;
+
+/*
 	File *dummyFile;
 	fm->print_directory("/");
 	fm->print_directory("/ftp");
@@ -32,6 +36,7 @@ int main()
 	fm->fopen("/ftp/gideon@1541ultimate.net:password/aapje.txt", FA_READ, &dummyFile);
 	fm->fopen("/ftp/gideon@1541ultimate.net:password/some_dir/aapje.txt", FA_READ, &dummyFile);
 	fm->fopen("/ftp/gideon@1541ultimate.net:password/some_dir/deeper/aapje.txt", FA_READ, &dummyFile);
+*/
 
 	fm->print_directory("/img");
 	fm->print_directory("/img/iso");

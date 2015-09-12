@@ -4,7 +4,9 @@
 /*------------------------------------------------------------------------*/
 
 
-#include <ff._h>
+#include "ff2.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #if _FS_REENTRANT
 /*------------------------------------------------------------------------*/
@@ -32,9 +34,15 @@ int ff_cre_syncobj (	/* !=0:Function succeeded, ==0:Could not create due to any 
 //	*sobj = OSMutexCreate(0, &err);		/* uC/OS-II */
 //	ret = (int)(err == OS_NO_ERR);
 
+#ifdef OS
 	*sobj = xSemaphoreCreateMutex();	/* FreeRTOS */
-	ret = (int)(*sobj != NULL);
-
+	ret = (*sobj != NULL) ? 1 : 0;
+#else
+	int *pint = malloc(4);
+	*pint = 0;
+	*sobj = pint;
+	ret = 1;
+#endif
 	return ret;
 }
 
@@ -61,9 +69,12 @@ int ff_del_syncobj (	/* !=0:Function succeeded, ==0:Could not delete due to any 
 //	OSMutexDel(sobj, OS_DEL_ALWAYS, &err);	/* uC/OS-II */
 //	ret = (int)(err == OS_NO_ERR);
 
+#ifdef OS
     vSemaphoreDelete(sobj);		/* FreeRTOS */
+#else
+    free(sobj);
+#endif
 	ret = 1;
-
 	return ret;
 }
 
@@ -89,7 +100,15 @@ int ff_req_grant (	/* 1:Got a grant to access the volume, 0:Could not get a gran
 //	OSMutexPend(sobj, _FS_TIMEOUT, &err));		/* uC/OS-II */
 //	ret = (int)(err == OS_NO_ERR);
 
+#ifdef OS
 	ret = (int)(xSemaphoreTake(sobj, _FS_TIMEOUT) == pdTRUE);	/* FreeRTOS */
+#else
+	if (*sobj > 0) { // this test only works in single threaded appl
+		printf("Fatal: sync object was not previously unlocked.\n");
+	}
+	*sobj = 1;
+#endif
+	ret = 1;
 
 	return ret;
 }
@@ -112,7 +131,14 @@ void ff_rel_grant (
 
 //	OSMutexPost(sobj);		/* uC/OS-II */
 
+#ifdef OS
 	xSemaphoreGive(sobj);	/* FreeRTOS */
+#else
+	if (*sobj == 0) { // this test only works in single threaded appl
+		printf("Fatal: sync object was not previously locked.\n");
+	}
+	*sobj = 0;
+#endif
 }
 
 #endif

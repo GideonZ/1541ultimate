@@ -231,6 +231,8 @@ TCHAR* f_gets (TCHAR* buff, int len, FIL* fp);						/* Get a string from the fil
 #endif
 
 FRESULT fs_init_volume(FATFS *fs, BYTE wmode);									/* Function that initializes the FATFS structure */
+FRESULT fs_deinit(FATFS *fs);													/* Function that removes system objects in use by the FATFS */
+
 FRESULT fs_open (FATFS *fs, const TCHAR* path, BYTE mode, FIL* fp);				/* Open or create a file */
 FRESULT fs_opendir (FATFS *fs, DIR* dp, const TCHAR* path);		    			/* Open a directory */
 FRESULT fs_mkdir (FATFS *fs, const TCHAR* path);								/* Create a sub directory */

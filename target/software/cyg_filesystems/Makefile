@@ -41,6 +41,7 @@ FINAL    =  $(RESULT)/$(PRJ).exe
 
 SRCS_C   =	ff2.c \
             ccsbcs.c \
+            ffsyscall.c \
             dump_hex.c
 
 SRCS_CC	 =  mystring.cc \

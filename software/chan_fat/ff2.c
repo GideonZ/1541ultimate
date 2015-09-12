@@ -18,7 +18,7 @@
 
 #include "ff2.h"		/* Declarations of FatFs API */
 #include "diskio.h"		/* Declarations of disk I/O functions */
-
+#include <stdio.h>
 
 /*--------------------------------------------------------------------------
 
@@ -690,6 +690,12 @@ FRESULT move_window (
 )
 {
 	FRESULT res = FR_OK;
+
+/*
+	if (*fs->sobj == 0) {
+		printf("FATAL FAT: Moving window unprotected! %d\n", sector);
+	}
+*/
 
 
 	if (sector != fs->winsect) {	/* Window offset changed? */
@@ -2012,6 +2018,12 @@ FRESULT follow_path (	/* FR_OK(0): successful, !=0: error code */
 	FRESULT res;
 	BYTE *dir, ns;
 
+/*
+	if (*dp->fs->sobj == 0) {
+		printf("FATAL FAT: Following a path unprotected!\n");
+	}
+*/
+
 
 #if _FS_RPATH
 	if (*path == '/' || *path == '\\') {	/* There is a heading separator */
@@ -2178,6 +2190,15 @@ FRESULT find_volume (	/* FR_OK(0): successful, !=0: any error occurred */
 	return fs_init_volume(fs, wmode);
 }
 
+FRESULT fs_deinit(FATFS *fs)
+{
+#if _FS_REENTRANT
+	if (!ff_del_syncobj(fs->sobj))
+		return FR_INT_ERR;
+#endif
+	return FR_OK;
+}
+
 FRESULT fs_init_volume(FATFS *fs, BYTE wmode)
 {
 	BYTE fmt, *pt;
@@ -2186,7 +2207,11 @@ FRESULT fs_init_volume(FATFS *fs, BYTE wmode)
 	DWORD bsect, fasize, tsect, sysect, nclst, szbfat, br[4];
 	WORD nrsv;
 
-	ENTER_FF(fs);						/* Lock the volume */
+#if _FS_REENTRANT						/* Create sync object for the new volume */
+	if (!ff_cre_syncobj(0, &fs->sobj)) return FR_INT_ERR;
+#endif
+
+//	ENTER_FF(fs);						/* Lock the volume */
 
 	if (fs->fs_type) {					/* If the volume has been mounted */
 		stat = disk_status(fs->drv);
