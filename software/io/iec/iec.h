@@ -98,7 +98,7 @@ public:
     void effectuate_settings(void); // from ConfigurableObject
     int get_last_error(char *); // writes string into buffer
 
-    void readDirectory(void);
+    FRESULT readDirectory(void);
     int findIecName(char *name, char *ext);
 
     friend class IecChannel;

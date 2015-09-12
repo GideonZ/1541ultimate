@@ -449,26 +449,22 @@ public:
     }
 
     bool cd(char *name) {
-    	int p = interface->findIecName(name, "DIR");
-    	if (p < 0) {
-    		if(!interface->path->cd(name)) {
-    			get_last_error(ERR_FILE_NOT_FOUND);
-    			return false;
-    		} else {
-    			return true;
-    		}
-    	}
-    	FileInfo *info = (*interface->dirlist)[p];
-    	if (!info->is_directory()) {
-        	get_last_error(ERR_FILE_TYPE_MISMATCH);
+    	int index = interface->findIecName(name, "");
+    	if (index < 0) {
+        	get_last_error(ERR_FILE_NOT_FOUND);
         	return false;
     	}
-
-    	if (!interface->path->cd(info->lfname)) {
-        	get_last_error(ERR_DIRECTORY_ERROR);
-        	return false;
+    	FileInfo *inf = (*(interface->dirlist))[index];
+    	interface->path->cd(inf->lfname);  // just try!
+    	FRESULT res = interface->readDirectory(); // just try!
+    	if (res == FR_OK) {
+        	get_last_error(ERR_OK);
+    		return true;
     	}
-    	return true;
+    	interface->path->cd(".."); // revert
+    	interface->readDirectory();
+    	get_last_error(ERR_DIRECTORY_ERROR);
+    	return false;
     }
 };
 

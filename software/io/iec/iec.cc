@@ -761,13 +761,14 @@ void IecInterface :: cleanupDir() {
 	iecNames->clear_list();
 }
 
-void IecInterface :: readDirectory()
+FRESULT IecInterface :: readDirectory()
 {
 	cleanupDir();
-	path->get_directory(*dirlist);
+	FRESULT res = path->get_directory(*dirlist);
 	for(int i=0;i<dirlist->get_elements();i++) {
 		iecNames->append(getIecName((*dirlist)[i]->lfname));
 	}
+	return res;
 }
 
 char *IecInterface :: getIecName(char *in)
@@ -794,7 +795,7 @@ char *IecInterface :: getIecName(char *in)
 int IecInterface :: findIecName(char *name, char *ext)
 {
 	for(int i=0;i<iecNames->get_elements();i++) {
-		if (pattern_match(name, (*iecNames)[i], true)) {
+		if (pattern_match(name, (*iecNames)[i], false)) {
 			return i;
 		}
 	}
