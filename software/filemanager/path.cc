@@ -94,12 +94,6 @@ int Path :: cd(const char *pa_in)
 	
 	strcpy(pa, pa_in);
     
-    // snoop last '/' (or '\')
-    if ((pa[pa_len-1] == '/')||(pa[pa_len-1] == '\\')) {
-        pa_len--;
-        pa[pa_len] = 0;
-    }
-
     // printf("CD '%s' (starting from %s)\n", pa, full_path.c_str());
 	
     // check for start from root
@@ -110,10 +104,25 @@ int Path :: cd(const char *pa_in)
         full_path = "/";
         cleanupElements();
     }
+
+    // nothing to be done anymore
     if(!pa_len) {
 		delete[] pa_alloc;
         return 1;
 	}
+
+    // snoop last '/' (or '\')
+    if ((pa[pa_len-1] == '/')||(pa[pa_len-1] == '\\')) {
+        pa_len--;
+        pa[pa_len] = 0;
+    }
+
+    // nothing to be done anymore
+    if(!pa_len) {
+		delete[] pa_alloc;
+        return 1;
+	}
+
     // split path string into separate parts
     last_part = pa;
     for(int i=0;i<pa_len;i++) {
@@ -155,6 +164,7 @@ const char *Path :: getElement(int a)
 	return (elements[a])->c_str();
 }
 
+/*
 void Path :: removeFirst()
 {
 	if(!depth)
@@ -169,6 +179,35 @@ void Path :: removeFirst()
 	depth--;
 
 	regenerateFullPath();
+}
+*/
+const char * Path :: getTail(int index, mstring &work)
+{
+	return getSub(index, depth, work);
+}
+
+const char * Path :: getSub(int start, int stop, mstring &work)
+{
+	work = "";
+	for(int i = start; i < stop; i++) {
+		work += "/";
+		work += (elements[i])->c_str();
+	}
+	if (work.length() == 0)
+		work = "/";
+	return work.c_str();
+}
+
+const char * Path :: getHead(mstring &work)
+{
+	work = "";
+	for(int i = 0; i < depth - 1; i++) {
+		work += "/";
+		work += (elements[i])->c_str();
+	}
+	if (work.length() == 0)
+		work = "/";
+	return work.c_str();
 }
 
 void Path :: regenerateFullPath()

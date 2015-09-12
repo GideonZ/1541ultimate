@@ -6,68 +6,85 @@
  */
 
 #include "filesystem_root.h"
+#include "filemanager.h"
 
 FileSystem_Root::FileSystem_Root(CachedTreeNode *node) : FileSystem(0) {
 	rootnode = node;
+	node->get_file_info()->fs = this;
 }
 
 FileSystem_Root::~FileSystem_Root() {
 
 }
 
-PathStatus_t FileSystem_Root::walk_path(Path *path, const char *fn, PathInfo& pathInfo)
+PathStatus_t FileSystem_Root::walk_path(PathInfo& pathInfo)
 {
 	// calling walk_path on the root of the file system will traverse through tree nodes.
 	// as soon as a file system is encountered, the function returns
-	printf("WalkPathRoot: '%s':'%s'\n", path->get_path(), fn);
+	//printf("WalkPathRoot: '%s'\n", path);
 	FRESULT fres;
 	CachedTreeNode *node = rootnode;
-	pathInfo.pathFromRootOfFileSystem.cd("/"); // reset path from Root
+
+	pathInfo.enterFileSystem(this);
 
 	// example1: /sd/somedir/somefile.d64/hello.prg
-	for(int i=0;i<path->getDepth();i++) {
-		node->probe();
-		CachedTreeNode *newnode = node->find_child(path->getElement(i));
-		if (!newnode)
+	while(pathInfo.hasMore()) {
+		node = node->find_child(pathInfo.workPath.getElement(pathInfo.index));
+		if (!node)
 			return e_DirNotFound;
 
-		// TODO: is this copy required?
-		FileInfo *info = newnode->get_file_info();
-		pathInfo.fileInfo.copyfrom(info);
+		pathInfo.replace(node->get_name());
+		node->probe();
 
+		// TODO: is this copy required?
+		FileInfo *info = node->get_file_info();
 		if (!info)
 			return e_DirNotFound;
 
-		pathInfo.remainingPath.removeFirst();
+		FileInfo *ninf = pathInfo.getNewInfoPointer();
+		ninf->copyfrom(info);
+		pathInfo.index ++;
 
 		if (info->fs) {
-			pathInfo.fileSystem = info->fs;
 			return e_TerminatedOnMount;
+		} else {
+			ninf->fs = this;
 		}
-
-		pathInfo.pathFromRootOfFileSystem.cd(path->getElement(i));
 	}
 	return e_EntryFound;
 }
 
 // functions for reading directories
-FRESULT FileSystem_Root :: dir_open(const char *path, Directory **)
+FRESULT FileSystem_Root :: dir_open(const char *path, Directory **dir, FileInfo *dummy)
 {
+	FileManager *fm = FileManager :: getFileManager();
+	Path *p = fm->get_new_path("root_temp");
+	p->cd(path);
+	CachedTreeNode *n = rootnode;
+	int elements = n->children.get_elements();
+	for(int i=0;i<p->getDepth();i++) {
+		n = n->find_child(p->getElement(i));
+		if (!n) {
+			fm->release_path(p);
+			return FR_NO_PATH;
+		}
+		elements = n->probe();
+	}
 
+	fm->release_path(p);
+	if (!elements) {
+		return FR_DENIED;
+	}
+	*dir = new DirectoryInRoot(this, n);
+	return FR_OK;
 }
 
 void    FileSystem_Root :: dir_close(Directory *d)
 {
-	// Closes (and destructs dir object)
+	delete d;
 }
 
 FRESULT FileSystem_Root :: dir_read(Directory *d, FileInfo *f)
 {
-	// reads next entry from dir
+	return d->get_entry(*f);
 }
-
-FRESULT FileSystem_Root :: dir_create(const char *path)
-{
-	// Creates a directory
-}
-

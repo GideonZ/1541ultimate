@@ -33,12 +33,11 @@ void FileSystemInFile_D64 :: init(File *f)
 {
 	this->file = f;
 
-	FileInfo *fi = f->getFileInfo();
-	printf("Creating D64 file system in File: %s.\n", fi->lfname);
+	printf("Creating D64 file system in File: %s.\n", f->get_name());
 
 	blk = new BlockDevice_File(file, 256);
 	if(blk)
-		prt = new Partition(blk, 0, (fi->size)>>8, 0);
+		prt = new Partition(blk, 0, f->get_size() >> 8, 0);
 	if(prt)
 		fs  = new FileSystemD64(prt);
 }

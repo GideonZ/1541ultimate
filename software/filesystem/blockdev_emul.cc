@@ -3,15 +3,18 @@
 #include <sys/stat.h>
 #include "blockdev_emul.h"
 
-BlockDevice_Emulated::BlockDevice_Emulated(char *name, int sec_size)
+BlockDevice_Emulated::BlockDevice_Emulated(const char *name, int sec_size)
 {
     sector_size = sec_size;
     struct stat file_status;
     if(!stat(name, &file_status)) {
         file_size = file_status.st_size;
         f = fopen(name, "rb+");
-        printf("Construct block device, opening file %s of size %ld (%p).\n", name, file_size, f);
+        set_state(e_device_ready);
+		printf("Construct block device, opening file %s of size %ld (%p).\n", name, file_size, f);
     } else {
+        set_state(e_device_no_media);
+		printf("Construct block device, fstat failed (file not found: %s)\n", name);
         f = NULL;
     }
 }
@@ -36,7 +39,7 @@ DSTATUS BlockDevice_Emulated::status(void)
         return STA_NODISK;
 }
     
-DRESULT BlockDevice_Emulated::read(uint8_t *buffer, uint32_t sector, uint8_t count)
+DRESULT BlockDevice_Emulated::read(uint8_t *buffer, uint32_t sector, int count)
 {
 //    printf("Device read sector %d.\n", sector);
 
@@ -51,7 +54,7 @@ DRESULT BlockDevice_Emulated::read(uint8_t *buffer, uint32_t sector, uint8_t cou
 }
 
 #if	_READONLY == 0
-DRESULT BlockDevice_Emulated::write(const uint8_t *buffer, uint32_t sector, uint8_t count)
+DRESULT BlockDevice_Emulated::write(const uint8_t *buffer, uint32_t sector, int count)
 {
 //    printf("Device write sector %d. ", sector);
 

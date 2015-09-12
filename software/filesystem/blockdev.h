@@ -21,9 +21,6 @@ typedef enum {
 
 class BlockDevice
 {
-//    FILE *f;
-//    int file_size;
-//    int sector_size;
 	t_device_state dev_state;
 public:
     BlockDevice();

@@ -17,13 +17,31 @@ public:
 	FileSystem_Root(CachedTreeNode *node);
 	virtual ~FileSystem_Root();
 
-	PathStatus_t walk_path(Path *path, const char *fn, PathInfo& pathInfo);
+	PathStatus_t walk_path(PathInfo& pathInfo);
 
     // functions for reading directories
-    FRESULT dir_open(const char *path, Directory **); // Opens directory (creates dir object, NULL = root)
+    FRESULT dir_open(const char *path, Directory **, FileInfo *); // Opens directory (creates dir object, NULL = root)
     void    dir_close(Directory *d);    // Closes (and destructs dir object)
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
-    FRESULT dir_create(const char *path);  // Creates a directory
+};
+
+class DirectoryInRoot : public Directory
+{
+	CachedTreeNode *node;
+	int index;
+public:
+	DirectoryInRoot(FileSystem *fs, CachedTreeNode *n) : Directory(fs, 0), node(n) {
+		index = 0;
+	}
+	virtual ~DirectoryInRoot() { }
+
+	FRESULT get_entry(FileInfo &info) {
+		if (index >= node->children.get_elements()) {
+			return FR_NO_FILE;
+		}
+		info.copyfrom(node->children[index++]->get_file_info());
+		return FR_OK;
+	}
 };
 
 #endif /* FILESYSTEM_FILESYSTEM_ROOT_H_ */

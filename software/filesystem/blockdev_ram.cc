@@ -10,6 +10,7 @@ BlockDevice_Ram::BlockDevice_Ram(uint8_t *mem, int sec_size, int num_sectors)
     memory = mem;
     sector_size = sec_size;
     number_of_sectors = num_sectors;    
+    set_state(e_device_ready);
 }
     
 BlockDevice_Ram::~BlockDevice_Ram()

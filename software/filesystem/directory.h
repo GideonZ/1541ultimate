@@ -17,7 +17,7 @@ public:
         fs = f;
     }
         
-    ~Directory() { }
+    virtual ~Directory() { }
 
     virtual FRESULT get_entry(FileInfo &info);   // get next directory entry
 };

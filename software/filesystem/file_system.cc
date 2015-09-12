@@ -1,5 +1,6 @@
 
 #include "file_system.h"
+#include "pattern.h"
 
 bool FileInfo :: is_writable(void)
 {
@@ -71,9 +72,9 @@ const char *FileSystem :: get_error_string(FRESULT res)
 	return "";
 }
 
-PathStatus_t FileSystem :: walk_path(Path *path, const char *fn, PathInfo& pathInfo)
+PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 {
-	printf("WalkPath: '%s':'%s'\n", path->get_path(), fn);
+	//printf("WalkPath: '%s'\n", path);
 	FRESULT fres;
 
 	// example1: /sd/somedir/somefile.d64/hello.prg
@@ -81,28 +82,48 @@ PathStatus_t FileSystem :: walk_path(Path *path, const char *fn, PathInfo& pathI
 	// second phase:
 	// should terminate with e_TerminatedOnFile, where the remaining path = "/hello.prg",
 
-	pathInfo.remainingPath.cd(path->get_path());
-	for(int i=0;i<path->getDepth();i++) {
-		fres = file_stat(&pathInfo.pathFromRootOfFileSystem, path->getElement(i), &pathInfo.fileInfo);
-		if (fres != FR_OK) {
-			return e_DirNotFound;
-		}
-		pathInfo.pathFromRootOfFileSystem.cd(path->getElement(i));
-		pathInfo.remainingPath.removeFirst();
-		if (!(pathInfo.fileInfo.attrib & AM_DIR)) {
-			return e_TerminatedOnFile;
-		}
-	}
-	fres = file_stat(&pathInfo.pathFromRootOfFileSystem, fn, &pathInfo.fileInfo);
-	if (fres == FR_OK) {
-		return e_EntryFound;
-	}
-	return e_EntryNotFound;
-}
+	pathInfo.enterFileSystem(this);
 
-FRESULT FileSystem :: file_stat(Path *path, const char *fn, FileInfo *inf)
-{
-	return FR_NO_FILESYSTEM;
+	FileInfo info(32);
+	Directory *dir;
+	FileInfo *ninf;
+
+	while(pathInfo.hasMore()) {
+		fres = dir_open(NULL, &dir, pathInfo.getLastInfo());
+		if (fres == FR_OK) {
+			while(1) {
+				fres = dir_read(dir, &info);
+				if (fres == FR_OK) {
+					// printf("%9d: %-32s (%d)\n", info.size, info.lfname, info.cluster);
+					if (info.attrib & AM_VOL)
+						continue;
+					if (pattern_match(pathInfo.workPath.getElement(pathInfo.index), info.lfname)) {
+						dir_close(dir);
+						pathInfo.replace(info.lfname);
+						pathInfo.index++;
+						ninf = pathInfo.getNewInfoPointer();
+						ninf->copyfrom(&info);
+						if (info.attrib & AM_DIR) {
+							break;
+						} else {
+							if (pathInfo.hasMore())
+								return e_TerminatedOnFile;
+							else {
+								return e_EntryFound;
+							}
+						}
+					}
+				} else { // not found
+					pathInfo.index ++; // we will still return something, even if it doesn't exist (for file create)
+					if (pathInfo.hasMore())
+						return e_DirNotFound;
+					else
+						return e_EntryNotFound;
+				}
+			}
+		}
+	}
+	return e_EntryFound;
 }
 
 bool FileSystem :: init(void)
@@ -111,7 +132,7 @@ bool FileSystem :: init(void)
 	return false;
 }
     
-FRESULT FileSystem :: dir_open(const char *path, Directory **)
+FRESULT FileSystem :: dir_open(const char *path, Directory **, FileInfo *inf)
 {
     return FR_NO_FILESYSTEM;
 }
@@ -130,7 +151,7 @@ FRESULT FileSystem :: dir_create(const char *path)
     return FR_NO_FILESYSTEM;
 }
     
-FRESULT FileSystem :: file_open(const char *path, uint8_t flags, File **)
+FRESULT FileSystem :: file_open(const char *path, Directory *, const char *filename, uint8_t flags, File **)
 {
     return FR_NO_FILESYSTEM;
 }

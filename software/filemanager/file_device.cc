@@ -85,6 +85,7 @@ int FileDevice :: probe(void) {
 		info.attrib = AM_DIR; // ;-)  (not read only of course, removed!!)
 		if(!info.fs)
 			return -1;
+	    return 1;
     }
 
     info.fs = 0;

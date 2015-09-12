@@ -19,10 +19,10 @@ class Factory
 	IndexedList<function_t> types;
 public:
     Factory() : types(4, 0) {
-		printf("Constructor of Factory.\n");
+		//printf("Constructor of Factory.\n");
     }
     ~Factory() {
-    	printf("Destructor of Factory\n");
+    	//printf("Destructor of Factory\n");
     }
 
     void register_type(function_t tester) {
@@ -46,11 +46,11 @@ class FactoryRegistrator
 	typedef Treturn (*function_t)(Tobj p);
 public:
 	FactoryRegistrator(Factory<Tobj, Treturn> *factory, function_t func) {
-		printf("Constructor of registrator.\n");
+		//printf("Constructor of registrator.\n");
 		factory->register_type(func);
 	}
 	~FactoryRegistrator() {
-		printf("Destructor of registrator.\n");
+		//printf("Destructor of registrator.\n");
 	}
 };
 

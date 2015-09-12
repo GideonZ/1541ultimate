@@ -5,7 +5,6 @@
 BlockDevice_File::BlockDevice_File(File *file, int sec_size)
 {
 	this->file = file; // reference only
-	FileInfo *f = file->getFileInfo();
     shift = 0;
     while(sec_size > 1) {
         shift++;
@@ -15,7 +14,7 @@ BlockDevice_File::BlockDevice_File(File *file, int sec_size)
         shift = 12;
     }
     sector_size = (1 << shift);
-    file_size = f->size;
+    file_size = file->get_size();
 }
     
 BlockDevice_File::~BlockDevice_File()

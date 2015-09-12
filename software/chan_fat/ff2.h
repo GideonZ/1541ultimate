@@ -25,6 +25,8 @@ extern "C" {
 
 #include "ff_integer.h"	/* Basic integer types */
 #include "ffconf.h"		/* FatFs configuration options */
+#include "fs_errors_flags.h"
+
 #if _FATFS != _FFCONF
 #error Wrong configuration file (ffconf.h).
 #endif
@@ -174,38 +176,10 @@ typedef struct {
 	TCHAR	fname[13];		/* Short file name (8.3 format) */
 #if _USE_LFN
 	TCHAR*	lfname;			/* Pointer to the LFN buffer */
+	DWORD   fclust;			/* Cluster number */
 	UINT 	lfsize;			/* Size of LFN buffer in TCHAR */
 #endif
 } FILINFO;
-
-
-
-/* File function return code (FRESULT) */
-
-typedef enum {
-	FR_OK = 0,				/* (0) Succeeded */
-	FR_DISK_ERR,			/* (1) A hard error occurred in the low level disk I/O layer */
-	FR_INT_ERR,				/* (2) Assertion failed */
-	FR_NOT_READY,			/* (3) The physical drive cannot work */
-	FR_NO_FILE,				/* (4) Could not find the file */
-	FR_NO_PATH,				/* (5) Could not find the path */
-	FR_INVALID_NAME,		/* (6) The path name format is invalid */
-	FR_DENIED,				/* (7) Access denied due to prohibited access or directory full */
-	FR_EXIST,				/* (8) Access denied due to prohibited access */
-	FR_INVALID_OBJECT,		/* (9) The file/directory object is invalid */
-	FR_WRITE_PROTECTED,		/* (10) The physical drive is write protected */
-	FR_INVALID_DRIVE,		/* (11) The logical drive number is invalid */
-	FR_NOT_ENABLED,			/* (12) The volume has no work area */
-	FR_NO_FILESYSTEM,		/* (13) There is no valid FAT volume */
-	FR_MKFS_ABORTED,		/* (14) The f_mkfs() aborted due to any parameter error */
-	FR_TIMEOUT,				/* (15) Could not get a grant to access the volume within defined period */
-	FR_LOCKED,				/* (16) The operation is rejected according to the file sharing policy */
-	FR_NO_MEMORY,	   		/* (17) LFN working buffer could not be allocated */
-	FR_TOO_MANY_OPEN_FILES,	/* (18) Number of open files > _FS_SHARE */
-	FR_INVALID_PARAMETER,	/* (19) Given parameter is invalid */
-	FR_DISK_FULL,			/* (20) OLD FATFS: no more free clusters */
-	FR_DIR_NOT_EMPTY		/* (21) Directory not empty */
-} FRESULT;
 
 
 
@@ -269,7 +243,9 @@ FRESULT fs_getfree (FATFS *fs, DWORD* nclst);									/* Get number of free clus
 FRESULT fs_getlabel (FATFS *fs, TCHAR* label, DWORD* vsn);						/* Get volume label */
 FRESULT fs_setlabel (FATFS *fs, const TCHAR* label);							/* Set volume label */
 FRESULT fs_mkfs (FATFS *fs, BYTE sfd, UINT au);									/* Create a file system on the volume */
+FRESULT fs_sync (FATFS* fs);
 
+FRESULT dir_sdi (DIR* dp, UINT idx);	/* Find the right entry in the directory */
 
 /*--------------------------------------------------------------*/
 /* Additional user defined functions                            */
@@ -295,27 +271,6 @@ int ff_cre_syncobj (BYTE vol, _SYNC_t* sobj);	/* Create a sync object */
 int ff_req_grant (_SYNC_t sobj);				/* Lock sync object */
 void ff_rel_grant (_SYNC_t sobj);				/* Unlock sync object */
 int ff_del_syncobj (_SYNC_t sobj);				/* Delete a sync object */
-#endif
-
-
-
-
-/*--------------------------------------------------------------*/
-/* Flags and offset address                                     */
-
-
-/* File access control and file status flags (FIL.flag) */
-
-#define	FA_READ				0x01
-#define	FA_OPEN_EXISTING	0x00
-
-#if !_FS_READONLY
-#define	FA_WRITE			0x02
-#define	FA_CREATE_NEW		0x04
-#define	FA_CREATE_ALWAYS	0x08
-#define	FA_OPEN_ALWAYS		0x10
-#define FA__WRITTEN			0x20
-#define FA__DIRTY			0x40
 #endif
 
 
@@ -345,17 +300,18 @@ int ff_del_syncobj (_SYNC_t sobj);				/* Delete a sync object */
 
 /*--------------------------------*/
 /* Multi-byte word access macros  */
-
-#if _WORD_ACCESS == 1	/* Enable word access to the FAT structure */
-#define	LD_WORD(ptr)		(WORD)(*(WORD*)(BYTE*)(ptr))
-#define	LD_DWORD(ptr)		(DWORD)(*(DWORD*)(BYTE*)(ptr))
-#define	ST_WORD(ptr,val)	*(WORD*)(BYTE*)(ptr)=(WORD)(val)
-#define	ST_DWORD(ptr,val)	*(DWORD*)(BYTE*)(ptr)=(DWORD)(val)
-#else					/* Use byte-by-byte access to the FAT structure */
-#define	LD_WORD(ptr)		(WORD)(((WORD)*((BYTE*)(ptr)+1)<<8)|(WORD)*(BYTE*)(ptr))
-#define	LD_DWORD(ptr)		(DWORD)(((DWORD)*((BYTE*)(ptr)+3)<<24)|((DWORD)*((BYTE*)(ptr)+2)<<16)|((WORD)*((BYTE*)(ptr)+1)<<8)|*(BYTE*)(ptr))
-#define	ST_WORD(ptr,val)	*(BYTE*)(ptr)=(BYTE)(val); *((BYTE*)(ptr)+1)=(BYTE)((WORD)(val)>>8)
-#define	ST_DWORD(ptr,val)	*(BYTE*)(ptr)=(BYTE)(val); *((BYTE*)(ptr)+1)=(BYTE)((WORD)(val)>>8); *((BYTE*)(ptr)+2)=(BYTE)((DWORD)(val)>>16); *((BYTE*)(ptr)+3)=(BYTE)((DWORD)(val)>>24)
+#ifndef LD_WORD
+	#if _WORD_ACCESS == 1	 // Enable word access to the FAT structure
+	#define	LD_WORD(ptr)		(WORD)(*(WORD*)(BYTE*)(ptr))
+	#define	LD_DWORD(ptr)		(DWORD)(*(DWORD*)(BYTE*)(ptr))
+	#define	ST_WORD(ptr,val)	*(WORD*)(BYTE*)(ptr)=(WORD)(val)
+	#define	ST_DWORD(ptr,val)	*(DWORD*)(BYTE*)(ptr)=(DWORD)(val)
+	#else					 // Use byte-by-byte access to the FAT structure
+	#define	LD_WORD(ptr)		(WORD)(((WORD)*((BYTE*)(ptr)+1)<<8)|(WORD)*(BYTE*)(ptr))
+	#define	LD_DWORD(ptr)		(DWORD)(((DWORD)*((BYTE*)(ptr)+3)<<24)|((DWORD)*((BYTE*)(ptr)+2)<<16)|((WORD)*((BYTE*)(ptr)+1)<<8)|*(BYTE*)(ptr))
+	#define	ST_WORD(ptr,val)	*(BYTE*)(ptr)=(BYTE)(val); *((BYTE*)(ptr)+1)=(BYTE)((WORD)(val)>>8)
+	#define	ST_DWORD(ptr,val)	*(BYTE*)(ptr)=(BYTE)(val); *((BYTE*)(ptr)+1)=(BYTE)((WORD)(val)>>8); *((BYTE*)(ptr)+2)=(BYTE)((DWORD)(val)>>16); *((BYTE*)(ptr)+3)=(BYTE)((DWORD)(val)>>24)
+	#endif
 #endif
 
 #ifdef __cplusplus

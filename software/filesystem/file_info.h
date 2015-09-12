@@ -28,25 +28,22 @@ class FileSystem;
 
 class FileInfo
 {
+    FileInfo()
+    {
+    	init();
+    }
 public:
 	FileSystem *fs;  /* Reference to file system, to uniquely identify file */
     uint32_t  cluster; /* Start cluster, easy for open! */
     uint32_t  size;	 /* File size */
 	uint16_t  date;	 /* Last modified date */
 	uint16_t  time;	 /* Last modified time */
-	uint32_t  dir_clust;  /* Start of directory, needed to reopen dir */
-    uint16_t  dir_index;  /* Entry of the directory we have our directory item. */
     uint16_t  lfsize;
     void   *object;
     char   *lfname;
 	uint8_t	attrib;	 /* Attribute */
 	uint8_t special_display;
 	char    extension[4];
-
-    FileInfo()
-    {
-    	init();
-    }
 
     void init()
     {
@@ -73,6 +70,8 @@ public:
 
     FileInfo(FileInfo &i)
     {
+    	lfsize = i.lfsize;
+    	lfname = new char[lfsize];
     	copyfrom(&i);
     }
 
@@ -83,8 +82,6 @@ public:
         size = i->size;
         date = i->date;
         time = i->time;
-        dir_clust = i->dir_clust;
-        dir_index = i->dir_index;
 		lfsize = strlen(new_name)+1;
         lfname = new char[lfsize];
         strcpy(lfname, new_name);
@@ -106,10 +103,6 @@ public:
         size = i->size;
         date = i->date;
         time = i->time;
-        dir_clust = i->dir_clust;
-        dir_index = i->dir_index;
-        lfsize = i->lfsize;
-        lfname = new char[lfsize];
         strncpy(lfname, i->lfname, lfsize);
         strncpy(extension, i->extension, 4);
         attrib = i->attrib;
@@ -130,12 +123,10 @@ public:
 		printf("Size       : %d\n", size);
 		printf("Date       : %d\n", date);
 		printf("Time	   : %d\n", time);
-        printf("DIR index  : %d\n", dir_index);
 		printf("LFSize     : %d\n", lfsize);
 		printf("LFname     : %s\n", lfname);
 		printf("Attrib:    : %b\n", attrib);
 		printf("Extension  : %s\n", extension);
-		printf("Dir Clust  : %d\n", dir_clust);
 	}
 };
 

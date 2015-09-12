@@ -16,7 +16,7 @@ BOOT = ../2nd_boot
 LWIPLIB = ../mb_lwip/result/liblwip.a
 
 # Configuration
-CROSS     ?= mb
+CROSS     ?= mb-
 
 # External inputs
 ROMS = ../../../roms
@@ -80,12 +80,12 @@ XILINXBIN = $(XILINX)/ISE_DS/ISE/bin/nt
 PATH_INC =  $(addprefix -I, $(VPATH))
 # VPATH   += $(OUTPUT) $(RESULT)
 
-CC		  = $(CROSS)-gcc
-CPP		  = $(CROSS)-g++
-LD		  = $(CROSS)-ld
-OBJDUMP   = $(CROSS)-objdump
-OBJCOPY	  = $(CROSS)-objcopy
-SIZE	  = $(CROSS)-size
+CC		  = $(CROSS)gcc
+CPP		  = $(CROSS)g++
+LD		  = $(CROSS)ld
+OBJDUMP   = $(CROSS)objdump
+OBJCOPY	  = $(CROSS)objcopy
+SIZE	  = $(CROSS)size
 
 .SUFFIXES:
 

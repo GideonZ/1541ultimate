@@ -22,9 +22,11 @@ public:
 		vQueueDelete(queue);
 	}
 	void putEvent(void *el) {
+#ifdef OS
 		if (!xQueueSend(queue, &el, 5)) {
 			puts("Failed to post message.");
 		}
+#endif
 	}
 	void *waitForEvent(uint32_t ticks) {
 		void *result = 0;

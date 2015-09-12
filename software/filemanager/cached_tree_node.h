@@ -31,7 +31,7 @@ public:
 	IndexedList<CachedTreeNode*> children;
 	CachedTreeNode *parent;
 
-    CachedTreeNode(CachedTreeNode *par) : parent(par), children(0, NULL) { }
+//    CachedTreeNode(CachedTreeNode *par) : parent(par), children(0, NULL), info(32) { }
     CachedTreeNode(CachedTreeNode *par, FileInfo &inf) : parent(par), children(0, NULL), info(inf) { }
     CachedTreeNode(CachedTreeNode *par, const char *name) : parent(par), children(0, NULL), info(name) { }
 
@@ -109,7 +109,7 @@ public:
 
 	// default compare function, just by name!
 	virtual int compare(CachedTreeNode *obj) {
-		return stricmp(get_name(), obj->get_name());
+		return strcasecmp(get_name(), obj->get_name());
 	}
 
     const char *get_full_path(mstring& out) {

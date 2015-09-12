@@ -24,7 +24,7 @@ DSTATUS disk_initialize (
 		DRVREF pdrv				/* Physical drive nmuber to identify the drive */
 )
 {
-	return STA_NOINIT; // don't use it this way
+	return ((Partition *)pdrv)->status();
 }
 
 

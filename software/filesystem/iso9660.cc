@@ -1,6 +1,7 @@
 #include "iso9660.h"
 #include "dump_hex.h"
 #include <ctype.h>
+#include "pattern.h"
 
 FileSystem_ISO9660 :: FileSystem_ISO9660(Partition *p) : FileSystem(p)
 {
@@ -127,7 +128,7 @@ bool    FileSystem_ISO9660 :: init(void)              // Initialize file system
 }
 
 // functions for reading directories
-Directory *FileSystem_ISO9660 :: dir_open(FileInfo *info) // Opens directory (creates dir object, NULL = root)
+FRESULT FileSystem_ISO9660 :: dir_open(const char *path, Directory **dir, FileInfo *info) // Opens directory (creates dir object, NULL = root)
 {
     t_iso_handle *handle = new t_iso_handle;
     if(info && info->cluster) {
@@ -141,8 +142,8 @@ Directory *FileSystem_ISO9660 :: dir_open(FileInfo *info) // Opens directory (cr
 
     handle->start  = handle->sector;
     handle->offset = 0;
-    Directory *dir = new Directory(this, handle);
-    return dir;    
+    *dir = new Directory(this, handle);
+    return FR_OK;
 }
 
 void FileSystem_ISO9660 :: dir_close(Directory *d)    // Closes (and destructs dir object)
@@ -189,7 +190,7 @@ try_next:
     }
 
     f->cluster    = dir_record.actual.sector;
-    f->dir_clust  = handle->start;
+//    f->dir_clust  = handle->start;
     f->attrib     = (dir_record.actual.flags & 0x02)?(AM_DIR):0;
     f->fs         = this;
     f->size       = dir_record.actual.file_size;
@@ -245,19 +246,32 @@ try_next:
 }
 
 // functions for reading files
-File   *FileSystem_ISO9660 :: file_open(FileInfo *info, uint8_t flags)  // Opens file (creates file object)
+FRESULT FileSystem_ISO9660 :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **f)  // Opens file (creates file object)
 {
-//    if(flags & FA_ANY_WRITE_FLAG)
-//        return NULL;
+	FileInfo info(32);
+	do {
+		FRESULT fres = dir_read(dir, &info);
+		if (fres != FR_OK) {
+			dir_close(dir);
+			return FR_NO_FILE;
+		}
+		if (info.attrib & AM_VOL)
+			continue;
+		if (pattern_match(filename, info.lfname)) {
+			break;
+		}
+	} while(1);
+
+	dir_close(dir);
 
     t_iso_handle *handle = new t_iso_handle;
-    handle->sector    = info->cluster;
-    handle->remaining = info->size;
+    handle->sector    = info.cluster;
+    handle->remaining = info.size;
     handle->start     = handle->sector;
     handle->offset    = 0;
 
-    File *f = new File(info, (uint32_t)handle);
-    return f;    
+    *f = new File(this, handle);
+    return FR_OK;
 }
 
 void    FileSystem_ISO9660 :: file_close(File *f)                // Closes file (and destructs file object)

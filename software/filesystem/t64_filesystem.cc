@@ -161,7 +161,7 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 File   *FileSystemT64 :: file_open(FileInfo *info, uint8_t flags)
 {
 	FileInT64 *ff = new FileInT64(this);
-	File *f = new File(info, (uint32_t)ff);
+	File *f = new File(this, ff);
 	FRESULT res = ff->open(info, flags);
 	if(res == FR_OK) {
 		return f;

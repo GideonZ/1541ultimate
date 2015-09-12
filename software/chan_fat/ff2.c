@@ -714,8 +714,7 @@ FRESULT move_window (
 /* Synchronize file system and strage device                             */
 /*-----------------------------------------------------------------------*/
 #if !_FS_READONLY
-static
-FRESULT sync_fs (	/* FR_OK: successful, FR_DISK_ERR: failed */
+FRESULT fs_sync (	/* FR_OK: successful, FR_DISK_ERR: failed */
 	FATFS* fs		/* File system object */
 )
 {
@@ -1034,7 +1033,6 @@ DWORD clmt_clust (	/* <2:Error, >=2:Cluster number */
 /* Directory handling - Set directory index                              */
 /*-----------------------------------------------------------------------*/
 
-static
 FRESULT dir_sdi (
 	DIR* dp,		/* Pointer to directory object */
 	UINT idx		/* Index of directory table */
@@ -1692,6 +1690,7 @@ void get_fileinfo (		/* No return code */
 		fno->fsize = LD_DWORD(dir + DIR_FileSize);	/* Size */
 		fno->fdate = LD_WORD(dir + DIR_WrtDate);	/* Date */
 		fno->ftime = LD_WORD(dir + DIR_WrtTime);	/* Time */
+		fno->fclust = ld_clust(dp->fs, dir);		/* Cluster number */
 	}
 	*p = 0;		/* Terminate SFN string by a \0 */
 
@@ -2033,14 +2032,14 @@ FRESULT follow_path (	/* FR_OK(0): successful, !=0: error code */
 		for (;;) {
 			res = create_name(dp, &path);	/* Get a segment name of the path */
 			if (res != FR_OK) break;
-			res = dir_find(dp);				/* Find an object with the sagment name */
+			res = dir_find(dp);				/* Find an object with the segment name */
 			ns = dp->fn[NSFLAG];
 			if (res != FR_OK) {				/* Failed to find the object */
 				if (res == FR_NO_FILE) {	/* Object is not found */
 					if (_FS_RPATH && (ns & NS_DOT)) {	/* If dot entry is not exist, */
 						dp->sclust = 0; dp->dir = 0;	/* it is the root directory and stay there */
 						if (!(ns & NS_LAST)) continue;	/* Continue to follow if not last segment */
-						res = FR_OK;					/* Ended at the root directroy. Function completed. */
+						res = FR_OK;					/* Ended at the root directory. Function completed. */
 					} else {							/* Could not find the object */
 						if (!(ns & NS_LAST)) res = FR_NO_PATH;	/* Adjust error code if not last segment */
 					}
@@ -2820,7 +2819,7 @@ FRESULT f_sync (
 				ST_WORD(dir + DIR_LstAccDate, 0);
 				fp->flag &= ~FA__WRITTEN;
 				fp->fs->wflag = 1;
-				res = sync_fs(fp->fs);
+				res = fs_sync(fp->fs);
 			}
 		}
 	}
@@ -3229,7 +3228,7 @@ FRESULT fs_opendir (
 	}
 	if (res == FR_NO_FILE) res = FR_NO_PATH;
 
-	if (res != FR_OK) dp->fs = 0;		/* Invalidate the directory object if function faild */
+	if (res != FR_OK) dp->fs = 0;		/* Invalidate the directory object if function failed */
 
 	LEAVE_FF(fs, res);
 }
@@ -3280,7 +3279,6 @@ FRESULT f_readdir (
 {
 	FRESULT res;
 	DEFINE_NAMEBUF;
-
 
 	res = validate(dp);						/* Check validity of the object */
 	if (res == FR_OK) {
@@ -3607,7 +3605,7 @@ FRESULT fs_unlink (
 			res = dir_remove(&dj);		/* Remove the directory entry */
 			if (res == FR_OK && dclst)	/* Remove the cluster chain if exist */
 				res = remove_chain(dj.fs, dclst);
-			if (res == FR_OK) res = sync_fs(dj.fs);
+			if (res == FR_OK) res = fs_sync(dj.fs);
 		}
 	}
 	FREE_BUF();
@@ -3693,7 +3691,7 @@ FRESULT fs_mkdir (
 			ST_DWORD(dir + DIR_WrtTime, tm);	/* Created time */
 			st_clust(dir, dcl);					/* Table start cluster */
 			dj.fs->wflag = 1;
-			res = sync_fs(dj.fs);
+			res = fs_sync(dj.fs);
 		}
 	}
 	FREE_BUF();
@@ -3747,7 +3745,7 @@ FRESULT fs_chmod (
 			mask &= AM_RDO|AM_HID|AM_SYS|AM_ARC;	/* Valid attribute mask */
 			dir[DIR_Attr] = (attr & mask) | (dir[DIR_Attr] & (BYTE)~mask);	/* Apply attribute change */
 			dj.fs->wflag = 1;
-			res = sync_fs(dj.fs);
+			res = fs_sync(dj.fs);
 		}
 	}
 
@@ -3829,7 +3827,7 @@ FRESULT fs_rename (
 					if (res == FR_OK) {
 						res = dir_remove(&djo);		/* Remove old entry */
 						if (res == FR_OK)
-							res = sync_fs(djo.fs);
+							res = fs_sync(djo.fs);
 					}
 /* End of critical section */
 				}
@@ -3888,7 +3886,7 @@ FRESULT fs_utime (
 			ST_WORD(dir + DIR_WrtTime, fno->ftime);
 			ST_WORD(dir + DIR_WrtDate, fno->fdate);
 			dj.fs->wflag = 1;
-			res = sync_fs(dj.fs);
+			res = fs_sync(dj.fs);
 		}
 	}
 
@@ -4060,7 +4058,7 @@ FRESULT fs_setlabel (
 				dj.dir[0] = DDEM;			/* Remove the volume label */
 			}
 			dj.fs->wflag = 1;
-			res = sync_fs(dj.fs);
+			res = fs_sync(dj.fs);
 		} else {					/* No volume label is found or error */
 			if (res == FR_NO_FILE) {
 				res = FR_OK;
@@ -4073,7 +4071,7 @@ FRESULT fs_setlabel (
 						tm = GET_FATTIME();
 						ST_DWORD(dj.dir + DIR_WrtTime, tm);
 						dj.fs->wflag = 1;
-						res = sync_fs(dj.fs);
+						res = fs_sync(dj.fs);
 					}
 				}
 			}
@@ -4780,3 +4778,18 @@ int f_printf (
 
 #endif /* !_FS_READONLY */
 #endif /* _USE_STRFUNC */
+
+uint32_t get_fattime (void) __attribute__((weak));
+uint32_t get_fattime (void)	/* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 20-16: Day(1-31) */
+						    /* 15-11: Hour(0-23), 10-5: Minute(0-59), 4-0: Second(0-29 *2) */
+{
+/*
+    35 << 25 = 0x46000000
+     9 << 21 = 0x01200000
+     1 << 16 = 0x00010000
+     9 << 11 = 0x00004800
+    36 <<  5 = 0x00000480
+    23 <<  0 = 0x00000017
+*/
+    return 0x47244C97;
+}

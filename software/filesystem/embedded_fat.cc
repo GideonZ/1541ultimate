@@ -1,25 +1,25 @@
 /*
- * embedded_iso.cc
+ * embedded_fat.cc
  *
  *  Created on: Jun 14, 2015
  *      Author: Gideon
  */
 
-#include "embedded_iso.h"
+#include "embedded_fat.h"
 #include "globals.h"
 
 // tester instance
 FactoryRegistrator<FileInfo *, FileSystemInFile *>
-	tester_emb_iso(Globals :: getEmbeddedFileSystemFactory(), FileSystemInFile_ISO :: test_type);
+	tester_emb_fat(Globals :: getEmbeddedFileSystemFactory(), FileSystemInFile_FAT :: test_type);
 
-FileSystemInFile_ISO :: FileSystemInFile_ISO() {
+FileSystemInFile_FAT :: FileSystemInFile_FAT() {
 	fs = 0;
 	blk = 0;
 	prt = 0;
 	fs = 0;
 }
 
-FileSystemInFile_ISO :: ~FileSystemInFile_ISO() {
+FileSystemInFile_FAT :: ~FileSystemInFile_FAT() {
 	if (fs)
 		delete fs;
 	if (prt)
@@ -28,11 +28,11 @@ FileSystemInFile_ISO :: ~FileSystemInFile_ISO() {
 		delete blk;
 }
 
-void FileSystemInFile_ISO :: init(File *f)
+void FileSystemInFile_FAT :: init(File *f)
 {
-	printf("Creating ISO file system in File: %s.\n", f->get_name());
+	printf("Creating FAT file system in File: %s.\n", f->get_name());
 
-    blk = new BlockDevice_File(f, 2048);
+    blk = new BlockDevice_File(f, 512);
     if(blk->status()) {
         printf("Can't open file.\n");
     } else {
@@ -40,7 +40,7 @@ void FileSystemInFile_ISO :: init(File *f)
         blk->ioctl(GET_SECTOR_COUNT, &sec_count);
         printf("Sector count: %d.\n", sec_count);
         prt = new Partition(blk, 0, sec_count, 0);
-        fs = new FileSystem_ISO9660(prt);
+        fs = new FileSystemFAT(prt);
     }
     if(fs) {
         if(!fs->init()) {
@@ -52,9 +52,9 @@ void FileSystemInFile_ISO :: init(File *f)
     }
 }
 
-FileSystemInFile *FileSystemInFile_ISO :: test_type(FileInfo *inf)
+FileSystemInFile *FileSystemInFile_FAT :: test_type(FileInfo *inf)
 {
-    if(strcmp(inf->extension, "ISO")==0)
-        return new FileSystemInFile_ISO();
+    if(strcmp(inf->extension, "FAT")==0)
+        return new FileSystemInFile_FAT();
     return NULL;
 }

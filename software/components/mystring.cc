@@ -207,7 +207,7 @@ int strinscmp(mstring &a, mstring &b)
         return -1;
     if(!b.cp)
         return 1;
-    return stricmp(a.cp, b.cp);
+    return strcasecmp(a.cp, b.cp);
 }
 
 mstring& int_to_mstring(int i)

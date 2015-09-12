@@ -5,6 +5,7 @@
 #include "file_device.h"
 #include <cctype>
 
+/*
 int FileManager :: validatePath(Path *p, CachedTreeNode **node)
 {
 	CachedTreeNode *n = root;
@@ -22,6 +23,7 @@ int FileManager :: validatePath(Path *p, CachedTreeNode **node)
 
 	return 1;
 }
+*/
 
 void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 {
@@ -48,7 +50,7 @@ void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 			continue;
 		}
 		f = m->get_file();
-		printf("%2d. %s\n", i, m->get_path());
+		printf("%2d. \n", i); //, m->get_path());
 		if (strncmp(f->get_path(), pathStringC, len) == 0) {
 			printf("Match!\n");
 			fclose(f);
@@ -66,7 +68,7 @@ void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 		} else if(!(f->isValid())) { // already invalidated.
 			continue;
 		}
-		printf("%2d. %s %p\n", i, f->info->lfname, f);
+		printf("%2d. %p:%s\n", i, f, f->get_name());
 		if (strncmp(f->get_path(), pathStringC, len) == 0) {
 			printf("Match!\n");
 			f->invalidate();
@@ -92,35 +94,43 @@ void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 
 bool FileManager :: is_path_writable(Path *p)
 {
-	CachedTreeNode *n;
-	if (!validatePath(p, &n))
-		return false;
-	return n->get_file_info()->is_writable();
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(p);
+	FRESULT res = find_pathentry(pathInfo, true);
+	if (res != FR_OK) {
+		return false; // no other way to say it failed
+	}
+	return pathInfo.getLastInfo()->is_writable();
 }
 
 bool FileManager :: is_path_valid(Path *p)
 {
-	CachedTreeNode *n;
-	if (!validatePath(p, &n))
-		return false;
-	return n->is_ready();
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(p);
+	FRESULT res = find_pathentry(pathInfo, true);
+	return (res == FR_OK);
 }
 
 void FileManager :: get_display_string(Path *p, const char *filename, char *buffer, int width)
 {
-	CachedTreeNode *n;
-	if (!validatePath(p, &n)) {
-		strncpy(buffer, "Invalid path", width);
+	CachedTreeNode *n = root;
+
+	for(int i=0; i<p->getDepth(); i++) {
+		n = n->find_child(p->getElement(i));
+		if (!n) {
+			strncpy(buffer, "Invalid path", width);
+			return;
+		}
+	}
+	n = n->find_child(filename);
+	if (!n) {
+		strncpy(buffer, "Invalid entry", width);
 		return;
 	}
-	CachedTreeNode *existing = n->find_child(filename);
-	if(existing) {
-		existing->get_display_string(buffer, width);
-	} else {
-		strncpy(buffer, "File doesn't exist in path", width);
-	}
+	n->get_display_string(buffer, width);
 }
 
+/*
 bool FileManager :: reworkPath(Path *path, const char *pathstr, const char *filename, reworked_t& rwp)
 {
 	int filename_length = strlen(filename);
@@ -171,64 +181,98 @@ bool FileManager :: reworkPath(Path *path, const char *pathstr, const char *file
 	rwp.path = temppath;
 	return true;
 }
+*/
 
 FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target)
 {
 	lock();
-	CachedTreeNode *n;
-	if (!validatePath(p, &n)) {
-    	unlock();
-		return FR_NO_PATH;
+
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(p);
+	FRESULT res = find_pathentry(pathInfo, true);
+	if (res != FR_OK) {
+		unlock();
+		return res;
 	}
-	int result = n->fetch_children();
-	if (result < 0) {
-    	unlock();
-		return FR_NO_FILE;
-	}
-	for (int i=0;i<n->children.get_elements();i++) {
-		target.append(new FileInfo(*(n->children[i]->get_file_info())));
+	Directory *dir;
+	mstring pathFromFSRoot;
+	FileSystem *fs = pathInfo.getLastInfo()->fs;
+	res = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir, pathInfo.getLastInfo());
+	FileInfo info(32);
+	if (res == FR_OK) {
+		while(1) {
+			res = dir->get_entry(info);
+			if (res != FR_OK)
+				break;
+			target.append(new FileInfo(info));
+		}
+		fs->dir_close(dir);
 	}
 	unlock();
 	return FR_OK;
 }
 
+FRESULT FileManager :: print_directory(const char *path)
+{
+	FileSystem *fs = 0;
+	printf("*** %s ***\n", path);
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(path);
+
+	FRESULT fres = find_pathentry(pathInfo, true);
+//	pathInfo.dumpState("Resulting");
+
+	if (fres != FR_OK) {
+		printf("%s\n***\n", FileSystem :: get_error_string(fres));
+	} else {
+		Directory *dir;
+		FileInfo info(32);
+		mstring pathFromFSRoot;
+		fs = pathInfo.getLastInfo()->fs;
+		fres = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir, pathInfo.getLastInfo());
+		if (fres == FR_OK) {
+			while(1) {
+				fres = dir->get_entry(info);
+				if (fres != FR_OK)
+					break;
+				printf("%-32s (%s) %10d\n", info.lfname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.size);
+			}
+			fs->dir_close(dir);
+		}
+		printf("***\n");
+	}
+
+	return fres;
+}
+
 FRESULT FileManager :: fopen(Path *path, const char *filename, uint8_t flags, File **file)
 {
-	reworked_t rwp;
-	if (!reworkPath(path, 0, filename, rwp))
-		return FR_INVALID_NAME;
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(path, filename);
 
 	lock();
 	// now do the actual thing
-	FRESULT res = fopen_impl(rwp.path, rwp.purename, flags, file);
+	FRESULT res = fopen_impl(pathInfo, flags, file);
 
-	// remove the temporary strings and path
-	delete[] rwp.copy;
-	this->release_path(rwp.path);
 	unlock();
 	return res;
 }
 
-FRESULT FileManager :: fopen(const char *path, const char *filename, uint8_t flags, File **file)
+FRESULT FileManager :: fopen(const char *pathname, uint8_t flags, File **file)
 {
-	reworked_t rwp;
-	if (!reworkPath(0, path, filename, rwp))
-		return FR_INVALID_NAME;
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(pathname);
 
 	lock();
 	// now do the actual thing
-	FRESULT res = fopen_impl(rwp.path, rwp.purename, flags, file);
+	FRESULT res = fopen_impl(pathInfo, flags, file);
 
-	// remove the temporary strings and path
-	delete[] rwp.copy;
-	this->release_path(rwp.path);
 	unlock();
 	return res;
 }
 
-FRESULT FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags, File **file)
+FRESULT FileManager :: find_pathentry(PathInfo &pathInfo, bool open_mount)
 {
-
 	// pass complete path to the file system's "walk path" function. This function
 	// attempts to search through its directory entries. There are various cases:
 
@@ -238,16 +282,18 @@ FRESULT FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags, Fil
 	// * Search terminated. Entry is a file, but there are more entries in the path. Return file info, and remaining path
 	// * Search terminated. Entry is a mount point, and the remaining path should be searched in the resulting file system. Return file system and remaining path.
 
-	bool ready;
-	FileSystem *fs = rootfs;
-	PathInfo pathInfo;
-	pathInfo.remainingPath.cd(path->get_path());
+	// printf("FileManager :: find_pathentry('%s', %d)\n", filepath, open_mount);
+
+	bool ready = false;
+	FileSystem *fs = pathInfo.getLastInfo()->fs;
 	MountPoint *mp;
+	mstring pathFromFSRoot;
 
 	FRESULT fres = FR_OK;
 	while(!ready) {
 		ready = true;
-		PathStatus_t ps = fs->walk_path(path, filename, pathInfo);
+
+		PathStatus_t ps = fs->walk_path(pathInfo);
 		switch(ps) {
 		case e_DirNotFound:
 			fres = FR_NO_PATH;
@@ -256,118 +302,106 @@ FRESULT FileManager :: fopen_impl(Path *path, char *filename, uint8_t flags, Fil
 			fres = FR_NO_FILE;
 			break;
 		case e_EntryFound:
+			fres = FR_OK;
+			// we end on a file, and we're requested to force open it
+			if (open_mount && !(pathInfo.last->attrib & AM_DIR)) {
+				mp = find_mount_point(pathInfo.last, pathInfo.previous, pathInfo.getPathFromLastFS(pathFromFSRoot));
+				if(mp) {
+					fs = mp->get_embedded()->getFileSystem();
+					pathInfo.enterFileSystem(fs);
+				} else {
+					fres = FR_NO_FILESYSTEM;
+				}
+			}
 			break;
 		case e_TerminatedOnFile:
-			mp = find_mount_point(&pathInfo.fileInfo, &pathInfo.pathFromRootOfFileSystem);
+			mp = find_mount_point(pathInfo.last, pathInfo.previous, pathInfo.getPathFromLastFS(pathFromFSRoot));
 			if(mp) {
 				fs = mp->get_embedded()->getFileSystem();
+				pathInfo.enterFileSystem(fs);
 				ready = false;
-				path = &pathInfo.remainingPath;
 			} else {
 				fres = FR_NO_FILESYSTEM;
 			}
 			break;
 		case e_TerminatedOnMount:
-			fs = pathInfo.fileSystem;
+			fs = pathInfo.last->fs;
+			pathInfo.enterFileSystem(fs);
+			ready = !pathInfo.hasMore();
 			break;
 		default:
 			break;
 		}
 	}
 
-/*
-	CachedTreeNode *pathnode = NULL;
-	if(!validatePath(path, &pathnode)) {
-		return FR_NO_PATH;
-	}
-
-	FileInfo *dirinfo = pathnode->get_file_info();
-	CachedTreeNode *existing = pathnode->find_child(filename);
-
-	*file = NULL;
-	FRESULT res;
-
-	// file does not exist, and we would like it to exist: create.
-	if ((!existing) && (flags & (FA_CREATE_NEW | FA_CREATE_ALWAYS))) {
-		if (!(dirinfo->attrib & AM_DIR)) {
-			return FR_INVALID_OBJECT;
-		}
-
-		FileInfo *newInfo = new FileInfo(filename);
-		newInfo->dir_clust = dirinfo->cluster;
-		newInfo->fs = dirinfo->fs;
-		fix_filename(newInfo->lfname);
-		get_extension(newInfo->lfname, newInfo->extension);
-
-		res = dirinfo->fs->file_open(newInfo, flags, file);
-		if(res == FR_OK) {
-			pathnode->cleanup_children(); // force reload from media
-			sendEventToObservers(eNodeAdded, path->get_path(), filename);
-		} else {
-			return res;
-		}
-	} else if(existing) { // no creation
-		FileInfo *fileinfo = existing->get_file_info();
-		res = fileinfo->fs->file_open(existing->get_file_info(), flags, file);
-	} else {
-		res = FR_NO_FILE;
-	}
-
-	if(*file) {
-		(*file)->set_path(path->get_path());
-		open_file_list.append(*file);
-	}
-*/
-
 	return fres;
 }
 
-bool FileManager :: fstat(FileInfo &info, const char *path, const char *filename)
+FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file)
 {
-	reworked_t rwp;
-	if (!reworkPath(0, path, filename, rwp))
-		return false;
+	FRESULT fres = find_pathentry(pathInfo, false);
+//	pathInfo.dumpState("result for fopen");
 
-	lock();
-	bool ret = false;
-	CachedTreeNode *n, *w;
-	if (validatePath(rwp.path, &n)) {
-		w = n->find_child(rwp.purename);
-		if (w) {
-			info.copyfrom(w->get_file_info());
-			ret = true;
-		}
+	if (fres == FR_NO_PATH)
+		return fres;
+
+	// printf("Path %s was accessed with result: %s\n", path->get_path(), FileSystem :: get_error_string(fres));
+	bool create = (flags & FA_CREATE_NEW) && (fres == FR_NO_FILE);
+
+	if ((fres != FR_OK) && (!create))
+		return fres;
+
+	// info.print_info();
+	// printf("The path from the root of this filesystem: %s\n", rem.c_str());
+
+	Directory *dir;
+	FileSystem *fs = pathInfo.getLastInfo()->fs;
+	if (create) {
+		fres = fs->dir_open(NULL, &dir, pathInfo.getLastInfo());
+	} else {
+		fres = fs->dir_open(NULL, &dir, pathInfo.getParentInfo());
 	}
-	delete[] rwp.copy;
-	this->release_path(rwp.path);
-	unlock();
-	return ret;
-}
+	if (fres != FR_OK)
+		return fres;
 
-/*
-FRESULT FileManager :: fopen_node(CachedTreeNode *node, uint8_t flags, File **file)
-{
-	lock();
-
-	FileInfo *info = node->get_file_info();
-	FRESULT res = info->fs->file_open(info, flags, file);
-
-	if(*file) {
-		open_file_list.append(*file);
-		mstring work;
-		(*file)->set_path(node->parent->get_full_path(work));
+	mstring workPathFromFSRoot;
+	char *filename = (char *)pathInfo.getFileName();
+	if (create) {
+		fix_filename(filename);
 	}
 
-	unlock();
-	return res;
+	// TODO: sendEventToObservers(eNodeAdded, path->get_path(), filename);
+	return fs->file_open(pathInfo.getPathFromLastFS(workPathFromFSRoot), dir, filename, flags, file);
 }
-*/
+
+FRESULT FileManager :: fstat(Path *path, const char *filename, FileInfo &info)
+{
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(path, filename);
+	FRESULT fres = find_pathentry(pathInfo, false);
+	if (fres != FR_OK) {
+		return fres;
+	}
+	info.copyfrom(pathInfo.getLastInfo());
+	return FR_OK;
+}
+
+FRESULT FileManager :: fstat(const char *pathname, FileInfo &info)
+{
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(pathname);
+	FRESULT fres = find_pathentry(pathInfo, false);
+	if (fres != FR_OK) {
+		return fres;
+	}
+	info.copyfrom(pathInfo.getLastInfo());
+	return FR_OK;
+}
 
 void FileManager :: fclose(File *f)
 {
 	lock();
-	FileInfo *inf = f->info;
-	if(inf) {
+	if(f->get_file_system()) {
 		// printf("Closing %s...\n", inf->lfname);
 	}
 	else {
@@ -404,25 +438,9 @@ MountPoint *FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
 	return mp;
 }
 
-/*
-MountPoint *FileManager :: find_mount_point(const char *full_path)
+MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent, const char *filepath)
 {
-//	printf("FileManager :: find_mount_point: '%s'\n", full_path);
-	lock();
-	for(int i=0;i<mount_points.get_elements();i++) {
-		if(mount_points[i]->match(full_path)) {
-			// printf("Found!\n");
-			unlock();
-			return mount_points[i];
-		}
-	}
-	unlock();
-	return 0;
-}
-*/
-MountPoint *FileManager :: find_mount_point(FileInfo *info, Path *path)
-{
-	printf("FileManager :: find_mount_point: '%s'\n", info->lfname);
+	// printf("FileManager :: find_mount_point: '%s' (parent: %s)\n", info->lfname, parent->lfname);
 	lock();
 	for(int i=0;i<mount_points.get_elements();i++) {
 		if(mount_points[i]->match(info->fs, info->cluster)) {
@@ -431,70 +449,117 @@ MountPoint *FileManager :: find_mount_point(FileInfo *info, Path *path)
 			return mount_points[i];
 		}
 	}
-	if (!path) {
+	if (!filepath) {
 		unlock();
 		return 0;
 	}
 	File *file;
 	FileSystemInFile *emb = 0;
 	MountPoint *mp = 0;
-	FRESULT fr = fopen(path, info->lfname, FA_READ | FA_WRITE, &file);
+
+	Directory *dir;
+	FRESULT frd = info->fs->dir_open(NULL, &dir, parent);
+	if (frd != FR_OK) {
+		unlock();
+		return 0;
+	}
+
+	uint8_t flags = (info->attrib & AM_RDO) ? FA_READ : FA_READ | FA_WRITE;
+
+	FRESULT fr = info->fs->file_open(filepath, dir, info->lfname, flags, &file);
 	if (fr == FR_OK) {
 		emb = Globals :: getEmbeddedFileSystemFactory() -> create(info);
-		if (emb)
+		if (emb) {
+			emb->init(file);
 			mp = add_mount_point(file, emb);
+		}
 	}
 	unlock();
 	return mp;
 }
 
 
-FRESULT FileManager :: delete_file_by_info(FileInfo *info)
+FRESULT FileManager :: delete_file(const char *pathname)
 {
-/*
-	lock();
-	FRESULT fres = info->fs->file_delete(info);
-	if(fres != FR_OK) {
-		unlock();
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(pathname);
+	FRESULT fres = find_pathentry(pathInfo, false);
+	if (fres != FR_OK) {
 		return fres;
-	} else {
-		sendEventToObservers(eNodeRemoved, "/", info->lfname); // FIXME: Path is unknown
 	}
-	unlock();
-*/
-	return FR_OK;
+	FileSystem *fs = pathInfo.getLastInfo()->fs;
+	mstring work;
+	pathInfo.getPathFromLastFS(work);
+	fres = fs->file_delete(work.c_str());
+	if (fres == FR_OK) {
+		pathInfo.workPath.getHead(work);
+		sendEventToObservers(eNodeRemoved, "/", pathInfo.getFileName());
+	}
+// LOCK & UNLOCK
+	return fres;
 }
 
-FRESULT FileManager :: create_dir_in_path(Path *path, const char *name)
+FRESULT FileManager :: delete_file(Path *path, const char *name)
 {
-/*
-	CachedTreeNode *node;
-	if (!validatePath(path, &node))
-		return FR_NO_PATH;
-
-	FileInfo *info = node->get_file_info();
-
-	if(!(info->attrib & AM_DIR)) {
-		printf("I don't know what you are trying to do, but the info doesn't point to a DIR!\n");
-		return FR_INVALID_OBJECT;
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(path, name);
+	FRESULT fres = find_pathentry(pathInfo, false);
+	if (fres != FR_OK) {
+		return fres;
 	}
-	if (!info->fs) {
-		return FR_NO_FILESYSTEM;
-	}
-
-	lock();
-	FileInfo *fi = new FileInfo(info, name);
-	fi->attrib = 0;
-	FRESULT fres = fi->fs->dir_create(fi);
-	printf("Result of mkdir: %d\n", fres);
+	FileSystem *fs = pathInfo.getLastInfo()->fs;
+	mstring work;
+	pathInfo.getPathFromLastFS(work);
+	fres = fs->file_delete(work.c_str());
 	if (fres == FR_OK) {
-		node->cleanup_children(); // force reload from media
-		sendEventToObservers(eNodeAdded, path->get_path(), name);
+		pathInfo.workPath.getHead(work);
+		sendEventToObservers(eNodeRemoved, "/", pathInfo.getFileName());
 	}
-	unlock();
+// LOCK & UNLOCK
 	return fres;
-*/
-	return FR_DENIED;
+}
+
+
+FRESULT FileManager :: create_dir(const char *pathname)
+{
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(pathname);
+
+	FRESULT fres = find_pathentry(pathInfo, false);
+	if (fres == FR_OK) {
+		return FR_EXIST;
+	}
+	if (fres == FR_OK)
+		return FR_EXIST;
+	if (fres == FR_NO_FILE) {
+		FileSystem *fs = pathInfo.getLastInfo()->fs;
+		mstring work;
+		pathInfo.getPathFromLastFS(work);
+		fres = fs->dir_create(work.c_str());
+		return fres;
+	}
+	return fres;
+}
+
+FRESULT FileManager :: create_dir(Path *path, const char *name)
+{
+	PathInfo pathInfo(rootfs);
+	pathInfo.init(path, name);
+
+	FRESULT fres = find_pathentry(pathInfo, false);
+	if (fres == FR_OK) {
+		return FR_EXIST;
+	}
+	if (fres == FR_OK)
+		return FR_EXIST;
+	if (fres == FR_NO_FILE) {
+		FileSystem *fs = pathInfo.getLastInfo()->fs;
+		mstring work;
+		pathInfo.getPathFromLastFS(work);
+		fres = fs->dir_create(work.c_str());
+		return fres;
+	}
+	return fres;
 }
 
 FRESULT FileManager :: fcopy(const char *path, const char *filename, const char *dest)
@@ -503,15 +568,16 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 	FileInfo *info = new FileInfo(64); // I do not use the stack here for the whole structure, because
 	// we might recurse deeply. Our stack is maybe small.
 
+	Path *sp = get_new_path("copy source");
+	sp->cd(path);
+	Path *dp = get_new_path("copy destination");
+	dp->cd(dest);
+
 	FRESULT ret = FR_OK;
-	if (fstat(*info, path, filename)) {
+	if ((ret = fstat(sp, filename, *info)) == FR_OK) {
 		if (info->attrib & AM_DIR) {
 			// create a new directory in our destination path
-			Path *dp = get_new_path("copy destination");
-			Path *sp = get_new_path("copy source");
-			sp->cd(path);
-			dp->cd(dest);
-			FRESULT dir_create_result = create_dir_in_path(dp, filename);
+			FRESULT dir_create_result = create_dir(dp, filename);
 			if (dir_create_result == FR_OK) {
 				IndexedList<FileInfo *> *dirlist = new IndexedList<FileInfo *>(16, NULL);
 				sp->cd(filename);
@@ -525,17 +591,17 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 				} else {
 					ret = get_dir_result;
 				}
+				delete dirlist;
 			} else {
 				ret = dir_create_result;
 			}
-			release_path(sp);
 			release_path(dp);
 		} else if ((info->attrib & AM_VOL) == 0) { // it is a file!
 			File *fi = 0;
-			ret = fopen(path, filename, FA_READ, &fi);
+			ret = fopen(sp, filename, FA_READ, &fi);
 			if (fi) {
 				File *fo = 0;
-				ret = fopen(dest, filename, FA_CREATE_NEW | FA_WRITE, &fo);
+				ret = fopen(dp, filename, FA_CREATE_NEW | FA_WRITE, &fo);
 				if (fo) {
 					uint8_t *buffer = new uint8_t[32768];
 					uint32_t transferred, written;
@@ -565,10 +631,9 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 			}
 		} // is file?
 	} else {
-		printf("Could not stat %s\n", filename);
-		ret = FR_NO_FILE;
+		printf("Could not stat %s (%s)\n", filename, FileSystem :: get_error_string(ret));
 	}
-
+	release_path(sp);
 	delete info;
 	return ret;
 }

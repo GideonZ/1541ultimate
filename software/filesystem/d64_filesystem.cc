@@ -6,6 +6,7 @@
  */
 
 #include "d64_filesystem.h"
+#include "pattern.h"
 
 /*********************************************************************/
 /* D64/D71/D81 File System implementation                            */
@@ -283,22 +284,22 @@ FRESULT FileSystemD64 :: sync(void)
 }
 
 // Opens directory (creates dir object, NULL = root)
-Directory *FileSystemD64 :: dir_open(FileInfo *info)
+FRESULT FileSystemD64 :: dir_open(const char *path, Directory **dir, FileInfo *info)
 {
 //    if(info) { // can only get root directory, D64 does not allow sub directories
 //        return NULL;
 //    }
+
 	DirInD64 *dd = new DirInD64(this);
-    Directory *dir = new Directory(this, dd);
+    *dir = new Directory(this, dd);
 	FRESULT res = dd->open(info);
 	if(res == FR_OK) {
-		return dir;
+		return FR_OK;
 	}
     delete dd;
-    delete dir;
-    return NULL;
+    delete *dir;
+    return res;
 }
-
 
 // Closes (and destructs dir object)
 void FileSystemD64 :: dir_close(Directory *d)
@@ -318,17 +319,34 @@ FRESULT FileSystemD64 :: dir_read(Directory *d, FileInfo *f)
 
 // functions for reading and writing files
 // Opens file (creates file object)
-File   *FileSystemD64 :: file_open(FileInfo *info, uint8_t flags)
+FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)
 {
+	FileInfo info(24);
+	do {
+		FRESULT fres = dir_read(dir, &info);
+		if (fres != FR_OK) {
+			dir_close(dir);
+			return FR_NO_FILE;
+		}
+		if (info.attrib & AM_VOL)
+			continue;
+		if (pattern_match(filename, info.lfname)) {
+			break;
+		}
+	} while(1);
+
+	dir_close(dir);
+
 	FileInD64 *ff = new FileInD64(this);
-	File *f = new File(info, (uint32_t)ff);
-	FRESULT res = ff->open(info, flags);
+	*file = new File(this, ff);
+
+	FRESULT res = ff->open(&info, flags);
 	if(res == FR_OK) {
-		return f;
+		return res;
 	}
 	delete ff;
-	delete f;
-	return NULL;
+	delete *file;
+	return res;
 }
 
 // Closes file (and destructs file object)
