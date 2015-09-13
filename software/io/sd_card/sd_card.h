@@ -1,9 +1,14 @@
 #ifndef SD_H
 #define SD_H
+
+#include <stdint.h>
 #include "blockdev.h" // base class definition
 #include "sdio.h"
+
+#ifdef OS
 #include "FreeRTOS.h"
 #include "semphr.h"
+#endif
 
 #define CMDGETSTATUS 13
 #define CMDSETBLKLEN 16
@@ -22,8 +27,9 @@ class SdCard : public BlockDevice
     int     sd_type;
     bool    sdhc;
     bool    initialized;
-	SemaphoreHandle_t mutex;
-    
+#ifdef OS
+    SemaphoreHandle_t mutex;
+#endif
     /* Private functions */
 
     uint8_t    Resp8b(void);

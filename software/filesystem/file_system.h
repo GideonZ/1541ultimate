@@ -90,6 +90,8 @@ public:
 	}
 
 	void init(const char *path) {
+		if (!path)
+			return;
 		if (!strlen(path))
 			return;
 		if ((path[0] != '/') && (path[0] == '\\'))
@@ -97,14 +99,25 @@ public:
 		workPath.cd(path);
 	}
 	void init(Path *path) {
+		if (!path)
+			return;
 		workPath.cd(path->get_path());
 	}
 	void init(const char *path, const char *filename) {
-		workPath.cd(path);
-		workPath.cd(filename);
+		if (path)
+			workPath.cd(path);
+		else
+			workPath.cd("/SD"); // configurable?
+		if (filename)
+			workPath.cd(filename);
 	}
 	void init(Path *path, const char *filename) {
-		workPath.cd(path->get_path());
+		if (path)
+			workPath.cd(path->get_path());
+		if (!filename)
+			return;
+		if ((filename[0] != '/') && (filename[0] == '\\'))
+			workPath.cd("/SD"); // configurable?
 		workPath.cd(filename);
 	}
 

@@ -2,8 +2,7 @@
 #include "flash.h"
 #include "sd_card.h"
 #include "disk.h"
-#include "fat_fs.h"
-#include "fatfile.h"
+#include "ff2.h"
 //#include "usb_scsi.h"
 #include "versions.h"
 
@@ -20,7 +19,9 @@ extern "C" {
 BlockDevice  *blk;
 Disk         *dsk;
 Partition    *prt;
-FileSystem   *fs;
+
+FATFS		 fs;
+
 //UsbDevice	 *usbdev;
 
 void (*function)();
@@ -30,6 +31,44 @@ void jump_run(uint32_t run_address)
     uint32_t *dp = (uint32_t *)&function;
     *dp = run_address;
     function();
+}
+
+#define BS_55AA             510
+#define BS_FilSysType       54
+#define BS_FilSysType32     82
+
+bool test_fat(Partition *prt)
+{
+	uint32_t secsize;
+	DRESULT status = prt->ioctl(GET_SECTOR_SIZE, &secsize);
+	uint8_t *buf;
+	if(status)
+		return false;
+	if(secsize > 4096)
+		return false;
+	if(secsize < 512)
+		return false;
+
+	buf = new uint8_t[secsize];
+
+	DRESULT dr = prt->read(buf, 0, 1);
+	if (dr != RES_OK) {	/* Load boot record */
+		printf("FileSystemFAT::test failed, because reading sector failed: %d\n", dr);
+		delete buf;
+		return false;
+	}
+
+	if (LD_WORD(&buf[BS_55AA]) != 0xAA55) {	/* Check record signature (always placed at offset 510 even if the sector size is >512) */
+		delete buf;
+		return false;
+	}
+	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	/* Check "FAT" string */
+		return true;
+	if ((LD_DWORD(&buf[BS_FilSysType32]) & 0xFFFFFF) == 0x544146)
+		return true;
+
+	delete buf;
+	return false;
 }
 
 int init_fat(void)
@@ -47,14 +86,15 @@ int init_fat(void)
 
     Partition *prt;
     prt = dsk->partition_list; // get first partition
-    if(!(fs = FATFS :: test(prt))) {
+
+    if(!test_fat(prt)) {
         printf("Did not find FAT file system.\n");
         delete prt;
         delete dsk;
         delete blk;
         return -2;
     }
-    fs->init();
+    fs_init_volume(&fs, 0);
     return 0;
 }
 
@@ -66,19 +106,19 @@ int init_fat_on_sd(void)
 
 FRESULT try_loading(char *filename, uint32_t run_address)
 {
-    FATFIL *file = new FATFIL((FATFS*)fs);
     uint16_t dummy;
-    FRESULT res = file->open(filename, 0, FA_READ, &dummy);
+    FIL file;
+    FRESULT res = fs_open(&fs, filename, FA_READ, &file);
+
     printf("File %s open result = %d.\n", filename, res);
     if(res != FR_OK) {
         return res;
     }
     uint32_t bytes_read = 0;
-    res = file->read((void *)run_address, APPLICATION_MAX_LENGTH, &bytes_read);
+    res = f_read(&file, (void *)run_address, APPLICATION_MAX_LENGTH, &bytes_read);
     printf("Bytes read: %d (0x%6x)\n", bytes_read, bytes_read);
     
-    file->close();
-    delete file;
+    f_close(&file);
 
     if(bytes_read) {
         //execute
@@ -135,7 +175,6 @@ int main()
     if(!file_system_err) { // will return error code, 0 = ok
         res = try_loading("recover.u2u", UPDATER_RUN_ADDRESS);
         res = try_loading("ultimate.bin", APPLICATION_RUN_ADDRESS);
-        delete fs;
         delete prt;
         delete dsk;
         delete blk;

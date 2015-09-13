@@ -40,14 +40,18 @@ SdCard :: SdCard(void) : BlockDevice()
     sdhc = false;
     sd_type = 0;
     initialized = false;
-	mutex = xSemaphoreCreateMutex();
+#ifdef OS
+    mutex = xSemaphoreCreateMutex();
+#endif
 }
 
 /* Destructor */
 SdCard :: ~SdCard(void)
 {
     printf("** DESTRUCTING SDCARD BLOCKDEVICE **\n");
+#ifdef OS
 	vSemaphoreDelete(mutex);
+#endif
 }
 
 DSTATUS SdCard :: status(void)
@@ -235,10 +239,12 @@ DRESULT SdCard :: read(uint8_t* buf, uint32_t address, int sectors)
 //	DBG((TXT("sd_readSector::Trying to read sector %u and store it at %p.\n"),address,&buf[0]));
 //    printf("Trying to read sector %d to %p.\n",address,buf);
 
+/*
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("SdCard unavailable.\n");
     	return RES_NOTRDY;
     }
+*/
     DRESULT res = RES_OK;
 
     for(int j=0;j<sectors;j++) {
@@ -256,10 +262,10 @@ DRESULT SdCard :: read(uint8_t* buf, uint32_t address, int sectors)
     		break;
     	}
     	cardresp = sdio_read_block(buf);
-		LEAVE_SAFE_SECTION
 
 		if (cardresp != 0x00) {
         	Resp8bError(cardresp);
+    		LEAVE_SAFE_SECTION
     		res = RES_ERROR;
     		break;
     	}
@@ -268,7 +274,7 @@ DRESULT SdCard :: read(uint8_t* buf, uint32_t address, int sectors)
     	buf += SD_SECTOR_SIZE;
     }
 
-	xSemaphoreGive(mutex);
+/*	xSemaphoreGive(mutex);*/
     return res;
 }
 
@@ -310,10 +316,12 @@ DRESULT SdCard :: write(const uint8_t* buf, uint32_t address, int sectors )
 #endif    
     //printf("Trying to write %p to %d sectors from %d.\n",buf,sectors,address);
 
+/*
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("SdCard unavailable.\n");
     	return RES_NOTRDY;
     }
+*/
     DRESULT res = RES_OK;
 
     for(int j=0;j<sectors;j++) {
@@ -348,7 +356,7 @@ DRESULT SdCard :: write(const uint8_t* buf, uint32_t address, int sectors )
         address ++;
     	buf += SD_SECTOR_SIZE;
     }
-	xSemaphoreGive(mutex);
+/*	xSemaphoreGive(mutex);*/
 	return res;
 }
 
@@ -566,11 +574,13 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
 	uint16_t c_size;
     int sector_power;
 	
+/*
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("SdCard unavailable.\n");
     	return RES_NOTRDY;
     }
-
+*/
+    ENTER_SAFE_SECTION
     sdio_send_command(CMDREADCID, 0, 0);
 	
     q = 200;
@@ -580,15 +590,23 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
 	} while ((cardresp != 0xFE) && (q));
 
     if(q) {
-        printf("CID:");
     	for( i=0; i<16; i++) {
     		iob[i] = SDIO_DATA;
-    		printf(" %02x", iob[i]);
     	}
-    	printf("\n");
-    } else {
+    }
+    LEAVE_SAFE_SECTION
+
+	if (q) {
+		printf("CID: ");
+		for(i=0; i < 16; i++) {
+			printf(" %02x", iob[i]);
+		} printf("\n");
+	} else {
         printf("Failed to read Card ID.\n");
     }
+
+
+    ENTER_SAFE_SECTION
 	sdio_send_command(CMDREADCSD, 0, 0);
 	
     q = 200;
@@ -598,23 +616,27 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
 	} while ((cardresp != 0xFE) && (q));
 
     if(q) {
-        printf("CSD:");
     	for( i=0; i<16; i++) {
     		iob[i] = SDIO_DATA;
+    	}
+    }
+	SDIO_DATA = 0xff;
+	SDIO_DATA = 0xff;
+
+	LEAVE_SAFE_SECTION
+
+    if(q) {
+        printf("CSD:");
+    	for( i=0; i<16; i++) {
     		printf(" %02x", iob[i]);
     	}
     	printf("\n");
     } else {
         printf("Failed to read CSD.\n");
-    	SDIO_DATA = 0xff;
-    	SDIO_DATA = 0xff;
         *drive_size = 0L;
         return RES_ERROR;
     }
 
-	SDIO_DATA = 0xff;
-	SDIO_DATA = 0xff;
-	
     if((iob[0] & 0x03) == 0) { // type 1.0 CSD
     	c_size = iob[6] & 0x03; // bits 1..0
     	c_size <<= 10;
@@ -640,7 +662,7 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
 
 	*drive_size = (uint32_t)(c_size+1) << sector_power;
 	
-	xSemaphoreGive(mutex);
+/*	xSemaphoreGive(mutex);*/
 	return RES_OK;
 }
 #endif

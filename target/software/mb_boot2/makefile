@@ -26,6 +26,9 @@ PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/application/2nd_boot \
+			$(PATH_SW)/chan_fat/option \
+			$(PATH_SW)/chan_fat/tiny_ro \
+			$(PATH_SW)/chan_fat \
 			$(PATH_SW)/filesystem \
 			$(PATH_SW)/filemanager \
 			$(PATH_SW)/system \
@@ -55,6 +58,8 @@ SRCS_C   =	mbstart_app.c \
 			itu.c \
 			xmodem.c \
 			dump_hex.c \
+			ff2.c \
+			diskio.c \
 			small_printf.c
 
 # the order of the files is important, because of the static constructors.
@@ -67,11 +72,6 @@ SRCS_C   =	mbstart_app.c \
 SRCS_CC	 =  blockdev.cc \
 			disk.cc \
 			partition.cc \
-			file_system.cc \
-			fat_fs.cc \
-			fat_dir.cc \
-			fatfile.cc \
-			ccsbcs.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \

@@ -6,7 +6,7 @@
  */
 
 #include "filesystem_fat.h"
-#include "filemanager.h"
+//#include "filemanager.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -29,13 +29,17 @@ void FileSystemFAT :: copy_info(FILINFO *fi, FileInfo *inf)
 	inf->size = fi->fsize;
 	inf->date = fi->fdate;
 	inf->time = fi->ftime;
-	inf->cluster = fi->fclust;
 
+#if _USE_LFN
 	get_extension(fi->fname, inf->extension);
+	inf->cluster = fi->fclust;
 
 	if(!(*inf->lfname)) {
 		strncpy(inf->lfname, fi->fname, inf->lfsize);
 	}
+#else
+	strncpy(inf->lfname, fi->fname, inf->lfsize);
+#endif
 }
 
 bool    FileSystemFAT :: init(void)
@@ -120,9 +124,10 @@ FRESULT FileSystemFAT :: dir_read(Directory *d, FileInfo *f)
 {
 	DIR *dir = (DIR *)d->handle;
 	FILINFO inf;
+#if _USE_LFN
 	inf.lfname = f->lfname;
 	inf.lfsize = f->lfsize;
-
+#endif
 	FRESULT res = f_readdir(dir, &inf);
 	if (dir->sect == 0)
 		return FR_NO_FILE;
@@ -228,6 +233,7 @@ FileSystem *FileSystemFAT::test (Partition *prt)
     DRESULT dr = prt->read(buf, 0, 1);
     if (dr != RES_OK) {	/* Load boot record */
     	printf("FileSystemFAT::test failed, because reading sector failed: %d\n", dr);
+		delete buf;
     	return NULL;
     }
 

@@ -25,7 +25,6 @@ mk2:
 	@$(MAKE) -C legacy/2.6k/target/software/update FPGA400=0
 
 mk3:
-	@svn up
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/fpga -f makefile_mb_700a
 	@$(MAKE) -C target/software/mb_lwip

@@ -1,8 +1,7 @@
 
 #include "file_system.h"
 #include "pattern.h"
-#include "filemanager.h"
-
+	
 bool FileInfo :: is_writable(void)
 {
     if(!fs) { // there is no file system, so it's certainly not writable
@@ -16,7 +15,7 @@ bool FileInfo :: is_writable(void)
 //    printf("Attrib: %b\n", attrib);
     return !(attrib & AM_RDO);
 }
-	
+
 FileSystem :: FileSystem(Partition *p)
 {
     prt = p;
@@ -85,7 +84,7 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 
 	pathInfo.enterFileSystem(this);
 
-	FileInfo info(INFO_SIZE);
+	FileInfo info(128);
 	Directory *dir;
 	FileInfo *ninf;
 	mstring workdir;
