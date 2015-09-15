@@ -77,7 +77,6 @@ SRCS_IEC =
 SRCS_NANO = 
 
 VPATH   += $(PATH_SW)/application/mb_update
-VPATH   += $(1ST_BOOT)/output
 VPATH   += $(2ND_BOOT)/result
 VPATH   += $(ULTIMATE)/result
 
@@ -93,7 +92,11 @@ LFLAGS   = --gc-sections
 
 
 include ../common/rules.mk
- 
+
+$(OUTPUT)/1st_boot_700.bin : $(1ST_BOOT)/output/1st_boot_700.bit
+	@echo "Converting $(<F) bitfile to $(@F)"
+	@$(PROMGEN) -r $< $(OUTPUT)/$(@F) 
+
 revert.o: revert.cc $(INCLUDES) $(CHK_BIN)
 	@echo "Compiling $(notdir $<)"
 	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) >$(OUTPUT)/checksums.h

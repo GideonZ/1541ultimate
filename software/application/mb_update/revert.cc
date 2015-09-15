@@ -26,8 +26,8 @@ extern "C" {
 
 extern uint8_t _ultimate_bin_start;
 extern uint8_t _ultimate_bin_end;
-extern uint8_t _1st_boot_700_b_start;
-extern uint8_t _1st_boot_700_b_end;
+extern uint8_t _1st_boot_700_bin_start;
+extern uint8_t _1st_boot_700_bin_end;
 extern uint8_t _2nd_boot_bin_start;
 extern uint8_t _2nd_boot_bin_end;
 
@@ -221,7 +221,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
         do {
             switch(fpga_type) {
                 case 0:
-        	        ok = flash_buffer(FLASH_ID_BOOTFPGA, &_1st_boot_700_b_start, &_1st_boot_700_b_end, FPGA_VERSION, "FPGA");
+        	        ok = flash_buffer(FLASH_ID_BOOTFPGA, &_1st_boot_700_bin_start, &_1st_boot_700_bin_end, FPGA_VERSION, "FPGA");
         	        break;
 #if _FPGA400 == 1
         	    case 1:
@@ -338,7 +338,7 @@ int main()
     /* Extra check on the loaded images */
     const char *check_error = "\033\032\nChecksum error... Not flashing.\n";
     console_print(screen, "\033\027Checking checksums loaded images..\033\037\n");
-    if(calc_checksum(&_1st_boot_700_b_start, &_1st_boot_700_b_end) == CHK_1st_boot_700_b)
+    if(calc_checksum(&_1st_boot_700_bin_start, &_1st_boot_700_bin_end) == CHK_1st_boot_700_bin)
         console_print(screen, "Checksum of FPGA image:   OK..\n");
     else {
         console_print(screen, check_error);

@@ -7,11 +7,9 @@ FINAL    =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ)_700.bit
 FPGA_700      = ../../fpga/mb700/ultimate_mb_700a.bit
 FPGA_700_BMM  = ../../fpga/mb700/ultimate_mb_700a_bd.bmm
 
-PRJ      =  mb_boot
 PATH_SW  =  ../../../software
 
 VPATH    += $(PATH_SW)/application/mb_boot
-
 
 SRCS_C   =	mbstart.c \
 			itu.c \

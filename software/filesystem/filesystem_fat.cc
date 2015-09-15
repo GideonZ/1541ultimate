@@ -6,7 +6,7 @@
  */
 
 #include "filesystem_fat.h"
-//#include "filemanager.h"
+#include "filemanager.h"
 #include <stdio.h>
 #include <string.h>
 
