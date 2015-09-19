@@ -42,17 +42,19 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
         incoming_command.message = command_buffer;
         incoming_command.length = 0;
         
+        queue = xQueueCreate(16, sizeof(uint8_t));
+        xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
+        ioWrite8(ITU_IRQ_ENABLE, 0x10);
+        CMD_IF_IRQMASK_CLEAR = 7;
     }
     target = CMD_TARGET_NONE;
     cart_mode = 0;
 
-    queue = xQueueCreate(16, sizeof(uint8_t));
-    xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
-    CMD_IF_IRQMASK_CLEAR = 7;
 }
 
 CommandInterface :: ~CommandInterface()
 {
+    ioWrite8(ITU_IRQ_DISABLE, 0x10);
 }
     
 int CommandInterface :: executeCommand(SubsysCommand *cmd)

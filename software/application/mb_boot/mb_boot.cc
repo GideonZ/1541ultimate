@@ -1,7 +1,6 @@
 extern "C" {
 	#include "small_printf.h"
 	#include "itu.h"
-	#include "xmodem.h"
 }
 #include "w25q_flash.h"
 #include "at49_flash.h"
@@ -40,6 +39,7 @@ bool w25q_wait_ready(int time_out)
     return ret;
 }
 
+/*
 void uart_write_hex_long(uint32_t hex)
 {
     uart_write_hex(uint8_t(hex >> 24));
@@ -47,7 +47,7 @@ void uart_write_hex_long(uint32_t hex)
     uart_write_hex(uint8_t(hex >> 8));
     uart_write_hex(uint8_t(hex));
 }
-
+*/
 
 int main(int argc, char **argv)
 {
@@ -119,13 +119,13 @@ int main(int argc, char **argv)
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
-        uart_write_hex_long(*(uint32_t *)BOOT2_RUN_ADDR);
+        //uart_write_hex_long(*(uint32_t *)BOOT2_RUN_ADDR);
         uart_write_buffer("Running 2nd boot.\n\r", 19);
         jump_run(BOOT2_RUN_ADDR);
         while(1);
     }
 
-    puts("No bootloader, trying application.");
+    puts("No bootloader.");
 
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA_32 = read_appl;
@@ -137,13 +137,13 @@ int main(int argc, char **argv)
         SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
         SPI_FLASH_DATA_32 = read_appl;
         dest = (uint32_t *)APPL_RUN_ADDR;
-        uart_write_hex_long((uint32_t)dest);
+        //uart_write_hex_long((uint32_t)dest);
         while(length > 0) {
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
         ioWrite8(UART_DATA, '-');
-        uart_write_hex_long((uint32_t)dest);
+        //uart_write_hex_long((uint32_t)dest);
         jump_run(APPL_RUN_ADDR);
         while(1);
     }

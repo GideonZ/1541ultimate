@@ -13,10 +13,9 @@ VPATH    += $(PATH_SW)/application/mb_boot
 
 SRCS_C   =	mbstart.c \
 			itu.c \
-			xmodem.c \
-			small_printf.c
 
-SRCS_CC	 =  mb_boot.cc
+SRCS_CC	 =  mb_boot.cc \
+            small_printf.cc
 
 SRCS_ASM =  mb_crt0.s
 

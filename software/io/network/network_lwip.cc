@@ -29,7 +29,7 @@ void initLwip(void *a, void *b)
 	printf("Initializing lwIP.\n");
 	tcpip_init(initLwipCallback, NULL);
 	printf("Starting network services.\n");
-	xTaskCreate( echo_task, "Echo task", configMINIMAL_STACK_SIZE, NULL, 2, NULL );
+	// xTaskCreate( echo_task, "Echo task", configMINIMAL_STACK_SIZE, NULL, 2, NULL );
 }
 
 

@@ -7,6 +7,7 @@
 
 #include "filesystem_d64.h"
 #include "pattern.h"
+#include "filemanager.h"
 
 /*********************************************************************/
 /* D64/D71/D81 File System implementation                            */
@@ -50,7 +51,7 @@ int FileSystemD64 :: get_abs_sector(int track, int sector)
     --track;
 
     if (image_mode > 1) {
-    	printf("T/S:%d:%d => ", track, sector);
+    	// printf("T/S:%d:%d => ", track, sector);
     	if(sector >= 40) {
             result = -1;
         } else {
@@ -59,7 +60,7 @@ int FileSystemD64 :: get_abs_sector(int track, int sector)
 		if (result >= num_sectors) {
             result = -1;
         }
-        printf("%d\n", result);
+        // printf("%d\n", result);
         return result;
     }
 
@@ -444,7 +445,7 @@ FRESULT DirInD64 :: read(FileInfo *f)
         } else {
             return FR_DISK_ERR;
         }
-		printf("D64/71/81 title now read.");
+		//printf("D64/71/81 title now read.");
     } else {
         do {
             if((idx & 7)==0) {
@@ -474,7 +475,8 @@ FRESULT DirInD64 :: read(FileInfo *f)
             }
             uint8_t *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
             //dump_hex(p, 32);
-            if((p[2] & 0x0f) == 0x02) { // PRG
+            uint8_t tp = (p[2] & 0x0f);
+            if ((tp == 0x01) || (tp == 0x02) || (tp == 0x03)) { // PRG
                 int j = 0;
                 for(int i=5;i<21;i++) {
                 	if ((p[i] == 0xA0) || (p[i] < 0x20))
@@ -485,10 +487,17 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 if(j < f->lfsize)
                     f->lfname[j] = 0;
 
-        	    f->attrib = (p[2] & 0x40)?AM_RDO:0;
+                fix_filename(f->lfname);
+                f->attrib = (p[2] & 0x40)?AM_RDO:0;
                 f->cluster = fs->get_abs_sector((int)p[3], (int)p[4]);
                 f->size = (int)p[30] + 256*(int)p[31];
-                strncpy(f->extension, "PRG", 4);
+                if (tp == 1) {
+                	strncpy(f->extension, "SEQ", 4);
+                } else if (tp == 2) {
+                	strncpy(f->extension, "PRG", 4);
+                } else if (tp == 3) {
+                	strncpy(f->extension, "USR", 4);
+                }
                 idx ++;
                 return FR_OK;
             }

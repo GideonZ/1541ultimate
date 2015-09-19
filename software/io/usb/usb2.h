@@ -43,6 +43,7 @@ class Usb2 : public UsbBase
     void  close_pipe(int pipe);
 
 	void input_task_impl(void);
+    void power_off(void);
 public:
     Usb2();
     virtual ~Usb2();
@@ -67,11 +68,6 @@ public:
     int  bulk_in(struct t_pipe *pipe, void *buf, int len); // blocking
 
     void free_input_buffer(int inpipe, uint8_t *buffer);
-
-    //    int  create_pipe(int addr, struct t_endpoint_descriptor *epd);
-//    void free_pipe(int index);
-    
-//    int  bulk_out_with_prefix(void *prefix, int prefix_len, void *buf, int len, int pipe);
 
     // special bootloader function
     UsbDevice *init_simple(void);

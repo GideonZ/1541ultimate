@@ -749,7 +749,7 @@ void set_extension(char *buffer, char *ext, int buf_size)
 
 void fix_filename(char *buffer)
 {
-	const char illegal[] = "\"*:<>\?|,\x7F";
+	const char illegal[] = "\"*:/<>\\?|,\x7F";
 	int illegal_count = strlen(illegal);
 	int len = strlen(buffer);
 

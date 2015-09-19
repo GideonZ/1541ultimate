@@ -56,11 +56,13 @@ Usb2 :: Usb2()
         queue = xQueueCreate(64, sizeof(struct usb_packet));
 
         xTaskCreate( poll_usb2, "\006USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
+        ioWrite8(ITU_IRQ_ENABLE, 0x04);
     }
 }
 
 Usb2 :: ~Usb2()
 {
+    ioWrite8(ITU_IRQ_DISABLE, 0x04);
 	vSemaphoreDelete(mutex);
 	vQueueDelete(queue);
     clean_up();
@@ -136,6 +138,8 @@ void Usb2 :: init(void)
 
 void Usb2 :: deinit(void)
 {
+	power_off();
+
 	NANO_START = 0;
 
 	// clear RAM
@@ -366,6 +370,21 @@ uint16_t Usb2 :: getSplitControl(int addr, int port, int speed, int type)
 		retval = 0;
 	}
 	return retval;
+}
+
+void Usb2 :: power_off()
+{
+    if (!xSemaphoreTake(mutex, 5000)) {
+    	printf("USB unavailable.\n");
+    	return;
+    }
+
+    printf("Turning USB bus off...\n");
+    USB2_CMD_Command = UCMD_OFF;
+    vTaskDelay(10);
+    USB2_CMD_Command = 0;
+
+    xSemaphoreGive(mutex);
 }
 
 int Usb2 :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)

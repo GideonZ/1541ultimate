@@ -24,7 +24,8 @@ static void socket_gui_listen_task(void *a)
 {
 	SocketGui *gui = (SocketGui *)a;
 	gui->listenTask();
-	vTaskDelete(gui->listenTaskHandle);
+	vTaskSuspend(NULL);
+//	vTaskDelete(gui->listenTaskHandle);
 }
 
 SocketGui :: SocketGui()
@@ -79,7 +80,7 @@ int SocketGui :: listenTask(void)
        return -1;
     }
     memset((char *) &serv_addr, 0, sizeof(serv_addr));
-    portno = 12345;
+    portno = 23;
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(portno);

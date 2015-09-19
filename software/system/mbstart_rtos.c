@@ -67,12 +67,10 @@ void _exit()
 void _premain()
 {
     ioWrite8(UART_DATA, 0x31);
-    ioWrite8(UART_DATA, 0x2e);
 
     __clear_bss();
 
     ioWrite8(UART_DATA, 0x32);
-    ioWrite8(UART_DATA, 0x2e);
 
     atexit(_do_dtors);
 
@@ -83,10 +81,9 @@ void _construct_and_go()
 {
 	int t;
 
-	_do_ctors();
+    ioWrite8(UART_DATA, 0x36);
 
-    ioWrite8(UART_DATA, 0x33);
-    ioWrite8(UART_DATA, 0x2e);
+    _do_ctors();
 
     t=main(0, 0);
 
@@ -149,7 +146,11 @@ void start_rtos (void)
 	scheduler has been started. */
 	portDISABLE_INTERRUPTS();
 
-	xTaskCreate( _construct_and_go, "U-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL );
+    ioWrite8(UART_DATA, 0x33);
+
+    xTaskCreate( _construct_and_go, "U-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL );
+
+    ioWrite8(UART_DATA, 0x34);
 
 	// Finally start the scheduler.
 	vTaskStartScheduler();
@@ -194,8 +195,19 @@ void restart(void)
 	while(size--) {
 		*(dst++) = *(src++);
 	}
-    puts("Restarting....");
-    __asm__("bralid r15, 0x10000");
+	dst = (uint32_t *)0x1FFF000;
+	for (int i=0;i<1022;i++) {
+		*(dst++) = 0x80000000; // NOP instruction
+	}
+	*(dst++) = 0xb60f0008; // RTSD R15, 8
+	*(dst++) = 0x80000000; // NOP instruction
+	// Note that the data cache has now been completely overwritten
+	// The instruction cache will now pick up the code
+	// this works because we have a write through cache.
+	// puts("Restarting....");
+    __asm__("bralid r15, 0x1FFF000"); // execute the whole bunch of NOPs and return
+    __asm__("nop");
+    __asm__("bralid r15, 0x10000"); // now that the instruction cache got flushed, jump to the newly loaded code
     __asm__("nop");
 }
 

@@ -269,6 +269,7 @@ DRESULT SdCard :: read(uint8_t* buf, uint32_t address, int sectors)
     		res = RES_ERROR;
     		break;
     	}
+		LEAVE_SAFE_SECTION
     	
     	address ++;
     	buf += SD_SECTOR_SIZE;

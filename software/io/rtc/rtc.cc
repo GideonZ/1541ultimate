@@ -53,7 +53,7 @@ static uint8_t bin2bcd(uint8_t bin)
 Rtc :: Rtc()
 {
     if(getFpgaCapabilities() & CAPAB_RTC_CHIP) {
-        capable = true;
+    	capable = true;
     	cfg = new RtcConfigStore("Clock Settings", rtc_config);
     	ConfigManager :: getConfigManager() -> add_custom_store(cfg);
     	get_time_from_chip();
@@ -189,6 +189,12 @@ void Rtc :: get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
         M  = (int)bcd2bin(rtc_regs[RTC_ADDR_MONTHS]);
         y  = (int)bcd2bin(rtc_regs[RTC_ADDR_YEARS]);
     }
+    if (M < 1) M = 1;
+    if (M > 12) M = 12;
+    if (D < 1) D = 1;
+    if (D > 31) D = 31;
+    if (wd < 0) wd = 0;
+    if (wd > 6) wd = 6;
 }
 
 void Rtc :: set_time(int y, int M, int D, int wd, int h, int m, int s)

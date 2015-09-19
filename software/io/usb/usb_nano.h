@@ -78,6 +78,7 @@
 #define UCMD_SETUP		  0x0000
 #define UCMD_OUT		  0x0001
 #define UCMD_IN			  0x0002
+#define UCMD_OFF		  0x0003
 
 #define SPLIT_START		0x0000
 #define SPLIT_COMPLETE	0x0080

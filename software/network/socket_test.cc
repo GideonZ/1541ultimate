@@ -54,8 +54,8 @@ int SocketTest :: saveTrace(SubsysCommand *cmd)
 
 	end_address = PROFILER_ADDR;
 	printf("Logic Analyzer stopped. Address = %p\n", end_address);
-	f = fm->fopen(cmd->path.c_str(), "rtostrac.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS);
-	if(f) {
+	FRESULT fres = fm->fopen(cmd->path.c_str(), "rtostrac.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+	if(fres == FR_OK) {
 		printf("Opened file successfully.\n");
 		f->write((void *)start_address, end_address - start_address, &transferred);
 		printf("written: %d...", transferred);
@@ -146,8 +146,11 @@ void SocketTest::restartThread(void *a)
 
     portDISABLE_INTERRUPTS(); // disable interrupts
     usb2.deinit();
+    ioWrite8(ITU_IRQ_TIMER_EN, 0);
+    ioWrite8(ITU_IRQ_GLOBAL, 0);
     ioWrite8(ITU_IRQ_DISABLE, 0xFF);
     ioWrite8(ITU_IRQ_CLEAR, 0xFF);
+
     asm("bralid r15, 8"); // restart!
     asm("nop");
 }

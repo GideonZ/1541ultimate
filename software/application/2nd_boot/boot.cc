@@ -54,20 +54,23 @@ bool test_fat(Partition *prt)
 	DRESULT dr = prt->read(buf, 0, 1);
 	if (dr != RES_OK) {	/* Load boot record */
 		printf("FileSystemFAT::test failed, because reading sector failed: %d\n", dr);
-		delete buf;
+		//delete buf;
 		return false;
 	}
 
 	if (LD_WORD(&buf[BS_55AA]) != 0xAA55) {	/* Check record signature (always placed at offset 510 even if the sector size is >512) */
-		delete buf;
+		//delete buf;
 		return false;
 	}
-	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	/* Check "FAT" string */
+	if ((LD_DWORD(&buf[BS_FilSysType]) & 0xFFFFFF) == 0x544146)	{ /* Check "FAT" string */
+		//delete buf;
 		return true;
-	if ((LD_DWORD(&buf[BS_FilSysType32]) & 0xFFFFFF) == 0x544146)
+	}
+	if ((LD_DWORD(&buf[BS_FilSysType32]) & 0xFFFFFF) == 0x544146) {
+		//delete buf;
 		return true;
-
-	delete buf;
+	}
+	//delete buf;
 	return false;
 }
 
@@ -79,8 +82,8 @@ int init_fat(void)
     printf("Disk initialized. Returned: %d\n", res);
 
     if(res < 1) {
-        delete dsk;
-        delete blk;
+        //delete dsk;
+        //delete blk;
         return -1;
     }    
 
@@ -89,11 +92,12 @@ int init_fat(void)
 
     if(!test_fat(prt)) {
         printf("Did not find FAT file system.\n");
-        delete prt;
-        delete dsk;
-        delete blk;
+        //delete prt;
+        //delete dsk;
+        //delete blk;
         return -2;
     }
+    fs.drv = prt;
     fs_init_volume(&fs, 0);
     return 0;
 }
@@ -175,9 +179,9 @@ int main()
     if(!file_system_err) { // will return error code, 0 = ok
         res = try_loading("recover.u2u", UPDATER_RUN_ADDRESS);
         res = try_loading("ultimate.bin", APPLICATION_RUN_ADDRESS);
-        delete prt;
-        delete dsk;
-        delete blk;
+        //delete prt;
+        //delete dsk;
+        //delete blk;
     } else {
 	   printf("File system error: %d\n", file_system_err);
 	}

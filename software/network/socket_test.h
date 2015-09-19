@@ -8,12 +8,11 @@
 #ifndef NETWORK_SOCKET_TEST_H_
 #define NETWORK_SOCKET_TEST_H_
 
-#include "poll.h"
 #include "menu.h"
 #include "filemanager.h"
 #include "subsys.h"
 
-class SocketTest: public ObjectWithMenu {
+class SocketTest { //: public ObjectWithMenu {
 	static int doTest1(SubsysCommand *cmd);
 	static int doTest2(SubsysCommand *cmd);
 	static int profiler(SubsysCommand *cmd);

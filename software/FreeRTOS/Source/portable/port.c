@@ -116,11 +116,22 @@ uint32_t *pulISRStack;
  */
 static void prvSetupTimerInterrupt( void )
 {
+	ioWrite8(ITU_IRQ_TIMER_EN, 0);
+	ioWrite8(ITU_IRQ_DISABLE, 0xFF);
 	ioWrite8(ITU_IRQ_TIMER_HI, 3);
 	ioWrite8(ITU_IRQ_TIMER_LO, 208); // 0x03D0 => 200 Hz
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
+	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
+    ioWrite8(UART_DATA, 0x35);
+/*
+#ifndef UPDATER
 	ioWrite8(ITU_IRQ_ENABLE, 0x1D); // uci, tape, usb + timer
+#else
+	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only
+#endif
+*/
 }
+
 /*-----------------------------------------------------------*/
 
 /* 
@@ -256,6 +267,10 @@ extern void ( vStartFirstTask )( void );
 
 		portENABLE_INTERRUPTS();
 
+	    static char buffer[8192];
+	    vTaskList(buffer);
+	    puts(buffer);
+
 		/* Kick off the first task. */
 		vStartFirstTask();
 	}
@@ -363,6 +378,7 @@ static uint8_t pending;
 		do_switch |= xTaskIncrementTick();
 	}
 	if (do_switch != pdFALSE) {
+		ioWrite8(UART_DATA, 0x2e);
 		vTaskSwitchContext();
 	}
 }

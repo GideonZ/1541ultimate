@@ -92,6 +92,7 @@ CMD_REQ_PAUSED       = $0200
 CMD_REQ_NOT_PAUSED   = $FDFF
 CMD_REQ_DO_DATA      = $0040
 CMD_REQ_NOT_DO_DATA  = $FFBF
+CMD_REQ_POWER_OFF	 = $0003
 
 CMD_BUF_NODATA       = $2000
 
@@ -540,7 +541,15 @@ _execute_cmd
     STORE Transferred
     LOAD  Current_Command
     BMI   _out_command
-
+;	BRA   _start_in
+;	
+;	CMP   #CMD_REQ_POWER_OFF
+;	BNE   _start_in
+;   LOAD  #$0E
+;   OUTP  ULPI_W_OTG_CONTROL
+;_off
+;	BRA   _off   
+		
 _start_in
     LOAD Current_Command_MemHi
     OUTP MEM_ADDR_HI

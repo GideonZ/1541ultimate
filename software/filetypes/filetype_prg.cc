@@ -155,9 +155,9 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
             	if (fres == FR_OK) {
                 	MountPoint *mp = fm -> find_mount_point(&info, 0, 0, 0);
                 	if (mp) {
-    					printf("Mounting %s to drive A\n", mp->get_file()->get_path());
+    					printf("Mounting %s to drive A\n", cmd->path.c_str());
 
-    					drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT, 0, 0, mp->get_file()->get_path());
+    					drive_command = new SubsysCommand(cmd->user_interface, SUBSYSID_DRIVE_A, MENU_1541_MOUNT, 0, 0, cmd->path.c_str());
     					drive_command->execute();
                 	} else {
                 		printf("INTERR: Can't find mount point anymore?\n");

@@ -16,7 +16,6 @@ SRCS_C   =	mbstart_rtos.c \
             timers.c \
             port.c \
             heap_3.c \
-            sock_echo.c \
             ff2.c \
             ccsbcs.c \
             ffsyscall.c \
@@ -41,11 +40,6 @@ SRCS_CC	 =  small_printf.cc \
 			embedded_iso.cc \
 			embedded_fat.cc \
 			rtc.cc \
-			usb_base.cc \
-			usb2.cc \
-			usb_device.cc \
-			usb_scsi.cc \
-			usb_hub.cc \
 			c64.cc \
 			c64_subsys.cc \
 			screen.cc \
@@ -73,8 +67,6 @@ SRCS_CC	 =  small_printf.cc \
 			sd_card.cc \
 			sdio.cc \
 			sdcard_manager.cc \
-			tape_controller.cc \
-			tape_recorder.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
@@ -88,35 +80,44 @@ SRCS_CC	 =  small_printf.cc \
 			context_menu.cc \
 			task_menu.cc \
 			audio_select.cc \
-			usb_ax88772.cc \
-			usb_em1010.cc \
-			network_interface.cc \
-			network_lwip.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
 			filetype_prg.cc \
 			filetype_u2u.cc \
 			filetype_reu.cc \
 			filetype_crt.cc \
-			filetype_tap.cc \
 			filetype_sid.cc \
-			vfs.cc \
-			ftpd.cc \
-            socket_stream.cc \
-            socket_gui.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
-			iec.cc \
+			usb_base.cc \
+			usb2.cc \
+			usb_device.cc \
+			usb_scsi.cc \
+			usb_hub.cc \
+			usb_ax88772.cc \
+			usb_em1010.cc \
+			network_interface.cc \
+			network_lwip.cc \
+			vfs.cc \
+			ftpd.cc \
+			tape_controller.cc \
+			tape_recorder.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
+			iec.cc \
+			filetype_tap.cc \
+            socket_stream.cc \
+            socket_gui.cc \
+			socket_test.cc \
 			$(PRJ).cc
 
+#            sock_echo.c \
 #			sys_calls.cc \
-#			socket_test.cc \
 ####			sampler.cc \
 ####			copper.cc \
+
 
 SRCS_ASM =  mb_crt0.s portasm.s
 
