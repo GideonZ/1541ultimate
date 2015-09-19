@@ -6,6 +6,8 @@
 #include "integer.h"
 #include "usb_ax88772.h"
 #include "profiler.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #define DEBUG_RAW_PKT 0
 #define DEBUG_INVALID_PKT 0
@@ -97,12 +99,13 @@ uint8_t UsbAx88772Driver_output(void *drv, void *b, int len) {
 FactoryRegistrator<UsbDevice *, UsbDriver *> ax88772_tester(UsbDevice :: getUsbDriverFactory(), UsbAx88772Driver :: test_driver);
 
 
-UsbAx88772Driver :: UsbAx88772Driver()
+UsbAx88772Driver :: UsbAx88772Driver(uint16_t prodID)
 {
     device = NULL;
     host = NULL;
     netstack = NULL;
     link_up = false;
+    this->prodID = prodID;
 }
 
 UsbAx88772Driver :: ~UsbAx88772Driver()
@@ -119,14 +122,15 @@ UsbDriver * UsbAx88772Driver :: test_driver(UsbDevice *dev)
 		printf("Device is not from Asix..\n");
 		return 0;
 	}
-	if((le16_to_cpu(dev->device_descr.product) & 0xFFFE) != 0x772A) {
-		printf("Device product ID is not AX88772A.\n");
+    uint16_t prodID = le16_to_cpu(dev->device_descr.product);
+    if((prodID & 0xFFFE) != 0x772A) {
+		printf("Device product ID is not AX88772.\n");
 		return 0;
 	}
 
-    printf("** Asix AX88772A found **\n");
+    printf("** Asix AX88772%c found **\n", (prodID & 1)?'B':'A');
 	// TODO: More tests needed here?
-	return new UsbAx88772Driver();
+	return new UsbAx88772Driver(prodID);
 }
 
 void UsbAx88772Driver :: install(UsbDevice *dev)
@@ -218,10 +222,13 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     host->control_exchange(&device->control_pipe,
                            c_write_ipg_regs, 8,
 						   temp_buffer, 1);
-    // * 40 2A 8000 8001 : Write Rx Burst Length register. Set it to 2K
-    host->control_exchange(&device->control_pipe,
-    					   c_write_rx_burst, 8,
-						   temp_buffer, 1);
+
+    if (prodID & 1) { // B version
+		// * 40 2A 8000 8001 : Write Rx Burst Length register. Set it to 2K
+		host->control_exchange(&device->control_pipe,
+							   c_write_rx_burst, 8,
+							   temp_buffer, 1);
+    }
 
     // * 40 10 88 00 : Write Rx Control register, start operation, enable broadcast
     host->control_exchange(&device->control_pipe,
@@ -447,17 +454,24 @@ bool UsbAx88772Driver :: read_mac_address()
 	uint8_t check = 0;
 	if(i == 6) {
         printf("MAC address:  ");
-        for(int i=0;i<6;i++) {
+        for(int i=0;i<3;i++) {
             printf("%b%c", local_mac[i], (i==5)?' ':':');
             check |= local_mac[i];
+        }
+        for(int i=3;i<6;i++) {
+            printf("%b%c", local_mac[i], (i==5)?' ':':');
         } printf("\n");
         if (!check) { // no mac address!!
-//        	printf("Reading MAC address failed.. Going to program EEPROM with good data.\n");
-//        	write_srom();
+        	// printf("Reading MAC address failed.. Going to program EEPROM with good data.\n");
+        	local_mac[0] = 0x02; // locally administered address
+        	local_mac[1] = 0x15; // a well known number
+        	local_mac[2] = 0x41;
+        	// leave the others in tact
+        	//        	write_srom();
 //        	printf("Writing SROM completed. Now re-insert.\n");
 //        	return false;
         	printf("Reading MAC address failed.. Setting a default MAC.");
-        	return write_mac_address();
+        	return write_mac_address(local_mac);
         }
         if (netstack)
         	netstack->set_mac_address(local_mac);
@@ -466,14 +480,39 @@ bool UsbAx88772Driver :: read_mac_address()
     return false;
 }
 
-bool UsbAx88772Driver :: write_mac_address(void)
+bool UsbAx88772Driver :: write_mac_address(uint8_t *local_mac)
 {
     uint8_t c_write_mac[] = { 0x40, 0x14, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00 };
-    uint8_t new_mac[] = { 0x00, 0x4c, 0x49, 0x4c, 0x49, 0x00 };
+	uint8_t c_srom_write_reg[8]   = { 0x40, 0x0C, 0xAA, 0x00, 0xCC, 0xDD, 0x00, 0x00 };
 
     host->control_write(&device->control_pipe,
                         c_write_mac, 8,
-                        new_mac, 6);
+                        local_mac, 6);
+
+	device->host->control_exchange(&device->control_pipe,
+									c_srom_write_enable, 8,
+                                    NULL, 0);
+
+	device->host->control_exchange(&device->control_pipe,
+									c_srom_write_enable, 8,
+                                    NULL, 0);
+
+	vTaskDelay(10);
+
+	for(int i=0;i<3;i++) {
+		c_srom_write_reg[2] = (uint8_t)(i + 4);
+		c_srom_write_reg[4] = local_mac[i*2];
+		c_srom_write_reg[5] = local_mac[i*2 + 1];
+		device->host->control_exchange(&device->control_pipe,
+										c_srom_write_reg, 8,
+	                                    NULL, 0);
+		vTaskDelay(10);
+	}
+
+	device->host->control_exchange(&device->control_pipe,
+									c_srom_write_disable, 8,
+                                    NULL, 0);
+
 
     return read_mac_address();
 }

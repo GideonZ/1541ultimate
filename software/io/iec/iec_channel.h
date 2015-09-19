@@ -450,12 +450,11 @@ public:
 
     bool cd(char *name) {
     	int index = interface->findIecName(name, "");
-    	if (index < 0) {
-        	get_last_error(ERR_FILE_NOT_FOUND);
-        	return false;
+    	if (index >= 0) {
+        	FileInfo *inf = (*(interface->dirlist))[index];
+        	name = inf->lfname;
     	}
-    	FileInfo *inf = (*(interface->dirlist))[index];
-    	interface->path->cd(inf->lfname);  // just try!
+    	interface->path->cd(name);  // just try!
     	FRESULT res = interface->readDirectory(); // just try!
     	if (res == FR_OK) {
         	get_last_error(ERR_OK);

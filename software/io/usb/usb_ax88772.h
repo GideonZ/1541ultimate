@@ -22,11 +22,12 @@ class UsbAx88772Driver : public UsbDriver
     struct t_pipe bulk_out_pipe;
 
     bool link_up;
+    uint16_t prodID;
 
     void read_srom();
     void write_srom();
     bool read_mac_address();
-    bool write_mac_address();
+    bool write_mac_address(uint8_t *);
     
     void write_phy_register(uint8_t reg, uint16_t value);
     uint16_t read_phy_register(uint8_t reg);
@@ -34,7 +35,7 @@ class UsbAx88772Driver : public UsbDriver
 public:
 	static UsbDriver *test_driver(UsbDevice *dev);
 
-	UsbAx88772Driver();
+	UsbAx88772Driver(uint16_t prodID);
 	~UsbAx88772Driver();
 
 	void install(UsbDevice *dev);

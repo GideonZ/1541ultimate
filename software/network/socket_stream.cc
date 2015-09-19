@@ -36,7 +36,7 @@ int SocketStream :: get_char()
 		if (errno == EAGAIN)
 			return -1;
 		printf("ERROR reading from socket %d. Errno = %d", n, errno);
-		return -1;
+		return -2;
 	} else { // n == 0
 		printf("Socket got closed\n");
 		return -2;
