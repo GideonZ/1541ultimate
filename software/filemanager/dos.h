@@ -53,7 +53,7 @@ class Dos : CommandTarget
     int dir_entries;
     int current_index;
     void cleanupDirectory();
-
+    void cd(Message *command, Message **reply, Message **status);
 public:
     Dos(int id);
     ~Dos();

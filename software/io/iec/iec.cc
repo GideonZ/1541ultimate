@@ -161,10 +161,6 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
         *(dst++) = *(src++);
     printf("%d bytes loaded.\n", size);
 
-    printf("Word 0: %8x\n", HW_IEC_RAM_DW[0]);
-    printf("Word 1: %8x\n", HW_IEC_RAM_DW[1]);
-    printf("Word 2: %8x\n", HW_IEC_RAM_DW[2]);
-
     atn = false;
     path = fm->get_new_path("IEC");
     path->cd("SD");
@@ -247,7 +243,11 @@ int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
     // list.append(new Action("Read status",    SUBSYSID_IEC, MENU_READ_STATUS));
     // list.append(new Action("Send command",   SUBSYSID_IEC, MENU_SEND_COMMAND));
 
-//    if(!(getFpgaCapabilities() & CAPAB_ANALYZER))
+#ifndef DEVELOPER
+	return count;
+#endif
+
+	if(!(getFpgaCapabilities() & CAPAB_ANALYZER))
         return count;
 
 	list.append(new Action("Trace IEC",      SUBSYSID_IEC, MENU_IEC_TRACE_ON));

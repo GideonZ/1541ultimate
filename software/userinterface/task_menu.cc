@@ -54,8 +54,8 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
         }
         rows = items + 2;
         size_y = screen->get_size_y();
-        if(rows > size_y) {
-            rows = size_y;
+        if(rows > size_y-2) {
+            rows = size_y-2;
         }
 		y_offs = (size_y - rows) >> 1;
         

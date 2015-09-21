@@ -417,7 +417,15 @@ int main()
         while(1);
     }
             
-    if(user_interface->popup("Updating to 3.x. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+    // virginity check
+    bool virgin = false;
+    t_flash_address image_address;
+	flash->get_image_addresses(FLASH_ID_AR5PAL, &image_address);
+    flash->read_linear_addr(image_address.start, 2, time_buffer);
+    if(time_buffer[0] == 0xFF)
+        virgin = true;
+
+    if(virgin || user_interface->popup("Updating to 3.x. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
         console_print(screen, "\n\n\n\n\n\n\n\n");
         program_flash(true, true, true);
     } else {
@@ -427,16 +435,17 @@ int main()
 	flash->protect_configure();
 	flash->protect_enable();
 
-	if (user_interface->popup("Reset configuration?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-		int num = flash->get_number_of_config_pages();
-		for(int i=0;i<num;i++) {
-			flash->clear_config_page(i);
+	if (!virgin) {
+		if (user_interface->popup("Reset configuration?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+			int num = flash->get_number_of_config_pages();
+			for(int i=0;i<num;i++) {
+				flash->clear_config_page(i);
+			}
 		}
+		wait_ms(20);
 	}
-	wait_ms(20);
     flash->reboot(0);
     
     while(1)
         ;
 }
-

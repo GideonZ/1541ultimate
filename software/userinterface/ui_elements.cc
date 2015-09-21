@@ -58,6 +58,7 @@ void UIPopup :: init(Screen *screen, Keyboard *k)
     window->output(message.c_str());
 
     active_button = 0; // we can change this
+    keyboard->wait_free();
     draw_buttons();
 }
 
@@ -155,7 +156,9 @@ void UIStringBox :: init(Screen *screen, Keyboard *keyb)
     window->move_cursor(0, 2);
     //scr = window->get_pointer();
 
-/// Now prefill the box...
+    keyboard->wait_free();
+
+    /// Now prefill the box...
     len = 0;
     cur = 0;
 

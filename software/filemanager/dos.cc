@@ -53,6 +53,24 @@ Dos :: ~Dos()
     // officially we should deregister ourselves, but as this will only occur at application exit, there is no need
 }
     
+void Dos :: cd(Message *command, Message **reply, Message **status)
+{
+	mstring old_path(path->get_path());
+
+	*reply  = &c_message_empty;
+    command->message[command->length] = 0;
+    path->cd((char *)&command->message[2]);
+
+	cleanupDirectory();
+	FRESULT fres = path->get_directory(directoryList);
+	if (fres == FR_OK) {
+        *status = &c_status_ok;
+    } else {
+        *status = &c_status_no_such_dir;
+        path->cd(old_path.c_str());
+    }
+}
+
 void Dos :: parse_command(Message *command, Message **reply, Message **status)
 {
     // the first byte of the command lead us here to this function.
@@ -219,23 +237,14 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             }
             break;
         case DOS_CMD_CHANGE_DIR:
-            *reply  = &c_message_empty;
-            command->message[command->length] = 0;
-            path->cd((char *)&command->message[2]);
-            if(path->isValid()) {
-                *status = &c_status_ok;
-            } else {
-                *status = &c_status_no_such_dir; 
-            }        
-            break;
+        	cd(command, reply, status);
+        	break;
+
         case DOS_CMD_COPY_UI_PATH:
             *reply  = &c_message_empty;
-/* FIXME path
-            if(!path->cd(user_interface->get_path()->get_full_path(str))) {
-                *status = &c_status_no_such_dir;
-                break;
-            } // fallthrough
-*/
+            *status = &c_status_not_implemented;
+            break;
+
         case DOS_CMD_GET_PATH:
             strcpy((char *)data_message.message, path->get_path());
             data_message.length = strlen((char *)data_message.message);
@@ -245,11 +254,14 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             break;
         case DOS_CMD_OPEN_DIR:
         	cleanupDirectory();
-        	dir_entries = path->get_directory(directoryList);
+        	res = path->get_directory(directoryList);
             *reply  = &c_message_empty;
-            if (dir_entries < 0) {
-                *status = &c_status_cannot_read_dir; 
-            } else if(dir_entries == 0) {
+            if (res != FR_OK) {
+                *status = &c_status_cannot_read_dir;
+                break;
+            }
+            dir_entries = directoryList.get_elements();
+            if(dir_entries == 0) {
                 *status = &c_status_directory_empty;
             } else {
                 *status = &c_status_ok;

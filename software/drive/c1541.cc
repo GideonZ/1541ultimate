@@ -281,8 +281,14 @@ void C1541 :: set_rom(t_1541_rom rom, const char *custom_filename)
             memcpy((void *)&memory_map[0xC000], &_1541c_bin_start, 0x4000);
             break;
         default: // custom
-            res = fm->fopen((const char *)NULL, custom_filename, FA_READ, &f);
-            printf("1541 rom file: %p (%d)\n", f, res);
+        	for(int i=0;i<8;i++) {
+        		res = fm->fopen((const char *)NULL, custom_filename, FA_READ, &f);
+                printf("1541 rom file: %p (%d)\n", f, res);
+        		if (res == FR_OK) {
+        			break;
+        		}
+        		vTaskDelay(100);
+        	}
 			if(res == FR_OK) {
 				uint32_t size = f->get_size();
 				if (size > 0x8000)

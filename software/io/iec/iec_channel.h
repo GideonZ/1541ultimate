@@ -454,13 +454,14 @@ public:
         	FileInfo *inf = (*(interface->dirlist))[index];
         	name = inf->lfname;
     	}
+    	mstring previous_path(interface->path->get_path());
     	interface->path->cd(name);  // just try!
     	FRESULT res = interface->readDirectory(); // just try!
     	if (res == FR_OK) {
         	get_last_error(ERR_OK);
     		return true;
     	}
-    	interface->path->cd(".."); // revert
+    	interface->path->cd(previous_path.c_str()); // revert
     	interface->readDirectory();
     	get_last_error(ERR_DIRECTORY_ERROR);
     	return false;

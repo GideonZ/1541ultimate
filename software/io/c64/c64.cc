@@ -33,6 +33,8 @@
 #include "flash.h"
 #include "keyboard_c64.h"
 #include "globals.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
@@ -692,11 +694,18 @@ void C64 :: set_cartridge(cart_def *def)
 #ifndef _NO_FILE_ACCESS
         FileManager *fm = FileManager :: getFileManager();
         File *f = 0;
-        fm->fopen(n, FA_READ, &f);
-		if(f) {
-			printf("File: %p\n", f);
+        FRESULT res;
+		for(int i=0;i<8;i++) {
+			res = fm->fopen((const char *)NULL, n, FA_READ, &f);
+			printf("C64 rom file: %p (%d)\n", f, res);
+			if (res == FR_OK) {
+				break;
+			}
+			vTaskDelay(100);
+		}
+		if(res == FR_OK) {
 			uint32_t transferred;
-			FRESULT res = f->read((void *)mem_addr, def->length, &transferred);
+			res = f->read((void *)mem_addr, def->length, &transferred);
 			if((res != FR_OK) || (transferred < 4096)) {
 				printf("Error loading file.. disabling cart.\n");
 				C64_CARTRIDGE_TYPE = 0;
@@ -732,11 +741,17 @@ void C64 :: init_cartridge()
 
         FileManager *fm = FileManager :: getFileManager();
         File *f = 0;
-        fm->fopen(n, FA_READ, &f);
-		if(f) {
+        FRESULT res;
+        for(int i=0;i<8;i++) {
+        	res = fm->fopen((const char *)NULL, n, FA_READ, &f);
+        	if (res == FR_OK)
+        		break;
+        	vTaskDelay(100);
+        }
+		if(res == FR_OK) {
 			uint32_t transferred;
             uint8_t *temp = new uint8_t[8192];
-			FRESULT res = f->read(temp, 8192, &transferred);
+			res = f->read(temp, 8192, &transferred);
             C64_KERNAL_ENABLE = 1;
 			if (transferred != 8192) {
 				printf("Error loading file.. [%d bytes read] disabling custom kernal.\n", transferred);

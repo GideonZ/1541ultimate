@@ -23,7 +23,7 @@ public:
     // functions called directly, or from a window
     int  get_color() { return color; }
     int   get_size_x(void) { return 60; }
-    int   get_size_y(void) { return 25; }
+    int   get_size_y(void) { return 24; }
     void  cursor_visible(int a) { }
     void set_color(int c);
     void reverse_mode(int r);
