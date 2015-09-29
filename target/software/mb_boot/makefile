@@ -31,7 +31,7 @@ LINK 	 = ./mb_boot.lds
 LLIB     =  -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2 \
 			-L $(TOOLCHAIN)/microblaze-xilinx-elf/lib
 LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
-LFLAGS   = --relax --gc-sections 
+LFLAGS   = --gc-sections 
 
 include ../common/rules.mk
 
