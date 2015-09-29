@@ -1,52 +1,22 @@
-/*
- * Copyright (c) 2002 Florian Schulze.
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the authors nor the names of the contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE AUTHORS AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- *
- * ftpd.c - This file is part of the FTP daemon for lwIP
- *
- */
-
-#include "lwip/debug.h"
-
-#include "lwip/stats.h"
 
 #include "ftpd.h"
 
-#include "lwip/tcp.h"
-
 #include <stdio.h>
-#include <string.h>
+#include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
+#if RUNS_ON_PC
+	#include <netinet/in.h>
+#else
+	#define fcntl(a,b,c)          lwip_fcntl(a,b,c)
+#endif
+
+#include <sys/fcntl.h>
 #include <ctype.h>
-#include <errno.h>
 #include <time.h>
 
 #include "vfs.h"
+#include "rtc.h"
 
 #ifdef FTPD_DEBUG
 int dbg_printf(const char *fmt, ...);
@@ -125,7 +95,7 @@ int dbg_printf(const char *fmt, ...);
              This may be a reply to any command if the service knows it
              must shut down.
 */
-#define msg425 "425 Can't open data connection."
+#define msg425 "425 Can't open data connection, use PORT or PASV first."
 #define msg426 "426 Connection closed; transfer aborted."
 #define msg450 "450 Requested file action not taken."
 /*
@@ -161,19 +131,8 @@ int dbg_printf(const char *fmt, ...);
              File name not allowed.
 */
 
-enum ftpd_state_e {
-	FTPD_USER,
-	FTPD_PASS,
-	FTPD_IDLE,
-	FTPD_NLST,
-	FTPD_LIST,
-	FTPD_RETR,
-	FTPD_RNFR,
-	FTPD_STOR,
-	FTPD_QUIT
-};
-
-static const char *month_table[12] = {
+static const char *month_table[16] = {
+	"Nul",
 	"Jan",
 	"Feb",
 	"Mar",
@@ -185,1026 +144,162 @@ static const char *month_table[12] = {
 	"Sep",
 	"Oct",
 	"Nov",
-	"Dec"
+	"Dec",
+	"M13",
+	"M14",
+	"M15"
 };
 
-/*
-------------------------------------------------------------
-	SFIFO 1.3
-------------------------------------------------------------
- * Simple portable lock-free FIFO
- * (c) 2000-2002, David Olofson
- *
- * Platform support:
- *	gcc / Linux / x86:		Works
- *	gcc / Linux / x86 kernel:	Works
- *	gcc / FreeBSD / x86:		Works
- *	gcc / NetBSD / x86:		Works
- *	gcc / Mac OS X / PPC:		Works
- *	gcc / Win32 / x86:		Works
- *	Borland C++ / DOS / x86RM:	Works
- *	Borland C++ / Win32 / x86PM16:	Untested
- *	? / Various Un*ces / ?:		Untested
- *	? / Mac OS / PPC:		Untested
- *	gcc / BeOS / x86:		Untested
- *	gcc / BeOS / PPC:		Untested
- *	? / ? / Alpha:			Untested
- *
- * 1.2: Max buffer size halved, to avoid problems with
- *	the sign bit...
- *
- * 1.3:	Critical buffer allocation bug fixed! For certain
- *	requested buffer sizes, older version would
- *	allocate a buffer of insufficient size, which
- *	would result in memory thrashing. (Amazing that
- *	I've manage to use this to the extent I have
- *	without running into this... *heh*)
- */
 
-/*
- * Porting note:
- *	Reads and writes of a variable of this type in memory
- *	must be *atomic*! 'int' is *not* atomic on all platforms.
- *	A safe type should be used, and  sfifo should limit the
- *	maximum buffer size accordingly.
- */
-typedef int sfifo_atomic_t;
-#ifdef __TURBOC__
-#	define	SFIFO_MAX_BUFFER_SIZE	0x7fff
-#else /* Kludge: Assume 32 bit platform */
-#	define	SFIFO_MAX_BUFFER_SIZE	0x7fffffff
-#endif
+FTPDaemon ftpd; // the class that causes us to exist
 
-typedef struct sfifo_t
+FTPDaemon :: FTPDaemon()
 {
-	char *buffer;
-	int size;			/* Number of bytes */
-	sfifo_atomic_t readpos;		/* Read position */
-	sfifo_atomic_t writepos;	/* Write position */
-} sfifo_t;
-
-#define SFIFO_SIZEMASK(x)	((x)->size - 1)
-
-#define sfifo_used(x)	(((x)->writepos - (x)->readpos) & SFIFO_SIZEMASK(x))
-#define sfifo_space(x)	((x)->size - 1 - sfifo_used(x))
-
-#define DBG(x)
-
-/*
- * Alloc buffer, init FIFO etc...
- */
-static int sfifo_init(sfifo_t *f, int size)
-{
-	memset(f, 0, sizeof(sfifo_t));
-
-	if(size > SFIFO_MAX_BUFFER_SIZE)
-		return -EINVAL;
-
-	/*
-	 * Set sufficient power-of-2 size.
-	 *
-	 * No, there's no bug. If you need
-	 * room for N bytes, the buffer must
-	 * be at least N+1 bytes. (The fifo
-	 * can't tell 'empty' from 'full'
-	 * without unsafe index manipulations
-	 * otherwise.)
-	 */
-	f->size = 1;
-	for(; f->size <= size; f->size <<= 1)
-		;
-
-	/* Get buffer */
-	if( 0 == (f->buffer = new char[f->size]) )
-		return -ENOMEM;
-
-	return 0;
+	xTaskCreate( ftp_listen_task, "FTP Listener", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &listenTaskHandle );
 }
 
-/*
- * Dealloc buffer etc...
- */
-static void sfifo_close(sfifo_t *f)
+void FTPDaemon :: ftp_listen_task(void *a)
 {
-	if(f->buffer)
-		delete f->buffer;
+	FTPDaemon *daemon = (FTPDaemon *)a;
+	daemon->listen_task();
 }
 
-/*
- * Empty FIFO buffer
- */
-static void sfifo_flush(sfifo_t *f)
+int FTPDaemon :: listen_task()
 {
-	/* Reset positions */
-	f->readpos = 0;
-	f->writepos = 0;
-}
+	int sockfd, portno;
+	socklen_t clilen;
+	struct sockaddr_in serv_addr, cli_addr;
 
-/*
- * Write bytes to a FIFO
- * Return number of bytes written, or an error code
- */
-static int sfifo_write(sfifo_t *f, const void *_buf, int len)
-{
-	int total;
-	int i;
-	const char *buf = (const char *)_buf;
-
-	if(!f->buffer)
-		return -ENODEV;	/* No buffer! */
-
-	/* total = len = min(space, len) */
-	total = sfifo_space(f);
-	DBG(dbg_printf("sfifo_space() = %d\n",total));
-	if(len > total)
-		len = total;
-	else
-		total = len;
-
-	i = f->writepos;
-	if(i + len > f->size)
-	{
-		memcpy(f->buffer + i, buf, f->size - i);
-		buf += f->size - i;
-		len -= f->size - i;
-		i = 0;
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+	   puts("FTPD: ERROR opening socket");
+	   return -1;
 	}
-	memcpy(f->buffer + i, buf, len);
-	f->writepos = i + len;
-
-	return total;
-}
-
-/*
- * Read bytes from a FIFO
- * Return number of bytes read, or an error code
- */
-static int sfifo_read(sfifo_t *f, void *_buf, int len)
-{
-	int total;
-	int i;
-	char *buf = (char *)_buf;
-
-	if(!f->buffer)
-		return -ENODEV;	/* No buffer! */
-
-	/* total = len = min(used, len) */
-	total = sfifo_used(f);
-	DBG(dbg_printf("sfifo_used() = %d\n",total));
-	if(len > total)
-		len = total;
-	else
-		total = len;
-
-	i = f->readpos;
-	if(i + len > f->size)
-	{
-		memcpy(buf, f->buffer + i, f->size - i);
-		buf += f->size - i;
-		len -= f->size - i;
-		i = 0;
+	memset((char *) &serv_addr, 0, sizeof(serv_addr));
+	portno = 21;
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_addr.s_addr = INADDR_ANY;
+	serv_addr.sin_port = htons(portno);
+	if (bind(sockfd, (struct sockaddr *) &serv_addr,
+			 sizeof(serv_addr)) < 0) {
+		puts("FTPD: ERROR on binding");
+		return -2;
 	}
-	memcpy(buf, f->buffer + i, len);
-	f->readpos = i + len;
 
-	return total;
-}
+	listen(sockfd, 2);
 
-struct ftpd_datastate {
-	int connected;
-	vfs_dir_t *vfs_dir;
-	vfs_dirent_t *vfs_dirent;
-	vfs_file_t *vfs_file;
-	sfifo_t fifo;
-	struct tcp_pcb *msgpcb;
-	struct ftpd_msgstate *msgfs;
-};
-
-struct ftpd_msgstate {
-	enum ftpd_state_e state;
-	sfifo_t fifo;
-	vfs_t *vfs;
-	struct ip_addr dataip;
-	u16_t dataport;
-	struct tcp_pcb *datapcb;
-	struct ftpd_datastate *datafs;
-	int passive;
-	char *renamefrom;
-};
-
-static void send_msg(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm, char *msg, ...);
-
-static void ftpd_dataerr(void *arg, err_t err)
-{
-	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
-
-	dbg_printf("ftpd_dataerr: %s (%d)\n", lwip_strerr(err), err);
-	if (fsd == NULL)
-		return;
-	fsd->msgfs->datafs = NULL;
-	fsd->msgfs->state = FTPD_IDLE;
-	delete fsd;
-}
-
-static void ftpd_dataclose(struct tcp_pcb *pcb, struct ftpd_datastate *fsd)
-{
-	tcp_arg(pcb, NULL);
-	tcp_sent(pcb, NULL);
-	tcp_recv(pcb, NULL);
-	fsd->msgfs->datafs = NULL;
-	sfifo_close(&fsd->fifo);
-	delete fsd;
-	tcp_arg(pcb, NULL);
-	tcp_close(pcb);
-}
-
-static void send_data(struct tcp_pcb *pcb, struct ftpd_datastate *fsd)
-{
-	err_t err;
-	u16_t len;
-
-	if (sfifo_used(&fsd->fifo) > 0) {
-		int i;
-
-		/* We cannot send more data than space available in the send
-		   buffer. */
-		if (tcp_sndbuf(pcb) < sfifo_used(&fsd->fifo)) {
-			len = tcp_sndbuf(pcb);
-		} else {
-			len = (u16_t) sfifo_used(&fsd->fifo);
+	while(1) {
+		clilen = sizeof(cli_addr);
+		int actual_socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+		if (actual_socket < 0) {
+			 puts("FTPD: ERROR on accept");
+			 return -3;
 		}
 
-		i = fsd->fifo.readpos;
-		if ((i + len) > fsd->fifo.size) {
-			err = tcp_write(pcb, fsd->fifo.buffer + i, (u16_t)(fsd->fifo.size - i), 1);
-			if (err != ERR_OK) {
-				dbg_printf("send_data: error writing!\n");
-				return;
+		struct timeval tv;
+		tv.tv_sec = 500; // bug in lwip; this is just used directly as tick value
+		tv.tv_usec = 500;
+		setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+
+		FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);
+
+		xTaskCreate( FTPDaemonThread :: run, "FTP Task", configMINIMAL_STACK_SIZE, thread, tskIDLE_PRIORITY + 1, NULL );
+	}
+}
+
+static uint16_t bind_port = 51000;
+
+FTPDaemonThread :: FTPDaemonThread(int socket, uint32_t addr, uint16_t port) : data_connections(4, NULL)
+{
+	this->socket = socket;
+
+	your_ip[0] = addr >> 24;
+	your_ip[1] = (addr >> 16) & 0xFF;
+	your_ip[2] = (addr >> 8) & 0xFF;
+	your_ip[3] = addr & 0xFF;
+
+	your_port = port;
+
+	printf("FTPDaemonThread: connection from %08x:%d", addr, port);
+	/* Initialize the structure. */
+	state = FTPD_IDLE;
+	vfs = 0;
+	memset(&dataip, 0, sizeof(dataip));
+	dataport = 0;
+	passive = 0;
+	connection = 0;
+	renamefrom = 0;
+	func = 0;
+
+	uint32_t fattime = rtc.get_fat_time();
+	current_year = 1980 + (fattime >> 25);
+}
+
+void FTPDaemonThread :: run(void *a)
+{
+	FTPDaemonThread *thread = (FTPDaemonThread *)a;
+	thread->handle_connection();
+	delete thread;
+	vTaskDelete(NULL);
+}
+
+uint16_t FTPDaemonThread :: getBindPort()
+{
+	if (bind_port == 61000) {
+		bind_port = 51000;
+	}
+	return bind_port++;
+}
+
+int FTPDaemonThread :: handle_connection()
+{
+	sockaddr my_addr;
+	uint32_t size;
+	getsockname(socket, &my_addr, &size);
+
+	for(int i=0;i<4;i++)
+		my_ip[i] = (uint8_t)my_addr.sa_data[2+i];
+
+	vfs = vfs_openfs();
+	if (!vfs) {
+		return -ENXIO;
+	}
+	//send_msg(msg220);
+	send_msg("220 Ultimate-II FTP: IP = %d.%d.%d.%d. Hello %d.%d.%d.%d:%d", my_ip[0], my_ip[1], my_ip[2], my_ip[3],
+			your_ip[0], your_ip[1], your_ip[2], your_ip[3], your_port);
+
+	int idx = 0;
+	while(1) {
+		int n = recv(socket, &command_buffer[idx], 1, 0);
+		if (n > 0) {
+			if ((command_buffer[idx] == '\n') || (command_buffer[idx] == '\r')) {
+				command_buffer[idx] = 0;
+				if (idx > 0) {
+					dispatch_command(command_buffer, idx);
+					idx = 0;
+				}
+			} else {
+				idx++;
+				if (idx >= COMMAND_BUFFER_SIZE)
+					idx = COMMAND_BUFFER_SIZE-1;
 			}
-			len -= fsd->fifo.size - i;
-			fsd->fifo.readpos = 0;
-			i = 0;
-		}
-
-		err = tcp_write(pcb, fsd->fifo.buffer + i, len, 1);
-		if (err != ERR_OK) {
-			dbg_printf("send_data: error writing!\n");
-			return;
-		}
-		fsd->fifo.readpos += len;
-	}
-}
-
-static void send_file(struct ftpd_datastate *fsd, struct tcp_pcb *pcb)
-{
-    static char buffer[2048];
-
-	if (!fsd->connected)
-		return;
-
-	if (fsd->vfs_file) {
-		int len;
-
-		len = sfifo_space(&fsd->fifo);
-		if (len == 0) {
-			send_data(pcb, fsd);
-			return;
-		}
-		if (len > 2048)
-			len = 2048;
-		len = vfs_read(buffer, 1, len, fsd->vfs_file);
-		if (len == 0) {
-			if (vfs_eof(fsd->vfs_file) == 0)
-				return;
-			vfs_close(fsd->vfs_file);
-			fsd->vfs_file = NULL;
-			return;
-		}
-		sfifo_write(&fsd->fifo, buffer, len);
-		send_data(pcb, fsd);
-	} else {
-		struct ftpd_msgstate *fsm;
-		struct tcp_pcb *msgpcb;
-
-		if (sfifo_used(&fsd->fifo) > 0) {
-			send_data(pcb, fsd);
-			return;
-		}
-		fsm = fsd->msgfs;
-		msgpcb = fsd->msgpcb;
-
-		ftpd_dataclose(pcb, fsd);
-		fsm->datapcb = NULL;
-		fsm->datafs = NULL;
-		fsm->state = FTPD_IDLE;
-		send_msg(msgpcb, fsm, msg226);
-		return;
-	}
-}
-
-static void send_next_directory(struct ftpd_datastate *fsd, struct tcp_pcb *pcb, int shortlist)
-{
-	static char buffer[1024];
-	int len;
-	struct ftpd_msgstate *fsm;
-	struct tcp_pcb *msgpcb;
-
-	while (1) {
-    	if (fsd->vfs_dirent == NULL)
-    		fsd->vfs_dirent = vfs_readdir(fsd->vfs_dir);
-    
-    	if (fsd->vfs_dirent) {
-    		if (shortlist) {
-    			len = sprintf(buffer, "%s\r\n", fsd->vfs_dirent->name);
-    			if (sfifo_space(&fsd->fifo) < len) {
-    				send_data(pcb, fsd);
-    				return;
-    			}
-    			sfifo_write(&fsd->fifo, buffer, len);
-    			fsd->vfs_dirent = NULL;
-    		} else {
-    			vfs_stat_t st;
-    			int current_year = 2015; // FIXME
-    
-    			vfs_stat(fsd->msgfs->vfs, fsd->vfs_dirent->name, &st);
-
-    			if (st.year == current_year)
-    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
-    						month_table[st.month], st.day, st.hr, st.min, fsd->vfs_dirent->name);
-    			else
-    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
-    						month_table[st.month], st.day, st.year, fsd->vfs_dirent->name);
-    			if (VFS_ISDIR(st.st_mode))
-    				buffer[0] = 'd';
-    			if (sfifo_space(&fsd->fifo) < len) {
-    				send_data(pcb, fsd);
-    				return;
-    			}
-    			sfifo_write(&fsd->fifo, buffer, len);
-    			fsd->vfs_dirent = NULL;
-    		}
-    	} else {
-    		if (sfifo_used(&fsd->fifo) > 0) {
-    			send_data(pcb, fsd);
-    			return;
-    		}
-    		fsm = fsd->msgfs;
-    		msgpcb = fsd->msgpcb;
-    
-    		vfs_closedir(fsd->vfs_dir);
-    		fsd->vfs_dir = NULL;
-    		ftpd_dataclose(pcb, fsd);
-    		fsm->datapcb = NULL;
-    		fsm->datafs = NULL;
-    		fsm->state = FTPD_IDLE;
-    		send_msg(msgpcb, fsm, msg226);
-    		return;
-    	}
-	}
-}
-
-static err_t ftpd_datasent(void *arg, struct tcp_pcb *pcb, u16_t len)
-{
-    if(arg == NULL) {
-        printf("ftpd_datasent: ARG = NULL\n");
-        return ERR_OK;
-    }
-	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
-
-	switch (fsd->msgfs->state) {
-	case FTPD_LIST:
-		send_next_directory(fsd, pcb, 0);
-		break;
-	case FTPD_NLST:
-		send_next_directory(fsd, pcb, 1);
-		break;
-	case FTPD_RETR:
-		send_file(fsd, pcb);
-		break;
-	default:
-		break;
-	}
-	return ERR_OK;
-}
-
-static err_t ftpd_datarecv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
-{
-	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
-
-	if (err == ERR_OK && p != NULL) {
-		struct pbuf *q;
-		u16_t tot_len = 0;
-
-		for (q = p; q != NULL; q = q->next) {
-			int len;
-
-			len = vfs_write(q->payload, 1, q->len, fsd->vfs_file);
-			tot_len += len;
-			if (len != q->len)
-				break;
-		}
-
-		/* Inform TCP that we have taken the data. */
-		tcp_recved(pcb, tot_len);
-
-		pbuf_free(p);
-	}
-	if (err == ERR_OK && p == NULL) {
-		struct ftpd_msgstate *fsm;
-		struct tcp_pcb *msgpcb;
-
-		fsm = fsd->msgfs;
-		msgpcb = fsd->msgpcb;
-
-		vfs_close(fsd->vfs_file);
-		fsd->vfs_file = NULL;
-		ftpd_dataclose(pcb, fsd);
-		fsm->datapcb = NULL;
-		fsm->datafs = NULL;
-		fsm->state = FTPD_IDLE;
-		send_msg(msgpcb, fsm, msg226);
-	}
-
-	return ERR_OK;
-}
-
-static err_t ftpd_dataconnected(void *arg, struct tcp_pcb *pcb, err_t err)
-{
-	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
-
-	fsd->msgfs->datapcb = pcb;
-	fsd->connected = 1;
-
-	/* Tell TCP that we wish to be informed of incoming data by a call
-	   to the http_recv() function. */
-	tcp_recv(pcb, ftpd_datarecv);
-
-	/* Tell TCP that we wish be to informed of data that has been
-	   successfully sent by a call to the ftpd_sent() function. */
-	tcp_sent(pcb, ftpd_datasent);
-
-	tcp_err(pcb, ftpd_dataerr);
-
-	switch (fsd->msgfs->state) {
-	case FTPD_LIST:
-		send_next_directory(fsd, pcb, 0);
-		break;
-	case FTPD_NLST:
-		send_next_directory(fsd, pcb, 1);
-		break;
-	case FTPD_RETR:
-		send_file(fsd, pcb);
-		break;
-	default:
-		break;
-	}
-
-	return ERR_OK;
-}
-
-static err_t ftpd_dataaccept(void *arg, struct tcp_pcb *pcb, err_t err)
-{
-	struct ftpd_datastate *fsd = (struct ftpd_datastate *)arg;
-
-	fsd->msgfs->datapcb = pcb;
-	fsd->connected = 1;
-
-	/* Tell TCP that we wish to be informed of incoming data by a call
-	   to the http_recv() function. */
-	tcp_recv(pcb, ftpd_datarecv);
-
-	/* Tell TCP that we wish be to informed of data that has been
-	   successfully sent by a call to the ftpd_sent() function. */
-	tcp_sent(pcb, ftpd_datasent);
-
-	tcp_err(pcb, ftpd_dataerr);
-
-	switch (fsd->msgfs->state) {
-	case FTPD_LIST:
-		send_next_directory(fsd, pcb, 0);
-		break;
-	case FTPD_NLST:
-		send_next_directory(fsd, pcb, 1);
-		break;
-	case FTPD_RETR:
-		send_file(fsd, pcb);
-		break;
-	default:
-		break;
-	}
-
-	return ERR_OK;
-}
-
-static int open_dataconnection(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	if (fsm->passive)
-		return 0;
-
-	/* Allocate memory for the structure that holds the state of the
-	   connection. */
-	fsm->datafs = new struct ftpd_datastate;
-
-	if (fsm->datafs == NULL) {
-		send_msg(pcb, fsm, msg451);
-		return 1;
-	}
-	memset(fsm->datafs, 0, sizeof(struct ftpd_datastate));
-	fsm->datafs->msgfs = fsm;
-	fsm->datafs->msgpcb = pcb;
-	sfifo_init(&fsm->datafs->fifo, 2000);
-
-	fsm->datapcb = tcp_new();
-	tcp_bind(fsm->datapcb, &pcb->local_ip, 20);
-	/* Tell TCP that this is the structure we wish to be passed for our
-	   callbacks. */
-	tcp_arg(fsm->datapcb, fsm->datafs);
-	tcp_connect(fsm->datapcb, &fsm->dataip, fsm->dataport, ftpd_dataconnected);
-
-	return 0;
-}
-
-static void cmd_user(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	send_msg(pcb, fsm, msg331);
-	fsm->state = FTPD_PASS;
-	/*
-	   send_msg(pcb, fs, msgLoginFailed);
-	   fs->state = FTPD_QUIT;
-	 */
-}
-
-static void cmd_pass(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	send_msg(pcb, fsm, msg230);
-	fsm->state = FTPD_IDLE;
-	/*
-	   send_msg(pcb, fs, msgLoginFailed);
-	   fs->state = FTPD_QUIT;
-	 */
-}
-
-static void cmd_port(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	int nr;
-	unsigned pHi, pLo;
-	unsigned ip[4];
-
-	nr = sscanf(arg, "%d,%d,%d,%d,%d,%d", &(ip[0]), &(ip[1]), &(ip[2]), &(ip[3]), &pHi, &pLo);
-	if (nr != 6) {
-		send_msg(pcb, fsm, msg501);
-	} else {
-		IP4_ADDR(&fsm->dataip, (u8_t) ip[0], (u8_t) ip[1], (u8_t) ip[2], (u8_t) ip[3]);
-		fsm->dataport = ((u16_t) pHi << 8) | (u16_t) pLo;
-		send_msg(pcb, fsm, msg200);
-	}
-}
-
-static void cmd_quit(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	send_msg(pcb, fsm, msg221);
-	fsm->state = FTPD_QUIT;
-}
-
-static void cmd_cwd(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	if (!vfs_chdir(fsm->vfs, arg)) {
-		send_msg(pcb, fsm, msg250);
-	} else {
-		send_msg(pcb, fsm, msg550);
-	}
-}
-
-static void cmd_cdup(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	if (!vfs_chdir(fsm->vfs, "..")) {
-		send_msg(pcb, fsm, msg250);
-	} else {
-		send_msg(pcb, fsm, msg550);
-	}
-}
-
-static void cmd_pwd(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	char *path;
-
-	if (path = vfs_getcwd(fsm->vfs, NULL, 0)) {
-		send_msg(pcb, fsm, msg257PWD, path);
-		delete path;
-	}
-}
-
-static void cmd_list_common(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm, int shortlist)
-{
-	vfs_dir_t *vfs_dir;
-	char *cwd;
-
-	cwd = vfs_getcwd(fsm->vfs, NULL, 0);
-	if ((!cwd)) {
-		send_msg(pcb, fsm, msg451);
-		return;
-	}
-	vfs_dir = vfs_opendir(fsm->vfs, cwd);
-	delete cwd;
-	if (!vfs_dir) {
-		send_msg(pcb, fsm, msg451);
-		return;
-	}
-
-	if (open_dataconnection(pcb, fsm) != 0) {
-		vfs_closedir(vfs_dir);
-		return;
-	}
-
-	fsm->datafs->vfs_dir = vfs_dir;
-	fsm->datafs->vfs_dirent = NULL;
-	if (shortlist != 0)
-		fsm->state = FTPD_NLST;
-	else
-		fsm->state = FTPD_LIST;
-
-	send_msg(pcb, fsm, msg150);
-}
-
-static void cmd_nlst(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	cmd_list_common(arg, pcb, fsm, 1);
-}
-
-static void cmd_list(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	cmd_list_common(arg, pcb, fsm, 0);
-}
-
-static void cmd_retr(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	vfs_file_t *vfs_file;
-	vfs_stat_t st;
-
-	int ret = vfs_stat(fsm->vfs, arg, &st);
-    printf("RET %d s%d m%d\n", ret, st.st_size, st.st_mode);
-	if (!VFS_ISREG(st.st_mode)) {
-		send_msg(pcb, fsm, msg550);
-		return;
-	}
-	vfs_file = vfs_open(fsm->vfs, arg, "rb");
-	if (!vfs_file) {
-		send_msg(pcb, fsm, msg550);
-		return;
-	}
-
-	send_msg(pcb, fsm, msg150recv, arg, st.st_size);
-
-	if (open_dataconnection(pcb, fsm) != 0) {
-		vfs_close(vfs_file);
-		return;
-	}
-
-	fsm->datafs->vfs_file = vfs_file;
-	fsm->state = FTPD_RETR;
-}
-
-static void cmd_stor(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	vfs_file_t *vfs_file;
-
-	vfs_file = vfs_open(fsm->vfs, arg, "wb");
-	if (!vfs_file) {
-		send_msg(pcb, fsm, msg550);
-		return;
-	}
-
-	send_msg(pcb, fsm, msg150stor, arg);
-
-	if (open_dataconnection(pcb, fsm) != 0) {
-		vfs_close(vfs_file);
-		return;
-	}
-
-	fsm->datafs->vfs_file = vfs_file;
-	fsm->state = FTPD_STOR;
-}
-
-static void cmd_noop(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	send_msg(pcb, fsm, msg200);
-}
-
-static void cmd_syst(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	send_msg(pcb, fsm, msg214SYST, "UNIX");
-}
-
-static void cmd_pasv(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	static u16_t port = 4096;
-	static u16_t start_port = 4096;
-	struct tcp_pcb *temppcb;
-
-	/* Allocate memory for the structure that holds the state of the
-	   connection. */
-	fsm->datafs = new struct ftpd_datastate;
-
-	if (fsm->datafs == NULL) {
-		send_msg(pcb, fsm, msg451);
-		return;
-	}
-	memset(fsm->datafs, 0, sizeof(struct ftpd_datastate));
-
-	fsm->datapcb = tcp_new();
-	if (!fsm->datapcb) {
-		delete fsm->datafs;
-		send_msg(pcb, fsm, msg451);
-		return;
-	}
-
-	sfifo_init(&fsm->datafs->fifo, 2000);
-
-	start_port = port;
-
-	while (1) {
-		err_t err;
-
-		if(++port > 0x7fff)
-			port = 4096;
-	
-		fsm->dataport = port;
-		err = tcp_bind(fsm->datapcb, &pcb->local_ip, fsm->dataport);
-		if (err == ERR_OK)
+		} else if (n < 0) {
+			if (errno == EAGAIN)
+				continue;
+			printf("FTPD: ERROR reading from socket %d. Errno = %d", n, errno);
+			return errno;
+		} else { // n == 0
+			printf("FTPD: Socket got closed\n");
 			break;
-		if (start_port == port)
-			err = ERR_CLSD;
-		if (err == ERR_USE)
-			continue;
-		if (err != ERR_OK) {
-			ftpd_dataclose(fsm->datapcb, fsm->datafs);
-			fsm->datapcb = NULL;
-			fsm->datafs = NULL;
-			return;
 		}
 	}
-
-	temppcb = tcp_listen(fsm->datapcb);
-	if (!temppcb) {
-		ftpd_dataclose(fsm->datapcb, fsm->datafs);
-		fsm->datapcb = NULL;
-		fsm->datafs = NULL;
-		return;
-	}
-	fsm->datapcb = temppcb;
-
-	fsm->passive = 1;
-	fsm->datafs->connected = 0;
-	fsm->datafs->msgfs = fsm;
-	fsm->datafs->msgpcb = pcb;
-
-	/* Tell TCP that this is the structure we wish to be passed for our
-	   callbacks. */
-	tcp_arg(fsm->datapcb, fsm->datafs);
-
-	tcp_accept(fsm->datapcb, ftpd_dataaccept);
-	send_msg(pcb, fsm, msg227, ip4_addr1(&pcb->local_ip), ip4_addr2(&pcb->local_ip), ip4_addr3(&pcb->local_ip), ip4_addr4(&pcb->local_ip), (fsm->dataport >> 8) & 0xff, (fsm->dataport) & 0xff);
+	return ERR_OK;
 }
 
-static void cmd_abrt(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	if (fsm->datafs != NULL) {
-		tcp_arg(fsm->datapcb, NULL);
-		tcp_sent(fsm->datapcb, NULL);
-		tcp_recv(fsm->datapcb, NULL);
-		tcp_arg(fsm->datapcb, NULL);
-		tcp_abort(pcb);
-		sfifo_close(&fsm->datafs->fifo);
-		delete fsm->datafs;
-		fsm->datafs = NULL;
-	}
-	fsm->state = FTPD_IDLE;
-}
-
-static void cmd_type(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	dbg_printf("Got TYPE -%s-\n", arg);
-	send_msg(pcb, fsm, msg200);
-}
-
-static void cmd_mode(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	dbg_printf("Got MODE -%s-\n", arg);
-	send_msg(pcb, fsm, msg502);
-}
-
-static void cmd_rnfr(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	if (arg == NULL) {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (*arg == '\0') {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (fsm->renamefrom)
-		delete fsm->renamefrom;
-	fsm->renamefrom = new char[strlen(arg) + 1];
-	if (fsm->renamefrom == NULL) {
-		send_msg(pcb, fsm, msg451);
-		return;
-	}
-	strcpy(fsm->renamefrom, arg);
-	fsm->state = FTPD_RNFR;
-	send_msg(pcb, fsm, msg350);
-}
-
-static void cmd_rnto(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	if (fsm->state != FTPD_RNFR) {
-		send_msg(pcb, fsm, msg503);
-		return;
-	}
-	fsm->state = FTPD_IDLE;
-	if (arg == NULL) {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (*arg == '\0') {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (vfs_rename(fsm->vfs, fsm->renamefrom, arg)) {
-		send_msg(pcb, fsm, msg450);
-	} else {
-		send_msg(pcb, fsm, msg250);
-	}
-}
-
-static void cmd_mkd(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	if (arg == NULL) {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (*arg == '\0') {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (vfs_mkdir(fsm->vfs, arg, VFS_IRWXU | VFS_IRWXG | VFS_IRWXO) != 0) {
-		send_msg(pcb, fsm, msg550);
-	} else {
-		send_msg(pcb, fsm, msg257, arg);
-	}
-}
-
-static void cmd_rmd(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	vfs_stat_t st;
-
-	if (arg == NULL) {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (*arg == '\0') {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (vfs_stat(fsm->vfs, arg, &st) != 0) {
-		send_msg(pcb, fsm, msg550);
-		return;
-	}
-	if (!VFS_ISDIR(st.st_mode)) {
-		send_msg(pcb, fsm, msg550);
-		return;
-	}
-	if (vfs_rmdir(fsm->vfs, arg) != 0) {
-		send_msg(pcb, fsm, msg550);
-	} else {
-		send_msg(pcb, fsm, msg250);
-	}
-}
-
-static void cmd_dele(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	vfs_stat_t st;
-
-	if (arg == NULL) {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (*arg == '\0') {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (vfs_stat(fsm->vfs, arg, &st) != 0) {
-		send_msg(pcb, fsm, msg550);
-		return;
-	}
-	if (!VFS_ISREG(st.st_mode)) {
-		send_msg(pcb, fsm, msg550);
-		return;
-	}
-	if (vfs_remove(fsm->vfs, arg) != 0) {
-		send_msg(pcb, fsm, msg550);
-	} else {
-		send_msg(pcb, fsm, msg250);
-	}
-}
-
-static void cmd_size(const char *arg, struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	vfs_stat_t st;
-	char buffer[20];
-
-	if (arg == NULL) {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (*arg == '\0') {
-		send_msg(pcb, fsm, msg501);
-		return;
-	}
-	if (vfs_stat(fsm->vfs, arg, &st) != 0) {
-		send_msg(pcb, fsm, msg550);
-		return;
-	}
-	sprintf(buffer, msg213, st.st_size);
-	send_msg(pcb, fsm, buffer);
-}
-
-struct ftpd_command {
-	char *cmd;
-	void (*func) (const char *arg, struct tcp_pcb * pcb, struct ftpd_msgstate * fsm);
-};
-
-static struct ftpd_command ftpd_commands[] = {
-	"USER", cmd_user,
-	"PASS", cmd_pass,
-	"PORT", cmd_port,
-	"QUIT", cmd_quit,
-	"CWD", cmd_cwd,
-	"CDUP", cmd_cdup,
-	"PWD", cmd_pwd,
-	"XPWD", cmd_pwd,
-	"NLST", cmd_nlst,
-	"LIST", cmd_list,
-	"RETR", cmd_retr,
-	"STOR", cmd_stor,
-	"NOOP", cmd_noop,
-	"SYST", cmd_syst,
-	"ABOR", cmd_abrt,
-	"TYPE", cmd_type,
-	"MODE", cmd_mode,
-	"RNFR", cmd_rnfr,
-	"RNTO", cmd_rnto,
-	"MKD", cmd_mkd,
-	"XMKD", cmd_mkd,
-	"RMD", cmd_rmd,
-	"XRMD", cmd_rmd,
-	"DELE", cmd_dele,
-	"SIZE", cmd_size,
-	//"PASV", cmd_pasv,
-	NULL
-};
-
-static void send_msgdata(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
-{
-	err_t err;
-	u16_t len;
-
-	if (sfifo_used(&fsm->fifo) > 0) {
-		int i;
-
-		/* We cannot send more data than space available in the send
-		   buffer. */
-		if (tcp_sndbuf(pcb) < sfifo_used(&fsm->fifo)) {
-			len = tcp_sndbuf(pcb);
-		} else {
-			len = (u16_t) sfifo_used(&fsm->fifo);
-		}
-
-		i = fsm->fifo.readpos;
-		if ((i + len) > fsm->fifo.size) {
-			err = tcp_write(pcb, fsm->fifo.buffer + i, (u16_t)(fsm->fifo.size - i), 1);
-			if (err != ERR_OK) {
-				dbg_printf("send_msgdata: error writing!\n");
-				return;
-			}
-			len -= fsm->fifo.size - i;
-			fsm->fifo.readpos = 0;
-			i = 0;
-		}
-
-		err = tcp_write(pcb, fsm->fifo.buffer + i, len, 1);
-		if (err != ERR_OK) {
-			dbg_printf("send_msgdata: error writing!\n");
-			return;
-		}
-		fsm->fifo.readpos += len;
-	}
-}
-
-static void send_msg(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm, char *msg, ...)
+void FTPDaemonThread :: send_msg(char *msg, ...)
 {
 	va_list arg;
-	static char buffer[1024];
+	char buffer[600];
 	int len;
 
 	va_start(arg, msg);
@@ -1212,201 +307,639 @@ static void send_msg(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm, char *msg, 
 	va_end(arg);
 	strcat(buffer, "\r\n");
 	len = strlen(buffer);
-	if (sfifo_space(&fsm->fifo) < len)
-		return;
-	sfifo_write(&fsm->fifo, buffer, len);
-	printf("response: %s", buffer);
-	send_msgdata(pcb, fsm);
+	lwip_write(socket, buffer, len);
+	// printf("response: %s", buffer);
 }
 
-static void ftpd_msgerr(void *arg, err_t err)
+void FTPDaemonThread :: cmd_user(const char *arg)
 {
-	struct ftpd_msgstate *fsm = (struct ftpd_msgstate *)arg;
-
-	dbg_printf("ftpd_msgerr: %s (%d)\n", lwip_strerr(err), err);
-	if (fsm == NULL)
-		return;
-	if (fsm->datafs)
-		ftpd_dataclose(fsm->datapcb, fsm->datafs);
-	sfifo_close(&fsm->fifo);
-	vfs_closefs(fsm->vfs);
-	fsm->vfs = NULL;
-	if (fsm->renamefrom)
-		delete fsm->renamefrom;
-	fsm->renamefrom = NULL;
-	delete fsm;
+	send_msg(msg331);
+	state = FTPD_PASS;
 }
 
-static void ftpd_msgclose(struct tcp_pcb *pcb, struct ftpd_msgstate *fsm)
+void FTPDaemonThread :: cmd_pass(const char *arg)
 {
-	tcp_arg(pcb, NULL);
-	tcp_sent(pcb, NULL);
-	tcp_recv(pcb, NULL);
-	if (fsm->datafs)
-		ftpd_dataclose(fsm->datapcb, fsm->datafs);
-	sfifo_close(&fsm->fifo);
-	vfs_closefs(fsm->vfs);
-	fsm->vfs = NULL;
-	if (fsm->renamefrom)
-		delete fsm->renamefrom;
-	fsm->renamefrom = NULL;
-	delete fsm;
-	tcp_arg(pcb, NULL);
-	tcp_close(pcb);
+	send_msg(msg230);
+	state = FTPD_IDLE;
 }
 
-static err_t ftpd_msgsent(void *arg, struct tcp_pcb *pcb, u16_t len)
+void FTPDaemonThread :: cmd_port(const char *arg)
 {
-	struct ftpd_msgstate *fsm = (struct ftpd_msgstate *)arg;
+	int nr;
+	unsigned pHi, pLo;
+	unsigned ip[4];
 
-	if (pcb->state > ESTABLISHED)
-		return ERR_OK;
+	nr = sscanf(arg, "%d,%d,%d,%d,%d,%d", &(ip[0]), &(ip[1]), &(ip[2]), &(ip[3]), &pHi, &pLo);
+	if (nr != 6) {
+		send_msg(msg501);
+	} else {
+		printf("Got: %d.%d.%d.%d port %d.%d\n", ip[0], ip[1], ip[2], ip[3], pHi, pLo);
+		IP4_ADDR(&dataip, (uint8_t) ip[0], (uint8_t) ip[1], (uint8_t) ip[2], (uint8_t) ip[3]);
+		dataport = ((uint16_t) pHi << 8) | (uint16_t) pLo;
 
-	if ((sfifo_used(&fsm->fifo) == 0) && (fsm->state == FTPD_QUIT))
-		ftpd_msgclose(pcb, fsm);
-
-	send_msgdata(pcb, fsm);
-
-	return ERR_OK;
-}
-
-static err_t ftpd_msgrecv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
-{
-	char *text;
-	struct ftpd_msgstate *fsm = (struct ftpd_msgstate *)arg;
-
-	if (err == ERR_OK && p != NULL) {
-
-		/* Inform TCP that we have taken the data. */
-		tcp_recved(pcb, p->tot_len);
-
-		text = new char[p->tot_len + 1];
-		if (text) {
-			char cmd[5];
-			struct pbuf *q;
-			char *pt = text;
-			struct ftpd_command *ftpd_cmd;
-
-			for (q = p; q != NULL; q = q->next) {
-				bcopy(q->payload, pt, q->len);
-				pt += q->len;
-			}
-			*pt = '\0';
-
-			pt = &text[strlen(text) - 1];
-			while (((*pt == '\r') || (*pt == '\n')) && pt >= text)
-				*pt-- = '\0';
-
-			printf("query: %s\n", text);
-
-			strncpy(cmd, text, 4);
-			for (pt = cmd; isalpha(*pt) && pt < &cmd[4]; pt++)
-				*pt = toupper(*pt);
-			*pt = '\0';
-
-			for (ftpd_cmd = ftpd_commands; ftpd_cmd->cmd != NULL; ftpd_cmd++) {
-				if (!strcmp(ftpd_cmd->cmd, cmd))
-					break;
-			}
-
-			if (strlen(text) < (strlen(cmd) + 1))
-				pt = "";
-			else
-				pt = &text[strlen(cmd) + 1];
-
-			if (ftpd_cmd->func)
-				ftpd_cmd->func(pt, pcb, fsm);
-			else
-				send_msg(pcb, fsm, msg502);
-
-			delete text;
+		if (connection) {
+			connection->close_connection();
+			delete connection;
 		}
-		pbuf_free(p);
+		connection = new FTPDataConnection(this);
+		passive = 0;
+		send_msg(msg200);
 	}
-
-	return ERR_OK;
 }
 
-static err_t ftpd_msgpoll(void *arg, struct tcp_pcb *pcb)
+void FTPDaemonThread :: cmd_quit(const char *arg)
 {
-	struct ftpd_msgstate *fsm = (struct ftpd_msgstate *)arg;
+	send_msg(msg221);
+	state = FTPD_QUIT;
+}
 
-	if (fsm == NULL)
-		return ERR_OK;
+void FTPDaemonThread :: cmd_cwd(const char *arg)
+{
+	if (!vfs_chdir(vfs, arg)) {
+		send_msg(msg250);
+	} else {
+		send_msg(msg550);
+	}
+}
 
-	if (fsm->datafs) {
-		if (fsm->datafs->connected) {
-			switch (fsm->state) {
-			case FTPD_LIST:
-				send_next_directory(fsm->datafs, fsm->datapcb, 0);
-				break;
-			case FTPD_NLST:
-				send_next_directory(fsm->datafs, fsm->datapcb, 1);
-				break;
-			case FTPD_RETR:
-				send_file(fsm->datafs, fsm->datapcb);
-				break;
-			default:
-				break;
-			}
+void FTPDaemonThread :: cmd_cdup(const char *arg)
+{
+	if (!vfs_chdir(vfs, "..")) {
+		send_msg(msg250);
+	} else {
+		send_msg(msg550);
+	}
+}
+
+void FTPDaemonThread :: cmd_pwd(const char *arg)
+{
+	char *path;
+
+	path = vfs_getcwd(vfs, NULL, 0);
+	if (path) {
+		send_msg(msg257PWD, path);
+		delete path;
+	}
+}
+
+void FTPDaemonThread :: cmd_list_common(const char *arg, int shortlist)
+{
+	vfs_dir_t *vfs_dir;
+	char *cwd;
+
+	cwd = vfs_getcwd(vfs, NULL, 0);
+	if ((!cwd)) {
+		send_msg(msg451);
+		return;
+	}
+	vfs_dir = vfs_opendir(vfs, cwd);
+	delete cwd;
+	if (!vfs_dir) {
+		send_msg(msg451);
+		return;
+	}
+
+	if (shortlist != 0)
+		state = FTPD_NLST;
+	else
+		state = FTPD_LIST;
+
+	if (!connection) {
+		send_msg(msg425);
+		vfs_closedir(vfs_dir);
+		return;
+	}
+
+	send_msg(msg150);
+
+	connection->directory(shortlist, vfs_dir);
+	connection->close_connection();
+	delete connection;
+	connection = 0;
+
+	send_msg(msg226);
+}
+
+void FTPDaemonThread :: cmd_nlst(const char *arg)
+{
+	cmd_list_common(arg, 1);
+}
+
+void FTPDaemonThread :: cmd_list(const char *arg)
+{
+	cmd_list_common(arg, 0);
+}
+
+void FTPDaemonThread :: cmd_retr(const char *arg)
+{
+	vfs_file_t *vfs_file;
+	vfs_stat_t st;
+
+	int ret = vfs_stat(vfs, arg, &st);
+    //printf("RET %d s%d m%d\n", ret, st.st_size, st.st_mode);
+	if (!VFS_ISREG(st.st_mode)) {
+		send_msg(msg550);
+		return;
+	}
+	vfs_file = vfs_open(vfs, arg, "rb");
+	if (!vfs_file) {
+		send_msg(msg550);
+		return;
+	}
+
+	if (!connection) {
+		send_msg(msg425);
+		vfs_close(vfs_file);
+		return;
+	}
+
+	send_msg(msg150recv, arg, st.st_size);
+
+	connection->sendfile(vfs_file);
+	connection->close_connection();
+	delete connection;
+	connection = 0;
+
+	send_msg(msg226);
+}
+
+void FTPDaemonThread :: cmd_stor(const char *arg)
+{
+	vfs_file_t *vfs_file;
+
+	vfs_file = vfs_open(vfs, arg, "wb");
+	if (!vfs_file) {
+		send_msg(msg550);
+		return;
+	}
+
+	send_msg(msg150stor, arg);
+
+	bool success = connection->receivefile(vfs_file);
+	connection->close_connection();
+	delete connection;
+	connection = 0;
+
+	if (success)
+		send_msg(msg226);
+	else
+		send_msg(msg452);
+}
+
+void FTPDaemonThread :: cmd_noop(const char *arg)
+{
+	send_msg(msg200);
+}
+
+void FTPDaemonThread :: cmd_syst(const char *arg)
+{
+	send_msg(msg214SYST, "UNIX");
+}
+
+void FTPDaemonThread :: cmd_pasv(const char *arg)
+{
+	passive = 1;
+	if (connection) {
+		connection->close_connection();
+		delete connection;
+	}
+	connection = new FTPDataConnection(this);
+	connection->do_bind();
+}
+
+void FTPDaemonThread :: cmd_abrt(const char *arg)
+{
+	if (connection) {
+		connection->close_connection();
+		delete connection;
+		connection = 0;
+	}
+	state = FTPD_IDLE;
+}
+
+void FTPDaemonThread :: cmd_type(const char *arg)
+{
+	dbg_printf("Got TYPE -%s-\n", arg);
+	send_msg(msg200);
+}
+
+void FTPDaemonThread :: cmd_mode(const char *arg)
+{
+	dbg_printf("Got MODE -%s-\n", arg);
+	send_msg(msg502);
+}
+
+void FTPDaemonThread :: cmd_rnfr(const char *arg)
+{
+	if (arg == NULL) {
+		send_msg(msg501);
+		return;
+	}
+	if (*arg == '\0') {
+		send_msg(msg501);
+		return;
+	}
+	if (renamefrom)
+		delete renamefrom;
+	renamefrom = new char[strlen(arg) + 1];
+	if (renamefrom == NULL) {
+		send_msg(msg451);
+		return;
+	}
+	strcpy(renamefrom, arg);
+	state = FTPD_RNFR;
+	send_msg(msg350);
+}
+
+void FTPDaemonThread :: cmd_rnto(const char *arg)
+{
+	if (state != FTPD_RNFR) {
+		send_msg(msg503);
+		return;
+	}
+	state = FTPD_IDLE;
+	if (arg == NULL) {
+		send_msg(msg501);
+		return;
+	}
+	if (*arg == '\0') {
+		send_msg(msg501);
+		return;
+	}
+	if (vfs_rename(vfs, renamefrom, arg)) {
+		send_msg(msg450);
+	} else {
+		send_msg(msg250);
+	}
+}
+
+void FTPDaemonThread :: cmd_mkd(const char *arg)
+{
+	if (arg == NULL) {
+		send_msg(msg501);
+		return;
+	}
+	if (*arg == '\0') {
+		send_msg(msg501);
+		return;
+	}
+	if (vfs_mkdir(vfs, arg, VFS_IRWXU | VFS_IRWXG | VFS_IRWXO) != 0) {
+		send_msg(msg550);
+	} else {
+		send_msg(msg257, arg);
+	}
+}
+
+void FTPDaemonThread :: cmd_rmd(const char *arg)
+{
+	vfs_stat_t st;
+
+	if (arg == NULL) {
+		send_msg(msg501);
+		return;
+	}
+	if (*arg == '\0') {
+		send_msg(msg501);
+		return;
+	}
+	if (vfs_stat(vfs, arg, &st) != 0) {
+		send_msg(msg550);
+		return;
+	}
+	if (!VFS_ISDIR(st.st_mode)) {
+		send_msg(msg550);
+		return;
+	}
+	if (vfs_rmdir(vfs, arg) != 0) {
+		send_msg(msg550);
+	} else {
+		send_msg(msg250);
+	}
+}
+
+void FTPDaemonThread :: cmd_dele(const char *arg)
+{
+	vfs_stat_t st;
+
+	if (arg == NULL) {
+		send_msg(msg501);
+		return;
+	}
+	if (*arg == '\0') {
+		send_msg(msg501);
+		return;
+	}
+	if (vfs_stat(vfs, arg, &st) != 0) {
+		send_msg(msg550);
+		return;
+	}
+	if (!VFS_ISREG(st.st_mode)) {
+		send_msg(msg550);
+		return;
+	}
+	if (vfs_remove(vfs, arg) != 0) {
+		send_msg(msg550);
+	} else {
+		send_msg(msg250);
+	}
+}
+
+void FTPDaemonThread :: cmd_size(const char *arg)
+{
+	vfs_stat_t st;
+	char buffer[20];
+
+	if (arg == NULL) {
+		send_msg(msg501);
+		return;
+	}
+	if (*arg == '\0') {
+		send_msg(msg501);
+		return;
+	}
+	if (vfs_stat(vfs, arg, &st) != 0) {
+		send_msg(msg550);
+		return;
+	}
+	sprintf(buffer, msg213, st.st_size);
+	send_msg(buffer);
+}
+
+
+struct ftpd_command {
+	char *cmd;
+	func_t func;
+};
+
+struct ftpd_command ftpd_commands[] = {
+	"USER", &FTPDaemonThread :: cmd_user,
+	"PASS", &FTPDaemonThread :: cmd_pass,
+	"PORT", &FTPDaemonThread :: cmd_port,
+	"QUIT", &FTPDaemonThread :: cmd_quit,
+	"CWD",  &FTPDaemonThread :: cmd_cwd,
+	"CDUP", &FTPDaemonThread :: cmd_cdup,
+	"PWD",  &FTPDaemonThread :: cmd_pwd,
+	"XPWD", &FTPDaemonThread :: cmd_pwd,
+	"NLST", &FTPDaemonThread :: cmd_nlst,
+	"LIST", &FTPDaemonThread :: cmd_list,
+	"RETR", &FTPDaemonThread :: cmd_retr,
+	"STOR", &FTPDaemonThread :: cmd_stor,
+	"NOOP", &FTPDaemonThread :: cmd_noop,
+	"SYST", &FTPDaemonThread :: cmd_syst,
+	"ABOR", &FTPDaemonThread :: cmd_abrt,
+	"TYPE", &FTPDaemonThread :: cmd_type,
+	"MODE", &FTPDaemonThread :: cmd_mode,
+	"RNFR", &FTPDaemonThread :: cmd_rnfr,
+	"RNTO", &FTPDaemonThread :: cmd_rnto,
+	"MKD",  &FTPDaemonThread :: cmd_mkd,
+	"XMKD", &FTPDaemonThread :: cmd_mkd,
+	"RMD",  &FTPDaemonThread :: cmd_rmd,
+	"XRMD", &FTPDaemonThread :: cmd_rmd,
+	"DELE", &FTPDaemonThread :: cmd_dele,
+	"SIZE", &FTPDaemonThread :: cmd_size,
+	"PASV", &FTPDaemonThread :: cmd_pasv,
+	NULL
+};
+
+void FTPDaemonThread :: dispatch_command(char *text, int length)
+{
+	char cmd[5];
+	char *pt = text;
+
+	pt = &text[length - 1];
+	while (((*pt == '\r') || (*pt == '\n')) && pt >= text)
+		*pt-- = '\0';
+
+	strncpy(cmd, text, 4);
+	for (pt = cmd; isalpha(*pt) && pt < &cmd[4]; pt++)
+		*pt = toupper(*pt);
+	*pt = '\0';
+
+	struct ftpd_command *ftpd_cmd;
+	for (ftpd_cmd = ftpd_commands; ftpd_cmd->cmd != NULL; ftpd_cmd++) {
+		if (!strcmp(ftpd_cmd->cmd, cmd))
+			break;
+	}
+
+	if (strlen(text) < (strlen(cmd) + 1))
+		pt = "";
+	else
+		pt = &text[strlen(cmd) + 1];
+
+	if (ftpd_cmd->func) {
+		// this->*ftpd_cmd->func(pt);
+		// func = ftpd_cmd->func;
+		((this)->*(ftpd_cmd->func))(pt);
+	} else {
+		send_msg(msg502);
+	}
+}
+
+int FTPDaemonThread :: open_dataconnection(bool passive)
+{
+	FTPDataConnection *conn = new FTPDataConnection(this); //, dataip, dataport);
+
+	if (conn == NULL) {
+		send_msg(msg451);
+		return 1;
+	}
+	return 0;
+}
+
+/*
+void FTPDataConnection :: send_next_directory(int shortlist)
+{
+}
+*/
+
+// both the PORT and the PASV command create a new data socket and thread.
+// In case of the PORT command, we will perform the connect to the specified IP/Port
+// In case of the PASV command, we will bind a local socket, reply our IP address and socket port, and then switch to listen mode
+
+FTPDataConnection :: FTPDataConnection(FTPDaemonThread *parent)
+{
+	this->parent = parent;
+	connected = 0;
+	done = 0;
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	actual_socket = -1;
+
+	vfs_dirent = 0;
+	vfs_file = 0;
+	acceptTaskHandle = 0;
+	spawningTask = 0;
+}
+
+int FTPDataConnection :: setup_connection()
+{
+	if (parent->passive) {
+		if (ulTaskNotifyTake(pdTRUE, 2000)) { // try to wait for some time
+			//printf("Semaphore take returned. apparently someone connected to my socket!\n");
+			vTaskDelete(acceptTaskHandle);
+			return 0;
+		} else {
+			printf("Taking semaphore timed out.\n");
+			return -1;
 		}
 	}
+	return connect_to(parent->dataip, parent->dataport);
+}
 
+void FTPDataConnection :: close_connection()
+{
+	if (actual_socket)
+		lwip_close(actual_socket);
+ 	if ((sockfd) && (actual_socket != sockfd))
+		lwip_close(sockfd);
+}
+
+int FTPDataConnection :: connect_to(struct ip_addr ip, uint16_t port) // active mode
+{
+	if (sockfd < 0)
+		return -ENOTCONN;
+
+	struct sockaddr_in serv_addr;
+	memset(&serv_addr, '0', sizeof(serv_addr));
+
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(port);
+
+	serv_addr.sin_addr.s_addr = ip.addr;
+/*
+	((uint32_t)ip.addr[0]) << 24 |
+								((uint32_t)ip.addr[1]) << 16 |
+								((uint32_t)ip.addr[2]) << 8 |
+								((uint32_t)ip.addr[3]);
+*/
+
+	if( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+	{
+	   printf("FTPD Error : Connect Failed \n");
+	   return -ENOTCONN;
+	}
+	connected = 1;
+	actual_socket = sockfd;
+
+	// now do your thing
 	return ERR_OK;
 }
 
-static err_t ftpd_msgaccept(void *arg, struct tcp_pcb *pcb, err_t err)
+int FTPDataConnection :: do_bind(void)
 {
-	struct ftpd_msgstate *fsm;
+	if (sockfd < 0)
+		return -ENOTCONN;
 
-	/* Allocate memory for the structure that holds the state of the
-	   connection. */
-	fsm = new struct ftpd_msgstate;
+    struct sockaddr_in serv_addr;
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
 
-	if (fsm == NULL) {
-		dbg_printf("ftpd_msgaccept: Out of memory\n");
-		return ERR_MEM;
-	}
-	memset(fsm, 0, sizeof(struct ftpd_msgstate));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_len = sizeof(serv_addr.sin_addr);
 
-	/* Initialize the structure. */
-	sfifo_init(&fsm->fifo, 2000);
-	fsm->state = FTPD_IDLE;
-	fsm->vfs = vfs_openfs();
-	if (!fsm->vfs) {
-		delete fsm;
-		return ERR_CLSD;
-	}
+    int result = 0, retry = 100;
+    uint16_t port;
+    do {
+    	if (retry <= 0) {
+        	puts("FTPD: ERROR on binding");
+            return -ENOTCONN;
+    	}
+    	port = parent->getBindPort();
+    	serv_addr.sin_port = htons(port);
+    	result = bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    } while(result < 0);
 
-	/* Tell TCP that this is the structure we wish to be passed for our
-	   callbacks. */
-	tcp_arg(pcb, fsm);
+    parent->send_msg(msg227, parent->my_ip[0], parent->my_ip[1], parent->my_ip[2], parent->my_ip[3], port >> 8, port & 0xFF);
+    result = listen(sockfd, 2);
 
-	/* Tell TCP that we wish to be informed of incoming data by a call
-	   to the http_recv() function. */
-	tcp_recv(pcb, ftpd_msgrecv);
-
-	/* Tell TCP that we wish be to informed of data that has been
-	   successfully sent by a call to the ftpd_sent() function. */
-	tcp_sent(pcb, ftpd_msgsent);
-
-	tcp_err(pcb, ftpd_msgerr);
-
-	tcp_poll(pcb, ftpd_msgpoll, 1);
-
-	send_msg(pcb, fsm, msg220);
-
-	return ERR_OK;
+    spawningTask = xTaskGetCurrentTaskHandle();
+    xTaskCreate( FTPDataConnection :: accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &acceptTaskHandle );
+    vTaskDelay(1); // allow the other task to run
 }
 
-void ftpd_init(void)
+// static
+void FTPDataConnection :: accept_data(void *a) // task entry point
 {
-	struct tcp_pcb *pcb;
+	FTPDataConnection *conn = (FTPDataConnection *)a;
 
-//	vfs_load_plugin(vfs_default_fs);
+	socklen_t clilen;
+    struct sockaddr_in cli_addr;
 
-	pcb = tcp_new();
-	tcp_bind(pcb, IP_ADDR_ANY, 21);
-	pcb = tcp_listen(pcb);
-	tcp_accept(pcb, ftpd_msgaccept);
+    // TODO: Add timeout
+    clilen = sizeof(cli_addr);
+	conn->actual_socket = accept(conn->sockfd, (struct sockaddr *) &cli_addr, &clilen);
+	if (conn->actual_socket < 0) {
+		 puts("ERROR on accept");
+	} else {
+		conn->connected = 1;
+	}
+	xTaskNotifyGive(conn->spawningTask);
+
+	vTaskSuspend(NULL);
+}
+
+void FTPDataConnection :: directory(int shortlist, vfs_dir_t *dir)
+{
+	if (setup_connection() == ERR_OK) {
+		int len;
+
+		do {
+			vfs_dirent = vfs_readdir(dir);
+
+	    	if (vfs_dirent) {
+	    		if (shortlist) {
+	    			len = sprintf(buffer, "%s\r\n", vfs_dirent->name);
+	    		} else {
+	    			vfs_stat_t st;
+
+	    			vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
+
+	    			if (st.year == parent->current_year)
+	    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
+	    						month_table[st.month], st.day, st.hr, st.min, vfs_dirent->name);
+	    			else
+	    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
+	    						month_table[st.month], st.day, st.year, vfs_dirent->name);
+	    			if (VFS_ISDIR(st.st_mode))
+	    				buffer[0] = 'd';
+	    		}
+	    		buffer[len] = 0;
+	    		lwip_send(actual_socket, buffer, len, 0);
+	    	}
+		} while(vfs_dirent);
+	}
+	vfs_closedir(dir);
+}
+
+void FTPDataConnection :: sendfile(vfs_file_t *file)
+{
+	if (setup_connection() == ERR_OK) {
+		uint32_t read;
+		do {
+			read = vfs_read(buffer, 1024, 1, file);
+			if (read)
+				lwip_send(actual_socket, buffer, read, 0);
+		} while(read > 0);
+	}
+	vfs_close(file);
+}
+
+bool FTPDataConnection :: receivefile(vfs_file_t *file)
+{
+	bool ret = true;
+	if (setup_connection() == ERR_OK) {
+		int n;
+	    do {
+	    	n = recv(actual_socket, buffer, 1024, 0);
+	    	if (n > 0) {
+	    		uint32_t written = vfs_write(buffer, n, 1, file);
+	    		if (written != n) {
+	    			printf("Hmm.. written = %d. n = %d\n", written, n);
+	    			ret = false;
+	    			break;
+	    		}
+	    	}
+	    } while(n > 0);
+	}
+	vfs_close(file);
+	return ret;
 }

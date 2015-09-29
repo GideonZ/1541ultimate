@@ -73,6 +73,15 @@ void Screen_MemMappedCharMatrix :: move_cursor(int x, int y)
 	if(cursor_on)
 		char_base[pointer] ^= 0x80;
 
+	if (x > size_x-1)
+		x = size_x-1;
+	if (y > size_y-1)
+		y = size_y-1;
+	if (x < 0)
+		x = 0;
+	if (y < 0)
+		y = 0;
+
 	cursor_x = x;
 	cursor_y = y;
 	pointer = (y * size_x) + x;
@@ -84,7 +93,10 @@ void Screen_MemMappedCharMatrix :: move_cursor(int x, int y)
 
 void Screen_MemMappedCharMatrix :: scroll_up()
 {
-    char *b = char_base;
+	if(!allow_scroll) {
+		return;
+	}
+	char *b = char_base;
     char *c = color_base;
     for(int y=0;y<size_y-1;y++) {
         for(int x=0;x<size_x;x++) {
@@ -119,10 +131,13 @@ void Screen_MemMappedCharMatrix :: repeat(char a, int len)
 	if(cursor_on)
 		char_base[pointer] ^= 0x80;
 
+	bool cur = cursor_on;
+	cursor_on = false;
+
 	for(int i=0;i<len;i++) {
-		char_base[pointer] = a;
-		color_base[pointer++] = color;
+		output_raw(a);
 	}
+	cursor_on = cur;
 
 	if(cursor_on)
 		char_base[pointer] ^= 0x80;
@@ -159,15 +174,14 @@ int  Screen_MemMappedCharMatrix :: output(const char *c) {
 
 void Screen_MemMappedCharMatrix :: output_raw(char c)
 {
-	if (cursor_on) {
+    if (cursor_on) {
 		char *p = char_base + pointer;
 		*p ^= 0x80; // unplace cursor
 	}
 	switch(c) {
         case 0x0A:
             if(cursor_y == size_y-1) {
-                if(allow_scroll)
-                    scroll_up();
+				scroll_up();
             } else {
                 pointer += size_x;
                 cursor_y++;
@@ -200,12 +214,11 @@ void Screen_MemMappedCharMatrix :: output_raw(char c)
             pointer ++;
             cursor_x++;
 
-            if(cursor_x == size_x) {
+            if(cursor_x >= size_x) {
                 cursor_x = 0;
-                pointer -= size_x;
+                pointer -= cursor_x;
                 if(cursor_y == size_y-1) {
-                    if(allow_scroll)
-                        scroll_up();
+					scroll_up();
                 } else {
                     pointer += size_x;
                     cursor_y++;

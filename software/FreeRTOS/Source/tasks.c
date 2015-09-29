@@ -3238,7 +3238,7 @@ TCB_t *pxNewTCB;
 		to the task to free any memory allocated at the application level. */
 		#if ( configUSE_NEWLIB_REENTRANT == 1 )
 		{
-			_reclaim_reent( &( pxTCB->xNewLib_reent ) );
+			//_reclaim_reent( &( pxTCB->xNewLib_reent ) );
 		}
 		#endif /* configUSE_NEWLIB_REENTRANT */
 

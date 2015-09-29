@@ -19,9 +19,7 @@ void echo_task(void *a);
  */
 void initLwipCallback(void *a)
 {
-	printf("Lwip TCP init callback.\n");
-	ftpd_init();
-	printf("FTPDaemon initialized\n");
+	printf("Lwip TCP init callback. Nothing to do!\n");
 }
 
 void initLwip(void *a, void *b)

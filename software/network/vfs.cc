@@ -2,12 +2,13 @@
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "vfs.h"
 
-extern "C" {
-    #include "small_printf.h"
-}
 #include "filemanager.h"
+
+#define dbg_printf(...)
+// #define dbg_printf(...)  printf(__VA_ARGS__)
 
 void  vfs_load_plugin()
 {
@@ -32,9 +33,9 @@ void vfs_closefs(vfs_t *vfs)
 
 vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags)
 {
-    printf("Open file: '%s' flags: '%s'\n", name, flags);
+    dbg_printf("Open file: '%s' flags: '%s'\n", name, flags);
     if (fs->open_file) {
-        printf("There is already a file open.\n");
+        dbg_printf("There is already a file open.\n");
         return NULL;
     }
     Path *path = (Path *)fs->path;
@@ -63,7 +64,7 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags)
 void vfs_close(vfs_file_t *file)
 {
     FileManager :: getFileManager() -> fclose((File *)file->file);
-    printf("File closed. clearing open file link.\n");
+    dbg_printf("File closed. clearing open file link.\n");
     file->parent_fs->open_file = NULL;    
 }
 
@@ -72,13 +73,13 @@ int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
     File *f = (File *)file->file;
     uint32_t trans = 0;
     uint32_t len = chunks*chunk_len;
-    printf("R(%d,%d)",chunks,chunk_len);
+    dbg_printf("R(%d,%d)",chunks,chunk_len);
     if(f->read(buffer, len, &trans) != FR_OK)
         return -1;
     
     if (trans < len) {
         file->eof = 1;
-        printf("[EOF]");
+        dbg_printf("[EOF]");
     }        
     return trans;
 }
@@ -96,15 +97,15 @@ int  vfs_write(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
 
 int  vfs_eof(vfs_file_t *file)
 {
-    printf("(EOF");
-    printf("%d)", file->eof);
+    dbg_printf("(EOF");
+    dbg_printf("%d)", file->eof);
     return file->eof;
 }
 
 vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
 {
     Path *path = (Path *)fs->path;
-    printf("OpenDIR: fs = %p, name arg = '%s'\n", fs, name);
+    dbg_printf("OpenDIR: fs = %p, name arg = '%s'\n", fs, name);
 
     // create objects
     vfs_dir_t *dir = (vfs_dir_t *)new vfs_dir_t;
@@ -128,7 +129,7 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
 
 void vfs_closedir(vfs_dir_t *dir)
 {
-    printf("CloseDIR (%p)\n", dir);
+    dbg_printf("CloseDIR (%p)\n", dir);
     if(dir) {
         dir->parent_fs->last_direntry = NULL;
         dir->parent_fs->last_dir = NULL;
@@ -145,7 +146,7 @@ void vfs_closedir(vfs_dir_t *dir)
 
 vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
 {
-    printf("READDIR: %p %d\n", dir, dir->index);
+    dbg_printf("READDIR: %p %d\n", dir, dir->index);
 	IndexedList<FileInfo *> *listOfEntries = (IndexedList<FileInfo *> *)(dir->entries);
 
     if(dir->index < listOfEntries->get_elements()) {
@@ -153,7 +154,7 @@ vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
         dir->entry->file_info = inf;
         dir->entry->name = inf->lfname;
         dir->parent_fs->last_direntry = dir->entry;
-        printf("Read: %s\n", dir->entry->name);
+        dbg_printf("Read: %s\n", dir->entry->name);
         dir->index++;
         return dir->entry;
     }
@@ -162,11 +163,11 @@ vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
 
 int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
 {
-    printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
+    dbg_printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
     FileInfo *inf = NULL;
     if(fs->last_direntry) {
         inf = (FileInfo *)fs->last_direntry->file_info;
-        printf("Last inf: %s\n", inf->lfname);
+        dbg_printf("Last inf: %s\n", inf->lfname);
         if(strcmp(inf->lfname, name) != 0) {
             inf = NULL;
         }
@@ -188,13 +189,25 @@ int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
     st->st_size = inf->size;
     st->st_mode = (inf->attrib & AM_DIR)?1:2;
 
+    // make sure that the date makes sense, otherwise the FTP client will get confused
+    if (st->month > 12)
+    	st->month = 12;
+    if (st->month < 1)
+    	st->month = 1;
+    if (st->day < 1)
+    	st->day = 1;
+    if (st->min > 59)
+    	st->min = 59;
+    if (st->hr > 23)
+    	st->hr = 23;
+    // > 31 is not possible
     return 0;
 }
 
 int  vfs_chdir(vfs_t *fs, const char *name)
 {
     Path *p = (Path *)fs->path;
-    printf("CD: VFS=%p -> %s\n", fs, name);
+    dbg_printf("CD: VFS=%p -> %s\n", fs, name);
     if(! p->cd((char*)name))
         return -1;
     return 0;
@@ -207,7 +220,7 @@ char *vfs_getcwd(vfs_t *fs, void *args, int dummy)
     // now copy the string to output
     char *retval = (char *)malloc(strlen(full_path)+1);
     strcpy(retval, full_path);
-    printf("CWD: %s\n", retval);
+    dbg_printf("CWD: %s\n", retval);
     return retval;
 }
 
