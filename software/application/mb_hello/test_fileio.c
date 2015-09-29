@@ -11,7 +11,7 @@ int main()
 {
     puts("Hello world.");
 
-	xTaskCreate( main_loop, "\002Main Event Loop", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL );
+	xTaskCreate( main_loop, "Main Event Loop", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 3, NULL );
 
 	vTaskDelay(500);
 

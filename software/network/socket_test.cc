@@ -17,7 +17,7 @@
 SocketTest socket_test; // global that causes the object to exist
 
 SocketTest::SocketTest() {
-	xTaskCreate( restartThread, "\007Reload Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
+	xTaskCreate( restartThread, "Reload Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
 }
 
 SocketTest::~SocketTest() {

@@ -286,6 +286,18 @@ int TreeBrowser :: poll(int sub_returned)
     return ret;
 }
 
+void TreeBrowser :: tasklist(void)
+{
+	char *buffer = new char[8192];
+    vTaskList(buffer);
+    for(char *b = buffer; *b; b++) {
+    	if (*b == 9)
+    		*b = 32;
+    }
+    user_interface->run_editor(buffer);
+    delete buffer;
+}
+
 int TreeBrowser :: handle_key(int c)
 {           
     int ret = 0;
@@ -326,6 +338,9 @@ int TreeBrowser :: handle_key(int c)
         case KEY_F2: // F2 -> config
             config();
             break;
+        case KEY_F4: // F4 -> show threads
+        	tasklist();
+        	break;
         case KEY_F6: // F6 -> show log
         	reset_quick_seek();
         	state->refresh = true;

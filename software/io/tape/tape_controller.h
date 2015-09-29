@@ -37,6 +37,7 @@ class TapeController : public SubSystem, ObjectWithMenu
 	FileManager *fm;
 	File *file;
 	uint32_t length;
+	int   state;
 	int   block;
     int   mode;
 	int   paused;

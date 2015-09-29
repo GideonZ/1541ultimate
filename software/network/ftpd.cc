@@ -197,8 +197,8 @@ int FTPDaemon :: listen_task()
 		}
 
 		struct timeval tv;
-		tv.tv_sec = 500; // bug in lwip; this is just used directly as tick value
-		tv.tv_usec = 500;
+		tv.tv_sec = 20; // bug in lwip; this is just used directly as tick value
+		tv.tv_usec = 20;
 		setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
 		FTPDaemonThread *thread = new FTPDaemonThread(actual_socket, cli_addr.sin_addr.s_addr, cli_addr.sin_port);

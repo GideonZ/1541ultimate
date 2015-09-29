@@ -103,15 +103,14 @@ public:
 				printf("About to execute a command in subsys %s (%p)\n", subsys->identify(), subsys->myMutex);
 				if (xSemaphoreTake(subsys->myMutex, 1000)) {
 					retval = subsys->executeCommand(this);
-					puts("before give");
+					//puts("before give");
 					xSemaphoreGive(subsys->myMutex);
-					puts("after give");
+					//puts("after give");
 				} else {
 					printf("Could not get lock on %s. Command not executed.\n", subsys->identify());
 				}
 			}
 		}
-		puts("before delete");
 		delete this;
 		printf("Command executed. Returning %d.\n", retval);
 		return retval;

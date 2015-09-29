@@ -226,20 +226,32 @@ char *vfs_getcwd(vfs_t *fs, void *args, int dummy)
 
 int  vfs_rename(vfs_t *fs, const char *old_name, const char *new_name)
 {
-    return -1;
+	printf("Rename from %s to %s.\n", old_name, new_name);
+    Path *p = (Path *)fs->path;
+	FRESULT fres = FileManager :: getFileManager() -> rename(p, old_name, new_name);
+	return (fres == FR_OK) ? 0 : -1;
 }
 
 int  vfs_mkdir(vfs_t *fs, const char *name, int flags)
 {
-    return -1;
+	printf("Create dir: %s.\n", name);
+    Path *p = (Path *)fs->path;
+	FRESULT fres = FileManager :: getFileManager() -> create_dir(p, name);
+	return (fres == FR_OK) ? 0 : -1;
 }
 
 int  vfs_rmdir(vfs_t *fs, const char *name)
 {
-    return -1;
+	printf("RmDir: %s.\n", name);
+    Path *p = (Path *)fs->path;
+	FRESULT fres = FileManager :: getFileManager() -> delete_file(p, name);
+	return (fres == FR_OK) ? 0 : -1;
 }
 
 int  vfs_remove(vfs_t *fs, const char *name)
 {
-    return -1;
+	printf("Delete: %s.\n", name);
+    Path *p = (Path *)fs->path;
+	FRESULT fres = FileManager :: getFileManager() -> delete_file(p, name);
+	return (fres == FR_OK) ? 0 : -1;
 }

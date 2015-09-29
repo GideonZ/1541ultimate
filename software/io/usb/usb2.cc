@@ -55,7 +55,7 @@ Usb2 :: Usb2()
     	mutex = xSemaphoreCreateMutex();
         queue = xQueueCreate(64, sizeof(struct usb_packet));
 
-        xTaskCreate( poll_usb2, "\006USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
+        xTaskCreate( poll_usb2, "USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
         ioWrite8(ITU_IRQ_ENABLE, 0x04);
     }
 }
@@ -131,7 +131,7 @@ void Usb2 :: init(void)
 	NANO_START = 1;
 
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
-	xTaskCreate( Usb2 :: input_task_start, "\004USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
+	xTaskCreate( Usb2 :: input_task_start, "USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
 
 	ioWrite8(ITU_MISC_IO, 1); // coherency is on
 }

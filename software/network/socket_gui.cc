@@ -30,7 +30,7 @@ static void socket_gui_listen_task(void *a)
 
 SocketGui :: SocketGui()
 {
-	xTaskCreate( socket_gui_listen_task, "\006Socket Gui Listener", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &listenTaskHandle );
+	xTaskCreate( socket_gui_listen_task, "Socket Gui Listener", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, &listenTaskHandle );
 }
 
 // The code below runs once for every socket gui instance
@@ -101,12 +101,12 @@ int SocketGui :: listenTask(void)
 		}
 
 		struct timeval tv;
-		tv.tv_sec = 500; // bug in lwip; this is just used directly as tick value
-		tv.tv_usec = 500;
+		tv.tv_sec = 20; // bug in lwip; this is just used directly as tick value
+		tv.tv_usec = 20;
 		setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
 		SocketStream *stream = new SocketStream(actual_socket);
-		xTaskCreate( socket_gui_task, "\003Socket Gui Task", configMINIMAL_STACK_SIZE, stream, tskIDLE_PRIORITY + 1, NULL );
+		xTaskCreate( socket_gui_task, "Socket Gui Task", configMINIMAL_STACK_SIZE, stream, tskIDLE_PRIORITY + 1, NULL );
     }
 }
 

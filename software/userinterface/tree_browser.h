@@ -49,6 +49,7 @@ public:
 
 class TreeBrowser : public UIObject
 {
+	void tasklist(void);
 public:
     char quick_seek_string[MAX_SEARCH_LEN_TB];
     int  quick_seek_length;

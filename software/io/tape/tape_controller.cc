@@ -40,7 +40,9 @@ void TapeController :: poll_static(void *a)
 {
 	TapeController *tc = (TapeController *)a;
 	while(1) {
+		tc->lock("tape poll");
 		tc->poll();
+		tc->unlock();
 		if (PLAYBACK_STATUS & C2N_STAT_ENABLED) {
 			vTaskDelay(5);
 		} else {
@@ -98,38 +100,38 @@ void TapeController :: start(int playout_pin)
 	PLAYBACK_CONTROL = controlByte;
     recording = playout_pin;
 	printf("] Status = %b.\n", PLAYBACK_STATUS);
+	state = 0;
 }
 	
 void TapeController :: read_block()
 {
-	if(!file)
+	if(!file) {
+		state = 1;
 		return;
+	}
 	if(!file->isValid()) {
+		state = 1;
     	close();
         return;
     }
-	
+
 	uint32_t bytes_read;
 
 	if(block > length)
 		block = length;
 
 	if(!block) {
-        if (PLAYBACK_STATUS & C2N_STAT_FIFO_EMPTY) {
-        	vTaskDelay(100);
-            close();
-            if (recording) {
-            	c64->setButtonPushed();
-            }
-        }
+		state = 1;
 		return;
 	}	
+
 	file->read(blockBuffer, block, &bytes_read);
+	for(int i=0;i<bytes_read;i++)// not sure if memcpy copies the bytes in the right order.
+		*PLAYBACK_DATA = blockBuffer[i];
+
 	if(bytes_read != block) {
 		printf("[%d of %d]", bytes_read, block);
 	}
-	for(int i=0;i<bytes_read;i++)// not sure if memcpy copies the bytes in the right order.
-		*PLAYBACK_DATA = blockBuffer[i];
 
 	printf(".");
 	length -= bytes_read;
@@ -149,7 +151,26 @@ void TapeController :: poll()
 	uint8_t st = PLAYBACK_STATUS;
 	if(st & C2N_STAT_ENABLED) { // we are enabled
 		if(!(st & C2N_STAT_FIFO_AF)) {
-			read_block();
+			switch(state) {
+			case 0:
+				read_block();
+				break;
+			case 1:
+				*PLAYBACK_DATA = 123;
+				state = 2;
+				break;
+			case 2:
+				if (PLAYBACK_STATUS & C2N_STAT_FIFO_EMPTY) {
+					state = 3;
+					close();
+			        if (recording) {
+			        	c64->setButtonPushed();
+			        }
+			    }
+				break;
+			default:
+				break;
+			}
 		}
 	}
 }
