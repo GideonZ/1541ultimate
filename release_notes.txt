@@ -1,0 +1,49 @@
+3.0 BETA 5
+==========
+r263 | gideonz | 2015-10-16 08:27:20 +0200 (Fri, 16 Oct 2015) | 13 lines
+
+Major:
+* BUGFIX: Processor's Data Cache stored result of IO read, causing wrong values to be read from the cache
+
+Minor:
+* C64 Keyboard scan made a bit slower  (not tested)
+* Fixed configuration drop down
+* Fixed clock settings
+* Mount disk made first option in D64 file type
+* Updated Final 3 cart.
+
+* AT49 flash support removed (kills address 0)
+* LwipOpts reviewed (has this been validated?)
+* Added 300 us delay in startup code to allow SDRAM to initialize (didn't fix anything)
+* Restart TCP socket now supports loading the updater (variable start address)
+
+
+
+3.0 BETA 4 (first version released on Facebook)
+===============================================
+
+The FPGA platform has gotten an upgrade. There is now a faster RISC processor
+on board (~10 times faster), and I have re-written the USB host controller,
+which has become ~50 times faster. The external memory of the FPGA also runs
+faster, and delivers now also approx. 7 times more bandwidth. With this faster
+platform, it has become possible to run a multithreaded OS.
+
+There is now support for USB2LAN adapters, and 3.0beta4 runs two services: a
+(raw-)telnet (VT100) server that brings up the menu, and an FTP daemon for
+basic file transfer.
+
+There is now support for reading the directories of D71 and D81 files in the
+browser.
+
+There is a 'CD' command in the software IEC, and other improvements have been
+made to the soft IEC driver.
+
+There is now a copy command in the file browser, that works with C=C/C=V
+(or CTRL-C / CTRL-V). It is not that fast, but for small files it works. You
+can also copy files from inside a D64/T64 to another location in the file
+system. The other way around is still under development, but will soon be
+possible as well.
+
+UltiCopy is disabled for now, because it still needs to be ported to the
+multi-threaded operating system.
+
