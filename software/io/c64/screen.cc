@@ -174,7 +174,7 @@ int  Screen_MemMappedCharMatrix :: output(const char *c) {
 
 void Screen_MemMappedCharMatrix :: output_raw(char c)
 {
-    if (cursor_on) {
+	if (cursor_on) {
 		char *p = char_base + pointer;
 		*p ^= 0x80; // unplace cursor
 	}
@@ -215,8 +215,8 @@ void Screen_MemMappedCharMatrix :: output_raw(char c)
             cursor_x++;
 
             if(cursor_x >= size_x) {
-                cursor_x = 0;
                 pointer -= cursor_x;
+                cursor_x = 0;
                 if(cursor_y == size_y-1) {
 					scroll_up();
                 } else {
