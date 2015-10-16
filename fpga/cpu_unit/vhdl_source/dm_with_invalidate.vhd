@@ -239,7 +239,11 @@ begin
                 dmem_o_comb.dat_i <= mem_i.dat_i; -- ouch, 32-bit multiplexer!
                 dmem_o_comb.ena_i <= '1';
 
-                if dmem_r.we_o='0' then -- was a read
+                if dmem_r.we_o='0' and is_cacheable(dmem_r.adr_o) then -- was a read
+--                    assert dmem_r.sel_o = X"F" 
+--                        report "Cache write of less than a word? " & hstr(dmem_r.adr_o)
+--                        severity error;
+                        
                     tag_ram_b_en <= '1';
                     cache_ram_b_en <= '1';
                     tag_ram_b_we <= '1';

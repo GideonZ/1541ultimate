@@ -111,6 +111,7 @@ void Keyboard_C64 :: scan(void)
     *col_register = 0xFF; // deselect keyboard for pure joystick scan
     *col_register = 0XFF; // delay
     row = *col_register; // port2
+    row = *col_register; // delay
     if(row != 0xFF) {
         joy = true;
         if     (!(row & 0x01)) { shift_flag = 0x01; mtrx = 0x07; }
@@ -129,8 +130,10 @@ void Keyboard_C64 :: scan(void)
             for(int idx=0,y=0;y<8;y++) {
                 *col_register = 0xFF;
                 *col_register = col;
+                *col_register = col;
                 do {
                     row = *row_register;
+                    *col_register = col;
                 } while(row != *row_register);
                 for(int x=0;x<8;x++, idx++) {
                     if((row & 1)==0) {

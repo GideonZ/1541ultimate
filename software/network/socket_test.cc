@@ -13,6 +13,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "usb2.h"
+#include "dump_hex.h"
 
 SocketTest socket_test; // global that causes the object to exist
 

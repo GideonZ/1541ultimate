@@ -115,11 +115,15 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OB
 
 $(OUTPUT)/$(PRJ).sim: $(RESULT)/$(PRJ).bin
 	@echo Make mem...
-	@$(MAKEMEM) -w $< $@ 1000000 65536 
+	@$(MAKEMEM) $< $@ 1000000 65536 
 
 $(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
 	@echo Make mem...
 	@$(MAKEMEM) $< $@ 2048
+
+$(OUTPUT)/$(PRJ).m32: $(RESULT)/$(PRJ).bin
+	@echo Make mem 32...
+	@$(MAKEMEM) -w $< $@ 2048
 
 # pull in dependency info for *existing* .o files
 -include $(ALL_DEP_OBJS:.o=.d)

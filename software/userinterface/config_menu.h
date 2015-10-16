@@ -34,6 +34,13 @@ public:
 class BrowsableConfigItem : public Browsable
 {
 	ConfigItem *item;
+
+	static int updateItem(SubsysCommand *cmd) {
+		ConfigItem *item = (ConfigItem *)(cmd->functionID);
+		item->execute(cmd->mode);
+		return 0;
+	}
+
 public:
 	BrowsableConfigItem(ConfigItem *i) {
 		item = i;
@@ -69,7 +76,7 @@ public:
 			case CFG_TYPE_ENUM:
 				for(i=item->definition->min;i<=item->definition->max;i++) {
 					sprintf(buf, item->definition->item_format, item->definition->items[i]);
-					items.append(new Action(buf, (int)item, i, 0));
+					items.append(new Action(buf, updateItem, (int)item, i));
 				}
 				break;
 			default:
@@ -96,6 +103,7 @@ public:
 	IndexedList<Browsable *> *getSubItems(int &error) {
 		if (children.get_elements() == 0) {
 			IndexedList<ConfigItem *> *itemList = store->getItems();
+			store->read();
 			for (int i=0; i < itemList->get_elements(); i++) {
 				children.append(new BrowsableConfigItem((*itemList)[i]));
 			}

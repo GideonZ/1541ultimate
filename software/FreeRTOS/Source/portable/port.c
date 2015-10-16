@@ -123,13 +123,7 @@ static void prvSetupTimerInterrupt( void )
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
     ioWrite8(UART_DATA, 0x35);
-/*
-#ifndef UPDATER
-	ioWrite8(ITU_IRQ_ENABLE, 0x1D); // uci, tape, usb + timer
-#else
-	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only
-#endif
-*/
+
 }
 
 /*-----------------------------------------------------------*/
@@ -237,19 +231,30 @@ const uint32_t ulR13 = ( uint32_t ) &_SDA_BASE_;
 
 BaseType_t xPortStartScheduler( void )
 {
-extern void ( __FreeRTOS_interrupt_Handler )( void );
+extern void ( __FreeRTOS_interrupt_handler )( void );
 extern void ( vStartFirstTask )( void );
 
 
 	/* Setup the FreeRTOS interrupt handler.   */
+/*
 	__asm__ volatile ( 	"la	r6, r0, __FreeRTOS_interrupt_handler	\n\t" \
-					"sw	  r6, r1, r0								\n\t" \
-					"lhu  r7, r1, r0								\n\t" \
+					"swi  r6, r1, 4 								\n\t" \
+					"lhui r7, r1, 4 								\n\t" \
 					"ori  r7, r7, 0xB0000000						\n\t" \
 					"swi  r7, r0, 0x10								\n\t" \
+					"swi  r7, r0, 0x18								\n\t" \
 					"andi r6, r6, 0xFFFF							\n\t" \
 					"ori  r6, r6, 0xB8080000						\n\t" \
-					"swi  r6, r0, 0x14 " );
+					"swi  r6, r0, 0x14 								\n\t" \
+					"swi  r6, r0, 0x1C " );
+*/
+	volatile uint32_t *p = (volatile uint32_t *)0x10;
+	uint32_t addr = (uint32_t)__FreeRTOS_interrupt_handler;
+	*p++ = (0xB0000000 | (addr >> 16));
+	*p++ = (0xB8080000 | (addr & 0xFFFF));
+	*p++ = (0xB0000000 | (addr >> 16));
+	*p++ = (0xB8080000 | (addr & 0xFFFF));
+
 
 	/* Setup the hardware to generate the tick.  Interrupts are disabled when
 	this function is called. */
@@ -266,10 +271,6 @@ extern void ( vStartFirstTask )( void );
 		pulISRStack += ( configMINIMAL_STACK_SIZE - 1 );
 
 		portENABLE_INTERRUPTS();
-
-	    static char buffer[8192];
-	    vTaskList(buffer);
-	    puts(buffer);
 
 		/* Kick off the first task. */
 		vStartFirstTask();

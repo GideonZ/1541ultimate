@@ -46,6 +46,7 @@ target/simulation/packages/vhdl_bfm_local
 target/simulation/sim/mblite
 target/simulation/sim/modelsim.ini
 target/simulation/sim/transcript
+target/simulation/sim/unisim
 target/simulation/sim/vsim.wlf
 target/simulation/sim/work
 target/software/1st_boot/output
@@ -73,6 +74,8 @@ target/software/mb_lib/output_mb
 target/software/mb_lib/result_mb
 target/software/mb_lwip/output
 target/software/mb_lwip/result
+target/software/mb_programmer/output
+target/software/mb_programmer/result
 target/software/mb_revert/output
 target/software/mb_revert/result
 target/software/mb_rtos/output

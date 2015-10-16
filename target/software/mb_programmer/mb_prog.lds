@@ -5,24 +5,25 @@ ENTRY(_premain)
 
 MEMORY
 {
-    DRAM (rwx)  : ORIGIN = 0x00001000, LENGTH = 0x0000E000 /* thus until 000F000; stay in the first 64K! */
+    BRAM (rwx)  : ORIGIN = 0x00000000, LENGTH = 0x00008000
+    DRAM (rwx)  : ORIGIN = 0x00008000, LENGTH = 0x00008000
 }
 
 SECTIONS
 {
-  .text 0x1000 : {
+  .text 0x0000 : {
     *(.text.start)
     *(.text .stub .text.* .gnu.linkonce.t.*)
-  } > DRAM
+  } > BRAM
   .fini           :
   {
     KEEP (*(.fini))
-  } > DRAM
+  } > BRAM
 
   .init :
   {
     KEEP (*(.init))
-  } > DRAM
+  } > BRAM
   
   end_of_text = .;
 
@@ -33,7 +34,7 @@ SECTIONS
     *(.rodata .rodata.* .gnu.linkonce.r.*)
     *(.rodata1)
   	
-  } > DRAM
+  } > BRAM
 
   .data ALIGN(4) :
   {
@@ -50,14 +51,14 @@ SECTIONS
     KEEP (*(.jcr))
 /*     SORT(CONSTRUCTORS)  */
     __data_end = .;
-  } > DRAM
+  } > BRAM
 
   __bss_start = .;
   __bss_start__ = .;
-  .bss ALIGN(4) (NOLOAD) :
+  .bss 0x8000 (NOLOAD) :
   {
    *(.dynbss)
-   *(.bss .bss.* .gnu.linkonce.b.*)
+   *(.bss .bss.* .sbss .gnu.linkonce.b.*)
    *(COMMON)
    /* Align here to ensure that the .bss section occupies space up to
       _end.  Align after .bss to ensure correct alignment even if the
@@ -74,8 +75,8 @@ SECTIONS
      _heap = .;
      _heap_start = .;
   } 
-  _heap_end = 0x0000E000;
-  _stack = 0x0000EFFC;
+  _heap_end = 0x00010000;
+  _stack = 0x0000FFFC;
   _SDA_BASE_ = 0x00E80000;
   _SDA2_BASE_ = 0x00E90000;
 }

@@ -5,11 +5,12 @@ extern "C" {
 #include "w25q_flash.h"
 #include "at49_flash.h"
 
+
 void (*function)();
 
 void jump_run(uint32_t a)
 {
-    uint32_t *dp = (uint32_t *)&function;
+	uint32_t *dp = (uint32_t *)&function;
     *dp = a;
     function();
     puts("Application exit.");
@@ -39,26 +40,18 @@ bool w25q_wait_ready(int time_out)
     return ret;
 }
 
-/*
-void uart_write_hex_long(uint32_t hex)
-{
-    uart_write_hex(uint8_t(hex >> 24));
-    uart_write_hex(uint8_t(hex >> 16));
-    uart_write_hex(uint8_t(hex >> 8));
-    uart_write_hex(uint8_t(hex));
-}
-*/
 
 int main(int argc, char **argv)
 {
     if (getFpgaCapabilities() & CAPAB_SIMULATION) {
         ioWrite8(UART_DATA, '*');
-        jump_run(APPL_RUN_ADDR);
+        jump_run(BOOT2_RUN_ADDR);
     }
 
-    puts("**Primary Boot**");
+    puts("**Primary Boot 3.1**");
 
-    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+
+	SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     SPI_FLASH_DATA = 0xFF;
 
     // check flash

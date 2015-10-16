@@ -79,10 +79,22 @@ if __name__ == "__main__":
 
     elif (sys.argv[1] == 'u'):
         with open(sys.argv[2], "rb") as f:
-            bytes = f.read(1024*1024) # max 1 Meg
+            bytes = f.read(2*1024*1024) # max 2 Meg
             if bytes != "":
                 s = mysocket()
                 s.connect(sys.argv[3], 12345)
+                s.mysend('\0\1\0\0')
+                s.mysend(bytes)
+                s.sock.shutdown(0)
+                s.sock.close()
+                
+    elif (sys.argv[1] == 'U'):
+        with open(sys.argv[2], "rb") as f:
+            bytes = f.read(2*1024*1024) # max 2 Meg
+            if bytes != "":
+                s = mysocket()
+                s.connect(sys.argv[3], 12345)
+                s.mysend('\1\0\0\0')
                 s.mysend(bytes)
                 s.sock.shutdown(0)
                 s.sock.close()

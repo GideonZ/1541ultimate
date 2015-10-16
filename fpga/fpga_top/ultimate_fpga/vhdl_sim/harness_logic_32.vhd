@@ -10,6 +10,9 @@ use work.io_bus_pkg.all;
 use work.io_bus_bfm_pkg.all;
 use work.command_if_pkg.all;
 
+library std;
+use std.textio.all;
+
 entity harness_logic_32 is
 end entity;
 
@@ -146,6 +149,7 @@ begin
         g_spi_flash     => true,
         g_vic_copper    => false,
         g_sampler       => false,
+        g_profiler      => true,
         g_analyzer      => false )
     port map (
         sys_clock       => sys_clock,
@@ -218,7 +222,7 @@ begin
 
     i_mem_ctrl: entity work.ext_mem_ctrl_v5
     generic map (
-        g_simulation => true )
+        g_simulation => false )
     port map (
         clock       => sys_clock,
         clk_2x      => sys_clock_2x,
@@ -312,19 +316,19 @@ begin
         DQ            => SDRAM_DQ
     );
 
-    i_ulpi_phy: entity work.ulpi_master_bfm
-    generic map (
-        g_given_name    => "device" )
-
-    port map (
-        clock           => ULPI_CLOCK,
-        reset           => ULPI_RESET,
-        ulpi_nxt        => ulpi_nxt,
-        ulpi_stp        => ulpi_stp,
-        ulpi_dir        => ulpi_dir,
-        ulpi_data       => ulpi_data );
-
-    i_device: entity work.usb_device_model;
+--    i_ulpi_phy: entity work.ulpi_master_bfm
+--    generic map (
+--        g_given_name    => "device" )
+--
+--    port map (
+--        clock           => ULPI_CLOCK,
+--        reset           => ULPI_RESET,
+--        ulpi_nxt        => ulpi_nxt,
+--        ulpi_stp        => ulpi_stp,
+--        ulpi_dir        => ulpi_dir,
+--        ulpi_data       => ulpi_data );
+--
+--    i_device: entity work.usb_device_model;
 
     i_rx: entity work.rx
     generic map (c_uart_divisor)
@@ -350,10 +354,25 @@ begin
         txd     => UART_RXD );
 
     process(sys_clock)
+        variable s    : line;
+        variable char : character;
     begin
         if rising_edge(sys_clock) then
             if rx_ack='1' then
                 rx_char_d <= rx_char;
+                char := character'val(to_integer(unsigned(rx_char)));
+                if rx_char = X"0D" then
+                    -- Ignore character 13
+                elsif rx_char = X"0A" then
+                    -- Writeline on character 10 (newline)
+                    writeline(output, s);
+                else
+                    -- Write to buffer
+                    write(s, char);
+                end if;
+            end if;
+            if mem_resp.rack = '1' and mem_req.address < 16 then
+                report "Access to address " & integer'image(to_integer(mem_req.address)) severity error;
             end if;
         end if;
     end process;

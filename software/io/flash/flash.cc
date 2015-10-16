@@ -23,13 +23,15 @@ Flash *get_flash(void)
 	if(ret_val)
 	    return ret_val;
 
-    ret_val = s25fl_flash.tester();
+	ret_val = s25fl_flash.tester();
 	if(ret_val)
 	    return ret_val;
 
+/*
 	ret_val = at49_flash.tester();
 	if(ret_val)
 	    return ret_val;
+*/
 
 	return new Flash(); // stubbed base class, just never return 0!
 }

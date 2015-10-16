@@ -2,7 +2,7 @@
 include ../common/environment.mk
 
 PRJ      =  ultimate
-FINAL    =  $(RESULT)/$(PRJ).bin
+FINAL    =  $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	mbstart_rtos.c \
 			itu.c \
@@ -28,7 +28,6 @@ SRCS_CC	 =  small_printf.cc \
 			init_function.cc \
 			flash.cc \
 			at45_flash.cc \
-			at49_flash.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			config.cc \

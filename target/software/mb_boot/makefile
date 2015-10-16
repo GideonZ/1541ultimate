@@ -2,7 +2,7 @@
 include ../common/environment.mk
 
 PRJ      =  mb_boot
-FINAL    =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ)_700.bit
+FINAL    =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ)_700.bit $(OUTPUT)/mb_boot.m32
 
 FPGA_700      = ../../fpga/mb700/ultimate_mb_700a.bit
 FPGA_700_BMM  = ../../fpga/mb700/ultimate_mb_700a_bd.bmm

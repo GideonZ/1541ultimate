@@ -38,16 +38,17 @@ void dump_hex_actual(void *pp, int len, int relative)
             printf("%4x: ", w);
         else
 		    printf("%p: ", p + w);
-        for(t=0;t<DUMP_BYTES;t++) {
+        for(t=0;t<DUMP_BYTES;t+=4) {
             if((w+t) < len) {
-		        printf("%02x ", p[w+t]);
+		        printf("%08x ", *((uint32_t *)&(p[w+t])));
 		    } else {
 		        printf("   ");
 		    }
 		}
         for(t=0;t<DUMP_BYTES;t++) {
             if((w+t) < len) {
-                c = p[w+t];
+                c = p[w+t] & 0x7F;
+
                 if((c >= 0x20)&&(c <= 0x7F)) {
                     printf("%c", c);
                 } else {

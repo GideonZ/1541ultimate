@@ -109,7 +109,7 @@ void AudioConfig :: effectuate_settings()
     ioWrite8(AUDIO_SELECT_RIGHT, map[cfg->get_value(CFG_AUDIO_SELECT_RIGHT)]);
     
     if(getFpgaCapabilities() & CAPAB_STEREO_SID) {
-        printf("Number of SID voices implemented in FPGA: %d\n", SID_VOICES);
+        printf("Number of SID voices implemented in FPGA: %d\n", ioRead8(SID_VOICES));
         ioWrite8(SID_BASE_LEFT,    sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)]);
         ioWrite8(SID_SNOOP_LEFT,   (sid_offsets[cfg->get_value(CFG_AUDIO_SID_BASE_LEFT)] & 0x80)?0:1);
         ioWrite8(SID_ENABLE_LEFT,  cfg->get_value(CFG_AUDIO_SID_ENABLE_L));

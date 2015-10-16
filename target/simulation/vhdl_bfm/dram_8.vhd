@@ -54,7 +54,7 @@ architecture bfm of dram_8 is
 --    constant c_col      : integer := 0;
 --    constant c_bank     : integer := g_column_bits;
 --    constant c_row      : integer := g_column_bits + g_bank_bits;
-    shared variable mem_array : t_byte_array(0 to 1048575) := (others => X"33");
+    shared variable mem_array : t_byte_array(0 to 16#FFFFFF#) := (others => X"33");
 begin
 
     command <= WEn & CASn & RASn;
@@ -76,7 +76,7 @@ begin
             ret(g_column_bits-1 downto 0) := col_bits;
             ret(g_column_bits+g_bank_bits-1 downto g_column_bits) := bank_bits;
             ret(g_column_bits+g_bank_bits+g_row_bits-1 downto g_column_bits+g_bank_bits) := row_bits;
-            return to_integer(unsigned(ret(19 downto 0)));
+            return to_integer(unsigned(ret(23 downto 0)));
         end function;
 
     begin

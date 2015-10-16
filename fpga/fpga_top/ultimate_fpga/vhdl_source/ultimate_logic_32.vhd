@@ -338,10 +338,10 @@ architecture logic of ultimate_logic_32 is
     signal samp_pwm_right   : std_logic;
     signal trigger_1        : std_logic;
     signal trigger_2        : std_logic;
-    signal sys_irq_usb      : std_logic;
-    signal sys_irq_tape     : std_logic;
-    signal sys_irq_iec      : std_logic;
-    signal sys_irq_cmdif    : std_logic;
+    signal sys_irq_usb      : std_logic := '0';
+    signal sys_irq_tape     : std_logic := '0';
+    signal sys_irq_iec      : std_logic := '0';
+    signal sys_irq_cmdif    : std_logic := '0';
     signal invalidate       : std_logic;
     signal inv_addr         : std_logic_vector(31 downto 0);
     signal stuck            : std_logic;

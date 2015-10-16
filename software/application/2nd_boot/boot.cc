@@ -147,6 +147,7 @@ int try_flash(void)
     printf("Application length = %08x, version %s\n", length, version);
     if(length != 0xFFFFFFFF) {
         flash->read_dev_addr(image_addr.device_addr+16, length, (void *)APPLICATION_RUN_ADDRESS); // we should use flash->read_image here
+
         jump_run(APPLICATION_RUN_ADDRESS);
         return 1;
     }
@@ -167,8 +168,18 @@ int try_xmodem(void)
 
 int main()
 {
-    printf("*** 1541 Ultimate-II - Bootloader %s - FPGA Version: %2x ***\n\n",
-            BOOT_VERSION, getFpgaVersion());
+	volatile uint32_t *k = (volatile uint32_t *)0;
+
+	printf("*** 1541 Ultimate-II - Bootloader %s - FPGA Version: %2x - %08x %08x ***\n\n",
+            BOOT_VERSION, getFpgaVersion(), *k++, *k++);
+
+	k = (volatile uint32_t *)0;
+	*k = 0xB0000000;
+
+	if (getFpgaCapabilities() & CAPAB_SIMULATION) {
+        ioWrite8(UART_DATA, '*');
+        jump_run(APPLICATION_RUN_ADDRESS);
+    }
 
     FRESULT res = FR_DISK_ERR;
     int file_system_err;

@@ -2,6 +2,8 @@
 #include "itu.h"
 #include <stdlib.h>
 
+#include "dump_hex.h"
+
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 #include "task.h"
@@ -22,6 +24,7 @@ void __clear_bss();
 
 void _premain() __attribute__ ((section(".text.start")));
 
+
 typedef void(*fptr)(void);
 
 void _do_ctors(void)
@@ -33,12 +36,15 @@ void _do_ctors(void)
     end = (unsigned long *)&__end_of_constructors;
 //    printf("\nconstructor list = (%p-%p)\n", pul, end);
 
+    portENTER_CRITICAL();
+
     while(pul != end) {
         f = (fptr)*pul;
-        printf("Con %p\n", f);
+        printf("Cons %p\n", f);
         f();
         pul++;
     }
+    portEXIT_CRITICAL();
 }
 
 void _do_dtors(void)
@@ -66,7 +72,7 @@ void _exit()
 
 void _premain()
 {
-    ioWrite8(UART_DATA, 0x31);
+	ioWrite8(UART_DATA, 0x31);
 
     __clear_bss();
 
@@ -185,30 +191,6 @@ void *sbrk(int inc)
         printf("Sbrk called with %6x. FAILED\n", inc);
     }
     return result;
-}
-
-void restart(void)
-{
-	uint32_t *src = (uint32_t *)0x1C00000;
-	uint32_t *dst = (uint32_t *)0x10000;
-	int size = (int)(*(src++));
-	while(size--) {
-		*(dst++) = *(src++);
-	}
-	dst = (uint32_t *)0x1FFF000;
-	for (int i=0;i<1022;i++) {
-		*(dst++) = 0x80000000; // NOP instruction
-	}
-	*(dst++) = 0xb60f0008; // RTSD R15, 8
-	*(dst++) = 0x80000000; // NOP instruction
-	// Note that the data cache has now been completely overwritten
-	// The instruction cache will now pick up the code
-	// this works because we have a write through cache.
-	// puts("Restarting....");
-    __asm__("bralid r15, 0x1FFF000"); // execute the whole bunch of NOPs and return
-    __asm__("nop");
-    __asm__("bralid r15, 0x10000"); // now that the instruction cache got flushed, jump to the newly loaded code
-    __asm__("nop");
 }
 
 

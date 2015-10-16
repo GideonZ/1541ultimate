@@ -55,7 +55,6 @@
         .type _start, @function
 _start:
         brai    _start1
-		nop
         brai    restart
         .end _start
     
@@ -118,14 +117,19 @@ __end_test_io:
     bralid  r15, 0x10000
     nop
 */
+	addi  r3, r0, 5000 /* Wait for 300 us */
+__wait:
+	bneid r3, __wait
+	addi  r3, r3, -1
+
     addi r3, r0, 2044  /* set R3 to top cache location */
 __loop:
     lw    r4, r3, r0   /* load word from memory (cache hit) */
     sw    r4, r3, r0   /* store word to memory (write through) */
-    beqi  r3, __done   /* if reached 0, we are done */
+    bneid r3, __loop   /* if reached 0, we are done */
     addi  r3, r3, -4   /* decrement address */
-    bri   __loop
-__done:
+
+	nop
 	brlid	r15, _premain               /* Initialize BSS and run program */
 	nop
 

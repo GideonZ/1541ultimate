@@ -82,7 +82,7 @@ void ConfigBrowserState :: change(void)
     it->store->dirty = true;
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
-            browser->context(it->value);
+            browser->context(it->value - it->definition->min);
             break;
         case CFG_TYPE_STRING:
             if(browser->user_interface->string_box(it->definition->item_text, it->string, it->definition->max))

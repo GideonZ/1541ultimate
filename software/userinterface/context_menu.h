@@ -34,7 +34,6 @@ class ContextMenu : public UIObject
     Screen   *screen;
     Window   *window;
     Keyboard *keyb;
-
     
     // some things we like to keep track
     t_context_state context_state;

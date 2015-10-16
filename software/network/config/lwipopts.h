@@ -168,7 +168,7 @@
  * - pbuf_free_callback(p);
  * - mem_free_callback(m);
  */
-#define LWIP_ALLOW_MEM_FREE_FROM_OTHER_CONTEXT 1
+#define LWIP_ALLOW_MEM_FREE_FROM_OTHER_CONTEXT 0
 
 /*
    ------------------------------------------------
@@ -335,14 +335,14 @@
  * this option does not affect outgoing packet sizes, which can be controlled
  * via IP_FRAG.
  */
-#define IP_REASSEMBLY                   1
+#define IP_REASSEMBLY                   0
 
 /**
  * IP_FRAG==1: Fragment outgoing IP packets if their size exceeds MTU. Note
  * that this option does not affect incoming packet sizes, which can be
  * controlled via IP_REASSEMBLY.
  */
-#define IP_FRAG                         1
+#define IP_FRAG                         0
 
 /**
  * IP_REASS_MAXAGE: Maximum time (in multiples of IP_TMR_INTERVAL - so seconds, normally)
@@ -516,7 +516,7 @@
 /**
  * LWIP_IGMP==1: Turn on IGMP module. 
  */
-#define LWIP_IGMP                       1
+#define LWIP_IGMP                       0
 
 /*
    ----------------------------------

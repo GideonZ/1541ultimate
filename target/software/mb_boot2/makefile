@@ -74,7 +74,6 @@ SRCS_CC	 =  blockdev.cc \
 			partition.cc \
 			flash.cc \
 			at45_flash.cc \
-			at49_flash.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			sd_card.cc \
@@ -124,7 +123,7 @@ ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 .PHONY: clean all dep
 
-all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin 
+all: $(OUTPUT) $(RESULT) $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).sim
 #	$(MAKE) -C ../1st_boot
 
 $(OUTPUT):
@@ -172,6 +171,10 @@ $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OB
 	@echo "Linking..."
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out
+
+$(OUTPUT)/$(PRJ).sim: $(RESULT)/$(PRJ).bin
+	@echo Make mem...
+	@$(MAKEMEM) $< $@ 61440 4096
 
 $(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
 	@echo "Make mem..."

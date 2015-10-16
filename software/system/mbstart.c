@@ -29,7 +29,6 @@ void _premain()
 	int t;
 
 	t=main(0, 0);
-
 }
 
 void _exit(void) {
@@ -72,25 +71,31 @@ void outbyte(int c)
 void restart(void)
 {
 	uint32_t *src = (uint32_t *)0x1C00000;
-	uint32_t *dst = (uint32_t *)0x10000;
 	int size = (int)(*(src++));
+	uint32_t *dst = (uint32_t *)(*(src++));
+	uint32_t *jump = dst;
+
 	while(size--) {
 		*(dst++) = *(src++);
 	}
-	dst = (uint32_t *)0x1FFF000;
+	dst = (uint32_t *)0xF000;
 	for (int i=0;i<1022;i++) {
 		*(dst++) = 0x80000000; // NOP instruction
 	}
-	*(dst++) = 0xb60f0008; // RTSD R15, 8
+	*(dst++) = 0xb6030008; // RTSD R3, 8
 	*(dst++) = 0x80000000; // NOP instruction
 	// Note that the data cache has now been completely overwritten
 	// The instruction cache will now pick up the code
 	// this works because we have a write through cache.
 	// puts("Restarting....");
-    __asm__("bralid  r15, 0x1FFF000"); // execute the whole bunch of NOPs and return
+    __asm__("bralid r3, 0xF000"); // execute the whole bunch of NOPs and return
     __asm__("nop");
-    __asm__("brai   0x10000"); // now that the instruction cache got flushed, jump to the newly loaded code
+    __asm__("nop");
+    __asm__("bra %0" : : "r"(jump)); // now that the instruction cache got flushed, jump to the newly loaded code
+    __asm__("nop");
+    /* We never get here */
 }
+
 
 /*
 void *sbrk(int inc)
