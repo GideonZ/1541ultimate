@@ -638,7 +638,7 @@ DRESULT SdCard :: get_drive_size(uint32_t* drive_size)
         return RES_ERROR;
     }
 
-    if((iob[0] & 0x03) == 0) { // type 1.0 CSD
+    if((iob[0] & 0xC0) == 0) { // type 1.0 CSD
     	c_size = iob[6] & 0x03; // bits 1..0
     	c_size <<= 10;
     	c_size += (uint16_t)iob[7]<<2;
