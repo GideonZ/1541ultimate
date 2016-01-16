@@ -502,7 +502,14 @@ void C64 :: backup_io(void)
 	cia_backup[1] = CIA2_DPA;
 	cia_backup[2] = CIA1_DDRA;
 	cia_backup[3] = CIA1_DDRB;
+	CIA1_DDRA = 0x00;
+	CIA1_DDRB = 0xFF;
+	cia_backup[5] = CIA1_DPB;
+	CIA1_DDRB = 0x00;
+	CIA1_DDRA = 0xFF;
 	cia_backup[4] = CIA1_DPA;
+	cia_backup[6] = CIA1_CRA;
+	cia_backup[7] = CIA1_CRB;
 }
 
 void C64 :: init_io(void)
@@ -514,8 +521,10 @@ void C64 :: init_io(void)
 //  CIA2_DPA  |= 0x03; // don't touch!
 
     // enable keyboard
-	CIA1_DDRA  = 0xFF; // all out
 	CIA1_DDRB  = 0x00; // all in
+	CIA1_DDRA  = 0xFF; // all out
+	CIA1_CRA &= 0xFD; // no PB6 output, interferes with keyboard
+	CIA1_CRB &= 0xFD; // no PB7 output, interferes with keyboard
 	
 	// Set VIC to use charset at 0800
 	// Set VIC to use screen at 0400
@@ -594,8 +603,11 @@ void C64 :: restore_io(void)
 	CIA1_DDRA = cia_backup[2];
 	CIA1_DDRB = cia_backup[3];
 	CIA1_DPA  = cia_backup[4];
+	CIA1_DPB  = cia_backup[5];
+	CIA1_CRA  = cia_backup[6];
+	CIA1_CRB  = cia_backup[7];
 
-    printf("Set CIA1 %b %b %b %b %b\n", cia_backup[0], cia_backup[1], cia_backup[2], cia_backup[3], cia_backup[4]);
+    printf("Set CIA1 %b %b %b %b %b %b\n", cia_backup[0], cia_backup[1], cia_backup[2], cia_backup[3], cia_backup[4], cia_backup[5]);
 
     // restore vic registers
     for(i=0;i<NUM_VICREGS;i++) {

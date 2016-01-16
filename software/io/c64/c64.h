@@ -95,6 +95,8 @@
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
 #define CIA2_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD00 + x))
+#define CIA1_CRA     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC0E))
+#define CIA1_CRB     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC0F))
 #define SID_VOLUME   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD418))
 #define SID_DUMMY    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD43F))
 #define VIC_CTRL     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD011))
@@ -167,7 +169,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint32_t ram_backup[BACKUP_SIZE/4];
     uint32_t screen_backup[COLOR_SIZE/4]; // only used now for vic state write
     uint32_t color_backup[COLOR_SIZE/4];
-    uint8_t cia_backup[5];
+    uint8_t cia_backup[8];
     
     uint8_t stop_mode;
     uint8_t raster;
