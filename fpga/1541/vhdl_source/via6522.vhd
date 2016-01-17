@@ -339,7 +339,7 @@ begin
                 data_out <= pio_i.ddrb;
             
             when X"3" => -- DDRA
-                data_out <= pio_i.ddrb;
+                data_out <= pio_i.ddra;
                 
             when X"4" => -- TA LO counter
                 data_out <= timer_a_count(7 downto 0);
