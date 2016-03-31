@@ -565,7 +565,12 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 		res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
 		if(res == FR_OK) {
 			check_if_save_needed(cmd);
-            mount_d64(protect, newFile);
+
+			c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
+            		C64_UNFREEZE, 0, "", "");
+            c64_command->execute();
+
+			mount_d64(protect, newFile);
             if ((cmd->functionID == D64FILE_MOUNT_UL) ||
             	(cmd->functionID == D64FILE_MOUNT_RO)) {
             	unlink();
@@ -591,7 +596,12 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 		res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
 		if(res == FR_OK) {
 			check_if_save_needed(cmd);
-            mount_g64(protect, newFile);
+
+			c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
+            		C64_UNFREEZE, 0, "", "");
+            c64_command->execute();
+
+			mount_g64(protect, newFile);
             if ((cmd->functionID == G64FILE_MOUNT_UL) ||
             	(cmd->functionID == G64FILE_MOUNT_RO)) {
             	unlink();
@@ -671,7 +681,7 @@ void C1541 :: save_disk_to_file(SubsysCommand *cmd)
 		set_extension(buffer, (cmd->mode)?(char *)".g64":(char *)".d64", 32);
 		fix_filename(buffer);
 		fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW, &file);
-		if(res == FR_OK) {
+		if(fres == FR_OK) {
 			if(cmd->mode) {
 				cmd->user_interface->show_progress("Saving G64...", 84);
 				gcr_image->save(file, (cfg->get_value(CFG_C1541_GCRALIGN)!=0), cmd->user_interface);

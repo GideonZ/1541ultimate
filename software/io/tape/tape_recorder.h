@@ -41,7 +41,7 @@
 #define REC_ERR_NO_FILE     2
 #define REC_ERR_WRITE_ERROR 3
 
-class TapeRecorder : public ObjectWithMenu
+class TapeRecorder : public SubSystem, ObjectWithMenu
 {
 	FileManager *fm;
 	TaskHandle_t taskHandle;

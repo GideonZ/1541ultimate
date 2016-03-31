@@ -434,8 +434,10 @@ FRESULT DirInD64 :: read(FileInfo *f)
 		if(fs->move_window(fs->get_root_sector()) == FR_OK) {
 			int offset = (fs->image_mode==2)?4:144;
 			for(int i=0;i<24;i++) {
-                if(i < f->lfsize)
-                    f->lfname[i] = char(fs->sect_buffer[offset+i] & 0x7F);
+                if(i < f->lfsize) {
+                	char c = char(fs->sect_buffer[offset+i] & 0x7F);
+                    f->lfname[i] = c; //(c == '/')? '!' : c;
+                }
             }
             if(f->lfsize > 24)
                 f->lfname[24] = 0;
@@ -481,8 +483,10 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 for(int i=5;i<21;i++) {
                 	if ((p[i] == 0xA0) || (p[i] < 0x20))
                 		break;
-                	if(j < f->lfsize)
-                		f->lfname[j++] = char(p[i] & 0x7F);
+                	if(j < f->lfsize) {
+                    	char c = char(p[i] & 0x7F);
+                        f->lfname[j++] = (c == '/')? '!' : c;
+                	}
                 }
                 if(j < f->lfsize)
                     f->lfname[j] = 0;

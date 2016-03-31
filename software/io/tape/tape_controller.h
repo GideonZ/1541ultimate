@@ -41,7 +41,7 @@ class TapeController : public SubSystem, ObjectWithMenu
 	int   block;
     int   mode;
 	int   paused;
-	int   recording;
+	bool  recording;
 	uint8_t  controlByte;
 	uint8_t  *blockBuffer;
 	TaskHandle_t taskHandle;

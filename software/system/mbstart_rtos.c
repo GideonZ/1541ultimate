@@ -72,6 +72,7 @@ void _exit()
 
 void _premain()
 {
+	portDISABLE_INTERRUPTS();
 	ioWrite8(UART_DATA, 0x31);
 
     __clear_bss();

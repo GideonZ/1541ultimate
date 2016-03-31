@@ -70,7 +70,7 @@ int  TapeController :: fetch_task_items(Path *path, IndexedList<Action*> &item_l
 void TapeController :: stop()
 {
 	PLAYBACK_CONTROL = C2N_CLEAR_ERROR | C2N_FLUSH_FIFO;
-	PLAYBACK_CONTROL = 0; // also clears sense pin
+	PLAYBACK_CONTROL = 0; // also clears sense pin and disables output
 }
 
 void TapeController :: close()
@@ -82,7 +82,7 @@ void TapeController :: close()
 	file = NULL;
 }
 	
-void TapeController :: start(int playout_pin)
+void TapeController :: start(int playout_pin) // pin = 1: read, pin = 2: write
 {
 	stop();
 	printf("Start Tape.. Status = %b. [", PLAYBACK_STATUS);
@@ -90,15 +90,27 @@ void TapeController :: start(int playout_pin)
 	PLAYBACK_CONTROL = 0;
 	paused = 0;
 	
-	for(int i=0;i<16;i++) { // preload some blocks
+	controlByte = C2N_ENABLE | uint8_t(mode << 3) | uint8_t(playout_pin << 6);
+	if (playout_pin == 1) { // normal playback: WE control the Sense PIN
+		controlByte |= C2N_SENSE;
+	} else { // record!
+		// insert one second pause to start with
+		*PLAYBACK_DATA = 0x00;
+		*PLAYBACK_DATA = 0xA2;
+		*PLAYBACK_DATA = 0x08;
+		*PLAYBACK_DATA = 0x0F;
+	}
+
+	// preload some blocks
+	for(int i=0;i<16;i++) {
 		if(PLAYBACK_STATUS & C2N_STAT_FIFO_AF)
 			break;
-			
+
 		read_block();
 	}
-	controlByte = C2N_SENSE | C2N_ENABLE | uint8_t(mode << 3) | uint8_t(playout_pin << 6);
+
 	PLAYBACK_CONTROL = controlByte;
-    recording = playout_pin;
+    recording = (playout_pin == 2);
 	printf("] Status = %b.\n", PLAYBACK_STATUS);
 	state = 0;
 }

@@ -101,7 +101,8 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 		read_buf[31] = 0;
 		f->lfname[24] = 0;
 	    for(int b=0;b<24;b++) {
-	        f->lfname[b] = char(read_buf[b+8]); 
+	    	char c = char(read_buf[b+8]);
+	    	f->lfname[b] = c; //(c == '/') ? '!' : c;
 	    }
 
 	    max  = LD_WORD(&read_buf[2]);
@@ -124,13 +125,13 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 	            memset(f->lfname, 0, f->lfsize);
 	            for(int s=0;s<16;s++) {
 	                c = read_buf[16+s];
-	                if ((c & 0x80)||(c == 32)) { // this is a sufficient conversion
-	                    f->lfname[s] = 32;
+	                if (c == '/') {
+	                	c = '!';
+	                } else if (c & 0x80) {
+	                	c = ' ';
 	                }
-					else {
-	                    f->lfname[s] = c;
-	                    v++;
-	                }
+					f->lfname[s] = c;
+					v++;
 	            }
 
 				// eui: no trailing spaces please

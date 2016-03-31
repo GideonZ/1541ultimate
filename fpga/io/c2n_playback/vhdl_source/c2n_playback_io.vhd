@@ -25,8 +25,8 @@ end c2n_playback_io;
 
 architecture gideon of c2n_playback_io is
     signal enabled          : std_logic;
-    signal sense            : std_logic;
     signal counter          : unsigned(23 downto 0);
+    signal counter2         : unsigned(11 downto 0);
     signal error            : std_logic;
     signal status           : std_logic_vector(7 downto 0);
     signal fifo_dout        : std_logic_vector(7 downto 0);
@@ -36,17 +36,13 @@ architecture gideon of c2n_playback_io is
     signal fifo_almostfull  : std_logic;
     signal fifo_flush       : std_logic;
     signal fifo_write       : std_logic;
-    signal pulse            : std_logic;
-    signal toggle           : std_logic;
-    signal cnt2             : integer range 0 to 127;
+    signal write_pulse      : std_logic;
     signal stream_en        : std_logic;
     type t_state is (idle, multi1, multi2, multi3, count_down);
     signal state            : t_state;
     signal state_enc        : std_logic_vector(1 downto 0);
     signal mode             : std_logic;
     signal sel              : std_logic_vector(1 downto 0);
-    signal c2n_out          : std_logic;
-    
     attribute register_duplication  : string;
     attribute register_duplication of stream_en : signal is "no";
     
@@ -61,15 +57,9 @@ begin
                 error <= '1';
             end if;
 
-            -- create a pulse of 50 ticks
-            if cnt2 = 0 then
-                pulse <= '0';
-            elsif phi2_tick='1' then
-                cnt2 <= cnt2 - 1;
-            end if;
-
             -- bus handling
             resp <= c_io_resp_init;
+            fifo_flush <= '0';
             if req.write='1' then
                 resp.ack <= '1'; -- ack for fifo write as well.
                 if req.address(11)='0' then
@@ -90,57 +80,71 @@ begin
             case state is
             when idle =>
                 if stream_en='1' and fifo_empty='0' then
+                    write_pulse <= '1';
                     if fifo_dout=X"00" then
                         if mode='1' then
                             state <= multi1;
                         else
-                            counter <= to_unsigned(256*8, counter'length);
+                            counter  <= to_unsigned(256*8, counter'length);
+                            counter2 <= to_unsigned(256*4, counter2'length);
                             state <= count_down;
                         end if;                    
                     else
-                        counter <= unsigned("0000000000000" & fifo_dout & "000");
+                        counter  <= unsigned("0000000000000" & fifo_dout & "000");
+                        counter2 <= unsigned("00" & fifo_dout & "00");   -- 12 bits
                         state <= count_down;
                     end if;
                 else
-                    toggle <= '0';
+                    write_pulse <= '0';
                 end if;
             
             when multi1 =>
-                if stream_en='1' and fifo_empty='0' then
-                    counter(7 downto 0) <= unsigned(fifo_dout);
-                    state <= multi2;
-                elsif enabled = '0' then
+                if enabled = '0' then
                     state <= idle;
+                elsif stream_en='1' and fifo_empty='0' then
+                    counter(7 downto 0) <= unsigned(fifo_dout);
+                    counter2(6 downto 0) <= unsigned(fifo_dout(7 downto 1));
+                    state <= multi2;
                 end if;
                 
             when multi2 =>
-                if stream_en='1' and fifo_empty='0' then
-                    counter(15 downto 8) <= unsigned(fifo_dout);
-                    state <= multi3;
-                elsif enabled = '0' then
+                if enabled = '0' then
                     state <= idle;
+                elsif stream_en='1' and fifo_empty='0' then
+                    counter(15 downto 8) <= unsigned(fifo_dout);
+                    counter2(11 downto 7) <= unsigned(fifo_dout(4 downto 0));
+                    if fifo_dout(7 downto 5) /= "000" then
+                        counter2 <= (others => '1');
+                    end if;
+                    state <= multi3;
                 end if;
 
             when multi3 =>
-                if stream_en='1' and fifo_empty='0' then
-                    counter(23 downto 16) <= unsigned(fifo_dout);
-                    state <= count_down;
-                elsif enabled = '0' then
+                if enabled = '0' then
                     state <= idle;
+                elsif stream_en='1' and fifo_empty='0' then
+                    counter(23 downto 16) <= unsigned(fifo_dout);
+                    if fifo_dout /= X"00" then
+                        counter2 <= (others => '1');
+                    end if;
+                    state <= count_down;
                 end if;
                 
             when count_down =>
-                if phi2_tick='1' and stream_en='1' and c64_stopped='0' then
+                if enabled = '0' then
+                    state <= idle;
+                elsif phi2_tick='1' and stream_en='1' and c64_stopped='0' then
+                    if (counter2 = 1) or (counter2 = 0) then
+                        write_pulse <= '0';
+                    else
+                        counter2 <= counter2 - 1;
+                    end if;
+
                     if (counter = 1) or (counter = 0) then
-                        pulse  <= '1';
-                        toggle <= not toggle;
-                        cnt2   <= 122;
                         state  <= idle;
                     else
                         counter <= counter - 1;
                     end if;
-                elsif enabled = '0' then -- software disabled the device
-                    state <= idle;
                 end if;
 
             when others =>
@@ -151,11 +155,11 @@ begin
             if reset='1' then
                 enabled <= '0';
                 counter <= (others => '0');
-                pulse  <= '0';
                 error   <= '0';
                 mode    <= '0';
                 sel     <= "00";
                 c2n_sense <= '0';
+                write_pulse <= '0';
             end if;
         end if;
     end process;
@@ -196,14 +200,18 @@ begin
     status(6) <= stream_en;
     status(7) <= fifo_empty;
 
-    c2n_out   <= not pulse;
+    -- mode 0: no output
+    -- mode 1: negative pulse on read
+    -- mode 2: positive pulse on write
+    -- mode 3: no output
 
     with sel select c2n_out_r <=
-        c2n_out when "00",
-        pulse   when "10",
+        not write_pulse when "01", -- Load from tap
         '1' when others;
         
-    c2n_out_w <= pulse when sel="01" else '1';
+    with sel select c2n_out_w <=
+        write_pulse when "10", -- Write to Tape
+        '1' when others;
 
     with state select state_enc <=
         "00" when idle,

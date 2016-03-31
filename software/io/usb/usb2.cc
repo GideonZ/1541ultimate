@@ -127,7 +127,7 @@ void Usb2 :: init(void)
 		free_map[i] = 0;
 	}
 	BLOCK_FIFO_HEAD = BLOCK_FIFO_ENTRIES - 1;
-
+	state = 0;
 	NANO_START = 1;
 
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
@@ -180,26 +180,30 @@ void Usb2 :: poll()
 BaseType_t Usb2 :: irq_handler(void)
 {
 	PROFILER_SUB = 2;
-	uint16_t read1, read2;
-	bool success = true;
-	success &= get_fifo(&read1);
-	success &= get_fifo(&read2);
+	uint16_t read;
 
-	if (!success) {
-		printf(":(");
-		PROFILER_SUB = 0;
-		return pdFALSE;
+	while (get_fifo(&read)) {
+		fifo_word[state++] = read;
+		if (state == 2) {
+			state = 0;
+			process_fifo();
+		}
 	}
+	PROFILER_SUB = 0;
+	return pdFALSE;
+}
 
-	int pipe = read1 & 0x0F;
+BaseType_t Usb2 :: process_fifo(void)
+{
+	int pipe = fifo_word[0] & 0x0F;
 	int error = 0;
-	if ((read1 & 0xFFF0) == 0xFFF0) {
+	if ((fifo_word[0] & 0xFFF0) == 0xFFF0) {
 		if (pipe == 15) {
 			printf("USB Other IRQ. Status = %b\n", USB2_STATUS);
 			return pdFALSE;
 		} else {
 			pause_input_pipe(pipe);
-			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, read2);
+			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, fifo_word[1]);
 			error = 1;
 		}
 	}
@@ -208,21 +212,19 @@ BaseType_t Usb2 :: irq_handler(void)
 	uint8_t *buffer = 0;
 	if (!error) {
 		if (inputPipeBufferMethod[pipe] == e_block) {
-			uint16_t idx = (read1 & 0xFFF0) / 384;
+			uint16_t idx = (fifo_word[0] & 0xFFF0) / 384;
 			free_map[idx] = 1; // allocated
-			buffer = (uint8_t *) & blockBufferBase[read1 & 0xFFF0];
+			buffer = (uint8_t *) & blockBufferBase[fifo_word[0] & 0xFFF0];
 		} else {
-			buffer = (uint8_t *) & circularBufferBase[read1 & 0xFFF0];
+			buffer = (uint8_t *) & circularBufferBase[fifo_word[0] & 0xFFF0];
 		}
 	}
 
 	struct usb_packet pkt;
 	pkt.data = buffer; // will be 0 upon error!
-	pkt.length = read2;
+	pkt.length = fifo_word[1];
 	pkt.object = inputPipeObjects[pipe];
 	pkt.pipe = pipe;
-//#ifndef OS
-//	inputPipeCallBacks[pipe](pkt.data, pkt.length, pkt.object);
 
 	BaseType_t retval;
 	PROFILER_SUB = 3;

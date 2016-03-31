@@ -9,7 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_mb_700a is
 generic (
-    g_version       : unsigned(7 downto 0) := X"04" );
+    g_version       : unsigned(7 downto 0) := X"05" );
 port (
     CLOCK       : in    std_logic;
     

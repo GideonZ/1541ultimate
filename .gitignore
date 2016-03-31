@@ -10,6 +10,7 @@ fpga/cpu_unit/mblite/tb
 fpga/cpu_unit/sim/mblite
 fpga/cpu_unit/tl_mblite
 fpga/io/sigma_delta_dac/sim
+fpga/io/tomas
 fpga/io/usb2/sim
 fpga/ip/video/sim
 fpga/sid6581/sim/modelsim.ini

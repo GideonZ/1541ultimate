@@ -31,7 +31,7 @@ __inline uint32_t cpu_to_le_32(uint32_t a)
     return (a >> 24) | (a << 24) | m1 | m2;
 }
 
-TapeRecorder :: TapeRecorder()
+TapeRecorder :: TapeRecorder() : SubSystem(SUBSYSID_TAPE_RECORDER)
 {
     fm = FileManager :: getFileManager();
     recording = 0;

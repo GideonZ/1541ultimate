@@ -46,7 +46,7 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(Globals :: getFil
 #define TAPFILE_RUN 0x3101
 #define TAPFILE_START 0x3110
 #define TAPFILE_WRITE 0x3111
-
+#define TAPFILE_WRITE2 0x3112
 
 /*************************************************************/
 /* Tap File Browser Handling                                 */
@@ -75,6 +75,8 @@ int FileTypeTap :: fetch_context_items(IndexedList<Action *> &list)
         count++;
         list.append(new Action("Write to Tape", FileTypeTap :: execute_st, TAPFILE_WRITE, 0 ));
         count++;
+//        list.append(new Action("Alt. Write", FileTypeTap :: execute_st, TAPFILE_WRITE2, 0 ));
+//        count++;
     }
     return count;
 }
@@ -121,7 +123,7 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
 	switch(cmd->functionID) {
 	case TAPFILE_START:
 		if(cmd->user_interface->popup("Tape emulation starts now..", BUTTON_OK | BUTTON_CANCEL) == BUTTON_OK) {
-			tape_controller->start(0);
+			tape_controller->start(1);
 		}
 		break;
 	case TAPFILE_RUN:
@@ -129,16 +131,20 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
 //      c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());
         c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_LOAD_RUN, "", "");
         c64_command->execute();
-		tape_controller->start(0);
+		tape_controller->start(1);
 		break;
     case TAPFILE_WRITE:
         c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_RECORD, "", "");
         c64_command->execute();
-		tape_controller->start(1);
+		tape_controller->start(2);
 		break;
-	default:
+    case TAPFILE_WRITE2:
+        c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DRIVE_LOAD, RUNCODE_TAPE_RECORD, "", "");
+        c64_command->execute();
+		tape_controller->start(3);
+		break;
+    default:
 		break;
 	}
 	return 0;
 }
-

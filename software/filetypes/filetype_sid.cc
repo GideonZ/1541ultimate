@@ -164,7 +164,8 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 	const char *errors[] = { "", "Can't open file",
 		"File seek failed", "Can't read header",
 		"File type error", "Internal error",
-		"No memory location for player data" };
+		"No memory location for player data",
+	    "Illegal: Load rolls over $FFFF" };
 		
 	int selection = cmd->functionID;
 	this->cmd = cmd;
@@ -264,12 +265,17 @@ int FileTypeSID :: prepare(bool use_default)
 	pus = (uint16_t *)&sid_header[0x7e];
 	*pus = cpu2le(end);
 
+	if (end < start) {
+		printf("Wrap around $0000!\n");
+		return 7;
+	}
+
 	// Now determine where to put the SID player header
     if (sid_header[4] < 0x02) {
-        if (start >= 0x1000) {
+        if(end <= 0xCF00) {
+			player = 0xCF00;
+        } else if (start >= 0x1000) {
             player = 0x0800;
-        } else if(end <= 0xCF00) {
-            player = 0xCF00;
         } else {
             player = 0x0400;
         }
@@ -281,10 +287,10 @@ int FileTypeSID :: prepare(bool use_default)
 		}
         if(sid_header[0x78] == 0x00) {
             printf("Clean SID file.. checking start/stop\n");
-            if (start >= 0x1000) {
+            if(end <= 0xCF00) {
+				player = 0xCF00;
+            } else if (start >= 0x1000) {
                 player = 0x0800;
-            } else if(end <= 0xCF00) {
-                player = 0xCF00;
             } else {
                 player = 0x0400;
             }
@@ -374,17 +380,26 @@ void FileTypeSID :: load(void)
 	// load file in C64 memory
     /* Now actually load the file */
     int total_trans = 0;
-    int max_length = 65536 - start;
+    int max_length = 65536;
 
     int block = (8192 - offset) & 0x1FF;
 
 	uint8_t dma_load_buffer[512];
-	uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE + start);
+	uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE);
+	int offset = int(start);
 	while (max_length > 0) {
-    	file->read(dma_load_buffer, block, &bytes_read);
+		file->read(dma_load_buffer, block, &bytes_read);
     	total_trans += bytes_read;
-    	memcpy(dest, dma_load_buffer, bytes_read);
-    	dest += bytes_read;
+    	if ((bytes_read + offset) > 65535) {
+    		//printf("\nRead: %d\nmemcpy(%p, %p, %d);\n", bytes_read, &dest[offset], dma_load_buffer, 65536 - offset);
+    		memcpy(&dest[offset], dma_load_buffer, 65536 - offset);
+    		//printf("memcpy(%p, %p, %d);\n", dest, &dma_load_buffer[65536-offset], bytes_read - (65536 - offset));
+    		memcpy(dest, &dma_load_buffer[65536-offset], bytes_read - (65536 - offset));
+    	} else {
+    		memcpy(&dest[offset], dma_load_buffer, bytes_read);
+    	}
+    	offset += bytes_read;
+    	offset &= 0xFFFF;
     	if (bytes_read < block) {
     		break;
     	}

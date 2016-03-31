@@ -1,5 +1,5 @@
 
-.PHONY: all mk1 mk2 prog special clean sw_clean loader
+.PHONY: all mk1 mk2 mk3 mk3only prog special clean sw_clean loader
 
 all:
 	@svn up
@@ -36,6 +36,16 @@ mk3:
 	@$(MAKE) -C target/software/update_to_mb
 	@cp target/software/update_to_mb/result/update.bin .
 	@cp target/software/mb_revert/result/revert.u2u .
+	@cp target/software/mb_update/result/update.u2u .
+
+mk3only:
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/fpga -f makefile_mb_700a
+	@$(MAKE) -C target/software/mb_lwip
+	@$(MAKE) -C target/software/mb_boot
+	@$(MAKE) -C target/software/mb_boot2
+	@$(MAKE) -C target/software/mb_ultimate
+	@$(MAKE) -C target/software/mb_update
 	@cp target/software/mb_update/result/update.u2u .
 
 prog:
