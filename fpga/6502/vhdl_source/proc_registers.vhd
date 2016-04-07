@@ -283,7 +283,7 @@ begin
         dreg when reg_d,
         a_reg_i  when reg_accu,
         reg_out  when reg_axy,
-        p_reg_i  when reg_flags,
+        p_reg_i or X"20" when reg_flags,
         pcl      when reg_pcl,
         pch      when reg_pch,
         mem_data when shift_res,
