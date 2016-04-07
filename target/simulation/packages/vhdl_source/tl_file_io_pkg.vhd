@@ -196,7 +196,8 @@ package body tl_file_io_pkg is
     begin
         if rec.offset = 0 then
             read(my_file, i);
-            rec.long_vec := std_logic_vector(to_unsigned(i, 32));
+            rec.long_vec := std_logic_vector(to_signed(i, 32));
+            --report "Long vec = " & hstr(rec.long_vec);
         end if;
         byte         := rec.long_vec(7 downto 0);
         rec.long_vec := "00000000" & rec.long_vec(31 downto 8);  -- lsB first
@@ -212,7 +213,7 @@ package body tl_file_io_pkg is
     begin
         rec.long_vec(31 downto 24) := byte;
         if rec.offset = 3 then
-            i          := to_integer(unsigned(rec.long_vec));
+            i          := to_integer(signed(rec.long_vec));
             write(my_file, i);
             rec.offset := 0;
         else

@@ -79,21 +79,24 @@ begin
         -- fix up in decimal mode (not for CMP!)
         if d_in='1' and support_bcd then
             if operation(2)='0' then -- ADC
+                sum_h := ('0' & data_a(7 downto 4)) + ('0' & b(7 downto 4));
+                        
                 if sum_l(4) = '1' or sum_l(3 downto 2)="11" or sum_l(3 downto 1)="101" then -- >9 (10-11, 12-15)
-                    sum_l := sum_l + (sum_l(4) & X"6"); -- adding sum_l(4) another time, prevents
-                                                        -- double fixup of high nibble.
+                    sum_l := sum_l + ('0' & X"6"); 
+                    sum_l(4) := '1';
                 end if;
+
                 -- negative when sum_h + sum_l(4) = 8
                 sum_h := sum_h + sum_l(4);
                 sum_n <= sum_h(3);
 
-                if sum_h(4) = '1' or sum_h(3 downto 2)="11" or sum_h(3 downto 1)="101" or
-                    (sum_l(4)='1' and sum_h(3 downto 0)="1001") then -- >9 (10-11, 12-15)
+                if sum_h(4) = '1' or sum_h(3 downto 2)="11" or sum_h(3 downto 1)="101" then --
                     sum_h := sum_h + 6;
+                    sum_c <= '1';
                 end if;
                 
                 -- carry and overflow are output after fix
-                sum_c  <= sum_h(4);
+--                sum_c  <= sum_h(4);
 --                sum_v  <= (sum_h(3) xor data_a(7)) and (sum_h(3) xor data_b(7) xor operation(2)); 
 
             elsif operation(0)='1' then -- SBC

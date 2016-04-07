@@ -281,7 +281,6 @@ package body tl_flat_memory_model_pkg is
         variable sector_idx : integer;
         variable entry_idx  : integer;
         variable read_data  : std_logic_vector(31 downto 0);
-        variable L          : line;
     begin
         --write_s(L, "Writing " & vec_to_hex(data, 8) & " to location " & vec_to_hex(address, 8));
         --writeline(output, L);
@@ -441,6 +440,7 @@ package body tl_flat_memory_model_pkg is
 
                 read_byte(myfile, data, myrec);
                 write_memory_8(bank, std_logic_vector(addr), data);
+                --report "Writing " & hstr(data) & " to " & hstr(addr);
                 addr := addr + 1;
             end loop;
         end if;
@@ -622,8 +622,6 @@ package body tl_flat_memory_model_pkg is
     is
         variable addr       : std_logic_vector(31 downto 0);
         variable data       : std_logic_vector(7 downto 0);
-        variable sector_idx : integer;
-        variable entry_idx  : integer;
         variable remaining  : integer;
         variable maxlen     : integer;
         variable sum        : unsigned(7 downto 0);
@@ -643,7 +641,7 @@ package body tl_flat_memory_model_pkg is
             end if;
 
             -- check for maximum length (until 64k boundary)
-            maxlen := to_integer(X"10000" - unsigned(X"0" & addr(15 downto 0)));
+            maxlen := 65536 - to_integer(unsigned(addr(15 downto 0)));
             if maxlen > 16 then maxlen := 16; end if;
 
             -- create data record
