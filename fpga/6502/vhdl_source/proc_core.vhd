@@ -21,6 +21,7 @@ port(
     
     sync_out     : out std_logic;
     pc_out       : out std_logic_vector(15 downto 0);
+    inst_out     : out std_logic_vector(7 downto 0);
     addr_out     : out std_logic_vector(16 downto 0);
     data_in      : in  std_logic_vector(7 downto 0);
     data_out     : out std_logic_vector(7 downto 0);
@@ -76,6 +77,8 @@ architecture structural of proc_core is
     signal clear_b      : std_logic;
     signal a16          : std_logic;
 begin
+    inst_out <= i_reg; -- for debug only
+
     new_flags(7) <= n_out;
     new_flags(6) <= v_out;
     new_flags(5) <= '1';
