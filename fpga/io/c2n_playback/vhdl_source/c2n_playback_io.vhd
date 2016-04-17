@@ -43,15 +43,19 @@ architecture gideon of c2n_playback_io is
     signal state_enc        : std_logic_vector(1 downto 0);
     signal mode             : std_logic;
     signal sel              : std_logic_vector(1 downto 0);
+    signal motor_en         : std_logic;
+    signal tick_out         : std_logic;
     attribute register_duplication  : string;
     attribute register_duplication of stream_en : signal is "no";
+    attribute register_duplication of motor_en  : signal is "no";
     
 begin
     process(clock)
     begin
         if rising_edge(clock) then
             -- c2n pin out and sync
-            stream_en <= enabled and c2n_motor;
+            stream_en <= enabled; --
+            motor_en  <= c2n_motor;
 
             if fifo_empty='1' and stream_en='1' then
                 error <= '1';
@@ -133,7 +137,7 @@ begin
             when count_down =>
                 if enabled = '0' then
                     state <= idle;
-                elsif phi2_tick='1' and stream_en='1' and c64_stopped='0' then
+                elsif tick_out='1' and stream_en='1' and c64_stopped='0' then
                     if (counter2 = 1) or (counter2 = 0) then
                         write_pulse <= '0';
                     else
@@ -221,4 +225,12 @@ begin
         "10" when count_down,
         "11" when others;
         
+    i_tape_speed: entity work.tape_speed_control
+    port map (
+        clock    => clock,
+        reset    => reset,
+        motor_en => motor_en,
+        tick_out => tick_out
+    );
+
 end gideon;

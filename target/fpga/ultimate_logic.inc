@@ -64,6 +64,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/io/iec_interface/vhdl_source/iec_processor.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/iec_interface/vhdl_source/iec_processor_io.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/c2n_playback/vhdl_source/c2n_playback_io.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/c2n_playback/vhdl_source/tape_speed_control.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/c2n_record/vhdl_source/c2n_record.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/command_interface/vhdl_source/command_if_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/command_interface/vhdl_source/command_protocol.vhd \
