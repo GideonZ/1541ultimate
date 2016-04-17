@@ -50,15 +50,15 @@ architecture gideon of c2n_record is
     signal fifo_almostfull  : std_logic;
     signal fifo_flush       : std_logic;
     signal fifo_write       : std_logic;
-    signal toggle           : std_logic;
-    signal cnt2             : integer range 0 to 63;
     type t_state is (idle, listen, encode, multi1, multi2, multi3);
     signal state            : t_state;
     signal state_enc        : std_logic_vector(1 downto 0);
+    signal motor_en         : std_logic;
     
     attribute register_duplication  : string;
     attribute register_duplication of stream_en : signal is "no";
     attribute register_duplication of read_c : signal is "no";
+    attribute register_duplication of motor_en : signal is "no";
     
 begin
     pull_sense <= sel and enabled;
@@ -76,7 +76,8 @@ begin
 
             -- signal capture
             stream_en <= c2n_sense and enabled; -- and c2n_motor;
-
+            motor_en  <= c2n_motor;
+            
             read_s <= (c2n_read and not sel) or (c2n_write and sel);
             read_d <= read_c;
             case mode is
@@ -155,7 +156,7 @@ begin
             
             when encode =>
                 fifo_write <= '1';
-                if diff > 2040 then
+                if (diff > 2040) or (motor_en = '0') then
                     fifo_din <= X"00";
                     state <= multi1;
                 else
@@ -193,7 +194,6 @@ begin
                 fifo_din <= (others => '0');
                 enabled  <= '0';
                 counter  <= (others => '0');
-                toggle   <= '0';
                 error    <= '0';
                 mode     <= "00";
                 sel      <= '0';
