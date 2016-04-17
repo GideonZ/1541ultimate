@@ -174,8 +174,13 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 int C64_Subsys :: dma_load_raw(File *f)
 {
 	bool i_stopped_it = false;
+	if (c64->client) {
+    	c64->client->release_host(); // disconnect from user interface
+    	c64->release_ownership();
+	}
 	if(!c64->stopped) {
-		c64->stop();
+		c64->stop(false);
+        C64_MODE = MODE_NORMAL;
 		i_stopped_it = true;
 	}
 	int bytes = load_file_dma(f, 0);
@@ -194,9 +199,10 @@ int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t
     	c64->client = 0;
 	}
     if(!c64->stopped) {
-    	c64->stop();
+    	c64->stop(false);
     }
 
+    C64_MODE = MODE_NORMAL;
     C64_POKE(0x162, run_code);
 
 	int len = strlen(name);
@@ -251,7 +257,7 @@ int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t
 int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 {
 	uint8_t dma_load_buffer[512];
-    uint32_t transferred;
+    uint32_t transferred = 0;
     uint16_t load_address = 0;
 
     if (f) {
@@ -270,21 +276,34 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
     int max_length = 65536 - int(load_address); // never exceed $FFFF
     int block = 510;
     printf("Now loading...");
-	uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE + load_address);
+	volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + load_address);
 
 	/* Now actually load the file */
 	int total_trans = 0;
 	while (max_length > 0) {
-		f->read(dma_load_buffer, block, &transferred);
+		FRESULT fres = f->read(dma_load_buffer, block, &transferred);
+		if (fres != FR_OK) {
+			printf("Error reading from file. %s\n", FileSystem :: get_error_string(fres));
+			return -1;
+		}
+		//printf("[%d]", transferred);
 		total_trans += transferred;
+		volatile uint8_t *d = dest;
 		for (int i=0;i<transferred;i++) {
-			*(dest++) = dma_load_buffer[i];
+			*(d++) = dma_load_buffer[i];
+		}
+		d = dest;
+		for (int i=0; i<transferred; i++, d++) {
+			if (*d != dma_load_buffer[i]) {
+				printf("Verify error: %b <> %b @ %7x\n", *d, dma_load_buffer[i], d);
+			}
 		}
 		if (transferred < block) {
 			break;
 		}
+		dest += transferred;
 		max_length -= transferred;
-		block = 512;
+		block = (max_length > 512) ? 512 : max_length;
 	}
 	uint16_t end_address = load_address + total_trans;
 	printf("DMA load complete: $%4x-$%4x\n", load_address, end_address);

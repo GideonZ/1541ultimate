@@ -149,13 +149,13 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 	            if (v) {
 	                strt = LD_WORD(&read_buf[2]);
 	                stop = LD_WORD(&read_buf[4]);
-	                printf("%s: %04x-%04x\n", f->lfname, strt, stop);
 	                f->time = strt;  // patch to store start address ###
 	                f->cluster = LD_DWORD(&read_buf[8]); // file offset :)
 	                f->attrib = 0;
 	                strncpy(f->extension, "PRG", 4);
-	                f->size = (stop)?(stop - strt):(65536 - strt);
+	                f->size = (stop != 0)?(stop - strt):(65536 - strt);
                     f->size += 2; // the file is actually two longer than the start-stop
+	                printf("%s: %04x-%04x (Size: %d)\n", f->lfname, strt, stop, f->size);
 	            } else {
 	            	strcpy(f->lfname, "- Invalid name -");
 	                f->cluster = 0;
@@ -296,6 +296,7 @@ FRESULT FileInT64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
 
 	res = fs->t64_file->read(dst, len, &bytes_read);
 	*transferred += bytes_read;
+	offset += bytes_read;
 	return res;
 }
 
