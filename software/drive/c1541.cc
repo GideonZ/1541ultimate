@@ -386,6 +386,24 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
     disk_state = e_alien_image;
 }
 
+void C1541 :: mount_d64(bool protect, uint8_t *image, uint32_t size)
+{
+	if(mount_file) {
+		fm->fclose(mount_file);
+	}
+	mount_file = NULL;
+	remove_disk();
+
+	printf("Loading...");
+	bin_image->copy(image, size);
+	printf("Converting...");
+	gcr_image->convert_disk_bin2gcr(bin_image, NULL);
+	printf("Inserting...");
+	insert_disk(protect, gcr_image);
+	printf("Done\n");
+	disk_state = e_d64_disk;
+}
+
 void C1541 :: mount_d64(bool protect, File *file)
 {
 	if(mount_file) {
@@ -397,7 +415,7 @@ void C1541 :: mount_d64(bool protect, File *file)
 	printf("Loading...");
 	bin_image->load(file);
 	printf("Converting...");
-	gcr_image->convert_disk_bin2gcr(bin_image, false);
+	gcr_image->convert_disk_bin2gcr(bin_image, NULL);
 	printf("Inserting...");
 	insert_disk(protect, gcr_image);
 	printf("Done\n");

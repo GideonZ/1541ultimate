@@ -112,6 +112,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void remove_disk(void);
     void insert_disk(bool protect, GcrImage *image);
     void unlink(void);
+    void mount_d64(bool protect, uint8_t *, uint32_t size);
     void mount_d64(bool protect, File *);
     void mount_g64(bool protect, File *);
     void mount_blank(void);

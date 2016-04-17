@@ -182,17 +182,13 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 		return -2;
 	}
 	if(error) {
-		printf("doing a popup with error %d\n", error);
 		cmd->user_interface->popup((char*)errors[error], BUTTON_OK);
-		printf("And closing the file after the error\n");
 		if(file) {
 			fm->fclose(file);
 			file = NULL;
 		}
 		this->cmd = 0;
 		return -3;
-	} else {
-		printf("no errors.\n");
 	}
 	this->cmd = 0;
 	return 0;

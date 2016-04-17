@@ -89,6 +89,8 @@ class BinImage
     BlockDevice_Ram *blk;
     Partition *prt;
     FileSystemD64 *fs;
+
+    int init(uint32_t size);
 public:
     int   num_tracks;
     uint8_t *bin_data;
@@ -97,6 +99,7 @@ public:
     ~BinImage();
 
     int format(const char *diskname);
+    int copy(uint8_t *, uint32_t size);
     int load(File *);
     int save(File *, UserInterface *ui);
     int write_track(int track, GcrImage *, File *);

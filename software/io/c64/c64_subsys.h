@@ -33,6 +33,8 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
 
     /* Others */
     int  dma_load(File *f, const char *name, uint8_t run_mode, uint16_t reloc=0);
+    int  dma_load_raw(File *f);
+    int  load_file_dma(File *f, uint16_t reloc);
     bool write_vic_state(File *f);
     void restoreCart(void);
 

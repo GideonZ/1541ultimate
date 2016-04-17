@@ -75,7 +75,7 @@ begin
             end if;
 
             -- signal capture
-            stream_en <= c2n_sense and enabled and c2n_motor;
+            stream_en <= c2n_sense and enabled; -- and c2n_motor;
 
             read_s <= (c2n_read and not sel) or (c2n_write and sel);
             read_d <= read_c;

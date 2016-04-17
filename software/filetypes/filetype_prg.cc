@@ -42,6 +42,7 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_prg(Globals :: getFil
 /*********************************************************************/
 #define PRGFILE_RUN       0x2201
 #define PRGFILE_LOAD      0x2202
+#define PRGFILE_DMAONLY   0x2205
 #define PRGFILE_MOUNT_RUN 0x2203
 #define PRGFILE_MOUNT_REAL_RUN 0x2204
 
@@ -66,7 +67,8 @@ int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 
 	list.append(new Action("Run",  FileTypePRG :: execute_st, PRGFILE_RUN, mode));
 	list.append(new Action("Load", FileTypePRG :: execute_st, PRGFILE_LOAD, mode));
-	count += 2;
+	list.append(new Action("DMA",  FileTypePRG :: execute_st, PRGFILE_DMAONLY, mode));
+	count += 3;
 
 	if (!c1541_A)
 		return count;
@@ -135,6 +137,9 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
     case PRGFILE_MOUNT_REAL_RUN:
         run_code = RUNCODE_MOUNT_LOAD_RUN;
         break;
+    case PRGFILE_DMAONLY:
+    	run_code = 0;
+    	break;
     default:
         return -1;
     }
@@ -164,8 +169,12 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
                 	}
             	}
             }
-            c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());
-            c64_command->execute();
+            if (run_code) {
+            	c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, run_code, cmd->path.c_str(), cmd->filename.c_str());
+            } else {
+            	c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD_RAW, run_code, cmd->path.c_str(), cmd->filename.c_str());
+            }
+        	c64_command->execute();
 
         } else {
             printf("Header of P00 file not correct.\n");

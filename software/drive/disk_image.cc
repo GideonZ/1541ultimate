@@ -769,6 +769,14 @@ uint8_t * BinImage :: get_sector_pointer(int track, int sector)
     return track_start[track-1] + (sector << 8);
 }
 
+int BinImage :: copy(uint8_t *data, uint32_t size)
+{
+	if (size > C1541_MAX_D64_LEN)
+		size = C1541_MAX_D64_LEN;
+	memcpy(bin_data, data, size);
+	return init(size);
+}
+
 int BinImage :: load(File *file)
 {
 	num_tracks = 0;
@@ -782,21 +790,25 @@ int BinImage :: load(File *file)
 	res = file->read(bin_data, C1541_MAX_D64_LEN, &transferred);
 	if(res != FR_OK)
 		return -2;
-
 	printf("Transferred: %d bytes\n", transferred);
-	if(transferred < C1541_MAX_D64_35_NO_ERRORS) {
+	return init(transferred);
+}
+
+int BinImage :: init(uint32_t size)
+{
+	if(size < C1541_MAX_D64_35_NO_ERRORS) {
 		return -3;
 	}
-	transferred -= (C1541_MAX_D64_35_NO_ERRORS);
+	size -= (C1541_MAX_D64_35_NO_ERRORS);
 	num_tracks = 35;
 	errors = &bin_data[C1541_MAX_D64_35_NO_ERRORS];
-	while(transferred >= 17*256) {
+	while(size >= 17*256) {
 		num_tracks ++;
-		transferred -= 17*256;
+		size -= 17*256;
 		errors += 17*256;
 	}
-	error_size = (int)transferred;
-	if(!transferred)
+	error_size = (int)size;
+	if(!size)
 		errors = NULL;
 
 	printf("Tracks: %d. Errors: %s\n", num_tracks, errors?"Yes":"No");

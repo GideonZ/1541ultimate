@@ -151,6 +151,13 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         	fm->fclose(f);
         }
     	break;
+    case C64_DMA_LOAD_RAW:
+    	res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
+        if(res == FR_OK) {
+        	dma_load_raw(f);
+        	fm->fclose(f);
+        }
+    	break;
     case C64_DRIVE_LOAD:
     	dma_load(0, cmd->filename.c_str(), cmd->mode);
     	break;
@@ -162,6 +169,21 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 	}
 
     return 0;
+}
+
+int C64_Subsys :: dma_load_raw(File *f)
+{
+	bool i_stopped_it = false;
+	if(!c64->stopped) {
+		c64->stop();
+		i_stopped_it = true;
+	}
+	int bytes = load_file_dma(f, 0);
+
+	if (i_stopped_it) {
+		c64->resume();
+	}
+	return bytes;
 }
 
 int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t reloc)
@@ -191,26 +213,7 @@ int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t
     c64->unfreeze(&boot_cart, 1);
 
 	// perform DMA load
-    // First, check if we have file access
-    uint32_t transferred;
-	uint16_t load_address = 0;
-    if (f) {
-        f->read(&load_address, 2, &transferred);
-        if(transferred != 2) {
-            printf("Can't read from file..\n");
-            return -1;
-        }
-        load_address = le2cpu(load_address); // make sure we can interpret the word correctly (endianness)
-        printf("Load address: %4x...", load_address);
-    } else {
-    	wait_ms(100);
-    }
-    int block = 510;
-
-    if(reloc)
-    	load_address = reloc;
-
-    int max_length = 65536 - int(load_address); // never exceed $FFFF
+    wait_ms(100);
 
 	// handshake with boot cart
     c64->stop(false);
@@ -218,10 +221,7 @@ int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t
 
 	C64_POKE(2, 0x40);  // signal cart ready for DMA load
 
-	uint8_t dma_load_buffer[512];
-
 	if ( !(run_code & RUNCODE_REAL_BIT) ) {
-
         int timeout = 0;
         while(C64_PEEK(2) != 0x01) {
         	c64->resume();
@@ -234,49 +234,75 @@ int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t
             printf("_");
             c64->stop(false);
         }
-        printf("Now loading...");
-        uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE + load_address);
-
-        /* Now actually load the file */
-        int total_trans = 0;
-        while (max_length > 0) {
-        	f->read(dma_load_buffer, block, &transferred);
-        	total_trans += transferred;
-        	for (int i=0;i<transferred;i++) {
-        		*(dest++) = dma_load_buffer[i];
-        	}
-        	if (transferred < block) {
-        		break;
-        	}
-        	max_length -= transferred;
-        	block = 512;
-        }
-        uint16_t end_address = load_address + total_trans;
-        printf("DMA load complete: $%4x-$%4x Run Code: %b\n", load_address, end_address, run_code);
+        load_file_dma(f, 0);
 
         C64_POKE(2, 0); // signal DMA load done
         C64_POKE(0x0162, run_code);
         C64_POKE(0x00BA, c64->cfg->get_value(CFG_C64_DMA_ID));    // fix drive number
+	}
 
-        C64_POKE(0x002D, end_address);
-        C64_POKE(0x002E, end_address >> 8);
-        C64_POKE(0x002F, end_address);
-        C64_POKE(0x0030, end_address >> 8);
-        C64_POKE(0x0031, end_address);
-        C64_POKE(0x0032, end_address >> 8);
-        C64_POKE(0x00AE, end_address);
-        C64_POKE(0x00AF, end_address >> 8);
-
-        C64_POKE(0x0090, 0x40); // Load status
-        C64_POKE(0x0035, 0);    // FRESPC
-        C64_POKE(0x0036, 0xA0);
-    }
-
-    printf("Resuming..\n");
+	printf("Resuming..\n");
     c64->resume();
 
     restoreCart();
     return 0;
+}
+
+int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
+{
+	uint8_t dma_load_buffer[512];
+    uint32_t transferred;
+    uint16_t load_address = 0;
+
+    if (f) {
+        f->read(&load_address, 2, &transferred);
+        if(transferred != 2) {
+            printf("Can't read from file..\n");
+            return -1;
+        }
+        load_address = le2cpu(load_address); // make sure we can interpret the word correctly (endianness)
+        printf("Load address: %4x...", load_address);
+    }
+    if(reloc) {
+    	load_address = reloc;
+    	printf(" -> %4x ..", load_address);
+    }
+    int max_length = 65536 - int(load_address); // never exceed $FFFF
+    int block = 510;
+    printf("Now loading...");
+	uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE + load_address);
+
+	/* Now actually load the file */
+	int total_trans = 0;
+	while (max_length > 0) {
+		f->read(dma_load_buffer, block, &transferred);
+		total_trans += transferred;
+		for (int i=0;i<transferred;i++) {
+			*(dest++) = dma_load_buffer[i];
+		}
+		if (transferred < block) {
+			break;
+		}
+		max_length -= transferred;
+		block = 512;
+	}
+	uint16_t end_address = load_address + total_trans;
+	printf("DMA load complete: $%4x-$%4x\n", load_address, end_address);
+
+	C64_POKE(0x002D, end_address);
+	C64_POKE(0x002E, end_address >> 8);
+	C64_POKE(0x002F, end_address);
+	C64_POKE(0x0030, end_address >> 8);
+	C64_POKE(0x0031, end_address);
+	C64_POKE(0x0032, end_address >> 8);
+	C64_POKE(0x00AE, end_address);
+	C64_POKE(0x00AF, end_address >> 8);
+
+	C64_POKE(0x0090, 0x40); // Load status
+	C64_POKE(0x0035, 0);    // FRESPC
+	C64_POKE(0x0036, 0xA0);
+
+	return total_trans;
 }
 
 bool C64_Subsys :: write_vic_state(File *f)
