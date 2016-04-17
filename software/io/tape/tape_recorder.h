@@ -13,7 +13,7 @@
 
 #define RECORD_STATUS  *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
 #define RECORD_CONTROL *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
-#define RECORD_DATA     ((volatile uint8_t *)(C2N_RECORD_BASE + 0x800))
+#define RECORD_DATA    *((volatile uint8_t *)(C2N_RECORD_BASE + 0x800))
 #define RECORD_DATA32  *((volatile uint32_t*)(C2N_RECORD_BASE + 0x800))
 
 #define REC_ENABLE       0x01

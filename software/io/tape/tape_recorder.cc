@@ -216,7 +216,7 @@ void TapeRecorder :: flush()
 		int i;
 		for(i=0;i<512;i++) {
 			if (RECORD_STATUS & REC_STAT_BYTE_AV)
-				*(block++) = RECORD_DATA32;
+				*(block++) = RECORD_DATA;
 			else
 				break;
 		}
