@@ -92,6 +92,8 @@
 #define CART_TYPE_OCEAN256    0x0B
 #define CART_TYPE_EASY_FLASH  0x0C
 #define CART_TYPE_EPYX        0x0E
+#define CART_TYPE_KCS         0x10
+#define CART_TYPE_FINAL12     0x11
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))

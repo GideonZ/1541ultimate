@@ -51,6 +51,7 @@ extern uint8_t _binary_ss5ntsc_bin_start;
 extern uint8_t _binary_ss5pal_bin_start;
 extern uint8_t _binary_tar_ntsc_bin_start;
 extern uint8_t _binary_tar_pal_bin_start;
+extern uint8_t _binary_kcs_bin_start;
 
 extern uint8_t _binary_1541_ii_bin_end;
 extern uint8_t _binary_1541_bin_end;
@@ -67,6 +68,7 @@ extern uint8_t _binary_ss5ntsc_bin_end;
 extern uint8_t _binary_ss5pal_bin_end;
 extern uint8_t _binary_tar_ntsc_bin_end;
 extern uint8_t _binary_tar_pal_bin_end;
+extern uint8_t _binary_kcs_bin_end;
 
 Screen *screen;
 UserInterface *user_interface;
@@ -333,6 +335,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
             copy_rom(roms, FLASH_ID_SS5NTSC,   &min, &max, &_binary_ss5ntsc_bin_start,  &_binary_ss5ntsc_bin_end  );
             copy_rom(roms, FLASH_ID_TAR_PAL,   &min, &max, &_binary_tar_pal_bin_start,  &_binary_tar_pal_bin_end  );
             copy_rom(roms, FLASH_ID_TAR_NTSC,  &min, &max, &_binary_tar_ntsc_bin_start, &_binary_tar_ntsc_bin_end );
+            copy_rom(roms, FLASH_ID_KCS,       &min, &max, &_binary_kcs_bin_start,      &_binary_kcs_bin_end      );
             // console_print(screen, "All roms located from %p to %p.\n", min, max);
             flash_buffer(FLASH_ID_ALL_ROMS, roms + min, roms + max, "", "all roms");
             free(roms);
@@ -352,6 +355,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
     	    flash_buffer(FLASH_ID_SS5NTSC,   &_binary_ss5ntsc_bin_start,  &_binary_ss5ntsc_bin_end,  "", "ss5ntsc");
     	    flash_buffer(FLASH_ID_TAR_PAL,   &_binary_tar_pal_bin_start,  &_binary_tar_pal_bin_end,  "", "tar_pal");
     	    flash_buffer(FLASH_ID_TAR_NTSC,  &_binary_tar_ntsc_bin_start, &_binary_tar_ntsc_bin_end, "", "tar_ntsc");
+    	    flash_buffer(FLASH_ID_KCS,       &_binary_kcs_bin_start,      &_binary_kcs_bin_end,      "", "kcs");
         }
     }
 	if(do_update2) {

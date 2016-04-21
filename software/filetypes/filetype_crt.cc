@@ -57,11 +57,13 @@ struct t_cart {
 #define CART_EPYX      8
 #define CART_FINAL3    9
 #define CART_SYSTEM3   10
+#define CART_KCS       11
+#define CART_FINAL12   12
 
 const struct t_cart c_recognized_carts[] = {
     {  0, CART_NORMAL,    "Normal cartridge" },
     {  1, CART_ACTION,    "Action Replay" },
-    {  2, CART_NOT_IMPL,  "KCS Power Cartridge" },
+    {  2, CART_KCS,       "KCS Power Cartridge" },
     {  3, CART_FINAL3,    "Final Cartridge III" },
     {  4, CART_NOT_IMPL,  "Simons Basic" },
     {  5, CART_OCEAN,     "Ocean type 1 (256 and 128 Kb)" },
@@ -72,7 +74,7 @@ const struct t_cart c_recognized_carts[] = {
     { 10, CART_EPYX,      "Epyx Fastload" },
     { 11, CART_NOT_IMPL,  "Westermann" },
     { 12, CART_NOT_IMPL,  "Rex" },
-    { 13, CART_NOT_IMPL,  "Final Cartridge I" },
+    { 13, CART_FINAL12,   "Final Cartridge I" },
     { 14, CART_NOT_IMPL,  "Magic Formel" },
     { 15, CART_SYSTEM3,   "C64 Game System" },
     { 16, CART_NOT_IMPL,  "Warpspeed" },
@@ -202,6 +204,11 @@ bool FileTypeCRT :: check_header(File *f)
                 printf("Not implemented.\n");
                 return false;
             }
+            if(type_select == CART_KCS) {
+            	/* Bug in many KCS CRT images, wrong header size */
+            	crt_header[0x10]=crt_header[0x11]=crt_header[0x12]=0;
+            	crt_header[0x13]=0x40;
+            }
             return true;
         }
         idx++;
@@ -238,10 +245,13 @@ bool FileTypeCRT :: read_chip_packet(File *f)
             split = true;
 
     uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
-    if(split)
+    if(type_select == CART_KCS) {
+    	mem_addr += load - 0x8000;
+    } else if(split) {
         mem_addr += 0x2000 * uint32_t(bank);
-    else
+    } else {
         mem_addr += uint32_t(size) * uint32_t(bank);
+    }
 
     if(load == 0xA000) {
         mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
@@ -360,6 +370,14 @@ void FileTypeCRT :: configure_cart(void)
         case CART_SYSTEM3:
             C64_CARTRIDGE_TYPE = CART_TYPE_SYSTEM3; // System3
             break;
+        case CART_KCS:
+            C64_CARTRIDGE_TYPE = CART_TYPE_KCS; // System3
+            break;
+        case CART_FINAL12:
+            C64_CARTRIDGE_TYPE = CART_TYPE_FINAL12; // System3
+            break;
+
+
         default:
             break;
     }

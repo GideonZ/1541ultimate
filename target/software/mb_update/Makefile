@@ -65,7 +65,8 @@ SRCS_BIN =  ultimate.bin \
 			ss5ntsc.bin \
 			ss5pal.bin \
 			tar_ntsc.bin \
-			tar_pal.bin 
+			tar_pal.bin \
+			kcs.bin
 
 SRCS_IEC = 
 

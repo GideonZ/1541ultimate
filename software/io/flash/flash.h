@@ -27,6 +27,7 @@
 #define FLASH_ID_SS5NTSC    0x48
 #define FLASH_ID_TAR_PAL    0x49
 #define FLASH_ID_TAR_NTSC   0x4A
+#define FLASH_ID_KCS	    0x4B
 #define FLASH_ID_ALL_ROMS   0x5F
 
 #define FLASH_ID_CONFIG     0xFE

@@ -51,7 +51,7 @@ begin
                 when c_cart_c64_stop_mode =>
                     control_i.c64_stop_mode <= io_req.data(1 downto 0);
                 when c_cart_cartridge_type =>
-                    control_i.cartridge_type <= io_req.data(3 downto 0);
+                    control_i.cartridge_type <= io_req.data(4 downto 0);
                 when c_cart_cartridge_kill =>
                     control_i.cartridge_kill <= '1';
                 when c_cart_kernal_enable =>
@@ -91,7 +91,7 @@ begin
                 when c_cart_cartridge_rom_base =>
                     io_resp.data <= std_logic_vector(g_rom_base(23 downto 16));
                 when c_cart_cartridge_type =>
-                    io_resp.data(3 downto 0) <= control_i.cartridge_type;
+                    io_resp.data(4 downto 0) <= control_i.cartridge_type;
                 when c_cart_cartridge_active =>
                     io_resp.data(0) <= status.cart_active;
                 when c_cart_kernal_enable =>
