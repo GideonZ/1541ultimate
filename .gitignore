@@ -36,6 +36,13 @@ target/fpga/_xmsgs
 target/fpga/boot400
 target/fpga/boot700
 target/fpga/mb700
+target/fpga/u2plus/*.csv
+target/fpga/u2plus/*.txt
+target/fpga/u2plus/*.xml
+target/fpga/u2plus/db
+target/fpga/u2plus/greybox_tmp
+target/fpga/u2plus/incremental_db
+target/fpga/u2plus/output_files
 target/fpga/work1400
 target/fpga/work250
 target/fpga/work400

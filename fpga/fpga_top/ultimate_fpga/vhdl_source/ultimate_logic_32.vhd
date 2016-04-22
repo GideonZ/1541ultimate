@@ -18,28 +18,28 @@ generic (
     g_boot_rom      : boolean := false;
     g_video_overlay : boolean := false;
     g_icap          : boolean := false;
-    g_uart          : boolean := false;
-    g_drive_1541    : boolean := false;
+    g_uart          : boolean := true;
+    g_drive_1541    : boolean := true;
     g_drive_1541_2  : boolean := false;
-    g_hardware_gcr  : boolean := false;
-    g_cartridge     : boolean := false;
-    g_command_intf  : boolean := false;
-    g_stereo_sid    : boolean := false;
-    g_ram_expansion : boolean := false;
+    g_hardware_gcr  : boolean := true;
+    g_cartridge     : boolean := true;
+    g_command_intf  : boolean := true;
+    g_stereo_sid    : boolean := true;
+    g_ram_expansion : boolean := true;
     g_extended_reu  : boolean := false;
-    g_hardware_iec  : boolean := false;
+    g_hardware_iec  : boolean := true;
     g_iec_prog_tim  : boolean := false;
-    g_c2n_streamer  : boolean := false;
-    g_c2n_recorder  : boolean := false;
-    g_drive_sound   : boolean := false;
-    g_rtc_chip      : boolean := false;
+    g_c2n_streamer  : boolean := true;
+    g_c2n_recorder  : boolean := true;
+    g_drive_sound   : boolean := true;
+    g_rtc_chip      : boolean := true;
     g_rtc_timer     : boolean := false;
     g_usb_host      : boolean := false;
-    g_usb_host2     : boolean := false;
-    g_spi_flash     : boolean := false;
+    g_usb_host2     : boolean := true;
+    g_spi_flash     : boolean := true;
     g_vic_copper    : boolean := false;
-    g_sampler       : boolean := false;
-    g_profiler      : boolean := false;
+    g_sampler       : boolean := true;
+    g_profiler      : boolean := true;
     g_analyzer      : boolean := false );
 port (
     -- globals
@@ -140,24 +140,24 @@ port (
     CAS_READ    : inout std_logic := 'Z';
     CAS_WRITE   : inout std_logic := 'Z';
     
-    -- Interface to other graphical output (Full HD of course and in 3D!) ;-)
-    vid_clock   : in    std_logic := '0';
-    vid_reset   : in    std_logic := '0';
-    vid_h_count : in    unsigned(11 downto 0) := (others => '0');
-    vid_v_count : in    unsigned(11 downto 0) := (others => '0');
-    vid_active  : out   std_logic;
-    vid_opaque  : out   std_logic;
-    vid_data    : out   unsigned(3 downto 0);
-    overlay_on  : out   std_logic;
-    keyb_row    : in    std_logic_vector(7 downto 0) := (others => '0');
-    keyb_col    : inout std_logic_vector(7 downto 0) := (others => '0');
+--    -- Interface to other graphical output (Full HD of course and in 3D!) ;-)
+--    vid_clock   : in    std_logic := '0';
+--    vid_reset   : in    std_logic := '0';
+--    vid_h_count : in    unsigned(11 downto 0) := (others => '0');
+--    vid_v_count : in    unsigned(11 downto 0) := (others => '0');
+--    vid_active  : out   std_logic;
+--    vid_opaque  : out   std_logic;
+--    vid_data    : out   unsigned(3 downto 0);
+--    overlay_on  : out   std_logic;
+--    keyb_row    : in    std_logic_vector(7 downto 0) := (others => '0');
+--    keyb_col    : inout std_logic_vector(7 downto 0) := (others => '0');
 
     -- Buttons
-    button      : in  std_logic_vector(2 downto 0);
+    button      : in  std_logic_vector(2 downto 0) );
     
-    -- Simulation port
-    sim_io_req  : in  t_io_req := c_io_req_init;
-    sim_io_resp : out t_io_resp );
+--    -- Simulation port
+--    sim_io_req  : in  t_io_req := c_io_req_init;
+--    sim_io_resp : out t_io_resp );
 	
 end ultimate_logic_32;
 
@@ -378,10 +378,10 @@ begin
         clock       => sys_clock,
         reset       => sys_reset,
         
-        reqs(0)     => sim_io_req,
+        reqs(0)     => c_io_req_init, --sim_io_req,
         reqs(1)     => cpu_io_req,
         
-        resps(0)    => sim_io_resp,
+        resps(0)    => open, --sim_io_resp,
         resps(1)    => cpu_io_resp,
         
         req         => io_req,
@@ -950,33 +950,33 @@ begin
             io_resp         => io_resp_icap );
     end generate;
 
-    r_overlay: if g_video_overlay generate
-        i_overlay: entity work.char_generator_peripheral
-        generic map (
-            g_screen_size   => 11,
-            g_color_ram     => true )
-        port map (
-            clock           => sys_clock,
-            reset           => sys_reset,
-            io_req          => io_req_big_io,  -- to be split later
-            io_resp         => io_resp_big_io,
-
-            keyb_col        => keyb_col,
-            keyb_row        => keyb_row,
-            
-            overlay_on      => overlay_on,
-            
-            pix_clock       => vid_clock,
-            pix_reset       => vid_reset,
-
-            h_count         => vid_h_count,
-            v_count         => vid_v_count,
-            
-            pixel_active    => vid_active,
-            pixel_opaque    => vid_opaque,
-            pixel_data      => vid_data );
-        
-    end generate;
+--    r_overlay: if g_video_overlay generate
+--        i_overlay: entity work.char_generator_peripheral
+--        generic map (
+--            g_screen_size   => 11,
+--            g_color_ram     => true )
+--        port map (
+--            clock           => sys_clock,
+--            reset           => sys_reset,
+--            io_req          => io_req_big_io,  -- to be split later
+--            io_resp         => io_resp_big_io,
+--
+--            keyb_col        => keyb_col,
+--            keyb_row        => keyb_row,
+--            
+--            overlay_on      => overlay_on,
+--            
+--            pix_clock       => vid_clock,
+--            pix_reset       => vid_reset,
+--
+--            h_count         => vid_h_count,
+--            v_count         => vid_v_count,
+--            
+--            pixel_active    => vid_active,
+--            pixel_opaque    => vid_opaque,
+--            pixel_data      => vid_data );
+--        
+--    end generate;
 
 	CAS_SENSE <= '0' when (c2n_sense='1') or (c2n_pull_sense='1') else 'Z';
 	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';

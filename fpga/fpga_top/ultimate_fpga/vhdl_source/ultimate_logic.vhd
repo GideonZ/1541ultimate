@@ -857,33 +857,33 @@ begin
             io_resp         => io_resp_icap );
     end generate;
 
-    r_overlay: if g_video_overlay generate
-        i_overlay: entity work.char_generator_peripheral
-        generic map (
-            g_screen_size   => 11,
-            g_color_ram     => true )
-        port map (
-            clock           => sys_clock,
-            reset           => sys_reset,
-            io_req          => io_req_big_io,  -- to be split later
-            io_resp         => io_resp_big_io,
-
-            keyb_col        => keyb_col,
-            keyb_row        => keyb_row,
-            
-            overlay_on      => overlay_on,
-            
-            pix_clock       => vid_clock,
-            pix_reset       => vid_reset,
-
-            h_count         => vid_h_count,
-            v_count         => vid_v_count,
-            
-            pixel_active    => vid_active,
-            pixel_opaque    => vid_opaque,
-            pixel_data      => vid_data );
-        
-    end generate;
+--    r_overlay: if g_video_overlay generate
+--        i_overlay: entity work.char_generator_peripheral
+--        generic map (
+--            g_screen_size   => 11,
+--            g_color_ram     => true )
+--        port map (
+--            clock           => sys_clock,
+--            reset           => sys_reset,
+--            io_req          => io_req_big_io,  -- to be split later
+--            io_resp         => io_resp_big_io,
+--
+--            keyb_col        => keyb_col,
+--            keyb_row        => keyb_row,
+--            
+--            overlay_on      => overlay_on,
+--            
+--            pix_clock       => vid_clock,
+--            pix_reset       => vid_reset,
+--
+--            h_count         => vid_h_count,
+--            v_count         => vid_v_count,
+--            
+--            pixel_active    => vid_active,
+--            pixel_opaque    => vid_opaque,
+--            pixel_data      => vid_data );
+--        
+--    end generate;
 
 	CAS_SENSE <= '0' when (c2n_sense='1') or (c2n_pull_sense='1') else 'Z';
 	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';

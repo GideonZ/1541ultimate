@@ -1,0 +1,8 @@
+	component nios is
+		port (
+			clk_clk              : in std_logic                     := 'X';             -- clk
+			nios2_gen2_0_irq_irq : in std_logic_vector(31 downto 0) := (others => 'X'); -- irq
+			reset_reset_n        : in std_logic                     := 'X'              -- reset_n
+		);
+	end component nios;
+
