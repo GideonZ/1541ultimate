@@ -237,7 +237,7 @@ begin
         g_icap          => false,
         g_uart          => true,
         g_drive_1541    => true,
-        g_drive_1541_2  => false,
+        g_drive_1541_2  => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
@@ -297,7 +297,8 @@ begin
         mem_resp    => mem_resp,
                  
         -- PWM outputs (for audio)
-        -- PWM_OUT     => PWM_OUT,
+        PWM_OUT(0)  => SPEAKER_DATA,
+        PWM_OUT(1)  => SPEAKER_ENABLE,
     
         -- IEC bus
         iec_reset_i => IEC_RESET,
