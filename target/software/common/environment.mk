@@ -63,7 +63,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/chan_fat/full \
 			$(PATH_SW)/FreeRTOS/Source \
 			$(PATH_SW)/FreeRTOS/Source/include \
-			$(PATH_SW)/FreeRTOS/Source/portable \
+			$(PATH_SW)/FreeRTOS/Source/portable/microblaze \
 			$(PATH_SW)/FreeRTOS/Source/MemMang \
 			$(PATH_SW)/lwip-1.4.1/src/include \
 			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
@@ -74,8 +74,9 @@ VPATH     = $(PATH_SW)/application \
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 XILINX ?= C:/Xilinx/13.2
-TOOLCHAIN = $(XILINX)/ISE_DS/EDK/gnu/microblaze/nt
-XILINXBIN = $(XILINX)/ISE_DS/ISE/bin/nt
+PLATFORM ?= nt
+TOOLCHAIN = $(XILINX)/ISE_DS/EDK/gnu/microblaze/$(PLATFORM)
+XILINXBIN = $(XILINX)/ISE_DS/ISE/bin/$(PLATFORM)
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 # VPATH   += $(OUTPUT) $(RESULT)

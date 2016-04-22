@@ -1,5 +1,7 @@
 # System tool locations
 
+include ../common/environment.mk
+
 HERE = $(shell pwd)
 TOOLS = ../../../tools
 BIN2HEX   = $(TOOLS)/bin2hex
@@ -93,8 +95,6 @@ LD		  = $(CROSS)-ld
 OBJDUMP   = $(CROSS)-objdump
 OBJCOPY	  = $(CROSS)-objcopy
 SIZE	  = $(CROSS)-size
-
-TOOLCHAIN = C:/Xilinx/13.2/ISE_DS/EDK/gnu/microblaze/nt
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 APPL_OPT = -DBOOTLOADER -D_FS_READONLY=1 -D_FS_MINIMIZE=3

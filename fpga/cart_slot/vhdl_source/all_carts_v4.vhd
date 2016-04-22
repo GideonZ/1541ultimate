@@ -344,22 +344,22 @@ begin
                 end if;
 
                 -- io1 write
-                if io_write='1' and io_addr(8 downto 0) = "010000000" then -- DE80
+                if io_write='1' and io_addr(8 downto 7) = "01" then -- DE80-DEFF
                     game_n       <= '0';        -- When write 16K GAME mode
                     exrom_n      <= '0';
                     mode_bits(0) <= '0';
                     mode_bits(1) <= '1';
                 end if;
-                if io_write='1' and io_addr(8 downto 0) = "000000010" then -- DE02
+                if io_write='1' and io_addr(8 downto 7) = "00" then -- DE00-DE7F
                     if mode_bits(1) = '1' then      -- Already in 16K Mode
                         exrom_n      <= '1';        -- When write ULTIMAX mode
                         mode_bits(0) <= '1';
                         mode_bits(1) <= '0';
                     elsif mode_bits(0) = '1' then   -- Already in ULTIMAX mode
-                        game_n       <= '1';        -- When write 8K GAME mode
-                        exrom_n      <= '0';
+                        game_n       <= io_addr(1); -- When addr bit 1=0 : 16k GAME mode
+                        exrom_n      <= '0';        -- When addr bit 1=1 : 8k GAME mode
                         mode_bits(0) <= '0';
-                        mode_bits(1) <= '0';
+                        mode_bits(1) <= not io_addr(1);
                     end if;
                 end if;
                 -- io2 read

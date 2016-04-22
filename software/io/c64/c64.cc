@@ -107,7 +107,7 @@ const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140
 const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
 
 struct t_cfg_definition c64_config[] = {
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 17, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 18, 4 },
     { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",              "%s", NULL,       1, 31, (int)"cart.bin" },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_KERNFILE, CFG_TYPE_STRING, "Alternate Kernal File",        "%s", NULL,       1, 36, (int)"kernal.rom" },

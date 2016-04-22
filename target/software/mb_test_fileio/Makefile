@@ -42,7 +42,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/sd_card \
 			$(PATH_SW)/FreeRTOS/Source \
 			$(PATH_SW)/FreeRTOS/Source/include \
-			$(PATH_SW)/FreeRTOS/Source/portable \
+			$(PATH_SW)/FreeRTOS/Source/portable/microblaze \
 			$(PATH_SW)/FreeRTOS/Source/MemMang \
 			$(ROMS)
 

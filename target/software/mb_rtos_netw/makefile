@@ -38,7 +38,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/flash \
 			$(PATH_SW)/FreeRTOS/Source \
 			$(PATH_SW)/FreeRTOS/Source/include \
-			$(PATH_SW)/FreeRTOS/Source/portable \
+			$(PATH_SW)/FreeRTOS/Source/portable/microblaze \
 			$(PATH_SW)/FreeRTOS/Source/MemMang \
 			$(PATH_SW)/lwip-1.4.1/src/include \
 			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \

@@ -26,7 +26,7 @@ CC  = gcc
 .PHONY:	all clean
 all:   	bin2hex hex2bin make_array make_mem makeappl promgen checksum dump_vcd dump_rtos_trace
 #ifneq ($(TERM), cygwin)
-#	@$(MAKE) -C 64tass
+	@$(MAKE) -C 64tass
 #endif
 
 clean:

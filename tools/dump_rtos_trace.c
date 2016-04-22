@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <sys/types.h>
+#include <stdint.h>
 
 struct data_entry {
     uint16_t stamp;

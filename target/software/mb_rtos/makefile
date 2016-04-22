@@ -20,7 +20,7 @@ PATH_SW  =  ../../../software
 
 VPATH     = $(PATH_SW)/FreeRTOS/Source \
 			$(PATH_SW)/FreeRTOS/Source/include \
-			$(PATH_SW)/FreeRTOS/Source/portable \
+			$(PATH_SW)/FreeRTOS/Source/portable/microblaze \
 			$(PATH_SW)/FreeRTOS/Source/MemMang \
 			$(PATH_SW)/application/rtos \
 			$(PATH_SW)/system
