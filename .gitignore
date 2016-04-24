@@ -107,6 +107,8 @@ target/software/mb_xmodem/output
 target/software/mb_xmodem/output_mb
 target/software/mb_xmodem/result
 target/software/mb_xmodem/result_mb
+target/software/nios2_ultimate/output
+target/software/nios2_ultimate/result
 target/software/programmer/output
 target/software/programmer/result
 target/software/ultimate/output
