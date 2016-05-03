@@ -9,6 +9,7 @@ use work.endianness_pkg.all;
 
 entity logic_analyzer_32 is
 generic (
+    g_big_endian   : boolean;
     g_timer_div    : positive := 50 );
 port (
     clock       : in  std_logic;
@@ -72,7 +73,7 @@ begin
                 end if;
                 
             when writing =>
-                mem_req.data    <= byte_swap(ev_wdata);
+                mem_req.data    <= byte_swap(ev_wdata, g_big_endian);
                 mem_req.request <= '1';
                 if mem_resp.rack='1' and mem_resp.rack_tag=X"F0" then
                     ev_addr <= ev_addr + 4;
@@ -88,22 +89,41 @@ begin
 
             if io_req.read='1' then
                 io_resp.ack <= '1';
-                case io_req.address(2 downto 0) is
-                when "011" =>
-                    io_resp.data <= std_logic_vector(ev_addr(7 downto 0));
-                when "010" =>
-                    io_resp.data <= std_logic_vector(ev_addr(15 downto 8));
-                when "001" =>
-                    io_resp.data <= std_logic_vector(ev_addr(23 downto 16));
-                when "000" =>
-                    io_resp.data <= "00000001";
-                when "100" =>
-                    io_resp.data <= X"0" & sub;
-                when "101" =>
-                    io_resp.data <= X"0" & task;
-                when others =>
-                    null;
-                end case;
+                if g_big_endian then
+                    case io_req.address(2 downto 0) is
+                    when "011" =>
+                        io_resp.data <= std_logic_vector(ev_addr(7 downto 0));
+                    when "010" =>
+                        io_resp.data <= std_logic_vector(ev_addr(15 downto 8));
+                    when "001" =>
+                        io_resp.data <= std_logic_vector(ev_addr(23 downto 16));
+                    when "000" =>
+                        io_resp.data <= "00000001";
+                    when "100" =>
+                        io_resp.data <= X"0" & sub;
+                    when "101" =>
+                        io_resp.data <= X"0" & task;
+                    when others =>
+                        null;
+                    end case;
+                else
+                    case io_req.address(2 downto 0) is
+                    when "000" =>
+                        io_resp.data <= std_logic_vector(ev_addr(7 downto 0));
+                    when "001" =>
+                        io_resp.data <= std_logic_vector(ev_addr(15 downto 8));
+                    when "010" =>
+                        io_resp.data <= std_logic_vector(ev_addr(23 downto 16));
+                    when "011" =>
+                        io_resp.data <= "00000001";
+                    when "100" =>
+                        io_resp.data <= X"0" & sub;
+                    when "101" =>
+                        io_resp.data <= X"0" & task;
+                    when others =>
+                        null;
+                    end case;
+                end if;                
             elsif io_req.write='1' then
                 io_resp.ack <= '1';
                 case io_req.address(2 downto 0) is

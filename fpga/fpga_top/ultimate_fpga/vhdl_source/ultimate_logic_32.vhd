@@ -15,6 +15,8 @@ generic (
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
     g_fpga_type     : natural := 0;
+    g_microblaze    : boolean := true;
+    g_big_endian    : boolean := true;
     g_boot_rom      : boolean := false;
     g_video_overlay : boolean := false;
     g_icap          : boolean := false;
@@ -152,12 +154,14 @@ port (
 --    keyb_row    : in    std_logic_vector(7 downto 0) := (others => '0');
 --    keyb_col    : inout std_logic_vector(7 downto 0) := (others => '0');
 
+    -- Simulation port
+    ext_io_req  : in  t_io_req := c_io_req_init;
+    ext_io_resp : out t_io_resp;
+    cpu_irq     : out std_logic;
+    
     -- Buttons
     button      : in  std_logic_vector(2 downto 0) );
     
---    -- Simulation port
---    sim_io_req  : in  t_io_req := c_io_req_init;
---    sim_io_resp : out t_io_resp );
 	
 end ultimate_logic_32;
 
@@ -342,34 +346,37 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_tape     : std_logic := '0';
     signal sys_irq_iec      : std_logic := '0';
     signal sys_irq_cmdif    : std_logic := '0';
-    signal invalidate       : std_logic;
-    signal inv_addr         : std_logic_vector(31 downto 0);
-    signal stuck            : std_logic;
     signal misc_io          : std_logic_vector(7 downto 0);
     signal profiler_irq_flags   : std_logic_vector(7 downto 0);
 begin
-    i_cpu: entity work.mblite_wrapper
-    generic map (
-        g_tag_i     => c_tag_cpu_i,
-        g_tag_d     => c_tag_cpu_d )
-    port map (
-        clock       => sys_clock,
-        reset       => sys_reset,
-        
-        irq_i       => io_irq,
-        invalidate  => invalidate,
-        inv_addr    => inv_addr,
-        
-        -- memory interface
-        mem_req     => mem_req_32_cpu,
-        mem_resp    => mem_resp_32_cpu,
-        
-        io_req      => cpu_io_req,
-        io_resp     => cpu_io_resp );
+    r_mb: if g_microblaze generate
+        signal invalidate       : std_logic;
+        signal inv_addr         : std_logic_vector(31 downto 0);
+    begin
+        i_cpu: entity work.mblite_wrapper
+        generic map (
+            g_tag_i     => c_tag_cpu_i,
+            g_tag_d     => c_tag_cpu_d )
+        port map (
+            clock       => sys_clock,
+            reset       => sys_reset,
+            
+            irq_i       => io_irq,
+            invalidate  => invalidate,
+            inv_addr    => inv_addr,
+            
+            -- memory interface
+            mem_req     => mem_req_32_cpu,
+            mem_resp    => mem_resp_32_cpu,
+            
+            io_req      => cpu_io_req,
+            io_resp     => cpu_io_resp );
 
-    invalidate <= misc_io(0) when (mem_resp_32_usb.rack_tag(5 downto 0) = c_tag_usb2(5 downto 0)) and (mem_req_32_usb.read_writen = '0') else '0';
-    inv_addr(31 downto 26) <= (others => '0');
-    inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_usb.address);
+        invalidate <= misc_io(0) when (mem_resp_32_usb.rack_tag(5 downto 0) = c_tag_usb2(5 downto 0)) and (mem_req_32_usb.read_writen = '0') else '0';
+        inv_addr(31 downto 26) <= (others => '0');
+        inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_usb.address);
+    end generate;
+    cpu_irq <= io_irq;
 		
     i_io_arb: entity work.io_bus_arbiter_pri
     generic map (
@@ -378,10 +385,10 @@ begin
         clock       => sys_clock,
         reset       => sys_reset,
         
-        reqs(0)     => c_io_req_init, --sim_io_req,
+        reqs(0)     => ext_io_req,
         reqs(1)     => cpu_io_req,
         
-        resps(0)    => open, --sim_io_resp,
+        resps(0)    => ext_io_resp,
         resps(1)    => cpu_io_resp,
         
         req         => io_req,
@@ -427,6 +434,8 @@ begin
     begin
         i_drive: entity work.c1541_drive
         generic map (
+            g_clock_freq    => g_clock_freq,
+            g_big_endian    => g_big_endian,
             g_cpu_tag       => c_tag_1541_cpu_1,
             g_floppy_tag    => c_tag_1541_floppy_1,
             g_audio_tag     => c_tag_1541_audio_1,
@@ -461,7 +470,7 @@ begin
             c64_reset_n     => RSTn,
             
             -- LED
-            act_led_n       => act_led_n,
+            act_led_n       => DISK_ACTn,
             motor_led_n     => motor_led_n,
             dirty_led_n     => dirty_led_1_n,
 
@@ -487,6 +496,8 @@ begin
     begin
         i_drive: entity work.c1541_drive
         generic map (
+            g_clock_freq    => g_clock_freq,
+            g_big_endian    => g_big_endian,
             g_cpu_tag       => c_tag_1541_cpu_2,
             g_floppy_tag    => c_tag_1541_floppy_2,
             g_audio_tag     => c_tag_1541_audio_2,
@@ -720,6 +731,7 @@ begin
     r_usb2: if g_usb_host2 generate
         i_usb2: entity work.usb_host_nano
         generic map (
+            g_big_endian => g_big_endian,
             g_tag        => c_tag_usb2,
             g_simulation => g_simulation )
         port map (
@@ -988,6 +1000,8 @@ begin
     c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
 	
     i_conv32_cart: entity work.mem_to_mem32(route_through)
+    generic map (
+        g_big_endian => g_big_endian )
     port map(
         clock       => sys_clock,
         reset       => sys_reset,
@@ -997,6 +1011,8 @@ begin
         mem_resp_32 => mem_resp_32_cart );
 
     i_conv32_1541: entity work.mem_to_mem32(route_through)
+    generic map (
+        g_big_endian => g_big_endian )
     port map(
         clock       => sys_clock,
         reset       => sys_reset,
@@ -1006,6 +1022,8 @@ begin
         mem_resp_32 => mem_resp_32_1541 );
 
     i_conv32_1541_2: entity work.mem_to_mem32(route_through)
+    generic map (
+        g_big_endian => g_big_endian )
     port map(
         clock       => sys_clock,
         reset       => sys_reset,
@@ -1066,15 +1084,9 @@ begin
         
     error <= sys_reset;
 
-	DISK_ACTn   <= act_led_n xor stuck;
 	MOTOR_LEDn  <= motor_led_n xor error;
     CART_LEDn   <= cart_led_n xor error;
 	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or busy_led)) xor error;
-
---	DISK_ACTn   <= not freezer_state(1);
---	MOTOR_LEDn  <= not freezer_state(0);
---    CART_LEDn   <= IRQn;
---	SDACT_LEDn  <= NMIn;
 
     filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_i,    atn_i);
     filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_i,  clk_i);
@@ -1109,6 +1121,8 @@ begin
             io_resp     => io_resp_debug );
          
         i_conv32_debug: entity work.mem_to_mem32(route_through)
+        generic map (
+            g_big_endian => g_big_endian )
         port map(
             clock       => sys_clock,
             reset       => sys_reset,
@@ -1126,6 +1140,7 @@ begin
     begin
         i_ela: entity work.logic_analyzer_32
         generic map (
+            g_big_endian   => g_big_endian,
             g_timer_div    => 25 )
         port map (
             clock       => sys_clock,

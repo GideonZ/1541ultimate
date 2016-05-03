@@ -20,6 +20,7 @@ library work;
     
 entity floppy is
 generic (
+    g_big_endian    : boolean;
     g_tag           : std_logic_vector(7 downto 0) := X"01" );
 port (
     sys_clock       : in  std_logic;
@@ -110,6 +111,8 @@ begin
         read_data       => read_data );
 
     params: entity work.floppy_param_mem
+    generic map (
+        g_big_endian    => g_big_endian )
     port map (
         clock       => sys_clock,
         reset       => drv_reset,

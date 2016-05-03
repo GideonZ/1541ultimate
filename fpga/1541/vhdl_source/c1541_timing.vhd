@@ -4,6 +4,8 @@ use ieee.numeric_std.all;
 
 
 entity c1541_timing is
+generic (
+    g_clock_freq    : natural := 50000000 );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -21,35 +23,31 @@ port (
 end c1541_timing;
 
 architecture Gideon of c1541_timing is
-    signal div_cnt          : unsigned(3 downto 0) := "0000";
+    signal div_count        : natural range 0 to 400 + (g_clock_freq / 10000);
     signal pre_cnt          : unsigned(1 downto 0) := "00";
 	signal cpu_clock_en_i	: std_logic := '0';
-    signal toggle           : std_logic := '0';
     signal iec_reset_sh     : std_logic_vector(0 to 2) := "000";
     signal c64_reset_sh     : std_logic_vector(0 to 2) := "000";
 begin
     process(clock)
+        variable v_next : natural  range 0 to 400 + (g_clock_freq / 10000);
     begin
         if rising_edge(clock) then
 			drv_clock_en   <= '0';
 			cpu_clock_en_i <= '0';
 			
             if drive_stop='0' then
-    			if (div_cnt = X"B" and toggle='0') or
-    			   (div_cnt = X"C" and toggle='1') then
-    				div_cnt <= X"0";
-    				drv_clock_en <= '1';
-    
-                    toggle <= not toggle;
-    
-    	            pre_cnt <= pre_cnt + 1;
-    	
-    	            if pre_cnt = "11" then
-    	                cpu_clock_en_i <= '1';
-    	            end if;
-    			else
-    				div_cnt <= div_cnt + 1;
+                v_next := div_count + 400;
+                if v_next >= (g_clock_freq / 10000) then
+                    drv_clock_en <= '1';
+                    pre_cnt <= pre_cnt + 1;
+                    if pre_cnt = "11" then
+                        cpu_clock_en_i <= '1';
+                    end if;
+
+                    v_next := v_next - (g_clock_freq / 10000);
     			end if;
+    			div_count <= v_next;
             end if;
 
             if cpu_clock_en_i = '1' then
@@ -61,9 +59,8 @@ begin
             end if;                    
 
             if reset='1' then
-                toggle      <= '0';
                 pre_cnt     <= (others => '0');
-                div_cnt     <= (others => '0');
+                div_count   <= 0;
             end if;
         end if;
     end process;

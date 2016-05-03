@@ -177,10 +177,11 @@ end component;
 
     signal reset_in     : std_logic;
     signal dcm_lock     : std_logic;
-    signal sys_clock    : std_logic;
-    signal sys_reset    : std_logic;
     signal sys_clock_2x : std_logic;
 --    signal sys_shifted  : std_logic;
+
+    signal sys_clock    : std_logic;
+    signal sys_reset    : std_logic;
     signal button_i     : std_logic_vector(2 downto 0);
         
     -- miscellaneous interconnect
@@ -234,6 +235,7 @@ begin
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
+        g_microblaze    => false,
         g_icap          => false,
         g_uart          => true,
         g_drive_1541    => true,

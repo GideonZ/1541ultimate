@@ -17,8 +17,11 @@ library ieee;
 
 library unisim;
     use unisim.vcomponents.all;
-
+    use work.endianness_pkg.all;
+    
 entity floppy_param_mem is
+generic (
+    g_big_endian    : boolean );
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
@@ -40,6 +43,7 @@ architecture gideon of floppy_param_mem is
     signal toggle     : std_logic;
     signal param_addr : std_logic_vector(8 downto 0);
     signal param_data : std_logic_vector(31 downto 0);
+    signal ram_data   : std_logic_vector(31 downto 0);
 begin
     ram: RAMB16_S9_S36
     port map (
@@ -60,13 +64,11 @@ begin
         ADDRB => param_addr,
 		DIB   => X"00000000",
 		DIPB  => X"0",
-		DOB(31 downto 24) => param_data(7 downto 0),   -- CPU writes big endian, bram is little endian
-		DOB(23 downto 16) => param_data(15 downto 8),
-        DOB(15 downto 8)  => param_data(23 downto 16),
-        DOB(7 downto 0)   => param_data(31 downto 24),
+		DOB   => ram_data,
 		DOPB  => open );
 
     param_addr <= '0' & track & toggle;
+    param_data <= byte_swap(ram_data, g_big_endian);
 
     process(clock)
     begin

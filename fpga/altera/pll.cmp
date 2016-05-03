@@ -5,7 +5,7 @@
 --(including device programming or simulation files), and any 
 --associated documentation or information are expressly subject 
 --to the terms and conditions of the Altera Program License 
---Subscription Agreement, the Altera Quartus II License Agreement,
+--Subscription Agreement, the Altera Quartus Prime License Agreement,
 --the Altera MegaCore Function License Agreement, or other 
 --applicable license agreement, including, without limitation, 
 --that your use is for the sole purpose of programming logic 
@@ -19,6 +19,7 @@ component pll
 	(
 		inclk0		: IN STD_LOGIC  := '0';
 		c0		: OUT STD_LOGIC ;
+		c1		: OUT STD_LOGIC ;
 		locked		: OUT STD_LOGIC 
 	);
 end component;

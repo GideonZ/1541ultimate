@@ -20,6 +20,7 @@ use unisim.vcomponents.all;
 
 entity usb_host_nano is
     generic (
+        g_big_endian   : boolean;
         g_tag          : std_logic_vector(7 downto 0) := X"05";
         g_simulation   : boolean := false );
 	port  (
@@ -165,8 +166,8 @@ begin
         DIPA  => "0000",
         DOA   => sys_buf_rdata_le );
 
-    sys_buf_wdata_le <= byte_swap(sys_buf_wdata);
-    sys_buf_rdata <= byte_swap(sys_buf_rdata_le);
+    sys_buf_wdata_le <= byte_swap(sys_buf_wdata, g_big_endian);
+    sys_buf_rdata <= byte_swap(sys_buf_rdata_le, g_big_endian);
         
     i_bridge_to_mem_ctrl: entity work.bridge_to_mem_ctrl
     port map (
@@ -277,6 +278,8 @@ begin
         cmd_resp    => usb_cmd_resp );
 
     i_nano: entity work.nano
+    generic map (
+        g_big_endian => g_big_endian )
     port map (
         clock       => clock,
         reset       => reset,

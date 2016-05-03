@@ -8,6 +8,8 @@ use work.mem_bus_pkg.all;
 
 entity c1541_drive is
 generic (
+    g_clock_freq    : natural := 50000000;
+    g_big_endian    : boolean;
     g_audio_tag     : std_logic_vector(7 downto 0) := X"01";
     g_floppy_tag    : std_logic_vector(7 downto 0) := X"02";
     g_cpu_tag       : std_logic_vector(7 downto 0) := X"04";
@@ -102,6 +104,8 @@ begin
     drive_stop_i <= drive_stop and stop_on_freeze;
     
     i_timing: entity work.c1541_timing
+    generic map (
+        g_clock_freq    => g_clock_freq )
     port map (
         clock        => clock,
         reset        => reset,
@@ -167,6 +171,7 @@ begin
     
     i_flop: entity work.floppy
     generic map (
+        g_big_endian   => g_big_endian,
         g_tag          => g_floppy_tag )
     port map (
         sys_clock       => clock,

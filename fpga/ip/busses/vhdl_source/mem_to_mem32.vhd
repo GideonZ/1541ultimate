@@ -13,6 +13,8 @@ library work;
 use work.mem_bus_pkg.all;
 
 entity mem_to_mem32 is
+    generic (
+        g_big_endian : boolean );
 	port  (
         clock       : in  std_logic;
         reset       : in  std_logic;
@@ -29,7 +31,7 @@ architecture route_through of mem_to_mem32 is
 begin
     -- this adapter is the most simple variant; it just routes through the data and address
     -- no support for count and burst.
-    mem_resp_8.data     <= mem_resp_32.data(31 downto 24);
+    mem_resp_8.data     <= mem_resp_32.data(31 downto 24) when g_big_endian else mem_resp_32.data(7 downto 0);
     mem_resp_8.rack     <= mem_resp_32.rack;
     mem_resp_8.rack_tag <= mem_resp_32.rack_tag;
     mem_resp_8.dack_tag <= mem_resp_32.dack_tag;
@@ -39,13 +41,7 @@ begin
     mem_req_32.request      <= mem_req_8.request;
     mem_req_32.read_writen  <= mem_req_8.read_writen;
     mem_req_32.address      <= mem_req_8.address;
-    mem_req_32.data         <= mem_req_8.data & X"000000";
-    mem_req_32.byte_en      <= "1000";
---    with mem_req_8.address(1 downto 0) select
---        mem_req_32.byte_en <= 
---            "1000" when "00",
---            "0100" when "01",
---            "0010" when "10",
---            "0001" when others;
+    mem_req_32.data         <= (mem_req_8.data & X"000000") when g_big_endian else (X"000000" & mem_req_8.data);
+    mem_req_32.byte_en      <= "1000" when g_big_endian else "0001";
 
 end architecture;
