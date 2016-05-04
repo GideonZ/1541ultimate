@@ -73,11 +73,11 @@ begin
     -- pop from fifo when we process the access
     cmd_ack <= '1' when (state = idle) and (cmd_valid='1') else '0';
 
-    process(buffer_idx, state, mreq, mem_resp, ram_addr_i)
+    process(buffer_idx, state, mreq, mem_resp, ram_addr_i, ram_we_i)
     begin
         ram_addr  <= buffer_idx & std_logic_vector(ram_addr_i);
         ram_en <= '0';
-
+        
         -- for writing to memory, we enable the BRAM only when we are going to set
         -- the request, such that the data and the request comes at the same time
         case state is
@@ -88,6 +88,11 @@ begin
         when others =>
             null;
         end case;
+
+        rem_do_dec <= '0';
+        if mem_resp.rack='1' and mem_resp.rack_tag(5 downto 0) = g_tag(5 downto 0) then
+            rem_do_dec <= '1';
+        end if;
         
         -- for reading from memory, it doesn't matter in which state we are:
         if ram_we_i /= "0000" then
@@ -99,7 +104,6 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            rem_do_dec <= '0';
             case state is
             when idle =>
                 rwn <= '1';
@@ -146,7 +150,6 @@ begin
                         first_req <= not mreq;
                         last_req <= remain_is_1;
                         mreq <= '1';
-                        rem_do_dec <= '1';
                     end if;
                 end if;
     
@@ -154,15 +157,14 @@ begin
                 rwn <= '0';
                 if (mem_resp.rack='1' and mem_resp.rack_tag(5 downto 0) = g_tag(5 downto 0)) or (mreq = '0') then
                     ram_addr_i <= ram_addr_i + 1;
-                    if remain_is_0 = '1' then
+                    if remain_is_1 = '1' and mreq = '1' then
                         state <= idle;
                         cmd_done <= '1';
                         mreq <= '0';
                     else
                         first_req <= not mreq;
-                        last_req <= remain_is_1;
+                        last_req <= '0'; 
                         mreq <= '1';
-                        rem_do_dec <= '1';
                     end if;
                 end if;
 
