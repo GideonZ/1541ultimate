@@ -72,6 +72,7 @@ SRCS_IEC =
 
 SRCS_NANO = 
 
+VPATH   += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 VPATH   += $(PATH_SW)/application/mb_update
 VPATH   += ../mb_ultimate/result
 VPATH   += ../mb_boot/result

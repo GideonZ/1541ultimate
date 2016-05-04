@@ -11,6 +11,10 @@
 #include "task.h"
 #include "semphr.h"
 
+#define MENU_REC_SAMPLE_TAPE   0x3211
+#define MENU_REC_RECORD_TO_TAP 0x3212
+#define MENU_REC_FINISH        0x3213
+
 #define RECORD_STATUS  *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
 #define RECORD_CONTROL *((volatile uint8_t *)(C2N_RECORD_BASE + 0x000))
 #define RECORD_DATA    *((volatile uint8_t *)(C2N_RECORD_BASE + 0x800))

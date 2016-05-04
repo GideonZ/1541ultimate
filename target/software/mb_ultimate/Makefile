@@ -105,6 +105,7 @@ SRCS_CC	 =  small_printf.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
+			uci_commands.cc \
 			iec.cc \
 			filetype_tap.cc \
             socket_stream.cc \
@@ -116,6 +117,8 @@ SRCS_CC	 =  small_printf.cc \
 #			sys_calls.cc \
 ####			sampler.cc \
 ####			copper.cc \
+
+VPATH += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 
 
 SRCS_ASM =  mb_crt0.s portasm.s
@@ -129,7 +132,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS 
+OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds

@@ -87,10 +87,10 @@ void UserInterface :: run(void)
 			case ui_idle:
 				if (!host->hasButton()) {
 					appear();
-					state = ui_host_permanent;
+					// state = ui_host_permanent;
 				} else if (host->buttonPush()) {
 					appear();
-					state = ui_host_owned;
+					// state = ui_host_owned;
 				}
 				break;
 
@@ -148,6 +148,11 @@ void UserInterface :: appear(void)
 	for(int i=0;i<=focus;i++) {  // build up
 		//printf("Going to (re)init objects %d.\n", i);
 		ui_objects[i]->init(screen, keyboard);
+	}
+	if (!host->hasButton()) {
+		state = ui_host_permanent;
+	} else {
+		state = ui_host_owned;
 	}
 }
 

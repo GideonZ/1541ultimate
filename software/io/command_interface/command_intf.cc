@@ -5,7 +5,6 @@ extern "C" {
 }
 #include "command_intf.h"
 #include "c64.h"
-#include "dos.h"
 
 // this target is a dummy.
 CommandTarget cmd_if_empty_target;
@@ -126,6 +125,7 @@ void CommandInterface :: run_task(void)
 				CMD_IF_RESPONSE_LEN_H = 0;
 				CMD_IF_RESPONSE_LEN_L = 0;
 				CMD_IF_STATUS_LENGTH = 0;
+				CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
 				CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
 			}
 			CMD_IF_IRQMASK_CLEAR = CMD_NEW_COMMAND;

@@ -286,13 +286,13 @@ begin
         CAS_READ    => CAS_READ,
         CAS_WRITE   => CAS_WRITE,
         
-        vid_clock   => sys_clock,
-        vid_reset   => sys_reset,
-        vid_h_count => X"000",
-        vid_v_count => X"000",
-        vid_active  => open,
-        vid_opaque  => open,
-        vid_data    => open,
+--        vid_clock   => sys_clock,
+--        vid_reset   => sys_reset,
+--        vid_h_count => X"000",
+--        vid_v_count => X"000",
+--        vid_active  => open,
+--        vid_opaque  => open,
+--        vid_data    => open,
 
         -- Buttons
         BUTTON      => button_i );

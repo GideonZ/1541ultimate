@@ -35,7 +35,6 @@ private:
     UIObject *ui_objects[MAX_UI_OBJECTS];
     
     void set_screen_title(void);
-    void appear(void);
     bool pollFocussed(void);
     UIStatusBox *status_box;
 public:
@@ -64,6 +63,7 @@ public:
     virtual int enterSelection(void);
 
     void init(GenericHost *h);
+    void appear(void);
     void set_screen(Screen *s); /* Only used in updater */
     int  activate_uiobject(UIObject *obj);
         

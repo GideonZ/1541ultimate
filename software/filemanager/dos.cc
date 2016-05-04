@@ -19,18 +19,18 @@ __inline uint16_t cpu_to_16le(uint16_t a)
 Dos dos1(1);
 Dos dos2(2);
 
-Message c_message_identification_dos = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.0" }; 
-Message c_status_directory_empty     = { 18, true, (uint8_t *)"01,DIRECTORY EMPTY" };
-Message c_status_truncated           = { 20, true, (uint8_t *)"02,REQUEST TRUNCATED" };
-Message c_status_not_implemented     = { 27, true, (uint8_t *)"99,FUNCTION NOT IMPLEMENTED" };
-Message c_status_no_data             = { 19, true, (uint8_t *)"81,NOT IN DATA MODE" };
-Message c_status_file_not_found      = { 17, true, (uint8_t *)"82,FILE NOT FOUND" };
-Message c_status_no_such_dir         = { 20, true, (uint8_t *)"83,NO SUCH DIRECTORY" };
-Message c_status_no_file_to_close    = { 19, true, (uint8_t *)"84,NO FILE TO CLOSE" };
-Message c_status_file_not_open       = { 15, true, (uint8_t *)"85,NO FILE OPEN" };
-Message c_status_cannot_read_dir     = { 23, true, (uint8_t *)"86,CAN'T READ DIRECTORY" }; 
-Message c_status_internal_error      = { 17, true, (uint8_t *)"87,INTERNAL ERROR" };
-Message c_status_no_information      = { 27, true, (uint8_t *)"88,NO INFORMATION AVAILABLE" };
+static Message c_message_identification_dos = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.0" };
+static Message c_status_directory_empty     = { 18, true, (uint8_t *)"01,DIRECTORY EMPTY" };
+static Message c_status_truncated           = { 20, true, (uint8_t *)"02,REQUEST TRUNCATED" };
+static Message c_status_not_implemented     = { 27, true, (uint8_t *)"99,FUNCTION NOT IMPLEMENTED" };
+static Message c_status_no_data             = { 19, true, (uint8_t *)"81,NOT IN DATA MODE" };
+static Message c_status_file_not_found      = { 17, true, (uint8_t *)"82,FILE NOT FOUND" };
+static Message c_status_no_such_dir         = { 20, true, (uint8_t *)"83,NO SUCH DIRECTORY" };
+static Message c_status_no_file_to_close    = { 19, true, (uint8_t *)"84,NO FILE TO CLOSE" };
+static Message c_status_file_not_open       = { 15, true, (uint8_t *)"85,NO FILE OPEN" };
+static Message c_status_cannot_read_dir     = { 23, true, (uint8_t *)"86,CAN'T READ DIRECTORY" };
+static Message c_status_internal_error      = { 17, true, (uint8_t *)"87,INTERNAL ERROR" };
+static Message c_status_no_information      = { 27, true, (uint8_t *)"88,NO INFORMATION AVAILABLE" };
 
 Dos :: Dos(int id) : directoryList(16, NULL)
 {

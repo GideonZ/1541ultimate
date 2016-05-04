@@ -69,6 +69,9 @@ SRCS_IEC =
 
 SRCS_NANO = 
 
+LWIPLIB = 
+
+VPATH   += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 VPATH   += $(PATH_SW)/application/update_to_mb
 VPATH   += $(PATH_SW)/system/cross
 

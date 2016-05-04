@@ -16,8 +16,15 @@ device  = $0163
 namelen = $0164
 name    = $0165
 
+uci_status  = $df1c
+uci_control = $df1c
+uci_command = $df1d
+uci_reponse = $df1e
+uci_stdata  = $df1f
+
 RUNCODE_LOAD_BIT      = %00000001
 RUNCODE_RUN_BIT       = %00000010
+RUNCODE_CAPTURE_BIT   = %00001000
 RUNCODE_RECORD_BIT    = %00010000
 RUNCODE_TAPE_BIT      = %00100000
 RUNCODE_REAL_BIT      = %01000000
@@ -28,6 +35,7 @@ RUNCODE_DMALOAD           = %00000001
 RUNCODE_MOUNT_DMALOAD_RUN = %10000011
 RUNCODE_MOUNT_LOAD_RUN    = %11000011
 RUNCODE_TAPE_RECORD       = %01110000
+RUNCODE_TAPE_CAPTURE      = %01101000
 	
 ;**************************************************************************
 ;*
@@ -172,8 +180,13 @@ KBUFFER2_LEN	= *-kbuffer2
 ms_skp2
 	lda runcode
 	and #RUNCODE_RECORD_BIT
-	beq do_load
+	bne record_tape
+	lda runcode
+	and #RUNCODE_CAPTURE_BIT
+	bne capture_tape
+	jmp do_load
 
+record_tape
     ldx #0
 -   inx
     lda $f0ea,x
@@ -223,6 +236,110 @@ write_message
     .text "ULTIMATE IS WRITING TO TAPE - JUST WAIT", 13
 WRITE_MSG_LEN = *-write_message    
 RECORD_ROUTINE_LEN = *-record_routine
+
+
+capture_tape
+    ldx #0
+-   inx
+    lda $f0ea,x
+    pha
+    and #$7f
+    jsr $ffd2
+    pla
+    bpl -
+    lda #$0d
+    jsr $ffd2
+    sei
+
+    lda #$27 ;; turn write pin to input
+    sta $00
+    lda #$37 ;; everything else is normal, motor off
+    sta $01
+
+    ldx #$00
+-   lda capture_routine,x
+    sta $380,x
+    inx
+    cpx #CAPTURE_ROUTINE_LEN
+    bne -
+    jmp $380 ;; cartridge will be killed shortly, we have to be quick
+    
+capture_routine
+	sta	$dfff		; disable boot cart
+    nop
+-   lda $01
+    and #$10 ;; sense input test, wait until button is pressed
+    bne -
+    
+    lda #$17
+    sta $01 ; turn on motor
+    
+    ldx #0
+-   lda $380 + (capture_message - capture_routine),x
+    jsr $ffd2
+    inx
+    cpx #CAPTURE_MSG_LEN
+    bne -
+self2
+	lda $01
+	and #$10 ;; sense input test, wait until button gets released
+	beq self2
+
+	lda #$37
+	sta $01 ; turn off motor
+
+	; DONE!
+	ldx #4
+-	lda $380 + (done_message - capture_routine),x
+	jsr $ffd2
+	dex 
+	bne -
+	
+	; Now let's inform the Ultimate that we're done
+	lda uci_status
+	and #$30
+	bne fault
+
+	ldx #2
+-	lda $380 + (uci_command_bytes - capture_routine),x
+	sta uci_command
+	dex 
+	bne -
+	lda #$08
+	sta uci_control
+	lda #$01
+	sta uci_control
+	
+	lda #$07
+	sta $d020
+-	lda uci_status
+	lsr
+	bcs -
+
+	lda #$05
+	sta $d020
+
+	lda #$02
+	sta uci_control
+
+self3
+    jmp $380 + (self3 - capture_routine)
+
+fault
+	lda #$02
+	sta $d020
+    jmp $380 + (self3 - capture_routine)
+
+
+capture_message
+    .text "ULTIMATE IS CAPTURING TAPE - JUST WAIT", 13
+done_message
+	.text "DONE"
+uci_command_bytes
+	.byte $00, $03
+	 
+CAPTURE_MSG_LEN = *-capture_message    
+CAPTURE_ROUTINE_LEN = *-capture_routine
 
 do_load
 	lda	#145		;CRSR-UP

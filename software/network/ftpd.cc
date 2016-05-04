@@ -161,7 +161,9 @@ FTPDaemon :: FTPDaemon()
 void FTPDaemon :: ftp_listen_task(void *a)
 {
 	FTPDaemon *daemon = (FTPDaemon *)a;
-	daemon->listen_task();
+	int error = daemon->listen_task();
+	printf("Going to suspend the FTPDaemon. Error = %d\n", error);
+	vTaskSuspend(NULL);
 }
 
 int FTPDaemon :: listen_task()
@@ -193,7 +195,7 @@ int FTPDaemon :: listen_task()
 		int actual_socket = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 		if (actual_socket < 0) {
 			 puts("FTPD: ERROR on accept");
-			 return -3;
+			 // return -3;
 		}
 
 		struct timeval tv;
@@ -220,7 +222,8 @@ FTPDaemonThread :: FTPDaemonThread(int socket, uint32_t addr, uint16_t port) : d
 
 	your_port = port;
 
-	printf("FTPDaemonThread: connection from %08x:%d", addr, port);
+	printf("FTPDaemonThread: connection from %d.%d.%d.%d:%d\n", your_ip[0], your_ip[1], your_ip[2], your_ip[3], port);
+
 	/* Initialize the structure. */
 	state = FTPD_IDLE;
 	vfs = 0;
@@ -874,6 +877,7 @@ void FTPDataConnection :: accept_data(void *a) // task entry point
 	}
 	xTaskNotifyGive(conn->spawningTask);
 
+	printf("Suspending FTPDataConnection\n");
 	vTaskSuspend(NULL);
 }
 

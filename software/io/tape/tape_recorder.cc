@@ -11,9 +11,6 @@ extern "C" {
 
 TapeRecorder *tape_recorder = NULL; // globally static
 
-#define MENU_REC_SAMPLE_TAPE   0x3211
-#define MENU_REC_RECORD_TO_TAP 0x3212
-#define MENU_REC_FINISH        0x3213
 
 extern "C" BaseType_t tape_recorder_irq(void)
 {
@@ -60,11 +57,25 @@ TapeRecorder :: ~TapeRecorder()
 	
 int TapeRecorder :: executeCommand(SubsysCommand *cmd)
 {
-	last_user_interface = cmd->user_interface;
+	if (cmd->user_interface) {
+		last_user_interface = cmd->user_interface;
+	}
+	UserInterface *ui = (UserInterface *)last_user_interface;
 
 	switch(cmd->functionID) {
 		case MENU_REC_FINISH:
 			flush();
+			if (ui) {
+				if (!ui->is_available()) {
+					ui->appear();
+					vTaskDelay(30);
+				}
+				if (ui->is_available()) {
+					ui->popup("Tape capture stopped.", BUTTON_OK);
+				} else {
+					printf("Damn user interface is not available!\n");
+				}
+			}
 			break;
 		case MENU_REC_SAMPLE_TAPE:
 			select = 0;
@@ -249,9 +260,6 @@ void TapeRecorder :: poll()
 
 	printf("** tape recorder this = %p\n", this);
 	while(1) {
-		if (this != aap)
-			PROFILER_SUB = 14;
-
 		if(error_code != REC_ERR_OK) {
 			PROFILER_SUB = 15;
 			if (last_user_interface) {
