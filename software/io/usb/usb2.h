@@ -36,7 +36,7 @@ class Usb2 : public UsbBase
     uint8_t  *circularBufferBase;
     uint8_t free_map[BLOCK_FIFO_ENTRIES];
 
-    uint8_t  prev_status;
+    uint16_t  prev_status;
     bool  get_fifo(uint16_t *out);
     bool  put_block_fifo(uint16_t in);
 

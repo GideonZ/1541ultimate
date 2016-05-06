@@ -4,6 +4,7 @@
 #include "w25q_flash.h"
 #include "s25fl_flash.h"
 #include "itu.h"
+#include <stdio.h>
 
 Flash *get_flash(void)
 {
@@ -21,7 +22,7 @@ Flash *get_flash(void)
 
 	ret_val = w25q_flash.tester();
 	if(ret_val)
-	    return ret_val;
+		return ret_val;
 
 	ret_val = s25fl_flash.tester();
 	if(ret_val)

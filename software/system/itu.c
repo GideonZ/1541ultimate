@@ -237,6 +237,19 @@ void uart_put_byte(BYTE c)
 }
 */
 
+void (*custom_outbyte)(int c) = 0;
+
+void outbyte(int c)
+{
+    if (custom_outbyte) {
+        custom_outbyte(c);
+    } else {
+        // Wait for space in FIFO
+        while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+        ioWrite8(UART_DATA, c);
+    }
+}
+
 #ifdef RUNS_ON_PC
 #include <stdio.h>
 void ioWrite8(uint32_t addr, uint8_t value) {

@@ -52,7 +52,6 @@ static const t_flash_address flash_addresses[] = {
 
 W25Q_Flash::W25Q_Flash()
 {
-
 	sector_size  = 16;			// in pages, default to W25Q16BV
 	sector_count = 512;			// default to W25Q16BV
     total_size   = 8192;		// in pages, default to W25Q16BV
@@ -109,14 +108,15 @@ Flash *W25Q_Flash :: tester()
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     portEXIT_CRITICAL();
     
-//    printf("W25Q MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
-
+    printf("W25Q MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
     if (manuf != 0xEF) 
     	return NULL; // not Winbond
 
 	if(mem_type != 0x40) { // not the right type of flash
 		return NULL;
 	}
+
+	return 0;
 	
 	if(capacity == 0x15) { // 16 Mbit
 		sector_size  = 16;	

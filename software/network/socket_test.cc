@@ -152,7 +152,7 @@ void SocketTest::restartThread(void *a)
     ioWrite8(ITU_IRQ_DISABLE, 0xFF);
     ioWrite8(ITU_IRQ_CLEAR, 0xFF);
 
-    asm("bralid r15, 8"); // restart!
+//    asm("bralid r15, 8"); // restart!
     asm("nop");
 }
 

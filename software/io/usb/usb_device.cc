@@ -9,7 +9,11 @@ extern "C" {
 
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+	return h;
+#else // assume big endian
     return (h >> 8) | (h << 8);
+#endif
 }
 
 char *unicode_to_ascii(uint8_t *in, char *out, int maxlen)
@@ -163,17 +167,20 @@ bool UsbDevice :: get_configuration(uint8_t index)
     c_get_configuration[2] = index;
     c_get_configuration[6] = 9;
     c_get_configuration[7] = 0;
-    uint8_t buf[12];
+    uint8_t buf[16];
+    memset(buf, 0xAA, 16);
 
     config_descriptor = NULL;
     int len_descr = host->control_exchange(&control_pipe, c_get_configuration, 8, buf, 9);
+    dump_hex(buf, 16);
+
     if(len_descr < 0)
     	return false;
     
     if ((buf[0] == 9) && (buf[1] == DESCR_CONFIGURATION)) {
         len_descr = int(buf[2]) + 256*int(buf[3]);
         printf("Total configuration length: %d\n", len_descr);
-    	config_descriptor = new uint8_t[len_descr];
+    	config_descriptor = new uint8_t[len_descr + 8];
     	if (!config_descriptor)
     		return false;
     } else {

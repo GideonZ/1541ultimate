@@ -10,15 +10,23 @@ extern "C" {
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
-    uint32_t m1, m2;
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+	return a;
+#else
+	uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
+#endif
 }
 
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+	return h;
+#else // assume big endian
     return (h >> 8) | (h << 8);
+#endif
 }
 
 /*********************************************************************

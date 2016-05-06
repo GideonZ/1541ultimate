@@ -120,15 +120,40 @@ ULPI_REG_READ_0      = $80
 ULPI_REG_WRITE_0     = $C0
 ULPI_R_IRQ_STATUS  = $93
 ULPI_W_FUNC_CTRL   = $C4
+ULPI_R_FUNC_CTRL   = $84
 ULPI_W_OTG_CONTROL = $CA
-
+ULPI_W_SCRATCH     = $D6
+ULPI_R_SCRATCH     = $96
+ULPI_R_VENDOR      = $80
+ULPI_R_PRODUCT_LOW = $82
 
 begin
     ; turn off power first
     LOAD  #$06
     OUTP  ULPI_W_OTG_CONTROL
-    LOAD  #$45
-    OUTP  ULPI_W_FUNC_CTRL
+
+    LOAD  #$65
+    OUTP  ULPI_W_FUNC_CTRL      ; reset then go to FS
+
+    INP   ULPI_R_PRODUCT_LOW
+    CMP   #$06
+    BEQ   _no_power
+
+;    INP   ULPI_R_FUNC_CTRL
+;    LOAD  #$55
+;    OUTP  ULPI_W_SCRATCH
+;    INP   ULPI_R_SCRATCH
+;    LOAD  #$AA
+;    OUTP  ULPI_W_SCRATCH
+;    INP   ULPI_R_SCRATCH
+;    LOAD  #$39
+;    OUTP  ULPI_W_SCRATCH
+;    INP   ULPI_R_SCRATCH
+;    LOAD  #$6C
+;    OUTP  ULPI_W_SCRATCH
+;    INP   ULPI_R_SCRATCH
+;    BRA   begin    
+
     LOAD  #0
     STORE RAM_STATUS
 ;    OUTP  CLR_CONNECTED
@@ -189,8 +214,8 @@ _no_power
     OUTP  ULPI_W_OTG_CONTROL  ; turn on our power
 
 _start2
-    ; initialize our function control in FS mode, reset the transceivers and all
-    LOAD  #$61
+    ; initialize our function control in FS mode
+    LOAD  #$45
     OUTP  ULPI_W_FUNC_CTRL
 
     ; wait 700 ms for the power to get stable and all. a loop to check when the power is stable might be good here
@@ -854,6 +879,7 @@ check_pipes
     STORE PipeNumber
 _chk_pipe
     LOADI PipeAddr
+    BEQ   _nxt_pipe
     STORE Current_Command
     AND   #CMD_REQ_PAUSED
     BEQ   _valid_pipe
@@ -992,7 +1018,8 @@ _prepare_circ
     BEQ   _unsuccessful
 
     LOAD  Current_Command
-	OR    #CMD_REQ_PAUSED ; we add the pause bit, so that it will only occur once
+	 ; we add the pause bit, so that it will only occur once
+    OR    #CMD_REQ_PAUSED
     CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
 
     ;; report back to host
@@ -1059,8 +1086,8 @@ _other_params
 ; check if fifo empty. Will return 0 (BEQ..) when fifo is empty
 blk_fifo_empty
     LOAD head_pointer_blk
-	CMP  head_pointer_blk
-	BNE  blk_fifo_empty
+    CMP  head_pointer_blk
+    BNE  blk_fifo_empty
     CMP  tail_pointer_blk
     RET
     

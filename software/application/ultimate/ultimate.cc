@@ -31,6 +31,7 @@
 #include "init_function.h"
 #include "stream_uart.h"
 #include "stream_textlog.h"
+#include "dump_hex.h"
 
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
@@ -53,10 +54,12 @@ void outbyte_log(int c)
 	textLog.charout(c);
 }
 
-int main(void *a)
+
+extern "C" void ultimate_main(void *a)
 {
-	char time_buffer[32];
-	uint32_t capabilities = getFpgaCapabilities();
+    char time_buffer[32];
+
+    uint32_t capabilities = getFpgaCapabilities();
 
 	printf("*** 1541 Ultimate V3.0 ***\n");
     printf("*** FPGA Capabilities: %8x ***\n\n", capabilities);
@@ -95,6 +98,7 @@ int main(void *a)
         ui->activate_uiobject(root_tree_browser); // root of all evil!
     } else {
     	// from now on, log to memory, freeing the uart
+/*
     	custom_outbyte = outbyte_log;
 
     	Stream *stream = new Stream_UART;
@@ -105,18 +109,9 @@ int main(void *a)
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
-    }
-/*
-    else {
-        Stream *stream = new Stream_UART;
-    	// stand alone mode
-        printf("Using Stream module as user interface...\n");
-        UserInterfaceStream *ui_str = new UserInterfaceStream(stream);
-        root_menu = new StreamMenu(ui_str, stream, new BrowsableRoot());
-        ui_str->set_menu(root_menu); // root of all evil!
-        ui = ui_str;
-    }
 */
+    }
+
 
     if(capabilities & CAPAB_C2N_STREAMER)
 	    tape_controller = new TapeController;
@@ -143,6 +138,8 @@ int main(void *a)
 
     if(ui) {
     	ui->run();
+    } else {
+    	vTaskSuspend(NULL); // Stop main task and wait forever
     }
 
     custom_outbyte = 0; // stop logging
@@ -175,7 +172,5 @@ int main(void *a)
 	    delete tape_recorder;
     
     printf("Graceful exit!!\n");
-    return 0;
+//    return 0;
 }
-
-

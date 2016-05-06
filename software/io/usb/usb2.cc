@@ -10,7 +10,14 @@ extern "C" {
 #include "task.h"
 #include "profiler.h"
 
-extern uint8_t  _nano_minimal_b_start;
+// #include <endian.h>
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+#define nano_word(x) ((x >> 8) | ((x & 0xFF) << 8))
+#else // assume big endian
+#define nano_word(x) x
+#endif
+
+extern uint16_t _nano_minimal_b_start;
 extern uint32_t _nano_minimal_b_size;
 
 uint16_t *attr_fifo_data = (uint16_t *)ATTR_FIFO_BASE;
@@ -19,11 +26,6 @@ uint16_t *block_fifo_data = (uint16_t *)BLOCK_FIFO_BASE;
 Usb2 usb2; // the global
 
 volatile int irq_count;
-
-__inline uint16_t le16_to_cpu(uint16_t h)
-{
-    return (h >> 8) | (h << 8);
-}
 
 static void poll_usb2(void *a)
 {
@@ -57,6 +59,8 @@ Usb2 :: Usb2()
 
         xTaskCreate( poll_usb2, "USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
         ioWrite8(ITU_IRQ_ENABLE, 0x04);
+    } else {
+        printf("No USB2 hardware found.\n");
     }
 }
 
@@ -101,17 +105,25 @@ void Usb2 :: init(void)
     }
     device_present = false;
 
-    // initialize the buffers
+	NANO_START = 0;
+
+	// initialize the buffers
     blockBufferBase = new uint32_t[384 * BLOCK_FIFO_ENTRIES];
     circularBufferBase = new uint8_t[4096];
 
     // load the nano CPU code and start it.
     int size = (int)&_nano_minimal_b_size;
-    uint8_t *src = &_nano_minimal_b_start;
-    uint8_t *dst = (uint8_t *)NANO_BASE;
-    for(int i=0;i<size;i++)
-        *(dst++) = *(src++);
-    printf("Nano CPU based USB Controller: %d bytes loaded.\n", size);
+    uint16_t *src = &_nano_minimal_b_start;
+    uint16_t *dst = (uint16_t *)NANO_BASE;
+    uint16_t temp;
+    for(int i=0;i<size;i+=2) {
+    	temp = *(src++);
+    	*(dst++) = nano_word(temp);
+	}
+    uint32_t *pul = (uint32_t *)NANO_BASE;
+    uint32_t ul = *pul;
+    printf("Nano CPU based USB Controller: %d bytes loaded. First DW: %08x\n", size, ul);
+
     printf("Circular Buffer Base = %p\n", circularBufferBase);
     memset (circularBufferBase, 0xe0, 4096);
 
@@ -151,7 +163,8 @@ void Usb2 :: deinit(void)
 
 void Usb2 :: poll()
 {
-	uint8_t usb_status = USB2_STATUS;
+	uint16_t usb_status = USB2_STATUS;
+//	printf("USB2 status: %04x\n", usb_status);
 	if (prev_status != usb_status) {
 		prev_status = usb_status;
 		if (usb_status & USTAT_CONNECTED) {
