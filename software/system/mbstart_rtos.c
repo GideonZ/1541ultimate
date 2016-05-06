@@ -8,7 +8,7 @@
 #include "FreeRTOSConfig.h"
 #include "task.h"
 
-extern int main(int argc, char **argv);
+extern void ultimate_main(void *context);
 void start_rtos (void);
 
 extern unsigned char __constructor_list, __end_of_constructors;
@@ -86,13 +86,11 @@ void _premain()
 
 void _construct_and_go()
 {
-	int t;
-
     ioWrite8(UART_DATA, 0x36);
 
     _do_ctors();
 
-    t=main(0, 0);
+    ultimate_main(0);
 
     // TODO: Kill all tasks?
     exit(0);

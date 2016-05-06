@@ -300,7 +300,7 @@ bool program_flash(bool do_update1, bool do_update2, bool do_roms)
 	return true;
 }
     
-int main()
+extern "C" void ultimate_main(void *)
 {
 	char time_buffer[32];
 	uint8_t byte_buffer[32];

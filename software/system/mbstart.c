@@ -61,12 +61,14 @@ int inbyte()
  * 
  * 
  */
+/*
 void outbyte(int c)
 {
 	// Wait for space in FIFO
 	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
 	ioWrite8(UART_DATA, (uint8_t)c);
 }
+*/
 
 void restart(void)
 {

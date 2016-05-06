@@ -127,12 +127,14 @@ void __copy_data(void)
 //void outbyte(int c);
 
 
+/*
 void outbyte(int c)
 {
 	// Wait for space in FIFO
 	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
 	ioWrite8(UART_DATA, c);
 }
+*/
 
 
 void *sbrk(int inc)
