@@ -6,11 +6,11 @@ ARCHITECTURE = nios2
 include ../common/environment.mk
 
 PRJ      =  ultimate
-FINAL    =  $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).sim
+FINAL    =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
-SRCS_C   =	mbstart_rtos.c \
-			itu.c \
+SRCS_C   =	itu.c \
 			dump_hex.c \
+			assert.c \
 			profiler.c \
 			croutine.c \
             event_groups.c \
@@ -23,8 +23,11 @@ SRCS_C   =	mbstart_rtos.c \
             ff2.c \
             ccsbcs.c \
             ffsyscall.c \
-            time.c
-
+            time.c \
+            i2c.c \
+            mdio.c \
+            nios_main.c
+            
 SRCS_CC	 =  small_printf.cc \
             stream.cc \
 			stream_uart.cc \
@@ -116,7 +119,10 @@ SRCS_CC	 =  small_printf.cc \
 			socket_test.cc \
 			$(PRJ).cc
 
-VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
+VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios_sigma
+VPATH +=	$(PATH_SW)/niosbsp
+VPATH +=	$(PATH_SW)/niosbsp/HAL/inc
+VPATH +=	$(PATH_SW)/niosbsp/drivers/inc
 
 #            sock_echo.c \
 #			sys_calls.cc \
@@ -124,7 +130,9 @@ VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 ####			copper.cc \
 
 
-SRCS_ASM =  mb_crt0.s portasm.s
+SRCS_ASM =
+
+SRCS_ASMS = port_asm.S
 
 SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
@@ -135,14 +143,15 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS 
-COPTIONS = $(OPTIONS) -std=c99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
+OPTIONS  = -g -ffunction-sections -O0 -DOS  -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+COPTIONS = $(OPTIONS) -std=gnu99
+CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = ./mb_app.lds
-LLIB     =  -L ../mb_lwip/result \
-            -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
-            -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
-LIBS     =  -llwip -lc -lgcc 
+LLIB     =  -L $(PATH_SW)/niosbsp \
+			-L ../nios2_elf_lwip/result \
+            -L $(NIOS_TOOLCHAIN)/nios2-elf/lib \
+            -L $(NIOS_TOOLCHAIN)/lib/gcc/nios2-elf/4.8.3
+LIBS     =  -lc -lhal_bsp -llwip -lc -lgcc 
 LFLAGS   = --gc-sections 
 
 include ../common/rules.mk

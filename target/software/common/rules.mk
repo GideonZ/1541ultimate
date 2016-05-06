@@ -1,5 +1,6 @@
 VPATH += $(OUTPUT)
 
+OBJS_ASMS = $(notdir $(SRCS_ASMS:%.S=%.o))
 OBJS_ASM = $(notdir $(SRCS_ASM:%.s=%.o))
 OBJS_C   = $(notdir $(SRCS_C:%.c=%.o))
 OBJS_CC  = $(notdir $(SRCS_CC:%.cc=%.o))
@@ -9,7 +10,7 @@ OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.o))
 CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_6502) $(OBJS_ASM) $(OBJS_C) $(OBJS_CC) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO))
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO))
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
@@ -90,7 +91,11 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	--redefine-sym $(was)_end=$(becomes)_end
     	
 %.o: %.s
-	@echo Compiling $(<F)
+	@echo Assembling $(<F)
+	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
+
+%.o: %.S
+	@echo Assembling $(<F)
 	@$(CC) $(OPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 
 %.o: %.c
@@ -108,11 +113,15 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(LWIPLIB)
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(LWIPLIB)
 	@echo Linking...
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out
 
+$(RESULT)/$(PRJ).elf: $(OUTPUT)/$(PRJ).out
+	@echo Providing ELF.
+	@cp $(OUTPUT)/$(PRJ).out $(RESULT)/$(PRJ).elf
+	
 $(OUTPUT)/$(PRJ).sim: $(RESULT)/$(PRJ).bin
 	@echo Make mem...
 	@$(MAKEMEM) $< $@ 1000000 65536 

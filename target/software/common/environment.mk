@@ -49,6 +49,8 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/c64 \
 			$(PATH_SW)/io/rtc \
 			$(PATH_SW)/io/usb \
+			$(PATH_SW)/io/i2c \
+			$(PATH_SW)/io/mdio \
 			$(PATH_SW)/io/tape \
 			$(PATH_SW)/io/icap \
 			$(PATH_SW)/io/sd_card \
