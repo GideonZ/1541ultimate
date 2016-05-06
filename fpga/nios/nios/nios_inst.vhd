@@ -40,9 +40,7 @@
 			pio_out_port                   : out   std_logic_vector(31 downto 0);                    -- out_port
 			reset_reset_n                  : in    std_logic                     := 'X';             -- reset_n
 			sys_clock_clk                  : out   std_logic;                                        -- clk
-			sys_reset_reset_n              : out   std_logic;                                        -- reset_n
-			uart_0_rxd                     : in    std_logic                     := 'X';             -- rxd
-			uart_0_txd                     : out   std_logic                                         -- txd
+			sys_reset_reset_n              : out   std_logic                                         -- reset_n
 		);
 	end component nios;
 
@@ -88,8 +86,6 @@
 			pio_out_port                   => CONNECTED_TO_pio_out_port,                   --                    .out_port
 			reset_reset_n                  => CONNECTED_TO_reset_reset_n,                  --               reset.reset_n
 			sys_clock_clk                  => CONNECTED_TO_sys_clock_clk,                  --           sys_clock.clk
-			sys_reset_reset_n              => CONNECTED_TO_sys_reset_reset_n,              --           sys_reset.reset_n
-			uart_0_rxd                     => CONNECTED_TO_uart_0_rxd,                     --              uart_0.rxd
-			uart_0_txd                     => CONNECTED_TO_uart_0_txd                      --                    .txd
+			sys_reset_reset_n              => CONNECTED_TO_sys_reset_reset_n               --           sys_reset.reset_n
 		);
 

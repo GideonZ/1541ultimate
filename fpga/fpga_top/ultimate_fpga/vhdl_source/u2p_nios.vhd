@@ -182,9 +182,7 @@ architecture rtl of u2p_nios is
             pio_out_port                   : out   std_logic_vector(31 downto 0);                    -- out_port
             reset_reset_n                  : in    std_logic                     := 'X';             -- reset_n
             sys_clock_clk                  : out   std_logic;                                        -- clk
-            sys_reset_reset_n              : out   std_logic;                                        -- reset_n
-            uart_0_rxd                     : in    std_logic                     := 'X';             -- rxd
-            uart_0_txd                     : out   std_logic                                         -- txd
+            sys_reset_reset_n              : out   std_logic                                         -- reset_n
         );
     end component nios;
 
@@ -217,7 +215,6 @@ architecture rtl of u2p_nios is
     signal mem_req          : t_mem_req_32;
     signal mem_resp         : t_mem_resp_32;
 
-    signal uart_txd_from_qsys   : std_logic;
     signal uart_txd_from_logic  : std_logic;
     signal pio_in_port          : std_logic_vector(31 downto 0) := (others => '0');
     signal pio_out_port         : std_logic_vector(31 downto 0);
@@ -232,6 +229,12 @@ architecture rtl of u2p_nios is
     signal io_req       : t_io_req;
     signal io_resp      : t_io_resp;
     signal io_req_addr  : std_logic_vector(19 downto 0);
+
+    signal eth_rx_data         : std_logic_vector(7 downto 0);
+    signal eth_rx_sof          : std_logic;
+    signal eth_rx_eof          : std_logic;
+    signal eth_rx_valid        : std_logic;
+
 begin
     process(RMII_REFCLK)
     begin
@@ -292,9 +295,6 @@ begin
 
         pio_in_port                    => pio_in_port,
         pio_out_port                   => pio_out_port,
-
-        uart_0_rxd                     => UART_RXD,
-        uart_0_txd                     => uart_txd_from_qsys,
 
         io_ack                         => io_resp.ack,
         io_rdata                       => io_resp.data,
@@ -466,8 +466,29 @@ begin
     button_i <= not BUTTON;
 
     -- stub
-    RMII_TX_EN   <= RMII_RX_ER and RMII_REFCLK and RMII_CRS_DV and ETH_IRQn and SLOT_VCC;
-    RMII_TX_DATA <= RMII_RX_DATA;
+--    RMII_TX_EN   <= RMII_RX_ER and RMII_REFCLK and RMII_CRS_DV and ETH_IRQn and SLOT_VCC;
+--    RMII_TX_DATA <= RMII_RX_DATA;
+
+    i_rmii: entity work.rmii_transceiver
+    port map (
+        clock        => RMII_REFCLK,
+        reset        => not por_n,
+        rmii_crs_dv  => RMII_CRS_DV,
+        rmii_rxd     => RMII_RX_DATA,
+        rmii_tx_en   => RMII_TX_EN,
+        rmii_txd     => RMII_TX_DATA,
+
+        eth_rx_data  => eth_rx_data,
+        eth_rx_sof   => eth_rx_sof,
+        eth_rx_eof   => eth_rx_eof,
+        eth_rx_valid => eth_rx_valid,
+        eth_tx_data  => X"00",
+        eth_tx_sof   => '0',
+        eth_tx_eof   => '0',
+        eth_tx_valid => '0',
+        eth_tx_ready => open,
+        ten_meg_mode => '0' );
+
 
     process(ulpi_clock)
     begin

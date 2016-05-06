@@ -40,9 +40,7 @@ module nios (
 	pio_out_port,
 	reset_reset_n,
 	sys_clock_clk,
-	sys_reset_reset_n,
-	uart_0_rxd,
-	uart_0_txd);	
+	sys_reset_reset_n);	
 
 	output		altmemddr_0_auxfull_clk;
 	output		altmemddr_0_auxhalf_clk;
@@ -85,6 +83,4 @@ module nios (
 	input		reset_reset_n;
 	output		sys_clock_clk;
 	output		sys_reset_reset_n;
-	input		uart_0_rxd;
-	output		uart_0_txd;
 endmodule

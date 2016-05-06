@@ -39,13 +39,13 @@
 // ------------------------------------------
 // Generation parameters:
 //   output_name:         nios_mm_interconnect_0_rsp_mux_002
-//   NUM_INPUTS:          3
-//   ARBITRATION_SHARES:  1 1 1
+//   NUM_INPUTS:          2
+//   ARBITRATION_SHARES:  1 1
 //   ARBITRATION_SCHEME   "no-arb"
 //   PIPELINE_ARB:        0
-//   PKT_TRANS_LOCK:      70 (arbitration locking enabled)
-//   ST_DATA_W:           110
-//   ST_CHANNEL_W:        9
+//   PKT_TRANS_LOCK:      69 (arbitration locking enabled)
+//   ST_DATA_W:           107
+//   ST_CHANNEL_W:        6
 // ------------------------------------------
 
 module nios_mm_interconnect_0_rsp_mux_002
@@ -54,33 +54,26 @@ module nios_mm_interconnect_0_rsp_mux_002
     // Sinks
     // ----------------------
     input                       sink0_valid,
-    input [110-1   : 0]  sink0_data,
-    input [9-1: 0]  sink0_channel,
+    input [107-1   : 0]  sink0_data,
+    input [6-1: 0]  sink0_channel,
     input                       sink0_startofpacket,
     input                       sink0_endofpacket,
     output                      sink0_ready,
 
     input                       sink1_valid,
-    input [110-1   : 0]  sink1_data,
-    input [9-1: 0]  sink1_channel,
+    input [107-1   : 0]  sink1_data,
+    input [6-1: 0]  sink1_channel,
     input                       sink1_startofpacket,
     input                       sink1_endofpacket,
     output                      sink1_ready,
-
-    input                       sink2_valid,
-    input [110-1   : 0]  sink2_data,
-    input [9-1: 0]  sink2_channel,
-    input                       sink2_startofpacket,
-    input                       sink2_endofpacket,
-    output                      sink2_ready,
 
 
     // ----------------------
     // Source
     // ----------------------
     output                      src_valid,
-    output [110-1    : 0] src_data,
-    output [9-1 : 0] src_channel,
+    output [107-1    : 0] src_data,
+    output [6-1 : 0] src_channel,
     output                      src_startofpacket,
     output                      src_endofpacket,
     input                       src_ready,
@@ -91,13 +84,13 @@ module nios_mm_interconnect_0_rsp_mux_002
     input clk,
     input reset
 );
-    localparam PAYLOAD_W        = 110 + 9 + 2;
-    localparam NUM_INPUTS       = 3;
+    localparam PAYLOAD_W        = 107 + 6 + 2;
+    localparam NUM_INPUTS       = 2;
     localparam SHARE_COUNTER_W  = 1;
     localparam PIPELINE_ARB     = 0;
-    localparam ST_DATA_W        = 110;
-    localparam ST_CHANNEL_W     = 9;
-    localparam PKT_TRANS_LOCK   = 70;
+    localparam ST_DATA_W        = 107;
+    localparam ST_CHANNEL_W     = 6;
+    localparam PKT_TRANS_LOCK   = 69;
 
     // ------------------------------------------
     // Signals
@@ -114,11 +107,9 @@ module nios_mm_interconnect_0_rsp_mux_002
 
     wire [PAYLOAD_W - 1 : 0] sink0_payload;
     wire [PAYLOAD_W - 1 : 0] sink1_payload;
-    wire [PAYLOAD_W - 1 : 0] sink2_payload;
 
     assign valid[0] = sink0_valid;
     assign valid[1] = sink1_valid;
-    assign valid[2] = sink2_valid;
 
 
     // ------------------------------------------
@@ -128,9 +119,8 @@ module nios_mm_interconnect_0_rsp_mux_002
     // ------------------------------------------
     reg [NUM_INPUTS - 1 : 0] lock;
     always @* begin
-      lock[0] = sink0_data[70];
-      lock[1] = sink1_data[70];
-      lock[2] = sink2_data[70];
+      lock[0] = sink0_data[69];
+      lock[1] = sink1_data[69];
     end
 
     assign last_cycle = src_valid & src_ready & src_endofpacket & ~(|(lock & grant));
@@ -163,10 +153,8 @@ module nios_mm_interconnect_0_rsp_mux_002
     // Input  |  arb shares  |  counter load value
     // 0      |      1       |  0
     // 1      |      1       |  0
-    // 2      |      1       |  0
      wire [SHARE_COUNTER_W - 1 : 0] share_0 = 1'd0;
      wire [SHARE_COUNTER_W - 1 : 0] share_1 = 1'd0;
-     wire [SHARE_COUNTER_W - 1 : 0] share_2 = 1'd0;
 
     // ------------------------------------------
     // Choose the share value corresponding to the grant.
@@ -175,8 +163,7 @@ module nios_mm_interconnect_0_rsp_mux_002
     always @* begin
       next_grant_share =
     share_0 & { SHARE_COUNTER_W {next_grant[0]} } |
-    share_1 & { SHARE_COUNTER_W {next_grant[1]} } |
-    share_2 & { SHARE_COUNTER_W {next_grant[2]} };
+    share_1 & { SHARE_COUNTER_W {next_grant[1]} };
     end
 
     // ------------------------------------------
@@ -242,14 +229,11 @@ module nios_mm_interconnect_0_rsp_mux_002
 
     wire final_packet_1 = 1'b1;
 
-    wire final_packet_2 = 1'b1;
-
 
     // ------------------------------------------
     // Concatenate all final_packet signals (wire or reg) into a handy vector.
     // ------------------------------------------
     wire [NUM_INPUTS - 1 : 0] final_packet = {
-    final_packet_2,
     final_packet_1,
     final_packet_0
     };
@@ -337,15 +321,13 @@ module nios_mm_interconnect_0_rsp_mux_002
 
     assign sink0_ready = src_ready && grant[0];
     assign sink1_ready = src_ready && grant[1];
-    assign sink2_ready = src_ready && grant[2];
 
     assign src_valid = |(grant & valid);
 
     always @* begin
       src_payload =
       sink0_payload & {PAYLOAD_W {grant[0]} } |
-      sink1_payload & {PAYLOAD_W {grant[1]} } |
-      sink2_payload & {PAYLOAD_W {grant[2]} };
+      sink1_payload & {PAYLOAD_W {grant[1]} };
     end
 
     // ------------------------------------------
@@ -356,8 +338,6 @@ module nios_mm_interconnect_0_rsp_mux_002
     sink0_startofpacket,sink0_endofpacket};
     assign sink1_payload = {sink1_channel,sink1_data,
     sink1_startofpacket,sink1_endofpacket};
-    assign sink2_payload = {sink2_channel,sink2_data,
-    sink2_startofpacket,sink2_endofpacket};
 
     assign {src_channel,src_data,src_startofpacket,src_endofpacket} = src_payload;
 endmodule

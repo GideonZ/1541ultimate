@@ -10,7 +10,7 @@ module nios_nios2_gen2_0 (
 		input  wire        clk,                                 //                       clk.clk
 		input  wire        reset_n,                             //                     reset.reset_n
 		input  wire        reset_req,                           //                          .reset_req
-		output wire [29:0] d_address,                           //               data_master.address
+		output wire [28:0] d_address,                           //               data_master.address
 		output wire [3:0]  d_byteenable,                        //                          .byteenable
 		output wire        d_read,                              //                          .read
 		input  wire [31:0] d_readdata,                          //                          .readdata
@@ -18,7 +18,7 @@ module nios_nios2_gen2_0 (
 		output wire        d_write,                             //                          .write
 		output wire [31:0] d_writedata,                         //                          .writedata
 		output wire        debug_mem_slave_debugaccess_to_roms, //                          .debugaccess
-		output wire [29:0] i_address,                           //        instruction_master.address
+		output wire [28:0] i_address,                           //        instruction_master.address
 		output wire        i_read,                              //                          .read
 		input  wire [31:0] i_readdata,                          //                          .readdata
 		input  wire        i_waitrequest,                       //                          .waitrequest

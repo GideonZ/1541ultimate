@@ -39,8 +39,6 @@
 		.pio_out_port                   (<connected-to-pio_out_port>),                   //                    .out_port
 		.reset_reset_n                  (<connected-to-reset_reset_n>),                  //               reset.reset_n
 		.sys_clock_clk                  (<connected-to-sys_clock_clk>),                  //           sys_clock.clk
-		.sys_reset_reset_n              (<connected-to-sys_reset_reset_n>),              //           sys_reset.reset_n
-		.uart_0_rxd                     (<connected-to-uart_0_rxd>),                     //              uart_0.rxd
-		.uart_0_txd                     (<connected-to-uart_0_txd>)                      //                    .txd
+		.sys_reset_reset_n              (<connected-to-sys_reset_reset_n>)               //           sys_reset.reset_n
 	);
 

@@ -454,7 +454,7 @@ endmodule
 // Retrieval info:     <NAMESPACE name = "simgen2">
 // Retrieval info:      <PRIVATE name = "family" value="Cyclone IV E"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "command" value="--simgen_arbitrary_blackbox=+nios_altmemddr_0_phy_alt_mem_phy_seq_wrapper;+nios_altmemddr_0_phy_alt_mem_phy_reconfig;+nios_altmemddr_0_phy_alt_mem_phy_pll;+nios_altmemddr_0_phy_alt_mem_phy_delay --ini=simgen_tri_bus_opt=on"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "parameter" value="SIMGEN_INITIALIZATION_FILE=/tmp/alt6918_2848294151262970302.dir/0037_iptb_gen/nios_altmemddr_0_phy_simgen_init.txt"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "parameter" value="SIMGEN_INITIALIZATION_FILE=/tmp/alt6927_982631220436261760.dir/0001_iptb_gen/nios_altmemddr_0_phy_simgen_init.txt"  type="STRING"  enable="1" />
 // Retrieval info:     </NAMESPACE>
 // Retrieval info:     <NAMESPACE name = "simgen_enable">
 // Retrieval info:      <PRIVATE name = "language" value="Verilog HDL"  type="STRING"  enable="1" />

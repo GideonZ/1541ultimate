@@ -20,6 +20,8 @@ Progress: Adding pio_0 [altera_avalon_pio 15.1]
 Progress: Parameterizing module pio_0
 Progress: Adding timer_0 [altera_avalon_timer 15.1]
 Progress: Parameterizing module timer_0
+Progress: Adding timer_1 [altera_avalon_timer 15.1]
+Progress: Parameterizing module timer_1
 Progress: Adding uart_0 [altera_avalon_uart 15.1]
 Progress: Parameterizing module uart_0
 Progress: Building connections
@@ -54,19 +56,23 @@ Info: io_bridge_0: "nios" instantiated io_bridge "io_bridge_0"
 Info: mem32_to_avalon_0: "nios" instantiated mem32_to_avalon "mem32_to_avalon_0"
 Info: nios2_gen2_0: "nios" instantiated altera_nios2_gen2 "nios2_gen2_0"
 Info: onchip_memory2_0: Starting RTL generation for module 'nios_onchip_memory2_0'
-Info: onchip_memory2_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_onchip_memory2 -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_onchip_memory2/generate_rtl.pl --name=nios_onchip_memory2_0 --dir=/tmp/alt6918_2848294151262970302.dir/0004_onchip_memory2_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt6918_2848294151262970302.dir/0004_onchip_memory2_0_gen//nios_onchip_memory2_0_component_configuration.pl  --do_build_sim=0  ]
+Info: onchip_memory2_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_onchip_memory2 -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_onchip_memory2/generate_rtl.pl --name=nios_onchip_memory2_0 --dir=/tmp/alt6918_2848294151262970302.dir/0040_onchip_memory2_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt6918_2848294151262970302.dir/0040_onchip_memory2_0_gen//nios_onchip_memory2_0_component_configuration.pl  --do_build_sim=0  ]
 Info: onchip_memory2_0: Done RTL generation for module 'nios_onchip_memory2_0'
 Info: onchip_memory2_0: "nios" instantiated altera_avalon_onchip_memory2 "onchip_memory2_0"
 Info: pio_0: Starting RTL generation for module 'nios_pio_0'
-Info: pio_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_pio -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_pio/generate_rtl.pl --name=nios_pio_0 --dir=/tmp/alt6918_2848294151262970302.dir/0005_pio_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt6918_2848294151262970302.dir/0005_pio_0_gen//nios_pio_0_component_configuration.pl  --do_build_sim=0  ]
+Info: pio_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_pio -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_pio/generate_rtl.pl --name=nios_pio_0 --dir=/tmp/alt6918_2848294151262970302.dir/0041_pio_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt6918_2848294151262970302.dir/0041_pio_0_gen//nios_pio_0_component_configuration.pl  --do_build_sim=0  ]
 Info: pio_0: Done RTL generation for module 'nios_pio_0'
 Info: pio_0: "nios" instantiated altera_avalon_pio "pio_0"
 Info: timer_0: Starting RTL generation for module 'nios_timer_0'
-Info: timer_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64//perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64//perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_timer -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_timer/generate_rtl.pl --name=nios_timer_0 --dir=/tmp/alt6918_2848294151262970302.dir/0006_timer_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt6918_2848294151262970302.dir/0006_timer_0_gen//nios_timer_0_component_configuration.pl  --do_build_sim=0  ]
+Info: timer_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64//perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64//perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_timer -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_timer/generate_rtl.pl --name=nios_timer_0 --dir=/tmp/alt6918_2848294151262970302.dir/0042_timer_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt6918_2848294151262970302.dir/0042_timer_0_gen//nios_timer_0_component_configuration.pl  --do_build_sim=0  ]
 Info: timer_0: Done RTL generation for module 'nios_timer_0'
 Info: timer_0: "nios" instantiated altera_avalon_timer "timer_0"
+Info: timer_1: Starting RTL generation for module 'nios_timer_1'
+Info: timer_1:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64//perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64//perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_timer -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_timer/generate_rtl.pl --name=nios_timer_1 --dir=/tmp/alt6918_2848294151262970302.dir/0043_timer_1_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt6918_2848294151262970302.dir/0043_timer_1_gen//nios_timer_1_component_configuration.pl  --do_build_sim=0  ]
+Info: timer_1: Done RTL generation for module 'nios_timer_1'
+Info: timer_1: "nios" instantiated altera_avalon_timer "timer_1"
 Info: uart_0: Starting RTL generation for module 'nios_uart_0'
-Info: uart_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_uart -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_uart/generate_rtl.pl --name=nios_uart_0 --dir=/tmp/alt6918_2848294151262970302.dir/0007_uart_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt6918_2848294151262970302.dir/0007_uart_0_gen//nios_uart_0_component_configuration.pl  --do_build_sim=0  ]
+Info: uart_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_uart -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_uart/generate_rtl.pl --name=nios_uart_0 --dir=/tmp/alt6918_2848294151262970302.dir/0044_uart_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt6918_2848294151262970302.dir/0044_uart_0_gen//nios_uart_0_component_configuration.pl  --do_build_sim=0  ]
 Info: uart_0: Done RTL generation for module 'nios_uart_0'
 Info: uart_0: "nios" instantiated altera_avalon_uart "uart_0"
 Info: avalon_st_adapter: Inserting error_adapter: error_adapter_0
@@ -77,20 +83,21 @@ Info: avalon_st_adapter_004: Inserting error_adapter: error_adapter_0
 Info: avalon_st_adapter_005: Inserting error_adapter: error_adapter_0
 Info: avalon_st_adapter_006: Inserting error_adapter: error_adapter_0
 Info: avalon_st_adapter_007: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_008: Inserting error_adapter: error_adapter_0
 Info: mm_interconnect_0: "nios" instantiated altera_mm_interconnect "mm_interconnect_0"
 Info: irq_mapper: "nios" instantiated altera_irq_mapper "irq_mapper"
 Info: rst_controller: "nios" instantiated altera_reset_controller "rst_controller"
 Info: cpu: Starting RTL generation for module 'nios_nios2_gen2_0_cpu'
-Info: cpu:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64//eperlcmd -I /opt/altera_lite/15.1/quartus/linux64//perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2/cpu_lib -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2/nios_lib -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2 -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2 -- /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2/generate_rtl.epl --name=nios_nios2_gen2_0_cpu --dir=/tmp/alt6918_2848294151262970302.dir/0010_cpu_gen/ --quartus_bindir=/opt/altera_lite/15.1/quartus/linux64/ --verilog --config=/tmp/alt6918_2848294151262970302.dir/0010_cpu_gen//nios_nios2_gen2_0_cpu_processor_configuration.pl  --do_build_sim=0  ]
-Info: cpu: # 2016.04.27 07:23:50 (*) Starting Nios II generation
-Info: cpu: # 2016.04.27 07:23:50 (*)   Checking for plaintext license.
-Info: cpu: # 2016.04.27 07:23:54 (*)   Plaintext license not found.
-Info: cpu: # 2016.04.27 07:23:54 (*)   No license required to generate encrypted Nios II/e.
-Info: cpu: # 2016.04.27 07:23:54 (*)   Elaborating CPU configuration settings
-Info: cpu: # 2016.04.27 07:23:54 (*)   Creating all objects for CPU
-Info: cpu: # 2016.04.27 07:23:55 (*)   Generating RTL from CPU objects
-Info: cpu: # 2016.04.27 07:23:55 (*)   Creating plain-text RTL
-Info: cpu: # 2016.04.27 07:23:55 (*) Done Nios II generation
+Info: cpu:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64//eperlcmd -I /opt/altera_lite/15.1/quartus/linux64//perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2/cpu_lib -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2/nios_lib -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2 -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2 -- /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2/generate_rtl.epl --name=nios_nios2_gen2_0_cpu --dir=/tmp/alt6918_2848294151262970302.dir/0047_cpu_gen/ --quartus_bindir=/opt/altera_lite/15.1/quartus/linux64/ --verilog --config=/tmp/alt6918_2848294151262970302.dir/0047_cpu_gen//nios_nios2_gen2_0_cpu_processor_configuration.pl  --do_build_sim=0  ]
+Info: cpu: # 2016.04.27 09:08:26 (*) Starting Nios II generation
+Info: cpu: # 2016.04.27 09:08:26 (*)   Checking for plaintext license.
+Info: cpu: # 2016.04.27 09:08:30 (*)   Plaintext license not found.
+Info: cpu: # 2016.04.27 09:08:30 (*)   No license required to generate encrypted Nios II/e.
+Info: cpu: # 2016.04.27 09:08:30 (*)   Elaborating CPU configuration settings
+Info: cpu: # 2016.04.27 09:08:30 (*)   Creating all objects for CPU
+Info: cpu: # 2016.04.27 09:08:31 (*)   Generating RTL from CPU objects
+Info: cpu: # 2016.04.27 09:08:31 (*)   Creating plain-text RTL
+Info: cpu: # 2016.04.27 09:08:32 (*) Done Nios II generation
 Info: cpu: Done RTL generation for module 'nios_nios2_gen2_0_cpu'
 Info: cpu: "nios2_gen2_0" instantiated altera_nios2_gen2_unit "cpu"
 Info: mem32_to_avalon_0_avalon_master_translator: "mm_interconnect_0" instantiated altera_merlin_master_translator "mem32_to_avalon_0_avalon_master_translator"
@@ -129,6 +136,6 @@ Info: avalon_st_adapter: "mm_interconnect_0" instantiated altera_avalon_st_adapt
 Info: avalon_st_adapter_003: "mm_interconnect_0" instantiated altera_avalon_st_adapter "avalon_st_adapter_003"
 Info: error_adapter_0: "avalon_st_adapter" instantiated error_adapter "error_adapter_0"
 Info: error_adapter_0: "avalon_st_adapter_003" instantiated error_adapter "error_adapter_0"
-Info: nios: Done "nios" with 42 modules, 119 files
+Info: nios: Done "nios" with 43 modules, 120 files
 Info: qsys-generate succeeded.
 Info: Finished: Create HDL design files for synthesis
