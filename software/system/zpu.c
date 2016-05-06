@@ -141,6 +141,7 @@ int inbyte()
  */
 //void outbyte(int c);
 
+/*
 
 void outbyte(int c)
 {
@@ -149,6 +150,7 @@ void outbyte(int c)
 	ioWrite8(UART_DATA, c);
 }
 
+*/
 
 
 /*
