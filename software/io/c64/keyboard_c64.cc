@@ -201,7 +201,7 @@ int Keyboard_C64 :: getch(void)
 #ifndef _NO_FILE_ACCESS
     static TickType_t previousWake = 0;
     vTaskDelayUntil(&previousWake, 4);
-    printf("{%08x}", previousWake);
+    // printf("{%08x}", previousWake);
     scan();
 #else
     scan();

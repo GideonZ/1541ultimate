@@ -379,7 +379,6 @@ static uint8_t pending;
 		do_switch |= xTaskIncrementTick();
 	}
 	if (do_switch != pdFALSE) {
-		ioWrite8(UART_DATA, 0x2e);
 		vTaskSwitchContext();
 	}
 }
