@@ -188,7 +188,7 @@ def parse_lines(lines):
         if(line.strip() == ''):
             continue
         line_strip = line.strip()
-        if line[0] != ' ':
+        if (line[0] != ' ') and (line[0] != '\t'):
             add_label(line.rstrip())
             if (phase == 2):
                 print "            ", line

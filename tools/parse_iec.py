@@ -394,8 +394,10 @@ def parse_lines(lines):
         if(line.strip() == ''):
             continue
         line_strip = line.strip()
-        if line[0] != ' ':
+        if (line[0] != ' ') and (line[0] != '\t'):
             add_label(line.rstrip())
+            if (phase == 2):
+                print "            ", line
             continue
         #print "Line: '%s'" % line_strip
         line_split = line_strip.split(" ", 1)
@@ -426,12 +428,12 @@ if __name__ == "__main__":
     parse_lines(lines)
     pc = 0
     phase = 2
-    logger.info("Pass 2...")
     logger.setLevel(logging.WARN)
+    logger.info("Pass 2...")
     parse_lines(lines)
 
 #    print program
     
-    dump_bram_init()
+#    dump_bram_init()
     dump_iec_file(outputfile)
     
