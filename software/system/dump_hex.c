@@ -38,9 +38,9 @@ void dump_hex_actual(void *pp, int len, int relative)
             printf("%4x: ", w);
         else
 		    printf("%p: ", p + w);
-        for(t=0;t<DUMP_BYTES;t+=4) {
+        for(t=0;t<DUMP_BYTES;t++) {
             if((w+t) < len) {
-		        printf("%08x ", *((uint32_t *)&(p[w+t])));
+		        printf("%02x ", *((uint8_t *)&(p[w+t])));
 		    } else {
 		        printf("   ");
 		    }

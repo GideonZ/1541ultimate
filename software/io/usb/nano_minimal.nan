@@ -528,14 +528,16 @@ NumberOfChirps
 
 check_command
     LOAD User_Command
-;    CMP  User_Command
-;    BNE  check_command
+	STORE Current_Command
+    CMP  User_Command
+    BNE  check_command
+	LOAD Current_Command
     BNE  _copy_user_cmd
     RET ; zero = no command
 
 _copy_user_cmd
-    LOAD  User_Command
-    STORE Current_Command
+;    LOAD  User_Command
+;    STORE Current_Command
     LOAD  User_Command_DevEP
     STORE Current_Command_DevEP    
     LOAD  User_Command_Length

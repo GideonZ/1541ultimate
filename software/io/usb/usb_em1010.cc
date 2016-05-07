@@ -10,7 +10,7 @@ extern "C" {
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#ifdef NIOS
 	return a;
 #else
 	uint32_t m1, m2;
@@ -22,7 +22,7 @@ __inline uint32_t cpu_to_32le(uint32_t a)
 
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#ifdef NIOS
 	return h;
 #else // assume big endian
     return (h >> 8) | (h << 8);

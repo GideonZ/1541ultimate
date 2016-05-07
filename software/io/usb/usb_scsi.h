@@ -11,7 +11,7 @@
 
 struct t_cbw
 {
-    uint32_t signature;
+    uint8_t  signature[4];
     uint32_t tag;
     uint32_t data_length;
     uint8_t  flags;

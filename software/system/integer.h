@@ -33,6 +33,20 @@ typedef enum { FALSE = 0, TRUE } BOOL;
 #define ST_DWORD(ptr,val)   *(uint8_t*)(ptr)=(uint8_t)(val); *(uint8_t*)((ptr)+1)=(uint8_t)((uint16_t)(val)>>8); *(uint8_t*)((ptr)+2)=(uint8_t)((uint32_t)(val)>>16); *(uint8_t*)((ptr)+3)=(uint8_t)((uint32_t)(val)>>24)
 #endif
 
+#define LD_DWORD_BE(ptr)    (uint32_t)( \
+							 (((uint32_t)(ptr)[0])<<24) | \
+							 (((uint32_t)(ptr)[1])<<16) | \
+							 (((uint32_t)(ptr)[2])<< 8) | \
+							 ((uint32_t)(ptr)[3]) \
+							)
+
+#define ST_DWORD_BE(ptr, val)	(ptr)[0] = (uint8_t)((val) >> 24); \
+								(ptr)[1] = (uint8_t)((val) >> 16); \
+								(ptr)[2] = (uint8_t)((val) >> 8); \
+								(ptr)[3] = (uint8_t)(val);
+
+
+
 #define NR_OF_EL(a)		(sizeof(a) / sizeof(a[0]))
 #define UNREFERENCED_PAR(a)	a=a
 

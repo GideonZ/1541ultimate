@@ -90,7 +90,7 @@ SRCS_CC	 =
 SRCS_ASM =  
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -Os -mno-hw-div -mno-hw-mul -mno-hw-mulx -ffunction-sections 
+OPTIONS  = -g -Os -mno-hw-div -mno-hw-mul -mno-hw-mulx -ffunction-sections -DNIOS
 COPTIONS = $(OPTIONS) -std=c99 
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti
 LINK 	 = ./mb_app.lds

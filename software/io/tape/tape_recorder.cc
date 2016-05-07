@@ -20,12 +20,16 @@ extern "C" BaseType_t tape_recorder_irq(void)
     return pdFALSE; // it will get polled, no immediate action
 }
 
-__inline uint32_t cpu_to_le_32(uint32_t a)
+__inline uint32_t cpu_to_32le(uint32_t a)
 {
-    uint32_t m1, m2;
+#ifdef NIOS
+	return a;
+#else
+	uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
+#endif
 }
 
 TapeRecorder :: TapeRecorder() : SubSystem(SUBSYSID_TAPE_RECORDER)
@@ -236,7 +240,7 @@ void TapeRecorder :: flush()
 		total_length += bytes_written;
     }
     file->seek(16);
-    uint32_t le_size = cpu_to_le_32(total_length);
+    uint32_t le_size = cpu_to_32le(total_length);
     file->write(&le_size, 4, &bytes_written);
 
 	fm->fclose(file);

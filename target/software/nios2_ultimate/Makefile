@@ -143,7 +143,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -DOS  -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = ./mb_app.lds

@@ -7,6 +7,7 @@ extern "C" {
 }
 #include "integer.h"
 #include "usb_hub.h"
+#include "FreeRTOS.h"
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
@@ -204,13 +205,12 @@ void UsbHubDriver :: deinstall(UsbDevice *dev)
 
 void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
 {
-    host->pause_input_pipe(this->irq_transaction);
     //printf("This = %p. HUB (ADDR=%d) IRQ data (%d bytes), at %p: ", this, device->current_address, data_length, irq_data_in);
-    for(int i=0;i<data_length;i++) {
-//        printf("%b ", irq_data_in[i]);
+	configASSERT(data_length <= 4);
+
+	for(int i=0;i<data_length;i++) {
         irq_data[i] = irq_data_in[i];
     }
-    //printf("\n");
 }
 
 void UsbHubDriver :: poll()
@@ -219,7 +219,9 @@ void UsbHubDriver :: poll()
 	if(!irqd)
         return;
 
-    int i;
+	printf("HUB IRQ data: %b\n", irqd);
+
+	int i;
     
     for(int j=0;j<num_ports;j++) {
     	irqd >>=1;
@@ -336,6 +338,7 @@ void UsbHubDriver :: poll()
             }
         }        
     }
+    irq_data[0] = 0;
     host->resume_input_pipe(this->irq_transaction);
 }
 

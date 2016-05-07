@@ -119,6 +119,9 @@ void Usb2 :: init(void)
     	temp = *(src++);
     	*(dst++) = nano_word(temp);
 	}
+    for(int i=size;i<2048;i+=2) {
+    	*(dst++) = 0;
+    }
     uint32_t *pul = (uint32_t *)NANO_BASE;
     uint32_t ul = *pul;
     printf("Nano CPU based USB Controller: %d bytes loaded. First DW: %08x\n", size, ul);
@@ -544,7 +547,12 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
 	uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
 
-    uint32_t addr = (uint32_t)buf;
+    if (((uint32_t)buf) & 3) {
+    	printf("Bulk_in: Unaligned buffer %p\n", buf);
+    	while(1);
+    }
+
+	uint32_t addr = (uint32_t)buf;
 	int total_trans = 0;
 
 	USB2_CMD_DevEP    = pipe->DevEP;
@@ -593,6 +601,11 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
     	return -9;
     }
 
+    if (((uint32_t)buf) & 3) {
+    	printf("Bulk_in: Unaligned buffer %p\n", buf);
+    	while(1);
+    }
+
     // printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
 	uint32_t addr = (uint32_t)buf;
 	int total_trans = 0;
@@ -633,6 +646,7 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		pipe->Command = (result & URES_TOGGLE) ^ URES_TOGGLE; // that's what we start with next time.
 		if (transferred != current_len) { // some bytes remained?
 			printf("CMD res: %4x\n", result);
+			dump_hex_relative(buf, transferred);
 			total_trans = -8;
 			break;
 		}

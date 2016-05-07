@@ -6,15 +6,23 @@
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
-    uint32_t m1, m2;
+#ifdef NIOS
+	return a;
+#else
+	uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
+#endif
 }
 
 __inline uint16_t cpu_to_16le(uint16_t a)
 {
-    return (a >> 8) | (a << 8);
+#ifdef NIOS
+	return a;
+#else
+	return (a >> 8) | (a << 8);
+#endif
 }
 
 // crate and register ourselves!

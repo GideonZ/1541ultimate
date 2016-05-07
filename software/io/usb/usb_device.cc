@@ -9,7 +9,7 @@ extern "C" {
 
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#ifdef NIOS
 	return h;
 #else // assume big endian
     return (h >> 8) | (h << 8);
