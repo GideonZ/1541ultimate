@@ -10,8 +10,7 @@ extern "C" {
 #include "task.h"
 #include "profiler.h"
 
-// #include <endian.h>
-#if __BYTE_ORDER == __LITTLE_ENDIAN
+#ifdef NIOS
 #define nano_word(x) ((x >> 8) | ((x & 0xFF) << 8))
 #else // assume big endian
 #define nano_word(x) x
