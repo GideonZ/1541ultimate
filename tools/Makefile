@@ -25,9 +25,11 @@ CC  = gcc
 
 .PHONY:	all clean
 all:   	bin2hex hex2bin make_array make_mem makeappl promgen checksum dump_vcd dump_rtos_trace
-#ifneq ($(TERM), cygwin)
+
+ifneq ($(SYSTEMDRIVE), C:)
+#	echo $(SYSTEMDRIVE)
 	@$(MAKE) -C 64tass
-#endif
+endif
 
 clean:
 	@rm -f bin2hex
