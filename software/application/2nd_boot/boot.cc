@@ -170,6 +170,7 @@ int main()
 {
 	volatile uint32_t *k = (volatile uint32_t *)0;
 
+    custom_outbyte = 0;
 	printf("*** 1541 Ultimate-II - Bootloader %s - FPGA Version: %2x - %08x %08x ***\n\n",
             BOOT_VERSION, getFpgaVersion(), *k++, *k++);
 

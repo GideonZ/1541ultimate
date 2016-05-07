@@ -47,9 +47,9 @@ int main(int argc, char **argv)
         ioWrite8(UART_DATA, '*');
         jump_run(BOOT2_RUN_ADDR);
     }
-
+    ioWrite8(UART_DATA, '$');
+    custom_outbyte = 0;
     puts("**Primary Boot 3.1**");
-
 
 	SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     SPI_FLASH_DATA = 0xFF;

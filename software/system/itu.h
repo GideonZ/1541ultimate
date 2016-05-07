@@ -98,6 +98,8 @@ uint16_t getMsTimer();
 uint32_t getFpgaCapabilities();
 uint8_t  getFpgaVersion();
 
+extern void (*custom_outbyte)(int c);
+
 #ifdef __cplusplus
 }
 #endif
