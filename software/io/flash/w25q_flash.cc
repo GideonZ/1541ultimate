@@ -116,8 +116,6 @@ Flash *W25Q_Flash :: tester()
 		return NULL;
 	}
 
-	return 0;
-	
 	if(capacity == 0x15) { // 16 Mbit
 		sector_size  = 16;	
 		sector_count = 512;	
