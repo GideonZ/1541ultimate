@@ -12,7 +12,7 @@ use ieee.numeric_std.all;
 entity align_read_to_bram is
 	port  (
 		clock       : in  std_logic;
-
+        reset       : in  std_logic;
         rdata       : in  std_logic_vector(31 downto 0);
         rdata_valid : in  std_logic;
         first_word  : in  std_logic;
@@ -36,7 +36,7 @@ end align_read_to_bram;
 --    Read from 0005 => 05.06.07.04    MSB first
 --                               **    Write these bytes to BRAM address 0
 --                      ** ** ** --    Write these bytes to BRAM address 1
---    Read from 0009 => 09.0A.0B.09
+--    Read from 0009 => 09.0A.0B.08
 --                               **    Write these bytes to BRAM address 1
 --                      ** ** ** --    Write these bytes to BRAM address 2
 --    ...

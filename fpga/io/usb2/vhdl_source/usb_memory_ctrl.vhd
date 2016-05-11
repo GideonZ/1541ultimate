@@ -216,6 +216,7 @@ begin
     i_align: entity work.align_read_to_bram
     port map (
         clock       => clock,
+        reset       => reset,
         rdata       => mem_resp.data,
         rdata_valid => rdata_valid,
         first_word  => mem_resp.dack_tag(6),
