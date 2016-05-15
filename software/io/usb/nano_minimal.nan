@@ -173,7 +173,7 @@ _sim_restart
     LOAD  #3
     STORE RAM_STATUS 
     OUTP  SET_SOF_ENABLE
-    OUTP  SEND_INTERRUPT
+	CALL  status_irq
     
 _waiting_for_reset_sim
     CALL  check_command
@@ -243,7 +243,7 @@ _device_detected
     OUTP  DISCONNECTED
     LOAD  #1
     STORE RAM_STATUS
-    OUTP  SEND_INTERRUPT
+	CALL  status_irq
 ;    OUTP  SET_CONNECTED
     
 _waiting_for_reset
@@ -252,7 +252,7 @@ _waiting_for_reset
     CALL  check_disconnect
     BEQ   _waiting_for_reset
 _disconnected
-    OUTP  SEND_INTERRUPT
+	CALL  status_irq
     BRA   _start2
     
 do_reset
@@ -1137,6 +1137,12 @@ attr_fifo_push
     STORE  head_pointer_atr
     RET
     
+status_irq
+	LOAD  #$FFFF
+	CALL  attr_fifo_push
+    OUTP  SEND_INTERRUPT
+	RET
+
 fifo_temp_data
     .dw 0
 fifo_temp_addr

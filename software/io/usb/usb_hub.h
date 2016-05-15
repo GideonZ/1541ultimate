@@ -15,6 +15,7 @@ class UsbHubDriver : public UsbDriver
 
     int  irq_transaction;
     int  port_in_reset;
+    int  reset_timeout;
     uint8_t buf[64];
     uint8_t dummy[16];
     volatile uint8_t irq_data[4];

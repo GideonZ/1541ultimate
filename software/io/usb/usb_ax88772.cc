@@ -300,7 +300,7 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
 		ipipe.DevEP = uint16_t((device->current_address << 8) | irq_in);
 		ipipe.Interval = 8000; // 1 Hz
 		ipipe.Length = 8; // just read 8 bytes max
-		ipipe.MaxTrans = iin->max_packet_size;
+		ipipe.MaxTrans = 16; // iin->max_packet_size;
 		ipipe.SplitCtl = 0;
 		ipipe.Command = 0; // driver will fill in the command
 
@@ -371,10 +371,10 @@ void UsbAx88772Driver :: poll(void)
 
 void UsbAx88772Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 {
-    //printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
-	//for(int i=0;i<data_len;i++) {
-	//	printf("%b ", irq_data[i]);
-	//} printf("\n");
+    printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
+	for(int i=0;i<data_len;i++) {
+		printf("%b ", irq_data[i]);
+	} printf("\n");
 
 	if(irq_data[2] & 0x01) {
 		if(!link_up) {

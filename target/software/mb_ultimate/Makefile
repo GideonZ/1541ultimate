@@ -90,7 +90,6 @@ SRCS_CC	 =  small_printf.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
 			usb_base.cc \
-			usb2.cc \
 			usb_device.cc \
 			usb_scsi.cc \
 			usb_hub.cc \

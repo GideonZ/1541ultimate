@@ -12,8 +12,8 @@
 #include "profiler.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "usb2.h"
 #include "dump_hex.h"
+#include "usb_base.h"
 
 SocketTest socket_test; // global that causes the object to exist
 

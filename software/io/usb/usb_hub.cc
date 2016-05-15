@@ -43,6 +43,7 @@ UsbHubDriver :: UsbHubDriver()
     host = NULL;
     memset((void *)irq_data, 0, 4);
     port_in_reset = 0;
+    reset_timeout = 0;
 }
 
 UsbHubDriver :: ~UsbHubDriver()
@@ -201,6 +202,12 @@ void UsbHubDriver :: install(UsbDevice *dev)
 void UsbHubDriver :: deinstall(UsbDevice *dev)
 {
     host->free_input_pipe(irq_transaction);
+
+    for(int i=0;i<num_ports;i++) {
+    	if (children[i]) {
+    		host->queueDeinstall(children[i]);
+    	}
+    }
 }
 
 void UsbHubDriver :: poll()
@@ -233,12 +240,11 @@ void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
 										c_get_port_status, 8,
 										buf, 8);
             if(i == 4) {
-/*
+
             	printf("Port %d of hub on addr %d status:", j+1, device->current_address);
                 for(int b=0;b<4;b+=2) {
                     printf("%b%b ", buf[b+1], buf[b]);
-                } printf("\n");
-*/
+                } printf(" Port in reset: %d\n", port_in_reset);
 
                 c_clear_port_feature[4] = uint8_t(j+1);
 
@@ -260,6 +266,7 @@ void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
 													   c_set_port_feature, 8,
 													   dummy, 8);
 							port_in_reset = j+1;
+							reset_timeout = 4;
                     	}
                     } else { // disconnect
                         c_clear_port_feature[2] = C_PORT_CONNECTION;
@@ -294,9 +301,9 @@ void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
                 							   dummy, 8);
                 }
                 if(buf[2] & BIT_PORT_RESET) {
-                    //printf("* RESET CHANGE *\n");
-                	port_in_reset = 0;
+                    printf("* RESET CHANGE %d *\n", j+1);
                 	if(buf[0] & BIT_PORT_ENABLE) {
+                    	port_in_reset = 0;
 						if(children[j]) {
 							printf("*** ERROR *** Device already present! ***\n");
 							host->deinstall_device(children[j]);
@@ -332,13 +339,20 @@ void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
 								children[j] = d;
 							}
 						}
+                    } else {
+                    	if (reset_timeout <= 0) {
+                    		port_in_reset = 0;
+                    		printf("RESET TIMEOUT\n");
+                    	} else {
+                    		reset_timeout --;
+                    	}
                     }
                 }
             } else {
                 printf("Failed to read port %d status. Got %d bytes.\n", j+1, i);
                 continue;
             }
-        }        
+        }
     }
     irq_data[0] = 0;
     host->resume_input_pipe(this->irq_transaction);
@@ -354,7 +368,7 @@ void UsbHubDriver :: reset_port(int port)
 {
     c_set_port_feature[2] = PORT_RESET;
     c_set_port_feature[4] = uint8_t(port+1);
-    printf("HUB: Issuing reset on port %d.\n", port+1);
+    printf("HUB: Requested to issue reset on port %d.\n", port+1);
 	host->control_exchange(&device->control_pipe,
 					       c_set_port_feature, 8,
 						   dummy, 8);

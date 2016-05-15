@@ -11,13 +11,13 @@
 class UsbDevice;
 class UsbDriver;
 
-#define USB2_MAX_DEVICES 16
 
 extern "C" BaseType_t usb_irq(void);
 
 struct usb_event {
 	uint16_t fifo_word[2];
 };
+
 struct usb_packet {
 	uint8_t *data;
 	void *object;

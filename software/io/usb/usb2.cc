@@ -29,7 +29,6 @@ static void poll_usb2(void *a)
 	usb2.init();
 	while(1) {
 		usb2.poll();
-		vTaskDelay(20);
 	}
 }
 
@@ -49,8 +48,9 @@ Usb2 :: Usb2()
     if(getFpgaCapabilities() & CAPAB_USB_HOST2) {
     	mutex = xSemaphoreCreateMutex();
         queue = xQueueCreate(64, sizeof(struct usb_event));
+        cleanup_queue = xQueueCreate(16, sizeof(UsbDevice *));
 
-    	NANO_START = 0;
+        NANO_START = 0;
         uint16_t *dst = (uint16_t *)NANO_BASE;
         for(int i=0; i<2048; i+=2) {
         	*(dst++) = 0;
@@ -85,6 +85,7 @@ void Usb2 :: input_task_impl(void)
 	struct usb_packet pkt;
 	while(1) {
 		if (xQueueReceive(queue, &ev, 5000) == pdTRUE) {
+			printf("{%04x:%04x}", ev.fifo_word[0], ev.fifo_word[1]);
 			PROFILER_SUB = 5;
 			process_fifo(&ev, &pkt);
 
@@ -173,13 +174,11 @@ void Usb2 :: deinit(void)
 
 }
 
-void Usb2 :: poll()
+void Usb2 :: handle_status(uint16_t new_status)
 {
-	uint16_t usb_status = USB2_STATUS;
-//	printf("USB2 status: %04x\n", usb_status);
-	if (prev_status != usb_status) {
-		prev_status = usb_status;
-		if (usb_status & USTAT_CONNECTED) {
+	if (prev_status != new_status) {
+		prev_status = new_status;
+		if (new_status & USTAT_CONNECTED) {
 			if (!device_present) {
 				device_present = true;
 				attach_root();
@@ -187,11 +186,31 @@ void Usb2 :: poll()
         } else {
         	if (device_present) {
 				device_present = false;
-				clean_up();
+				queuedDeinstall(rootDevice);
         	}
 		}
     }
+}
+
+void Usb2 :: queuedDeinstall(Device *device)
+{
+	xQueueSend(cleanup_queue, &device, 500000);
+}
+
+void Usb2 :: poll()
+{
+	UsbDevice *device;
+	BaseType_t doCleanup;
+
+	do {
+		doCleanup = xQueueReceive(cleanup_queue, &device, 20);
+		if (doCleanup == pdTRUE) {
+			deinstall_device(device);
+		}
+	} while(doCleanup == pdTRUE);
+
 	for(int i=0;i<USB_MAX_DEVICES;i++) {
+
 		UsbDevice *dev = device_list[i];
 		if(dev) {
 			UsbDriver *drv = dev->driver;
@@ -210,10 +229,17 @@ BaseType_t Usb2 :: irq_handler(void)
 
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 	while (get_fifo(&read)) {
-		event.fifo_word[state++] = read;
+		if (read == 0xFFFF) {
+			event.fifo_word[0] = read;
+			event.fifo_word[1] = USB2_STATUS;
+			state = 2;
+		} else {
+			event.fifo_word[state++] = read;
+		}
+
 		if (state == 2) {
 			state = 0;
-			//printf("[%04x:%04x]", event.fifo_word[0], event.fifo_word[1]);
+			printf("[%04x:%04x]", event.fifo_word[0], event.fifo_word[1]);
 			xQueueSendFromISR(queue, &event, &xHigherPriorityTaskWoken);
 		}
 	}
@@ -230,7 +256,8 @@ void Usb2 :: process_fifo(struct usb_event *ev, struct usb_packet *pkt)
 
 	if ((ev->fifo_word[0] & 0xFFF0) == 0xFFF0) {
 		if (pipe == 15) {
-			printf("USB Other IRQ. Status = %b\n", USB2_STATUS);
+			printf("USB Other IRQ. Status = %b\n", ev->fifo_word[1]);
+			handle_status(ev->fifo_word[1]);
 			return;
 		} else {
 			// pause_input_pipe(pipe);
@@ -238,7 +265,6 @@ void Usb2 :: process_fifo(struct usb_event *ev, struct usb_packet *pkt)
 			error = 1;
 		}
 	}
-	//printf("%4x,%4x,%d\n", read1, read2, success);
 
 	uint8_t *buffer = 0;
 	if (!error) {
@@ -362,10 +388,11 @@ void Usb2 :: pause_input_pipe(int index)
 
 void Usb2 :: resume_input_pipe(int index)
 {
-	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
+	volatile uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
 	uint16_t command = pipe[PIPE_OFFS_Command];
 	command &= ~UCMD_PAUSED;
 	pipe[PIPE_OFFS_Command] = command;
+	printf("Input pipe %d resumed: %04x\n", index, pipe[PIPE_OFFS_Command]);
 }
 
 void Usb2 :: free_input_buffer(int inpipe, uint8_t *buffer)
