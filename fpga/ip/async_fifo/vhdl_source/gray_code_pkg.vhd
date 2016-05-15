@@ -13,7 +13,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-package tl_gray_code_pkg is
+package gray_code_pkg is
 
     ---------------------------------------------------------------------------
     -- type
@@ -26,13 +26,13 @@ package tl_gray_code_pkg is
     function to_unsigned (arg : t_gray) return unsigned;
     function to_gray (arg : unsigned) return t_gray;
 
-end tl_gray_code_pkg;
+end gray_code_pkg;
 
 -------------------------------------------------------------------------------
 -- package body
 -------------------------------------------------------------------------------
 
-package body tl_gray_code_pkg is
+package body gray_code_pkg is
 
     function to_unsigned (arg : t_gray) return unsigned is
         alias myarg : t_gray(1 to arg'length) is arg; -- force direction 
@@ -67,6 +67,3 @@ package body tl_gray_code_pkg is
     end function;
 
 end;
-
-
-
