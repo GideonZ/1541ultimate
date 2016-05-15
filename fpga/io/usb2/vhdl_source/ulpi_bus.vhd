@@ -49,6 +49,7 @@ architecture gideon of ulpi_bus is
     signal ulpi_data_out    : std_logic_vector(7 downto 0);
 
     signal ulpi_data_in     : std_logic_vector(7 downto 0);
+    signal ulpi_stp_d1      : std_logic; -- for signaltap only
     signal ulpi_dir_d1      : std_logic;
     signal ulpi_dir_d2      : std_logic;
     signal ulpi_dir_d3      : std_logic;
@@ -97,6 +98,8 @@ begin
 
             reg_cmd_d2   <= ulpi_data_in(7) and ulpi_data_in(6);
             reg_cmd_d3   <= reg_cmd_d2;
+
+            ulpi_stp_d1  <= ulpi_stop;
 
             ulpi_dir_d1  <= ULPI_DIR;
             ulpi_dir_d2  <= ulpi_dir_d1;

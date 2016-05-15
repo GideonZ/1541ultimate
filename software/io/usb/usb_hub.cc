@@ -203,6 +203,11 @@ void UsbHubDriver :: deinstall(UsbDevice *dev)
     host->free_input_pipe(irq_transaction);
 }
 
+void UsbHubDriver :: poll()
+{
+
+}
+
 void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
 {
     //printf("This = %p. HUB (ADDR=%d) IRQ data (%d bytes), at %p: ", this, device->current_address, data_length, irq_data_in);
@@ -211,10 +216,7 @@ void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
 	for(int i=0;i<data_length;i++) {
         irq_data[i] = irq_data_in[i];
     }
-}
 
-void UsbHubDriver :: poll()
-{
 	uint8_t irqd = irq_data[0];
 	if(!irqd)
         return;

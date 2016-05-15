@@ -26,9 +26,12 @@ SRCS_C   =	itu.c \
             time.c \
             i2c.c \
             mdio.c \
-            nios_main.c
-            
-SRCS_CC	 =  small_printf.cc \
+            nios_main.c \
+            alt_malloc_lock.c \
+            alt_do_ctors.c
+                        
+SRCS_CC	 =  u2p_init.cc \
+			small_printf.cc \
             stream.cc \
 			stream_uart.cc \
 			memory_rtos.cc \
@@ -120,6 +123,7 @@ SRCS_CC	 =  small_printf.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios_sigma
+VPATH +=	$(PATH_SW)/system/altera
 VPATH +=	$(PATH_SW)/niosbsp
 VPATH +=	$(PATH_SW)/niosbsp/HAL/inc
 VPATH +=	$(PATH_SW)/niosbsp/drivers/inc
@@ -149,8 +153,9 @@ CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermis
 LINK 	 = ./mb_app.lds
 LLIB     =  -L $(PATH_SW)/niosbsp \
 			-L ../nios2_elf_lwip/result \
-            -L $(NIOS_TOOLCHAIN)/nios2-elf/lib \
-            -L $(NIOS_TOOLCHAIN)/lib/gcc/nios2-elf/4.8.3
+            -L $(NIOS_TOOLCHAIN)/nios2-elf/lib/mno-hw-mul \
+            -L $(NIOS_TOOLCHAIN)/lib/gcc/nios2-elf/4.8.3/mno-hw-mul
+# NOTE: The nios toolchain points to 
 LIBS     =  -lc -lhal_bsp -llwip -lc -lgcc 
 LFLAGS   = --gc-sections 
 

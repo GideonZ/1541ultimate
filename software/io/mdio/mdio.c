@@ -73,7 +73,7 @@ void mdio_write(uint8_t reg, uint16_t data)
     mdio_bit(0);
 
     for (int i=0; i<16; i++) {
-        mdio_bit(reg & 0x8000);
+        mdio_bit(data & 0x8000);
         data <<= 1;
     }
     mdio_bit(1);

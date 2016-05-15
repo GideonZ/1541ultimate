@@ -29,7 +29,7 @@ uint8_t c_write_ipg_regs[]    = { 0x40, 0x12, 0x1D, 0x00, 0x12, 0x00, 0x00, 0x00
 uint8_t c_get_mac_address[]   = { 0xC0, 0x13, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00 };
 uint8_t c_read_phy_addr[]     = { 0xC0, 0x19, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
 uint8_t c_read_medium_mode[]  = { 0xC0, 0x1A, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00 };
-uint8_t c_write_medium_mode[] = { 0x40, 0x1B, 0x36, 0x03, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_write_medium_mode[] = { 0x40, 0x1B, 0x16, 0x03, 0x00, 0x00, 0x00, 0x00 }; // disabled pause frames
 uint8_t c_write_gpio[]        = { 0x40, 0x1f, 0xB0, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_write_softw_rst1[]  = { 0x40, 0x20, 0x48, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_write_softw_rst2[]  = { 0x40, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -148,6 +148,36 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     device = dev;
     
 	dev->set_configuration(dev->get_device_config()->config_value);
+
+/*
+	static uint8_t testje[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+    static uint8_t testje_met_offset[16] = { 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 };
+    static uint8_t testje_512_offset[516];
+
+    printf("Testje: %p %p\n", testje, testje_met_offset);
+    for(int i=0; i<=8; i++) {
+    	host->bulk_out(&device->control_pipe, testje, i);
+    	for(int j=0;j<16;j++) {
+    		testje[j] += 16;
+    	}
+    }
+    for(int i=0; i<=8; i++) {
+    	host->bulk_out(&device->control_pipe, &testje_met_offset[2], i);
+    	for(int j=0;j<16;j++) {
+    		testje_met_offset[j] += 16;
+    	}
+    }
+    for(int i=0;i<512;i++) {
+    	testje_512_offset[i+2] = (uint8_t)i;
+    }
+    testje_512_offset[0] = 0xEE;
+    testje_512_offset[1] = 0xDD;
+    testje_512_offset[514] = 0xCC;
+    testje_512_offset[515] = 0xBB;
+
+    device->control_pipe.MaxTrans = 512;
+    host->bulk_out(&device->control_pipe, &testje_512_offset[2], 512);
+*/
 
     netstack = getNetworkStack(this, UsbAx88772Driver_output, UsbAx88772Driver_free_buffer);
     if(!netstack) {
@@ -269,7 +299,7 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     	struct t_pipe ipipe;
 		ipipe.DevEP = uint16_t((device->current_address << 8) | irq_in);
 		ipipe.Interval = 8000; // 1 Hz
-		ipipe.Length = 16; // just read 16 bytes max
+		ipipe.Length = 8; // just read 8 bytes max
 		ipipe.MaxTrans = iin->max_packet_size;
 		ipipe.SplitCtl = 0;
 		ipipe.Command = 0; // driver will fill in the command
@@ -560,8 +590,6 @@ uint8_t UsbAx88772Driver :: output_packet(uint8_t *buffer, int pkt_len)
     size[1] = uint8_t(pkt_len >> 8);
     size[2] = size[0] ^ 0xFF;
     size[3] = size[1] ^ 0xFF;
-
-	//dump_hex(p, p->len + sizeof(struct pbuf));
 
 	host->bulk_out(&bulk_out_pipe, size, pkt_len + 4);
 

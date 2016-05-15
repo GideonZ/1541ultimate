@@ -715,8 +715,6 @@ determine_length
     LOAD Current_Command_MaxTrans
 _no_truncate
     STORE CurrentLength
-    ADD   #3
-    AND   #$FFFC
     ADD   Current_Word_Offset
     ADD   #3
     OUTP  MEM_TRANSFER_READ
@@ -1015,15 +1013,18 @@ _prepare_circ
     CALL  _other_params
     CALL  _execute_cmd
 
+	; Not required to call store updated command, because
+	; when the transfer had an error, we pause the pipe, which also updates the command
+	; and when it is successful, pause pipe will also be called, see below
+    ; LOAD  Current_Command
+    ; CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
+
     ;; Now what will we tell the host?  Was the transfer successful?
     LOAD  Transferred
     BEQ   _unsuccessful
 
-    LOAD  Current_Command
-	 ; we add the pause bit, so that it will only occur once
-    OR    #CMD_REQ_PAUSED
-    CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
-
+	CALL  pause_pipe  ; Circular data always gets paused, because they represent interrupts
+	
     ;; report back to host
     LOAD  Circ_Offset
     OR    PipeNumber
@@ -1041,12 +1042,19 @@ _prepare_circ
     STORE Circ_Offset
     BRA   _nxt_pipe
     
+pause_pipe
+    LOAD  Current_Command
+	 ; we add the pause bit, so that it will only occur once
+    OR    #CMD_REQ_PAUSED
+    BRA  store_updated_command ; We do this to make sure we will expect the correct toggle next time
+
 _unsuccessful
     LOAD Current_Command_Result
     AND  #CMD_RES_MASK
     CMP  #CMD_RES_NAK
     BEQ  _nxt_pipe   ; we just got NAK, no worries, don't report    
 
+	CALL  pause_pipe
     LOAD #$FFF0
     OR   PipeNumber
     CALL attr_fifo_push

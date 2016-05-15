@@ -15,6 +15,16 @@ class UsbDriver;
 
 extern "C" BaseType_t usb_irq(void);
 
+struct usb_event {
+	uint16_t fifo_word[2];
+};
+struct usb_packet {
+	uint8_t *data;
+	void *object;
+	uint16_t  length;
+	uint16_t  pipe;
+};
+
 typedef enum {
 	e_circular = 0,
 	e_block = 1
@@ -24,8 +34,10 @@ class Usb2 : public UsbBase
 {
 	QueueHandle_t queue;
 	SemaphoreHandle_t mutex;
-	uint16_t fifo_word[2];
+
+	struct usb_event event;
 	int state;
+	int irq_count;
 
     void  (*inputPipeCallBacks[USB2_NUM_PIPES])(uint8_t *buf, int len, void *obj);
     void  *inputPipeObjects[USB2_NUM_PIPES];
@@ -40,7 +52,7 @@ class Usb2 : public UsbBase
     bool  get_fifo(uint16_t *out);
     bool  put_block_fifo(uint16_t in);
 
-    BaseType_t process_fifo(void);
+    void process_fifo(struct usb_event *, struct usb_packet *);
 
     int   open_pipe();
     void  init_pipe(int index, struct t_pipe *init);

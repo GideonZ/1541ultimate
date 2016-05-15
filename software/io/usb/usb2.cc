@@ -24,8 +24,6 @@ uint16_t *block_fifo_data = (uint16_t *)BLOCK_FIFO_BASE;
 
 Usb2 usb2; // the global
 
-volatile int irq_count;
-
 static void poll_usb2(void *a)
 {
 	usb2.init();
@@ -36,28 +34,31 @@ static void poll_usb2(void *a)
 }
 
 extern "C" BaseType_t usb_irq() {
-	return usb2.irq_handler();
+	BaseType_t xHigherPriorityTaskWoken = usb2.irq_handler();
+	// portEND_SWITCHING_ISR(xHigherPriorityTaskWoken);
+	return xHigherPriorityTaskWoken;
 }
-
-struct usb_packet {
-	uint8_t *data;
-	void *object;
-	uint16_t  length;
-	uint16_t  pipe;
-};
 
 Usb2 :: Usb2()
 {
-    prev_status = 0xFF;
+	irq_count = 0;
+	prev_status = 0xFF;
     blockBufferBase = NULL;
     circularBufferBase = NULL;
     
     if(getFpgaCapabilities() & CAPAB_USB_HOST2) {
     	mutex = xSemaphoreCreateMutex();
-        queue = xQueueCreate(64, sizeof(struct usb_packet));
+        queue = xQueueCreate(64, sizeof(struct usb_event));
+
+    	NANO_START = 0;
+        uint16_t *dst = (uint16_t *)NANO_BASE;
+        for(int i=0; i<2048; i+=2) {
+        	*(dst++) = 0;
+        }
+        ioWrite8(ITU_IRQ_DISABLE, 0x04);
+        ioWrite8(ITU_IRQ_CLEAR, 0x04);
 
         xTaskCreate( poll_usb2, "USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
-        ioWrite8(ITU_IRQ_ENABLE, 0x04);
     } else {
         printf("No USB2 hardware found.\n");
     }
@@ -80,12 +81,19 @@ void Usb2 :: input_task_start(void *u)
 void Usb2 :: input_task_impl(void)
 {
 	printf("USB input task is now running. this = %p\n", this);
+	struct usb_event ev;
 	struct usb_packet pkt;
 	while(1) {
-		if (xQueueReceive(queue, &pkt, 5000) == pdTRUE) {
+		if (xQueueReceive(queue, &ev, 5000) == pdTRUE) {
 			PROFILER_SUB = 5;
+			process_fifo(&ev, &pkt);
+
 			if (!pkt.data) { // error code
-				((UsbDriver *)pkt.object)->pipe_error(pkt.pipe);
+				if (!pkt.object) {
+					printf("** INVALID USB PACKET RECEIVED IN QUEUE! Length: %d, Pipe: %d\n", pkt.length, pkt.pipe);
+				} else {
+					((UsbDriver *)pkt.object)->pipe_error(pkt.pipe);
+				}
 			} else {
 				inputPipeCallBacks[pkt.pipe](pkt.data, pkt.length, pkt.object);
 			}
@@ -142,6 +150,8 @@ void Usb2 :: init(void)
 	}
 	BLOCK_FIFO_HEAD = BLOCK_FIFO_ENTRIES - 1;
 	state = 0;
+	ioWrite8(ITU_IRQ_CLEAR,  0x04);
+	ioWrite8(ITU_IRQ_ENABLE, 0x04);
 	NANO_START = 1;
 
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
@@ -195,30 +205,36 @@ void Usb2 :: poll()
 BaseType_t Usb2 :: irq_handler(void)
 {
 	PROFILER_SUB = 2;
+	irq_count++;
 	uint16_t read;
 
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 	while (get_fifo(&read)) {
-		fifo_word[state++] = read;
+		event.fifo_word[state++] = read;
 		if (state == 2) {
 			state = 0;
-			process_fifo();
+			//printf("[%04x:%04x]", event.fifo_word[0], event.fifo_word[1]);
+			xQueueSendFromISR(queue, &event, &xHigherPriorityTaskWoken);
 		}
 	}
 	PROFILER_SUB = 0;
-	return pdFALSE;
+	return xHigherPriorityTaskWoken;
 }
 
-BaseType_t Usb2 :: process_fifo(void)
+void Usb2 :: process_fifo(struct usb_event *ev, struct usb_packet *pkt)
 {
-	int pipe = fifo_word[0] & 0x0F;
+	int pipe = ev->fifo_word[0] & 0x0F;
 	int error = 0;
-	if ((fifo_word[0] & 0xFFF0) == 0xFFF0) {
+
+	pkt->data = 0;
+
+	if ((ev->fifo_word[0] & 0xFFF0) == 0xFFF0) {
 		if (pipe == 15) {
 			printf("USB Other IRQ. Status = %b\n", USB2_STATUS);
-			return pdFALSE;
+			return;
 		} else {
-			pause_input_pipe(pipe);
-			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, fifo_word[1]);
+			// pause_input_pipe(pipe);
+			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, ev->fifo_word[1]);
 			error = 1;
 		}
 	}
@@ -227,25 +243,20 @@ BaseType_t Usb2 :: process_fifo(void)
 	uint8_t *buffer = 0;
 	if (!error) {
 		if (inputPipeBufferMethod[pipe] == e_block) {
-			uint16_t idx = (fifo_word[0] & 0xFFF0) / 384;
+			uint16_t idx = (ev->fifo_word[0] & 0xFFF0) / 384;
 			free_map[idx] = 1; // allocated
-			buffer = (uint8_t *) & blockBufferBase[fifo_word[0] & 0xFFF0];
+			buffer = (uint8_t *) & blockBufferBase[ev->fifo_word[0] & 0xFFF0];
 		} else {
-			buffer = (uint8_t *) & circularBufferBase[fifo_word[0] & 0xFFF0];
+			buffer = (uint8_t *) & circularBufferBase[ev->fifo_word[0] & 0xFFF0];
 		}
 	}
 
-	struct usb_packet pkt;
-	pkt.data = buffer; // will be 0 upon error!
-	pkt.length = fifo_word[1];
-	pkt.object = inputPipeObjects[pipe];
-	pkt.pipe = pipe;
+	pkt->data = buffer; // will be 0 upon error!
+	pkt->length = ev->fifo_word[1];
+	pkt->object = inputPipeObjects[pipe];
+	pkt->pipe = pipe;
 
-	BaseType_t retval;
 	PROFILER_SUB = 3;
-	xQueueSendFromISR(queue, &pkt, &retval);
-	PROFILER_SUB = 4;
-	return retval;
 }
 
 bool Usb2 :: get_fifo(uint16_t *out)
@@ -547,8 +558,8 @@ int  Usb2 :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
 	uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
 
-    if (((uint32_t)buf) & 3) {
-    	printf("Bulk_in: Unaligned buffer %p\n", buf);
+    if (((uint32_t)buf) & 1) {
+    	printf("Bulk_out: Unaligned buffer %p\n", buf);
     	while(1);
     }
 
@@ -645,9 +656,9 @@ int  Usb2 :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 		len -= transferred;
 		pipe->Command = (result & URES_TOGGLE) ^ URES_TOGGLE; // that's what we start with next time.
 		if (transferred != current_len) { // some bytes remained?
-			printf("CMD res: %4x\n", result);
-			dump_hex_relative(buf, transferred);
-			total_trans = -8;
+			//printf("CMD res: %4x\n", result);
+			//dump_hex_relative(buf, transferred);
+			//total_trans = -8;
 			break;
 		}
 	} while (len > 0);

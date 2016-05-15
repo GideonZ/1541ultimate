@@ -235,6 +235,12 @@ architecture rtl of u2p_nios is
     signal eth_rx_eof          : std_logic;
     signal eth_rx_valid        : std_logic;
 
+    signal eth_tx_data         : std_logic_vector(7 downto 0);
+    signal eth_tx_sof          : std_logic;
+    signal eth_tx_eof          : std_logic;
+    signal eth_tx_valid        : std_logic;
+    signal eth_tx_ready        : std_logic;
+
 begin
     process(RMII_REFCLK)
     begin
@@ -482,12 +488,23 @@ begin
         eth_rx_sof   => eth_rx_sof,
         eth_rx_eof   => eth_rx_eof,
         eth_rx_valid => eth_rx_valid,
-        eth_tx_data  => X"00",
-        eth_tx_sof   => '0',
-        eth_tx_eof   => '0',
-        eth_tx_valid => '0',
-        eth_tx_ready => open,
+        eth_tx_data  => eth_tx_data,
+        eth_tx_sof   => eth_tx_sof,
+        eth_tx_eof   => eth_tx_eof,
+        eth_tx_valid => eth_tx_valid,
+        eth_tx_ready => eth_tx_ready,
         ten_meg_mode => '0' );
+
+    i_packet: entity work.packet_generator
+    port map (
+        clock        => RMII_REFCLK,
+        reset        => not por_n,
+        eth_tx_data  => eth_tx_data,
+        eth_tx_sof   => eth_tx_sof,
+        eth_tx_eof   => eth_tx_eof,
+        eth_tx_valid => eth_tx_valid,
+        eth_tx_ready => eth_tx_ready );
+    
 
 
     process(ulpi_clock)

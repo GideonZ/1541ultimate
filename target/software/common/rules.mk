@@ -101,6 +101,7 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 %.o: %.c
 	@echo Compiling $(<F)
 	@$(CC) $(COPTIONS) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
+	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 %.o: %.cc
 	@echo Compiling $(<F)

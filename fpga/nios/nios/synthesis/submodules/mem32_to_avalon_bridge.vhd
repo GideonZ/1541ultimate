@@ -43,18 +43,19 @@ port (
 end entity;
 
 architecture rtl of mem32_to_avalon_bridge is
-    signal wr   : unsigned(1 downto 0);
-    signal rd   : unsigned(1 downto 0);
+    signal wr   : unsigned(2 downto 0);
+    signal rd   : unsigned(2 downto 0);
+    signal full : std_logic;
     type t_tag_store is array(natural range <>) of std_logic_vector(7 downto 0);
-    signal tag_store    : t_tag_store(0 to 3);
+    signal tag_store    : t_tag_store(0 to 7);
     type t_offset_store is array(natural range <>) of std_logic_vector(1 downto 0);
-    signal offset_store : t_offset_store(0 to 3);
+    signal offset_store : t_offset_store(0 to 7);
 begin
     memresp_rack_tag <= X"00" when avm_ready = '0' else memreq_tag;
-    memresp_rack     <= avm_ready and memreq_request;
+    memresp_rack     <= avm_ready and memreq_request and not full;
 
-    avm_read        <= memreq_request and memreq_read_writen;
-    avm_write       <= memreq_request and not memreq_read_writen;
+    avm_read        <= memreq_request and not full and memreq_read_writen;
+    avm_write       <= memreq_request and not full and not memreq_read_writen;
     avm_address     <= memreq_address(25 downto 2) & "00"; 
 
     -- Avalon is little endian.
@@ -77,13 +78,15 @@ begin
         memreq_byte_en(0 downto 0) & memreq_byte_en(3 downto 1) when "11",
         memreq_byte_en                                        when others;
         
+    full <= '1' when (wr - rd) = "110" else '0';
+    
     process(clock)
         variable v_rdoff : std_logic_vector(1 downto 0);
     begin
         if rising_edge(clock) then
             if memreq_request='1' then
                 if memreq_read_writen = '1' then 
-                    if avm_ready = '1' then
+                    if avm_ready = '1' and full = '0' then
                         tag_store(to_integer(wr)) <= memreq_tag;
                         offset_store(to_integer(wr)) <= memreq_address(1 downto 0);
                         wr <= wr + 1;
@@ -111,8 +114,8 @@ begin
             if reset='1' then
                 rd <= (others => '0');
                 wr <= (others => '0');
-                tag_store <= (others => (others => '0')); -- avoid using M9K for just 32 bits
-                offset_store <= (others => (others => '0')); -- or even more so for just 8 bits
+                tag_store <= (others => (others => '0')); -- avoid using M9K for just 64 bits
+                offset_store <= (others => (others => '0')); -- or even more so for just 16 bits
             end if;
         end if;
     end process;
