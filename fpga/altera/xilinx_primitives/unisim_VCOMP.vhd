@@ -11,7 +11,6 @@
 library IEEE;
 use IEEE.STD_LOGIC_1164.all;
 package VCOMPONENTS is
-attribute BOX_TYPE : string;
 
 
 -- synopsys translate_off
@@ -66,8 +65,7 @@ component AND2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND2 : component is "PRIMITIVE";
+
 
 ----- component AND2B1 -----
 component AND2B1
@@ -77,8 +75,7 @@ component AND2B1
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND2B1 : component is "PRIMITIVE";
+
 
 ----- component AND2B1L -----
 component AND2B1L
@@ -88,8 +85,7 @@ component AND2B1L
      SRI : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND2B1L : component is "PRIMITIVE";
+
 
 ----- component AND2B2 -----
 component AND2B2
@@ -99,8 +95,7 @@ component AND2B2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND2B2 : component is "PRIMITIVE";
+
 
 ----- component AND3 -----
 component AND3
@@ -111,8 +106,7 @@ component AND3
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND3 : component is "PRIMITIVE";
+
 
 ----- component AND3B1 -----
 component AND3B1
@@ -123,8 +117,7 @@ component AND3B1
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND3B1 : component is "PRIMITIVE";
+
 
 ----- component AND3B2 -----
 component AND3B2
@@ -135,8 +128,7 @@ component AND3B2
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND3B2 : component is "PRIMITIVE";
+
 
 ----- component AND3B3 -----
 component AND3B3
@@ -147,8 +139,7 @@ component AND3B3
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND3B3 : component is "PRIMITIVE";
+
 
 ----- component AND4 -----
 component AND4
@@ -160,8 +151,7 @@ component AND4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND4 : component is "PRIMITIVE";
+
 
 ----- component AND4B1 -----
 component AND4B1
@@ -173,8 +163,7 @@ component AND4B1
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND4B1 : component is "PRIMITIVE";
+
 
 ----- component AND4B2 -----
 component AND4B2
@@ -186,8 +175,7 @@ component AND4B2
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND4B2 : component is "PRIMITIVE";
+
 
 ----- component AND4B3 -----
 component AND4B3
@@ -199,8 +187,7 @@ component AND4B3
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND4B3 : component is "PRIMITIVE";
+
 
 ----- component AND4B4 -----
 component AND4B4
@@ -212,8 +199,7 @@ component AND4B4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND4B4 : component is "PRIMITIVE";
+
 
 ----- component AND5 -----
 component AND5
@@ -226,8 +212,7 @@ component AND5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND5 : component is "PRIMITIVE";
+
 
 ----- component AND5B1 -----
 component AND5B1
@@ -240,8 +225,7 @@ component AND5B1
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND5B1 : component is "PRIMITIVE";
+
 
 ----- component AND5B2 -----
 component AND5B2
@@ -254,8 +238,7 @@ component AND5B2
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND5B2 : component is "PRIMITIVE";
+
 
 ----- component AND5B3 -----
 component AND5B3
@@ -268,8 +251,7 @@ component AND5B3
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND5B3 : component is "PRIMITIVE";
+
 
 ----- component AND5B4 -----
 component AND5B4
@@ -282,8 +264,7 @@ component AND5B4
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND5B4 : component is "PRIMITIVE";
+
 
 ----- component AND5B5 -----
 component AND5B5
@@ -296,8 +277,7 @@ component AND5B5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND5B5 : component is "PRIMITIVE";
+
 
 ----- component AND6 -----
 component AND6
@@ -311,8 +291,7 @@ component AND6
      I5 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND6 : component is "PRIMITIVE";
+
 
 ----- component AND7 -----
 component AND7
@@ -327,8 +306,7 @@ component AND7
      I6 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND7 : component is "PRIMITIVE";
+
 
 ----- component AND8 -----
 component AND8
@@ -344,8 +322,7 @@ component AND8
      I7 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AND8 : component is "PRIMITIVE";
+
 
 ----- component AUTOBUF -----
 component AUTOBUF
@@ -357,8 +334,7 @@ component AUTOBUF
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  AUTOBUF : component is "PRIMITIVE";
+
 
 ----- component BSCANE2 -----
 component BSCANE2
@@ -380,8 +356,7 @@ component BSCANE2
      TDO : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  BSCANE2 : component is "PRIMITIVE";
+
 
 ----- component BSCAN_FPGACORE -----
 component BSCAN_FPGACORE
@@ -399,8 +374,7 @@ component BSCAN_FPGACORE
      TDO2 : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  BSCAN_FPGACORE : component is "PRIMITIVE";
+
 
 ----- component BSCAN_JTAG_MONE2 -----
 component BSCAN_JTAG_MONE2
@@ -410,8 +384,7 @@ component BSCAN_JTAG_MONE2
      TMS : out std_ulogic := 'L'
   );
 end component;
-attribute BOX_TYPE of
-  BSCAN_JTAG_MONE2 : component is "PRIMITIVE";
+
 
 ----- component BSCAN_SPARTAN3 -----
 component BSCAN_SPARTAN3
@@ -429,8 +402,7 @@ component BSCAN_SPARTAN3
      TDO2 : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  BSCAN_SPARTAN3 : component is "PRIMITIVE";
+
 
 ----- component BSCAN_SPARTAN3A -----
 component BSCAN_SPARTAN3A
@@ -450,8 +422,7 @@ component BSCAN_SPARTAN3A
      TDO2 : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  BSCAN_SPARTAN3A : component is "PRIMITIVE";
+
 
 ----- component BSCAN_SPARTAN6 -----
 component BSCAN_SPARTAN6
@@ -472,8 +443,7 @@ component BSCAN_SPARTAN6
      TDO : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  BSCAN_SPARTAN6 : component is "PRIMITIVE";
+
 
 ----- component BSCAN_VIRTEX4 -----
 component BSCAN_VIRTEX4
@@ -491,8 +461,7 @@ component BSCAN_VIRTEX4
      TDO : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  BSCAN_VIRTEX4 : component is "PRIMITIVE";
+
 
 ----- component BSCAN_VIRTEX5 -----
 component BSCAN_VIRTEX5
@@ -510,8 +479,7 @@ component BSCAN_VIRTEX5
      TDO : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  BSCAN_VIRTEX5 : component is "PRIMITIVE";
+
 
 ----- component BSCAN_VIRTEX6 -----
 component BSCAN_VIRTEX6
@@ -533,8 +501,7 @@ component BSCAN_VIRTEX6
      TDO : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  BSCAN_VIRTEX6 : component is "PRIMITIVE";
+
 
 ----- component BUF -----
 component BUF
@@ -543,8 +510,7 @@ component BUF
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUF : component is "PRIMITIVE";
+
 
 ----- component BUFCF -----
 component BUFCF
@@ -553,8 +519,7 @@ component BUFCF
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFCF : component is "PRIMITIVE";
+
 
 ----- component BUFE -----
 component BUFE
@@ -564,8 +529,7 @@ component BUFE
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFE : component is "PRIMITIVE";
+
 
 ----- component BUFFOE -----
 component BUFFOE
@@ -574,8 +538,7 @@ component BUFFOE
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFFOE : component is "PRIMITIVE";
+
 
 ----- component BUFG -----
 component BUFG
@@ -584,8 +547,7 @@ component BUFG
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFG : component is "PRIMITIVE";
+
 
 ----- component BUFGCE -----
 component BUFGCE
@@ -595,8 +557,7 @@ component BUFGCE
      I : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  BUFGCE : component is "PRIMITIVE";
+
 
 ----- component BUFGCE_1 -----
 component BUFGCE_1
@@ -606,8 +567,7 @@ component BUFGCE_1
      I : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  BUFGCE_1 : component is "PRIMITIVE";
+
 
 ----- component BUFGCTRL -----
 component BUFGCTRL
@@ -628,8 +588,7 @@ component BUFGCTRL
      S1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFGCTRL : component is "PRIMITIVE";
+
 
 ----- component BUFGDLL -----
 component BUFGDLL
@@ -641,8 +600,7 @@ component BUFGDLL
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFGDLL : component is "PRIMITIVE";
+
 
 ----- component BUFGMUX -----
 component BUFGMUX
@@ -656,8 +614,7 @@ component BUFGMUX
      S : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  BUFGMUX : component is "PRIMITIVE";
+
 
 ----- component BUFGMUX_1 -----
 component BUFGMUX_1
@@ -671,8 +628,7 @@ component BUFGMUX_1
      S : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  BUFGMUX_1 : component is "PRIMITIVE";
+
 
 ----- component BUFGMUX_CTRL -----
 component BUFGMUX_CTRL
@@ -683,8 +639,7 @@ component BUFGMUX_CTRL
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFGMUX_CTRL : component is "PRIMITIVE";
+
 
 ----- component BUFGMUX_VIRTEX4 -----
 component BUFGMUX_VIRTEX4
@@ -695,8 +650,7 @@ component BUFGMUX_VIRTEX4
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFGMUX_VIRTEX4 : component is "PRIMITIVE";
+
 
 ----- component BUFGP -----
 component BUFGP
@@ -705,8 +659,7 @@ component BUFGP
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFGP : component is "PRIMITIVE";
+
 
 ----- component BUFGSR -----
 component BUFGSR
@@ -715,8 +668,7 @@ component BUFGSR
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFGSR : component is "PRIMITIVE";
+
 
 ----- component BUFGTS -----
 component BUFGTS
@@ -725,8 +677,7 @@ component BUFGTS
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFGTS : component is "PRIMITIVE";
+
 
 ----- component BUFH -----
 component BUFH
@@ -735,8 +686,7 @@ component BUFH
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFH : component is "PRIMITIVE";
+
 
 ----- component BUFHCE -----
 component BUFHCE
@@ -750,8 +700,7 @@ component BUFHCE
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFHCE : component is "PRIMITIVE";
+
 
 ----- component BUFIO -----
 component BUFIO
@@ -760,8 +709,7 @@ component BUFIO
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFIO : component is "PRIMITIVE";
+
 
 ----- component BUFIO2 -----
 component BUFIO2
@@ -778,8 +726,7 @@ component BUFIO2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFIO2 : component is "PRIMITIVE";
+
 
 ----- component BUFIO2FB -----
 component BUFIO2FB
@@ -791,8 +738,7 @@ component BUFIO2FB
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFIO2FB : component is "PRIMITIVE";
+
 
 ----- component BUFIO2_2CLK -----
 component BUFIO2_2CLK
@@ -807,8 +753,7 @@ component BUFIO2_2CLK
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFIO2_2CLK : component is "PRIMITIVE";
+
 
 ----- component BUFIODQS -----
 component BUFIODQS
@@ -821,8 +766,7 @@ component BUFIODQS
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFIODQS : component is "PRIMITIVE";
+
 
 ----- component BUFMR -----
 component BUFMR
@@ -831,8 +775,7 @@ component BUFMR
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFMR : component is "PRIMITIVE";
+
 
 ----- component BUFMRCE -----
 component BUFMRCE
@@ -846,8 +789,7 @@ component BUFMRCE
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFMRCE : component is "PRIMITIVE";
+
 
 ----- component BUFPLL -----
 component BUFPLL
@@ -864,8 +806,7 @@ component BUFPLL
      PLLIN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFPLL : component is "PRIMITIVE";
+
 
 ----- component BUFPLL_MCB -----
 component BUFPLL_MCB
@@ -885,8 +826,7 @@ component BUFPLL_MCB
      PLLIN1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFPLL_MCB : component is "PRIMITIVE";
+
 
 ----- component BUFR -----
 component BUFR
@@ -901,8 +841,7 @@ component BUFR
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFR : component is "PRIMITIVE";
+
 
 ----- component BUFT -----
 component BUFT
@@ -912,8 +851,7 @@ component BUFT
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  BUFT : component is "PRIMITIVE";
+
 
 ----- component CAPTUREE2 -----
 component CAPTUREE2
@@ -925,8 +863,7 @@ component CAPTUREE2
      CLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  CAPTUREE2 : component is "PRIMITIVE";
+
 
 ----- component CAPTURE_FPGACORE -----
 component CAPTURE_FPGACORE
@@ -938,8 +875,7 @@ component CAPTURE_FPGACORE
      CLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  CAPTURE_FPGACORE : component is "PRIMITIVE";
+
 
 ----- component CAPTURE_SPARTAN3 -----
 component CAPTURE_SPARTAN3
@@ -951,8 +887,7 @@ component CAPTURE_SPARTAN3
      CLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  CAPTURE_SPARTAN3 : component is "PRIMITIVE";
+
 
 ----- component CAPTURE_SPARTAN3A -----
 component CAPTURE_SPARTAN3A
@@ -964,8 +899,7 @@ component CAPTURE_SPARTAN3A
      CLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  CAPTURE_SPARTAN3A : component is "PRIMITIVE";
+
 
 ----- component CAPTURE_VIRTEX4 -----
 component CAPTURE_VIRTEX4
@@ -977,8 +911,7 @@ component CAPTURE_VIRTEX4
      CLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  CAPTURE_VIRTEX4 : component is "PRIMITIVE";
+
 
 ----- component CAPTURE_VIRTEX5 -----
 component CAPTURE_VIRTEX5
@@ -990,8 +923,7 @@ component CAPTURE_VIRTEX5
      CLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  CAPTURE_VIRTEX5 : component is "PRIMITIVE";
+
 
 ----- component CAPTURE_VIRTEX6 -----
 component CAPTURE_VIRTEX6
@@ -1003,8 +935,7 @@ component CAPTURE_VIRTEX6
      CLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  CAPTURE_VIRTEX6 : component is "PRIMITIVE";
+
 
 ----- component CARRY4 -----
 component CARRY4
@@ -1017,8 +948,7 @@ component CARRY4
      S : in std_logic_vector(3 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  CARRY4 : component is "PRIMITIVE";
+
 
 ----- component CFGLUT5 -----
 component CFGLUT5
@@ -1039,8 +969,7 @@ component CFGLUT5
      I4 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  CFGLUT5 : component is "PRIMITIVE";
+
 
 ----- component CLKDLL -----
 component CLKDLL
@@ -1063,8 +992,7 @@ component CLKDLL
      RST : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLKDLL : component is "PRIMITIVE";
+
 
 ----- component CLKDLLE -----
 component CLKDLLE
@@ -1088,8 +1016,7 @@ component CLKDLLE
      RST : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLKDLLE : component is "PRIMITIVE";
+
 
 ----- component CLKDLLHF -----
 component CLKDLLHF
@@ -1109,8 +1036,7 @@ component CLKDLLHF
      RST : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLKDLLHF : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV10 -----
 component CLK_DIV10
@@ -1119,8 +1045,7 @@ component CLK_DIV10
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV10 : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV10R -----
 component CLK_DIV10R
@@ -1130,8 +1055,7 @@ component CLK_DIV10R
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV10R : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV10RSD -----
 component CLK_DIV10RSD
@@ -1141,8 +1065,7 @@ component CLK_DIV10RSD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV10RSD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV10SD -----
 component CLK_DIV10SD
@@ -1151,8 +1074,7 @@ component CLK_DIV10SD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV10SD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV12 -----
 component CLK_DIV12
@@ -1161,8 +1083,7 @@ component CLK_DIV12
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV12 : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV12R -----
 component CLK_DIV12R
@@ -1172,8 +1093,7 @@ component CLK_DIV12R
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV12R : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV12RSD -----
 component CLK_DIV12RSD
@@ -1183,8 +1103,7 @@ component CLK_DIV12RSD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV12RSD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV12SD -----
 component CLK_DIV12SD
@@ -1193,8 +1112,7 @@ component CLK_DIV12SD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV12SD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV14 -----
 component CLK_DIV14
@@ -1203,8 +1121,7 @@ component CLK_DIV14
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV14 : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV14R -----
 component CLK_DIV14R
@@ -1214,8 +1131,7 @@ component CLK_DIV14R
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV14R : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV14RSD -----
 component CLK_DIV14RSD
@@ -1225,8 +1141,7 @@ component CLK_DIV14RSD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV14RSD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV14SD -----
 component CLK_DIV14SD
@@ -1235,8 +1150,7 @@ component CLK_DIV14SD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV14SD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV16 -----
 component CLK_DIV16
@@ -1245,8 +1159,7 @@ component CLK_DIV16
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV16 : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV16R -----
 component CLK_DIV16R
@@ -1256,8 +1169,7 @@ component CLK_DIV16R
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV16R : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV16RSD -----
 component CLK_DIV16RSD
@@ -1267,8 +1179,7 @@ component CLK_DIV16RSD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV16RSD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV16SD -----
 component CLK_DIV16SD
@@ -1277,8 +1188,7 @@ component CLK_DIV16SD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV16SD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV2 -----
 component CLK_DIV2
@@ -1287,8 +1197,7 @@ component CLK_DIV2
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV2 : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV2R -----
 component CLK_DIV2R
@@ -1298,8 +1207,7 @@ component CLK_DIV2R
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV2R : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV2RSD -----
 component CLK_DIV2RSD
@@ -1309,8 +1217,7 @@ component CLK_DIV2RSD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV2RSD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV2SD -----
 component CLK_DIV2SD
@@ -1319,8 +1226,7 @@ component CLK_DIV2SD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV2SD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV4 -----
 component CLK_DIV4
@@ -1329,8 +1235,7 @@ component CLK_DIV4
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV4 : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV4R -----
 component CLK_DIV4R
@@ -1340,8 +1245,7 @@ component CLK_DIV4R
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV4R : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV4RSD -----
 component CLK_DIV4RSD
@@ -1351,8 +1255,7 @@ component CLK_DIV4RSD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV4RSD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV4SD -----
 component CLK_DIV4SD
@@ -1361,8 +1264,7 @@ component CLK_DIV4SD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV4SD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV6 -----
 component CLK_DIV6
@@ -1371,8 +1273,7 @@ component CLK_DIV6
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV6 : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV6R -----
 component CLK_DIV6R
@@ -1382,8 +1283,7 @@ component CLK_DIV6R
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV6R : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV6RSD -----
 component CLK_DIV6RSD
@@ -1393,8 +1293,7 @@ component CLK_DIV6RSD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV6RSD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV6SD -----
 component CLK_DIV6SD
@@ -1403,8 +1302,7 @@ component CLK_DIV6SD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV6SD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV8 -----
 component CLK_DIV8
@@ -1413,8 +1311,7 @@ component CLK_DIV8
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV8 : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV8R -----
 component CLK_DIV8R
@@ -1424,8 +1321,7 @@ component CLK_DIV8R
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV8R : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV8RSD -----
 component CLK_DIV8RSD
@@ -1435,8 +1331,7 @@ component CLK_DIV8RSD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV8RSD : component is "PRIMITIVE";
+
 
 ----- component CLK_DIV8SD -----
 component CLK_DIV8SD
@@ -1445,14 +1340,12 @@ component CLK_DIV8SD
      CLKIN : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  CLK_DIV8SD : component is "PRIMITIVE";
+
 
 ----- component CONFIG -----
 component CONFIG
 end component;
-attribute BOX_TYPE of
-  CONFIG : component is "PRIMITIVE";
+
 
 ----- component CRC32 -----
 component CRC32
@@ -1468,8 +1361,7 @@ component CRC32
      CRCRESET : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  CRC32 : component is "PRIMITIVE";
+
 
 ----- component CRC64 -----
 component CRC64
@@ -1485,8 +1377,7 @@ component CRC64
      CRCRESET : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  CRC64 : component is "PRIMITIVE";
+
 
 ----- component DCIRESET -----
 component DCIRESET
@@ -1495,8 +1386,7 @@ component DCIRESET
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  DCIRESET : component is "PRIMITIVE";
+
 
 ----- component DCM -----
 component DCM
@@ -1540,8 +1430,7 @@ component DCM
      RST : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  DCM : component is "PRIMITIVE";
+
 
 ----- component DCM_ADV -----
 component DCM_ADV
@@ -1591,8 +1480,7 @@ component DCM_ADV
      RST : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  DCM_ADV : component is "PRIMITIVE";
+
 
 ----- component DCM_BASE -----
 component DCM_BASE
@@ -1630,8 +1518,7 @@ component DCM_BASE
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  DCM_BASE : component is "PRIMITIVE";
+
 
 ----- component DCM_CLKGEN -----
 component DCM_CLKGEN
@@ -1659,8 +1546,7 @@ component DCM_CLKGEN
      RST : in std_ulogic := 'L'
   );
 end component;
-attribute BOX_TYPE of
-  DCM_CLKGEN : component is "PRIMITIVE";
+
 
 ----- component DCM_PS -----
 component DCM_PS
@@ -1703,8 +1589,7 @@ component DCM_PS
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  DCM_PS : component is "PRIMITIVE";
+
 
 ----- component DCM_SP -----
 component DCM_SP
@@ -1747,8 +1632,7 @@ component DCM_SP
      RST : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  DCM_SP : component is "PRIMITIVE";
+
 
 ----- component DNA_PORT -----
 component DNA_PORT
@@ -1763,8 +1647,7 @@ component DNA_PORT
      SHIFT : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  DNA_PORT : component is "PRIMITIVE";
+
 
 ----- component DSP48 -----
 component DSP48
@@ -1812,8 +1695,7 @@ component DSP48
      SUBTRACT : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  DSP48 : component is "PRIMITIVE";
+
 
 ----- component DSP48A -----
 component DSP48A
@@ -1862,8 +1744,7 @@ component DSP48A
      RSTP : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  DSP48A : component is "PRIMITIVE";
+
 
 ----- component DSP48A1 -----
 component DSP48A1
@@ -1915,8 +1796,7 @@ component DSP48A1
      RSTP : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  DSP48A1 : component is "PRIMITIVE";
+
 
 ----- component DSP48E -----
 component DSP48E
@@ -1993,8 +1873,7 @@ component DSP48E
      RSTP : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  DSP48E : component is "PRIMITIVE";
+
 
 ----- component DSP48E1 -----
 component DSP48E1
@@ -2077,8 +1956,7 @@ component DSP48E1
      RSTP : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  DSP48E1 : component is "PRIMITIVE";
+
 
 ----- component EFUSE_USR -----
 component EFUSE_USR
@@ -2089,8 +1967,7 @@ component EFUSE_USR
      EFUSEUSR : out std_logic_vector(31 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  EFUSE_USR : component is "PRIMITIVE";
+
 
 ----- component EMAC -----
 component EMAC
@@ -2267,8 +2144,7 @@ component EMAC
      TIEEMAC1UNICASTADDR : in std_logic_vector(47 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  EMAC : component is "PRIMITIVE";
+
 
 ----- component FD -----
 component FD
@@ -2281,8 +2157,7 @@ component FD
      D : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FD : component is "PRIMITIVE";
+
 
 ----- component FDC -----
 component FDC
@@ -2296,8 +2171,7 @@ component FDC
      D : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDC : component is "PRIMITIVE";
+
 
 ----- component FDCE -----
 component FDCE
@@ -2312,8 +2186,7 @@ component FDCE
      D : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDCE : component is "PRIMITIVE";
+
 
 ----- component FDCE_1 -----
 component FDCE_1
@@ -2328,8 +2201,7 @@ component FDCE_1
      D : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDCE_1 : component is "PRIMITIVE";
+
 
 ----- component FDCP -----
 component FDCP
@@ -2344,8 +2216,7 @@ component FDCP
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDCP : component is "PRIMITIVE";
+
 
 ----- component FDCPE -----
 component FDCPE
@@ -2361,8 +2232,7 @@ component FDCPE
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDCPE : component is "PRIMITIVE";
+
 
 ----- component FDCPE_1 -----
 component FDCPE_1
@@ -2378,8 +2248,7 @@ component FDCPE_1
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDCPE_1 : component is "PRIMITIVE";
+
 
 ----- component FDCP_1 -----
 component FDCP_1
@@ -2394,8 +2263,7 @@ component FDCP_1
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDCP_1 : component is "PRIMITIVE";
+
 
 ----- component FDC_1 -----
 component FDC_1
@@ -2409,8 +2277,7 @@ component FDC_1
      D : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDC_1 : component is "PRIMITIVE";
+
 
 ----- component FDD -----
 component FDD
@@ -2423,8 +2290,7 @@ component FDD
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  FDD : component is "PRIMITIVE";
+
 
 ----- component FDDC -----
 component FDDC
@@ -2438,8 +2304,7 @@ component FDDC
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  FDDC : component is "PRIMITIVE";
+
 
 ----- component FDDCE -----
 component FDDCE
@@ -2454,8 +2319,7 @@ component FDDCE
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  FDDCE : component is "PRIMITIVE";
+
 
 ----- component FDDCP -----
 component FDDCP
@@ -2470,8 +2334,7 @@ component FDDCP
      PRE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  FDDCP : component is "PRIMITIVE";
+
 
 ----- component FDDCPE -----
 component FDDCPE
@@ -2487,8 +2350,7 @@ component FDDCPE
      PRE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  FDDCPE : component is "PRIMITIVE";
+
 
 ----- component FDDP -----
 component FDDP
@@ -2502,8 +2364,7 @@ component FDDP
      PRE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  FDDP : component is "PRIMITIVE";
+
 
 ----- component FDDPE -----
 component FDDPE
@@ -2518,8 +2379,7 @@ component FDDPE
      PRE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  FDDPE : component is "PRIMITIVE";
+
 
 ----- component FDDRCPE -----
 component FDDRCPE
@@ -2537,8 +2397,7 @@ component FDDRCPE
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDDRCPE : component is "PRIMITIVE";
+
 
 ----- component FDDRRSE -----
 component FDDRRSE
@@ -2556,8 +2415,7 @@ component FDDRRSE
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDDRRSE : component is "PRIMITIVE";
+
 
 ----- component FDE -----
 component FDE
@@ -2571,8 +2429,7 @@ component FDE
      D : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDE : component is "PRIMITIVE";
+
 
 ----- component FDE_1 -----
 component FDE_1
@@ -2586,8 +2443,7 @@ component FDE_1
      D : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDE_1 : component is "PRIMITIVE";
+
 
 ----- component FDP -----
 component FDP
@@ -2601,8 +2457,7 @@ component FDP
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDP : component is "PRIMITIVE";
+
 
 ----- component FDPE -----
 component FDPE
@@ -2617,8 +2472,7 @@ component FDPE
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDPE : component is "PRIMITIVE";
+
 
 ----- component FDPE_1 -----
 component FDPE_1
@@ -2633,8 +2487,7 @@ component FDPE_1
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDPE_1 : component is "PRIMITIVE";
+
 
 ----- component FDP_1 -----
 component FDP_1
@@ -2648,8 +2501,7 @@ component FDP_1
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDP_1 : component is "PRIMITIVE";
+
 
 ----- component FDR -----
 component FDR
@@ -2663,8 +2515,7 @@ component FDR
      R : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDR : component is "PRIMITIVE";
+
 
 ----- component FDRE -----
 component FDRE
@@ -2679,8 +2530,7 @@ component FDRE
      R : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDRE : component is "PRIMITIVE";
+
 
 ----- component FDRE_1 -----
 component FDRE_1
@@ -2695,8 +2545,7 @@ component FDRE_1
      R : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDRE_1 : component is "PRIMITIVE";
+
 
 ----- component FDRS -----
 component FDRS
@@ -2711,8 +2560,7 @@ component FDRS
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDRS : component is "PRIMITIVE";
+
 
 ----- component FDRSE -----
 component FDRSE
@@ -2728,8 +2576,7 @@ component FDRSE
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDRSE : component is "PRIMITIVE";
+
 
 ----- component FDRSE_1 -----
 component FDRSE_1
@@ -2745,8 +2592,7 @@ component FDRSE_1
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDRSE_1 : component is "PRIMITIVE";
+
 
 ----- component FDRS_1 -----
 component FDRS_1
@@ -2761,8 +2607,7 @@ component FDRS_1
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDRS_1 : component is "PRIMITIVE";
+
 
 ----- component FDR_1 -----
 component FDR_1
@@ -2776,8 +2621,7 @@ component FDR_1
      R : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  FDR_1 : component is "PRIMITIVE";
+
 
 ----- component FDS -----
 component FDS
@@ -2791,8 +2635,7 @@ component FDS
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDS : component is "PRIMITIVE";
+
 
 ----- component FDSE -----
 component FDSE
@@ -2807,8 +2650,7 @@ component FDSE
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDSE : component is "PRIMITIVE";
+
 
 ----- component FDSE_1 -----
 component FDSE_1
@@ -2823,8 +2665,7 @@ component FDSE_1
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDSE_1 : component is "PRIMITIVE";
+
 
 ----- component FDS_1 -----
 component FDS_1
@@ -2838,8 +2679,7 @@ component FDS_1
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FDS_1 : component is "PRIMITIVE";
+
 
 ----- component FD_1 -----
 component FD_1
@@ -2852,8 +2692,7 @@ component FD_1
      D : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FD_1 : component is "PRIMITIVE";
+
 
 ----- component FIFO16 -----
 component FIFO16
@@ -2883,8 +2722,7 @@ component FIFO16
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FIFO16 : component is "PRIMITIVE";
+
 
 ----- component FIFO18 -----
 component FIFO18
@@ -2917,8 +2755,7 @@ component FIFO18
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FIFO18 : component is "PRIMITIVE";
+
 
 ----- component FIFO18E1 -----
 component FIFO18E1
@@ -2956,8 +2793,7 @@ component FIFO18E1
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FIFO18E1 : component is "PRIMITIVE";
+
 
 ----- component FIFO18_36 -----
 component FIFO18_36
@@ -2989,8 +2825,7 @@ component FIFO18_36
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FIFO18_36 : component is "PRIMITIVE";
+
 
 ----- component FIFO36 -----
 component FIFO36
@@ -3023,8 +2858,7 @@ component FIFO36
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FIFO36 : component is "PRIMITIVE";
+
 
 ----- component FIFO36E1 -----
 component FIFO36E1
@@ -3069,8 +2903,7 @@ component FIFO36E1
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FIFO36E1 : component is "PRIMITIVE";
+
 
 ----- component FIFO36_72 -----
 component FIFO36_72
@@ -3107,8 +2940,7 @@ component FIFO36_72
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FIFO36_72 : component is "PRIMITIVE";
+
 
 ----- component FIFO36_72_EXP -----
 component FIFO36_72_EXP
@@ -3149,8 +2981,7 @@ component FIFO36_72_EXP
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FIFO36_72_EXP : component is "PRIMITIVE";
+
 
 ----- component FIFO36_EXP -----
 component FIFO36_EXP
@@ -3187,8 +3018,7 @@ component FIFO36_EXP
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FIFO36_EXP : component is "PRIMITIVE";
+
 
 ----- component FMAP -----
 component FMAP
@@ -3200,8 +3030,7 @@ component FMAP
      O : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  FMAP : component is "PRIMITIVE";
+
 
 ----- component FRAME_ECCE2 -----
 component FRAME_ECCE2
@@ -3220,8 +3049,7 @@ component FRAME_ECCE2
      SYNWORD : out std_logic_vector(6 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  FRAME_ECCE2 : component is "PRIMITIVE";
+
 
 ----- component FRAME_ECC_VIRTEX4 -----
 component FRAME_ECC_VIRTEX4
@@ -3231,8 +3059,7 @@ component FRAME_ECC_VIRTEX4
      SYNDROMEVALID : out std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FRAME_ECC_VIRTEX4 : component is "PRIMITIVE";
+
 
 ----- component FRAME_ECC_VIRTEX5 -----
 component FRAME_ECC_VIRTEX5
@@ -3243,8 +3070,7 @@ component FRAME_ECC_VIRTEX5
      SYNDROMEVALID : out std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FRAME_ECC_VIRTEX5 : component is "PRIMITIVE";
+
 
 ----- component FRAME_ECC_VIRTEX6 -----
 component FRAME_ECC_VIRTEX6
@@ -3263,8 +3089,7 @@ component FRAME_ECC_VIRTEX6
      SYNWORD : out std_logic_vector(6 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  FRAME_ECC_VIRTEX6 : component is "PRIMITIVE";
+
 
 ----- component FTC -----
 component FTC
@@ -3275,8 +3100,7 @@ component FTC
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FTC : component is "PRIMITIVE";
+
 
 ----- component FTCP -----
 component FTCP
@@ -3291,8 +3115,7 @@ component FTCP
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FTCP : component is "PRIMITIVE";
+
 
 ----- component FTP -----
 component FTP
@@ -3303,8 +3126,7 @@ component FTP
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  FTP : component is "PRIMITIVE";
+
 
 ----- component GND -----
 component GND
@@ -3312,8 +3134,7 @@ component GND
      G : out std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  GND : component is "PRIMITIVE";
+
 
 ----- component GT11 -----
 component GT11
@@ -3599,8 +3420,7 @@ component GT11
      TXUSRCLK2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GT11 : component is "PRIMITIVE";
+
 
 ----- component GT11CLK -----
 component GT11CLK
@@ -3620,8 +3440,7 @@ component GT11CLK
      SYNCLK2IN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GT11CLK : component is "PRIMITIVE";
+
 
 ----- component GT11CLK_MGT -----
 component GT11CLK_MGT
@@ -3636,8 +3455,7 @@ component GT11CLK_MGT
      MGTCLKP : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GT11CLK_MGT : component is "PRIMITIVE";
+
 
 ----- component GT11_CUSTOM -----
 component GT11_CUSTOM
@@ -3919,8 +3737,7 @@ component GT11_CUSTOM
      TXUSRCLK2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GT11_CUSTOM : component is "PRIMITIVE";
+
 
 ----- component GT11_DUAL -----
 component GT11_DUAL
@@ -4475,8 +4292,7 @@ component GT11_DUAL
      TXUSRCLKB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GT11_DUAL : component is "PRIMITIVE";
+
 
 ----- component GTHE1_QUAD -----
 component GTHE1_QUAD
@@ -4950,8 +4766,7 @@ component GTHE1_QUAD
      TXUSERCLKIN3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GTHE1_QUAD : component is "PRIMITIVE";
+
 
 ----- component GTPA1_DUAL -----
 component GTPA1_DUAL
@@ -5409,8 +5224,7 @@ component GTPA1_DUAL
      USRCODEERR1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GTPA1_DUAL : component is "PRIMITIVE";
+
 
 ----- component GTP_DUAL -----
 component GTP_DUAL
@@ -5774,8 +5588,7 @@ component GTP_DUAL
      TXUSRCLK21 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GTP_DUAL : component is "PRIMITIVE";
+
 
 ----- component GTXE1 -----
 component GTXE1
@@ -6133,8 +5946,7 @@ component GTXE1
      USRCODEERR : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GTXE1 : component is "PRIMITIVE";
+
 
 ----- component GTXE2_CHANNEL -----
 component GTXE2_CHANNEL
@@ -6570,8 +6382,7 @@ component GTXE2_CHANNEL
      TXUSRCLK2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GTXE2_CHANNEL : component is "PRIMITIVE";
+
 
 ----- component GTXE2_COMMON -----
 component GTXE2_COMMON
@@ -6634,8 +6445,7 @@ component GTXE2_COMMON
      RCALENB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GTXE2_COMMON : component is "PRIMITIVE";
+
 
 ----- component GTX_DUAL -----
 component GTX_DUAL
@@ -7077,8 +6887,7 @@ component GTX_DUAL
      TXUSRCLK21 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  GTX_DUAL : component is "PRIMITIVE";
+
 
 ----- component IBUF -----
 component IBUF
@@ -7094,8 +6903,7 @@ component IBUF
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF : component is "PRIMITIVE";
+
 
 ----- component IBUFDS -----
 component IBUFDS
@@ -7113,8 +6921,7 @@ component IBUFDS
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_BLVDS_25 -----
 component IBUFDS_BLVDS_25
@@ -7124,8 +6931,7 @@ component IBUFDS_BLVDS_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_BLVDS_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_DIFF_OUT -----
 component IBUFDS_DIFF_OUT
@@ -7141,8 +6947,7 @@ component IBUFDS_DIFF_OUT
      IB : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_DIFF_OUT : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_DIFF_OUT_IBUFDISABLE -----
 component IBUFDS_DIFF_OUT_IBUFDISABLE
@@ -7159,8 +6964,7 @@ component IBUFDS_DIFF_OUT_IBUFDISABLE
      IBUFDISABLE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_DIFF_OUT_IBUFDISABLE : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_DIFF_OUT_INTERMDISABLE -----
 component IBUFDS_DIFF_OUT_INTERMDISABLE
@@ -7178,8 +6982,7 @@ component IBUFDS_DIFF_OUT_INTERMDISABLE
      INTERMDISABLE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_DIFF_OUT_INTERMDISABLE : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_DLY_ADJ -----
 component IBUFDS_DLY_ADJ
@@ -7195,8 +6998,7 @@ component IBUFDS_DLY_ADJ
      S : in std_logic_vector (2 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_DLY_ADJ : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_GTE2 -----
 component IBUFDS_GTE2
@@ -7213,8 +7015,7 @@ component IBUFDS_GTE2
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_GTE2 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_GTHE1 -----
 component IBUFDS_GTHE1
@@ -7224,8 +7025,7 @@ component IBUFDS_GTHE1
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_GTHE1 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_GTXE1 -----
 component IBUFDS_GTXE1
@@ -7242,8 +7042,7 @@ component IBUFDS_GTXE1
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_GTXE1 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_IBUFDISABLE -----
 component IBUFDS_IBUFDISABLE
@@ -7262,8 +7061,7 @@ component IBUFDS_IBUFDISABLE
      IBUFDISABLE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_IBUFDISABLE : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_INTERMDISABLE -----
 component IBUFDS_INTERMDISABLE
@@ -7283,8 +7081,7 @@ component IBUFDS_INTERMDISABLE
      INTERMDISABLE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_INTERMDISABLE : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LDT_25 -----
 component IBUFDS_LDT_25
@@ -7294,8 +7091,7 @@ component IBUFDS_LDT_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LDT_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVDSEXT_25 -----
 component IBUFDS_LVDSEXT_25
@@ -7305,8 +7101,7 @@ component IBUFDS_LVDSEXT_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVDSEXT_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVDSEXT_25_DCI -----
 component IBUFDS_LVDSEXT_25_DCI
@@ -7316,8 +7111,7 @@ component IBUFDS_LVDSEXT_25_DCI
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVDSEXT_25_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVDSEXT_33 -----
 component IBUFDS_LVDSEXT_33
@@ -7327,8 +7121,7 @@ component IBUFDS_LVDSEXT_33
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVDSEXT_33 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVDSEXT_33_DCI -----
 component IBUFDS_LVDSEXT_33_DCI
@@ -7338,8 +7131,7 @@ component IBUFDS_LVDSEXT_33_DCI
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVDSEXT_33_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVDS_25 -----
 component IBUFDS_LVDS_25
@@ -7349,8 +7141,7 @@ component IBUFDS_LVDS_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVDS_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVDS_25_DCI -----
 component IBUFDS_LVDS_25_DCI
@@ -7360,8 +7151,7 @@ component IBUFDS_LVDS_25_DCI
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVDS_25_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVDS_33 -----
 component IBUFDS_LVDS_33
@@ -7371,8 +7161,7 @@ component IBUFDS_LVDS_33
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVDS_33 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVDS_33_DCI -----
 component IBUFDS_LVDS_33_DCI
@@ -7382,8 +7171,7 @@ component IBUFDS_LVDS_33_DCI
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVDS_33_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVPECL_25 -----
 component IBUFDS_LVPECL_25
@@ -7393,8 +7181,7 @@ component IBUFDS_LVPECL_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVPECL_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_LVPECL_33 -----
 component IBUFDS_LVPECL_33
@@ -7404,8 +7191,7 @@ component IBUFDS_LVPECL_33
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_LVPECL_33 : component is "PRIMITIVE";
+
 
 ----- component IBUFDS_ULVDS_25 -----
 component IBUFDS_ULVDS_25
@@ -7415,8 +7201,7 @@ component IBUFDS_ULVDS_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFDS_ULVDS_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFG -----
 component IBUFG
@@ -7431,8 +7216,7 @@ component IBUFG
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS -----
 component IBUFGDS
@@ -7449,8 +7233,7 @@ component IBUFGDS
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_BLVDS_25 -----
 component IBUFGDS_BLVDS_25
@@ -7460,8 +7243,7 @@ component IBUFGDS_BLVDS_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_BLVDS_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_DIFF_OUT -----
 component IBUFGDS_DIFF_OUT
@@ -7477,8 +7259,7 @@ component IBUFGDS_DIFF_OUT
      IB : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_DIFF_OUT : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LDT_25 -----
 component IBUFGDS_LDT_25
@@ -7488,8 +7269,7 @@ component IBUFGDS_LDT_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LDT_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVDSEXT_25 -----
 component IBUFGDS_LVDSEXT_25
@@ -7499,8 +7279,7 @@ component IBUFGDS_LVDSEXT_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVDSEXT_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVDSEXT_25_DCI -----
 component IBUFGDS_LVDSEXT_25_DCI
@@ -7510,8 +7289,7 @@ component IBUFGDS_LVDSEXT_25_DCI
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVDSEXT_25_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVDSEXT_33 -----
 component IBUFGDS_LVDSEXT_33
@@ -7521,8 +7299,7 @@ component IBUFGDS_LVDSEXT_33
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVDSEXT_33 : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVDSEXT_33_DCI -----
 component IBUFGDS_LVDSEXT_33_DCI
@@ -7532,8 +7309,7 @@ component IBUFGDS_LVDSEXT_33_DCI
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVDSEXT_33_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVDS_25 -----
 component IBUFGDS_LVDS_25
@@ -7543,8 +7319,7 @@ component IBUFGDS_LVDS_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVDS_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVDS_25_DCI -----
 component IBUFGDS_LVDS_25_DCI
@@ -7554,8 +7329,7 @@ component IBUFGDS_LVDS_25_DCI
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVDS_25_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVDS_33 -----
 component IBUFGDS_LVDS_33
@@ -7565,8 +7339,7 @@ component IBUFGDS_LVDS_33
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVDS_33 : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVDS_33_DCI -----
 component IBUFGDS_LVDS_33_DCI
@@ -7576,8 +7349,7 @@ component IBUFGDS_LVDS_33_DCI
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVDS_33_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVPECL_25 -----
 component IBUFGDS_LVPECL_25
@@ -7587,8 +7359,7 @@ component IBUFGDS_LVPECL_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVPECL_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_LVPECL_33 -----
 component IBUFGDS_LVPECL_33
@@ -7598,8 +7369,7 @@ component IBUFGDS_LVPECL_33
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_LVPECL_33 : component is "PRIMITIVE";
+
 
 ----- component IBUFGDS_ULVDS_25 -----
 component IBUFGDS_ULVDS_25
@@ -7609,8 +7379,7 @@ component IBUFGDS_ULVDS_25
      IB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFGDS_ULVDS_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_AGP -----
 component IBUFG_AGP
@@ -7619,8 +7388,7 @@ component IBUFG_AGP
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_AGP : component is "PRIMITIVE";
+
 
 ----- component IBUFG_CTT -----
 component IBUFG_CTT
@@ -7629,8 +7397,7 @@ component IBUFG_CTT
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_CTT : component is "PRIMITIVE";
+
 
 ----- component IBUFG_GTL -----
 component IBUFG_GTL
@@ -7639,8 +7406,7 @@ component IBUFG_GTL
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_GTL : component is "PRIMITIVE";
+
 
 ----- component IBUFG_GTLP -----
 component IBUFG_GTLP
@@ -7649,8 +7415,7 @@ component IBUFG_GTLP
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_GTLP : component is "PRIMITIVE";
+
 
 ----- component IBUFG_GTLP_DCI -----
 component IBUFG_GTLP_DCI
@@ -7659,8 +7424,7 @@ component IBUFG_GTLP_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_GTLP_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_GTL_DCI -----
 component IBUFG_GTL_DCI
@@ -7669,8 +7433,7 @@ component IBUFG_GTL_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_GTL_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_I -----
 component IBUFG_HSTL_I
@@ -7679,8 +7442,7 @@ component IBUFG_HSTL_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_I : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_II -----
 component IBUFG_HSTL_II
@@ -7689,8 +7451,7 @@ component IBUFG_HSTL_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_II : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_III -----
 component IBUFG_HSTL_III
@@ -7699,8 +7460,7 @@ component IBUFG_HSTL_III
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_III : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_III_18 -----
 component IBUFG_HSTL_III_18
@@ -7709,8 +7469,7 @@ component IBUFG_HSTL_III_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_III_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_III_DCI -----
 component IBUFG_HSTL_III_DCI
@@ -7719,8 +7478,7 @@ component IBUFG_HSTL_III_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_III_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_III_DCI_18 -----
 component IBUFG_HSTL_III_DCI_18
@@ -7729,8 +7487,7 @@ component IBUFG_HSTL_III_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_III_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_II_18 -----
 component IBUFG_HSTL_II_18
@@ -7739,8 +7496,7 @@ component IBUFG_HSTL_II_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_II_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_II_DCI -----
 component IBUFG_HSTL_II_DCI
@@ -7749,8 +7505,7 @@ component IBUFG_HSTL_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_II_DCI_18 -----
 component IBUFG_HSTL_II_DCI_18
@@ -7759,8 +7514,7 @@ component IBUFG_HSTL_II_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_II_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_IV -----
 component IBUFG_HSTL_IV
@@ -7769,8 +7523,7 @@ component IBUFG_HSTL_IV
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_IV : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_IV_18 -----
 component IBUFG_HSTL_IV_18
@@ -7779,8 +7532,7 @@ component IBUFG_HSTL_IV_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_IV_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_IV_DCI -----
 component IBUFG_HSTL_IV_DCI
@@ -7789,8 +7541,7 @@ component IBUFG_HSTL_IV_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_IV_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_IV_DCI_18 -----
 component IBUFG_HSTL_IV_DCI_18
@@ -7799,8 +7550,7 @@ component IBUFG_HSTL_IV_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_IV_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_I_18 -----
 component IBUFG_HSTL_I_18
@@ -7809,8 +7559,7 @@ component IBUFG_HSTL_I_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_I_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_I_DCI -----
 component IBUFG_HSTL_I_DCI
@@ -7819,8 +7568,7 @@ component IBUFG_HSTL_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_I_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_HSTL_I_DCI_18 -----
 component IBUFG_HSTL_I_DCI_18
@@ -7829,8 +7577,7 @@ component IBUFG_HSTL_I_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_HSTL_I_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVCMOS12 -----
 component IBUFG_LVCMOS12
@@ -7839,8 +7586,7 @@ component IBUFG_LVCMOS12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVCMOS12 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVCMOS15 -----
 component IBUFG_LVCMOS15
@@ -7849,8 +7595,7 @@ component IBUFG_LVCMOS15
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVCMOS15 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVCMOS18 -----
 component IBUFG_LVCMOS18
@@ -7859,8 +7604,7 @@ component IBUFG_LVCMOS18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVCMOS18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVCMOS2 -----
 component IBUFG_LVCMOS2
@@ -7869,8 +7613,7 @@ component IBUFG_LVCMOS2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVCMOS2 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVCMOS25 -----
 component IBUFG_LVCMOS25
@@ -7879,8 +7622,7 @@ component IBUFG_LVCMOS25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVCMOS25 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVCMOS33 -----
 component IBUFG_LVCMOS33
@@ -7889,8 +7631,7 @@ component IBUFG_LVCMOS33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVCMOS33 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVDCI_15 -----
 component IBUFG_LVDCI_15
@@ -7899,8 +7640,7 @@ component IBUFG_LVDCI_15
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVDCI_15 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVDCI_18 -----
 component IBUFG_LVDCI_18
@@ -7909,8 +7649,7 @@ component IBUFG_LVDCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVDCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVDCI_25 -----
 component IBUFG_LVDCI_25
@@ -7919,8 +7658,7 @@ component IBUFG_LVDCI_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVDCI_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVDCI_33 -----
 component IBUFG_LVDCI_33
@@ -7929,8 +7667,7 @@ component IBUFG_LVDCI_33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVDCI_33 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVDCI_DV2_15 -----
 component IBUFG_LVDCI_DV2_15
@@ -7939,8 +7676,7 @@ component IBUFG_LVDCI_DV2_15
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVDCI_DV2_15 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVDCI_DV2_18 -----
 component IBUFG_LVDCI_DV2_18
@@ -7949,8 +7685,7 @@ component IBUFG_LVDCI_DV2_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVDCI_DV2_18 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVDCI_DV2_25 -----
 component IBUFG_LVDCI_DV2_25
@@ -7959,8 +7694,7 @@ component IBUFG_LVDCI_DV2_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVDCI_DV2_25 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVDCI_DV2_33 -----
 component IBUFG_LVDCI_DV2_33
@@ -7969,8 +7703,7 @@ component IBUFG_LVDCI_DV2_33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVDCI_DV2_33 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVDS -----
 component IBUFG_LVDS
@@ -7979,8 +7712,7 @@ component IBUFG_LVDS
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVDS : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVPECL -----
 component IBUFG_LVPECL
@@ -7989,8 +7721,7 @@ component IBUFG_LVPECL
      I : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVPECL : component is "PRIMITIVE";
+
 
 ----- component IBUFG_LVTTL -----
 component IBUFG_LVTTL
@@ -7999,8 +7730,7 @@ component IBUFG_LVTTL
      I : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_LVTTL : component is "PRIMITIVE";
+
 
 ----- component IBUFG_PCI33_3 -----
 component IBUFG_PCI33_3
@@ -8009,8 +7739,7 @@ component IBUFG_PCI33_3
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_PCI33_3 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_PCI33_5 -----
 component IBUFG_PCI33_5
@@ -8019,8 +7748,7 @@ component IBUFG_PCI33_5
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_PCI33_5 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_PCI66_3 -----
 component IBUFG_PCI66_3
@@ -8029,8 +7757,7 @@ component IBUFG_PCI66_3
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_PCI66_3 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_PCIX -----
 component IBUFG_PCIX
@@ -8039,8 +7766,7 @@ component IBUFG_PCIX
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_PCIX : component is "PRIMITIVE";
+
 
 ----- component IBUFG_PCIX66_3 -----
 component IBUFG_PCIX66_3
@@ -8049,8 +7775,7 @@ component IBUFG_PCIX66_3
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_PCIX66_3 : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL18_I -----
 component IBUFG_SSTL18_I
@@ -8059,8 +7784,7 @@ component IBUFG_SSTL18_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL18_I : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL18_II -----
 component IBUFG_SSTL18_II
@@ -8069,8 +7793,7 @@ component IBUFG_SSTL18_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL18_II : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL18_II_DCI -----
 component IBUFG_SSTL18_II_DCI
@@ -8079,8 +7802,7 @@ component IBUFG_SSTL18_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL18_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL18_I_DCI -----
 component IBUFG_SSTL18_I_DCI
@@ -8089,8 +7811,7 @@ component IBUFG_SSTL18_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL18_I_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL2_I -----
 component IBUFG_SSTL2_I
@@ -8099,8 +7820,7 @@ component IBUFG_SSTL2_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL2_I : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL2_II -----
 component IBUFG_SSTL2_II
@@ -8109,8 +7829,7 @@ component IBUFG_SSTL2_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL2_II : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL2_II_DCI -----
 component IBUFG_SSTL2_II_DCI
@@ -8119,8 +7838,7 @@ component IBUFG_SSTL2_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL2_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL2_I_DCI -----
 component IBUFG_SSTL2_I_DCI
@@ -8129,8 +7847,7 @@ component IBUFG_SSTL2_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL2_I_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL3_I -----
 component IBUFG_SSTL3_I
@@ -8139,8 +7856,7 @@ component IBUFG_SSTL3_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL3_I : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL3_II -----
 component IBUFG_SSTL3_II
@@ -8149,8 +7865,7 @@ component IBUFG_SSTL3_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL3_II : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL3_II_DCI -----
 component IBUFG_SSTL3_II_DCI
@@ -8159,8 +7874,7 @@ component IBUFG_SSTL3_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL3_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUFG_SSTL3_I_DCI -----
 component IBUFG_SSTL3_I_DCI
@@ -8169,8 +7883,7 @@ component IBUFG_SSTL3_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUFG_SSTL3_I_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_AGP -----
 component IBUF_AGP
@@ -8179,8 +7892,7 @@ component IBUF_AGP
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_AGP : component is "PRIMITIVE";
+
 
 ----- component IBUF_CTT -----
 component IBUF_CTT
@@ -8189,8 +7901,7 @@ component IBUF_CTT
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_CTT : component is "PRIMITIVE";
+
 
 ----- component IBUF_DLY_ADJ -----
 component IBUF_DLY_ADJ
@@ -8204,8 +7915,7 @@ component IBUF_DLY_ADJ
      S : in std_logic_vector (2 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_DLY_ADJ : component is "PRIMITIVE";
+
 
 ----- component IBUF_GTL -----
 component IBUF_GTL
@@ -8214,8 +7924,7 @@ component IBUF_GTL
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_GTL : component is "PRIMITIVE";
+
 
 ----- component IBUF_GTLP -----
 component IBUF_GTLP
@@ -8224,8 +7933,7 @@ component IBUF_GTLP
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_GTLP : component is "PRIMITIVE";
+
 
 ----- component IBUF_GTLP_DCI -----
 component IBUF_GTLP_DCI
@@ -8234,8 +7942,7 @@ component IBUF_GTLP_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_GTLP_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_GTL_DCI -----
 component IBUF_GTL_DCI
@@ -8244,8 +7951,7 @@ component IBUF_GTL_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_GTL_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_I -----
 component IBUF_HSTL_I
@@ -8254,8 +7960,7 @@ component IBUF_HSTL_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_I : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_II -----
 component IBUF_HSTL_II
@@ -8264,8 +7969,7 @@ component IBUF_HSTL_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_II : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_III -----
 component IBUF_HSTL_III
@@ -8274,8 +7978,7 @@ component IBUF_HSTL_III
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_III : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_III_18 -----
 component IBUF_HSTL_III_18
@@ -8284,8 +7987,7 @@ component IBUF_HSTL_III_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_III_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_III_DCI -----
 component IBUF_HSTL_III_DCI
@@ -8294,8 +7996,7 @@ component IBUF_HSTL_III_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_III_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_III_DCI_18 -----
 component IBUF_HSTL_III_DCI_18
@@ -8304,8 +8005,7 @@ component IBUF_HSTL_III_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_III_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_II_18 -----
 component IBUF_HSTL_II_18
@@ -8314,8 +8014,7 @@ component IBUF_HSTL_II_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_II_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_II_DCI -----
 component IBUF_HSTL_II_DCI
@@ -8324,8 +8023,7 @@ component IBUF_HSTL_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_II_DCI_18 -----
 component IBUF_HSTL_II_DCI_18
@@ -8334,8 +8032,7 @@ component IBUF_HSTL_II_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_II_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_IV -----
 component IBUF_HSTL_IV
@@ -8344,8 +8041,7 @@ component IBUF_HSTL_IV
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_IV : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_IV_18 -----
 component IBUF_HSTL_IV_18
@@ -8354,8 +8050,7 @@ component IBUF_HSTL_IV_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_IV_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_IV_DCI -----
 component IBUF_HSTL_IV_DCI
@@ -8364,8 +8059,7 @@ component IBUF_HSTL_IV_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_IV_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_IV_DCI_18 -----
 component IBUF_HSTL_IV_DCI_18
@@ -8374,8 +8068,7 @@ component IBUF_HSTL_IV_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_IV_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_I_18 -----
 component IBUF_HSTL_I_18
@@ -8384,8 +8077,7 @@ component IBUF_HSTL_I_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_I_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_I_DCI -----
 component IBUF_HSTL_I_DCI
@@ -8394,8 +8086,7 @@ component IBUF_HSTL_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_I_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_HSTL_I_DCI_18 -----
 component IBUF_HSTL_I_DCI_18
@@ -8404,8 +8095,7 @@ component IBUF_HSTL_I_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_HSTL_I_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_IBUFDISABLE -----
 component IBUF_IBUFDISABLE
@@ -8422,8 +8112,7 @@ component IBUF_IBUFDISABLE
      IBUFDISABLE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_IBUFDISABLE : component is "PRIMITIVE";
+
 
 ----- component IBUF_INTERMDISABLE -----
 component IBUF_INTERMDISABLE
@@ -8441,8 +8130,7 @@ component IBUF_INTERMDISABLE
      INTERMDISABLE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_INTERMDISABLE : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVCMOS12 -----
 component IBUF_LVCMOS12
@@ -8451,8 +8139,7 @@ component IBUF_LVCMOS12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVCMOS12 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVCMOS15 -----
 component IBUF_LVCMOS15
@@ -8461,8 +8148,7 @@ component IBUF_LVCMOS15
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVCMOS15 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVCMOS18 -----
 component IBUF_LVCMOS18
@@ -8471,8 +8157,7 @@ component IBUF_LVCMOS18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVCMOS18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVCMOS2 -----
 component IBUF_LVCMOS2
@@ -8481,8 +8166,7 @@ component IBUF_LVCMOS2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVCMOS2 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVCMOS25 -----
 component IBUF_LVCMOS25
@@ -8491,8 +8175,7 @@ component IBUF_LVCMOS25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVCMOS25 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVCMOS33 -----
 component IBUF_LVCMOS33
@@ -8501,8 +8184,7 @@ component IBUF_LVCMOS33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVCMOS33 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVDCI_15 -----
 component IBUF_LVDCI_15
@@ -8511,8 +8193,7 @@ component IBUF_LVDCI_15
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVDCI_15 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVDCI_18 -----
 component IBUF_LVDCI_18
@@ -8521,8 +8202,7 @@ component IBUF_LVDCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVDCI_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVDCI_25 -----
 component IBUF_LVDCI_25
@@ -8531,8 +8211,7 @@ component IBUF_LVDCI_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVDCI_25 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVDCI_33 -----
 component IBUF_LVDCI_33
@@ -8541,8 +8220,7 @@ component IBUF_LVDCI_33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVDCI_33 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVDCI_DV2_15 -----
 component IBUF_LVDCI_DV2_15
@@ -8551,8 +8229,7 @@ component IBUF_LVDCI_DV2_15
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVDCI_DV2_15 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVDCI_DV2_18 -----
 component IBUF_LVDCI_DV2_18
@@ -8561,8 +8238,7 @@ component IBUF_LVDCI_DV2_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVDCI_DV2_18 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVDCI_DV2_25 -----
 component IBUF_LVDCI_DV2_25
@@ -8571,8 +8247,7 @@ component IBUF_LVDCI_DV2_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVDCI_DV2_25 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVDCI_DV2_33 -----
 component IBUF_LVDCI_DV2_33
@@ -8581,8 +8256,7 @@ component IBUF_LVDCI_DV2_33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVDCI_DV2_33 : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVDS -----
 component IBUF_LVDS
@@ -8591,8 +8265,7 @@ component IBUF_LVDS
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVDS : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVPECL -----
 component IBUF_LVPECL
@@ -8601,8 +8274,7 @@ component IBUF_LVPECL
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVPECL : component is "PRIMITIVE";
+
 
 ----- component IBUF_LVTTL -----
 component IBUF_LVTTL
@@ -8611,8 +8283,7 @@ component IBUF_LVTTL
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_LVTTL : component is "PRIMITIVE";
+
 
 ----- component IBUF_PCI33_3 -----
 component IBUF_PCI33_3
@@ -8621,8 +8292,7 @@ component IBUF_PCI33_3
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_PCI33_3 : component is "PRIMITIVE";
+
 
 ----- component IBUF_PCI33_5 -----
 component IBUF_PCI33_5
@@ -8631,8 +8301,7 @@ component IBUF_PCI33_5
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_PCI33_5 : component is "PRIMITIVE";
+
 
 ----- component IBUF_PCI66_3 -----
 component IBUF_PCI66_3
@@ -8641,8 +8310,7 @@ component IBUF_PCI66_3
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_PCI66_3 : component is "PRIMITIVE";
+
 
 ----- component IBUF_PCIX -----
 component IBUF_PCIX
@@ -8651,8 +8319,7 @@ component IBUF_PCIX
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_PCIX : component is "PRIMITIVE";
+
 
 ----- component IBUF_PCIX66_3 -----
 component IBUF_PCIX66_3
@@ -8661,8 +8328,7 @@ component IBUF_PCIX66_3
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_PCIX66_3 : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL18_I -----
 component IBUF_SSTL18_I
@@ -8671,8 +8337,7 @@ component IBUF_SSTL18_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL18_I : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL18_II -----
 component IBUF_SSTL18_II
@@ -8681,8 +8346,7 @@ component IBUF_SSTL18_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL18_II : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL18_II_DCI -----
 component IBUF_SSTL18_II_DCI
@@ -8691,8 +8355,7 @@ component IBUF_SSTL18_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL18_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL18_I_DCI -----
 component IBUF_SSTL18_I_DCI
@@ -8701,8 +8364,7 @@ component IBUF_SSTL18_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL18_I_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL2_I -----
 component IBUF_SSTL2_I
@@ -8711,8 +8373,7 @@ component IBUF_SSTL2_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL2_I : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL2_II -----
 component IBUF_SSTL2_II
@@ -8721,8 +8382,7 @@ component IBUF_SSTL2_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL2_II : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL2_II_DCI -----
 component IBUF_SSTL2_II_DCI
@@ -8731,8 +8391,7 @@ component IBUF_SSTL2_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL2_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL2_I_DCI -----
 component IBUF_SSTL2_I_DCI
@@ -8741,8 +8400,7 @@ component IBUF_SSTL2_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL2_I_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL3_I -----
 component IBUF_SSTL3_I
@@ -8751,8 +8409,7 @@ component IBUF_SSTL3_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL3_I : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL3_II -----
 component IBUF_SSTL3_II
@@ -8761,8 +8418,7 @@ component IBUF_SSTL3_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL3_II : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL3_II_DCI -----
 component IBUF_SSTL3_II_DCI
@@ -8771,8 +8427,7 @@ component IBUF_SSTL3_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL3_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IBUF_SSTL3_I_DCI -----
 component IBUF_SSTL3_I_DCI
@@ -8781,8 +8436,7 @@ component IBUF_SSTL3_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IBUF_SSTL3_I_DCI : component is "PRIMITIVE";
+
 
 ----- component ICAPE2 -----
 component ICAPE2
@@ -8799,8 +8453,7 @@ component ICAPE2
      RDWRB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ICAPE2 : component is "PRIMITIVE";
+
 
 ----- component ICAP_SPARTAN3A -----
 component ICAP_SPARTAN3A
@@ -8813,8 +8466,7 @@ component ICAP_SPARTAN3A
      WRITE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ICAP_SPARTAN3A : component is "PRIMITIVE";
+
 
 ----- component ICAP_SPARTAN6 -----
 component ICAP_SPARTAN6
@@ -8831,8 +8483,7 @@ component ICAP_SPARTAN6
      WRITE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ICAP_SPARTAN6 : component is "PRIMITIVE";
+
 
 ----- component ICAP_VIRTEX4 -----
 component ICAP_VIRTEX4
@@ -8848,8 +8499,7 @@ component ICAP_VIRTEX4
      WRITE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ICAP_VIRTEX4 : component is "PRIMITIVE";
+
 
 ----- component ICAP_VIRTEX5 -----
 component ICAP_VIRTEX5
@@ -8865,8 +8515,7 @@ component ICAP_VIRTEX5
      WRITE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ICAP_VIRTEX5 : component is "PRIMITIVE";
+
 
 ----- component ICAP_VIRTEX6 -----
 component ICAP_VIRTEX6
@@ -8884,8 +8533,7 @@ component ICAP_VIRTEX6
      RDWRB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ICAP_VIRTEX6 : component is "PRIMITIVE";
+
 
 ----- component IDDR -----
 component IDDR
@@ -8905,8 +8553,7 @@ component IDDR
      S : in std_ulogic := 'L'
   );
 end component;
-attribute BOX_TYPE of
-  IDDR : component is "PRIMITIVE";
+
 
 ----- component IDDR2 -----
 component IDDR2
@@ -8927,8 +8574,7 @@ component IDDR2
      S : in std_ulogic := 'L'
   );
 end component;
-attribute BOX_TYPE of
-  IDDR2 : component is "PRIMITIVE";
+
 
 ----- component IDDR_2CLK -----
 component IDDR_2CLK
@@ -8949,8 +8595,7 @@ component IDDR_2CLK
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IDDR_2CLK : component is "PRIMITIVE";
+
 
 ----- component IDELAY -----
 component IDELAY
@@ -8967,8 +8612,7 @@ component IDELAY
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IDELAY : component is "PRIMITIVE";
+
 
 ----- component IDELAYCTRL -----
 component IDELAYCTRL
@@ -8978,8 +8622,7 @@ component IDELAYCTRL
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IDELAYCTRL : component is "PRIMITIVE";
+
 
 ----- component IDELAYE2 -----
 component IDELAYE2
@@ -9008,8 +8651,7 @@ component IDELAYE2
      REGRST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IDELAYE2 : component is "PRIMITIVE";
+
 
 ----- component IDELAYE2_FINEDELAY -----
 component IDELAYE2_FINEDELAY
@@ -9040,8 +8682,7 @@ component IDELAYE2_FINEDELAY
      REGRST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IDELAYE2_FINEDELAY : component is "PRIMITIVE";
+
 
 ----- component IFDDRCPE -----
 component IFDDRCPE
@@ -9056,8 +8697,7 @@ component IFDDRCPE
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IFDDRCPE : component is "PRIMITIVE";
+
 
 ----- component IFDDRRSE -----
 component IFDDRRSE
@@ -9072,8 +8712,7 @@ component IFDDRRSE
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IFDDRRSE : component is "PRIMITIVE";
+
 
 ----- component ILD -----
 component ILD
@@ -9083,8 +8722,7 @@ component ILD
      G : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ILD : component is "PRIMITIVE";
+
 
 ----- component INV -----
 component INV
@@ -9093,8 +8731,7 @@ component INV
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  INV : component is "PRIMITIVE";
+
 
 ----- component IN_FIFO -----
 component IN_FIFO
@@ -9136,8 +8773,7 @@ component IN_FIFO
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IN_FIFO : component is "PRIMITIVE";
+
 
 ----- component IOBUF -----
 component IOBUF
@@ -9157,8 +8793,7 @@ component IOBUF
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF : component is "PRIMITIVE";
+
 
 ----- component IOBUFDS -----
 component IOBUFDS
@@ -9179,8 +8814,7 @@ component IOBUFDS
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUFDS : component is "PRIMITIVE";
+
 
 ----- component IOBUFDS_BLVDS_25 -----
 component IOBUFDS_BLVDS_25
@@ -9192,8 +8826,7 @@ component IOBUFDS_BLVDS_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUFDS_BLVDS_25 : component is "PRIMITIVE";
+
 
 ----- component IOBUFDS_DCIEN -----
 component IOBUFDS_DCIEN
@@ -9216,8 +8849,7 @@ component IOBUFDS_DCIEN
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUFDS_DCIEN : component is "PRIMITIVE";
+
 
 ----- component IOBUFDS_DIFF_OUT -----
 component IOBUFDS_DIFF_OUT
@@ -9236,8 +8868,7 @@ component IOBUFDS_DIFF_OUT
      TS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUFDS_DIFF_OUT : component is "PRIMITIVE";
+
 
 ----- component IOBUFDS_DIFF_OUT_DCIEN -----
 component IOBUFDS_DIFF_OUT_DCIEN
@@ -9258,8 +8889,7 @@ component IOBUFDS_DIFF_OUT_DCIEN
      TS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUFDS_DIFF_OUT_DCIEN : component is "PRIMITIVE";
+
 
 ----- component IOBUFDS_DIFF_OUT_INTERMDISABLE -----
 component IOBUFDS_DIFF_OUT_INTERMDISABLE
@@ -9280,8 +8910,7 @@ component IOBUFDS_DIFF_OUT_INTERMDISABLE
      TS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUFDS_DIFF_OUT_INTERMDISABLE : component is "PRIMITIVE";
+
 
 ----- component IOBUFDS_INTERMDISABLE -----
 component IOBUFDS_INTERMDISABLE
@@ -9304,8 +8933,7 @@ component IOBUFDS_INTERMDISABLE
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUFDS_INTERMDISABLE : component is "PRIMITIVE";
+
 
 ----- component IOBUFE -----
 component IOBUFE
@@ -9316,8 +8944,7 @@ component IOBUFE
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUFE : component is "PRIMITIVE";
+
 
 ----- component IOBUF_AGP -----
 component IOBUF_AGP
@@ -9328,8 +8955,7 @@ component IOBUF_AGP
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_AGP : component is "PRIMITIVE";
+
 
 ----- component IOBUF_CTT -----
 component IOBUF_CTT
@@ -9340,8 +8966,7 @@ component IOBUF_CTT
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_CTT : component is "PRIMITIVE";
+
 
 ----- component IOBUF_DCIEN -----
 component IOBUF_DCIEN
@@ -9363,8 +8988,7 @@ component IOBUF_DCIEN
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_DCIEN : component is "PRIMITIVE";
+
 
 ----- component IOBUF_F_12 -----
 component IOBUF_F_12
@@ -9375,8 +8999,7 @@ component IOBUF_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_F_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_F_16 -----
 component IOBUF_F_16
@@ -9387,8 +9010,7 @@ component IOBUF_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_F_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_F_2 -----
 component IOBUF_F_2
@@ -9399,8 +9021,7 @@ component IOBUF_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_F_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_F_24 -----
 component IOBUF_F_24
@@ -9411,8 +9032,7 @@ component IOBUF_F_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_F_24 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_F_4 -----
 component IOBUF_F_4
@@ -9423,8 +9043,7 @@ component IOBUF_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_F_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_F_6 -----
 component IOBUF_F_6
@@ -9435,8 +9054,7 @@ component IOBUF_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_F_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_F_8 -----
 component IOBUF_F_8
@@ -9447,8 +9065,7 @@ component IOBUF_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_F_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_GTL -----
 component IOBUF_GTL
@@ -9459,8 +9076,7 @@ component IOBUF_GTL
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_GTL : component is "PRIMITIVE";
+
 
 ----- component IOBUF_GTLP -----
 component IOBUF_GTLP
@@ -9471,8 +9087,7 @@ component IOBUF_GTLP
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_GTLP : component is "PRIMITIVE";
+
 
 ----- component IOBUF_GTLP_DCI -----
 component IOBUF_GTLP_DCI
@@ -9483,8 +9098,7 @@ component IOBUF_GTLP_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_GTLP_DCI : component is "PRIMITIVE";
+
 
 ----- component IOBUF_GTL_DCI -----
 component IOBUF_GTL_DCI
@@ -9495,8 +9109,7 @@ component IOBUF_GTL_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_GTL_DCI : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_I -----
 component IOBUF_HSTL_I
@@ -9507,8 +9120,7 @@ component IOBUF_HSTL_I
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_I : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_II -----
 component IOBUF_HSTL_II
@@ -9519,8 +9131,7 @@ component IOBUF_HSTL_II
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_II : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_III -----
 component IOBUF_HSTL_III
@@ -9531,8 +9142,7 @@ component IOBUF_HSTL_III
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_III : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_III_18 -----
 component IOBUF_HSTL_III_18
@@ -9543,8 +9153,7 @@ component IOBUF_HSTL_III_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_III_18 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_II_18 -----
 component IOBUF_HSTL_II_18
@@ -9555,8 +9164,7 @@ component IOBUF_HSTL_II_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_II_18 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_II_DCI -----
 component IOBUF_HSTL_II_DCI
@@ -9567,8 +9175,7 @@ component IOBUF_HSTL_II_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_II_DCI_18 -----
 component IOBUF_HSTL_II_DCI_18
@@ -9579,8 +9186,7 @@ component IOBUF_HSTL_II_DCI_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_II_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_IV -----
 component IOBUF_HSTL_IV
@@ -9591,8 +9197,7 @@ component IOBUF_HSTL_IV
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_IV : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_IV_18 -----
 component IOBUF_HSTL_IV_18
@@ -9603,8 +9208,7 @@ component IOBUF_HSTL_IV_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_IV_18 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_IV_DCI -----
 component IOBUF_HSTL_IV_DCI
@@ -9615,8 +9219,7 @@ component IOBUF_HSTL_IV_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_IV_DCI : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_IV_DCI_18 -----
 component IOBUF_HSTL_IV_DCI_18
@@ -9627,8 +9230,7 @@ component IOBUF_HSTL_IV_DCI_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_IV_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_HSTL_I_18 -----
 component IOBUF_HSTL_I_18
@@ -9639,8 +9241,7 @@ component IOBUF_HSTL_I_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_HSTL_I_18 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_INTERMDISABLE -----
 component IOBUF_INTERMDISABLE
@@ -9662,8 +9263,7 @@ component IOBUF_INTERMDISABLE
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_INTERMDISABLE : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS12 -----
 component IOBUF_LVCMOS12
@@ -9674,8 +9274,7 @@ component IOBUF_LVCMOS12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS12_F_2 -----
 component IOBUF_LVCMOS12_F_2
@@ -9686,8 +9285,7 @@ component IOBUF_LVCMOS12_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS12_F_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS12_F_4 -----
 component IOBUF_LVCMOS12_F_4
@@ -9698,8 +9296,7 @@ component IOBUF_LVCMOS12_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS12_F_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS12_F_6 -----
 component IOBUF_LVCMOS12_F_6
@@ -9710,8 +9307,7 @@ component IOBUF_LVCMOS12_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS12_F_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS12_F_8 -----
 component IOBUF_LVCMOS12_F_8
@@ -9722,8 +9318,7 @@ component IOBUF_LVCMOS12_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS12_F_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS12_S_2 -----
 component IOBUF_LVCMOS12_S_2
@@ -9734,8 +9329,7 @@ component IOBUF_LVCMOS12_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS12_S_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS12_S_4 -----
 component IOBUF_LVCMOS12_S_4
@@ -9746,8 +9340,7 @@ component IOBUF_LVCMOS12_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS12_S_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS12_S_6 -----
 component IOBUF_LVCMOS12_S_6
@@ -9758,8 +9351,7 @@ component IOBUF_LVCMOS12_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS12_S_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS12_S_8 -----
 component IOBUF_LVCMOS12_S_8
@@ -9770,8 +9362,7 @@ component IOBUF_LVCMOS12_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS12_S_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15 -----
 component IOBUF_LVCMOS15
@@ -9782,8 +9373,7 @@ component IOBUF_LVCMOS15
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_F_12 -----
 component IOBUF_LVCMOS15_F_12
@@ -9794,8 +9384,7 @@ component IOBUF_LVCMOS15_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_F_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_F_16 -----
 component IOBUF_LVCMOS15_F_16
@@ -9806,8 +9395,7 @@ component IOBUF_LVCMOS15_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_F_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_F_2 -----
 component IOBUF_LVCMOS15_F_2
@@ -9818,8 +9406,7 @@ component IOBUF_LVCMOS15_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_F_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_F_4 -----
 component IOBUF_LVCMOS15_F_4
@@ -9830,8 +9417,7 @@ component IOBUF_LVCMOS15_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_F_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_F_6 -----
 component IOBUF_LVCMOS15_F_6
@@ -9842,8 +9428,7 @@ component IOBUF_LVCMOS15_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_F_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_F_8 -----
 component IOBUF_LVCMOS15_F_8
@@ -9854,8 +9439,7 @@ component IOBUF_LVCMOS15_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_F_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_S_12 -----
 component IOBUF_LVCMOS15_S_12
@@ -9866,8 +9450,7 @@ component IOBUF_LVCMOS15_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_S_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_S_16 -----
 component IOBUF_LVCMOS15_S_16
@@ -9878,8 +9461,7 @@ component IOBUF_LVCMOS15_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_S_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_S_2 -----
 component IOBUF_LVCMOS15_S_2
@@ -9890,8 +9472,7 @@ component IOBUF_LVCMOS15_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_S_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_S_4 -----
 component IOBUF_LVCMOS15_S_4
@@ -9902,8 +9483,7 @@ component IOBUF_LVCMOS15_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_S_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_S_6 -----
 component IOBUF_LVCMOS15_S_6
@@ -9914,8 +9494,7 @@ component IOBUF_LVCMOS15_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_S_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS15_S_8 -----
 component IOBUF_LVCMOS15_S_8
@@ -9926,8 +9505,7 @@ component IOBUF_LVCMOS15_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS15_S_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18 -----
 component IOBUF_LVCMOS18
@@ -9938,8 +9516,7 @@ component IOBUF_LVCMOS18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_F_12 -----
 component IOBUF_LVCMOS18_F_12
@@ -9950,8 +9527,7 @@ component IOBUF_LVCMOS18_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_F_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_F_16 -----
 component IOBUF_LVCMOS18_F_16
@@ -9962,8 +9538,7 @@ component IOBUF_LVCMOS18_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_F_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_F_2 -----
 component IOBUF_LVCMOS18_F_2
@@ -9974,8 +9549,7 @@ component IOBUF_LVCMOS18_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_F_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_F_4 -----
 component IOBUF_LVCMOS18_F_4
@@ -9986,8 +9560,7 @@ component IOBUF_LVCMOS18_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_F_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_F_6 -----
 component IOBUF_LVCMOS18_F_6
@@ -9998,8 +9571,7 @@ component IOBUF_LVCMOS18_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_F_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_F_8 -----
 component IOBUF_LVCMOS18_F_8
@@ -10010,8 +9582,7 @@ component IOBUF_LVCMOS18_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_F_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_S_12 -----
 component IOBUF_LVCMOS18_S_12
@@ -10022,8 +9593,7 @@ component IOBUF_LVCMOS18_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_S_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_S_16 -----
 component IOBUF_LVCMOS18_S_16
@@ -10034,8 +9604,7 @@ component IOBUF_LVCMOS18_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_S_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_S_2 -----
 component IOBUF_LVCMOS18_S_2
@@ -10046,8 +9615,7 @@ component IOBUF_LVCMOS18_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_S_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_S_4 -----
 component IOBUF_LVCMOS18_S_4
@@ -10058,8 +9626,7 @@ component IOBUF_LVCMOS18_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_S_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_S_6 -----
 component IOBUF_LVCMOS18_S_6
@@ -10070,8 +9637,7 @@ component IOBUF_LVCMOS18_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_S_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS18_S_8 -----
 component IOBUF_LVCMOS18_S_8
@@ -10082,8 +9648,7 @@ component IOBUF_LVCMOS18_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS18_S_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS2 -----
 component IOBUF_LVCMOS2
@@ -10094,8 +9659,7 @@ component IOBUF_LVCMOS2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25 -----
 component IOBUF_LVCMOS25
@@ -10106,8 +9670,7 @@ component IOBUF_LVCMOS25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_F_12 -----
 component IOBUF_LVCMOS25_F_12
@@ -10118,8 +9681,7 @@ component IOBUF_LVCMOS25_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_F_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_F_16 -----
 component IOBUF_LVCMOS25_F_16
@@ -10130,8 +9692,7 @@ component IOBUF_LVCMOS25_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_F_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_F_2 -----
 component IOBUF_LVCMOS25_F_2
@@ -10142,8 +9703,7 @@ component IOBUF_LVCMOS25_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_F_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_F_24 -----
 component IOBUF_LVCMOS25_F_24
@@ -10154,8 +9714,7 @@ component IOBUF_LVCMOS25_F_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_F_24 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_F_4 -----
 component IOBUF_LVCMOS25_F_4
@@ -10166,8 +9725,7 @@ component IOBUF_LVCMOS25_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_F_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_F_6 -----
 component IOBUF_LVCMOS25_F_6
@@ -10178,8 +9736,7 @@ component IOBUF_LVCMOS25_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_F_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_F_8 -----
 component IOBUF_LVCMOS25_F_8
@@ -10190,8 +9747,7 @@ component IOBUF_LVCMOS25_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_F_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_S_12 -----
 component IOBUF_LVCMOS25_S_12
@@ -10202,8 +9758,7 @@ component IOBUF_LVCMOS25_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_S_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_S_16 -----
 component IOBUF_LVCMOS25_S_16
@@ -10214,8 +9769,7 @@ component IOBUF_LVCMOS25_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_S_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_S_2 -----
 component IOBUF_LVCMOS25_S_2
@@ -10226,8 +9780,7 @@ component IOBUF_LVCMOS25_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_S_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_S_24 -----
 component IOBUF_LVCMOS25_S_24
@@ -10238,8 +9791,7 @@ component IOBUF_LVCMOS25_S_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_S_24 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_S_4 -----
 component IOBUF_LVCMOS25_S_4
@@ -10250,8 +9802,7 @@ component IOBUF_LVCMOS25_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_S_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_S_6 -----
 component IOBUF_LVCMOS25_S_6
@@ -10262,8 +9813,7 @@ component IOBUF_LVCMOS25_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_S_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS25_S_8 -----
 component IOBUF_LVCMOS25_S_8
@@ -10274,8 +9824,7 @@ component IOBUF_LVCMOS25_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS25_S_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33 -----
 component IOBUF_LVCMOS33
@@ -10286,8 +9835,7 @@ component IOBUF_LVCMOS33
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_F_12 -----
 component IOBUF_LVCMOS33_F_12
@@ -10298,8 +9846,7 @@ component IOBUF_LVCMOS33_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_F_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_F_16 -----
 component IOBUF_LVCMOS33_F_16
@@ -10310,8 +9857,7 @@ component IOBUF_LVCMOS33_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_F_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_F_2 -----
 component IOBUF_LVCMOS33_F_2
@@ -10322,8 +9868,7 @@ component IOBUF_LVCMOS33_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_F_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_F_24 -----
 component IOBUF_LVCMOS33_F_24
@@ -10334,8 +9879,7 @@ component IOBUF_LVCMOS33_F_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_F_24 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_F_4 -----
 component IOBUF_LVCMOS33_F_4
@@ -10346,8 +9890,7 @@ component IOBUF_LVCMOS33_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_F_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_F_6 -----
 component IOBUF_LVCMOS33_F_6
@@ -10358,8 +9901,7 @@ component IOBUF_LVCMOS33_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_F_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_F_8 -----
 component IOBUF_LVCMOS33_F_8
@@ -10370,8 +9912,7 @@ component IOBUF_LVCMOS33_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_F_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_S_12 -----
 component IOBUF_LVCMOS33_S_12
@@ -10382,8 +9923,7 @@ component IOBUF_LVCMOS33_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_S_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_S_16 -----
 component IOBUF_LVCMOS33_S_16
@@ -10394,8 +9934,7 @@ component IOBUF_LVCMOS33_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_S_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_S_2 -----
 component IOBUF_LVCMOS33_S_2
@@ -10406,8 +9945,7 @@ component IOBUF_LVCMOS33_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_S_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_S_24 -----
 component IOBUF_LVCMOS33_S_24
@@ -10418,8 +9956,7 @@ component IOBUF_LVCMOS33_S_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_S_24 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_S_4 -----
 component IOBUF_LVCMOS33_S_4
@@ -10430,8 +9967,7 @@ component IOBUF_LVCMOS33_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_S_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_S_6 -----
 component IOBUF_LVCMOS33_S_6
@@ -10442,8 +9978,7 @@ component IOBUF_LVCMOS33_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_S_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVCMOS33_S_8 -----
 component IOBUF_LVCMOS33_S_8
@@ -10454,8 +9989,7 @@ component IOBUF_LVCMOS33_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVCMOS33_S_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVDCI_15 -----
 component IOBUF_LVDCI_15
@@ -10466,8 +10000,7 @@ component IOBUF_LVDCI_15
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVDCI_15 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVDCI_18 -----
 component IOBUF_LVDCI_18
@@ -10478,8 +10011,7 @@ component IOBUF_LVDCI_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVDCI_18 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVDCI_25 -----
 component IOBUF_LVDCI_25
@@ -10490,8 +10022,7 @@ component IOBUF_LVDCI_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVDCI_25 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVDCI_33 -----
 component IOBUF_LVDCI_33
@@ -10502,8 +10033,7 @@ component IOBUF_LVDCI_33
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVDCI_33 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVDCI_DV2_15 -----
 component IOBUF_LVDCI_DV2_15
@@ -10514,8 +10044,7 @@ component IOBUF_LVDCI_DV2_15
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVDCI_DV2_15 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVDCI_DV2_18 -----
 component IOBUF_LVDCI_DV2_18
@@ -10526,8 +10055,7 @@ component IOBUF_LVDCI_DV2_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVDCI_DV2_18 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVDCI_DV2_25 -----
 component IOBUF_LVDCI_DV2_25
@@ -10538,8 +10066,7 @@ component IOBUF_LVDCI_DV2_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVDCI_DV2_25 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVDCI_DV2_33 -----
 component IOBUF_LVDCI_DV2_33
@@ -10550,8 +10077,7 @@ component IOBUF_LVDCI_DV2_33
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVDCI_DV2_33 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVDS -----
 component IOBUF_LVDS
@@ -10562,8 +10088,7 @@ component IOBUF_LVDS
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVDS : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVPECL -----
 component IOBUF_LVPECL
@@ -10574,8 +10099,7 @@ component IOBUF_LVPECL
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVPECL : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL -----
 component IOBUF_LVTTL
@@ -10586,8 +10110,7 @@ component IOBUF_LVTTL
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_F_12 -----
 component IOBUF_LVTTL_F_12
@@ -10598,8 +10121,7 @@ component IOBUF_LVTTL_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_F_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_F_16 -----
 component IOBUF_LVTTL_F_16
@@ -10610,8 +10132,7 @@ component IOBUF_LVTTL_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_F_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_F_2 -----
 component IOBUF_LVTTL_F_2
@@ -10622,8 +10143,7 @@ component IOBUF_LVTTL_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_F_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_F_24 -----
 component IOBUF_LVTTL_F_24
@@ -10634,8 +10154,7 @@ component IOBUF_LVTTL_F_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_F_24 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_F_4 -----
 component IOBUF_LVTTL_F_4
@@ -10646,8 +10165,7 @@ component IOBUF_LVTTL_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_F_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_F_6 -----
 component IOBUF_LVTTL_F_6
@@ -10658,8 +10176,7 @@ component IOBUF_LVTTL_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_F_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_F_8 -----
 component IOBUF_LVTTL_F_8
@@ -10670,8 +10187,7 @@ component IOBUF_LVTTL_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_F_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_S_12 -----
 component IOBUF_LVTTL_S_12
@@ -10682,8 +10198,7 @@ component IOBUF_LVTTL_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_S_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_S_16 -----
 component IOBUF_LVTTL_S_16
@@ -10694,8 +10209,7 @@ component IOBUF_LVTTL_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_S_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_S_2 -----
 component IOBUF_LVTTL_S_2
@@ -10706,8 +10220,7 @@ component IOBUF_LVTTL_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_S_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_S_24 -----
 component IOBUF_LVTTL_S_24
@@ -10718,8 +10231,7 @@ component IOBUF_LVTTL_S_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_S_24 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_S_4 -----
 component IOBUF_LVTTL_S_4
@@ -10730,8 +10242,7 @@ component IOBUF_LVTTL_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_S_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_S_6 -----
 component IOBUF_LVTTL_S_6
@@ -10742,8 +10253,7 @@ component IOBUF_LVTTL_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_S_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_LVTTL_S_8 -----
 component IOBUF_LVTTL_S_8
@@ -10754,8 +10264,7 @@ component IOBUF_LVTTL_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_LVTTL_S_8 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_PCI33_3 -----
 component IOBUF_PCI33_3
@@ -10766,8 +10275,7 @@ component IOBUF_PCI33_3
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_PCI33_3 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_PCI33_5 -----
 component IOBUF_PCI33_5
@@ -10778,8 +10286,7 @@ component IOBUF_PCI33_5
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_PCI33_5 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_PCI66_3 -----
 component IOBUF_PCI66_3
@@ -10790,8 +10297,7 @@ component IOBUF_PCI66_3
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_PCI66_3 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_PCIX -----
 component IOBUF_PCIX
@@ -10802,8 +10308,7 @@ component IOBUF_PCIX
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_PCIX : component is "PRIMITIVE";
+
 
 ----- component IOBUF_PCIX66_3 -----
 component IOBUF_PCIX66_3
@@ -10814,8 +10319,7 @@ component IOBUF_PCIX66_3
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_PCIX66_3 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_SSTL18_I -----
 component IOBUF_SSTL18_I
@@ -10826,8 +10330,7 @@ component IOBUF_SSTL18_I
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_SSTL18_I : component is "PRIMITIVE";
+
 
 ----- component IOBUF_SSTL18_II -----
 component IOBUF_SSTL18_II
@@ -10838,8 +10341,7 @@ component IOBUF_SSTL18_II
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_SSTL18_II : component is "PRIMITIVE";
+
 
 ----- component IOBUF_SSTL18_II_DCI -----
 component IOBUF_SSTL18_II_DCI
@@ -10850,8 +10352,7 @@ component IOBUF_SSTL18_II_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_SSTL18_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IOBUF_SSTL2_I -----
 component IOBUF_SSTL2_I
@@ -10862,8 +10363,7 @@ component IOBUF_SSTL2_I
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_SSTL2_I : component is "PRIMITIVE";
+
 
 ----- component IOBUF_SSTL2_II -----
 component IOBUF_SSTL2_II
@@ -10874,8 +10374,7 @@ component IOBUF_SSTL2_II
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_SSTL2_II : component is "PRIMITIVE";
+
 
 ----- component IOBUF_SSTL2_II_DCI -----
 component IOBUF_SSTL2_II_DCI
@@ -10886,8 +10385,7 @@ component IOBUF_SSTL2_II_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_SSTL2_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IOBUF_SSTL3_I -----
 component IOBUF_SSTL3_I
@@ -10898,8 +10396,7 @@ component IOBUF_SSTL3_I
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_SSTL3_I : component is "PRIMITIVE";
+
 
 ----- component IOBUF_SSTL3_II -----
 component IOBUF_SSTL3_II
@@ -10910,8 +10407,7 @@ component IOBUF_SSTL3_II
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_SSTL3_II : component is "PRIMITIVE";
+
 
 ----- component IOBUF_SSTL3_II_DCI -----
 component IOBUF_SSTL3_II_DCI
@@ -10922,8 +10418,7 @@ component IOBUF_SSTL3_II_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_SSTL3_II_DCI : component is "PRIMITIVE";
+
 
 ----- component IOBUF_S_12 -----
 component IOBUF_S_12
@@ -10934,8 +10429,7 @@ component IOBUF_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_S_12 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_S_16 -----
 component IOBUF_S_16
@@ -10946,8 +10440,7 @@ component IOBUF_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_S_16 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_S_2 -----
 component IOBUF_S_2
@@ -10958,8 +10451,7 @@ component IOBUF_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_S_2 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_S_24 -----
 component IOBUF_S_24
@@ -10970,8 +10462,7 @@ component IOBUF_S_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_S_24 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_S_4 -----
 component IOBUF_S_4
@@ -10982,8 +10473,7 @@ component IOBUF_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_S_4 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_S_6 -----
 component IOBUF_S_6
@@ -10994,8 +10484,7 @@ component IOBUF_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_S_6 : component is "PRIMITIVE";
+
 
 ----- component IOBUF_S_8 -----
 component IOBUF_S_8
@@ -11006,8 +10495,7 @@ component IOBUF_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IOBUF_S_8 : component is "PRIMITIVE";
+
 
 ----- component IODELAY -----
 component IODELAY
@@ -11032,8 +10520,7 @@ component IODELAY
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IODELAY : component is "PRIMITIVE";
+
 
 ----- component IODELAY2 -----
 component IODELAY2
@@ -11067,8 +10554,7 @@ component IODELAY2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IODELAY2 : component is "PRIMITIVE";
+
 
 ----- component IODELAYE1 -----
 component IODELAYE1
@@ -11099,8 +10585,7 @@ component IODELAYE1
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IODELAYE1 : component is "PRIMITIVE";
+
 
 ----- component IODRP2 -----
 component IODRP2
@@ -11126,8 +10611,7 @@ component IODRP2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IODRP2 : component is "PRIMITIVE";
+
 
 ----- component IODRP2_MCB -----
 component IODRP2_MCB
@@ -11163,8 +10647,7 @@ component IODRP2_MCB
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  IODRP2_MCB : component is "PRIMITIVE";
+
 
 ----- component ISERDES -----
 component ISERDES
@@ -11213,8 +10696,7 @@ component ISERDES
      SR : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ISERDES : component is "PRIMITIVE";
+
 
 ----- component ISERDES2 -----
 component ISERDES2
@@ -11248,8 +10730,7 @@ component ISERDES2
      SHIFTIN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ISERDES2 : component is "PRIMITIVE";
+
 
 ----- component ISERDESE1 -----
 component ISERDESE1
@@ -11299,8 +10780,7 @@ component ISERDESE1
      SHIFTIN2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ISERDESE1 : component is "PRIMITIVE";
+
 
 ----- component ISERDESE2 -----
 component ISERDESE2
@@ -11354,8 +10834,7 @@ component ISERDESE2
      SHIFTIN2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ISERDESE2 : component is "PRIMITIVE";
+
 
 ----- component ISERDES_NODELAY -----
 component ISERDES_NODELAY
@@ -11393,8 +10872,7 @@ component ISERDES_NODELAY
      SHIFTIN2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ISERDES_NODELAY : component is "PRIMITIVE";
+
 
 ----- component JTAGPPC -----
 component JTAGPPC
@@ -11406,8 +10884,7 @@ component JTAGPPC
      TDOTSPPC : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  JTAGPPC : component is "PRIMITIVE";
+
 
 ----- component JTAGPPC440 -----
 component JTAGPPC440
@@ -11418,8 +10895,7 @@ component JTAGPPC440
      TDOPPC : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  JTAGPPC440 : component is "PRIMITIVE";
+
 
 ----- component JTAG_SIME2 -----
 component JTAG_SIME2
@@ -11433,8 +10909,7 @@ component JTAG_SIME2
      TMS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  JTAG_SIME2 : component is "PRIMITIVE";
+
 
 ----- component JTAG_SIM_SPARTAN3A -----
 component JTAG_SIM_SPARTAN3A
@@ -11448,8 +10923,7 @@ component JTAG_SIM_SPARTAN3A
      TMS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  JTAG_SIM_SPARTAN3A : component is "PRIMITIVE";
+
 
 ----- component JTAG_SIM_SPARTAN6 -----
 component JTAG_SIM_SPARTAN6
@@ -11463,8 +10937,7 @@ component JTAG_SIM_SPARTAN6
      TMS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  JTAG_SIM_SPARTAN6 : component is "PRIMITIVE";
+
 
 ----- component JTAG_SIM_VIRTEX4 -----
 component JTAG_SIM_VIRTEX4
@@ -11478,8 +10951,7 @@ component JTAG_SIM_VIRTEX4
      TMS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  JTAG_SIM_VIRTEX4 : component is "PRIMITIVE";
+
 
 ----- component JTAG_SIM_VIRTEX5 -----
 component JTAG_SIM_VIRTEX5
@@ -11493,8 +10965,7 @@ component JTAG_SIM_VIRTEX5
      TMS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  JTAG_SIM_VIRTEX5 : component is "PRIMITIVE";
+
 
 ----- component JTAG_SIM_VIRTEX6 -----
 component JTAG_SIM_VIRTEX6
@@ -11508,8 +10979,7 @@ component JTAG_SIM_VIRTEX6
      TMS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  JTAG_SIM_VIRTEX6 : component is "PRIMITIVE";
+
 
 ----- component KEEP -----
 component KEEP
@@ -11518,8 +10988,7 @@ component KEEP
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  KEEP : component is "PRIMITIVE";
+
 
 ----- component KEEPER -----
 component KEEPER
@@ -11527,8 +10996,7 @@ component KEEPER
      O : inout std_ulogic := 'W'
   );
 end component;
-attribute BOX_TYPE of
-  KEEPER : component is "PRIMITIVE";
+
 
 ----- component KEY_CLEAR -----
 component KEY_CLEAR
@@ -11536,8 +11004,7 @@ component KEY_CLEAR
      KEYCLEARB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  KEY_CLEAR : component is "PRIMITIVE";
+
 
 ----- component LD -----
 component LD
@@ -11550,8 +11017,7 @@ component LD
      G : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LD : component is "PRIMITIVE";
+
 
 ----- component LDC -----
 component LDC
@@ -11565,8 +11031,7 @@ component LDC
      G : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDC : component is "PRIMITIVE";
+
 
 ----- component LDCE -----
 component LDCE
@@ -11581,8 +11046,7 @@ component LDCE
      GE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDCE : component is "PRIMITIVE";
+
 
 ----- component LDCE_1 -----
 component LDCE_1
@@ -11597,8 +11061,7 @@ component LDCE_1
      GE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDCE_1 : component is "PRIMITIVE";
+
 
 ----- component LDCP -----
 component LDCP
@@ -11613,8 +11076,7 @@ component LDCP
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDCP : component is "PRIMITIVE";
+
 
 ----- component LDCPE -----
 component LDCPE
@@ -11630,8 +11092,7 @@ component LDCPE
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDCPE : component is "PRIMITIVE";
+
 
 ----- component LDCPE_1 -----
 component LDCPE_1
@@ -11647,8 +11108,7 @@ component LDCPE_1
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDCPE_1 : component is "PRIMITIVE";
+
 
 ----- component LDCP_1 -----
 component LDCP_1
@@ -11663,8 +11123,7 @@ component LDCP_1
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDCP_1 : component is "PRIMITIVE";
+
 
 ----- component LDC_1 -----
 component LDC_1
@@ -11678,8 +11137,7 @@ component LDC_1
      G : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDC_1 : component is "PRIMITIVE";
+
 
 ----- component LDE -----
 component LDE
@@ -11693,8 +11151,7 @@ component LDE
      GE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDE : component is "PRIMITIVE";
+
 
 ----- component LDE_1 -----
 component LDE_1
@@ -11708,8 +11165,7 @@ component LDE_1
      GE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDE_1 : component is "PRIMITIVE";
+
 
 ----- component LDG -----
 component LDG
@@ -11722,8 +11178,7 @@ component LDG
      G : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  LDG : component is "PRIMITIVE";
+
 
 ----- component LDP -----
 component LDP
@@ -11737,8 +11192,7 @@ component LDP
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDP : component is "PRIMITIVE";
+
 
 ----- component LDPE -----
 component LDPE
@@ -11753,8 +11207,7 @@ component LDPE
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDPE : component is "PRIMITIVE";
+
 
 ----- component LDPE_1 -----
 component LDPE_1
@@ -11769,8 +11222,7 @@ component LDPE_1
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDPE_1 : component is "PRIMITIVE";
+
 
 ----- component LDP_1 -----
 component LDP_1
@@ -11784,8 +11236,7 @@ component LDP_1
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LDP_1 : component is "PRIMITIVE";
+
 
 ----- component LD_1 -----
 component LD_1
@@ -11798,8 +11249,7 @@ component LD_1
      G : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LD_1 : component is "PRIMITIVE";
+
 
 ----- component LUT1 -----
 component LUT1
@@ -11811,8 +11261,7 @@ component LUT1
      I0 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT1 : component is "PRIMITIVE";
+
 
 ----- component LUT1_D -----
 component LUT1_D
@@ -11825,8 +11274,7 @@ component LUT1_D
      I0 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT1_D : component is "PRIMITIVE";
+
 
 ----- component LUT1_L -----
 component LUT1_L
@@ -11838,8 +11286,7 @@ component LUT1_L
      I0 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT1_L : component is "PRIMITIVE";
+
 
 ----- component LUT2 -----
 component LUT2
@@ -11852,8 +11299,7 @@ component LUT2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT2 : component is "PRIMITIVE";
+
 
 ----- component LUT2_D -----
 component LUT2_D
@@ -11867,8 +11313,7 @@ component LUT2_D
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT2_D : component is "PRIMITIVE";
+
 
 ----- component LUT2_L -----
 component LUT2_L
@@ -11881,8 +11326,7 @@ component LUT2_L
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT2_L : component is "PRIMITIVE";
+
 
 ----- component LUT3 -----
 component LUT3
@@ -11896,8 +11340,7 @@ component LUT3
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT3 : component is "PRIMITIVE";
+
 
 ----- component LUT3_D -----
 component LUT3_D
@@ -11912,8 +11355,7 @@ component LUT3_D
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT3_D : component is "PRIMITIVE";
+
 
 ----- component LUT3_L -----
 component LUT3_L
@@ -11927,8 +11369,7 @@ component LUT3_L
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT3_L : component is "PRIMITIVE";
+
 
 ----- component LUT4 -----
 component LUT4
@@ -11943,8 +11384,7 @@ component LUT4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT4 : component is "PRIMITIVE";
+
 
 ----- component LUT4_D -----
 component LUT4_D
@@ -11960,8 +11400,7 @@ component LUT4_D
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT4_D : component is "PRIMITIVE";
+
 
 ----- component LUT4_L -----
 component LUT4_L
@@ -11976,8 +11415,7 @@ component LUT4_L
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT4_L : component is "PRIMITIVE";
+
 
 ----- component LUT5 -----
 component LUT5
@@ -11993,8 +11431,7 @@ component LUT5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT5 : component is "PRIMITIVE";
+
 
 ----- component LUT5_D -----
 component LUT5_D
@@ -12011,8 +11448,7 @@ component LUT5_D
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT5_D : component is "PRIMITIVE";
+
 
 ----- component LUT5_L -----
 component LUT5_L
@@ -12028,8 +11464,7 @@ component LUT5_L
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT5_L : component is "PRIMITIVE";
+
 
 ----- component LUT6 -----
 component LUT6
@@ -12046,8 +11481,7 @@ component LUT6
      I5 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT6 : component is "PRIMITIVE";
+
 
 ----- component LUT6_2 -----
 component LUT6_2
@@ -12065,8 +11499,7 @@ component LUT6_2
      I5 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT6_2 : component is "PRIMITIVE";
+
 
 ----- component LUT6_D -----
 component LUT6_D
@@ -12084,8 +11517,7 @@ component LUT6_D
      I5 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT6_D : component is "PRIMITIVE";
+
 
 ----- component LUT6_L -----
 component LUT6_L
@@ -12102,8 +11534,7 @@ component LUT6_L
      I5 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  LUT6_L : component is "PRIMITIVE";
+
 
 ----- component MCB -----
 component MCB
@@ -12372,8 +11803,7 @@ component MCB
      UIUDQSINC : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MCB : component is "PRIMITIVE";
+
 
 ----- component MERGE -----
 component MERGE
@@ -12381,8 +11811,7 @@ component MERGE
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MERGE : component is "PRIMITIVE";
+
 
 ----- component MIN_OFF -----
 component MIN_OFF
@@ -12390,8 +11819,7 @@ component MIN_OFF
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MIN_OFF : component is "PRIMITIVE";
+
 
 ----- component MMCME2_ADV -----
 component MMCME2_ADV
@@ -12473,8 +11901,7 @@ component MMCME2_ADV
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MMCME2_ADV : component is "PRIMITIVE";
+
 
 ----- component MMCME2_BASE -----
 component MMCME2_BASE
@@ -12530,8 +11957,7 @@ component MMCME2_BASE
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MMCME2_BASE : component is "PRIMITIVE";
+
 
 ----- component MMCM_ADV -----
 component MMCM_ADV
@@ -12614,8 +12040,7 @@ component MMCM_ADV
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MMCM_ADV : component is "PRIMITIVE";
+
 
 ----- component MMCM_BASE -----
 component MMCM_BASE
@@ -12672,8 +12097,7 @@ component MMCM_BASE
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MMCM_BASE : component is "PRIMITIVE";
+
 
 ----- component MULT18X18 -----
 component MULT18X18
@@ -12683,8 +12107,7 @@ component MULT18X18
      B : in std_logic_vector (17 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  MULT18X18 : component is "PRIMITIVE";
+
 
 ----- component MULT18X18S -----
 component MULT18X18S
@@ -12697,8 +12120,7 @@ component MULT18X18S
      R : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MULT18X18S : component is "PRIMITIVE";
+
 
 ----- component MULT18X18SIO -----
 component MULT18X18SIO
@@ -12723,8 +12145,7 @@ component MULT18X18SIO
      RSTP : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MULT18X18SIO : component is "PRIMITIVE";
+
 
 ----- component MULT_AND -----
 component MULT_AND
@@ -12734,8 +12155,7 @@ component MULT_AND
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MULT_AND : component is "PRIMITIVE";
+
 
 ----- component MUXCY -----
 component MUXCY
@@ -12746,8 +12166,7 @@ component MUXCY
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXCY : component is "PRIMITIVE";
+
 
 ----- component MUXCY_D -----
 component MUXCY_D
@@ -12759,8 +12178,7 @@ component MUXCY_D
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXCY_D : component is "PRIMITIVE";
+
 
 ----- component MUXCY_L -----
 component MUXCY_L
@@ -12771,8 +12189,7 @@ component MUXCY_L
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXCY_L : component is "PRIMITIVE";
+
 
 ----- component MUXF5 -----
 component MUXF5
@@ -12783,8 +12200,7 @@ component MUXF5
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF5 : component is "PRIMITIVE";
+
 
 ----- component MUXF5_D -----
 component MUXF5_D
@@ -12796,8 +12212,7 @@ component MUXF5_D
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF5_D : component is "PRIMITIVE";
+
 
 ----- component MUXF5_L -----
 component MUXF5_L
@@ -12808,8 +12223,7 @@ component MUXF5_L
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF5_L : component is "PRIMITIVE";
+
 
 ----- component MUXF6 -----
 component MUXF6
@@ -12820,8 +12234,7 @@ component MUXF6
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF6 : component is "PRIMITIVE";
+
 
 ----- component MUXF6_D -----
 component MUXF6_D
@@ -12833,8 +12246,7 @@ component MUXF6_D
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF6_D : component is "PRIMITIVE";
+
 
 ----- component MUXF6_L -----
 component MUXF6_L
@@ -12845,8 +12257,7 @@ component MUXF6_L
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF6_L : component is "PRIMITIVE";
+
 
 ----- component MUXF7 -----
 component MUXF7
@@ -12857,8 +12268,7 @@ component MUXF7
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF7 : component is "PRIMITIVE";
+
 
 ----- component MUXF7_D -----
 component MUXF7_D
@@ -12870,8 +12280,7 @@ component MUXF7_D
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF7_D : component is "PRIMITIVE";
+
 
 ----- component MUXF7_L -----
 component MUXF7_L
@@ -12882,8 +12291,7 @@ component MUXF7_L
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF7_L : component is "PRIMITIVE";
+
 
 ----- component MUXF8 -----
 component MUXF8
@@ -12894,8 +12302,7 @@ component MUXF8
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF8 : component is "PRIMITIVE";
+
 
 ----- component MUXF8_D -----
 component MUXF8_D
@@ -12907,8 +12314,7 @@ component MUXF8_D
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF8_D : component is "PRIMITIVE";
+
 
 ----- component MUXF8_L -----
 component MUXF8_L
@@ -12919,8 +12325,7 @@ component MUXF8_L
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  MUXF8_L : component is "PRIMITIVE";
+
 
 ----- component NAND2 -----
 component NAND2
@@ -12930,8 +12335,7 @@ component NAND2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND2 : component is "PRIMITIVE";
+
 
 ----- component NAND2B1 -----
 component NAND2B1
@@ -12941,8 +12345,7 @@ component NAND2B1
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND2B1 : component is "PRIMITIVE";
+
 
 ----- component NAND2B2 -----
 component NAND2B2
@@ -12952,8 +12355,7 @@ component NAND2B2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND2B2 : component is "PRIMITIVE";
+
 
 ----- component NAND3 -----
 component NAND3
@@ -12964,8 +12366,7 @@ component NAND3
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND3 : component is "PRIMITIVE";
+
 
 ----- component NAND3B1 -----
 component NAND3B1
@@ -12976,8 +12377,7 @@ component NAND3B1
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND3B1 : component is "PRIMITIVE";
+
 
 ----- component NAND3B2 -----
 component NAND3B2
@@ -12988,8 +12388,7 @@ component NAND3B2
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND3B2 : component is "PRIMITIVE";
+
 
 ----- component NAND3B3 -----
 component NAND3B3
@@ -13000,8 +12399,7 @@ component NAND3B3
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND3B3 : component is "PRIMITIVE";
+
 
 ----- component NAND4 -----
 component NAND4
@@ -13013,8 +12411,7 @@ component NAND4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND4 : component is "PRIMITIVE";
+
 
 ----- component NAND4B1 -----
 component NAND4B1
@@ -13026,8 +12423,7 @@ component NAND4B1
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND4B1 : component is "PRIMITIVE";
+
 
 ----- component NAND4B2 -----
 component NAND4B2
@@ -13039,8 +12435,7 @@ component NAND4B2
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND4B2 : component is "PRIMITIVE";
+
 
 ----- component NAND4B3 -----
 component NAND4B3
@@ -13052,8 +12447,7 @@ component NAND4B3
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND4B3 : component is "PRIMITIVE";
+
 
 ----- component NAND4B4 -----
 component NAND4B4
@@ -13065,8 +12459,7 @@ component NAND4B4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND4B4 : component is "PRIMITIVE";
+
 
 ----- component NAND5 -----
 component NAND5
@@ -13079,8 +12472,7 @@ component NAND5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND5 : component is "PRIMITIVE";
+
 
 ----- component NAND5B1 -----
 component NAND5B1
@@ -13093,8 +12485,7 @@ component NAND5B1
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND5B1 : component is "PRIMITIVE";
+
 
 ----- component NAND5B2 -----
 component NAND5B2
@@ -13107,8 +12498,7 @@ component NAND5B2
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND5B2 : component is "PRIMITIVE";
+
 
 ----- component NAND5B3 -----
 component NAND5B3
@@ -13121,8 +12511,7 @@ component NAND5B3
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND5B3 : component is "PRIMITIVE";
+
 
 ----- component NAND5B4 -----
 component NAND5B4
@@ -13135,8 +12524,7 @@ component NAND5B4
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND5B4 : component is "PRIMITIVE";
+
 
 ----- component NAND5B5 -----
 component NAND5B5
@@ -13149,8 +12537,7 @@ component NAND5B5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NAND5B5 : component is "PRIMITIVE";
+
 
 ----- component NOR2 -----
 component NOR2
@@ -13160,8 +12547,7 @@ component NOR2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NOR2 : component is "PRIMITIVE";
+
 
 ----- component NOR2B1 -----
 component NOR2B1
@@ -13171,8 +12557,7 @@ component NOR2B1
      I1 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR2B1 : component is "PRIMITIVE";
+
 
 ----- component NOR2B2 -----
 component NOR2B2
@@ -13182,8 +12567,7 @@ component NOR2B2
      I1 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR2B2 : component is "PRIMITIVE";
+
 
 ----- component NOR3 -----
 component NOR3
@@ -13194,8 +12578,7 @@ component NOR3
      I2 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR3 : component is "PRIMITIVE";
+
 
 ----- component NOR3B1 -----
 component NOR3B1
@@ -13206,8 +12589,7 @@ component NOR3B1
      I2 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR3B1 : component is "PRIMITIVE";
+
 
 ----- component NOR3B2 -----
 component NOR3B2
@@ -13218,8 +12600,7 @@ component NOR3B2
      I2 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR3B2 : component is "PRIMITIVE";
+
 
 ----- component NOR3B3 -----
 component NOR3B3
@@ -13230,8 +12611,7 @@ component NOR3B3
      I2 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR3B3 : component is "PRIMITIVE";
+
 
 ----- component NOR4 -----
 component NOR4
@@ -13243,8 +12623,7 @@ component NOR4
      I3 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR4 : component is "PRIMITIVE";
+
 
 ----- component NOR4B1 -----
 component NOR4B1
@@ -13256,8 +12635,7 @@ component NOR4B1
      I3 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR4B1 : component is "PRIMITIVE";
+
 
 ----- component NOR4B2 -----
 component NOR4B2
@@ -13269,8 +12647,7 @@ component NOR4B2
      I3 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR4B2 : component is "PRIMITIVE";
+
 
 ----- component NOR4B3 -----
 component NOR4B3
@@ -13282,8 +12659,7 @@ component NOR4B3
      I3 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR4B3 : component is "PRIMITIVE";
+
 
 ----- component NOR4B4 -----
 component NOR4B4
@@ -13295,8 +12671,7 @@ component NOR4B4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NOR4B4 : component is "PRIMITIVE";
+
 
 ----- component NOR5 -----
 component NOR5
@@ -13309,8 +12684,7 @@ component NOR5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NOR5 : component is "PRIMITIVE";
+
 
 ----- component NOR5B1 -----
 component NOR5B1
@@ -13323,8 +12697,7 @@ component NOR5B1
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NOR5B1 : component is "PRIMITIVE";
+
 
 ----- component NOR5B2 -----
 component NOR5B2
@@ -13337,8 +12710,7 @@ component NOR5B2
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NOR5B2 : component is "PRIMITIVE";
+
 
 ----- component NOR5B3 -----
 component NOR5B3
@@ -13351,8 +12723,7 @@ component NOR5B3
      I4 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR5B3 : component is "PRIMITIVE";
+
 
 ----- component NOR5B4 -----
 component NOR5B4
@@ -13365,8 +12736,7 @@ component NOR5B4
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  NOR5B4 : component is "PRIMITIVE";
+
 
 ----- component NOR5B5 -----
 component NOR5B5
@@ -13379,8 +12749,7 @@ component NOR5B5
      I4 : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  NOR5B5 : component is "PRIMITIVE";
+
 
 ----- component OBUF -----
 component OBUF
@@ -13395,8 +12764,7 @@ component OBUF
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF : component is "PRIMITIVE";
+
 
 ----- component OBUFDS -----
 component OBUFDS
@@ -13411,8 +12779,7 @@ component OBUFDS
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS : component is "PRIMITIVE";
+
 
 ----- component OBUFDS_BLVDS_25 -----
 component OBUFDS_BLVDS_25
@@ -13422,8 +12789,7 @@ component OBUFDS_BLVDS_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS_BLVDS_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFDS_LDT_25 -----
 component OBUFDS_LDT_25
@@ -13433,8 +12799,7 @@ component OBUFDS_LDT_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS_LDT_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFDS_LVDSEXT_25 -----
 component OBUFDS_LVDSEXT_25
@@ -13444,8 +12809,7 @@ component OBUFDS_LVDSEXT_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS_LVDSEXT_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFDS_LVDSEXT_33 -----
 component OBUFDS_LVDSEXT_33
@@ -13455,8 +12819,7 @@ component OBUFDS_LVDSEXT_33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS_LVDSEXT_33 : component is "PRIMITIVE";
+
 
 ----- component OBUFDS_LVDS_25 -----
 component OBUFDS_LVDS_25
@@ -13466,8 +12829,7 @@ component OBUFDS_LVDS_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS_LVDS_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFDS_LVDS_33 -----
 component OBUFDS_LVDS_33
@@ -13477,8 +12839,7 @@ component OBUFDS_LVDS_33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS_LVDS_33 : component is "PRIMITIVE";
+
 
 ----- component OBUFDS_LVPECL_25 -----
 component OBUFDS_LVPECL_25
@@ -13488,8 +12849,7 @@ component OBUFDS_LVPECL_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS_LVPECL_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFDS_LVPECL_33 -----
 component OBUFDS_LVPECL_33
@@ -13499,8 +12859,7 @@ component OBUFDS_LVPECL_33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS_LVPECL_33 : component is "PRIMITIVE";
+
 
 ----- component OBUFDS_ULVDS_25 -----
 component OBUFDS_ULVDS_25
@@ -13510,8 +12869,7 @@ component OBUFDS_ULVDS_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFDS_ULVDS_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFE -----
 component OBUFE
@@ -13521,8 +12879,7 @@ component OBUFE
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFE : component is "PRIMITIVE";
+
 
 ----- component OBUFT -----
 component OBUFT
@@ -13538,8 +12895,7 @@ component OBUFT
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS -----
 component OBUFTDS
@@ -13555,8 +12911,7 @@ component OBUFTDS
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS_BLVDS_25 -----
 component OBUFTDS_BLVDS_25
@@ -13567,8 +12922,7 @@ component OBUFTDS_BLVDS_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS_BLVDS_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS_LDT_25 -----
 component OBUFTDS_LDT_25
@@ -13579,8 +12933,7 @@ component OBUFTDS_LDT_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS_LDT_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS_LVDSEXT_25 -----
 component OBUFTDS_LVDSEXT_25
@@ -13591,8 +12944,7 @@ component OBUFTDS_LVDSEXT_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS_LVDSEXT_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS_LVDSEXT_33 -----
 component OBUFTDS_LVDSEXT_33
@@ -13603,8 +12955,7 @@ component OBUFTDS_LVDSEXT_33
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS_LVDSEXT_33 : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS_LVDS_25 -----
 component OBUFTDS_LVDS_25
@@ -13615,8 +12966,7 @@ component OBUFTDS_LVDS_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS_LVDS_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS_LVDS_33 -----
 component OBUFTDS_LVDS_33
@@ -13627,8 +12977,7 @@ component OBUFTDS_LVDS_33
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS_LVDS_33 : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS_LVPECL_25 -----
 component OBUFTDS_LVPECL_25
@@ -13639,8 +12988,7 @@ component OBUFTDS_LVPECL_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS_LVPECL_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS_LVPECL_33 -----
 component OBUFTDS_LVPECL_33
@@ -13651,8 +12999,7 @@ component OBUFTDS_LVPECL_33
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS_LVPECL_33 : component is "PRIMITIVE";
+
 
 ----- component OBUFTDS_ULVDS_25 -----
 component OBUFTDS_ULVDS_25
@@ -13663,8 +13010,7 @@ component OBUFTDS_ULVDS_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFTDS_ULVDS_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_AGP -----
 component OBUFT_AGP
@@ -13674,8 +13020,7 @@ component OBUFT_AGP
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_AGP : component is "PRIMITIVE";
+
 
 ----- component OBUFT_CTT -----
 component OBUFT_CTT
@@ -13685,8 +13030,7 @@ component OBUFT_CTT
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_CTT : component is "PRIMITIVE";
+
 
 ----- component OBUFT_F_12 -----
 component OBUFT_F_12
@@ -13696,8 +13040,7 @@ component OBUFT_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_F_16 -----
 component OBUFT_F_16
@@ -13707,8 +13050,7 @@ component OBUFT_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_F_2 -----
 component OBUFT_F_2
@@ -13718,8 +13060,7 @@ component OBUFT_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_F_24 -----
 component OBUFT_F_24
@@ -13729,8 +13070,7 @@ component OBUFT_F_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_F_24 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_F_4 -----
 component OBUFT_F_4
@@ -13740,8 +13080,7 @@ component OBUFT_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_F_6 -----
 component OBUFT_F_6
@@ -13751,8 +13090,7 @@ component OBUFT_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_F_8 -----
 component OBUFT_F_8
@@ -13762,8 +13100,7 @@ component OBUFT_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_GTL -----
 component OBUFT_GTL
@@ -13773,8 +13110,7 @@ component OBUFT_GTL
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_GTL : component is "PRIMITIVE";
+
 
 ----- component OBUFT_GTLP -----
 component OBUFT_GTLP
@@ -13784,8 +13120,7 @@ component OBUFT_GTLP
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_GTLP : component is "PRIMITIVE";
+
 
 ----- component OBUFT_GTLP_DCI -----
 component OBUFT_GTLP_DCI
@@ -13795,8 +13130,7 @@ component OBUFT_GTLP_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_GTLP_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_GTL_DCI -----
 component OBUFT_GTL_DCI
@@ -13806,8 +13140,7 @@ component OBUFT_GTL_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_GTL_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_I -----
 component OBUFT_HSTL_I
@@ -13817,8 +13150,7 @@ component OBUFT_HSTL_I
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_I : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_II -----
 component OBUFT_HSTL_II
@@ -13828,8 +13160,7 @@ component OBUFT_HSTL_II
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_II : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_III -----
 component OBUFT_HSTL_III
@@ -13839,8 +13170,7 @@ component OBUFT_HSTL_III
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_III : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_III_18 -----
 component OBUFT_HSTL_III_18
@@ -13850,8 +13180,7 @@ component OBUFT_HSTL_III_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_III_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_III_DCI -----
 component OBUFT_HSTL_III_DCI
@@ -13861,8 +13190,7 @@ component OBUFT_HSTL_III_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_III_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_III_DCI_18 -----
 component OBUFT_HSTL_III_DCI_18
@@ -13872,8 +13200,7 @@ component OBUFT_HSTL_III_DCI_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_III_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_II_18 -----
 component OBUFT_HSTL_II_18
@@ -13883,8 +13210,7 @@ component OBUFT_HSTL_II_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_II_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_II_DCI -----
 component OBUFT_HSTL_II_DCI
@@ -13894,8 +13220,7 @@ component OBUFT_HSTL_II_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_II_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_II_DCI_18 -----
 component OBUFT_HSTL_II_DCI_18
@@ -13905,8 +13230,7 @@ component OBUFT_HSTL_II_DCI_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_II_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_IV -----
 component OBUFT_HSTL_IV
@@ -13916,8 +13240,7 @@ component OBUFT_HSTL_IV
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_IV : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_IV_18 -----
 component OBUFT_HSTL_IV_18
@@ -13927,8 +13250,7 @@ component OBUFT_HSTL_IV_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_IV_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_IV_DCI -----
 component OBUFT_HSTL_IV_DCI
@@ -13938,8 +13260,7 @@ component OBUFT_HSTL_IV_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_IV_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_IV_DCI_18 -----
 component OBUFT_HSTL_IV_DCI_18
@@ -13949,8 +13270,7 @@ component OBUFT_HSTL_IV_DCI_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_IV_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_I_18 -----
 component OBUFT_HSTL_I_18
@@ -13960,8 +13280,7 @@ component OBUFT_HSTL_I_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_I_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_I_DCI -----
 component OBUFT_HSTL_I_DCI
@@ -13971,8 +13290,7 @@ component OBUFT_HSTL_I_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_I_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_HSTL_I_DCI_18 -----
 component OBUFT_HSTL_I_DCI_18
@@ -13982,8 +13300,7 @@ component OBUFT_HSTL_I_DCI_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_HSTL_I_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS12 -----
 component OBUFT_LVCMOS12
@@ -13993,8 +13310,7 @@ component OBUFT_LVCMOS12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS12_F_2 -----
 component OBUFT_LVCMOS12_F_2
@@ -14004,8 +13320,7 @@ component OBUFT_LVCMOS12_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS12_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS12_F_4 -----
 component OBUFT_LVCMOS12_F_4
@@ -14015,8 +13330,7 @@ component OBUFT_LVCMOS12_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS12_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS12_F_6 -----
 component OBUFT_LVCMOS12_F_6
@@ -14026,8 +13340,7 @@ component OBUFT_LVCMOS12_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS12_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS12_F_8 -----
 component OBUFT_LVCMOS12_F_8
@@ -14037,8 +13350,7 @@ component OBUFT_LVCMOS12_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS12_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS12_S_2 -----
 component OBUFT_LVCMOS12_S_2
@@ -14048,8 +13360,7 @@ component OBUFT_LVCMOS12_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS12_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS12_S_4 -----
 component OBUFT_LVCMOS12_S_4
@@ -14059,8 +13370,7 @@ component OBUFT_LVCMOS12_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS12_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS12_S_6 -----
 component OBUFT_LVCMOS12_S_6
@@ -14070,8 +13380,7 @@ component OBUFT_LVCMOS12_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS12_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS12_S_8 -----
 component OBUFT_LVCMOS12_S_8
@@ -14081,8 +13390,7 @@ component OBUFT_LVCMOS12_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS12_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15 -----
 component OBUFT_LVCMOS15
@@ -14092,8 +13400,7 @@ component OBUFT_LVCMOS15
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_F_12 -----
 component OBUFT_LVCMOS15_F_12
@@ -14103,8 +13410,7 @@ component OBUFT_LVCMOS15_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_F_16 -----
 component OBUFT_LVCMOS15_F_16
@@ -14114,8 +13420,7 @@ component OBUFT_LVCMOS15_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_F_2 -----
 component OBUFT_LVCMOS15_F_2
@@ -14125,8 +13430,7 @@ component OBUFT_LVCMOS15_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_F_4 -----
 component OBUFT_LVCMOS15_F_4
@@ -14136,8 +13440,7 @@ component OBUFT_LVCMOS15_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_F_6 -----
 component OBUFT_LVCMOS15_F_6
@@ -14147,8 +13450,7 @@ component OBUFT_LVCMOS15_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_F_8 -----
 component OBUFT_LVCMOS15_F_8
@@ -14158,8 +13460,7 @@ component OBUFT_LVCMOS15_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_S_12 -----
 component OBUFT_LVCMOS15_S_12
@@ -14169,8 +13470,7 @@ component OBUFT_LVCMOS15_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_S_16 -----
 component OBUFT_LVCMOS15_S_16
@@ -14180,8 +13480,7 @@ component OBUFT_LVCMOS15_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_S_2 -----
 component OBUFT_LVCMOS15_S_2
@@ -14191,8 +13490,7 @@ component OBUFT_LVCMOS15_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_S_4 -----
 component OBUFT_LVCMOS15_S_4
@@ -14202,8 +13500,7 @@ component OBUFT_LVCMOS15_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_S_6 -----
 component OBUFT_LVCMOS15_S_6
@@ -14213,8 +13510,7 @@ component OBUFT_LVCMOS15_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS15_S_8 -----
 component OBUFT_LVCMOS15_S_8
@@ -14224,8 +13520,7 @@ component OBUFT_LVCMOS15_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS15_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18 -----
 component OBUFT_LVCMOS18
@@ -14235,8 +13530,7 @@ component OBUFT_LVCMOS18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_F_12 -----
 component OBUFT_LVCMOS18_F_12
@@ -14246,8 +13540,7 @@ component OBUFT_LVCMOS18_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_F_16 -----
 component OBUFT_LVCMOS18_F_16
@@ -14257,8 +13550,7 @@ component OBUFT_LVCMOS18_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_F_2 -----
 component OBUFT_LVCMOS18_F_2
@@ -14268,8 +13560,7 @@ component OBUFT_LVCMOS18_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_F_4 -----
 component OBUFT_LVCMOS18_F_4
@@ -14279,8 +13570,7 @@ component OBUFT_LVCMOS18_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_F_6 -----
 component OBUFT_LVCMOS18_F_6
@@ -14290,8 +13580,7 @@ component OBUFT_LVCMOS18_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_F_8 -----
 component OBUFT_LVCMOS18_F_8
@@ -14301,8 +13590,7 @@ component OBUFT_LVCMOS18_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_S_12 -----
 component OBUFT_LVCMOS18_S_12
@@ -14312,8 +13600,7 @@ component OBUFT_LVCMOS18_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_S_16 -----
 component OBUFT_LVCMOS18_S_16
@@ -14323,8 +13610,7 @@ component OBUFT_LVCMOS18_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_S_2 -----
 component OBUFT_LVCMOS18_S_2
@@ -14334,8 +13620,7 @@ component OBUFT_LVCMOS18_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_S_4 -----
 component OBUFT_LVCMOS18_S_4
@@ -14345,8 +13630,7 @@ component OBUFT_LVCMOS18_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_S_6 -----
 component OBUFT_LVCMOS18_S_6
@@ -14356,8 +13640,7 @@ component OBUFT_LVCMOS18_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS18_S_8 -----
 component OBUFT_LVCMOS18_S_8
@@ -14367,8 +13650,7 @@ component OBUFT_LVCMOS18_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS18_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS2 -----
 component OBUFT_LVCMOS2
@@ -14378,8 +13660,7 @@ component OBUFT_LVCMOS2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25 -----
 component OBUFT_LVCMOS25
@@ -14389,8 +13670,7 @@ component OBUFT_LVCMOS25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_F_12 -----
 component OBUFT_LVCMOS25_F_12
@@ -14400,8 +13680,7 @@ component OBUFT_LVCMOS25_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_F_16 -----
 component OBUFT_LVCMOS25_F_16
@@ -14411,8 +13690,7 @@ component OBUFT_LVCMOS25_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_F_2 -----
 component OBUFT_LVCMOS25_F_2
@@ -14422,8 +13700,7 @@ component OBUFT_LVCMOS25_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_F_24 -----
 component OBUFT_LVCMOS25_F_24
@@ -14433,8 +13710,7 @@ component OBUFT_LVCMOS25_F_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_F_24 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_F_4 -----
 component OBUFT_LVCMOS25_F_4
@@ -14444,8 +13720,7 @@ component OBUFT_LVCMOS25_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_F_6 -----
 component OBUFT_LVCMOS25_F_6
@@ -14455,8 +13730,7 @@ component OBUFT_LVCMOS25_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_F_8 -----
 component OBUFT_LVCMOS25_F_8
@@ -14466,8 +13740,7 @@ component OBUFT_LVCMOS25_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_S_12 -----
 component OBUFT_LVCMOS25_S_12
@@ -14477,8 +13750,7 @@ component OBUFT_LVCMOS25_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_S_16 -----
 component OBUFT_LVCMOS25_S_16
@@ -14488,8 +13760,7 @@ component OBUFT_LVCMOS25_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_S_2 -----
 component OBUFT_LVCMOS25_S_2
@@ -14499,8 +13770,7 @@ component OBUFT_LVCMOS25_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_S_24 -----
 component OBUFT_LVCMOS25_S_24
@@ -14510,8 +13780,7 @@ component OBUFT_LVCMOS25_S_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_S_24 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_S_4 -----
 component OBUFT_LVCMOS25_S_4
@@ -14521,8 +13790,7 @@ component OBUFT_LVCMOS25_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_S_6 -----
 component OBUFT_LVCMOS25_S_6
@@ -14532,8 +13800,7 @@ component OBUFT_LVCMOS25_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS25_S_8 -----
 component OBUFT_LVCMOS25_S_8
@@ -14543,8 +13810,7 @@ component OBUFT_LVCMOS25_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS25_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33 -----
 component OBUFT_LVCMOS33
@@ -14554,8 +13820,7 @@ component OBUFT_LVCMOS33
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_F_12 -----
 component OBUFT_LVCMOS33_F_12
@@ -14565,8 +13830,7 @@ component OBUFT_LVCMOS33_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_F_16 -----
 component OBUFT_LVCMOS33_F_16
@@ -14576,8 +13840,7 @@ component OBUFT_LVCMOS33_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_F_2 -----
 component OBUFT_LVCMOS33_F_2
@@ -14587,8 +13850,7 @@ component OBUFT_LVCMOS33_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_F_24 -----
 component OBUFT_LVCMOS33_F_24
@@ -14598,8 +13860,7 @@ component OBUFT_LVCMOS33_F_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_F_24 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_F_4 -----
 component OBUFT_LVCMOS33_F_4
@@ -14609,8 +13870,7 @@ component OBUFT_LVCMOS33_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_F_6 -----
 component OBUFT_LVCMOS33_F_6
@@ -14620,8 +13880,7 @@ component OBUFT_LVCMOS33_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_F_8 -----
 component OBUFT_LVCMOS33_F_8
@@ -14631,8 +13890,7 @@ component OBUFT_LVCMOS33_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_S_12 -----
 component OBUFT_LVCMOS33_S_12
@@ -14642,8 +13900,7 @@ component OBUFT_LVCMOS33_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_S_16 -----
 component OBUFT_LVCMOS33_S_16
@@ -14653,8 +13910,7 @@ component OBUFT_LVCMOS33_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_S_2 -----
 component OBUFT_LVCMOS33_S_2
@@ -14664,8 +13920,7 @@ component OBUFT_LVCMOS33_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_S_24 -----
 component OBUFT_LVCMOS33_S_24
@@ -14675,8 +13930,7 @@ component OBUFT_LVCMOS33_S_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_S_24 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_S_4 -----
 component OBUFT_LVCMOS33_S_4
@@ -14686,8 +13940,7 @@ component OBUFT_LVCMOS33_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_S_6 -----
 component OBUFT_LVCMOS33_S_6
@@ -14697,8 +13950,7 @@ component OBUFT_LVCMOS33_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVCMOS33_S_8 -----
 component OBUFT_LVCMOS33_S_8
@@ -14708,8 +13960,7 @@ component OBUFT_LVCMOS33_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVCMOS33_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVDCI_15 -----
 component OBUFT_LVDCI_15
@@ -14719,8 +13970,7 @@ component OBUFT_LVDCI_15
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVDCI_15 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVDCI_18 -----
 component OBUFT_LVDCI_18
@@ -14730,8 +13980,7 @@ component OBUFT_LVDCI_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVDCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVDCI_25 -----
 component OBUFT_LVDCI_25
@@ -14741,8 +13990,7 @@ component OBUFT_LVDCI_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVDCI_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVDCI_33 -----
 component OBUFT_LVDCI_33
@@ -14752,8 +14000,7 @@ component OBUFT_LVDCI_33
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVDCI_33 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVDCI_DV2_15 -----
 component OBUFT_LVDCI_DV2_15
@@ -14763,8 +14010,7 @@ component OBUFT_LVDCI_DV2_15
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVDCI_DV2_15 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVDCI_DV2_18 -----
 component OBUFT_LVDCI_DV2_18
@@ -14774,8 +14020,7 @@ component OBUFT_LVDCI_DV2_18
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVDCI_DV2_18 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVDCI_DV2_25 -----
 component OBUFT_LVDCI_DV2_25
@@ -14785,8 +14030,7 @@ component OBUFT_LVDCI_DV2_25
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVDCI_DV2_25 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVDCI_DV2_33 -----
 component OBUFT_LVDCI_DV2_33
@@ -14796,8 +14040,7 @@ component OBUFT_LVDCI_DV2_33
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVDCI_DV2_33 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVDS -----
 component OBUFT_LVDS
@@ -14807,8 +14050,7 @@ component OBUFT_LVDS
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVDS : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVPECL -----
 component OBUFT_LVPECL
@@ -14818,8 +14060,7 @@ component OBUFT_LVPECL
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVPECL : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL -----
 component OBUFT_LVTTL
@@ -14829,8 +14070,7 @@ component OBUFT_LVTTL
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_F_12 -----
 component OBUFT_LVTTL_F_12
@@ -14840,8 +14080,7 @@ component OBUFT_LVTTL_F_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_F_16 -----
 component OBUFT_LVTTL_F_16
@@ -14851,8 +14090,7 @@ component OBUFT_LVTTL_F_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_F_2 -----
 component OBUFT_LVTTL_F_2
@@ -14862,8 +14100,7 @@ component OBUFT_LVTTL_F_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_F_24 -----
 component OBUFT_LVTTL_F_24
@@ -14873,8 +14110,7 @@ component OBUFT_LVTTL_F_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_F_24 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_F_4 -----
 component OBUFT_LVTTL_F_4
@@ -14884,8 +14120,7 @@ component OBUFT_LVTTL_F_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_F_6 -----
 component OBUFT_LVTTL_F_6
@@ -14895,8 +14130,7 @@ component OBUFT_LVTTL_F_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_F_8 -----
 component OBUFT_LVTTL_F_8
@@ -14906,8 +14140,7 @@ component OBUFT_LVTTL_F_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_S_12 -----
 component OBUFT_LVTTL_S_12
@@ -14917,8 +14150,7 @@ component OBUFT_LVTTL_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_S_16 -----
 component OBUFT_LVTTL_S_16
@@ -14928,8 +14160,7 @@ component OBUFT_LVTTL_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_S_2 -----
 component OBUFT_LVTTL_S_2
@@ -14939,8 +14170,7 @@ component OBUFT_LVTTL_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_S_24 -----
 component OBUFT_LVTTL_S_24
@@ -14950,8 +14180,7 @@ component OBUFT_LVTTL_S_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_S_24 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_S_4 -----
 component OBUFT_LVTTL_S_4
@@ -14961,8 +14190,7 @@ component OBUFT_LVTTL_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_S_6 -----
 component OBUFT_LVTTL_S_6
@@ -14972,8 +14200,7 @@ component OBUFT_LVTTL_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_LVTTL_S_8 -----
 component OBUFT_LVTTL_S_8
@@ -14983,8 +14210,7 @@ component OBUFT_LVTTL_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_LVTTL_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_PCI33_3 -----
 component OBUFT_PCI33_3
@@ -14994,8 +14220,7 @@ component OBUFT_PCI33_3
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_PCI33_3 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_PCI33_5 -----
 component OBUFT_PCI33_5
@@ -15005,8 +14230,7 @@ component OBUFT_PCI33_5
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_PCI33_5 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_PCI66_3 -----
 component OBUFT_PCI66_3
@@ -15016,8 +14240,7 @@ component OBUFT_PCI66_3
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_PCI66_3 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_PCIX -----
 component OBUFT_PCIX
@@ -15027,8 +14250,7 @@ component OBUFT_PCIX
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_PCIX : component is "PRIMITIVE";
+
 
 ----- component OBUFT_PCIX66_3 -----
 component OBUFT_PCIX66_3
@@ -15038,8 +14260,7 @@ component OBUFT_PCIX66_3
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_PCIX66_3 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL18_I -----
 component OBUFT_SSTL18_I
@@ -15049,8 +14270,7 @@ component OBUFT_SSTL18_I
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL18_I : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL18_II -----
 component OBUFT_SSTL18_II
@@ -15060,8 +14280,7 @@ component OBUFT_SSTL18_II
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL18_II : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL18_II_DCI -----
 component OBUFT_SSTL18_II_DCI
@@ -15071,8 +14290,7 @@ component OBUFT_SSTL18_II_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL18_II_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL18_I_DCI -----
 component OBUFT_SSTL18_I_DCI
@@ -15082,8 +14300,7 @@ component OBUFT_SSTL18_I_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL18_I_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL2_I -----
 component OBUFT_SSTL2_I
@@ -15093,8 +14310,7 @@ component OBUFT_SSTL2_I
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL2_I : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL2_II -----
 component OBUFT_SSTL2_II
@@ -15104,8 +14320,7 @@ component OBUFT_SSTL2_II
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL2_II : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL2_II_DCI -----
 component OBUFT_SSTL2_II_DCI
@@ -15115,8 +14330,7 @@ component OBUFT_SSTL2_II_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL2_II_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL2_I_DCI -----
 component OBUFT_SSTL2_I_DCI
@@ -15126,8 +14340,7 @@ component OBUFT_SSTL2_I_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL2_I_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL3_I -----
 component OBUFT_SSTL3_I
@@ -15137,8 +14350,7 @@ component OBUFT_SSTL3_I
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL3_I : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL3_II -----
 component OBUFT_SSTL3_II
@@ -15148,8 +14360,7 @@ component OBUFT_SSTL3_II
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL3_II : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL3_II_DCI -----
 component OBUFT_SSTL3_II_DCI
@@ -15159,8 +14370,7 @@ component OBUFT_SSTL3_II_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL3_II_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_SSTL3_I_DCI -----
 component OBUFT_SSTL3_I_DCI
@@ -15170,8 +14380,7 @@ component OBUFT_SSTL3_I_DCI
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_SSTL3_I_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUFT_S_12 -----
 component OBUFT_S_12
@@ -15181,8 +14390,7 @@ component OBUFT_S_12
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_S_16 -----
 component OBUFT_S_16
@@ -15192,8 +14400,7 @@ component OBUFT_S_16
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_S_2 -----
 component OBUFT_S_2
@@ -15203,8 +14410,7 @@ component OBUFT_S_2
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_S_24 -----
 component OBUFT_S_24
@@ -15214,8 +14420,7 @@ component OBUFT_S_24
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_S_24 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_S_4 -----
 component OBUFT_S_4
@@ -15225,8 +14430,7 @@ component OBUFT_S_4
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_S_6 -----
 component OBUFT_S_6
@@ -15236,8 +14440,7 @@ component OBUFT_S_6
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUFT_S_8 -----
 component OBUFT_S_8
@@ -15247,8 +14450,7 @@ component OBUFT_S_8
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUFT_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_AGP -----
 component OBUF_AGP
@@ -15257,8 +14459,7 @@ component OBUF_AGP
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_AGP : component is "PRIMITIVE";
+
 
 ----- component OBUF_CTT -----
 component OBUF_CTT
@@ -15267,8 +14468,7 @@ component OBUF_CTT
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_CTT : component is "PRIMITIVE";
+
 
 ----- component OBUF_F_12 -----
 component OBUF_F_12
@@ -15277,8 +14477,7 @@ component OBUF_F_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_F_16 -----
 component OBUF_F_16
@@ -15287,8 +14486,7 @@ component OBUF_F_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_F_2 -----
 component OBUF_F_2
@@ -15297,8 +14495,7 @@ component OBUF_F_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_F_24 -----
 component OBUF_F_24
@@ -15307,8 +14504,7 @@ component OBUF_F_24
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_F_24 : component is "PRIMITIVE";
+
 
 ----- component OBUF_F_4 -----
 component OBUF_F_4
@@ -15317,8 +14513,7 @@ component OBUF_F_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_F_6 -----
 component OBUF_F_6
@@ -15327,8 +14522,7 @@ component OBUF_F_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_F_8 -----
 component OBUF_F_8
@@ -15337,8 +14531,7 @@ component OBUF_F_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_GTL -----
 component OBUF_GTL
@@ -15347,8 +14540,7 @@ component OBUF_GTL
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_GTL : component is "PRIMITIVE";
+
 
 ----- component OBUF_GTLP -----
 component OBUF_GTLP
@@ -15357,8 +14549,7 @@ component OBUF_GTLP
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_GTLP : component is "PRIMITIVE";
+
 
 ----- component OBUF_GTLP_DCI -----
 component OBUF_GTLP_DCI
@@ -15367,8 +14558,7 @@ component OBUF_GTLP_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_GTLP_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_GTL_DCI -----
 component OBUF_GTL_DCI
@@ -15377,8 +14567,7 @@ component OBUF_GTL_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_GTL_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_I -----
 component OBUF_HSTL_I
@@ -15387,8 +14576,7 @@ component OBUF_HSTL_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_I : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_II -----
 component OBUF_HSTL_II
@@ -15397,8 +14585,7 @@ component OBUF_HSTL_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_II : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_III -----
 component OBUF_HSTL_III
@@ -15407,8 +14594,7 @@ component OBUF_HSTL_III
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_III : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_III_18 -----
 component OBUF_HSTL_III_18
@@ -15417,8 +14603,7 @@ component OBUF_HSTL_III_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_III_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_III_DCI -----
 component OBUF_HSTL_III_DCI
@@ -15427,8 +14612,7 @@ component OBUF_HSTL_III_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_III_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_III_DCI_18 -----
 component OBUF_HSTL_III_DCI_18
@@ -15437,8 +14621,7 @@ component OBUF_HSTL_III_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_III_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_II_18 -----
 component OBUF_HSTL_II_18
@@ -15447,8 +14630,7 @@ component OBUF_HSTL_II_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_II_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_II_DCI -----
 component OBUF_HSTL_II_DCI
@@ -15457,8 +14639,7 @@ component OBUF_HSTL_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_II_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_II_DCI_18 -----
 component OBUF_HSTL_II_DCI_18
@@ -15467,8 +14648,7 @@ component OBUF_HSTL_II_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_II_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_IV -----
 component OBUF_HSTL_IV
@@ -15477,8 +14657,7 @@ component OBUF_HSTL_IV
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_IV : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_IV_18 -----
 component OBUF_HSTL_IV_18
@@ -15487,8 +14666,7 @@ component OBUF_HSTL_IV_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_IV_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_IV_DCI -----
 component OBUF_HSTL_IV_DCI
@@ -15497,8 +14675,7 @@ component OBUF_HSTL_IV_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_IV_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_IV_DCI_18 -----
 component OBUF_HSTL_IV_DCI_18
@@ -15507,8 +14684,7 @@ component OBUF_HSTL_IV_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_IV_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_I_18 -----
 component OBUF_HSTL_I_18
@@ -15517,8 +14693,7 @@ component OBUF_HSTL_I_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_I_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_I_DCI -----
 component OBUF_HSTL_I_DCI
@@ -15527,8 +14702,7 @@ component OBUF_HSTL_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_I_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_HSTL_I_DCI_18 -----
 component OBUF_HSTL_I_DCI_18
@@ -15537,8 +14711,7 @@ component OBUF_HSTL_I_DCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_HSTL_I_DCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS12 -----
 component OBUF_LVCMOS12
@@ -15547,8 +14720,7 @@ component OBUF_LVCMOS12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS12_F_2 -----
 component OBUF_LVCMOS12_F_2
@@ -15557,8 +14729,7 @@ component OBUF_LVCMOS12_F_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS12_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS12_F_4 -----
 component OBUF_LVCMOS12_F_4
@@ -15567,8 +14738,7 @@ component OBUF_LVCMOS12_F_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS12_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS12_F_6 -----
 component OBUF_LVCMOS12_F_6
@@ -15577,8 +14747,7 @@ component OBUF_LVCMOS12_F_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS12_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS12_F_8 -----
 component OBUF_LVCMOS12_F_8
@@ -15587,8 +14756,7 @@ component OBUF_LVCMOS12_F_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS12_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS12_S_2 -----
 component OBUF_LVCMOS12_S_2
@@ -15597,8 +14765,7 @@ component OBUF_LVCMOS12_S_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS12_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS12_S_4 -----
 component OBUF_LVCMOS12_S_4
@@ -15607,8 +14774,7 @@ component OBUF_LVCMOS12_S_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS12_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS12_S_6 -----
 component OBUF_LVCMOS12_S_6
@@ -15617,8 +14783,7 @@ component OBUF_LVCMOS12_S_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS12_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS12_S_8 -----
 component OBUF_LVCMOS12_S_8
@@ -15627,8 +14792,7 @@ component OBUF_LVCMOS12_S_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS12_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15 -----
 component OBUF_LVCMOS15
@@ -15637,8 +14801,7 @@ component OBUF_LVCMOS15
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_F_12 -----
 component OBUF_LVCMOS15_F_12
@@ -15647,8 +14810,7 @@ component OBUF_LVCMOS15_F_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_F_16 -----
 component OBUF_LVCMOS15_F_16
@@ -15657,8 +14819,7 @@ component OBUF_LVCMOS15_F_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_F_2 -----
 component OBUF_LVCMOS15_F_2
@@ -15667,8 +14828,7 @@ component OBUF_LVCMOS15_F_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_F_4 -----
 component OBUF_LVCMOS15_F_4
@@ -15677,8 +14837,7 @@ component OBUF_LVCMOS15_F_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_F_6 -----
 component OBUF_LVCMOS15_F_6
@@ -15687,8 +14846,7 @@ component OBUF_LVCMOS15_F_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_F_8 -----
 component OBUF_LVCMOS15_F_8
@@ -15697,8 +14855,7 @@ component OBUF_LVCMOS15_F_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_S_12 -----
 component OBUF_LVCMOS15_S_12
@@ -15707,8 +14864,7 @@ component OBUF_LVCMOS15_S_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_S_16 -----
 component OBUF_LVCMOS15_S_16
@@ -15717,8 +14873,7 @@ component OBUF_LVCMOS15_S_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_S_2 -----
 component OBUF_LVCMOS15_S_2
@@ -15727,8 +14882,7 @@ component OBUF_LVCMOS15_S_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_S_4 -----
 component OBUF_LVCMOS15_S_4
@@ -15737,8 +14891,7 @@ component OBUF_LVCMOS15_S_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_S_6 -----
 component OBUF_LVCMOS15_S_6
@@ -15747,8 +14900,7 @@ component OBUF_LVCMOS15_S_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS15_S_8 -----
 component OBUF_LVCMOS15_S_8
@@ -15757,8 +14909,7 @@ component OBUF_LVCMOS15_S_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS15_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18 -----
 component OBUF_LVCMOS18
@@ -15767,8 +14918,7 @@ component OBUF_LVCMOS18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_F_12 -----
 component OBUF_LVCMOS18_F_12
@@ -15777,8 +14927,7 @@ component OBUF_LVCMOS18_F_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_F_16 -----
 component OBUF_LVCMOS18_F_16
@@ -15787,8 +14936,7 @@ component OBUF_LVCMOS18_F_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_F_2 -----
 component OBUF_LVCMOS18_F_2
@@ -15797,8 +14945,7 @@ component OBUF_LVCMOS18_F_2
      I : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_F_4 -----
 component OBUF_LVCMOS18_F_4
@@ -15807,8 +14954,7 @@ component OBUF_LVCMOS18_F_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_F_6 -----
 component OBUF_LVCMOS18_F_6
@@ -15817,8 +14963,7 @@ component OBUF_LVCMOS18_F_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_F_8 -----
 component OBUF_LVCMOS18_F_8
@@ -15827,8 +14972,7 @@ component OBUF_LVCMOS18_F_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_S_12 -----
 component OBUF_LVCMOS18_S_12
@@ -15837,8 +14981,7 @@ component OBUF_LVCMOS18_S_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_S_16 -----
 component OBUF_LVCMOS18_S_16
@@ -15847,8 +14990,7 @@ component OBUF_LVCMOS18_S_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_S_2 -----
 component OBUF_LVCMOS18_S_2
@@ -15857,8 +14999,7 @@ component OBUF_LVCMOS18_S_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_S_4 -----
 component OBUF_LVCMOS18_S_4
@@ -15867,8 +15008,7 @@ component OBUF_LVCMOS18_S_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_S_6 -----
 component OBUF_LVCMOS18_S_6
@@ -15877,8 +15017,7 @@ component OBUF_LVCMOS18_S_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS18_S_8 -----
 component OBUF_LVCMOS18_S_8
@@ -15887,8 +15026,7 @@ component OBUF_LVCMOS18_S_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS18_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS2 -----
 component OBUF_LVCMOS2
@@ -15897,8 +15035,7 @@ component OBUF_LVCMOS2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25 -----
 component OBUF_LVCMOS25
@@ -15907,8 +15044,7 @@ component OBUF_LVCMOS25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_F_12 -----
 component OBUF_LVCMOS25_F_12
@@ -15917,8 +15053,7 @@ component OBUF_LVCMOS25_F_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_F_16 -----
 component OBUF_LVCMOS25_F_16
@@ -15927,8 +15062,7 @@ component OBUF_LVCMOS25_F_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_F_2 -----
 component OBUF_LVCMOS25_F_2
@@ -15937,8 +15071,7 @@ component OBUF_LVCMOS25_F_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_F_24 -----
 component OBUF_LVCMOS25_F_24
@@ -15947,8 +15080,7 @@ component OBUF_LVCMOS25_F_24
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_F_24 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_F_4 -----
 component OBUF_LVCMOS25_F_4
@@ -15957,8 +15089,7 @@ component OBUF_LVCMOS25_F_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_F_6 -----
 component OBUF_LVCMOS25_F_6
@@ -15967,8 +15098,7 @@ component OBUF_LVCMOS25_F_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_F_8 -----
 component OBUF_LVCMOS25_F_8
@@ -15977,8 +15107,7 @@ component OBUF_LVCMOS25_F_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_S_12 -----
 component OBUF_LVCMOS25_S_12
@@ -15987,8 +15116,7 @@ component OBUF_LVCMOS25_S_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_S_16 -----
 component OBUF_LVCMOS25_S_16
@@ -15997,8 +15125,7 @@ component OBUF_LVCMOS25_S_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_S_2 -----
 component OBUF_LVCMOS25_S_2
@@ -16007,8 +15134,7 @@ component OBUF_LVCMOS25_S_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_S_24 -----
 component OBUF_LVCMOS25_S_24
@@ -16017,8 +15143,7 @@ component OBUF_LVCMOS25_S_24
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_S_24 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_S_4 -----
 component OBUF_LVCMOS25_S_4
@@ -16027,8 +15152,7 @@ component OBUF_LVCMOS25_S_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_S_6 -----
 component OBUF_LVCMOS25_S_6
@@ -16037,8 +15161,7 @@ component OBUF_LVCMOS25_S_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS25_S_8 -----
 component OBUF_LVCMOS25_S_8
@@ -16047,8 +15170,7 @@ component OBUF_LVCMOS25_S_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS25_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33 -----
 component OBUF_LVCMOS33
@@ -16057,8 +15179,7 @@ component OBUF_LVCMOS33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_F_12 -----
 component OBUF_LVCMOS33_F_12
@@ -16067,8 +15188,7 @@ component OBUF_LVCMOS33_F_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_F_16 -----
 component OBUF_LVCMOS33_F_16
@@ -16077,8 +15197,7 @@ component OBUF_LVCMOS33_F_16
      I : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_F_2 -----
 component OBUF_LVCMOS33_F_2
@@ -16087,8 +15206,7 @@ component OBUF_LVCMOS33_F_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_F_24 -----
 component OBUF_LVCMOS33_F_24
@@ -16097,8 +15215,7 @@ component OBUF_LVCMOS33_F_24
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_F_24 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_F_4 -----
 component OBUF_LVCMOS33_F_4
@@ -16107,8 +15224,7 @@ component OBUF_LVCMOS33_F_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_F_6 -----
 component OBUF_LVCMOS33_F_6
@@ -16117,8 +15233,7 @@ component OBUF_LVCMOS33_F_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_F_8 -----
 component OBUF_LVCMOS33_F_8
@@ -16127,8 +15242,7 @@ component OBUF_LVCMOS33_F_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_S_12 -----
 component OBUF_LVCMOS33_S_12
@@ -16137,8 +15251,7 @@ component OBUF_LVCMOS33_S_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_S_16 -----
 component OBUF_LVCMOS33_S_16
@@ -16147,8 +15260,7 @@ component OBUF_LVCMOS33_S_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_S_2 -----
 component OBUF_LVCMOS33_S_2
@@ -16157,8 +15269,7 @@ component OBUF_LVCMOS33_S_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_S_24 -----
 component OBUF_LVCMOS33_S_24
@@ -16167,8 +15278,7 @@ component OBUF_LVCMOS33_S_24
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_S_24 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_S_4 -----
 component OBUF_LVCMOS33_S_4
@@ -16177,8 +15287,7 @@ component OBUF_LVCMOS33_S_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_S_6 -----
 component OBUF_LVCMOS33_S_6
@@ -16187,8 +15296,7 @@ component OBUF_LVCMOS33_S_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVCMOS33_S_8 -----
 component OBUF_LVCMOS33_S_8
@@ -16197,8 +15305,7 @@ component OBUF_LVCMOS33_S_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVCMOS33_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVDCI_15 -----
 component OBUF_LVDCI_15
@@ -16207,8 +15314,7 @@ component OBUF_LVDCI_15
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVDCI_15 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVDCI_18 -----
 component OBUF_LVDCI_18
@@ -16217,8 +15323,7 @@ component OBUF_LVDCI_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVDCI_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVDCI_25 -----
 component OBUF_LVDCI_25
@@ -16227,8 +15332,7 @@ component OBUF_LVDCI_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVDCI_25 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVDCI_33 -----
 component OBUF_LVDCI_33
@@ -16237,8 +15341,7 @@ component OBUF_LVDCI_33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVDCI_33 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVDCI_DV2_15 -----
 component OBUF_LVDCI_DV2_15
@@ -16247,8 +15350,7 @@ component OBUF_LVDCI_DV2_15
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVDCI_DV2_15 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVDCI_DV2_18 -----
 component OBUF_LVDCI_DV2_18
@@ -16257,8 +15359,7 @@ component OBUF_LVDCI_DV2_18
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVDCI_DV2_18 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVDCI_DV2_25 -----
 component OBUF_LVDCI_DV2_25
@@ -16267,8 +15368,7 @@ component OBUF_LVDCI_DV2_25
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVDCI_DV2_25 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVDCI_DV2_33 -----
 component OBUF_LVDCI_DV2_33
@@ -16277,8 +15377,7 @@ component OBUF_LVDCI_DV2_33
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVDCI_DV2_33 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVDS -----
 component OBUF_LVDS
@@ -16287,8 +15386,7 @@ component OBUF_LVDS
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVDS : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVPECL -----
 component OBUF_LVPECL
@@ -16297,8 +15395,7 @@ component OBUF_LVPECL
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVPECL : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL -----
 component OBUF_LVTTL
@@ -16307,8 +15404,7 @@ component OBUF_LVTTL
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_F_12 -----
 component OBUF_LVTTL_F_12
@@ -16317,8 +15413,7 @@ component OBUF_LVTTL_F_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_F_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_F_16 -----
 component OBUF_LVTTL_F_16
@@ -16327,8 +15422,7 @@ component OBUF_LVTTL_F_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_F_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_F_2 -----
 component OBUF_LVTTL_F_2
@@ -16337,8 +15431,7 @@ component OBUF_LVTTL_F_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_F_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_F_24 -----
 component OBUF_LVTTL_F_24
@@ -16347,8 +15440,7 @@ component OBUF_LVTTL_F_24
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_F_24 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_F_4 -----
 component OBUF_LVTTL_F_4
@@ -16357,8 +15449,7 @@ component OBUF_LVTTL_F_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_F_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_F_6 -----
 component OBUF_LVTTL_F_6
@@ -16367,8 +15458,7 @@ component OBUF_LVTTL_F_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_F_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_F_8 -----
 component OBUF_LVTTL_F_8
@@ -16377,8 +15467,7 @@ component OBUF_LVTTL_F_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_F_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_S_12 -----
 component OBUF_LVTTL_S_12
@@ -16387,8 +15476,7 @@ component OBUF_LVTTL_S_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_S_16 -----
 component OBUF_LVTTL_S_16
@@ -16397,8 +15485,7 @@ component OBUF_LVTTL_S_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_S_2 -----
 component OBUF_LVTTL_S_2
@@ -16407,8 +15494,7 @@ component OBUF_LVTTL_S_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_S_24 -----
 component OBUF_LVTTL_S_24
@@ -16417,8 +15503,7 @@ component OBUF_LVTTL_S_24
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_S_24 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_S_4 -----
 component OBUF_LVTTL_S_4
@@ -16427,8 +15512,7 @@ component OBUF_LVTTL_S_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_S_6 -----
 component OBUF_LVTTL_S_6
@@ -16437,8 +15521,7 @@ component OBUF_LVTTL_S_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_LVTTL_S_8 -----
 component OBUF_LVTTL_S_8
@@ -16447,8 +15530,7 @@ component OBUF_LVTTL_S_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_LVTTL_S_8 : component is "PRIMITIVE";
+
 
 ----- component OBUF_PCI33_3 -----
 component OBUF_PCI33_3
@@ -16457,8 +15539,7 @@ component OBUF_PCI33_3
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_PCI33_3 : component is "PRIMITIVE";
+
 
 ----- component OBUF_PCI33_5 -----
 component OBUF_PCI33_5
@@ -16467,8 +15548,7 @@ component OBUF_PCI33_5
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_PCI33_5 : component is "PRIMITIVE";
+
 
 ----- component OBUF_PCI66_3 -----
 component OBUF_PCI66_3
@@ -16477,8 +15557,7 @@ component OBUF_PCI66_3
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_PCI66_3 : component is "PRIMITIVE";
+
 
 ----- component OBUF_PCIX -----
 component OBUF_PCIX
@@ -16487,8 +15566,7 @@ component OBUF_PCIX
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_PCIX : component is "PRIMITIVE";
+
 
 ----- component OBUF_PCIX66_3 -----
 component OBUF_PCIX66_3
@@ -16497,8 +15575,7 @@ component OBUF_PCIX66_3
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_PCIX66_3 : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL18_I -----
 component OBUF_SSTL18_I
@@ -16507,8 +15584,7 @@ component OBUF_SSTL18_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL18_I : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL18_II -----
 component OBUF_SSTL18_II
@@ -16517,8 +15593,7 @@ component OBUF_SSTL18_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL18_II : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL18_II_DCI -----
 component OBUF_SSTL18_II_DCI
@@ -16527,8 +15602,7 @@ component OBUF_SSTL18_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL18_II_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL18_I_DCI -----
 component OBUF_SSTL18_I_DCI
@@ -16537,8 +15611,7 @@ component OBUF_SSTL18_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL18_I_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL2_I -----
 component OBUF_SSTL2_I
@@ -16547,8 +15620,7 @@ component OBUF_SSTL2_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL2_I : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL2_II -----
 component OBUF_SSTL2_II
@@ -16557,8 +15629,7 @@ component OBUF_SSTL2_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL2_II : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL2_II_DCI -----
 component OBUF_SSTL2_II_DCI
@@ -16567,8 +15638,7 @@ component OBUF_SSTL2_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL2_II_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL2_I_DCI -----
 component OBUF_SSTL2_I_DCI
@@ -16577,8 +15647,7 @@ component OBUF_SSTL2_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL2_I_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL3_I -----
 component OBUF_SSTL3_I
@@ -16587,8 +15656,7 @@ component OBUF_SSTL3_I
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL3_I : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL3_II -----
 component OBUF_SSTL3_II
@@ -16597,8 +15665,7 @@ component OBUF_SSTL3_II
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL3_II : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL3_II_DCI -----
 component OBUF_SSTL3_II_DCI
@@ -16607,8 +15674,7 @@ component OBUF_SSTL3_II_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL3_II_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_SSTL3_I_DCI -----
 component OBUF_SSTL3_I_DCI
@@ -16617,8 +15683,7 @@ component OBUF_SSTL3_I_DCI
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_SSTL3_I_DCI : component is "PRIMITIVE";
+
 
 ----- component OBUF_S_12 -----
 component OBUF_S_12
@@ -16627,8 +15692,7 @@ component OBUF_S_12
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_S_12 : component is "PRIMITIVE";
+
 
 ----- component OBUF_S_16 -----
 component OBUF_S_16
@@ -16637,8 +15701,7 @@ component OBUF_S_16
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_S_16 : component is "PRIMITIVE";
+
 
 ----- component OBUF_S_2 -----
 component OBUF_S_2
@@ -16647,8 +15710,7 @@ component OBUF_S_2
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_S_2 : component is "PRIMITIVE";
+
 
 ----- component OBUF_S_24 -----
 component OBUF_S_24
@@ -16657,8 +15719,7 @@ component OBUF_S_24
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_S_24 : component is "PRIMITIVE";
+
 
 ----- component OBUF_S_4 -----
 component OBUF_S_4
@@ -16667,8 +15728,7 @@ component OBUF_S_4
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_S_4 : component is "PRIMITIVE";
+
 
 ----- component OBUF_S_6 -----
 component OBUF_S_6
@@ -16677,8 +15737,7 @@ component OBUF_S_6
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_S_6 : component is "PRIMITIVE";
+
 
 ----- component OBUF_S_8 -----
 component OBUF_S_8
@@ -16687,8 +15746,7 @@ component OBUF_S_8
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OBUF_S_8 : component is "PRIMITIVE";
+
 
 ----- component ODDR -----
 component ODDR
@@ -16707,8 +15765,7 @@ component ODDR
      S : in std_ulogic := 'L'
   );
 end component;
-attribute BOX_TYPE of
-  ODDR : component is "PRIMITIVE";
+
 
 ----- component ODDR2 -----
 component ODDR2
@@ -16728,8 +15785,7 @@ component ODDR2
      S : in std_ulogic := 'L'
   );
 end component;
-attribute BOX_TYPE of
-  ODDR2 : component is "PRIMITIVE";
+
 
 ----- component ODELAYE2 -----
 component ODELAYE2
@@ -16758,8 +15814,7 @@ component ODELAYE2
      REGRST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ODELAYE2 : component is "PRIMITIVE";
+
 
 ----- component ODELAYE2_FINEDELAY -----
 component ODELAYE2_FINEDELAY
@@ -16790,8 +15845,7 @@ component ODELAYE2_FINEDELAY
      REGRST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ODELAYE2_FINEDELAY : component is "PRIMITIVE";
+
 
 ----- component OFDDRCPE -----
 component OFDDRCPE
@@ -16806,8 +15860,7 @@ component OFDDRCPE
      PRE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OFDDRCPE : component is "PRIMITIVE";
+
 
 ----- component OFDDRRSE -----
 component OFDDRRSE
@@ -16822,8 +15875,7 @@ component OFDDRRSE
      S : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OFDDRRSE : component is "PRIMITIVE";
+
 
 ----- component OFDDRTCPE -----
 component OFDDRTCPE
@@ -16839,8 +15891,7 @@ component OFDDRTCPE
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OFDDRTCPE : component is "PRIMITIVE";
+
 
 ----- component OFDDRTRSE -----
 component OFDDRTRSE
@@ -16856,8 +15907,7 @@ component OFDDRTRSE
      T : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OFDDRTRSE : component is "PRIMITIVE";
+
 
 ----- component OPT_OFF -----
 component OPT_OFF
@@ -16865,8 +15915,7 @@ component OPT_OFF
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OPT_OFF : component is "PRIMITIVE";
+
 
 ----- component OPT_UIM -----
 component OPT_UIM
@@ -16874,8 +15923,7 @@ component OPT_UIM
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OPT_UIM : component is "PRIMITIVE";
+
 
 ----- component OR2 -----
 component OR2
@@ -16885,8 +15933,7 @@ component OR2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR2 : component is "PRIMITIVE";
+
 
 ----- component OR2B1 -----
 component OR2B1
@@ -16896,8 +15943,7 @@ component OR2B1
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR2B1 : component is "PRIMITIVE";
+
 
 ----- component OR2B2 -----
 component OR2B2
@@ -16907,8 +15953,7 @@ component OR2B2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR2B2 : component is "PRIMITIVE";
+
 
 ----- component OR2L -----
 component OR2L
@@ -16918,8 +15963,7 @@ component OR2L
      SRI : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR2L : component is "PRIMITIVE";
+
 
 ----- component OR3 -----
 component OR3
@@ -16930,8 +15974,7 @@ component OR3
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR3 : component is "PRIMITIVE";
+
 
 ----- component OR3B1 -----
 component OR3B1
@@ -16942,8 +15985,7 @@ component OR3B1
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR3B1 : component is "PRIMITIVE";
+
 
 ----- component OR3B2 -----
 component OR3B2
@@ -16954,8 +15996,7 @@ component OR3B2
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR3B2 : component is "PRIMITIVE";
+
 
 ----- component OR3B3 -----
 component OR3B3
@@ -16966,8 +16007,7 @@ component OR3B3
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR3B3 : component is "PRIMITIVE";
+
 
 ----- component OR4 -----
 component OR4
@@ -16979,8 +16019,7 @@ component OR4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR4 : component is "PRIMITIVE";
+
 
 ----- component OR4B1 -----
 component OR4B1
@@ -16992,8 +16031,7 @@ component OR4B1
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR4B1 : component is "PRIMITIVE";
+
 
 ----- component OR4B2 -----
 component OR4B2
@@ -17005,8 +16043,7 @@ component OR4B2
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR4B2 : component is "PRIMITIVE";
+
 
 ----- component OR4B3 -----
 component OR4B3
@@ -17018,8 +16055,7 @@ component OR4B3
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR4B3 : component is "PRIMITIVE";
+
 
 ----- component OR4B4 -----
 component OR4B4
@@ -17031,8 +16067,7 @@ component OR4B4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR4B4 : component is "PRIMITIVE";
+
 
 ----- component OR5 -----
 component OR5
@@ -17045,8 +16080,7 @@ component OR5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR5 : component is "PRIMITIVE";
+
 
 ----- component OR5B1 -----
 component OR5B1
@@ -17059,8 +16093,7 @@ component OR5B1
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR5B1 : component is "PRIMITIVE";
+
 
 ----- component OR5B2 -----
 component OR5B2
@@ -17073,8 +16106,7 @@ component OR5B2
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR5B2 : component is "PRIMITIVE";
+
 
 ----- component OR5B3 -----
 component OR5B3
@@ -17087,8 +16119,7 @@ component OR5B3
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR5B3 : component is "PRIMITIVE";
+
 
 ----- component OR5B4 -----
 component OR5B4
@@ -17101,8 +16132,7 @@ component OR5B4
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR5B4 : component is "PRIMITIVE";
+
 
 ----- component OR5B5 -----
 component OR5B5
@@ -17115,8 +16145,7 @@ component OR5B5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR5B5 : component is "PRIMITIVE";
+
 
 ----- component OR6 -----
 component OR6
@@ -17130,8 +16159,7 @@ component OR6
      I5 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR6 : component is "PRIMITIVE";
+
 
 ----- component OR7 -----
 component OR7
@@ -17146,8 +16174,7 @@ component OR7
      I6 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR7 : component is "PRIMITIVE";
+
 
 ----- component OR8 -----
 component OR8
@@ -17163,8 +16190,7 @@ component OR8
      I7 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OR8 : component is "PRIMITIVE";
+
 
 ----- component ORCY -----
 component ORCY
@@ -17174,8 +16200,7 @@ component ORCY
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ORCY : component is "PRIMITIVE";
+
 
 ----- component OSERDES -----
 component OSERDES
@@ -17215,8 +16240,7 @@ component OSERDES
      TCE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OSERDES : component is "PRIMITIVE";
+
 
 ----- component OSERDES2 -----
 component OSERDES2
@@ -17258,8 +16282,7 @@ component OSERDES2
      TRAIN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OSERDES2 : component is "PRIMITIVE";
+
 
 ----- component OSERDESE1 -----
 component OSERDESE1
@@ -17308,8 +16331,7 @@ component OSERDESE1
      WC : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OSERDESE1 : component is "PRIMITIVE";
+
 
 ----- component OSERDESE2 -----
 component OSERDESE2
@@ -17356,8 +16378,7 @@ component OSERDESE2
      TCE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OSERDESE2 : component is "PRIMITIVE";
+
 
 ----- component OUT_FIFO -----
 component OUT_FIFO
@@ -17400,8 +16421,7 @@ component OUT_FIFO
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  OUT_FIFO : component is "PRIMITIVE";
+
 
 ----- component PCIE_2_0 -----
 component PCIE_2_0
@@ -18002,8 +17022,7 @@ component PCIE_2_0
      USERCLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PCIE_2_0 : component is "PRIMITIVE";
+
 
 ----- component PCIE_2_1 -----
 component PCIE_2_1
@@ -18704,8 +17723,7 @@ component PCIE_2_1
      USERCLK2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PCIE_2_1 : component is "PRIMITIVE";
+
 
 ----- component PCIE_A1 -----
 component PCIE_A1
@@ -18954,8 +17972,7 @@ component PCIE_A1
      USERCLK : in std_ulogic := 'L'
   );
 end component;
-attribute BOX_TYPE of
-  PCIE_A1 : component is "PRIMITIVE";
+
 
 ----- component PCIE_EP -----
 component PCIE_EP
@@ -19402,8 +18419,7 @@ component PCIE_EP
      PIPERXVALIDL7 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PCIE_EP : component is "PRIMITIVE";
+
 
 ----- component PCIE_INTERNAL_1_1 -----
 component PCIE_INTERNAL_1_1
@@ -20027,8 +19043,7 @@ component PCIE_INTERNAL_1_1
      PIPERXVALIDL7 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PCIE_INTERNAL_1_1 : component is "PRIMITIVE";
+
 
 ----- component PHASER_IN -----
 component PHASER_IN
@@ -20064,8 +19079,7 @@ component PHASER_IN
      SYSCLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PHASER_IN : component is "PRIMITIVE";
+
 
 ----- component PHASER_IN_PHY -----
 component PHASER_IN_PHY
@@ -20107,8 +19121,7 @@ component PHASER_IN_PHY
      SYSCLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PHASER_IN_PHY : component is "PRIMITIVE";
+
 
 ----- component PHASER_OUT -----
 component PHASER_OUT
@@ -20150,8 +19163,7 @@ component PHASER_OUT
      SYSCLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PHASER_OUT : component is "PRIMITIVE";
+
 
 ----- component PHASER_OUT_PHY -----
 component PHASER_OUT_PHY
@@ -20198,8 +19210,7 @@ component PHASER_OUT_PHY
      SYSCLK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PHASER_OUT_PHY : component is "PRIMITIVE";
+
 
 ----- component PHASER_REF -----
 component PHASER_REF
@@ -20210,8 +19221,7 @@ component PHASER_REF
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PHASER_REF : component is "PRIMITIVE";
+
 
 ----- component PHY_CONTROL -----
 component PHY_CONTROL
@@ -20277,8 +19287,7 @@ component PHY_CONTROL
      WRITECALIBENABLE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PHY_CONTROL : component is "PRIMITIVE";
+
 
 ----- component PLLE2_ADV -----
 component PLLE2_ADV
@@ -20336,8 +19345,7 @@ component PLLE2_ADV
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PLLE2_ADV : component is "PRIMITIVE";
+
 
 ----- component PLLE2_BASE -----
 component PLLE2_BASE
@@ -20383,8 +19391,7 @@ component PLLE2_BASE
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PLLE2_BASE : component is "PRIMITIVE";
+
 
 ----- component PLL_ADV -----
 component PLL_ADV
@@ -20460,8 +19467,7 @@ component PLL_ADV
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PLL_ADV : component is "PRIMITIVE";
+
 
 ----- component PLL_BASE -----
 component PLL_BASE
@@ -20508,8 +19514,7 @@ component PLL_BASE
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PLL_BASE : component is "PRIMITIVE";
+
 
 ----- component PMCD -----
 component PMCD
@@ -20533,8 +19538,7 @@ component PMCD
      RST : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PMCD : component is "PRIMITIVE";
+
 
 ----- component POST_CRC_INTERNAL -----
 component POST_CRC_INTERNAL
@@ -20542,8 +19546,7 @@ component POST_CRC_INTERNAL
      CRCERROR : out std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  POST_CRC_INTERNAL : component is "PRIMITIVE";
+
 
 ----- component PPC405_ADV -----
 component PPC405_ADV
@@ -20751,8 +19754,7 @@ component PPC405_ADV
      TRCC405TRIGGEREVENTIN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PPC405_ADV : component is "PRIMITIVE";
+
 
 ----- component PPC440 -----
 component PPC440
@@ -21147,8 +20149,7 @@ component PPC440
      TRCC440TRIGGEREVENTIN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  PPC440 : component is "PRIMITIVE";
+
 
 ----- component PULLDOWN -----
 component PULLDOWN
@@ -21156,8 +20157,7 @@ component PULLDOWN
      O : out std_ulogic := 'L'
   );
 end component;
-attribute BOX_TYPE of
-  PULLDOWN : component is "PRIMITIVE";
+
 
 ----- component PULLUP -----
 component PULLUP
@@ -21165,8 +20165,7 @@ component PULLUP
      O : out std_ulogic := 'H'
   );
 end component;
-attribute BOX_TYPE of
-  PULLUP : component is "PRIMITIVE";
+
 
 ----- component RAM128X1D -----
 component RAM128X1D
@@ -21183,8 +20182,7 @@ component RAM128X1D
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM128X1D : component is "PRIMITIVE";
+
 
 ----- component RAM128X1S -----
 component RAM128X1S
@@ -21205,8 +20203,7 @@ component RAM128X1S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM128X1S : component is "PRIMITIVE";
+
 
 ----- component RAM128X1S_1 -----
 component RAM128X1S_1
@@ -21227,8 +20224,7 @@ component RAM128X1S_1
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM128X1S_1 : component is "PRIMITIVE";
+
 
 ----- component RAM16X1D -----
 component RAM16X1D
@@ -21251,8 +20247,7 @@ component RAM16X1D
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM16X1D : component is "PRIMITIVE";
+
 
 ----- component RAM16X1D_1 -----
 component RAM16X1D_1
@@ -21275,8 +20270,7 @@ component RAM16X1D_1
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM16X1D_1 : component is "PRIMITIVE";
+
 
 ----- component RAM16X1S -----
 component RAM16X1S
@@ -21294,8 +20288,7 @@ component RAM16X1S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM16X1S : component is "PRIMITIVE";
+
 
 ----- component RAM16X1S_1 -----
 component RAM16X1S_1
@@ -21313,8 +20306,7 @@ component RAM16X1S_1
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM16X1S_1 : component is "PRIMITIVE";
+
 
 ----- component RAM16X2S -----
 component RAM16X2S
@@ -21335,8 +20327,7 @@ component RAM16X2S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM16X2S : component is "PRIMITIVE";
+
 
 ----- component RAM16X4S -----
 component RAM16X4S
@@ -21363,8 +20354,7 @@ component RAM16X4S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM16X4S : component is "PRIMITIVE";
+
 
 ----- component RAM16X8S -----
 component RAM16X8S
@@ -21389,8 +20379,7 @@ component RAM16X8S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM16X8S : component is "PRIMITIVE";
+
 
 ----- component RAM256X1S -----
 component RAM256X1S
@@ -21405,8 +20394,7 @@ component RAM256X1S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM256X1S : component is "PRIMITIVE";
+
 
 ----- component RAM32M -----
 component RAM32M
@@ -21433,8 +20421,7 @@ component RAM32M
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM32M : component is "PRIMITIVE";
+
 
 ----- component RAM32X1D -----
 component RAM32X1D
@@ -21459,8 +20446,7 @@ component RAM32X1D
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM32X1D : component is "PRIMITIVE";
+
 
 ----- component RAM32X1D_1 -----
 component RAM32X1D_1
@@ -21485,8 +20471,7 @@ component RAM32X1D_1
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM32X1D_1 : component is "PRIMITIVE";
+
 
 ----- component RAM32X1S -----
 component RAM32X1S
@@ -21505,8 +20490,7 @@ component RAM32X1S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM32X1S : component is "PRIMITIVE";
+
 
 ----- component RAM32X1S_1 -----
 component RAM32X1S_1
@@ -21525,8 +20509,7 @@ component RAM32X1S_1
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM32X1S_1 : component is "PRIMITIVE";
+
 
 ----- component RAM32X2S -----
 component RAM32X2S
@@ -21548,8 +20531,7 @@ component RAM32X2S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM32X2S : component is "PRIMITIVE";
+
 
 ----- component RAM32X4S -----
 component RAM32X4S
@@ -21577,8 +20559,7 @@ component RAM32X4S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM32X4S : component is "PRIMITIVE";
+
 
 ----- component RAM32X8S -----
 component RAM32X8S
@@ -21604,8 +20585,7 @@ component RAM32X8S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM32X8S : component is "PRIMITIVE";
+
 
 ----- component RAM64M -----
 component RAM64M
@@ -21632,8 +20612,7 @@ component RAM64M
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM64M : component is "PRIMITIVE";
+
 
 ----- component RAM64X1D -----
 component RAM64X1D
@@ -21660,8 +20639,7 @@ component RAM64X1D
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM64X1D : component is "PRIMITIVE";
+
 
 ----- component RAM64X1D_1 -----
 component RAM64X1D_1
@@ -21688,8 +20666,7 @@ component RAM64X1D_1
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM64X1D_1 : component is "PRIMITIVE";
+
 
 ----- component RAM64X1S -----
 component RAM64X1S
@@ -21709,8 +20686,7 @@ component RAM64X1S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM64X1S : component is "PRIMITIVE";
+
 
 ----- component RAM64X1S_1 -----
 component RAM64X1S_1
@@ -21730,8 +20706,7 @@ component RAM64X1S_1
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM64X1S_1 : component is "PRIMITIVE";
+
 
 ----- component RAM64X2S -----
 component RAM64X2S
@@ -21754,8 +20729,7 @@ component RAM64X2S
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAM64X2S : component is "PRIMITIVE";
+
 
 ----- component RAMB16 -----
 component RAMB16
@@ -21878,8 +20852,7 @@ component RAMB16
      WEB : in std_logic_vector (3 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16 : component is "PRIMITIVE";
+
 
 ----- component RAMB16BWE -----
 component RAMB16BWE
@@ -21988,8 +20961,7 @@ component RAMB16BWE
      WEB : in std_logic_vector (3 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16BWE : component is "PRIMITIVE";
+
 
 ----- component RAMB16BWER -----
 component RAMB16BWER
@@ -22110,8 +21082,7 @@ component RAMB16BWER
      WEB : in std_logic_vector (3 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16BWER : component is "PRIMITIVE";
+
 
 ----- component RAMB16BWE_S18 -----
 component RAMB16BWE_S18
@@ -22204,8 +21175,7 @@ component RAMB16BWE_S18
      WE : in std_logic_vector(1 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16BWE_S18 : component is "PRIMITIVE";
+
 
 ----- component RAMB16BWE_S18_S18 -----
 component RAMB16BWE_S18_S18
@@ -22311,8 +21281,7 @@ component RAMB16BWE_S18_S18
      WEB : in std_logic_vector(1 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16BWE_S18_S18 : component is "PRIMITIVE";
+
 
 ----- component RAMB16BWE_S18_S9 -----
 component RAMB16BWE_S18_S9
@@ -22418,8 +21387,7 @@ component RAMB16BWE_S18_S9
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16BWE_S18_S9 : component is "PRIMITIVE";
+
 
 ----- component RAMB16BWE_S36 -----
 component RAMB16BWE_S36
@@ -22512,8 +21480,7 @@ component RAMB16BWE_S36
      WE : in std_logic_vector(3 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16BWE_S36 : component is "PRIMITIVE";
+
 
 ----- component RAMB16BWE_S36_S18 -----
 component RAMB16BWE_S36_S18
@@ -22619,8 +21586,7 @@ component RAMB16BWE_S36_S18
      WEB : in std_logic_vector(1 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16BWE_S36_S18 : component is "PRIMITIVE";
+
 
 ----- component RAMB16BWE_S36_S36 -----
 component RAMB16BWE_S36_S36
@@ -22726,8 +21692,7 @@ component RAMB16BWE_S36_S36
      WEB : in std_logic_vector(3 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16BWE_S36_S36 : component is "PRIMITIVE";
+
 
 ----- component RAMB16BWE_S36_S9 -----
 component RAMB16BWE_S36_S9
@@ -22833,8 +21798,7 @@ component RAMB16BWE_S36_S9
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16BWE_S36_S9 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S1 -----
 component RAMB16_S1
@@ -22917,8 +21881,7 @@ component RAMB16_S1
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S1 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S18 -----
 component RAMB16_S18
@@ -23011,8 +21974,7 @@ component RAMB16_S18
      WE : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S18 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S18_S18 -----
 component RAMB16_S18_S18
@@ -23118,8 +22080,7 @@ component RAMB16_S18_S18
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S18_S18 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S18_S36 -----
 component RAMB16_S18_S36
@@ -23225,8 +22186,7 @@ component RAMB16_S18_S36
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S18_S36 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S1_S1 -----
 component RAMB16_S1_S1
@@ -23320,8 +22280,7 @@ component RAMB16_S1_S1
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S1_S1 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S1_S18 -----
 component RAMB16_S1_S18
@@ -23425,8 +22384,7 @@ component RAMB16_S1_S18
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S1_S18 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S1_S2 -----
 component RAMB16_S1_S2
@@ -23520,8 +22478,7 @@ component RAMB16_S1_S2
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S1_S2 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S1_S36 -----
 component RAMB16_S1_S36
@@ -23625,8 +22582,7 @@ component RAMB16_S1_S36
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S1_S36 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S1_S4 -----
 component RAMB16_S1_S4
@@ -23720,8 +22676,7 @@ component RAMB16_S1_S4
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S1_S4 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S1_S9 -----
 component RAMB16_S1_S9
@@ -23825,8 +22780,7 @@ component RAMB16_S1_S9
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S1_S9 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S2 -----
 component RAMB16_S2
@@ -23909,8 +22863,7 @@ component RAMB16_S2
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S2 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S2_S18 -----
 component RAMB16_S2_S18
@@ -24014,8 +22967,7 @@ component RAMB16_S2_S18
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S2_S18 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S2_S2 -----
 component RAMB16_S2_S2
@@ -24109,8 +23061,7 @@ component RAMB16_S2_S2
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S2_S2 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S2_S36 -----
 component RAMB16_S2_S36
@@ -24214,8 +23165,7 @@ component RAMB16_S2_S36
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S2_S36 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S2_S4 -----
 component RAMB16_S2_S4
@@ -24309,8 +23259,7 @@ component RAMB16_S2_S4
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S2_S4 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S2_S9 -----
 component RAMB16_S2_S9
@@ -24414,8 +23363,7 @@ component RAMB16_S2_S9
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S2_S9 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S36 -----
 component RAMB16_S36
@@ -24508,8 +23456,7 @@ component RAMB16_S36
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S36 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S36_S36 -----
 component RAMB16_S36_S36
@@ -24615,8 +23562,7 @@ component RAMB16_S36_S36
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S36_S36 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S4 -----
 component RAMB16_S4
@@ -24699,8 +23645,7 @@ component RAMB16_S4
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S4 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S4_S18 -----
 component RAMB16_S4_S18
@@ -24804,8 +23749,7 @@ component RAMB16_S4_S18
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S4_S18 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S4_S36 -----
 component RAMB16_S4_S36
@@ -24909,8 +23853,7 @@ component RAMB16_S4_S36
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S4_S36 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S4_S4 -----
 component RAMB16_S4_S4
@@ -25004,8 +23947,7 @@ component RAMB16_S4_S4
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S4_S4 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S4_S9 -----
 component RAMB16_S4_S9
@@ -25109,8 +24051,7 @@ component RAMB16_S4_S9
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S4_S9 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S9 -----
 component RAMB16_S9
@@ -25203,8 +24144,7 @@ component RAMB16_S9
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S9 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S9_S18 -----
 component RAMB16_S9_S18
@@ -25310,8 +24250,7 @@ component RAMB16_S9_S18
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S9_S18 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S9_S36 -----
 component RAMB16_S9_S36
@@ -25417,8 +24356,7 @@ component RAMB16_S9_S36
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S9_S36 : component is "PRIMITIVE";
+
 
 ----- component RAMB16_S9_S9 -----
 component RAMB16_S9_S9
@@ -25524,8 +24462,7 @@ component RAMB16_S9_S9
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB16_S9_S9 : component is "PRIMITIVE";
+
 
 ----- component RAMB18 -----
 component RAMB18
@@ -25641,8 +24578,7 @@ component RAMB18
      WEB : in std_logic_vector(1 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB18 : component is "PRIMITIVE";
+
 
 ----- component RAMB18E1 -----
 component RAMB18E1
@@ -25764,8 +24700,7 @@ component RAMB18E1
      WEBWE : in std_logic_vector(3 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB18E1 : component is "PRIMITIVE";
+
 
 ----- component RAMB18SDP -----
 component RAMB18SDP
@@ -25865,8 +24800,7 @@ component RAMB18SDP
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB18SDP : component is "PRIMITIVE";
+
 
 ----- component RAMB32_S64_ECC -----
 component RAMB32_S64_ECC
@@ -25887,8 +24821,7 @@ component RAMB32_S64_ECC
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB32_S64_ECC : component is "PRIMITIVE";
+
 
 ----- component RAMB36 -----
 component RAMB36
@@ -26086,8 +25019,7 @@ component RAMB36
      WEB : in std_logic_vector(3 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB36 : component is "PRIMITIVE";
+
 
 ----- component RAMB36E1 -----
 component RAMB36E1
@@ -26295,8 +25227,7 @@ component RAMB36E1
      WEBWE : in std_logic_vector(7 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB36E1 : component is "PRIMITIVE";
+
 
 ----- component RAMB36SDP -----
 component RAMB36SDP
@@ -26474,8 +25405,7 @@ component RAMB36SDP
      WREN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB36SDP : component is "PRIMITIVE";
+
 
 ----- component RAMB36SDP_EXP -----
 component RAMB36SDP_EXP
@@ -26664,8 +25594,7 @@ component RAMB36SDP_EXP
      WRENU : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB36SDP_EXP : component is "PRIMITIVE";
+
 
 ----- component RAMB36_EXP -----
 component RAMB36_EXP
@@ -26879,8 +25808,7 @@ component RAMB36_EXP
      WEBU : in std_logic_vector(7 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB36_EXP : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S1 -----
 component RAMB4_S1
@@ -26912,8 +25840,7 @@ component RAMB4_S1
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S1 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S16 -----
 component RAMB4_S16
@@ -26945,8 +25872,7 @@ component RAMB4_S16
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S16 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S16_S16 -----
 component RAMB4_S16_S16
@@ -26986,8 +25912,7 @@ component RAMB4_S16_S16
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S16_S16 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S1_S1 -----
 component RAMB4_S1_S1
@@ -27027,8 +25952,7 @@ component RAMB4_S1_S1
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S1_S1 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S1_S16 -----
 component RAMB4_S1_S16
@@ -27068,8 +25992,7 @@ component RAMB4_S1_S16
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S1_S16 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S1_S2 -----
 component RAMB4_S1_S2
@@ -27109,8 +26032,7 @@ component RAMB4_S1_S2
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S1_S2 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S1_S4 -----
 component RAMB4_S1_S4
@@ -27150,8 +26072,7 @@ component RAMB4_S1_S4
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S1_S4 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S1_S8 -----
 component RAMB4_S1_S8
@@ -27191,8 +26112,7 @@ component RAMB4_S1_S8
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S1_S8 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S2 -----
 component RAMB4_S2
@@ -27224,8 +26144,7 @@ component RAMB4_S2
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S2 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S2_S16 -----
 component RAMB4_S2_S16
@@ -27265,8 +26184,7 @@ component RAMB4_S2_S16
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S2_S16 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S2_S2 -----
 component RAMB4_S2_S2
@@ -27306,8 +26224,7 @@ component RAMB4_S2_S2
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S2_S2 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S2_S4 -----
 component RAMB4_S2_S4
@@ -27347,8 +26264,7 @@ component RAMB4_S2_S4
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S2_S4 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S2_S8 -----
 component RAMB4_S2_S8
@@ -27388,8 +26304,7 @@ component RAMB4_S2_S8
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S2_S8 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S4 -----
 component RAMB4_S4
@@ -27421,8 +26336,7 @@ component RAMB4_S4
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S4 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S4_S16 -----
 component RAMB4_S4_S16
@@ -27462,8 +26376,7 @@ component RAMB4_S4_S16
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S4_S16 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S4_S4 -----
 component RAMB4_S4_S4
@@ -27503,8 +26416,7 @@ component RAMB4_S4_S4
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S4_S4 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S4_S8 -----
 component RAMB4_S4_S8
@@ -27544,8 +26456,7 @@ component RAMB4_S4_S8
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S4_S8 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S8 -----
 component RAMB4_S8
@@ -27577,8 +26488,7 @@ component RAMB4_S8
      WE : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S8 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S8_S16 -----
 component RAMB4_S8_S16
@@ -27618,8 +26528,7 @@ component RAMB4_S8_S16
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S8_S16 : component is "PRIMITIVE";
+
 
 ----- component RAMB4_S8_S8 -----
 component RAMB4_S8_S8
@@ -27659,8 +26568,7 @@ component RAMB4_S8_S8
      WEB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  RAMB4_S8_S8 : component is "PRIMITIVE";
+
 
 ----- component RAMB8BWER -----
 component RAMB8BWER
@@ -27745,8 +26653,7 @@ component RAMB8BWER
      WEBWEU : in std_logic_vector(1 downto 0)
   );
 end component;
-attribute BOX_TYPE of
-  RAMB8BWER : component is "PRIMITIVE";
+
 
 ----- component ROC -----
 component ROC
@@ -27757,8 +26664,7 @@ component ROC
      O : out std_ulogic := '1'
   );
 end component;
-attribute BOX_TYPE of
-  ROC : component is "PRIMITIVE";
+
 
 ----- component ROCBUF -----
 component ROCBUF
@@ -27767,8 +26673,7 @@ component ROCBUF
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ROCBUF : component is "PRIMITIVE";
+
 
 ----- component ROM128X1 -----
 component ROM128X1
@@ -27786,8 +26691,7 @@ component ROM128X1
      A6 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ROM128X1 : component is "PRIMITIVE";
+
 
 ----- component ROM16X1 -----
 component ROM16X1
@@ -27802,8 +26706,7 @@ component ROM16X1
      A3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ROM16X1 : component is "PRIMITIVE";
+
 
 ----- component ROM256X1 -----
 component ROM256X1
@@ -27822,8 +26725,7 @@ component ROM256X1
      A7 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ROM256X1 : component is "PRIMITIVE";
+
 
 ----- component ROM32X1 -----
 component ROM32X1
@@ -27839,8 +26741,7 @@ component ROM32X1
      A4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ROM32X1 : component is "PRIMITIVE";
+
 
 ----- component ROM64X1 -----
 component ROM64X1
@@ -27857,8 +26758,7 @@ component ROM64X1
      A5 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ROM64X1 : component is "PRIMITIVE";
+
 
 ----- component SIM_CONFIGE2 -----
 component SIM_CONFIGE2
@@ -27879,8 +26779,7 @@ component SIM_CONFIGE2
      RDWRB : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  SIM_CONFIGE2 : component is "PRIMITIVE";
+
 
 ----- component SIM_CONFIG_S3A -----
 component SIM_CONFIG_S3A
@@ -27900,8 +26799,7 @@ component SIM_CONFIG_S3A
      RDWRB : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  SIM_CONFIG_S3A : component is "PRIMITIVE";
+
 
 ----- component SIM_CONFIG_S3A_SERIAL -----
 component SIM_CONFIG_S3A_SERIAL
@@ -27917,8 +26815,7 @@ component SIM_CONFIG_S3A_SERIAL
      PROGB : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  SIM_CONFIG_S3A_SERIAL : component is "PRIMITIVE";
+
 
 ----- component SIM_CONFIG_S6 -----
 component SIM_CONFIG_S6
@@ -27939,8 +26836,7 @@ component SIM_CONFIG_S6
      RDWRB : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  SIM_CONFIG_S6 : component is "PRIMITIVE";
+
 
 ----- component SIM_CONFIG_S6_SERIAL -----
 component SIM_CONFIG_S6_SERIAL
@@ -27956,8 +26852,7 @@ component SIM_CONFIG_S6_SERIAL
      PROGB : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  SIM_CONFIG_S6_SERIAL : component is "PRIMITIVE";
+
 
 ----- component SIM_CONFIG_V5 -----
 component SIM_CONFIG_V5
@@ -27978,8 +26873,7 @@ component SIM_CONFIG_V5
      RDWRB : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  SIM_CONFIG_V5 : component is "PRIMITIVE";
+
 
 ----- component SIM_CONFIG_V5_SERIAL -----
 component SIM_CONFIG_V5_SERIAL
@@ -27996,8 +26890,7 @@ component SIM_CONFIG_V5_SERIAL
      PROGB : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  SIM_CONFIG_V5_SERIAL : component is "PRIMITIVE";
+
 
 ----- component SIM_CONFIG_V6 -----
 component SIM_CONFIG_V6
@@ -28019,8 +26912,7 @@ component SIM_CONFIG_V6
      RDWRB : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  SIM_CONFIG_V6 : component is "PRIMITIVE";
+
 
 ----- component SIM_CONFIG_V6_SERIAL -----
 component SIM_CONFIG_V6_SERIAL
@@ -28037,8 +26929,7 @@ component SIM_CONFIG_V6_SERIAL
      PROGB : in std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  SIM_CONFIG_V6_SERIAL : component is "PRIMITIVE";
+
 
 ----- component SPI_ACCESS -----
 component SPI_ACCESS
@@ -28056,8 +26947,7 @@ component SPI_ACCESS
      MOSI : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  SPI_ACCESS : component is "PRIMITIVE";
+
 
 ----- component SRL16 -----
 component SRL16
@@ -28074,8 +26964,7 @@ component SRL16
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  SRL16 : component is "PRIMITIVE";
+
 
 ----- component SRL16E -----
 component SRL16E
@@ -28093,8 +26982,7 @@ component SRL16E
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  SRL16E : component is "PRIMITIVE";
+
 
 ----- component SRL16E_1 -----
 component SRL16E_1
@@ -28112,8 +27000,7 @@ component SRL16E_1
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  SRL16E_1 : component is "PRIMITIVE";
+
 
 ----- component SRL16_1 -----
 component SRL16_1
@@ -28130,8 +27017,7 @@ component SRL16_1
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  SRL16_1 : component is "PRIMITIVE";
+
 
 ----- component SRLC16 -----
 component SRLC16
@@ -28149,8 +27035,7 @@ component SRLC16
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  SRLC16 : component is "PRIMITIVE";
+
 
 ----- component SRLC16E -----
 component SRLC16E
@@ -28169,8 +27054,7 @@ component SRLC16E
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  SRLC16E : component is "PRIMITIVE";
+
 
 ----- component SRLC16E_1 -----
 component SRLC16E_1
@@ -28189,8 +27073,7 @@ component SRLC16E_1
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  SRLC16E_1 : component is "PRIMITIVE";
+
 
 ----- component SRLC16_1 -----
 component SRLC16_1
@@ -28208,8 +27091,7 @@ component SRLC16_1
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  SRLC16_1 : component is "PRIMITIVE";
+
 
 ----- component SRLC32E -----
 component SRLC32E
@@ -28225,8 +27107,7 @@ component SRLC32E
      D : in STD_ULOGIC
   );
 end component;
-attribute BOX_TYPE of
-  SRLC32E : component is "PRIMITIVE";
+
 
 ----- component STARTBUF_FPGACORE -----
 component STARTBUF_FPGACORE
@@ -28236,8 +27117,7 @@ component STARTBUF_FPGACORE
      GSRIN : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTBUF_FPGACORE : component is "PRIMITIVE";
+
 
 ----- component STARTBUF_SPARTAN2 -----
 component STARTBUF_SPARTAN2
@@ -28249,8 +27129,7 @@ component STARTBUF_SPARTAN2
      GTSIN : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTBUF_SPARTAN2 : component is "PRIMITIVE";
+
 
 ----- component STARTBUF_SPARTAN3 -----
 component STARTBUF_SPARTAN3
@@ -28262,8 +27141,7 @@ component STARTBUF_SPARTAN3
      GTSIN : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTBUF_SPARTAN3 : component is "PRIMITIVE";
+
 
 ----- component STARTBUF_VIRTEX -----
 component STARTBUF_VIRTEX
@@ -28275,8 +27153,7 @@ component STARTBUF_VIRTEX
      GTSIN : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTBUF_VIRTEX : component is "PRIMITIVE";
+
 
 ----- component STARTBUF_VIRTEX2 -----
 component STARTBUF_VIRTEX2
@@ -28288,8 +27165,7 @@ component STARTBUF_VIRTEX2
      GTSIN : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTBUF_VIRTEX2 : component is "PRIMITIVE";
+
 
 ----- component STARTBUF_VIRTEX4 -----
 component STARTBUF_VIRTEX4
@@ -28306,8 +27182,7 @@ component STARTBUF_VIRTEX4
      USRDONETSIN : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTBUF_VIRTEX4 : component is "PRIMITIVE";
+
 
 ----- component STARTUPE2 -----
 component STARTUPE2
@@ -28331,8 +27206,7 @@ component STARTUPE2
      USRDONETS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  STARTUPE2 : component is "PRIMITIVE";
+
 
 ----- component STARTUP_FPGACORE -----
 component STARTUP_FPGACORE
@@ -28341,8 +27215,7 @@ component STARTUP_FPGACORE
      GSR : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTUP_FPGACORE : component is "PRIMITIVE";
+
 
 ----- component STARTUP_SPARTAN3 -----
 component STARTUP_SPARTAN3
@@ -28352,8 +27225,7 @@ component STARTUP_SPARTAN3
      GTS : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTUP_SPARTAN3 : component is "PRIMITIVE";
+
 
 ----- component STARTUP_SPARTAN3A -----
 component STARTUP_SPARTAN3A
@@ -28363,8 +27235,7 @@ component STARTUP_SPARTAN3A
      GTS : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTUP_SPARTAN3A : component is "PRIMITIVE";
+
 
 ----- component STARTUP_SPARTAN3E -----
 component STARTUP_SPARTAN3E
@@ -28375,8 +27246,7 @@ component STARTUP_SPARTAN3E
      MBT : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTUP_SPARTAN3E : component is "PRIMITIVE";
+
 
 ----- component STARTUP_SPARTAN6 -----
 component STARTUP_SPARTAN6
@@ -28390,8 +27260,7 @@ component STARTUP_SPARTAN6
      KEYCLEARB : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  STARTUP_SPARTAN6 : component is "PRIMITIVE";
+
 
 ----- component STARTUP_VIRTEX4 -----
 component STARTUP_VIRTEX4
@@ -28406,8 +27275,7 @@ component STARTUP_VIRTEX4
      USRDONETS : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTUP_VIRTEX4 : component is "PRIMITIVE";
+
 
 ----- component STARTUP_VIRTEX5 -----
 component STARTUP_VIRTEX5
@@ -28426,8 +27294,7 @@ component STARTUP_VIRTEX5
      USRDONETS : in std_ulogic := 'X'
   );
 end component;
-attribute BOX_TYPE of
-  STARTUP_VIRTEX5 : component is "PRIMITIVE";
+
 
 ----- component STARTUP_VIRTEX6 -----
 component STARTUP_VIRTEX6
@@ -28452,8 +27319,7 @@ component STARTUP_VIRTEX6
      USRDONETS : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  STARTUP_VIRTEX6 : component is "PRIMITIVE";
+
 
 ----- component SUSPEND_SYNC -----
 component SUSPEND_SYNC
@@ -28463,8 +27329,7 @@ component SUSPEND_SYNC
      SACK : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  SUSPEND_SYNC : component is "PRIMITIVE";
+
 
 ----- component SYSMON -----
 component SYSMON
@@ -28522,14 +27387,12 @@ component SYSMON
      VP : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  SYSMON : component is "PRIMITIVE";
+
 
 ----- component TBLOCK -----
 component TBLOCK
 end component;
-attribute BOX_TYPE of
-  TBLOCK : component is "PRIMITIVE";
+
 
 ----- component TEMAC -----
 component TEMAC
@@ -28781,8 +27644,7 @@ component TEMAC
      RESET : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  TEMAC : component is "PRIMITIVE";
+
 
 ----- component TEMAC_SINGLE -----
 component TEMAC_SINGLE
@@ -28919,20 +27781,17 @@ component TEMAC_SINGLE
      RESET : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  TEMAC_SINGLE : component is "PRIMITIVE";
+
 
 ----- component TIMEGRP -----
 component TIMEGRP
 end component;
-attribute BOX_TYPE of
-  TIMEGRP : component is "PRIMITIVE";
+
 
 ----- component TIMESPEC -----
 component TIMESPEC
 end component;
-attribute BOX_TYPE of
-  TIMESPEC : component is "PRIMITIVE";
+
 
 ----- component TOC -----
 component TOC
@@ -28943,8 +27802,7 @@ component TOC
      O : out std_ulogic := '0'
   );
 end component;
-attribute BOX_TYPE of
-  TOC : component is "PRIMITIVE";
+
 
 ----- component TOCBUF -----
 component TOCBUF
@@ -28953,8 +27811,7 @@ component TOCBUF
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  TOCBUF : component is "PRIMITIVE";
+
 
 ----- component USR_ACCESSE2 -----
 component USR_ACCESSE2
@@ -28964,8 +27821,7 @@ component USR_ACCESSE2
      DATAVALID : out std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  USR_ACCESSE2 : component is "PRIMITIVE";
+
 
 ----- component USR_ACCESS_VIRTEX4 -----
 component USR_ACCESS_VIRTEX4
@@ -28974,8 +27830,7 @@ component USR_ACCESS_VIRTEX4
      DATAVALID : out std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  USR_ACCESS_VIRTEX4 : component is "PRIMITIVE";
+
 
 ----- component USR_ACCESS_VIRTEX5 -----
 component USR_ACCESS_VIRTEX5
@@ -28985,8 +27840,7 @@ component USR_ACCESS_VIRTEX5
      DATAVALID : out std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  USR_ACCESS_VIRTEX5 : component is "PRIMITIVE";
+
 
 ----- component USR_ACCESS_VIRTEX6 -----
 component USR_ACCESS_VIRTEX6
@@ -28996,8 +27850,7 @@ component USR_ACCESS_VIRTEX6
      DATAVALID : out std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  USR_ACCESS_VIRTEX6 : component is "PRIMITIVE";
+
 
 ----- component VCC -----
 component VCC
@@ -29005,8 +27858,7 @@ component VCC
      P : out std_ulogic := '1'
   );
 end component;
-attribute BOX_TYPE of
-  VCC : component is "PRIMITIVE";
+
 
 ----- component WIREAND -----
 component WIREAND
@@ -29014,8 +27866,7 @@ component WIREAND
      I : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  WIREAND : component is "PRIMITIVE";
+
 
 ----- component XADC -----
 component XADC
@@ -29082,8 +27933,7 @@ component XADC
      VP : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XADC : component is "PRIMITIVE";
+
 
 ----- component XNOR2 -----
 component XNOR2
@@ -29093,8 +27943,7 @@ component XNOR2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XNOR2 : component is "PRIMITIVE";
+
 
 ----- component XNOR3 -----
 component XNOR3
@@ -29105,8 +27954,7 @@ component XNOR3
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XNOR3 : component is "PRIMITIVE";
+
 
 ----- component XNOR4 -----
 component XNOR4
@@ -29118,8 +27966,7 @@ component XNOR4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XNOR4 : component is "PRIMITIVE";
+
 
 ----- component XNOR5 -----
 component XNOR5
@@ -29132,8 +27979,7 @@ component XNOR5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XNOR5 : component is "PRIMITIVE";
+
 
 ----- component XOR2 -----
 component XOR2
@@ -29143,8 +27989,7 @@ component XOR2
      I1 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XOR2 : component is "PRIMITIVE";
+
 
 ----- component XOR3 -----
 component XOR3
@@ -29155,8 +28000,7 @@ component XOR3
      I2 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XOR3 : component is "PRIMITIVE";
+
 
 ----- component XOR4 -----
 component XOR4
@@ -29168,8 +28012,7 @@ component XOR4
      I3 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XOR4 : component is "PRIMITIVE";
+
 
 ----- component XOR5 -----
 component XOR5
@@ -29182,8 +28025,7 @@ component XOR5
      I4 : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XOR5 : component is "PRIMITIVE";
+
 
 ----- component XORCY -----
 component XORCY
@@ -29193,8 +28035,7 @@ component XORCY
      LI : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XORCY : component is "PRIMITIVE";
+
 
 ----- component XORCY_D -----
 component XORCY_D
@@ -29205,8 +28046,7 @@ component XORCY_D
      LI : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XORCY_D : component is "PRIMITIVE";
+
 
 ----- component XORCY_L -----
 component XORCY_L
@@ -29216,8 +28056,7 @@ component XORCY_L
      LI : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  XORCY_L : component is "PRIMITIVE";
+
 
 ----- component ZHOLD_DELAY -----
 component ZHOLD_DELAY
@@ -29233,8 +28072,7 @@ component ZHOLD_DELAY
      DLYIN : in std_ulogic
   );
 end component;
-attribute BOX_TYPE of
-  ZHOLD_DELAY : component is "PRIMITIVE";
+
 
 -- END COMPONENT
 
