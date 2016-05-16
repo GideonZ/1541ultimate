@@ -94,6 +94,7 @@ public:
 
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
+	void disable(void);
 	void poll(void);
 	void pipe_error(int pipe);
 

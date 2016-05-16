@@ -101,6 +101,7 @@ public:
 	virtual void poll(void)                  { }
 	virtual void pipe_error(int pipe)		 { }
 	virtual void reset_port(int port)		 { }
+	virtual void disable(void)				 { }
 };
 
 class UsbDevice
@@ -134,6 +135,7 @@ public:
     UsbDevice *parent;  // in case of being connected to a hub
     int        parent_port;
     UsbDriver *driver;
+    bool	   disabled;
 
     UsbDevice(UsbBase *u, int speed);
     ~UsbDevice();
@@ -152,6 +154,8 @@ public:
     		parent->driver->reset_port(parent_port);
     }
 
+    // Called during init, from the Event context
+    void disable(void);
     void get_string(int index, char *dest, int len);
     void get_pathname(char *dest, int len);
     bool get_device_descriptor();
@@ -160,12 +164,15 @@ public:
     bool get_configuration(uint8_t index);
     void set_configuration(uint8_t config);
     void set_interface(uint8_t intf);
+
     void unstall_pipe(uint8_t ep);
 
+    // Called only from the Event context
     bool init(int address);
     struct t_endpoint_descriptor *find_endpoint(uint8_t code);
 
     // functions that arrange attachment to the system
+    // Called only from the Event context
     void install(void) {
     	if(driver)
     		deinstall();
@@ -174,6 +181,7 @@ public:
     		driver->install(this);
     }
 
+    // Called only from the poll/cleanup context
     void deinstall(void)  {
     	if(driver) {
     		driver->deinstall(this);
@@ -181,7 +189,14 @@ public:
             driver = NULL;
     	}
     }
-//    int init(void); // gets device descriptor, assigns address
+
+    void poll(void) {
+    	if (!disabled) {
+    		if (driver) {
+    			driver->poll();
+    		}
+    	}
+    }
 };    
 
 char *unicode_to_ascii(uint8_t *in, char *out);

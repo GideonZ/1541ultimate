@@ -30,6 +30,7 @@ public:
 	UsbHubDriver();
 	~UsbHubDriver();
 
+	void disable(void);
 	void install(UsbDevice *dev);
 	void deinstall(UsbDevice *dev);
 	void poll(void);

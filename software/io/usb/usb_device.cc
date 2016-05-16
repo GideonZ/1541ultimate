@@ -59,7 +59,8 @@ uint8_t c_unstall_pipe[]			   = { 0x02, 0x01, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00
 
 UsbDevice :: UsbDevice(UsbBase *u, int speed)
 {
-    parent = NULL;
+	disabled = false;
+	parent = NULL;
     parent_port = 0;
     driver = NULL;
     host = u;
@@ -94,6 +95,14 @@ UsbDevice :: ~UsbDevice()
 		delete hid_descriptor;
 }
 
+
+void UsbDevice :: disable()
+{
+	disabled = true;
+	if (driver) {
+		driver->disable();
+	}
+}
 
 void UsbDevice :: get_string(int index, char *dest, int len)
 {

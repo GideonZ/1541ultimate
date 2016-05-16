@@ -100,7 +100,6 @@ SRCS_CC	 =  u2p_init.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
 			usb_base.cc \
-			usb2.cc \
 			usb_device.cc \
 			usb_scsi.cc \
 			usb_hub.cc \
@@ -122,7 +121,7 @@ SRCS_CC	 =  u2p_init.cc \
 			socket_test.cc \
 			$(PRJ).cc
 
-VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios_sigma
+VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/system/altera
 VPATH +=	$(PATH_SW)/niosbsp
 VPATH +=	$(PATH_SW)/niosbsp/HAL/inc

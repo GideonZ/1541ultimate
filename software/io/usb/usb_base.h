@@ -18,13 +18,6 @@ struct usb_event {
 	uint16_t fifo_word[2];
 };
 
-struct usb_packet {
-	uint8_t *data;
-	void *object;
-	uint16_t  length;
-	uint16_t  pipe;
-};
-
 typedef enum {
 	e_circular = 0,
 	e_block = 1
@@ -73,7 +66,7 @@ class UsbBase
     uint16_t  prev_status;
     bool  get_fifo(uint16_t *out);
     bool  put_block_fifo(uint16_t in);
-    void process_fifo(struct usb_event *, struct usb_packet *);
+    void process_fifo(struct usb_event *);
     void handle_status(uint16_t status);
 
     int   open_pipe();

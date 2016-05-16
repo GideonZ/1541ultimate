@@ -319,14 +319,19 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
     }
 }
 
-void UsbAx88772Driver :: deinstall(UsbDevice *dev)
+void UsbAx88772Driver :: disable()
 {
+	host->free_input_pipe(irq_transaction);
+	host->free_input_pipe(bulk_transaction);
+    printf("AX88772 Disabled.\n");
     if (netstack) {
     	netstack->stop();
-
-		host->free_input_pipe(irq_transaction);
-		host->free_input_pipe(bulk_transaction);
+    	netstack = NULL;
     }
+}
+
+void UsbAx88772Driver :: deinstall(UsbDevice *dev)
+{
     printf("AX88772 Deinstalled.\n");
 }
 
@@ -371,10 +376,12 @@ void UsbAx88772Driver :: poll(void)
 
 void UsbAx88772Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 {
+/*
     printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
 	for(int i=0;i<data_len;i++) {
 		printf("%b ", irq_data[i]);
 	} printf("\n");
+*/
 
 	if(irq_data[2] & 0x01) {
 		if(!link_up) {

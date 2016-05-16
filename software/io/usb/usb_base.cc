@@ -40,6 +40,7 @@ UsbDevice *UsbBase :: first_device(void)
     return rootDevice;
 }
 
+/*
 void UsbBase :: clean_up()
 {
 	rootDevice->deinstall();
@@ -48,7 +49,9 @@ void UsbBase :: clean_up()
 		deviceUsed[i] = 0;
 	}
 }
+*/
 
+// Called only from the Event context
 int UsbBase :: get_device_slot(void)
 {
     for(int i=1;i<128;i++) {
@@ -61,17 +64,19 @@ int UsbBase :: get_device_slot(void)
 }
     
 
+// Called only from the Event context
 void UsbBase :: attach_root(void)
 {
     printf("Attach root!!\n");
-//    max_current = cfg->get_value(CFG_USB_MAXCUR) * 10;
     remaining_current = 500; //max_current;
     bus_reset();
 
     UsbDevice *dev = new UsbDevice(this, get_bus_speed());
-	install_device(dev, true);
+    install_device(dev, true);
+    rootDevice = dev;
 }
 
+// Called only from the Event context
 bool UsbBase :: install_device(UsbDevice *dev, bool draws_current)
 {
     int idx = get_device_slot();
@@ -107,6 +112,7 @@ bool UsbBase :: install_device(UsbDevice *dev, bool draws_current)
     return false;
 }
 
+// Called from cleanup task.
 void UsbBase :: deinstall_device(UsbDevice *dev)
 {
     int addr = dev->current_address;
@@ -168,42 +174,148 @@ void UsbBase :: deinitHardware()
     ioWrite8(ITU_IRQ_DISABLE, 0x04);
 	vSemaphoreDelete(mutex);
 	vQueueDelete(queue);
-    clean_up();
+    //clean_up();
+	vQueueDelete(cleanup_queue);
 }
 
+// This STARTS the event context
 void UsbBase :: input_task_start(void *u)
 {
 	UsbBase *usb = (UsbBase *)u;
 	usb->input_task_impl();
 }
 
+// This RUNS the event context
 void UsbBase :: input_task_impl(void)
 {
 	printf("USB input task is now running. this = %p\n", this);
 	struct usb_event ev;
-	struct usb_packet pkt;
 	while(1) {
 		if (xQueueReceive(queue, &ev, 5000) == pdTRUE) {
-			printf("{%04x:%04x}", ev.fifo_word[0], ev.fifo_word[1]);
+			//printf("{%04x:%04x}", ev.fifo_word[0], ev.fifo_word[1]);
 			PROFILER_SUB = 5;
-			process_fifo(&ev, &pkt);
-
-			if (!pkt.data) { // error code
-				if (!pkt.object) {
-					printf("** INVALID USB PACKET RECEIVED IN QUEUE! Length: %d, Pipe: %d\n", pkt.length, pkt.pipe);
-				} else {
-					((UsbDriver *)pkt.object)->pipe_error(pkt.pipe);
-				}
-			} else {
-				inputPipeCallBacks[pkt.pipe](pkt.data, pkt.length, pkt.object);
-			}
-			PROFILER_SUB = 12;
+			process_fifo(&ev);
 		} else {
 			printf("@");
 		}
 	}
 }
 
+// Called from event context
+void UsbBase :: process_fifo(struct usb_event *ev)
+{
+	int pipe = ev->fifo_word[0] & 0x0F;
+	int error = 0;
+
+	if ((ev->fifo_word[0] & 0xFFF0) == 0xFFF0) {
+		if (pipe == 15) {
+			printf("USB Other IRQ. Status = %b\n", ev->fifo_word[1]);
+			handle_status(ev->fifo_word[1]);
+			return;
+		} else {
+			// pause_input_pipe(pipe);
+			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, ev->fifo_word[1]);
+			void *object = inputPipeObjects[pipe];
+			((UsbDriver *)object)->pipe_error(pipe);
+			return;
+		}
+	}
+
+	uint8_t *buffer = 0;
+	if (inputPipeBufferMethod[pipe] == e_block) {
+		uint16_t idx = (ev->fifo_word[0] & 0xFFF0) / 384;
+		free_map[idx] = 1; // allocated
+		buffer = (uint8_t *) & blockBufferBase[ev->fifo_word[0] & 0xFFF0];
+	} else {
+		buffer = (uint8_t *) & circularBufferBase[ev->fifo_word[0] & 0xFFF0];
+	}
+	void *object = inputPipeObjects[pipe];
+
+	PROFILER_SUB = 3;
+	if (!object) {
+		printf("** INVALID USB PACKET RECEIVED IN QUEUE! Pipe : %d\n", pipe);
+		return;
+	}
+	inputPipeCallBacks[pipe](buffer, ev->fifo_word[1], object);
+	PROFILER_SUB = 12;
+}
+
+// Called from event context
+void UsbBase :: handle_status(uint16_t new_status)
+{
+	if (prev_status != new_status) {
+		prev_status = new_status;
+		if (new_status & USTAT_CONNECTED) {
+			if (!device_present) {
+				attach_root();
+			}
+        } else {
+        	if (rootDevice) {
+//        		rootDevice->disable();
+				queueDeinstall(rootDevice);
+				rootDevice = NULL;
+        	}
+		}
+    }
+}
+
+// Called from event context
+void UsbBase :: queueDeinstall(UsbDevice *device)
+{
+	device->disable(); // do no more transactions, disable poll pipes, etc
+	xQueueSend(cleanup_queue, &device, 500000);
+}
+
+// Called during init?  TODO
+void UsbBase :: bus_reset()
+{
+	NANO_DO_RESET = 1;
+
+	for (int i=0; i<3; i++) {
+		wait_ms(50);
+		printf("Reset status: %b Speed: %b\n", USB2_STATUS, NANO_LINK_SPEED);
+		if (USB2_STATUS & USTAT_OPERATIONAL)
+			break;
+	}
+	set_bus_speed(NANO_LINK_SPEED);
+}
+
+// Called from where?  During Init, and from
+// anyone that uses the blocks. In this case only the tcpip thread.
+// But is there only one?  Should we protect this? TODO
+bool UsbBase :: put_block_fifo(uint16_t in)
+{
+	uint16_t tail;
+
+	do {
+		tail = BLOCK_FIFO_TAIL;
+	} while(tail != BLOCK_FIFO_TAIL);
+
+	uint16_t idx = (in / 384);
+	if (!free_map[idx]) {
+		ioWrite8(UART_DATA, '^');
+		return true;
+	}
+	free_map[idx] = 0;
+
+	uint16_t head = BLOCK_FIFO_HEAD;
+	uint16_t head_next = head + 1;
+	if (head_next == BLOCK_FIFO_ENTRIES)
+		head_next = 0;
+	if (head_next == tail) {
+		printf("block fifo full! free dropped\n");
+		return false;
+	}
+
+	block_fifo_data[head] = in;
+	BLOCK_FIFO_HEAD = head_next;
+	return true;
+}
+
+
+///////////////////////////////////////////////////////
+
+// Called from poll / cleanup context
 void UsbBase :: init(void)
 {
     // clear our internal device list
@@ -260,49 +372,14 @@ void UsbBase :: init(void)
 	ioWrite8(ITU_MISC_IO, 1); // coherency is on
 }
 
-void UsbBase :: deinit(void)
-{
-	power_off();
-
-	NANO_START = 0;
-
-	// clear RAM
-	uint8_t *dst = (uint8_t *)NANO_BASE;
-    for(int i=0;i<2048;i++)
-        *(dst++) = 0;
-
-}
-
-void UsbBase :: handle_status(uint16_t new_status)
-{
-	if (prev_status != new_status) {
-		prev_status = new_status;
-		if (new_status & USTAT_CONNECTED) {
-			if (!device_present) {
-				attach_root();
-			}
-        } else {
-        	if (rootDevice) {
-//        		rootDevice->disable();
-				queueDeinstall(rootDevice);
-				rootDevice = NULL;
-        	}
-		}
-    }
-}
-
-void UsbBase :: queueDeinstall(UsbDevice *device)
-{
-	xQueueSend(cleanup_queue, &device, 500000);
-}
-
+// Called from poll / cleanup context
 void UsbBase :: poll()
 {
 	UsbDevice *device;
 	BaseType_t doCleanup;
 
 	do {
-		doCleanup = xQueueReceive(cleanup_queue, &device, 20);
+		doCleanup = xQueueReceive(cleanup_queue, &device, 40);
 		if (doCleanup == pdTRUE) {
 			deinstall_device(device);
 		}
@@ -316,122 +393,19 @@ void UsbBase :: poll()
 	}
 }
 
-BaseType_t UsbBase :: irq_handler(void)
+void UsbBase :: deinit(void)
 {
-	PROFILER_SUB = 2;
-	irq_count++;
-	uint16_t read;
+	power_off();
 
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-	while (get_fifo(&read)) {
-		if (read == 0xFFFF) {
-			event.fifo_word[0] = read;
-			event.fifo_word[1] = USB2_STATUS;
-			state = 2;
-		} else {
-			event.fifo_word[state++] = read;
-		}
+	NANO_START = 0;
 
-		if (state == 2) {
-			state = 0;
-			printf("[%04x:%04x]", event.fifo_word[0], event.fifo_word[1]);
-			xQueueSendFromISR(queue, &event, &xHigherPriorityTaskWoken);
-		}
-	}
-	PROFILER_SUB = 0;
-	return xHigherPriorityTaskWoken;
+	// clear RAM
+	uint8_t *dst = (uint8_t *)NANO_BASE;
+    for(int i=0;i<2048;i++)
+        *(dst++) = 0;
 }
 
-void UsbBase :: process_fifo(struct usb_event *ev, struct usb_packet *pkt)
-{
-	int pipe = ev->fifo_word[0] & 0x0F;
-	int error = 0;
-
-	pkt->data = 0;
-
-	if ((ev->fifo_word[0] & 0xFFF0) == 0xFFF0) {
-		if (pipe == 15) {
-			printf("USB Other IRQ. Status = %b\n", ev->fifo_word[1]);
-			handle_status(ev->fifo_word[1]);
-			return;
-		} else {
-			// pause_input_pipe(pipe);
-			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, ev->fifo_word[1]);
-			error = 1;
-		}
-	}
-
-	uint8_t *buffer = 0;
-	if (!error) {
-		if (inputPipeBufferMethod[pipe] == e_block) {
-			uint16_t idx = (ev->fifo_word[0] & 0xFFF0) / 384;
-			free_map[idx] = 1; // allocated
-			buffer = (uint8_t *) & blockBufferBase[ev->fifo_word[0] & 0xFFF0];
-		} else {
-			buffer = (uint8_t *) & circularBufferBase[ev->fifo_word[0] & 0xFFF0];
-		}
-	}
-
-	pkt->data = buffer; // will be 0 upon error!
-	pkt->length = ev->fifo_word[1];
-	pkt->object = inputPipeObjects[pipe];
-	pkt->pipe = pipe;
-
-	PROFILER_SUB = 3;
-}
-
-bool UsbBase :: get_fifo(uint16_t *out)
-{
-	uint16_t tail = ATTR_FIFO_TAIL;
-	uint16_t head;
-
-	do {
-		head = ATTR_FIFO_HEAD;
-	} while(head != ATTR_FIFO_HEAD);
-
-//	printf("Head: %d, Tail: %d\n", head, tail);
-	if (tail == head) {
-		*out = 0xFFFF;
-		return false;
-	}
-	*out = attr_fifo_data[tail];
-	tail ++;
-	if (tail == ATTR_FIFO_ENTRIES)
-		tail = 0;
-	ATTR_FIFO_TAIL = tail;
-	return true;
-}
-
-
-bool UsbBase :: put_block_fifo(uint16_t in)
-{
-	uint16_t tail;
-
-	do {
-		tail = BLOCK_FIFO_TAIL;
-	} while(tail != BLOCK_FIFO_TAIL);
-
-	uint16_t idx = (in / 384);
-	if (!free_map[idx]) {
-		ioWrite8(UART_DATA, '^');
-		return true;
-	}
-	free_map[idx] = 0;
-
-	uint16_t head = BLOCK_FIFO_HEAD;
-	uint16_t head_next = head + 1;
-	if (head_next == BLOCK_FIFO_ENTRIES)
-		head_next = 0;
-	if (head_next == tail) {
-		printf("block fifo full! free dropped\n");
-		return false;
-	}
-
-	block_fifo_data[head] = in;
-	BLOCK_FIFO_HEAD = head_next;
-	return true;
-}
-
+// Called from protected function 'allocate input pipe'
 int UsbBase :: open_pipe()
 {
 	uint16_t *pipe = (uint16_t *)USB2_PIPES_BASE;
@@ -444,6 +418,7 @@ int UsbBase :: open_pipe()
 	return -1;
 }
 
+// Called from protected function 'allocate input pipe'
 void UsbBase :: init_pipe(int index, struct t_pipe *init)
 {
 	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
@@ -469,6 +444,7 @@ void UsbBase :: init_pipe(int index, struct t_pipe *init)
 	}
 }
 
+// Still used? -> No
 void UsbBase :: pause_input_pipe(int index)
 {
 	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
@@ -481,13 +457,14 @@ void UsbBase :: pause_input_pipe(int index)
 	pipe[PIPE_OFFS_Command] = command;
 }
 
+// Called from event context (pipe input processor)
 void UsbBase :: resume_input_pipe(int index)
 {
 	volatile uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
 	uint16_t command = pipe[PIPE_OFFS_Command];
 	command &= ~UCMD_PAUSED;
 	pipe[PIPE_OFFS_Command] = command;
-	printf("Input pipe %d resumed: %04x\n", index, pipe[PIPE_OFFS_Command]);
+	//printf("Input pipe %d resumed: %04x\n", index, pipe[PIPE_OFFS_Command]);
 }
 
 void UsbBase :: free_input_buffer(int inpipe, uint8_t *buffer)
@@ -500,13 +477,13 @@ void UsbBase :: free_input_buffer(int inpipe, uint8_t *buffer)
 	put_block_fifo(uint16_t(offset >> 2));
 }
 
-
 void UsbBase :: close_pipe(int pipe)
 {
 	uint16_t *p = (uint16_t *)USB2_PIPES_BASE;
 	p[(8 * pipe)] = 0;
 }
 
+// Reentrant
 uint16_t UsbBase :: getSplitControl(int addr, int port, int speed, int type)
 {
 	uint16_t retval = SPLIT_DO_SPLIT | (addr << 8) | (port & 0x0F) | ((type & 0x03) << 4);
@@ -522,6 +499,7 @@ uint16_t UsbBase :: getSplitControl(int addr, int port, int speed, int type)
 	return retval;
 }
 
+// Protected by Mutex
 void UsbBase :: power_off()
 {
     if (!xSemaphoreTake(mutex, 5000)) {
@@ -537,6 +515,7 @@ void UsbBase :: power_off()
     xSemaphoreGive(mutex);
 }
 
+// Protected by Mutex
 int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
@@ -589,6 +568,7 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 	return transferred;
 }
 
+// Protected by Mutex
 int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
@@ -633,6 +613,7 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
 	return transferred;
 }
 
+// Protected by Mutex
 int  UsbBase :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(uint8_t *buf, int len, void *obj), void *object)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
@@ -790,19 +771,7 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 	return total_trans;
 }
 
-void UsbBase :: bus_reset()
-{
-	NANO_DO_RESET = 1;
-
-	for (int i=0; i<3; i++) {
-		wait_ms(50);
-		printf("Reset status: %b Speed: %b\n", USB2_STATUS, NANO_LINK_SPEED);
-		if (USB2_STATUS & USTAT_OPERATIONAL)
-			break;
-	}
-	set_bus_speed(NANO_LINK_SPEED);
-}
-
+/*
 UsbDevice *UsbBase :: init_simple(void)
 {
 	init();
@@ -820,4 +789,57 @@ UsbDevice *UsbBase :: init_simple(void)
 		return dev;
 	}
 	return NULL;
+}
+*/
+
+////////////////////////////////////////////////////////////
+
+// Called from IRQ
+BaseType_t UsbBase :: irq_handler(void)
+{
+	PROFILER_SUB = 2;
+	irq_count++;
+	uint16_t read;
+
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	while (get_fifo(&read)) {
+		if (read == 0xFFFF) {
+			event.fifo_word[0] = read;
+			event.fifo_word[1] = USB2_STATUS;
+			state = 2;
+		} else {
+			event.fifo_word[state++] = read;
+		}
+
+		if (state == 2) {
+			state = 0;
+			//printf("[%04x:%04x]", event.fifo_word[0], event.fifo_word[1]);
+			xQueueSendFromISR(queue, &event, &xHigherPriorityTaskWoken);
+		}
+	}
+	PROFILER_SUB = 0;
+	return xHigherPriorityTaskWoken;
+}
+
+// Called from IRQ
+bool UsbBase :: get_fifo(uint16_t *out)
+{
+	uint16_t tail = ATTR_FIFO_TAIL;
+	uint16_t head;
+
+	do {
+		head = ATTR_FIFO_HEAD;
+	} while(head != ATTR_FIFO_HEAD);
+
+//	printf("Head: %d, Tail: %d\n", head, tail);
+	if (tail == head) {
+		*out = 0xFFFF;
+		return false;
+	}
+	*out = attr_fifo_data[tail];
+	tail ++;
+	if (tail == ATTR_FIFO_ENTRIES)
+		tail = 0;
+	ATTR_FIFO_TAIL = tail;
+	return true;
 }

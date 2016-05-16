@@ -156,9 +156,20 @@ void UsbEm1010Driver :: install(UsbDevice *dev)
 
 }
 
+void UsbEm1010Driver :: disable(void)
+{
+	host->free_input_pipe(irq_transaction);
+	host->free_input_pipe(bulk_transaction);
+    printf("EM1010 Disabled.\n");
+    if (netstack) {
+    	netstack->stop();
+    	netstack = NULL;
+    }
+}
+
 void UsbEm1010Driver :: deinstall(UsbDevice *dev)
 {
-    host->free_input_pipe(irq_transaction);
+	printf("EM1010 Deinstalled\n");
 }
 
 bool UsbEm1010Driver :: read_mac_address()

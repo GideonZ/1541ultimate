@@ -199,20 +199,33 @@ void UsbHubDriver :: install(UsbDevice *dev)
     printf("Poll installed on irq_transaction %d\n", irq_transaction);
 }
 
-void UsbHubDriver :: deinstall(UsbDevice *dev)
+void UsbHubDriver :: disable(void)
 {
     host->free_input_pipe(irq_transaction);
-
     for(int i=0;i<num_ports;i++) {
     	if (children[i]) {
-    		host->queueDeinstall(children[i]);
+    		children[i]->disable();
+    	}
+    }
+}
+
+// called from cleanup task
+void UsbHubDriver :: deinstall(UsbDevice *dev)
+{
+    for(int i=0;i<num_ports;i++) {
+    	if (children[i]) {
+    		host->deinstall_device(children[i]);
     	}
     }
 }
 
 void UsbHubDriver :: poll()
 {
-
+    for(int i=0;i<num_ports;i++) {
+    	if (children[i]) {
+    		children[i]->poll();
+    	}
+    }
 }
 
 void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
@@ -269,12 +282,16 @@ void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
 							reset_timeout = 4;
                     	}
                     } else { // disconnect
-                        c_clear_port_feature[2] = C_PORT_CONNECTION;
+                    	if (port_in_reset == j+1) {
+                    		port_in_reset = 0;
+                    	}
+                    	c_clear_port_feature[2] = C_PORT_CONNECTION;
                     	i = host->control_exchange(&device->control_pipe,
                     							   c_clear_port_feature, 8,
                     							   dummy, 8);
                         if(children[j]) {
-                            host->deinstall_device(children[j]);
+                        	// let the poll task clean it up.
+                        	host->queueDeinstall(children[j]);
                         }
                         children[j] = NULL;
                     }                        
@@ -306,7 +323,7 @@ void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
                     	port_in_reset = 0;
 						if(children[j]) {
 							printf("*** ERROR *** Device already present! ***\n");
-							host->deinstall_device(children[j]);
+							host->queueDeinstall(children[j]);
 							children[j] = NULL;
 		                    c_clear_port_feature[2] = C_PORT_RESET;
 		                	i = host->control_exchange(&device->control_pipe,
