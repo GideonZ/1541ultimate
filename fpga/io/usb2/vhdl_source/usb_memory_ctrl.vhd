@@ -3,6 +3,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 use work.mem_bus_pkg.all;
+use work.endianness_pkg.all;
 
 -- This module performs the memory operations that are instructed
 -- by the nano_cpu. This controller copies data to or from a
@@ -11,6 +12,7 @@ use work.mem_bus_pkg.all;
 
 entity usb_memory_ctrl is
 generic (
+    g_big_endian   : boolean;
     g_tag          : std_logic_vector(7 downto 0) := X"55" );
 
 port (
@@ -61,6 +63,7 @@ architecture gideon of usb_memory_ctrl is
     signal rdata_valid      : std_logic;
     signal first_req        : std_logic;
     signal last_req         : std_logic;
+    signal mem_rdata_le     : std_logic_vector(31 downto 0);
 begin
     mem_req.tag(7)          <= last_req;
     mem_req.tag(6)          <= first_req;
@@ -226,11 +229,13 @@ begin
     last_req <= remain_is_1;
     rdata_valid <= '1' when mem_resp.dack_tag(5 downto 0) = g_tag(5 downto 0) else '0';
     
+    mem_rdata_le <= byte_swap(mem_resp.data, g_big_endian);
+    
     i_align: entity work.align_read_to_bram
     port map (
         clock       => clock,
         reset       => reset,
-        rdata       => mem_resp.data,
+        rdata       => mem_rdata_le,
         rdata_valid => rdata_valid,
         first_word  => mem_resp.dack_tag(6),
         last_word   => mem_resp.dack_tag(7),
