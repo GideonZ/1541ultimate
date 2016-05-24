@@ -4,7 +4,7 @@
  * Machine generated for CPU 'nios2_gen2_0' in SOPC Builder design 'nios'
  * SOPC Builder design path: ../../fpga/nios/nios.sopcinfo
  *
- * Generated: Fri May 06 08:35:15 CEST 2016
+ * Generated: Wed May 18 07:13:01 CEST 2016
  */
 
 /*
@@ -134,7 +134,6 @@
  */
 
 #define __ALTERA_AVALON_PIO
-#define __ALTERA_AVALON_TIMER
 #define __ALTERA_NIOS2_GEN2
 #define __ALTMEMDDR2
 #define __IO_BRIDGE
@@ -191,7 +190,7 @@
 
 #define ALT_INCLUDE_INSTRUCTION_RELATED_EXCEPTION_API
 #define ALT_MAX_FD 32
-#define ALT_SYS_CLK TIMER_1
+#define ALT_SYS_CLK none
 #define ALT_TIMESTAMP_CLK none
 
 
@@ -227,64 +226,12 @@
 #define PIO_0_HAS_IN 1
 #define PIO_0_HAS_OUT 1
 #define PIO_0_HAS_TRI 0
-#define PIO_0_IRQ -1
-#define PIO_0_IRQ_INTERRUPT_CONTROLLER_ID -1
-#define PIO_0_IRQ_TYPE "NONE"
+#define PIO_0_IRQ 0
+#define PIO_0_IRQ_INTERRUPT_CONTROLLER_ID 0
+#define PIO_0_IRQ_TYPE "LEVEL"
 #define PIO_0_NAME "/dev/pio_0"
 #define PIO_0_RESET_VALUE 0
 #define PIO_0_SPAN 32
 #define PIO_0_TYPE "altera_avalon_pio"
-
-
-/*
- * timer_0 configuration
- *
- */
-
-#define ALT_MODULE_CLASS_timer_0 altera_avalon_timer
-#define TIMER_0_ALWAYS_RUN 0
-#define TIMER_0_BASE 0x10006000
-#define TIMER_0_COUNTER_SIZE 32
-#define TIMER_0_FIXED_PERIOD 0
-#define TIMER_0_FREQ 62500000
-#define TIMER_0_IRQ 2
-#define TIMER_0_IRQ_INTERRUPT_CONTROLLER_ID 0
-#define TIMER_0_LOAD_VALUE 624999
-#define TIMER_0_MULT 0.001
-#define TIMER_0_NAME "/dev/timer_0"
-#define TIMER_0_PERIOD 10
-#define TIMER_0_PERIOD_UNITS "ms"
-#define TIMER_0_RESET_OUTPUT 0
-#define TIMER_0_SNAPSHOT 1
-#define TIMER_0_SPAN 32
-#define TIMER_0_TICKS_PER_SEC 100
-#define TIMER_0_TIMEOUT_PULSE_OUTPUT 0
-#define TIMER_0_TYPE "altera_avalon_timer"
-
-
-/*
- * timer_1 configuration
- *
- */
-
-#define ALT_MODULE_CLASS_timer_1 altera_avalon_timer
-#define TIMER_1_ALWAYS_RUN 0
-#define TIMER_1_BASE 0x10007000
-#define TIMER_1_COUNTER_SIZE 32
-#define TIMER_1_FIXED_PERIOD 0
-#define TIMER_1_FREQ 62500000
-#define TIMER_1_IRQ 3
-#define TIMER_1_IRQ_INTERRUPT_CONTROLLER_ID 0
-#define TIMER_1_LOAD_VALUE 62499
-#define TIMER_1_MULT 0.001
-#define TIMER_1_NAME "/dev/timer_1"
-#define TIMER_1_PERIOD 1
-#define TIMER_1_PERIOD_UNITS "ms"
-#define TIMER_1_RESET_OUTPUT 0
-#define TIMER_1_SNAPSHOT 1
-#define TIMER_1_SPAN 32
-#define TIMER_1_TICKS_PER_SEC 1000
-#define TIMER_1_TIMEOUT_PULSE_OUTPUT 0
-#define TIMER_1_TYPE "altera_avalon_timer"
 
 #endif /* __SYSTEM_H_ */

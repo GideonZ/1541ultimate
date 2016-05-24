@@ -2,8 +2,8 @@
 <sch:Settings xmlns:sch="http://www.altera.com/embeddedsw/bsp/schema">
         <BspType>hal</BspType>
         <BspVersion>default</BspVersion>
-        <BspGeneratedTimeStamp>May 6, 2016 8:35:15 AM</BspGeneratedTimeStamp>
-        <BspGeneratedUnixTimeStamp>1462516515456</BspGeneratedUnixTimeStamp>
+        <BspGeneratedTimeStamp>May 18, 2016 7:13:01 AM</BspGeneratedTimeStamp>
+        <BspGeneratedUnixTimeStamp>1463548381175</BspGeneratedUnixTimeStamp>
         <BspGeneratedLocation>/home/gideon/proj/ultimate/software/niosbsp</BspGeneratedLocation>
         <BspSettingsFile>/home/gideon/proj/ultimate/software/niosbsp/settings.bsp</BspSettingsFile>
         <SopcDesignFile>../../fpga/nios/nios.sopcinfo</SopcDesignFile>
@@ -14,7 +14,7 @@
                 <SettingName>hal.sys_clk_timer</SettingName>
                 <Identifier>ALT_SYS_CLK</Identifier>
                 <Type>UnquotedString</Type>
-                <Value>timer_1</Value>
+                <Value>none</Value>
                 <DefaultValue>none</DefaultValue>
                 <DestinationFile>system_h_define</DestinationFile>
                 <Description>Slave descriptor of the system clock timer device. This device provides a periodic interrupt ("tick") and is typically required for RTOS use. This setting defines the value of ALT_SYS_CLK in system.h.</Description>
@@ -879,18 +879,6 @@
                 <addressRange>0x10005000 - 0x1000501F</addressRange>
                 <addressSpan>32</addressSpan>
                 <attributes/>
-        </MemoryMap>
-        <MemoryMap>
-                <slaveDescriptor>timer_0</slaveDescriptor>
-                <addressRange>0x10006000 - 0x1000601F</addressRange>
-                <addressSpan>32</addressSpan>
-                <attributes>timer</attributes>
-        </MemoryMap>
-        <MemoryMap>
-                <slaveDescriptor>timer_1</slaveDescriptor>
-                <addressRange>0x10007000 - 0x1000701F</addressRange>
-                <addressSpan>32</addressSpan>
-                <attributes>timer</attributes>
         </MemoryMap>
         <LinkerSection>
                 <sectionName>.text</sectionName>

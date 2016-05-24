@@ -33,16 +33,16 @@
 #include "flash.h"
 #include "keyboard_c64.h"
 #include "globals.h"
-#include "FreeRTOS.h"
-#include "task.h"
 
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
 #define CMD_IF_SLOT_ENABLE     *((volatile uint8_t *)(CMD_IF_BASE + 0x1))
 #endif
 
-#ifndef _NO_FILE_ACCESS
+#if _NO_FILE_ACCESS == 0
 # include "filemanager.h"
+# include "FreeRTOS.h"
+# include "task.h"
 #endif
 
 /* Configuration */

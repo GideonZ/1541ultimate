@@ -53,7 +53,8 @@ void wait_ms(int time)
 }
 
 uint16_t getMsTimer() {
-	return ioRead16(__ITU_MS_TIMER);
+	uint16_t result = ((uint16_t)ioRead8(ITU_MS_TIMER_LO)) | (((uint16_t)ioRead8(ITU_MS_TIMER_HI)) << 8);
+	return result;
 }
 /*
 -------------------------------------------------------------------------------

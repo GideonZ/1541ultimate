@@ -54,15 +54,11 @@ extern constructor __CTOR_END__[];
 /*
  * Run the C++ static constructors.
  */
-#include <stdio.h>
 
 void _do_ctors(void)
 {
   constructor* ctor;
 
-//  for (ctor = &__CTOR_END__[-1]; ctor >= __CTOR_LIST__; ctor--) {
-  for (ctor = __CTOR_LIST__; ctor != &__CTOR_END__[0]; ctor++) {
-	  printf("CTOR: %p\n", *ctor);
-	  (*ctor) ();
-  }
+  for (ctor = &__CTOR_END__[-1]; ctor >= __CTOR_LIST__; ctor--)
+        (*ctor) (); 
 }

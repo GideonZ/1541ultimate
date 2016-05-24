@@ -116,6 +116,12 @@ Flash *W25Q_Flash :: tester()
 		return NULL;
 	}
 
+	if(capacity == 0x14) { // 8 Mbit
+		sector_size  = 16;
+		sector_count = 256;
+	    total_size   = 4096;
+		return this;
+	}
 	if(capacity == 0x15) { // 16 Mbit
 		sector_size  = 16;	
 		sector_count = 512;	
@@ -316,7 +322,26 @@ void W25Q_Flash :: protect_disable(void)
 	
 	// program status register with value 0x20
     portENTER_CRITICAL();
+
 	SPI_FLASH_CTRL = 0;
+	SPI_FLASH_DATA = W25Q_WriteDisable;
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+	SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
+	printf("Status register 1: %b %b %b %b\n", SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA);
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    SPI_FLASH_CTRL = 0;
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+	SPI_FLASH_DATA = W25Q_ReadStatusRegister2;
+	printf("Status register 2: %b %b %b %b\n", SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA);
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+    SPI_FLASH_CTRL = 0;
+    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+	SPI_FLASH_DATA = W25Q_ReadUniqueIDNumber;
+	SPI_FLASH_DATA_32 = 0x55555555;
+	printf("Unique ID: %b %b %b %b\n", SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA);
+    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+
+    SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = W25Q_WriteStatusRegister;

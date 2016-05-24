@@ -73,9 +73,9 @@
 
 /* Altera includes. */
 #include "sys/alt_irq.h"
-#include "altera_avalon_timer_regs.h"
+// #include "altera_avalon_timer_regs.h"
 #include "priv/alt_irq_table.h"
-#include "system.h"
+// #include "system.h"
 
 /* Scheduler includes. */
 #include "FreeRTOS.h"
@@ -171,17 +171,19 @@ void vPortEndScheduler( void )
 
 /*-----------------------------------------------------------*/
 
+/*
 void vPortSysTickHandler(void * context)
 {
-	/* Increment the kernel tick. */
+	 Increment the kernel tick.
 	if( xTaskIncrementTick() != pdFALSE )
 	{
         vTaskSwitchContext();
 	}
 		
-	/* Clear the interrupt. */
+	 Clear the interrupt.
 	IOWR_ALTERA_AVALON_TIMER_STATUS( TIMER_1_BASE, ~ALTERA_AVALON_TIMER_STATUS_TO_MSK );
 }
+*/
 /*-----------------------------------------------------------*/
 
 

@@ -1,0 +1,46 @@
+	component nios is
+		port (
+			clk50_clk                : in    std_logic                     := 'X';             -- clk
+			io_ack                   : in    std_logic                     := 'X';             -- ack
+			io_rdata                 : in    std_logic_vector(7 downto 0)  := (others => 'X'); -- rdata
+			io_read                  : out   std_logic;                                        -- read
+			io_wdata                 : out   std_logic_vector(7 downto 0);                     -- wdata
+			io_write                 : out   std_logic;                                        -- write
+			io_address               : out   std_logic_vector(19 downto 0);                    -- address
+			io_irq                   : in    std_logic                     := 'X';             -- irq
+			mem32_address            : in    std_logic_vector(25 downto 0) := (others => 'X'); -- address
+			mem32_direction          : in    std_logic                     := 'X';             -- direction
+			mem32_byte_en            : in    std_logic_vector(3 downto 0)  := (others => 'X'); -- byte_en
+			mem32_wdata              : in    std_logic_vector(31 downto 0) := (others => 'X'); -- wdata
+			mem32_request            : in    std_logic                     := 'X';             -- request
+			mem32_tag                : in    std_logic_vector(7 downto 0)  := (others => 'X'); -- tag
+			mem32_dack_tag           : out   std_logic_vector(7 downto 0);                     -- dack_tag
+			mem32_rdata              : out   std_logic_vector(31 downto 0);                    -- rdata
+			mem32_rack               : out   std_logic;                                        -- rack
+			mem32_rack_tag           : out   std_logic_vector(7 downto 0);                     -- rack_tag
+			memory_mem_a             : out   std_logic_vector(13 downto 0);                    -- mem_a
+			memory_mem_ba            : out   std_logic_vector(1 downto 0);                     -- mem_ba
+			memory_mem_ck            : out   std_logic_vector(0 downto 0);                     -- mem_ck
+			memory_mem_ck_n          : out   std_logic_vector(0 downto 0);                     -- mem_ck_n
+			memory_mem_cke           : out   std_logic_vector(0 downto 0);                     -- mem_cke
+			memory_mem_cs_n          : out   std_logic_vector(0 downto 0);                     -- mem_cs_n
+			memory_mem_dm            : out   std_logic_vector(0 downto 0);                     -- mem_dm
+			memory_mem_ras_n         : out   std_logic_vector(0 downto 0);                     -- mem_ras_n
+			memory_mem_cas_n         : out   std_logic_vector(0 downto 0);                     -- mem_cas_n
+			memory_mem_we_n          : out   std_logic_vector(0 downto 0);                     -- mem_we_n
+			memory_mem_dq            : inout std_logic_vector(7 downto 0)  := (others => 'X'); -- mem_dq
+			memory_mem_dqs           : inout std_logic_vector(0 downto 0)  := (others => 'X'); -- mem_dqs
+			memory_mem_dqs_n         : inout std_logic_vector(0 downto 0)  := (others => 'X'); -- mem_dqs_n
+			memory_mem_odt           : out   std_logic_vector(0 downto 0);                     -- mem_odt
+			oct_rzqin                : in    std_logic                     := 'X';             -- rzqin
+			pio_in_port              : in    std_logic_vector(31 downto 0) := (others => 'X'); -- in_port
+			pio_out_port             : out   std_logic_vector(31 downto 0);                    -- out_port
+			reset_reset_n            : in    std_logic                     := 'X';             -- reset_n
+			status_local_init_done   : out   std_logic;                                        -- local_init_done
+			status_local_cal_success : out   std_logic;                                        -- local_cal_success
+			status_local_cal_fail    : out   std_logic;                                        -- local_cal_fail
+			sys_clock_clk            : out   std_logic;                                        -- clk
+			sys_reset_reset_n        : out   std_logic                                         -- reset_n
+		);
+	end component nios;
+

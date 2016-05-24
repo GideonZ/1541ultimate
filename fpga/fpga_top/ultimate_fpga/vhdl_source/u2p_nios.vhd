@@ -34,7 +34,7 @@ port (
     SLOT_PHI2        : in    std_logic;
     SLOT_DOTCLK      : in    std_logic;
     SLOT_RSTn        : inout std_logic;
---    SLOT_BUFFER_ENn  : out   std_logic;
+    SLOT_BUFFER_ENn  : out   std_logic;
     SLOT_ADDR        : inout std_logic_vector(15 downto 0);
     SLOT_DATA        : inout std_logic_vector(7 downto 0);
     SLOT_RWn         : inout std_logic;
@@ -541,7 +541,7 @@ begin
         port map (
             clock  => audio_clock,
             reset  => audio_reset,
-            freq   => X"0235",
+            freq   => X"00E5",
             sine   => audio_left,
             cosine => open );
         
@@ -595,4 +595,5 @@ begin
         end process;
     end block;    
     
+    SLOT_BUFFER_ENn <= '0'; -- once configured, we can connect
 end architecture;

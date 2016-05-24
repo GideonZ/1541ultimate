@@ -1,0 +1,62 @@
+# # File gsaved with Nlview version 6.3.8  2013-12-19 bk=1.2992 VDI=34 GEI=35
+# 
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.transacto -pg 1
+preplace inst nios.mem_if_ddr2_emif_0 -pg 1 -lvl 4 -y 140
+preplace inst nios.mem_if_ddr2_emif_0.c0.afi_reset -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.c0.ng0 -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.p2b_adapter -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.jtag_phy_embedded_in_jtag_master -pg 1
+preplace inst nios -pg 1 -lvl 1 -y 40 -regy -20
+preplace inst nios.mem_if_ddr2_emif_0.c0 -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.oct0 -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.s0 -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.m0 -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.afi_reset_export -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.afi_clk -pg 1
+preplace inst nios.nios2_gen2_0.cpu -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.c0.a0 -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.b2p_adapter -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.timing_adt -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.pll0 -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.afi_reset -pg 1
+preplace inst nios.mem32_to_avalon_0 -pg 1 -lvl 10 -y 110
+preplace inst nios.clk_0 -pg 1 -lvl 5 -y 30
+preplace inst nios.mem_if_ddr2_emif_0.dll0 -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.p2b -pg 1
+preplace inst nios.clk_1 -pg 1 -lvl 9 -y 690
+preplace inst nios.mem_if_ddr2_emif_0.c0.afi_clk -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.dmaster -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.c0.afi_half_clk -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.clk_rst -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.pll_ref_clk -pg 1
+preplace inst nios.nios2_gen2_0.reset_bridge -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.b2p -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.as0 -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.afi_half_clk -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.soft_reset -pg 1
+preplace inst nios.nios2_gen2_0.clock_bridge -pg 1
+preplace inst nios.nios2_gen2_0 -pg 1 -lvl 5 -y 220
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.clk_src -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.p0 -pg 1
+preplace inst nios.pio_0 -pg 1 -lvl 9 -y 190
+preplace inst nios.mem_if_ddr2_emif_0.dmaster.fifo -pg 1
+preplace inst nios.mem_if_ddr2_emif_0.global_reset -pg 1
+preplace inst nios.io_bridge_0 -pg 1 -lvl 9 -y 310
+preplace netloc POINT_TO_POINT<net_container>nios</net_container>(MASTER)clk_0.clk,(SLAVE)mem_if_ddr2_emif_0.pll_ref_clk) 1 3 3 850 320 NJ 120 1690
+preplace netloc EXPORT<net_container>nios</net_container>(MASTER)nios.sys_reset,(MASTER)clk_1.clk_reset) 1 9 2 NJ 720 NJ
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.clk50,(SLAVE)clk_0.clk_in) 1 0 5 NJ 360 NJ 360 NJ 360 NJ 360 NJ
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.memory,(SLAVE)mem_if_ddr2_emif_0.memory) 1 0 4 NJ 60 NJ 60 NJ 60 NJ
+preplace netloc INTERCONNECT<net_container>nios</net_container>(MASTER)mem32_to_avalon_0.avalon_master,(MASTER)nios2_gen2_0.data_master,(SLAVE)nios2_gen2_0.debug_mem_slave,(MASTER)nios2_gen2_0.instruction_master,(SLAVE)mem_if_ddr2_emif_0.avl,(SLAVE)pio_0.s1,(SLAVE)io_bridge_0.avalon_slave_0) 1 3 8 810 400 1310 440 1690 250 NJ 250 NJ 250 1850 100 NJ 100 2330
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.io,(SLAVE)io_bridge_0.io) 1 0 9 NJ 480 NJ 480 NJ 480 NJ 480 NJ 480 NJ 360 NJ 360 NJ 360 NJ
+preplace netloc INTERCONNECT<net_container>nios</net_container>(SLAVE)mem32_to_avalon_0.reset,(SLAVE)clk_1.clk_in_reset,(MASTER)nios2_gen2_0.debug_reset_request,(SLAVE)io_bridge_0.reset,(MASTER)mem_if_ddr2_emif_0.afi_reset,(SLAVE)nios2_gen2_0.reset,(SLAVE)pio_0.reset) 1 4 6 1210 460 1670 270 NJ 270 NJ 270 1870 160 N
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)mem_if_ddr2_emif_0.status,(SLAVE)nios.status) 1 0 4 NJ 270 NJ 270 NJ 270 NJ
+preplace netloc EXPORT<net_container>nios</net_container>(MASTER)clk_1.clk,(MASTER)nios.sys_clock) 1 9 2 NJ 700 NJ
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.oct,(SLAVE)mem_if_ddr2_emif_0.oct) 1 0 4 NJ 80 NJ 80 NJ 80 NJ
+preplace netloc FAN_OUT<net_container>nios</net_container>(MASTER)mem_if_ddr2_emif_0.afi_clk,(SLAVE)clk_1.clk_in,(SLAVE)pio_0.clk,(SLAVE)mem32_to_avalon_0.clock,(SLAVE)io_bridge_0.clock,(SLAVE)nios2_gen2_0.clk) 1 4 6 1310 180 NJ 180 NJ 180 NJ 180 1830 140 2090
+preplace netloc FAN_OUT<net_container>nios</net_container>(SLAVE)pio_0.irq,(MASTER)nios2_gen2_0.irq,(SLAVE)io_bridge_0.irq) 1 5 4 NJ 310 NJ 310 NJ 310 1890
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.mem32,(SLAVE)mem32_to_avalon_0.mem32_slave) 1 0 10 NJ 100 NJ 140 NJ 140 NJ 340 NJ 140 NJ 80 NJ 80 NJ 80 NJ 80 2110
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.reset,(SLAVE)clk_0.clk_in_reset) 1 0 5 NJ 380 NJ 380 NJ 380 NJ 380 NJ
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)pio_0.external_connection,(SLAVE)nios.pio) 1 0 9 NJ 420 NJ 420 NJ 420 NJ 420 NJ 420 NJ 330 NJ 330 NJ 330 NJ
+preplace netloc FAN_OUT<net_container>nios</net_container>(MASTER)clk_0.clk_reset,(SLAVE)mem_if_ddr2_emif_0.soft_reset,(SLAVE)mem_if_ddr2_emif_0.global_reset) 1 3 3 830 100 NJ 100 1670
+levelinfo -pg 1 0 50 2440
+levelinfo -hier nios 60 80 470 730 1030 1430 1750 1770 1790 1920 2140 2350

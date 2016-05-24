@@ -1,0 +1,539 @@
+# -------------------------------------------------------------------------- #
+#
+# Copyright (C) 1991-2015 Altera Corporation. All rights reserved.
+# Your use of Altera Corporation's design tools, logic functions 
+# and other software and tools, and its AMPP partner logic 
+# functions, and any output files from any of the foregoing 
+# (including device programming or simulation files), and any 
+# associated documentation or information are expressly subject 
+# to the terms and conditions of the Altera Program License 
+# Subscription Agreement, the Altera Quartus II License Agreement,
+# the Altera MegaCore Function License Agreement, or other 
+# applicable license agreement, including, without limitation, 
+# that your use is for the sole purpose of programming logic 
+# devices manufactured by Altera and sold by Altera or its 
+# authorized distributors.  Please refer to the applicable 
+# agreement for further details.
+#
+# -------------------------------------------------------------------------- #
+#
+# Quartus II 64-Bit
+# Version 14.1.1 Build 190 01/19/2015 Patches 1.19 SJ Full Version
+# Date created = 19:12:21  december 21, 2015
+#
+# -------------------------------------------------------------------------- #
+#
+# Notes:
+#
+# 1) The default values for assignments are stored in the file:
+#		ultimate_altera_assignment_defaults.qdf
+#    If this file doesn't exist, see file:
+#		assignment_defaults.qdf
+#
+# 2) Altera recommends that you do not modify this file. This
+#    file is updated automatically by the Quartus II software
+#    and any changes you make may be lost or overwritten.
+#
+# -------------------------------------------------------------------------- #
+
+
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CEBA2U15C8
+set_global_assignment -name TOP_LEVEL_ENTITY u2p_nios
+set_global_assignment -name ORIGINAL_QUARTUS_VERSION "14.1.1 SP1.19"
+set_global_assignment -name PROJECT_CREATION_TIME_DATE "19:12:21  DECEMBER 21, 2015"
+set_global_assignment -name LAST_QUARTUS_VERSION 15.1.0
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
+set_global_assignment -name DEVICE_FILTER_SPEED_GRADE 8
+set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
+set_global_assignment -name EDA_SIMULATION_TOOL "<None>"
+set_global_assignment -name EDA_OUTPUT_DATA_FORMAT NONE -section_id eda_simulation
+set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "NO HEAT SINK WITH STILL AIR"
+set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
+set_global_assignment -name DEVICE_FILTER_PIN_COUNT 324
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "2.5 V"
+
+# Workaround for internal error
+set_global_assignment -name AUTO_RAM_BLOCK_BALANCING OFF
+
+set_global_assignment -name POWER_DEFAULT_INPUT_IO_TOGGLE_RATE "12.5 %"
+set_global_assignment -name ENABLE_OCT_DONE OFF
+set_global_assignment -name ENABLE_CONFIGURATION_PINS OFF
+set_global_assignment -name ENABLE_BOOT_SEL_PIN OFF
+set_global_assignment -name USE_CONFIGURATION_DEVICE ON
+set_global_assignment -name CRC_ERROR_OPEN_DRAIN OFF
+set_global_assignment -name RESERVE_DATA0_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_DATA1_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_DATA7_THROUGH_DATA2_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_FLASH_NCE_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_DCLK_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -fall
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -fall
+
+
+
+set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
+
+
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_BCLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_LRCLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_MCLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_SDI
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_SDO
+set_instance_assignment -name IO_STANDARD "1.8 V" -to BUTTON[0]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to BUTTON[1]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to BUTTON[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_MOTOR
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_READ
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_SENSE
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_WRITE
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_CSn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_MISO
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_MOSI
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_SCK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_SEL
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_SELCK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_ATN
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_CLOCK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_DATA
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_RESET
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_SRQ_IN
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_CRS_DV
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_REFCLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_RX_ER
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_TX_EN
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[10] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[11] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[12] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[13] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[2] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[3] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[4] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[5] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[6] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[7] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[8] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[9] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[2]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CASn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CKE -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "DIFFERENTIAL 1.8-V SSTL CLASS I" -to SDRAM_CLK -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "DIFFERENTIAL 1.8-V SSTL CLASS I" -to SDRAM_CLKn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CSn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "DIFFERENTIAL 1.8-V SSTL CLASS I" -to SDRAM_DQS -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[2] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[3] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[4] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[5] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[6] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[7] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DM -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_ODT -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_RASn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_WEn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[10]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[11]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[12]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[13]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[14]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[15]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[8]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[9]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_BA
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_BUFFER_ENn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DMAn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DOTCLK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_EXROMn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_GAMEn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_IO1n
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_IO2n
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_IRQn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_NMIn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_PHI2
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ROMHn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ROMLn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_RSTn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_RWn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_RXD
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_CLOCK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[0]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[1]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[2]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[3]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[4]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[5]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[6]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[7]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DIR
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_NXT
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_RESET
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_STP
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to I2C_SCL
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to I2C_SDA
+set_instance_assignment -name IO_STANDARD "1.8 V" -to HUB_CLOCK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to HUB_RESETn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LED_CARTn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LED_DISKn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LED_MOTORn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LED_SDACTn
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_RX_DATA[1]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_RX_DATA[0]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_TX_DATA[1]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_TX_DATA[0]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ETH_RESETn
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ETH_IRQn
+set_instance_assignment -name IO_STANDARD "1.8 V" -to MDIO_CLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to MDIO_DATA
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SPEAKER_DATA
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SPEAKER_ENABLE
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_VCC
+
+
+
+
+set_global_assignment -name ENABLE_SIGNALTAP ON
+set_global_assignment -name USE_SIGNALTAP_FILE stp3.stp
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to RMII_CRS_DV
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/packet_generator.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/align_read_to_bram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/async_fifo_ft.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/crc32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/rmii_transceiver.vhd
+set_global_assignment -name SDC_FILE ultimate_altera.sdc
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/i2s_serializer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sine_osc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_nios_c5.vhd
+set_global_assignment -name QIP_FILE ../../../fpga/nios_c5/nios/synthesis/nios.qip
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S18.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16BWE_S36_S9.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/distributed_stack.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/std/dsram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram_sc.vhd
+set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_vector_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_string_util_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_file_io_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw_byte.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/std/std_Pkg.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core_Pkg.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/gprf.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/fetch.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/execute.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/decode.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core_address_decoder.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/mem.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S36.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/unisim_VCOMP.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_timing.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_stream.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/via6522.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/bin2gcr.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_mem.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_encoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_param_mem.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_drive.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_sound.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr2bin.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_codec.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_decoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1541.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/drive_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/wave_map.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_debug_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/oscillator.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/Q_table.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_top.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/mult_acc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_filter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_mixer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/adsr_multi.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_trace.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_mapper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/all_carts_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_slave.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/freezer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/cart_slot_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_server_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/cart_slot_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_cpu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_alu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/real_time_clock.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchroniser.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/input_synchronizer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/spram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/sync_fifo/vhdl_source/sync_fifo.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_to_dma_bridge.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/dma_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/dma_bus_arbiter_pri.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_to_mem32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_to_io_bridge.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/endianness_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_dummy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/oc_pusher/vhdl_source/oc_pusher.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/shifter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/cpu6502.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/pkg_6502_decode.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/alu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/bit_cpx_cpy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_control.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/pkg_6502_opcodes.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_interrupt.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/pkg_6502_defs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_core.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/data_oper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/implied.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_arbiter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem16k.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_cache_custom.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem4k.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mblite_wrapper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_with_invalidate.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/config_pkg.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem32k.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/cached_mblite.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_simple.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/rxtx_to_buf.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_nano.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_memory_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/host_sequencer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_io_bank.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_interface.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/mem_remain_counter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_tx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_nano.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/bridge_to_mem_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_bus.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/nano_minimal_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc_check.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/mem_addr_counter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc_19.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/data_crc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_rx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/timer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/mem_ctrl/vhdl_source/ext_mem_ctrl_v5.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio_select/vhdl_source/audio_select.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spike_filter/vhdl_source/spike_filter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_playback/vhdl_source/tape_speed_control.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/deserializer/vhdl_source/deserializer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/logic_analyzer_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/logic_analyzer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_engine.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_zpu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_zpu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_processor.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_interface_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_processor_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_interface.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/command_interface/vhdl_source/command_if_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/command_interface/vhdl_source/command_protocol.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/command_interface/vhdl_source/command_interface.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/hf_noise.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/mash.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/high_pass.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/delta_sigma_2to5.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_record/vhdl_source/c2n_record.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_accu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu.vhd
+set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/pll.qip
+set_global_assignment -name CDF_FILE output_files/Chain1.cdf
+set_global_assignment -name SIGNALTAP_FILE stp1.stp
+set_global_assignment -name SIGNALTAP_FILE stp2.stp
+set_global_assignment -name CDF_FILE Chain1.cdf
+set_global_assignment -name SIGNALTAP_FILE stp3.stp
+set_global_assignment -name SOURCE_FILE db/ultimate_altera.cmp.rdb
+set_global_assignment -name SIGNALTAP_FILE stp4.stp
+set_global_assignment -name SIGNALTAP_FILE stp5.stp
+set_instance_assignment -name IO_STANDARD "DIFFERENTIAL 1.8-V SSTL CLASS I" -to SDRAM_DQSn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name IO_STANDARD "1.8 V" -to SDRAM_RZQ
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQ[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQ[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQ[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQ[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQ[2] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQ[2] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQ[3] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQ[3] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQ[4] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQ[4] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQ[5] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQ[5] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQ[6] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQ[6] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQ[7] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQ[7] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQS -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQS -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name D5_DELAY 6 -to SDRAM_DQS -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name D6_DELAY 0 -to SDRAM_DQS -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name INPUT_TERMINATION "PARALLEL 50 OHM WITH CALIBRATION" -to SDRAM_DQSn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DQSn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name D5_DELAY 6 -to SDRAM_DQSn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name D6_DELAY 0 -to SDRAM_DQSn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITHOUT CALIBRATION" -to SDRAM_CLK -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name D5_DELAY 4 -to SDRAM_CLK -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITHOUT CALIBRATION" -to SDRAM_CLKn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name D5_DELAY 4 -to SDRAM_CLKn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[10] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[11] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[12] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[13] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[2] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[3] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[4] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[5] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[6] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[7] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[8] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[9] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_BA[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_BA[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_CSn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_WEn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_RASn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_CASn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_ODT -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_CKE -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name OUTPUT_TERMINATION "SERIES 50 OHM WITH CALIBRATION" -to SDRAM_DM -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQ[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQ[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQ[2] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQ[3] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQ[4] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQ[5] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQ[6] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQ[7] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DM -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQS -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_DQSn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[10] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[11] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[12] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[13] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[2] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[3] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[4] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[5] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[6] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[7] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[8] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_A[9] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_BA[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_BA[1] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_CSn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_WEn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_RASn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_CASn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_ODT -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_CKE -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_CLK -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PACKAGE_SKEW_COMPENSATION OFF -to SDRAM_CLKn -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name GLOBAL_SIGNAL "GLOBAL CLOCK" -to i_nios|mem_if_ddr2_emif_0|pll0|pll_afi_clk -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name GLOBAL_SIGNAL "DUAL-REGIONAL CLOCK" -to i_nios|mem_if_ddr2_emif_0|pll0|pll_addr_cmd_clk -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name GLOBAL_SIGNAL "DUAL-REGIONAL CLOCK" -to i_nios|mem_if_ddr2_emif_0|pll0|pll_avl_clk -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name GLOBAL_SIGNAL "DUAL-REGIONAL CLOCK" -to i_nios|mem_if_ddr2_emif_0|pll0|pll_config_clk -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name GLOBAL_SIGNAL OFF -to i_nios|mem_if_ddr2_emif_0|p0|umemphy|ureset|phy_reset_mem_stable_n -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name GLOBAL_SIGNAL OFF -to i_nios|mem_if_ddr2_emif_0|p0|umemphy|ureset|phy_reset_n -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name GLOBAL_SIGNAL OFF -to i_nios|mem_if_ddr2_emif_0|s0|sequencer_rw_mgr_inst|rw_mgr_inst|rw_mgr_core_inst|rw_soft_reset_n -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name GLOBAL_SIGNAL OFF -to i_nios|mem_if_ddr2_emif_0|p0|umemphy|uread_datapath|reset_n_fifo_write_side[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name GLOBAL_SIGNAL OFF -to i_nios|mem_if_ddr2_emif_0|p0|umemphy|uread_datapath|reset_n_fifo_wraddress[0] -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name ENABLE_BENEFICIAL_SKEW_OPTIMIZATION_FOR_NON_GLOBAL_CLOCKS ON -to i_nios|mem_if_ddr2_emif_0 -tag __nios_mem_if_ddr2_emif_0_p0
+set_instance_assignment -name PLL_COMPENSATION_MODE DIRECT -to i_nios|mem_if_ddr2_emif_0|pll0|fbout -tag __nios_mem_if_ddr2_emif_0_p0
+set_global_assignment -name USE_DLL_FREQUENCY_FOR_DQS_DELAY_CHAIN ON
+set_global_assignment -name UNIPHY_SEQUENCER_DQS_CONFIG_ENABLE ON
+set_global_assignment -name OPTIMIZE_MULTI_CORNER_TIMING ON
+set_global_assignment -name ECO_REGENERATE_REPORT ON
+set_global_assignment -name STRATIXV_CONFIGURATION_SCHEME "ACTIVE SERIAL X1"
+set_global_assignment -name STRATIXII_CONFIGURATION_DEVICE EPCS16
+set_global_assignment -name ACTIVE_SERIAL_CLOCK FREQ_100MHZ
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<preferences>
+ <debug showDebugMenu="0" />
+ <systemtable filter="altmemddr_0.sysclk" showClockDomains="1" showResetDomains="0">
+  <columns>
+   <connections preferredWidth="255" />
+   <irq preferredWidth="34" />
+  </columns>
+ </systemtable>
+ <library expandedCategories="Project,Library" />
+ <window width="1855" height="1084" x="65" y="-4" />
+ <generation synthesis="VHDL" block_symbol_file="0" />
+</preferences>

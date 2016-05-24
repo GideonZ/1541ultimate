@@ -4,7 +4,7 @@
  * Machine generated for CPU 'nios2_gen2_0' in SOPC Builder design 'nios'
  * SOPC Builder design path: ../../fpga/nios/nios.sopcinfo
  *
- * Generated: Fri May 06 08:35:15 CEST 2016
+ * Generated: Tue May 17 20:55:21 CEST 2016
  */
 
 /*
@@ -59,15 +59,12 @@
  */
 
 #include "altera_nios2_gen2_irq.h"
-#include "altera_avalon_timer.h"
 
 /*
  * Allocate the device storage
  */
 
 ALTERA_NIOS2_GEN2_IRQ_INSTANCE ( NIOS2_GEN2_0, nios2_gen2_0);
-ALTERA_AVALON_TIMER_INSTANCE ( TIMER_0, timer_0);
-ALTERA_AVALON_TIMER_INSTANCE ( TIMER_1, timer_1);
 
 /*
  * Initialize the interrupt controller devices
@@ -90,6 +87,4 @@ void alt_irq_init ( const void* base )
 
 void alt_sys_init( void )
 {
-    ALTERA_AVALON_TIMER_INIT ( TIMER_0, timer_0);
-    ALTERA_AVALON_TIMER_INIT ( TIMER_1, timer_1);
 }
