@@ -108,6 +108,8 @@ port (
     -- I2C Interface for RTC, audio codec and usb hub
     I2C_SDA     : inout std_logic := 'Z';
     I2C_SCL     : inout std_logic := 'Z';
+    I2C_SDA_18  : inout std_logic := 'Z';
+    I2C_SCL_18  : inout std_logic := 'Z';
 
     -- Flash Interface
     FLASH_CSn   : out   std_logic;
@@ -313,13 +315,16 @@ begin
 
     io_req.address <= unsigned(io_req_addr);
 
-    pio_in_port(0) <= I2C_SCL;
-    pio_in_port(1) <= I2C_SDA;
+    pio_in_port(0) <= I2C_SCL and I2C_SCL_18;
+    pio_in_port(1) <= I2C_SDA and I2C_SDA_18;
     pio_in_port(5) <= MDIO_DATA;
     pio_in_port(9) <= ETH_IRQn;
     
     I2C_SCL        <= '0' when pio_out_port(0) = '0' else 'Z';
     I2C_SDA        <= '0' when pio_out_port(1) = '0' else 'Z';
+    I2C_SCL_18     <= '0' when pio_out_port(0) = '0' else 'Z';
+    I2C_SDA_18     <= '0' when pio_out_port(1) = '0' else 'Z';
+
     FLASH_SEL      <= pio_out_port(2);
     FLASH_SELCK    <= pio_out_port(3);
     MDIO_CLK       <= pio_out_port(4);
@@ -327,7 +332,6 @@ begin
     ETH_RESETn     <= not pio_out_port(6); -- we may run into issues with the clock!
     HUB_RESETn     <= pio_out_port(7);
     SPEAKER_ENABLE <= pio_out_port(8);
-    
 
     i_logic: entity work.ultimate_logic_32
     generic map (
@@ -404,7 +408,7 @@ begin
         mem_resp    => mem_resp,
                  
         -- PWM outputs (for audio)
-        PWM_OUT(0)  => SPEAKER_DATA,
+        PWM_OUT(0)  => open,
         PWM_OUT(1)  => open,
     
         -- IEC bus
@@ -526,6 +530,7 @@ begin
     UART_TXD <= uart_txd_from_logic; -- and uart_txd_from_qsys;
 
     b_audio: block
+        signal freq_left        : std_logic_vector(15 downto 0);
         signal audio_left       : signed(19 downto 0);
         signal audio_right      : signed(19 downto 0);
         signal stream_out_data  : std_logic_vector(23 downto 0);
@@ -535,13 +540,30 @@ begin
         signal stream_in_tag    : std_logic_vector(0 downto 0);
         signal stream_in_ready  : std_logic;
     begin
+        i_sync: entity work.synchroniser
+        generic map (
+            g_data_width => 16
+        )
+        port map(
+            tx_clock     => sys_clock,
+            tx_reset     => sys_reset,
+            tx_push      => '1',
+            tx_data      => pio_out_port(31 downto 16),
+            tx_done      => open,
+            
+            rx_clock     => audio_clock,
+            rx_reset     => audio_reset,
+            rx_new_data  => open,
+            rx_data      => freq_left
+        );
+        
         
         -- audio stuff for testing
         i_sineL: entity work.sine_osc
         port map (
             clock  => audio_clock,
             reset  => audio_reset,
-            freq   => X"00E5",
+            freq   => unsigned(freq_left),
             sine   => audio_left,
             cosine => open );
         
@@ -570,6 +592,18 @@ begin
             stream_in_ready  => stream_in_ready );
 
         AUDIO_MCLK <= audio_clock;
+
+        i_dac: entity work.sigma_delta_dac
+        generic map (
+            g_left_shift   => 0,
+            g_width        => 20
+        )
+        port map (
+            clock          => audio_clock,
+            reset          => audio_reset,
+            dac_in         => signed(audio_left),
+            dac_out        => SPEAKER_DATA
+        );
 
         process(audio_clock)
         begin
