@@ -46,7 +46,7 @@ port (
 end entity;
 
 architecture rtl of rmii_transceiver is
-    type t_state is (idle, preamble, data0, data1, data2, data3, crc);
+    type t_state is (idle, preamble, data0, data1, data2, data3, crc, gap);
     signal rx_state : t_state;
     signal tx_state : t_state;
 
@@ -232,6 +232,16 @@ begin
             when crc =>
                 rmii_tx_en <= '1';
                 rmii_txd <= tx_crc(31 - tx_count*2 downto 30 - tx_count*2);                
+                if tx_count = 0 then
+                    tx_count <= 15;
+                    tx_state <= gap;
+                else
+                    tx_count <= tx_count - 1;
+                end if;
+
+            when gap =>
+                rmii_tx_en <= '0';
+                rmii_txd <= "00";
                 if tx_count = 0 then
                     tx_state <= idle;
                 else

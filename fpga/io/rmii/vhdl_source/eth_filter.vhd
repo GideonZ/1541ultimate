@@ -16,8 +16,11 @@ library ieee;
 library work;
     use work.io_bus_pkg.all;
     use work.block_bus_pkg.all;
-    
+    use work.mem_bus_pkg.all;
+        
 entity eth_filter is
+generic (
+    g_mem_tag       : std_logic_vector(7 downto 0) := X"13" );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -27,8 +30,14 @@ port (
     io_resp         : out t_io_resp;
 
     -- interface to free block system
-    block_req       : out t_block_req;
-    block_resp      : in  t_block_resp;
+    alloc_req       : out std_logic;
+    alloc_resp      : in  t_alloc_resp;
+    used_req        : out t_used_req;
+    used_resp       : in  std_logic;
+
+    -- interface to memory
+    mem_req         : out t_mem_req_32;
+    mem_resp        : in  t_mem_resp_32;
 
     ----
     eth_clock       : in std_logic;
@@ -55,31 +64,39 @@ architecture gideon of eth_filter is
     signal rd_dout      : std_logic_vector(17 downto 0);
     signal rd_valid     : std_logic;
 
-    type t_state is (idle, get_block, drop, copy, valid_packet, pushing);
+    type t_receive_state is (idle, odd, even, len, ovfl);
+    signal receive_state    : t_receive_state;
+    
+    type t_state is (idle, get_block, drop, copy, valid_packet, pushing, ram_write);
     signal state    : t_state;
     signal address_valid    : std_logic;
     signal start_addr       : unsigned(25 downto 0);
-    signal length           : unsigned(11 downto 0);    
     signal mac_idx          : integer range 0 to 3;
     signal for_me           : std_logic;
+    signal block_id         : unsigned(7 downto 0);
+    
+    -- memory signals
+    signal mem_addr     : unsigned(25 downto 0) := (others => '0');
+    signal mem_data     : std_logic_vector(31 downto 0) := (others => '0');
+    signal write_req    : std_logic;
     
     -- signals in eth_clock domain
-    signal rx_data_d    : std_logic_vector(7 downto 0) := (others => '0');
     signal eth_wr_din   : std_logic_vector(17 downto 0);
     signal eth_wr_en    : std_logic;
     signal eth_wr_full  : std_logic;
+    signal eth_length   : unsigned(11 downto 0);
+    signal crc_ok       : std_logic;
     signal toggle       : std_logic;
-    signal overflow     : std_logic;
 begin
     -- 18 wide fifo; 16 data bits and 2 control bits
     -- 00 = packet data
-    -- 01 = end; one valid byte
-    -- 10 = end; two valid bytes
-    -- 11 = drop; end of packet, overflow detected, or CRC error
+    -- 01 = overflow detected => drop
+    -- 10 = packet with CRC error => drop
+    -- 11 = packet OK!
 
     i_fifo: entity work.async_fifo_ft
     generic map (
-        g_fast       => true,
+        --g_fast       => true,
         g_data_width => 18,
         g_depth_bits => 9
     )
@@ -100,39 +117,73 @@ begin
     process(eth_clock)
     begin
         if rising_edge(eth_clock) then
-            if eth_rx_valid = '1' then
-                rx_data_d <= eth_rx_data;
-                eth_wr_din <= "00" & eth_rx_data & rx_data_d;
-                
-                eth_wr_en <= '0';
-                if eth_rx_sof = '1' then -- first byte of new packet
-                    overflow <= '0';
-                    toggle <= '0';
-                else
-                    toggle <= not toggle;
-                    if toggle = '0' then -- 2 bytes received
-                        eth_wr_en <= not overflow;
-                    end if;
+            eth_wr_en <= '0';
+            
+            case receive_state is
+            when idle =>
+                eth_wr_din(7 downto 0) <= eth_rx_data;
+                eth_length <= to_unsigned(1, eth_length'length);
+                if eth_rx_sof = '1' and eth_rx_valid = '1' then
+                    receive_state <= odd;
                 end if;
-                
-                if eth_wr_full = '1' then
-                    overflow <= '1';
-                end if;
-                
-                if eth_rx_eof = '1' then
-                    eth_wr_en <= '1';
-                    if overflow = '1' or eth_rx_data /= X"FF" then
-                        eth_wr_din(17 downto 16) <= "11";
+            
+            when odd =>
+                eth_wr_din(15 downto 8) <= eth_rx_data;
+                eth_wr_din(17 downto 16) <= "00";
+
+                if eth_rx_valid = '1' then
+                    eth_length <= eth_length + 1;
+                    if eth_wr_full = '1' then
+                        receive_state <= ovfl;
                     else
-                        eth_wr_din(17) <= toggle;
-                        eth_wr_din(16) <= not toggle;
+                        eth_wr_en <= '1';
+                        crc_ok <= eth_rx_data(0);
+                        if eth_rx_eof = '1' then
+                            receive_state <= len;
+                        else                        
+                            receive_state <= even;
+                        end if;
                     end if;
                 end if;
-            end if;
+
+            when even =>
+                eth_wr_din(7 downto 0) <= eth_rx_data;
+                eth_wr_din(17 downto 16) <= "00";
+
+                if eth_rx_valid = '1' then
+                    eth_length <= eth_length + 1;
+                    if eth_rx_eof = '1' then
+                        receive_state <= len;
+                        crc_ok <= eth_rx_data(0);
+                    else
+                        receive_state <= odd;
+                    end if;
+                end if;
+
+            when len =>
+                if eth_wr_full = '0' then
+                    eth_wr_din <= (others => '0');
+                    eth_wr_din(17) <= '1';
+                    eth_wr_din(16) <= crc_ok;
+                    eth_wr_din(eth_length'range) <= std_logic_vector(eth_length);
+                    eth_wr_en <= '1';
+                    receive_state <= idle;                                        
+                else
+                    receive_state <= ovfl;                                        
+                end if;
+            
+            when ovfl =>
+                if eth_wr_full = '0' then
+                    eth_wr_din(17 downto 16) <= "01";
+                    eth_wr_en <= '1';
+                    receive_state <= idle;
+                end if;
+
+            end case;
 
             if eth_reset = '1' then
-                toggle <= '0';
-                overflow <= '0';
+                receive_state <= idle;
+                crc_ok <= '0';
             end if;                
         end if;
     end process;
@@ -167,7 +218,7 @@ begin
             end if;
 
             if reset = '1' then
-                null;
+                promiscuous <= '0';
             end if;
         end if;
     end process;
@@ -183,15 +234,15 @@ begin
             case state is
             when idle =>
                 mac_idx <= 0;
+                toggle <= '0';
                 for_me <= '1';
-                length <= (others => '0');
                 if rd_valid = '1' then -- packet data available!
                     if rd_dout(17 downto 16) = "00" then
                         if address_valid = '1' then
+                            mem_addr <= start_addr;
                             state <= copy;
                         else                            
-                            block_req.request <= '1';
-                            block_req.command <= allocate;
+                            alloc_req <= '1';
                             state <= get_block;
                         end if;
                     else
@@ -200,13 +251,14 @@ begin
                 end if;
             
             when get_block =>
-                if block_resp.done = '1' then
-                    block_req.request <= '0';
-                    block_req.id <= block_resp.id;
-                    if block_resp.error = '1' then
+                if alloc_resp.done = '1' then
+                    alloc_req <= '0';
+                    block_id <= alloc_resp.id;
+                    if alloc_resp.error = '1' then
                         state <= drop;
                     else
-                        start_addr <= block_resp.address;
+                        start_addr <= alloc_resp.address;
+                        mem_addr <= alloc_resp.address;
                         address_valid <= '1';
                         state <= copy;
                     end if;                    
@@ -226,52 +278,78 @@ begin
                         mac_idx <= mac_idx + 1;
                     end if;                        
 
+                    toggle <= not toggle;
+                    if toggle = '0' then
+                        mem_data(31 downto 16) <= rd_dout(15 downto 0);
+                        write_req <= '1';
+                        state <= ram_write;
+                    else
+                        mem_data(15 downto 0) <= rd_dout(15 downto 0);
+                    end if;                    
+
                     case rd_dout(17 downto 16) is
-                    when "00" =>
-                        length <= length + 2;
                     when "01" =>
-                        length <= length + 1;
-                        state <= valid_packet;
-                    when "10" =>
-                        length <= length + 2;
-                        state <= valid_packet;
-                    when "11" =>
+                        -- overflow detected
+                        write_req <= '0';
                         state <= idle;
+                    when "10" =>
+                        -- packet with bad CRC
+                        write_req <= '0';
+                        state <= idle;
+                    when "11" =>
+                        -- correct packet!
+                        used_req.bytes <= unsigned(rd_dout(used_req.bytes'range)) - 5; -- snoop FF and CRC
+                        write_req <= '1';
+                        state <= valid_packet;
                     when others =>
                         null;
                     end case;
                 end if;
 
-            when valid_packet =>
-                if for_me = '1' or promiscuous = '1' then
-                    address_valid <= '0';
-                    block_req.request <= '1';
-                    block_req.command <= write;
-                    block_req.bytes   <= length;
-                    state <= pushing;
-                else
-                    state <= idle;
-                end if;
+            when ram_write =>
+                if mem_resp.rack_tag = g_mem_tag then
+                    write_req <= '0';
+                    mem_addr <= mem_addr + 4;
+                    state <= copy;
+                end if;                
 
-            when pushing =>
-                if block_resp.done = '1' then
-                    block_req.request <= '0';
-                    if block_resp.error = '1' then
-                        state <= valid_packet;                        
+            when valid_packet =>
+                if mem_resp.rack_tag = g_mem_tag then
+                    write_req <= '0';
+                    if for_me = '1' or promiscuous = '1' then
+                        address_valid <= '0';
+                        used_req.request <= '1';
+                        used_req.id <= block_id;
+                        state <= pushing;
                     else
                         state <= idle;
                     end if;
+                end if;
+
+            when pushing =>
+                if used_resp = '1' then
+                    used_req.request <= '0';
+                    state <= idle;
                 end if;
                 
             end case;
 
             if reset = '1' then
-                block_req <= c_block_req_init;
+                alloc_req <= '0';
+                used_req <= c_used_req_init;
                 state <= idle;
                 address_valid <= '0';
+                write_req <= '0';
             end if;
         end if;
     end process;
+
+    mem_req.request <= write_req;
+    mem_req.data    <= mem_data;
+    mem_req.address <= mem_addr;
+    mem_req.read_writen <= '0';
+    mem_req.byte_en <= (others => '1');
+    mem_req.tag <= g_mem_tag;
 
     process(state)
     begin
