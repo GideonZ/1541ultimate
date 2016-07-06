@@ -28,7 +28,8 @@ port (
     -- io interface for local cpu
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
-
+    io_irq          : out std_logic;
+    
     -- interface to memory (read)
     mem_req         : out t_mem_req_32;
     mem_resp        : in  t_mem_resp_32;
@@ -48,25 +49,33 @@ end entity;
 
 architecture gideon of eth_transmit is
 
-    type t_state is (idle);
+    type t_state is (idle, wait_mem, copy);
     signal state    : t_state;
-    signal address_valid    : std_logic;
-    signal start_addr       : unsigned(25 downto 0);
-    signal trigger          : std_logic;
 
+    signal trigger          : std_logic;
+    signal trigger_sent     : std_logic;
     signal wr_en            : std_logic;
-    signal wr_din           : std_logic_vector(8 downto 0);
-    signal wr_full          : std_logic;
-    
+    signal wr_din           : std_logic_vector(8 downto 0) := (others => '0');
+    signal wr_full          : std_logic := '0';
+
+    signal busy             : std_logic;
+    signal start            : std_logic;
+    signal done             : std_logic;
+        
     -- memory signals
-    signal mem_addr     : unsigned(25 downto 0) := (others => '0');
+    signal sw_addr      : std_logic_vector(25 downto 0);
+    signal sw_length    : std_logic_vector(11 downto 0);
+    signal down_count   : unsigned(11 downto 0);
+    signal up_count     : unsigned(11 downto 0);
+    signal offset       : unsigned(1 downto 0) := (others => '0');
+    signal mem_addr     : unsigned(25 downto 2) := (others => '0');
+    signal mem_data     : std_logic_vector(31 downto 0);
     signal read_req     : std_logic;
-    
+
     -- signals in eth_clock domain
     signal eth_rd_next  : std_logic;
     signal eth_rd_dout  : std_logic_vector(8 downto 0);
     signal eth_rd_valid : std_logic;
-    signal eth_rd_next  : std_logic;
     signal eth_trigger  : std_logic;
     signal eth_streaming: std_logic;
 begin
@@ -144,7 +153,7 @@ begin
                 io_resp.ack <= '1';
                 case local_addr is
                 when X"0" =>
-                    null;
+                    sw_addr(7 downto 0) <= io_req.data;
                 when X"1" =>
                     sw_addr(15 downto 8) <= io_req.data;
                 when X"2" =>
@@ -166,6 +175,11 @@ begin
                 end case;
             end if;
 
+            if done = '1' then
+                busy <= '0';
+                io_irq <= '1';
+            end if;
+
             if io_req.read = '1' then
                 io_resp.ack <= '1';
                 case local_addr is
@@ -183,144 +197,84 @@ begin
         end if;
     end process;
 
-    -- condense to do 16 bit compares with data from fifo
-    my_mac_16(0) <= my_mac(1) & my_mac(0);
-    my_mac_16(1) <= my_mac(3) & my_mac(2);
-    my_mac_16(2) <= my_mac(5) & my_mac(4);
     
     process(clock)
     begin
         if rising_edge(clock) then
+            trigger <= '0';
+            done <= '0';
             case state is
             when idle =>
-                mac_idx <= 0;
-                toggle <= '0';
-                for_me <= '1';
-                if rd_valid = '1' then -- packet data available!
-                    if rd_dout(17 downto 16) = "00" then
-                        if address_valid = '1' then
-                            mem_addr <= start_addr;
-                            state <= copy;
-                        else                            
-                            alloc_req <= '1';
-                            state <= get_block;
-                        end if;
-                    else
-                        state <= drop; -- resyncronize
-                    end if;
+                if wr_full = '0' then
+                    wr_en <= '0';
                 end if;
-            
-            when get_block =>
-                if alloc_resp.done = '1' then
-                    alloc_req <= '0';
-                    block_id <= alloc_resp.id;
-                    if alloc_resp.error = '1' then
-                        state <= drop;
-                    else
-                        start_addr <= alloc_resp.address;
-                        mem_addr <= alloc_resp.address;
-                        address_valid <= '1';
-                        state <= copy;
-                    end if;                    
+                mem_addr <= unsigned(sw_addr(25 downto 2));
+                down_count <= unsigned(sw_length);
+                up_count <= (others => '0');
+                offset <= unsigned(sw_addr(1 downto 0));
+                trigger_sent <= '0';
+
+                if start = '1' then
+                    read_req <= '1';
+                    state <= wait_mem;
                 end if;
-            
-            when drop =>
-                if rd_valid = '1' and rd_dout(17 downto 16) /= "00" then
-                    state <= idle;
+                
+            when wait_mem =>
+                if wr_full = '0' then
+                    wr_en <= '0';
+                end if;
+                if mem_resp.rack = '1' and mem_resp.rack_tag = g_mem_tag then
+                    read_req <= '0';
+                    mem_addr <= mem_addr + 1;
+                end if;
+                if mem_resp.dack_tag = g_mem_tag then
+                    mem_data <= mem_resp.data;
+                    state <= copy;
                 end if;
 
             when copy =>
-                if rd_valid = '1' then
-                    if mac_idx /= 3 then
-                        if rd_dout(15 downto 0) /= X"FFFF" and rd_dout(15 downto 0) /= my_mac_16(mac_idx) then
-                            for_me <= '0';
-                        end if;
-                        mac_idx <= mac_idx + 1;
-                    end if;                        
-
-                    toggle <= not toggle;
-                    if toggle = '0' then
-                        mem_data(31 downto 16) <= rd_dout(15 downto 0);
-                        write_req <= '1';
-                        state <= ram_write;
-                    else
-                        mem_data(15 downto 0) <= rd_dout(15 downto 0);
-                    end if;                    
-
-                    case rd_dout(17 downto 16) is
-                    when "01" =>
-                        -- overflow detected
-                        write_req <= '0';
-                        state <= idle;
-                    when "10" =>
-                        -- packet with bad CRC
-                        write_req <= '0';
-                        state <= idle;
-                    when "11" =>
-                        -- correct packet!
-                        used_req.bytes <= unsigned(rd_dout(used_req.bytes'range)) - 5; -- snoop FF and CRC
-                        write_req <= '1';
-                        state <= valid_packet;
-                    when others =>
-                        null;
-                    end case;
-                end if;
-
-            when ram_write =>
-                if mem_resp.rack_tag = g_mem_tag then
-                    write_req <= '0';
-                    mem_addr <= mem_addr + 4;
-                    state <= copy;
-                end if;                
-
-            when valid_packet =>
-                if mem_resp.rack_tag = g_mem_tag then
-                    write_req <= '0';
-                    if for_me = '1' or promiscuous = '1' then
-                        address_valid <= '0';
-                        used_req.request <= '1';
-                        used_req.id <= block_id;
-                        state <= pushing;
-                    else
-                        state <= idle;
+                if wr_full = '0' then
+                    wr_din(7 downto 0) <= mem_data(7+8*to_integer(offset) downto 8*to_integer(offset));
+                    wr_en <= '1';
+    
+                    if offset = 3 then
+                        read_req <= '1';
+                        state <= wait_mem;
                     end if;
+                    offset <= offset + 1;
+    
+                    if down_count = 1 then
+                        wr_din(8) <= '1';
+                        read_req <= '0';
+                        done <= '1';
+                        state <= idle;
+                        trigger <= not trigger_sent;
+                    else
+                        wr_din(8) <= '0';
+                    end if; 
+    
+                    if up_count = 512 then
+                        trigger <= '1';
+                        trigger_sent <= '1';
+                    end if;
+    
+                    down_count <= down_count - 1;
+                    up_count <= up_count + 1;                
                 end if;
-
-            when pushing =>
-                if used_resp = '1' then
-                    used_req.request <= '0';
-                    state <= idle;
-                end if;
-                
-            end case;
+            end case;             
 
             if reset = '1' then
-                alloc_req <= '0';
-                used_req <= c_used_req_init;
+                read_req <= '0';
                 state <= idle;
-                address_valid <= '0';
-                write_req <= '0';
             end if;
         end if;
     end process;
 
-    mem_req.request <= write_req;
+    mem_req.request <= read_req;
     mem_req.data    <= mem_data;
-    mem_req.address <= mem_addr;
-    mem_req.read_writen <= '0';
+    mem_req.address <= mem_addr & "00";
+    mem_req.read_writen <= '1';
     mem_req.byte_en <= (others => '1');
-    mem_req.tag <= g_mem_tag;
-
-    process(state)
-    begin
-        case state is
-        when drop =>
-            rd_next <= '1';
-        when copy =>
-            rd_next <= '1'; -- do something here with memory
-        when others =>
-            rd_next <= '0';
-        end case;        
-    end process;
+    mem_req.tag     <= g_mem_tag;
     
 end architecture;
