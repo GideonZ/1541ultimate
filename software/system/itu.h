@@ -14,12 +14,12 @@ extern "C" {
 #define ITU_IRQ_DISABLE   (ITU_BASE + 0x02)
 #define ITU_IRQ_EDGE      (ITU_BASE + 0x03)
 #define ITU_IRQ_CLEAR     (ITU_BASE + 0x04)
-#define ITU_IRQ_ACTIVE    (ITU_BASE + 0x05)
+#define ITU_BUTTON_REG    (ITU_BASE + 0x05)
 #define ITU_TIMER         (ITU_BASE + 0x06)
 #define ITU_IRQ_TIMER_EN  (ITU_BASE + 0x07)
-#define ITU_IRQ_TIMER_LO  (ITU_BASE + 0x09)
 #define ITU_IRQ_TIMER_HI  (ITU_BASE + 0x08)
-#define ITU_FPGA_FLAGS    (ITU_BASE + 0x0A)
+#define ITU_IRQ_TIMER_LO  (ITU_BASE + 0x09)
+#define ITU_IRQ_ACTIVE    (ITU_BASE + 0x0A)
 #define ITU_FPGA_VERSION  (ITU_BASE + 0x0B)
 #define ITU_MS_TIMER_LO   (ITU_BASE + 0x23)
 #define ITU_MS_TIMER_HI   (ITU_BASE + 0x22)
@@ -27,6 +27,14 @@ extern "C" {
 #define ITU_USB_BUSY	  (ITU_BASE + 0x24)
 #define ITU_SD_BUSY	      (ITU_BASE + 0x25)
 #define ITU_MISC_IO	      (ITU_BASE + 0x26)
+
+#define ITU_INTERRUPT_TIMER  0x01
+#define ITU_INTERRUPT_UART   0x02
+#define ITU_INTERRUPT_USB    0x04
+#define ITU_INTERRUPT_TAPE   0x08
+#define ITU_INTERRUPT_CMDIF  0x10
+#define ITU_INTERRUPT_RMIIRX 0x20
+#define ITU_INTERRUPT_RMIITX 0x40
 
 
 #define CAPAB_UART          0x00000001
@@ -67,7 +75,6 @@ extern "C" {
 # define LEAVE_SAFE_SECTION ioWrite8(ITU_IRQ_GLOBAL,1);
 #endif
 
-#define ITU_C64_IRQ 0x10
 #define ITU_BUTTON0 0x20
 #define ITU_BUTTON1 0x40
 #define ITU_BUTTON2 0x80

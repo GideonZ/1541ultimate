@@ -118,6 +118,7 @@ SRCS_CC	 =  small_printf.cc \
 ####			copper.cc \
 
 VPATH += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
+VPATH += $(PATH_SW)/portable/microblaze
 
 
 SRCS_ASM =  mb_crt0.s portasm.s
@@ -130,6 +131,8 @@ SRCS_IEC = iec_code.iec
 
 SRCS_NANO = nano_minimal.nan
 
+# TOOLCHAIN ?= $(XILINX_EDK)/gnu/microblaze/lin64
+
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER
 COPTIONS = $(OPTIONS) -std=c99
@@ -140,5 +143,5 @@ LLIB     =  -L ../mb_lwip/result \
             -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
 LIBS     =  -llwip -lc -lgcc 
 LFLAGS   = --gc-sections 
-
+	
 include ../common/rules.mk

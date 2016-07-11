@@ -79,7 +79,7 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 XILINX ?= C:/Xilinx/13.2
 PLATFORM ?= nt
-TOOLCHAIN = $(XILINX)/ISE_DS/EDK/gnu/microblaze/$(PLATFORM)
+TOOLCHAIN = $(XILINX_EDK)/gnu/microblaze/$(PLATFORM)
 XILINXBIN = $(XILINX)/ISE_DS/ISE/bin/$(PLATFORM)
 
 PATH_INC =  $(addprefix -I, $(VPATH))

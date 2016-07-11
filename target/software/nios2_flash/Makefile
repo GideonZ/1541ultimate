@@ -32,7 +32,7 @@ SRCS_CC	 =	memory.cc \
             host_stream.cc \
 			$(PRJ).cc
 
-VPATH +=	$(PATH_SW)/system/altera
+VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/niosbsp
 VPATH +=	$(PATH_SW)/niosbsp/HAL/inc
 VPATH +=	$(PATH_SW)/niosbsp/drivers/inc

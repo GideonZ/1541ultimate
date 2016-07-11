@@ -80,6 +80,7 @@ architecture gideon of free_queue is
     signal sw_pop_id        : std_logic_vector(7 downto 0) := (others => '0');
     signal sw_pop_size      : std_logic_vector(11 downto 0) := (others => '0');
     signal alloc_valid      : std_logic;
+    signal soft_reset       : std_logic;
 begin
     io_irq <= alloc_valid;
     
@@ -109,6 +110,7 @@ begin
                 end if;
             end if;
 
+            soft_reset <= '0';
             if io_req.write = '1' then
                 io_resp.ack <= '1';
                 case local_addr is
@@ -126,7 +128,8 @@ begin
                     sw_insert <= '1';
                 when X"F" =>
                     alloc_valid <= '0';
-                    
+                when X"E" =>
+                    soft_reset <= '1';
                 when others =>
                     null; 
                 end case;
@@ -277,7 +280,7 @@ begin
             alloc_head <= alloc_head_next;
             state <= next_state;
 
-            if reset = '1' then
+            if reset = '1' or soft_reset = '1' then
                 state <= idle;
                 alloc_resp_i <= c_alloc_resp_init;
                 alloc_tail <= (others => '0');

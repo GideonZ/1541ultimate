@@ -48,7 +48,8 @@ typedef uint8_t (*driver_output_function_t)(void *driver, void *buffer, int leng
 
 NetworkInterface *getNetworkStack(void *driver,
 								  driver_output_function_t out,
-								  driver_free_function_t free);
+								  driver_free_function_t free );
+
 void releaseNetworkStack(void *s);
 
 #define CFG_NET_DHCP_EN		0xE0

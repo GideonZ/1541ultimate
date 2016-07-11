@@ -24,7 +24,7 @@ entity level_synchronizer is
         -- Clock signal
         clock       : in  std_logic;
         -- Asynchronous input
-        reset       : in  std_logic;
+        reset       : in  std_logic := '0';
         -- Asynchronous input
         input       : in  std_logic;
         -- Synchronized input
@@ -50,8 +50,8 @@ end level_synchronizer;
 
 architecture rtl of level_synchronizer is
 
-    signal sync1        : std_logic;
-    signal sync2        : std_logic;
+    signal sync1        : std_logic := g_reset_val;
+    signal sync2        : std_logic := g_reset_val;
 
 begin
 

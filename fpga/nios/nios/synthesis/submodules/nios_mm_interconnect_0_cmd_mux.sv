@@ -40,7 +40,7 @@
 // Generation parameters:
 //   output_name:         nios_mm_interconnect_0_cmd_mux
 //   NUM_INPUTS:          3
-//   ARBITRATION_SHARES:  1 1 1
+//   ARBITRATION_SHARES:  2 1 1
 //   ARBITRATION_SCHEME   "round-robin"
 //   PIPELINE_ARB:        1
 //   PKT_TRANS_LOCK:      69 (arbitration locking enabled)
@@ -174,10 +174,10 @@ module nios_mm_interconnect_0_cmd_mux
     // being optimized away.
     // ------------------------------------------
     // Input  |  arb shares  |  counter load value
-    // 0      |      1       |  0
+    // 0      |      2       |  1
     // 1      |      1       |  0
     // 2      |      1       |  0
-     wire [SHARE_COUNTER_W - 1 : 0] share_0 = 1'd0;
+     wire [SHARE_COUNTER_W - 1 : 0] share_0 = 1'd1;
      wire [SHARE_COUNTER_W - 1 : 0] share_1 = 1'd0;
      wire [SHARE_COUNTER_W - 1 : 0] share_2 = 1'd0;
 

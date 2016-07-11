@@ -22,6 +22,7 @@
 #define GCR_CODER_BASE     0x4060500
 #define ICAP_BASE          0x4060600
 #define AUDIO_SEL_BASE     0x4060700
+#define RMII_BASE          0x4060800
 #define USB_BASE           0x4080000
 #define C2N_PLAY_BASE      0x40A0000
 #define C2N_RECORD_BASE    0x40C0000

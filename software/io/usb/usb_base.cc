@@ -160,8 +160,8 @@ void UsbBase :: initHardware()
         for(int i=0; i<2048; i+=2) {
         	*(dst++) = 0;
         }
-        ioWrite8(ITU_IRQ_DISABLE, 0x04);
-        ioWrite8(ITU_IRQ_CLEAR, 0x04);
+        ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_USB);
+        ioWrite8(ITU_IRQ_CLEAR, ITU_INTERRUPT_USB);
 
         xTaskCreate( poll_usb2, "USB Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     } else {
@@ -171,7 +171,7 @@ void UsbBase :: initHardware()
 
 void UsbBase :: deinitHardware()
 {
-    ioWrite8(ITU_IRQ_DISABLE, 0x04);
+    ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_USB);
 	vSemaphoreDelete(mutex);
 	vQueueDelete(queue);
     //clean_up();

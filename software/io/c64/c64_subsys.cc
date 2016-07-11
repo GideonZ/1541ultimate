@@ -57,7 +57,7 @@ void C64_Subsys :: poll(void *a)
 
 	static uint8_t button_prev;
 	while(1) {
-		uint8_t buttons = ioRead8(ITU_IRQ_ACTIVE) & ITU_BUTTONS;
+		uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
 		if((buttons & ~button_prev) & ITU_BUTTON1) {
 			c64->buttonPushSeen = true;
 		}

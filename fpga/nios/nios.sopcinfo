@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <EnsembleReport name="nios" kind="nios" version="1.0" fabric="QSYS">
  <!-- Format version 15.1 185 (Future versions may contain additional information.) -->
- <!-- 2016.05.18.07:10:24 -->
+ <!-- 2016.07.10.12:31:42 -->
  <!-- A collection of modules and connections -->
  <parameter name="AUTO_GENERATION_ID">
   <type>java.lang.Integer</type>
-  <value>1463548224</value>
+  <value>1468146702</value>
   <derived>false</derived>
   <enabled>true</enabled>
   <visible>false</visible>
@@ -8770,7 +8770,7 @@ parameters are a RESULT of the module parameters. -->
    end="altmemddr_0.s1">
   <parameter name="arbitrationPriority">
    <type>int</type>
-   <value>1</value>
+   <value>2</value>
    <derived>false</derived>
    <enabled>true</enabled>
    <visible>true</visible>

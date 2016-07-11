@@ -58,6 +58,7 @@ err_t lwip_output_callback(struct netif *netif, struct pbuf *pbuf)
     	return ERR_ARG;
     }
     while(pbuf) {
+    	printf("Concat %p->%p (%d)\n", pbuf->payload, temp, pbuf->len);
     	memcpy(temp, pbuf->payload, pbuf->len);
     	temp += pbuf->len;
     	if (pbuf->len == pbuf->tot_len)
@@ -242,7 +243,7 @@ bool NetworkLWIP :: input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size)
 
 	if (my_net_if.input(p, &my_net_if)!=ERR_OK) {
 		LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
-		printf("é");
+		printf("ï¿½");
 		pbuf_fifo.push(pbuf);
 //		pbuf_free(p);
 		return false;

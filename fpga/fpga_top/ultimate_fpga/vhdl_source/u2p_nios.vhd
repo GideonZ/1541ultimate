@@ -201,12 +201,14 @@ architecture rtl of u2p_nios is
     signal init_done    : std_logic;
     signal por_n        : std_logic;
     signal por_count    : unsigned(23 downto 0) := (others => '0');
-
+    signal led_n        : std_logic_vector(0 to 3);
+    
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
     signal sys_reset_n  : std_logic;
     signal audio_clock  : std_logic;
     signal audio_reset  : std_logic;
+    signal eth_reset    : std_logic;
     signal button_i     : std_logic_vector(2 downto 0);
         
     -- miscellaneous interconnect
@@ -232,16 +234,7 @@ architecture rtl of u2p_nios is
     signal io_resp      : t_io_resp;
     signal io_req_addr  : std_logic_vector(19 downto 0);
 
-    signal eth_rx_data         : std_logic_vector(7 downto 0);
-    signal eth_rx_sof          : std_logic;
-    signal eth_rx_eof          : std_logic;
-    signal eth_rx_valid        : std_logic;
 
-    signal eth_tx_data         : std_logic_vector(7 downto 0);
-    signal eth_tx_sof          : std_logic;
-    signal eth_tx_eof          : std_logic;
-    signal eth_tx_valid        : std_logic;
-    signal eth_tx_ready        : std_logic;
 
 begin
     process(RMII_REFCLK)
@@ -258,12 +251,27 @@ begin
 
     sys_reset <= not sys_reset_n;
     
-    process(audio_clock)
-    begin
-        if rising_edge(audio_clock) then
-            audio_reset <= not sys_reset_n;
-        end if;
-    end process;
+    i_audio_reset: entity work.level_synchronizer
+    generic map ('1')
+    port map (
+        clock       => audio_clock,
+        input       => not sys_reset_n,
+        input_c     => audio_reset  );
+    
+    i_ulpi_reset: entity work.level_synchronizer
+    generic map ('1')
+    port map (
+        clock       => ulpi_clock,
+        input       => sys_reset,
+        input_c     => ulpi_reset_i  );
+
+    i_eth_reset: entity work.level_synchronizer
+    generic map ('1')
+    port map (
+        clock       => RMII_REFCLK,
+        input       => sys_reset,
+        input_c     => eth_reset  );
+
 
     i_nios: nios
     port map(
@@ -366,7 +374,8 @@ begin
         g_video_overlay => false,
         g_sampler       => false,
         g_analyzer      => false,
-        g_profiler      => true )
+        g_profiler      => true,
+        g_rmii          => true )
     port map (
         -- globals
         sys_clock   => sys_clock,
@@ -424,11 +433,11 @@ begin
         iec_clock_o => iec_clock_o,
         iec_srq_o   => iec_srq_o,
                                     
-        DISK_ACTn   => LED_DISKn, -- activity LED
-        CART_LEDn   => LED_CARTn,
-        SDACT_LEDn  => LED_SDACTn,
-        MOTOR_LEDn  => LED_MOTORn,
-        
+        MOTOR_LEDn  => led_n(0),
+        DISK_ACTn   => led_n(1),
+        CART_LEDn   => led_n(2),
+        SDACT_LEDn  => led_n(3),
+
         -- Debug UART
         UART_TXD    => uart_txd_from_logic,
         UART_RXD    => UART_RXD,
@@ -465,8 +474,21 @@ begin
         CAS_READ    => CAS_READ,
         CAS_WRITE   => CAS_WRITE,
         
+        -- Ethernet Interface (RMII)
+        eth_clock   => RMII_REFCLK, 
+        eth_reset   => eth_reset,
+        rmii_crs_dv => RMII_CRS_DV, 
+        rmii_rxd    => RMII_RX_DATA,
+        rmii_tx_en  => RMII_TX_EN,
+        rmii_txd    => RMII_TX_DATA,
+
         -- Buttons
         BUTTON      => button_i );
+
+    LED_MOTORn <= led_n(0) xor sys_reset;
+    LED_DISKn  <= led_n(1) xor sys_reset;
+    LED_CARTn  <= led_n(2) xor sys_reset;
+    LED_SDACTn <= led_n(3) xor sys_reset;
 
     IEC_ATN    <= '0' when iec_atn_o   = '0' else 'Z';
     IEC_DATA   <= '0' when iec_data_o  = '0' else 'Z';
@@ -475,48 +497,6 @@ begin
 
     button_i <= not BUTTON;
 
-    -- stub
---    RMII_TX_EN   <= RMII_RX_ER and RMII_REFCLK and RMII_CRS_DV and ETH_IRQn and SLOT_VCC;
---    RMII_TX_DATA <= RMII_RX_DATA;
-
-    i_rmii: entity work.rmii_transceiver
-    port map (
-        clock        => RMII_REFCLK,
-        reset        => not por_n,
-        rmii_crs_dv  => RMII_CRS_DV,
-        rmii_rxd     => RMII_RX_DATA,
-        rmii_tx_en   => RMII_TX_EN,
-        rmii_txd     => RMII_TX_DATA,
-
-        eth_rx_data  => eth_rx_data,
-        eth_rx_sof   => eth_rx_sof,
-        eth_rx_eof   => eth_rx_eof,
-        eth_rx_valid => eth_rx_valid,
-        eth_tx_data  => eth_tx_data,
-        eth_tx_sof   => eth_tx_sof,
-        eth_tx_eof   => eth_tx_eof,
-        eth_tx_valid => eth_tx_valid,
-        eth_tx_ready => eth_tx_ready,
-        ten_meg_mode => '0' );
-
-    i_packet: entity work.packet_generator
-    port map (
-        clock        => RMII_REFCLK,
-        reset        => not por_n,
-        eth_tx_data  => eth_tx_data,
-        eth_tx_sof   => eth_tx_sof,
-        eth_tx_eof   => eth_tx_eof,
-        eth_tx_valid => eth_tx_valid,
-        eth_tx_ready => eth_tx_ready );
-    
-
-
-    process(ulpi_clock)
-    begin
-        if rising_edge(ulpi_clock) then
-            ulpi_reset_i <= sys_reset;
-        end if;
-    end process;
 
     ULPI_RESET <= por_n;
 

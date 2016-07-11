@@ -564,7 +564,7 @@
    version="15.1"
    start="mem32_to_avalon_0.avalon_master"
    end="altmemddr_0.s1">
-  <parameter name="arbitrationPriority" value="1" />
+  <parameter name="arbitrationPriority" value="2" />
   <parameter name="baseAddress" value="0x0000" />
   <parameter name="defaultConnection" value="false" />
  </connection>

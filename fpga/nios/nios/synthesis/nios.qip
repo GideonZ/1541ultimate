@@ -2,7 +2,7 @@ set_global_assignment -entity "nios" -library "nios" -name IP_TOOL_NAME "Qsys"
 set_global_assignment -entity "nios" -library "nios" -name IP_TOOL_VERSION "15.1"
 set_global_assignment -entity "nios" -library "nios" -name IP_TOOL_ENV "Qsys"
 set_global_assignment -library "nios" -name SOPCINFO_FILE [file join $::quartus(qip_path) "../../nios.sopcinfo"]
-set_global_assignment -entity "nios" -library "nios" -name SLD_INFO "QSYS_NAME nios HAS_SOPCINFO 1 GENERATION_ID 1463548224"
+set_global_assignment -entity "nios" -library "nios" -name SLD_INFO "QSYS_NAME nios HAS_SOPCINFO 1 GENERATION_ID 1468146702"
 set_global_assignment -library "nios" -name MISC_FILE [file join $::quartus(qip_path) "../nios.cmp"]
 set_global_assignment -library "nios" -name SLD_FILE [file join $::quartus(qip_path) "nios.regmap"]
 set_global_assignment -library "nios" -name SLD_FILE [file join $::quartus(qip_path) "nios.debuginfo"]
@@ -16,7 +16,7 @@ set_global_assignment -entity "nios" -library "nios" -name IP_COMPONENT_DISPLAY_
 set_global_assignment -entity "nios" -library "nios" -name IP_COMPONENT_REPORT_HIERARCHY "On"
 set_global_assignment -entity "nios" -library "nios" -name IP_COMPONENT_INTERNAL "Off"
 set_global_assignment -entity "nios" -library "nios" -name IP_COMPONENT_VERSION "MS4w"
-set_global_assignment -entity "nios" -library "nios" -name IP_COMPONENT_PARAMETER "QVVUT19HRU5FUkFUSU9OX0lE::MTQ2MzU0ODIyNA==::QXV0byBHRU5FUkFUSU9OX0lE"
+set_global_assignment -entity "nios" -library "nios" -name IP_COMPONENT_PARAMETER "QVVUT19HRU5FUkFUSU9OX0lE::MTQ2ODE0NjcwMg==::QXV0byBHRU5FUkFUSU9OX0lE"
 set_global_assignment -entity "nios" -library "nios" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0VfRkFNSUxZ::Q3ljbG9uZSBJViBF::QXV0byBERVZJQ0VfRkFNSUxZ"
 set_global_assignment -entity "nios" -library "nios" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0U=::RVA0Q0UyMkYxN0M4::QXV0byBERVZJQ0U="
 set_global_assignment -entity "nios" -library "nios" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0VfU1BFRURHUkFERQ==::OA==::QXV0byBERVZJQ0VfU1BFRURHUkFERQ=="
@@ -335,7 +335,7 @@ set_global_assignment -entity "nios_mm_interconnect_0_cmd_mux" -library "nios" -
 set_global_assignment -entity "nios_mm_interconnect_0_cmd_mux" -library "nios" -name IP_COMPONENT_PARAMETER "VVNFX0VYVEVSTkFMX0FSQg==::MA==::VXNlIGV4dGVybmFsIGFyYml0cmF0aW9u"
 set_global_assignment -entity "nios_mm_interconnect_0_cmd_mux" -library "nios" -name IP_COMPONENT_PARAMETER "UEtUX1RSQU5TX0xPQ0s=::Njk=::UGFja2V0IGxvY2sgdHJhbnNhY3Rpb24gZmllbGQgaW5kZXg="
 set_global_assignment -entity "nios_mm_interconnect_0_cmd_mux" -library "nios" -name IP_COMPONENT_PARAMETER "QVJCSVRSQVRJT05fU0NIRU1F::cm91bmQtcm9iaW4=::QXJiaXRyYXRpb24gc2NoZW1l"
-set_global_assignment -entity "nios_mm_interconnect_0_cmd_mux" -library "nios" -name IP_COMPONENT_PARAMETER "QVJCSVRSQVRJT05fU0hBUkVT::MSwxLDE=::QXJiaXRyYXRpb24gc2hhcmVz"
+set_global_assignment -entity "nios_mm_interconnect_0_cmd_mux" -library "nios" -name IP_COMPONENT_PARAMETER "QVJCSVRSQVRJT05fU0hBUkVT::MiwxLDE=::QXJiaXRyYXRpb24gc2hhcmVz"
 set_global_assignment -entity "nios_mm_interconnect_0_cmd_mux" -library "nios" -name IP_COMPONENT_PARAMETER "TUVSTElOX1BBQ0tFVF9GT1JNQVQ=::b3JpX2J1cnN0X3NpemUoMTA0OjEwMikgcmVzcG9uc2Vfc3RhdHVzKDEwMToxMDApIGNhY2hlKDk5Ojk2KSBwcm90ZWN0aW9uKDk1OjkzKSB0aHJlYWRfaWQoOTIpIGRlc3RfaWQoOTE6OTApIHNyY19pZCg4OTo4OCkgcW9zKDg3KSBiZWdpbl9idXJzdCg4NikgZGF0YV9zaWRlYmFuZCg4NSkgYWRkcl9zaWRlYmFuZCg4NCkgYnVyc3RfdHlwZSg4Mzo4MikgYnVyc3Rfc2l6ZSg4MTo3OSkgYnVyc3R3cmFwKDc4Ojc2KSBieXRlX2NudCg3NTo3MSkgdHJhbnNfZXhjbHVzaXZlKDcwKSB0cmFuc19sb2NrKDY5KSB0cmFuc19yZWFkKDY4KSB0cmFuc193cml0ZSg2NykgdHJhbnNfcG9zdGVkKDY2KSB0cmFuc19jb21wcmVzc2VkX3JlYWQoNjUpIGFkZHIoNjQ6MzYpIGJ5dGVlbigzNTozMikgZGF0YSgzMTowKQ==::TWVybGluIHBhY2tldCBmb3JtYXQgZGVzY3JpcHRvcg=="
 set_global_assignment -entity "nios_mm_interconnect_0_cmd_mux" -library "nios" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0VfRkFNSUxZ::Q3ljbG9uZSBJViBF::QXV0byBERVZJQ0VfRkFNSUxZ"
 set_global_assignment -entity "nios_mm_interconnect_0_cmd_demux_002" -library "nios" -name IP_COMPONENT_NAME "bmlvc19tbV9pbnRlcmNvbm5lY3RfMF9jbWRfZGVtdXhfMDAy"

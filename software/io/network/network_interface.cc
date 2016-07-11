@@ -16,7 +16,7 @@ void releaseNetworkStack(void *s) __attribute__((weak));
 
 NetworkInterface *getNetworkStack(void *driver,
 								  driver_output_function_t out,
-								  driver_free_function_t free)
+								  driver_free_function_t free )
 {
 	return 0;
 }

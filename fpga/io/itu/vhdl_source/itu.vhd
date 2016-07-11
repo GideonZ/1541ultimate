@@ -13,10 +13,9 @@ generic (
     g_frequency     : integer := 50_000_000;
     g_edge_init     : std_logic_vector(7 downto 0) := "00000001";
     g_capabilities  : std_logic_vector(31 downto 0) := X"5555AAAA";
-    g_flags         : std_logic_vector(7 downto 0) := "00000000";
     g_edge_write    : boolean := true;
     g_baudrate      : integer := 115_200;
-    g_timer_rate    : integer := 200_000 ); -- 5µs (should not result in more than 8 bits div)
+    g_timer_rate    : integer := 200_000 ); -- 5ï¿½s (should not result in more than 8 bits div)
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -24,6 +23,8 @@ port (
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
     irq_out         : out std_logic;
+    
+    buttons         : in  std_logic_vector(2 downto 0);
     
     irq_timer_tick  : in  std_logic := '0';
     irq_in          : in  std_logic_vector(7 downto 2);
@@ -181,8 +182,8 @@ begin
                     io_resp_it.data <= g_capabilities(15 downto 8);
                 when c_itu_capabilities3 =>
                     io_resp_it.data <= g_capabilities( 7 downto 0);
-                when c_itu_hw_flags =>
-                    io_resp_it.data <= g_flags;
+                when c_itu_buttons =>
+                    io_resp_it.data <= buttons & "00000";
                 when others =>
                     null;
                 end case;

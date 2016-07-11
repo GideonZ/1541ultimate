@@ -42,6 +42,7 @@ generic (
     g_vic_copper    : boolean := false;
     g_sampler       : boolean := true;
     g_profiler      : boolean := true;
+    g_rmii          : boolean := false;
     g_analyzer      : boolean := false );
 port (
     -- globals
@@ -142,6 +143,15 @@ port (
     CAS_READ    : inout std_logic := 'Z';
     CAS_WRITE   : inout std_logic := 'Z';
     
+    -- Ethernet RMII interface
+    eth_clock       : in std_logic := '0';
+    eth_reset       : in std_logic := '0';
+
+    rmii_crs_dv     : in  std_logic := '0';
+    rmii_rxd        : in  std_logic_vector(1 downto 0) := "00";
+    rmii_tx_en      : out std_logic;
+    rmii_txd        : out std_logic_vector(1 downto 0);
+
 --    -- Interface to other graphical output (Full HD of course and in 3D!) ;-)
 --    vid_clock   : in    std_logic := '0';
 --    vid_reset   : in    std_logic := '0';
@@ -203,6 +213,7 @@ architecture logic of ultimate_logic_32 is
         cap(21) := to_std(g_sampler);
         cap(22) := to_std(g_analyzer) or to_std(g_profiler);
         cap(23) := to_std(g_usb_host2);
+        cap(24) := to_std(g_rmii);
         cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -222,7 +233,8 @@ architecture logic of ultimate_logic_32 is
     constant c_tag_usb2          : std_logic_vector(7 downto 0) := X"09";
     constant c_tag_cpu_i         : std_logic_vector(7 downto 0) := X"0A";
     constant c_tag_cpu_d         : std_logic_vector(7 downto 0) := X"0B";
-    
+    constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
+
 	-- Memory interface
     signal mem_req_32_cpu        : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_32_cpu       : t_mem_resp_32 := c_mem_resp_32_init;
@@ -247,6 +259,8 @@ architecture logic of ultimate_logic_32 is
     signal mem_resp_32_debug     : t_mem_resp_32 := c_mem_resp_32_init;
     signal mem_req_32_usb        : t_mem_req_32 := c_mem_req_32_init;
     signal mem_resp_32_usb       : t_mem_resp_32 := c_mem_resp_32_init;
+    signal mem_req_32_rmii       : t_mem_req_32 := c_mem_req_32_init;
+    signal mem_resp_32_rmii      : t_mem_resp_32 := c_mem_resp_32_init;
 
     -- IO Bus
     signal cpu_io_req       : t_io_req;
@@ -293,6 +307,8 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_debug    : t_io_resp := c_io_resp_init;
     signal io_req_led       : t_io_req;
     signal io_resp_led      : t_io_resp := c_io_resp_init;
+    signal io_req_rmii      : t_io_req;
+    signal io_resp_rmii     : t_io_resp := c_io_resp_init;
     signal io_irq           : std_logic;
     
     -- Audio routing
@@ -346,6 +362,8 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_tape     : std_logic := '0';
     signal sys_irq_iec      : std_logic := '0';
     signal sys_irq_cmdif    : std_logic := '0';
+    signal sys_irq_eth_tx   : std_logic := '0';
+    signal sys_irq_eth_rx   : std_logic := '0';
     signal misc_io          : std_logic_vector(7 downto 0);
     signal profiler_irq_flags   : std_logic_vector(7 downto 0);
 begin
@@ -372,6 +390,7 @@ begin
             io_req      => cpu_io_req,
             io_resp     => cpu_io_resp );
 
+        -- TODO: also invalidate for rmii
         invalidate <= misc_io(0) when (mem_resp_32_usb.rack_tag(5 downto 0) = c_tag_usb2(5 downto 0)) and (mem_req_32_usb.read_writen = '0') else '0';
         inv_addr(31 downto 26) <= (others => '0');
         inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_usb.address);
@@ -412,9 +431,11 @@ begin
         io_req      => io_req_itu,
         io_resp     => io_resp_itu,
     
-        irq_in(7)   => button(2),
-        irq_in(6)   => button(1),
-        irq_in(5)   => button(0),
+        buttons     => button,
+
+        irq_in(7)   => '0',
+        irq_in(6)   => sys_irq_eth_tx,
+        irq_in(5)   => sys_irq_eth_rx,
         irq_in(4)   => sys_irq_cmdif,
         irq_in(3)   => sys_irq_tape,
         irq_in(2)   => sys_irq_usb,
@@ -678,7 +699,7 @@ begin
     generic map (
         g_range_lo  => 8,
         g_range_hi  => 11,
-        g_ports     => 8 )
+        g_ports     => 9 )
     port map (
         clock    => sys_clock,
         
@@ -693,7 +714,8 @@ begin
         reqs(5)  => io_req_gcr_dec,  -- 4060500
         reqs(6)  => io_req_icap,     -- 4060600
         reqs(7)  => io_req_aud_sel,  -- 4060700
-        
+        reqs(8)  => io_req_rmii,     -- 4060800
+
         resps(0) => io_resp_sd,
         resps(1) => io_resp_rtc,
         resps(2) => io_resp_flash,
@@ -701,7 +723,8 @@ begin
         resps(4) => io_resp_rtc_tmr,
         resps(5) => io_resp_gcr_dec,
         resps(6) => io_resp_icap,
-        resps(7) => io_resp_aud_sel );
+        resps(7) => io_resp_aud_sel,
+        resps(8) => io_resp_rmii );
 
 
 --    r_usb: if g_usb_host generate
@@ -1034,7 +1057,7 @@ begin
 
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
-        g_ports      => 6,
+        g_ports      => 7,
         g_registered => false )
     port map (
         clock       => sys_clock,
@@ -1043,16 +1066,18 @@ begin
         reqs(0)     => mem_req_32_cart,
         reqs(1)     => mem_req_32_1541,
         reqs(2)     => mem_req_32_1541_2,
-        reqs(3)     => mem_req_32_debug,
-        reqs(4)     => mem_req_32_cpu,
-        reqs(5)     => mem_req_32_usb,
-
+        reqs(3)     => mem_req_32_rmii,
+        reqs(4)     => mem_req_32_debug,
+        reqs(5)     => mem_req_32_cpu,
+        reqs(6)     => mem_req_32_usb,
+        
         resps(0)    => mem_resp_32_cart,
         resps(1)    => mem_resp_32_1541,
         resps(2)    => mem_resp_32_1541_2,
-        resps(3)    => mem_resp_32_debug,
-        resps(4)    => mem_resp_32_cpu,
-        resps(5)    => mem_resp_32_usb,
+        resps(3)    => mem_resp_32_rmii,
+        resps(4)    => mem_resp_32_debug,
+        resps(5)    => mem_resp_32_cpu,
+        resps(6)    => mem_resp_32_usb,
         
         req         => mem_req,
         resp        => mem_resp );        
@@ -1157,6 +1182,31 @@ begin
             io_resp     => io_resp_debug );
          
         ev_data <= profiler_irq_flags;
+    end generate;
+
+    r_rmii: if g_rmii generate
+    begin
+        i_rmii: entity work.ethernet_rmii
+        generic map (
+            g_mem_tag   => c_tag_rmii
+        )
+        port map(
+            sys_clock   => sys_clock,
+            sys_reset   => sys_reset,
+            io_req      => io_req_rmii,
+            io_resp     => io_resp_rmii,
+            io_irq_tx   => sys_irq_eth_tx,
+            io_irq_rx   => sys_irq_eth_rx,
+            mem_req     => mem_req_32_rmii,
+            mem_resp    => mem_resp_32_rmii,
+            
+            eth_clock   => eth_clock,
+            eth_reset   => eth_reset,
+            rmii_crs_dv => rmii_crs_dv,
+            rmii_rxd    => rmii_rxd,
+            rmii_tx_en  => rmii_tx_en,
+            rmii_txd    => rmii_txd );
+        
     end generate;
 
 end logic;

@@ -111,6 +111,8 @@ target/software/mb_xmodem/result
 target/software/mb_xmodem/result_mb
 target/software/nios2_elf_lwip/output
 target/software/nios2_elf_lwip/result
+target/software/nios2_flash/output
+target/software/nios2_flash/result
 target/software/nios2_ultimate/d
 target/software/nios2_ultimate/output
 target/software/nios2_ultimate/python_out*

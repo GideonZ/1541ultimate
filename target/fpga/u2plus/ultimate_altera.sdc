@@ -482,9 +482,8 @@ set_clock_groups -asynchronous -group [get_clocks {altera_reserved_tck}]
 # Set False Path
 #**************************************************************
 
-set_false_path  -from  [get_clocks {RMII_REFCLK}] -to  [get_clocks {i_nios|altmemddr_0|nios_altmemddr_0_controller_phy_inst|nios_altmemddr_0_phy_inst|nios_altmemddr_0_phy_alt_mem_phy_inst|clk|pll|altpll_component|auto_generated|pll1|clk[0]}]
-set_false_path  -from  [get_clocks {ULPI_CLOCK}]  -to  [get_clocks {i_nios|altmemddr_0|nios_altmemddr_0_controller_phy_inst|nios_altmemddr_0_phy_inst|nios_altmemddr_0_phy_alt_mem_phy_inst|clk|pll|altpll_component|auto_generated|pll1|clk[0]}]
-set_false_path  -to    [get_clocks {ULPI_CLOCK}] -from [get_clocks {i_nios|altmemddr_0|nios_altmemddr_0_controller_phy_inst|nios_altmemddr_0_phy_inst|nios_altmemddr_0_phy_alt_mem_phy_inst|clk|pll|altpll_component|auto_generated|pll1|clk[0]}]
+set_false_path  -to  [get_keepers {*synchroniser:*_tig*}]
+set_false_path  -to  [get_keepers {*level_synchronizer:*|sync1}]
 
 set_false_path  -from  [get_clocks {i_nios|altmemddr_0|nios_altmemddr_0_controller_phy_inst|nios_altmemddr_0_phy_inst|nios_altmemddr_0_phy_alt_mem_phy_inst|clk|pll|altpll_component|auto_generated|pll1|clk[0]}]  -to  [get_clocks {RMII_REFCLK}]
 set_false_path  -from  [get_clocks {i_nios|altmemddr_0|nios_altmemddr_0_controller_phy_inst|nios_altmemddr_0_phy_inst|nios_altmemddr_0_phy_alt_mem_phy_inst|clk|pll|altpll_component|auto_generated|pll1|clk[0]}]  -to  [get_clocks {i_nios|altmemddr_0|nios_altmemddr_0_controller_phy_inst|nios_altmemddr_0_phy_inst|nios_altmemddr_0_phy_alt_mem_phy_inst|clk|pll|altpll_component|auto_generated|pll1|clk[4]}]

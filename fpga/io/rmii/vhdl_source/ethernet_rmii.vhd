@@ -96,8 +96,8 @@ begin
     
     i_split: entity work.io_bus_splitter
     generic map (
-        g_range_lo => 8,
-        g_range_hi => 9,
+        g_range_lo => 4,
+        g_range_hi => 5,
         g_ports    => 3
     )
     port map (

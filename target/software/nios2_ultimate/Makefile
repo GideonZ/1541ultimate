@@ -119,10 +119,11 @@ SRCS_CC	 =  u2p_init.cc \
             socket_stream.cc \
             socket_gui.cc \
 			socket_test.cc \
+			rmii_interface.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
-VPATH +=	$(PATH_SW)/system/altera
+VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/niosbsp
 VPATH +=	$(PATH_SW)/niosbsp/HAL/inc
 VPATH +=	$(PATH_SW)/niosbsp/drivers/inc

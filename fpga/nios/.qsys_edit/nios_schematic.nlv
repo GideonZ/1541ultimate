@@ -8,25 +8,25 @@ preplace inst nios.clk_0 -pg 1 -lvl 1 -y 90
 preplace inst nios.clk_1 -pg 1 -lvl 2 -y 750
 preplace inst nios.nios2_gen2_0.reset_bridge -pg 1
 preplace inst nios.nios2_gen2_0.clock_bridge -pg 1
-preplace inst nios.nios2_gen2_0 -pg 1 -lvl 1 -y 280
-preplace inst nios.pio_0 -pg 1 -lvl 2 -y 230
+preplace inst nios.nios2_gen2_0 -pg 1 -lvl 1 -y 220
+preplace inst nios.pio_0 -pg 1 -lvl 2 -y 250
 preplace inst nios.io_bridge_0 -pg 1 -lvl 2 -y 370
+preplace netloc INTERCONNECT<net_container>nios</net_container>(SLAVE)mem32_to_avalon_0.reset,(SLAVE)pio_0.reset,(SLAVE)clk_1.clk_in_reset,(SLAVE)io_bridge_0.reset,(MASTER)nios2_gen2_0.debug_reset_request,(MASTER)altmemddr_0.reset_request_n,(SLAVE)nios2_gen2_0.reset) 1 0 3 160 400 560 220 860
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)altmemddr_0.external_connection,(SLAVE)nios.mem_external) 1 0 2 NJ 40 NJ
 preplace netloc EXPORT<net_container>nios</net_container>(MASTER)nios.altmemddr_0_auxfull,(MASTER)altmemddr_0.auxfull) 1 2 3 NJ 60 NJ 40 NJ
-preplace netloc POINT_TO_POINT<net_container>nios</net_container>(SLAVE)io_bridge_0.irq,(MASTER)nios2_gen2_0.irq) 1 1 1 520
-preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.memory,(SLAVE)altmemddr_0.memory) 1 0 2 NJ 80 NJ
-preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.mem_external,(SLAVE)altmemddr_0.external_connection) 1 0 2 NJ 40 NJ
+preplace netloc FAN_OUT<net_container>nios</net_container>(MASTER)nios2_gen2_0.irq,(SLAVE)pio_0.irq,(SLAVE)io_bridge_0.irq) 1 1 1 540
+preplace netloc INTERCONNECT<net_container>nios</net_container>(SLAVE)pio_0.s1,(MASTER)mem32_to_avalon_0.avalon_master,(SLAVE)nios2_gen2_0.debug_mem_slave,(SLAVE)altmemddr_0.s1,(MASTER)nios2_gen2_0.data_master,(SLAVE)io_bridge_0.avalon_slave_0,(MASTER)nios2_gen2_0.instruction_master) 1 0 4 140 380 520 240 NJ 260 1120
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)mem32_to_avalon_0.mem32_slave,(SLAVE)nios.mem32) 1 0 3 NJ 160 NJ 200 NJ
 preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)clk_0.clk_in,(SLAVE)nios.clk50) 1 0 1 NJ
-preplace netloc EXPORT<net_container>nios</net_container>(MASTER)nios.sys_reset,(MASTER)clk_1.clk_reset) 1 2 3 NJ 770 NJ 770 NJ
-preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)clk_0.clk_in_reset,(SLAVE)nios.reset) 1 0 1 NJ
-preplace netloc FAN_OUT<net_container>nios</net_container>(MASTER)clk_0.clk_reset,(SLAVE)altmemddr_0.global_reset_n,(SLAVE)altmemddr_0.soft_reset_n) 1 1 1 640
+preplace netloc FAN_OUT<net_container>nios</net_container>(MASTER)altmemddr_0.sysclk,(SLAVE)mem32_to_avalon_0.clock,(SLAVE)pio_0.clk,(SLAVE)io_bridge_0.clock,(SLAVE)clk_1.clk_in,(SLAVE)nios2_gen2_0.clk) 1 0 3 120 360 640 180 840
 preplace netloc EXPORT<net_container>nios</net_container>(MASTER)nios.sys_clock,(MASTER)clk_1.clk) 1 2 3 NJ 750 NJ 750 NJ
 preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.pio,(SLAVE)pio_0.external_connection) 1 0 2 NJ 420 NJ
-preplace netloc INTERCONNECT<net_container>nios</net_container>(SLAVE)mem32_to_avalon_0.reset,(SLAVE)nios2_gen2_0.reset,(SLAVE)clk_1.clk_in_reset,(SLAVE)io_bridge_0.reset,(MASTER)nios2_gen2_0.debug_reset_request,(MASTER)altmemddr_0.reset_request_n,(SLAVE)pio_0.reset) 1 0 3 120 200 580 360 880
-preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)io_bridge_0.io,(SLAVE)nios.io) 1 0 2 NJ 240 NJ
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)io_bridge_0.io,(SLAVE)nios.io) 1 0 2 NJ 180 NJ
 preplace netloc EXPORT<net_container>nios</net_container>(MASTER)altmemddr_0.auxhalf,(MASTER)nios.altmemddr_0_auxhalf) 1 2 3 NJ 80 NJ 60 NJ
-preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.mem32,(SLAVE)mem32_to_avalon_0.mem32_slave) 1 0 3 NJ 160 NJ 200 NJ
-preplace netloc FAN_OUT<net_container>nios</net_container>(SLAVE)mem32_to_avalon_0.clock,(SLAVE)pio_0.clk,(SLAVE)nios2_gen2_0.clk,(SLAVE)io_bridge_0.clock,(MASTER)altmemddr_0.sysclk,(SLAVE)clk_1.clk_in) 1 0 3 140 180 620 340 840
-preplace netloc POINT_TO_POINT<net_container>nios</net_container>(SLAVE)altmemddr_0.refclk,(MASTER)clk_0.clk) 1 1 1 N
-preplace netloc INTERCONNECT<net_container>nios</net_container>(SLAVE)pio_0.s1,(SLAVE)io_bridge_0.avalon_slave_0,(MASTER)mem32_to_avalon_0.avalon_master,(MASTER)nios2_gen2_0.data_master,(SLAVE)nios2_gen2_0.debug_mem_slave,(MASTER)nios2_gen2_0.instruction_master,(SLAVE)altmemddr_0.s1) 1 0 4 160 220 560 220 NJ 260 1120
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)nios.reset,(SLAVE)clk_0.clk_in_reset) 1 0 1 NJ
+preplace netloc FAN_OUT<net_container>nios</net_container>(MASTER)clk_0.clk_reset,(SLAVE)altmemddr_0.soft_reset_n,(SLAVE)altmemddr_0.global_reset_n) 1 1 1 520
+preplace netloc EXPORT<net_container>nios</net_container>(SLAVE)altmemddr_0.memory,(SLAVE)nios.memory) 1 0 2 NJ 80 NJ
+preplace netloc POINT_TO_POINT<net_container>nios</net_container>(MASTER)clk_0.clk,(SLAVE)altmemddr_0.refclk) 1 1 1 N
+preplace netloc EXPORT<net_container>nios</net_container>(MASTER)clk_1.clk_reset,(MASTER)nios.sys_reset) 1 2 3 NJ 780 NJ 780 NJ
 levelinfo -pg 1 0 90 1400
 levelinfo -hier nios 100 280 670 930 1230 1250

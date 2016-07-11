@@ -253,7 +253,7 @@ begin
                         wr_din(8) <= '0';
                     end if; 
     
-                    if up_count = 512 then
+                    if up_count = 800 then -- this level has to be insanely high because of the insanely slow memory interface
                         trigger <= '1';
                         trigger_sent <= '1';
                     end if;
