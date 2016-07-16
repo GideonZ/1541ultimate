@@ -226,8 +226,8 @@ module nios_altmemddr_0_phy (
 		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_DQS_WIDTH = 1,
 		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_OCT_EN = 0,
 		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_CLK_PAIR_COUNT = 1,
-		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_CLK_PS = 8000,
-		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_CLK_PS_STR = "8000 ps",
+		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_CLK_PS = 7692,
+		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_CLK_PS_STR = "7692 ps",
 		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_MR_0 = 579,
 		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_MR_1 = 1024,
 		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_MR_2 = 0,
@@ -236,7 +236,7 @@ module nios_altmemddr_0_phy (
 		nios_altmemddr_0_phy_alt_mem_phy_inst.SCAN_CLK_DIVIDE_BY = 2,
 		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_DQSN_EN = 0,
 		nios_altmemddr_0_phy_alt_mem_phy_inst.DLL_EXPORT_IMPORT = "EXPORT",
-		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_ADDR_CMD_PHASE = 90,
+		nios_altmemddr_0_phy_alt_mem_phy_inst.MEM_IF_ADDR_CMD_PHASE = 180,
 		nios_altmemddr_0_phy_alt_mem_phy_inst.RANK_HAS_ADDR_SWAP = 0;
 endmodule
 
@@ -257,14 +257,14 @@ endmodule
 // Retrieval info:      <PRIVATE name = "pipeline_commands" value="false"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "use_generated_memory_model" value="true"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "export_debug_port" value="false"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "local_if_clk_mhz_label" value="62.5"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "local_if_clk_mhz_label" value="65.0"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "pll_ref_clk_ps_label" value="(20000 ps)"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "pll_ref_clk_mhz" value="50.0"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "mem_if_clk_mhz" value="125.0"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "mem_if_clk_mhz" value="130.0"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "local_if_drate" value="Half"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "project_family" value="Cyclone IV E"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "enable_v72_rsu" value="false"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "mem_if_clk_ps_label" value="(8000 ps)"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "mem_if_clk_ps_label" value="(7692 ps)"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "mem_if_memtype" value="DDR2 SDRAM"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "new_variant" value="false"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "family" value="Cyclone IV E"  type="STRING"  enable="1" />
@@ -345,7 +345,7 @@ endmodule
 // Retrieval info:      <PRIVATE name = "mem_if_dqsn_en" value="false"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "mem_btype" value="Sequential"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "mp_DSS_percent" value="0.6"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "ac_phase" value="90"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "ac_phase" value="180"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "mp_QH_percent" value="0.5"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "mem_dll_en" value="Yes"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "mp_IS_percent" value="0.7"  type="STRING"  enable="1" />
@@ -372,7 +372,7 @@ endmodule
 // Retrieval info:      <PRIVATE name = "dll_external" value="false"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "mp_QHS_percent" value="0.5"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "mem_tcl" value="4.0"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "ac_clk_select" value="90"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "ac_clk_select" value="180"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "ctl_powerdn_en" value="false"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "ctl_lookahead_depth" value="4"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "ctl_autopch_en" value="false"  type="STRING"  enable="1" />
@@ -399,7 +399,7 @@ endmodule
 // Retrieval info:      <PRIVATE name = "ctl_latency" value="0"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "ref_clk_source" value="clk_0"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "clk_source_sharing_en" value="false"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "cfg_reorder_data" value="true"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "cfg_reorder_data" value="false"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "max_local_size" value="4"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "csr_en" value="false"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "mem_rtt_nom" value="ODT Disabled"  type="STRING"  enable="1" />
@@ -433,7 +433,7 @@ endmodule
 // Retrieval info:      <PRIVATE name = "board_skew_ps" value="20"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "dqs_dqsn_slew_rate" value="2.0"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "t_IS" value="0.5"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "board_intra_DQS_group_skew" value="0.02"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "board_intra_DQS_group_skew" value="0.1"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "t_DH_calculated" value="0.350"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "isi_addresscmd_hold" value="0.0"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "isi_addresscmd_setup" value="0.0"  type="STRING"  enable="1" />
@@ -442,7 +442,7 @@ endmodule
 // Retrieval info:      <PRIVATE name = "board_settings_valid" value="true"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "isi_DQS" value="0.0"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "t_IH" value="0.5"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "board_addresscmd_CK_skew" value="0.0"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "board_addresscmd_CK_skew" value="0.1"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "isi_DQ" value="0.0"  type="STRING"  enable="1" />
 // Retrieval info:     </NAMESPACE>
 // Retrieval info:     <NAMESPACE name = "simgen">
@@ -454,7 +454,7 @@ endmodule
 // Retrieval info:     <NAMESPACE name = "simgen2">
 // Retrieval info:      <PRIVATE name = "family" value="Cyclone IV E"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "command" value="--simgen_arbitrary_blackbox=+nios_altmemddr_0_phy_alt_mem_phy_seq_wrapper;+nios_altmemddr_0_phy_alt_mem_phy_reconfig;+nios_altmemddr_0_phy_alt_mem_phy_pll;+nios_altmemddr_0_phy_alt_mem_phy_delay --ini=simgen_tri_bus_opt=on"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "parameter" value="SIMGEN_INITIALIZATION_FILE=/tmp/alt6992_2381232279443298763.dir/0001_iptb_gen/nios_altmemddr_0_phy_simgen_init.txt"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "parameter" value="SIMGEN_INITIALIZATION_FILE=/tmp/alt6993_8556806898035513691.dir/0001_iptb_gen/nios_altmemddr_0_phy_simgen_init.txt"  type="STRING"  enable="1" />
 // Retrieval info:     </NAMESPACE>
 // Retrieval info:     <NAMESPACE name = "simgen_enable">
 // Retrieval info:      <PRIVATE name = "language" value="Verilog HDL"  type="STRING"  enable="1" />

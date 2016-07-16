@@ -104,7 +104,7 @@ module nios_altmemddr_0_phy_alt_mem_phy_seq_wrapper (
   localparam DQS_PHASE_SETTING             = 2;
   localparam SCAN_CLK_DIVIDE_BY            = 2;
   localparam PLL_STEPS_PER_CYCLE           = 80;
-  localparam MEM_IF_CLK_PS                 = 8000;
+  localparam MEM_IF_CLK_PS                 = 7692;
   localparam DQS_DELAY_CTL_WIDTH           = 6;
   localparam MEM_IF_MEMTYPE                = "DDR2";
   localparam RANK_HAS_ADDR_SWAP            = 0;
@@ -116,7 +116,7 @@ module nios_altmemddr_0_phy_alt_mem_phy_seq_wrapper (
   localparam IP_BUILDNUM                   = 0;
   localparam FAMILY                        = "Cyclone IV E";
   localparam FAMILYGROUP_ID                = 2;
-  localparam MEM_IF_ADDR_CMD_PHASE         = 90;
+  localparam MEM_IF_ADDR_CMD_PHASE         = 180;
   localparam CAPABILITIES                  = 2048;
   localparam WRITE_DESKEW_T10              = 0;
   localparam WRITE_DESKEW_HC_T10           = 0;
@@ -134,7 +134,7 @@ module nios_altmemddr_0_phy_alt_mem_phy_seq_wrapper (
   localparam FORCE_HC                      = 0;
   localparam MEM_IF_DQS_CAPTURE_EN         = 0;
   localparam REDUCE_SIM_TIME               = 0;
-  localparam TINIT_TCK                     = 12500;
+  localparam TINIT_TCK                     = 13001;
   localparam TINIT_RST                     = 0;
   localparam GENERATE_ADDITIONAL_DBG_RTL   = 0;
   localparam MEM_IF_CS_PER_RANK            = 1;

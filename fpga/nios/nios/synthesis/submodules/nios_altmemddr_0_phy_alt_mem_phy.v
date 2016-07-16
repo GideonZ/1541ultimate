@@ -2597,7 +2597,7 @@ endmodule
 `include "alt_mem_phy_defines.v"
 
 //DQS pin assignments
-(* altera_attribute = " -name DQS_FREQUENCY 125.0MHz -to dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[0].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[1].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[2].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[3].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[4].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[5].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[6].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[7].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dm[0].dm_obuf -from dqs[0].dqs_obuf" *)
+(* altera_attribute = " -name DQS_FREQUENCY 130.0MHz -to dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[0].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[1].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[2].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[3].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[4].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[5].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[6].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dqs_group[0].dq[7].dq_ibuf -from dqs[0].dqs_obuf; -name DQ_GROUP 9 -to dm[0].dm_obuf -from dqs[0].dqs_obuf" *)
 
 //
 module nios_altmemddr_0_phy_alt_mem_phy_dp_io (

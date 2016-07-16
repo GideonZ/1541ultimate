@@ -22,12 +22,12 @@
 # speed_grade : 8
 # local_if_drate : Half
 # pll_ref_clk_mhz : 50.0
-# mem_if_clk_mhz : 125.0
+# mem_if_clk_mhz : 130.0
 # mem_if_preset : JEDEC DDR2-533 512Mb x8
 # chip_or_dimm : Discrete Device
 # mem_if_dq_per_dqs : 8
-# ac_phase : 90
-# ac_clk_select : 90
+# ac_phase : 180
+# ac_clk_select : 180
 
 set corename "nios_altmemddr_0_phy"
 source "[list [file join [file dirname [info script]] nios_altmemddr_0_phy_ddr_timing.tcl]]"

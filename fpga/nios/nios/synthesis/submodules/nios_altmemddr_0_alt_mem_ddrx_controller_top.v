@@ -116,7 +116,7 @@ module nios_altmemddr_0_alt_mem_ddrx_controller_top(
    localparam MEM_TRRD                         = 2;
    localparam MEM_TFAW                         = 5;
    localparam MEM_TRFC                         = 14;
-   localparam MEM_TREFI                        = 875;
+   localparam MEM_TREFI                        = 911;
    localparam MEM_TRCD                         = 2;
    localparam MEM_TRP                          = 2;
    localparam MEM_TWR                          = 2;
@@ -161,7 +161,7 @@ module nios_altmemddr_0_alt_mem_ddrx_controller_top(
    localparam CFG_INTERFACE_WIDTH              = 8;
    localparam CFG_BURST_LENGTH                 = 'b01000;
    localparam CFG_DEVICE_WIDTH                 = 1;
-   localparam CFG_REORDER_DATA                 = 1;
+   localparam CFG_REORDER_DATA                 = 0;
    localparam CFG_DATA_REORDERING_TYPE         = "INTER_BANK";
    localparam CFG_STARVE_LIMIT                 = 10;
    localparam CFG_ADDR_ORDER                   = 'b00;

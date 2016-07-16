@@ -72,6 +72,27 @@ void ultimate_main(void *context);
 #define ENABLE_SPEAKER  IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, 0x100)
 #define DISABLE_SPEAKER IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0x100)
 
+#define SGTL5000_CHIP_ID            0x0000
+#define SGTL5000_CHIP_DIG_POWER     0x0002
+#define SGTL5000_CHIP_CLK_CTRL      0x0004
+#define SGTL5000_CHIP_I2S_CTRL      0x0006
+#define SGTL5000_CHIP_SSS_CTRL      0x000A
+#define SGTL5000_CHIP_ADCDAC_CTRL   0x000E
+#define SGTL5000_CHIP_DAC_VOL       0x0010
+#define SGTL5000_CHIP_PAD_STRENGTH  0x0014
+#define SGTL5000_CHIP_ANA_ADC_CTRL  0x0020
+#define SGTL5000_CHIP_ANA_HP_CTRL   0x0022
+#define SGTL5000_CHIP_ANA_CTRL      0x0024
+#define SGTL5000_CHIP_LINREG_CTRL   0x0026
+#define SGTL5000_CHIP_REF_CTRL      0x0028
+#define SGTL5000_CHIP_MIC_CTRL      0x002A
+#define SGTL5000_CHIP_LINE_OUT_CTRL 0x002C
+#define SGTL5000_CHIP_LINE_OUT_VOL  0x002E
+#define SGTL5000_CHIP_ANA_POWER     0x0030
+#define SGTL5000_CHIP_PLL_CTRL      0x0032
+#define SGTL5000_CHIP_CLK_TOP_CTRL  0x0034
+#define SGTL5000_CHIP_SHORT_CTRL    0x003C
+
 static void test_i2c_mdio(void)
 {
     //i2c_write_byte(0xA2, 0, 0x58);
@@ -95,18 +116,46 @@ static void test_i2c_mdio(void)
 //	printf("MDIO Read 1B: %04x\n", mdio_read(0x1B));
 //	printf("MDIO Read 1F: %04x\n", mdio_read(0x1F));
 
-    printf("Audio Codec read: %02x\n", i2c_read_byte(0x30, 0xFF));
-    uint8_t codec_data[24];
-    i2c_read_block(0x30, 0, codec_data, 24);
-    dump_hex_relative(codec_data, 24);
+    printf("Audio Codec ChipID: %04x\n", i2c_read_word(0x14, 0x0000));
 
-    SET_FREQ(0x654);
+    i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x4260);
+    i2c_write_word(0x14, SGTL5000_CHIP_CLK_TOP_CTRL, 0x0800);
+    i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x4A60);
+    i2c_write_word(0x14, SGTL5000_CHIP_REF_CTRL, 0x004E);
+    i2c_write_word(0x14, SGTL5000_CHIP_LINE_OUT_CTRL, 0x0304); // VAGCNTL = 0.9 => 0.8 + 4 * 25 mV
+    i2c_write_word(0x14, SGTL5000_CHIP_REF_CTRL, 0x004F);
+    i2c_write_word(0x14, SGTL5000_CHIP_SHORT_CTRL, 0x1106);
+    i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x6AFF); // to be reviewed; we don't need to power on HP
+    i2c_write_word(0x14, SGTL5000_CHIP_DIG_POWER, 0x0073); // I2S in/out DAP, DAC, ADC power
+    i2c_write_word(0x14, SGTL5000_CHIP_LINE_OUT_VOL, 0x0F0F); // see table on page 41
+
+    uint16_t clock_control = i2c_read_word(0x14, SGTL5000_CHIP_CLK_CTRL);
+    clock_control = (clock_control & ~0xC) | 0x8; // FS = 48 kHz, MCLK = 256*Fs
+    clock_control = (clock_control & ~0x3) | 0x0;
+    i2c_write_word(0x14, SGTL5000_CHIP_CLK_CTRL, clock_control);
+
+    i2c_write_word(0x14, SGTL5000_CHIP_SSS_CTRL, 0x0150); // I2S => DAP+DAC. ADC => I2S
+
+    i2c_write_word(0x14, SGTL5000_CHIP_DAC_VOL, 0x3C3C);
+
+    // write CHIP_ADCDAC_CTRL to unmute DAC left and right
+    i2c_write_word(0x14, SGTL5000_CHIP_ANA_CTRL, 0x0010);
+    i2c_write_word(0x14, SGTL5000_CHIP_ADCDAC_CTRL, 0x0200); // unmute
+
+    SET_FREQ(0x131);
     ENABLE_SPEAKER;
+
+    for(int i=0;i<64;i+=2) {
+        uint16_t temp = i2c_read_word(0x14, (uint16_t)i);
+        printf("%04x: %04x\n", i, temp);
+    }
+
 
     USb2512Init();
 }
 
 
+/*
 
 #define CODEC_STATUS			0x00
 #define CODEC_JACK_SENSE		0x01
@@ -171,6 +220,7 @@ static void Max9867Init(void) {
 	// Take device out of shutdown
 	i2c_write_byte(0x30, CODEC_SHUTDOWN, 0xEF); // Enable everything
 }
+*/
 
 int main(int argc, char *argv[])
 {
@@ -185,8 +235,10 @@ int main(int argc, char *argv[])
 
     ioWrite8(UART_DATA, 0x34);
 
-    Max9867Init();
     test_i2c_mdio();
+
+    while(1)
+    	;
 
     if ( -EINVAL == alt_irq_register( 1, 0x0, ituIrqHandler ) ) {
 		puts("Failed to install ITU IRQ handler.");

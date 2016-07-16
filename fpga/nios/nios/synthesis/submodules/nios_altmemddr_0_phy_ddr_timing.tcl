@@ -1,10 +1,10 @@
 package require ::quartus::ddr_timing_model
 
 # The clock period of your memory interface. Don't modify this
-set ::t(period) 8.000
+set ::t(period) 7.692
 
 # The worst case skew between any pair of traces which are nominally matched
-set ::t(board_skew) 0.020
+set ::t(board_skew) 0.100
 set ::t(min_additional_dqs_variation) 0.000
 set ::t(max_additional_dqs_variation) 0.000
 
@@ -33,7 +33,7 @@ set ::t(QHS) 0.400
 
 # DQS to CK timing on reads
 set ::t(DQSCK) 0.450
-set ::t(HP) 3.600
+set ::t(HP) 3.461
 
 # The maximum allowed length of the mimic path depends on the device family
 set ::t(mimic_shift) 2.500
@@ -71,9 +71,9 @@ set ::SSN(rel_pullin_i)  [expr [get_micro_node_delay -micro SSI -parameters [lis
 set ::board(minCK_DQS_skew) -0.010
 set ::board(maxCK_DQS_skew) 0.010
 set ::board(tpd_inter_DIMM) 0.050
-set ::board(intra_DQS_group_skew) 0.020
+set ::board(intra_DQS_group_skew) 0.100
 set ::board(inter_DQS_group_skew) 0.020
-set ::board(addresscmd_CK_skew) 0.000
+set ::board(addresscmd_CK_skew) 0.100
 set ::t(additional_addresscmd_tpd) $::board(addresscmd_CK_skew)
 
 # ISI effects

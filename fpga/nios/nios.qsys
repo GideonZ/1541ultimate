@@ -156,15 +156,15 @@
  <interface name="sys_reset" internal="clk_1.clk_reset" type="reset" dir="start" />
  <module name="altmemddr_0" kind="altmemddr2" version="15.1" enabled="1">
   <parameter name="WIDTH_RATIO" value="4" />
-  <parameter name="ac_clk_select" value="90" />
-  <parameter name="ac_phase" value="90" />
+  <parameter name="ac_clk_select" value="180" />
+  <parameter name="ac_phase" value="180" />
   <parameter name="addr_cmd_slew_rate" value="1.0" />
   <parameter name="auto_powerdn_cycles" value="0" />
   <parameter name="auto_powerdn_en" value="false" />
   <parameter name="avalon_burst_length" value="1" />
-  <parameter name="board_addresscmd_CK_skew" value="0.0" />
+  <parameter name="board_addresscmd_CK_skew" value="0.1" />
   <parameter name="board_inter_DQS_group_skew" value="0.02" />
-  <parameter name="board_intra_DQS_group_skew" value="0.02" />
+  <parameter name="board_intra_DQS_group_skew" value="0.1" />
   <parameter name="board_maxCK_DQS_skew" value="0.01" />
   <parameter name="board_minCK_DQS_skew" value="-0.01" />
   <parameter name="board_settings_valid" value="true" />
@@ -172,7 +172,7 @@
   <parameter name="board_tpd_inter_DIMM" value="0.05" />
   <parameter name="burst_merge_en" value="false" />
   <parameter name="cfg_data_reordering_type" value="INTER_BANK" />
-  <parameter name="cfg_reorder_data" value="true" />
+  <parameter name="cfg_reorder_data" value="false" />
   <parameter name="cfg_starve_limit" value="10" />
   <parameter name="chip_or_dimm" value="Discrete Device" />
   <parameter name="ck_ckn_slew_rate" value="2.0" />
@@ -208,7 +208,7 @@
   <parameter name="isi_DQS" value="0.0" />
   <parameter name="isi_addresscmd_hold" value="0.0" />
   <parameter name="isi_addresscmd_setup" value="0.0" />
-  <parameter name="local_if_clk_mhz_label" value="62.5" />
+  <parameter name="local_if_clk_mhz_label" value="65.0" />
   <parameter name="local_if_drate" value="Half" />
   <parameter name="local_if_dwidth_label" value="32" />
   <parameter name="local_if_type_avalon" value="true" />
@@ -225,9 +225,9 @@
   <parameter name="mem_dyn_deskew_en" value="false" />
   <parameter name="mem_fmax" value="266.667" />
   <parameter name="mem_if_bankaddr_width" value="2" />
-  <parameter name="mem_if_clk_mhz" value="125.0" />
+  <parameter name="mem_if_clk_mhz" value="130.0" />
   <parameter name="mem_if_clk_pair_count" value="1" />
-  <parameter name="mem_if_clk_ps_label" value="(8000 ps)" />
+  <parameter name="mem_if_clk_ps_label" value="(7692 ps)" />
   <parameter name="mem_if_coladdr_width" value="10" />
   <parameter name="mem_if_cs_per_dimm" value="1" />
   <parameter name="mem_if_cs_per_rank" value="1" />
@@ -356,7 +356,7 @@
  <module name="clk_1" kind="clock_source" version="15.1" enabled="1">
   <parameter name="clockFrequency" value="50000000" />
   <parameter name="clockFrequencyKnown" value="false" />
-  <parameter name="inputClockFrequency" value="62500000" />
+  <parameter name="inputClockFrequency" value="65000000" />
   <parameter name="resetSynchronousEdges" value="DEASSERT" />
  </module>
  <module name="io_bridge_0" kind="io_bridge" version="1.0" enabled="1" />
@@ -378,7 +378,7 @@
   <parameter name="breakOffset" value="32" />
   <parameter name="breakSlave" value="None" />
   <parameter name="cdx_enabled" value="false" />
-  <parameter name="clockFrequency" value="62500000" />
+  <parameter name="clockFrequency" value="65000000" />
   <parameter name="cpuArchRev" value="1" />
   <parameter name="cpuID" value="0" />
   <parameter name="cpuReset" value="false" />
@@ -549,7 +549,7 @@
   <parameter name="bitClearingEdgeCapReg" value="false" />
   <parameter name="bitModifyingOutReg" value="true" />
   <parameter name="captureEdge" value="false" />
-  <parameter name="clockRate" value="62500000" />
+  <parameter name="clockRate" value="65000000" />
   <parameter name="direction" value="InOut" />
   <parameter name="edgeType" value="RISING" />
   <parameter name="generateIRQ" value="true" />

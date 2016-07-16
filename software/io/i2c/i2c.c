@@ -61,8 +61,9 @@ static void i2c_stop()
 	_wait();
 }
 
-static int i2c_send_byte(uint8_t byte)
+static int i2c_send_byte(const uint8_t byte)
 {
+	uint8_t data = byte;
 	if (GET_SDA) {
 		SET_SDA_LOW;
 		_wait();
@@ -72,12 +73,12 @@ static int i2c_send_byte(uint8_t byte)
 		_wait();
 	}
 	for(int i=0;i<8;i++) {
-		if (byte & 0x80) {
+		if (data & 0x80) {
 			SET_SDA_HIGH;
 		} else {
 			SET_SDA_LOW;
 		}
-		byte <<= 1;
+		data <<= 1;
 		SET_SCL_HIGH;
 		_wait();
 		SET_SCL_LOW;
@@ -136,7 +137,7 @@ void i2c_scan_bus(void)
 	printf("\n");
 }
 
-uint8_t i2c_read_byte(uint8_t devaddr, uint8_t regaddr)
+uint8_t i2c_read_byte(const uint8_t devaddr, const uint8_t regaddr)
 {
 	i2c_start();
 	int res;
@@ -158,7 +159,7 @@ uint8_t i2c_read_byte(uint8_t devaddr, uint8_t regaddr)
 	return result;
 }
 
-int i2c_write_byte(uint8_t devaddr, uint8_t regaddr, uint8_t data)
+int i2c_write_byte(const uint8_t devaddr, const uint8_t regaddr, const uint8_t data)
 {
 	i2c_start();
 	int res;
@@ -182,7 +183,57 @@ int i2c_write_byte(uint8_t devaddr, uint8_t regaddr, uint8_t data)
 	return res;
 }
 
-int i2c_write_block(uint8_t devaddr, uint8_t regaddr, uint8_t *data, int length)
+uint16_t i2c_read_word(const uint8_t devaddr, const uint16_t regaddr)
+{
+	i2c_start();
+	int res;
+	res = i2c_send_byte(devaddr);
+	if(res) {
+		printf("Error sending write address (%d)\n", res);
+	}
+	res = i2c_send_byte(regaddr >> 8);
+	res += i2c_send_byte(regaddr & 0xFF);
+	if(res) {
+		printf("Error sending register address (%d)\n", res);
+	}
+	i2c_restart();
+	res = i2c_send_byte(devaddr | 1);
+	if(res) {
+		printf("Error sending read address (%d)\n", res);
+	}
+	uint16_t result = ((uint16_t)i2c_receive_byte(1)) << 8;
+	result |= i2c_receive_byte(0);
+	i2c_stop();
+	return result;
+}
+
+int i2c_write_word(const uint8_t devaddr, const uint16_t regaddr, const uint16_t data)
+{
+	i2c_start();
+	int res;
+	res = i2c_send_byte(devaddr);
+	if(res) {
+		printf("Error sending write address (%d)\n", res);
+		i2c_stop();
+		return -1;
+	}
+	res = i2c_send_byte(regaddr >> 8);
+	res += i2c_send_byte(regaddr & 0xFF);
+	if(res) {
+		printf("Error sending register address (%d)\n", res);
+		i2c_stop();
+		return -1;
+	}
+	res = i2c_send_byte(data >> 8);
+	res += i2c_send_byte(data & 0xFF);
+	if(res) {
+		printf("Error sending register data (%d)\n", res);
+	}
+	i2c_stop();
+	return res;
+}
+
+int i2c_write_block(const uint8_t devaddr, const uint8_t regaddr, const uint8_t *data, int length)
 {
 	i2c_start();
 	int res;
@@ -216,7 +267,7 @@ int i2c_write_block(uint8_t devaddr, uint8_t regaddr, uint8_t *data, int length)
 	return 0;
 }
 
-int i2c_read_block(uint8_t devaddr, uint8_t regaddr, uint8_t *data, int length)
+int i2c_read_block(const uint8_t devaddr, const uint8_t regaddr, uint8_t *data, const int length)
 {
 	if(!length)
 		return 0;

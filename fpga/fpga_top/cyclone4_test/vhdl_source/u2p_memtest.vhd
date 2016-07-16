@@ -196,10 +196,8 @@ architecture rtl of u2p_memtest is
     );
     end component;
 
-    signal init_done    : std_logic;
     signal por_n        : std_logic;
     signal por_count    : unsigned(23 downto 0) := (others => '0');
-    signal led_n        : std_logic_vector(0 to 3);
     
     signal audio_clock  : std_logic;
     signal audio_reset  : std_logic;
@@ -213,12 +211,38 @@ architecture rtl of u2p_memtest is
     signal ulpi_reset_i     : std_logic;
     signal reset_request_n  : std_logic := '1';
 
+    signal ctl_dqs_burst       : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '0');
+    signal ctl_wdata_valid     : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '0');
+    signal ctl_wdata           : STD_LOGIC_VECTOR (31 DOWNTO 0) := (others => '0');
+    signal ctl_dm              : STD_LOGIC_VECTOR (3 DOWNTO 0)  := (others => '0');
+    signal ctl_addr            : STD_LOGIC_VECTOR (27 DOWNTO 0) := (others => '0');
+    signal ctl_ba              : STD_LOGIC_VECTOR (3 DOWNTO 0)  := (others => '0');
+    signal ctl_cas_n           : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '1');
+    signal ctl_cke             : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '1');
+    signal ctl_cs_n            : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '1');
+    signal ctl_odt             : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '0');
+    signal ctl_ras_n           : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '1');
+    signal ctl_we_n            : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '1');
+    signal ctl_rst_n           : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '1');
+    signal ctl_mem_clk_disable : STD_LOGIC_VECTOR (0 DOWNTO 0)  := (others => '0');
+    signal ctl_doing_rd        : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '0');
+    signal ctl_wlat            : STD_LOGIC_VECTOR (4 DOWNTO 0)  := (others => '0');
+    signal ctl_rdata           : STD_LOGIC_VECTOR (31 DOWNTO 0) := (others => '0');
+    signal ctl_rdata_valid     : STD_LOGIC_VECTOR (1 DOWNTO 0)  := (others => '0');
+    signal ctl_rlat            : STD_LOGIC_VECTOR (4 DOWNTO 0)  := (others => '0');
+    signal ctl_cal_success     : STD_LOGIC := '0';
+    signal ctl_cal_fail        : STD_LOGIC := '0';
+    signal ctl_cal_warning     : STD_LOGIC := '0';
+
+    signal count               : unsigned(23 downto 0) := (others => '0');
+
 begin
-    process(RMII_REFCLK, reset_request_n)
+    process(RMII_REFCLK, button_i)
     begin
-        if reset_request_n = '0' then
+        if button_i(0) = '1' then
             por_count <= (others => '0');
         elsif rising_edge(RMII_REFCLK) then
+--        if rising_edge(RMII_REFCLK) then
             if por_count = X"FFFFFF" then
                 por_n <= '1';
             else
@@ -261,13 +285,14 @@ begin
     port map (
         pll_ref_clk             => RMII_REFCLK,
         global_reset_n          => por_n,
-        soft_reset_n            => '1',
+        soft_reset_n            => por_n,
         reset_request_n         => reset_request_n,
         aux_half_rate_clk       => open,
         aux_full_rate_clk       => open,
 
         ctl_clk                 => sys_clock,
         ctl_reset_n             => sys_reset_n,
+
         ctl_dqs_burst           => ctl_dqs_burst,
         ctl_wdata_valid         => ctl_wdata_valid,
         ctl_wdata               => ctl_wdata,
@@ -283,16 +308,17 @@ begin
         ctl_rst_n               => ctl_rst_n,
         ctl_mem_clk_disable     => ctl_mem_clk_disable,
         ctl_doing_rd            => ctl_doing_rd,
-        ctl_cal_req             => ctl_cal_req,
-        ctl_cal_byte_lane_sel_n => ctl_cal_byte_lane_sel_n,
-        ctl_wlat                => ctl_wlat,
+
         ctl_rdata               => ctl_rdata,
         ctl_rdata_valid         => ctl_rdata_valid,
-        ctl_rlat                => ctl_rlat,
 
+        ctl_cal_req             => '0',
+        ctl_cal_byte_lane_sel_n => "0",
         ctl_cal_success         => ctl_cal_success,
         ctl_cal_fail            => ctl_cal_fail,
         ctl_cal_warning         => ctl_cal_warning,
+        ctl_wlat                => ctl_wlat,
+        ctl_rlat                => ctl_rlat,
 
         dbg_clk                 => sys_clock,
         dbg_reset_n             => sys_reset_n,
@@ -318,7 +344,7 @@ begin
         mem_clk_n(0)            => SDRAM_CLKn,
         mem_dq                  => SDRAM_DQ,
         mem_dqs(0)              => SDRAM_DQS,
-        mem_dqs_n               => mem_dqs_n
+        mem_dqs_n(0)            => open
     );
     
 
@@ -349,14 +375,21 @@ begin
     CAS_READ    <= '0'; 
     CAS_WRITE   <= '0'; 
 
-    LED_MOTORn <= init_done;
-    LED_DISKn  <= sys_reset;
-    LED_CARTn  <= button_i(0) xor button_i(1) xor button_i(2);
-    LED_SDACTn <= SLOT_BA xor SLOT_DOTCLK xor SLOT_PHI2 xor CAS_MOTOR xor SLOT_VCC;
+    LED_MOTORn <= not ctl_cal_success;
+    LED_DISKn  <= not ctl_cal_fail;
+    LED_CARTn  <= count(count'high); -- not ctl_cal_warning xor button_i(0) xor button_i(1) xor button_i(2);
+    LED_SDACTn <= sys_reset_n;
+
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            count <= count + 1;
+        end if;
+    end process;
 
     button_i <= not BUTTON;
 
-    SLOT_BUFFER_ENn <= '1'; -- we don't connect to a C64
+    SLOT_BUFFER_ENn <= SLOT_BA xor SLOT_DOTCLK xor SLOT_PHI2 xor CAS_MOTOR xor SLOT_VCC; -- we don't connect to a C64
     
     -- Debug UART
     UART_TXD    <= '1';
