@@ -1,0 +1,28 @@
+#Core: memphy - Instance: i_memphy
+#Path, Setup Margin, Hold Margin
+"Address Command (Slow 1200mV 85C Model)",3.953,1.745
+"DQS vs CK (Slow 1200mV 85C Model)",1.544,1.581
+"Half Rate Address/Command (Slow 1200mV 85C Model)",11.730,1.744
+"Mimic (Slow 1200mV 85C Model)",0.608,
+"Phy (Slow 1200mV 85C Model)",0.608,0.446
+"Phy Reset (Slow 1200mV 85C Model)",3.935,1.159
+"Read Capture (Slow 1200mV 85C Model)",0.580,0.595
+"Write (Slow 1200mV 85C Model)",0.597,0.852
+ 
+"Address Command (Slow 1200mV 0C Model)",4.126,1.682
+"DQS vs CK (Slow 1200mV 0C Model)",1.569,1.607
+"Half Rate Address/Command (Slow 1200mV 0C Model)",11.895,1.681
+"Mimic (Slow 1200mV 0C Model)",0.580,
+"Phy (Slow 1200mV 0C Model)",0.580,0.402
+"Phy Reset (Slow 1200mV 0C Model)",4.127,1.068
+"Read Capture (Slow 1200mV 0C Model)",0.537,0.552
+"Write (Slow 1200mV 0C Model)",0.617,0.880
+ 
+"Address Command (Fast 1200mV 0C Model)",4.551,1.551
+"DQS vs CK (Fast 1200mV 0C Model)",1.697,1.697
+"Half Rate Address/Command (Fast 1200mV 0C Model)",12.295,1.549
+"Mimic (Fast 1200mV 0C Model)",1.592,
+"Phy (Fast 1200mV 0C Model)",1.592,0.154
+"Phy Reset (Fast 1200mV 0C Model)",4.930,0.491
+"Read Capture (Fast 1200mV 0C Model)",0.817,0.822
+"Write (Fast 1200mV 0C Model)",0.723,0.928

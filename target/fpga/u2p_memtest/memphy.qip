@@ -1,0 +1,28 @@
+set_global_assignment -name IP_TOOL_NAME "ALTMEMPHY"
+set_global_assignment -name IP_TOOL_VERSION "15.1"
+set_global_assignment -name IP_GENERATED_DEVICE_FAMILY "{Cyclone IV E}"
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "memphy_alt_mem_phy_seq_wrapper.v"]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) "memphy_alt_mem_phy_seq.vhd"]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) "memphy.vhd"]
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "memphy_alt_mem_phy.v"]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) "memphy_alt_mem_phy_pll.vhd"]
+set_global_assignment -name SEARCH_PATH  [file join $::quartus(qip_path) "." ]
+set_global_assignment -name EDA_DESIGN_EXTRA_ALTERA_SIM_LIB cycloneiii -section_id eda_simulation
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy.vhd ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy.cmp ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy.bsf ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy.qip ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy.html ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy_alt_mem_phy_seq_wrapper.v ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy_alt_mem_phy_seq.vhd ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy_alt_mem_phy.v ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy_alt_mem_phy_pll.vhd ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy_pin_assignments.tcl ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy_ddr_pins.tcl ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy_report_timing.tcl ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy_report_timing_core.tcl ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy_ddr_timing.tcl ]
+set_global_assignment -name SDC_FILE [file join $::quartus(qip_path) memphy_ddr_timing.sdc ]
+set_global_assignment -name QIP_FILE [file join $::quartus(qip_path) memphy_alt_mem_phy_pll.qip ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) alt_mem_phy_defines.v ]
+set_global_assignment -name MISC_FILE [file join $::quartus(qip_path) memphy.ppf ]
