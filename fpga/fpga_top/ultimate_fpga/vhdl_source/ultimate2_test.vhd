@@ -110,7 +110,7 @@ begin
     end process;
 
     -- slot side
-    BUFFER_ENn  <= '0';
+    BUFFER_ENn  <= not BUTTON(1);
 
     SLOT_ADDR   <= std_logic_vector(counter(23 downto 8));
     SLOT_DATA   <= std_logic_vector(counter(7 downto 0));
@@ -154,15 +154,15 @@ begin
     PWM_OUT     <= "ZZ";
 
     -- IEC bus
-    IEC_ATN     <= 'Z';
-    IEC_DATA    <= 'Z';
-    IEC_CLOCK   <= 'Z';
-    IEC_SRQ_IN  <= 'Z';
+    IEC_ATN     <= '0' when counter(20) = '1' else '1';
+    IEC_DATA    <= '0' when counter(21) = '1' else '1';
+    IEC_CLOCK   <= '0' when counter(22) = '1' else '1';
+    IEC_SRQ_IN  <= '0' when counter(23) = '1' else '1';
     
-    DISK_ACTn   <= '0';
-    CART_LEDn   <= '1';
-    SDACT_LEDn  <= '0';
-    MOTOR_LEDn  <= '1';
+    MOTOR_LEDn  <= not counter(23) or not counter(22);
+    DISK_ACTn   <= not counter(23) or     counter(22);
+    CART_LEDn   <=     counter(23) or not counter(22);
+    SDACT_LEDn  <=     counter(23) or     counter(22);
     
     -- Debug UART
     UART_TXD    <= '1';

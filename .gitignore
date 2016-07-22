@@ -3,6 +3,7 @@
 /*.mcs
 /*.zip
 /audio
+fpga/altera/sim
 fpga/cpu_unit/mblite/designs
 fpga/cpu_unit/mblite/doc
 fpga/cpu_unit/mblite/sw

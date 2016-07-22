@@ -9,7 +9,7 @@ port (
     SLOT_PHI2        : in    std_logic;
     SLOT_DOTCLK      : in    std_logic;
     SLOT_RSTn        : inout std_logic;
---    SLOT_BUFFER_ENn  : out   std_logic;
+    SLOT_BUFFER_ENn  : out   std_logic;
     SLOT_ADDR        : inout std_logic_vector(15 downto 0);
     SLOT_DATA        : inout std_logic_vector(7 downto 0);
     SLOT_RWn         : inout std_logic;
@@ -180,9 +180,9 @@ begin
     IEC_SRQ_IN  <= 'Z';
     
     LED_DISKn   <= '0';
-    LED_CARTn   <= '1';
+    LED_CARTn   <= '0';
     LED_SDACTn  <= '0';
-    LED_MOTORn  <= '1';
+    LED_MOTORn  <= '0';
     
     -- Debug UART
     UART_TXD    <= '1';
@@ -197,4 +197,6 @@ begin
     ULPI_STP    <= '0';
     ULPI_DATA   <= (others => 'Z');
 
+    SLOT_BUFFER_ENn  <= '0';
+    
 end structural;
