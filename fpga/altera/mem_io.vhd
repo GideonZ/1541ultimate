@@ -63,6 +63,7 @@ architecture arch of mem_io is
     
     signal wdata_half       : std_logic_vector(2*g_data_width-1 downto 0);
     signal wdata_mux        : std_logic;
+    signal mux_reset        : std_logic;
     signal rdata_h          : std_logic_vector(g_data_width-1 downto 0);
     signal rdata_l          : std_logic_vector(g_data_width-1 downto 0);
 
@@ -400,14 +401,13 @@ begin
         outclocken             => '1'
     );
 
-    process(mem_write_clock, sys_reset_pipe(0))
+    process(mem_write_clock)
     begin
-        if sys_reset_pipe(0) = '1' then
-            wdata_mux <= '0';
-        elsif rising_edge(mem_write_clock) then
-            wdata_mux <= not wdata_mux;
+        if rising_edge(mem_write_clock) then
+            wdata_mux <= not wdata_mux and not mux_reset;
         end if;
         if falling_edge(mem_write_clock) then
+            mux_reset <= sys_reset_pipe(0);            
             wdata_r <= wdata;
             wdata_oe_r <= wdata_oe;
         end if;
@@ -416,7 +416,7 @@ begin
         end if;
     end process;
 
-    wdata_half <= wdata_r(2*g_data_width-1 downto 0) when wdata_mux='1' else
+    wdata_half <= wdata_r(2*g_data_width-1 downto 0) when wdata_mux='0' else
                   wdata_r(4*g_data_width-1 downto 2*g_data_width);
                   
 

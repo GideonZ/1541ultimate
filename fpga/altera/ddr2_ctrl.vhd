@@ -94,7 +94,7 @@ architecture Gideon of ddr2_ctrl is
         col_addr        : std_logic_vector(9 downto 0);
         bank_addr       : std_logic_vector(1 downto 0);
         refresh_cnt     : integer range 0 to SDRAM_Refr_period-1;
-        refr_delay      : integer range 0 to 3;
+        refr_delay      : integer range 0 to 7;
         delay           : integer range 0 to 7;
         do_refresh      : std_logic;
         refresh_inhibit : std_logic;
@@ -160,7 +160,7 @@ begin
         begin
             outp.sdram_cmd  <= c_cmd_refresh;
             nxt.do_refresh <= '0';
-            nxt.refr_delay <= 3; 
+            nxt.refr_delay <= 6; 
         end procedure;
 
         procedure accept_req is
