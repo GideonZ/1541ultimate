@@ -2,11 +2,11 @@
 <sch:Settings xmlns:sch="http://www.altera.com/embeddedsw/bsp/schema">
         <BspType>hal</BspType>
         <BspVersion>default</BspVersion>
-        <BspGeneratedTimeStamp>May 18, 2016 7:13:01 AM</BspGeneratedTimeStamp>
-        <BspGeneratedUnixTimeStamp>1463548381175</BspGeneratedUnixTimeStamp>
-        <BspGeneratedLocation>/home/gideon/proj/ultimate/software/niosbsp</BspGeneratedLocation>
-        <BspSettingsFile>/home/gideon/proj/ultimate/software/niosbsp/settings.bsp</BspSettingsFile>
-        <SopcDesignFile>../../fpga/nios/nios.sopcinfo</SopcDesignFile>
+        <BspGeneratedTimeStamp>Jul 12, 2016 8:44:11 AM</BspGeneratedTimeStamp>
+        <BspGeneratedUnixTimeStamp>1468305851985</BspGeneratedUnixTimeStamp>
+        <BspGeneratedLocation>.\</BspGeneratedLocation>
+        <BspSettingsFile>C:\proj\UltimateII\software\niosbsp\settings.bsp</BspSettingsFile>
+        <SopcDesignFile>..\..\fpga\nios\nios.sopcinfo</SopcDesignFile>
         <JdiFile>default</JdiFile>
         <Cpu>nios2_gen2_0</Cpu>
         <SchemaVersion>1.9</SchemaVersion>
@@ -110,7 +110,7 @@
                 <SettingName>hal.linker.enable_alt_load_copy_exceptions</SettingName>
                 <Identifier>none</Identifier>
                 <Type>Boolean</Type>
-                <Value>1</Value>
+                <Value>0</Value>
                 <DefaultValue>0</DefaultValue>
                 <DestinationFile>none</DestinationFile>
                 <Description>Causes the alt_load() facility to copy the .exceptions section. If true, this setting defines the macro ALT_LOAD_COPY_EXCEPTIONS in linker.h.</Description>

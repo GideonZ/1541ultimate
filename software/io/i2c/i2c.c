@@ -9,19 +9,18 @@
 #include <stdio.h>
 
 #include "system.h"
-#include "altera_avalon_pio_regs.h"
+//#include "altera_avalon_pio_regs.h"
+#include "u2p.h"
 #include "dump_hex.h"
 
-#define SET_SCL_LOW   IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0x1)
-#define SET_SCL_HIGH  IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, 0x1)
-#define SET_SDA_LOW   IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0x2)
-#define SET_SDA_HIGH  IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, 0x2)
-#define GET_SDA       (IORD_ALTERA_AVALON_PIO_DATA(PIO_0_BASE) & 0x2)
-#define GET_SCL       (IORD_ALTERA_AVALON_PIO_DATA(PIO_0_BASE) & 0x1)
-#define SET_MARKER    IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, 0x4)
-#define CLR_MARKER    IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0x4)
-#define HUB_RESET_0   IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0x80)
-#define HUB_RESET_1   IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, 0x80)
+#define SET_SCL_LOW   U2PIO_SET_SCL = 0
+#define SET_SCL_HIGH  U2PIO_SET_SCL = 1
+#define SET_SDA_LOW   U2PIO_SET_SDA = 0
+#define SET_SDA_HIGH  U2PIO_SET_SDA = 1
+#define GET_SCL       U2PIO_GET_SCL
+#define GET_SDA       U2PIO_GET_SDA
+#define HUB_RESET_0   U2PIO_HUB_RESET = 0
+#define HUB_RESET_1   U2PIO_HUB_RESET = 1
 
 static void _wait() {
 	for(int i=0;i<2;i++)

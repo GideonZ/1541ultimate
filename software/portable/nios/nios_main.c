@@ -65,12 +65,8 @@ int alt_irq_register(int, int, void(*)(void*));
 void ultimate_main(void *context);
 
 #include "system.h"
-#include "altera_avalon_pio_regs.h"
+#include "u2p.h"
 #include "dump_hex.h"
-
-#define SET_FREQ(x)     IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0xFFFF0000); IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, x << 16)
-#define ENABLE_SPEAKER  IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, 0x100)
-#define DISABLE_SPEAKER IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0x100)
 
 #define SGTL5000_CHIP_ID            0x0000
 #define SGTL5000_CHIP_DIG_POWER     0x0002
@@ -116,8 +112,6 @@ static void test_i2c_mdio(void)
 //	printf("MDIO Read 1B: %04x\n", mdio_read(0x1B));
 //	printf("MDIO Read 1F: %04x\n", mdio_read(0x1F));
 
-    printf("Audio Codec ChipID: %04x\n", i2c_read_word(0x14, 0x0000));
-
     i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x4260);
     i2c_write_word(0x14, SGTL5000_CHIP_CLK_TOP_CTRL, 0x0800);
     i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x4A60);
@@ -142,85 +136,13 @@ static void test_i2c_mdio(void)
     i2c_write_word(0x14, SGTL5000_CHIP_ANA_CTRL, 0x0010);
     i2c_write_word(0x14, SGTL5000_CHIP_ADCDAC_CTRL, 0x0200); // unmute
 
-    SET_FREQ(0x131);
-    ENABLE_SPEAKER;
-
     for(int i=0;i<64;i+=2) {
         uint16_t temp = i2c_read_word(0x14, (uint16_t)i);
         printf("%04x: %04x\n", i, temp);
     }
 
-
     USb2512Init();
 }
-
-
-/*
-
-#define CODEC_STATUS			0x00
-#define CODEC_JACK_SENSE		0x01
-#define CODEC_AUX_HIGH			0x02
-#define CODEC_AUX_LOW			0x03
-#define CODEC_IRQ_ENABLE		0x04
-#define CODEC_SYSTEM_CLOCK		0x05
-#define CODEC_AUDIO_CLOCK_HI 	0x06
-#define CODEC_AUDIO_CLOCK_LO 	0x07
-#define CODEC_INTERFACE_MODE1	0x08
-#define CODEC_INTERFACE_MODE2	0x09
-#define CODEC_FILTERS			0x0A
-#define CODEC_SIDE_TONE			0x0B
-#define CODEC_DAC_LEVEL			0x0C
-#define CODEC_ADC_LEVEL			0x0D
-#define CODEC_LEFT_INPUT_LEVEL  0x0E
-#define CODEC_RIGHT_INPUT_LEVEL 0x0F
-#define CODEC_LEFT_VOLUME_CTRL  0x10
-#define CODEC_RIGHT_VOLUME_CTRL 0x11
-#define CODEC_LEFT_MIC_GAIN		0x12
-#define CODEC_RIGHT_MIC_GAIN	0x13
-#define CODEC_CFG_ADC_INPUT	    0x14
-#define CODEC_CFG_ADC_MIC		0x15
-#define CODEC_CFG_MODE			0x16
-#define CODEC_SHUTDOWN			0x17
-#define CODEC_REVISION			0xFF
-
-static void Max9867Init(void) {
-	// Shutdown device
-	i2c_write_byte(0x30, CODEC_SHUTDOWN, 0x00); // Disable everything
-
-	// Clock Control: Use MCLK and BCLK from FPGA for now (slave mode)
-	// Clock from FPGA is close to 12.288 MHz, we run at "close to" 48 kHz.
-	// PSMODE = 01, FREQ = 0000 => 0001_0000 => 0x10 (Prescaler: 10-20 MHz, FREQ: No effect)
-    i2c_write_byte(0x30, CODEC_SYSTEM_CLOCK, 0x10);
-    i2c_write_byte(0x30, CODEC_AUDIO_CLOCK_HI, 0x60); // PLL on L/R clock disabled
-    i2c_write_byte(0x30, CODEC_AUDIO_CLOCK_LO, 0x00); // $6000
-
-    // Interface mode
-    i2c_write_byte(0x30, CODEC_INTERFACE_MODE1, 0x18); // DLY (I2S mode) | HIZOFF
-	i2c_write_byte(0x30, CODEC_INTERFACE_MODE2, 0x00); // BSEL = 0, TDM = 0, DMONO = 0
-
-	// Levels
-	i2c_write_byte(0x30, CODEC_SIDE_TONE, 0x00); // disable side tone
-	i2c_write_byte(0x30, CODEC_DAC_LEVEL, 0x07); // Mute = 0, Gain = 00 (=0dB), A = 0dB
-	i2c_write_byte(0x30, CODEC_ADC_LEVEL, 0x33); // ADC = 0 dB for both channels
-
-	// Playback volume control
-	i2c_write_byte(0x30, CODEC_LEFT_VOLUME_CTRL, 0x02); // Single ended mode: 0 dB
-	i2c_write_byte(0x30, CODEC_RIGHT_VOLUME_CTRL, 0x02); // Single ended mode: 0 dB
-
-	// Do not route line in to headphone amplifier
-	i2c_write_byte(0x30, CODEC_LEFT_INPUT_LEVEL, 0x4C); // LIxM = '1', gain = 0 dB
-	i2c_write_byte(0x30, CODEC_RIGHT_INPUT_LEVEL, 0x4C); // LIxM = '1', gain = 0 dB
-
-	// Configuration
-	i2c_write_byte(0x30, CODEC_CFG_ADC_INPUT, 0xA0); // Select line in for ADC
-	i2c_write_byte(0x30, CODEC_CFG_MODE, 0x8A); // slow volume changes (80)
-												// Jack detect enable (08)
-												// Capacitorless stereo headphones (02)
-
-	// Take device out of shutdown
-	i2c_write_byte(0x30, CODEC_SHUTDOWN, 0xEF); // Enable everything
-}
-*/
 
 int main(int argc, char *argv[])
 {

@@ -8,17 +8,14 @@
 #include <stdint.h>
 
 #include "system.h"
-#include "altera_avalon_pio_regs.h"
+#include "u2p.h"
 
-#define SET_MDC_LOW   IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0x10)
-#define SET_MDC_HIGH  IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, 0x10)
-#define SET_MDIO_LOW  IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0x20)
-#define SET_MDIO_HIGH IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, 0x20)
-#define GET_MDIO      (IORD_ALTERA_AVALON_PIO_DATA(PIO_0_BASE) & 0x20)
-#define GET_IRQ       (IORD_ALTERA_AVALON_PIO_DATA(PIO_0_BASE) & 0x200) // bit 9
-
-#define ASSERT_ETH_RESET   IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_0_BASE, 0x40)  // inversion in VHDL
-#define DEASSERT_ETH_RESET IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_0_BASE, 0x40)
+#define SET_MDC_LOW   U2PIO_SET_MDC = 0
+#define SET_MDC_HIGH  U2PIO_SET_MDC = 1
+#define SET_MDIO_LOW  U2PIO_SET_MDIO = 0
+#define SET_MDIO_HIGH U2PIO_SET_MDIO = 1
+#define GET_MDIO      U2PIO_GET_MDIO
+#define GET_IRQ       1 //U2PIO_GET_ETHIRQ
 
 // Read:  32x'1', "01", "10", "000AA", "RRRRR", "TT", 16xData, Z
 // Write: 32x'1', "01", "01", "000AA", "RRRRR", "10", 16xData, Z (1)
@@ -41,9 +38,11 @@ static void mdio_bit(int val)
 
 void mdio_reset()
 {
+/*
     ASSERT_ETH_RESET;
     _wait;
     DEASSERT_ETH_RESET;
+*/
     SET_MDC_LOW;
 }
 
