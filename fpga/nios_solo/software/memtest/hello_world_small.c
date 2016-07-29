@@ -80,19 +80,7 @@
 
 #include "sys/alt_stdio.h"
 #include <stdio.h>
-#include <stdint.h>
-
-#define DDR2_BASE 0xA0000000
-
-#define DDR2_ADDR_LOW  (*(volatile uint8_t *)(DDR2_BASE + 0x00))
-#define DDR2_ADDR_HIGH (*(volatile uint8_t *)(DDR2_BASE + 0x01))
-#define DDR2_COMMAND   (*(volatile uint8_t *)(DDR2_BASE + 0x02))
-#define DDR2_READMODE  (*(volatile uint8_t *)(DDR2_BASE + 0x08))
-#define DDR2_PLLPHASE  (*(volatile uint8_t *)(DDR2_BASE + 0x09))
-#define DDR2_ENABLE    (*(volatile uint8_t *)(DDR2_BASE + 0x0C))
-
-#define DDR2_MEASURE   (*(volatile uint8_t *)(DDR2_BASE + 0x04))
-#define DDR2_PHASEDONE (*(volatile uint8_t *)(DDR2_BASE + 0x05))
+#include "u2p.h"
 
 #define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0000))
 #define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0004))
@@ -106,8 +94,6 @@
 
 #define TESTVALUE1  0x55AA6699
 #define TESTVALUE2  0x12345678
-#define TESTVALUE1R 0x669955AA
-#define TESTVALUE2R 0x56781234
 
 int main()
 { 
@@ -207,7 +193,7 @@ int main()
     		final_pos = best_pos;
     	}
     }
-    printf("Chosen: Mode = %d, Pos = %d. Window = %d ps\n\r", best_mode, final_pos, 100 * best_overall);
+    // printf("Chosen: Mode = %d, Pos = %d. Window = %d ps\n\r", best_mode, final_pos, 100 * best_overall);
     DDR2_READMODE = best_mode;
 	for (phase = 0; phase < final_pos; phase ++) {
 		DDR2_PLLPHASE = 0x35; // move read clock

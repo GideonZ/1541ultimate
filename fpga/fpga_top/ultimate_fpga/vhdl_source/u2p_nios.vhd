@@ -537,7 +537,6 @@ begin
             rx_data      => freq_left
         );
         
-        
         -- audio stuff for testing
         i_sineL: entity work.sine_osc
         port map (

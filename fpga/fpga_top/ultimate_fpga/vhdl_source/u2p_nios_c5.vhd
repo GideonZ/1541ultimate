@@ -112,10 +112,10 @@ port (
     I2C_SCL     : inout std_logic := 'Z';
 
     -- Flash Interface
-    FLASH_CSn   : out   std_logic;
-    FLASH_SCK   : out   std_logic;
-    FLASH_MOSI  : out   std_logic;
-    FLASH_MISO  : in    std_logic;
+--    FLASH_CSn   : out   std_logic;
+--    FLASH_SCK   : out   std_logic;
+--    FLASH_MOSI  : out   std_logic;
+--    FLASH_MISO  : in    std_logic;
     FLASH_SEL   : out   std_logic := '0';
     FLASH_SELCK : out   std_logic := '0';
 
@@ -142,6 +142,34 @@ port (
 end entity;
 
 architecture rtl of u2p_nios is
+    component cyclonev_asmiblock
+        generic (
+            enable_sim : string := "false"
+        );
+        port (
+            dclk : in std_logic;
+            sce : in std_logic;
+            oe : in std_logic;
+            data0out : in std_logic;
+            data1out : in std_logic;
+            data2out : in std_logic;
+            data3out : in std_logic;
+            data0oe : in std_logic;
+            data1oe : in std_logic;
+            data2oe : in std_logic;
+            data3oe : in std_logic;
+            data0in : out std_logic;
+            data1in : out std_logic;
+            data2in : out std_logic;
+            data3in : out std_logic
+        );
+    end component;
+ 
+    signal FLASH_CSn   : std_logic;
+    signal FLASH_SCK   : std_logic;
+    signal FLASH_MOSI  : std_logic;
+    signal FLASH_MISO  : std_logic;
+
     component nios is
         port (
             clk50_clk                : in    std_logic                     := 'X';             -- clk
@@ -642,5 +670,23 @@ begin
             end if; 
         end process;
     end block;    
+
+    cyclonev_inst : cyclonev_asmiblock 
+    port map(
+        dclk     => FLASH_SCK,
+        sce      => FLASH_CSn,
+        oe       => '0',
+        data0out => FLASH_MOSI,
+        data1out => '0',
+        data2out => '0',
+        data3out => '0',
+        data0oe  => '1',
+        data1oe  => '0',
+        data2oe  => '0',
+        data3oe  => '0',
+        data0in  => open,
+        data1in  => FLASH_MISO,
+        data2in  => open,
+        data3in  => open );
     
 end architecture;

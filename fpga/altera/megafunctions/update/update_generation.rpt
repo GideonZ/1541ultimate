@@ -1,0 +1,17 @@
+Info: Starting: Create HDL design files for synthesis
+Info: qsys-generate C:\proj\UltimateII\target\fpga\remote\update.qsys --synthesis=VHDL --output-directory=C:\proj\UltimateII\target\fpga\remote\update\synthesis --family="Cyclone IV E" --part=EP4CE22F17C8
+Progress: Loading remote/update.qsys
+Progress: Reading input file
+Progress: Adding remote_update_0 [altera_remote_update 15.1]
+Progress: Parameterizing module remote_update_0
+Progress: Building connections
+Progress: Parameterizing connections
+Progress: Validating
+Progress: Done reading input file
+Info: update: Generating update "update" for QUARTUS_SYNTH
+Info: remote_update_0: "update" instantiated altera_remote_update "remote_update_0"
+Info: remote_update_core: Generating top-level entity altera_remote_update_core.
+Info: remote_update_core: "remote_update_0" instantiated altera_remote_update_core "remote_update_core"
+Info: update: Done "update" with 3 modules, 3 files
+Info: qsys-generate succeeded.
+Info: Finished: Create HDL design files for synthesis
