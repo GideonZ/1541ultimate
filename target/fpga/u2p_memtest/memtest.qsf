@@ -39,7 +39,6 @@
 
 set_global_assignment -name FAMILY "Cyclone IV E"
 set_global_assignment -name DEVICE EP4CE22F17C8
-set_global_assignment -name TOP_LEVEL_ENTITY u2p_memtest
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 15.1.0
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "16:56:36  JULI 10, 2016"
 set_global_assignment -name LAST_QUARTUS_VERSION 15.1.0
@@ -52,9 +51,6 @@ set_global_assignment -name EDA_SIMULATION_TOOL "ModelSim-Altera (VHDL)"
 set_global_assignment -name EDA_OUTPUT_DATA_FORMAT VHDL -section_id eda_simulation
 set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
 set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
-set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
-set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
-set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 
 set_location_assignment PIN_D2 -to FLASH_CSn
 set_location_assignment PIN_H2 -to FLASH_MISO
@@ -208,6 +204,34 @@ set_location_assignment PIN_E11 -to SPEAKER_ENABLE
 set_location_assignment PIN_E16 -to SLOT_VCC
 
 
+set_location_assignment PIN_L13 -to I2C_SCL_18
+set_location_assignment PIN_J13 -to I2C_SDA_18
+set_location_assignment PIN_E8 -to SLOT_BUFFER_ENn
+
+set_global_assignment -name ENABLE_SIGNALTAP ON
+set_global_assignment -name USE_SIGNALTAP_FILE stp1.stp
+
+
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DQ[0]
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DQ[1]
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DQ[2]
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DQ[3]
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DQ[4]
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DQ[5]
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DQ[6]
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DQ[7]
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DM
+#set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to SDRAM_DQS
+
+
+set_global_assignment -name TOP_LEVEL_ENTITY u2p_nios_ddr2
+
+# set_instance_assignment -name PAD_TO_INPUT_REGISTER_DELAY 0 -to SDRAM_DQ[*]
+
+
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_BCLK
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_LRCLK
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_MCLK
@@ -235,41 +259,8 @@ set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_CRS_DV
 set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_REFCLK
 set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_RX_ER
 set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_TX_EN
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[10]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[11]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[12]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[13]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[1]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[2]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[3]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[4]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[5]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[6]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[7]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[8]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[9]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[1]
 set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[2]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CASn
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CKE
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CLK
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CLKn
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CSn
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQS
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[1]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[2]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[3]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[4]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[5]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[6]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[7]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DM
 set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_ODT
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_RASn
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_WEn
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[0]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[10]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[11]
@@ -346,267 +337,450 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to RMII_CRS_DV
 set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_BUFFER_ENn
 set_instance_assignment -name IO_STANDARD "1.8 V" -to I2C_SCL_18
 set_instance_assignment -name IO_STANDARD "1.8 V" -to I2C_SDA_18
-set_location_assignment PIN_L13 -to I2C_SCL_18
-set_location_assignment PIN_J13 -to I2C_SDA_18
-set_location_assignment PIN_E8 -to SLOT_BUFFER_ENn
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to I2C_SCL_18
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to I2C_SDA_18
-
-set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/pll.qip
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/cyclone4_test/vhdl_source/u2p_memtest.vhd
-set_global_assignment -name QIP_FILE memphy.qip
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[1]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[1]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[2]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[2]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[3]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[3]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[4]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[4]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[5]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[5]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[6]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[6]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[7]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[7]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[8]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[8]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[9]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[9]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[10]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[10]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[11]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[11]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[12]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[12]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_addr[13]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_addr[13]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_ba[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_ba[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_ba[1]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_ba[1]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_cas_n
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_cas_n
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_cke[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_cke[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_cs_n[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_cs_n[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dm[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dm[0]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[0]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[0]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[1]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[1]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[2]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[2]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[3]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[3]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[4]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[4]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[5]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[5]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[6]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[6]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[7]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[7]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[8]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[8]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[9]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[9]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[10]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[10]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[11]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[11]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[12]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[12]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[13]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_A[13]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[0]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_BA[0]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[1]
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_BA[1]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CASn
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_CASn
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CKE
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_CKE
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CSn
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_CSn
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DM
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DM
 set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_odt[0]
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_odt[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_ras_n
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_ras_n
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_we_n
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to mem_we_n
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_clk[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_clk[0]
-set_instance_assignment -name PAD_TO_CORE_DELAY 0 -to mem_clk[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_clk_n[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_clk_n[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dq[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dq[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dq[1]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dq[1]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dq[2]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dq[2]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dq[3]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dq[3]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dq[4]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dq[4]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dq[5]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dq[5]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dq[6]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dq[6]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dq[7]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dq[7]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dqs[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dqs[0]
-set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to mem_dqs_n[0]
-set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to mem_dqs_n[0]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dm[0]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dm[0]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dq[0]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dq[1]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dq[2]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dq[3]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dq[4]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dq[5]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dq[6]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dq[7]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dq[0]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dq[1]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dq[2]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dq[3]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dq[4]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dq[5]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dq[6]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dq[7]
-set_instance_assignment -name MEM_INTERFACE_DELAY_CHAIN_CONFIG FLEXIBLE_TIMING -to mem_dqs[0]
-set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to mem_dqs[0]
-set_instance_assignment -name CKN_CK_PAIR ON -from mem_clk_n[0] -to mem_clk[0]
-set_global_assignment -name ENABLE_SIGNALTAP ON
-set_global_assignment -name USE_SIGNALTAP_FILE stp3.stp
-set_global_assignment -name SIGNALTAP_FILE stp3.stp
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_RASn
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_RASn
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_WEn
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_WEn
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CLK
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_CLK
+set_instance_assignment -name PAD_TO_CORE_DELAY 0 -to SDRAM_CLK
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CLKn
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_CLKn
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[0]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DQ[0]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[1]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DQ[1]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[2]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DQ[2]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[3]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DQ[3]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[4]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DQ[4]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[5]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DQ[5]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[6]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DQ[6]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQ[7]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DQ[7]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DQS
+set_instance_assignment -name CURRENT_STRENGTH_NEW 12MA -to SDRAM_DQS
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DQ[0]
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DQ[1]
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DQ[2]
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DQ[3]
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DQ[4]
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DQ[5]
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DQ[6]
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DQ[7]
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DM
+set_instance_assignment -name OUTPUT_ENABLE_GROUP 1077756020 -to SDRAM_DQS
+set_instance_assignment -name CKN_CK_PAIR ON -from SDRAM_CLK -to SDRAM_CLKn
 set_global_assignment -name SLD_NODE_CREATOR_ID 110 -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_ENTITY_NAME sld_signaltap -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_clk -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|clk" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[0] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|ctl_cal_fail" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[1] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|ctl_cal_req" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[2] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|ctl_cal_success" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[3] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|ctl_cal_warning" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[4] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_idle" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[5] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_init_dram" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[6] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_phy_initialise" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[7] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_poa" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[8] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_prep_adv_rd_lat" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[9] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_prep_adv_wr_lat" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[10] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_prep_customer_mr_setup" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[11] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_prog_cal_mr" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[12] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_rdv" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[13] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_read_mtp" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[14] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_rrp_reset" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[15] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_rrp_seek" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[16] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_rrp_sweep" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[17] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_tr_due" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[18] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_was" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[19] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_write_btp" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[20] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_write_ihi" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[21] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_write_mtp" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[22] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command_req" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[23] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|ctl_cal_byte_lanes[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[24] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ba[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[25] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ba[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[26] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ba[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[27] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ba[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[28] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_cas_n[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[29] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_cas_n[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[30] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_cs_n[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[31] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_cs_n[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[32] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_odt[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[33] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_odt[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[34] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ras_n[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[35] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ras_n[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[36] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_we_n[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[37] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_we_n[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[38] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dm[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[39] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dm[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[40] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dm[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[41] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dm[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[42] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[43] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[44] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[45] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[46] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs_burst[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[47] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs_burst[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[48] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_wdata_valid[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[49] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_wdata_valid[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[0] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|ctl_cal_fail" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[1] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|ctl_cal_req" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[2] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|ctl_cal_success" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[3] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|ctl_cal_warning" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[4] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_idle" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[5] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_init_dram" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[6] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_phy_initialise" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[7] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_poa" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[8] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_prep_adv_rd_lat" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[9] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_prep_adv_wr_lat" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[10] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_prep_customer_mr_setup" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[11] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_prog_cal_mr" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[12] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_rdv" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[13] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_read_mtp" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[14] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_rrp_reset" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[15] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_rrp_seek" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[16] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_rrp_sweep" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[17] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_tr_due" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[18] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_was" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[19] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_write_btp" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[20] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_write_ihi" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[21] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command.cmd_write_mtp" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[22] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|\\ac_mux:ctrl_broadcast_r.command_req" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[23] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|memphy_alt_mem_phy_seq:seq_inst|ctl_cal_byte_lanes[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[24] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ba[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[25] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ba[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[26] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ba[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[27] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ba[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[28] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_cas_n[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[29] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_cas_n[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[30] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_cs_n[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[31] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_cs_n[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[32] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_odt[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[33] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_odt[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[34] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ras_n[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[35] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_ras_n[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[36] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_we_n[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[37] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_ac_we_n[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[38] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dm[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[39] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dm[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[40] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dm[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[41] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dm[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[42] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[43] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[44] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[45] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[46] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs_burst[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[47] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_dqs_burst[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[48] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_wdata_valid[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[49] -to "memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_seq_wrapper:seq_wrapper|seq_wdp_wdata_valid[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_clk -to "ddr2_ctrl:i_memphy|sys_clock_o" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[0] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[1] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[10]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[2] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[11]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[3] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[12]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[4] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[13]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[5] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[14]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[6] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[15]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[7] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[16]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[8] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[17]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[9] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[18]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[10] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[19]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[11] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[12] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[20]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[13] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[21]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[14] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[22]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[15] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[23]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[16] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[24]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[17] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[25]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[18] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[19] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[20] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[21] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[22] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[23] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[24] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[8]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[25] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[9]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[26] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_byteenable[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[27] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_byteenable[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[28] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_byteenable[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[29] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_byteenable[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[30] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_read" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[31] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[32] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[10]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[33] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[11]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[34] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[12]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[35] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[13]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[36] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[14]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[37] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[15]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[38] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[16]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[39] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[17]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[40] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[18]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[41] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[19]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[42] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[43] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[20]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[44] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[21]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[45] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[22]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[46] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[23]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[47] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[24]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[48] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[25]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[49] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[26]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[50] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[27]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[51] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[28]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[52] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[29]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[53] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[54] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[30]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[55] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[31]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[56] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[57] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[58] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[59] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[60] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[61] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[8]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[62] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[9]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[63] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdatavalid" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[64] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_waitrequest" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[65] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_write" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[66] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[67] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[10]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[68] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[11]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[69] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[12]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[70] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[13]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[71] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[14]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[72] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[15]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[73] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[16]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[74] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[17]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[75] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[18]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[76] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[19]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[77] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[78] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[20]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[79] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[21]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[80] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[22]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[81] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[23]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[82] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[24]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[83] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[25]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[84] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[26]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[85] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[27]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[86] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[28]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[87] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[29]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[88] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[89] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[30]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[90] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[31]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[91] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[92] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[93] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[94] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[95] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[96] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[8]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[97] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[9]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[98] -to "ddr2_ctrl:i_memphy|cur.do_refresh" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[99] -to "ddr2_ctrl:i_memphy|cur.rack" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[100] -to "ddr2_ctrl:i_memphy|cur.refresh_inhibit" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[101] -to "ddr2_ctrl:i_memphy|cur.state.delay_1" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[102] -to "ddr2_ctrl:i_memphy|cur.state.delay_2" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[103] -to "ddr2_ctrl:i_memphy|cur.state.idle" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[104] -to "ddr2_ctrl:i_memphy|cur.state.sd_read" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[105] -to "ddr2_ctrl:i_memphy|cur.state.sd_write" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[106] -to "ddr2_ctrl:i_memphy|cur.state.sd_write_2" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[107] -to "ddr2_ctrl:i_memphy|enable_sdram" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[108] -to "ddr2_ctrl:i_memphy|io_req.address[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[109] -to "ddr2_ctrl:i_memphy|io_req.address[10]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[110] -to "ddr2_ctrl:i_memphy|io_req.address[11]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[111] -to "ddr2_ctrl:i_memphy|io_req.address[12]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[112] -to "ddr2_ctrl:i_memphy|io_req.address[13]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[113] -to "ddr2_ctrl:i_memphy|io_req.address[14]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[114] -to "ddr2_ctrl:i_memphy|io_req.address[15]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[115] -to "ddr2_ctrl:i_memphy|io_req.address[16]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[116] -to "ddr2_ctrl:i_memphy|io_req.address[17]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[117] -to "ddr2_ctrl:i_memphy|io_req.address[18]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[118] -to "ddr2_ctrl:i_memphy|io_req.address[19]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[119] -to "ddr2_ctrl:i_memphy|io_req.address[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[120] -to "ddr2_ctrl:i_memphy|io_req.address[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[121] -to "ddr2_ctrl:i_memphy|io_req.address[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[122] -to "ddr2_ctrl:i_memphy|io_req.address[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[123] -to "ddr2_ctrl:i_memphy|io_req.address[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[124] -to "ddr2_ctrl:i_memphy|io_req.address[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[125] -to "ddr2_ctrl:i_memphy|io_req.address[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[126] -to "ddr2_ctrl:i_memphy|io_req.address[8]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[127] -to "ddr2_ctrl:i_memphy|io_req.address[9]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[128] -to "ddr2_ctrl:i_memphy|io_req.data[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[129] -to "ddr2_ctrl:i_memphy|io_req.data[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[130] -to "ddr2_ctrl:i_memphy|io_req.data[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[131] -to "ddr2_ctrl:i_memphy|io_req.data[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[132] -to "ddr2_ctrl:i_memphy|io_req.data[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[133] -to "ddr2_ctrl:i_memphy|io_req.data[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[134] -to "ddr2_ctrl:i_memphy|io_req.data[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[135] -to "ddr2_ctrl:i_memphy|io_req.data[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[136] -to "ddr2_ctrl:i_memphy|io_req.read" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[137] -to "ddr2_ctrl:i_memphy|io_req.write" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[138] -to "ddr2_ctrl:i_memphy|io_resp.ack" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[139] -to "ddr2_ctrl:i_memphy|mode[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[140] -to "ddr2_ctrl:i_memphy|mode[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[141] -to "ddr2_ctrl:i_memphy|phasestep[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[142] -to "ddr2_ctrl:i_memphy|phasestep[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[143] -to "ddr2_ctrl:i_memphy|phasestep[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[144] -to "ddr2_ctrl:i_memphy|phasestep[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[0] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[1] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[10]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[2] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[11]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[3] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[12]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[4] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[13]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[5] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[14]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[6] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[15]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[7] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[16]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[8] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[17]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[9] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[18]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[10] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[19]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[11] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[12] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[20]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[13] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[21]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[14] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[22]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[15] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[23]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[16] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[24]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[17] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[25]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[18] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[19] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[20] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[21] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[22] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[23] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[24] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[8]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[25] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_address[9]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[26] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_byteenable[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[27] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_byteenable[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[28] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_byteenable[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[29] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_byteenable[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[30] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_read" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[31] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[32] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[10]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[33] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[11]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[34] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[12]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[35] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[13]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[36] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[14]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[37] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[15]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[38] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[16]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[39] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[17]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[40] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[18]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[41] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[19]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[42] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[43] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[20]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[44] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[21]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[45] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[22]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[46] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[23]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[47] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[24]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[48] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[25]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[49] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[26]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[50] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[27]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[51] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[28]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[52] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[29]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[53] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[54] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[30]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[55] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[31]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[56] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[57] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[58] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[59] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[60] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[61] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[8]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[62] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdata[9]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[63] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_readdatavalid" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[64] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_waitrequest" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[65] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_write" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[66] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[67] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[10]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[68] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[11]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[69] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[12]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[70] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[13]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[71] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[14]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[72] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[15]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[73] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[16]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[74] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[17]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[75] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[18]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[76] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[19]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[77] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[78] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[20]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[79] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[21]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[80] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[22]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[81] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[23]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[82] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[24]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[83] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[25]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[84] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[26]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[85] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[27]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[86] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[28]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[87] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[29]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[88] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[89] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[30]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[90] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[31]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[91] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[92] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[93] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[94] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[95] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[96] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[8]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[97] -to "avalon_to_mem32_bridge:i_dram_bridge|avs_writedata[9]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[98] -to "ddr2_ctrl:i_memphy|cur.do_refresh" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[99] -to "ddr2_ctrl:i_memphy|cur.rack" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[100] -to "ddr2_ctrl:i_memphy|cur.refresh_inhibit" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[101] -to "ddr2_ctrl:i_memphy|cur.state.delay_1" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[102] -to "ddr2_ctrl:i_memphy|cur.state.delay_2" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[103] -to "ddr2_ctrl:i_memphy|cur.state.idle" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[104] -to "ddr2_ctrl:i_memphy|cur.state.sd_read" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[105] -to "ddr2_ctrl:i_memphy|cur.state.sd_write" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[106] -to "ddr2_ctrl:i_memphy|cur.state.sd_write_2" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[107] -to "ddr2_ctrl:i_memphy|enable_sdram" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[108] -to "ddr2_ctrl:i_memphy|io_req.address[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[109] -to "ddr2_ctrl:i_memphy|io_req.address[10]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[110] -to "ddr2_ctrl:i_memphy|io_req.address[11]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[111] -to "ddr2_ctrl:i_memphy|io_req.address[12]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[112] -to "ddr2_ctrl:i_memphy|io_req.address[13]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[113] -to "ddr2_ctrl:i_memphy|io_req.address[14]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[114] -to "ddr2_ctrl:i_memphy|io_req.address[15]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[115] -to "ddr2_ctrl:i_memphy|io_req.address[16]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[116] -to "ddr2_ctrl:i_memphy|io_req.address[17]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[117] -to "ddr2_ctrl:i_memphy|io_req.address[18]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[118] -to "ddr2_ctrl:i_memphy|io_req.address[19]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[119] -to "ddr2_ctrl:i_memphy|io_req.address[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[120] -to "ddr2_ctrl:i_memphy|io_req.address[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[121] -to "ddr2_ctrl:i_memphy|io_req.address[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[122] -to "ddr2_ctrl:i_memphy|io_req.address[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[123] -to "ddr2_ctrl:i_memphy|io_req.address[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[124] -to "ddr2_ctrl:i_memphy|io_req.address[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[125] -to "ddr2_ctrl:i_memphy|io_req.address[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[126] -to "ddr2_ctrl:i_memphy|io_req.address[8]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[127] -to "ddr2_ctrl:i_memphy|io_req.address[9]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[128] -to "ddr2_ctrl:i_memphy|io_req.data[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[129] -to "ddr2_ctrl:i_memphy|io_req.data[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[130] -to "ddr2_ctrl:i_memphy|io_req.data[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[131] -to "ddr2_ctrl:i_memphy|io_req.data[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[132] -to "ddr2_ctrl:i_memphy|io_req.data[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[133] -to "ddr2_ctrl:i_memphy|io_req.data[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[134] -to "ddr2_ctrl:i_memphy|io_req.data[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[135] -to "ddr2_ctrl:i_memphy|io_req.data[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[136] -to "ddr2_ctrl:i_memphy|io_req.read" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[137] -to "ddr2_ctrl:i_memphy|io_req.write" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[138] -to "ddr2_ctrl:i_memphy|io_resp.ack" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[139] -to "ddr2_ctrl:i_memphy|mode[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[140] -to "ddr2_ctrl:i_memphy|mode[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[141] -to "ddr2_ctrl:i_memphy|phasestep[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[142] -to "ddr2_ctrl:i_memphy|phasestep[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[143] -to "ddr2_ctrl:i_memphy|phasestep[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[144] -to "ddr2_ctrl:i_memphy|phasestep[3]" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_RAM_BLOCK_TYPE=AUTO" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_DATA_BITS=50" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_BITS=50" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STORAGE_QUALIFIER_BITS=50" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_DATA_BITS=145" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_BITS=145" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STORAGE_QUALIFIER_BITS=145" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_NODE_INFO=805334528" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_POWER_UP_TRIGGER=0" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INVERSION_MASK=0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INVERSION_MASK_LENGTH=175" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INVERSION_MASK=0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INVERSION_MASK_LENGTH=457" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STORAGE_QUALIFIER_INVERSION_MASK_LENGTH=0" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_SEGMENT_SIZE=2048" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_SEGMENT_SIZE=256" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_ATTRIBUTE_MEM_MODE=OFF" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STATE_FLOW_USE_GENERATED=0" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STATE_BITS=11" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_BUFFER_FULL_STOP=1" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_CURRENT_RESOURCE_WIDTH=1" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INCREMENTAL_ROUTING=1" -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[0] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[1] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[0] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[1] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[2] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[3] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[3] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[4] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[5] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[6] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[7] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[8] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[9] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[6] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[7] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[8] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[9] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[10] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[11] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[11] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[12] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[13] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[13] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[14] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[15] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[15] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[16] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[17] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[18] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[17] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[18] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[19] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[20] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[20] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[21] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[22] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[22] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[23] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[24] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[25] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[26] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[27] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[28] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[29] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[30] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[31] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[26] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[27] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[28] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[29] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[30] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[31] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_LEVEL=1" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_SAMPLE_DEPTH=2048" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_SAMPLE_DEPTH=256" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_IN_ENABLED=0" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_ADVANCED_TRIGGER_ENTITY=basic,1," -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_LEVEL_PIPELINE=1" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_ENABLE_ADVANCED_TRIGGER=0" -section_id auto_signaltap_0
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd
+set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.qip
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_dummy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/megafunctions/pll.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/cyclone4_test/vhdl_source/u2p_nios_ddr2.vhd
+set_global_assignment -name QIP_FILE ../../../fpga/nios_solo/nios_solo/synthesis/nios_solo.qip
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/avalon_to_mem32_bridge.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd
+set_global_assignment -name SIGNALTAP_FILE stp1.stp
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
-set_global_assignment -name SLD_FILE db/stp3_auto_stripped.stp
+set_global_assignment -name SLD_FILE db/stp1_auto_stripped.stp

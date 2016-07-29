@@ -1,10 +1,5 @@
-PLL_Name	memphy:i_memphy|memphy_alt_mem_phy:memphy_alt_mem_phy_inst|memphy_alt_mem_phy_clk_reset:clk|memphy_alt_mem_phy_pll:pll|altpll:altpll_component|altpll_igk3:auto_generated|pll1
+PLL_Name	mem_io:i_mut|altpll:i_pll|altpll_dak3:auto_generated|pll1
 PLLJITTER	31
-PLLSPEmax	84
-PLLSPEmin	-53
-
-PLL_Name	pll:i_pll|altpll:altpll_component|pll_altpll:auto_generated|pll1
-PLLJITTER	30
 PLLSPEmax	84
 PLLSPEmin	-53
 
