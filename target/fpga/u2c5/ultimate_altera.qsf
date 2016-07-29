@@ -535,5 +535,53 @@ set_global_assignment -name OPTIMIZE_MULTI_CORNER_TIMING ON
 set_global_assignment -name ECO_REGENERATE_REPORT ON
 set_global_assignment -name STRATIXV_CONFIGURATION_SCHEME "ACTIVE SERIAL X1"
 set_global_assignment -name STRATIXII_CONFIGURATION_DEVICE EPCS16
-set_global_assignment -name ACTIVE_SERIAL_CLOCK FREQ_100MHZ
+set_global_assignment -name ACTIVE_SERIAL_CLOCK FREQ_50MHZ
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to altera_reserved_tck
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to altera_reserved_tdi
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to altera_reserved_tdo
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to altera_reserved_tms
+set_location_assignment PIN_V10 -to SDRAM_A[0]
+set_location_assignment PIN_U8 -to SDRAM_CLK
+set_location_assignment PIN_V8 -to "SDRAM_CLK(n)"
+set_location_assignment PIN_N10 -to LED_CARTn
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
+set_location_assignment PIN_N8 -to LED_DISKn
+set_location_assignment PIN_M8 -to LED_MOTORn
+set_location_assignment PIN_M9 -to LED_SDACTn
+set_location_assignment PIN_M10 -to HUB_RESETn
+set_location_assignment PIN_B9 -to AUDIO_BCLK
+set_location_assignment PIN_A9 -to AUDIO_LRCLK
+set_location_assignment PIN_A10 -to AUDIO_MCLK
+set_location_assignment PIN_B10 -to AUDIO_SDI
+set_location_assignment PIN_D9 -to AUDIO_SDO
+set_location_assignment PIN_C11 -to BUTTON[2]
+set_location_assignment PIN_D11 -to BUTTON[1]
+set_location_assignment PIN_C12 -to BUTTON[0]
+set_location_assignment PIN_B8 -to I2C_SDA
+set_location_assignment PIN_E8 -to I2C_SCL
+set_location_assignment PIN_B12 -to MDIO_CLK
+set_location_assignment PIN_A12 -to MDIO_DATA
+set_location_assignment PIN_B15 -to RMII_CRS_DV
+set_location_assignment PIN_C13 -to RMII_REFCLK
+set_location_assignment PIN_B14 -to RMII_RX_DATA[1]
+set_location_assignment PIN_A14 -to RMII_RX_DATA[0]
+set_location_assignment PIN_A16 -to RMII_RX_ER
+set_location_assignment PIN_A15 -to RMII_TX_DATA[1]
+set_location_assignment PIN_B17 -to RMII_TX_DATA[0]
+set_location_assignment PIN_A17 -to RMII_TX_EN
+set_location_assignment PIN_B5 -to CAS_MOTOR
+set_location_assignment PIN_A6 -to CAS_READ
+set_location_assignment PIN_A5 -to CAS_SENSE
+set_location_assignment PIN_B4 -to CAS_WRITE
+set_location_assignment PIN_A4 -to IEC_ATN
+set_location_assignment PIN_B3 -to IEC_CLOCK
+set_location_assignment PIN_C3 -to IEC_DATA
+set_location_assignment PIN_C2 -to IEC_RESET
+set_location_assignment PIN_C1 -to IEC_SRQ_IN
+set_location_assignment PIN_B7 -to SPEAKER_DATA
+set_location_assignment PIN_A7 -to SPEAKER_ENABLE
+set_location_assignment PIN_F7 -to UART_RXD
+set_location_assignment PIN_F6 -to UART_TXD
+set_location_assignment PIN_U7 -to FLASH_SELCK
+set_location_assignment PIN_T7 -to FLASH_SEL
+set_location_assignment PIN_E1 -to SLOT_ADDR[15]

@@ -39,6 +39,12 @@ target/fpga/_xmsgs
 target/fpga/boot400
 target/fpga/boot700
 target/fpga/mb700
+target/fpga/u2c5/*.csv
+target/fpga/u2c5/*.txt
+target/fpga/u2c5/db
+target/fpga/u2c5/incremental_db
+target/fpga/u2c5/output_files
+target/fpga/u2c5/remote
 target/fpga/u2p_memtest/*.csv
 target/fpga/u2p_memtest/*.txt
 target/fpga/u2p_memtest/db
