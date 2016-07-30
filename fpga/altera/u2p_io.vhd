@@ -12,14 +12,18 @@ port (
     io_req      : in  t_io_req;
     io_resp     : out t_io_resp;
 
-    mdc         : out   std_logic;
-    mdio        : inout std_logic;
+    mdc         : out std_logic;
+    mdio_i      : in  std_logic;
+    mdio_o      : out std_logic;
     
-    i2c_scl     : inout std_logic;
-    i2c_sda     : inout std_logic;
+    i2c_scl_i   : in  std_logic;
+    i2c_sda_i   : in  std_logic;
+    i2c_scl_o   : out std_logic;
+    i2c_sda_o   : out std_logic;
     
-    hub_reset_n : out   std_logic;
-    speaker_en  : out   std_logic );
+    eth_irq_i   : in  std_logic;
+    hub_reset_n : out std_logic;
+    speaker_en  : out std_logic );
     
 end entity;
 
@@ -42,15 +46,19 @@ begin
                 io_resp.ack <= '1';
                 case local is
                 when X"0" | X"1" | X"8" =>
-                    io_resp.data(0) <= i2c_scl;
+                    io_resp.data(0) <= i2c_scl_i;
                 when X"2" | X"3" | X"9" =>
-                    io_resp.data(0) <= i2c_sda;
+                    io_resp.data(0) <= i2c_sda_i;
                 when X"4" | X"5" | X"A" =>
                     io_resp.data(0) <= mdc_out;
                 when X"6" | X"7" | X"B" =>
-                    io_resp.data(0) <= mdio;
+                    io_resp.data(0) <= mdio_i;
                 when X"C" =>
                     io_resp.data(0) <= speaker_en_i;
+                when X"D" =>
+                    io_resp.data(0) <= hub_reset_i;
+                when X"E" =>
+                    io_resp.data(0) <= eth_irq_i;
                 when others =>
                     null;
                 end case;
@@ -59,29 +67,29 @@ begin
                 io_resp.ack <= '1';
                 case local is
                 when X"0" =>
-                    i2c_scl_out <= '0';
+                    i2c_scl_o <= '0';
                 when X"1" =>
-                    i2c_scl_out <= '1';
+                    i2c_scl_o <= '1';
                 when X"2" =>
-                    i2c_sda_out <= '0';
+                    i2c_sda_o <= '0';
                 when X"3" =>
-                    i2c_sda_out <= '1';
+                    i2c_sda_o <= '1';
                 when X"4" =>
                     mdc_out <= '0';
                 when X"5" =>
                     mdc_out <= '1';
                 when X"6" =>
-                    mdio_out <= '0';
+                    mdio_o <= '0';
                 when X"7" =>
-                    mdio_out <= '1';
+                    mdio_o <= '1';
                 when X"8" =>
-                    i2c_scl_out <= io_req.data(0);
+                    i2c_scl_o <= io_req.data(0);
                 when X"9" =>
-                    i2c_sda_out <= io_req.data(0);
+                    i2c_sda_o <= io_req.data(0);
                 when X"A" =>
                     mdc_out <= io_req.data(0);
                 when X"B" =>
-                    mdio_out <= io_req.data(0);
+                    mdio_o <= io_req.data(0);
                 when X"C" =>
                     speaker_en_i <= io_req.data(0);
                 when X"D" =>
@@ -91,10 +99,10 @@ begin
                 end case;
             end if;
             if reset = '1' then
-                i2c_scl_out <= '1';
-                i2c_sda_out <= '1';
+                i2c_scl_o <= '1';
+                i2c_sda_o <= '1';
                 mdc_out <= '1';
-                mdio_out <= '1';
+                mdio_o <= '1';
                 speaker_en_i <= '0';
                 hub_reset_i <= '0';
             end if;
@@ -102,9 +110,6 @@ begin
     end process;
 
     mdc     <= mdc_out;
-    mdio    <= '0' when mdio_out = '0' else 'Z';
-    i2c_scl <= '0' when i2c_scl_out = '0' else 'Z';
-    i2c_sda <= '0' when i2c_sda_out = '0' else 'Z';
     speaker_en <= speaker_en_i;
     hub_reset_n <= not (hub_reset_i or reset);
 

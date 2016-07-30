@@ -19,8 +19,8 @@
 #define SET_SDA_HIGH  U2PIO_SET_SDA = 1
 #define GET_SCL       U2PIO_GET_SCL
 #define GET_SDA       U2PIO_GET_SDA
-#define HUB_RESET_0   U2PIO_HUB_RESET = 0
-#define HUB_RESET_1   U2PIO_HUB_RESET = 1
+#define HUB_RESET_0   U2PIO_HUB_RESET = 1
+#define HUB_RESET_1   U2PIO_HUB_RESET = 0
 
 static void _wait() {
 	for(int i=0;i<2;i++)

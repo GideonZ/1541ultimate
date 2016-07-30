@@ -72,6 +72,8 @@
 #include <errno.h>
 
 /* Altera includes. */
+#define  ALT_ENHANCED_INTERRUPT_API_PRESENT
+
 #include "sys/alt_irq.h"
 // #include "altera_avalon_timer_regs.h"
 #include "priv/alt_irq_table.h"

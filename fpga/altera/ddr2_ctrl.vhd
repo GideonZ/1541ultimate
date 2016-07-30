@@ -122,7 +122,7 @@ architecture Gideon of ddr2_ctrl is
     );    
 
     type t_tag_array is array(natural range <>) of std_logic_vector(req.tag'range);
-    signal dack_pipe    : t_tag_array(3 downto 0) := (others => (others => '0'));
+    signal dack_pipe    : t_tag_array(4 downto 0) := (others => (others => '0'));
     
     signal outp         : t_output;
     signal cur          : t_internal_state := c_internal_state_init;
@@ -138,21 +138,20 @@ architecture Gideon of ddr2_ctrl is
     signal addr_second        : std_logic_vector(21 downto 0);
     signal phy_wdata          : std_logic_vector(35 downto 0);
     signal phy_rdata          : std_logic_vector(35 downto 0);
+    signal phy_write          : std_logic;
     signal enable_sdram       : std_logic;
     signal rdata              : std_logic_vector(31 downto 0);
     signal do_read            : std_logic;
-    
     signal ext_addr         : std_logic_vector(15 downto 0);
     signal ext_cmd          : std_logic_vector(3 downto 0);
     signal ext_cmd_valid    : std_logic;
     signal ext_cmd_done     : std_logic;
-
 begin
     is_idle <= '1' when cur.state = idle else '0';
 
     resp.data     <= rdata;
-    resp.rack     <= cur.rack;
-    resp.rack_tag <= cur.rack_tag;
+    resp.rack     <= nxt.rack;  -- was cur
+    resp.rack_tag <= nxt.rack_tag; -- was cur
     resp.dack_tag <= dack_pipe(dack_pipe'high);
     
     process(req, inhibit, cur, ext_cmd, ext_cmd_valid, ext_addr, enable_sdram)
@@ -286,18 +285,20 @@ begin
             end if;
             dack_pipe(dack_pipe'high downto 1) <= dack_pipe(dack_pipe'high-1 downto 0);
             
+            addr_first  <= outp.sdram_cke & outp.sdram_odt & outp.sdram_cmd & outp.sdram_ba & outp.sdram_a;
+            addr_second <= outp.sdram_cke & outp.sdram_odt & "1111"         & outp.sdram_ba & outp.sdram_a;
+            phy_wdata   <= outp.wmask(3) & outp.wdata(31 downto 24) &
+                           outp.wmask(2) & outp.wdata(23 downto 16) &
+                           outp.wmask(1) & outp.wdata(15 downto 08) &
+                           outp.wmask(0) & outp.wdata(07 downto 00);
+            phy_write   <= outp.write;
+            
             if reset='1' then
                 cur <= c_internal_state_init;
             end if;
         end if;
     end process;
 
-    addr_first  <= outp.sdram_cke & outp.sdram_odt & outp.sdram_cmd & outp.sdram_ba & outp.sdram_a;
-    addr_second <= outp.sdram_cke & outp.sdram_odt & "1111"         & outp.sdram_ba & outp.sdram_a;
-    phy_wdata   <= outp.wmask(3) & outp.wdata(31 downto 24) &
-                   outp.wmask(2) & outp.wdata(23 downto 16) &
-                   outp.wmask(1) & outp.wdata(15 downto 08) &
-                   outp.wmask(0) & outp.wdata(07 downto 00);
     rdata       <= phy_rdata(34 downto 27) & phy_rdata(25 downto 18) & phy_rdata(16 downto 9) & phy_rdata(7 downto 0);
 
     i_phy: entity work.mem_io
@@ -319,7 +320,7 @@ begin
         addr_first         => addr_first,
         addr_second        => addr_second,
         wdata              => phy_wdata,
-        wdata_oe           => outp.write,
+        wdata_oe           => phy_write,
         rdata              => phy_rdata,
 
         mem_clk_p          => SDRAM_CLK,

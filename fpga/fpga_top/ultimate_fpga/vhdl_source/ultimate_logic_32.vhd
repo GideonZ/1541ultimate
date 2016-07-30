@@ -167,6 +167,9 @@ port (
     -- Simulation port
     ext_io_req  : in  t_io_req := c_io_req_init;
     ext_io_resp : out t_io_resp;
+    ext_mem_req : in  t_mem_req_32 := c_mem_req_32_init;
+    ext_mem_resp: out t_mem_resp_32;
+    
     cpu_irq     : out std_logic;
     
     -- Buttons
@@ -395,6 +398,13 @@ begin
         inv_addr(31 downto 26) <= (others => '0');
         inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_usb.address);
     end generate;
+
+    r_no_mb: if not g_microblaze generate
+        -- route the memory access of the processor to the outside world
+        mem_req_32_cpu <= ext_mem_req;
+        ext_mem_resp   <= mem_resp_32_cpu;
+    end generate;
+
     cpu_irq <= io_irq;
 		
     i_io_arb: entity work.io_bus_arbiter_pri

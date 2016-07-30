@@ -124,9 +124,9 @@ SRCS_CC	 =  u2p_init.cc \
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
-VPATH +=	$(PATH_SW)/niosbsp
-VPATH +=	$(PATH_SW)/niosbsp/HAL/inc
-VPATH +=	$(PATH_SW)/niosbsp/drivers/inc
+VPATH +=	$(PATH_SW)/nios_appl_bsp
+VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
+VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 
 #            sock_echo.c \
 #			sys_calls.cc \
@@ -151,7 +151,7 @@ OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS -Wno-write-strings -mno-hw-div
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = ./mb_app.lds
-LLIB     =  -L $(PATH_SW)/niosbsp \
+LLIB     =  -L $(PATH_SW)/nios_appl_bsp \
 			-L ../nios2_elf_lwip/result \
             -L $(NIOS_TOOLCHAIN)/nios2-elf/lib/mno-hw-mul \
             -L $(NIOS_TOOLCHAIN)/lib/gcc/nios2-elf/4.8.3/mno-hw-mul

@@ -59,6 +59,9 @@ target/fpga/u2plus/db
 target/fpga/u2plus/greybox_tmp
 target/fpga/u2plus/incremental_db
 target/fpga/u2plus/output_files
+target/fpga/u2plus_solo/db
+target/fpga/u2plus_solo/incremental_db
+target/fpga/u2plus_solo/output_files
 target/fpga/work1400
 target/fpga/work250
 target/fpga/work400
