@@ -72,8 +72,6 @@
 #include <errno.h>
 
 /* Altera includes. */
-#define  ALT_ENHANCED_INTERRUPT_API_PRESENT
-
 #include "sys/alt_irq.h"
 // #include "altera_avalon_timer_regs.h"
 #include "priv/alt_irq_table.h"
@@ -196,20 +194,19 @@ void vPortSysTickHandler(void * context)
  * kernel has its scheduler started so that contexts are saved and switched 
  * correctly.
 */
-
 int alt_iic_isr_register(alt_u32 ic_id, alt_u32 irq, alt_isr_func isr, void *isr_context, void *flags)
 {
 	  int rc = -EINVAL;
-	  int id = irq;             /* IRQ interpreted as the interrupt ID. */
+	  int id = irq;             // IRQ interpreted as the interrupt ID.
 	  alt_irq_context status;
 
 	  if (id < ALT_NIRQ)
 	  {
-	    /*
-	     * interrupts are disabled while the handler tables are updated to ensure
-	     * that an interrupt doesn't occur while the tables are in an inconsistant
-	     * state.
-	     */
+	    //
+	    // interrupts are disabled while the handler tables are updated to ensure
+	    // that an interrupt doesn't occur while the tables are in an inconsistant
+	    // state.
+	    //
 
 	    status = alt_irq_disable_all();
 
@@ -232,11 +229,11 @@ int alt_irq_register( alt_u32 id, void* context, void (*handler) )
 
 	if (id < ALT_NIRQ)
 	{
-		/*
-		 * interrupts are disabled while the handler tables are updated to ensure
-		 * that an interrupt doesn't occur while the tables are in an inconsistent
-		 * state.
-		 */
+		//
+		// interrupts are disabled while the handler tables are updated to ensure
+		// that an interrupt doesn't occur while the tables are in an inconsistent
+		// state.
+		//
 
 		status = alt_irq_disable_all ();
 
@@ -245,7 +242,7 @@ int alt_irq_register( alt_u32 id, void* context, void (*handler) )
 
 		rc = (handler) ? alt_ic_irq_enable (0, id): alt_ic_irq_disable (0, id);
 		(void) status; // fixes compile warning
-		/* alt_irq_enable_all(status); This line is removed to prevent the interrupt from being immediately enabled. */
+		// alt_irq_enable_all(status); This line is removed to prevent the interrupt from being immediately enabled.
 	}
 
 	return rc;

@@ -141,7 +141,12 @@ static void test_i2c_mdio(void)
         printf("%04x: %04x\n", i, temp);
     }
 
+    U2PIO_SPEAKER_EN = 1;
+
     USb2512Init();
+    U2PIO_SPEAKER_EN = 0;
+
+    //REMOTE_RECONFIG = 0xBE;
 }
 
 int main(int argc, char *argv[])
@@ -159,10 +164,8 @@ int main(int argc, char *argv[])
 
     test_i2c_mdio();
 
-    while(1)
-    	;
 
-    if ( -EINVAL == alt_irq_register( 1, 0x0, ituIrqHandler ) ) {
+    if ( -EINVAL == alt_irq_register( 0, 0x0, ituIrqHandler ) ) {
 		puts("Failed to install ITU IRQ handler.");
 	}
 

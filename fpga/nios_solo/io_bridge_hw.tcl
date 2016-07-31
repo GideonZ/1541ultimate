@@ -152,7 +152,7 @@ add_interface_port io io_irq irq Input 1
 # connection point irq
 # 
 add_interface irq interrupt end
-set_interface_property irq associatedAddressablePoint ""
+set_interface_property irq associatedAddressablePoint "avalon_slave_0"
 set_interface_property irq associatedClock clock
 set_interface_property irq bridgedReceiverOffset ""
 set_interface_property irq bridgesToReceiver ""

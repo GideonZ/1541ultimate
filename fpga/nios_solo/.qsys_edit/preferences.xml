@@ -7,8 +7,7 @@
    <irq preferredWidth="34" />
   </columns>
  </systemtable>
- <library
-   expandedCategories="Library,Project/Basic Functions/Bridges and Adaptors,Project,Project/Basic Functions,Project/Basic Functions/Bridges and Adaptors/Memory Mapped" />
- <window width="1561" height="803" x="0" y="0" />
+ <library expandedCategories="Library,Project" />
+ <window width="1478" height="800" x="65" y="24" />
  <generation path="_PROJECT_NAME_" />
 </preferences>

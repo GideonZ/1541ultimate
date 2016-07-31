@@ -34,7 +34,7 @@
 #define U2PIO_SPEAKER_EN (*(volatile uint8_t *)(U2P_IO_BASE + 0x0C))
 #define U2PIO_HUB_RESET  (*(volatile uint8_t *)(U2P_IO_BASE + 0x0D))
 
-#define REMOTE_RECONFIG     (*(volatile uint8_t *)(REMOTE_BASE + 0x06)) = 1
+#define REMOTE_RECONFIG     (*(volatile uint8_t *)(REMOTE_BASE + 0x06))
 #define REMOTE_FLASHSEL_0   (*(volatile uint8_t *)(REMOTE_BASE + 0x0A)) = 1
 #define REMOTE_FLASHSEL_1   (*(volatile uint8_t *)(REMOTE_BASE + 0x0B)) = 1
 #define REMOTE_FLASHSELCK_0 (*(volatile uint8_t *)(REMOTE_BASE + 0x08)) = 1

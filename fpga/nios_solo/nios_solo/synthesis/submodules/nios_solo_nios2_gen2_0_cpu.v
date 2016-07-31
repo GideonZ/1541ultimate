@@ -2248,9 +2248,9 @@ module nios_solo_nios2_gen2_0_cpu_nios2_avalon_reg (
   always @(posedge clk or negedge reset_n)
     begin
       if (reset_n == 0)
-          oci_ienable <= 32'b00000000000000000000000000000110;
+          oci_ienable <= 32'b00000000000000000000000000000111;
       else if (take_action_oci_intr_mask_reg)
-          oci_ienable <= writedata | ~(32'b00000000000000000000000000000110);
+          oci_ienable <= writedata | ~(32'b00000000000000000000000000000111);
     end
 
 
@@ -4001,7 +4001,7 @@ module nios_solo_nios2_gen2_0_cpu (
   //custom_instruction_master, which is an e_custom_instruction_master
   assign dummy_ci_port = 1'b0;
   assign E_ci_multi_stall = 1'b0;
-  assign iactive = irq[31 : 0] & 32'b00000000000000000000000000000110;
+  assign iactive = irq[31 : 0] & 32'b00000000000000000000000000000111;
   assign F_pc_sel_nxt = (R_ctrl_exception | W_rf_ecc_unrecoverable_valid) ? 2'b00 :
     R_ctrl_break                              ? 2'b01 :
     (W_br_taken | R_ctrl_uncond_cti_non_br)   ? 2'b10 :
@@ -4658,9 +4658,9 @@ defparam nios_solo_nios2_gen2_0_cpu_register_bank_b.lpm_file = "nios_solo_nios2_
 
   assign W_bstatus_reg_nxt = E_valid ? W_bstatus_reg_inst_nxt : W_bstatus_reg;
   assign W_ienable_reg_nxt = ((E_wrctl_ienable & E_valid) ? 
-    E_src1[31 : 0] : W_ienable_reg) & 32'b00000000000000000000000000000110;
+    E_src1[31 : 0] : W_ienable_reg) & 32'b00000000000000000000000000000111;
 
-  assign W_ipending_reg_nxt = iactive & W_ienable_reg & oci_ienable & 32'b00000000000000000000000000000110;
+  assign W_ipending_reg_nxt = iactive & W_ienable_reg & oci_ienable & 32'b00000000000000000000000000000111;
   always @(posedge clk or negedge reset_n)
     begin
       if (reset_n == 0)

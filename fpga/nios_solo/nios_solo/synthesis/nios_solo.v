@@ -5,6 +5,7 @@
 `timescale 1 ps / 1 ps
 module nios_solo (
 		input  wire        clk_clk,                 //    clk.clk
+		input  wire        dummy_export,            //  dummy.export
 		input  wire        io_ack,                  //     io.ack
 		input  wire [7:0]  io_rdata,                //       .rdata
 		output wire        io_read,                 //       .read
@@ -80,10 +81,16 @@ module nios_solo (
 	wire         mm_interconnect_0_onchip_memory2_0_s1_write;                 // mm_interconnect_0:onchip_memory2_0_s1_write -> onchip_memory2_0:write
 	wire  [31:0] mm_interconnect_0_onchip_memory2_0_s1_writedata;             // mm_interconnect_0:onchip_memory2_0_s1_writedata -> onchip_memory2_0:writedata
 	wire         mm_interconnect_0_onchip_memory2_0_s1_clken;                 // mm_interconnect_0:onchip_memory2_0_s1_clken -> onchip_memory2_0:clken
+	wire         mm_interconnect_0_pio_0_s1_chipselect;                       // mm_interconnect_0:pio_0_s1_chipselect -> pio_0:chipselect
+	wire  [31:0] mm_interconnect_0_pio_0_s1_readdata;                         // pio_0:readdata -> mm_interconnect_0:pio_0_s1_readdata
+	wire   [1:0] mm_interconnect_0_pio_0_s1_address;                          // mm_interconnect_0:pio_0_s1_address -> pio_0:address
+	wire         mm_interconnect_0_pio_0_s1_write;                            // mm_interconnect_0:pio_0_s1_write -> pio_0:write_n
+	wire  [31:0] mm_interconnect_0_pio_0_s1_writedata;                        // mm_interconnect_0:pio_0_s1_writedata -> pio_0:writedata
 	wire         irq_mapper_receiver0_irq;                                    // io_bridge_0:avs_irq -> irq_mapper:receiver0_irq
 	wire         irq_mapper_receiver1_irq;                                    // io_bridge_1:avs_irq -> irq_mapper:receiver1_irq
+	wire         irq_mapper_receiver2_irq;                                    // pio_0:irq -> irq_mapper:receiver2_irq
 	wire  [31:0] nios2_gen2_0_irq_irq;                                        // irq_mapper:sender_irq -> nios2_gen2_0:irq
-	wire         rst_controller_reset_out_reset;                              // rst_controller:reset_out -> [avalon2mem_0:reset, io_bridge_0:reset, io_bridge_1:reset, irq_mapper:reset, mm_interconnect_0:nios2_gen2_0_reset_reset_bridge_in_reset_reset, nios2_gen2_0:reset_n, onchip_memory2_0:reset, rst_translator:in_reset]
+	wire         rst_controller_reset_out_reset;                              // rst_controller:reset_out -> [avalon2mem_0:reset, io_bridge_0:reset, io_bridge_1:reset, irq_mapper:reset, mm_interconnect_0:nios2_gen2_0_reset_reset_bridge_in_reset_reset, nios2_gen2_0:reset_n, onchip_memory2_0:reset, pio_0:reset_n, rst_translator:in_reset]
 	wire         rst_controller_reset_out_reset_req;                          // rst_controller:reset_req -> [nios2_gen2_0:reset_req, onchip_memory2_0:reset_req, rst_translator:reset_req_in]
 
 	avalon_to_mem32_bridge #(
@@ -192,6 +199,18 @@ module nios_solo (
 		.reset_req  (rst_controller_reset_out_reset_req)                //       .reset_req
 	);
 
+	nios_solo_pio_0 pio_0 (
+		.clk        (clk_clk),                               //                 clk.clk
+		.reset_n    (~rst_controller_reset_out_reset),       //               reset.reset_n
+		.address    (mm_interconnect_0_pio_0_s1_address),    //                  s1.address
+		.write_n    (~mm_interconnect_0_pio_0_s1_write),     //                    .write_n
+		.writedata  (mm_interconnect_0_pio_0_s1_writedata),  //                    .writedata
+		.chipselect (mm_interconnect_0_pio_0_s1_chipselect), //                    .chipselect
+		.readdata   (mm_interconnect_0_pio_0_s1_readdata),   //                    .readdata
+		.in_port    (dummy_export),                          // external_connection.export
+		.irq        (irq_mapper_receiver2_irq)               //                 irq.irq
+	);
+
 	nios_solo_mm_interconnect_0 mm_interconnect_0 (
 		.clk_0_clk_clk                                  (clk_clk),                                                     //                                clk_0_clk.clk
 		.nios2_gen2_0_reset_reset_bridge_in_reset_reset (rst_controller_reset_out_reset),                              // nios2_gen2_0_reset_reset_bridge_in_reset.reset
@@ -243,7 +262,12 @@ module nios_solo (
 		.onchip_memory2_0_s1_writedata                  (mm_interconnect_0_onchip_memory2_0_s1_writedata),             //                                         .writedata
 		.onchip_memory2_0_s1_byteenable                 (mm_interconnect_0_onchip_memory2_0_s1_byteenable),            //                                         .byteenable
 		.onchip_memory2_0_s1_chipselect                 (mm_interconnect_0_onchip_memory2_0_s1_chipselect),            //                                         .chipselect
-		.onchip_memory2_0_s1_clken                      (mm_interconnect_0_onchip_memory2_0_s1_clken)                  //                                         .clken
+		.onchip_memory2_0_s1_clken                      (mm_interconnect_0_onchip_memory2_0_s1_clken),                 //                                         .clken
+		.pio_0_s1_address                               (mm_interconnect_0_pio_0_s1_address),                          //                                 pio_0_s1.address
+		.pio_0_s1_write                                 (mm_interconnect_0_pio_0_s1_write),                            //                                         .write
+		.pio_0_s1_readdata                              (mm_interconnect_0_pio_0_s1_readdata),                         //                                         .readdata
+		.pio_0_s1_writedata                             (mm_interconnect_0_pio_0_s1_writedata),                        //                                         .writedata
+		.pio_0_s1_chipselect                            (mm_interconnect_0_pio_0_s1_chipselect)                        //                                         .chipselect
 	);
 
 	nios_solo_irq_mapper irq_mapper (
@@ -251,6 +275,7 @@ module nios_solo (
 		.reset         (rst_controller_reset_out_reset), // clk_reset.reset
 		.receiver0_irq (irq_mapper_receiver0_irq),       // receiver0.irq
 		.receiver1_irq (irq_mapper_receiver1_irq),       // receiver1.irq
+		.receiver2_irq (irq_mapper_receiver2_irq),       // receiver2.irq
 		.sender_irq    (nios2_gen2_0_irq_irq)            //    sender.irq
 	);
 

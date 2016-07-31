@@ -89,6 +89,22 @@
          type = "String";
       }
    }
+   element pio_0
+   {
+      datum _sortIndex
+      {
+         value = "6";
+         type = "int";
+      }
+   }
+   element pio_0.s1
+   {
+      datum baseAddress
+      {
+         value = "285212672";
+         type = "String";
+      }
+   }
 }
 ]]></parameter>
  <parameter name="clockCrossingAdapter" value="HANDSHAKE" />
@@ -111,6 +127,11 @@
  <parameter name="useTestBenchNamingPattern" value="false" />
  <instanceScript></instanceScript>
  <interface name="clk" internal="clk_0.clk_in" type="clock" dir="end" />
+ <interface
+   name="dummy"
+   internal="pio_0.external_connection"
+   type="conduit"
+   dir="end" />
  <interface name="io" internal="io_bridge_0.io" type="conduit" dir="end" />
  <interface name="io_u2p" internal="io_bridge_1.io" type="conduit" dir="end" />
  <interface name="mem" internal="avalon2mem_0.mem" type="conduit" dir="end" />
@@ -150,7 +171,7 @@
   <parameter name="dataAddrWidth" value="32" />
   <parameter name="dataMasterHighPerformanceAddrWidth" value="1" />
   <parameter name="dataMasterHighPerformanceMapParam" value="" />
-  <parameter name="dataSlaveMapParam"><![CDATA[<address-map><slave name='avalon2mem_0.avalon_slave_0' start='0x0' end='0x4000000' type='avalon2mem.avalon_slave_0' /><slave name='io_bridge_0.avalon_slave_0' start='0x4000000' end='0x4100000' type='io_bridge.avalon_slave_0' /><slave name='nios2_gen2_0.debug_mem_slave' start='0x10000800' end='0x10001000' type='altera_nios2_gen2.debug_mem_slave' /><slave name='onchip_memory2_0.s1' start='0x20000000' end='0x20000800' type='altera_avalon_onchip_memory2.s1' /><slave name='io_bridge_1.avalon_slave_0' start='0xA0000000' end='0xA0100000' type='io_bridge.avalon_slave_0' /></address-map>]]></parameter>
+  <parameter name="dataSlaveMapParam"><![CDATA[<address-map><slave name='avalon2mem_0.avalon_slave_0' start='0x0' end='0x4000000' type='avalon2mem.avalon_slave_0' /><slave name='io_bridge_0.avalon_slave_0' start='0x4000000' end='0x4100000' type='io_bridge.avalon_slave_0' /><slave name='nios2_gen2_0.debug_mem_slave' start='0x10000800' end='0x10001000' type='altera_nios2_gen2.debug_mem_slave' /><slave name='pio_0.s1' start='0x11000000' end='0x11000010' type='altera_avalon_pio.s1' /><slave name='onchip_memory2_0.s1' start='0x20000000' end='0x20000800' type='altera_avalon_onchip_memory2.s1' /><slave name='io_bridge_1.avalon_slave_0' start='0xA0000000' end='0xA0100000' type='io_bridge.avalon_slave_0' /></address-map>]]></parameter>
   <parameter name="data_master_high_performance_paddr_base" value="0" />
   <parameter name="data_master_high_performance_paddr_size" value="0" />
   <parameter name="data_master_paddr_base" value="0" />
@@ -196,7 +217,7 @@
   <parameter name="instruction_master_high_performance_paddr_size" value="0" />
   <parameter name="instruction_master_paddr_base" value="0" />
   <parameter name="instruction_master_paddr_size" value="0" />
-  <parameter name="internalIrqMaskSystemInfo" value="6" />
+  <parameter name="internalIrqMaskSystemInfo" value="7" />
   <parameter name="io_regionbase" value="0" />
   <parameter name="io_regionsize" value="0" />
   <parameter name="master_addr_map" value="false" />
@@ -335,6 +356,20 @@
   <parameter name="useShallowMemBlocks" value="false" />
   <parameter name="writable" value="true" />
  </module>
+ <module name="pio_0" kind="altera_avalon_pio" version="15.1" enabled="1">
+  <parameter name="bitClearingEdgeCapReg" value="false" />
+  <parameter name="bitModifyingOutReg" value="false" />
+  <parameter name="captureEdge" value="false" />
+  <parameter name="clockRate" value="62500000" />
+  <parameter name="direction" value="Input" />
+  <parameter name="edgeType" value="RISING" />
+  <parameter name="generateIRQ" value="true" />
+  <parameter name="irqType" value="LEVEL" />
+  <parameter name="resetValue" value="0" />
+  <parameter name="simDoTestBenchWiring" value="false" />
+  <parameter name="simDrivenValue" value="0" />
+  <parameter name="width" value="1" />
+ </module>
  <connection
    kind="avalon"
    version="15.1"
@@ -383,6 +418,15 @@
  <connection
    kind="avalon"
    version="15.1"
+   start="nios2_gen2_0.data_master"
+   end="pio_0.s1">
+  <parameter name="arbitrationPriority" value="1" />
+  <parameter name="baseAddress" value="0x11000000" />
+  <parameter name="defaultConnection" value="false" />
+ </connection>
+ <connection
+   kind="avalon"
+   version="15.1"
    start="nios2_gen2_0.instruction_master"
    end="avalon2mem_0.avalon_slave_0">
   <parameter name="arbitrationPriority" value="1" />
@@ -408,6 +452,7 @@
   <parameter name="defaultConnection" value="false" />
  </connection>
  <connection kind="clock" version="15.1" start="clk_0.clk" end="nios2_gen2_0.clk" />
+ <connection kind="clock" version="15.1" start="clk_0.clk" end="pio_0.clk" />
  <connection
    kind="clock"
    version="15.1"
@@ -425,13 +470,20 @@
    version="15.1"
    start="nios2_gen2_0.irq"
    end="io_bridge_0.irq">
-  <parameter name="irqNumber" value="1" />
+  <parameter name="irqNumber" value="0" />
  </connection>
  <connection
    kind="interrupt"
    version="15.1"
    start="nios2_gen2_0.irq"
    end="io_bridge_1.irq">
+  <parameter name="irqNumber" value="1" />
+ </connection>
+ <connection
+   kind="interrupt"
+   version="15.1"
+   start="nios2_gen2_0.irq"
+   end="pio_0.irq">
   <parameter name="irqNumber" value="2" />
  </connection>
  <connection
@@ -454,6 +506,7 @@
    version="15.1"
    start="clk_0.clk_reset"
    end="avalon2mem_0.reset" />
+ <connection kind="reset" version="15.1" start="clk_0.clk_reset" end="pio_0.reset" />
  <connection
    kind="reset"
    version="15.1"
