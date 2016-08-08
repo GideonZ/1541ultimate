@@ -46,6 +46,8 @@ int main(int argc, char** argv)
     int      help       = 0;
     int      unnamed    = 0;
     int      add_length = 0;
+    int      word_mode  = 0;
+    
     char     name_in[1024];
     char     name_out[1024];
     char     version[16];
@@ -114,6 +116,10 @@ int main(int argc, char** argv)
                 }
                 break;
 
+            case 'w':
+                word_mode = 1;
+                break;
+                
             case 'z':
                 add_length = 1;
                 break;
@@ -150,6 +156,7 @@ int main(int argc, char** argv)
         fprintf(stderr, "\t-t omits the end record.\n");
         fprintf(stderr, "\t-z adds file length word in little endian.\n");
         fprintf(stderr, "\t-Z adds file length word in big endian.\n");
+        fprintf(stderr, "\t-w selects word mode (outputs 4 bytes per line, and divides address by 4).\n");
         fprintf(stderr, "\t-a appends to the existing hex file.\n");
         return 1;
     }
@@ -177,6 +184,7 @@ int main(int argc, char** argv)
     int bytes_read;
     int bytes_to_read;
     int seg_flag = 0;
+    int line_length = (word_mode)?4:32;
     
     while(length && !feof(fi)) {
         bytes_in_segment = 65536 - (hex_offset & 0xFFFF);
@@ -188,16 +196,17 @@ int main(int argc, char** argv)
             ch = 0xFA - b1 - b2;
             seg_flag = 1;
         }
-        bytes_to_read = (bytes_in_segment > 32)?32:bytes_in_segment;
+        bytes_to_read = (bytes_in_segment > line_length)?line_length:bytes_in_segment;
         bytes_read = fread_wrapper((uint8_t *)buffer, bytes_to_read, fi, &add_length, file_size, version);
         if(bytes_read) {
             if(seg_flag) {
                 fprintf(fo, ":02000004%04X%02X\n", segment, ch);
                 seg_flag = 0;            
             }
-            fprintf(fo, ":%02X%04X00", bytes_read, hex_offset & 0xFFFF);
-            b1 = (hex_offset & 0xFF);
-            b2 = (hex_offset >> 8) & 0xFF;
+            int offset_out = (hex_offset & 0xFFFF) >> ((word_mode)?2:0);
+            fprintf(fo, ":%02X%04X00", bytes_read, offset_out);
+            b1 = (offset_out & 0xFF);
+            b2 = (offset_out >> 8) & 0xFF;
             ch = 0 + bytes_read + b1 + b2;
             for(i=0;i<bytes_read;i++) {
                 fprintf(fo, "%02X", buffer[i]);

@@ -6,7 +6,7 @@ ARCHITECTURE = nios2
 include ../common/environment.mk
 
 PRJ      =  ultimate
-FINAL    =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
+FINAL    =  $(RESULT)/$(PRJ).binrec $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	itu.c \
 			dump_hex.c \
@@ -150,13 +150,9 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-LINK 	 = ./mb_app.lds
-LLIB     =  -L $(PATH_SW)/nios_appl_bsp \
-			-L ../nios2_elf_lwip/result \
-            -L $(NIOS_TOOLCHAIN)/nios2-elf/lib/mno-hw-mul \
-            -L $(NIOS_TOOLCHAIN)/lib/gcc/nios2-elf/4.8.3/mno-hw-mul
-# NOTE: The nios toolchain points to 
-LIBS     =  -lc -lhal_bsp -llwip -lc -lgcc 
-LFLAGS   = --gc-sections 
+BSP      = $(PATH_SW)/nios_appl_bsp
+LINK 	 = $(BSP)/linker.x
+LIBS2    = $(BSP)/libhal_bsp.a ../nios2_elf_lwip/result/liblwip.a
+LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../common/rules.mk

@@ -246,8 +246,6 @@ architecture logic of ultimate_logic_32 is
     signal mem_resp_1541         : t_mem_resp := c_mem_resp_init;
     signal mem_req_1541_2        : t_mem_req := c_mem_req_init;
     signal mem_resp_1541_2       : t_mem_resp := c_mem_resp_init;
-    signal mem_req_cart          : t_mem_req := c_mem_req_init;
-    signal mem_resp_cart         : t_mem_resp := c_mem_resp_init;
     signal mem_req_debug         : t_mem_req := c_mem_req_init;
     signal mem_resp_debug        : t_mem_resp := c_mem_resp_init;
 
@@ -593,6 +591,7 @@ begin
             g_ram_base_reu  => X"1000000", -- should be on 16M boundary, or should be limited in size
             g_rom_base_cart => X"0F00000", -- should be on a 1M boundary
             g_ram_base_cart => X"0EF0000", -- should be on a 64K boundary
+            g_big_endian    => g_big_endian,
             g_control_read  => true,
             g_ram_expansion => g_ram_expansion,
             g_extended_reu  => g_extended_reu,
@@ -645,8 +644,8 @@ begin
 
             -- master on memory bus
             memctrl_inhibit => mem_inhibit,
-            mem_req         => mem_req_cart,
-            mem_resp        => mem_resp_cart,
+            mem_req         => mem_req_32_cart,
+            mem_resp        => mem_resp_32_cart,
             
             -- slave on io bus
             io_req          => io_req_cart,
@@ -1032,17 +1031,6 @@ begin
 
     c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
 	
-    i_conv32_cart: entity work.mem_to_mem32(route_through)
-    generic map (
-        g_big_endian => g_big_endian )
-    port map(
-        clock       => sys_clock,
-        reset       => sys_reset,
-        mem_req_8   => mem_req_cart,
-        mem_resp_8  => mem_resp_cart,
-        mem_req_32  => mem_req_32_cart,
-        mem_resp_32 => mem_resp_32_cart );
-
     i_conv32_1541: entity work.mem_to_mem32(route_through)
     generic map (
         g_big_endian => g_big_endian )

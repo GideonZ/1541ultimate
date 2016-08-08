@@ -16,6 +16,7 @@ generic (
     g_ram_base_reu  : unsigned(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
+    g_big_endian    : boolean;
     g_control_read  : boolean := true;
     g_command_intf  : boolean := true;
     g_ram_expansion : boolean := true;
@@ -70,8 +71,8 @@ port (
 	
     -- master on memory bus
     memctrl_inhibit : out   std_logic;
-    mem_req         : out   t_mem_req;
-    mem_resp        : in    t_mem_resp;
+    mem_req         : out   t_mem_req_32;
+    mem_resp        : in    t_mem_resp_32;
     
     -- slave on io bus
     io_req          : in    t_io_req;
@@ -179,12 +180,17 @@ architecture structural of slot_server_v4 is
     signal slot_resp_cmd    : t_slot_resp := c_slot_resp_init;
     signal slot_resp_samp   : t_slot_resp := c_slot_resp_init;
     
-    signal mem_req_slot     : t_mem_req   := c_mem_req_init; 
-    signal mem_resp_slot    : t_mem_resp  := c_mem_resp_init;
     signal mem_req_reu      : t_mem_req   := c_mem_req_init; 
     signal mem_resp_reu     : t_mem_resp  := c_mem_resp_init;
     signal mem_req_samp     : t_mem_req   := c_mem_req_init;
     signal mem_resp_samp    : t_mem_resp  := c_mem_resp_init;
+
+    signal mem_req_32_slot  : t_mem_req_32  := c_mem_req_32_init; 
+    signal mem_resp_32_slot : t_mem_resp_32 := c_mem_resp_32_init;
+    signal mem_req_32_reu   : t_mem_req_32  := c_mem_req_32_init; 
+    signal mem_resp_32_reu  : t_mem_resp_32 := c_mem_resp_32_init;
+    signal mem_req_32_samp  : t_mem_req_32  := c_mem_req_32_init;
+    signal mem_resp_32_samp : t_mem_resp_32 := c_mem_resp_32_init;
     
 --    signal mem_req_trace    : t_mem_req;
 --    signal mem_resp_trace   : t_mem_resp;
@@ -303,9 +309,10 @@ begin
         do_probe_end    => do_probe_end,
         do_io_event     => do_io_event );
 
-    mem_req_slot.tag <= g_tag_slot;
-    mem_rack_slot <= '1' when mem_resp_slot.rack_tag = g_tag_slot else '0';
-    mem_dack_slot <= '1' when mem_resp_slot.dack_tag = g_tag_slot else '0';
+    mem_req_32_slot.tag <= g_tag_slot;
+    mem_req_32_slot.byte_en <= "0001"; -- we assume little endian for now
+    mem_rack_slot <= '1' when mem_resp_32_slot.rack_tag = g_tag_slot else '0';
+    mem_dack_slot <= '1' when mem_resp_32_slot.dack_tag = g_tag_slot else '0';
 
     i_slave: entity work.slot_slave
     port map (
@@ -328,14 +335,12 @@ begin
         DATA_tri        => slave_dtri,
     
         -- interface with memory controller
-        mem_req         => mem_req_slot.request,
-        mem_rwn         => mem_req_slot.read_writen,
-        mem_wdata       => mem_req_slot.data,
-        mem_size        => mem_req_slot.size,
+        mem_req         => mem_req_32_slot.request,
+        mem_rwn         => mem_req_32_slot.read_writen,
+        mem_wdata       => mem_req_32_slot.data,
         mem_rack        => mem_rack_slot,
         mem_dack        => mem_dack_slot,
-        mem_rdata       => mem_resp_slot.data,
-        mem_count       => mem_resp.count,
+        mem_rdata       => mem_resp_32_slot.data,
         -- mem_addr comes from cartridge logic
     
         -- synchronized outputs
@@ -451,7 +456,7 @@ begin
         slot_req        => slot_req,
         slot_resp       => slot_resp_cart,
 
-        mem_addr        => mem_req_slot.address, 
+        mem_addr        => mem_req_32_slot.address, 
         serve_enable    => serve_enable,
         serve_vic       => serve_vic,
         serve_rom       => serve_rom, -- ROML or ROMH
@@ -769,22 +774,45 @@ begin
         
         req         => dma_req,
         resp        => dma_resp );
+
     
-    i_mem_arb: entity work.mem_bus_arbiter_pri
+    i_conv32_reu: entity work.mem_to_mem32(route_through)
+    generic map (
+        g_big_endian => g_big_endian )
+    port map(
+        clock       => clock,
+        reset       => reset,
+        mem_req_8   => mem_req_reu,
+        mem_resp_8  => mem_resp_reu,
+        mem_req_32  => mem_req_32_reu,
+        mem_resp_32 => mem_resp_32_reu );
+
+    i_conv32_samp: entity work.mem_to_mem32(route_through)
+    generic map (
+        g_big_endian => g_big_endian )
+    port map(
+        clock       => clock,
+        reset       => reset,
+        mem_req_8   => mem_req_samp,
+        mem_resp_8  => mem_resp_samp,
+        mem_req_32  => mem_req_32_samp,
+        mem_resp_32 => mem_resp_32_samp );
+
+    i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
         g_ports     => 3 )
     port map (
         clock       => clock,
         reset       => reset,
         
-        reqs(0)     => mem_req_slot,
-        reqs(1)     => mem_req_reu,
-        reqs(2)     => mem_req_samp,
+        reqs(0)     => mem_req_32_slot,
+        reqs(1)     => mem_req_32_reu,
+        reqs(2)     => mem_req_32_samp,
         
 --        reqs(3)     => mem_req_trace,
-        resps(0)    => mem_resp_slot,
-        resps(1)    => mem_resp_reu,
-        resps(2)    => mem_resp_samp,
+        resps(0)    => mem_resp_32_slot,
+        resps(1)    => mem_resp_32_reu,
+        resps(2)    => mem_resp_32_samp,
 --        resps(3)    => mem_resp_trace,
         
         req         => mem_req,

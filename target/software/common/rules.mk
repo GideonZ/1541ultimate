@@ -8,7 +8,7 @@ OBJS_6502 = $(notdir $(SRCS_6502:%.tas=%.o))
 OBJS_IEC = $(notdir $(SRCS_IEC:%.iec=%.o))
 OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.o))
-OBJS_RBF = $(notdir $(SRCS_RBF:%.srec=%.o))
+OBJS_RBF = $(notdir $(SRCS_RBF:%.rbf=%.o))
 CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 
 ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF))
@@ -38,6 +38,18 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo Creating Binary $@
 	@$(OBJCOPY) -O binary $< $@
 
+$(RESULT)/$(PRJ).binrec: $(RESULT)/$(PRJ).hex
+	@echo Creating Binary with Records $@
+	@$(HEX2BIN) -r $< $@
+
+$(RESULT)/$(PRJ).hex: $(OUTPUT)/$(PRJ).out
+	@echo Creating Hex File $@
+	@$(OBJCOPY) -O ihex  $< $@
+
+$(RESULT)/$(PRJ).chiphex: $(RESULT)/$(PRJ).bin
+	@echo Creating Hex File for On Chip Memory $@
+	@$(BIN2HEX) -w $< $@
+
 %.chk: %.bin
 	@echo Calculating checksum of $(<F) binary to $(@F)..
 	@$(CHECKSUM) $< $(OUTPUT)/$(@F)
@@ -59,7 +71,7 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo Converting $(<F) SREC to $(@F)..
 	@$(OBJCOPY) -I srec -O binary $< $@
 
-%.o: %.rif
+%.o: %.rbf
 	@echo Converting $(<F) binary to $(@F)..
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
 	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
@@ -128,9 +140,14 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
+$(OUTPUT)/$(PRJ).ld: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(LWIPLIB)
+	@echo Linking using LD...
+	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).ld $(ALL_OBJS) $(LIBS)
+	@$(SIZE) $(OUTPUT)/$(PRJ).ld
+
 $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(LWIPLIB)
-	@echo Linking...
-	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS)
+	@echo Linking using GCC...
+	@$(CPP) -Wl,-Map=$(OUTPUT)/$(PRJ).map,$(LFLAGS) -T'$(LINK)' $(OPTIONS) -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS2)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out
 
 $(RESULT)/$(PRJ).elf: $(OUTPUT)/$(PRJ).out

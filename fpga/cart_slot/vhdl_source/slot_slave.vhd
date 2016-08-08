@@ -27,13 +27,11 @@ port (
     
     -- interface with memory controller
     mem_req         : out std_logic; -- our memory request to serve slot
-    mem_size        : out unsigned(1 downto 0);
     mem_rwn         : out std_logic;
     mem_rack        : in  std_logic;
     mem_dack        : in  std_logic;
-    mem_count       : in  unsigned(1 downto 0);
-    mem_rdata       : in  std_logic_vector(7 downto 0);
-    mem_wdata       : out std_logic_vector(7 downto 0);
+    mem_rdata       : in  std_logic_vector(31 downto 0);
+    mem_wdata       : out std_logic_vector(31 downto 0);
     -- mem_addr comes from cartridge logic
 
     reset_out       : out std_logic;
@@ -81,7 +79,7 @@ architecture gideon of slot_slave is
     signal addr_is_io   : boolean;
     signal addr_is_kernal : std_logic;
     signal mem_req_ff   : std_logic;
-    signal mem_size_i   : unsigned(1 downto 0);
+
     signal servicable   : std_logic;
     signal io_out       : boolean := false;
     signal io_read_cond : std_logic;
@@ -122,6 +120,7 @@ begin
     slot_req.io_write      <= do_io_event and io_write_cond;
     slot_req.io_read       <= do_io_event and io_read_cond;
     slot_req.late_write    <= do_io_event and late_write_cond;
+    -- TODO: Do we still need io_read_early? If so, should we not check for PHI2 here? Or will we serve I/O data to the VIC?
     slot_req.io_read_early <= '1' when (addr_is_io and rwn_c='1' and do_sample_addr='1') else '0';
 
     process(clock)
@@ -178,9 +177,9 @@ begin
             
             case state is
             when idle =>
-                mem_size_i <= "00";
                 if do_sample_addr='1' then
                     -- register output
+                    -- TODO: Should we not check for PHI2 here? Or will we serve I/O data to the VIC?
                     if slot_resp.reg_output='1' and addr_is_io and rwn_c='1' then -- read register
                         mem_data_0 <= slot_resp.data;
                         io_out     <= true;
@@ -193,7 +192,6 @@ begin
                         if kernal_enable='1' and ultimax='0' and addr_is_kernal='1' and ba_c='1' then
                             kernal_probe_i <= '1';
                             kernal_area_i  <= '1';
-                            mem_size_i <= "01";
                         end if;
                         if addr_is_io then
                             if ba_c='1' then -- only serve IO when BA='1' (Fix for Ethernet)
@@ -240,19 +238,11 @@ begin
                         state <= wait_end;
                     end if;
                 end if;
--- this will never happen, because we have latency from RAM.
---				if mem_dack='1' then -- in case the data comes immediately
---                    DATA_out <= mem_rdata;
---                    dav      <= '1';
---				end if;
 
             when wait_end =>
 				if mem_dack='1' then -- the data is available, put it on the bus!
-                    if mem_count="00" then
-                        mem_data_0 <= mem_rdata;
-                    else
-                        mem_data_1 <= mem_rdata;
-                    end if;
+                    mem_data_0 <= mem_rdata(7 downto 0);
+                    mem_data_1 <= mem_rdata(15 downto 8);
                     dav      <= '1';
 				end if;
                 if phi2_tick='1' or do_io_event='1' then -- around the clock edges
@@ -291,7 +281,6 @@ begin
                 dav             <= '0';
                 state           <= idle;
                 mem_req_ff      <= '0';
-                mem_size_i      <= "00";
                 io_out          <= false;
                 io_read_cond    <= '0';
                 io_write_cond   <= '0';
@@ -332,8 +321,7 @@ begin
 
     mem_req    <= mem_req_ff;
     mem_rwn    <= rwn_c;
-    mem_wdata  <= mem_wdata_i;
-    mem_size   <= mem_size_i;
+    mem_wdata  <= X"000000" & mem_wdata_i;
         
     BUFFER_ENn <= '0';
 

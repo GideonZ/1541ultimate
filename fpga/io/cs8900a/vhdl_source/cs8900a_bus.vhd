@@ -156,7 +156,7 @@ begin
         pp_rdata(7 downto 0)  when c_lo_rx_tx_data_0 | c_lo_rx_tx_data_1 | c_lo_packet_page_data_0 | c_lo_packet_page_data_1,
         pp_rdata(15 downto 8) when c_hi_rx_tx_data_0 | c_hi_rx_tx_data_1 | c_hi_packet_page_data_0 | c_hi_packet_page_data_1,
         std_logic_vector(packet_page_pointer(7 downto 1)) & '0' when c_lo_packet_page_pointer,
-        packet_page_auto_inc & "000" & std_logic_vector(packet_page_pointer(11 downto 8)) when c_hi_packet_page_pointer,
+        packet_page_auto_inc & "011" & std_logic_vector(packet_page_pointer(11 downto 8)) when c_hi_packet_page_pointer,
         X"00" when others;
 
 end;

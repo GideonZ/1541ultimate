@@ -4,7 +4,7 @@
  * Machine generated for CPU 'nios2_gen2_0' in SOPC Builder design 'nios_solo'
  * SOPC Builder design path: ../../fpga/nios_solo/nios_solo.sopcinfo
  *
- * Generated: Fri Jul 29 17:42:28 CEST 2016
+ * Generated: Sun Aug 07 15:27:52 CEST 2016
  */
 
 /*
@@ -86,7 +86,14 @@ SECTIONS
         KEEP (*(.entry))
     } > reset
 
-    .exceptions :
+    /*
+     *
+     * This section's LMA is set to the .text region.
+     * crt0 will copy to this section's specified mapped region virtual memory address (VMA)
+     *
+     */
+
+    .exceptions : AT ( 0x20000020 )
     {
         PROVIDE (__ram_exceptions_start = ABSOLUTE(.));
         . = ALIGN(0x20);
@@ -117,7 +124,14 @@ SECTIONS
 
     PROVIDE (__flash_exceptions_start = LOADADDR(.exceptions));
 
-    .text :
+    /*
+     *
+     * This section's LMA is set to the .text region.
+     * crt0 will copy to this section's specified mapped region virtual memory address (VMA)
+     *
+     */
+
+    .text LOADADDR (.exceptions) + SIZEOF (.exceptions) : AT ( LOADADDR (.exceptions) + SIZEOF (.exceptions) )
     {
         /*
          * All code sections are merged into the text output section, along with
@@ -211,7 +225,14 @@ SECTIONS
         . = ALIGN(4);
     } > onchip_memory2_0 = 0x3a880100 /* NOP instruction (always in big-endian byte ordering) */
 
-    .rodata :
+    /*
+     *
+     * This section's LMA is set to the .text region.
+     * crt0 will copy to this section's specified mapped region virtual memory address (VMA)
+     *
+     */
+
+    .rodata LOADADDR (.text) + SIZEOF (.text) : AT ( LOADADDR (.text) + SIZEOF (.text) )
     {
         PROVIDE (__ram_rodata_start = ABSOLUTE(.));
         . = ALIGN(4);

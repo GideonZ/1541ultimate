@@ -2,9 +2,9 @@
  * linker.x - Linker script
  *
  * Machine generated for CPU 'nios2_gen2_0' in SOPC Builder design 'nios_solo'
- * SOPC Builder design path: /home/gideon/proj/ultimate/fpga/nios_solo/nios_solo.sopcinfo
+ * SOPC Builder design path: ../../fpga/nios_solo/nios_solo.sopcinfo
  *
- * Generated: Fri Jul 29 16:47:34 CEST 2016
+ * Generated: Sun Aug 07 15:26:11 CEST 2016
  */
 
 /*

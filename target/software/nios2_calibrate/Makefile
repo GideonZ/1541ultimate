@@ -6,9 +6,9 @@ ARCHITECTURE = nios2
 include ../common/environment.mk
 
 PRJ      =  calibrator
-FINAL    =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
+FINAL    =  $(RESULT)/$(PRJ).chiphex $(RESULT)/$(PRJ).elf
 
-SRCS_C   =	ddr2_calibrator.c
+SRCS_C   =	ddr2_calibrator.c small_printf.c itu.c
                         
 SRCS_CC	 =  
 
@@ -27,15 +27,12 @@ SRCS_IEC =
 SRCS_NANO = 
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -Os -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-LINK 	 = ./nios_solo_bram.lds
-LLIB     =  -L $(PATH_SW)/nios_solo_bsp \
-            -L $(NIOS_TOOLCHAIN)/nios2-elf/lib/mno-hw-mul \
-            -L $(NIOS_TOOLCHAIN)/lib/gcc/nios2-elf/4.8.3/mno-hw-mul
-# NOTE: The nios toolchain points to 
-LIBS     =  -lc -lhal_bsp -lc -lgcc 
-LFLAGS   = --gc-sections 
+BSP      = $(PATH_SW)/nios_solo_bsp
+LINK 	 = $(BSP)/linker.x
+LIBS2    = $(BSP)/libhal_bsp.a
+LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../common/rules.mk

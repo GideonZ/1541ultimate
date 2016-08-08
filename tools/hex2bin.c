@@ -34,6 +34,16 @@ uint8_t read_hexuint8_t(FILE *fp)
 	return res;
 }
 
+void write_record(uint32_t load_addr, uint32_t length, uint32_t start_addr, FILE *fp, uint8_t *buffer)
+{
+    printf("** %08x %08x %08x **\n", load_addr, length, start_addr);
+    fwrite(&load_addr, 1, 4, fp);
+    fwrite(&length, 1, 4, fp);
+    fwrite(&start_addr, 1, 4, fp);
+    length = (length + 3) & ~3; // rounding
+    fwrite(buffer, 1, length, fp);
+} 
+
 /*
 -------------------------------------------------------------------------------
 							read_hex_file
@@ -44,19 +54,27 @@ uint8_t read_hexuint8_t(FILE *fp)
 	
 -------------------------------------------------------------------------------
 */
-int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size)
+int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size, int records, FILE *fpo)
 {
 	uint16_t  bytes_read;
 	char     buf[8];
 	uint8_t	 chk;
-    uint16_t  d, last_erased = 0xFFFF;
+    uint16_t  d;
 	uint8_t  data[64], i, b, r;
-	uint32_t  addr;
+	uint32_t  addr = 0;
+	uint32_t  addr2 = 0;
+	uint32_t  last_addr = 0xBAD;
 	uint32_t  high = 0;
 	uint8_t  *paddr;
+	uint8_t  *paddr2;
         
 	paddr = (uint8_t *)&addr;
+	paddr2 = (uint8_t *)&addr2;
 
+    addr = 0;
+    int section_open = 0;
+    uint32_t section_addr = 0;
+    
 	while(1) {
         // find start of record
     	do {
@@ -85,11 +103,26 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size)
     	switch(data[3]) { // type field
     		case 0x01:
     			//printf("End record.\n");
+                if (section_open) {
+                    printf("Length of section: %08x\n", last_addr - section_addr);                        
+                    if(records) {
+                        write_record(section_addr, last_addr - section_addr, addr2, fpo, buffer);
+                    }
+                }
     			return high;
     
     		case 0x02: // x86 extended memory format
-    			fprintf(stderr, "Unsupported segmented address.\n");
-    			return 0;
+    			if(data[0] == 2) {
+                    addr = 0;
+    				paddr[1] = data[4];
+    				paddr[0] = data[5];
+                    addr <<= 4;
+                    printf("Segmented address %08X.\n", addr);
+    			} else {
+    				fprintf(stderr, "Segmented address with wrong length.\n");
+    				return 0;
+    			}
+                break;
     
     		case 0x04: // x386 extended address format
     			if(data[0] == 2) {
@@ -102,10 +135,35 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size)
     			}
                 break;
     
+            case 0x05: // start address
+            case 0x03: // start address
+                paddr2[0] = data[7];
+                paddr2[1] = data[6];
+                paddr2[2] = data[5];
+                paddr2[3] = data[4];
+                printf("Start address: 0x%08x\n", addr2);
+                break;
+                                
     		case 0x00: // data
     			paddr[0] = data[2];
     			paddr[1] = data[1];
-    
+
+                if(last_addr != addr) {
+                    if (section_open) {
+                        printf("Length of section: %08x\n", last_addr - section_addr);                        
+                        if(records) {
+                            write_record(section_addr, last_addr - section_addr, addr2, fpo, buffer);
+                        }
+                    }
+                    printf("Data at new address (new record): 0x%08x\n", addr);
+                    last_addr = addr;
+                    section_addr = addr;
+                    section_open = 1;
+                    if (records) {
+                        offset = addr;
+                    }
+                }
+
                 if(addr < offset) {
                     fprintf(stderr, "Address too small (0x%X is below offset..)\n", addr);
                     return 0;
@@ -113,8 +171,7 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size)
                 if(addr - offset >= size) {
                     fprintf(stderr, "Address too big (0x%X is > (size+offset)..)\n", addr);
                     return 0;
-                }                    
-   
+                }
     			for(i=0;i<data[0];i++) {
                     // program uint8_t
                     b = data[4+i];
@@ -123,6 +180,7 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size)
                         high = addr - offset;
                     addr++;
                 }
+                last_addr = addr;
     			break;
     
     		default:
@@ -148,6 +206,7 @@ int main(int argc, char** argv)
     char     name_in[1024];
     char     name_out[1024];
     unsigned char *buffer;
+    int      records = 0;
     
     FILE     *fi, *fo;
     
@@ -193,6 +252,11 @@ int main(int argc, char** argv)
                 }
                 break;
 
+            case 'r':
+                printf("Enabled generating record structs\n");
+                records = 1;
+                break;
+                
             default:
                 printf("Unknown option %s given.\n", argv[i]);
                 exit(2);
@@ -236,14 +300,15 @@ int main(int argc, char** argv)
     memset(buffer, (fill & 0xFF), size+64);
 
     // load hex file here
-    highest = read_hex_file(fi, buffer, bin_offset, size);
+    highest = read_hex_file(fi, buffer, bin_offset, size, records, fo);
     
-    if(size_set) {
-        fwrite(buffer, 1, size, fo);
-    } else {
-        fwrite(buffer, 1, highest + 1, fo);
+    if (!records) {
+        if(size_set) {
+            fwrite(buffer, 1, size, fo);
+        } else {
+            fwrite(buffer, 1, highest + 1, fo);
+        }
     }
-
     free(buffer);
 
     fclose(fo);

@@ -79,6 +79,18 @@
  */
 
 #include "u2p.h"
+#include "itu.h"
+#include "iomap.h"
+#include <stdio.h>
+
+#define W25Q_ContinuousArrayRead_LowFrequency       0x03
+
+#define SPI_FLASH_DATA     *((volatile uint8_t *)(FLASH_BASE + 0x00))
+#define SPI_FLASH_DATA_32  *((volatile uint32_t*)(FLASH_BASE + 0x00))
+#define SPI_FLASH_CTRL     *((volatile uint8_t *)(FLASH_BASE + 0x08))
+
+#define SPI_FORCE_SS 0x01
+#define SPI_LEVEL_SS 0x02
 
 #define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0000))
 #define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0004))
@@ -92,6 +104,15 @@
 
 #define TESTVALUE1  0x55AA6699
 #define TESTVALUE2  0x12345678
+
+
+void jump_run(uint32_t a)
+{
+	void (*function)();
+	uint32_t *dp = (uint32_t *)&function;
+    *dp = a;
+    function();
+}
 
 int main()
 { 
@@ -211,13 +232,47 @@ int main()
 	}
 	printf("\n\r");
 */
+	uint32_t flash_addr = 0xC0000; // 768K from start. FPGA image is (uncompressed) 745K
 
-	/* Event loop never exits. */
-    while (1) {
-		if (DDR2_TESTLOC1 != TESTVALUE2) {
-			DDR2_MEASURE;
-		}
+	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+    SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;
+    SPI_FLASH_DATA = (uint8_t)(flash_addr >> 16);
+    SPI_FLASH_DATA = (uint8_t)(flash_addr >> 8);
+    SPI_FLASH_DATA = (uint8_t)(flash_addr);
+
+    uint32_t *dest   = (uint32_t *)SPI_FLASH_DATA_32;
+    int      length  = (int)SPI_FLASH_DATA_32;
+    uint32_t run_address = SPI_FLASH_DATA_32;
+
+    if(length != -1) {
+        while(length > 0) {
+            *(dest++) = SPI_FLASH_DATA_32;
+            length -= 4;
+        }
+    	SPI_FLASH_CTRL = 0; // reset SPI chip select to idle
+        puts("Running bootloader.");
+        jump_run(run_address);
+        while(1);
     }
 
+    puts("No bootloader.");
+
     return 0;
+}
+
+void exit(int a)
+{
+	while(1)
+		;
+}
+
+void _zero_bss(void)
+{
+	extern char __sbss_start;
+	extern char __sbss_end;
+	int length = (int)&__sbss_end - (int)&__sbss_start;
+	uint8_t *bss = (uint8_t *)&__sbss_start;
+	for(int i=0;i<length;i++) {
+		*(bss++) = 0;
+	}
 }
