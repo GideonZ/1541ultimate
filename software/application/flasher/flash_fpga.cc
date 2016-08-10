@@ -20,6 +20,9 @@
 extern uint8_t _ultimate_altera_rbf_start;
 extern uint8_t _ultimate_altera_rbf_end;
 
+extern uint8_t _appl_bin_start;
+extern uint8_t _appl_bin_end;
+
 uint8_t swapped_bytes[256];
 
 int main(int argc, char *argv[])
@@ -70,10 +73,11 @@ int main(int argc, char *argv[])
     Screen *screen = host->getScreen();
 //    screen->clear();
 
-	flash_buffer_at(flash, screen, 0, false, &_ultimate_altera_rbf_start,   &_ultimate_altera_rbf_end,   "V1.0", "FPGA Loader");
+	flash_buffer_at(flash, screen, 0x00000, false, &_ultimate_altera_rbf_start,   &_ultimate_altera_rbf_end,   "V1.0", "FPGA Loader");
+	flash_buffer_at(flash, screen, 0xC0000, false, &_appl_bin_start,  &_appl_bin_end,  "V1.0", "Demo Application");
 
-	console_print(screen, "\nConfiguring Flash write protection..\n");
+//	console_print(screen, "\nConfiguring Flash write protection..\n");
 //	flash->protect_configure();
 //	flash->protect_enable();
-	console_print(screen, "Done!\n");
+	console_print(screen, "Done!                            \n");
 }

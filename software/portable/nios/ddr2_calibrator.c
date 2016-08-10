@@ -105,6 +105,16 @@
 #define TESTVALUE1  0x55AA6699
 #define TESTVALUE2  0x12345678
 
+const uint8_t hexchars[] = "0123456789ABCDEF";
+/*
+uint8_t hexchar(int a)
+{
+	if (a < 10) {
+		return (uint8_t)(a + '0');
+	}
+	return (uint8_t)(a + 'a' - 10);
+}
+*/
 
 void jump_run(uint32_t a)
 {
@@ -114,15 +124,30 @@ void jump_run(uint32_t a)
     function();
 }
 
+#if RECOVERY
+#define APPL "bootloader"
+#else
+#define APPL "application"
+#endif
+
 int main()
 { 
 	DDR2_ENABLE    = 1;
 	int i;
 	for (i=0;i<1000;i++)
 		;
-	//alt_putstr("Hello from Nios II!\n\r"); // delay!
 
-    DDR2_ADDR_LOW  = 0x00;
+#if RECOVERY
+	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
+	if ((buttons & ITU_BUTTON1) == 0) { // middle button not pressed
+		REMOTE_FLASHSEL_1;
+	    REMOTE_FLASHSELCK_0;
+	    REMOTE_FLASHSELCK_1;
+	    REMOTE_RECONFIG = 0xBE;
+	}
+#endif
+
+	DDR2_ADDR_LOW  = 0x00;
     DDR2_ADDR_HIGH = 0x04;
     DDR2_COMMAND   = 2; // Precharge all
 
@@ -212,11 +237,17 @@ int main()
     		final_pos = best_pos;
     	}
     }
-    // printf("Chosen: Mode = %d, Pos = %d. Window = %d ps\n\r", best_mode, final_pos, 100 * best_overall);
+    //printf("Chosen: Mode = %d, Pos = %d. Window = %d ps\n\r", best_mode, final_pos, 100 * best_overall);
     DDR2_READMODE = best_mode;
 	for (phase = 0; phase < final_pos; phase ++) {
 		DDR2_PLLPHASE = 0x35; // move read clock
 	}
+	ioWrite8(UART_DATA, '@');
+	ioWrite8(UART_DATA, hexchars[best_mode]);
+	ioWrite8(UART_DATA, hexchars[final_pos >> 4]);
+	ioWrite8(UART_DATA, hexchars[final_pos & 15]);
+	ioWrite8(UART_DATA, '\r');
+	ioWrite8(UART_DATA, '\n');
 
 /*
 	for (phase = 0; phase < 160; phase ++) {
@@ -243,6 +274,7 @@ int main()
     uint32_t *dest   = (uint32_t *)SPI_FLASH_DATA_32;
     int      length  = (int)SPI_FLASH_DATA_32;
     uint32_t run_address = SPI_FLASH_DATA_32;
+//    uint32_t version = SPI_FLASH_DATA_32;
 
     if(length != -1) {
         while(length > 0) {
@@ -250,29 +282,13 @@ int main()
             length -= 4;
         }
     	SPI_FLASH_CTRL = 0; // reset SPI chip select to idle
-        puts("Running bootloader.");
+        puts("Running " APPL ".");
         jump_run(run_address);
         while(1);
     }
 
-    puts("No bootloader.");
+    puts("No " APPL ".");
 
     return 0;
 }
 
-void exit(int a)
-{
-	while(1)
-		;
-}
-
-void _zero_bss(void)
-{
-	extern char __sbss_start;
-	extern char __sbss_end;
-	int length = (int)&__sbss_end - (int)&__sbss_start;
-	uint8_t *bss = (uint8_t *)&__sbss_start;
-	for(int i=0;i<length;i++) {
-		*(bss++) = 0;
-	}
-}
