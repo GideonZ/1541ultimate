@@ -38,7 +38,7 @@ VPATH +=	$(PATH_SW)/niosbsp/HAL/inc
 VPATH +=	$(PATH_SW)/niosbsp/drivers/inc
 VPATH +=	$(PATH_SW)/application/flasher
 VPATH +=    $(PATH_SW)/../target/fpga/u2plus_recovery/output_files
-VPATH +=    $(PATH_SW)/../target/fpga/u2plus_solo/output_files
+VPATH +=    $(PATH_SW)/../target/fpga/u2plus_run/output_files
 VPATH +=    $(PATH_SW)/../target/software/nios2_rtos/result
 VPATH +=    $(PATH_SW)/../target/software/nios2_ultimate/result
 

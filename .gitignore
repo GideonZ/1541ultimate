@@ -135,6 +135,10 @@ target/software/nios2_flash/output
 target/software/nios2_flash/result
 target/software/nios2_loader1/output
 target/software/nios2_loader1/result
+target/software/nios2_loader2/output
+target/software/nios2_loader2/result
+target/software/nios2_rtos/output
+target/software/nios2_rtos/result
 target/software/nios2_ultimate/d
 target/software/nios2_ultimate/output
 target/software/nios2_ultimate/python_out*

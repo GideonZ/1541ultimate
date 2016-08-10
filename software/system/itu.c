@@ -52,9 +52,14 @@ void wait_ms(int time)
     }
 }
 
-uint16_t getMsTimer() {
-	uint16_t result = ((uint16_t)ioRead8(ITU_MS_TIMER_LO)) | (((uint16_t)ioRead8(ITU_MS_TIMER_HI)) << 8);
-	return result;
+uint16_t getMsTimer()
+{
+	uint16_t result1, result2;
+	do {
+		result1 = ((uint16_t)ioRead8(ITU_MS_TIMER_LO)) | (((uint16_t)ioRead8(ITU_MS_TIMER_HI)) << 8);
+		result2 = ((uint16_t)ioRead8(ITU_MS_TIMER_LO)) | (((uint16_t)ioRead8(ITU_MS_TIMER_HI)) << 8);
+	} while(result1 != result2);
+	return result1;
 }
 /*
 -------------------------------------------------------------------------------

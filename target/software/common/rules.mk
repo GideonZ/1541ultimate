@@ -9,7 +9,7 @@ OBJS_IEC = $(notdir $(SRCS_IEC:%.iec=%.o))
 OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.o))
 OBJS_RBF = $(notdir $(SRCS_RBF:%.rbf=%.o))
-OBJS_APP = $(notdir $(SRCS_APP:%.app=%.o))
+OBJS_APP = $(notdir $(SRCS_APP:%.app=%.ao))
 CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 
 ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP))
@@ -83,7 +83,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end
 
-%.o: %.app
+%.ao: %.app
 	@echo Converting $(<F) binary to $(@F)..
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
 	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))

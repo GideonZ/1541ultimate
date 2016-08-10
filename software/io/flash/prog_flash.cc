@@ -60,7 +60,7 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
         p = (char *)bin;
     }
     else {
-        console_print(screen, "Flashing  \033\027%s\033\037..\n", descr);
+        console_print(screen, "Flashing  \033\027%s\033\037.. from %p\n", descr, buffer);
         p = (char *)buffer;
     }
 
@@ -71,7 +71,7 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
 			sector = flash->page_to_sector(page);
 			if (sector != last_sector) {
 				last_sector = sector;
-				// console_print(screen, "Erasing     %d   \r", sector);
+				// console_print(screen, "Erasing     %d   \n", sector);
 				if(!flash->erase_sector(sector)) {
 			        // user_interface->popup("Erasing failed...", BUTTON_CANCEL);
 			        return false;

@@ -16,23 +16,51 @@
 #include "stream_uart.h"
 #include "host_stream.h"
 #include "dump_hex.h"
+#include "u2p.h"
 
-extern uint8_t _ultimate_altera_rbf_start;
-extern uint8_t _ultimate_altera_rbf_end;
+extern uint32_t _ultimate_recovery_rbf_start;
+extern uint32_t _ultimate_recovery_rbf_end;
 
-extern uint8_t _appl_bin_start;
-extern uint8_t _appl_bin_end;
+extern uint32_t _ultimate_run_rbf_start;
+extern uint32_t _ultimate_run_rbf_end;
+
+extern uint32_t _free_rtos_demo_app_start;
+extern uint32_t _free_rtos_demo_app_end;
+
+extern uint32_t _ultimate_app_start;
+extern uint32_t _ultimate_app_end;
 
 uint8_t swapped_bytes[256];
+uint8_t readbuf[512];
 
 int main(int argc, char *argv[])
 {
-	printf("*** Primary Flash Programmer ***\n\n");
+	printf("*** Flash Programmer ***\n\n");
+
+	REMOTE_FLASHSEL_0;
+    REMOTE_FLASHSELCK_0;
+    REMOTE_FLASHSELCK_1;
 	Flash *flash = get_flash();
-    printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
     GenericHost *host = 0;
     Stream *stream = new Stream_UART;
+
+    /*
+    C64 *c64 = new C64;
+    c64->reset();
+
+    if (c64->exists()) {
+    	host = c64;
+    } else {
+    	host = new HostStream(stream);
+    }
+*/
+	host = new HostStream(stream);
+	host->take_ownership(NULL);
+    Screen *screen = host->getScreen();
+//    screen->clear();
+
+	console_print(screen, "Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
     for(int i=0;i<256;i++) {
     	uint8_t temp = (uint8_t)i;
@@ -44,40 +72,47 @@ int main(int argc, char *argv[])
     	}
     	swapped_bytes[i] = swapped;
     }
-    dump_hex(swapped_bytes, 256);
 
-    uint8_t *data = &_ultimate_altera_rbf_start;
-	int length = (int)&_ultimate_altera_rbf_end - (int)data;
+    uint8_t *data = (uint8_t *)&_ultimate_recovery_rbf_start;
+	int length = (int)&_ultimate_recovery_rbf_end - (int)data;
 
-	printf("Swapping %d bytes\n", length);
+	console_print(screen, "Swapping %d bytes from %p\n", length, data);
 	for(int i=0;i < length; i++, data++) {
     	*data = swapped_bytes[*data];
     }
 
-    dump_hex(&_ultimate_altera_rbf_start, 256);
-/*
-    C64 *c64 = new C64;
-    c64->reset();
+    data = (uint8_t *)&_ultimate_run_rbf_start;
+    length = (int)&_ultimate_run_rbf_end - (int)data;
 
-    if (c64->exists()) {
-    	host = c64;
-    } else {
-    	host = new HostStream(stream);
+    console_print(screen, "Swapping %d bytes from %p\n", length, data);
+    for(int i=0;i < length; i++, data++) {
+        *data = swapped_bytes[*data];
     }
-*/
-	host = new HostStream(stream);
 
-	flash->protect_disable();
+    flash->read_linear_addr(0xC0000, 512, readbuf);
+    dump_hex_relative(readbuf, 512);
 
-	host->take_ownership(NULL);
-    Screen *screen = host->getScreen();
-//    screen->clear();
+    flash->protect_disable();
 
-	flash_buffer_at(flash, screen, 0x00000, false, &_ultimate_altera_rbf_start,   &_ultimate_altera_rbf_end,   "V1.0", "FPGA Loader");
-	flash_buffer_at(flash, screen, 0xC0000, false, &_appl_bin_start,  &_appl_bin_end,  "V1.0", "Demo Application");
+	flash_buffer_at(flash, screen, 0x00000, false, &_ultimate_recovery_rbf_start,   &_ultimate_recovery_rbf_end,   "V1.0", "FPGA Loader");
+	flash_buffer_at(flash, screen, 0xC0000, false, &_free_rtos_demo_app_start,  &_free_rtos_demo_app_end,  "V1.0", "Demo Application");
 
-//	console_print(screen, "\nConfiguring Flash write protection..\n");
+    REMOTE_FLASHSEL_1;
+    REMOTE_FLASHSELCK_0;
+    REMOTE_FLASHSELCK_1;
+
+    Flash *flash2 = get_flash();
+    flash_buffer_at(flash2, screen, 0x00000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
+    flash_buffer_at(flash2, screen, 0xC0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+
+	//	console_print(screen, "\nConfiguring Flash write protection..\n");
 //	flash->protect_configure();
 //	flash->protect_enable();
 	console_print(screen, "Done!                            \n");
+
+	REMOTE_FLASHSEL_0;
+    REMOTE_FLASHSELCK_0;
+    REMOTE_FLASHSELCK_1;
+    REMOTE_RECONFIG = 0xBE;
+	console_print(screen, "You shouldn't see this!\n");
 }
