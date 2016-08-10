@@ -6,13 +6,14 @@ ARCHITECTURE = nios2
 include ../common/environment.mk
 
 PRJ      =  free_rtos_demo
-FINAL    =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
+FINAL    =  $(RESULT)/appl.bin $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 
-VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios_sigma
-VPATH +=	$(PATH_SW)/niosbsp
-VPATH +=	$(PATH_SW)/niosbsp/HAL/inc
-VPATH +=	$(PATH_SW)/niosbsp/drivers/inc
+VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
+VPATH +=	$(PATH_SW)/portable/nios
+VPATH +=	$(PATH_SW)/nios_appl_bsp
+VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
+VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 VPATH +=	$(PATH_SW)/application/rtos
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
@@ -36,14 +37,13 @@ SRCS_ASM =
 
 SRCS_ASMS = port_asm.S
 
-OPTIONS  = -g -ffunction-sections -O0 -DOS  -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+PATH_INC =  $(addprefix -I, $(VPATH))
+OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
-CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
-LINK 	 = ./nios_app.lds
-LLIB     =  -L $(PATH_SW)/niosbsp \
-			-L $(NIOS_TOOLCHAIN)/nios2-elf/lib \
-            -L $(NIOS_TOOLCHAIN)/lib/gcc/nios2-elf/4.8.3
-LIBS     =  -lc -lhal_bsp -lc -lgcc
-LFLAGS   = --gc-sections 
+CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
+BSP      = $(PATH_SW)/nios_appl_bsp
+LINK 	 = $(BSP)/linker.x
+LIBS2    = $(BSP)/libhal_bsp.a
+LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../common/rules.mk

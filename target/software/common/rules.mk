@@ -38,17 +38,19 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo Creating Binary $@
 	@$(OBJCOPY) -O binary $< $@
 
-$(RESULT)/$(PRJ).binrec: $(RESULT)/$(PRJ).hex
+$(RESULT)/appl.bin: $(OUTPUT)/$(PRJ).shex
 	@echo Creating Binary with Records $@
 	@$(HEX2BIN) -r $< $@
 
 $(RESULT)/$(PRJ).hex: $(OUTPUT)/$(PRJ).out
-	@echo Creating Hex File $@
+	@echo Creating Hex File for On Chip Memory $@
+	elf2hex --input=$< 0x0000 $(HEXLAST) --width=32 --little-endian-mem --create-lanes=0 --record=4 --output=$@ --base=$(HEXBASE) --end=$(HEXEND)
+
+$(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
+	@echo Creating Hex File to extract startaddr $@
 	@$(OBJCOPY) -O ihex  $< $@
 
-$(RESULT)/$(PRJ).chiphex: $(RESULT)/$(PRJ).bin
-	@echo Creating Hex File for On Chip Memory $@
-	@$(BIN2HEX) -w $< $@
+#	@$(BIN2HEX) $< $@
 
 %.chk: %.bin
 	@echo Calculating checksum of $(<F) binary to $(@F)..

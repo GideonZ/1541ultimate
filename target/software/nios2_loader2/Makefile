@@ -5,8 +5,12 @@ ARCHITECTURE = nios2
 
 include ../common/environment.mk
 
-PRJ      =  calibrator
-FINAL    =  $(RESULT)/$(PRJ).chiphex $(RESULT)/$(PRJ).elf
+DEST     =  ../../fpga/u2plus_solo/onchip_mem.hex
+PRJ      =  secondary
+FINAL    =  $(RESULT)/$(PRJ).hex $(RESULT)/$(PRJ).elf $(DEST)
+HEXLAST  =  0x07FF
+HEXBASE  =  0x20000000
+HEXEND   =  0x200007FF
 
 SRCS_C   =	ddr2_calibrator.c small_printf.c itu.c
                         
@@ -27,7 +31,7 @@ SRCS_IEC =
 SRCS_NANO = 
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -Os -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DRECOVERY=0
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_solo_bsp
@@ -36,3 +40,6 @@ LIBS2    = $(BSP)/libhal_bsp.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../common/rules.mk
+
+$(DEST): $(RESULT)/$(PRJ).hex
+	cp $(RESULT)/$(PRJ).hex $(DEST)

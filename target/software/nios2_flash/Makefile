@@ -37,7 +37,8 @@ VPATH +=	$(PATH_SW)/niosbsp
 VPATH +=	$(PATH_SW)/niosbsp/HAL/inc
 VPATH +=	$(PATH_SW)/niosbsp/drivers/inc
 VPATH +=	$(PATH_SW)/application/flasher
-VPATH +=    $(PATH_SW)/../target/fpga/u2plus_solo
+VPATH +=    $(PATH_SW)/../target/fpga/u2plus_solo/output_files
+VPATH +=    $(PATH_SW)/../target/software/nios2_rtos/result
 
 SRCS_ASM =
 
@@ -47,7 +48,7 @@ SRCS_6502 =
 
 SRCS_RBF =  ultimate_altera.rbf
 
-SRCS_BIN = chars.bin
+SRCS_BIN = chars.bin appl.bin
 
 SRCS_IEC = 
 
