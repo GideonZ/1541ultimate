@@ -5,7 +5,7 @@ ARCHITECTURE = nios2
 
 include ../common/environment.mk
 
-DEST     =  ../../fpga/u2plus_solo/onchip_mem.hex
+DEST     =  ../../fpga/u2plus_run/onchip_mem.hex
 PRJ      =  secondary
 FINAL    =  $(RESULT)/$(PRJ).hex $(RESULT)/$(PRJ).elf $(DEST)
 HEXLAST  =  0x07FF

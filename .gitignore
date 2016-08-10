@@ -62,9 +62,9 @@ target/fpga/u2plus/output_files
 target/fpga/u2plus_recovery/db
 target/fpga/u2plus_recovery/incremental_db
 target/fpga/u2plus_recovery/output_files
-target/fpga/u2plus_solo/db
-target/fpga/u2plus_solo/incremental_db
-target/fpga/u2plus_solo/output_files
+target/fpga/u2plus_run/db
+target/fpga/u2plus_run/incremental_db
+target/fpga/u2plus_run/output_files
 target/fpga/work1400
 target/fpga/work250
 target/fpga/work400

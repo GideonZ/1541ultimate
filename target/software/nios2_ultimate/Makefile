@@ -6,7 +6,7 @@ ARCHITECTURE = nios2
 include ../common/environment.mk
 
 PRJ      =  ultimate
-FINAL    =  $(RESULT)/$(PRJ).binrec $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
+FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	itu.c \
 			dump_hex.c \

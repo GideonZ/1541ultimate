@@ -9,9 +9,10 @@ OBJS_IEC = $(notdir $(SRCS_IEC:%.iec=%.o))
 OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.o))
 OBJS_RBF = $(notdir $(SRCS_RBF:%.rbf=%.o))
+OBJS_APP = $(notdir $(SRCS_APP:%.app=%.o))
 CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF))
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP))
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
@@ -38,8 +39,8 @@ $(RESULT)/$(PRJ).bin: $(OUTPUT)/$(PRJ).out
 	@echo Creating Binary $@
 	@$(OBJCOPY) -O binary $< $@
 
-$(RESULT)/appl.bin: $(OUTPUT)/$(PRJ).shex
-	@echo Creating Binary with Records $@
+$(RESULT)/$(PRJ).app: $(OUTPUT)/$(PRJ).shex
+	@echo Creating Binary Application $@
 	@$(HEX2BIN) -r $< $@
 
 $(RESULT)/$(PRJ).hex: $(OUTPUT)/$(PRJ).out
@@ -74,6 +75,15 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@$(OBJCOPY) -I srec -O binary $< $@
 
 %.o: %.rbf
+	@echo Converting $(<F) binary to $(@F)..
+	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
+	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
+	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
+	--redefine-sym $(was)_start=$(becomes)_start \
+	--redefine-sym $(was)_size=$(becomes)_size \
+	--redefine-sym $(was)_end=$(becomes)_end
+
+%.o: %.app
 	@echo Converting $(<F) binary to $(@F)..
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
 	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
@@ -142,14 +152,14 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(OUTPUT)/$(PRJ).ld: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(LWIPLIB)
+$(OUTPUT)/$(PRJ).ld: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP) $(LWIPLIB)
 	@echo Linking using LD...
 	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).ld $(ALL_OBJS) $(LIBS)
 	@$(SIZE) $(OUTPUT)/$(PRJ).ld
 
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(LWIPLIB)
+$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP) $(LWIPLIB)
 	@echo Linking using GCC...
-	@$(CPP) -Wl,-Map=$(OUTPUT)/$(PRJ).map,$(LFLAGS) -T'$(LINK)' $(OPTIONS) -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS2)
+	$(CPP) -Wl,-Map=$(OUTPUT)/$(PRJ).map,$(LFLAGS) -T'$(LINK)' $(OPTIONS) -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS2)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out
 
 $(RESULT)/$(PRJ).elf: $(OUTPUT)/$(PRJ).out

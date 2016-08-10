@@ -6,7 +6,7 @@ ARCHITECTURE = nios2
 include ../common/environment.mk
 
 PRJ      =  free_rtos_demo
-FINAL    =  $(RESULT)/appl.bin $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
+FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
