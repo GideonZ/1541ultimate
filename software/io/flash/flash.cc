@@ -6,36 +6,20 @@
 #include "itu.h"
 #include <stdio.h>
 
+
 Flash *get_flash(void)
 {
-	// we test all known flashes here..
-	// Because we don't have a 'new' in the 1st boot, we simply
-	// instatiate all possible flash classes and return the pointer to the right one..
 #if RUNS_ON_PC
 	return new Flash(); // on PC, return stubbed class
 #endif
-	Flash *ret_val = NULL;
 
-	ret_val = at45_flash.tester();
-	if(ret_val)
-	    return ret_val;
-
-	ret_val = w25q_flash.tester();
-	if(ret_val)
-		return ret_val;
-
-	ret_val = s25fl_flash.tester();
-	if(ret_val)
-	    return ret_val;
-
-/*
-	ret_val = at49_flash.tester();
-	if(ret_val)
-	    return ret_val;
-*/
+	IndexedList<Flash*> *types = Flash :: getSupportedFlashTypes();
+	for(int i=0; i < types->get_elements(); i++) {
+		Flash *f = (*types)[i];
+		if (f->tester()) {
+			return f;
+		}
+	}
 
 	return new Flash(); // stubbed base class, just never return 0!
 }
-
-//Flash *flash = get_flash();
-

@@ -24,8 +24,8 @@ extern uint32_t _ultimate_recovery_rbf_end;
 extern uint32_t _ultimate_run_rbf_start;
 extern uint32_t _ultimate_run_rbf_end;
 
-extern uint32_t _free_rtos_demo_app_start;
-extern uint32_t _free_rtos_demo_app_end;
+extern uint32_t _recovery_app_start;
+extern uint32_t _recovery_app_end;
 
 extern uint32_t _ultimate_app_start;
 extern uint32_t _ultimate_app_end;
@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
     flash->protect_disable();
 
 	flash_buffer_at(flash, screen, 0x00000, false, &_ultimate_recovery_rbf_start,   &_ultimate_recovery_rbf_end,   "V1.0", "FPGA Loader");
-	flash_buffer_at(flash, screen, 0xC0000, false, &_free_rtos_demo_app_start,  &_free_rtos_demo_app_end,  "V1.0", "Demo Application");
+	flash_buffer_at(flash, screen, 0x80000, false, &_recovery_app_start,  &_recovery_app_end,  "V1.0", "Recovery Application");
 
     REMOTE_FLASHSEL_1;
     REMOTE_FLASHSELCK_0;

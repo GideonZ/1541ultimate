@@ -341,11 +341,13 @@ int TreeBrowser :: handle_key(int c)
         case KEY_F4: // F4 -> show threads
         	tasklist();
         	break;
+/*
         case KEY_F6: // F6 -> show log
         	reset_quick_seek();
         	state->refresh = true;
         	user_interface->run_editor(textLog.getText());
         	break;
+*/
         case KEY_BACK: // backspace
             if(quick_seek_length) {
                 quick_seek_length--;

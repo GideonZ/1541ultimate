@@ -39,15 +39,17 @@ VPATH +=	$(PATH_SW)/niosbsp/drivers/inc
 VPATH +=	$(PATH_SW)/application/flasher
 VPATH +=    $(PATH_SW)/../target/fpga/u2plus_recovery/output_files
 VPATH +=    $(PATH_SW)/../target/fpga/u2plus_run/output_files
-VPATH +=    $(PATH_SW)/../target/software/nios2_rtos/result
+VPATH +=    $(PATH_SW)/../target/software/nios2_recovery/result
 VPATH +=    $(PATH_SW)/../target/software/nios2_ultimate/result
 
-SRCS_ASM =
+SRCS_ASM =  binaries.s
 SRCS_ASMS = 
 SRCS_6502 = 
-SRCS_RBF =  ultimate_recovery.rbf ultimate_run.rbf
+SRCS_RBF =  
+#ultimate_recovery.rbf ultimate_run.rbf
 SRCS_BIN =  chars.bin
-SRCS_APP =  free_rtos_demo.app ultimate.app
+SRCS_APP =
+#free_rtos_demo.app ultimate.app
 SRCS_IEC = 
 SRCS_NANO =
 

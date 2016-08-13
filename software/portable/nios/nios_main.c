@@ -17,12 +17,17 @@
 #include "iomap.h"
 #include "itu.h"
 #include "profiler.h"
-
+#include "usb_nano.h"
 
 void RmiiRxInterruptHandler(void);
-uint8_t command_interface_irq(void);
-uint8_t tape_recorder_irq(void);
-uint8_t usb_irq(void);
+uint8_t command_interface_irq(void) __attribute__ ((weak));
+uint8_t tape_recorder_irq(void) __attribute__ ((weak));
+uint8_t usb_irq(void) __attribute__ ((weak));
+
+uint8_t command_interface_irq(void)
+{
+
+}
 
 static void ituIrqHandler(void *context)
 {
@@ -143,8 +148,16 @@ static void test_i2c_mdio(void)
 
     U2PIO_SPEAKER_EN = 1;
 
+    NANO_START = 0;
+    U2PIO_ULPI_RESET = 1;
+    uint16_t *dst = (uint16_t *)NANO_BASE;
+    for(int i=0; i<2048; i+=2) {
+    	*(dst++) = 0;
+    }
     USb2512Init();
     U2PIO_SPEAKER_EN = 0;
+    U2PIO_ULPI_RESET = 0;
+
 
     //REMOTE_RECONFIG = 0xBE;
 }

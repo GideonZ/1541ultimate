@@ -2,6 +2,7 @@
 #define FLASH_H
 
 #include "integer.h"
+#include "indexed_list.h"
 
 #define FLASH_ID_BOOTFPGA   0x00
 #define FLASH_ID_BOOTAPP    0x01
@@ -41,11 +42,17 @@ typedef struct t_flash_address {
 	int  max_length;
 } _flash_address;
 
-
 class Flash
 {
 public:    
-    Flash() { }
+	static IndexedList<Flash*>* getSupportedFlashTypes() {
+    	static IndexedList<Flash*> flash_types(4, NULL);
+    	return &flash_types;
+    }
+
+	Flash() {
+		getSupportedFlashTypes()->append(this);
+	}
     virtual ~Flash() { }
 
 	virtual Flash *tester(void) { return NULL; }

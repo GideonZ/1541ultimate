@@ -263,7 +263,11 @@ int main()
 	}
 	printf("\n\r");
 */
+#if RECOVERY
+	uint32_t flash_addr = 0x80000; // 512K from start. FPGA image is (compressed) ~330K
+#else
 	uint32_t flash_addr = 0xC0000; // 768K from start. FPGA image is (uncompressed) 745K
+#endif
 
 	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;

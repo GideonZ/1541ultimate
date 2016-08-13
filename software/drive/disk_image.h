@@ -7,6 +7,9 @@
 #include "filesystem_d64.h"
 #include "iomap.h"
 #include "userinterface.h"
+#include "menu.h"
+#include "filemanager.h"
+#include "subsys.h"
 
 #define GCR_DECODER_GCR_IN   (*(volatile uint8_t *)(GCR_CODER_BASE + 0x00))
 #define GCR_DECODER_BIN_OUT0 (*(volatile uint8_t *)(GCR_CODER_BASE + 0x00))
@@ -113,5 +116,31 @@ public:
 };
 
 extern BinImage static_bin_image; // for general use
+
+class ImageCreator : public ObjectWithMenu
+{
+public:
+	ImageCreator() { }
+	~ImageCreator() { }
+
+	static int S_createD64(SubsysCommand *cmd);
+
+	// object with menu
+	int fetch_task_items(Path *path, IndexedList<Action *> &list)
+	{
+		if(FileManager :: getFileManager() -> is_path_writable(path)) {
+	        list.append(new Action("Create D64", ImageCreator :: S_createD64, 0, 0));
+	        list.append(new Action("Create G64", ImageCreator :: S_createD64, 0, 1));
+	        return 3;
+	    }
+	    return 0;
+	}
+
+/*
+	int fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list) {
+		return 0;
+	}
+*/
+};
 
 #endif /* DISK_IMAGE_H_ */

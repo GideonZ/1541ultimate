@@ -175,6 +175,7 @@ architecture rtl of u2p_nios_solo is
     signal audio_clock  : std_logic;
     signal audio_reset  : std_logic;
     signal eth_reset    : std_logic;
+    signal ulpi_reset_req : std_logic;
     signal button_i     : std_logic_vector(2 downto 0);
         
     -- miscellaneous interconnect
@@ -246,7 +247,7 @@ begin
     generic map ('1')
     port map (
         clock       => ulpi_clock,
-        input       => sys_reset,
+        input       => ulpi_reset_req,
         input_c     => ulpi_reset_i  );
 
     i_eth_reset: entity work.level_synchronizer
@@ -362,7 +363,8 @@ begin
         i2c_sda_o  => i2c_sda_o,
         eth_irq_i  => ETH_IRQn,
         speaker_en => SPEAKER_ENABLE,
-        hub_reset_n=> HUB_RESETn
+        hub_reset_n=> HUB_RESETn,
+        ulpi_reset => ulpi_reset_req
     );
 
     i2c_scl_i   <= I2C_SCL and I2C_SCL_18;

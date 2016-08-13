@@ -41,8 +41,6 @@ int UserFileInteraction :: fetch_task_items(Path *path, IndexedList<Action*> &li
 {
 
 	if(FileManager :: getFileManager() -> is_path_writable(path)) {
-        list.append(new Action("Create D64", UserFileInteraction :: S_createD64, 0, 0));
-        list.append(new Action("Create G64", UserFileInteraction :: S_createD64, 0, 1));
         list.append(new Action("Create Directory", UserFileInteraction :: S_createDir, 0));
         return 3;
     }
@@ -116,62 +114,6 @@ int UserFileInteraction :: S_view(SubsysCommand *cmd)
         cmd->user_interface->run_editor(text_buf);
         delete text_buf;
     }
-	return 0;
-}
-
-int UserFileInteraction :: S_createD64(SubsysCommand *cmd)
-{
-	int doG64 = cmd->mode;
-	char buffer[64];
-
-	buffer[0] = 0;
-	int res;
-	BinImage *bin;
-	GcrImage *gcr;
-	FileManager *fm = FileManager :: getFileManager();
-	bool save_result;
-
-	res = cmd->user_interface->string_box("Give name for new disk..", buffer, 22);
-	if(res > 0) {
-		fix_filename(buffer);
-	    bin = &static_bin_image; //new BinImage;
-		if(bin) {
-    		bin->format(buffer);
-			set_extension(buffer, (doG64)?(char *)".g64":(char *)".d64", 32);
-            File *f = 0;
-            FRESULT fres = fm -> fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW, &f);
-			if(f) {
-                if(doG64) {
-                    gcr = new GcrImage;
-                    if(gcr) {
-                        bin->num_tracks = 40;
-                        cmd->user_interface->show_progress("Converting..", 120);
-                        gcr->convert_disk_bin2gcr(bin, cmd->user_interface);
-                        cmd->user_interface->update_progress("Saving...", 0);
-                        save_result = gcr->save(f, false, cmd->user_interface); // create image, without alignment, we are aligned already
-                        cmd->user_interface->hide_progress();
-                    } else {
-                        printf("No memory to create gcr image.\n");
-                        return -3;
-                    }
-                } else {
-                    cmd->user_interface->show_progress("Creating D64..", 35);
-                    save_result = bin->save(f, cmd->user_interface);
-                    cmd->user_interface->hide_progress();
-                }
-        		printf("Result of save: %d.\n", save_result);
-                fm->fclose(f);
-			} else {
-				printf("Can't create file '%s'\n", buffer);
-				cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-				return -2;
-			}
-			// delete bin;
-		} else {
-			printf("No memory to create bin.\n");
-			return -1;
-		}
-	}
 	return 0;
 }
 
