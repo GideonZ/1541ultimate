@@ -88,6 +88,7 @@ set_clock_groups -asynchronous -group [get_clocks {altera_reserved_tck $sys_cloc
 
 set_false_path  -to  [get_keepers {*_tig}]
 set_false_path  -to  [get_keepers {*synchroniser:*_tig*}]
+set_false_path  -to  [get_keepers {*synchronizer_gzw:*_tig*}]
 set_false_path  -to  [get_keepers {*level_synchronizer:*|sync1}]
 set_false_path  -to  [get_keepers {*pulse_synchronizer:*|sync1}]
 

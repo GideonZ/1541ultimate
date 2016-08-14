@@ -260,9 +260,11 @@ int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t
 
 int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 {
-	uint8_t dma_load_buffer[512];
+	uint32_t dma_load_buffer[128];
     uint32_t transferred = 0;
     uint16_t load_address = 0;
+    uint8_t  *dma_load_buffer_b;
+    dma_load_buffer_b = (uint8_t *)dma_load_buffer;
 
     if (f) {
         f->read(&load_address, 2, &transferred);
@@ -294,11 +296,11 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 		total_trans += transferred;
 		volatile uint8_t *d = dest;
 		for (int i=0;i<transferred;i++) {
-			*(d++) = dma_load_buffer[i];
+			*(d++) = dma_load_buffer_b[i];
 		}
 		d = dest;
 		for (int i=0; i<transferred; i++, d++) {
-			if (*d != dma_load_buffer[i]) {
+			if (*d != dma_load_buffer_b[i]) {
 				printf("Verify error: %b <> %b @ %7x\n", *d, dma_load_buffer[i], d);
 			}
 		}

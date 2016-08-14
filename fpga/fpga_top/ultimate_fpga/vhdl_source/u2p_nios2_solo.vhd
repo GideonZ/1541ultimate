@@ -218,7 +218,8 @@ architecture rtl of u2p_nios_solo is
     -- audio
     signal drive_sample_1   : signed(12 downto 0);
     signal drive_sample_2   : signed(12 downto 0);
-
+    signal audio_left       : signed(18 downto 0);
+    signal audio_right      : signed(18 downto 0);
 begin
     process(RMII_REFCLK)
     begin
@@ -395,7 +396,7 @@ begin
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
-        g_stereo_sid    => false,
+        g_stereo_sid    => true,
         g_hardware_iec  => true,
         g_iec_prog_tim  => false,
         g_c2n_streamer  => true,
@@ -459,7 +460,9 @@ begin
         -- Audio outputs
         drive_sample_1  => drive_sample_1,
         drive_sample_2  => drive_sample_2,
-    
+        audio_left      => audio_left,
+        audio_right     => audio_right,
+        
         -- IEC bus
         iec_reset_i => IEC_RESET,
         iec_atn_i   => IEC_ATN,
@@ -554,9 +557,10 @@ begin
     UART_TXD <= uart_txd_from_logic; -- and uart_txd_from_qsys;
 
     b_audio: block
-        signal freq_left        : std_logic_vector(15 downto 0);
-        signal audio_left       : signed(19 downto 0);
-        signal audio_right      : signed(19 downto 0);
+        signal audio_get_sample : std_logic;
+        signal sys_get_sample   : std_logic;
+        signal audio_audio_left : std_logic_vector(audio_left'range);
+        signal audio_audio_right: std_logic_vector(audio_right'range);
         signal stream_out_data  : std_logic_vector(23 downto 0);
         signal stream_out_tag   : std_logic_vector(0 downto 0);
         signal stream_out_valid : std_logic;
@@ -564,40 +568,6 @@ begin
         signal stream_in_tag    : std_logic_vector(0 downto 0);
         signal stream_in_ready  : std_logic;
     begin
-        i_sync: entity work.synchroniser
-        generic map (
-            g_data_width => 16
-        )
-        port map(
-            tx_clock     => sys_clock,
-            tx_reset     => sys_reset,
-            tx_push      => '1',
-            tx_data      => X"0321",
-            tx_done      => open,
-            
-            rx_clock     => audio_clock,
-            rx_reset     => audio_reset,
-            rx_new_data  => open,
-            rx_data      => freq_left
-        );
-        
-        -- audio stuff for testing
-        i_sineL: entity work.sine_osc
-        port map (
-            clock  => audio_clock,
-            reset  => audio_reset,
-            freq   => unsigned(freq_left),
-            sine   => audio_left,
-            cosine => open );
-        
-        i_sineR: entity work.sine_osc
-        port map (
-            clock  => audio_clock,
-            reset  => audio_reset,
-            freq   => X"0123",
-            sine   => audio_right,
-            cosine => open );
-    
         i2s: entity work.i2s_serializer
         port map (
             clock            => audio_clock,
@@ -616,28 +586,57 @@ begin
 
         AUDIO_MCLK <= audio_clock;
 
---        i_dac: entity work.sigma_delta_dac
---        generic map (
---            g_left_shift   => 0,
---            g_width        => 20
---        )
---        port map (
---            clock          => audio_clock,
---            reset          => audio_reset,
---            dac_in         => signed(audio_left),
---            dac_out        => SPEAKER_DATA
---        );
+        i_sync_get: entity work.pulse_synchronizer
+        port map (
+            clock_in  => audio_clock,
+            pulse_in  => audio_get_sample,
+            clock_out => sys_clock,
+            pulse_out => sys_get_sample
+        );
+        
 
+        i_sync_left: entity work.synchronizer_gzw
+        generic map (
+            g_width     => audio_left'length,
+            g_fast      => false
+        )
+        port map(
+            tx_clock    => sys_clock,
+            tx_push     => sys_get_sample,
+            tx_data     => std_logic_vector(audio_left),
+            tx_done     => open,
+            rx_clock    => audio_clock,
+            rx_new_data => open,
+            rx_data     => audio_audio_left
+        );
+        
+        i_sync_right: entity work.synchronizer_gzw
+        generic map (
+            g_width     => audio_right'length,
+            g_fast      => false
+        )
+        port map(
+            tx_clock    => sys_clock,
+            tx_push     => sys_get_sample,
+            tx_data     => std_logic_vector(audio_right),
+            tx_done     => open,
+            rx_clock    => audio_clock,
+            rx_new_data => open,
+            rx_data     => audio_audio_right
+        );
+ 
         process(audio_clock)
         begin
             if rising_edge(audio_clock) then
+                audio_get_sample <= '0';
                 if stream_in_ready = '1' then
                     if stream_in_tag(0) = '0' then
                         stream_in_tag(0) <= '1';
-                        stream_in_data <= std_logic_vector(audio_right) & "0000";
+                        stream_in_data <= audio_audio_right & "00000";
+                        audio_get_sample <= '1';
                     else
                         stream_in_tag(0) <= '0';
-                        stream_in_data <= std_logic_vector(audio_left) & "0000";
+                        stream_in_data <= audio_audio_left & "00000";
                     end if;
                 end if;
                 if audio_reset = '1' then

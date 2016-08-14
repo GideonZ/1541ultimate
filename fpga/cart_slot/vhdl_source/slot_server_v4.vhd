@@ -60,10 +60,10 @@ port (
     freezer_state   : out   std_logic_vector(1 downto 0);
 
     -- audio output
-    sid_pwm_left    : out   std_logic := '0';
-    sid_pwm_right   : out   std_logic := '0';
-    samp_pwm_left   : out   std_logic := '0';
-    samp_pwm_right  : out   std_logic := '0';
+    sid_left         : out signed(17 downto 0);
+    sid_right        : out signed(17 downto 0);
+    samp_left        : out signed(17 downto 0);
+    samp_right       : out signed(17 downto 0);
 
     -- timing output
     phi2_tick       : out   std_logic;
@@ -197,11 +197,6 @@ architecture structural of slot_server_v4 is
     
     signal mem_rack_slot    : std_logic;
     signal mem_dack_slot    : std_logic;
-
-    signal sid_sample_left  : signed(17 downto 0);
-    signal sid_sample_right : signed(17 downto 0);
-    signal sample_L         : signed(17 downto 0);
-    signal sample_R         : signed(17 downto 0);
 
     signal phi2_tick_avail  : std_logic;
     signal stand_alone_tick : std_logic;
@@ -511,34 +506,8 @@ begin
             slot_resp    => slot_resp_sid,
         
             start_iter   => phi2_tick_avail,
-            sample_left  => sid_sample_left,
-            sample_right => sid_sample_right );
-
-        i_pdm_sid_L: entity work.sigma_delta_dac --delta_sigma_2to5
-        generic map (
-            g_left_shift => 0,
-            g_invert => true,
-            g_use_mid_only => false,
-            g_width => sid_sample_left'length )
-        port map (
-            clock   => clock,
-            reset   => reset,
-            
-            dac_in  => sid_sample_left,
-            dac_out => sid_pwm_left );
-    
-        i_pdm_sid_R: entity work.sigma_delta_dac --delta_sigma_2to5
-        generic map (
-            g_left_shift => 0,
-            g_invert => true,
-            g_use_mid_only => false,
-            g_width => sid_sample_right'length )
-        port map (
-            clock   => clock,
-            reset   => reset,
-            
-            dac_in  => sid_sample_right,
-            dac_out => sid_pwm_right );
+            sample_left  => sid_left,
+            sample_right => sid_right );
 
     end generate;
     
@@ -669,35 +638,9 @@ begin
 
             irq         => irq_samp,
             
-            sample_L    => sample_L,
-            sample_R    => sample_R,
+            sample_L    => samp_left,
+            sample_R    => samp_right,
             new_sample  => open );
-
-        i_pdm_samp_L: entity work.sigma_delta_dac --delta_sigma_2to5
-        generic map (
-            g_left_shift => 0,
-            g_invert => true,
-            g_use_mid_only => false,
-            g_width => 18 )
-        port map (
-            clock   => clock,
-            reset   => reset,
-            
-            dac_in  => sample_L,
-            dac_out => samp_pwm_left );
-    
-        i_pdm_samp_R: entity work.sigma_delta_dac --delta_sigma_2to5
-        generic map (
-            g_left_shift => 0,
-            g_invert => true,
-            g_use_mid_only => false,
-            g_width => 18 )
-        port map (
-            clock   => clock,
-            reset   => reset,
-            
-            dac_in  => sample_R,
-            dac_out => samp_pwm_right );
 
     end generate;
 

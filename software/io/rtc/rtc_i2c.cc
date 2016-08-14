@@ -1,5 +1,6 @@
 #include "rtc.h"
 #include "small_printf.h"
+#include "i2c.h"
 
 const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
 										"Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -34,37 +35,17 @@ struct t_cfg_definition rtc_config[] = {
 	{ CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
-// ========================
-//   Register definitions
-// ========================
-#define RTC_CHIP_DATA  *((volatile uint8_t *)(RTC_BASE + 0x00))
-#define RTC_CHIP_SPEED *((volatile uint8_t *)(RTC_BASE + 0x04))
-#define RTC_CHIP_CTRL  *((volatile uint8_t *)(RTC_BASE + 0x08))
-
-#define SPI_BUSY        0x80
-#define SPI_FORCE_SS    0x01
-#define SPI_LEVEL_SS    0x02
-#define SPI_CS_ON       0x01
-#define SPI_CS_OFF      0x03
-
 #define RTC_ADDR_CTRL1      0
 #define RTC_ADDR_CTRL2      1
-#define RTC_ADDR_SECONDS    2
-#define RTC_ADDR_MINUTES    3
-#define RTC_ADDR_HOURS      4
-#define RTC_ADDR_DAYS       5
-#define RTC_ADDR_WEEKDAYS   6
-#define RTC_ADDR_MONTHS     7
-#define RTC_ADDR_YEARS      8
-#define RTC_ADDR_MIN_ALM    9
-#define RTC_ADDR_HOUR_ALM  10
-#define RTC_ADDR_DAY_ALM   11
-#define RTC_ADDR_WKDAY_ALM 12
-#define RTC_ADDR_OFFSET    13
-#define RTC_ADDR_TIMER     14
-#define RTC_ADDR_CLOCKOUT  14
-#define RTC_ADDR_COUNTDOWN 15
-
+#define RTC_ADDR_OFFSET     2
+#define RTC_ADDR_RAM		3
+#define RTC_ADDR_SECONDS    4
+#define RTC_ADDR_MINUTES    5
+#define RTC_ADDR_HOURS      6
+#define RTC_ADDR_DAYS       7
+#define RTC_ADDR_WEEKDAYS   8
+#define RTC_ADDR_MONTHS     9
+#define RTC_ADDR_YEARS      10
 
 static uint8_t bcd2bin(uint8_t bcd)
 {
@@ -84,38 +65,24 @@ static uint8_t bin2bcd(uint8_t bin)
 
 Rtc :: Rtc()
 {
-    if(getFpgaCapabilities() & CAPAB_RTC_CHIP) {
-    	capable = true;
-    	cfg = new RtcConfigStore("Clock Settings", rtc_config);
-    	ConfigManager :: getConfigManager() -> add_custom_store(cfg);
-    	get_time_from_chip();
-    
-    	// Check and correct clock out setting
-    	if((rtc_regs[RTC_ADDR_CLOCKOUT] & 0x70) != 0x70)
-    		write_byte(RTC_ADDR_CLOCKOUT, 0x72);
-    } else {
-        capable = false;
-    }
+	capable = true;
+	cfg = new RtcConfigStore("Clock Settings", rtc_config);
+	ConfigManager :: getConfigManager() -> add_custom_store(cfg);
+	get_time_from_chip();
 }
 
 Rtc :: ~Rtc()
 {
-    //printf("Destructor RTC\n");
     if (capable) {
-        //config_manager.dump();
     	ConfigManager :: getConfigManager() -> remove_store(cfg);
     	delete cfg;
-    	//printf("RTC configuration store now gone..\n");
     }
 }
 
 void Rtc :: write_byte(int addr, uint8_t val)
 {
 	ENTER_SAFE_SECTION
-	RTC_CHIP_CTRL = SPI_CS_ON;
-    RTC_CHIP_DATA = (uint8_t)(0x10 + addr);
-    RTC_CHIP_DATA = val;
-    RTC_CHIP_CTRL = SPI_CS_OFF;
+	i2c_write_byte(0xA2, addr, val);
 	LEAVE_SAFE_SECTION
 	rtc_regs[addr] = val; // update internal structure as well.
 }
@@ -124,13 +91,10 @@ void Rtc :: write_byte(int addr, uint8_t val)
 void Rtc :: read_all(void)
 {
 	ENTER_SAFE_SECTION
-	RTC_CHIP_CTRL = SPI_CS_ON;
-    RTC_CHIP_DATA = 0x90; // read + startbit
+    for(int i=0;i<11;i++) {
+        rtc_regs[i] = i2c_read_byte(0xA2, i);
 
-    for(int i=0;i<16;i++) {
-        rtc_regs[i] = RTC_CHIP_DATA;
     }
-	RTC_CHIP_CTRL = SPI_CS_OFF;
 	LEAVE_SAFE_SECTION
 }
 
@@ -156,22 +120,17 @@ void Rtc :: set_time_in_chip(int corr_ppm, int y, int M, int D, int wd, int h, i
 	// calculate correction register
 	uint8_t corr_byte = 0;
 	int div;
-	if((corr_ppm > 136)||(corr_ppm < -136)) {
-		div = 434;
-		corr_byte = 0x80;
-	} else {
-		div = 217;
-	}
-	int val = (200 * corr_ppm) / div;
+	int val = (29 * corr_ppm) / 59;
 	if(val > 0)
 		if(val & 1) val++;
 	else
 		if(val & 1) val--;
 	val = (val >> 1) & 0x7F;
-	corr_byte |= uint8_t(val);
-//	printf("Correction byte for %d ppm: %b\n", corr_ppm, corr_byte);
+	corr_byte = 0x80 | uint8_t(val);
+	printf("Correction byte for %d ppm: %b\n", corr_ppm, corr_byte);
 	
-	write_byte(RTC_ADDR_CTRL1,    0x80);
+	write_byte(RTC_ADDR_CTRL1,    0x21); // stop
+	write_byte(RTC_ADDR_CTRL2,    0x07); // no clock out
 	write_byte(RTC_ADDR_SECONDS,  bin2bcd(s));
 	write_byte(RTC_ADDR_MINUTES,  bin2bcd(m));
 	write_byte(RTC_ADDR_HOURS,    bin2bcd(h));
@@ -180,17 +139,16 @@ void Rtc :: set_time_in_chip(int corr_ppm, int y, int M, int D, int wd, int h, i
 	write_byte(RTC_ADDR_MONTHS,   bin2bcd(M));
 	write_byte(RTC_ADDR_YEARS,    bin2bcd(y));
 	write_byte(RTC_ADDR_OFFSET,   corr_byte);
-	write_byte(RTC_ADDR_CTRL1,    0x00);
+	write_byte(RTC_ADDR_CTRL1,    0x01);
     
 }
 
 int  Rtc :: get_correction(void)
 {
-	uint8_t corr_byte = rtc_regs[RTC_ADDR_OFFSET];
-	int mul = (corr_byte & 0x80)?434:217;
-	int val = (corr_byte & 0x40)?(int(corr_byte) | -128):int(corr_byte & 0x3F);
-//	printf("Mul = %d. Val = $%b (%d)\n", mul, val, val);
-	int corr = (mul * val) / 50;
+	uint8_t corr_byte = rtc_regs[RTC_ADDR_OFFSET] & 0x7F;
+	int val = (corr_byte & 0x40) ? (int(corr_byte & 0x3F) -64) : int(corr_byte & 0x3F);
+
+	int corr = (236 * val) / 29;
 	if(corr > 0)
 		if(corr & 1) corr++;
 	else
@@ -213,7 +171,7 @@ void Rtc :: get_time(int &y, int &M, int &D, int &wd, int &h, int &m, int &s)
     } else {
         read_all(); // read directly from chip
 
-        s  = (int)bcd2bin(rtc_regs[RTC_ADDR_SECONDS]);
+        s  = (int)bcd2bin(rtc_regs[RTC_ADDR_SECONDS] & 0x7F);
         m  = (int)bcd2bin(rtc_regs[RTC_ADDR_MINUTES]);
         h  = (int)bcd2bin(rtc_regs[RTC_ADDR_HOURS]);
         wd = (int)bcd2bin(rtc_regs[RTC_ADDR_WEEKDAYS]);

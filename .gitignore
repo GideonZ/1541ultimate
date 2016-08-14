@@ -137,6 +137,9 @@ target/software/nios2_loader1/output
 target/software/nios2_loader1/result
 target/software/nios2_loader2/output
 target/software/nios2_loader2/result
+target/software/nios2_recovery/output
+target/software/nios2_recovery/python_out*
+target/software/nios2_recovery/result
 target/software/nios2_rtos/output
 target/software/nios2_rtos/result
 target/software/nios2_ultimate/d

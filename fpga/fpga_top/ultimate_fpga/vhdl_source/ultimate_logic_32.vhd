@@ -84,6 +84,8 @@ port (
     -- Audio outputs
     drive_sample_1   : out signed(12 downto 0);
     drive_sample_2   : out signed(12 downto 0);
+    audio_left       : out signed(18 downto 0);
+    audio_right      : out signed(18 downto 0);
 
     -- IEC bus
     -- actual levels of the pins --
@@ -313,9 +315,10 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_rmii     : t_io_resp := c_io_resp_init;
     signal io_irq           : std_logic;
     
-    -- Audio routing
-    signal pwm              : std_logic := '0';
-    signal pwm_2            : std_logic := '0';
+    signal sid_left         : signed(17 downto 0);
+    signal sid_right        : signed(17 downto 0);
+    signal samp_left        : signed(17 downto 0);
+    signal samp_right       : signed(17 downto 0);
     
     -- IEC signal routing
     signal atn_o, atn_i     : std_logic := '1';
@@ -352,10 +355,7 @@ architecture logic of ultimate_logic_32 is
     signal freezer_state    : std_logic_vector(1 downto 0);
     signal dirty_led_1_n    : std_logic := '1';
     signal dirty_led_2_n    : std_logic := '1';
-    signal sid_pwm_left     : std_logic;
-    signal sid_pwm_right    : std_logic;
-    signal samp_pwm_left    : std_logic;
-    signal samp_pwm_right   : std_logic;
+
     signal trigger_1        : std_logic;
     signal trigger_2        : std_logic;
     signal sys_irq_usb      : std_logic := '0';
@@ -599,10 +599,10 @@ begin
             cart_led_n      => cart_led_n,
             
             -- audio
-            sid_pwm_left    => sid_pwm_left,
-            sid_pwm_right   => sid_pwm_right,
-            samp_pwm_left   => samp_pwm_left,
-            samp_pwm_right  => samp_pwm_right,
+            sid_left        => sid_left,
+            sid_right       => sid_right,
+            samp_left       => samp_left,
+            samp_right      => samp_right,
 
             -- debug
             freezer_state   => freezer_state,
@@ -1060,14 +1060,14 @@ begin
         req             => io_req_aud_sel,
         resp            => io_resp_aud_sel,
         
-        drive0          => pwm,
-        drive1          => pwm_2,
-        cas_read        => CAS_READ,
-        cas_write       => CAS_WRITE,
-        sid_left        => sid_pwm_left,
-        sid_right       => sid_pwm_right,
-        samp_left       => samp_pwm_left,
-        samp_right      => samp_pwm_right,
+        drive0          => '0', -- pwm,
+        drive1          => '0', -- pwm_2,
+        cas_read        => '0', -- CAS_READ,
+        cas_write       => '0', -- CAS_WRITE,
+        sid_left        => '0', -- sid_pwm_left,
+        sid_right       => '0', -- sid_pwm_right,
+        samp_left       => '0', -- samp_pwm_left,
+        samp_right      => '0', -- samp_pwm_right,
                 
         pwm_out         => open );
 
@@ -1177,5 +1177,13 @@ begin
             rmii_txd    => rmii_txd );
         
     end generate;
+
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            audio_left  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
+            audio_right <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right); 
+        end if;
+    end process;
 
 end logic;

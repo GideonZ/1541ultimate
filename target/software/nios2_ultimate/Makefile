@@ -48,7 +48,7 @@ SRCS_CC	 =  u2p_init.cc \
 			embedded_t64.cc \
 			embedded_iso.cc \
 			embedded_fat.cc \
-			rtc.cc \
+			rtc_i2c.cc \
 			c64.cc \
 			c64_subsys.cc \
 			screen.cc \

@@ -14,9 +14,6 @@
 #include "config.h"
 #include "iomap.h"
 
-#define RTC_CHIP_DATA  *((volatile uint8_t *)(RTC_BASE + 0x00))
-#define RTC_CHIP_SPEED *((volatile uint8_t *)(RTC_BASE + 0x04))
-#define RTC_CHIP_CTRL  *((volatile uint8_t *)(RTC_BASE + 0x08))
 
 #define RTC_TIMER_HUNDREDTHS *((volatile uint8_t *)(RTC_TIMER_BASE + 0x07))
 #define RTC_TIMER_SECONDS    *((volatile uint8_t *)(RTC_TIMER_BASE + 0x06))
@@ -28,30 +25,6 @@
 #define RTC_TIMER_YEARS      *((volatile uint8_t *)(RTC_TIMER_BASE + 0x00))
 #define RTC_TIMER_LOCK       *((volatile uint8_t *)(RTC_TIMER_BASE + 0x0C))
 #define RTC_TIMER_FAT_TIME   *((volatile uint32_t *)(RTC_TIMER_BASE + 0x08))
-
-#define SPI_BUSY        0x80
-#define SPI_FORCE_SS    0x01
-#define SPI_LEVEL_SS    0x02
-#define SPI_CS_ON       0x01
-#define SPI_CS_OFF      0x03
-
-#define RTC_ADDR_CTRL1      0
-#define RTC_ADDR_CTRL2      1
-#define RTC_ADDR_SECONDS    2
-#define RTC_ADDR_MINUTES    3
-#define RTC_ADDR_HOURS      4
-#define RTC_ADDR_DAYS       5
-#define RTC_ADDR_WEEKDAYS   6
-#define RTC_ADDR_MONTHS     7
-#define RTC_ADDR_YEARS      8
-#define RTC_ADDR_MIN_ALM    9
-#define RTC_ADDR_HOUR_ALM  10
-#define RTC_ADDR_DAY_ALM   11
-#define RTC_ADDR_WKDAY_ALM 12
-#define RTC_ADDR_OFFSET    13
-#define RTC_ADDR_TIMER     14
-#define RTC_ADDR_CLOCKOUT  14
-#define RTC_ADDR_COUNTDOWN 15
 
 class RtcConfigStore : public ConfigStore
 {
