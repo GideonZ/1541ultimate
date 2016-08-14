@@ -597,10 +597,6 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
                 		C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
                 c64_command->execute();
-            } else {
-                c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
-                		C64_UNFREEZE, 0, "", "");
-                c64_command->execute();
             }
 		} else {
 			printf("Error opening file.\n");
@@ -627,10 +623,6 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
             if(cmd->functionID == G64FILE_RUN) {
                 c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
                 		C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
-                c64_command->execute();
-            } else {
-                c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
-                		C64_UNFREEZE, 0, "", "");
                 c64_command->execute();
             }
 		} else {

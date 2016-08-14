@@ -163,7 +163,7 @@ public:
     void set_address(int address);
     bool get_configuration(uint8_t index);
     void set_configuration(uint8_t config);
-    void set_interface(uint8_t intf);
+    void set_interface(uint8_t intf, uint8_t alt);
 
     void unstall_pipe(uint8_t ep);
 

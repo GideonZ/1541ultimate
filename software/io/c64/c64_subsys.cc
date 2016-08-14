@@ -16,8 +16,12 @@ cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 static inline uint16_t le2cpu(uint16_t p)
 {
+#if NIOS
+	return p;
+#else
 	uint16_t out = (p >> 8) | (p << 8);
 	return out;
+#endif
 }
 
 C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {

@@ -73,9 +73,6 @@ SRCS_CC	 =  u2p_init.cc \
 			filesystem_d64.cc \
 			filesystem_t64.cc \
 			filesystem_fat.cc \
-			sd_card.cc \
-			sdio.cc \
-			sdcard_manager.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
@@ -147,7 +144,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_appl_bsp

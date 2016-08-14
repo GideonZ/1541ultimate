@@ -96,7 +96,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
 
 	dev->set_configuration(dev->get_device_config()->config_value);
-	dev->set_interface(0);
+	dev->set_interface(dev->interfaces[0]->interface_number, dev->interfaces[0]->alternate_setting);
 
 	max_lun = get_max_lun(dev);
 	printf("max lun = %d\n", max_lun);
@@ -276,7 +276,7 @@ int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
 	int i;
 	if((len != 13)||(stat_resp[0] != 0x55)||(stat_resp[1] != 0x53)||(stat_resp[2] != 0x42)||(stat_resp[3] != 0x53)) {
 		printf("Invalid status (len = %d, signature = %8x)... performing reset..\n", len, *signature);
-		do_reset = true;
+		//do_reset = true;
 	} else if(stat_resp[12] == 2) {
 		printf("Phase error.. performing reset.\n");
 		do_reset = true;

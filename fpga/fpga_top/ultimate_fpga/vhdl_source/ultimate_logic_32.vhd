@@ -81,8 +81,9 @@ port (
     mem_req     : out   t_mem_req_32;
     mem_resp    : in    t_mem_resp_32;
     
-    -- PWM outputs (for audio)
-    PWM_OUT     : out   std_logic_vector(1 downto 0) := "11";
+    -- Audio outputs
+    drive_sample_1   : out signed(12 downto 0);
+    drive_sample_2   : out signed(12 downto 0);
 
     -- IEC bus
     -- actual levels of the pins --
@@ -313,10 +314,8 @@ architecture logic of ultimate_logic_32 is
     signal io_irq           : std_logic;
     
     -- Audio routing
-    signal pwm              : std_logic;
+    signal pwm              : std_logic := '0';
     signal pwm_2            : std_logic := '0';
-    signal drive_sample     : signed(12 downto 0);
-    signal drive_sample_2   : signed(12 downto 0);
     
     -- IEC signal routing
     signal atn_o, atn_i     : std_logic := '1';
@@ -504,21 +503,7 @@ begin
             dirty_led_n     => dirty_led_1_n,
 
             -- audio out
-            audio_sample    => drive_sample );
-
-        r_pwm: if g_drive_sound generate
-            i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
-            generic map (
-                g_left_shift => 2,
-                g_width => drive_sample'length )
-            port map (
-                clock   => sys_clock,
-                reset   => sys_reset,
-                
-                dac_in  => drive_sample,
-            
-                dac_out => pwm );
-        end generate;
+            audio_sample    => drive_sample_1 );
     end generate;
 
     r_drive_2: if g_drive_1541_2 generate
@@ -567,20 +552,6 @@ begin
 
             -- audio out
             audio_sample    => drive_sample_2 );
-
-        r_pwm: if g_drive_sound generate
-            i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
-            generic map (
-                g_left_shift => 2,
-                g_width => drive_sample_2'length )
-            port map (
-                clock   => sys_clock,
-                reset   => sys_reset,
-                
-                dac_in  => drive_sample_2,
-            
-                dac_out => pwm_2 );
-        end generate;
     end generate;
 
     r_cart: if g_cartridge generate
@@ -1098,7 +1069,7 @@ begin
         samp_left       => samp_pwm_left,
         samp_right      => samp_pwm_right,
                 
-        pwm_out         => PWM_OUT );
+        pwm_out         => open );
 
     iec_atn_o    <= '0' when atn_o='0'  or atn_o_2='0'  or hw_atn_o='0'  else '1';
     iec_clock_o  <= '0' when clk_o='0'  or clk_o_2='0'  or hw_clk_o='0'  else '1';

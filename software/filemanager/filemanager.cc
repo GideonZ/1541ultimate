@@ -402,6 +402,7 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 //		fs->collect_file_info(*file, (*file)->getFileInfo());
 		pathInfo.workPath.getTail(0, (*file)->get_path_reference());
 	}
+	return fres;
 }
 
 FRESULT FileManager :: fstat(Path *path, const char *filename, FileInfo &info)

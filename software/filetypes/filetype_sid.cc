@@ -29,9 +29,14 @@ cart_def sid_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_RAM };
 
 static inline uint16_t swap_word(uint16_t p)
 {
+#if NIOS
+	return p;
+#else
 	uint16_t out = (p >> 8) | (p << 8);
 	return out;
+#endif
 }
+
 #define le2cpu swap_word
 #define cpu2le swap_word
 #define swap   swap_word

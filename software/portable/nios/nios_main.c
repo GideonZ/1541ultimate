@@ -155,7 +155,7 @@ static void test_i2c_mdio(void)
     	*(dst++) = 0;
     }
     USb2512Init();
-    U2PIO_SPEAKER_EN = 0;
+//    U2PIO_SPEAKER_EN = 0;
     U2PIO_ULPI_RESET = 0;
 
 

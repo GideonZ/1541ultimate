@@ -215,6 +215,10 @@ architecture rtl of u2p_nios_solo is
     signal io_req_ddr2      : t_io_req;
     signal io_resp_ddr2     : t_io_resp;
 
+    -- audio
+    signal drive_sample_1   : signed(12 downto 0);
+    signal drive_sample_2   : signed(12 downto 0);
+
 begin
     process(RMII_REFCLK)
     begin
@@ -452,9 +456,9 @@ begin
         mem_req     => mem_req,
         mem_resp    => mem_resp,
                  
-        -- PWM outputs (for audio)
-        PWM_OUT(0)  => open,
-        PWM_OUT(1)  => open,
+        -- Audio outputs
+        drive_sample_1  => drive_sample_1,
+        drive_sample_2  => drive_sample_2,
     
         -- IEC bus
         iec_reset_i => IEC_RESET,
@@ -520,6 +524,19 @@ begin
 
         -- Buttons
         BUTTON      => button_i );
+
+    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
+    generic map (
+        g_left_shift => 2,
+        g_width => drive_sample_1'length )
+    port map (
+        clock   => sys_clock,
+        reset   => sys_reset,
+        
+        dac_in  => drive_sample_1,
+    
+        dac_out => SPEAKER_DATA );
+
 
     LED_MOTORn <= led_n(0) xor sys_reset;
     LED_DISKn  <= led_n(1) xor sys_reset;
@@ -599,17 +616,17 @@ begin
 
         AUDIO_MCLK <= audio_clock;
 
-        i_dac: entity work.sigma_delta_dac
-        generic map (
-            g_left_shift   => 0,
-            g_width        => 20
-        )
-        port map (
-            clock          => audio_clock,
-            reset          => audio_reset,
-            dac_in         => signed(audio_left),
-            dac_out        => SPEAKER_DATA
-        );
+--        i_dac: entity work.sigma_delta_dac
+--        generic map (
+--            g_left_shift   => 0,
+--            g_width        => 20
+--        )
+--        port map (
+--            clock          => audio_clock,
+--            reset          => audio_reset,
+--            dac_in         => signed(audio_left),
+--            dac_out        => SPEAKER_DATA
+--        );
 
         process(audio_clock)
         begin
