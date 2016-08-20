@@ -100,6 +100,10 @@ AudioConfig :: AudioConfig()
     effectuate_settings();
 }
     
+extern "C" {
+    void set_sid_coefficients(void);
+}
+
 void AudioConfig :: effectuate_settings()
 {
     if(!cfg)
@@ -121,7 +125,10 @@ void AudioConfig :: effectuate_settings()
         ioWrite8(SID_ENABLE_RIGHT,  cfg->get_value(CFG_AUDIO_SID_ENABLE_R));
         ioWrite8(SID_EXTEND_RIGHT,  cfg->get_value(CFG_AUDIO_SID_EXT_RIGHT));
         ioWrite8(SID_COMBSEL_RIGHT, cfg->get_value(CFG_AUDIO_SID_WAVE_RIGHT));
+
+        set_sid_coefficients();
     }
+
 }
 
 void AudioConfig :: clear_sampler_registers()

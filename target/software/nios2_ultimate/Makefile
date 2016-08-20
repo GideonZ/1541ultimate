@@ -26,6 +26,7 @@ SRCS_C   =	itu.c \
             time.c \
             i2c.c \
             mdio.c \
+            sid_coeff.c \
             nios_main.c \
             alt_malloc_lock.c \
             alt_do_ctors.c
