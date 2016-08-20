@@ -30,6 +30,9 @@ extern uint32_t _recovery_app_end;
 extern uint32_t _ultimate_app_start;
 extern uint32_t _ultimate_app_end;
 
+extern uint32_t _rom_pack_start;
+extern uint32_t _rom_pack_end;
+
 uint8_t swapped_bytes[256];
 uint8_t readbuf[512];
 
@@ -102,8 +105,9 @@ int main(int argc, char *argv[])
     REMOTE_FLASHSELCK_1;
 
     Flash *flash2 = get_flash();
-    flash_buffer_at(flash2, screen, 0x00000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
-    flash_buffer_at(flash2, screen, 0xC0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+    flash_buffer_at(flash2, screen, 0x000000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
+    flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+    flash_buffer_at(flash2, screen, 0x200000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
 
 	//	console_print(screen, "\nConfiguring Flash write protection..\n");
 //	flash->protect_configure();

@@ -238,9 +238,10 @@ UsbScsi :: ~UsbScsi()
 
 void UsbScsi :: reset(void)
 {
-    uint8_t buf[8];
     
+/*
     if(lun == 0) {
+    	uint8_t buf[8];
 		printf("Executing reset...\n");
 		int i = driver->device->host->control_exchange(&(driver->device->control_pipe),
 									   c_scsi_reset, 8,
@@ -248,6 +249,7 @@ void UsbScsi :: reset(void)
 
 		printf("Device reset. (returned %d bytes)\n", i);
     }
+*/
 
 	set_state(e_device_unknown);
 
@@ -263,7 +265,7 @@ int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
 {
 	uint32_t *signature = (uint32_t *)stat_resp;
 	*signature = 0;
-	int len;
+	int len = 0;
 	uint8_t buf[8];
 	bool do_reset = false;
 
@@ -273,10 +275,22 @@ int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
 		len = 13; // has already been received in error
 	}
 
+	if (len == -4) { // Pipe stalled
+		printf("Stall detected on status read. Clearing stall condition.\n");
+		len = device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
+	    bulk_in.Command = 0; // reset toggle
+		if (len < 0) {
+			printf("Clear stall condition failed. %d\n", len);
+			return len;
+		}
+		len = host->bulk_in(&bulk_in, stat_resp, 13);
+		printf("Retry: %d\n", len);
+ 	}
+
 	int i;
 	if((len != 13)||(stat_resp[0] != 0x55)||(stat_resp[1] != 0x53)||(stat_resp[2] != 0x42)||(stat_resp[3] != 0x53)) {
 		printf("Invalid status (len = %d, signature = %8x)... performing reset..\n", len, *signature);
-		//do_reset = true;
+		do_reset = true;
 	} else if(stat_resp[12] == 2) {
 		printf("Phase error.. performing reset.\n");
 		do_reset = true;
@@ -285,14 +299,27 @@ int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
 	if (!do_reset)
 		return (int)stat_resp[12]; // OK, or other error
 
-	i =  host->control_exchange(&(device->control_pipe),
-								c_scsi_reset, 8,
-								buf, 8);
+	i = mass_storage_reset();
 
 	if(i != 0)
 		return -2; // reset failed
 
 	return 0; // OK
+}
+
+int UsbScsiDriver :: mass_storage_reset()
+{
+	uint8_t buf[8];
+
+	printf("Executing reset...\n");
+	c_scsi_reset[4] = device->interface_number;
+	int i =  host->control_exchange(&(device->control_pipe),
+								    c_scsi_reset, 8,
+								    buf, 8);
+
+	printf("Device reset. (returned %d bytes)\n", i);
+
+	return i;
 }
 
 int UsbScsiDriver :: request_sense(int lun, bool debug)
@@ -417,7 +444,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 				printf("%d data bytes received:\n", len);
 				dump_hex(data, len);
 			}
-			if (len < 0) {
+			if (len == -4) {
 				printf("In Pipe stalled. Unstalling pipe, and reading status.\n");
 			    device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
 			    bulk_in.Command = 0; // reset toggle
@@ -435,6 +462,11 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 
     /* STATUS PHASE */
     st = status_transport(read_status);
+    if (st == -4) {
+    	printf("Stalled. Unstalling Endpoint\n");
+    	device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
+	    bulk_in.Command = 0; // reset toggle
+    }
 
 	xSemaphoreGive(mutex);
 	if(st == 1) {

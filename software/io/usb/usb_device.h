@@ -116,6 +116,7 @@ public:
     enum e_dev_state                device_state;
     uint8_t *config_descriptor;
     uint8_t *hid_descriptor; // should we support more than one?
+    uint8_t  interface_number;
 
     //struct t_device_configuration   device_config;
     //struct t_interface_descriptor   interface_descr;
@@ -165,7 +166,7 @@ public:
     void set_configuration(uint8_t config);
     void set_interface(uint8_t intf, uint8_t alt);
 
-    void unstall_pipe(uint8_t ep);
+    int  unstall_pipe(uint8_t ep);
 
     // Called only from the Event context
     bool init(int address);

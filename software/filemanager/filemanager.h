@@ -82,6 +82,8 @@ class FileManager
     ~FileManager() {
 #ifdef OS
     	vSemaphoreDelete(serializer);
+#else
+#error "No Os?"
 #endif
     	for(int i=0;i<open_file_list.get_elements();i++) {
         	delete open_file_list[i];

@@ -59,11 +59,12 @@ architecture gideon of eth_filter is
     type t_mac_16 is array(0 to 2) of std_logic_vector(15 downto 0);
     signal my_mac_16 : t_mac_16 := (others => (others => '0'));
 
+    signal rx_enable    : std_logic;
     signal promiscuous  : std_logic;
     signal rd_next      : std_logic;
     signal rd_dout      : std_logic_vector(17 downto 0);
     signal rd_valid     : std_logic;
-
+    
     type t_receive_state is (idle, odd, even, len, ovfl);
     signal receive_state    : t_receive_state;
     
@@ -204,6 +205,9 @@ begin
                 when X"7" =>
                     promiscuous <= io_req.data(0);
                     
+                when X"8" =>
+                    rx_enable <= io_req.data(0);
+                    
                 when others =>
                     null; 
                 end case;
@@ -236,9 +240,15 @@ begin
                 mac_idx <= 0;
                 toggle <= '0';
                 for_me <= '1';
+                if rx_enable = '0' then
+                    address_valid <= '0';
+                end if;
+                
                 if rd_valid = '1' then -- packet data available!
                     if rd_dout(17 downto 16) = "00" then
-                        if address_valid = '1' then
+                        if rx_enable = '0' then
+                            state <= drop;
+                        elsif address_valid = '1' then
                             mem_addr <= start_addr;
                             state <= copy;
                         else                            

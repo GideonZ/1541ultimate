@@ -40,6 +40,7 @@ class UsbScsiDriver : public UsbDriver
 	int max_lun;
 	int current_lun;
     int get_max_lun(UsbDevice *dev);
+    int mass_storage_reset(void);
 
     uint32_t      id;
     struct t_pipe bulk_in;

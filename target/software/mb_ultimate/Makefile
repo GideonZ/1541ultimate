@@ -134,14 +134,12 @@ SRCS_NANO = nano_minimal.nan
 # TOOLCHAIN ?= $(XILINX_EDK)/gnu/microblaze/lin64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER
+OPTIONS  = -g -ffunction-sections -nostartfiles -Os -DOS -DDEVELOPER
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
-LLIB     =  -L ../mb_lwip/result \
-            -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \
-            -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2
-LIBS     =  -llwip -lc -lgcc 
+LIBS2    = ../mb_lwip/result/liblwip.a
 LFLAGS   = --gc-sections 
+#-msys-crt0=$(OUTPUT)/mb_crt0.o
 	
 include ../common/rules.mk

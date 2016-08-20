@@ -330,12 +330,13 @@ void UsbDevice :: set_interface(uint8_t interface, uint8_t alt)
     uint8_t dummy_buffer[8];
     int i = host->control_exchange(&control_pipe, c_set_interface, 8, dummy_buffer, 0);
 //    printf("Set Configuration result:%d\n", i);
+    interface_number = alt;
 }
 
-void UsbDevice :: unstall_pipe(uint8_t ep)
+int UsbDevice :: unstall_pipe(uint8_t ep)
 {
 	c_unstall_pipe[4] = ep;
-	host->control_exchange(&control_pipe, c_unstall_pipe, 8, NULL, 0);
+	return host->control_exchange(&control_pipe, c_unstall_pipe, 8, NULL, 0);
 }
 
 bool UsbDevice :: init(int address)

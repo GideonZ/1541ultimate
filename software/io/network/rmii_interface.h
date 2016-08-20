@@ -14,6 +14,7 @@
 
 #define RMII_RX_MAC(x)   *((volatile uint8_t *)(RMII_BASE + 0x00 + x))
 #define RMII_RX_PROMISC  *((volatile uint8_t *)(RMII_BASE + 0x07))
+#define RMII_RX_ENABLE   *((volatile uint8_t *)(RMII_BASE + 0x08))
 #define RMII_TX_ADDRESS  *((volatile uint32_t *)(RMII_BASE + 0x10))
 #define RMII_TX_LENGTH   *((volatile uint16_t *)(RMII_BASE + 0x14))
 #define RMII_TX_START    *((volatile uint8_t *)(RMII_BASE + 0x18))

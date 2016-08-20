@@ -5,10 +5,11 @@
 #include "network_interface.h"
 #include "rmii_interface.h"
 #include "dump_hex.h"
+#include "flash.h"
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
-#ifdef NIOS
+#if NIOS
 	return a;
 #else
 	uint32_t m1, m2;
@@ -20,7 +21,7 @@ __inline uint32_t cpu_to_32le(uint32_t a)
 
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
-#ifdef NIOS
+#if NIOS
 	return h;
 #else // assume big endian
     return (h >> 8) | (h << 8);
@@ -72,16 +73,27 @@ void RmiiInterface :: rmiiTask(void)
 {
 	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
 
-    for(int i=0;i<6;i++) {
-    	local_mac[i] = 0x11 * i;
+	uint8_t flash_serial[8];
+	Flash *flash = get_flash();
+	flash->read_serial(flash_serial);
+
+	local_mac[0] = 0x02;
+	local_mac[1] = 0x15;
+	local_mac[2] = 0x41;
+	local_mac[3] = flash_serial[1] ^ flash_serial[5];
+	local_mac[4] = flash_serial[2] ^ flash_serial[6];
+	local_mac[5] = flash_serial[3] ^ flash_serial[7];
+
+	for(int i=0;i<6;i++) {
+    	// local_mac[i] = 0x11 * i;
     	RMII_RX_MAC(i) = local_mac[i];
     }
 
     // we're not a whore
     RMII_RX_PROMISC = 0;
+    RMII_RX_ENABLE  = 0;
     RMII_FREE_RESET = 1;
 
-    uint8_t broadcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
     if (netstack) {
     	for(int i=0;i<64;i++) {
@@ -89,15 +101,17 @@ void RmiiInterface :: rmiiTask(void)
     	}
     	netstack->set_mac_address(local_mac);
     	netstack->start();
-    	//netstack->link_up(); // temporary fix
-    	link_up = true;
+    	link_up = false;
     	ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_RMIIRX);
     }
-
+    RMII_RX_ENABLE = 1;
+/*
+    uint8_t broadcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
     for (int i=700;i<1530;i+=16) {
     	output_packet(broadcast, i);
     	vTaskDelay(10);
     }
+*/
 
     struct EthPacket pkt;
     while(1) {
@@ -152,6 +166,7 @@ void RmiiInterface :: input_packet(struct EthPacket *pkt)
 	uint8_t *buffer = &ram_base[offset];
 
 	//printf("Rmii Rx: %b %p (%d)\n", pkt->id, buffer, pkt->size);
+	//dump_hex_relative(buffer+2, pkt->size);
 
 	if(netstack) {
 		if (!netstack->input(buffer, buffer+2, pkt->size)) {

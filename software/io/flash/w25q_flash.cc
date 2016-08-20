@@ -25,29 +25,46 @@ W25Q_Flash w25q_flash;
 // CUSTOM FPGA is thus on sector 12.. 
 
 static const t_flash_address flash_addresses[] = {
-	{ FLASH_ID_BOOTAPP,    0x01, 0x054000, 0x054000, 0x0C000 }, // 192 pages (48K)
-	{ FLASH_ID_APPL,       0x01, 0x100000, 0x100000, 0xF0000 },
 	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x53CA0 },
+	{ FLASH_ID_BOOTAPP,    0x01, 0x054000, 0x054000, 0x0C000 }, // 192 pages (48K)
+
 	{ FLASH_ID_AR5PAL,     0x00, 0x060000, 0x060000, 0x08000 },
 	{ FLASH_ID_AR6PAL,     0x00, 0x068000, 0x068000, 0x08000 },
 	{ FLASH_ID_FINAL3,     0x00, 0x070000, 0x070000, 0x10000 },
-	{ FLASH_ID_SOUNDS,     0x00, 0x080000, 0x080000, 0x05000 },
-	{ FLASH_ID_CHARS,      0x00, 0x087000, 0x087000, 0x01000 },
-	{ FLASH_ID_SIDCRT,     0x00, 0x088000, 0x088000, 0x02000 },
-	{ FLASH_ID_EPYX,       0x00, 0x08A000, 0x08A000, 0x02000 },
-	{ FLASH_ID_ROM1541,    0x00, 0x08C000, 0x08C000, 0x04000 },
+	{ FLASH_ID_KCS,        0x00, 0x080000, 0x080000, 0x04000 }, //0x84000-8A000 free (24K)
+	{ FLASH_ID_EPYX,       0x00, 0x08A000, 0x08A000, 0x02000 }, //0x8C000-90000 free (16K)
 	{ FLASH_ID_RR38PAL,    0x00, 0x090000, 0x090000, 0x10000 },
 	{ FLASH_ID_SS5PAL,     0x00, 0x0A0000, 0x0A0000, 0x10000 },
-	{ FLASH_ID_AR5NTSC,    0x00, 0x0B0000, 0x0B0000, 0x08000 },
-	{ FLASH_ID_ROM1541C,   0x00, 0x0B8000, 0x0B8000, 0x04000 },
-	{ FLASH_ID_ROM1541II,  0x00, 0x0BC000, 0x0BC000, 0x04000 },
+	{ FLASH_ID_AR5NTSC,    0x00, 0x0B0000, 0x0B0000, 0x08000 }, // B8000-C0000 free (32K)
 	{ FLASH_ID_RR38NTSC,   0x00, 0x0C0000, 0x0C0000, 0x10000 },
 	{ FLASH_ID_SS5NTSC,    0x00, 0x0D0000, 0x0D0000, 0x10000 },
 	{ FLASH_ID_TAR_PAL,    0x00, 0x0E0000, 0x0E0000, 0x10000 },
 	{ FLASH_ID_TAR_NTSC,   0x00, 0x0F0000, 0x0F0000, 0x10000 },
-	{ FLASH_ID_KCS,        0x00, 0x1F0000, 0x1F0000, 0x04000 },
-	{ FLASH_ID_CONFIG,     0x00, 0x1FF000, 0x1FF000, 0x01000 },
+
+	{ FLASH_ID_APPL,       0x01, 0x100000, 0x100000, 0xC0000 }, // max size: 768K, free: 1c0000-1f0000
+	{ FLASH_ID_CONFIG,     0x00, 0x1F0000, 0x1F0000, 0x10000 },
 	{ FLASH_ID_LIST_END,   0x00, 0x1FE000, 0x1FE000, 0x01000 } };
+
+
+static const t_flash_address flash_addresses_u2p[] = {
+	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0xC0000  },
+	{ FLASH_ID_APPL,       0x01, 0x0C0000, 0x0C0000, 0x140000 }, // Max 1.25 MB
+
+	{ FLASH_ID_AR5PAL,     0x00, 0x200000, 0x200000, 0x08000 },
+	{ FLASH_ID_AR6PAL,     0x00, 0x208000, 0x208000, 0x08000 },
+	{ FLASH_ID_FINAL3,     0x00, 0x210000, 0x210000, 0x10000 },
+	{ FLASH_ID_RR38PAL,    0x00, 0x220000, 0x220000, 0x10000 },
+	{ FLASH_ID_RR38NTSC,   0x00, 0x230000, 0x230000, 0x10000 },
+	{ FLASH_ID_TAR_PAL,    0x00, 0x240000, 0x240000, 0x10000 },
+	{ FLASH_ID_TAR_NTSC,   0x00, 0x250000, 0x250000, 0x10000 },
+	{ FLASH_ID_SS5PAL,     0x00, 0x260000, 0x260000, 0x10000 },
+	{ FLASH_ID_SS5NTSC,    0x00, 0x270000, 0x270000, 0x10000 },
+	{ FLASH_ID_AR5NTSC,    0x00, 0x280000, 0x280000, 0x08000 },
+	{ FLASH_ID_KCS,        0x00, 0x288000, 0x288000, 0x04000 },
+	{ FLASH_ID_EPYX,       0x00, 0x28C000, 0x28C000, 0x02000 },
+
+	{ FLASH_ID_CONFIG,     0x00, 0x3F0000, 0x3F0000, 0x10000 },
+	{ FLASH_ID_LIST_END,   0x00, 0x3FE000, 0x3FE000, 0x01000 } };
 
 
 W25Q_Flash::W25Q_Flash()
@@ -65,7 +82,12 @@ W25Q_Flash::~W25Q_Flash()
 
 void W25Q_Flash :: get_image_addresses(int id, t_flash_address *addr)
 {
-	t_flash_address *a = (t_flash_address *)flash_addresses;
+	t_flash_address *a;
+	if (sector_count == 1024) {
+		a = (t_flash_address *)flash_addresses_u2p;
+	} else {
+		a = (t_flash_address *)flash_addresses;
+	}
 	while(a->id != FLASH_ID_LIST_END) {
 		if(int(a->id) == id) {
 			*addr = *a; // copy
@@ -108,7 +130,6 @@ Flash *W25Q_Flash :: tester()
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     portEXIT_CRITICAL();
     
-    printf("W25Q MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
     if (manuf != 0xEF) 
     	return NULL; // not Winbond
 
@@ -116,7 +137,9 @@ Flash *W25Q_Flash :: tester()
 		return NULL;
 	}
 
-	if(capacity == 0x14) { // 8 Mbit
+    printf("W25Q MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
+
+    if(capacity == 0x14) { // 8 Mbit
 		sector_size  = 16;
 		sector_count = 256;
 	    total_size   = 4096;
@@ -151,7 +174,12 @@ int W25Q_Flash :: get_sector_size(int addr)
 
 int W25Q_Flash :: read_image(int id, void *buffer, int buf_size)
 {
-	t_flash_address *a = (t_flash_address *)flash_addresses;
+	t_flash_address *a;
+	if (sector_count == 1024) {
+		a = (t_flash_address *)flash_addresses_u2p;
+	} else {
+		a = (t_flash_address *)flash_addresses;
+	}
 	while(a->id != FLASH_ID_LIST_END) {
 		if(int(a->id) == id) {
 			int len = (a->max_length > buf_size) ? buf_size : a->max_length;

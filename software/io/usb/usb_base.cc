@@ -768,7 +768,8 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 
     // printf("Bulk in done: %d\n", total_trans);
     xSemaphoreGive(mutex);
-	return total_trans;
+
+    return total_trans;
 }
 
 /*

@@ -139,6 +139,18 @@ extern "C" void ultimate_main(void *a)
     if(ui) {
     	ui->run();
     } else {
+    	vTaskDelay(2000);
+    	printf("Attempting to write a test file to /Usb0.\n");
+    	FileManager *fm = FileManager :: getFileManager();
+    	File *file;
+    	FRESULT fres;
+    	DWORD tr;
+    	fres = fm->fopen("/Usb0/testje.txt", FA_CREATE_NEW|FA_CREATE_ALWAYS|FA_WRITE, &file);
+    	printf("%s\n", FileSystem :: get_error_string(fres) );
+    	if (fres == FR_OK) {
+    		file->write(buffer, 8192, &tr);
+    		fm->fclose(file);
+    	}
     	vTaskSuspend(NULL); // Stop main task and wait forever
     }
 
