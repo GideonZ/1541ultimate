@@ -347,6 +347,8 @@ begin
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
+        slow_clock  => audio_clock,
+        slow_reset  => audio_reset,
         io_req      => io_req_remote,
         io_resp     => io_resp_remote,
         flash_selck => FLASH_SELCK,

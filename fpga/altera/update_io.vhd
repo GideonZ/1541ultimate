@@ -9,6 +9,9 @@ port (
 	clock       : in  std_logic                     := '0';             --       clock.clk
 	reset       : in  std_logic                     := '0';             --       reset.reset
 
+    slow_clock  : in  std_logic;
+    slow_reset  : in  std_logic;
+
     io_req      : in  t_io_req;
     io_resp     : out t_io_resp;
 
@@ -41,7 +44,25 @@ architecture rtl of update_io is
     signal read_source : std_logic_vector(1 downto 0)  := (others => '0'); -- read_source
     signal flash_sel_i  : std_logic;
     signal flash_selck_i : std_logic;
+
+    signal slow_req     : t_io_req;
+    signal slow_resp    : t_io_resp;
 begin
+    i_bridge: entity work.io_bus_bridge2
+    generic map (
+        g_addr_width => 4
+    )
+    port map(
+        clock_a      => clock,
+        reset_a      => reset,
+        req_a        => io_req,
+        resp_a       => io_resp,
+        clock_b      => slow_clock,
+        reset_b      => slow_reset,
+        req_b        => slow_req,
+        resp_b       => slow_resp );
+    
+
 	remote_update_0 : component update_remote_update_0
 		port map (
 			busy        => busy,        --        busy.busy
@@ -51,50 +72,50 @@ begin
 			reconfig    => reconfig,    --    reconfig.reconfig
 			reset_timer => reset_timer, -- reset_timer.reset_timer
 			read_source => read_source, -- read_source.read_source
-			clock       => clock,       --       clock.clk
-			reset       => reset        --       reset.reset
+			clock       => slow_clock,       --       clock.clk
+			reset       => slow_reset        --       reset.reset
 		);
 
-    process(clock)
+    process(slow_clock)
         variable local  : unsigned(3 downto 0);
     begin
-        if rising_edge(clock) then
-            local := io_req.address(3 downto 0);
-            io_resp <= c_io_resp_init;
+        if rising_edge(slow_clock) then
+            local := slow_req.address(3 downto 0);
+            slow_resp <= c_io_resp_init;
             read_param <= '0';
             
-            if io_req.read = '1' then
-                io_resp.ack <= '1';
+            if slow_req.read = '1' then
+                slow_resp.ack <= '1';
                 case local is
                 when X"0" =>
-                    io_resp.data <= data_out(7 downto 0);
+                    slow_resp.data <= data_out(7 downto 0);
                 when X"1" =>
-                    io_resp.data <= data_out(15 downto 8);
+                    slow_resp.data <= data_out(15 downto 8);
                 when X"2" =>
-                    io_resp.data <= data_out(23 downto 16);
+                    slow_resp.data <= data_out(23 downto 16);
                 when X"3" =>
-                    io_resp.data <= "000" & data_out(28 downto 24);
+                    slow_resp.data <= "000" & data_out(28 downto 24);
                 when X"5" =>
-                    io_resp.data(0) <= busy;        
+                    slow_resp.data(0) <= busy;        
                 when X"6" =>
-                    io_resp.data(0) <= reconfig;        
+                    slow_resp.data(0) <= reconfig;        
                 when X"8"|X"9" =>
-                    io_resp.data(0) <= flash_selck_i;
+                    slow_resp.data(0) <= flash_selck_i;
                 when X"A"|X"B" =>
-                    io_resp.data(0) <= flash_sel_i;
+                    slow_resp.data(0) <= flash_sel_i;
                 when others =>
                     null;
                 end case;
             end if;
-            if io_req.write = '1' then
-                io_resp.ack <= '1';
+            if slow_req.write = '1' then
+                slow_resp.ack <= '1';
                 case local is
                 when X"4" =>
-                    param <= io_req.data(param'range);
-                    read_source <= io_req.data(5 downto 4);
+                    param <= slow_req.data(param'range);
+                    read_source <= slow_req.data(5 downto 4);
                     read_param <= '1';
                 when X"6" =>
-                    if io_req.data = X"BE" then
+                    if slow_req.data = X"BE" then
                         reconfig <= '1';
                     end if;
                 when X"8" =>
@@ -109,7 +130,7 @@ begin
                     null;
                 end case;
             end if;
-            if reset = '1' then
+            if slow_reset = '1' then
                 read_source <= (others => '0');
                 reconfig <= '0';
                 param <= (others => '0');

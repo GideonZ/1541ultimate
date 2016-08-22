@@ -200,6 +200,9 @@ int TreeBrowser :: poll(int sub_returned)
 				match_dir = false;
 			}
 		}
+		// match dir means: Our view is -or is a child of- the path mentioned in the event.
+		bool match_exact_path = (match_dir) && (st == this->state);
+
 		if (match_dir) {
 			if (st->deeper) {
 				printf("$%p:", st->deeper);
@@ -216,8 +219,8 @@ int TreeBrowser :: poll(int sub_returned)
 
     	switch (event->eventType) {
     	case eNodeAdded:
-    		if (event->pathName == getPath()) { // are we seeing the change?
-    			printf("Refresh because event path and current path are equal.\n");
+    	case eRefreshDirectory:
+    		if (match_exact_path) { // are we seeing the change?
     			state->refresh = true;
     		}
     		if (match_dir) {

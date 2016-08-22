@@ -901,6 +901,8 @@ begin
 
     r_iec: if g_hardware_iec generate
         i_iec: entity work.iec_processor_io
+        generic map (
+            g_half_mhz      =>  g_clock_freq / 500_000 )
         port map (
             clock           => sys_clock,
             reset           => sys_reset,

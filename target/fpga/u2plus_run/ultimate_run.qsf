@@ -478,6 +478,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bu
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri_32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_bridge2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/oc_pusher/vhdl_source/oc_pusher.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/shifter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/cpu6502.vhd
@@ -579,7 +580,12 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
 set_global_assignment -name GENERATE_RBF_FILE ON
 set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION OFF
-set_global_assignment -name ENABLE_SIGNALTAP ON
-set_global_assignment -name USE_SIGNALTAP_FILE usbstp1.stp
+set_global_assignment -name ENABLE_SIGNALTAP OFF
+set_global_assignment -name USE_SIGNALTAP_FILE drvstp1.stp
 set_global_assignment -name SIGNALTAP_FILE usbstp1.stp
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_ATN
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_CLOCK
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_DATA
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_SRQ_IN
+set_global_assignment -name SIGNALTAP_FILE drvstp1.stp
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

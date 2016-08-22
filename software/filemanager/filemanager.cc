@@ -384,6 +384,10 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 
 	if (create) {
 		fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getLastInfo());
+		if (fres == FR_OK) {
+			const char *pathstring = pathInfo.getFullPath(workpath, -1);
+			sendEventToObservers(eRefreshDirectory, pathstring, "");
+		}
 	} else {
 		fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getParentInfo());
 	}
@@ -396,7 +400,6 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 		fix_filename(filename);
 	}
 
-	// TODO: sendEventToObservers(eNodeAdded, path->get_path(), filename);
 	fres = fs->file_open(pathInfo.getPathFromLastFS(workPathFromFSRoot), dir, filename, flags, file);
 	if (fres == FR_OK) {
 //		fs->collect_file_info(*file, (*file)->getFileInfo());
@@ -597,9 +600,18 @@ FRESULT FileManager :: rename_impl(PathInfo &from, PathInfo &to)
 			return FR_INVALID_DRIVE;
 		}
 		mstring work1, work2;
-		return from.getLastInfo()->fs->file_rename(
+		fres = from.getLastInfo()->fs->file_rename(
 					from.getPathFromLastFS(work1),
 					to.getPathFromLastFS(work2));
+		if (fres == FR_OK) {
+			const char *from_path = from.getFullPath(work1, -1);
+			const char *to_path = to.getFullPath(work2, -1);
+			sendEventToObservers(eRefreshDirectory, from_path, "");
+			if (strcmp(from_path, to_path) != 0) {
+				sendEventToObservers(eRefreshDirectory, to_path, "");
+			}
+		}
+		return fres;
 	}
 	if (fres == FR_OK)
 		return FR_EXIST;
@@ -622,6 +634,9 @@ FRESULT FileManager :: create_dir(const char *pathname)
 		mstring work;
 		pathInfo.getPathFromLastFS(work);
 		fres = fs->dir_create(work.c_str());
+		if (fres == FR_OK) {
+			sendEventToObservers(eNodeAdded, pathInfo.getFullPath(work, -1), pathInfo.getFileName());
+		}
 		return fres;
 	}
 	return fres;
@@ -643,6 +658,9 @@ FRESULT FileManager :: create_dir(Path *path, const char *name)
 		mstring work;
 		pathInfo.getPathFromLastFS(work);
 		fres = fs->dir_create(work.c_str());
+		if (fres == FR_OK) {
+			sendEventToObservers(eNodeAdded, path->get_path(), name);
+		}
 		return fres;
 	}
 	return fres;

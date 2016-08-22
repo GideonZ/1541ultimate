@@ -10,11 +10,9 @@
 
 #include "mystring.h"
 #include "action.h"
-#include <stdio.h>
 
 #include "indexed_list.h"
 #include "action.h"
-//#include "path.h"
 
 class Browsable
 {

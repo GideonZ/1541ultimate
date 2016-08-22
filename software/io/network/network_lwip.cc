@@ -4,6 +4,8 @@
 #include <string.h>
 #include "lwip/netifapi.h"
 #include "ftpd.h"
+#include "filemanager.h"
+
 extern "C" {
 #include "dump_hex.h"
 #include "FreeRTOS.h"
@@ -108,6 +110,9 @@ NetworkLWIP :: NetworkLWIP(void *driver,
 	dhcp_enable = false;
 
 	NetworkInterface :: registerNetworkInterface(this);
+
+	// quick hack to perform update on the browser
+	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
 }
 
 NetworkLWIP :: ~NetworkLWIP()
@@ -116,6 +121,9 @@ NetworkLWIP :: ~NetworkLWIP()
 	netifapi_dhcp_stop(&my_net_if);
 	netif_set_down(&my_net_if);
 	netif_remove(&my_net_if);
+
+	// quick hack to perform update on the browser
+	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
 }
 
 void ethernet_init_inside_thread(void *classPointer)
@@ -136,6 +144,7 @@ void NetworkLWIP :: stop()
     //if_up = false;
 }
 
+/*
 void NetworkLWIP :: poll()
 {
     if (netif_is_up(&my_net_if) && !if_up) {
@@ -146,7 +155,23 @@ void NetworkLWIP :: poll()
         if_up = false;
     }
 }
+*/
 
+void NetworkLWIP :: statusCallback(struct netif *net)
+{
+	NetworkLWIP *ni = (NetworkLWIP *)net->state;
+	ni->statusUpdate();
+}
+
+#include "lwip/ip_addr.h"
+void NetworkLWIP :: statusUpdate(void)
+{
+    char str[16];
+    printf("Status update IP = %s\n", ipaddr_ntoa_r(&(my_net_if.ip_addr), str, sizeof(str)));
+
+    // quick hack to perform update on the browser
+	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
+}
 
 void NetworkLWIP :: init_callback( )
 {
@@ -214,6 +239,7 @@ void NetworkLWIP :: init_callback( )
     } else {
     	printf("Netif_add failed.\n");
     }
+    netif_set_status_callback(&my_net_if, NetworkLWIP :: statusCallback);
 }
 
 
@@ -243,7 +269,7 @@ bool NetworkLWIP :: input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size)
 
 	if (my_net_if.input(p, &my_net_if)!=ERR_OK) {
 		LWIP_DEBUGF(NETIF_DEBUG, ("net_if_input: IP input error\n"));
-		printf("�");
+		printf("#");
 		pbuf_fifo.push(pbuf);
 //		pbuf_free(p);
 		return false;
@@ -255,6 +281,7 @@ bool NetworkLWIP :: input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size)
 void NetworkLWIP :: link_up()
 {
     // Enable the network interface
+	if_up = true;
 	netifapi_netif_set_up(&my_net_if);
     if (dhcp_enable)
     	netifapi_dhcp_start(&my_net_if);
@@ -262,6 +289,7 @@ void NetworkLWIP :: link_up()
 
 void NetworkLWIP :: link_down()
 {
+	if_up = false;
 	// Disable the network interface
 	netifapi_netif_set_down(&my_net_if);
 	netifapi_dhcp_stop(&my_net_if);
@@ -298,6 +326,11 @@ void NetworkLWIP :: effectuate_settings(void)
 			}
 		}
 	}
+}
+
+char *NetworkLWIP :: getIpAddrString(char *buf, int buflen)
+{
+	return ipaddr_ntoa_r(&(my_net_if.ip_addr), buf, buflen);
 }
 
 void NetworkLWIP :: getIpAddr(uint8_t *buf)

@@ -5,7 +5,7 @@ use ieee.numeric_std.all;
 
 entity iec_processor is
 generic (
-    g_mhz           : natural := 50);
+    g_half_mhz      : natural := 100);
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -67,7 +67,7 @@ architecture mixed of iec_processor is
     signal pc           : unsigned(instr_addr'range);
     signal pc_ret_std   : std_logic_vector(instr_addr'range);
     signal pop, push    : std_logic;
-    signal presc        : integer range 0 to g_mhz;
+    signal presc        : integer range 0 to g_half_mhz;
     signal timer_done   : std_logic;
     signal atn_i_d      : std_logic;
     signal valid_reg    : std_logic := '0';
@@ -133,14 +133,17 @@ begin
             irq_event <= '0';
             flush_stack <= '0';
             
-            if presc = 0 then
+            if (presc = 0) or (presc = g_half_mhz / 2) then
                 if timer = 1 then
                     timer_done <= '1';
                 end if;
                 if timer /= 0 then
                     timer <= timer - 1;
                 end if;
-                presc <= g_mhz-1;
+            end if;
+
+            if presc = 0 then
+                presc <= g_half_mhz-1;
             else
                 presc <= presc - 1;
             end if;
@@ -156,7 +159,6 @@ begin
             when decode =>
                 timer_done <= '0';
                 timer <= unsigned(a_operand);
---                presc <= 0;
                 state <= get_inst;
                 
                 case a_opcode is

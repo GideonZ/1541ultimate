@@ -249,7 +249,6 @@ void UserInterface :: hide_progress(void)
 
 void UserInterface :: run_editor(const char *text_buf)
 {
-/*
     Editor *edit = new Editor(this, text_buf);
     edit->init(screen, keyboard);
     int ret;
@@ -257,7 +256,6 @@ void UserInterface :: run_editor(const char *text_buf)
         ret = edit->poll(0);
     } while(!ret);
     edit->deinit();
-*/
 }
 
 int UserInterface :: enterSelection()

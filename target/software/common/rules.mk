@@ -45,7 +45,7 @@ $(RESULT)/$(PRJ).app: $(OUTPUT)/$(PRJ).shex
 
 $(RESULT)/$(PRJ).hex: $(OUTPUT)/$(PRJ).out
 	@echo Creating Hex File for On Chip Memory $@
-	elf2hex --input=$< 0x0000 $(HEXLAST) --width=32 --little-endian-mem --create-lanes=0 --record=4 --output=$@ --base=$(HEXBASE) --end=$(HEXEND)
+	@elf2hex --input=$< 0x0000 $(HEXLAST) --width=32 --little-endian-mem --create-lanes=0 --record=4 --output=$@ --base=$(HEXBASE) --end=$(HEXEND)
 
 $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@echo Creating Hex File to extract startaddr $@
@@ -159,7 +159,7 @@ $(OUTPUT)/$(PRJ).ld: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJ
 
 $(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP) $(LWIPLIB)
 	@echo Linking using GCC...
-	$(CPP) -Wl,-Map=$(OUTPUT)/$(PRJ).map,$(LFLAGS) -T'$(LINK)' $(OPTIONS) -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS2)
+	@$(CPP) -Wl,-Map=$(OUTPUT)/$(PRJ).map,$(LFLAGS) -T'$(LINK)' $(OPTIONS) -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS2)
 	@$(SIZE) $(OUTPUT)/$(PRJ).out
 
 $(RESULT)/$(PRJ).elf: $(OUTPUT)/$(PRJ).out

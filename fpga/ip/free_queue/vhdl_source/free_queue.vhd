@@ -209,7 +209,8 @@ begin
         sw_done <= '0';
         sw_pop_valid <= '0';
         alloc_resp_c.done <= '0';
-
+        offset_c <= offset_r;
+        
         if g_store_size then
             table_wdata(19 downto 8) <= std_logic_vector(used_req.bytes);
         end if;

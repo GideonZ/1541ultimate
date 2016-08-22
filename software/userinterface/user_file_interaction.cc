@@ -42,7 +42,7 @@ int UserFileInteraction :: fetch_task_items(Path *path, IndexedList<Action*> &li
 
 	if(FileManager :: getFileManager() -> is_path_writable(path)) {
         list.append(new Action("Create Directory", UserFileInteraction :: S_createDir, 0));
-        return 3;
+        return 1;
     }
     return 0;
 }

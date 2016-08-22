@@ -11,6 +11,11 @@
 #include "userinterface.h"
 #include "filemanager.h"
 
+#ifndef CLOCK_FREQ
+#define CLOCK_FREQ 50000000
+#warning "Clock frequency should be set in makefile, using -DCLOCK_FREQ=nnnnn. Now 50 MHz is assumed."
+#endif
+
 const char *en_dis[] = { "Disabled", "Enabled" };
 const char *yes_no[] = { "No", "Yes" };
 const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Load from file" };
@@ -46,7 +51,6 @@ struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",       "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "1541 Resets when C64 resets","%s", yes_no,     0,  1, 1 },
     { CFG_C1541_STOPFREEZ, CFG_TYPE_ENUM,   "1541 Freezes in menu",       "%s", yes_no,     0,  1, 1 },
-//    { CFG_C1541_GCRTWEAK,  CFG_TYPE_VALUE,  "GCR Image Save Tweak",       "%d", NULL,      -4,  4, 0 },
     { CFG_C1541_GCRALIGN,  CFG_TYPE_ENUM,   "GCR Save Align Tracks",      "%s", yes_no,     0,  1, 1 },
     
 //    { CFG_C1541_LASTMOUNT, CFG_TYPE_ENUM,   "Load last mounted disk",  "%s", yes_no,     0,  1, 0 },
@@ -367,7 +371,7 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
 
     volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
 
-    uint32_t rotation_speed = 2500000; // 1/8 track time => 10 ns steps
+    uint32_t rotation_speed = (CLOCK_FREQ / 20); // 2 (half clocks) * 1/8 (bytes) * clocks per track. 300 RPM = 5 RPS. (5 * 8 / 2) = 20
     for(int i=0;i<C1541_MAXTRACKS;i++) {
         uint32_t bit_time = rotation_speed / image->track_length[i];
     	// printf("%2d %08x %08x %d\n", i, image->track_address[i], image->track_length[i], bit_time);

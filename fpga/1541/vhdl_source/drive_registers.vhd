@@ -8,6 +8,7 @@ use work.c1541_pkg.all;
 
 entity drive_registers is
 generic (
+    g_clock_freq    : natural := 50_000_000;
     g_audio_base    : unsigned(27 downto 0) := X"0030000";
     g_ram_base      : unsigned(27 downto 0) := X"0060000" );
 port (

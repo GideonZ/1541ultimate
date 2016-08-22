@@ -21,8 +21,14 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(Globals :: getFil
 #define SIDFILE_PLAY_LAST 0x5402
 #define SIDFILE_SHOW_INFO 0x5403
 
-const uint32_t magic_psid = 0x50534944; // big endian assumed
-const uint32_t magic_rsid = 0x52534944; // big endian assumed
+#if NIOS
+const uint32_t magic_psid = 0x44495350; // little endian
+const uint32_t magic_rsid = 0x44495352; // little endian
+#else
+const uint32_t magic_psid = 0x50534944; // big endian
+const uint32_t magic_rsid = 0x52534944; // big endian
+#endif
+
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
 cart_def sid_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_RAM }; 
@@ -37,9 +43,9 @@ static inline uint16_t swap_word(uint16_t p)
 #endif
 }
 
-#define le2cpu swap_word
-#define cpu2le swap_word
-#define swap   swap_word
+#define le2cpu  swap_word
+#define cpu2le  swap_word
+#define swap(p) (((p) >> 8) | ((p) << 8))
 
 /*************************************************************/
 /* SID File Browser Handling                                 */
@@ -209,7 +215,6 @@ int FileTypeSID :: prepare(bool use_default)
 	
 	FileInfo *info;
 	uint32_t bytes_read;
-	uint16_t *pus;
 	int  error = 0;
 	int  length;
 	
@@ -234,26 +239,29 @@ int FileTypeSID :: prepare(bool use_default)
 
 	// extract default song
 	if(use_default) {
-		pus = (uint16_t *)&sid_header[0x10];
-		song = *pus;
+		song = ((uint16_t)sid_header[0x10]) << 8;
+	    song |= sid_header[0x11];
 		printf("Default song = %d\n", song);
 		if(!song)
 			song = 1;
 	}
 	
 	// write back the default song, for some players that only look here
-	pus = (uint16_t *)&sid_header[0x10];
-	*pus = song-1;
+
+	sid_header[0x10] = (song - 1) >> 8;
+	sid_header[0x11] = (song - 1) & 0xFF;
 
 	// get offset, file start, file end, update header.
-	pus = (uint16_t *)&sid_header[0x06];
-	offset = (uint32_t)*pus;
+	offset = uint32_t(sid_header[0x06]) << 8;
+	offset |= sid_header[0x07];
+
 	if(file->seek(offset) != FR_OK) {
 		return 2;
 	}
-    pus = (uint16_t *)&sid_header[0x08];
-    start = *pus;
-    if(start == 0) {
+	start = uint16_t(sid_header[0x08]) << 8;
+	start |= sid_header[0x09];
+
+	if(start == 0) {
     	if(file->read(&start, 2, &bytes_read) != FR_OK) {
     		return 3;
     	}
@@ -263,8 +271,9 @@ int FileTypeSID :: prepare(bool use_default)
 
 	length = (file->get_size() - offset) - 2;
 	end = start + length;
-	pus = (uint16_t *)&sid_header[0x7e];
-	*pus = cpu2le(end);
+
+	sid_header[0x7e] = uint8_t(end & 0xFF);
+	sid_header[0x7f] = uint8_t(end >> 8);
 
 	if (end < start) {
 		printf("Wrap around $0000!\n");
@@ -306,7 +315,7 @@ int FileTypeSID :: prepare(bool use_default)
     printf("Player address: %04x.\n", player);
 
 	// convert big endian to little endian format
-	pus = (uint16_t *)&sid_header[4];
+	uint16_t *pus = (uint16_t *)&sid_header[4];
 	for(int i=0;i<7;i++,pus++)
 		*pus = swap(*pus);
 	header_valid = false;

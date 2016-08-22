@@ -56,9 +56,9 @@ public:
 
     bool start();
     void stop();
-    void poll();
     void link_up();
     void link_down();
+    bool is_link_up() { return if_up; }
     void set_mac_address(uint8_t *mac);
     bool input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size);
 
@@ -75,6 +75,11 @@ public:
 	void getIpAddr(uint8_t *a);
 	void getMacAddr(uint8_t *a);
 	void setIpAddr(uint8_t *a);
+	char *getIpAddrString(char *buf, int buflen);
+
+	// callbacks
+	static void statusCallback(struct netif *);
+	void statusUpdate(void);
 };
 
 NetworkInterface *getNetworkStack(void *driver,

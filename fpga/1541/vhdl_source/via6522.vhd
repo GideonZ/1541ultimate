@@ -57,6 +57,9 @@ architecture Gideon of via6522 is
     constant latch_reset_pattern : std_logic_vector(15 downto 0) := X"01AA";
 
     signal pio_i         : pio_t;
+
+    signal port_a_c      : std_logic_vector(7 downto 0) := (others => '0');
+    signal port_b_c      : std_logic_vector(7 downto 0) := (others => '0');
     
     signal irq_mask      : std_logic_vector(6 downto 0) := (others => '0');
     signal irq_flags     : std_logic_vector(6 downto 0) := (others => '0');
@@ -115,9 +118,6 @@ architecture Gideon of via6522 is
     
     signal ira, irb         : std_logic_vector(7 downto 0) := (others => '0');
     
-    signal pb_latch_ready   : std_logic := '0';
-    signal pa_latch_ready   : std_logic := '0';
-    
     signal write_t1c_h      : std_logic;
     signal write_t2c_h      : std_logic;
 
@@ -126,8 +126,10 @@ architecture Gideon of via6522 is
     signal ca1_d, ca2_d     : std_logic;
     signal cb1_d, cb2_d     : std_logic;
     
-    signal set_ca2_low      : std_logic;
-    signal set_cb2_low      : std_logic;
+    signal ca2_handshake_o  : std_logic;
+    signal ca2_pulse_o      : std_logic;
+    signal cb2_handshake_o  : std_logic;
+    signal cb2_pulse_o      : std_logic;
 begin
     irq <= irq_out;
     
@@ -135,15 +137,6 @@ begin
     
     write_t1c_h <= '1' when addr = X"5" and wen='1' else '0';
     write_t2c_h <= '1' when addr = X"9" and wen='1' else '0';
-
---    input latches
-    ira <= port_a_i when pa_latch_ready='0';
-    irb <= port_b_i when pb_latch_ready='0';
-    pa_latch_ready <= '1' when (ca1_event='1') and (pa_latch_en='1') and (pa_latch_ready='0') else
-        '0' when (pa_latch_en='0') or (ren='1' and addr=X"1");
-    pb_latch_ready <= '1' when (cb1_event='1') and (pb_latch_en='1') and (pb_latch_ready='0') else
-        '0' when (pb_latch_en='0') or (ren='1' and addr=X"0");
-
 
     ca1_event <= (ca1_c xor ca1_d) and (ca1_d xor ca1_edge_select);
     ca2_event <= (ca2_c xor ca2_d) and (ca2_d xor ca2_edge_select);
@@ -153,6 +146,18 @@ begin
     ca2_t <= ca2_is_output;
     cb2_t <= cb2_is_output when serport_en='0' else shift_dir;
     cb2_o <= hs_cb2_o      when serport_en='0' else ser_cb2_o;
+
+    with ca2_out_mode select ca2_o <= 
+        ca2_handshake_o when "00",
+        ca2_pulse_o     when "01",
+        '0'             when "10",
+        '1'             when others;
+        
+    with cb2_out_mode select hs_cb2_o <= 
+        cb2_handshake_o when "00",
+        cb2_pulse_o     when "01",
+        '0'             when "10",
+        '1'             when others;
 
     process(clock)
     begin
@@ -168,71 +173,48 @@ begin
             cb1_d <= cb1_c;
             cb2_d <= cb2_c;
 
-            
+            -- input registers
+            port_a_c <= port_a_i;
+            port_b_c <= port_b_i;
 
-            -- CA2 output logic
-            case ca2_out_mode is
-            when "00" =>
-                if ca1_event='1' then
-                    ca2_o <= '1';
-                elsif (ren='1' or wen='1') and addr=X"1" then
-                    ca2_o <= '0';
-                end if;
+            -- input latch emulation
+            if pa_latch_en = '0' or ca1_event = '1' then
+                ira <= port_a_c;
+            end if;
             
-            when "01" =>
-                if clock_en='1' then
-                    ca2_o <= not set_ca2_low;
-                    set_ca2_low <= '0';
-                end if;
-                if (ren='1' or wen='1') and addr=X"1" then
-                    if clock_en='1' then
-                        ca2_o <= '0';
-                    else
-                        set_ca2_low <= '1';
-                    end if;
-                end if;
-                                
-            when "10" =>
-                ca2_o <= '0';
-            
-            when "11" =>
-                ca2_o <= '1';
-            
-            when others =>
-                null;
-            end case;
+            if pb_latch_en = '0' or cb1_event = '1' then
+                irb <= port_b_c;
+            end if;            
 
-            -- CB2 output logic
-            case cb2_out_mode is
-            when "00" =>
-                if cb1_event='1' then
-                    hs_cb2_o <= '1';
-                elsif (ren='1' or wen='1') and addr=X"0" then
-                    hs_cb2_o <= '0';
-                end if;
+            -- CA2 logic
+            if ca1_event = '1' then
+                ca2_handshake_o <= '1';
+            elsif (ren = '1' or wen = '1') and addr = X"1" and clock_en = '1' then
+                ca2_handshake_o <= '0';
+            end if;
             
-            when "01" =>
-                if clock_en='1' then
-                    hs_cb2_o <= not set_cb2_low;
-                    set_cb2_low <= '0';
+            if clock_en = '1' then
+                if (ren = '1' or wen = '1') and addr = X"1" then
+                    ca2_pulse_o <= '0';
+                else            
+                    ca2_pulse_o <= '1';
                 end if;
-                if (ren='1' or wen='1') and addr=X"0" then
-                    if clock_en='1' then
-                        hs_cb2_o <= '0';
-                    else
-                        set_cb2_low <= '1';
-                    end if;
+            end if;
+
+            -- CB2 logic
+            if cb1_event = '1' then
+                cb2_handshake_o <= '1';
+            elsif (ren = '1' or wen = '1') and addr = X"0" and clock_en = '1' then
+                cb2_handshake_o <= '0';
+            end if;
+            
+            if clock_en = '1' then
+                if (ren = '1' or wen = '1') and addr = X"0" then
+                    cb2_pulse_o <= '0';
+                else            
+                    cb2_pulse_o <= '1';
                 end if;
-                                
-            when "10" =>
-                hs_cb2_o <= '0';
-            
-            when "11" =>
-                hs_cb2_o <= '1';
-            
-            when others =>
-                null;
-            end case;
+            end if;
 
             -- Interrupt logic
             irq_flags <= irq_flags or irq_events;
@@ -311,14 +293,9 @@ begin
             case addr is
             when X"0" => -- ORB
                 --Port B reads its own output register for pins set to output.
-                data_out(0) <= (pio_i.prb(0) and pio_i.ddrb(0)) or (irb(0) and not pio_i.ddrb(0));
-                data_out(1) <= (pio_i.prb(1) and pio_i.ddrb(1)) or (irb(1) and not pio_i.ddrb(1));
-                data_out(2) <= (pio_i.prb(2) and pio_i.ddrb(2)) or (irb(2) and not pio_i.ddrb(2));
-                data_out(3) <= (pio_i.prb(3) and pio_i.ddrb(3)) or (irb(3) and not pio_i.ddrb(3));
-                data_out(4) <= (pio_i.prb(4) and pio_i.ddrb(4)) or (irb(4) and not pio_i.ddrb(4));
-                data_out(5) <= (pio_i.prb(5) and pio_i.ddrb(5)) or (irb(5) and not pio_i.ddrb(5));
-                data_out(6) <= (pio_i.prb(6) and pio_i.ddrb(6)) or (irb(6) and not pio_i.ddrb(6));
-                data_out(7) <= (pio_i.prb(7) and (pio_i.ddrb(7) or tmr_a_output_en)) or (irb(7) and not (pio_i.ddrb(7) or tmr_a_output_en));
+                data_out <= (pio_i.prb and pio_i.ddrb) or (irb and not pio_i.ddrb);
+--                if tmr_a_output_en = '1' and pio_i.ddrb(7) = '1' then
+
                 if cb2_no_irq_clr='0' and ren='1' then
                     cb2_flag <= '0';
                 end if;
@@ -396,10 +373,10 @@ begin
                 irq_flags     <= (others => '0');
                 acr           <= (others => '0');
                 pcr           <= (others => '0');
-                ca2_o         <= '1';
-                hs_cb2_o      <= '1';
-                set_ca2_low   <= '0';
-                set_cb2_low   <= '0';
+                ca2_handshake_o <= '1';
+                ca2_pulse_o     <= '1';
+                cb2_handshake_o <= '1';
+                cb2_pulse_o     <= '1';
                 timer_a_latch  <= latch_reset_pattern;
                 timer_b_latch  <= latch_reset_pattern(7 downto 0);
             end if;

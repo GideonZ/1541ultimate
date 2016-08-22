@@ -737,7 +737,7 @@
  * LWIP_NETIF_STATUS_CALLBACK==1: Support a callback function whenever an interface
  * changes its up/down status (i.e., due to DHCP IP acquistion)
  */
-#define LWIP_NETIF_STATUS_CALLBACK      0
+#define LWIP_NETIF_STATUS_CALLBACK      1
 
 /**
  * LWIP_NETIF_LINK_CALLBACK==1: Support a callback function from an interface

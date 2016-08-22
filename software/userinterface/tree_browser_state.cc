@@ -268,6 +268,7 @@ bool TreeBrowserState :: into2(void)
 
     if(error < 0) {
     	delete deeper;
+    	deeper = NULL;
     	return(true);
     }
 	browser->path->cd(under_cursor->getName());

@@ -40,6 +40,7 @@ public:
 };
 
 typedef enum  {
+	eRefreshDirectory,  // Contents of directory have changed
 	eNodeAdded,			// New Node
 	eNodeRemoved,       // Node no longer exists (deleted)
 	eNodeMediaRemoved,  // Node lost all its children

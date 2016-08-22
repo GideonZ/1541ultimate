@@ -14,6 +14,36 @@
 #include "globals.h"
 #include "size_str.h"
 #include "user_file_interaction.h"
+#include "network_interface.h"
+
+class BrowsableNetwork : public Browsable
+{
+	Browsable *parent;
+	int index;
+public:
+	BrowsableNetwork(Browsable *parent, int index) {
+		this->parent = parent;
+		this->index = index;
+	}
+
+	void getDisplayString(char *buffer, int width) {
+		uint8_t mac[6];
+		char ip[16];
+
+		NetworkInterface *ni = NetworkInterface :: getInterface(index);
+		ni->getMacAddr(mac);
+		if (ni->is_link_up()) {
+			sprintf(buffer, "Net%d    IP: %17s  \eELink Up", index, ni->getIpAddrString(ip, 16));
+		} else {
+			sprintf(buffer, "Net%d    MAC %b:%b:%b:%b:%b:%b  \eJLink Down", index, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+		}
+	}
+
+	IndexedList<Browsable *> *getSubItems(int &error) {
+		error = -1;
+		return &children;
+	}
+};
 
 class BrowsableDirEntry : public Browsable
 {
@@ -123,6 +153,7 @@ public:
 	BrowsableRoot()  {
 		fm = FileManager :: getFileManager();
 		root = fm -> get_new_path("Browsable Root");
+		UserFileInteraction :: getUserFileInteractionObject(); // just to make sure the UserFileInteraction class has been initialized
 	}
 	virtual ~BrowsableRoot() {
 		fm -> release_path(root);
@@ -131,7 +162,6 @@ public:
 	// get parent function not implemented; there is no parent, see base class
 
 	virtual IndexedList<Browsable *> *getSubItems(int &error) {
-		printf("ROOT GET SUBITEMS\n");
 		if (children.get_elements() == 0) {
 			IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
 			fm -> get_directory(root, *infos);
@@ -141,9 +171,12 @@ public:
 				children.append(new BrowsableDirEntry(root, this, inf, true)); // pass ownership of the FileInfo to the browsable object
 			}
 			delete infos; // deletes the indexed list, but not the FileInfos
+
+			for(int i=0; i < NetworkInterface :: getNumberOfInterfaces(); i++) {
+				children.append(new BrowsableNetwork(this, i));
+			}
 		}
 		error = 0;
-		printf("ROOT GET SUBITEMS DONE\n");
 		return &children;
 	}
 

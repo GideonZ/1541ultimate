@@ -176,6 +176,15 @@ public:
 		return workPath.getSub(indexFromStartOfFileSystem, index-1, work);
 	}
 
+	const char *getFullPath(mstring &work, int part) {
+		if (part < 0) {
+			return workPath.getSub(0, index + part, work);
+		} else if(part > 0) {
+			return workPath.getSub(0, part, work);
+		}
+		return workPath.get_path();
+	}
+
 	const char *getFileName() {
 		int depth = workPath.getDepth();
 		if (depth == 0)
