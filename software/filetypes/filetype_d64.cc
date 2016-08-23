@@ -37,7 +37,7 @@ extern "C" {
 }
 
 // tester instance
-FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_d64(Globals :: getFileTypeFactory(), FileTypeD64 :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_d64(FileType :: getFileTypeFactory(), FileTypeD64 :: test_type);
 
 /*********************************************************************/
 /* D64/D71/D81 File Browser Handling                                 */

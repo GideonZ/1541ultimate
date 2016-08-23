@@ -45,7 +45,7 @@ __inline uint32_t le_to_cpu_32(uint32_t a)
 }
 
 // tester instance
-FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(Globals :: getFileTypeFactory(), FileTypeTap :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(FileType :: getFileTypeFactory(), FileTypeTap :: test_type);
 
 #define TAPFILE_RUN 0x3101
 #define TAPFILE_START 0x3110

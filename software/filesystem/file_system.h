@@ -6,6 +6,7 @@
 #include "partition.h"
 #include "file_info.h"
 #include "fs_errors_flags.h"
+#include "factory.h"
 
 class FileSystem;
 class Path;
@@ -30,7 +31,12 @@ public:
     FileSystem(Partition *p);
     virtual ~FileSystem();
 
-	static  const char *get_error_string(FRESULT res);
+	static Factory<Partition *, FileSystem *>* getFileSystemFactory() {
+		static Factory<Partition *, FileSystem *> file_system_factory;
+		return &file_system_factory;
+	}
+
+    static  const char *get_error_string(FRESULT res);
 
 	virtual PathStatus_t walk_path(PathInfo& pathInfo);
 

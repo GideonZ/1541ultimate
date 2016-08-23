@@ -33,7 +33,7 @@
 #include "subsys.h"
 
 // tester instance
-FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_g64(Globals :: getFileTypeFactory(), FileTypeG64 :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_g64(FileType :: getFileTypeFactory(), FileTypeG64 :: test_type);
 
 /*************************************************************/
 /* G64 File Browser Handling                                 */

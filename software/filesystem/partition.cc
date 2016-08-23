@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include "blockdev.h"
 #include "partition.h"
-#include "globals.h"
 #include "file_system.h"
 
 #include <stdio.h>
@@ -39,7 +38,7 @@ DSTATUS Partition::status(void)
 
 FileSystem *Partition :: attach_filesystem(void)
 {
-	FileSystem *fs = Globals :: getFileSystemFactory() -> create(this);
+	FileSystem *fs = FileSystem :: getFileSystemFactory() -> create(this);
 	if(fs) {
 		if (fs->init()) {
 			return fs;

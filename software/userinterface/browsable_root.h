@@ -11,7 +11,6 @@
 #include "browsable.h"
 #include "filemanager.h"
 #include "filetypes.h"
-#include "globals.h"
 #include "size_str.h"
 #include "user_file_interaction.h"
 #include "network_interface.h"
@@ -136,7 +135,7 @@ public:
 
 	virtual void fetch_context_items(IndexedList<Action *>&items) {
 		if (!type)
-			type = Globals :: getFileTypeFactory()->create(this);
+			type = FileType :: getFileTypeFactory()->create(this);
 		if (type) {
 			type->fetch_context_items(items);
 		}

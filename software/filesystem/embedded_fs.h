@@ -8,11 +8,19 @@
 #ifndef FILESYSTEM_EMBEDDED_FS_H_
 #define FILESYSTEM_EMBEDDED_FS_H_
 
+#include "factory.h"
+
 class File;
 class FileSystem;
+class FileInfo;
 
 class FileSystemInFile {
 public:
+	static Factory<FileInfo *, FileSystemInFile *>* getEmbeddedFileSystemFactory() {
+		static Factory<FileInfo *, FileSystemInFile *> embedded_fs_factory;
+		return &embedded_fs_factory;
+	}
+
 	FileSystemInFile() {  }
 	virtual ~FileSystemInFile() { }
 

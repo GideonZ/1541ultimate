@@ -32,7 +32,6 @@
 #include "c64.h"
 #include "flash.h"
 #include "keyboard_c64.h"
-#include "globals.h"
 
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))

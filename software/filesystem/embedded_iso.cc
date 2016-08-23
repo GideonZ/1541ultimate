@@ -6,11 +6,10 @@
  */
 
 #include "embedded_iso.h"
-#include "globals.h"
 
 // tester instance
 FactoryRegistrator<FileInfo *, FileSystemInFile *>
-	tester_emb_iso(Globals :: getEmbeddedFileSystemFactory(), FileSystemInFile_ISO :: test_type);
+	tester_emb_iso(FileSystemInFile :: getEmbeddedFileSystemFactory(), FileSystemInFile_ISO :: test_type);
 
 FileSystemInFile_ISO :: FileSystemInFile_ISO() {
 	fs = 0;

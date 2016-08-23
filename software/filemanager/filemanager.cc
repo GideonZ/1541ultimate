@@ -514,7 +514,7 @@ MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent, co
 
 	FRESULT fr = info->fs->file_open(filepath, dir, info->lfname, flags, &file);
 	if (fr == FR_OK) {
-		emb = Globals :: getEmbeddedFileSystemFactory() -> create(info);
+		emb = FileSystemInFile :: getEmbeddedFileSystemFactory() -> create(info);
 		if (emb) {
 			emb->init(file);
 			if (emb->getFileSystem()) {

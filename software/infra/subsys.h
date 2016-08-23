@@ -8,14 +8,15 @@
 #ifndef INFRA_SUBSYS_H_
 #define INFRA_SUBSYS_H_
 
-#include "globals.h"
 #include "mystring.h"
 #include "action.h"
+#include "managed_array.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
 #include "semphr.h"
+#include <stdio.h>
 
 class SubsysCommand;
 class UserInterface;
@@ -40,12 +41,18 @@ public:
 	SubSystem(int id) {
 		myID = id;
 		myMutex = xSemaphoreCreateMutex();
-		Globals :: getSubSystems() -> set(myID, this);
+		SubSystem :: getSubSystems() -> set(myID, this);
 	}
 	virtual ~SubSystem() {
-		Globals :: getSubSystems() -> unset(myID);
+		SubSystem :: getSubSystems() -> unset(myID);
 		vSemaphoreDelete(myMutex);
 	}
+
+	static ManagedArray<SubSystem *>* getSubSystems() {
+		static ManagedArray<SubSystem *> subsystem_array(16, NULL);
+		return &subsystem_array;
+	}
+
 	virtual const char *identify(void) { return "Unknown Subsystem"; }
 
 	int  lock(const char *name) {
@@ -98,7 +105,7 @@ public:
 		if(direct_call) {
 			retval = direct_call(this);
 		} else {
-			subsys = (*Globals :: getSubSystems())[subsysID];
+			subsys = (*SubSystem :: getSubSystems())[subsysID];
 			if (subsys) {
 				printf("About to execute a command in subsys %s (%p)\n", subsys->identify(), subsys->myMutex);
 				if (xSemaphoreTake(subsys->myMutex, 1000)) {

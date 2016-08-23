@@ -35,7 +35,7 @@
 extern C1541 *c1541_A;
 
 // tester instance
-FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_prg(Globals :: getFileTypeFactory(), FileTypePRG :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_prg(FileType :: getFileTypeFactory(), FileTypePRG :: test_type);
 
 /*********************************************************************/
 /* PRG File Browser Handling                                         */

@@ -34,7 +34,7 @@ extern "C" {
 }
 
 // tester instance
-FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_u2u(Globals :: getFileTypeFactory(), FileTypeUpdate :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_u2u(FileType :: getFileTypeFactory(), FileTypeUpdate :: test_type);
 
 #define UPDATE_RUN 0x7501
 

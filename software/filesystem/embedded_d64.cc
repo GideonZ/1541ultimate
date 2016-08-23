@@ -10,7 +10,7 @@
 
 // tester instance
 FactoryRegistrator<FileInfo *, FileSystemInFile *>
-	tester_emb_d64(Globals :: getEmbeddedFileSystemFactory(), FileSystemInFile_D64 :: test_type);
+	tester_emb_d64(FileSystemInFile :: getEmbeddedFileSystemFactory(), FileSystemInFile_D64 :: test_type);
 
 FileSystemInFile_D64::FileSystemInFile_D64(int mode) {
 	this->mode = mode;

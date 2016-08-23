@@ -6,11 +6,10 @@
  */
 
 #include "embedded_fat.h"
-#include "globals.h"
 
 // tester instance
 FactoryRegistrator<FileInfo *, FileSystemInFile *>
-	tester_emb_fat(Globals :: getEmbeddedFileSystemFactory(), FileSystemInFile_FAT :: test_type);
+	tester_emb_fat(FileSystemInFile :: getEmbeddedFileSystemFactory(), FileSystemInFile_FAT :: test_type);
 
 FileSystemInFile_FAT :: FileSystemInFile_FAT() {
 	fs = 0;

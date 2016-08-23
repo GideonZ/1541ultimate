@@ -359,5 +359,4 @@ FRESULT FileSystem_ISO9660 :: file_seek(File *f, uint32_t pos)
 
 //FileSystemRegistrator iso_tester(FileSystem_ISO9660 :: test);
 
-#include "globals.h"
-FactoryRegistrator<Partition *, FileSystem *> iso_tester(Globals :: getFileSystemFactory(), FileSystem_ISO9660 :: test);
+FactoryRegistrator<Partition *, FileSystem *> iso_tester(FileSystem :: getFileSystemFactory(), FileSystem_ISO9660 :: test);

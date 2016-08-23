@@ -7,7 +7,7 @@
 #include "subsys.h"
 
 // tester instance
-FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_reu(Globals :: getFileTypeFactory(), FileTypeREU :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_reu(FileType :: getFileTypeFactory(), FileTypeREU :: test_type);
 
 // cart definition
 extern uint8_t _module_bin_start;

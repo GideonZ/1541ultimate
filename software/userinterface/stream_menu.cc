@@ -1,7 +1,6 @@
 #include "menu.h"
 #include "stream_menu.h"
 #include "task_menu.h"
-#include "globals.h"
 #include "filemanager.h"
 #include "subsys.h"
 
@@ -169,7 +168,7 @@ int StreamMenu :: process_command(char *command)
     } 
     else if ((strcmp(command, "task")==0) and (state == 0)) {
         items = 0;// node->fetch_task_items(menu->children);
-        IndexedList<ObjectWithMenu *>*objects = Globals ::getObjectsWithMenu();
+        IndexedList<ObjectWithMenu *>*objects = ObjectWithMenu ::getObjectsWithMenu();
 
         for(int i=0;i<objects->get_elements();i++) {
         	items += (*objects)[i]->fetch_task_items(currentPath, actionList);

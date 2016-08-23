@@ -250,5 +250,4 @@ FileSystem *FileSystemFAT::test (Partition *prt)
 	return NULL;
 }
 
-#include "globals.h"
-FactoryRegistrator<Partition *, FileSystem *> fat_tester(Globals :: getFileSystemFactory(), FileSystemFAT :: test);
+FactoryRegistrator<Partition *, FileSystem *> fat_tester(FileSystem :: getFileSystemFactory(), FileSystemFAT :: test);

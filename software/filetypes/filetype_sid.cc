@@ -13,7 +13,7 @@ extern uint8_t _sidcrt_65_start;
 //extern uint8_t _sidcrt_65_end;
 
 // tester instance
-FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(Globals :: getFileTypeFactory(), FileTypeSID :: test_type);
+FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(FileType :: getFileTypeFactory(), FileTypeSID :: test_type);
 
 #define SIDFILE_PLAY_MAIN 0x5301
 #define SIDFILE_PLAY_TUNE 0x5302

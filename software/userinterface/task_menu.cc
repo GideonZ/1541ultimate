@@ -1,7 +1,5 @@
 #include "task_menu.h"
-#include "globals.h"
 #include <string.h>
-//#include "user_file_interaction.h"
 #include "tree_browser_state.h"
 
 TaskMenu :: TaskMenu(UserInterface *ui, TreeBrowserState *state, Path *p) : ContextMenu(ui, state, 0, 0)
@@ -33,7 +31,7 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
     int len, max_len;
     int rows, size_y;
 
-    IndexedList<ObjectWithMenu*> *objects = Globals :: getObjectsWithMenu();
+    IndexedList<ObjectWithMenu*> *objects = ObjectWithMenu :: getObjectsWithMenu();
 
     if(context_state == e_new) {
     	if(browsable)

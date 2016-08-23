@@ -6,11 +6,10 @@
  */
 
 #include "embedded_t64.h"
-#include "globals.h"
 
 // tester instance
 FactoryRegistrator<FileInfo *, FileSystemInFile *>
-	tester_emb_t64(Globals :: getEmbeddedFileSystemFactory(), FileSystemInFile_T64 :: test_type);
+	tester_emb_t64(FileSystemInFile :: getEmbeddedFileSystemFactory(), FileSystemInFile_T64 :: test_type);
 
 
 FileSystemInFile_T64 :: FileSystemInFile_T64() {

@@ -10,17 +10,21 @@
 
 #include "action.h"
 #include "indexed_list.h"
-#include "globals.h"
 #include "path.h"
 
 class ObjectWithMenu
 {
 public:
+	static IndexedList<ObjectWithMenu*>* getObjectsWithMenu() {
+    	static IndexedList<ObjectWithMenu*> objects_with_menu(8, NULL);
+    	return &objects_with_menu;
+    }
+
 	ObjectWithMenu() {
-		Globals :: getObjectsWithMenu() -> append(this);
+		ObjectWithMenu :: getObjectsWithMenu() -> append(this);
 	}
 	virtual ~ObjectWithMenu() {
-		Globals :: getObjectsWithMenu() -> remove(this);
+		ObjectWithMenu :: getObjectsWithMenu() -> remove(this);
 	}
 
     virtual int fetch_task_items(Path *p, IndexedList<Action*> &item_list) { return 0; }
