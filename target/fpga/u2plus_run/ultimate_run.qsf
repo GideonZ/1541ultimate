@@ -588,4 +588,5 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_CLO
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_DATA
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_SRQ_IN
 set_global_assignment -name SIGNALTAP_FILE drvstp1.stp
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BUTTON[2]
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

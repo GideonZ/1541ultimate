@@ -53,8 +53,7 @@ architecture structural of iec_processor_io is
     signal up_fifo_dout    : std_logic_vector(8 downto 0);
     signal up_fifo_empty   : std_logic;
     signal up_fifo_full    : std_logic;
-    signal up_dav          : std_logic;
-    signal up_space        : std_logic;
+    signal up_fifo_count   : integer range 0 to 2048;
     signal down_fifo_flush : std_logic;
     signal down_fifo_empty : std_logic;
     signal down_fifo_full  : std_logic;
@@ -131,27 +130,6 @@ begin
         SSRB  => '0',
         WEB   => '0' );
 
-
---    i_up_fifo: entity work.srl_fifo
---    generic map (
---        Width       => 9,
---        Depth       => 15, -- 15 is the maximum
---        Threshold   => 13 )
---    port map (
---        clock       => clock,
---        reset       => reset,
---        GetElement  => up_fifo_get,
---        PutElement  => up_fifo_put,
---        FlushFifo   => '0',
---        DataIn      => up_fifo_din,
---        DataOut     => up_fifo_dout,
---        SpaceInFifo => up_space,
---        AlmostFull  => open,
---        DataInFifo  => up_dav);
---    
---    up_fifo_empty <= not up_dav;
---    up_fifo_full  <= not up_space;
-
     i_up_fifo: entity work.sync_fifo
         generic map (
             g_depth        => 2048,
@@ -169,12 +147,12 @@ begin
             din         => up_fifo_din,
             dout        => up_fifo_dout,
     
-            flush       => '0',
+            flush       => proc_reset,
     
             full        => up_fifo_full,
             almost_full => open,
             empty       => up_fifo_empty,
-            count       => open  );
+            count       => up_fifo_count  );
 
     i_down_fifo: entity work.srl_fifo
     generic map (
@@ -183,7 +161,7 @@ begin
         Threshold   => 13 )
     port map (
         clock       => clock,
-        reset       => reset,
+        reset       => proc_reset,
         GetElement  => down_fifo_get,
         PutElement  => down_fifo_put,
         FlushFifo   => down_fifo_flush,
@@ -197,13 +175,15 @@ begin
     down_fifo_full  <= not down_space;
 
     process(clock)
+        variable val : unsigned(15 downto 0);
     begin
         if rising_edge(clock) then
             ram_sel <= '0';
             reg_rdata <= (others => '0');
             proc_reset <= not enable;
             resp.ack <= '0';
-                        
+            val := to_unsigned(up_fifo_count, 16);
+            
             if req.read='1' then
                 resp.ack <= '1'; -- data handled outside clocked process if ram
                 ram_sel <= req.address(11);
@@ -228,6 +208,12 @@ begin
                         
                     when X"C" =>
                         reg_rdata <= "0000000" & irq_status;
+
+                    when X"E" =>
+                        reg_rdata <= std_logic_vector(val(7 downto 0));
+
+                    when X"F" =>
+                        reg_rdata <= std_logic_vector(val(15 downto 8));
 
                     when others => null;
                 end case;

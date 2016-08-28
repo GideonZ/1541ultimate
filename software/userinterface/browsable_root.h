@@ -32,9 +32,9 @@ public:
 		NetworkInterface *ni = NetworkInterface :: getInterface(index);
 		ni->getMacAddr(mac);
 		if (ni->is_link_up()) {
-			sprintf(buffer, "Net%d    IP: %17s  \eELink Up", index, ni->getIpAddrString(ip, 16));
+			sprintf(buffer, "Net%d    IP: %#s\eELink Up", index, width-21, ni->getIpAddrString(ip, 16));
 		} else {
-			sprintf(buffer, "Net%d    MAC %b:%b:%b:%b:%b:%b  \eJLink Down", index, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+			sprintf(buffer, "Net%d    MAC %b:%b:%b:%b:%b:%b%#s\eJLink Down", index, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], width-38, "");
 		}
 	}
 

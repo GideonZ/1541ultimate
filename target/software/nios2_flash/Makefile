@@ -63,3 +63,5 @@ LIBS2    = $(BSP)/libhal_bsp.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../common/rules.mk
+
+$(OUTPUT)/binaries.o: $(PATH_SW)/../target/software/nios2_ultimate/result/ultimate.app $(PATH_SW)/../target/software/nios2_recovery/result/recovery.app $(PATH_SW)/../target/fpga/u2plus_recovery/output_files/ultimate_recovery.rbf $(PATH_SW)/../target/fpga/u2plus_run/output_files/ultimate_run.rbf

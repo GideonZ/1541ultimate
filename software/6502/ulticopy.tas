@@ -24,6 +24,7 @@ drive_code_start
     ctrl_sync = $80
         
     via_iec = $1800 ; port B cia1
+    via_sysctrl = $1801 ; port A cia1 (track0 sense, 1/2 MHz, side ...)
     via_timer = $1805 ; cia1 timer
     via_ctrl = $1c00 ; port B cia2 (sync, motor, etc)
     via_data = $1c01 ; port A cia2
@@ -164,6 +165,8 @@ read_disk
     jsr $f97e ; turn motor on
     jsr wait_a_little
     sei
+    lda #$08
+    sta via_sysctrl ; make sure we're running at 1 MHz and try to read side 0
     lda #1
 -
     jsr calculate_zone ; sets current track, zone and sectors on track
@@ -220,6 +223,7 @@ seek_track_1
     lda $01
     cmp #$01
     beq +
+    ora #$20
     rts
 +   sei
     lda #$b0
@@ -292,7 +296,7 @@ create_shift_table
     rts
 
 read_sector
-    lda #64
+    lda #100
     sta attempts
 _next_attempt
     dec attempts

@@ -10,9 +10,9 @@ class UserInterfaceStream : public UserInterface
 {
     Stream *stream;
     StreamMenu *menu;
+    virtual ~UserInterfaceStream() { };
 public:
     UserInterfaceStream(Stream *s);
-    virtual ~UserInterfaceStream() { };
 
     virtual void run();
     virtual int popup(const char *msg, uint8_t flags); // blocking

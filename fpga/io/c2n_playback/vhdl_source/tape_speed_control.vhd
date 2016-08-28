@@ -10,6 +10,8 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 entity tape_speed_control is
+generic (
+    g_clock_freq    : natural := 50_000_000 );
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
@@ -20,10 +22,9 @@ port (
 end entity;
 
 architecture arch of tape_speed_control is
-    constant c_clock_freq       : natural := 50000000;
-    constant c_pdm_target       : natural := (985250 * 512) / (c_clock_freq / 128);  
-    constant c_slowdown_ticks   : natural := 350 * (c_clock_freq / 1000); 
-    constant c_speedup_ticks    : natural := 140 * (c_clock_freq / 1000);
+    constant c_pdm_target       : natural := (985250 * 512) / (g_clock_freq / 128);  
+    constant c_slowdown_ticks   : natural := 350 * (g_clock_freq / 1000); 
+    constant c_speedup_ticks    : natural := 140 * (g_clock_freq / 1000);
     constant c_slowdown_divider : natural := c_slowdown_ticks / c_pdm_target;
     constant c_speedup_divider  : natural := c_speedup_ticks / c_pdm_target;  
     signal   divider            : natural range 0 to c_slowdown_divider - 1;

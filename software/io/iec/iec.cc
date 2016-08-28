@@ -35,11 +35,13 @@ extern uint32_t _ulticopy_65_size;
 
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
+#define CFG_IEC_PATH     0x53
 
 static const char *en_dis[] = { "Disabled", "Enabled" };
 static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive",                 "%s", en_dis,     0,  1, 0 },
     { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",         "%d", NULL,       8, 30, 10 },
+    { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",              "%s", NULL,       0, 30, 0 },
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -135,10 +137,7 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 void IecInterface :: iec_task(void *a)
 {
 	IecInterface *iec = (IecInterface *)a;
-	while(1) {
-		iec->poll();
-		vTaskDelay(2);
-	}
+	iec->poll();
 }
 
 IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
@@ -163,7 +162,7 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
 
     atn = false;
     path = fm->get_new_path("IEC");
-    path->cd("SD");
+    path->cd(cfg->get_string(CFG_IEC_PATH));
     cmd_path = fm->get_new_path("IEC Gui Path");
     cmd_ui = 0;
 
@@ -182,7 +181,11 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     }
     channels[15] = new IecCommandChannel(this, 15);
 
-	xTaskCreate( IecInterface :: iec_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
+    ulticopyBusy = xSemaphoreCreateBinary();
+    ulticopyMutex = xSemaphoreCreateMutex();
+    queueGuiToIec = xQueueCreate(2, sizeof(int));
+
+    xTaskCreate( IecInterface :: iec_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
 }
 
 IecInterface :: ~IecInterface()
@@ -228,12 +231,13 @@ void IecInterface :: effectuate_settings(void)
 }
     
 
+// called from GUI task
 int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
 {
     int count = 3;
 	list.append(new Action("Reset IEC",      SUBSYSID_IEC, MENU_IEC_RESET));
-	//list.append(new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8));
-	//list.append(new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9));
+	list.append(new Action("UltiCopy 8",     SUBSYSID_IEC, MENU_IEC_WARP_8));
+	list.append(new Action("UltiCopy 9",     SUBSYSID_IEC, MENU_IEC_WARP_9));
 	// list.append(new Action("IEC Test 1",     SUBSYSID_IEC, MENU_IEC_MASTER_1));
 	// list.append(new Action("IEC Test 2",     SUBSYSID_IEC, MENU_IEC_MASTER_2));
 	// list.append(new Action("IEC Test 3",     SUBSYSID_IEC, MENU_IEC_MASTER_3));
@@ -258,91 +262,104 @@ int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
 
 //BYTE dummy_prg[] = { 0x01, 0x08, 0x0C, 0x08, 0xDC, 0x07, 0x99, 0x22, 0x48, 0x4F, 0x49, 0x22, 0x00, 0x00, 0x00 };
 
-int IecInterface :: poll()
+// this is actually the task
+void IecInterface :: poll()
 {
     uint8_t data;
+    int command;
+    BaseType_t gotSomething;
 
-    if(wait_irq) {
-        if (HW_IEC_IRQ & 0x01) {
-            get_warp_data();
-        }
-        return 0;
-    }
-    uint8_t a;
-    while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
-        data = HW_IEC_RX_DATA;
-        if(a & IEC_FIFO_CTRL) {
-            switch(data) {
-                case 0xDA:
-                    HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
-                    wait_irq = true;
-                    return 0;
-                case 0xAD:
-                    ioWrite8(UART_DATA, 0x23); // printf("{warp_end}");
-                    break;
-                case 0xDE:
-                    get_warp_error();
-                    break;
-                case 0x57:
-                    printf("{warp mode}");
-                    break;
-                case 0x43:
-                    printf("{tlk} ");
-                    talking = true;
-                    break;
-                case 0x45:
-                    printf("{end} ");
-                    channels[current_channel]->push_command(0);
-                    break;
-                case 0x41:
-                    atn = true;
-                    talking = false;
-                    printf("<1>", data);
-                    break;
-                case 0x42:
-                    atn = false;
-                    printf("<0> ", data);
-                    break;
-                default:
-                    printf("<%b> ", data);
-            }
-        } else {
-            if(atn) {
-                printf("[/%b] ", data);
-                if(data >= 0x60) { // workaround for passing of wrong atn codes talk/untalk
-                    current_channel = int(data & 0x0F);
-                    channels[current_channel]->push_command(data & 0xF0);
-                }
-            } else {
-                printf("[%b] ", data);
-                channels[current_channel]->push_data(data);
-            }
-        }
-    }
+    while(1) {
+    	if(wait_irq) {
+			if (HW_IEC_IRQ & 0x01) {
+				get_warp_data();
+			}
+		    continue;
+		}
+    	gotSomething = xQueueReceive(queueGuiToIec, &command, 2); // here is the vTaskDelay(2) that used to be here
+    	if (gotSomething == pdTRUE) {
+    		start_warp_iec();
+    	}
+		uint8_t a;
+		while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
+			data = HW_IEC_RX_DATA;
+			if(a & IEC_FIFO_CTRL) {
+				switch(data) {
+					case 0xDA:
+						HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
+						wait_irq = true;
+						break;
+					case 0xAD:
+						ioWrite8(UART_DATA, 0x23); // printf("{warp_end}");
+						break;
+					case 0xDE:
+						get_warp_error();
+						break;
+					case 0x57:
+						printf("{warp mode}");
+						break;
+					case 0x43:
+						printf("{tlk} ");
+						talking = true;
+						break;
+					case 0x45:
+						printf("{end} ");
+						channels[current_channel]->push_command(0);
+						break;
+					case 0x41:
+						atn = true;
+						talking = false;
+						printf("<1>", data);
+						break;
+					case 0x42:
+						atn = false;
+						printf("<0> ", data);
+						break;
+					default:
+						printf("<%b> ", data);
+				}
+			} else {
+				if(atn) {
+					printf("[/%b] ", data);
+					if(data >= 0x60) { // workaround for passing of wrong atn codes talk/untalk
+						current_channel = int(data & 0x0F);
+						channels[current_channel]->push_command(data & 0xF0);
+					}
+				} else {
+					printf("[%b] ", data);
+					channels[current_channel]->push_data(data);
+				}
+			}
+			if (wait_irq) {
+				break;
+			}
+		}
 
-    int st;
-    if(talking) {
-        while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
-        	st = channels[current_channel]->pop_data(data);
-            if(st == IEC_OK)
-                HW_IEC_TX_DATA = data;
-            else if(st == IEC_LAST) {
-                HW_IEC_TX_CTRL = 1;
-                while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
-                    ;
-                HW_IEC_TX_DATA = data;
-                talking = false;
-                break;
-            } else { 
-                printf("Talk Error = %d\n", st);
-                HW_IEC_TX_CTRL = 0x10;
-                talking = false;
-                break;
-            }
-        }
+		int st;
+		if(talking) {
+			while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
+				st = channels[current_channel]->pop_data(data);
+				if(st == IEC_OK)
+					HW_IEC_TX_DATA = data;
+				else if(st == IEC_LAST) {
+					HW_IEC_TX_CTRL = 1;
+					while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
+						;
+					HW_IEC_TX_DATA = data;
+					talking = false;
+					break;
+				} else {
+					printf("Talk Error = %d\n", st);
+					HW_IEC_TX_CTRL = 0x10;
+					talking = false;
+					break;
+				}
+			}
+		}
     }
 }
 
+// called from GUI task
 int IecInterface :: executeCommand(SubsysCommand *cmd)
 {
 	File *f = 0;
@@ -423,9 +440,16 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;
 
+// called from GUI task
 void IecInterface :: start_warp(int drive)
 {
-    warp_drive = drive;
+	// First try to obtain a lock on this function
+	if (xSemaphoreTake(ulticopyMutex, 0) == pdFALSE) {
+		cmd_ui->popup("Ulticopy is already in use", BUTTON_OK);
+		return;
+	}
+
+	// FIXME: Make sure that the C64 is actually frozen!
     printf("Starting IEC Warp Mode.\n");
     C64_POKE(0xDD00,0x07); // make sure the C64 that might be connected does not interfere
     // make sure that our local drives are turned off as well
@@ -435,48 +459,101 @@ void IecInterface :: start_warp(int drive)
     if (c1541_B) {
         c1541_B->drive_power(false);
     }
-    
+
     ui_window = new UltiCopy();
     ui_window->init(cmd_ui->screen, cmd_ui->keyboard);
     cmd_ui->activate_uiobject(ui_window); // now we have focus
     ui_window->window->move_cursor(15,10);
     ui_window->window->output("Loading...");
-    HW_IEC_RESET_ENABLE = 1; // reset the IEC controller, just in case
+
+    warp_drive = drive;
+    int command = 1;
+    xQueueSend(queueGuiToIec, &command, 0); // ulticopy shall now take over
+
+    if (xSemaphoreTake(ulticopyBusy, 10) == pdFALSE) {
+    	printf("Synchronization error!  UltiCopy did not start.\n");
+    	while(1)
+    		;
+    }
+    while(1) {
+		printf("GUI Task was notified that UltiCopy is now busy");
+		xSemaphoreTake(ulticopyBusy, portMAX_DELAY);
+
+		// Ulticopy is done
+		printf("UltiCopy warp mode returned.\n");
+
+		if(warp_return_code & 0x80) {
+			last_track++;
+			printf("Error on track %d.\n", last_track);
+		} else if(warp_return_code == 0) {
+			save_copied_disk();
+			if(cmd_ui->popup("Another disk?", BUTTON_YES|BUTTON_NO) == BUTTON_YES) {
+				ui_window->window->clear();
+				// if(!run_drive_code(warp_drive, 0x403, NULL, 0)) { // restart
+			    if(!run_drive_code(warp_drive, 0x400, &_ulticopy_65_start, (int)&_ulticopy_65_size)) {
+					cmd_ui->popup("Restart error..", BUTTON_OK);
+					break;
+			    }
+				// clear pending interrupt if any
+				HW_IEC_IRQ = 0;
+				// push warp command into down-fifo
+				HW_IEC_TX_CTRL = IEC_CMD_GO_WARP;
+				last_track = 0;
+			} else {
+				ui_window->close();
+				break;
+			}
+		} else if(warp_return_code < 0x40) {
+			cmd_ui->popup("Error reading disk..", BUTTON_OK);
+			ui_window->close();
+			break;
+		}
+	}
+	if (c1541_A) {
+		c1541_A->effectuate_settings();
+	}
+	if (c1541_B) {
+		c1541_B->effectuate_settings();
+	}
+	HW_IEC_RESET_ENABLE = iec_enable;
+
+    xSemaphoreGive(ulticopyMutex);
+}
+
+void IecInterface :: start_warp_iec(void)
+{
+	// notify that we are busy now
+	xSemaphoreGive(ulticopyBusy);
+
+    HW_IEC_RESET_ENABLE = 1;
     
     if(!run_drive_code(warp_drive, 0x400, &_ulticopy_65_start, (int)&_ulticopy_65_size)) {
         cmd_ui->popup("Error accessing drive..", BUTTON_OK);
         ui_window->close();
-        if (c1541_A) {
-            c1541_A->effectuate_settings();
-        }
-        if (c1541_B) {
-            c1541_B->effectuate_settings();
-        }
-        HW_IEC_RESET_ENABLE = iec_enable;
+        warp_return_code = 0x1F;
+        xSemaphoreGive(ulticopyBusy);
         return;
     }
 
     ui_window->window->clear();
-    HW_IEC_RESET_ENABLE = 1; // reset the IEC controller, just in case
     // clear pending interrupt if any
     HW_IEC_IRQ = 0;
-    // push warp command into down-fifo
+    // push warp command into down-fifo; Go!
     HW_IEC_TX_CTRL = IEC_CMD_GO_WARP;
     last_track = 0;
-
-    // FIXME: This is called from a GUI thread, which is not a good thing.
-    // We should either wait here, or post a message in a queue of the IEC thread and wait for a signal
-    // from the IEC thread, that the GUI can continue.
 }
 
 void IecInterface :: get_warp_data(void)
 {
     uint32_t read;
-    uint8_t temp[260];
-    uint32_t *dw = (uint32_t *)&temp[0];
+    uint32_t temp[65];
+    uint32_t *dw = &temp[0];
+
     int err = 0;
+    uint16_t fifo_count = uint16_t(HW_IEC_UP_FIFO_COUNT_LO) | (uint16_t(HW_IEC_UP_FIFO_COUNT_HI) << 8);
+
     for(int i=0;i<64;i++) {
-        GCR_DECODER_GCR_IN_32 = HW_IEC_RX_DATA_32; // first in first out, endianness OK
+    	GCR_DECODER_GCR_IN_32 = HW_IEC_RX_DATA_32; // first in first out, endianness OK
         GCR_DECODER_GCR_IN = HW_IEC_RX_DATA;
         *(dw++) = GCR_DECODER_BIN_OUT_32;
         if(GCR_DECODER_ERRORS)
@@ -487,66 +564,42 @@ void IecInterface :: get_warp_data(void)
     GCR_DECODER_GCR_IN = 0x55;
     *(dw++) = GCR_DECODER_BIN_OUT_32;
 
+#if NIOS
+    uint8_t sector = (uint8_t)(read >> 24);
+#else
     uint8_t sector = (uint8_t)read;
+#endif
     uint8_t track = HW_IEC_RX_DATA;
     uint8_t *dest = static_bin_image.get_sector_pointer(track, sector);
-    uint8_t *src = &temp[1];
+    uint8_t *src = (uint8_t *)temp;
     // printf("Sector {%b %b (%p -> %p}\n", track, sector, src, dest);
-    ui_window->window->set_char(track-1,sector+1,err?'-':'*');
-    last_track = track;
-    if(dest) {
-        for(int i=0;i<256;i++) {
-            *(dest++) = *(src++);
-        }
+    if (dest) {
+		ui_window->window->set_char(track-1,sector+1,err?'-':'*');
+		ui_window->parent_win->sync();
+		last_track = track;
+		if(dest) {
+			for(int i=0;i<256;i++) {
+				*(dest++) = *(++src); // asymmetric: We copy from 1.. to 0..., so we increment src first
+			}
+		}
     }
     // clear pending interrupt
     wait_irq = false;
     HW_IEC_IRQ = 0;
 }
 
+// called from IEC context
 void IecInterface :: get_warp_error(void)
 {
     while (HW_IEC_RX_FIFO_STATUS & IEC_FIFO_EMPTY)
         ;
         
-    uint8_t err = HW_IEC_RX_DATA;
-    printf("{Warp Error: %b}", err);
+    warp_return_code = HW_IEC_RX_DATA;
+    printf("{Warp Error: %b}", warp_return_code);
     // clear pending interrupt
     HW_IEC_IRQ = 0;
-    bool re_enable = false;
-
-    if(err & 0x80) {
-        last_track++;
-        printf("Error on track %d.\n", last_track);
-    } else if(err == 0) {
-        save_copied_disk();
-        if(cmd_ui->popup("Another disk?", BUTTON_YES|BUTTON_NO) == BUTTON_YES) {
-            ui_window->window->clear();
-            run_drive_code(warp_drive, 0x403, NULL, 0); // restart
-            // clear pending interrupt if any
-            HW_IEC_IRQ = 0;
-            // push warp command into down-fifo
-            HW_IEC_TX_CTRL = IEC_CMD_GO_WARP;
-            last_track = 0;
-        } else {
-            ui_window->close();
-            re_enable = true;
-        }
-    } else if(err < 0x20) {
-        cmd_ui->popup("Error reading disk..", BUTTON_OK);
-        ui_window->close();
-        re_enable = true;
-    }
-    
-    if(re_enable) {
-        if (c1541_A) {
-            c1541_A->effectuate_settings();
-        }
-        if (c1541_B) {
-            c1541_B->effectuate_settings();
-        }
-        HW_IEC_RESET_ENABLE = iec_enable;
-    }    
+    // notify the gui that we are done
+    xSemaphoreGive(ulticopyBusy);
 }
 
 void IecInterface :: save_copied_disk()

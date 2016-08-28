@@ -6,6 +6,8 @@ library work;
 use work.io_bus_pkg.all;
 
 entity c2n_playback_io is
+generic (
+    g_clock_freq    : natural := 50_000_000 );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -226,6 +228,8 @@ begin
         "11" when others;
         
     i_tape_speed: entity work.tape_speed_control
+    generic map (
+        g_clock_freq => g_clock_freq )
     port map (
         clock    => clock,
         reset    => reset,

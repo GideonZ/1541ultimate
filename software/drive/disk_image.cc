@@ -705,7 +705,6 @@ bool GcrImage :: test(void)
 BinImage :: BinImage(const char *name)
 {
 	bin_data = new uint8_t[C1541_MAX_D64_LEN];
-
 	int sects;
 	uint8_t *track = bin_data;
 	for(int i=0;i<C1541_MAXTRACKS;i++) {
@@ -764,12 +763,18 @@ int BinImage :: get_absolute_sector(int track, int sector)
 
 uint8_t * BinImage :: get_sector_pointer(int track, int sector)
 {
-/*
-    int sec = get_absolute_sector(track, sector);
-    if(sec < 0)
-        return NULL;
-    return &bin_data[256*sec];
-*/
+	if (track < 1) {
+		return 0;
+	}
+	if (sector < 0) {
+		return 0;
+	}
+	if (track >= C1541_MAXTRACKS) {
+		return 0;
+	}
+	if (sector >= track_sectors[track-1]) {
+		return 0;
+	}
     return track_start[track-1] + (sector << 8);
 }
 

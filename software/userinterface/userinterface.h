@@ -30,6 +30,7 @@ private:
     void effectuate_settings(void);
 
     bool initialized;
+    mstring title;
     t_ui_state state;
 
     UIObject *ui_objects[MAX_UI_OBJECTS];
@@ -45,7 +46,7 @@ public:
     Screen *screen;
     int     focus;
 
-    UserInterface();
+    UserInterface(const char *title);
     virtual ~UserInterface();
 
     // from HostClient

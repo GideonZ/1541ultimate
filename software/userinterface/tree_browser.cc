@@ -82,6 +82,10 @@ TreeBrowser :: ~TreeBrowser()
 void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 {
 	this->screen = screen;
+
+    screen->move_cursor(screen->get_size_x()-8, screen->get_size_y()-1);
+	screen->output("\eAF3=Help\eO");
+
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
 	keyb = k;
 	if(!state) {
@@ -460,87 +464,6 @@ void TreeBrowser :: paste(void)
 	state->refresh = true;
 }
 
-/*
-void TreeBrowser :: invalidate(const void *obj)
-{
-	// we just have to take care of ourselves.. which means, that we have to check
-	// if the current browser state is dependent on the object that is going to be
-	// destroyed. If so, we will need to revert to the object that is not
-	// dependent anymore (likely to be root).
-
-	// Note!! This function CAN be called on a sub-browser, like context, menu or
-	// even config. Therefore, we need to recall this function on browser 0!
-	if(this != user_interface->get_root_object()) {
-		((TreeBrowser *)(user_interface->get_root_object()))->invalidate(obj);
-		return;
-	}
-
-	// printf("The object to be invalidated is: %s\n", obj->get_name());
-
-	TreeBrowserState *st, *found;
-	st = state;
-	found = 0;
-
-	while(st) {
-		printf("checking %s...\n", st->node->getName());
-
-		if(st->node->isValid()) {
-			found = st;
-			break;
-		}
-		st = st->previous;
-	}
-
-
-	if(found) { // need to roll back
-		printf("Rolling back browser...");
-		if(contextMenu) {
-			printf("(first, remove open context)...");
-			contextMenu->deinit();
-			user_interface->focus--;
-        	delete contextMenu;
-            contextMenu = NULL;
-		}
-		if(configBrowser) {
-			printf("(first, remove open config)...");
-			configBrowser->deinit();
-			user_interface->focus--;
-        	delete configBrowser;
-        	configBrowser = NULL;
-		}
-
-		while(state) {
-			printf("'%d' ", state->level);
-			st = state;
-			state->level_up();
-			if (st == found)
-				break;
-		}
-		printf("** There are now %d browsable objects.\n", *(Browsable :: getCount()));
-		printf("Going to reload %s\n", state->node->getName());
-		state->reload();
-		printf(" done\n");
-	} else {
-		printf("Did not rewind, because the object invalidated is not in my path.\n");
-
-		// still, the item might be somewhere else in the tree.
-		st = state;
-		while(st) {
-			for(int i=0;i<st->children.get_elements();i++) {
-				if (st->children[i]->invalidateMatch(obj)) {
-					printf("Found invalidate match %s in %s.\n", st->children[i]->getName(), st->node->getName());
-					st->needs_reload = true;
-					st = 0; // break outer
-					break;
-				}
-			}
-			if (st)
-				st = st->previous;
-		}
-
-	}
-}
-*/
 
 const char *TreeBrowser :: getPath() {
 	return path->get_path();

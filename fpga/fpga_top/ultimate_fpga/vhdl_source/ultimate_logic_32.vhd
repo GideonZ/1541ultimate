@@ -11,6 +11,7 @@ entity ultimate_logic_32 is
 generic (
 	g_version		: unsigned(7 downto 0) := X"FF";
     g_simulation    : boolean := true;
+    g_ultimate2plus : boolean := false;
     g_clock_freq    : natural := 50_000_000;
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
@@ -220,6 +221,7 @@ architecture logic of ultimate_logic_32 is
         cap(22) := to_std(g_analyzer) or to_std(g_profiler);
         cap(23) := to_std(g_usb_host2);
         cap(24) := to_std(g_rmii);
+        cap(25) := to_std(g_ultimate2plus);
         cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -923,6 +925,8 @@ begin
 
     r_c2n: if g_c2n_streamer generate
         i_c2n: entity work.c2n_playback_io
+        generic map (
+            g_clock_freq    => g_clock_freq )
         port map (
             clock           => sys_clock,
             reset           => sys_reset,

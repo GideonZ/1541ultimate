@@ -123,7 +123,7 @@ void UsbBase :: deinstall_device(UsbDevice *dev)
 
 ////////////////////////////
 
-extern uint16_t _nano_minimal_b_start;
+extern uint8_t _nano_minimal_b_start;
 extern uint32_t _nano_minimal_b_size;
 
 uint16_t *attr_fifo_data = (uint16_t *)ATTR_FIFO_BASE;
@@ -332,11 +332,12 @@ void UsbBase :: init(void)
 
     // load the nano CPU code and start it.
     int size = (int)&_nano_minimal_b_size;
-    uint16_t *src = &_nano_minimal_b_start;
+    uint8_t *src = &_nano_minimal_b_start;
     uint16_t *dst = (uint16_t *)NANO_BASE;
     uint16_t temp;
     for(int i=0;i<size;i+=2) {
-    	temp = *(src++);
+    	temp = uint16_t(*(src++));
+    	temp |= (uint16_t(*(src++)) << 8);
     	*(dst++) = nano_word(temp);
 	}
     for(int i=size;i<2048;i+=2) {
@@ -344,7 +345,7 @@ void UsbBase :: init(void)
     }
     uint32_t *pul = (uint32_t *)NANO_BASE;
     uint32_t ul = *pul;
-    printf("Nano CPU based USB Controller: %d bytes loaded. First DW: %08x\n", size, ul);
+    printf("Nano CPU based USB Controller: %d bytes loaded from %p. First DW: %08x\n", size, &_nano_minimal_b_start, ul);
 
     printf("Circular Buffer Base = %p\n", circularBufferBase);
     memset (circularBufferBase, 0xe0, 4096);

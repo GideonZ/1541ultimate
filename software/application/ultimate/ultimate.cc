@@ -75,8 +75,15 @@ extern "C" void ultimate_main(void *a)
     c64 = new C64;
     c64_subsys = new C64_Subsys(c64);
 
+    char title[48];
+    if(capabilities & CAPAB_ULTIMATE2PLUS) {
+    	sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+    } else {
+    	sprintf(title, "\eA**** 1541 Ultimate %s (%b) ****\eO", APPL_VERSION, getFpgaVersion());
+    }
+
     if(c64 && c64->exists()) {
-        ui = new UserInterface;
+        ui = new UserInterface(title);
         ui->init(c64);
 
     	// Instantiate and attach the root tree browser
@@ -91,7 +98,7 @@ extern "C" void ultimate_main(void *a)
     } else if(capabilities & CAPAB_OVERLAY) {
         printf("Using Overlay module as user interface...\n");
         overlay = new Overlay(false);
-        ui = new UserInterface;
+        ui = new UserInterface(title);
         ui->init(overlay);
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);

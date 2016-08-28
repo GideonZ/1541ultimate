@@ -29,7 +29,7 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
-UserInterface :: UserInterface()
+UserInterface :: UserInterface(const char *title) : title(title)
 {
     initialized = false;
     focus = -1;
@@ -185,22 +185,18 @@ void UserInterface :: set_screen_title()
 {
     int width = screen->get_size_x();
     int height = screen->get_size_y();
-	static char title[48];
+
+    int len = title.length()-4;
+    int hpos = (width - len) / 2;
 
     screen->clear();
-    sprintf(title, "\eA**** 1541 Ultimate %s (1%b) ****\eO", APPL_VERSION, getFpgaVersion());
-    int len = strlen(title)-4;
-    int hpos = (width - len) / 2;
-    printf("Title = %s (%d)\n", title, len);
     screen->move_cursor(hpos, 0);
-    screen->output(title);
+    screen->output(title.c_str());
     screen->move_cursor(0, 1);
 	screen->repeat('\002', width);
     screen->move_cursor(0, height-1);
 	screen->scroll_mode(false);
 	screen->repeat('\002', width);
-    screen->move_cursor(width-8,height-1);
-	screen->output("\eAF3=Help\eO");
 }
     
 /* Blocking variants of our simple objects follow: */
