@@ -26,6 +26,7 @@
 #define C64_EVENT_AUDIO_ON  0x6478
 #define C64_START_CART      0x6479
 #define C64_UNFREEZE		0x647A
+#define C64_STOP_COMMAND	0x647B
 
 //#define SID_TRACE_END           *((volatile uint32_t *)(C64_TRACE_BASE + 0x80))
 //#define SID_REGS(x)             *((volatile uint8_t *)(C64_TRACE_BASE + x))

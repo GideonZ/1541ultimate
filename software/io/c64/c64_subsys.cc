@@ -165,6 +165,9 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     case C64_DRIVE_LOAD:
     	dma_load(0, cmd->filename.c_str(), cmd->mode);
     	break;
+    case C64_STOP_COMMAND:
+		c64->stop(false);
+		break;
     case MENU_C64_HARD_BOOT:
 		c64->flash->reboot(0);
 		break;

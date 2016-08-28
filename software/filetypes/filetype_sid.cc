@@ -125,7 +125,9 @@ void FileTypeSID :: showInfo()
     }    
 	stream.format("\nSID version: %b\n", sid_header[4]);
     stream.format("\nNumber of songs: %d\n", numberOfSongs);
-	stream.format("Default song = %d\n", *((uint16_t *)&sid_header[0x10]));
+	uint16_t sng = ((uint16_t)sid_header[0x10]) << 8;
+    sng |= sid_header[0x11];
+    stream.format("Default song = %d\n", sng);
 
 	cmd->user_interface->run_editor(stream.getText());
 	// stream gets out of scope.
@@ -320,6 +322,10 @@ int FileTypeSID :: prepare(bool use_default)
 		*pus = swap(*pus);
 	header_valid = false;
 
+	// Now, start to access the C64..
+	SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_STOP_COMMAND, (int)0, "", "");
+	c64_command->execute();
+
 	memset((void *)C64_MEMORY_BASE, 0, 1024);
 	C64_POKE(0x0165, player >> 8); // Important: Store player header loc!
 	// make memory testing obsolete
@@ -337,8 +343,7 @@ int FileTypeSID :: prepare(bool use_default)
 	// leave the browser, and smoothly transition to
 	// sid cart.
     sid_cart.custom_addr = (void *)&_sidcrt_65_start;
-
-	SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&sid_cart, "", "");
+	c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&sid_cart, "", "");
 	c64_command->execute();
 
 	load();
