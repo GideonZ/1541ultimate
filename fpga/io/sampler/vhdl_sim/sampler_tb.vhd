@@ -29,6 +29,7 @@ begin
     
     i_dut: entity work.sampler
     generic map (
+        g_clock_freq    => 62_500_000,
         g_num_voices    => 8 )
     port map (
         clock       => clock,
@@ -88,31 +89,33 @@ begin
         io_write(io, X"00" + c_sample_rate_l        , X"18");
         io_write(io, X"00" + c_sample_control       , X"01");
         
-        io_write(io, X"10" + c_sample_volume        , X"28");
-        io_write(io, X"10" + c_sample_pan           , X"0F");
-        io_write(io, X"10" + c_sample_start_addr_h  , X"01");
-        io_write(io, X"10" + c_sample_start_addr_mh , X"23");
-        io_write(io, X"10" + c_sample_start_addr_ml , X"45");
-        io_write(io, X"10" + c_sample_start_addr_l  , X"00");
-        io_write(io, X"10" + c_sample_length_h      , X"00");
-        io_write(io, X"10" + c_sample_length_m      , X"01");
-        io_write(io, X"10" + c_sample_length_l      , X"00");
-        io_write(io, X"10" + c_sample_rate_h        , X"00");
-        io_write(io, X"10" + c_sample_rate_l        , X"05");
-        io_write(io, X"10" + c_sample_control       , X"03"); -- repeat on
-
-        io_write(io, X"20" + c_sample_volume        , X"38");
-        io_write(io, X"20" + c_sample_pan           , X"04");
+        io_write(io, X"20" + c_sample_volume        , X"28");
+        io_write(io, X"20" + c_sample_pan           , X"0F");
         io_write(io, X"20" + c_sample_start_addr_h  , X"01");
         io_write(io, X"20" + c_sample_start_addr_mh , X"23");
         io_write(io, X"20" + c_sample_start_addr_ml , X"45");
         io_write(io, X"20" + c_sample_start_addr_l  , X"00");
         io_write(io, X"20" + c_sample_length_h      , X"00");
-        io_write(io, X"20" + c_sample_length_m      , X"00");
-        io_write(io, X"20" + c_sample_length_l      , X"80");
+        io_write(io, X"20" + c_sample_length_m      , X"01");
+        io_write(io, X"20" + c_sample_length_l      , X"00");
         io_write(io, X"20" + c_sample_rate_h        , X"00");
-        io_write(io, X"20" + c_sample_rate_l        , X"09");
-        io_write(io, X"20" + c_sample_control       , X"13"); -- repeat on, 16 bit
+        io_write(io, X"20" + c_sample_rate_l        , X"05");
+        io_write(io, X"20" + c_sample_rep_b_pos_l   , X"CC");
+        io_write(io, X"20" + c_sample_control       , X"03"); -- repeat on
+
+        io_write(io, X"E0" + c_sample_volume        , X"38");
+        io_write(io, X"E0" + c_sample_pan           , X"04");
+        io_write(io, X"E0" + c_sample_start_addr_h  , X"01");
+        io_write(io, X"E0" + c_sample_start_addr_mh , X"23");
+        io_write(io, X"E0" + c_sample_start_addr_ml , X"45");
+        io_write(io, X"E0" + c_sample_start_addr_l  , X"00");
+        io_write(io, X"E0" + c_sample_length_h      , X"00");
+        io_write(io, X"E0" + c_sample_length_m      , X"00");
+        io_write(io, X"E0" + c_sample_length_l      , X"80");
+        io_write(io, X"E0" + c_sample_rate_h        , X"00");
+        io_write(io, X"E0" + c_sample_rate_l        , X"09");
+        io_write(io, X"E0" + c_sample_rep_b_pos_l   , X"80");
+        io_write(io, X"E0" + c_sample_control       , X"13"); -- repeat on, 16 bit
 
         wait;
         

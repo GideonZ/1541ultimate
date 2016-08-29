@@ -27,6 +27,7 @@
 #define C64_START_CART      0x6479
 #define C64_UNFREEZE		0x647A
 #define C64_STOP_COMMAND	0x647B
+#define C64_SET_KERNAL		0x647C
 
 //#define SID_TRACE_END           *((volatile uint32_t *)(C64_TRACE_BASE + 0x80))
 //#define SID_REGS(x)             *((volatile uint8_t *)(C64_TRACE_BASE + x))
@@ -231,6 +232,7 @@ public:
     /* C64 specifics */
     void unfreeze(cart_def *def, int mode);  // called from crt... hmm FIXME
 
+    static void enable_kernal(uint8_t *rom);
     void init_cartridge(void);
     void cartridge_test(void);
     void reset(void);

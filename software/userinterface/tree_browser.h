@@ -80,6 +80,7 @@ public:
 
     virtual int poll(int);
     virtual int handle_key(int);
+    virtual void checkFileManagerEvent(void);
 
     void reset_quick_seek(void);
     bool perform_quick_seek(void);

@@ -171,7 +171,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     case MENU_C64_HARD_BOOT:
 		c64->flash->reboot(0);
 		break;
-	default:
+    default:
 		break;
 	}
 

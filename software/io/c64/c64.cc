@@ -103,13 +103,12 @@ const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB",
 const char *en_dis2[] = { "Disabled", "Enabled" };
 const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
+const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "120ns" };
 const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
 
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 18, 4 },
-    { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",              "%s", NULL,       1, 31, (int)"cart.bin" },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
-    { CFG_C64_KERNFILE, CFG_TYPE_STRING, "Alternate Kernal File",        "%s", NULL,       1, 36, (int)"kernal.rom" },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
     { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis2,    0,  1, 0 },
@@ -128,6 +127,11 @@ extern uint8_t _chars_bin_start;
 C64 :: C64()
 {
 	flash = get_flash();
+
+	if (getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
+		c64_config[7].items = timing2; // hack!
+		c64_config[7].def = 5; // hack!
+	}
     register_store(0x43363420, "C64 and cartridge settings", c64_config);
 
     // char_set = new BYTE[CHARSET_SIZE];
@@ -705,6 +709,7 @@ void C64 :: set_cartridge(cart_def *def)
     } else if (def->length) { // not ram, not flash.. then it has to be custom
         *(uint8_t *)(mem_addr+5) = 0; // disable previously started roms.
 
+/*
         const char *n = cfg->get_string(CFG_C64_CUSTOM);
         printf("Now loading '%s' as cartridge.\n", n);
 
@@ -732,6 +737,7 @@ void C64 :: set_cartridge(cart_def *def)
 			printf("Open file failed.\n");
 		}
 #endif
+*/
     }
 	// clear function RAM on the cartridge
     mem_addr -= 65536; // TODO: We know it, because we made the hardware, but the hardware should tell us!
@@ -743,6 +749,18 @@ void C64 :: set_colors(int background, int border) {
     BACKGROUND = uint8_t(background);
 }
 
+void C64 :: enable_kernal(uint8_t *rom)
+{
+	C64_KERNAL_ENABLE = 1;
+	uint8_t *src = rom;
+	uint8_t *dst = (uint8_t *)(C64_KERNAL_BASE+1);
+	for(int i=0;i<8192;i++) {
+		*(dst) = *(src++);
+		dst += 2;
+	}
+	dump_hex((void *)(C64_KERNAL_BASE + 0x3FD0), 48);
+}
+
 void C64 :: init_cartridge()
 {
     if(!cfg)
@@ -751,44 +769,12 @@ void C64 :: init_cartridge()
     C64_MODE = C64_MODE_RESET;
     C64_KERNAL_ENABLE = 0;
 
-#ifndef _NO_FILE_ACCESS
     if (cfg->get_value(CFG_C64_ALT_KERN)) {
-        const char *n = cfg->get_string(CFG_C64_KERNFILE);
-        printf("Now loading '%s' as KERNAL ROM.\n", n);
-
-        FileManager *fm = FileManager :: getFileManager();
-        File *f = 0;
-        FRESULT res;
-        for(int i=0;i<8;i++) {
-        	res = fm->fopen((const char *)NULL, n, FA_READ, &f);
-        	if (res == FR_OK)
-        		break;
-        	vTaskDelay(100);
-        }
-		if(res == FR_OK) {
-			uint32_t transferred;
-            uint8_t *temp = new uint8_t[8192];
-			res = f->read(temp, 8192, &transferred);
-            C64_KERNAL_ENABLE = 1;
-			if (transferred != 8192) {
-				printf("Error loading file.. [%d bytes read] disabling custom kernal.\n", transferred);
-                C64_KERNAL_ENABLE = 0;
-			}
-			fm->fclose(f);
-            // BYTE *src = (BYTE *)&_binary_kernal_sx_251104_04_bin_start;
-            uint8_t *src = temp;
-            uint8_t *dst = (uint8_t *)(C64_KERNAL_BASE+1);
-            for(int i=0;i<8192;i++) {
-                *(dst) = *(src++);
-                dst += 2;
-            }
-            dump_hex((void *)(C64_KERNAL_BASE + 0x3FD0), 48);
-            delete[] temp;
-		} else {
-			printf("Open file failed.\n");
-		}
+		uint8_t *temp = new uint8_t[8192];
+		flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
+		enable_kernal(temp);
+		delete[] temp;
     }
-#endif
 
     int cart = cfg->get_value(CFG_C64_CART);
     set_cartridge(&cartridges[cart]);

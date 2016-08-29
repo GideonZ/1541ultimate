@@ -8,6 +8,7 @@ use work.sampler_pkg.all;
 
 entity sampler is
 generic (
+    g_clock_freq    : natural := 50_000_000;
     g_num_voices    : positive := 8 );
 port (
     clock       : in  std_logic;
@@ -28,11 +29,20 @@ port (
 end entity;
 
 architecture gideon of sampler is
+    function iif(c : boolean; t : natural; f : natural) return natural is
+    begin
+        if c then return t; else return f; end if;
+    end function iif;
+
+    constant c_iterations : natural := iif(g_clock_freq = 50_000_000, 8, 10);
+    signal voice_i       : integer range 0 to g_num_voices-1;
+    signal iter_i        : integer range 0 to c_iterations-1;
+    signal active_i      : std_logic;
+    
     signal voice_state        : t_voice_state_array(0 to g_num_voices-1) := (others => c_voice_state_init);
     signal voice_sample_reg_h : t_sample_byte_array(0 to g_num_voices-1) := (others => (others => '0'));
     signal voice_sample_reg_l : t_sample_byte_array(0 to g_num_voices-1) := (others => (others => '0'));
     
-    signal voice_i       : integer range 0 to g_num_voices-1;
     signal fetch_en      : std_logic;
     signal fetch_addr    : unsigned(25 downto 0);
     signal fetch_tag     : std_logic_vector(7 downto 0);
@@ -72,11 +82,19 @@ begin
     begin
         if rising_edge(clock) then
             if voice_i = g_num_voices-1 then
-                voice_i <= 0;
+                active_i <= '0';
             else
                 voice_i <= voice_i + 1;            
             end if;
  
+            if iter_i = c_iterations-1 then
+                voice_i <= 0;
+                iter_i <= 0;
+                active_i <= '1';
+            else
+                iter_i <= iter_i + 1;            
+            end if;
+
             for i in interrupt'range loop
                 if interrupt_clr(i)='1' then
                     interrupt(i) <= '0';
@@ -91,7 +109,7 @@ begin
 
             case current_state.state is
             when idle =>
-                if current_control.enable then
+                if current_control.enable and voice_i <= g_num_voices then
                     next_state.state      := fetch1;
                     next_state.position   := (others => '0');
                     next_state.divider    := current_control.rate;
@@ -168,7 +186,12 @@ begin
             end if;
             
             -- write port - state --
-            voice_state <= voice_state(1 to g_num_voices-1) & next_state;
+            if active_i = '1' then
+                voice_state <= voice_state(1 to g_num_voices-1) & next_state;
+            else
+                cur_sam <= (others => '0');
+                fetch_en <= '0';
+            end if;
                         
             -- write port - sample data --
             if mem_resp.dack_tag(7 downto 5) = "110" then
@@ -182,6 +205,8 @@ begin
 
             if reset='1' then
                 voice_i <= 0;
+                iter_i  <= 0;
+                active_i <= '1';
                 next_state.state := idle; -- shifted into the voice state vector automatically.
                 interrupt <= (others => '0');
             end if;

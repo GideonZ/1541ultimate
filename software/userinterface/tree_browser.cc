@@ -178,6 +178,27 @@ int TreeBrowser :: poll(int sub_returned)
         return ret;
     }
 
+    checkFileManagerEvent();
+
+    if(state->refresh) {
+        state->do_refresh();
+	}
+
+    c = keyb->getch();
+    if(c == -2) { // error
+        printf("Keyboard returned -2\n");
+        return -2;
+    }
+    if(c < 0)
+    	return 0;
+
+    ret = handle_key(c);
+
+    return ret;
+}
+
+void TreeBrowser :: checkFileManagerEvent(void)
+{
     FileManagerEvent *event = (FileManagerEvent *)observerQueue->waitForEvent(0);
     if (event) {
     	printf("Event %d on %s\n", event->eventType, event->pathName.c_str() );
@@ -274,24 +295,8 @@ int TreeBrowser :: poll(int sub_returned)
     		break;
     	}
     }
-
-
-    if(state->refresh) {
-        state->do_refresh();
-	}
-
-    c = keyb->getch();
-    if(c == -2) { // error
-        printf("Keyboard returned -2\n");
-        return -2;
-    }
-    if(c < 0)
-    	return 0;
-
-    ret = handle_key(c);
-
-    return ret;
 }
+
 
 void TreeBrowser :: tasklist(void)
 {

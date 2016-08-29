@@ -216,8 +216,7 @@ architecture rtl of u2p_nios_solo is
     signal io_resp_ddr2     : t_io_resp;
 
     -- audio
-    signal drive_sample_1   : signed(12 downto 0);
-    signal drive_sample_2   : signed(12 downto 0);
+    signal audio_speaker    : signed(12 downto 0);
     signal audio_left       : signed(18 downto 0);
     signal audio_right      : signed(18 downto 0);
 begin
@@ -414,7 +413,7 @@ begin
         g_spi_flash     => true,
         g_vic_copper    => false,
         g_video_overlay => false,
-        g_sampler       => false,
+        g_sampler       => true,
         g_analyzer      => false,
         g_profiler      => true,
         g_rmii          => true )
@@ -461,8 +460,7 @@ begin
         mem_resp    => mem_resp,
                  
         -- Audio outputs
-        drive_sample_1  => drive_sample_1,
-        drive_sample_2  => drive_sample_2,
+        audio_speaker   => audio_speaker,
         audio_left      => audio_left,
         audio_right     => audio_right,
         
@@ -534,12 +532,12 @@ begin
     i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
     generic map (
         g_left_shift => 2,
-        g_width => drive_sample_1'length )
+        g_width => audio_speaker'length )
     port map (
         clock   => sys_clock,
         reset   => sys_reset,
         
-        dac_in  => drive_sample_1,
+        dac_in  => audio_speaker,
     
         dac_out => SPEAKER_DATA );
 
@@ -562,15 +560,31 @@ begin
     b_audio: block
         signal audio_get_sample : std_logic;
         signal sys_get_sample   : std_logic;
-        signal audio_audio_left : std_logic_vector(audio_left'range);
-        signal audio_audio_right: std_logic_vector(audio_right'range);
         signal stream_out_data  : std_logic_vector(23 downto 0);
         signal stream_out_tag   : std_logic_vector(0 downto 0);
         signal stream_out_valid : std_logic;
         signal stream_in_data   : std_logic_vector(23 downto 0);
         signal stream_in_tag    : std_logic_vector(0 downto 0);
         signal stream_in_ready  : std_logic;
+        signal audio_left_filt  : signed(17 downto 0);
+        signal audio_right_filt : signed(17 downto 0);
+        signal audio_audio_left : std_logic_vector(audio_left_filt'range);
+        signal audio_audio_right: std_logic_vector(audio_right_filt'range);
     begin
+        i_filt_left: entity work.lp_filter
+        port map (
+            clock     => sys_clock,
+            reset     => sys_reset,
+            signal_in => audio_left(18 downto 1),
+            low_pass  => audio_left_filt );
+        
+        i_filt_right: entity work.lp_filter
+        port map (
+            clock     => sys_clock,
+            reset     => sys_reset,
+            signal_in => audio_right(18 downto 1),
+            low_pass  => audio_right_filt );
+
         i2s: entity work.i2s_serializer
         port map (
             clock            => audio_clock,
@@ -600,13 +614,13 @@ begin
 
         i_sync_left: entity work.synchronizer_gzw
         generic map (
-            g_width     => audio_left'length,
+            g_width     => audio_left_filt'length,
             g_fast      => false
         )
         port map(
             tx_clock    => sys_clock,
             tx_push     => sys_get_sample,
-            tx_data     => std_logic_vector(audio_left),
+            tx_data     => std_logic_vector(audio_left_filt),
             tx_done     => open,
             rx_clock    => audio_clock,
             rx_new_data => open,
@@ -615,13 +629,13 @@ begin
         
         i_sync_right: entity work.synchronizer_gzw
         generic map (
-            g_width     => audio_right'length,
+            g_width     => audio_right_filt'length,
             g_fast      => false
         )
         port map(
             tx_clock    => sys_clock,
             tx_push     => sys_get_sample,
-            tx_data     => std_logic_vector(audio_right),
+            tx_data     => std_logic_vector(audio_right_filt),
             tx_done     => open,
             rx_clock    => audio_clock,
             rx_new_data => open,
@@ -635,11 +649,11 @@ begin
                 if stream_in_ready = '1' then
                     if stream_in_tag(0) = '0' then
                         stream_in_tag(0) <= '1';
-                        stream_in_data <= audio_audio_right & "00000";
+                        stream_in_data <= audio_audio_right & "000000";
                         audio_get_sample <= '1';
                     else
                         stream_in_tag(0) <= '0';
-                        stream_in_data <= audio_audio_left & "00000";
+                        stream_in_data <= audio_audio_left & "000000";
                     end if;
                 end if;
                 if audio_reset = '1' then

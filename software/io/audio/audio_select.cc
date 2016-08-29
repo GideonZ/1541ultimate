@@ -10,6 +10,7 @@ extern "C" {
 #include "flash.h"
 #include "userinterface.h"
 #include "sampler.h"
+#include "u2p.h"
 
 // static pointer
 AudioConfig audio_configurator;
@@ -26,9 +27,12 @@ AudioConfig audio_configurator;
 #define CFG_AUDIO_SID_EXT_LEFT   0x5E
 #define CFG_AUDIO_SID_EXT_RIGHT  0x5F
 #define CFG_AUDIO_SAMPLER_IO     0x60
+#define CFG_AUDIO_SPEAKER_EN     0x61
 
 const char *aud_choices[]  = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right" };
 const char *aud_choices2[] = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "Sampler Left", "Sampler Right" };
+const char *aud_choices3[] = { "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right",
+		                       "SID + Samp L", "SID + Samp R", "SID Mono", "Sampler Mono" };
 
 const char *sid_base[] = { "Snoop $D400", "Snoop $D420", "Snoop $D480", "Snoop $D500", "Snoop $D580",
                            "Snoop $D600", "Snoop $D680", "Snoop $D700", "Snoop $D780",
@@ -64,7 +68,23 @@ struct t_cfg_definition audio_cfg_no_sid[] = {
     { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices2, 0,  3, 1 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
-int normal_map[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+struct t_cfg_definition audio_cfg_plus[] = {
+	{ CFG_AUDIO_SPEAKER_EN,     CFG_TYPE_ENUM, "Built-in Speaker (Drive-A)",   "%s", en_dis3,     0,  1, 1 },
+    { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices3,0, 11, 8 },
+    { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices3,0, 11, 9 },
+    { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis3,     0,  1, 1 },
+    { CFG_AUDIO_SID_BASE_LEFT,  CFG_TYPE_ENUM, "SID Left Base",                "%s", sid_base,    0, 24, 0 },
+    { CFG_AUDIO_SID_EXT_LEFT,   CFG_TYPE_ENUM, "SID Left Mode",                "%s", sid_voices,  0,  1, 0 },
+    { CFG_AUDIO_SID_WAVE_LEFT,  CFG_TYPE_ENUM, "SID Left Combined Waveforms",  "%s", sidchip_sel, 0,  1, 0 },
+    { CFG_AUDIO_SID_ENABLE_R,   CFG_TYPE_ENUM, "SID Right",                    "%s", en_dis3,     0,  1, 1 },
+    { CFG_AUDIO_SID_BASE_RIGHT, CFG_TYPE_ENUM, "SID Right Base",               "%s", sid_base,    0, 24, 8 },
+    { CFG_AUDIO_SID_EXT_RIGHT,  CFG_TYPE_ENUM, "SID Right Mode",               "%s", sid_voices,  0,  1, 0 },
+    { CFG_AUDIO_SID_WAVE_RIGHT, CFG_TYPE_ENUM, "SID Right Combined Waveforms", "%s", sidchip_sel, 0,  1, 0 },
+//    { CFG_AUDIO_SAMPLER_IO,     CFG_TYPE_ENUM, "Map Sampler in $DF20-DFFF",    "%s", en_dis3,     0,  1, 0 },
+    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,        0,  0, 0 } };
+
+
+int normal_map[12] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
 int skip_sid[8]   = { 0, 1, 2, 3, 6, 7, 6, 7 };
 
 AudioConfig :: AudioConfig()
@@ -73,7 +93,10 @@ AudioConfig :: AudioConfig()
     uint32_t store = 0x41554449;    
     uint32_t capabilities = getFpgaCapabilities();
 
-    if(capabilities & CAPAB_STEREO_SID) {
+    if(capabilities & CAPAB_ULTIMATE2PLUS) {
+    	map = normal_map;
+        def = audio_cfg_plus;
+    } else if(capabilities & CAPAB_STEREO_SID) {
     	map = normal_map;
         def = audio_cfg;
         if(capabilities & CAPAB_SAMPLER) {
@@ -128,7 +151,9 @@ void AudioConfig :: effectuate_settings()
 
         set_sid_coefficients();
     }
-
+    if(getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
+    	U2PIO_SPEAKER_EN = cfg->get_value(CFG_AUDIO_SPEAKER_EN);
+    }
 }
 
 void AudioConfig :: clear_sampler_registers()

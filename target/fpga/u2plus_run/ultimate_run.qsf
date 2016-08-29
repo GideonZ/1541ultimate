@@ -364,10 +364,17 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to RMII_CRS_DV
 
 
 
-set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
-set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
-set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 
+set_global_assignment -name GENERATE_RBF_FILE ON
+set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION OFF
+set_global_assignment -name ENABLE_SIGNALTAP OFF
+set_global_assignment -name USE_SIGNALTAP_FILE audio.stp
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_ATN
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_CLOCK
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_DATA
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_SRQ_IN
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BUTTON[2]
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/lp_filter2.vhd
 set_global_assignment -name SDC_FILE ultimate_altera.sdc
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_nios2_solo.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd
@@ -578,15 +585,10 @@ set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
-set_global_assignment -name GENERATE_RBF_FILE ON
-set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION OFF
-set_global_assignment -name ENABLE_SIGNALTAP OFF
-set_global_assignment -name USE_SIGNALTAP_FILE drvstp1.stp
 set_global_assignment -name SIGNALTAP_FILE usbstp1.stp
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_ATN
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_CLOCK
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_DATA
-set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_SRQ_IN
 set_global_assignment -name SIGNALTAP_FILE drvstp1.stp
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BUTTON[2]
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_global_assignment -name SIGNALTAP_FILE audio.stp
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

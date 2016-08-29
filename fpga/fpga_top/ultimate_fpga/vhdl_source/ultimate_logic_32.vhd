@@ -83,8 +83,7 @@ port (
     mem_resp    : in    t_mem_resp_32;
     
     -- Audio outputs
-    drive_sample_1   : out signed(12 downto 0);
-    drive_sample_2   : out signed(12 downto 0);
+    audio_speaker    : out signed(12 downto 0);
     audio_left       : out signed(18 downto 0);
     audio_right      : out signed(18 downto 0);
 
@@ -317,10 +316,16 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_rmii     : t_io_resp := c_io_resp_init;
     signal io_irq           : std_logic;
     
+    signal drive_sample_1   : signed(12 downto 0);
+    signal drive_sample_2   : signed(12 downto 0);
+    signal audio_tape_read  : signed(18 downto 0);
+    signal audio_tape_write : signed(18 downto 0);
     signal sid_left         : signed(17 downto 0);
     signal sid_right        : signed(17 downto 0);
     signal samp_left        : signed(17 downto 0);
     signal samp_right       : signed(17 downto 0);
+    signal audio_select_left    : std_logic_vector(3 downto 0);
+    signal audio_select_right   : std_logic_vector(3 downto 0);
     
     -- IEC signal routing
     signal atn_o, atn_i     : std_logic := '1';
@@ -344,6 +349,8 @@ architecture logic of ultimate_logic_32 is
     signal c64_stopped		: std_logic;
     signal c2n_sense        : std_logic := '0';
     signal c2n_sense_in     : std_logic := '0';
+    signal cas_read_c       : std_logic;
+    signal cas_write_c      : std_logic;
     signal c2n_out_r		: std_logic := '1';
     signal c2n_out_w		: std_logic := '1';
 	signal busy_led			: std_logic;
@@ -507,6 +514,8 @@ begin
             -- audio out
             audio_sample    => drive_sample_1 );
     end generate;
+    audio_speaker <= drive_sample_1;
+
 
     r_drive_2: if g_drive_1541_2 generate
     begin
@@ -559,6 +568,7 @@ begin
     r_cart: if g_cartridge generate
         i_slot_srv: entity work.slot_server_v4
         generic map (
+            g_clock_freq    => g_clock_freq,
             g_tag_slot      => c_tag_slot,
             g_tag_reu       => c_tag_reu,
             g_ram_base_reu  => X"1000000", -- should be on 16M boundary, or should be limited in size
@@ -1067,16 +1077,80 @@ begin
         req             => io_req_aud_sel,
         resp            => io_resp_aud_sel,
         
-        drive0          => '0', -- pwm,
-        drive1          => '0', -- pwm_2,
-        cas_read        => '0', -- CAS_READ,
-        cas_write       => '0', -- CAS_WRITE,
-        sid_left        => '0', -- sid_pwm_left,
-        sid_right       => '0', -- sid_pwm_right,
-        samp_left       => '0', -- samp_pwm_left,
-        samp_right      => '0', -- samp_pwm_right,
-                
-        pwm_out         => open );
+        select_left     => audio_select_left,
+        select_right    => audio_select_right );
+        
+    -- generate raw samples for audio
+    audio_tape_read  <= to_signed(-10000, 19) when cas_read_c = '0' else to_signed(10000, 19);
+    audio_tape_write <= to_signed(-10000, 19) when cas_write_c = '0' else to_signed(10000, 19);  
+        
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            cas_read_c  <= CAS_READ;
+            cas_write_c <= CAS_WRITE;
+
+            audio_left <= (others => '0');
+            audio_right <= (others => '0');
+            case audio_select_left is
+            when X"0" =>
+                audio_left(18 downto 5) <= drive_sample_1(12) & drive_sample_1(12 downto 0);
+            when X"1" =>
+                audio_left(18 downto 5) <= drive_sample_2(12) & drive_sample_2(12 downto 0);
+            when X"2" =>
+                audio_left <= audio_tape_read;
+            when X"3" =>
+                audio_left <= audio_tape_write;
+            when X"4" =>
+                audio_left  <= sid_left & '0';
+            when X"5" =>
+                audio_left  <= sid_right & '0';
+            when X"6" =>
+                audio_left  <= samp_left & '0';
+            when X"7" =>
+                audio_left  <= samp_right & '0';
+            when X"8" =>
+                audio_left  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
+            when X"9" =>
+                audio_left  <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right);
+            when X"A" =>
+                audio_left  <= (sid_left(17) & sid_left) + (sid_right(17) & sid_right);
+            when X"B" =>
+                audio_left  <= (samp_left(17) & samp_left) + (samp_right(17) & samp_right);
+            when others =>
+                null;
+            end case;                            
+
+            case audio_select_right is
+            when X"0" =>
+                audio_right(18 downto 5) <= drive_sample_1(12) & drive_sample_1(12 downto 0);
+            when X"1" =>
+                audio_right(18 downto 5) <= drive_sample_2(12) & drive_sample_2(12 downto 0);
+            when X"2" =>
+                audio_right <= audio_tape_read;
+            when X"3" =>
+                audio_right <= audio_tape_write;
+            when X"4" =>
+                audio_right  <= sid_left & '0';
+            when X"5" =>
+                audio_right  <= sid_right & '0';
+            when X"6" =>
+                audio_right  <= samp_left & '0';
+            when X"7" =>
+                audio_right  <= samp_right & '0';
+            when X"8" =>
+                audio_right  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
+            when X"9" =>
+                audio_right  <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right);
+            when X"A" =>
+                audio_right  <= (sid_left(17) & sid_left) + (sid_right(17) & sid_right);
+            when X"B" =>
+                audio_right  <= (samp_left(17) & samp_left) + (samp_right(17) & samp_right);
+            when others =>
+                null;
+            end case;                            
+        end if;  
+    end process;
 
     iec_atn_o    <= '0' when atn_o='0'  or atn_o_2='0'  or hw_atn_o='0'  else '1';
     iec_clock_o  <= '0' when clk_o='0'  or clk_o_2='0'  or hw_clk_o='0'  else '1';
@@ -1184,13 +1258,5 @@ begin
             rmii_txd    => rmii_txd );
         
     end generate;
-
-    process(sys_clock)
-    begin
-        if rising_edge(sys_clock) then
-            audio_left  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
-            audio_right <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right); 
-        end if;
-    end process;
 
 end logic;

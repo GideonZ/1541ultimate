@@ -11,6 +11,7 @@ use work.cart_slot_pkg.all;
 
 entity slot_server_v4 is
 generic (
+    g_clock_freq    : natural := 50_000_000;
     g_tag_slot      : std_logic_vector(7 downto 0) := X"08";
     g_tag_reu       : std_logic_vector(7 downto 0) := X"10";
     g_ram_base_reu  : unsigned(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
@@ -627,6 +628,7 @@ begin
 
         i_sampler: entity work.sampler
         generic map (
+            g_clock_freq    => g_clock_freq,
             g_num_voices    => 8 )
         port map (
             clock       => clock,
