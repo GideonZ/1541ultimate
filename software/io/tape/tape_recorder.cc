@@ -4,6 +4,7 @@
 #include "tape_recorder.h"
 #include "userinterface.h"
 #include "filemanager.h"
+#include "c64.h"
 
 extern "C" {
     #include "dump_hex.h"
@@ -65,6 +66,7 @@ int TapeRecorder :: executeCommand(SubsysCommand *cmd)
 		last_user_interface = cmd->user_interface;
 	}
 	UserInterface *ui = (UserInterface *)last_user_interface;
+	SubsysCommand *c64_command;
 
 	switch(cmd->functionID) {
 		case MENU_REC_FINISH:
@@ -83,8 +85,17 @@ int TapeRecorder :: executeCommand(SubsysCommand *cmd)
 			break;
 		case MENU_REC_SAMPLE_TAPE:
 			select = 0;
-			if(request_file(cmd))
+			if(request_file(cmd)) {
+				if (ui->is_available()) {
+					ui->popup("Start tape when back in C64 screen", BUTTON_OK);
+				} else {
+					printf("Damn user interface is not available!\n");
+				}
+				c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
+	            		C64_UNFREEZE, 0, "", "");
+	            c64_command->execute();
 				start();
+			}
 			break;
 		case MENU_REC_RECORD_TO_TAP:
 			select = 1;

@@ -110,7 +110,7 @@ begin
     end process;
 
     -- slot side
-    BUFFER_ENn  <= not BUTTON(1);
+    BUFFER_ENn  <= '0';
 
     SLOT_ADDR   <= std_logic_vector(counter(23 downto 8));
     SLOT_DATA   <= std_logic_vector(counter(7 downto 0));
@@ -137,6 +137,11 @@ begin
     CAS_READ    <= pulses(17);
     CAS_WRITE   <= pulses(18);
     CAS_MOTOR   <= pulses(19);
+
+    IEC_DATA    <= '0' when pulses(20) = '1' else 'Z';
+    IEC_CLOCK   <= '0' when pulses(21) = '1' else 'Z';
+    IEC_ATN     <= '0' when pulses(22) = '1' else 'Z';
+    IEC_SRQ_IN  <= '0' when pulses(23) = '1' else 'Z';
     
     -- local bus side
     LB_ADDR     <= (others => 'Z');
@@ -153,16 +158,10 @@ begin
     -- PWM outputs (for audio)
     PWM_OUT     <= "ZZ";
 
-    -- IEC bus
-    IEC_ATN     <= '0' when counter(20) = '1' else '1';
-    IEC_DATA    <= '0' when counter(21) = '1' else '1';
-    IEC_CLOCK   <= '0' when counter(22) = '1' else '1';
-    IEC_SRQ_IN  <= '0' when counter(23) = '1' else '1';
-    
-    MOTOR_LEDn  <= not counter(23) or not counter(22);
-    DISK_ACTn   <= not counter(23) or     counter(22);
-    CART_LEDn   <=     counter(23) or not counter(22);
-    SDACT_LEDn  <=     counter(23) or     counter(22);
+    DISK_ACTn   <= not counter(20);
+    CART_LEDn   <= not counter(21);
+    SDACT_LEDn  <= not counter(22);
+    MOTOR_LEDn  <= not counter(23);
     
     -- Debug UART
     UART_TXD    <= '1';

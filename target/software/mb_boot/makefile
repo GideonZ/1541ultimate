@@ -10,6 +10,7 @@ FPGA_700_BMM  = ../../fpga/mb700/ultimate_mb_700a_bd.bmm
 PATH_SW  =  ../../../software
 
 VPATH    += $(PATH_SW)/application/mb_boot
+VPATH    += $(PATH_SW)/portable/microblaze
 
 SRCS_C   =	mbstart.c \
 			itu.c \
@@ -28,10 +29,7 @@ APPL_OPT = -DBOOTLOADER -D_FS_READONLY=1 -D_FS_MINIMIZE=3
 COPTIONS = -ffunction-sections -Os -std=c99 $(APPL_OPT)
 CPPOPT   = -ffunction-sections -Os -fno-exceptions -fno-rtti $(APPL_OPT)
 LINK 	 = ./mb_boot.lds
-LLIB     =  -L $(TOOLCHAIN)/lib/gcc/microblaze-xilinx-elf/4.1.2 \
-			-L $(TOOLCHAIN)/microblaze-xilinx-elf/lib
-LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lxil -lc -lm --end-group -lgcc
-LFLAGS   = --gc-sections 
+LFLAGS   = --gc-sections -nostartfiles
 
 include ../common/rules.mk
 

@@ -19,7 +19,8 @@ SRCS_C   =	mbstart_rtos.c \
             ff2.c \
             ccsbcs.c \
             ffsyscall.c \
-            time.c
+            time.c \
+            sid_coeff.c
 
 SRCS_CC	 =  small_printf.cc \
             stream.cc \
@@ -71,7 +72,6 @@ SRCS_CC	 =  small_printf.cc \
 			ui_elements.cc \
             user_file_interaction.cc \
 			editor.cc \
-			ui_stream.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
 			stream_menu.cc \
@@ -86,6 +86,7 @@ SRCS_CC	 =  small_printf.cc \
 			filetype_reu.cc \
 			filetype_crt.cc \
 			filetype_sid.cc \
+			filetype_bin.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \

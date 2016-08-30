@@ -175,14 +175,14 @@ begin
     down_fifo_full  <= not down_space;
 
     process(clock)
-        variable val : unsigned(15 downto 0);
+--        variable value : unsigned(15 downto 0);
     begin
         if rising_edge(clock) then
             ram_sel <= '0';
             reg_rdata <= (others => '0');
             proc_reset <= not enable;
             resp.ack <= '0';
-            val := to_unsigned(up_fifo_count, 16);
+--            value := to_unsigned(up_fifo_count, 16);
             
             if req.read='1' then
                 resp.ack <= '1'; -- data handled outside clocked process if ram
@@ -209,12 +209,12 @@ begin
                     when X"C" =>
                         reg_rdata <= "0000000" & irq_status;
 
-                    when X"E" =>
-                        reg_rdata <= std_logic_vector(val(7 downto 0));
-
-                    when X"F" =>
-                        reg_rdata <= std_logic_vector(val(15 downto 8));
-
+--                    when X"E" =>
+--                        reg_rdata <= std_logic_vector(value(7 downto 0));
+--
+--                    when X"F" =>
+--                        reg_rdata <= std_logic_vector(value(15 downto 8));
+--
                     when others => null;
                 end case;
             elsif req.write='1' then

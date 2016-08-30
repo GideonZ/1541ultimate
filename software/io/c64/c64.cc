@@ -38,10 +38,11 @@
 #define CMD_IF_SLOT_ENABLE     *((volatile uint8_t *)(CMD_IF_BASE + 0x1))
 #endif
 
-#if _NO_FILE_ACCESS == 0
-# include "filemanager.h"
-# include "FreeRTOS.h"
-# include "task.h"
+#ifndef NO_FILE_ACCESS
+#include "filemanager.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
 #endif
 
 /* Configuration */

@@ -79,6 +79,9 @@ void _premain()
 
     ioWrite8(UART_DATA, 0x32);
 
+    for(int i=0;i<10;i++)
+    	printf("malloc returned: %08x: ", malloc(300));
+
     atexit(_do_dtors);
 
     start_rtos();
@@ -170,12 +173,13 @@ void *sbrk(int inc)
 {
     static int b = (int)_heap;
     void *result = (void *)-1;
+    printf("SBRK: Heap = %08x. Inc = %08x. HeapEnd = %08x\n", b, inc, (int)_heap_end);
     if ((b + inc) < (int)_heap_end) {
         result = (void *)b;
         //printf("sbrk called with %6x. b = %p returning %p\n", inc, b, result);
         b += inc;
     } else {
-        printf("Sbrk called with %6x. FAILED\n", inc);
+        printf("Sbrk called with %d. FAILED\n", inc);
     }
     return result;
 }

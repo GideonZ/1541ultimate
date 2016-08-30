@@ -141,6 +141,7 @@ void *sbrk(int inc)
 {
     static int b = (int)_heap;
     void *result = (void *)-1;
+    printf("SBRK: Heap = %08x. HeapEnd = %08x\n", b, (int)_heap_end);
     if ((b + inc) < (int)_heap_end) {
         result = (void *)b;
         //printf("sbrk called with %6x. b = %p returning %p\n", inc, b, result);

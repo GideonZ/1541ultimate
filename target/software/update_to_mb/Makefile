@@ -33,7 +33,7 @@ SRCS_CC	 =  memory.cc \
 			mystring.cc \
 			size_str.cc \
 			rtc.cc \
-			task_menu.cc \
+			editor.cc \
 			userinterface.cc \
 			ui_elements.cc \
 			stream.cc \
@@ -73,19 +73,21 @@ LWIPLIB =
 
 VPATH   += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 VPATH   += $(PATH_SW)/application/update_to_mb
-VPATH   += $(PATH_SW)/system/cross
+VPATH   += $(PATH_SW)/portable/zpu
 
 VPATH   += ../mb_ultimate/result
 VPATH   += ../mb_boot/result
 VPATH   += ../mb_boot2/result
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -Os -DGCC_ZPU -ffunction-sections -std=c99
-CPPOPT   = -Os -DGCC_ZPU -ffunction-sections -fno-exceptions -fno-rtti -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 -D_FPGA400=$(FPGA400)
-LINK 	 = $(PATH_SW)/system/zpu.lds
-LLIB     =  -L $(ZPU_TOOLCHAIN)/install/lib/gcc/zpu-elf/3.4.2 \
-			-L $(ZPU_TOOLCHAIN)/install/zpu-elf/lib
-LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lc -lbcc --end-group -lgcc
+OPTIONS  = -nostartfiles
+APPL_OPT = -Os -DGCC_ZPU -ffunction-sections -DNO_FILE_ACCESS=1 -DFIRST_WRITABLE_PAGE=0 -D_FPGA400=$(FPGA400)
+COPTIONS = $(APPL_OPT) -std=c99
+CPPOPT   = $(APPL_OPT) -fno-exceptions -fno-rtti 
+LINK 	 = $(PATH_SW)/portable/zpu/zpu.lds
+#LLIB     =  -L $(ZPU_TOOLCHAIN)/install/lib/gcc/zpu-elf/3.4.2 \
+#			-L $(ZPU_TOOLCHAIN)/install/zpu-elf/lib
+#LIBS     = -lstdc++ -lsupc++ -lgcc --start-group -lc -lbcc --end-group -lgcc
 #LIBS     = -lstdc++ -lsupc++ --start-group -lbcc --end-group
 LFLAGS   = --relax --gc-sections 
 

@@ -371,16 +371,12 @@ int main()
     }
     
     printf("host = %p\n", host);
-	host->take_ownership(NULL);
 
-    screen = host->getScreen();
-    user_interface = new UserInterface;
+    user_interface = new UserInterface("\033\021   **** 1541 Ultimate II Updater ****\n\033\037");
     user_interface->init(host);
-    user_interface->set_screen(screen);
-
-    screen->move_cursor(0,0);
-    screen->output("\033\021   **** 1541 Ultimate II Updater ****\n\033\037"); // \020 = alpha \021 = beta
-    screen->repeat('\002', 40);
+    user_interface->appear();
+    screen = host->getScreen();
+    screen->move_cursor(0,2);
 
     console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
 	console_print(screen, "%s\n", rtc.get_time_string(time_buffer, 32));

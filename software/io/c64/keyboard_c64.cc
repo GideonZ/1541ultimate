@@ -3,7 +3,7 @@
 #include "keyboard_c64.h"
 #include "c64.h"
 
-#ifndef _NO_FILE_ACCESS
+#ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
 #include "task.h"
 #endif
@@ -198,7 +198,7 @@ void Keyboard_C64 :: scan(void)
 
 int Keyboard_C64 :: getch(void)
 {
-#ifndef _NO_FILE_ACCESS
+#ifndef NO_FILE_ACCESS
     static TickType_t previousWake = 0;
     vTaskDelayUntil(&previousWake, 4);
     // printf("{%08x}", previousWake);

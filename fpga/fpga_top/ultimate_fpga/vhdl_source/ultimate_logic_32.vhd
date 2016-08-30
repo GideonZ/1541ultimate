@@ -1109,14 +1109,14 @@ begin
                 audio_left  <= samp_left & '0';
             when X"7" =>
                 audio_left  <= samp_right & '0';
-            when X"8" =>
-                audio_left  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
-            when X"9" =>
-                audio_left  <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right);
-            when X"A" =>
-                audio_left  <= (sid_left(17) & sid_left) + (sid_right(17) & sid_right);
-            when X"B" =>
-                audio_left  <= (samp_left(17) & samp_left) + (samp_right(17) & samp_right);
+--            when X"8" =>
+--                audio_left  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
+--            when X"9" =>
+--                audio_left  <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right);
+--            when X"A" =>
+--                audio_left  <= (sid_left(17) & sid_left) + (sid_right(17) & sid_right);
+--            when X"B" =>
+--                audio_left  <= (samp_left(17) & samp_left) + (samp_right(17) & samp_right);
             when others =>
                 null;
             end case;                            
@@ -1138,14 +1138,14 @@ begin
                 audio_right  <= samp_left & '0';
             when X"7" =>
                 audio_right  <= samp_right & '0';
-            when X"8" =>
-                audio_right  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
-            when X"9" =>
-                audio_right  <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right);
-            when X"A" =>
-                audio_right  <= (sid_left(17) & sid_left) + (sid_right(17) & sid_right);
-            when X"B" =>
-                audio_right  <= (samp_left(17) & samp_left) + (samp_right(17) & samp_right);
+--            when X"8" =>
+--                audio_right  <= (sid_left(17) & sid_left) + (samp_left(17) & samp_left);
+--            when X"9" =>
+--                audio_right  <= (sid_right(17) & sid_right) + (samp_right(17) & samp_right);
+--            when X"A" =>
+--                audio_right  <= (sid_left(17) & sid_left) + (sid_right(17) & sid_right);
+--            when X"B" =>
+--                audio_right  <= (samp_left(17) & samp_left) + (samp_right(17) & samp_right);
             when others =>
                 null;
             end case;                            

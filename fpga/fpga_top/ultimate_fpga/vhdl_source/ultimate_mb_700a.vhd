@@ -9,7 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_mb_700a is
 generic (
-    g_version       : unsigned(7 downto 0) := X"06" );
+    g_version       : unsigned(7 downto 0) := X"07" );
 port (
     CLOCK       : in    std_logic;
     
@@ -136,6 +136,10 @@ architecture structural of ultimate_mb_700a is
     signal iec_clock_o : std_logic;
     signal iec_srq_o   : std_logic;
     
+    -- Audio outputs
+    signal audio_left  : signed(18 downto 0);
+    signal audio_right : signed(18 downto 0);
+
     -- debug
     signal scale_cnt        : unsigned(11 downto 0) := X"000";
     attribute iob : string;
@@ -225,8 +229,9 @@ begin
         mem_req     => mem_req,
         mem_resp    => mem_resp,
                  
-        -- PWM outputs (for audio)
-        PWM_OUT     => PWM_OUT,
+        -- Audio outputs
+        audio_left  => audio_left,
+        audio_right => audio_right,
     
         -- IEC bus
         iec_reset_i => IEC_RESET,
@@ -347,4 +352,28 @@ begin
 
     ULPI_RESET <= ulpi_reset_i;
 
+    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
+    generic map (
+        g_left_shift => 2,
+        g_width => audio_left'length )
+    port map (
+        clock   => sys_clock,
+        reset   => sys_reset,
+        
+        dac_in  => audio_left,
+    
+        dac_out => PWM_OUT(0) );
+
+    i_pwm1: entity work.sigma_delta_dac --delta_sigma_2to5
+    generic map (
+        g_left_shift => 2,
+        g_width => audio_right'length )
+    port map (
+        clock   => sys_clock,
+        reset   => sys_reset,
+        
+        dac_in  => audio_right,
+    
+        dac_out => PWM_OUT(1) );
+        
 end structural;
