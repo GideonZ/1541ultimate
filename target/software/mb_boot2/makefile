@@ -1,8 +1,9 @@
 
 include ../common/environment.mk
 
-PRJ      =  mb_boot2
-FINAL    =  $(RESULT)/$(PRJ).bin
+PRJ        =  mb_boot2
+FINAL      =  $(RESULT)/$(PRJ).bin
+LINKMETHOD = ld
 
 SRCS_C   =	mbstart_app.c \
 			itu.c \

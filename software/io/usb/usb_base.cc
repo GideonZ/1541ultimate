@@ -336,9 +336,9 @@ void UsbBase :: init(void)
     uint16_t *dst = (uint16_t *)NANO_BASE;
     uint16_t temp;
     for(int i=0;i<size;i+=2) {
-    	temp = uint16_t(*(src++));
-    	temp |= (uint16_t(*(src++)) << 8);
-    	*(dst++) = nano_word(temp);
+    	temp = (uint16_t(*(src++)) << 8);
+    	temp |= uint16_t(*(src++));
+    	*(dst++) = temp;
 	}
     for(int i=size;i<2048;i+=2) {
     	*(dst++) = 0;

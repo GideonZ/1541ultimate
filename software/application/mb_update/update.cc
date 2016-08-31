@@ -136,6 +136,11 @@ bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
     int length = (int)buf_end - (int)buffer;
 	t_flash_address image_address;
 	flash->get_image_addresses(id, &image_address);
+	if (image_address.id == FLASH_ID_LIST_END) {
+		console_print(screen, "ROM image obsolete: No target: %s\n", descr);
+		return true;
+	}
+
 	int address = image_address.start;
     int page_size = flash->get_page_size();
     int page = address / page_size;
@@ -144,6 +149,7 @@ bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
 
     //console_print(screen, "            \n");
     if(image_address.has_header) {
+        // dump_hex(buffer, 256);
         console_print(screen, "Flashing  \033\027%s\033\037,\n  version \033\027%s\033\037..\n", descr, version);
         uint8_t *bin = new uint8_t[length+16];
         uint32_t *pul;
@@ -154,6 +160,7 @@ bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *desc
         memcpy(bin+16, buffer, length);
         length+=16;
         p = (char *)bin;
+        // dump_hex(p, 256);
     }
     else {
         console_print(screen, "Flashing  \033\027%s\033\037..\n", descr);
@@ -309,6 +316,12 @@ extern "C" void ultimate_main(void *)
 	flash = get_flash();
     printf("Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
+/*
+    static uint8_t bufje[65536];
+    flash->read_linear_addr(0, 65536, bufje);
+    dump_hex_relative(bufje, 65536);
+*/
+
     GenericHost *host = 0;
     Stream *stream = new Stream_UART;
     C64 *c64 = new C64;
@@ -384,17 +397,15 @@ extern "C" void ultimate_main(void *)
     do_update2 = need_update(FLASH_ID_APPL, APPL_VERSION, "Ultimate application");
 
     if(virgin) {
-        program_flash(do_update1, do_update2, true);
+        program_flash(true, true, true);
     } else if(do_update1 || do_update2) {
         if(user_interface->popup("Update required. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            program_flash(do_update1, do_update2, false);
+            program_flash(true, true, true);
         }
     } else {
-        int response = user_interface->popup("Update NOT required. Force?", BUTTON_ALL | BUTTON_YES | BUTTON_NO);
-        if(response == BUTTON_ALL) {
+        int response = user_interface->popup("Update NOT required. Force?", BUTTON_YES | BUTTON_NO);
+        if(response == BUTTON_YES) {
             program_flash(true, true, true);
-        } else if(response == BUTTON_YES) {
-            program_flash(false, true, false);
         }
 	}
 

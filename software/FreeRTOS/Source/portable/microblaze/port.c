@@ -357,9 +357,15 @@ void vTaskISRHandler( void )
 static uint8_t pending;
 
 	PROFILER_SUB = 1;
-/* Which interrupts are pending? */
+
+	/* Which interrupts are pending? */
 	pending = ioRead8(ITU_IRQ_ACTIVE);
 	ioWrite8(ITU_IRQ_CLEAR, pending);
+	//const uint8_t hex[] = "0123456789ABCDEF";
+
+	//ioWrite8(UART_DATA, hex[pending >> 4]);
+	//ioWrite8(UART_DATA, hex[pending & 0x0F]);
+	//ioWrite8(UART_DATA, '|');
 
 	BaseType_t do_switch = pdFALSE;
 

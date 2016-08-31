@@ -307,11 +307,13 @@ begin
         do_io_event     => do_io_event );
 
     mem_req_32_slot.tag <= g_tag_slot;
-    mem_req_32_slot.byte_en <= "0001"; -- we assume little endian for now
+    mem_req_32_slot.byte_en <= "1000" when g_big_endian else "0001";
     mem_rack_slot <= '1' when mem_resp_32_slot.rack_tag = g_tag_slot else '0';
     mem_dack_slot <= '1' when mem_resp_32_slot.dack_tag = g_tag_slot else '0';
 
     i_slave: entity work.slot_slave
+    generic map (
+        g_big_endian => g_big_endian )
     port map (
         clock           => clock,
         reset           => reset,

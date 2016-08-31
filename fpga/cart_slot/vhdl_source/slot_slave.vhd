@@ -6,6 +6,8 @@ library work;
 use work.slot_bus_pkg.all;
 
 entity slot_slave is
+generic (
+    g_big_endian    : boolean );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -241,8 +243,13 @@ begin
 
             when wait_end =>
 				if mem_dack='1' then -- the data is available, put it on the bus!
-                    mem_data_0 <= mem_rdata(7 downto 0);
-                    mem_data_1 <= mem_rdata(15 downto 8);
+                    if g_big_endian then
+                        mem_data_0 <= mem_rdata(31 downto 24);
+                        mem_data_1 <= mem_rdata(23 downto 16);
+                    else
+                        mem_data_0 <= mem_rdata(7 downto 0);
+                        mem_data_1 <= mem_rdata(15 downto 8);
+                    end if;
                     dav      <= '1';
 				end if;
                 if phi2_tick='1' or do_io_event='1' then -- around the clock edges
@@ -321,7 +328,7 @@ begin
 
     mem_req    <= mem_req_ff;
     mem_rwn    <= rwn_c;
-    mem_wdata  <= X"000000" & mem_wdata_i;
+    mem_wdata  <= mem_wdata_i & X"0000" & mem_wdata_i; -- support both little endian as well as big endian
         
     BUFFER_ENn <= '0';
 

@@ -1,8 +1,9 @@
 
 include ../common/environment.mk
 
-PRJ      =  mb_boot
-FINAL    =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ)_700.bit $(OUTPUT)/mb_boot.m32
+PRJ        =  mb_boot
+FINAL      =  $(RESULT)/$(PRJ).bin $(RESULT)/$(PRJ)_700.bit $(OUTPUT)/mb_boot.m32
+LINKMETHOD = ld
 
 FPGA_700      = ../../fpga/mb700/ultimate_mb_700a.bit
 FPGA_700_BMM  = ../../fpga/mb700/ultimate_mb_700a_bd.bmm
@@ -29,7 +30,7 @@ APPL_OPT = -DBOOTLOADER -D_FS_READONLY=1 -D_FS_MINIMIZE=3
 COPTIONS = -ffunction-sections -Os -std=c99 $(APPL_OPT)
 CPPOPT   = -ffunction-sections -Os -fno-exceptions -fno-rtti $(APPL_OPT)
 LINK 	 = ./mb_boot.lds
-LFLAGS   = --gc-sections -nostartfiles
+LFLAGS   = --gc-sections
 
 include ../common/rules.mk
 

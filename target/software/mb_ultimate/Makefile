@@ -1,8 +1,9 @@
 
 include ../common/environment.mk
 
-PRJ      =  ultimate
-FINAL    =  $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).sim
+PRJ        =  ultimate
+FINAL      =  $(RESULT)/$(PRJ).bin
+LINKMETHOD = ld
 
 SRCS_C   =	mbstart_rtos.c \
 			itu.c \
@@ -139,8 +140,7 @@ OPTIONS  = -g -ffunction-sections -nostartfiles -Os -DOS -DDEVELOPER
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
-LIBS2    = ../mb_lwip/result/liblwip.a
+LIBS     = ../mb_lwip/result/liblwip.a
 LFLAGS   = --gc-sections 
-#-msys-crt0=$(OUTPUT)/mb_crt0.o
 	
 include ../common/rules.mk

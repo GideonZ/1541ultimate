@@ -38,10 +38,12 @@ void _do_ctors(void)
 
     portENTER_CRITICAL();
 
+    int count = ((int)end - (int)pul) >> 2;
     while(pul != end) {
         f = (fptr)*pul;
-        printf("Cons %p\n", f);
+        printf("Cons %d %p\n", count, f);
         f();
+        count--;
         pul++;
     }
     portEXIT_CRITICAL();
@@ -78,9 +80,6 @@ void _premain()
     __clear_bss();
 
     ioWrite8(UART_DATA, 0x32);
-
-    for(int i=0;i<10;i++)
-    	printf("malloc returned: %08x: ", malloc(300));
 
     atexit(_do_dtors);
 
@@ -173,7 +172,7 @@ void *sbrk(int inc)
 {
     static int b = (int)_heap;
     void *result = (void *)-1;
-    printf("SBRK: Heap = %08x. Inc = %08x. HeapEnd = %08x\n", b, inc, (int)_heap_end);
+    //printf("SBRK: Heap = %08x. Inc = %08x. HeapEnd = %08x\n", b, inc, (int)_heap_end);
     if ((b + inc) < (int)_heap_end) {
         result = (void *)b;
         //printf("sbrk called with %6x. b = %p returning %p\n", inc, b, result);

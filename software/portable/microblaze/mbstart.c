@@ -95,8 +95,9 @@ void restart(void)
     __asm__("nop");
     __asm__("bra %0" : : "r"(jump)); // now that the instruction cache got flushed, jump to the newly loaded code
     __asm__("nop");
-    /* We never get here */
+    //  We never get here
 }
+
 
 
 /*

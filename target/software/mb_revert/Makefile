@@ -1,8 +1,9 @@
 
 include ../common/environment.mk
 
-PRJ      =  revert
-FINAL    =  $(RESULT)/$(PRJ).u2u
+PRJ        =  revert
+FINAL      =  $(RESULT)/$(PRJ).u2u
+LINKMETHOD = ld
 
 LEGACY = ../../../legacy/2.6k
 1ST_BOOT = $(LEGACY)/target/software/1st_boot

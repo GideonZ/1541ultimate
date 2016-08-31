@@ -19,6 +19,7 @@ ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 .PHONY: clean all mem
 
 all: $(OUTPUT) $(RESULT) $(FINAL)
+	
 mem: $(OUTPUT)/$(PRJ).mem
 
 $(OUTPUT):
@@ -152,16 +153,6 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(OUTPUT)/$(PRJ).ld: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP) $(LWIPLIB)
-	@echo Linking using LD...
-	@$(LD) $(LLIB) $(LFLAGS) -T $(LINK) -Map=$(OUTPUT)/$(PRJ).map -o $(OUTPUT)/$(PRJ).ld $(ALL_OBJS) $(LIBS)
-	@$(SIZE) $(OUTPUT)/$(PRJ).ld
-
-$(OUTPUT)/$(PRJ).out: $(LINK) $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_ASMS) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP) $(LWIPLIB)
-	@echo Linking using GCC...
-	@$(CPP) -Wl,-Map=$(OUTPUT)/$(PRJ).map,$(LFLAGS) -T'$(LINK)' $(OPTIONS) -o $(OUTPUT)/$(PRJ).out $(ALL_OBJS) $(LIBS2)
-	@$(SIZE) $(OUTPUT)/$(PRJ).out
-
 $(RESULT)/$(PRJ).elf: $(OUTPUT)/$(PRJ).out
 	@echo Providing ELF.
 	@cp $(OUTPUT)/$(PRJ).out $(RESULT)/$(PRJ).elf
@@ -177,6 +168,10 @@ $(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
 $(OUTPUT)/$(PRJ).m32: $(RESULT)/$(PRJ).bin
 	@echo Make mem 32...
 	@$(MAKEMEM) -w $< $@ 2048
+
+LINKMETHOD ?= gcc
+
+include ../common/$(LINKMETHOD).mk
 
 # pull in dependency info for *existing* .o files
 -include $(ALL_DEP_OBJS:.o=.d)

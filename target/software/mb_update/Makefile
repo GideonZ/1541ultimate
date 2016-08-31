@@ -1,8 +1,9 @@
 
 include ../common/environment.mk
 
-PRJ      =  update
-FINAL    =  $(RESULT)/$(PRJ).u2u
+PRJ        =  update
+FINAL      =  $(RESULT)/$(PRJ).u2u
+LINKMETHOD = ld
 
 SRCS_C   =	mbstart_rtos.c \
 			itu.c \
@@ -83,13 +84,11 @@ PATH_INC =  $(addprefix -I, $(VPATH) $(OUTPUT))
 APP_OPTS = -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 -DUPDATER
 COPTIONS = -g -ffunction-sections -Os -std=c99 $(APP_OPTS)
 CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -fno-threadsafe-statics $(APP_OPTS)
-OPTIONS  = -nostartfiles
+#OPTIONS  = -nostartfiles
 LINK 	 = ./mb_update.lds
 LFLAGS   = --gc-sections 
 
-
 include ../common/rules.mk
- 
 
 update.o: update.cc $(INCLUDES) $(CHK_BIN)
 	@echo "Compiling $(notdir $<)"

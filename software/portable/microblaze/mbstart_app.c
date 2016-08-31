@@ -50,10 +50,12 @@ void _do_ctors(void)
     end = (unsigned long *)&__end_of_constructors;
 //    printf("\nconstructor list = (%p-%p)\n", pul, end);
 
+    int count = ((int)end - (int)pul) >> 2;
     while(pul != end) {
         f = (fptr)*pul;
-//        printf("Con %p\n", f);
+        printf("Cons %d %p\n", count, f);
         f();
+        count--;
         pul++;
     }
 }
@@ -141,14 +143,13 @@ void *sbrk(int inc)
 {
     static int b = (int)_heap;
     void *result = (void *)-1;
-    printf("SBRK: Heap = %08x. HeapEnd = %08x\n", b, (int)_heap_end);
+    //printf("SBRK: Heap = %08x. HeapEnd = %08x\n", b, (int)_heap_end);
     if ((b + inc) < (int)_heap_end) {
         result = (void *)b;
         //printf("sbrk called with %6x. b = %p returning %p\n", inc, b, result);
         b += inc;
     } else {
-        printf("Sbrk called with %6x. FAILED\n", inc);
+        printf("Sbrk called with %08x. Heap = %08x-%08x. Current = %08x. FAILED\n", inc, (int)_heap, (int)_heap_end, b);
     }
     return result;
 }
-
