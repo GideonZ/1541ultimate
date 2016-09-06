@@ -48,7 +48,6 @@ int main(int argc, char *argv[])
     GenericHost *host = 0;
     Stream *stream = new Stream_UART;
 
-    /*
     C64 *c64 = new C64;
     c64->reset();
 
@@ -57,11 +56,9 @@ int main(int argc, char *argv[])
     } else {
     	host = new HostStream(stream);
     }
-*/
-	host = new HostStream(stream);
 	host->take_ownership(NULL);
     Screen *screen = host->getScreen();
-//    screen->clear();
+    screen->clear();
 
 	console_print(screen, "Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
 
@@ -92,8 +89,8 @@ int main(int argc, char *argv[])
         *data = swapped_bytes[*data];
     }
 
-    flash->read_linear_addr(0xC0000, 512, readbuf);
-    dump_hex_relative(readbuf, 512);
+//    flash->read_linear_addr(0xC0000, 512, readbuf);
+//    dump_hex_relative(readbuf, 512);
 
     flash->protect_disable();
 
@@ -109,9 +106,9 @@ int main(int argc, char *argv[])
     flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
     flash_buffer_at(flash2, screen, 0x200000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
 
-	//	console_print(screen, "\nConfiguring Flash write protection..\n");
-//	flash->protect_configure();
-//	flash->protect_enable();
+	console_print(screen, "\nConfiguring Flash write protection..\n");
+	flash->protect_configure();
+	flash->protect_enable();
 	console_print(screen, "Done!                            \n");
 
 	REMOTE_FLASHSEL_0;
