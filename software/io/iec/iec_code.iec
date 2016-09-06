@@ -11,13 +11,13 @@ Tbb = 90
 
 start
             JUMP reset_vec
-            
+
 # IRQ is at address 1
 ATN_IRQ
+            SET DATA=0 # not ready to receive
             SET CLK=1  # release clock
             WAIT FOR 20 us
-            SET DATA=0 # not ready to receive
-            WAIT UNTIL CLK=0 
+            WAIT UNTIL CLK=0
 
 # We are now able to release data, unless we are not ready to receive data
 # So we have to check our FIFO and see if it has room for a new byte.
@@ -25,7 +25,7 @@ ATN_IRQ
             PUSHC
 
             WAIT UNTIL CLK=1
-            SUB RECEIVE_BYTE
+            SUB RECEIVE_ATN_BYTE
             JUMP _no_push2
 _atn_loop
             WAIT UNTIL CLK=1
@@ -42,12 +42,21 @@ _no_push2
             IF TALKER THEN _keep_data
             WAIT FOR 70 us
             SET DATA=1
+            WAIT UNTIL NOT ATN=0        # ATN is not for us, wait end of ATN
+            LOAD $42
+            PUSHC
+            #WAIT FOR 70 us
+            JUMP RELEASE
 _keep_data
             # at some time, the computer will either
             # 1) want us to talk
             # 2) it wants to send another byte to us under attention
             # 3) it wants to send another byte without attention
             # In all cases, it will release the clock line
+            # ATN is for us, acknowledge
+            WAIT FOR 20 us
+            SET  DATA=0
+
 _check_after_atn_byte
             WAIT UNTIL NOT CLK=0,ATN=0
 
@@ -65,15 +74,15 @@ _check_after_atn_byte
             # We need to listen!
 #            LOAD $44
 #            PUSHC
-          
-_listen_normally                        
+
+_listen_normally
             WAIT UNTIL CLK=1
             SUB RECEIVE_BYTE
             SUB PUSH_BYTE
-            IF NOT EOI THEN _listen_normally                        
+            IF NOT EOI THEN _listen_normally
             WAIT FOR 70 us
             JUMP RELEASE
-            
+
 ATN_TURNAROUND
             WAIT UNTIL CLK=1 FOR Ttk
             IF TIMEOUT THEN _error
@@ -83,7 +92,7 @@ ATN_TURNAROUND
             SET EOI=0
             LOAD $43  # Tell to the software that it should push data
             PUSHC
-            SET EOI=0    
+            SET EOI=0
             SUB TRANSMIT
             JUMP RELEASE
 
@@ -166,7 +175,7 @@ RELEASE
             SET DATA=1
             WAIT FOR 100 us
             JUMP reset_vec
-                        
+
 RECEIVE_BYTE
 # initial state: DATA is low, CLK=1
 
@@ -183,13 +192,26 @@ _wait1
             SET DATA=1
             WAIT UNTIL CLK=0 FOR 1000 us
             IF TIMEOUT THEN _error
-                        
+
 _recv0
+            SUB _recv8bits
+
+# Now acknowledge byte
+            WAIT FOR 20 us
+            SET  DATA=0
+            RET
+
+RECEIVE_ATN_BYTE
+            SET DATA=1
+            WAIT UNTIL CLK=0 FOR 1000 us
+            IF TIMEOUT THEN _error
+
+_recv8bits
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT0=DATA
             IF TIMEOUT THEN _error
             WAIT UNTIL CLK=0 FOR Tv
-                                     
+
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT1=DATA
             IF TIMEOUT THEN _error
@@ -199,35 +221,31 @@ _recv0
             IN   DATABIT2=DATA
             IF TIMEOUT THEN _error
             WAIT UNTIL CLK=0 FOR Tv
-                                     
+
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT3=DATA
             IF TIMEOUT THEN _error
             WAIT UNTIL CLK=0 FOR Tv
-                                     
+
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT4=DATA
             IF TIMEOUT THEN _error
             WAIT UNTIL CLK=0 FOR Tv
-                                     
+
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT5=DATA
             IF TIMEOUT THEN _error
             WAIT UNTIL CLK=0 FOR Tv
-                                     
+
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT6=DATA
             IF TIMEOUT THEN _error
             WAIT UNTIL CLK=0 FOR Tv
-                                     
+
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT7=DATA
             IF TIMEOUT THEN _error
             WAIT UNTIL CLK=0 FOR Tv
-            
-# Now acknowledge byte
-            WAIT FOR 20 us
-            SET  DATA=0
             RET
 
 PUSH_BYTE
@@ -256,7 +274,13 @@ _dont_unlisten
             IF NOT DATABYTE IS $2A THEN _dont_listen
             SET LISTENER=1
             SET TALKER=0
-_dont_listen            
+_dont_listen
+            IF NOT DATABYTE IS $24 THEN _dont_print
+            LOAD $46
+            PUSHC
+            SET LISTENER=1
+            SET TALKER=0
+_dont_print
             RET
 
 # Below are some different error codes for debug
@@ -300,7 +324,7 @@ _release_atn_and_tx
             SUB TRANSMIT
             WAIT FOR 100 us
             JUMP _atn_send
-            
+
 _release_and_turnaround
             SET ATN=1
             WAIT FOR 30 us
@@ -310,7 +334,7 @@ _release_and_turnaround
             WAIT UNTIL CLK=0 FOR 1000 us
             IF TIMEOUT THEN no_device
             SET EOI=0
-            JUMP _listen_normally                        
+            JUMP _listen_normally
 
 no_device
             LOAD $E6
@@ -332,7 +356,7 @@ warp_data
             SET CLK=0
             WAIT UNTIL DATA=1
             SET CLK=1
-            
+
             SUB warp_sync
             SUB get_128
             SUB warp_sync
@@ -421,4 +445,26 @@ get_68
             SUB get_32
             SUB get_4
             RET
-                        
+
+
+; Control codes sent to software via FIFO
+; $41 : Start of ATN
+; $42 : End of ATN
+; $43 : Ready to send (software can now push data to be sent in FIFO)
+; $44 : Ready to receive (not sent to software)
+; $45 : End of reception (OEI)
+; $46 : Start of printer data
+
+; $57 : Acknowledge WARP mode enabled
+; $AD : End of WARP bloc reception (328 bytes)
+; $AE : Timeout on WARP (never sent because subroutine never called)
+; $DA : Start of WARP reception
+; $DE : WARP reception failure
+
+; $E5 : Invalid control code received from software
+; $E6 : No device, we are alone on IEC bus
+
+
+; Control codes received from software via FIFO
+; $57 : Switch to WARP mode (from initial waiting state)
+; $4D : Switch to MASTER mode to send ATN commands (from initial waiting state)

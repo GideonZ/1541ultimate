@@ -50,6 +50,7 @@
 #define LOGGER_CMD_STOP        0x44
 
 class IecChannel;
+class IecPrinter;
 class UltiCopy;
 
 class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
@@ -66,12 +67,15 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     QueueHandle_t queueGuiToIec;
 
 	int last_addr;
+    int last_printer_addr;
     bool wait_irq;
     bool atn;
     bool talking;
+    bool printer;
     uint32_t start_address;
     uint32_t end_address;
     IecChannel *channels[16];
+    IecPrinter *channel_printer;
     int current_channel;
     int warp_drive;
     uint8_t warp_return_code;
@@ -111,6 +115,7 @@ public:
 
     friend class IecChannel;
     friend class IecCommandChannel;
+    friend class IecPrinter;
 };
 
 extern IecInterface HW_IEC;

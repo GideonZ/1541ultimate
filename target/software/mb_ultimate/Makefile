@@ -108,6 +108,14 @@ SRCS_CC	 =  small_printf.cc \
 			network_target.cc \
 			uci_commands.cc \
 			iec.cc \
+			mps_printer.cc \
+			mps_printer_cbm.cc \
+			mps_printer_epson.cc \
+			mps_printer_ibmgp.cc \
+			mps_printer_ibmpp.cc \
+			mps_chargen.cc \
+			mps_charset.cc \
+			lodepng.cc \
 			filetype_tap.cc \
             socket_stream.cc \
             socket_gui.cc \
@@ -144,3 +152,10 @@ LIBS     = ../mb_lwip/result/liblwip.a
 LFLAGS   = --gc-sections 
 	
 include ../common/rules.mk
+
+lodepng.o: lodepng.cc
+	@echo Compiling $(<F) optimized for speed
+	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
+	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
+
+

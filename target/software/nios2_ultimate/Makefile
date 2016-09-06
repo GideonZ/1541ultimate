@@ -113,6 +113,14 @@ SRCS_CC	 =  u2p_init.cc \
 			dos.cc \
 			network_target.cc \
 			iec.cc \
+			mps_printer.cc \
+			mps_printer_cbm.cc \
+			mps_printer_epson.cc \
+			mps_printer_ibmgp.cc \
+			mps_printer_ibmpp.cc \
+			mps_chargen.cc \
+			mps_charset.cc \
+			lodepng.cc \
 			filetype_tap.cc \
             socket_stream.cc \
             socket_gui.cc \
@@ -154,3 +162,8 @@ LIBS2    = $(BSP)/libhal_bsp.a ../nios2_elf_lwip/result/liblwip.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../common/rules.mk
+
+lodepng.o: lodepng.cc
+	@echo Compiling $(<F) optimized for speed
+	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
+	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
