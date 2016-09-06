@@ -32,6 +32,7 @@ SRCS_CC	 =	memory.cc \
             host_stream.cc \
 			$(PRJ).cc
 
+VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/niosbsp
 VPATH +=	$(PATH_SW)/niosbsp/HAL/inc

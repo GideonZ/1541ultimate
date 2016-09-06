@@ -48,6 +48,27 @@ mk3only:
 	@$(MAKE) -C target/software/mb_update
 	@cp target/software/mb_update/result/update.u2u .
 
+mb:
+	@$(MAKE) -C tools
+	@$(MAKE) -C target/software/mb_lwip
+	@$(MAKE) -C target/software/mb_boot
+	@$(MAKE) -C target/software/mb_boot2
+	@$(MAKE) -C target/software/mb_ultimate
+	@$(MAKE) -C target/software/mb_update
+
+niosclean:
+	@$(MAKE) -C target/software/nios2_elf_lwip clean
+	@$(MAKE) -C target/software/nios2_loader1 clean
+	@$(MAKE) -C target/software/nios2_loader2 clean
+	@$(MAKE) -C target/software/nios2_ultimate clean
+	@$(MAKE) -C target/software/nios2_flash clean
+nios:
+	@$(MAKE) -C target/software/nios2_elf_lwip
+	@$(MAKE) -C target/software/nios2_loader1
+	@$(MAKE) -C target/software/nios2_loader2
+	@$(MAKE) -C target/software/nios2_ultimate
+	@$(MAKE) -C target/software/nios2_flash
+
 u2p:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/software/nios2_loader1

@@ -216,7 +216,9 @@ void UsbBase :: process_fifo(struct usb_event *ev)
 			// pause_input_pipe(pipe);
 			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, ev->fifo_word[1]);
 			void *object = inputPipeObjects[pipe];
-			((UsbDriver *)object)->pipe_error(pipe);
+			if (object) {
+				((UsbDriver *)object)->pipe_error(pipe);
+			}
 			return;
 		}
 	}

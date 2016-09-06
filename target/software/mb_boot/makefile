@@ -36,7 +36,7 @@ include ../common/rules.mk
 
 $(RESULT)/$(PRJ)_700.bit: $(OUTPUT)/$(PRJ).mem $(FPGA_700) $(FPGA_700_BMM)
 	@echo "Data2MEM 700A..."
-	@$(XILINXBIN)/data2mem -bm $(FPGA_700_BMM) \
+	@data2mem -bm $(FPGA_700_BMM) \
 	         -bt $(FPGA_700) \
 	         -bd $(OUTPUT)/$(PRJ).mem tag icache \
 	         -bd $(OUTPUT)/$(PRJ).mem tag dcache \

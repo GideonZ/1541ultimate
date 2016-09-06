@@ -9,14 +9,6 @@
 #define FLASH_ID_APPL       0x02
 //#define FLASH_ID_CUSTOMFPGA 0x03
 
-#define FLASH_ID_ROM1541    0x10
-#define FLASH_ID_ROM1541C   0x11
-#define FLASH_ID_ROM1541II  0x12
-
-#define FLASH_ID_SOUNDS     0x20
-#define FLASH_ID_CHARS      0x21
-#define FLASH_ID_SIDCRT     0x22
-
 #define FLASH_ID_AR5PAL     0x40
 #define FLASH_ID_AR6PAL     0x41
 #define FLASH_ID_FINAL3     0x42

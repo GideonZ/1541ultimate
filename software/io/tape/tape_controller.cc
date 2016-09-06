@@ -175,6 +175,7 @@ void TapeController :: poll()
 				if (PLAYBACK_STATUS & C2N_STAT_FIFO_EMPTY) {
 					state = 3;
 					close();
+	                stop();
 			        if (recording) {
 			        	c64->setButtonPushed();
 			        }

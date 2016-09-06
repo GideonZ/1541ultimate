@@ -400,12 +400,12 @@ begin
                     unfreeze  <= '1';
                 end if;
                 -- io2 access
-                if io_read='1' and io_addr(8) = '1' then -- DE00-DEFF
+                if io_read='1' and io_addr(8) = '1' then -- DF00-DFFF
                     game_n    <= '0';      -- 16K GAME mode
                     exrom_n   <= '0';
                     unfreeze  <= '1';
                 end if;
-                if io_write='1' and io_addr(8) = '1' then -- DE00-DEFF
+                if io_write='1' and io_addr(8) = '1' then -- DF00-DFFF
                     game_n    <= '0';      -- 16K GAME mode
                     exrom_n   <= '0';
                     unfreeze  <= '1';
@@ -436,7 +436,7 @@ begin
                 nmi_n     <= '1';
 
             end case;
-            
+
             if cart_kill='1' then
                 cart_en  <= '0';
                 hold_nmi <= '0';

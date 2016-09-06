@@ -326,7 +326,7 @@ void UsbAx88772Driver :: disable()
     printf("AX88772 Disabled.\n");
     if (netstack) {
     	netstack->stop();
-    	netstack = NULL;
+    	//netstack = NULL;
     }
 }
 

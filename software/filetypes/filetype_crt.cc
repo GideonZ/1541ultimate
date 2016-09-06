@@ -245,8 +245,11 @@ bool FileTypeCRT :: read_chip_packet(File *f)
             split = true;
 
     uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+
     if(type_select == CART_KCS) {
     	mem_addr += load - 0x8000;
+    } else if(type_select == CART_NORMAL) {
+    	mem_addr += (load & 0x2000); // use bit 13 of the load address
     } else if(split) {
         mem_addr += 0x2000 * uint32_t(bank);
     } else {
