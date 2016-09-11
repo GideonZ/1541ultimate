@@ -107,7 +107,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void drive_reset(void);
     void set_hw_address(int addr);
     void set_sw_address(int addr);
-    void set_rom(t_1541_rom rom, const char *);
+    void set_rom(t_1541_rom rom);
     void set_ram(t_1541_ram ram);
     void remove_disk(void);
     void insert_disk(bool protect, GcrImage *image);

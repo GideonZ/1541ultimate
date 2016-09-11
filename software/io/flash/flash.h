@@ -23,6 +23,7 @@
 #define FLASH_ID_KCS	    0x4B
 #define FLASH_ID_CUSTOM_ROM 0x4C
 #define FLASH_ID_KERNAL_ROM 0x4D
+#define FLASH_ID_CUSTOM_DRV 0x4E
 
 #define FLASH_ID_ALL_ROMS   0x5F
 

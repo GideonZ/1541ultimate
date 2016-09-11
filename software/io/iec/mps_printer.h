@@ -60,7 +60,7 @@
 #define MPS_PRINTER_SCRIPT_SUB              4
 
 #ifdef NIOS
-#define FS_ROOT "/USB/"
+#define FS_ROOT "/Usb0/"
 #else
 #define FS_ROOT "/SD/"
 #endif

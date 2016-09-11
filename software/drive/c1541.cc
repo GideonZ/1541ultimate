@@ -18,7 +18,7 @@
 
 const char *en_dis[] = { "Disabled", "Enabled" };
 const char *yes_no[] = { "No", "Yes" };
-const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Load from file" };
+const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Custom*" };
 const char *ram_board[] = { "Off", "$8000-$BFFF (16K)",
 							 "$4000-$7FFF (16K)",
 							 "$4000-$BFFF (32K)",
@@ -34,7 +34,7 @@ t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom }
 #define CFG_C1541_POWERED   0xD1
 #define CFG_C1541_BUS_ID    0xD2
 #define CFG_C1541_ROMSEL    0xD3
-#define CFG_C1541_ROMFILE   0xD4
+//#define CFG_C1541_ROMFILE   0xD4
 #define CFG_C1541_RAMBOARD  0xD5
 #define CFG_C1541_SWAPDELAY 0xD6
 #define CFG_C1541_LASTMOUNT 0xD7
@@ -46,7 +46,6 @@ struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",                 "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",          "%d", NULL,       8, 11, 8 },
     { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  3, 2 },
-    { CFG_C1541_ROMFILE,   CFG_TYPE_STRING, "1541 ROM File",              "%s", NULL,       1, 36, (int)"1541.rom" },
     { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "1541 RAM BOard",             "%s", ram_board,  0,  6, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",       "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "1541 Resets when C64 resets","%s", yes_no,     0,  1, 1 },
@@ -139,9 +138,9 @@ void C1541 :: effectuate_settings(void)
 
     t_1541_rom rom = rom_modes[cfg->get_value(CFG_C1541_ROMSEL)];
     if((rom != current_rom)||
-       (rom == e_rom_custom)) { // && ( check if the name has changed
+       (rom == e_rom_custom)) {
 
-        set_rom(rom, cfg->get_string(CFG_C1541_ROMFILE));
+        set_rom(rom);
     }
 
     if(registers[C1541_POWER] != cfg->get_value(CFG_C1541_POWERED)) {
@@ -253,7 +252,7 @@ int  C1541 :: get_current_iec_address(void)
 	return iec_address;
 }
 
-void C1541 :: set_rom(t_1541_rom rom, const char *custom_filename)
+void C1541 :: set_rom(t_1541_rom rom)
 {
     large_rom = false;
     File *f = 0;
@@ -285,33 +284,8 @@ void C1541 :: set_rom(t_1541_rom rom, const char *custom_filename)
             memcpy((void *)&memory_map[0xC000], &_1541c_bin_start, 0x4000);
             break;
         default: // custom
-        	for(int i=0;i<8;i++) {
-        		res = fm->fopen((const char *)NULL, custom_filename, FA_READ, &f);
-                printf("1541 rom file: %p (%d)\n", f, res);
-        		if (res == FR_OK) {
-        			break;
-        		}
-        		vTaskDelay(100);
-        	}
-			if(res == FR_OK) {
-				uint32_t size = f->get_size();
-				if (size > 0x8000)
-					offset = 0x8000;
-				else
-					offset = 0x10000 - size;
-
-//				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
-                memcpy((void *)&memory_map[0xC000], &_1541_ii_bin_start, 0x4000);
-				f->read((void *)&memory_map[offset], 0x8000, &transferred);
-				fm->fclose(f);
-				if(transferred > 0x4000) {
-					large_rom = true;
-				}
-			} else {
-				printf("C1541: Failed to open custom file.\n");
-//				flash->read_image(FLASH_ID_ROM1541II, (void *)&memory_map[0xC000], 0x4000);
-                memcpy((void *)&memory_map[0xC000], &_1541_ii_bin_start, 0x4000);
-			}
+            flash->read_image(FLASH_ID_CUSTOM_DRV, (void *)&memory_map[0x8000], 0x8000);
+			large_rom = true;
     }
 	if(!large_rom) // if rom <= 16K, then mirror it
 		memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
