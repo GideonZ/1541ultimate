@@ -10,6 +10,8 @@ FINAL    =  $(RESULT)/$(PRJ).elf
 
 SRCS_C   =	itu.c \
 			dump_hex.c \
+			codec.c \
+			i2c.c \
             alt_do_ctors.c
                         
 SRCS_CC	 =	memory.cc \
@@ -22,7 +24,7 @@ SRCS_CC	 =	memory.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
 			config.cc \
-			rtc.cc \
+			rtc_i2c.cc \
 			c64.cc \
 			screen.cc \
 			screen_vt100.cc \
@@ -30,8 +32,10 @@ SRCS_CC	 =	memory.cc \
 			keyboard_vt100.cc \
 			mystring.cc \
             host_stream.cc \
+            bist.cc \
 			$(PRJ).cc
 
+VPATH +=	$(PATH_SW)/bist
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/niosbsp
@@ -64,5 +68,6 @@ LIBS2    = $(BSP)/libhal_bsp.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../common/rules.mk
+#$(OUTPUT)/binaries.o: ultimate_recovery.swp ultimate_run.swp
 
-#$(OUTPUT)/binaries.o: $(PATH_SW)/../target/software/nios2_ultimate/result/ultimate.app $(PATH_SW)/../target/software/nios2_recovery/result/recovery.app $(PATH_SW)/../target/fpga/u2plus_recovery/output_files/ultimate_recovery.rbf $(PATH_SW)/../target/fpga/u2plus_run/output_files/ultimate_run.rbf
+binaries.s: ultimate_recovery.swp ultimate_run.swp

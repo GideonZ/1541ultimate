@@ -265,9 +265,13 @@ int main()
 */
 #if RECOVERY
 	uint32_t flash_addr = 0x80000; // 512K from start. FPGA image is (compressed) ~330K
+	REMOTE_FLASHSEL_0;
 #else
 	uint32_t flash_addr = 0xC0000; // 768K from start. FPGA image is (uncompressed) 745K
+	REMOTE_FLASHSEL_1;
 #endif
+    REMOTE_FLASHSELCK_0;
+    REMOTE_FLASHSELCK_1;
 
 	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
     SPI_FLASH_DATA = W25Q_ContinuousArrayRead_LowFrequency;
@@ -287,12 +291,18 @@ int main()
         }
     	SPI_FLASH_CTRL = 0; // reset SPI chip select to idle
         puts("Running " APPL ".");
-        jump_run(run_address);
+    	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
+    	if ((buttons & ITU_BUTTON2) == 0) {  // right button not pressed
+    		jump_run(run_address);
+    	} else {
+    		puts(APPL " Lock");
+    	}
         while(1);
     }
 
     puts("No " APPL ".");
-
+    while(1)
+    	;
     return 0;
 }
 

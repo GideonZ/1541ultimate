@@ -52,18 +52,13 @@ extern "C" void ultimate_main(void *a)
     c64_subsys = new C64_Subsys(c64);
 
     if(c64 && c64->exists()) {
-        ui = new UserInterface;
+        ui = new UserInterface("** Ultimate-II+ Recovery **");
         ui->init(c64);
 
     	// Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
-
-        // now that everything is running, initialize the C64
-    	// which might load custom ROMs from the file system.
-        c64->init_cartridge();
-
     }
 
     printf("All linked modules have been initialized and are now running.\n");

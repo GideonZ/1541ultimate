@@ -114,6 +114,7 @@ architecture structural of slot_server_v4 is
 
     -- interface with freezer (cartridge) logic
     signal serve_enable    : std_logic := '0'; -- from cartridge emulation logic
+    signal serve_inhibit   : std_logic := '0';
     signal serve_vic       : std_logic := '0';
     signal serve_rom       : std_logic := '0'; -- ROML or ROMH
     signal serve_io1       : std_logic := '0'; -- IO1n
@@ -278,6 +279,8 @@ begin
         status          => status );
         
 
+    serve_inhibit <= status.c64_stopped and not control.serve_while_stopped;
+
     i_timing: entity work.slot_timing
     port map (
         clock           => clock,
@@ -289,7 +292,7 @@ begin
     
         serve_vic       => serve_vic,
         serve_enable    => serve_enable,
-        serve_inhibit   => status.c64_stopped,
+        serve_inhibit   => serve_inhibit,
         allow_serve     => allow_serve,
 
         timing_addr     => control.timing_addr_valid,

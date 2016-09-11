@@ -10,6 +10,7 @@ FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
 SRCS_C   =	itu.c \
 			dump_hex.c \
+			codec.c \
 			assert.c \
 			profiler.c \
 			croutine.c \
@@ -41,11 +42,12 @@ SRCS_CC	 =  u2p_init.cc \
 			filemanager.cc \
 			file_device.cc \
 			file_partition.cc \
-			rtc.cc \
+			rtc_i2c.cc \
 			c64.cc \
 			c64_subsys.cc \
 			screen.cc \
 			keyboard_c64.cc \
+			editor.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \
@@ -67,7 +69,7 @@ SRCS_CC	 =  u2p_init.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
-			filetype_u2u.cc \
+			filetype_u2p.cc \
 			usb_base.cc \
 			usb_device.cc \
 			usb_scsi.cc \
@@ -97,7 +99,7 @@ SRCS_IEC =
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_appl_bsp

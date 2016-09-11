@@ -11,6 +11,7 @@ TASS = $(TOOLS)/64tass/64tass
 PARSE_IEC = $(TOOLS)/parse_iec.py
 PARSE_NANO = $(TOOLS)/parse_nano.py
 CHECKSUM = $(TOOLS)/checksum
+SWAP = $(TOOLS)/swap
 
 # Configuration
 CROSS        ?= mb-

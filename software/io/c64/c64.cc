@@ -108,7 +108,7 @@ const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns
 const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
 
 struct t_cfg_definition c64_config[] = {
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 18, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 12, 4 },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
@@ -154,7 +154,7 @@ C64 :: C64()
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
 
     effectuate_settings();
-    reset();
+    init_cartridge();
 }
     
 C64 :: ~C64()
@@ -533,6 +533,12 @@ void C64 :: init_io(void)
     // enable keyboard
 	CIA1_DDRB  = 0x00; // all in
 	CIA1_DDRA  = 0xFF; // all out
+
+	printf("CIA DDR: %b %b Mode: %b\n", CIA1_DDRB, CIA1_DDRA, C64_MODE);
+	CIA1_DDRA  = 0xFF; // all out
+	CIA1_DDRB  = 0x00; // all in
+	printf("CIA DDR: %b %b\n", CIA1_DDRB, CIA1_DDRA);
+
 	CIA1_CRA &= 0xFD; // no PB6 output, interferes with keyboard
 	CIA1_CRB &= 0xFD; // no PB7 output, interferes with keyboard
 	

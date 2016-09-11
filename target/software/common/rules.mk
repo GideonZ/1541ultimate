@@ -23,10 +23,10 @@ all: $(OUTPUT) $(RESULT) $(FINAL)
 mem: $(OUTPUT)/$(PRJ).mem
 
 $(OUTPUT):
-	@mkdir $(OUTPUT)
+	@mkdir -p $(OUTPUT)
 
 $(RESULT):
-	@mkdir $(RESULT)
+	@mkdir -p $(RESULT)
 		
 $(RESULT)/$(PRJ).a: $(OBJS_C)
 	@echo Creating Archive $@
@@ -75,11 +75,17 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@echo Converting $(<F) SREC to $(@F)..
 	@$(OBJCOPY) -I srec -O binary $< $@
 
+%.swp: %.rbf
+	@echo Swapping FPGA Image $(<F)
+	@$(SWAP) $< $(OUTPUT)/$@
+	
+# Essentially do a swapped copy of the rbf first to the output directory and then convert to elf..
 %.o: %.rbf
-	@echo Converting $(<F) binary to $(@F)..
+	@echo Converting $(<F) FPGA Image to $(@F)..
 	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
 	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
-	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
+	@$(SWAP) $< $(OUTPUT)/$(@F)
+	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $(OUTPUT)/$(@F) $(OUTPUT)/$@ \
 	--redefine-sym $(was)_start=$(becomes)_start \
 	--redefine-sym $(was)_size=$(becomes)_size \
 	--redefine-sym $(was)_end=$(becomes)_end

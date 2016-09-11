@@ -4,7 +4,7 @@
 .global _ultimate_recovery_rbf_start
 .type _ultimate_recovery_rbf_start, @object
 _ultimate_recovery_rbf_start:
-.incbin "ultimate_recovery.rbf"
+.incbin "ultimate_recovery.swp"
 .global _ultimate_recovery_rbf_end
 _ultimate_recovery_rbf_end:
 
@@ -13,7 +13,7 @@ _ultimate_recovery_rbf_end:
 .global _ultimate_run_rbf_start
 .type _ultimate_run_rbf_start, @object
 _ultimate_run_rbf_start:
-.incbin "ultimate_run.rbf"
+.incbin "ultimate_run.swp"
 .global _ultimate_run_rbf_end
 _ultimate_run_rbf_end:
 
@@ -52,3 +52,11 @@ _rom_pack_start:
 .incbin "epyx.bin"
 .global _rom_pack_end
 _rom_pack_end:
+
+.align 4
+.global _sample_raw_start
+.type _sample_raw_start, @object
+_sample_raw_start:
+.incbin "sample.raw"
+.global _sample_raw_end
+_sample_raw_end:

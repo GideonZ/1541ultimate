@@ -4,7 +4,7 @@
  * Machine generated for CPU 'nios2_gen2_0' in SOPC Builder design 'nios_solo'
  * SOPC Builder design path: ../../fpga/nios_solo/nios_solo.sopcinfo
  *
- * Generated: Sun Jul 31 10:54:55 CEST 2016
+ * Generated: Sun Sep 11 11:00:15 CEST 2016
  */
 
 /*
@@ -90,6 +90,7 @@
  *
  */
 
+#define ALT_LOAD_COPY_EXCEPTIONS
 #define ALT_LOAD_COPY_RWDATA
 
 #endif /* __LINKER_H_ */

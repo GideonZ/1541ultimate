@@ -17,6 +17,7 @@
 #include "host_stream.h"
 #include "dump_hex.h"
 #include "u2p.h"
+#include "bist.h"
 
 extern uint32_t _ultimate_recovery_rbf_start;
 extern uint32_t _ultimate_recovery_rbf_end;
@@ -35,6 +36,10 @@ extern uint32_t _rom_pack_end;
 
 uint8_t swapped_bytes[256];
 uint8_t readbuf[512];
+
+extern "C" {
+	void codec_init(void);
+}
 
 int main(int argc, char *argv[])
 {
@@ -60,48 +65,33 @@ int main(int argc, char *argv[])
     Screen *screen = host->getScreen();
     screen->clear();
 
-	console_print(screen, "Flash = %p. Capabilities = %8x\n", flash, getFpgaCapabilities());
+	console_print(screen, "Flash: %p. Capabilities: %8x\n", flash, getFpgaCapabilities());
 
-    for(int i=0;i<256;i++) {
-    	uint8_t temp = (uint8_t)i;
-    	uint8_t swapped = 0;
-    	for(int j=0; j<8; j++) {
-    		swapped <<= 1;
-    		swapped |= (temp & 1);
-    		temp >>= 1;
-    	}
-    	swapped_bytes[i] = swapped;
-    }
-
-    uint8_t *data = (uint8_t *)&_ultimate_recovery_rbf_start;
-	int length = (int)&_ultimate_recovery_rbf_end - (int)data;
-
-	console_print(screen, "Swapping %d bytes from %p\n", length, data);
-	for(int i=0;i < length; i++, data++) {
-    	*data = swapped_bytes[*data];
-    }
-
-    data = (uint8_t *)&_ultimate_run_rbf_start;
-    length = (int)&_ultimate_run_rbf_end - (int)data;
-
-    console_print(screen, "Swapping %d bytes from %p\n", length, data);
-    for(int i=0;i < length; i++, data++) {
-        *data = swapped_bytes[*data];
-    }
-
-//    flash->read_linear_addr(0xC0000, 512, readbuf);
-//    dump_hex_relative(readbuf, 512);
+	codec_init();
+	test_iec(screen);
+	test_cartbus(screen);
+	test_audio();
 
     flash->protect_disable();
 
 	flash_buffer_at(flash, screen, 0x00000, false, &_ultimate_recovery_rbf_start,   &_ultimate_recovery_rbf_end,   "V1.0", "FPGA Loader");
 	flash_buffer_at(flash, screen, 0x80000, false, &_recovery_app_start,  &_recovery_app_end,  "V1.0", "Recovery Application");
 
-    REMOTE_FLASHSEL_1;
+	//console_print(screen, "\nConfiguring Flash write protection..\n");
+	//flash->protect_configure();
+	//flash->protect_enable();
+
+	REMOTE_FLASHSEL_1;
     REMOTE_FLASHSELCK_0;
     REMOTE_FLASHSELCK_1;
 
     Flash *flash2 = get_flash();
+
+    flash2->protect_disable();
+    //memset(&_ultimate_run_rbf_start, 0xFF, (uint32_t)&_ultimate_run_rbf_end - (uint32_t)&_ultimate_run_rbf_start);
+    //memset(&_ultimate_app_start, 0xFF, (uint32_t)&_ultimate_app_end - (uint32_t)&_ultimate_app_start);
+    //memset(&_rom_pack_start, 0xFF, (uint32_t)&_rom_pack_end - (uint32_t)&_rom_pack_start);
+
     flash_buffer_at(flash2, screen, 0x000000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
     flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
     flash_buffer_at(flash2, screen, 0x200000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");

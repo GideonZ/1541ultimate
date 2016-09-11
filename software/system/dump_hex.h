@@ -32,6 +32,7 @@ void dump_hex(void *pp, int len);
 void dump_hex_relative(void *pp, int len);
 void dump_hex_actual(void *pp, int len, int relative);
 void dump_hex_dirty(void *p, int len, uint8_t ptrn);
+void dump_hex_verify(void *pp1, void *pp2, int len);
 
 #ifdef __cplusplus
 }

@@ -46,6 +46,7 @@
 #define C64_SWAP_CART_BUTTONS   *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xA))
 #define C64_TIMING_ADDR_VALID   *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xB))
 #define C64_PHI2_EDGE_RECOVER   *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xC))
+#define C64_SERVE_CONTROL       *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xD))
 #define C64_SAMPLER_ENABLE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xE))
 #define C64_ETHERNET_ENABLE     *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xF))
 
@@ -55,6 +56,8 @@
 #define C64_MODE_RESET     0x04
 #define C64_MODE_UNRESET   0x08
 #define C64_MODE_NMI       0x10
+
+#define SERVE_WHILE_STOPPED 0x01
 
 #define STOP_COND_BADLINE  0x00
 #define STOP_COND_RWSEQ    0x01

@@ -30,12 +30,13 @@
 
 #ifndef RUNS_ON_PC
 #define ioWrite8(x, y)  (*(volatile uint8_t *)(x)) = y
-#define ioWrite16(x, y) (*(volatile uint16_t *)(x)) = y
-#define ioWrite32(x, y) (*(volatile uint32_t *)(x)) = y
+#define ioRead8(x)      (*(volatile uint8_t *)(x))
 
-#define ioRead8(x)  (*(volatile uint8_t *)(x))
-#define ioRead16(x) (*(volatile uint16_t *)(x))
-#define ioRead32(x) (*(volatile uint32_t *)(x))
+//#define ioWrite16(x, y) (*(volatile uint16_t *)(x)) = y
+//#define ioWrite32(x, y) (*(volatile uint32_t *)(x)) = y
+//#define ioRead16(x)     (*(volatile uint16_t *)(x))
+//#define ioRead32(x)     (*(volatile uint32_t *)(x))
+
 #else
 
 void ioWrite8(uint32_t addr, uint8_t value);

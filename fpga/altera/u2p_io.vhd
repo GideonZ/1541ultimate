@@ -20,6 +20,9 @@ port (
     i2c_sda_i   : in  std_logic;
     i2c_scl_o   : out std_logic;
     i2c_sda_o   : out std_logic;
+
+    iec_i       : in  std_logic_vector(3 downto 0);
+    iec_o       : out std_logic_vector(3 downto 0);
     
     eth_irq_i   : in  std_logic;
     hub_reset_n : out std_logic;
@@ -61,6 +64,7 @@ begin
                     io_resp.data(0) <= hub_reset_i;
                 when X"E" =>
                     io_resp.data(0) <= eth_irq_i;
+                    io_resp.data(7 downto 4) <= iec_i;
                 when X"F" =>
                     io_resp.data(0) <= ulpi_reset_i;
                 when others =>
@@ -98,6 +102,8 @@ begin
                     speaker_en_i <= io_req.data(0);
                 when X"D" =>
                     hub_reset_i <= io_req.data(0);
+                when X"E" =>
+                    iec_o <= io_req.data(7 downto 4);
                 when X"F" =>
                     ulpi_reset_i <= io_req.data(0);
                 when others =>
@@ -112,6 +118,7 @@ begin
                 speaker_en_i <= '0';
                 hub_reset_i <= '0';
                 ulpi_reset_i <= '0';
+                iec_o <= (others => '1');
             end if;
         end if;
     end process;

@@ -91,10 +91,6 @@ extern "C" void ultimate_main(void *a)
     	root_tree_browser = new TreeBrowser(ui, root);
         ui->activate_uiobject(root_tree_browser); // root of all evil!
 
-        // now that everything is running, initialize the C64
-    	// which might load custom ROMs from the file system.
-        c64->init_cartridge();
-
     } else if(capabilities & CAPAB_OVERLAY) {
         printf("Using Overlay module as user interface...\n");
         overlay = new Overlay(false);

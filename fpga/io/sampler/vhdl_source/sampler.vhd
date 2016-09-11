@@ -207,7 +207,7 @@ begin
                 voice_i <= 0;
                 iter_i  <= 0;
                 active_i <= '1';
-                next_state.state := idle; -- shifted into the voice state vector automatically.
+                next_state.state := finished; -- shifted into the voice state vector automatically.
                 interrupt <= (others => '0');
             end if;
         end if;

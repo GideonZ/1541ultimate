@@ -319,7 +319,7 @@ extern "C" void ultimate_main(void *)
     
     printf("host = %p\n", host);
 
-    user_interface = new UserInterface("\033\021   **** 1541 Ultimate II Updater ****\n\033\037");
+    UserInterface *user_interface = new UserInterface("\033\021** 1541 Ultimate II+ Updater **\n\033\037");
     user_interface->init(host);
     user_interface->appear();
 

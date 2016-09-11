@@ -201,7 +201,9 @@ architecture rtl of u2p_nios_solo is
     signal iec_data_o  : std_logic;
     signal iec_clock_o : std_logic;
     signal iec_srq_o   : std_logic;
-
+    signal sw_iec_o    : std_logic_vector(3 downto 0);
+    signal sw_iec_i    : std_logic_vector(3 downto 0);
+    
     -- io buses
     signal io_irq       : std_logic;
     signal io_req       : t_io_req;
@@ -367,6 +369,8 @@ begin
         i2c_scl_o  => i2c_scl_o,
         i2c_sda_i  => i2c_sda_i,
         i2c_sda_o  => i2c_sda_o,
+        iec_i      => sw_iec_i,
+        iec_o      => sw_iec_o,
         eth_irq_i  => ETH_IRQn,
         speaker_en => SPEAKER_ENABLE,
         hub_reset_n=> HUB_RESETn,
@@ -547,10 +551,12 @@ begin
     LED_CARTn  <= led_n(2) xor sys_reset;
     LED_SDACTn <= led_n(3) xor sys_reset;
 
-    IEC_ATN    <= '0' when iec_atn_o   = '0' else 'Z';
-    IEC_DATA   <= '0' when iec_data_o  = '0' else 'Z';
-    IEC_CLOCK  <= '0' when iec_clock_o = '0' else 'Z';
-    IEC_SRQ_IN <= '0' when iec_srq_o   = '0' else 'Z';
+    IEC_SRQ_IN <= '0' when iec_srq_o   = '0' or sw_iec_o(3) = '0' else 'Z';
+    IEC_ATN    <= '0' when iec_atn_o   = '0' or sw_iec_o(2) = '0' else 'Z';
+    IEC_DATA   <= '0' when iec_data_o  = '0' or sw_iec_o(1) = '0' else 'Z';
+    IEC_CLOCK  <= '0' when iec_clock_o = '0' or sw_iec_o(0) = '0' else 'Z';
+
+    sw_iec_i <= IEC_SRQ_IN & IEC_ATN & IEC_DATA & IEC_CLOCK;
 
     button_i <= not BUTTON;
 

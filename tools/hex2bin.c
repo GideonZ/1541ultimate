@@ -117,7 +117,7 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size, int
     				paddr[1] = data[4];
     				paddr[0] = data[5];
                     addr <<= 4;
-                    printf("Segmented address %08X.\n", addr);
+                    printf("Segmented address %08X (continuation from: %08X)\n", addr, last_addr);
     			} else {
     				fprintf(stderr, "Segmented address with wrong length.\n");
     				return 0;
@@ -128,7 +128,7 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size, int
     			if(data[0] == 2) {
     				paddr[3] = data[4];
     				paddr[2] = data[5];
-                    //printf("Extended address %04X.\n", addr >> 16);
+                    printf("Extended address %08X. (continuation from: %08X)\n", addr, last_addr);
     			} else {
     				fprintf(stderr, "Extended address with wrong length.\n");
     				return 0;
@@ -196,7 +196,7 @@ int main(int argc, char** argv)
 	int i;
 
     uint32_t bin_offset = 0;
-    uint32_t size       = (1<<21); // 2M default
+    uint32_t size       = (1<<22); // 4M default
     uint32_t highest    = 0;
     int      segment    = -1;
     int      help       = 0;

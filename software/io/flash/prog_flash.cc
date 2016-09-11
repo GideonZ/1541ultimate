@@ -7,6 +7,7 @@
 
 #include "prog_flash.h"
 #include <string.h>
+#include <stdio.h>
 #include "screen.h"
 #include "dump_hex.h"
 
@@ -60,7 +61,7 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
         p = (char *)bin;
     }
     else {
-        console_print(screen, "Flashing  \033\027%s\033\037.. from %p\n", descr, buffer);
+        console_print(screen, "Flashing  \033\027%s\033\037..\n", descr);
         p = (char *)buffer;
     }
 
@@ -71,10 +72,11 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
 			sector = flash->page_to_sector(page);
 			if (sector != last_sector) {
 				last_sector = sector;
-				// console_print(screen, "Erasing     %d   \n", sector);
+				printf("Erasing     %d   \n", sector);
 				if(!flash->erase_sector(sector)) {
 			        // user_interface->popup("Erasing failed...", BUTTON_CANCEL);
-			        return false;
+					last_sector = -1;
+					return false;
 				}
 			}
 		}
@@ -88,23 +90,21 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
             }
             flash->read_page(page, verify_buffer);
             if(!my_memcmp(screen, verify_buffer, p, page_size)) {
-                console_print(screen, "Verify failed on page %d. Retry %d.\n", page, retry);
-                console_print(screen, "%p %p %d\n", verify_buffer, p, page_size);
-                dump_hex(verify_buffer, 32);
-                dump_hex(p, 32);
+                console_print(screen, "Verify failed on page %d.\n", page, retry);
+                // console_print(screen, "%p %p %d\n", verify_buffer, p, page_size);
+                dump_hex_verify(p, verify_buffer, page_size);
                 continue;
             }
             retry = -2;
         }
         if(retry != -2) {
+			//last_sector = -1;
             //user_interface->popup("Programming failed...", BUTTON_CANCEL);
-            return false;
+            // return false;
         }
         page ++;
         p += page_size;
         length -= page_size;
     }
-
     return true;
 }
-

@@ -26,6 +26,7 @@ SRCS_C   =	itu.c \
             time.c \
             i2c.c \
             mdio.c \
+			codec.c \
             sid_coeff.c \
             nios_main.c \
             alt_malloc_lock.c \
@@ -41,6 +42,7 @@ SRCS_CC	 =  u2p_init.cc \
 			at45_flash.cc \
 			w25q_flash.cc \
 			s25fl_flash.cc \
+			prog_flash.cc \
 			config.cc \
 			filemanager.cc \
 			file_device.cc \

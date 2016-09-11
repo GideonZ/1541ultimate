@@ -62,6 +62,8 @@ begin
                     control_i.reu_size <= io_req.data(2 downto 0);
                 when c_cart_ethernet_enable =>
                     control_i.eth_enable <= io_req.data(0);
+                when c_cart_serve_control =>
+                    control_i.serve_while_stopped <= io_req.data(0);
                 when c_cart_timing =>
                     control_i.timing_addr_valid <= unsigned(io_req.data(2 downto 0)); 
                 when c_cart_phi2_recover =>
@@ -102,6 +104,8 @@ begin
                     io_resp.data(2 downto 0) <= control_i.reu_size;
                 when c_cart_ethernet_enable =>
                     io_resp.data(0) <= control_i.eth_enable;
+                when c_cart_serve_control =>
+                    io_resp.data(0) <= control_i.serve_while_stopped;
                 when c_cart_sampler_enable =>
                     io_resp.data(0) <= control_i.sampler_enable;
                 when c_cart_timing =>

@@ -61,20 +61,21 @@ niosclean:
 	@$(MAKE) -C target/software/nios2_loader1 clean
 	@$(MAKE) -C target/software/nios2_loader2 clean
 	@$(MAKE) -C target/software/nios2_ultimate clean
+	@$(MAKE) -C target/software/nios2_recovery clean
 	@$(MAKE) -C target/software/nios2_flash clean
+	@$(MAKE) -C target/software/nios2_update clean
+
 nios:
+	@$(MAKE) -C software/nios_solo_bsp
+	@$(MAKE) -C software/nios_appl_bsp
 	@$(MAKE) -C target/software/nios2_elf_lwip
 	@$(MAKE) -C target/software/nios2_loader1
 	@$(MAKE) -C target/software/nios2_loader2
 	@$(MAKE) -C target/software/nios2_ultimate
+	@$(MAKE) -C target/software/nios2_recovery
 	@$(MAKE) -C target/software/nios2_flash
-
-u2p:
-	@$(MAKE) -C tools
-	@$(MAKE) -C target/software/nios2_loader1
-	@$(MAKE) -C target/software/nios2_loader2
-	@$(MAKE) -C target/software/nios2_ultimate
-	@$(MAKE) -C target/software/nios2_flash
+	@$(MAKE) -C target/software/nios2_update
+	@cp target/software/nios2_update/result/update.app ./update.u2p
 	
 prog:
 	@$(MAKE) mk2

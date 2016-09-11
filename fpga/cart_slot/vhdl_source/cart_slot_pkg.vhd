@@ -18,6 +18,7 @@ package cart_slot_pkg is
 	constant c_cart_swap_buttons		: unsigned(3 downto 0) := X"A";
     constant c_cart_timing              : unsigned(3 downto 0) := X"B";
     constant c_cart_phi2_recover        : unsigned(3 downto 0) := X"C";
+    constant c_cart_serve_control       : unsigned(3 downto 0) := X"D";
     constant c_cart_sampler_enable      : unsigned(3 downto 0) := X"E";
     constant c_cart_ethernet_enable     : unsigned(3 downto 0) := X"F";
 
@@ -38,6 +39,7 @@ package cart_slot_pkg is
 		timing_addr_valid   : unsigned(2 downto 0);
 		phi2_edge_recover   : std_logic;
 		tick_ntsc           : std_logic;
+		serve_while_stopped : std_logic;
     end record;
     
     type t_cart_status is record
@@ -62,7 +64,8 @@ package cart_slot_pkg is
         timing_addr_valid => "100",
 		phi2_edge_recover => '1',
         swap_buttons   => '1',
-        tick_ntsc      => '0' );
+        tick_ntsc      => '0',
+        serve_while_stopped => '0' );
     
 
 end cart_slot_pkg;

@@ -608,7 +608,7 @@ begin
             -- other hardware pins
             BUFFER_ENn      => BUFFER_ENn,
         
-			buttons 		=> BUTTON,
+			buttons 		=> button,
             cart_led_n      => cart_led_n,
             
             -- audio
