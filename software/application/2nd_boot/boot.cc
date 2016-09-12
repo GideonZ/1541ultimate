@@ -134,14 +134,15 @@ FRESULT try_loading(char *filename, uint32_t run_address)
 
 int try_flash(void)
 {
-    uint32_t length;
 	Flash *flash = get_flash();
 	t_flash_address image_addr;
     
-    char version[12];
+    static uint32_t length;
+    static char version[16];
     
 	flash->get_image_addresses(FLASH_ID_APPL, &image_addr);
     flash->read_dev_addr(image_addr.device_addr+0,  4, &length); // could come from image_addr, too, if we fix it in the interface
+    printf("Length: %08x\n", length);
     flash->read_dev_addr(image_addr.device_addr+4, 12, version); // we should create a flash call for this on the interface
     
     printf("Application length = %08x, version %s\n", length, version);
