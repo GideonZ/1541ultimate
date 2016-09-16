@@ -261,6 +261,7 @@ begin
                 game_n    <= '0';
                 exrom_n   <= '1';
                 serve_rom <= '1';
+                serve_vic <= '1';
                 serve_io1 <= '0';
                 serve_io2 <= '0';
                 irq_n     <= '1';
