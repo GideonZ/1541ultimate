@@ -60,7 +60,7 @@ public:
 	uint32_t get_fat_time(void);
 };
 
-uint32_t get_fattime(void);
+extern "C" uint32_t get_fattime(void);
 
 extern Rtc rtc;
 #endif
