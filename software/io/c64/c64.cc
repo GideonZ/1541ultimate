@@ -710,43 +710,21 @@ void C64 :: set_cartridge(cart_def *def)
     if(def->type & CART_RAM) {
         printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, mem_addr); 
         memcpy((void *)mem_addr, def->custom_addr, def->length);
+
+        if (def->id == ID_MODPLAYER) {
+    		// now overwrite the register settings
+    		C64_REU_SIZE = 7;
+    		C64_REU_ENABLE = 1;
+    		C64_SAMPLER_ENABLE = 1;
+        }
     } else if(def->id) {
         printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
         flash->read_image(def->id, (void *)mem_addr, def->length);
     } else if (def->length) { // not ram, not flash.. then it has to be custom
         *(uint8_t *)(mem_addr+5) = 0; // disable previously started roms.
-
-/*
-        const char *n = cfg->get_string(CFG_C64_CUSTOM);
-        printf("Now loading '%s' as cartridge.\n", n);
-
-#ifndef _NO_FILE_ACCESS
-        FileManager *fm = FileManager :: getFileManager();
-        File *f = 0;
-        FRESULT res;
-		for(int i=0;i<8;i++) {
-			res = fm->fopen((const char *)NULL, n, FA_READ, &f);
-			printf("C64 rom file: %p (%d)\n", f, res);
-			if (res == FR_OK) {
-				break;
-			}
-			vTaskDelay(100);
-		}
-		if(res == FR_OK) {
-			uint32_t transferred;
-			res = f->read((void *)mem_addr, def->length, &transferred);
-			if((res != FR_OK) || (transferred < 4096)) {
-				printf("Error loading file.. disabling cart.\n");
-				C64_CARTRIDGE_TYPE = 0;
-			}
-			fm->fclose(f);
-		} else {
-			printf("Open file failed.\n");
-		}
-#endif
-*/
     }
-	// clear function RAM on the cartridge
+
+    // clear function RAM on the cartridge
     mem_addr -= 65536; // TODO: We know it, because we made the hardware, but the hardware should tell us!
     memset((void *)mem_addr, 0x00, 65536);
 }

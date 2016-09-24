@@ -11,7 +11,7 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_reu(FileType :: getFi
 
 // cart definition
 extern uint8_t _module_bin_start;
-cart_def mod_cart  = { 0x00, (void *)0, 0x4000, 0x02 | CART_REU | CART_RAM };
+cart_def mod_cart  = { ID_MODPLAYER, (void *)0, 0x4000, CART_TYPE_16K | CART_REU | CART_RAM };
 
 /*********************************************************************/
 /* REU File Browser Handling                                         */
@@ -119,13 +119,11 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 		} else {
 			mod_cart.custom_addr = (void *)&_module_bin_start;
 
-			C64_REU_SIZE = 7;
-			C64_REU_ENABLE = 1;
-			C64_SAMPLER_ENABLE = 1;
+			// Select MOD output
 			ioWrite8(AUDIO_SELECT_LEFT, 6);
-			ioWrite8(AUDIO_SELECT_RIGHT, 7);
+    		ioWrite8(AUDIO_SELECT_RIGHT, 7);
 
-			SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&mod_cart, "", "");
+    		SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&mod_cart, "", "");
 			c64_command->execute();
 		}
 	} else {

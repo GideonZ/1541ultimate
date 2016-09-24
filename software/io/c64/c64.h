@@ -156,6 +156,8 @@
 #define CFG_C64_RATE	 0xCD
 #define CFG_CMD_ENABLE   0x71
 
+#define ID_MODPLAYER 0xAA
+
 typedef struct _cart
 {
     uint8_t  id;
