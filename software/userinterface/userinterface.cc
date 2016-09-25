@@ -87,13 +87,17 @@ void UserInterface :: run(void)
 				if (!host->hasButton()) {
 					appear();
 					// state = ui_host_permanent;
-				} else if (host->buttonPush()) {
+				} else if(host->exists() && host->buttonPush()) {
 					appear();
 					// state = ui_host_owned;
 				}
 				break;
 
 			case ui_host_owned:
+				if (!host->exists()) {
+					state = ui_idle;
+					break;
+				}
 				if (host->buttonPush()) {
 					release_host();
 					host->release_ownership();

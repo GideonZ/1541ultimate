@@ -23,7 +23,8 @@ port (
     down_fifo_empty : in  std_logic;
     down_fifo_get   : out std_logic;
     down_fifo_flush : out std_logic;
-    down_fifo_dout  : in  std_logic_vector(8 downto 0);
+    down_fifo_release : in  std_logic;
+    down_fifo_dout  : in  std_logic_vector(9 downto 0);
     
     irq_event       : out std_logic;
     
@@ -93,6 +94,7 @@ architecture mixed of iec_processor is
     signal out_vector   : std_logic_vector(19 downto 0);
     alias a_drivers     : std_logic_vector(3 downto 0) is out_vector(19 downto 16);
     alias a_irq_enable  : std_logic                    is out_vector(8);
+    alias a_eoi         : std_logic                    is out_vector(12);
     alias a_status      : std_logic_vector(7 downto 0) is out_vector(15 downto 8);
     alias a_data_reg    : std_logic_vector(7 downto 0) is out_vector(7 downto 0);
 begin
@@ -129,10 +131,13 @@ begin
         if rising_edge(clock) then
             up_fifo_put   <= '0';
             down_fifo_get <= '0';
-            down_fifo_flush <= '0';
             irq_event <= '0';
             flush_stack <= '0';
             
+            if down_fifo_release = '1' then
+                down_fifo_flush <= '0';
+            end if;
+
             if (presc = 0) or (presc = g_half_mhz / 2) then
                 if timer = 1 then
                     timer_done <= '1';
@@ -193,11 +198,15 @@ begin
                 when c_opc_pop      =>
                     a_data_reg <= down_fifo_dout(7 downto 0);
                     ctrl_reg   <= down_fifo_dout(8);
+                    a_eoi      <= down_fifo_dout(9);
                     valid_reg  <= not down_fifo_empty;
                     
-                    if down_fifo_empty='0' then
-                        down_fifo_get <= '1';
-                    elsif a_databyte(0)='0' then -- empty and non-block bit not set
+                    -- If data byte bit 1 is set, we do not actually pop, we just read the fifo
+                    down_fifo_get <= not down_fifo_empty and not a_databyte(1); -- only actually POP when bit 1 = 0.
+
+                    if down_fifo_empty='0' or a_databyte(0)='1' then -- if there is data, or if we should not halt if there is none 
+                        state <= get_inst;
+                    else
                         state <= decode;
                     end if;
 
@@ -247,6 +256,7 @@ begin
             end if;
 
             if reset='1' then
+                down_fifo_flush <= '1';
                 state        <= get_inst;
                 pc           <= (others => '0');
                 out_vector   <= X"F0000";

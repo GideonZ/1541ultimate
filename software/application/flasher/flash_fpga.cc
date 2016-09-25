@@ -68,11 +68,16 @@ int main(int argc, char *argv[])
 	console_print(screen, "Flash: %p. Capabilities: %8x\n", flash, getFpgaCapabilities());
 
 	codec_init();
-	test_iec(screen);
-	test_cartbus(screen);
+	int test_a = test_iec(screen);
+	int test_b = test_cartbus(screen);
 	test_audio();
 
-    flash->protect_disable();
+	if (flash->get_number_of_pages() != 4096) {
+		console_print(screen, "* ERROR: Unexpected flash type Bank #0\n");
+		while(1)
+			;
+	}
+	flash->protect_disable();
 
 	flash_buffer_at(flash, screen, 0x00000, false, &_ultimate_recovery_rbf_start,   &_ultimate_recovery_rbf_end,   "V1.0", "FPGA Loader");
 	flash_buffer_at(flash, screen, 0x80000, false, &_recovery_app_start,  &_recovery_app_end,  "V1.0", "Recovery Application");
@@ -87,6 +92,11 @@ int main(int argc, char *argv[])
 
     Flash *flash2 = get_flash();
 
+	if (flash2->get_number_of_pages() != 16384) {
+		console_print(screen, "* ERROR: Unexpected flash type Bank #1\n");
+		while(1)
+			;
+	}
     flash2->protect_disable();
     //memset(&_ultimate_run_rbf_start, 0xFF, (uint32_t)&_ultimate_run_rbf_end - (uint32_t)&_ultimate_run_rbf_start);
     //memset(&_ultimate_app_start, 0xFF, (uint32_t)&_ultimate_app_end - (uint32_t)&_ultimate_app_start);
@@ -100,6 +110,12 @@ int main(int argc, char *argv[])
 	flash->protect_configure();
 	flash->protect_enable();
 	console_print(screen, "Done!                            \n");
+
+	if (test_a || test_b) {
+		console_print(screen, "There were errors.\n");
+		while(1)
+			;
+	}
 
 	REMOTE_FLASHSEL_0;
     REMOTE_FLASHSELCK_0;

@@ -462,7 +462,7 @@ bool GcrImage :: load(File *f)
     // check signature
     pul = (uint32_t *)gcr_data;
 
-    if((pul[0] != 0x4743522D)||(pul[1] != 0x31353431)) { // big endianness assumed
+    if (strncmp("GCR-1541", (char *)gcr_data, 8) != 0) {
         printf("Wrong header.\n");
         return false;
     }

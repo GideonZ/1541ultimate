@@ -224,7 +224,13 @@ void C64 :: set_emulation_flags(cart_def *def)
 
 bool C64 :: exists(void)
 {
-    return (C64_CLOCK_DETECT != 0);
+	if (C64_CLOCK_DETECT != 0) {
+		return true;
+	}
+    C64_STOP_MODE = STOP_COND_FORCE;
+    C64_MODE = MODE_NORMAL;
+	C64_STOP = 0;
+	return false;
 }
     
 void C64 :: determine_d012(void)

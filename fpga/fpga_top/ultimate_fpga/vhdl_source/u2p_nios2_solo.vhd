@@ -10,7 +10,8 @@ library ieee;
     use ieee.numeric_std.all;
     use work.io_bus_pkg.all;
     use work.mem_bus_pkg.all;
-    
+    use work.my_math_pkg.all;
+        
 entity u2p_nios_solo is
 port (
     -- slot side
@@ -387,7 +388,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"07",
+        g_version       => X"09",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -457,7 +458,8 @@ begin
 
         IRQn        => SLOT_IRQn,
         NMIn        => SLOT_NMIn,
-        
+        VCC         => SLOT_VCC,
+                
         -- local bus side
         mem_inhibit => memctrl_inhibit,
         mem_req     => mem_req,
@@ -655,11 +657,11 @@ begin
                 if stream_in_ready = '1' then
                     if stream_in_tag(0) = '0' then
                         stream_in_tag(0) <= '1';
-                        stream_in_data <= audio_audio_right & "000000";
+                        stream_in_data <= std_logic_vector(left_scale(signed(audio_audio_right), 1)) & "0000000";
                         audio_get_sample <= '1';
                     else
                         stream_in_tag(0) <= '0';
-                        stream_in_data <= audio_audio_left & "000000";
+                        stream_in_data <= std_logic_vector(left_scale(signed(audio_audio_left), 1)) & "0000000";
                     end if;
                 end if;
                 if audio_reset = '1' then
@@ -669,5 +671,5 @@ begin
         end process;
     end block;    
     
-    SLOT_BUFFER_ENn <= '0'; -- once configured, we can connect
+    SLOT_BUFFER_ENn <= not SLOT_VCC; -- once configured, we can connect, if there is power from the C64
 end architecture;

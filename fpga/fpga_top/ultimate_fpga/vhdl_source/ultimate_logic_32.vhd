@@ -76,6 +76,7 @@ port (
 
     IRQn        : inout std_logic;
     NMIn        : inout std_logic;
+    VCC         : in    std_logic := '1';
     
     -- local bus side
     mem_inhibit : out   std_logic;
@@ -589,6 +590,7 @@ begin
             reset           => sys_reset,
             
             -- Cartridge pins
+            VCC             => VCC,
             RSTn            => RSTn,
             IRQn            => IRQn,
             NMIn            => NMIn,

@@ -33,6 +33,7 @@ port (
     reset           : in  std_logic;
     
     -- Cartridge pins
+    VCC             : in    std_logic := '1';
     RSTn            : inout std_logic;
     IRQn            : inout std_logic;
     NMIn            : inout std_logic;
@@ -322,6 +323,7 @@ begin
         reset           => reset,
         
         -- Cartridge pins
+        VCC             => VCC,
         RSTn            => RSTn,
         IO1n            => IO1n,
         IO2n            => IO2n,
@@ -775,7 +777,8 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            memctrl_inhibit <= timing_inhibit;            
+            memctrl_inhibit <= timing_inhibit;
+            status.c64_vcc <= VCC;            
         end if;
     end process;
 

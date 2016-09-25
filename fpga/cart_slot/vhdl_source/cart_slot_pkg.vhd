@@ -46,6 +46,7 @@ package cart_slot_pkg is
         c64_stopped    : std_logic;
         clock_detect   : std_logic;
         cart_active    : std_logic;
+        c64_vcc        : std_logic;
     end record;
 
     constant c_cart_control_init : t_cart_control := (

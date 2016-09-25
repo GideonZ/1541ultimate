@@ -57,10 +57,11 @@ architecture structural of iec_processor_io is
     signal down_fifo_flush : std_logic;
     signal down_fifo_empty : std_logic;
     signal down_fifo_full  : std_logic;
+    signal down_fifo_release : std_logic;
     signal down_fifo_get   : std_logic;
     signal down_fifo_put   : std_logic;
-    signal down_fifo_din   : std_logic_vector(8 downto 0);
-    signal down_fifo_dout  : std_logic_vector(8 downto 0);
+    signal down_fifo_din   : std_logic_vector(9 downto 0);
+    signal down_fifo_dout  : std_logic_vector(9 downto 0);
     signal down_dav        : std_logic;
     signal down_space      : std_logic;
 
@@ -91,7 +92,8 @@ begin
         down_fifo_get   => down_fifo_get,
         down_fifo_dout  => down_fifo_dout,
         down_fifo_flush => down_fifo_flush,
-                
+        down_fifo_release => down_fifo_release,
+        
         irq_event       => irq_event,
 
         clk_o           => clk_o,
@@ -156,7 +158,7 @@ begin
 
     i_down_fifo: entity work.srl_fifo
     generic map (
-        Width       => 9,
+        Width       => 10,
         Depth       => 15, -- 15 is the maximum
         Threshold   => 13 )
     port map (
@@ -178,6 +180,7 @@ begin
 --        variable value : unsigned(15 downto 0);
     begin
         if rising_edge(clock) then
+            down_fifo_release <= '0';
             ram_sel <= '0';
             reg_rdata <= (others => '0');
             proc_reset <= not enable;
@@ -189,11 +192,11 @@ begin
                 ram_sel <= req.address(11);
                 case req.address(3 downto 0) is
                     when X"0" =>
-                        reg_rdata <= X"23"; -- version
+                        reg_rdata <= X"25"; -- version
                         
                     when X"1" =>
                         reg_rdata(0) <= down_fifo_empty;
-                        reg_rdata(1) <= down_fifo_full;
+                        reg_rdata(1) <= down_fifo_full or down_fifo_flush;
                     
                     when X"2" =>
                         reg_rdata(0) <= up_fifo_empty;
@@ -227,6 +230,8 @@ begin
                         when X"C" =>
                             irq_status <= '0';
                             irq_enable <= req.data(0);
+                        when X"D" =>
+                            down_fifo_release <= '1';
                         when others =>
                             null;
                     end case;
@@ -246,8 +251,8 @@ begin
     end process;
 
     resp.data  <= ram_rdata when ram_sel='1' else reg_rdata;
-    down_fifo_put <= '1' when req.write='1' and req.address(11)='0' and req.address(3 downto 1) = "10" else '0';
+    down_fifo_put <= '1' when req.write='1' and req.address(11)='0' and req.address(3 downto 2) = "10" else '0';
     up_fifo_get   <= '1' when req.read='1'  and req.address(11)='0' and ((req.address(3 downto 0) = "0110") or (req.address(3 downto 2) = "10")) else '0';    
-    down_fifo_din <= req.address(0) & req.data;
+    down_fifo_din <= std_logic_vector(req.address(1 downto 0)) & req.data;
     ram_en <= (req.write or req.read) and req.address(11);
 end structural;

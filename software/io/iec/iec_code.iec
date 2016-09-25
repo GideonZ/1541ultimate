@@ -1,6 +1,6 @@
 
-Tv = 275
-Ts = 275
+Tv = 1475
+Ts = 1475
 Ttk = 200
 Tda = 80
 T0 = 80
@@ -14,6 +14,7 @@ start
 
 # IRQ is at address 1
 ATN_IRQ
+            CLRST
             SET DATA=0 # not ready to receive
             SET CLK=1  # release clock
             WAIT FOR 20 us
@@ -45,7 +46,6 @@ _no_push2
             WAIT UNTIL NOT ATN=0        # ATN is not for us, wait end of ATN
             LOAD $42
             PUSHC
-            #WAIT FOR 70 us
             JUMP RELEASE
 _keep_data
             # at some time, the computer will either
@@ -81,6 +81,8 @@ _listen_normally
             SUB PUSH_BYTE
             IF NOT EOI THEN _listen_normally
             WAIT FOR 70 us
+            LOAD $5b
+            PUSHC
             JUMP RELEASE
 
 ATN_TURNAROUND
@@ -94,14 +96,21 @@ ATN_TURNAROUND
             PUSHC
             SET EOI=0
             SUB TRANSMIT
+            LOAD $5a
+            PUSHC
             JUMP RELEASE
 
 TRANSMIT
-            POP
+            READB
             IF NOT CTRL THEN _tx_data
+
+            # A control byte is now on the fifo output
+            POPB  # now actually consume the control byte
             IF DATABYTE IS $10 THEN _tx_done
-            SET EOI=1
-            POP
+            LOAD $EF
+            PUSHC
+            RET
+
 _tx_data
             SUB TX_BYTE
             IF NOT EOI THEN TRANSMIT  # loop until everything was transmitted
@@ -164,7 +173,9 @@ _no_tx_eoi
             WAIT FOR 2 us  #otherwise we might still read our own latest data bit
             WAIT UNTIL DATA=0 FOR 1000 us
             IF TIMEOUT THEN _error
-            # PUSHD # debug
+            POPB  # the byte was read into the register using READ. Now we actually POP the byte, because it has been acknowledged by the initiator
+            LOAD $47
+            PUSHC
             WAIT FOR Tbb
             RET
 
@@ -292,7 +303,7 @@ _error
 reset_vec
             CLRST
             SET IRQ_EN=1
-            POP ; hang
+            POPB ; hang
             IF NOT CTRL THEN reset_vec
             IF DATABYTE IS $57 THEN WARP_START
             IF DATABYTE IS $4D THEN MASTER_START
@@ -307,7 +318,7 @@ MASTER_START
             WAIT UNTIL DATA=0 FOR 1000 us
             IF TIMEOUT THEN no_device
 _atn_send
-            POP
+            POPB
             IF CTRL THEN _master_test
             SET EOI=0
             SUB TX_BYTE
@@ -350,7 +361,7 @@ warp_continue
 warp_data
             LOAD $DA
             PUSHC
-            POP ; handshake
+            POPB ; handshake
             LOAD $55 # Push missing $55
             PUSHD
             SET CLK=0
@@ -454,6 +465,7 @@ get_68
 ; $44 : Ready to receive (not sent to software)
 ; $45 : End of reception (OEI)
 ; $46 : Start of printer data
+; $47 : Byte transmitted  (we need to know this, because our fifo can get flushed by ATN)
 
 ; $57 : Acknowledge WARP mode enabled
 ; $AD : End of WARP bloc reception (328 bytes)

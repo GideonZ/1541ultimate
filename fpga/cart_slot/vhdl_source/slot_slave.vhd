@@ -13,6 +13,7 @@ port (
     reset           : in  std_logic;
     
     -- Cartridge pins
+    VCC             : in  std_logic;
     RSTn            : in  std_logic;
     IO1n            : in  std_logic;
     IO2n            : in  std_logic;
@@ -133,7 +134,7 @@ begin
                 rwn_c     <= RWn;
                 address_c <= ADDRESS;
             end if;
-            reset_out <= reset or not RSTn;
+            reset_out <= reset or (not RSTn and VCC);
             ba_c      <= BA;
             io1n_c    <= IO1n;
             io2n_c    <= IO2n;

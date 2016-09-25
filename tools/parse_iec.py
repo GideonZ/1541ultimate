@@ -6,6 +6,7 @@ logger = logging.getLogger()
 logger.addHandler(console)
 logger.setLevel(logging.ERROR)
 
+last_data = 0
 labels = {}
 
 mask_signals = { 'CLK' : 0, 'DATA' : 1, 'ATN' : 2, 'SRQ' : 3 }
@@ -152,10 +153,10 @@ def _create_mask_value_expression(mask, value):
     return d
 
 def _output_direct(data):
-    global pc
-    pc += 1
     if phase == 2:
         program.append("%08X" % data)
+        global last_data
+        last_data = data
 
 def _output_8_12(opcode, value, param):
     data = (opcode << 20) + (param << 8) + value
@@ -189,38 +190,53 @@ def add_label(line):
 def _load(params):
 #    constant c_opc_load     : std_logic_vector(3 downto 0) := X"0";
     val = _get_value(params)
-    logger.info("PC: %03x: LOAD #%d." % (pc, val))
     _output_8_12(0, val, 0)  # 12 bit operand remains unused
+    logger.info("PC: %03x: %08x LOAD #%d." % (pc, last_data, val))
     
 def _pop(params):
 #    constant c_opc_pop      : std_logic_vector(3 downto 0) := X"1";
-    logger.info("PC: %03x: POP" % pc)
-    _output_opc(1)  # Pop does not take parameters
+    _output_8_12(1, 0x01, 0) # 12 bit operand remains unused, but bit 1 of databyte is set. (non blocking)  
+    logger.info("PC: %03x: %08x POP" % (pc, last_data))
+
+def _popb(params):
+#    constant c_opc_pop      : std_logic_vector(3 downto 0) := X"1";
+    _output_8_12(1, 0x00, 0) # 12 bit operand remains unused, but bit 1 of databyte is clear (blocking)
+    logger.info("PC: %03x: %08x POPB" % (pc, last_data))
+
+def _read(params):
+#    constant c_opc_pop      : std_logic_vector(3 downto 0) := X"1";
+    _output_8_12(1, 0x03, 0) # 12 bit operand remains unused, but bit 0 and 1 of databyte is set (non blocking peek)
+    logger.info("PC: %03x: %08x READ" % (pc, last_data))
+
+def _readb(params):
+#    constant c_opc_pop      : std_logic_vector(3 downto 0) := X"1";
+    _output_8_12(1, 0x02, 0) # 12 bit operand remains unused, but bit 0 of databyte is set. (blocking peek)  
+    logger.info("PC: %03x: %08x READB" % (pc, last_data))
 
 def _pushc(params):
 #    constant c_opc_pushc    : std_logic_vector(3 downto 0) := X"2";
-    logger.info("PC: %03x: PUSHC" % pc)
     _output_opc(2)  # PushC does not take parameters (silly, because it could push <value>)
+    logger.info("PC: %03x: %08x PUSHC" % (pc, last_data))
     
 def _pushd(params):
 #    constant c_opc_pushd    : std_logic_vector(3 downto 0) := X"3";
-    logger.info("PC: %03x: PUSHD" % pc)
     _output_opc(3)  # PushD does not take parameters
+    logger.info("PC: %03x: %08x PUSHD" % (pc, last_data))
 
 def _irq(params):
-    logger.info("PC: %03x: IRQ" % pc)
     _output_opc(6)  # IRQ does not take parameters
+    logger.info("PC: %03x: %08x IRQ" % (pc, last_data))
 
 def _sub(params):
 #    constant c_opc_sub      : std_logic_vector(3 downto 0) := X"4";
     addr = _get_value(params)
-    logger.info("PC: %03x: SUB $%03x" % (pc, addr))
     _output_8_12(4, 0, addr)  
+    logger.info("PC: %03x: %08x SUB $%03x" % (pc, last_data, addr))
 
 def _ret(params):
 #    constant c_opc_ret      : std_logic_vector(3 downto 0) := X"7";
-    logger.info("PC: %03x: RET" % pc)
     _output_opc(7)  # Return does not take parameters
+    logger.info("PC: %03x: %08x RET" % (pc, last_data))
 
 def _out(params):
 #    constant c_opc_out      : std_logic_vector(3 downto 0) := X"5";
@@ -232,16 +248,16 @@ def _out(params):
         dbg += '!'
     dbg += input_names[src];
             
-    logger.info("PC: %03x: COPY %s" % (pc, dbg))
     _output_direct(data)
+    logger.info("PC: %03x: %08x COPY %s" % (pc, last_data, dbg))
 
     
 def _jump(params):
     addr = _get_value(params)
     i = input_signals['1'] 
-    logger.info("PC: %03x: JUMP $%03x" % (pc, addr))
     data = (i << 24) + (0x08 << 20) + (addr << 8)
     _output_direct(data)  # IF TRUE THEN addr
+    logger.info("PC: %03x: %08x JUMP $%03x" % (pc, last_data, addr))
     
 def _if(params):
 #    constant c_opc_if       : std_logic_vector(3 downto 0) := X"8";
@@ -265,10 +281,10 @@ def _if(params):
         if inv > 0:
             dbg = "NOT "
         dbg += input_names[bit] + " THEN $%03x" % addr
-        logger.info("PC: %03x: IFCTRL %s" % (pc, dbg))
         data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8)
 
         _output_direct(data)
+        logger.info("PC: %03x: %08x IFCTRL %s" % (pc, last_data, dbg))
 
     except KeyError:
         # Ok, it was not a valid control bit
@@ -284,18 +300,18 @@ def _if(params):
             if inv > 0:
                 dbg = "NOT "
             dbg += "DATAREG = $%02x THEN $%03x" % (value, addr)
-            logger.info("PC: %03x: IF %s" % (pc, dbg))
             bit = input_signals['_data_eq']
             data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
             _output_direct(data )
+            logger.info("PC: %03x: %08x IF %s" % (pc, last_data, dbg))
                
         else:
             raise NameError("Unexpected check word %s on line %d." % (spl[0], nr))
     
 def _clrst(params):
 #    constant c_opc_clear_stack : std_logic_vector(3 downto 0) := X"9";
-    logger.info("PC: %03x: CLRST" % pc)
     _output_opc(9)  # Clear stack does not take parameters
+    logger.info("PC: %03x: %08x CLRST" % (pc, last_data))
 
 def _wait(params):
 #    constant c_opc_wait     : std_logic_vector(3 downto 0) := X"C";
@@ -331,10 +347,10 @@ def _wait(params):
     if time>0:
         dbg += " FOR %d us" % (time)
     
-    logger.info("PC: %03x: WAIT %s" % (pc, dbg))
 #    print "wait",sig,inv,time,spl[next:]
     data = (inv << 29) + (input_signals['_mask_eq'] << 24) + (0x0C << 20) + (time << 8) + (mask << 4) + value
     _output_direct(data)
+    logger.info("PC: %03x: %08x WAIT %s" % (pc, last_data, dbg))
 
 def unknown_mnem(params):
     print "Unknown mnemonic: '%s'" % params
@@ -369,6 +385,9 @@ def dump_iec_file(filename):
 mnemonics = {
     'LOAD'  : _load,   # 0
     'POP'   : _pop,    # 1
+    'READ'  : _read,   # 1
+    'POPB'  : _popb,   # 1
+    'READB' : _readb,  # 1
     'PUSHC' : _pushc,  # 2
     'PUSHD' : _pushd,  # 3
     'SUB'   : _sub,    # 4
@@ -408,6 +427,8 @@ def parse_lines(lines):
         except KeyError,e:
             raise NameError("Unknown Mnemonic %s in line %d" % (line_split[0], nr))
         f(line_split[1].strip())
+        global pc
+        pc += 1
     
 #    print labels
     
@@ -428,7 +449,7 @@ if __name__ == "__main__":
     parse_lines(lines)
     pc = 0
     phase = 2
-    logger.setLevel(logging.WARN)
+    logger.setLevel(logging.INFO)
     logger.info("Pass 2...")
     parse_lines(lines)
 

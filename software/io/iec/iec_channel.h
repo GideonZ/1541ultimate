@@ -16,7 +16,7 @@ typedef enum _t_channel_state {
 
 enum t_channel_retval {
     IEC_OK=0, IEC_LAST=1, IEC_NO_DATA=-1, IEC_FILE_NOT_FOUND=-2, IEC_NO_FILE=-3,
-    IEC_READ_ERROR=-4, IEC_WRITE_ERROR=-5, IEC_BYTE_LOST=-6 
+    IEC_READ_ERROR=-4, IEC_WRITE_ERROR=-5, IEC_BYTE_LOST=-6, IEC_BUFFER_END=-7
 };
 
 static uint8_t c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
@@ -36,6 +36,8 @@ class IecChannel
     uint8_t buffer[256];
     int  size;
     int  pointer;
+    int  prefetch;
+    int  prefetch_max;
     File *f;
     int  last_command;
     int  dir_index;
@@ -64,6 +66,8 @@ public:
         last_byte = 0;
         size = 0;
         last_command = 0;
+        prefetch = 0;
+        prefetch_max = 0;
     }
     
     virtual ~IecChannel()
@@ -71,36 +75,63 @@ public:
     	close_file();
     }
 
-
-    virtual int pop_data(uint8_t& b)
+    virtual void reset_prefetch(void)
     {
-        switch(state) {
+    	prefetch = pointer;
+    }
+
+    virtual int prefetch_data(uint8_t& data)
+    {
+    	if (state == e_error) {
+    		return IEC_NO_FILE;
+    	}
+    	if (prefetch == last_byte) {
+    		data = buffer[prefetch];
+    		prefetch++;
+    		printf("L");
+    		return IEC_LAST;
+    	}
+    	if (prefetch < prefetch_max) {
+    		data = buffer[prefetch];
+    		prefetch++;
+    		return IEC_OK;
+    	}
+    	if (prefetch > prefetch_max) {
+    		return IEC_NO_FILE;
+    	}
+    	return IEC_BUFFER_END;
+    }
+
+    virtual int pop_data(void)
+    {
+    	switch(state) {
             case e_file:
-                if(pointer == 256) {
-                    if(read_block())
+                if(pointer == last_byte) {
+                    state = e_complete;
+                    return IEC_NO_FILE; // no more data?
+                } else if(pointer == 255) {
+                    if(read_block())  // also resets pointer.
                         return IEC_READ_ERROR;
+                    else
+                    	return IEC_OK;
                 }            
                 break;
             case e_dir:                
-                if(pointer == 32) {
+                if(pointer == last_byte) {
+                    state = e_complete;
+                    return IEC_NO_FILE; // no more data?
+                } else if(pointer == 31) {
                     if(read_dir_entry())
                         return IEC_READ_ERROR;
+                    else
+                    	return IEC_OK;
                 }
                 break;
-//            case e_complete:
-//                b = 0;
-//                return IEC_LAST;
             default:
-                b = 0;
                 return IEC_NO_FILE;
         }
 
-        if(pointer == last_byte) {
-            b = buffer[pointer];
-            state = e_complete;
-            return IEC_LAST;
-        }
-        b = buffer[pointer++];
+        pointer++;
         return IEC_OK;
     }
     
@@ -112,6 +143,8 @@ public:
             memcpy(&buffer[4], "BLOCKS FREE.             \0\0\0", 28);
             last_byte = 31;
             pointer = 0;
+            prefetch_max = 31;
+            prefetch = 0;
             return 0;
         }
         printf("Dir index = %d %s\n", dir_index, (*interface->iecNames)[dir_index]);
@@ -155,6 +188,8 @@ public:
         }
         buffer[31] = 0;
         pointer = 0;
+        prefetch_max = 32;
+        prefetch = 0;
         dir_index ++;
         return 0;
     }
@@ -181,6 +216,8 @@ public:
         }
         size -= 256;
         pointer = 0;
+        prefetch = 0;
+        prefetch_max = 256;
         return 0;
     }
             
@@ -313,6 +350,8 @@ private:
             interface->readDirectory();
             state = e_dir;
             pointer = 0;
+            prefetch = 0;
+            prefetch_max = 32;
             last_byte = -1;
             size = 32;
             memcpy(buffer, c_header, 32);
@@ -356,6 +395,8 @@ private:
             printf("Successfully opened file %s in %s\n", buffer, interface->path->get_path());
             last_byte = -1;
             pointer = 0;
+            prefetch = 0;
+            prefetch_max = 256;
             state = e_file;
             if(!write) {
                 size = f->get_size();
@@ -367,7 +408,6 @@ private:
         }            
         return 0;
     }
-    
     
     int close_file(void) // file should be open
     {
@@ -399,20 +439,21 @@ public:
         last_byte = interface->get_last_error((char *)buffer) - 1;
         printf("Get last error: last = %d. buffer = %s.\n", last_byte, buffer);
         pointer = 0;
+        prefetch = 0;
+        prefetch_max = last_byte;
     	interface->last_error = ERR_OK;
     }
 
-    int pop_data(uint8_t& b)
+    int pop_data(void)
     {
         if(pointer > last_byte) {
             return IEC_NO_FILE;
         }
         if(pointer == last_byte) {
-            b = buffer[pointer];
             get_last_error();
             return IEC_LAST;
         }
-        b = buffer[pointer++];
+        pointer++;
         return IEC_OK;
     }
 

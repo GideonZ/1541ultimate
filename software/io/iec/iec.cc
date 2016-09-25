@@ -358,51 +358,61 @@ void IecInterface :: poll()
 						break;
 					case 0x43:
 						printf("{tlk} ");
+						HW_IEC_TX_FIFO_RELEASE = 1;
 						talking = true;
 						break;
 					case 0x45:
-                                                //printf("{end} ");
-                                                if (printer) {
-                                                    channel_printer->push_command(0xFF);
-                                                    printer = false;
-                                                } else {
-                                                    channels[current_channel]->push_command(0);
-                                                }
+						//printf("{end} ");
+						if (printer) {
+							channel_printer->push_command(0xFF);
+							printer = false;
+						} else {
+							channels[current_channel]->push_command(0);
+						}
 						break;
 					case 0x41:
 						atn = true;
-						talking = false;
+						printf("F");
+						if (talking) {
+							channels[current_channel]->reset_prefetch();
+							talking = false;
+						}
 						//printf("<1>", data);
 						break;
 					case 0x42:
 						atn = false;
 						//printf("<0> ", data);
 						break;
-                                        case 0x46:
-                                                printer = true;
-                                                channel_printer->push_command(0xFE);
-                                                break;
-					//default:
-						//printf("<%b> ", data);
+					case 0x47:
+						if (!printer) {
+							channels[current_channel]->pop_data();
+						}
+						break;
+					case 0x46:
+						printer = true;
+						channel_printer->push_command(0xFE);
+						break;
+					default:
+						printf("<%b> ", data);
 				}
 			} else {
 				if(atn) {
-                                        //printf("[/%b] ", data);
-                                        if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
-                                            if (printer) {
-                                                channel_printer->push_command(data & 0x7);
-                                            } else {
-                                                current_channel = int(data & 0x0F);
-                                                channels[current_channel]->push_command(data & 0xF0);
-                                            }
+					printf("[/%b] ", data);
+					if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
+						if (printer) {
+							channel_printer->push_command(data & 0x7);
+						} else {
+							current_channel = int(data & 0x0F);
+							channels[current_channel]->push_command(data & 0xF0);
+						}
 					}
 				} else {
-                                        if (printer) {
-                                            channel_printer->push_data(data);
-                                        } else {
-                                            //printf("[%b] ", data);
-                                            channels[current_channel]->push_data(data);
-                                        }
+					if (printer) {
+						channel_printer->push_data(data);
+					} else {
+						printf("[%b] ", data);
+						channels[current_channel]->push_data(data);
+					}
 				}
 			}
 			if (wait_irq) {
@@ -413,15 +423,14 @@ void IecInterface :: poll()
 		int st;
 		if(talking) {
 			while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
-				st = channels[current_channel]->pop_data(data);
-				if(st == IEC_OK)
+				st = channels[current_channel]->prefetch_data(data);
+				if(st == IEC_OK) {
 					HW_IEC_TX_DATA = data;
-				else if(st == IEC_LAST) {
-					HW_IEC_TX_CTRL = 1;
-					while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
-						;
-					HW_IEC_TX_DATA = data;
+				} else if(st == IEC_LAST) {
+					HW_IEC_TX_LAST = data;
 					talking = false;
+					break;
+				} else if(st == IEC_BUFFER_END) {
 					break;
 				} else {
 					printf("Talk Error = %d\n", st);
@@ -448,7 +457,7 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 
 	switch(cmd->functionID) {
 		case MENU_IEC_RESET:
-                        channel_printer->reset();
+			channel_printer->reset();
 			HW_IEC_RESET_ENABLE = iec_enable;
 			break;
 		case MENU_IEC_FLUSH:
@@ -576,6 +585,7 @@ void IecInterface :: start_warp(int drive)
 				// clear pending interrupt if any
 				HW_IEC_IRQ = 0;
 				// push warp command into down-fifo
+				HW_IEC_TX_FIFO_RELEASE = 1;
 				HW_IEC_TX_CTRL = IEC_CMD_GO_WARP;
 				last_track = 0;
 			} else {
@@ -618,6 +628,7 @@ void IecInterface :: start_warp_iec(void)
     // clear pending interrupt if any
     HW_IEC_IRQ = 0;
     // push warp command into down-fifo; Go!
+	HW_IEC_TX_FIFO_RELEASE = 1;
     HW_IEC_TX_CTRL = IEC_CMD_GO_WARP;
     last_track = 0;
 }
@@ -727,6 +738,7 @@ int IecInterface :: get_last_error(char *buffer)
 void IecInterface :: master_open_file(int device, int channel, char *filename, bool write)
 {
     printf("Open '%s' on device '%d', channel %d\n", filename, device, channel);
+	HW_IEC_TX_FIFO_RELEASE = 1;
     HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
     HW_IEC_TX_DATA = 0x20 | (((uint8_t)device) & 0x1F); // listen!
     HW_IEC_TX_DATA = 0xF0 | (((uint8_t)channel) & 0x0F); // open on channel x
@@ -761,6 +773,7 @@ bool IecInterface :: master_send_cmd(int device, uint8_t *cmd, int length)
     //printf("Send command on device '%d' [%s]\n", device, cmd);
     // dump_hex(cmd, length);
     
+	HW_IEC_TX_FIFO_RELEASE = 1;
     HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
     HW_IEC_TX_DATA = 0x20 | (((uint8_t)device) & 0x1F); // listen!
     HW_IEC_TX_DATA = 0x6F;
@@ -803,6 +816,7 @@ bool IecInterface :: master_send_cmd(int device, uint8_t *cmd, int length)
 void IecInterface :: master_read_status(int device)
 {
     printf("Reading status channel from device %d\n", device);
+	HW_IEC_TX_FIFO_RELEASE = 1;
     HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
     HW_IEC_TX_DATA = 0x40 | (((uint8_t)device) & 0x1F); // listen!
     HW_IEC_TX_DATA = 0x6F; // channel 15
@@ -841,6 +855,7 @@ void IecInterface :: test_master(int test)
     switch(test) {
     case 1:
         printf("Open $ on device 8\n");
+		HW_IEC_TX_FIFO_RELEASE = 1;
         HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
         HW_IEC_TX_DATA = 0x28; // listen #8!
         HW_IEC_TX_DATA = 0xF0; // open
@@ -853,6 +868,7 @@ void IecInterface :: test_master(int test)
         break;
     case 2:
         printf("Talk channel 0\n");
+		HW_IEC_TX_FIFO_RELEASE = 1;
         HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
         HW_IEC_TX_DATA = 0x48; // talk #8!!
         HW_IEC_TX_DATA = 0x60; // channel 0
@@ -860,6 +876,7 @@ void IecInterface :: test_master(int test)
         break;
     case 3:
         printf("Close file on 8\n");
+		HW_IEC_TX_FIFO_RELEASE = 1;
         HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
         HW_IEC_TX_DATA = 0x5F; // untalk
         HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
@@ -871,6 +888,7 @@ void IecInterface :: test_master(int test)
         break;
     case 4:
         printf("Reading status channel\n");
+		HW_IEC_TX_FIFO_RELEASE = 1;
         HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
         HW_IEC_TX_DATA = 0x48; // talk #8!!
         HW_IEC_TX_DATA = 0x6F; // channel 15

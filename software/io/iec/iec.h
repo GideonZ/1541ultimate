@@ -22,12 +22,15 @@
 #define HW_IEC_TX_FIFO_STATUS  *((volatile uint8_t *)(HW_IEC_REGS + 0x1)) // 1: full 0: empty
 #define HW_IEC_RX_FIFO_STATUS  *((volatile uint8_t *)(HW_IEC_REGS + 0x2)) // 7: ctrlcode 1: full 0: empty
 #define HW_IEC_RESET_ENABLE    *((volatile uint8_t *)(HW_IEC_REGS + 0x3)) // 0 = reset, 1 = run (and reset)
-#define HW_IEC_TX_DATA         *((volatile uint8_t *)(HW_IEC_REGS + 0x4)) // push data byte
-#define HW_IEC_TX_CTRL         *((volatile uint8_t *)(HW_IEC_REGS + 0x5)) // push control byte
 #define HW_IEC_RX_DATA         *((volatile uint8_t *)(HW_IEC_REGS + 0x6)) // read+clear
 #define HW_IEC_RX_CTRL         *((volatile uint8_t *)(HW_IEC_REGS + 0x7)) // read
 #define HW_IEC_RX_DATA_32      *((volatile uint32_t *)(HW_IEC_REGS + 0x8)) // read+clear
+#define HW_IEC_TX_DATA         *((volatile uint8_t *)(HW_IEC_REGS + 0x8)) // push data byte
+#define HW_IEC_TX_CTRL         *((volatile uint8_t *)(HW_IEC_REGS + 0x9)) // push control byte
+#define HW_IEC_TX_LAST         *((volatile uint8_t *)(HW_IEC_REGS + 0xA)) // push eoi byte
 #define HW_IEC_IRQ             *((volatile uint8_t *)(HW_IEC_REGS + 0xC)) // write=ack, bit0=irq enable
+#define HW_IEC_TX_FIFO_RELEASE *((volatile uint8_t *)(HW_IEC_REGS + 0xD)) // write any value to release fifo.
+
 #define HW_IEC_UP_FIFO_COUNT_LO  *((volatile uint8_t *)(HW_IEC_REGS + 0xE))
 #define HW_IEC_UP_FIFO_COUNT_HI  *((volatile uint8_t *)(HW_IEC_REGS + 0xF))
 

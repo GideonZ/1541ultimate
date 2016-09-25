@@ -60,7 +60,5 @@ void codec_init(void)
     // write CHIP_ADCDAC_CTRL to unmute DAC left and right
     i2c_write_word(0x14, SGTL5000_CHIP_ANA_CTRL, 0x0010);
     i2c_write_word(0x14, SGTL5000_CHIP_ADCDAC_CTRL, 0x0200); // unmute
-
-    U2PIO_SPEAKER_EN = 1;
 }
 
