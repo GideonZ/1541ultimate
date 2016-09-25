@@ -357,7 +357,7 @@ void IecInterface :: poll()
 						printf("{warp mode}");
 						break;
 					case 0x43:
-						printf("{tlk} ");
+						// printf("{tlk} ");
 						HW_IEC_TX_FIFO_RELEASE = 1;
 						talking = true;
 						break;
@@ -372,7 +372,6 @@ void IecInterface :: poll()
 						break;
 					case 0x41:
 						atn = true;
-						printf("F");
 						if (talking) {
 							channels[current_channel]->reset_prefetch();
 							talking = false;
@@ -393,11 +392,12 @@ void IecInterface :: poll()
 						channel_printer->push_command(0xFE);
 						break;
 					default:
-						printf("<%b> ", data);
+						//printf("<%b> ", data);
+						break;
 				}
 			} else {
 				if(atn) {
-					printf("[/%b] ", data);
+					// printf("[/%b] ", data);
 					if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
 						if (printer) {
 							channel_printer->push_command(data & 0x7);
@@ -410,7 +410,7 @@ void IecInterface :: poll()
 					if (printer) {
 						channel_printer->push_data(data);
 					} else {
-						printf("[%b] ", data);
+						// printf("[%b] ", data);
 						channels[current_channel]->push_data(data);
 					}
 				}

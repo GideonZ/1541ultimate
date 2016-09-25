@@ -88,7 +88,6 @@ public:
     	if (prefetch == last_byte) {
     		data = buffer[prefetch];
     		prefetch++;
-    		printf("L");
     		return IEC_LAST;
     	}
     	if (prefetch < prefetch_max) {
