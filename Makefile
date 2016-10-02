@@ -73,6 +73,10 @@ niosboot:
 	@$(MAKE) -C software/nios_appl_bsp
 
 nios:
+	@touch software/nios_solo_bsp/Makefile
+	@touch software/nios_solo_bsp/public.mk
+	@touch software/nios_appl_bsp/Makefile
+	@touch software/nios_appl_bsp/public.mk
 	@$(MAKE) -C software/nios_solo_bsp
 	@$(MAKE) -C software/nios_appl_bsp
 	@$(MAKE) -C target/software/nios2_elf_lwip
