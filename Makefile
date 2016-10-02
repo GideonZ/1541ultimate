@@ -73,18 +73,18 @@ niosboot:
 	@$(MAKE) -C software/nios_appl_bsp
 
 nios:
+	@$(MAKE) -C target/software/nios2_elf_lwip
+	@$(MAKE) -C target/software/nios2_loader1
+	@$(MAKE) -C target/software/nios2_loader2
+	@$(MAKE) -C target/fpga/u2plus_recovery
+	@$(MAKE) -C target/fpga/u2plus_run
+	@$(MAKE) -C software/nios_solo_bsp
+	@$(MAKE) -C software/nios_appl_bsp
 	@$(MAKE) -C target/software/nios2_ultimate
 	@$(MAKE) -C target/software/nios2_recovery
 	@$(MAKE) -C target/software/nios2_flash
 	@$(MAKE) -C target/software/nios2_update
 	@cp target/software/nios2_update/result/update.app ./update.u2p
-	
-
-prog:
-	@$(MAKE) mk2
-	@$(MAKE) -C target/fpga -f makefile_boot_700a
-	@$(MAKE) -C target/software/programmer
-	@cp target/software/programmer/result/*.bit .
 
 k1:
 	@svn up

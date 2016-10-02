@@ -671,5 +671,7 @@ begin
         end process;
     end block;    
     
-    SLOT_BUFFER_ENn <= not SLOT_VCC; -- once configured, we can connect, if there is power from the C64
+    -- SLOT_BUFFER_ENn <= not SLOT_VCC; -- once configured, we can connect, if there is power from the C64
+    SLOT_BUFFER_ENn <= '0'; -- once configured, we can connect
 end architecture;
+

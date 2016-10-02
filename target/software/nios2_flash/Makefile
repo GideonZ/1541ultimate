@@ -70,4 +70,4 @@ LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 include ../common/rules.mk
 #$(OUTPUT)/binaries.o: ultimate_recovery.swp ultimate_run.swp
 
-binaries.s: ultimate_recovery.swp ultimate_run.swp
+binaries.o: ultimate_recovery.swp ultimate_run.swp ../nios2_ultimate/result/ultimate.bin ../nios2_recovery/result/recovery.app
