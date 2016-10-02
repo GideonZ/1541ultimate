@@ -1,0 +1,1 @@
+{ "" "" "" "PLL \"*\" input clock inclk[0] is not fully compensated because it is fed by a remote clock pin *" {  } {  } 0 176598 "" 0 0 "Quartus II" 0 -1 0 ""}

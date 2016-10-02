@@ -61,7 +61,11 @@ set sys_clock "i_memphy|i_phy|i_pll|auto_generated|pll1|clk[0]"
 # Set Clock Uncertainty
 #**************************************************************
 
+set_clock_uncertainty -from { altera_reserved_tck } -to { altera_reserved_tck } 0.1
+set_clock_uncertainty -from { ref_clock } -to { ref_clock } 0.1
+set_clock_uncertainty -from { ulpi_clock } -to { ulpi_clock } 0.1
 
+derive_clock_uncertainty
 
 #**************************************************************
 # Set Input Delay
@@ -120,13 +124,13 @@ set_false_path -from {ddr2_ctrl:i_memphy|mem_io:i_phy|sys_reset_pipe[0]} -to {dd
 #**************************************************************
     
 # Set Input Delay
-set_input_delay -add_delay -clock [get_clocks ULPI_CLOCK] -max 1.5 [get_ports -no_case "ULPI_DATA* ULPI_DIR ULPI_NXT"]
-set_input_delay -add_delay -clock [get_clocks ULPI_CLOCK] -min 3.5 [get_ports -no_case "ULPI_DATA* ULPI_DIR ULPI_NXT"]
+set_input_delay -add_delay -clock [get_clocks ulpi_clock] -max 1.5 [get_ports -no_case "ULPI_DATA* ULPI_DIR ULPI_NXT"]
+set_input_delay -add_delay -clock [get_clocks ulpi_clock] -min 3.5 [get_ports -no_case "ULPI_DATA* ULPI_DIR ULPI_NXT"]
 
 # Set Output Delay
 # max output delay (measured from next clock edge) = set_up of other device.
-set_output_delay -add_delay -max -clock [get_clocks ULPI_CLOCK]  5.0 [get_ports -no_case "ULPI_DATA* ULPI_STP"]
-set_output_delay -add_delay -min -clock [get_clocks ULPI_CLOCK]  0   [get_ports -no_case "ULPI_DATA* ULPI_STP"]
+set_output_delay -add_delay -max -clock [get_clocks ulpi_clock]  5.0 [get_ports -no_case "ULPI_DATA* ULPI_STP"]
+set_output_delay -add_delay -min -clock [get_clocks ulpi_clock]  0   [get_ports -no_case "ULPI_DATA* ULPI_STP"]
 
 # Set a multicycle path on the bus turnaround
 # set_multicycle_path -setup -end -from [get_keepers -no_case "ULPI_DIR"] -to [get_keepers -no_case "ULPI_DATA*"] 2
