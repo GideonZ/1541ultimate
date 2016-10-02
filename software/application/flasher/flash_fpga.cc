@@ -18,6 +18,8 @@
 #include "dump_hex.h"
 #include "u2p.h"
 #include "bist.h"
+#include "i2c.h"
+#include "rtc.h"
 
 extern uint32_t _ultimate_recovery_rbf_start;
 extern uint32_t _ultimate_recovery_rbf_end;
@@ -70,6 +72,30 @@ int main(int argc, char *argv[])
 	codec_init();
 	int test_a = test_iec(screen);
 	int test_b = test_cartbus(screen);
+	int test_c = 0;
+
+	ENTER_SAFE_SECTION
+	i2c_write_byte(0xA2, 0x03, 0x55);
+	uint8_t rambyte = i2c_read_byte(0xA2, 0x03);
+	LEAVE_SAFE_SECTION
+	if (rambyte != 0x55)
+		test_c ++;
+
+	ENTER_SAFE_SECTION
+	i2c_write_byte(0xA2, 0x03, 0xAA);
+	rambyte = i2c_read_byte(0xA2, 0x03);
+	LEAVE_SAFE_SECTION
+	if (rambyte != 0xAA)
+		test_c ++;
+
+    char date_buffer1[32];
+    char time_buffer1[32];
+    console_print(screen, "%s ", rtc.get_long_date(date_buffer1, 32));
+	console_print(screen, "%s\n", rtc.get_time_string(time_buffer1, 32));
+
+	if (test_c) {
+		console_print(screen, "RTC does not respond (correctly)\n");
+	}
 	test_audio();
 
 	if (flash->get_number_of_pages() != 4096) {
@@ -81,6 +107,15 @@ int main(int argc, char *argv[])
 
 	flash_buffer_at(flash, screen, 0x00000, false, &_ultimate_recovery_rbf_start,   &_ultimate_recovery_rbf_end,   "V1.0", "FPGA Loader");
 	flash_buffer_at(flash, screen, 0x80000, false, &_recovery_app_start,  &_recovery_app_end,  "V1.0", "Recovery Application");
+
+    char date_buffer2[32];
+    char time_buffer2[32];
+    console_print(screen, "%s ", rtc.get_long_date(date_buffer2, 32));
+	console_print(screen, "%s\n", rtc.get_time_string(time_buffer2, 32));
+
+	// more than 1 second has passed, so the time buffers shall not be equal
+	if(strcmp(time_buffer1, time_buffer2) == 0)
+		test_c ++;
 
 	//console_print(screen, "\nConfiguring Flash write protection..\n");
 	//flash->protect_configure();
@@ -111,7 +146,7 @@ int main(int argc, char *argv[])
 	flash->protect_enable();
 	console_print(screen, "Done!                            \n");
 
-	if (test_a || test_b) {
+	if (test_a || test_b || test_c) {
 		console_print(screen, "There were errors.\n");
 		while(1)
 			;
