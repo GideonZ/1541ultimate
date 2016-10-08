@@ -51,7 +51,7 @@ set_global_assignment -name EDA_OUTPUT_DATA_FORMAT NONE -section_id eda_simulati
 set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "NO HEAT SINK WITH STILL AIR"
 set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
 set_global_assignment -name DEVICE_FILTER_PIN_COUNT 256
-set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "2.5 V"
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVCMOS"
 
 # Workaround for internal error
 set_global_assignment -name AUTO_RAM_BLOCK_BALANCING OFF
@@ -205,6 +205,11 @@ set_location_assignment PIN_J16 -to AUDIO_SDO
 set_location_assignment PIN_K16 -to AUDIO_BCLK
 set_location_assignment PIN_J14 -to AUDIO_LRCLK
 
+set_location_assignment PIN_K5 -to BOARD_REVn[0]
+set_location_assignment PIN_F8 -to BOARD_REVn[1]
+set_location_assignment PIN_E7 -to BOARD_REVn[2]
+set_location_assignment PIN_E6 -to BOARD_REVn[3]
+set_location_assignment PIN_D5 -to BOARD_REVn[4]
 
 set_location_assignment PIN_N16 -to MDIO_CLK
 set_location_assignment PIN_L16 -to MDIO_DATA
@@ -220,6 +225,7 @@ set_location_assignment PIN_J13 -to I2C_SDA_18
 set_location_assignment PIN_E8 -to SLOT_BUFFER_ENn
 
 
+set_instance_assignment -name IO_STANDARD "1.8 V" -to BOARD_REVn[0]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_BCLK
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_LRCLK
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_MCLK
@@ -229,7 +235,7 @@ set_instance_assignment -name IO_STANDARD "1.8 V" -to BUTTON[0]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to BUTTON[1]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to BUTTON[2]
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_MOTOR
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_READ
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to CAS_READ
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_SENSE
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_WRITE
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_CSn
@@ -363,7 +369,14 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to I2C_SDA_18
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to RMII_CRS_DV
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SLOT_RSTn
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to UART_RXD
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to CAS_WRITE
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to CAS_SENSE
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BUTTON[2]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[4]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[3]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[2]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[1]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[0]
 
 set_global_assignment -name GENERATE_RBF_FILE ON
 set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON

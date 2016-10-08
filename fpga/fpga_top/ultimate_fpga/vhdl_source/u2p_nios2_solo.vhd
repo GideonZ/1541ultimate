@@ -114,6 +114,9 @@ port (
     HUB_RESETn  : out   std_logic := '1';
     HUB_CLOCK   : out   std_logic := '0';
 
+	-- Misc
+	BOARD_REVn  : in    std_logic_vector(4 downto 0);
+
     -- Cassette Interface
     CAS_MOTOR   : in    std_logic := '0';
     CAS_SENSE   : inout std_logic := 'Z';
@@ -372,6 +375,7 @@ begin
         i2c_sda_o  => i2c_sda_o,
         iec_i      => sw_iec_i,
         iec_o      => sw_iec_o,
+        board_rev  => not BOARD_REVn,
         eth_irq_i  => ETH_IRQn,
         speaker_en => SPEAKER_ENABLE,
         hub_reset_n=> HUB_RESETn,

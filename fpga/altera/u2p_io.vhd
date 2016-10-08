@@ -23,7 +23,8 @@ port (
 
     iec_i       : in  std_logic_vector(3 downto 0);
     iec_o       : out std_logic_vector(3 downto 0);
-    
+
+    board_rev   : in  std_logic_vector(4 downto 0);    
     eth_irq_i   : in  std_logic;
     hub_reset_n : out std_logic;
     speaker_en  : out std_logic;
@@ -60,6 +61,7 @@ begin
                     io_resp.data(0) <= mdio_i;
                 when X"C" =>
                     io_resp.data(0) <= speaker_en_i;
+                    io_resp.data(7 downto 3) <= board_rev;
                 when X"D" =>
                     io_resp.data(0) <= hub_reset_i;
                 when X"E" =>
