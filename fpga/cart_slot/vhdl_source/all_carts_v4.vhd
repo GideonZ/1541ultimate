@@ -87,6 +87,9 @@ architecture gideon of all_carts_v4 is
     constant c_epyx         : std_logic_vector(4 downto 0) := "01110";
     constant c_kcs          : std_logic_vector(4 downto 0) := "10000";
     constant c_fc           : std_logic_vector(4 downto 0) := "10001";
+    constant c_comal80      : std_logic_vector(4 downto 0) := "10010";
+    constant c_sbasic       : std_logic_vector(4 downto 0) := "10011";
+    constant c_westermann   : std_logic_vector(4 downto 0) := "10100";
     
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -324,6 +327,46 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= '1';
 
+            when c_comal80 => -- 64K, 4x16K banks
+                if io_write='1' and io_addr(8)='0' and cart_en='1' then -- DE00-DEFF
+                    bank_bits <= io_wdata(1 downto 0) & '0';
+                end if;
+                game_n    <= '0';
+                exrom_n   <= '0';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
+            when c_sbasic => -- 16K, upper 8k enabled by writing to DExx
+                             -- and disabled by reading
+                if io_write='1' and io_addr(8)='0' and cart_en='1' then
+                    mode_bits(0) <= '1';
+                elsif io_read='1' and io_addr(8)='0' and cart_en='1' then
+                    mode_bits(0) <= '0';
+                end if;
+                game_n    <= not mode_bits(0);
+                exrom_n   <= '0';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
+            when c_westermann => -- 16K, upper 8k disabled by reading to DFxx
+                             -- and disabled by reading
+                if io_read='1' and io_addr(8)='1' and cart_en='1' then
+                    mode_bits(0) <= '1';
+                end if;
+                game_n    <= mode_bits(0);
+                exrom_n   <= '0';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
             when c_epyx =>
                 game_n    <= '1';
                 exrom_n   <= epyx_timeout;
@@ -511,7 +554,7 @@ begin
                 mem_addr_i <= g_rom_base(27 downto 20) & slot_addr(13) & ext_bank & bank_bits & slot_addr(12 downto 0);
             end if;
 
-        when c_fc3 =>
+        when c_fc3 | c_comal80 =>
             mem_addr_i(15 downto 0) <= bank_bits(15 downto 14) & slot_addr(13 downto 0); -- 16K banks
             
         when c_ss5 =>
@@ -551,9 +594,14 @@ begin
                mem_addr_i <= g_rom_base(27 downto 14) & slot_addr(13 downto 0);
             end if;
 
-        when c_fc =>
+        when c_fc | c_westermann =>
             -- rom access
             mem_addr_i <= g_rom_base(27 downto 14) & slot_addr(13 downto 0);
+
+        when c_sbasic =>
+            -- rom access
+            mem_addr_i <= g_rom_base(27 downto 13) & slot_addr(12 downto 0);
+	    mem_addr_i(19) <= slot_addr(13);
 
         when others =>
             null;

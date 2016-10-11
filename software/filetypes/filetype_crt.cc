@@ -59,20 +59,23 @@ struct t_cart {
 #define CART_SYSTEM3   10
 #define CART_KCS       11
 #define CART_FINAL12   12
+#define CART_COMAL80   13
+#define CART_SBASIC    14
+#define CART_WESTERMANN 15
 
 const struct t_cart c_recognized_carts[] = {
     {  0, CART_NORMAL,    "Normal cartridge" },
     {  1, CART_ACTION,    "Action Replay" },
     {  2, CART_KCS,       "KCS Power Cartridge" },
     {  3, CART_FINAL3,    "Final Cartridge III" },
-    {  4, CART_NOT_IMPL,  "Simons Basic" },
+    {  4, CART_SBASIC,    "Simons Basic" },
     {  5, CART_OCEAN,     "Ocean type 1 (256 and 128 Kb)" },
     {  6, CART_NOT_IMPL,  "Expert Cartridge" },
     {  7, CART_NOT_IMPL,  "Fun Play" },
     {  8, CART_NOT_IMPL,  "Super Games" },
     {  9, CART_RETRO,     "Atomic Power" },
     { 10, CART_EPYX,      "Epyx Fastload" },
-    { 11, CART_NOT_IMPL,  "Westermann" },
+    { 11, CART_WESTERMANN,"Westermann" },
     { 12, CART_NOT_IMPL,  "Rex" },
     { 13, CART_FINAL12,   "Final Cartridge I" },
     { 14, CART_NOT_IMPL,  "Magic Formel" },
@@ -82,7 +85,7 @@ const struct t_cart c_recognized_carts[] = {
     { 18, CART_NOT_IMPL,  "Zaxxon" },
     { 19, CART_DOMARK,    "Magic Desk, Domark, HES Australia" },
     { 20, CART_SUPERSNAP, "Super Snapshot 5" },
-    { 21, CART_NOT_IMPL,  "COMAL 80" },
+    { 21, CART_COMAL80,   "COMAL 80" },
     { 32, CART_EASYFLASH, "EasyFlash" },
     { 0xFFFF, 0xFFFF, "" } }; 
     
@@ -379,7 +382,15 @@ void FileTypeCRT :: configure_cart(void)
         case CART_FINAL12:
             C64_CARTRIDGE_TYPE = CART_TYPE_FINAL12; // System3
             break;
-
+        case CART_COMAL80:
+            C64_CARTRIDGE_TYPE = CART_TYPE_COMAL80; // Comal 80
+            break;
+        case CART_SBASIC:
+            C64_CARTRIDGE_TYPE = CART_TYPE_SBASIC; // Simons Basic
+            break;
+        case CART_WESTERMANN:
+            C64_CARTRIDGE_TYPE = CART_TYPE_WESTERMANN; // Westermann
+            break;
 
         default:
             break;
