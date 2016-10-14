@@ -475,7 +475,8 @@ begin
         exrom_n         => exrom_n,
         game_n          => game_n,
     
-        CART_LEDn       => cart_led_n );
+        CART_LEDn       => cart_led_n,
+	size_ctrl       => control.reu_size );
 
 
     r_sid: if g_implement_sid generate

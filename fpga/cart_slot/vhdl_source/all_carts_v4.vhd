@@ -9,7 +9,10 @@ entity all_carts_v4 is
 generic (
     g_kernal_base   : std_logic_vector(27 downto 0) := X"0ECC000"; -- multiple of 16K
     g_rom_base      : std_logic_vector(27 downto 0) := X"0F00000"; -- multiple of 1M
+    g_georam_base   : std_logic_vector(27 downto 0) := X"1000000"; -- Shared with reu
     g_ram_base      : std_logic_vector(27 downto 0) := X"0EF0000" ); -- multiple of 64K
+
+
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -46,7 +49,9 @@ port (
     exrom_n         : out std_logic;
     game_n          : out std_logic;
 
-    CART_LEDn       : out std_logic );
+    CART_LEDn       : out std_logic;
+
+    size_ctrl       : in  std_logic_vector(2 downto 0) := "001" );
 
 end all_carts_v4;    
 
@@ -57,6 +62,7 @@ architecture gideon of all_carts_v4 is
     signal bank_bits    : std_logic_vector(15 downto 13);
     signal mode_bits    : std_logic_vector(2 downto 0);
     signal ram_select   : std_logic;
+    signal georam_bank  : std_logic_vector(15 downto 0);
     
 --    signal rom_enable   : std_logic;
 
@@ -90,6 +96,7 @@ architecture gideon of all_carts_v4 is
     constant c_comal80      : std_logic_vector(4 downto 0) := "10010";
     constant c_sbasic       : std_logic_vector(4 downto 0) := "10011";
     constant c_westermann   : std_logic_vector(4 downto 0) := "10100";
+    constant c_georam       : std_logic_vector(4 downto 0) := "10101";
     
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -100,7 +107,20 @@ architecture gideon of all_carts_v4 is
     signal io_write         : std_logic;
     signal io_addr          : std_logic_vector(8 downto 0);
     signal io_wdata         : std_logic_vector(7 downto 0);
+    signal georam_mask      : std_logic_vector(15 downto 0);
+
 begin
+    with size_ctrl select georam_mask <=
+        "0000000111111111" when "000",
+        "0000001111111111" when "001",
+        "0000011111111111" when "010",
+        "0000111111111111" when "011",
+        "0001111111111111" when "100",
+        "0011111111111111" when "101",
+        "0111111111111111" when "110",
+        "1111111111111111" when others;
+
+
     serve_enable <= cart_en or kernal_enable;
     cart_active  <= cart_en;
 
@@ -123,6 +143,7 @@ begin
                 mode_bits    <= (others => '0');
                 bank_bits    <= (others => '0');
                 ext_bank     <= (others => '0');
+		georam_bank  <= (others => '0');
                 allow_bank   <= '0';
                 ram_select   <= '0';
                 do_io2       <= '1';
@@ -367,6 +388,23 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= '1';
 
+            when c_georam =>
+	        if io_write='1' and io_addr(8 downto 7) = "11" and cart_en='1' then
+		   if io_addr(0) = '0' then
+		      georam_bank(5 downto 0) <= io_wdata(5 downto 0) and georam_mask(5 downto 0);
+		      georam_bank(15 downto 14) <= io_wdata(7 downto 6) and georam_mask(15 downto 14);
+		   else
+		      georam_bank(13 downto 6) <= io_wdata(7 downto 0) and georam_mask(13 downto 6);
+	           end if; 
+		end if;
+                game_n    <= '1';
+                exrom_n   <= '1';
+                serve_rom <= '1';
+                serve_io1 <= '1';
+                serve_io2 <= '1';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
             when c_epyx =>
                 game_n    <= '1';
                 exrom_n   <= epyx_timeout;
@@ -495,7 +533,7 @@ begin
 
     -- determine address
 --  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -602,6 +640,12 @@ begin
             -- rom access
             mem_addr_i <= g_rom_base(27 downto 13) & slot_addr(12 downto 0);
 	    mem_addr_i(19) <= slot_addr(13);
+
+        when c_georam =>
+	   if slot_addr(15 downto 8)=X"DE" then
+	      mem_addr_i <= g_georam_base(27 downto 24) & georam_bank(15 downto 0) & slot_addr(7 downto 0); 
+	      allow_write <= '1';
+	   end if;
 
         when others =>
             null;
