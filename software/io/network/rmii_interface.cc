@@ -115,9 +115,7 @@ void RmiiInterface :: rmiiTask(void)
 
     struct EthPacket pkt;
     while(1) {
-		if (xQueueReceive(queue, &pkt, 200) == pdTRUE) {
-			input_packet(&pkt);
-		} else {
+    	if (!link_up) {
 			uint16_t status = mdio_read(1);
 			if(status & 0x04) {
 				if(!link_up) {
@@ -127,6 +125,13 @@ void RmiiInterface :: rmiiTask(void)
 					link_up = true;
 				}
 			} else {
+				vTaskDelay(50);
+			}
+    	} else if (xQueueReceive(queue, &pkt, 200) == pdTRUE) {
+			input_packet(&pkt);
+		} else { // Link is up, but not received a packet in 1 second
+			uint16_t status = mdio_read(1);
+			if ((status & 0x04) == 0) {
 				if(link_up) {
 					printf("Bringing link down.\n");
 					if (netstack)
