@@ -55,11 +55,13 @@ struct t_cart {
 #define CART_EPYX      8
 #define CART_FINAL3    9
 #define CART_SYSTEM3   10
+#define CART_KCS       11
+#define CART_FINAL12   12
 
 const struct t_cart c_recognized_carts[] = {
     {  0, CART_NORMAL,    "Normal cartridge" },
     {  1, CART_ACTION,    "Action Replay" },
-    {  2, CART_NOT_IMPL,  "KCS Power Cartridge" },
+    {  2, CART_KCS,       "KCS Power Cartridge" },
     {  3, CART_FINAL3,    "Final Cartridge III" },
     {  4, CART_NOT_IMPL,  "Simons Basic" },
     {  5, CART_OCEAN,     "Ocean type 1 (256 and 128 Kb)" },
@@ -70,7 +72,7 @@ const struct t_cart c_recognized_carts[] = {
     { 10, CART_EPYX,      "Epyx Fastload" },
     { 11, CART_NOT_IMPL,  "Westermann" },
     { 12, CART_NOT_IMPL,  "Rex" },
-    { 13, CART_NOT_IMPL,  "Final Cartridge I" },
+    { 13, CART_FINAL12,   "Final Cartridge I" },
     { 14, CART_NOT_IMPL,  "Magic Formel" },
     { 15, CART_SYSTEM3,   "C64 Game System" },
     { 16, CART_NOT_IMPL,  "Warpspeed" },
@@ -207,6 +209,11 @@ bool FileTypeCRT :: check_header(File *f)
                 printf("Not implemented.\n");
                 return false;
             }
+	    if(type_select == CART_KCS) {
+	        /* Bug in many KCS CRT images, wrong header size */
+	        crt_header[0x10]=crt_header[0x11]=crt_header[0x12]=0;
+		crt_header[0x13]=0x40;
+	    }
             return true;
         }
         idx++;
@@ -243,6 +250,9 @@ bool FileTypeCRT :: read_chip_packet(File *f)
             split = true;
 
     DWORD mem_addr = ((DWORD)C64_CARTRIDGE_RAM_BASE) << 16;
+    if(type_select == CART_KCS){
+        mem_addr += load - 0x8000;
+    } else {
     if(split)
         mem_addr += 0x2000 * DWORD(bank);
     else
@@ -253,7 +263,8 @@ bool FileTypeCRT :: read_chip_packet(File *f)
         load_at_a000 = true;
     }
     printf("Reading chip data for bank %d to $%4x with size $%4x to 0x%8x. %s\n", bank, load, size, mem_addr, (split)?"Split":"Contiguous");
-    
+    }
+
     if(size) {
         if(split) {
             res = f->read((void *)mem_addr, 0x2000, &bytes_read);
@@ -293,6 +304,8 @@ bool FileTypeCRT :: read_chip_packet(File *f)
     constant c_ocean256     : X"B";
     constant c_easy_flash   : X"C";
     constant c_epyx         : X"E";
+    constant c_kcs          : X"10";
+    constant c_fc           : X"11";
 */
 
 void FileTypeCRT :: configure_cart(void)
@@ -381,6 +394,12 @@ void FileTypeCRT :: configure_cart(void)
             break;
         case CART_SYSTEM3:
             C64_CARTRIDGE_TYPE = 0x08; // System3
+            break;
+        case CART_KCS:
+            C64_CARTRIDGE_TYPE = 0x10; // KCS Power Cartridge
+            break;
+        case CART_FINAL12:
+            C64_CARTRIDGE_TYPE = 0x11; // Final Cartridge 1 & 2
         default:
             break;
     }
