@@ -349,7 +349,7 @@ begin
                 nmi_n     <= '1';
 
             when c_comal80 => -- 64K, 4x16K banks
-                if io_write='1' and io_addr(8)='0' and cart_en='1' then -- DE00-DEFF
+                if io_write='1' and io_addr(8)='0' then -- DE00-DEFF
                     bank_bits <= io_wdata(1 downto 0) & '0';
                 end if;
                 game_n    <= '0';
@@ -362,9 +362,9 @@ begin
 
             when c_sbasic => -- 16K, upper 8k enabled by writing to DExx
                              -- and disabled by reading
-                if io_write='1' and io_addr(8)='0' and cart_en='1' then
+                if io_write='1' and io_addr(8)='0' then
                     mode_bits(0) <= '1';
-                elsif io_read='1' and io_addr(8)='0' and cart_en='1' then
+                elsif io_read='1' and io_addr(8)='0' then
                     mode_bits(0) <= '0';
                 end if;
                 game_n    <= not mode_bits(0);
@@ -377,7 +377,7 @@ begin
 
             when c_westermann => -- 16K, upper 8k disabled by reading to DFxx
                              -- and disabled by reading
-                if io_read='1' and io_addr(8)='1' and cart_en='1' then
+                if io_read='1' and io_addr(8)='1' then
                     mode_bits(0) <= '1';
                 end if;
                 game_n    <= mode_bits(0);
@@ -389,7 +389,7 @@ begin
                 nmi_n     <= '1';
 
             when c_georam =>
-	        if io_write='1' and io_addr(8 downto 7) = "11" and cart_en='1' then
+	        if io_write='1' and io_addr(8 downto 7) = "11" then
 		   if io_addr(0) = '0' then
 		      georam_bank(5 downto 0) <= io_wdata(5 downto 0) and georam_mask(5 downto 0);
 		      georam_bank(15 downto 14) <= io_wdata(7 downto 6) and georam_mask(15 downto 14);
