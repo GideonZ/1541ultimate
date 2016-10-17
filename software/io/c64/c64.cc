@@ -55,14 +55,15 @@ char *cart_mode[] = { "None",
                       "Final Cart III",
                       "Action Replay V4.2 PAL",
                       "Action Replay V6.0 PAL",
-                      "Retro Replay V3.8p PAL",
+                      "Retro Replay V3.8q PAL",
                       "SuperSnapshot V5.22 PAL",
                       "TAsm / CodeNet PAL",
                       "Action Replay V5.0 NTSC",
-                      "Retro Replay V3.8a NTSC",
+                      "Retro Replay V3.8y NTSC",
                       "SuperSnapshot V5.22 NTSC",
                       "TAsm / CodeNet NTSC",
                       "Epyx Fastloader",
+		      "GeoRAM",
                       "Custom 8K ROM",
                       "Custom 16K ROM",
 /*
@@ -87,6 +88,7 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_SS5NTSC,   0x000000, 0x10000,  0x05 | CART_REU },
                           { FLASH_ID_TAR_NTSC,  0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
                           { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0E },
+                          { 0x00,               0x000000, 0x04000,  0x12 }, // GeoRam
                           { 0x00,               0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
                           { 0x00,               0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
 /*
@@ -118,7 +120,7 @@ char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
 
 struct t_cfg_definition c64_config[] = {
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 15, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 16, 4 },
     { CFG_C64_CUSTOM,   CFG_TYPE_STRING, "Custom Cart ROM",              "%s", NULL,       1, 31, (int)"cart.bin" },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_KERNFILE, CFG_TYPE_STRING, "Alternate Kernal File",        "%s", NULL,       1, 36, (int)"kernal.rom" },
@@ -198,8 +200,8 @@ void C64 :: set_emulation_flags(cart_def *def)
         if(cfg->get_value(CFG_C64_REU_EN)) {
         	printf("Enabling REU!!\n");
         	C64_REU_ENABLE = 1;
-            C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
         }
+        C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
         if(CAPABILITIES & CAPAB_SAMPLER) {
             printf("Sampler found in FPGA... IO map: ");
             if(cfg->get_value(CFG_C64_MAP_SAMP)) {
