@@ -26,7 +26,7 @@ port (
     unfreeze        : out std_logic; -- indicates the freeze logic to switch back to non-freeze mode.
     
     cart_kill       : in  std_logic;
-    cart_logic      : in  std_logic_vector(4 downto 0);   -- 1 out of 16 logic emulations
+    cart_logic      : in  std_logic_vector(4 downto 0);   -- 1 out of 32 logic emulations
     
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
@@ -92,6 +92,8 @@ architecture gideon of all_carts_v4 is
     constant c_sbasic       : std_logic_vector(4 downto 0) := "10000";
     constant c_westermann   : std_logic_vector(4 downto 0) := "10001";
     constant c_georam       : std_logic_vector(4 downto 0) := "10010";
+    constant c_kcs          : std_logic_vector(4 downto 0) := "10011";
+    constant c_fc           : std_logic_vector(4 downto 0) := "10100";
 
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -402,7 +404,99 @@ begin
                 serve_io2 <= '1'; -- rom visible df00-dfff
                 irq_n     <= '1';
                 nmi_n     <= '1';
-            
+
+            when c_kcs =>
+	    	-- mode_bit(0) -> ULTIMAX
+		-- mode_bit(1) -> 16K Mode
+		-- io1 read
+                if io_read='1' and io_addr(8) = '0' then -- DE00-DEFF
+		    game_n       <= '1';                 -- When read and addr bit 1=0 : 8k GAME mode
+		    exrom_n   	 <= io_addr(1);          -- When read and addr bit 1=1 : Cartridge disabled mode
+		    mode_bits(0) <= '0';
+                    mode_bits(1) <= '0';
+		end if;
+		-- io1 write
+                if io_write='1' and io_addr(8 downto 7) = "01" then -- DE80-DEFF
+                    game_n       <= '0';        -- When write 16K GAME mode
+                    exrom_n      <= '0';
+                    mode_bits(0) <= '0';
+                    mode_bits(1) <= '1';
+                end if;
+                if io_write='1' and io_addr(8 downto 7) = "00" then -- DE00-DE7F
+		    if mode_bits(1) = '1' then      -- Already in 16K Mode
+                        exrom_n      <= '1';        -- When write ULTIMAX mode
+                        mode_bits(0) <= '1';
+		        mode_bits(1) <= '0';
+                    elsif mode_bits(0) = '1' then   -- Already in ULTIMAX mode
+                        game_n       <= io_addr(1); -- When addr bit 1=0 : 16k GAME mode
+                        exrom_n      <= '0';        -- When addr bit 1=1 : 8k GAME mode
+                        mode_bits(0) <= '0';
+                        mode_bits(1) <= not io_addr(1);
+                    end if;
+                end if;
+		-- io2 read
+                if io_read='1' and io_addr(8 downto 7) = "11" then -- DF80-DFFF
+		    unfreeze     <= '1';	-- When read : release freeze
+		end if;
+		-- on freeze
+                if freeze_act='1' then
+                    game_n       <= '0'; 	-- ULTIMAX mode
+                    exrom_n      <= '1';
+		    mode_bits(0) <= '1';
+                    mode_bits(1) <= '0';
+		end if;
+		-- on reset
+                if reset_in='1' then
+                    game_n       <= '0'; 	-- 16K GAME mode
+                    exrom_n      <= '0';
+		    mode_bits(0) <= '0';
+                    mode_bits(1) <= '1';
+                end if;
+                serve_io1 <= '1';
+                serve_io2 <= '1';
+                serve_rom <= '1';
+		serve_vic <= mode_bits(0);
+                nmi_n     <= not(freeze_trig or freeze_act);
+
+            when c_fc =>
+		-- io1 access
+                if io_read='1' and io_addr(8) = '0' then -- DE00-DEFF
+                    game_n    <= '1';		-- Cartridge disabled mode
+                    exrom_n   <= '1';
+		    unfreeze  <= '1';
+                end if;
+                if io_write='1' and io_addr(8) = '0' then -- DE00-DEFF
+                    game_n    <= '1';		-- Cartridge disabled mode
+                    exrom_n   <= '1';
+		    unfreeze  <= '1';
+                end if;
+		-- io2 access
+                if io_read='1' and io_addr(8) = '1' then -- DE00-DEFF
+                    game_n    <= '0';		-- 16K GAME mode
+                    exrom_n   <= '0';
+		    unfreeze  <= '1';
+                end if;
+                if io_write='1' and io_addr(8) = '1' then -- DE00-DEFF
+                    game_n    <= '0';		-- 16K GAME mode
+                    exrom_n   <= '0';
+		    unfreeze  <= '1';
+                end if;
+		-- on freeze
+                if freeze_trig='1' then
+                    game_n       <= '0'; 	-- ULTIMAX mode
+                    exrom_n      <= '1';
+		end if;
+		-- on reset/init
+                if reset_in='1' then
+                    game_n       <= '0'; 	-- 16K GAME mode
+                    exrom_n      <= '0';
+ 		    unfreeze     <= '1';
+                end if;
+                serve_io1 <= '1';
+                serve_io2 <= '1';
+                serve_rom <= '1';
+                nmi_n     <= not(freeze_trig or freeze_act);
+
             when others =>
                 game_n    <= '1';
                 exrom_n   <= '1';
@@ -526,6 +620,20 @@ begin
 	      mem_addr_i <= g_georam_base(27 downto 24) & georam_bank(15 downto 0) & slot_addr(7 downto 0);
 	      allow_write <= '1';
 	   end if;
+
+        when c_kcs =>
+	    -- io2 ram access
+            if slot_addr(15 downto 8) = X"DF" then
+		mem_addr_i <= g_ram_base(27 downto 7) & slot_addr(6 downto 0);
+                allow_write <= '1';
+	    else
+	    	-- rom access
+            	mem_addr_i <= g_rom_base(27 downto 14) & slot_addr(13 downto 0);
+            end if;
+
+        when c_fc =>
+	    -- rom access
+            mem_addr_i <= g_rom_base(27 downto 14) & slot_addr(13 downto 0);
 
         when others =>
             null;
