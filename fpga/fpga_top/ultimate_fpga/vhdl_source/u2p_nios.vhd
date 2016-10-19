@@ -353,7 +353,7 @@ begin
         g_icap          => false,
         g_uart          => true,
         g_drive_1541    => true,
-        g_drive_1541_2  => false,
+        g_drive_1541_2  => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
