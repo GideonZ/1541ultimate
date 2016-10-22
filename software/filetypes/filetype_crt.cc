@@ -62,6 +62,7 @@ struct t_cart {
 #define CART_COMAL80   13
 #define CART_SBASIC    14
 #define CART_WESTERMANN 15
+#define CART_BBASIC    16
 
 const struct t_cart c_recognized_carts[] = {
     {  0, CART_NORMAL,    "Normal cartridge" },
@@ -108,7 +109,7 @@ const struct t_cart c_recognized_carts[] = {
     { 51, CART_NOT_IMPL,  "MACH 5" },
     { 52, CART_NOT_IMPL,  "Diashow Maker" },
     { 53, CART_NOT_IMPL,  "Pagefox" },
-    { 54, CART_NOT_IMPL,  "Kingsoft Business Basic" },
+    { 54, CART_BBASIC,    "Kingsoft Business Basic" },
     { 55, CART_NOT_IMPL,  "Silver Rock 128" },
     { 56, CART_NOT_IMPL,  "Formel 64" },
     { 57, CART_NOT_IMPL,  "RGCD" },
@@ -418,6 +419,9 @@ void FileTypeCRT :: configure_cart(void)
             break;
         case CART_WESTERMANN:
             C64_CARTRIDGE_TYPE = CART_TYPE_WESTERMANN; // Westermann
+            break;
+        case CART_BBASIC:
+            C64_CARTRIDGE_TYPE = CART_TYPE_BBASIC; // Business Basic
             break;
 
         default:
