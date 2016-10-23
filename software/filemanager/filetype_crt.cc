@@ -284,6 +284,8 @@ bool FileTypeCRT :: read_chip_packet(File *f)
     DWORD mem_addr = ((DWORD)C64_CARTRIDGE_RAM_BASE) << 16;
     if(type_select == CART_KCS){
         mem_addr += load - 0x8000;
+    } else if(type_select == CART_NORMAL) {
+       mem_addr += (load & 0x2000); // use bit 13 of the load address
     } else {
     if(split)
         mem_addr += 0x2000 * DWORD(bank);
@@ -370,11 +372,11 @@ void FileTypeCRT :: configure_cart(void)
 
     switch(type_select) {
         case CART_NORMAL:
-            if ((crt_header[0x18] == 0) && (crt_header[0x19] == 1)) {
+            if ((crt_header[0x18] == 1) && (crt_header[0x19] == 0)) {
                 C64_CARTRIDGE_TYPE = 0x03; // Ultimax
-            } else if ((crt_header[0x18] == 1) && (crt_header[0x19] == 1)) {
+            } else if ((crt_header[0x18] == 0) && (crt_header[0x19] == 0)) {
                 C64_CARTRIDGE_TYPE = 0x02; // 16K
-            } else if ((crt_header[0x18] == 1) && (crt_header[0x19] == 0)) {
+            } else if ((crt_header[0x18] == 0) && (crt_header[0x19] == 1)) {
                 C64_CARTRIDGE_TYPE = 0x01; // 8K
             } else {
                 if (total_read > 8192)
