@@ -60,6 +60,7 @@ struct t_cart {
 #define CART_WESTERMANN 13
 #define CART_KCS       14
 #define CART_FINAL12   15
+#define CART_BBASIC    16
 
 const struct t_cart c_recognized_carts[] = {
     {  0, CART_NORMAL,    "Normal cartridge" },
@@ -106,7 +107,7 @@ const struct t_cart c_recognized_carts[] = {
     { 51, CART_NOT_IMPL,  "MACH 5" },
     { 52, CART_NOT_IMPL,  "Diashow Maker" },
     { 53, CART_NOT_IMPL,  "Pagefox" },
-    { 54, CART_NOT_IMPL,  "Kingsoft Business Basic" },
+    { 54, CART_BBASIC,    "Kingsoft Business Basic" },
     { 55, CART_NOT_IMPL,  "Silver Rock 128" },
     { 56, CART_NOT_IMPL,  "Formel 64" },
     { 57, CART_NOT_IMPL,  "RGCD" },
@@ -440,6 +441,10 @@ void FileTypeCRT :: configure_cart(void)
             break;
         case CART_FINAL12:
             C64_CARTRIDGE_TYPE = 0x14; // Final Cartridge 1 & 2
+            break;
+        case CART_BBASIC:
+            C64_CARTRIDGE_TYPE = 0x15; // Business Basic
+            break;
         default:
             break;
     }

@@ -94,6 +94,7 @@ architecture gideon of all_carts_v4 is
     constant c_georam       : std_logic_vector(4 downto 0) := "10010";
     constant c_kcs          : std_logic_vector(4 downto 0) := "10011";
     constant c_fc           : std_logic_vector(4 downto 0) := "10100";
+    constant c_bbasic       : std_logic_vector(4 downto 0) := "10101";
 
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -396,6 +397,28 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= '1';
 
+            when c_bbasic =>
+                if io_write='1' and io_addr(8)='0' then
+                    mode_bits(0) <= '0';
+                elsif io_read='1' and io_addr(8)='0' then
+                    mode_bits(0) <= '1';
+                end if;
+		if mode_bits(0)='1' then
+                   game_n    <= '0';
+                   exrom_n   <= '0';
+	        elsif slot_addr(15)='1' and not(slot_addr(14 downto 13) = "10") then
+                   game_n    <= '0';
+                   exrom_n   <= '1';
+                else
+                   game_n    <= '1';
+                   exrom_n   <= '1';
+		end if;		
+                serve_rom <= '1';
+                serve_io1 <= '1';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
             when c_epyx =>
                 game_n    <= '1';
                 exrom_n   <= epyx_timeout;
@@ -614,6 +637,16 @@ begin
         when c_sbasic =>
             mem_addr_i(19) <= slot_addr(13);
             mem_addr_i(12 downto 0) <= slot_addr(12 downto 0);
+
+        when c_bbasic =>
+            -- rom access
+	    if slot_addr(15 downto 13)="100" then
+               mem_addr_i <= g_rom_base(27 downto 15) & "00" & slot_addr(12 downto 0);
+	    elsif slot_addr(15 downto 13)="101" then
+               mem_addr_i <= g_rom_base(27 downto 15) & "01" & slot_addr(12 downto 0);
+	    elsif slot_addr(15 downto 13)="111" then
+               mem_addr_i <= g_rom_base(27 downto 15) & "10" & slot_addr(12 downto 0);
+            end if;
 
         when c_georam =>
 	   if slot_addr(15 downto 8)=X"DE" then
