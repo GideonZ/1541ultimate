@@ -91,7 +91,7 @@ const struct t_cart c_recognized_carts[] = {
     { 33, CART_NOT_IMPL,  "EasyFlash X-Bank" },
     { 34, CART_NOT_IMPL,  "Capture" },
     { 35, CART_NOT_IMPL,  "Action Replay 3" },
-    { 36, CART_NOT_IMPL,  "Retro Replay" },
+    { 36, CART_ACTION,    "Retro Replay" },
     { 37, CART_NOT_IMPL,  "MMC64" },
     { 38, CART_NOT_IMPL,   "MMC Replay" },
     { 39, CART_NOT_IMPL,  "IDE64" },
