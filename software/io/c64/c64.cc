@@ -88,18 +88,18 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0E },
                           { FLASH_ID_KCS,       0x000000, 0x04000,  0x10 },
                           { 0x00,               0x000000, 0x04000,  0x15 }, // GeoRam
-                          { 0x00,               0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
-                          { 0x00,               0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
 /*
                           { 0x00,               0x000000, 0x80000,  0x08 | CART_REU },
                           { 0x00,               0x000000, 0x80000,  0x0A | CART_REU },
                           { 0x00,               0x000000, 0x80000,  0x0B | CART_REU },
                           { 0x00,               0x000000, 0x10000,  0x04 },
 */
-                          { 0x00,               0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
-                          { 0x00,               0x000000, 0x10000,  0x05 | CART_REU },
-                          { 0x00,               0x000000, 0x04000,  0x10 },
-                          { 0x00,               0x000000, 0x04000,  0x11 }
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x05 | CART_REU },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x10 },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x11 }
  };
                           
 const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
@@ -110,7 +110,7 @@ const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns
 const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
 
 struct t_cfg_definition c64_config[] = {
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 13, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 19, 4 },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
