@@ -71,7 +71,7 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         count++;
       }
 
-    if(size == 65536 || size == 16384 || size == 8192) {
+    if(size == 65536 || size == 32768 || size == 16384 || size == 8192) {
       list.append(new Action("Use as Cartridge ROM", FileTypeBin :: execute_st, CMD_SET_CARTROM, (int)this));
       count++;
     }    
