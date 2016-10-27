@@ -64,6 +64,7 @@ extern uint8_t _sounds_bin_start;
 //--------------------------------------------------------------
 // C1541 Drive Class
 //--------------------------------------------------------------
+
 C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?SUBSYSID_DRIVE_A : SUBSYSID_DRIVE_B)
 {
     registers  = regs;
@@ -72,7 +73,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     current_rom = e_rom_unset;
 	flash = get_flash();
     fm = FileManager :: getFileManager();
-
+    
     char buffer[32];
     c1541_config[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
     c1541_config[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
@@ -122,6 +123,10 @@ C1541 :: ~C1541()
     if (taskHandle) {
     	vTaskDelete(taskHandle);
     }
+}
+
+C1541* C1541 :: get_last_mounted_drive() {
+    return last_mounted_drive;
 }
 
 void C1541 :: effectuate_settings(void)
@@ -362,6 +367,8 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
     registers[C1541_INSERTED] = 1;
 //    image->mounted_on = this;
     disk_state = e_alien_image;
+
+    last_mounted_drive = this;
 }
 
 void C1541 :: mount_d64(bool protect, uint8_t *image, uint32_t size)
@@ -429,6 +436,34 @@ void C1541 :: mount_blank()
 	insert_disk(false, gcr_image);
 	printf("Done\n");
 	disk_state = e_disk_file_closed;
+}
+
+void C1541 :: swap_disk()
+{
+    if(!mount_file) return;
+
+    char* path = strdup(mount_file->get_path()); // working on a copy of the current filename
+    char* type = path+strlen(path)-3;            // pointer to extension (last three chars)
+    int last = strlen(path)-5;                   // index of last character before extension dot  
+    char current = path[last];                   // remember current value of last character
+    File *f;
+  
+    path[last]++; // start by incrementing last character
+    
+    while(path[last] != current) {                  // while we're not back where we started...
+        if(fm->fopen(path, FA_READ, &f) == FR_OK) { // if next image exists, mount it and break
+      
+            if(strncmp(type, "d64", 3) == 0) {
+                mount_d64(false, f);
+            }
+            else if(strncmp(type, "g64", 3) == 0) {
+                mount_g64(false, f);
+            }
+            break;
+        } 
+        path[last]++; // keep "incrementing" the filename
+    }
+    free(path);
 }
 
 // static member
