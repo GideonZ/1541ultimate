@@ -317,7 +317,7 @@ int FileTypeCRT :: parseCrt(void *bufferVoid)
         mem_addr += uint32_t(size) * uint32_t(bank);
     }
 
-    if(load == 0xA000) {
+    if(load == 0xA000 && type_select != CART_KCS) {
         mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
         load_at_a000 = true;
     }
@@ -564,7 +564,7 @@ bool FileTypeCRT :: read_chip_packet(File *f)
         mem_addr += uint32_t(size) * uint32_t(bank);
     }
 
-    if(load == 0xA000) {
+    if(load == 0xA000 && type_select != CART_KCS) {
         mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
         load_at_a000 = true;
     }
