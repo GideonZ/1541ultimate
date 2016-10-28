@@ -20,7 +20,10 @@ class FileTypeCRT : public FileType
 
     static int execute_st(SubsysCommand *cmd);
     int execute(SubsysCommand *cmd);
+    static int executeFlash_st(SubsysCommand *cmd);
+    int executeFlash(SubsysCommand *cmd);
 public:
+    static int parseCrt(void *buffer);
     FileTypeCRT(BrowsableDirEntry *node);
     ~FileTypeCRT();
 
