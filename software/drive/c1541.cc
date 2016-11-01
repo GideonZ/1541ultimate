@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <ctype.h>
 #include <errno.h>
 
 #include "itu.h"
@@ -440,28 +441,51 @@ void C1541 :: mount_blank()
 
 void C1541 :: swap_disk()
 {
-    if(!mount_file) return;
+    if (!mount_file) return;
 
-    char* path = strdup(mount_file->get_path()); // working on a copy of the current filename
-    char* type = path+strlen(path)-3;            // pointer to extension (last three chars)
-    int last = strlen(path)-5;                   // index of last character before extension dot  
-    char current = path[last];                   // remember current value of last character
-    File *f;
-  
-    path[last]++; // start by incrementing last character
+    File *f;        
+    char* path = strdup(mount_file->get_path());  // working on a copy of the current filename 
+    char* type = path+strlen(path)-3;             // pointer to extension (last three chars)
+    int last = strlen(path)-5;                    // index of last character before extension dot  
+    char current = path[last];                    // remember current value of last character
+
+    if (!isalpha(current) && !isdigit(current)) { // abort unless last char is alphanumeric
+        free(path);
+        return;
+    }
+
+    for (int i=0; path[i]; i++) {                 // operate on upper case path
+        path[i] = toupper(path[i]);
+    }
+    current = toupper(current);
+
+    char top = isalpha(current) ? 'A'-1 : '0'-1;  
+    char bottom = isalpha(current) ? 'Z' : '9';
     
-    while(path[last] != current) {                  // while we're not back where we started...
-        if(fm->fopen(path, FA_READ, &f) == FR_OK) { // if next image exists, mount it and break
-      
-            if(strncmp(type, "d64", 3) == 0) {
+    for (path[last]++; path[last] != current; path[last]++) {
+
+        if (path[last] > bottom) {
+            path[last] = top;
+            continue;
+        }
+
+        if (fm->fopen(path, FA_READ, &f) == FR_OK) { 
+
+            printf("Swapping Disk: %s -> %s\n", mount_file->get_path(), path);
+
+            if (strncmp(type, "D64", 3) == 0) {
                 mount_d64(false, f);
             }
-            else if(strncmp(type, "g64", 3) == 0) {
+            else if(strncmp(type, "G64", 3) == 0) {
                 mount_g64(false, f);
             }
             break;
-        } 
-        path[last]++; // keep "incrementing" the filename
+        }
+        else {
+            if(path[last] > current) {
+                path[last] = top;
+            }
+        }
     }
     free(path);
 }
