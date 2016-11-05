@@ -17,6 +17,8 @@ fpga/io/sigma_delta_dac/sim
 fpga/io/tomas
 fpga/io/usb2/sim
 fpga/ip/video/sim
+fpga/nios/software
+fpga/nios_solo/software/memtest_bsp
 fpga/sid6581/sim/modelsim.ini
 fpga/sid6581/sim/transcript
 fpga/sid6581/sim/vsim.wlf
@@ -38,7 +40,11 @@ target/fpga/*.xrpt
 target/fpga/_xmsgs
 target/fpga/boot400
 target/fpga/boot700
+target/fpga/lx16
 target/fpga/mb700
+target/fpga/testexec/db
+target/fpga/testexec/incremental_db
+target/fpga/testexec/output_files
 target/fpga/u2c5/*.csv
 target/fpga/u2c5/*.txt
 target/fpga/u2c5/db
@@ -75,6 +81,7 @@ target/fpga/u2plus_run/*.txt
 target/fpga/u2plus_run/db
 target/fpga/u2plus_run/incremental_db
 target/fpga/u2plus_run/output_files
+target/fpga/u2plus_solo
 target/fpga/work1400
 target/fpga/work250
 target/fpga/work400

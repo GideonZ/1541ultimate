@@ -1,0 +1,23 @@
+# # File gsaved with Nlview version 6.3.8  2013-12-19 bk=1.2992 VDI=34 GEI=35
+# 
+preplace inst nios_solo.nios2_gen2_0 -pg 1 -lvl 2 -y 230
+preplace inst nios_solo.nios2_gen2_0.cpu -pg 1
+preplace inst nios_solo.nios2_gen2_0.reset_bridge -pg 1
+preplace inst nios_solo.io_bridge_0 -pg 1 -lvl 3 -y 30
+preplace inst nios_solo.uart_0 -pg 1 -lvl 3 -y 270
+preplace inst nios_solo.onchip_memory2_0 -pg 1 -lvl 3 -y 150
+preplace inst nios_solo.clk_0 -pg 1 -lvl 1 -y 170
+preplace inst nios_solo.mm_bridge_1 -pg 1 -lvl 3 -y 470
+preplace inst nios_solo -pg 1 -lvl 1 -y 40 -regy -20
+preplace inst nios_solo.nios2_gen2_0.clock_bridge -pg 1
+preplace netloc FAN_OUT<net_container>nios_solo</net_container>(SLAVE)uart_0.irq,(MASTER)nios2_gen2_0.irq,(SLAVE)io_bridge_0.irq) 1 2 1 720
+preplace netloc FAN_OUT<net_container>nios_solo</net_container>(SLAVE)uart_0.clk,(SLAVE)mm_bridge_1.clk,(SLAVE)onchip_memory2_0.clk1,(SLAVE)nios2_gen2_0.clk,(SLAVE)io_bridge_0.clock,(MASTER)clk_0.clk) 1 1 2 260 190 680
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)io_bridge_0.io,(SLAVE)nios_solo.io) 1 0 3 NJ 80 NJ 80 NJ
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)nios_solo.uart,(SLAVE)uart_0.external_connection) 1 0 3 NJ 370 NJ 370 NJ
+preplace netloc FAN_OUT<net_container>nios_solo</net_container>(SLAVE)onchip_memory2_0.reset1,(SLAVE)uart_0.reset,(MASTER)clk_0.clk_reset,(SLAVE)mm_bridge_1.reset,(SLAVE)nios2_gen2_0.reset,(SLAVE)io_bridge_0.reset) 1 1 2 280 170 660
+preplace netloc INTERCONNECT<net_container>nios_solo</net_container>(SLAVE)io_bridge_0.avalon_slave_0,(SLAVE)mm_bridge_1.s0,(MASTER)nios2_gen2_0.instruction_master,(MASTER)nios2_gen2_0.data_master,(SLAVE)nios2_gen2_0.debug_mem_slave,(SLAVE)onchip_memory2_0.s1,(SLAVE)uart_0.s1) 1 1 2 300 390 700
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)clk_0.clk_in_reset,(SLAVE)nios_solo.reset) 1 0 1 NJ
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)clk_0.clk_in,(SLAVE)nios_solo.clk) 1 0 1 NJ
+preplace netloc EXPORT<net_container>nios_solo</net_container>(MASTER)nios_solo.dram,(MASTER)mm_bridge_1.m0) 1 3 1 N
+levelinfo -pg 1 0 50 1000
+levelinfo -hier nios_solo 60 90 420 790 940

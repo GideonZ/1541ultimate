@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<preferences>
+ <debug showDebugMenu="1" />
+ <systemtable filter="All Interfaces">
+  <columns>
+   <connections preferredWidth="143" />
+   <irq preferredWidth="34" />
+  </columns>
+ </systemtable>
+ <library
+   expandedCategories="Library/Basic Functions,Library/Memory Interfaces and Controllers,Library/Memory Interfaces and Controllers/Flash,Library/Interface Protocols,Library/Basic Functions/Bridges and Adaptors,Library/Basic Functions/On Chip Memory,Library,Library/Basic Functions/Bridges and Adaptors/Memory Mapped,Library/Interface Protocols/Serial,Library/University Program,Library/University Program/Generic IO,Project" />
+ <window width="1616" height="876" x="-8" y="-8" />
+ <generation path="_PROJECT_NAME_" synthesis="VHDL" />
+</preferences>

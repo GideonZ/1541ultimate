@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<system name="$${FILENAME}">
+ <component
+   name="$${FILENAME}"
+   displayName="$${FILENAME}"
+   version="1.0"
+   description=""
+   tags="INTERNAL_COMPONENT=true"
+   categories="" />
+ <parameter name="bonusData"><![CDATA[bonusData 
+{
+   element virtual_jtag_0
+   {
+      datum _sortIndex
+      {
+         value = "0";
+         type = "int";
+      }
+   }
+}
+]]></parameter>
+ <parameter name="clockCrossingAdapter" value="HANDSHAKE" />
+ <parameter name="device" value="EP4CE22F17C8" />
+ <parameter name="deviceFamily" value="Cyclone IV E" />
+ <parameter name="deviceSpeedGrade" value="8" />
+ <parameter name="fabricMode" value="QSYS" />
+ <parameter name="generateLegacySim" value="false" />
+ <parameter name="generationId" value="0" />
+ <parameter name="globalResetBus" value="false" />
+ <parameter name="hdlLanguage" value="VERILOG" />
+ <parameter name="hideFromIPCatalog" value="true" />
+ <parameter name="lockedInterfaceDefinition" value="" />
+ <parameter name="maxAdditionalLatency" value="1" />
+ <parameter name="projectName" value="" />
+ <parameter name="sopcBorderPoints" value="false" />
+ <parameter name="systemHash" value="0" />
+ <parameter name="testBenchDutName" value="" />
+ <parameter name="timeStamp" value="0" />
+ <parameter name="useTestBenchNamingPattern" value="false" />
+ <instanceScript></instanceScript>
+ <interface name="jtag" internal="virtual_jtag_0.jtag" type="conduit" dir="end">
+  <port name="tdi" internal="tdi" />
+  <port name="tdo" internal="tdo" />
+  <port name="ir_in" internal="ir_in" />
+  <port name="ir_out" internal="ir_out" />
+  <port name="virtual_state_cdr" internal="virtual_state_cdr" />
+  <port name="virtual_state_sdr" internal="virtual_state_sdr" />
+  <port name="virtual_state_e1dr" internal="virtual_state_e1dr" />
+  <port name="virtual_state_pdr" internal="virtual_state_pdr" />
+  <port name="virtual_state_e2dr" internal="virtual_state_e2dr" />
+  <port name="virtual_state_udr" internal="virtual_state_udr" />
+  <port name="virtual_state_cir" internal="virtual_state_cir" />
+  <port name="virtual_state_uir" internal="virtual_state_uir" />
+ </interface>
+ <interface name="tck" internal="virtual_jtag_0.tck" type="clock" dir="start">
+  <port name="tck" internal="tck" />
+ </interface>
+ <module
+   name="virtual_jtag_0"
+   kind="altera_virtual_jtag"
+   version="15.1"
+   enabled="1"
+   autoexport="1">
+  <parameter name="CREATE_PRIMITIVE_JTAG_STATE_SIGNAL_PORTS" value="false" />
+  <parameter name="device_family" value="Cyclone IV E" />
+  <parameter name="gui_use_auto_index" value="true" />
+  <parameter name="sld_instance_index" value="0" />
+  <parameter name="sld_ir_width" value="4" />
+ </module>
+ <interconnectRequirement for="$system" name="qsys_mm.clockCrossingAdapter" value="HANDSHAKE" />
+ <interconnectRequirement for="$system" name="qsys_mm.enableEccProtection" value="FALSE" />
+ <interconnectRequirement for="$system" name="qsys_mm.insertDefaultSlave" value="FALSE" />
+ <interconnectRequirement for="$system" name="qsys_mm.maxAdditionalLatency" value="1" />
+</system>
