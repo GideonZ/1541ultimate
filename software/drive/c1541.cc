@@ -444,17 +444,36 @@ void C1541 :: swap_disk()
     if (!mount_file) return;
 
     File *f;        
-    char* path = strdup(mount_file->get_path());  // working on a copy of the current filename 
+    char* path = strdup(mount_file->get_path());  // working on a copy of the current path
     char* type = path+strlen(path)-3;             // pointer to extension (last three chars)
-    int last = strlen(path)-5;                    // index of last character before extension dot  
-    char current = path[last];                    // remember current value of last character
 
-    if (!isalpha(current) && !isdigit(current)) { // abort unless last char is alphanumeric
+    // Try to find the denominating character by searching backwards,
+    // beginning with the last character before the extension dot, up
+    // to the path separator. Determine the the position of the first
+    // char that is either alphabetic or numeric and is preceeded and
+    // followed by a non-alphabetic or non-numeric character
+    // respectively.
+
+    int index;
+    bool found = false;
+    
+    for(index = strlen(path)-5; path[index] != '/'; index--) {
+        
+        if((found = (isalpha(path[index]) && !isalpha(path[index-1]) && !isalpha(path[index+1]))
+            || (isdigit(path[index]) && !isdigit(path[index-1]) && !isdigit(path[index+1])))) {
+               break;
+           }
+    }
+
+    if(!found) {
+        printf("Disk Swap: No denominating character found for %s\n", path);
         free(path);
         return;
     }
-
-    for (int i=0; path[i]; i++) {                 // operate on upper case path
+    
+    char current = path[index];      // remember current value of denominator
+    
+    for (int i=0; path[i]; i++) {    // operate on upper case path from now on
         path[i] = toupper(path[i]);
     }
     current = toupper(current);
@@ -462,16 +481,16 @@ void C1541 :: swap_disk()
     char top = isalpha(current) ? 'A'-1 : '0'-1;  
     char bottom = isalpha(current) ? 'Z' : '9';
     
-    for (path[last]++; path[last] != current; path[last]++) {
+    for (path[index]++; path[index] != current; path[index]++) {
 
-        if (path[last] > bottom) {
-            path[last] = top;
+        if (path[index] > bottom) { // continue from the top
+            path[index] = top;
             continue;
         }
 
         if (fm->fopen(path, FA_READ, &f) == FR_OK) { 
 
-            printf("Swapping Disk: %s -> %s\n", mount_file->get_path(), path);
+            printf("Disk Swap: %s -> %s\n", mount_file->get_path(), path);
 
             if (strncmp(type, "D64", 3) == 0) {
                 mount_d64(false, f);
@@ -479,14 +498,17 @@ void C1541 :: swap_disk()
             else if(strncmp(type, "G64", 3) == 0) {
                 mount_g64(false, f);
             }
-            break;
+            free(path);
+            return;
         }
         else {
-            if(path[last] > current) {
-                path[last] = top;
+            // no immediate successor was found -> continue from the top
+            if(path[index] > current) {
+                path[index] = top;
             }
         }
     }
+    printf("Disk Swap: No matching image found for %s\n", path);
     free(path);
 }
 
