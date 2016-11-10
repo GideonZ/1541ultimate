@@ -1,8 +1,8 @@
 -------------------------------------------------------------------------------
--- Title      : u2p_tester
+-- Title      : u2p_dut
 -- Author     : Gideon Zweijtzer <gideon.zweijtzer@gmail.com>
 -------------------------------------------------------------------------------
--- Description: Toplevel for u2p_tester.
+-- Description: Toplevel for u2p_dut.
 -------------------------------------------------------------------------------
 
 library ieee;
@@ -11,26 +11,26 @@ library ieee;
     use work.io_bus_pkg.all;
     use work.mem_bus_pkg.all;
     
-entity u2p_tester is
+entity u2p_dut is
 port (
     -- slot side
+    SLOT_BUFFER_ENn  : out   std_logic;
     SLOT_PHI2        : in    std_logic;
     SLOT_DOTCLK      : in    std_logic;
     SLOT_RSTn        : in    std_logic;
-    SLOT_BUFFER_ENn  : out   std_logic;
-    SLOT_ADDR        : inout std_logic_vector(15 downto 0);
-    SLOT_DATA        : inout std_logic_vector(7 downto 0);
+    SLOT_ADDR        : in    std_logic_vector(15 downto 0);
+    SLOT_DATA        : in    std_logic_vector(7 downto 0);
     SLOT_RWn         : in    std_logic;
     SLOT_BA          : in    std_logic;
     SLOT_DMAn        : in    std_logic;
-    SLOT_EXROMn      : out   std_logic;
-    SLOT_GAMEn       : inout std_logic;
-    SLOT_ROMHn       : out   std_logic;
-    SLOT_ROMLn       : out   std_logic;
+    SLOT_EXROMn      : in    std_logic;
+    SLOT_GAMEn       : in    std_logic;
+    SLOT_ROMHn       : in    std_logic;
+    SLOT_ROMLn       : in    std_logic;
     SLOT_IO1n        : in    std_logic;
-    SLOT_IO2n        : out   std_logic;
+    SLOT_IO2n        : in    std_logic;
     SLOT_IRQn        : in    std_logic;
-    SLOT_NMIn        : out   std_logic;
+    SLOT_NMIn        : in    std_logic;
     SLOT_VCC         : in    std_logic;
     
     -- memory
@@ -55,11 +55,11 @@ port (
     AUDIO_SDI   : in    std_logic;
 
     -- IEC bus
-    IEC_ATN     : inout std_logic;
-    IEC_DATA    : inout std_logic;
-    IEC_CLOCK   : inout std_logic;
+    IEC_ATN     : in    std_logic;
+    IEC_DATA    : in    std_logic;
+    IEC_CLOCK   : in    std_logic;
     IEC_RESET   : in    std_logic;
-    IEC_SRQ_IN  : inout std_logic;
+    IEC_SRQ_IN  : in    std_logic;
     
     LED_DISKn   : out   std_logic; -- activity LED
     LED_CARTn   : out   std_logic;
@@ -118,17 +118,17 @@ port (
 
     -- Cassette Interface
     CAS_MOTOR   : in    std_logic := '0';
-    CAS_SENSE   : inout std_logic := 'Z';
-    CAS_READ    : inout std_logic := 'Z';
-    CAS_WRITE   : inout std_logic := 'Z';
+    CAS_SENSE   : in    std_logic := 'Z';
+    CAS_READ    : in    std_logic := 'Z';
+    CAS_WRITE   : in    std_logic := 'Z';
     
     -- Buttons
     BUTTON      : in    std_logic_vector(2 downto 0));
 
 end entity;
 
-architecture rtl of u2p_tester is
-    component nios_tester is
+architecture rtl of u2p_dut is
+    component nios_dut is
         port (
             audio_in_data           : in    std_logic_vector(31 downto 0) := (others => 'X'); -- data
             audio_in_valid          : in    std_logic                     := 'X';             -- valid
@@ -137,6 +137,13 @@ architecture rtl of u2p_tester is
             audio_out_valid         : out   std_logic;                                        -- valid
             audio_out_ready         : in    std_logic                     := 'X';             -- ready
             dummy_export            : in    std_logic                     := 'X';             -- export
+            io_ack                  : in    std_logic                     := 'X';             -- ack
+            io_rdata                : in    std_logic_vector(7 downto 0)  := (others => 'X'); -- rdata
+            io_read                 : out   std_logic;                                        -- read
+            io_wdata                : out   std_logic_vector(7 downto 0);                     -- wdata
+            io_write                : out   std_logic;                                        -- write
+            io_address              : out   std_logic_vector(19 downto 0);                    -- address
+            io_irq                  : in    std_logic                     := 'X';             -- irq
             io_u2p_ack              : in    std_logic                     := 'X';             -- ack
             io_u2p_rdata            : in    std_logic_vector(7 downto 0)  := (others => 'X'); -- rdata
             io_u2p_read             : out   std_logic;                                        -- read
@@ -144,14 +151,8 @@ architecture rtl of u2p_tester is
             io_u2p_write            : out   std_logic;                                        -- write
             io_u2p_address          : out   std_logic_vector(19 downto 0);                    -- address
             io_u2p_irq              : in    std_logic                     := 'X';             -- irq
-            jtag0_jtag_tck          : out   std_logic;                                        -- jtag_tck
-            jtag0_jtag_tms          : out   std_logic;                                        -- jtag_tms
-            jtag0_jtag_tdi          : out   std_logic;                                        -- jtag_tdi
-            jtag0_jtag_tdo          : in    std_logic                     := 'X';             -- jtag_tdo
-            jtag1_jtag_tck          : out   std_logic;                                        -- jtag_tck
-            jtag1_jtag_tms          : out   std_logic;                                        -- jtag_tms
-            jtag1_jtag_tdi          : out   std_logic;                                        -- jtag_tdi
-            jtag1_jtag_tdo          : in    std_logic                     := 'X';             -- jtag_tdo
+            jtag_io_input_vector    : in    std_logic_vector(47 downto 0) := (others => 'X'); -- input_vector
+            jtag_io_output_vector   : out   std_logic_vector(7 downto 0);                     -- output_vector
             mem_mem_req_address     : out   std_logic_vector(25 downto 0);                    -- mem_req_address
             mem_mem_req_byte_en     : out   std_logic_vector(3 downto 0);                     -- mem_req_byte_en
             mem_mem_req_read_writen : out   std_logic;                                        -- mem_req_read_writen
@@ -161,12 +162,9 @@ architecture rtl of u2p_tester is
             mem_mem_resp_dack_tag   : in    std_logic_vector(7 downto 0)  := (others => 'X'); -- mem_resp_dack_tag
             mem_mem_resp_data       : in    std_logic_vector(31 downto 0) := (others => 'X'); -- mem_resp_data
             mem_mem_resp_rack_tag   : in    std_logic_vector(7 downto 0)  := (others => 'X'); -- mem_resp_rack_tag
-            pio_in_port             : in    std_logic_vector(31 downto 0) := (others => 'X'); -- in_port
-            pio_out_port            : out   std_logic_vector(31 downto 0);                    -- out_port
-            spi_MISO                : in    std_logic                     := 'X';             -- MISO
-            spi_MOSI                : out   std_logic;                                        -- MOSI
-            spi_SCLK                : out   std_logic;                                        -- SCLK
-            spi_SS_n                : out   std_logic;                                        -- SS_n
+            pio1_export             : in    std_logic_vector(31 downto 0) := (others => 'X'); -- export
+            pio2_export             : in    std_logic_vector(19 downto 0) := (others => 'X'); -- export
+            pio3_export             : out   std_logic_vector(7 downto 0);                     -- export
             sys_clock_clk           : in    std_logic                     := 'X';             -- clk
             sys_reset_reset_n       : in    std_logic                     := 'X';             -- reset_n
             uart_rxd                : in    std_logic                     := 'X';             -- rxd
@@ -180,7 +178,7 @@ architecture rtl of u2p_tester is
             usb_ulpi_nxt            : in    std_logic                     := 'X';             -- ulpi_nxt
             usb_ulpi_stp            : out   std_logic                                         -- ulpi_stp
         );
-    end component nios_tester;
+    end component nios_dut;
 
     component pll
         PORT
@@ -195,7 +193,7 @@ architecture rtl of u2p_tester is
     signal por_n        : std_logic;
     signal ref_reset    : std_logic;
     signal por_count    : unsigned(19 downto 0) := (others => '0');
-    
+    signal sys_count    : unsigned(23 downto 0) := (others => '0');    
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
     signal audio_clock  : std_logic;
@@ -207,7 +205,6 @@ architecture rtl of u2p_tester is
     signal ulpi_reset_i     : std_logic;
     
     -- memory controller interconnect
-    signal memctrl_inhibit  : std_logic;
     signal is_idle          : std_logic;
     signal mem_req          : t_mem_req_32;
     signal mem_resp         : t_mem_resp_32;
@@ -219,6 +216,8 @@ architecture rtl of u2p_tester is
     signal mdio_o      : std_logic;
         
     -- io buses
+    signal io_req   : t_io_req;
+    signal io_resp  : t_io_resp;
     signal io_u2p_req   : t_io_req;
     signal io_u2p_resp  : t_io_resp;
     signal io_req_new_io    : t_io_req;
@@ -240,23 +239,9 @@ architecture rtl of u2p_tester is
     signal audio_out_valid         : std_logic;                                        -- valid
     signal audio_out_ready         : std_logic                     := '0';             -- ready
 
-    signal jtag0_jtag_tck          : std_logic;                                        -- jtag_tck
-    signal jtag0_jtag_tms          : std_logic;                                        -- jtag_tms
-    signal jtag0_jtag_tdi          : std_logic;                                        -- jtag_tdi
-    signal jtag0_jtag_tdo          : std_logic                     := 'X';             -- jtag_tdo
-
-    signal jtag1_jtag_tck          : std_logic;                                        -- jtag_tck
-    signal jtag1_jtag_tms          : std_logic;                                        -- jtag_tms
-    signal jtag1_jtag_tdi          : std_logic;                                        -- jtag_tdi
-    signal jtag1_jtag_tdo          : std_logic                     := 'X';             -- jtag_tdo
-
-    signal pio_in_port             : std_logic_vector(31 downto 0) := (others => 'X'); -- in_port
-    signal pio_out_port            : std_logic_vector(31 downto 0);                    -- out_port
-
-    signal spi_MISO                : std_logic                     := 'X';             -- MISO
-    signal spi_MOSI                : std_logic;                                        -- MOSI
-    signal spi_SCLK                : std_logic;                                        -- SCLK
-    signal spi_SS_n                : std_logic;                                        -- SS_n
+    signal pio1_export             : std_logic_vector(31 downto 0) := (others => '0'); -- in_port
+    signal pio2_export             : std_logic_vector(19 downto 0) := (others => '0'); -- in_port
+    signal pio3_export             : std_logic_vector(7 downto 0);                     -- out_port
 
     signal prim_uart_rxd           : std_logic := '1';
     signal prim_uart_txd           : std_logic := '1';
@@ -268,6 +253,8 @@ architecture rtl of u2p_tester is
     signal io_uart_cts             : std_logic := '1';
     signal io_uart_rts             : std_logic := '1';
 
+    signal slot_test_vector     : std_logic_vector(47 downto 0);
+    signal jtag_write_vector    : std_logic_vector(7 downto 0);
 begin
     process(RMII_REFCLK)
     begin
@@ -275,9 +262,16 @@ begin
             if por_count = X"FFFFF" then
                 por_n <= '1';
             else
-                por_n <= '0';
                 por_count <= por_count + 1;
+                por_n <= '0';
             end if;
+        end if;
+    end process;
+
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            sys_count <= sys_count + 1;
         end if;
     end process;
 
@@ -310,7 +304,7 @@ begin
         input       => sys_reset,
         input_c     => eth_reset  );
 
-    i_nios: nios_tester
+    i_nios: nios_dut
     port map (
         audio_in_data           => audio_in_data,
         audio_in_valid          => audio_in_valid,
@@ -320,6 +314,14 @@ begin
         audio_out_ready         => audio_out_ready,
         dummy_export            => '0',
 
+        io_ack               => io_resp.ack,
+        io_rdata             => io_resp.data,
+        io_read              => io_req.read,
+        io_wdata             => io_req.data,
+        io_write             => io_req.write,
+        unsigned(io_address) => io_req.address,
+        io_irq               => '0',
+
         io_u2p_ack              => io_u2p_resp.ack,
         io_u2p_rdata            => io_u2p_resp.data,
         io_u2p_read             => io_u2p_req.read,
@@ -328,15 +330,8 @@ begin
         unsigned(io_u2p_address) => io_u2p_req.address,
         io_u2p_irq              => '0',
 
-        jtag0_jtag_tck          => jtag0_jtag_tck,
-        jtag0_jtag_tms          => jtag0_jtag_tms,
-        jtag0_jtag_tdi          => jtag0_jtag_tdi,
-        jtag0_jtag_tdo          => jtag0_jtag_tdo,
-
-        jtag1_jtag_tck          => jtag1_jtag_tck,
-        jtag1_jtag_tms          => jtag1_jtag_tms,
-        jtag1_jtag_tdi          => jtag1_jtag_tdi,
-        jtag1_jtag_tdo          => jtag1_jtag_tdo,
+        jtag_io_input_vector    => slot_test_vector,
+        jtag_io_output_vector   => jtag_write_vector,
 
         unsigned(mem_mem_req_address) => mem_req.address,
         mem_mem_req_byte_en     => mem_req.byte_en,
@@ -348,13 +343,9 @@ begin
         mem_mem_resp_data       => mem_resp.data,
         mem_mem_resp_rack_tag   => mem_resp.rack_tag,
 
-        pio_in_port             => pio_in_port,
-        pio_out_port            => pio_out_port,
-
-        spi_MISO                => spi_miso,
-        spi_MOSI                => spi_mosi,
-        spi_SCLK                => spi_sclk,
-        spi_SS_n                => spi_ss_n,
+        pio1_export             => pio1_export,
+        pio2_export             => pio2_export,
+        pio3_export             => pio3_export,
 
         sys_clock_clk           => sys_clock,
         sys_reset_reset_n       => not sys_reset,
@@ -373,7 +364,7 @@ begin
         ulpi_reset_reset_n      => not ulpi_reset_i
     );
 
-    UART_TXD <= prim_uart_txd;
+    UART_TXD <= prim_uart_txd and io_uart_txd;
     
     i_split: entity work.io_bus_splitter
     generic map (
@@ -507,7 +498,6 @@ begin
     );
     
 
-
 --    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
 --    generic map (
 --        g_left_shift => 2,
@@ -521,17 +511,10 @@ begin
 --        dac_out => SPEAKER_DATA );
 
 
-    LED_MOTORn <= not pio_out_port(0);
-    LED_DISKn  <= not pio_out_port(1);
-    LED_CARTn  <= not pio_out_port(2);
-    LED_SDACTn <= not pio_out_port(3);
-
-    IEC_SRQ_IN <= 'Z';
-    IEC_ATN    <= 'Z';
-    IEC_DATA   <= 'Z';
-    IEC_CLOCK  <= 'Z';
-
-    pio_in_port(2 downto 0)  <= not BUTTON;
+    LED_MOTORn <= jtag_write_vector(0) xor not pio3_export(0);
+    LED_DISKn  <= jtag_write_vector(1) xor not pio3_export(1) xor sys_count(sys_count'high);
+    LED_CARTn  <= jtag_write_vector(2) xor not pio3_export(2);
+    LED_SDACTn <= jtag_write_vector(3) xor not pio3_export(3);
 
     ULPI_RESET <= por_n;
 
@@ -603,49 +586,35 @@ begin
     
     SLOT_BUFFER_ENn <= '0'; -- once configured, we can connect
 
-    SLOT_ROMHn     <= prim_uart_rts_n;
-                      prim_uart_cts_n   <= SLOT_RSTn;
-                      prim_uart_rxd     <= SLOT_IRQn;
-                      io_uart_rxd       <= SLOT_IRQn;
-    SLOT_NMIn      <= prim_uart_txd and io_uart_txd;
-    
-    pio_in_port(4) <= SLOT_PHI2;  --        <= usb_to_host_vbus; // B5 input only on FPGA
-    pio_in_port(5) <= SLOT_DOTCLK; --       <= jig_spkr.n;       // T6 input only on FPGA
-    pio_in_port(6) <= SLOT_RWn; --          <= jig_spkr.p;
-    -- todo: add another uart
-    -- IO1n        <= jig_rxd;
-    -- GAMEn       <= jig_txd;
-    pio_in_port(8)  <= SLOT_ADDR(14);  -- usb_vcc[1];
-    pio_in_port(9)  <= SLOT_ADDR(13);  -- usb_vcc[2];
-    pio_in_port(10) <= SLOT_ADDR(15);  -- usb_vcc[3];
-    pio_in_port(11) <= SLOT_ADDR(9);   -- jtag_vcc;
-    
-    SLOT_ADDR(8)     <= not pio_out_port(4); -- dut_en_n;
-    SLOT_EXROMn      <= not pio_out_port(5); -- jig_v50_5v_en_n;
-    SLOT_IO2n        <= not pio_out_port(6); -- jig_c64_5v_en_n;
-    SLOT_ROMLn       <= not pio_out_port(7); -- jig_ext_5v_en_n;
+    pio1_export(31 downto 0)  <= slot_test_vector(31 downto 0);
+    pio2_export(15 downto 0)  <= slot_test_vector(47 downto 32);
+    pio2_export(18 downto 16) <= not BUTTON;
 
-    pio_in_port(12)  <= SLOT_BA; -- adc_eoc_n; // input only fpga T12
-
-    spi_miso         <= SLOT_DMAn;
-    SLOT_ADDR(7)     <= spi_mosi;
-    SLOT_DATA(7)     <= spi_sclk;
-    SLOT_DATA(6)     <= spi_ss_n;
-
-    jtag0_jtag_tdo   <= SLOT_ADDR(6);
-    SLOT_DATA(5)     <= jtag0_jtag_tdi;
-    SLOT_ADDR(5)     <= jtag0_jtag_tms;
-    SLOT_DATA(4)     <= jtag0_jtag_tck;
-
-    jtag1_jtag_tdo   <= SLOT_DATA(3);
-    SLOT_DATA(2)     <= jtag1_jtag_tdi;
-    SLOT_DATA(1)     <= jtag1_jtag_tms;
-    SLOT_DATA(0)     <= jtag1_jtag_tck; 
-
-    SLOT_ADDR(4)     <= not pio_out_port(8); -- exp_sclr_n
-    SLOT_ADDR(3)     <= not pio_out_port(9); -- exp_oe_n
-    SLOT_ADDR(2)     <= pio_out_port(10); -- exp_rclk;
-    SLOT_ADDR(1)     <= pio_out_port(11); -- exp_sclk;
-    SLOT_ADDR(0)     <= pio_out_port(12); -- exp_data;
+    slot_test_vector <=  CAS_MOTOR   & 
+                         CAS_SENSE   & 
+                         CAS_READ    &
+                         CAS_WRITE   &
+                         IEC_ATN     &
+                         IEC_DATA    &
+                         IEC_CLOCK   &
+                         IEC_RESET   &
+                         IEC_SRQ_IN  &
+                         SLOT_PHI2   &
+                         SLOT_DOTCLK &
+                         SLOT_RSTn   &
+                         SLOT_RWn    &
+                         SLOT_BA     &
+                         SLOT_DMAn   &
+                         SLOT_EXROMn &
+                         SLOT_GAMEn  &
+                         SLOT_ROMHn  &
+                         SLOT_ROMLn  &
+                         SLOT_IO1n   &
+                         SLOT_IO2n   &
+                         SLOT_IRQn   &
+                         SLOT_NMIn   &
+                         SLOT_VCC    &
+                         SLOT_DATA   &
+                         SLOT_ADDR;
 
 end architecture;

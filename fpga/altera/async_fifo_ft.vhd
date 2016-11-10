@@ -10,6 +10,7 @@
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 library altera_mf;
 use altera_mf.all;
@@ -32,6 +33,7 @@ entity async_fifo_ft is
         rd_reset        : in  std_logic;
         rd_next         : in  std_logic;
         rd_dout         : out std_logic_vector(g_data_width-1 downto 0);
+        rd_count        : out unsigned(g_depth_bits downto 0);
         rd_valid        : out std_logic );
 
     ---------------------------------------------------------------------------
@@ -50,10 +52,12 @@ end entity;
 architecture altera of async_fifo_ft is
     signal aclr     : std_logic;
     signal rdempty  : std_logic;
+    signal rdusedw  : std_logic_vector(g_depth_bits downto 0);
     constant c_num_words : natural := 2 ** g_depth_bits;
 
     COMPONENT dcfifo
     GENERIC (
+        add_usedw_msb_bit       : STRING;
         intended_device_family      : STRING;
         lpm_numwords        : NATURAL;
         lpm_showahead       : STRING;
@@ -77,6 +81,7 @@ architecture altera of async_fifo_ft is
             wrreq   : IN STD_LOGIC ;
             q   : OUT STD_LOGIC_VECTOR (g_data_width-1 DOWNTO 0);
             rdempty : OUT STD_LOGIC ;
+            rdusedw : OUT STD_LOGIC_VECTOR(g_depth_bits DOWNTO 0);
             wrfull  : OUT STD_LOGIC 
     );
     END COMPONENT;
@@ -85,12 +90,13 @@ begin
     
     dcfifo_component : dcfifo
     generic map (
+        add_usedw_msb_bit => "ON",
         intended_device_family => "Cyclone IV E",
         lpm_numwords => c_num_words,
         lpm_showahead => "ON",
         lpm_type => "dcfifo",
         lpm_width => g_data_width,
-        lpm_widthu => g_depth_bits,
+        lpm_widthu => g_depth_bits+1,
         overflow_checking => "ON",
         rdsync_delaypipe => 4,
         read_aclr_synch => "ON",
@@ -110,8 +116,9 @@ begin
         rdclk   => rd_clock,
         rdreq   => rd_next,
         q       => rd_dout,
-        rdempty => rdempty
+        rdempty => rdempty,
+        rdusedw => rdusedw
     );
     rd_valid <= not rdempty;
-    
+    rd_count <= unsigned(rdusedw);
 end architecture;

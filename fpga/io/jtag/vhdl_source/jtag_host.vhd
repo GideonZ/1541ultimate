@@ -46,25 +46,25 @@ end entity;
 
 architecture arch of jtag_host is
     signal presc    : integer range 0 to g_clock_divider-1;
-    type t_state is (idle, shifting_L, shifting_H);
+    type t_state is (idle, shifting_L, shifting_H, wait_state);
     signal state    : t_state;
     signal sample   : std_logic;
     signal wr_en    : std_logic;
     signal rd_en    : std_logic;
-    signal din      : std_logic_vector(38 downto 0);
-    signal dout     : std_logic_vector(38 downto 0);
+    signal din      : std_logic_vector(33 downto 0);
+    signal dout     : std_logic_vector(33 downto 0);
     signal full     : std_logic;
     signal valid    : std_logic;
-    signal was_read : std_logic;
     signal tms_select : std_logic;
+    signal tms_last : std_logic;
     signal data     : std_logic_vector(31 downto 0);
-    signal length   : integer range 0 to 31;
-    signal position : integer range 0 to 31;
+    signal length   : integer range 0 to 16383;
+    signal position : integer range 0 to 16383;
 begin
     i_fifo: entity work.sync_fifo
     generic map (
         g_depth        => 255,
-        g_data_width   => 39,
+        g_data_width   => 34,
         g_threshold    => 100,
         g_storage      => "auto",
         g_fall_through => true
@@ -83,7 +83,7 @@ begin
         valid          => valid,
         count          => open
     );
-    din   <= avs_read & avs_address(7 downto 2) & avs_writedata;
+    din   <= avs_read & avs_address(2) & avs_writedata;
     wr_en <= avs_read or avs_write; 
     
     process(clock)
@@ -93,11 +93,15 @@ begin
             avs_readdatavalid <= '0';
             rd_en <= '0';
             sample <= '0';
-            if sample = '1' then
-                data(position) <= jtag_tdo;
+            if position < 32 then
+                if sample = '1' then
+                    data(position) <= jtag_tdo;
+                end if;
+                v_bit := data(position);
+            else
+                v_bit := '0';
             end if;
-            v_bit := data(position);
-            
+                        
             case state is
             when idle =>
                 presc <= g_clock_divider-1;
@@ -106,20 +110,36 @@ begin
                 jtag_tdi <= '0';
 
                 if valid = '1' then
-                    was_read   <= dout(38);
-                    tms_select <= dout(37);
-                    length     <= to_integer(unsigned(dout(36 downto 32)));
-                    position   <= 0;
-                    data       <= dout(31 downto 0);
-                    state      <= shifting_L;
                     rd_en <= '1';
+                    if dout(33) = '1' then
+                        avs_readdatavalid <= '1';
+                        state <= wait_state;
+                    elsif dout(32) = '1' then
+                        tms_select <= '0';
+                        tms_last <= '0';
+                        length <= 31;
+                        data   <= dout(31 downto 0);
+                        position <= 0;
+                        state    <= shifting_L;
+                    else
+                        tms_select <= dout(31);
+                        tms_last   <= dout(30);
+                        length     <= to_integer(unsigned(dout(29 downto 16)));
+                        position   <= 0;
+                        data       <= X"0000" & dout(15 downto 0);
+                        state      <= shifting_L;
+                    end if;
                 end if;
             
             when shifting_L =>
                 jtag_tck <= '0';
                 if tms_select = '0' then
                     jtag_tdi <= v_bit;
-                    jtag_tms <= '0';
+                    if position = length then
+                        jtag_tms <= tms_last;
+                    else
+                        jtag_tms <= '0';
+                    end if;
                 else
                     jtag_tdi <= '0';
                     jtag_tms <= v_bit;
@@ -137,7 +157,6 @@ begin
                 if presc = 0 then
                     presc <= g_clock_divider-1;
                     if position = length then
-                        avs_readdatavalid <= was_read;
                         state <= idle;
                     else
                         position <= position + 1;
@@ -147,6 +166,9 @@ begin
                     presc <= presc - 1;
                 end if;
             
+            when wait_state =>
+                state <= idle;
+                
             when others =>
                 null;
             end case;            
