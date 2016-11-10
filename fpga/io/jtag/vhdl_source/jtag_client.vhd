@@ -48,8 +48,8 @@ architecture arch of jtag_client is
     constant c_rom            : std_logic_vector(31 downto 0) := X"DEAD1541";
     signal shiftreg_sample    : std_logic_vector(sample_vector'range);
     signal shiftreg_write     : std_logic_vector(write_vector'range);
-    signal shiftreg_debug     : std_logic_vector(34 downto 0);
-    signal debug_bits         : std_logic_vector(15 downto 0);
+    signal shiftreg_debug     : std_logic_vector(24 downto 0);
+    signal debug_bits         : std_logic_vector(4 downto 0);
 
     signal bypass_reg         : std_logic;
     signal bit_count          : unsigned(4 downto 0) := (others => '0');    
@@ -69,13 +69,13 @@ architecture arch of jtag_client is
 
     signal write_fifo_full    : std_logic;
     signal write_fifo_put     : std_logic := '0';
-    signal write_fifo_din     : std_logic_vector(10 downto 0);
+    signal write_fifo_din     : std_logic_vector(11 downto 0);
     signal read_fifo_get      : std_logic;
     signal shiftreg_fifo      : std_logic_vector(15 downto 0);
     signal read_fifo_count    : unsigned(7 downto 0);
     signal read_fifo_data     : std_logic_vector(7 downto 0);
     signal cmd_count          : unsigned(7 downto 0) := X"00";
-    signal last_command       : std_logic_vector(10 downto 0);
+    signal last_command       : std_logic_vector(11 downto 0);
     -- signals that live in the avm clock domain
     type t_state is (idle, do_write, do_read, do_read2, do_read3);
     signal state            : t_state;
@@ -85,6 +85,7 @@ architecture arch of jtag_client is
     signal avm_read_reg     : std_logic_vector(31 downto 0) := (others => '0');
     signal write_enabled    : std_logic;
     signal write_data       : std_logic_vector(31 downto 0) := (others => '0');
+    signal write_be         : std_logic_vector(3 downto 0) := (others => '0');
     signal address          : unsigned(31 downto 0) := (others => '0');
     signal avm_rfifo_put    : std_logic;
     signal avm_rfifo_full   : std_logic;
@@ -92,7 +93,7 @@ architecture arch of jtag_client is
     signal avm_wfifo_valid  : std_logic;
     signal avm_read_i       : std_logic;
     signal avm_write_i      : std_logic;
-    signal avm_wfifo_dout   : std_logic_vector(10 downto 0);
+    signal avm_wfifo_dout   : std_logic_vector(11 downto 0);
     signal avm_wfifo_count  : unsigned(4 downto 0);
     signal avm_exec_count   : unsigned(2 downto 0) := "000";
     signal avm_clock_count  : unsigned(2 downto 0) := "000";
@@ -117,17 +118,8 @@ begin
     process(tck)
     begin
         if rising_edge(tck) then
-            if virtual_state_cdr = '1' then
-                shiftreg_write  <= (others => '0');
-                shiftreg_sample <= sample_vector;
-                bit_count <= (others => '0');
-                shiftreg_fifo <= X"00" & std_logic_vector(read_fifo_count);
-                shiftreg_debug <= debug_bits & last_command & std_logic_vector(cmd_count);
-            end if;
-            
             read_fifo_get <= '0';
             write_fifo_put <= '0';
-                            
             if write_fifo_put = '1' then
                 last_command <= write_fifo_din;
             end if;
@@ -160,6 +152,15 @@ begin
                     end if;
                 end if;                
             end if;
+
+            if virtual_state_cdr = '1' then
+                shiftreg_write  <= (others => '0');
+                shiftreg_sample <= sample_vector;
+                bit_count <= (others => '0');
+                shiftreg_fifo <= X"00" & std_logic_vector(read_fifo_count);
+                shiftreg_debug <= debug_bits & last_command & std_logic_vector(cmd_count);
+            end if;
+           
             if virtual_state_udr = '1' then
                 case ir_in is
                 when X"2" =>
@@ -190,19 +191,19 @@ begin
     end process;
     
     -- Avalon JTAG commands
-    -- 000 => write data (byte is data)
-    -- 0010 => Start Write Non Incrementing  (only upper bit of byte used)
-    -- 0011 => Start Write incrementing  (only upper bit of byte used)
-    -- 010 => Do Read Non-Incrementing (byte is length)
-    -- 011 => Do Read incrementing (byte is length)
-    -- 1xx => Set address (bytes is address data) xx = index of address byte
+    -- E000 => write data (byte is data)
+    -- x0010 => Start Write Non Incrementing  (only upper bit of byte used)
+    -- x0011 => Start Write incrementing  (only upper bit of byte used)
+    -- x010 => Do Read Non-Incrementing (byte is length)
+    -- x011 => Do Read incrementing (byte is length)
+    -- x1xx => Set address (bytes is address data) xx = index of address byte
     -- 
-    write_fifo_din <= ("000" & shiftreg_fifo(7 downto 0)) when ir_in = X"6" else
-                      (shiftreg_fifo(10 downto 0));
+    write_fifo_din <= ("1000" & shiftreg_fifo(15 downto 8)) when ir_in = X"6" else
+                      (shiftreg_fifo(11 downto 0));
                       
     i_write_fifo: entity work.async_fifo_ft
     generic map(
-        g_data_width => 11,
+        g_data_width => 12,
         g_depth_bits => 4
     )
     port map (
@@ -251,7 +252,9 @@ begin
                     case v_cmd is
                     when "000" =>
                         if write_enabled = '1' then
+                            write_be(3) <= avm_wfifo_dout(11);
                             write_data(31 downto 24) <= avm_wfifo_dout(7 downto 0);
+                            write_be(2 downto 0) <= write_be(3 downto 1);
                             write_data(23 downto 00) <= write_data(31 downto 8);
                             if byte_count = 3 then
                                 avm_write_i <= '1';
@@ -295,6 +298,7 @@ begin
                     end if;
                 end if;
             when do_read =>
+                write_be <= "1111";
                 avm_read_i <= '1';
                 state <= do_read2;
             when do_read2 =>
@@ -336,7 +340,7 @@ begin
                 byte_count <= 0;
                 read_count <= (others => '0');
                 write_enabled <= '0';
-
+                write_be <= "0000";
                 avm_read_i <= '0';
                 avm_write_i <= '0';
                 avm_rfifo_put <= '0';
@@ -346,7 +350,7 @@ begin
         end if;
     end process;
 
-    with state select debug_bits(3 downto 1) <=
+    with state select debug_bits(2 downto 0) <=
         "000" when idle,
         "001" when do_write,
         "010" when do_read,
@@ -354,18 +358,15 @@ begin
         "100" when do_read3,
         "111" when others;
 
-    debug_bits(4) <= avm_wfifo_valid;
-    debug_bits(0) <= avm_reset;
-    debug_bits(9 downto 5) <= std_logic_vector(avm_wfifo_count);
-    debug_bits(12 downto 10) <= std_logic_vector(avm_exec_count);
-    debug_bits(15 downto 13) <= std_logic_vector(avm_clock_count);
+    debug_bits(3) <= avm_read_i;
+    debug_bits(4) <= avm_write_i;
     
     avm_read      <= avm_read_i;
     avm_write     <= avm_write_i;
     avm_wfifo_get <= '1' when avm_wfifo_valid = '1' and state = idle else '0';
     
     avm_address <= std_logic_vector(address(31 downto 2) & "00");
-    avm_byteenable <= "1111";
+    avm_byteenable <= write_be;
     avm_writedata <= write_data;
     
 end arch;

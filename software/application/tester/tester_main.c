@@ -131,7 +131,6 @@ void jtag_write_vji_block(volatile uint32_t *host, uint8_t *vji_inst, int drLeng
 	host[0] = JTAG_TMSSEL | (2 << 16) | 0x01; // send 3 bits: 1, 0, 0 to get into ShiftDR state
 	for(int i=1;i < words;i++) {
 		host[1] = *(data++);
-		//host[0] = 0xF0000 | ((*(data++)) & 0xFFFF);
 	}
 	host[0] = 0xF0000 | ((*data) & 0xFFFF);
 	host[0] = JTAG_LAST | 0xF0000 | ((*data) >> 16);
@@ -162,7 +161,7 @@ int main(int argc, char **argv)
 	}
 	printf("\n");
 
-	//printf("SVF file @ %p (%d)\n", &_dut_svf_start, (int)&_dut_svf_size);
+	printf("SVF file @ %p (%d)\n", &_dut_svf_start, (int)&_dut_svf_size);
 	play_svf((char *)(&_dut_svf_start), (volatile uint32_t *)JTAG_1_BASE);
 
 	uint8_t idcode[4] = {0, 0, 0, 0};
@@ -258,13 +257,17 @@ int main(int argc, char **argv)
 	}
 	mem_block[0] = 0xDEADBABE;
 
-	uint8_t write_cmd[] = { 0x20, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x80, 0x01, 0x11, 0, 0x22, 0, 0x33, 0, 0x44, 0 };
+	uint8_t write_cmd[] = { 0x20, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x80, 0x01 };
 	regAddr = addr + 5;
-	jtag_write_vji(jtag1, &regAddr, bits, write_cmd, 18);
+	jtag_write_vji(jtag1, &regAddr, bits, write_cmd, 10);
 	regAddr = addr + 6;
-	jtag_write_vji_block(jtag1, &regAddr, bits, mem_block, 64);
+	jtag_write_vji_block(jtag1, &regAddr, bits, mem_block, 32);
+	jtag_write_vji_block(jtag1, &regAddr, bits, mem_block, 32);
+	uint8_t write_cmd2[] = { 0x20, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x80, 0x01, 0x11, 0x08, 0x22, 0x08, 0x33, 0x00, 0x44, 0x08 };
+	regAddr = addr + 5;
+	jtag_write_vji(jtag1, &regAddr, bits, write_cmd2, 18);
 
-	uint8_t read_cmd[] = { 0x00, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x3F, 0x03 };
+	uint8_t read_cmd[] = { 0x20, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x3F, 0x03 };
 	regAddr = addr + 5;
 	jtag_write_vji(jtag1, &regAddr, bits, read_cmd, 10);
 
@@ -275,13 +278,23 @@ int main(int argc, char **argv)
 	}
 	printf("\n");
 
+	uint32_t mem_block_read[64];
 
 	regAddr = addr + 4;
-	jtag_read_vji_fifo(jtag1, &regAddr, bits, mem_block, 64);
+	jtag_read_vji_fifo(jtag1, &regAddr, bits, mem_block_read, 64);
 	for(int i=0;i<64;i++) {
-		printf("%08x ", mem_block[i]);
+		printf("%08x ", mem_block_read[i]);
 		if ((i & 3) == 3)
 			printf("\n");
 	}
-
+	int err = 0;
+	for(int i=0;i<32;i++) {
+		if (mem_block_read[i] != mem_block[i]) {
+			err++;
+		}
+		if (mem_block_read[i+32] != mem_block[i]) {
+			err++;
+		}
+	}
+	printf("%d Errors in readback.\n", err);
 }
