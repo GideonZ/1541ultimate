@@ -51,6 +51,7 @@ void send_tdi_bits(int clocks, unsigned int value, int last)
 	if ((clocks == 32) && (!last)) {
 		host[1] = value;
 	} else {
+		printf("TDI %d => %08x => ", clocks, value);
 		int remain = clocks;
 		while(remain > 0) {
 			unsigned int now = (remain > 16) ? 16 : (unsigned int)remain;
@@ -60,7 +61,7 @@ void send_tdi_bits(int clocks, unsigned int value, int last)
 			value >>= 16;
 		}
 		uint32_t readback = host[0];
-		printf("TDI %d => %08x => %08x\n", clocks, value, readback);
+		printf("%08x\n", readback);
 	}
 }
 // 10.110.100
@@ -109,7 +110,9 @@ void send_tms_bits(int clocks, unsigned int value)
 
 void send_tms_zeros(int clocks)
 {
-	host[0] = (((unsigned int)(clocks - 1)) << 16) | JTAG_TMSSEL;
+	uint32_t value = (((unsigned int)(clocks - 1)) << 16) | JTAG_TMSSEL;
+	printf("TMS Zeros: %08x\n", value);
+	host[0] = value;
 }
 
 // Navigage TMS to desired state with no TDO read back
@@ -384,6 +387,18 @@ int sdr_nbits(unsigned int nbits, unsigned int has_tdo, unsigned int has_mask,
 
 	if (nbits < 1)
 		return 0;
+
+#ifdef DUMP
+	if (nbits > 10000) {
+		FILE *fo;
+		fo = fopen("dump.bin", "wb");
+		if (fo) {
+			fwrite(psdr_tdi_data, 1, (nbits+7)/8, fo);
+			fclose(fo);
+		}
+	}
+#endif
+
 
 	if (g_tap_state == TAP_STATE_PAUSE_IR) {
 		//from pause IR go to state where we can shift DR
@@ -847,3 +862,26 @@ int play_svf(char *text, volatile uint32_t *jtag)
 	free_sdr_data();
 	return 1;
 }
+
+#ifdef DUMP
+int main(int argc, char **argv)
+{
+	volatile uint32_t jtag[2];
+
+	FILE *fi = fopen(argv[1], "rb");
+	if (!fi)
+		return -1;
+	fseek(fi, 0, SEEK_END);
+	size_t size = ftell(fi);
+	printf("Size: %ld\n", size);
+	fseek(fi, 0, SEEK_SET);
+	char *buffer = malloc(size + 2);
+	memset(buffer, 0, size + 2);
+	fread(buffer, 1, size, fi);
+	fclose(fi);
+
+	play_svf(buffer, jtag);
+
+	free(buffer);
+}
+#endif
