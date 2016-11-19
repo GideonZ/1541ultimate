@@ -21,7 +21,6 @@ PacketDescriptor nullDescriptor = { 0, 0 };
 
 Fifo<PacketDescriptor> incomingPackets(30, nullDescriptor);
 
-extern "C" {
 int getNetworkPacket(uint8_t **payload, int *length)
 {
 	if (incomingPackets.is_empty()) {
@@ -31,8 +30,6 @@ int getNetworkPacket(uint8_t **payload, int *length)
 	*payload = desc.pointer;
 	*length  = desc.length;
 	return 1;
-}
-
 }
 
 /**

@@ -15,13 +15,21 @@
 #include "stdlib.h"
 #include "itu.h"
 #include "u2p.h"
-#include "flash_switch.h"
 #include "usb_nano.h"
 #include "dump_hex.h"
+#include "i2c.h"
+#include "rtc_only.h"
+
+extern "C" {
+#include "flash_switch.h"
 #include "ethernet_test.h"
 #include "audio_test.h"
 #include "flash_programmer.h"
-#include "i2c.h"
+int checkUsbHub();
+int checkUsbSticks();
+void initializeUsb(void);
+void codec_init(void);
+}
 
 #define BUFFER_LOCATION  (*(volatile uint32_t *)(0x20000784))
 #define BUFFER_SIZE      (*(volatile uint32_t *)(0x20000788))
@@ -41,7 +49,6 @@ extern uint32_t _nano_phytest_b_size;
 
 int getNetworkPacket(uint8_t **payload, int *length);
 
-void codec_init(void);
 
 void outbyte_buffer(int c)
 {
@@ -128,10 +135,6 @@ int checkUsbPhy()
 	return errors;
 }
 
-int checkUsbHub();
-int checkUsbSticks();
-void initializeUsb(void);
-
 int programFlash()
 {
 	if (!PROGRAM_DATALOC) {
@@ -217,13 +220,18 @@ int writeRtc()
         result |= i2c_write_byte(0xA2, i, *(pb++));
     }
 	LEAVE_SAFE_SECTION
+	char date[32], time[32];
+	printf("Written to RTC: %s ", rtc.get_long_date(date, 32));
+	printf("%s\n", rtc.get_time_string(time, 32));
+
 	return result;
 }
 
+extern "C" {
 void main_task(void *context)
 {
 	// Initialize software fifo based character buffer
-	uint8_t *buffer = malloc(SIZE_OF_BUFFER);
+	uint8_t *buffer = (uint8_t *)malloc(SIZE_OF_BUFFER);
 	BUFFER_SIZE = SIZE_OF_BUFFER;
 	BUFFER_HEAD = 0;
 	BUFFER_TAIL = 0;
@@ -306,4 +314,5 @@ void main_task(void *context)
 		TESTER_TO_DUT = 0;
 		DUT_TO_TESTER ++;
 	}
+}
 }

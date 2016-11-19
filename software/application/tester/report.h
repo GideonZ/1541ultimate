@@ -32,7 +32,7 @@ typedef enum {
 	failed
 } EState;
 
-const char *stateStrings[] = { "NOT RUN", "SKIPPED", "PASSED ", "FAILED!" };
+const char *stateStrings[] = { "Not run", "Skipped", "OK", "FAILED!" };
 
 class TestResult
 {

@@ -30,8 +30,9 @@ extern "C" {
 	#include "flash_switch.h"
 	#include "ethernet_test.h"
 	void codec_init(void);
-	int getNetworkPacket(uint8_t **payload, int *length);
 }
+
+int getNetworkPacket(uint8_t **payload, int *length);
 
 #include "usb_base.h"
 
@@ -828,6 +829,20 @@ int checkDigitalIO(JTAG_Access_t *target, int timeout, char **log)
 	return TestIOPins(target);
 }
 
+int copyRtc(JTAG_Access_t *target, int timeout, char **log)
+{
+	ENTER_SAFE_SECTION
+	uint32_t timebuf[3];
+	uint8_t *pb = (uint8_t *)timebuf;
+    for(int i=0;i<11;i++) {
+        *(pb++) = i2c_read_byte(0xA2, i);
+    }
+	LEAVE_SAFE_SECTION
+	vji_write_memory(target, TIMELOC, 3, timebuf);
+	int retval = executeDutCommand(target, 15, timeout, log);
+	return retval;
+}
+
 TestDefinition_t jig_tests[] = {
 		{ "Power SwitchOver Test",  jigPowerSwitchOverTest,  1, false, false, false },
 		{ "Voltage Regulator Test", jigVoltageRegulatorTest, 1,  true, false, false },
@@ -841,6 +856,7 @@ TestDefinition_t jig_tests[] = {
 		{ "Verify USB Phy clock",   checkUsbClock,           1, false, false,  true },
 		{ "Verify USB Phy type",    checkUsbPhy,           150, false, false,  true },
 		{ "RTC access test",        checkRtcAccess,        150, false, false,  true },
+		{ "Copy time to DUT RTC",   copyRtc,			   150, false, false,  true },
 		{ "", NULL, 0, false, false, false }
 };
 
@@ -851,6 +867,7 @@ TestDefinition_t slot_tests[] = {
 		{ "Digital I/O test",       checkDigitalIO,          1, false, false,  true },
 		{ "Verify reference clock", checkReferenceClock,     1,  true, false,  true },
 		{ "Verify DUT appl running",checkApplicationRun,   150,  true, false,  true },
+		{ "Check Flash Types",      checkFlashSwitch,      150,  true, false,  true },
 		{ "Button Test", 			checkButtons,		  3000, false,  true,  true },
 		{ "Audio input test",       slotAudioInput,        600, false, false,  true },
 		{ "Audio output test",      slotAudioOutput,       600, false, false,  true },
@@ -886,6 +903,7 @@ int writeLog(StreamTextLog *log, const char *prefix, const char *name)
 	char total_name[100];
 	strcpy(total_name, prefix);
 	strcat(total_name, name);
+	strcat(total_name, ".log");
 
 	FileManager *fm = FileManager :: getFileManager();
 	File *file;
@@ -912,7 +930,7 @@ extern "C" {
 		printf("Welcome to the Ultimate-II+ automated test system.\n");
 		printf("Initializing local USB devices...\n");
 
-		// rtc.set_time_in_chip(0, 2016 - 1980, 11, 19, 6, 14, 14, 0);
+		// rtc.set_time_in_chip(0, 2016 - 1980, 11, 19, 6, 17, 45, 0);
 		custom_outbyte = outbyte_log;
 
 		usb2.initHardware();
@@ -972,14 +990,14 @@ extern "C" {
 				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04);
 				slotSuite.Run((volatile uint32_t *)JTAG_1_BASE);
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
-				if (!jigSuite.Passed()) {
+				if (!slotSuite.Passed()) {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
 				} else {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one
 				}
 				slotSuite.Report();
 				logger.Stop();
-				writeLog(&logger, "/Usb?/logs/slot_", jigSuite.getDateTime());
+				writeLog(&logger, "/Usb?/logs/slot_", slotSuite.getDateTime());
 			}
 			vTaskDelay(20);
 			printf("\nPress Left Button to run test on JIG. Press Right button to run test in Slot.\n");
