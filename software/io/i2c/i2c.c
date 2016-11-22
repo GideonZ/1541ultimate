@@ -136,22 +136,23 @@ void i2c_scan_bus(void)
 	printf("\n");
 }
 
-uint8_t i2c_read_byte(const uint8_t devaddr, const uint8_t regaddr)
+uint8_t i2c_read_byte(const uint8_t devaddr, const uint8_t regaddr, int *res)
 {
 	i2c_start();
-	int res;
-	res = i2c_send_byte(devaddr);
-	if(res) {
-		printf("Error sending write address (%d)\n", res);
+	*res = 0;
+	*res = i2c_send_byte(devaddr);
+	if(*res) {
+		printf("Error sending read address (%d)\n", *res);
+		return 0xFF;
 	}
-	res = i2c_send_byte(regaddr);
-	if(res) {
-		printf("Error sending register address (%d)\n", res);
+	*res = i2c_send_byte(regaddr);
+	if(*res) {
+		printf("Error sending register address (%d)\n", *res);
 	}
 	i2c_restart();
-	res = i2c_send_byte(devaddr | 1);
-	if(res) {
-		printf("Error sending read address (%d)\n", res);
+	*res = i2c_send_byte(devaddr | 1);
+	if(*res) {
+		printf("Error sending read address (%d)\n", *res);
 	}
 	uint8_t result = i2c_receive_byte(0);
 	i2c_stop();

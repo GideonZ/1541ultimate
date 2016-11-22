@@ -72,7 +72,7 @@ UsbDriver *UsbScsiDriver :: test_driver(UsbDevice *dev)
 //		printf("SubClass is not transparent SCSI. [%b]\n", dev->interface_descr.sub_class);
 //		return false;
 //	}
-	printf("** Mass storage device found **\n");
+	// printf("** Mass storage device found **\n");
 	return new UsbScsiDriver();
 }
 
@@ -87,7 +87,7 @@ int UsbScsiDriver :: get_max_lun(UsbDevice *dev)
     if(!i)
         return 0;
 
-    printf("Got %d bytes. Max lun: %b\n", i, dummy_buffer[0]);
+    //printf("Got %d bytes. Max lun: %b\n", i, dummy_buffer[0]);
     return (int)dummy_buffer[0];
 }
 
@@ -99,7 +99,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	dev->set_interface(dev->interfaces[0]->interface_number, dev->interfaces[0]->alternate_setting);
 
 	max_lun = get_max_lun(dev);
-	printf("max lun = %d\n", max_lun);
+	//printf("max lun = %d\n", max_lun);
 
 	// Initialize standard command structures
 	memset(&cbw, 0, sizeof(cbw));
@@ -134,7 +134,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 
 		// path_dev[i]->attach();
 		state_copy[i] = scsi_blk_dev[i]->get_state(); // returns unknown, most likely! :)
-		printf("*** LUN = %d *** Initial state = %d ***\n", i, state_copy[i]);
+		//printf("*** LUN = %d *** Initial state = %d ***\n", i, state_copy[i]);
 		uint16_t now = getMsTimer();
 		now += 500 + (i * 100);
 		poll_interval[i] = now;
@@ -142,7 +142,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 		file_manager->add_root_entry(path_dev[i]);
 	}
 	current_lun = 0;
-	printf("Now enabling poll.\n");
+	// printf("Now enabling poll.\n");
 	poll_enable = true;
 }
 
@@ -195,7 +195,7 @@ void UsbScsiDriver :: poll(void)
 		if(new_state == e_device_ready) {
 			if(!media_seen[current_lun]) {
 				if(blk->read_capacity(&capacity, &block_size) == RES_OK) {
-					printf("Path Dev %p %p. Current lun %d. BS = %d\n", path_dev, path_dev[current_lun], current_lun, block_size);
+					// printf("Path Dev %p %p. Current lun %d. BS = %d\n", path_dev, path_dev[current_lun], current_lun, block_size);
 					path_dev[current_lun]->attach_disk(int(block_size));
 				} else {
 					blk->set_state(e_device_error);
@@ -253,12 +253,12 @@ void UsbScsi :: reset(void)
 
 	set_state(e_device_unknown);
 
-	printf("Going to do inquiry..\n");
+//	printf("Going to do inquiry..\n");
     inquiry();
-    driver->request_sense(lun, true);
+    driver->request_sense(lun, false);
 
 //    test_unit_ready();
-	printf("Reset Done..\n");
+//	printf("Reset Done..\n");
 }
 
 int UsbScsiDriver :: status_transport(bool do_bulk_in=true)
@@ -496,7 +496,7 @@ void UsbScsi :: inquiry(void)
     uint8_t inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
     //inquiry_command[1] = BYTE(lun << 5);
 
-    if((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, true)) < 0) {
+    if((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) {
     	printf("Inquiry failed. %d\n", len);
     	initialized = false; // don't try again
     	return;
@@ -504,11 +504,11 @@ void UsbScsi :: inquiry(void)
 
     removable = 0;
     if(response[1] & 0x80) {
-    	printf("Removable device!\n");
+    	//printf("Removable device!\n");
     	removable = 1;
     }
     response[36] = 0;
-    printf("Device: %s\n", (char *)&response[8]);
+    printf("Device: %s %s\n", (char *)&response[8], (removable)?"(Removable)":"");
     
     // copy display name
     char *n = disp_name;
@@ -555,14 +555,14 @@ DRESULT UsbScsi :: read_capacity(uint32_t *num_blocks, uint32_t *blk_size)
         return RES_NOTRDY;
 
     uint8_t read_cap_command[] = { 0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    printf("Read capacity.\n");
+    // printf("Read capacity.\n");
     int stat = driver->exec_command(lun, 10, false, read_cap_command, 8, buf, false);
     
     if(stat >= 0) {
     	*num_blocks = LD_DWORD_BE(&buf[0]);
         ++(*num_blocks);
         *blk_size = LD_DWORD_BE(&buf[4]);
-        printf("Block Size: %d. Num Blocks: %d\n", *blk_size, *num_blocks);
+        // printf("Block Size: %d. Num Blocks: %d\n", *blk_size, *num_blocks);
         this->block_size = int(*blk_size);
         this->capacity   = *num_blocks;
         return RES_OK;

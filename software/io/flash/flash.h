@@ -54,7 +54,8 @@ public:
 	virtual Flash *tester(void) { return NULL; }
     
 	// Getting the serial number
-    virtual void read_serial(void *buffer) { }
+    virtual const char *get_type_string(void) { return "Base"; }
+	virtual void read_serial(void *buffer) { }
 
 	// Interface for getting images from ROM.
 	virtual int  read_image(int image_id, void *buffer, int buf_size) { return 0; }

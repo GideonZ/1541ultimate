@@ -6,6 +6,7 @@
 
 #include "altera_avalon_spi.h"
 #include "altera_avalon_pio_regs.h"
+#include "altera_msgdma.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -56,8 +57,9 @@ BinaryImage_t toBeFlashed[] = {
 		{ "/Usb?/flash/rompack.bin",           "ROM Pack",             0x80200000, 0, 0 }
 };
 
-BinaryImage_t dutFpga = { "/Usb?/tester/dut.b",   "DUT FPGA Image", 0, 0, 0 };
-BinaryImage_t dutAppl = { "/Usb?/tester/dut.app", "DUT Application Image", 0, 0, 0 };
+BinaryImage_t dutFpga   = { "/Usb?/tester/dut.fpga","DUT FPGA Image", 0, 0, 0 };
+BinaryImage_t dutAppl   = { "/Usb?/tester/dut.app", "DUT Application Image", 0, 0, 0 };
+BinaryImage_t jigReport = { "", "JIG Report", 0xEE000, 0, 0 };
 
 #define APPLICATION_RUN  (0x20000780)
 #define BUFFER_LOCATION  (0x20000784)
@@ -485,7 +487,7 @@ int jigPowerSwitchOverTest(JTAG_Access_t *target, int timeout, char **log)
 
 int jigVoltageRegulatorTest(JTAG_Access_t *target, int timeout, char **log)
 {
-	//IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 7));
+	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (7 << 13)); // clear loads
 	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0xE0);
 	vTaskDelay(200);
 	jtag_clear_fpga(target->host);
@@ -498,6 +500,88 @@ int jigVoltageRegulatorTest(JTAG_Access_t *target, int timeout, char **log)
 	}
 	return 0;
 }
+
+int jigVoltageRegulatorLoad(JTAG_Access_t *target, int timeout, char **log)
+{
+	uint32_t v50, mA, uW, uWdiff, Vr, Ir, Pr, eff;
+	int errors = 0;
+
+	//IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 7));
+	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0xE0);
+	vTaskDelay(150);
+	report_analog();
+
+	v50 = adc_read_channel_corrected(2);
+	mA = adc_read_channel_corrected(0) / 1000;
+	uW = v50 * mA;
+	uint32_t uWStart = uW;
+	printf("Starting with: %d mW\n", uWStart / 1000);
+
+	// 1.2V
+	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, (1 << 13)); // load 1.2V
+	vTaskDelay(50);
+	v50 = adc_read_channel_corrected(2);
+	mA = adc_read_channel_corrected(0) / 1000;
+	Vr = adc_read_channel_corrected(7);
+	Ir = ((10 * Vr) + 23) / 47;
+	Pr = (Ir * Vr);
+	uW = v50 * mA;
+	uWdiff = uW - uWStart;
+	eff = Pr / (uWdiff / 100);
+	printf("%d mW (+%d mW), Ir = %d mA thru 4.7 Ohm = %d mW. Eff = %d\%\n", uW / 1000, uWdiff / 1000, Ir, Pr / 1000, eff);
+	if (Vr < 1050) {
+		errors |= 1;
+	}
+	if (eff < 75) {
+		errors |= 2;
+	}
+
+	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 13)); // load 1.2V (measured: 1.111)
+
+	// 1.8V
+	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, (1 << 14)); // load 1.8V
+	vTaskDelay(50);
+	v50 = adc_read_channel_corrected(2);
+	mA = adc_read_channel_corrected(0) / 1000;
+	Vr = adc_read_channel_corrected(6);
+	Ir = ((10 * Vr) + 34) / 68;
+	Pr = (Ir * Vr);
+	uW = v50 * mA;
+	uWdiff = uW - uWStart;
+	eff = Pr / (uWdiff / 100);
+	printf("%d mW (+%d mW), Ir = %d mA thru 6.8 Ohm = %d mW. Eff = %d\%\n", uW / 1000, uWdiff / 1000, Ir, Pr / 1000, eff);
+	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 14)); // load 1.8V (measured: 1.708)
+
+	if (Vr < 1650) {
+		errors |= 4;
+	}
+	if (eff < 82) {
+		errors |= 8;
+	}
+
+	// 3.3V
+	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, (1 << 15)); // load 3.3V
+	vTaskDelay(50);
+	v50 = adc_read_channel_corrected(2);
+	mA = adc_read_channel_corrected(0) / 1000;
+	Vr = adc_read_channel_corrected(4);
+	Ir = (Vr + 8) / 15;
+	Pr = (Ir * Vr);
+	uW = v50 * mA;
+	uWdiff = uW - uWStart;
+	eff = Pr / (uWdiff / 100);
+	printf("%d mW (+%d mW), Ir = %d mA thru 15 Ohm = %d mW. Eff = %d\%\n", uW / 1000, uWdiff / 1000, Ir, Pr / 1000, eff);
+	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 15)); // load 3.3V (measured: 3.24)
+
+	if (Vr < 1650) {
+		errors |= 16;
+	}
+	if (eff < 82) {
+		errors |= 32;
+	}
+	return errors;
+}
+
 
 int bringupIdCode(JTAG_Access_t *target, int timeout, char **log)
 {
@@ -515,6 +599,7 @@ int bringupConfigure(JTAG_Access_t *target, int timeout, char **log)
 		printf("No FPGA image loaded from USB.\n");
 		return -1;
 	}
+
 	jtag_configure_fpga(target->host, (uint8_t *)dutFpga.buffer, (int)dutFpga.size);
 	vTaskDelay(100);
 	report_analog();
@@ -627,7 +712,18 @@ int dutPowerOn(JTAG_Access_t *target, int timeout, char **log)
 	vTaskDelay(200);
 	jtag_clear_fpga(target->host);
 	vTaskDelay(100);
-	// TODO: Test current ~45-85 mA; not working on Tester V1.
+
+	uint32_t uA = adc_read_channel_corrected(0);
+	printf("Measured current: %d mA\n", uA / 1000);
+
+	if (uA < 25000) {
+		printf("Current low. No device detected in slot.\n");
+		return -1;
+	}
+	if (uA > 100000) {
+		printf("Current high! There might be a problem with the device in the slot.\n");
+		return -2;
+	}
 	return 0;
 }
 
@@ -834,18 +930,26 @@ int copyRtc(JTAG_Access_t *target, int timeout, char **log)
 	ENTER_SAFE_SECTION
 	uint32_t timebuf[3];
 	uint8_t *pb = (uint8_t *)timebuf;
-    for(int i=0;i<11;i++) {
-        *(pb++) = i2c_read_byte(0xA2, i);
-    }
+    int res;
+	for(int i=0;i<11;i++) {
+        *(pb++) = i2c_read_byte(0xA2, i, &res);
+        if (res) {
+        	break;
+        }
+	}
 	LEAVE_SAFE_SECTION
-	vji_write_memory(target, TIMELOC, 3, timebuf);
-	int retval = executeDutCommand(target, 15, timeout, log);
+	int retval = -9;
+	if (!res) {
+		vji_write_memory(target, TIMELOC, 3, timebuf);
+		retval = executeDutCommand(target, 15, timeout, log);
+	}
 	return retval;
 }
 
 TestDefinition_t jig_tests[] = {
 		{ "Power SwitchOver Test",  jigPowerSwitchOverTest,  1, false, false, false },
 		{ "Voltage Regulator Test", jigVoltageRegulatorTest, 1,  true, false, false },
+		{ "VREG Load Test",         jigVoltageRegulatorLoad, 1, false, false, false },
 		{ "Check FPGA ID Code",     bringupIdCode,           1,  true, false, false },
 		{ "Configure the FPGA",     bringupConfigure,        1,  true, false, false },
 		{ "Verify reference clock", checkReferenceClock,     1,  true, false, false },
@@ -856,21 +960,21 @@ TestDefinition_t jig_tests[] = {
 		{ "Verify USB Phy clock",   checkUsbClock,           1, false, false,  true },
 		{ "Verify USB Phy type",    checkUsbPhy,           150, false, false,  true },
 		{ "RTC access test",        checkRtcAccess,        150, false, false,  true },
-		{ "Copy time to DUT RTC",   copyRtc,			   150, false, false,  true },
 		{ "", NULL, 0, false, false, false }
 };
 
 TestDefinition_t slot_tests[] = {
-		{ "Power up DUT in slot",   dutPowerOn,              1, false, false, false },
+		{ "Power up DUT in slot",   dutPowerOn,              1,  true, false, false },
 		{ "Check FPGA ID Code",     bringupIdCode,           1,  true, false,  true },
 		{ "Configure the FPGA",     bringupConfigure,        1,  true, false,  true },
 		{ "Digital I/O test",       checkDigitalIO,          1, false, false,  true },
 		{ "Verify reference clock", checkReferenceClock,     1,  true, false,  true },
 		{ "Verify DUT appl running",checkApplicationRun,   150,  true, false,  true },
-		{ "Check Flash Types",      checkFlashSwitch,      150,  true, false,  true },
 		{ "Button Test", 			checkButtons,		  3000, false,  true,  true },
+		{ "Check Flash Types",      checkFlashSwitch,      150, false, false,  true },
 		{ "Audio input test",       slotAudioInput,        600, false, false,  true },
 		{ "Audio output test",      slotAudioOutput,       600, false, false,  true },
+		{ "Copy time to DUT RTC",   copyRtc,			   150, false, false,  true },
 		{ "RTC advance test",       checkRtcAdvance,       400, false, false,  true },
 		{ "Ethernet Tx test",       checkNetworkTx,        120, false, false,  false },
 		{ "Ethernet Rx test",       checkNetworkRx,        120, false, false,  false },
@@ -921,6 +1025,64 @@ int writeLog(StreamTextLog *log, const char *prefix, const char *name)
 	return fres;
 }
 
+void listenJtag(void)
+{
+	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, (14 << 4)); // setting power on on JIG
+	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, (1 << 16)); // setting JTAG to input
+
+	alt_msgdma_dev *dma_in = alt_msgdma_open("/dev/jtagdebug_csr");
+	if (!dma_in) {
+		printf("Cannot open dma input device for JTAG snoop.\n");
+		return;
+	}
+
+	uint8_t *buffer = (uint8_t *)malloc(8*1024*1024);
+	memset(buffer, 0xFF, 8*1024*1024);
+	printf("Now 'listening' on JTAG port.\n");
+
+	alt_msgdma_standard_descriptor desc_in;
+	desc_in.write_address = (uint32_t*)buffer;
+	desc_in.transfer_length = 8*1024*1024 - 4;
+	desc_in.control = 0x80000000; // just once
+	alt_msgdma_standard_descriptor_async_transfer(dma_in, &desc_in);
+
+	vTaskDelay(200);
+	while(1) {
+		vTaskDelay(50);
+		uint8_t buttons = getButtons();
+		if (!buttons) {
+			continue;
+		}
+		if (buttons == 0x02) {
+			printf("Middle button stop. Going to write file.\n\n");
+			break;
+		}
+	}
+	int i;
+	for(i = 8*1024*1024 - 4; i > 0; i--) {
+		if(buffer[i] != 0xFF) {
+			break;
+		}
+	}
+	printf("Length of capture found: %d\n", i);
+
+	FileManager *fm = FileManager :: getFileManager();
+	File *file;
+	FRESULT fres = fm->fopen("/Usb?/jtag_trace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &file);
+	if (fres == FR_OK) {
+		uint32_t transferred = 0;
+		file->write(buffer, i, &transferred);
+		if (transferred != i) {
+			printf("Warning! Trace file not (completely) written.\n");
+		}
+		fm->fclose(file);
+	} else {
+		printf("WARNING! Trace file could not be written!\n");
+	}
+
+	free(buffer);
+}
+
 extern "C" {
 	void main_task(void *context)
 	{
@@ -951,11 +1113,12 @@ extern "C" {
 			load_file(&toBeFlashed[i]);
 		}
 
+/*
 		// Initialize fpga and application structures for DUT
 		dutFpga.buffer = (uint32_t *)&_dut_b_start;
 		dutFpga.size   = (uint32_t)&_dut_b_size;
 		dutAppl.buffer = (uint32_t *)&_dut_application_start;
-		// printf("%p %d\n", (uint32_t *)&_dut_b_start, (uint32_t)&_dut_b_size);
+*/
 		load_file(&dutFpga);
 		load_file(&dutAppl);
 
@@ -964,6 +1127,7 @@ extern "C" {
 
 		printf("\nPress Left Button to run test on JIG. Press Right button to run test in Slot.\n");
 		while(1) {
+			vTaskDelay(1);
 			uint8_t buttons = getButtons();
 			if (!buttons) {
 				continue;
@@ -972,18 +1136,29 @@ extern "C" {
 			if (buttons == 0x01) {
 				jigSuite.Reset();
 				logger.Reset();
+				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 16)); // setting JTAG to output (port 0)
 				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04); // yellow one
 				jigSuite.Run((volatile uint32_t *)JTAG_0_BASE);
-				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
+				jigSuite.Report();
+				logger.Stop();
+				jigReport.buffer = (uint32_t *)logger.getText();
+				jigReport.size = logger.getLength();
+				program_flash(jigSuite.getTarget(), &jigReport);
+				vTaskDelay(5);
+				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4); // turn off
 				if (!jigSuite.Passed()) {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
 				} else {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one
 				}
-				jigSuite.Report();
-				logger.Stop();
 				writeLog(&logger, "/Usb?/logs/jig_", jigSuite.getDateTime());
 			}
+/*
+			if (buttons == 0x02) {
+				printf("Middle button pressed. ");
+				listenJtag();
+			}
+*/
 			if (buttons == 0x04) {
 				slotSuite.Reset();
 				logger.Reset();

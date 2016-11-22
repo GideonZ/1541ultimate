@@ -25,6 +25,25 @@ void jtag_instruction(volatile uint32_t *host, uint32_t inst)
 	host[0] = JTAG_TMSSEL | (1 << 16) | 0x01; // send 2 bits: 1, 0 on TMS to get back to idle state
 }
 
+void jtag_instruction_pause_ir(volatile uint32_t *host, uint32_t inst)
+{
+	host[0] = JTAG_TMSSEL | (3 << 16) | 0x03; // send 4 bits: 1, 1, 0, 0 to get into ShiftIR state
+	host[0] = JTAG_LAST   | (9 << 16) | inst; // send 10 bits of instruction data, we are now in Exit1-IR state
+	host[0] = JTAG_TMSSEL | (0 << 16) | 0x00; // send 1 bits: 0 on TMS to get to pause_ir state
+}
+
+void jtag_pause_ir_instruction(volatile uint32_t *host, uint32_t inst)
+{
+	host[0] = JTAG_TMSSEL | (5 << 16) | 0x0F; // send 6 bits: 1, 1, 1, 1, 0, 0 to get into ShiftIR state
+	host[0] = JTAG_LAST   | (9 << 16) | inst; // send 10 bits of instruction data, we are now in Exit1-IR state
+	host[0] = JTAG_TMSSEL | (0 << 16) | 0x00; // send 1 bits: 0 on TMS to get to pause_ir state
+}
+
+void jtag_exit_pause_ir(volatile uint32_t *host)
+{
+	host[0] = JTAG_TMSSEL | (2 << 16) | 0x03; // send 3 bits: 1, 1, 0 to get into idle state
+}
+
 void jtag_senddata(volatile uint32_t *host, uint8_t *data, int length, uint8_t *readback)
 {
 	host[0] = JTAG_TMSSEL | (2 << 16) | 0x01; // send 3 bits: 1, 0, 0 to get into ShiftDR state
@@ -205,6 +224,7 @@ void jtag_configure_fpga(volatile uint32_t *host, uint8_t *data, int length)
 	STATE IDLE;
 	*/
 	jtag_reset_to_idle(host);
+	jtag_instruction(host, 0x2D0); // Disengage active?
 	host[0] = JTAG_TMSSEL | (3 << 16) | 0x03; // send 4 bits: 1, 1, 0, 0 to get into ShiftIR state
 	host[0] = JTAG_LAST   | (9 << 16) | 2;    // send 10 bits of instruction data, we are now in Exit1-IR state
 	host[0] = JTAG_TMSSEL | (3 << 16) | 0x06; // send 4 bits: 0, 1, 1, 0 to get into Idle state through Pause-IR
@@ -219,17 +239,25 @@ void jtag_configure_fpga(volatile uint32_t *host, uint8_t *data, int length)
 	host[0] = JTAG_TMSSEL | (2 << 16) | 0x01; // send 3 bits: 1, 1, 0 to get into ShiftDR state.
 	host[0] = JTAG_LAST   | (731 << 16);      // send 732 zero bits on TDI and exit to Exit1-DR
 	host[0] = JTAG_TMSSEL | (1 << 16) | 0x01; // send 2 bits: 1, 0 on TMS to get back to idle state
-	jtag_instruction(host, 3);
+	jtag_instruction_pause_ir(host, 3);
 	host[0] = (16383 << 16); 				  // send 16384 clocks, but stay in idle
 	host[0] = (16383 << 16); 				  // send 16384 clocks, but stay in idle
 	host[0] = (16383 << 16); 				  // send 16384 clocks, but stay in idle
 	host[0] = (16383 << 16); 				  // send 16384 clocks, but stay in idle
 	host[0] = (16383 << 16); 				  // send 16384 clocks, but stay in idle
+
+	host[0] = (16383 << 16); 				  // send 16384 clocks, but stay in idle
+	host[0] = (16383 << 16); 				  // send 16384 clocks, but stay in idle
+	host[0] = (16383 << 16); 				  // send 16384 clocks, but stay in idle
+
 	host[0] = (16383 << 16); 				  // send 16384 clocks, but stay in idle
 	host[0] = (4607  << 16);                  // send the remaining 4608 clocks, stay in idle
-	jtag_instruction(host, 0x3FF);
+	jtag_pause_ir_instruction(host, 0x3FF);
 	host[0] = (12499 << 16);                  // send 12500 zero bits on TDI, stay in same state
 	host[0] = (12499 << 16);                  // send 12500 zero bits on TDI, stay in same state
+	host[0] = (12499 << 16);                  // send 12500 zero bits on TDI, stay in same state
+	jtag_exit_pause_ir(host);
+	//jtag_reset_to_idle(host);
 	volatile uint32_t read = host[0];         // this read forces us to wait until the jtag controller is done
 //	printf("Configuring FPGA completed. %d\n");
 }

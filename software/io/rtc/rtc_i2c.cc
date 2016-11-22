@@ -91,8 +91,9 @@ void Rtc :: write_byte(int addr, uint8_t val)
 void Rtc :: read_all(void)
 {
 	ENTER_SAFE_SECTION
-    for(int i=0;i<11;i++) {
-        rtc_regs[i] = i2c_read_byte(0xA2, i);
+    int dummy;
+	for(int i=0;i<11;i++) {
+        rtc_regs[i] = i2c_read_byte(0xA2, i, &dummy);
 
     }
 	LEAVE_SAFE_SECTION

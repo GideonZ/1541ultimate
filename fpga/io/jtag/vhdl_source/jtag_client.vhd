@@ -22,6 +22,8 @@ port (
     avm_readdatavalid   : in  std_logic;
     avm_waitrequest     : in  std_logic;
 
+    clock_1         : in  std_logic;
+    clock_2         : in  std_logic;
     sample_vector   : in  std_logic_vector(47 downto 0);
     write_vector    : out std_logic_vector(7 downto 0) );
 end entity;
@@ -49,7 +51,10 @@ architecture arch of jtag_client is
     signal shiftreg_sample    : std_logic_vector(sample_vector'range);
     signal shiftreg_write     : std_logic_vector(write_vector'range);
     signal shiftreg_debug     : std_logic_vector(24 downto 0);
+    signal shiftreg_clock     : std_logic_vector(7 downto 0);
     signal debug_bits         : std_logic_vector(4 downto 0);
+    signal clock_1_shift      : std_logic_vector(7 downto 0) := X"00";
+    signal clock_2_shift      : std_logic_vector(7 downto 0) := X"00";
 
     signal bypass_reg         : std_logic;
     signal bit_count          : unsigned(4 downto 0) := (others => '0');    
@@ -129,7 +134,7 @@ begin
                 shiftreg_sample <= tdi & shiftreg_sample(shiftreg_sample'high downto 1);
                 shiftreg_write <= tdi & shiftreg_write(shiftreg_write'high downto 1);
                 shiftreg_debug <= tdi & shiftreg_debug(shiftreg_debug'high downto 1);
-
+                shiftreg_clock <= tdi & shiftreg_debug(shiftreg_clock'high downto 1);
                 bit_count <= bit_count + 1;
                 if ir_in = X"4" then
                     if bit_count(2 downto 0) = "111" then
@@ -159,6 +164,12 @@ begin
                 bit_count <= (others => '0');
                 shiftreg_fifo <= X"00" & std_logic_vector(read_fifo_count);
                 shiftreg_debug <= debug_bits & last_command & std_logic_vector(cmd_count);
+                if ir_in = X"8" then
+                    shiftreg_clock <= clock_1_shift;
+                end if;  
+                if ir_in = X"9" then
+                    shiftreg_clock <= clock_2_shift;
+                end if;  
             end if;
            
             if virtual_state_udr = '1' then
@@ -172,7 +183,21 @@ begin
         end if;
     end process;
 
-    process(ir_in, bit_count, shiftreg_sample, shiftreg_write, bypass_reg, shiftreg_fifo, shiftreg_debug)
+    process(clock_1)
+    begin
+        if rising_edge(clock_1) then
+            clock_1_shift <= clock_1_shift(6 downto 0) & not clock_1_shift(7);
+        end if;
+    end process;
+    
+    process(clock_2)
+    begin
+        if rising_edge(clock_2) then
+            clock_2_shift <= clock_2_shift(6 downto 0) & not clock_2_shift(7);
+        end if;
+    end process;
+
+    process(ir_in, bit_count, shiftreg_sample, shiftreg_write, bypass_reg, shiftreg_fifo, shiftreg_debug, shiftreg_clock)
     begin
         case ir_in is
         when X"0" =>
@@ -185,6 +210,8 @@ begin
             tdo <= shiftreg_debug(0);
         when X"4" =>
             tdo <= shiftreg_fifo(0);
+        when X"8" | X"9" =>
+            tdo <= shiftreg_clock(0);
         when others =>
             tdo <= bypass_reg;
         end case;            

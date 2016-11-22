@@ -6,6 +6,7 @@
 #include "rmii_interface.h"
 #include "dump_hex.h"
 #include "flash.h"
+#include "mdio.h"
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
@@ -55,11 +56,14 @@ RmiiInterface :: RmiiInterface()
     ram_base = (uint8_t *) (((uint32_t)ram_buffer + 255) & 0xFFFFFF00);
     RMII_FREE_BASE = (uint32_t)ram_base;
 
-    printf("Rmii RAM buffer: %p.. Base = %p\n", ram_buffer, ram_base);
+    // printf("Rmii RAM buffer: %p.. Base = %p\n", ram_buffer, ram_base);
 
-    if (ram_buffer) {
+	mdio_write(0x1B, 0x0500); // enable link up, link down interrupts
+	mdio_write(0x16, 0x0002); // disable factory reset mode
+
+	if (ram_buffer) {
         xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
-        queue = xQueueCreate(128, sizeof(struct EthPacket)); // single byte queue, only IDs!
+        queue = xQueueCreate(128, sizeof(struct EthPacket));
     }
 }
 
@@ -68,7 +72,6 @@ void RmiiInterface :: startRmiiTask(void *a)
 	rmii_interface.rmiiTask();
 }
 
-#include "mdio.h"
 void RmiiInterface :: rmiiTask(void)
 {
 	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
@@ -119,7 +122,7 @@ void RmiiInterface :: rmiiTask(void)
 			uint16_t status = mdio_read(1);
 			if(status & 0x04) {
 				if(!link_up) {
-					printf("Bringing link up.\n");
+					//printf("Bringing link up.\n");
 					if (netstack)
 						netstack->link_up();
 					link_up = true;
@@ -133,7 +136,7 @@ void RmiiInterface :: rmiiTask(void)
 			uint16_t status = mdio_read(1);
 			if ((status & 0x04) == 0) {
 				if(link_up) {
-					printf("Bringing link down.\n");
+					//printf("Bringing link down.\n");
 					if (netstack)
 						netstack->link_down();
 					link_up = false;
@@ -197,6 +200,7 @@ uint8_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 
 	if (RMII_TX_BUSY) {
 		printf("Oops.. tx is busy!\n");
+		return 1;
 	}
 	//printf("Rmii Out Packet: %p %4x\n", buffer, pkt_len);
 	//dump_hex_relative(buffer, (pkt_len > 64)?64:pkt_len);
@@ -206,3 +210,10 @@ uint8_t RmiiInterface :: output_packet(uint8_t *buffer, int pkt_len)
 
 	return 0;
 }
+
+/*
+uint8_t rmiiTransmit(uint8_t *buffer, int pkt_len)
+{
+	return rmii_interface.output_packet(buffer, pkt_len);
+}
+*/

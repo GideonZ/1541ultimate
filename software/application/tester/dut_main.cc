@@ -185,15 +185,21 @@ int testRtcAccess(void)
 
 	ENTER_SAFE_SECTION
 	i2c_write_byte(0xA2, 0x03, 0x55);
-	uint8_t rambyte = i2c_read_byte(0xA2, 0x03);
+	int res;
+	uint8_t rambyte = i2c_read_byte(0xA2, 0x03, &res);
 	LEAVE_SAFE_SECTION
+	if (res)
+		return -9;
+
 	if (rambyte != 0x55)
 		test_c ++;
 
 	ENTER_SAFE_SECTION
 	i2c_write_byte(0xA2, 0x03, 0xAA);
-	rambyte = i2c_read_byte(0xA2, 0x03);
+	rambyte = i2c_read_byte(0xA2, 0x03, &res);
 	LEAVE_SAFE_SECTION
+	if (res)
+		return -9;
 	if (rambyte != 0xAA)
 		test_c ++;
 
@@ -204,11 +210,15 @@ int readRtc()
 {
 	ENTER_SAFE_SECTION
 	volatile uint8_t *pb = TIME;
-    for(int i=0;i<11;i++) {
-        *(pb++) = i2c_read_byte(0xA2, i);
+	int res;
+	for(int i=0;i<11;i++) {
+        *(pb++) = i2c_read_byte(0xA2, i, &res);
+        if (res) {
+        	break;
+        }
     }
 	LEAVE_SAFE_SECTION
-	return 0;
+	return res;
 }
 
 int writeRtc()

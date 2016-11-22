@@ -125,7 +125,7 @@ void W25Q_Flash :: read_dev_addr(int device_addr, int len, void *buffer)
 Flash *W25Q_Flash :: tester()
 {
 	portENTER_CRITICAL();
-    SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
+	SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS;
     SPI_FLASH_DATA = 0xFF;
     SPI_FLASH_CTRL = SPI_FORCE_SS;
 
@@ -143,7 +143,7 @@ Flash *W25Q_Flash :: tester()
 		return NULL;
 	}
 
-    printf("W25Q MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
+    //printf("W25Q MANUF: %02x MEM_TYPE: %02x CAPACITY: %02x\n", manuf, mem_type, capacity);
 
     if(capacity == 0x14) { // 8 Mbit
 		sector_size  = 16;
@@ -167,6 +167,19 @@ Flash *W25Q_Flash :: tester()
 	return NULL;
 }
 
+const char *W25Q_Flash :: get_type_string(void)
+{
+	switch(total_size) {
+	case 4096:
+		return "W25Q80";
+	case 8192:
+		return "W25Q16";
+	case 16384:
+		return "W25Q32";
+	default:
+		return "Winbond";
+	}
+}
 
 int W25Q_Flash :: get_page_size(void)
 {
@@ -359,7 +372,9 @@ void W25Q_Flash :: protect_disable(void)
 
 	SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteDisable;
-    SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
+
+/*
+	SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = W25Q_ReadStatusRegister1;
 	printf("Status register 1: %b %b %b %b\n", SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
@@ -369,11 +384,15 @@ void W25Q_Flash :: protect_disable(void)
 	printf("Status register 2: %b %b %b %b\n", SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
     SPI_FLASH_CTRL = 0;
+*/
+
+/*
     SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
 	SPI_FLASH_DATA = W25Q_ReadUniqueIDNumber;
 	SPI_FLASH_DATA_32 = 0x55555555;
 	printf("Unique ID: %b %b %b %b\n", SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA, SPI_FLASH_DATA);
     SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high
+*/
 
     SPI_FLASH_CTRL = 0;
 	SPI_FLASH_DATA = W25Q_WriteEnable;

@@ -1,5 +1,5 @@
 #include "u2p.h"
-#include "iomap_tester.h"
+#include "itu.h"
 #include <stdio.h>
 
 #define W25Q_ContinuousArrayRead_LowFrequency       0x03
@@ -132,7 +132,6 @@ int main()
     			}
     		}
     	}
-//    	printf(": %d\n\r", best_pos);
     	if (best_length > best_overall) {
     		best_overall = best_length;
     		best_mode = mode;
@@ -151,22 +150,8 @@ int main()
 	ioWrite8(UART_DATA, '\r');
 	ioWrite8(UART_DATA, '\n');
 
-/*
-	for (phase = 0; phase < 160; phase ++) {
-		uint8_t measure = DDR2_MEASURE;
-		if ((measure & 0x0F) > (measure >> 4)) {
-			printf("+");
-		} else if ((measure & 0x0F) < (measure >> 4)) {
-			printf("-");
-		} else {
-			printf("0");
-		}
-		DDR2_PLLPHASE = 0x36; // move measure clock
-	}
-	printf("\n\r");
-*/
-	uint32_t flash_addr = 0xC0000; // 768K from start. FPGA image is (uncompressed) 745K
-	REMOTE_FLASHSEL_1;
+	uint32_t flash_addr = 0x80000;
+	REMOTE_FLASHSEL_0;
     REMOTE_FLASHSELCK_0;
     REMOTE_FLASHSELCK_1;
 
@@ -181,7 +166,6 @@ int main()
     uint32_t run_address = SPI_FLASH_DATA_32;
 //    uint32_t version = SPI_FLASH_DATA_32;
 
-/*
     if(length != -1) {
         while(length > 0) {
             *(dest++) = SPI_FLASH_DATA_32;
@@ -197,7 +181,6 @@ int main()
     	}
         while(1);
     }
-*/
 
     puts("Flash Empty");
     while(1)

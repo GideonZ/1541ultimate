@@ -61,6 +61,12 @@ uint16_t getMsTimer()
 	} while(result1 != result2);
 	return result1;
 }
+
+uint8_t getButtons()
+{
+	return (ioRead8(ITU_BUTTON_REG) >> 5) & 7;
+}
+
 /*
 -------------------------------------------------------------------------------
 							uart_data_available
@@ -244,6 +250,8 @@ void uart_put_byte(BYTE c)
 */
 
 void (*custom_outbyte)(int c) = 0;
+
+// void outbyte(int c) __attribute__ ((weak));
 
 void outbyte(int c)
 {

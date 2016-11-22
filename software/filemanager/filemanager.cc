@@ -240,7 +240,7 @@ FRESULT FileManager :: print_directory(const char *path)
 				fres = dir->get_entry(info);
 				if (fres != FR_OK)
 					break;
-				printf("%-32s (%s) %10d\n", info.lfname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.size);
+				printf("%32s (%s) %10d\n", info.lfname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.size);
 			}
 			fs->dir_close(dir);
 		}

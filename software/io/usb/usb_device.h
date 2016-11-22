@@ -124,6 +124,9 @@ public:
     struct t_interface_descriptor *interfaces[4];
     int num_interfaces;
 
+    uint16_t vendorID;
+    uint16_t productID;
+
     char manufacturer[32];
     char product[32];
     char serial[32];

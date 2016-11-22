@@ -77,7 +77,6 @@ class UsbBase
 	void input_task_impl(void);
     void power_off(void);
 
-    void initHardware(void);
     void deinitHardware(void);
     int get_device_slot(void);
     void deinstall_device(UsbDevice *dev);
@@ -92,6 +91,7 @@ public:
     UsbBase();
     virtual ~UsbBase();
     
+    void initHardware(void);
     BaseType_t irq_handler(void);
     UsbDevice *first_device(void);
 

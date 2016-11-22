@@ -38,6 +38,16 @@ public:
 	void reset_port(int port);
 
 	void interrupt_handler(uint8_t *, int);
+
+	UsbDevice *getChild(int index) {
+		if (index < 0) {
+			return 0;
+		}
+		if (index > 6) {
+			return 0;
+		}
+		return children[index];
+	}
 };
 
 #endif

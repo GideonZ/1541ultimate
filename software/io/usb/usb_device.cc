@@ -7,6 +7,8 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 
+#define printf(...)
+
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
 #ifdef NIOS
@@ -137,7 +139,9 @@ bool UsbDevice :: get_device_descriptor()
 		return false;
 	}
 
-	printf("Vendor/Product: %4x %4x\n", le16_to_cpu(device_descr.vendor), le16_to_cpu(device_descr.product));
+	vendorID = le16_to_cpu(device_descr.vendor);
+	productID = le16_to_cpu(device_descr.product);
+	printf("Vendor/Product: %4x %4x\n", vendorID, productID);
     printf("Class / SubClass / Protocol: %d %d %d\n", device_descr.device_class, device_descr.sub_class, device_descr.protocol);
     printf("MaxPacket: %d\n", device_descr.max_packet_size);
 
@@ -181,7 +185,7 @@ bool UsbDevice :: get_configuration(uint8_t index)
 
     config_descriptor = NULL;
     int len_descr = host->control_exchange(&control_pipe, c_get_configuration, 8, buf, 9);
-    dump_hex(buf, 16);
+    //dump_hex(buf, 16);
 
     if(len_descr < 0)
     	return false;

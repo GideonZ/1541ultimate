@@ -16,9 +16,12 @@ CC  = gcc
 # Compiling
 
 %: %.c
-	@echo
 	@echo $@
 	@$(CC) $(CFLAGS) $^ -o $(basename $@)
+
+#svf_dump: ../software/application/tester/svf_player.c
+#	@echo $@
+#	@$(CC) ../software/application/tester/svf_player.c $(CFLAGS) -DDUMP -o $(basename $@)
 
 # --------------------------------------------------------------------------
 # Binaries
@@ -40,6 +43,7 @@ clean:
 	@rm -f promgen
 	@rm -f checksum
 	@rm -f swap
+	@rm -f svf_dump
 	@rm -f bin2hex.exe
 	@rm -f hex2bin.exe
 	@rm -f make_array.exe
@@ -49,6 +53,7 @@ clean:
 	@rm -f checksum.exe
 	@rm -f dump_vcd.exe
 	@rm -f swap.exe
+	@rm -f svf_dump.exe
 	@rm -f 64tass/64tass
 	@rm -f 64tass/*.o
 	

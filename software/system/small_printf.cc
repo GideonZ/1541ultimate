@@ -84,6 +84,11 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             width = 0;
             prepad = 0;
             postpad = 0;
+            bool nega = false;
+            if (c == '-') {
+            	nega = true;
+            	c = *fmt++;
+            }
             if (c == '#') {
             	width = va_arg(ap, int); // take width parameter from stack
 				c = *fmt++;

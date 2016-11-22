@@ -49,7 +49,6 @@ set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
 set_global_assignment -name DEVICE_FILTER_PIN_COUNT 256
 set_global_assignment -name DEVICE_FILTER_SPEED_GRADE 8
 set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
-set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
 set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
 set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
 set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
@@ -368,197 +367,227 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to RMII_CRS_DV
 set_global_assignment -name GENERATE_RBF_FILE ON
 set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON
 
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd
-set_global_assignment -name SDC_FILE ultimate_altera.sdc
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_bridge2.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/cyclone4_test/vhdl_source/u2p_tester.vhd
-set_global_assignment -name QSYS_FILE ../../../fpga/nios_tester/nios_tester.qsys
-set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/i2s_serializer.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.vhd -library update
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.qip
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/megafunctions/pll.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/sync_fifo/vhdl_source/sync_fifo.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/jtag/vhdl_source/jtag_host.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/async_fifo_ft.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_nano.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd
+set_global_assignment -name QSYS_FILE ../../../fpga/altera/megafunctions/jtag/virtual_jtag.qsys
+set_global_assignment -name QSYS_FILE ../../../fpga/nios_tester/nios_tester.qsys
+set_global_assignment -name SDC_FILE ultimate_altera.sdc
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/bin2gcr.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_drive.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_timing.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1541.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/drive_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_mem.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_param_mem.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_sound.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_stream.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_codec.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_decoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_encoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr2bin.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/via6522.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/alu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/bit_cpx_cpy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/cpu6502.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/data_oper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/implied.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/pkg_6502_decode.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/pkg_6502_defs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/pkg_6502_opcodes.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_control.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_core.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_interrupt.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/shifter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/align_read_to_bram.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/mem_remain_counter.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/mem_addr_counter.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_memory_ctrl.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/timer.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/host_sequencer.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_interface.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/async_fifo_ft.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/distributed_stack.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/unisim_VPKG.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/unisim_VCOMP.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16BWE_S36_S9.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S36.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram_sc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/megafunctions/pll.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S18.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S36.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16BWE_S36_S9.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/unisim_VCOMP.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/all_carts_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/cart_slot_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/cart_slot_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/freezer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_server_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_slave.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing_62.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core_address_decoder.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core_Pkg.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/decode.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/execute.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/fetch.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/gprf.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/mem.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/std/dsram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/std/std_Pkg.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/cached_mblite.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/config_pkg.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_cache_custom.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_simple.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_with_invalidate.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_arbiter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mblite_wrapper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem16k.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem32k.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem4k.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/cyclone4_test/vhdl_source/u2p_tester.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio_select/vhdl_source/audio_select.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/i2s_serializer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/lp_filter2.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sine_osc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_playback/vhdl_source/tape_speed_control.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_record/vhdl_source/c2n_record.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/command_interface/vhdl_source/command_if_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/command_interface/vhdl_source/command_interface.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/command_interface/vhdl_source/command_protocol.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_engine.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/logic_analyzer_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/logic_analyzer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/deserializer/vhdl_source/deserializer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_interface_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_interface.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_processor_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_processor.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/crc32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_filter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/ethernet_rmii.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/packet_generator.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/rmii_transceiver.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_accu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/delta_sigma_2to5.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/hf_noise.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/high_pass.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/mash.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_zpu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spike_filter/vhdl_source/spike_filter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_zpu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/bridge_to_mem_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/data_crc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/host_sequencer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/mem_addr_counter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/mem_remain_counter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/nano_minimal_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/rxtx_to_buf.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/timer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc_19.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc_check.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_bus.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_rx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_tx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_nano.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_interface.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_nano.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_io_bank.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_memory_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/dma_bus_arbiter_pri.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/dma_bus_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/endianness_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/altera/avalon_usb.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_bridge2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/avalon_to_io_bridge.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_dummy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_to_dma_bridge.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_to_mem32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_to_io_bridge.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/real_time_clock.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/free_queue.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw_byte.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/spram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_alu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_cpu.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_alu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_nano.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_tx.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_rx.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_pkg.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_bus.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc_check.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc_19.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/rxtx_to_buf.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/nano_minimal_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/data_crc.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/bridge_to_mem_ctrl.vhd
-set_global_assignment -name QSYS_FILE ../../../fpga/altera/megafunctions/jtag/virtual_jtag.qsys
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/oc_pusher/vhdl_source/oc_pusher.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/sync_fifo/vhdl_source/sync_fifo.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/input_synchronizer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchroniser.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/adsr_multi.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/mult_acc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/oscillator.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/Q_table.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_debug_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_filter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_mapper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_mixer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_top.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_trace.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/wave_map.vhd
+set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_file_io_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_string_util_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_vector_pkg.vhd
+
 set_global_assignment -name ENABLE_SIGNALTAP ON
-set_global_assignment -name USE_SIGNALTAP_FILE stp2.stp
+set_global_assignment -name USE_SIGNALTAP_FILE ../testdut/jtag2.stp
 set_global_assignment -name SIGNALTAP_FILE output_files/stp1.stp
 set_global_assignment -name SIGNALTAP_FILE stp2.stp
 set_global_assignment -name SLD_NODE_CREATOR_ID 110 -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_ENTITY_NAME sld_signaltap -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_clk -to "nios_tester:i_nios|jtag_host:jtag_0|clock" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[0] -to "nios_tester:i_nios|jtag0_jtag_tck" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[1] -to "nios_tester:i_nios|jtag0_jtag_tdi" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[2] -to "nios_tester:i_nios|jtag0_jtag_tdo" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[3] -to "nios_tester:i_nios|jtag0_jtag_tms" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[4] -to "nios_tester:i_nios|jtag1_jtag_tck" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[5] -to "nios_tester:i_nios|jtag1_jtag_tdi" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[6] -to "nios_tester:i_nios|jtag1_jtag_tdo" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[7] -to "nios_tester:i_nios|jtag1_jtag_tms" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[8] -to "nios_tester:i_nios|jtag_host:jtag_1|data[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[9] -to "nios_tester:i_nios|jtag_host:jtag_1|data[10]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[10] -to "nios_tester:i_nios|jtag_host:jtag_1|data[11]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[11] -to "nios_tester:i_nios|jtag_host:jtag_1|data[12]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[12] -to "nios_tester:i_nios|jtag_host:jtag_1|data[13]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[13] -to "nios_tester:i_nios|jtag_host:jtag_1|data[14]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[14] -to "nios_tester:i_nios|jtag_host:jtag_1|data[15]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[15] -to "nios_tester:i_nios|jtag_host:jtag_1|data[16]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[16] -to "nios_tester:i_nios|jtag_host:jtag_1|data[17]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[17] -to "nios_tester:i_nios|jtag_host:jtag_1|data[18]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[18] -to "nios_tester:i_nios|jtag_host:jtag_1|data[19]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[19] -to "nios_tester:i_nios|jtag_host:jtag_1|data[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[20] -to "nios_tester:i_nios|jtag_host:jtag_1|data[20]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[21] -to "nios_tester:i_nios|jtag_host:jtag_1|data[21]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[22] -to "nios_tester:i_nios|jtag_host:jtag_1|data[22]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[23] -to "nios_tester:i_nios|jtag_host:jtag_1|data[23]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[24] -to "nios_tester:i_nios|jtag_host:jtag_1|data[24]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[25] -to "nios_tester:i_nios|jtag_host:jtag_1|data[25]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[26] -to "nios_tester:i_nios|jtag_host:jtag_1|data[26]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[27] -to "nios_tester:i_nios|jtag_host:jtag_1|data[27]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[28] -to "nios_tester:i_nios|jtag_host:jtag_1|data[28]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[29] -to "nios_tester:i_nios|jtag_host:jtag_1|data[29]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[30] -to "nios_tester:i_nios|jtag_host:jtag_1|data[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[31] -to "nios_tester:i_nios|jtag_host:jtag_1|data[30]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[32] -to "nios_tester:i_nios|jtag_host:jtag_1|data[31]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[33] -to "nios_tester:i_nios|jtag_host:jtag_1|data[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[34] -to "nios_tester:i_nios|jtag_host:jtag_1|data[4]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[35] -to "nios_tester:i_nios|jtag_host:jtag_1|data[5]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[36] -to "nios_tester:i_nios|jtag_host:jtag_1|data[6]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[37] -to "nios_tester:i_nios|jtag_host:jtag_1|data[7]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[38] -to "nios_tester:i_nios|jtag_host:jtag_1|data[8]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[39] -to "nios_tester:i_nios|jtag_host:jtag_1|data[9]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[40] -to "nios_tester:i_nios|jtag_host:jtag_1|length[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[41] -to "nios_tester:i_nios|jtag_host:jtag_1|length[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[42] -to "nios_tester:i_nios|jtag_host:jtag_1|length[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[43] -to "nios_tester:i_nios|jtag_host:jtag_1|length[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[44] -to "nios_tester:i_nios|jtag_host:jtag_1|length[4]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[45] -to "nios_tester:i_nios|jtag_host:jtag_1|position[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[46] -to "nios_tester:i_nios|jtag_host:jtag_1|position[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[47] -to "nios_tester:i_nios|jtag_host:jtag_1|position[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[48] -to "nios_tester:i_nios|jtag_host:jtag_1|position[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[49] -to "nios_tester:i_nios|jtag_host:jtag_1|position[4]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[50] -to "nios_tester:i_nios|jtag_host:jtag_1|rd_en" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[51] -to "nios_tester:i_nios|jtag_host:jtag_1|state.idle" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[52] -to "nios_tester:i_nios|jtag_host:jtag_1|state.shifting_H" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[53] -to "nios_tester:i_nios|jtag_host:jtag_1|state.shifting_L" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[54] -to "nios_tester:i_nios|jtag_host:jtag_1|tms_select" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[55] -to "nios_tester:i_nios|jtag_host:jtag_1|was_read" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[0] -to "nios_tester:i_nios|jtag0_jtag_tck" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[1] -to "nios_tester:i_nios|jtag0_jtag_tdi" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[2] -to "nios_tester:i_nios|jtag0_jtag_tdo" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[3] -to "nios_tester:i_nios|jtag0_jtag_tms" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[4] -to "nios_tester:i_nios|jtag1_jtag_tck" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[5] -to "nios_tester:i_nios|jtag1_jtag_tdi" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[6] -to "nios_tester:i_nios|jtag1_jtag_tdo" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[7] -to "nios_tester:i_nios|jtag1_jtag_tms" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[8] -to "nios_tester:i_nios|jtag_host:jtag_1|data[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[9] -to "nios_tester:i_nios|jtag_host:jtag_1|data[10]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[10] -to "nios_tester:i_nios|jtag_host:jtag_1|data[11]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[11] -to "nios_tester:i_nios|jtag_host:jtag_1|data[12]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[12] -to "nios_tester:i_nios|jtag_host:jtag_1|data[13]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[13] -to "nios_tester:i_nios|jtag_host:jtag_1|data[14]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[14] -to "nios_tester:i_nios|jtag_host:jtag_1|data[15]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[15] -to "nios_tester:i_nios|jtag_host:jtag_1|data[16]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[16] -to "nios_tester:i_nios|jtag_host:jtag_1|data[17]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[17] -to "nios_tester:i_nios|jtag_host:jtag_1|data[18]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[18] -to "nios_tester:i_nios|jtag_host:jtag_1|data[19]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[19] -to "nios_tester:i_nios|jtag_host:jtag_1|data[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[20] -to "nios_tester:i_nios|jtag_host:jtag_1|data[20]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[21] -to "nios_tester:i_nios|jtag_host:jtag_1|data[21]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[22] -to "nios_tester:i_nios|jtag_host:jtag_1|data[22]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[23] -to "nios_tester:i_nios|jtag_host:jtag_1|data[23]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[24] -to "nios_tester:i_nios|jtag_host:jtag_1|data[24]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[25] -to "nios_tester:i_nios|jtag_host:jtag_1|data[25]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[26] -to "nios_tester:i_nios|jtag_host:jtag_1|data[26]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[27] -to "nios_tester:i_nios|jtag_host:jtag_1|data[27]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[28] -to "nios_tester:i_nios|jtag_host:jtag_1|data[28]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[29] -to "nios_tester:i_nios|jtag_host:jtag_1|data[29]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[30] -to "nios_tester:i_nios|jtag_host:jtag_1|data[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[31] -to "nios_tester:i_nios|jtag_host:jtag_1|data[30]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[32] -to "nios_tester:i_nios|jtag_host:jtag_1|data[31]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[33] -to "nios_tester:i_nios|jtag_host:jtag_1|data[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[34] -to "nios_tester:i_nios|jtag_host:jtag_1|data[4]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[35] -to "nios_tester:i_nios|jtag_host:jtag_1|data[5]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[36] -to "nios_tester:i_nios|jtag_host:jtag_1|data[6]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[37] -to "nios_tester:i_nios|jtag_host:jtag_1|data[7]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[38] -to "nios_tester:i_nios|jtag_host:jtag_1|data[8]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[39] -to "nios_tester:i_nios|jtag_host:jtag_1|data[9]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[40] -to "nios_tester:i_nios|jtag_host:jtag_1|length[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[41] -to "nios_tester:i_nios|jtag_host:jtag_1|length[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[42] -to "nios_tester:i_nios|jtag_host:jtag_1|length[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[43] -to "nios_tester:i_nios|jtag_host:jtag_1|length[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[44] -to "nios_tester:i_nios|jtag_host:jtag_1|length[4]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[45] -to "nios_tester:i_nios|jtag_host:jtag_1|position[0]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[46] -to "nios_tester:i_nios|jtag_host:jtag_1|position[1]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[47] -to "nios_tester:i_nios|jtag_host:jtag_1|position[2]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[48] -to "nios_tester:i_nios|jtag_host:jtag_1|position[3]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[49] -to "nios_tester:i_nios|jtag_host:jtag_1|position[4]" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[50] -to "nios_tester:i_nios|jtag_host:jtag_1|rd_en" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[51] -to "nios_tester:i_nios|jtag_host:jtag_1|state.idle" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[52] -to "nios_tester:i_nios|jtag_host:jtag_1|state.shifting_H" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[53] -to "nios_tester:i_nios|jtag_host:jtag_1|state.shifting_L" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[54] -to "nios_tester:i_nios|jtag_host:jtag_1|tms_select" -section_id auto_signaltap_0
-set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[55] -to "nios_tester:i_nios|jtag_host:jtag_1|was_read" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_RAM_BLOCK_TYPE=AUTO" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_DATA_BITS=56" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_BITS=56" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STORAGE_QUALIFIER_BITS=56" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_NODE_INFO=805334528" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_POWER_UP_TRIGGER=0" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INVERSION_MASK=00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INVERSION_MASK_LENGTH=191" -section_id auto_signaltap_0
-set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STORAGE_QUALIFIER_INVERSION_MASK_LENGTH=0" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_SEGMENT_SIZE=512" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_ATTRIBUTE_MEM_MODE=OFF" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STATE_FLOW_USE_GENERATED=0" -section_id auto_signaltap_0
@@ -567,42 +596,77 @@ set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_BUFFER_FULL_STOP=
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_CURRENT_RESOURCE_WIDTH=1" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INCREMENTAL_ROUTING=1" -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[0] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[1] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[2] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[3] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[4] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[5] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[6] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[7] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[8] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[9] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[10] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[11] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[12] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[13] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[14] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[15] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[16] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[17] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[18] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[19] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[20] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[21] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[22] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[23] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[24] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[25] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[26] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[27] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
 set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[28] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[29] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[30] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
-set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[31] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_LEVEL=1" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_SAMPLE_DEPTH=512" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_IN_ENABLED=0" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_ADVANCED_TRIGGER_ENTITY=basic,1," -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_LEVEL_PIPELINE=1" -section_id auto_signaltap_0
 set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_ENABLE_ADVANCED_TRIGGER=0" -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[1] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[9] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[22] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[25] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[26] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[6] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[13] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[20] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[23] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[27] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_global_assignment -name GENERATE_SVF_FILE ON
+set_global_assignment -name SIGNALTAP_FILE ../testdut/jtag2.stp
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_clk -to "ultimate_logic_32:i_logic|sys_clock" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[0] -to "\\b_jtag_debug:jtag_tck" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[1] -to "\\b_jtag_debug:jtag_tdi" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[2] -to "\\b_jtag_debug:jtag_tdo" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[3] -to "\\b_jtag_debug:jtag_tms" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[4] -to jtag_in_valid -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[5] -to "nios_tester:i_nios|jtag_in_data[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[6] -to "nios_tester:i_nios|jtag_in_data[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[7] -to "nios_tester:i_nios|jtag_in_data[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[8] -to "nios_tester:i_nios|jtag_in_data[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[9] -to "nios_tester:i_nios|jtag_in_data[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[10] -to "nios_tester:i_nios|jtag_in_data[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[11] -to "nios_tester:i_nios|jtag_in_data[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_trigger_in[12] -to "nios_tester:i_nios|jtag_in_data[7]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[0] -to "\\b_jtag_debug:jtag_tck" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[1] -to "\\b_jtag_debug:jtag_tdi" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[2] -to "\\b_jtag_debug:jtag_tdo" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[3] -to "\\b_jtag_debug:jtag_tms" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[4] -to jtag_in_valid -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[5] -to "nios_tester:i_nios|jtag_in_data[0]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[6] -to "nios_tester:i_nios|jtag_in_data[1]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[7] -to "nios_tester:i_nios|jtag_in_data[2]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[8] -to "nios_tester:i_nios|jtag_in_data[3]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[9] -to "nios_tester:i_nios|jtag_in_data[4]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[10] -to "nios_tester:i_nios|jtag_in_data[5]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[11] -to "nios_tester:i_nios|jtag_in_data[6]" -section_id auto_signaltap_0
+set_instance_assignment -name CONNECT_TO_SLD_NODE_ENTITY_PORT acq_data_in[12] -to "nios_tester:i_nios|jtag_in_data[7]" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_DATA_BITS=13" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_TRIGGER_BITS=13" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STORAGE_QUALIFIER_BITS=13" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INVERSION_MASK=00000000000000000000000000000000000000000000000000000000000000" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_INVERSION_MASK_LENGTH=62" -section_id auto_signaltap_0
+set_global_assignment -name SLD_NODE_PARAMETER_ASSIGNMENT "SLD_STORAGE_QUALIFIER_INVERSION_MASK_LENGTH=0" -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[2] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[5] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[7] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[8] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[11] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[14] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[16] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[17] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[18] -to auto_signaltap_0|gnd -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[19] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[21] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[24] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[29] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[30] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_instance_assignment -name POST_FIT_CONNECT_TO_SLD_NODE_ENTITY_PORT crc[31] -to auto_signaltap_0|vcc -section_id auto_signaltap_0
+set_global_assignment -name SLD_FILE db/jtag2_auto_stripped.stp
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
-set_global_assignment -name SLD_FILE db/stp2_auto_stripped.stp

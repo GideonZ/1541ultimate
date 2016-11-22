@@ -54,28 +54,28 @@ port (
     ulpi_reset  : in    std_logic;
 
     -- slot side
-    PHI2        : in    std_logic;
-    DOTCLK      : in    std_logic;
+    PHI2        : in    std_logic := '0';
+    DOTCLK      : in    std_logic := '0';
     RSTn        : inout std_logic := '1';
 
     BUFFER_ENn  : out   std_logic := '1';
 
-    SLOT_ADDR   : inout std_logic_vector(15 downto 0);
-    SLOT_DATA   : inout std_logic_vector(7 downto 0);
-    RWn         : inout std_logic;
-    BA          : in    std_logic;
+    SLOT_ADDR   : inout std_logic_vector(15 downto 0) := (others => 'H');
+    SLOT_DATA   : inout std_logic_vector(7 downto 0) := (others => 'H');
+    RWn         : inout std_logic := 'H';
+    BA          : in    std_logic := '0';
     DMAn        : out   std_logic;
     
-    EXROMn      : inout std_logic;
-    GAMEn       : inout std_logic;
+    EXROMn      : inout std_logic := 'H';
+    GAMEn       : inout std_logic := 'H';
     
-    ROMHn       : in    std_logic;
-    ROMLn       : in    std_logic;
-    IO1n        : in    std_logic;
-    IO2n        : in    std_logic;
+    ROMHn       : in    std_logic := '1';
+    ROMLn       : in    std_logic := '1';
+    IO1n        : in    std_logic := '1';
+    IO2n        : in    std_logic := '1';
 
-    IRQn        : inout std_logic;
-    NMIn        : inout std_logic;
+    IRQn        : inout std_logic := 'H';
+    NMIn        : inout std_logic := 'H';
     VCC         : in    std_logic := '1';
     
     -- local bus side
@@ -90,11 +90,11 @@ port (
 
     -- IEC bus
     -- actual levels of the pins --
-    iec_reset_i : in    std_logic;
-    iec_atn_i   : in    std_logic;
-    iec_data_i  : in    std_logic;
-    iec_clock_i : in    std_logic;
-    iec_srq_i   : in    std_logic;
+    iec_reset_i : in    std_logic := '1';
+    iec_atn_i   : in    std_logic := '1';
+    iec_data_i  : in    std_logic := '1';
+    iec_clock_i : in    std_logic := '1';
+    iec_srq_i   : in    std_logic := '1';
     
     iec_reset_o : out   std_logic := '1';
     iec_atn_o   : out   std_logic;
@@ -109,14 +109,14 @@ port (
 	
 	-- Debug UART
 	UART_TXD	: out   std_logic;
-	UART_RXD	: in    std_logic;
+	UART_RXD	: in    std_logic := '1';
 	
     -- SD Card Interface
     SD_SSn      : out   std_logic;
     SD_CLK      : out   std_logic;
     SD_MOSI     : out   std_logic;
-    SD_MISO     : in    std_logic;
-    SD_CARDDETn : in    std_logic;
+    SD_MISO     : in    std_logic := '1';
+    SD_CARDDETn : in    std_logic := '1';
     SD_DATA     : inout std_logic_vector(2 downto 1) := "ZZ";
     
     -- LED interface
@@ -127,18 +127,18 @@ port (
     RTC_CS      : out   std_logic;
     RTC_SCK     : out   std_logic;
     RTC_MOSI    : out   std_logic;
-    RTC_MISO    : in    std_logic;
+    RTC_MISO    : in    std_logic := '0';
 
     -- Flash Interface
     FLASH_CSn   : out   std_logic;
     FLASH_SCK   : out   std_logic;
     FLASH_MOSI  : out   std_logic;
-    FLASH_MISO  : in    std_logic;
+    FLASH_MISO  : in    std_logic := '0';
 
     -- USB Interface (ULPI)
-    ULPI_NXT    : in    std_logic;
+    ULPI_NXT    : in    std_logic := '0';
     ULPI_STP    : out   std_logic;
-    ULPI_DIR    : in    std_logic;
+    ULPI_DIR    : in    std_logic := '0';
     ULPI_DATA   : inout std_logic_vector(7 downto 0) := "ZZZZZZZZ";
 
     -- Cassette Interface

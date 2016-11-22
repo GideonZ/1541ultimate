@@ -12,6 +12,7 @@ PARSE_IEC = $(TOOLS)/parse_iec.py
 PARSE_NANO = $(TOOLS)/parse_nano.py
 CHECKSUM = $(TOOLS)/checksum
 SWAP = $(TOOLS)/swap
+SVFDUMP = $(TOOLS)/svf_dump
 
 # Configuration
 CROSS        ?= mb-
@@ -26,11 +27,11 @@ LWIPLIB = ../$(subst -,_,$(CROSS))lwip/result/liblwip.a
 ROMS = ../../../roms
 
 # Outputs
-RESULT    = result
-OUTPUT    = output
+RESULT    ?= result
+OUTPUT    ?= output
 
-RESULT_FP = $(shell pwd)/result
-OUTPUT_FP = $(shell pwd)/output
+RESULT_FP = $(shell pwd)/$(RESULT)
+OUTPUT_FP = $(shell pwd)/$(OUTPUT)
 
 PATH_SW  =  ../../../software
 

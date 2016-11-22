@@ -13,6 +13,18 @@ extern "C" {
 #include "task.h"
 #include "profiler.h"
 
+//-----------------------------------
+const char *net_en_dis[] = { "Disabled", "Enabled" };
+
+struct t_cfg_definition net_config[] = {
+    { CFG_NET_DHCP_EN, CFG_TYPE_ENUM,   "Use DHCP",                      "%s", net_en_dis, 0,  1, 1 },
+	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
+	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
+	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
+	{ CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name", 					 "%s", NULL,       3, 18, (int)"Ultimate-II" },
+	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
+};
+
 void echo_task(void *a);
 }
 
@@ -100,7 +112,9 @@ NetworkLWIP :: NetworkLWIP(void *driver,
 							driver_output_function_t out,
 							driver_free_function_t free) : pbuf_fifo(PBUF_FIFO_SIZE, NULL)
 {
-	this->driver = driver;
+    register_store(0x4E657477, "Network settings", net_config);
+
+    this->driver = driver;
 	this->driver_free_function = free;
 	this->driver_output_function = out;
 	if_up = false;

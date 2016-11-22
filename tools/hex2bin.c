@@ -148,7 +148,7 @@ int read_hex_file(FILE *fp, uint8_t *buffer, uint32_t offset, uint32_t size, int
     			paddr[0] = data[2];
     			paddr[1] = data[1];
 
-                if(last_addr != addr) {
+                if ((addr < last_addr) || (addr > (last_addr + 32))) {
                     if (section_open) {
                         printf("Length of section: %08x\n", last_addr - section_addr);                        
                         if(records) {

@@ -32,6 +32,7 @@
 #include "stream_uart.h"
 #include "stream_textlog.h"
 #include "dump_hex.h"
+#include "usb_base.h"
 
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
@@ -69,6 +70,7 @@ extern "C" void ultimate_main(void *a)
 
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
+	usb2.initHardware();
 
 	UserInterface *ui = 0;
     

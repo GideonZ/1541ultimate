@@ -73,17 +73,18 @@ int main(int argc, char *argv[])
 	int test_a = test_iec(screen);
 	int test_b = test_cartbus(screen);
 	int test_c = 0;
+	int dummy;
 
 	ENTER_SAFE_SECTION
 	i2c_write_byte(0xA2, 0x03, 0x55);
-	uint8_t rambyte = i2c_read_byte(0xA2, 0x03);
+	uint8_t rambyte = i2c_read_byte(0xA2, 0x03, &dummy);
 	LEAVE_SAFE_SECTION
 	if (rambyte != 0x55)
 		test_c ++;
 
 	ENTER_SAFE_SECTION
 	i2c_write_byte(0xA2, 0x03, 0xAA);
-	rambyte = i2c_read_byte(0xA2, 0x03);
+	rambyte = i2c_read_byte(0xA2, 0x03, &dummy);
 	LEAVE_SAFE_SECTION
 	if (rambyte != 0xAA)
 		test_c ++;

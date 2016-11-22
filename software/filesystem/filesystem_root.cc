@@ -34,7 +34,9 @@ PathStatus_t FileSystem_Root::walk_path(PathInfo& pathInfo)
 			return e_DirNotFound;
 
 		pathInfo.replace(node->get_name());
-		node->probe();
+		if (node->probe() < 0) {
+			return e_DirNotFound;
+		}
 
 		// TODO: is this copy required?
 		FileInfo *info = node->get_file_info();

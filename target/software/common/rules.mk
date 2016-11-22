@@ -10,23 +10,25 @@ OBJS_NANO = $(notdir $(SRCS_NANO:%.nan=%.o))
 OBJS_BIN = $(notdir $(SRCS_BIN:%.bin=%.o))
 OBJS_RBF = $(notdir $(SRCS_RBF:%.rbf=%.o))
 OBJS_APP = $(notdir $(SRCS_APP:%.app=%.ao))
-OBJS_RAW = $(notdir $(SRCS_RAW:%.svf=%.svo))
 CHK_BIN  = $(notdir $(SRCS_BIN:%.bin=%.chk))
 
-ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP) $(OBJS_RAW))
+ALL_OBJS      = $(addprefix $(OUTPUT)/,$(OBJS_ASM) $(OBJS_ASMS) $(OBJS_C) $(OBJS_CC) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO) $(OBJS_RBF) $(OBJS_APP))
 ALL_DEP_OBJS  = $(addprefix $(OUTPUT)/,$(OBJS_C) $(OBJS_CC))
 
 
 .PHONY: clean all mem
 
 all: $(OUTPUT) $(RESULT) $(FINAL)
-	
+	@echo Making all requires $(OUTPUT), $(RESULT) and $(FINAL)	
+
 mem: $(OUTPUT)/$(PRJ).mem
 
 $(OUTPUT):
+	@echo crearing output directory $(OUTPUT)
 	@mkdir -p $(OUTPUT)
 
 $(RESULT):
+	@echo crearing result directory $(RESULT)
 	@mkdir -p $(RESULT)
 		
 $(RESULT)/$(PRJ).a: $(OBJS_C)
@@ -63,14 +65,10 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 	@echo Calculating checksum of $< binary to $(@F)..
 	@$(CHECKSUM) $(OUTPUT)/$(<F) $(OUTPUT)/$(@F)
 
-%.svo: %.svf
-	@echo Converting $(<F) binary to $(@F)..
-	@$(eval was := _binary_$(subst .,_,$(subst /,_,$(subst -,_,$<))))
-	@$(eval becomes := _$(subst .,_,$(subst -,_,$(<F))))
-	@$(OBJCOPY) -I binary -O $(ELFTYPE) --binary-architecture $(ARCHITECTURE) $< $(OUTPUT)/$@ \
-	--redefine-sym $(was)_start=$(becomes)_start \
-	--redefine-sym $(was)_size=$(becomes)_size \
-	--redefine-sym $(was)_end=$(becomes)_end
+%.b: %.svf
+	@echo Converting $(<F) to binary $(@F)..
+	@$(SVFDUMP) $< >$(OUTPUT)/svf_dump.txt
+	@mv dump.bin $(OUTPUT)/$@
 
 %.o: %.bin
 	@echo Converting $(<F) binary to $(@F)..
@@ -169,7 +167,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 %.d: %.c
 	@$(CC) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
-$(RESULT)/$(PRJ).elf: $(OUTPUT)/$(PRJ).out
+$(RESULT)/$(PRJ).elf: $(OUTPUT)/$(PRJ).out $(RESULT)
 	@echo Providing ELF.
 	@cp $(OUTPUT)/$(PRJ).out $(RESULT)/$(PRJ).elf
 	
@@ -193,8 +191,7 @@ include ../common/$(LINKMETHOD).mk
 -include $(ALL_DEP_OBJS:.o=.d)
 
 clean:
-	@rm -rf $(OUTPUT)
-	@rm -rf $(RESULT)
+	@rm -rf $(OUTPUT) $(RESULT) $(OUTPUTDIRS)
 
 dep:  $(OBJS_CC:.o=.d) $(OBJS_C:.o=.d)
 

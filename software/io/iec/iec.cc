@@ -459,6 +459,7 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 		case MENU_IEC_RESET:
 			channel_printer->reset();
 			HW_IEC_RESET_ENABLE = iec_enable;
+			last_error = ERR_DOS;
 			break;
 		case MENU_IEC_FLUSH:
 			channel_printer->flush();

@@ -84,6 +84,7 @@ extern "C" {
 // Timer functions
 void wait_ms(int);
 void outbyte(int c);
+uint8_t getButtons(void);
 
 #define UART_DATA  (ITU_BASE + 0x10)
 #define UART_GET   (ITU_BASE + 0x11)

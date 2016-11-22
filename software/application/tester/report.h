@@ -93,6 +93,7 @@ class TestSuite
 	char dateTime[40];
 	IndexedList <TestDefinition_t *>tests;
 	IndexedList <TestResult *> results;
+	JTAG_Access_t target;
 public:
 	TestSuite(const char *name, TestDefinition_t tests[]) : tests(32, 0), results(32, 0) {
 		for (int i=0; tests[i].function; i++) {
@@ -115,7 +116,6 @@ public:
 
 	void Run(volatile uint32_t *jtag) {
 		char *log;
-		JTAG_Access_t target;
 		target.host = jtag;
 		int errors = 0;
 		rtc.get_datetime_compact(this->dateTime, 40);
@@ -151,9 +151,10 @@ public:
 	}
 
 	void Report(void) {
-		printf("\n--------------------------------------------------------------\n");
-		printf("| TestSuite %-30s | %-16s|", suiteName, dateTime);
-		printf("\n+------------------------------------------------------------+\n");
+		printf("\n");
+		printf("--------------------------------------------------------------\n");
+		printf("| TestSuite %-30s | %-16s|\n", suiteName, dateTime);
+		printf("+------------------------------------------------------------+\n");
 		for (int i=0; i < results.get_elements(); i++) {
 			results[i]->format();
 		}
@@ -164,6 +165,10 @@ public:
 
 	const char *getDateTime(void) {
 		return dateTime;
+	}
+
+	JTAG_Access_t *getTarget(void) {
+		return &target;
 	}
 };
 

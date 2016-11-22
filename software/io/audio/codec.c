@@ -32,11 +32,13 @@
 
 void codec_init(void)
 {
+/*
     printf("RTC read: ");
     for(int i=0;i<11;i++) {
     	printf("%02x ", i2c_read_byte(0xA2, i));
     } printf("\n");
 
+*/
 	i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x4260);
     i2c_write_word(0x14, SGTL5000_CHIP_CLK_TOP_CTRL, 0x0800);
     i2c_write_word(0x14, SGTL5000_CHIP_ANA_POWER, 0x4A60);
@@ -58,7 +60,7 @@ void codec_init(void)
     i2c_write_word(0x14, SGTL5000_CHIP_DAC_VOL, 0x3C3C);
 
     // write CHIP_ADCDAC_CTRL to unmute DAC left and right
-    i2c_write_word(0x14, SGTL5000_CHIP_ANA_CTRL, 0x0010);
+    i2c_write_word(0x14, SGTL5000_CHIP_ANA_CTRL, 0x0014); // select LINE_IN for ADC
     i2c_write_word(0x14, SGTL5000_CHIP_ADCDAC_CTRL, 0x0200); // unmute
 }
 

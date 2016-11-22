@@ -153,6 +153,8 @@ architecture rtl of u2p_dut is
             io_u2p_irq              : in    std_logic                     := 'X';             -- irq
             jtag_io_input_vector    : in    std_logic_vector(47 downto 0) := (others => 'X'); -- input_vector
             jtag_io_output_vector   : out   std_logic_vector(7 downto 0);                     -- output_vector
+            jtag_test_clocks_clock_1 : in    std_logic                     := 'X';             -- clock_1
+            jtag_test_clocks_clock_2 : in    std_logic                     := 'X';             -- clock_2
             mem_mem_req_address     : out   std_logic_vector(25 downto 0);                    -- mem_req_address
             mem_mem_req_byte_en     : out   std_logic_vector(3 downto 0);                     -- mem_req_byte_en
             mem_mem_req_read_writen : out   std_logic;                                        -- mem_req_read_writen
@@ -170,13 +172,7 @@ architecture rtl of u2p_dut is
             uart_rxd                : in    std_logic                     := 'X';             -- rxd
             uart_txd                : out   std_logic;                                        -- txd
             uart_cts_n              : in    std_logic                     := 'X';             -- cts_n
-            uart_rts_n              : out   std_logic;                                        -- rts_n
-            ulpi_clock_clk          : in    std_logic                     := 'X';             -- clk
-            ulpi_reset_reset_n      : in    std_logic                     := 'X';             -- reset_n
-            usb_ulpi_data           : inout std_logic_vector(7 downto 0)  := (others => 'X'); -- ulpi_data
-            usb_ulpi_dir            : in    std_logic                     := 'X';             -- ulpi_dir
-            usb_ulpi_nxt            : in    std_logic                     := 'X';             -- ulpi_nxt
-            usb_ulpi_stp            : out   std_logic                                         -- ulpi_stp
+            uart_rts_n              : out   std_logic                                         -- rts_n
         );
     end component nios_dut;
 
@@ -208,6 +204,8 @@ architecture rtl of u2p_dut is
     signal is_idle          : std_logic;
     signal mem_req          : t_mem_req_32;
     signal mem_resp         : t_mem_resp_32;
+    signal cpu_mem_req      : t_mem_req_32;
+    signal cpu_mem_resp     : t_mem_resp_32;
 
     signal i2c_sda_i   : std_logic;
     signal i2c_sda_o   : std_logic;
@@ -216,6 +214,7 @@ architecture rtl of u2p_dut is
     signal mdio_o      : std_logic;
         
     -- io buses
+    signal io_irq   : std_logic;
     signal io_req   : t_io_req;
     signal io_resp  : t_io_resp;
     signal io_u2p_req   : t_io_req;
@@ -226,10 +225,6 @@ architecture rtl of u2p_dut is
     signal io_resp_remote   : t_io_resp;
     signal io_req_ddr2      : t_io_req;
     signal io_resp_ddr2     : t_io_resp;
-    signal io_req_flash     : t_io_req;
-    signal io_resp_flash    : t_io_resp;
-    signal io_req_uart      : t_io_req;
-    signal io_resp_uart     : t_io_resp;
 
     -- misc io
     signal audio_in_data           : std_logic_vector(31 downto 0) := (others => '0'); -- data
@@ -238,7 +233,8 @@ architecture rtl of u2p_dut is
     signal audio_out_data          : std_logic_vector(31 downto 0) := (others => '0'); -- data
     signal audio_out_valid         : std_logic;                                        -- valid
     signal audio_out_ready         : std_logic                     := '0';             -- ready
-
+    signal audio_speaker           : signed(15 downto 0);
+    
     signal pio1_export             : std_logic_vector(31 downto 0) := (others => '0'); -- in_port
     signal pio2_export             : std_logic_vector(19 downto 0) := (others => '0'); -- in_port
     signal pio3_export             : std_logic_vector(7 downto 0);                     -- out_port
@@ -250,8 +246,6 @@ architecture rtl of u2p_dut is
 
     signal io_uart_rxd             : std_logic := '1';
     signal io_uart_txd             : std_logic := '1';
-    signal io_uart_cts             : std_logic := '1';
-    signal io_uart_rts             : std_logic := '1';
 
     signal slot_test_vector     : std_logic_vector(47 downto 0);
     signal jtag_write_vector    : std_logic_vector(7 downto 0);
@@ -259,7 +253,10 @@ begin
     process(RMII_REFCLK)
     begin
         if rising_edge(RMII_REFCLK) then
-            if por_count = X"FFFFF" then
+            if jtag_write_vector(7) = '1' then
+                por_count <= (others => '0');
+                por_n <= '0';
+            elsif por_count = X"FFFFF" then
                 por_n <= '1';
             else
                 por_count <= por_count + 1;
@@ -320,7 +317,7 @@ begin
         io_wdata             => io_req.data,
         io_write             => io_req.write,
         unsigned(io_address) => io_req.address,
-        io_irq               => '0',
+        io_irq               => io_irq,
 
         io_u2p_ack              => io_u2p_resp.ack,
         io_u2p_rdata            => io_u2p_resp.data,
@@ -330,18 +327,20 @@ begin
         unsigned(io_u2p_address) => io_u2p_req.address,
         io_u2p_irq              => '0',
 
-        jtag_io_input_vector    => slot_test_vector,
-        jtag_io_output_vector   => jtag_write_vector,
+        jtag_io_input_vector     => slot_test_vector,
+        jtag_io_output_vector    => jtag_write_vector,
+        jtag_test_clocks_clock_1 => RMII_REFCLK,
+        jtag_test_clocks_clock_2 => ULPI_CLOCK,
 
-        unsigned(mem_mem_req_address) => mem_req.address,
-        mem_mem_req_byte_en     => mem_req.byte_en,
-        mem_mem_req_read_writen => mem_req.read_writen,
-        mem_mem_req_request     => mem_req.request,
-        mem_mem_req_tag         => mem_req.tag,
-        mem_mem_req_wdata       => mem_req.data,
-        mem_mem_resp_dack_tag   => mem_resp.dack_tag,
-        mem_mem_resp_data       => mem_resp.data,
-        mem_mem_resp_rack_tag   => mem_resp.rack_tag,
+        unsigned(mem_mem_req_address) => cpu_mem_req.address,
+        mem_mem_req_byte_en     => cpu_mem_req.byte_en,
+        mem_mem_req_read_writen => cpu_mem_req.read_writen,
+        mem_mem_req_request     => cpu_mem_req.request,
+        mem_mem_req_tag         => cpu_mem_req.tag,
+        mem_mem_req_wdata       => cpu_mem_req.data,
+        mem_mem_resp_dack_tag   => cpu_mem_resp.dack_tag,
+        mem_mem_resp_data       => cpu_mem_resp.data,
+        mem_mem_resp_rack_tag   => cpu_mem_resp.rack_tag,
 
         pio1_export             => pio1_export,
         pio2_export             => pio2_export,
@@ -353,24 +352,18 @@ begin
         uart_rxd                => prim_uart_rxd,
         uart_txd                => prim_uart_txd,
         uart_cts_n              => prim_uart_cts_n,
-        uart_rts_n              => prim_uart_rts_n,
-
-        usb_ulpi_data           => ULPI_DATA,
-        usb_ulpi_dir            => ULPI_DIR,
-        usb_ulpi_nxt            => ULPI_NXT,
-        usb_ulpi_stp            => ULPI_STP,
-
-        ulpi_clock_clk          => ulpi_clock,
-        ulpi_reset_reset_n      => not ulpi_reset_i
+        uart_rts_n              => prim_uart_rts_n
     );
 
-    UART_TXD <= prim_uart_txd and io_uart_txd;
+    UART_TXD      <= prim_uart_txd and io_uart_txd;
+    prim_uart_rxd <= UART_RXD;
+    io_uart_rxd   <= UART_RXD;
     
     i_split: entity work.io_bus_splitter
     generic map (
         g_range_lo => 8,
         g_range_hi => 10,
-        g_ports    => 5
+        g_ports    => 3
     )
     port map (
         clock      => sys_clock,
@@ -379,13 +372,9 @@ begin
         reqs(0)    => io_req_new_io,
         reqs(1)    => io_req_ddr2,
         reqs(2)    => io_req_remote,
-        reqs(3)    => io_req_flash,
-        reqs(4)    => io_req_uart,
         resps(0)   => io_resp_new_io,
         resps(1)   => io_resp_ddr2,
-        resps(2)   => io_resp_remote,
-        resps(3)   => io_resp_flash,
-        resps(4)   => io_resp_uart
+        resps(2)   => io_resp_remote
     );
 
     i_memphy: entity work.ddr2_ctrl
@@ -461,58 +450,105 @@ begin
     I2C_SDA_18  <= '0' when i2c_sda_o = '0' else 'Z';
     MDIO_DATA   <= '0' when mdio_o = '0' else 'Z';
 
-    i_spiflash: entity work.spi_peripheral_io
-        generic map (
-            g_fixed_rate => true,
-            g_init_rate  => 0,
-            g_crc        => false )
-        port map (
-            clock       => sys_clock,
-            reset       => sys_reset,
-            
-            io_req      => io_req_flash,
-            io_resp     => io_resp_flash,
-                
-            SD_DETECTn  => '0',
-            SD_WRPROTn  => '1',
-            SPI_SSn     => FLASH_CSn,
-            SPI_CLK     => FLASH_SCK,
-            SPI_MOSI    => FLASH_MOSI,
-            SPI_MISO    => FLASH_MISO );
-
-    i_uart: entity work.uart_peripheral_io
+    i_logic: entity work.ultimate_logic_32
     generic map (
-        g_tx_fifo => true,
-        g_divisor => (62500000 / 115200)
-    )
-    port map(
-        clock     => sys_clock,
-        reset     => sys_reset,
-        io_req    => io_req_uart,
-        io_resp   => io_resp_uart,
-        irq       => open,
-        txd       => io_uart_txd,
-        rxd       => io_uart_rxd,
-        rts       => io_uart_rts,
-        cts       => io_uart_cts
-    );
+        g_version       => X"7F",
+        g_simulation    => false,
+        g_ultimate2plus => true,
+        g_clock_freq    => 62_500_000,
+        g_baud_rate     => 115_200,
+        g_timer_rate    => 200_000,
+        g_microblaze    => false,
+        g_big_endian    => false,
+        g_icap          => false,
+        g_uart          => true,
+        g_drive_1541    => false,
+        g_drive_1541_2  => false,
+        g_hardware_gcr  => false,
+        g_ram_expansion => false,
+        g_extended_reu  => false,
+        g_stereo_sid    => false,
+        g_hardware_iec  => false,
+        g_iec_prog_tim  => false,
+        g_c2n_streamer  => false,
+        g_c2n_recorder  => false,
+        g_cartridge     => false,
+        g_command_intf  => false,
+        g_drive_sound   => false,
+        g_rtc_chip      => false,
+        g_rtc_timer     => false,
+        g_usb_host      => false,
+        g_usb_host2     => true,
+        g_spi_flash     => true,
+        g_vic_copper    => false,
+        g_video_overlay => false,
+        g_sampler       => false,
+        g_analyzer      => false,
+        g_profiler      => true,
+        g_rmii          => true )
+    port map (
+        -- globals
+        sys_clock   => sys_clock,
+        sys_reset   => sys_reset,
+    
+        ulpi_clock  => ulpi_clock,
+        ulpi_reset  => ulpi_reset_i,
+    
+        ext_io_req  => io_req,
+        ext_io_resp => io_resp,
+        ext_mem_req => cpu_mem_req,
+        ext_mem_resp=> cpu_mem_resp,
+        cpu_irq     => io_irq,
+        
+        -- local bus side
+        mem_req     => mem_req,
+        mem_resp    => mem_resp,
+        
+        -- Debug UART
+        UART_TXD    => io_uart_txd,
+        UART_RXD    => io_uart_rxd,
+        
+        -- Flash Interface
+        FLASH_CSn   => FLASH_CSn,
+        FLASH_SCK   => FLASH_SCK,
+        FLASH_MOSI  => FLASH_MOSI,
+        FLASH_MISO  => FLASH_MISO,
+    
+        -- USB Interface (ULPI)
+        ULPI_NXT    => ULPI_NXT,
+        ULPI_STP    => ULPI_STP,
+        ULPI_DIR    => ULPI_DIR,
+        ULPI_DATA   => ULPI_DATA,
+    
+        -- Ethernet Interface (RMII)
+        eth_clock   => RMII_REFCLK, 
+        eth_reset   => eth_reset,
+        rmii_crs_dv => RMII_CRS_DV, 
+        rmii_rxd    => RMII_RX_DATA,
+        rmii_tx_en  => RMII_TX_EN,
+        rmii_txd    => RMII_TX_DATA,
+
+        -- Buttons
+        BUTTON      => not BUTTON );
     
 
---    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
---    generic map (
---        g_left_shift => 2,
---        g_width => audio_speaker'length )
---    port map (
---        clock   => sys_clock,
---        reset   => sys_reset,
---        
---        dac_in  => audio_speaker,
---    
---        dac_out => SPEAKER_DATA );
+    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
+    generic map (
+        g_left_shift => 0,
+        g_width => audio_speaker'length )
+    port map (
+        clock   => sys_clock,
+        reset   => sys_reset,
+        
+        dac_in  => audio_speaker,
+    
+        dac_out => SPEAKER_DATA );
 
+    audio_speaker(15 downto 8) <= signed(audio_out_data(15 downto 8));
+    audio_speaker( 7 downto 0) <= signed(audio_out_data(23 downto 16));
 
     LED_MOTORn <= jtag_write_vector(0) xor not pio3_export(0);
-    LED_DISKn  <= jtag_write_vector(1) xor not pio3_export(1) xor sys_count(sys_count'high);
+    LED_DISKn  <= jtag_write_vector(1) xor not pio3_export(1);
     LED_CARTn  <= jtag_write_vector(2) xor not pio3_export(2);
     LED_SDACTn <= jtag_write_vector(3) xor not pio3_export(3);
 
@@ -536,7 +572,10 @@ begin
             wr_clock     => sys_clock,
             wr_reset     => sys_reset,
             wr_en        => audio_out_valid,
-            wr_din       => audio_out_data(24 downto 0),
+            wr_din(24)   => audio_out_data(0),
+            wr_din(23 downto 16) => audio_out_data(15 downto 8),
+            wr_din(15 downto 8)  => audio_out_data(23 downto 16),
+            wr_din(7 downto 0)   => audio_out_data(31 downto 24),
             wr_full      => audio_out_full,
             
             rd_clock     => audio_clock,
@@ -561,7 +600,10 @@ begin
             tx_done     => open,
             rx_clock    => sys_clock,
             rx_new_data => audio_in_valid,
-            rx_data     => audio_in_data(24 downto 0)
+            rx_data(24)  => audio_in_data(0),
+            rx_data(23 downto 16) => audio_in_data(15 downto 8),
+            rx_data(15 downto 8) => audio_in_data(23 downto 16),
+            rx_data(7 downto 0) => audio_in_data(31 downto 24)
         );
 
         i2s: entity work.i2s_serializer

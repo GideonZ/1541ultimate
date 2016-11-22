@@ -12,6 +12,7 @@
 #include "lwip/tcp_impl.h"
 #include "lwip/udp.h"
 */
+#include "config.h"
 #include "netif/etharp.h"
 #include "lwip/inet.h"
 #include "lwip/tcpip.h"
@@ -22,11 +23,17 @@ extern "C" {
 #include "arch/sys_arch.h"
 }
 
+#define CFG_NET_DHCP_EN		0xE0
+#define CFG_NET_IP          0xE1
+#define CFG_NET_NETMASK		0xE2
+#define CFG_NET_GATEWAY		0xE3
+#define CFG_NET_HOSTNAME    0xE4
+
 #include "network_interface.h"
 #include "fifo.h" // my oh so cool fifo! :)
 #define PBUF_FIFO_SIZE 70
 
-class NetworkLWIP : public NetworkInterface
+class NetworkLWIP : public NetworkInterface, ConfigurableObject
 {
 	struct pbuf_custom pbuf_array[PBUF_FIFO_SIZE];
 	Fifo<struct pbuf_custom *> pbuf_fifo;

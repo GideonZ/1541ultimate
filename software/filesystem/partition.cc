@@ -15,7 +15,7 @@ Partition::Partition(BlockDevice *blk, uint32_t offset, uint32_t size, uint8_t t
     length = size;
     type   = t;
 
-    printf("Created partition at offset %d, size = %d, type = %d.\n", offset, size, t);
+    //printf("Created partition at offset %d, size = %d, type = %d.\n", offset, size, t);
 }
     
 Partition::~Partition()

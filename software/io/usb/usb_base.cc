@@ -19,15 +19,18 @@ extern "C" {
 
 UsbBase usb2;
 
+#define printf(...)
+
 UsbBase :: UsbBase()
 {
+    ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_USB);
 	max_current = 500;
 	remaining_current = 500;
 	rootDevice = NULL;
 	initialized = false;
 	bus_speed = -1;
 
-	initHardware();
+//	initHardware();
 }
 
 UsbBase :: ~UsbBase()

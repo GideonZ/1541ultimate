@@ -47,6 +47,7 @@ public:
 
 	// Getting the serial number
     virtual void read_serial(void *buffer);
+    virtual const char *get_type_string(void);
 
 	// Interface for getting images from ROM.
 	virtual int  read_image(int image_id, void *buffer, int buf_size);

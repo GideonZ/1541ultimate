@@ -3,9 +3,9 @@
 
 #include "integer.h"
 #include <string.h>
-#include "config.h"
+#include "indexed_list.h"
 
-class NetworkInterface : public ConfigurableObject {
+class NetworkInterface  {
 	static IndexedList<NetworkInterface *>netInterfaces;
 public:
 	static void registerNetworkInterface(NetworkInterface *intf) {
@@ -32,11 +32,12 @@ public:
     virtual void poll() { }
     virtual void link_up() { }
     virtual void link_down() { }
-    virtual bool is_link_up() { }
+    virtual bool is_link_up() { return false; }
     virtual void set_mac_address(uint8_t *mac) {
     	memcpy(mac_address, mac, 6);
     }
     virtual bool input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size) { return false; }
+    virtual bool output(uint8_t *raw_buffer, int pkt_size) { return false; }
     virtual void effectuate_settings(void) { }
 
 	virtual void getIpAddr(uint8_t *a)  { bzero(a, 12); }
@@ -54,9 +55,4 @@ NetworkInterface *getNetworkStack(void *driver,
 
 void releaseNetworkStack(void *s);
 
-#define CFG_NET_DHCP_EN		0xE0
-#define CFG_NET_IP          0xE1
-#define CFG_NET_NETMASK		0xE2
-#define CFG_NET_GATEWAY		0xE3
-#define CFG_NET_HOSTNAME    0xE4
 #endif

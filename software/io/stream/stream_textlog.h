@@ -11,6 +11,7 @@
 #include "stream.h"
 #include "small_printf.h"
 
+
 class StreamTextLog
 {
     static void _put(char c, void **param) {
@@ -19,11 +20,13 @@ class StreamTextLog
     char *buffer;
     int offset;
     int size;
+    bool enabled;
 public:
     StreamTextLog(int size) {
     	this->size = size;
     	buffer = new char[size];
     	offset = 0;
+    	enabled = true;
     }
     ~StreamTextLog() {
     	delete buffer;
@@ -48,6 +51,10 @@ public:
     	return buffer;
     }
 
+    int getLength(void) {
+    	return offset;
+    }
+
     int format(const char *fmt, ...) {
         va_list ap;
         int ret;
@@ -57,6 +64,15 @@ public:
         va_end(ap);
 
         return (ret);
+    }
+
+    void Reset(void) {
+    	offset = 0;
+    	enabled = true;
+    }
+
+    void Stop(void) {
+    	enabled = false;
     }
 };
 

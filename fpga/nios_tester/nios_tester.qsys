@@ -18,7 +18,7 @@
       }
       datum sopceditor_expanded
       {
-         value = "0";
+         value = "1";
          type = "boolean";
       }
    }
@@ -47,7 +47,7 @@
       }
       datum sopceditor_expanded
       {
-         value = "0";
+         value = "1";
          type = "boolean";
       }
    }
@@ -93,17 +93,25 @@
          type = "boolean";
       }
    }
-   element clk_1
+   element io_bridge_0
    {
       datum _sortIndex
       {
-         value = "1";
+         value = "3";
          type = "int";
       }
       datum sopceditor_expanded
       {
          value = "0";
          type = "boolean";
+      }
+   }
+   element io_bridge_0.avalon_slave_0
+   {
+      datum baseAddress
+      {
+         value = "67108864";
+         type = "String";
       }
    }
    element io_bridge_1
@@ -131,7 +139,7 @@
    {
       datum _sortIndex
       {
-         value = "13";
+         value = "11";
          type = "int";
       }
       datum sopceditor_expanded
@@ -152,7 +160,7 @@
    {
       datum _sortIndex
       {
-         value = "14";
+         value = "12";
          type = "int";
       }
       datum sopceditor_expanded
@@ -169,11 +177,35 @@
          type = "String";
       }
    }
+   element jtagdebug
+   {
+      datum _sortIndex
+      {
+         value = "14";
+         type = "int";
+      }
+   }
+   element jtagdebug.csr
+   {
+      datum baseAddress
+      {
+         value = "2415976448";
+         type = "String";
+      }
+   }
+   element jtagdebug.descriptor_slave
+   {
+      datum baseAddress
+      {
+         value = "2415980544";
+         type = "String";
+      }
+   }
    element nios2_gen2_0
    {
       datum _sortIndex
       {
-         value = "2";
+         value = "1";
          type = "int";
       }
       datum sopceditor_expanded
@@ -194,7 +226,7 @@
    {
       datum _sortIndex
       {
-         value = "3";
+         value = "2";
          type = "int";
       }
       datum sopceditor_expanded
@@ -257,7 +289,7 @@
    {
       datum _sortIndex
       {
-         value = "15";
+         value = "13";
          type = "int";
       }
       datum sopceditor_expanded
@@ -271,27 +303,6 @@
       datum baseAddress
       {
          value = "2415968256";
-         type = "String";
-      }
-   }
-   element timer_0
-   {
-      datum _sortIndex
-      {
-         value = "11";
-         type = "int";
-      }
-      datum sopceditor_expanded
-      {
-         value = "0";
-         type = "boolean";
-      }
-   }
-   element timer_0.s1
-   {
-      datum baseAddress
-      {
-         value = "2415947776";
          type = "String";
       }
    }
@@ -313,27 +324,6 @@
       datum baseAddress
       {
          value = "2415923200";
-         type = "String";
-      }
-   }
-   element usb_host_0
-   {
-      datum _sortIndex
-      {
-         value = "12";
-         type = "int";
-      }
-      datum sopceditor_expanded
-      {
-         value = "0";
-         type = "boolean";
-      }
-   }
-   element usb_host_0.avalon_slave_0
-   {
-      datum baseAddress
-      {
-         value = "2415951872";
          type = "String";
       }
    }
@@ -373,9 +363,15 @@
    internal="pio_0.external_connection"
    type="conduit"
    dir="end" />
+ <interface name="io" internal="io_bridge_0.io" type="conduit" dir="end" />
  <interface name="io_u2p" internal="io_bridge_1.io" type="conduit" dir="end" />
  <interface name="jtag0" internal="jtag_0.jtag" type="conduit" dir="end" />
  <interface name="jtag1" internal="jtag_1.jtag" type="conduit" dir="end" />
+ <interface
+   name="jtag_in"
+   internal="jtagdebug.st_sink"
+   type="avalon_streaming"
+   dir="end" />
  <interface name="mem" internal="avalon2mem_0.mem" type="conduit" dir="end" />
  <interface
    name="pio"
@@ -390,13 +386,6 @@
    internal="uart_0.external_connection"
    type="conduit"
    dir="end" />
- <interface name="ulpi_clock" internal="clk_1.clk_in" type="clock" dir="end" />
- <interface
-   name="ulpi_reset"
-   internal="clk_1.clk_in_reset"
-   type="reset"
-   dir="end" />
- <interface name="usb" internal="usb_host_0.ulpi" type="conduit" dir="end" />
  <module name="audio_in_dma" kind="altera_msgdma" version="15.1" enabled="1">
   <parameter name="AUTO_DESCRIPTOR_READ_MASTER_ADDRESS_MAP" value="" />
   <parameter
@@ -490,15 +479,52 @@
   <parameter name="inputClockFrequency" value="0" />
   <parameter name="resetSynchronousEdges" value="DEASSERT" />
  </module>
- <module name="clk_1" kind="clock_source" version="15.1" enabled="1">
-  <parameter name="clockFrequency" value="60000000" />
-  <parameter name="clockFrequencyKnown" value="true" />
-  <parameter name="inputClockFrequency" value="0" />
-  <parameter name="resetSynchronousEdges" value="DEASSERT" />
- </module>
+ <module name="io_bridge_0" kind="io_bridge" version="1.0" enabled="1" />
  <module name="io_bridge_1" kind="io_bridge" version="1.0" enabled="1" />
  <module name="jtag_0" kind="jtag" version="1.0" enabled="1" />
  <module name="jtag_1" kind="jtag" version="1.0" enabled="1" />
+ <module name="jtagdebug" kind="altera_msgdma" version="15.1" enabled="1">
+  <parameter name="AUTO_DESCRIPTOR_READ_MASTER_ADDRESS_MAP" value="" />
+  <parameter
+     name="AUTO_DESCRIPTOR_READ_MASTER_ADDRESS_WIDTH"
+     value="AddressWidth = -1" />
+  <parameter name="AUTO_DESCRIPTOR_WRITE_MASTER_ADDRESS_MAP" value="" />
+  <parameter
+     name="AUTO_DESCRIPTOR_WRITE_MASTER_ADDRESS_WIDTH"
+     value="AddressWidth = -1" />
+  <parameter name="AUTO_DEVICE" value="EP4CE22F17C8" />
+  <parameter name="AUTO_DEVICE_FAMILY" value="Cyclone IV E" />
+  <parameter name="AUTO_DEVICE_SPEEDGRADE" value="8" />
+  <parameter name="AUTO_MM_READ_ADDRESS_MAP" value="" />
+  <parameter name="AUTO_MM_READ_ADDRESS_WIDTH" value="AddressWidth = -1" />
+  <parameter name="AUTO_MM_WRITE_ADDRESS_MAP"><![CDATA[<address-map><slave name='avalon2mem_0.avalon_slave_0' start='0x0' end='0x4000000' /></address-map>]]></parameter>
+  <parameter name="AUTO_MM_WRITE_ADDRESS_WIDTH" value="AddressWidth = 26" />
+  <parameter name="BURST_ENABLE" value="0" />
+  <parameter name="BURST_WRAPPING_SUPPORT" value="0" />
+  <parameter name="CHANNEL_ENABLE" value="0" />
+  <parameter name="CHANNEL_WIDTH" value="8" />
+  <parameter name="DATA_FIFO_DEPTH" value="256" />
+  <parameter name="DATA_WIDTH" value="8" />
+  <parameter name="DESCRIPTOR_FIFO_DEPTH" value="8" />
+  <parameter name="ENHANCED_FEATURES" value="0" />
+  <parameter name="ERROR_ENABLE" value="0" />
+  <parameter name="ERROR_WIDTH" value="8" />
+  <parameter name="FIX_ADDRESS_WIDTH" value="32" />
+  <parameter name="MAX_BURST_COUNT" value="2" />
+  <parameter name="MAX_BYTE" value="8388608" />
+  <parameter name="MAX_STRIDE" value="1" />
+  <parameter name="MODE" value="2" />
+  <parameter name="PACKET_ENABLE" value="0" />
+  <parameter name="PREFETCHER_DATA_WIDTH" value="32" />
+  <parameter name="PREFETCHER_ENABLE" value="0" />
+  <parameter name="PREFETCHER_MAX_READ_BURST_COUNT" value="2" />
+  <parameter name="PREFETCHER_READ_BURST_ENABLE" value="0" />
+  <parameter name="PROGRAMMABLE_BURST_ENABLE" value="0" />
+  <parameter name="RESPONSE_PORT" value="2" />
+  <parameter name="STRIDE_ENABLE" value="0" />
+  <parameter name="TRANSFER_TYPE" value="Aligned Accesses" />
+  <parameter name="USE_FIX_ADDRESS_WIDTH" value="0" />
+ </module>
  <module
    name="nios2_gen2_0"
    kind="altera_nios2_gen2"
@@ -523,7 +549,7 @@
   <parameter name="dataAddrWidth" value="32" />
   <parameter name="dataMasterHighPerformanceAddrWidth" value="1" />
   <parameter name="dataMasterHighPerformanceMapParam" value="" />
-  <parameter name="dataSlaveMapParam"><![CDATA[<address-map><slave name='avalon2mem_0.avalon_slave_0' start='0x0' end='0x4000000' type='avalon2mem.avalon_slave_0' /><slave name='nios2_gen2_0.debug_mem_slave' start='0x10000800' end='0x10001000' type='altera_nios2_gen2.debug_mem_slave' /><slave name='onchip_memory2_0.s1' start='0x20000000' end='0x20000800' type='altera_avalon_onchip_memory2.s1' /><slave name='pio_0.s1' start='0x90000000' end='0x90000010' type='altera_avalon_pio.s1' /><slave name='uart_0.s1' start='0x90001000' end='0x90001020' type='altera_avalon_uart.s1' /><slave name='audio_out_dma.csr' start='0x90002000' end='0x90002020' type='altera_msgdma.csr' /><slave name='audio_out_dma.descriptor_slave' start='0x90003000' end='0x90003010' type='altera_msgdma.descriptor_slave' /><slave name='audio_in_dma.csr' start='0x90004000' end='0x90004020' type='altera_msgdma.csr' /><slave name='audio_in_dma.descriptor_slave' start='0x90005000' end='0x90005010' type='altera_msgdma.descriptor_slave' /><slave name='pio_1.s1' start='0x90006000' end='0x90006020' type='altera_avalon_pio.s1' /><slave name='timer_0.s1' start='0x90007000' end='0x90007020' type='altera_avalon_timer.s1' /><slave name='usb_host_0.avalon_slave_0' start='0x90008000' end='0x9000A000' type='usb_host.avalon_slave_0' /><slave name='jtag_0.avalon_slave_0' start='0x9000A000' end='0x9000A100' type='jtag.avalon_slave_0' /><slave name='jtag_1.avalon_slave_0' start='0x9000B000' end='0x9000B100' type='jtag.avalon_slave_0' /><slave name='spi_0.spi_control_port' start='0x9000C000' end='0x9000C020' type='altera_avalon_spi.spi_control_port' /><slave name='io_bridge_1.avalon_slave_0' start='0xA0000000' end='0xA0100000' type='io_bridge.avalon_slave_0' /></address-map>]]></parameter>
+  <parameter name="dataSlaveMapParam"><![CDATA[<address-map><slave name='avalon2mem_0.avalon_slave_0' start='0x0' end='0x4000000' type='avalon2mem.avalon_slave_0' /><slave name='io_bridge_0.avalon_slave_0' start='0x4000000' end='0x4100000' type='io_bridge.avalon_slave_0' /><slave name='nios2_gen2_0.debug_mem_slave' start='0x10000800' end='0x10001000' type='altera_nios2_gen2.debug_mem_slave' /><slave name='onchip_memory2_0.s1' start='0x20000000' end='0x20000800' type='altera_avalon_onchip_memory2.s1' /><slave name='pio_0.s1' start='0x90000000' end='0x90000010' type='altera_avalon_pio.s1' /><slave name='uart_0.s1' start='0x90001000' end='0x90001020' type='altera_avalon_uart.s1' /><slave name='audio_out_dma.csr' start='0x90002000' end='0x90002020' type='altera_msgdma.csr' /><slave name='audio_out_dma.descriptor_slave' start='0x90003000' end='0x90003010' type='altera_msgdma.descriptor_slave' /><slave name='audio_in_dma.csr' start='0x90004000' end='0x90004020' type='altera_msgdma.csr' /><slave name='audio_in_dma.descriptor_slave' start='0x90005000' end='0x90005010' type='altera_msgdma.descriptor_slave' /><slave name='pio_1.s1' start='0x90006000' end='0x90006020' type='altera_avalon_pio.s1' /><slave name='jtag_0.avalon_slave_0' start='0x9000A000' end='0x9000A100' type='jtag.avalon_slave_0' /><slave name='jtag_1.avalon_slave_0' start='0x9000B000' end='0x9000B100' type='jtag.avalon_slave_0' /><slave name='spi_0.spi_control_port' start='0x9000C000' end='0x9000C020' type='altera_avalon_spi.spi_control_port' /><slave name='jtagdebug.csr' start='0x9000E000' end='0x9000E020' type='altera_msgdma.csr' /><slave name='jtagdebug.descriptor_slave' start='0x9000F000' end='0x9000F010' type='altera_msgdma.descriptor_slave' /><slave name='io_bridge_1.avalon_slave_0' start='0xA0000000' end='0xA0100000' type='io_bridge.avalon_slave_0' /></address-map>]]></parameter>
   <parameter name="data_master_high_performance_paddr_base" value="0" />
   <parameter name="data_master_high_performance_paddr_size" value="0" />
   <parameter name="data_master_paddr_base" value="0" />
@@ -569,7 +595,7 @@
   <parameter name="instruction_master_high_performance_paddr_size" value="0" />
   <parameter name="instruction_master_paddr_base" value="0" />
   <parameter name="instruction_master_paddr_size" value="0" />
-  <parameter name="internalIrqMaskSystemInfo" value="510" />
+  <parameter name="internalIrqMaskSystemInfo" value="383" />
   <parameter name="io_regionbase" value="-2147483648" />
   <parameter name="io_regionsize" value="1073741824" />
   <parameter name="master_addr_map" value="false" />
@@ -752,18 +778,6 @@
   <parameter name="targetClockRate" value="2000000" />
   <parameter name="targetSlaveSelectToSClkDelay" value="0.0" />
  </module>
- <module name="timer_0" kind="altera_avalon_timer" version="15.1" enabled="1">
-  <parameter name="alwaysRun" value="false" />
-  <parameter name="counterSize" value="32" />
-  <parameter name="fixedPeriod" value="false" />
-  <parameter name="period" value="10" />
-  <parameter name="periodUnits" value="MSEC" />
-  <parameter name="resetOutput" value="false" />
-  <parameter name="snapshot" value="true" />
-  <parameter name="systemFrequency" value="62500000" />
-  <parameter name="timeoutPulseOutput" value="false" />
-  <parameter name="watchdogPulse" value="2" />
- </module>
  <module name="uart_0" kind="altera_avalon_uart" version="15.1" enabled="1">
   <parameter name="baud" value="115200" />
   <parameter name="clockRate" value="62500000" />
@@ -780,16 +794,6 @@
   <parameter name="useEopRegister" value="false" />
   <parameter name="useRelativePathForSimFile" value="false" />
  </module>
- <module name="usb_host_0" kind="usb_host" version="1.0" enabled="1" />
- <connection
-   kind="avalon"
-   version="15.1"
-   start="usb_host_0.avalon_master_0"
-   end="avalon2mem_0.avalon_slave_0">
-  <parameter name="arbitrationPriority" value="1" />
-  <parameter name="baseAddress" value="0x0000" />
-  <parameter name="defaultConnection" value="false" />
- </connection>
  <connection
    kind="avalon"
    version="15.1"
@@ -806,15 +810,6 @@
    end="avalon2mem_0.avalon_slave_0">
   <parameter name="arbitrationPriority" value="1" />
   <parameter name="baseAddress" value="0x0000" />
-  <parameter name="defaultConnection" value="false" />
- </connection>
- <connection
-   kind="avalon"
-   version="15.1"
-   start="nios2_gen2_0.data_master"
-   end="usb_host_0.avalon_slave_0">
-  <parameter name="arbitrationPriority" value="1" />
-  <parameter name="baseAddress" value="0x90008000" />
   <parameter name="defaultConnection" value="false" />
  </connection>
  <connection
@@ -839,6 +834,15 @@
    kind="avalon"
    version="15.1"
    start="nios2_gen2_0.data_master"
+   end="io_bridge_0.avalon_slave_0">
+  <parameter name="arbitrationPriority" value="1" />
+  <parameter name="baseAddress" value="0x04000000" />
+  <parameter name="defaultConnection" value="false" />
+ </connection>
+ <connection
+   kind="avalon"
+   version="15.1"
+   start="nios2_gen2_0.data_master"
    end="audio_out_dma.csr">
   <parameter name="arbitrationPriority" value="1" />
   <parameter name="baseAddress" value="0x90002000" />
@@ -851,6 +855,15 @@
    end="audio_in_dma.csr">
   <parameter name="arbitrationPriority" value="1" />
   <parameter name="baseAddress" value="0x90004000" />
+  <parameter name="defaultConnection" value="false" />
+ </connection>
+ <connection
+   kind="avalon"
+   version="15.1"
+   start="nios2_gen2_0.data_master"
+   end="jtagdebug.csr">
+  <parameter name="arbitrationPriority" value="1" />
+  <parameter name="baseAddress" value="0x9000e000" />
   <parameter name="defaultConnection" value="false" />
  </connection>
  <connection
@@ -878,6 +891,15 @@
    end="audio_in_dma.descriptor_slave">
   <parameter name="arbitrationPriority" value="1" />
   <parameter name="baseAddress" value="0x90005000" />
+  <parameter name="defaultConnection" value="false" />
+ </connection>
+ <connection
+   kind="avalon"
+   version="15.1"
+   start="nios2_gen2_0.data_master"
+   end="jtagdebug.descriptor_slave">
+  <parameter name="arbitrationPriority" value="1" />
+  <parameter name="baseAddress" value="0x9000f000" />
   <parameter name="defaultConnection" value="false" />
  </connection>
  <connection
@@ -914,15 +936,6 @@
    end="pio_1.s1">
   <parameter name="arbitrationPriority" value="1" />
   <parameter name="baseAddress" value="0x90006000" />
-  <parameter name="defaultConnection" value="false" />
- </connection>
- <connection
-   kind="avalon"
-   version="15.1"
-   start="nios2_gen2_0.data_master"
-   end="timer_0.s1">
-  <parameter name="arbitrationPriority" value="1" />
-  <parameter name="baseAddress" value="0x90007000" />
   <parameter name="defaultConnection" value="false" />
  </connection>
  <connection
@@ -979,11 +992,19 @@
   <parameter name="baseAddress" value="0x0000" />
   <parameter name="defaultConnection" value="false" />
  </connection>
+ <connection
+   kind="avalon"
+   version="15.1"
+   start="jtagdebug.mm_write"
+   end="avalon2mem_0.avalon_slave_0">
+  <parameter name="arbitrationPriority" value="1" />
+  <parameter name="baseAddress" value="0x0000" />
+  <parameter name="defaultConnection" value="false" />
+ </connection>
  <connection kind="clock" version="15.1" start="clk_0.clk" end="nios2_gen2_0.clk" />
  <connection kind="clock" version="15.1" start="clk_0.clk" end="pio_0.clk" />
  <connection kind="clock" version="15.1" start="clk_0.clk" end="uart_0.clk" />
  <connection kind="clock" version="15.1" start="clk_0.clk" end="pio_1.clk" />
- <connection kind="clock" version="15.1" start="clk_0.clk" end="timer_0.clk" />
  <connection kind="clock" version="15.1" start="clk_0.clk" end="spi_0.clk" />
  <connection
    kind="clock"
@@ -1008,16 +1029,8 @@
    end="audio_in_dma.clock" />
  <connection kind="clock" version="15.1" start="clk_0.clk" end="jtag_0.clock" />
  <connection kind="clock" version="15.1" start="clk_0.clk" end="jtag_1.clock" />
- <connection
-   kind="clock"
-   version="15.1"
-   start="clk_0.clk"
-   end="usb_host_0.sys_clock" />
- <connection
-   kind="clock"
-   version="15.1"
-   start="clk_1.clk"
-   end="usb_host_0.ulpi_clock" />
+ <connection kind="clock" version="15.1" start="clk_0.clk" end="io_bridge_0.clock" />
+ <connection kind="clock" version="15.1" start="clk_0.clk" end="jtagdebug.clock" />
  <connection
    kind="interrupt"
    version="15.1"
@@ -1031,6 +1044,13 @@
    start="nios2_gen2_0.irq"
    end="audio_in_dma.csr_irq">
   <parameter name="irqNumber" value="4" />
+ </connection>
+ <connection
+   kind="interrupt"
+   version="15.1"
+   start="nios2_gen2_0.irq"
+   end="jtagdebug.csr_irq">
+  <parameter name="irqNumber" value="5" />
  </connection>
  <connection
    kind="interrupt"
@@ -1057,22 +1077,15 @@
    kind="interrupt"
    version="15.1"
    start="nios2_gen2_0.irq"
-   end="timer_0.irq">
-  <parameter name="irqNumber" value="5" />
- </connection>
- <connection
-   kind="interrupt"
-   version="15.1"
-   start="nios2_gen2_0.irq"
-   end="usb_host_0.irq">
-  <parameter name="irqNumber" value="7" />
- </connection>
- <connection
-   kind="interrupt"
-   version="15.1"
-   start="nios2_gen2_0.irq"
    end="spi_0.irq">
   <parameter name="irqNumber" value="8" />
+ </connection>
+ <connection
+   kind="interrupt"
+   version="15.1"
+   start="nios2_gen2_0.irq"
+   end="io_bridge_0.irq">
+  <parameter name="irqNumber" value="0" />
  </connection>
  <connection
    kind="reset"
@@ -1100,11 +1113,6 @@
    kind="reset"
    version="15.1"
    start="clk_0.clk_reset"
-   end="timer_0.reset" />
- <connection
-   kind="reset"
-   version="15.1"
-   start="clk_0.clk_reset"
    end="jtag_0.reset" />
  <connection
    kind="reset"
@@ -1112,6 +1120,11 @@
    start="clk_0.clk_reset"
    end="jtag_1.reset" />
  <connection kind="reset" version="15.1" start="clk_0.clk_reset" end="spi_0.reset" />
+ <connection
+   kind="reset"
+   version="15.1"
+   start="clk_0.clk_reset"
+   end="io_bridge_0.reset" />
  <connection
    kind="reset"
    version="15.1"
@@ -1131,12 +1144,7 @@
    kind="reset"
    version="15.1"
    start="clk_0.clk_reset"
-   end="usb_host_0.sys_reset" />
- <connection
-   kind="reset"
-   version="15.1"
-   start="clk_1.clk_reset"
-   end="usb_host_0.ulpi_reset" />
+   end="jtagdebug.reset_n" />
  <interconnectRequirement for="$system" name="qsys_mm.clockCrossingAdapter" value="HANDSHAKE" />
  <interconnectRequirement for="$system" name="qsys_mm.enableEccProtection" value="FALSE" />
  <interconnectRequirement for="$system" name="qsys_mm.insertDefaultSlave" value="FALSE" />
