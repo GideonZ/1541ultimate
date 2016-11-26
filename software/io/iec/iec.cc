@@ -238,23 +238,19 @@ IecInterface :: ~IecInterface()
 
 void IecInterface :: effectuate_settings(void)
 {
-    uint32_t was_talk   = 0x18800040 + last_addr; // compare instruction
-    uint32_t was_listen = 0x18800020 + last_addr;
-    uint32_t was_printer_listen = 0x18800020 + last_printer_addr;
-    
 //            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
     if(bus_id != last_addr) {
         printf("Setting IEC bus ID to %d.\n", bus_id);
         int replaced = 0;
         for(int i=0;i<512;i++) {
-            if ((HW_IEC_RAM_DW[i] & 0x1F8000FF) == was_listen) {
+            if (((HW_IEC_RAM(4*i) & 0x1f) == 0x18) && ((HW_IEC_RAM(4*i+1) & 0x80) == 0x80) && (HW_IEC_RAM(4*i+3) == (0x20 | last_addr)) ) {
                 // printf("Replacing %8x with %8x at %d.\n", HW_IEC_RAM_DW[i], (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x20, i);
-                HW_IEC_RAM_DW[i] = (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x20;
+                HW_IEC_RAM(4*i+3) = bus_id | 0x20;
                 replaced ++;
             }
-            if ((HW_IEC_RAM_DW[i] & 0x1F8000FF) == was_talk) {
-                HW_IEC_RAM_DW[i] = (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x40;
+            if (((HW_IEC_RAM(4*i) & 0x1f) == 0x18) && ((HW_IEC_RAM(4*i+1) & 0x80) == 0x80) && (HW_IEC_RAM(4*i+3) == (0x40 | last_addr)) ) {
+                HW_IEC_RAM(4*i+3) = bus_id | 0x40;
                 replaced ++;
             }
         }  
@@ -266,8 +262,8 @@ void IecInterface :: effectuate_settings(void)
         printf("Setting IEC printer ID to %d.\n", bus_id);
         int replaced = 0;
         for(int i=0;i<512;i++) {
-            if ((HW_IEC_RAM_DW[i] & 0x1F8000FF) == was_printer_listen) {
-                HW_IEC_RAM_DW[i] = (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x20;
+            if (((HW_IEC_RAM(4*i) & 0x1f) == 0x18) && ((HW_IEC_RAM(4*i+1) & 0x80) == 0x80) && (HW_IEC_RAM(4*i+3) == (0x20 | last_printer_addr)) ) {
+                HW_IEC_RAM(4*i+3) = bus_id | 0x20;
                 replaced ++;
             }
         } 
