@@ -220,10 +220,10 @@ void Copper :: capture(void)
 
 void Copper :: timed_write(void)
 {
-    static char cycle_string[8];
-    static char reg_string[8];
-    static char before_string[8];
-    static char after_string[8];
+    static char cycle_string[8] = {0];
+    static char reg_string[8] = {0];
+    static char before_string[8] = {0];
+    static char after_string[8] = {0];
 
     static uint8_t copper_list[] = { // init
                            COPCODE_WAIT_SYNC,

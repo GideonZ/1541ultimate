@@ -694,7 +694,7 @@ void C1541 :: unlink(void)
 
 void C1541 :: save_disk_to_file(SubsysCommand *cmd)
 {
-    static char buffer[32];
+    static char buffer[32] = {0};
 	File *file = 0;
 	FRESULT fres;
 	int res;
