@@ -57,8 +57,9 @@ int main(int argc, char **argv)
 	samples = 256;
 	uint32_t mono[samples];
 	double stepmono = (2.0 * 3.14159265359) / 51.2;
+	double amplmono = pow(2.0, 21.8);
 	for(int i=0; i < samples; i++) {
-		waves[i]   = ((uint32_t)(ampl * sin(stepmono * (float)i))) & 0xFFFFFF;
+		waves[i]   = ((uint32_t)(amplmono * sin(stepmono * (float)i))) & 0xFFFFFF;
 		waves[i]  |= 0x02000000;
 	}
 

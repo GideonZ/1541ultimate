@@ -1,0 +1,587 @@
+# -------------------------------------------------------------------------- #
+#
+# Copyright (C) 1991-2015 Altera Corporation. All rights reserved.
+# Your use of Altera Corporation's design tools, logic functions 
+# and other software and tools, and its AMPP partner logic 
+# functions, and any output files from any of the foregoing 
+# (including device programming or simulation files), and any 
+# associated documentation or information are expressly subject 
+# to the terms and conditions of the Altera Program License 
+# Subscription Agreement, the Altera Quartus Prime License Agreement,
+# the Altera MegaCore Function License Agreement, or other 
+# applicable license agreement, including, without limitation, 
+# that your use is for the sole purpose of programming logic 
+# devices manufactured by Altera and sold by Altera or its 
+# authorized distributors.  Please refer to the applicable 
+# agreement for further details.
+#
+# -------------------------------------------------------------------------- #
+#
+# Quartus Prime
+# Version 15.1.0 Build 185 10/21/2015 SJ Lite Edition
+# Date created = 09:58:41  November 03, 2016
+#
+# -------------------------------------------------------------------------- #
+#
+# Notes:
+#
+# 1) The default values for assignments are stored in the file:
+#		testexec_assignment_defaults.qdf
+#    If this file doesn't exist, see file:
+#		assignment_defaults.qdf
+#
+# 2) Altera recommends that you do not modify this file. This
+#    file is updated automatically by the Quartus Prime software
+#    and any changes you make may be lost or overwritten.
+#
+# -------------------------------------------------------------------------- #
+
+
+set_global_assignment -name FAMILY "Cyclone IV E"
+set_global_assignment -name DEVICE EP4CE22F17C8
+set_global_assignment -name TOP_LEVEL_ENTITY u2p_dut
+set_global_assignment -name ORIGINAL_QUARTUS_VERSION 15.1.0
+set_global_assignment -name PROJECT_CREATION_TIME_DATE "09:58:41  NOVEMBER 03, 2016"
+set_global_assignment -name LAST_QUARTUS_VERSION 15.1.0
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
+set_global_assignment -name DEVICE_FILTER_PIN_COUNT 256
+set_global_assignment -name DEVICE_FILTER_SPEED_GRADE 8
+set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
+set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
+set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+
+# Workaround for internal error
+set_global_assignment -name AUTO_RAM_BLOCK_BALANCING OFF
+
+set_global_assignment -name POWER_DEFAULT_INPUT_IO_TOGGLE_RATE "12.5 %"
+set_global_assignment -name ENABLE_OCT_DONE OFF
+set_global_assignment -name ENABLE_CONFIGURATION_PINS OFF
+set_global_assignment -name ENABLE_BOOT_SEL_PIN OFF
+set_global_assignment -name USE_CONFIGURATION_DEVICE OFF
+set_global_assignment -name CRC_ERROR_OPEN_DRAIN OFF
+set_global_assignment -name RESERVE_DATA0_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_DATA1_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_DATA7_THROUGH_DATA2_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_FLASH_NCE_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_DCLK_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -fall
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -fall
+set_location_assignment PIN_D2 -to FLASH_CSn
+set_location_assignment PIN_H2 -to FLASH_MISO
+set_location_assignment PIN_C1 -to FLASH_MOSI
+set_location_assignment PIN_H1 -to FLASH_SCK
+set_location_assignment PIN_G5 -to FLASH_SEL
+set_location_assignment PIN_F3 -to FLASH_SELCK
+
+set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_location_assignment PIN_C2 -to SLOT_DATA[0]
+set_location_assignment PIN_B1 -to SLOT_ADDR[0]
+set_location_assignment PIN_C3 -to SLOT_ADDR[1]
+set_location_assignment PIN_A3 -to SLOT_ADDR[2]
+set_location_assignment PIN_A4 -to SLOT_ADDR[3]
+set_location_assignment PIN_D6 -to SLOT_ADDR[4]
+set_location_assignment PIN_C6 -to SLOT_ADDR[5]
+set_location_assignment PIN_A2 -to SLOT_DATA[1]
+set_location_assignment PIN_B3 -to SLOT_DATA[2]
+set_location_assignment PIN_B4 -to SLOT_DATA[3]
+set_location_assignment PIN_B5 -to SLOT_DATA[4]
+set_location_assignment PIN_A5 -to SLOT_DATA[5]
+set_location_assignment PIN_B6 -to SLOT_DATA[6]
+set_location_assignment PIN_A6 -to SLOT_ADDR[6]
+set_location_assignment PIN_B7 -to SLOT_DATA[7]
+set_location_assignment PIN_D8 -to SLOT_ADDR[7]
+set_location_assignment PIN_A7 -to SLOT_DMAn
+set_location_assignment PIN_C8 -to SLOT_ADDR[8]
+set_location_assignment PIN_C9 -to SLOT_ADDR[9]
+set_location_assignment PIN_B8 -to SLOT_BA
+set_location_assignment PIN_B10 -to SLOT_ROMLn
+set_location_assignment PIN_A10 -to SLOT_ADDR[10]
+set_location_assignment PIN_B11 -to SLOT_IO2n
+set_location_assignment PIN_A11 -to SLOT_ADDR[11]
+set_location_assignment PIN_B12 -to SLOT_EXROMn
+set_location_assignment PIN_A12 -to SLOT_ADDR[12]
+set_location_assignment PIN_B13 -to SLOT_GAMEn
+set_location_assignment PIN_A13 -to SLOT_ADDR[13]
+set_location_assignment PIN_C14 -to SLOT_IO1n
+set_location_assignment PIN_B14 -to SLOT_ADDR[14]
+set_location_assignment PIN_B9 -to SLOT_DOTCLK
+set_location_assignment PIN_A14 -to SLOT_ADDR[15]
+set_location_assignment PIN_A9 -to SLOT_PHI2
+set_location_assignment PIN_A15 -to SLOT_RWn
+set_location_assignment PIN_B16 -to SLOT_IRQn
+set_location_assignment PIN_C15 -to SLOT_NMIn
+set_location_assignment PIN_C16 -to SLOT_RSTn
+set_location_assignment PIN_D15 -to SLOT_ROMHn
+set_location_assignment PIN_E9 -to IEC_RESET
+set_location_assignment PIN_D9 -to IEC_CLOCK
+set_location_assignment PIN_D11 -to IEC_DATA
+set_location_assignment PIN_D12 -to IEC_ATN
+set_location_assignment PIN_E10 -to IEC_SRQ_IN
+set_location_assignment PIN_G16 -to CAS_MOTOR
+set_location_assignment PIN_F16 -to CAS_READ
+set_location_assignment PIN_D16 -to CAS_WRITE
+set_location_assignment PIN_F15 -to CAS_SENSE
+set_location_assignment PIN_F14 -to I2C_SCL
+set_location_assignment PIN_F13 -to I2C_SDA
+set_location_assignment PIN_G1 -to HUB_RESETn
+set_location_assignment PIN_F9 -to UART_RXD
+set_location_assignment PIN_G15 -to UART_TXD
+set_location_assignment PIN_L15 -to BUTTON[2]
+set_location_assignment PIN_M15 -to BUTTON[1]
+set_location_assignment PIN_M16 -to BUTTON[0]
+set_location_assignment PIN_P1 -to SDRAM_DQ[6]
+set_location_assignment PIN_L1 -to SDRAM_DM
+set_location_assignment PIN_N2 -to SDRAM_DQ[1]
+set_location_assignment PIN_P2 -to SDRAM_DQ[4]
+set_location_assignment PIN_L2 -to SDRAM_DQS
+set_location_assignment PIN_N1 -to SDRAM_DQ[3]
+set_location_assignment PIN_L4 -to SDRAM_DQ[2]
+set_location_assignment PIN_J1 -to SDRAM_DQ[5]
+set_location_assignment PIN_K1 -to SDRAM_DQ[0]
+set_location_assignment PIN_J2 -to SDRAM_DQ[7]
+set_location_assignment PIN_L8 -to SDRAM_CLK
+set_location_assignment PIN_L7 -to SDRAM_CLKn
+
+set_location_assignment PIN_K2 -to SDRAM_ODT
+set_location_assignment PIN_M7 -to SDRAM_CSn
+set_location_assignment PIN_M6 -to SDRAM_A[0]
+set_location_assignment PIN_M8 -to SDRAM_A[4]
+set_location_assignment PIN_N3 -to SDRAM_A[13]
+set_location_assignment PIN_N5 -to SDRAM_A[8]
+set_location_assignment PIN_N6 -to SDRAM_A[11]
+set_location_assignment PIN_P3 -to SDRAM_A[6]
+set_location_assignment PIN_N8 -to SDRAM_A[2]
+set_location_assignment PIN_R3 -to SDRAM_CASn
+set_location_assignment PIN_R4 -to SDRAM_RASn
+set_location_assignment PIN_R1 -to SDRAM_WEn
+set_location_assignment PIN_T3 -to SDRAM_BA[1]
+set_location_assignment PIN_T2 -to SDRAM_A[1]
+set_location_assignment PIN_R5 -to SDRAM_A[5]
+set_location_assignment PIN_T4 -to SDRAM_A[9]
+set_location_assignment PIN_R6 -to SDRAM_A[7]
+set_location_assignment PIN_T5 -to SDRAM_A[12]
+set_location_assignment PIN_P8 -to SDRAM_A[3]
+set_location_assignment PIN_R7 -to SDRAM_A[10]
+set_location_assignment PIN_T6 -to SDRAM_BA[0]
+set_location_assignment PIN_T7 -to SDRAM_CKE
+set_location_assignment PIN_N9 -to SDRAM_BA[2]
+set_location_assignment PIN_P9 -to HUB_CLOCK
+
+set_location_assignment PIN_M10 -to ULPI_RESET
+set_location_assignment PIN_N11 -to ULPI_STP
+set_location_assignment PIN_R10 -to ULPI_DIR
+set_location_assignment PIN_T10 -to ULPI_NXT
+set_location_assignment PIN_P11 -to ULPI_DATA[0]
+set_location_assignment PIN_R11 -to ULPI_DATA[1]
+set_location_assignment PIN_T11 -to ULPI_DATA[2]
+set_location_assignment PIN_N12 -to ULPI_DATA[3]
+set_location_assignment PIN_R12 -to ULPI_DATA[4]
+set_location_assignment PIN_T12 -to ULPI_DATA[5]
+set_location_assignment PIN_R13 -to ULPI_DATA[6]
+set_location_assignment PIN_P14 -to ULPI_DATA[7]
+set_location_assignment PIN_T9 -to ULPI_CLOCK
+
+set_location_assignment PIN_T13 -to ETH_RESETn
+set_location_assignment PIN_N14 -to RMII_TX_DATA[1]
+set_location_assignment PIN_R14 -to RMII_TX_DATA[0]
+set_location_assignment PIN_T14 -to RMII_TX_EN
+set_location_assignment PIN_N15 -to ETH_IRQn
+set_location_assignment PIN_P15 -to RMII_RX_ER
+set_location_assignment PIN_T8 -to RMII_REFCLK
+set_location_assignment PIN_T15 -to RMII_CRS_DV
+set_location_assignment PIN_R16 -to RMII_RX_DATA[0]
+set_location_assignment PIN_P16 -to RMII_RX_DATA[1]
+#set_location_assignment PIN_ -to MDIO_CLK
+#set_location_assignment PIN_ -to MDIO_DATA
+
+set_location_assignment PIN_K15 -to AUDIO_MCLK
+set_location_assignment PIN_J15 -to AUDIO_SDI
+set_location_assignment PIN_J16 -to AUDIO_SDO
+set_location_assignment PIN_K16 -to AUDIO_BCLK
+set_location_assignment PIN_J14 -to AUDIO_LRCLK
+
+
+set_location_assignment PIN_N16 -to MDIO_CLK
+set_location_assignment PIN_L16 -to MDIO_DATA
+set_location_assignment PIN_G2 -to LED_CARTn
+set_location_assignment PIN_F1 -to LED_DISKn
+set_location_assignment PIN_F2 -to LED_MOTORn
+set_location_assignment PIN_D1 -to LED_SDACTn
+set_location_assignment PIN_D14 -to SPEAKER_DATA
+set_location_assignment PIN_E11 -to SPEAKER_ENABLE
+set_location_assignment PIN_E16 -to SLOT_VCC
+set_location_assignment PIN_L13 -to I2C_SCL_18
+set_location_assignment PIN_J13 -to I2C_SDA_18
+set_location_assignment PIN_E8 -to SLOT_BUFFER_ENn
+
+
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_BCLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_LRCLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_MCLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_SDI
+set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_SDO
+set_instance_assignment -name IO_STANDARD "1.8 V" -to BUTTON[0]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to BUTTON[1]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to BUTTON[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_MOTOR
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_READ
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_SENSE
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to CAS_WRITE
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_CSn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_MISO
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_MOSI
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_SCK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_SEL
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to FLASH_SELCK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_ATN
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_CLOCK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_DATA
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_RESET
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to IEC_SRQ_IN
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_CRS_DV
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_REFCLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_RX_ER
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_TX_EN
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[0]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[10]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[11]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[12]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[13]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[1]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[2]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[3]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[4]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[5]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[6]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[7]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[8]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_A[9]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[0]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[1]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_BA[2]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CASn
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CKE
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CLK
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CLKn
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_CSn
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQS
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[0]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[1]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[2]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[3]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[4]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[5]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[6]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS II" -to SDRAM_DQ[7]
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DM
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_ODT
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_RASn
+set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_WEn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[10]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[11]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[12]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[13]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[14]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[15]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[8]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[9]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_BA
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DMAn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DOTCLK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_EXROMn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_GAMEn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_IO1n
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_IO2n
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_IRQn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_NMIn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_PHI2
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ROMHn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ROMLn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_RSTn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_RWn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_RXD
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_CLOCK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[0]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[1]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[2]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[3]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[4]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[5]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[6]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[7]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DIR
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_NXT
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_RESET
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_STP
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to I2C_SCL
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to I2C_SDA
+set_instance_assignment -name IO_STANDARD "1.8 V" -to HUB_CLOCK
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to HUB_RESETn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LED_CARTn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LED_DISKn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LED_MOTORn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to LED_SDACTn
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_RX_DATA[1]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_RX_DATA[0]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_TX_DATA[1]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to RMII_TX_DATA[0]
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ETH_RESETn
+set_instance_assignment -name IO_STANDARD "1.8 V" -to ETH_IRQn
+set_instance_assignment -name IO_STANDARD "1.8 V" -to MDIO_CLK
+set_instance_assignment -name IO_STANDARD "1.8 V" -to MDIO_DATA
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SPEAKER_DATA
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SPEAKER_ENABLE
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_VCC
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_BUFFER_ENn
+set_instance_assignment -name IO_STANDARD "1.8 V" -to I2C_SCL_18
+set_instance_assignment -name IO_STANDARD "1.8 V" -to I2C_SDA_18
+
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to I2C_SCL_18
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to I2C_SDA_18
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to RMII_CRS_DV
+
+set_global_assignment -name GENERATE_RBF_FILE ON
+set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON
+
+set_global_assignment -name ENABLE_SIGNALTAP OFF
+set_global_assignment -name USE_SIGNALTAP_FILE output_files/stp1.stp
+
+set_global_assignment -name QIP_FILE ../../../fpga/nios_dut/nios_dut/synthesis/nios_dut.qip
+
+set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.qip
+set_global_assignment -name SDC_FILE ultimate_altera.sdc
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/bin2gcr.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_drive.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/c1541_timing.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/cpu_part_1541.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/drive_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_mem.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_param_mem.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_sound.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy_stream.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/floppy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_codec.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_decoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr_encoder.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/gcr2bin.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/via6522.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/alu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/bit_cpx_cpy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/cpu6502.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/data_oper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/implied.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/pkg_6502_decode.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/pkg_6502_defs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/pkg_6502_opcodes.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_control.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_core.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_interrupt.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/proc_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/6502/vhdl_source/shifter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/align_read_to_bram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/async_fifo_ft.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/ddr2_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/distributed_stack.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram_sc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/dpram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/megafunctions/pll.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/mem_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/srl_fifo.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/u2p_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/update_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S18.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S36.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/RAMB16BWE_S36_S9.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/altera/xilinx_primitives/unisim_VCOMP.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/all_carts_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/cart_slot_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/cart_slot_registers.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/freezer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/reu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_master_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_server_v4.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_slave.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cart_slot/vhdl_source/slot_timing_62.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core_address_decoder.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core_Pkg.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/core.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/decode.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/execute.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/fetch.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/gprf.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/core/mem.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/std/dsram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/mblite/hw/std/std_Pkg.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/cached_mblite.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/config_pkg.vhd -library mblite
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_cache_custom.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_simple.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dm_with_invalidate.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_arbiter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/dmem_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mblite_wrapper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem16k.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem32k.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem4k.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/cyclone4_test/vhdl_source/u2p_dut.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio_select/vhdl_source/audio_select.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/i2s_serializer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/lp_filter2.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sine_osc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_playback/vhdl_source/tape_speed_control.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_record/vhdl_source/c2n_record.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/command_interface/vhdl_source/command_if_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/command_interface/vhdl_source/command_interface.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/command_interface/vhdl_source/command_protocol.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_engine.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/logic_analyzer_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/logic_analyzer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/deserializer/vhdl_source/deserializer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/icap/vhdl_source/icap.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_interface_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_interface.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_processor_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_processor.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/crc32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_filter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/ethernet_rmii.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/packet_generator.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/rmii_transceiver.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_accu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sampler/vhdl_source/sampler.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/delta_sigma_2to5.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/hf_noise.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/high_pass.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/mash.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/my_math_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_zpu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/spike_filter/vhdl_source/spike_filter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_zpu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/bridge_to_mem_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/data_crc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/host_sequencer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/mem_addr_counter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/mem_remain_counter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/nano_minimal_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/rxtx_to_buf.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/timer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc_19.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc_check.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/token_crc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_bus.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_rx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/ulpi_tx.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_nano.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_cmd_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_interface.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_host_nano.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_io_bank.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_memory_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/usb_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/dma_bus_arbiter_pri.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/dma_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/endianness_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_bridge2.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_splitter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_dummy.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_to_dma_bridge.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_arbiter_pri.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_to_mem32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_to_io_bridge.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/real_time_clock.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/free_queue.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_io.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw_byte.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/dpram_rdw.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/pseudo_dpram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/spram.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_alu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_cpu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/oc_pusher/vhdl_source/oc_pusher.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/sync_fifo/vhdl_source/sync_fifo.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/input_synchronizer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchroniser.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/adsr_multi.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/mult_acc.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/oscillator.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/Q_table.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_ctrl.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_debug_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_filter.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_io_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_mapper.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_mixer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_top.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/sid_trace.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/wave_map.vhd
+set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_file_io_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_string_util_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_vector_pkg.vhd
+set_global_assignment -name CDF_FILE dut.cdf
+
+set_global_assignment -name GENERATE_SVF_FILE ON
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

@@ -21,6 +21,7 @@ typedef struct {
 	volatile uint32_t *host;
 	int drLength;
 	uint16_t address;
+	int dutRunning;
 } JTAG_Access_t;
 
 int FindJtagAccess(volatile uint32_t *host, JTAG_Access_t *access);

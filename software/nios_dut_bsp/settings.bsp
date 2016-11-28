@@ -2,8 +2,8 @@
 <sch:Settings xmlns:sch="http://www.altera.com/embeddedsw/bsp/schema">
         <BspType>hal</BspType>
         <BspVersion>default</BspVersion>
-        <BspGeneratedTimeStamp>Nov 14, 2016 9:20:03 PM</BspGeneratedTimeStamp>
-        <BspGeneratedUnixTimeStamp>1479154803155</BspGeneratedUnixTimeStamp>
+        <BspGeneratedTimeStamp>Nov 25, 2016 7:27:20 AM</BspGeneratedTimeStamp>
+        <BspGeneratedUnixTimeStamp>1480055240787</BspGeneratedUnixTimeStamp>
         <BspGeneratedLocation>/home/gideon/proj/ultimate/software/nios_dut_bsp</BspGeneratedLocation>
         <BspSettingsFile>/home/gideon/proj/ultimate/software/nios_dut_bsp/settings.bsp</BspSettingsFile>
         <SopcDesignFile>../../fpga/nios_dut/nios_dut.sopcinfo</SopcDesignFile>

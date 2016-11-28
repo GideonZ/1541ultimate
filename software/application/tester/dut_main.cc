@@ -19,6 +19,7 @@
 #include "dump_hex.h"
 #include "i2c.h"
 #include "rtc_only.h"
+#include "usb_base.h"
 
 extern "C" {
 #include "flash_switch.h"
@@ -53,8 +54,13 @@ int getNetworkPacket(uint8_t **payload, int *length);
 void outbyte_buffer(int c)
 {
 	uint32_t next = (BUFFER_HEAD == (SIZE_OF_BUFFER-1)) ? 0 : BUFFER_HEAD+1;
+	while (ioRead8(UART_FLAGS) & UART_TxFifoFull)
+		;
+	ioWrite8(UART_DATA, c);
+
 	while(next == BUFFER_TAIL)
 		;
+
 	uint8_t *buffer = (uint8_t *)BUFFER_LOCATION;
 	buffer[BUFFER_HEAD] = (uint8_t)c;
 	BUFFER_HEAD = next;

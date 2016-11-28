@@ -17,7 +17,7 @@ int checkUsbHub(void)
 {
 	UsbDevice *device = usb2.first_device();
 	if (!device) {
-		printf("No USB device was found on the USB PHY.\n");
+//		printf("No USB device was found on the USB PHY.\n");
 		return -1;
 	}
 	if (device->vendorID != 0x0424) {
@@ -43,7 +43,6 @@ int checkUsbSticks(void)
 	for(int i=0;i<3;i++) {
 		UsbDevice *d = hub->getChild(i);
 		if (d) {
-			printf("Port %d: %04x:%04x %s %s\n", i, d->vendorID, d->productID, d->manufacturer, d->product);
 			if (d->speed == 2) {
 				devices++;
 			}
@@ -51,6 +50,12 @@ int checkUsbSticks(void)
 	}
 	if (devices != 3) {
 		return -2;
+	}
+	for(int i=0;i<3;i++) {
+		UsbDevice *d = hub->getChild(i);
+		if (d) {
+			printf("Port %d: %04x:%04x %s %s\n", i, d->vendorID, d->productID, d->manufacturer, d->product);
+		}
 	}
 	return 0;
 }

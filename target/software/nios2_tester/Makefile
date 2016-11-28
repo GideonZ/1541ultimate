@@ -83,6 +83,7 @@ VPATH +=	$(PATH_SW)/nios_tester_bsp
 VPATH +=	$(PATH_SW)/nios_tester_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_tester_bsp/drivers/inc
 VPATH +=    ../../fpga/testdut/output_files
+VPATH +=    ../nios2_dut/result
 
 SRCS_ASM = tester_binaries.s
 
@@ -107,7 +108,7 @@ LFLAGS   = --gc-sections -msys-crt0='$(BSP)/obj/HAL/src/crt0.o'  -msys-lib=hal_b
 
 include ../common/rules.mk
 
-tester_binaries.o: $(PATH_SW)/application/tester/waves_8_12.bin 
+tester_binaries.o: $(PATH_SW)/application/tester/waves_8_12.bin ../nios2_dut/result/dut.app
 
 $(FLASH)/rompack.bin: $(ROMS)/ar5pal.bin $(ROMS)/ar6pal.bin $(ROMS)/final3.bin $(ROMS)/rr38pal.bin $(ROMS)/rr38ntsc.bin $(ROMS)/tar_pal.bin \
 	$(ROMS)/tar_ntsc.bin $(ROMS)/ss5pal.bin $(ROMS)/ss5ntsc.bin $(ROMS)/ar5ntsc.bin $(ROMS)/kcs.bin $(ROMS)/epyx.bin
@@ -115,19 +116,19 @@ $(FLASH)/rompack.bin: $(ROMS)/ar5pal.bin $(ROMS)/ar6pal.bin $(ROMS)/final3.bin $
 	@cat $(ROMS)/ar5pal.bin $(ROMS)/ar6pal.bin $(ROMS)/final3.bin $(ROMS)/rr38pal.bin $(ROMS)/rr38ntsc.bin $(ROMS)/tar_pal.bin \
 	$(ROMS)/tar_ntsc.bin $(ROMS)/ss5pal.bin $(ROMS)/ss5ntsc.bin $(ROMS)/ar5ntsc.bin $(ROMS)/kcs.bin $(ROMS)/epyx.bin >$@
 
-$(FLASH)/ultimate_run.swp : #../nios2_flash/output/ultimate_run.swp
+$(FLASH)/ultimate_run.swp : ../nios2_flash/output/ultimate_run.swp
 	@make -C ../nios2_flash
 	@cp $< $@
 
-$(FLASH)/ultimate_recovery.swp : #../nios2_flash/output/ultimate_recovery.swp
+$(FLASH)/ultimate_recovery.swp : ../nios2_flash/output/ultimate_recovery.swp
 	@make -C ../nios2_flash
 	@cp $< $@
 
-$(FLASH)/ultimate.app : #../nios2_ultimate/result/ultimate.app
+$(FLASH)/ultimate.app : ../nios2_ultimate/result/ultimate.app
 	@make -C ../nios2_ultimate
 	@cp $< $@
 
-$(FLASH)/recovery.app : #../nios2_recovery/result/recovery.app
+$(FLASH)/recovery.app : ../nios2_recovery/result/recovery.app
 	@make -C ../nios2_recovery
 	@cp $< $@
 
@@ -138,9 +139,9 @@ $(TESTER)/dut.app::
 	@make -C ../nios2_dut
 	@cp ../nios2_dut/result/dut.app $@
 
-$(TESTER)/dut.app::
-	@make -C ../nios2_dut
-	@cp ../nios2_dut/result/dut.app $@
+#$(TESTER)/dut.app: ../nios2_dut/result/dut.app
+#	@make -C ../nios2_dut
+#	@cp ../nios2_dut/result/dut.app $@
 
 $(TESTER)/tester.app: $(RESULT)/$(PRJ).app
 	@cp $< $@

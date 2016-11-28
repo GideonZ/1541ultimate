@@ -74,23 +74,39 @@ BinaryImage_t jigReport = { "", "JIG Report", 0xEE000, 0, 0 };
 #define PROGRAM_ADDR     (0x200007A8)
 #define TIMELOC          (0x200007B0)
 
-
-void run_application_on_dut(JTAG_Access_t *target, uint32_t *app)
+static void outbyte_local(int c)
 {
+	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
+	ioWrite8(UART_DATA, c);
+}
+
+int run_application_on_dut(JTAG_Access_t *target, uint32_t *app)
+{
+	int retval = 0;
 	uint8_t reset = 0x80;
-	uint8_t download = 0x01;
+	uint8_t download = 0x00;
 	vji_write(target, 2, &reset, 1);
 	vji_write(target, 2, &download, 1);
 	vTaskDelay(100);
-	int length = (int)app[1];
+	int length = (int)(app[1] + 3) & -4;
 	uint32_t dest = app[0];
 	uint32_t runaddr = app[2];
 	uint32_t *src = &app[3];
-	//printf("Copying %d words to %08x.. ", length >> 2, dest);
+	printf("Copying %d words to %08x.. ", length >> 2, dest);
 	vji_write_memory(target, dest, length >> 2, src);
-	//printf("Setting run address to %08x..", runaddr);
-	vji_write_memory(target, APPLICATION_RUN, 1, &runaddr);
-	//printf("Done!\n");
+	uint32_t *verifyBuffer = (uint32_t *)malloc(length);
+	vji_read_memory(target, dest, length >> 2, verifyBuffer);
+	if(memcmp(verifyBuffer, src, length) != 0) {
+		printf("Verify failure. RAM error.\n");
+		dump_hex_verify(src, verifyBuffer, length);
+		retval = -3;
+	} else {
+		printf("Setting run address to %08x..", runaddr);
+		vji_write_memory(target, APPLICATION_RUN, 1, &runaddr);
+		printf("Done!\n");
+	}
+	free(verifyBuffer);
+	return retval;
 }
 
 void read_bytes(JTAG_Access_t *target, uint32_t address, int bytes, uint8_t *dest)
@@ -178,8 +194,7 @@ int executeDutCommand(JTAG_Access_t *target, uint32_t commandCode, int timeout, 
 				int ch = getchar_from_dut(target);
 				if (ch == -1) {
 					break;
-				}
-				putchar(ch);
+				}				outbyte_local(ch);
 			}
 		}
 		vji_read_memory(target, DUT_TO_TESTER, 1, &post);
@@ -464,7 +479,8 @@ int jigPowerSwitchOverTest(JTAG_Access_t *target, int timeout, char **log)
 		uint32_t v50 = adc_read_channel_corrected(2);
 		uint32_t vcc = adc_read_channel_corrected(1);
 		printf("ExtVCC: V50=%d, VCC=%d.\n", v50, vcc);
-		if ((vcc > 750) || (v50 > 750)) {
+		// if ((vcc > 750) || (v50 > 750)) {
+		if ((vcc > 4600) || (v50 > 4600)) {
 			errors |= 4;
 		}
 	}
@@ -532,7 +548,7 @@ int jigVoltageRegulatorLoad(JTAG_Access_t *target, int timeout, char **log)
 	if (Vr < 1050) {
 		errors |= 1;
 	}
-	if (eff < 75) {
+	if (eff < 70) {
 		errors |= 2;
 	}
 
@@ -600,7 +616,9 @@ int bringupConfigure(JTAG_Access_t *target, int timeout, char **log)
 		return -1;
 	}
 
+	portDISABLE_INTERRUPTS();
 	jtag_configure_fpga(target->host, (uint8_t *)dutFpga.buffer, (int)dutFpga.size);
+	portENABLE_INTERRUPTS();
 	vTaskDelay(100);
 	report_analog();
 
@@ -631,11 +649,16 @@ int checkReferenceClock(JTAG_Access_t *target, int timeout, char **log)
 
 int checkApplicationRun(JTAG_Access_t *target, int timeout, char **log)
 {
-	run_application_on_dut(target, dutAppl.buffer);
+	int download = run_application_on_dut(target, dutAppl.buffer);
+	if (download) {
+		return download;
+	}
 
 	int started = executeDutCommand(target, 99, timeout, log);
 	if (started) {
 		printf("Seems that the DUT did not start test software.\n");
+	} else {
+		target->dutRunning = 1;
 	}
 	return started;
 }
@@ -859,10 +882,14 @@ int checkUsbHub(JTAG_Access_t *target, int timeout, char **log)
 		return usb;
 	}
 
-	vTaskDelay(800);
-
 	// Check for USB Hub
-	usb = executeDutCommand(target, 8, timeout, log);
+	int retries = 20;
+	usb = -1;
+	while(retries && usb) {
+		vTaskDelay(50);
+		usb = executeDutCommand(target, 8, timeout, log);
+		retries--;
+	}
 	if (usb) {
 		printf("USB HUB check failed.\n");
 	}
@@ -871,10 +898,15 @@ int checkUsbHub(JTAG_Access_t *target, int timeout, char **log)
 
 int checkUsbSticks(JTAG_Access_t *target, int timeout, char **log)
 {
-	vTaskDelay(1500);
-
 	// Check for USB sticks
-	int usb = executeDutCommand(target, 9, timeout, log);
+	int retries = 20;
+	int usb = -1;
+	while(retries && usb) {
+		vTaskDelay(50);
+		usb = executeDutCommand(target, 9, timeout, log);
+		retries--;
+	}
+
 	if (usb) {
 		printf("*** USB check for 3 devices failed.\n");
 	}
@@ -998,8 +1030,7 @@ void outbyte_log(int c)
 {
 	logger.charout(c);
 	// Wait for space in FIFO
-	while (ioRead8(UART_FLAGS) & UART_TxFifoFull);
-	ioWrite8(UART_DATA, c);
+	outbyte_local(c);
 }
 
 int writeLog(StreamTextLog *log, const char *prefix, const char *name)
@@ -1113,14 +1144,14 @@ extern "C" {
 			load_file(&toBeFlashed[i]);
 		}
 
-/*
+
 		// Initialize fpga and application structures for DUT
-		dutFpga.buffer = (uint32_t *)&_dut_b_start;
-		dutFpga.size   = (uint32_t)&_dut_b_size;
+//		dutFpga.buffer = (uint32_t *)&_dut_b_start;
+//		dutFpga.size   = (uint32_t)&_dut_b_size;
 		dutAppl.buffer = (uint32_t *)&_dut_application_start;
-*/
+
 		load_file(&dutFpga);
-		load_file(&dutAppl);
+//		load_file(&dutAppl);
 
 		TestSuite jigSuite("JIG Test Suite", jig_tests);
 		TestSuite slotSuite("Slot Test Suite", slot_tests);
@@ -1143,7 +1174,9 @@ extern "C" {
 				logger.Stop();
 				jigReport.buffer = (uint32_t *)logger.getText();
 				jigReport.size = logger.getLength();
-				program_flash(jigSuite.getTarget(), &jigReport);
+				if (jigSuite.getTarget()->dutRunning) {
+					program_flash(jigSuite.getTarget(), &jigReport);
+				}
 				vTaskDelay(5);
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4); // turn off
 				if (!jigSuite.Passed()) {

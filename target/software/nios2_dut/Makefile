@@ -71,7 +71,7 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -O0 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DRECOVERY=0 -DNIOS=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-BSP      = $(PATH_SW)/nios_tester_bsp
+BSP      = $(PATH_SW)/nios_dut_bsp
 LINK 	 = $(BSP)/linker.x
 LIBS3    = $(BSP)/libhal_bsp.a
 LFLAGS   = --gc-sections -msys-crt0='$(BSP)/obj/HAL/src/crt0.o'  -msys-lib=hal_bsp -L $(BSP)

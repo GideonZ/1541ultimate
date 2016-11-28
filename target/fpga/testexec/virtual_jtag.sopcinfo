@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <EnsembleReport name="virtual_jtag" kind="virtual_jtag" version="1.0" fabric="QSYS">
  <!-- Format version 15.1 185 (Future versions may contain additional information.) -->
- <!-- 2016.11.20.22:26:34 -->
+ <!-- 2016.11.24.12:41:23 -->
  <!-- A collection of modules and connections -->
  <parameter name="AUTO_GENERATION_ID">
   <type>java.lang.Integer</type>
-  <value>1479677194</value>
+  <value>1479987683</value>
   <derived>false</derived>
   <enabled>true</enabled>
   <visible>false</visible>

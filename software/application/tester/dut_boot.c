@@ -1,7 +1,6 @@
 #include "u2p.h"
-#include "iomap_tester.h"
+#include "itu.h"
 #include <stdio.h>
-
 
 #define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0000))
 #define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0004))

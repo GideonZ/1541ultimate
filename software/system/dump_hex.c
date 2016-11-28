@@ -92,12 +92,17 @@ void dump_hex_verify(void *pp1, void *pp2, int len)
 	int w,t,d;
     uint8_t *p1 = (uint8_t *)pp1;
     uint8_t *p2 = (uint8_t *)pp2;
-	for(w=0;w<len;w+=DUMP_BYTES) {
+    int lines = 16;
+    for(w=0;w<len;w+=DUMP_BYTES) {
 		for(d=0,t=0;t<DUMP_BYTES;t++) {
 			if(p1[w+t] != p2[w+t])
 				d++;
 		}
 		if(d) {
+			if (!lines) {
+				printf("Output truncated.\n");
+				break;
+			}
             printf("%4x: ", w);
 			for(t=0;t<DUMP_BYTES;t++) {
 				if (((w+t) < len) && (p1[w+t] != p2[w+t])) {
@@ -115,6 +120,7 @@ void dump_hex_verify(void *pp1, void *pp2, int len)
 				}
 			}
             printf("\n");
+            lines--;
 		}
 	}
 }

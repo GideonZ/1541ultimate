@@ -1,0 +1,58 @@
+	component nios_tester is
+		port (
+			audio_in_data           : in  std_logic_vector(31 downto 0) := (others => 'X'); -- data
+			audio_in_valid          : in  std_logic                     := 'X';             -- valid
+			audio_in_ready          : out std_logic;                                        -- ready
+			audio_out_data          : out std_logic_vector(31 downto 0);                    -- data
+			audio_out_valid         : out std_logic;                                        -- valid
+			audio_out_ready         : in  std_logic                     := 'X';             -- ready
+			dummy_export            : in  std_logic                     := 'X';             -- export
+			io_ack                  : in  std_logic                     := 'X';             -- ack
+			io_rdata                : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- rdata
+			io_read                 : out std_logic;                                        -- read
+			io_wdata                : out std_logic_vector(7 downto 0);                     -- wdata
+			io_write                : out std_logic;                                        -- write
+			io_address              : out std_logic_vector(19 downto 0);                    -- address
+			io_irq                  : in  std_logic                     := 'X';             -- irq
+			io_u2p_ack              : in  std_logic                     := 'X';             -- ack
+			io_u2p_rdata            : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- rdata
+			io_u2p_read             : out std_logic;                                        -- read
+			io_u2p_wdata            : out std_logic_vector(7 downto 0);                     -- wdata
+			io_u2p_write            : out std_logic;                                        -- write
+			io_u2p_address          : out std_logic_vector(19 downto 0);                    -- address
+			io_u2p_irq              : in  std_logic                     := 'X';             -- irq
+			jtag0_jtag_tck          : out std_logic;                                        -- jtag_tck
+			jtag0_jtag_tms          : out std_logic;                                        -- jtag_tms
+			jtag0_jtag_tdi          : out std_logic;                                        -- jtag_tdi
+			jtag0_jtag_tdo          : in  std_logic                     := 'X';             -- jtag_tdo
+			jtag1_jtag_tck          : out std_logic;                                        -- jtag_tck
+			jtag1_jtag_tms          : out std_logic;                                        -- jtag_tms
+			jtag1_jtag_tdi          : out std_logic;                                        -- jtag_tdi
+			jtag1_jtag_tdo          : in  std_logic                     := 'X';             -- jtag_tdo
+			jtag_in_data            : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- data
+			jtag_in_valid           : in  std_logic                     := 'X';             -- valid
+			jtag_in_ready           : out std_logic;                                        -- ready
+			mem_mem_req_address     : out std_logic_vector(25 downto 0);                    -- mem_req_address
+			mem_mem_req_byte_en     : out std_logic_vector(3 downto 0);                     -- mem_req_byte_en
+			mem_mem_req_read_writen : out std_logic;                                        -- mem_req_read_writen
+			mem_mem_req_request     : out std_logic;                                        -- mem_req_request
+			mem_mem_req_tag         : out std_logic_vector(7 downto 0);                     -- mem_req_tag
+			mem_mem_req_wdata       : out std_logic_vector(31 downto 0);                    -- mem_req_wdata
+			mem_mem_resp_dack_tag   : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- mem_resp_dack_tag
+			mem_mem_resp_data       : in  std_logic_vector(31 downto 0) := (others => 'X'); -- mem_resp_data
+			mem_mem_resp_rack_tag   : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- mem_resp_rack_tag
+			pio_in_port             : in  std_logic_vector(31 downto 0) := (others => 'X'); -- in_port
+			pio_out_port            : out std_logic_vector(31 downto 0);                    -- out_port
+			spi_MISO                : in  std_logic                     := 'X';             -- MISO
+			spi_MOSI                : out std_logic;                                        -- MOSI
+			spi_SCLK                : out std_logic;                                        -- SCLK
+			spi_SS_n                : out std_logic;                                        -- SS_n
+			sys_clock_clk           : in  std_logic                     := 'X';             -- clk
+			sys_reset_reset_n       : in  std_logic                     := 'X';             -- reset_n
+			uart_rxd                : in  std_logic                     := 'X';             -- rxd
+			uart_txd                : out std_logic;                                        -- txd
+			uart_cts_n              : in  std_logic                     := 'X';             -- cts_n
+			uart_rts_n              : out std_logic                                         -- rts_n
+		);
+	end component nios_tester;
+

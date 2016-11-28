@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include "jtag.h"
 
 #define JTAG_LAST   0x40000000
 #define JTAG_TMSSEL 0x80000000
@@ -76,13 +77,6 @@ void jtag_senddata(volatile uint32_t *host, uint8_t *data, int length, uint8_t *
 	}
 	host[0] = JTAG_TMSSEL | (1 << 16) | 0x01; // send 2 bits: 1, 0 on TMS to get back to idle state
 }
-
-typedef struct {
-	int valid;
-	volatile uint32_t *host;
-	int drLength;
-	uint16_t address;
-} JTAG_Access_t;
 
 
 void vji_read(JTAG_Access_t *controller, uint16_t addr, uint8_t *dest, int bytes)
@@ -168,18 +162,27 @@ void vji_write_block(JTAG_Access_t *controller, uint32_t *data, int words)
 
 void vji_read_memory(JTAG_Access_t *controller, uint32_t address, int words, uint32_t *dest)
 {
+/*
 	if (words > 256) {
 		printf("Reading more than 256 DWORDS is not supported.\n");
 		return;
 	}
-	uint8_t read_cmd[] = { 0x00, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x00, 0x03 };
-	read_cmd[0] = (uint8_t)address;  address >>= 8;
-	read_cmd[2] = (uint8_t)address;  address >>= 8;
-	read_cmd[4] = (uint8_t)address;  address >>= 8;
-	read_cmd[6] = (uint8_t)address;
-	read_cmd[8] = (uint8_t)(words - 1);
-	vji_write(controller, 5, read_cmd, 10);
-	vji_read_fifo(controller, dest, words);
+*/
+	while(words > 0) {
+		int now = (words > 256) ? 256 : words;
+		uint32_t caddr = address;
+		uint8_t read_cmd[] = { 0x00, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x00, 0x03 };
+		read_cmd[0] = (uint8_t)caddr;  caddr >>= 8;
+		read_cmd[2] = (uint8_t)caddr;  caddr >>= 8;
+		read_cmd[4] = (uint8_t)caddr;  caddr >>= 8;
+		read_cmd[6] = (uint8_t)caddr;
+		read_cmd[8] = (uint8_t)(now - 1);
+		vji_write(controller, 5, read_cmd, 10);
+		vji_read_fifo(controller, dest, now);
+		address += 4*now;
+		words -= now;
+		dest += now;
+	}
 }
 
 void vji_write_memory(JTAG_Access_t *controller, uint32_t address, int words, uint32_t *src)

@@ -155,5 +155,11 @@ int testDutSpeaker(void)
 	int err = doFFT(buffer, result, 10, 0);
 	free(buffer);
 	printf("Audio speaker test. %d\n", err);
+	if(err) {
+		for(int i=0;i<256;i++) {
+			printf("%d;%d\n", i, result[i]);
+		}
+	}
+
 	return err;
 }

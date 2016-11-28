@@ -7,6 +7,7 @@ use work.my_math_pkg.all;
 
 entity sigma_delta_dac is
 generic (
+    g_divider       : natural := 1;
     g_width         : positive := 12;
     g_invert        : boolean := false;
     g_use_mid_only  : boolean := true;
@@ -21,31 +22,15 @@ port (
 end sigma_delta_dac;
 
 architecture gideon of sigma_delta_dac is
---    signal converted   : unsigned(g_width-1 downto 0);
     signal dac_in_scaled    : signed(g_width-1 downto g_left_shift);
     signal converted   : unsigned(g_width downto g_left_shift);
     signal out_i       : std_logic;
     signal accu        : unsigned(converted'range);
-    signal divider     : unsigned(2 downto 0) := "000";
-    signal sine        : signed(15 downto 0);
-    signal sine_enable : std_logic;
+    signal divider     : integer range 0 to g_divider-1;
 begin
     dac_in_scaled <= left_scale(dac_in, g_left_shift);
     converted <= (not dac_in_scaled(dac_in_scaled'high) & unsigned(dac_in_scaled(dac_in_scaled'high downto g_left_shift))) when g_use_mid_only else
                  (not dac_in_scaled(dac_in_scaled'high) & unsigned(dac_in_scaled(dac_in_scaled'high-1 downto g_left_shift))) & '0';
-
---    converted <= not sine(sine'high) & unsigned(sine(sine'high downto 0));
-
---    i_pilot: entity work.sine_osc
---    port map (
---        clock   => clock,
---        enable  => sine_enable,
---        reset   => reset,
---        
---        sine    => sine,
---        cosine  => open );
---
---    sine_enable <= '1' when divider="001" else '0';
 
     process(clock)
         procedure sum_with_carry(a, b : unsigned; y : out unsigned; c : out std_logic ) is
@@ -64,13 +49,18 @@ begin
         variable carry  : std_logic;
     begin
         if rising_edge(clock) then
-            divider <= divider + 1;
-            sum_with_carry(accu, converted, a_new, carry);
-            accu <= a_new;
-            if g_invert then
-                out_i <= not carry;
+            if divider = g_divider - 1 then
+                divider <= 0;
+
+                sum_with_carry(accu, converted, a_new, carry);
+                accu <= a_new;
+                if g_invert then
+                    out_i <= not carry;
+                else
+                    out_i <= carry;
+                end if;
             else
-                out_i <= carry;
+                divider <= divider + 1;
             end if;
             
             if reset='1' then

@@ -81,7 +81,8 @@ void main_task(void *context);
 
 int main(int argc, char *argv[])
 {
-    /* When re-starting a debug session (rather than cold booting) we want
+	printf("AA");
+	/* When re-starting a debug session (rather than cold booting) we want
     to ensure the installed interrupt handlers do not execute until after the
     scheduler has been started. */
     portDISABLE_INTERRUPTS();
@@ -97,7 +98,7 @@ int main(int argc, char *argv[])
 
     ioWrite8(UART_DATA, 0x33);
 
-    xTaskCreate( main_task, "Tester Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL );
+    xTaskCreate( main_task, "Tester Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
 
     ioWrite8(UART_DATA, 0x34);
 

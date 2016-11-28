@@ -1,0 +1,208 @@
+Info: Starting: Create block symbol file (.bsf)
+Info: qsys-generate /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester.qsys --block-symbol-file --output-directory=/home/gideon/proj/ultimate/fpga/nios_tester/nios_tester --family="Cyclone IV E" --part=EP4CE22F17C8
+Progress: Loading nios_tester/nios_tester.qsys
+Progress: Reading input file
+Progress: Adding audio_in_dma [altera_msgdma 15.1]
+Progress: Parameterizing module audio_in_dma
+Progress: Adding audio_out_dma [altera_msgdma 15.1]
+Progress: Parameterizing module audio_out_dma
+Progress: Adding avalon2mem_0 [avalon2mem 1.0]
+Progress: Parameterizing module avalon2mem_0
+Progress: Adding clk_0 [clock_source 15.1]
+Progress: Parameterizing module clk_0
+Progress: Adding io_bridge_0 [io_bridge 1.0]
+Progress: Parameterizing module io_bridge_0
+Progress: Adding io_bridge_1 [io_bridge 1.0]
+Progress: Parameterizing module io_bridge_1
+Progress: Adding jtag_0 [jtag 1.0]
+Progress: Parameterizing module jtag_0
+Progress: Adding jtag_1 [jtag 1.0]
+Progress: Parameterizing module jtag_1
+Progress: Adding jtagdebug [altera_msgdma 15.1]
+Progress: Parameterizing module jtagdebug
+Progress: Adding nios2_gen2_0 [altera_nios2_gen2 15.1]
+Progress: Parameterizing module nios2_gen2_0
+Progress: Adding onchip_memory2_0 [altera_avalon_onchip_memory2 15.1]
+Progress: Parameterizing module onchip_memory2_0
+Progress: Adding pio_0 [altera_avalon_pio 15.1]
+Progress: Parameterizing module pio_0
+Progress: Adding pio_1 [altera_avalon_pio 15.1]
+Progress: Parameterizing module pio_1
+Progress: Adding spi_0 [altera_avalon_spi 15.1]
+Progress: Parameterizing module spi_0
+Progress: Adding uart_0 [altera_avalon_uart 15.1]
+Progress: Parameterizing module uart_0
+Progress: Building connections
+Progress: Parameterizing connections
+Progress: Validating
+Progress: Done reading input file
+Info: nios_tester.audio_in_dma: Response information port is disabled. Enable the response port if data transfer information is required by host
+Warning: nios_tester.jtag: The SIM_VHDL fileset must specify the top-level module name.
+Warning: nios_tester.jtag: The SIM_VHDL fileset must specify the top-level module name.
+Info: nios_tester.jtagdebug: Response information port is disabled. Enable the response port if data transfer information is required by host
+Info: nios_tester.pio_0: PIO inputs are not hardwired in test bench. Undefined values will be read from PIO inputs during simulation.
+Info: nios_tester.pio_1: PIO inputs are not hardwired in test bench. Undefined values will be read from PIO inputs during simulation.
+Info: qsys-generate succeeded.
+Info: Finished: Create block symbol file (.bsf)
+Info: 
+Info: Starting: Create HDL design files for synthesis
+Info: qsys-generate /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester.qsys --synthesis=VHDL --output-directory=/home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis --family="Cyclone IV E" --part=EP4CE22F17C8
+Progress: Loading nios_tester/nios_tester.qsys
+Progress: Reading input file
+Progress: Adding audio_in_dma [altera_msgdma 15.1]
+Progress: Parameterizing module audio_in_dma
+Progress: Adding audio_out_dma [altera_msgdma 15.1]
+Progress: Parameterizing module audio_out_dma
+Progress: Adding avalon2mem_0 [avalon2mem 1.0]
+Progress: Parameterizing module avalon2mem_0
+Progress: Adding clk_0 [clock_source 15.1]
+Progress: Parameterizing module clk_0
+Progress: Adding io_bridge_0 [io_bridge 1.0]
+Progress: Parameterizing module io_bridge_0
+Progress: Adding io_bridge_1 [io_bridge 1.0]
+Progress: Parameterizing module io_bridge_1
+Progress: Adding jtag_0 [jtag 1.0]
+Progress: Parameterizing module jtag_0
+Progress: Adding jtag_1 [jtag 1.0]
+Progress: Parameterizing module jtag_1
+Progress: Adding jtagdebug [altera_msgdma 15.1]
+Progress: Parameterizing module jtagdebug
+Progress: Adding nios2_gen2_0 [altera_nios2_gen2 15.1]
+Progress: Parameterizing module nios2_gen2_0
+Progress: Adding onchip_memory2_0 [altera_avalon_onchip_memory2 15.1]
+Progress: Parameterizing module onchip_memory2_0
+Progress: Adding pio_0 [altera_avalon_pio 15.1]
+Progress: Parameterizing module pio_0
+Progress: Adding pio_1 [altera_avalon_pio 15.1]
+Progress: Parameterizing module pio_1
+Progress: Adding spi_0 [altera_avalon_spi 15.1]
+Progress: Parameterizing module spi_0
+Progress: Adding uart_0 [altera_avalon_uart 15.1]
+Progress: Parameterizing module uart_0
+Progress: Building connections
+Progress: Parameterizing connections
+Progress: Validating
+Progress: Done reading input file
+Info: nios_tester.audio_in_dma: Response information port is disabled. Enable the response port if data transfer information is required by host
+Warning: nios_tester.jtag: The SIM_VHDL fileset must specify the top-level module name.
+Warning: nios_tester.jtag: The SIM_VHDL fileset must specify the top-level module name.
+Info: nios_tester.jtagdebug: Response information port is disabled. Enable the response port if data transfer information is required by host
+Info: nios_tester.pio_0: PIO inputs are not hardwired in test bench. Undefined values will be read from PIO inputs during simulation.
+Info: nios_tester.pio_1: PIO inputs are not hardwired in test bench. Undefined values will be read from PIO inputs during simulation.
+Info: nios_tester: Generating nios_tester "nios_tester" for QUARTUS_SYNTH
+Warning: nios_tester: "No matching role found for uart_0:s1:dataavailable (dataavailable)"
+Warning: nios_tester: "No matching role found for uart_0:s1:readyfordata (readyfordata)"
+Info: audio_in_dma: "nios_tester" instantiated altera_msgdma "audio_in_dma"
+Info: audio_out_dma: "nios_tester" instantiated altera_msgdma "audio_out_dma"
+Info: avalon2mem_0: "nios_tester" instantiated avalon2mem "avalon2mem_0"
+Info: io_bridge_0: "nios_tester" instantiated io_bridge "io_bridge_0"
+Info: jtag_0: "nios_tester" instantiated jtag "jtag_0"
+Info: jtagdebug: "nios_tester" instantiated altera_msgdma "jtagdebug"
+Info: nios2_gen2_0: "nios_tester" instantiated altera_nios2_gen2 "nios2_gen2_0"
+Info: onchip_memory2_0: Starting RTL generation for module 'nios_tester_onchip_memory2_0'
+Info: onchip_memory2_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_onchip_memory2 -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_onchip_memory2/generate_rtl.pl --name=nios_tester_onchip_memory2_0 --dir=/tmp/alt7125_6192934987475488862.dir/0046_onchip_memory2_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt7125_6192934987475488862.dir/0046_onchip_memory2_0_gen//nios_tester_onchip_memory2_0_component_configuration.pl  --do_build_sim=0  ]
+Info: onchip_memory2_0: Done RTL generation for module 'nios_tester_onchip_memory2_0'
+Info: onchip_memory2_0: "nios_tester" instantiated altera_avalon_onchip_memory2 "onchip_memory2_0"
+Info: pio_0: Starting RTL generation for module 'nios_tester_pio_0'
+Info: pio_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_pio -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_pio/generate_rtl.pl --name=nios_tester_pio_0 --dir=/tmp/alt7125_6192934987475488862.dir/0047_pio_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt7125_6192934987475488862.dir/0047_pio_0_gen//nios_tester_pio_0_component_configuration.pl  --do_build_sim=0  ]
+Info: pio_0: Done RTL generation for module 'nios_tester_pio_0'
+Info: pio_0: "nios_tester" instantiated altera_avalon_pio "pio_0"
+Info: pio_1: Starting RTL generation for module 'nios_tester_pio_1'
+Info: pio_1:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_pio -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_pio/generate_rtl.pl --name=nios_tester_pio_1 --dir=/tmp/alt7125_6192934987475488862.dir/0048_pio_1_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt7125_6192934987475488862.dir/0048_pio_1_gen//nios_tester_pio_1_component_configuration.pl  --do_build_sim=0  ]
+Info: pio_1: Done RTL generation for module 'nios_tester_pio_1'
+Info: pio_1: "nios_tester" instantiated altera_avalon_pio "pio_1"
+Info: spi_0: Starting RTL generation for module 'nios_tester_spi_0'
+Info: spi_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_spi -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_spi/generate_rtl.pl --name=nios_tester_spi_0 --dir=/tmp/alt7125_6192934987475488862.dir/0049_spi_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt7125_6192934987475488862.dir/0049_spi_0_gen//nios_tester_spi_0_component_configuration.pl  --do_build_sim=0  ]
+Info: spi_0: Done RTL generation for module 'nios_tester_spi_0'
+Info: spi_0: "nios_tester" instantiated altera_avalon_spi "spi_0"
+Info: uart_0: Starting RTL generation for module 'nios_tester_uart_0'
+Info: uart_0:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64/perl/bin/perl -I /opt/altera_lite/15.1/quartus/linux64/perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/common -I /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_uart -- /opt/altera_lite/15.1/quartus/../ip/altera/sopc_builder_ip/altera_avalon_uart/generate_rtl.pl --name=nios_tester_uart_0 --dir=/tmp/alt7125_6192934987475488862.dir/0050_uart_0_gen/ --quartus_dir=/opt/altera_lite/15.1/quartus --verilog --config=/tmp/alt7125_6192934987475488862.dir/0050_uart_0_gen//nios_tester_uart_0_component_configuration.pl  --do_build_sim=0  ]
+Info: uart_0: Done RTL generation for module 'nios_tester_uart_0'
+Info: uart_0: "nios_tester" instantiated altera_avalon_uart "uart_0"
+Info: avalon_st_adapter: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_001: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_002: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_003: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_004: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_005: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_006: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_007: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_008: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_009: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_010: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_011: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_012: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_013: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_014: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_015: Inserting error_adapter: error_adapter_0
+Info: avalon_st_adapter_016: Inserting error_adapter: error_adapter_0
+Info: mm_interconnect_0: "nios_tester" instantiated altera_mm_interconnect "mm_interconnect_0"
+Info: irq_mapper: "nios_tester" instantiated altera_irq_mapper "irq_mapper"
+Info: rst_controller: "nios_tester" instantiated altera_reset_controller "rst_controller"
+Info: dispatcher_internal: "audio_in_dma" instantiated modular_sgdma_dispatcher "dispatcher_internal"
+Info: write_mstr_internal: "audio_in_dma" instantiated dma_write_master "write_mstr_internal"
+Info: read_mstr_internal: "audio_out_dma" instantiated dma_read_master "read_mstr_internal"
+Info: cpu: Starting RTL generation for module 'nios_tester_nios2_gen2_0_cpu'
+Info: cpu:   Generation command is [exec /opt/altera_lite/15.1/quartus/linux64//eperlcmd -I /opt/altera_lite/15.1/quartus/linux64//perl/lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/europa -I /opt/altera_lite/15.1/quartus/sopc_builder/bin/perl_lib -I /opt/altera_lite/15.1/quartus/sopc_builder/bin -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2/cpu_lib -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2/nios_lib -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2 -I /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2 -- /opt/altera_lite/15.1/quartus/../ip/altera/nios2_ip/altera_nios2_gen2/generate_rtl.epl --name=nios_tester_nios2_gen2_0_cpu --dir=/tmp/alt7125_6192934987475488862.dir/0056_cpu_gen/ --quartus_bindir=/opt/altera_lite/15.1/quartus/linux64/ --verilog --config=/tmp/alt7125_6192934987475488862.dir/0056_cpu_gen//nios_tester_nios2_gen2_0_cpu_processor_configuration.pl  --do_build_sim=0  ]
+Info: cpu: # 2016.11.20 20:44:28 (*) Starting Nios II generation
+Info: cpu: # 2016.11.20 20:44:28 (*)   Checking for plaintext license.
+Info: cpu: # 2016.11.20 20:44:31 (*)   Plaintext license not found.
+Info: cpu: # 2016.11.20 20:44:31 (*)   No license required to generate encrypted Nios II/e.
+Info: cpu: # 2016.11.20 20:44:31 (*)   Elaborating CPU configuration settings
+Info: cpu: # 2016.11.20 20:44:31 (*)   Creating all objects for CPU
+Info: cpu: # 2016.11.20 20:44:32 (*)   Generating RTL from CPU objects
+Info: cpu: # 2016.11.20 20:44:32 (*)   Creating plain-text RTL
+Info: cpu: # 2016.11.20 20:44:33 (*) Done Nios II generation
+Info: cpu: Done RTL generation for module 'nios_tester_nios2_gen2_0_cpu'
+Info: cpu: "nios2_gen2_0" instantiated altera_nios2_gen2_unit "cpu"
+Info: nios2_gen2_0_data_master_translator: "mm_interconnect_0" instantiated altera_merlin_master_translator "nios2_gen2_0_data_master_translator"
+Info: io_bridge_1_avalon_slave_0_translator: "mm_interconnect_0" instantiated altera_merlin_slave_translator "io_bridge_1_avalon_slave_0_translator"
+Info: nios2_gen2_0_data_master_agent: "mm_interconnect_0" instantiated altera_merlin_master_agent "nios2_gen2_0_data_master_agent"
+Info: io_bridge_1_avalon_slave_0_agent: "mm_interconnect_0" instantiated altera_merlin_slave_agent "io_bridge_1_avalon_slave_0_agent"
+Info: io_bridge_1_avalon_slave_0_agent_rsp_fifo: "mm_interconnect_0" instantiated altera_avalon_sc_fifo "io_bridge_1_avalon_slave_0_agent_rsp_fifo"
+Info: router: "mm_interconnect_0" instantiated altera_merlin_router "router"
+Info: router_001: "mm_interconnect_0" instantiated altera_merlin_router "router_001"
+Info: router_002: "mm_interconnect_0" instantiated altera_merlin_router "router_002"
+Info: router_004: "mm_interconnect_0" instantiated altera_merlin_router "router_004"
+Info: router_005: "mm_interconnect_0" instantiated altera_merlin_router "router_005"
+Info: router_006: "mm_interconnect_0" instantiated altera_merlin_router "router_006"
+Info: router_007: "mm_interconnect_0" instantiated altera_merlin_router "router_007"
+Info: router_013: "mm_interconnect_0" instantiated altera_merlin_router "router_013"
+Info: router_014: "mm_interconnect_0" instantiated altera_merlin_router "router_014"
+Info: io_bridge_1_avalon_slave_0_burst_adapter: "mm_interconnect_0" instantiated altera_merlin_burst_adapter "io_bridge_1_avalon_slave_0_burst_adapter"
+Info: cmd_demux: "mm_interconnect_0" instantiated altera_merlin_demultiplexer "cmd_demux"
+Info: cmd_demux_001: "mm_interconnect_0" instantiated altera_merlin_demultiplexer "cmd_demux_001"
+Info: cmd_demux_002: "mm_interconnect_0" instantiated altera_merlin_demultiplexer "cmd_demux_002"
+Info: cmd_demux_004: "mm_interconnect_0" instantiated altera_merlin_demultiplexer "cmd_demux_004"
+Info: cmd_mux: "mm_interconnect_0" instantiated altera_merlin_multiplexer "cmd_mux"
+Info: cmd_mux_001: "mm_interconnect_0" instantiated altera_merlin_multiplexer "cmd_mux_001"
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_arbitrator.sv
+Info: cmd_mux_002: "mm_interconnect_0" instantiated altera_merlin_multiplexer "cmd_mux_002"
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_arbitrator.sv
+Info: cmd_mux_008: "mm_interconnect_0" instantiated altera_merlin_multiplexer "cmd_mux_008"
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_arbitrator.sv
+Info: cmd_mux_009: "mm_interconnect_0" instantiated altera_merlin_multiplexer "cmd_mux_009"
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_arbitrator.sv
+Info: rsp_demux_001: "mm_interconnect_0" instantiated altera_merlin_demultiplexer "rsp_demux_001"
+Info: rsp_demux_008: "mm_interconnect_0" instantiated altera_merlin_demultiplexer "rsp_demux_008"
+Info: rsp_demux_009: "mm_interconnect_0" instantiated altera_merlin_demultiplexer "rsp_demux_009"
+Info: rsp_mux: "mm_interconnect_0" instantiated altera_merlin_multiplexer "rsp_mux"
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_arbitrator.sv
+Info: rsp_mux_001: "mm_interconnect_0" instantiated altera_merlin_multiplexer "rsp_mux_001"
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_arbitrator.sv
+Info: rsp_mux_002: "mm_interconnect_0" instantiated altera_merlin_multiplexer "rsp_mux_002"
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_arbitrator.sv
+Info: rsp_mux_004: "mm_interconnect_0" instantiated altera_merlin_multiplexer "rsp_mux_004"
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_arbitrator.sv
+Info: nios2_gen2_0_data_master_to_io_bridge_1_avalon_slave_0_cmd_width_adapter: "mm_interconnect_0" instantiated altera_merlin_width_adapter "nios2_gen2_0_data_master_to_io_bridge_1_avalon_slave_0_cmd_width_adapter"
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_address_alignment.sv
+Info: Reusing file /home/gideon/proj/ultimate/fpga/nios_tester/nios_tester/synthesis/submodules/altera_merlin_burst_uncompressor.sv
+Info: avalon_st_adapter: "mm_interconnect_0" instantiated altera_avalon_st_adapter "avalon_st_adapter"
+Info: avalon_st_adapter_001: "mm_interconnect_0" instantiated altera_avalon_st_adapter "avalon_st_adapter_001"
+Info: avalon_st_adapter_009: "mm_interconnect_0" instantiated altera_avalon_st_adapter "avalon_st_adapter_009"
+Info: error_adapter_0: "avalon_st_adapter" instantiated error_adapter "error_adapter_0"
+Info: error_adapter_0: "avalon_st_adapter_001" instantiated error_adapter "error_adapter_0"
+Info: error_adapter_0: "avalon_st_adapter_009" instantiated error_adapter "error_adapter_0"
+Info: nios_tester: Done "nios_tester" with 58 modules, 91 files
+Info: qsys-generate succeeded.
+Info: Finished: Create HDL design files for synthesis

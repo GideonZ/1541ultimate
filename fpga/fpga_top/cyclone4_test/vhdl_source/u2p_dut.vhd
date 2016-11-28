@@ -534,6 +534,7 @@ begin
 
     i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
     generic map (
+        g_divider => 10,
         g_left_shift => 0,
         g_width => audio_speaker'length )
     port map (

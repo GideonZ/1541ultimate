@@ -117,6 +117,7 @@ public:
 	void Run(volatile uint32_t *jtag) {
 		char *log;
 		target.host = jtag;
+		target.dutRunning = 0;
 		int errors = 0;
 		rtc.get_datetime_compact(this->dateTime, 40);
 		for (int i=0; i < tests.get_elements(); i++) {

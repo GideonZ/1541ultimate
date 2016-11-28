@@ -84,7 +84,6 @@ public:
     int max_current;
     int remaining_current;
     bool initialized;
-    bool device_present;
 
     UsbDevice *rootDevice;
 

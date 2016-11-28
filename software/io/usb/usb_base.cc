@@ -71,12 +71,14 @@ int UsbBase :: get_device_slot(void)
 void UsbBase :: attach_root(void)
 {
     printf("Attach root!!\n");
+    rootDevice = NULL;
     remaining_current = 500; //max_current;
     bus_reset();
 
     UsbDevice *dev = new UsbDevice(this, get_bus_speed());
-    install_device(dev, true);
-    rootDevice = dev;
+    if (install_device(dev, true)) {
+    	rootDevice = dev;
+    }
 }
 
 // Called only from the Event context
@@ -194,6 +196,11 @@ void UsbBase :: input_task_impl(void)
 	printf("USB input task is now running. this = %p\n", this);
 	struct usb_event ev;
 	while(1) {
+		if (!queue) {
+			printf("Bleh!\n");
+			vTaskDelay(10);
+			continue;
+		}
 		if (xQueueReceive(queue, &ev, 5000) == pdTRUE) {
 			//printf("{%04x:%04x}", ev.fifo_word[0], ev.fifo_word[1]);
 			PROFILER_SUB = 5;
@@ -251,9 +258,7 @@ void UsbBase :: handle_status(uint16_t new_status)
 	if (prev_status != new_status) {
 		prev_status = new_status;
 		if (new_status & USTAT_CONNECTED) {
-			if (!device_present) {
-				attach_root();
-			}
+			attach_root();
         } else {
         	if (rootDevice) {
 //        		rootDevice->disable();
@@ -268,6 +273,10 @@ void UsbBase :: handle_status(uint16_t new_status)
 void UsbBase :: queueDeinstall(UsbDevice *device)
 {
 	device->disable(); // do no more transactions, disable poll pipes, etc
+	if (!cleanup_queue) {
+		printf("CUleh!\n");
+		return;
+	}
 	xQueueSend(cleanup_queue, &device, 500000);
 }
 
@@ -385,6 +394,9 @@ void UsbBase :: poll()
 	BaseType_t doCleanup;
 
 	do {
+		if (!cleanup_queue) {
+			printf("CURBleh\n");
+		}
 		doCleanup = xQueueReceive(cleanup_queue, &device, 40);
 		if (doCleanup == pdTRUE) {
 			deinstall_device(device);
@@ -821,7 +833,11 @@ BaseType_t UsbBase :: irq_handler(void)
 		if (state == 2) {
 			state = 0;
 			//printf("[%04x:%04x]", event.fifo_word[0], event.fifo_word[1]);
-			xQueueSendFromISR(queue, &event, &xHigherPriorityTaskWoken);
+			if (!queue) {
+				ioWrite8(UART_DATA, '#');
+			} else {
+				xQueueSendFromISR(queue, &event, &xHigherPriorityTaskWoken);
+			}
 		}
 	}
 	PROFILER_SUB = 0;
