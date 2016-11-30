@@ -69,6 +69,7 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 
 SRCS_C   =	mbstart_rtos.c \
+			malloc_lock.c \
 			itu.c \
 			dump_hex.c \
 			small_printf.c \
@@ -92,7 +93,7 @@ SRCS_C   =	mbstart_rtos.c \
 
 
 SRCS_CC	 =  stream.cc \
-			memory_rtos.cc \
+			memory.cc \
 			init_function.cc \
 			flash.cc \
 			at45_flash.cc \

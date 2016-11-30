@@ -40,3 +40,13 @@ void operator delete[](void *p)
 {
 	vPortFree(p);
 }
+
+
+extern "C" void __cxa_pure_virtual()
+{
+}
+
+void *__dso_handle = 0;
+extern "C" void  __cxa_atexit()
+{
+}

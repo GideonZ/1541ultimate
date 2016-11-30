@@ -35,6 +35,7 @@ SRCS_C   =	croutine.c \
             timers.c \
             port.c \
             mbstart_app.c \
+			malloc_lock.c \
             small_printf.c \
             heap_3.c \
             $(PRJ).c

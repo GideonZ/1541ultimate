@@ -11,6 +11,7 @@ LEGACY = ../../../legacy/2.6k
 ULTIMATE = $(LEGACY)/target/software/ultimate
 
 SRCS_C   =	mbstart_rtos.c \
+			malloc_lock.c \
 			itu.c \
 			dump_hex.c \
 			small_printf.c \
@@ -24,7 +25,7 @@ SRCS_C   =	mbstart_rtos.c \
             port.c \
             heap_3.c
 
-SRCS_CC	 =  memory_rtos.cc \
+SRCS_CC	 =  memory.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \

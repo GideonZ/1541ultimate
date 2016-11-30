@@ -27,26 +27,16 @@ mk2:
 mk3:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/fpga -f makefile_mb_700a
+	@$(MAKE) -C target/fpga -f makefile_mb_700a_dd
 	@$(MAKE) -C target/software/mb_lwip
 	@$(MAKE) -C target/software/mb_boot
-	@$(MAKE) -C target/software/mb_boot2
-	@$(MAKE) -C target/software/mb_ultimate
-	@$(MAKE) -C target/software/mb_revert
-	@$(MAKE) -C target/software/mb_update
-	@$(MAKE) -C target/software/update_to_mb
-	@cp target/software/update_to_mb/result/update.bin .
-	@cp target/software/mb_revert/result/revert.u2u .
-	@cp target/software/mb_update/result/update.u2u .
-
-mk3only:
-	@$(MAKE) -C tools
-	@$(MAKE) -C target/fpga -f makefile_mb_700a
-	@$(MAKE) -C target/software/mb_lwip
-	@$(MAKE) -C target/software/mb_boot
+	@$(MAKE) -C target/software/mb_boot_dd
 	@$(MAKE) -C target/software/mb_boot2
 	@$(MAKE) -C target/software/mb_ultimate
 	@$(MAKE) -C target/software/mb_update
-	@cp target/software/mb_update/result/update.u2u .
+	@$(MAKE) -C target/software/mb_update_dd
+	@cp target/software/mb_update/result/update.u2u ./update_audio.u2u
+	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive.u2u
 
 mb:
 	@$(MAKE) -C tools
@@ -125,6 +115,16 @@ loader:
 	@$(MAKE) -C target/fpga -f makefile_boot_700a
 	@$(MAKE) -C target/software/programmer
 	@cp target/software/programmer/result/*.bit .
+
+u2p_tester:
+	@$(MAKE) -C target/software/nios2_testboot
+	@$(MAKE) -C target/software/nios2_dutboot
+	@$(MAKE) -C target/fpga/testdut
+	@$(MAKE) -C target/fpga/testexec
+	@$(MAKE) -C target/software/nios2_dut
+	@$(MAKE) -C target/software/nios2_tester
+	@$(MAKE) -C target/software/nios2_testloader
+	@$(MAKE) -C target/software/nios2_testflasher
 
 clean:
 	@$(MAKE) -C tools clean

@@ -31,7 +31,7 @@ SRCS_C   =	itu.c \
             alt_malloc_lock.c \
             alt_do_ctors.c
                         
-SRCS_CC	 =  memory_rtos.cc \
+SRCS_CC	 =  memory.cc \
 			small_printf.cc \
 			flash.cc \
 			at45_flash.cc \

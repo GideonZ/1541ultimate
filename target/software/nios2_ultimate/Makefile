@@ -36,7 +36,7 @@ SRCS_CC	 =  u2p_init.cc \
 			small_printf.cc \
             stream.cc \
 			stream_uart.cc \
-			memory_rtos.cc \
+			memory.cc \
 			init_function.cc \
 			flash.cc \
 			at45_flash.cc \

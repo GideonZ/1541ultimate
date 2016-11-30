@@ -392,7 +392,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"09",
+        g_version       => X"0A",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -403,7 +403,7 @@ begin
         g_icap          => false,
         g_uart          => true,
         g_drive_1541    => true,
-        g_drive_1541_2  => false,
+        g_drive_1541_2  => true,
         g_hardware_gcr  => true,
         g_ram_expansion => true,
         g_extended_reu  => false,
@@ -542,6 +542,7 @@ begin
     i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
     generic map (
         g_left_shift => 2,
+        g_divider => 10,
         g_width => audio_speaker'length )
     port map (
         clock   => sys_clock,

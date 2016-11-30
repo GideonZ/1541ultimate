@@ -6,6 +6,7 @@ FINAL      =  $(RESULT)/$(PRJ).bin
 LINKMETHOD = ld
 
 SRCS_C   =	mbstart_rtos.c \
+			malloc_lock.c \
 			itu.c \
 			dump_hex.c \
 			profiler.c \
@@ -26,7 +27,7 @@ SRCS_C   =	mbstart_rtos.c \
 SRCS_CC	 =  small_printf.cc \
             stream.cc \
 			stream_uart.cc \
-			memory_rtos.cc \
+			memory.cc \
 			init_function.cc \
 			flash.cc \
 			at45_flash.cc \

@@ -50,6 +50,7 @@ INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 
 SRCS_C   =	mbstart_rtos.c \
+			malloc_lock.c \
 			itu.c \
 			dump_hex.c \
 			small_printf.c \
@@ -69,7 +70,7 @@ SRCS_C   =	mbstart_rtos.c \
 # root of the application. Devices can register themselves in the file system tree.
 # Therefore, the file manager needs to exist.
 
-SRCS_CC	 =  memory_rtos.cc \
+SRCS_CC	 =  memory.cc \
 			flash.cc \
 			at45_flash.cc \
 			at49_flash.cc \

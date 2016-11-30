@@ -71,6 +71,19 @@ static struct t_cfg_definition iec_config[] = {
     { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
+__inline uint32_t swap_if_cpu_is_little_endian(uint32_t a)
+{
+#ifndef NIOS
+	return a;
+#else
+	uint32_t m1, m2;
+    m1 = (a & 0x00FF0000) >> 8;
+    m2 = (a & 0x0000FF00) << 8;
+    return (a >> 24) | (a << 24) | m1 | m2;
+#endif
+}
+
+
 // this global will cause us to run!
 IecInterface iec_if;
 
@@ -248,13 +261,14 @@ void IecInterface :: effectuate_settings(void)
         printf("Setting IEC bus ID to %d.\n", bus_id);
         int replaced = 0;
         for(int i=0;i<512;i++) {
-            if ((HW_IEC_RAM_DW[i] & 0x1F8000FF) == was_listen) {
+        	uint32_t word_read = swap_if_cpu_is_little_endian(HW_IEC_RAM_DW[i]);
+        	if ((word_read & 0x1F8000FF) == was_listen) {
                 // printf("Replacing %8x with %8x at %d.\n", HW_IEC_RAM_DW[i], (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x20, i);
-                HW_IEC_RAM_DW[i] = (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x20;
+                HW_IEC_RAM_DW[i] = swap_if_cpu_is_little_endian((word_read & 0xFFFFFF00) + bus_id + 0x20);
                 replaced ++;
             }
-            if ((HW_IEC_RAM_DW[i] & 0x1F8000FF) == was_talk) {
-                HW_IEC_RAM_DW[i] = (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x40;
+            if ((word_read & 0x1F8000FF) == was_talk) {
+                HW_IEC_RAM_DW[i] = swap_if_cpu_is_little_endian((word_read & 0xFFFFFF00) + bus_id + 0x40);
                 replaced ++;
             }
         }  
@@ -266,8 +280,9 @@ void IecInterface :: effectuate_settings(void)
         printf("Setting IEC printer ID to %d.\n", bus_id);
         int replaced = 0;
         for(int i=0;i<512;i++) {
-            if ((HW_IEC_RAM_DW[i] & 0x1F8000FF) == was_printer_listen) {
-                HW_IEC_RAM_DW[i] = (HW_IEC_RAM_DW[i] & 0xFFFFFF00) + bus_id + 0x20;
+        	uint32_t word_read = swap_if_cpu_is_little_endian(HW_IEC_RAM_DW[i]);
+            if ((word_read & 0x1F8000FF) == was_printer_listen) {
+                HW_IEC_RAM_DW[i] = swap_if_cpu_is_little_endian((word_read & 0xFFFFFF00) + bus_id + 0x20);
                 replaced ++;
             }
         } 

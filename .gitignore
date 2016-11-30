@@ -44,6 +44,7 @@ target/fpga/boot400
 target/fpga/boot700
 target/fpga/lx16
 target/fpga/mb700
+target/fpga/mb700dd
 target/fpga/testdut/*.hex
 target/fpga/testdut/*.sopcinfo
 target/fpga/testdut/*.stp

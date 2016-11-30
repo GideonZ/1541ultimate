@@ -78,7 +78,7 @@ VPATH   += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 VPATH   += $(PATH_SW)/application/mb_update
 VPATH   += $(PATH_SW)/portable/microblaze
 VPATH   += ../mb_ultimate/result
-VPATH   += ../mb_boot/result
+VPATH   += ../mb_boot_dd/result
 VPATH   += ../mb_boot2/result
 
 PATH_INC =  $(addprefix -I, $(VPATH) $(OUTPUT))

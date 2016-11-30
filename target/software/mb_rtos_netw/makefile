@@ -48,6 +48,7 @@ VPATH     = $(PATH_SW)/application \
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
 SRCS_C   =	mbstart_rtos.c \
+			malloc_lock.c \
 			profiler.c \
 			itu.c \
 			dump_hex.c \
