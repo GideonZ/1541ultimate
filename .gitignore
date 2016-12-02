@@ -134,8 +134,8 @@ target/software/mb_boot_dd/result
 target/software/mb_chan
 target/software/mb_hello/output_mb
 target/software/mb_hello/result_mb
-target/software/mb_irq/output_mb
-target/software/mb_irq/result_mb
+target/software/mb_irq/output
+target/software/mb_irq/result
 target/software/mb_lib/output_mb
 target/software/mb_lib/result_mb
 target/software/mb_lwip/output
