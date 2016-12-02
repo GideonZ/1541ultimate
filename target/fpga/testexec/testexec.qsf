@@ -207,6 +207,11 @@ set_location_assignment PIN_J16 -to AUDIO_SDO
 set_location_assignment PIN_K16 -to AUDIO_BCLK
 set_location_assignment PIN_J14 -to AUDIO_LRCLK
 
+set_location_assignment PIN_K5 -to BOARD_REVn[0]
+set_location_assignment PIN_F8 -to BOARD_REVn[1]
+set_location_assignment PIN_E7 -to BOARD_REVn[2]
+set_location_assignment PIN_E6 -to BOARD_REVn[3]
+set_location_assignment PIN_D5 -to BOARD_REVn[4]
 
 set_location_assignment PIN_N16 -to MDIO_CLK
 set_location_assignment PIN_L16 -to MDIO_DATA
@@ -221,7 +226,7 @@ set_location_assignment PIN_L13 -to I2C_SCL_18
 set_location_assignment PIN_J13 -to I2C_SDA_18
 set_location_assignment PIN_E8 -to SLOT_BUFFER_ENn
 
-
+set_instance_assignment -name IO_STANDARD "1.8 V" -to BOARD_REVn[0]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_BCLK
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_LRCLK
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_MCLK
@@ -363,6 +368,11 @@ set_instance_assignment -name IO_STANDARD "1.8 V" -to I2C_SDA_18
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to I2C_SCL_18
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to I2C_SDA_18
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to RMII_CRS_DV
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[4]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[3]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[2]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[1]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[0]
 
 set_global_assignment -name GENERATE_RBF_FILE ON
 set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON

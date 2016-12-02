@@ -117,7 +117,8 @@ set_false_path -from [get_keepers {sld_hub:*|sld_shadow_jsm:shadow_jsm|state[1]}
 
 set_false_path -from {ddr2_ctrl:i_memphy|mem_io:i_phy|sys_reset_pipe[0]} -to {ddr2_ctrl:i_memphy|mem_io:i_phy|altddio_out:i_dqs|ddio_out_dih:auto_generated|ddio_outa[0]~DFFHI}
 set_false_path -from {ddr2_ctrl:i_memphy|mem_io:i_phy|sys_reset_pipe[0]} -to {ddr2_ctrl:i_memphy|mem_io:i_phy|altddio_out:i_dqs|ddio_out_dih:auto_generated|ddio_outa[0]~DFFLO}
-
+set_false_path -from {ddr2_ctrl:i_memphy|mem_io:i_phy|sys_reset_pipe[0]} -to {async_fifo_ft:\b_audio:i_aout|dcfifo:dcfifo_component|dcfifo_gpm1:auto_generated|dffpipe_3dc:rdaclr|dffe1*}
+set_false_path -from {level_synchronizer:i_audio_reset|sync2} -to {async_fifo_ft:\b_audio:i_aout|dcfifo:dcfifo_component|dcfifo_gpm1:auto_generated|dffpipe_3dc:wraclr|dffe1*}
 
 #**************************************************************
 # USB timing
