@@ -129,6 +129,8 @@ target/software/mb_boot/result
 target/software/mb_boot/result_mb
 target/software/mb_boot2/output
 target/software/mb_boot2/result
+target/software/mb_boot_dd/output
+target/software/mb_boot_dd/result
 target/software/mb_chan
 target/software/mb_hello/output_mb
 target/software/mb_hello/result_mb
@@ -156,6 +158,8 @@ target/software/mb_ultimate/python_out_nano
 target/software/mb_ultimate/result
 target/software/mb_update/output
 target/software/mb_update/result
+target/software/mb_update_dd/output
+target/software/mb_update_dd/result
 target/software/mb_usb_test/output_mb
 target/software/mb_usb_test/result_mb
 target/software/mb_xmodem/output
@@ -209,3 +213,5 @@ target/software/update/output
 target/software/update/result
 target/software/update_to_mb/output
 target/software/update_to_mb/result
+target/tester_package/flash
+target/tester_package/tester
