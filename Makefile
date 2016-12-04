@@ -1,28 +1,7 @@
 
-.PHONY: all mk1 mk2 mk3 mk3only prog special clean sw_clean loader
+# .PHONY: all mk1 mk2 mk3 mk3only prog special clean sw_clean loader
 
-all:
-	@svn up
-	@$(MAKE) -C tools
-	@$(MAKE) -C target/fpga -f makefile_700a
-	@$(MAKE) -C target/fpga -f makefile_400a
-	@$(MAKE) -C target/fpga -f makefile_250e
-	@$(MAKE) -C target/software/1st_boot
-	@$(MAKE) -C target/software/2nd_boot
-	@$(MAKE) -C target/software/ultimate
-	@$(MAKE) -C target/software/ultimate appl
-	@$(MAKE) -C target/software/update FPGA400=1
-	@cp target/software/update/result/update.bin .
-	@cp target/software/ultimate/result/appl.bin .
-
-mk2:
-	@svn up
-	@$(MAKE) -C legacy/2.6k/tools
-	@$(MAKE) -C legacy/2.6k/target/fpga -f makefile_700a
-	@$(MAKE) -C legacy/2.6k/target/software/1st_boot mk2
-	@$(MAKE) -C legacy/2.6k/target/software/2nd_boot
-	@$(MAKE) -C legacy/2.6k/target/software/ultimate
-	@$(MAKE) -C legacy/2.6k/target/software/update FPGA400=0
+all: mk3 u2plus
 
 mk3:
 	@$(MAKE) -C tools
