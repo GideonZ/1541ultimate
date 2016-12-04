@@ -19,10 +19,6 @@ CC  = gcc
 	@echo $@
 	@$(CC) $(CFLAGS) $^ -o $(basename $@)
 
-#svf_dump: ../software/application/tester/svf_player.c
-#	@echo $@
-#	@$(CC) ../software/application/tester/svf_player.c $(CFLAGS) -DDUMP -o $(basename $@)
-
 # --------------------------------------------------------------------------
 # Binaries
 
@@ -56,4 +52,8 @@ clean:
 	@rm -f svf_dump.exe
 	@rm -f 64tass/64tass
 	@rm -f 64tass/*.o
-	
+
+svf_dump: ../software/application/tester/svf_player.c
+	@echo $@
+	@$(CC) ../software/application/tester/svf_player.c $(CFLAGS) -DDUMP -o $(basename $@)
+

@@ -101,10 +101,17 @@ u2p_tester:
 	@$(MAKE) -C target/software/nios2_dutboot
 	@$(MAKE) -C target/fpga/testdut
 	@$(MAKE) -C target/fpga/testexec
+	@touch software/nios_dut_bsp/Makefile
+	@touch software/nios_dut_bsp/public.mk
+	@touch software/nios_tester_bsp/Makefile
+	@touch software/nios_tester_bsp/public.mk
+	@$(MAKE) -C software/nios_dut_bsp
+	@$(MAKE) -C software/nios_tester_bsp
 	@$(MAKE) -C target/software/nios2_dut
 	@$(MAKE) -C target/software/nios2_tester
 	@$(MAKE) -C target/software/nios2_testloader
 	@$(MAKE) -C target/software/nios2_testflasher
+	@$(MAKE) -C target/tester_package force
 	@$(MAKE) -C target/tester_package force
 
 clean:
