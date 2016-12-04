@@ -42,7 +42,7 @@
 #include "filemanager.h"
 #include "FreeRTOS.h"
 #include "task.h"
-
+#include "filetype_crt.h"
 #endif
 
 /* Configuration */
@@ -50,15 +50,16 @@ const char *cart_mode[] = { "None",
                       "Final Cart III",
                       "Action Replay V4.2 PAL",
                       "Action Replay V6.0 PAL",
-                      "Retro Replay V3.8p PAL",
+                      "Retro Replay V3.8q PAL",
                       "SuperSnapshot V5.22 PAL",
                       "TAsm / CodeNet PAL",
                       "Action Replay V5.0 NTSC",
-                      "Retro Replay V3.8a NTSC",
+                      "Retro Replay V3.8y NTSC",
                       "SuperSnapshot V5.22 NTSC",
                       "TAsm / CodeNet NTSC",
                       "Epyx Fastloader",
 					  "KCS Power Cartridge",
+					  "GeoRAM",
                       "Custom 8K ROM",
                       "Custom 16K ROM",
 /*
@@ -70,7 +71,8 @@ const char *cart_mode[] = { "None",
                       "Custom Retro Replay ROM",
                       "Custom Snappy ROM",
 					  "Custom KCS ROM",
-					  "Custom Final V1/V2 ROM"
+					  "Custom Final V1/V2 ROM",
+					  "Custom CRT"
                    };
 
 cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_REU | CART_ETH },
@@ -86,18 +88,20 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_TAR_NTSC,  0x000000, 0x10000,  0x06 | CART_ETH },
                           { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0E },
                           { FLASH_ID_KCS,       0x000000, 0x04000,  0x10 },
-                          { 0x00,               0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
-                          { 0x00,               0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
+                          { 0x00,               0x000000, 0x04000,  0x15 }, // GeoRam
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
 /*
                           { 0x00,               0x000000, 0x80000,  0x08 | CART_REU },
                           { 0x00,               0x000000, 0x80000,  0x0A | CART_REU },
                           { 0x00,               0x000000, 0x80000,  0x0B | CART_REU },
                           { 0x00,               0x000000, 0x10000,  0x04 },
 */
-                          { 0x00,               0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
-                          { 0x00,               0x000000, 0x10000,  0x05 | CART_REU },
-                          { 0x00,               0x000000, 0x04000,  0x10 },
-                          { 0x00,               0x000000, 0x04000,  0x11 }
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x05 | CART_REU },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x10 },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x11 },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x00000,  0x00 }
  };
                           
 const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
@@ -108,7 +112,7 @@ const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns
 const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
 
 struct t_cfg_definition c64_config[] = {
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 12, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 20, 4 },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
@@ -195,8 +199,8 @@ void C64 :: set_emulation_flags(cart_def *def)
         if(cfg->get_value(CFG_C64_REU_EN)) {
         	printf("Enabling REU!!\n");
         	C64_REU_ENABLE = 1;
-            C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
         }
+        C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
         if(getFpgaCapabilities() & CAPAB_SAMPLER) {
             printf("Sampler found in FPGA... IO map: ");
             if(cfg->get_value(CFG_C64_MAP_SAMP)) {
@@ -723,9 +727,17 @@ void C64 :: set_cartridge(cart_def *def)
     		C64_REU_ENABLE = 1;
     		C64_SAMPLER_ENABLE = 1;
         }
-    } else if(def->id) {
+    } else if(def->id && def->type) {
         printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
         flash->read_image(def->id, (void *)mem_addr, def->length);
+    } else if(def->id && !def->type) {
+#ifndef RECOVERYAPP
+        char* buffer = new char[128*1024];
+        printf("Requesting crt copy from Flash, id = %b to mem addr %p\n", def->id, buffer);
+        flash->read_image(def->id, (void *)buffer, 128*1024);
+	FileTypeCRT :: parseCrt(buffer);
+	delete buffer;
+#endif
     } else if (def->length) { // not ram, not flash.. then it has to be custom
         *(uint8_t *)(mem_addr+5) = 0; // disable previously started roms.
     }

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <ctype.h>
 #include <errno.h>
 
 #include "itu.h"
@@ -64,6 +65,7 @@ extern uint8_t _sounds_bin_start;
 //--------------------------------------------------------------
 // C1541 Drive Class
 //--------------------------------------------------------------
+
 C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?SUBSYSID_DRIVE_A : SUBSYSID_DRIVE_B)
 {
     registers  = regs;
@@ -72,7 +74,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     current_rom = e_rom_unset;
 	flash = get_flash();
     fm = FileManager :: getFileManager();
-
+    
     char buffer[32];
     c1541_config[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
     c1541_config[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
@@ -122,6 +124,10 @@ C1541 :: ~C1541()
     if (taskHandle) {
     	vTaskDelete(taskHandle);
     }
+}
+
+C1541* C1541 :: get_last_mounted_drive() {
+    return last_mounted_drive;
 }
 
 void C1541 :: effectuate_settings(void)
@@ -362,6 +368,8 @@ void C1541 :: insert_disk(bool protect, GcrImage *image)
     registers[C1541_INSERTED] = 1;
 //    image->mounted_on = this;
     disk_state = e_alien_image;
+
+    last_mounted_drive = this;
 }
 
 void C1541 :: mount_d64(bool protect, uint8_t *image, uint32_t size)
@@ -429,6 +437,79 @@ void C1541 :: mount_blank()
 	insert_disk(false, gcr_image);
 	printf("Done\n");
 	disk_state = e_disk_file_closed;
+}
+
+void C1541 :: swap_disk()
+{
+    if (!mount_file) return;
+
+    File *f;        
+    char* path = strdup(mount_file->get_path());  // working on a copy of the current path
+    char* type = path+strlen(path)-3;             // pointer to extension (last three chars)
+
+    // Try to find the denominating character by searching backwards,
+    // beginning with the last character before the extension dot, up
+    // to the path separator. Determine the the position of the first
+    // char that is either alphabetic or numeric and is preceeded and
+    // followed by a non-alphabetic or non-numeric character
+    // respectively.
+
+    int index;
+    bool found = false;
+    
+    for(index = strlen(path)-5; path[index] != '/'; index--) {
+        
+        if((found = (isalpha(path[index]) && !isalpha(path[index-1]) && !isalpha(path[index+1]))
+            || (isdigit(path[index]) && !isdigit(path[index-1]) && !isdigit(path[index+1])))) {
+               break;
+           }
+    }
+
+    if(!found) {
+        printf("Disk Swap: No denominating character found for %s\n", path);
+        free(path);
+        return;
+    }
+    
+    char current = path[index];      // remember current value of denominator
+    
+    for (int i=0; path[i]; i++) {    // operate on upper case path from now on
+        path[i] = toupper(path[i]);
+    }
+    current = toupper(current);
+
+    char top = isalpha(current) ? 'A'-1 : '0'-1;  
+    char bottom = isalpha(current) ? 'Z' : '9';
+    
+    for (path[index]++; path[index] != current; path[index]++) {
+
+        if (path[index] > bottom) { // continue from the top
+            path[index] = top;
+            continue;
+        }
+
+        if (fm->fopen(path, FA_READ, &f) == FR_OK) { 
+
+            printf("Disk Swap: %s -> %s\n", mount_file->get_path(), path);
+
+            if (strncmp(type, "D64", 3) == 0) {
+                mount_d64(false, f);
+            }
+            else if(strncmp(type, "G64", 3) == 0) {
+                mount_g64(false, f);
+            }
+            free(path);
+            return;
+        }
+        else {
+            // no immediate successor was found -> continue from the top
+            if(path[index] > current) {
+                path[index] = top;
+            }
+        }
+    }
+    printf("Disk Swap: No matching image found for %s\n", path);
+    free(path);
 }
 
 // static member
@@ -659,7 +740,7 @@ void C1541 :: unlink(void)
 
 void C1541 :: save_disk_to_file(SubsysCommand *cmd)
 {
-    static char buffer[32];
+    static char buffer[32] = {0};
 	File *file = 0;
 	FRESULT fres;
 	int res;

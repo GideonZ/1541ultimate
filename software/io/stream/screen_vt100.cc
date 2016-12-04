@@ -12,6 +12,7 @@ Screen_VT100::Screen_VT100(Stream *m) {
 	stream = m;
 	draw_mode = false;
 	expect_color = false;
+	stream->write("\377\376\042\377\373\001", 6);
 	stream->write("\ec", 2);
 	set_color(15);
 }

@@ -121,7 +121,9 @@ public:
     C1541(volatile uint8_t *regs, char letter);
     ~C1541();
 
-	void init(void);
+    static C1541* get_last_mounted_drive(void);
+    
+    void init(void);
 
     int  fetch_task_items(Path *path, IndexedList<Action*> &item_list); // from ObjectWithMenu
     void effectuate_settings(void); // from ConfigurableObject
@@ -131,9 +133,12 @@ public:
     int  executeCommand(SubsysCommand *cmd);
 
     // called from IEC (UltiCopy)
-    int  get_current_iec_address(void);
+    int  get_current_iec_address(void);    
     void drive_power(bool on);
+    void swap_disk(void);
 };
+
+static C1541* last_mounted_drive;
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;

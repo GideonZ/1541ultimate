@@ -37,6 +37,8 @@ private:
     
     void set_screen_title(void);
     bool pollFocussed(void);
+    bool buttonDownFor(uint32_t ms);
+    void swapDisk(void);
     UIStatusBox *status_box;
 public:
     int color_border, color_bg, color_fg, color_sel;

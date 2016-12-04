@@ -36,6 +36,7 @@ extern "C" {
 
 #define CMD_SET_KERNAL   0x4201
 #define CMD_SET_DRIVEROM 0x4202
+#define CMD_SET_CARTROM  0x4203
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_bin(FileType :: getFileTypeFactory(), FileTypeBin :: test_type);
@@ -59,13 +60,22 @@ FileTypeBin :: ~FileTypeBin()
 int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;
-    if (node->getInfo()->size == 8192) {
-    	list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
-    	count++;
-    } else if ((node->getInfo()->size == 16384) || (node->getInfo()->size == 32768)) {
-    	list.append(new Action("Use as drive ROM", FileTypeBin :: execute_st, CMD_SET_DRIVEROM, (int)this));
-    	count++;
+    int size = node->getInfo()->size;
+
+    if (size == 8192) {
+      list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
+      count++;
     }
+    else if (size == 16384 || size == 32768) {
+        list.append(new Action("Use as Drive ROM", FileTypeBin :: execute_st, CMD_SET_DRIVEROM, (int)this));
+        count++;
+      }
+
+    if(size == 65536 || size == 32768 || size == 16384 || size == 8192) {
+      list.append(new Action("Use as Cartridge ROM", FileTypeBin :: execute_st, CMD_SET_CARTROM, (int)this));
+      count++;
+    }    
+    
     return count;
 }
 
@@ -93,12 +103,28 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
 
     FileManager *fm = FileManager :: getFileManager();
 
-    uint32_t size = (cmd->functionID == CMD_SET_DRIVEROM) ? 32768 : 8192;
+    uint32_t size;
+    uint8_t id;
+    
+    switch(cmd->functionID) {
 
+    case CMD_SET_DRIVEROM:
+      size = 32768;
+      id = FLASH_ID_CUSTOM_DRV;
+      break;
+
+    case CMD_SET_KERNAL:
+      size = 8192;
+      id = FLASH_ID_KERNAL_ROM;
+      break;
+      
+    case CMD_SET_CARTROM:
+      size = node->getInfo()->size;
+      id = FLASH_ID_CUSTOM_ROM;
+    }  
+    
     printf("Binary Load.. %s\n", cmd->filename.c_str());
     FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
-
-    uint8_t id = (cmd->functionID == CMD_SET_DRIVEROM) ? FLASH_ID_CUSTOM_DRV : FLASH_ID_KERNAL_ROM;
 
     if(file) {
     	uint8_t *buffer = new uint8_t[size];
@@ -121,9 +147,14 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     			if (id == FLASH_ID_KERNAL_ROM) {
 					// Success!
 					C64 :: enable_kernal(buffer);
-    			} else {
-        			cmd->user_interface->popup("Now set custom ROM in drive config.", BUTTON_OK);
+                    cmd->user_interface->popup("Now use Alternate Kernal.", BUTTON_OK);
+
+    			} else if (id == FLASH_ID_CUSTOM_DRV) {
+        			cmd->user_interface->popup("Now use Custom 1541 ROM.", BUTTON_OK);
     			}
+                else if (id == FLASH_ID_CUSTOM_ROM) {
+                    cmd->user_interface->popup("Now use appropriate Custom Catridge.", BUTTON_OK);
+                }
     		}
     	}
         delete buffer;

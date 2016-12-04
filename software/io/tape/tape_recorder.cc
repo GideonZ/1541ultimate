@@ -314,7 +314,7 @@ void TapeRecorder :: poll()
 
 bool TapeRecorder :: request_file(SubsysCommand *cmd)
 {
-    char buffer[40];
+    char buffer[40] = {0};
     
     if(file) {
         printf("** WARNING.. File variable is already set!!\n");

@@ -7,7 +7,12 @@
 #include "tree_browser.h"
 #include "tree_browser_state.h"
 #include "path.h"
-#endif
+#ifndef UPDATER
+#ifndef RECOVERYAPP
+#include "c1541.h"
+#endif // RECOVERYAPP
+#endif // UPDATER
+#endif // NO_FILE_ACCESS
 
 /* Configuration */
 const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
@@ -86,10 +91,13 @@ void UserInterface :: run(void)
 			case ui_idle:
 				if (!host->hasButton()) {
 					appear();
-					// state = ui_host_permanent;
 				} else if(host->exists() && host->buttonPush()) {
-					appear();
-					// state = ui_host_owned;
+                    if(buttonDownFor(1000)) {
+                        swapDisk();
+                    }
+                    else {
+                        appear();
+                    }
 				}
 				break;
 
@@ -124,6 +132,37 @@ void UserInterface :: run(void)
 		vTaskDelay(3);
     }
 #endif
+}
+
+bool UserInterface :: buttonDownFor(uint32_t ms)
+{
+    bool down = false;
+    uint8_t delay = 10;
+    TickType_t ticks = delay / portTICK_PERIOD_MS;
+    uint32_t elapsed = 0;
+    
+    while((ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS) & ITU_BUTTON1) {
+        vTaskDelay(ticks);
+        elapsed+=delay;
+    
+        if(elapsed > ms) {
+            down = true;
+            break;
+        }
+    }
+    return down;
+}
+
+void UserInterface :: swapDisk(void)
+{
+#ifndef RECOVERYAPP
+#ifndef UPDATER                  
+    C1541* drive = C1541::get_last_mounted_drive(); 
+    if(drive != NULL) {
+        drive->swap_disk();
+    }
+#endif
+#endif                                                                
 }
 
 bool UserInterface :: pollFocussed(void)
