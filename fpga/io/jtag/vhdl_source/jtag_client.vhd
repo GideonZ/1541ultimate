@@ -134,7 +134,7 @@ begin
                 shiftreg_sample <= tdi & shiftreg_sample(shiftreg_sample'high downto 1);
                 shiftreg_write <= tdi & shiftreg_write(shiftreg_write'high downto 1);
                 shiftreg_debug <= tdi & shiftreg_debug(shiftreg_debug'high downto 1);
-                shiftreg_clock <= tdi & shiftreg_debug(shiftreg_clock'high downto 1);
+                shiftreg_clock <= tdi & shiftreg_clock(shiftreg_clock'high downto 1);
                 bit_count <= bit_count + 1;
                 if ir_in = X"4" then
                     if bit_count(2 downto 0) = "111" then

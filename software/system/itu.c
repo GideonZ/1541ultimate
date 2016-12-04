@@ -221,12 +221,13 @@ int uart_get_byte(int delay)
     uint8_t d;
     
     while(!(ioRead8(UART_FLAGS) & UART_RxDataAv)) {
-        ioWrite8(ITU_TIMER, 240);
-        while(ioRead8(ITU_TIMER))
-            ;
         delay--;
         if(delay <= 0)
             return -2;
+
+        ioWrite8(ITU_TIMER, 240);
+        while(ioRead8(ITU_TIMER))
+            ;
     }
     d = ioRead8(UART_DATA);
     ioWrite8(UART_GET, 0);

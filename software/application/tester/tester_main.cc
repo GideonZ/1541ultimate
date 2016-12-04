@@ -22,6 +22,7 @@
 #include "usb_base.h"
 #include "filemanager.h"
 #include "stream_textlog.h"
+#include "itu.h"
 
 extern "C" {
 	#include "jtag.h"
@@ -60,6 +61,7 @@ BinaryImage_t toBeFlashed[] = {
 BinaryImage_t dutFpga   = { "/Usb?/tester/dut.fpga","DUT FPGA Image", 0, 0, 0 };
 BinaryImage_t dutAppl   = { "/Usb?/tester/dut.app", "DUT Application Image", 0, 0, 0 };
 BinaryImage_t jigReport = { "", "JIG Report", 0xEE000, 0, 0 };
+BinaryImage_t slotReport = { "", "Slot Report", 0xEC000, 0, 0 };
 
 #define APPLICATION_RUN  (0x20000780)
 #define BUFFER_LOCATION  (0x20000784)
@@ -1056,6 +1058,104 @@ int writeLog(StreamTextLog *log, const char *prefix, const char *name)
 	return fres;
 }
 
+void setTime(void)
+{
+	char buffer[32];
+	printf("The current time is set to: %s\n", rtc.get_time_string(buffer, 32));
+	printf("Enter new time, using 4 numeric chars and press enter to set:\n");
+	int ch;
+	int value = 0;
+	int hours = 0;
+	int mins = 0;
+
+	while(1) {
+		ch = uart_get_byte(0);
+		if (ch < 0) {
+			continue;
+		}
+		if (ch == 0x0d) {
+			if ((hours > 23) || (mins > 59)) {
+				continue;
+			}
+			break; // OK
+		}
+		if ((ch < '0') || (ch > '9')) {
+			continue;
+		}
+		value *= 10;
+		value += (ch - '0');
+		value -= 10000 * (value / 10000);
+		hours = value / 100;
+		mins = value % 100;
+		printf("%02d:%02d\r", hours, mins);
+	}
+	int Y,M,D,wd,h,m,s;
+	rtc.get_time(Y,M,D,wd,h,m,s);
+	h = hours;
+	m = mins;
+	s = 0;
+	rtc.set_time_in_chip(0, Y,M,D,wd,h,m,s);
+	printf("\nTime is now set to: %s\n", rtc.get_time_string(buffer, 32));
+}
+
+void setDate(void)
+{
+	char buffer[32];
+	printf("The current date is set to: %s\n", rtc.get_date_string(buffer, 32));
+	printf("Enter new date, using 6 numeric chars:\n");
+	int ch;
+	char *input = "_______";
+	int Yi,Mi,Di;
+
+	printf("20__-__-__\r");
+	for(int i=0;i<6;) {
+		ch = uart_get_byte(0);
+		if (ch < 0) {
+			continue;
+		}
+		if ((ch < '0') || (ch > '9')) {
+			continue;
+		}
+		input[i++] = (char)ch;
+
+		printf("\r20%c%c-%c%c-%c%c\r", input[0], input[1], input[2], input[3], input[4], input[5]);
+		printf("20");
+		for(int j=0;j<i;j++) {
+			printf("%c", input[j]);
+			if ((j & 1) == 1) {
+				printf("-");
+			}
+		}
+	}
+
+/*
+	if (input[6] != 0x0D) {
+		printf("\nTime not set.\n");
+		return;
+	}
+*/
+
+	Yi = 10*(input[0]-'0') + (input[1] - '0');
+	Mi = 10*(input[2]-'0') + (input[3] - '0');
+	Di = 10*(input[4]-'0') + (input[5] - '0');
+
+	if ((Mi < 1) || (Mi > 12)) {
+		printf("\nInvalid month.\n");
+		return;
+	}
+	if ((Di < 1) || (Di > 31)) {
+		printf("\nInvalid date.\n");
+		return;
+	}
+	int Y,M,D,wd,h,m,s;
+	rtc.get_time(Y,M,D,wd,h,m,s);
+	Y = Yi + 20;
+	M = Mi;
+	D = Di;
+	rtc.set_time_in_chip(0, Y,M,D,wd,h,m,s);
+	printf("\nDate is now set to: %s\n", rtc.get_date_string(buffer, 32));
+}
+
 void listenJtag(void)
 {
 	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, (14 << 4)); // setting power on on JIG
@@ -1148,23 +1248,30 @@ extern "C" {
 		// Initialize fpga and application structures for DUT
 //		dutFpga.buffer = (uint32_t *)&_dut_b_start;
 //		dutFpga.size   = (uint32_t)&_dut_b_size;
-		dutAppl.buffer = (uint32_t *)&_dut_application_start;
+//		dutAppl.buffer = (uint32_t *)&_dut_application_start;
 
 		load_file(&dutFpga);
-//		load_file(&dutAppl);
+		load_file(&dutAppl);
 
 		TestSuite jigSuite("JIG Test Suite", jig_tests);
 		TestSuite slotSuite("Slot Test Suite", slot_tests);
 
-		printf("\nPress Left Button to run test on JIG. Press Right button to run test in Slot.\n");
+		int nothing_pressed = 0;
 		while(1) {
 			vTaskDelay(1);
+			int ub = uart_get_byte(0);
 			uint8_t buttons = getButtons();
-			if (!buttons) {
+			if ((!buttons) && (ub < 0)) {
+				if (nothing_pressed <= 0) {
+					printf("Press 'j' or left button on Tester to run test on JIG. Press 's' or right button to run test in Slot.\n");
+					nothing_pressed = 2000;
+				}
+				nothing_pressed --;
 				continue;
 			}
+			nothing_pressed = 2000;
 			IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0x03); // red+green
-			if (buttons == 0x01) {
+			if ((buttons == 0x01) || (ub == (int)'j')) {
 				jigSuite.Reset();
 				logger.Reset();
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 16)); // setting JTAG to output (port 0)
@@ -1175,6 +1282,7 @@ extern "C" {
 				jigReport.buffer = (uint32_t *)logger.getText();
 				jigReport.size = logger.getLength();
 				if (jigSuite.getTarget()->dutRunning) {
+					printf("Writing report into flash.\n");
 					program_flash(jigSuite.getTarget(), &jigReport);
 				}
 				vTaskDelay(5);
@@ -1184,6 +1292,7 @@ extern "C" {
 				} else {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one
 				}
+				printf("Writing report into USB.\n");
 				writeLog(&logger, "/Usb?/logs/jig_", jigSuite.getDateTime());
 			}
 /*
@@ -1192,23 +1301,35 @@ extern "C" {
 				listenJtag();
 			}
 */
-			if (buttons == 0x04) {
+			if ((buttons == 0x04) || (ub == (int)'s')) {
 				slotSuite.Reset();
 				logger.Reset();
 				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04);
 				slotSuite.Run((volatile uint32_t *)JTAG_1_BASE);
+				slotSuite.Report();
+				logger.Stop();
+				slotReport.buffer = (uint32_t *)logger.getText();
+				slotReport.size = logger.getLength();
+				if (slotSuite.getTarget()->dutRunning) {
+					printf("Writing report into flash.\n");
+					program_flash(slotSuite.getTarget(), &slotReport);
+				}
+				vTaskDelay(5);
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
 				if (!slotSuite.Passed()) {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
 				} else {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one
 				}
-				slotSuite.Report();
-				logger.Stop();
+				printf("Writing report into USB.\n");
 				writeLog(&logger, "/Usb?/logs/slot_", slotSuite.getDateTime());
 			}
+			if ((buttons == 0x00) && (ub == (int)'D')) {
+				setDate();
+			} else if ((buttons == 0x00) && (ub == (int)'T')) {
+				setTime();
+			}
 			vTaskDelay(20);
-			printf("\nPress Left Button to run test on JIG. Press Right button to run test in Slot.\n");
 		}
 		printf("Test has terminated.\n");
 		while(1) {

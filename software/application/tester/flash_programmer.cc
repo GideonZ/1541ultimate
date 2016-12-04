@@ -11,6 +11,8 @@
 #include "dump_hex.h"
 #include "flash.h"
 #include "u2p.h"
+#include "system.h"
+#include "altera_avalon_pio_regs.h"
 
 static bool my_memcmp(void *a, void *b, int len)
 {
@@ -63,6 +65,7 @@ int doFlashProgram(uint32_t address, void *buffer, int length)
 			if (sector != last_sector) {
 				last_sector = sector;
 				printf("Sector %d   \r", sector);
+				IOWR_ALTERA_AVALON_PIO_DATA(PIO_3_BASE, 1 << (sector & 3));
 				if(!flash->erase_sector(sector)) {
 			        // user_interface->popup("Erasing failed...", BUTTON_CANCEL);
 					last_sector = -1;
@@ -99,6 +102,7 @@ int doFlashProgram(uint32_t address, void *buffer, int length)
     }
     delete[] verify_buffer;
     printf("\n");
+	IOWR_ALTERA_AVALON_PIO_DATA(PIO_3_BASE, 0);
     return retval;
 }
 

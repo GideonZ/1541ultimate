@@ -156,24 +156,30 @@ int testButtons()
 	int start = (int)xTaskGetTickCount();
 	int end = start + 2400; // 12 seconds
 
+	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_3_BASE, 0x0D);
+
 	int retval = 7;
 	while ((end - (int)xTaskGetTickCount()) > 0) {
 		uint32_t buttons = (IORD_ALTERA_AVALON_PIO_DATA(PIO_2_BASE) >> 16) & 7;
 		switch(buttons) {
 		case 1:
 			retval &= ~1;
+			IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_3_BASE, 0x01);
 			break;
 		case 2:
 			retval &= ~2;
+			IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_3_BASE, 0x04);
 			break;
 		case 3:
 		case 5:
 		case 6:
 		case 7:
 			retval |= 16;
+			IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_3_BASE, 0x02);
 			break;
 		case 4:
 			retval &= ~4;
+			IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_3_BASE, 0x08);
 			break;
 		default:
 			break;
@@ -181,7 +187,7 @@ int testButtons()
 		if (retval == 0)
 			break;
 	}
-
+	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_3_BASE, 0x0F);
 	return retval;
 }
 

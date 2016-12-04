@@ -117,6 +117,7 @@ loader:
 	@cp target/software/programmer/result/*.bit .
 
 u2p_tester:
+	@$(MAKE) -C target/software/nios2_elf_lwip
 	@$(MAKE) -C target/software/nios2_testboot
 	@$(MAKE) -C target/software/nios2_dutboot
 	@$(MAKE) -C target/fpga/testdut
@@ -125,6 +126,7 @@ u2p_tester:
 	@$(MAKE) -C target/software/nios2_tester
 	@$(MAKE) -C target/software/nios2_testloader
 	@$(MAKE) -C target/software/nios2_testflasher
+	@$(MAKE) -C target/tester_package force
 
 clean:
 	@$(MAKE) -C tools clean
