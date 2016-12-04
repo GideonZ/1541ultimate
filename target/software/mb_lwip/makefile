@@ -93,8 +93,8 @@ SRCS_CC	 =
 SRCS_ASM =  
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-COPTIONS = -g -ffunction-sections -Os -std=c99 
-CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti
+COPTIONS = -g -ffunction-sections -O2 -std=c99 
+CPPOPT   = -g -ffunction-sections -O2 -fno-exceptions -fno-rtti
 LINK 	 = ./mb_app.lds
 LLIB     =  -L ../mb_lib/result_mb \
             -L $(TOOLCHAIN)/microblaze-xilinx-elf/lib \

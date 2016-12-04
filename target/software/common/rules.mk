@@ -171,9 +171,13 @@ $(RESULT)/$(PRJ).elf: $(OUTPUT)/$(PRJ).out $(RESULT)
 	@echo Providing ELF.
 	@cp $(OUTPUT)/$(PRJ).out $(RESULT)/$(PRJ).elf
 	
+$(OUTPUT)/$(PRJ).s00: $(RESULT)/$(PRJ).bin
+	@echo Make mem...
+	@$(MAKEMEM) -w $< $@ 1000000
+
 $(OUTPUT)/$(PRJ).sim: $(RESULT)/$(PRJ).bin
 	@echo Make mem...
-	@$(MAKEMEM) $< $@ 1000000 65536 
+	@$(MAKEMEM) -w $< $@ 1000000 65536 
 
 $(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
 	@echo Make mem...

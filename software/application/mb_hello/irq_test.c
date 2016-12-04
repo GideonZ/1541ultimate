@@ -1,8 +1,10 @@
 #include "small_printf.h"
 #include "itu.h"
+#include "dump_hex.h"
 
 int irq_count = 0;
 
+void flush_icache(void);
 void myISR(void) __attribute__ ((interrupt_handler));
 
 int main()
@@ -15,6 +17,7 @@ int main()
     vector[0] = (0xB0000000 | (pointer >> 16));
     vector[1] = (0xB8080000 | (pointer & 0xFFFF));
 
+    printf("%p %p %p\n", pointer, pointer >> 7, pointer >> 16);
     // enable interrupts
     __asm__ ("msrset r0, 0x02");
     
@@ -24,7 +27,7 @@ int main()
     ioWrite8(ITU_IRQ_ENABLE  , 0x01);
 
     while(1) {
-        printf("IRQ_Count = %d\r", irq_count);
+        printf("IRQ_Count = %d\n", irq_count);
     }
     return 0;
 }
