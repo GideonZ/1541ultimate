@@ -98,6 +98,7 @@ architecture gideon of all_carts_v4 is
     constant c_westermann   : std_logic_vector(4 downto 0) := "10100";
     constant c_georam       : std_logic_vector(4 downto 0) := "10101";
     constant c_bbasic       : std_logic_vector(4 downto 0) := "10110";
+    constant c_pagefox      : std_logic_vector(4 downto 0) := "10111";
     
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -383,6 +384,20 @@ begin
                 end if;
                 game_n    <= mode_bits(0);
                 exrom_n   <= '0';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
+            when c_pagefox => -- 16K, upper 8k disabled by reading to DFxx
+                             -- and disabled by reading
+                if io_write='1' and io_addr(8 downto 7) = "01"  then
+                   mode_bits(0) <= io_wdata(4);
+		   bank_bits <= io_wdata(3 downto 1);
+                end if;
+                game_n    <= mode_bits(0);
+                exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
                 serve_io1 <= '0';
                 serve_io2 <= '0';
@@ -679,6 +694,17 @@ begin
 	      mem_addr_i <= g_georam_base(27 downto 24) & georam_bank(15 downto 0) & slot_addr(7 downto 0); 
 	      allow_write <= '1';
 	   end if;
+
+        when c_pagefox =>
+	   if bank_bits(15) = '0' then
+              mem_addr_i <= g_rom_base(27 downto 16) & bank_bits(14) & bank_bits(13) & slot_addr(13 downto 0); 
+	   elsif bank_bits(14) = '0' then
+	      mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(13) & slot_addr(13 downto 0);
+	      if slot_addr(15 downto 14)="10" then
+	         allow_write <= '1';
+	      end if;
+	   end if;
+
 
         when others =>
             null;
