@@ -167,7 +167,7 @@ begin
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
         g_icap          => true,
-        g_uart          => true,
+        g_uart          => false,
         g_drive_1541    => true,
         g_drive_1541_2  => false,
         g_hardware_gcr  => true,
