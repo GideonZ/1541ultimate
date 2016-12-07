@@ -189,7 +189,7 @@ begin
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
         g_icap          => true,
-        g_uart          => true,
+        g_uart          => g_dual_drive,
         g_drive_1541    => true,
         g_drive_1541_2  => g_dual_drive,
         g_hardware_gcr  => true,
