@@ -13,6 +13,7 @@
 #include "editor.h"
 #include "userinterface.h"
 #include "browsable_root.h"
+#include "home_directory.h"
 
 static const char *helptext=
 		"CRSR UP/DN: Selection up/down\n"
@@ -395,14 +396,17 @@ int TreeBrowser :: handle_key(int c)
         case KEY_LEFT: // left
         	state->level_up();
             break;
-        case KEY_HOME: // home
+#ifndef RECOVERYAPP
+       case KEY_HOME: // home
             cd(user_interface->cfg->get_string(CFG_USERIF_HOME_DIR));
             break;
        case KEY_CTRL_HOME: // set home
            user_interface->cfg->set_string(CFG_USERIF_HOME_DIR, (char*)path->get_path());
            user_interface->cfg->write();
+           HomeDirectory :: setHomeDirectory(path->get_path());
            user_interface->popup("Current dir set as home dir", BUTTON_OK);
-           break;           
+           break;
+#endif         
         default:
             if((c >= '!')&&(c < 0x80)) {
                 if(quick_seek_length < (MAX_SEARCH_LEN_TB-2)) {

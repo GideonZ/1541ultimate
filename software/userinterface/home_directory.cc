@@ -1,19 +1,19 @@
 #include "home_directory.h"
 
-static const char* home_directory;
+static char home_directory[1024];
 
 HomeDirectory::HomeDirectory(UserInterface *ui, TreeBrowser *browser)
 {
 #ifndef NO_FILE_ACCESS
     this->ui = ui;
     this->browser = browser;
+
+    fm = FileManager :: getFileManager();
+    path = fm->get_new_path("HomeDirectory");
+    path->cd(ui->cfg->get_string(CFG_USERIF_HOME_DIR));
+    setHomeDirectory(path->get_path());
     
     if(ui->cfg->get_value(CFG_USERIF_START_HOME)) {
-
-        fm = FileManager :: getFileManager();
-        path = fm->get_new_path("HomeDirectory");
-        path->cd(ui->cfg->get_string(CFG_USERIF_HOME_DIR));
-        home_directory = path->get_path();
         
         observerQueue = new ObserverQueue();
         fm->registerObserver(observerQueue);
@@ -36,6 +36,10 @@ HomeDirectory::~HomeDirectory()
 
 const char* HomeDirectory::getHomeDirectory(void) {
     return home_directory;
+}
+
+void HomeDirectory::setHomeDirectory(const char* path) {
+  strncpy((char*)home_directory, path, 1023);
 }
 
 void HomeDirectory::poll_home_directory(void *a)

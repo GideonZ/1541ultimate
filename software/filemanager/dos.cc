@@ -71,7 +71,7 @@ void Dos :: cd(Message *command, Message **reply, Message **status)
 	*reply  = &c_message_empty;
     command->message[command->length] = 0;
     path->cd((char *)&command->message[2]);
-
+    
 	cleanupDirectory();
 	FRESULT fres = path->get_directory(directoryList);
 	if (fres == FR_OK) {
@@ -401,10 +401,9 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             *status = &c_status_not_implemented;
             break;
         case DOS_CMD_COPY_HOME_PATH:
-            *reply  = &c_message_empty;
-            *status = &c_status_ok;
             destination = (char*) HomeDirectory :: getHomeDirectory();
             strncpy((char*)command->message+2, destination, strlen(destination)+1);
+            command->length = 2 + strlen(destination) + 1;
             cd(command, reply, status);
             // fallthrough
 

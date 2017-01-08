@@ -26,6 +26,7 @@ class HomeDirectory
     virtual ~HomeDirectory();
 
     static const char* getHomeDirectory(void);
+    static void setHomeDirectory(const char* path);
 };
 
 #endif // HOME_DIRECTORY_H
