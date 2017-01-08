@@ -45,6 +45,7 @@ public:
 
     virtual void into(void);
 	virtual bool into2(void);
+    virtual void into3(const char* name);
     virtual void level_up(void);
     virtual void select(void);
     virtual void select_all(bool);

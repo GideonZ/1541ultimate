@@ -28,6 +28,7 @@
 #define MENU_1541_MOUNT     0x1511
 #define MENU_1541_MOUNT_GCR 0x1512
 #define MENU_1541_UNLINK    0x1513
+#define MENU_1541_SWAP      0x1514
 
 #define D64FILE_RUN        0x2101
 #define D64FILE_MOUNT      0x2102
@@ -117,6 +118,8 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void mount_g64(bool protect, File *);
     void mount_blank(void);
     void check_if_save_needed(SubsysCommand *cmd);
+    void swap_disk(void);
+    
 public:
     C1541(volatile uint8_t *regs, char letter);
     ~C1541();
@@ -135,7 +138,6 @@ public:
     // called from IEC (UltiCopy)
     int  get_current_iec_address(void);    
     void drive_power(bool on);
-    void swap_disk(void);
 };
 
 static C1541* last_mounted_drive;

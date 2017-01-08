@@ -1,5 +1,6 @@
 #include "dos.h"
 #include "userinterface.h"
+#include "home_directory.h"
 #include <string.h>
 
 __inline uint32_t cpu_to_32le(uint32_t a)
@@ -112,13 +113,14 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
     char *oldname;
     char *newname;
     char *filename;
+    char *destination;
 
     uint8_t drive_id;
     C1541 *drive;
     int mount_type;
     Action* mount_action;
     SubsysCommand* mount_command;
-    
+    SubsysCommand* swap_command;    
     
     switch(command->message[1]) {
         case DOS_CMD_IDENTIFY:
@@ -245,6 +247,21 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
                 *status = &status_message; 
             }
             break;
+        case DOS_CMD_COPY_FILE:    
+            *reply = &c_message_empty;
+            command->message[command->length] = 0;
+            filename = (char *)&command->message[2];
+            destination = (char *)&command->message[2+strlen(filename)+1];
+            res = fm->fcopy(path->get_path(), filename, destination);
+            
+            if (res == FR_OK) {
+                *status = &c_status_ok; 
+            } else {
+                strcpy((char *)status_message.message, FileSystem::get_error_string(res));
+                status_message.length = strlen((char *)status_message.message);
+                *status = &status_message; 
+            }
+            break;
         case DOS_CMD_LOAD_REU:
             if(!file) {
                 *status = &c_status_file_not_open;
@@ -337,11 +354,10 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
 
             mount_action = new Action("Mount Disk", drive->getID(), mount_type);
             mount_command = new SubsysCommand((UserInterface*) NULL, mount_action, path->get_path(), filename);              
-            drive->executeCommand(mount_command);
+            mount_command->execute();
             
             delete ffi;
             delete mount_action;
-            delete mount_command;
             break;
        case DOS_CMD_UMOUNT_DISK:
             *reply  = &c_message_empty;
@@ -356,10 +372,9 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             
             mount_action = new Action("Umount Disk", drive->getID(), MENU_1541_REMOVE, 0);
             mount_command = new SubsysCommand((UserInterface*) NULL, mount_action, (char*)NULL, (char*)NULL);
-            drive->executeCommand(mount_command);
+            mount_command->execute();
 
             delete mount_action;
-            delete mount_command;
             break;
         case DOS_CMD_SWAP_DISK:
             *reply  = &c_message_empty;
@@ -370,8 +385,13 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             if ((drive = getDriveByID(drive_id)) == NULL) {
                 *status = &c_status_drive_not_present;
                 break;
-            }            
-            drive->swap_disk();
+            }
+                        
+            swap_command =
+              new SubsysCommand((UserInterface*) NULL, drive->getID(), MENU_1541_SWAP, 0,
+                                (const char*)NULL, (const char*)NULL);
+
+            swap_command->execute();
             break;                        
         case DOS_CMD_CHANGE_DIR:
         	cd(command, reply, status);
@@ -379,8 +399,16 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
         case DOS_CMD_COPY_UI_PATH:
             *reply  = &c_message_empty;
             *status = &c_status_not_implemented;
-            break;            
-       case DOS_CMD_GET_PATH:
+            break;
+        case DOS_CMD_COPY_HOME_PATH:
+            *reply  = &c_message_empty;
+            *status = &c_status_ok;
+            destination = (char*) HomeDirectory :: getHomeDirectory();
+            strncpy((char*)command->message+2, destination, strlen(destination)+1);
+            cd(command, reply, status);
+            // fallthrough
+
+        case DOS_CMD_GET_PATH:
             strcpy((char *)data_message.message, path->get_path());
             data_message.length = strlen((char *)data_message.message);
             data_message.last_part = true;
