@@ -45,6 +45,8 @@
 #include "filetype_crt.h"
 #endif
 
+int ultimatedosversion = 0;
+
 /* Configuration */
 const char *cart_mode[] = { "None",
                       "Final Cart III",
@@ -110,6 +112,7 @@ const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
 const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "120ns" };
 const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
+const char *ultimatedos[] = { "Disabled", "enabled", "enabled (v1.0)" };
 
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 20, 4 },
@@ -121,7 +124,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",                 "%s", buttons,    0,  1, 1 },
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 1 },
-    { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", en_dis2,    0,  1, 0 },
+    { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", ultimatedos,0,  2, 0 },
 //	{ CFG_C64_RATE,     CFG_TYPE_ENUM,   "Stand-Alone Tick Rate",        "%s", tick_rates, 0,  1, 0 },
 //    { CFG_C64_ETH_EN,   CFG_TYPE_ENUM,   "Ethernet CS8900A",        "%s", en_dis2,     0,  1, 0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
@@ -211,7 +214,9 @@ void C64 :: set_emulation_flags(cart_def *def)
             }
         }
         if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
-        	CMD_IF_SLOT_ENABLE = cfg->get_value(CFG_CMD_ENABLE);
+        	int choice = cfg->get_value(CFG_CMD_ENABLE);
+        	CMD_IF_SLOT_ENABLE = !!choice;
+		ultimatedosversion = choice;
             CMD_IF_SLOT_BASE = 0x47; // $DF1C
         }
     }
