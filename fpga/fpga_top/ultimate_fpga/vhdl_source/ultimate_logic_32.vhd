@@ -657,7 +657,7 @@ begin
         
             -- other hardware pins
             BUFFER_ENn      => BUFFER_ENn,
-        
+            sense           => c2n_sense_in,        
 			buttons 		=> button,
             cart_led_n      => cart_led_n,
             

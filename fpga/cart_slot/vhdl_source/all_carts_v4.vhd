@@ -22,6 +22,7 @@ port (
     
     ethernet_enable : in  std_logic := '1';
     kernal_enable   : in  std_logic;
+    kernal_16k      : in  std_logic;
     kernal_area     : in  std_logic;
     freeze_trig     : in  std_logic; -- goes '1' when the button has been pressed and we're waiting to enter the freezer
     freeze_act      : in  std_logic; -- goes '1' when we need to switch in the cartridge for freeze mode
@@ -48,6 +49,7 @@ port (
     nmi_n           : out std_logic;
     exrom_n         : out std_logic;
     game_n          : out std_logic;
+    sense           : in  std_logic;
 
     CART_LEDn       : out std_logic;
 
@@ -571,7 +573,7 @@ begin
 
     -- determine address
 --  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank, sense)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -711,7 +713,11 @@ begin
         end case;
 
         if kernal_area='1' then
-            mem_addr_i <= g_kernal_base(27 downto 14) & slot_addr(12 downto 0) & '0';
+            if kernal_16k='0' then
+               mem_addr_i <= g_kernal_base(27 downto 14) & slot_addr(12 downto 0) & '0';
+           else
+               mem_addr_i <= g_rom_base(27 downto 15) & (not sense) & slot_addr(12 downto 0) & '0';
+           end if;
         end if;
 
 --        if eth_addr then

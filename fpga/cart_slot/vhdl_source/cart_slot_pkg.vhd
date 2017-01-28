@@ -31,6 +31,7 @@ package cart_slot_pkg is
         cartridge_type : std_logic_vector(4 downto 0);
         cartridge_kill : std_logic;
         kernal_enable  : std_logic;
+        kernal_16k     : std_logic;
         reu_enable     : std_logic;
         reu_size       : std_logic_vector(2 downto 0);
         eth_enable     : std_logic;
@@ -58,6 +59,7 @@ package cart_slot_pkg is
         cartridge_type => "00000",
         cartridge_kill => '0',
         kernal_enable  => '0',
+        kernal_16k     => '0',
         reu_enable     => '0',
         reu_size       => "111",
         eth_enable     => '0',

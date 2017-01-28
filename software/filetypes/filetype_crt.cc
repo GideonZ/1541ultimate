@@ -706,14 +706,26 @@ void FileTypeCRT :: configure_cart(void)
             C64_CARTRIDGE_TYPE = CART_TYPE_PAGEFOX; // Business Basic
             break;
         case CART_EXOS:
-	    	C64_KERNAL_ENABLE = 1;
-	        uint8_t *src = (uint8_t *)(((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
-	        uint8_t *dst = (uint8_t *)(C64_KERNAL_BASE+1);
-	        for(int i=0;i<8192;i++) {
-		   *(dst) = *(src++);
-		   dst += 2;
-	        }
-                break;
+        	  {
+        		  if (total_read > 8192)
+        		  {
+	    	         C64_KERNAL_ENABLE = 3;
+	               uint8_t *src = (uint8_t *)(((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
+	               for(int i=16383; i>=0; i--)
+		                *(src + 2*i + 1) = *(src+i);
+	            }
+        		  else
+        		  {
+	    	         C64_KERNAL_ENABLE = 1;
+	               uint8_t *src = (uint8_t *)(((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
+	               uint8_t *dst = (uint8_t *)(C64_KERNAL_BASE+1);
+	               for(int i=0;i<8192;i++) {
+		                *(dst) = *(src++);
+		                dst += 2;
+	               }
+	            }
+	          }
+            break;
 
         default:
             break;
