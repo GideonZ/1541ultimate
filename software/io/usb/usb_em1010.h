@@ -70,6 +70,7 @@ class UsbEm1010Driver : public UsbDriver
     
     UsbBase   *host;
     UsbDevice *device;
+    UsbInterface *interface;
     NetworkInterface *netstack;
 
     int  bulk_in;
@@ -87,13 +88,13 @@ class UsbEm1010Driver : public UsbDriver
     bool read_mac_address();
 
 public:
-	static UsbDriver *test_driver(UsbDevice *dev);
+	static UsbDriver *test_driver(UsbInterface *dev);
 
-	UsbEm1010Driver();
+	UsbEm1010Driver(UsbInterface *intf);
 	~UsbEm1010Driver();
 
-	void install(UsbDevice *dev);
-	void deinstall(UsbDevice *dev);
+	void install(UsbInterface *dev);
+	void deinstall(UsbInterface *dev);
 	void disable(void);
 	void poll(void);
 	void pipe_error(int pipe);

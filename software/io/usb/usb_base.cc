@@ -19,7 +19,7 @@ extern "C" {
 
 UsbBase usb2;
 
-#define printf(...)
+// #define printf(...)
 
 UsbBase :: UsbBase()
 {
@@ -404,10 +404,7 @@ void UsbBase :: poll()
 	} while(doCleanup == pdTRUE);
 
 	if(rootDevice) {
-		UsbDriver *drv = rootDevice->driver;
-		if (drv) {
-			drv->poll();
-		}
+		rootDevice->poll();
 	}
 }
 

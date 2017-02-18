@@ -9,7 +9,7 @@ extern "C" {
 #include "usb_hub.h"
 #include "FreeRTOS.h"
 
-#define printf(...)
+//#define printf(...)
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
@@ -33,9 +33,9 @@ uint8_t c_clear_hub_feature[]  = { 0x20, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x0
 uint8_t c_clear_port_feature[] = { 0x23, 0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 // tester instance
-FactoryRegistrator<UsbDevice *, UsbDriver *> hub_tester(UsbDevice :: getUsbDriverFactory(), UsbHubDriver :: test_driver);
+FactoryRegistrator<UsbInterface *, UsbDriver *> hub_tester(UsbInterface :: getUsbDriverFactory(), UsbHubDriver :: test_driver);
 
-UsbHubDriver :: UsbHubDriver()
+UsbHubDriver :: UsbHubDriver(UsbInterface *intf) : UsbDriver(intf)
 {
 	num_ports = 0;
 	for(int i=0;i<7;i++) {
@@ -53,9 +53,10 @@ UsbHubDriver :: ~UsbHubDriver()
 
 }
 
-
-UsbDriver *UsbHubDriver :: test_driver(UsbDevice *dev)
+UsbDriver *UsbHubDriver :: test_driver(UsbInterface *intf)
 {
+	UsbDevice *dev = intf->getParentDevice();
+
 	//printf("** Test UsbHubDriver **\n");
 	if(dev->device_descr.device_class != 0x09) {
 		printf("Device is not a hub..\n");
@@ -71,7 +72,7 @@ UsbDriver *UsbHubDriver :: test_driver(UsbDevice *dev)
 //	}
 	printf("** USB HUB Found! **\n");
 	// TODO: More tests needed here?
-	return new UsbHubDriver();
+	return new UsbHubDriver(intf);
 }
 
 
@@ -108,8 +109,9 @@ void UsbHubDriver_interrupt_handler(uint8_t *irq_data_in, int data_length, void 
 }
 
 
-void UsbHubDriver :: install(UsbDevice *dev)
+void UsbHubDriver :: install(UsbInterface *intf)
 {
+	UsbDevice *dev = intf->getParentDevice();
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
     host = dev->host;
     device = dev;
@@ -182,7 +184,7 @@ void UsbHubDriver :: install(UsbDevice *dev)
 
     printf("-- Install Complete.. HUB on address %d.. --\n", dev->current_address);
 
-    struct t_endpoint_descriptor *iin = dev->find_endpoint(0x83);
+    struct t_endpoint_descriptor *iin = intf->find_endpoint(0x83);
     int endpoint = iin->endpoint_address & 0x0F;
     if (endpoint != 1) {
     	printf("Warning, somehow, the interrupt endpoint is not 1 but %d.\n", endpoint);
@@ -212,7 +214,7 @@ void UsbHubDriver :: disable(void)
 }
 
 // called from cleanup task
-void UsbHubDriver :: deinstall(UsbDevice *dev)
+void UsbHubDriver :: deinstall(UsbInterface *intf)
 {
     for(int i=0;i<num_ports;i++) {
     	if (children[i]) {

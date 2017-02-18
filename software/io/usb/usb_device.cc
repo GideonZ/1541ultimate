@@ -7,7 +7,7 @@ extern "C" {
 #include <stdlib.h>
 #include <string.h>
 
-#define printf(...)
+// #define printf(...)
 
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
@@ -44,6 +44,7 @@ char *unicode_to_ascii(uint8_t *in, char *out, int maxlen)
     return out;
 }
 
+
 // =========================================================
 // USB DEVICE
 // =========================================================
@@ -56,7 +57,7 @@ uint8_t c_set_configuration[]         = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x
 uint8_t c_set_interface[]             = { 0x01, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 uint8_t c_get_interface[]			   = { 0x21, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 };
-uint8_t c_get_hid_report_descriptor[] = { 0x81, 0x06, 0x00, 0x22, 0x00, 0x00, 0x00, 0x00 };
+uint8_t c_get_hid_report_descriptor[]  = { 0x81, 0x06, 0x00, 0x22, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_unstall_pipe[]			   = { 0x02, 0x01, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
 
 UsbDevice :: UsbDevice(UsbBase *u, int speed)
@@ -64,17 +65,13 @@ UsbDevice :: UsbDevice(UsbBase *u, int speed)
 	disabled = false;
 	parent = NULL;
     parent_port = 0;
-    driver = NULL;
     host = u;
     device_state = dev_st_invalid;
     current_address = 0;
     config_descriptor = NULL;
-    hid_descriptor = NULL;
 
     device_descr.length = 0;
-    for(int i=0;i<4;i++) {
-        endpoints[i].length = 0;
-    }
+
     for(int i=0;i<4;i++) {
     	interfaces[i] = NULL;
     }
@@ -91,18 +88,24 @@ UsbDevice :: UsbDevice(UsbBase *u, int speed)
 
 UsbDevice :: ~UsbDevice()
 {
-	if(config_descriptor)
+	for (int i=0;i<num_interfaces;i++) {
+		if (interfaces[i]) {
+			delete interfaces[i];
+		}
+	}
+	if(config_descriptor) {
 		delete config_descriptor;
-	if(hid_descriptor)
-		delete hid_descriptor;
+	}
 }
 
 
 void UsbDevice :: disable()
 {
 	disabled = true;
-	if (driver) {
-		driver->disable();
+	for(int i=0;i<num_interfaces;i++) {
+		if (interfaces[i]) {
+			interfaces[i] -> disable();
+		}
 	}
 }
 
@@ -116,12 +119,15 @@ void UsbDevice :: get_string(int index, char *dest, int len)
     uint8_t usb_buffer[64];
     
     c_get_string_descriptor[2] = (uint8_t)index;
-
-    if(host->control_exchange(&control_pipe, c_get_string_descriptor, 8, usb_buffer, 64) > 0)
+    int result = host->control_exchange(&control_pipe, c_get_string_descriptor, 8, usb_buffer, 64);
+    if(result > 0) {
         unicode_to_ascii(usb_buffer, dest, len);
-    else
+        //printf("USB Get String returned:\n");
+        //dump_hex_relative(usb_buffer, result);
+    } else {
+        //printf("USB Get String returned nothing.");
         *dest = '\0';
-      
+    }
 }
 
 bool UsbDevice :: get_device_descriptor()
@@ -223,6 +229,8 @@ bool UsbDevice :: get_configuration(uint8_t index)
     uint8_t bConfigurationValue = config_descriptor[5];
     printf("bConfigurationValue = %b\n", bConfigurationValue);
 
+    UsbInterface *interface = NULL;
+
     while(i < len_descr) {
         len = (int)pnt[0];
         if (!len) {
@@ -237,25 +245,25 @@ bool UsbDevice :: get_configuration(uint8_t index)
         	case DESCR_INTERFACE:
         		if(len == 9) {
         			printf("Interface descriptor #%b:%b, with %d endpoints. Class = %d:%d\n", pnt[2], pnt[3], pnt[4], pnt[5], pnt[6]);
-        			if (pnt[4] != 0) {
-        				interfaces[num_interfaces] = (struct t_interface_descriptor *)pnt;
-        				num_interfaces++;
+        			int number = (int)pnt[2];
+        			if (number <= 3) {
+						interface = new UsbInterface(this, number, (struct t_interface_descriptor *)pnt);
+						if (interfaces[number]) {
+							interfaces[number]->addAlternative(interface);
+						} else {
+							interfaces[number] = interface;
+							num_interfaces++;
+						}
         			}
         		}
         		break;
         	case DESCR_ENDPOINT:
                 if ((len == 7)||(len == 9)) {
-                	if (ep < 4) {
-                		memcpy((void *)&endpoints[ep], (void *)pnt, len);
-                		endpoints[ep].max_packet_size = (uint16_t(pnt[5]) << 8) | pnt[4];
-                		printf("Endpoint found with address %b, attr: %b, maxpkt: %04x\n",
-                    			endpoints[ep].endpoint_address, endpoints[ep].attributes,
-								endpoints[ep].max_packet_size);
+                	if (!interface) {
+                		printf("Cannot store endpoint, as we do not have an active interface to attach it to.\n");
                 	} else {
-                    	printf("Endpoint found with address %b, attr: %b, not stored\n", pnt[2], pnt[3]);
+                		interface->addEndpoint(pnt, len);
                 	}
-                    // pipe_numbers[ep] = host->create_pipe(current_address, &endpoints[ep]);
-                    ep++;
                 } else {
                     printf("Invalid length of endpoint descriptor.\n");
                 }
@@ -263,27 +271,9 @@ bool UsbDevice :: get_configuration(uint8_t index)
             case DESCR_HID:
             	if(len == 9) {
             		int hid_len = int(pnt[7]) + 256*int(pnt[8]);
-            		printf("Device has a HID descriptor with length %d!\n", hid_len);
-
-            		/* THIS MAY ONLY BE DONE AFTER SET_CONFIGURATION.
-            		if (!hid_descriptor) {
-            			hid_descriptor = new BYTE[hid_len];
-            			if (hid_descriptor) {
-            				BYTE current_interface = interfaces[num_interfaces-1]->interface_number;
-            				printf("Current interface number = %b\n", current_interface);
-
-            				c_get_interface[4] = current_interface;
-            				host->control_exchange(&control_pipe, c_get_interface, 8, buf, 1);
-
-            				c_get_hid_report_descriptor[4] = current_interface;
-            				c_get_hid_report_descriptor[6] = pnt[7];
-            				c_get_hid_report_descriptor[7] = pnt[8];
-            				hid_len = host->control_exchange(&control_pipe, c_get_hid_report_descriptor, 8, hid_descriptor, hid_len);
-            				dump_hex(hid_descriptor, hid_len);
-            			}
-            		}
-            		*/
-            	} else {
+            		printf("Interface has a HID descriptor with length %d!\n", hid_len);
+            		interface->setHidDescriptor(pnt, len);
+           		} else {
             		printf("Invalid length of HID descriptor.\n");
             	}
             	break;
@@ -305,7 +295,6 @@ bool UsbDevice :: get_configuration(uint8_t index)
         pnt += len;
     }
     printf ("Number of interfaces found: %d.\n", num_interfaces);
-    printf ("Number of endpoints found: %d.\n", ep);
 
     return true;
 }
@@ -334,7 +323,7 @@ void UsbDevice :: set_interface(uint8_t interface, uint8_t alt)
     uint8_t dummy_buffer[8];
     int i = host->control_exchange(&control_pipe, c_set_interface, 8, dummy_buffer, 0);
 //    printf("Set Configuration result:%d\n", i);
-    interface_number = alt;
+//    interface_number = alt;
 }
 
 int UsbDevice :: unstall_pipe(uint8_t ep)
@@ -358,21 +347,6 @@ bool UsbDevice :: init(int address)
     return get_configuration(0);
 }
 
-struct t_endpoint_descriptor *UsbDevice :: find_endpoint(uint8_t code)
-{
-    uint8_t ep_code;
-    
-    for(int i=0;i<4;i++) {
-        if(endpoints[i].length) {
-            ep_code = (endpoints[i].attributes & 0x03) |
-                      (endpoints[i].endpoint_address & 0x80);
-            if (ep_code == code)
-                return &endpoints[i];
-        }
-    }
-    return 0;
-}
-
 void UsbDevice :: get_pathname(char *dest, int len)
 {
 	char buf[16];
@@ -387,5 +361,33 @@ void UsbDevice :: get_pathname(char *dest, int len)
 	strncpy(dest, "Usb", 3);
 	strncpy(dest+3, (const char *)&buf[i], len-3);
 }
+
+
+// =========================================================
+// USB INTERFACE
+// =========================================================
+
+void UsbInterface :: getHidReportDescriptor(void) {
+	if (!hid_descriptor_valid) {
+		return;
+	}
+	uint8_t buf[2];
+	uint8_t *pnt = (uint8_t *)&hid_descriptor;
+	int hid_len = int(pnt[7]) + 256*int(pnt[8]);
+	hid_report_descriptor = new uint8_t[hid_len];
+
+	if (hid_report_descriptor) {
+		c_get_interface[4] = interface_number;
+		parentDevice->host->control_exchange(&parentDevice->control_pipe, c_get_interface, 8, buf, 1);
+
+		c_get_hid_report_descriptor[4] = interface_number;
+		c_get_hid_report_descriptor[6] = pnt[7];
+		c_get_hid_report_descriptor[7] = pnt[8];
+		hid_len = parentDevice->host->control_exchange(&parentDevice->control_pipe, c_get_hid_report_descriptor, 8, hid_report_descriptor, hid_len);
+		dump_hex(hid_report_descriptor, hid_len);
+	}
+}
+
+
 
 IndexedList<UsbDriver *> usb_drivers(16, NULL);

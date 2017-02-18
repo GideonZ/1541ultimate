@@ -49,16 +49,18 @@ class UsbScsiDriver : public UsbDriver
     uint8_t       sense_data[32];
     struct t_cbw    cbw;
 
+    UsbDevice *device;
+    UsbInterface *interface;
     UsbBase *host;
 public:
-    UsbDevice *device;
 
-    static UsbDriver *test_driver(UsbDevice *dev);
-	UsbScsiDriver();
+    static UsbDriver *test_driver(UsbInterface *dev);
+	UsbScsiDriver(UsbInterface *intf);
 	~UsbScsiDriver();
 
-	void install(UsbDevice *dev);
-	void deinstall(UsbDevice *dev);
+	UsbDevice  *getDevice(void) { return device; }
+	void install(UsbInterface *dev);
+	void deinstall(UsbInterface *dev);
 	void poll(void);
 
     int status_transport(bool);

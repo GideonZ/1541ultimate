@@ -34,7 +34,7 @@ __inline uint16_t le16_to_cpu(uint16_t h)
 / and necessary system objects
 /*********************************************************************/
 // tester instance
-FactoryRegistrator<UsbDevice *, UsbDriver *> em1010_tester(UsbDevice :: getUsbDriverFactory(), UsbEm1010Driver :: test_driver);
+FactoryRegistrator<UsbInterface *, UsbDriver *> em1010_tester(UsbInterface :: getUsbDriverFactory(), UsbEm1010Driver :: test_driver);
 
 // Entry point for call-backs.
 void UsbEm1010Driver_interrupt_callback(uint8_t *data, int data_length, void *object) {
@@ -58,9 +58,10 @@ uint8_t UsbEm1010Driver_output(void *drv, void *b, int len) {
 
 
 
-UsbEm1010Driver :: UsbEm1010Driver()
+UsbEm1010Driver :: UsbEm1010Driver(UsbInterface *intf) : UsbDriver(intf)
 {
-    device = NULL;
+	interface = intf;
+	device = NULL;
     host = NULL;
     netstack = NULL;
     link_up = false;
@@ -72,10 +73,11 @@ UsbEm1010Driver :: ~UsbEm1010Driver()
 		releaseNetworkStack(netstack);
 }
 
-UsbDriver *UsbEm1010Driver :: test_driver(UsbDevice *dev)
+UsbDriver *UsbEm1010Driver :: test_driver(UsbInterface *intf)
 {
 	//printf("** Test USB Eminent EM1010 Driver **\n");
 
+	UsbDevice *dev = intf->getParentDevice();
 	uint16_t vendor = le16_to_cpu(dev->device_descr.vendor);
 	uint16_t product = le16_to_cpu(dev->device_descr.product);
 
@@ -87,18 +89,18 @@ UsbDriver *UsbEm1010Driver :: test_driver(UsbDevice *dev)
 
 	if (found) {
 		printf("** Eminent EM1010 (ADM8515 chip) found!!\n");
-		return new UsbEm1010Driver();
+		return new UsbEm1010Driver(intf);
 	}
 	return 0;
 }
 
-void UsbEm1010Driver :: install(UsbDevice *dev)
+void UsbEm1010Driver :: install(UsbInterface *intf)
 {
-	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
-    host = dev->host;
-    device = dev;
+	device = intf->getParentDevice();
+	printf("Installing '%s %s'\n", device->manufacturer, device->product);
+    host = device->host;
     
-	dev->set_configuration(dev->get_device_config()->config_value);
+    device->set_configuration(device->get_device_config()->config_value);
 
     netstack = getNetworkStack(this, UsbEm1010Driver_output, UsbEm1010Driver_free_buffer);
     if(!netstack) {
@@ -107,9 +109,9 @@ void UsbEm1010Driver :: install(UsbDevice *dev)
 
     read_mac_address();
 
-    struct t_endpoint_descriptor *bin  = dev->find_endpoint(0x82);
-    struct t_endpoint_descriptor *bout = dev->find_endpoint(0x02);
-    struct t_endpoint_descriptor *iin  = dev->find_endpoint(0x83);
+    struct t_endpoint_descriptor *bin  = interface->find_endpoint(0x82);
+    struct t_endpoint_descriptor *bout = interface->find_endpoint(0x02);
+    struct t_endpoint_descriptor *iin  = interface->find_endpoint(0x83);
 
     irq_in   = (iin->endpoint_address & 0x0F);
     bulk_in  = (bin->endpoint_address & 0x0F);
@@ -167,7 +169,7 @@ void UsbEm1010Driver :: disable(void)
     }
 }
 
-void UsbEm1010Driver :: deinstall(UsbDevice *dev)
+void UsbEm1010Driver :: deinstall(UsbInterface *dev)
 {
 	printf("EM1010 Deinstalled\n");
 }

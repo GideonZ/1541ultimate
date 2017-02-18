@@ -33,15 +33,18 @@ uint8_t c_scsi_reset[]     = { 0x21, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 #ifndef BOOTLOADER
 
 // tester instance
-FactoryRegistrator<UsbDevice *, UsbDriver *> scsi_tester(UsbDevice :: getUsbDriverFactory(), UsbScsiDriver :: test_driver);
+FactoryRegistrator<UsbInterface *, UsbDriver *> scsi_tester(UsbInterface :: getUsbDriverFactory(), UsbScsiDriver :: test_driver);
 
-UsbScsiDriver :: UsbScsiDriver()
+UsbScsiDriver :: UsbScsiDriver(UsbInterface *intf) : UsbDriver(intf)
 {
 	poll_enable = false;
 	current_lun = 0;
 	max_lun = 0;
 	file_manager = FileManager :: getFileManager();
 	mutex = xSemaphoreCreateMutex();
+	interface = intf;
+	device = intf->getParentDevice();
+	host = device->host;
 }
 
 UsbScsiDriver :: ~UsbScsiDriver()
@@ -49,23 +52,26 @@ UsbScsiDriver :: ~UsbScsiDriver()
 
 }
 
-UsbDriver *UsbScsiDriver :: test_driver(UsbDevice *dev)
+UsbDriver *UsbScsiDriver :: test_driver(UsbInterface *intf)
 {
 	//printf("** Test UsbScsiDriver **\n");
+/*
 	if (dev->num_interfaces < 1)
 		return 0;
-
+*/
+	UsbDevice *dev = intf->getParentDevice();
 	//printf("Dev class: %d\n", dev->device_descr.device_class);
 	if((dev->device_descr.device_class != 0x08)&&(dev->device_descr.device_class != 0x00)) {
 		//printf("Device is not mass storage..\n");
 		return 0;
 	}
-	if(dev->interfaces[0]->interface_class != 0x08) {
-		printf("Interface class is not mass storage. [%b]\n", dev->interfaces[0]->interface_class);
+
+	if(intf->getInterfaceDescriptor()->interface_class != 0x08) {
+		printf("Interface class is not mass storage. [%b]\n", intf->getInterfaceDescriptor()->interface_class);
 		return 0;
 	}
-	if(dev->interfaces[0]->protocol != 0x50) {
-		printf("Protocol is not bulk only. [%b]\n", dev->interfaces[0]->protocol);
+	if(intf->getInterfaceDescriptor()->protocol != 0x50) {
+		printf("Protocol is not bulk only. [%b]\n", intf->getInterfaceDescriptor()->protocol);
 		return 0;
 	}
 //	if(dev->interface_descr.sub_class != 0x06) {
@@ -73,7 +79,7 @@ UsbDriver *UsbScsiDriver :: test_driver(UsbDevice *dev)
 //		return false;
 //	}
 	// printf("** Mass storage device found **\n");
-	return new UsbScsiDriver();
+	return new UsbScsiDriver(intf);
 }
 
 int UsbScsiDriver :: get_max_lun(UsbDevice *dev)
@@ -91,12 +97,14 @@ int UsbScsiDriver :: get_max_lun(UsbDevice *dev)
     return (int)dummy_buffer[0];
 }
 
-void UsbScsiDriver :: install(UsbDevice *dev)
+void UsbScsiDriver :: install(UsbInterface *intf)
 {
+	UsbDevice *dev = interface->getParentDevice();
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
 
 	dev->set_configuration(dev->get_device_config()->config_value);
-	dev->set_interface(dev->interfaces[0]->interface_number, dev->interfaces[0]->alternate_setting);
+	dev->set_interface(interface->getInterfaceDescriptor()->interface_number,
+			interface->getInterfaceDescriptor()->alternate_setting);
 
 	max_lun = get_max_lun(dev);
 	//printf("max lun = %d\n", max_lun);
@@ -108,8 +116,8 @@ void UsbScsiDriver :: install(UsbDevice *dev)
     cbw.signature[2] = 0x42;
     cbw.signature[3] = 0x43;
 
-    struct t_endpoint_descriptor *bin = dev->find_endpoint(0x82);
-    struct t_endpoint_descriptor *bout = dev->find_endpoint(0x02);
+    struct t_endpoint_descriptor *bin = interface->find_endpoint(0x82);
+    struct t_endpoint_descriptor *bout = interface->find_endpoint(0x02);
 
     int bi = bin->endpoint_address & 0x0F;
     int bo = bout->endpoint_address & 0x0F;
@@ -146,7 +154,7 @@ void UsbScsiDriver :: install(UsbDevice *dev)
 	poll_enable = true;
 }
 
-void UsbScsiDriver :: deinstall(UsbDevice *dev)
+void UsbScsiDriver :: deinstall(UsbInterface *intf)
 {
 	for(int i=0;i<=max_lun;i++) {
         printf("DeInstalling SCSI Lun %d\n", i);
@@ -312,7 +320,7 @@ int UsbScsiDriver :: mass_storage_reset()
 	uint8_t buf[8];
 
 	printf("Executing reset...\n");
-	c_scsi_reset[4] = device->interface_number;
+	c_scsi_reset[4] = interface->getInterfaceDescriptor()->interface_number;
 	int i =  host->control_exchange(&(device->control_pipe),
 								    c_scsi_reset, 8,
 								    buf, 8);
@@ -487,7 +495,7 @@ void UsbScsi :: inquiry(void)
 
     int len, i;
 
-    driver->device->get_pathname(name, 13);
+    driver->getDevice()->get_pathname(name, 13);
     // create file system name
     if (max_lun) { // more than one lun?
     	sprintf(name + strlen(name), "L%d", lun);

@@ -5,6 +5,7 @@
 #include "indexed_list.h"
 #include "usb_base.h"
 #include "factory.h"
+#include <string.h>
 
 #define DESCR_DEVICE            0x01
 #define DESCR_CONFIGURATION     0x02
@@ -79,7 +80,20 @@ struct t_endpoint_descriptor
     uint8_t attributes;
     uint16_t max_packet_size;
     uint8_t interval;
+    uint8_t dummy1;
+    uint8_t dummy2;
 };
+
+struct t_hid_descriptor
+{
+    uint8_t length;
+    uint8_t type;
+    uint16_t hid_version;
+    uint8_t country_code;
+    uint8_t number_of_descriptors;
+    uint8_t descriptor_type;
+    uint16_t descriptor_length;
+} __attribute__((packed));
 
 typedef enum e_dev_state {
     dev_st_invalid = 0,
@@ -89,40 +103,164 @@ typedef enum e_dev_state {
 } t_dev_state;
 
 class UsbDevice;
+class UsbInterface;
 
 class UsbDriver
 {
 public:
-	UsbDriver() { }
+	UsbDriver(UsbInterface *intf) { }
 	virtual ~UsbDriver() { }
 
-	virtual void install(UsbDevice *dev)     { }
-	virtual void deinstall(UsbDevice *dev)   { }
+	virtual UsbDevice  *getDevice(void) 		 { return NULL; }
+	virtual void install(UsbInterface *intf)     { }
+	virtual void deinstall(UsbInterface *intf)   { }
 	virtual void poll(void)                  { }
 	virtual void pipe_error(int pipe)		 { }
 	virtual void reset_port(int port)		 { }
 	virtual void disable(void)				 { }
 };
 
-class UsbDevice
+class UsbInterface
 {
+    uint8_t *hid_report_descriptor;
+    uint8_t  interface_number;
+    struct t_interface_descriptor   interface_descr;
+    struct t_endpoint_descriptor    endpoints[4];
+    struct t_hid_descriptor			hid_descriptor;
+    bool hid_descriptor_valid;
+    bool enabled;
+    int numEndpoints;
+    UsbDriver *driver;
+    UsbDevice *parentDevice;
+    UsbInterface *alternative;
+
 public:
-    static Factory<UsbDevice *, UsbDriver *>* getUsbDriverFactory() {
-		static Factory<UsbDevice *, UsbDriver *> usb_driver_factory;
+    static Factory<UsbInterface *, UsbDriver *>* getUsbDriverFactory() {
+		static Factory<UsbInterface *, UsbDriver *> usb_driver_factory;
 		return &usb_driver_factory;
 	}
 
+    UsbInterface(UsbDevice *dev, int interfaceNr, struct t_interface_descriptor *desc) {
+    	parentDevice = dev;
+    	interface_number = interfaceNr;
+    	hid_report_descriptor = NULL;
+    	driver = NULL;
+    	alternative = NULL;
+    	numEndpoints = 0;
+    	hid_descriptor_valid = false;
+    	enabled = false;
+    	memcpy(&interface_descr, desc, sizeof(struct t_interface_descriptor));
+    }
+
+    ~UsbInterface() {
+    	if (alternative) {
+    		delete alternative;
+    	}
+    	if (hid_report_descriptor) {
+    		delete hid_report_descriptor;
+    	}
+    }
+
+
+    void addAlternative(UsbInterface *intf) {
+    	alternative = intf;
+    }
+
+    void addEndpoint(uint8_t *data, int len) {
+    	if (numEndpoints < 4) {
+    		struct t_endpoint_descriptor *ep = &endpoints[numEndpoints];
+    		memcpy((void *)ep, (void *)data, len);
+    		ep->max_packet_size = (uint16_t(data[5]) << 8) | data[4];
+    		printf("Endpoint found with address %b, attr: %b, maxpkt: %04x\n",
+        			ep->endpoint_address, ep->attributes, ep->max_packet_size);
+    		numEndpoints++;
+    	}
+    }
+
+    void setHidDescriptor(uint8_t *data, int len) {
+    	memcpy(&hid_descriptor, data, len);
+    	hid_descriptor_valid = true;
+    }
+
+    void getHidReportDescriptor(void);
+
+    void setDriver(UsbDriver *drv) {
+    	driver = drv;
+    }
+
+    UsbDriver *getDriver(void) {
+    	return driver;
+    }
+
+    UsbDevice *getParentDevice(void) {
+    	return parentDevice;
+    }
+
+    const struct t_interface_descriptor *getInterfaceDescriptor(void) {
+    	return &interface_descr;
+    }
+
+    void poll(void) {
+    	if (enabled) {
+    		if (driver) {
+    			driver->poll();
+    		}
+    	}
+    }
+
+    void install(void) {
+		getHidReportDescriptor();
+    	UsbDriver *driver = getUsbDriverFactory()->create(this);
+    	setDriver(driver);
+    	if (driver) {
+			driver->install(this);
+			enabled = true;
+    	} else {
+    		printf("No driver found for interface %d\n", this->interface_number);
+    	}
+    }
+
+    // Called only from the poll/cleanup context
+    void deinstall(void)  {
+    	enabled = false;
+    	if(driver) {
+    		driver->deinstall(this);
+			delete driver;
+            driver = NULL;
+    	}
+    }
+
+    void disable(void) {
+    	enabled = false;
+    }
+
+    struct t_endpoint_descriptor *find_endpoint(uint8_t code)
+    {
+        uint8_t ep_code;
+
+        for(int i=0;i<4;i++) {
+            if(endpoints[i].length) {
+                ep_code = (endpoints[i].attributes & 0x03) |
+                          (endpoints[i].endpoint_address & 0x80);
+                if (ep_code == code)
+                    return &endpoints[i];
+            }
+        }
+        return 0;
+    }
+};
+
+class UsbDevice
+{
+public:
 	int current_address;
     enum e_dev_state                device_state;
     uint8_t *config_descriptor;
-    uint8_t *hid_descriptor; // should we support more than one?
-    uint8_t  interface_number;
 
     //struct t_device_configuration   device_config;
-    //struct t_interface_descriptor   interface_descr;
-    struct t_endpoint_descriptor    endpoints[4];
-    struct t_interface_descriptor *interfaces[4];
+    struct t_device_descriptor      device_descr;
     int num_interfaces;
+    UsbInterface *interfaces[4]; // we support composite devices with up to 4 interfaces
 
     uint16_t vendorID;
     uint16_t productID;
@@ -131,15 +269,13 @@ public:
     char product[32];
     char serial[32];
 
-    struct t_device_descriptor      device_descr;
-    struct t_pipe control_pipe;
 
     UsbBase   *host;
     int		   speed;
     UsbDevice *parent;  // in case of being connected to a hub
     int        parent_port;
-    UsbDriver *driver;
     bool	   disabled;
+    struct t_pipe control_pipe;
 
     UsbDevice(UsbBase *u, int speed);
     ~UsbDevice();
@@ -155,7 +291,7 @@ public:
     	if (!parent)
     		host->bus_reset();
     	else
-    		parent->driver->reset_port(parent_port);
+    		parent->interfaces[0]->getDriver()->reset_port(parent_port);
     }
 
     // Called during init, from the Event context
@@ -178,29 +314,30 @@ public:
     // functions that arrange attachment to the system
     // Called only from the Event context
     void install(void) {
-    	if(driver)
-    		deinstall();
-    	driver = getUsbDriverFactory()->create(this);
-    	if(driver)
-    		driver->install(this);
-    }
-
-    // Called only from the poll/cleanup context
-    void deinstall(void)  {
-    	if(driver) {
-    		driver->deinstall(this);
-			delete driver;
-            driver = NULL;
+    	for (int i = 0; i < num_interfaces; i++) {
+    		if (interfaces[i]) {
+    			interfaces[i]->install();
+    		}
     	}
     }
 
     void poll(void) {
-    	if (!disabled) {
-    		if (driver) {
-    			driver->poll();
+    	for (int i = 0; i < num_interfaces; i++) {
+    		if (interfaces[i]) {
+    			interfaces[i]->poll();
     		}
     	}
     }
+
+    // Called only from the poll/cleanup context
+    void deinstall(void)  {
+    	for (int i = 0; i < num_interfaces; i++) {
+    		if (interfaces[i]) {
+				interfaces[i]->deinstall();
+    		}
+    	}
+    }
+
 };    
 
 char *unicode_to_ascii(uint8_t *in, char *out);

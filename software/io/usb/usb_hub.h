@@ -25,14 +25,14 @@ class UsbHubDriver : public UsbDriver
     UsbDevice *children[7];
 
 public:
-	static UsbDriver *test_driver(UsbDevice *dev);
+	static UsbDriver *test_driver(UsbInterface *intf);
 
-	UsbHubDriver();
+	UsbHubDriver(UsbInterface *intf);
 	~UsbHubDriver();
 
 	void disable(void);
-	void install(UsbDevice *dev);
-	void deinstall(UsbDevice *dev);
+	void install(UsbInterface *intf);
+	void deinstall(UsbInterface *intf);
 	void poll(void);
 	void pipe_error(int pipe);
 	void reset_port(int port);

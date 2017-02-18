@@ -104,10 +104,10 @@ uint8_t UsbAx88772Driver_output(void *drv, void *b, int len) {
 / and necessary system objects
 /*********************************************************************/
 // tester instance
-FactoryRegistrator<UsbDevice *, UsbDriver *> ax88772_tester(UsbDevice :: getUsbDriverFactory(), UsbAx88772Driver :: test_driver);
+FactoryRegistrator<UsbInterface *, UsbDriver *> ax88772_tester(UsbInterface :: getUsbDriverFactory(), UsbAx88772Driver :: test_driver);
 
 
-UsbAx88772Driver :: UsbAx88772Driver(uint16_t prodID)
+UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbDriver(intf)
 {
     device = NULL;
     host = NULL;
@@ -122,11 +122,12 @@ UsbAx88772Driver :: ~UsbAx88772Driver()
 		releaseNetworkStack(netstack);
 }
 
-UsbDriver * UsbAx88772Driver :: test_driver(UsbDevice *dev)
+UsbDriver * UsbAx88772Driver :: test_driver(UsbInterface *intf)
 {
 	//printf("** Test USB Asix AX88772 Driver **\n");
 
-    if(le16_to_cpu(dev->device_descr.vendor) != 0x0b95) {
+	UsbDevice *dev = intf->getParentDevice();
+	if(le16_to_cpu(dev->device_descr.vendor) != 0x0b95) {
 		printf("Device is not from Asix..\n");
 		return 0;
 	}
@@ -138,14 +139,16 @@ UsbDriver * UsbAx88772Driver :: test_driver(UsbDevice *dev)
 
     printf("** Asix AX88772%c found **\n", (prodID & 1)?'B':'A');
 	// TODO: More tests needed here?
-	return new UsbAx88772Driver(prodID);
+	return new UsbAx88772Driver(intf, prodID);
 }
 
-void UsbAx88772Driver :: install(UsbDevice *dev)
+void UsbAx88772Driver :: install(UsbInterface *intf)
 {
+	UsbDevice *dev = intf->getParentDevice();
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
     host = dev->host;
-    device = dev;
+    interface = intf;
+    device = intf->getParentDevice();
     
 	dev->set_configuration(dev->get_device_config()->config_value);
 
@@ -186,9 +189,9 @@ void UsbAx88772Driver :: install(UsbDevice *dev)
 
     read_mac_address();
 
-    struct t_endpoint_descriptor *iin = dev->find_endpoint(0x83);
-    struct t_endpoint_descriptor *bin = dev->find_endpoint(0x82);
-    struct t_endpoint_descriptor *bout = dev->find_endpoint(0x02);
+    struct t_endpoint_descriptor *iin = interface->find_endpoint(0x83);
+    struct t_endpoint_descriptor *bin = interface->find_endpoint(0x82);
+    struct t_endpoint_descriptor *bout = interface->find_endpoint(0x02);
     bulk_in  = (bin->endpoint_address & 0x0F);
     bulk_out = (bout->endpoint_address & 0x0F);
     irq_in   = (iin->endpoint_address & 0x0F);
@@ -330,7 +333,7 @@ void UsbAx88772Driver :: disable()
     }
 }
 
-void UsbAx88772Driver :: deinstall(UsbDevice *dev)
+void UsbAx88772Driver :: deinstall(UsbInterface *intf)
 {
     printf("AX88772 Deinstalled.\n");
 }

@@ -14,6 +14,7 @@ class UsbAx88772Driver : public UsbDriver
     
     UsbBase   *host;
     UsbDevice *device;
+    UsbInterface *interface;
     NetworkInterface *netstack;
 
     int  bulk_in;
@@ -33,13 +34,13 @@ class UsbAx88772Driver : public UsbDriver
     uint16_t read_phy_register(uint8_t reg);
 
 public:
-	static UsbDriver *test_driver(UsbDevice *dev);
+	static UsbDriver *test_driver(UsbInterface *intf);
 
-	UsbAx88772Driver(uint16_t prodID);
+	UsbAx88772Driver(UsbInterface *intf,uint16_t prodID);
 	~UsbAx88772Driver();
 
-	void install(UsbDevice *dev);
-	void deinstall(UsbDevice *dev);
+	void install(UsbInterface *intf);
+	void deinstall(UsbInterface *intf);
 	void disable(void);
 	void poll(void);
 	void pipe_error(int pipe);
