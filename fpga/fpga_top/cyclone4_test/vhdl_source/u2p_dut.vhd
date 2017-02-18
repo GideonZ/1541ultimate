@@ -235,6 +235,8 @@ architecture rtl of u2p_dut is
     signal audio_out_ready         : std_logic                     := '0';             -- ready
     signal audio_speaker           : signed(15 downto 0);
     
+    signal pll_locked              : std_logic;
+
     signal pio1_export             : std_logic_vector(31 downto 0) := (others => '0'); -- in_port
     signal pio2_export             : std_logic_vector(19 downto 0) := (others => '0'); -- in_port
     signal pio3_export             : std_logic_vector(7 downto 0);                     -- out_port
@@ -278,7 +280,7 @@ begin
         inclk0  => RMII_REFCLK, -- 50 MHz
         c0      => HUB_CLOCK, -- 24 MHz
         c1      => audio_clock, -- 12.245 MHz (47.831 kHz sample rate)
-        locked  => open );
+        locked  => pll_locked );
 
     i_audio_reset: entity work.level_synchronizer
     generic map ('1')
@@ -548,9 +550,9 @@ begin
     audio_speaker(15 downto 8) <= signed(audio_out_data(15 downto 8));
     audio_speaker( 7 downto 0) <= signed(audio_out_data(23 downto 16));
 
-    LED_MOTORn <= jtag_write_vector(0) xor not pio3_export(0);
-    LED_DISKn  <= jtag_write_vector(1) xor not pio3_export(1);
-    LED_CARTn  <= jtag_write_vector(2) xor not pio3_export(2);
+    LED_MOTORn <= jtag_write_vector(0) xor not pio3_export(0) xor sys_count(sys_count'high);
+    LED_DISKn  <= (jtag_write_vector(1) xor not pio3_export(1)) and pll_locked; -- if pll_locked = 0, led is on
+    LED_CARTn  <= (jtag_write_vector(2) xor not pio3_export(2)) and por_n; -- if por_n is 0, led is on
     LED_SDACTn <= jtag_write_vector(3) xor not pio3_export(3);
 
     ULPI_RESET <= por_n;

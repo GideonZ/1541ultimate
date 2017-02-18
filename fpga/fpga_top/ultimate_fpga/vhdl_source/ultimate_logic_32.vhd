@@ -354,6 +354,8 @@ architecture logic of ultimate_logic_32 is
     signal cas_write_c      : std_logic;
     signal c2n_out_r		: std_logic := '1';
     signal c2n_out_w		: std_logic := '1';
+    signal c2n_out_en_r     : std_logic := '0';
+    signal c2n_out_en_w     : std_logic := '0';
 	signal busy_led			: std_logic;
 	signal sd_busy          : std_logic;
 	signal sd_act_stretched : std_logic;
@@ -950,6 +952,8 @@ begin
             phi2_tick       => phi2_tick,
             c2n_sense       => c2n_sense,
             c2n_motor       => CAS_MOTOR,
+            c2n_out_en_r    => c2n_out_en_r,
+            c2n_out_en_w    => c2n_out_en_w,
             c2n_out_r       => c2n_out_r,
             c2n_out_w       => c2n_out_w );
     end generate;
@@ -1013,11 +1017,8 @@ begin
 --    end generate;
 
 	CAS_SENSE <= '0' when (c2n_sense='1') or (c2n_pull_sense='1') else 'Z';
-	CAS_READ  <= '0' when c2n_out_r='0' else 'Z';
-	CAS_WRITE <= '0' when c2n_out_w='0' else 'Z';
-
---    CAS_READ  <= trigger_1;
---    CAS_WRITE <= trigger_2;
+	CAS_READ  <= c2n_out_r when c2n_out_en_r = '1' else 'Z';
+	CAS_WRITE <= c2n_out_w when c2n_out_en_w = '1' else 'Z';
 
     c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
 	

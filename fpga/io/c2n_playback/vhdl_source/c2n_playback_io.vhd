@@ -20,6 +20,8 @@ port (
     
     c2n_motor       : in  std_logic;
     c2n_sense       : out std_logic;
+    c2n_out_en_w    : out std_logic;
+    c2n_out_en_r    : out std_logic;
     c2n_out_r       : out std_logic;
     c2n_out_w       : out std_logic );
 
@@ -215,6 +217,9 @@ begin
         not write_pulse when "01", -- Load from tap
         '1' when others;
         
+    c2n_out_en_r <= stream_en when (sel = "01") else '0';
+    c2n_out_en_w <= stream_en when (sel = "10") else '0'; 
+
     with sel select c2n_out_w <=
         write_pulse when "10", -- Write to Tape
         '1' when others;
