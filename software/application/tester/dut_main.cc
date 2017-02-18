@@ -28,6 +28,7 @@ extern "C" {
 #include "flash_programmer.h"
 int checkUsbHub();
 int checkUsbSticks();
+void printUsbSticksFound(void);
 void initializeUsb(void);
 void codec_init(void);
 }
@@ -149,6 +150,16 @@ int programFlash()
 	}
 	uint32_t *pul = (uint32_t *)PROGRAM_DATALOC;
 	return doFlashProgram(PROGRAM_ADDR, pul, PROGRAM_DATALEN);
+}
+
+int readFlash()
+{
+	if (!PROGRAM_DATALOC) {
+		printf("Memory Location of programming data not set.\n");
+		return -7;
+	}
+	uint32_t *pul = (uint32_t *)PROGRAM_DATALOC;
+	return doReadFlash(PROGRAM_ADDR, pul, PROGRAM_DATALEN);
 }
 
 int testButtons()
@@ -326,8 +337,14 @@ void main_task(void *context)
 		case 16:
 			result = protectFlashes();
 			break;
+		case 17:
+			printUsbSticksFound();
+			break;
+		case 18:
+			result = readFlash();
+			break;
 		case 99:
-			printf("Alive!\n");
+			printf("Alive V1.3!\n");
 			break;
 		default:
 			result = -5;

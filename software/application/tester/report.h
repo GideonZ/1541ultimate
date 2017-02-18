@@ -103,7 +103,8 @@ public:
 		suiteName = name;
 	}
 
-	void Reset(void) {
+	void Reset(volatile uint32_t *jtag) {
+		target.host = jtag;
 		dateTime[0] = 0;
 		for (int i=0; i < results.get_elements(); i++) {
 			char *log = results[i]->getLog();
@@ -114,9 +115,8 @@ public:
 		}
 	}
 
-	void Run(volatile uint32_t *jtag) {
+	void Run(void) {
 		char *log;
-		target.host = jtag;
 		target.dutRunning = 0;
 		int errors = 0;
 		rtc.get_datetime_compact(this->dateTime, 40);

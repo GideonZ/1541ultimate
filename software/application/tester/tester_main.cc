@@ -293,127 +293,6 @@ int program_flash(JTAG_Access_t *target, BinaryImage_t *flashFile)
 
 
 
-/*
-int test(void)
-{
-	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (0x0F << 4));
-	vTaskDelay(100);
-	configure_adc();
-
-	// jig_test();
-	// usb2.initHardware();
-
-	return 0;
-	//TestAudio();
-	//return 0;
-
-	for(int i=0;i<5;i++) {
-		report_analog();
-		for(int i=0;i<500000;i++)
-			;
-	}
-
-//	printf("SVF file @ %p (%d)\n", &_dut_b_start, (int)&_dut_b_size);
-//	play_svf((char *)(&_dut_b_start), (volatile uint32_t *)JTAG_1_BASE);
-
-	uint8_t idcode[4] = {0, 0, 0, 0};
-
-	volatile uint32_t *jtag0 = (volatile uint32_t *)JTAG_0_BASE;
-	volatile uint32_t *jtag1 = (volatile uint32_t *)JTAG_1_BASE;
-
-	jtag_reset_to_idle(jtag0);
-	jtag_instruction(jtag0, 6);
-	jtag_senddata(jtag0, idcode, 32, idcode);
-
-	printf("ID code of DUT: %02x %02x %02x %02x\n", idcode[3], idcode[2], idcode[1], idcode[0]);
-
-	printf("Going to configure the FPGA.\n");
-	if (!dutFpga.buffer) {
-		printf("No FPGA image loaded from USB.\n");
-		return -8;
-	}
-	jtag_configure_fpga(jtag1, (uint8_t *)dutFpga.buffer, (int)dutFpga.size);
-
-	for(int i=0;i<1000000;i++)
-		;
-	report_analog();
-
-	JTAG_Access_t jig;
-	if (FindJtagAccess(jtag0, &jig) < 0) {
-		return -1;
-	}
-	for(int i=0;i<5;i++) {
-		report_analog();
-		for(int i=0;i<500000;i++)
-			;
-	}
-	uint8_t leds_on = 0x0F;
-	vji_write(&jig, 2, &leds_on, 1);
-	for(int i=0;i<5;i++) {
-		report_analog();
-		for(int i=0;i<500000;i++)
-			;
-	}
-
-	jtag_reset_to_idle(jtag1);
-	jtag_instruction(jtag1, 6);
-	jtag_senddata(jtag1, idcode, 32, idcode);
-
-	printf("ID code of DUT: %02x %02x %02x %02x\n", idcode[3], idcode[2], idcode[1], idcode[0]);
-
-	JTAG_Access_t access;
-	if (FindJtagAccess(jtag1, &access) < 0) {
-		return -1;
-	}
-
-	uint8_t vji_data[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-
-	vji_read(&access, 0, vji_data, 8);
-	for(int i=0;i<8;i++) {
-		printf("%02x ", vji_data[i]);
-	}
-	printf("\n");
-
-	vji_read(&access, 1, vji_data, 8);
-	for(int i=0;i<8;i++) {
-		printf("%02x ", vji_data[i]);
-	}
-	printf("\n");
-
-	uint8_t led = 0x05;
-	vji_write(&access, 2, &led, 1);
-
-
-	uint32_t mem_block[64];
-	for(int i=0;i<64;i++) {
-		mem_block[i] = 0x01010101 * i;
-	}
-	mem_block[0] = 0xDEADBABE;
-
-	vji_write_memory(&access, 0x00020020, 32, mem_block);
-	vji_write_memory(&access, 0x000200A0, 32, mem_block);
-
-	uint32_t mem_block_read[64];
-	vji_read_memory(&access, 0x00020020, 64, mem_block_read);
-
-	for(int i=0;i<64;i++) {
-		printf("%08x ", mem_block_read[i]);
-		if ((i & 3) == 3)
-			printf("\n");
-	}
-	int err = 0;
-	for(int i=0;i<32;i++) {
-		if (mem_block_read[i] != mem_block[i]) {
-			err++;
-		}
-		if (mem_block_read[i+32] != mem_block[i]) {
-			err++;
-		}
-	}
-	printf("%d Errors in readback.\n", err);
-
-}
-*/
 
 int load_file(BinaryImage_t *flashFile)
 {
@@ -488,7 +367,7 @@ int jigPowerSwitchOverTest(JTAG_Access_t *target, int timeout, char **log)
 	}
 	vTaskDelay(200);
 	jtag_clear_fpga(target->host);
-	vTaskDelay(100);
+	vTaskDelay(200);
 	{
 		uint32_t v50 = adc_read_channel_corrected(2);
 		uint32_t vcc = adc_read_channel_corrected(1);
@@ -537,7 +416,7 @@ int jigVoltageRegulatorLoad(JTAG_Access_t *target, int timeout, char **log)
 
 	// 1.2V
 	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, (1 << 13)); // load 1.2V
-	vTaskDelay(50);
+	vTaskDelay(80);
 	v50 = adc_read_channel_corrected(2);
 	mA = adc_read_channel_corrected(0) / 1000;
 	Vr = adc_read_channel_corrected(7);
@@ -546,19 +425,21 @@ int jigVoltageRegulatorLoad(JTAG_Access_t *target, int timeout, char **log)
 	uW = v50 * mA;
 	uWdiff = uW - uWStart;
 	eff = Pr / (uWdiff / 100);
-	printf("%d mW (+%d mW), Ir = %d mA thru 4.7 Ohm = %d mW. Eff = %d\%\n", uW / 1000, uWdiff / 1000, Ir, Pr / 1000, eff);
+	printf("%d mW (+%d mW), Vr = %d mV, Ir = %d mA thru 4.7 Ohm = %d mW. Eff = %d\%\n", uW / 1000, uWdiff / 1000, Vr, Ir, Pr / 1000, eff);
 	if (Vr < 1050) {
 		errors |= 1;
 	}
+/*
 	if (eff < 70) {
 		errors |= 2;
 	}
+*/
 
 	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 13)); // load 1.2V (measured: 1.111)
 
 	// 1.8V
 	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, (1 << 14)); // load 1.8V
-	vTaskDelay(50);
+	vTaskDelay(80);
 	v50 = adc_read_channel_corrected(2);
 	mA = adc_read_channel_corrected(0) / 1000;
 	Vr = adc_read_channel_corrected(6);
@@ -567,19 +448,21 @@ int jigVoltageRegulatorLoad(JTAG_Access_t *target, int timeout, char **log)
 	uW = v50 * mA;
 	uWdiff = uW - uWStart;
 	eff = Pr / (uWdiff / 100);
-	printf("%d mW (+%d mW), Ir = %d mA thru 6.8 Ohm = %d mW. Eff = %d\%\n", uW / 1000, uWdiff / 1000, Ir, Pr / 1000, eff);
+	printf("%d mW (+%d mW), Vr = %d mV, Ir = %d mA thru 6.8 Ohm = %d mW. Eff = %d\%\n", uW / 1000, uWdiff / 1000, Vr, Ir, Pr / 1000, eff);
 	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 14)); // load 1.8V (measured: 1.708)
 
 	if (Vr < 1650) {
 		errors |= 4;
 	}
+/*
 	if (eff < 82) {
 		errors |= 8;
 	}
+*/
 
 	// 3.3V
 	IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, (1 << 15)); // load 3.3V
-	vTaskDelay(50);
+	vTaskDelay(80);
 	v50 = adc_read_channel_corrected(2);
 	mA = adc_read_channel_corrected(0) / 1000;
 	Vr = adc_read_channel_corrected(4);
@@ -588,15 +471,17 @@ int jigVoltageRegulatorLoad(JTAG_Access_t *target, int timeout, char **log)
 	uW = v50 * mA;
 	uWdiff = uW - uWStart;
 	eff = Pr / (uWdiff / 100);
-	printf("%d mW (+%d mW), Ir = %d mA thru 15 Ohm = %d mW. Eff = %d\%\n", uW / 1000, uWdiff / 1000, Ir, Pr / 1000, eff);
+	printf("%d mW (+%d mW), Vr = %d mV, Ir = %d mA thru 15 Ohm = %d mW. Eff = %d\%\n", uW / 1000, uWdiff / 1000, Vr, Ir, Pr / 1000, eff);
 	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 15)); // load 3.3V (measured: 3.24)
 
-	if (Vr < 1650) {
+	if (Vr < 3100) {
 		errors |= 16;
 	}
+/*
 	if (eff < 82) {
 		errors |= 32;
 	}
+*/
 	return errors;
 }
 
@@ -745,7 +630,7 @@ int dutPowerOn(JTAG_Access_t *target, int timeout, char **log)
 		printf("Current low. No device detected in slot.\n");
 		return -1;
 	}
-	if (uA > 100000) {
+	if (uA > 200000) {
 		printf("Current high! There might be a problem with the device in the slot.\n");
 		return -2;
 	}
@@ -877,6 +762,11 @@ int checkNetworkRx(JTAG_Access_t *target, int timeout, char **log)
 
 int checkUsbHub(JTAG_Access_t *target, int timeout, char **log)
 {
+	uint32_t powerBits = (IORD_ALTERA_AVALON_PIO_DATA(PIO_1_BASE) & 0x700) >> 8;
+	printf("Before turning on USB power: Power bits: %2x\n", powerBits);
+	if (powerBits != 0x04) {
+		printf("-> Check U5: There seems to be power on the USB sticks, while they have not yet been turned on.\n");
+	}
 	// Now, let's start the USB stack on the DUT
 	int usb = executeDutCommand(target, 11, timeout, log);
 	if (usb) {
@@ -908,10 +798,16 @@ int checkUsbSticks(JTAG_Access_t *target, int timeout, char **log)
 		usb = executeDutCommand(target, 9, timeout, log);
 		retries--;
 	}
+	uint32_t powerBits = (IORD_ALTERA_AVALON_PIO_DATA(PIO_1_BASE) & 0x700) >> 8;
+	printf("After USB test: Power bits: %2x\n", powerBits);
+	if (powerBits != 0x07) {
+		printf("-> Check U5: There seems to be no power on the USB sticks.\n");
+	}
 
 	if (usb) {
 		printf("*** USB check for 3 devices failed.\n");
 	}
+	executeDutCommand(target, 17, timeout, log);
 	return usb;
 }
 
@@ -980,6 +876,51 @@ int copyRtc(JTAG_Access_t *target, int timeout, char **log)
 	return retval;
 }
 
+int readReports(JTAG_Access_t *target, int timeout, char **log)
+{
+	static uint32_t buffer[2048];
+
+	uint32_t dut_addr = 0xC00000; // 12 MB from start - arbitrary! Should use malloc
+	uint32_t destination = jigReport.flashAddress;
+	uint32_t length = 8192;
+	int words = (length + 3) >> 2;
+	vji_write_memory(target, PROGRAM_ADDR, 1, &destination);
+	vji_write_memory(target, PROGRAM_DATALEN, 1, &length);
+	vji_write_memory(target, PROGRAM_DATALOC, 1, &dut_addr);
+	int retval = executeDutCommand(target, 18, timeout, log);
+	if (!retval) {
+		vji_read_memory(target, dut_addr, words, buffer);
+		uint8_t *c = (uint8_t *)buffer;
+		for(int i=0;i<8192;i++) {
+			if (c[i] == 0xFF) {
+				c[i] = 0;
+				break;
+			}
+		}
+		printf("\e[33m%s\n\e[0m", buffer);
+	}
+	if(retval) {
+		return retval;
+	}
+	destination = slotReport.flashAddress;
+	vji_write_memory(target, PROGRAM_ADDR, 1, &destination);
+	vji_write_memory(target, PROGRAM_DATALEN, 1, &length);
+	vji_write_memory(target, PROGRAM_DATALOC, 1, &dut_addr);
+	retval = executeDutCommand(target, 18, timeout, log);
+	if (!retval) {
+		vji_read_memory(target, dut_addr, words, buffer);
+		uint8_t *c = (uint8_t *)buffer;
+		for(int i=0;i<8192;i++) {
+			if (c[i] == 0xFF) {
+				c[i] = 0;
+				break;
+			}
+		}
+		printf("\e[34m%s\n\e[0m", buffer);
+	}
+	return retval;
+}
+
 TestDefinition_t jig_tests[] = {
 		{ "Power SwitchOver Test",  jigPowerSwitchOverTest,  1, false, false, false },
 		{ "Voltage Regulator Test", jigVoltageRegulatorTest, 1,  true, false, false },
@@ -987,11 +928,11 @@ TestDefinition_t jig_tests[] = {
 		{ "Check FPGA ID Code",     bringupIdCode,           1,  true, false, false },
 		{ "Configure the FPGA",     bringupConfigure,        1,  true, false, false },
 		{ "Verify reference clock", checkReferenceClock,     1,  true, false, false },
+		{ "Verify USB Phy clock",   checkUsbClock,           1, false, false,  true },
 		{ "Verify LED presence",    checkLEDs,               2, false, false, false },
 		{ "Verify DUT appl running",checkApplicationRun,   150,  true, false, false },
 		{ "Check Flash Types",      checkFlashSwitch,      150,  true, false,  true },
 		{ "Audio amplifier test",   checkSpeaker,          150, false, false,  true },
-		{ "Verify USB Phy clock",   checkUsbClock,           1, false, false,  true },
 		{ "Verify USB Phy type",    checkUsbPhy,           150, false, false,  true },
 		{ "RTC access test",        checkRtcAccess,        150, false, false,  true },
 		{ "", NULL, 0, false, false, false }
@@ -1015,6 +956,26 @@ TestDefinition_t slot_tests[] = {
 		{ "Check USB Hub type",     checkUsbHub,           600, false, false,  true },
 		{ "Check USB Ports (3x)",   checkUsbSticks,        600, false, false,  true },
 		{ "Program Flashes",        flashRoms,             200, false,  true,  true },
+		{ "", NULL, 0, false, false, false }
+};
+
+TestDefinition_t checks[] = {
+		{ "Voltage Regulator Test", jigVoltageRegulatorTest, 1,  true, false, false },
+		{ "Check FPGA ID Code",     bringupIdCode,           1,  true, false, false },
+		{ "Configure the FPGA",     bringupConfigure,        1,  true, false, false },
+		{ "Verify reference clock", checkReferenceClock,     1,  true, false, false },
+		{ "Verify DUT appl running",checkApplicationRun,   150,  true, false, false },
+		{ "Read reports", 			readReports,		   100,  true, false, false },
+		{ "", NULL, 0, false, false, false }
+};
+
+TestDefinition_t usb_only[] = {
+		{ "Power up DUT in slot",   dutPowerOn,              1,  true, false, false },
+		{ "Check FPGA ID Code",     bringupIdCode,           1,  true, false,  true },
+		{ "Configure the FPGA",     bringupConfigure,        1,  true, false,  true },
+		{ "Verify DUT appl running",checkApplicationRun,   150,  true, false,  true },
+		{ "Check USB Hub type",     checkUsbHub,           600, false, false,  true },
+		{ "Check USB Ports (3x)",   checkUsbSticks,        600, false, false,  true },
 		{ "", NULL, 0, false, false, false }
 };
 /*
@@ -1255,6 +1216,8 @@ extern "C" {
 
 		TestSuite jigSuite("JIG Test Suite", jig_tests);
 		TestSuite slotSuite("Slot Test Suite", slot_tests);
+		TestSuite checkSuite("Check Suite", checks);
+		TestSuite usbSuite("USB Suite", usb_only);
 
 		int nothing_pressed = 0;
 		while(1) {
@@ -1263,7 +1226,7 @@ extern "C" {
 			uint8_t buttons = getButtons();
 			if ((!buttons) && (ub < 0)) {
 				if (nothing_pressed <= 0) {
-					printf("Press 'j' or left button on Tester to run test on JIG. Press 's' or right button to run test in Slot.\n");
+					printf("V1.4 - Press 'j' or left button on Tester to run test on JIG. Press 's' or right button to run test in Slot.\n");
 					nothing_pressed = 2000;
 				}
 				nothing_pressed --;
@@ -1271,12 +1234,27 @@ extern "C" {
 			}
 			nothing_pressed = 2000;
 			IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0x03); // red+green
+			if ((buttons == 0x00) && (ub == (int)'P')) {
+				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0xF0); // turn on DUT
+				vTaskDelay(200);
+				jigSuite.Reset((volatile uint32_t *)JTAG_0_BASE);
+				bringupConfigure(jigSuite.getTarget(), 100, NULL);
+				printf("JIG & SLOT are now powered... Press any key to turn off.\n");
+				do {
+					vTaskDelay(1);
+					ub = uart_get_byte(0);
+				} while(ub < 0);
+				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF0); // turn off DUT
+				printf("Turning off power.\n");
+				continue;
+			}
+
 			if ((buttons == 0x01) || (ub == (int)'j')) {
-				jigSuite.Reset();
+				jigSuite.Reset((volatile uint32_t *)JTAG_0_BASE);
 				logger.Reset();
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, (1 << 16)); // setting JTAG to output (port 0)
 				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04); // yellow one
-				jigSuite.Run((volatile uint32_t *)JTAG_0_BASE);
+				jigSuite.Run();
 				jigSuite.Report();
 				logger.Stop();
 				jigReport.buffer = (uint32_t *)logger.getText();
@@ -1302,10 +1280,10 @@ extern "C" {
 			}
 */
 			if ((buttons == 0x04) || (ub == (int)'s')) {
-				slotSuite.Reset();
+				slotSuite.Reset((volatile uint32_t *)JTAG_1_BASE);
 				logger.Reset();
 				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04);
-				slotSuite.Run((volatile uint32_t *)JTAG_1_BASE);
+				slotSuite.Run();
 				slotSuite.Report();
 				logger.Stop();
 				slotReport.buffer = (uint32_t *)logger.getText();
@@ -1324,6 +1302,37 @@ extern "C" {
 				printf("Writing report into USB.\n");
 				writeLog(&logger, "/Usb?/logs/slot_", slotSuite.getDateTime());
 			}
+
+			if ((buttons == 0x00) && (ub == (int)'c')) {
+				checkSuite.Reset((volatile uint32_t *)JTAG_0_BASE);
+				logger.Reset();
+				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04);
+				checkSuite.Run();
+				checkSuite.Report();
+				logger.Stop();
+				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
+				if (!checkSuite.Passed()) {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
+				} else {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one
+				}
+			}
+
+			if ((buttons == 0x00) && (ub == (int)'u')) {
+				usbSuite.Reset((volatile uint32_t *)JTAG_1_BASE);
+				logger.Reset();
+				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04);
+				usbSuite.Run();
+				usbSuite.Report();
+				logger.Stop();
+				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
+				if (!usbSuite.Passed()) {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
+				} else {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one
+				}
+			}
+
 			if ((buttons == 0x00) && (ub == (int)'D')) {
 				setDate();
 			} else if ((buttons == 0x00) && (ub == (int)'T')) {

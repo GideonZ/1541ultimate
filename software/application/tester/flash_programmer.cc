@@ -106,6 +106,25 @@ int doFlashProgram(uint32_t address, void *buffer, int length)
     return retval;
 }
 
+int doReadFlash(uint32_t address, void *buffer, int length)
+{
+	static int last_sector = -1;
+
+	if (address & 0x80000000) {
+		REMOTE_FLASHSEL_1;
+	} else {
+		REMOTE_FLASHSEL_0;
+	}
+	REMOTE_FLASHSELCK_0;
+	REMOTE_FLASHSELCK_1;
+
+	address &= 0x7FFFFFFF;
+
+	Flash *flash = get_flash();
+	flash->read_linear_addr(address, length, buffer);
+	return 0;
+}
+
 int protectFlashes(void)
 {
 	REMOTE_FLASHSEL_0;

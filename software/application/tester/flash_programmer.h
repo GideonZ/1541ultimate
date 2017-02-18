@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 
+int doReadFlash(uint32_t address, void *buffer, int length);
 int doFlashProgram(uint32_t address, void *buffer, int length);
 int protectFlashes(void);
 

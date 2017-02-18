@@ -125,7 +125,7 @@ int validate_analog(int mode)
 		errors ++;
 	}
 	// V33
-	if ((adc_values[4] > 3400) || (adc_values[3] < 3200)) {
+	if ((adc_values[4] > 3450) || (adc_values[3] < 3200)) {
 		printf("Expected voltage on 3.3V node is out of range.\n");
 		errors ++;
 	}

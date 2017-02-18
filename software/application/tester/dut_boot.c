@@ -131,6 +131,10 @@ int main()
     		final_pos = best_pos;
     	}
     }
+    // for test only
+    best_mode = 1;
+    final_pos = 0x36;
+
     //printf("Chosen: Mode = %d, Pos = %d. Window = %d ps\n\r", best_mode, final_pos, 100 * best_overall);
     DDR2_READMODE = best_mode;
 	for (phase = 0; phase < final_pos; phase ++) {
