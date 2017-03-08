@@ -884,7 +884,20 @@ int BinImage :: format(const char *name)
 	uint8_t *track_18 = &bin_data[17*21*256];
 	uint8_t *bam_name = track_18 + 144;
 
-	memset(bin_data, 0, C1541_MAX_D64_LEN);
+	uint8_t sector[256];
+	for (int i=0; i<256; i++) {
+		sector[i] = ~((uint8_t)i);
+	}
+	sector[0] = 0;
+	sector[1] = 0;
+
+//	memset(bin_data, 0, C1541_MAX_D64_LEN);
+	uint8_t *dest = bin_data;
+	int num_sectors = C1541_MAX_D64_LEN >> 8;
+	for (int i=0; i < num_sectors; i++, dest += 256) {
+		memcpy(dest, sector, 256);
+	}
+
 	memcpy(track_18, bam_header, 144);
 
     // part that comes after bam header

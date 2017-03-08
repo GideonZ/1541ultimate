@@ -13,6 +13,7 @@
 #include "editor.h"
 #include "userinterface.h"
 #include "browsable_root.h"
+#include "keyboard_usb.h"
 
 static const char *helptext=
 		"CRSR UP/DN: Selection up/down\n"
@@ -189,12 +190,10 @@ int TreeBrowser :: poll(int sub_returned)
         printf("Keyboard returned -2\n");
         return -2;
     }
-    if(c < 0)
-    	return 0;
-
-    ret = handle_key(c);
-
-    return ret;
+    if(c >= 0) {
+    	ret = handle_key(c);
+    }
+	return ret;
 }
 
 void TreeBrowser :: checkFileManagerEvent(void)

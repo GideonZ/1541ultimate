@@ -6,6 +6,9 @@
 
 class UsbHubDriver : public UsbDriver
 {
+    int  port_in_reset;
+    bool irq_stopped;
+    static bool reset_busy;
     int  num_ports;
     int  power_on_time;
     int  hub_current;
@@ -14,7 +17,6 @@ class UsbHubDriver : public UsbDriver
     bool compound;
 
     int  irq_transaction;
-    int  port_in_reset;
     int  reset_timeout;
     uint8_t buf[64];
     uint8_t dummy[16];
@@ -24,6 +26,7 @@ class UsbHubDriver : public UsbDriver
     UsbDevice *device;
     UsbDevice *children[7];
 
+    void handle_irqdata(void);
 public:
 	static UsbDriver *test_driver(UsbInterface *intf);
 

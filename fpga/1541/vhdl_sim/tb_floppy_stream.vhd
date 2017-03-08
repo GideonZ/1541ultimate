@@ -13,78 +13,55 @@
  
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_arith.all;
-use ieee.std_logic_unsigned.all;
-
-library work;
-use work.floppy_emu_pkg.all;
+use ieee.numeric_std.all;
+use work.tl_flat_memory_model_pkg.all;
 
 entity tb_floppy_stream is
+
 end tb_floppy_stream;
 
 architecture tb of tb_floppy_stream is
     signal clock           : std_logic := '0';
-    signal clock_en        : std_logic;  -- combi clk/cke that yields 4 MHz; eg. 16/4
     signal reset           : std_logic;
 
-    signal drv_rdata       : std_logic_vector(7 downto 0) := X"01";
+    signal mem_rdata       : std_logic_vector(7 downto 0) := X"01";
 
     signal motor_on        : std_logic;
     signal mode            : std_logic;
     signal write_prot_n    : std_logic;
-    signal step            : std_logic_vector(1 downto 0) := "00";
+    signal step            : unsigned(1 downto 0) := "00";
     signal soe             : std_logic;
-    signal rate_ctrl       : std_logic_vector(1 downto 0);
-
+    signal bit_time        : unsigned(8 downto 0) := to_unsigned(335, 9);
     signal track           : std_logic_vector(6 downto 0);
     
     signal byte_ready      : std_logic;
     signal sync            : std_logic;
     signal read_data       : std_logic_vector(7 downto 0);
     signal write_data      : std_logic_vector(7 downto 0) := X"55";
+    signal read_latched    : std_logic_vector(7 downto 0) := (others => '-');
     
-    signal fifo_put        : std_logic;
-    signal fifo_command    : std_logic_vector(2 downto 0);
-    signal fifo_parameter  : std_logic_vector(10 downto 0);
-
+    signal do_read          : std_logic;
+    signal do_write         : std_logic;
+    signal do_advance       : std_logic;
+    
     type t_buffer_array is array (natural range <>) of std_logic_vector(7 downto 0);
     shared variable my_buffer : t_buffer_array(0 to 15) := (others => X"FF");
     
-    type t_integer_array is array (natural range <>) of integer;
-    constant rate_table : t_integer_array(0 to 63) := (
-        3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-        2, 2, 2, 2, 2, 2, 2,
-        1, 1, 1, 1, 1, 1,
-        0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 );
 begin
-    clock <= not clock after 31.25 ns;
+    clock <= not clock after 10 ns;
     reset <= '1', '0' after 400 ns;
-
-    process
-    begin
-        wait until clock='1';
-        clock_en <= '0';
-        wait until clock='1';
-        wait until clock='1';
-        wait until clock='1';
-        clock_en <= '1';
-    end process;
             
     mut: entity work.floppy_stream
     port map (
         clock           => clock,
-        clock_en        => clock_en,  -- combi clk/cke that yields 4 MHz; eg. 16/4
         reset           => reset,
         
-        drv_rdata       => drv_rdata,
+        mem_rdata       => mem_rdata,
         floppy_inserted => '1',
-    	write_data		=> write_data,
         
-        fifo_put        => fifo_put,
-        fifo_command    => fifo_command,
-        fifo_parameter  => fifo_parameter,
+        do_read         => do_read,
+        do_write        => do_write,
+        do_advance      => do_advance,
 
         track           => track,
         
@@ -92,11 +69,11 @@ begin
         sync            => sync,
         mode            => mode,
         write_prot_n    => write_prot_n,
-        step            => step,
+        step            => std_logic_vector(step),
         byte_ready      => byte_ready,
         soe             => soe,
-        rate_ctrl       => rate_ctrl,
-        
+        bit_time        => bit_time,
+                
         read_data       => read_data );
 
     test: process
@@ -105,18 +82,48 @@ begin
         mode         <= '1';
         write_prot_n <= '1';
         soe          <= '1';
-        wait for 700 us;
-        mode <= '0'; -- switch to write
+        --wait for 700 us;
+        --mode <= '0'; -- switch to write
         
         wait;
     end process;
     
-    fill: process
+    process(byte_ready)
     begin
-        wait until fifo_put='1';
-        wait for 10 ns;
-        if fifo_command = c_cmd_next then
-            drv_rdata <= drv_rdata + 1;
+        if falling_edge(byte_ready) then
+            read_latched <= read_data;
+        end if;
+    end process;
+
+    memory: process(clock)
+        variable h : h_mem_object;
+        variable h_initialized : boolean := false;
+        variable address : unsigned(31 downto 0) := X"000002AE";
+    begin
+        if rising_edge(clock) then
+            if not h_initialized then
+                register_mem_model("my_memory", "my memory", h);
+                load_memory("../../../g64/720_s0.g64", 1, X"00000000");
+                h_initialized := true; 
+                write_memory_32(h, X"00000400", X"00000000");
+                write_memory_32(h, X"00000404", X"00000000");
+                write_memory_32(h, X"00000408", X"00000000");
+                write_memory_32(h, X"0000040C", X"00000000");
+                write_memory_32(h, X"00000410", X"00000000");
+                write_memory_32(h, X"00000414", X"00000000");
+                write_memory_32(h, X"00000418", X"00000000");
+                write_memory_32(h, X"0000041C", X"00000000");
+                write_memory_32(h, X"00000420", X"00000000");
+            end if;
+            if do_write = '1' then
+                write_memory_8(h, std_logic_vector(address), write_data);
+                address := address + 1;
+            elsif do_read = '1' then
+                mem_rdata <= read_memory_8(h, std_logic_vector(address));
+                address := address + 1;
+            elsif do_advance = '1' then
+                address := address + 1;
+            end if;
         end if;
     end process;
     
@@ -134,5 +141,4 @@ begin
         end loop;
     end process;
     
-    rate_ctrl <= conv_std_logic_vector(rate_table(conv_integer(track(6 downto 1))), 2);    
 end tb;

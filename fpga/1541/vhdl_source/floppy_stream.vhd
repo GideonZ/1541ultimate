@@ -23,11 +23,10 @@ use ieee.numeric_std.all;
 entity floppy_stream is
 port (
     clock           : in  std_logic;
-    clock_en        : in  std_logic;  -- combi clk/cke that yields 4 MHz; eg. 16/4
     reset           : in  std_logic;
     
     -- data from memory
-    drv_rdata       : in  std_logic_vector(7 downto 0);
+    mem_rdata       : in  std_logic_vector(7 downto 0);
     do_read         : out std_logic;
     do_write        : out std_logic;
     do_advance      : out std_logic;
@@ -48,7 +47,7 @@ port (
     step            : in  std_logic_vector(1 downto 0);
     byte_ready      : out std_logic;
     soe             : in  std_logic;
-    rate_ctrl       : in  std_logic_vector(1 downto 0); -- dont have any effect anymore
+    rate_ctrl       : in  std_logic_vector(1 downto 0);
     bit_time        : in  unsigned(8 downto 0); -- in steps of 10 ns
         
     -- data to drive CPU
@@ -69,15 +68,17 @@ architecture gideon of floppy_stream is
     signal sync_i      : std_logic;
     signal byte_rdy_i  : std_logic;
     alias  mem_rd_bit  : std_logic is mem_shift(7);
-
     --signal track_c     : unsigned(6 downto 2);
     signal track_i     : unsigned(6 downto 0);
-    signal up, down    : std_logic;
-    signal step_d      : std_logic_vector(1 downto 0);
-    signal step_dd0    : std_logic;
     signal mode_d      : std_logic;
     signal write_delay : integer range 0 to 3;
+
+    -- weak bit implementation
     signal random_data : std_logic_vector(15 downto 0);
+    signal bit_slip    : std_logic;
+    signal bit_flip    : std_logic;
+    signal weak_count  : integer range 0 to 63 := 0;
+    signal enable_slip : std_logic;
 begin
     p_clock_div: process(clock)
     begin
@@ -103,38 +104,50 @@ begin
                 bit_timer <= to_unsigned(10, bit_timer'length);
                 bit_carry <= '0';
             end if;
---            if clock_en='1' then
---                if bit_div="1111" then
---                    bit_div  <= "00" & unsigned(rate_ctrl);
---                    bit_tick <= motor_on;
---                else
---                    bit_div <= bit_div + 1;
---                end if;
---            end if;
---            if reset='1' then
---                bit_div <= "0000";
---            end if;
         end if;            
     end process;
     
+    i_noise: entity work.noise_generator
+    generic map (
+        g_type          => "Galois",
+        g_polynom       => X"1020",
+        g_seed          => X"569A"
+    )
+    port map (
+        clock           => clock,
+        enable          => bit_tick,
+        reset           => reset,
+        q               => random_data  );
+    
     -- stream from memory
     p_stream: process(clock)
-        variable new_bit : std_logic;
+        variable history : std_logic_vector(4 downto 0) := "11111";
     begin
         if rising_edge(clock) then
             do_read <= '0';
             if bit_tick='1' then
-                new_bit := random_data(15) xor random_data(13) xor random_data(12) xor random_data(10);
+                history  := history(3 downto 0) & mem_rd_bit;
+                bit_slip <= '0';
+                bit_flip <= '0';
+                if history = "00000" then -- something weird can happen now:
+                -- nothing
+                -- bit flip
+                -- bit slip (generates less bits)
+                    bit_slip <= random_data(2) and random_data(7) and random_data(11) and enable_slip; -- 12.5%
+                    bit_flip <= random_data(6) and random_data(14); -- 25%                    
+                    if weak_count = 63 then
+                        enable_slip <= '1';
+                    else
+                        weak_count <= weak_count + 1;
+                    end if;
+                else
+                    weak_count <= 0;
+                    enable_slip <= '0';
+                end if;
 
                 mem_bit_cnt <= mem_bit_cnt + 1;
                 if mem_bit_cnt="000" then
-                    random_data <= random_data(14 downto 0) & new_bit;
-                    if drv_rdata = X"00" then
-                        mem_shift <= random_data(15 downto 8) and random_data(7 downto 0);
-                    else
-                        mem_shift <= drv_rdata;
-                    end if;
-                        -- issue command to fifo
+                    mem_shift <= mem_rdata;
                     do_read <= mode; --'1'; does not pulse when in write mode
                 else
                     mem_shift <= mem_shift(6 downto 0) & '1';
@@ -143,7 +156,9 @@ begin
             if reset='1' then
                 mem_shift    <= (others => '1');
                 mem_bit_cnt  <= "000";
-                random_data  <= X"ABCD";
+                bit_flip     <= '0';
+                bit_slip     <= '0';
+                enable_slip  <= '0';
             end if;
         end if;
     end process;
@@ -178,15 +193,15 @@ begin
                 end if;
             end if;
             
-            if bit_tick='1' then
-                rd_shift   <= rd_shift(8 downto 0) & mem_rd_bit;
+            if bit_tick='1' and bit_slip = '0' then
+                rd_shift   <= rd_shift(8 downto 0) & (mem_rd_bit or bit_flip);
                 rd_bit_cnt <= rd_bit_cnt + 1;
             end if;
             if s = '0' then
                 rd_bit_cnt <= "000";
             end if;
 
-            if (rd_bit_cnt="111") and (soe = '1') and (bit_square='1') then
+            if (rd_bit_cnt="111") and (soe = '1') and (bit_square='1') and (bit_slip = '0') then
                 byte_rdy_i <= '0';
             else
                 byte_rdy_i <= '1';
@@ -204,8 +219,6 @@ begin
 
             if motor_on='1' then
                 st := std_logic_vector(track_i(1 downto 0)) & step;
-                down      <= '0';
-                up        <= '0';
     
                 case st is
                 when "0001" | "0110" | "1011" | "1100" => -- up

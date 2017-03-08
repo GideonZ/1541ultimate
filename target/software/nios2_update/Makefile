@@ -44,6 +44,7 @@ SRCS_CC	 =  memory.cc \
 			screen.cc \
 			screen_vt100.cc \
 			keyboard_c64.cc \
+			keyboard_usb.cc \
 			keyboard_vt100.cc \
 			mystring.cc \
 			size_str.cc \

@@ -45,7 +45,7 @@ StreamMenu *root_menu;
 Overlay *overlay;
 C64 *c64;
 C64_Subsys *c64_subsys;
-
+UserInterface *primaryUserInterface = 0;
 StreamTextLog textLog(65536);
 
 extern "C" void (*custom_outbyte)(int c);
@@ -71,8 +71,6 @@ extern "C" void ultimate_main(void *a)
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
 	usb2.initHardware();
-
-	UserInterface *ui = 0;
     
     c64 = new C64;
     c64_subsys = new C64_Subsys(c64);
@@ -85,22 +83,22 @@ extern "C" void ultimate_main(void *a)
     }
 
     if(c64 && c64->exists()) {
-        ui = new UserInterface(title);
-        ui->init(c64);
+        primaryUserInterface = new UserInterface(title);
+        primaryUserInterface->init(c64);
 
     	// Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
-    	root_tree_browser = new TreeBrowser(ui, root);
-        ui->activate_uiobject(root_tree_browser); // root of all evil!
+    	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
+        primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
 
     } else if(capabilities & CAPAB_OVERLAY) {
         printf("Using Overlay module as user interface...\n");
         overlay = new Overlay(false);
-        ui = new UserInterface(title);
-        ui->init(overlay);
+        primaryUserInterface = new UserInterface(title);
+        primaryUserInterface->init(overlay);
         Browsable *root = new BrowsableRoot();
-    	root_tree_browser = new TreeBrowser(ui, root);
-        ui->activate_uiobject(root_tree_browser); // root of all evil!
+    	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
+        primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
     } else {
     	// from now on, log to memory, freeing the uart
 /*
@@ -141,9 +139,11 @@ extern "C" void ultimate_main(void *a)
     vTaskList(buffer);
     puts(buffer);
 
-    if(ui) {
-    	ui->run();
-    } else {
+    if(primaryUserInterface) {
+    	primaryUserInterface->run();
+    }
+/*
+    else {
     	vTaskDelay(2000);
     	printf("Attempting to write a test file to /Usb0.\n");
     	FileManager *fm = FileManager :: getFileManager();
@@ -158,6 +158,7 @@ extern "C" void ultimate_main(void *a)
     	}
     	vTaskSuspend(NULL); // Stop main task and wait forever
     }
+*/
 
     custom_outbyte = 0; // stop logging
     printf("GUI running on C64 host has terminated? This should not happen.\n");
@@ -173,8 +174,8 @@ extern "C" void ultimate_main(void *a)
         delete overlay;
     if(root_tree_browser)
         delete root_tree_browser;
-    if(ui)
-        delete ui;
+    if(primaryUserInterface)
+        delete primaryUserInterface;
     if(c64_subsys)
     	delete c64_subsys;
     if(c64)

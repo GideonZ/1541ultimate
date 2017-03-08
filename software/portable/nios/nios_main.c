@@ -24,22 +24,19 @@ uint8_t command_interface_irq(void) __attribute__ ((weak));
 uint8_t tape_recorder_irq(void) __attribute__ ((weak));
 uint8_t usb_irq(void) __attribute__ ((weak));
 
-uint8_t command_interface_irq(void)
-{
+uint8_t command_interface_irq(void) {
 
 }
 
-void RmiiRxInterruptHandler()
-{
+void RmiiRxInterruptHandler() {
 
 }
 
-static void ituIrqHandler(void *context)
-{
-    static uint8_t pending;
+static void ituIrqHandler(void *context) {
+	static uint8_t pending;
 
 	PROFILER_SUB = 1;
-/* Which interrupts are pending? */
+	/* Which interrupts are pending? */
 	pending = ioRead8(ITU_IRQ_ACTIVE);
 	ioWrite8(ITU_IRQ_CLEAR, pending);
 
@@ -58,12 +55,12 @@ static void ituIrqHandler(void *context)
 	if (pending & 0x04) {
 		do_switch |= usb_irq();
 	}
-/*
-	if (pending & 0x02) {
-		do_switch |= uart_irq();
-	}
+	/*
+	 if (pending & 0x02) {
+	 do_switch |= uart_irq();
+	 }
 
-*/
+	 */
 	if (pending & 0x01) {
 		do_switch |= xTaskIncrementTick();
 	}
@@ -71,7 +68,7 @@ static void ituIrqHandler(void *context)
 		vTaskSwitchContext();
 	}
 }
-int alt_irq_register(int, int, void(*)(void*));
+int alt_irq_register(int, int, void (*)(void*));
 void ultimate_main(void *context);
 
 #include "system.h"
@@ -80,40 +77,39 @@ void ultimate_main(void *context);
 
 void codec_init();
 
-static void test_i2c_mdio(void)
-{
+static void test_i2c_mdio(void) {
 	// mdio_reset();
 	mdio_write(0x1B, 0x0500); // enable link up, link down interrupts
 	mdio_write(0x16, 0x0002); // disable factory reset mode
 
 	codec_init();
 
-    NANO_START = 0;
-    U2PIO_ULPI_RESET = 1;
-    uint16_t *dst = (uint16_t *)NANO_BASE;
-    for(int i=0; i<2048; i+=2) {
-    	*(dst++) = 0;
-    }
-    USb2512Init();
-    U2PIO_ULPI_RESET = 0;
+	NANO_START = 0;
+	U2PIO_ULPI_RESET = 1;
+	uint16_t *dst = (uint16_t *) NANO_BASE;
+	for (int i = 0; i < 2048; i += 2) {
+		*(dst++) = 0;
+	}
+	USb2512Init();
+	U2PIO_ULPI_RESET = 0;
 }
 
-int main(int argc, char *argv[])
-{
-    /* When re-starting a debug session (rather than cold booting) we want
-    to ensure the installed interrupt handlers do not execute until after the
-    scheduler has been started. */
-    portDISABLE_INTERRUPTS();
+int main(int argc, char *argv[]) {
+	/* When re-starting a debug session (rather than cold booting) we want
+	 to ensure the installed interrupt handlers do not execute until after the
+	 scheduler has been started. */
+	portDISABLE_INTERRUPTS();
 
-    ioWrite8(UART_DATA, 0x33);
+	ioWrite8(UART_DATA, 0x33);
 
-    xTaskCreate( ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 2, NULL );
+	xTaskCreate(ultimate_main, "U-II Main", configMINIMAL_STACK_SIZE, NULL,
+			tskIDLE_PRIORITY + 2, NULL);
 
-    ioWrite8(UART_DATA, 0x34);
+	ioWrite8(UART_DATA, 0x34);
 
-    test_i2c_mdio();
+	test_i2c_mdio();
 
-    if ( -EINVAL == alt_irq_register( 0, 0x0, ituIrqHandler ) ) {
+	if (-EINVAL == alt_irq_register(0, 0x0, ituIrqHandler)) {
 		puts("Failed to install ITU IRQ handler.");
 	}
 
@@ -124,11 +120,11 @@ int main(int argc, char *argv[])
 	ioWrite8(ITU_IRQ_TIMER_LO, 208); // 0x03D0 => 200 Hz
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
-    ioWrite8(UART_DATA, 0x35);
+	ioWrite8(UART_DATA, 0x35);
 
-    // Finally start the scheduler.
-    vTaskStartScheduler();
+	// Finally start the scheduler.
+	vTaskStartScheduler();
 
-    // Should not get here as the processor is now under control of the
-    // scheduler!
+	// Should not get here as the processor is now under control of the
+	// scheduler!
 }

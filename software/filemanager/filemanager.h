@@ -201,10 +201,10 @@ public:
     	observers.remove(q);
     }
     void sendEventToObservers(eFileManagerEventType e, const char *p, const char *n="") {
-    	// printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
+    	printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
     	for(int i=0;i<observers.get_elements();i++) {
     		FileManagerEvent *ev = new FileManagerEvent(e, p, n);
-    		observers[i]->putEvent(ev);
+    		observers[i]->putEvent(ev, i);
     	}
     }
 };

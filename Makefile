@@ -138,3 +138,10 @@ sw_clean:
 	@rm -f ./revert.u2u
 	@rm -rf `find target/software -name result`
 	@rm -rf `find target/software -name output`
+
+mb_clean:
+	@rm -f ./update.u2u
+	@rm -f ./revert.u2u
+	@rm -rf `find target/software/mb* -name result`
+	@rm -rf `find target/software/mb* -name output`
+	

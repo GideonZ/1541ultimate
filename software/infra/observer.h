@@ -14,21 +14,24 @@
 
 class ObserverQueue {
 	QueueHandle_t queue;
+	int polls;
 public:
 	ObserverQueue() {
 		queue = xQueueCreate(8, sizeof(void *));
+		polls = 0;
 	}
 	virtual ~ObserverQueue() {
 		vQueueDelete(queue);
 	}
-	void putEvent(void *el) {
+	void putEvent(void *el, int q) {
 #ifdef OS
 		if (!xQueueSend(queue, &el, 5)) {
-			puts("Failed to post message.");
+			printf("Failed to post message to queue #%d (polled %d times).\n", q, polls);
 		}
 #endif
 	}
 	void *waitForEvent(uint32_t ticks) {
+		polls++;
 		void *result = 0;
 		xQueueReceive(queue, &result, (TickType_t)ticks);
 		return result;

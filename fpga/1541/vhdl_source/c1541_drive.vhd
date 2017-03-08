@@ -175,7 +175,6 @@ begin
         g_tag          => g_floppy_tag )
     port map (
         sys_clock       => clock,
-        drv_clock_en    => drv_clock_en,  -- resulting in 4 MHz
         drv_reset       => drv_reset,
         
         -- signals from MOS 6522 VIA

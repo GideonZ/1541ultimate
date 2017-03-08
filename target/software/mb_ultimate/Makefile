@@ -98,6 +98,8 @@ SRCS_CC	 =  small_printf.cc \
 			usb_hub.cc \
 			usb_ax88772.cc \
 			usb_em1010.cc \
+			usb_hid.cc \
+			keyboard_usb.cc \
 			network_interface.cc \
 			network_lwip.cc \
 			vfs.cc \
@@ -145,7 +147,7 @@ SRCS_NANO = nano_minimal.nan
 # TOOLCHAIN ?= $(XILINX_EDK)/gnu/microblaze/lin64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -nostartfiles -O2 -DOS -DDEVELOPER
+OPTIONS  = -g -ffunction-sections -nostartfiles -Os -DOS
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds

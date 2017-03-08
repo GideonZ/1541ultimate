@@ -121,8 +121,10 @@ void UsbEm1010Driver :: install(UsbInterface *intf)
 	bulk_out_pipe.MaxTrans = bout->max_packet_size;
 	bulk_out_pipe.SplitCtl = 0;
 	bulk_out_pipe.Command = 0;
+	bulk_out_pipe.needPing = 0;
+	bulk_out_pipe.highSpeed = (device->speed == 2) ? 1 : 0;
 
-    write_register(EMREG_EC1, 0x38); // 100M full duplex, reset MAC
+	write_register(EMREG_EC1, 0x38); // 100M full duplex, reset MAC
     write_register(EMREG_EC2, 0x41); // SET EP3RC bit to clear interrupts on EP3 access
     write_register(EMREG_IPHYC, 0x03); // enable and reset PHY
     write_register(EMREG_IPHYC, 0x02); // enable PHY, clear reset

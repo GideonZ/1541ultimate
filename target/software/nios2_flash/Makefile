@@ -30,6 +30,7 @@ SRCS_CC	 =	memory.cc \
 			screen_vt100.cc \
 			keyboard_c64.cc \
 			keyboard_vt100.cc \
+			keyboard_usb.cc \
 			mystring.cc \
             host_stream.cc \
             bist.cc \

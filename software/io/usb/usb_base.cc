@@ -70,21 +70,27 @@ int UsbBase :: get_device_slot(void)
 // Called only from the Event context
 void UsbBase :: attach_root(void)
 {
+    char buf[16];
     printf("Attach root!!\n");
     rootDevice = NULL;
     remaining_current = 500; //max_current;
     bus_reset();
 
     UsbDevice *dev = new UsbDevice(this, get_bus_speed());
-    if (install_device(dev, true)) {
+    if (init_device(dev)) {
     	rootDevice = dev;
     }
+    if (!rootDevice->init2()) {
+    	printf("Failed to initialize device %s\n", dev->get_pathname(buf, 16));
+    	return;
+    }
+    rootDevice->install(); // should actually call install_device, so that current can be checked.
 }
 
 // Called only from the Event context
-bool UsbBase :: install_device(UsbDevice *dev, bool draws_current)
+bool UsbBase :: init_device(UsbDevice *dev) // This function only gives the device an address on the USB
 {
-    int idx = get_device_slot();
+	int idx = get_device_slot();
     char buf[16];
     dev->get_pathname(buf, 16);
     printf("Installing %s Parent = %p, ParentPort = %d\n", buf, dev->parent, dev->parent_port);
@@ -98,9 +104,11 @@ bool UsbBase :: install_device(UsbDevice *dev, bool draws_current)
         	wait_ms(100*i);
         }
     }
-    if(!ok)
-        return false;
+    return ok;
+}
 
+bool UsbBase :: install_device(UsbDevice *dev, bool draws_current)
+{
     if(!draws_current) {
         dev->install();
         return true; // actually install should be able to return false too
@@ -157,7 +165,8 @@ void UsbBase :: initHardware()
 
     if(getFpgaCapabilities() & CAPAB_USB_HOST2) {
     	mutex = xSemaphoreCreateMutex();
-        queue = xQueueCreate(64, sizeof(struct usb_event));
+    	enumeration_lock = false;
+    	queue = xQueueCreate(64, sizeof(struct usb_event));
         cleanup_queue = xQueueCreate(16, sizeof(UsbDevice *));
 
         NANO_START = 0;
@@ -410,7 +419,7 @@ void UsbBase :: poll()
 
 void UsbBase :: deinit(void)
 {
-	power_off();
+	//power_off();
 
 	NANO_START = 0;
 
@@ -442,8 +451,9 @@ void UsbBase :: init_pipe(int index, struct t_pipe *init)
 	pipe[PIPE_OFFS_MaxTrans] = init->MaxTrans;
 	pipe[PIPE_OFFS_Interval] = init->Interval;
 	pipe[PIPE_OFFS_SplitCtl] = init->SplitCtl;
+
 	if (init->Command) {
-		pipe[PIPE_OFFS_Command]  = init->Command;
+		pipe[PIPE_OFFS_Command] = init->Command;
 		inputPipeCommand[index] = init->Command;
 	} else {
 		uint16_t command = UCMD_MEMWRITE | UCMD_DO_DATA | UCMD_IN;
@@ -517,6 +527,7 @@ uint16_t UsbBase :: getSplitControl(int addr, int port, int speed, int type)
 // Protected by Mutex
 void UsbBase :: power_off()
 {
+/*
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
     	return;
@@ -528,6 +539,27 @@ void UsbBase :: power_off()
     USB2_CMD_Command = 0;
 
     xSemaphoreGive(mutex);
+*/
+}
+
+void UsbBase :: doPing(struct t_pipe *pipe)
+{
+	if (!(pipe->highSpeed)) {
+		pipe->needPing = 0;
+		return;
+	}
+
+	uint16_t result;
+	do {
+		USB2_CMD_DevEP  = pipe->DevEP;
+		USB2_CMD_Length = 0;
+		USB2_CMD_Command = UCMD_PING;
+
+		while(USB2_CMD_Command)
+			;
+		result = USB2_CMD_Result;
+	} while ((result & URES_RESULT_MSK) == URES_NAK);
+	pipe->needPing = 0;
 }
 
 // Protected by Mutex
@@ -538,19 +570,25 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
     	return -9;
     }
 
-	USB2_CMD_DevEP  = pipe->DevEP;
+    USB2_CMD_DevEP  = pipe->DevEP;
 	USB2_CMD_Length = outlen;
 	USB2_CMD_MaxTrans = pipe->MaxTrans;
 	USB2_CMD_MemHi = ((uint32_t)out) >> 16;
 	USB2_CMD_MemLo = ((uint32_t)out) & 0xFFFF;
 	USB2_CMD_SplitCtl = pipe->SplitCtl;
-	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
+
+	uint16_t result;
+	USB2_CMD_Command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_SETUP;
 
 	// wait until it gets zero again
 	while(USB2_CMD_Command)
 		;
-
-	// printf("Setup Result: %04x\n", USB2_CMD_Result);
+	result = USB2_CMD_Result;
+	if ((result & URES_RESULT_MSK) != URES_ACK) {
+		printf("Setup Result: %04x\n", result);
+	    xSemaphoreGive(mutex);
+		return -1;
+	}
 
 	USB2_CMD_Length = inlen;
 	uint16_t command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT;// start with toggle bit 1
@@ -561,23 +599,54 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 		command |= UCMD_MEMWRITE;
 	}
 	USB2_CMD_Command = command;
-
 	// wait until it gets zero again
 	while(USB2_CMD_Command)
 		;
 
+	result = USB2_CMD_Result;
 	uint32_t transferred = inlen - USB2_CMD_Length;
-	// printf("In: %d bytes (Result = %4x)\n", transferred, USB2_CMD_Result);
+	// printf("In: %d bytes (Result = %4x)\n", transferred, result);
 	// dump_hex(read_buf, transferred);
 
-	if (transferred) {
-		USB2_CMD_Length = 0;
-		USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // send zero bytes as out packet
+	if ((result & URES_RESULT_MSK) == URES_STALL) {
+	    xSemaphoreGive(mutex);
+		return -4;
+	}
 
-		// wait until it gets zero again
-		while(USB2_CMD_Command)
-			;
-		// printf("Out Result = %4x\n", USB2_CMD_Result);
+	if (transferred > 0) {
+		if (pipe->needPing) {
+			doPing(pipe);
+		}
+
+		int done = 0;
+		do {
+			USB2_CMD_Length = 0;
+			USB2_CMD_Command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // send zero bytes as out packet
+
+			// wait until it gets zero again
+			while(USB2_CMD_Command)
+				;
+
+			uint16_t result = USB2_CMD_Result;
+			switch (result & URES_RESULT_MSK) {
+			case URES_ACK:
+				// OK
+				done = 1;
+				break;
+			case URES_NYET:
+				// OK, but need ping next time if we are in high speed mode
+				pipe->needPing = 1;
+				done = 1;
+				break;
+			case URES_NAK:
+				doPing(pipe);
+				break;
+			default:
+				printf("Control status phase Out error: $%4x\n", result);
+				done = 1;
+				break;
+			}
+		} while(!done);
 	}
     xSemaphoreGive(mutex);
 	return transferred;
@@ -684,24 +753,59 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 	uint32_t addr = (uint32_t)buf;
 	int total_trans = 0;
 
-	USB2_CMD_DevEP    = pipe->DevEP;
-	USB2_CMD_MaxTrans = pipe->MaxTrans;
-	USB2_CMD_SplitCtl = pipe->SplitCtl;
-	USB2_CMD_MemHi = addr >> 16;
-	USB2_CMD_MemLo = addr & 0xFFFF;
 
 	do {
-		int current_len = (len > 49152) ? 49152 : len;
-		USB2_CMD_Length = current_len;
-		uint16_t cmd = pipe->Command | UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT;
-		//printf("%d: %4x ", len, cmd);
-		USB2_CMD_Command = cmd;
+		uint16_t result;
+		int current_len = 0;
 
-		// wait until it gets zero again
-		while(USB2_CMD_Command)
-			;
+/*
+ 		int done = 0;
+		do {
+			if (pipe->needPing) {
+				doPing(pipe);
+			}
 
-		uint16_t result = USB2_CMD_Result;
+*/
+			current_len = (len > 49152) ? 49152 : len;
+			USB2_CMD_DevEP    = pipe->DevEP;
+			USB2_CMD_MaxTrans = pipe->MaxTrans;
+			USB2_CMD_SplitCtl = pipe->SplitCtl;
+			USB2_CMD_MemHi    = addr >> 16;
+			USB2_CMD_MemLo    = addr & 0xFFFF;
+			USB2_CMD_Length   = current_len;
+
+			uint16_t cmd = pipe->Command | UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_RETRY_ON_NAK;
+			//printf("%d: %4x ", len, cmd);
+
+			USB2_CMD_Command = cmd;
+			// wait until it gets zero again
+			while(USB2_CMD_Command)
+				;
+
+			result = USB2_CMD_Result;
+			pipe->Command = (result & URES_TOGGLE); // that's what we start with next time.
+
+/*
+			switch (result & URES_RESULT_MSK) {
+			case URES_ACK:
+				// OK
+				done = 1;
+				break;
+			case URES_NYET:
+				// OK, but need ping next time if we are in high speed mode
+				done = 1;
+				pipe->needPing = 1;
+				break;
+			case URES_NAK:
+				doPing(pipe);
+				break;
+			default:
+				done = 1;
+				break;
+			}
+		} while(!done);
+*/
+
 		if (((result & URES_RESULT_MSK) != URES_ACK) && ((result & URES_RESULT_MSK) != URES_NYET)) {
 			printf("Bulk Out error: $%4x, Transferred: %d\n", result, total_trans);
 			break;
@@ -712,7 +816,6 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 		total_trans += transferred;
 		addr += transferred;
 		len -= transferred;
-		pipe->Command = (result & URES_TOGGLE); // that's what we start with next time.
 
 	} while (len > 0);
 
@@ -723,7 +826,7 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 	return total_trans;
 }
 
-int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
+int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) // blocking
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
@@ -748,15 +851,19 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len) // blocking
 	do {
 		int current_len = (len > 49152) ? 49152 : len;
 		USB2_CMD_Length = current_len;
-		uint16_t cmd = pipe->Command | UCMD_MEMWRITE | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN;
+		uint16_t cmd = pipe->Command | UCMD_MEMWRITE | UCMD_DO_DATA | UCMD_IN;// | UCMD_RETRY_ON_NAK;
 		//printf("%d: %4x \n", len, cmd);
-		USB2_CMD_Command = cmd;
+		uint16_t result;
 
-		// wait until it gets zero again
-		while(USB2_CMD_Command)
-			;
+		do {
+			USB2_CMD_Command = cmd;
+			// wait until it gets zero again
+			while(USB2_CMD_Command)
+				;
+			result = USB2_CMD_Result;
+			timeout --;
+		} while (((result & URES_RESULT_MSK) == URES_NAK) && (timeout > 0));
 
-		uint16_t result = USB2_CMD_Result;
 		if ((result & URES_RESULT_MSK) != URES_PACKET) {
 			printf("Bulk IN error: $%4x, Transferred: %d\n", result, total_trans);
 			if ((result & URES_RESULT_MSK) == URES_STALL) {

@@ -74,6 +74,8 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_device.cc \
 			usb_scsi.cc \
 			usb_hub.cc \
+			usb_hid.cc \
+			keyboard_usb.cc \
 			network_interface.cc \
 			network_lwip.cc \
 			rmii_interface.cc \

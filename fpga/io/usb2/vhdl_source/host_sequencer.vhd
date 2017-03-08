@@ -299,9 +299,9 @@ begin
                         end if;                        
 
                     when in_request =>
-                        receive_en <= usb_cmd_req.do_data;
                         state <= wait_device_response;
-
+                        receive_en <= usb_cmd_req.do_data;
+                        
                     when others =>
                         state <= wait_device_response;
                     end case;
@@ -313,7 +313,12 @@ begin
 
                 when wait_device_response =>
                     usb_tx_req_i.pid <= c_pid_ack; 
-                    if usb_rx.valid_handsh = '1' then
+                        -- check if we did a start split to an interrupt (or iso) endpoint; in that case, we won't get any reply from the hub.
+                    if usb_cmd_req.split_et(0) = '1' and start_split_active then 
+                        usb_cmd_resp.result <= res_ack; -- we just fake the ack for the layer above that doesn't need to know about this USB quirk
+                        cmd_done <= '1';
+                        state <= idle;
+                    elsif usb_rx.valid_handsh = '1' then
                         usb_cmd_resp.result <= encode_result(usb_rx.pid);
                         cmd_done <= '1';
                         state <= idle;

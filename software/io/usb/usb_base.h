@@ -30,6 +30,8 @@ struct t_pipe {
 	uint16_t MaxTrans;
 	uint16_t Interval;
 	uint16_t SplitCtl;
+	uint16_t needPing;
+	uint16_t highSpeed;
 };
 
 typedef enum {
@@ -49,6 +51,7 @@ class UsbBase
 	QueueHandle_t queue;
 	QueueHandle_t cleanup_queue;
 	SemaphoreHandle_t mutex;
+	volatile bool enumeration_lock;
 
 	struct usb_event event;
 	int state;
@@ -80,6 +83,7 @@ class UsbBase
     void deinitHardware(void);
     int get_device_slot(void);
     void deinstall_device(UsbDevice *dev);
+    void doPing(struct t_pipe *);
 public:
     int max_current;
     int remaining_current;
@@ -96,7 +100,9 @@ public:
 
     void clean_up(void);
     void attach_root(void);
+    bool init_device(UsbDevice *dev);
     bool install_device(UsbDevice *dev, bool draws_current);
+
     void queueDeinstall(UsbDevice *device);
 
     void set_bus_speed(int sp) { bus_speed = sp; }
@@ -116,7 +122,7 @@ public:
     void resume_input_pipe(int index);
 
     int  bulk_out(struct t_pipe *pipe, void *buf, int len);
-    int  bulk_in(struct t_pipe *pipe, void *buf, int len); // blocking
+    int  bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout = 1000000); // blocking
 
     void free_input_buffer(int inpipe, uint8_t *buffer);
 

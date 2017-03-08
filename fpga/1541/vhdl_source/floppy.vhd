@@ -24,8 +24,6 @@ generic (
     g_tag           : std_logic_vector(7 downto 0) := X"01" );
 port (
     sys_clock       : in  std_logic;
-
-    drv_clock_en    : in  std_logic;  -- combi clk/cke that yields 4 MHz; eg. 16/4
     drv_reset       : in  std_logic;
     
     -- signals from MOS 6522 VIA
@@ -65,7 +63,7 @@ port (
 end floppy;
 
 architecture structural of floppy is
-    signal drv_rdata        : std_logic_vector(7 downto 0);
+    signal mem_rdata        : std_logic_vector(7 downto 0);
     signal do_read          : std_logic;
     signal do_write         : std_logic;
     signal do_advance       : std_logic;
@@ -81,10 +79,9 @@ begin
     stream: entity work.floppy_stream
     port map (
         clock           => sys_clock,
-        clock_en        => drv_clock_en,  -- combi clk/cke that yields 4 MHz; eg. 16/4
         reset           => drv_reset,
         
-		drv_rdata		=> drv_rdata, -- from memory
+		mem_rdata		=> mem_rdata,
         do_read         => do_read,
     	do_write	    => do_write,
         do_advance      => do_advance,
@@ -135,7 +132,7 @@ begin
         clock           => sys_clock,
         reset           => drv_reset,
         
-		drv_rdata		=> drv_rdata,
+		drv_rdata		=> mem_rdata,
         drv_wdata       => write_data,
         do_read         => do_read,
         do_write        => do_write,

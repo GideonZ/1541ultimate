@@ -2,6 +2,7 @@
 #include "itu.h"
 #include "keyboard_c64.h"
 #include "c64.h"
+#include "keyboard_usb.h"
 
 #ifndef NO_FILE_ACCESS
 #include "FreeRTOS.h"
@@ -209,7 +210,7 @@ int Keyboard_C64 :: getch(void)
 #endif
 
     if(!key_count) {
-        return -1;
+        return system_usb_keyboard.getch();
     }
     ENTER_SAFE_SECTION
     uint8_t key = key_buffer[0];

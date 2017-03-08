@@ -45,6 +45,7 @@ public:
 
     GenericHost *host;
     Keyboard *keyboard;
+    Keyboard *alt_keyboard;
     Screen *screen;
     int     focus;
 

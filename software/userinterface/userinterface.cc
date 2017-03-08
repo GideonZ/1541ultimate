@@ -40,6 +40,7 @@ UserInterface :: UserInterface(const char *title) : title(title)
     state = ui_idle;
     host = NULL;
     keyboard = NULL;
+    alt_keyboard = NULL;
     screen = NULL;
 
     register_store(0x47454E2E, "User Interface Settings", user_if_config);

@@ -45,6 +45,7 @@ UsbScsiDriver :: UsbScsiDriver(UsbInterface *intf) : UsbDriver(intf)
 	interface = intf;
 	device = intf->getParentDevice();
 	host = device->host;
+	id = 0x0D08F00F;
 }
 
 UsbScsiDriver :: ~UsbScsiDriver()
@@ -103,6 +104,7 @@ void UsbScsiDriver :: install(UsbInterface *intf)
 	printf("Installing '%s %s'\n", dev->manufacturer, dev->product);
 
 	dev->set_configuration(dev->get_device_config()->config_value);
+
 	dev->set_interface(interface->getInterfaceDescriptor()->interface_number,
 			interface->getInterfaceDescriptor()->alternate_setting);
 
@@ -130,8 +132,12 @@ void UsbScsiDriver :: install(UsbInterface *intf)
         bulk_out.MaxTrans = bout->max_packet_size;
         bulk_in.Command = 0; // used to store toggle bit
         bulk_out.Command = 0; // used to store toggle bit
-        bulk_in.SplitCtl = 0;
-        bulk_out.SplitCtl = 0;
+        bulk_in.SplitCtl = host->getSplitControl(dev->parent->current_address, dev->parent_port + 1, dev->speed, 2);
+        bulk_out.SplitCtl = bulk_in.SplitCtl;
+        bulk_in.needPing = 0;
+        bulk_out.needPing = 0;
+        bulk_in.highSpeed = (dev->speed == 2) ? 1 : 0;
+        bulk_out.highSpeed = (dev->speed == 2) ? 1 : 0;
     }
 
 	// create a block device for each LUN
@@ -203,7 +209,7 @@ void UsbScsiDriver :: poll(void)
 		if(new_state == e_device_ready) {
 			if(!media_seen[current_lun]) {
 				if(blk->read_capacity(&capacity, &block_size) == RES_OK) {
-					// printf("Path Dev %p %p. Current lun %d. BS = %d\n", path_dev, path_dev[current_lun], current_lun, block_size);
+					printf("Path Dev %p %p. Current lun %d. BS = %d. CAP = %d\n", path_dev, path_dev[current_lun], current_lun, block_size, capacity);
 					path_dev[current_lun]->attach_disk(int(block_size));
 				} else {
 					blk->set_state(e_device_error);
@@ -434,8 +440,10 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     	return retval;
     }
 
+    int timeout = 1000000;
     if(cmd[0] == 0x12) {
         vTaskDelay(100);
+        timeout = 40;
     }
 
     bool read_status = true;
@@ -447,7 +455,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 				printf("%d data bytes sent.\n", len);
 			}
     	} else { // in
-			len = host->bulk_in(&bulk_in, data, datalen);
+			len = host->bulk_in(&bulk_in, data, datalen, timeout);
 			if(debug) {
 				printf("%d data bytes received:\n", len);
 				dump_hex(data, len);
@@ -456,6 +464,9 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 				printf("In Pipe stalled. Unstalling pipe, and reading status.\n");
 			    device->unstall_pipe((uint8_t)(bulk_in.DevEP & 0xFF));
 			    bulk_in.Command = 0; // reset toggle
+			} else if (len < 0) {
+				xSemaphoreGive(mutex);
+				return -1;
 			} else if(len != datalen) {
 				printf("expected %d bytes, got %d...", datalen, len);
 				if(len == 13) { // could be a status!
@@ -478,7 +489,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 
 	xSemaphoreGive(mutex);
 	if(st == 1) {
-		request_sense(true); // was debug
+		request_sense(lun, debug);
 		scsi_blk_dev[lun]->handle_sense_error(sense_data);
 		retval = -7;
 	}
@@ -504,9 +515,13 @@ void UsbScsi :: inquiry(void)
     uint8_t inquiry_command[6] = { 0x12, 0, 0, 0, 36, 0 };
     //inquiry_command[1] = BYTE(lun << 5);
 
+
     if((len = driver->exec_command(lun, 6, false, inquiry_command, 36, response, false)) < 0) {
     	printf("Inquiry failed. %d\n", len);
-    	initialized = false; // don't try again
+        removable = 1;
+        disp_name[31] = 0;
+        strncpy(disp_name, driver->getDevice()->product, 31);
+    	//initialized = false; // don't try again
     	return;
     }
 
@@ -540,7 +555,7 @@ bool UsbScsi :: test_unit_ready(void)
 
     uint8_t test_ready_command[12] = { 0x00, uint8_t(lun << 5), 0, 0, 0, 0,
                                           0, 0, 0, 0, 0, 0 };
-    int res = driver->exec_command(lun, 6, false, test_ready_command, 0, NULL, false);
+    int res = driver->exec_command(lun, 6, true, test_ready_command, 0, NULL, false);
 	if(res == -7) {
 		return true; // handled by sense
 	}

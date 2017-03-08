@@ -200,6 +200,8 @@ void UsbAx88772Driver :: install(UsbInterface *intf)
 	bulk_out_pipe.MaxTrans = bout->max_packet_size;
 	bulk_out_pipe.SplitCtl = 0;
 	bulk_out_pipe.Command = 0;
+	bulk_out_pipe.needPing = 0;
+	bulk_out_pipe.highSpeed = (device->speed == 2) ? 1 : 0;
 
     uint16_t dummy_read;
 

@@ -30,6 +30,10 @@ public:
 		char ip[16];
 
 		NetworkInterface *ni = NetworkInterface :: getInterface(index);
+		if (!ni) {
+			sprintf(buffer, "Net%d%#s\eJRemoved", index, width-17, "");
+			return;
+		}
 		ni->getMacAddr(mac);
 		if (ni->is_link_up()) {
 			sprintf(buffer, "Net%d    IP: %#s\eELink Up", index, width-21, ni->getIpAddrString(ip, 16));

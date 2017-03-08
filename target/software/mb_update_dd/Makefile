@@ -33,6 +33,7 @@ SRCS_CC	 =  memory.cc \
 			screen_vt100.cc \
 			keyboard_c64.cc \
 			keyboard_vt100.cc \
+			keyboard_usb.cc \
 			mystring.cc \
 			size_str.cc \
 			rtc.cc \
@@ -83,8 +84,8 @@ VPATH   += ../mb_boot2/result
 
 PATH_INC =  $(addprefix -I, $(VPATH) $(OUTPUT))
 APP_OPTS = -D_NO_FILE_ACCESS -DFIRST_WRITABLE_PAGE=0 -DUPDATER -DRECOVERYAPP=1
-COPTIONS = -g -ffunction-sections -O2 -std=c99 $(APP_OPTS)
-CPPOPT   = -g -ffunction-sections -O2 -fno-exceptions -fno-rtti -fno-threadsafe-statics $(APP_OPTS)
+COPTIONS = -g -ffunction-sections -Os -std=c99 $(APP_OPTS)
+CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -fno-threadsafe-statics $(APP_OPTS)
 #OPTIONS  = -nostartfiles
 LINK 	 = ./mb_update.lds
 LFLAGS   = --gc-sections 

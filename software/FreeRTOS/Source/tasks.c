@@ -2893,7 +2893,7 @@ UBaseType_t x;
 	#if ( configUSE_NEWLIB_REENTRANT == 1 )
 	{
 		/* Initialise this task's Newlib reent structure. */
-		_REENT_INIT_PTR( ( &( pxTCB->xNewLib_reent ) ) );
+		// _REENT_INIT_PTR( ( &( pxTCB->xNewLib_reent ) ) );
 	}
 	#endif /* configUSE_NEWLIB_REENTRANT */
 }

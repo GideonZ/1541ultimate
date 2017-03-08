@@ -6,6 +6,7 @@ extern "C" {
 #include "usb_device.h"
 #include <stdlib.h>
 #include <string.h>
+#include "task.h"
 
 // #define printf(...)
 
@@ -48,9 +49,9 @@ char *unicode_to_ascii(uint8_t *in, char *out, int maxlen)
 // =========================================================
 // USB DEVICE
 // =========================================================
-uint8_t c_get_device_descriptor[]     = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00 };
+uint8_t c_get_device_descriptor[]     = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x12, 0x00 };
 uint8_t c_get_device_descr_slow[]     = { 0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x08, 0x00 };
-uint8_t c_get_string_descriptor[]     = { 0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0x40, 0x00 };
+uint8_t c_get_language_descriptor[]   = { 0x80, 0x06, 0x00, 0x03, 0x00, 0x00, 0x04, 0x00 };
 uint8_t c_get_configuration[]         = { 0x80, 0x06, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00 };
 uint8_t c_set_address[]               = { 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t c_set_configuration[]         = { 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -84,6 +85,10 @@ UsbDevice :: UsbDevice(UsbBase *u, int speed)
     	control_pipe.MaxTrans = 64;
     }
 	control_pipe.SplitCtl = 0;
+	control_pipe.highSpeed = (speed == 2) ? 1 : 0;
+	control_pipe.needPing = 0;
+	vendorID = 0;
+	productID = 0;
 }
 
 UsbDevice :: ~UsbDevice()
@@ -111,22 +116,35 @@ void UsbDevice :: disable()
 
 void UsbDevice :: get_string(int index, char *dest, int len)
 {
-    if(!index) {
-        *dest = '\0';
-        return;
-    }
-        
-    uint8_t usb_buffer[64];
+    uint8_t usb_buffer[256];
     
+    uint8_t c_get_string_descriptor[] = { 0x80, 0x06, 0x00, 0x03, 0x09, 0x04, 0xFF, 0x00 };
+
     c_get_string_descriptor[2] = (uint8_t)index;
-    int result = host->control_exchange(&control_pipe, c_get_string_descriptor, 8, usb_buffer, 64);
+    c_get_string_descriptor[4] = language[0];
+    c_get_string_descriptor[5] = language[1];
+
+    int result = host->control_exchange(&control_pipe, c_get_string_descriptor, 8, usb_buffer, 256);
     if(result > 0) {
-        unicode_to_ascii(usb_buffer, dest, len);
+    	unicode_to_ascii(usb_buffer, dest, len);
         //printf("USB Get String returned:\n");
         //dump_hex_relative(usb_buffer, result);
     } else {
         //printf("USB Get String returned nothing.");
         *dest = '\0';
+    }
+}
+
+void UsbDevice :: get_language(void)
+{
+    uint8_t usb_buffer[4];
+
+	language[0] = 0;
+	language[1] = 0;
+    int result = host->control_exchange(&control_pipe, c_get_language_descriptor, 8, usb_buffer, 4);
+    if(result > 0) {
+    	language[0] = usb_buffer[2];
+    	language[1] = usb_buffer[3];
     }
 }
 
@@ -148,19 +166,11 @@ bool UsbDevice :: get_device_descriptor()
 	vendorID = le16_to_cpu(device_descr.vendor);
 	productID = le16_to_cpu(device_descr.product);
 	printf("Vendor/Product: %4x %4x\n", vendorID, productID);
+/*
     printf("Class / SubClass / Protocol: %d %d %d\n", device_descr.device_class, device_descr.sub_class, device_descr.protocol);
     printf("MaxPacket: %d\n", device_descr.max_packet_size);
-
-	get_string(device_descr.manuf_string, manufacturer, 32);
-	get_string(device_descr.product_string, product, 32);
-	get_string(device_descr.serial_string, serial, 32);
-	if (*manufacturer)
-		printf("Manufacturer: %s\n", manufacturer);
-	if (*product)
-		printf("Product: %s\n", product);
-	if (*serial)
-		printf("Serial #: %s\n", serial);
 	printf("Configurations: %d\n", device_descr.num_configurations);
+*/
     return true;
 }
 
@@ -168,7 +178,7 @@ void UsbDevice :: set_address(int address)
 {
     printf ("Setting address to %d: \n", address);
 
-    uint8_t dummy_buffer[8];
+    uint8_t dummy_buffer[20];
 
     c_set_address[2] = (uint8_t)address;
     int i = host->control_exchange(&control_pipe, c_set_address, 8, dummy_buffer, 0);
@@ -244,7 +254,7 @@ bool UsbDevice :: get_configuration(uint8_t index)
         		break;
         	case DESCR_INTERFACE:
         		if(len == 9) {
-        			printf("Interface descriptor #%b:%b, with %d endpoints. Class = %d:%d\n", pnt[2], pnt[3], pnt[4], pnt[5], pnt[6]);
+        			printf("Interface descriptor #%b:%b, with %d endpoints. Class = %d:%d:%d\n", pnt[2], pnt[3], pnt[4], pnt[5], pnt[6], pnt[7]);
         			int number = (int)pnt[2];
         			if (number <= 3) {
 						interface = new UsbInterface(this, number, (struct t_interface_descriptor *)pnt);
@@ -322,7 +332,7 @@ void UsbDevice :: set_interface(uint8_t interface, uint8_t alt)
 
     uint8_t dummy_buffer[8];
     int i = host->control_exchange(&control_pipe, c_set_interface, 8, dummy_buffer, 0);
-//    printf("Set Configuration result:%d\n", i);
+    printf("Set Configuration result:%d\n", i);
 //    interface_number = alt;
 }
 
@@ -339,15 +349,31 @@ bool UsbDevice :: init(int address)
     	device_reset();
     	return false;
     }
-    
+
     // set address and create new control pipes for this address
     set_address(address);
+    return true;
+}
+
+bool UsbDevice :: init2(void)
+{
+    get_language();
+    get_string(device_descr.manuf_string, manufacturer, 32);
+	get_string(device_descr.serial_string, serial, 32);
+	get_string(device_descr.product_string, product, 32);
+
+	if (*manufacturer)
+		printf("Manufacturer: %s\n", manufacturer);
+	if (*product)
+		printf("Product: %s\n", product);
+	if (*serial)
+		printf("Serial #: %s\n", serial);
 
     // get configuration
     return get_configuration(0);
 }
 
-void UsbDevice :: get_pathname(char *dest, int len)
+char *UsbDevice :: get_pathname(char *dest, int len)
 {
 	char buf[16];
 	memset(buf, 0, 16);
@@ -360,6 +386,7 @@ void UsbDevice :: get_pathname(char *dest, int len)
 	}
 	strncpy(dest, "Usb", 3);
 	strncpy(dest+3, (const char *)&buf[i], len-3);
+	return dest;
 }
 
 

@@ -13,11 +13,13 @@ public:
     virtual void clear_buffer(void) { }
 };
 
-#define KEY_BREAK  0x11
 #define KEY_BACK   0x08
+#define KEY_TAB    0x09
 #define KEY_RETURN 0x0D
+#define KEY_BREAK  0x11
 #define KEY_DOWN   0x12
 #define KEY_HOME   0x13
+#define KEY_ESCAPE 0x1B
 #define KEY_RIGHT  0x1D
 #define KEY_SPACE  0x20
 #define KEY_SHIFT_SP 0xA0
@@ -49,5 +51,11 @@ public:
 #define KEY_PAGEDOWN 0x95
 #define KEY_END		 0x96
 #define KEY_DELETE   0x7F
+
+#define KEY_ERR      0xFF
+#define KEY_CAPS     0xA1
+#define KEY_PRSCR    0xA2
+#define KEY_SCRLOCK  0xA3
+#define KEY_NUMLOCK  0xA4
 
 #endif

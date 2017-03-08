@@ -232,6 +232,9 @@ public:
 
     void disable(void) {
     	enabled = false;
+    	if(driver) {
+    		driver->disable();
+    	}
     }
 
     struct t_endpoint_descriptor *find_endpoint(uint8_t code)
@@ -268,7 +271,7 @@ public:
     char manufacturer[32];
     char product[32];
     char serial[32];
-
+    uint8_t language[2];
 
     UsbBase   *host;
     int		   speed;
@@ -296,8 +299,9 @@ public:
 
     // Called during init, from the Event context
     void disable(void);
+    void get_language(void);
     void get_string(int index, char *dest, int len);
-    void get_pathname(char *dest, int len);
+    char *get_pathname(char *dest, int len);
     bool get_device_descriptor();
     struct t_device_configuration *get_device_config();
     void set_address(int address);
@@ -309,6 +313,8 @@ public:
 
     // Called only from the Event context
     bool init(int address);
+    bool init2(void);
+
     struct t_endpoint_descriptor *find_endpoint(uint8_t code);
 
     // functions that arrange attachment to the system
