@@ -29,6 +29,7 @@ UsbHidDriver :: UsbHidDriver(UsbInterface *intf) : UsbDriver(intf)
     interface = intf;
     irq_in = 0;
     irq_transaction = 0;
+    keyboard = false;
 }
 
 UsbHidDriver :: ~UsbHidDriver()
@@ -73,6 +74,15 @@ void UsbHidDriver :: install(UsbInterface *intf)
 		if (interface->getInterfaceDescriptor()->protocol == 1) {
 			printf("Boot Keyboard found!\n");
 			keyboard = true;
+
+			uint8_t c_set_idle[]     = { 0x21, 0x0A, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
+			uint8_t c_set_protocol[] = { 0x21, 0x0B, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
+			c_set_idle[4] = interface->getInterfaceDescriptor()->interface_number;
+			c_set_protocol[4] = interface->getInterfaceDescriptor()->interface_number;
+
+			host->control_exchange(&dev->control_pipe, c_set_protocol, 8, NULL, 0);
+			host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
+
 		} else if (interface->getInterfaceDescriptor()->protocol == 2) {
 			printf("Boot Mouse found!\n");
 		}
@@ -95,12 +105,19 @@ void UsbHidDriver :: poll(void)
 
 void UsbHidDriver :: interrupt_handler(uint8_t *irq_data, int data_len)
 {
+/*
     printf("HID (ADDR=%d) IRQ data: ", device->current_address);
 	for(int i=0;i<data_len;i++) {
 		printf("%b ", irq_data[i]);
 	} printf("\n");
 
+*/
 	if (keyboard) { // keyboard
+		printf("HID (ADDR=%d:%d) IRQ KB data: ", device->current_address, irq_in);
+		for(int i=0;i<data_len;i++) {
+			printf("%b ", irq_data[i]);
+		} printf("\n");
+
 		system_usb_keyboard.process_data(irq_data);
 	}
 	host->resume_input_pipe(this->irq_transaction);

@@ -80,6 +80,7 @@ typedef enum { e_no_disk,
 
 class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
 {
+    static C1541* last_mounted_drive;
     volatile uint8_t *memory_map;
     volatile uint8_t *registers;
     mstring drive_name;
@@ -121,7 +122,7 @@ public:
     C1541(volatile uint8_t *regs, char letter);
     ~C1541();
 
-    static C1541* get_last_mounted_drive(void);
+    static C1541 *get_last_mounted_drive(void);
     
     void init(void);
 
@@ -135,10 +136,11 @@ public:
     // called from IEC (UltiCopy)
     int  get_current_iec_address(void);    
     void drive_power(bool on);
+
+    // Called from user interface thread?  Is this allowed at all? -> no no, the interface thread should
+    // issue a subsys command.
     void swap_disk(void);
 };
-
-static C1541* last_mounted_drive;
 
 extern C1541 *c1541_A;
 extern C1541 *c1541_B;

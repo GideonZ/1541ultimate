@@ -29,6 +29,14 @@ extern uint32_t _ultimate_app_end;
 extern uint32_t _rom_pack_start;
 extern uint32_t _rom_pack_end;
 
+/*
+extern uint32_t _ultimate_recovery_rbf_start;
+extern uint32_t _ultimate_recovery_rbf_end;
+
+extern uint32_t _recovery_app_start;
+extern uint32_t _recovery_app_end;
+*/
+
 void do_update(void)
 {
 	printf("*** U2+ Updater ***\n\n");
@@ -71,12 +79,31 @@ void do_update(void)
         flash_buffer_at(flash2, screen, 0x200000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
 
     	console_print(screen, "\nConfiguring Flash write protection..\n");
-    	flash->protect_configure();
-    	flash->protect_enable();
+    	flash2->protect_configure();
+    	flash2->protect_enable();
     	console_print(screen, "Done!                            \n");
-    	wait_ms(5000);
     }
 
+/*
+    if(user_interface->popup("Flash Recovery?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+    	REMOTE_FLASHSEL_0;
+        REMOTE_FLASHSELCK_0;
+        REMOTE_FLASHSELCK_1;
+
+        Flash *flash1 = get_flash();
+        flash1->protect_disable();
+        flash_buffer_at(flash1, screen, 0x000000, false, &_ultimate_recovery_rbf_start,   &_ultimate_recovery_rbf_end,   "V1.0", "Recovery FPGA");
+        flash_buffer_at(flash1, screen, 0x080000, false, &_recovery_app_start,  &_recovery_app_end,  "V1.0", "Recovery Application");
+
+    	console_print(screen, "\nConfiguring Flash write protection..\n");
+    	console_print(screen, "Done!                            \n");
+    }
+*/
+
+    wait_ms(2000);
+	REMOTE_FLASHSEL_1;
+    REMOTE_FLASHSELCK_0;
+    REMOTE_FLASHSELCK_1;
     REMOTE_RECONFIG = 0xBE;
 	console_print(screen, "You shouldn't see this!\n");
 }

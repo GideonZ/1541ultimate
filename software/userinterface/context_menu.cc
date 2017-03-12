@@ -142,7 +142,8 @@ int ContextMenu :: handle_key(int c)
     switch(c) {
         case KEY_LEFT: // left
         case KEY_BREAK: // runstop
-            ret = -1;
+        case KEY_ESCAPE:
+        	ret = -1;
             break;
         case KEY_F8: // exit
             ret = -1;

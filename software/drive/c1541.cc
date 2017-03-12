@@ -126,6 +126,9 @@ C1541 :: ~C1541()
     }
 }
 
+// private static member can only be read through getter
+C1541* C1541 :: last_mounted_drive;
+
 C1541* C1541 :: get_last_mounted_drive() {
     return last_mounted_drive;
 }

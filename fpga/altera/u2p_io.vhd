@@ -28,7 +28,8 @@ port (
     eth_irq_i   : in  std_logic;
     hub_reset_n : out std_logic;
     speaker_en  : out std_logic;
-    ulpi_reset  : out std_logic );
+    ulpi_reset  : out std_logic;
+    buffer_en   : out std_logic  );
     
 end entity;
 
@@ -41,10 +42,20 @@ architecture rtl of u2p_io is
     signal hub_reset_i  : std_logic;
     signal ulpi_reset_i : std_logic;
 begin
-    process(clock)
+    process(clock, reset)
         variable local  : unsigned(3 downto 0);
     begin
-        if rising_edge(clock) then
+        if reset = '1' then -- switched to asynchronous reset
+            i2c_scl_o <= '1';
+            i2c_sda_o <= '1';
+            mdc_out <= '1';
+            mdio_o <= '1';
+            speaker_en_i <= '0';
+            hub_reset_i <= '0';
+            ulpi_reset_i <= '0';
+            buffer_en <= '0';
+            iec_o <= (others => '1');
+        elsif rising_edge(clock) then
             local := io_req.address(3 downto 0);
             io_resp <= c_io_resp_init;
             
@@ -108,19 +119,14 @@ begin
                     iec_o <= io_req.data(7 downto 4);
                 when X"F" =>
                     ulpi_reset_i <= io_req.data(0);
+                    if io_req.data(7) = '1' then
+                        buffer_en <= '1';
+                    elsif io_req.data(6) = '1' then
+                        buffer_en <= '0';
+                    end if;
                 when others =>
                     null;
                 end case;
-            end if;
-            if reset = '1' then
-                i2c_scl_o <= '1';
-                i2c_sda_o <= '1';
-                mdc_out <= '1';
-                mdio_o <= '1';
-                speaker_en_i <= '0';
-                hub_reset_i <= '0';
-                ulpi_reset_i <= '0';
-                iec_o <= (others => '1');
             end if;
         end if;
     end process;

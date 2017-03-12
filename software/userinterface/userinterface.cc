@@ -7,6 +7,7 @@
 #include "tree_browser.h"
 #include "tree_browser_state.h"
 #include "path.h"
+#include "keyboard_usb.h"
 #ifndef UPDATER
 #ifndef RECOVERYAPP
 #include "c1541.h"
@@ -91,44 +92,53 @@ void UserInterface :: run(void)
 		switch(state) {
 			case ui_idle:
 				if (!host->hasButton()) {
+					state = ui_host_permanent;
 					appear();
-				} else if(host->exists() && host->buttonPush()) {
+					break;
+				}
+				if (host->exists() && host->buttonPush()) {
                     if(buttonDownFor(1000)) {
                         swapDisk();
-                    }
-                    else {
+                    } else {
+                		state = ui_host_owned;
                         appear();
                     }
+                    break;
+				}
+				switch(system_usb_keyboard.getch()) {
+				case KEY_SCRLOCK:
+					state = ui_host_owned;
+                    appear();
+                    break;
+				case 0x04: // CTRL-D
+                    swapDisk();
+                    break;
 				}
 				break;
 
 			case ui_host_owned:
 				if (!host->exists()) {
 					state = ui_idle;
-					break;
-				}
-				if (host->buttonPush()) {
+				} else if (host->buttonPush()) {
+					state = ui_idle;
 					release_host();
 					host->release_ownership();
-				} else {
-					if (!pollFocussed()) {
-						host->releaseScreen();
-						host->release_ownership();
-						state = ui_idle;
-					}
+				} else if (!pollFocussed()) {
+					host->releaseScreen();
+					host->release_ownership();
+					state = ui_idle;
 				}
 				break;
 
-			// fall through from host_owned:
 			case ui_host_permanent:
 				if (!pollFocussed()) {
 					host->releaseScreen();
-					return;
+					return; // User Interface ceases to exist
 				}
 				break;
 
 			default:
-				break;
+				return; // User Interface ceases to exist
 		}
 		vTaskDelay(3);
     }
@@ -192,11 +202,6 @@ void UserInterface :: appear(void)
 		//printf("Going to (re)init objects %d.\n", i);
 		ui_objects[i]->init(screen, keyboard);
 	}
-	if (!host->hasButton()) {
-		state = ui_host_permanent;
-	} else {
-		state = ui_host_owned;
-	}
 }
 
 void UserInterface :: release_host(void)
@@ -205,7 +210,17 @@ void UserInterface :: release_host(void)
         ui_objects[i]->deinit();
     }
     host->releaseScreen();
-    state = ui_idle;
+
+    // This bit of state machine needs to be here, because the
+    // browser doesn't know that a command actually causes the
+    // C64 to unfreeze.
+
+    if (!host->hasButton()) {
+    	state = ui_host_permanent;
+    } else {
+    	state = ui_idle;
+    }
+
 }
 
 bool UserInterface :: is_available(void)

@@ -350,9 +350,15 @@ int TreeBrowser :: handle_key(int c)
             config();
             break;
         case KEY_F4: // F4 -> show threads
+        	reset_quick_seek();
+        	state->refresh = true;
         	tasklist();
         	break;
-/*
+        case KEY_SCRLOCK:
+        case KEY_ESCAPE:
+        	ret = -1;
+        	break;
+        	/*
         case KEY_F6: // F6 -> show log
         	reset_quick_seek();
         	state->refresh = true;

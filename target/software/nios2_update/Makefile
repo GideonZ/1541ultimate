@@ -64,7 +64,9 @@ VPATH +=	$(PATH_SW)/nios_appl_bsp
 VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 VPATH +=    $(PATH_SW)/application/update_u2p
+VPATH +=    $(PATH_SW)/../target/fpga/u2plus_recovery/output_files
 VPATH +=    $(PATH_SW)/../target/fpga/u2plus_run/output_files
+VPATH +=    $(PATH_SW)/../target/software/nios2_recovery/result
 VPATH +=    $(PATH_SW)/../target/software/nios2_ultimate/result
 
 SRCS_ASM = update_binaries.s
@@ -90,4 +92,4 @@ LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
 
 include ../common/rules.mk
 
-update_binaries.o: ultimate_run.swp ../nios2_ultimate/result/ultimate.bin
+update_binaries.o: ultimate_run.swp ultimate_recovery.swp ../nios2_ultimate/result/ultimate.bin ../nios2_recovery/result/recovery.bin

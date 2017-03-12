@@ -850,6 +850,18 @@ int checkFlashSwitch(JTAG_Access_t *target, int timeout, char **log)
 	return retval;
 }
 
+int keepCheckingFlash(JTAG_Access_t *target, int timeout, char **log)
+{
+	int retval;
+	int ch;
+	do {
+		retval += executeDutCommand(target, 4, timeout, log);
+		ch = uart_get_byte(0);
+	} while(ch < 0);
+
+	return retval;
+}
+
 int checkDigitalIO(JTAG_Access_t *target, int timeout, char **log)
 {
 	return TestIOPins(target);
@@ -978,6 +990,16 @@ TestDefinition_t usb_only[] = {
 		{ "Check USB Ports (3x)",   checkUsbSticks,        600, false, false,  true },
 		{ "", NULL, 0, false, false, false }
 };
+
+TestDefinition_t flash_only[] = {
+		//{ "Power up DUT in slot",   dutPowerOn,              1,  true, false, false },
+		{ "Check FPGA ID Code",     bringupIdCode,           1,  true, false,  true },
+		{ "Configure the FPGA",     bringupConfigure,        1,  true, false,  true },
+		{ "Verify DUT appl running",checkApplicationRun,   150,  true, false,  true },
+		{ "Check Flash Types Cont.",keepCheckingFlash,      600, false, false,  true },
+		{ "", NULL, 0, false, false, false }
+};
+
 /*
 		const char *nameOfTest;
 		TestFunction_t function;
@@ -1218,6 +1240,7 @@ extern "C" {
 		TestSuite slotSuite("Slot Test Suite", slot_tests);
 		TestSuite checkSuite("Check Suite", checks);
 		TestSuite usbSuite("USB Suite", usb_only);
+		TestSuite flashSuite("Flash Suite", flash_only);
 
 		int nothing_pressed = 0;
 		while(1) {
@@ -1327,6 +1350,21 @@ extern "C" {
 				logger.Stop();
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
 				if (!usbSuite.Passed()) {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
+				} else {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one
+				}
+			}
+
+			if ((buttons == 0x00) && (ub == (int)'f')) {
+				flashSuite.Reset((volatile uint32_t *)JTAG_1_BASE);
+				logger.Reset();
+				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04);
+				flashSuite.Run();
+				flashSuite.Report();
+				logger.Stop();
+				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
+				if (!flashSuite.Passed()) {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
 				} else {
 					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one

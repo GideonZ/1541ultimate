@@ -23,6 +23,8 @@ int testFlashSwitch(void)
 	const char *type0 = flash->get_type_string();
 	flash->read_serial(id0);
 
+	printf("Flash 0: %s %08X:%08X\n", type0, id0[0], id0[1]);
+
 	REMOTE_FLASHSEL_1;
     REMOTE_FLASHSELCK_0;
     REMOTE_FLASHSELCK_1;
@@ -30,7 +32,6 @@ int testFlashSwitch(void)
     const char *type1 = flash->get_type_string();
 	flash->read_serial(id1);
 
-	printf("Flash 0: %s %08X:%08X\n", type0, id0[0], id0[1]);
 	printf("Flash 1: %s %08X:%08X\n", type1, id1[0], id1[1]);
 
 	if ((id0[0] == id1[0]) && (id0[1] == id1[1])) {

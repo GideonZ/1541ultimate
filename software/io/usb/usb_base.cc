@@ -843,7 +843,7 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 	int total_trans = 0;
 
 	USB2_CMD_DevEP    = pipe->DevEP;
-	USB2_CMD_MaxTrans = pipe->MaxTrans;
+	USB2_CMD_MaxTrans = (len > pipe->MaxTrans) ? pipe->MaxTrans : len;
 	USB2_CMD_SplitCtl = pipe->SplitCtl;
 	USB2_CMD_MemHi = addr >> 16;
 	USB2_CMD_MemLo = addr & 0xFFFF;

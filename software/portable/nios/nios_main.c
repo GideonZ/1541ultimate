@@ -84,6 +84,17 @@ static void test_i2c_mdio(void) {
 
 	codec_init();
 
+    uint16_t *base = (uint16_t *)NANO_BASE;
+    if (*base) {
+    	printf("Detected debug session. Dumping current USB state.\n");
+    	for (int j=0; j < 64; j++) {
+    		printf("%b0: ", j);
+    		for(int i=16*j; i < (16*j+16); i+=2) {
+    			printf("%04X ", base[i]);
+    		} printf("\n");
+    	}
+    }
+
 	NANO_START = 0;
 	U2PIO_ULPI_RESET = 1;
 	uint16_t *dst = (uint16_t *) NANO_BASE;
@@ -92,6 +103,9 @@ static void test_i2c_mdio(void) {
 	}
 	USb2512Init();
 	U2PIO_ULPI_RESET = 0;
+
+	// enable buffer
+	U2PIO_ULPI_RESET = 0x80;
 }
 
 int main(int argc, char *argv[]) {

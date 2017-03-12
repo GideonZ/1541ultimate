@@ -171,7 +171,7 @@ architecture rtl of u2p_nios_solo is
 
     signal por_n        : std_logic;
     signal ref_reset    : std_logic;
-    signal por_count    : unsigned(23 downto 0) := (others => '0');
+    signal por_count    : unsigned(15 downto 0) := (others => '0');
     signal led_n        : std_logic_vector(0 to 3);
     
     signal sys_clock    : std_logic;
@@ -181,6 +181,7 @@ architecture rtl of u2p_nios_solo is
     signal eth_reset    : std_logic;
     signal ulpi_reset_req : std_logic;
     signal button_i     : std_logic_vector(2 downto 0);
+    signal buffer_en    : std_logic;
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
@@ -229,7 +230,7 @@ begin
     process(RMII_REFCLK)
     begin
         if rising_edge(RMII_REFCLK) then
-            if por_count = X"FFFFFF" then
+            if por_count = X"FFFF" then
                 por_n <= '1';
             else
                 por_n <= '0';
@@ -379,7 +380,8 @@ begin
         eth_irq_i  => ETH_IRQn,
         speaker_en => SPEAKER_ENABLE,
         hub_reset_n=> HUB_RESETn,
-        ulpi_reset => ulpi_reset_req
+        ulpi_reset => ulpi_reset_req,
+        buffer_en  => buffer_en
     );
 
     i2c_scl_i   <= I2C_SCL and I2C_SCL_18;
@@ -676,7 +678,6 @@ begin
         end process;
     end block;    
     
-    -- SLOT_BUFFER_ENn <= not SLOT_VCC; -- once configured, we can connect, if there is power from the C64
-    SLOT_BUFFER_ENn <= '0'; -- once configured, we can connect
+    SLOT_BUFFER_ENn <= not buffer_en;
 end architecture;
 

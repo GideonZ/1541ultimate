@@ -138,6 +138,7 @@ int ConfigBrowser :: handle_key(int c)
     switch(c) {
         case KEY_F8: // exit
         case KEY_BREAK: // runstop
+        case KEY_ESCAPE:
         	if(state->level == 1) { // going to level 0, we need to store in flash
         		ConfigStore *st = ((BrowsableConfigStore *)state->previous->under_cursor)->getStore();
         		if(st->dirty) {

@@ -365,7 +365,10 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
         
 		new_gcr = find_sync(gcr, begin, end);
         if(new_gcr < gcr) {
-//            printf(":W");
+        	if (wrapped) {
+        		break;
+        	}
+        	//            printf(":W");
             wrapped = true;
         }            
         gcr = new_gcr;
@@ -858,8 +861,9 @@ int BinImage :: save(File *file, UserInterface *user_interface)
     }            
 
 	data = &bin_data[683*256];
-	num_tracks -= 35;
-	while(num_tracks--) {
+	int tracks = num_tracks - 35;
+	while(tracks > 0) {
+		tracks--;
 		res = file->write(data, 17*256, &transferred);
         if(user_interface)
             user_interface->update_progress(NULL, 1);
@@ -884,20 +888,7 @@ int BinImage :: format(const char *name)
 	uint8_t *track_18 = &bin_data[17*21*256];
 	uint8_t *bam_name = track_18 + 144;
 
-	uint8_t sector[256];
-	for (int i=0; i<256; i++) {
-		sector[i] = ~((uint8_t)i);
-	}
-	sector[0] = 0;
-	sector[1] = 0;
-
-//	memset(bin_data, 0, C1541_MAX_D64_LEN);
-	uint8_t *dest = bin_data;
-	int num_sectors = C1541_MAX_D64_LEN >> 8;
-	for (int i=0; i < num_sectors; i++, dest += 256) {
-		memcpy(dest, sector, 256);
-	}
-
+	memset(bin_data, 0, C1541_MAX_D64_LEN);
 	memcpy(track_18, bam_header, 144);
 
     // part that comes after bam header
