@@ -58,6 +58,11 @@ BinaryImage_t toBeFlashed[] = {
 		{ "/Usb?/flash/rompack.bin",           "ROM Pack",             0x80200000, 0, 0 }
 };
 
+BinaryImage_t toBeFlashedExec[] = {
+		{ "/Usb?/flash/testexec.swp",      "TestExec FPGA Image",      0x00000000, 0, 0 },
+		{ "/Usb?/flash/test_loader.app",   "Test Application Loader",  0x00080000, 0, 0 },
+};
+
 BinaryImage_t dutFpga   = { "/Usb?/tester/dut.fpga","DUT FPGA Image", 0, 0, 0 };
 BinaryImage_t dutAppl   = { "/Usb?/tester/dut.app", "DUT Application Image", 0, 0, 0 };
 BinaryImage_t jigReport = { "", "JIG Report", 0xEE000, 0, 0 };
@@ -886,6 +891,31 @@ int flashRoms(JTAG_Access_t *target, int timeout, char **log)
 	return errors;
 }
 
+int flashRomsExec(JTAG_Access_t *target, int timeout, char **log)
+{
+	int errors = 0;
+
+	// Flash Programming
+	int flash = 0;
+	for (int i=0; i<2; i++) {
+		if (!toBeFlashedExec[i].buffer) {
+			printf("No Valid data for '%s' => Cannot flash.\n", toBeFlashed[i].romName);
+			errors ++;
+		} else {
+			flash = program_flash(target, &toBeFlashedExec[i]);
+		}
+		if (flash) {
+			printf("Flashing failed.\n");
+			errors ++;
+			break;
+		}
+	}
+	if (!errors) {
+		executeDutCommand(target, 16, timeout, log);
+	}
+	return errors;
+}
+
 int checkButtons(JTAG_Access_t *target, int timeout, char **log)
 {
 	printf(" ** PRESS EACH OF THE BUTTONS ON THE DUT **\n");
@@ -1013,6 +1043,7 @@ TestDefinition_t slot_tests[] = {
 		{ "Configure the FPGA",     bringupConfigure,        1,  true, false,  true },
 		{ "Digital I/O test",       checkDigitalIO,          1, false, false,  true },
 		{ "Verify reference clock", checkReferenceClock,     1,  true, false,  true },
+		{ "Memory Test", 			checkMemory,             1,  true, false, false },
 		{ "Run DUT Application",    checkApplicationRun,   150,  true, false,  true },
 		{ "Button Test", 			checkButtons,		  3000, false,  true,  true },
 		{ "Check Flash Types",      checkFlashSwitch,      150, false, false,  true },
@@ -1025,6 +1056,28 @@ TestDefinition_t slot_tests[] = {
 		{ "Check USB Hub type",     checkUsbHub,           600, false, false,  true },
 		{ "Check USB Ports (3x)",   checkUsbSticks,        600, false, false,  true },
 		{ "Program Flashes",        flashRoms,             200, false,  true,  true },
+		{ "", NULL, 0, false, false, false }
+};
+
+TestDefinition_t prepare_testexec[] = {
+		{ "Power up DUT in slot",   dutPowerOn,              1,  true, false, false },
+		{ "Check FPGA ID Code",     bringupIdCode,           1,  true, false,  true },
+		{ "Configure the FPGA",     bringupConfigure,        1,  true, false,  true },
+		{ "Digital I/O test",       checkDigitalIO,          1, false, false,  true },
+		{ "Verify reference clock", checkReferenceClock,     1,  true, false,  true },
+		{ "Memory Test", 			checkMemory,             1,  true, false, false },
+		{ "Run DUT Application",    checkApplicationRun,   150,  true, false,  true },
+		{ "Button Test", 			checkButtons,		  3000, false,  true,  true },
+		{ "Check Flash Types",      checkFlashSwitch,      150, false, false,  true },
+		{ "Audio input test",       slotAudioInput,        600, false, false,  true },
+		{ "Audio output test",      slotAudioOutput,       600, false, false,  true },
+		{ "Copy time to DUT RTC",   copyRtc,			   150, false, false,  true },
+		{ "RTC advance test",       checkRtcAdvance,       400, false, false,  true },
+		{ "Ethernet Tx test",       checkNetworkTx,        120, false, false,  false },
+		{ "Ethernet Rx test",       checkNetworkRx,        120, false, false,  false },
+		{ "Check USB Hub type",     checkUsbHub,           600, false, false,  true },
+		{ "Check USB Ports (3x)",   checkUsbSticks,        600, false, false,  true },
+		{ "Program Flashes",        flashRomsExec,         200, false,  true,  true },
 		{ "", NULL, 0, false, false, false }
 };
 
@@ -1282,6 +1335,7 @@ void usage()
 	printf("Press 'P' to turn on jig and slot. Press any key to turn off power.\n");
 	printf("Press 'D' to set RTC date. (ISO Format: YYYY-MM-DD\n");
 	printf("Press 'T' to set RTC time. (24 hr format)\n");
+	printf("Press '#' to prepare a board with tester software.\n");
 }
 
 extern "C" {
@@ -1313,7 +1367,9 @@ extern "C" {
 		for (int i=0; i < 5; i++) {
 			load_file(&toBeFlashed[i]);
 		}
-
+		for (int i=0; i < 2; i++) {
+			load_file(&toBeFlashedExec[i]);
+		}
 
 		// Initialize fpga and application structures for DUT
 //		dutFpga.buffer = (uint32_t *)&_dut_b_start;
@@ -1328,6 +1384,7 @@ extern "C" {
 		TestSuite checkSuite("Check Suite", checks);
 		TestSuite usbSuite("USB Suite", usb_only);
 		TestSuite flashSuite("Flash Suite", flash_only);
+		TestSuite prepareSuite("Prepare Tester", prepare_testexec);
 
 		printf("Generating Random numbers for testing memory.\n");
 		generateRandom();
@@ -1412,6 +1469,30 @@ extern "C" {
 				}
 				printf("Writing report into USB.\n");
 				writeLog(&logger, "/Usb?/logs/slot_", slotSuite.getDateTime());
+			}
+
+			if (ub == (int)'#') {
+				prepareSuite.Reset((volatile uint32_t *)JTAG_1_BASE);
+				logger.Reset();
+				IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x04);
+				prepareSuite.Run();
+				prepareSuite.Report();
+				logger.Stop();
+				slotReport.buffer = (uint32_t *)logger.getText();
+				slotReport.size = logger.getLength();
+				if (prepareSuite.getTarget()->dutRunning) {
+					printf("Writing report into flash.\n");
+					program_flash(prepareSuite.getTarget(), &slotReport);
+				}
+				vTaskDelay(5);
+				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF4);
+				if (!prepareSuite.Passed()) {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x02); // red one
+				} else {
+					IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x01); // green one
+				}
+				printf("Writing report into USB.\n");
+				writeLog(&logger, "/Usb?/logs/prep_", slotSuite.getDateTime());
 			}
 
 			if ((buttons == 0x00) && (ub == (int)'c')) {
