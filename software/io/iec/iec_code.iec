@@ -109,7 +109,6 @@ TRANSMIT
             RET
 
 _tx_data
-			# PUSHC
             SUB TX_BYTE
             IF NOT EOI THEN TRANSMIT  # loop until everything was transmitted
 _tx_done
