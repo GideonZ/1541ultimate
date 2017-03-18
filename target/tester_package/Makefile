@@ -4,7 +4,8 @@ ROMS = ../../roms
 SVFDUMP = ../../tools/svf_dump
 
 all: $(FLASH) $(FLASH)/rompack.bin $(FLASH)/ultimate_run.swp $(FLASH)/ultimate_recovery.swp $(FLASH)/ultimate.app $(FLASH)/recovery.app \
-	 $(TESTER) $(TESTER)/dut.fpga $(TESTER)/dut.app $(TESTER)/tester.app
+	 $(TESTER) $(TESTER)/dut.fpga $(TESTER)/dut.app $(TESTER)/tester.app \
+	 $(FLASH)/testexec.swp $(FLASH)/test_loader.app
 
 force::
 	@make -C ../software/nios2_flash ultimate_run.swp
@@ -25,6 +26,12 @@ $(FLASH)/ultimate_run.swp : ../software/nios2_flash/output/ultimate_run.swp
 	@cp $< $@
 
 $(FLASH)/ultimate_recovery.swp : ../software/nios2_flash/output/ultimate_recovery.swp
+	@cp $< $@
+
+$(FLASH)/testexec.swp : ../software/nios2_testflasher/output/testexec.swp
+	@cp $< $@
+
+$(FLASH)/test_loader.app : ../software/nios2_testloader/result/test_loader.app
 	@cp $< $@
 
 $(FLASH)/ultimate.app : ../software/nios2_ultimate/result/ultimate.app
@@ -54,6 +61,12 @@ $(TESTER)::
 
 ../software/nios2_flash/output/ultimate_recovery.swp:
 	@make -C ../software/nios2_flash ultimate_recovery.swp
+
+../software/nios2_testflasher/output/testexec.swp:
+	@make -C ../software/nios2_testflasher testexec.swp
+
+../software/nios2_testloader/result/test_loader.app:
+	@make -C ../software/nios2_testloader
 
 ../software/nios2_ultimate/result/ultimate.app:
 	@make -C ../software/nios2_ultimate
