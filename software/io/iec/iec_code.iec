@@ -317,12 +317,13 @@ MASTER_START
             WAIT UNTIL DATA=0 FOR 1000 us
             IF TIMEOUT THEN no_device
 _atn_send
-            POPB
+            READB
             IF CTRL THEN _master_test
             SET EOI=0
             SUB TX_BYTE
             JUMP _atn_send
 _master_test
+			POPB
             IF DATABYTE IS $1D THEN MASTER_START
             IF DATABYTE IS $1C THEN _release_atn_and_tx
             IF DATABYTE IS $1B THEN RELEASE

@@ -216,6 +216,7 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     printer = false;
 
     channel_printer = new IecPrinter();
+    start_address = 0x1000000;
 
     effectuate_settings();
 
@@ -765,11 +766,11 @@ void IecInterface :: master_open_file(int device, int channel, char *filename, b
     for (int i=0;i<len;i++) {
         while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
             ;
-        if (i == (len-1))
-            HW_IEC_TX_CTRL = 0x01; // EOI
-        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
-            ;
-        HW_IEC_TX_DATA = (uint8_t)filename[i];
+        if (i == (len-1)) {
+            HW_IEC_TX_LAST = (uint8_t)filename[i]; // EOI
+        } else {
+        	HW_IEC_TX_DATA = (uint8_t)filename[i];
+        }
     }
     if(!write) {
         while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
@@ -799,11 +800,11 @@ bool IecInterface :: master_send_cmd(int device, uint8_t *cmd, int length)
     for (int i=0;i<length;i++) {
         while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
             ;
-        if (i == (length-1))
-            HW_IEC_TX_CTRL = 0x01; // EOI
-        while(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)
-            ;
-        HW_IEC_TX_DATA = cmd[i];
+        if (i == (length-1)) {
+            HW_IEC_TX_LAST = cmd[i];
+        } else {
+            HW_IEC_TX_DATA = cmd[i];
+        }
     }
     while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_EMPTY))
         ;
@@ -877,8 +878,7 @@ void IecInterface :: test_master(int test)
         HW_IEC_TX_DATA = 0x28; // listen #8!
         HW_IEC_TX_DATA = 0xF0; // open
         HW_IEC_TX_CTRL = IEC_CMD_ATN_TO_TX;
-        HW_IEC_TX_CTRL = 0x01; // EOI
-        HW_IEC_TX_DATA = '$';
+        HW_IEC_TX_LAST = '$';
         HW_IEC_TX_CTRL = IEC_CMD_GO_MASTER;
         HW_IEC_TX_DATA = 0x3F; // unlisten
         HW_IEC_TX_CTRL = IEC_CMD_ATN_RELEASE;
