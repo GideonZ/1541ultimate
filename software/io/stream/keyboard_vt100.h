@@ -19,6 +19,7 @@ class Keyboard_VT100 : public Keyboard
 		e_esc_idle,
 		e_esc_escape,
 		e_esc_bracket,
+		e_esc_o,
 	} escape_state_t;
 
 	escape_state_t escape_state;

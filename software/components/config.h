@@ -147,7 +147,11 @@ public:
     ConfigurableObject() {
     	cfg = NULL;
     }
-    virtual ~ConfigurableObject() { }
+    virtual ~ConfigurableObject() {
+    	if (cfg) {
+    		ConfigManager :: getConfigManager()->remove_store(cfg);
+    	}
+    }
     
     virtual bool register_store(uint32_t store_id, const char *name, t_cfg_definition *defs)
     {

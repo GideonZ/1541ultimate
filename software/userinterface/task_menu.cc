@@ -52,8 +52,8 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
         }
         rows = items + 2;
         size_y = screen->get_size_y();
-        if(rows > size_y-2) {
-            rows = size_y-2;
+        if(rows > size_y-4) {
+            rows = size_y-4;
         }
 		y_offs = (size_y - rows) >> 1;
         
@@ -68,7 +68,7 @@ void TaskMenu :: init(Window *pwin, Keyboard *key)
             max_len = 30;
     }
 
-    window = new Window(screen, (screen->get_size_x() - max_len - 2) >> 1, y_offs+2, max_len+2, rows);
+    window = new Window(screen, (screen->get_size_x() - max_len - 2) >> 1, y_offs, max_len+2, rows);
     window->set_color(user_interface->color_fg);
     window->draw_border();
     context_state = e_active;

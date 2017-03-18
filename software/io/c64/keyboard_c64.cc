@@ -83,8 +83,8 @@ Keyboard_C64 :: Keyboard_C64(GenericHost *h, volatile uint8_t *row, volatile uin
     
     repeat_speed = 4;
     first_delay = 16;
-    key_count = 0;
-
+    key_head = 0;
+    key_tail = 0;
     mtrx_prev  = 0xFF;
     shift_prev = 0xFF;
     delay_count = first_delay;
@@ -192,8 +192,10 @@ void Keyboard_C64 :: scan(void)
     }
 
 //    printf("%b ", key);
-    if(key_count != KEY_BUFFER_SIZE) {
-        key_buffer[key_count++] = key;
+    int next_head = (key_head + 1) % KEY_BUFFER_SIZE;
+    if(next_head != key_tail) {
+        key_buffer[key_head] = key;
+        key_head = next_head;
     }
 }
 
@@ -202,23 +204,20 @@ int Keyboard_C64 :: getch(void)
 #ifndef NO_FILE_ACCESS
     static TickType_t previousWake = 0;
     vTaskDelayUntil(&previousWake, 4);
-    // printf("{%08x}", previousWake);
     scan();
+    if(key_head != key_tail) {
+    	printf("[%08x:%08x]", previousWake, xTaskGetTickCount());
+    }
 #else
     scan();
     wait_ms(20);
 #endif
 
-    if(!key_count) {
+    if(key_head == key_tail) {
         return system_usb_keyboard.getch();
     }
-    ENTER_SAFE_SECTION
-    uint8_t key = key_buffer[0];
-    for(int i=0;i<key_count-1;i++) {
-        key_buffer[i] = key_buffer[i+1];
-    }
-    key_count--;
-    LEAVE_SAFE_SECTION
+    uint8_t key = key_buffer[key_tail];
+    key_tail = (key_tail + 1) % KEY_BUFFER_SIZE;
 
     return (int)key;
 }
@@ -243,5 +242,5 @@ void Keyboard_C64 :: set_delays(int initial, int repeat)
 
 void Keyboard_C64 :: clear_buffer(void)
 {
-    key_count = 0;
+    key_head = key_tail = 0;
 }

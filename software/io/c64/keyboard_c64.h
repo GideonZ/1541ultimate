@@ -23,7 +23,8 @@ class Keyboard_C64 : public Keyboard
     int  delay_count;
 
     uint8_t key_buffer[KEY_BUFFER_SIZE];
-    int  key_count;
+    int  key_head;
+    int  key_tail;
 public:
     Keyboard_C64(GenericHost *, volatile uint8_t *r, volatile uint8_t *c);
     ~Keyboard_C64();
