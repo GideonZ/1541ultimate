@@ -357,6 +357,7 @@ void IecInterface :: poll()
 		while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
 			data = HW_IEC_RX_DATA;
 			if(a & IEC_FIFO_CTRL) {
+				//printf("<%b>", data);
 				switch(data) {
 					case 0xDA:
 						HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
@@ -412,7 +413,7 @@ void IecInterface :: poll()
 				}
 			} else {
 				if(atn) {
-					// printf("[/%b] ", data);
+					//printf("[/%b] ", data);
 					if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
 						if (printer) {
 							channel_printer->push_command(data & 0x7);
@@ -425,7 +426,7 @@ void IecInterface :: poll()
 					if (printer) {
 						channel_printer->push_data(data);
 					} else {
-						// printf("[%b] ", data);
+						//printf("[%b] ", data);
 						channels[current_channel]->push_data(data);
 					}
 				}

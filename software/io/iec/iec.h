@@ -35,10 +35,10 @@
 #define HW_IEC_UP_FIFO_COUNT_HI  *((volatile uint8_t *)(HW_IEC_REGS + 0xF))
 
 #define IEC_CMD_GO_WARP     0x57
-#define IEC_CMD_GO_MASTER   0x4D
-#define IEC_CMD_ATN_TO_TX   0x4C
-#define IEC_CMD_ATN_RELEASE 0x4B
-#define IEC_CMD_ATN_TO_RX   0x4A
+#define IEC_CMD_GO_MASTER   0x1D
+#define IEC_CMD_ATN_TO_TX   0x1C
+#define IEC_CMD_ATN_RELEASE 0x1B
+#define IEC_CMD_ATN_TO_RX   0x1A
 
 #define IEC_FIFO_EMPTY 0x01
 #define IEC_FIFO_FULL  0x02

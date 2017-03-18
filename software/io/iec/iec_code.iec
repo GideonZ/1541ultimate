@@ -27,12 +27,13 @@ ATN_IRQ
 
             WAIT UNTIL CLK=1
             SUB RECEIVE_ATN_BYTE
+			WAIT FOR 10 us
             JUMP _no_push2
 _atn_loop
             WAIT UNTIL CLK=1
             SUB RECEIVE_BYTE
             IF NOT TALKER THEN _no_push1
-            SUB PUSH_BYTE  # we can always push this byte, because we waited before becoming ready
+            SUB PUSH_BYTE
             JUMP _no_push2
 _no_push1
             IF NOT LISTENER THEN _no_push2
@@ -53,9 +54,6 @@ _keep_data
             # 2) it wants to send another byte to us under attention
             # 3) it wants to send another byte without attention
             # In all cases, it will release the clock line
-            # ATN is for us, acknowledge
-            WAIT FOR 20 us
-            SET  DATA=0
 
 _check_after_atn_byte
             WAIT UNTIL NOT CLK=0,ATN=0
@@ -91,7 +89,6 @@ ATN_TURNAROUND
             SET CLK=0
             SET DATA=1
             WAIT FOR Tda
-            SET EOI=0
             LOAD $43  # Tell to the software that it should push data
             PUSHC
             SET EOI=0
@@ -112,6 +109,7 @@ TRANSMIT
             RET
 
 _tx_data
+			# PUSHC
             SUB TX_BYTE
             IF NOT EOI THEN TRANSMIT  # loop until everything was transmitted
 _tx_done
@@ -208,7 +206,7 @@ _recv0
             SUB _recv8bits
 
 # Now acknowledge byte
-            WAIT FOR 20 us
+            WAIT FOR 50 us
             SET  DATA=0
             RET
 
@@ -257,6 +255,8 @@ _recv8bits
             IN   DATABIT7=DATA
             IF TIMEOUT THEN _error
             WAIT UNTIL CLK=0 FOR Tv
+            WAIT FOR 20 us
+			SET DATA=0
             RET
 
 PUSH_BYTE
@@ -306,7 +306,7 @@ reset_vec
             POPB ; hang
             IF NOT CTRL THEN reset_vec
             IF DATABYTE IS $57 THEN WARP_START
-            IF DATABYTE IS $4D THEN MASTER_START
+            IF DATABYTE IS $1D THEN MASTER_START
             JUMP reset_vec
 
 MASTER_START
@@ -324,10 +324,10 @@ _atn_send
             SUB TX_BYTE
             JUMP _atn_send
 _master_test
-            IF DATABYTE IS $4D THEN MASTER_START
-            IF DATABYTE IS $4C THEN _release_atn_and_tx
-            IF DATABYTE IS $4B THEN RELEASE
-            IF DATABYTE IS $4A THEN _release_and_turnaround
+            IF DATABYTE IS $1D THEN MASTER_START
+            IF DATABYTE IS $1C THEN _release_atn_and_tx
+            IF DATABYTE IS $1B THEN RELEASE
+            IF DATABYTE IS $1A THEN _release_and_turnaround
             LOAD $E5
             PUSHC
 _release_atn_and_tx
@@ -479,4 +479,4 @@ get_68
 
 ; Control codes received from software via FIFO
 ; $57 : Switch to WARP mode (from initial waiting state)
-; $4D : Switch to MASTER mode to send ATN commands (from initial waiting state)
+; $1D : Switch to MASTER mode to send ATN commands (from initial waiting state)
