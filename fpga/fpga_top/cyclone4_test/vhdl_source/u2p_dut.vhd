@@ -550,10 +550,31 @@ begin
     audio_speaker(15 downto 8) <= signed(audio_out_data(15 downto 8));
     audio_speaker( 7 downto 0) <= signed(audio_out_data(23 downto 16));
 
-    LED_MOTORn <= jtag_write_vector(0) xor not pio3_export(0) xor sys_count(sys_count'high);
-    LED_DISKn  <= (jtag_write_vector(1) xor not pio3_export(1)) and pll_locked; -- if pll_locked = 0, led is on
-    LED_CARTn  <= (jtag_write_vector(2) xor not pio3_export(2)) and por_n; -- if por_n is 0, led is on
-    LED_SDACTn <= jtag_write_vector(3) xor not pio3_export(3);
+    process(jtag_write_vector, pio3_export, sys_count, pll_locked, por_n)
+    begin
+        case jtag_write_vector(6 downto 5) is
+        when "00" =>
+            LED_MOTORn <= sys_count(sys_count'high);
+            LED_DISKn  <= pll_locked; -- if pll_locked = 0, led is on
+            LED_CARTn  <= por_n; -- if por_n is 0, led is on
+            LED_SDACTn <= '0';
+        when "01" =>
+            LED_MOTORn <= not jtag_write_vector(0);
+            LED_DISKn  <= not jtag_write_vector(1);
+            LED_CARTn  <= not jtag_write_vector(2);
+            LED_SDACTn <= not jtag_write_vector(3);
+        when "10" =>
+            LED_MOTORn <= not pio3_export(0);
+            LED_DISKn  <= not pio3_export(1);
+            LED_CARTn  <= not pio3_export(2);
+            LED_SDACTn <= not pio3_export(3);
+        when others =>
+            LED_MOTORn <= '1';
+            LED_DISKn  <= '1';
+            LED_CARTn  <= '1';
+            LED_SDACTn <= '1';
+        end case;                            
+    end process;
 
     ULPI_RESET <= por_n;
 
