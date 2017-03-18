@@ -35,6 +35,7 @@ software/chan_fat
 software/contrib-1.4.1
 software/libc
 software/libzip-0.11.2
+software/nios_appl_bsp/obj
 software/nios_dut_bsp/obj
 software/nios_tester_bsp/obj
 software/zlib-1.2.8
@@ -215,3 +216,14 @@ target/software/update_to_mb/output
 target/software/update_to_mb/result
 target/tester_package/flash
 target/tester_package/tester
+tools/bin2hex
+tools/checksum
+tools/dump_rtos_trace
+tools/dump_vcd
+tools/hex2bin
+tools/make_array
+tools/make_mem
+tools/makeappl
+tools/promgen
+tools/svf_dump
+tools/swap
