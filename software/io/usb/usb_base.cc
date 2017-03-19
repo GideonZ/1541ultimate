@@ -747,10 +747,10 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
     if (((uint32_t)buf) & 1) {
     	printf("Bulk_out: Unaligned buffer %p\n", buf);
-    	while(1);
+    	// while(1);
     }
 
-	uint32_t addr = (uint32_t)buf;
+	uint32_t addr = ((uint32_t)buf) & 0xFFFFFFFE;
 	int total_trans = 0;
 
 

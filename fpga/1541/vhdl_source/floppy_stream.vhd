@@ -129,7 +129,7 @@ begin
                 history  := history(3 downto 0) & mem_rd_bit;
                 bit_slip <= '0';
                 bit_flip <= '0';
-                if history = "00000" then -- something weird can happen now:
+                if history = "00000" and mode = '1' then -- something weird can happen now:
                 -- nothing
                 -- bit flip
                 -- bit slip (generates less bits)
@@ -188,7 +188,7 @@ begin
                 if write_delay = 0 then
                     do_write <= floppy_inserted; --'1';
                 else
-                    do_advance <= '1';
+                    do_advance <= '0';
                     write_delay <= write_delay - 1;
                 end if;
             end if;

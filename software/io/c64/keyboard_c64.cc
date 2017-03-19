@@ -204,10 +204,9 @@ int Keyboard_C64 :: getch(void)
 #ifndef NO_FILE_ACCESS
     static TickType_t previousWake = 0;
     vTaskDelayUntil(&previousWake, 4);
+    TickType_t now = xTaskGetTickCount();
+    previousWake = now;
     scan();
-    if(key_head != key_tail) {
-    	printf("[%08x:%08x]", previousWake, xTaskGetTickCount());
-    }
 #else
     scan();
     wait_ms(20);

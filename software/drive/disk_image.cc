@@ -512,7 +512,7 @@ int GcrImage :: find_track_start(int track)
             offset = (gcr - begin) - 10;
             if(offset < 0)
                 offset += track_length[track];
-            return offset;
+            return offset & 0xFFFFFFFC; // word align (for now)
         }
     }
     return 0;    

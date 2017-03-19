@@ -119,12 +119,8 @@ begin
                     mem_addr_i <= flop_slip_addr(15 downto 0) + ("00" & voice2_cnt);
                     serve_state <= wait_voice2;                    
                 else
+                    motor_sample <= X"00";
                     serve_state <= idle;
---                    if motor_sample(7)='1' then
---                        motor_sample <= motor_sample + 1; -- is negative, go to zero
---                    elsif motor_sample /= 0 then
---                        motor_sample <= motor_sample - 1;
---                    end if;
                 end if;
             
             when wait_voice2 =>
