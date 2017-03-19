@@ -172,19 +172,19 @@ public:
             buffer[pos++] = 32;
         buffer[pos++]=34;
         char *name = (*interface->iecNames)[dir_index];
-        while(*name)
-            buffer[pos++] = *(name++);
+        char *src = name+3;
+        while(*src)
+            buffer[pos++] = *(src++);
         buffer[pos++] = 34;
         while(pos < 32)
             buffer[pos++] = 32;
 
         if (info->is_directory()) {
         	memcpy(&buffer[27-chars], "DIR", 3);
-        } else if(strcmp(info->extension, "PRG") != 0) {
-        	memcpy(&buffer[27-chars], "SEQ", 3);
         } else {
-        	memcpy(&buffer[27-chars], "PRG", 3);
+            memcpy(&buffer[27-chars], name, 3);
         }
+
         buffer[31] = 0;
         pointer = 0;
         prefetch_max = 32;
@@ -308,6 +308,7 @@ private:
             write = 1;
         else
             write = 0;
+
         if(channel < 2)
             extension = ".prg";
         else

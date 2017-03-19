@@ -940,29 +940,60 @@ FRESULT IecInterface :: readDirectory()
 
 char *IecInterface :: getIecName(char *in)
 {
-	char *out = new char[20];
-	memset(out, 0, 20);
+	char *out = new char[24];
+	memset(out, 0, 24);
 
-	for(int i=0;i<16;i++) {
+	char temp[64];
+	strncpy(temp, in, 64);
+
+	char ext[8];
+	get_extension(in, ext);
+
+	if (strcmp(ext, "PRG") == 0) {
+		memcpy(out, ext, 3);
+		set_extension(temp, "", 64);
+	} else if (strcmp(ext, "SEQ") == 0) {
+		memcpy(out, ext, 3);
+		set_extension(temp, "", 64);
+	} else if (strcmp(ext, "REL") == 0) {
+		memcpy(out, ext, 3);
+		set_extension(temp, "", 64);
+	} else if (strcmp(ext, "USR") == 0) {
+		memcpy(out, ext, 3);
+		set_extension(temp, "", 64);
+	} else {
+		memcpy(out, "SEQ", 3);
+	}
+
+	for(int i=0;i<15;i++) {
 		char o;
-		if(in[i] == 0) {
+		if(temp[i] == 0) {
 			break;
-		} else if(in[i] == '_') {
+		} else if(temp[i] == '_') {
 			o = 164;
-		} else if(in[i] < 32) {
+		} else if(temp[i] < 32) {
 			o = 32;
 		} else {
 			o = toupper(in[i]);
 		}
-		out[i] = o;
+		out[i+3] = o;
 	}
 	return out;
 }
 
 int IecInterface :: findIecName(char *name, char *ext)
 {
+	char temp[32];
+	if (ext[0]=='.')
+		ext++;
+	temp[0] = toupper(ext[0]);
+	temp[1] = toupper(ext[1]);
+	temp[2] = toupper(ext[2]);
+
+	strncpy(temp+3, name, 28);
+
 	for(int i=0;i<iecNames->get_elements();i++) {
-		if (pattern_match(name, (*iecNames)[i], false)) {
+		if (pattern_match(temp, (*iecNames)[i], false)) {
 			return i;
 		}
 	}

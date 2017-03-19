@@ -751,10 +751,12 @@ void set_extension(char *buffer, char *ext, int buf_size)
 
 	// try to remove the extension
 	int name_len = strlen(buffer);
+/*
 	int min_dot = name_len-ext_len;
 	if(min_dot < 0)
 		min_dot = 0;
-	for(int i=name_len-1;i>=min_dot;i--) {
+*/
+	for(int i=name_len-1;i>=0;i--) {
 		if(buffer[i] == '.')
 			buffer[i] = 0;
 	}
