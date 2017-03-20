@@ -8,7 +8,7 @@ extern "C" {
 #include <string.h>
 #include "task.h"
 
-// #define printf(...)
+#define printf(...)
 
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
@@ -208,7 +208,7 @@ bool UsbDevice :: get_configuration(uint8_t index)
     
     if ((buf[0] == 9) && (buf[1] == DESCR_CONFIGURATION)) {
         len_descr = int(buf[2]) + 256*int(buf[3]);
-        printf("Total configuration length: %d\n", len_descr);
+        // printf("Total configuration length: %d\n", len_descr);
     	config_descriptor = new uint8_t[len_descr + 8];
     	if (!config_descriptor)
     		return false;
@@ -411,7 +411,7 @@ void UsbInterface :: getHidReportDescriptor(void) {
 		c_get_hid_report_descriptor[6] = pnt[7];
 		c_get_hid_report_descriptor[7] = pnt[8];
 		hid_len = parentDevice->host->control_exchange(&parentDevice->control_pipe, c_get_hid_report_descriptor, 8, hid_report_descriptor, hid_len);
-		dump_hex(hid_report_descriptor, hid_len);
+		// dump_hex(hid_report_descriptor, hid_len);
 	}
 }
 

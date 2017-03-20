@@ -19,7 +19,7 @@ extern "C" {
 
 UsbBase usb2;
 
-// #define printf(...)
+#define printf(...)
 
 UsbBase :: UsbBase()
 {
@@ -745,12 +745,15 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
 	uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
 
-    if (((uint32_t)buf) & 1) {
-    	printf("Bulk_out: Unaligned buffer %p\n", buf);
-    	// while(1);
+/*
+    if (((uint32_t)buf) & 3) {
+    	printf("Bulk_out: Unaligned buffer %p (%d - len = %d)\n", buf, ((uint32_t)buf) & 3, len);
+    	dump_hex((void *)(((uint32_t)buf) & -4), 16);
+    	//while(1);
     }
+*/
 
-	uint32_t addr = ((uint32_t)buf) & 0xFFFFFFFE;
+    uint32_t addr = ((uint32_t)buf);
 	int total_trans = 0;
 
 

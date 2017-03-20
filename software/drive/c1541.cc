@@ -725,6 +725,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
     	cmd->mode = 1;
         save_disk_to_file(cmd);
         break;
+    case MENU_1541_SWAP:
+        swap_disk();
+        break;
 	default:
 		printf("Unhandled menu item for C1541.\n");
 		return -1;

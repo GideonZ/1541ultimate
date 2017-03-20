@@ -9,7 +9,7 @@ extern "C" {
 #include "usb_hub.h"
 #include "FreeRTOS.h"
 
-//#define printf(...)
+#define printf(...)
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {

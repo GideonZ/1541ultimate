@@ -91,6 +91,7 @@ public:
     void test_editor(void);
     void copy_selection(void);
     void paste(void);
+    void cd(const char *path);
     
     void invalidate(const void *obj);
     const char *getPath();

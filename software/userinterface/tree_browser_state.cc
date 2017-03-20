@@ -280,6 +280,38 @@ bool TreeBrowserState :: into2(void)
 	return(false);
 }
 
+// step into browsable by name, used by TreeBrowser::cd(char* path)
+void TreeBrowserState :: into3(const char* name)
+{
+    Browsable *browsable = 0;
+    
+    for(int i=0; i<children->get_elements(); i++) {
+        if(strcasecmp((*children)[i]->getName(), name) == 0) {
+            browsable = (*children)[i];
+            break;
+        }
+    }
+    if(!browsable)
+        return;
+    
+    printf("Going deeper into = %s\n", browsable->getName());
+    
+    deeper = new TreeBrowserState(browsable, browser, level+1);
+    
+    int error;
+    deeper->children = browsable->getSubItems(error);
+    if(error < 0) {
+        delete deeper;
+        return;
+    }
+    browser->path->cd(browsable->getName());
+    printf("%d children fetched.\n", deeper->children->get_elements());
+    
+    //user_interface->set_path(under_cursor);
+    browser->state = deeper;
+    deeper->previous = this;
+}
+
 void TreeBrowserState :: level_up(void)
 {
     if(!previous)

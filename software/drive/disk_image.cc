@@ -382,10 +382,6 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 			s = (int)header[2];
 			dest = bin + (256 * s);
 //            printf(":H[%d.%d]", t, s);
-//            if(s==8) {
-//                printf("\nSector 8. Current pointer: %p\n", gcr_data);
-//                dump_hex(new_gcr-10, 104);
-//            }
 			//printf("Sector header found: %d %d\n", t, s);
 			if(t != (track+1)) {
 				printf("Error, sector doesn't belong to this track.\n");
@@ -405,6 +401,7 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 //                printf(":D");
 				expect_data = false;
 				secs++;
+				uint8_t *binarySector = dest;
 				memcpy(dest, &header[1], 3);
 				dest += 3;
                 gcr_data = wrap(&gcr, begin, end, 320);
@@ -414,6 +411,15 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 				}
 				conv_5bytes_gcr2bin(&gcr_data, &header[4]);
 				*(dest++) = header[4];
+				uint8_t chk = 0;
+/*
+				for (int i=0;i<256;i++) {
+					chk ^= *(binarySector++);
+				}
+				if (chk != header[5]) {
+					printf("Checksum error %d:%d\n", t, s);
+				}
+*/
 				//printf("bin = %p\n", bin);
 			}
 		}
@@ -512,7 +518,7 @@ int GcrImage :: find_track_start(int track)
             offset = (gcr - begin) - 10;
             if(offset < 0)
                 offset += track_length[track];
-            return offset & 0xFFFFFFFC; // word align (for now)
+            return offset;
         }
     }
     return 0;    

@@ -48,6 +48,7 @@ uint8_t sid_offsets[] = { 0x40, 0x42, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78,
 const char *sid_voices[] = { "Standard", "8 Voices" };
 const char *en_dis3[] = { "Disabled", "Enabled" };
 const char *sidchip_sel[] = { "6581", "8580" };
+const char *speaker_vol[] = { "Disabled", "Vol 1", "Vol 2", "Vol 3", "Vol 4", "Vol 5", "Vol 6", "Vol 7", "Vol 8", "Vol 9", "Vol 10", "Vol 11", "Vol 12", "Vol 13", "Vol 14", "Vol 15" };
 
 struct t_cfg_definition audio_cfg[] = {
     { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  7, 0 },
@@ -69,7 +70,7 @@ struct t_cfg_definition audio_cfg_no_sid[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition audio_cfg_plus[] = {
-	{ CFG_AUDIO_SPEAKER_EN,     CFG_TYPE_ENUM, "Built-in Speaker (Drive-A)",   "%s", en_dis3,     0,  1, 1 },
+    { CFG_AUDIO_SPEAKER_EN,     CFG_TYPE_ENUM, "Built-in Speaker (Drive-A)",   "%s", speaker_vol,     0,  15, 1 },
     { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices3,0,  7, 4 },
     { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices3,0,  7, 5 },
     { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis3,     0,  1, 1 },
@@ -152,7 +153,8 @@ void AudioConfig :: effectuate_settings()
         set_sid_coefficients();
     }
     if(getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
-    	U2PIO_SPEAKER_EN = cfg->get_value(CFG_AUDIO_SPEAKER_EN);
+        unsigned char tmp = cfg->get_value(CFG_AUDIO_SPEAKER_EN);
+    	U2PIO_SPEAKER_EN = (tmp << 1) | (tmp != 0);
     }
 }
 

@@ -24,6 +24,8 @@ public:
 #define KEY_SPACE  0x20
 #define KEY_SHIFT_SP 0xA0
 
+#define KEY_CTRL_HOME 0x14
+
 #define KEY_CTRL_A 0x01
 #define KEY_CTRL_C 0x03
 #define KEY_CTRL_N 0x0E

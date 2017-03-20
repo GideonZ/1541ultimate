@@ -171,8 +171,8 @@ public:
     		struct t_endpoint_descriptor *ep = &endpoints[numEndpoints];
     		memcpy((void *)ep, (void *)data, len);
     		ep->max_packet_size = (uint16_t(data[5]) << 8) | data[4];
-    		printf("Endpoint found with address %b, attr: %b, maxpkt: %04x\n",
-        			ep->endpoint_address, ep->attributes, ep->max_packet_size);
+    		//printf("Endpoint found with address %b, attr: %b, maxpkt: %04x\n",
+        	//		ep->endpoint_address, ep->attributes, ep->max_packet_size);
     		numEndpoints++;
     	}
     }

@@ -19,11 +19,7 @@
 const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
                          "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
                           
-#define CFG_USERIF_BACKGROUND 0x01
-#define CFG_USERIF_BORDER     0x02
-#define CFG_USERIF_FOREGROUND 0x03
-#define CFG_USERIF_SELECTED   0x04
-#define CFG_USERIF_WORDWRAP   0x05
+const char *en_dis4[]    = { "Disabled", "Enabled" };
 
 struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 0 },
@@ -31,6 +27,8 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 15 },
     { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 1 },
 //    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
+    { CFG_USERIF_HOME_DIR,   CFG_TYPE_STRING, "Home Directory",        "%s", NULL, 0, 31, (int)"" },
+    { CFG_USERIF_START_HOME, CFG_TYPE_ENUM,   "Enter Home on Startup", "%s", en_dis4, 0,  1, 0 },
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
@@ -169,8 +167,13 @@ void UserInterface :: swapDisk(void)
 #ifndef RECOVERYAPP
 #ifndef UPDATER                  
     C1541* drive = C1541::get_last_mounted_drive(); 
+
     if(drive != NULL) {
-        drive->swap_disk();
+      SubsysCommand* swap =
+        new SubsysCommand(this, drive->getID(), MENU_1541_SWAP, 0,
+                          (const char*)NULL, (const char*)NULL);
+
+      swap->execute();
     }
 #endif
 #endif                                                                

@@ -685,7 +685,7 @@ int dutPowerOn(JTAG_Access_t *target, int timeout, char **log)
 		printf("Current low. No device detected in slot.\n");
 		return -1;
 	}
-	if (uA > 200000) {
+	if (uA > 110000) {
 		printf("Current high! There might be a problem with the device in the slot.\n");
 		return -2;
 	}

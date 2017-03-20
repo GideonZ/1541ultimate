@@ -14,6 +14,7 @@
 #include "userinterface.h"
 #include "browsable_root.h"
 #include "keyboard_usb.h"
+#include "home_directory.h"
 
 static const char *helptext=
 		"CRSR UP/DN: Selection up/down\n"
@@ -36,6 +37,9 @@ static const char *helptext=
 		"C=-C        Copy current selection\n"
 		"C=-V        Paste selection here.\n"
 		"\n"
+        "HOME:       Enter home directory\n"
+        "C=-HOME:    Set current dir as home\n"
+        "\n"  
 		"Quick seek: Use the keyboard to type\n"
 		"            the name to search for.\n"
 		"            You can use ? as a\n"
@@ -397,6 +401,17 @@ int TreeBrowser :: handle_key(int c)
         case KEY_LEFT: // left
         	state->level_up();
             break;
+#ifndef RECOVERYAPP
+       case KEY_HOME: // home
+            cd(user_interface->cfg->get_string(CFG_USERIF_HOME_DIR));
+            break;
+       case KEY_CTRL_HOME: // set home
+           user_interface->cfg->set_string(CFG_USERIF_HOME_DIR, (char*)path->get_path());
+           user_interface->cfg->write();
+           HomeDirectory :: setHomeDirectory(path->get_path());
+           user_interface->popup("Current dir set as home dir", BUTTON_OK);
+           break;
+#endif         
         default:
             if((c >= '!')&&(c < 0x80)) {
                 if(quick_seek_length < (MAX_SEARCH_LEN_TB-2)) {
@@ -474,6 +489,30 @@ void TreeBrowser :: paste(void)
 	state->refresh = true;
 }
 
+
+void TreeBrowser :: cd(const char *dst) {
+    
+    // get the destination path to navigate to
+    Path *destination = fm->get_new_path("Tree Browser");
+    destination->cd(dst);
+    
+    // bail out on invalid path
+    if(!fm->is_path_valid(destination)) {
+        fm->release_path(destination);
+        return;
+    }
+    
+    // walk back up to root if neccessary...
+    while(state != state_root) {
+        state->level_up();
+    }
+    
+    // step down into target path...
+    for(uint8_t i=0; i<destination->getDepth(); i++) {
+        state->into3(destination->getElement(i));
+    }
+    fm->release_path(destination);
+}
 
 const char *TreeBrowser :: getPath() {
 	return path->get_path();

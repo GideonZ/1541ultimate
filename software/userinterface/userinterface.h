@@ -15,6 +15,13 @@
 
 #define MAX_UI_OBJECTS  8
 
+#define CFG_USERIF_BACKGROUND 0x01
+#define CFG_USERIF_BORDER     0x02
+#define CFG_USERIF_FOREGROUND 0x03
+#define CFG_USERIF_SELECTED   0x04
+#define CFG_USERIF_WORDWRAP   0x05
+#define CFG_USERIF_START_HOME 0x06
+#define CFG_USERIF_HOME_DIR   0x07
 
 typedef enum {
     ui_idle,
@@ -74,6 +81,8 @@ public:
     void run_editor(const char *);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }
+
+    friend class HomeDirectory;
 };
 
 #endif
