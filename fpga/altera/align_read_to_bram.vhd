@@ -26,10 +26,7 @@ entity align_read_to_bram is
 
 end align_read_to_bram;
 
--- This unit implements data rotation. This is done to support streaming from the avalon.
--- Note that the other unit: mem32_to_avalon bridge, actually "emulates" the DRAM wrapped
--- bursts. So.. the data that this unit gets is always lane aligned, but not word aligned.
--- To minimize the size of this block, only offsets of 0 and 2 are supported.
+-- This unit implements data rotation. This is done to support streaming from memory.
 
 -- Length that this unit gets is: actual length + offset + 3. This indicates the last byte that
 -- is being read and thus valid for writing. 
@@ -38,7 +35,7 @@ end align_read_to_bram;
 -- for writing, these byte enables shall still be rotated to the right. 
 -- offset = info about byte enables of first beat, and rotation value
 -- Note that for an offset of 0, it doesn't really matter if we write a few extra bytes in the BRAM,
--- because we're aligned. However, for an offset other than 0 (=2 in this case), it determines whether
+-- because we're aligned. However, for an offset other than 0, it determines whether
 -- we should write the last beat or not.
 
 architecture arch of align_read_to_bram is
@@ -52,47 +49,85 @@ begin
             wmask <= X"0";
             wnext <= '0';
 
+            -- we always get 3210, regardless of the offset.
+            -- If the offset is 0, we pass all data
+            -- If the offset is 1, we save 3 bytes (321x), and go to the next state
+            -- If the offset is 2, we save 2 bytes (32xx), and go to the next state
+            -- If the offset is 3, we save 1 byte  (3xxx), and go to the next state
+
+            -- In case the offset was sent to the DRAM, we get:
+            -- If the offset is 1, we save 3 bytes (x321), and go to the next state
+            -- If the offset is 2, we save 2 bytes (xx32), and go to the next state
+            -- If the offset is 3, we save 1 byte  (xxx3), and go to the next state
             case state is
             when idle =>
                 wdata <= rdata;
                 if rdata_valid = '1' then -- we assume first word
-                    if offset(1) = '0' then -- aligned
+                    remain <= rdata;
+                    case offset is
+                    when "00" => -- aligned
                         wmask <= X"F";
                         wnext <= '1';
-                    else -- misaligned. Data is FROM address 2; so first two bytes are invalid.
-                    -- However, because rotated and little-endianed by the mem32_to_avalon block,
-                    -- so those will be the leftmost bytes in little endian mode.
-                    -- We get order 1032. 10 are invalid, so we store "32" (rightmost)
-                        remain(15 downto 0) <= rdata(15 downto 0);
+                    when others =>
                         if last_word = '1' then
                             state <= last;
                         else
                             state <= stream;
                         end if;
-                    end if;
+                    end case;
                 end if;
             
             when stream =>
-                -- again, we get 5476. We stored 32. We store 76 and write 5432.
-                wdata <= rdata(31 downto 16) & remain(15 downto 0);
+                case offset is
+                when "01" =>
+                    -- We use 3 bytes from the previous word, and one from the current word
+                    wdata <= rdata(31 downto 24) & remain(23 downto 0);
+                when "10" =>
+                    -- We use 2 bytes from the previous word, and two from the current word
+                    wdata <= rdata(31 downto 16) & remain(15 downto 0);
+                when "11" =>
+                    -- We use 1 bytes from the previous word, and three from the current word
+                    wdata <= rdata(31 downto  8) & remain( 7 downto 0);
+                when others =>
+                    wdata <= rdata;
+                end case;
                 if rdata_valid = '1' then
-                    remain(15 downto 0) <= rdata(15 downto 0);
+                    remain <= rdata;
                     wmask <= X"F";
                     wnext <= '1';
                     if last_word = '1' then
-                        if last_bytes(1) = '1' then
-                            state <= last;
-                        else
-                            state <= idle;
-                        end if;
+                        state <= idle;
                     end if;
                 end if;
             
             when last =>
-                -- we stored 67, we write 67--
-                wdata <= rdata(31 downto 16) & remain(15 downto 0);
-                wmask <= "0011";
+                case offset is
+                when "01" =>
+                    -- We use 3 bytes from the previous word, and one from the current word
+                    wdata <= rdata(31 downto 24) & remain(23 downto 0);
+                when "10" =>
+                    -- We use 2 bytes from the previous word, and two from the current word
+                    wdata <= rdata(31 downto 16) & remain(15 downto 0);
+                when "11" =>
+                    -- We use 1 bytes from the previous word, and three from the current word
+                    wdata <= rdata(31 downto  8) & remain( 7 downto 0);
+                when others =>
+                    wdata <= rdata;
+                end case;
+
+                wmask <= X"F";
                 state <= idle;
+
+--                case last_bytes is
+--                when "01" =>
+--                    wmask <= "0001";
+--                when "10" =>
+--                    wmask <= "0011";
+--                when "11" =>
+--                    wmask <= "0111";
+--                when others =>
+--                    wmask <= "0000";
+--                end case;
                 
             when others =>
                 null;

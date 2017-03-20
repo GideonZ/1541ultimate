@@ -226,6 +226,7 @@ architecture rtl of u2p_nios_solo is
     signal audio_speaker    : signed(12 downto 0);
     signal audio_left       : signed(18 downto 0);
     signal audio_right      : signed(18 downto 0);
+    signal speaker_vol      : std_logic_vector(3 downto 0);
 begin
     process(RMII_REFCLK)
     begin
@@ -379,6 +380,7 @@ begin
         board_rev  => not BOARD_REVn,
         eth_irq_i  => ETH_IRQn,
         speaker_en => SPEAKER_ENABLE,
+	    speaker_vol=> speaker_vol,
         hub_reset_n=> HUB_RESETn,
         ulpi_reset => ulpi_reset_req,
         buffer_en  => buffer_en
@@ -394,7 +396,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"0B",
+        g_version       => X"0C",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -425,8 +427,8 @@ begin
         g_vic_copper    => false,
         g_video_overlay => false,
         g_sampler       => true,
-        g_analyzer      => false,
-        g_profiler      => true,
+        g_analyzer      => true,
+        g_profiler      => false,
         g_rmii          => true )
     port map (
         -- globals
@@ -475,6 +477,7 @@ begin
         audio_speaker   => audio_speaker,
         audio_left      => audio_left,
         audio_right     => audio_right,
+        speaker_vol     => speaker_vol,
         
         -- IEC bus
         iec_reset_i => IEC_RESET,

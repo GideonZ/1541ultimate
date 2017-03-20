@@ -29,8 +29,8 @@ port (
     hub_reset_n : out std_logic;
     speaker_en  : out std_logic;
     ulpi_reset  : out std_logic;
+    speaker_vol : out std_logic_vector(3 downto 0);
     buffer_en   : out std_logic  );
-    
 end entity;
 
 architecture rtl of u2p_io is
@@ -39,6 +39,7 @@ architecture rtl of u2p_io is
     signal i2c_scl_out : std_logic;
     signal i2c_sda_out : std_logic;
     signal speaker_en_i : std_logic;
+    signal speaker_vol_i : std_logic_vector(3 downto 0);
     signal hub_reset_i  : std_logic;
     signal ulpi_reset_i : std_logic;
 begin
@@ -113,6 +114,7 @@ begin
                     mdio_o <= io_req.data(0);
                 when X"C" =>
                     speaker_en_i <= io_req.data(0);
+		    speaker_vol_i <= io_req.data(4 downto 1);
                 when X"D" =>
                     hub_reset_i <= io_req.data(0);
                 when X"E" =>
@@ -133,6 +135,7 @@ begin
 
     mdc     <= mdc_out;
     speaker_en <= speaker_en_i;
+    speaker_vol <= speaker_vol_i;
     hub_reset_n <= not (hub_reset_i or reset);
     ulpi_reset  <= ulpi_reset_i or reset;
     

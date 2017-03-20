@@ -87,6 +87,7 @@ port (
     audio_speaker    : out signed(12 downto 0);
     audio_left       : out signed(18 downto 0);
     audio_right      : out signed(18 downto 0);
+    speaker_vol      : in std_logic_vector(3 downto 0);
 
     -- IEC bus
     -- actual levels of the pins --
@@ -378,6 +379,9 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_eth_rx   : std_logic := '0';
     signal misc_io          : std_logic_vector(7 downto 0);
     signal profiler_irq_flags   : std_logic_vector(7 downto 0);
+
+
+    signal audio_speaker_tmp : signed(17 downto 0);
 begin
     r_mb: if g_microblaze generate
         signal invalidate       : std_logic;
@@ -517,8 +521,8 @@ begin
             -- audio out
             audio_sample    => drive_sample_1 );
     end generate;
-    audio_speaker <= drive_sample_1;
-
+    audio_speaker_tmp <= drive_sample_1 * signed(resize(unsigned(speaker_vol),5));
+    audio_speaker <= audio_speaker_tmp(16 downto 4);
 
     r_drive_2: if g_drive_1541_2 generate
     begin

@@ -180,7 +180,7 @@ begin
             mode_d <= mode;
             if mode_d='1' and mode='0' then -- going to write
                 write_delay <= 2;
-                do_advance <= '0';
+                do_advance <= '1';
             end if;
             
             do_write <= '0';
