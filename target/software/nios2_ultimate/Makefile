@@ -130,6 +130,7 @@ SRCS_CC	 =  u2p_init.cc \
             socket_gui.cc \
 			socket_test.cc \
 			rmii_interface.cc \
+            home_directory.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
@@ -157,6 +158,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
+# OPTIONS  = -g -ffunction-sections -O0 -DOS -DDEVELOPER=1 -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive

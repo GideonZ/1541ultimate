@@ -123,6 +123,7 @@ SRCS_CC	 =  small_printf.cc \
             socket_stream.cc \
             socket_gui.cc \
 			socket_test.cc \
+            home_directory.cc \
 			$(PRJ).cc
 
 #            sock_echo.c \
