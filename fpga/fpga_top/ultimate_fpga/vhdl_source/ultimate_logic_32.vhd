@@ -87,7 +87,7 @@ port (
     audio_speaker    : out signed(12 downto 0);
     audio_left       : out signed(18 downto 0);
     audio_right      : out signed(18 downto 0);
-    speaker_vol      : in std_logic_vector(3 downto 0);
+    speaker_vol      : in std_logic_vector(3 downto 0) := X"0";
 
     -- IEC bus
     -- actual levels of the pins --
@@ -521,6 +521,7 @@ begin
             -- audio out
             audio_sample    => drive_sample_1 );
     end generate;
+
     audio_speaker_tmp <= drive_sample_1 * signed(resize(unsigned(speaker_vol),5));
     audio_speaker <= audio_speaker_tmp(16 downto 4);
 
