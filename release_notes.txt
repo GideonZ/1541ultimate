@@ -1,3 +1,54 @@
+3.1
+===
+r474 | gideonz | 2017-03-21 01:11:49 +0100 (di, 21 mrt 2017) | 1 line
+
+USB fixes:
+- support for sticks that do not reliably reply to the 'inquiry' command
+- Byte alignment issue fixed when writing. This caused corrupted G64s to be written sometimes
+- Support for composite devices added
+- Added support for USB keyboards, to navigate the Ultimate browser menu
+
+Incorporated patches from Markus & Henning, including, but not limited to:
+- Audio squeal fix, speaker volume addition
+- Ultimate DOS V1.1 with added commands
+- Added Home Directory support
+- Added support for GeoRAM
+
+IEC fixes
+- IEC now operates properly on the bus, when it is alone (disabled 1541 drives)
+- IEC filename fixes; saving a file to IEC adds the right extension and also removes the extension when loading directory
+- IEC should now work with JiffyDOS  (not yet supporting the JiffyDOS protocol)
+- UltiCopy is working again!
+
+Other small fixes
+- Small fix in TCP support (TCP hangup on retransmission)
+- Save disk twice bug fixed
+- Fixed load errors on tape adapter cable with some USB 3.0 cables
+- Keyboard "racekeys" fixed
+- Reduced Link Up time for the Ethernet port
+- Ultimax mode ROMs now allow video data in ROM
+
+3.0 BETA 7
+==========
+Processor flag error fixed.
+Some 6502 opcode testing done. Fixed ADC in decimal mode.
+
+Some fixes:
+ISSUE 189: Mount disk is now performed when C64/drive is not frozen
+ISSUE 191: Loading a file from within T64 (and D64) could fail at times due to special chars. Fixed
+ISSUE 193: Tape grab to TAP file fixed (at least that the option to run it will work)
+ISSUE 204: TCP slowdown fixed; bug in USB driver
+ISSUE 207: Typo fixed that caused "Save to disk" to fail with a 0 byte file
+OTHER: SID file with faulty header now no longer causes Flash corruption
+OTHER: Tape play / record functions updated
+
+------------------------------------------------------------------------
+r276 | soci | 2016-01-17 07:35:38 +0100 (Sun, 17 Jan 2016)
+Fix wrong DDRA readback (typo)
+The TASM-RR cartridge is not REU compatible
+Fix for PB6/7 keyboard freeze bug
+
+
 3.0 BETA 5
 ==========
 r263 | gideonz | 2015-10-16 08:27:20 +0200 (Fri, 16 Oct 2015) | 13 lines
