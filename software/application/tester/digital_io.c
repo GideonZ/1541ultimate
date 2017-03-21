@@ -170,5 +170,8 @@ int TestIOPins(JTAG_Access_t *access)
 		}
 	}
 	printf("Total errors: %d\n", errors);
+
+	// CLEAR output enable pin of the register
+	IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, EXP_OE);
 	return errors;
 }

@@ -685,7 +685,7 @@ int dutPowerOn(JTAG_Access_t *target, int timeout, char **log)
 		printf("Current low. No device detected in slot.\n");
 		return -1;
 	}
-	if (uA > 110000) {
+	if (uA > 175000) {
 		printf("Current high! There might be a problem with the device in the slot.\n");
 		return -2;
 	}
@@ -1200,7 +1200,7 @@ void setDate(void)
 	char *input = "_______";
 	int Yi,Mi,Di;
 
-	printf("20__-__-__\r");
+	printf("20__-__-__\r20");
 	for(int i=0;i<6;) {
 		ch = uart_get_byte(0);
 		if (ch < 0) {
@@ -1410,6 +1410,10 @@ extern "C" {
 				do {
 					vTaskDelay(1);
 					ub = uart_get_byte(0);
+					if (ub == 'a') {
+						report_analog();
+						ub = -1;
+					}
 				} while(ub < 0);
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF0); // turn off DUT
 				printf("Turning off power.\n");
