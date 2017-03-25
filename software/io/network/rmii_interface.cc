@@ -50,20 +50,23 @@ extern "C" {
 
 RmiiInterface :: RmiiInterface()
 {
-    netstack = NULL;
-    link_up = false;
-    ram_buffer = new uint8_t[(128 * 1536) + 256];
-    ram_base = (uint8_t *) (((uint32_t)ram_buffer + 255) & 0xFFFFFF00);
-    RMII_FREE_BASE = (uint32_t)ram_base;
+    if(getFpgaCapabilities() & CAPAB_ETH_RMII) {
+		netstack = NULL;
+		link_up = false;
+		ram_buffer = new uint8_t[(128 * 1536) + 256];
+		ram_base = (uint8_t *) (((uint32_t)ram_buffer + 255) & 0xFFFFFF00);
 
-    // printf("Rmii RAM buffer: %p.. Base = %p\n", ram_buffer, ram_base);
+		RMII_FREE_BASE = (uint32_t)ram_base;
 
-	mdio_write(0x1B, 0x0500); // enable link up, link down interrupts
-	mdio_write(0x16, 0x0002); // disable factory reset mode
+		// printf("Rmii RAM buffer: %p.. Base = %p\n", ram_buffer, ram_base);
 
-	if (ram_buffer) {
-        xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
-        queue = xQueueCreate(128, sizeof(struct EthPacket));
+		mdio_write(0x1B, 0x0500); // enable link up, link down interrupts
+		mdio_write(0x16, 0x0002); // disable factory reset mode
+
+		if (ram_buffer) {
+			xTaskCreate( RmiiInterface :: startRmiiTask, "RMII Driver Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
+			queue = xQueueCreate(128, sizeof(struct EthPacket));
+		}
     }
 }
 

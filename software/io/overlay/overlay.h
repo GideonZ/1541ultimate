@@ -38,6 +38,7 @@ extern "C" {
 class Overlay : public GenericHost
 {
     Keyboard *keyb;
+    Screen *screen;
 public:
     Overlay(bool active) {
         keyb = NULL;
@@ -57,11 +58,14 @@ public:
             CHARGEN_TRANSPARENCY     = (active)?0x84:0x04;
 
             keyb = new Keyboard_C64(this, &CHARGEN_KEYB_ROW, &CHARGEN_KEYB_COL);
+            screen = new Screen_MemMappedCharMatrix((char *)CHARGEN_SCREEN_RAM, (char *)CHARGEN_COLOR_RAM, 40, 25);
         }
     }
     ~Overlay() {
         if(keyb)
             delete keyb;
+        if(screen)
+        	delete screen;
     }
 
     bool exists(void) {
@@ -76,8 +80,6 @@ public:
         return true;
     }
     
-    void poll() { }
-    void reset(void) { }
     void freeze(void) {
         CHARGEN_TRANSPARENCY = 0x86;
     }
@@ -85,11 +87,12 @@ public:
         CHARGEN_TRANSPARENCY = 0x06;
     }
 
-    char *get_screen(void) { return (char *)CHARGEN_SCREEN_RAM; }
-    char *get_color_map(void) { return (char *)CHARGEN_COLOR_RAM; }
+    Screen *getScreen(void) {
+    	return screen;
+    }
 
     /* We should actually just return an input device type */
-    Keyboard *get_keyboard(void) {
+    Keyboard *getKeyboard(void) {
         return keyb;
     }
 };

@@ -74,8 +74,10 @@ extern "C" void ultimate_main(void *a)
 	InitFunction :: executeAll();
 	usb2.initHardware();
     
-    c64 = new C64;
-    c64_subsys = new C64_Subsys(c64);
+	if (capabilities & CAPAB_CARTRIDGE) {
+		c64 = new C64;
+		c64_subsys = new C64_Subsys(c64);
+	}
 
     char title[48];
     if(capabilities & CAPAB_ULTIMATE2PLUS) {
@@ -95,7 +97,7 @@ extern "C" void ultimate_main(void *a)
 
     } else if(capabilities & CAPAB_OVERLAY) {
         printf("Using Overlay module as user interface...\n");
-        overlay = new Overlay(false);
+        overlay = new Overlay(true);
         primaryUserInterface = new UserInterface(title);
         primaryUserInterface->init(overlay);
         Browsable *root = new BrowsableRoot();
