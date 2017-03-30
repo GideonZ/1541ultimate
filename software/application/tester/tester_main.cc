@@ -421,7 +421,7 @@ int jigPowerSwitchOverTest(JTAG_Access_t *target, int timeout, char **log)
 		uint32_t v50 = adc_read_channel_corrected(2);
 		uint32_t vcc = adc_read_channel_corrected(1);
 		printf("ExtVCC: V50=%d, VCC=%d.\n", v50, vcc);
-		if (vcc > 100) {
+		if (vcc > 2000) {
 			printf("Should not read VCC on the slot pin.\n", vcc);
 			errors |= 4;
 		}
@@ -819,8 +819,8 @@ int checkUsbHub(JTAG_Access_t *target, int timeout, char **log)
 {
 	uint32_t powerBits = (IORD_ALTERA_AVALON_PIO_DATA(PIO_1_BASE) & 0x700) >> 8;
 	printf("Before turning on USB power: Power bits: %2x\n", powerBits);
-	if (powerBits != 0x04) {
-		printf("-> Check U5: There seems to be power on the USB sticks, while they have not yet been turned on.\n");
+	if (powerBits != 0x00) {
+		printf("-> There seems to be power on the USB sticks, while they have not yet been turned on. (Check VR6)\n");
 	}
 	// Now, let's start the USB stack on the DUT
 	int usb = executeDutCommand(target, 11, timeout, log);
@@ -856,7 +856,7 @@ int checkUsbSticks(JTAG_Access_t *target, int timeout, char **log)
 	uint32_t powerBits = (IORD_ALTERA_AVALON_PIO_DATA(PIO_1_BASE) & 0x700) >> 8;
 	printf("After USB test: Power bits: %2x\n", powerBits);
 	if (powerBits != 0x07) {
-		printf("-> Check U5: There seems to be no power on the USB sticks.\n");
+		printf("-> Check VR6: There seems to be no power on all of the USB sticks.\n");
 	}
 
 	if (usb) {
@@ -1326,7 +1326,7 @@ void usage()
 	char date[48];
 	char time[48];
 
-	printf("\n** Ultimate 2+ Tester *** V1.5 *** ");
+	printf("\n** Ultimate 2+ Tester *** V1.6 *** ");
 	printf("%s %s ***\n", rtc.get_long_date(date, 40), rtc.get_time_string(time, 40));
 	printf("Press 'j' or left button on Tester to run test on JIG.\n");
 	printf("Press 's' or right button on Tester to run test in Slot.\n");
