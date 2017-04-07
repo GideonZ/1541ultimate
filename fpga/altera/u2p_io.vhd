@@ -21,7 +21,7 @@ port (
     i2c_scl_o   : out std_logic;
     i2c_sda_o   : out std_logic;
 
-    iec_i       : in  std_logic_vector(3 downto 0);
+    iec_i       : in  std_logic_vector(3 downto 0) := X"F";
     iec_o       : out std_logic_vector(3 downto 0);
 
     board_rev   : in  std_logic_vector(4 downto 0);    

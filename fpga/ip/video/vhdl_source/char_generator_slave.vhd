@@ -75,7 +75,7 @@ begin
                 pointer <= control.pointer(pointer'range);
                 char_y  <= (others => '0');
                 remaining_lines <= control.active_lines;
-                if v_count = control.y_on then
+                if (v_count = control.y_on) and (control.overlay_on = '1') then
                     state <= active_line;
                 end if;
                 
