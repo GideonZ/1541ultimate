@@ -105,9 +105,6 @@ architecture structural of cpu_part_1541 is
     type   t_mem_state  is (idle, cpubusy, newcycle, extcycle);
     signal mem_state    : t_mem_state;
 
-    signal clock_en_d   : std_logic;
-    signal clock_en_dd  : std_logic;
-
     -- "old" style signals
     signal mem_request     : std_logic;
     signal mem_addr        : unsigned(25 downto 0);
@@ -236,9 +233,6 @@ begin
             bank_is_io <= "0000" & not bank_is_ram(3 downto 1) & '1';
             mem_addr(25 downto 16) <= g_ram_base(25 downto 16);
             
-            clock_en_d <= clock_en;
-            clock_en_dd <= clock_en_d;
-
             cpu_ready <= '0';
             
             case mem_state is

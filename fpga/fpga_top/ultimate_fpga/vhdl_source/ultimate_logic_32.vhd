@@ -1221,6 +1221,14 @@ begin
         ev_data <= profiler_irq_flags;
     end generate;
 
+    g_no_elas: if not g_profiler and not g_analyzer generate
+        i_dummy: entity work.io_dummy
+        port map (
+            clock       => sys_clock,
+            io_req      => io_req_debug,
+            io_resp     => io_resp_debug );
+    end generate;
+
     r_rmii: if g_rmii generate
     begin
         i_rmii: entity work.ethernet_rmii

@@ -52,9 +52,11 @@ architecture structural of char_generator_peripheral is
     signal char_data       : std_logic_vector(7 downto 0);
 
 	signal io_req_regs		: t_io_req  := c_io_req_init;
+    signal io_req_regs_p    : t_io_req  := c_io_req_init;
 	signal io_req_scr		: t_io_req  := c_io_req_init;
 	signal io_req_color		: t_io_req  := c_io_req_init;
 	signal io_resp_regs		: t_io_resp := c_io_resp_init;
+    signal io_resp_regs_p   : t_io_resp := c_io_resp_init;
 	signal io_resp_scr		: t_io_resp := c_io_resp_init;
 	signal io_resp_color	: t_io_resp := c_io_resp_init;
 
@@ -84,13 +86,27 @@ begin
         resps(1) => io_resp_scr,
         resps(2) => io_resp_color );
 
+    i_bridge: entity work.io_bus_bridge2
+    generic map (
+        g_addr_width => 20
+    )
+    port map(
+        clock_a      => clock,
+        reset_a      => reset,
+        req_a        => io_req_regs,
+        resp_a       => io_resp_regs,
+        clock_b      => pix_clock,
+        reset_b      => pix_reset,
+        req_b        => io_req_regs_p,
+        resp_b       => io_resp_regs_p );
+
     i_regs: entity work.char_generator_regs
     port map (
-        clock           => clock,
-        reset           => reset,
+        clock           => pix_clock,
+        reset           => pix_reset,
         
-        io_req          => io_req_regs,
-        io_resp         => io_resp_regs,
+        io_req          => io_req_regs_p,
+        io_resp         => io_resp_regs_p,
         
         keyb_row        => keyb_row,
         keyb_col        => keyb_col,

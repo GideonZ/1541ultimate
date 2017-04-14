@@ -70,7 +70,7 @@ architecture structural of floppy is
     signal track_start      : std_logic_vector(25 downto 0);
     signal max_offset       : std_logic_vector(13 downto 0);
     signal track_i          : std_logic_vector(6 downto 0);
-    signal bit_time         : unsigned(8 downto 0);
+    signal bit_time         : unsigned(9 downto 0);
 begin
     en_hum  <= motor_on and not floppy_inserted;
     en_slip <= motor_on and floppy_inserted;

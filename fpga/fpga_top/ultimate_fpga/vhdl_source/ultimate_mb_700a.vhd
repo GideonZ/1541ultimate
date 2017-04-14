@@ -191,7 +191,7 @@ begin
         g_video_overlay => false,
         g_sampler       => not g_dual_drive,
         g_analyzer      => false,
-        g_profiler      => true )
+        g_profiler      => false )
     port map (
         -- globals
         sys_clock   => sys_clock,
