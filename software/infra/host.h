@@ -18,7 +18,9 @@ public:
 
     virtual bool exists(void) { return false; }
     virtual bool is_accessible(void) { return false; }
-//    virtual void reset(void) { }
+    virtual bool is_permanent(void) { return false; }
+
+    //    virtual void reset(void) { }
     virtual void set_colors(int background, int border) { }
 
     virtual Screen   *getScreen(void) { return NULL; }
@@ -27,6 +29,10 @@ public:
 
     virtual bool buttonPush(void) { return false; }
     virtual bool hasButton(void) { return false; }
+    virtual void setButtonPushed(void) {  }
+
+    // This is a temporary hack until the unfreeze function is no longer called from CRT
+    virtual void unfreeze(void *, int) { }
 };
 
 class HostClient

@@ -32,8 +32,6 @@
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_crt(FileType :: getFileTypeFactory(), FileTypeCRT :: test_type);
 
-extern C64 *c64;
-
 /*********************************************************************/
 /* PRG File Browser Handling                                         */
 /*********************************************************************/

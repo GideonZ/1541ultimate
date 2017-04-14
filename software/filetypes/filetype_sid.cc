@@ -8,7 +8,6 @@
 #include "userinterface.h"
 #include "stream_textlog.h"
 
-extern C64 *c64;
 extern uint8_t _sidcrt_65_start;
 //extern uint8_t _sidcrt_65_end;
 
@@ -362,9 +361,10 @@ void FileTypeSID :: load(void)
 	uint32_t bytes_read;
 	
 	printf("Loading SID..\n");
+	C64 *commie = (C64 *)c64;
 
 	// handshake with sid player cart
-	c64->stop(false);
+	commie->stop(false);
 
 	C64_POKE(0x0162, 0);
 	C64_POKE(0x0164, player);
@@ -372,18 +372,18 @@ void FileTypeSID :: load(void)
 
 	int timeout = 0;
 	while(C64_PEEK(2) != 0x01) {
-		c64->resume();
+		commie->resume();
 		timeout++;
 		if(timeout == 30) {
             printf("Time out!\n");
 			fm->fclose(file);
 			file = NULL;
-			c64->init_cartridge();
+			commie->init_cartridge();
 			return;
 		}
 		wait_ms(25);
 		printf("/");
-		c64->stop(false);
+		commie->stop(false);
 	}
 	
     // clear the entire memory
@@ -442,7 +442,7 @@ void FileTypeSID :: load(void)
 	
 //    SID_REGS(0) = 0x33; // start trace
     
-	c64->resume();
+	commie->resume();
 
 	fm->fclose(file);
 	file = NULL;
