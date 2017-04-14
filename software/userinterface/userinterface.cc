@@ -76,6 +76,10 @@ void UserInterface :: init(GenericHost *h)
     keyboard = h->getKeyboard();
 	screen = h->getScreen();
     initialized = true;
+    if (host->is_permanent()) {
+    	state = ui_host_permanent;
+    	appear();
+    }
 }
 
 void UserInterface :: set_screen(Screen *s)
@@ -90,7 +94,8 @@ void UserInterface :: run(void)
 		switch(state) {
 			case ui_idle:
 				if (!host->hasButton()) {
-					state = ui_host_permanent;
+					state = ui_host_remote;
+					host->take_ownership(this);
 					appear();
 					break;
 				}
@@ -99,6 +104,7 @@ void UserInterface :: run(void)
                         swapDisk();
                     } else {
                 		state = ui_host_owned;
+                		host->take_ownership(this);
                         appear();
                     }
                     break;
@@ -106,6 +112,7 @@ void UserInterface :: run(void)
 				switch(system_usb_keyboard.getch()) {
 				case KEY_SCRLOCK:
 					state = ui_host_owned;
+					host->take_ownership(this);
                     appear();
                     break;
 				case 0x04: // CTRL-D
@@ -128,10 +135,23 @@ void UserInterface :: run(void)
 				}
 				break;
 
-			case ui_host_permanent:
+			case ui_host_remote:
 				if (!pollFocussed()) {
 					host->releaseScreen();
 					return; // User Interface ceases to exist
+				}
+				break;
+
+			case ui_host_permanent:
+				if (host->is_accessible()) {
+					if (!pollFocussed()) {
+						host->release_ownership();
+					}
+				} else {
+					if (system_usb_keyboard.getch() == KEY_SCRLOCK) {
+						host->take_ownership(0);
+						appear();
+					}
 				}
 				break;
 
@@ -198,7 +218,6 @@ bool UserInterface :: pollFocussed(void)
 
 void UserInterface :: appear(void)
 {
-	host->take_ownership(this);
 	host->set_colors(color_bg, color_border);
 	set_screen_title();
 	for(int i=0;i<=focus;i++) {  // build up
