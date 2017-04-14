@@ -132,6 +132,13 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	const uint8_t modifier_locations[] = { 0x72, 0x17, 0x00, 0x75, 0x72, 0x64, 0x00, 0x75 };
 	const uint8_t key_locations[] = { };
 
+	// reset
+	if (modi == 0x0F) {
+		matrix[8] = 1;
+	} else {
+		matrix[8] = 0;
+	}
+
 	// Handle the modifiers
 	for(int i=0;i<8;i++, modi >>= 1) {
 		if (modi & 1) {
@@ -143,9 +150,14 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 		}
 	}
 	// Handle the other keys
+	uint8_t restore = 0;
+
 	for(int i=2; i<USB_DATA_SIZE; i++) {
 		if (!kd[i]) {
 			break;
+		}
+		if (keymap_normal[kd[i]] == KEY_F12) {
+			restore = 1;;
 		}
 		uint8_t n = keymap_usb2matrix[kd[i]];
 		if (n != 0xFF) {
@@ -155,6 +167,8 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 			}
 		}
 	}
+
+	matrix[9] = restore;
 
 	for(int i=0; i<8; i++) {
 		printf("%b ", out[i]);
