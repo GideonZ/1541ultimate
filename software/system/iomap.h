@@ -3,30 +3,34 @@
 
 #include <stdint.h>
 
-#define ITU_BASE           0x4000000
-#define DRIVE_A_BASE       0x4020000
-#define DRIVE_B_BASE       0x4024000
-#define IEC_BASE           0x4028000
-#define LED_BASE		   0x402C000
-#define C64_CARTREGS_BASE  0x4040000
-#define SID_BASE           0x4042000
-#define CMD_IF_BASE        0x4044000
-#define COPPER_BASE        0x4046000
-#define SAMPLER_BASE       0x4048000
-#define C64_MEMORY_BASE    0x4050000
-#define SDCARD_BASE        0x4060000
-#define RTC_BASE           0x4060100
-#define FLASH_BASE         0x4060200
-#define TRACE_BASE         0x4060300
-#define RTC_TIMER_BASE     0x4060400
-#define GCR_CODER_BASE     0x4060500
-#define ICAP_BASE          0x4060600
-#define AUDIO_SEL_BASE     0x4060700
-#define RMII_BASE          0x4060800
-#define USB_BASE           0x4080000
-#define C2N_PLAY_BASE      0x40A0000
-#define C2N_RECORD_BASE    0x40C0000
-#define OVERLAY_BASE       0x40E0000
+#ifndef IOBASE
+#define IOBASE 0x4000000
+#endif
+
+#define ITU_BASE           (IOBASE + 0x00000)
+#define DRIVE_A_BASE       (IOBASE + 0x20000)
+#define DRIVE_B_BASE       (IOBASE + 0x24000)
+#define IEC_BASE           (IOBASE + 0x28000)
+#define LED_BASE		   (IOBASE + 0x2C000)
+#define C64_CARTREGS_BASE  (IOBASE + 0x40000)
+#define SID_BASE           (IOBASE + 0x42000)
+#define CMD_IF_BASE        (IOBASE + 0x44000)
+#define COPPER_BASE        (IOBASE + 0x46000)
+#define SAMPLER_BASE       (IOBASE + 0x48000)
+#define C64_MEMORY_BASE    (IOBASE + 0x50000)
+#define SDCARD_BASE        (IOBASE + 0x60000)
+#define RTC_BASE           (IOBASE + 0x60100)
+#define FLASH_BASE         (IOBASE + 0x60200)
+#define TRACE_BASE         (IOBASE + 0x60300)
+#define RTC_TIMER_BASE     (IOBASE + 0x60400)
+#define GCR_CODER_BASE     (IOBASE + 0x60500)
+#define ICAP_BASE          (IOBASE + 0x60600)
+#define AUDIO_SEL_BASE     (IOBASE + 0x60700)
+#define RMII_BASE          (IOBASE + 0x60800)
+#define USB_BASE           (IOBASE + 0x80000)
+#define C2N_PLAY_BASE      (IOBASE + 0xA0000)
+#define C2N_RECORD_BASE    (IOBASE + 0xC0000)
+#define OVERLAY_BASE       (IOBASE + 0xE0000)
 
 #ifndef RUNS_ON_PC
 #define ioWrite8(x, y)  (*(volatile uint8_t *)(x)) = y

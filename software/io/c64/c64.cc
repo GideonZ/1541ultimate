@@ -652,9 +652,11 @@ void C64 :: restore_io(void)
     SID_DUMMY  = 0;   // clear internal charge on databus!
 }
 
-void C64 :: unfreeze(cart_def *def, int mode)
+void C64 :: unfreeze(void *vdef, int mode)
 {
-    if(C64_CLOCK_DETECT == 0)
+	cart_def *def = (cart_def *)vdef;
+
+	if(C64_CLOCK_DETECT == 0)
     	return;
 
     keyb->wait_free();

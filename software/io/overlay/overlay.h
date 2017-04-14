@@ -8,6 +8,7 @@ extern "C" {
 #include "integer.h"
 #include "host.h"
 #include "keyboard_c64.h"
+#include "keyboard_usb.h"
 #include "iomap.h"
 
 #define CHARGEN_LINE_CLOCKS_HI   *((volatile uint8_t *)(OVERLAY_BASE + 0x00))
@@ -39,26 +40,33 @@ class Overlay : public GenericHost
 {
     Keyboard *keyb;
     Screen *screen;
+    bool enabled;
 public:
     Overlay(bool active) {
         keyb = NULL;
+        enabled = active;
         
         if(getFpgaCapabilities() & CAPAB_OVERLAY) {
             CHARGEN_CHAR_WIDTH       = 8;
             CHARGEN_CHAR_HEIGHT      = 9;
             CHARGEN_CHARS_PER_LINE   = 40;
             CHARGEN_ACTIVE_LINES     = 25;
-            CHARGEN_X_ON_HI          = 0;
-            CHARGEN_X_ON_LO          = 100;
-            CHARGEN_Y_ON_HI          = 0;
-            CHARGEN_Y_ON_LO          = 150;
+            CHARGEN_X_ON_HI          = 1;
+            CHARGEN_X_ON_LO          = 120;
+            CHARGEN_Y_ON_HI          = 1;
+            CHARGEN_Y_ON_LO          = 90;
             CHARGEN_POINTER_HI       = 0;
             CHARGEN_POINTER_LO       = 0;
             CHARGEN_PERFORM_SYNC     = 0;
-            CHARGEN_TRANSPARENCY     = (active)?0x84:0x04;
 
             keyb = new Keyboard_C64(this, &CHARGEN_KEYB_ROW, &CHARGEN_KEYB_COL);
             screen = new Screen_MemMappedCharMatrix((char *)CHARGEN_SCREEN_RAM, (char *)CHARGEN_COLOR_RAM, 40, 25);
+
+            if (enabled) {
+            	take_ownership(0);
+            } else {
+            	release_ownership();
+            }
         }
     }
     ~Overlay() {
@@ -77,14 +85,23 @@ public:
     }
     
     bool is_accessible(void) {
-        return true;
+        return enabled;
+    }
+
+    bool is_permanent(void) {
+    	return true;
     }
     
-    void freeze(void) {
-        CHARGEN_TRANSPARENCY = 0x86;
+    void take_ownership(HostClient *h) {
+        CHARGEN_TRANSPARENCY = 0x80;
+        enabled = true;
+        system_usb_keyboard.enableMatrix(false);
     }
-    void unfreeze() {
-        CHARGEN_TRANSPARENCY = 0x06;
+
+    void release_ownership() {
+        CHARGEN_TRANSPARENCY = 0x01;
+        enabled = false;
+        system_usb_keyboard.enableMatrix(true);
     }
 
     Screen *getScreen(void) {

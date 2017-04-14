@@ -10,9 +10,14 @@
 
 #include <stdint.h>
 
+#ifndef U2P_IO_BASE
 #define U2P_IO_BASE 0xA0000000
-#define DDR2_BASE   0xA0000100
-#define REMOTE_BASE 0xA0000200
+#endif
+
+#define DDR2_BASE     (U2P_IO_BASE + 0x0100)
+#define REMOTE_BASE   (U2P_IO_BASE + 0x0200)
+#define DOWNLOAD_UART (U2P_IO_BASE + 0x0400)
+#define MATRIX_KEYB   (U2P_IO_BASE + 0x0800)
 
 #define DDR2_ADDR_LOW  (*(volatile uint8_t *)(DDR2_BASE + 0x00))
 #define DDR2_ADDR_HIGH (*(volatile uint8_t *)(DDR2_BASE + 0x01))

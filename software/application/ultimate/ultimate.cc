@@ -34,6 +34,8 @@
 #include "dump_hex.h"
 #include "usb_base.h"
 #include "home_directory.h"
+#include "u2p.h"
+#include "keyboard_usb.h"
 
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
@@ -44,7 +46,7 @@ C1541 *c1541_B;
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
 Overlay *overlay;
-C64 *c64;
+GenericHost *c64;
 C64_Subsys *c64_subsys;
 UserInterface *primaryUserInterface = 0;
 HomeDirectory *home_directory;
@@ -76,7 +78,9 @@ extern "C" void ultimate_main(void *a)
     
 	if (capabilities & CAPAB_CARTRIDGE) {
 		c64 = new C64;
-		c64_subsys = new C64_Subsys(c64);
+		c64_subsys = new C64_Subsys((C64 *)c64);
+	} else {
+		c64 = new GenericHost;
 	}
 
     char title[48];
@@ -88,21 +92,22 @@ extern "C" void ultimate_main(void *a)
 
     if(c64 && c64->exists()) {
         primaryUserInterface = new UserInterface(title);
-        primaryUserInterface->init(c64);
 
     	// Instantiate and attach the root tree browser
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
         primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+        primaryUserInterface->init(c64);
 
     } else if(capabilities & CAPAB_OVERLAY) {
         printf("Using Overlay module as user interface...\n");
-        overlay = new Overlay(true);
+        overlay = new Overlay(false);
         primaryUserInterface = new UserInterface(title);
-        primaryUserInterface->init(overlay);
+        system_usb_keyboard.setMatrix((volatile uint8_t *)MATRIX_KEYB);
         Browsable *root = new BrowsableRoot();
     	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
         primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+        primaryUserInterface->init(overlay);
     } else {
     	// from now on, log to memory, freeing the uart
 /*

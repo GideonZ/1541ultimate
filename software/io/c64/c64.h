@@ -240,7 +240,7 @@ public:
     Keyboard *getKeyboard(void);
 
     /* C64 specifics */
-    void unfreeze(cart_def *def, int mode);  // called from crt... hmm FIXME
+    void unfreeze(void *def, int mode);  // called from crt... hmm FIXME
 
     static void enable_kernal(uint8_t *rom);
     void init_cartridge(void);
@@ -251,6 +251,6 @@ public:
     friend class C64_Subsys; // the wrapper with file access
 };
 
-extern C64 *c64;
+extern GenericHost *c64;
 
 #endif
