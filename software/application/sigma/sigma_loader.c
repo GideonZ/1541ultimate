@@ -122,8 +122,8 @@ static void JumpToApplication(void target(void))
      * coming out of a hardware reset.
      */
     alt_irq_disable_all();
-    alt_dcache_flush_all();
-    alt_icache_flush_all();
+//    alt_dcache_flush_all();
+//    alt_icache_flush_all();
 
     /*
      * The cpu state is as close to reset as we can get it, so we jump to the new
@@ -140,6 +140,7 @@ int main(void)
 {
     uint32_t length;
     uint32_t address = 0;
+    uint32_t startaddr = 0x022c;
 
     // Let the world know we are alive
 //    Debug("Bootloader stopped now...\n");
@@ -155,15 +156,18 @@ int main(void)
     // Let the FPGA loader know we are ready to receive
     SendErpcRequest();
 
+	// Get the section address
+	SerialReadBuffer(loaderUart, (uint8_t*)&address, sizeof(address));
+
 	// Get the section length
 	SerialReadBuffer(loaderUart, (uint8_t*)&length, sizeof(length));
 
-	// Get the section address
-	// SerialReadBuffer(loaderUart, (uint8_t*)&address, sizeof(address));
+	// Get the runaddr
+	SerialReadBuffer(loaderUart, (uint8_t*)&startaddr, sizeof(startaddr));
+
 
 	SerialReadBuffer(loaderUart, (uint8_t*)address, length);
 	Debug("Done loading.\n");
 
-	JumpToApplication((void (*)(void))RESET_ADDRESS);
-
+	JumpToApplication((void (*)(void))startaddr);
 }
