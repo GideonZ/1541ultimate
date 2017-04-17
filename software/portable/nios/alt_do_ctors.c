@@ -62,7 +62,7 @@ void _do_ctors(void)
 
 //  for (ctor = &__CTOR_END__[-1]; ctor >= __CTOR_LIST__; ctor--) {
   for (ctor = __CTOR_LIST__; ctor != &__CTOR_END__[0]; ctor++) {
-	  // printf("CTOR: %p\n", *ctor);
+	  printf("CTOR: %p\n", *ctor);
 	  (*ctor) ();
   }
 }

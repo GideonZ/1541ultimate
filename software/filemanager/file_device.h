@@ -11,10 +11,10 @@ class FileDevice : public CachedTreeNode
 {
     BlockDevice *blk;
     Disk *disk;
-    char *display_name;
+    const char *display_name;
     bool initialized;
 public:
-    FileDevice(BlockDevice *b, char *n, char *dispn);
+    FileDevice(BlockDevice *b, const char *n, const char *dispn);
     virtual ~FileDevice();
     
 	bool is_ready(void);

@@ -169,7 +169,7 @@ FRESULT FileSystem :: file_read(File *f, void *buffer, uint32_t len, uint32_t *t
     return FR_NO_FILESYSTEM;
 }
 
-FRESULT FileSystem :: file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT FileSystem :: file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred)
 {
     *transferred = 0;
     return FR_NO_FILESYSTEM;

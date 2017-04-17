@@ -381,12 +381,10 @@ void UsbAx88772Driver :: poll(void)
 
 void UsbAx88772Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 {
-/*
     printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
 	for(int i=0;i<data_len;i++) {
 		printf("%b ", irq_data[i]);
 	} printf("\n");
-*/
 
 	if(irq_data[2] & 0x01) {
 		if(!link_up) {

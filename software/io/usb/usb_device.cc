@@ -27,21 +27,21 @@ char *unicode_to_ascii(uint8_t *in, char *out, int maxlen)
     buf = out;
     in += 2;
 
-    if(len < 2)
-        return "";
+    if(len < 2) {
+    	out[0] = 0;
+    } else {
+		len -= 2;
+		len >>= 1;
+		if(len >= maxlen)
+			len = maxlen-1;
 
-    len -= 2;
-    len >>= 1;
-    if(len >= maxlen)
-        len = maxlen-1;
-        
-    while(len) {
-        *(buf++) = (char)*in;
-        in += 2;
-        len--;
+		while(len) {
+			*(buf++) = (char)*in;
+			in += 2;
+			len--;
+		}
+		*(buf++) = '\0';
     }
-    *(buf++) = '\0';
-
     return out;
 }
 

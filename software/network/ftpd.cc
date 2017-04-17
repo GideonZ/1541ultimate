@@ -299,7 +299,7 @@ int FTPDaemonThread :: handle_connection()
 	return ERR_OK;
 }
 
-void FTPDaemonThread :: send_msg(char *msg, ...)
+void FTPDaemonThread :: send_msg(const char *msg, ...)
 {
 	va_list arg;
 	char buffer[600];
@@ -670,7 +670,7 @@ void FTPDaemonThread :: cmd_size(const char *arg)
 
 
 struct ftpd_command {
-	char *cmd;
+	const char *cmd;
 	func_t func;
 };
 
@@ -725,7 +725,7 @@ void FTPDaemonThread :: dispatch_command(char *text, int length)
 	}
 
 	if (strlen(text) < (strlen(cmd) + 1))
-		pt = "";
+		pt[0] = 0;
 	else
 		pt = &text[strlen(cmd) + 1];
 

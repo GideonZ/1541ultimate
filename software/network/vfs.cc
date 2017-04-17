@@ -31,7 +31,7 @@ void vfs_closefs(vfs_t *vfs)
     delete vfs;
 }
 
-vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags)
+vfs_file_t *vfs_open(vfs_t *fs, const char *name, const char *flags)
 {
     dbg_printf("Open file: '%s' flags: '%s'\n", name, flags);
     if (fs->open_file) {
@@ -84,7 +84,7 @@ int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
     return trans;
 }
 
-int  vfs_write(void *buffer, int chunks, int chunk_len, vfs_file_t *file)
+int  vfs_write(const void *buffer, int chunks, int chunk_len, vfs_file_t *file)
 {
     File *f = (File *)file->file;
     uint32_t trans = 0;

@@ -57,7 +57,7 @@ public:
 	virtual FRESULT file_delete(const char *path); // deletes a file
     virtual void    file_close(File *f);
     virtual FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    virtual FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);
+    virtual FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
     virtual FRESULT file_seek(File *f, uint32_t pos);
     virtual FRESULT file_sync(File *f);             // Clean-up cached data
     virtual void    file_print_info(File *f) { } // debug

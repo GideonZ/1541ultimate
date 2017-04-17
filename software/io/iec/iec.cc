@@ -753,7 +753,7 @@ int IecInterface :: get_last_error(char *buffer)
     return sprintf(buffer,"99,UNKNOWN,00,00\015");
 }
 
-void IecInterface :: master_open_file(int device, int channel, char *filename, bool write)
+void IecInterface :: master_open_file(int device, int channel, const char *filename, bool write)
 {
     printf("Open '%s' on device '%d', channel %d\n", filename, device, channel);
 	HW_IEC_TX_FIFO_RELEASE = 1;
@@ -981,7 +981,7 @@ char *IecInterface :: getIecName(char *in)
 	return out;
 }
 
-int IecInterface :: findIecName(char *name, char *ext)
+int IecInterface :: findIecName(const char *name, const char *ext)
 {
 	char temp[32];
 	if (ext[0]=='.')

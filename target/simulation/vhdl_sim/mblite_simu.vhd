@@ -32,7 +32,7 @@ architecture test of mblite_simu is
     type t_mem_array is array(natural range <>) of std_logic_vector(31 downto 0);
     
     shared variable memory  : t_mem_array(0 to 1048575) := (others => (others => '0')); -- 4MB
-
+	signal last_char	: std_logic_vector(7 downto 0);
 BEGIN
     clock <= not clock after 10 ns;
     reset <= '1', '0' after 100 ns;
@@ -80,6 +80,7 @@ BEGIN
                         when X"00010" => -- UART_DATA
                             byte := dmem_o.dat_o(31 downto 24);
                             char := character'val(to_integer(unsigned(byte)));
+							last_char <= char;
                             if byte = X"0D" then
                                 -- Ignore character 13
                             elsif byte = X"0A" then

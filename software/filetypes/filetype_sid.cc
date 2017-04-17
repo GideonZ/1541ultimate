@@ -361,10 +361,9 @@ void FileTypeSID :: load(void)
 	uint32_t bytes_read;
 	
 	printf("Loading SID..\n");
-	C64 *commie = (C64 *)c64;
 
 	// handshake with sid player cart
-	commie->stop(false);
+	c64->stop(false);
 
 	C64_POKE(0x0162, 0);
 	C64_POKE(0x0164, player);
@@ -372,18 +371,18 @@ void FileTypeSID :: load(void)
 
 	int timeout = 0;
 	while(C64_PEEK(2) != 0x01) {
-		commie->resume();
+		c64->resume();
 		timeout++;
 		if(timeout == 30) {
             printf("Time out!\n");
 			fm->fclose(file);
 			file = NULL;
-			commie->init_cartridge();
+			c64->init_cartridge();
 			return;
 		}
 		wait_ms(25);
 		printf("/");
-		commie->stop(false);
+		c64->stop(false);
 	}
 	
     // clear the entire memory
@@ -442,7 +441,7 @@ void FileTypeSID :: load(void)
 	
 //    SID_REGS(0) = 0x33; // start trace
     
-	commie->resume();
+	c64->resume();
 
 	fm->fclose(file);
 	file = NULL;

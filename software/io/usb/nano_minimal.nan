@@ -59,16 +59,10 @@ SPEED                = $26
 
 SET_DO_CHIRP         = $20
 SET_CHIRP_LEVEL      = $21
-;SET_CONNECTED        = $22
-;SET_OPERATIONAL      = $23
-;SET_SUSPENDED        = $24
 SET_SOF_ENABLE       = $27
 SEND_INTERRUPT       = $28
 CLR_DO_CHIRP         = $30
 CLR_CHIRP_LEVEL      = $31
-;CLR_CONNECTED        = $32
-;CLR_OPERATIONAL      = $33
-;CLR_SUSPENDED        = $34
 CLR_SOF_ENABLE       = $37
 
 PULSE_WAKEUP         = $25
@@ -139,26 +133,8 @@ begin
     CMP   #$06
     BEQ   _no_power
 
-;    INP   ULPI_R_FUNC_CTRL
-;    LOAD  #$55
-;    OUTP  ULPI_W_SCRATCH
-;    INP   ULPI_R_SCRATCH
-;    LOAD  #$AA
-;    OUTP  ULPI_W_SCRATCH
-;    INP   ULPI_R_SCRATCH
-;    LOAD  #$39
-;    OUTP  ULPI_W_SCRATCH
-;    INP   ULPI_R_SCRATCH
-;    LOAD  #$6C
-;    OUTP  ULPI_W_SCRATCH
-;    INP   ULPI_R_SCRATCH
-;    BRA   begin    
-
     LOAD  #0
     STORE RAM_STATUS
-;    OUTP  CLR_CONNECTED
-;    OUTP  CLR_OPERATIONAL
-;    OUTP  CLR_SUSPENDED
     OUTP  CLR_SOF_ENABLE
     LOAD  Simulation
     BEQ   start  ; Normal mode
@@ -167,9 +143,7 @@ begin
     LOAD  #$66
     OUTP  ULPI_W_OTG_CONTROL  ; turn on our power
 _sim_restart
-;    OUTP  SET_CONNECTED
     CALL  _reset_end
-;    OUTP  SET_OPERATIONAL
     LOAD  #3
     STORE RAM_STATUS 
     OUTP  SET_SOF_ENABLE
@@ -183,8 +157,6 @@ _waiting_for_reset_sim
     LOAD  #0
     STORE DO_RESET
     STORE RAM_STATUS
-;    OUTP  CLR_OPERATIONAL
-;    OUTP  CLR_SOF_ENABLE
     BRA   _sim_restart
 
 start
@@ -260,13 +232,9 @@ do_reset
     LOAD  #0
     STORE DO_RESET
     STORE RAM_STATUS
-;    OUTP  CLR_SOF_ENABLE
-;    OUTP  CLR_OPERATIONAL
     CALL  bus_reset
-;    OUTP  CLR_SUSPENDED
     LOAD  #3 ; cannot come without connected
     STORE RAM_STATUS
-;    OUTP  SET_OPERATIONAL
     OUTP  SET_SOF_ENABLE
     LOAD  #2
     CALL  delay
@@ -288,8 +256,6 @@ check_disconnect
     BPL   _no_disconnect
     OUTP  DISCONNECTED
     STORE RAM_STATUS
-;    OUTP  CLR_CONNECTED
-;    OUTP  CLR_OPERATIONAL
     OUTP  CLR_SOF_ENABLE
 _no_disconnect
     RET
@@ -306,7 +272,6 @@ main_loop
     BRA   main_loop
 
 do_suspend
-;    OUTP  SET_SUSPENDED
     LOAD  RAM_STATUS
     OR    #4
     STORE RAM_STATUS
@@ -398,7 +363,6 @@ _do_unsuspend_1
     LOAD  RAM_STATUS
     AND   #$FFFB
     STORE RAM_STATUS
-;    OUTP  CLR_SUSPENDED
     BRA   main_loop
     
 ; The following code issues a reset, and tries to get the device in high speed mode

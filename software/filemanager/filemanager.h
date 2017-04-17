@@ -10,7 +10,7 @@
 #include "semphr.h"
 #include "embedded_fs.h"
 
-void set_extension(char *buffer, char *ext, int buf_size);
+void set_extension(char *buffer, const char *ext, int buf_size);
 void get_extension(const char *name, char *ext);
 void fix_filename(char *buffer);
 

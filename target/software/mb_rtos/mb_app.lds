@@ -76,6 +76,8 @@ SECTIONS
   } 
   _heap_end = 0x00E80000;
 
+  _HEAP_SIZE = _heap_end - _heap_start;
+
   _stack = 0x00EBFFFC;
   _SDA_BASE_ = 0x00E80000;
   _SDA2_BASE_ = 0x00E90000;

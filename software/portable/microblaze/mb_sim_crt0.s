@@ -85,11 +85,28 @@ _start1:
 	la	r2, r0, _SDA2_BASE_
 	la	r1, r0, _stack-16           /* 16 bytes (4 words are needed by crtinit for args and link reg */
 
-    bralid  r15, 0x10000
-    nop
+	la   r4, r0, 0x1000
+	lwi  r3, r4, 0
+	beqi r3, not1000
+	bralid  r15, 0x1000
+	nop
+    bralid  r15, _exit                   /* Call exit with the return value of main */
+    addik  r5, r3, 0
+not1000:
 
-        brlid   r15, _exit                   /* Call exit with the return value of main */
-        addik   r5, r3, 0                   
+	la   r4, r0, 0x10000
+	lwi  r3, r4, 0
+	beqi r3, not10000
+	bralid  r15, 0x10000
+	nop
+    bralid  r15, _exit                   /* Call exit with the return value of main */
+    addik  r5, r3, 0
+not10000:
+
+    bralid  r15, 0x1000000
+	nop
+    bralid  r15, _exit                   /* Call exit with the return value of main */
+    addik  r5, r3, 0
 
         /* Control does not reach here */
         .end _start1

@@ -39,7 +39,7 @@
 #define __LWIPOPTS_H__
 
 // Use ERRNO! (nowhere to be found in the documentation!)
-#define ERRNO 				1
+#define ERRNO 				(errno)
 
 //  Altera TSE requires 2 byte padding for use with lwIP!
 #define ETH_PAD_SIZE        0
@@ -1418,5 +1418,8 @@
  * DNS_DEBUG: Enable debugging for DNS.
  */
 #define DNS_DEBUG                       LWIP_DBG_OFF
+
+
+#define LWIP_TIMEVAL_PRIVATE 0
 
 #endif /* __LWIPOPTS_H__ */

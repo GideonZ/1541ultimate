@@ -251,6 +251,6 @@ public:
     friend class C64_Subsys; // the wrapper with file access
 };
 
-extern GenericHost *c64;
+extern C64 *c64;
 
 #endif

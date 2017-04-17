@@ -743,7 +743,7 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 }
 
 /* some handy functions */
-void set_extension(char *buffer, char *ext, int buf_size)
+void set_extension(char *buffer, const char *ext, int buf_size)
 {
 	int ext_len = strlen(ext);
 	if(buf_size < 1+ext_len)

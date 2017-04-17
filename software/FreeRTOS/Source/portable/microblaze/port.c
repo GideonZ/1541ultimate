@@ -255,7 +255,6 @@ extern void ( vStartFirstTask )( void );
 	*p++ = (0xB0000000 | (addr >> 16));
 	*p++ = (0xB8080000 | (addr & 0xFFFF));
 
-
 	/* Setup the hardware to generate the tick.  Interrupts are disabled when
 	this function is called. */
 	prvSetupTimerInterrupt();
@@ -389,7 +388,7 @@ static uint8_t pending;
 	}
 }
 /*-----------------------------------------------------------*/
-void vAssertCalled( char* fileName, uint16_t lineNo )
+void vAssertCalled(const char* fileName, uint16_t lineNo )
 {
 	printf("ASSERTION FAIL: %s:%d\n", fileName, lineNo);
 	while(1)

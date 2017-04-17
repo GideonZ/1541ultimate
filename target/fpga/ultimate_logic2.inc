@@ -1,7 +1,7 @@
 ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_bus_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_bus_splitter.vhd \
-				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_bus_bridge.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_bus_bridge2.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_bus_arbiter_pri.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/io_dummy.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/busses/vhdl_source/mem_bus_pkg.vhd \
@@ -20,6 +20,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/pulse_stretch/vhdl_source/pulse_stretch.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/oc_pusher/vhdl_source/oc_pusher.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/synchroniser/vhdl_source/synchroniser.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/synchroniser/vhdl_source/synchronizer_gzw.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/synchroniser/vhdl_source/level_synchronizer.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/async_fifo/vhdl_source/gray_code_pkg.vhd \

@@ -39,6 +39,7 @@ SRCS_CC	 =  memory.cc \
 			stream.cc \
 			host_stream.cc \
 			stream_uart.cc \
+			keyboard_usb.cc \
 			$(PRJ).cc
 
 SRCS_ASM =  crt0_appl.s
@@ -81,7 +82,7 @@ VPATH   += ../mb_boot2/result
 
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -nostartfiles
-APPL_OPT = -Os -DGCC_ZPU -ffunction-sections -DNO_FILE_ACCESS=1 -DFIRST_WRITABLE_PAGE=0 -D_FPGA400=$(FPGA400)
+APPL_OPT = -Os -DGCC_ZPU -ffunction-sections -DNO_FILE_ACCESS=1 -DFIRST_WRITABLE_PAGE=0 -D_FPGA400=$(FPGA400) -DRECOVERYAPP=1
 COPTIONS = $(APPL_OPT) -std=c99
 CPPOPT   = $(APPL_OPT) -fno-exceptions -fno-rtti 
 LINK 	 = $(PATH_SW)/portable/zpu/zpu.lds

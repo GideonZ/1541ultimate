@@ -27,7 +27,7 @@ FRESULT File :: read(void *buffer, uint32_t len, uint32_t *transferred)
 	return res;
 }
 
-FRESULT File :: write(void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT File :: write(const void *buffer, uint32_t len, uint32_t *transferred)
 {
 	if(!filesystem) return FR_INVALID_OBJECT;
     return filesystem->file_write(this, buffer, len, transferred);

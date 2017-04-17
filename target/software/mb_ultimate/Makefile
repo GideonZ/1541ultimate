@@ -2,7 +2,7 @@
 include ../common/environment.mk
 
 PRJ        =  ultimate
-FINAL      =  $(RESULT)/$(PRJ).bin
+FINAL      =  $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).sim
 LINKMETHOD = ld
 
 SRCS_C   =	mbstart_rtos.c \
@@ -148,7 +148,7 @@ SRCS_NANO = nano_minimal.nan
 # TOOLCHAIN ?= $(XILINX_EDK)/gnu/microblaze/lin64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -nostartfiles -Os -DOS
+OPTIONS  = -g -ffunction-sections -nostartfiles -Os -DOS -DCLOCK_FREQ=50000000
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds

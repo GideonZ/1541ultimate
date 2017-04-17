@@ -97,7 +97,7 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
 {
 	FRESULT fres;
 	uint8_t read_buf[20];
-	char *signature = "C64-TAPE-RAW";
+	const char *signature = "C64-TAPE-RAW";
 	uint32_t *pul;
 	uint32_t bytes_read;
 	SubsysCommand *c64_command;

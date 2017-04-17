@@ -5,6 +5,7 @@
 #include "ff2.h"
 //#include "usb_scsi.h"
 #include "versions.h"
+#include "dump_hex.h"
 
 extern "C" {
 	#include "itu.h"
@@ -108,7 +109,7 @@ int init_fat_on_sd(void)
     return init_fat();
 }
 
-FRESULT try_loading(char *filename, uint32_t run_address)
+FRESULT try_loading(const char *filename, uint32_t run_address)
 {
     uint16_t dummy;
     FIL file;
@@ -167,16 +168,20 @@ int try_xmodem(void)
     return 1;
 }
 
-int main()
+void set(uint32_t p, uint32_t value)
 {
-	volatile uint32_t *k = (volatile uint32_t *)0;
+	uint32_t *pnt = (uint32_t *)p;
+	pnt[0] = value;
+}
 
+int main(int argc, char *argv[])
+{
     custom_outbyte = 0;
-	printf("*** 1541 Ultimate-II - Bootloader %s - FPGA Version: %2x - %08x %08x ***\n\n",
-            BOOT_VERSION, getFpgaVersion(), *k++, *k++);
+	printf("*** 1541 Ultimate-II - Bootloader %s - FPGA Version: %2x ***\n\n",
+            BOOT_VERSION, getFpgaVersion());
 
-	k = (volatile uint32_t *)0;
-	*k = 0xB0000000;
+	dump_hex(0, 16);
+	// set(0, 0xB0000000);
 
 	if (getFpgaCapabilities() & CAPAB_SIMULATION) {
         ioWrite8(UART_DATA, '*');

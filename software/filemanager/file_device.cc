@@ -2,7 +2,7 @@
 #include "file_partition.h"
 #include <stdio.h>
 
-FileDevice :: FileDevice(BlockDevice *b, char *n, char *dn) : CachedTreeNode(NULL, n)
+FileDevice :: FileDevice(BlockDevice *b, const char *n, const char *dn) : CachedTreeNode(NULL, n)
 {
     initialized = false;
     display_name = dn;

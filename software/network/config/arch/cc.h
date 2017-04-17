@@ -36,6 +36,7 @@
 #define __CC_H__
 
 #include <string.h>
+#include <sys/time.h>
 
 //#define LWIP_PROVIDE_ERRNO
 

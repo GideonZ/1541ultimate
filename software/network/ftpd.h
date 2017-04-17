@@ -106,7 +106,7 @@ class FTPDaemonThread
 	friend class FTPDataConnection;
 
 	static void run(void *a);
-	void send_msg(char *a, ...);
+	void send_msg(const char *a, ...);
 	void dispatch_command(char *a, int length);
 	int open_dataconnection(bool passive);
 public:

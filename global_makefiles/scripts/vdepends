@@ -75,12 +75,12 @@ awk '
 	# and configurations)
 	#
 	($1=="use" || $1 ~ /:/) && $2=="entity" {
-		entity=gensub(/\(.*/, "", "", $3);
-		entity=gensub(/.*\./, "", "", entity);
+		entity=gensub(/\(.*/, "", 1, $3);
+		entity=gensub(/.*\./, "", 1, entity);
 		entity=gensub(/;.*/, "", "g", entity);
 		if($3 ~ /\(/) {
-			architecture=gensub(/^.*\(/, "", "", $3);
-			architecture=gensub(/\).*/, "", "", architecture);
+			architecture=gensub(/^.*\(/, "", 1, $3);
+			architecture=gensub(/\).*/, "", 1, architecture);
 			if(name[entity]==1)
 				printf(" \\\n\t%s.vc",entity)
 			if(name[entity "-" architecture]==1) 

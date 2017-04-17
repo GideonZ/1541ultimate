@@ -46,7 +46,7 @@ C1541 *c1541_B;
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
 Overlay *overlay;
-GenericHost *c64;
+C64 *c64;
 C64_Subsys *c64_subsys;
 UserInterface *primaryUserInterface = 0;
 HomeDirectory *home_directory;
@@ -78,9 +78,9 @@ extern "C" void ultimate_main(void *a)
     
 	if (capabilities & CAPAB_CARTRIDGE) {
 		c64 = new C64;
-		c64_subsys = new C64_Subsys((C64 *)c64);
+		c64_subsys = new C64_Subsys(c64);
 	} else {
-		c64 = new GenericHost;
+		c64 = NULL;
 	}
 
     char title[48];
@@ -90,7 +90,17 @@ extern "C" void ultimate_main(void *a)
     	sprintf(title, "\eA**** 1541 Ultimate %s (%b) ****\eO", APPL_VERSION, getFpgaVersion());
     }
 
-    if(c64 && c64->exists()) {
+    if(capabilities & CAPAB_OVERLAY) {
+            printf("Using Overlay module as user interface...\n");
+            overlay = new Overlay(false);
+            primaryUserInterface = new UserInterface(title);
+            system_usb_keyboard.setMatrix((volatile uint8_t *)MATRIX_KEYB);
+            Browsable *root = new BrowsableRoot();
+        	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
+            primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+            primaryUserInterface->init(overlay);
+
+    } else if(c64 && c64->exists()) {
         primaryUserInterface = new UserInterface(title);
 
     	// Instantiate and attach the root tree browser
@@ -99,15 +109,6 @@ extern "C" void ultimate_main(void *a)
         primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
         primaryUserInterface->init(c64);
 
-    } else if(capabilities & CAPAB_OVERLAY) {
-        printf("Using Overlay module as user interface...\n");
-        overlay = new Overlay(false);
-        primaryUserInterface = new UserInterface(title);
-        system_usb_keyboard.setMatrix((volatile uint8_t *)MATRIX_KEYB);
-        Browsable *root = new BrowsableRoot();
-    	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
-        primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
-        primaryUserInterface->init(overlay);
     } else {
     	// from now on, log to memory, freeing the uart
 /*
@@ -123,7 +124,6 @@ extern "C" void ultimate_main(void *a)
         ui->activate_uiobject(root_tree_browser); // root of all evil!
 */
     }
-
 
     if(capabilities & CAPAB_C2N_STREAMER)
 	    tape_controller = new TapeController;

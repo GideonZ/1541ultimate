@@ -42,7 +42,7 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_crt(FileType :: getFi
 struct t_cart {
     uint16_t hw_type;
     uint16_t type_select;
-    char *cart_name;
+    const char *cart_name;
 };
 
 #define CART_NOT_IMPL  0xFFFF
@@ -252,7 +252,7 @@ int FileTypeCRT :: parseCrt(void *bufferVoid)
        int idx = 0;
        while(c_recognized_carts[idx].hw_type != 0xFFFF) {
         if(uint8_t(c_recognized_carts[idx].hw_type) == crt_header[0x17]) {
-            char* name = c_recognized_carts[idx].cart_name;
+            const char* name = c_recognized_carts[idx].cart_name;
             printf("%s\n", name);
             type_select = c_recognized_carts[idx].type_select;
             if(type_select == CART_NOT_IMPL) {

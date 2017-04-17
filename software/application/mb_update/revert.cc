@@ -305,6 +305,7 @@ extern "C" void ultimate_main(void *)
 
     user_interface = new UserInterface("\033\021   **** 1541 Ultimate II Reverter ****\n\033\037");
     user_interface->init(host);
+    host->take_ownership(user_interface);
     user_interface->appear();
     screen = host->getScreen();
     screen->move_cursor(0, 2);

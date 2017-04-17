@@ -52,7 +52,7 @@ public:
 
     virtual FRESULT sync(void);
     virtual FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
-    virtual FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);
+    virtual FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
     virtual FRESULT seek(uint32_t pos);
 //    virtual void print_info() { filesystem->file_print_info(this); }
     virtual uint32_t get_size(void)

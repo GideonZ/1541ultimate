@@ -31,7 +31,7 @@ typedef enum {
 } t_ui_state;
 
 
-class UserInterface : public ConfigurableObject, HostClient
+class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
     /* Configurable Object */

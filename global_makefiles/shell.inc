@@ -1,6 +1,19 @@
 ################################################################################
 ##
-## (C) COPYRIGHT 2010 Gideon's Logic Architectures'
+## (C) COPYRIGHT 2007-2011 TECHNOLUTION BV, GOUDA NL
+## | =======          I                   ==          I    =
+## |    I             I                    I          I
+## |    I   ===   === I ===  I ===   ===   I  I    I ====  I   ===  I ===
+## |    I  /   \ I    I/   I I/   I I   I  I  I    I  I    I  I   I I/   I
+## |    I  ===== I    I    I I    I I   I  I  I    I  I    I  I   I I    I
+## |    I  \     I    I    I I    I I   I  I  I   /I  \    I  I   I I    I
+## |    I   ===   === I    I I    I  ===  ===  === I   ==  I   ===  I    I
+## |                 +---------------------------------------------------+
+## +----+            |  +++++++++++++++++++++++++++++++++++++++++++++++++|
+##      |            |             ++++++++++++++++++++++++++++++++++++++|
+##      +------------+                          +++++++++++++++++++++++++|
+##                                                         ++++++++++++++|
+##                                                                  +++++|
 ##
 ################################################################################
 ## VSIM Simulation include file
@@ -12,10 +25,6 @@ export SCRIPT_PATH = $(strip $(GLOBAL_INCS)/scripts)
 ################################################################################
 ## Tool settings
 ################################################################################
-
-# Set the shell to execute this with
-
-SHELL = /bin/bash
 
 # Standard OS utilities.  These are for Linux.  Set them for your particular OS.
 RM                 := rm -f

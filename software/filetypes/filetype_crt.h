@@ -13,7 +13,7 @@ class FileTypeCRT : public FileType
     uint16_t  max_bank;
     uint32_t total_read;
     bool  load_at_a000;    
-    char *name;
+    const char *name;
     bool  check_header(File *f);
     void  configure_cart(void);
     bool  read_chip_packet(File *file);

@@ -2,8 +2,9 @@
 include ../common/environment.mk
 
 PRJ        =  mb_boot2
-FINAL      =  $(RESULT)/$(PRJ).bin
+FINAL      =  $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).sim
 LINKMETHOD = ld
+SIMOFFSET  = 4096
 
 SRCS_C   =	mbstart_app.c \
 			itu.c \

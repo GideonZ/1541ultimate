@@ -323,7 +323,7 @@ bool TapeRecorder :: request_file(SubsysCommand *cmd)
     }
         
     uint32_t dummy;
-    char *signature = "C64-TAPE-RAW\001\0\0\0\0\0\0\0";
+    const char *signature = "C64-TAPE-RAW\001\0\0\0\0\0\0\0";
 
 	int res = cmd->user_interface->string_box("Give name for tap file..", buffer, 22);
 	if(res > 0) {

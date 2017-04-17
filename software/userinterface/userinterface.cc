@@ -163,6 +163,7 @@ void UserInterface :: run(void)
 #endif
 }
 
+#ifndef RECOVERYAPP
 bool UserInterface :: buttonDownFor(uint32_t ms)
 {
     bool down = false;
@@ -181,6 +182,12 @@ bool UserInterface :: buttonDownFor(uint32_t ms)
     }
     return down;
 }
+#else
+bool UserInterface :: buttonDownFor(uint32_t ms)
+{
+	return false;
+}
+#endif
 
 void UserInterface :: swapDisk(void)
 {

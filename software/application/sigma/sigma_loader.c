@@ -148,7 +148,11 @@ int main(void)
 //    while(1)
 //    	;
 
-    Debug("Bootloader starting...\n");
+    int i;
+    for(i=0;i<30;i++) {
+    	Debug("Bootloader wait...\n");
+    }
+	Debug("Requesting Firmware...\n");
 
     // Flush any data in the receive buffer
     SerialFlush(loaderUart);

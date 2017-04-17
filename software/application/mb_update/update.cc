@@ -87,7 +87,7 @@ int calc_checksum(uint8_t *buffer, uint8_t *buffer_end)
 }
 
 
-bool need_update(int id, char *version, char *descr)
+bool need_update(int id, const char *version, const char *descr)
 {
 	t_flash_address image_address;
 	flash->get_image_addresses(id, &image_address);
@@ -123,7 +123,7 @@ bool my_memcmp(void *a, void *b, int len)
 
 static int last_sector = -1;	
 
-bool flash_buffer(int id, void *buffer, void *buf_end, char *version, char *descr)
+bool flash_buffer(int id, void *buffer, void *buf_end, const char *version, const char *descr)
 {
     int length = (int)buf_end - (int)buffer;
 	t_flash_address image_address;
@@ -321,6 +321,7 @@ extern "C" void ultimate_main(void *)
 
     UserInterface *user_interface = new UserInterface("\033\021** 1541 Ultimate II+ Updater **\n\033\037");
     user_interface->init(host);
+    host->take_ownership(user_interface);
     user_interface->appear();
 
     screen = host->getScreen();

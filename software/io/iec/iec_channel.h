@@ -298,7 +298,7 @@ public:
 private:
     int open_file(void)  // name should be in buffer
     {
-        char *extension;
+        const char *extension;
         
         buffer[pointer] = 0; // string terminator
         printf("Open file. Raw Filename = '%s'\n", buffer);

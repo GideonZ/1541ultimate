@@ -90,7 +90,7 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     void get_warp_data(void);
     void get_warp_error(void);
     void save_copied_disk(void);
-    void master_open_file(int device, int channel, char *filename, bool write);
+    void master_open_file(int device, int channel, const char *filename, bool write);
     bool master_send_cmd(int device, uint8_t *cmd, int length);
     void master_read_status(int device);
     bool run_drive_code(int device, uint16_t addr, uint8_t *code, int length);
@@ -114,7 +114,7 @@ public:
     int get_last_error(char *); // writes string into buffer
 
     FRESULT readDirectory(void);
-    int findIecName(char *name, char *ext);
+    int findIecName(const char *name, const char *ext);
 
     friend class IecChannel;
     friend class IecCommandChannel;

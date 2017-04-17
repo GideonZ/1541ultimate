@@ -616,7 +616,7 @@ const char *sense_strings[] = {
 struct t_sense_code
 {
     uint8_t major, minor;
-    char *string;
+    const char *string;
 };
 
 struct t_sense_code sense_codes[] = {

@@ -65,10 +65,10 @@ EXTERNC void   vfs_load_plugin();
 EXTERNC vfs_t *vfs_openfs();
 EXTERNC void   vfs_closefs(vfs_t *);
 
-EXTERNC vfs_file_t *vfs_open(vfs_t *fs, const char *name, char *flags);
+EXTERNC vfs_file_t *vfs_open(vfs_t *fs, const char *name, const char *flags);
 EXTERNC void vfs_close(vfs_file_t *file);
 EXTERNC int  vfs_read(void *buffer, int chunks, int chunk_len, vfs_file_t *file);
-EXTERNC int  vfs_write(void *buffer, int chunks, int chunk_len, vfs_file_t *file);
+EXTERNC int  vfs_write(const void *buffer, int chunks, int chunk_len, vfs_file_t *file);
 EXTERNC int  vfs_eof(vfs_file_t *file);
 
 EXTERNC vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name);

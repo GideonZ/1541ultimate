@@ -1,6 +1,19 @@
 ################################################################################
 ##
-## (C) COPYRIGHT 2010 Gideon's Logic Architectures'
+## (C) COPYRIGHT 2004-2013 TECHNOLUTION BV, GOUDA NL
+## | =======          I                   ==          I    =
+## |    I             I                    I          I
+## |    I   ===   === I ===  I ===   ===   I  I    I ====  I   ===  I ===
+## |    I  /   \ I    I/   I I/   I I   I  I  I    I  I    I  I   I I/   I
+## |    I  ===== I    I    I I    I I   I  I  I    I  I    I  I   I I    I
+## |    I  \     I    I    I I    I I   I  I  I   /I  \    I  I   I I    I
+## |    I   ===   === I    I I    I  ===  ===  === I   ==  I   ===  I    I
+## |                 +---------------------------------------------------+
+## +----+            |  +++++++++++++++++++++++++++++++++++++++++++++++++|
+##      |            |             ++++++++++++++++++++++++++++++++++++++|
+##      +------------+                          +++++++++++++++++++++++++|
+##                                                         ++++++++++++++|
+##                                                                  +++++|
 ##
 ################################################################################
 ## VSIM Simulation include file
@@ -14,6 +27,7 @@ THIS_MAKE_DEP := $(lastword $(MAKEFILE_LIST))
 WORK_DIR	?= work
 VWORK_DIR	?= $(WORK_DIR)
 VWORK_DIR_DEP	?= $(VWORK_DIR)/_dir
+TL_ENV ?= true
 
 VPATH		+= $(PROJ_ROOT)
 VPATH		+= $(VWORK_DIR)
@@ -38,7 +52,11 @@ VSIM_SOURCES += $(notdir $(wildcard $(addsuffix /*.vhd,$(subst :, ,$(AUTO_DEP_PA
 VSIM_SOURCES := $(sort $(VSIM_SOURCES)) # remove duplicates
 
 
-VSIM_SOURCE_PATHS += $(if $(SOURCE_INCLUDES),$(shell awk -f $(SCRIPT_PATH)/vsinc_paths.awk $(SOURCE_INCLUDES)))
+#VSIM_SOURCE_PATHS += $(if $(SOURCE_INCLUDES),$(shell awk -f $(SCRIPT_PATH)/vsinc_paths.awk $(SOURCE_INCLUDES)))
+	# NOTE/WOI: Do not add the SOURCE_INCLUDES paths to the VPATH. This breaks
+	# the makefile when adding sinc files from other modules, since make will
+	# automatically find the "work" target in the other directory as well, so it
+	# will not create a work directory in the current directory.
 VSIM_SOURCE_PATHS += $(AUTO_DEP_PATHS)
 VSIM_SOURCE_PATHS := $(sort $(VSIM_SOURCE_PATHS)) # remove duplicates
 
@@ -64,10 +82,10 @@ THIS_MAKE_DEP := $(THIS_MAKE_DEP) $(lastword $(MAKEFILE_LIST))
 # if no location of the tools are defined use the current active Modelsim version in
 # the shell
 
-VCOM	?= vcom
-VSIM	?= vsim
-VLIB	?= vlib
-VMAP	?= vmap
+VCOM	= ${TL_ENV} $(ENVIRONMENTS) && vcom
+VSIM	= ${TL_ENV} $(ENVIRONMENTS) && vsim
+VLIB	= ${TL_ENV} $(ENVIRONMENTS) && vlib
+VMAP	= ${TL_ENV} $(ENVIRONMENTS) && vmap
 VDEPENDS	?= $(GLOBAL_INCS)/scripts/vdepends
 
 VCOM_FLAGS = -93 -quiet
@@ -98,6 +116,7 @@ $(VWORK_DIR_DEP)	:
 ifneq ($(MAKECMDGOALS),vsim-info)
 ifneq ($(MAKECMDGOALS),vsim-clean)
 ifneq ($(MAKECMDGOALS),vsim-targets)
+ifneq ($(MAKECMDGOALS),vsim-drtr)
 ifneq ($(MAKECMDGOALS),clean)
   ifneq ($(words $(VSIM_SOURCES)),0)
     -include $(VSIM_SOURCES:%.vhd=$(VWORK_DIR)/%.vc.depend.make)
@@ -111,6 +130,7 @@ ifneq ($(MAKECMDGOALS),clean)
   ifneq ($(words $(REGTESTS)),0)
     -include $(REGTESTS:%=$(VWORK_DIR)/%.rt.depend.make)
   endif
+endif
 endif
 endif
 endif
@@ -137,10 +157,10 @@ findstringex		= $(findstring -$(1)-,$(patsubst %,-%-,$(2)))
 
 
 # function IS_TC_OR_TB
-# 	This function checks if a testcase or testbench is registered. It
+# 	This function checks if a test case or test bench is registered. It
 #	generates an error that stops make when not.
 #
-#	$(1) testcase name
+#	$(1) test case name
 
 IS_TC_OR_TB		= $(if $(call findstringex,$(1),$(TESTCASES) $(TESTBENCHES)),,\
 			  echo -e "\n\nTestcase '$(1)' is not found.\
@@ -149,10 +169,10 @@ IS_TC_OR_TB		= $(if $(call findstringex,$(1),$(TESTCASES) $(TESTBENCHES)),,\
 
 
 # function IS_TESTCASE
-# 	This function checks if a testcase is registered. It generates an error
+# 	This function checks if a test case is registered. It generates an error
 #	that stops make when not.
 #
-#	$(1) testcase name
+#	$(1) test case name
 
 IS_TESTCASE		= $(if $(call findstringex,$(1),$(TESTCASES)),,\
 			  echo -e "\n\nTestcase '$(1)' is not found.\
@@ -176,17 +196,17 @@ IS_REGTEST		= $(if $(call findstringex,$(1),$(REGTESTS)),,\
 # 	This function returns a command expression that will echo
 #	"successful" or "failed" when TCR has passed or failed.
 #
-#	$(1) testcase name
+#	$(1) test case name
 
 TCR_CHECK_CMD		= ( grep "** Simulation verdict : SUCCESSFUL" \
 			  $(VWORK_DIR)/$(1).tcr \
 			  > /dev/null && echo "successful" || echo "failed" )
 
 # function TCR_CHECK
-# 	This function evaluates the report of a testcase and returns a string
-# 	"succesful" on testcase success or "failed" on testcase failure
+# 	This function evaluates the report of a test case and returns a string
+# 	"succesful" on test case success or "failed" on test case failure
 #
-#	$(1) testcase name
+#	$(1) test case name
 
 TCR_CHECK		= $(shell  $(call TCR_CHECK_CMD,$(1)))
 
@@ -210,8 +230,8 @@ RTR_CHECK		= $(shell $(call RTR_CHECK_CMD,$(1)) )
 
 # function RT_PASS_FAIL
 # 	This function verifies if the regression test has succeeded.
-#	Returns the string "successful" when all testcases have passed, returns
-#	an empty string if one or more testcases failed.
+#	Returns the string "successful" when all test cases have passed, returns
+#	an empty string if one or more test cases failed.
 #
 #	$(1) regression test name
 
@@ -249,6 +269,10 @@ GET_VHDL_LIB		= $(if $(call EXTRACT_VHDL_LIB,$(1)),\
     ## Rules
     ############################################################################
 
+$(CONFIG_FILES):
+	$(error "The config file(s) '$(CONFIG_FILES)' configured in variable 'CONFIG_FILES' does not exist. Make sure the variable config files points to existing config files (makefiles). Ensure also the casing is correct.")
+	
+	
     ############################################################################
     ## Source include file generation
     ############################################################################
@@ -286,12 +310,12 @@ $(VWORK_DIR)/%.vc.depend.make: %.vhd $(VWORK_DIR_DEP) $(VWORK_DIR)/sources.sinc 
 	@$(call print_cmd_info_nonl,"VHD DEP",$<)
 	@$(if $(shell awk --field-separator=, '{if($$3 == "$(<F)") printf("%s\n",$$3)}'\
                  $(VWORK_DIR)/sources.sinc), \
-			echo "-> (sinc)";\
+			echo " -> (sinc)";\
 			echo $(patsubst %.vhd,%.vc,\
 			    $(shell awk --field-separator=, '{if($$3 == "$(<F)") \
 			    printf("%s : %s %s/_lib\n",$$3,$$4,$$2)}' \
 				$(VWORK_DIR)/sources.sinc)) > $(VWORK_DIR)/$(@F),\
-			echo "-> (auto dep)";\
+			echo " -> (auto dep)";\
 			$(VDEPENDS) $< $(basename $(VSIM_SOURCES)) > $(VWORK_DIR)/$(@F)\
 		)
 	@echo VHDL_LIB_$(*F) = $(call GET_VHDL_LIB,$(<F)) >> $(VWORK_DIR)/$(@F)
@@ -304,7 +328,7 @@ $(VWORK_DIR)/%.vc.depend.make: %.vhd $(VWORK_DIR_DEP) $(VWORK_DIR)/sources.sinc 
     ############################################################################
     ## TC report gen
     ############################################################################
-    ## Simulates a testcase and generates the test case reports (assuming the
+    ## Simulates a test case and generates the test case reports (assuming the
     ## sctb package is used).
     ##
     ## Note that the dependencies are generated and included separately
@@ -317,13 +341,13 @@ $(VWORK_DIR)/%.tb.depend.make: $(VWORK_DIR_DEP) $(CONFIG_FILES)
 
 
 
-    ## add default rule for testbench names
+    ## Add default rule for test bench names
 $(foreach testbench,$(TESTBENCHES),$(eval $(testbench): $(testbench).gui))
 
     ############################################################################
     ## TC report gen
     ############################################################################
-    ## Simulates a testcase and generates the test case reports (assuming the
+    ## Simulates a test case and generates the test case reports (assuming the
     ## sctb package is used).
     ##
     ## Note that the dependencies are generated and included separately
@@ -348,7 +372,7 @@ $(VWORK_DIR)/%.tc.depend.make: $(VWORK_DIR_DEP) $(CONFIG_FILES)
 	$(if $($(*F)_DO_OVERRIDE),\
 		@echo $($(*F)_DO_OVERRIDE) > $(VWORK_DIR)/$(@F),\
 		@echo "onerror {resume}; onbreak {resume}; $($(*F)_DO_BEFORE); \
-		run $($(*F)_TIME); $($(*F)_DO_AFTER); exit;"\
+		run 1 ns; restart -f; run $($(*F)_TIME); $($(*F)_DO_AFTER); exit;"\
 		> $(VWORK_DIR)/$(@F)\
 	 )
 
@@ -356,32 +380,34 @@ $(VWORK_DIR)/%.tc.depend.make: $(VWORK_DIR_DEP) $(CONFIG_FILES)
 %.tcr: %.tcr.do $(CONFIG_FILES)
 	@$(call print_cmd_info_nonl,"TCR VSIM",$(*F))
 	@$(call IS_TESTCASE,$(*F))
+	@rm -f $(VWORK_DIR)/$(@F).log
+	@rm -f $(VWORK_DIR)/$(@F)
 	@$(VSIM) -do $(VWORK_DIR)/$(*F).tcr.do $($(*F)_VSIM_OPTS) \
 	-gg_report_file_name=$(VWORK_DIR)/$(@F) \
 	-c $($(*F)_HARNESS_ENTITY) $($(*F)_ENTITY) > $(VWORK_DIR)/$(@F).log && \
-	echo -n "-> "; $(call TCR_CHECK_CMD,$(*F)) || echo "-> failed";
+	echo -n " -> "; $(call TCR_CHECK_CMD,$(*F)) || echo " -> failed";
 
     ############################################################################
     ## TC check
     ############################################################################
-    ## Checks the result of all testcase reports. Rebuilds the reports if
+    ## Checks the result of all test case reports. Rebuilds the reports if
     ## required.
     ############################################################################
 
 .PHONY: %.tc
 %.tc: %.tcr  $(CONFIG_FILES)
 	@$(call print_cmd_info_nonl,"TC CHECK",$(*F) )
-	@echo "-> $(call TCR_CHECK,$(*F))"
+	@echo " -> $(call TCR_CHECK,$(*F))"
 
 
-    ## add default rule for testcase name
+    ## add default rule for test case name
 $(foreach testcase,$(TESTCASES),$(eval $(testcase): $(testcase).tc))
 
 
     ############################################################################
     ## Regression test
     ############################################################################
-    ## Executes all testcases for a regression test
+    ## Executes all test cases for a regression test.
     ##
     ## Note that the dependencies are generated and included separately
     ## (%.rt.depend.make)
@@ -404,7 +430,7 @@ $(VWORK_DIR)/%.rt.depend.make: $(VWORK_DIR_DEP) $(CONFIG_FILES)
 		echo -e "\nREGRESSION TEST ENDED: SUCCESSFUL" >> $(VWORK_DIR)/$(@F),\
 		echo -e "\nREGRESSION TEST ENDED: FAILED" >> $(VWORK_DIR)/$(@F)\
 	)
-	@echo -n "-> "; $(call RTR_CHECK_CMD,$(*F))
+	@echo -n " -> "; $(call RTR_CHECK_CMD,$(*F))
 
     ############################################################################
     ## RT check
@@ -415,7 +441,9 @@ $(VWORK_DIR)/%.rt.depend.make: $(VWORK_DIR_DEP) $(CONFIG_FILES)
 .PHONY: %.rt
 %.rt: %.rtr
 	@$(call print_cmd_info_nonl,"RT CHECK",$(*F) )
-	@echo "-> $(call RTR_CHECK,$(*F))"
+	@echo " -> $(call RTR_CHECK,$(*F))"
+	@$(if $(call RT_PASS_FAIL,$(*F)),true, cat $(VWORK_DIR)/$*.rtr)
+	@$(if $(call RT_PASS_FAIL,$(*F)),true, false)
 
 $(foreach regtest,$(REGTESTS),$(eval $(regtest): $(regtest).rt))
 
@@ -429,8 +457,10 @@ $(foreach regtest,$(REGTESTS),$(eval $(regtest): $(regtest).rt))
     ## vtest - Makefile debugging only
     ############################################################################
 vtest::
-	echo vtest
-	env
+	echo $(VSIM_SOURCES)
+	echo $(VPATH)
+	
+	
 
 
     ############################################################################
@@ -443,11 +473,12 @@ vtest::
 vsim-clean::
 	 @$(call print_cmd_info,"CLEANUP",$(VWORK_DIR))
 	-@$(RMDIR) $(VWORK_DIR)
+	-@$(RM) transcript vsim.wlf
 
     ############################################################################
     ## Dump reports
     ############################################################################
-    ## Dumps the testcase report (does not perform a rebuild if files are
+    ## Dumps the test case report (does not perform a rebuild if files are
     ## modified)
     ############################################################################
 
@@ -466,8 +497,8 @@ vsim-clean::
     ############################################################################
     ## VSIM GUI
     ############################################################################
-    ## Runs a testcase or testbench in the VSIM GUI. This process is started in
-    ## the background.
+    ## Runs a test case or test bench in the VSIM GUI. This process is started
+    ## in the background.
     ############################################################################
 
 VSIM_GUI_CMD = 	$(VSIM) -gui $($(*F)_VSIM_OPTS) -do $(VWORK_DIR)/$(*F).gui.do\
@@ -484,7 +515,7 @@ VSIM_GUI_CMD = 	$(VSIM) -gui $($(*F)_VSIM_OPTS) -do $(VWORK_DIR)/$(*F).gui.do\
                 proc remake {} {exec make $($(*F)_SRC:.vhd=.vc)}; \
                 proc rerun {}  {exec make $($(*F)_SRC:.vhd=.vc); restart -f; run $($(*F)_TIME)}; \
                 $($(*F)_DO_GUI_BEFORE); \
-		run $($(*F)_TIME); $($(*F)_DO_GUI_AFTER)"\
+		run 1 ns; restart -f; run $($(*F)_TIME); $($(*F)_DO_GUI_AFTER)"\
 		> $(VWORK_DIR)/$(@F)\
 	 )
 
@@ -509,29 +540,37 @@ vsim-info::
 	@$(ECHO) "*** VSIM include					   "
 	@$(ECHO) "*****************************************************************************************"
 	@$(ECHO) "*** File targets"
-	@$(ECHO) "***   <file>.vc                  : compiles <file>.vhd"
+	@$(ECHO) "***   <file>.vc                  : Compiles <file>.vhd"
 	@$(ECHO) "*** Virtual targets"
-	@$(ECHO) "***   vsim-clean                 : cleans all files that are generated"
-	@$(ECHO) "***   vsim-info                  : this info"
-	@$(ECHO) "***   vsim-targets               : Shows all available testbenches,testcases and "
-	@$(ECHO) "***                                regression tests"
-	@$(ECHO) "***   <testcase/regression_test> : gives the result of an testcase/regression test. "
+	@$(ECHO) "***   vsim-clean                 : Cleans all files that are generated"
+	@$(ECHO) "***   vsim-info                  : This info"
+	@$(ECHO) "***   vsim-targets               : Shows all available test benches, test cases and"
+	@$(ECHO) "***                                regression tests."
+	@$(ECHO) "***   vsim-drtr                  : Shows all regression test reports."
+	@$(ECHO) "***   <testcase/regression_test> : Gives the result of a test case or regression test."
 	@$(ECHO) "***                                Executes a new simulation when required."
-	@$(ECHO) "***   <testcase/testbench>.gui   : starts a vsim gui with the given testcase or testbench"
-	@$(ECHO) "***   <testcase>.dtcr            : dumps the testcase report"
-	@$(ECHO) "***   <regression_test>.drtr     : dumps the regression test report"
+	@$(ECHO) "***   <testcase/testbench>.gui   : Starts a Vsim GUI with the given test case or"
+	@$(ECHO) "***                                test bench."
+	@$(ECHO) "***   <testcase>.dtcr            : Dumps the test case report."
+	@$(ECHO) "***   <regression_test>.drtr     : Dumps the regression test report."
 	@$(ECHO) "*****************************************************************************************"
 
 vsim-targets::
 	@$(ECHO) "*****************************************************************************************"
 	@$(ECHO) "*** Available project targets"
 	@$(ECHO) "*****************************************************************************************"
-	@$(ECHO) "*** Testbenches      :"
+	@$(ECHO) "*** Test benches     :"
 	@$(foreach testbench,$(TESTBENCHES),$(ECHO) "***   $(testbench)";)
 	@$(ECHO) "*** "
-	@$(ECHO) "*** Testcases        :"
+	@$(ECHO) "*** Test cases       :"
 	@$(foreach testcase,$(TESTCASES),$(ECHO) "***   $(testcase)";)
 	@$(ECHO) "*** "
 	@$(ECHO) "*** Regression tests :"
 	@$(foreach regtest,$(REGTESTS),$(ECHO) "***   $(regtest)";)
+	@$(ECHO) "*****************************************************************************************"
+
+vsim-drtr::
+	@$(ECHO) "*****************************************************************************************"
+	@$(ECHO) "*** Regression tests :"
+	@$(foreach regtest,$(REGTESTS), $(ECHO) "***   $(regtest)" ; cat $(VWORK_DIR)/$(regtest).rtr;)
 	@$(ECHO) "*****************************************************************************************"

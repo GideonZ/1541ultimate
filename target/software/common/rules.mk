@@ -177,7 +177,7 @@ $(OUTPUT)/$(PRJ).s00: $(RESULT)/$(PRJ).bin
 
 $(OUTPUT)/$(PRJ).sim: $(RESULT)/$(PRJ).bin
 	@echo Make mem...
-	@$(MAKEMEM) -w $< $@ 1000000 65536 
+	@$(MAKEMEM) -w $< $@ 1000000 $(SIMOFFSET) 
 
 $(OUTPUT)/$(PRJ).mem: $(RESULT)/$(PRJ).bin
 	@echo Make mem...
