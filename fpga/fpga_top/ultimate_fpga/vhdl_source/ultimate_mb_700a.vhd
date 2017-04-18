@@ -122,6 +122,7 @@ architecture structural of ultimate_mb_700a is
     signal sys_clock_2x : std_logic;
 --    signal sys_shifted  : std_logic;
     signal button_i     : std_logic_vector(2 downto 0);
+    signal RSTn_out     : std_logic;
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
@@ -203,7 +204,8 @@ begin
         -- slot side
         PHI2        => PHI2,
         DOTCLK      => DOTCLK,
-        RSTn        => RSTn,
+        RSTn_in     => RSTn,
+        RSTn_out    => RSTn_out,
     
         BUFFER_ENn  => BUFFER_ENn,
                                    
@@ -307,6 +309,7 @@ begin
     IEC_DATA   <= '0' when iec_data_o  = '0' else 'Z';
     IEC_CLOCK  <= '0' when iec_clock_o = '0' else 'Z';
     IEC_SRQ_IN <= '0' when iec_srq_o   = '0' else 'Z';
+    RSTn       <= '0' when RSTn_out = '0' else 'Z';
 
     i_mem_ctrl: entity work.ext_mem_ctrl_v5
     generic map (

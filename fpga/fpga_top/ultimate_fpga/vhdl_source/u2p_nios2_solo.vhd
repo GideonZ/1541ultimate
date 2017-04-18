@@ -173,6 +173,7 @@ architecture rtl of u2p_nios_solo is
     signal ref_reset    : std_logic;
     signal por_count    : unsigned(15 downto 0) := (others => '0');
     signal led_n        : std_logic_vector(0 to 3);
+    signal RSTn_out     : std_logic;
     
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
@@ -448,7 +449,8 @@ begin
         BUFFER_ENn  => open,
         PHI2        => SLOT_PHI2,
         DOTCLK      => SLOT_DOTCLK,
-        RSTn        => SLOT_RSTn,
+        RSTn_in     => SLOT_RSTn,
+        RSTn_out    => RSTn_out,
                                    
         SLOT_ADDR   => SLOT_ADDR,
         SLOT_DATA   => SLOT_DATA,
@@ -543,6 +545,8 @@ begin
 
         -- Buttons
         BUTTON      => button_i );
+
+    SLOT_RSTn <= '0' when RSTn_out = '0' else 'Z';
 
     i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
     generic map (

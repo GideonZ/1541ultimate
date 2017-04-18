@@ -34,7 +34,8 @@ port (
     
     -- Cartridge pins
     VCC             : in    std_logic := '1';
-    RSTn            : inout std_logic;
+    RSTn_in         : in    std_logic := '1';
+    RSTn_out        : out   std_logic := '1';
     IRQn            : inout std_logic;
     NMIn            : inout std_logic;
     PHI2            : in    std_logic;
@@ -324,7 +325,7 @@ begin
         
         -- Cartridge pins
         VCC             => VCC,
-        RSTn            => RSTn,
+        RSTn            => RSTn_in,
         IO1n            => IO1n,
         IO2n            => IO2n,
         ROMLn           => ROMLn,
@@ -706,10 +707,12 @@ begin
     
     irq_push: entity work.oc_pusher port map(clock => clock, sig_in => irq_oc, oc_out => IRQn);
     nmi_push: entity work.oc_pusher port map(clock => clock, sig_in => nmi_oc, oc_out => NMIn);
-    rst_push: entity work.oc_pusher port map(clock => clock, sig_in => rst_oc, oc_out => RSTn);
+    --rst_push: entity work.oc_pusher port map(clock => clock, sig_in => rst_oc, oc_out => RSTn);
     dma_push: entity work.oc_pusher port map(clock => clock, sig_in => dma_oc, oc_out => DMAn);
     exr_push: entity work.oc_pusher port map(clock => clock, sig_in => exrom_oc, oc_out => EXROMn);
     gam_push: entity work.oc_pusher port map(clock => clock, sig_in => game_oc, oc_out => GAMEn);
+
+    RSTn_out <= rst_oc;
 
     -- arbitration
     i_dma_arb: entity work.dma_bus_arbiter_pri

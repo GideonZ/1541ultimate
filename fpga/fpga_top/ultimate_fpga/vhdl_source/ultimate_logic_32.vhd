@@ -56,7 +56,8 @@ port (
     -- slot side
     PHI2        : in    std_logic := '0';
     DOTCLK      : in    std_logic := '0';
-    RSTn        : inout std_logic := '1';
+    RSTn_out    : out   std_logic := '1';
+    RSTn_in     : in    std_logic := '1';
 
     BUFFER_ENn  : out   std_logic := '1';
 
@@ -511,7 +512,7 @@ begin
             data_i          => data_i,              
             
             iec_reset_n     => iec_reset_i,
-            c64_reset_n     => RSTn,
+            c64_reset_n     => RSTn_in,
             
             -- LED
             act_led_n       => DISK_ACTn,
@@ -562,7 +563,7 @@ begin
             data_i          => data_i,              
             
             iec_reset_n     => iec_reset_i,
-            c64_reset_n     => RSTn,
+            c64_reset_n     => RSTn_in,
 
             -- LED
             act_led_n       => open, --DISK_ACTn,
@@ -598,7 +599,8 @@ begin
             
             -- Cartridge pins
             VCC             => VCC,
-            RSTn            => RSTn,
+            RSTn_in         => RSTn_in,
+            RSTn_out        => RSTn_out,
             IRQn            => IRQn,
             NMIn            => NMIn,
             PHI2            => PHI2,
