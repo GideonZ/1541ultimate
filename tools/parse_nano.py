@@ -244,6 +244,7 @@ if __name__ == "__main__":
     parse_lines(lines)
     for imm in imm_values:
         logger.info("PC: %03x: .dw $%04x" % (pc, imm))
+        print "%03X: %04X | IMM #%d" % (pc, imm, imm)
         _output_direct(imm)
         
     dump_bram_init()
