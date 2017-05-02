@@ -96,7 +96,11 @@ begin
                     wmask <= X"F";
                     wnext <= '1';
                     if last_word = '1' then
-                        state <= idle;
+                        if offset > last_bytes then
+                            state <= idle;
+                        else
+                            state <= last;
+                        end if;
                     end if;
                 end if;
             
