@@ -358,7 +358,9 @@ begin
 
     i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
     generic map (
-        g_left_shift => 2,
+        g_left_shift    => 0,
+        g_invert        => true,
+        g_use_mid_only  => false,
         g_width => audio_left'length )
     port map (
         clock   => sys_clock,
@@ -370,7 +372,9 @@ begin
 
     i_pwm1: entity work.sigma_delta_dac --delta_sigma_2to5
     generic map (
-        g_left_shift => 2,
+        g_left_shift    => 0,
+        g_invert        => true,
+        g_use_mid_only  => false,
         g_width => audio_right'length )
     port map (
         clock   => sys_clock,

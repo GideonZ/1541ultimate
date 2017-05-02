@@ -1083,9 +1083,9 @@ begin
             audio_right <= (others => '0');
             case audio_select_left is
             when X"0" =>
-                audio_left(18 downto 5) <= drive_sample_1(12) & drive_sample_1(12 downto 0);
+                audio_left(18 downto 7) <= drive_sample_1(11 downto 0);
             when X"1" =>
-                audio_left(18 downto 5) <= drive_sample_2(12) & drive_sample_2(12 downto 0);
+                audio_left(18 downto 7) <= drive_sample_2(11 downto 0);
             when X"2" =>
                 audio_left <= audio_tape_read;
             when X"3" =>
@@ -1112,9 +1112,9 @@ begin
 
             case audio_select_right is
             when X"0" =>
-                audio_right(18 downto 5) <= drive_sample_1(12) & drive_sample_1(12 downto 0);
+                audio_right(18 downto 7) <= drive_sample_1(11 downto 0);
             when X"1" =>
-                audio_right(18 downto 5) <= drive_sample_2(12) & drive_sample_2(12 downto 0);
+                audio_right(18 downto 7) <= drive_sample_2(11 downto 0);
             when X"2" =>
                 audio_right <= audio_tape_read;
             when X"3" =>
