@@ -26,7 +26,7 @@ MemBlock_Base_High      = $3E4
 MemBlock_Base_Low       = $3E5
 
 RAM_STATUS            = $3E6
-
+AbortCurrentCommand   = $3EF
 User_Command          = $3F0
 User_Command_DevEP    = $3F1
 User_Command_Length   = $3F2
@@ -136,28 +136,6 @@ begin
     LOAD  #0
     STORE RAM_STATUS
     OUTP  CLR_SOF_ENABLE
-    LOAD  Simulation
-    BEQ   start  ; Normal mode
-
-    ; Simulation init
-    LOAD  #$66
-    OUTP  ULPI_W_OTG_CONTROL  ; turn on our power
-_sim_restart
-    CALL  _reset_end
-    LOAD  #3
-    STORE RAM_STATUS 
-    OUTP  SET_SOF_ENABLE
-	CALL  status_irq
-    
-_waiting_for_reset_sim
-    CALL  check_command
-    CALL  check_pipes
-    LOAD  DO_RESET
-    BEQ   _waiting_for_reset_sim
-    LOAD  #0
-    STORE DO_RESET
-    STORE RAM_STATUS
-    BRA   _sim_restart
 
 start
     ; Turn off power and apply discharge
@@ -519,9 +497,15 @@ _copy_user_cmd
     STORE User_Command_Result
     LOAD  Current_Command_Length
     STORE User_Command_Length
-    LOAD  #0
+	LOAD  #0
+	STORE AbortCurrentCommand
     STORE User_Command
-    RET
+    LOAD  #$FFFE
+    BRA   other_irq
+    
+;	 LOAD  #0
+;    STORE User_Command
+;    RET
     
 _execute_cmd
     LOAD Current_Command_DevEP
@@ -548,6 +532,8 @@ _start_in
     OUTP MEM_ADDR_LO
 ; If we get here, we assume that it is an IN command
 _next_in_chunk
+	LOAD AbortCurrentCommand
+	BNE  _in_done ; we just stop trying, as requested
     LOAD CurrentBuffer
     OUTP CMD_DATA_BUFFER_CTRL
     LOAD Current_Command_SplitCtl
@@ -693,6 +679,8 @@ _no_truncate
 _out_command
     CALL do_mem_read ; first time
 _next_out_chunk
+	LOAD AbortCurrentCommand
+	BNE  _out_done ; we just stop trying, as requested
     LOAD CurrentLength
     BNE  _has_data
     OR   #CMD_BUF_NODATA
@@ -803,37 +791,6 @@ _check_nyet_response_out
     BRA  _try_complete_out
 
 
-AllowedErrors
-    .dw 0
-Transferred
-    .dw 0
-CurrentLength
-    .dw 0
-CurrentBuffer
-    .dw 0
-Current_Command
-    .dw 0          
-Current_Command_DevEP    
-    .dw 0          
-Current_Command_Length   
-    .dw 0          
-Current_Command_MaxTrans 
-    .dw 0          
-Current_Command_MemHi    
-    .dw 0          
-Current_Command_MemLo    
-    .dw 0          
-Current_Command_SplitCtl 
-    .dw 0          
-Current_Command_Result   
-    .dw 0          
-Current_Word_Offset
-    .dw 0
-    
-PipeAddr
-    .dw 0
-PipeNumber
-    .dw 0
     
 ; Pipe check loop
 check_pipes
@@ -859,13 +816,6 @@ _nxt_pipe
     BNE   _chk_pipe
 _pipes_done
     RET
-    
-Interval
-    .dw 0
-LastFrame
-    .dw 0
-BlockOffset
-    .dw 0
     
 _valid_pipe
     ; check interval
@@ -1103,6 +1053,7 @@ attr_fifo_push
     
 status_irq
 	LOAD  #$FFFF
+other_irq
 	CALL  attr_fifo_push
     OUTP  SEND_INTERRUPT
 	RET
@@ -1111,3 +1062,41 @@ fifo_temp_data
     .dw 0
 fifo_temp_addr
     .dw 0
+AllowedErrors
+    .dw 0
+Transferred
+    .dw 0
+CurrentLength
+    .dw 0
+CurrentBuffer
+    .dw 0
+Current_Command
+    .dw 0          
+Current_Command_DevEP    
+    .dw 0          
+Current_Command_Length   
+    .dw 0          
+Current_Command_MaxTrans 
+    .dw 0          
+Current_Command_MemHi    
+    .dw 0          
+Current_Command_MemLo    
+    .dw 0          
+Current_Command_SplitCtl 
+    .dw 0          
+Current_Command_Result   
+    .dw 0          
+Current_Word_Offset
+    .dw 0
+    
+PipeAddr
+    .dw 0
+PipeNumber
+    .dw 0
+Interval
+    .dw 0
+LastFrame
+    .dw 0
+BlockOffset
+    .dw 0
+    

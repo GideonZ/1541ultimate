@@ -8,7 +8,7 @@ extern "C" {
 #include <string.h>
 #include "task.h"
 
-#define printf(...)
+// #define printf(...)
 
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
@@ -36,7 +36,8 @@ char *unicode_to_ascii(uint8_t *in, char *out, int maxlen)
 			len = maxlen-1;
 
 		while(len) {
-			*(buf++) = (char)*in;
+			if ((*in >= 32) && (*in < 127))
+				*(buf++) = (char)*in;
 			in += 2;
 			len--;
 		}
@@ -87,6 +88,9 @@ UsbDevice :: UsbDevice(UsbBase *u, int speed)
 	control_pipe.SplitCtl = 0;
 	control_pipe.highSpeed = (speed == 2) ? 1 : 0;
 	control_pipe.needPing = 0;
+
+	manufacturer[0] = 0;
+	product[0] = 0;
 	vendorID = 0;
 	productID = 0;
 }

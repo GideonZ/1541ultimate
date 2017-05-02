@@ -82,9 +82,13 @@ void UsbHidDriver :: install(UsbInterface *intf)
 
 			host->control_exchange(&dev->control_pipe, c_set_protocol, 8, NULL, 0);
 			host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
-
+			host->resume_input_pipe(irq_transaction); // start polling
 		} else if (interface->getInterfaceDescriptor()->protocol == 2) {
 			printf("Boot Mouse found!\n");
+			// Note: Polling is not started!
+		} else {
+			// Another HID device which we cannot decode just yet
+			// Note: Polling is not started!
 		}
 	}
 }

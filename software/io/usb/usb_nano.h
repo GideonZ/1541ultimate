@@ -14,6 +14,7 @@
 #define USB2_BASE    USB_BASE
 #define NANO_BASE    USB_BASE
 
+#define USB2_CMD_Abort    (*(volatile uint16_t *)(NANO_BASE + 0x7DE))
 #define USB2_CMD_Command  (*(volatile uint16_t *)(NANO_BASE + 0x7E0))
 #define USB2_CMD_DevEP    (*(volatile uint16_t *)(NANO_BASE + 0x7E2))
 #define USB2_CMD_Length   (*(volatile uint16_t *)(NANO_BASE + 0x7E4))
@@ -92,14 +93,14 @@
 #define SPLIT_DO_SPLIT	0x8000
 
 
-#define URES_DONE	    0x8000
+#define URES_ABORTED    0x8000
 #define URES_PACKET	    0x0000
 #define URES_ACK	    0x1000
 #define URES_NAK	    0x2000
 #define URES_NYET	    0x3000
 #define URES_STALL      0x4000
 #define URES_ERROR	    0x5000
-#define URES_RESULT_MSK 0x7000
+#define URES_RESULT_MSK 0xF000
 #define URES_TOGGLE     0x0800
 #define URES_NO_DATA    0x0400
 #define URES_LENGTH_MSK 0x03FF

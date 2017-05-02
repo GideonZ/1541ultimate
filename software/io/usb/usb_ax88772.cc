@@ -152,35 +152,41 @@ void UsbAx88772Driver :: install(UsbInterface *intf)
     
 	dev->set_configuration(dev->get_device_config()->config_value);
 
-/*
+#if 0
 	static uint8_t testje[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
-    static uint8_t testje_met_offset[16] = { 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 };
     static uint8_t testje_512_offset[516];
 
-    printf("Testje: %p %p\n", testje, testje_met_offset);
-    for(int i=0; i<=8; i++) {
-    	host->bulk_out(&device->control_pipe, testje, i);
-    	for(int j=0;j<16;j++) {
-    		testje[j] += 16;
-    	}
+    printf("Testje: %p\n", testje);
+	for(int i=1; i<=8; i++) {
+		for(int k=0; k<4; k++) {
+			if ((k == 1) && (i == 6)) {
+				printf("Nice case to trigger.\n");
+			}
+			host->bulk_out(&device->control_pipe, testje+k, i);
+			for(int j=0;j<16;j++) {
+				testje[j] += 16;
+			}
+		}
     }
-    for(int i=0; i<=8; i++) {
-    	host->bulk_out(&device->control_pipe, &testje_met_offset[2], i);
-    	for(int j=0;j<16;j++) {
-    		testje_met_offset[j] += 16;
-    	}
-    }
-    for(int i=0;i<512;i++) {
-    	testje_512_offset[i+2] = (uint8_t)i;
-    }
-    testje_512_offset[0] = 0xEE;
-    testje_512_offset[1] = 0xDD;
-    testje_512_offset[514] = 0xCC;
-    testje_512_offset[515] = 0xBB;
 
     device->control_pipe.MaxTrans = 512;
-    host->bulk_out(&device->control_pipe, &testje_512_offset[2], 512);
-*/
+
+    for(int k=0; k<4; k++) {
+	    testje_512_offset[0] = 0xEE;
+	    testje_512_offset[1] = 0xDD;
+	    testje_512_offset[2] = 0xCC;
+	    testje_512_offset[3] = 0xBB;
+	    testje_512_offset[512] = 0xAA;
+	    testje_512_offset[513] = 0xBB;
+	    testje_512_offset[514] = 0xCC;
+	    testje_512_offset[515] = 0xDD;
+		for(int i=0;i<512;i++) {
+			testje_512_offset[i+k] = (uint8_t)i;
+		}
+	    host->bulk_out(&device->control_pipe, &testje_512_offset[k], 512);
+    }
+
+#endif
 
     netstack = getNetworkStack(this, UsbAx88772Driver_output, UsbAx88772Driver_free_buffer);
     if(!netstack) {
@@ -310,6 +316,7 @@ void UsbAx88772Driver :: install(UsbInterface *intf)
 		ipipe.Command = 0; // driver will fill in the command
 
 		irq_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_interrupt_callback, this);
+		host->resume_input_pipe(irq_transaction);
 
 		ipipe.DevEP = uint16_t((device->current_address << 8) | bulk_in);
 		ipipe.Interval = 1; // fast!
@@ -381,14 +388,17 @@ void UsbAx88772Driver :: poll(void)
 
 void UsbAx88772Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 {
+/*
     printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
 	for(int i=0;i<data_len;i++) {
 		printf("%b ", irq_data[i]);
 	} printf("\n");
+*/
 
 	if(irq_data[2] & 0x01) {
 		if(!link_up) {
 			printf("Bringing link up.\n");
+			host->resume_input_pipe(bulk_transaction);
 			if (netstack)
 				netstack->link_up();
 			link_up = true;
@@ -396,6 +406,7 @@ void UsbAx88772Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 	} else {
 		if(link_up) {
 			printf("Bringing link down.\n");
+			host->pause_input_pipe(bulk_transaction);
 			if (netstack)
 				netstack->link_down();
 			link_up = false;

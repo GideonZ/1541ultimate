@@ -51,6 +51,7 @@ class UsbBase
 	QueueHandle_t queue;
 	QueueHandle_t cleanup_queue;
 	SemaphoreHandle_t mutex;
+	SemaphoreHandle_t commandSemaphore;
 	volatile bool enumeration_lock;
 
 	struct usb_event event;
@@ -71,6 +72,7 @@ class UsbBase
     bool  put_block_fifo(uint16_t in);
     void process_fifo(struct usb_event *);
     void handle_status(uint16_t status);
+    uint16_t complete_command(int timeout);
 
     int   open_pipe();
     void  init_pipe(int index, struct t_pipe *init);

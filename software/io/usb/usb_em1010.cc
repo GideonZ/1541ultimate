@@ -145,6 +145,7 @@ void UsbEm1010Driver :: install(UsbInterface *intf)
 		ipipe.Command = 0; // driver will fill in the command
 
 		irq_transaction = host->allocate_input_pipe(&ipipe, UsbEm1010Driver_interrupt_callback, this);
+		host->resume_input_pipe(irq_transaction);
 
 		ipipe.DevEP = uint16_t((device->current_address << 8) | bulk_in);
 		ipipe.Interval = 1; // fast!
@@ -205,6 +206,7 @@ void UsbEm1010Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 	if(irq_data[5] & 0x01) {
 		if(!link_up) {
 			printf("Bringing link up.\n");
+			host->resume_input_pipe(bulk_transaction);
 			if (netstack)
 				netstack->link_up();
 			link_up = true;
@@ -212,6 +214,7 @@ void UsbEm1010Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
 	} else {
 		if(link_up) {
 			printf("Bringing link down.\n");
+			host->pause_input_pipe(bulk_transaction);
 			if (netstack)
 				netstack->link_down();
 			link_up = false;

@@ -9,7 +9,7 @@ extern "C" {
 #include "usb_hub.h"
 #include "FreeRTOS.h"
 
-#define printf(...)
+// #define printf(...)
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
@@ -200,6 +200,7 @@ void UsbHubDriver :: install(UsbInterface *intf)
 
     irq_transaction = host->allocate_input_pipe(&ipipe, UsbHubDriver_interrupt_handler, this);
     printf("Poll installed on irq_transaction %d\n", irq_transaction);
+    host->resume_input_pipe(irq_transaction);
 }
 
 void UsbHubDriver :: disable(void)
@@ -288,17 +289,18 @@ void UsbHubDriver :: handle_irqdata(void)
 							c_set_port_feature[4] = uint8_t(j+1);
 							wait_ms(power_on_time);
 							printf("Issuing reset on port %d.\n", j+1);
-							reset_busy = true;
 							i = host->control_exchange(&device->control_pipe,
 													   c_set_port_feature, 8,
 													   dummy, 8);
 							port_in_reset = j+1;
+							reset_busy = true;
 							reset_timeout = 4;
                     	}
                     } else { // disconnect
                     	printf("-> Disconnect\n");
                     	if (port_in_reset == j+1) {
                     		port_in_reset = 0;
+                    		reset_busy = false;
                     	}
                     	c_clear_port_feature[2] = C_PORT_CONNECTION;
                     	if(children[j]) {
@@ -379,6 +381,7 @@ void UsbHubDriver :: handle_irqdata(void)
                     } else {
                     	if (reset_timeout <= 0) {
                     		port_in_reset = 0;
+                    		reset_busy = false;
 
                     		printf("RESET TIMEOUT\n");
 							c_clear_port_feature[2] = C_PORT_ENABLE; // disable port
