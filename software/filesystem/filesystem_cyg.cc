@@ -140,7 +140,7 @@ FRESULT FileSystemCygwin :: file_read(File *f, void *buffer, uint32_t len, uint3
 	return FR_OK;
 }
 
-FRESULT FileSystemCygwin :: file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT FileSystemCygwin :: file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred)
 {
 	FILE *cygf = (FILE *)f->handle;
 	*transferred = fwrite(buffer, 1, len, cygf);

@@ -40,7 +40,7 @@ public:
 
 	void    file_close(File *f);                // Closes file (and destructs file object)
     FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
     FRESULT file_sync(File *f);             // Clean-up cached data
 

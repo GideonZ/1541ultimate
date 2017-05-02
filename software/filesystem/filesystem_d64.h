@@ -51,7 +51,7 @@ public:
     FRESULT open(FileInfo *info, uint8_t flags);
     FRESULT close(void);
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT write(void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT seek(uint32_t pos);
 };
 
@@ -92,7 +92,7 @@ public:
     FRESULT file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
     FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
-    FRESULT file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred);
+    FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
 
     uint32_t get_file_size(File *f) {

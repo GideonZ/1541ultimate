@@ -191,7 +191,7 @@ FRESULT FileSystemFAT :: file_read(File *f, void *buffer, uint32_t len, uint32_t
 	return f_read(fil, buffer, len, transferred);
 }
 
-FRESULT FileSystemFAT :: file_write(File *f, void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT FileSystemFAT :: file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred)
 {
 	FIL *fil = (FIL *)f->handle;
 	return f_write(fil, buffer, len, transferred);

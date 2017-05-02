@@ -727,7 +727,7 @@ void UsbBase :: free_input_pipe(int index)
     xSemaphoreGive(mutex);
 }
 
-int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len)
+int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
@@ -766,7 +766,7 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len)
 
 		USB2_CMD_Command = cmd;
 		// wait until it gets zero again
-		result = complete_command(100);
+		result = complete_command(timeout);
 
 		pipe->Command = (result & URES_TOGGLE); // that's what we start with next time.
 

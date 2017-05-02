@@ -123,8 +123,8 @@ public:
     void pause_input_pipe(int index);
     void resume_input_pipe(int index);
 
-    int  bulk_out(struct t_pipe *pipe, void *buf, int len);
-    int  bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout = 1000000); // blocking
+    int  bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout = 2000); // 10 seconds
+    int  bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout = 2000); // 10 seconds
 
     void free_input_buffer(int inpipe, uint8_t *buffer);
 

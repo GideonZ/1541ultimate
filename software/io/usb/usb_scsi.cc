@@ -440,22 +440,20 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     	return retval;
     }
 
-    int timeout = 1000000;
     if(cmd[0] == 0x12) {
         vTaskDelay(100);
-        timeout = 40;
     }
 
     bool read_status = true;
     /* DATA PHASE */
     if((data)&&(datalen)) {
     	if(out) {
-			len = host->bulk_out(&bulk_out, data, datalen);
+			len = host->bulk_out(&bulk_out, data, datalen, 2000); // 10 seconds
 			if(debug) {
 				printf("%d data bytes sent.\n", len);
 			}
     	} else { // in
-			len = host->bulk_in(&bulk_in, data, datalen, timeout);
+			len = host->bulk_in(&bulk_in, data, datalen, 400); // 2 seconds
 			if(debug) {
 				printf("%d data bytes received:\n", len);
 				dump_hex(data, len);

@@ -217,7 +217,7 @@ FRESULT FileSystemT64::file_read(File *f, void *buffer, uint32_t len, uint32_t *
     return ff->read(buffer, len, bytes_read);
 }
 
-FRESULT FileSystemT64::file_write(File *f, void *buffer, uint32_t len, uint32_t *bytes_written)
+FRESULT FileSystemT64::file_write(File *f, const void *buffer, uint32_t len, uint32_t *bytes_written)
 {
     FileInT64 *ff = (FileInT64 *)f->handle;
     return ff->write(buffer, len, bytes_written);
@@ -300,7 +300,7 @@ FRESULT FileInT64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
 	return res;
 }
 
-FRESULT  FileInT64 :: write(void *buffer, uint32_t len, uint32_t *transferred)
+FRESULT  FileInT64 :: write(const void *buffer, uint32_t len, uint32_t *transferred)
 {
 	return FR_DENIED;
 }
