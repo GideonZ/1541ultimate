@@ -142,7 +142,7 @@
 #define C64_POKE(x,y) *((volatile uint8_t *)(C64_MEMORY_BASE + x)) = y;
 #define C64_PEEK(x)   (*((volatile uint8_t *)(C64_MEMORY_BASE + x)))
 
-#define NUM_VICREGS    48
+#define NUM_VICREGS    49
 #define COLOR_SIZE   1024
 #define BACKUP_SIZE  2048
 #define CHARSET_SIZE 2048
