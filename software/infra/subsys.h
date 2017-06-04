@@ -79,6 +79,7 @@ struct SubsysResult
 class SubsysCommand
 {
 	SubSystem   *subsys;	// filled in by factory
+
 public:
 	SubsysCommand(UserInterface *ui, Action *act, const char *p, const char *fn) :
 		user_interface(ui),
@@ -88,6 +89,8 @@ public:
 		direct_call(act->func),
 		path(p), filename(fn) {
 		subsys	       = 0;
+		buffer = NULL;
+		bufferSize = 0;
 	}
 
 	SubsysCommand(UserInterface *ui, int subID, int funcID, int mode, const char *p, const char *fn) :
@@ -97,6 +100,20 @@ public:
 		mode(mode),
 		direct_call(0),
 		path(p), filename(fn) {
+		subsys	       = 0;
+		buffer = NULL;
+		bufferSize = 0;
+	}
+
+	SubsysCommand(UserInterface *ui, int subID, int funcID, int mode, void *buffer, int bufferSize) :
+		user_interface(ui),
+		subsysID(subID),
+		functionID(funcID),
+		mode(mode),
+		direct_call(0),
+		path(""), filename(""),
+		buffer(buffer),
+		bufferSize(bufferSize) {
 		subsys	       = 0;
 	}
 
@@ -129,6 +146,7 @@ public:
 		printf("  Mode: %d\n", mode);
 		printf("  Path: %s\n", path.c_str());
 		printf("  Filename: %s\n", filename.c_str());
+		printf("  Buffer = %p (size: %d)\n", buffer, bufferSize);
 	}
 
 	UserInterface *user_interface;
@@ -138,6 +156,8 @@ public:
 	actionFunction_t direct_call;
 	mstring        path;
 	mstring		   filename;
+	void 		  *buffer;
+	int            bufferSize;
 };
 
 #endif /* INFRA_SUBSYS_H_ */

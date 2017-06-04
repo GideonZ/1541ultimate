@@ -479,6 +479,8 @@ public:
                 printf("Command received: %s\n", buffer);
                 if (strncmp((char *)buffer, "CD:", 3) == 0) {
                 	cd((char *)&buffer[3]);
+                } else if (strncmp((char *)buffer, "UI", 2) == 0) {
+                	get_last_error(ERR_DOS);
                 } else { // unknown command
                 	get_last_error(ERR_SYNTAX_ERROR_CMD);
                 }

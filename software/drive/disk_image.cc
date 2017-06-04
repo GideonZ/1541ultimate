@@ -288,6 +288,7 @@ uint8_t *GcrImage :: find_sync(uint8_t *gcr_data, uint8_t *begin, uint8_t *end)
             gcr_data = begin;
         }
     } while(1);
+    return NULL;
 }
 
 inline void conv_5bytes_gcr2bin(uint8_t **gcr, uint8_t *bin)
@@ -306,13 +307,12 @@ inline void conv_5bytes_gcr2bin(uint8_t **gcr, uint8_t *bin)
 	*gcr = b;
 }
 
-uint8_t *GcrImage :: wrap(uint8_t **current, uint8_t *begin, uint8_t *end, int count)
+uint8_t *GcrImage :: wrap(uint8_t **current, uint8_t *begin, uint8_t *end, int count, uint8_t *buffer)
 {
     uint8_t *gcr = *current;
-//    printf("[%p-%p-%p:%d]", begin, gcr, end, count);
+
     if(gcr > (end - count)) {
-//		printf("Wrap(%d)..", count);
-		uint8_t *d = sector_buffer;
+		uint8_t *d = buffer;
 		uint8_t *s = gcr;
         *current = (gcr + count) - (end - begin);
 		while((s < end)&&(count--))
@@ -320,7 +320,7 @@ uint8_t *GcrImage :: wrap(uint8_t **current, uint8_t *begin, uint8_t *end, int c
 		s = begin;
 		while(count--)
 			*(d++) = *(s++);
-		return sector_buffer; // set decode pointer to the scratch pad
+		return buffer; // set decode pointer to the scratch pad
 	}
     *current = gcr + count;
 	return gcr;
@@ -340,6 +340,110 @@ int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, UserInterface *user_in
     return errors;
 }
 
+int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackLen, int maxSector, uint8_t *bin, uint8_t *status)
+{
+	static uint8_t header[8];
+	int t, s;
+
+    uint8_t *begin;
+	uint8_t *end;
+	uint8_t *current;
+	uint8_t *dest;
+    uint8_t *gcr_data;
+	uint8_t *new_gcr;
+	uint8_t *st = status;
+
+	bool  expect_data = false;
+	bool  wrapped = false;
+
+	current = gcr;
+	begin = gcr;
+	end = begin + trackLen;
+	gcr = begin;
+
+	int secs = 0;
+	uint8_t sector_buffer[352];
+
+	while(secs < maxSector) {
+
+		new_gcr = find_sync(current, begin, end);
+        if(new_gcr < current) {
+        	if (wrapped) {
+        		break;
+        	}
+            wrapped = true;
+        }
+        current = new_gcr;
+
+        gcr_data = wrap(&current, begin, end, 5, sector_buffer);
+		conv_5bytes_gcr2bin(&gcr_data, &header[0]);
+		if(header[0] == 8) {
+            gcr_data = wrap(&current, begin, end, 5, sector_buffer);
+			conv_5bytes_gcr2bin(&gcr_data, &header[4]);
+			t = (int)header[3];
+			s = (int)header[2];
+			dest = bin + (256 * s);
+
+			// We found a header, but we are expecting data
+			if (expect_data) {
+				if (st) {
+					*(st++) = 0xE4;
+				}
+			}
+
+			// new sector, store sector number
+			if (st) {
+				*(st++) = s;
+			}
+
+			if(t != trackNumber) {
+				if (st) {
+					*(st++) = 0xE1;
+				}
+			}
+			if(s >= maxSector) {
+				if (st) {
+					*(st++) = 0xE2;
+				}
+			}
+			expect_data = true;
+			continue;
+		}
+
+		if(header[0] == 7) {
+			if(!expect_data) {
+
+			} else {
+				expect_data = false;
+				secs++;
+				uint8_t *binarySector = dest;
+				memcpy(dest, &header[1], 3);
+				dest += 3;
+                gcr_data = wrap(&current, begin, end, 320, sector_buffer);
+				for(int i=0;i<63;i++) {
+					conv_5bytes_gcr2bin(&gcr_data, dest);
+					dest+=4;
+				}
+				conv_5bytes_gcr2bin(&gcr_data, &header[4]);
+				*(dest++) = header[4];
+
+				if (st) {
+					uint8_t chk = 0;
+					for (int i=0;i<256;i++) {
+						chk ^= *(binarySector++);
+					}
+					if (chk != header[5]) {
+						*(st++) = 0xE3;
+					} else {
+						*(st++) = 0x00;
+					}
+				}
+			}
+		}
+	}
+	return secs;
+}
+
 int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 {
 	static uint8_t header[8];
@@ -347,83 +451,10 @@ int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
 
 	int expected_secs = bin_image->track_sectors[track];
 	uint8_t *bin = bin_image->track_start[track];
-	uint8_t *gcr;
-    uint8_t *begin;
-	uint8_t *end;
-	uint8_t *dest;
-    uint8_t *gcr_data;
-	uint8_t *new_gcr;
-	bool  expect_data = false;
-	bool  wrapped = false;
-    begin = track_address[2*track];
-	end = begin + track_length[2*track];
-	gcr = begin;
+    uint8_t *begin = track_address[2*track];
     
-	int secs = 0;
+    int secs = convert_gcr_track_to_bin(begin, track+1, track_length[2*track], expected_secs, bin, NULL);
 	
-	while(secs < expected_secs) {
-        
-		new_gcr = find_sync(gcr, begin, end);
-        if(new_gcr < gcr) {
-        	if (wrapped) {
-        		break;
-        	}
-        	//            printf(":W");
-            wrapped = true;
-        }            
-        gcr = new_gcr;
-
-        gcr_data = wrap(&gcr, begin, end, 5);
-		conv_5bytes_gcr2bin(&gcr_data, &header[0]);
-		if(header[0] == 8) {
-            gcr_data = wrap(&gcr, begin, end, 5);
-			conv_5bytes_gcr2bin(&gcr_data, &header[4]);
-			t = (int)header[3];
-			s = (int)header[2];
-			dest = bin + (256 * s);
-//            printf(":H[%d.%d]", t, s);
-			//printf("Sector header found: %d %d\n", t, s);
-			if(t != (track+1)) {
-				printf("Error, sector doesn't belong to this track.\n");
-				return -1;
-			}
-			if(s >= expected_secs) {
-				printf("Sector out of bounds.\n");
-				return -2;
-			}
-			expect_data = true;
-		}
-		if(header[0] == 7) {
-			if(!expect_data) {
-//                printf("$");
-//				printf("Ignoring data block. No header.\n");
-			} else {
-//                printf(":D");
-				expect_data = false;
-				secs++;
-				uint8_t *binarySector = dest;
-				memcpy(dest, &header[1], 3);
-				dest += 3;
-                gcr_data = wrap(&gcr, begin, end, 320);
-				for(int i=0;i<63;i++) {
-					conv_5bytes_gcr2bin(&gcr_data, dest);
-					dest+=4;
-				}
-				conv_5bytes_gcr2bin(&gcr_data, &header[4]);
-				*(dest++) = header[4];
-				uint8_t chk = 0;
-/*
-				for (int i=0;i<256;i++) {
-					chk ^= *(binarySector++);
-				}
-				if (chk != header[5]) {
-					printf("Checksum error %d:%d\n", t, s);
-				}
-*/
-				//printf("bin = %p\n", bin);
-			}
-		}
-	}
 	printf("%d sectors found.\n", secs);
 	if(secs != expected_secs)
 		return -3;
@@ -511,7 +542,7 @@ int GcrImage :: find_track_start(int track)
         gcr = find_sync(gcr, begin, end);
         if(!gcr)
             return 0;
-        gcr_data = wrap(&gcr, begin, end, 5);
+        gcr_data = wrap(&gcr, begin, end, 5, sector_buffer);
     	conv_5bytes_gcr2bin(&gcr_data, &header[0]);
     	if((header[0] == 8)&&(header[2] == 0)) {
             // sector 0 found!

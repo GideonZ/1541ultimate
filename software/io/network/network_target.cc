@@ -15,11 +15,11 @@
 NetworkTarget net(3);
 
 Message c_net_message_identification = { 34, true, (uint8_t *)"ULTIMATE-II NETWORK INTERFACE V1.0" };
-Message c_status_invalid_params      = { 17, true, (uint8_t *)"21,INVALID PARAMS" };
-Message c_status_param_out_of_range  = { 28, true, (uint8_t *)"22,PARAMETER(S) OUT OF RANGE" };
-Message c_status_interface_not_set   = { 20, true, (uint8_t *)"23,INTERFACE NOT SET" };
-Message c_status_host_not_resolvable = { 18, true, (uint8_t *)"24,UNRESOLVED HOST" };
-Message c_status_no_socket           = { 23, true, (uint8_t *)"25,ERROR OPENING SOCKET" };
+Message c_status_invalid_params      = { 17, true, (uint8_t *)"81,INVALID PARAMS" };
+Message c_status_param_out_of_range  = { 28, true, (uint8_t *)"82,PARAMETER(S) OUT OF RANGE" };
+Message c_status_interface_not_set   = { 20, true, (uint8_t *)"83,INTERFACE NOT SET" };
+Message c_status_host_not_resolvable = { 18, true, (uint8_t *)"84,UNRESOLVED HOST" };
+Message c_status_no_socket           = { 23, true, (uint8_t *)"85,ERROR OPENING SOCKET" };
 Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLOSED BY HOST" };
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 

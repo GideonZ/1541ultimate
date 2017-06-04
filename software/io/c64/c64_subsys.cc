@@ -151,7 +151,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     case C64_DMA_LOAD:
     	res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
         if(res == FR_OK) {
-        	dma_load(f, cmd->filename.c_str(), cmd->mode);
+        	dma_load(f, NULL, 0, cmd->filename.c_str(), cmd->mode);
         	fm->fclose(f);
         }
     	break;
@@ -163,7 +163,10 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         }
     	break;
     case C64_DRIVE_LOAD:
-    	dma_load(0, cmd->filename.c_str(), cmd->mode);
+    	dma_load(0, NULL, 0, cmd->filename.c_str(), cmd->mode);
+    	break;
+    case C64_DMA_BUFFER:
+    	dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode);
     	break;
     case C64_STOP_COMMAND:
 		c64->stop(false);
@@ -198,7 +201,8 @@ int C64_Subsys :: dma_load_raw(File *f)
 	return bytes;
 }
 
-int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t reloc)
+int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
+		const char *name, uint8_t run_code, uint16_t reloc)
 {
 	// prepare DMA load
     if(c64->client) { // we are locked by a client, likely: user interface
@@ -247,7 +251,11 @@ int C64_Subsys :: dma_load(File *f, const char *name, uint8_t run_code, uint16_t
             printf("_");
             c64->stop(false);
         }
-        load_file_dma(f, 0);
+        if (f) {
+        	load_file_dma(f, 0);
+        } else {
+        	load_buffer_dma(buffer, bufferSize, 0);
+        }
 
         C64_POKE(2, 0); // signal DMA load done
         C64_POKE(0x0162, run_code);
@@ -331,6 +339,40 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 	C64_POKE(0x0036, 0xA0);
 
 	return total_trans;
+}
+
+int C64_Subsys :: load_buffer_dma(const uint8_t *buffer, const int bufferSize, uint16_t reloc)
+{
+    uint16_t load_address = 0;
+
+    load_address = (uint16_t)buffer[0] | ((uint16_t)buffer[1]) << 8;
+	printf("Load address: %4x...", load_address);
+
+	if (reloc) {
+    	load_address = reloc;
+    	printf(" -> %4x ..", load_address);
+    }
+	volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + load_address);
+
+	memcpy((void *)dest, buffer + 2, bufferSize - 2);
+
+	uint16_t end_address = load_address + bufferSize - 2;
+	printf("DMA load complete: $%4x-$%4x\n", load_address, end_address);
+
+	C64_POKE(0x002D, end_address);
+	C64_POKE(0x002E, end_address >> 8);
+	C64_POKE(0x002F, end_address);
+	C64_POKE(0x0030, end_address >> 8);
+	C64_POKE(0x0031, end_address);
+	C64_POKE(0x0032, end_address >> 8);
+	C64_POKE(0x00AE, end_address);
+	C64_POKE(0x00AF, end_address >> 8);
+
+	C64_POKE(0x0090, 0x40); // Load status
+	C64_POKE(0x0035, 0);    // FRESPC
+	C64_POKE(0x0036, 0xA0);
+
+	return bufferSize - 2;
 }
 
 bool C64_Subsys :: write_vic_state(File *f)

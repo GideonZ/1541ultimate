@@ -116,6 +116,7 @@ SRCS_CC	 =  u2p_init.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
+			control_target.cc \
 			iec.cc \
 			mps_printer.cc \
 			mps_printer_cbm.cc \
@@ -128,7 +129,7 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_tap.cc \
             socket_stream.cc \
             socket_gui.cc \
-			socket_test.cc \
+			socket_dma.cc \
 			rmii_interface.cc \
             home_directory.cc \
 			$(PRJ).cc
@@ -158,8 +159,8 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-# OPTIONS  = -g -ffunction-sections -O0 -DOS -DDEVELOPER=1 -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
-OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -O0 -DOS -DDEVELOPER=1 -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+# OPTIONS  = -g -ffunction-sections -O0 -DOS -DNIOS=1 -DCLOCK_FREQ=62500000 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_appl_bsp

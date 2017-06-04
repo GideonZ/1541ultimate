@@ -111,8 +111,8 @@ void CommandInterface :: run_task(void)
 			length = int(CMD_IF_COMMAND_LEN_L) + (int(CMD_IF_COMMAND_LEN_H) << 8);
 
 			if (length) {
-				//printf("Command received:\n");
-				//dump_hex_relative((void *)command_buffer, length);
+				// printf("Command received:\n");
+				// dump_hex_relative((void *)command_buffer, length);
 
 				incoming_command.length = length;
 				target = incoming_command.message[0] & CMD_IF_MAX_TARGET;

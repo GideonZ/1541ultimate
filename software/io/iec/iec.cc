@@ -124,7 +124,7 @@ const char msg64[] = "FILE TYPE MISMATCH";		//64
 const char msg70[] = "NO CHANNEL";	            //70
 const char msg71[] = "DIRECTORY ERROR";			//71
 const char msg72[] = "DISK FULL";				//72
-const char msg73[] = "ULTIMATE IEC DOS V0.7";	//73 DOS MISMATCH(Returns DOS Version)
+const char msg73[] = "ULTIMATE IEC DOS V0.8";	//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 
 const char msg_c1[] = "BAD COMMAND";			//custom

@@ -53,8 +53,8 @@ class GcrImage
     uint8_t gcr_data[C1541_MAX_GCR_LEN];
 
     // private functions
-    uint8_t *wrap(uint8_t **, uint8_t *, uint8_t *, int);
-    uint8_t *find_sync(uint8_t *, uint8_t *, uint8_t *);
+    static uint8_t *wrap(uint8_t **, uint8_t *, uint8_t *, int, uint8_t *buffer);
+    static uint8_t *find_sync(uint8_t *, uint8_t *, uint8_t *);
     uint8_t *convert_block_bin2gcr(uint8_t *bin, uint8_t *gcr, int len);
     uint8_t *convert_track_bin2gcr(int track, uint8_t *bin, uint8_t *gcr, uint8_t *errors, int errors_size);
     int   find_track_start(int);
@@ -79,6 +79,8 @@ public:
     bool test(void);
     
     friend class BinImage;
+    static int convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trackLength,
+    		int maxSector, uint8_t *bin, uint8_t *status);
 };
 
 

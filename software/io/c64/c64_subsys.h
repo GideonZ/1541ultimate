@@ -32,9 +32,12 @@ class C64_Subsys : public SubSystem, ObjectWithMenu
     int  fetch_task_items(Path *p, IndexedList<Action *> &item_list);
 
     /* Others */
-    int  dma_load(File *f, const char *name, uint8_t run_mode, uint16_t reloc=0);
+    int  dma_load(File *f, const uint8_t *buffer, const int bufferSize,
+    		const char *name, uint8_t run_mode, uint16_t reloc=0);
+    int  dma_load_buffer(uint8_t prg_buffer, uint8_t run_mode, uint16_t reloc=0);
     int  dma_load_raw(File *f);
     int  load_file_dma(File *f, uint16_t reloc);
+    int  load_buffer_dma(const uint8_t *buffer, const int bufferSize, uint16_t reloc);
     bool write_vic_state(File *f);
     void restoreCart(void);
 
