@@ -368,9 +368,14 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 	if (fres == FR_NO_PATH)
 		return fres;
 
+	if ((fres == FR_OK) && (flags & FA_CREATE_NEW)) {
+		return FR_EXIST;
+	}
+
 	// printf("Path %s was accessed with result: %s\n", path->get_path(), FileSystem :: get_error_string(fres));
 	bool create = (flags & FA_CREATE_NEW) && (fres == FR_NO_FILE);
 	create |= (flags & FA_CREATE_ALWAYS) && (fres == FR_OK);
+	create |= (flags & FA_CREATE_ALWAYS) && (fres == FR_NO_FILE);
 
 	if ((fres != FR_OK) && (!create))
 		return fres;
