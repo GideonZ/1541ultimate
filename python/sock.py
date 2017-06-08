@@ -1,5 +1,6 @@
 import sys
 import socket
+from struct import *
 
 class mysocket:
     '''demonstration class only
@@ -23,7 +24,6 @@ class mysocket:
             if sent == 0:
                 raise RuntimeError("socket connection broken")
             totalsent = totalsent + sent
-        print totalsent
         
     def myreceive(self, maxlen):
         chunks = []
@@ -89,12 +89,36 @@ if __name__ == "__main__":
                 s.sock.close()
                 
     elif (sys.argv[1] == 'p'):
+        #define SOCKET_CMD_DMA    0xFF01
+        #define SOCKET_CMD_DMARUN 0xFF02
+        #define SOCKET_CMD_KEYB   0xFF03
+        #define SOCKET_CMD_RESET  0xFF04
+        #define SOCKET_CMD_WAIT      0xFF05
+        #define SOCKET_CMD_DMAWRITE  0xFF06
+        
         with open(sys.argv[2], "rb") as f:
-            bytes = f.read(65536) # max 64K Meg
+            bytes = f.read(65536) # max 64K 
             if bytes != "":
                 s = mysocket()
                 s.connect(sys.argv[3], 64)
+                # reset 
+                s.mysend(pack("<H", 0xFF04))
+                s.mysend(pack("<H", 0))
+                # wait 3 seconds
+                s.mysend(pack("<H", 0xFF05))
+                s.mysend(pack("<H", 600))
+                # write hello
+                s.mysend(pack("<H", 0xFF03))
+                s.mysend(pack("<H", 5))
+                s.mysend("HELLO")
+                # wait 3 seconds
+                s.mysend(pack("<H", 0xFF05))
+                s.mysend(pack("<H", 600))
+                # execute load/run command
+                s.mysend(pack("<H", 0xFF02))
+                s.mysend(pack("<H", len(bytes)))
                 s.mysend(bytes)
+                
                 s.sock.shutdown(0)
                 s.sock.close()
 

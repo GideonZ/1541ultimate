@@ -14,6 +14,7 @@
 
 class SocketDMA {
 	static void dmaThread(void *a);
+	static void parseBuffer(void *load_buffer, int length);
 	uint8_t load_buffer[65536];
 public:
 	SocketDMA();

@@ -15,6 +15,13 @@
 #include "c64.h"
 #include "c64_subsys.h"
 
+#define SOCKET_CMD_DMA      0xFF01
+#define SOCKET_CMD_DMARUN   0xFF02
+#define SOCKET_CMD_KEYB     0xFF03
+#define SOCKET_CMD_RESET    0xFF04
+#define SOCKET_CMD_WAIT	    0xFF05
+#define SOCKET_CMD_DMAWRITE 0xFF06
+
 SocketDMA socket_test; // global that causes the object to exist
 
 SocketDMA::SocketDMA() {
@@ -23,6 +30,56 @@ SocketDMA::SocketDMA() {
 
 SocketDMA::~SocketDMA() {
 
+}
+
+void SocketDMA :: parseBuffer(void *load_buffer, int length)
+{
+	uint8_t *buf = (uint8_t *)load_buffer;
+	int remaining = length;
+	SubsysCommand *c64_command;
+
+	while (remaining > 0) {
+		uint16_t cmd = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
+		buf += 2;
+		remaining -= 2;
+		uint16_t len = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
+		buf += 2;
+		remaining -= 2;
+		uint16_t offs;
+
+		switch(cmd) {
+		case SOCKET_CMD_DMA:
+			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD, buf, len);
+			c64_command->execute();
+			break;
+		case SOCKET_CMD_DMARUN:
+			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_RUN, buf, len);
+			c64_command->execute();
+			break;
+		case SOCKET_CMD_DMAWRITE:
+			offs = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
+			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, offs, buf + 2, len - 2);
+			c64_command->execute();
+			break;
+		case SOCKET_CMD_KEYB:
+			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x0277, buf, len);
+			c64_command->execute();
+			buf[0] = len;
+			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x00C6, buf, 1);
+			c64_command->execute();
+			break;
+		case SOCKET_CMD_RESET:
+			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0, buf, len);
+			c64_command->execute();
+			break;
+		case SOCKET_CMD_WAIT:
+			vTaskDelay(len);
+			len = 0;
+			break;
+		}
+		buf += len;
+		remaining -= len;
+	}
 }
 
 void SocketDMA::dmaThread(void *load_buffer)
@@ -94,9 +151,7 @@ void SocketDMA::dmaThread(void *load_buffer)
 		if (n < 0) {
 			puts("ERROR reading from socket");
 		} else {
-			SubsysCommand *c64_command;
-			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD, load_buffer, received);
-        	c64_command->execute();
+			parseBuffer(load_buffer, received);
 		}
     }
 

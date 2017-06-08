@@ -168,6 +168,9 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     case C64_DMA_BUFFER:
     	dma_load(0, (const uint8_t *)cmd->buffer, cmd->bufferSize, cmd->filename.c_str(), cmd->mode);
     	break;
+    case C64_DMA_RAW:
+    	dma_load_raw_buffer((uint16_t)cmd->mode, (const uint8_t *)cmd->buffer, cmd->bufferSize);
+    	break;
     case C64_STOP_COMMAND:
 		c64->stop(false);
 		break;
@@ -199,6 +202,28 @@ int C64_Subsys :: dma_load_raw(File *f)
 		c64->resume();
 	}
 	return bytes;
+}
+
+int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, int length)
+{
+	bool i_stopped_it = false;
+	if (c64->client) {
+    	c64->client->release_host(); // disconnect from user interface
+    	c64->release_ownership();
+	}
+	if(!c64->stopped) {
+		c64->stop(false);
+		i_stopped_it = true;
+	}
+
+	volatile uint8_t *dest = (volatile uint8_t *)(C64_MEMORY_BASE + offset);
+
+	memcpy((void *)dest, buffer, length);
+
+	if (i_stopped_it) {
+		c64->resume();
+	}
+	return length;
 }
 
 int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
