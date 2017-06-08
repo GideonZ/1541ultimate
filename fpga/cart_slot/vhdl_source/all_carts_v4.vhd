@@ -101,6 +101,7 @@ architecture gideon of all_carts_v4 is
     constant c_georam       : std_logic_vector(4 downto 0) := "10101";
     constant c_bbasic       : std_logic_vector(4 downto 0) := "10110";
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10111";
+    constant c_128          : std_logic_vector(4 downto 0) := "11000";
     
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -294,6 +295,16 @@ begin
                 serve_io2 <= '0';
                 irq_n     <= '1';
                 nmi_n     <= '1';
+
+            when c_128 =>
+                game_n    <= '1';
+                exrom_n   <= '1';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+		serve_vic <= '1';
 
             when c_ocean128 =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
@@ -654,6 +665,10 @@ begin
         when c_16k | c_16k_umax =>
             mem_addr_i(27 downto 14) <= g_rom_base(27 downto 14);
             mem_addr_i(13 downto 0)  <= slot_addr(13 downto 0);
+        
+        when c_128 =>
+            mem_addr_i(27 downto 15) <= g_rom_base(27 downto 15);
+            mem_addr_i(14 downto 0)  <= slot_addr(14 downto 0);
         
         when c_ocean128 | c_system3 | c_domark | c_ocean256 =>
             mem_addr_i <= g_rom_base(27 downto 20) & slot_addr(13) & ext_bank & bank_bits & slot_addr(12 downto 0);

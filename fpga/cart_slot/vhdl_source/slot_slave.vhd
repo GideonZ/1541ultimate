@@ -314,7 +314,9 @@ begin
             if addr_is_io and (serve_io1='1' or serve_io2='1') then
                 servicable <= '1';
             end if;
---            if (romln_c='0' or romhn_c='0') and (serve_rom='1') then -- our decode is faster!
+            if (romln_c='0' or romhn_c='0') and (serve_rom='1') then -- for C128
+                servicable <= '1';
+            end if;
             if address_c(15 downto 14)="10" and (serve_rom='1') then -- 8000-BFFF
                 servicable <= '1';
             end if;

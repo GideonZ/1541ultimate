@@ -74,6 +74,7 @@ const char *cart_mode[] = { "None",
                       "Custom Snappy ROM",
 					  "Custom KCS ROM",
 					  "Custom Final V1/V2 ROM",
+					  "Custom C128 External ROM",
 					  "Custom CRT"
                    };
 
@@ -103,6 +104,7 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x05 | CART_REU },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x10 },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x11 },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x08000,  0x18 | CART_REU | CART_ETH },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x00000,  0x00 }
  };
                           
@@ -115,7 +117,7 @@ const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
 const char *ultimatedos[] = { "Disabled", "enabled", "enabled (v1.0)" };
 
 struct t_cfg_definition c64_config[] = {
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 20, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
