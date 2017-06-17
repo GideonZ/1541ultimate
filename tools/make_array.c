@@ -35,7 +35,7 @@ int main(int argc, char **argv)
     printf("    constant sdrom_array : t_sdrom_array(0 to %d) := (", size-1);
 
     for(i=0;i<size;i++) {
-        if ((i % 10) == 0)
+        if ((i % 16) == 0)
             printf("\n        ");
             
         printf("X\"%02X\"", buffer[i]);

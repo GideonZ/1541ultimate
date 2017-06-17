@@ -122,7 +122,7 @@ SRCS_CC	 =  small_printf.cc \
 			filetype_tap.cc \
             socket_stream.cc \
             socket_gui.cc \
-			socket_test.cc \
+			socket_dma.cc \
             home_directory.cc \
 			$(PRJ).cc
 

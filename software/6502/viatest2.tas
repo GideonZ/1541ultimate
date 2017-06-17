@@ -1,0 +1,15 @@
+
+
+	*= $C000
+	ldx #0
+-	LDA $C020,x
+	STA $00,x
+	inx
+	bne -
+    LDA #$2B
+    LDX #$FF
+    LDY #$D0
+    TXS
+    LDX #$00
+    JMP $0000
+	

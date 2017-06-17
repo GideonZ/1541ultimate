@@ -1,0 +1,83 @@
+	
+	* = $0000
+L0000
+   STX $180B    ; ACR
+   LDA $BA,X
+   STA $1806,X    ; T1 Latch Low, T1 Latch Hi, T2 Low, T2 Hi, and shift register
+   INX
+   CPX #$05
+   BCC $0000
+   BCS $0049
+; T1 Latch is set to $45A5
+; T2 Latch/Counter is set to $6505
+; Shift Register is set to $E5
+
+	*= $0049
+L0049
+   LDX #$04
+   LDA $BA,X
+   STA $53
+   LDA #$C7
+   STA $54 ; 0051
+   SBC $00
+   EOR $1808    ; T2 Low
+   ADC $1806    ; T1 Latch Low
+   AND $1809    ; T2 Hi
+   EOR $1807    ; T1 Latch Hi
+   STA $180A    ; Shift Register 0061
+   SBC $1808    ; T2 Low
+   ADC $1806    ; T1 Latch Low
+   STA $1C0A    ; VIA2 Shift Register
+   DEC $54
+   BNE $0053
+   DEX  ; 0071
+   BPL $0053
+   LDY #$00
+   LDX #$03  ; 0076
+   LDA ($D8),Y
+   CLC
+   EOR $C8,X ; 007b
+   STA $C8,X
+   ADC $CC,X
+   STA $CC,X
+   DEX
+   BPL $007B
+   INY
+   BNE $0076
+   LDX #$07
+   LDA #$20
+   STA $180B    ; ACR
+   NOP
+   NOP
+   NOP
+   NOP
+   NOP
+   NOP
+   NOP
+   NOP
+   NOP
+   NOP
+   NOP
+   NOP
+   LDA $1807    ; T1 Latch Hi     These 4 should eventually contain the values 45 00 4B A7.
+	STA $0100
+   LDA $1808    ; T2 Low
+	STA $0101
+   LDA $1809    ; T2 Hi
+	STA $0102
+   LDA $180A    ; Shift Register
+	STA $0103
+	LDA #$44
+	STA $0104
+   NOP
+   NOP
+   NOP
+-	BNE -
+
+	* = $00BA
+	
+   .byte                                                   $a5, $45, $05, $65, $e5, $d1
+   .byte $0e, $03, $6a, $de, $ba, $ea, $05, $00, $00, $00, $00, $00, $00, $00, $00, $00
+   .byte $36, $01, $2a, $2f, $28, $cb, $a3, $a7, $00, $2b, $00, $00, $00, $00, $00, $00
+   .byte $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $03, $00, $19, $19, $19
+   .byte $16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00

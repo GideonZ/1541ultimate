@@ -63,7 +63,19 @@ _hex(int val, char *buf, int len)
     } while(len);
 }
     
-    
+static void
+_bin(int val, char *buf, int len)
+{
+    if(!len)
+        return;
+
+    do {
+        len--;
+        buf[len] = (val & 0x01) ? '*' : '.';
+        val >>= 1;
+    } while(len);
+}
+
 #define is_digit(c) ((c >= '0') && (c <= '9'))
 
 
@@ -140,6 +152,12 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
                 addr = va_arg(ap, int); // byte
                 length = 2;
                 _hex(addr, buf, length);
+                cp = buf;
+                break;
+            case 'B': // bits of a byte
+                addr = va_arg(ap, int); // byte
+                length = 8;
+                _bin(addr, buf, length);
                 cp = buf;
                 break;
             default:

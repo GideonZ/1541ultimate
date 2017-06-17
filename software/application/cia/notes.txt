@@ -1,0 +1,560 @@
+  0: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  4E from T2CL
+  1: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  55 from T2CH
+  2: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Wrote 10 to T2CL.
+  3: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Wrote 02 to T2CH.
+  4: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Wrote 7F to IER.
+  5: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Wrote A0 to IER.
+  6: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF)..
+  7: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL
+  8: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL
+  9: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL
+ 10: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL
+ 11: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL
+ 12: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL
+ 13: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL
+ 14: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL
+ 15: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL
+ 16: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  04 from T2CL
+ 17: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  03 from T2CL
+ 18: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  02 from T2CL
+ 19: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  01 from T2CL
+ 20: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  00 from T2CL
+ 21: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FF from T2CL
+ 22: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FE from T2CL
+ 23: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FD from T2CL
+ 24: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FC from T2CL
+ 25: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FB from T2CL
+ 26: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FA from T2CL
+ 27: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F9 from T2CL
+ 28: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F8 from T2CL
+ 29: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F7 from T2CL
+ 30: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F6 from T2CL
+ 31: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F5 from T2CL
+ 32: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F4 from T2CL
+ 33: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F3 from T2CL
+ 34: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F2 from T2CL
+ 35: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F1 from T2CL
+ 36: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  F0 from T2CL
+ 37: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  EF from T2CL
+ 38: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  EE from T2CL
+ 39: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  ED from T2CL
+ 40: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  EC from T2CL
+ 41: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  EB from T2CL
+ 42: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  EA from T2CL
+ 43: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E9 from T2CL
+ 44: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E8 from T2CL
+ 45: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E7 from T2CL
+ 46: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E6 from T2CL
+ 47: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E5 from T2CL
+ 48: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E4 from T2CL
+ 49: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E3 from T2CL
+ 50: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E2 from T2CL
+ 51: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E1 from T2CL
+ 52: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  E0 from T2CL
+ 53: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  DF from T2CL
+ 54: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  DE from T2CL
+ 55: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  DD from T2CL
+ 56: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  DC from T2CL
+ 57: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  DB from T2CL
+ 58: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  DA from T2CL
+ 59: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D9 from T2CL
+ 60: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D8 from T2CL
+ 61: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D7 from T2CL
+ 62: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D6 from T2CL
+ 63: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D5 from T2CL
+ 64: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D4 from T2CL
+ 65: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D3 from T2CL
+ 66: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D2 from T2CL
+ 67: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D1 from T2CL
+ 68: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  D0 from T2CL
+ 69: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  CF from T2CL
+ 70: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  CE from T2CL
+ 71: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  CD from T2CL
+ 72: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  CC from T2CL
+ 73: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  CB from T2CL
+ 74: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  CA from T2CL
+ 75: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C9 from T2CL
+ 76: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C8 from T2CL
+ 77: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C7 from T2CL
+ 78: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C6 from T2CL
+ 79: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C5 from T2CL
+ 80: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C4 from T2CL
+ 81: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C3 from T2CL
+ 82: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C2 from T2CL
+ 83: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C1 from T2CL
+ 84: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  C0 from T2CL
+ 85: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  BF from T2CL
+ 86: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  BE from T2CL
+ 87: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  BD from T2CL
+ 88: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  BC from T2CL
+ 89: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  BB from T2CL
+ 90: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  BA from T2CL
+ 91: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B9 from T2CL
+ 92: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B8 from T2CL
+ 93: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B7 from T2CL
+ 94: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B6 from T2CL
+ 95: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B5 from T2CL
+ 96: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B4 from T2CL
+ 97: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B3 from T2CL
+ 98: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B2 from T2CL
+ 99: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B1 from T2CL
+100: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  B0 from T2CL
+101: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  AF from T2CL
+102: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  AE from T2CL
+103: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  AD from T2CL
+104: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  AC from T2CL
+105: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  AB from T2CL
+106: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  AA from T2CL
+107: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A9 from T2CL
+108: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A8 from T2CL
+109: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A7 from T2CL
+110: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A6 from T2CL
+111: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A5 from T2CL
+112: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A4 from T2CL
+113: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A3 from T2CL
+114: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A2 from T2CL
+115: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A1 from T2CL
+116: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  A0 from T2CL
+117: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  9F from T2CL
+118: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  9E from T2CL
+119: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  9D from T2CL
+120: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  9C from T2CL
+121: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  9B from T2CL
+122: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  9A from T2CL
+123: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  99 from T2CL
+124: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  98 from T2CL
+125: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  97 from T2CL
+126: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  96 from T2CL
+127: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  95 from T2CL
+128: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  94 from T2CL
+129: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  93 from T2CL
+130: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  92 from T2CL
+131: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  91 from T2CL
+132: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  90 from T2CL
+133: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  8F from T2CL
+134: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  8E from T2CL
+135: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  8D from T2CL
+136: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  8C from T2CL
+137: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  8B from T2CL
+138: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  8A from T2CL
+139: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  89 from T2CL
+140: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  88 from T2CL
+141: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  87 from T2CL
+142: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  86 from T2CL
+143: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  85 from T2CL
+144: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  84 from T2CL
+145: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  83 from T2CL
+146: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  82 from T2CL
+147: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  81 from T2CL
+148: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  80 from T2CL
+149: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  7F from T2CL
+150: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  7E from T2CL
+151: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  7D from T2CL
+152: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  7C from T2CL
+153: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  7B from T2CL
+154: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  7A from T2CL
+155: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  79 from T2CL
+156: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  78 from T2CL
+157: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Wrote 04 to ACR.
+158: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Wrote 55 to SR.
+159: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF)..
+160: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  74 from T2CL  Read  01 from T2CH   Read  55 from SR
+161: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  73 from T2CL  Read  01 from T2CH   Read  55 from SR
+162: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  72 from T2CL  Read  01 from T2CH   Read  55 from SR
+163: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  71 from T2CL  Read  01 from T2CH   Read  55 from SR
+164: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  70 from T2CL  Read  01 from T2CH   Read  55 from SR
+165: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  6F from T2CL  Read  01 from T2CH   Read  55 from SR
+166: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  6E from T2CL  Read  01 from T2CH   Read  55 from SR
+167: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  6D from T2CL  Read  01 from T2CH   Read  55 from SR
+168: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  6C from T2CL  Read  01 from T2CH   Read  55 from SR
+169: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  6B from T2CL  Read  01 from T2CH   Read  55 from SR
+170: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  6A from T2CL  Read  01 from T2CH   Read  55 from SR
+171: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  69 from T2CL  Read  01 from T2CH   Read  55 from SR
+172: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  68 from T2CL  Read  01 from T2CH   Read  55 from SR
+173: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  67 from T2CL  Read  01 from T2CH   Read  55 from SR
+174: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  66 from T2CL  Read  01 from T2CH   Read  55 from SR
+175: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  65 from T2CL  Read  01 from T2CH   Read  55 from SR
+176: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  64 from T2CL  Read  01 from T2CH   Read  55 from SR
+177: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  63 from T2CL  Read  01 from T2CH   Read  55 from SR
+178: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  62 from T2CL  Read  01 from T2CH   Read  55 from SR
+179: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  61 from T2CL  Read  01 from T2CH   Read  55 from SR
+180: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  60 from T2CL  Read  01 from T2CH   Read  55 from SR
+181: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  5F from T2CL  Read  01 from T2CH   Read  55 from SR
+182: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  5E from T2CL  Read  01 from T2CH   Read  55 from SR
+183: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  5D from T2CL  Read  01 from T2CH   Read  55 from SR
+184: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  5C from T2CL  Read  01 from T2CH   Read  55 from SR
+185: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  5B from T2CL  Read  01 from T2CH   Read  55 from SR
+186: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  5A from T2CL  Read  01 from T2CH   Read  55 from SR
+187: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  59 from T2CL  Read  01 from T2CH   Read  55 from SR
+188: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  58 from T2CL  Read  01 from T2CH   Read  55 from SR
+189: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  57 from T2CL  Read  01 from T2CH   Read  55 from SR
+190: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  56 from T2CL  Read  01 from T2CH   Read  55 from SR
+191: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  55 from T2CL  Read  01 from T2CH   Read  55 from SR
+192: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  54 from T2CL  Read  01 from T2CH   Read  55 from SR
+193: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  53 from T2CL  Read  01 from T2CH   Read  55 from SR
+194: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  52 from T2CL  Read  01 from T2CH   Read  55 from SR
+195: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  51 from T2CL  Read  01 from T2CH   Read  55 from SR
+196: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  50 from T2CL  Read  01 from T2CH   Read  55 from SR
+197: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  4F from T2CL  Read  01 from T2CH   Read  55 from SR
+198: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  4E from T2CL  Read  01 from T2CH   Read  55 from SR
+199: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  4D from T2CL  Read  01 from T2CH   Read  55 from SR
+200: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  4C from T2CL  Read  01 from T2CH   Read  55 from SR
+201: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  4B from T2CL  Read  01 from T2CH   Read  55 from SR
+202: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  4A from T2CL  Read  01 from T2CH   Read  55 from SR
+203: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  49 from T2CL  Read  01 from T2CH   Read  55 from SR
+204: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  48 from T2CL  Read  01 from T2CH   Read  55 from SR
+205: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  47 from T2CL  Read  01 from T2CH   Read  55 from SR
+206: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  46 from T2CL  Read  01 from T2CH   Read  55 from SR
+207: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  45 from T2CL  Read  01 from T2CH   Read  55 from SR
+208: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  44 from T2CL  Read  01 from T2CH   Read  55 from SR
+209: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  43 from T2CL  Read  01 from T2CH   Read  55 from SR
+210: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  42 from T2CL  Read  01 from T2CH   Read  55 from SR
+211: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  41 from T2CL  Read  01 from T2CH   Read  55 from SR
+212: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  40 from T2CL  Read  01 from T2CH   Read  55 from SR
+213: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  3F from T2CL  Read  01 from T2CH   Read  55 from SR
+214: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  3E from T2CL  Read  01 from T2CH   Read  55 from SR
+215: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  3D from T2CL  Read  01 from T2CH   Read  55 from SR
+216: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  3C from T2CL  Read  01 from T2CH   Read  55 from SR
+217: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  3B from T2CL  Read  01 from T2CH   Read  55 from SR
+218: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  3A from T2CL  Read  01 from T2CH   Read  55 from SR
+219: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  39 from T2CL  Read  01 from T2CH   Read  55 from SR
+220: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  38 from T2CL  Read  01 from T2CH   Read  55 from SR
+221: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  37 from T2CL  Read  01 from T2CH   Read  55 from SR
+222: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  36 from T2CL  Read  01 from T2CH   Read  55 from SR
+223: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  35 from T2CL  Read  01 from T2CH   Read  55 from SR
+224: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  34 from T2CL  Read  01 from T2CH   Read  55 from SR
+225: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  33 from T2CL  Read  01 from T2CH   Read  55 from SR
+226: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  32 from T2CL  Read  01 from T2CH   Read  55 from SR
+227: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  31 from T2CL  Read  01 from T2CH   Read  55 from SR
+228: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  30 from T2CL  Read  01 from T2CH   Read  55 from SR
+229: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  2F from T2CL  Read  01 from T2CH   Read  55 from SR
+230: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  2E from T2CL  Read  01 from T2CH   Read  55 from SR
+231: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  2D from T2CL  Read  01 from T2CH   Read  55 from SR
+232: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  2C from T2CL  Read  01 from T2CH   Read  55 from SR
+233: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  2B from T2CL  Read  01 from T2CH   Read  55 from SR
+234: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  2A from T2CL  Read  01 from T2CH   Read  55 from SR
+235: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  29 from T2CL  Read  01 from T2CH   Read  55 from SR
+236: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  28 from T2CL  Read  01 from T2CH   Read  55 from SR
+237: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  27 from T2CL  Read  01 from T2CH   Read  55 from SR
+238: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  26 from T2CL  Read  01 from T2CH   Read  55 from SR
+239: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  25 from T2CL  Read  01 from T2CH   Read  55 from SR
+240: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  24 from T2CL  Read  01 from T2CH   Read  55 from SR
+241: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  23 from T2CL  Read  01 from T2CH   Read  55 from SR
+242: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  22 from T2CL  Read  01 from T2CH   Read  55 from SR
+243: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  21 from T2CL  Read  01 from T2CH   Read  55 from SR
+244: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  20 from T2CL  Read  01 from T2CH   Read  55 from SR
+245: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  1F from T2CL  Read  01 from T2CH   Read  55 from SR
+246: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  1E from T2CL  Read  01 from T2CH   Read  55 from SR
+247: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  1D from T2CL  Read  01 from T2CH   Read  55 from SR
+248: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  1C from T2CL  Read  01 from T2CH   Read  55 from SR
+249: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  1B from T2CL  Read  01 from T2CH   Read  55 from SR
+250: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  1A from T2CL  Read  01 from T2CH   Read  55 from SR
+251: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  19 from T2CL  Read  01 from T2CH   Read  55 from SR
+252: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  18 from T2CL  Read  01 from T2CH   Read  55 from SR
+253: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  17 from T2CL  Read  01 from T2CH   Read  55 from SR
+254: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  16 from T2CL  Read  01 from T2CH   Read  55 from SR
+255: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  15 from T2CL  Read  01 from T2CH   Read  55 from SR
+256: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  14 from T2CL  Read  01 from T2CH   Read  55 from SR
+257: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  13 from T2CL  Read  01 from T2CH   Read  55 from SR
+258: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  12 from T2CL  Read  01 from T2CH   Read  55 from SR
+259: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  11 from T2CL  Read  01 from T2CH   Read  55 from SR
+260: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  10 from T2CL  Read  01 from T2CH   Read  55 from SR
+261: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0F from T2CL  Read  01 from T2CH   Read  55 from SR
+262: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0E from T2CL  Read  01 from T2CH   Read  55 from SR
+263: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL  Read  01 from T2CH   Read  55 from SR
+264: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL  Read  01 from T2CH   Read  55 from SR
+265: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL  Read  01 from T2CH   Read  55 from SR
+266: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL  Read  01 from T2CH   Read  55 from SR
+267: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL  Read  01 from T2CH   Read  55 from SR
+268: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL  Read  01 from T2CH   Read  55 from SR
+269: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL  Read  01 from T2CH   Read  55 from SR
+270: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL  Read  01 from T2CH   Read  55 from SR
+271: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL  Read  01 from T2CH   Read  55 from SR
+272: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  04 from T2CL  Read  01 from T2CH   Read  55 from SR
+273: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  03 from T2CL  Read  01 from T2CH   Read  55 from SR
+274: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  02 from T2CL  Read  01 from T2CH   Read  55 from SR
+275: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  01 from T2CL  Read  01 from T2CH   Read  55 from SR
+276: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  00 from T2CL  Read  01 from T2CH   Read  55 from SR
+277: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FF from T2CL  Read  00 from T2CH   Read  55 from SR
+278: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  10 from T2CL  Read  00 from T2CH   Read  55 from SR
+279: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0F from T2CL  Read  00 from T2CH   Read  55 from SR
+280: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0E from T2CL  Read  00 from T2CH   Read  55 from SR
+281: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0D from T2CL  Read  00 from T2CH   Read  55 from SR
+282: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0C from T2CL  Read  00 from T2CH   Read  55 from SR
+283: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0B from T2CL  Read  00 from T2CH   Read  55 from SR
+284: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0A from T2CL  Read  00 from T2CH   Read  55 from SR
+285: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  09 from T2CL  Read  00 from T2CH   Read  55 from SR
+286: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  08 from T2CL  Read  00 from T2CH   Read  55 from SR
+287: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  07 from T2CL  Read  00 from T2CH   Read  55 from SR
+288: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  06 from T2CL  Read  00 from T2CH   Read  55 from SR
+289: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  05 from T2CL  Read  00 from T2CH   Read  55 from SR
+290: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  04 from T2CL  Read  00 from T2CH   Read  55 from SR
+291: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  03 from T2CL  Read  00 from T2CH   Read  55 from SR
+292: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  02 from T2CL  Read  00 from T2CH   Read  55 from SR
+293: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  01 from T2CL  Read  00 from T2CH   Read  55 from SR
+294: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  00 from T2CL  Read  00 from T2CH   Read  55 from SR
+295: PHI2=1: ..*****. (FF).. PHI2=0: ...****. (FF).. Read  FF from T2CL  Read  FF from T2CH   Read  55 from SR
+296: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  10 from T2CL  Read  FF from T2CH   Read  55 from SR
+297: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0F from T2CL  Read  FF from T2CH   Read  AB from SR
+298: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0E from T2CL  Read  FF from T2CH   Read  AB from SR
+299: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL  Read  FF from T2CH   Read  AB from SR
+300: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL  Read  FF from T2CH   Read  AB from SR
+301: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL  Read  FF from T2CH   Read  AB from SR
+302: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL  Read  FF from T2CH   Read  AB from SR
+303: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL  Read  FF from T2CH   Read  AB from SR
+304: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL  Read  FF from T2CH   Read  AB from SR
+305: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL  Read  FF from T2CH   Read  AB from SR
+306: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL  Read  FF from T2CH   Read  AB from SR
+307: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL  Read  FF from T2CH   Read  AB from SR
+308: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  04 from T2CL  Read  FF from T2CH   Read  AB from SR
+309: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  03 from T2CL  Read  FF from T2CH   Read  AB from SR
+310: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  02 from T2CL  Read  FF from T2CH   Read  AB from SR
+311: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  01 from T2CL  Read  FF from T2CH   Read  AB from SR
+312: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  00 from T2CL  Read  FF from T2CH   Read  AB from SR
+313: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FF from T2CL  Read  FE from T2CH   Read  AB from SR
+314: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  10 from T2CL  Read  FE from T2CH   Read  AB from SR
+315: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0F from T2CL  Read  FE from T2CH   Read  AB from SR
+316: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0E from T2CL  Read  FE from T2CH   Read  AB from SR
+317: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0D from T2CL  Read  FE from T2CH   Read  AB from SR
+318: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0C from T2CL  Read  FE from T2CH   Read  AB from SR
+319: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0B from T2CL  Read  FE from T2CH   Read  AB from SR
+320: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0A from T2CL  Read  FE from T2CH   Read  AB from SR
+321: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  09 from T2CL  Read  FE from T2CH   Read  AB from SR
+322: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  08 from T2CL  Read  FE from T2CH   Read  AB from SR
+323: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  07 from T2CL  Read  FE from T2CH   Read  AB from SR
+324: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  06 from T2CL  Read  FE from T2CH   Read  AB from SR
+325: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  05 from T2CL  Read  FE from T2CH   Read  AB from SR
+326: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  04 from T2CL  Read  FE from T2CH   Read  AB from SR
+327: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  03 from T2CL  Read  FE from T2CH   Read  AB from SR
+328: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  02 from T2CL  Read  FE from T2CH   Read  AB from SR
+329: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  01 from T2CL  Read  FE from T2CH   Read  AB from SR
+330: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  00 from T2CL  Read  FE from T2CH   Read  AB from SR
+331: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  FF from T2CL  Read  FD from T2CH   Read  AB from SR
+332: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  10 from T2CL  Read  FD from T2CH   Read  AB from SR
+333: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0F from T2CL  Read  FD from T2CH   Read  57 from SR
+334: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0E from T2CL  Read  FD from T2CH   Read  57 from SR
+335: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL  Read  FD from T2CH   Read  57 from SR
+336: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL  Read  FD from T2CH   Read  57 from SR
+337: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL  Read  FD from T2CH   Read  57 from SR
+338: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL  Read  FD from T2CH   Read  57 from SR
+339: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL  Read  FD from T2CH   Read  57 from SR
+340: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL  Read  FD from T2CH   Read  57 from SR
+341: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL  Read  FD from T2CH   Read  57 from SR
+342: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL  Read  FD from T2CH   Read  57 from SR
+343: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL  Read  FD from T2CH   Read  57 from SR
+344: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  04 from T2CL  Read  FD from T2CH   Read  57 from SR
+345: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  03 from T2CL  Read  FD from T2CH   Read  57 from SR
+346: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  02 from T2CL  Read  FD from T2CH   Read  57 from SR
+347: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  01 from T2CL  Read  FD from T2CH   Read  57 from SR
+348: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  00 from T2CL  Read  FD from T2CH   Read  57 from SR
+349: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FF from T2CL  Read  FC from T2CH   Read  57 from SR
+350: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  10 from T2CL  Read  FC from T2CH   Read  57 from SR
+351: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0F from T2CL  Read  FC from T2CH   Read  57 from SR
+352: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0E from T2CL  Read  FC from T2CH   Read  57 from SR
+353: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0D from T2CL  Read  FC from T2CH   Read  57 from SR
+354: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0C from T2CL  Read  FC from T2CH   Read  57 from SR
+355: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0B from T2CL  Read  FC from T2CH   Read  57 from SR
+356: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0A from T2CL  Read  FC from T2CH   Read  57 from SR
+357: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  09 from T2CL  Read  FC from T2CH   Read  57 from SR
+358: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  08 from T2CL  Read  FC from T2CH   Read  57 from SR
+359: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  07 from T2CL  Read  FC from T2CH   Read  57 from SR
+360: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  06 from T2CL  Read  FC from T2CH   Read  57 from SR
+361: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  05 from T2CL  Read  FC from T2CH   Read  57 from SR
+362: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  04 from T2CL  Read  FC from T2CH   Read  57 from SR
+363: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  03 from T2CL  Read  FC from T2CH   Read  57 from SR
+364: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  02 from T2CL  Read  FC from T2CH   Read  57 from SR
+365: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  01 from T2CL  Read  FC from T2CH   Read  57 from SR
+366: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  00 from T2CL  Read  FC from T2CH   Read  57 from SR
+367: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  FF from T2CL  Read  FB from T2CH   Read  57 from SR
+368: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  10 from T2CL  Read  FB from T2CH   Read  57 from SR
+369: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0F from T2CL  Read  FB from T2CH   Read  AF from SR
+370: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0E from T2CL  Read  FB from T2CH   Read  AF from SR
+371: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL  Read  FB from T2CH   Read  AF from SR
+372: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL  Read  FB from T2CH   Read  AF from SR
+373: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL  Read  FB from T2CH   Read  AF from SR
+374: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL  Read  FB from T2CH   Read  AF from SR
+375: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL  Read  FB from T2CH   Read  AF from SR
+376: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL  Read  FB from T2CH   Read  AF from SR
+377: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL  Read  FB from T2CH   Read  AF from SR
+378: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL  Read  FB from T2CH   Read  AF from SR
+379: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL  Read  FB from T2CH   Read  AF from SR
+380: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  04 from T2CL  Read  FB from T2CH   Read  AF from SR
+381: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  03 from T2CL  Read  FB from T2CH   Read  AF from SR
+382: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  02 from T2CL  Read  FB from T2CH   Read  AF from SR
+383: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  01 from T2CL  Read  FB from T2CH   Read  AF from SR
+384: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  00 from T2CL  Read  FB from T2CH   Read  AF from SR
+385: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FF from T2CL  Read  FA from T2CH   Read  AF from SR
+386: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  10 from T2CL  Read  FA from T2CH   Read  AF from SR
+387: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0F from T2CL  Read  FA from T2CH   Read  AF from SR
+388: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0E from T2CL  Read  FA from T2CH   Read  AF from SR
+389: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0D from T2CL  Read  FA from T2CH   Read  AF from SR
+390: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0C from T2CL  Read  FA from T2CH   Read  AF from SR
+391: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0B from T2CL  Read  FA from T2CH   Read  AF from SR
+392: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0A from T2CL  Read  FA from T2CH   Read  AF from SR
+393: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  09 from T2CL  Read  FA from T2CH   Read  AF from SR
+394: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  08 from T2CL  Read  FA from T2CH   Read  AF from SR
+395: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  07 from T2CL  Read  FA from T2CH   Read  AF from SR
+396: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  06 from T2CL  Read  FA from T2CH   Read  AF from SR
+397: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  05 from T2CL  Read  FA from T2CH   Read  AF from SR
+398: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  04 from T2CL  Read  FA from T2CH   Read  AF from SR
+399: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  03 from T2CL  Read  FA from T2CH   Read  AF from SR
+400: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  02 from T2CL  Read  FA from T2CH   Read  AF from SR
+401: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  01 from T2CL  Read  FA from T2CH   Read  AF from SR
+402: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  00 from T2CL  Read  FA from T2CH   Read  AF from SR
+403: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  FF from T2CL  Read  F9 from T2CH   Read  AF from SR
+404: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  10 from T2CL  Read  F9 from T2CH   Read  AF from SR
+405: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0F from T2CL  Read  F9 from T2CH   Read  5F from SR
+406: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0E from T2CL  Read  F9 from T2CH   Read  5F from SR
+407: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL  Read  F9 from T2CH   Read  5F from SR
+408: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL  Read  F9 from T2CH   Read  5F from SR
+409: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL  Read  F9 from T2CH   Read  5F from SR
+410: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL  Read  F9 from T2CH   Read  5F from SR
+411: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL  Read  F9 from T2CH   Read  5F from SR
+412: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL  Read  F9 from T2CH   Read  5F from SR
+413: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL  Read  F9 from T2CH   Read  5F from SR
+414: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL  Read  F9 from T2CH   Read  5F from SR
+415: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL  Read  F9 from T2CH   Read  5F from SR
+416: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  04 from T2CL  Read  F9 from T2CH   Read  5F from SR
+417: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  03 from T2CL  Read  F9 from T2CH   Read  5F from SR
+418: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  02 from T2CL  Read  F9 from T2CH   Read  5F from SR
+419: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  01 from T2CL  Read  F9 from T2CH   Read  5F from SR
+420: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  00 from T2CL  Read  F9 from T2CH   Read  5F from SR
+421: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FF from T2CL  Read  F8 from T2CH   Read  5F from SR
+422: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  10 from T2CL  Read  F8 from T2CH   Read  5F from SR
+423: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0F from T2CL  Read  F8 from T2CH   Read  5F from SR
+424: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0E from T2CL  Read  F8 from T2CH   Read  5F from SR
+425: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0D from T2CL  Read  F8 from T2CH   Read  5F from SR
+426: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0C from T2CL  Read  F8 from T2CH   Read  5F from SR
+427: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0B from T2CL  Read  F8 from T2CH   Read  5F from SR
+428: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0A from T2CL  Read  F8 from T2CH   Read  5F from SR
+429: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  09 from T2CL  Read  F8 from T2CH   Read  5F from SR
+430: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  08 from T2CL  Read  F8 from T2CH   Read  5F from SR
+431: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  07 from T2CL  Read  F8 from T2CH   Read  5F from SR
+432: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  06 from T2CL  Read  F8 from T2CH   Read  5F from SR
+433: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  05 from T2CL  Read  F8 from T2CH   Read  5F from SR
+434: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  04 from T2CL  Read  F8 from T2CH   Read  5F from SR
+435: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  03 from T2CL  Read  F8 from T2CH   Read  5F from SR
+436: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  02 from T2CL  Read  F8 from T2CH   Read  5F from SR
+437: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  01 from T2CL  Read  F8 from T2CH   Read  5F from SR
+438: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  00 from T2CL  Read  F8 from T2CH   Read  5F from SR
+439: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  FF from T2CL  Read  F7 from T2CH   Read  5F from SR
+440: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  10 from T2CL  Read  F7 from T2CH   Read  5F from SR
+441: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0F from T2CL  Read  F7 from T2CH   Read  BF from SR
+442: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0E from T2CL  Read  F7 from T2CH   Read  BF from SR
+443: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL  Read  F7 from T2CH   Read  BF from SR
+444: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL  Read  F7 from T2CH   Read  BF from SR
+445: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL  Read  F7 from T2CH   Read  BF from SR
+446: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL  Read  F7 from T2CH   Read  BF from SR
+447: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL  Read  F7 from T2CH   Read  BF from SR
+448: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL  Read  F7 from T2CH   Read  BF from SR
+449: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL  Read  F7 from T2CH   Read  BF from SR
+450: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL  Read  F7 from T2CH   Read  BF from SR
+451: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL  Read  F7 from T2CH   Read  BF from SR
+452: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  04 from T2CL  Read  F7 from T2CH   Read  BF from SR
+453: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  03 from T2CL  Read  F7 from T2CH   Read  BF from SR
+454: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  02 from T2CL  Read  F7 from T2CH   Read  BF from SR
+455: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  01 from T2CL  Read  F7 from T2CH   Read  BF from SR
+456: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  00 from T2CL  Read  F7 from T2CH   Read  BF from SR
+457: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FF from T2CL  Read  F6 from T2CH   Read  BF from SR
+458: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  10 from T2CL  Read  F6 from T2CH   Read  BF from SR
+459: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0F from T2CL  Read  F6 from T2CH   Read  BF from SR
+460: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0E from T2CL  Read  F6 from T2CH   Read  BF from SR
+461: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0D from T2CL  Read  F6 from T2CH   Read  BF from SR
+462: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0C from T2CL  Read  F6 from T2CH   Read  BF from SR
+463: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0B from T2CL  Read  F6 from T2CH   Read  BF from SR
+464: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0A from T2CL  Read  F6 from T2CH   Read  BF from SR
+465: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  09 from T2CL  Read  F6 from T2CH   Read  BF from SR
+466: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  08 from T2CL  Read  F6 from T2CH   Read  BF from SR
+467: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  07 from T2CL  Read  F6 from T2CH   Read  BF from SR
+468: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  06 from T2CL  Read  F6 from T2CH   Read  BF from SR
+469: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  05 from T2CL  Read  F6 from T2CH   Read  BF from SR
+470: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  04 from T2CL  Read  F6 from T2CH   Read  BF from SR
+471: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  03 from T2CL  Read  F6 from T2CH   Read  BF from SR
+472: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  02 from T2CL  Read  F6 from T2CH   Read  BF from SR
+473: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  01 from T2CL  Read  F6 from T2CH   Read  BF from SR
+474: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  00 from T2CL  Read  F6 from T2CH   Read  BF from SR
+475: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  FF from T2CL  Read  F5 from T2CH   Read  BF from SR
+476: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  10 from T2CL  Read  F5 from T2CH   Read  BF from SR
+477: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0F from T2CL  Read  F5 from T2CH   Read  7F from SR
+478: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0E from T2CL  Read  F5 from T2CH   Read  7F from SR
+479: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL  Read  F5 from T2CH   Read  7F from SR
+480: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL  Read  F5 from T2CH   Read  7F from SR
+481: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL  Read  F5 from T2CH   Read  7F from SR
+482: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL  Read  F5 from T2CH   Read  7F from SR
+483: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL  Read  F5 from T2CH   Read  7F from SR
+484: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL  Read  F5 from T2CH   Read  7F from SR
+485: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL  Read  F5 from T2CH   Read  7F from SR
+486: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL  Read  F5 from T2CH   Read  7F from SR
+487: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL  Read  F5 from T2CH   Read  7F from SR
+488: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  04 from T2CL  Read  F5 from T2CH   Read  7F from SR
+489: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  03 from T2CL  Read  F5 from T2CH   Read  7F from SR
+490: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  02 from T2CL  Read  F5 from T2CH   Read  7F from SR
+491: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  01 from T2CL  Read  F5 from T2CH   Read  7F from SR
+492: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  00 from T2CL  Read  F5 from T2CH   Read  7F from SR
+493: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FF from T2CL  Read  F4 from T2CH   Read  7F from SR
+494: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  10 from T2CL  Read  F4 from T2CH   Read  7F from SR
+495: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0F from T2CL  Read  F4 from T2CH   Read  7F from SR
+496: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0E from T2CL  Read  F4 from T2CH   Read  7F from SR
+497: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0D from T2CL  Read  F4 from T2CH   Read  7F from SR
+498: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0C from T2CL  Read  F4 from T2CH   Read  7F from SR
+499: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0B from T2CL  Read  F4 from T2CH   Read  7F from SR
+500: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0A from T2CL  Read  F4 from T2CH   Read  7F from SR
+501: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  09 from T2CL  Read  F4 from T2CH   Read  7F from SR
+502: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  08 from T2CL  Read  F4 from T2CH   Read  7F from SR
+503: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  07 from T2CL  Read  F4 from T2CH   Read  7F from SR
+504: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  06 from T2CL  Read  F4 from T2CH   Read  7F from SR
+505: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  05 from T2CL  Read  F4 from T2CH   Read  7F from SR
+506: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  04 from T2CL  Read  F4 from T2CH   Read  7F from SR
+507: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  03 from T2CL  Read  F4 from T2CH   Read  7F from SR
+508: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  02 from T2CL  Read  F4 from T2CH   Read  7F from SR
+509: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  01 from T2CL  Read  F4 from T2CH   Read  7F from SR
+510: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  00 from T2CL  Read  F4 from T2CH   Read  7F from SR
+511: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  FF from T2CL  Read  F3 from T2CH   Read  7F from SR
+512: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  10 from T2CL  Read  F3 from T2CH   Read  7F from SR
+513: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0F from T2CL  Read  F3 from T2CH   Read  FF from SR
+514: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0E from T2CL  Read  F3 from T2CH   Read  FF from SR
+515: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL  Read  F3 from T2CH   Read  FF from SR
+516: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL  Read  F3 from T2CH   Read  FF from SR
+517: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL  Read  F3 from T2CH   Read  FF from SR
+518: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL  Read  F3 from T2CH   Read  FF from SR
+519: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL  Read  F3 from T2CH   Read  FF from SR
+520: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL  Read  F3 from T2CH   Read  FF from SR
+521: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL  Read  F3 from T2CH   Read  FF from SR
+522: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL  Read  F3 from T2CH   Read  FF from SR
+523: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL  Read  F3 from T2CH   Read  FF from SR
+524: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  04 from T2CL  Read  F3 from T2CH   Read  FF from SR
+525: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  03 from T2CL  Read  F3 from T2CH   Read  FF from SR
+526: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  02 from T2CL  Read  F3 from T2CH   Read  FF from SR
+527: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  01 from T2CL  Read  F3 from T2CH   Read  FF from SR
+528: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  00 from T2CL  Read  F3 from T2CH   Read  FF from SR
+529: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  FF from T2CL  Read  F2 from T2CH   Read  FF from SR
+530: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  10 from T2CL  Read  F2 from T2CH   Read  FF from SR
+531: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0F from T2CL  Read  F2 from T2CH   Read  FF from SR
+532: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0E from T2CL  Read  F2 from T2CH   Read  FF from SR
+533: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0D from T2CL  Read  F2 from T2CH   Read  FF from SR
+534: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0C from T2CL  Read  F2 from T2CH   Read  FF from SR
+535: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0B from T2CL  Read  F2 from T2CH   Read  FF from SR
+536: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  0A from T2CL  Read  F2 from T2CH   Read  FF from SR
+537: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  09 from T2CL  Read  F2 from T2CH   Read  FF from SR
+538: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  08 from T2CL  Read  F2 from T2CH   Read  FF from SR
+539: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  07 from T2CL  Read  F2 from T2CH   Read  FF from SR
+540: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  06 from T2CL  Read  F2 from T2CH   Read  FF from SR
+541: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  05 from T2CL  Read  F2 from T2CH   Read  FF from SR
+542: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  04 from T2CL  Read  F2 from T2CH   Read  FF from SR
+543: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  03 from T2CL  Read  F2 from T2CH   Read  FF from SR
+544: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  02 from T2CL  Read  F2 from T2CH   Read  FF from SR
+545: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  01 from T2CL  Read  F2 from T2CH   Read  FF from SR
+546: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  00 from T2CL  Read  F2 from T2CH   Read  FF from SR
+547: PHI2=1: ..*****. (FF).. PHI2=0: ..*****. (FF).. Read  FF from T2CL  Read  F1 from T2CH   Read  FF from SR
+548: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  10 from T2CL  Read  F1 from T2CH   Read  FF from SR
+549: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0F from T2CL  Read  F1 from T2CH   Read  FF from SR
+550: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0E from T2CL  Read  F1 from T2CH   Read  FF from SR
+551: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0D from T2CL  Read  F1 from T2CH   Read  FF from SR
+552: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0C from T2CL  Read  F1 from T2CH   Read  FF from SR
+553: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0B from T2CL  Read  F1 from T2CH   Read  FF from SR
+554: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  0A from T2CL  Read  F1 from T2CH   Read  FF from SR
+555: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  09 from T2CL  Read  F1 from T2CH   Read  FF from SR
+556: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  08 from T2CL  Read  F1 from T2CH   Read  FF from SR
+557: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  07 from T2CL  Read  F1 from T2CH   Read  FF from SR
+558: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  06 from T2CL  Read  F1 from T2CH   Read  FF from SR
+559: PHI2=1: ..****** (FF).. PHI2=0: ..****** (FF).. Read  05 from T2CL  Read  F1 from T2CH   Read  FF from SR

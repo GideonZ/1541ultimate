@@ -114,6 +114,14 @@ if __name__ == "__main__":
                 # wait 3 seconds
                 s.mysend(pack("<H", 0xFF05))
                 s.mysend(pack("<H", 600))
+                # write border color
+                s.mysend(pack("<H", 0xFF06))
+                s.mysend(pack("<H", 3))
+                s.mysend(pack("<H", 0xD020))
+                s.mysend(pack("<B", 7))
+                # wait 3 seconds
+                s.mysend(pack("<H", 0xFF05))
+                s.mysend(pack("<H", 600))
                 # execute load/run command
                 s.mysend(pack("<H", 0xFF02))
                 s.mysend(pack("<H", len(bytes)))
