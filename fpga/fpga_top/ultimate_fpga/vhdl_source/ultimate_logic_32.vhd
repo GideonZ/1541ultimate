@@ -346,6 +346,7 @@ architecture logic of ultimate_logic_32 is
     signal hw_srq_o         : std_logic := '1';
     
     -- miscellaneous interconnect
+    signal c64_reset_in_n   : std_logic;
     signal c64_irq_n        : std_logic;
     signal c64_irq          : std_logic;
     signal phi2_tick        : std_logic;
@@ -512,7 +513,7 @@ begin
             data_i          => data_i,              
             
             iec_reset_n     => iec_reset_i,
-            c64_reset_n     => RSTn_in,
+            c64_reset_n     => c64_reset_in_n,
             
             -- LED
             act_led_n       => DISK_ACTn,
@@ -563,7 +564,7 @@ begin
             data_i          => data_i,              
             
             iec_reset_n     => iec_reset_i,
-            c64_reset_n     => RSTn_in,
+            c64_reset_n     => c64_reset_in_n,
 
             -- LED
             act_led_n       => open, --DISK_ACTn,
@@ -1157,6 +1158,7 @@ begin
     filt3: entity work.spike_filter generic map (10) port map(sys_clock, iec_data_i,   data_i);
     filt4: entity work.spike_filter generic map (10) port map(sys_clock, iec_srq_i,    srq_i);
     filt5: entity work.spike_filter port map(sys_clock, IRQn, c64_irq_n);
+    filt6: entity work.spike_filter port map(sys_clock, RSTn_in, c64_reset_in_n );
     c64_irq <= not c64_irq_n;
 
     -- dummy

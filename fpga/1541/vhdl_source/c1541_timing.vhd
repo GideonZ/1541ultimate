@@ -18,6 +18,7 @@ port (
     drive_stop      : in  std_logic;
                     
     drv_clock_en    : out std_logic;   -- 1/12.5 (4 MHz)
+    cia_rising      : out std_logic;
     cpu_clock_en    : out std_logic ); -- 1/50   (1 MHz)
     
 end c1541_timing;
@@ -35,12 +36,15 @@ begin
         if rising_edge(clock) then
 			drv_clock_en   <= '0';
 			cpu_clock_en_i <= '0';
-			
+            cia_rising     <= '0';			
             if drive_stop='0' then
                 v_next := div_count + 400;
                 if v_next >= (g_clock_freq / 10000) then
                     drv_clock_en <= '1';
                     pre_cnt <= pre_cnt + 1;
+                    if pre_cnt = "01" then
+                        cia_rising <= '1';
+                    end if;
                     if pre_cnt = "11" then
                         cpu_clock_en_i <= '1';
                     end if;

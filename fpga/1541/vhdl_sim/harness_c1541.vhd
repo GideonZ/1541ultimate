@@ -36,44 +36,32 @@ architecture harness of harness_c1541 is
     signal mem_resp     : t_mem_resp;
 
     signal act_led_n    : std_logic;
-    signal audio_sample : unsigned(12 downto 0);
-
-    signal SDRAM_A      : std_logic_vector(14 downto 0);
-    signal SDRAM_DQ     : std_logic_vector(7 downto 0);
-    signal SDRAM_CSn    : std_logic;
-    signal SDRAM_RASn   : std_logic;
-    signal SDRAM_CASn   : std_logic;
-    signal SDRAM_WEn    : std_logic;
-    signal SDRAM_DQM    : std_logic := '0';
-	signal SDRAM_CKE    : std_logic;
-	signal SDRAM_CLK    : std_logic;
-
-    shared variable dram : h_mem_object;
+    signal audio_sample : signed(12 downto 0);
 
 begin
     clock <= not clock after 10 ns;
     reset <= '1', '0' after 100 ns;
     clk_shifted <= transport clock after 15 ns;
     
-    process(clock)
-        variable count : integer := 0;
-    begin
-        if rising_edge(clock) then
-            cpu_clock_en <= '0';
-            drv_clock_en <= '0';
-            
-            case count is
-            when 0 | 12 | 25 | 37 =>
-                drv_clock_en <= '1';
-                count := count + 1;
-            when 49 =>
-                cpu_clock_en <= '1';
-                count := 0;
-            when others =>
-                count := count + 1;
-            end case;                    
-        end if;
-    end process;
+--    process(clock)
+--        variable count : integer := 0;
+--    begin
+--        if rising_edge(clock) then
+--            cpu_clock_en <= '0';
+--            drv_clock_en <= '0';
+--            
+--            case count is
+--            when 0 | 12 | 25 | 37 =>
+--                drv_clock_en <= '1';
+--                count := count + 1;
+--            when 49 =>
+--                cpu_clock_en <= '1';
+--                count := 0;
+--            when others =>
+--                count := count + 1;
+--            end case;                    
+--        end if;
+--    end process;
     
     i_io_bus_bfm: entity work.io_bus_bfm
     generic map (
@@ -86,6 +74,8 @@ begin
 
     i_drive: entity work.c1541_drive 
     generic map (
+        g_clock_freq    => 50000000,
+        g_big_endian    => false,
         g_audio         => true,
         g_audio_div     => 100, -- for simulation: 500 ksps
         g_audio_base    => X"0010000",
@@ -93,8 +83,6 @@ begin
     port map (
         clock           => clock,
         reset           => reset,
-        cpu_clock_en    => cpu_clock_en,
-        drv_clock_en    => drv_clock_en,
         
         -- slave port on io bus
         io_req          => io_req,
@@ -127,64 +115,15 @@ begin
     iec_data <= '0' when iec_data_o='0' else 'Z';
     iec_data_i <= '0' when iec_data='0' else '1';
 
-	i_memctrl: entity work.ext_mem_ctrl_v4
-    generic map (
-    	g_simulation => true,
-    	A_Width	    => 15 )
-		
-    port map (
-        clock       => clock,
-        clk_shifted => clk_shifted,
-        reset       => reset,
-                                  
-        inhibit     => '0',
-        is_idle     => open,
-        
-        req         => mem_req,
-        resp        => mem_resp,
-        
-		SDRAM_CSn   => SDRAM_CSn,	
-	    SDRAM_RASn  => SDRAM_RASn,
-	    SDRAM_CASn  => SDRAM_CASn,
-	    SDRAM_WEn   => SDRAM_WEn,
-		SDRAM_CKE	=> SDRAM_CKE,
-		SDRAM_CLK	=> SDRAM_CLK,
-
-        MEM_A       => SDRAM_A,
-        MEM_D       => SDRAM_DQ );
-
-    i_memory: entity work.dram_model_8
-    generic map (
-        g_given_name  => "dram",
-        g_cas_latency => 2,
-        g_burst_len_r => 1,
-        g_burst_len_w => 1,
-        g_column_bits => 10,
-        g_row_bits    => 13,
-        g_bank_bits   => 2 )
-    port map (
-        CLK  => SDRAM_CLK,
-        CKE  => SDRAM_CKE,
-        A    => SDRAM_A(12 downto 0),
-        BA   => SDRAM_A(14 downto 13),
-        CSn  => SDRAM_CSn,
-        RASn => SDRAM_RASn,
-        CASn => SDRAM_CASn,
-        WEn  => SDRAM_WEn,
-        DQM  => SDRAM_DQM,
-        
-        DQ   => SDRAM_DQ );
-
-	process
-	begin
-        bind_mem_model("dram", dram);
-        
-        load_memory("../../../software/1541u/application/ultimate/roms/1541-ii.bin", dram, X"0000C000");
-        load_memory("../../../software/1541u/application/ultimate/roms/sounds.bin", dram, X"00010000");
-
-        --wait for 3 ms;
-        --save_memory("datspace_sim.bin", ram, X"00068000", 8192);
-		wait;
-	end process;
-
+    i_memory: entity work.mem_bus_slave_bfm
+    generic map(
+        g_name    => "dram",
+        g_latency => 2
+    )
+    port map(
+        clock     => clock,
+        req       => mem_req,
+        resp      => mem_resp
+    );
+    
 end harness;

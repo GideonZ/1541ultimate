@@ -1,3 +1,18 @@
+-------------------------------------------------------------------------------
+--
+-- (C) COPYRIGHT 2007-2017, Gideon's Logic Architectures
+--
+-------------------------------------------------------------------------------
+-- Title      : VIA 6522
+-------------------------------------------------------------------------------
+-- Author     : Gideon Zweijtzer  <gideon.zweijtzer@gmail.com>
+-------------------------------------------------------------------------------
+-- Description: This module implements the 6522 VIA chip.
+--              Please note: A LOT OF REVERSE ENGINEERING has been done to
+--              make this module as accurate as it is now. Please do not copy
+--              (use in your own projects) without written permission of the
+--              author.
+-------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.std_logic_arith.all;
@@ -6,7 +21,8 @@ use ieee.std_logic_unsigned.all;
 entity via6522 is
 port (
     clock       : in  std_logic;
-    clock_en    : in  std_logic; -- for counters and stuff
+    rising      : in  std_logic;
+    falling     : in  std_logic;
     reset       : in  std_logic;
     
     addr        : in  std_logic_vector(3 downto 0);
@@ -14,6 +30,8 @@ port (
     ren         : in  std_logic;
     data_in     : in  std_logic_vector(7 downto 0);
     data_out    : out std_logic_vector(7 downto 0);
+
+    phi2_ref    : out std_logic;
 
     -- pio --
     port_a_o    : out std_logic_vector(7 downto 0);
@@ -54,10 +72,11 @@ architecture Gideon of via6522 is
     end record;
     
     constant pio_default : pio_t := (others => (others => '0'));
-    constant latch_reset_pattern : std_logic_vector(15 downto 0) := X"01AA";
+    constant latch_reset_pattern : std_logic_vector(15 downto 0) := X"5550";
 
+    signal last_data     : std_logic_vector(7 downto 0) := X"55";
+    
     signal pio_i         : pio_t;
-
     signal port_a_c      : std_logic_vector(7 downto 0) := (others => '0');
     signal port_b_c      : std_logic_vector(7 downto 0) := (others => '0');
     
@@ -67,7 +86,7 @@ architecture Gideon of via6522 is
     signal irq_out       : std_logic;
     
     signal timer_a_latch : std_logic_vector(15 downto 0) := latch_reset_pattern;
-    signal timer_b_latch : std_logic_vector(7 downto 0) := latch_reset_pattern(7 downto 0);
+    signal timer_b_latch : std_logic_vector(15 downto 0) := latch_reset_pattern;
     signal timer_a_count : std_logic_vector(15 downto 0) := latch_reset_pattern;
     signal timer_b_count : std_logic_vector(15 downto 0) := latch_reset_pattern;
     signal timer_a_out   : std_logic;
@@ -78,6 +97,7 @@ architecture Gideon of via6522 is
     signal serport_en    : std_logic;
     signal ser_cb2_o     : std_logic;
     signal hs_cb2_o      : std_logic;
+    signal trigger_serial: std_logic;
         
     alias  ca2_event     : std_logic is irq_events(0);
     alias  ca1_event     : std_logic is irq_events(1);
@@ -130,13 +150,12 @@ architecture Gideon of via6522 is
     signal ca2_pulse_o      : std_logic;
     signal cb2_handshake_o  : std_logic;
     signal cb2_pulse_o      : std_logic;
+    signal shift_active     : std_logic;
 begin
     irq <= irq_out;
     
-    irq_out <= '0' when (irq_flags and irq_mask) = "0000000" else '1';
-    
-    write_t1c_h <= '1' when addr = X"5" and wen='1' else '0';
-    write_t2c_h <= '1' when addr = X"9" and wen='1' else '0';
+    write_t1c_h <= '1' when addr = X"5" and wen='1' and falling = '1' else '0';
+    write_t2c_h <= '1' when addr = X"9" and wen='1' and falling = '1' else '0';
 
     ca1_event <= (ca1_c xor ca1_d) and (ca1_d xor ca1_edge_select);
     ca2_event <= (ca2_c xor ca2_d) and (ca2_d xor ca2_edge_select);
@@ -158,6 +177,27 @@ begin
         cb2_pulse_o     when "01",
         '0'             when "10",
         '1'             when others;
+
+    process(irq_flags, irq_mask)
+    begin
+        if (irq_flags and irq_mask) = "0000000" then
+            irq_out <= '0';
+        else
+            irq_out <= '1';
+        end if;
+    end process;
+
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            if rising = '1' then
+                phi2_ref <= '1';
+            elsif falling = '1' then
+                phi2_ref <= '0';
+            end if;
+        end if;
+    end process;
+    
 
     process(clock)
     begin
@@ -189,11 +229,11 @@ begin
             -- CA2 logic
             if ca1_event = '1' then
                 ca2_handshake_o <= '1';
-            elsif (ren = '1' or wen = '1') and addr = X"1" and clock_en = '1' then
+            elsif (ren = '1' or wen = '1') and addr = X"1" and falling = '1' then
                 ca2_handshake_o <= '0';
             end if;
             
-            if clock_en = '1' then
+            if falling = '1' then
                 if (ren = '1' or wen = '1') and addr = X"1" then
                     ca2_pulse_o <= '0';
                 else            
@@ -204,11 +244,11 @@ begin
             -- CB2 logic
             if cb1_event = '1' then
                 cb2_handshake_o <= '1';
-            elsif (ren = '1' or wen = '1') and addr = X"0" and clock_en = '1' then
+            elsif (ren = '1' or wen = '1') and addr = X"0" and falling = '1' then
                 cb2_handshake_o <= '0';
             end if;
             
-            if clock_en = '1' then
+            if falling = '1' then
                 if (ren = '1' or wen = '1') and addr = X"0" then
                     cb2_pulse_o <= '0';
                 else            
@@ -218,9 +258,14 @@ begin
 
             -- Interrupt logic
             irq_flags <= irq_flags or irq_events;
+
+            if falling = '1' then
+                trigger_serial <= '0';
+            end if;                
             
             -- Writes --
-            if wen='1' then
+            if wen='1' and falling = '1' then
+                last_data <= data_in;
                 case addr is
                 when X"0" => -- ORB
                     pio_i.prb <= data_in;
@@ -254,6 +299,7 @@ begin
                     
                 when X"7" => -- TA HI latch
                     timer_a_latch(15 downto 8) <= data_in;
+                    timer_a_flag <= '0';
                     
                 when X"8" => -- TB LO latch
                     timer_b_latch(7 downto 0) <= data_in;
@@ -263,6 +309,9 @@ begin
                 
                 when X"A" => -- Serial port
                     serial_flag <= '0';
+                    if shift_active = '0' then
+                        trigger_serial <= '1';
+                    end if;
                     
                 when X"B" => -- ACR (Auxiliary Control Register)
                     acr <= data_in;
@@ -288,85 +337,76 @@ begin
                 end case;
             end if;
             
-            -- Reads --
-            
+            -- Reads - Output only --
+            data_out <= X"00";
             case addr is
             when X"0" => -- ORB
                 --Port B reads its own output register for pins set to output.
                 data_out <= (pio_i.prb and pio_i.ddrb) or (irb and not pio_i.ddrb);
---                if tmr_a_output_en = '1' and pio_i.ddrb(7) = '1' then
-
-                if cb2_no_irq_clr='0' and ren='1' then
-                    cb2_flag <= '0';
-                end if;
-                if ren='1' then
-                    cb1_flag <= '0';
-                end if;
-                                            
             when X"1" => -- ORA
                 data_out <= ira;
-                if ca2_no_irq_clr='0' and ren='1' then
-                    ca2_flag <= '0';
-                end if;
-                if ren='1' then
-                    ca1_flag <= '0';
-                end if;
-                
             when X"2" => -- DDRB
                 data_out <= pio_i.ddrb;
-            
             when X"3" => -- DDRA
                 data_out <= pio_i.ddra;
-                
             when X"4" => -- TA LO counter
                 data_out <= timer_a_count(7 downto 0);
-                if ren='1' then
-                    timer_a_flag <= '0';
-                end if;
-                
             when X"5" => -- TA HI counter
                 data_out <= timer_a_count(15 downto 8);
-                
             when X"6" => -- TA LO latch
                 data_out <= timer_a_latch(7 downto 0);
-                
             when X"7" => -- TA HI latch
                 data_out <= timer_a_latch(15 downto 8);
-                
             when X"8" => -- TA LO counter
                 data_out <= timer_b_count(7 downto 0);
-                if ren='1' then
-                    timer_b_flag <= '0';
-                end if;
-                
             when X"9" => -- TA HI counter
                 data_out <= timer_b_count(15 downto 8);
-
             when X"A" => -- SR
                 data_out  <= shift_reg;
-                if ren='1' then
-                    serial_flag <= '0';
-                end if;
-
             when X"B" => -- ACR
                 data_out  <= acr;
-                
             when X"C" => -- PCR
                 data_out  <= pcr;
-                
             when X"D" => -- IFR
                 data_out  <= irq_out & irq_flags;
-                
             when X"E" => -- IER
                 data_out  <= '0' & irq_mask;
-                
             when X"F" => -- ORA
                 data_out  <= ira;
-
             when others =>
                 null;
             end case;
             
+            -- Read actions --
+            if ren = '1' and falling = '1' then
+                case addr is
+                when X"0" => -- ORB
+                    if cb2_no_irq_clr='0' then
+                        cb2_flag <= '0';
+                    end if;
+                    cb1_flag <= '0';
+                                                
+                when X"1" => -- ORA
+                    if ca2_no_irq_clr='0' then
+                        ca2_flag <= '0';
+                    end if;
+                    ca1_flag <= '0';
+                    
+                when X"4" => -- TA LO counter
+                    timer_a_flag <= '0';
+                    
+                when X"8" => -- TB LO counter
+                    timer_b_flag <= '0';
+                    
+                when X"A" => -- SR
+                    serial_flag <= '0';
+                    trigger_serial <= '1';
+    
+                when others =>
+                    null;
+                end case;
+            end if;
+
             if reset='1' then
                 pio_i         <= pio_default;
                 irq_mask      <= (others => '0');
@@ -378,7 +418,8 @@ begin
                 cb2_handshake_o <= '1';
                 cb2_pulse_o     <= '1';
                 timer_a_latch  <= latch_reset_pattern;
-                timer_b_latch  <= latch_reset_pattern(7 downto 0);
+                timer_b_latch  <= latch_reset_pattern;
+                trigger_serial <= '0';
             end if;
         end if;
     end process;
@@ -396,120 +437,125 @@ begin
     -- Timer A
     tmr_a: block
         signal timer_a_reload        : std_logic;
-        signal timer_a_post_oneshot        : std_logic;
+        signal timer_a_oneshot_trig  : std_logic;
+        signal timer_a_toggle        : std_logic;
     begin
         process(clock)
         begin
             if rising_edge(clock) then
-                timer_a_event <= '0';
-    
-                if clock_en='1' then
+                if falling = '1' then
                     -- always count, or load
                         
                     if timer_a_reload = '1' then
                         timer_a_count  <= timer_a_latch;
                         timer_a_reload <= '0';
+                        timer_a_oneshot_trig <= '0';
                     else
                         if timer_a_count = X"0000" then
                             -- generate an event if we were triggered
-                            if tmr_a_freerun = '1' then
-                                timer_a_event  <= '1';
-                                -- if in free running mode, set a flag to reload
-                                timer_a_reload <= tmr_a_freerun;
-                            else
-                                if (timer_a_post_oneshot = '0') then
-                                    timer_a_post_oneshot <= '1';
-                                    timer_a_event  <= '1';
-                                end if;
-                            end if;                                                                             
-                            -- toggle output
-                            timer_a_out    <= not timer_a_out;                        
+                            timer_a_reload <= '1';
                         end if;
                         --Timer coutinues to count in both free run and one shot.                        
                         timer_a_count <= timer_a_count - X"0001";
                     end if;                    
                 end if;
                 
+                if rising = '1' then
+                    if timer_a_event = '1' then
+                        timer_a_toggle <= not timer_a_toggle;
+                    end if;
+                end if;
+
                 if write_t1c_h = '1' then
-                    timer_a_out   <= '0';
-                    timer_a_count <= data_in & timer_a_latch(7 downto 0);
+                    timer_a_toggle <= '0';
+                    timer_a_count  <= data_in & timer_a_latch(7 downto 0);
                     timer_a_reload <= '0';
-                    timer_a_post_oneshot <= '0';
+                    timer_a_oneshot_trig <= '1';
                 end if;
 
                 if reset='1' then
-                    timer_a_out    <= '1';
+                    timer_a_toggle <= '1';
                     timer_a_count  <= latch_reset_pattern;
                     timer_a_reload <= '0';
-                    timer_a_post_oneshot <= '0';
+                    timer_a_oneshot_trig <= '0';
                 end if;
             end if;
         end process;
+
+        timer_a_out   <= timer_a_toggle;
+        timer_a_event <= rising and timer_a_reload and (tmr_a_freerun or timer_a_oneshot_trig);
+         
     end block tmr_a;
     
     -- Timer B
     tmr_b: block
-        signal timer_b_reload        : std_logic;
-        signal timer_b_post_oneshot  : std_logic;
+        signal timer_b_reload_lo     : std_logic;
+        signal timer_b_oneshot_trig  : std_logic;
+        signal timer_b_timeout       : std_logic;
         signal pb6_c, pb6_d          : std_logic;
     begin
         process(clock)
             variable timer_b_decrement   : std_logic;
         begin
             if rising_edge(clock) then
-                timer_b_event <= '0';
-                timer_b_tick  <= '0';
-                pb6_c <= port_b_i(6);
-    
                 timer_b_decrement := '0';
-                if clock_en='1' then
-                
-                    pb6_d <= pb6_c;
 
-                    if timer_b_reload = '1' then
-                        timer_b_count <= X"00" & timer_b_latch(7 downto 0);
-                        timer_b_reload <= '0';
-                    else
-                        if tmr_b_count_mode = '1' then
-                            if (pb6_d='0' and pb6_c='1') then
-                                 timer_b_decrement := '1';
-                            end if;
-                        else -- one shot or used for shirt register
-                            timer_b_decrement := '1';
-                        end if;    
-                        
-                        if timer_b_decrement = '1' then
-                            if timer_b_count = X"0000" then
-                                if (timer_b_post_oneshot = '0') then
-                                    timer_b_post_oneshot <= '1';
-                                    timer_b_event  <= '1';
-                                end if;
-                                timer_b_tick <= '1';
-                                case shift_mode_control is
-                                when "001" | "101" | "100" =>
-                                    timer_b_reload <= '1';
-                                when others =>
-                                    null;
-                                end case;
-                            end if;
-                            timer_b_count <= timer_b_count - X"0001";
+                if rising = '1' then
+                    pb6_c <= To_X01(port_b_i(6));
+                    pb6_d <= pb6_c;
+                end if;
+                                
+                if falling = '1' then
+                    timer_b_timeout <= '0';
+                    timer_b_tick  <= '0';
+
+                    if tmr_b_count_mode = '1' then
+                        if (pb6_d='1' and pb6_c='0') then
+                             timer_b_decrement := '1';
                         end if;
+                    else -- one shot or used for shift register
+                        timer_b_decrement := '1';
+                    end if;    
+                        
+                    if timer_b_decrement = '1' then
+                        if timer_b_count = X"0000" then
+                            if timer_b_oneshot_trig = '1' then
+                                timer_b_oneshot_trig <= '0';
+                                timer_b_timeout <= '1';
+                            end if;
+                        end if;
+                        if timer_b_count(7 downto 0) = X"00" then
+                            case shift_mode_control is
+                            when "001" | "101" | "100" =>
+                                timer_b_reload_lo <= '1';
+                                timer_b_tick <= '1';
+                            when others =>
+                                null;
+                            end case;
+                        end if;
+                        timer_b_count <= timer_b_count - X"0001";
+                    end if;
+                    if timer_b_reload_lo = '1' then
+                        timer_b_count(7 downto 0) <= timer_b_latch(7 downto 0);
+                        timer_b_reload_lo <= '0';
                     end if;
                 end if;
-                
+
                 if write_t2c_h = '1' then
                     timer_b_count <= data_in & timer_b_latch(7 downto 0);
-                    timer_b_reload <= '0';
-                    timer_b_post_oneshot <= '0';
+                    timer_b_oneshot_trig <= '1';
                 end if;
 
                 if reset='1' then
                     timer_b_count  <= latch_reset_pattern;
-                    timer_b_reload <= '0';
-                    timer_b_post_oneshot <= '0';                    
+                    timer_b_reload_lo    <= '0';
+                    timer_b_oneshot_trig <= '0';                    
                 end if;
             end if;
         end process;
+
+        timer_b_event <= rising and timer_b_timeout;
+
     end block tmr_b;
     
     ser: block
@@ -517,97 +563,114 @@ begin
         signal shift_clock   : std_logic;
         signal shift_tick_r  : std_logic;
         signal shift_tick_f  : std_logic;
-        signal cb1_c, cb2_c  : std_logic;
-        signal mpu_write     : std_logic;
-        signal mpu_read      : std_logic;
+        signal cb2_c         : std_logic := '0';
         signal bit_cnt       : integer range 0 to 7;
-        signal shift_active  : std_logic;
+        signal shift_pulse   : std_logic;
     begin
-        process(clock)
+        process(shift_active, timer_b_tick, shift_clk_sel, shift_clock, shift_clock_d)
         begin
-            if rising_edge(clock) then
-                case shift_clk_sel is
-                when "10" =>
-                    if shift_active='0' then
-                        shift_clock <= '1';
-                    elsif clock_en='1' then
-                        shift_clock <= not shift_clock;
-                    end if;
+            case shift_clk_sel is
+            when "10" =>
+                shift_pulse <= '1';
                 
-                when "00"|"01" =>
-                    if shift_active='0' then
-                        shift_clock <= '1';
-                    elsif timer_b_tick='1' then
-                        shift_clock <= not shift_clock;
-                    end if;
-                
-                when others => -- "11"
-                    shift_clock <= To_X01(cb1_i);
-                
-                end case;
-                shift_clock_d <= shift_clock;
+            when "00"|"01" =>
+                shift_pulse <= timer_b_tick;
+            
+            when others =>
+                shift_pulse <= shift_clock and not shift_clock_d;
+
+            end case;
+            
+            if shift_active = '0' then
+                shift_pulse <= '0';
             end if;
         end process;
 
-        shift_tick_r <= not shift_clock_d and shift_clock;
-        shift_tick_f <=     shift_clock_d and not shift_clock;
-                
+        process(clock)
+        begin
+            if rising_edge(clock) then
+                if rising = '1' then
+                    cb2_c  <= To_X01(cb2_i);
+
+                    if shift_active='0' then
+                        shift_clock <= '1';
+                    elsif shift_clk_sel = "11" then
+                        shift_clock <= To_X01(cb1_i);
+                    elsif shift_pulse = '1' then
+                        shift_clock <= not shift_clock;
+                    end if;
+
+                    shift_clock_d <= shift_clock;
+
+                    if shift_tick_f = '1' then
+                        ser_cb2_o <= shift_reg(7);
+                    end if;
+                end if;
+                if reset = '1' then
+                    shift_clock <= '1';
+                    shift_clock_d <= '1';
+                    ser_cb2_o <= '1';
+                end if;
+            end if;
+        end process;
+
         cb1_t <= '0' when shift_clk_sel="11" else serport_en;
-        cb1_o <= shift_clock;
-        
-        mpu_write <= wen  when addr=X"A" else '0';
-        mpu_read  <= ren  when addr=X"A" else '0';
+        cb1_o <= shift_clock_d;
         
         serport_en <= shift_dir or shift_clk_sel(1) or shift_clk_sel(0);
         
         process(clock)
         begin
             if rising_edge(clock) then
-                cb1_c  <= To_X01(cb1_i);
-                cb2_c  <= To_X01(cb2_i);
-                
-                if shift_clk_sel = "00" then
-                    bit_cnt <= 7;
-                    if shift_dir='0' then -- disabled mode
-                        shift_active <= '0';
-                    end if;
-                end if;
-                
-                if mpu_read='1' or mpu_write='1' then
-                    bit_cnt      <= 7;
-                    shift_active <= '1';
-                    if mpu_write='1' then                        
+                if reset = '1' then
+                    shift_reg <= X"FF";
+                    shift_tick_r <= '0';
+                    shift_tick_f <= '0';
+                elsif falling = '1' then
+                    shift_tick_r <= not shift_clock_d and shift_clock;
+                    shift_tick_f <= shift_clock_d and not shift_clock;
+
+                    if wen = '1' and addr = X"A" then
                         shift_reg <= data_in;
-                    end if;
-                end if;
-
-                serial_event <= '0';
-                
-                if shift_active='1' then
-                    if shift_tick_f='1' then
-                        ser_cb2_o <= shift_reg(7);
-                    end if;
-
-                    if shift_tick_r='1' then
+                    elsif shift_tick_r = '1' then
                         if shift_dir='1' then -- output
                             shift_reg <= shift_reg(6 downto 0) & shift_reg(7);
                         else
                             shift_reg <= shift_reg(6 downto 0) & cb2_c;
                         end if;
-                        
-                        if bit_cnt=0 then
-                            serial_event <= '1';
-                            shift_active <= '0';
-                        else
-                            bit_cnt <= bit_cnt - 1;
-                        end if;
                     end if;
                 end if;
+            end if;
+        end process;        
+
+        -- tell people that we're ready!
+        serial_event <= shift_tick_r and not shift_active and rising;
+        
+        process(clock)
+        begin
+            if rising_edge(clock) then
+                if falling = '1' then
+                    if shift_active = '0' then
+                        if trigger_serial = '1' then
+                            bit_cnt      <= 7;
+                            shift_active <= '1';
+                        end if;
+                    else -- we're active
+                        if shift_clk_sel = "00" then
+                            shift_active <= shift_dir; -- when '1' we're active, but for mode 000 we go inactive.
+                        elsif shift_pulse = '1' and shift_clock = '1' then
+                            if bit_cnt = 0 then
+                                shift_active <= '0';
+                            else
+                                bit_cnt <= bit_cnt - 1;
+                            end if;
+                        end if;                            
+                    end if;
+                end if;
+                
                 if reset='1' then
-                    shift_reg    <= (others => '1');
                     shift_active <= '0';
                     bit_cnt      <= 0;
-                    ser_cb2_o    <= '1';
                 end if;
             end if;
         end process;                

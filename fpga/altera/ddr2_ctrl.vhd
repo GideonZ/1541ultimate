@@ -23,6 +23,9 @@ port (
     sys_clock_o : out std_logic;
     sys_reset_o : out std_logic;
 
+    user_clock_1  : out std_logic := '0';
+    user_clock_2  : out std_logic := '0';
+
     clock       : in  std_logic := '0';
     reset       : in  std_logic := '0';
 
@@ -322,6 +325,9 @@ begin
         wdata              => phy_wdata,
         wdata_oe           => phy_write,
         rdata              => phy_rdata,
+
+        user_clock_1       => user_clock_1,
+        user_clock_2       => user_clock_2,
 
         mem_clk_p          => SDRAM_CLK,
         mem_clk_n          => SDRAM_CLKn,

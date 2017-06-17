@@ -20,7 +20,7 @@
 ###############################################################################
 
 # GLOBAL_INCS should point to the make include files directory
-export GLOBAL_INCS = $(strip $(shell pwd)/../../global_makefiles)
+export GLOBAL_INCS = $(strip $(shell pwd)/../../../global_makefiles)
 
 .SUFFIXES:		#delete all known suffixes
 
@@ -58,6 +58,7 @@ AUTO_DEP_PATHS += $(wildcard ../../*/vhdl_sim/)
 AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_sim/)
 AUTO_DEP_PATHS += $(wildcard ../../*/vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_bfm/)
+AUTO_DEP_PATHS += $(wildcard ../../altera/xilinx_primitives/)
 
 
 ###############################################################################
@@ -101,6 +102,16 @@ $(TESTBENCH)_DO_GUI_OVERRIDE	:=
 
 #### tb4 #####
 TESTBENCH 						:= tb_usb_host
+TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
+$(TESTBENCH)_SRC				:= 
+$(TESTBENCH)_ENTITY				:= 
+$(TESTBENCH)_TIME				:= 
+$(TESTBENCH)_DO_GUI_BEFORE		:= 
+$(TESTBENCH)_DO_GUI_AFTER		:= 
+$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
+
+#### tb4 #####
+TESTBENCH 						:= tb_via6522
 TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
 $(TESTBENCH)_SRC				:= 
 $(TESTBENCH)_ENTITY				:= 

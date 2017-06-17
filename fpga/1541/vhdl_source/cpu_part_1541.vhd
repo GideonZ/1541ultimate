@@ -11,7 +11,8 @@ generic (
     g_ram_base  : unsigned(27 downto 0) := X"0060000" );
 port (
     clock       : in  std_logic;
-    clock_en    : in  std_logic;
+    falling     : in  std_logic;
+    rising      : in  std_logic;
     reset       : in  std_logic;
     
     -- serial bus pins
@@ -79,9 +80,15 @@ architecture structural of cpu_part_1541 is
     signal via1_port_b_i    : std_logic_vector(7 downto 0);
 
     signal via1_ca1         : std_logic;
-    signal via1_ca2         : std_logic;
-    signal via1_cb1         : std_logic;
-    signal via1_cb2         : std_logic;
+    signal via1_ca2_o       : std_logic;
+    signal via1_ca2_i       : std_logic;
+    signal via1_ca2_t       : std_logic;
+    signal via1_cb1_o       : std_logic;
+    signal via1_cb1_i       : std_logic;
+    signal via1_cb1_t       : std_logic;
+    signal via1_cb2_o       : std_logic;
+    signal via1_cb2_i       : std_logic;
+    signal via1_cb2_t       : std_logic;
     signal via1_irq         : std_logic;
     signal via2_port_b_o    : std_logic_vector(7 downto 0);
     signal via2_port_b_t    : std_logic_vector(7 downto 0);
@@ -99,7 +106,8 @@ architecture structural of cpu_part_1541 is
     signal bank_is_io       : std_logic_vector(7 downto 0);
     signal io_select        : std_logic;
     signal rdata_mux        : std_logic;
-    signal cpu_ready    : std_logic;
+    signal cpu_ready     : std_logic;
+    signal cpu_rising    : std_logic;
     signal need_cycle   : unsigned(2 downto 0);
     signal done_cycle   : unsigned(2 downto 0);
     type   t_mem_state  is (idle, cpubusy, newcycle, extcycle);
@@ -146,7 +154,8 @@ begin
     via1: entity work.via6522
     port map (
         clock       => clock,
-        clock_en    => cpu_ready,
+        falling     => cpu_ready,
+        rising      => cpu_rising,
         reset       => reset,
                                 
         addr        => cpu_addr(3 downto 0),
@@ -167,24 +176,25 @@ begin
         -- handshake pins
         ca1_i       => via1_ca1,
                             
-        ca2_o       => via1_ca2,
-        ca2_i       => via1_ca2,
-        ca2_t       => open,
+        ca2_o       => via1_ca2_o,
+        ca2_i       => via1_ca2_i,
+        ca2_t       => via1_ca2_t,
                             
-        cb1_o       => via1_cb1,
-        cb1_i       => via1_cb1,
-        cb1_t       => open,
+        cb1_o       => via1_cb1_o,
+        cb1_i       => via1_cb1_i,
+        cb1_t       => via1_cb1_t,
                             
-        cb2_o       => via1_cb2,
-        cb2_i       => via1_cb2,
-        cb2_t       => open,
+        cb2_o       => via1_cb2_o,
+        cb2_i       => via1_cb2_i,
+        cb2_t       => via1_cb2_t,
                             
         irq         => via1_irq  );
     
     via2: entity work.via6522
     port map (
         clock       => clock,
-        clock_en    => cpu_ready,
+        falling     => cpu_ready,
+        rising      => cpu_rising,
         reset       => reset,
                                 
         addr        => cpu_addr(3 downto 0),
@@ -226,7 +236,7 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
-            if clock_en='1' then
+            if falling='1' then
                 need_cycle <= need_cycle + 1;
             end if;
 
@@ -234,6 +244,7 @@ begin
             mem_addr(25 downto 16) <= g_ram_base(25 downto 16);
             
             cpu_ready <= '0';
+            cpu_rising <= '0';
             
             case mem_state is
             when idle =>
@@ -246,6 +257,7 @@ begin
                 mem_state <= newcycle;
             
             when newcycle => -- we have a new address now
+                cpu_rising <= '1';
                 mem_addr(15 downto  0) <= unsigned(cpu_addr(15 downto 0));
                 io_select <= '0';
                 if bank_is_io(to_integer(unsigned(cpu_addr(15 downto 13))))='1' then
@@ -290,6 +302,7 @@ begin
                 rdata_mux   <= '0';
                 io_select   <= '0';
                 cpu_ready   <= '0';
+                cpu_rising  <= '0';
                 mem_request <= '0';
                 mem_state   <= idle;
                 need_cycle  <= "000";
@@ -311,11 +324,11 @@ begin
 
     cpu_rdata <= io_rdata when rdata_mux='1' else ext_rdata;
 
-    via1_wen <= '1' when cpu_write='1' and cpu_ready='1' and io_select='1' and cpu_addr(12 downto 10)="110" else '0';
-    via1_ren <= '1' when cpu_write='0' and cpu_ready='1' and io_select='1' and cpu_addr(12 downto 10)="110" else '0';
+    via1_wen <= '1' when cpu_write='1' and io_select='1' and cpu_addr(12 downto 10)="110" else '0';
+    via1_ren <= '1' when cpu_write='0' and io_select='1' and cpu_addr(12 downto 10)="110" else '0';
     
-    via2_wen <= '1' when cpu_write='1' and cpu_ready='1' and io_select='1' and cpu_addr(12 downto 10)="111" else '0';
-    via2_ren <= '1' when cpu_write='0' and cpu_ready='1' and io_select='1' and cpu_addr(12 downto 10)="111" else '0';
+    via2_wen <= '1' when cpu_write='1' and io_select='1' and cpu_addr(12 downto 10)="111" else '0';
+    via2_ren <= '1' when cpu_write='0' and io_select='1' and cpu_addr(12 downto 10)="111" else '0';
 
     
     -- correctly attach the VIA pins to the outside world
@@ -324,7 +337,13 @@ begin
     via1_port_a_i(7 downto 1) <= (others => '1');
     via1_port_a_i(0)          <= track_is_0;
     
-    via1_ca1 <= not atn_i;
+    via1_ca1         <= not atn_i;
+
+    via1_ca2_i      <= via1_ca2_o or not via1_ca2_t;
+    via1_cb1_i      <= via1_cb1_o or not via1_cb1_t;
+    via1_cb2_i      <= via1_cb2_o or not via1_cb2_t;
+    
+
     via1_port_b_i(7) <= not atn_i;
     -- the following bits should read 0 when the jumper is closed (drive select = 0) or when driven low by the VIA itself
     via1_port_b_i(6) <= drive_address(1); -- drive select

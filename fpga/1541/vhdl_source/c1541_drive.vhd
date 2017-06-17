@@ -20,7 +20,7 @@ generic (
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
-    drive_stop      : in  std_logic;
+    drive_stop      : in  std_logic := '0';
     
     -- slave port on io bus
     io_req          : in  t_io_req;
@@ -40,8 +40,8 @@ port (
     data_o          : out std_logic; -- open drain
     data_i          : in  std_logic;              
 
-    iec_reset_n     : in  std_logic;
-    c64_reset_n     : in  std_logic;
+    iec_reset_n     : in  std_logic := '1';
+    c64_reset_n     : in  std_logic := '1';
     
     -- LED
     act_led_n       : out std_logic;
@@ -54,6 +54,7 @@ port (
 end c1541_drive;
 
 architecture structural of c1541_drive is
+    signal cia_rising       : std_logic;
     signal cpu_clock_en     : std_logic;
     signal drv_clock_en     : std_logic;
     signal iec_reset_o      : std_logic;
@@ -118,6 +119,7 @@ begin
         drive_stop   => drive_stop_i,
     
         drv_clock_en => drv_clock_en,   -- 1/12.5 (4 MHz)
+        cia_rising   => cia_rising,
         cpu_clock_en => cpu_clock_en ); -- 1/50   (1 MHz)
 
     i_cpu: entity work.cpu_part_1541
@@ -126,7 +128,8 @@ begin
         g_ram_base     => g_ram_base )
     port map (
         clock       => clock,
-        clock_en    => cpu_clock_en,
+        falling     => cpu_clock_en,
+        rising      => cia_rising,
         reset       => drv_reset,
         
         -- serial bus pins

@@ -5,6 +5,8 @@ use IEEE.numeric_std.all;
 use work.io_bus_pkg.all;
 
 entity update_io is
+generic (
+    g_remote    : boolean := true );
 port (
 	clock       : in  std_logic                     := '0';             --       clock.clk
 	reset       : in  std_logic                     := '0';             --       reset.reset
@@ -63,18 +65,20 @@ begin
         resp_b       => slow_resp );
     
 
-	remote_update_0 : component update_remote_update_0
-		port map (
-			busy        => busy,        --        busy.busy
-			data_out    => data_out,    --    data_out.data_out
-			param       => param,       --       param.param
-			read_param  => read_param,  --  read_param.read_param
-			reconfig    => reconfig,    --    reconfig.reconfig
-			reset_timer => reset_timer, -- reset_timer.reset_timer
-			read_source => read_source, -- read_source.read_source
-			clock       => slow_clock,       --       clock.clk
-			reset       => slow_reset        --       reset.reset
-		);
+	r_remote: if g_remote generate
+    	remote_update_0 : component update_remote_update_0
+    		port map (
+    			busy        => busy,        --        busy.busy
+    			data_out    => data_out,    --    data_out.data_out
+    			param       => param,       --       param.param
+    			read_param  => read_param,  --  read_param.read_param
+    			reconfig    => reconfig,    --    reconfig.reconfig
+    			reset_timer => reset_timer, -- reset_timer.reset_timer
+    			read_source => read_source, -- read_source.read_source
+    			clock       => slow_clock,       --       clock.clk
+    			reset       => slow_reset        --       reset.reset
+    		);
+    end generate;
 
     process(slow_clock)
         variable local  : unsigned(3 downto 0);
