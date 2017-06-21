@@ -9,6 +9,10 @@
 #include "userinterface.h"
 #include "c1541.h"
 
+#include "c64.h"
+
+#include "home_directory.h"
+
 // member
 int UserFileInteraction :: fetch_context_items(BrowsableDirEntry *br, IndexedList<Action *> &list)
 {
@@ -34,6 +38,28 @@ int UserFileInteraction :: fetch_context_items(BrowsableDirEntry *br, IndexedLis
 	    list.append(new Action("Delete", UserFileInteraction :: S_delete, 0));
 		count+=2;
 	}
+
+    bool showRunWithApp = false;
+#ifndef RECOVERYAPP
+        const char* app_directory = HomeDirectory :: getHomeDirectory();
+	char appname[100];
+	strcpy(appname, info->extension);
+	strcat(appname, ".prg");
+	
+	FileManager *fm = FileManager :: getFileManager();
+	File *file = 0;
+        FRESULT fres = fm->fopen(app_directory, appname, FA_READ, &file);
+        if (file)
+	{
+	   fm->fclose(file);
+	   showRunWithApp = true;
+	}
+#endif
+
+    if((info->size <= 16*1024*1024-4)&&(!(info->attrib & AM_DIR)) && showRunWithApp) {
+        list.append(new Action("Run with App", UserFileInteraction :: S_runApp, 0));
+        count++;
+    }
 	return count;
 }
 
@@ -135,5 +161,89 @@ int UserFileInteraction :: S_createDir(SubsysCommand *cmd)
 		}
 	}
 	fm->release_path(path);
+	return 0;
+}
+
+int UserFileInteraction :: S_runApp(SubsysCommand *cmd)
+{
+#ifndef RECOVERYAPP
+	printf("REU Select: %4x\n", cmd->functionID);
+	File *file = 0;
+	uint32_t bytes_read;
+	bool progress;
+	int sectors;
+    int secs_per_step;
+    int bytes_per_step;
+    int total_bytes_read;
+    int remain;
+    
+	static char buffer[48];
+    uint8_t *dest;
+    FileManager *fm = FileManager :: getFileManager();
+    FileInfo info(32);
+    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+
+
+    sectors = (info.size >> 9);
+	if(sectors >= 128)
+		progress = true;
+	secs_per_step = (sectors + 31) >> 5;
+	bytes_per_step = secs_per_step << 9;
+	remain = info.size;
+
+	printf("REU Load.. %s\nUI = %p", cmd->filename.c_str(), cmd->user_interface);
+	if (!cmd->user_interface)
+		progress = false;
+
+	FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+	if(file) {
+		total_bytes_read = 0;
+		// load file in REU memory
+		if(progress) {
+			cmd->user_interface->show_progress("Loading REU file..", 32);
+			dest = (uint8_t *)(REU_MEMORY_BASE+4);
+			while(remain > 0) {
+				file->read(dest, bytes_per_step, &bytes_read);
+				total_bytes_read += bytes_read;
+				cmd->user_interface->update_progress(NULL, 1);
+				remain -= bytes_per_step;
+				dest += bytes_per_step;
+			}
+			cmd->user_interface->hide_progress();
+		} else {
+			file->read((void *)(REU_MEMORY_BASE+4), (REU_MAX_SIZE-4), &bytes_read);
+			total_bytes_read += bytes_read;
+		}
+		printf("\nClosing file. ");
+		fm->fclose(file);
+		file = NULL;
+		printf("done.\n");
+		*(uint32_t *)(REU_MEMORY_BASE) = total_bytes_read;
+		
+		char appname[100];
+		char * filen = strcpy(appname, cmd->filename.c_str());
+		char* extension = filen;
+		char* tmp = filen;
+		while (*tmp)
+		{
+		   if (*tmp == '.')
+		      extension = tmp+1;
+	           tmp++;
+		}
+		strcpy(appname, extension);
+		strcat(appname, ".prg");
+
+		// sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
+		// cmd->user_interface->popup(buffer, BUTTON_OK);
+
+                const char* app_directory = HomeDirectory :: getHomeDirectory(); // cmd->user_interface->cfg->get_string(CFG_USERIF_HOME_DIR);
+            	SubsysCommand* c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_DMA_LOAD, RUNCODE_DMALOAD_RUN, app_directory, appname);
+        	c64_command->execute();
+	} else {
+		printf("Error opening file.\n");
+        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+		return -2;
+	}
+#endif
 	return 0;
 }
