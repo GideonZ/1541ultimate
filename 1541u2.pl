@@ -39,7 +39,7 @@ while ($line = <$file>)
             PeerHost => $ip,
             PeerPort => 64,
             Proto => 'tcp',
-        ) or die "Cannection failed\n";
+        ) or die "Connection failed\n";
       $socket->send($packet);
       $socket->close();
       $packet = "";
