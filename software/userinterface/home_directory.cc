@@ -85,6 +85,7 @@ void HomeDirectory::poll(void)
         while(ui->state == ui_idle) {
             vTaskDelay(25);
         }
+        vTaskDelay(25);
         printf("HOME DIRECTORY: Enter %s\n", path->get_path());
         browser->cd(path->get_path());
     }
