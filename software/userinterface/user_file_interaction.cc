@@ -174,7 +174,7 @@ int UserFileInteraction :: S_runApp(SubsysCommand *cmd)
 	int sectors;
     int secs_per_step;
     int bytes_per_step;
-    int total_bytes_read;
+    uint32_t total_bytes_read;
     int remain;
     
 	static char buffer[48];
@@ -218,10 +218,14 @@ int UserFileInteraction :: S_runApp(SubsysCommand *cmd)
 		fm->fclose(file);
 		file = NULL;
 		printf("done.\n");
-		*(uint32_t *)(REU_MEMORY_BASE) = total_bytes_read;
+		*(uint8_t *)(REU_MEMORY_BASE) = total_bytes_read & 0xff;
+		*(uint8_t *)(REU_MEMORY_BASE+1) = (total_bytes_read >> 8) & 0xff;
+		*(uint8_t *)(REU_MEMORY_BASE+2) = (total_bytes_read >> 16) & 0xff;
+		*(uint8_t *)(REU_MEMORY_BASE+3) = (total_bytes_read >> 24) & 0xff;
 		
 		char appname[100];
-		char * filen = strcpy(appname, cmd->filename.c_str());
+		char filen[100];
+		strcpy(filen, cmd->filename.c_str());
 		char* extension = filen;
 		char* tmp = filen;
 		while (*tmp)
@@ -230,6 +234,8 @@ int UserFileInteraction :: S_runApp(SubsysCommand *cmd)
 		      extension = tmp+1;
 	           tmp++;
 		}
+		extension[3]=0;
+		
 		strcpy(appname, extension);
 		strcat(appname, ".prg");
 
