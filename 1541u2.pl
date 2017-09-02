@@ -6,10 +6,36 @@
 use strict;
 use IO::Socket::INET;
 
-die "Syntax $0 <ip> <script>\n" unless @ARGV == 2;
+die "Syntax $0 <ip> <script>\n".
+    "       $0 <ip> -c run:<filename>\n".
+    "       $0 <ip> -e <command> [-e <command> ...]\n" unless @ARGV >= 2;
 
+my $ip = shift @ARGV;
+my $escript = "";
+while ($ARGV[0] eq "-e")
+{
+   shift @ARGV;
+   $escript .= $ARGV[0]."\n";
+   shift @ARGV;
+}
+if (!$escript && $ARGV[0] eq "-c")
+{
+   shift @ARGV;
+   my $command = shift @ARGV;
+   if (substr($command,0,4) eq "run:")
+   {
+      $escript = "load run from prg '".substr($command,4)."'\nsend\n";
+   }
+   else
+   {
+      die "Unknown short command\n";
+   }
+}
 
-my ($ip, $script) = @ARGV;
+my $script = \$escript;
+$script = shift @ARGV unless $escript;
+
+die "Error parsing command line arguments" if @ARGV != 0;
 
 my $file;
 my $line;
@@ -133,7 +159,7 @@ while ($line = <$file>)
 	    die "Syntax error";
 	 }
       }
-      $bin = pack("v", length($bin)).$bin if $sizeprefix;
+      $bin = pack("V", length($bin)).$bin if $sizeprefix;
       die unless $addr ne "";
       my $prg = $addr.$bin;
       my $opcode = "\x06";
@@ -212,12 +238,13 @@ while ($line = <$file>)
 	 }
       }
       
+      $bin = pack("V", length($bin)).$bin if $sizeprefix;
+      
       while ($bin ne "")
       {
          my $bin2 = substr($bin, 0, 60*1024);
 	 my $len2 = length($bin2);
 	 $packet = "\x07\xFF" . pack("v", 3+$len2) . substr(pack("V", $addr),0,3) . $bin2; 
-      
          my $socket = new IO::Socket::INET (
             PeerHost => $ip,
             PeerPort => 64,
@@ -225,7 +252,6 @@ while ($line = <$file>)
            ) or die "Cannection failed\n";
          $socket->send($packet);
          $socket->close();
-      
          $bin = substr($bin, $len2);
 	 $addr += $len2;
       }
