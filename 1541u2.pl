@@ -216,7 +216,7 @@ while ($line = <$file>)
       {
          my $bin2 = substr($bin, 0, 60*1024);
 	 my $len2 = length($bin2);
-	 $packet = "\x07\xFF" . pack("v", 3+$len2) . substr(pack("v", $addr),0,3) . $bin2; 
+	 $packet = "\x07\xFF" . pack("v", 3+$len2) . substr(pack("V", $addr),0,3) . $bin2; 
       
          my $socket = new IO::Socket::INET (
             PeerHost => $ip,
