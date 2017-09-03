@@ -26,6 +26,10 @@ if (!$escript && $ARGV[0] eq "-c")
    {
       $escript = "load run from prg '".substr($command,4)."'\nsend\n";
    }
+   elsif (substr($command,0,7) eq "kernal:")
+   {
+      $escript = "load at kernal 0 from bin '".substr($command,7)."'\nreset-c64\nsend\n";
+   }
    else
    {
       die "Unknown short command\n";
@@ -91,6 +95,7 @@ while ($line = <$file>)
       my $reset = 0;
       my $run = 0;
       my $sizeprefix = 0;
+      my $kernal = 0;
       my $test;
       my @token2 = @token;
       shift @token2;
@@ -108,7 +113,13 @@ while ($line = <$file>)
 	        $addr2 = shift @token2;
 		$addr = substr(pack("V", $addr2), 0, 3);
 	     }
-	     else
+	     elsif ($addr2 eq "kernal")
+	     {
+	        $addr2 = shift @token2;
+		$addr = pack("v", $addr2);
+		$kernal = 1;
+	     }
+
 	     {
 	        $addr = pack("v", $addr2);
 	     }
@@ -165,6 +176,7 @@ while ($line = <$file>)
       my $opcode = "\x06";
       $opcode = "\x01" if $reset;
       $opcode = "\x02" if $run;
+      $opcode = "\x08" if $kernal;
       $opcode = "\x07" if length($addr) == 3;
       $packet .= "$opcode\xFF" . pack("v", length($prg) ) . $prg;
    }
