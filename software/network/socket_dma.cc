@@ -15,14 +15,15 @@
 #include "c64.h"
 #include "c64_subsys.h"
 
-#define SOCKET_CMD_DMA      0xFF01
-#define SOCKET_CMD_DMARUN   0xFF02
-#define SOCKET_CMD_KEYB     0xFF03
-#define SOCKET_CMD_RESET    0xFF04
-#define SOCKET_CMD_WAIT	    0xFF05
-#define SOCKET_CMD_DMAWRITE 0xFF06
-#define SOCKET_CMD_REUWRITE 0xFF07
-#define SOCKET_CMD_DMAJUMP  0xFF09
+#define SOCKET_CMD_DMA         0xFF01
+#define SOCKET_CMD_DMARUN      0xFF02
+#define SOCKET_CMD_KEYB        0xFF03
+#define SOCKET_CMD_RESET       0xFF04
+#define SOCKET_CMD_WAIT	       0xFF05
+#define SOCKET_CMD_DMAWRITE    0xFF06
+#define SOCKET_CMD_REUWRITE    0xFF07
+#define SOCKET_CMD_KERNALWRITE 0xFF08
+#define SOCKET_CMD_DMAJUMP     0xFF09
 
 SocketDMA socket_dma; // global that causes the object to exist
 
@@ -88,6 +89,11 @@ void SocketDMA :: parseBuffer(void *load_buffer, int length)
 			offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8) | (((uint32_t)buf[2]) << 16);
 			for (i=3; i<len; i++)
 			   *(uint8_t *)(REU_MEMORY_BASE+ ((offs32+i-3)&0xffffff)) = buf[i];
+			break;
+		case SOCKET_CMD_KERNALWRITE:
+			offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8);
+			for (i=2; i<len; i++)
+			   *(uint8_t *)(C64_KERNAL_BASE+1+2*((offs32+i-2)&0x1fff)) = buf[i];
 			break;
 		}
 		buf += len;
