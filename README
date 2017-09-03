@@ -4,6 +4,10 @@
 Syntax: 1541u2.pl <c64-ip-addr> <scriptfile>
 resp. 1541u2.exe <c64-ip-addr> <scriptfile>
 
+1541u2.pl <ip> -c run:<filename>
+1541u2.pl <ip> -c kernal:<filename>
+1541u2.pl <ip> -e "<command>" [-e "<command>" ...]
+
 Commands to be used in the script file:
 
 * reset-c64
@@ -18,9 +22,9 @@ Waits some time on the C64
 
 Fill keyboard buffer
 
-* load [run] [reset] [at <number>] [at reu <number>] [sizeprefix] [from prg 'filename'] [from bin 'filename'] [fill <count> <value>] [values <valuelist>] 
+* load [run] [reset] [at <number>] [at reu <number>] [at kernal <number>] [sizeprefix] [from prg 'filename'] [from bin 'filename'] [fill <count> <value>] [values <valuelist>] 
 
-load data into C64 Memory / the REU. Either by startaddress from prg file or given with the at-Clause.
+load data into C64 Memory / the REU / the Kernal ROM. Either by startaddress from prg file or given with the at-Clause.
 Optionally the size can be prefixed to the data (4 byte).
 
 * send

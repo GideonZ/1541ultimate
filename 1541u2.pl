@@ -8,6 +8,7 @@ use IO::Socket::INET;
 
 die "Syntax $0 <ip> <script>\n".
     "       $0 <ip> -c run:<filename>\n".
+    "       $0 <ip> -c kernal:<filename>\n".
     "       $0 <ip> -e <command> [-e <command> ...]\n" unless @ARGV >= 2;
 
 my $ip = shift @ARGV;
