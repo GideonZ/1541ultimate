@@ -1,6 +1,8 @@
 #!/usr/bin/perl
 
 #perl2exe_include utf8
+#perl2exe_include PerlIO
+#perl2exe_include PerlIO::scalar
 #perl2exe_include "unicore/Heavy.pl"
 
 use strict;
