@@ -100,7 +100,7 @@ int validate_analog(int mode)
 	}
 	int errors = 0;
 	// current
-	if ((adc_values[0] < 30000) || (adc_values[0] > 100000)) {
+	if ((adc_values[0] < 30000) || (adc_values[0] > 150000)) {
 		printf("Current is out of range.\n");
 		errors ++;
 	}

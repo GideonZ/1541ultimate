@@ -34,22 +34,37 @@ port (
     
     -- Cartridge pins
     VCC             : in    std_logic := '1';
-    RSTn_in         : in    std_logic := '1';
-    RSTn_out        : out   std_logic := '1';
-    IRQn            : inout std_logic;
-    NMIn            : inout std_logic;
-    PHI2            : in    std_logic;
-    IO1n            : in    std_logic;
-    IO2n            : in    std_logic;
-    DMAn            : out   std_logic := '1';
-    BA              : in    std_logic := '0';
-    ROMLn           : in    std_logic;
-    ROMHn           : in    std_logic;
-    GAMEn           : inout std_logic;
-    EXROMn          : inout std_logic;
-    RWn             : inout std_logic;
-    ADDRESS         : inout std_logic_vector(15 downto 0);
-    DATA            : inout std_logic_vector(7 downto 0);
+
+    phi2_i          : in    std_logic;
+    io1n_i          : in    std_logic;
+    io2n_i          : in    std_logic;
+    romln_i         : in    std_logic;
+    romhn_i         : in    std_logic;
+
+    dman_o          : out   std_logic := '1';
+    ba_i            : in    std_logic := '0';
+    rstn_i          : in    std_logic := '1';
+    rstn_o          : out   std_logic := '1';
+
+    slot_addr_o     : out   std_logic_vector(15 downto 0);
+    slot_addr_i     : in    std_logic_vector(15 downto 0) := (others => '1');
+    slot_addr_t     : out   std_logic;
+                    
+    slot_data_o     : out   std_logic_vector(7 downto 0);
+    slot_data_i     : in    std_logic_vector(7 downto 0) := (others => '1');
+    slot_data_t     : out   std_logic;
+                    
+    rwn_o           : out   std_logic;
+    rwn_i           : in    std_logic;
+
+    exromn_i        : in    std_logic := '1';
+    exromn_o        : out   std_logic;
+    gamen_i         : in    std_logic := '1';
+    gamen_o         : out   std_logic;
+                    
+    irqn_i          : in    std_logic := '1';
+    irqn_o          : out   std_logic;
+    nmin_o          : out   std_logic;
 
     -- other hardware pins
     BUFFER_ENn      : out   std_logic;
@@ -106,7 +121,6 @@ architecture structural of slot_server_v4 is
     signal address_tri_h   : std_logic;
     signal address_out     : std_logic_vector(15 downto 0);
 
-    signal rwn_tri         : std_logic;
     signal rwn_out         : std_logic;
 
     signal control         : t_cart_control;
@@ -146,8 +160,6 @@ architecture structural of slot_server_v4 is
     signal irq_n            : std_logic := '1';
     signal exrom_n          : std_logic := '1';
     signal game_n           : std_logic := '1';
-
-    signal irq_oc, nmi_oc, rst_oc, dma_oc, exrom_oc, game_oc    : std_logic;
 
     signal unfreeze         : std_logic;
     signal freeze_trig      : std_logic;
@@ -289,8 +301,8 @@ begin
         reset           => reset,
 
         -- Cartridge pins
-        PHI2            => PHI2,
-        BA              => BA,
+        PHI2            => phi2_i,
+        BA              => ba_i,
     
         serve_vic       => serve_vic,
         serve_enable    => serve_enable,
@@ -325,17 +337,17 @@ begin
         
         -- Cartridge pins
         VCC             => VCC,
-        RSTn            => RSTn_in,
-        IO1n            => IO1n,
-        IO2n            => IO2n,
-        ROMLn           => ROMLn,
-        ROMHn           => ROMHn,
-        GAMEn           => GAMEn,
-        EXROMn          => EXROMn,
-        RWn             => RWn,
-        BA              => BA,
-        ADDRESS         => ADDRESS,
-        DATA_in         => DATA,
+        RSTn            => rstn_i,
+        IO1n            => io1n_i,
+        IO2n            => io2n_i,
+        ROMLn           => romln_i,
+        ROMHn           => romhn_i,
+        GAMEn           => gamen_i,
+        EXROMn          => exromn_i,
+        RWn             => rwn_i,
+        BA              => ba_i,
+        ADDRESS         => slot_addr_i,
+        DATA_in         => slot_data_i,
         DATA_out        => slave_dout,
         DATA_tri        => slave_dtri,
     
@@ -387,16 +399,16 @@ begin
         
         -- Cartridge pins
         DMAn            => dma_n,
-        BA              => BA,
-        RWn_in          => RWn,
-        RWn_out         => rwn_out,
-        RWn_tri         => rwn_tri,
+        BA              => ba_i,
+        RWn_in          => rwn_i,
+        RWn_out         => rwn_o,
+        RWn_tri         => open,
         
         ADDRESS_out     => address_out,
         ADDRESS_tri_h   => address_tri_h,
         ADDRESS_tri_l   => address_tri_l,
         
-        DATA_in         => DATA,
+        DATA_in         => slot_data_i,
         DATA_out        => master_dout,
         DATA_tri        => master_dtri,
     
@@ -477,7 +489,7 @@ begin
         game_n          => game_n,
     
         CART_LEDn       => cart_led_n,
-	size_ctrl       => control.reu_size );
+    	size_ctrl       => control.reu_size );
 
 
     r_sid: if g_implement_sid generate
@@ -577,7 +589,7 @@ begin
             clock       => clock,
             reset       => reset,
             
-            irq_n       => IRQn,
+            irq_n       => irqn_i,
             phi2_tick   => phi2_tick_i,
             
             trigger_1   => trigger_1,
@@ -668,52 +680,46 @@ begin
         end if;
     end process;
 
-    ADDRESS(7 downto 0)  <= address_out(7 downto 0)  when address_tri_l='1' else (others => 'Z');
-    ADDRESS(12 downto 8) <= address_out(12 downto 8) when address_tri_h='1' else (others => 'Z');
-    ADDRESS(15 downto 13) <= "101" when (kernal_addr_out='1' and kernal_probe='1') else
-                             address_out(15 downto 13) when address_tri_h='1' else (others => 'Z');
+    process(address_out, kernal_addr_out, kernal_probe)
+    begin
+        slot_addr_o <= address_out;
+        if kernal_addr_out='1' and kernal_probe='1' then
+            slot_addr_o(15 downto 13) <= "101";
+        end if;
+    end process;
+    slot_addr_t <= address_tri_l or address_tri_h;
 
-    RWn  <= rwn_out when rwn_tri='1' else 'Z';
-
-    DATA <= slave_dout when (slave_dtri='1') else
-            master_dout when (master_dtri='1') else (others => 'Z');
+    slot_data_o <= slave_dout when (slave_dtri='1') else
+                   master_dout when (master_dtri='1') else
+                   X"FF";     
+    slot_data_t <= slave_dtri or master_dtri;            
 
     -- open drain outputs
-    irq_oc  <= '0' when irq_n='0' or slot_resp.irq='1' else '1';
-    nmi_oc  <= '0' when (control.c64_nmi='1')   or (nmi_n='0') else '1';
-    rst_oc  <= '0' when (reset_button='1' and status.c64_stopped='0' and mask_buttons='0') or
-                         (control.c64_reset='1') else '1';
-    dma_oc  <= '0' when (dma_n='0' or kernal_probe='1') else '1';
-    -- dma_oc  <= '0' when (dma_n='0') else '1';
+    irqn_o  <= '0' when irq_n='0' or slot_resp.irq='1' else '1';
+    nmin_o  <= '0' when (control.c64_nmi='1')   or (nmi_n='0') else '1';
+    rstn_o  <= '0' when (reset_button='1' and status.c64_stopped='0' and mask_buttons='0') or
+                        (control.c64_reset='1') else '1';
+    dman_o  <= '0' when (dma_n='0' or kernal_probe='1') else '1';
     
     process(control, serve_enable, exrom_n, game_n, force_ultimax, kernal_probe)
     begin
-        exrom_oc <= '1';
-        game_oc  <= '1';
+        exromn_o <= '1';
+        gamen_o  <= '1';
         if (force_ultimax = '1') or (control.c64_ultimax = '1') then
-            game_oc <= '0';
+            gamen_o <= '0';
         elsif kernal_probe = '1' then
-            game_oc <= '0';
-            exrom_oc <= '0';
+            gamen_o <= '0';
+            exromn_o <= '0';
         else
             if (serve_enable='1' and exrom_n='0') then
-                exrom_oc <= '0';
+                exromn_o <= '0';
             end if;
             if (serve_enable='1' and game_n='0') then
-                game_oc <= '0';
+                gamen_o <= '0';
             end if;
         end if;
     end process;
     
-    irq_push: entity work.oc_pusher port map(clock => clock, sig_in => irq_oc, oc_out => IRQn);
-    nmi_push: entity work.oc_pusher port map(clock => clock, sig_in => nmi_oc, oc_out => NMIn);
-    --rst_push: entity work.oc_pusher port map(clock => clock, sig_in => rst_oc, oc_out => RSTn);
-    dma_push: entity work.oc_pusher port map(clock => clock, sig_in => dma_oc, oc_out => DMAn);
-    exr_push: entity work.oc_pusher port map(clock => clock, sig_in => exrom_oc, oc_out => EXROMn);
-    gam_push: entity work.oc_pusher port map(clock => clock, sig_in => game_oc, oc_out => GAMEn);
-
-    RSTn_out <= rst_oc;
-
     -- arbitration
     i_dma_arb: entity work.dma_bus_arbiter_pri
     generic map (

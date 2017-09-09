@@ -6,7 +6,8 @@
 #define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0004))
 #define JUMP_LOCATION  (*(volatile uint32_t *)(0x20000780))
 
-#define MR     0x0232
+#define MR     0x0232 // 00 | 0 0 1 (write recovery=2) 0 (dll reset) | 0 (testmode) 0 1 1 (CL=3) | 0 (seq burst) 0 1 0 (BL=4)
+#define MR8    0x0233 // 00 | 0 0 1 (write recovery=2) 0 (dll reset) | 0 (testmode) 0 1 1 (CL=3) | 0 (seq burst) 0 1 1 (BL=8)
 #define EMR    0x4440 // 01 0 0 0 1 (no DQSn) 000 (no OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (full drive) 0 (dll used)
 #define EMROCD 0x47C0 // 01 0 0 0 1 (no DQSn) 111 (do OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (full drive) 0 (dll used)
 #define EMR2   0x8000 // no extended refresh
@@ -33,13 +34,29 @@ void outbyte(int c)
 	ioWrite8(UART_DATA, c);
 }
 
+void hexword(uint32_t data)
+{
+	for(int i=0;i<8;i++) {
+		outbyte(hexchars[data >> 28]);
+		data <<= 4;
+	}
+	outbyte('\n');
+}
+
+#define CLK_DIVIDER 9
+#define VCO_PHASE_STEPS 8
+#define PHASE_STEPS (CLK_DIVIDER * VCO_PHASE_STEPS)
+
 int main()
 {
 	outbyte('@');
 	DDR2_ENABLE    = 1;
+	DDR2_READMODE = 1;
+
+	volatile unsigned int *ram = (volatile unsigned int *)0x800;
 	int i;
 	for (i=0;i<1000;i++)
-		;
+		ram[i] = 0xBA5E1000 + i;
 
 	DDR2_ADDR_LOW  = 0x00;
     DDR2_ADDR_HIGH = 0x04;
@@ -82,11 +99,14 @@ int main()
     DDR2_ADDR_HIGH = (EMR >> 8);
     DDR2_COMMAND   = 0; // write MR
 
-	for (i=0;i<1000;i++)
-		;
-//    alt_putstr("DDR2 Initialized!\n\r"); // delay!
+	for (i=0;i<1000;i++) {
 
-    DDR2_TESTLOC0 = TESTVALUE1;
+	}
+	//    alt_putstr("DDR2 Initialized!\n\r"); // delay!
+
+	outbyte('W');
+
+	DDR2_TESTLOC0 = TESTVALUE1;
     DDR2_TESTLOC1 = TESTVALUE2;
 
     int mode, phase, rep, good;
@@ -97,20 +117,24 @@ int main()
     int best_overall = -1;
 
     for (mode = 0; mode < 4; mode ++) {
+    	outbyte('\n');
     	DDR2_READMODE = mode;
     	state = 0;
     	best_pos = -1;
     	best_length = 0;
-    	for (phase = 0; phase < 160; phase ++) { // 2x 80 PLL phases: 720 degrees
+    	for (phase = 0; phase < (2 * PHASE_STEPS); phase ++) { // 720 degrees
     		good = 0;
+//    		hexword(DDR2_TESTLOC0);
     		for (rep = 0; rep < 7; rep ++) {
     			if (DDR2_TESTLOC0 == TESTVALUE1)
     				good++;
     			if (DDR2_TESTLOC1 == TESTVALUE2)
     				good++;
     		}
-			DDR2_PLLPHASE = 0x35; // move read clock
-//    		printf("%x", good);
+			DDR2_PLLPHASE = 0x33; // move read clock
+			outbyte(hexchars[good]);
+
+			//    		printf("%x", good);
 
     		if ((state == 0) && (good >= 13)) {
     			last_begin = phase;
@@ -131,16 +155,14 @@ int main()
     		final_pos = best_pos;
     	}
     }
-    // for test only
-    best_mode = 1;
-    final_pos = 0x36;
 
     //printf("Chosen: Mode = %d, Pos = %d. Window = %d ps\n\r", best_mode, final_pos, 100 * best_overall);
     DDR2_READMODE = best_mode;
 	for (phase = 0; phase < final_pos; phase ++) {
-		DDR2_PLLPHASE = 0x35; // move read clock
+		DDR2_PLLPHASE = 0x33; // move read clock
 	}
-	outbyte(hexchars[best_mode]);
+	outbyte('\n');
+	outbyte(hexchars[best_mode & 15]);
 	outbyte(hexchars[final_pos >> 4]);
 	outbyte(hexchars[final_pos & 15]);
 	outbyte('\r');

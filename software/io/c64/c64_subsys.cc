@@ -28,7 +28,9 @@ C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
 	taskHandle = 0;
 	c64 = machine;
 	fm = FileManager :: getFileManager();
-	xTaskCreate( C64_Subsys :: poll, "C64 Server", configMINIMAL_STACK_SIZE, machine, tskIDLE_PRIORITY + 1, &taskHandle );
+	taskHandle = 0;
+
+	// xTaskCreate( C64_Subsys :: poll, "C64 Server", configMINIMAL_STACK_SIZE, machine, tskIDLE_PRIORITY + 1, &taskHandle );
 }
 
 C64_Subsys::~C64_Subsys() {
@@ -55,6 +57,7 @@ int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list
 	return count;
 }
 
+/*
 void C64_Subsys :: poll(void *a)
 {
 	C64 *c64 = (C64 *)a;
@@ -69,6 +72,7 @@ void C64_Subsys :: poll(void *a)
 		vTaskDelay(5);
 	}
 }
+*/
 
 void C64_Subsys :: restoreCart(void)
 {

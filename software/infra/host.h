@@ -27,6 +27,7 @@ public:
     virtual void releaseScreen(void) { }
     virtual Keyboard *getKeyboard(void) { return NULL; }
 
+    virtual void checkButton(void) {  }
     virtual bool buttonPush(void) { return false; }
     virtual bool hasButton(void) { return false; }
     virtual void setButtonPushed(void) {  }

@@ -54,29 +54,42 @@ port (
     ulpi_reset  : in    std_logic;
 
     -- slot side
-    PHI2        : in    std_logic := '0';
-    DOTCLK      : in    std_logic := '0';
-    RSTn_out    : out   std_logic := '1';
-    RSTn_in     : in    std_logic := '1';
-
     BUFFER_ENn  : out   std_logic := '1';
 
-    SLOT_ADDR   : inout std_logic_vector(15 downto 0) := (others => 'H');
-    SLOT_DATA   : inout std_logic_vector(7 downto 0) := (others => 'H');
-    RWn         : inout std_logic := 'H';
-    BA          : in    std_logic := '0';
-    DMAn        : out   std_logic;
-    
-    EXROMn      : inout std_logic := 'H';
-    GAMEn       : inout std_logic := 'H';
-    
-    ROMHn       : in    std_logic := '1';
-    ROMLn       : in    std_logic := '1';
-    IO1n        : in    std_logic := '1';
-    IO2n        : in    std_logic := '1';
+    phi2_i      : in    std_logic := '0';
+    dotclk_i    : in    std_logic := '0';
 
-    IRQn        : inout std_logic := 'H';
-    NMIn        : inout std_logic := 'H';
+    rstn_o      : out   std_logic := '1';
+    rstn_i      : in    std_logic := '1';
+
+    slot_addr_o : out   std_logic_vector(15 downto 0);
+    slot_addr_i : in    std_logic_vector(15 downto 0) := (others => '1');
+    slot_addr_t : out   std_logic;
+    
+    slot_data_o : out   std_logic_vector(7 downto 0);
+    slot_data_i : in    std_logic_vector(7 downto 0) := (others => '1');
+    slot_data_t : out   std_logic;
+
+    rwn_i       : in    std_logic;
+    rwn_o       : out   std_logic;
+        
+    exromn_i    : in    std_logic := '1';
+    exromn_o    : out   std_logic;
+    gamen_i     : in    std_logic := '1';
+    gamen_o     : out   std_logic;
+
+    irqn_i      : in    std_logic := '1';
+    irqn_o      : out   std_logic;
+    nmin_i      : in    std_logic := '1';
+    nmin_o      : out   std_logic;
+
+    ba_i        : in    std_logic := '0';
+    dman_o      : out   std_logic;
+    romhn_i     : in    std_logic := '1';
+    romln_i     : in    std_logic := '1';
+    io1n_i      : in    std_logic := '1';
+    io2n_i      : in    std_logic := '1';
+
     VCC         : in    std_logic := '1';
     
     -- local bus side
@@ -600,22 +613,39 @@ begin
             
             -- Cartridge pins
             VCC             => VCC,
-            RSTn_in         => RSTn_in,
-            RSTn_out        => RSTn_out,
-            IRQn            => IRQn,
-            NMIn            => NMIn,
-            PHI2            => PHI2,
-            IO1n            => IO1n,
-            IO2n            => IO2n,
-            DMAn            => DMAn,
-            BA              => BA,
-            ROMLn           => ROMLn,
-            ROMHn           => ROMHn,
-            GAMEn           => GAMEn,
-            EXROMn          => EXROMn,
-            RWn             => RWn,
-            ADDRESS         => SLOT_ADDR,
-            DATA            => SLOT_DATA,
+
+            phi2_i          => phi2_i,
+
+            rstn_i          => rstn_i,
+            rstn_o          => rstn_o,
+                       
+            slot_addr_i     => slot_addr_i,
+            slot_addr_o     => slot_addr_o,
+            slot_addr_t     => slot_addr_t,
+
+            slot_data_i     => slot_data_i,
+            slot_data_o     => slot_data_o,
+            slot_data_t     => slot_data_t,
+
+            rwn_i           => rwn_i,
+            rwn_o           => rwn_o, -- goes with addr_t
+
+            ba_i            => ba_i,
+            dman_o          => dman_o,
+                                       
+            exromn_i        => exromn_i,
+            exromn_o        => exromn_o,
+            gamen_i         => gamen_i,
+            gamen_o         => gamen_o,
+            irqn_i          => irqn_i,
+            irqn_o          => irqn_o,
+            -- nmin_i          => nmin_i,
+            nmin_o          => nmin_o,
+                                           
+            romhn_i         => romhn_i,
+            romln_i         => romln_i,
+            io1n_i          => io1n_i,
+            io2n_i          => io2n_i,
         
             -- other hardware pins
             BUFFER_ENn      => BUFFER_ENn,
@@ -1157,8 +1187,8 @@ begin
     filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_i,  clk_i);
     filt3: entity work.spike_filter generic map (10) port map(sys_clock, iec_data_i,   data_i);
     filt4: entity work.spike_filter generic map (10) port map(sys_clock, iec_srq_i,    srq_i);
-    filt5: entity work.spike_filter port map(sys_clock, IRQn, c64_irq_n);
-    filt6: entity work.spike_filter port map(sys_clock, RSTn_in, c64_reset_in_n );
+    filt5: entity work.spike_filter port map(sys_clock, irqn_i, c64_irq_n);
+    filt6: entity work.spike_filter port map(sys_clock, rstn_i, c64_reset_in_n );
     c64_irq <= not c64_irq_n;
 
     -- dummy

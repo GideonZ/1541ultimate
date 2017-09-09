@@ -41,10 +41,12 @@ class Overlay : public GenericHost
     Keyboard *keyb;
     Screen *screen;
     bool enabled;
+    bool buttonPushSeen;
 public:
     Overlay(bool active) {
         keyb = NULL;
         enabled = active;
+        buttonPushSeen = false;
         
         if(getFpgaCapabilities() & CAPAB_OVERLAY) {
             CHARGEN_CHAR_WIDTH       = 8;
@@ -102,6 +104,32 @@ public:
         CHARGEN_TRANSPARENCY = 0x01;
         enabled = false;
         system_usb_keyboard.enableMatrix(true);
+    }
+
+    bool hasButton(void) {
+    	return true;
+    }
+
+    void checkButton(void) {
+    	static uint8_t button_prev;
+
+    	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
+    	if((buttons & ~button_prev) & ITU_BUTTON1) {
+    		buttonPushSeen = true;
+    	}
+    	button_prev = buttons;
+    }
+
+    bool buttonPush(void)
+    {
+    	bool ret = buttonPushSeen;
+    	buttonPushSeen = false;
+    	return ret;
+    }
+
+    void setButtonPushed(void)
+    {
+    	buttonPushSeen = true;
     }
 
     Screen *getScreen(void) {

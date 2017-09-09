@@ -815,3 +815,13 @@ void C64 :: setButtonPushed(void)
 	buttonPushSeen = true;
 }
 
+void C64 :: checkButton(void)
+{
+	static uint8_t button_prev;
+
+	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
+	if((buttons & ~button_prev) & ITU_BUTTON1) {
+		buttonPushSeen = true;
+	}
+	button_prev = buttons;
+}

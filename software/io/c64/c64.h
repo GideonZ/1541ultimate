@@ -227,6 +227,8 @@ public:
     	unfreeze(0, 0); // continue where we left off
     	this->client = 0;
     }
+
+    void checkButton(void);
     bool hasButton(void) {
     	return true;
     }

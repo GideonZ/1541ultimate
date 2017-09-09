@@ -174,6 +174,12 @@ architecture rtl of u2p_nios_solo is
     signal por_count    : unsigned(15 downto 0) := (others => '0');
     signal led_n        : std_logic_vector(0 to 3);
     signal RSTn_out     : std_logic;
+    signal irq_oc, nmi_oc, rst_oc, dma_oc, exrom_oc, game_oc    : std_logic;
+    signal slot_addr_o  : std_logic_vector(15 downto 0);
+    signal slot_addr_t  : std_logic;
+    signal slot_data_o  : std_logic_vector(7 downto 0);
+    signal slot_data_t  : std_logic;
+    signal slot_rwn_o   : std_logic;
     
     signal sys_clock    : std_logic;
     signal sys_reset    : std_logic;
@@ -447,28 +453,35 @@ begin
         
         -- slot side
         BUFFER_ENn  => open,
-        PHI2        => SLOT_PHI2,
-        DOTCLK      => SLOT_DOTCLK,
-        RSTn_in     => SLOT_RSTn,
-        RSTn_out    => RSTn_out,
-                                   
-        SLOT_ADDR   => SLOT_ADDR,
-        SLOT_DATA   => SLOT_DATA,
-        RWn         => SLOT_RWn,
-        BA          => SLOT_BA,
-        DMAn        => SLOT_DMAn,
-                                   
-        EXROMn      => SLOT_EXROMn,
-        GAMEn       => SLOT_GAMEn,
-                                   
-        ROMHn       => SLOT_ROMHn,
-        ROMLn       => SLOT_ROMLn,
-        IO1n        => SLOT_IO1n,
-        IO2n        => SLOT_IO2n,
-
-        IRQn        => SLOT_IRQn,
-        NMIn        => SLOT_NMIn,
         VCC         => SLOT_VCC,
+
+        phi2_i      => SLOT_PHI2,
+        dotclk_i    => SLOT_DOTCLK,
+        rstn_i      => SLOT_RSTn,
+        rstn_o      => RSTn_out,
+                                   
+        slot_addr_o => slot_addr_o,
+        slot_addr_i => SLOT_ADDR,
+        slot_addr_t => slot_addr_t,
+        slot_data_o => slot_data_o,
+        slot_data_i => SLOT_DATA,
+        slot_data_t => slot_data_t,
+        rwn_i       => SLOT_RWn,
+        rwn_o       => slot_rwn_o,
+        exromn_i    => SLOT_EXROMn,
+        exromn_o    => exrom_oc,
+        gamen_i     => SLOT_GAMEn,
+        gamen_o     => game_oc,
+        irqn_i      => SLOT_IRQn,
+        irqn_o      => irq_oc,
+        nmin_i      => SLOT_NMIn,
+        nmin_o      => nmi_oc,
+        ba_i        => SLOT_BA,
+        dman_o      => dma_oc,
+        romhn_i     => SLOT_ROMHn,
+        romln_i     => SLOT_ROMLn,
+        io1n_i      => SLOT_IO1n,
+        io2n_i      => SLOT_IO2n,
                 
         -- local bus side
         mem_inhibit => memctrl_inhibit,
@@ -547,21 +560,16 @@ begin
         BUTTON      => button_i );
 
     SLOT_RSTn <= '0' when RSTn_out = '0' else 'Z';
+    SLOT_ADDR <= slot_addr_o when slot_addr_t = '1' else (others => 'Z');
+    SLOT_DATA <= slot_data_o when slot_data_t = '1' else (others => 'Z');
+    SLOT_RWn  <= slot_rwn_o  when slot_addr_t = '1' else 'Z';
 
-    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
-    generic map (
-        g_left_shift => 2,
-        g_divider => 10,
-        g_width => audio_speaker'length )
-    port map (
-        clock   => sys_clock,
-        reset   => sys_reset,
-        
-        dac_in  => audio_speaker,
+    irq_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => irq_oc, oc_out => SLOT_IRQn);
+    nmi_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => nmi_oc, oc_out => SLOT_NMIn);
+    dma_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => dma_oc, oc_out => SLOT_DMAn);
+    exr_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => exrom_oc, oc_out => SLOT_EXROMn);
+    gam_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => game_oc, oc_out => SLOT_GAMEn);
     
-        dac_out => SPEAKER_DATA );
-
-
     LED_MOTORn <= led_n(0) xor sys_reset;
     LED_DISKn  <= led_n(1) xor sys_reset;
     LED_CARTn  <= led_n(2) xor sys_reset;
@@ -578,6 +586,19 @@ begin
 
     ULPI_RESET <= por_n;
     UART_TXD <= uart_txd_from_logic; -- and uart_txd_from_qsys;
+
+    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
+    generic map (
+        g_left_shift => 2,
+        g_divider => 10,
+        g_width => audio_speaker'length )
+    port map (
+        clock   => sys_clock,
+        reset   => sys_reset,
+        
+        dac_in  => audio_speaker,
+    
+        dac_out => SPEAKER_DATA );
 
     b_audio: block
         signal audio_get_sample : std_logic;

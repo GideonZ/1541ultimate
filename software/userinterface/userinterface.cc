@@ -91,9 +91,10 @@ void UserInterface :: run(void)
 {
 #ifndef NO_FILE_ACCESS
     while(1) {
-		switch(state) {
+    	host->checkButton();
+    	switch(state) {
 			case ui_idle:
-				if (!host->hasButton()) {
+				if (!host->hasButton()) { // FIXME: We should just initialize the UI in the right state. This is too implicit
 					state = ui_host_remote;
 					host->take_ownership(this);
 					appear();
@@ -148,7 +149,7 @@ void UserInterface :: run(void)
 						host->release_ownership();
 					}
 				} else {
-					if (system_usb_keyboard.getch() == KEY_SCRLOCK) {
+					if ((system_usb_keyboard.getch() == KEY_SCRLOCK) || (host->buttonPush())) {
 						host->take_ownership(0);
 						appear();
 					}
