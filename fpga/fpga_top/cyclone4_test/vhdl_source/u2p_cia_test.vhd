@@ -274,6 +274,8 @@ architecture rtl of u2p_cia_test is
     signal hs_from_cia : std_logic_vector(4 downto 0);
     signal hs_drive    : std_logic_vector(4 downto 0);
 
+    signal spi_c, spi_d : std_logic_vector(0 to 3);
+
 begin
     process(RMII_REFCLK)
     begin
@@ -708,6 +710,15 @@ begin
     pio1_export(31 downto 0)  <= slot_test_vector(31 downto 0);
     pio2_export(15 downto 0)  <= slot_test_vector(47 downto 32);
     pio2_export(18 downto 16) <= not BUTTON;
+    pio2_export(19) <= '1' when spi_d = "0000" else '0';
+    
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            spi_c <= CAS_MOTOR & CAS_SENSE & CAS_READ & CAS_WRITE;
+            spi_d <= spi_c;
+        end if;
+    end process;
 
     slot_test_vector <=  CAS_MOTOR   & 
                          CAS_SENSE   & 

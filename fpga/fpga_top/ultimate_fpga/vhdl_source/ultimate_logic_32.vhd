@@ -12,6 +12,7 @@ generic (
 	g_version		: unsigned(7 downto 0) := X"FF";
     g_simulation    : boolean := true;
     g_ultimate2plus : boolean := false;
+    g_ultimate_64   : boolean := false;
     g_clock_freq    : natural := 50_000_000;
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
@@ -70,7 +71,7 @@ port (
     slot_data_i : in    std_logic_vector(7 downto 0) := (others => '1');
     slot_data_t : out   std_logic;
 
-    rwn_i       : in    std_logic;
+    rwn_i       : in    std_logic := '1';
     rwn_o       : out   std_logic;
         
     exromn_i    : in    std_logic := '1';
@@ -237,6 +238,7 @@ architecture logic of ultimate_logic_32 is
         cap(23) := to_std(g_usb_host2);
         cap(24) := to_std(g_rmii);
         cap(25) := to_std(g_ultimate2plus);
+        cap(26) := to_std(g_ultimate_64);
         cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -844,7 +846,7 @@ begin
         i_spi_flash: entity work.spi_peripheral_io
         generic map (
             g_fixed_rate => true,
-            g_init_rate  => 0,
+            g_init_rate  => 1,
             g_crc        => false )
         port map (
             clock       => sys_clock,
