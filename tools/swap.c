@@ -11,7 +11,7 @@
 
 int usage()
 {
-    printf("Usage: swap <input file> <output file>\n");
+    printf("Usage: swap [-h] <input file> <output file> [truncate to size]\n");
     return 0;
 }
 
@@ -26,7 +26,26 @@ int main(int argc, char **argv)
     int argfail = 0;
     int argidx = 1;
 
-    // second optional switch
+    if (argc <= argidx) {
+        return usage();
+    }
+    int headerStrip = 0;
+    int nibbleShift = 0;
+    if (strcmp(argv[argidx], "-h") == 0) {
+    	headerStrip = 1;
+    	argidx ++;
+    } else if (strcmp(argv[argidx], "-n") == 0) {
+    	headerStrip = 1;
+    	nibbleShift = 1;
+    	argidx ++;
+    }
+
+    if(nibbleShift)
+    	printf("NibbleShift Enabled\n");
+    if(headerStrip)
+    	printf("HeaderStrip Enabled\n");
+
+
     if (argc <= argidx) {
         return usage();
     }
@@ -37,6 +56,10 @@ int main(int argc, char **argv)
     }
     filename2 = argv[argidx++];
 
+    int truncate = 0x7FFFFFFF;
+    if (argc > argidx) {
+    	truncate = (int)strtol(argv[argidx++], NULL, 16);
+    }
 
     f = fopen(filename, "rb");
     if(!f) {
@@ -63,12 +86,42 @@ int main(int argc, char **argv)
     	swapped_bytes[i] = swapped;
     }
 
-	while(!feof(f)) {
-		int read = fread((char *)buffer, 1, 4096, f);
+    uint8_t nibble = 0x0F;
+    uint8_t nibbleTemp;
+
+	while(!feof(f) && (truncate)) {
+		// Truncating
+		int now = (truncate > 4096) ? 4096 : truncate;
+		truncate -= now;
+		int read = fread((char *)buffer, 1, now, f);
+
+		// Header stripping
+		int start = 0;
+		if (headerStrip) {
+			for (i=0;i<read;i++) {
+				if (buffer[i] == 0xFF) {
+					start = i;
+					headerStrip = 0;
+					truncate += start;
+					break;
+				}
+			}
+		}
+
+		// Nibbleshift
+		if (nibbleShift) {
+			for(i=0;i<read;i++) {
+				nibbleTemp = buffer[i] >> 4;
+				buffer[i] = (buffer[i] << 4) | nibble;
+				nibble = nibbleTemp;
+			}
+		}
+
+		// Swapping
 		for(i=0;i<read;i++) {
 			buffer[i] = swapped_bytes[buffer[i]];
 		}
-		fwrite((char *)buffer, 1, read, fo);
+		fwrite(&buffer[start], 1, read-start, fo);
     }
 
     fclose(f);
