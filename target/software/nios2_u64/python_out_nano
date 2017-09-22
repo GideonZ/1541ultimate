@@ -1,0 +1,984 @@
+             Offset_Command           = 0
+             Offset_Command_DevEP     = 1
+             Offset_Command_Length    = 2
+             Offset_Command_MaxTrans  = 3
+             Offset_Command_Interval  = 4
+             Offset_Command_LastFrame = 5
+             Offset_Command_SplitCtl  = 6
+             Offset_Command_Result    = 7
+             NUM_PIPES = 8
+             Pipes    = 0x2E0
+             PipesEnd = 0x320
+             attrib_fifo      = 0x320 
+             block_fifo       = 0x3A0 
+             Circ_MemAddr_Start_High = $3E0
+             Circ_MemAddr_Start_Low  = $3E1
+             Circ_Size               = $3E2
+             Circ_Offset             = $3E3
+             MemBlock_Base_High      = $3E4
+             MemBlock_Base_Low       = $3E5
+             RAM_STATUS            = $3E6
+             AbortCurrentCommand   = $3EF
+             User_Command          = $3F0
+             User_Command_DevEP    = $3F1
+             User_Command_Length   = $3F2
+             User_Command_MaxTrans = $3F3
+             User_Command_MemHi    = $3F4
+             User_Command_MemLo    = $3F5
+             User_Command_SplitCtl = $3F6
+             User_Command_Result   = $3F7
+             tail_pointer_atr = 0x3F8 
+             head_pointer_atr = 0x3F9 
+             tail_pointer_blk = 0x3FA 
+             head_pointer_blk = 0x3FB 
+             DO_SUSPEND      = $3FC
+             DO_RESET        = $3FD
+             LinkSpeed       = $3FE
+             Simulation      = $3FF
+             FILTERED_STAT_1 = $39
+             FRAME_COUNTER   = $3B
+             FRAME_TICK      = $3C 
+             MEM_CTRL_READY  = $3D
+             DISCONNECTED    = $3E 
+             STATUS          = $3F
+             SPEED                = $26
+             SET_DO_CHIRP         = $20
+             SET_CHIRP_LEVEL      = $21
+             SET_SOF_ENABLE       = $27
+             SEND_INTERRUPT       = $28
+             CLR_DO_CHIRP         = $30
+             CLR_CHIRP_LEVEL      = $31
+             CLR_SOF_ENABLE       = $37
+             PULSE_WAKEUP         = $25
+             PULSE_RESET_FILTER   = $29
+             CMD_REQUEST          = $60
+             CMD_DATA_BUFFER_CTRL = $61
+             CMD_DEVICE_ENDPOINT  = $62
+             CMD_SPLIT_CONTROL    = $63
+             CMD_RESPONSE         = $64
+             CMD_REQ_MEMREAD      = $8000
+             CMD_REQ_MEMWRITE     = $4000
+             CMD_REQ_USEBLOCK     = $2000
+             CMD_REQ_USECIRC      = $1000
+             CMD_TOGGLE_BIT       = $0800
+             CMD_TOGGLE_BIT_NOT   = $F7FF
+             CMD_REQ_RETRY_ON_NAK = $0400
+             CMD_REQ_PAUSED       = $0200
+             CMD_REQ_NOT_PAUSED   = $FDFF
+             CMD_REQ_DO_DATA      = $0040
+             CMD_REQ_NOT_DO_DATA  = $FFBF
+             CMD_REQ_POWER_OFF	 = $0003
+             CMD_BUF_NODATA       = $2000
+             CMD_RES_DATA         = $0000
+             CMD_RES_ACK          = $1000
+             CMD_RES_NAK          = $2000
+             CMD_RES_NYET         = $3000
+             CMD_RES_STALL        = $4000
+             CMD_RES_ERROR        = $5000
+             CMD_RES_MASK         = $7000
+             CMD_RES_NO_DATA      = $0400
+             CMD_RES_LEN_MASK     = $03FF
+             SPLIT_COMPLETE       = $0080
+             MEM_ADDR_LO          = $70
+             MEM_ADDR_HI          = $71
+             MEM_TRANSFER_WRITE   = $72
+             MEM_TRANSFER_READ    = $73
+             MEM_BUFFER_INDEX     = $74
+             ULPI_REG_READ_0      = $80
+             ULPI_REG_WRITE_0     = $C0
+             ULPI_R_IRQ_STATUS  = $93
+             ULPI_W_FUNC_CTRL   = $C4
+             ULPI_R_FUNC_CTRL   = $84
+             ULPI_W_OTG_CONTROL = $CA
+             ULPI_W_SCRATCH     = $D6
+             ULPI_R_SCRATCH     = $96
+             ULPI_R_VENDOR      = $80
+             ULPI_R_PRODUCT_LOW = $82
+             begin
+000: 0AAA |      LOAD  #$06
+001: A0CA |      OUTP  ULPI_W_OTG_CONTROL
+002: 0AC5 |      LOAD  #$65
+003: A0C4 |      OUTP  ULPI_W_FUNC_CTRL      
+004: 7882 |      INP   ULPI_R_PRODUCT_LOW
+005: 52AA |      CMP   #$06
+006: C017 |      BEQ   _no_power
+007: 0AA4 |      LOAD  #0
+008: 83E6 |      STORE RAM_STATUS
+009: A037 |      OUTP  CLR_SOF_ENABLE
+             start
+00A: 0AAE |      LOAD  #$0E
+00B: A0CA |      OUTP  ULPI_W_OTG_CONTROL
+             _startup_power_check
+00C: 7893 |      INP   ULPI_R_IRQ_STATUS
+00D: 2AAA |      AND   #6
+00E: C017 |      BEQ   _no_power
+00F: 0AB1 |      LOAD  #4000
+010: E83E |      CALL  delay
+011: 7893 |      INP   ULPI_R_IRQ_STATUS
+012: 2AA6 |      AND   #2
+013: C017 |      BEQ   _no_power
+014: 0AAA |      LOAD  #$06
+015: A0CA |      OUTP  ULPI_W_OTG_CONTROL
+016: E019 |      BRA   _start2
+             _no_power
+017: 0AC6 |      LOAD  #$66
+018: A0CA |      OUTP  ULPI_W_OTG_CONTROL  
+             _start2
+019: 0ABB |      LOAD  #$45
+01A: A0C4 |      OUTP  ULPI_W_FUNC_CTRL
+01B: 08E6 |      LOAD  ResetDelay
+01C: E83E |      CALL  delay
+01D: 783F |      INP   STATUS
+01E: 2AA7 |      AND   #3
+01F: C826 |      BNE   _device_detected 
+020: 0AA4 |      LOAD  #0
+021: 83E6 |      STORE RAM_STATUS
+             _wait_for_device_attachment
+022: 783F |      INP   STATUS
+023: 2AA7 |      AND   #3
+024: C022 |      BEQ   _wait_for_device_attachment
+025: E019 |      BRA   _start2
+             _device_detected
+026: 5AA5 |      SUB   #1
+027: 3AA5 |      XOR   #1
+028: A026 |      OUTP  SPEED
+029: A03E |      OUTP  DISCONNECTED
+02A: 0AA5 |      LOAD  #1
+02B: 83E6 |      STORE RAM_STATUS
+02C: EA8C |  	CALL  status_irq
+             _waiting_for_reset
+02D: 0BFD |      LOAD  DO_RESET
+02E: C833 |      BNE   do_reset
+02F: E845 |      CALL  check_disconnect
+030: C02D |      BEQ   _waiting_for_reset
+             _disconnected
+031: EA8C |  	CALL  status_irq
+032: E019 |      BRA   _start2
+             do_reset
+033: 0AA4 |      LOAD  #0
+034: 83FD |      STORE DO_RESET
+035: 83E6 |      STORE RAM_STATUS
+036: E89B |      CALL  bus_reset
+037: 0AA7 |      LOAD  #3 
+038: 83E6 |      STORE RAM_STATUS
+039: A027 |      OUTP  SET_SOF_ENABLE
+03A: 0AA6 |      LOAD  #2
+03B: E83E |      CALL  delay
+03C: A03E |      OUTP  DISCONNECTED
+03D: E04B |      BRA   main_loop
+             delay
+03E: 80DD |      STORE DelayTimer
+             _delay
+03F: E8D8 |      CALL  loop_timer
+040: 08DD |      LOAD  DelayTimer
+041: 5AA5 |      SUB   #1
+042: 80DD |      STORE DelayTimer
+043: C83F |      BNE   _delay
+044: B800 |      RET
+             check_disconnect
+045: 783E |      INP   DISCONNECTED
+046: D84A |      BPL   _no_disconnect
+047: A03E |      OUTP  DISCONNECTED
+048: 83E6 |      STORE RAM_STATUS
+049: A037 |      OUTP  CLR_SOF_ENABLE
+             _no_disconnect
+04A: B800 |      RET
+             main_loop
+04B: E845 |      CALL  check_disconnect
+04C: C831 |      BNE   _disconnected
+04D: 0BFD |      LOAD  DO_RESET
+04E: C833 |      BNE   do_reset
+04F: 0BFC |      LOAD  DO_SUSPEND
+050: C854 |      BNE   do_suspend
+051: E8E8 |      CALL  check_command
+052: E9D5 |      CALL  check_pipes
+053: E04B |      BRA   main_loop
+             do_suspend
+054: 0BE6 |      LOAD  RAM_STATUS
+055: 1AA8 |      OR    #4
+056: 83E6 |      STORE RAM_STATUS
+057: A037 |      OUTP  CLR_SOF_ENABLE
+058: 0BFE |      LOAD  LinkSpeed
+059: 2AA7 |      AND   #3
+05A: 4AC3 |      ADD   #LinkRegisterMapSuspended
+05B: 80BB |      STORE _reset_temp
+05C: 88BB |      LOADI _reset_temp
+05D: A0C4 |      OUTP  ULPI_W_FUNC_CTRL
+05E: 0BFE |      LOAD  LinkSpeed
+05F: 52A6 |      CMP   #2
+060: C86F |      BNE   suspend_loop
+061: 0AA5 |      LOAD  #1
+062: A026 |      OUTP  SPEED  
+063: 0AB1 |      LOAD  #4000
+064: 80BB |      STORE _reset_temp
+             _do_suspend_1
+065: 08BB |      LOAD  _reset_temp
+066: C06E |      BEQ   _device_suspended 
+067: 5AA5 |      SUB   #1
+068: 80BB |      STORE _reset_temp
+069: 783F |      INP   STATUS
+06A: 2AA7 |      AND   #3
+06B: C86E |      BNE   _device_suspended
+06C: E8D8 |      CALL  loop_timer
+06D: E065 |      BRA   _do_suspend_1
+             _device_suspended
+06E: A03E |      OUTP  DISCONNECTED
+             suspend_loop
+06F: E845 |      CALL  check_disconnect
+070: C819 |      BNE   _start2
+071: 0BFD |      LOAD  DO_RESET
+072: C833 |      BNE   do_reset
+073: 0BFC |      LOAD  DO_SUSPEND
+074: C08B |      BEQ   do_unsuspend
+             _chk_remote_wakekup
+075: 0BFE |      LOAD  LinkSpeed
+076: C881 |      BNE   _chk_remote_wakeup_fs
+             _chk_remote_wakeup_ls
+077: 783F |      INP   STATUS
+078: 2AA7 |      AND   #$03
+079: 52A5 |      CMP   #1
+07A: C86F |      BNE   suspend_loop
+07B: E8D8 |      CALL  loop_timer
+07C: 783F |      INP   STATUS 
+07D: 2AA7 |      AND   #$03
+07E: 52A5 |      CMP   #1
+07F: C86F |      BNE   suspend_loop
+080: E08A |      BRA   do_wakeup
+             _chk_remote_wakeup_fs
+081: 783F |      INP   STATUS
+082: 2AA7 |      AND   #$03
+083: 52A6 |      CMP   #2
+084: C86F |      BNE   suspend_loop
+085: E8D8 |      CALL  loop_timer
+086: 783F |      INP   STATUS 
+087: 2AA7 |      AND   #$03
+088: 52A6 |      CMP   #2
+089: C86F |      BNE   suspend_loop
+             do_wakeup
+08A: A025 |      OUTP  PULSE_WAKEUP
+             do_unsuspend
+08B: A031 |      OUTP  CLR_CHIRP_LEVEL
+08C: A020 |      OUTP  SET_DO_CHIRP
+08D: 0ABA |      LOAD  #160
+08E: E83E |      CALL  delay
+08F: A030 |      OUTP  CLR_DO_CHIRP
+090: E8B2 |      CALL  _reset_end     
+091: 0ABD |      LOAD  #32
+             _do_unsuspend_1
+092: 5AA5 |      SUB   #1
+093: D892 |      BPL   _do_unsuspend_1
+094: A027 |      OUTP  SET_SOF_ENABLE
+095: E8D8 |      CALL  loop_timer
+096: E8D8 |      CALL  loop_timer
+097: 0BE6 |      LOAD  RAM_STATUS
+098: 2ACD |      AND   #$FFFB
+099: 83E6 |      STORE RAM_STATUS
+09A: E04B |      BRA   main_loop
+             bus_reset
+             _reset_chk_ls
+09B: 783F |      INP   STATUS
+09C: 2AA6 |      AND   #$02
+09D: C0A1 |      BEQ   _reset_fs
+09E: 0AA4 |      LOAD  #0
+09F: 83FE |      STORE LinkSpeed
+0A0: E0A3 |      BRA   _do_reset
+             _reset_fs
+0A1: 0AA5 |      LOAD  #1
+0A2: 83FE |      STORE LinkSpeed
+             _do_reset
+0A3: 0ABE |      LOAD  #$50
+0A4: A0C4 |      OUTP  ULPI_W_FUNC_CTRL
+0A5: 0ACC |      LOAD  #120
+0A6: 80DD |      STORE ResetTimer
+0A7: A029 |      OUTP  PULSE_RESET_FILTER
+0A8: A039 |      OUTP  FILTERED_STAT_1
+0A9: 0BFE |      LOAD  LinkSpeed
+0AA: C0D2 |      BEQ   _reset_simple
+             _reset_1
+0AB: 7839 |      INP   FILTERED_STAT_1
+0AC: D0BC |      BMI   _reset_chirp_heard
+0AD: E8D8 |      CALL  loop_timer
+0AE: 08DD |      LOAD  ResetTimer
+0AF: 5AA5 |      SUB   #1
+0B0: 80DD |      STORE ResetTimer
+0B1: C8AB |      BNE   _reset_1
+             _reset_end
+0B2: 0BFE |      LOAD  LinkSpeed
+0B3: A026 |      OUTP  SPEED
+0B4: 2AA7 |      AND   #3
+0B5: 4AC0 |      ADD   #LinkRegisterMap
+0B6: 80BB |      STORE _reset_temp
+0B7: 88BB |      LOADI _reset_temp
+0B8: A0C4 |      OUTP  ULPI_W_FUNC_CTRL
+0B9: A03E |      OUTP  DISCONNECTED
+0BA: B800 |      RET
+             _reset_temp
+0BB: 0000 |      .dw 0
+             _reset_chirp_heard
+0BC: 0AA6 |      LOAD  #2
+0BD: 83FE |      STORE LinkSpeed
+0BE: A031 |      OUTP  CLR_CHIRP_LEVEL
+0BF: A020 |      OUTP  SET_DO_CHIRP
+0C0: 08E7 |      LOAD  NumberOfChirps
+0C1: 80DD |      STORE ResetTimer
+             _chirp_loop
+0C2: A031 |      OUTP  CLR_CHIRP_LEVEL
+0C3: 0ACA |      LOAD  #750
+             _chirp_k
+0C4: 5AA5 |      SUB   #1
+0C5: C8C4 |      BNE   _chirp_k
+0C6: 08DD |      LOAD  ResetTimer
+0C7: 5AA5 |      SUB   #1
+0C8: 80DD |      STORE ResetTimer
+0C9: C0CF |      BEQ   _chirps_done
+0CA: A021 |      OUTP  SET_CHIRP_LEVEL
+0CB: 0ACA |      LOAD  #750
+             _chirp_j
+0CC: 5AA5 |      SUB   #1
+0CD: C8CC |      BNE   _chirp_j
+0CE: E0C2 |      BRA   _chirp_loop
+             _chirps_done
+0CF: A030 |      OUTP  CLR_DO_CHIRP
+0D0: 0AA7 |      LOAD  #3
+0D1: 80DD |      STORE ResetTimer
+             _reset_simple
+0D2: E8D8 |      CALL  loop_timer
+0D3: 08DD |      LOAD  ResetTimer
+0D4: 5AA5 |      SUB   #1
+0D5: 80DD |      STORE ResetTimer
+0D6: C8D2 |      BNE   _reset_simple
+0D7: E0B2 |      BRA   _reset_end
+             loop_timer
+0D8: 0ABF |      LOAD  #1873
+             _loop_timer_1
+0D9: 5AA5 |      SUB   #1
+0DA: D8D9 |      BPL   _loop_timer_1
+0DB: B800 |      RET
+             temp
+0DC: 0000 |      .dw 0
+             ResetTimer
+             DelayTimer
+0DD: 0000 |      .dw 0
+             LinkRegisterMap
+0DE: 0046 |      .dw $46
+0DF: 0045 |      .dw $45
+0E0: 0040 |      .dw $40
+0E1: 0050 |      .dw $50
+             LinkRegisterMapSuspended
+0E2: 0056 |      .dw $56
+0E3: 0055 |      .dw $55
+0E4: 0055 |      .dw $55
+0E5: 0050 |      .dw $50
+             ResetDelay
+0E6: 15E1 |      .dw 5601
+             NumberOfChirps
+0E7: 004B |      .dw 75
+             check_command
+0E8: 0BF0 |      LOAD User_Command
+0E9: 8296 |  	STORE Current_Command
+0EA: 53F0 |      CMP  User_Command
+0EB: C8E8 |      BNE  check_command
+0EC: 0A96 |  	LOAD Current_Command
+0ED: C8EF |      BNE  _copy_user_cmd
+0EE: B800 |      RET 
+             _copy_user_cmd
+0EF: 0BF1 |      LOAD  User_Command_DevEP
+0F0: 8297 |      STORE Current_Command_DevEP
+0F1: 0BF2 |      LOAD  User_Command_Length
+0F2: 8298 |      STORE Current_Command_Length
+0F3: 0BF3 |      LOAD  User_Command_MaxTrans
+0F4: 8299 |      STORE Current_Command_MaxTrans
+0F5: 0BF4 |      LOAD  User_Command_MemHi
+0F6: 829A |      STORE Current_Command_MemHi
+0F7: 0BF5 |      LOAD  User_Command_MemLo
+0F8: 829B |      STORE Current_Command_MemLo
+0F9: 0BF6 |      LOAD  User_Command_SplitCtl
+0FA: 829C |      STORE Current_Command_SplitCtl
+0FB: E905 |      CALL  _execute_cmd
+0FC: 0A9D |      LOAD  Current_Command_Result
+0FD: 83F7 |      STORE User_Command_Result
+0FE: 0A98 |      LOAD  Current_Command_Length
+0FF: 83F2 |      STORE User_Command_Length
+100: 0AA4 |  	LOAD  #0
+101: 83EF |  	STORE AbortCurrentCommand
+102: 83F0 |      STORE User_Command
+103: 0ACE |      LOAD  #$FFFE
+104: E28D |      BRA   other_irq
+             _execute_cmd
+105: 0A97 |      LOAD Current_Command_DevEP
+106: A062 |      OUTP CMD_DEVICE_ENDPOINT
+107: 0AA7 |      LOAD #3
+108: 8292 |      STORE AllowedErrors
+109: 0AA4 |      LOAD  #0
+10A: 8293 |      STORE Transferred
+10B: 0A96 |      LOAD  Current_Command
+10C: D183 |      BMI   _out_command
+             _start_in
+10D: 0A9A |      LOAD Current_Command_MemHi
+10E: A071 |      OUTP MEM_ADDR_HI
+10F: 0A9B |      LOAD Current_Command_MemLo
+110: A070 |      OUTP MEM_ADDR_LO
+             _next_in_chunk
+111: 0BEF |  	LOAD AbortCurrentCommand
+112: C969 |  	BNE  _in_done 
+113: 0A95 |      LOAD CurrentBuffer
+114: A061 |      OUTP CMD_DATA_BUFFER_CTRL
+115: 0A9C |      LOAD Current_Command_SplitCtl
+116: A063 |      OUTP CMD_SPLIT_CONTROL
+117: 0A96 |      LOAD Current_Command
+118: A060 |      OUTP CMD_REQUEST 
+119: 0A9C |      LOAD Current_Command_SplitCtl
+11A: C92E |      BNE  _wait_in_cmd_ssplit
+             _wait_in_cmd
+11B: 7864 |      INP  CMD_RESPONSE
+11C: D91B |      BPL  _wait_in_cmd
+11D: 829D |      STORE Current_Command_Result
+11E: 2AB8 |      AND  #CMD_RES_MASK
+11F: 52A4 |      CMP  #CMD_RES_DATA
+120: C141 |      BEQ  _in_success
+121: 52B4 |      CMP  #CMD_RES_NAK
+122: C13B |      BEQ  _check_nak_response_in
+123: 52B5 |      CMP  #CMD_RES_NYET
+124: C134 |      BEQ  _try_complete_split_in
+125: 52B6 |      CMP  #CMD_RES_STALL
+126: C169 |      BEQ  _in_done
+127: 52B7 |      CMP  #CMD_RES_ERROR
+128: C969 |      BNE  _in_done 
+             _check_in_error
+129: 0A92 |      LOAD  AllowedErrors
+12A: C169 |      BEQ   _in_done 
+12B: 5AA5 |      SUB   #1
+12C: 8292 |      STORE AllowedErrors
+12D: E111 |      BRA   _next_in_chunk 
+             _wait_in_cmd_ssplit
+12E: 7864 |      INP  CMD_RESPONSE
+12F: D92E |      BPL  _wait_in_cmd_ssplit
+130: 829D |      STORE Current_Command_Result
+131: 2AB8 |      AND  #CMD_RES_MASK
+132: 52B2 |      CMP  #CMD_RES_ACK
+133: C929 |      BNE  _check_in_error
+             _try_complete_split_in
+134: E8D8 |      CALL loop_timer
+135: 0A9C |      LOAD Current_Command_SplitCtl
+136: 1AAD |      OR   #SPLIT_COMPLETE
+137: A063 |      OUTP CMD_SPLIT_CONTROL
+138: 0A96 |      LOAD Current_Command
+139: A060 |      OUTP CMD_REQUEST 
+13A: E11B |      BRA  _wait_in_cmd
+             _check_nak_response_in
+13B: 0A93 |      LOAD Transferred
+13C: C911 |      BNE  _next_in_chunk
+13D: 0A96 |      LOAD Current_Command
+13E: 2AB3 |      AND  #CMD_REQ_RETRY_ON_NAK
+13F: C911 |      BNE  _next_in_chunk
+140: E169 |      BRA  _in_done
+             _in_success
+141: 0A9D |      LOAD Current_Command_Result
+142: 2ACF |      AND  #CMD_RES_LEN_MASK
+143: 8294 |      STORE CurrentLength
+144: 0AA7 |      LOAD #3
+145: 8292 |      STORE AllowedErrors
+             _check_rx_toggle
+146: 0A96 |      LOAD Current_Command
+147: 3A9D |      XOR  Current_Command_Result
+148: 2ABC |      AND  #CMD_TOGGLE_BIT
+149: C14D |      BEQ  _toggle_ok
+14A: 0AA4 |      LOAD #0
+14B: 8294 |      STORE CurrentLength
+14C: E15E |  	BRA   _toggle_error
+             _toggle_ok
+14D: 0A96 |      LOAD Current_Command
+14E: 2AB6 |      AND  #CMD_REQ_MEMWRITE
+14F: C15B |      BEQ  _no_mem_write
+             _wait_mem2
+150: 783D |      INP  MEM_CTRL_READY
+151: D950 |      BPL  _wait_mem2
+152: 0A95 |      LOAD CurrentBuffer
+153: A074 |      OUTP MEM_BUFFER_INDEX
+154: 0A94 |      LOAD CurrentLength
+155: C15B |      BEQ  _no_mem_write
+156: 4AA7 |      ADD  #3
+157: A072 |      OUTP MEM_TRANSFER_WRITE
+158: 0A93 |      LOAD  Transferred
+159: 4A94 |      ADD   CurrentLength
+15A: 8293 |      STORE Transferred
+             _no_mem_write
+15B: 0A96 |      LOAD  Current_Command
+15C: 3ABC |      XOR   #CMD_TOGGLE_BIT
+15D: 8296 |      STORE Current_Command
+             _toggle_error
+15E: 0A95 |      LOAD  CurrentBuffer
+15F: 4AB6 |      ADD   #$4000
+160: 8295 |      STORE CurrentBuffer
+161: 0A98 |      LOAD Current_Command_Length
+162: 5A94 |      SUB  CurrentLength
+163: 8298 |      STORE Current_Command_Length
+164: C169 |      BEQ  _in_done
+165: D169 |      BMI  _in_done
+166: 0A94 |      LOAD CurrentLength
+167: 5299 |      CMP  Current_Command_MaxTrans
+168: D911 |      BPL  _next_in_chunk
+             _in_done
+169: 783D |      INP  MEM_CTRL_READY
+16A: D969 |      BPL  _in_done
+16B: B800 |      RET
+             do_mem_read
+16C: 0A9A |      LOAD Current_Command_MemHi
+16D: A071 |      OUTP MEM_ADDR_HI
+16E: 0A9B |      LOAD Current_Command_MemLo
+16F: A070 |      OUTP MEM_ADDR_LO
+170: 2AA7 |      AND  #3
+171: 829E |      STORE Current_Word_Offset
+172: 0A95 |      LOAD CurrentBuffer
+173: A074 |      OUTP MEM_BUFFER_INDEX
+             determine_length
+174: 0A98 |      LOAD Current_Command_Length
+175: 5299 |      CMP  Current_Command_MaxTrans
+176: D178 |      BMI  _no_truncate
+177: 0A99 |      LOAD Current_Command_MaxTrans
+             _no_truncate
+178: 8294 |      STORE CurrentLength
+179: 4A9E |      ADD   Current_Word_Offset
+17A: 4AA7 |      ADD   #3
+17B: A073 |      OUTP  MEM_TRANSFER_READ
+17C: 0A9B |      LOAD  Current_Command_MemLo
+17D: 4A94 |      ADD   CurrentLength
+17E: 829B |      STORE Current_Command_MemLo
+17F: 0A9A |      LOAD  Current_Command_MemHi
+180: 6AA4 |      ADDC  #0
+181: 829A |      STORE Current_Command_MemHi
+182: B800 |      RET
+             _out_command
+183: E96C |      CALL do_mem_read 
+             _next_out_chunk
+184: 0BEF |  	LOAD AbortCurrentCommand
+185: C9C4 |  	BNE  _out_done 
+186: 0A94 |      LOAD CurrentLength
+187: C989 |      BNE  _has_data
+188: 1AB4 |      OR   #CMD_BUF_NODATA
+             _has_data
+189: 1A95 |      OR   CurrentBuffer
+18A: A061 |      OUTP CMD_DATA_BUFFER_CTRL
+18B: 0A9C |      LOAD Current_Command_SplitCtl
+18C: A063 |      OUTP CMD_SPLIT_CONTROL
+             _wait_mem1
+18D: 783D |      INP  MEM_CTRL_READY
+18E: D98D |      BPL  _wait_mem1
+18F: 0A96 |      LOAD Current_Command
+190: A060 |      OUTP CMD_REQUEST 
+191: 0A95 |      LOAD  CurrentBuffer
+192: 4AB6 |      ADD   #$4000
+193: 8295 |      STORE CurrentBuffer
+194: 0A98 |      LOAD Current_Command_Length
+195: 5A94 |      SUB  CurrentLength
+196: 8298 |      STORE Current_Command_Length
+197: C199 |      BEQ  _no_more_read_out
+198: E96C |      CALL do_mem_read 
+             _no_more_read_out
+199: 0A9C |      LOAD Current_Command_SplitCtl
+19A: C9A7 |      BNE  _wait_out_cmd_ssplit
+             _wait_out_cmd
+19B: 7864 |      INP  CMD_RESPONSE
+19C: D99B |      BPL  _wait_out_cmd
+19D: 829D |      STORE Current_Command_Result
+19E: 2AB8 |      AND  #CMD_RES_MASK
+19F: 52B2 |      CMP  #CMD_RES_ACK
+1A0: C1BA |      BEQ  _out_success
+1A1: 52B5 |      CMP  #CMD_RES_NYET
+1A2: C1D2 |      BEQ  _check_nyet_response_out
+1A3: 52B4 |      CMP  #CMD_RES_NAK
+1A4: C1CC |      BEQ  _check_nak_response_out
+1A5: 52B7 |      CMP  #CMD_RES_ERROR
+1A6: E1C4 |      BRA  _out_done  
+             _wait_out_cmd_ssplit
+1A7: 7864 |      INP   CMD_RESPONSE
+1A8: D9A7 |      BPL   _wait_out_cmd_ssplit
+1A9: 829D |      STORE Current_Command_Result
+1AA: 2AB8 |      AND   #CMD_RES_MASK
+1AB: 52B2 |      CMP   #CMD_RES_ACK
+1AC: C9C4 |      BNE   _out_done 
+1AD: 0A9C |      LOAD  Current_Command_SplitCtl
+1AE: 1AAD |      OR    #SPLIT_COMPLETE
+1AF: A063 |      OUTP  CMD_SPLIT_CONTROL
+             _try_complete_out
+1B0: E8D8 |      CALL  loop_timer
+1B1: 0A96 |      LOAD  Current_Command
+1B2: 2AB9 |      AND   #CMD_REQ_NOT_DO_DATA
+1B3: A060 |      OUTP  CMD_REQUEST
+1B4: E19B |      BRA   _wait_out_cmd
+             _check_out_error
+1B5: 0A92 |      LOAD AllowedErrors
+1B6: C1C4 |      BEQ  _out_done 
+1B7: 5AA5 |      SUB  #1
+1B8: 8292 |      STORE AllowedErrors
+1B9: E1CF |      BRA  _retry_out
+             _out_success
+1BA: 0A96 |      LOAD  Current_Command
+1BB: 3ABC |      XOR   #CMD_TOGGLE_BIT
+1BC: 8296 |      STORE Current_Command
+1BD: 0AA7 |      LOAD  #3
+1BE: 8292 |      STORE AllowedErrors
+1BF: 0A93 |      LOAD  Transferred
+1C0: 4A94 |      ADD   CurrentLength
+1C1: 8293 |      STORE Transferred
+1C2: 0A98 |      LOAD  Current_Command_Length
+1C3: C984 |      BNE  _next_out_chunk
+             _out_done
+1C4: 0A96 |      LOAD  Current_Command
+1C5: 2ABC |      AND   #CMD_TOGGLE_BIT
+1C6: 80DC |      STORE temp
+1C7: 0A9D |      LOAD  Current_Command_Result
+1C8: 2AAB |      AND   #CMD_TOGGLE_BIT_NOT
+1C9: 18DC |      OR    temp
+1CA: 829D |      STORE Current_Command_Result
+1CB: B800 |      RET
+             _check_nak_response_out
+1CC: 0A96 |      LOAD Current_Command
+1CD: 2AB3 |      AND  #CMD_REQ_RETRY_ON_NAK
+1CE: C1C4 |      BEQ  _out_done
+             _retry_out
+1CF: 0A96 |      LOAD Current_Command
+1D0: A060 |      OUTP CMD_REQUEST 
+1D1: E19B |      BRA  _wait_out_cmd
+             _check_nyet_response_out
+1D2: 0A9C |      LOAD Current_Command_SplitCtl
+1D3: C1BA |      BEQ  _out_success 
+1D4: E1B0 |      BRA  _try_complete_out
+             check_pipes
+1D5: 0AC2 |      LOAD  #Pipes
+1D6: 829F |      STORE PipeAddr
+1D7: 0AA4 |      LOAD  #0
+1D8: 82A0 |      STORE PipeNumber
+             _chk_pipe
+1D9: 8A9F |      LOADI PipeAddr
+1DA: C1DE |      BEQ   _nxt_pipe
+1DB: 8296 |      STORE Current_Command
+1DC: 2AB0 |      AND   #CMD_REQ_PAUSED
+1DD: C1E7 |      BEQ   _valid_pipe
+             _nxt_pipe
+1DE: 0AA0 |      LOAD  PipeNumber
+1DF: 4AA5 |      ADD   #1
+1E0: 82A0 |      STORE PipeNumber
+1E1: 0A9F |      LOAD  PipeAddr
+1E2: 4AAC |      ADD   #8
+1E3: 829F |      STORE PipeAddr
+1E4: 52C1 |      CMP   #PipesEnd
+1E5: C9D9 |      BNE   _chk_pipe
+             _pipes_done
+1E6: B800 |      RET
+             _valid_pipe
+1E7: 0A9F |      LOAD  PipeAddr
+1E8: 4AA8 |      ADD   #Offset_Command_Interval
+1E9: 80DC |      STORE temp
+1EA: 88DC |      LOADI temp
+1EB: 82A1 |      STORE Interval
+1EC: 0A9F |      LOAD  PipeAddr
+1ED: 4AA9 |      ADD   #Offset_Command_LastFrame
+1EE: 80DC |      STORE temp
+1EF: 88DC |      LOADI temp
+1F0: 82A2 |      STORE LastFrame
+1F1: 783B |      INP   FRAME_COUNTER
+1F2: 5AA2 |      SUB   LastFrame
+1F3: 52A1 |      CMP   Interval
+1F4: DA04 |      BPL   _interval_ok
+1F5: E1DE |      BRA    _nxt_pipe
+             store_last_frame
+1F6: 82A1 |      STORE  Interval
+1F7: 0A9F |      LOAD   PipeAddr
+1F8: 4AA9 |      ADD    #Offset_Command_LastFrame
+1F9: 80DC |      STORE  temp
+1FA: 0AA1 |      LOAD   Interval
+1FB: 90DC |      STORI  temp
+1FC: B800 |      RET
+             store_updated_command
+1FD: 82A1 |      STORE  Interval 
+1FE: 0A9F |      LOAD   PipeAddr
+1FF: 4AA4 |      ADD    #Offset_Command
+200: 80DC |      STORE  temp
+201: 0AA1 |      LOAD   Interval
+202: 90DC |      STORI  temp
+203: B800 |      RET
+             _interval_ok
+204: 783B |      INP   FRAME_COUNTER
+205: E9F6 |      CALL   store_last_frame
+             _need_to_exectue
+206: EA7C |      CALL  attr_fifo_full
+207: C1DE |      BEQ   _nxt_pipe
+208: 0A96 |      LOAD  Current_Command
+209: 2AB4 |      AND   #CMD_REQ_USEBLOCK
+20A: CA16 |      BNE   _prepare_block
+20B: 8A9F |      LOADI PipeAddr
+20C: 2AB2 |      AND   #CMD_REQ_USECIRC
+20D: CA30 |      BNE   _prepare_circ
+20E: E1DE |      BRA   _nxt_pipe
+             _add_block_offset
+20F: 0AA3 |      LOAD  BlockOffset
+210: 4A9B |      ADD   Current_Command_MemLo
+211: 829B |      STORE Current_Command_MemLo
+212: 0A9A |      LOAD  Current_Command_MemHi
+213: 6AA4 |      ADDC  #0
+214: 829A |      STORE Current_Command_MemHi
+215: B800 |      RET
+             _prepare_block
+216: EA6D |      CALL  blk_fifo_empty
+217: C1DE |      BEQ   _nxt_pipe
+218: EA72 |      CALL  blk_fifo_read
+219: 82A3 |      STORE BlockOffset
+21A: 4BE5 |      ADD   MemBlock_Base_Low
+21B: 829B |      STORE Current_Command_MemLo
+21C: 0BE4 |      LOAD  MemBlock_Base_High
+21D: 6AA4 |      ADDC  #0
+21E: 829A |      STORE Current_Command_MemHi
+21F: EA0F |      CALL  _add_block_offset 
+220: EA0F |      CALL  _add_block_offset 
+221: EA0F |      CALL  _add_block_offset 
+222: EA58 |      CALL  _other_params
+223: E905 |      CALL  _execute_cmd
+224: 0A96 |      LOAD  Current_Command
+225: E9FD |      CALL  store_updated_command 
+226: 0A93 |      LOAD  Transferred
+227: C24C |      BEQ   _unsuccessful
+228: 0AA3 |      LOAD  BlockOffset
+229: 1AA0 |      OR    PipeNumber
+22A: EA81 |      CALL  attr_fifo_push
+22B: 0A93 |      LOAD  Transferred
+22C: EA81 |      CALL  attr_fifo_push
+22D: A028 |      OUTP  SEND_INTERRUPT
+22E: EA77 |      CALL  blk_fifo_adv
+22F: E1DE |      BRA   _nxt_pipe
+             _prepare_circ
+230: 0BE1 |      LOAD  Circ_MemAddr_Start_Low
+231: 4BE3 |      ADD   Circ_Offset
+232: 829B |      STORE Current_Command_MemLo
+233: 0BE0 |      LOAD  Circ_MemAddr_Start_High
+234: 6AA4 |      ADDC  #0
+235: 829A |      STORE Current_Command_MemHi
+236: EA58 |      CALL  _other_params
+237: E905 |      CALL  _execute_cmd
+238: 0A93 |      LOAD  Transferred
+239: C24C |      BEQ   _unsuccessful
+23A: EA49 |  	CALL  pause_pipe  
+23B: 0BE3 |      LOAD  Circ_Offset
+23C: 1AA0 |      OR    PipeNumber
+23D: EA81 |      CALL  attr_fifo_push 
+23E: 0A93 |      LOAD  Transferred
+23F: EA81 |      CALL  attr_fifo_push 
+240: A028 |      OUTP  SEND_INTERRUPT
+241: 0BE3 |      LOAD  Circ_Offset
+242: 4AAF |      ADD   #16
+243: 83E3 |      STORE Circ_Offset
+244: 53E2 |      CMP   Circ_Size
+245: C9DE |      BNE   _nxt_pipe
+246: 0AA4 |      LOAD  #0
+247: 83E3 |      STORE Circ_Offset
+248: E1DE |      BRA   _nxt_pipe
+             pause_pipe
+249: 0A96 |      LOAD  Current_Command
+24A: 1AB0 |      OR    #CMD_REQ_PAUSED
+24B: E1FD |      BRA  store_updated_command 
+             _unsuccessful
+24C: 0A9D |      LOAD Current_Command_Result
+24D: 2AB8 |      AND  #CMD_RES_MASK
+24E: 52B4 |      CMP  #CMD_RES_NAK
+24F: C1DE |      BEQ  _nxt_pipe   
+250: EA49 |  	CALL  pause_pipe
+251: 0ACB |      LOAD #$FFF0
+252: 1AA0 |      OR   PipeNumber
+253: EA81 |      CALL attr_fifo_push
+254: 0A9D |      LOAD Current_Command_Result
+255: EA81 |      CALL attr_fifo_push
+256: A028 |      OUTP  SEND_INTERRUPT
+257: E1DE |      BRA  _nxt_pipe
+             _other_params
+258: 0A9F |      LOAD  PipeAddr
+259: 4AA5 |      ADD   #Offset_Command_DevEP
+25A: 80DC |      STORE temp
+25B: 88DC |      LOADI temp
+25C: 8297 |      STORE Current_Command_DevEP
+25D: 0A9F |      LOAD  PipeAddr
+25E: 4AA6 |      ADD   #Offset_Command_Length
+25F: 80DC |      STORE temp
+260: 88DC |      LOADI temp
+261: 8298 |      STORE Current_Command_Length
+262: 0A9F |      LOAD  PipeAddr
+263: 4AA7 |      ADD   #Offset_Command_MaxTrans
+264: 80DC |      STORE temp
+265: 88DC |      LOADI temp
+266: 8299 |      STORE Current_Command_MaxTrans
+267: 0A9F |      LOAD  PipeAddr
+268: 4AAA |      ADD   #Offset_Command_SplitCtl
+269: 80DC |      STORE temp
+26A: 88DC |      LOADI temp
+26B: 829C |      STORE Current_Command_SplitCtl
+26C: B800 |      RET
+             blk_fifo_empty
+26D: 0BFB |      LOAD head_pointer_blk
+26E: 53FB |      CMP  head_pointer_blk
+26F: CA6D |      BNE  blk_fifo_empty
+270: 53FA |      CMP  tail_pointer_blk
+271: B800 |      RET
+             blk_fifo_read
+272: 0BFA |      LOAD  tail_pointer_blk
+273: 4AC4 |      ADD   #block_fifo
+274: 8291 |      STORE fifo_temp_addr
+275: 8A91 |      LOADI fifo_temp_addr
+276: B800 |      RET
+             blk_fifo_adv
+277: 0BFA |      LOAD  tail_pointer_blk
+278: 4AA5 |      ADD   #1
+279: 2AC8 |      AND   #$3F
+27A: 83FA |      STORE tail_pointer_blk
+27B: B800 |      RET
+             attr_fifo_full
+27C: 0BF9 |      LOAD head_pointer_atr
+27D: 4AA5 |      ADD  #1
+27E: 2AC9 |      AND  #$7F
+27F: 3BF8 |      XOR  tail_pointer_atr
+280: B800 |      RET
+             attr_fifo_push
+281: 8290 |      STORE  fifo_temp_data
+282: 0BF9 |      LOAD   head_pointer_atr
+283: 4AC1 |      ADD    #attrib_fifo
+284: 8291 |      STORE  fifo_temp_addr
+285: 0A90 |      LOAD   fifo_temp_data
+286: 9291 |      STORI  fifo_temp_addr
+287: 0BF9 |      LOAD   head_pointer_atr
+288: 4AA5 |      ADD    #1
+289: 2AC9 |      AND    #$7F
+28A: 83F9 |      STORE  head_pointer_atr
+28B: B800 |      RET
+             status_irq
+28C: 0AC7 |  	LOAD  #$FFFF
+             other_irq
+28D: EA81 |  	CALL  attr_fifo_push
+28E: A028 |      OUTP  SEND_INTERRUPT
+28F: B800 |  	RET
+             fifo_temp_data
+290: 0000 |      .dw 0
+             fifo_temp_addr
+291: 0000 |      .dw 0
+             AllowedErrors
+292: 0000 |      .dw 0
+             Transferred
+293: 0000 |      .dw 0
+             CurrentLength
+294: 0000 |      .dw 0
+             CurrentBuffer
+295: 0000 |      .dw 0
+             Current_Command
+296: 0000 |      .dw 0
+             Current_Command_DevEP
+297: 0000 |      .dw 0
+             Current_Command_Length
+298: 0000 |      .dw 0
+             Current_Command_MaxTrans
+299: 0000 |      .dw 0
+             Current_Command_MemHi
+29A: 0000 |      .dw 0
+             Current_Command_MemLo
+29B: 0000 |      .dw 0
+             Current_Command_SplitCtl
+29C: 0000 |      .dw 0
+             Current_Command_Result
+29D: 0000 |      .dw 0
+             Current_Word_Offset
+29E: 0000 |      .dw 0
+             PipeAddr
+29F: 0000 |      .dw 0
+             PipeNumber
+2A0: 0000 |      .dw 0
+             Interval
+2A1: 0000 |      .dw 0
+             LastFrame
+2A2: 0000 |      .dw 0
+             BlockOffset
+2A3: 0000 |      .dw 0
+2A4: 0000 | IMM #0
+2A5: 0001 | IMM #1
+2A6: 0002 | IMM #2
+2A7: 0003 | IMM #3
+2A8: 0004 | IMM #4
+2A9: 0005 | IMM #5
+2AA: 0006 | IMM #6
+2AB: F7FF | IMM #63487
+2AC: 0008 | IMM #8
+2AD: 0080 | IMM #128
+2AE: 000E | IMM #14
+2AF: 0010 | IMM #16
+2B0: 0200 | IMM #512
+2B1: 0FA0 | IMM #4000
+2B2: 1000 | IMM #4096
+2B3: 0400 | IMM #1024
+2B4: 2000 | IMM #8192
+2B5: 3000 | IMM #12288
+2B6: 4000 | IMM #16384
+2B7: 5000 | IMM #20480
+2B8: 7000 | IMM #28672
+2B9: FFBF | IMM #65471
+2BA: 00A0 | IMM #160
+2BB: 0045 | IMM #69
+2BC: 0800 | IMM #2048
+2BD: 0020 | IMM #32
+2BE: 0050 | IMM #80
+2BF: 0751 | IMM #1873
+2C0: 00DE | IMM #222
+2C1: 0320 | IMM #800
+2C2: 02E0 | IMM #736
+2C3: 00E2 | IMM #226
+2C4: 03A0 | IMM #928
+2C5: 0065 | IMM #101
+2C6: 0066 | IMM #102
+2C7: FFFF | IMM #65535
+2C8: 003F | IMM #63
+2C9: 007F | IMM #127
+2CA: 02EE | IMM #750
+2CB: FFF0 | IMM #65520
+2CC: 0078 | IMM #120
+2CD: FFFB | IMM #65531
+2CE: FFFE | IMM #65534
+2CF: 03FF | IMM #1023
+        INIT_00 => X"0AB1C0172AAA7893A0CA0AAEA03783E60AA4C01752AA7882A0C40AC5A0CA0AAA",
+        INIT_01 => X"C8262AA7783FE83E08E6A0C40ABBA0CA0AC6E019A0CA0AAAC0172AA67893E83E",
+        INIT_02 => X"E845C8330BFDEA8C83E60AA5A03EA0263AA55AA5E019C0222AA7783F83E60AA4",
+        INIT_03 => X"E8D880DDE04BA03EE83E0AA6A02783E60AA7E89B83E683FD0AA4E019EA8CC02D",
+        INIT_04 => X"0BFCC8330BFDC831E845B800A03783E6A03ED84A783EB800C83F80DD5AA508DD",
+        INIT_05 => X"52A60BFEA0C488BB80BB4AC32AA70BFEA03783E61AA80BE6E04BE9D5E8E8C854",
+        INIT_06 => X"E845A03EE065E8D8C86E2AA7783F80BB5AA5C06E08BB80BB0AB1A0260AA5C86F",
+        INIT_07 => X"C86F52A52AA7783FE8D8C86F52A52AA7783FC8810BFEC08B0BFCC8330BFDC819",
+        INIT_08 => X"A030E83E0ABAA020A031A025C86F52A62AA7783FE8D8C86F52A62AA7783FE08A",
+        INIT_09 => X"83FE0AA4C0A12AA6783FE04B83E62ACD0BE6E8D8E8D8A027D8925AA50ABDE8B2",
+        INIT_0A => X"5AA508DDE8D8D0BC7839C0D20BFEA039A02980DD0ACCA0C40ABE83FE0AA5E0A3",
+        INIT_0B => X"A020A03183FE0AA60000B800A03EA0C488BB80BB4AC02AA7A0260BFEC8AB80DD",
+        INIT_0C => X"A030E0C2C8CC5AA50ACAA021C0CF80DD5AA508DDC8C45AA50ACAA03180DD08E7",
+        INIT_0D => X"0045004600000000B800D8D95AA50ABFE0B2C8D280DD5AA508DDE8D880DD0AA7",
+        INIT_0E => X"0BF1B800C8EF0A96C8E853F082960BF0004B15E1005000550055005600500040",
+        INIT_0F => X"83F20A9883F70A9DE905829C0BF6829B0BF5829A0BF482990BF382980BF28297",
+        INIT_10 => X"0A9BA0710A9AD1830A9682930AA482920AA7A0620A97E28D0ACE83F083EF0AA4",
+        INIT_11 => X"52A42AB8829DD91B7864C92E0A9CA0600A96A0630A9CA0610A95C9690BEFA070",
+        INIT_12 => X"D92E7864E11182925AA5C1690A92C96952B7C16952B6C13452B5C13B52B4C141",
+        INIT_13 => X"C9112AB30A96C9110A93E11BA0600A96A0631AAD0A9CE8D8C92952B22AB8829D",
+        INIT_14 => X"C15B2AB60A96E15E82940AA4C14D2ABC3A9D0A9682920AA782942ACF0A9DE169",
+        INIT_15 => X"4AB60A9582963ABC0A9682934A940A93A0724AA7C15B0A94A0740A95D950783D",
+        INIT_16 => X"A0700A9BA0710A9AB800D969783DD91152990A94D169C16982985A940A988295",
+        INIT_17 => X"0A9A829B4A940A9BA0734AA74A9E82940A99D17852990A98A0740A95829E2AA7",
+        INIT_18 => X"0A96D98D783DA0630A9CA0611A951AB4C9890A94C9C40BEFE96CB800829A6AA4",
+        INIT_19 => X"52B22AB8829DD99B7864C9A70A9CE96CC19982985A940A9882954AB60A95A060",
+        INIT_1A => X"A0631AAD0A9CC9C452B22AB8829DD9A77864E1C452B7C1CC52B4C1D252B5C1BA",
+        INIT_1B => X"0A9382920AA782963ABC0A96E1CF82925AA5C1C40A92E19BA0602AB90A96E8D8",
+        INIT_1C => X"0A96C1C42AB30A96B800829D18DC2AAB0A9D80DC2ABC0A96C9840A9882934A94",
+        INIT_1D => X"4AA50AA0C1E72AB08296C1DE8A9F82A00AA4829F0AC2E1B0C1BA0A9CE19BA060",
+        INIT_1E => X"88DC80DC4AA90A9F82A188DC80DC4AA80A9FB800C9D952C1829F4AAC0A9F82A0",
+        INIT_1F => X"4AA40A9F82A1B80090DC0AA180DC4AA90A9F82A1E1DEDA0452A15AA2783B82A2",
+        INIT_20 => X"0AA3E1DECA302AB28A9FCA162AB40A96C1DEEA7CE9F6783BB80090DC0AA180DC",
+        INIT_21 => X"EA0F829A6AA40BE4829B4BE582A3EA72C1DEEA6DB800829A6AA40A9A829B4A9B",
+        INIT_22 => X"E1DEEA77A028EA810A93EA811AA00AA3C24C0A93E9FD0A96E905EA58EA0FEA0F",
+        INIT_23 => X"EA810A93EA811AA00BE3EA49C24C0A93E905EA58829A6AA40BE0829B4BE30BE1",
+        INIT_24 => X"C1DE52B42AB80A9DE1FD1AB00A96E1DE83E30AA4C9DE53E283E34AAF0BE3A028",
+        INIT_25 => X"80DC4AA60A9F829788DC80DC4AA50A9FE1DEA028EA810A9DEA811AA00ACBEA49",
+        INIT_26 => X"CA6D53FB0BFBB800829C88DC80DC4AAA0A9F829988DC80DC4AA70A9F829888DC",
+        INIT_27 => X"3BF82AC94AA50BF9B80083FA2AC84AA50BFAB8008A9182914AC40BFAB80053FA",
+        INIT_28 => X"B800A028EA810AC7B80083F92AC94AA50BF992910A9082914AC10BF98290B800",
+        INIT_29 => X"0000000000000000000000000000000000000000000000000000000000000000",
+        INIT_2A => X"0010000E00800008F7FF00060005000400030002000100000000000000000000",
+        INIT_2B => X"0751005000200800004500A0FFBF70005000400030002000040010000FA00200",
+        INIT_2C => X"03FFFFFEFFFB0078FFF002EE007F003FFFFF0066006503A000E202E0032000DE",

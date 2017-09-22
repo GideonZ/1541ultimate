@@ -39,8 +39,8 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
 {
 	static int last_sector = -1;
 	int length = (int)buf_end - (int)buffer;
-	if (length > 900000) {
-		length = 900000;
+	if (length > 9000000) {
+		return false;
 	}
     int page_size = flash->get_page_size();
     int page = address / page_size;

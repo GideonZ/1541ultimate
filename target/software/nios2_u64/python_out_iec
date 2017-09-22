@@ -1,0 +1,74 @@
+             Tv = 1475
+             Ts = 1475
+             Ttk = 200
+             Tda = 80
+             T0 = 80
+             T1 = 80
+             Tne = 40
+             Tye = 1000
+             Tbb = 90
+             start
+             ATN_IRQ
+             _atn_loop
+             _no_push1
+             _no_push2
+             _keep_data
+             _check_after_atn_byte
+             _listen_normally
+             ATN_TURNAROUND
+             TRANSMIT
+             _tx_data
+             _tx_done
+             TX_BYTE
+             _no_tx_eoi
+             RELEASE
+             RECEIVE_BYTE
+             _wait1
+             _recv0
+             RECEIVE_ATN_BYTE
+             _recv8bits
+             PUSH_BYTE
+             _noeoi
+             CHECK_ATN_BYTE
+             _dont_untalk
+             _dont_talk
+             _dont_unlisten
+             _dont_listen
+             _dont_print
+             _error
+             reset_vec
+             MASTER_START
+             _atn_send
+             _master_test
+             _release_atn_and_tx
+             _release_and_turnaround
+             no_device
+             WARP_START
+             warp_continue
+             warp_data
+             warp_error
+             warp_sync
+             warp_timeout
+             get_warp_byte
+             get_4
+             get_32
+             get_128
+             get_68
+             ; Control codes sent to software via FIFO
+             ; $41 : Start of ATN
+             ; $42 : End of ATN
+             ; $43 : Ready to send (software can now push data to be sent in FIFO)
+             ; $44 : Ready to receive (not sent to software)
+             ; $45 : End of reception (OEI)
+             ; $46 : Start of printer data
+             ; $47 : Byte transmitted  (we need to know this, because our fifo can get flushed by ATN)
+             ; $57 : Acknowledge WARP mode enabled
+             ; $AD : End of WARP bloc reception (328 bytes)
+             ; $AE : Timeout on WARP (never sent because subroutine never called)
+             ; $DA : Start of WARP reception
+             ; $DE : WARP reception failure
+             ; $E5 : Invalid control code received from software
+             ; $E6 : No device, we are alone on IEC bus
+             ; Control codes received from software via FIFO
+             ; $57 : Switch to WARP mode (from initial waiting state)
+             ; $1D : Switch to MASTER mode to send ATN commands (from initial waiting state)

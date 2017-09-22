@@ -73,6 +73,31 @@ static const t_flash_address flash_addresses_u2p[] = {
 	{ FLASH_ID_LIST_END,   0x00, 0x3FE000, 0x3FE000, 0x01000 } };
 
 
+static const t_flash_address flash_addresses_u64[] = {
+	{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x298000 }, // 282BD4
+	{ FLASH_ID_APPL,       0x01, 0x290000, 0x290000, 0x0E8000 }, // Max 0.9 MB
+
+	{ FLASH_ID_AR5PAL,     0x00, 0x380000, 0x380000, 0x08000 },
+	{ FLASH_ID_AR6PAL,     0x00, 0x388000, 0x388000, 0x08000 },
+	{ FLASH_ID_FINAL3,     0x00, 0x390000, 0x390000, 0x10000 },
+	{ FLASH_ID_RR38PAL,    0x00, 0x3A0000, 0x3A0000, 0x10000 },
+	{ FLASH_ID_SS5PAL,     0x00, 0x3B0000, 0x3B0000, 0x10000 },
+	{ FLASH_ID_KCS,        0x00, 0x3C0000, 0x3C0000, 0x04000 },
+	{ FLASH_ID_EPYX,       0x00, 0x3C4000, 0x3C4000, 0x02000 },
+	{ FLASH_ID_KERNAL_ROM, 0x00, 0x3C6000, 0x3C6000, 0x02000 },
+	{ FLASH_ID_CUSTOM_DRV, 0x00, 0x3C8000, 0x3C8000, 0x08000 },
+	{ FLASH_ID_CUSTOM_ROM, 0x00, 0x3D0000, 0x3D0000, 0x20000 }, // max size: 128K
+
+//	{ FLASH_ID_TAR_PAL,    0x00, 0x3B0000, 0x3B0000, 0x10000 },
+//	{ FLASH_ID_RR38NTSC,   0x00, 0x330000, 0x330000, 0x10000 },
+//	{ FLASH_ID_TAR_NTSC,   0x00, 0x350000, 0x350000, 0x10000 },
+//	{ FLASH_ID_SS5NTSC,    0x00, 0x370000, 0x370000, 0x10000 },
+//	{ FLASH_ID_AR5NTSC,    0x00, 0x380000, 0x380000, 0x08000 },
+
+
+	{ FLASH_ID_CONFIG,     0x00, 0x3F0000, 0x3F0000, 0x10000 },
+	{ FLASH_ID_LIST_END,   0x00, 0x3FE000, 0x3FE000, 0x01000 } };
+
 W25Q_Flash::W25Q_Flash()
 {
 	sector_size  = 16;			// in pages, default to W25Q16BV
@@ -89,7 +114,9 @@ W25Q_Flash::~W25Q_Flash()
 void W25Q_Flash :: get_image_addresses(int id, t_flash_address *addr)
 {
 	t_flash_address *a;
-	if (sector_count == 1024) {
+	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+		a = (t_flash_address *)flash_addresses_u64;
+	} else if (getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
 		a = (t_flash_address *)flash_addresses_u2p;
 	} else {
 		a = (t_flash_address *)flash_addresses;
@@ -163,6 +190,18 @@ Flash *W25Q_Flash :: tester()
 	    total_size   = 16384;
 		return this;
 	}
+	if(capacity == 0x17) { // 64 Mbit
+		sector_size  = 16;
+		sector_count = 2048;
+	    total_size   = 32768;
+		return this;
+	}
+	if(capacity == 0x18) { // 128 Mbit
+		sector_size  = 16;
+		sector_count = 4096;
+	    total_size   = 65536;
+		return this;
+	}
 
 	return NULL;
 }
@@ -176,6 +215,10 @@ const char *W25Q_Flash :: get_type_string(void)
 		return "W25Q16";
 	case 16384:
 		return "W25Q32";
+	case 32768:
+		return "W25Q64";
+	case 65536:
+		return "W25Q128";
 	default:
 		return "Winbond";
 	}
@@ -194,7 +237,9 @@ int W25Q_Flash :: get_sector_size(int addr)
 int W25Q_Flash :: read_image(int id, void *buffer, int buf_size)
 {
 	t_flash_address *a;
-	if (sector_count == 1024) {
+	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+		a = (t_flash_address *)flash_addresses_u64;
+	} else if (getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
 		a = (t_flash_address *)flash_addresses_u2p;
 	} else {
 		a = (t_flash_address *)flash_addresses;

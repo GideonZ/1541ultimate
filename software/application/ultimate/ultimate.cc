@@ -84,23 +84,32 @@ extern "C" void ultimate_main(void *a)
 	}
 
     char title[48];
-    if(capabilities & CAPAB_ULTIMATE2PLUS) {
+    if(capabilities & CAPAB_ULTIMATE64) {
+    	sprintf(title, "\eA*** Ultimate 64 - %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+    } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
     	sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
     } else {
     	sprintf(title, "\eA**** 1541 Ultimate %s (%b) ****\eO", APPL_VERSION, getFpgaVersion());
     }
 
+    if(capabilities & CAPAB_ULTIMATE64) {
+        system_usb_keyboard.setMatrix((volatile uint8_t *)MATRIX_KEYB);
+    }
+
+/*
     if(capabilities & CAPAB_OVERLAY) {
             printf("Using Overlay module as user interface...\n");
             overlay = new Overlay(false);
             primaryUserInterface = new UserInterface(title);
-            system_usb_keyboard.setMatrix((volatile uint8_t *)MATRIX_KEYB);
             Browsable *root = new BrowsableRoot();
         	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
             primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
             primaryUserInterface->init(overlay);
 
-    } else if(c64 && c64->exists()) {
+    } else
+*/
+
+    if(c64 && c64->exists()) {
         primaryUserInterface = new UserInterface(title);
 
     	// Instantiate and attach the root tree browser

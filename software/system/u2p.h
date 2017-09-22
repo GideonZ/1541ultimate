@@ -16,8 +16,7 @@
 
 #define DDR2_BASE     (U2P_IO_BASE + 0x0100)
 #define REMOTE_BASE   (U2P_IO_BASE + 0x0200)
-#define DOWNLOAD_UART (U2P_IO_BASE + 0x0400)
-#define MATRIX_KEYB   (U2P_IO_BASE + 0x0800)
+#define MATRIX_KEYB   (U2P_IO_BASE + 0x0300)
 
 #define DDR2_ADDR_LOW  (*(volatile uint8_t *)(DDR2_BASE + 0x00))
 #define DDR2_ADDR_HIGH (*(volatile uint8_t *)(DDR2_BASE + 0x01))
@@ -49,5 +48,8 @@
 #define REMOTE_READ_PARAM   (*(volatile uint8_t *)(REMOTE_BASE + 0x04)) = 1
 #define REMOTE_BUSY         (*(volatile uint8_t *)(REMOTE_BASE + 0x05))
 #define REMOTE_READ_RESULT  (*(volatile uint32_t *)(REMOTE_BASE + 0x00))
+
+#define U2PIO_UR_BUFFER_ENABLE  0x80
+#define U2PIO_UR_BUFFER_DISABLE 0x40
 
 #endif /* U2P_H_ */

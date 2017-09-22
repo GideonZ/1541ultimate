@@ -18,6 +18,7 @@
 #include "itu.h"
 #include "profiler.h"
 #include "usb_nano.h"
+#include "u64.h"
 
 void RmiiRxInterruptHandler(void) __attribute__ ((weak));
 uint8_t command_interface_irq(void) __attribute__ ((weak));
@@ -105,7 +106,21 @@ static void test_i2c_mdio(void) {
 	U2PIO_ULPI_RESET = 0;
 
 	// enable buffer
-	U2PIO_ULPI_RESET = 0x80;
+	U2PIO_ULPI_RESET = U2PIO_UR_BUFFER_ENABLE;
+
+	// Try to read EDID, just a hardware test
+	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+		U64_HDMI_REG = U64_HDMI_HPD_RESET;
+
+		if (U64_HDMI_REG & U64_HDMI_HPD_CURRENT) {
+			U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
+			printf("Monitor detected, now reading EDID.\n");
+			uint8_t edid[256];
+			i2c_read_block(0xA0, 0x00, edid, 256);
+			dump_hex_relative(edid, 256);
+			U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+		}
+	}
 }
 
 int main(int argc, char *argv[]) {

@@ -5,8 +5,8 @@
 #include "flash.h"
 #include "iomap.h"
 
-#define W25Q_PAGE_CONFIG_START (8192-256)
 #define W25Q_NUM_CONFIG_PAGES  16
+#define W25Q_PAGE_CONFIG_START ((sector_count - W25Q_NUM_CONFIG_PAGES) * sector_size)
 
 #define W25Q_ContinuousArrayRead_LowFrequency       0x03
 #define W25Q_ContinuousArrayRead_HighFrequency      0x0B
