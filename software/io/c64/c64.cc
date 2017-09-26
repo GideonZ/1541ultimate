@@ -740,11 +740,13 @@ void C64 :: set_cartridge(cart_def *def)
         flash->read_image(def->id, (void *)mem_addr, def->length);
     } else if(def->id && !def->type) {
 #ifndef RECOVERYAPP
-        char* buffer = new char[128*1024];
+#ifndef NO_FILE_ACCESS
+    	char* buffer = new char[128*1024];
         printf("Requesting crt copy from Flash, id = %b to mem addr %p\n", def->id, buffer);
         flash->read_image(def->id, (void *)buffer, 128*1024);
-	FileTypeCRT :: parseCrt(buffer);
-	delete buffer;
+        FileTypeCRT :: parseCrt(buffer);
+        delete buffer;
+#endif
 #endif
     } else if (def->length) { // not ram, not flash.. then it has to be custom
         *(uint8_t *)(mem_addr+5) = 0; // disable previously started roms.

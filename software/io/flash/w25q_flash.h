@@ -34,8 +34,8 @@
 
 class W25Q_Flash : public Flash
 {
-//    int page_size;
-    int sector_size;
+protected:
+	int sector_size;
 	int sector_count;
     int total_size;
 

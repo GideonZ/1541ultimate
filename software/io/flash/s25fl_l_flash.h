@@ -49,12 +49,8 @@
 #define SPI_FORCE_SS 0x01
 #define SPI_LEVEL_SS 0x02
 
-class S25FLxxxL_Flash : public W25Q_Flash
+class S25FLxxxL_Flash : protected W25Q_Flash
 {
-    int sector_size;
-	int sector_count;
-    int total_size;
-	
 public:    
     S25FLxxxL_Flash();
     virtual ~S25FLxxxL_Flash();

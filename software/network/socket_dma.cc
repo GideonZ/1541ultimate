@@ -22,7 +22,7 @@
 #define SOCKET_CMD_WAIT	    0xFF05
 #define SOCKET_CMD_DMAWRITE 0xFF06
 
-SocketDMA socket_test; // global that causes the object to exist
+SocketDMA socket_dma; // global that causes the object to exist
 
 SocketDMA::SocketDMA() {
 	xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );

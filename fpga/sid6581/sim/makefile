@@ -112,6 +112,12 @@ $(TESTCASE)_ENTITY			:= $(TESTCASE)
 $(TESTCASE)_TIME			:= -all
 $(TESTCASE)_DO_GUI_BEFORE	:= 
 
+TESTCASE 					:= tb_sid_from_stream
+TESTCASES					:= $(TESTCASES) $(TESTCASE)
+$(TESTCASE)_SRC				:= $(TESTCASE).vhd
+$(TESTCASE)_ENTITY			:= $(TESTCASE)
+$(TESTCASE)_TIME			:= -all
+$(TESTCASE)_DO_GUI_BEFORE	:= 
 
 ###############################################################################
 #### Regression tests

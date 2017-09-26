@@ -18,7 +18,7 @@
 SocketTest socket_test; // global that causes the object to exist
 
 SocketTest::SocketTest() {
-	xTaskCreate( restartThread, "Reload Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
+//	xTaskCreate( restartThread, "Debug Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
 }
 
 SocketTest::~SocketTest() {
@@ -27,11 +27,11 @@ SocketTest::~SocketTest() {
 
 int  SocketTest::fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
-	item_list.append(new Action("Socket Test Server", SocketTest :: doTest1, 0, 0));
-	item_list.append(new Action("Socket Test Client", SocketTest :: doTest2, 1, 0));
-	item_list.append(new Action("Start RTOS Trace", SocketTest :: profiler, 2, 1));
-	item_list.append(new Action("Stop RTOS Trace", SocketTest :: profiler, 2, 0));
-	item_list.append(new Action("Save RTOS Trace", SocketTest :: saveTrace, 3, 0));
+//	item_list.append(new Action("Socket Test Server", SocketTest :: doTest1, 0, 0));
+//	item_list.append(new Action("Socket Test Client", SocketTest :: doTest2, 1, 0));
+	item_list.append(new Action("Start BUS Trace", SocketTest :: profiler, 2, 1));
+	item_list.append(new Action("Stop BUS Trace", SocketTest :: profiler, 2, 0));
+	item_list.append(new Action("Save BUS Trace", SocketTest :: saveTrace, 3, 0));
 	return 3;
 }
 
@@ -47,15 +47,15 @@ int SocketTest :: profiler(SubsysCommand *cmd) {
 int SocketTest :: saveTrace(SubsysCommand *cmd)
 {
 	File *f;
-	uint32_t start_address = 0x1000000;
-	uint32_t end_address = 0x1000000;
+	uint32_t start_address = 0x2000000;
+	uint32_t end_address = 0x2000000;
 	uint32_t transferred;
 
 	FileManager *fm = FileManager :: getFileManager();
 
 	end_address = PROFILER_ADDR;
 	printf("Logic Analyzer stopped. Address = %p\n", end_address);
-	FRESULT fres = fm->fopen(cmd->path.c_str(), "rtostrac.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+	FRESULT fres = fm->fopen(cmd->path.c_str(), "bustrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
 	if(fres == FR_OK) {
 		printf("Opened file successfully.\n");
 		f->write((void *)start_address, end_address - start_address, &transferred);

@@ -350,7 +350,6 @@ architecture logic of ultimate_logic_32 is
     signal clk_o, clk_i     : std_logic := '1';
     signal data_o, data_i   : std_logic := '1';
     signal srq_i            : std_logic := '1';
-	
     signal atn_o_2          : std_logic := '1';
     signal clk_o_2          : std_logic := '1';
     signal data_o_2         : std_logic := '1';
@@ -386,6 +385,7 @@ architecture logic of ultimate_logic_32 is
     signal dirty_led_1_n    : std_logic := '1';
     signal dirty_led_2_n    : std_logic := '1';
 
+    signal dman_oi          : std_logic;
     signal trigger_1        : std_logic;
     signal trigger_2        : std_logic;
     signal sys_irq_usb      : std_logic := '0';
@@ -633,7 +633,7 @@ begin
             rwn_o           => rwn_o, -- goes with addr_t
 
             ba_i            => ba_i,
-            dman_o          => dman_o,
+            dman_o          => dman_oi,
                                        
             exromn_i        => exromn_i,
             exromn_o        => exromn_o,
@@ -679,7 +679,10 @@ begin
             io_req          => io_req_cart,
             io_resp         => io_resp_cart,
             io_irq_cmd      => sys_irq_cmdif );
+
+        dman_o <= dman_oi;
     end generate;
+
 
     i_split1: entity work.io_bus_splitter
     generic map (
@@ -1233,28 +1236,55 @@ begin
                    '0' & atn_o & data_o & clk_o & hw_srq_o & hw_atn_o & hw_data_o & hw_clk_o;
     end generate;
     
+--    g_ela32: if g_profiler generate
+--        signal ev_data  : std_logic_vector(7 downto 0);
+--    begin
+--        i_ela: entity work.logic_analyzer_32
+--        generic map (
+--            g_big_endian   => g_big_endian,
+--            g_timer_div    => 25 )
+--        port map (
+--            clock       => sys_clock,
+--            reset       => sys_reset,
+--            
+--            ev_dav      => '0',
+--            ev_data     => ev_data,
+--            
+--            ---
+--            mem_req     => mem_req_32_debug,
+--            mem_resp    => mem_resp_32_debug,
+--            
+--            io_req      => io_req_debug,
+--            io_resp     => io_resp_debug );
+--         
+--        ev_data <= profiler_irq_flags;
+--    end generate;
+
     g_ela32: if g_profiler generate
-        signal ev_data  : std_logic_vector(7 downto 0);
     begin
-        i_ela: entity work.logic_analyzer_32
+        i_ela: entity work.bus_analyzer_32
         generic map (
-            g_big_endian   => g_big_endian,
-            g_timer_div    => 25 )
+            g_big_endian => g_big_endian
+        )
         port map (
-            clock       => sys_clock,
-            reset       => sys_reset,
-            
-            ev_dav      => '0',
-            ev_data     => ev_data,
-            
-            ---
-            mem_req     => mem_req_32_debug,
-            mem_resp    => mem_resp_32_debug,
-            
-            io_req      => io_req_debug,
-            io_resp     => io_resp_debug );
-         
-        ev_data <= profiler_irq_flags;
+            clock        => sys_clock,
+            reset        => sys_reset,
+            addr         => SLOT_ADDR_i,
+            data         => SLOT_DATA_i,
+            rstn         => RSTn_i,
+            phi2         => PHI2_i,
+            rwn          => RWn_i,
+            ba           => BA_i,
+            IO1n         => IO1n_i,
+            IO2n         => IO2n_i,
+            IRQn         => IRQn_i,
+            NMIn         => NMIn_i,
+            DMAn         => DMAn_oi,
+            mem_req      => mem_req_32_debug,
+            mem_resp     => mem_resp_32_debug,
+            io_req       => io_req_debug,
+            io_resp      => io_resp_debug
+        );
     end generate;
 
     g_no_elas: if not g_profiler and not g_analyzer generate
@@ -1289,5 +1319,6 @@ begin
             rmii_txd    => rmii_txd );
         
     end generate;
+
 
 end logic;

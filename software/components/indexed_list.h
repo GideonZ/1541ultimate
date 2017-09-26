@@ -1,7 +1,7 @@
 #ifndef INDEXED_LIST_H
 #define INDEXED_LIST_H
 
-#include "integer.h"
+#include <stdint.h>
 
 #ifndef ENTER_SAFE_SECTION
 #include "itu.h"

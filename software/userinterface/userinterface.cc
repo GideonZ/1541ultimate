@@ -168,6 +168,7 @@ void UserInterface :: run(void)
 bool UserInterface :: buttonDownFor(uint32_t ms)
 {
     bool down = false;
+#ifndef UPDATER
     uint8_t delay = 10;
     TickType_t ticks = delay / portTICK_PERIOD_MS;
     uint32_t elapsed = 0;
@@ -181,6 +182,7 @@ bool UserInterface :: buttonDownFor(uint32_t ms)
             break;
         }
     }
+#endif
     return down;
 }
 #else
@@ -194,7 +196,7 @@ void UserInterface :: swapDisk(void)
 {
 #ifndef RECOVERYAPP
 #ifndef UPDATER                  
-    C1541* drive = C1541::get_last_mounted_drive(); 
+	C1541* drive = C1541::get_last_mounted_drive();
 
     if(drive != NULL) {
       SubsysCommand* swap =

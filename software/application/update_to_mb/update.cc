@@ -403,7 +403,7 @@ int main()
     t_flash_address image_address;
 	flash->get_image_addresses(FLASH_ID_AR5PAL, &image_address);
     flash->read_linear_addr(image_address.start, 2, time_buffer);
-    if(time_buffer[0] == 0xFF)
+    //if(time_buffer[0] == 0xFF)
         virgin = true;
 
     if(virgin || user_interface->popup("Updating to 3.x. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
