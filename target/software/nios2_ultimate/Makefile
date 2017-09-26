@@ -130,6 +130,7 @@ SRCS_CC	 =  u2p_init.cc \
             socket_stream.cc \
             socket_gui.cc \
 			socket_dma.cc \
+			socket_test.cc \
 			rmii_interface.cc \
             home_directory.cc \
 			$(PRJ).cc
