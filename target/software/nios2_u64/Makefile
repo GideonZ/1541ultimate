@@ -133,6 +133,7 @@ SRCS_CC	 =  u2p_init.cc \
 			socket_dma.cc \
 			rmii_interface.cc \
             home_directory.cc \
+			socket_test.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios

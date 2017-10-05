@@ -195,7 +195,7 @@ include ../common/$(LINKMETHOD).mk
 -include $(ALL_DEP_OBJS:.o=.d)
 
 clean:
-	@rm -rf $(OUTPUT) $(RESULT) $(OUTPUTDIRS)
+	@rm -rf $(OUTPUT) $(RESULT) $(OUTPUTDIRS) python*out*
 
 dep:  $(OBJS_CC:.o=.d) $(OBJS_C:.o=.d)
 

@@ -198,6 +198,9 @@ target/software/nios2_testflasher/result
 target/software/nios2_testloader/output
 target/software/nios2_testloader/python*
 target/software/nios2_testloader/result
+target/software/nios2_u64/output
+target/software/nios2_u64/python*
+target/software/nios2_u64/result
 target/software/nios2_ultimate/d
 target/software/nios2_ultimate/output
 target/software/nios2_ultimate/python_out*
@@ -205,6 +208,12 @@ target/software/nios2_ultimate/result
 target/software/nios2_update/output
 target/software/nios2_update/python*
 target/software/nios2_update/result
+target/software/nios2_update_u64/output
+target/software/nios2_update_u64/python*
+target/software/nios2_update_u64/result
+target/software/nios2_update_u64a4/output
+target/software/nios2_update_u64a4/python*
+target/software/nios2_update_u64a4/result
 target/software/programmer/output
 target/software/programmer/result
 target/software/ultimate/output
