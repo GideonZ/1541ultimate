@@ -41,9 +41,9 @@ void dump_trace(FILE *fi, int max)
     const char vcd_middle[] = "\n$enddefinitions $end\n\n#0\n$dumpvars\n";
 
     //   ev_data_c <= sub & task & ev_data;
-//    vector_in <= phi2 & rstn & rwn & ba & irqn & nmin & io1n & io2n & data & addr;
-
-    const char *labels[8] = { "io2","io1","nmi", "irq","ba","RWn","rst","phi2" };
+    //    vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
+    //
+    const char *labels[8] = { "RWn","IOn","ROMn", "INTn","BA","EXROMn","GAMEn","PHI2" };
 
     uint8_t   b;
         
