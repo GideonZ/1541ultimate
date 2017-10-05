@@ -83,6 +83,8 @@ port (
     -- I2C Interface for RTC, audio codec and usb hub
     I2C_SDA     : inout std_logic := 'Z';
     I2C_SCL     : inout std_logic := 'Z';
+    I2C_SDA_18  : inout std_logic := 'Z';
+    I2C_SCL_18  : inout std_logic := 'Z';
 
     -- Flash Interface
     FLASH_CSn   : out   std_logic;
@@ -157,6 +159,11 @@ begin
     CAS_READ    <= pulses(17);
     CAS_WRITE   <= pulses(18);
 --    CAS_MOTOR   <= pulses(19);
+
+    I2C_SCL    <= pulses(2);
+    I2C_SDA    <= pulses(8);
+    I2C_SCL_18 <= pulses(3);    
+    I2C_SDA_18 <= pulses(11);
     
     -- local bus side
     SDRAM_A     <= (others => 'Z');

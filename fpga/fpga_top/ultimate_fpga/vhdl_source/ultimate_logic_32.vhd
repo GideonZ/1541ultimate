@@ -1280,6 +1280,10 @@ begin
             IRQn         => IRQn_i,
             NMIn         => NMIn_i,
             DMAn         => DMAn_oi,
+            ROMLn        => ROMLn_i,
+            ROMHn        => ROMHn_i,
+            EXROMn       => EXROMn_i,
+            GAMEn        => GAMEn_i,
             mem_req      => mem_req_32_debug,
             mem_resp     => mem_resp_32_debug,
             io_req       => io_req_debug,
@@ -1319,6 +1323,5 @@ begin
             rmii_txd    => rmii_txd );
         
     end generate;
-
 
 end logic;

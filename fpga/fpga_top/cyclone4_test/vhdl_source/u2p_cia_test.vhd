@@ -254,6 +254,10 @@ architecture rtl of u2p_cia_test is
     signal slot_test_vector     : std_logic_vector(47 downto 0);
     signal jtag_write_vector    : std_logic_vector(7 downto 0);
 
+    signal rising, falling  : std_logic;
+    signal cia_write   : std_logic;
+    signal cia_read    : std_logic;
+
     signal cia_addr    : std_logic_vector(3 downto 0);
     signal cia_cs_n    : std_logic;
     signal cia_cs2     : std_logic;
@@ -273,6 +277,24 @@ architecture rtl of u2p_cia_test is
     signal hs_to_cia   : std_logic_vector(4 downto 0);
     signal hs_from_cia : std_logic_vector(4 downto 0);
     signal hs_drive    : std_logic_vector(4 downto 0);
+
+    signal pa_from_my_cia   : std_logic_vector(7 downto 0);
+    signal pb_from_my_cia   : std_logic_vector(7 downto 0);
+    signal db_from_my_cia   : std_logic_vector(7 downto 0);
+    signal hs_from_my_cia   : std_logic_vector(4 downto 0);
+    signal irq_from_my_cia  : std_logic;
+    
+    signal cia2_sp_o        : std_logic; 
+    signal cia2_sp_i        : std_logic; 
+    signal cia2_sp_t        : std_logic; 
+    signal cia2_cnt_o       : std_logic; 
+    signal cia2_cnt_i       : std_logic; 
+    signal cia2_cnt_t       : std_logic; 
+    signal cia2_pc_o        : std_logic;
+    signal cia2_port_a_o    : std_logic_vector(7 downto 0);
+    signal cia2_port_a_t    : std_logic_vector(7 downto 0);
+    signal cia2_port_b_o    : std_logic_vector(7 downto 0);
+    signal cia2_port_b_t    : std_logic_vector(7 downto 0);
 
     signal spi_c, spi_d : std_logic_vector(0 to 3);
 
@@ -484,6 +506,8 @@ begin
         rw_n        => cia_rw_n,
         phi2        => cia_phi2,
         irq_n       => cia_irq_n,
+        rising      => rising,
+        falling     => falling,
         db_to_cia   => db_to_cia,
         db_from_cia => db_from_cia,
         db_drive    => db_drive,
@@ -495,7 +519,12 @@ begin
         pb_drive    => pb_drive,
         hs_to_cia   => hs_to_cia,
         hs_from_cia => hs_from_cia,
-        hs_drive    => hs_drive
+        hs_drive    => hs_drive,
+
+        pb_from_my_cia => pb_from_my_cia,
+        db_from_my_cia => db_from_my_cia,
+        hs_from_my_cia => hs_from_my_cia,
+        irq_from_my_cia => irq_from_my_cia
     );
     
 
@@ -782,16 +811,115 @@ begin
     pb_from_cia(6) <= SLOT_IO1n;
     pb_from_cia(7) <= SLOT_DOTCLK;
    
-    SLOT_RWn       <= hs_to_cia(0) when hs_drive(0) = '1' else 'Z';
-    SLOT_IRQn      <= hs_to_cia(1) when hs_drive(1) = '1' else 'Z';
-    SLOT_ADDR(0)   <= hs_to_cia(2) when hs_drive(2) = '1' else 'Z';
-    SLOT_ADDR(1)   <= hs_to_cia(3) when hs_drive(3) = '1' else 'Z';
-    SLOT_NMIn      <= hs_to_cia(4) when hs_drive(4) = '1' else 'Z';
+    SLOT_RWn       <= hs_to_cia(0) when hs_drive(0) = '1' else 'Z'; -- pin 18 (PC#)
+    SLOT_IRQn      <= hs_to_cia(1) when hs_drive(1) = '1' else 'Z'; -- pin 19 (TOD)
+    SLOT_ADDR(0)   <= hs_to_cia(2) when hs_drive(2) = '1' else 'Z'; -- pin 40 (CNT)
+    SLOT_ADDR(1)   <= hs_to_cia(3) when hs_drive(3) = '1' else 'Z'; -- pin 39 (SP)
+    SLOT_NMIn      <= hs_to_cia(4) when hs_drive(4) = '1' else 'Z'; -- pin 24 (FLAG#)
+
+    -- for 6526, hs_drive should be 10010
 
     hs_from_cia(0) <= SLOT_RWn;
     hs_from_cia(1) <= SLOT_IRQn;
     hs_from_cia(2) <= SLOT_ADDR(0);
     hs_from_cia(3) <= SLOT_ADDR(1);
     hs_from_cia(4) <= SLOT_NMIn;
+
+
+-- Wire mapping:
+-- 21 SLOT_DATA[0]  CIA  2 PA[0]
+-- 20 SLOT_DATA[1]  CIA  3 PA[1]
+-- 19 SLOT_DATA[2]  CIA  4 PA[2]
+-- 18 SLOT_DATA[3]  CIA  5 PA[3]
+-- 17 SLOT_DATA[4]  CIA  6 PA[4]
+-- 16 SLOT_DATA[5]  CIA  7 PA[5]
+-- 15 SLOT_DATA[6]  CIA  8 PA[6]
+-- 14 SLOT_DATA[7]  CIA  9 PA[7]
+-- 13 SLOT_DMA      CIA 10 PB[0]
+-- 12 SLOT_BA       CIA 11 PB[1]
+-- 11 SLOT_ROMLn    CIA 12 PB[2]
+-- 10 SLOT_IO2n     CIA 13 PB[3]
+--  9 SLOT_EXROMn   CIA 14 PB[4]
+--  8 SLOT_GAMEn    CIA 15 PB[5]
+--  7 SLOT_IO1n     CIA 16 PB[6]
+--  6 SLOT_DOTCLK   CIA 17 PB[7]
+--  5 SLOT_RWn      CIA 18 PC#
+--  4 SLOT_IRQn     CIA 19 TOD
+                    
+--  E SLOT_PHI2     CIA 21 IRQ#
+--  B SLOT_ROMHn    CIA 22 R/W#
+--  C SLOT_RSTn     CIA 23 CS#
+--  D SLOT_NMIn     CIA 24 FLAG#
+--  F SLOT_ADDR[15] CIA 25 PHI2
+--  H SLOT_ADDR[14] CIA 26 DB[7]
+--  J SLOT_ADDR[13] CIA 27 DB[6]
+--  K SLOT_ADDR[12] CIA 28 DB[5]
+--  L SLOT_ADDR[11] CIA 29 DB[4]
+--  M SLOT_ADDR[10] CIA 30 DB[3]
+--  N SLOT_ADDR[9]  CIA 31 DB[2]
+--  P SLOT_ADDR[8]  CIA 32 DB[1]
+--  R SLOT_ADDR[7]  CIA 33 DB[0]
+--  S SLOT_ADDR[6]  CIA 34 RESET#
+--  T SLOT_ADDR[5]  CIA 35 RS[3]
+--  U SLOT_ADDR[4]  CIA 36 RS[2]
+--  V SLOT_ADDR[3]  CIA 37 RS[1]
+--  W SLOT_ADDR[2]  CIA 38 RS[0]
+--  X SLOT_ADDR[1]  CIA 39 SP
+--  Y SLOT_ADDR[0]  CIA 40 CNT
+-- 
+    cia_write <= not cia_cs_n and not cia_rw_n;
+    cia_read  <= not cia_cs_n and     cia_rw_n;
+
+    i_my_cia: entity work.cia_registers
+        generic map (
+            g_unit_name => "CIA_2" )
+        port map (
+            clock       => sys_clock,
+            rising      => rising,
+            falling     => falling,
+            reset       => not cia_reset_n,
+            
+            addr        => unsigned(cia_addr),
+            wen         => cia_write,
+            ren         => cia_read,
+            data_out    => db_from_my_cia,
+            data_in     => db_to_cia,
+        
+            -- pio --
+            port_a_o    => cia2_port_a_o,
+            port_a_t    => cia2_port_a_t,
+            port_a_i    => pa_from_my_cia,
+            
+            port_b_o    => cia2_port_b_o,
+            port_b_t    => cia2_port_b_t,
+            port_b_i    => pb_from_my_cia,
+        
+            -- serial pin
+            sp_o        => cia2_sp_o,
+            sp_i        => cia2_sp_i,
+            sp_t        => cia2_sp_t,
+            
+            cnt_i       => cia2_cnt_i,
+            cnt_o       => cia2_cnt_o,
+            cnt_t       => cia2_cnt_t,
+            
+            tod_pin     => SLOT_IRQn,
+            pc_o        => cia2_pc_o,
+            flag_i      => SLOT_NMIn,
+            
+            irq         => irq_from_my_cia );
+
+    
+    hs_from_my_cia(0) <= cia2_pc_o;
+    hs_from_my_cia(1) <= SLOT_IRQn;
+    hs_from_my_cia(2) <= cia2_cnt_i;
+    hs_from_my_cia(3) <= cia2_sp_i; 
+    hs_from_my_cia(4) <= SLOT_NMIn;
+
+    pa_from_my_cia <= cia2_port_a_o or not cia2_port_a_t;
+    pb_from_my_cia <= cia2_port_b_o or not cia2_port_b_t;
+
+    cia2_cnt_i <= (cia2_cnt_o or not cia2_cnt_t) and (hs_to_cia(2) or not hs_drive(2));
+    cia2_sp_i  <= (cia2_sp_o  or not cia2_sp_t)  and (hs_to_cia(3) or not hs_drive(3));
 
 end architecture;

@@ -21,6 +21,10 @@ port (
     rwn         : in  std_logic;
     ba          : in  std_logic;
     dman        : in  std_logic;
+    ROMLn       : in  std_logic;
+    ROMHn       : in  std_logic;
+    EXROMn      : in  std_logic;
+    GAMEn       : in  std_logic;
     IO1n        : in  std_logic;
     IO2n        : in  std_logic;
     IRQn        : in  std_logic;
@@ -51,8 +55,15 @@ architecture gideon of bus_analyzer_32 is
     signal phi_d1       : std_logic := '0';
     signal phi_d2       : std_logic := '0';
     signal dman_c       : std_logic := '0';
+    signal io           : std_logic;
+    signal interrupt    : std_logic;
+    signal rom          : std_logic;
 begin
-    vector_in <= phi2 & rstn & rwn & ba & irqn & nmin & io1n & io2n & data & addr;
+    io <= io1n and io2n;
+    rom <= romln and romhn;
+    interrupt <= irqn and nmin;
+    
+    vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
 
     process(clock)
     begin

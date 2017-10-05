@@ -19,7 +19,14 @@ port (
     rw_n        : out std_logic;
     phi2        : out std_logic;
     irq_n       : in  std_logic;
+    rising      : out std_logic;
+    falling     : out std_logic;
     
+    db_from_my_cia  : in  std_logic_vector(7 downto 0);
+    pb_from_my_cia  : in  std_logic_vector(7 downto 0);
+    hs_from_my_cia  : in  std_logic_vector(4 downto 0);
+    irq_from_my_cia : in  std_logic;
+
     db_to_cia   : out std_logic_vector(7 downto 0);
     db_from_cia : in  std_logic_vector(7 downto 0);
     db_drive    : out std_logic;
@@ -90,10 +97,19 @@ begin
                 when X"8" | X"9" =>
                     io_resp.data(4 downto 0) <= hs_from_cia;
                     io_resp.data(5) <= irq_n;
+                when X"B" =>
+                    io_resp.data <= db_from_my_cia;
+                when X"C" =>
+                    io_resp.data <= pb_from_my_cia;
+                when X"D" =>
+                    io_resp.data(4 downto 0) <= hs_from_my_cia;
+                    io_resp.data(5) <= not irq_from_my_cia;
                 when others =>
                     null;
                 end case;
             end if;
+            rising <= '0';
+            falling <= '0';
             if io_req.write = '1' then
                 io_resp.ack <= '1';
                 case local is
@@ -107,12 +123,14 @@ begin
                     reg_reset_n <= reg_reset_n or io_req.data(2);
                     reg_rw_n    <= reg_rw_n    or io_req.data(3);
                     reg_phi2    <= reg_phi2    or io_req.data(4);
+                    rising <= not reg_phi2 and io_req.data(4); -- pulse if it was zero.
                 when X"3" =>
                     reg_cs_n    <= reg_cs_n    and not io_req.data(0);
                     reg_cs2     <= reg_cs2     and not io_req.data(1);
                     reg_reset_n <= reg_reset_n and not io_req.data(2);
                     reg_rw_n    <= reg_rw_n    and not io_req.data(3);
                     reg_phi2    <= reg_phi2    and not io_req.data(4);
+                    falling <= reg_phi2 and io_req.data(4); -- pulse if it was one.
                 when X"4" =>
                     pa_to_cia   <= io_req.data;
                 when X"5" =>

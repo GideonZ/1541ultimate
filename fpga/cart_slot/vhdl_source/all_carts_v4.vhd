@@ -144,7 +144,7 @@ begin
                 mode_bits    <= (others => '0');
                 bank_bits    <= (others => '0');
                 ext_bank     <= (others => '0');
-		georam_bank  <= (others => '0');
+                georam_bank  <= (others => '0');
                 allow_bank   <= '0';
                 ram_select   <= '0';
                 do_io2       <= '1';
@@ -390,14 +390,14 @@ begin
                 nmi_n     <= '1';
 
             when c_georam =>
-	        if io_write='1' and io_addr(8 downto 7) = "11" then
-		   if io_addr(0) = '0' then
-		      georam_bank(5 downto 0) <= io_wdata(5 downto 0) and georam_mask(5 downto 0);
-		      georam_bank(15 downto 14) <= io_wdata(7 downto 6) and georam_mask(15 downto 14);
-		   else
-		      georam_bank(13 downto 6) <= io_wdata(7 downto 0) and georam_mask(13 downto 6);
-	           end if; 
-		end if;
+    	        if io_write='1' and io_addr(8 downto 7) = "11" then
+                    if io_addr(0) = '0' then
+                        georam_bank(5 downto 0) <= io_wdata(5 downto 0) and georam_mask(5 downto 0);
+    		            georam_bank(15 downto 14) <= io_wdata(7 downto 6) and georam_mask(15 downto 14);
+                    else
+                        georam_bank(13 downto 6) <= io_wdata(7 downto 0) and georam_mask(13 downto 6);
+                    end if; 
+                end if;
                 game_n    <= '1';
                 exrom_n   <= '1';
                 serve_rom <= '1';
@@ -412,16 +412,16 @@ begin
                 elsif io_read='1' and io_addr(8)='0' then
                     mode_bits(0) <= '1';
                 end if;
-		if mode_bits(0)='1' then
+        		if mode_bits(0)='1' then
                    game_n    <= '0';
                    exrom_n   <= '0';
-	        elsif slot_addr(15)='1' and not(slot_addr(14 downto 13) = "10") then
+                elsif slot_addr(15)='1' and not(slot_addr(14 downto 13) = "10") then
                    game_n    <= '0';
                    exrom_n   <= '1';
                 else
                    game_n    <= '1';
                    exrom_n   <= '1';
-		end if;		
+                end if;		
                 serve_rom <= '1';
                 serve_io1 <= '1';
                 serve_io2 <= '0';
