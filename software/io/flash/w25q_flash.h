@@ -20,7 +20,9 @@
 #define W25Q_WriteDisable							0x04
 #define W25Q_ReadStatusRegister1					0x05
 #define W25Q_ReadStatusRegister2					0x35
-#define W25Q_WriteStatusRegister					0x01
+#define W25Q_WriteStatusRegister1					0x01
+#define W25Q_WriteStatusRegister2					0x31
+#define W25Q_WriteStatusRegister3					0x11
 #define W25Q_PageProgram							0x02
 
 #define SPI_FLASH_DATA     *((volatile uint8_t *)(FLASH_BASE + 0x00))

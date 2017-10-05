@@ -40,11 +40,8 @@ extern uint32_t _recovery_app_end;
 
 void do_update(void)
 {
-	printf("*** U2+ Updater ***\n\n");
+	printf("*** U64 Updater ***\n\n");
 
-	REMOTE_FLASHSEL_1;
-    REMOTE_FLASHSELCK_0;
-    REMOTE_FLASHSELCK_1;
 	Flash *flash = get_flash();
 
     GenericHost *host = 0;
@@ -69,12 +66,11 @@ void do_update(void)
     console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
 	console_print(screen, "%s\n", rtc.get_time_string(time_buffer, 32));
 
-	REMOTE_FLASHSEL_1;
-    REMOTE_FLASHSELCK_0;
-    REMOTE_FLASHSELCK_1;
-
     Flash *flash2 = get_flash();
-    console_print(screen, "Detected Flash: %s\n", flash2->get_type_string());
+    console_print(screen, "\033\024Detected Flash: %s\n", flash2->get_type_string());
+
+    const char *fpgaType = (getFpgaCapabilities() & CAPAB_FPGA_TYPE) ? "5CEBA4" : "5CEBA2";
+    console_print(screen, "Detected FPGA Type: %s.\nBoard Revision: %b\n\033\037\n", fpgaType, U2PIO_BOARDREV >> 3);
 
 /*
     uint8_t was;
@@ -107,7 +103,6 @@ void do_update(void)
     console_print(screen, "Verify errors: %d\n", errors);
 */
 
-
     if(user_interface->popup("About to flash. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
         flash2->protect_disable();
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");
@@ -137,9 +132,6 @@ void do_update(void)
 */
 
     wait_ms(2000);
-	REMOTE_FLASHSEL_1;
-    REMOTE_FLASHSELCK_0;
-    REMOTE_FLASHSELCK_1;
     REMOTE_RECONFIG = 0xBE;
 	console_print(screen, "You shouldn't see this!\n");
 }

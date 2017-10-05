@@ -14,6 +14,7 @@
 #include "task.h"
 #include "dump_hex.h"
 #include "usb_base.h"
+#include "userinterface.h"
 
 SocketTest socket_test; // global that causes the object to exist
 
@@ -53,12 +54,31 @@ int SocketTest :: saveTrace(SubsysCommand *cmd)
 
 	FileManager *fm = FileManager :: getFileManager();
 
+	bool progress = true;
+	if (!cmd->user_interface)
+		progress = false;
+
 	end_address = PROFILER_ADDR;
 	printf("Logic Analyzer stopped. Address = %p\n", end_address);
 	FRESULT fres = fm->fopen(cmd->path.c_str(), "bustrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
 	if(fres == FR_OK) {
 		printf("Opened file successfully.\n");
-		f->write((void *)start_address, end_address - start_address, &transferred);
+		if(progress) {
+			cmd->user_interface->show_progress("Saving Bus Trace..", 32);
+		}
+		while(start_address < end_address) {
+			uint32_t now = end_address - start_address;
+			if (now > 1024*1024)
+				now = 1024*1024;
+			f->write((void *)start_address, now, &transferred);
+			if(progress) {
+				cmd->user_interface->update_progress(NULL, 1);
+			}
+			start_address += now;
+		}
+		if(progress) {
+			cmd->user_interface->hide_progress();
+		}
 		printf("written: %d...", transferred);
 		fm->fclose(f);
 	} else {

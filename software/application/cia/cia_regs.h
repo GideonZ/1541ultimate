@@ -24,6 +24,9 @@
 #define CIA_HS_SET   (*(volatile uint8_t *)(CIA_TEST_BASE + 0x08))
 #define CIA_HS_CLR   (*(volatile uint8_t *)(CIA_TEST_BASE + 0x09))
 #define CIA_HS_DIR   (*(volatile uint8_t *)(CIA_TEST_BASE + 0x0A))
+#define MINE_DB		 (*(volatile uint8_t *)(CIA_TEST_BASE + 0x0B))
+#define MINE_PB		 (*(volatile uint8_t *)(CIA_TEST_BASE + 0x0C))
+#define MINE_HS		 (*(volatile uint8_t *)(CIA_TEST_BASE + 0x0D))
 
 #define CTRL_CSN  0x01
 #define CTRL_CS2  0x02
