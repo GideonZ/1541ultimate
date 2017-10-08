@@ -109,9 +109,10 @@ begin
         clock         => clock,
         reset         => reset,
                       
-        addr          => sid_addr,
+        waddr         => sid_addr,
         wren          => sid_wren,
         wdata         => sid_wdata,
+        raddr         => sid_addr,
         rdata         => sid_rdata,
 
         comb_wave_l   => control.comb_wave_left,

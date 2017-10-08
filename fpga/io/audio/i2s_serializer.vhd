@@ -20,15 +20,11 @@ port (
     i2s_bclk            : out std_logic;
     i2s_fs              : out std_logic;
     
-    stream_out_data     : out std_logic_vector(23 downto 0);
-    stream_out_tag      : out std_logic_vector(0 downto 0);
-    stream_out_valid    : out std_logic;
-    
-    stream_in_data      : in  std_logic_vector(23 downto 0);
-    stream_in_tag       : in  std_logic_vector(0 downto 0);
-    stream_in_valid     : in  std_logic;
-    stream_in_ready     : out std_logic );
-
+    sample_pulse        : out std_logic;
+    left_sample_out     : out std_logic_vector(23 downto 0);
+    right_sample_out    : out std_logic_vector(23 downto 0);
+    left_sample_in      : in  std_logic_vector(23 downto 0);
+    right_sample_in     : in  std_logic_vector(23 downto 0) );
 end entity;
 
 architecture rtl of i2s_serializer is
@@ -42,31 +38,33 @@ begin
             bit_count <= bit_count + 1;
             i2s_bclk  <= bit_count(1);
             i2s_fs    <= bit_count(7); 
-            stream_in_ready  <= '0';
-            stream_out_valid <= '0';
+            sample_pulse <= '0';
+            
+            if bit_count = X"00" then
+                sample_pulse <= '1';
+            end if;
             
             if bit_count(1 downto 0) = "00" then
                 i2s_out <= shift_reg(shift_reg'left);
             elsif bit_count(1 downto 0) = "10" then
                 shift_reg <= shift_reg(shift_reg'left-1 downto 0) & i2s_in;
             end if;            
+
             if bit_count(6 downto 0) = "1111110" then
-                stream_out_data   <= shift_reg(shift_reg'left-2 downto shift_reg'left - 25);
-                stream_out_tag(0) <= bit_count(7);
-                stream_out_valid  <= '1';
-                if stream_in_valid = '1' and ((bit_count(7) xor stream_in_tag(0)) = '1') then
-                    shift_reg <= '0' & stream_in_data & "0000000";
-                    stream_in_ready <= '1';
+                if bit_count(7) = '0' then
+                    left_sample_out  <= shift_reg(shift_reg'left-2 downto shift_reg'left - 25);
+                    shift_reg <= '0' & left_sample_in & "0000000";
                 else
-                    shift_reg <= (others => '0');
+                    right_sample_out <= shift_reg(shift_reg'left-2 downto shift_reg'left - 25);
+                    shift_reg <= '0' & right_sample_in & "0000000";
                 end if;
             end if;
             
             if reset='1' then
                 bit_count <= (others => '1');
                 i2s_out   <= '0';
-                stream_in_ready <= '0';
-                stream_out_valid <= '0';
+                left_sample_out <= (others => '0');
+                right_sample_out <= (others => '0');
             end if;
         end if;
     end process;

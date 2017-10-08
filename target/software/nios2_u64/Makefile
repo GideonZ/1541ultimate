@@ -88,7 +88,6 @@ SRCS_CC	 =  u2p_init.cc \
 			config_menu.cc \
 			context_menu.cc \
 			task_menu.cc \
-			audio_select.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
 			filetype_prg.cc \
@@ -134,10 +133,12 @@ SRCS_CC	 =  u2p_init.cc \
 			rmii_interface.cc \
             home_directory.cc \
 			socket_test.cc \
+			u64_config.cc \
 			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
+VPATH +=	$(PATH_SW)/u64
 VPATH +=	$(PATH_SW)/nios_appl_bsp
 VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc

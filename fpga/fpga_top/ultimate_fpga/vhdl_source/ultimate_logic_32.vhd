@@ -158,10 +158,16 @@ port (
     ULPI_DATA   : inout std_logic_vector(7 downto 0) := "ZZZZZZZZ";
 
     -- Cassette Interface
-    CAS_MOTOR   : in    std_logic := '0';
-    CAS_SENSE   : inout std_logic := 'Z';
-    CAS_READ    : inout std_logic := 'Z';
-    CAS_WRITE   : inout std_logic := 'Z';
+    c2n_read_in     : in  std_logic := '1';
+    c2n_write_in    : in  std_logic := '1';
+    c2n_read_out    : out std_logic := '1';
+    c2n_write_out   : out std_logic := '1';
+    c2n_read_en     : out std_logic := '0';
+    c2n_write_en    : out std_logic := '0';
+    c2n_sense_in    : in  std_logic := '0';
+    c2n_sense_out   : out std_logic := '0';
+    c2n_motor_in    : in  std_logic := '0';
+    c2n_motor_out   : out std_logic := '0';
     
     -- Ethernet RMII interface
     eth_clock       : in std_logic := '0';
@@ -369,10 +375,6 @@ architecture logic of ultimate_logic_32 is
     signal c2n_sense_in     : std_logic := '0';
     signal cas_read_c       : std_logic;
     signal cas_write_c      : std_logic;
-    signal c2n_out_r		: std_logic := '1';
-    signal c2n_out_w		: std_logic := '1';
-    signal c2n_out_en_r     : std_logic := '0';
-    signal c2n_out_en_w     : std_logic := '0';
 	signal busy_led			: std_logic;
 	signal sd_busy          : std_logic;
 	signal sd_act_stretched : std_logic;
@@ -683,7 +685,6 @@ begin
         dman_o <= dman_oi;
     end generate;
 
-
     i_split1: entity work.io_bus_splitter
     generic map (
         g_range_lo  => 17,
@@ -960,7 +961,7 @@ begin
     end generate;
 
     r_c2n: if g_c2n_streamer generate
-        i_c2n: entity work.c2n_playback_io
+        i_c2n: entity work.c2n_playback_io -- tap -> signals
         generic map (
             g_clock_freq    => g_clock_freq )
         port map (
@@ -972,15 +973,19 @@ begin
 
 			c64_stopped		=> c64_stopped,
             phi2_tick       => phi2_tick,
-            c2n_sense       => c2n_sense,
-            c2n_motor       => CAS_MOTOR,
-            c2n_out_en_r    => c2n_out_en_r,
-            c2n_out_en_w    => c2n_out_en_w,
-            c2n_out_r       => c2n_out_r,
-            c2n_out_w       => c2n_out_w );
+
+            c2n_sense_in    => c2n_sense_in,
+            c2n_motor_in    => c2n_motor_in,
+
+            c2n_sense_out   => c2n_play_sense_out,
+            c2n_motor_out   => c2n_play_motor_out,
+            c2n_out_en_r    => c2n_read_en,
+            c2n_out_en_w    => c2n_write_en,
+            c2n_out_r       => c2n_read_out,
+            c2n_out_w       => c2n_write_out );
     end generate;
     
-    r_c2n_rec: if g_c2n_recorder generate
+    r_c2n_rec: if g_c2n_recorder generate -- signals => tap
         i_c2n: entity work.c2n_record
         port map (
             clock           => sys_clock,
@@ -993,12 +998,17 @@ begin
 			c64_stopped		=> c64_stopped,
             phi2_tick       => phi2_tick,
 
-            pull_sense      => c2n_pull_sense,
             c2n_sense       => c2n_sense_in,
-            c2n_motor       => CAS_MOTOR,
-            c2n_write       => CAS_WRITE,
-            c2n_read        => CAS_READ );
+            c2n_motor_in    => c2n_motor_in,
+            c2n_write       => c2n_write_in,
+            c2n_read        => c2n_read_in,
+
+            pull_sense      => c2n_rec_sense_out,
+            c2n_motor_out   => c2n_rec_motor_out );
     end generate;
+
+    c2n_sense_out <= c2n_play_sense_out or c2n_rec_sense_out;
+    c2n_motor_out <= c2n_play_motor_out or c2n_rec_motor_out;
 
     r_icap: if g_icap generate
         i_icap: entity work.icap
@@ -1112,8 +1122,8 @@ begin
     process(sys_clock)
     begin
         if rising_edge(sys_clock) then
-            cas_read_c  <= CAS_READ;
-            cas_write_c <= CAS_WRITE;
+            cas_read_c  <= c2n_read_in;
+            cas_write_c <= c2n_write_in;
 
             audio_left <= (others => '0');
             audio_right <= (others => '0');
