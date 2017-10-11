@@ -364,6 +364,12 @@ architecture logic of ultimate_logic_32 is
 	signal hw_clk_o	        : std_logic := '1';
 	signal hw_data_o		: std_logic := '1';
     signal hw_srq_o         : std_logic := '1';
+
+    -- Cassette
+    signal c2n_play_sense_out   : std_logic := '0';
+    signal c2n_play_motor_out   : std_logic := '0';
+    signal c2n_rec_sense_out    : std_logic := '0';
+    signal c2n_rec_motor_out    : std_logic := '0';
     
     -- miscellaneous interconnect
     signal c64_reset_in_n   : std_logic;
@@ -371,8 +377,6 @@ architecture logic of ultimate_logic_32 is
     signal c64_irq          : std_logic;
     signal phi2_tick        : std_logic;
     signal c64_stopped		: std_logic;
-    signal c2n_sense        : std_logic := '0';
-    signal c2n_sense_in     : std_logic := '0';
     signal cas_read_c       : std_logic;
     signal cas_write_c      : std_logic;
 	signal busy_led			: std_logic;
@@ -1048,12 +1052,6 @@ begin
         
     end generate;
 
-	CAS_SENSE <= '0' when (c2n_sense='1') or (c2n_pull_sense='1') else 'Z';
-	CAS_READ  <= c2n_out_r when c2n_out_en_r = '1' else 'Z';
-	CAS_WRITE <= c2n_out_w when c2n_out_en_w = '1' else 'Z';
-
-    c2n_sense_in <= '1' when CAS_SENSE='0' else '0';
-	
     i_conv32_1541: entity work.mem_to_mem32(route_through)
     generic map (
         g_big_endian => g_big_endian )

@@ -75,7 +75,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
     fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
     if (cmd->functionID == REUFILE_PLAYMOD) {
-        audio_configurator.clear_sampler_registers();
+    	AudioConfig :: clear_sampler_registers();
     }
 
     sectors = (info.size >> 9);
@@ -119,9 +119,7 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
 		} else {
 			mod_cart.custom_addr = (void *)&_module_bin_start;
 
-			// Select MOD output
-			ioWrite8(AUDIO_SELECT_LEFT, 6);
-    		ioWrite8(AUDIO_SELECT_RIGHT, 7);
+			AudioConfig :: set_sampler_output();
 
     		SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&mod_cart, "", "");
 			c64_command->execute();

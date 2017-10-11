@@ -158,11 +158,3 @@ void AudioConfig :: effectuate_settings()
     }
 }
 
-void AudioConfig :: clear_sampler_registers()
-{
-    if(getFpgaCapabilities() & CAPAB_SAMPLER) {
-        for(int i=0;i<64;i++) {
-            ioWrite8(SAMPLER_BASE + i, 0);
-        }
-    }
-}

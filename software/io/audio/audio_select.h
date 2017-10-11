@@ -37,7 +37,22 @@ public:
     ~AudioConfig() {}
 
     void effectuate_settings();
-    void clear_sampler_registers();
+
+    static void clear_sampler_registers() {
+        if(getFpgaCapabilities() & CAPAB_SAMPLER) {
+            for(int i=0;i<64;i++) {
+                ioWrite8(SAMPLER_BASE + i, 0);
+            }
+        }
+    }
+
+    static void set_sampler_output() {
+        if(getFpgaCapabilities() & CAPAB_SAMPLER) {
+    		// Select MOD output
+    		ioWrite8(AUDIO_SELECT_LEFT, 6);
+    		ioWrite8(AUDIO_SELECT_RIGHT, 7);
+        }
+    }
 };
 
 extern AudioConfig audio_configurator;

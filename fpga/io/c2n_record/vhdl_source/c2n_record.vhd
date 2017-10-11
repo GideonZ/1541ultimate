@@ -20,7 +20,8 @@ port (
     c64_stopped		: in  std_logic;
     
     pull_sense      : out std_logic;
-    c2n_motor       : in  std_logic;
+    c2n_motor_in    : in  std_logic;
+    c2n_motor_out   : out std_logic := '0'; -- not yet used
     c2n_sense       : in  std_logic;
     c2n_read        : in  std_logic;
     c2n_write       : in  std_logic );
@@ -76,7 +77,7 @@ begin
 
             -- signal capture
             stream_en <= c2n_sense and enabled; -- and c2n_motor;
-            motor_en  <= c2n_motor;
+            motor_en  <= c2n_motor_in;
             
             read_s <= (c2n_read and not sel) or (c2n_write and sel);
             read_d <= read_c;

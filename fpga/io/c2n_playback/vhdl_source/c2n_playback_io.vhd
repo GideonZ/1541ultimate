@@ -18,8 +18,10 @@ port (
     phi2_tick       : in  std_logic;
     c64_stopped		: in  std_logic;
     
-    c2n_motor       : in  std_logic;
-    c2n_sense       : out std_logic;
+    c2n_motor_in    : in  std_logic;
+    c2n_motor_out   : out std_logic := '0'; -- not yet used
+    c2n_sense_in    : in  std_logic; -- not used
+    c2n_sense_out   : out std_logic;
     c2n_out_en_w    : out std_logic;
     c2n_out_en_r    : out std_logic;
     c2n_out_r       : out std_logic;
@@ -59,7 +61,7 @@ begin
         if rising_edge(clock) then
             -- c2n pin out and sync
             stream_en <= enabled; --
-            motor_en  <= c2n_motor;
+            motor_en  <= c2n_motor_in;
 
             if fifo_empty='1' and stream_en='1' then
                 error <= '1';
@@ -77,7 +79,7 @@ begin
                     end if;
                     fifo_flush <= req.data(2);
                     mode <= req.data(3);
-                    c2n_sense <= req.data(4);
+                    c2n_sense_out <= req.data(4);
                     sel  <= req.data(7 downto 6);
                 end if;
             elsif req.read='1' then
@@ -166,7 +168,7 @@ begin
                 error   <= '0';
                 mode    <= '0';
                 sel     <= "00";
-                c2n_sense <= '0';
+                c2n_sense_out <= '0';
                 write_pulse <= '0';
             end if;
         end if;
