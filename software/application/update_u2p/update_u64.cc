@@ -76,8 +76,9 @@ void do_update(void)
     uint8_t was;
     uint8_t value = S25FLxxxL_Flash :: write_config_register(&was);
     console_print(screen, "Value of CR3NV was: %b and has become: %b\n", was, value);
+*/
 
-    int size = (int)&_u64_rbf_end - (int)&_u64_rbf_start;
+/*    int size = (int)&_u64_rbf_end - (int)&_u64_rbf_start;
     uint8_t *read_buffer = malloc(size);
     if (!read_buffer) {
     	console_print(screen, "Cannot allocate read buffer.\n");
@@ -102,7 +103,6 @@ void do_update(void)
     }
     console_print(screen, "Verify errors: %d\n", errors);
 */
-
     if(user_interface->popup("About to flash. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
         flash2->protect_disable();
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");

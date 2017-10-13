@@ -24,6 +24,7 @@ uci_stdata  = $df1f
 
 RUNCODE_LOAD_BIT      = %00000001
 RUNCODE_RUN_BIT       = %00000010
+RUNCODE_JUMP_BIT      = %00000100
 RUNCODE_CAPTURE_BIT   = %00001000
 RUNCODE_RECORD_BIT    = %00010000
 RUNCODE_TAPE_BIT      = %00100000
@@ -116,7 +117,15 @@ main_start
 	jsr	$fda3
 	jsr	clone_fd50
 	jsr	clone_fd15
-	jsr	$ff5b
+
+	lda runcode
+	and #RUNCODE_JUMP_BIT
+	bne start_jump
+
+	jsr	$ff5b  ; screen init
+	
+	jsr $e51b
+	jsr $ff5e
 
 ; init basic vectors
 	jsr	$e453
@@ -133,6 +142,45 @@ main_start
 
 	jsr	dma_load
 	jmp	ms_skp3
+
+start_jump
+	; vic init (copy of E5A0, which was normally reached through ff5b
+	
+	LDA #$03        ; set the screen as the output device
+	STA $9A         ; save the output device number
+	LDA #$00        ; set the keyboard as the input device
+	STA $99         ; save the input device number
+	LDX #$2F        ; set the count/index
+-	CPX #$21        ; skip d020
+	BEQ +           ; 
+	CPX #$22        ; skip d021
+	BEQ +           ; 
+	CPX #$12		; skip d011
+	BEQ +
+	LDA $ECB8,X     ; get a vic ii chip initialisation value
+	STA $CFFF,X     ; save it to the vic ii chip
++	DEX             ; decrement the count/index
+	BNE -       	; loop if more to do
+
+	jsr $e51b
+	jsr $ff5e
+
+; init basic vectors
+	jsr	$e453
+; init basic storage (sets $01fc and $01fd to $01)
+	jsr	$e3bf
+; basic start message + new (resets stack pointer to $fa)
+	jsr	$e422
+
+	jsr	wait_cart_ready
+	jsr dma_load_impl
+
+	ldx #jumper_code_end - jumper_code - 1
+-	lda jumper_code,x
+	sta JUMPER,x
+	dex
+	bpl -
+	jmp JUMPER
 
 kbuffer
 	.text	13,"RUN",13
@@ -430,6 +478,7 @@ ready_msg
 dma_load
 	jsr	print_load
 	jsr	print_load2
+dma_load_impl
 	sei
 	ldx	#DMA_LOADER_LEN
 dl_lp1
@@ -515,6 +564,13 @@ runner_relinkjsr = *-runner_st+RUNNER
 runner_runjmp	= *-runner_st+RUNNER
 	jmp	$a7ae		; run
 RUNNER_LEN	= *-runner_st
+
+JUMPER = $0150
+jumper_code
+	sta $dfff
+	cli
+	jmp ($00aa)
+jumper_code_end
 
 ;**************************************************************************
 ;*

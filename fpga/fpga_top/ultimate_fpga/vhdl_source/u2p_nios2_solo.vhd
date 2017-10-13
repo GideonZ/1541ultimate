@@ -216,6 +216,18 @@ architecture rtl of u2p_nios_solo is
     signal sw_iec_o    : std_logic_vector(3 downto 0);
     signal sw_iec_i    : std_logic_vector(3 downto 0);
     
+    -- Cassette
+    signal c2n_read_in      : std_logic;
+    signal c2n_write_in     : std_logic;
+    signal c2n_read_out     : std_logic;
+    signal c2n_write_out    : std_logic;
+    signal c2n_read_en      : std_logic;
+    signal c2n_write_en     : std_logic;
+    signal c2n_sense_in     : std_logic;
+    signal c2n_sense_out    : std_logic;
+    signal c2n_motor_in     : std_logic;
+    signal c2n_motor_out    : std_logic;
+
     -- io buses
     signal io_irq       : std_logic;
     signal io_req       : t_io_req;
@@ -543,10 +555,16 @@ begin
         ULPI_DATA   => ULPI_DATA,
     
         -- Cassette Interface
-        CAS_MOTOR   => CAS_MOTOR,
-        CAS_SENSE   => CAS_SENSE,
-        CAS_READ    => CAS_READ,
-        CAS_WRITE   => CAS_WRITE,
+        c2n_read_in    => c2n_read_in, 
+        c2n_write_in   => c2n_write_in, 
+        c2n_read_out   => c2n_read_out, 
+        c2n_write_out  => c2n_write_out, 
+        c2n_read_en    => c2n_read_en, 
+        c2n_write_en   => c2n_write_en, 
+        c2n_sense_in   => c2n_sense_in, 
+        c2n_sense_out  => c2n_sense_out, 
+        c2n_motor_in   => c2n_motor_in, 
+        c2n_motor_out  => c2n_motor_out, 
         
         -- Ethernet Interface (RMII)
         eth_clock   => RMII_REFCLK, 
@@ -613,6 +631,11 @@ begin
         signal audio_right_filt : signed(17 downto 0);
         signal audio_audio_left : std_logic_vector(audio_left_filt'range);
         signal audio_audio_right: std_logic_vector(audio_right_filt'range);
+
+        signal codec_left_in    : std_logic_vector(23 downto 0);
+        signal codec_right_in   : std_logic_vector(23 downto 0);
+        signal codec_left_out   : std_logic_vector(23 downto 0);
+        signal codec_right_out  : std_logic_vector(23 downto 0);
     begin
         i_filt_left: entity work.lp_filter
         port map (
@@ -636,13 +659,12 @@ begin
             i2s_in           => AUDIO_SDI,
             i2s_bclk         => AUDIO_BCLK,
             i2s_fs           => AUDIO_LRCLK,
-            stream_out_data  => stream_out_data,
-            stream_out_tag   => stream_out_tag,
-            stream_out_valid => stream_out_valid,
-            stream_in_data   => stream_in_data,
-            stream_in_tag    => stream_in_tag,
-            stream_in_valid  => '1',
-            stream_in_ready  => stream_in_ready );
+            sample_pulse     => audio_get_sample,
+            
+            left_sample_out  => codec_left_in,
+            right_sample_out => codec_right_in,
+            left_sample_in   => codec_left_out,
+            right_sample_in  => codec_right_out );
 
         AUDIO_MCLK <= audio_clock;
 
@@ -653,7 +675,6 @@ begin
             clock_out => sys_clock,
             pulse_out => sys_get_sample
         );
-        
 
         i_sync_left: entity work.synchronizer_gzw
         generic map (
@@ -685,25 +706,9 @@ begin
             rx_data     => audio_audio_right
         );
  
-        process(audio_clock)
-        begin
-            if rising_edge(audio_clock) then
-                audio_get_sample <= '0';
-                if stream_in_ready = '1' then
-                    if stream_in_tag(0) = '0' then
-                        stream_in_tag(0) <= '1';
-                        stream_in_data <= std_logic_vector(left_scale(signed(audio_audio_right), 1)) & "0000000";
-                        audio_get_sample <= '1';
-                    else
-                        stream_in_tag(0) <= '0';
-                        stream_in_data <= std_logic_vector(left_scale(signed(audio_audio_left), 1)) & "0000000";
-                    end if;
-                end if;
-                if audio_reset = '1' then
-                    stream_in_tag(0) <= '1';
-                end if;
-            end if; 
-        end process;
+        codec_left_out  <= std_logic_vector(left_scale(signed(audio_audio_left), 1)) & "0000000";
+        codec_right_out <= std_logic_vector(left_scale(signed(audio_audio_right), 1)) & "0000000";
+
     end block;    
     
     SLOT_BUFFER_ENn <= not buffer_en;

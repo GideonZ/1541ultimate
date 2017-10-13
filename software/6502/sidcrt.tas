@@ -60,7 +60,7 @@ start         sei
 
               jsr $ff84           ;init I/O devices / CIA timers
 
-              ;jsr $ff87          ;init RAM, tape buffer, screen (replaced by the following)
+              ;jsr $ff87 (FD50)         ;init RAM, tape buffer, screen (replaced by the following)
 
               ldx #$00
               lda #$00
@@ -1726,14 +1726,14 @@ S8580Lbl      .byte $38, $35, $38, $30, $00
 S65818580Lbl  .byte $36, $35, $38, $31, $20, $2f, $20, $38
               .byte $35, $38, $30, $00
               
-ASCII         .null 'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñİŸıÿß'
+ASCII         .null 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½İŸï¿½ï¿½ï¿½'
 PETSCII       .null 'AAAAAAAaaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYYyyB'
 
               ;examples special characters:
-              ; /HVSC/C64Music/MUSICIANS/W/Walt/Maelkeboetten.sid (Mæclkebøtten)
-              ; /HVSC/C64Music/MUSICIANS/A/Ass_It/Lasst_Uns_Froh.sid (Laßt Uns Froh)
-              ; /HVSC/C64Music/GAMES/A-F/Captain_Blood.sid (by François Lionet)
-              ; /HVSC/C64Music/MUSICIANS/D/Da_Blondie/Brain_Damage.sid (by Attila Szõke)
+              ; /HVSC/C64Music/MUSICIANS/W/Walt/Maelkeboetten.sid (Mï¿½clkebï¿½tten)
+              ; /HVSC/C64Music/MUSICIANS/A/Ass_It/Lasst_Uns_Froh.sid (Laï¿½t Uns Froh)
+              ; /HVSC/C64Music/GAMES/A-F/Captain_Blood.sid (by Franï¿½ois Lionet)
+              ; /HVSC/C64Music/MUSICIANS/D/Da_Blondie/Brain_Damage.sid (by Attila Szï¿½ke)
               ; etc.
 
 fileEnd

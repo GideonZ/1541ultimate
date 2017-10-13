@@ -30,7 +30,7 @@ const uint32_t magic_rsid = 0x52534944; // big endian
 
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
-cart_def sid_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_RAM }; 
+cart_def sid_cart = { 0x00, (void *)0, 0x1000, CART_TYPE_8K | CART_RAM };
 
 static inline uint16_t swap_word(uint16_t p)
 {

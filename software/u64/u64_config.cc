@@ -62,7 +62,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 23, 0 },
     { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 23, 0 },
     { CFG_AUDIO_LEFT_OUT,       CFG_TYPE_ENUM, "Output Selector Left",         "%s", audio_sel,    0,  9, 0 },
-    { CFG_AUDIO_LEFT_OUT,       CFG_TYPE_ENUM, "Output Selector Right",        "%s", audio_sel,    0,  9, 0 },
+    { CFG_AUDIO_RIGHT_OUT,      CFG_TYPE_ENUM, "Output Selector Right",        "%s", audio_sel,    0,  9, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 U64Config :: U64Config()

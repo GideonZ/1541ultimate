@@ -29,13 +29,11 @@ extern uint32_t _ultimate_app_end;
 extern uint32_t _rom_pack_start;
 extern uint32_t _rom_pack_end;
 
-/*
 extern uint32_t _ultimate_recovery_rbf_start;
 extern uint32_t _ultimate_recovery_rbf_end;
 
 extern uint32_t _recovery_app_start;
 extern uint32_t _recovery_app_end;
-*/
 
 void do_update(void)
 {
@@ -68,24 +66,6 @@ void do_update(void)
     console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
 	console_print(screen, "%s\n", rtc.get_time_string(time_buffer, 32));
 
-	REMOTE_FLASHSEL_1;
-    REMOTE_FLASHSELCK_0;
-    REMOTE_FLASHSELCK_1;
-
-    if(user_interface->popup("About to flash. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-        Flash *flash2 = get_flash();
-        flash2->protect_disable();
-        flash_buffer_at(flash2, screen, 0x000000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
-        flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
-        flash_buffer_at(flash2, screen, 0x200000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
-
-    	console_print(screen, "\nConfiguring Flash write protection..\n");
-    	flash2->protect_configure();
-    	flash2->protect_enable();
-    	console_print(screen, "Done!                            \n");
-    }
-
-/*
     if(user_interface->popup("Flash Recovery?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
     	REMOTE_FLASHSEL_0;
         REMOTE_FLASHSELCK_0;
@@ -99,7 +79,24 @@ void do_update(void)
     	console_print(screen, "\nConfiguring Flash write protection..\n");
     	console_print(screen, "Done!                            \n");
     }
-*/
+
+    if(user_interface->popup("Flash Runtime?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+    	REMOTE_FLASHSEL_1;
+        REMOTE_FLASHSELCK_0;
+        REMOTE_FLASHSELCK_1;
+
+        Flash *flash2 = get_flash();
+        flash2->protect_disable();
+        flash_buffer_at(flash2, screen, 0x000000, false, &_ultimate_run_rbf_start,   &_ultimate_run_rbf_end,   "V1.0", "Runtime FPGA");
+        flash_buffer_at(flash2, screen, 0x0C0000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
+        flash_buffer_at(flash2, screen, 0x200000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
+
+    	console_print(screen, "\nConfiguring Flash write protection..\n");
+    	flash2->protect_configure();
+    	flash2->protect_enable();
+    	console_print(screen, "Done!                            \n");
+    }
+
 
     wait_ms(2000);
 	REMOTE_FLASHSEL_1;

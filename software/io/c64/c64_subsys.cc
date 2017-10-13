@@ -12,7 +12,7 @@
 /* other external references */
 extern uint8_t _bootcrt_65_start;
 
-cart_def boot_cart = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
+cart_def boot_cart = { 0x00, (void *)0, 0x1000, CART_TYPE_8K | CART_REU | CART_RAM };
 
 static inline uint16_t le2cpu(uint16_t p)
 {
@@ -283,7 +283,14 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
         if (f) {
         	load_file_dma(f, 0);
         } else {
-        	load_buffer_dma(buffer, bufferSize, 0);
+            // If we need to jump, the first two bytes are the jump address
+            if (run_code & RUNCODE_JUMP_BIT) {
+            	C64_POKE(0xAA, buffer[0]);
+            	C64_POKE(0xAB, buffer[1]);
+            	load_buffer_dma(buffer+2, bufferSize-2, 0);
+            } else {
+            	load_buffer_dma(buffer, bufferSize, 0);
+            }
         }
 
         C64_POKE(2, 0); // signal DMA load done

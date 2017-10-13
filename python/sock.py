@@ -95,36 +95,39 @@ if __name__ == "__main__":
         #define SOCKET_CMD_RESET  0xFF04
         #define SOCKET_CMD_WAIT      0xFF05
         #define SOCKET_CMD_DMAWRITE  0xFF06
+        #define SOCKET_CMD_DMAJUMP   0xFF07
         
         with open(sys.argv[2], "rb") as f:
             bytes = f.read(65536) # max 64K 
             if bytes != "":
                 s = mysocket()
                 s.connect(sys.argv[3], 64)
-                # reset 
-                s.mysend(pack("<H", 0xFF04))
-                s.mysend(pack("<H", 0))
-                # wait 3 seconds
-                s.mysend(pack("<H", 0xFF05))
-                s.mysend(pack("<H", 600))
-                # write hello
-                s.mysend(pack("<H", 0xFF03))
-                s.mysend(pack("<H", 5))
-                s.mysend("HELLO")
-                # wait 3 seconds
-                s.mysend(pack("<H", 0xFF05))
-                s.mysend(pack("<H", 600))
-                # write border color
-                s.mysend(pack("<H", 0xFF06))
-                s.mysend(pack("<H", 3))
-                s.mysend(pack("<H", 0xD020))
-                s.mysend(pack("<B", 7))
-                # wait 3 seconds
-                s.mysend(pack("<H", 0xFF05))
-                s.mysend(pack("<H", 600))
-                # execute load/run command
-                s.mysend(pack("<H", 0xFF02))
-                s.mysend(pack("<H", len(bytes)))
+                # # reset 
+                # s.mysend(pack("<H", 0xFF04))
+                # s.mysend(pack("<H", 0))
+                # # wait 3 seconds
+                # s.mysend(pack("<H", 0xFF05))
+                # s.mysend(pack("<H", 600))
+                # # write hello
+                # s.mysend(pack("<H", 0xFF03))
+                # s.mysend(pack("<H", 5))
+                # s.mysend("HELLO")
+                # # wait 3 seconds
+                # s.mysend(pack("<H", 0xFF05))
+                # s.mysend(pack("<H", 600))
+                # # write border color
+                # s.mysend(pack("<H", 0xFF06))
+                # s.mysend(pack("<H", 3))
+                # s.mysend(pack("<H", 0xD020))
+                # s.mysend(pack("<B", 7))
+                # # wait 3 seconds
+                # s.mysend(pack("<H", 0xFF05))
+                # s.mysend(pack("<H", 600))
+                # # execute load/run command
+
+                s.mysend(pack("<H", 0xFF07))
+                s.mysend(pack("<H", len(bytes)+2))
+                s.mysend(pack("<H", 0x1800))
                 s.mysend(bytes)
                 
                 s.sock.shutdown(0)

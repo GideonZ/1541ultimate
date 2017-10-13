@@ -21,6 +21,7 @@
 #define SOCKET_CMD_RESET    0xFF04
 #define SOCKET_CMD_WAIT	    0xFF05
 #define SOCKET_CMD_DMAWRITE 0xFF06
+#define SOCKET_CMD_DMAJUMP  0xFF07
 
 SocketDMA socket_dma; // global that causes the object to exist
 
@@ -54,6 +55,10 @@ void SocketDMA :: parseBuffer(void *load_buffer, int length)
 			break;
 		case SOCKET_CMD_DMARUN:
 			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_RUN, buf, len);
+			c64_command->execute();
+			break;
+		case SOCKET_CMD_DMAJUMP:
+			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_JUMP, buf, len);
 			c64_command->execute();
 			break;
 		case SOCKET_CMD_DMAWRITE:

@@ -564,6 +564,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/spike_filter/vhdl_source/
 set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_playback/vhdl_source/tape_speed_control.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/deserializer/vhdl_source/deserializer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/bus_analyzer_32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/logic_analyzer_32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/logic_analyzer.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_pkg.vhd
