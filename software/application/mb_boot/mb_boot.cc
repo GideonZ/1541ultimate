@@ -87,7 +87,7 @@ int main(int argc, char **argv)
             SPI_FLASH_CTRL = 0;
         	SPI_FLASH_DATA = W25Q_WriteEnable;
             SPI_FLASH_CTRL = SPI_FORCE_SS; // drive CSn low
-        	SPI_FLASH_DATA = W25Q_WriteStatusRegister;
+        	SPI_FLASH_DATA = W25Q_WriteStatusRegister1;
         	SPI_FLASH_DATA = 0x34; // 7/8 on spansion!!
         	SPI_FLASH_DATA = 0x00;
             SPI_FLASH_CTRL = SPI_FORCE_SS | SPI_LEVEL_SS; // drive CSn high

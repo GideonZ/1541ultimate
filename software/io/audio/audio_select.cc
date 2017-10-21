@@ -125,7 +125,7 @@ AudioConfig :: AudioConfig()
 }
     
 extern "C" {
-    void set_sid_coefficients(void);
+    void set_sid_coefficients(volatile uint8_t *);
 }
 
 void AudioConfig :: effectuate_settings()
@@ -150,7 +150,7 @@ void AudioConfig :: effectuate_settings()
         ioWrite8(SID_EXTEND_RIGHT,  cfg->get_value(CFG_AUDIO_SID_EXT_RIGHT));
         ioWrite8(SID_COMBSEL_RIGHT, cfg->get_value(CFG_AUDIO_SID_WAVE_RIGHT));
 
-        set_sid_coefficients();
+        set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x800));
     }
     if(getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
         unsigned char tmp = cfg->get_value(CFG_AUDIO_SPEAKER_EN);

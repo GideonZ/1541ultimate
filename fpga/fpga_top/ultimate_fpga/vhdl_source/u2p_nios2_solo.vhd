@@ -605,6 +605,16 @@ begin
     ULPI_RESET <= por_n;
     UART_TXD <= uart_txd_from_logic; -- and uart_txd_from_qsys;
 
+    -- Tape
+    c2n_motor_in <= CAS_MOTOR;
+    CAS_SENSE    <= '0' when c2n_sense_out = '1' else 'Z';
+    c2n_sense_in <= CAS_SENSE;
+    CAS_READ     <= c2n_read_out when c2n_read_en = '1' else 'Z';
+    c2n_read_in  <= CAS_READ;
+    CAS_WRITE    <= c2n_write_out when c2n_write_en = '1' else 'Z';
+    c2n_write_in <= CAS_WRITE;
+
+
     i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
     generic map (
         g_left_shift => 2,

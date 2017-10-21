@@ -74,9 +74,9 @@ uint16_t sid6581_filter_coefficients[] = {
         0xfee3, 0xfed2, 0xfec1, 0xfeb0, 0xfe9e, 0xfe8d, 0xfe7c, 0xfe6b, 0xfe5a, 0xfe48, 0xfe37, 0xfe26, 0xfe15, 0xfe04, 0xfdf2, 0xfde1,
         0xfff6, 0xffe5, 0xffd4, 0xffc3, 0xffb2, 0xffa0, 0xff8f, 0xff7e, 0xff6d, 0xff5c, 0xff4a, 0xff39, 0xff28, 0xff17, 0xff06, 0xfef4 };
 
-void set_sid_coefficients(void)
+void set_sid_coefficients(volatile uint8_t *filter_ram)
 {
-    volatile uint8_t *filter_ram = (volatile uint8_t *)(SID_BASE + 0x800);
+//    volatile uint8_t *filter_ram = (volatile uint8_t *)(SID_BASE + 0x800);
     for (int i=0; i<1024; i++) {
         uint16_t value = sid6581_filter_coefficients[i ^ 15]; // columns should be from right to left.. legacy from Xilinx
         *(filter_ram++) = (value & 0xFF);

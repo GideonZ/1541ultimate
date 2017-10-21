@@ -11,8 +11,9 @@
 #include <stdint.h>
 
 #ifndef U64_IO_BASE
-#define U64_IO_BASE 0xA0000400
-#define C64_IO_BASE 0xA0000500
+#define U64_IO_BASE  0xA0000400
+#define C64_IO_BASE  0xA0080000
+#define C64_SID_BASE 0xA0090000
 #endif
 
 #define U64_HDMI_REG      (*(volatile uint8_t *)(U64_IO_BASE + 0x00))

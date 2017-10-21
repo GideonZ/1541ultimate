@@ -126,6 +126,14 @@ architecture structural of ultimate_mb_700a is
         
     -- miscellaneous interconnect
     signal ulpi_reset_i     : std_logic;
+
+    -- Slot
+    signal slot_addr_o  : std_logic_vector(15 downto 0);
+    signal slot_addr_t  : std_logic;
+    signal slot_data_o  : std_logic_vector(7 downto 0);
+    signal slot_data_t  : std_logic;
+    signal slot_rwn_o   : std_logic;
+    signal irq_oc, nmi_oc, rst_oc, dma_oc, exrom_oc, game_oc    : std_logic;
     
     -- memory controller interconnect
     signal memctrl_inhibit  : std_logic;
@@ -138,6 +146,18 @@ architecture structural of ultimate_mb_700a is
     signal iec_clock_o : std_logic;
     signal iec_srq_o   : std_logic;
     
+    -- Cassette
+    signal c2n_read_in      : std_logic;
+    signal c2n_write_in     : std_logic;
+    signal c2n_read_out     : std_logic;
+    signal c2n_write_out    : std_logic;
+    signal c2n_read_en      : std_logic;
+    signal c2n_write_en     : std_logic;
+    signal c2n_sense_in     : std_logic;
+    signal c2n_sense_out    : std_logic;
+    signal c2n_motor_in     : std_logic;
+    signal c2n_motor_out    : std_logic;
+
     -- Audio outputs
     signal audio_left  : signed(18 downto 0);
     signal audio_right : signed(18 downto 0);
@@ -202,29 +222,33 @@ begin
         ulpi_reset  => ulpi_reset_i,
     
         -- slot side
-        PHI2        => PHI2,
-        DOTCLK      => DOTCLK,
-        RSTn_in     => RSTn,
-        RSTn_out    => RSTn_out,
-    
-        BUFFER_ENn  => BUFFER_ENn,
+        phi2_i      => PHI2,
+        dotclk_i    => DOTCLK,
+        rstn_i      => RSTn,
+        rstn_o      => RSTn_out,
                                    
-        SLOT_ADDR   => SLOT_ADDR,
-        SLOT_DATA   => SLOT_DATA,
-        RWn         => RWn,
-        BA          => BA,
-        DMAn        => DMAn,
-                                   
-        EXROMn      => EXROMn,
-        GAMEn       => GAMEn,
-                                   
-        ROMHn       => ROMHn,
-        ROMLn       => ROMLn,
-        IO1n        => IO1n,
-        IO2n        => IO2n,
-                                   
-        IRQn        => IRQn,
-        NMIn        => NMIn,
+        slot_addr_o => slot_addr_o,
+        slot_addr_i => SLOT_ADDR,
+        slot_addr_t => slot_addr_t,
+        slot_data_o => slot_data_o,
+        slot_data_i => SLOT_DATA,
+        slot_data_t => slot_data_t,
+        rwn_i       => RWn,
+        rwn_o       => slot_rwn_o,
+        exromn_i    => EXROMn,
+        exromn_o    => exrom_oc,
+        gamen_i     => GAMEn,
+        gamen_o     => game_oc,
+        irqn_i      => IRQn,
+        irqn_o      => irq_oc,
+        nmin_i      => NMIn,
+        nmin_o      => nmi_oc,
+        ba_i        => BA,
+        dman_o      => dma_oc,
+        romhn_i     => ROMHn,
+        romln_i     => ROMLn,
+        io1n_i      => IO1n,
+        io2n_i      => IO2n,
         
         -- local bus side
         mem_inhibit => memctrl_inhibit,
@@ -289,10 +313,16 @@ begin
         ULPI_DATA   => ULPI_DATA,
     
         -- Cassette Interface
-        CAS_MOTOR   => CAS_MOTOR,
-        CAS_SENSE   => CAS_SENSE,
-        CAS_READ    => CAS_READ,
-        CAS_WRITE   => CAS_WRITE,
+        c2n_read_in    => c2n_read_in, 
+        c2n_write_in   => c2n_write_in, 
+        c2n_read_out   => c2n_read_out, 
+        c2n_write_out  => c2n_write_out, 
+        c2n_read_en    => c2n_read_en, 
+        c2n_write_en   => c2n_write_en, 
+        c2n_sense_in   => c2n_sense_in, 
+        c2n_sense_out  => c2n_sense_out, 
+        c2n_motor_in   => c2n_motor_in, 
+        c2n_motor_out  => c2n_motor_out, 
         
 --        vid_clock   => sys_clock,
 --        vid_reset   => sys_reset,
@@ -305,11 +335,30 @@ begin
         -- Buttons
         BUTTON      => button_i );
 
+    irq_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => irq_oc, oc_out => IRQn);
+    nmi_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => nmi_oc, oc_out => NMIn);
+    dma_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => dma_oc, oc_out => DMAn);
+    exr_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => exrom_oc, oc_out => EXROMn);
+    gam_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => game_oc, oc_out => GAMEn);
+
+    SLOT_ADDR  <= slot_addr_o when slot_addr_t = '1' else (others => 'Z');
+    SLOT_DATA  <= slot_data_o when slot_data_t = '1' else (others => 'Z');
+    RWn        <= slot_rwn_o  when slot_addr_t = '1' else 'Z';
+    RSTn       <= '0' when RSTn_out = '0' else 'Z';
+
     IEC_ATN    <= '0' when iec_atn_o   = '0' else 'Z';
     IEC_DATA   <= '0' when iec_data_o  = '0' else 'Z';
     IEC_CLOCK  <= '0' when iec_clock_o = '0' else 'Z';
     IEC_SRQ_IN <= '0' when iec_srq_o   = '0' else 'Z';
-    RSTn       <= '0' when RSTn_out = '0' else 'Z';
+
+    -- Tape
+    c2n_motor_in <= CAS_MOTOR;
+    CAS_SENSE    <= '0' when c2n_sense_out = '1' else 'Z';
+    c2n_sense_in <= CAS_SENSE;
+    CAS_READ     <= c2n_read_out when c2n_read_en = '1' else 'Z';
+    c2n_read_in  <= CAS_READ;
+    CAS_WRITE    <= c2n_write_out when c2n_write_en = '1' else 'Z';
+    c2n_write_in <= CAS_WRITE;
 
     i_mem_ctrl: entity work.ext_mem_ctrl_v5
     generic map (

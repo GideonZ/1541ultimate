@@ -661,78 +661,7 @@ begin
     end process;
 
     ULPI_RESET <= por_n;
-
-    b_audio: block
-        signal stream_out_data  : std_logic_vector(23 downto 0);
-        signal stream_out_tag   : std_logic_vector(0 downto 0);
-        signal stream_out_valid : std_logic;
-        signal stream_in_data   : std_logic_vector(23 downto 0);
-        signal stream_in_tag    : std_logic_vector(0 downto 0);
-        signal stream_in_ready  : std_logic;
-        signal audio_out_full   : std_logic;
-    begin
-        i_aout: entity work.async_fifo_ft
-        generic map (
-            g_depth_bits => 4,
-            g_data_width => 25
-        )
-        port map(
-            wr_clock     => sys_clock,
-            wr_reset     => sys_reset,
-            wr_en        => audio_out_valid,
-            wr_din(24)   => audio_out_data(0),
-            wr_din(23 downto 16) => audio_out_data(15 downto 8),
-            wr_din(15 downto 8)  => audio_out_data(23 downto 16),
-            wr_din(7 downto 0)   => audio_out_data(31 downto 24),
-            wr_full      => audio_out_full,
-            
-            rd_clock     => audio_clock,
-            rd_reset     => audio_reset,
-            rd_next      => stream_in_ready,
-            rd_dout(24 downto 24) => stream_in_tag,
-            rd_dout(23 downto 0) => stream_in_data,
-            rd_valid     => open --stream_in_valid
-        );
-        audio_out_ready <= not audio_out_full;
-
-        i_ain: entity work.synchronizer_gzw
-        generic map(
-            g_width     => 25,
-            g_fast      => false
-        )
-        port map(
-            tx_clock    => audio_clock,
-            tx_push     => stream_out_valid,
-            tx_data(24 downto 24) => stream_out_tag,
-            tx_data(23 downto 0) => stream_out_data,
-            tx_done     => open,
-            rx_clock    => sys_clock,
-            rx_new_data => audio_in_valid,
-            rx_data(24)  => audio_in_data(0),
-            rx_data(23 downto 16) => audio_in_data(15 downto 8),
-            rx_data(15 downto 8) => audio_in_data(23 downto 16),
-            rx_data(7 downto 0) => audio_in_data(31 downto 24)
-        );
-
-        i2s: entity work.i2s_serializer
-        port map (
-            clock            => audio_clock,
-            reset            => audio_reset,
-            i2s_out          => AUDIO_SDO,
-            i2s_in           => AUDIO_SDI,
-            i2s_bclk         => AUDIO_BCLK,
-            i2s_fs           => AUDIO_LRCLK,
-            stream_out_data  => stream_out_data,
-            stream_out_tag   => stream_out_tag,
-            stream_out_valid => stream_out_valid,
-            stream_in_data   => stream_in_data,
-            stream_in_tag    => stream_in_tag,
-            stream_in_valid  => '1',
-            stream_in_ready  => stream_in_ready );
-
-        AUDIO_MCLK <= audio_clock;
-
-    end block;    
+    AUDIO_MCLK <= audio_clock;
     
     SLOT_BUFFER_ENn <= '0'; -- once configured, we can connect
 
