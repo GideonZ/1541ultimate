@@ -65,13 +65,21 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_AUDIO_RIGHT_OUT,      CFG_TYPE_ENUM, "Output Selector Right",        "%s", audio_sel,    0,  9, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
+extern "C" {
+    void set_sid_coefficients(volatile uint8_t *);
+}
+
 U64Config :: U64Config()
 {
-    struct t_cfg_definition *def = u64_cfg;
-    uint32_t store = 0x55363443;
-    register_store(store, "U64 Specific Settings", def);
+	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+		struct t_cfg_definition *def = u64_cfg;
+		uint32_t store = 0x55363443;
+		register_store(store, "U64 Specific Settings", def);
 
-    effectuate_settings();
+		set_sid_coefficients((volatile uint8_t *)C64_SID_BASE);
+
+		effectuate_settings();
+	}
 }
 
 void U64Config :: effectuate_settings()

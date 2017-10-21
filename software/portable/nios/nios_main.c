@@ -109,10 +109,6 @@ static void test_i2c_mdio(void) {
 	// enable buffer
 	U2PIO_ULPI_RESET = U2PIO_UR_BUFFER_ENABLE;
 
-	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-		set_sid_coefficients((volatile uint8_t *)C64_SID_BASE);
-	}
-
 	// Try to read EDID, just a hardware test
 	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		U64_HDMI_REG = U64_HDMI_HPD_RESET;
