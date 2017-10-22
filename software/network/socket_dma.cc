@@ -21,7 +21,7 @@
 #define SOCKET_CMD_RESET    0xFF04
 #define SOCKET_CMD_WAIT	    0xFF05
 #define SOCKET_CMD_DMAWRITE 0xFF06
-#define SOCKET_CMD_DMAJUMP  0xFF07
+#define SOCKET_CMD_DMAJUMP  0xFF09
 
 SocketDMA socket_dma; // global that causes the object to exist
 

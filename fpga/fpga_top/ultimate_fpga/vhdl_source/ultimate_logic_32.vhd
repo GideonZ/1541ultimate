@@ -1292,6 +1292,7 @@ begin
             ROMHn        => ROMHn_i,
             EXROMn       => EXROMn_i,
             GAMEn        => GAMEn_i,
+            cart_led_n   => cart_led_n,
             mem_req      => mem_req_32_debug,
             mem_resp     => mem_resp_32_debug,
             io_req       => io_req_debug,

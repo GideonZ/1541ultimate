@@ -30,6 +30,7 @@ port (
     IRQn        : in  std_logic;
     NMIn        : in  std_logic;
     
+    cart_led_n  : in  std_logic;
     ---
     mem_req     : out t_mem_req_32;
     mem_resp    : in  t_mem_resp_32;
@@ -63,7 +64,8 @@ begin
     rom <= romln and romhn;
     interrupt <= irqn and nmin;
     
-    vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
+    vector_in <= phi2 & gamen & exromn & ba & irqn & rom & nmin & rwn & data & addr;
+    --vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
 
     process(clock)
     begin
@@ -81,7 +83,7 @@ begin
             case state is
             when idle =>
                 mem_wdata <= byte_swap(vector_d4, g_big_endian);
-                if enable_log = '1' and dman_c = '1' then
+                if enable_log = '1' and dman_c = '1' and cart_led_n = '1' then -- only when the cartridge is off
                     if phi_d2 /= phi_d1 then
                         mem_request <= '1';
                         state <= writing;            

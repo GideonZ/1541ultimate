@@ -3,6 +3,7 @@
 ;* FILE  bootcrt.tas
 ;* Copyright (c) 2011 Daniel Kahlin <daniel@kahlin.net>
 ;* Written by Daniel Kahlin <daniel@kahlin.net>
+;* Additions by Gideon Zweijtzer <gideon.zweijtzer@gmail.com> and Wilfred Bos
 ;*
 ;* DESCRIPTION
 ;*   Boot Cartridge for the 1541-Ultimate
@@ -33,6 +34,7 @@ RUNCODE_MOUNT_BIT     = %10000000
 
 RUNCODE_DMALOAD_RUN       = %00000011
 RUNCODE_DMALOAD           = %00000001
+RUNCODE_DMALOAD_JUMP      = %00000101
 RUNCODE_MOUNT_DMALOAD_RUN = %10000011
 RUNCODE_MOUNT_LOAD_RUN    = %11000011
 RUNCODE_TAPE_RECORD       = %01110000
@@ -552,6 +554,8 @@ rp_skp1
 	lda	#$00
 	jsr	$ff90
 
+	jsr synchronize
+	
 	jmp	RUNNER
 
 RUNNER		=	$0150
@@ -705,5 +709,172 @@ run_msg
 	.text	13,"READY.",13
 	.text	"RUN",13
 	.text	0
+
+;**************************************************************************
+;*
+;* NAME  synchronize_impl
+;*
+;* DESCRIPTION
+;*   synchronizes CPU with VIC for cycle exact start of programs
+;*   This is the part that is copied to RAM
+;*
+;******
+STACKPOINTER = $0400
+SYNCLOC      = $0401
+SYNCHRONIZEIRQPOINTER   = SYNCLOC + synchronizeirq - synchronize_impl
+SYNCHRONIZEWEDGEPOINTER = SYNCLOC + WedgeIRQ - synchronize_impl
+
+synchronize_impl
+	; pointer has already been set by the prepare function
+	lda #$35
+	sta $01
+	tsx
+	stx STACKPOINTER
+	lda #$01
+	sta $d01a
+	cli
+	; now just wait until the IRQ occurs
+-	jmp -
+			
+synchronizeirq
+    ; A Raster Compare IRQ is triggered on cycle 0 on the current $d012 line
+    ; The MPU needs to finish it's current OP code before starting the Interrupt Handler,
+    ; meaning a 0 -> 7 cycles delay depending on OP code.
+    ; Then a 7 cycle delay is spendt invoking the Interrupt Handler (Push SR/PC to stack++)
+    ; Then 13 cycles for storing registers (pha, txa, pha, tya, pha)
+
+    ; CYCLECOUNT: [20 -> 27] cycles after Raster IRQ occurred.
+
+    ; Set up Wedge IRQ vector
+    lda #<SYNCHRONIZEWEDGEPOINTER
+    sta $fffe
+    lda #>SYNCHRONIZEWEDGEPOINTER
+    sta $ffff
+
+    ; Set the Raster IRQ to trigger on the next Raster line
+    inc $d012
+
+    ; Acknowlege current Raster IRQ
+    lda #$01
+    sta $d019
+
+    ; Store current Stack Pointer (will be messed up when the next IRQ occurs)
+    tsx
+
+    ; Allow IRQ to happen (Remeber the Interupt flag is set by the Interrupt Handler).
+    cli
+
+    ; Execute NOPs untill the raster line changes and the Raster IRQ triggers
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
+    ; Add one extra nop for 65 cycle NTSC machines
+
+    ; CYCLECOUNT: [64 -> 71]
+
+WedgeIRQ
+    ; At this point the next Raster Compare IRQ has triggered and the jitter is max 1 cycle.
+    ; CYCLECOUNT: [7 -> 8] (7 cycles for the interrupt handler + [0 -> 1] cycle Jitter for the NOP)
+
+    ; Restore previous Stack Pointer (ignore the last Stack Manipulation by the IRQ)
+    txs
+
+    ; PAL-63  ; NTSC-64    ; NTSC-65
+    ;---------;------------;-----------
+    ldx #$08   ; ldx #$08   ; ldx #$09
+    dex        ; dex        ; dex
+    bne *-1    ; bne *-1    ; bne *-1
+    bit $00    ; nop
+               ; nop
+
+    ; Check if $d012 is incremented and rectify with an aditional cycle if neccessary
+    lda $d012
+    cmp $d012  ; <- critical instruction (ZERO-Flag will indicate if Jitter = 0 or 1)
+
+    ; CYCLECOUNT: [61 -> 62] <- Will not work if this timing is wrong
+
+    ; cmp $d012 is originally a 5 cycle instruction but due to piplining tech. the
+    ; 5th cycle responsible for calculating the result is executed simultaniously
+    ; with the next OP fetch cycle (first cycle of beq *+2).
+
+    ; Add one cycle if $d012 wasn't incremented (Jitter / ZERO-Flag = 0)
+    beq *+2
+
+    ; Stable code
+	ldx STACKPOINTER
+	txs
+	lda #$37
+	sta $01
+		
+	; Note that this RTS will actually jump back to our caller (called to 'synchronize_impl')	
+	rts
+SYNCHRONIZELENGTH = * - synchronize_impl
+
+;**************************************************************************
+;*
+;* NAME  synchronize
+;*
+;* DESCRIPTION
+;*   setup raster synchronization; i.e. disable IRQ sources from CIA1
+;*   and setup IRQ from VIC at raster #$FC. Disable sprites, too.
+;*   then copy the actual synchronize function to RAM and call it.
+;*   so aside from rom RAM getting garbled, this function will return
+;*   to the ROM with CPU and VIC synchronized. Note, CIA timers are first
+;*   cleared and later reinitialized by the original kernal routine.
+;*    
+;******
+synchronize
+	sei
+	; eliminate CIA interrupts
+	lda #$7F
+	sta $dc0d
+	sta $dd0d
+	lda $dc0d
+	lda $dd0d
+
+	; prepare VIC interrupt
+	lda #$00
+	sta $d015
+	lda #$fc
+	sta $d012
+	lda $d011
+	and #$7f
+	sta $d011
+	lda #$00
+	sta $d01a
+	lda #$0f
+	sta $d019
+
+    ; Set up IRQ vector (write 'through' kernal rom)
+    lda #<SYNCHRONIZEIRQPOINTER
+    sta $fffe
+    lda #>SYNCHRONIZEIRQPOINTER
+    sta $ffff
+
+	; now copy synchronize routine to RAM, as we need to run it with our ROM banked out
+	ldx #SYNCHRONIZELENGTH - 1 
+-	lda synchronize_impl,x
+	sta SYNCLOC,x
+	dex
+	bpl -
+	
+	; GO!
+	jsr SYNCLOC
+
+	; disable VIC interrupt once again
+	lda #$00
+	sta $d01a
+	lda #$0f
+	sta $d019
+
+	; reinit CIA interrupts
+	jsr	$fda3
+
+	rts
 
 ; eof
