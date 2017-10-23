@@ -60,7 +60,15 @@ int SocketTest :: saveTrace(SubsysCommand *cmd)
 
 	end_address = PROFILER_ADDR;
 	printf("Logic Analyzer stopped. Address = %p\n", end_address);
-	FRESULT fres = fm->fopen(cmd->path.c_str(), "bustrace.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+
+    static char buffer[32] = {0};
+    strcpy(buffer, "bustrace.bin");
+    FRESULT res = cmd->user_interface->string_box("Give name for trace file..", buffer, 24);
+	if(res <= 0) {
+		return 0;
+	}
+
+	FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
 	if(fres == FR_OK) {
 		printf("Opened file successfully.\n");
 		if(progress) {

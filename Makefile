@@ -67,6 +67,13 @@ niosapps:
 	@$(MAKE) -C target/software/nios2_update
 	@cp target/software/nios2_update/result/update.app ./update.u2p
 
+u64apps:
+	@$(MAKE) -C target/software/nios2_u64
+	@$(MAKE) -C target/software/nios2_update_u64
+	@$(MAKE) -C target/software/nios2_update_u64a4
+	@cp target/software/nios2_update_u64/result/update.app ./update_5ceba2.u64
+	@cp target/software/nios2_update_u64a4/result/update.app ./update_5ceba4.u64
+
 k1:
 	@svn up
 	@$(MAKE) -C tools

@@ -43,7 +43,7 @@ void dump_trace(FILE *fi, int max)
     //   ev_data_c <= sub & task & ev_data;
     //    vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
     //
-    const char *labels[8] = { "RWn","IOn","ROMn", "INTn","BA","EXROMn","GAMEn","PHI2" };
+    const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","EXROMn","GAMEn","PHI2" };
 
     uint8_t   b;
         
@@ -67,6 +67,8 @@ void dump_trace(FILE *fi, int max)
             break;
 
         time ++;
+        if (!(d.flags & 0x80))
+            continue;
         printf("#%ld\n", time);
     	if (prev.addr != d.addr) {
     		printf("b%s z\n", bin(d.addr, 16, buffer));

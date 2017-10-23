@@ -95,7 +95,7 @@ if __name__ == "__main__":
         #define SOCKET_CMD_RESET  0xFF04
         #define SOCKET_CMD_WAIT      0xFF05
         #define SOCKET_CMD_DMAWRITE  0xFF06
-        #define SOCKET_CMD_DMAJUMP   0xFF07
+        #define SOCKET_CMD_DMAJUMP   0xFF09
         
         with open(sys.argv[2], "rb") as f:
             bytes = f.read(65536) # max 64K 
@@ -125,9 +125,13 @@ if __name__ == "__main__":
                 # s.mysend(pack("<H", 600))
                 # # execute load/run command
 
-                s.mysend(pack("<H", 0xFF07))
-                s.mysend(pack("<H", len(bytes)+2))
-                s.mysend(pack("<H", 0x1800))
+                #s.mysend(pack("<H", 0xFF09))
+                #s.mysend(pack("<H", len(bytes)+2))
+                #s.mysend(pack("<H", 0x1800))  # start addr
+                #s.mysend(bytes)
+
+                s.mysend(pack("<H", 0xFF02))
+                s.mysend(pack("<H", len(bytes)))
                 s.mysend(bytes)
                 
                 s.sock.shutdown(0)

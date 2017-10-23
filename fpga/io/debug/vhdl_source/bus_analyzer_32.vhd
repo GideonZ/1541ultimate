@@ -41,7 +41,7 @@ port (
 end entity;
 
 architecture gideon of bus_analyzer_32 is
-    type t_state is (idle, writing);
+    type t_state is (idle, writing, recording, wait_trigger);
     signal enable_log   : std_logic;
     signal ev_addr      : unsigned(24 downto 0);
     signal state        : t_state;
@@ -64,7 +64,8 @@ begin
     rom <= romln and romhn;
     interrupt <= irqn and nmin;
     
-    vector_in <= phi2 & gamen & exromn & ba & irqn & rom & nmin & rwn & data & addr;
+    vector_in <= phi2 & dman & exromn & ba & irqn & rom & nmin & rwn & data & addr;
+    --vector_in <= phi2 & gamen & exromn & ba & irqn & rom & nmin & rwn & data & addr;
     --vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
 
     process(clock)
@@ -82,22 +83,36 @@ begin
 
             case state is
             when idle =>
+                if enable_log = '1' then
+                    state <= wait_trigger;
+                end if;
+            
+            when wait_trigger =>
+                if enable_log = '0' then
+                    state <= idle;
+                elsif cart_led_n = '1' then -- loader cartridge went off
+                    state <= recording;
+                end if;
+                
+            when recording =>
                 mem_wdata <= byte_swap(vector_d4, g_big_endian);
-                if enable_log = '1' and dman_c = '1' and cart_led_n = '1' then -- only when the cartridge is off
-                    if phi_d2 /= phi_d1 then
-                        mem_request <= '1';
-                        state <= writing;            
-                    end if;
+                if phi_d2 /= phi_d1 then
+                    mem_request <= '1';
+                    state <= writing;            
                 end if;
                 
             when writing =>
                 if mem_resp.rack='1' and mem_resp.rack_tag=X"F0" then
                     ev_addr <= ev_addr + 4;
-                    if ev_addr = 16#1FFFFF8# then
+                    if ev_addr = 16#1FFFFF4# then
                         enable_log <= '0';
                     end if;
                     mem_request <= '0';
-                    state <= idle;
+                    if enable_log = '0' then
+                        state <= idle;
+                    else
+                        state <= recording;
+                    end if; 
                 end if;
 
             when others =>

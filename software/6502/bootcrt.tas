@@ -554,6 +554,8 @@ rp_skp1
 	lda	#$00
 	jsr	$ff90
 
+	jsr $ff84
+
 	jsr synchronize
 	
 	jmp	RUNNER
@@ -719,8 +721,8 @@ run_msg
 ;*   This is the part that is copied to RAM
 ;*
 ;******
-STACKPOINTER = $0400
-SYNCLOC      = $0401
+STACKPOINTER = $CF00
+SYNCLOC      = $CF01
 SYNCHRONIZEIRQPOINTER   = SYNCLOC + synchronizeirq - synchronize_impl
 SYNCHRONIZEWEDGEPOINTER = SYNCLOC + WedgeIRQ - synchronize_impl
 
@@ -730,40 +732,69 @@ synchronize_impl
 	sta $01
 	tsx
 	stx STACKPOINTER
+
+    ; Set up IRQ vector (write 'through' kernal rom)
+    lda #<SYNCHRONIZEIRQPOINTER
+    sta $fffe
+    lda #>SYNCHRONIZEIRQPOINTER
+    sta $ffff
+
+-	lda $d012
+	cmp #$F0
+	bne -
+
+	; disable IRQs
+	lda #$7f
+	sta $dc0d
+	; acknowledg IRQs
+	lda $dc0d
+	; Just in case also for CIA2
+	lda $dd0d
+	
+	; setup IRQ for VIC
+	lda #$FC
+	sta $d012
+	lda $d011
+	and #$7F
+	sta $d011
+	
 	lda #$01
+	sta $d019
 	sta $d01a
 	cli
 	; now just wait until the IRQ occurs
--	jmp -
+irqwait
+	clc
+	bcc irqwait
 			
 synchronizeirq
     ; A Raster Compare IRQ is triggered on cycle 0 on the current $d012 line
     ; The MPU needs to finish it's current OP code before starting the Interrupt Handler,
     ; meaning a 0 -> 7 cycles delay depending on OP code.
     ; Then a 7 cycle delay is spendt invoking the Interrupt Handler (Push SR/PC to stack++)
-    ; Then 13 cycles for storing registers (pha, txa, pha, tya, pha)
 
-    ; CYCLECOUNT: [20 -> 27] cycles after Raster IRQ occurred.
+    ; CYCLECOUNT: [7 -> 14] cycles after Raster IRQ occurred.
 
     ; Set up Wedge IRQ vector
-    lda #<SYNCHRONIZEWEDGEPOINTER
-    sta $fffe
-    lda #>SYNCHRONIZEWEDGEPOINTER
-    sta $ffff
+    lda #<SYNCHRONIZEWEDGEPOINTER    ; 2
+    sta $fffe                        ; 4
+    lda #>SYNCHRONIZEWEDGEPOINTER    ; 2
+    sta $ffff                        ; 4
 
     ; Set the Raster IRQ to trigger on the next Raster line
-    inc $d012
+    inc $d012						 ; 6
 
     ; Acknowlege current Raster IRQ
-    lda #$01
-    sta $d019
+    lda #$01						 ; 2
+    sta $d019						 ; 4
 
     ; Store current Stack Pointer (will be messed up when the next IRQ occurs)
-    tsx
+    tsx								 ; 2
 
-    ; Allow IRQ to happen (Remeber the Interupt flag is set by the Interrupt Handler).
-    cli
+    ; Allow IRQ to happen (Remember the Interupt flag is set by the Interrupt Handler).
+    cli								 ; 2
 
+	; CYCLECOUNT: [35 -> 42]   (max = 65 before new interrupt, hence: 65 - 35 = 30 / 2 = 15 nops)
     ; Execute NOPs untill the raster line changes and the Raster IRQ triggers
     NOP
     NOP
@@ -773,9 +804,18 @@ synchronizeirq
     NOP
     NOP
     NOP
-    ; Add one extra nop for 65 cycle NTSC machines
-
-    ; CYCLECOUNT: [64 -> 71]
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
+    NOP
+	NOP
+    ; CYCLECOUNT: [67 -> 74]
+	NOP
+    NOP
+	inc $0401	
 
 WedgeIRQ
     ; At this point the next Raster Compare IRQ has triggered and the jitter is max 1 cycle.
@@ -830,7 +870,16 @@ SYNCHRONIZELENGTH = * - synchronize_impl
 ;******
 synchronize
 	sei
+	pha
+	txa
+	pha
+	tya
+	pha
+
 	; eliminate CIA interrupts
+	lda $dc0e
+	and #$fe
+	sta $dc0e
 	lda #$7F
 	sta $dc0d
 	sta $dd0d
@@ -840,28 +889,23 @@ synchronize
 	; prepare VIC interrupt
 	lda #$00
 	sta $d015
-	lda #$fc
-	sta $d012
-	lda $d011
-	and #$7f
-	sta $d011
-	lda #$00
-	sta $d01a
-	lda #$0f
-	sta $d019
-
-    ; Set up IRQ vector (write 'through' kernal rom)
-    lda #<SYNCHRONIZEIRQPOINTER
-    sta $fffe
-    lda #>SYNCHRONIZEIRQPOINTER
-    sta $ffff
+;	lda #$fc
+;	sta $d012
+;	lda $d011
+;	and #$7f
+;	sta $d011
+;	lda #$00
+;	sta $d01a
+;	lda #$0f
+;	sta $d019
 
 	; now copy synchronize routine to RAM, as we need to run it with our ROM banked out
-	ldx #SYNCHRONIZELENGTH - 1 
+	ldx #0
 -	lda synchronize_impl,x
 	sta SYNCLOC,x
-	dex
-	bpl -
+	inx
+	cpx #SYNCHRONIZELENGTH
+	bne -
 	
 	; GO!
 	jsr SYNCLOC
@@ -872,9 +916,17 @@ synchronize
 	lda #$0f
 	sta $d019
 
-	; reinit CIA interrupts
-	jsr	$fda3
+	; reinit CIA interrupts and return to called
+	lda #$81
+	sta $dc0d
+	lda $dc0e
+	ora #$11
+	sta $dc0e
 
+	pla
+	tay
+	pla
+	tax
+	pla
 	rts
 
-; eof
