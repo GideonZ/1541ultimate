@@ -32,6 +32,7 @@
 #define DOS_CMD_UMOUNT_DISK    0x24
 #define DOS_CMD_SWAP_DISK      0x25
 #define DOS_CMD_GET_TIME       0x26
+#define DOS_CMD_SET_TIME       0x27
 #define DOS_CMD_ECHO           0xF0
 
 typedef enum _e_dos_state {

@@ -166,6 +166,7 @@
 #define CFG_C64_PHI2_REC 0xCC
 #define CFG_C64_RATE	 0xCD
 #define CFG_CMD_ENABLE   0x71
+#define CFG_CMD_ALLOW_WRITE   0x72
 
 #define ID_MODPLAYER 0xAA
 
