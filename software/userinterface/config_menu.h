@@ -59,6 +59,7 @@ public:
 		ConfigItem *it = (ConfigItem *)cmd->functionID;
 		printf("ContextSelect of item %s, set value to %d.\n", it->get_item_name(), cmd->mode);
 		it->value = cmd->mode;
+    	it->setChanged();
 		return 0;
 	}
 

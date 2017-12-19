@@ -257,6 +257,14 @@ ConfigItem *ConfigStore :: find_item(uint8_t id)
     return NULL;
 }
 
+void ConfigStore :: set_change_hook(uint8_t id, t_change_hook hook)
+{
+    ConfigItem *i = find_item(id);
+    if(i) {
+    	i->setChangeHook(hook);
+    }
+}
+
 int ConfigStore :: get_value(uint8_t id)
 {
     ConfigItem *i = find_item(id);
@@ -331,7 +339,8 @@ void ConfigStore :: check_bounds(void)
 /*** CONFIGURATION ITEM ***/
 ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d)
 {
-    definition = d;
+	hook = NULL;
+	definition = d;
     store = s;
     if(d->type == CFG_TYPE_STRING) {
         string = new char[d->max+1];
@@ -502,7 +511,15 @@ void ConfigItem :: execute(int sel)
 {
     printf("Setting option to %d.\n", sel);
     value = sel;
+    setChanged();
+}
+
+void ConfigItem :: setChanged()
+{
     store->dirty = true;
+    if(hook) {
+    	hook(this);
+    }
 }
 
 ConfigSetting :: ConfigSetting(int index, ConfigItem *p, char *name) : setting_name(name)

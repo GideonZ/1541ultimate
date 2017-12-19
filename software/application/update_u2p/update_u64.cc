@@ -38,6 +38,21 @@ extern uint32_t _recovery_app_start;
 extern uint32_t _recovery_app_end;
 */
 
+const char *getBoardRevision(void)
+{
+	uint8_t rev = (U2PIO_BOARDREV >> 3) ^ 0x1F;
+
+	switch (rev) {
+	case 0x08:
+		return "U64 Prototype";
+	case 0x09:
+		return "U64 V1.1 (Null Series)";
+	case 0x0A:
+		return "U64 V1.2 (Mass Prod)";
+	}
+	return "Unknown";
+}
+
 void do_update(void)
 {
 	printf("*** U64 Updater ***\n\n");
@@ -70,7 +85,7 @@ void do_update(void)
     console_print(screen, "\033\024Detected Flash: %s\n", flash2->get_type_string());
 
     const char *fpgaType = (getFpgaCapabilities() & CAPAB_FPGA_TYPE) ? "5CEBA4" : "5CEBA2";
-    console_print(screen, "Detected FPGA Type: %s.\nBoard Revision: %b\n\033\037\n", fpgaType, U2PIO_BOARDREV >> 3);
+    console_print(screen, "Detected FPGA Type: %s.\nBoard Revision: %s\n\033\037\n", fpgaType, getBoardRevision());
 
 /*
     uint8_t was;

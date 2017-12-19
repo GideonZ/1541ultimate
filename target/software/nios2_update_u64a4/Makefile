@@ -23,10 +23,6 @@ SRCS_C   =	itu.c \
             timers.c \
             port.c \
             heap_3.c \
-            ff2.c \
-            ccsbcs.c \
-            ffsyscall.c \
-            time.c \
             i2c.c \
             mdio.c \
             nios_main.c \
@@ -37,7 +33,6 @@ SRCS_CC	 =  memory.cc \
 			small_printf.cc \
 			flash.cc \
 			at45_flash.cc \
-			at49_flash.cc \
 			w25q_flash.cc \
             s25fl_flash.cc \
             s25fl_l_flash.cc \

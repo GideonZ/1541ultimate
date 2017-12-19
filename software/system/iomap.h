@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #ifndef IOBASE
-#define IOBASE 0x4000000
+#define IOBASE 0x04000000
 #endif
 
 #define ITU_BASE           (IOBASE + 0x00000)

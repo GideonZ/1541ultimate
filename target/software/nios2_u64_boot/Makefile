@@ -5,12 +5,12 @@ ARCHITECTURE = nios2
 
 include ../common/environment.mk
 
-DEST     =  ../../../../ult64/target/u64_c5/onchip_mem.hex
+DEST     =  ../../../../ult64/target/u64_a4/onchip_mem.hex
 PRJ      =  u64_boot
 FINAL    =  $(RESULT)/$(PRJ).hex $(RESULT)/$(PRJ).elf $(DEST)
 HEXLAST  =  0x07FF
-HEXBASE  =  0x20000000
-HEXEND   =  0x200007FF
+HEXBASE  =  0x30000000
+HEXEND   =  0x300007FF
 
 SRCS_C   =	u64_boot.c small_printf.c
                         
@@ -44,3 +44,4 @@ include ../common/rules.mk
 
 $(DEST): $(RESULT)/$(PRJ).hex
 	cp $(RESULT)/$(PRJ).hex $(DEST)
+	

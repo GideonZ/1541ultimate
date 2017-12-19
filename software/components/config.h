@@ -47,6 +47,7 @@ struct t_cfg_definition
 class ConfigStore;
 class ConfigurableObject;
 class ConfigItem;
+typedef void (*t_change_hook)(ConfigItem *);
 
 class ConfigSetting
 {
@@ -60,6 +61,7 @@ public:
 
 class ConfigItem
 {
+	t_change_hook hook;
 public:    
     ConfigStore *store;
     t_cfg_definition *definition;
@@ -76,7 +78,10 @@ public:
     const char *get_display_string(char *buffer, int width);
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
+    void setChanged(void);
+    void setChangeHook(t_change_hook hook) { this->hook = hook; }
 };
+
 
 class ConfigStore
 {
@@ -101,6 +106,7 @@ public:
     virtual void write(void);
     virtual void effectuate(void);
 
+    void set_change_hook(uint8_t id, t_change_hook hook);
     ConfigItem *find_item(uint8_t id);
     int  get_value(uint8_t id);
     const char *get_store_name() { return store_name.c_str(); }

@@ -63,7 +63,7 @@ int SocketTest :: saveTrace(SubsysCommand *cmd)
 
     static char buffer[32] = {0};
     strcpy(buffer, "bustrace.bin");
-    FRESULT res = cmd->user_interface->string_box("Give name for trace file..", buffer, 24);
+    int res = cmd->user_interface->string_box("Give name for trace file..", buffer, 24);
 	if(res <= 0) {
 		return 0;
 	}

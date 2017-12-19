@@ -79,14 +79,15 @@ void ConfigBrowserState :: level_up(void)
 void ConfigBrowserState :: change(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    it->store->dirty = true;
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
             browser->context(it->value - it->definition->min);
             break;
         case CFG_TYPE_STRING:
-            if(browser->user_interface->string_box(it->definition->item_text, it->string, it->definition->max))
+            if(browser->user_interface->string_box(it->definition->item_text, it->string, it->definition->max)) {
             	update_selected();
+            	it->setChanged();
+            }
             break;
         default:
             break;
@@ -96,7 +97,7 @@ void ConfigBrowserState :: change(void)
 void ConfigBrowserState :: increase(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    it->store->dirty = true;
+
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
@@ -105,6 +106,7 @@ void ConfigBrowserState :: increase(void)
             else
                 it->value = it->definition->min; // circular
             update_selected();
+        	it->setChanged();
             break;
             
         default:
@@ -115,7 +117,6 @@ void ConfigBrowserState :: increase(void)
 void ConfigBrowserState :: decrease(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    it->store->dirty = true;
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
@@ -124,6 +125,7 @@ void ConfigBrowserState :: decrease(void)
             else
                 it->value = it->definition->max; // circular
             update_selected();
+        	it->setChanged();
             break;
         default:
             //level_up();

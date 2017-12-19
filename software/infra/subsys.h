@@ -29,6 +29,7 @@ class UserInterface;
 #define SUBSYSID_TAPE_RECORDER   5
 #define SUBSYSID_IEC             6
 #define SUBSYSID_CMD_IF			 7
+#define SUBSYSID_U64			 8
 
 class SubSystem  // implements function "executeCommand"
 {

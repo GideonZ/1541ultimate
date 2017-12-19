@@ -77,7 +77,6 @@ void ultimate_main(void *context);
 #include "dump_hex.h"
 
 void codec_init();
-void set_sid_coefficients(volatile uint8_t *);
 
 static void test_i2c_mdio(void) {
 	// mdio_reset();
@@ -108,21 +107,7 @@ static void test_i2c_mdio(void) {
 
 	// enable buffer
 	U2PIO_ULPI_RESET = U2PIO_UR_BUFFER_ENABLE;
-
-	// Try to read EDID, just a hardware test
-	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-		U64_HDMI_REG = U64_HDMI_HPD_RESET;
-
-		if (U64_HDMI_REG & U64_HDMI_HPD_CURRENT) {
-			U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
-			printf("Monitor detected, now reading EDID.\n");
-			uint8_t edid[256];
-			i2c_read_block(0xA0, 0x00, edid, 256);
-			dump_hex_relative(edid, 256);
-			U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
-		}
-	}
-}
+ }
 
 int main(int argc, char *argv[]) {
 	/* When re-starting a debug session (rather than cold booting) we want
