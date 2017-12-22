@@ -1,6 +1,7 @@
 #include "dos.h"
 #include "userinterface.h"
 #include "home_directory.h"
+#include "rtc.h"
 #include <string.h>
 
 __inline uint32_t cpu_to_32le(uint32_t a)
@@ -24,14 +25,20 @@ __inline uint16_t cpu_to_16le(uint16_t a)
 #endif
 }
 
+
+static char* wdnames[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
+
+
 // crate and register ourselves!
 Dos dos1(1);
 Dos dos2(2);
 
 extern int ultimatedosversion;
+extern bool allowUltimateDosDateSet;
 
 static Message c_message_identification_dos10 = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.0" };
 static Message c_message_identification_dos11 = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.1" };
+static Message c_message_identification_dos12 = { 20, true, (uint8_t *)"ULTIMATE-II DOS V1.2" };
 static Message c_status_directory_empty     = { 18, true, (uint8_t *)"01,DIRECTORY EMPTY" };
 static Message c_status_truncated           = { 20, true, (uint8_t *)"02,REQUEST TRUNCATED" };
 static Message c_status_not_implemented     = { 27, true, (uint8_t *)"99,FUNCTION NOT IMPLEMENTED" };
@@ -45,6 +52,7 @@ static Message c_status_internal_error      = { 17, true, (uint8_t *)"87,INTERNA
 static Message c_status_no_information      = { 27, true, (uint8_t *)"88,NO INFORMATION AVAILABLE" };
 static Message c_status_not_a_disk_image    = { 19, true, (uint8_t *)"89,NOT A DISK IMAGE" };
 static Message c_status_drive_not_present   = { 20, true, (uint8_t *)"90,DRIVE NOT PRESENT" };
+static Message c_status_prohibited          = { 22, true, (uint8_t *)"98,FUNCTION PROHIBITED" };
 
 Dos :: Dos(int id) : directoryList(16, NULL)
 {
@@ -125,17 +133,26 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
     SubsysCommand* mount_command;
     SubsysCommand* swap_command;    
     
-    if (ultimatedosversion == 2)
+    if (ultimatedosversion == 3) /* Ultidos 1.0 */
     {
        int cmd = command->message[1];
        if (cmd >= 0x09 && cmd <= 0x0f)   command->message[1] = 0xff;
        if (cmd >= 0x16 && cmd <= 0x1f)   command->message[1] = 0xff;
        if (cmd >= 0x23 && cmd <= 0x2f)   command->message[1] = 0xff;
     }
+    if (ultimatedosversion == 2) /* Ultidos 1.1 */
+    {
+       int cmd = command->message[1];
+       if (cmd >= 0x0c && cmd <= 0x0f)   command->message[1] = 0xff;
+       if (cmd >= 0x18 && cmd <= 0x1f)   command->message[1] = 0xff;
+       if (cmd >= 0x26 && cmd <= 0x2f)   command->message[1] = 0xff;
+    }
     
     switch(command->message[1]) {
         case DOS_CMD_IDENTIFY:
             if (ultimatedosversion == 1)
+               *reply  = &c_message_identification_dos12;
+	    else if (ultimatedosversion == 2)
                *reply  = &c_message_identification_dos11;
 	    else
                *reply  = &c_message_identification_dos10;
@@ -491,6 +508,95 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
             *reply  = command;
             *status = &c_status_ok;
             break;
+        case DOS_CMD_GET_TIME:
+	{
+	    int y, M, D, wd, h, m, s;
+            rtc.get_time(y, M, D, wd, h, m, s);
+	    int extFormat = 0;
+	    if (command->length > 2)
+	          extFormat = command->message[2];
+	    if (extFormat == 0)
+	    {
+	       sprintf((char*) data_message.message, "%4d/%02d/%02d %02d:%02d:%02d", 1980+y, M, D, h, m, s);
+	       data_message.length = 19;
+               *status = &c_status_ok;
+               data_message.last_part = true;
+	       *reply = &data_message;
+	    }
+	    else if (extFormat == 1)
+	    {
+	       sprintf((char*) data_message.message, "%s %4d/%02d/%02d %02d:%02d:%02d", wdnames[wd], 1980+y, M, D, h, m, s);
+	       data_message.length = 23;
+               *status = &c_status_ok;
+               data_message.last_part = true;
+	       *reply = &data_message;
+	    }
+	    else
+	    {
+	       *status = &c_status_unknown_command;
+	       *reply = &c_message_empty;
+	    }
+            break;
+        }
+        case DOS_CMD_SET_TIME:
+	{
+	    if (allowUltimateDosDateSet)
+	    {
+	       int y, M, D, wd, h, m, s, yz, mz, cz;
+	       int len = command->length;
+	       if (len != 8)
+	       {
+	          sprintf((char*) data_message.message, "%02d", len);
+	          data_message.length = 2;
+
+
+                  data_message.last_part = true;
+	          *reply = &data_message;
+
+                 //*reply  = &c_message_empty;
+                 *status = &c_status_unknown_command; 
+	       }
+	       else
+	       {
+	          y=command->message[2];
+	          M=command->message[3];
+	          D=command->message[4];
+	          h=command->message[5];
+	          m=command->message[6];
+	          s=command->message[7];
+	          yz = y + 1900;
+		  y -= 80;
+	          mz = M;
+	          if (M < 3)
+	          {
+	             yz--;
+		     mz += 12;
+	          }
+		  cz = yz / 100;
+		  yz = yz % 100;
+	          int wdz = D + (mz+1)*13/5 + yz + yz/4 + cz/4 - 2 * cz + 6;
+	          wdz = wdz % 7;
+	          if (wdz < 0)
+	             wdz += 7; 
+	          int corr = rtc.get_correction();
+                  rtc.set_time(y, M, D, wdz, h, m, s);
+		  rtc.set_time_in_chip(corr, y, M, D, wdz, h, m, s);
+                  rtc.get_time(y, M, D, wd, h, m, s);
+	          sprintf((char*) data_message.message, "%s %4d/%02d/%02d %02d:%02d:%02d", wdnames[wd], 1980+y, M, D, h, m, s);
+	          data_message.length = 23;
+                  *status = &c_status_ok;
+                  data_message.last_part = true;
+	          *reply = &data_message;
+	       }
+	    }
+	    else
+	    {
+	       *status = &c_status_prohibited;
+	       *reply = &c_message_empty;
+	    }
+            break;
+        }
+
         default:
             *reply  = &c_message_empty;
             *status = &c_status_unknown_command; 

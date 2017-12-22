@@ -68,6 +68,8 @@ port (
 
     -- other hardware pins
     BUFFER_ENn      : out   std_logic;
+    sense           : in    std_logic;
+    
 
 	buttons 		: in    std_logic_vector(2 downto 0);
     cart_led_n      : out   std_logic;
@@ -482,11 +484,13 @@ begin
         allow_write     => allow_write,
         kernal_area     => kernal_area,
         kernal_enable   => control.kernal_enable,
+        kernal_16k      => control.kernal_16k,
         
         irq_n           => irq_n,
         nmi_n           => nmi_n,
         exrom_n         => exrom_n,
         game_n          => game_n,
+	sense           => sense,
     
         CART_LEDn       => cart_led_n,
     	size_ctrl       => control.reu_size );

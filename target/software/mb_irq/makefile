@@ -26,8 +26,8 @@ SRCS_BIN =
 
 PATH_INC =  $(addprefix -I, $(VPATH) $(OUTPUT))
 APP_OPTS = -D_NO_FILE_ACCESS
-COPTIONS = -g -ffunction-sections -O2 -std=c99 $(APP_OPTS)
-CPPOPT   = -g -ffunction-sections -O2 -fno-exceptions -fno-rtti -fno-threadsafe-statics $(APP_OPTS)
+COPTIONS = -g -ffunction-sections -Os -std=c99 $(APP_OPTS)
+CPPOPT   = -g -ffunction-sections -Os -fno-exceptions -fno-rtti -fno-threadsafe-statics $(APP_OPTS)
 #OPTIONS  = -nostartfiles
 LINK 	 = ./mb_app.lds
 LFLAGS   = --gc-sections 

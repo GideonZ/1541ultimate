@@ -62,6 +62,8 @@ struct t_cart {
 #define CART_SBASIC    14
 #define CART_WESTERMANN 15
 #define CART_BBASIC    16
+#define CART_PAGEFOX   17
+#define CART_EXOS      18
 
 const struct t_cart c_recognized_carts[] = {
     {  0, CART_NORMAL,    "Normal cartridge" },
@@ -98,7 +100,7 @@ const struct t_cart c_recognized_carts[] = {
     { 41, CART_NOT_IMPL,  "IEEE 488" },
     { 42, CART_NOT_IMPL,  "Game Killer" },
     { 43, CART_NOT_IMPL,  "Prophet 64" },
-    { 44, CART_NOT_IMPL,  "EXOS" },
+    { 44, CART_EXOS,      "EXOS" },
     { 45, CART_NOT_IMPL,  "Freeze Frame" },
     { 46, CART_NOT_IMPL,  "Freeze Machine" },
     { 47, CART_NOT_IMPL,  "Snapshot64" },
@@ -107,7 +109,7 @@ const struct t_cart c_recognized_carts[] = {
     { 50, CART_NOT_IMPL,  "Action Replay 2" },
     { 51, CART_NOT_IMPL,  "MACH 5" },
     { 52, CART_NOT_IMPL,  "Diashow Maker" },
-    { 53, CART_NOT_IMPL,  "Pagefox" },
+    { 53, CART_PAGEFOX,   "Pagefox" },
     { 54, CART_BBASIC,    "Kingsoft Business Basic" },
     { 55, CART_NOT_IMPL,  "Silver Rock 128" },
     { 56, CART_NOT_IMPL,  "Formel 64" },
@@ -430,6 +432,9 @@ int FileTypeCRT :: parseCrt(void *bufferVoid)
         case CART_BBASIC:
             C64_CARTRIDGE_TYPE = CART_TYPE_BBASIC; // Business Basic
             break;
+        case CART_PAGEFOX:
+            C64_CARTRIDGE_TYPE = CART_TYPE_PAGEFOX; // Business Basic
+            break;
 
         default:
             break;
@@ -696,6 +701,30 @@ void FileTypeCRT :: configure_cart(void)
             break;
         case CART_BBASIC:
             C64_CARTRIDGE_TYPE = CART_TYPE_BBASIC; // Business Basic
+            break;
+        case CART_PAGEFOX:
+            C64_CARTRIDGE_TYPE = CART_TYPE_PAGEFOX; // Business Basic
+            break;
+        case CART_EXOS:
+        	  {
+        		  if (total_read > 8192)
+        		  {
+	    	         C64_KERNAL_ENABLE = 3;
+	               uint8_t *src = (uint8_t *)(((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
+	               for(int i=16383; i>=0; i--)
+		                *(src + 2*i + 1) = *(src+i);
+	            }
+        		  else
+        		  {
+	    	         C64_KERNAL_ENABLE = 1;
+	               uint8_t *src = (uint8_t *)(((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
+	               uint8_t *dst = (uint8_t *)(C64_KERNAL_BASE+1);
+	               for(int i=0;i<8192;i++) {
+		                *(dst) = *(src++);
+		                dst += 2;
+	               }
+	            }
+	          }
             break;
 
         default:

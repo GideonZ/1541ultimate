@@ -22,6 +22,7 @@ port (
     
     ethernet_enable : in  std_logic := '1';
     kernal_enable   : in  std_logic;
+    kernal_16k      : in  std_logic;
     kernal_area     : in  std_logic;
     freeze_trig     : in  std_logic; -- goes '1' when the button has been pressed and we're waiting to enter the freezer
     freeze_act      : in  std_logic; -- goes '1' when we need to switch in the cartridge for freeze mode
@@ -48,6 +49,7 @@ port (
     nmi_n           : out std_logic;
     exrom_n         : out std_logic;
     game_n          : out std_logic;
+    sense           : in  std_logic;
 
     CART_LEDn       : out std_logic;
 
@@ -98,6 +100,8 @@ architecture gideon of all_carts_v4 is
     constant c_westermann   : std_logic_vector(4 downto 0) := "10100";
     constant c_georam       : std_logic_vector(4 downto 0) := "10101";
     constant c_bbasic       : std_logic_vector(4 downto 0) := "10110";
+    constant c_pagefox      : std_logic_vector(4 downto 0) := "10111";
+    constant c_128          : std_logic_vector(4 downto 0) := "11000";
     
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -292,6 +296,16 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= '1';
 
+            when c_128 =>
+                game_n    <= '1';
+                exrom_n   <= '1';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+		serve_vic <= '1';
+
             when c_ocean128 =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
                     bank_bits <= io_wdata(2 downto 0);
@@ -383,6 +397,20 @@ begin
                 end if;
                 game_n    <= mode_bits(0);
                 exrom_n   <= '0';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
+            when c_pagefox => -- 16K, upper 8k disabled by reading to DFxx
+                             -- and disabled by reading
+                if io_write='1' and io_addr(8 downto 7) = "01"  then
+                   mode_bits(0) <= io_wdata(4);
+		   bank_bits <= io_wdata(3 downto 1);
+                end if;
+                game_n    <= mode_bits(0);
+                exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
                 serve_io1 <= '0';
                 serve_io2 <= '0';
@@ -556,7 +584,7 @@ begin
 
     -- determine address
 --  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank, sense)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -638,6 +666,10 @@ begin
             mem_addr_i(27 downto 14) <= g_rom_base(27 downto 14);
             mem_addr_i(13 downto 0)  <= slot_addr(13 downto 0);
         
+        when c_128 =>
+            mem_addr_i(27 downto 15) <= g_rom_base(27 downto 15);
+            mem_addr_i(14 downto 0)  <= slot_addr(14 downto 0);
+        
         when c_ocean128 | c_system3 | c_domark | c_ocean256 =>
             mem_addr_i <= g_rom_base(27 downto 20) & slot_addr(13) & ext_bank & bank_bits & slot_addr(12 downto 0);
 
@@ -680,12 +712,27 @@ begin
 	      allow_write <= '1';
 	   end if;
 
+        when c_pagefox =>
+	   if bank_bits(15) = '0' then
+              mem_addr_i <= g_rom_base(27 downto 16) & bank_bits(14) & bank_bits(13) & slot_addr(13 downto 0); 
+	   elsif bank_bits(14) = '0' then
+	      mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(13) & slot_addr(13 downto 0);
+	      if slot_addr(15 downto 14)="10" then
+	         allow_write <= '1';
+	      end if;
+	   end if;
+
+
         when others =>
             null;
         end case;
 
         if kernal_area='1' then
-            mem_addr_i <= g_kernal_base(27 downto 14) & slot_addr(12 downto 0) & '0';
+            if kernal_16k='0' then
+               mem_addr_i <= g_kernal_base(27 downto 14) & slot_addr(12 downto 0) & '0';
+           else
+               mem_addr_i <= g_rom_base(27 downto 15) & (not sense) & slot_addr(12 downto 0) & '0';
+           end if;
         end if;
 
 --        if eth_addr then

@@ -108,6 +108,8 @@
 #define CART_TYPE_WESTERMANN  0x14
 #define CART_TYPE_GEORAM      0x15
 #define CART_TYPE_BBASIC      0x16
+#define CART_TYPE_PAGEFOX     0x17
+#define CART_TYPE_128         0x18
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
@@ -141,7 +143,7 @@
 #define C64_POKE(x,y) *((volatile uint8_t *)(C64_MEMORY_BASE + x)) = y;
 #define C64_PEEK(x)   (*((volatile uint8_t *)(C64_MEMORY_BASE + x)))
 
-#define NUM_VICREGS    48
+#define NUM_VICREGS    49
 #define COLOR_SIZE   1024
 #define BACKUP_SIZE  2048
 #define CHARSET_SIZE 2048
@@ -164,6 +166,7 @@
 #define CFG_C64_PHI2_REC 0xCC
 #define CFG_C64_RATE	 0xCD
 #define CFG_CMD_ENABLE   0x71
+#define CFG_CMD_ALLOW_WRITE   0x72
 
 #define ID_MODPLAYER 0xAA
 
