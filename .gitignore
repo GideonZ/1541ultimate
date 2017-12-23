@@ -39,6 +39,7 @@ software/libzip-0.11.2
 software/nios_appl_bsp/obj
 software/nios_dut_bsp/obj
 software/nios_tester_bsp/obj
+software/nios_solo_bsp/obj
 software/zlib-1.2.8
 target/fpga/*.xrpt
 target/fpga/_xmsgs
