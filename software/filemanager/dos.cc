@@ -4,30 +4,26 @@
 #include "rtc.h"
 #include <string.h>
 
-__inline uint32_t cpu_to_32le(uint32_t a)
-{
+__inline uint32_t cpu_to_32le(uint32_t a) {
 #ifdef NIOS
-	return a;
+    return a;
 #else
-	uint32_t m1, m2;
+    uint32_t m1, m2;
     m1 = (a & 0x00FF0000) >> 8;
     m2 = (a & 0x0000FF00) << 8;
     return (a >> 24) | (a << 24) | m1 | m2;
 #endif
 }
 
-__inline uint16_t cpu_to_16le(uint16_t a)
-{
+__inline uint16_t cpu_to_16le(uint16_t a) {
 #ifdef NIOS
-	return a;
+    return a;
 #else
-	return (a >> 8) | (a << 8);
+    return (a >> 8) | (a << 8);
 #endif
 }
 
-
 static char* wdnames[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
-
 
 // crate and register ourselves!
 Dos dos1(1);
@@ -54,38 +50,35 @@ static Message c_status_not_a_disk_image    = { 19, true, (uint8_t *)"89,NOT A D
 static Message c_status_drive_not_present   = { 20, true, (uint8_t *)"90,DRIVE NOT PRESENT" };
 static Message c_status_prohibited          = { 22, true, (uint8_t *)"98,FUNCTION PROHIBITED" };
 
-Dos :: Dos(int id) : directoryList(16, NULL)
-{
+Dos::Dos(int id) :
+        directoryList(16, NULL) {
     command_targets[id] = this;
     data_message.message = new uint8_t[512];
     status_message.message = new uint8_t[80];
-    fm = FileManager :: getFileManager();
+    fm = FileManager::getFileManager();
     path = fm->get_new_path("Dos");
     file = 0;
     dir_entries = remaining = current_index = 0;
     dos_state = e_dos_idle;
 }
-   
 
-Dos :: ~Dos()
-{
+Dos::~Dos() {
     fm->release_path(path);
     delete[] data_message.message;
     delete[] status_message.message;
     // officially we should deregister ourselves, but as this will only occur at application exit, there is no need
 }
-    
-void Dos :: cd(Message *command, Message **reply, Message **status)
-{
-	mstring old_path(path->get_path());
 
-	*reply  = &c_message_empty;
+void Dos::cd(Message *command, Message **reply, Message **status) {
+    mstring old_path(path->get_path());
+
+    *reply = &c_message_empty;
     command->message[command->length] = 0;
-    path->cd((char *)&command->message[2]);
-    
-	cleanupDirectory();
-	FRESULT fres = path->get_directory(directoryList);
-	if (fres == FR_OK) {
+    path->cd((char *) &command->message[2]);
+
+    cleanupDirectory();
+    FRESULT fres = path->get_directory(directoryList);
+    if (fres == FR_OK) {
         *status = &c_status_ok;
     } else {
         *status = &c_status_no_such_dir;
@@ -93,15 +86,14 @@ void Dos :: cd(Message *command, Message **reply, Message **status)
     }
 }
 
-C1541* Dos :: getDriveByID(uint8_t id)
-{
+C1541* Dos::getDriveByID(uint8_t id) {
     C1541* drive = NULL;
-    
+
     if (id) {
         if (c1541_A != NULL && c1541_A->get_current_iec_address() == id) {
             drive = c1541_A;
-        }
-        else if (c1541_B != NULL && c1541_B->get_current_iec_address() == id) {
+        } else if (c1541_B != NULL
+                && c1541_B->get_current_iec_address() == id) {
             drive = c1541_B;
         }
     } else {
@@ -111,8 +103,7 @@ C1541* Dos :: getDriveByID(uint8_t id)
     return drive;
 }
 
-void Dos :: parse_command(Message *command, Message **reply, Message **status)
-{
+void Dos::parse_command(Message *command, Message **reply, Message **status) {
     // the first byte of the command lead us here to this function.
     // the second byte is the command byte for the DOS; the third and forth byte are the length
     // data follows after the 4th byte and is thus aligned for copy.    
@@ -131,502 +122,519 @@ void Dos :: parse_command(Message *command, Message **reply, Message **status)
     int mount_type;
     Action* mount_action;
     SubsysCommand* mount_command;
-    SubsysCommand* swap_command;    
-    
+    SubsysCommand* swap_command;
+
     if (ultimatedosversion == 3) /* Ultidos 1.0 */
     {
-       int cmd = command->message[1];
-       if (cmd >= 0x09 && cmd <= 0x0f)   command->message[1] = 0xff;
-       if (cmd >= 0x16 && cmd <= 0x1f)   command->message[1] = 0xff;
-       if (cmd >= 0x23 && cmd <= 0x2f)   command->message[1] = 0xff;
+        int cmd = command->message[1];
+        if (cmd >= 0x09 && cmd <= 0x0f)
+            command->message[1] = 0xff;
+        if (cmd >= 0x16 && cmd <= 0x1f)
+            command->message[1] = 0xff;
+        if (cmd >= 0x23 && cmd <= 0x2f)
+            command->message[1] = 0xff;
     }
     if (ultimatedosversion == 2) /* Ultidos 1.1 */
     {
-       int cmd = command->message[1];
-       if (cmd >= 0x0c && cmd <= 0x0f)   command->message[1] = 0xff;
-       if (cmd >= 0x18 && cmd <= 0x1f)   command->message[1] = 0xff;
-       if (cmd >= 0x26 && cmd <= 0x2f)   command->message[1] = 0xff;
+        int cmd = command->message[1];
+        if (cmd >= 0x0c && cmd <= 0x0f)
+            command->message[1] = 0xff;
+        if (cmd >= 0x18 && cmd <= 0x1f)
+            command->message[1] = 0xff;
+        if (cmd >= 0x26 && cmd <= 0x2f)
+            command->message[1] = 0xff;
     }
-    
-    switch(command->message[1]) {
-        case DOS_CMD_IDENTIFY:
-            if (ultimatedosversion == 1)
-               *reply  = &c_message_identification_dos12;
-	    else if (ultimatedosversion == 2)
-               *reply  = &c_message_identification_dos11;
-	    else
-               *reply  = &c_message_identification_dos10;
+
+    switch (command->message[1]) {
+    case DOS_CMD_IDENTIFY:
+        if (ultimatedosversion == 1)
+            *reply = &c_message_identification_dos12;
+        else if (ultimatedosversion == 2)
+            *reply = &c_message_identification_dos11;
+        else
+            *reply = &c_message_identification_dos10;
+        *status = &c_status_ok;
+        break;
+    case DOS_CMD_OPEN_FILE:
+        command->message[command->length] = 0;
+        res = fm->fopen(path, (char *) &command->message[3],
+                command->message[2], &file);
+        *reply = &c_message_empty;
+        if (!file) {
+            strcpy((char *) status_message.message,
+                    FileSystem::get_error_string(res));
+            status_message.length = strlen((char *) status_message.message);
+            *status = &status_message;
+        } else {
             *status = &c_status_ok;
-            break;            
-        case DOS_CMD_OPEN_FILE:
-            command->message[command->length] = 0;
-            res = fm->fopen(path, (char *)&command->message[3], command->message[2], &file);
-            *reply  = &c_message_empty;
-            if(!file) {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-                status_message.length = strlen((char *)status_message.message);
-                *status = &status_message; 
-            } else {
-                *status = &c_status_ok; 
-            }
-            break;            
-        case DOS_CMD_CLOSE_FILE:
-            *reply  = &c_message_empty;
-            if (file) {
-                fm->fclose(file);
-                file = NULL;
-                *status = &c_status_ok; 
-            } else {
-                *status = &c_status_no_file_to_close; 
-            }
-            break;
-        case DOS_CMD_FILE_SEEK:
-            *reply  = &c_message_empty;
-            *status = &c_status_ok; 
-            if(!file) {
-                *status = &c_status_file_not_open;
-            } else {
-                pos = (((uint32_t)command->message[5]) << 24) | (((uint32_t)command->message[4]) << 16) |
-                      (((uint32_t)command->message[3]) << 8) | command->message[2];
-                res = file->seek(pos);
-                if (res != FR_OK) {
-                    strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-                    status_message.length = strlen((char *)status_message.message);
-                    *status = &status_message;
-                }
-            }
-            break;
-        case DOS_CMD_FILE_INFO:
-            *reply  = &c_message_empty;
-            if (!file) {
-            	*status = &c_status_file_not_open;
-            	break;
-            }
+        }
+        break;
+    case DOS_CMD_CLOSE_FILE:
+        *reply = &c_message_empty;
+        if (file) {
+            fm->fclose(file);
+            file = NULL;
             *status = &c_status_ok;
-            ffi = new FileInfo(INFO_SIZE);
-            res = fm->fstat(file->get_path(), *ffi);
-            if(res != FR_OK) {
-                *status = &c_status_file_not_found;
-                delete ffi;
-                break;
-            }
-            dos_info.size   = cpu_to_32le(ffi->size);
-        	dos_info.date   = cpu_to_16le(ffi->date);
-        	dos_info.time   = cpu_to_16le(ffi->time);
-            dos_info.extension[0] = ' ';
-            dos_info.extension[1] = ' ';
-            dos_info.extension[2] = ' ';
-            strncpy(dos_info.extension, ffi->extension, 3);
-        	dos_info.attrib = ffi->attrib;
-        	strncpy(dos_info.filename, ffi->lfname, 63);
-            data_message.length = strlen(dos_info.filename) + 4 + 2 + 2 + 4;
-            data_message.last_part = true;
-            memcpy(data_message.message, &dos_info, data_message.length);
-            *reply = &data_message;
-            delete ffi;
-            break;
-        case DOS_CMD_FILE_STAT:
-            *reply  = &c_message_empty;
-            *status = &c_status_ok; 
-            ffi = new FileInfo(INFO_SIZE);
-            res = fm->fstat(path, (char *)&command->message[2], *ffi);
-            if(res != FR_OK) {
-                *status = &c_status_file_not_found;
-                delete ffi;
-                break;
-            } 
-            dos_info.size   = cpu_to_32le(ffi->size);
-        	dos_info.date   = cpu_to_16le(ffi->date);
-        	dos_info.time   = cpu_to_16le(ffi->time);
-            dos_info.extension[0] = ' ';
-            dos_info.extension[1] = ' ';
-            dos_info.extension[2] = ' ';
-            strncpy(dos_info.extension, ffi->extension, 3);
-        	dos_info.attrib = ffi->attrib;
-        	strncpy(dos_info.filename, ffi->lfname, 63);
-            data_message.length = strlen(dos_info.filename) + 4 + 2 + 2 + 4;
-            data_message.last_part = true;
-            memcpy(data_message.message, &dos_info, data_message.length);
-            *reply = &data_message;
-            delete ffi;
-            break;
-        case DOS_CMD_DELETE_FILE:
-            *reply = &c_message_empty;
-            command->message[command->length] = 0;
-            res = fm->delete_file(path, (char *)&command->message[2]);
-            
-            if (res == FR_OK) {
-                *status = &c_status_ok; 
-            } else {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-                status_message.length = strlen((char *)status_message.message);
-                *status = &status_message; 
-            }
-            break;
-        case DOS_CMD_RENAME_FILE:
-            *reply = &c_message_empty;
-            command->message[command->length] = 0;
-            oldname = (char *)&command->message[2];
-            newname = (char *)&command->message[2+strlen(oldname)+1];
-            res = fm->rename(path, oldname, newname);
-            
-            if (res == FR_OK) {
-                *status = &c_status_ok; 
-            } else {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-                status_message.length = strlen((char *)status_message.message);
-                *status = &status_message; 
-            }
-            break;
-        case DOS_CMD_COPY_FILE:    
-            *reply = &c_message_empty;
-            command->message[command->length] = 0;
-            filename = (char *)&command->message[2];
-            destination = (char *)&command->message[2+strlen(filename)+1];
-            res = fm->fcopy(path->get_path(), filename, destination);
-            
-            if (res == FR_OK) {
-                *status = &c_status_ok; 
-            } else {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-                status_message.length = strlen((char *)status_message.message);
-                *status = &status_message; 
-            }
-            break;
-        case DOS_CMD_LOAD_REU:
-            if(!file) {
-                *status = &c_status_file_not_open;
-                *reply  = &c_message_empty;
-                break;
-            } 
-            *status = &c_status_ok; 
-            addr = (((uint32_t)command->message[5]) << 24) | (((uint32_t)command->message[4]) << 16) |
-                   (((uint32_t)command->message[3]) << 8) | command->message[2];
-            len  = (((uint32_t)command->message[9]) << 24) | (((uint32_t)command->message[8]) << 16) |
-                   (((uint32_t)command->message[7]) << 8) | command->message[6];
-            addr &= 0x00FFFFFF;
-            len  &= 0x00FFFFFF;
-            if ((addr + len) > 0x01000000) {
-                len = 0x01000000 - addr;
-                *status = &c_status_truncated; 
-            }    
-            res = file->read((uint8_t *)(addr | 0x01000000), len, &transferred);
-            *reply  = &data_message;
-            sprintf((char *)data_message.message, "$%6x BYTES LOADED TO REU $%6x", transferred, addr);
-            data_message.length = 35;
-            data_message.last_part = true;
+        } else {
+            *status = &c_status_no_file_to_close;
+        }
+        break;
+    case DOS_CMD_FILE_SEEK:
+        *reply = &c_message_empty;
+        *status = &c_status_ok;
+        if (!file) {
+            *status = &c_status_file_not_open;
+        } else {
+            pos = (((uint32_t) command->message[5]) << 24)
+                    | (((uint32_t) command->message[4]) << 16)
+                    | (((uint32_t) command->message[3]) << 8)
+                    | command->message[2];
+            res = file->seek(pos);
             if (res != FR_OK) {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-                status_message.length = strlen((char *)status_message.message);
+                strcpy((char *) status_message.message,
+                        FileSystem::get_error_string(res));
+                status_message.length = strlen((char *) status_message.message);
                 *status = &status_message;
             }
+        }
+        break;
+    case DOS_CMD_FILE_INFO:
+        *reply = &c_message_empty;
+        if (!file) {
+            *status = &c_status_file_not_open;
             break;
-        case DOS_CMD_SAVE_REU:
-            if(!file) {
-                *status = &c_status_file_not_open;
-                *reply  = &c_message_empty;
-                break;
-            } 
-            *status = &c_status_ok; 
-            addr = (((uint32_t)command->message[5]) << 24) | (((uint32_t)command->message[4]) << 16) |
-                   (((uint32_t)command->message[3]) << 8) | command->message[2];
-            len  = (((uint32_t)command->message[9]) << 24) | (((uint32_t)command->message[8]) << 16) |
-                   (((uint32_t)command->message[7]) << 8) | command->message[6];
-            addr &= 0x00FFFFFF;
-            len  &= 0x00FFFFFF;
-            if ((addr + len) > 0x01000000) {
-                len = 0x01000000 - addr;
-                *status = &c_status_truncated; 
-            }    
-            res = file->write((uint8_t *)(addr | 0x01000000), len, &transferred);
-            *reply  = &data_message;
-            sprintf((char *)data_message.message, "$%6x BYTES SAVED FROM REU $%6x", transferred, addr);
-            data_message.length = 36;
-            data_message.last_part = true;
-            if (res != FR_OK) {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-                status_message.length = strlen((char *)status_message.message);
-                *status = &status_message;
-            }
-            break;
-        case DOS_CMD_MOUNT_DISK:
-            *reply  = &c_message_empty;
-            *status = &c_status_ok; 
-            command->message[command->length] = 0;
-
-            drive_id = command->message[2];
-            filename = (char *)&command->message[3];
-            
-            if ((drive = getDriveByID(drive_id)) == NULL) {
-                *status = &c_status_drive_not_present;
-                break;
-            }
-            
-            ffi = new FileInfo(INFO_SIZE);
-            res = fm->fstat(path, filename, *ffi);
-
-            if (res != FR_OK) {
-                *status = &c_status_file_not_found;
-                delete ffi;
-                break;
-            }
-
-            if (strncasecmp(ffi->extension, "d64", 3) == 0) {
-                mount_type = D64FILE_MOUNT;
-            }
-            else if (strncasecmp(ffi->extension, "g64", 3) == 0) {
-                mount_type = G64FILE_MOUNT;
-            }
-            else {
-              *status = &c_status_not_a_disk_image;
-                delete ffi;
-                break;
-            }              
-
-            mount_action = new Action("Mount Disk", drive->getID(), mount_type);
-            mount_command = new SubsysCommand((UserInterface*) NULL, mount_action, path->get_path(), filename);              
-            mount_command->execute();
-            
+        }
+        *status = &c_status_ok;
+        ffi = new FileInfo(INFO_SIZE);
+        res = fm->fstat(file->get_path(), *ffi);
+        if (res != FR_OK) {
+            *status = &c_status_file_not_found;
             delete ffi;
-            delete mount_action;
             break;
-       case DOS_CMD_UMOUNT_DISK:
-            *reply  = &c_message_empty;
-            *status = &c_status_ok; 
-
-            drive_id = command->message[2];
-
-            if ((drive = getDriveByID(drive_id)) == NULL) {
-                *status = &c_status_drive_not_present;
-                break;
-            }
-            
-            mount_action = new Action("Umount Disk", drive->getID(), MENU_1541_REMOVE, 0);
-            mount_command = new SubsysCommand((UserInterface*) NULL, mount_action, (char*)NULL, (char*)NULL);
-            mount_command->execute();
-
-            delete mount_action;
+        }
+        dos_info.size = cpu_to_32le(ffi->size);
+        dos_info.date = cpu_to_16le(ffi->date);
+        dos_info.time = cpu_to_16le(ffi->time);
+        dos_info.extension[0] = ' ';
+        dos_info.extension[1] = ' ';
+        dos_info.extension[2] = ' ';
+        strncpy(dos_info.extension, ffi->extension, 3);
+        dos_info.attrib = ffi->attrib;
+        strncpy(dos_info.filename, ffi->lfname, 63);
+        data_message.length = strlen(dos_info.filename) + 4 + 2 + 2 + 4;
+        data_message.last_part = true;
+        memcpy(data_message.message, &dos_info, data_message.length);
+        *reply = &data_message;
+        delete ffi;
+        break;
+    case DOS_CMD_FILE_STAT:
+        *reply = &c_message_empty;
+        *status = &c_status_ok;
+        ffi = new FileInfo(INFO_SIZE);
+        res = fm->fstat(path, (char *) &command->message[2], *ffi);
+        if (res != FR_OK) {
+            *status = &c_status_file_not_found;
+            delete ffi;
             break;
-        case DOS_CMD_SWAP_DISK:
-            *reply  = &c_message_empty;
+        }
+        dos_info.size = cpu_to_32le(ffi->size);
+        dos_info.date = cpu_to_16le(ffi->date);
+        dos_info.time = cpu_to_16le(ffi->time);
+        dos_info.extension[0] = ' ';
+        dos_info.extension[1] = ' ';
+        dos_info.extension[2] = ' ';
+        strncpy(dos_info.extension, ffi->extension, 3);
+        dos_info.attrib = ffi->attrib;
+        strncpy(dos_info.filename, ffi->lfname, 63);
+        data_message.length = strlen(dos_info.filename) + 4 + 2 + 2 + 4;
+        data_message.last_part = true;
+        memcpy(data_message.message, &dos_info, data_message.length);
+        *reply = &data_message;
+        delete ffi;
+        break;
+    case DOS_CMD_DELETE_FILE:
+        *reply = &c_message_empty;
+        command->message[command->length] = 0;
+        res = fm->delete_file(path, (char *) &command->message[2]);
+
+        if (res == FR_OK) {
             *status = &c_status_ok;
+        } else {
+            strcpy((char *) status_message.message,
+                    FileSystem::get_error_string(res));
+            status_message.length = strlen((char *) status_message.message);
+            *status = &status_message;
+        }
+        break;
+    case DOS_CMD_RENAME_FILE:
+        *reply = &c_message_empty;
+        command->message[command->length] = 0;
+        oldname = (char *) &command->message[2];
+        newname = (char *) &command->message[2 + strlen(oldname) + 1];
+        res = fm->rename(path, oldname, newname);
 
-            drive_id = command->message[2];
-            
-            if ((drive = getDriveByID(drive_id)) == NULL) {
-                *status = &c_status_drive_not_present;
-                break;
-            }
-                        
-            swap_command =
-              new SubsysCommand((UserInterface*) NULL, drive->getID(), MENU_1541_SWAP, 0,
-                                (const char*)NULL, (const char*)NULL);
+        if (res == FR_OK) {
+            *status = &c_status_ok;
+        } else {
+            strcpy((char *) status_message.message,
+                    FileSystem::get_error_string(res));
+            status_message.length = strlen((char *) status_message.message);
+            *status = &status_message;
+        }
+        break;
+    case DOS_CMD_COPY_FILE:
+        *reply = &c_message_empty;
+        command->message[command->length] = 0;
+        filename = (char *) &command->message[2];
+        destination = (char *) &command->message[2 + strlen(filename) + 1];
+        res = fm->fcopy(path->get_path(), filename, destination);
 
-            swap_command->execute();
-            break;                        
-        case DOS_CMD_CHANGE_DIR:
-        	cd(command, reply, status);
-        	break;
-        case DOS_CMD_COPY_UI_PATH:
-            *reply  = &c_message_empty;
-            *status = &c_status_not_implemented;
-            break;
-        case DOS_CMD_COPY_HOME_PATH:
-            destination = (char*) HomeDirectory :: getHomeDirectory();
-            strncpy((char*)command->message+2, destination, strlen(destination)+1);
-            command->length = 2 + strlen(destination) + 1;
-            cd(command, reply, status);
-            // fallthrough
-
-        case DOS_CMD_GET_PATH:
-            strcpy((char *)data_message.message, path->get_path());
-            data_message.length = strlen((char *)data_message.message);
-            data_message.last_part = true;
-            *reply  = &data_message;
-            *status = &c_status_ok; 
-            break;
-        case DOS_CMD_CREATE_DIR:
+        if (res == FR_OK) {
+            *status = &c_status_ok;
+        } else {
+            strcpy((char *) status_message.message,
+                    FileSystem::get_error_string(res));
+            status_message.length = strlen((char *) status_message.message);
+            *status = &status_message;
+        }
+        break;
+    case DOS_CMD_LOAD_REU:
+        if (!file) {
+            *status = &c_status_file_not_open;
             *reply = &c_message_empty;
-            command->message[command->length] = 0;
-            res = fm->create_dir(path, (char *)&command->message[2]);
-            
-            if (res == FR_OK) {
-                *status = &c_status_ok; 
-            } else {
-                strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-                status_message.length = strlen((char *)status_message.message);
-                *status = &status_message; 
-            }
             break;
-        case DOS_CMD_OPEN_DIR:
-        	cleanupDirectory();
-        	res = path->get_directory(directoryList);
-            *reply  = &c_message_empty;
-            if (res != FR_OK) {
-                *status = &c_status_cannot_read_dir;
-                break;
-            }
-            dir_entries = directoryList.get_elements();
-            if(dir_entries == 0) {
-                *status = &c_status_directory_empty;
-            } else {
-                *status = &c_status_ok;
-            }            
+        }
+        *status = &c_status_ok;
+        addr = (((uint32_t) command->message[5]) << 24)
+                | (((uint32_t) command->message[4]) << 16)
+                | (((uint32_t) command->message[3]) << 8) | command->message[2];
+        len = (((uint32_t) command->message[9]) << 24)
+                | (((uint32_t) command->message[8]) << 16)
+                | (((uint32_t) command->message[7]) << 8) | command->message[6];
+        addr &= 0x00FFFFFF;
+        len &= 0x00FFFFFF;
+        if ((addr + len) > 0x01000000) {
+            len = 0x01000000 - addr;
+            *status = &c_status_truncated;
+        }
+        res = file->read((uint8_t *) (addr | 0x01000000), len, &transferred);
+        *reply = &data_message;
+        sprintf((char *) data_message.message, "$%6x BYTES LOADED TO REU $%6x",
+                transferred, addr);
+        data_message.length = 35;
+        data_message.last_part = true;
+        if (res != FR_OK) {
+            strcpy((char *) status_message.message,
+                    FileSystem::get_error_string(res));
+            status_message.length = strlen((char *) status_message.message);
+            *status = &status_message;
+        }
+        break;
+    case DOS_CMD_SAVE_REU:
+        if (!file) {
+            *status = &c_status_file_not_open;
+            *reply = &c_message_empty;
             break;
-            
-        case DOS_CMD_READ_DIR:
-            current_index = 0;
-            dos_state = e_dos_in_directory;
+        }
+        *status = &c_status_ok;
+        addr = (((uint32_t) command->message[5]) << 24)
+                | (((uint32_t) command->message[4]) << 16)
+                | (((uint32_t) command->message[3]) << 8) | command->message[2];
+        len = (((uint32_t) command->message[9]) << 24)
+                | (((uint32_t) command->message[8]) << 16)
+                | (((uint32_t) command->message[7]) << 8) | command->message[6];
+        addr &= 0x00FFFFFF;
+        len &= 0x00FFFFFF;
+        if ((addr + len) > 0x01000000) {
+            len = 0x01000000 - addr;
+            *status = &c_status_truncated;
+        }
+        res = file->write((uint8_t *) (addr | 0x01000000), len, &transferred);
+        *reply = &data_message;
+        sprintf((char *) data_message.message, "$%6x BYTES SAVED FROM REU $%6x",
+                transferred, addr);
+        data_message.length = 36;
+        data_message.last_part = true;
+        if (res != FR_OK) {
+            strcpy((char *) status_message.message,
+                    FileSystem::get_error_string(res));
+            status_message.length = strlen((char *) status_message.message);
+            *status = &status_message;
+        }
+        break;
+    case DOS_CMD_MOUNT_DISK:
+        *reply = &c_message_empty;
+        *status = &c_status_ok;
+        command->message[command->length] = 0;
+
+        drive_id = command->message[2];
+        filename = (char *) &command->message[3];
+
+        if ((drive = getDriveByID(drive_id)) == NULL) {
+            *status = &c_status_drive_not_present;
+            break;
+        }
+
+        ffi = new FileInfo(INFO_SIZE);
+        res = fm->fstat(path, filename, *ffi);
+
+        if (res != FR_OK) {
+            *status = &c_status_file_not_found;
+            delete ffi;
+            break;
+        }
+
+        if (strncasecmp(ffi->extension, "d64", 3) == 0) {
+            mount_type = D64FILE_MOUNT;
+        } else if (strncasecmp(ffi->extension, "g64", 3) == 0) {
+            mount_type = G64FILE_MOUNT;
+        } else {
+            *status = &c_status_not_a_disk_image;
+            delete ffi;
+            break;
+        }
+
+        mount_action = new Action("Mount Disk", drive->getID(), mount_type);
+        mount_command = new SubsysCommand((UserInterface*) NULL, mount_action,
+                path->get_path(), filename);
+        mount_command->execute();
+
+        delete ffi;
+        delete mount_action;
+        break;
+    case DOS_CMD_UMOUNT_DISK:
+        *reply = &c_message_empty;
+        *status = &c_status_ok;
+
+        drive_id = command->message[2];
+
+        if ((drive = getDriveByID(drive_id)) == NULL) {
+            *status = &c_status_drive_not_present;
+            break;
+        }
+
+        mount_action = new Action("Umount Disk", drive->getID(),
+                MENU_1541_REMOVE, 0);
+        mount_command = new SubsysCommand((UserInterface*) NULL, mount_action,
+                (char*) NULL, (char*) NULL);
+        mount_command->execute();
+
+        delete mount_action;
+        break;
+    case DOS_CMD_SWAP_DISK:
+        *reply = &c_message_empty;
+        *status = &c_status_ok;
+
+        drive_id = command->message[2];
+
+        if ((drive = getDriveByID(drive_id)) == NULL) {
+            *status = &c_status_drive_not_present;
+            break;
+        }
+
+        swap_command = new SubsysCommand((UserInterface*) NULL, drive->getID(),
+                MENU_1541_SWAP, 0, (const char*) NULL, (const char*) NULL);
+
+        swap_command->execute();
+        break;
+    case DOS_CMD_CHANGE_DIR:
+        cd(command, reply, status);
+        break;
+    case DOS_CMD_COPY_UI_PATH:
+        *reply = &c_message_empty;
+        *status = &c_status_not_implemented;
+        break;
+    case DOS_CMD_COPY_HOME_PATH:
+        destination = (char*) HomeDirectory::getHomeDirectory();
+        strncpy((char*) command->message + 2, destination,
+                strlen(destination) + 1);
+        command->length = 2 + strlen(destination) + 1;
+        cd(command, reply, status);
+        // fallthrough
+
+    case DOS_CMD_GET_PATH:
+        strcpy((char *) data_message.message, path->get_path());
+        data_message.length = strlen((char *) data_message.message);
+        data_message.last_part = true;
+        *reply = &data_message;
+        *status = &c_status_ok;
+        break;
+    case DOS_CMD_CREATE_DIR:
+        *reply = &c_message_empty;
+        command->message[command->length] = 0;
+        res = fm->create_dir(path, (char *) &command->message[2]);
+
+        if (res == FR_OK) {
+            *status = &c_status_ok;
+        } else {
+            strcpy((char *) status_message.message,
+                    FileSystem::get_error_string(res));
+            status_message.length = strlen((char *) status_message.message);
+            *status = &status_message;
+        }
+        break;
+    case DOS_CMD_OPEN_DIR:
+        cleanupDirectory();
+        res = path->get_directory(directoryList);
+        *reply = &c_message_empty;
+        if (res != FR_OK) {
+            *status = &c_status_cannot_read_dir;
+            break;
+        }
+        dir_entries = directoryList.get_elements();
+        if (dir_entries == 0) {
+            *status = &c_status_directory_empty;
+        } else {
+            *status = &c_status_ok;
+        }
+        break;
+
+    case DOS_CMD_READ_DIR:
+        current_index = 0;
+        dos_state = e_dos_in_directory;
+        get_more_data(reply, status);
+        break;
+    case DOS_CMD_READ_DATA:
+        if (!file) {
+            *reply = &c_message_empty;
+            *status = &c_status_file_not_open;
+        } else {
+            remaining = (((int) command->message[3]) << 8)
+                    | command->message[2];
+            dos_state = e_dos_in_file;
             get_more_data(reply, status);
-            break;            
-        case DOS_CMD_READ_DATA:
-            if(!file) {
-                *reply  = &c_message_empty;
-                *status = &c_status_file_not_open;
-            } else {
-                remaining = (((int)command->message[3]) << 8) | command->message[2];
-                dos_state = e_dos_in_file;
-                get_more_data(reply, status);
-            }
-            break;
-        case DOS_CMD_WRITE_DATA:
-            *reply  = &c_message_empty;
-            if(!file) {
-                *status = &c_status_file_not_open;
-            } else {
-                res = file->write(&command->message[4], command->length-4, &transferred);
-                *status = &c_status_ok;
-                if (res != FR_OK) {
-                    strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-                    status_message.length = strlen((char *)status_message.message);
-                    *status = &status_message;
-                }
-            }
-            break;
-        case DOS_CMD_ECHO:
-            command->last_part = true;
-            *reply  = command;
+        }
+        break;
+    case DOS_CMD_WRITE_DATA:
+        *reply = &c_message_empty;
+        if (!file) {
+            *status = &c_status_file_not_open;
+        } else {
+            res = file->write(&command->message[4], command->length - 4,
+                    &transferred);
             *status = &c_status_ok;
-            break;
-        case DOS_CMD_GET_TIME:
-	{
-	    int y, M, D, wd, h, m, s;
-            rtc.get_time(y, M, D, wd, h, m, s);
-	    int extFormat = 0;
-	    if (command->length > 2)
-	          extFormat = command->message[2];
-	    if (extFormat == 0)
-	    {
-	       sprintf((char*) data_message.message, "%4d/%02d/%02d %02d:%02d:%02d", 1980+y, M, D, h, m, s);
-	       data_message.length = 19;
-               *status = &c_status_ok;
-               data_message.last_part = true;
-	       *reply = &data_message;
-	    }
-	    else if (extFormat == 1)
-	    {
-	       sprintf((char*) data_message.message, "%s %4d/%02d/%02d %02d:%02d:%02d", wdnames[wd], 1980+y, M, D, h, m, s);
-	       data_message.length = 23;
-               *status = &c_status_ok;
-               data_message.last_part = true;
-	       *reply = &data_message;
-	    }
-	    else
-	    {
-	       *status = &c_status_unknown_command;
-	       *reply = &c_message_empty;
-	    }
-            break;
+            if (res != FR_OK) {
+                strcpy((char *) status_message.message,
+                        FileSystem::get_error_string(res));
+                status_message.length = strlen((char *) status_message.message);
+                *status = &status_message;
+            }
         }
-        case DOS_CMD_SET_TIME:
-	{
-	    if (allowUltimateDosDateSet)
-	    {
-	       int y, M, D, wd, h, m, s, yz, mz, cz;
-	       int len = command->length;
-	       if (len != 8)
-	       {
-	          sprintf((char*) data_message.message, "%02d", len);
-	          data_message.length = 2;
-
-
-                  data_message.last_part = true;
-	          *reply = &data_message;
-
-                 //*reply  = &c_message_empty;
-                 *status = &c_status_unknown_command; 
-	       }
-	       else
-	       {
-	          y=command->message[2];
-	          M=command->message[3];
-	          D=command->message[4];
-	          h=command->message[5];
-	          m=command->message[6];
-	          s=command->message[7];
-	          yz = y + 1900;
-		  y -= 80;
-	          mz = M;
-	          if (M < 3)
-	          {
-	             yz--;
-		     mz += 12;
-	          }
-		  cz = yz / 100;
-		  yz = yz % 100;
-	          int wdz = D + (mz+1)*13/5 + yz + yz/4 + cz/4 - 2 * cz + 6;
-	          wdz = wdz % 7;
-	          if (wdz < 0)
-	             wdz += 7; 
-	          int corr = rtc.get_correction();
-                  rtc.set_time(y, M, D, wdz, h, m, s);
-		  rtc.set_time_in_chip(corr, y, M, D, wdz, h, m, s);
-                  rtc.get_time(y, M, D, wd, h, m, s);
-	          sprintf((char*) data_message.message, "%s %4d/%02d/%02d %02d:%02d:%02d", wdnames[wd], 1980+y, M, D, h, m, s);
-	          data_message.length = 23;
-                  *status = &c_status_ok;
-                  data_message.last_part = true;
-	          *reply = &data_message;
-	       }
-	    }
-	    else
-	    {
-	       *status = &c_status_prohibited;
-	       *reply = &c_message_empty;
-	    }
-            break;
+        break;
+    case DOS_CMD_ECHO:
+        command->last_part = true;
+        *reply = command;
+        *status = &c_status_ok;
+        break;
+    case DOS_CMD_GET_TIME: {
+        int y, M, D, wd, h, m, s;
+        rtc.get_time(y, M, D, wd, h, m, s);
+        int extFormat = 0;
+        if (command->length > 2)
+            extFormat = command->message[2];
+        if (extFormat == 0) {
+            sprintf((char*) data_message.message,
+                    "%4d/%02d/%02d %02d:%02d:%02d", 1980 + y, M, D, h, m, s);
+            data_message.length = 19;
+            *status = &c_status_ok;
+            data_message.last_part = true;
+            *reply = &data_message;
+        } else if (extFormat == 1) {
+            sprintf((char*) data_message.message,
+                    "%s %4d/%02d/%02d %02d:%02d:%02d", wdnames[wd], 1980 + y, M,
+                    D, h, m, s);
+            data_message.length = 23;
+            *status = &c_status_ok;
+            data_message.last_part = true;
+            *reply = &data_message;
+        } else {
+            *status = &c_status_unknown_command;
+            *reply = &c_message_empty;
         }
+        break;
+    }
+    case DOS_CMD_SET_TIME: {
+        if (allowUltimateDosDateSet) {
+            int y, M, D, wd, h, m, s, yz, mz, cz;
+            int len = command->length;
+            if (len != 8) {
+                sprintf((char*) data_message.message, "%02d", len);
+                data_message.length = 2;
 
-        default:
-            *reply  = &c_message_empty;
-            *status = &c_status_unknown_command; 
+                data_message.last_part = true;
+                *reply = &data_message;
+
+                //*reply  = &c_message_empty;
+                *status = &c_status_unknown_command;
+            } else {
+                y = command->message[2];
+                M = command->message[3];
+                D = command->message[4];
+                h = command->message[5];
+                m = command->message[6];
+                s = command->message[7];
+                yz = y + 1900;
+                y -= 80;
+                mz = M;
+                if (M < 3) {
+                    yz--;
+                    mz += 12;
+                }
+                cz = yz / 100;
+                yz = yz % 100;
+                int wdz = D + (mz + 1) * 13 / 5 + yz + yz / 4 + cz / 4 - 2 * cz
+                        + 6;
+                wdz = wdz % 7;
+                if (wdz < 0)
+                    wdz += 7;
+                int corr = rtc.get_correction();
+                rtc.set_time(y, M, D, wdz, h, m, s);
+                rtc.set_time_in_chip(corr, y, M, D, wdz, h, m, s);
+                rtc.get_time(y, M, D, wd, h, m, s);
+                sprintf((char*) data_message.message,
+                        "%s %4d/%02d/%02d %02d:%02d:%02d", wdnames[wd],
+                        1980 + y, M, D, h, m, s);
+                data_message.length = 23;
+                *status = &c_status_ok;
+                data_message.last_part = true;
+                *reply = &data_message;
+            }
+        } else {
+            *status = &c_status_prohibited;
+            *reply = &c_message_empty;
+        }
+        break;
+    }
+
+    default:
+        *reply = &c_message_empty;
+        *status = &c_status_unknown_command;
     }
 }
-    
-void Dos :: cleanupDirectory() {
-	for (int i=0;i<directoryList.get_elements();i++) {
-		delete directoryList[i];
-	}
-	directoryList.clear_list();
+
+void Dos::cleanupDirectory() {
+    for (int i = 0; i < directoryList.get_elements(); i++) {
+        delete directoryList[i];
+    }
+    directoryList.clear_list();
 }
 
-void Dos :: get_more_data(Message **reply, Message **status)
-{
+void Dos::get_more_data(Message **reply, Message **status) {
     uint32_t transferred = 0;
     FRESULT res;
     int length;
     FileInfo *fi;
-    
+
     switch (dos_state) {
     case e_dos_idle:
         printf("DOS: asking for more data, but state is idle\n");
-        *reply  = &c_message_empty;
+        *reply = &c_message_empty;
         *status = &c_status_no_data;
         break;
     case e_dos_in_file:
-        length = (remaining > 512)?512:remaining;        
+        length = (remaining > 512) ? 512 : remaining;
         res = file->read(data_message.message, length, &transferred);
-        data_message.length = (int)transferred;
+        data_message.length = (int) transferred;
         remaining -= transferred;
         if ((transferred != length) || (remaining == 0)) {
             data_message.last_part = true;
@@ -635,8 +643,9 @@ void Dos :: get_more_data(Message **reply, Message **status)
             data_message.last_part = false;
         }
         if (res != FR_OK) {
-            strcpy((char *)status_message.message, FileSystem::get_error_string(res));
-            status_message.length = strlen((char *)status_message.message);
+            strcpy((char *) status_message.message,
+                    FileSystem::get_error_string(res));
+            status_message.length = strlen((char *) status_message.message);
         } else {
             *status = &c_message_empty;
         }
@@ -648,12 +657,12 @@ void Dos :: get_more_data(Message **reply, Message **status)
             *status = &c_status_internal_error;
             *reply = &c_message_empty;
         } else {
-			data_message.message[0] = fi->attrib;
-            strcpy((char *)&data_message.message[1], fi->lfname);
-            data_message.length = 1+strlen((char*)&data_message.message[1]);
+            data_message.message[0] = fi->attrib;
+            strcpy((char *) &data_message.message[1], fi->lfname);
+            data_message.length = 1 + strlen((char*) &data_message.message[1]);
             current_index++;
             if (current_index == dir_entries) {
-                data_message.last_part = true; 
+                data_message.last_part = true;
                 *status = &c_status_ok;
                 dos_state = e_dos_idle;
             } else {
@@ -666,9 +675,9 @@ void Dos :: get_more_data(Message **reply, Message **status)
     default:
         printf("DOS: Illegal state\n");
         dos_state = e_dos_idle;
-    }        
+    }
 }
 
-void Dos :: abort(void) {
+void Dos::abort(void) {
     dos_state = e_dos_idle;
 }

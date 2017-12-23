@@ -24,11 +24,11 @@
 #define DOS_CMD_OPEN_DIR       0x13
 #define DOS_CMD_READ_DIR       0x14
 #define DOS_CMD_COPY_UI_PATH   0x15
-#define DOS_CMD_CREATE_DIR     0x16            
+#define DOS_CMD_CREATE_DIR     0x16
 #define DOS_CMD_COPY_HOME_PATH 0x17
 #define DOS_CMD_LOAD_REU       0x21
 #define DOS_CMD_SAVE_REU       0x22
-#define DOS_CMD_MOUNT_DISK     0x23    
+#define DOS_CMD_MOUNT_DISK     0x23
 #define DOS_CMD_UMOUNT_DISK    0x24
 #define DOS_CMD_SWAP_DISK      0x25
 #define DOS_CMD_GET_TIME       0x26
@@ -42,18 +42,18 @@ typedef enum _e_dos_state {
 } e_dos_state;
 
 typedef struct _dos_info {
-    uint32_t	size;	 /* File size */
-    uint16_t	date;	 /* Last modified date */
-    uint16_t	time;	 /* Last modified time */
+    uint32_t size;  /* File size */
+    uint16_t date;  /* Last modified date */
+    uint16_t time;  /* Last modified time */
     char    extension[3];
-	uint8_t	attrib;	 /* Attribute */
+    uint8_t attrib;  /* Attribute */
     char    filename[64];
 } t_dos_info;
 
 class Dos : CommandTarget
 {
-	FileManager *fm;
-	e_dos_state dos_state;
+    FileManager *fm;
+    e_dos_state dos_state;
     t_dos_info dos_info;
     File *file;
     Path *path;

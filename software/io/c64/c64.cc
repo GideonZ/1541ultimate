@@ -61,8 +61,8 @@ const char *cart_mode[] = { "None",
                       "SuperSnapshot V5.22 NTSC",
                       "TAsm / CodeNet NTSC",
                       "Epyx Fastloader",
-					  "KCS Power Cartridge",
-					  "GeoRAM",
+                      "KCS Power Cartridge",
+                      "GeoRAM",
                       "Custom 8K ROM",
                       "Custom 16K ROM",
 /*
@@ -73,10 +73,10 @@ const char *cart_mode[] = { "None",
 */
                       "Custom Retro Replay ROM",
                       "Custom Snappy ROM",
-					  "Custom KCS ROM",
-					  "Custom Final V1/V2 ROM",
-					  "Custom C128 External ROM",
-					  "Custom CRT"
+                      "Custom KCS ROM",
+                      "Custom Final V1/V2 ROM",
+                      "Custom C128 External ROM",
+                      "Custom CRT"
                    };
 
 cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_REU | CART_ETH },
@@ -129,107 +129,107 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 1 },
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", ultimatedos,0,  3, 0 },
     { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis2,0,  1, 0 },
-//	{ CFG_C64_RATE,     CFG_TYPE_ENUM,   "Stand-Alone Tick Rate",        "%s", tick_rates, 0,  1, 0 },
+//  { CFG_C64_RATE,     CFG_TYPE_ENUM,   "Stand-Alone Tick Rate",        "%s", tick_rates, 0,  1, 0 },
 //    { CFG_C64_ETH_EN,   CFG_TYPE_ENUM,   "Ethernet CS8900A",        "%s", en_dis2,     0,  1, 0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
 extern uint8_t _chars_bin_start;
 
-C64 :: C64()
+C64::C64()
 {
-	flash = get_flash();
+    flash = get_flash();
 
-	if (getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
-		c64_config[7].items = timing2; // hack!
-		c64_config[7].def = 5; // hack!
-	}
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
+        c64_config[7].items = timing2; // hack!
+        c64_config[7].def = 5; // hack!
+    }
     register_store(0x43363420, "C64 and cartridge settings", c64_config);
 
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
-    char_set = (uint8_t *)&_chars_bin_start;
+    char_set = (uint8_t *) &_chars_bin_start;
     keyb = new Keyboard_C64(this, &CIA1_DPB, &CIA1_DPA);
-    screen = new Screen_MemMappedCharMatrix((char *)C64_SCREEN, (char *)C64_COLORRAM, 40, 25);
+    screen = new Screen_MemMappedCharMatrix((char *) C64_SCREEN, (char *) C64_COLORRAM, 40, 25);
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-	C64_STOP = 0;
-	stopped = false;
+    C64_STOP = 0;
+    stopped = false;
     C64_MODE = C64_MODE_RESET;
     buttonPushSeen = false;
 
     client = 0;
 
-    if(C64_CLOCK_DETECT == 0)
+    if (C64_CLOCK_DETECT == 0)
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
 
     effectuate_settings();
     init_cartridge();
 }
-    
-C64 :: ~C64()
+
+C64::~C64()
 {
-    if(stopped) {
-	    restore_io();
-	    resume();
-	    stopped = false;
-	}
+    if (stopped) {
+        restore_io();
+        resume();
+        stopped = false;
+    }
 
     delete keyb;
 
     if (screen)
-    	delete screen;
+        delete screen;
 }
 
-void C64 :: effectuate_settings(void)
+void C64::effectuate_settings(void)
 {
     // this function will set the parameters that can be switched while the machine is running
     // init_cartridge is called only at reboot, and will cause the C64 to reset.
-	C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
+    C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
 
     cart_def *def;
-	int cart = cfg->get_value(CFG_C64_CART);
-	def = &cartridges[cart];
+    int cart = cfg->get_value(CFG_C64_CART);
+    def = &cartridges[cart];
     set_emulation_flags(def);
 }
 
-void C64 :: set_emulation_flags(cart_def *def)
+void C64::set_emulation_flags(cart_def *def)
 {
     C64_REU_ENABLE = 0;
-	C64_SAMPLER_ENABLE = 0;
-    if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
-    	CMD_IF_SLOT_ENABLE = 0;
+    C64_SAMPLER_ENABLE = 0;
+    if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+        CMD_IF_SLOT_ENABLE = 0;
     }
 
     C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
-    if(def->type & CART_REU) {
-        if(cfg->get_value(CFG_C64_REU_EN)) {
-        	printf("Enabling REU!!\n");
-        	C64_REU_ENABLE = 1;
+    if (def->type & CART_REU) {
+        if (cfg->get_value(CFG_C64_REU_EN)) {
+            printf("Enabling REU!!\n");
+            C64_REU_ENABLE = 1;
         }
         // C64_REU_SIZE = cfg->get_value(CFG_C64_REU_SIZE);
-        if(getFpgaCapabilities() & CAPAB_SAMPLER) {
+        if (getFpgaCapabilities() & CAPAB_SAMPLER) {
             printf("Sampler found in FPGA... IO map: ");
-            if(cfg->get_value(CFG_C64_MAP_SAMP)) {
+            if (cfg->get_value(CFG_C64_MAP_SAMP)) {
                 printf("Enabled!\n");
-            	C64_SAMPLER_ENABLE = 1;
+                C64_SAMPLER_ENABLE = 1;
             } else {
                 printf("disabled.\n");
             }
         }
-        if(getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
-        	int choice = cfg->get_value(CFG_CMD_ENABLE);
-        	CMD_IF_SLOT_ENABLE = !!choice;
-		ultimatedosversion = choice;
+        if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+            int choice = cfg->get_value(CFG_CMD_ENABLE);
+            CMD_IF_SLOT_ENABLE = !!choice;
+            ultimatedosversion = choice;
             CMD_IF_SLOT_BASE = 0x47; // $DF1C
-	    choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
-	    allowUltimateDosDateSet = choice;
+            choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
+            allowUltimateDosDateSet = choice;
         }
     }
     C64_ETHERNET_ENABLE = 0;
-    if(def->type & CART_ETH) {
-        if(cfg->get_value(CFG_C64_ETH_EN)) {
+    if (def->type & CART_ETH) {
+        if (cfg->get_value(CFG_C64_ETH_EN)) {
             C64_ETHERNET_ENABLE = 1;
         }
     }
@@ -238,55 +238,55 @@ void C64 :: set_emulation_flags(cart_def *def)
     C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
 }
 
-bool C64 :: exists(void)
+bool C64::exists(void)
 {
-	if (C64_CLOCK_DETECT != 0) {
-		return true;
-	}
+    if (C64_CLOCK_DETECT != 0) {
+        return true;
+    }
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-	C64_STOP = 0;
-	return false;
+    C64_STOP = 0;
+    return false;
 }
-    
-void C64 :: determine_d012(void)
+
+void C64::determine_d012(void)
 {
     uint8_t b;
     // pre-condition: C64 is already in the stopped state, and IRQ registers have already been saved
     //                C64 IRQn to SD-IRQ is not enabled.
-    
+
     VIC_REG(26) = 0x01; // interrupt enable = raster only
     VIC_REG(25) = 0x81; // clear raster interrupts
-    
+
     // poll until VIC interrupt occurs
 
     vic_d012 = 0;
     vic_d011 = 0;
 
     b = 0;
-    while(!(VIC_REG(25) & 0x81)) {
-        if(!ioRead8(ITU_TIMER)) {
+    while (!(VIC_REG(25) & 0x81)) {
+        if (!ioRead8(ITU_TIMER)) {
             ioWrite8(ITU_TIMER, 200);
             b++;
-            if(b == 40)
+            if (b == 40)
                 break;
         }
     }
 
     vic_d012 = VIC_REG(18); // d012
     vic_d011 = VIC_REG(17); // d011
-    
+
     VIC_REG(26) = 0x00; // disable interrutps
     VIC_REG(25) = 0x81; // clear raster interrupt
 }
 
-void C64 :: stop(bool do_raster)
+void C64::stop(bool do_raster)
 {
     int b, w;
-    
+
 //    bool do_raster = true;
-    
-	// stop the c-64
+
+    // stop the c-64
     stop_mode = 0;
     raster = 0;
     raster_hi = 0;
@@ -298,55 +298,55 @@ void C64 :: stop(bool do_raster)
 
     //printf("Stop.. ");
 
-    if(do_raster) {
+    if (do_raster) {
         // wait maximum for 25 ms (that is 1/40 of a second; there should be a bad line in this time frame
         ioWrite8(ITU_TIMER, 200); // 1 ms
-    
-    	// request to stop the c-64
-    	C64_STOP = 1;
+
+        // request to stop the c-64
+        C64_STOP = 1;
         //printf(" condition set.\n");
-        
-        for(b=0;b<25;) {
-            if(C64_STOP & C64_HAS_STOPPED) {  // has the C64 stopped already?
-    //            VIC_REG(48) = 0;  // switch to slow mode (C128)
-            	// enter ultimax mode, so we can be sure that we can access IO space!
-                C64_MODE    = MODE_ULTIMAX;
+
+        for (b = 0; b < 25;) {
+            if (C64_STOP & C64_HAS_STOPPED) {  // has the C64 stopped already?
+                //            VIC_REG(48) = 0;  // switch to slow mode (C128)
+                // enter ultimax mode, so we can be sure that we can access IO space!
+                C64_MODE = MODE_ULTIMAX;
 
                 printf("Ultimax set.. Now reading registers..\n");
-                raster     = VIC_REG(18);
-                raster_hi  = VIC_REG(17);
+                raster = VIC_REG(18);
+                raster_hi = VIC_REG(17);
                 vic_irq_en = VIC_REG(26);
-                vic_irq    = VIC_REG(25);
+                vic_irq = VIC_REG(25);
                 stop_mode = 1;
                 printf("Mode=1\n");
                 break;
             }
-            if(!ioRead8(ITU_TIMER)) {
+            if (!ioRead8(ITU_TIMER)) {
                 ioWrite8(ITU_TIMER, 200); // 1 ms
                 b++;
             }
         }
     }
-    
+
     //printf("Raster failed.\n");
-    
+
     // If that fails, the screen must be blanked or so, so we try to break upon a safe R/Wn sequence
-    if(!stop_mode) {
+    if (!stop_mode) {
         C64_STOP_MODE = STOP_COND_RWSEQ;
 
-    	// request to stop the c-64
-    	C64_STOP = 1; // again, in case we had to stop without trying raster first
+        // request to stop the c-64
+        C64_STOP = 1; // again, in case we had to stop without trying raster first
 
         ioWrite8(ITU_TIMER, 200); // 1 ms
-    
-        for(w=0;w<100;) { // was 1500
-            if(C64_STOP & C64_HAS_STOPPED) {
+
+        for (w = 0; w < 100;) { // was 1500
+            if (C64_STOP & C64_HAS_STOPPED) {
                 stop_mode = 2;
                 break;
             }
 //            printf("#%b^%b ", ITU_TIMER, w);
-            if(!ioRead8(ITU_TIMER)) {
-            	ioWrite8(ITU_TIMER, 200); // 1 ms
+            if (!ioRead8(ITU_TIMER)) {
+                ioWrite8(ITU_TIMER, 200); // 1 ms
                 w++;
             }
         }
@@ -355,55 +355,55 @@ void C64 :: stop(bool do_raster)
 
     // If that fails, the CPU must have disabled interrupts, and be in a polling read loop
     // since no write occurs!
-    if(!stop_mode) {
+    if (!stop_mode) {
         C64_STOP_MODE = STOP_COND_FORCE;
 
         // wait until it is stopped (it always will!)
-        while(!(C64_STOP & C64_HAS_STOPPED))
+        while (!(C64_STOP & C64_HAS_STOPPED))
             ;
 
         stop_mode = 3;
     }
 
-    if(do_raster) {  // WRONG parameter actually, but this function is only called in two places:
-                     // entering the menu, and dma load. menu calls it with true, dma load with false.... :-S
-                     // TODO: Clean up
-        switch(stop_mode) {
-            case 1:
-                printf("Frozen on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
-                if(vic_irq_en & 0x01) { // Raster interrupt enabled
-                    determine_d012();
-                    printf("Original d012/11 content = %02x %02x.\n", vic_d012, vic_d011);
-                } else {
-                    vic_d011 = VIC_REG(17); // for all other bits
-                }
-                break;
-            case 2:
-                printf("Frozen on R/Wn sequence.\n");
-                break;
-            case 3:
-                printf("Hard stop!!!\n");
-                break;
-            default:
-                printf("Internal error. Should be one of the cases.\n");
+    if (do_raster) {  // WRONG parameter actually, but this function is only called in two places:
+                      // entering the menu, and dma load. menu calls it with true, dma load with false.... :-S
+                      // TODO: Clean up
+        switch (stop_mode) {
+        case 1:
+            printf("Frozen on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
+            if (vic_irq_en & 0x01) { // Raster interrupt enabled
+                determine_d012();
+                printf("Original d012/11 content = %02x %02x.\n", vic_d012, vic_d011);
+            } else {
+                vic_d011 = VIC_REG(17); // for all other bits
+            }
+            break;
+        case 2:
+            printf("Frozen on R/Wn sequence.\n");
+            break;
+        case 3:
+            printf("Hard stop!!!\n");
+            break;
+        default:
+            printf("Internal error. Should be one of the cases.\n");
         }
     }
     //printf("@");
 }
 
-void C64 :: resume(void)
+void C64::resume(void)
 {
-    int dummy=0;
+    int dummy = 0;
     uint8_t rast_lo;
     uint8_t rast_hi;
-    
-    if(!raster && !raster_hi) {
+
+    if (!raster && !raster_hi) {
         rast_lo = 0;
         rast_hi = 0;
     } else {
         rast_lo = raster - 1;
         rast_hi = raster_hi & 0x80;
-        if(!raster)
+        if (!raster)
             rast_hi = 0;
     }
 
@@ -411,26 +411,26 @@ void C64 :: resume(void)
     if (stop_mode == 1) {
         // this can only occur when we exit from the menu, so we are still
         // in ultimax mode, so we can see the VIC here.
-        if(vic_irq & 0x01) { // was raster flag set when we stopped? then let's set it again
+        if (vic_irq & 0x01) { // was raster flag set when we stopped? then let's set it again
             VIC_REG(26) = 0x81;
             VIC_REG(18) = rast_lo;
             VIC_REG(17) = rast_hi;
-            while((VIC_REG(18) != rast_lo)&&((VIC_REG(17)&0x80) != rast_hi)) {
-                if(!ioRead8(ITU_TIMER)) {
-                	ioWrite8(ITU_TIMER, 200); // 1 ms
+            while ((VIC_REG(18) != rast_lo) && ((VIC_REG(17) & 0x80) != rast_hi)) {
+                if (!ioRead8(ITU_TIMER)) {
+                    ioWrite8(ITU_TIMER, 200); // 1 ms
                     dummy++;
-                    if(dummy == 40)
+                    if (dummy == 40)
                         break;
                 }
             }
             VIC_REG(18) = vic_d012;
             VIC_REG(17) = vic_d011;
         } else {
-            while((VIC_REG(18) != rast_lo)&&((VIC_REG(17)&0x80) != rast_hi)) {
-                if(!ioRead8(ITU_TIMER)) {
-                	ioWrite8(ITU_TIMER, 200); // 1 ms
+            while ((VIC_REG(18) != rast_lo) && ((VIC_REG(17) & 0x80) != rast_hi)) {
+                if (!ioRead8(ITU_TIMER)) {
+                    ioWrite8(ITU_TIMER, 200); // 1 ms
                     dummy++;
-                    if(dummy == 40)
+                    if (dummy == 40)
                         break;
                 }
             }
@@ -440,9 +440,9 @@ void C64 :: resume(void)
         }
         VIC_REG(26) = vic_irq_en;
 
-        raster     = VIC_REG(18);
+        raster = VIC_REG(18);
         vic_irq_en = VIC_REG(26);
-        vic_irq    = VIC_REG(25);
+        vic_irq = VIC_REG(25);
 
         C64_STOP_MODE = STOP_COND_BADLINE;
 
@@ -452,121 +452,121 @@ void C64 :: resume(void)
 
         // dummy cycle
         dummy = VIC_REG(0);
-        
-    	// un-stop the c-64
-    	C64_STOP = 0;
+
+        // un-stop the c-64
+        C64_STOP = 0;
 
         printf("Resumed on Bad line. Raster = %02x. VIC Irq Enable: %02x. Vic IRQ: %02x\n", raster, vic_irq_en, vic_irq);
     } else {
         C64_STOP_MODE = STOP_COND_FORCE;
-    	// un-stop the c-64
+        // un-stop the c-64
         // return to normal mode
         C64_MODE = MODE_NORMAL;
 
-    	C64_STOP = 0;
+        C64_STOP = 0;
     }
 }
 
-void C64 :: reset(void)
+void C64::reset(void)
 {
     C64_MODE = C64_MODE_RESET;
     ioWrite8(ITU_TIMER, 20);
-    while(ioRead8(ITU_TIMER))
+    while (ioRead8(ITU_TIMER))
         ;
     C64_MODE = C64_MODE_UNRESET;
 }
 
-   
 /*
--------------------------------------------------------------------------------
-							freeze (split in subfunctions)
-							======
-  Abstract:
+ -------------------------------------------------------------------------------
+ freeze (split in subfunctions)
+ ======
+ Abstract:
 
-	Stops the C64. Backups the resources the cardridge is allowed to use.
-	Clears the screen and sets the default colours.
-	
--------------------------------------------------------------------------------
-*/
-void C64 :: backup_io(void)
+ Stops the C64. Backups the resources the cardridge is allowed to use.
+ Clears the screen and sets the default colours.
+
+ -------------------------------------------------------------------------------
+ */
+void C64::backup_io(void)
 {
-	int i;
+    int i;
 //	char *scr = (char *)SCREEN1_ADDR;
 
-	// enter ultimax mode, as this might not have taken place already!
-    C64_MODE    = MODE_ULTIMAX;
+    // enter ultimax mode, as this might not have taken place already!
+    C64_MODE = MODE_ULTIMAX;
 
-	// back up VIC registers
-	for(i=0;i<NUM_VICREGS;i++)
-		vic_backup[i] = VIC_REG(i); 
-	
-	// now we can turn off the screen to avoid flicker
-	VIC_CTRL	= 0;
-	BORDER		= 0; // black
-	BACKGROUND	= 0; // black for later
-    SID_VOLUME  = 0;
-	
+    // back up VIC registers
+    for (i = 0; i < NUM_VICREGS; i++)
+        vic_backup[i] = VIC_REG(i);
+
+    // now we can turn off the screen to avoid flicker
+    VIC_CTRL = 0;
+    BORDER = 0; // black
+    BACKGROUND = 0; // black for later
+    SID_VOLUME = 0;
+
     // have a look at the timers.
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
     printf("CIA1 registers: ");
-    for(i=0;i<13;i++) {
+    for (i = 0; i < 13; i++) {
         printf("%b ", CIA1_REG(i));
-    } printf("\n");
-
-	// back up 3 kilobytes of RAM to do our thing 
-	for(i=0;i<BACKUP_SIZE/4;i++) {
-		ram_backup[i] = MEM_LOC[i];
-	}
-    for(i=0;i<COLOR_SIZE/4;i++) {
-    	color_backup[i] = COLOR_RAM[i];
     }
-    for(i=0;i<COLOR_SIZE/4;i++) {
-    	screen_backup[i] = SCREEN_RAM[i];
+    printf("\n");
+
+    // back up 3 kilobytes of RAM to do our thing
+    for (i = 0; i < BACKUP_SIZE / 4; i++) {
+        ram_backup[i] = MEM_LOC[i];
+    }
+    for (i = 0; i < COLOR_SIZE / 4; i++) {
+        color_backup[i] = COLOR_RAM[i];
+    }
+    for (i = 0; i < COLOR_SIZE / 4; i++) {
+        screen_backup[i] = SCREEN_RAM[i];
     }
 
-	// now copy our own character map into that piece of ram at 0800
-	for(i=0;i<CHARSET_SIZE;i++) {
-		CHAR_DEST[i] = char_set[i];
-	}
-	
-	// backup CIA registers
-	cia_backup[0] = CIA2_DDRA;
-	cia_backup[1] = CIA2_DPA;
-	cia_backup[2] = CIA1_DDRA;
-	cia_backup[3] = CIA1_DDRB;
-	CIA1_DDRA = 0x00;
-	CIA1_DDRB = 0xFF;
-	cia_backup[5] = CIA1_DPB;
-	CIA1_DDRB = 0x00;
-	CIA1_DDRA = 0xFF;
-	cia_backup[4] = CIA1_DPA;
-	cia_backup[6] = CIA1_CRA;
-	cia_backup[7] = CIA1_CRB;
+    // now copy our own character map into that piece of ram at 0800
+    for (i = 0; i < CHARSET_SIZE; i++) {
+        CHAR_DEST[i] = char_set[i];
+    }
+
+    // backup CIA registers
+    cia_backup[0] = CIA2_DDRA;
+    cia_backup[1] = CIA2_DPA;
+    cia_backup[2] = CIA1_DDRA;
+    cia_backup[3] = CIA1_DDRB;
+    CIA1_DDRA = 0x00;
+    CIA1_DDRB = 0xFF;
+    cia_backup[5] = CIA1_DPB;
+    CIA1_DDRB = 0x00;
+    CIA1_DDRA = 0xFF;
+    cia_backup[4] = CIA1_DPA;
+    cia_backup[6] = CIA1_CRA;
+    cia_backup[7] = CIA1_CRB;
 }
 
-void C64 :: init_io(void)
+void C64::init_io(void)
 {
     printf("Init IO.\n");
-    
+
     // set VIC bank to 0
-	CIA2_DDRA &= 0xFC; // set bank bits to input
+    CIA2_DDRA &= 0xFC; // set bank bits to input
 //  CIA2_DPA  |= 0x03; // don't touch!
 
     // enable keyboard
-	CIA1_DDRB  = 0x00; // all in
-	CIA1_DDRA  = 0xFF; // all out
+    CIA1_DDRB = 0x00; // all in
+    CIA1_DDRA = 0xFF; // all out
 
-	printf("CIA DDR: %b %b Mode: %b\n", CIA1_DDRB, CIA1_DDRA, C64_MODE);
-	CIA1_DDRA  = 0xFF; // all out
-	CIA1_DDRB  = 0x00; // all in
-	printf("CIA DDR: %b %b\n", CIA1_DDRB, CIA1_DDRA);
+    printf("CIA DDR: %b %b Mode: %b\n", CIA1_DDRB, CIA1_DDRA, C64_MODE);
+    CIA1_DDRA = 0xFF; // all out
+    CIA1_DDRB = 0x00; // all in
+    printf("CIA DDR: %b %b\n", CIA1_DDRB, CIA1_DDRA);
 
-	CIA1_CRA &= 0xFD; // no PB6 output, interferes with keyboard
-	CIA1_CRB &= 0xFD; // no PB7 output, interferes with keyboard
-	
-	// Set VIC to use charset at 0800
-	// Set VIC to use screen at 0400
-	VIC_MMAP = 0x12; // screen $0400 / charset at 0800
+    CIA1_CRA &= 0xFD; // no PB6 output, interferes with keyboard
+    CIA1_CRB &= 0xFD; // no PB7 output, interferes with keyboard
+
+    // Set VIC to use charset at 0800
+    // Set VIC to use screen at 0400
+    VIC_MMAP = 0x12; // screen $0400 / charset at 0800
 
     // init_cia_handler clears the state of the cia interrupt handlers.
     // Because we cannot read which interrupts are enabled,
@@ -577,19 +577,18 @@ void C64 :: init_io(void)
 //    printf("cia irq mask = %02x. Test = %02X.\n", cia1_imsk, cia1_test);
 
     VIC_REG(17) = 0x1B; // vic_ctrl	// Enable screen in text mode, 25 rows
-	VIC_REG(18) = 0xF8; // raster line to trigger on
-	VIC_REG(21) = 0x00; // turn off sprites
+    VIC_REG(18) = 0xF8; // raster line to trigger on
+    VIC_REG(21) = 0x00; // turn off sprites
     VIC_REG(22) = 0xC8; // Screen = 40 cols with correct scroll
     VIC_REG(32) = 0x00; // black border
-	//VIC_REG(26) = 0x01; // Enable Raster interrupt
+    //VIC_REG(26) = 0x01; // Enable Raster interrupt
     VIC_REG(48) = 252;
-}    
+}
 
-
-void C64 :: freeze(void)
+void C64::freeze(void)
 {
-    if(C64_CLOCK_DETECT == 0)
-    	return;
+    if (C64_CLOCK_DETECT == 0)
+        return;
 
     stop();
 
@@ -600,25 +599,25 @@ void C64 :: freeze(void)
 
     backup_io();
     init_io();
-    
+
     stopped = true;
 }
 
 /*
--------------------------------------------------------------------------------
-							unfreeze (split in subfunctions)
-							========
-  Abstract:
+ -------------------------------------------------------------------------------
+ unfreeze (split in subfunctions)
+ ========
+ Abstract:
 
-	Restores the backed up resources and resumes the C64
+ Restores the backed up resources and resumes the C64
 
-  Parameters:
-  	Mode:  0 = normal resume
-  	       1 = make screen black, and release in a custom cart
--------------------------------------------------------------------------------
-*/
+ Parameters:
+ Mode:  0 = normal resume
+ 1 = make screen black, and release in a custom cart
+ -------------------------------------------------------------------------------
+ */
 
-void C64 :: restore_io(void)
+void C64::restore_io(void)
 {
     int i;
 
@@ -626,185 +625,186 @@ void C64 :: restore_io(void)
     VIC_CTRL = 0;
 
     // restore memory
-    for(i=0;i<BACKUP_SIZE/4;i++) {
+    for (i = 0; i < BACKUP_SIZE / 4; i++) {
         MEM_LOC[i] = ram_backup[i];
     }
-    for(i=0;i<COLOR_SIZE/4;i++) {
-    	COLOR_RAM[i] = color_backup[i];
+    for (i = 0; i < COLOR_SIZE / 4; i++) {
+        COLOR_RAM[i] = color_backup[i];
     }
-    for(i=0;i<COLOR_SIZE/4;i++) {
-    	SCREEN_RAM[i] = screen_backup[i];
+    for (i = 0; i < COLOR_SIZE / 4; i++) {
+        SCREEN_RAM[i] = screen_backup[i];
     }
 
     // restore the cia registers
     CIA2_DDRA = cia_backup[0];
 //    CIA2_DPA  = cia_backup[1]; // don't touch!
-	CIA1_DDRA = cia_backup[2];
-	CIA1_DDRB = cia_backup[3];
-	CIA1_DPA  = cia_backup[4];
-	CIA1_DPB  = cia_backup[5];
-	CIA1_CRA  = cia_backup[6];
-	CIA1_CRB  = cia_backup[7];
+    CIA1_DDRA = cia_backup[2];
+    CIA1_DDRB = cia_backup[3];
+    CIA1_DPA = cia_backup[4];
+    CIA1_DPB = cia_backup[5];
+    CIA1_CRA = cia_backup[6];
+    CIA1_CRB = cia_backup[7];
 
-    printf("Set CIA1 %b %b %b %b %b %b\n", cia_backup[0], cia_backup[1], cia_backup[2], cia_backup[3], cia_backup[4], cia_backup[5]);
+    printf("Set CIA1 %b %b %b %b %b %b\n", cia_backup[0], cia_backup[1], cia_backup[2], cia_backup[3], cia_backup[4],
+            cia_backup[5]);
 
     // restore vic registers
-    for(i=0;i<NUM_VICREGS;i++) {
-        VIC_REG(i) = vic_backup[i]; 
-    }        
+    for (i = 0; i < NUM_VICREGS; i++) {
+        VIC_REG(i) = vic_backup[i];
+    }
 
 //    restore_cia();  // Restores the interrupt generation
 
     SID_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
-    SID_DUMMY  = 0;   // clear internal charge on databus!
+    SID_DUMMY = 0;   // clear internal charge on databus!
 }
 
-void C64 :: unfreeze(void *vdef, int mode)
+void C64::unfreeze(void *vdef, int mode)
 {
-	cart_def *def = (cart_def *)vdef;
+    cart_def *def = (cart_def *) vdef;
 
-	if(C64_CLOCK_DETECT == 0)
-    	return;
+    if (C64_CLOCK_DETECT == 0)
+        return;
 
     keyb->wait_free();
-    
-	if(mode == 0) {
-	    // bring back C64 in original state
-	    restore_io();
-	    // resume C64
-	    resume();
-	} else {
-		VIC_REG(32) = 0; // black border
-		VIC_REG(17) = 0; // screen off
+
+    if (mode == 0) {
+        // bring back C64 in original state
+        restore_io();
+        // resume C64
+        resume();
+    } else {
+        VIC_REG(32) = 0; // black border
+        VIC_REG(17) = 0; // screen off
 
         C64_STOP_MODE = STOP_COND_FORCE;
         C64_MODE = MODE_NORMAL;
-		C64_MODE = C64_MODE_RESET;
-		wait_ms(1);
-    	C64_STOP = 0;
-		set_cartridge(def);
-		C64_MODE = C64_MODE_UNRESET;
-	}
+        C64_MODE = C64_MODE_RESET;
+        wait_ms(1);
+        C64_STOP = 0;
+        set_cartridge(def);
+        C64_MODE = C64_MODE_UNRESET;
+    }
     stopped = false;
 }
 
-Screen *C64 :: getScreen(void)
+Screen *C64::getScreen(void)
 {
-/*
-    if (!screen)
-    	screen = new Screen_MemMappedCharMatrix(C64_SCREEN, C64_COLORRAM, 40, 25);
-*/
-	screen->clear();
+    /*
+     if (!screen)
+     screen = new Screen_MemMappedCharMatrix(C64_SCREEN, C64_COLORRAM, 40, 25);
+     */
+    screen->clear();
     return screen;
 }
-    
-void C64 :: releaseScreen()
+
+void C64::releaseScreen()
 {
-/*
-	if(screen) {
-		delete screen;
-		screen = 0;
-	}
-*/
+    /*
+     if(screen) {
+     delete screen;
+     screen = 0;
+     }
+     */
 }
 
-bool C64 :: is_accessible(void)
+bool C64::is_accessible(void)
 {
     return stopped;
 }
 
-Keyboard *C64 :: getKeyboard(void)
+Keyboard *C64::getKeyboard(void)
 {
     return keyb;
 }
 
-
-void C64 :: set_cartridge(cart_def *def)
+void C64::set_cartridge(cart_def *def)
 {
-	if(!def) {
-		int cart = cfg->get_value(CFG_C64_CART);
-		def = &cartridges[cart];
-	}
+    if (!def) {
+        int cart = cfg->get_value(CFG_C64_CART);
+        def = &cartridges[cart];
+    }
     printf("Setting cart mode %b. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
     C64_CARTRIDGE_TYPE = def->type & 0x1F;
 //    push_event(e_cart_mode_change, NULL, def->type);
-    
+
     set_emulation_flags(def);
 
     uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
-    if(def->type & CART_RAM) {
-        printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, mem_addr); 
-        memcpy((void *)mem_addr, def->custom_addr, def->length);
+    if (def->type & CART_RAM) {
+        printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, mem_addr);
+        memcpy((void *) mem_addr, def->custom_addr, def->length);
 
         if (def->id == ID_MODPLAYER) {
-    		// now overwrite the register settings
-    		C64_REU_SIZE = 7;
-    		C64_REU_ENABLE = 1;
-    		C64_SAMPLER_ENABLE = 1;
+            // now overwrite the register settings
+            C64_REU_SIZE = 7;
+            C64_REU_ENABLE = 1;
+            C64_SAMPLER_ENABLE = 1;
         }
-    } else if(def->id && def->type) {
+    } else if (def->id && def->type) {
         printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
-        flash->read_image(def->id, (void *)mem_addr, def->length);
-    } else if(def->id && !def->type) {
+        flash->read_image(def->id, (void *) mem_addr, def->length);
+    } else if (def->id && !def->type) {
 #ifndef RECOVERYAPP
 #ifndef NO_FILE_ACCESS
-    	char* buffer = new char[128*1024];
+        char* buffer = new char[128 * 1024];
         printf("Requesting crt copy from Flash, id = %b to mem addr %p\n", def->id, buffer);
-        flash->read_image(def->id, (void *)buffer, 128*1024);
-        FileTypeCRT :: parseCrt(buffer);
+        flash->read_image(def->id, (void *) buffer, 128 * 1024);
+        FileTypeCRT::parseCrt(buffer);
         delete buffer;
 #endif
 #endif
     } else if (def->length) { // not ram, not flash.. then it has to be custom
-        *(uint8_t *)(mem_addr+5) = 0; // disable previously started roms.
+        *(uint8_t *) (mem_addr + 5) = 0; // disable previously started roms.
     }
 
     // clear function RAM on the cartridge
     mem_addr -= 65536; // TODO: We know it, because we made the hardware, but the hardware should tell us!
-    memset((void *)mem_addr, 0x00, 65536);
+    memset((void *) mem_addr, 0x00, 65536);
 }
 
-void C64 :: set_colors(int background, int border) {
-    BORDER     = uint8_t(border);
+void C64::set_colors(int background, int border)
+{
+    BORDER = uint8_t(border);
     BACKGROUND = uint8_t(background);
 }
 
-void C64 :: enable_kernal(uint8_t *rom)
+void C64::enable_kernal(uint8_t *rom)
 {
-	C64_KERNAL_ENABLE = 1;
-	uint8_t *src = rom;
-	uint8_t *dst = (uint8_t *)(C64_KERNAL_BASE+1);
-	for(int i=0;i<8192;i++) {
-		*(dst) = *(src++);
-		dst += 2;
-	}
-	dump_hex((void *)(C64_KERNAL_BASE + 0x3FD0), 48);
+    C64_KERNAL_ENABLE = 1;
+    uint8_t *src = rom;
+    uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
+    for (int i = 0; i < 8192; i++) {
+        *(dst) = *(src++);
+        dst += 2;
+    }
+    dump_hex((void *) (C64_KERNAL_BASE + 0x3FD0), 48);
 }
 
-void C64 :: init_cartridge()
+void C64::init_cartridge()
 {
-    if(!cfg)
+    if (!cfg)
         return;
 
     C64_MODE = C64_MODE_RESET;
     C64_KERNAL_ENABLE = 0;
 
     if (cfg->get_value(CFG_C64_ALT_KERN)) {
-		uint8_t *temp = new uint8_t[8192];
-		flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
-		enable_kernal(temp);
-		delete[] temp;
+        uint8_t *temp = new uint8_t[8192];
+        flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
+        enable_kernal(temp);
+        delete[] temp;
     }
 
     int cart = cfg->get_value(CFG_C64_CART);
     set_cartridge(&cartridges[cart]);
-    
+
     C64_MODE = C64_MODE_UNRESET;
 }
 
-void C64 :: cartridge_test(void)
+void C64::cartridge_test(void)
 {
-    for(int i=0;i<19;i++) {
+    for (int i = 0; i < 19; i++) {
         printf("Setting mode %d\n", i);
         cfg->set_value(CFG_C64_CART, i);
         init_cartridge();
@@ -812,25 +812,25 @@ void C64 :: cartridge_test(void)
     }
 }
 
-bool C64 :: buttonPush(void)
+bool C64::buttonPush(void)
 {
-	bool ret = buttonPushSeen;
-	buttonPushSeen = false;
-	return ret;
+    bool ret = buttonPushSeen;
+    buttonPushSeen = false;
+    return ret;
 }
 
-void C64 :: setButtonPushed(void)
+void C64::setButtonPushed(void)
 {
-	buttonPushSeen = true;
+    buttonPushSeen = true;
 }
 
-void C64 :: checkButton(void)
+void C64::checkButton(void)
 {
-	static uint8_t button_prev;
+    static uint8_t button_prev;
 
-	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
-	if((buttons & ~button_prev) & ITU_BUTTON1) {
-		buttonPushSeen = true;
-	}
-	button_prev = buttons;
+    uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
+    if ((buttons & ~button_prev) & ITU_BUTTON1) {
+        buttonPushSeen = true;
+    }
+    button_prev = buttons;
 }
