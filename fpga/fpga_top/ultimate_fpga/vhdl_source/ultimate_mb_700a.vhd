@@ -129,7 +129,8 @@ architecture structural of ultimate_mb_700a is
 
     -- Slot
     signal slot_addr_o  : std_logic_vector(15 downto 0);
-    signal slot_addr_t  : std_logic;
+    signal slot_addr_tl : std_logic;
+    signal slot_addr_th : std_logic;
     signal slot_data_o  : std_logic_vector(7 downto 0);
     signal slot_data_t  : std_logic;
     signal slot_rwn_o   : std_logic;
@@ -189,7 +190,7 @@ begin
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
         g_icap          => true,
-        g_uart          => g_dual_drive,
+        g_uart          => true,
         g_drive_1541    => true,
         g_drive_1541_2  => g_dual_drive,
         g_hardware_gcr  => true,
@@ -222,6 +223,7 @@ begin
         ulpi_reset  => ulpi_reset_i,
     
         -- slot side
+        BUFFER_ENn  => BUFFER_ENn,
         phi2_i      => PHI2,
         dotclk_i    => DOTCLK,
         rstn_i      => RSTn,
@@ -229,7 +231,8 @@ begin
                                    
         slot_addr_o => slot_addr_o,
         slot_addr_i => SLOT_ADDR,
-        slot_addr_t => slot_addr_t,
+        slot_addr_tl=> slot_addr_tl,
+        slot_addr_th=> slot_addr_th,
         slot_data_o => slot_data_o,
         slot_data_i => SLOT_DATA,
         slot_data_t => slot_data_t,
@@ -324,14 +327,6 @@ begin
         c2n_motor_in   => c2n_motor_in, 
         c2n_motor_out  => c2n_motor_out, 
         
---        vid_clock   => sys_clock,
---        vid_reset   => sys_reset,
---        vid_h_count => X"000",
---        vid_v_count => X"000",
---        vid_active  => open,
---        vid_opaque  => open,
---        vid_data    => open,
-
         -- Buttons
         BUTTON      => button_i );
 
@@ -341,9 +336,11 @@ begin
     exr_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => exrom_oc, oc_out => EXROMn);
     gam_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => game_oc, oc_out => GAMEn);
 
-    SLOT_ADDR  <= slot_addr_o when slot_addr_t = '1' else (others => 'Z');
+    SLOT_ADDR(15 downto 12) <= slot_addr_o(15 downto 12) when slot_addr_th = '1' else (others => 'Z');
+    SLOT_ADDR(11 downto 00) <= slot_addr_o(11 downto 00) when slot_addr_tl = '1' else (others => 'Z');
+
     SLOT_DATA  <= slot_data_o when slot_data_t = '1' else (others => 'Z');
-    RWn        <= slot_rwn_o  when slot_addr_t = '1' else 'Z';
+    RWn        <= slot_rwn_o  when slot_addr_tl = '1' else 'Z';
     RSTn       <= '0' when RSTn_out = '0' else 'Z';
 
     IEC_ATN    <= '0' when iec_atn_o   = '0' else 'Z';

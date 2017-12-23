@@ -31,7 +31,7 @@ generic (
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
-    
+
     -- Cartridge pins
     VCC             : in    std_logic := '1';
 
@@ -48,7 +48,8 @@ port (
 
     slot_addr_o     : out   std_logic_vector(15 downto 0);
     slot_addr_i     : in    std_logic_vector(15 downto 0) := (others => '1');
-    slot_addr_t     : out   std_logic;
+    slot_addr_tl    : out   std_logic;
+    slot_addr_th    : out   std_logic;
                     
     slot_data_o     : out   std_logic_vector(7 downto 0);
     slot_data_i     : in    std_logic_vector(7 downto 0) := (others => '1');
@@ -71,9 +72,9 @@ port (
     sense           : in    std_logic;
     
 
-	buttons 		: in    std_logic_vector(2 downto 0);
+    buttons         : in    std_logic_vector(2 downto 0);
     cart_led_n      : out   std_logic;
-    
+
     trigger_1       : out   std_logic;
     trigger_2       : out   std_logic;
 
@@ -88,13 +89,13 @@ port (
 
     -- timing output
     phi2_tick       : out   std_logic;
-	c64_stopped		: out   std_logic;
-	
+    c64_stopped     : out   std_logic;
+
     -- master on memory bus
     memctrl_inhibit : out   std_logic;
     mem_req         : out   t_mem_req_32;
     mem_resp        : in    t_mem_resp_32;
-    
+
     -- slave on io bus
     io_req          : in    t_io_req;
     io_resp         : out   t_io_resp;
@@ -106,7 +107,7 @@ architecture structural of slot_server_v4 is
 
     signal phi2_tick_i     : std_logic;
     signal phi2_recovered  : std_logic;
-    signal vic_cycle       : std_logic;    
+    signal vic_cycle       : std_logic;
     signal do_sample_addr  : std_logic;
     signal do_sample_io    : std_logic;
     signal do_io_event     : std_logic;
@@ -115,7 +116,7 @@ architecture structural of slot_server_v4 is
 
     signal slave_dout      : std_logic_vector(7 downto 0);
     signal slave_dtri      : std_logic := '0';
-    
+
     signal master_dout     : std_logic_vector(7 downto 0);
     signal master_dtri     : std_logic := '0';
 
@@ -138,7 +139,7 @@ architecture structural of slot_server_v4 is
     signal serve_io1       : std_logic := '0'; -- IO1n
     signal serve_io2       : std_logic := '0'; -- IO2n
     signal allow_write     : std_logic := '0';
-    
+
     -- kernal replacement logic
     signal kernal_area     : std_logic := '0';
     signal kernal_probe    : std_logic := '0';
@@ -147,14 +148,14 @@ architecture structural of slot_server_v4 is
 
     signal cpu_write       : std_logic;
     signal epyx_timeout    : std_logic;
-    
+
     signal reu_dma_n       : std_logic := '1'; -- direct from REC
     signal cmd_if_freeze    : std_logic := '0'; -- same function as reu_dma_n, but then from CI
-    
+
     signal mask_buttons     : std_logic := '0';
     signal reset_button     : std_logic;
     signal freeze_button    : std_logic;
-	
+
     signal actual_c64_reset : std_logic;
     
     signal dma_n            : std_logic := '1';
@@ -490,10 +491,10 @@ begin
         nmi_n           => nmi_n,
         exrom_n         => exrom_n,
         game_n          => game_n,
-	sense           => sense,
+        sense           => sense,
     
         CART_LEDn       => cart_led_n,
-    	size_ctrl       => control.reu_size );
+        size_ctrl       => control.reu_size );
 
 
     r_sid: if g_implement_sid generate
@@ -684,14 +685,16 @@ begin
         end if;
     end process;
 
-    process(address_out, kernal_addr_out, kernal_probe)
+    process(address_out, kernal_addr_out, kernal_probe, address_tri_l, address_tri_h)
     begin
         slot_addr_o <= address_out;
+        slot_addr_tl <= address_tri_l;
+        slot_addr_th <= address_tri_h;
         if kernal_addr_out='1' and kernal_probe='1' then
             slot_addr_o(15 downto 13) <= "101";
+            slot_addr_th <= '1';
         end if;
     end process;
-    slot_addr_t <= address_tri_l or address_tri_h;
 
     slot_data_o <= slave_dout when (slave_dtri='1') else
                    master_dout when (master_dtri='1') else
@@ -816,6 +819,6 @@ begin
 
     phi2_tick_avail <= stand_alone_tick when status.clock_detect = '0' else phi2_tick_i;
     phi2_tick <= phi2_tick_avail;
-    
-	c64_stopped <= status.c64_stopped;
+
+    c64_stopped <= status.c64_stopped;
 end structural;

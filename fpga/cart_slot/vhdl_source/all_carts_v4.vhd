@@ -28,10 +28,10 @@ port (
     freeze_act      : in  std_logic; -- goes '1' when we need to switch in the cartridge for freeze mode
     unfreeze        : out std_logic; -- indicates the freeze logic to switch back to non-freeze mode.
     cart_active     : out std_logic; -- indicates that the cartridge is active
-    
+
     cart_kill       : in  std_logic;
     cart_logic      : in  std_logic_vector(4 downto 0);   -- 1 out of 32 logic emulations
-    
+
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
 
@@ -42,9 +42,9 @@ port (
     serve_io1       : out std_logic; -- IO1n
     serve_io2       : out std_logic; -- IO2n
     allow_write     : out std_logic;
-    
+
     mem_addr        : out unsigned(25 downto 0);   
-    
+
     irq_n           : out std_logic;
     nmi_n           : out std_logic;
     exrom_n         : out std_logic;
@@ -140,7 +140,7 @@ begin
         if rising_edge(clock) then
             reset_in     <= reset or RST_in or c64_reset;
             freeze_act_d <= freeze_act;
-			unfreeze     <= '0';
+            unfreeze     <= '0';
             
             -- control register
             if reset_in='1' then
@@ -153,7 +153,6 @@ begin
                 ram_select   <= '0';
                 do_io2       <= '1';
                 cart_en      <= '1';
---                unfreeze     <= '0';
                 hold_nmi     <= '0';
             elsif freeze_act='1' and freeze_act_d='0' then
                 bank_bits  <= (others => '0');
@@ -161,7 +160,6 @@ begin
                 --allow_bank <= '0';
                 ram_select <= '0';
                 cart_en    <= '1';
---                unfreeze   <= '0';
                 hold_nmi   <= '1';
             elsif cart_en = '0' then
                 cart_logic_d <= cart_logic; -- activate change of mode!
@@ -304,7 +302,7 @@ begin
                 serve_io2 <= '0';
                 irq_n     <= '1';
                 nmi_n     <= '1';
-		serve_vic <= '1';
+                serve_vic <= '1';
 
             when c_ocean128 =>
                 if io_write='1' and io_addr(8)='0' then -- DE00 range
@@ -407,7 +405,7 @@ begin
                              -- and disabled by reading
                 if io_write='1' and io_addr(8 downto 7) = "01"  then
                    mode_bits(0) <= io_wdata(4);
-		   bank_bits <= io_wdata(3 downto 1);
+                   bank_bits <= io_wdata(3 downto 1);
                 end if;
                 game_n    <= mode_bits(0);
                 exrom_n   <= mode_bits(0);
@@ -418,10 +416,10 @@ begin
                 nmi_n     <= '1';
 
             when c_georam =>
-    	        if io_write='1' and io_addr(8 downto 7) = "11" then
+                if io_write='1' and io_addr(8 downto 7) = "11" then
                     if io_addr(0) = '0' then
                         georam_bank(5 downto 0) <= io_wdata(5 downto 0) and georam_mask(5 downto 0);
-    		            georam_bank(15 downto 14) <= io_wdata(7 downto 6) and georam_mask(15 downto 14);
+                        georam_bank(15 downto 14) <= io_wdata(7 downto 6) and georam_mask(15 downto 14);
                     else
                         georam_bank(13 downto 6) <= io_wdata(7 downto 0) and georam_mask(13 downto 6);
                     end if; 
@@ -440,7 +438,7 @@ begin
                 elsif io_read='1' and io_addr(8)='0' then
                     mode_bits(0) <= '1';
                 end if;
-        		if mode_bits(0)='1' then
+                if mode_bits(0)='1' then
                    game_n    <= '0';
                    exrom_n   <= '0';
                 elsif slot_addr(15)='1' and not(slot_addr(14 downto 13) = "10") then
@@ -449,7 +447,7 @@ begin
                 else
                    game_n    <= '1';
                    exrom_n   <= '1';
-                end if;		
+                end if;
                 serve_rom <= '1';
                 serve_io1 <= '1';
                 serve_io2 <= '0';
@@ -576,7 +574,7 @@ begin
             end if;
         end if;
     end process;
-    
+
     CART_LEDn <= not cart_en;
 
     -- decode address DE02-DE0F
@@ -584,7 +582,8 @@ begin
 
     -- determine address
 --  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank, sense)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2,
+            allow_bank, eth_addr, kernal_area, georam_bank, sense, kernal_16k)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -694,34 +693,33 @@ begin
         when c_sbasic =>
             -- rom access
             mem_addr_i <= g_rom_base(27 downto 13) & slot_addr(12 downto 0);
-	    mem_addr_i(19) <= slot_addr(13);
+            mem_addr_i(19) <= slot_addr(13);
 
         when c_bbasic =>
             -- rom access
-	    if slot_addr(15 downto 13)="100" then
+            if slot_addr(15 downto 13)="100" then
                mem_addr_i <= g_rom_base(27 downto 15) & "00" & slot_addr(12 downto 0);
-	    elsif slot_addr(15 downto 13)="101" then
+            elsif slot_addr(15 downto 13)="101" then
                mem_addr_i <= g_rom_base(27 downto 15) & "01" & slot_addr(12 downto 0);
-	    elsif slot_addr(15 downto 13)="111" then
+            elsif slot_addr(15 downto 13)="111" then
                mem_addr_i <= g_rom_base(27 downto 15) & "10" & slot_addr(12 downto 0);
             end if;
 
         when c_georam =>
-	   if slot_addr(15 downto 8)=X"DE" then
-	      mem_addr_i <= g_georam_base(27 downto 24) & georam_bank(15 downto 0) & slot_addr(7 downto 0); 
-	      allow_write <= '1';
-	   end if;
+            if slot_addr(15 downto 8)=X"DE" then
+                mem_addr_i <= g_georam_base(27 downto 24) & georam_bank(15 downto 0) & slot_addr(7 downto 0); 
+                allow_write <= '1';
+            end if;
 
         when c_pagefox =>
-	   if bank_bits(15) = '0' then
-              mem_addr_i <= g_rom_base(27 downto 16) & bank_bits(14) & bank_bits(13) & slot_addr(13 downto 0); 
-	   elsif bank_bits(14) = '0' then
-	      mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(13) & slot_addr(13 downto 0);
-	      if slot_addr(15 downto 14)="10" then
-	         allow_write <= '1';
-	      end if;
-	   end if;
-
+            if bank_bits(15) = '0' then
+                mem_addr_i <= g_rom_base(27 downto 16) & bank_bits(14) & bank_bits(13) & slot_addr(13 downto 0); 
+            elsif bank_bits(14) = '0' then
+                mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(13) & slot_addr(13 downto 0);
+                if slot_addr(15 downto 14)="10" then
+                    allow_write <= '1';
+                end if;
+            end if;
 
         when others =>
             null;

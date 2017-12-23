@@ -11,7 +11,7 @@ generic (
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
-    
+
     -- Cartridge pins
     VCC             : in  std_logic;
     RSTn            : in  std_logic;
@@ -27,7 +27,7 @@ port (
     DATA_in         : in  std_logic_vector(7 downto 0);
     DATA_out        : out std_logic_vector(7 downto 0) := (others => '0');
     DATA_tri        : out std_logic;
-    
+
     -- interface with memory controller
     mem_req         : out std_logic; -- our memory request to serve slot
     mem_rwn         : out std_logic;
@@ -38,7 +38,7 @@ port (
     -- mem_addr comes from cartridge logic
 
     reset_out       : out std_logic;
-    
+
     -- timing inputs
     phi2_tick       : in  std_logic;
     do_sample_addr  : in  std_logic;
@@ -243,7 +243,7 @@ begin
                 end if;
 
             when wait_end =>
-				if mem_dack='1' then -- the data is available, put it on the bus!
+                if mem_dack='1' then -- the data is available, put it on the bus!
                     if g_big_endian then
                         mem_data_0 <= mem_rdata(31 downto 24);
                         mem_data_1 <= mem_rdata(23 downto 16);
@@ -252,7 +252,7 @@ begin
                         mem_data_1 <= mem_rdata(15 downto 8);
                     end if;
                     dav      <= '1';
-				end if;
+                end if;
                 if phi2_tick='1' or do_io_event='1' then -- around the clock edges
                     kernal_area_i <= '0';
                     state <= idle;
@@ -270,7 +270,7 @@ begin
                 end if;
                 
             when others =>
-                null;                    
+                null;
 
             end case;
 

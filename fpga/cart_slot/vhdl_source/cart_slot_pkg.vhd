@@ -15,7 +15,7 @@ package cart_slot_pkg is
     constant c_cart_kernal_enable       : unsigned(3 downto 0) := X"7";
     constant c_cart_reu_enable          : unsigned(3 downto 0) := X"8";
     constant c_cart_reu_size            : unsigned(3 downto 0) := X"9";
-	constant c_cart_swap_buttons		: unsigned(3 downto 0) := X"A";
+    constant c_cart_swap_buttons        : unsigned(3 downto 0) := X"A";
     constant c_cart_timing              : unsigned(3 downto 0) := X"B";
     constant c_cart_phi2_recover        : unsigned(3 downto 0) := X"C";
     constant c_cart_serve_control       : unsigned(3 downto 0) := X"D";
@@ -36,11 +36,11 @@ package cart_slot_pkg is
         reu_size       : std_logic_vector(2 downto 0);
         eth_enable     : std_logic;
         sampler_enable : std_logic;
-		swap_buttons   : std_logic;
-		timing_addr_valid   : unsigned(2 downto 0);
-		phi2_edge_recover   : std_logic;
-		tick_ntsc           : std_logic;
-		serve_while_stopped : std_logic;
+        swap_buttons   : std_logic;
+        timing_addr_valid   : unsigned(2 downto 0);
+        phi2_edge_recover   : std_logic;
+        tick_ntsc           : std_logic;
+        serve_while_stopped : std_logic;
     end record;
     
     type t_cart_status is record
@@ -65,10 +65,10 @@ package cart_slot_pkg is
         eth_enable     => '0',
         sampler_enable => '0',
         timing_addr_valid => "100",
-		phi2_edge_recover => '1',
+        phi2_edge_recover => '1',
         swap_buttons   => '1',
         tick_ntsc      => '0',
         serve_while_stopped => '0' );
-    
+
 
 end cart_slot_pkg;

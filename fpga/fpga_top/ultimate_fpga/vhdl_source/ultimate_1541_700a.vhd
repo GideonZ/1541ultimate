@@ -9,7 +9,7 @@ use work.io_bus_pkg.all;
 
 entity ultimate_1541_700a is
 generic (
-    g_version       : unsigned(7 downto 0) := X"FB" );
+    g_version       : unsigned(7 downto 0) := X"FC" );
 port (
     CLOCK       : in    std_logic;
     
@@ -182,7 +182,7 @@ begin
         g_c2n_streamer  => true,
         g_c2n_recorder  => true,
         g_cartridge     => true,
-		g_command_intf  => true,
+        g_command_intf  => true,
         g_drive_sound   => true,
         g_rtc_chip      => true,
         g_rtc_timer     => false,
@@ -201,28 +201,36 @@ begin
         ulpi_reset  => ulpi_reset_i,
     
         -- slot side
-        PHI2        => PHI2,
-        DOTCLK      => DOTCLK,
-        RSTn        => RSTn,
-    
-        BUFFER_ENn  => BUFFER_ENn,
+        BUFFER_ENn  => open,
+        VCC         => SLOT_VCC,
+
+        phi2_i      => SLOT_PHI2,
+        dotclk_i    => SLOT_DOTCLK,
+        rstn_i      => SLOT_RSTn,
+        rstn_o      => RSTn_out,
                                    
-        SLOT_ADDR   => SLOT_ADDR,
-        SLOT_DATA   => SLOT_DATA,
-        RWn         => RWn,
-        BA          => BA,
-        DMAn        => DMAn,
-                                   
-        EXROMn      => EXROMn,
-        GAMEn       => GAMEn,
-                                   
-        ROMHn       => ROMHn,
-        ROMLn       => ROMLn,
-        IO1n        => IO1n,
-        IO2n        => IO2n,
-                                   
-        IRQn        => IRQn,
-        NMIn        => NMIn,
+        slot_addr_o => slot_addr_o,
+        slot_addr_i => SLOT_ADDR,
+        slot_addr_t => slot_addr_t,
+        slot_data_o => slot_data_o,
+        slot_data_i => SLOT_DATA,
+        slot_data_t => slot_data_t,
+        rwn_i       => SLOT_RWn,
+        rwn_o       => slot_rwn_o,
+        exromn_i    => SLOT_EXROMn,
+        exromn_o    => exrom_oc,
+        gamen_i     => SLOT_GAMEn,
+        gamen_o     => game_oc,
+        irqn_i      => SLOT_IRQn,
+        irqn_o      => irq_oc,
+        nmin_i      => SLOT_NMIn,
+        nmin_o      => nmi_oc,
+        ba_i        => SLOT_BA,
+        dman_o      => dma_oc,
+        romhn_i     => SLOT_ROMHn,
+        romln_i     => SLOT_ROMLn,
+        io1n_i      => SLOT_IO1n,
+        io2n_i      => SLOT_IO2n,
         
         -- local bus side
         mem_inhibit => memctrl_inhibit,
@@ -231,9 +239,9 @@ begin
         mem_resp    => mem_resp,
                  
         -- Audio outputs
-        audio_left  => audio_left,
-        audio_right => audio_right,
-    
+        audio_left      => audio_left,
+        audio_right     => audio_right,
+
         -- IEC bus
         iec_reset_i => IEC_RESET,
         iec_atn_i   => IEC_ATN,
@@ -283,18 +291,16 @@ begin
         ULPI_DATA   => ULPI_DATA,
     
         -- Cassette Interface
-        CAS_MOTOR   => CAS_MOTOR,
-        CAS_SENSE   => CAS_SENSE,
-        CAS_READ    => CAS_READ,
-        CAS_WRITE   => CAS_WRITE,
-        
-        vid_clock   => sys_clock,
-        vid_reset   => sys_reset,
-        vid_h_count => X"000",
-        vid_v_count => X"000",
-        vid_active  => open,
-        vid_opaque  => open,
-        vid_data    => open,
+        c2n_read_in    => c2n_read_in, 
+        c2n_write_in   => c2n_write_in, 
+        c2n_read_out   => c2n_read_out, 
+        c2n_write_out  => c2n_write_out, 
+        c2n_read_en    => c2n_read_en, 
+        c2n_write_en   => c2n_write_en, 
+        c2n_sense_in   => c2n_sense_in, 
+        c2n_sense_out  => c2n_sense_out, 
+        c2n_motor_in   => c2n_motor_in, 
+        c2n_motor_out  => c2n_motor_out, 
 
         -- Buttons
         BUTTON      => button_i );

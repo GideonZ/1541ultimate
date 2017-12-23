@@ -176,7 +176,8 @@ architecture rtl of u2p_nios_solo is
     signal RSTn_out     : std_logic;
     signal irq_oc, nmi_oc, rst_oc, dma_oc, exrom_oc, game_oc    : std_logic;
     signal slot_addr_o  : std_logic_vector(15 downto 0);
-    signal slot_addr_t  : std_logic;
+    signal slot_addr_tl : std_logic;
+    signal slot_addr_th : std_logic;
     signal slot_data_o  : std_logic_vector(7 downto 0);
     signal slot_data_t  : std_logic;
     signal slot_rwn_o   : std_logic;
@@ -415,7 +416,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"0D",
+        g_version       => X"0E",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -474,7 +475,8 @@ begin
                                    
         slot_addr_o => slot_addr_o,
         slot_addr_i => SLOT_ADDR,
-        slot_addr_t => slot_addr_t,
+        slot_addr_tl=> slot_addr_tl,
+        slot_addr_th=> slot_addr_th,
         slot_data_o => slot_data_o,
         slot_data_i => SLOT_DATA,
         slot_data_t => slot_data_t,
@@ -578,9 +580,10 @@ begin
         BUTTON      => button_i );
 
     SLOT_RSTn <= '0' when RSTn_out = '0' else 'Z';
-    SLOT_ADDR <= slot_addr_o when slot_addr_t = '1' else (others => 'Z');
+    SLOT_ADDR(15 downto 12) <= slot_addr_o(15 downto 12) when slot_addr_th = '1' else (others => 'Z');
+    SLOT_ADDR(11 downto 00) <= slot_addr_o(11 downto 00) when slot_addr_tl = '1' else (others => 'Z');
     SLOT_DATA <= slot_data_o when slot_data_t = '1' else (others => 'Z');
-    SLOT_RWn  <= slot_rwn_o  when slot_addr_t = '1' else 'Z';
+    SLOT_RWn  <= slot_rwn_o  when slot_addr_tl = '1' else 'Z';
 
     irq_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => irq_oc, oc_out => SLOT_IRQn);
     nmi_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => nmi_oc, oc_out => SLOT_NMIn);

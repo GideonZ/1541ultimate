@@ -65,7 +65,8 @@ port (
 
     slot_addr_o : out   std_logic_vector(15 downto 0);
     slot_addr_i : in    std_logic_vector(15 downto 0) := (others => '1');
-    slot_addr_t : out   std_logic;
+    slot_addr_tl: out   std_logic;
+    slot_addr_th: out   std_logic;
     
     slot_data_o : out   std_logic_vector(7 downto 0);
     slot_data_i : in    std_logic_vector(7 downto 0) := (others => '1');
@@ -629,7 +630,8 @@ begin
                        
             slot_addr_i     => slot_addr_i,
             slot_addr_o     => slot_addr_o,
-            slot_addr_t     => slot_addr_t,
+            slot_addr_tl    => slot_addr_tl,
+            slot_addr_th    => slot_addr_th,
 
             slot_data_i     => slot_data_i,
             slot_data_o     => slot_data_o,
