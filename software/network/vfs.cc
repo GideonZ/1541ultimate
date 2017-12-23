@@ -200,6 +200,10 @@ int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
     	st->min = 59;
     if (st->hr > 23)
     	st->hr = 23;
+
+    strncpy(st->name, inf->lfname, 64);
+    st->name[63] = 0;
+
     // > 31 is not possible
     return 0;
 }

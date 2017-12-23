@@ -59,6 +59,7 @@ typedef struct _vfs_stat_t {
     uint8_t hr;
     uint8_t min;
     uint8_t sec;
+    char name[64];
 } vfs_stat_t;
 
 EXTERNC void   vfs_load_plugin();

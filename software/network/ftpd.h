@@ -141,6 +141,9 @@ public:
 	void cmd_rmd(const char *arg);
 	void cmd_dele(const char *arg);
 	void cmd_size(const char *arg);
+    void cmd_mlst(const char *arg);
+    void cmd_mlsd(const char *arg);
+    void cmd_feat(const char *arg);
 };
 
 class FTPDataConnection
@@ -166,7 +169,7 @@ public:
 	int do_bind(void);
 	void close_connection();
 
-	void directory(int shortlist, vfs_dir_t *dir);
+	void directory(int listType, vfs_dir_t *dir);
 	void sendfile(vfs_file_t *file);
 	bool receivefile(vfs_file_t *file);
 };

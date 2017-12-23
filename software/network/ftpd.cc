@@ -45,7 +45,7 @@ int dbg_printf(const char *fmt, ...);
 #define msg150stor "150 Opening BINARY mode data connection for %s."
 #define msg200 "200 Command okay."
 #define msg202 "202 Command not implemented, superfluous at this site."
-#define msg211 "211 System status, or system help reply."
+#define msg211 "211-Features:\r\nMLST ;size*;type*;\r\n211 End"
 #define msg212 "212 Directory status."
 #define msg213 "213 %d"
 #define msg214 "214 %s."
@@ -385,7 +385,7 @@ void FTPDaemonThread :: cmd_pwd(const char *arg)
 	}
 }
 
-void FTPDaemonThread :: cmd_list_common(const char *arg, int shortlist)
+void FTPDaemonThread :: cmd_list_common(const char *arg, int listType)
 {
 	vfs_dir_t *vfs_dir;
 	char *cwd;
@@ -402,7 +402,7 @@ void FTPDaemonThread :: cmd_list_common(const char *arg, int shortlist)
 		return;
 	}
 
-	if (shortlist != 0)
+	if (listType != 0)
 		state = FTPD_NLST;
 	else
 		state = FTPD_LIST;
@@ -415,12 +415,45 @@ void FTPDaemonThread :: cmd_list_common(const char *arg, int shortlist)
 
 	send_msg(msg150);
 
-	connection->directory(shortlist, vfs_dir);
+	connection->directory(listType, vfs_dir);
 	connection->close_connection();
 	delete connection;
 	connection = 0;
 
 	send_msg(msg226);
+}
+
+void FTPDaemonThread :: cmd_mlst(const char *arg)
+{
+    vfs_stat_t st;
+    int result;
+    const char *type;
+
+    if ((arg == NULL) || (*arg == '\0')) { // No argument given
+        result = vfs_stat(vfs, ".", &st);
+        type = "cdir";
+    } else {
+        result = vfs_stat(vfs, arg, &st);
+        if (VFS_ISDIR(st.st_mode)) {
+            type = "dir";
+        } else {
+            type = "file";
+        }
+    }
+
+    if (result) {
+        send_msg(msg501);
+        return;
+    }
+    char buffer[200];
+    sprintf(buffer, "250- Listing %s\r\n type=%s;size=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
+            type, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
+    send_msg(buffer);
+}
+
+void FTPDaemonThread :: cmd_mlsd(const char *arg)
+{
+    cmd_list_common(arg, 2);
 }
 
 void FTPDaemonThread :: cmd_nlst(const char *arg)
@@ -497,6 +530,11 @@ void FTPDaemonThread :: cmd_noop(const char *arg)
 void FTPDaemonThread :: cmd_syst(const char *arg)
 {
 	send_msg(msg214SYST, "UNIX");
+}
+
+void FTPDaemonThread :: cmd_feat(const char *arg)
+{
+    send_msg(msg211);
 }
 
 void FTPDaemonThread :: cmd_pasv(const char *arg)
@@ -701,6 +739,9 @@ struct ftpd_command ftpd_commands[] = {
 	"DELE", &FTPDaemonThread :: cmd_dele,
 	"SIZE", &FTPDaemonThread :: cmd_size,
 	"PASV", &FTPDaemonThread :: cmd_pasv,
+	"MLST", &FTPDaemonThread :: cmd_mlst,
+    "MLSD", &FTPDaemonThread :: cmd_mlsd,
+	"FEAT", &FTPDaemonThread :: cmd_feat,
 	NULL
 };
 
@@ -881,31 +922,41 @@ void FTPDataConnection :: accept_data(void *a) // task entry point
 	vTaskSuspend(NULL);
 }
 
-void FTPDataConnection :: directory(int shortlist, vfs_dir_t *dir)
+void FTPDataConnection :: directory(int listType, vfs_dir_t *dir)
 {
 	if (setup_connection() == ERR_OK) {
 		int len;
+        vfs_stat_t st;
 
 		do {
 			vfs_dirent = vfs_readdir(dir);
 
 	    	if (vfs_dirent) {
-	    		if (shortlist) {
+	    	    switch(listType) {
+	    	    case 0:
+                    vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
+
+                    if (st.year == parent->current_year)
+                        len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
+                                month_table[st.month], st.day, st.hr, st.min, vfs_dirent->name);
+                    else
+                        len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
+                                month_table[st.month], st.day, st.year, vfs_dirent->name);
+                    if (VFS_ISDIR(st.st_mode))
+                        buffer[0] = 'd';
+                    break;
+	    	    case 1:
 	    			len = sprintf(buffer, "%s\r\n", vfs_dirent->name);
-	    		} else {
-	    			vfs_stat_t st;
-
-	    			vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
-
-	    			if (st.year == parent->current_year)
-	    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
-	    						month_table[st.month], st.day, st.hr, st.min, vfs_dirent->name);
-	    			else
-	    				len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
-	    						month_table[st.month], st.day, st.year, vfs_dirent->name);
-	    			if (VFS_ISDIR(st.st_mode))
-	    				buffer[0] = 'd';
-	    		}
+	    			break;
+	    	    case 2:
+                    vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
+                    len = sprintf(buffer, "type=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
+                            VFS_ISDIR(st.st_mode) ? "dir" : "file", st.st_size,
+	    	                st.year, st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name);
+	    	        break;
+	    	    default:
+	    	        len = sprintf(buffer, "Internal Error\r\n");
+	    	    }
 	    		buffer[len] = 0;
 	    		lwip_send(actual_socket, buffer, len, 0);
 	    	}
