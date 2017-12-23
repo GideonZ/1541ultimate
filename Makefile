@@ -21,9 +21,13 @@ mb:
 	@$(MAKE) -C tools
 	@$(MAKE) -C target/software/mb_lwip
 	@$(MAKE) -C target/software/mb_boot
+	@$(MAKE) -C target/software/mb_boot_dd
 	@$(MAKE) -C target/software/mb_boot2
 	@$(MAKE) -C target/software/mb_ultimate
 	@$(MAKE) -C target/software/mb_update
+	@$(MAKE) -C target/software/mb_update_dd
+	@cp target/software/mb_update/result/update.u2u ./update_audio.u2u
+	@cp target/software/mb_update_dd/result/update.u2u ./update_dual_drive.u2u
 
 niosclean:
 	@$(MAKE) -C target/software/nios2_elf_lwip clean
@@ -151,4 +155,4 @@ mb_clean:
 	@rm -f ./revert.u2u
 	@rm -rf `find target/software/mb* -name result`
 	@rm -rf `find target/software/mb* -name output`
-	
+
