@@ -156,3 +156,19 @@ mb_clean:
 	@rm -rf `find target/software/mb* -name result`
 	@rm -rf `find target/software/mb* -name output`
 
+u2plus_swonly:
+	@$(MAKE) -C tools
+	@$(MAKE) -C software/nios_solo_bsp
+	@$(MAKE) -C software/nios_appl_bsp
+	@$(MAKE) -C target/software/nios2_elf_lwip
+	@$(MAKE) -C target/software/nios2_ultimate
+	@$(MAKE) -C target/software/nios2_recovery
+	cp target/software/nios2_ultimate/result/ultimate.elf .
+u2plus_swapply:
+	@$(MAKE) -C tools
+	@$(MAKE) -C software/nios_solo_bsp
+	@$(MAKE) -C software/nios_appl_bsp
+	@$(MAKE) -C target/software/nios2_elf_lwip
+	@$(MAKE) -C target/software/nios2_ultimate
+	@$(MAKE) -C target/software/nios2_recovery
+	nios2-download -g target/software/nios2_ultimate/result/ultimate.elf
