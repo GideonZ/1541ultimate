@@ -629,7 +629,9 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	case G64FILE_MOUNT:
 	case MENU_1541_MOUNT:
 	case MENU_1541_MOUNT_GCR:
-		fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+		if (!(cmd->mode & RUNCODE_MOUNT_BUFFER)) {
+			fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
+		}
         break;
 	default:
 		break;
@@ -667,25 +669,34 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	case D64FILE_MOUNT:
 	case D64FILE_MOUNT_UL:
 	case D64FILE_MOUNT_RO:
-		printf("Mounting disk.. %s\n", cmd->filename.c_str());
-		res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
-		if(res == FR_OK) {
-			check_if_save_needed(cmd);
-
-			c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
-            		C64_UNFREEZE, 0, "", "");
-            c64_command->execute();
-
-			mount_d64(protect, newFile);
-            if ((cmd->functionID == D64FILE_MOUNT_UL) ||
-            	(cmd->functionID == D64FILE_MOUNT_RO)) {
-            	unlink();
-            }
-            if(cmd->functionID == D64FILE_RUN) {
-                c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
-                		C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
-                c64_command->execute();
-            }
+		if (!(cmd->mode & RUNCODE_MOUNT_BUFFER)) {
+			printf("Mounting disk.. %s\n", cmd->filename.c_str());
+			res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
+		}
+		if(cmd->mode & RUNCODE_MOUNT_BUFFER || res == FR_OK) {
+			if (!(cmd->mode & RUNCODE_NO_CHECKSAVE)) {
+				check_if_save_needed(cmd);
+			}
+			if (!(cmd->mode & RUNCODE_NO_UNFREEZE)) {
+				c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
+					C64_UNFREEZE, 0, "", "");
+				c64_command->execute();
+			}
+			if (cmd->mode & RUNCODE_MOUNT_BUFFER) {
+				mount_d64(false, (uint8_t *) cmd->buffer, (uint32_t) cmd->bufferSize);
+				unlink();
+			} else {
+				mount_d64(protect, newFile);
+			}
+			if ((cmd->functionID == D64FILE_MOUNT_UL) ||
+				(cmd->functionID == D64FILE_MOUNT_RO)) {
+				unlink();
+			}
+			if(cmd->functionID == D64FILE_RUN) {
+				c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
+						C64_DRIVE_LOAD, RUNCODE_MOUNT_LOAD_RUN, "", "*");
+				c64_command->execute();
+			}
 		} else {
 			printf("Error opening file.\n");
 		}
