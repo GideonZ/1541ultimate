@@ -63,6 +63,8 @@ architecture gideon of all_carts_v4 is
     signal ext_bank     : std_logic_vector(18 downto 16);
     signal bank_bits    : std_logic_vector(15 downto 13);
     signal mode_bits    : std_logic_vector(2 downto 0);
+    signal ef_write     : std_logic_vector(2 downto 0);
+    signal ef_write_addr : std_logic_vector(21 downto 0);
     signal ram_select   : std_logic;
     signal georam_bank  : std_logic_vector(15 downto 0);
     
@@ -149,10 +151,13 @@ begin
                 bank_bits    <= (others => '0');
                 ext_bank     <= (others => '0');
                 georam_bank  <= (others => '0');
+                ef_write     <= (others => '0');
+                ef_write_addr <= (others => '0');
                 allow_bank   <= '0';
                 ram_select   <= '0';
                 do_io2       <= '1';
                 cart_en      <= '1';
+--                unfreeze     <= '0';
                 hold_nmi     <= '0';
             elsif freeze_act='1' and freeze_act_d='0' then
                 bank_bits  <= (others => '0');
@@ -160,6 +165,7 @@ begin
                 --allow_bank <= '0';
                 ram_select <= '0';
                 cart_en    <= '1';
+--                unfreeze   <= '0';
                 hold_nmi   <= '1';
             elsif cart_en = '0' then
                 cart_logic_d <= cart_logic; -- activate change of mode!
@@ -227,17 +233,53 @@ begin
 
             when c_easy_flash =>
                 if io_write='1' and io_addr(8)='0' and cart_en='1' then -- DExx
-                    if io_addr(1)='0' then -- DE00
+                    if io_addr(3 downto 0)="0000" then -- DE00
                         ext_bank  <= io_wdata(5 downto 3);
                         bank_bits <= io_wdata(2 downto 0);
-                    else -- DE02
+                    end if;
+                    if io_addr(3 downto 0)="0010" then -- DE02
                         mode_bits <= io_wdata(2 downto 0); -- LED not implemented
+                    end if;
+                    if io_addr(3 downto 0)="1001" then -- DE09
+                        ef_write <= "000";
+                    end if;
+                    if io_addr(3 downto 0)="1000" then -- DE08
+                        case ef_write is
+                           when "000" =>
+                              if io_wdata(7 downto 0) = X"65" then
+                                 ef_write <= "001";
+                              end if;
+                           when "001" =>
+                              if io_wdata(7 downto 0) = X"66" then
+                                 ef_write <= "010";
+                              else
+                                 ef_write <= "000";
+                              end if;
+                           when "010" =>
+                              if io_wdata(7 downto 0) = X"77" then
+                                 ef_write <= "011";
+                              else
+                                 ef_write <= "000";
+                              end if;
+                           when "011" =>
+                                  ef_write_addr(7 downto 0) <= io_wdata(7 downto 0);
+                                  ef_write <= "100";
+                           when "100" =>
+                                  ef_write_addr(12 downto 8) <= io_wdata(4 downto 0);
+                                  ef_write_addr(19) <= io_wdata(5);
+                                  ef_write <= "101";
+                           when "101" =>
+                                  ef_write_addr(18 downto 13) <= io_wdata(5 downto 0);
+                                  ef_write <= "110";
+                           when others =>
+                                 ef_write <= "000";
+                        end case;
                     end if;
                 end if;
                 game_n    <= not (mode_bits(0) or not mode_bits(2));
                 exrom_n   <= not mode_bits(1);
                 serve_rom <= '1';
-                serve_io1 <= '0'; -- write registers only, no reads
+                serve_io1 <= '1'; -- write registers only, no reads
                 serve_io2 <= '1'; -- RAM
                 irq_n     <= '1';
                 nmi_n     <= '1';
@@ -298,8 +340,8 @@ begin
                 game_n    <= '1';
                 exrom_n   <= '1';
                 serve_rom <= '1';
-                serve_io1 <= '0';
-                serve_io2 <= '0';
+                serve_io1 <= '1';
+                serve_io2 <= '1';
                 irq_n     <= '1';
                 nmi_n     <= '1';
                 serve_vic <= '1';
@@ -419,7 +461,7 @@ begin
                 if io_write='1' and io_addr(8 downto 7) = "11" then
                     if io_addr(0) = '0' then
                         georam_bank(5 downto 0) <= io_wdata(5 downto 0) and georam_mask(5 downto 0);
-                        georam_bank(15 downto 14) <= io_wdata(7 downto 6) and georam_mask(15 downto 14);
+                            georam_bank(15 downto 14) <= io_wdata(7 downto 6) and georam_mask(15 downto 14);
                     else
                         georam_bank(13 downto 6) <= io_wdata(7 downto 0) and georam_mask(13 downto 6);
                     end if; 
@@ -438,7 +480,7 @@ begin
                 elsif io_read='1' and io_addr(8)='0' then
                     mode_bits(0) <= '1';
                 end if;
-                if mode_bits(0)='1' then
+                        if mode_bits(0)='1' then
                    game_n    <= '0';
                    exrom_n   <= '0';
                 elsif slot_addr(15)='1' and not(slot_addr(14 downto 13) = "10") then
@@ -582,8 +624,7 @@ begin
 
     -- determine address
 --  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2,
-            allow_bank, eth_addr, kernal_area, georam_bank, sense, kernal_16k)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank, sense)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -638,8 +679,13 @@ begin
             if slot_addr(15 downto 8)=X"DF" then
                 mem_addr_i <= g_ram_base(27 downto 8) & slot_addr(7 downto 0);
                 allow_write <= '1';
-            else
-                mem_addr_i <= g_rom_base(27 downto 20) & slot_addr(13) & ext_bank & bank_bits & slot_addr(12 downto 0);
+            else 
+                if slot_addr(15 downto 0)=X"DE07" and ef_write = "110" then
+                   mem_addr_i <= g_rom_base(27 downto 20) & ef_write_addr(19 downto 0);
+                   allow_write <= '1';
+               else
+                   mem_addr_i <= g_rom_base(27 downto 20) & slot_addr(13) & ext_bank & bank_bits & slot_addr(12 downto 0);
+               end if;
             end if;
 
         when c_fc3 | c_comal80 =>
@@ -706,20 +752,21 @@ begin
             end if;
 
         when c_georam =>
-            if slot_addr(15 downto 8)=X"DE" then
-                mem_addr_i <= g_georam_base(27 downto 24) & georam_bank(15 downto 0) & slot_addr(7 downto 0); 
-                allow_write <= '1';
-            end if;
+           if slot_addr(15 downto 8)=X"DE" then
+              mem_addr_i <= g_georam_base(27 downto 24) & georam_bank(15 downto 0) & slot_addr(7 downto 0); 
+              allow_write <= '1';
+           end if;
 
         when c_pagefox =>
-            if bank_bits(15) = '0' then
-                mem_addr_i <= g_rom_base(27 downto 16) & bank_bits(14) & bank_bits(13) & slot_addr(13 downto 0); 
-            elsif bank_bits(14) = '0' then
-                mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(13) & slot_addr(13 downto 0);
-                if slot_addr(15 downto 14)="10" then
-                    allow_write <= '1';
-                end if;
-            end if;
+           if bank_bits(15) = '0' then
+              mem_addr_i <= g_rom_base(27 downto 16) & bank_bits(14) & bank_bits(13) & slot_addr(13 downto 0); 
+           elsif bank_bits(14) = '0' then
+              mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(13) & slot_addr(13 downto 0);
+              if slot_addr(15 downto 14)="10" then
+                 allow_write <= '1';
+              end if;
+           end if;
+
 
         when others =>
             null;
