@@ -16,8 +16,9 @@ cart_def mod_cart  = { ID_MODPLAYER, (void *)0, 0x4000, CART_TYPE_16K | CART_REU
 /*********************************************************************/
 /* REU File Browser Handling                                         */
 /*********************************************************************/
-#define REUFILE_LOAD      0x5201
-#define REUFILE_PLAYMOD   0x5202
+#define REUFILE_LOAD        0x5201
+#define REUFILE_PLAYMOD     0x5202
+#define REUFILE_SET_PRELOAD 0x5203
 
 #define REU_TYPE_REU 0
 #define REU_TYPE_MOD 1
@@ -38,6 +39,7 @@ int FileTypeREU :: fetch_context_items(IndexedList<Action *> &list)
     int count = 1;
 
     list.append(new Action("Load into REU", FileTypeREU :: execute_st, REUFILE_LOAD));
+    list.append(new Action("Preload on Startup", FileTypeREU :: execute_st, REUFILE_SET_PRELOAD));
     uint32_t capabilities = getFpgaCapabilities();
     if ((type == REU_TYPE_MOD) && (capabilities & CAPAB_SAMPLER)) {
         list.append(new Action("Play MOD", FileTypeREU :: execute_st, REUFILE_PLAYMOD));
@@ -74,6 +76,15 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
     FileInfo info(32);
     fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
+    if (cmd->functionID == REUFILE_SET_PRELOAD) {
+        char path[1024];
+        sprintf(path, "%s%s", cmd->path.c_str(), cmd->filename.c_str());
+        c64->cfg->set_string(CFG_C64_REU_IMG, path);
+        c64->cfg->write();
+        cmd->user_interface->popup("Set as REU Preload Image", BUTTON_OK);
+        return 0;
+    }
+    
     if (cmd->functionID == REUFILE_PLAYMOD) {
     	AudioConfig :: clear_sampler_registers();
     }

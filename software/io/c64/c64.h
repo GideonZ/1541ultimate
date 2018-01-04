@@ -152,21 +152,24 @@
 #define CART_ETH 0x40
 #define CART_RAM 0x20
 
-#define CFG_C64_CART     0xC1
-#define CFG_C64_CUSTOM   0xC2
-#define CFG_C64_REU_EN   0xC3
-#define CFG_C64_REU_SIZE 0xC4
-#define CFG_C64_ETH_EN   0xC5
-#define CFG_C64_SWAP_BTN 0xC6
-#define CFG_C64_DMA_ID   0xC7
-#define CFG_C64_MAP_SAMP 0xC8
-#define CFG_C64_ALT_KERN 0xC9
-#define CFG_C64_KERNFILE 0xCA
-#define CFG_C64_TIMING   0xCB
-#define CFG_C64_PHI2_REC 0xCC
-#define CFG_C64_RATE	 0xCD
-#define CFG_CMD_ENABLE   0x71
-#define CFG_CMD_ALLOW_WRITE   0x72
+#define CFG_C64_CART        0xC1
+#define CFG_C64_CUSTOM      0xC2
+#define CFG_C64_REU_EN      0xC3
+#define CFG_C64_REU_SIZE    0xC4
+#define CFG_C64_ETH_EN      0xC5
+#define CFG_C64_SWAP_BTN    0xC6
+#define CFG_C64_DMA_ID      0xC7
+#define CFG_C64_MAP_SAMP    0xC8
+#define CFG_C64_ALT_KERN    0xC9
+#define CFG_C64_KERNFILE    0xCA
+#define CFG_C64_TIMING      0xCB
+#define CFG_C64_PHI2_REC    0xCC
+#define CFG_C64_RATE        0xCD
+#define CFG_CMD_ENABLE      0x71
+#define CFG_CMD_ALLOW_WRITE 0x72
+#define CFG_C64_REU_PRE     0x80
+#define CFG_C64_REU_IMG     0x81
+#define CFG_C64_REU_OFFS    0x82
 
 #define ID_MODPLAYER 0xAA
 
@@ -258,6 +261,8 @@ public:
         
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access
+    friend class REUPreloader; // preloader needs to access config
+    friend class FileTypeREU; // REU file needs to access config 
 };
 
 extern C64 *c64;
