@@ -5,7 +5,7 @@ REUPreloader::REUPreloader()
 #ifndef NO_FILE_ACCESS
     cfg = c64->cfg;
 
-    if(cfg->get_value(CFG_C64_REU_EN) && cfg->get_value(CFG_C64_REU_PRE)) {
+    if(cfg->get_value(CFG_C64_REU_PRE)) {
 
         fm = FileManager :: getFileManager();
         path = fm->get_new_path("REUPreloader");
