@@ -1,11 +1,14 @@
-;-------------------------------------------------
-; Ultimate Player V1.1 - Sidplayer for the 1541 Ultimate
+;-----------------------------------------------------------------------
+; Ultimate SID Player V2.0 - Sidplayer for the Ultimate hardware
 ;
-; Programmed by Wilfred Bos - April 2009
+; Written by Wilfred Bos - April 2009
+;                          August 2017 - January 2018
 ;
 ; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
 ;
 ; Info:
+;  Editing the source code should be done in a text editor which supports UTF-8.
+;
 ;  Call the player by activating the cartridge and performing a reset. Pass tune
 ;  selection in the SID header at offset $10 (default song)
 ;  The player needs a SID header which is located somewhere in memory. The SID
@@ -15,1725 +18,2147 @@
 ;  play address ($0C), songs ($0e) and startSong ($10) in the SID header should
 ;  be set in little endian format. The original SID header is in big endian
 ;  format.
-;  The SID header should include the load address at $7c (if present). Therefore
-;  just copy the original SID header till $7e in front of the player.
-;  Set the load end address of the SID tune after the SID header at $7e in little
-;  endian format.
+;  The SID header should include the load address at offset $7c (if present).
+;  Therefore just copy the original SID header till offset $7e in front of the
+;  player. Set the load end address of the SID tune after the SID header at $7e
+;  in little endian format.
 ;
 ;  The following zero page addresses are used and will be removed afterwards:
 ;
-;  $F7 and $F8 are used temporarely
+;  $A0, $A3 and $A4 are used temporarely
+;  $F7, $F8 and $F9 are used temporarely
 ;  $FA = low byte SID header
 ;  $FB = high byte SID header and player address
 ;  $FC = song to play
-;  $FD = use CIA timer boolean (0 = No CIA, other value means that CIA should be used)
+;  $FD = hi-byte of address of screen location
 ;  $FE and $FF are used temporarely
-;-------------------------------------------------
+;
+;-----------------------------------------------------------------------
 
-              *= $8000            ;base address of cartridge
+; TODO
+; - implement reading SSL files for songlength support
+; - print multiple SID lines depending on 2SID/3SID
+; - when year cannot be found, then the pointer of system labels and song number is one line off
+; - use extra player for init when it can be located in memory but not according free pages
 
-              .byte <start        ;cold start vector
-              .byte >start
-              .byte <startNMI     ;nmi vector
-              .byte >startNMI
-              .byte 'C' + $80, 'B' + $80, 'M' + $80, '80'   ;CBM80
+;=== CONSTANTS
+SID_MODE = $aa
+DMA_MODE = $ab
 
-              .text $00, 'Ultimate SID Player Cartridge V1.1. Copyright (c) 2009-2011 Wilfred Bos / Gideon Zweijtzer', $00
+OFFSET_SYSTEM_SCREEN_LOCATION = $ec       ; location at screen + $0300 -> $03ec
+OFFSET_SONG_SCREEN_LOCATION = $ee       ; location at screen + $0300 -> $03ee
 
-startNMI      pla                 ;just ignore pressing restore key
-              tay
-              pla
-              tax
-              pla
-              rti
-              
-start         sei
-              lda #$7f
-              sta $dd0d
-              lda $dd0d
-      
-              ldx #$00
-              stx $d011
-              stx $d020
-              stx $d021
-              stx $d418
+;=== ZERO PAGE ADDRESSES
+SONG_TO_PLAY = $fc
+SCREEN_LOCATION = $fd
 
-              jsr $ff84           ;init I/O devices / CIA timers
+EXTRA_PLAYER_SIZE = $b6
+EXTRA_PLAYER_LOCATION = $b7
+PLAYER_LOCATION = $b8
+CHARROM_LOCATION = $b9
 
-              ;jsr $ff87 (FD50)         ;init RAM, tape buffer, screen (replaced by the following)
+                * = $8000           ; base address of cartridge
 
-              ldx #$00
-              lda #$00
--             sta $0200,x
-              inx
-              bne -
-              lda #$A0
-              sta $0284
-              lda #$08
-              sta $0282
-              lda #$04
-              sta $0288
+                .byte <start        ; cold start vector
+                .byte >start
+                .byte <startNMI     ; nmi vector
+                .byte >startNMI
+                .byte 'C' + $80, 'B' + $80, 'M' + $80, '8', '0'   ; CBM80
 
-              jsr $ff8a           ;restore default IO vectors
+                .text 0, 'Ultimate SID Player Cartridge V2.0 - Copyright (c) 2009-2018 Wilfred Bos / Gideon Zweijtzer', 0
 
-              ; set test bit of each voice to guarantee synced voices!
-              lda #$08
-              sta $d404
-              sta $d404 + 7
-              sta $d404 + 14
-              lda #$00
-              sta $d404
-              sta $d404 + 7
-              sta $d404 + 14
-              
-              lda $02
-              cmp #$AA
-              beq sid_mode
-              cmp #$AB
-              beq dma_mode
-              jmp reset
-              
-dma_mode
-							;load PRG file
-              lda #$00
-              sta $02
-              
-              jsr $ff81     			;(init screen and VIC-Chip the normal way)
-              jmp continue_initializing
+startNMI        pla                 ; ignore pressing restore key
+                tay
+                pla
+                tax
+                pla
+                rti
 
-sid_mode
-	            ;jsr $ff81 (init screen and VIC-Chip) is replaced by the following block
-              ;to avoid screen color change
-              lda #$03
-              sta $9a
-              lda #$00
-              sta $99
-              ldx #$2f
--             lda $ecb8,x
-              sta $cfff,x
-              cpx #$23    				;don't set $d020 and $d021
-              bne +
-              dex
-              dex              
-+             cpx #$13    				;don't set d011
-              bne +
-              dex              
-+             dex
-              bne -
+start           sei
+                lda #$7f
+                sta $dd0d
+                lda $dd0d
 
-continue_initializing
-              jsr $e51b
-              jsr $ff5e
-              jsr $e453           ;copy BASIC vectors to RAM
+                lda #$00
+                sta $d020
+                sta $d021
+                sta $d418
 
-              lda $0300
-              sta $0334
-              lda $0301
-              sta $0335
-              lda #<basicStarted
-              sta $0300
-              lda #>basicStarted
-              sta $0301
-              lda $a001
-              sta $0101
-              lda $a000
-              clc
-              adc #$03            ;skip JSR $E453 to avoid overwriting vector at $0300
-              sta $0100
-              bcc +
-              inc $0101
-              cli
-+             jmp ($0100)
-         
-basicStarted
-              lda $0334
-              sta $0300
-              lda $0335
-              sta $0301
+                jsr screenOff
 
-              sei
-              lda #<basicStartedIRQ
-              sta $0314
-              lda #>basicStartedIRQ
-              sta $0315
-              
-              jmp ($0300)
+                jsr $ff84           ; init I/O devices / CIA timers
+                jsr alternative_ff87
+                jsr $ff8a           ; restore default IO vectors
 
-basicStartedIRQ              
-              lda #$31            ;restore IRQ vector
-              sta $0314
-              lda #$ea
-              sta $0315
+                jsr resetSID
 
-              lda $dc0d           ;acknowledge IRQ
+                ; do not remove this check
+                jsr checkIfAsciiIsNotCorrupt
 
-              lda $02
-              cmp #$AA
-              beq load_sid
+                lda $02
+                cmp #SID_MODE
+                beq sidMode
+                cmp #DMA_MODE
+                beq dmaMode
+                jmp reset
 
-              ldx #$00
--             lda initMem,x
-              sta $0100,x
-              inx
-              cpx #initMemEnd - initMem
-              bne -
-              jmp $0100           ;clear memory and execute DMA load, and do run
+dmaMode         lda #$00            ; load PRG file
+                sta $02
 
-load_sid      
-              ldx #$ff            ;init stack pointer
-              txs
-              lda #$fc            ;push reset address on stack
-              pha
-              lda #$e2 - 1
-              pha
+                jsr $ff81           ; (init screen and VIC-Chip the normal way)
+                jmp +
 
-              lda #$ea
-              sta $0328           ;disable runstop/restore
+sidMode         jsr alternative_ff81
 
-              ldx #$00
--             lda initMem,x
-              sta $0100,x
-              inx
-              cpx #initMemEnd - initMem
-              bne -
-              jsr $0100           ;clear memory and execute DMA load
++               jsr $e453           ; copy BASIC vectors to RAM
 
-              ;important: load $0165 value after DMA load
-              lda $0165           ;get high address of SID header              
-              sta $fb             ;store SID header address high byte and expect that $fa is $00
-              lda #$00
-              sta $fa
+                lda $0300
+                sta $0334
+                lda $0301
+                sta $0335
+                lda #<basicStarted
+                sta $0300
+                lda #>basicStarted
+                sta $0301
+                lda $a001
+                sta $0101
+                lda $a000
+                clc
+                adc #$03            ; skip JSR $E453 to avoid overwriting vector at $0300
+                sta $0100
+                bcc +
+                inc $0101
+                cli
++               jmp ($0100)
 
-              ldx #$00
--             lda readHeader,x
-              sta $0180,x
-              inx
-              cpx #readHeaderEnd - readHeader
-              bne -
+alternative_ff87
+                ; jsr $FF87 / $FD50 (init RAM, tape buffer, screen) is replaced by the following block
+                lda #$00
+                tay
+-               sta $0200,y
+                iny
+                bne -
+                ldx #$3c
+                ldy #$03
+                stx $b2
+                sty $b3
 
-              ldy #$01            ;detect if header is a real SID header
-              jsr $0180           ;read header
-              cmp #'S'
-              bne reset
-              iny
-              jsr $0180           ;read header
-              cmp #'I'
-              bne reset
-              iny
-              jsr $0180           ;read header
-              cmp #'D'
-              beq SIDHeaderDetected         
+                lda #$A0
+                sta $0284
+                lda #$08
+                sta $0282
+                lda #$04
+                sta $0288
+                rts
 
-              ;if header is no real header then disable cartridge and perform a reset
-reset
-              ldx #$00
--             lda resetRoutine,x
-              sta $0100,x
-              inx
-              cpx #resetRoutineEnd - resetRoutine
-              bne -
-              jmp $0100
+alternative_ff81
+                ; jsr $FF81 (init screen and VIC-Chip) is replaced by the following block to avoid screen color change
+                lda #$03
+                sta $9a
+                lda #$00
+                sta $99
+                ldx #$2f
+-               lda $ecb8,x
+                sta $cfff,x
+                cpx #$23            ; don't set $d020 and $d021
+                bne +
+                dex
+                dex
++               cpx #$13            ; don't set d011
+                bne +
+                dex
++               dex
+                bne -
 
-SIDHeaderDetected
-              ldy #$10            ;default song offset
-              jsr $0180           ;read header
-              sta $fc             ;set song to play
+                jsr $e51b
+                jmp $ff5e
 
-              ldx #$00
-              stx $d1             ;set screen line address to header address to avoid blinking cursor on screen for some tunes
-              sta $d2
+checkIfAsciiIsNotCorrupt
+                lda #$00
+                ldx #(PETSCII - ASCII - 1) * 2
+-               clc
+                adc ASCII,x
+                dex
+                bpl -
 
-;--- load address ---------
-              
-;Get real load address
-              ldy #$08            ;get load address
-              jsr $0180           ;read header
-              bne +
-              iny
-              jsr $0180           ;read header
-              bne +               ;is load address zero?
-              
-              ;load address is zero then overwrite with other load address
-              ldy #$06            ;get header length
-              jsr $0180           ;read header
-              tax
-              tay
-              jsr $0180           ;read header (get load address low)
-              ldy #$08            ;set load address low
-              sta ($fa),y
-              inx
-              txa
-              tay
-              jsr $0180           ;read header (get load address high)
-              ldy #$09            ;set load address high
-              sta ($fa),y
+                cmp #$d7
+                beq +
+                ; if a reset is performed here then the ASCII table has been changed.
+                ; Check if your code editor saves ASCII characters correctly.
+                jmp reset
++               rts
+
+basicStarted    sei
+                lda #<basicStartedIRQ
+                sta $0314
+                lda #>basicStartedIRQ
+                sta $0315
+
+                lda $0334
+                sta $0300
+                lda $0335
+                sta $0301
+                jmp ($0300)
+
+basicStartedIRQ
+                lda #$31            ; restore IRQ vector
+                sta $0314
+                lda #$ea
+                sta $0315
+
+                lda $dc0d           ; acknowledge IRQ
+
+                ldx #$00
+-               lda initMem,x
+                sta $0100,x
+                inx
+                cpx #initMemEnd - initMem
+                bne -
+
+                lda $02
+                cmp #SID_MODE
+                beq loadSid
+                jmp $0100           ; clear memory and execute DMA load, and do run
+
+loadSid         ldx #$ff            ; init stack pointer
+                txs
+                lda #$fc            ; push reset address on stack
+                pha
+                lda #$e2 - 1
+                pha
+
+                jsr $0100           ; clear memory and execute DMA load
+
+                ; important: retrieve value at $0165 after DMA load
+                lda $0165           ; get high address of SID header
+                sta $fb             ; store SID header address high byte
+                lda #$00
+                sta $fa
+
+                ldx #$00
+-               lda readMem,x
+                sta $0180,x
+                inx
+                cpx #readMemEnd - readMem
+                bne -
+
+                ldy #$01            ; detect if header is a real SID header
+                jsr readHeader
+                cmp #'S'
+                bne noSid
+                iny
+                jsr readHeader
+                cmp #'I'
+                bne noSid
+                iny
+                jsr readHeader
+                cmp #'D'
+                beq SidHeaderDetected
+noSid           jmp reset           ; header is no real header so disable cartridge and perform a reset
+
+SidHeaderDetected
+                jsr fixHeader
+                jsr moveSidHeader
+
+                ldy #$10            ; default song offset
+                jsr readHeader
+                sta SONG_TO_PLAY    ; set song to play
+
+                jsr prepareSidHeader
+
+                jsr calculateExtraPlayerSize
+
+                jsr calculateLocations
+
+                jsr setupScreen
+
+;##################################################
+                jsr copyPlayer
+                jsr setPlayerVars
+
+                lda SCREEN_LOCATION
+                and #$f0
+                cmp #$d0
+                bne +
+                ; don't allow screen updates when the screen is located at $Dxxx and therefore the extra player should not be activated
+                lda #$00
+                sta EXTRA_PLAYER_LOCATION
 +
-
-;--- set screen ---------
-              
-;map screen and optional charset
-              lda $dd00
-              and #%11111100
-              sta $fd
-
-              ldy #$00
-              jsr $0180           ;read header
-              cmp #"R"            ;check if RSID file
-              bne +
-              ldy #$77
-              jsr $0180           ;read header
-              and #$02            ;is BASIC tune?
-              beq +
-              lda #$a0            ;always map BASIC screen to $A000 to avoid BASIC programs to do screen writes
-              jmp mapScreen
+                lda EXTRA_PLAYER_LOCATION
+                beq +
+                jsr copyExtraPlayer
+                jsr relocateExtraPlayer
+                jsr setExtraPlayerVars
 +
+                lda EXTRA_PLAYER_LOCATION
+                beq +
+                sta $ab
+                lda #$03
+                sta $aa
+                jmp runPlayer
 
-              ldy #$78            ;get free page base
-              jsr $0180           ;read header
-              bne checkFreePageSize
++               jsr removeSystemLabel   ; there is no room for the advanced player so therefore remove the system info line
 
-;Free page base is zero, so check if $0400 can be used
-              lda $fb
-              and #$f8            ;are we located below $0800?
-              beq +
-              and #$f0
-              bne screenAfterPlayer
-             
-              ldy #$09            ;get load address high
-              jsr $0180           ;read header
-              and #$f0            ;is load address lower than $1000?
-              bne mapTo0400
+                lda PLAYER_LOCATION
+                sta $ab
+                lda #$00
+                sta $aa
+                jmp runPlayer
+
+calculateExtraPlayerSize
+                ; extra player size is (extraPlayerEnd - extraPlayer + 1 + numberOfSongs * 2) >> 8
+                ldy #$0e            ; get number of songs
+                jsr readHeader
+                sta $aa
+                ldy #$0f            ; get number of songs
+                jsr readHeader
+                sta $ab
+
+                lda $aa
+                asl
+                sta $aa
+                lda $ab
+                rol
+                sta $ab
+
+                lda $aa
+                clc
+                adc #<extraPlayerEnd
+                sta $aa
+                lda $ab
+                adc #>extraPlayerEnd
+                sta $ab
+
+                lda $aa
+                sec
+                sbc #<extraPlayer
+                sta $aa
+                lda $ab
+                sbc #>extraPlayer
+                sta $ab
+
+                inc $aa
+                bcc +
+                inc $ab
+
+                lda $ab
+                sta EXTRA_PLAYER_SIZE
+                rts
+
+fixHeader       ; load end address is always 2 bytes off (needs to be fixed in the Ultimate firmware)
+                ldy #$7e
+-               lda ($fa),y
+                clc
+                adc #$02
+                sta ($fa),y
+                bcc +
+                iny
+                lda ($fa),y
+                clc
+                adc #$01
+                sta ($fa),y
++               rts
+
+moveSidHeader   ldy #$7d            ; read hi byte of load address
+                jsr readHeader
+                cmp #$04            ; if load address is lower than $0400 then move header to $FF00
+                bcc moveToEndOfMem
+
+                lda $fb
+                cmp #$03
+                beq noMoveNeeded
+
+                ldy #$7f
+-               lda ($fa),y
+                sta $0380,y
+                lda #$00            ; clean previous location
+                sta ($fa),y
+                dey
+                bpl -
+                lda #$80
+                sta $fa
+                lda #$03
+                sta $fb
+noMoveNeeded    rts
+
+moveToEndOfMem  lda $fb
+                cmp #$ff
+                beq noMoveNeeded
+
+                ldy #$7f
+-               lda ($fa),y
+                sta $ff00,y
+                lda #$00            ; clean previous location
+                sta ($fa),y
+                dey
+                bpl -
+                lda #$00
+                sta $fa
+                lda #$ff
+                sta $fb
+                rts
+
+cleanupMemory   ldy #$7f            ; clean SID header
+                lda #$00
+-               sta ($fa),y
+                dey
+                bpl -
+
+                ldx #$00            ; clear temp variables
+                stx $a0
+                stx $a3
+                stx $a4
+
+                ; don't clean $aa and $ab since these are used for the player address to jump to
+                stx $a6
+                stx $a7
+                stx $a8
+                stx $a9
+                stx $ac
+                stx $ad
+                stx $ae
+
+                stx $b6
+                stx $b7
+                stx $b8
+                stx $b9
+                stx $ba
+                stx $bb
+                stx $bc
+                stx $bd
+                stx $be
+                stx $bf
+
+                stx $f7
+                stx $f8
+
+                stx $fa
+                stx $fb
+                stx $fc
+                stx $fd
+                stx $fe
+
+                ldx #$20
+                stx $ff
+                rts
+
+removeSystemLabel
+                ldx #$00
+-               lda moveScreen,x
+                sta $0100,x
+                inx
+                cpx #moveScreenEnd - moveScreen
+                bne -
+
+                jmp $0100
+
+moveScreen      ; move screen one line up to remove system label
+                lda $01
+                pha
+                lda #$34
+                sta $01
+                lda SCREEN_LOCATION
+                sta $ab
+                inc $ab
+                lda $ab
+                sta $ad
+                lda #$68
+                sta $aa
+                lda #$40
+                sta $ac
+                ldy #$00
+-               lda ($aa),y
+                sta ($ac),y
+                iny
+                cpy #$f0
+                bne -
+                pla
+                sta $01
+                rts
+moveScreenEnd
+
+calculateLocations
+                ldy #$78            ; get free page base
+                jsr readHeader
+                beq calcLocBasedOnLoadArea
+                cmp #$ff
+                beq noAreaPossible
+                ldy #$79            ; get free page size
+                jsr readHeader
+                beq calcLocBasedOnLoadArea
+                cmp #$01
+                bne calcLocBasedOnFreePages
+
+calcLocBasedOnLoadArea
+                jsr memalloc.calcPlayerLocations
+                jmp memalloc.calcExtraPlayerLocation
+noAreaPossible
+                jsr memalloc.calcSmallestPlayerLocation
+
+                lda #$00
+                sta EXTRA_PLAYER_LOCATION
+
+                ; TODO set variable to indicate that extra player needs to be installed for init only
+                ;jsr memalloc.calcExtraPlayerLocation
+                rts
+calcLocBasedOnFreePages
+                jsr memalloc.calcPlayerScreenLocForRelocArea
+
+                jsr memalloc.calcExtraPlayerLocForRelocArea
+                ; TODO set variable to indicate that extra player needs to be installed for init only
+                ;jsr memalloc.calcExtraPlayerLocation
+                rts
+
+relocateExtraPlayer
+                lda EXTRA_PLAYER_LOCATION
+                sta $ab
+                lda #$00
+                sta $aa
+                lda extraPlayer.codeSize
+                sta $ac
+                lda extraPlayer.codeSize + 1
+                clc
+                adc $ab
+                sta $ad
+                jmp relocator.relocateCode
+
+setExtraPlayerVars
+                lda EXTRA_PLAYER_LOCATION
+                sta $ad
+
+                lda SCREEN_LOCATION
+                clc
+                adc #$03
+                ldy extraPlayer.clockLoc
+                ldx extraPlayer.clockLoc + 1
+                jsr setValue
+
+                ldy extraPlayer.songLenLoc1
+                ldx extraPlayer.songLenLoc1 + 1
+                jsr setValue
+
+                ldy #OFFSET_SONG_SCREEN_LOCATION
+                jsr getVariableWord
+                pha
+                txa
+                ldy extraPlayer.songNumLoc
+                ldx extraPlayer.songNumLoc + 1
+                jsr setValue
+                pla
+                iny
+                jsr writeAddress
+
+                ldy #OFFSET_SYSTEM_SCREEN_LOCATION
+                jsr getVariableWord
+                pha
+                txa
+                ldy extraPlayer.sidModelLoc
+                ldx extraPlayer.sidModelLoc + 1
+                jsr setValue
+                pla
+                iny
+                jsr writeAddress
+
+                ldy #OFFSET_SYSTEM_SCREEN_LOCATION
+                jsr getVariableWord
+                pha
+                txa
+                ldy extraPlayer.c64ModelLoc
+                ldx extraPlayer.c64ModelLoc + 1
+                jsr setValue
+                pla
+                iny
+                jsr writeAddress
+
+                lda player.offSongNr + 1
+                clc
+                adc PLAYER_LOCATION
+                pha
+                lda player.offSongNr
+                ldy extraPlayer.songNumSet
+                ldx extraPlayer.songNumSet + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                lda SCREEN_LOCATION
+                clc
+                adc #$03
+                pha
+                lda #$80
+                ldy extraPlayer.spriteLoc
+                ldx extraPlayer.spriteLoc + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                lda player.offPlayLoop + 1
+                clc
+                adc PLAYER_LOCATION
+                pha
+                lda player.offPlayLoop
+                ldy extraPlayer.playerLoopLoc
+                ldx extraPlayer.playerLoopLoc + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                lda player.offExtraPlay1 + 1
+                clc
+                adc PLAYER_LOCATION
+                pha
+                lda player.offExtraPlay1
+                ldy extraPlayer.epCallLoc
+                ldx extraPlayer.epCallLoc + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                lda player.offFastForw + 1
+                clc
+                adc PLAYER_LOCATION
+                pha
+                lda player.offFastForw
+                ldy extraPlayer.fastFwd
+                ldx extraPlayer.fastFwd + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                lda player.offSpeed1 + 1
+                clc
+                adc PLAYER_LOCATION
+                pha
+                lda player.offSpeed1
+                ldy extraPlayer.hdrSpeedFlag1
+                ldx extraPlayer.hdrSpeedFlag1 + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                lda player.offSpeed2 + 1
+                clc
+                adc PLAYER_LOCATION
+                pha
+                lda player.offSpeed2
+                ldy extraPlayer.hdrSpeedFlag2
+                ldx extraPlayer.hdrSpeedFlag2 + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                lda player.offSpeed3 + 1
+                clc
+                adc PLAYER_LOCATION
+                pha
+                lda player.offSpeed3
+                ldy extraPlayer.hdrSpeedFlag3
+                ldx extraPlayer.hdrSpeedFlag3 + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                ldy #$12            ; byte 4 of speed flags
+                jsr readHeader
+                ldy extraPlayer.hdrSpeedFlags
+                ldx extraPlayer.hdrSpeedFlags + 1
+                jsr setValue
+                ldy #$13            ; byte 3 of speed flags
+                jsr readHeader
+                ldy #$01
+                jsr writeAddress
+                ldy #$14            ; byte 2 of speed flags
+                jsr readHeader
+                ldy #$02
+                jsr writeAddress
+                ldy #$15            ; byte 1 of speed flags
+                jsr readHeader
+                ldy #$03
+                jsr writeAddress
+
+                lda PLAYER_LOCATION
+                pha
+                lda #$00
+                ldy extraPlayer.playerLoc
+                ldx extraPlayer.playerLoc + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                ldy #$77
+                jsr readHeader
+                lsr
+                lsr
+                and #$03
+                tax
+                and #$01
+                bne +                 ; when PAL flag is set then always write 0 (therefore jump to lsr)
+                txa
++               lsr                   ; value is 1 for NTSC, otherwise 0 for PAL / UNKNOWN clock. If PAL is set then value is always 0.
+                ldy extraPlayer.c64ModelFlag
+                ldx extraPlayer.c64ModelFlag + 1
+                jsr setValue
+
+                lda SONG_TO_PLAY
+                ldy extraPlayer.songNum
+                ldx extraPlayer.songNum + 1
+                jsr setValue
+
+                ldy #$0e            ; get number of songs
+                jsr readHeader
+                sec
+                sbc #$01
+                ldy extraPlayer.maxSongLoc
+                ldx extraPlayer.maxSongLoc + 1
+                jsr setValue
+
+                tax                 ; XR = number of songs
+
+                lda extraPlayer.songLenData
+                sta $aa
+                lda extraPlayer.songLenData + 1
+                clc
+                adc $ad
+                sta $ab
+
+                jmp songlengths.loadSongLengths
+
+getVariableByte lda #$00
+                sta $b0
+                lda SCREEN_LOCATION
+                clc
+                adc #$03
+                sta $b1
+
+                jmp readScreen
+
+getVariableWord jsr getVariableByte
+                tax
+                iny
+                jmp readScreen
+
+setVariableByte pha
+                lda #$00
+                sta $b0
+                lda SCREEN_LOCATION
+                clc
+                adc #$03
+                sta $b1
+                pla
+                jmp writeScreen
+
+setVariableWord jsr setVariableByte
+                txa
+                iny
+                jmp writeScreen
+
+setPlayerVars   lda PLAYER_LOCATION
+                sta $ad
+
+                lda SONG_TO_PLAY
+                ldy player.offSongNr
+                ldx player.offSongNr + 1
+                jsr setValue
+                ldy player.offBasSongNr
+                ldx player.offBasSongNr + 1
+                jsr setValue
+
+                ; handle init address
+                ldy #$0b            ; get init address hi-byte (note that SID header is converted to little endian here)
+                jsr readHeader
+                pha
+                ldy #$0a            ; get init address lo-byte (note that SID header is converted to little endian here)
+                jsr readHeader
+                ldy player.offInit
+                ldx player.offInit + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                ; handle play address
+                ldy #$0d            ; get play address hi-byte (note that SID header is converted to little endian here)
+                jsr readHeader
+                pha
+                ldy #$0c            ; get play address lo-byte (note that SID header is converted to little endian here)
+                jsr readHeader
+                ldy player.offPlay
+                ldx player.offPlay + 1
+                jsr setValue
+                iny
+                pla
+                jsr writeAddress
+
+                ldy player.offReloc1
+                ldx player.offReloc1 + 1
+                jsr reloc
+
+                ldy player.offCiaLU1
+                ldx player.offCiaLU1 + 1
+                jsr reloc
+
+                ldy player.offCiaLU2
+                ldx player.offCiaLU2 + 1
+                jsr reloc
+
+                ldy player.offCiaFix
+                ldx player.offCiaFix + 1
+                jsr reloc
+
+                lda $ad
+                ldy player.offBasicEnd
+                ldx player.offBasicEnd + 1
+                jsr setValue
+
+                lda $ad
+                ldy player.offHiPlayer
+                ldx player.offHiPlayer + 1
+                jsr setValue
+
+                ldy player.offCiaFix1
+                ldx player.offCiaFix1 + 1
+                jsr reloc
+
+                ldy player.offCiaFix2
+                ldx player.offCiaFix2 + 1
+                jsr reloc
+
+                jsr isRsid
+                ldy player.offRsid
+                ldx player.offRsid + 1
+                jsr setValue
+
+                cmp #$01
+                bne +
+                jsr setSpeedFlags             ; set all speed flags to 1
 +
-;load address is lower than $1000
-              ldy #$09
-              jsr $0180
-              cmp #$07
-              bpl +
-              bne screenAfterPlayer
-              cmp #$e8
-              bmi screenAfterPlayer
-              and #$80
-              beq screenAfterPlayer
+                jsr isBasic
+                ldy player.offBasic
+                ldx player.offBasic + 1
+                jsr setValue
+                cmp #$00
+                beq noBasic
 
-+             lda $fa
-              sta $fe
-              lda $fb
-              clc
-              adc #$02
-              sta $ff
+                ; it's a BASIC tune so jump to $A7AE
+                lda #$ae
+                ldy player.offInit
+                ldx player.offInit + 1
+                jsr setValue
+                iny
+                lda #$a7
+                jsr writeAddress
 
-              ;move SID header
-              ldy #$00
--             lda ($fa),y
-              sta ($fe),y
-              iny
-              bne -
-              lda $fb
-              inc $fb
-              inc $fb
-              jmp defaultScreen
+noBasic         ldy #$7e            ; read lo-byte of load end address
+                jsr readHeader
+                ldy player.offLoEnd
+                ldx player.offLoEnd + 1
+                jsr setValue
 
-screenAfterPlayer
-              ldy #$7f            ;get load end address high
-              jsr $0180           ;read header
-              clc
-              adc #$01 + $03
-              jmp mapScreen
-              
-mapTo0400     lda #$04
-              jmp defaultScreen
-              
-checkFreePageSize              
-              ldy #$79            ;get free page size
-              jsr $0180           ;read header
-              and #$f8
-              bne checkScreenSize 
-              
-              ldy #$79            ;get free page size
-              jsr $0180           ;read header
-              and #$fc
-              beq +
-;size is greater or equal than 4
+                ldy #$7f            ; read hi-byte of load end address
+                jsr readHeader
+                ldy player.offhiEnd
+                ldx player.offhiEnd + 1
+                jsr setValue
 
-              lda $fb
-              clc
-              adc #$03            ;to avoid address to be truncated (like $39, $3A and $3B becomes $38), #$03 will round free pages $39, $3A and $3B to $3c
-              and #%11111100      ;align to $x000, $x400, $x800 or $xC00 pages
-              clc
-              adc #$02
-              sta $ff
+                ldy #$0b            ; get init address hi-byte
+                jsr readHeader
+                jsr getBankInit
+                ldy player.offInitBank
+                ldx player.offInitBank + 1
+                jsr setValue
 
-              lda $fa
-              sta $fe
+                ldy #$0d            ; get play address hi-byte
+                jsr readHeader
+                jsr getBankPlay
+                ldy player.offPlayBank
+                ldx player.offPlayBank + 1
+                jsr setValue
 
-              ;move SID header
-              ldy #$00
--             lda ($fa),y
-              sta ($fe),y
-              iny
-              bne -
-              lda $ff
-              sta $fb
-              sec
-              sbc #$02             
-              jmp mapScreen
+                ldy #$0c            ; get play address lo-byte
+                jsr readHeader
+                bne playNotZero
+                iny
+                jsr readHeader
+                bne playNotZero     ; is play address zero?
 
+                ; play address is zero
+
+                lda #$01
+                ldy player.offPlayNull1
+                ldx player.offPlayNull1 + 1
+                jsr setValue
+                ldy player.offPlayNull2
+                ldx player.offPlayNull2 + 1
+                jsr setValue
+
+                lda #$ea            ; NOP
+                ldy player.offInitAfter
+                ldx player.offInitAfter + 1
+                jsr setValue
+                iny                 ; write another NOP
+                jsr writeAddress
+                jmp continueInitPlayer
+
+playNotZero     lda #$85            ; STA $01
+                ldy player.offInitAfter
+                ldx player.offInitAfter + 1
+                jsr setValue
+                iny
+                lda #$01
+                jsr writeAddress
+
+continueInitPlayer
+                lda $a4
+                ldy player.offD018
+                ldx player.offD018 + 1
+                jsr setValue
+
+                lda $a3
+                ldy player.offDD00
+                ldx player.offDD00 + 1
+                jsr setValue
+
+                ldy player.offHiIrq
+                ldx player.offHiIrq + 1
+                jsr reloc
+
+                ldy player.offHiBrk
+                ldx player.offHiBrk + 1
+                jsr reloc
+
+                ldy #$77
+                jsr readHeader
+                lsr
+                lsr
+                and #$03
+                tax
+                and #$01
+                bne +                 ; when PAL flag is set then always write 0 (therefore jump to lsr)
+                txa
+  +             lsr                   ; value is 1 for NTSC, otherwise 0 for PAL / UNKNOWN clock. If PAL is set then value is always 0.
+                ldy player.offClock
+                ldx player.offClock + 1
+                jsr setValue
+
+                ; speed flags
+                lda SONG_TO_PLAY    ; read current song
+                jsr calcSpeedFlag
+                jsr setSpeedFlags
+
+                cmp #$01            ; do not use extra player when speed flag is 1
+                beq noExtraPlayWithFF
+
+                lda EXTRA_PLAYER_LOCATION
+                beq noExtraPlayer
+
+                ; do not use extra player when play address is zero
+                ldy #$0c            ; get play address
+                jsr readHeader
+                bne +
+                iny
+                jsr readHeader
+                beq noExtraPlayWithFF   ; is play address zero?
 +
-              ;size is lower than $04 so we can't have a screen, therefore
-              ;  locate screen after load end address + $0700 and #%11111100
-              ldy #$7f
-              jsr $0180           ;read header
-              and #$f8            ;is load end address $F800 or higher?
-              cmp #$f8        
-              beq noScreenPossible              
+                lda EXTRA_PLAYER_LOCATION
+                pha
 
-              jsr $0180           ;read header
-              clc
-              adc #$07
-              jmp mapScreen
-                  
-noScreenPossible                            
-              ldx #$00            ;make character color black
-              txa
--             sta $d800,x
-              sta $d900,x
-              sta $da00,x
-              sta $db00,x
-              inx
-              bne -
-              jmp ScreenDone
-              
-checkScreenSize
-;check if player size ($0800) + screen size ($0400) + optional ($1000) can fit in memory              
-              
-              ldy #$78            ;get free page base
-              jsr $0180           ;read header
-              clc
-              adc #$0b            ;to avoid address to be truncated (like $39, $3A and $3B becomes $38), add #$08 to skip player location and #$03 will round free pages $39, $3A and $3B to $3c
-mapScreen     and #%11111100      ;align to $x000, $x400, $x800 or $xC00 pages
-              pha
-              
-;check if default charset location can be used
-              and #%11000000
-              beq defaultCharSet  
-              cmp #$80           
-              bne mapCharSet      
-              
-defaultCharSet              
-              lda #$10            ;means default charset location should be used (#$10 shr 2)
-              sta $ff
-              jmp checkRam
-              
-mapCharSet    pla
-              pha
-              and #$f0
-              cmp #$d0      
-              bne +
-              pla
-              clc
-              adc #$10
-              pha
-+             pla
-              pha
-              and #$04
-              bne screenLocationOk
-              pla
-              sta $ff             ;charset location high
-              clc
-              adc #$04
-              pha
-              jmp copyChars
-screenLocationOk          
-              pla
-              pha
-              clc
-              adc #$04
-              sta $ff             ;charset location high
-              
-copyChars     lda #$d0
-              sta $f8
-              
-              ;$ff is charset destination address
-              ldy #$00
-              sty $fe
-              sty $f7
-              
-              ldx #$00
--             lda CharROMCopy,x
-              sta $0100,x
-              inx
-              cpx #CharROMCopyEnd - CharROMCopy
-              bne -
-              
-copyChrLoop   jsr $0100
-              iny
-              bne copyChrLoop
-              inc $ff
-              inc $f8
-              lda $f8
-              cmp #$d4
-              bne copyChrLoop
-              
-checkRam    
-              pla
-              pha
-              and #$f0
-              cmp #$10
-              beq ramAreaNOK
-              cmp #$d0
-              beq ramAreaNOK
-              cmp #$90
-              bne ramAreaOK
-ramAreaNOK              
-              pla
-              and #$f0
-              clc
-              adc #$13
-              and #%11111100  		;align to $x000, $x400, $x800 or $xC00 pages
-              pha
-ramAreaOK     pla
-              pha      
-              rol
-              rol
-              tax
-              rol
-              eor #$ff
-              and #$03
-              ora $fd
-              sta $dd00           ;set correct bank
-                 
-              lda $d018
-              and #%00000001
-              
-              sta $fe
-              
-              lda $ff
-              ror
-              ror
-              and #%00001110      ;set charset address
-              ora $fe 
-              sta $fe
-              
-              txa
-              and #$f0
-              ora $fe
-              sta $d018
+                lda #$20            ; JSR
+                ldy player.offExtraPlay1
+                ldx player.offExtraPlay1 + 1
+                jsr setValue
+                iny
+                lda #$00            ; lo-byte of extra player
+                jsr writeAddress
+                iny
+                pla
+                jsr writeAddress
 
-              pla
+extraPLayForFF
+                lda EXTRA_PLAYER_LOCATION
+                pha
 
-defaultScreen
+                lda #$20            ; JSP
+                ldy player.offExtraPlay2
+                ldx player.offExtraPlay2 + 1
+                jsr setValue
+                iny
+                lda #$00            ; lo-byte of extra player
+                jsr writeAddress
+                iny
+                pla
+                jsr writeAddress
+                rts
 
-; fill screen and colors
-              pha
-              sta $f8             ;$f7/$f8 is now screen address
-              lda #$00
-              sta $f7
-              
-; fill colors 
-              ldx #$00             
--             lda #$0f            ;light grey
-              sta $d800,x
-              sta $d900,x
-              sta $db00,x
-              lda #$00            ;black
-              sta $da00,x
-              dex
-              bne -
-              ldx #40
-              lda #$01            ;white
--             sta $d7ff,x
-              dex 
-              bne -
-              
-              ldx #8
-              lda #$07            ;yellow
--             sta $d7ff + 40 * 3,x
-              sta $d7ff + 40 * 4,x
-              sta $d7ff + 40 * 5,x
-              sta $d7ff + 40 * 7,x
-              sta $d7ff + 40 * 8,x
-              sta $d7ff + 40 * 10,x
-              dex 
-              bne -  
-              
-              lda #$01
-              sta $dbe0
-              sta $dbe1
-              sta $dbe2
+noExtraPlayer   lda #$ea            ; NOP
+                ldy player.offExtraPlay1
+                ldx player.offExtraPlay1 + 1
+                jsr setValue
+                iny
+                jsr writeAddress
+                iny
+                jsr writeAddress
 
-; fill screen              
-              ldx #$00
--             lda ScreenWrite,x
-              sta $0100,x
-              inx
-              cpx #(ScreenWriteEnd - ScreenWrite) + 1
-              bne -
-              
-              lda #<screenData1
-              sta $fe
-              lda #>screenData1
-              sta $ff
-       
-              jsr writeScreenData
-              
-              ;skip 256 bytes to make it possible to have the sid header on the screen (invisible)
-              
-              inc $f8
-              lda #$00
-              sta $f7
+                ldy player.offExtraPlay2
+                ldx player.offExtraPlay2 + 1
+                jsr setValue
+                iny
+                jsr writeAddress
+                iny
+                jsr writeAddress
+                rts
 
-              lda #<screenData2
-              sta $fe
-              lda #>screenData2
-              sta $ff
-       
-              jsr writeScreenData
-              
-              pla
-              pha
-              sta $ff             ;$fe/$ff is now screen address
-              lda #$00
-              sta $fe
-        
-              lda $fa             ;backup sid header address
-              sta $f7
+noExtraPlayWithFF
+                lda EXTRA_PLAYER_LOCATION
+                beq noExtraPlayer
 
-              lda $fb
-              sta $f8
+                jsr isBasic
+                cmp #$01            ; when BASIC tune then always play song in an endless loop and don't allow subtune changes via keyboard
+                beq playInLoop
 
-              lda #$16            ;offset title in SID header
-              sta $fa
-              
-              lda #10 + 40 * 3
-              sta $fe
-              ldx #30             ;print max 30 chars (ignore last char)
-              jsr printData       ;write title data to screen
+                lda SCREEN_LOCATION ; read screen hi-byte
+                and #$f0
+                cmp #$d0            ; when screen is located at $Dxxx then don't allow extra player since screen cannot be updated
+                beq playInLoop
 
-              lda #$36            ;offset author in SID header
-              sta $fa
-              
-              lda #10 + 40 * 4
-              sta $fe
-              ldx #30             ;print max 30 chars (ignore last char)
-              jsr printData       ;write title data to screen
+                ; remove loop so that extra player is called for subtune selection via keyboard
 
-              lda #$56            ;offset released in SID header
-              sta $fa
-              
-              lda #10 + 40 * 5
-              sta $fe
-              ldx #30             ;print max 30 chars (ignore last char)
-              jsr printData       ;write title data to screen
+                lda #$60
+                ldy player.offPlayLoop
+                ldx player.offPlayLoop + 1
+                jsr setValue
+playInLoop
+                lda #$ea            ; NOP
+                ldy player.offExtraPlay1
+                ldx player.offExtraPlay1 + 1
+                jsr setValue
+                iny
+                jsr writeAddress
+                iny
+                jsr writeAddress
+                jmp extraPLayForFF
 
-              lda $f7             ;restore sid header address
-              sta $fa
+setValue        pha
+                tya
+                sta $aa
+                txa
+                clc
+                adc $ad
+                sta $ab
+                pla
+                ldy #$00
+                jmp writeAddress
 
-              lda $f8
-              sta $fb
+reloc           tya
+                sta $aa
+                txa
+                clc
+                adc $ad
+                sta $ab
+                ldy #$00
+                jsr readAddress
+                clc
+                adc $ad
+                jmp writeAddress
 
-;Print Clock info
-              ldy #$04            ;check version
-              jsr $0180           ;read header
-              cmp #$01
-              beq printUnknownClock
-              
-              ldy #$77
-              jsr $0180
-              lsr
-              lsr
-              and #$03
-              cmp #$00
-              beq printUnknownClock
-              cmp #$01
-              beq printPal
-              cmp #$02
-              beq printNtsc
+isRsid          ldy #$00
+                jsr readHeader
+                ldy #$01
+                cmp #'R'            ; check if RSID file
+                beq +
+                ldy #$00
+  +             tya
+                cmp #$01
+                rts
 
-              ;print "PAL / NTSC"
-              lda #<PALNTSCLbl
-              sta $aa
-              lda #>PALNTSCLbl
-              sta $ab
-              jmp printClock
+isBasic         ldy #$77
+                jsr readHeader
+                and #$02            ; is BASIC tune?
+                lsr
+                cmp #$01
+                rts
 
-printPal      lda #<PALLbl
-              sta $aa
-              lda #>PALLbl
-              sta $ab
-              jmp printClock
+setSpeedFlags   ldy player.offSpeed1
+                ldx player.offSpeed1 + 1
+                jsr setValue
+                ldy player.offSpeed2
+                ldx player.offSpeed2 + 1
+                jsr setValue
+                ldy player.offSpeed3
+                ldx player.offSpeed3 + 1
+                jmp setValue
 
-printNtsc     lda #<NTSCLbl
-              sta $aa
-              lda #>NTSCLbl
-              sta $ab
-              jmp printClock
+copyPlayer      lda #$00
+                sta $ac
 
-printUnknownClock
-              lda #<UnknownLbl
-              sta $aa
-              lda #>UnknownLbl
-              sta $ab
-              
-printClock    lda $ff
-              clc
-              adc #$01
-              sta $f8
-              lda #9 + 40 * 7 // $ff
-              sta $f7
+                lda PLAYER_LOCATION
+                sta $ad
 
-              ldy #$00            
--             lda ($aa),y
-              cmp #$00
-              beq +
-              jsr $0100           ;write to screen
-              iny
-              bne -
+                lda #>player
+                sta $ab
+
+                lda #<player
+                clc
+                adc player.headerSize
+                sta $aa
+                bcc +
+                inc $ab
 +
+                ldx #$02      ; size player in blocks of $0100
+                ldy #$00
+-               lda ($aa),y
+                sta ($ac),y
+                iny
+                bne -
+                inc $ab
+                inc $ad
+                dex
+                bne -
+                rts
 
-;Print model info
-              ldy #$04            ;check version
-              jsr $0180           ;read header
-              cmp #$01
-              beq printUnknownModel
-              
-              ldy #$77
-              jsr $0180
-              lsr
-              lsr
-              lsr
-              lsr
-              and #$03
-              cmp #$00
-              beq printUnknownModel
-              cmp #$01
-              beq print6581
-              cmp #$02
-              beq print8580
+copyExtraPlayer lda #$00
+                sta $ac
 
-              ;print "6581 / 8580"
-              lda #<S65818580Lbl
-              sta $aa
-              lda #>S65818580Lbl
-              sta $ab
-              jmp printModel
+                lda EXTRA_PLAYER_LOCATION
+                sta $ad
 
-print6581     lda #<S6581Lbl
-              sta $aa
-              lda #>S6581Lbl
-              sta $ab
-              jmp printModel
+                lda #>extraPlayer
+                sta $ab
 
-print8580     lda #<S8580Lbl
-              sta $aa
-              lda #>S8580Lbl
-              sta $ab
-              jmp printModel
+                lda #<extraPlayer
+                clc
+                adc extraPlayer.headerSize
+                sta $aa
+                bcc +
+                inc $ab
++
+                ldx #(extraPlayerEnd - extraPlayer) / 256 + 1      ; size player in blocks of $0100
+                ldy #$00
+-               lda ($aa),y
+                sta ($ac),y
+                iny
+                bne -
+                inc $ab
+                inc $ad
+                dex
+                bne -
+                rts
+
+prepareSidHeader
+                ; Get real load address
+                ldy #$08            ; get load address
+                jsr readHeader
+                bne +
+                iny
+                jsr readHeader
+                bne +               ; is load address zero?
+
+                ; if load address is zero then overwrite with other load address
+                ldy #$06            ; get header length
+                jsr readHeader
+                tax
+                tay
+                jsr readHeader     ; get load address low at offset $7c
+                ldy #$08            ; set load address low
+                sta ($fa),y
+                inx
+                txa
+                tay
+                jsr readHeader     ; get load address high at offset $7d
+                ldy #$09            ; set load address high
+                sta ($fa),y
++
+                ldy #$0a            ; get init address
+                jsr readHeader
+                bne +
+                iny
+                jsr readHeader
+                bne +               ; is init address zero?
+
+                ; init address is zero therefore overwrite it with load address
+                ldy #$08            ; get load address low
+                jsr readHeader
+                ldy #$0a            ; set init address low
+                sta ($fa),y
+                dey                 ; get load address high
+                jsr readHeader
+                ldy #$0b            ; set init address high
+                sta ($fa),y
++
+                ; check if init is same as play, then ignore play address
+                ldy #$0c            ; get play address low
+                jsr readHeader
+                sta $aa
+                ldy #$0a            ; compare with init low
+                jsr readHeader
+                cmp $aa
+                bne +
+                ldy #$0d            ; get play address high
+                jsr readHeader
+                sta $aa
+                ldy #$0b            ; compare with init high
+                jsr readHeader
+                cmp $aa
+                bne +
+
+                ; clear play address
+                ldy #$0c
+                lda #$00
+                sta ($fa),y
+                iny
+                sta ($fa),y
++               rts
+
+runPlayer       jsr cleanupMemory
+
+                ldx #$00
+-               lda runRoutine,x
+                sta $0100,x
+                inx
+                cpx #runRoutineEnd - runRoutine
+                bne -
+
+                jmp $0100
+
+copyChars       lda CHARROM_LOCATION
+                sta $ff           ; charset destination address
+                cmp #$10
+                beq dontCopyChar
+
+                lda #$d0
+                sta $f8
+
+                ldy #$00
+                sty $fe
+                sty $f7
+
+                ldx #$00
+-               lda CharROMCopy,x
+                sta $0100,x
+                inx
+                cpx #CharROMCopyEnd - CharROMCopy
+                bne -
+
+copyChrLoop     jsr $0100
+                iny
+                bne copyChrLoop
+                inc $ff
+                inc $f8
+                lda $f8
+                cmp #$d4
+                bne copyChrLoop
+dontCopyChar    rts
+
+setupScreen     jsr copyChars
+
+                lda CHARROM_LOCATION
+                lsr
+                lsr
+                and #$0e
+                ora #$01
+                sta $a4
+
+                lda SCREEN_LOCATION
+                asl
+                asl
+                and #$f0
+                ora $a4
+                sta $a4             ; d018
+
+                lda SCREEN_LOCATION
+                rol
+                rol
+                rol
+                eor #$ff
+                and #$03
+                ora #$94
+                sta $a3             ; dd00
+
+                ldx #$00
+-               lda screenWriteBegin,x
+                sta $0100,x
+                inx
+                cpx #(screenWriteEnd - screenWriteBegin) + 1
+                bne -
+
+                lda SCREEN_LOCATION
+                pha
+                sta $f8             ; $f7/$f8 is now screen address
+                lda #$00
+                sta $f7
+
+                ; clear screen
+                lda $f8
+                pha
+                ldy #$00
+                ldx #$03
+                lda #$20
+-               jsr screenWrite
+                iny
+                cpx #$00
+                bne +
+                cpy #$e8
+                beq ++
++               cpy #$00
+                bne -
+                inc $f8
+                dex
+                bpl -
++               pla
+                sta $f8
+
+                lda #<screenData1
+                sta $fe
+                lda #>screenData1
+                sta $ff
+
+                jsr writeScreenData
+
+                jsr canReleaseFieldSplit
+                cpy #$00
+                beq +
+
+                ; write year label
+                lda #<screenData2
+                sta $fe
+                lda #>screenData2
+                sta $ff
+
+                jsr writeScreenData
++
+                ; write empty line
+                lda #<screenData3
+                sta $fe
+                lda #>screenData3
+                sta $ff
+
+                jsr writeScreenData
+
+                ; write system label
+                lda #<screenData4
+                sta $fe
+                lda #>screenData4
+                sta $ff
+
+                jsr writeScreenData
+
+                ; write SID label
+                lda #<screenData5
+                sta $fe
+                lda #>screenData5
+                sta $ff
+
+                jsr writeScreenData
+
+                ; skip 256 bytes to make it possible to have the sid header on the screen (invisible)
+                inc $f8
+                inc $f8
+                lda #$98
+                sta $f7
+
+                ; write time bar
+                lda #<screenData6
+                sta $fe
+                lda #>screenData6
+                sta $ff
+
+                jsr writeScreenData
+
+                pla
+                pha
+                sta $ff             ; $fe/$ff is now screen address
+                lda #$00
+                sta $fe
+
+                lda #$fe            ; $fe/$ff are now used to write to screen
+                sta screenWriteAddress + 1
+
+                lda $fa             ; backup sid header address
+                sta $f7
+
+                lda $fb
+                sta $f8
+
+                ldy #$16            ; offset title in SID header
+
+                lda #8 + 40 * 3
+                sta $fe
+                ldx #32             ; print max 32 chars
+                jsr printData       ; write title data to screen
+
+                ldy #$36            ; offset author in SID header
+
+                lda #8 + 40 * 4
+                sta $fe
+                ldx #32             ; print max 32 chars
+                jsr printData       ; write author data to screen
+
+                ldy #$56            ; offset released in SID header
+
+                jsr canReleaseFieldSplit
+                cpy #$00
+                bne splitReleasedField
+
+printFullLine   lda #8 + 40 * 5
+                sta $fe
+                ldx #32             ; print max 32 chars
+                jsr printData       ; write released data to screen
+                jmp printSidInfo
+
+canReleaseFieldSplit
+                ldy #$56            ; offset released in SID header
+                jsr readHeader
+                cmp #$31            ; starts released field with 1?
+                beq +
+                cmp #$32            ; starts released field with 2?
+                bne cannotSplit
++
+                ldy #$5a            ; search for space
+                jsr readHeader
+                cmp #$20
+                beq +
+                ldy #$5d
+                jsr readHeader
+                cmp #$20
+                beq +
+cannotSplit     ldy #00
++               rts
+
+splitReleasedField
+                tya
+                sec
+                sbc #$56
+                pha
+
+                iny                 ; start index in header of publisher
+
+                eor #$ff            ; calculate size of publisher by 32 - start index
+                clc
+                adc #32
+                tax                 ; x is now end of publisher string
+
+                lda #8 + 40 * 5
+                sta $fe
+                jsr printData       ; write title data to screen
+
+                pla
+                tax                 ; end of year string
+
+                lda #8 + 40 * 6
+                sta $fe
+
+                ldy #$56            ; start index of year
+                jsr printData       ; write title data to screen
+
+printSidInfo    lda $f7             ; restore sid header address
+                sta $fa
+
+                lda $f8
+                sta $fb
+
+                lda #(16 + 40 * 8) >> 8
+                clc
+                adc SCREEN_LOCATION
+                tax
+                lda #(16 + 40 * 8) & $ff
+                ldy #OFFSET_SYSTEM_SCREEN_LOCATION
+                jsr setVariableWord
+
+                ; print model info
+                ldy #$04            ; check version
+                jsr readHeader
+                cmp #$01
+                beq printUnknownModel
+
+                ldy #$77
+                jsr readHeader
+                lsr
+                lsr
+                lsr
+                lsr
+                and #$03
+                beq printUnknownModel
+                cmp #$01
+                beq print6581
+                cmp #$02
+                beq print8580
+
+                ; print '6581 / 8580'
+                lda #<S65818580Lbl
+                sta $aa
+                lda #>S65818580Lbl
+                sta $ab
+                jmp printModel
+
+print6581       lda #<S6581Lbl
+                sta $aa
+                lda #>S6581Lbl
+                sta $ab
+                jmp printModel
+
+print8580       lda #<S8580Lbl
+                sta $aa
+                lda #>S8580Lbl
+                sta $ab
+                jmp printModel
 
 printUnknownModel
-              lda #<UnknownLbl
-              sta $aa
-              lda #>UnknownLbl
-              sta $ab
-              
-printModel    lda $ff
-              clc
-              adc #$01
-              sta $f8
-              lda #9 + 40 * 8 // $ff
-              sta $f7
+                lda #<SUnknownLbl
+                sta $aa
+                lda #>SUnknownLbl
+                sta $ab
 
-              ldy #$00            
--             lda ($aa),y
-              cmp #$00
-              beq +
-              jsr $0100           ;write to screen
-              iny
-              bne -
+printModel      lda $ff
+                clc
+                adc #$01
+                sta $ff
+                lda #(16 + 40 * 9) & $ff
+                sta $fe
+
+                ldy #$00
+-               lda ($aa),y
+                cmp #$00
+                beq +
+                jsr $0100           ; write to screen
+                iny
+                bne -
 +
+                iny
+                sty $ac
 
-;print number of songs
-              lda #(9 + 40 * 10) // $ff
-              sta $fe
-              inc $ff
+                ; print Clock info
+                ldy #$04            ; check version
+                jsr readHeader
+                cmp #$01
+                beq printUnknownClock
 
-              ldx #'0'              
-              lda $fc
-              pha
+                ldy #$77
+                jsr readHeader
+                lsr
+                lsr
+                and #$03
+                cmp #$00
+                beq printUnknownClock
+                cmp #$01
+                beq printPal
+                cmp #$02
+                beq printNtsc
 
-              cmp #$ff              
-              bne skipFirstNibble
-              ldy #$00
-              lda #'2'
-              sta ($fe),y
-              inc $fe
-              lda #'5'
-              sta ($fe),y
-              inc $fe
-              lda #'6'
-              sta ($fe),y
-              inc $fe
-              bne writeCurrentSongDone   
-                            
-skipFirstNibble
-              pla
-              jsr printNibble
-writeCurrentSongDone              
+                ; print 'PAL / NTSC'
+                lda #<PALNTSCLbl
+                sta $aa
+                lda #>PALNTSCLbl
+                sta $ab
+                jmp printClock
 
-              inc $fe
-              lda #$2f
-              ldy #$00
-              sta ($fe),y
-              inc $fe
-              inc $fe
-              
-              ldy #$0f
-              jsr $0180           ;read header
-              and #$01
-              beq songs255
-              ldy #$00
-              lda #'2'
-              sta ($fe),y
-              iny
-              lda #'5'
-              sta ($fe),y
-              iny
-              lda #'6'
-              sta ($fe),y
-              bne ScreenDone         
-             
-songs255      ldy #$0e
-              jsr $0180           ;read header
-              tax
-              dex
-              txa
-              jsr printNibble         
-             
-ScreenDone    lda #$1b
-              sta $d011
+printPal        lda #<PALLbl
+                sta $aa
+                lda #>PALLbl
+                sta $ab
+                jmp printClock
 
-              lda #$c8
-              sta $d016
-              
-;--- init SID chip ---------
-              
-              ldx #$19
--             lda #$00
-              sta $d3ff,x
-              dex
-              bne -
-              
-              lda #$0f
-              sta $d418
+printNtsc       lda #<NTSCLbl
+                sta $aa
+                lda #>NTSCLbl
+                sta $ab
+                jmp printClock
 
-;set end address of file (not required anymore since 1541 Ultimate loader is setting the zero page addresses now)
-              ldy #$7e
-              jsr $0180           ;read header
-              sta $2d
-              sta $2f
-              sta $31
-              sta $ae
-              iny
-              jsr $0180           ;read header
-              sta $2e
-              sta $30
-              sta $32
-              sta $af
+printUnknownClock
+                lda #<UnknownLbl
+                sta $aa
+                lda #>UnknownLbl
+                sta $ab
 
-;Check if RSID file
-              ldy #$00
-              jsr $0180           ;read header
-              cmp #"R"            ;check if RSID file
-              beq rsidFile
-              jmp psidFile
+printClock      lda #(16 + 40 * 9) & $ff
+                clc
+                adc $ac
+                sta $fe
 
-;===============================================================================
-; RSID file             
-;===============================================================================
-              
-rsidFile      ldy #$80
-              ldx #$00
--             lda rsidroutine,x
-              sta ($fa),y
-              iny
-              inx
-              cpx #rsidroutineEnd - rsidroutine
-              bne -
-
-              lda #<rsidplay - rsidroutine + $80
-              sta $fe
-              lda #>rsidplay - rsidroutine
-              clc
-              adc $fb
-              sta $ff
-
-              ldy #$0a            ;check if init address is zero
-              jsr $0180           ;read header
-              bne runRSID
-              iny
-              jsr $0180           ;read header
-              bne runRSID
-              
-              ;init address is zero
-              ldy #$77
-              jsr $0180           ;read header
-              and #$02            ;is BASIC tune?
-              beq noBasic
-              ;It's a BASIC file
-
-              lda $ff
-              sta $0301           ;vector that is called when end of BASIC code is reached or when BASIC error
-
-              lda $fe
-              clc
-              adc #$03
-              sta $0300
-              bcc noPageCrossed
-              inc $0301
-noPageCrossed
-              lda $0803
-              sta $39
-              lda $0804
-              sta $3a
-              
-              lda #$ae
-              ldy #$01
-              sta ($fe),y
-              lda #$a7
-              iny
-              sta ($fe),y
-              jmp setSongAndRun             
-              
-noBasic       ldy #$09            ;get load address high
-              jmp jmpToAddress              
-    
-runRSID       ldy #$0b            ;get init address high
-jmpToAddress         
-              jsr $0180           ;read header
-              pha
-              dey
-              jsr $0180           ;read header
-              ldy #$01
-              sta ($fe),y
-              iny
-              pla
-              sta ($fe),y
-
-setSongAndRun    
-              ldx #$00
--             lda runRoutine,x
-              sta $0100,x
-              inx
-              cpx #runRoutineEnd - runRoutine
-              bne -
-
-              lda $fc
-              sta $030c           ;set song to play in accumulator, x-register and y-register of BASIC
-              sta $030d
-              sta $030e  
-              
-              ldx #$00            ;clear temp variables; $fa is always zero so no need to clear
-              stx $fc
-              stx $fe
-              stx $ff
-              
-              stx $aa
-              stx $ab
-              
-              stx $f7
-              stx $f8
-
-              ldx #$80
-              stx $fa
-                     
-              jmp $0100
-             
-;===============================================================================
-; PSID file             
-;===============================================================================
-
-psidfile      ldy #$0a            ;get init address
-              jsr $0180           ;read header
-              bne +
-              iny
-              jsr $0180           ;read header
-              bne +               ;is init address zero?
-              
-              ;init address is zero then overwrite with load address
-              ldy #$08            ;get load address low
-              jsr $0180           ;read header
-              ldy #$0a            ;set init address low
-              sta ($fa),y
-              dey                 ;get load address high
-              jsr $0180           ;read header
-              ldy #$0b            ;set init address high
-              sta ($fa),y
+                ldy #$00
+-               lda ($aa),y
+                cmp #$00
+                beq +
+                jsr $0100           ; write to screen
+                iny
+                bne -
 +
+                ; print number of songs
+                lda #(8 + 40 * 11) >> 8
+                clc
+                adc SCREEN_LOCATION
+                tax
+                lda #(8 + 40 * 11) & $ff
+                ldy #OFFSET_SONG_SCREEN_LOCATION
+                jsr setVariableWord
 
-              ;check if init is same as play, then ignore play address
-              ldy #$0c            ;get play address low
-              jsr $0180           ;read header
-              sta $78
-              ldy #$0a            ;compare with init low
-              jsr $0180           ;read header
-              cmp $78
-              bne +
-              ldy #$0d            ;get play address high
-              jsr $0180           ;read header
-              sta $78
-              ldy #$0b            ;compare with init high
-              jsr $0180           ;read header
-              cmp $78
-              bne +
+                lda #(8 + 40 * 11) & $ff
+                sta $fe
 
-              ;clear play address    
-              ldy #$0c
-              lda #$00
-              sta ($fa),y
-              iny
-              sta ($fa),y
-+   
+                ldx #'0'
+                lda SONG_TO_PLAY
+                pha
 
-;copy play routine
-              ldx #$00
-              ldy #$80
--             lda playRoutine,x
-              sta ($fa),y
-              iny
-              inx
-              cpx #playRoutineEnd - playRoutine
-              bne -
+                cmp #$ff
+                bne skipFirstNibble
+                jsr write256
 
-              lda #play - playRoutine + $80
-              sta $fe
-              lda $fb
-              sta $ff
+                inc $fe
+                bne writeCurrentSongDone
 
-              ldy #$0c            ;copy play address
-              jsr $0180           ;read header
-              ldy #$05           
-              sta ($fe),y
-              ldy #$0d
-              jsr $0180           ;read header
-              ldy #$06           
-              sta ($fe),y
+skipFirstNibble pla
+                jsr printNibble
 
-              jsr getBankPlay    	;call getBank, input is play high address in accumulator
-              ldy #$01
-              sta ($fe),y
-              
-              lda #init - playRoutine + $80
-              sta $fe
-              lda $fb
-              sta $ff
+writeCurrentSongDone
+                inc $fe
+                lda #$2f
+                ldy #$00
+                jsr screenWrite
+                inc $fe
+                inc $fe
 
-              ldy #$0a            ;copy init address
-              jsr $0180           ;read header
-              ldy #$07           
-              sta ($fe),y
-              ldy #$0b
-              jsr $0180           ;read header
-              ldy #$08           
-              sta ($fe),y
+                ldy #$0f
+                jsr readHeader
+                and #$01
+                beq songs255
+                jsr write256
+                jmp ScreenDone
 
-              jsr getBankInit     ;call getBank, input is init high address in accumulator
-              ldy #$01
-              sta ($fe),y              
+songs255        ldy #$0e
+                jsr readHeader
+                tax
+                dex
+                txa
+                jsr printNibble
+ScreenDone      pla
 
-              ldy #$0c
-              jsr $0180           ;read header
-              bne setBankAfterInit
-              iny
-              jsr $0180           ;read header
-              bne setBankAfterInit
-              
-              lda #$ea            ;nop sta $01 after init
-              pha
-              pha
-              bne afterInitSet
+                ; set sprite pointer
+                lda #$80
+                sta $aa
+                lda SCREEN_LOCATION
+                clc
+                adc #$03
+                sta $ab
+                ldx #6
+-               lda $ab
+                lsr
+                sta $ab
+                lda $aa
+                ror
+                sta $aa
+                dex
+                bne -
+                pha
 
-setBankAfterInit
-              lda #$01        
-              pha
-              lda #$85            ;STA $01
-              pha
-              
-afterInitSet              
-              ldy #$0b
-              pla
-              sta ($fe),y
-              iny
-              pla
-              sta ($fe),y
+                lda #$00
+                sta $aa
+                lda SCREEN_LOCATION
+                clc
+                adc #$03
+                sta $ab
+                ldy #$f8
+                pla
+                jsr writeScreen
+                rts
 
-;check playsid specific flag
-              lda $fc             ;get song to play
-              bne readSpeedBits   ;if song is first song (#0) than read speed bit immediately
-              ldy #$15
-              jsr $0180           ;read header
-              jmp readSpeedBit
-              
-readSpeedBits              
-              tax
+write256        ldy #$00
+                lda #'2'
+                sta ($fe),y
+                inc $fe
+                lda #'5'
+                sta ($fe),y
+                inc $fe
+                lda #'6'
+                sta ($fe),y
+                rts
 
-              ldy #$04            ;check version
-              jsr $0180           ;read header
-              cmp #$01
-              beq oldVersion
-              ldy #$77
-              jsr $0180           ;read header
-              and #$02            ;is PlaySID specific?
-              beq oldVersion
+; speed flag of tune 32 is also used for tunes 33 - 256
+; (old implementation is not supported since current SID collections don't have them anymore)
+; input: AC - song number to calculate the speed flag for
+; speed flags most be set to $0100-$0103
+calcSpeedFlag   pha
+                ldy #$12            ; byte 4 of speed flags
+                jsr readHeader
+                sta $0100
+                ldy #$13            ; byte 3 of speed flags
+                jsr readHeader
+                sta $0101
+                ldy #$14            ; byte 2 of speed flags
+                jsr readHeader
+                sta $0102
+                ldy #$15            ; byte 1 of speed flags
+                jsr readHeader
+                sta $0103
+                pla
 
-              txa                 ;get song to play     
-              and #$e0            ;check if greater than 31
-              bne newVersion
-loop1
-              ldy #$12            ;start at byte 4 of speed flags
-              clc
-              jsr $0180           ;read header (speed flag byte4)
-              ror              
-              sta ($fa),y                                                                     
-              iny
-              jsr $0180           ;read header (speed flag byte3)
-              ror              
-              sta ($fa),y                                                                     
-              iny
-              jsr $0180           ;read header (speed flag byte2)
-              ror              
-              sta ($fa),y                                                                     
-              iny
-              jsr $0180           ;read header (speed flag byte1)
-              ror              
-              sta ($fa),y                                                                     
-              dex
-              bne loop1              
-readSpeedBit              
-              and #$01
-              sta $fd
-              jmp speedFlagsRead        
-              
-newVersion    ldy #$12            ;start at byte 4 of speed flags
-              jsr $0180           ;read header (check byte 4 bit 7)
-              and #$80
-              sta $fd
-              jmp speedFlagsRead        
+                cmp #32             ; check if less than 32
+                bcc +
+                lda #32 - 1         ; select song 32
++               tay
+                and #$07
+                tax
+                tya
 
-oldVersion    txa                 ;get song to play
-              and #$e0            ;check if less than 32
-              beq loop1           ;yes? then go to loop1
-              txa
-              sec
-              sbc #$20
-              tax
-              jmp oldVersion            
-speedFlagsRead
-              
-              ;check if play address should be ignored
-              ldy #$0c
-              jsr $0180           ;read header
-              bne installPlayer
-              iny
-              jsr $0180           ;read header
-              bne installPlayer
-              
-              lda $fd
-              bne initCIA         ;jump when CIA is used
-              
-;disable CIA when player address is zero and VBI is used              
-initVIC
-              lda #$7f
-              sta $dc0d
-              lda #$00
-              sta $dc0e
-              lda #$01
-              sta $d01a
-              lda $dc0d
-              jmp processInit
-initCIA              
-              lda #$81
-              sta $dc0d
-              lda #$01
-              sta $dc0e
-              jmp processInit
-              
-installPlayer 
-              lda #speedFix - playRoutine + $80
-              sta $fe
+                lsr
+                lsr
+                lsr
+                and #$03
+                eor #$03
+                tay
+                lda $0100,y
+-               dex
+                bmi +
+                lsr
+                bpl -
++               and #$01
+                rts
 
-              lda $fd
-              beq FixedSpeed
-              ldy #$02            ;remove sta $dc04 and sta $dc05
-              lda #$ea
-              sta ($fe),y    
-              iny
-              sta ($fe),y    
-              iny
-              sta ($fe),y    
-              ldy #$07
-              sta ($fe),y    
-              iny
-              sta ($fe),y    
-              iny
-              sta ($fe),y    
-FixedSpeed              
-              ldy #$04            ;check version
-              jsr $0180           ;read header
-              cmp #$01
-              beq defaultSpeed    ;if old version then play at default speed
+; input is high address for which the correct bank should be calculated
+getBankInit     ldy #$7f  ;get load end address high
+                jmp getBank
+getBankPlay     ldy #$0d  ;get play address
+                jmp getBank
 
-              ldy #$77
-              jsr $0180           ;read header
-              ror
-              ror
-              and #$03            ;filter PAL/NTSC flag, default is PAL
-              beq defaultPAL
-              and #$01
-              bne defaultPAL
-
-defaultNTSCHz lda $02a6
-              bne PAL60Hz
-             
-NTSC60Hz      lda #$c6            ;set NTSC speed (263 * 65 - 1)
-              sta $dc04
-              ldy #$01
-              sta ($fe),y
-              lda #$42
-              sta $dc05              
-              ldy #$06
-              sta ($fe),y
-              bne playCIA 
-              
-defaultPAL    lda $fd
-              beq defaultPALHz
-              
-              lda $02a6           ;if CIA Speed flag is set, then always default timer to 60Hz PAL / NTSC
-              beq NTSC60Hz
-
-PAL60Hz       lda #$fb            ;set 60Hz based on PAL (312 * 63 * 50 / 60 - 1)
-              sta $dc04
-              ldy #$01
-              sta ($fe),y
-              lda #$3f
-              sta $dc05              
-              ldy #$06
-              sta ($fe),y
-              bne playCIA              
-
-defaultSpeed  lda $02a6
-              beq NTSC60Hz
-              bne PAL50Hz
-
-defaultPALHz  lda $02a6
-              beq NTSC50Hz
-              
-PAL50Hz       lda #$c7            ;set PAL speed (312 * 63 - 1)
-              sta $dc04
-              ldy #$01
-              sta ($fe),y
-              lda #$4c
-              sta $dc05              
-              ldy #$06
-              sta ($fe),y
-              bne playCIA
-              
-NTSC50Hz      lda #$21            ;set PAL speed (263 * 65 * 60 / 50 - 1)
-              sta $dc04
-              ldy #$01
-              sta ($fe),y
-              lda #$50
-              sta $dc05              
-              ldy #$06
-              sta ($fe),y
-              bne playCIA 
-
-playCIA       ldx #irqcia - playRoutine + $80
-              lda $fb
-              stx $0314
-              sta $0315
-              stx $fffe
-              sta $ffff
-              
-              lda #$81            ;enable CIA A, Timer A
-              sta $dc0d
-              
-              lda #$01            ;start Timer A, continuous
-              sta $dc0e
-            
-processInit   lda $fc             ;get song to play
-              pha
-
-              lda #irqbrk - playRoutine + $80
-              sta $0316
-              lda $fb              
-              sta $0317
-              
-              ldx #$f9
-              lda #$00
--             sta $01,x
-              dex
-              bne -               ;stop when X is zero
-              sta $fc
-              sta $fd
-              sta $fe
-              sta $ff
-              sta $78
-
-              lda #$80
-              sta $fa
-
-              ldx #$00
--             lda runRoutine,x
-              sta $0100,x
-              inx
-              cpx #runRoutineEnd - runRoutine
-              bne -
-
-              pla
-              jmp $0100           ;call init routine
-
-playRoutine   ldx #$00
-              stx $fa
-              stx $fb
-
-init          ldx #$00
-              stx $01
-              tax
-              tay
-              jsr $0000           ;call init routine of player
-           
-              ;if play address is null then STA $01 will be NOPPED out
-              lda #$37
-              sta $01
-              cli
-              clc
-              bcc *
-
-irqbrk        tsx                 ;interpreter BRK as RTS with AC, XR, YR and processor status register restored
-              lda $0104,x
-              pha
-              plp                 ;restore processor status
-              lda $0101,x         ;move YR, XR and AC stack position
-              sta $0104,x
-              lda $0102,x
-              sta $0105,x
-              lda $0103,x
-              sta $0106,x
-              inx
-              inx
-              inx
-              txs
-              
-              pla                 ;restor YR, XR and AC
-              tay
-              pla
-              tax
-              pla
-              rts
-
-irqcia        lda $01
-              pha
-play          lda #$00
-              sta $01
-              jsr $0000
-              pla
-              sta $01
-
-speedFix      lda #$00
-              sta $dc04
-              lda #$00
-              sta $dc05              
-             
-              lda $dc0d
-              pla
-              tay
-              pla
-              tax
-              pla
-              rti
-              
-playRoutineEnd
-
-;input is high address for which the correct bank should be calculated
-getBankInit   ldy #$7f  ;get load end address high
-              jmp getBank
-getBankPlay   ldy #$0d  ;get play address
-              jmp getBank              
-
-getBank       and #$f0
-              cmp #$d0
-              bne isBankKernal
-              lda #$34
-              rts
-isBankKernal  cmp #$e0
-              beq bankKernal
-              cmp #$f0
-              bne isBankBasic
-bankKernal    lda #$35
-              rts
-isBankBasic   jsr $0180           ;read header
-              and #$f0
-              bpl bankDefault
-              cmp #$80
-              beq bankDefault
-              cmp #$90
-              beq bankDefault
-              lda #$36
-              rts
-bankDefault   lda #$37
-              rts
+getBank         and #$f0
+                cmp #$d0
+                bne isBankKernal
+                lda #$34
+                rts
+isBankKernal    cmp #$e0
+                beq bankKernal
+                cmp #$f0
+                bne isBankBasic
+bankKernal      lda #$35
+                rts
+isBankBasic     jsr readHeader
+                and #$f0
+                bpl bankDefault
+                cmp #$80
+                beq bankDefault
+                cmp #$90
+                beq bankDefault
+                lda #$36
+                rts
+bankDefault     lda #$37
+                rts
 
 ;------ X is length
-printData     lda #<ASCII
-              sta $a9
-              lda #>ASCII
-              sta $aa
-              lda #<PETSCII
-              sta $a7
-              lda #>PETSCII
-              sta $a8
+printData       lda $fa
+                sta $ac
 
-              ldy #$00
-fillData      jsr $0180           ;read header
-              beq stopPrintData
-              
-              ;ascii special character to petscii conversion
-              sta $a6
-              tya
-              pha                 ;save index
+                tya
+                clc
+                adc $fa
+                sta $fa
 
-              ldy #$00
-charConvLoop  lda ($a9),y
-              beq conversionEnd
-              cmp $a6
-              bne checkNextChar
-              
-              lda ($a7),y
-              sta $a6
-              bne conversionEnd
-              
-checkNextChar iny
-              bne charConvLoop
-              
-conversionEnd pla
-              tay
-              lda $a6
-              
-              pha
-              and #$40
-              beq noConversion
-              pla
-              and #$9f
-              pha
-noConversion  pla
-              and #$7f            ;only first 128 chars allowed, so map last 128 to first 128 chars
-              sta ($fe),y
-              iny
-              dex
-              bne fillData
-stopPrintData rts
+                lda #<ASCII
+                sta $a9
+                lda #>ASCII
+                sta $aa
+                lda #<PETSCII
+                sta $a7
+                lda #>PETSCII
+                sta $a8
 
-printNibble   tax
-              inx
-countOne              
-              sed
-              ldy #$00
-              lda #$00
-convertToDec  clc
-              adc #$01
-              bcc noIncHundred
-              iny
-noIncHundred              
-              dex
-              bne convertToDec 
+                ldy #$00
+fillData        jsr readHeader
+                beq stopPrintData
+
+                ; ascii special character to petscii conversion
+                sta $a6
+                tya
+                pha                 ; save index
+
+                ldy #$00
+charConvLoop    lda ($a9),y
+                beq conversionEnd
+                cmp $a6
+                bne checkNextChar
+
+                lda ($a7),y
+                sta $a6
+                bne conversionEnd
+
+checkNextChar   iny
+                bne charConvLoop
+
+conversionEnd   pla
+                tay
+                lda $a6
+
+                pha
+                and #$40
+                beq noConversion
+                pla
+                and #$9f
+                pha
+noConversion    pla
+                and #$7f            ; only first 128 chars allowed, so map last 128 to first 128 chars
+                jsr screenWrite
+                iny
+                dex
+                bne fillData
+stopPrintData
+                lda $ac
+                sta $fa
+                rts
+
+printNibble     tax
+                inx
+countOne
+                sed
+                ldy #$00
+                lda #$00
+convertToDec    clc
+                adc #$01
+                bcc noIncHundred
+                iny
+noIncHundred
+                dex
+                bne convertToDec
 stopDecConversion
-              cld
-              
-              ldx #$00
-              cpy #$00
-              beq skipFirstNibble2
-              pha
-              tya
-              clc
-              adc #$30
-              ldy #$00
-              sta ($fe),y         ;print hundred
-              inx
-              inc $fe
-              pla
-skipFirstNibble2
-              
-              pha
-              lsr
-              lsr
-              lsr
-              lsr
-              cpx #$00
-              bne forcePrint1
-              cmp #$00
-              beq skipSecondNibble
+                cld
 
-forcePrint1   and #$0f
-              clc
-              adc #$30
-              sta ($fe),y
-              inc $fe
+                ldx #$00
+                cpy #$00
+                beq skipFirstNibble2
+                pha
+                tya
+                clc
+                adc #$30
+                ldy #$00
+                jsr screenWrite       ; print hundred
+                inx
+                inc $fe
+                pla
+skipFirstNibble2
+
+                pha
+                lsr
+                lsr
+                lsr
+                lsr
+                cpx #$00
+                bne forcePrint1
+                cmp #$00
+                beq skipSecondNibble
+
+forcePrint1     and #$0f
+                clc
+                adc #$30
+                jsr screenWrite
+                inc $fe
 
 skipSecondNibble
-              pla
-              and #$0f
-              clc
-              adc #$30
-              sta ($fe),y
-              inc $fe
-              rts
+                pla
+                and #$0f
+                clc
+                adc #$30
+                jsr screenWrite
+                inc $fe
+                rts
 
-CharROMCopy   lda $01
-              pha
-              lda #$33
-              sta $01
-              lda ($f7),y
-              pha
-              lda #$34
-              sta $01
-              pla
-              sta ($fe),y
-              pla
-              sta $01
-              rts
+CharROMCopy     lda $01
+                pha
+                lda #$33
+                sta $01
+                lda ($f7),y
+                pha
+                lda #$34
+                sta $01
+                pla
+                sta ($fe),y
+                pla
+                sta $01
+                rts
 CharROMCopyEnd
 
-ScreenWrite   pha
-              lda $01
-              sta $0100 + ScreenWriteEnd - ScreenWrite
-              lda #$34
-              sta $01
-              pla
-              sta ($f7),y
-              pha
-              lda $0100 + ScreenWriteEnd - ScreenWrite
-              sta $01
-              pla
-              rts
-ScreenWriteEnd              
+screenWriteBegin
+                .logical $0100
+screenWrite     pha
+                lda $01
+                sta screenBankTemp
+                lda #$34
+                sta $01
+                pla
+screenWriteAddress
+                sta ($f7),y
+                pha
+                lda screenBankTemp
+                sta $01
+                pla
+                rts
+screenBankTemp
+                .here
+screenWriteEnd
 
-resetRoutine  sta $dfff
-              inc $8005
-              cli
-              jmp ($fffc)
+reset           ldx #$00
+-               lda resetRoutine,x
+                sta $0100,x
+                inx
+                cpx #resetRoutineEnd - resetRoutine
+                bne -
+                jmp $0100
+
+resetRoutine    sta $dfff
+                inc $8005
+                cli
+                jmp ($fffc)
 resetRoutineEnd
 
-rsidroutine   ldx #$00
-              stx $fa
-              stx $fb
-              tax
-              tay
-              cli
-              
-rsidplay      jsr $0000
-              clc
-              bcc *
-rsidroutineEnd              
+screenOff       lda $d011
+                and #$ef
+                sta $d011
 
-initMem       lda $01
-              pha
-              
-              lda #$34
-              sta $01
-              
-              lda #$00
-              sta $0162
+  -             lda $d011
+                bmi -
+  -             lda $d011
+                bpl -
+  -             lda $d011
+                bmi -
+                rts
 
-              ldx #$01            ;receive DMA load
-              stx $02     
-              
--             bit $0162           ;wait till DMA load is ready
-              bpl -
-              
-              pla
-              sta $01
+; first write $ff for tunes like:
+; /MUSICIANS/T/Tel_Jeroen/Cybernoid.sid
+; /MUSICIANS/B/Bjerregaard_Johannes/Stormlord_V2.sid
+resetSID        lda #$ff
+resetSIDLoop    ldx #$17
+  -             sta $d400,x
+                dex
+                bpl -
+                tax
+                bpl +
+                lda #$08
+                bpl resetSIDLoop
++
+-               bit $d011
+                bpl -
+-               bit $d011
+                bmi -
+                eor #$08
+                beq resetSIDLoop
+                rts
 
-              lda #$00
-              sta $02             ;restore value of address $0002 to $00
+initMem         lda $01
+                pha
 
-;              lda #$0d
-;              sta $d020
-;              ldx #0
-;              ldy #0
-;-             iny
-;              bne -
-;              inx
-;              bne -
+                lda #$34
+                sta $01
 
-              lda $0162
-              cmp #$BC
-              beq run_basic
-              cmp #$AA
-              bne go_basic
-              rts
+                lda #$00
+                sta $0162
+
+                ldx #$01            ; receive DMA load
+                stx $02
+
+-               bit $0162           ; wait till DMA load is ready
+                bpl -
+
+                pla
+                sta $01
+
+                lda #$00
+                sta $02             ; restore value of address $0002 to $00
+
+                lda $0162
+                cmp #$BC
+                beq run_basic
+                cmp #$AA
+                bne go_basic
+                rts
 run_basic
 ; WE GET HERE ON INTERRUPT!
-              pla ; 3x from the interrupt
-              pla
-              pla
-              sta $dfff ; turn off cartridge
-              cli ; we just let the interrupt occur again
-              lda #1   ; disable cursor blink
-              sta $CC
-              lda #'R'
-              sta $0200
-              lda #'U'
-              sta $0201
-              lda #'N'
-              sta $0202
-              lda #0
-              sta $13
-              ldx #3
-              jsr $AACA
-              jmp $A486    
+                pla                 ; 3x from the interrupt
+                pla
+                pla
+                sta $dfff           ; turn off cartridge
+                cli                 ; we just let the interrupt occur again
+                lda #1              ; disable cursor blink
+                sta $CC
+                lda #'R'
+                sta $0200
+                lda #'U'
+                sta $0201
+                lda #'N'
+                sta $0202
+                lda #0
+                sta $13
+                ldx #3
+                jsr $AACA
+                jmp $A486
 
 go_basic
 ; WE GET HERE ON INTERRUPT!
-              sta $dfff ; turn off cartridge
-              jmp $ea31
-              
-              
+                sta $dfff           ; turn off cartridge
+                jmp $ea31
 initMemEnd
 
-readHeader    lda $01
-              sta $0180 + readHeaderEnd - readHeader
-              lda #$34
-              sta $01
-              lda ($fa),y
-              pha
-              lda $0180 + readHeaderEnd - readHeader
-              sta $01
-              pla
-              rts
-readHeaderEnd
+readMem
+                .logical $0180
+readHeader      jsr saveBank
+                lda ($fa),y
+                jmp restoreBank
 
-runRoutine    sta $dfff
-              jmp ($00fa)
+readScreen      jsr saveBank
+                lda ($b0),y
+                jmp restoreBank
+
+writeScreen     pha
+                jsr saveBank
+                pla
+                sta ($b0),y
+                jmp restoreBank
+
+readAddress     jsr saveBank
+                lda ($aa),y
+                jmp restoreBank
+
+writeAddress    pha
+                jsr saveBank
+                pla
+                sta ($aa),y
+                jmp restoreBank
+
+saveBank        lda $01
+                sta bankValue
+                lda #$34
+                sta $01
+                rts
+
+restoreBank     pha
+                lda bankValue
+                sta $01
+                pla
+                rts
+bankValue
+                .here
+readMemEnd
+
+runRoutine      sta $dfff
+                jmp ($00aa)
 runRoutineEnd
-              
-writeScreenData       
--             ldy #$00
-              lda ($fe),y
-              beq endScreenWrite
-              cmp #$ff
-              bne writeData
 
-              ldy #$02
-              lda ($fe),y
-              tax
-              ldy #$01
-              lda ($fe),y
-              ldy #$00
--             
-              jsr $0100           ;write to screen
-              inc $f7
-              bne +
-              inc $f8
-+             dex
-              bne -
-              lda $fe
-              clc
-              adc #$03
-              sta $fe
-              bcc +
-              inc $ff
-+             bne --
-              
-writeData     jsr $0100           ;write to screen
-              
-              inc $f7
-              bne +
-              inc $f8
-+             inc $fe
-              bne +
-              inc $ff
-+             bne --
-              
-endScreenWrite   
-              rts
+writeScreenData
+-               ldy #$00
+                lda ($fe),y
+                beq endScreenWrite
+                cmp #$ff
+                bne writeData
 
-screenData1   ;header
-              .byte $20, $20, $20, $2a, $2a, $2a, $2a, $20
-              .byte $31, $35, $34, $31, $20, $15, $0c, $14
-              .byte $09, $0d, $01, $14, $05, $20, $13, $09
-              .byte $04, $20, $10, $0c, $01, $19, $05, $12
-              .byte $20, $2a, $2a, $2a, $2a, $20, $20, $20
-              
-              ;line
-              .byte $ff, 'C', 40
+                ldy #$02
+                lda ($fe),y
+                tax
+                ldy #$01
+                lda ($fe),y
+                ldy #$00
+-
+                jsr screenWrite           ; write to screen
+                inc $f7
+                bne +
+                inc $f8
++               dex
+                bne -
+                lda $fe
+                clc
+                adc #$03
+                sta $fe
+                bcc +
+                inc $ff
++               bne --
 
-              .byte $ff, $20, 40  ;empty line
-          
-              ;title label
-              .byte $14, $09, $14, $0c, $05, $20, $20, $20
-              .byte $3a, $ff, $20, 31
-          
-              ;author label
-              .byte $01, $15, $14, $08, $0f, $12, $20, $20
-              .byte $3a, $ff, $20, 31              
-          
-              ;released label
-              .byte $12, $05, $0c, $05, $01, $13, $05, $04
-              .byte $3a
+writeData       jsr screenWrite           ; write to screen
 
-              .byte $ff, $20, 40*1 + 31  ;1 empty line
+                inc $f7
+                bne +
+                inc $f8
++               inc $fe
+                bne +
+                inc $ff
++               bne --
+endScreenWrite  rts
 
-              ;Clock label
-              .byte $03, $0c, $0f, $03, $0b, $20, $20, $20
-              .byte $3a, $ff, $20, 31
+player          .binclude 'player/player.asm'
+extraPlayer     .binclude 'player/advanced/advancedplayer.asm'
+extraPlayerEnd
+relocator       .binclude 'relocator.asm'
+memalloc        .binclude 'memalloc.asm'
+songlengths     .binclude 'songlengths.asm'
 
-              ;Model label
-              .byte $0d, $0f, $04, $05, $0c, $20, $20, $20
-              .byte $3a
+                .enc 'screen'
+screenData1     .text ' **** THE ULTIMATE C-64 SID PLAYER **** '
 
-              .byte $ff, $20, 40*1 + 31  ;1 empty line
+                .byte $ff, $40, 40  ; line
+                .byte $ff, $20, 40  ; empty line
 
-              ;playing label
-              .byte $10, $0c, $01, $19, $09, $0e, $07, $20
-              .byte $3a, $ff, $20, 31 + 40 + 32, $00 ;end
+                .text 'TITLE :'
+                .byte $ff, $20, 33
 
-screenData2   .byte $ff, $20, 40*2 - 2   ;2 empty lines
+                .text 'AUTHOR:'
+                .byte $ff, $20, 33
 
-              .byte $02, $19, $20, $17, $09, $0c, $06, $12
-              .byte $05, $04, $20, $02, $0f, $13, $20, $01
-              .byte $0e, $04, $20, $07, $09, $04, $05, $0f
-              .byte $0e, $20, $1a, $2e
+                .text 'REL.BY:'
+                .byte $ff, $20, 33
+                .byte $00 ;end
 
-              .byte $ff, $20, 40*1 + 6 ;5 empty line
-              
-              ;line
-              .byte $ff, 'C', 40
-              
-              ;footer
-              .byte $10, $12, $05, $13, $13
-              .byte $20, $0d, $09, $04, $04, $0c, $05, $20
-              .byte $02, $15, $14, $14, $0f, $0e, $20, $06, $0f
-              .byte $12, $20, $01, $0e, $0f, $14, $08
-              .byte $05, $12, $20, $13, $15, $02, $14, $15, $0e, $05, $21
-              .byte $00 ;end
+screenData2     .text 'YEAR  :'
+                .byte $ff, $20, 33
+                .byte $00 ;end
 
-PALLbl        .byte $10, $01, $0c, $00
-NTSCLbl       .byte $0e, $14, $13, $03, $00
-PALNTSCLbl    .byte $10, $01, $0c, $20, $2f, $20, $0e, $14
-              .byte $13, $03, $00
-UnknownLbl    .byte $15, $0e, $0b, $0e, $0f, $17, $0e, $00
-S6581Lbl      .byte $36, $35, $38, $31, $00
-S8580Lbl      .byte $38, $35, $38, $30, $00
-S65818580Lbl  .byte $36, $35, $38, $31, $20, $2f, $20, $38
-              .byte $35, $38, $30, $00
-              
-ASCII         .null '������������������������������������������������������ݟ���'
-PETSCII       .null 'AAAAAAAaaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYYyyB'
+screenData3     .byte $ff, $20, 40  ; empty line
+                .byte $00 ;end
 
-              ;examples special characters:
-              ; /HVSC/C64Music/MUSICIANS/W/Walt/Maelkeboetten.sid (M�clkeb�tten)
-              ; /HVSC/C64Music/MUSICIANS/A/Ass_It/Lasst_Uns_Froh.sid (La�t Uns Froh)
-              ; /HVSC/C64Music/GAMES/A-F/Captain_Blood.sid (by Fran�ois Lionet)
-              ; /HVSC/C64Music/MUSICIANS/D/Da_Blondie/Brain_Damage.sid (by Attila Sz�ke)
-              ; etc.
+screenData4     .text 'SYSTEM: $D400 :'
+                .byte $ff, $20, 25
+                .byte $00 ;end
 
-fileEnd
+screenData5     .text 'SID   : $D400 :'
+                .byte $ff, $20, 25
+
+                .byte $ff, $20, 40  ; empty line
+
+                .text 'SONG  :'
+                .byte $ff, $20, 33
+                .byte $00 ;end
+
+screenData6     .text '                                   05:00'
+                .byte $ff, $62, 40  ; time bar
+                .byte $00 ;end
+
+PALLbl          .text '/ PAL', 0
+NTSCLbl         .text '/ NTSC', 0
+PALNTSCLbl      .text '/ PAL / NTSC', 0
+UnknownLbl      .text '/ UNKOWN', 0
+S6581Lbl        .text '6581', 0
+S8580Lbl        .text '8580', 0
+S65818580Lbl    .text '6581 / 8580', 0
+SUnknownLbl     .text 'UNKOWN', 0
+                .enc 'none'
+
+ASCII             .byte $c0, $c1, $c2, $c3, $c4, $c5, $c6             ; all A variants
+                  .byte $e0, $e1, $e2, $e3, $e4, $e5, $e6             ; all a variants
+                  .byte $c8, $c9, $ca, $cb                            ; all E variants
+                  .byte $e8, $e9, $ea, $eb                            ; all e variants
+                  .byte $cc, $cd, $ce, $cf                            ; all I variants
+                  .byte $ec, $ed, $ee, $ef                            ; all i variants
+                  .byte $d2, $d3, $d4, $d5, $d6, $d8                  ; all O variants
+                  .byte $f2, $f3, $f4, $f5, $f6, $f8                  ; all o variants
+                  .byte $d9, $da, $db, $dc                            ; all U variants
+                  .byte $f9, $fa, $fb, $fc                            ; all u variants
+                  .byte $c7, $e7, $d1, $f1, $dd, $9f, $fd, $ff, $df   ; other chars
+                  .byte 0
+                  ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
+PETSCII           .null 'AAAAAAAaaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYYyyB'
+
+                  ;examples special characters:
+                  ; /HVSC/C64Music/MUSICIANS/W/Walt/Maelkeboetten.sid (Mæclkebøtten)
+                  ; /HVSC/C64Music/MUSICIANS/A/Ass_It/Lasst_Uns_Froh.sid (Laßt Uns Froh)
+                  ; /HVSC/C64Music/GAMES/A-F/Captain_Blood.sid (by François Lionet)
+                  ; /HVSC/C64Music/MUSICIANS/D/Da_Blondie/Brain_Damage.sid (by Attila Szõke)
+                  ; etc.
