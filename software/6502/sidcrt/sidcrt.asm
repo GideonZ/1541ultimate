@@ -27,7 +27,6 @@
 
 ; TODO
 ; - implement reading SSL files for songlength support
-; - print multiple SID lines depending on 2SID/3SID
 ; - use extra player for init when it can be located in memory but not according free pages
 
 ; CONSTANTS
@@ -47,6 +46,8 @@ EXTRA_PLAYER_SIZE = $b6                   ; size of the advanced player (includi
 EXTRA_PLAYER_LOCATION = $b7               ; hi-byte of the advanced player address
 PLAYER_LOCATION = $b8                     ; hi-byte of the player address
 CHARROM_LOCATION = $b9                    ; hi-byte of the character ROM address where value $10 is the default CHARROM
+
+TEMP = $bc
 
 SID_HEADER_LO = $fa                       ; lo-byte of sid header address
 SID_HEADER_HI = $fb                       ; hi-byte of sid header address
@@ -414,6 +415,8 @@ cleanupMemory   ldy #$7f            ; clean SID header
                 sta EXTRA_PLAYER_LOCATION ; $b7
                 sta PLAYER_LOCATION       ; $b8
                 sta CHARROM_LOCATION      ; $b9
+
+                sta TEMP            ; $bc
 
                 jsr relocator.cleanupVars
                 jsr memalloc.cleanupVars
@@ -1343,16 +1346,56 @@ setupScreen     jsr copyChars
 
                 jsr writeScreenData
 
-                ; skip 256 bytes to make it possible to have the sid header on the screen (invisible)
-                inc $f8
-                inc $f8
-                lda #$98
-                sta $f7
+                ldy #$7a            ; is second SID address defined?
+                jsr readHeader
+                beq noMoreSids
 
-                ; write time bar
+                lda #1
+                jsr writeSidChipCount
+
+                ; write SID label
+                lda #<screenData5
+                sta $fe
+                lda #>screenData5
+                sta $ff
+
+                jsr writeScreenData
+                lda #2
+                jsr writeSidChipCount
+
+                ldy #$7b            ; is third SID address defined?
+                jsr readHeader
+                beq noMoreSids
+
+                ; write SID label
+                lda #<screenData5
+                sta $fe
+                lda #>screenData5
+                sta $ff
+
+                jsr writeScreenData
+                lda #3
+                jsr writeSidChipCount
+noMoreSids
+                ; write SONG label
                 lda #<screenData6
                 sta $fe
                 lda #>screenData6
+                sta $ff
+
+                jsr writeScreenData
+
+                lda #(40 * 23) >> 8
+                clc
+                adc SCREEN_LOCATION
+                sta $f8
+                lda #(40 * 23) & $ff
+                sta $f7
+
+                ; write time bar
+                lda #<screenData7
+                sta $fe
+                lda #>screenData7
                 sta $ff
 
                 jsr writeScreenData
@@ -1464,136 +1507,54 @@ splitReleasedField
                 lda #$08
                 sta CURRENT_LINE
 
-printSidInfo    lda $f7             ; restore sid header address
+printSidInfo
+                lda $f7             ; restore sid header address
                 sta SID_HEADER_LO
 
                 lda $f8
                 sta SID_HEADER_HI
 
-                ; print model info
-                ldy #$04            ; check version
-                jsr readHeader
-                cmp #$01
-                beq printUnknownModel
-
-                ldy #$77
-                jsr readHeader
-                lsr
-                lsr
-                lsr
-                lsr
-                and #$03
-                beq printUnknownModel
-                cmp #$01
-                beq print6581
-                cmp #$02
-                beq print8580
-
-                ; print '6581 / 8580'
-                lda #<S65818580Lbl
-                sta $aa
-                lda #>S65818580Lbl
-                sta $ab
-                jmp printModel
-
-print6581       lda #<S6581Lbl
-                sta $aa
-                lda #>S6581Lbl
-                sta $ab
-                jmp printModel
-
-print8580       lda #<S8580Lbl
-                sta $aa
-                lda #>S8580Lbl
-                sta $ab
-                jmp printModel
-
-printUnknownModel
-                lda #<SUnknownLbl
-                sta $aa
-                lda #>SUnknownLbl
-                sta $ab
-
-printModel      inc CURRENT_LINE
-                jsr setCurrentLinePosition
-                lda $fe
-                clc
-                adc #16
-                sta $fe
-                bcc +
-                inc $ff
-+
-                ldy #$00
--               lda ($aa),y
-                cmp #$00
-                beq +
-                jsr $0100           ; write to screen
-                iny
-                bne -
-+
-                iny
-                sty $ac
-
-                ; print Clock info
-                ldy #$04            ; check version
-                jsr readHeader
-                cmp #$01
-                beq printUnknownClock
-
-                ldy #$77
-                jsr readHeader
-                lsr
-                lsr
-                and #$03
-                cmp #$00
-                beq printUnknownClock
-                cmp #$01
-                beq printPal
-                cmp #$02
-                beq printNtsc
-
-                ; print 'PAL / NTSC'
-                lda #<PALNTSCLbl
-                sta $aa
-                lda #>PALNTSCLbl
-                sta $ab
-                jmp printClock
-
-printPal        lda #<PALLbl
-                sta $aa
-                lda #>PALLbl
-                sta $ab
-                jmp printClock
-
-printNtsc       lda #<NTSCLbl
-                sta $aa
-                lda #>NTSCLbl
-                sta $ab
-                jmp printClock
-
-printUnknownClock
-                lda #<UnknownLbl
-                sta $aa
-                lda #>UnknownLbl
-                sta $ab
-
-printClock      lda $fe
-                clc
-                adc $ac
-                sta $fe
-                bcc +
-                inc $ff
-+
-                ldy #$00
--               lda ($aa),y
-                cmp #$00
-                beq +
-                jsr $0100           ; write to screen
-                iny
-                bne -
-+
-                ; print number of songs
                 inc CURRENT_LINE
+                jsr setCurrentLinePosition
+
+                ldy #$77
+                jsr readHeader
+                lsr
+                lsr
+                lsr
+                lsr
+                sta TEMP
+                ldx #$01
+                jsr printSingleSidInfo
+
+                ldy #$7a            ; is second SID address defined?
+                jsr readHeader
+                beq noMoreSids2
+
+                ldy #$77
+                jsr readHeader
+                rol
+                rol
+                rol
+                cmp #$00
+                bne +
+                lda TEMP            ; unknown SID model for second SID so use the info of first SID
++               ldx #$02
+                jsr printSingleSidInfo
+
+                ldy #$7b            ; is third SID address defined?
+                jsr readHeader
+                beq noMoreSids2
+
+                ldy #$76
+                jsr readHeader
+                cmp #$00
+                bne +
+                lda TEMP            ; unknown SID model for third SID so use the info of first SID
++               ldx #$03
+                jsr printSingleSidInfo
+noMoreSids2
+                ; print number of songs
                 inc CURRENT_LINE
                 jsr setCurrentLinePosition
                 lda $fe
@@ -1603,7 +1564,6 @@ printClock      lda $fe
                 bcc +
                 inc $ff
 +
-
                 ldx $ff
                 lda $fe
                 ldy #OFFSET_SONG_SCREEN_LOCATION
@@ -2130,6 +2090,200 @@ setCurrentLinePosition
                 sta $ff
                 rts
 
+writeSidChipCount
+                pha
+                lda $f7
+                sec
+                sbc #$24
+                sta $f7
+
+                lda #'#'
+                ldy #$00
+                sta ($f7),y
+                iny
+
+                pla
+                clc
+                adc #$30
+                sta ($f7),y
+
+                lda $f7
+                clc
+                adc #$24
+                sta $f7
+                rts
+
+printSingleSidInfo
+                pha
+                txa
+                ; check for which SID number to print the info
+                cmp #$01
+                beq checkVersion
+
+                cmp #$02
+                bne +
+
+                lda $fe
+                clc
+                adc #10
+                sta $fe
+
+                ldy #$7a            ; is second SID address defined?
+                jsr readHeader
+                jsr printHex
+                jmp checkVersion
+
++               cmp #$03
+                bne checkVersion
+
+                lda $fe
+                clc
+                adc #10
+                sta $fe
+
+                ; print SID address for second SID
+                ldy #$7b            ; is second SID address defined?
+                jsr readHeader
+                jsr printHex
+
+checkVersion    ldy #$04            ; check version
+                jsr readHeader
+                cmp #$01
+                beq printUnknownModel
+
+                pla
+                and #$03
+                beq printUnknownModel
+                cmp #$01
+                beq print6581
+                cmp #$02
+                beq print8580
+
+                ; print '6581 / 8580'
+                lda #<S65818580Lbl
+                sta $aa
+                lda #>S65818580Lbl
+                sta $ab
+                jmp printModel
+
+print6581       lda #<S6581Lbl
+                sta $aa
+                lda #>S6581Lbl
+                sta $ab
+                jmp printModel
+
+print8580       lda #<S8580Lbl
+                sta $aa
+                lda #>S8580Lbl
+                sta $ab
+                jmp printModel
+
+printUnknownModel
+                lda #<SUnknownLbl
+                sta $aa
+                lda #>SUnknownLbl
+                sta $ab
+
+printModel      jsr setCurrentLinePosition
+                lda $fe
+                clc
+                adc #16
+                sta $fe
+                bcc +
+                inc $ff
++
+                ldy #$00
+-               lda ($aa),y
+                cmp #$00
+                beq +
+                jsr $0100           ; write to screen
+                iny
+                bne -
++
+                iny
+                sty $ac
+
+                ; print Clock info
+                ldy #$04            ; check version
+                jsr readHeader
+                cmp #$01
+                beq printUnknownClock
+
+                ldy #$77
+                jsr readHeader
+                lsr
+                lsr
+                and #$03
+                cmp #$00
+                beq printUnknownClock
+                cmp #$01
+                beq printPal
+                cmp #$02
+                beq printNtsc
+
+                ; print 'PAL / NTSC'
+                lda #<PALNTSCLbl
+                sta $aa
+                lda #>PALNTSCLbl
+                sta $ab
+                jmp printClock
+
+printPal        lda #<PALLbl
+                sta $aa
+                lda #>PALLbl
+                sta $ab
+                jmp printClock
+
+printNtsc       lda #<NTSCLbl
+                sta $aa
+                lda #>NTSCLbl
+                sta $ab
+                jmp printClock
+
+printUnknownClock
+                lda #<UnknownLbl
+                sta $aa
+                lda #>UnknownLbl
+                sta $ab
+
+printClock      lda $fe
+                clc
+                adc $ac
+                sta $fe
+                bcc +
+                inc $ff
++
+                ldy #$00
+-               lda ($aa),y
+                cmp #$00
+                beq +
+                jsr $0100           ; write to screen
+                iny
+                bne -
++
+                inc CURRENT_LINE
+                jsr setCurrentLinePosition
+                rts
+
+printHex        pha
+                lsr
+                lsr
+                lsr
+                lsr
+                ldy #$00
+                jsr printHexNibble
+                pla
+                and #$0f
+printHexNibble
+                cmp #$0a
+                bcc +
+                clc
+                adc #+'A' - '0' - 10 - $40
++               adc #'0'
+                sta ($fe),y
+                iny
+                rts
+
 player          .binclude 'player/player.asm'
 extraPlayer     .binclude 'player/advanced/advancedplayer.asm'
 extraPlayerEnd
@@ -2166,14 +2320,15 @@ screenData4     .text 'SYSTEM: $D400 :'
 
 screenData5     .text 'SID   : $D400 :'
                 .byte $ff, $20, 25
+                .byte $00 ;end
 
-                .byte $ff, $20, 40  ; empty line
+screenData6     .byte $ff, $20, 40  ; empty line
 
                 .text 'SONG  :'
                 .byte $ff, $20, 33
                 .byte $00 ;end
 
-screenData6     .text '                                   05:00'
+screenData7     .text '                                   05:00'
                 .byte $ff, $62, 40  ; time bar
                 .byte $00 ;end
 
