@@ -23,39 +23,35 @@
 ;  player. Set the load end address of the SID tune after the SID header at $7e
 ;  in little endian format.
 ;
-;  The following zero page addresses are used and will be removed afterwards:
-;
-;  $A0, $A3 and $A4 are used temporarely
-;  $F7, $F8 and $F9 are used temporarely
-;  $FA = low byte SID header
-;  $FB = high byte SID header and player address
-;  $FC = song to play
-;  $FD = hi-byte of address of screen location
-;  $FE and $FF are used temporarely
-;
 ;-----------------------------------------------------------------------
 
 ; TODO
 ; - implement reading SSL files for songlength support
 ; - print multiple SID lines depending on 2SID/3SID
-; - when year cannot be found, then the pointer of system labels and song number is one line off
 ; - use extra player for init when it can be located in memory but not according free pages
 
-;=== CONSTANTS
+; CONSTANTS
 SID_MODE = $aa
 DMA_MODE = $ab
 
 OFFSET_SYSTEM_SCREEN_LOCATION = $ec       ; location at screen + $0300 -> $03ec
-OFFSET_SONG_SCREEN_LOCATION = $ee       ; location at screen + $0300 -> $03ee
+OFFSET_SONG_SCREEN_LOCATION = $ee         ; location at screen + $0300 -> $03ee
 
-;=== ZERO PAGE ADDRESSES
-SONG_TO_PLAY = $fc
-SCREEN_LOCATION = $fd
+; ZERO PAGE ADDRESSES
+CURRENT_LINE = $a0
 
-EXTRA_PLAYER_SIZE = $b6
-EXTRA_PLAYER_LOCATION = $b7
-PLAYER_LOCATION = $b8
-CHARROM_LOCATION = $b9
+DD00_VALUE = $a3
+D018_VALUE = $a4
+
+EXTRA_PLAYER_SIZE = $b6                   ; size of the advanced player (including song lengths data)
+EXTRA_PLAYER_LOCATION = $b7               ; hi-byte of the advanced player address
+PLAYER_LOCATION = $b8                     ; hi-byte of the player address
+CHARROM_LOCATION = $b9                    ; hi-byte of the character ROM address where value $10 is the default CHARROM
+
+SID_HEADER_LO = $fa                       ; lo-byte of sid header address
+SID_HEADER_HI = $fb                       ; hi-byte of sid header address
+SONG_TO_PLAY = $fc                        ; song to play where value 0 is song 1 and $ff is song 256
+SCREEN_LOCATION = $fd                     ; hi-byte of screen location
 
                 * = $8000           ; base address of cartridge
 
@@ -231,9 +227,9 @@ loadSid         ldx #$ff            ; init stack pointer
 
                 ; important: retrieve value at $0165 after DMA load
                 lda $0165           ; get high address of SID header
-                sta $fb             ; store SID header address high byte
+                sta SID_HEADER_HI   ; store SID header address hi-byte
                 lda #$00
-                sta $fa
+                sta SID_HEADER_LO
 
                 ldx #$00
 -               lda readMem,x
@@ -347,16 +343,16 @@ calculateExtraPlayerSize
 
 fixHeader       ; load end address is always 2 bytes off (needs to be fixed in the Ultimate firmware)
                 ldy #$7e
--               lda ($fa),y
+-               lda (SID_HEADER_LO),y
                 clc
                 adc #$02
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
                 bcc +
                 iny
-                lda ($fa),y
+                lda (SID_HEADER_LO),y
                 clc
                 adc #$01
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
 +               rts
 
 moveSidHeader   ldy #$7d            ; read hi byte of load address
@@ -364,82 +360,75 @@ moveSidHeader   ldy #$7d            ; read hi byte of load address
                 cmp #$04            ; if load address is lower than $0400 then move header to $FF00
                 bcc moveToEndOfMem
 
-                lda $fb
+                lda SID_HEADER_HI
                 cmp #$03
                 beq noMoveNeeded
 
                 ldy #$7f
--               lda ($fa),y
+-               lda (SID_HEADER_LO),y
                 sta $0380,y
                 lda #$00            ; clean previous location
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
                 dey
                 bpl -
                 lda #$80
-                sta $fa
+                sta SID_HEADER_LO
                 lda #$03
-                sta $fb
+                sta SID_HEADER_HI
 noMoveNeeded    rts
 
-moveToEndOfMem  lda $fb
+moveToEndOfMem  lda SID_HEADER_HI
                 cmp #$ff
                 beq noMoveNeeded
 
                 ldy #$7f
--               lda ($fa),y
+-               lda (SID_HEADER_LO),y
                 sta $ff00,y
                 lda #$00            ; clean previous location
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
                 dey
                 bpl -
                 lda #$00
-                sta $fa
+                sta SID_HEADER_LO
                 lda #$ff
-                sta $fb
+                sta SID_HEADER_HI
                 rts
 
 cleanupMemory   ldy #$7f            ; clean SID header
                 lda #$00
--               sta ($fa),y
+-               sta (SID_HEADER_LO),y
                 dey
                 bpl -
 
-                ldx #$00            ; clear temp variables
-                stx $a0
-                stx $a3
-                stx $a4
+                lda #$00            ; clear temp variables
+                sta CURRENT_LINE    ; $a0
+                sta DD00_VALUE      ; $a3
+                sta D018_VALUE      ; $a4
 
-                ; don't clean $aa and $ab since these are used for the player address to jump to
-                stx $a6
-                stx $a7
-                stx $a8
-                stx $a9
-                stx $ac
-                stx $ad
-                stx $ae
+                sta $a6
+                sta $a7
+                sta $a8
+                sta $a9
 
-                stx $b6
-                stx $b7
-                stx $b8
-                stx $b9
-                stx $ba
-                stx $bb
-                stx $bc
-                stx $bd
-                stx $be
-                stx $bf
+                sta EXTRA_PLAYER_SIZE     ; $b6
+                sta EXTRA_PLAYER_LOCATION ; $b7
+                sta PLAYER_LOCATION       ; $b8
+                sta CHARROM_LOCATION      ; $b9
 
-                stx $f7
-                stx $f8
+                jsr relocator.cleanupVars
+                jsr memalloc.cleanupVars
 
-                stx $fa
-                stx $fb
-                stx $fc
-                stx $fd
-                stx $fe
+                sta $f7
+                sta $f8
 
-                ldx #$20
-                stx $ff
+                sta SID_HEADER_LO   ; $fa
+                sta SID_HEADER_HI   ; $fb
+                sta SONG_TO_PLAY    ; $fc
+                sta SCREEN_LOCATION ; $fd
+                sta $fe
+
+                lda #$20
+                sta $ff
                 rts
 
 removeSystemLabel
@@ -511,20 +500,20 @@ calcLocBasedOnFreePages
 
 relocateExtraPlayer
                 lda EXTRA_PLAYER_LOCATION
-                sta $ab
+                sta relocator.START_HI
                 lda #$00
-                sta $aa
+                sta relocator.START_LO
                 lda extraPlayer.codeSize
-                sta $ac
+                sta relocator.END_LO
                 lda extraPlayer.codeSize + 1
                 clc
-                adc $ab
-                sta $ad
+                adc relocator.START_HI
+                sta relocator.END_HI
                 jmp relocator.relocateCode
 
 setExtraPlayerVars
                 lda EXTRA_PLAYER_LOCATION
-                sta $ad
+                sta relocator.BASE_ADDRESS
 
                 lda SCREEN_LOCATION
                 clc
@@ -727,7 +716,7 @@ setExtraPlayerVars
                 sta $aa
                 lda extraPlayer.songLenData + 1
                 clc
-                adc $ad
+                adc relocator.BASE_ADDRESS
                 sta $ab
 
                 jmp songlengths.loadSongLengths
@@ -762,7 +751,7 @@ setVariableWord jsr setVariableByte
                 jmp writeScreen
 
 setPlayerVars   lda PLAYER_LOCATION
-                sta $ad
+                sta relocator.BASE_ADDRESS
 
                 lda SONG_TO_PLAY
                 ldy player.offSongNr
@@ -800,37 +789,37 @@ setPlayerVars   lda PLAYER_LOCATION
 
                 ldy player.offReloc1
                 ldx player.offReloc1 + 1
-                jsr reloc
+                jsr relocator.relocByte
 
                 ldy player.offCiaLU1
                 ldx player.offCiaLU1 + 1
-                jsr reloc
+                jsr relocator.relocByte
 
                 ldy player.offCiaLU2
                 ldx player.offCiaLU2 + 1
-                jsr reloc
+                jsr relocator.relocByte
 
                 ldy player.offCiaFix
                 ldx player.offCiaFix + 1
-                jsr reloc
+                jsr relocator.relocByte
 
-                lda $ad
+                lda relocator.BASE_ADDRESS
                 ldy player.offBasicEnd
                 ldx player.offBasicEnd + 1
                 jsr setValue
 
-                lda $ad
+                lda relocator.BASE_ADDRESS
                 ldy player.offHiPlayer
                 ldx player.offHiPlayer + 1
                 jsr setValue
 
                 ldy player.offCiaFix1
                 ldx player.offCiaFix1 + 1
-                jsr reloc
+                jsr relocator.relocByte
 
                 ldy player.offCiaFix2
                 ldx player.offCiaFix2 + 1
-                jsr reloc
+                jsr relocator.relocByte
 
                 jsr isRsid
                 ldy player.offRsid
@@ -917,23 +906,23 @@ playNotZero     lda #$85            ; STA $01
                 jsr writeAddress
 
 continueInitPlayer
-                lda $a4
+                lda D018_VALUE
                 ldy player.offD018
                 ldx player.offD018 + 1
                 jsr setValue
 
-                lda $a3
+                lda DD00_VALUE
                 ldy player.offDD00
                 ldx player.offDD00 + 1
                 jsr setValue
 
                 ldy player.offHiIrq
                 ldx player.offHiIrq + 1
-                jsr reloc
+                jsr relocator.relocByte
 
                 ldy player.offHiBrk
                 ldx player.offHiBrk + 1
-                jsr reloc
+                jsr relocator.relocByte
 
                 ldy #$77
                 jsr readHeader
@@ -944,7 +933,7 @@ continueInitPlayer
                 and #$01
                 bne +                 ; when PAL flag is set then always write 0 (therefore jump to lsr)
                 txa
-  +             lsr                   ; value is 1 for NTSC, otherwise 0 for PAL / UNKNOWN clock. If PAL is set then value is always 0.
++               lsr                   ; value is 1 for NTSC, otherwise 0 for PAL / UNKNOWN clock. If PAL is set then value is always 0.
                 ldy player.offClock
                 ldx player.offClock + 1
                 jsr setValue
@@ -1051,22 +1040,10 @@ setValue        pha
                 sta $aa
                 txa
                 clc
-                adc $ad
+                adc relocator.BASE_ADDRESS
                 sta $ab
                 pla
                 ldy #$00
-                jmp writeAddress
-
-reloc           tya
-                sta $aa
-                txa
-                clc
-                adc $ad
-                sta $ab
-                ldy #$00
-                jsr readAddress
-                clc
-                adc $ad
                 jmp writeAddress
 
 isRsid          ldy #$00
@@ -1075,7 +1052,7 @@ isRsid          ldy #$00
                 cmp #'R'            ; check if RSID file
                 beq +
                 ldy #$00
-  +             tya
++               tya
                 cmp #$01
                 rts
 
@@ -1168,13 +1145,13 @@ prepareSidHeader
                 tay
                 jsr readHeader     ; get load address low at offset $7c
                 ldy #$08            ; set load address low
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
                 inx
                 txa
                 tay
                 jsr readHeader     ; get load address high at offset $7d
                 ldy #$09            ; set load address high
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
 +
                 ldy #$0a            ; get init address
                 jsr readHeader
@@ -1187,11 +1164,11 @@ prepareSidHeader
                 ldy #$08            ; get load address low
                 jsr readHeader
                 ldy #$0a            ; set init address low
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
                 dey                 ; get load address high
                 jsr readHeader
                 ldy #$0b            ; set init address high
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
 +
                 ; check if init is same as play, then ignore play address
                 ldy #$0c            ; get play address low
@@ -1212,12 +1189,20 @@ prepareSidHeader
                 ; clear play address
                 ldy #$0c
                 lda #$00
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
                 iny
-                sta ($fa),y
+                sta (SID_HEADER_LO),y
 +               rts
 
-runPlayer       jsr cleanupMemory
+runPlayer       lda $aa
+                pha
+                lda $ab
+                pha
+                jsr cleanupMemory
+                pla
+                sta $ab
+                pla
+                sta $aa
 
                 ldx #$00
 -               lda runRoutine,x
@@ -1264,14 +1249,14 @@ setupScreen     jsr copyChars
                 lsr
                 and #$0e
                 ora #$01
-                sta $a4
+                sta D018_VALUE
 
                 lda SCREEN_LOCATION
                 asl
                 asl
                 and #$f0
-                ora $a4
-                sta $a4             ; d018
+                ora D018_VALUE
+                sta D018_VALUE
 
                 lda SCREEN_LOCATION
                 rol
@@ -1280,7 +1265,7 @@ setupScreen     jsr copyChars
                 eor #$ff
                 and #$03
                 ora #$94
-                sta $a3             ; dd00
+                sta DD00_VALUE
 
                 ldx #$00
 -               lda screenWriteBegin,x
@@ -1381,10 +1366,10 @@ setupScreen     jsr copyChars
                 lda #$fe            ; $fe/$ff are now used to write to screen
                 sta screenWriteAddress + 1
 
-                lda $fa             ; backup sid header address
+                lda SID_HEADER_LO   ; backup sid header address
                 sta $f7
 
-                lda $fb
+                lda SID_HEADER_HI
                 sta $f8
 
                 ldy #$16            ; offset title in SID header
@@ -1401,16 +1386,26 @@ setupScreen     jsr copyChars
                 ldx #32             ; print max 32 chars
                 jsr printData       ; write author data to screen
 
-                ldy #$56            ; offset released in SID header
-
                 jsr canReleaseFieldSplit
                 cpy #$00
                 bne splitReleasedField
 
-printFullLine   lda #8 + 40 * 5
+                ldy #$56            ; offset released in SID header
+                lda #8 + 40 * 5
                 sta $fe
                 ldx #32             ; print max 32 chars
                 jsr printData       ; write released data to screen
+
+                lda #(16 + 40 * 7) >> 8
+                clc
+                adc SCREEN_LOCATION
+                tax
+                lda #(16 + 40 * 7) & $ff
+                ldy #OFFSET_SYSTEM_SCREEN_LOCATION
+                jsr setVariableWord
+
+                lda #$07
+                sta CURRENT_LINE
                 jmp printSidInfo
 
 canReleaseFieldSplit
@@ -1447,7 +1442,7 @@ splitReleasedField
 
                 lda #8 + 40 * 5
                 sta $fe
-                jsr printData       ; write title data to screen
+                jsr printData       ; write publisher info to screen
 
                 pla
                 tax                 ; end of year string
@@ -1456,13 +1451,7 @@ splitReleasedField
                 sta $fe
 
                 ldy #$56            ; start index of year
-                jsr printData       ; write title data to screen
-
-printSidInfo    lda $f7             ; restore sid header address
-                sta $fa
-
-                lda $f8
-                sta $fb
+                jsr printData       ; write year info to screen
 
                 lda #(16 + 40 * 8) >> 8
                 clc
@@ -1471,6 +1460,15 @@ printSidInfo    lda $f7             ; restore sid header address
                 lda #(16 + 40 * 8) & $ff
                 ldy #OFFSET_SYSTEM_SCREEN_LOCATION
                 jsr setVariableWord
+
+                lda #$08
+                sta CURRENT_LINE
+
+printSidInfo    lda $f7             ; restore sid header address
+                sta SID_HEADER_LO
+
+                lda $f8
+                sta SID_HEADER_HI
 
                 ; print model info
                 ldy #$04            ; check version
@@ -1516,13 +1514,15 @@ printUnknownModel
                 lda #>SUnknownLbl
                 sta $ab
 
-printModel      lda $ff
+printModel      inc CURRENT_LINE
+                jsr setCurrentLinePosition
+                lda $fe
                 clc
-                adc #$01
-                sta $ff
-                lda #(16 + 40 * 9) & $ff
+                adc #16
                 sta $fe
-
+                bcc +
+                inc $ff
++
                 ldy #$00
 -               lda ($aa),y
                 cmp #$00
@@ -1577,11 +1577,13 @@ printUnknownClock
                 lda #>UnknownLbl
                 sta $ab
 
-printClock      lda #(16 + 40 * 9) & $ff
+printClock      lda $fe
                 clc
                 adc $ac
                 sta $fe
-
+                bcc +
+                inc $ff
++
                 ldy #$00
 -               lda ($aa),y
                 cmp #$00
@@ -1591,16 +1593,21 @@ printClock      lda #(16 + 40 * 9) & $ff
                 bne -
 +
                 ; print number of songs
-                lda #(8 + 40 * 11) >> 8
+                inc CURRENT_LINE
+                inc CURRENT_LINE
+                jsr setCurrentLinePosition
+                lda $fe
                 clc
-                adc SCREEN_LOCATION
-                tax
-                lda #(8 + 40 * 11) & $ff
+                adc #8
+                sta $fe
+                bcc +
+                inc $ff
++
+
+                ldx $ff
+                lda $fe
                 ldy #OFFSET_SONG_SCREEN_LOCATION
                 jsr setVariableWord
-
-                lda #(8 + 40 * 11) & $ff
-                sta $fe
 
                 ldx #'0'
                 lda SONG_TO_PLAY
@@ -1750,13 +1757,13 @@ bankDefault     lda #$37
                 rts
 
 ;------ X is length
-printData       lda $fa
+printData       lda SID_HEADER_LO
                 sta $ac
 
                 tya
                 clc
-                adc $fa
-                sta $fa
+                adc SID_HEADER_LO
+                sta SID_HEADER_LO
 
                 lda #<ASCII
                 sta $a9
@@ -1807,7 +1814,7 @@ noConversion    pla
                 bne fillData
 stopPrintData
                 lda $ac
-                sta $fa
+                sta SID_HEADER_LO
                 rts
 
 printNibble     tax
@@ -1917,11 +1924,11 @@ screenOff       lda $d011
                 and #$ef
                 sta $d011
 
-  -             lda $d011
+-               lda $d011
                 bmi -
-  -             lda $d011
+-               lda $d011
                 bpl -
-  -             lda $d011
+-               lda $d011
                 bmi -
                 rts
 
@@ -1930,7 +1937,7 @@ screenOff       lda $d011
 ; /MUSICIANS/B/Bjerregaard_Johannes/Stormlord_V2.sid
 resetSID        lda #$ff
 resetSIDLoop    ldx #$17
-  -             sta $d400,x
+-               sta $d400,x
                 dex
                 bpl -
                 tax
@@ -2003,7 +2010,7 @@ initMemEnd
 readMem
                 .logical $0180
 readHeader      jsr saveBank
-                lda ($fa),y
+                lda (SID_HEADER_LO),y
                 jmp restoreBank
 
 readScreen      jsr saveBank
@@ -2083,6 +2090,45 @@ writeData       jsr screenWrite           ; write to screen
                 inc $ff
 +               bne --
 endScreenWrite  rts
+
+setCurrentLineOffset
+                lda CURRENT_LINE
+                sta $fe
+                lda #$00
+                sta $ff
+
+                ; multiply by 40
+                ldx $ff
+                lda $fe
+                asl
+                rol $ff
+                asl
+                rol $ff
+
+                clc
+                adc $fe
+                sta $fe
+                txa
+                adc $ff
+                sta $ff
+
+                asl $fe
+                rol $ff
+
+                asl $fe
+                rol $ff
+                asl $fe
+                rol $ff
+                rts
+
+setCurrentLinePosition
+                lda CURRENT_LINE
+                jsr setCurrentLineOffset
+                lda $ff
+                clc
+                adc SCREEN_LOCATION
+                sta $ff
+                rts
 
 player          .binclude 'player/player.asm'
 extraPlayer     .binclude 'player/advanced/advancedplayer.asm'

@@ -24,11 +24,24 @@ TEMP = $bc
 BANK = $bd
 LOOP_INDEX = $be
 LOOP_END_INDEX = $bf
-LOOP_SIZE = $bf           ; safe to be the same location as LOOP_END_INDEX
+LOOP_SIZE = LOOP_END_INDEX              ; safe to be the same location
 
 PAGE_START = $aa
 PAGE_SIZE = $ab
 PAGE_END = $ac
+
+cleanupVars     lda #$00
+                sta LOAD_ADDRESS
+                sta LOAD_END_ADDRESS
+                sta TEMP
+                sta BANK
+                sta LOOP_INDEX
+                sta LOOP_END_INDEX
+                sta LOOP_SIZE
+                sta PAGE_START
+                sta PAGE_SIZE
+                sta PAGE_END
+                rts
 
 ; =========== PLAYER, SCREEN AND CHARROM LOCATION CALCULATION ==================
 
