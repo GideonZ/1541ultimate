@@ -77,9 +77,28 @@ while ($line = <$file>)
       $socket->close();
       $packet = "";
    }
+   elsif ($token[0] eq "large-send" && @token == 1)
+   {
+      die if length($packet) > 200000;
+   
+      my $socket = new IO::Socket::INET (
+            PeerHost => $ip,
+            PeerPort => 64,
+            Proto => 'tcp',
+        ) or die "Connection failed\n";
+      $socket->send($packet);
+      $socket->close();
+      $packet = "";
+   }
    elsif ($token[0] eq "debug" && @token == 1)
    {
       die if length($packet) > 65534;
+      print unpack("H*", $packet)."\n";   
+      $packet = "";
+   }
+   elsif ($token[0] eq "large-debug" && @token == 1)
+   {
+      die if length($packet) > 200000;
       print unpack("H*", $packet)."\n";   
       $packet = "";
    }
@@ -184,6 +203,39 @@ while ($line = <$file>)
       $packet .= "$opcode\xFF" . pack("v", length($prg) ) . $prg;
    }
 
+   elsif ($token[0] eq "insert-disk" && @token > 1)
+   {
+      my $run = 0;
+      my $d64 = 0;
+      my $bin;
+      my @token2 = @token;
+      shift @token2;
+      while (@token2)
+      {
+         if ($token2[0] eq "run") { $run = 1; shift @token2; }
+         elsif ($token2[0] eq "d64") 
+	 {
+	     shift @token2;
+	     my $infile = shift @token2;
+
+             my $file2;
+             open ($file2, "< :raw", $infile) or die "Cannot open $infile\n";
+	     local $/;
+	     undef $/;
+	     $bin = <$file2>;
+	     close $file2;
+	     $d64 = 1;
+	 }
+         else
+	 {
+	    die "Syntax error";
+	 }
+      }
+      die unless $d64;
+      my $opcode = "\x0a";
+      $opcode = "\x0b" if $run;
+      $packet .= "$opcode\xFF" . substr(pack("V", length($bin)),0,3) . $bin;
+   }
 
 
 

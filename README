@@ -27,9 +27,17 @@ Fill keyboard buffer
 load data into C64 Memory / the REU / the Kernal ROM. Either by startaddress from prg file or given with the at-Clause.
 Optionally the size can be prefixed to the data (4 byte).
 
+* insert-disk [run] d64 'filename'
+
+inserts a disk into the 1st floppy drive. Currently only d64 is supported.
+
 * send
 
 sends the actual packet to the C64.
+
+* large-send
+
+sends the actual packet to the C64. In contrast to "send", this packet can be 200000 bytes and requires large packet support in the 1541 Ultimate II.
 
 * reu-load-split [at <number>] [sizeprefix] [from prg 'filename'] [from bin 'filename'] [fill <count> <value>] [values <valuelist>]
 
