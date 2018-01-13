@@ -11,6 +11,8 @@ use IO::Socket::INET;
 die "Syntax $0 <ip> <script>\n".
     "       $0 <ip> -c run:<filename>\n".
     "       $0 <ip> -c kernal:<filename>\n".
+    "       $0 <ip> -c d64:<filename>\n".
+    "       $0 <ip> -c rund64:<filename>\n".
     "       $0 <ip> -e <command> [-e <command> ...]\n" unless @ARGV >= 2;
 
 my $ip = shift @ARGV;
@@ -32,6 +34,14 @@ if (!$escript && $ARGV[0] eq "-c")
    elsif (substr($command,0,7) eq "kernal:")
    {
       $escript = "load at kernal 0 from bin '".substr($command,7)."'\nreset-c64\nsend\n";
+   }
+   elsif (substr($command,0,4) eq "d64:")
+   {
+      $escript = "insert-disk d64 '".substr($command,4)."'\nlarge-send\n";
+   }
+   elsif (substr($command,0,4) eq "rund64:")
+   {
+      $escript = "insert-disk run d64 '".substr($command,7)."'\nlarge-send\n";
    }
    else
    {
