@@ -124,7 +124,8 @@ SRCS_CC	 =  small_printf.cc \
             socket_gui.cc \
 			socket_dma.cc \
             home_directory.cc \
-			$(PRJ).cc
+            reu_preloader.cc \
+            $(PRJ).cc
 
 #            sock_echo.c \
 #			sys_calls.cc \
