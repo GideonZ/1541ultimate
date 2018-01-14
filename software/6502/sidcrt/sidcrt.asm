@@ -27,7 +27,6 @@
 
 ; TODO
 ; - implement reading SSL files for songlength support
-; - use extra player for init when it can be located in memory but not according free pages
 
 ; CONSTANTS
 SID_MODE = $aa
@@ -48,6 +47,8 @@ PLAYER_LOCATION = $b8                     ; hi-byte of the player address
 CHARROM_LOCATION = $b9                    ; hi-byte of the character ROM address where value $10 is the default CHARROM
 
 TEMP = $bc
+SID_MODEL = $bc
+C64_CLOCK = $bd
 
 SID_HEADER_LO = $fa                       ; lo-byte of sid header address
 SID_HEADER_HI = $fb                       ; hi-byte of sid header address
@@ -294,9 +295,7 @@ SidHeaderDetected
                 sta $aa
                 jmp runPlayer
 
-+               jsr removeSystemLabel   ; there is no room for the advanced player so therefore remove the system info line
-
-                lda PLAYER_LOCATION
++               lda PLAYER_LOCATION
                 sta $ab
                 lda #$00
                 sta $aa
@@ -417,6 +416,8 @@ cleanupMemory   ldy #$7f            ; clean SID header
                 sta CHARROM_LOCATION      ; $b9
 
                 sta TEMP            ; $bc
+                sta SID_MODEL       ; $bc
+                sta C64_CLOCK       ; $bd
 
                 jsr relocator.cleanupVars
                 jsr memalloc.cleanupVars
@@ -434,41 +435,6 @@ cleanupMemory   ldy #$7f            ; clean SID header
                 sta $ff
                 rts
 
-removeSystemLabel
-                ldx #$00
--               lda moveScreen,x
-                sta $0100,x
-                inx
-                cpx #moveScreenEnd - moveScreen
-                bne -
-
-                jmp $0100
-
-moveScreen      ; move screen one line up to remove system label
-                lda $01
-                pha
-                lda #$34
-                sta $01
-                lda SCREEN_LOCATION
-                sta $ab
-                inc $ab
-                lda $ab
-                sta $ad
-                lda #$68
-                sta $aa
-                lda #$40
-                sta $ac
-                ldy #$00
--               lda ($aa),y
-                sta ($ac),y
-                iny
-                cpy #$f0
-                bne -
-                pla
-                sta $01
-                rts
-moveScreenEnd
-
 calculateLocations
                 ldy #$78            ; get free page base
                 jsr readHeader
@@ -484,21 +450,15 @@ calculateLocations
 calcLocBasedOnLoadArea
                 jsr memalloc.calcPlayerLocations
                 jmp memalloc.calcExtraPlayerLocation
-noAreaPossible
-                jsr memalloc.calcSmallestPlayerLocation
 
+noAreaPossible  jsr memalloc.calcSmallestPlayerLocation
                 lda #$00
                 sta EXTRA_PLAYER_LOCATION
-
-                ; TODO set variable to indicate that extra player needs to be installed for init only
-                ;jsr memalloc.calcExtraPlayerLocation
                 rts
+
 calcLocBasedOnFreePages
                 jsr memalloc.calcPlayerScreenLocForRelocArea
-
                 jsr memalloc.calcExtraPlayerLocForRelocArea
-                ; TODO set variable to indicate that extra player needs to be installed for init only
-                ;jsr memalloc.calcExtraPlayerLocation
                 rts
 
 relocateExtraPlayer
@@ -1514,8 +1474,13 @@ printSidInfo
                 lda $f8
                 sta SID_HEADER_HI
 
-                inc CURRENT_LINE
                 jsr setCurrentLinePosition
+
+                jsr detection.detectSystem
+                sta C64_CLOCK
+                sty SID_MODEL
+                ldx #$00            ; 0 indicates that system info is presented
+                jsr printSingleSidInfo
 
                 ldy #$77
                 jsr readHeader
@@ -1524,7 +1489,7 @@ printSidInfo
                 lsr
                 lsr
                 sta TEMP
-                ldx #$01
+                ldx #$01            ; first SID
                 jsr printSingleSidInfo
 
                 ldy #$7a            ; is second SID address defined?
@@ -1539,7 +1504,7 @@ printSidInfo
                 cmp #$00
                 bne +
                 lda TEMP            ; unknown SID model for second SID so use the info of first SID
-+               ldx #$02
++               ldx #$02            ; second SID
                 jsr printSingleSidInfo
 
                 ldy #$7b            ; is third SID address defined?
@@ -1551,7 +1516,7 @@ printSidInfo
                 cmp #$00
                 bne +
                 lda TEMP            ; unknown SID model for third SID so use the info of first SID
-+               ldx #$03
++               ldx #$03            ; third SID
                 jsr printSingleSidInfo
 noMoreSids2
                 ; print number of songs
@@ -2117,6 +2082,7 @@ printSingleSidInfo
                 pha
                 txa
                 ; check for which SID number to print the info
+                beq checkVersion
                 cmp #$01
                 beq checkVersion
 
@@ -2146,12 +2112,23 @@ printSingleSidInfo
                 jsr readHeader
                 jsr printHex
 
-checkVersion    ldy #$04            ; check version
+checkVersion    pla                 ; check if system info needs to be printed
+                pha
+                bne checkSidHeader1
+                ; print system info
+                lda SID_MODEL
+                beq print8580
+                cmp #$01
+                beq print6581
+                jmp printUnknownModel
+
+checkSidHeader1 ldy #$04            ; check version
                 jsr readHeader
                 cmp #$01
                 beq printUnknownModel
 
                 pla
+                pha
                 and #$03
                 beq printUnknownModel
                 cmp #$01
@@ -2204,7 +2181,16 @@ printModel      jsr setCurrentLinePosition
                 sty $ac
 
                 ; print Clock info
-                ldy #$04            ; check version
+                pla                 ; check if system info needs to be printed
+                bne checkSidHeader2
+                ; print system info
+                lda C64_CLOCK
+                beq printPal
+                cmp #$03
+                beq printPal
+                jmp printNtsc
+
+checkSidHeader2 ldy #$04            ; check version
                 jsr readHeader
                 cmp #$01
                 beq printUnknownClock
@@ -2289,6 +2275,7 @@ extraPlayer     .binclude 'player/advanced/advancedplayer.asm'
 extraPlayerEnd
 relocator       .binclude 'relocator.asm'
 memalloc        .binclude 'memalloc.asm'
+detection       .binclude 'detection.asm'
 songlengths     .binclude 'songlengths.asm'
 
                 .enc 'screen'
