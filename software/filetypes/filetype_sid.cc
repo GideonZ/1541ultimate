@@ -9,8 +9,8 @@
 #include "stream_textlog.h"
 #include "init_function.h"
 
-extern uint8_t _sidcrt_65_start;
-extern uint8_t _sidcrt_65_end;
+extern uint8_t _sidcrt_bin_start;
+extern uint8_t _sidcrt_bin_end;
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(FileType :: getFileTypeFactory(), FileTypeSID :: test_type);
@@ -49,10 +49,10 @@ static inline uint16_t swap_word(uint16_t p)
 
 static void initSidCart(void *object, void *param)
 {
-    int size = (int)&_sidcrt_65_end - (int)&_sidcrt_65_start;
+    int size = (int)&_sidcrt_bin_end - (int)&_sidcrt_bin_start;
     sid_cart.custom_addr = new uint8_t[8192];
     sid_cart.length = size;
-    memcpy(sid_cart.custom_addr, &_sidcrt_65_start, size);
+    memcpy(sid_cart.custom_addr, &_sidcrt_bin_start, size);
     printf("%d bytes copied into sid_cart.\n", size);
 }
 InitFunction sidCart_initializer(initSidCart, NULL, NULL);

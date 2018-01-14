@@ -1,3 +1,4 @@
+TOOLS = ../../../tools
 TARGETDIR = target
 PLAYERDIR = player
 ADVPLAYERDIR = player/advanced
@@ -7,16 +8,16 @@ OBJECTS = $(TARGETDIR)/sidcrt.bin $(TARGETDIR)/player.bin $(TARGETDIR)/advancedp
 all: ${TARGETDIR} ${OBJECTS}
 
 $(TARGETDIR)/player.bin: $(PLAYERDIR)/player.asm
-	./tools/64tass --nostart -o $@ $(PLAYERDIR)/player.asm
+	$(TOOLS)/64tass/64tass --nostart -o $@ $(PLAYERDIR)/player.asm
 
 $(TARGETDIR)/advancedplayer.bin: $(ADVPLAYERDIR)/advancedplayer.asm $(ADVPLAYERDIR)/clock.asm $(ADVPLAYERDIR)/math.asm $(ADVPLAYERDIR)/timebar.asm $(ADVPLAYERDIR)/keyboard.asm
-	./tools/64tass --nostart -o $@ $(ADVPLAYERDIR)/advancedplayer.asm
+	$(TOOLS)/64tass/64tass --nostart -o $@ $(ADVPLAYERDIR)/advancedplayer.asm
 
 $(TARGETDIR)/sidcrt.bin: sidcrt.asm relocator.asm memalloc.asm detection.asm songlengths.asm $(TARGETDIR)/player.bin $(TARGETDIR)/advancedplayer.bin
-	./tools/64tass -o $@ -b sidcrt.asm
+	$(TOOLS)/64tass/64tass -o $@ -b sidcrt.asm
 
 ${TARGETDIR}:
-	if not exist $@ (mkdir $@)
+	mkdir -p $@
 
 clean:
-	del $(TARGETDIR)/*.bin
+	rm -rf $(TARGETDIR)

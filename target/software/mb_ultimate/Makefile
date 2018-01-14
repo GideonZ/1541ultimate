@@ -134,13 +134,14 @@ SRCS_CC	 =  small_printf.cc \
 
 VPATH += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 VPATH += $(PATH_SW)/portable/microblaze
+VPATH += $(PATH_SW)/6502/sidcrt/target
 
 
 SRCS_ASM =  mb_crt0.s portasm.s
 
-SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
+SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -163,4 +164,6 @@ lodepng.o: lodepng.cc
 	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
+$(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
 
