@@ -238,3 +238,4 @@ tools/makeappl
 tools/promgen
 tools/svf_dump
 tools/swap
+software/6502/sidcrt/target
