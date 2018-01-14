@@ -83,6 +83,7 @@ cr_lp1
 	jmp	$d000
 
 reset_trampoline
+    lda #$40
 	sta	$dfff		; disable boot cart
 	jmp	($fffc)
 RESET_TRAMPOLINE_LEN	= *-reset_trampoline
@@ -264,6 +265,7 @@ record_tape
     jmp $380 ;; cartridge will be killed shortly, we have to be quick
     
 record_routine
+    lda #$40
 	sta	$dfff		; disable boot cart
     nop
 -   lda $01
@@ -315,6 +317,7 @@ capture_tape
     jmp $380 ;; cartridge will be killed shortly, we have to be quick
     
 capture_routine
+    lda #$40
 	sta	$dfff		; disable boot cart
     nop
 -   lda $01
@@ -562,6 +565,7 @@ rp_skp1
 
 RUNNER		=	$0150
 runner_st
+    lda #$40
 	sta	$dfff		; disable boot cart
 	cli
 runner_relinkjsr = *-runner_st+RUNNER
@@ -573,6 +577,7 @@ RUNNER_LEN	= *-runner_st
 
 JUMPER = $0150
 jumper_code
+    lda #$40
 	sta $dfff
 	cli
 	jmp ($00aa)

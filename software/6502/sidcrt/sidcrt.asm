@@ -1839,7 +1839,8 @@ reset           ldx #$00
                 bne -
                 jmp $0100
 
-resetRoutine    sta $dfff
+resetRoutine    lda #40
+                sta $dfff
                 inc $8005
                 cli
                 jmp ($fffc)
@@ -1910,6 +1911,7 @@ run_basic
                 pla                 ; 3x from the interrupt
                 pla
                 pla
+                lda #$40
                 sta $dfff           ; turn off cartridge
                 cli                 ; we just let the interrupt occur again
                 lda #1              ; disable cursor blink
@@ -1928,6 +1930,7 @@ run_basic
 
 go_basic
 ; WE GET HERE ON INTERRUPT!
+                lda #$40
                 sta $dfff           ; turn off cartridge
                 jmp $ea31
 initMemEnd
@@ -1973,7 +1976,8 @@ bankValue
                 .here
 readMemEnd
 
-runRoutine      sta $dfff
+runRoutine      lda #$40
+                sta $dfff
                 jmp ($00aa)
 runRoutineEnd
 

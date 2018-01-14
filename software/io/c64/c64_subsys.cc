@@ -88,11 +88,16 @@ void C64_Subsys :: poll(void *a)
 
 void C64_Subsys :: restoreCart(void)
 {
-	while (C64_CARTRIDGE_ACTIVE) {
+	for (int i=0; (i<200) && (C64_CARTRIDGE_ACTIVE); i++) {
 		vTaskDelay(2);
 	}
-	printf("Cart got disabled, now restoring.\n");
-	c64->set_cartridge(NULL);
+	if (C64_CARTRIDGE_ACTIVE) {
+	    printf("Error.. cart did not get disabled.\n");
+	    c64->init_cartridge(); // hard reset
+	} else {
+	    printf("Cart got disabled, now restoring.\n");
+	    c64->set_cartridge(NULL);
+	}
 }
 
 
