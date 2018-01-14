@@ -324,8 +324,11 @@ void C1541 :: check_if_save_needed(SubsysCommand *cmd)
     if(disk_state == e_no_disk) {
         return;
     }
+    if(cmd->user_interface == NULL || !cmd->user_interface->is_available()) {
+        return;
+    }
 	if(cmd->user_interface->popup("About to remove a changed disk. Save?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
-	    return;
+      return;
     }
 	cmd->mode = (disk_state == e_gcr_disk) ? 1 : 0;
 	save_disk_to_file(cmd);
@@ -483,6 +486,10 @@ void C1541 :: swap_disk()
 
     char top = isalpha(current) ? 'A'-1 : '0'-1;  
     char bottom = isalpha(current) ? 'Z' : '9';
+
+    SubsysCommand *cmd;
+    int cmd_type = 0;
+    FileInfo info(32);
     
     for (path[index]++; path[index] != current; path[index]++) {
 
@@ -491,16 +498,35 @@ void C1541 :: swap_disk()
             continue;
         }
 
-        if (fm->fopen(path, FA_READ, &f) == FR_OK) { 
+        if (fm->fstat(path, info) == FR_OK) { 
 
             printf("Disk Swap: %s -> %s\n", mount_file->get_path(), path);
-
+            
             if (strncmp(type, "D64", 3) == 0) {
-                mount_d64(false, f);
+                cmd_type = D64FILE_MOUNT;                
             }
             else if(strncmp(type, "G64", 3) == 0) {
-                mount_g64(false, f);
+                cmd_type = G64FILE_MOUNT;
             }
+            else {
+                printf("Disk Swap: Wrong type: %s\n", path);
+                free(path);
+                return;
+            }
+            
+            // Write back dirty tracks before mounting new disk...
+            while(((registers[C1541_ANYDIRTY])||(write_skip))) {
+              printf(".");
+              this->poll();
+              vTaskDelay(50);
+            }
+
+            cmd = new SubsysCommand(cmd->user_interface, getID(),
+                                    cmd_type, 0, 0, path);
+            
+            executeCommand(cmd);
+            free(cmd);
+
             free(path);
             return;
         }
