@@ -7,9 +7,10 @@
 #include "menu.h"
 #include "userinterface.h"
 #include "stream_textlog.h"
+#include "init_function.h"
 
 extern uint8_t _sidcrt_65_start;
-//extern uint8_t _sidcrt_65_end;
+extern uint8_t _sidcrt_65_end;
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(FileType :: getFileTypeFactory(), FileTypeSID :: test_type);
@@ -30,7 +31,7 @@ const uint32_t magic_rsid = 0x52534944; // big endian
 
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
-cart_def sid_cart = { 0x00, (void *)0, 0x1000, CART_TYPE_8K | CART_RAM };
+cart_def sid_cart = { 0x00, (void *)0, 0x2000, CART_TYPE_8K | CART_RAM };
 
 static inline uint16_t swap_word(uint16_t p)
 {
@@ -46,10 +47,19 @@ static inline uint16_t swap_word(uint16_t p)
 #define cpu2le  swap_word
 #define swap(p) (((p) >> 8) | ((p) << 8))
 
+static void initSidCart(void *object, void *param)
+{
+    int size = (int)&_sidcrt_65_end - (int)&_sidcrt_65_start;
+    sid_cart.custom_addr = new uint8_t[8192];
+    sid_cart.length = size;
+    memcpy(sid_cart.custom_addr, &_sidcrt_65_start, size);
+    printf("%d bytes copied into sid_cart.\n", size);
+}
+InitFunction sidCart_initializer(initSidCart, NULL, NULL);
+
 /*************************************************************/
 /* SID File Browser Handling                                 */
 /*************************************************************/
-
 FileTypeSID :: FileTypeSID(BrowsableDirEntry *node)
 {
     fm = FileManager :: getFileManager();
@@ -59,6 +69,8 @@ FileTypeSID :: FileTypeSID(BrowsableDirEntry *node)
     header_valid = false;
     numberOfSongs = 0;
     cmd = NULL;
+
+
 }
 
 FileTypeSID :: ~FileTypeSID()
@@ -341,8 +353,7 @@ int FileTypeSID :: prepare(bool use_default)
 
 	// leave the browser, and smoothly transition to
 	// sid cart.
-    sid_cart.custom_addr = (void *)&_sidcrt_65_start;
-	c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&sid_cart, "", "");
+    c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&sid_cart, "", "");
 	c64_command->execute();
 
 	load();

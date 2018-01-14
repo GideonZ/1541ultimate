@@ -8,11 +8,23 @@
 #include "c64.h"
 #include "c64_subsys.h"
 #include <ctype.h>
+#include "init_function.h"
 
 /* other external references */
 extern uint8_t _bootcrt_65_start;
+extern uint8_t _bootcrt_65_end;
 
 cart_def boot_cart = { 0x00, (void *)0, 0x1000, CART_TYPE_8K | CART_REU | CART_RAM };
+
+static void initBootCart(void *object, void *param)
+{
+    int size = (int)&_bootcrt_65_end - (int)&_bootcrt_65_start;
+    boot_cart.custom_addr = new uint8_t[8192];
+    boot_cart.length = size;
+    memcpy(boot_cart.custom_addr, &_bootcrt_65_start, size);
+    printf("%d bytes copied into boot_cart.\n", size);
+}
+InitFunction bootCart_initializer(initBootCart, NULL, NULL);
 
 static inline uint16_t le2cpu(uint16_t p)
 {

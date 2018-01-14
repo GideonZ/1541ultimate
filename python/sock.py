@@ -88,6 +88,19 @@ if __name__ == "__main__":
                 s.sock.shutdown(0)
                 s.sock.close()
                 
+    elif (sys.argv[1] == 's'):
+        with open(sys.argv[2], "rb") as f:
+            bytes = f.read(65536) # max 64K 
+            if bytes != "":
+                s = mysocket()
+                s.connect(sys.argv[3], 64)
+                s.mysend(pack("<H", 0xFF71))
+                s.mysend(pack("<H", len(bytes)))
+                s.mysend(bytes)
+                s.sock.shutdown(0)
+                s.sock.close()
+                
+                
     elif (sys.argv[1] == 'p'):
         #define SOCKET_CMD_DMA    0xFF01
         #define SOCKET_CMD_DMARUN 0xFF02
@@ -96,6 +109,8 @@ if __name__ == "__main__":
         #define SOCKET_CMD_WAIT      0xFF05
         #define SOCKET_CMD_DMAWRITE  0xFF06
         #define SOCKET_CMD_DMAJUMP   0xFF09
+        #define SOCKET_CMD_LOADSIDCRT 0xFF71
+        
         
         with open(sys.argv[2], "rb") as f:
             bytes = f.read(65536) # max 64K 

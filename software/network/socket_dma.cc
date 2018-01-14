@@ -24,8 +24,13 @@
 #define SOCKET_CMD_REUWRITE    0xFF07
 #define SOCKET_CMD_KERNALWRITE 0xFF08
 #define SOCKET_CMD_DMAJUMP     0xFF09
+#define SOCKET_CMD_LOADSIDCRT  0xFF71
+#define SOCKET_CMD_LOADBOOTCRT 0xFF72
 
 SocketDMA socket_dma; // global that causes the object to exist
+
+extern cart_def sid_cart;
+extern cart_def boot_cart;
 
 SocketDMA::SocketDMA() {
 	xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
@@ -51,6 +56,7 @@ void SocketDMA :: parseBuffer(void *load_buffer, int length)
 		uint16_t offs;
 		uint32_t offs32;
 		uint16_t i;
+		uint16_t size;
 
 		switch(cmd) {
 		case SOCKET_CMD_DMA:
@@ -91,10 +97,25 @@ void SocketDMA :: parseBuffer(void *load_buffer, int length)
 			   *(uint8_t *)(REU_MEMORY_BASE+ ((offs32+i-3)&0xffffff)) = buf[i];
 			break;
 		case SOCKET_CMD_KERNALWRITE:
-			offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8);
+		    /* GZW: Actually a driver for the cartridge mapping should be called here. */
+		    offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8);
 			for (i=2; i<len; i++)
 			   *(uint8_t *)(C64_KERNAL_BASE+1+2*((offs32+i-2)&0x1fff)) = buf[i];
 			break;
+		case SOCKET_CMD_LOADSIDCRT:
+		    size = (len > 0x2000) ? 0x2000 : len;
+		    if (sid_cart.custom_addr) {
+		        memcpy(sid_cart.custom_addr, buf, size);
+		        sid_cart.length = size;
+		    }
+		    break;
+        case SOCKET_CMD_LOADBOOTCRT:
+            size = (len > 0x2000) ? 0x2000 : len;
+            if (boot_cart.custom_addr) {
+                memcpy(boot_cart.custom_addr, buf, size);
+                boot_cart.length = size;
+            }
+            break;
 		}
 		buf += len;
 		remaining -= len;
