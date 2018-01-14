@@ -258,7 +258,7 @@ begin
                 nmi_n     <= not(freeze_trig or freeze_act);
 
             when c_8k =>
-                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
+                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' and io_wdata(7 downto 6) = "01" then -- DFFF
                     cart_en <= '0'; -- permanent off
                 end if;
                 game_n    <= '1';
@@ -270,9 +270,9 @@ begin
                 nmi_n     <= '1';
 
             when c_16k =>
---                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
---                    cart_en <= '0'; -- permanent off
---                end if;
+                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' and io_wdata(7 downto 6) = "01" then -- DFFF
+                    cart_en <= '0'; -- permanent off
+                end if;
                 game_n    <= '0';
                 exrom_n   <= '0';
                 serve_rom <= '1';
@@ -282,7 +282,7 @@ begin
                 nmi_n     <= '1';
 
             when c_16k_umax =>
-                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
+                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' and io_wdata(7 downto 6) = "01" then -- DFFF
                     cart_en <= '0'; -- permanent off
                 end if;
                 game_n    <= '0';

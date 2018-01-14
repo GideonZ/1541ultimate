@@ -11,6 +11,7 @@
 
 extern uint8_t _sidcrt_bin_start;
 extern uint8_t _sidcrt_bin_end;
+extern uint8_t _basic_bin_start;
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(FileType :: getFileTypeFactory(), FileTypeSID :: test_type);
@@ -31,7 +32,7 @@ const uint32_t magic_rsid = 0x52534944; // big endian
 
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
-cart_def sid_cart = { 0x00, (void *)0, 0x2000, CART_TYPE_8K | CART_RAM };
+cart_def sid_cart = { 0x00, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 
 static inline uint16_t swap_word(uint16_t p)
 {
@@ -50,10 +51,12 @@ static inline uint16_t swap_word(uint16_t p)
 static void initSidCart(void *object, void *param)
 {
     int size = (int)&_sidcrt_bin_end - (int)&_sidcrt_bin_start;
-    sid_cart.custom_addr = new uint8_t[8192];
-    sid_cart.length = size;
-    memcpy(sid_cart.custom_addr, &_sidcrt_bin_start, size);
+    uint8_t *sid_rom_area = new uint8_t[16384];
+    sid_cart.custom_addr = sid_rom_area;
+//    sid_cart.length = size;
+    memcpy(sid_rom_area, &_sidcrt_bin_start, size);
     printf("%d bytes copied into sid_cart.\n", size);
+    memcpy(sid_rom_area + 0x2000, &_basic_bin_start, 8192);
 }
 InitFunction sidCart_initializer(initSidCart, NULL, NULL);
 
@@ -69,8 +72,6 @@ FileTypeSID :: FileTypeSID(BrowsableDirEntry *node)
     header_valid = false;
     numberOfSongs = 0;
     cmd = NULL;
-
-
 }
 
 FileTypeSID :: ~FileTypeSID()
@@ -218,6 +219,36 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 	return 0;
 }
 
+
+void FileTypeSID :: readSongLengths(void)
+{
+	Path *slPath = fm->get_new_path("sid file");
+	File *sslFile;
+
+	slPath->cd(cmd->path.c_str());
+	slPath->cd("SONGLENGTHS");
+	char filename[80];
+	strncpy(filename, cmd->filename.c_str(), 79);
+	filename[79] = 0;
+
+	set_extension(filename, ".ssl", 80);
+
+	uint8_t *sid_rom = (uint8_t *)sid_cart.custom_addr;
+    // just clear the first few bytes for the player to know there
+    // are no song lengths loaded
+	memset(sid_rom + 0x3E00, 0, 16);
+
+	uint32_t songLengthsArrayLength = 0;
+	if (fm->fopen(slPath->get_path(), filename, FA_READ, &sslFile) == FR_OK) {
+	    sslFile->read(sid_rom + 0x3E00, 512, &songLengthsArrayLength);
+	    printf("Song length array loaded. %d bytes\n", songLengthsArrayLength);
+	    fm->fclose(sslFile);
+	} else {
+	    printf("Cannot open file with song lengths.\n");
+	}
+	fm->release_path(slPath);
+}
+
 int FileTypeSID :: prepare(bool use_default)
 {
 	if(use_default) {
@@ -332,6 +363,8 @@ int FileTypeSID :: prepare(bool use_default)
 	for(int i=0;i<7;i++,pus++)
 		*pus = swap(*pus);
 	header_valid = false;
+
+	readSongLengths();
 
 	// Now, start to access the C64..
 	SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_STOP_COMMAND, (int)0, "", "");

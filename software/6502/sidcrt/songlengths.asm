@@ -17,16 +17,17 @@
 ;   - $aa: lo-byte of address where the song lengths should be written to.
 ;   - $ab: hi-byte of address where the song lengths should be written to.
 loadSongLengths
-; TODO read the songlengths from the SSL file, for now all songs are defaulted to 5 minutes
+; TODO: Wrap over to $BF00.. this only goes OK for 128 songs or less
                 ldy #$00
--               lda #$05            ; 5 minutes
+-               lda $BE00,y
                 jsr writeAddress
                 iny
-                lda #$00
+                lda $BE00,y
                 jsr writeAddress
                 iny
-
-                dex
+                bne +
+                inc $ab
++               dex
                 cpx #$ff
                 bne -
                 rts

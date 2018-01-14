@@ -26,6 +26,7 @@ class FileTypeSID : public FileType
     static int execute_st(SubsysCommand *cmd);
     int   readHeader(void);
     void  showInfo(void);
+    void  readSongLengths(void);
 public:
     FileTypeSID(BrowsableDirEntry *n);
     ~FileTypeSID();
