@@ -36,7 +36,7 @@
             .byte >start
             .byte <startNMI     ;nmi vector
             .byte >startNMI
-            .byte 'C' + $80, 'B' + $80, 'M' + $80, '80'   ;CBM80
+            .byte   "C"|$80,"B"|$80,"M"|$80,"8","0"
 
             .text $00, 'Test routines for Command Interface I/O Module. Copyright (c) 2013 - Gideon Zweijtzer', $00
 
@@ -275,6 +275,7 @@ wait_while_busy .proc
             cmp #CMD_STATE_BUSY
             beq -
             rts
+            .pend
 
 get_status  .proc
             bit CMD_IF_CONTROL

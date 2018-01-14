@@ -1,4 +1,5 @@
 /*
+    $Id: opcodes.h 1511 2017-05-01 08:08:36Z soci $
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -10,65 +11,54 @@
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc.,
+    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 */
-#ifndef _OPCODES_H_
-#define _OPCODES_H_
+#ifndef OPCODES_H
+#define OPCODES_H
+#include "inttypes.h"
 
-#define ADR_IMPLIED   0
-#define ADR_ACCU      1
-#define ADR_IMMEDIATE 2
-#define ADR_LONG      3
-#define ADR_ADDR      4
-#define ADR_ZP        5
-#define ADR_LONG_X    6
-#define ADR_ADDR_X    7
-#define ADR_ZP_X      8
-#define ADR_ADDR_X_I  9
-#define ADR_ZP_X_I    10
-#define ADR_ZP_S      11
-#define ADR_ZP_S_I_Y  12
-#define ADR_LONG_Y    13
-#define ADR_ADDR_Y    14
-#define ADR_ZP_Y      15
-#define ADR_ZP_LI_Y   16
-#define ADR_ZP_I_Y    17
-#define ADR_ADDR_LI   18
-#define ADR_ZP_LI     19
-#define ADR_ADDR_I    20
-#define ADR_ZP_I      21
-#define ADR_REL_L     22
-#define ADR_REL       23
-#define ADR_MOVE      24
+#define ____ 0x69
+typedef enum Adr_types {
+    ADR_REG = 0, ADR_IMPLIED, ADR_IMMEDIATE, ADR_LONG, ADR_ADDR, ADR_ZP,
+    ADR_LONG_X, ADR_ADDR_X, ADR_ZP_X, ADR_ADDR_X_I, ADR_ZP_X_I, ADR_ZP_S,
+    ADR_ZP_S_I_Y, ADR_ADDR_Y, ADR_ZP_Y, ADR_ZP_LI_Y, ADR_ZP_I_Y, ADR_ZP_I_Z,
+    ADR_ADDR_LI, ADR_ZP_LI, ADR_ADDR_I, ADR_ZP_I, ADR_REL_L, ADR_REL,
+    ADR_MOVE, ADR_ZP_R, ADR_ZP_R_I_Y, ADR_BIT_ZP, ADR_BIT_ZP_REL, ADR_LEN
+} Adr_types;
 
-#define OPCODES_65816 111
-#define OPCODES_6502 68
-#define OPCODES_65C02 79
-#define OPCODES_6502i 98
-#define OPCODES_CPU64 81
-#define OPCODES_65DTV02 89
-#define ____ 0x42
-// 0x42 =WDM                  
-extern unsigned char c65816[];
-#define MNEMONIC65816 "adcandaslbccbcsbeqbgebitbltbmibnebplbrabrkbrlbvcbvsclccldcliclvcmpcopcpxcpydeadecdexdeyeorgccgcsgeqggegltgmignegplgragvcgvsinaincinxinyjmljmpjsljsrldaldxldylsrmvnmvpnoporapeapeiperphaphbphdphkphpphxphyplaplbpldplpplxplyreprolrorrtirtlrtssbcsecsedseisepstastpstxstystzswatadtastaxtaytcdtcstdatdctrbtsatsbtsctsxtxatxstxytyatyxwaixbaxce"
-//                      1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100101102103104105106107108109110111
-extern unsigned char c6502[];
-#define MNEMONIC6502 "adcandaslbccbcsbeqbgebitbltbmibnebplbrkbvcbvsclccldcliclvcmpcpxcpydecdexdeyeorgccgcsgeqggegltgmignegplgvcgvsincinxinyjmpjsrldaldxldylsrnoporaphaphpplaplprolrorrtirtssbcsecsedseistastxstytaxtaytsxtxatxstya";
-//                     1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68
-extern unsigned char c65c02[];
-#define MNEMONIC65C02 "adcandaslbccbcsbeqbgebitbltbmibnebplbrabrkbvcbvsclccldcliclvcmpcpxcpydeadecdexdeyeorgccgcsgeqggegltgmignegplgragvcgvsinaincinxinyjmpjsrldaldxldylsrnoporaphaphpphxphyplaplpplxplyrolrorrtirtssbcsecsedseistastxstystztaxtaytrbtsbtsxtxatxstya";
-//                      1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79
-extern unsigned char c6502i[];
-#define MNEMONIC6502i "adcahxalrancandanearraslasraxsbccbcsbeqbgebitbltbmibnebplbrkbvcbvsclccldcliclvcmpcpxcpydcmdcpdecdexdeyeorgccgcsgeqggegltgmignegplgvcgvsincinsinxinyisbiscjamjmpjsrlaelaslaxldaldsldxldylsrlxanoporaphaphpplaplprlarolrorrrartirtssaxsbcsbxsecsedseishashsshxshyslosrestastxstytastaxtaytsxtxatxstyaxaa";
-//                      1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98
-extern unsigned char ccpu64[];
-#define MNEMONICCPU64 "adcandaslbccbcsbeqbgebitbltbmibnebplbrabrkbvcbvsclccldcliclvcmpcpxcpydeadecdexdeyeorgccgcsgeqggegltgmignegplgvcgvsinaincinxinyjmljmpjsljsrldaldxldylsrnoporaphaphbphpphxphyplaplbplpplxplyrolrorrtirtlrtssbcsecsedseistastxstystztaxtaytsxtxatxstya";
-//                       1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81
-extern unsigned char c65dtv02[];
-#define MNEMONIC65DTV02 "adcalrandanearraslasrbccbcsbeqbgebitbltbmibnebplbrabrkbvcbvsclccldcliclvcmpcpxcpydcmdcpdecdexdeyeorgccgcsgeqggegltgmignegplgragvcgvsincinsinxinyisbiscjmpjsrlaxldaldxldylsrlxanoporaphaphpplaplprlarolrorrrartirtssacsaxsbcsecsedseisirslosrestastxstytaxtaytsxtxatxstyaxaa";
-//                        1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89
+typedef enum Reg_types {
+    REG_A, REG_X, REG_Y, REG_S, REG_D, REG_R, REG_I, REG_Z, REG_B, REG_K, REG_P, REG_LEN
+} Reg_types;
+
+struct cpu_s {
+    const uint32_t *mnemonic;
+    const uint8_t *opcode;
+    const uint16_t *disasm;
+    const uint8_t *alias;
+    const uint32_t registers;
+    unsigned int opcodes;
+    address_t max_address;
+    int jmp;
+    int brl;
+};
+
+extern const char *reg_names;
+extern const char * const addr_modes[ADR_LEN];
+extern const uint8_t regopcode_table[][REG_LEN];
+extern const uint8_t opcode_table[][ADR_LEN];
+
+extern const struct cpu_s w65816;
+extern const struct cpu_s c6502;
+extern const struct cpu_s c65c02;
+extern const struct cpu_s c6502i;
+extern const struct cpu_s c65dtv02;
+extern const struct cpu_s c65el02;
+extern const struct cpu_s r65c02;
+extern const struct cpu_s w65c02;
+extern const struct cpu_s c65ce02;
+extern const struct cpu_s c4510;
 
 #endif

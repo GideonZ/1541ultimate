@@ -1,0 +1,25 @@
+Wednesday 22/05/2013
+
+NewProject
+
+ Creates a new project ("unnamed") using "Template_1" template.
+ You can start this tool from Shell, too.
+
+  Usage: NewProject TEMPLATE,TO,ICON/K
+
+ TEMPLATE is the name of the project template to be used, TO is the 
+ name of the new project, and ICON is the name of the drawer icon to 
+ be used. Note that spaces are not allowed in template, project, and 
+ icon names.
+
+
+Hidden directory "Template_1.template"
+
+ Default project template. NewProject tool will use this directory's 
+ content to create a new project drawer. You are free to modify the 
+ template by adding new files and subdirectories and edit existing files.
+
+
+Hidden file "Project.icon"
+
+ Drawer icon for new projects.

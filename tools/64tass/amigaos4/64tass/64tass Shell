@@ -1,0 +1,14 @@
+; $VER: Start64tass 1.0 (21.5.2013)
+; Copyright (c) Janne Peräaho. All Rights Reserved.
+;
+; Open 64tass Shell.
+;
+;-----------------------------------------------------------------------------
+;
+; HISTORY
+;
+; Version 1.0 (21.5.2013)
+;	· First version
+;
+EXECUTE 64tass.setup
+NewCLI FROM="64tass-Shell" WINDOW="CON:-1/-1/640/480/64tass Shell/CLOSE/HISTORY/TABBED"

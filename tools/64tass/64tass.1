@@ -1,0 +1,340 @@
+.TH 64tass 1 "May 1 2017" "64tass 1.53" "64tass 1.53"
+.SH NAME
+64tass \- A multi pass optimizing macro assembler for the 65xx series of processors
+.SH SYNOPSIS
+.B 64tass
+[\fIOPTION\fR]... [\fISOURCES\fR]...
+.SH DESCRIPTION
+.LP
+64tass is cross assembler targeting the 65xx series of micro processors. This manual is
+only describing the command line options. The many features are described in the HTML manual.
+.SH OPTIONS
+.sp 1
+.TP 0.5i
+\fB\-o\fR \fIfilename\fR, \fB\--output\fR \fIfilename\fR
+Place output into \fIfilename\fR. The default output filename is "a.out",
+this option changes it.
+.TP 0.5i
+\fB\-X\fR, \fB\-\-long\-address\fR
+Use 3 byte address/length for CBM and nonlinear output instead of 2
+bytes. Also increases the size of raw output to 16 MiB.
+.TP 0.5i
+\fB\-\-cbm\-prg\fR
+Generate CBM format binaries (default).
+The first 2 bytes are the little endian address of the first valid byte
+(start address). Overlapping blocks are flattened and uninitialized memory
+is filled up with zeros. Uninitialized memory before the first and after
+the last valid bytes are not saved. Up to 64 KiB or 16 MiB with long
+address.
+.TP 0.5i
+\fB\-b\fR, \fB\-\-nostart\fR
+Output raw data only without start address.
+Overlapping blocks are flattened and uninitialized memory is filled up
+with zeros. Uninitialized memory before the first and after the last
+valid bytes are not saved. Up to 64 KiB or 16 MiB with long address.
+.TP 0.5i
+\fB\-f\fR, \fB\-\-flat\fR
+Flat address space output mode.
+Overlapping blocks are flattened and uninitialized memory is filled up
+with zeros. Uninitialized memory after the last valid byte is not saved.
+Up to 4 GiB.
+.TP 0.5i
+\fB\-n\fR, \fB\-\-nonlinear\fR
+Generate nonlinear output file.
+Overlapping blocks are flattened. Blocks are saved in sorted order and
+uninitialized memory is skipped. Up to 64 KiB or 16 MiB with long
+address.
+.TP 0.5i
+\fB\-\-atari\-xex\fR
+Generate a Atari XEX output file.
+Overlapping blocks are kept, continuing blocks are concatenated. Saving
+happens in the definition order without sorting, and uninitialized memory
+is skipped in the output. Up to 64 KiB.
+.TP 0.5i
+\fB\-\-apple2\fR
+Generate a Apple II output file (DOS 3.3).
+Overlapping blocks are flattened and uninitialized memory is filled up
+with zeros. Uninitialized memory before the first and after the last
+valid bytes are not saved. Up to 64 KiB.
+.TP 0.5i
+\fB\-\-intel-hex\fR
+Use Intel HEX output file format.
+Overlapping blocks are kept, data is stored in the definition order, and
+uninitialized areas are skipped. I8HEX up to 64 KiB, I32HEX up to 4 GiB.
+.TP 0.5i
+\fB\-\-s-record\fR
+Use Motorola S-record output file format.
+Overlapping blocks are kept, data is stored in the definition order, and
+uninitialized memory areas are skipped. S19 up to 64 KiB, S28 up to 16
+MiB and S37 up to 4 GiB.
+.TP 0.5i
+\fB\-a\fR, \fB\-\-ascii\fR
+Use ASCII/Unicode text encoding instead of raw 8-bit.
+Normally no conversion takes place, this is for backwards compatibility with a
+DOS based Turbo Assembler editor, which could create PETSCII files for
+6502tass. (including control characters of course)
+Using this option will change the default "none" and "screen" encodings to map
+\'a\'\-\'z\' and \'A\'\-\'Z\' into the correct PETSCII range of $41\-$5A and $C1\-$DA,
+which is more suitable for an ASCII editor. It also adds predefined petcat
+style PETSCII literals to the default encodings, and enables Unicode letters in symbol names.
+For writing sources in UTF-8/UTF-16 encodings this option is required!
+.TP 0.5i
+\fB\-B\fR, \fB\-\-long\-branch\fR
+Automatic BXX *+5 JMP xxx. Branch too long messages can be annoying sometimes,
+usually they'll need to be rewritten to BXX *+5 JMP xxx. 64tass can do this
+automatically if this option is used. But BRA is not converted.
+.TP 0.5i
+\fB\-C\fR, \fB\-\-case\-sensitive\fR
+Make all symbols (variables, opcodes, directives, operators, etc.) case
+sensitive. Otherwise everything is case insensitive by default.
+.TP 0.5i
+\fB\-D\fR \fIlabel\fR=\fIvalue\fR
+Defines a \fIlabel\fR to a \fIvalue\fR. Same syntax is
+allowed as in source files. Be careful with string quoting, the shell
+might eat some of the characters.
+.TP 0.5i
+\fB\-w\fR, \fB\-\-no\-warn\fR
+Suppress warnings. Disables warnings during compile.
+.TP 0.5i
+\fB\-\-no\-caret\-diag\fR
+Suppress displaying of faulty source line and fault position after fault
+messages.
+.TP 0.5i
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress messages. Disables header and summary messages.
+.TP 0.5i
+\fB\-T\fR, \fB\-\-tasm\-compatible\fR
+Enable TASM compatible operators and precedence
+Switches the expression evaluator into compatibility mode. This enables
+".", ":" and "!" operators and disables 64tass specific extensions,
+disables precedence handling and forces 16 bit unsigned evaluation (see
+"differences to original Turbo Assembler" below)
+.TP 0.5i
+\fB\-I\fR \fIpath\fR
+Specify include search \fIpath\fR.
+If an included source or binary file can't be found in the directory of
+the source file then this path is tried. More than one directories can be
+specified by repeating this option. If multiple matches exist the first
+one is used.
+.TP 0.5i
+\fB\-M\fR \fIfile\fR
+Specify make rule output \fIfile\fR.
+Writes a dependency rule suitable for 'make' from the list of files
+used during compilation.
+.TP 0.5i
+\fB\-E\fR \fIfile\fR, \fB\-\-error\fR \fIfile\fR
+Specify error output \fIfile\fR.
+Normally compilation errors a written to the standard error output. It's
+possible to redirect them to a file or to the standard output by using '-'
+as the file name.
+.TP 0.5i
+\fB\-Wall\fR
+Enable most diagnostic warnings, except those individually disabled. Or with the 'no-' prefix disable all except those enabled.
+.TP 0.5i
+\fB\-Werror\fR
+Make all diagnostic warnings to an error, except those individually set to a warning. 
+.TP 0.5i
+\fB\-Werror\fR=\fI<name>\fR
+Change a diagnostic warning to an error.
+For example "-Werror=implied-reg" makes this check an error. The "-Wno-error=" variant is useful with "-Werror" to set some to warnings.
+.TP 0.5i
+\fB\-Walias\fR
+Warns about alias opcodes.
+.TP 0.5i
+\fB\-Wbranch\-page\fR
+Warns if a branch is crossing a page.
+Page crossing branches execute with a penalty cycle. This option helps to
+locate them.
+.TP 0.5i
+\fB\-Wcase\-symbol\fR
+Warn if symbol letter case is used inconsistently.
+.TP 0.5i
+\fB\-Wimmediate\fR
+Warns for cases where immediate addressing is more likely.
+\fB\-Wimplied\-reg\fR
+Warns if implied addressing is used instead of register.
+Some instructions have implied aliases like 'asl' for 'asl a' for
+compatibility reasons, but this shorthand not the preferred form.
+.TP 0.5i
+\fB\-Wleading\-zeros\fR
+Warns if about leading zeros.
+A leading zero could be a prefix for an octal number but as octals
+are not supported so the result will be decimal.
+.TP 0.5i
+\fB\-Wlong\-branch\fR
+Warns when a long branch is used.
+This option gives a warning for instructions which were modified by the long branch function.
+Less intrusive than disabling long branches and see where it fails.
+.TP 0.5i
+\fB\-Wno\-deprecated\fR
+Don't warn about deprecated features.
+Unfortunately there were some features added previously which shouldn't
+have been included. This option disables warnings about their uses.
+.TP 0.5i
+\fB-Wno\-float\-compare\fR
+Don't warn if floating point comparisons are only approximate.
+Floating point numbers have a finite precision and comparing them might
+give unexpected results.
+.TP 0.5i
+\fB\-Wno\-ignored\fR
+Don't warn about ignored directives.
+.TP 0.5i
+\fB\-Wno\-jmp\-bug\fR
+Don't warn about the jmp ($xxff) bug.
+It's fine that the high byte is read from the 'wrong' address on 6502,
+NMOS 6502 and 65DTV02.
+.TP 0.5i
+\fB\-Wno\-label\-left\fR
+Don't warn about certain labels not being on left side.
+You may disable this if you use labels which look like mistyped versions of
+implied addressing mode instructions and you don't want to put them in the
+first column.
+.TP 0.5i
+\fB\-Wno\-mem\-wrap\fR
+Don't warn for compile offset wrap around.
+Continue from the beginning of image file once it's end was reached.
+.TP 0.5i
+\fB\-Wno\-pc\-wrap\fR
+Don't warn for program counter wrap around.
+Continue from the beginning of program bank once it's end was reached.
+.TP 0.5i
+\fB-Wno\-pitfalls\fR
+Don't note on common pitfalls.
+Experts don't need notes about how to fix things ;)
+.TP 0.5i
+\fB\-Wno\-portable\fR
+Don't warn about source portability problems.
+.TP 0.5i
+\fB\-Wno\-star\-assign\fR
+Don't warn about ignored compound multiply.
+.TP 0.5i
+\fB\-Wold\-equal\fR
+Warn about old equal operator.
+The single '=' operator is only there for compatibility reasons and should
+be written as '==' normally.
+.TP 0.5i
+\fB\-Woptimize\fR
+Warn about optimizable code.
+Warns on things that could be optimized, at least according to the limited
+analysis done.
+.TP 0.5i
+\fB\-Wshadow\fR
+Warn about symbol shadowing.
+Checks if local variables 'shadow' other variables of same name in upper
+scopes in ambiguous ways.
+.TP 0.5i
+\fB\-Wstrict\-bool\fR
+Warn about implicit boolean conversions.
+Boolean values can be interpreted as numeric 0/1 and other types as booleans. This is convenient but may cause mistakes.
+.TP 0.5i
+\fB\-Wswitch-case\fR
+Warn about multiple switch case matches
+.TP 0.5i
+\fB\-Wunused\fR
+Warn about unused constant symbols, any type.
+.TP 0.5i
+\fB\-Wunused-macro\fR
+Warn about unused macros.
+.TP 0.5i
+\fB\-Wunused-const\fR
+Warn about unused constants.
+.TP 0.5i
+\fB\-Wunused-label\fR
+Warn about unused labels.
+.TP 0.5i
+\fB\-Wunused-variable\fR
+Warn about unused variables.
+.TP 0.5i
+\fB\-\-m65xx\fR
+Standard 65xx (default). For writing compatible code, no extra codes.
+This is the default.
+.TP 0.5i
+\fB\-c\fR, \fB\-\-m65c02\fR
+CMOS 65C02. Enables extra opcodes and addressing modes specific to this CPU.
+.TP 0.5i
+\fB\-\-m65ce02\fR
+CSG 65CE02. Enables extra opcodes and addressing modes specific to this CPU.
+.TP 0.5i
+\fB\-i\fR, \fB\-\-m6502\fR
+NMOS 65xx. Enables extra illegal opcodes. Useful for demo coding for C64, disk drive code, etc.
+.TP 0.5i
+\fB\-t\fR, \fB\-\-m65dtv02\fR
+65DTV02. Enables extra opcodes specific to DTV.
+.TP 0.5i
+\fB\-x\fR, \fB\-\-m65816\fR
+W65C816. Enables extra opcodes. Useful for SuperCPU projects.
+.TP 0.5i
+\fB\-e\fR, \fB\-\-m65el02\fR
+65EL02. Enables extra opcodes, useful RedPower CPU projects. Probably you'll need "\-\-nostart" as well.
+.TP 0.5i
+\fB\-\-mr65c02\fR
+R65C02. Enables extra opcodes and addressing modes specific to this CPU.
+.TP 0.5i
+\fB\-\-mw65c02\fR
+W65C02. Enables extra opcodes and addressing modes specific to this CPU.
+.TP 0.5i
+\fB\-\-m4510\fR
+CSG 4510. Enables extra opcodes and addressing modes specific to this CPU. Useful for C65 projects.
+.TP 0.5i
+\fB\-l\fR \fIfile\fR, \fR\-\-labels\fR=\fIfile\fR
+List labels into \fIfile\fR. May be used multiple times.
+.TP 0.5i
+\fB\-\-vice\-labels\fR
+List labels in a VICE readable format.
+.TP 0.5i
+\fB\-\-dump\-labels\fR
+List labels for debugging.
+.TP 0.5i
+\fB\-\-labels\-root\fR=\fI<path>\fR
+Specify the scope to list labels from
+.TP 0.5i
+\fB\-L\fR \fIfile\fR, \fB\-\-list\fR=\fIfile\fR
+List into \fIfile\fR. Dumps source code and compiled code into file. Useful for
+debugging, it's much easier to identify the code in memory within the
+source files.
+.TP 0.5i
+\fB\-m\fR, \fB\-\-no\-monitor\fR
+Don't put monitor code into listing. There won't be any monitor listing
+in the list file.
+.TP 0.5i
+\fB\-s\fR, \fB\-\-no\-source\fR
+Don't put source code into listing. There won't be any source listing in
+the list file.
+.TP 0.5i
+\fB\-\-line\-numbers\fR
+This option creates a new column for showing line numbers for easier
+identification of source origin.
+.TP 0.5i
+\fB\-\-tab\-size\fR=\fInumber\fR
+By default the listing file is using a tab size of 8 to align the
+disassembly. This can be changed to other more favorable values like 4.
+Only spaces are used if 1 is selected. Please note that this has no
+effect on the source code on the right hand side.
+.TP 0.5i
+\fB\-\-verbose\-list\fR
+Normally the assembler tries to minimize listing output by omitting
+"unimportant" lines. But sometimes it's better to just list everything
+including comments and empty lines.
+.TP 0.5i
+\fB\-?\fR, \fB\-\-help\fR
+Give this help list. Prints help about command line options.
+.TP 0.5i
+\fB\-\-usage\fR
+Give a short usage message. Prints short help about command line options.
+.TP 0.5i
+\fB\-V\fR, \fB\-\-version\fR
+Print program version.
+.SH "EXIT STATUS"
+Normally the exit status is 0 if no error occured.
+.SH AUTHOR
+Written by Zsolt Kajtar.
+.SH "REPORTING BUGS"
+Online bug tracker: <http://sourceforge.net/p/tass64/bugs/>
+.SH COPYRIGHT
+Copyright \(co 2017 Zsolt Kajtar.
+License GPLv2+: GNU GPL version 2 or later <http://gnu.org/licenses/gpl.html>.
+.br
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+.SH "SEE ALSO"
+Full documentation at: <http://tass64.sourceforge.net/>

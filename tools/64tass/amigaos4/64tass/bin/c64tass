@@ -1,0 +1,10 @@
+;
+; $VER: c64tass 1.0 (20.5.2013)
+; Copyright (c) 2013 Janne Peräaho. All Rights Reserved.
+;
+.KEY SOURCE/A/M,TO/K
+.DEF TO="a.out"
+.BRA {
+.KET }
+
+64tass -a -C -B -I64TASS:includes -o{TO} {SOURCE}

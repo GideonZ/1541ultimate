@@ -1,0 +1,3 @@
+; 64tass setup
+ASSIGN 64TASS: ""
+PATH 64TASS:bin ADD

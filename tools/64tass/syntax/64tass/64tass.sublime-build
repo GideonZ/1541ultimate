@@ -1,0 +1,6 @@
+{
+	"cmd": ["make.bat"],
+	"file_regex": "^(.*?)\\(([0-9]+)\\)",
+	"working_dir": "$file_path",
+	"selector": "source.64tass"
+}

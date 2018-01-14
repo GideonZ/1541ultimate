@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ex:set ts=2 et:
+
+ $Id: GtkSourceView-6502_64tass.lang 1193 2016-07-02 13:27:26Z soci $
+
+ GtkSourceView language definition file for 64tass
+ Usable with gedit
+
+ Place it to one/both of these folder:
+
+ ~/.local/share/gtksourceview-2.0/language-specs/
+ ~/.local/share/gtksourceview-3.0/language-specs/
+
+ Author: Zsolt Kajtar <soci at c64.rulez.org>
+ Copyright (C) 2012 Zsolt Kajtar <soci at c64.rulez.org>
+
+ Original-Author: Alex Brem <alex@freQvibez.net>
+ Copyright (C) 2009 Alex Brem <alex@freQvibez.net>
+
+ This library is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+
+-->
+<language id="tass6502" _name="6502 assembly (64tass)" version="2.0" _section="Sources">
+
+  <metadata>
+    <property name="mimetypes">text/x-64tass;application/x-64tass</property>
+    <property name="globs">*.asm</property>
+    <property name="line-comment-start">;</property>
+  </metadata>
+
+  <styles>
+    <style id="comment" _name="Comment" map-to="def:comment"/>
+    <style id="opcode" _name="Opcode" map-to="def:keyword"/>
+    <style id="illegal-opcode" _name="Illegal Opcode" map-to="def:special-constant"/>
+    <style id="operator" _name="Operator" map-to="def:operator"/>
+    <style id="register" _name="Register" map-to="def:keyword"/>
+    <style id="definition" _name="Definition" map-to="def:type"/>
+    <style id="string" _name="String" map-to="def:string"/>
+    <style id="decimal" _name="Decimal number" map-to="def:decimal"/>
+    <style id="base-n-integer" _name="Base-N number" map-to="def:base-n-integer"/>
+    <style id="floating-point" _name="Floating point number" map-to="def:floating-point"/>
+    <style id="label" _name="Label" map-to="def:identifier"/>
+    <style id="preprocessor" _name="Preprocessor" map-to="def:preprocessor"/>
+  </styles>
+
+  <default-regex-options case-sensitive="false"/>
+
+  <definitions>
+
+    <context id="tass6502">
+      <include>
+        <context ref="opcode"/>
+        <context ref="illegal-opcode"/>
+        <context ref="label"/>
+        <context ref="comment"/>
+        <context ref="miscprep"/>
+      </include>
+    </context>
+
+    <context id="comment" style-ref="comment" end-at-line-end="true" end-parent="true">
+      <start>;</start>
+    </context>
+
+
+    <context id="double-quoted-string">
+      <include>
+        <context style-ref="string">
+          <start>"</start><end>"</end>
+        </context>
+        <context style-ref="string">
+          <start>'</start><end>'</end>
+        </context>
+      </include>
+    </context>
+
+    <context id="decimal" style-ref="decimal">
+      <match>(?&lt;![\w\.])(([0-9]_+)+[0-9]|[0-9])+(?![\w\.])</match>
+    </context>
+
+    <context id="hex" style-ref="base-n-integer">
+      <match>(?&lt;![\w\.])\$(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])+(?![\w\.])</match>
+    </context>
+
+    <context id="binary" style-ref="base-n-integer">
+      <match>(?&lt;![\w\.])%(([01]_+)+[01]|[01])+(?![\w\.])</match>
+    </context>
+
+    <context id="float" style-ref="floating-point">
+      <match>(?&lt;![\w\.])((\.(([0-9]_+)+[0-9]|[0-9])+|(([0-9]_+)+[0-9]|[0-9])+\.(([0-9]_+)+[0-9]|[0-9])*)([ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)?|(([0-9]_+)+[0-9]|[0-9])+[ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)(?![\w\.])</match>
+    </context>
+
+    <context id="hfloat" style-ref="floating-point">
+      <match>(?&lt;![\w\.])\$((\.(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])+|(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])+\.(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])*)(p[+-]?(([0-9]_+)+[0-9]|[0-9])+)?|(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])+p[+-]?(([0-9]_+)+[0-9]|[0-9])+)(?![\w\.])</match>
+    </context>
+
+    <context id="bfloat" style-ref="floating-point">
+      <match>(?&lt;![\w\.])%((\.(([01]_+)+[01]|[01])+|(([01]_+)+[01]|[01])+\.(([01]_+)+[01]|[01])*)([ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)?|(([01]_+)+[01]|[01])+[ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)(?![\w\.])</match>
+    </context>
+
+    <context id="identifier" style-ref="label">
+      <match>(?&lt;!\w)([[:alpha:]][[:alnum:]_]*|_[[:alnum:]][[:alnum:]_]*)</match>
+    </context>
+
+    <context id="preidentifier" style-ref="preprocessor">
+      <match>\\[[:alpha:]][[:alnum:]_]*|\\[1-9@]|\\\{[^}]*\}</match>
+    </context>
+
+    <context id="label" end-at-line-end="true">
+      <start>[[:alpha:]][[:alnum:]_]*:?|_[[:alnum:]][[:alnum:]_]*:?|\*</start>
+      <include>
+        <context ref="opcode"/>
+        <context ref="illegal-opcode"/>
+        <context ref="comment"/>
+        <context ref="miscprep"/>
+        <context end-at-line-end="true">
+          <start>=</start>
+          <include>
+            <context ref="miscparam"/>
+          </include>
+        </context>
+      </include>
+    </context>
+
+    <context id="operator" style-ref="operator">
+      <match>[-+!~&lt;&gt;&amp;,.|^*/%=(){}\[\]?:`#]</match>
+    </context>
+
+    <context id="register" style-ref="register">
+      <match>,[xyzsrdbk]\b</match>
+    </context>
+
+    <context id="miscparam">
+      <include>
+        <context ref="identifier"/>
+        <context ref="preidentifier"/>
+        <context ref="bfloat"/>
+        <context ref="hfloat"/>
+        <context ref="float"/>
+        <context ref="decimal"/>
+        <context ref="hex"/>
+        <context ref="binary"/>
+        <context ref="operator"/>
+        <context ref="double-quoted-string"/>
+        <context ref="comment"/>
+      </include>
+    </context>
+
+    <context id="opcode" end-at-line-end="true">
+      <start>(adc|and|asl|bcc|bcs|beq|bge|bit|blt|bmi|bne|bpl|brk|bvc|bvs|clc|cld|cli|clv|cmp|cpx|cpy|dec|dex|dey|eor|gcc|gcs|geq|gge|glt|gmi|gne|gpl|gvc|gvs|inc|inx|iny|jmp|jsr|lda|ldx|ldy|lsr|nop|ora|pha|php|pla|plp|rol|ror|rti|rts|sbc|sec|sed|sei|shl|shr|sta|stx|sty|tax|tay|tsx|txa|txs|tya)(?:\s+(a(\s|(?=;)|$))?|(?=;)|$)</start>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="opcode"/>
+        <context sub-pattern="1" where="start" style-ref="opcode"/>
+        <context ref="register"/>
+        <context ref="miscparam"/>
+      </include>
+    </context>
+
+    <context id="illegal-opcode" end-at-line-end="true">
+      <start>(ahx|alr|anc|ane|arr|asr|axs|dcm|dcp|ins|isb|isc|jam|lae|las|lax|lds|lxa|rla|rra|sax|sbx|sha|shs|shx|shy|slo|sre|tas|xaa)(\s|(?=;)|$)</start>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="illegal-opcode"/>
+        <context ref="register"/>
+        <context ref="miscparam"/>
+      </include>
+    </context>
+
+    <context id="miscprep">
+      <include>
+        <context ref="definition"/>
+        <context ref="preprocessor-include"/>
+        <context ref="preprocessor-macro"/>
+        <context ref="preprocessor-loop"/>
+        <context ref="preprocessor-cond"/>
+        <context ref="preprocessor-misc"/>
+        <context ref="mcomment"/>
+      </include>
+    </context>
+
+    <context id="preprocessor-include" end-at-line-end="true">
+      <start>\.b?include(\s|(?=;)|$)</start>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="preprocessor"/>
+        <context ref="miscparam"/>
+      </include>
+    </context>
+
+    <context id="preprocessor-macro" end-at-line-end="true">
+      <start>\.(macro|segment|endm|function|endf)(\s|(?=;)|$)|[#.]([[:alpha:]][[:alnum:]_]*|_[[:alnum:]][[:alnum:]_]*)(\s|(?=;)|$)</start>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="preprocessor"/>
+        <context ref="miscparam"/>
+      </include>
+    </context>
+
+    <context id="preprocessor-loop" end-at-line-end="true">
+      <start>\.(for|rept|next|lbl|goto)(\s|(?=;)|$)</start>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="preprocessor"/>
+        <context ref="miscparam"/>
+      </include>
+    </context>
+
+    <context id="preprocessor-cond" end-at-line-end="true">
+      <start>\.(if|ifne|ifeq|ifpl|ifmi|else|elsif|fi|endif|switch|case|default|endswitch|c?error|c?warn)(\s|(?=;)|$)</start>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="preprocessor"/>
+        <context ref="miscparam"/>
+      </include>
+    </context>
+
+    <context id="preprocessor-misc" end-at-line-end="true">
+      <start>\.(struct|union|page|end[usp]|d?section|block|proc|[sbp]end|logical|here|[ax][ls]|autsiz|mansiz|pron|proff|weak|endweak|hidemac|showmac|offs|align|assert|check|[ce]def|databank|dpage|cpu|enc|option|var|end|eor|seed|break|continue)(\s|(?=;)|$)</start>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="preprocessor"/>
+        <context ref="miscparam"/>
+      </include>
+    </context>
+
+    <context id="definition" end-at-line-end="true">
+      <start>\.(byte|char|[lsd]int|rta|long|d?word|fill|p?text|null|shiftl?|binary|dstruct|dunion|addr)(\s|(?=;)|$)</start>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="definition"/>
+        <context ref="miscparam"/>
+      </include>
+    </context>
+
+    <context id="mcomment" style-ref="comment" style-inside="true">
+      <start>\.comment(\s|(?=;)|$)</start>
+      <end>\.endc(\s|(?=;)|$)</end>
+      <include>
+        <context sub-pattern="0" where="start" style-ref="preprocessor"/>
+        <context sub-pattern="0" where="end" style-ref="preprocessor"/>
+      </include>
+    </context>
+
+  </definitions>
+
+</language>
