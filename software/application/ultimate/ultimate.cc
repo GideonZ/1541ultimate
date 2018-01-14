@@ -34,6 +34,7 @@
 #include "dump_hex.h"
 #include "usb_base.h"
 #include "home_directory.h"
+#include "reu_preloader.h"
 #include "u2p.h"
 #include "keyboard_usb.h"
 
@@ -50,6 +51,7 @@ C64 *c64;
 C64_Subsys *c64_subsys;
 UserInterface *primaryUserInterface = 0;
 HomeDirectory *home_directory;
+REUPreloader *reu_preloader;
 StreamTextLog textLog(65536);
 
 extern "C" void (*custom_outbyte)(int c);
@@ -153,6 +155,7 @@ extern "C" void ultimate_main(void *a)
     }
 
     home_directory = new HomeDirectory(primaryUserInterface, root_tree_browser);
+    reu_preloader = new REUPreloader();
     
     printf("All linked modules have been initialized and are now running.\n");
     static char buffer[8192];
@@ -210,6 +213,8 @@ extern "C" void ultimate_main(void *a)
 	    delete tape_recorder;
     if(home_directory)
         delete home_directory;
+    if(reu_preloader)
+      delete reu_preloader;
     
     printf("Graceful exit!!\n");
 //    return 0;
