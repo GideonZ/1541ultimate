@@ -1,0 +1,58 @@
+Wednesday 22/05/2013
+
+AMIGA EXTRAS
+
+The following directories, tools and documents are not part of the 
+original 64tass release.
+
+
+includes directory
+
+ Used for non-local and standard include files.
+ 64tass front-end searches include files from this directory.
+
+
+Projects directory
+
+ Directory for your software projects.
+
+
+64tass-Shell
+
+ Shell startup for 64tass Shell.
+ Copyright (c) 2013 Janne Peräaho.
+
+
+64tass.setup
+
+ 64tass Amiga setup.
+ Copyright (c) 2013 Janne Peräaho.
+
+
+64tass Shell
+
+ Opens 64tass Shell.
+ Copyright (c) 2013 Janne Peräaho.
+
+
+c64tass
+
+ 64tass front-end for easy compiling.
+ Copyright (c) 2013 Janne Peräaho.
+
+
+NewProject
+
+ Tool for creating new projects. Utilizes templates.
+ Copyright (c) 2013 Janne Peräaho.
+
+
+Template_1.template
+
+ Project template for NewProject tool.
+ Copyright (c) 2013 Janne Peräaho.
+
+
+Manual.pdf
+
+ The original 64tass manual converted into a PDF document.

@@ -1,0 +1,371 @@
+<?xml version="1.0"?>
+
+<!DOCTYPE MODE SYSTEM "xmode.dtd">
+
+<!--
+	$Id: jedit-assembly-64tass.xml 1418 2017-03-31 16:54:52Z soci $
+	64tass Assembly mode for jedit by Soci/Singular (soci at c64.rulez.org)
+-->
+
+<MODE>
+
+	<PROPS>
+		<PROPERTY NAME="lineComment" VALUE=";" />
+		<PROPERTY NAME="contextInsensitive" VALUE="true"/>
+                <PROPERTY NAME="wordBreakChars" VALUE=".,+-=&lt;&gt;/?^&amp;*" />
+	</PROPS>
+
+	<RULES HIGHLIGHT_DIGITS="FALSE" IGNORE_CASE="TRUE">
+
+		<EOL_SPAN TYPE="COMMENT1">;</EOL_SPAN>
+
+                <SEQ_REGEXP HASH_CHARS="$" AT_WORD_START="TRUE" TYPE="DIGIT">\$\.(([0-9a-fA-F]_+)+[0-9a-fA-F]|[0-9a-fA-F])+(p[+-]?(([0-9]_+)+[0-9]|[0-9])+)?|\$(([0-9a-fA-F]_+)+[0-9a-fA-F]|[0-9a-fA-F])+p[+-]?(([0-9]_+)+[0-9]|[0-9])+|\$(([0-9a-fA-F]_+)+[0-9a-fA-F]|[0-9a-fA-F])+\.(([0-9a-fA-F]_+)+[0-9a-fA-F]|[0-9a-fA-F])*(p[+-]?(([0-9]_+)+[0-9]|[0-9])+)?|\$(([0-9a-fA-F]_+)+[0-9a-fA-F]|[0-9a-fA-F])*</SEQ_REGEXP>
+                <SEQ_REGEXP HASH_CHARS="%" AT_WORD_START="TRUE" TYPE="DIGIT">%\.(([01]_+)+[01]|[01])+([ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)?|%(([01]_+)+[01]|[01])+[ep][+-]?(([0-9]_+)+[0-9]|[0-9])+|%(([01]_+)+[01]|[01])+\.(([01]_+)+[01]|[01])*([ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)?|%(([01]_+)+[01]|[01])*</SEQ_REGEXP>
+                <SEQ_REGEXP HASH_CHARS="?" AT_WORD_START="TRUE" TYPE="DIGIT">\?</SEQ_REGEXP>
+                <SEQ_REGEXP HASH_CHARS="." AT_WORD_START="TRUE" TYPE="DIGIT">\.(([0-9]_+)+[0-9]|[0-9])+([ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)?</SEQ_REGEXP>
+                <SEQ_REGEXP HASH_CHARS="0123456789" AT_WORD_START="TRUE" TYPE="DIGIT">(([0-9]_+)+[0-9]|[0-9])+[ep][+-]?(([0-9]_+)+[0-9]|[0-9])+|(([0-9]_+)+[0-9]|[0-9])+\.(([0-9]_+)+[0-9]|[0-9])*([ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)?|(([0-9]_+)+[0-9]|[0-9])+</SEQ_REGEXP>
+
+		<SPAN TYPE="LITERAL2" NO_LINE_BREAK="TRUE" DELEGATE="STRINGS">
+			<BEGIN>'</BEGIN>
+			<END>'</END>
+		</SPAN>
+
+		<SPAN TYPE="LITERAL2" NO_LINE_BREAK="TRUE" DELEGATE="STRINGS">
+			<BEGIN>"</BEGIN>
+			<END>"</END>
+		</SPAN>
+
+		<MARK_PREVIOUS TYPE="LABEL" MATCH_TYPE="OPERATOR" AT_LINE_START="TRUE">:</MARK_PREVIOUS>
+
+		<KEYWORDS>
+                        <KEYWORD3>.al</KEYWORD3>
+                        <KEYWORD3>.align</KEYWORD3>
+                        <KEYWORD3>.as</KEYWORD3>
+                        <KEYWORD3>.assert</KEYWORD3>
+                        <KEYWORD3>.bend</KEYWORD3>
+                        <KEYWORD3>.binclude</KEYWORD3>
+                        <KEYWORD3>.block</KEYWORD3>
+                        <KEYWORD3>.break</KEYWORD3>
+                        <KEYWORD3>.case</KEYWORD3>
+                        <KEYWORD3>.cdef</KEYWORD3>
+                        <KEYWORD3>.cerror</KEYWORD3>
+                        <KEYWORD3>.check</KEYWORD3>
+                        <KEYWORD3>.comment</KEYWORD3>
+                        <KEYWORD3>.continue</KEYWORD3>
+                        <KEYWORD3>.cpu</KEYWORD3>
+                        <KEYWORD3>.cwarn</KEYWORD3>
+                        <KEYWORD3>.databank</KEYWORD3>
+                        <KEYWORD3>.default</KEYWORD3>
+                        <KEYWORD3>.dpage</KEYWORD3>
+                        <KEYWORD3>.dsection</KEYWORD3>
+                        <KEYWORD3>.edef</KEYWORD3>
+                        <KEYWORD3>.else</KEYWORD3>
+                        <KEYWORD3>.elsif</KEYWORD3>
+                        <KEYWORD3>.enc</KEYWORD3>
+                        <KEYWORD3>.end</KEYWORD3>
+                        <KEYWORD3>.endc</KEYWORD3>
+                        <KEYWORD3>.endf</KEYWORD3>
+                        <KEYWORD3>.endif</KEYWORD3>
+                        <KEYWORD3>.endm</KEYWORD3>
+                        <KEYWORD3>.endp</KEYWORD3>
+                        <KEYWORD3>.ends</KEYWORD3>
+                        <KEYWORD3>.endswitch</KEYWORD3>
+                        <KEYWORD3>.endu</KEYWORD3>
+                        <KEYWORD3>.endweak</KEYWORD3>
+                        <KEYWORD3>.eor</KEYWORD3>
+                        <KEYWORD3>.error</KEYWORD3>
+                        <KEYWORD3>.fi</KEYWORD3>
+                        <KEYWORD3>.for</KEYWORD3>
+                        <KEYWORD3>.function</KEYWORD3>
+                        <KEYWORD3>.goto</KEYWORD3>
+                        <KEYWORD3>.here</KEYWORD3>
+                        <KEYWORD3>.hidemac</KEYWORD3>
+                        <KEYWORD3>.if</KEYWORD3>
+                        <KEYWORD3>.ifeq</KEYWORD3>
+                        <KEYWORD3>.ifmi</KEYWORD3>
+                        <KEYWORD3>.ifne</KEYWORD3>
+                        <KEYWORD3>.ifpl</KEYWORD3>
+                        <KEYWORD3>.include</KEYWORD3>
+                        <KEYWORD3>.lbl</KEYWORD3>
+                        <KEYWORD3>.lint</KEYWORD3>
+                        <KEYWORD3>.logical</KEYWORD3>
+                        <KEYWORD3>.macro</KEYWORD3>
+                        <KEYWORD3>.next</KEYWORD3>
+                        <KEYWORD3>.offs</KEYWORD3>
+                        <KEYWORD3>.option</KEYWORD3>
+                        <KEYWORD3>.page</KEYWORD3>
+                        <KEYWORD3>.pend</KEYWORD3>
+                        <KEYWORD3>.proc</KEYWORD3>
+                        <KEYWORD3>.proff</KEYWORD3>
+                        <KEYWORD3>.pron</KEYWORD3>
+                        <KEYWORD3>.rept</KEYWORD3>
+                        <KEYWORD3>.section</KEYWORD3>
+                        <KEYWORD3>.seed</KEYWORD3>
+                        <KEYWORD3>.segment</KEYWORD3>
+                        <KEYWORD3>.send</KEYWORD3>
+                        <KEYWORD3>.showmac</KEYWORD3>
+                        <KEYWORD3>.struct</KEYWORD3>
+                        <KEYWORD3>.switch</KEYWORD3>
+                        <KEYWORD3>.union</KEYWORD3>
+                        <KEYWORD3>.var</KEYWORD3>
+                        <KEYWORD3>.warn</KEYWORD3>
+                        <KEYWORD3>.weak</KEYWORD3>
+                        <KEYWORD3>.xl</KEYWORD3>
+                        <KEYWORD3>.xs</KEYWORD3>
+                        <KEYWORD3>.autsiz</KEYWORD3>
+                        <KEYWORD3>.mansiz</KEYWORD3>
+
+                        <KEYWORD4>.binary</KEYWORD4>
+                        <KEYWORD4>.byte</KEYWORD4>
+                        <KEYWORD4>.char</KEYWORD4>
+                        <KEYWORD4>.dint</KEYWORD4>
+                        <KEYWORD4>.dstruct</KEYWORD4>
+                        <KEYWORD4>.dunion</KEYWORD4>
+                        <KEYWORD4>.dword</KEYWORD4>
+                        <KEYWORD4>.fill</KEYWORD4>
+                        <KEYWORD4>.sint</KEYWORD4>
+                        <KEYWORD4>.long</KEYWORD4>
+                        <KEYWORD4>.null</KEYWORD4>
+                        <KEYWORD4>.ptext</KEYWORD4>
+                        <KEYWORD4>.rta</KEYWORD4>
+                        <KEYWORD4>.shift</KEYWORD4>
+                        <KEYWORD4>.shiftl</KEYWORD4>
+                        <KEYWORD4>.text</KEYWORD4>
+                        <KEYWORD4>.word</KEYWORD4>
+                        <KEYWORD4>.addr</KEYWORD4>
+
+			<!-- Instructions: standard -->
+                        <KEYWORD1>adc</KEYWORD1>
+                        <KEYWORD1>and</KEYWORD1>
+                        <KEYWORD1>asl</KEYWORD1>
+                        <KEYWORD1>bcc</KEYWORD1>
+                        <KEYWORD1>bcs</KEYWORD1>
+                        <KEYWORD1>beq</KEYWORD1>
+                        <KEYWORD1>bit</KEYWORD1>
+                        <KEYWORD1>bmi</KEYWORD1>
+                        <KEYWORD1>bne</KEYWORD1>
+                        <KEYWORD1>bpl</KEYWORD1>
+                        <KEYWORD1>brk</KEYWORD1>
+                        <KEYWORD1>bvc</KEYWORD1>
+                        <KEYWORD1>bvs</KEYWORD1>
+                        <KEYWORD1>clc</KEYWORD1>
+                        <KEYWORD1>cld</KEYWORD1>
+                        <KEYWORD1>cli</KEYWORD1>
+                        <KEYWORD1>clv</KEYWORD1>
+                        <KEYWORD1>cmp</KEYWORD1>
+                        <KEYWORD1>cpx</KEYWORD1>
+                        <KEYWORD1>cpy</KEYWORD1>
+                        <KEYWORD1>dec</KEYWORD1>
+                        <KEYWORD1>dex</KEYWORD1>
+                        <KEYWORD1>dey</KEYWORD1>
+                        <KEYWORD1>eor</KEYWORD1>
+                        <KEYWORD1>inc</KEYWORD1>
+                        <KEYWORD1>inx</KEYWORD1>
+                        <KEYWORD1>iny</KEYWORD1>
+                        <KEYWORD1>jmp</KEYWORD1>
+                        <KEYWORD1>jsr</KEYWORD1>
+                        <KEYWORD1>lda</KEYWORD1>
+                        <KEYWORD1>ldx</KEYWORD1>
+                        <KEYWORD1>ldy</KEYWORD1>
+                        <KEYWORD1>lsr</KEYWORD1>
+                        <KEYWORD1>nop</KEYWORD1>
+                        <KEYWORD1>ora</KEYWORD1>
+                        <KEYWORD1>pha</KEYWORD1>
+                        <KEYWORD1>php</KEYWORD1>
+                        <KEYWORD1>pla</KEYWORD1>
+                        <KEYWORD1>plp</KEYWORD1>
+                        <KEYWORD1>rol</KEYWORD1>
+                        <KEYWORD1>ror</KEYWORD1>
+                        <KEYWORD1>rti</KEYWORD1>
+                        <KEYWORD1>rts</KEYWORD1>
+                        <KEYWORD1>sbc</KEYWORD1>
+                        <KEYWORD1>sec</KEYWORD1>
+                        <KEYWORD1>sed</KEYWORD1>
+                        <KEYWORD1>sei</KEYWORD1>
+                        <KEYWORD1>sta</KEYWORD1>
+                        <KEYWORD1>stx</KEYWORD1>
+                        <KEYWORD1>sty</KEYWORD1>
+                        <KEYWORD1>tax</KEYWORD1>
+                        <KEYWORD1>tay</KEYWORD1>
+                        <KEYWORD1>tsx</KEYWORD1>
+                        <KEYWORD1>txa</KEYWORD1>
+                        <KEYWORD1>txs</KEYWORD1>
+                        <KEYWORD1>tya</KEYWORD1>
+
+			<!-- Instructions: Alias -->
+                        <KEYWORD1>bge</KEYWORD1>
+                        <KEYWORD1>blt</KEYWORD1>
+                        <KEYWORD1>shl</KEYWORD1>
+                        <KEYWORD1>shr</KEYWORD1>
+
+			<!-- Instructions: Pseudo -->
+                        <KEYWORD1>gcc</KEYWORD1>
+                        <KEYWORD1>gcs</KEYWORD1>
+                        <KEYWORD1>geq</KEYWORD1>
+                        <KEYWORD1>gge</KEYWORD1>
+                        <KEYWORD1>glt</KEYWORD1>
+                        <KEYWORD1>gmi</KEYWORD1>
+                        <KEYWORD1>gne</KEYWORD1>
+                        <KEYWORD1>gpl</KEYWORD1>
+                        <KEYWORD1>gvc</KEYWORD1>
+                        <KEYWORD1>gvs</KEYWORD1>
+
+			<!-- Instructions: Illegal -->
+                        <KEYWORD2>anc</KEYWORD2>
+                        <KEYWORD2>ane</KEYWORD2>
+                        <KEYWORD2>arr</KEYWORD2>
+                        <KEYWORD2>asr</KEYWORD2>
+                        <KEYWORD2>dcp</KEYWORD2>
+                        <KEYWORD2>isb</KEYWORD2>
+                        <KEYWORD2>jam</KEYWORD2>
+                        <KEYWORD2>lax</KEYWORD2>
+                        <KEYWORD2>lds</KEYWORD2>
+                        <KEYWORD2>rla</KEYWORD2>
+                        <KEYWORD2>rra</KEYWORD2>
+                        <KEYWORD2>sax</KEYWORD2>
+                        <KEYWORD2>sbx</KEYWORD2>
+                        <KEYWORD2>sha</KEYWORD2>
+                        <KEYWORD2>shs</KEYWORD2>
+                        <KEYWORD2>shx</KEYWORD2>
+                        <KEYWORD2>shy</KEYWORD2>
+                        <KEYWORD2>slo</KEYWORD2>
+                        <KEYWORD2>sre</KEYWORD2>
+
+			<!-- Predefined constants -->
+                        <LITERAL3>a</LITERAL3>
+                        <LITERAL3>true</LITERAL3>
+                        <LITERAL3>false</LITERAL3>
+                        <LITERAL3>pi</LITERAL3>
+
+			<!-- Functions -->
+                        <FUNCTION>abs</FUNCTION>
+                        <FUNCTION>acos</FUNCTION>
+                        <FUNCTION>address</FUNCTION>
+                        <FUNCTION>all</FUNCTION>
+                        <FUNCTION>any</FUNCTION>
+                        <FUNCTION>asin</FUNCTION>
+                        <FUNCTION>atan</FUNCTION>
+                        <FUNCTION>atan2</FUNCTION>
+                        <FUNCTION>bool</FUNCTION>
+                        <FUNCTION>cbrt</FUNCTION>
+                        <FUNCTION>ceil</FUNCTION>
+                        <FUNCTION>cos</FUNCTION>
+                        <FUNCTION>cosh</FUNCTION>
+                        <FUNCTION>deg</FUNCTION>
+                        <FUNCTION>exp</FUNCTION>
+                        <FUNCTION>float</FUNCTION>
+                        <FUNCTION>floor</FUNCTION>
+                        <FUNCTION>format</FUNCTION>
+                        <FUNCTION>frac</FUNCTION>
+                        <FUNCTION>hypot</FUNCTION>
+                        <FUNCTION>int</FUNCTION>
+                        <FUNCTION>len</FUNCTION>
+                        <FUNCTION>log</FUNCTION>
+                        <FUNCTION>log10</FUNCTION>
+                        <FUNCTION>pow</FUNCTION>
+                        <FUNCTION>rad</FUNCTION>
+                        <FUNCTION>random</FUNCTION>
+                        <FUNCTION>range</FUNCTION>
+                        <FUNCTION>repr</FUNCTION>
+                        <FUNCTION>round</FUNCTION>
+                        <FUNCTION>sign</FUNCTION>
+                        <FUNCTION>sin</FUNCTION>
+                        <FUNCTION>sinh</FUNCTION>
+                        <FUNCTION>size</FUNCTION>
+                        <FUNCTION>sort</FUNCTION>
+                        <FUNCTION>sqrt</FUNCTION>
+                        <FUNCTION>str</FUNCTION>
+                        <FUNCTION>tan</FUNCTION>
+                        <FUNCTION>tanh</FUNCTION>
+                        <FUNCTION>trunc</FUNCTION>
+		</KEYWORDS>
+
+                <SEQ_REGEXP AT_LINE_START="TRUE" TYPE="LABEL">[\p{javaUnicodeIdentifierStart}][\p{javaUnicodeIdentifierPart}_.]*|_[\p{javaUnicodeIdentifierPart}][\p{javaUnicodeIdentifierPart}_.]*|[+-]</SEQ_REGEXP>
+                <SEQ_REGEXP HASH_CHARS="-`~!^*/%+&lt;&gt;=&amp;|" TYPE="OPERATOR">.</SEQ_REGEXP>
+	</RULES>
+
+	<RULES SET="STRINGS" HIGHLIGHT_DIGITS="FALSE" IGNORE_CASE="FALSE" DEFAULT="LITERAL2">
+            <SEQ TYPE="DIGIT">{bell}</SEQ>
+            <SEQ TYPE="DIGIT">{black}</SEQ>
+            <SEQ TYPE="DIGIT">{blk}</SEQ>
+            <SEQ TYPE="DIGIT">{blue}</SEQ>
+            <SEQ TYPE="DIGIT">{blu}</SEQ>
+            <SEQ TYPE="DIGIT">{brn}</SEQ>
+            <SEQ TYPE="DIGIT">{brown}</SEQ>
+            <SEQ_REGEXP HASH_CHARS="{" TYPE="DIGIT">\{cbm-[-*+0-9@^a-z]\}</SEQ_REGEXP>
+            <SEQ TYPE="DIGIT">{cbm-pound}</SEQ>
+            <SEQ TYPE="DIGIT">{cbm-up arrow}</SEQ>
+            <SEQ TYPE="DIGIT">{clear}</SEQ>
+            <SEQ TYPE="DIGIT">{clr}</SEQ>
+            <SEQ_REGEXP HASH_CHARS="{" TYPE="DIGIT">\{control-[0-9:;=@a-z]\}</SEQ_REGEXP>
+            <SEQ TYPE="DIGIT">{control-left arrow}</SEQ>
+            <SEQ TYPE="DIGIT">{control-pound}</SEQ>
+            <SEQ TYPE="DIGIT">{control-up arrow}</SEQ>
+            <SEQ TYPE="DIGIT">{cr}</SEQ>
+            <SEQ TYPE="DIGIT">{cyan}</SEQ>
+            <SEQ TYPE="DIGIT">{cyn}</SEQ>
+            <SEQ TYPE="DIGIT">{delete}</SEQ>
+            <SEQ TYPE="DIGIT">{del}</SEQ>
+            <SEQ TYPE="DIGIT">{dish}</SEQ>
+            <SEQ TYPE="DIGIT">{down}</SEQ>
+            <SEQ TYPE="DIGIT">{ensh}</SEQ>
+            <SEQ TYPE="DIGIT">{esc}</SEQ>
+            <SEQ_REGEXP HASH_CHARS="{" TYPE="DIGIT">\{f1[0-2]\}</SEQ_REGEXP>
+            <SEQ_REGEXP HASH_CHARS="{" TYPE="DIGIT">\{f[1-9]\}</SEQ_REGEXP>
+            <SEQ_REGEXP HASH_CHARS="{" TYPE="DIGIT">\{gr[ae]y[1-3]\}</SEQ_REGEXP>
+            <SEQ TYPE="DIGIT">{green}</SEQ>
+            <SEQ TYPE="DIGIT">{grn}</SEQ>
+            <SEQ_REGEXP HASH_CHARS="{" TYPE="DIGIT">\{gry[1-3]\}</SEQ_REGEXP>
+            <SEQ TYPE="DIGIT">{help}</SEQ>
+            <SEQ TYPE="DIGIT">{home}</SEQ>
+            <SEQ TYPE="DIGIT">{insert}</SEQ>
+            <SEQ TYPE="DIGIT">{inst}</SEQ>
+            <SEQ TYPE="DIGIT">{lblu}</SEQ>
+            <SEQ TYPE="DIGIT">{left arrow}</SEQ>
+            <SEQ TYPE="DIGIT">{left}</SEQ>
+            <SEQ TYPE="DIGIT">{lf}</SEQ>
+            <SEQ TYPE="DIGIT">{lgrn}</SEQ>
+            <SEQ TYPE="DIGIT">{lower case}</SEQ>
+            <SEQ TYPE="DIGIT">{lred}</SEQ>
+            <SEQ TYPE="DIGIT">{lt blue}</SEQ>
+            <SEQ TYPE="DIGIT">{lt green}</SEQ>
+            <SEQ TYPE="DIGIT">{lt red}</SEQ>
+            <SEQ TYPE="DIGIT">{orange}</SEQ>
+            <SEQ TYPE="DIGIT">{orng}</SEQ>
+            <SEQ TYPE="DIGIT">{pi}</SEQ>
+            <SEQ TYPE="DIGIT">{pound}</SEQ>
+            <SEQ TYPE="DIGIT">{purple}</SEQ>
+            <SEQ TYPE="DIGIT">{pur}</SEQ>
+            <SEQ TYPE="DIGIT">{red}</SEQ>
+            <SEQ TYPE="DIGIT">{return}</SEQ>
+            <SEQ TYPE="DIGIT">{reverse off}</SEQ>
+            <SEQ TYPE="DIGIT">{reverse on}</SEQ>
+            <SEQ TYPE="DIGIT">{rght}</SEQ>
+            <SEQ TYPE="DIGIT">{right}</SEQ>
+            <SEQ TYPE="DIGIT">{run}</SEQ>
+            <SEQ TYPE="DIGIT">{rvof}</SEQ>
+            <SEQ TYPE="DIGIT">{rvon}</SEQ>
+            <SEQ TYPE="DIGIT">{rvs off}</SEQ>
+            <SEQ TYPE="DIGIT">{rvs on}</SEQ>
+            <SEQ TYPE="DIGIT">{shift return}</SEQ>
+            <SEQ_REGEXP HASH_CHARS="{" TYPE="DIGIT">\{shift-[-*+,./0-9:;@^a-z]\}</SEQ_REGEXP>
+            <SEQ TYPE="DIGIT">{shift-pound}</SEQ>
+            <SEQ TYPE="DIGIT">{shift-space}</SEQ>
+            <SEQ TYPE="DIGIT">{shift-up arrow}</SEQ>
+            <SEQ TYPE="DIGIT">{space}</SEQ>
+            <SEQ TYPE="DIGIT">{sret}</SEQ>
+            <SEQ TYPE="DIGIT">{stop}</SEQ>
+            <SEQ TYPE="DIGIT">{swlc}</SEQ>
+            <SEQ TYPE="DIGIT">{swuc}</SEQ>
+            <SEQ TYPE="DIGIT">{tab}</SEQ>
+            <SEQ TYPE="DIGIT">{up arrow}</SEQ>
+            <SEQ TYPE="DIGIT">{up/lo lock off}</SEQ>
+            <SEQ TYPE="DIGIT">{up/lo lock on}</SEQ>
+            <SEQ TYPE="DIGIT">{upper case}</SEQ>
+            <SEQ TYPE="DIGIT">{up}</SEQ>
+            <SEQ TYPE="DIGIT">{white}</SEQ>
+            <SEQ TYPE="DIGIT">{wht}</SEQ>
+            <SEQ TYPE="DIGIT">{yellow}</SEQ>
+            <SEQ TYPE="DIGIT">{yel}</SEQ>
+	</RULES>
+</MODE>

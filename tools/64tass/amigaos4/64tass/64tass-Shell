@@ -1,0 +1,24 @@
+; $VER: 64tass-Shell 1.0 (20.5.2013)
+; Copyright (c) Janne Peräaho. All Rights Reserved.
+
+; Use your Shell settings
+EXECUTE S:Shell-Startup
+
+; Display information on development environment
+Clear
+ECHO ""
+CD 64TASS:
+64tass --v
+ECHO ""
+ECHO "64tass assign  : 64TASS:"
+ECHO "64tass path    :" `CD` NOLINE
+ECHO "/bin"
+ECHO "Include path   : 64TASS:includes"
+ECHO "Shell front-end: c64tass SOURCE/A/M,TO/K"
+ECHO ""
+64tass
+ECHO ""
+
+; Change to "Projects" directory
+SETENV 64tass_project_dir "64TASS:Projects"
+CD $64tass_project_dir

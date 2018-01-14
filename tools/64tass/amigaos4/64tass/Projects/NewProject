@@ -1,0 +1,41 @@
+;
+; $VER: NewProject 1.0 (21.5.2013)
+; Copyright (c) Janne Peräaho. All Rights Reserved.
+;
+; Create new project drawer using the supplied template and drawer icon.
+;
+; Usage: NewProject TEMPLATE,TO,ICON/K
+;
+; TEMPLATE
+;	Project template (directory path).
+;
+; TO
+;	Name of the project to create.
+;
+; ICON
+;	Drawer icon to use.
+;
+;-----------------------------------------------------------------------------
+;
+; HISTORY
+;
+; Version 1.0 (21.5.2013)
+;	· First version
+;
+.KEY TEMPLATE,TO,ICON/K
+.DEF TEMPLATE="Template_1.template"
+.DEF TO="unnamed"
+.DEF ICON="Project.icon"
+.BRA {
+.KET }
+
+; Create new project
+IF NOT EXISTS {TO}
+	; Copy template project
+	COPY FROM {TEMPLATE} TO {TO} ALL QUIET
+
+	; Add icon
+	COPY {ICON} TO {TO}.info QUIET
+ELSE
+	REQUESTCHOICE >NIL:TITLE="New project" BODY="Project `ECHO {TO} NOLINE` exists!" GADGETS="_OK" TYPE="ERROR"
+ENDIF

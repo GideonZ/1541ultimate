@@ -1,0 +1,280 @@
+#64tass mcedit/cooledit syntax
+# $Id: assembler.syntax 1193 2016-07-02 13:27:26Z soci $
+#
+# Place it into this folder:
+#
+# ~/.local/share/mc/mcedit/assembler.syntax
+
+context default lightgray
+    keyword whole adc white
+    keyword whole and white
+    keyword whole asl white
+    keyword whole bcc white
+    keyword whole bcs white
+    keyword whole beq white
+    keyword whole bge white
+    keyword whole bit white
+    keyword whole blt white
+    keyword whole bne white
+    keyword whole bmi white
+    keyword whole bpl white
+    keyword whole brk white
+    keyword whole bvc white
+    keyword whole bvs white
+    keyword whole clc white
+    keyword whole cld white
+    keyword whole cli white
+    keyword whole clv white
+    keyword whole cmp white
+    keyword whole cpx white
+    keyword whole cpy white
+    keyword whole dec white
+    keyword whole dex white
+    keyword whole dey white
+    keyword whole eor white
+    keyword whole gcc white
+    keyword whole gcs white
+    keyword whole geq white
+    keyword whole gge white
+    keyword whole glt white
+    keyword whole gne white
+    keyword whole gmi white
+    keyword whole gpl white
+    keyword whole gvc white
+    keyword whole gvs white
+    keyword whole inc white
+    keyword whole inx white
+    keyword whole iny white
+    keyword whole jmp white
+    keyword whole jsr white
+    keyword whole lda white
+    keyword whole ldx white
+    keyword whole ldy white
+    keyword whole lsr white
+    keyword whole nop white
+    keyword whole ora white
+    keyword whole pha white
+    keyword whole php white
+    keyword whole pla white
+    keyword whole plp white
+    keyword whole rol white
+    keyword whole ror white
+    keyword whole rti white
+    keyword whole rts white
+    keyword whole sbc white
+    keyword whole sec white
+    keyword whole sed white
+    keyword whole sei white
+    keyword whole shl white
+    keyword whole shr white
+    keyword whole sta white
+    keyword whole stx white
+    keyword whole sty white
+    keyword whole tax white
+    keyword whole tay white
+    keyword whole tsx white
+    keyword whole txa white
+    keyword whole txs white
+    keyword whole tya white
+
+    keyword whole ahx white
+    keyword whole alr white
+    keyword whole anc white
+    keyword whole ane white
+    keyword whole arr white
+    keyword whole asr white
+    keyword whole axs white
+    keyword whole dcm white
+    keyword whole dcp white
+    keyword whole ins white
+    keyword whole isb white
+    keyword whole isc white
+    keyword whole jam white
+    keyword whole lae white
+    keyword whole las white
+    keyword whole lax white
+    keyword whole lds white
+    keyword whole lxa white
+    keyword whole rla white
+    keyword whole rra white
+    keyword whole sax white
+    keyword whole sbx white
+    keyword whole sha white
+    keyword whole shs white
+    keyword whole shx white
+    keyword whole shy white
+    keyword whole slo white
+    keyword whole sre white
+    keyword whole tas white
+    keyword whole xaa white
+
+    keyword whole .al brightcyan
+    keyword whole .align brightcyan
+    keyword whole .as brightcyan
+    keyword whole .assert brightcyan
+    keyword whole .bend brightcyan
+    keyword whole .binclude brightcyan
+    keyword whole .block brightcyan
+    keyword whole .break brightcyan
+    keyword whole .case brightcyan
+    keyword whole .cdef brightcyan
+    keyword whole .cerror brightcyan
+    keyword whole .check brightcyan
+    keyword whole .comment brightcyan
+    keyword whole .continue brightcyan
+    keyword whole .cpu brightcyan
+    keyword whole .cwarn brightcyan
+    keyword whole .databank brightcyan
+    keyword whole .default brightcyan
+    keyword whole .dpage brightcyan
+    keyword whole .dsection brightcyan
+    keyword whole .dstruct brightcyan
+    keyword whole .dunion brightcyan
+    keyword whole .edef brightcyan
+    keyword whole .else brightcyan
+    keyword whole .elsif brightcyan
+    keyword whole .enc brightcyan
+    keyword whole .end brightcyan
+    keyword whole .endc brightcyan
+    keyword whole .endf brightcyan
+    keyword whole .endif brightcyan
+    keyword whole .endm brightcyan
+    keyword whole .endp brightcyan
+    keyword whole .ends brightcyan
+    keyword whole .endswitch brightcyan
+    keyword whole .endu brightcyan
+    keyword whole .endweak brightcyan
+    keyword whole .eor brightcyan
+    keyword whole .error brightcyan
+    keyword whole .fi brightcyan
+    keyword whole .for brightcyan
+    keyword whole .function brightcyan
+    keyword whole .goto brightcyan
+    keyword whole .here brightcyan
+    keyword whole .hidemac brightcyan
+    keyword whole .if brightcyan
+    keyword whole .ifeq brightcyan
+    keyword whole .ifmi brightcyan
+    keyword whole .ifne brightcyan
+    keyword whole .ifpl brightcyan
+    keyword whole .include brightcyan
+    keyword whole .lbl brightcyan
+    keyword whole .logical brightcyan
+    keyword whole .macro brightcyan
+    keyword whole .next brightcyan
+    keyword whole .offs brightcyan
+    keyword whole .option brightcyan
+    keyword whole .page brightcyan
+    keyword whole .pend brightcyan
+    keyword whole .proc brightcyan
+    keyword whole .proff brightcyan
+    keyword whole .pron brightcyan
+    keyword whole .rept brightcyan
+    keyword whole .section brightcyan
+    keyword whole .seed brightcyan
+    keyword whole .segment brightcyan
+    keyword whole .send brightcyan
+    keyword whole .showmac brightcyan
+    keyword whole .struct brightcyan
+    keyword whole .switch brightcyan
+    keyword whole .union brightcyan
+    keyword whole .var brightcyan
+    keyword whole .warn brightcyan
+    keyword whole .weak brightcyan
+    keyword whole .xl brightcyan
+    keyword whole .xs brightcyan
+
+    keyword whole .char yellow
+    keyword whole .dint yellow
+    keyword whole .dword yellow
+    keyword whole .fill yellow
+    keyword whole .sint yellow
+    keyword whole .lint yellow
+    keyword whole .long yellow
+    keyword whole .null yellow
+    keyword whole .addr yellow
+    keyword whole .binary yellow
+    keyword whole .byte yellow
+    keyword whole .shift yellow
+    keyword whole .shiftl yellow
+    keyword whole .rta yellow
+    keyword whole .ptext yellow
+    keyword whole .word yellow
+    keyword whole .text yellow
+
+    keyword whole $\[0123456789abcdefABCDEF\]\.\{0123456789abcdefABCDEF\}\[0123456789abcdefABCDEF\] brightred
+    keyword whole $\{0123456789abcdefABCDEF\}\[0123456789abcdefABCDEF\]\.\[0123456789abcdefABCDEF\] brightred
+    keyword whole $\{0123456789abcdefABCDEF\}\[0123456789abcdefABCDEF\]\{eEpP\}\{0123456789\}\[0123456789\] brightred
+    keyword whole $\{0123456789abcdefABCDEF\}\[0123456789abcdefABCDEF\]\{eEpP\}\{\-\+\}\{0123456789\}\[0123456789\] brightred
+    keyword whole $\{0123456789abcdefABCDEF\}\[0123456789abcdefABCDEF\]\.\{0123456789abcdefABCDEF\}\[0123456789abcdefABCDEF\]\{eEpP\}\{0123456789\}\[0123456789\] brightred
+    keyword whole $\{0123456789abcdefABCDEF\}\[0123456789abcdefABCDEF\]\.\{0123456789abcdefABCDEF\}\[0123456789abcdefABCDEF\]\{eEpP\}\{\-\+\}\{0123456789\}\[0123456789\] brightred
+    keyword whole $\{0123456789abcdefABCDEF\}\[0123456789abcdefABCDEF\] brightred
+    keyword whole %\[01\]\.\{01\}\[01\] brightred
+    keyword whole %\{01\}\[01\]\.\[01\] brightred
+    keyword whole %\{01\}\[01\]\{eEpP\}\{0123456789\}\[0123456789\] brightred
+    keyword whole %\{01\}\[01\]\{eEpP\}\{\-\+\}\{0123456789\}\[0123456789\] brightred
+    keyword whole %\{01\}\[01\]\.\{01\}\[01\]\{eEpP\}\{0123456789\}\[0123456789\] brightred
+    keyword whole %\{01\}\[01\]\.\{01\}\[01\]\{eEpP\}\{\-\+\}\{0123456789\}\[0123456789\] brightred
+    keyword whole %\{01\}\[01\] brightred
+    keyword whole \[0123456789\]\.\{0123456789\}\[0123456789\] brightred
+    keyword whole \{0123456789\}\[0123456789\]\.\[0123456789\] brightred
+    keyword whole \{0123456789\}\[0123456789\]\{eEpP\}\{0123456789\}\[0123456789\] brightred
+    keyword whole \{0123456789\}\[0123456789\]\{eEpP\}\{\-\+\}\{0123456789\}\[0123456789\] brightred
+    keyword whole \{0123456789\}\[0123456789\]\.\{0123456789\}\[0123456789\]\{eEpP\}\{0123456789\}\[0123456789\] brightred
+    keyword whole \{0123456789\}\[0123456789\]\.\{0123456789\}\[0123456789\]\{eEpP\}\{\-\+\}\{0123456789\}\[0123456789\] brightred
+    keyword whole \{0123456789\}\[0123456789\] brightred
+
+    keyword \*= white
+    keyword ,x white
+    keyword ,y white
+    keyword ,z white
+    keyword ,r white
+    keyword ,s white
+    keyword ,b white
+    keyword ,d white
+    keyword ,k white
+
+    keyword ( white
+    keyword ) white
+    keyword [ white
+    keyword ] white
+    keyword { white
+    keyword } white
+    keyword . white
+    keyword , white
+    keyword : white
+    keyword - white
+    keyword \+ white
+    keyword / white
+    keyword \* white
+    keyword % white
+    keyword & white
+    keyword > white
+    keyword = white
+    keyword < white
+    keyword ^ white
+    keyword ` white
+    keyword ? white
+    keyword ~ white
+    keyword ! white
+    keyword | white
+    keyword # white
+
+context ; \n brown/22
+#    spellcheck
+
+context " " green/6
+    keyword %% brightgreen
+    keyword %\[#0\s-\+,\]\[0123456789\*\]\[.\]\[0123456789\*\]\{eEfgGxX\} brightgreen
+    keyword %\[0\s-\+,\]\[0123456789\*\]\[.\]\[0123456789\*\]\{dxX\} brightgreen
+    keyword %\[-\]\[0123456789\*\]\[.\]\[0123456789\*\]s brightgreen
+    keyword %[*] brightgreen
+    keyword %c brightgreen
+
+context ' ' green/6
+    keyword %% brightgreen
+    keyword %\[#0\s-\+,\]\[0123456789\*\]\[.\]\[0123456789\*\]\{eEfgGxX\} brightgreen
+    keyword %\[0\s-\+,\]\[0123456789\*\]\[.\]\[0123456789\*\]\{dxX\} brightgreen
+    keyword %\[-\]\[0123456789\*\]\[.\]\[0123456789\*\]s brightgreen
+    keyword %[*] brightgreen
+    keyword %c brightgreen

@@ -2,6 +2,9 @@
 /*.bit
 /*.mcs
 /*.zip
+/*.u64
+/*.u2u
+/*.u2p
 /audio
 fpga/altera/sim
 fpga/cpu_unit/mblite/designs
@@ -239,3 +242,6 @@ tools/promgen
 tools/svf_dump
 tools/swap
 software/6502/sidcrt/target
+*.d
+tools/64tass/*.o
+

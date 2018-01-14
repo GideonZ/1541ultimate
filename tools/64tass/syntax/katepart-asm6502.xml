@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language SYSTEM "language.dtd"
+[
+        <!ENTITY opcode    "\b(adc|and|asl|bcc|bcs|beq|bge|bit|blt|bmi|bne|bpl|brk|bvc|bvs|clc|cld|cli|clv|cmp|cpx|cpy|dec|dex|dey|eor|gcc|gcs|geq|gge|glt|gmi|gne|gpl|gvc|gvs|inc|inx|iny|jmp|jsr|lda|ldx|ldy|lsr|nop|ora|pha|php|pla|plp|rol|ror|rti|rts|sbc|sec|sed|sei|shl|shr|sta|stx|sty|tax|tay|tsx|txa|txs|tya)((?:\s+(a(?=(\s|;|$))))|(?=(\s|;|$)))">
+        <!ENTITY iopcode   "\b(ahx|alr|anc|ane|arr|asr|axs|dcm|dcp|ins|isb|isc|jam|lae|las|lax|lds|lxa|rla|rra|sax|sbx|sha|shs|shx|shy|slo|sre|tas|xaa)((?:\s+(#|a(?=(\s|;|$))))|(?=(\s|;|$)))">
+        <!ENTITY datadef   "\.(byte|char|[lsd]int|rta|long|d?word|fill|p?text|null|shiftl?|dstruct|dunion|binary|addr)\b">
+        <!ENTITY preproc   "\.(b?include|lbl|goto|c?error|c?warn|[ax][ls]|autsiz|mansiz|pron|proff|hidemac|showmac|offs|align|assert|check|[ce]def|databank|dpage|cpu|enc|option|var|end|eor|seed|dsection|break|continue)\b">
+]>
+<!-- ex:set ts=2 et:
+
+ $Id: katepart-asm6502.xml 1277 2016-11-19 13:14:05Z soci $
+
+ Katepart language definition file for 64tass
+ Usable with kwrite, kate, kdevelop
+
+ Place it into this folder:
+
+ ~/.kde/share/apps/katepart/syntax
+
+ Author: Zsolt Kajtar <soci at c64.rulez.org>
+ Copyright (C) 2012 Zsolt Kajtar <soci at c64.rulez.org>
+
+ This library is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+
+-->
+<language name="6502 assembly (64tass)" version="1.04" kateversion="2.1" section="Assembler" extensions="*.asm" mimetype="text/x-64tass;application/x-64tass">
+  <highlighting>
+    <contexts>
+      <context name="Base" attribute="Normal Text" lineEndContext="#stay">
+        <IncludeRules context="Opcode"/>
+        <RegExpr String="([a-z][\w_.]*|_\w[\w_.]*):?" context="Opcode2" insensitive="TRUE"/>
+        <RegExpr String="[+\-*](?=(\s|$|=))" context="Opcode2" insensitive="TRUE"/>
+      </context>
+      <context name="Opcode2" attribute="Normal Text" lineEndContext="Base">
+        <RegExpr String="=" attribute="Keyword" context="Miscparam" insensitive="TRUE"/>
+        <IncludeRules context="Opcode"/>
+      </context>
+
+      <context name="Opcode" lineEndContext="#pop">
+        <RegExpr String="&opcode;" attribute="Keyword" context="Miscparam" insensitive="TRUE"/>
+        <RegExpr String="&iopcode;" attribute="Keyword" context="Miscparam" insensitive="TRUE"/>
+        <RegExpr String="&datadef;" attribute="Data Type" context="Miscparam" insensitive="TRUE"/>
+        <RegExpr String="&preproc;" attribute="Preprocessor" context="Miscparam" insensitive="TRUE"/>
+        <RegExpr context="folding" beginRegion="foldingRegion" String="\.comment\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr String="#(\\?([a-z][\w_.]*|_\w[\w_.]*)|\\[1-9@])\b" attribute="Preprocessor" context="Miscparam" insensitive="TRUE"/>
+        <IncludeRules context="foldstuff"/>
+        <RegExpr String=";.*$" attribute="Comment" context="#stay"/>
+      </context>
+      <context name="Miscparam" attribute="Normal Text" lineEndContext="Base">
+        <RegExpr String="[\-+]+\s*(?=($|[)},;.\]]))" attribute="Label" context="Miscparam2"/>
+        <RegExpr String="[bnlsp]&quot;" attribute="String" context="string1"/>
+        <RegExpr String="'" attribute="String" context="string2"/>
+        <RegExpr String="([a-z][\w_]*|_\w[\w_]*)\s*(?=\()" attribute="Normal Text" context="#stay" insensitive="TRUE"/>
+        <RegExpr String="[a-z][\w_]*|_\w[\w_]*" attribute="Label" context="Miscparam2" insensitive="TRUE"/>
+        <RegExpr String="\\([a-z][\w_]*|_\w[\w_]*)" attribute="Preprocessor" context="Miscparam2" insensitive="TRUE"/>
+        <RegExpr String="\\\{([a-z][\w_]*|_\w[\w_]*)\}" attribute="Preprocessor" context="Miscparam" insensitive="TRUE"/>
+        <RegExpr String="\\[@1-9]" attribute="Preprocessor" context="Miscparam2" insensitive="TRUE"/>
+        <RegExpr String="%((\.(([01]_+)+[01]|[01])+|(([01]_+)+[01]|[01])+\.(?!\.)(([01]_+)+[01]|[01])*)([ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)?|(([01]_+)+[01]|[01])+[ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)" attribute="Float" context="Miscparam2" insensitive="TRUE"/>
+        <RegExpr String="%(([01]_+)+[01]|[01])*" attribute="Bin" context="Miscparam2"/>
+        <RegExpr String="[*?]" attribute="Hex" context="Miscparam2"/>
+        <RegExpr String="@[bwl]" attribute="Operator" context="#stay"/>
+        <RegExpr String="(\.(([0-9]_+)+[0-9]|[0-9])+|(([0-9]_+)+[0-9]|[0-9])+\.(?!\.)(([0-9]_+)+[0-9]|[0-9])*)([ep][+-]?(([0-9]_+)+[0-9]|[0-9])+)?|(([0-9]_+)+[0-9]|[0-9])+[ep][+-]?(([0-9]_+)+[0-9]|[0-9])+" attribute="Float" context="Miscparam2" insensitive="TRUE"/>
+        <RegExpr String="(([0-9]_+)+[0-9]|[0-9])+" attribute="Decimal" context="Miscparam2"/>
+        <RegExpr String="\$((\.(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])+|(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])+\.(?!\.)(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])*)(p[+-]?(([0-9]_+)+[0-9]|[0-9])+)?|(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])+p[+-]?(([0-9]_+)+[0-9]|[0-9])+)" attribute="Float" context="Miscparam2" insensitive="TRUE"/>
+        <RegExpr String="\$(([0-9a-f]_+)+[0-9a-f]|[0-9a-f])*" attribute="Hex" context="Miscparam2" insensitive="TRUE"/>
+        <RegExpr String="[,({\[+\-!~&lt;&gt;#`\^:]"  attribute="Operator" context="#stay"/>
+        <RegExpr String="[)}\]]"  attribute="Operator" context="Miscparam2"/>
+        <DetectChar char="&quot;" attribute="String" context="string1"/>
+        <DetectChar char="'" attribute="String" context="string2"/>
+        <RegExpr String=";.*$" attribute="Comment" context="#pop"/>
+        <RegExpr String="[^ \t]" attribute="Error" context="#stay"/>
+      </context>
+      <context name="Miscparam2" attribute="Normal Text" lineEndContext="Base">
+        <RegExpr String=",[xyzrsdbk]\b"  attribute="Operator" context="#stay"/>
+        <RegExpr String="[)}\]]"  attribute="Operator" context="#stay"/>
+        <RegExpr String="&amp;&amp;|\|\||^^|\*\*|//|\.\.|==|&lt;[&lt;=]|&gt;[&gt;=]||&lt;&gh;|&gt;&gt;&gt;|!=|[&gt;&lt;]\?|\bx\b|\bin\b"  attribute="Operator" context="Miscparam"/>
+        <RegExpr String="[,({\[&amp;|^*%/\-+.?:=&lt;&gt;]"  attribute="Operator" context="Miscparam"/>
+        <RegExpr String=";.*$" attribute="Comment" context="#pop"/>
+        <RegExpr String="[^ \t]" attribute="Error" context="#stay"/>
+      </context>
+      <context name="string1" lineEndContext="Base" attribute="String">
+        <Detect2Chars attribute="Preprocessor" context="#stay" char="&quot;" char1="&quot;"/>
+        <RegExpr String="\{[^}&quot;]*\}" attribute="Preprocessor" context="#stay"/>
+        <DetectChar attribute="String" context="Miscparam2" char="&quot;"/>
+      </context>
+      <context name="string2" lineEndContext="Base" attribute="String">
+        <Detect2Chars attribute="Preprocessor" context="#stay" char="'" char1="'"/>
+        <RegExpr String="\{[^}']*\}" attribute="Preprocessor" context="#stay"/>
+        <DetectChar attribute="String" context="Miscparam2" char="'"/>
+      </context>
+      <context name="Error" attribute="Error" lineEndContext="Base">
+      </context>
+      <context name="foldstuff">
+        <RegExpr beginRegion="proc" String="\.proc\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="proc" String="\.pend\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="block" String="\.block\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="block" String="\.bend\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="section" String="\.section\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="section" String="\.send\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="struct" String="\.struct\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="struct" String="\.ends\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="union" String="\.union\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="union" String="\.endu\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="page" String="\.page\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="page" String="\.endp\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="macro" String="\.(macro|segment)\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="macro" String="\.endm\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="function" String="\.function\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="function" String="\.endf\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="for" String="\.(for|rept)\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="for" String="\.next\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="logical" String="\.logical\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="here" String="\.here\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="weak" String="\.weak\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="endweak" String="\.endweak\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="if" String="\.(if|ifeq|ifne|ifpl|ifmi)\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="if" endRegion="elsif" String="\s?(?=\.elsif\b)" context="elsif" insensitive="TRUE"/>
+        <RegExpr endRegion="if" endRegion="elsif" String="\s?(?=\.else\b)" context="else" insensitive="TRUE"/>
+        <RegExpr endRegion="if" endRegion="elsif" endRegion="else" String="\.(fi|endif)\b" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr beginRegion="switch" String="\.switch\b" context="Miscparam" attribute="Preprocessor" insensitive="TRUE"/>
+        <RegExpr endRegion="switch" endRegion="case" String="\s?(?=\.case\b)" context="Miscparam" context="case" insensitive="TRUE"/>
+        <RegExpr endRegion="switch" endRegion="case" String="\s?(?=\.default\b)" context="default" insensitive="TRUE"/>
+        <RegExpr endRegion="switch" endRegion="case" endRegion="default" String="\.endswitch\b" attribute="Preprocessor" insensitive="TRUE"/>
+      </context>
+      <context name="elsif" lineEndContext="#pop">
+        <RegExpr beginRegion="elsif" String="\.elsif\b" attribute="Preprocessor" context="Miscparam"/>
+      </context>
+      <context name="else" lineEndContext="#pop">
+        <RegExpr beginRegion="else" String="\.else\b" attribute="Preprocessor"/>
+      </context>
+      <context name="case" lineEndContext="#pop">
+        <RegExpr beginRegion="case" String="\.case\b" attribute="Preprocessor" context="Miscparam"/>
+      </context>
+      <context name="default" lineEndContext="#pop">
+        <RegExpr beginRegion="default" String="\.default\b" attribute="Preprocessor"/>
+      </context>
+
+      <context attribute="Comment" name="folding" lineEndContext="#stay">
+        <RegExpr context="#pop" endRegion="foldingRegion" String="\.endc\b" attribute="Preprocessor" insensitive="TRUE"/>
+      </context>
+    </contexts>
+
+    <itemDatas>
+      <itemData name="Normal Text" defStyleNum="dsNormal"/>
+      <itemData name="Label" defStyleNum="dsFunction"/>
+      <itemData name="Keyword" defStyleNum="dsKeyword"/>
+      <itemData name="Decimal" defStyleNum="dsDecVal"/>
+      <itemData name="Float" defStyleNum="dsFloat"/>
+      <itemData name="Data Type" defStyleNum="dsDataType"/>
+      <itemData name="Hex" defStyleNum="dsBaseN"/>
+      <itemData name="Bin" defStyleNum="dsBaseN"/>
+      <itemData name="String" defStyleNum="dsString"/>
+      <itemData name="Comment" defStyleNum="dsComment"/>
+      <itemData name="Preprocessor" defStyleNum="dsOthers"/>
+      <itemData name="Operator" defStyleNum="dsNormal"/>
+      <itemData name="Error" defStyleNum="dsError"/>
+    </itemDatas>
+  </highlighting>
+  <general>
+    <comments>
+      <comment name="singleLine" start=";"/>
+    </comments>
+    <keywords casesensitive="1"/>
+  </general>
+</language>
+
