@@ -34,7 +34,7 @@ SRCS_C   =	itu.c \
                         
 SRCS_CC	 =  u2p_init.cc \
 			small_printf.cc \
-            stream.cc \
+			stream.cc \
 			stream_uart.cc \
 			memory.cc \
 			init_function.cc \
@@ -72,14 +72,14 @@ SRCS_CC	 =  u2p_init.cc \
 			directory.cc \
 			file.cc \
 			filesystem_iso9660.cc \
-            filesystem_root.cc \
+			filesystem_root.cc \
 			filesystem_d64.cc \
 			filesystem_t64.cc \
 			filesystem_fat.cc \
 			size_str.cc \
 			userinterface.cc \
 			ui_elements.cc \
-            user_file_interaction.cc \
+			user_file_interaction.cc \
 			editor.cc \
 			tree_browser.cc \
 			tree_browser_state.cc \
@@ -96,9 +96,9 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_crt.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
-            host_stream.cc \
-            keyboard_vt100.cc \
-            screen_vt100.cc \
+			host_stream.cc \
+			keyboard_vt100.cc \
+			screen_vt100.cc \
 			usb_base.cc \
 			usb_device.cc \
 			usb_scsi.cc \
@@ -127,20 +127,21 @@ SRCS_CC	 =  u2p_init.cc \
 			mps_charset.cc \
 			lodepng.cc \
 			filetype_tap.cc \
-            socket_stream.cc \
-            socket_gui.cc \
+			socket_stream.cc \
+			socket_gui.cc \
 			socket_dma.cc \
 			socket_test.cc \
 			rmii_interface.cc \
-            home_directory.cc \
-            reu_preloader.cc \
-            $(PRJ).cc
+			home_directory.cc \
+			reu_preloader.cc \
+			$(PRJ).cc
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/nios_appl_bsp
 VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
+VPATH +=	$(PATH_SW)/6502/sidcrt/target
 
 #            sock_echo.c \
 #			sys_calls.cc \
@@ -152,9 +153,9 @@ SRCS_ASM =
 
 SRCS_ASMS = port_asm.S
 
-SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
+SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -176,3 +177,6 @@ lodepng.o: lodepng.cc
 	@echo Compiling $(<F) optimized for speed
 	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
+
+$(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt

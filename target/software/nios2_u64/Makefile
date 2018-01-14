@@ -132,6 +132,7 @@ SRCS_CC	 =  u2p_init.cc \
 			socket_dma.cc \
 			rmii_interface.cc \
             home_directory.cc \
+			reu_preloader.cc \
 			socket_test.cc \
 			u64_config.cc \
 			fpll.cc \
@@ -143,6 +144,7 @@ VPATH +=	$(PATH_SW)/u64
 VPATH +=	$(PATH_SW)/nios_appl_bsp
 VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
+VPATH +=	$(PATH_SW)/6502/sidcrt/target
 
 #            sock_echo.c \
 #			sys_calls.cc \
@@ -154,9 +156,9 @@ SRCS_ASM =
 
 SRCS_ASMS = port_asm.S
 
-SRCS_6502 = sidcrt.tas bootcrt.tas cmd_test_rom.tas ulticopy.tas
+SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
+SRCS_BIN =  sidcrt.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -178,3 +180,6 @@ lodepng.o: lodepng.cc
 	@echo Compiling $(<F) optimized for speed
 	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
+
+$(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
