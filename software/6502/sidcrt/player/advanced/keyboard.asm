@@ -32,13 +32,16 @@ keyPressed      cmp currentKey,x
                 beq notReleased
                 sta currentKey,x
 
-                cpx #$06          ; check for row 7 (which is not handled)
+                cpx #$06            ; check for row 7 (which is not handled)
                 beq skipKeyCheck
                 cpx #$05
                 beq row6
 
-                cpx #$07          ; check for <- key to fastforward tune
+                cpx #$07            ; check for runstop to exit player and for <- key to fastforward tune
                 bne +
+
+                cmp #$7f            ; check if runstop key is pressed
+                beq gotoUltimateMenu
 
                 cmp #$fd
                 bne +
@@ -51,7 +54,7 @@ notReleased     rts
                 beq skipKeyCheck
                 ; handle keys 0-9
                 tay
-                and #$f6      ; check for values $fe and $f7
+                and #$f6            ; check for values $fe and $f7
                 cmp #$f6
                 beq +
                 rts
@@ -92,6 +95,11 @@ plusKey         lda currentSong
                 lda #0
                 sta currentSong
 +               jmp selectSubTune
+
+gotoUltimateMenu
+                ; TODO implement code to return to Ultimate menu
+                inc $d021
+                rts
 
                 .section data
 keyRow          .byte $fe, $fd, $fb, $f7, $ef, $df, $bf, $7f

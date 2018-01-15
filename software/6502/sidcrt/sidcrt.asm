@@ -90,9 +90,6 @@ start           sei
 
                 jsr resetSID
 
-                ; do not remove this check
-                jsr checkIfAsciiIsNotCorrupt
-
                 lda $02
                 cmp #SID_MODE
                 beq sidMode
@@ -171,21 +168,6 @@ alternative_ff81
                 jsr $e51b
                 jmp $ff5e
 
-checkIfAsciiIsNotCorrupt
-                lda #$00
-                ldx #(PETSCII - ASCII - 1) * 2
--               clc
-                adc ASCII,x
-                dex
-                bpl -
-
-                cmp #$d7
-                beq +
-                ; if a reset is performed here then the ASCII table has been changed.
-                ; Check if your code editor saves ASCII characters correctly.
-                jmp reset
-+               rts
-
 basicStarted    sei
                 lda #<basicStartedIRQ
                 sta $0314
@@ -240,6 +222,8 @@ loadSid         ldx #$ff            ; init stack pointer
                 cpx #readMemEnd - readMem
                 bne -
 
+                jsr moveSidHeader   ; move to location where it can be modified
+
                 ldy #$01            ; detect if header is a real SID header
                 jsr readHeader
                 cmp #'S'
@@ -255,20 +239,18 @@ loadSid         ldx #$ff            ; init stack pointer
 noSid           jmp reset           ; header is no real header so disable cartridge and perform a reset
 
 SidHeaderDetected
-                jsr fixHeader
-                jsr moveSidHeader
+                jsr fixHeader       ; fix header after it has been moved (temporary fix)
+                jsr prepareSidHeader
 
                 ldy #$10            ; default song offset
                 jsr readHeader
                 sta SONG_TO_PLAY    ; set song to play
 
-                jsr prepareSidHeader
-
                 jsr calculateExtraPlayerSize
-
                 jsr calculateLocations
 
                 jsr setupScreen
+                jsr songlengths.displayCurSongLength
 
 ;##################################################
                 jsr copyPlayer
@@ -343,13 +325,13 @@ calculateExtraPlayerSize
 
 fixHeader       ; load end address is always 2 bytes off (needs to be fixed in the Ultimate firmware)
                 ldy #$7e
--               lda (SID_HEADER_LO),y
+-               jsr readHeader
                 clc
                 adc #$02
                 sta (SID_HEADER_LO),y
                 bcc +
                 iny
-                lda (SID_HEADER_LO),y
+                jsr readHeader
                 clc
                 adc #$01
                 sta (SID_HEADER_LO),y
@@ -487,6 +469,10 @@ setExtraPlayerVars
 
                 ldy extraPlayer.songLenLoc1
                 ldx extraPlayer.songLenLoc1 + 1
+                jsr setValue
+
+                ldy extraPlayer.songLenLoc2
+                ldx extraPlayer.songLenLoc2 + 1
                 jsr setValue
 
                 ldy #OFFSET_SONG_SCREEN_LOCATION
