@@ -33,24 +33,31 @@ relocateCode    lda START_HI
 
 -               ldy #$00
                 jsr readAddress
-                tax
+                cmp #$60            ; RTS is the only exception in opcode size between opcodes from $00-$3f and $40-$7f.
+                bne +
+                lda #$00            ; interpret RTS as BRK
+
++               and #$ff - $40      ; map $c0-$ff to $80-$bf and $40-$7f to $00-$3f
+                bpl +
+                eor #$c0            ; map $80-$bf to $40-$7f
++               tax
                 lda opcodeSizes,x
                 pha
-                cmp #$03          ; only opcodes with 3 bytes need to be relocated
-                bne +
+                cmp #$03            ; only opcodes with 3 bytes need to be relocated
+                bne readNext
 
                 ldy #$02
                 jsr readAddress
                 tax
                 and #$f0
-                cmp #$d0          ; ignore I/O addresses
-                beq +
+                cmp #$d0            ; ignore I/O addresses
+                beq readNext
                 txa
                 clc
                 adc BASE_ADDRESS
                 jsr writeAddress
 
-+               pla
+readNext        pla
                 clc
                 adc START_LO
                 sta START_LO
@@ -77,19 +84,12 @@ relocByte       tya
                 adc BASE_ADDRESS
                 jmp writeAddress
 
+                ; these opcode sizes are compacted
+                ; opcodes $40-$7f are mapped to $00-$3f, except for RTS ($60) which should be handled separately
+                ; opcodes $80-$bf and $c0-$ff are mapped to $40-$7f
 opcodeSizes     .byte $01, $02, $01, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
                 .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
                 .byte $03, $02, $01, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
-                .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
-
-                .byte $01, $02, $01, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
-                .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
-                .byte $01, $02, $01, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
-                .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
-
-                .byte $02, $02, $02, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
-                .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
-                .byte $02, $02, $02, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
                 .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
 
                 .byte $02, $02, $02, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
