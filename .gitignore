@@ -95,6 +95,7 @@ target/fpga/u2plus_recovery/*.txt
 target/fpga/u2plus_recovery/db
 target/fpga/u2plus_recovery/incremental_db
 target/fpga/u2plus_recovery/output_files
+target/fpga/u2plus_recovery/ultimate_recovery_assignment_defaults.qdf
 target/fpga/u2plus_run/*.cdf
 target/fpga/u2plus_run/*.hex
 target/fpga/u2plus_run/*.qws
@@ -103,6 +104,7 @@ target/fpga/u2plus_run/*.txt
 target/fpga/u2plus_run/db
 target/fpga/u2plus_run/incremental_db
 target/fpga/u2plus_run/output_files
+target/fpga/u2plus_run/ultimate_run_assignment_defaults.qdf
 target/fpga/u2plus_solo
 target/fpga/work1400
 target/fpga/work250
@@ -230,6 +232,8 @@ target/software/update_to_mb/output
 target/software/update_to_mb/result
 target/tester_package/flash
 target/tester_package/tester
+software/nios_appl_bsp/libhal_bsp.a
+software/nios_solo_bsp/libhal_bsp.a
 tools/bin2hex
 tools/checksum
 tools/dump_rtos_trace
@@ -243,5 +247,5 @@ tools/svf_dump
 tools/swap
 software/6502/sidcrt/target
 *.d
+tools/dump_bus_trace
 tools/64tass/*.o
-
