@@ -145,8 +145,15 @@ C64::C64()
     flash = get_flash();
 
     if (getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
-        c64_config[7].items = timing2; // hack!
-        c64_config[7].def = 5; // hack!
+        t_cfg_definition *timing;
+
+        for(int i=0; (timing = &c64_config[i])->id != CFG_TYPE_END; i++) {
+            if(timing->id == CFG_C64_TIMING) {
+                timing->items = timing2; // hack!
+                timing->def = 5; // hack!
+                break;
+            }
+        }
     }
     register_store(0x43363420, "C64 and cartridge settings", c64_config);
 
