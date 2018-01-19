@@ -261,9 +261,13 @@ songLengthDigit1
                 adc #$30
 songLengthDigit2
                 sta $07bb,y
+                dey
+                cpy #$02
+                bne +
+                lda #':'
+                bne songLengthDigit2
++
                 dex
-                dey
-                dey
                 dey
                 bpl -
                 rts
