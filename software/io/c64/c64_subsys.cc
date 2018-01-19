@@ -9,6 +9,7 @@
 #include "c64_subsys.h"
 #include <ctype.h>
 #include "init_function.h"
+#include "userinterface.h"
 
 /* other external references */
 extern uint8_t _bootcrt_65_start;
@@ -107,7 +108,8 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 	FRESULT res;
 	CachedTreeNode *po;
 	uint32_t transferred;
-	int ram_size;
+    int ram_size;
+    char buffer[64] = "memory";
 
     switch(cmd->functionID) {
     case C64_UNFREEZE:
@@ -143,14 +145,48 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 	case MENU_C64_SAVEREU:
         ram_size = 128 * 1024;
         ram_size <<= c64->cfg->get_value(CFG_C64_REU_SIZE);
-        res = fm->fopen(cmd->path.c_str(), "memory.reu", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
-        if(res == FR_OK) {
-            printf("Opened file successfully.\n");
-            f->write((void *)REU_MEMORY_BASE, ram_size, &transferred);
-            printf("written: %d...", transferred);
-            fm->fclose(f);
-        } else {
-            printf("Couldn't open file..\n");
+        
+        if(cmd->user_interface->string_box("Save REU memory as..", buffer, 22) > 0) {
+            fix_filename(buffer);
+            set_extension(buffer, ".reu", 32);
+
+            res = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+            if(res == FR_OK) {
+                printf("Opened file successfully.\n");
+                
+                uint32_t reu_sizes[] =
+                    { 0x20000, 0x40000, 0x80000, 0x100000, 0x200000, 0x400000, 0x800000, 0x1000000 };
+
+                uint32_t current_reu_size = reu_sizes[c64->cfg->get_value(CFG_C64_REU_SIZE)];
+                uint32_t sectors = (current_reu_size >> 9);
+                uint32_t secs_per_step = (sectors + 31) >> 5;
+				uint32_t bytes_per_step = secs_per_step << 9;
+                uint32_t bytes_written;
+                uint32_t remain = current_reu_size;
+				uint8_t *src;
+                transferred = 0;
+                
+                cmd->user_interface->show_progress("Saving REU file..", 32);
+                src = (BYTE *)(REU_MEMORY_BASE + REU_MAX_SIZE - current_reu_size);
+                
+                while(remain != 0) {
+                    f->write(src, bytes_per_step, &bytes_written);
+                    transferred += bytes_written;
+                    cmd->user_interface->update_progress(NULL, 1);
+                    remain -= bytes_per_step;
+                    src += bytes_per_step;
+                }
+                cmd->user_interface->hide_progress();                
+                
+                printf("written: %d...", transferred);
+                sprintf(buffer, "Bytes saved: %d ($%8x)", transferred, transferred);
+                cmd->user_interface->popup(buffer, BUTTON_OK);
+                
+                fm->fclose(f);
+            } else {
+                printf("Couldn't open file..\n");
+                cmd->user_interface->popup(FileSystem :: get_error_string(res), BUTTON_OK);
+            }
         }
         break;
     case MENU_C64_SAVEFLASH: // doesn't belong here, but i need it fast
