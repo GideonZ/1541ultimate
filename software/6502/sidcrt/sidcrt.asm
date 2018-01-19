@@ -2273,7 +2273,6 @@ songlengths     .binclude 'songlengths.asm'
 
                 .enc 'screen'
 screenData1     .text '  *** THE ULTIMATE C-64 SID PLAYER ***  '
-
                 .byte $ff, $40, 40  ; line
                 .byte $ff, $20, 40  ; empty line
 
