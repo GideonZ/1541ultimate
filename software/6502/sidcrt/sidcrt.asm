@@ -238,6 +238,8 @@ loadSid         ldx #$ff            ; init stack pointer
                 beq SidHeaderDetected
 noSid           jmp reset           ; header is no real header so disable cartridge and perform a reset
 
+;##################################################
+
 SidHeaderDetected
                 jsr fixHeader       ; fix header after it has been moved (temporary fix)
                 jsr prepareSidHeader
@@ -252,7 +254,6 @@ SidHeaderDetected
                 jsr setupScreen
                 jsr songlengths.displayCurSongLength
 
-;##################################################
                 jsr copyPlayer
                 jsr setPlayerVars
 
@@ -282,6 +283,8 @@ SidHeaderDetected
                 lda #$00
                 sta $aa
                 jmp runPlayer
+
+;##################################################
 
 calculateExtraPlayerSize
                 ; extra player size is (extraPlayerEnd - extraPlayer + 1 + numberOfSongs * 2) >> 8
@@ -1331,11 +1334,11 @@ noMoreSids
 
                 jsr writeScreenData
 
-                lda #(40 * 23) >> 8
+                lda #(40 * 24) >> 8
                 clc
                 adc SCREEN_LOCATION
                 sta $f8
-                lda #(40 * 23) & $ff
+                lda #(40 * 24) & $ff
                 sta $f7
 
                 ; write time bar
@@ -2269,7 +2272,7 @@ detection       .binclude 'detection.asm'
 songlengths     .binclude 'songlengths.asm'
 
                 .enc 'screen'
-screenData1     .text ' **** THE ULTIMATE C-64 SID PLAYER **** '
+screenData1     .text '  *** THE ULTIMATE C-64 SID PLAYER ***  '
 
                 .byte $ff, $40, 40  ; line
                 .byte $ff, $20, 40  ; empty line
@@ -2305,8 +2308,7 @@ screenData6     .byte $ff, $20, 40  ; empty line
                 .byte $ff, $20, 33
                 .byte $00 ;end
 
-screenData7     .text '                                   05:00'
-                .byte $ff, $62, 40  ; time bar
+screenData7     .byte $ff, $62, 40  ; time bar
                 .byte $00 ;end
 
 PALLbl          .text '/ PAL', 0

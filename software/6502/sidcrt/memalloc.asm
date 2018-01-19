@@ -209,6 +209,8 @@ calcSmallestPlayerLocation
                 lda #$10
                 sta CHARROM_LOCATION
 
+                jsr readLoadAddresses
+
                 ldy #$79            ; get free page size
                 jsr readHeader
                 cmp #$02
@@ -221,8 +223,6 @@ calcSmallestPlayerLocation
                 sta PLAYER_LOCATION
                 jmp setScreenArea
 +
-                jsr readLoadAddresses
-
                 lda LOAD_ADDRESS
                 cmp #$06
                 bcc +

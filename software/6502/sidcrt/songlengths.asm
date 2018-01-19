@@ -27,18 +27,21 @@ loadSongLengths
                 jsr isSslValid
                 bne defaultTime
 
--               ldy #$00
-                lda LOCATION_SSL,y
+                lda #<LOCATION_SSL
+                sta $ac
+                lda #>LOCATION_SSL
+                sta $ad
+
+                ldy #$00
+-               lda ($ac),y
                 jsr writeAddress
                 iny
-                lda LOCATION_SSL,y
+                lda ($ac),y
                 jsr writeAddress
-                lda $aa
-                clc
-                adc #$02
-                sta $aa
-                bcc +
+                iny                 ; after INC Y, Y is always even
+                bne +
                 inc $ab
+                inc $ad
 +               dex
                 cpx #$ff
                 bne -
@@ -61,17 +64,14 @@ notValid        lda #$01
                 rts
 
 defaultTime
--               ldy #$00            ; set default song lengths to 5 minutes when no SSL or invalid song length is found
-                lda #$05            ; 5 minutes
+                ldy #$00            ; set default song lengths to 5 minutes when no SSL or invalid song length is found
+-               lda #$05            ; 5 minutes
                 jsr writeAddress
                 iny
                 lda #$00
                 jsr writeAddress
-                lda $aa
-                clc
-                adc #$02
-                sta $aa
-                bcc +
+                iny
+                bne +
                 inc $ab
 +               dex
                 cpx #$ff
@@ -80,13 +80,13 @@ defaultTime
 
 displayCurSongLength
                 jsr isSslValid
-                bne dontWriteSongLength     ; if there is no ssl available then the screen already displays the default
+                bne dontWriteSongLength     ; if there is no ssl available then don't display default time for normal player
 
                 lda SCREEN_LOCATION
                 clc
                 adc #$03
                 sta $ff
-                lda #$bc
+                lda #$bd
                 sta $fe
 
                 lda SONG_TO_PLAY
@@ -94,7 +94,7 @@ displayCurSongLength
                 tax
 
                 inx
-                ldy #$03
+                ldy #$02
 -               lda LOCATION_SSL,x
                 pha
                 and #$0f
@@ -109,10 +109,15 @@ displayCurSongLength
                 clc
                 adc #$30
                 dec $fe
-                jsr screenWrite
+-               jsr screenWrite
+                cpy #$02
+                bne +
+                dey
+                lda #':'
+                bne -
++
                 dex
                 dey
-                dey
-                bpl -
+                bpl --
  dontWriteSongLength
                 rts
