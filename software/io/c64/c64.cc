@@ -129,8 +129,13 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis2,    0,  1, 0 },
     { CFG_C64_DMA_ID,   CFG_TYPE_VALUE,  "DMA Load Mimics ID:",          "%d", NULL,       8, 31, 8 },
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",                 "%s", buttons,    0,  1, 1 },
+#if CLOCK_FREQ == 62500000
+    { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing2,    0,  7, 5 },
+    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 1 },
+#elif CLOCK_FREQ == 50000000
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
     { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 1 },
+#endif
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", ultimatedos,0,  3, 0 },
     { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis2,0,  1, 0 },
 //  { CFG_C64_RATE,     CFG_TYPE_ENUM,   "Stand-Alone Tick Rate",        "%s", tick_rates, 0,  1, 0 },
@@ -144,17 +149,6 @@ C64::C64()
 {
     flash = get_flash();
 
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
-        t_cfg_definition *timing;
-
-        for(int i=0; (timing = &c64_config[i])->id != CFG_TYPE_END; i++) {
-            if(timing->id == CFG_C64_TIMING) {
-                timing->items = timing2; // hack!
-                timing->def = 5; // hack!
-                break;
-            }
-        }
-    }
     register_store(0x43363420, "C64 and cartridge settings", c64_config);
 
     // char_set = new BYTE[CHARSET_SIZE];
@@ -245,8 +239,14 @@ void C64::set_emulation_flags(cart_def *def)
         }
     }
 
-    C64_PHI2_EDGE_RECOVER = cfg->get_value(CFG_C64_PHI2_REC);
-    C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
+    int recovery = cfg->get_value(CFG_C64_PHI2_REC);
+    if (recovery >= 0) {
+        C64_PHI2_EDGE_RECOVER = cfg->get_value(CFG_C64_PHI2_REC);
+        C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
+    } else { // U64
+        C64_PHI2_EDGE_RECOVER = 0;
+        C64_TIMING_ADDR_VALID = 3;
+    }
 }
 
 bool C64::exists(void)
@@ -735,6 +735,8 @@ void C64::set_cartridge(cart_def *def)
         int cart = cfg->get_value(CFG_C64_CART);
         def = &cartridges[cart];
     }
+    lastCartridgeId = def->id;
+
     printf("Setting cart mode %b. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
     C64_CARTRIDGE_TYPE = def->type & 0x1F;
 //    push_event(e_cart_mode_change, NULL, def->type);
@@ -746,11 +748,26 @@ void C64::set_cartridge(cart_def *def)
         printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, mem_addr);
         memcpy((void *) mem_addr, def->custom_addr, def->length);
 
-        if (def->id == ID_MODPLAYER) {
+        switch(def->id) {
+        case ID_MODPLAYER:
             // now overwrite the register settings
             C64_REU_SIZE = 7;
             C64_REU_ENABLE = 1;
             C64_SAMPLER_ENABLE = 1;
+            break;
+        case ID_CMDTEST:
+            if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+                CMD_IF_SLOT_ENABLE = 1;
+                CMD_IF_SLOT_BASE = 0x47; // $df1c
+            }
+            break;
+        case ID_SIDCART:
+            if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
+                CMD_IF_SLOT_ENABLE = 1;
+                CMD_IF_SLOT_BASE = 0x7F; // $dffc
+                printf("Enabled UCI at $DFFC\n");
+            }
+            break;
         }
     } else if (def->id && def->type) {
         printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
@@ -827,6 +844,13 @@ bool C64::buttonPush(void)
 {
     bool ret = buttonPushSeen;
     buttonPushSeen = false;
+
+    if (ret) {
+        if ((lastCartridgeId == ID_SIDCART) || (lastCartridgeId == ID_MODPLAYER)) {
+            set_cartridge(NULL);
+        }
+    }
+
     return ret;
 }
 

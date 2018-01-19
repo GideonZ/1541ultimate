@@ -24,6 +24,7 @@
 #define C64_DMA_LOAD_RAW	0x6466
 #define C64_DMA_BUFFER	    0x6467
 #define C64_DMA_RAW         0x6468
+#define C64_PUSH_BUTTON     0x6476
 #define C64_EVENT_MAX_REU   0x6477
 #define C64_EVENT_AUDIO_ON  0x6478
 #define C64_START_CART      0x6479
@@ -172,6 +173,8 @@
 #define CFG_C64_REU_OFFS    0x82
 
 #define ID_MODPLAYER 0xAA
+#define ID_SIDCART   0xBB
+#define ID_CMDTEST   0xCC
 
 typedef struct _cart
 {
@@ -204,6 +207,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_d011;
     uint8_t vic_d012;
 
+    uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
 
     bool stopped;

@@ -1,6 +1,7 @@
 #include "control_target.h"
 #include "disk_image.h"
 #include <string.h>
+#include "c64.h"
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
@@ -102,6 +103,10 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
     // the first byte of the command lead us here to this function.
     // the second byte is the command byte for the DOS; the third and forth byte are the length
     // data follows after the 4th byte and is thus aligned for copy.    
+    SubsysCommand *c64_command;
+    *reply  = &c_message_empty;
+    *status = &c_status_unknown_command;
+
     switch(command->message[1]) {
         case CTRL_CMD_IDENTIFY:
 		    *reply  = &c_message_identification;
@@ -110,10 +115,11 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
         case CTRL_CMD_DECODE_TRACK:
         	decode_track(command, reply, status);
         	break;
-
-        default:
-            *reply  = &c_message_empty;
-            *status = &c_status_unknown_command;
+        case CTRL_CMD_FREEZE:
+            c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_PUSH_BUTTON, (int)0, "", "");
+            c64_command->execute();
+            *status = &c_message_empty;
+            break;
     }
 }
 

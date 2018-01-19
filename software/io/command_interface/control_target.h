@@ -6,9 +6,9 @@
 
 #define CTRL_CMD_IDENTIFY       0x01
 #define CTRL_CMD_READ_RTC		0x02
+#define CTRL_CMD_FREEZE         0x05
 #define CTRL_CMD_DECODE_TRACK   0x11
 #define CTRL_CMD_ENCODE_TRACK   0x12
-
 
 class ControlTarget : CommandTarget
 {
