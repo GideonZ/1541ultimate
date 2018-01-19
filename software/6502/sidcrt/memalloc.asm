@@ -209,6 +209,8 @@ calcSmallestPlayerLocation
                 lda #$10
                 sta CHARROM_LOCATION
 
+                jsr readLoadAddresses
+
                 ldy #$79            ; get free page size
                 jsr readHeader
                 cmp #$02
@@ -221,8 +223,6 @@ calcSmallestPlayerLocation
                 sta PLAYER_LOCATION
                 jmp setScreenArea
 +
-                jsr readLoadAddresses
-
                 lda LOAD_ADDRESS
                 cmp #$06
                 bcc +
@@ -570,12 +570,6 @@ checkNext       inc LOOP_INDEX
                 cmp LOOP_END_INDEX
                 bne loopFreePages
 
-noExtraPlayer
-                ; advanced player is not possible
-                lda #$00
-                sta EXTRA_PLAYER_LOCATION
-                rts
-
 checkIfAllFit   lda PLAYER_LOCATION
                 ldx #$02            ; player size
                 jsr checkIfItFits
@@ -622,6 +616,10 @@ checkIfItFits   stx TEMP
 noFit2          lda #$01
                 rts
 
+noExtraPlayer   lda #$00                ; advanced player is not possible
+                sta EXTRA_PLAYER_LOCATION
+                rts
+
 calcExtraPlayerLocation
                 jsr readLoadAddresses
 
@@ -634,10 +632,7 @@ calcExtraPlayerLocation
                 sec
                 sbc EXTRA_PLAYER_SIZE
                 cmp LOOP_INDEX          ; check if end index is not lower than begin index
-                beq noSpaceBeforeLoad
                 bcc noSpaceBeforeLoad
-
-                lda LOAD_ADDRESS
                 sta LOOP_END_INDEX
 
                 jsr findExtraPlayerLoc
@@ -668,14 +663,15 @@ loopLocations
                 lda LOOP_INDEX
                 clc
                 adc EXTRA_PLAYER_SIZE
-                cmp #$a0
+                cmp #$a0                ; is end of advanced player before BASIC ROM location?
                 beq epLocFound
                 bcc epLocFound
 
+                ; now check if the advanced player can be installed between $C000-$D000
                 cmp #$d0
-                beq epLocFound
-                bcc epLocFound
-
+                beq +
+                bcs checkNext2
++
                 lda LOOP_INDEX
                 cmp #$c0
                 beq epLocFound
