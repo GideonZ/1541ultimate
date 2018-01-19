@@ -106,7 +106,7 @@ void SocketDMA :: parseBuffer(void *load_buffer, int length)
 		    size = (len > 0x2000) ? 0x2000 : len;
 		    if (sid_cart.custom_addr) {
 		        memcpy(sid_cart.custom_addr, buf, size);
-		        sid_cart.length = size;
+		        //sid_cart.length = size;
 		    }
 		    break;
         case SOCKET_CMD_LOADBOOTCRT:

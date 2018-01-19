@@ -23,7 +23,7 @@ __inline uint16_t cpu_to_16le(uint16_t a) {
 #endif
 }
 
-static char* wdnames[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
+static const char* wdnames[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
 
 // crate and register ourselves!
 Dos dos1(1);

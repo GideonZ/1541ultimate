@@ -17,7 +17,7 @@ CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 
 // cart definition
 extern uint8_t _cmd_test_rom_65_start;
-cart_def cmd_cart  = { 0x00, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
+cart_def cmd_cart  = { ID_CMDTEST, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 #define MENU_CMD_RUNCMDCART 0xC180
 
@@ -116,10 +116,13 @@ void CommandInterface :: run_task(void)
 
 				incoming_command.length = length;
 				target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
+				bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
 				command_targets[target]->parse_command(&incoming_command, &data, &status);
 				CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
 				copy_result(data, status);
-
+				if (no_reply) {
+				    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
+				}
 			} else {
 				printf("Null command.\n");
 				CMD_IF_RESPONSE_LEN_H = 0;

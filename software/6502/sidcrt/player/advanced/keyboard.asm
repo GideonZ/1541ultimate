@@ -97,8 +97,32 @@ plusKey         lda currentSong
 +               jmp selectSubTune
 
 gotoUltimateMenu
-                ; TODO implement code to return to Ultimate menu
-                inc $d021
+                lda $dffd ; Identification register
+                cmp #$c9
+                bne noUCI
+
+                ; Check if the UCI is busy
+                lda $dffc ; Status register
+                and #$30  ; State bits
+                bne busyUCI ; Temporarily unavailable
+
+                lda #$84  ; Control Target (Target #4 without reply)
+                sta $dffd ; Command pipe
+                lda #$05  ; Command Freeze
+                sta $dffd ; Command pipe
+                ; No params
+                lda #$01  ; New Command!
+                sta $dffc ; Control register
+
+                ; Now wait patiently
+-               lda $dffc
+                and #$30  ; Status bits
+                bne -
+                rts
+
+noUCI           inc $d020
+                rts
+busyUCI         inc $d021
                 rts
 
                 .section data

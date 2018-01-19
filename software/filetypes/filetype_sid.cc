@@ -8,6 +8,7 @@
 #include "userinterface.h"
 #include "stream_textlog.h"
 #include "init_function.h"
+#include "dump_hex.h"
 
 extern uint8_t _sidcrt_bin_start;
 extern uint8_t _sidcrt_bin_end;
@@ -32,7 +33,7 @@ const uint32_t magic_rsid = 0x52534944; // big endian
 
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
-cart_def sid_cart = { 0x00, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
+cart_def sid_cart = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 
 static inline uint16_t swap_word(uint16_t p)
 {
@@ -53,7 +54,7 @@ static void initSidCart(void *object, void *param)
     int size = (int)&_sidcrt_bin_end - (int)&_sidcrt_bin_start;
     uint8_t *sid_rom_area = new uint8_t[16384];
     sid_cart.custom_addr = sid_rom_area;
-//    sid_cart.length = size;
+    //sid_cart.length = size;
     memcpy(sid_rom_area, &_sidcrt_bin_start, size);
     printf("%d bytes copied into sid_cart.\n", size);
     memcpy(sid_rom_area + 0x2000, &_basic_bin_start, 8192);
@@ -236,16 +237,17 @@ void FileTypeSID :: readSongLengths(void)
 	uint8_t *sid_rom = (uint8_t *)sid_cart.custom_addr;
     // just clear the first few bytes for the player to know there
     // are no song lengths loaded
-	memset(sid_rom + 0x3E00, 0, 16);
+	memset(sid_rom + 0x3000, 0, 512);
 
 	uint32_t songLengthsArrayLength = 0;
 	if (fm->fopen(slPath->get_path(), filename, FA_READ, &sslFile) == FR_OK) {
-	    sslFile->read(sid_rom + 0x3E00, 512, &songLengthsArrayLength);
+	    sslFile->read(sid_rom + 0x3000, 512, &songLengthsArrayLength);
 	    printf("Song length array loaded. %d bytes\n", songLengthsArrayLength);
 	    fm->fclose(sslFile);
 	} else {
 	    printf("Cannot open file with song lengths.\n");
 	}
+
 	fm->release_path(slPath);
 }
 
@@ -490,7 +492,9 @@ void FileTypeSID :: load(void)
 	fm->fclose(file);
 	file = NULL;
 
-    c64_subsys->restoreCart();
+	// In this special case, we do NOT restore the cartridge right away,
+	// but we do this as soon as the button is pressed, not earlier.
+	// c64_subsys->restoreCart();
 	
 	return;
 }

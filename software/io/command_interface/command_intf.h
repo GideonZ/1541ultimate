@@ -95,6 +95,7 @@ extern CommandInterface cmd_if;
 /* Command Targets */
 
 #define CMD_IF_MAX_TARGET   0x0F
+#define CMD_IF_NO_REPLY     0x80
 
 // Mandatory commands for all targets
 #define CMD_IDENTIFY   0x01

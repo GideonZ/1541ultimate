@@ -112,6 +112,9 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     char buffer[64] = "memory";
 
     switch(cmd->functionID) {
+    case C64_PUSH_BUTTON:
+        c64->setButtonPushed();
+        break;
     case C64_UNFREEZE:
 		if(c64->client) { // we can't execute this yet
 			c64->client->release_host(); // disconnect from user interface
