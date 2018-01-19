@@ -570,12 +570,6 @@ checkNext       inc LOOP_INDEX
                 cmp LOOP_END_INDEX
                 bne loopFreePages
 
-noExtraPlayer
-                ; advanced player is not possible
-                lda #$00
-                sta EXTRA_PLAYER_LOCATION
-                rts
-
 checkIfAllFit   lda PLAYER_LOCATION
                 ldx #$02            ; player size
                 jsr checkIfItFits
@@ -622,6 +616,10 @@ checkIfItFits   stx TEMP
 noFit2          lda #$01
                 rts
 
+noExtraPlayer   lda #$00                ; advanced player is not possible
+                sta EXTRA_PLAYER_LOCATION
+                rts
+
 calcExtraPlayerLocation
                 jsr readLoadAddresses
 
@@ -634,10 +632,7 @@ calcExtraPlayerLocation
                 sec
                 sbc EXTRA_PLAYER_SIZE
                 cmp LOOP_INDEX          ; check if end index is not lower than begin index
-                beq noSpaceBeforeLoad
                 bcc noSpaceBeforeLoad
-
-                lda LOAD_ADDRESS
                 sta LOOP_END_INDEX
 
                 jsr findExtraPlayerLoc
