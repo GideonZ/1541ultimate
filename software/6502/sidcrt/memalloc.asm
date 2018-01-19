@@ -668,14 +668,15 @@ loopLocations
                 lda LOOP_INDEX
                 clc
                 adc EXTRA_PLAYER_SIZE
-                cmp #$a0
+                cmp #$a0                ; is end of advanced player before BASIC ROM location?
                 beq epLocFound
                 bcc epLocFound
 
+                ; now check if the advanced player can be installed between $C000-$D000
                 cmp #$d0
-                beq epLocFound
-                bcc epLocFound
-
+                beq +
+                bcs checkNext2
++
                 lda LOOP_INDEX
                 cmp #$c0
                 beq epLocFound
