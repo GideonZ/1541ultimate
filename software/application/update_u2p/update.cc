@@ -29,11 +29,13 @@ extern uint32_t _ultimate_app_end;
 extern uint32_t _rom_pack_start;
 extern uint32_t _rom_pack_end;
 
+/*
 extern uint32_t _ultimate_recovery_rbf_start;
 extern uint32_t _ultimate_recovery_rbf_end;
 
 extern uint32_t _recovery_app_start;
 extern uint32_t _recovery_app_end;
+*/
 
 void do_update(void)
 {
@@ -66,6 +68,7 @@ void do_update(void)
     console_print(screen, "%s ", rtc.get_long_date(time_buffer, 32));
 	console_print(screen, "%s\n", rtc.get_time_string(time_buffer, 32));
 
+/*
     if(user_interface->popup("Flash Recovery?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
     	REMOTE_FLASHSEL_0;
         REMOTE_FLASHSELCK_0;
@@ -79,6 +82,7 @@ void do_update(void)
     	console_print(screen, "\nConfiguring Flash write protection..\n");
     	console_print(screen, "Done!                            \n");
     }
+*/
 
     if(user_interface->popup("Flash Runtime?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
     	REMOTE_FLASHSEL_1;
@@ -99,11 +103,18 @@ void do_update(void)
 
 
     wait_ms(2000);
-	REMOTE_FLASHSEL_1;
+    console_print(screen, "\nPLEASE TURN OFF YOUR MACHINE.\n");
+
+    while (1)
+        ;
+
+/*
+    REMOTE_FLASHSEL_1;
     REMOTE_FLASHSELCK_0;
     REMOTE_FLASHSELCK_1;
     REMOTE_RECONFIG = 0xBE;
 	console_print(screen, "You shouldn't see this!\n");
+*/
 }
 
 extern "C" int ultimate_main(int argc, char *argv[])
