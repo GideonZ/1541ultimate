@@ -39,7 +39,7 @@ if (!$escript && $ARGV[0] eq "-c")
    {
       $escript = "insert-disk d64 '".substr($command,4)."'\nlarge-send\n";
    }
-   elsif (substr($command,0,4) eq "rund64:")
+   elsif (substr($command,0,7) eq "rund64:")
    {
       $escript = "insert-disk run d64 '".substr($command,7)."'\nlarge-send\n";
    }
