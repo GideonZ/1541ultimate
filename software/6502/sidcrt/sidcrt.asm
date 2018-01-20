@@ -1828,9 +1828,31 @@ reset           ldx #$00
                 bne -
                 jmp $0100
 
-resetRoutine    lda #40
+resetRoutine    inc $8005
+
+                lda $dffd ; Identification register
+                cmp #$c9
+                bne noUCI
+
+                ; Check if the UCI is busy
+                lda $dffc ; Status register
+                and #$30  ; State bits
+                bne noUCI ; Temporarily unavailable
+
+                lda #$84  ; Control Target (Target #4 without reply)
+                sta $dffd ; Command pipe
+                lda #$06  ; Command Reset Normal Cartridge
+                sta $dffd ; Command pipe
+                ; No params
+                lda #$01  ; New Command!
+                sta $dffc ; Control register
+
+                ; Now wait patiently, note A = 01
+-               bne -
+
+noUCI           lda #$40
                 sta $dfff
-                inc $8005
+
                 cli
                 jmp ($fffc)
 resetRoutineEnd

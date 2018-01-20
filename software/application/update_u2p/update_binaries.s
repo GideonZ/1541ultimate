@@ -37,6 +37,7 @@ _rom_pack_start:
 _rom_pack_end:
 
 .align 4
+.section ".rodata.recovery"
 
 .global _recovery_app_start
 .type _recovery_app_start, @object

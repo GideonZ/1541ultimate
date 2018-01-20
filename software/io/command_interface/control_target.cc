@@ -120,6 +120,11 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             c64_command->execute();
             *status = &c_message_empty;
             break;
+        case CTRL_CMD_REBOOT:
+            c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_REBOOT, (int)0, "", "");
+            c64_command->execute();
+            *status = &c_message_empty;
+            break;
     }
 }
 
