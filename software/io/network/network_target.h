@@ -18,7 +18,7 @@
 #define NET_CMD_SET_IPADDR          0x06
 #define NET_CMD_OPEN_TCP	        0x07
 #define NET_CMD_OPEN_UDP	        0x08
-#define NET_CMD_CLOSE		        0x09
+#define NET_CMD_CLOSE_SOCKET        0x09
 #define NET_CMD_READ_SOCKET         0x10
 #define NET_CMD_WRITE_SOCKET        0x11
 
@@ -27,11 +27,11 @@
 class NetworkTarget : public CommandTarget {
     Message data_message;
     Message status_message;
-    int interface_number;
     uint8_t buffer[NET_CMD_BUFSIZE];
     void open_socket(Message *command, Message **reply, Message **status, int);
     void read_socket(Message *command, Message **reply, Message **status);
     void write_socket(Message *command, Message **reply, Message **status);
+    void close_socket(Message *command, Message **reply, Message **status);
 public:
 	NetworkTarget(int id);
 	virtual ~NetworkTarget();
