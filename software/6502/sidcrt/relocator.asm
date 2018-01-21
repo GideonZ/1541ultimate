@@ -33,13 +33,13 @@ relocateCode    lda START_HI
 
 -               ldy #$00
                 jsr readAddress
-                cmp #$60            ; RTS is the only exception in opcode size between opcodes from $00-$3f and $40-$7f.
+                cmp #$20            ; JSR is the only exception in opcode size between opcodes from $00-$1f, $20-$3f, $40-$5f and $60-$7f.
                 bne +
-                lda #$00            ; interpret RTS as BRK
+                lda #$4c            ; interpret JSR as JMP
 
-+               and #$ff - $40      ; map $c0-$ff to $80-$bf and $40-$7f to $00-$3f
++               and #$ff - $60      ; map $e0-$ff, $c0-$df, $a0-$bf to $80-$9f and map $60-$7f, $40-$5f, $20-$3f to $00-$1f
                 bpl +
-                eor #$c0            ; map $80-$bf to $40-$7f
+                eor #$80 + $20      ; map $80-$9f to $20-$3f
 +               tax
                 lda opcodeSizes,x
                 pha
@@ -85,14 +85,10 @@ relocByte       tya
                 jmp writeAddress
 
                 ; these opcode sizes are compacted
-                ; opcodes $40-$7f are mapped to $00-$3f, except for RTS ($60) which should be handled separately
-                ; opcodes $80-$bf and $c0-$ff are mapped to $40-$7f
+                ; opcodes $60-$7f, $40-$5f, $20-$3f are mapped to $00-$1f, except for JSR ($20) which should be handled separately
+                ; opcodes $e0-$ff, $c0-$df, $a0-$bf, $80-$9f are mapped to $20-$3f
 opcodeSizes     .byte $01, $02, $01, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
                 .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
-                .byte $03, $02, $01, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
-                .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
 
-                .byte $02, $02, $02, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
-                .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
                 .byte $02, $02, $02, $02, $02, $02, $02, $02, $01, $02, $01, $02, $03, $03, $03, $03
                 .byte $02, $02, $01, $02, $02, $02, $02, $02, $01, $03, $01, $03, $03, $03, $03, $03
