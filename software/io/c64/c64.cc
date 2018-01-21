@@ -845,12 +845,6 @@ bool C64::buttonPush(void)
     bool ret = buttonPushSeen;
     buttonPushSeen = false;
 
-    if (ret) {
-        if ((lastCartridgeId == ID_SIDCART) || (lastCartridgeId == ID_MODPLAYER)) {
-            set_cartridge(NULL);
-        }
-    }
-
     return ret;
 }
 
