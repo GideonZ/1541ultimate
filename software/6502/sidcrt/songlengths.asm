@@ -63,8 +63,7 @@ valid           lda #$00
 notValid        lda #$01
                 rts
 
-defaultTime
-                ldy #$00            ; set default song lengths to 5 minutes when no SSL or invalid song length is found
+defaultTime     ldy #$00            ; set default song lengths to 5 minutes when no SSL or invalid song length is found
 -               lda #$05            ; 5 minutes
                 jsr writeAddress
                 iny
