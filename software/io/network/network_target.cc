@@ -17,18 +17,18 @@ NetworkTarget net(3);
 Message c_net_message_identification = { 34, true, (uint8_t *)"ULTIMATE-II NETWORK INTERFACE V1.0" };
 Message c_status_invalid_params      = { 17, true, (uint8_t *)"81,INVALID PARAMS" };
 Message c_status_param_out_of_range  = { 28, true, (uint8_t *)"82,PARAMETER(S) OUT OF RANGE" };
-Message c_status_interface_not_set   = { 20, true, (uint8_t *)"83,INTERFACE NOT SET" };
+Message c_status_interface_not_set   = { 26, true, (uint8_t *)"83,INTERFACE NOT AVAILABLE" };
 Message c_status_host_not_resolvable = { 18, true, (uint8_t *)"84,UNRESOLVED HOST" };
 Message c_status_no_socket           = { 23, true, (uint8_t *)"85,ERROR OPENING SOCKET" };
 Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLOSED BY HOST" };
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
+Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
 
 NetworkTarget::NetworkTarget(int id)
 {
     command_targets[id] = this;
     data_message.message = new uint8_t[512];
     status_message.message = new uint8_t[80];
-    interface_number = 0;
 }
 
 NetworkTarget::~NetworkTarget()
@@ -40,8 +40,9 @@ NetworkTarget::~NetworkTarget()
 
 void NetworkTarget :: parse_command(Message *command, Message **reply, Message **status)
 {
-	NetworkInterface *interface = NetworkInterface :: getInterface(interface_number);
-	switch(command->message[1]) {
+    NetworkInterface *interface;
+
+    switch(command->message[1]) {
         case NET_CMD_IDENTIFY:
             *reply  = &c_net_message_identification;
             *status = &c_status_ok;
@@ -53,28 +54,51 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
         	*reply  = &data_message;
             *status = &c_status_ok;
         	break;
+/*
         case NET_CMD_SET_INTERFACE:
         	*reply = &c_message_empty;
-        	if (command->length != 3)
+        	if (command->length != 3) {
         		*status = &c_status_invalid_params;
-        	else if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces())
+	        } else if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
         		*status = &c_status_param_out_of_range;
-        	else
+	        } else {
+                *status = &c_status_ok;
         		interface_number = command->message[2];
+        	}
         	break;
+*/
         case NET_CMD_GET_IPADDR:
-        	if (interface) {
+            *reply = &c_message_empty;
+            if (command->length != 3) {
+                *status = &c_status_invalid_params;
+                break;
+            }
+            if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
+                *status = &c_status_param_out_of_range;
+                break;
+            }
+            interface = NetworkInterface :: getInterface(command->message[2]);
+            if (interface) {
         		*reply = &data_message;
         		*status = &c_status_ok;
         		interface->getIpAddr(data_message.message);
         		data_message.length = 12;
             	data_message.last_part = true;
         	} else {
-        		*reply = &c_message_empty;
         		*status = &c_status_interface_not_set;
         	}
         	break;
         case NET_CMD_GET_NETADDR:
+            *reply = &c_message_empty;
+            if (command->length != 3) {
+                *status = &c_status_invalid_params;
+                break;
+            }
+            if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
+                *status = &c_status_param_out_of_range;
+                break;
+            }
+            interface = NetworkInterface :: getInterface(command->message[2]);
         	if (interface) {
         		*reply = &data_message;
         		*status = &c_status_ok;
@@ -87,27 +111,55 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
         	}
         	break;
         case NET_CMD_SET_IPADDR:
+            *reply = &c_message_empty;
+            if (command->length != 15) { // 12 + 3
+                *status = &c_status_invalid_params;
+                break;
+            }
+            if (command->message[2] >= (uint8_t)NetworkInterface :: getNumberOfInterfaces()) {
+                *status = &c_status_param_out_of_range;
+                break;
+            }
+            interface = NetworkInterface :: getInterface(command->message[2]);
         	if (interface) {
-        		if (command->length != 14) { // 2 + 12
-					*reply = &c_message_empty;
-            		*status = &c_status_invalid_params;
-        		} else {
-					*reply = &c_message_empty;
-					*status = &c_status_ok;
-        		}
-				interface->setIpAddr(&command->message[2]);
+				interface->setIpAddr(&command->message[3]);
+                *reply = &c_message_empty;
+                *status = &c_status_ok;
         	} else {
         		*reply = &c_message_empty;
         		*status = &c_status_interface_not_set;
         	}
         	break;
         case NET_CMD_OPEN_TCP:
-        	open_socket(command, reply, status, SOCK_STREAM);
+            if (command->length < 5) { // Impossible
+                *reply = &c_message_empty;
+                *status = &c_status_invalid_params;
+                break;
+            }
+            open_socket(command, reply, status, SOCK_STREAM);
 			break;
         case NET_CMD_OPEN_UDP:
+            if (command->length < 5) { // Impossible
+                *reply = &c_message_empty;
+                *status = &c_status_invalid_params;
+                break;
+            }
         	open_socket(command, reply, status, SOCK_DGRAM);
         	break;
+        case NET_CMD_CLOSE_SOCKET:
+            if (command->length != 3) { // 2 + 1
+                *reply = &c_message_empty;
+                *status = &c_status_invalid_params;
+                break;
+            }
+            close_socket(command, reply, status);
+            break;
         case NET_CMD_READ_SOCKET:
+            if (command->length != 5) { // 2 + 3
+                *reply = &c_message_empty;
+                *status = &c_status_invalid_params;
+                break;
+            }
         	read_socket(command, reply, status);
         	break;
         case NET_CMD_WRITE_SOCKET:
@@ -160,10 +212,18 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 		sprintf((char *)this->status_message.message, "11,ERROR ON CONNECT: %d", errno);
 		this->status_message.length = strlen((char *)this->status_message.message);
 		lwip_close(socket);
+		return;
 	}
+
+	if (socket > 255) {
+        *status = &c_status_internal_error;
+        lwip_close(socket);
+        return;
+	}
+
 	*reply = &data_message;
-	memcpy(this->data_message.message, &socket, sizeof(int));
-	this->data_message.length = sizeof(int);
+	this->data_message.message[0] = (uint8_t)socket;
+	this->data_message.length = 1;
 	data_message.last_part = true;
 
 	struct timeval tv;
@@ -174,29 +234,24 @@ void NetworkTarget :: open_socket(Message *command, Message **reply, Message **s
 
 void NetworkTarget :: read_socket(Message *command, Message **reply, Message **status)
 {
-	int socket;
-	int length;
-	uint8_t *dest = (uint8_t *)&socket;
-	uint8_t *src = &command->message[2];
-	for(int i=0;i<sizeof(int);i++) {
-		*(dest++) = *(src++);
-	}
-	dest = (uint8_t *)&length;
-	for(int i=0;i<sizeof(int);i++) {
-		*(dest++) = *(src++);
-	}
+	uint8_t socketnr = command->message[2];
+	uint32_t length = ((uint32_t)command->message[3]) | (((uint32_t)command->message[4]) << 8);
 
-	*reply = &c_message_empty;
-	int ret = lwip_recv(socket, data_message.message, length, 0);
+    *reply = &data_message;
+	int ret = lwip_recv(socketnr, &data_message.message[2], length, 0);
+    data_message.length = 2;
+    data_message.last_part = true;
+    data_message.message[0] = (ret & 0xFF);
+    data_message.message[1] = (ret & 0xFF00) >> 8;
+
+    // printf("Reading %d bytes from socket %d resulted in %d\n", length, socketnr, ret);
 	if (ret == 0) {
-		lwip_close(socket);
+		lwip_close(socketnr);
 		*status = &c_status_socket_closed;
 		return;
 	}
 	if (ret > 0) {
-		*reply = &data_message;
-		data_message.length = ret;
-    	data_message.last_part = true;
+		data_message.length = ret + 2;
 		*status = &c_status_ok;
 		return;
 	}
@@ -204,27 +259,45 @@ void NetworkTarget :: read_socket(Message *command, Message **reply, Message **s
 	sprintf((char *)this->status_message.message, "02,NO DATA: %d", errno);
 	this->status_message.length = strlen((char *)this->status_message.message);
 }
-
+#include "dump_hex.h"
 void NetworkTarget :: write_socket(Message *command, Message **reply, Message **status)
 {
-	int socket;
-	uint8_t *dest = (uint8_t *)&socket;
-	uint8_t *src = &command->message[2];
-	for(int i=0;i<sizeof(int);i++) {
-		*(dest++) = *(src++);
-	}
-	int length = command->length - 4;
-	int ret = lwip_send(socket, src, length, 0);
-	if (ret < 0) {
+    uint8_t socketnr = command->message[2];
+    uint8_t *src = &command->message[3];
+
+    int length = command->length - 3;
+    int ret = lwip_send(socketnr, src, length, 0);
+    // printf("Writing %d bytes to socket %d resulted in %d\n", length, socketnr, ret);
+    // dump_hex_relative(src, length);
+
+    *reply = &data_message;
+    data_message.length = 2;
+    data_message.last_part = true;
+    data_message.message[0] = (ret & 0xFF);
+    data_message.message[1] = (ret & 0xFF00) >> 8;
+
+    if (ret < 0) {
 		*status = &status_message;
 		sprintf((char *)this->status_message.message, "12,SEND ERROR: %d", errno);
 		this->status_message.length = strlen((char *)this->status_message.message);
-		return;
+	} else {
+	    *status = &c_status_ok;
 	}
-	*reply = &c_message_empty;
-	*status = &c_status_ok;
 }
 
+void NetworkTarget :: close_socket(Message *command, Message **reply, Message **status)
+{
+    uint8_t socketnr = command->message[2];
+    int result = lwip_close(socketnr);
+    *reply = &c_message_empty;
+    if (result < 0) {
+        *status = &status_message;
+        sprintf((char *)this->status_message.message, "12,ERROR ON CLOSE: %d", errno);
+        this->status_message.length = strlen((char *)this->status_message.message);
+    } else {
+        *status = &c_status_ok;
+    }
+}
 
 void NetworkTarget :: get_more_data(Message **reply, Message **status)
 {
