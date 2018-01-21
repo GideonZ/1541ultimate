@@ -25,10 +25,9 @@
 ;
 ;-----------------------------------------------------------------------
 
-; TODO
-; - implement reading SSL files for songlength support
-
 ; CONSTANTS
+INCLUDE_RUNSTOP = 1
+
 SID_MODE = $aa
 DMA_MODE = $ab
 
@@ -1095,13 +1094,13 @@ prepareSidHeader
                 jsr readHeader
                 tax
                 tay
-                jsr readHeader     ; get load address low at offset $7c
+                jsr readHeader      ; get load address low at offset $7c
                 ldy #$08            ; set load address low
                 sta (SID_HEADER_LO),y
                 inx
                 txa
                 tay
-                jsr readHeader     ; get load address high at offset $7d
+                jsr readHeader      ; get load address high at offset $7d
                 ldy #$09            ; set load address high
                 sta (SID_HEADER_LO),y
 +
@@ -1733,16 +1732,14 @@ stopPrintData
 
 printNibble     tax
                 inx
-countOne
                 sed
                 ldy #$00
                 lda #$00
 convertToDec    clc
                 adc #$01
-                bcc noIncHundred
+                bcc +
                 iny
-noIncHundred
-                dex
++               dex
                 bne convertToDec
 stopDecConversion
                 cld
@@ -1760,7 +1757,6 @@ stopDecConversion
                 inc $fe
                 pla
 skipFirstNibble2
-
                 pha
                 lsr
                 lsr
