@@ -60,7 +60,7 @@ public:
 	void stop();
 	void start(int);
 	void poll();
-	void set_file(File *f, uint32_t, int);
+	void set_file(File *f, uint32_t, int, int);
 };
 
 extern TapeController *tape_controller;

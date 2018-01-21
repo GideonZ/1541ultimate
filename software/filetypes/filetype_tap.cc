@@ -57,10 +57,11 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(FileType :: getFi
 /*************************************************************/
 
 
-FileTypeTap :: FileTypeTap(BrowsableDirEntry *node)
+FileTypeTap :: FileTypeTap(BrowsableDirEntry *node) : tapIndices(4, NULL)
 {
 	this->node = node;
 	printf("Creating Tap type from: %s\n", node->getName());
+	indexValid = false;
 }
 
 FileTypeTap :: ~FileTypeTap()
@@ -68,17 +69,134 @@ FileTypeTap :: ~FileTypeTap()
     printf("Destructor of FileTypeTap.\n");
 }
 
+void FileTypeTap :: readIndexFile(void)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    File *idxFile;
+
+    char filename[80];
+    strncpy(filename, node->getName(), 79);
+    filename[79] = 0;
+
+    set_extension(filename, ".idx", 80);
+
+    indexValid = false;
+    if (fm->fopen(node->getPath(), filename, FA_READ, &idxFile) == FR_OK) {
+        parseIndexFile(idxFile);
+        fm->fclose(idxFile);
+    } else {
+        printf("Cannot open file with song lengths.\n");
+    }
+}
+
+static uint32_t readLine(const char *buffer, uint32_t index, char *out, int outlen)
+{
+    int i = 0;
+    // trim leading spaces and tabs
+    while ((buffer[index] == 0x20) || (buffer[index] == 0x09)) {
+        index ++;
+    }
+    while ((buffer[index] != 0x0A) && (buffer[index] != 0x00)) {
+        if (buffer[index] != 0x0D) {
+            if (i < (outlen-1)) {
+                out[i++] = buffer[index];
+            }
+        }
+        index++;
+    }
+    if (buffer[index] == 0x0A) {
+        index++;
+    }
+    out[i] = 0;
+    return index;
+}
+
+static void trimLine(char *line)
+{
+    // first truncate anything behind a semicolon
+    int len = strlen(line);
+    for (int i=0;i<len;i++) {
+        if (line[i] == ';') {
+            line[i] = 0;
+            break;
+        }
+    }
+
+    // then, remove trailing spaces
+    len = strlen(line);
+    for (int i=len-1; i >= 0; i--) {
+        if ((line[i] == ' ')||(line[i] == '\t')) {
+            line[i] = 0;
+        } else {
+            break;
+        }
+    }
+}
+
+static void parseLine(char *line, char *name, int len, uint32_t *offset)
+{
+    char *rest;
+    uint32_t value = strtol(line, &rest, 0);
+    *offset = value;
+    if (*rest) {
+        rest++;
+    }
+    name[len-1] = 0;
+    strncpy(name, rest, len-1);
+}
+
+void FileTypeTap :: parseIndexFile(File *f)
+{
+    uint32_t size = f->get_size();
+    if ((size > 8192) || (size < 8)) { // max 8K index file
+        return;
+    }
+    char *buffer = new char[size];
+    char *linebuf = new char[80];
+    char *name;
+
+    uint32_t transferred;
+    f->read(buffer, size, &transferred);
+
+    uint32_t offset;
+
+    uint32_t index = 0;
+    while(index < size) {
+        index = readLine(buffer, index, linebuf, 80);
+        trimLine(linebuf);
+        if (strlen(linebuf) > 0) {
+            TapIndexEntry *entry = new TapIndexEntry;
+            parseLine(linebuf, entry->name, 28, &(entry->offset));
+            tapIndices.append(entry);
+        }
+    }
+    delete linebuf;
+    delete buffer;
+    indexValid = true;
+}
+
 int FileTypeTap :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_C2N_STREAMER) {
+        if (!indexValid) {
+            readIndexFile();
+        }
+
         list.append(new Action("Run Tape", FileTypeTap :: execute_st, TAPFILE_RUN, 0 ));
-        count++;
-        list.append(new Action("Start Tape", FileTypeTap :: execute_st, TAPFILE_START, 0 ));
         count++;
         list.append(new Action("Write to Tape", FileTypeTap :: execute_st, TAPFILE_WRITE, 0 ));
         count++;
+        if (!indexValid) {
+            list.append(new Action("Start Tape", FileTypeTap :: execute_st, TAPFILE_START, 0 ));
+            count++;
+        } else {
+            for(int i=0; i < tapIndices.get_elements(); i++) {
+                list.append(new Action(tapIndices[i]->name, FileTypeTap :: execute_st, TAPFILE_START, tapIndices[i]->offset ));
+                count++;
+            }
+        }
 //        list.append(new Action("Alt. Write", FileTypeTap :: execute_st, TAPFILE_WRITE2, 0 ));
 //        count++;
     }
@@ -121,7 +239,7 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
 		return -3;
 	}
 	pul = (uint32_t *)&read_buf[16];
-	tape_controller->set_file(file, le_to_cpu_32(*pul), int(read_buf[12]));
+	tape_controller->set_file(file, le_to_cpu_32(*pul), int(read_buf[12]), cmd->mode); // the mode parameter holds the offset in the file
 	file = NULL; // after set file, the tape controller is now owner of the File object :)
 
 	switch(cmd->functionID) {
