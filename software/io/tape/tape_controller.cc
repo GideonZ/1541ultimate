@@ -212,12 +212,16 @@ int TapeController :: executeCommand(SubsysCommand *cmd)
 	return 0;
 }
 
-void TapeController :: set_file(File *f, uint32_t len, int m)
+void TapeController :: set_file(File *f, uint32_t len, int m, int offset)
 {
 	close();
 	file = f;
-	length = len;
-	block = 512 - 20;
-	mode = m; 
+	length = f->get_size() - offset;
+	mode = m;
+
+	if (offset < 20) {
+	    offset = 20;
+	}
+	file->seek((uint32_t)offset);
+	block = 512 - (offset & 0x1FF);
 }
-		

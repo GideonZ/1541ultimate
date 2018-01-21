@@ -3,11 +3,22 @@
 
 #include "filetypes.h"
 #include "browsable_root.h"
+#include "indexed_list.h"
+
+typedef struct
+{
+    uint32_t offset;
+    char name[28];
+} TapIndexEntry;
 
 class FileTypeTap : public FileType
 {
 	BrowsableDirEntry *node;
 	void closeFile();
+	bool indexValid;
+	void readIndexFile();
+	void parseIndexFile(File *f);
+	IndexedList<TapIndexEntry *> tapIndices;
 public:
     FileTypeTap(BrowsableDirEntry *par);
     ~FileTypeTap();
