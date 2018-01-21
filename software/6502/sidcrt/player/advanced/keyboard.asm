@@ -40,9 +40,10 @@ keyPressed      cmp currentKey,x
                 cpx #$07            ; check for runstop to exit player and for <- key to fastforward tune
                 bne +
 
+.if INCLUDE_RUNSTOP==1
                 cmp #$7f            ; check if runstop key is pressed
                 beq gotoUltimateMenu
-
+.fi
                 cmp #$fd
                 bne +
                 ldy #$01
@@ -96,6 +97,7 @@ plusKey         lda currentSong
                 sta currentSong
 +               jmp selectSubTune
 
+.if INCLUDE_RUNSTOP==1
 gotoUltimateMenu
                 lda $dffd ; Identification register
                 cmp #$c9
@@ -124,7 +126,7 @@ noUCI           inc $d020
                 rts
 busyUCI         inc $d021
                 rts
-
+.fi
                 .section data
 keyRow          .byte $fe, $fd, $fb, $f7, $ef, $df, $bf, $7f
 currentKey      .byte 0, 0, 0, 0, 0, 0, 0, 0
