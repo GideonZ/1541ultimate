@@ -90,15 +90,21 @@ void TapeController :: start(int playout_pin) // pin = 1: read, pin = 2: write
 	PLAYBACK_CONTROL = 0;
 	paused = 0;
 	
+    // insert one second pause to start with
+    *PLAYBACK_DATA = 0x00;
+    *PLAYBACK_DATA = 0xA2;
+    *PLAYBACK_DATA = 0x08;
+    *PLAYBACK_DATA = 0x0F;
+
 	controlByte = C2N_ENABLE | uint8_t(mode << 3) | uint8_t(playout_pin << 6);
 	if (playout_pin == 1) { // normal playback: WE control the Sense PIN
 		controlByte |= C2N_SENSE;
 	} else { // record!
 		// insert one second pause to start with
-		*PLAYBACK_DATA = 0x00;
-		*PLAYBACK_DATA = 0xA2;
-		*PLAYBACK_DATA = 0x08;
-		*PLAYBACK_DATA = 0x0F;
+		//*PLAYBACK_DATA = 0x00;
+		//*PLAYBACK_DATA = 0xA2;
+		//*PLAYBACK_DATA = 0x08;
+		//*PLAYBACK_DATA = 0x0F;
 	}
 
 	// preload some blocks

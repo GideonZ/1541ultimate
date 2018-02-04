@@ -12,6 +12,7 @@
 #include "action.h"
 #include "file_info.h"
 class BrowsableDirEntry;
+class Browsable;
 
 class FileType
 {
@@ -26,6 +27,10 @@ public:
 
 	virtual int fetch_context_items(IndexedList<Action *> &list) {
 		return 0;
+	}
+
+	virtual int getCustomBrowsables(Browsable *parent, IndexedList<Browsable *> &list) {
+	    return -1;
 	}
 };
 

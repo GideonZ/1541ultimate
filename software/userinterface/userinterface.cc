@@ -351,7 +351,9 @@ int UserInterface :: enterSelection()
 	TreeBrowser *browser = (TreeBrowser *)(get_root_object());
 	if (browser) {
 		if (browser->state) {
-			browser->state->into2();
+			if(browser->state->into2()) {
+			    return -1;
+			}
 			return 0;
 		}
 	}

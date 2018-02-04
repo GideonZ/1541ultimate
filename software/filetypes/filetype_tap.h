@@ -26,8 +26,30 @@ public:
     int   fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
     static int execute_st(SubsysCommand *cmd);
+    static int enter_st(SubsysCommand *cmd);
     int execute(SubsysCommand *cmd);
+
+    int getCustomBrowsables(Browsable *, IndexedList<Browsable *> &list);
 };
 
+class BrowsableTapEntry : public Browsable
+{
+    Browsable *parent;
+    TapIndexEntry *tiEntry;
+public:
+    BrowsableTapEntry(Browsable *p, TapIndexEntry *ti) : parent(p), tiEntry(ti) {
+
+    }
+
+    virtual ~BrowsableTapEntry() { }
+
+    virtual Browsable *getParent() { return parent; }
+    virtual const char *getName() { return "BrowsableTapEntry"; }
+    virtual void fetch_context_items(IndexedList<Action *> &list);
+    virtual void getDisplayString(char *buffer, int width) {
+        sprintf(buffer, "%#s \eE%6x", width-8, tiEntry->name, tiEntry->offset);
+    }
+
+};
 
 #endif

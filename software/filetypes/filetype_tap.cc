@@ -51,6 +51,11 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_tap(FileType :: getFi
 #define TAPFILE_START 0x3110
 #define TAPFILE_WRITE 0x3111
 #define TAPFILE_WRITE2 0x3112
+#define TAPFILE_INDEX  0x3113
+
+#define TAPFILE_RUN_PARENT   (0x8000 | TAPFILE_RUN)
+#define TAPFILE_START_PARENT (0x8000 | TAPFILE_START)
+#define TAPFILE_WRITE_PARENT (0x8000 | TAPFILE_WRITE)
 
 /*************************************************************/
 /* Tap File Browser Handling                                 */
@@ -180,27 +185,32 @@ int FileTypeTap :: fetch_context_items(IndexedList<Action *> &list)
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     if(capabilities & CAPAB_C2N_STREAMER) {
-        if (!indexValid) {
-            readIndexFile();
-        }
-
+        list.append(new Action("Enter (index)", FileTypeTap :: enter_st, TAPFILE_INDEX, 0 ));
+        count++;
         list.append(new Action("Run Tape", FileTypeTap :: execute_st, TAPFILE_RUN, 0 ));
         count++;
         list.append(new Action("Write to Tape", FileTypeTap :: execute_st, TAPFILE_WRITE, 0 ));
         count++;
-        if (!indexValid) {
-            list.append(new Action("Start Tape", FileTypeTap :: execute_st, TAPFILE_START, 0 ));
-            count++;
-        } else {
+        list.append(new Action("Start Tape", FileTypeTap :: execute_st, TAPFILE_START, 0 ));
+        count++;
+
+/*
             for(int i=0; i < tapIndices.get_elements(); i++) {
                 list.append(new Action(tapIndices[i]->name, FileTypeTap :: execute_st, TAPFILE_START, tapIndices[i]->offset ));
                 count++;
             }
-        }
+*/
 //        list.append(new Action("Alt. Write", FileTypeTap :: execute_st, TAPFILE_WRITE2, 0 ));
 //        count++;
     }
     return count;
+}
+
+void BrowsableTapEntry :: fetch_context_items(IndexedList<Action *> &list)
+{
+    list.append(new Action("Start From Here", FileTypeTap :: execute_st, TAPFILE_START_PARENT, tiEntry->offset ));
+    list.append(new Action("Run From Here",   FileTypeTap :: execute_st, TAPFILE_RUN_PARENT, tiEntry->offset ));
+    list.append(new Action("Write From Here", FileTypeTap :: execute_st, TAPFILE_WRITE_PARENT, tiEntry->offset ));
 }
 
 FileType *FileTypeTap :: test_type(BrowsableDirEntry *obj)
@@ -209,6 +219,36 @@ FileType *FileTypeTap :: test_type(BrowsableDirEntry *obj)
     if(strcmp(inf->extension, "TAP")==0)
         return new FileTypeTap(obj);
     return NULL;
+}
+
+int FileTypeTap :: getCustomBrowsables(Browsable *parentBrowsable, IndexedList<Browsable *> &list)
+{
+    if (list.get_elements())
+        return 0; // List is not empty; I have done this before.
+
+    if (!indexValid) { // no need to read again
+        this->readIndexFile();
+    }
+    if (indexValid) {
+        for(int i=0; i < tapIndices.get_elements(); i++) {
+            list.append(new BrowsableTapEntry(parentBrowsable, tapIndices[i]));
+        }
+        return 1; // OK
+    }
+    // too bad, there is no index file
+    return -1;
+}
+
+int FileTypeTap :: enter_st(SubsysCommand *cmd)
+{
+    if (cmd->user_interface) {
+        int ret = cmd->user_interface->enterSelection();
+        if (ret < 0) {
+            cmd->user_interface->popup("No Index file found", BUTTON_OK);
+        }
+        return ret;
+    }
+    return -1;
 }
 
 int FileTypeTap :: execute_st(SubsysCommand *cmd)
@@ -223,8 +263,15 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
 	tape_controller->stop();
 	tape_controller->close();
 
+	int functionID = cmd->functionID & 0x7FFF;
+	const char *fn = cmd->filename.c_str();
+
+	if (cmd->functionID & 0x8000) {
+	    fn = "";
+	}
+
 	File *file = 0;
-	fres = FileManager :: getFileManager() -> fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+	fres = FileManager :: getFileManager() -> fopen(cmd->path.c_str(), fn, FA_READ, &file);
 	if(!file) {
 		cmd->user_interface->popup("Can't open TAP file.", BUTTON_OK);
 		return -1;
@@ -242,11 +289,15 @@ int FileTypeTap :: execute_st(SubsysCommand *cmd)
 	tape_controller->set_file(file, le_to_cpu_32(*pul), int(read_buf[12]), cmd->mode); // the mode parameter holds the offset in the file
 	file = NULL; // after set file, the tape controller is now owner of the File object :)
 
-	switch(cmd->functionID) {
+	switch(functionID) {
 	case TAPFILE_START:
-		if(cmd->user_interface->popup("Tape emulation starts now..", BUTTON_OK | BUTTON_CANCEL) == BUTTON_OK) {
+        c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_UNFREEZE, 0, "", "");
+        c64_command->execute();
+        vTaskDelay(50);
+        //if(cmd->user_interface->popup("Tape emulation starts now..", BUTTON_OK | BUTTON_CANCEL) == BUTTON_OK) {
 			tape_controller->start(1);
-		}
+		//}
+        printf("Tape emulation started.\n");
 		break;
 	case TAPFILE_RUN:
 //		c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_START_CART, (int)&sid_cart, "", "");
