@@ -101,6 +101,13 @@ public:
 			return &children; // cached version OK
 		}
 
+		if (type) {
+		    if (type->getCustomBrowsables(this, children) >= 0) {
+		        error = 0;
+		        return &children; // filetype returned custom browsables
+		    }
+		}
+
 		setPath();
 		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
 		if (path->get_directory(*infos) != FR_OK) {
