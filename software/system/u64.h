@@ -22,6 +22,8 @@
 #define U64_RESTORE_REG    (*(volatile uint8_t *)(U64_IO_BASE + 0x02))
 #define U64_AUDIO_SEL_REG  (*(volatile uint8_t *)(U64_IO_BASE + 0x03))
 #define U64_HDMI_PLL_RESET (*(volatile uint8_t *)(U64_IO_BASE + 0x04))
+#define U64_EXT_I2C_SCL    (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
+#define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 
 #define U64_HDMI_DDC_ENABLE     0x20
 #define U64_HDMI_DDC_DISABLE    0x10

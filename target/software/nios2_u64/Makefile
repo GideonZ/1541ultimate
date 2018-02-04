@@ -25,6 +25,7 @@ SRCS_C   =	itu.c \
             ffsyscall.c \
             time.c \
             i2c.c \
+            ext_i2c.c \
             mdio.c \
 			codec.c \
             sid_coeff.c \

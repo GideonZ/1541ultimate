@@ -29,6 +29,7 @@
 #include "c64.h"
 #include "subsys.h"
 #include "userinterface.h"
+#include "ext_i2c.h"
 
 extern "C" {
     #include "dump_hex.h"
@@ -37,6 +38,7 @@ extern "C" {
 #define CMD_SET_KERNAL   0x4201
 #define CMD_SET_DRIVEROM 0x4202
 #define CMD_SET_CARTROM  0x4203
+#define CMD_WRITE_EEPROM 0x4204
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_bin(FileType :: getFileTypeFactory(), FileTypeBin :: test_type);
@@ -57,10 +59,18 @@ FileTypeBin :: ~FileTypeBin()
 }
 
 
+
 int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;
     int size = node->getInfo()->size;
+
+#if DEVELOPER
+    if (size == 256) {
+        list.append(new Action("Write EEPROM", FileTypeBin :: execute_st, CMD_WRITE_EEPROM, (int)this));
+        count++;
+    }
+#endif
 
     if (size == 8192) {
       list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
@@ -108,6 +118,10 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     
     switch(cmd->functionID) {
 
+    case CMD_WRITE_EEPROM:
+        size = 256;
+        break;
+
     case CMD_SET_DRIVEROM:
       size = 32768;
       id = FLASH_ID_CUSTOM_DRV;
@@ -138,7 +152,20 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     	}
         fm->fclose(file);
 
-    	if (transferred == size) { // this should now match
+#if DEVELOPER
+        if (cmd->functionID == CMD_WRITE_EEPROM) {
+            for(int i=0;i<256;i++) {
+                ext_i2c_write_byte(0xA0, i, buffer[i]);
+                for(int j=0;j<10000;j++)
+                    ;
+            }
+            cmd->user_interface->popup("EEPROM written", BUTTON_OK);
+            delete buffer;
+            return 0;
+        }
+#endif
+
+        if (transferred == size) { // this should now match
     		int retval = get_flash()->write_image(id, buffer, size);
     		if (retval) {
     			printf("Flashing Kernal or drive ROM Failed: %d\n", retval);
