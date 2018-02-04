@@ -559,7 +559,7 @@ rp_skp1
 
 	jsr $ff84
 
-	jsr synchronize
+;	jsr synchronize
 	
 	jmp	RUNNER
 
