@@ -20,6 +20,7 @@ extern "C" {
 #include "audio_select.h"
 #include "fpll.h"
 #include "i2c.h"
+#include "ext_i2c.h"
 
 // static pointer
 U64Config u64_configurator;
@@ -172,11 +173,12 @@ void U64Config :: setPllOffset(ConfigItem *it)
 void U64Config :: setScanMode(ConfigItem *it)
 {
 	if(it) {
-		SetScanMode(it->value);
+//		SetScanMode(it->value);
 	}
 }
 
 #define MENU_U64_SAVEEDID 1
+#define MENU_U64_SAVEEEPROM 2
 
 int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 {
@@ -184,6 +186,8 @@ int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 	if(fm->is_path_writable(p)) {
     	item_list.append(new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID));
     	count ++;
+        item_list.append(new Action("Save I2C ROM to file", SUBSYSID_U64, MENU_U64_SAVEEEPROM));
+        count ++;
     }
 	return count;
 
@@ -221,6 +225,22 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     		}
     	}
     	break;
+    case MENU_U64_SAVEEEPROM:
+        // Try to read EDID, just a hardware test
+        if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+            if (ext_i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
+                dump_hex_relative(edid, 256);
+                if (cmd->user_interface->string_box("Reading I2C OK. Save to:", name, 31) > 0) {
+                    set_extension(name, ".bin", 32);
+                    fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+                    if (fres == FR_OK) {
+                        f->write(edid, 256, &trans);
+                        fm->fclose(f);
+                    }
+                }
+            }
+        }
+        break;
 
     default:
     	printf("U64 does not know this command\n");
