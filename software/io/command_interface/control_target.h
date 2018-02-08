@@ -6,6 +6,7 @@
 
 #define CTRL_CMD_IDENTIFY       0x01
 #define CTRL_CMD_READ_RTC		0x02
+#define CTRL_CMD_FINISH_CAPTURE 0x03
 #define CTRL_CMD_FREEZE         0x05
 #define CTRL_CMD_REBOOT         0x06
 #define CTRL_CMD_DECODE_TRACK   0x11
