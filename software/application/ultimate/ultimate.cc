@@ -91,7 +91,7 @@ extern "C" void ultimate_main(void *a)
     } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
     	sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
     } else {
-    	sprintf(title, "\eA**** 1541 Ultimate %s (%b) ****\eO", APPL_VERSION, getFpgaVersion());
+    	sprintf(title, "\eA*** 1541 Ultimate-II %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
     }
 
     if(capabilities & CAPAB_ULTIMATE64) {
