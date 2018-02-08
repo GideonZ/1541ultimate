@@ -43,13 +43,13 @@ public:
 
     virtual ~BrowsableTapEntry() { }
 
-    virtual Browsable *getParent() { return parent; }
-    virtual const char *getName() { return "BrowsableTapEntry"; }
-    virtual void fetch_context_items(IndexedList<Action *> &list);
-    virtual void getDisplayString(char *buffer, int width) {
+    Browsable *getParent() { return parent; }
+    const char *getName() { return "BrowsableTapEntry"; }
+    void fetch_context_items(IndexedList<Action *> &list);
+    IndexedList<Browsable *> *getSubItems(int &error) { error = -1; return &children; }
+    void getDisplayString(char *buffer, int width) {
         sprintf(buffer, "%#s \eE%6x", width-8, tiEntry->name, tiEntry->offset);
     }
-
 };
 
 #endif
