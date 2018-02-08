@@ -428,16 +428,20 @@ void FTPDaemonThread :: cmd_mlst(const char *arg)
     vfs_stat_t st;
     int result;
     const char *type;
+    bool isDir; 
 
     if ((arg == NULL) || (*arg == '\0')) { // No argument given
         result = vfs_stat(vfs, ".", &st);
         type = "cdir";
+        isDir = true;
     } else {
         result = vfs_stat(vfs, arg, &st);
         if (VFS_ISDIR(st.st_mode)) {
             type = "dir";
+            isDir = true;
         } else {
             type = "file";
+            isDir = false;
         }
     }
 
@@ -446,8 +450,12 @@ void FTPDaemonThread :: cmd_mlst(const char *arg)
         return;
     }
     char buffer[200];
-    sprintf(buffer, "250- Listing %s\r\n type=%s;size=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
-            type, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
+    if (isDir)
+       sprintf(buffer, "250- Listing %s\r\n type=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
+               type, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
+    else
+       sprintf(buffer, "250- Listing %s\r\n type=%s;size=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
+               type, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
     send_msg(buffer);
 }
 
@@ -950,8 +958,12 @@ void FTPDataConnection :: directory(int listType, vfs_dir_t *dir)
 	    			break;
 	    	    case 2:
                     vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
-                    len = sprintf(buffer, "type=%s;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
-                            VFS_ISDIR(st.st_mode) ? "dir" : "file", st.st_size,
+                    if ( VFS_ISDIR(st.st_mode) )
+                       len = sprintf(buffer, " type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
+                            st.year, st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name);
+                    else
+                       len = sprintf(buffer, " type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
+                            st.st_size,
 	    	                st.year, st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name);
 	    	        break;
 	    	    default:
