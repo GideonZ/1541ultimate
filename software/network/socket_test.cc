@@ -30,9 +30,11 @@ int  SocketTest::fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
 //	item_list.append(new Action("Socket Test Server", SocketTest :: doTest1, 0, 0));
 //	item_list.append(new Action("Socket Test Client", SocketTest :: doTest2, 1, 0));
+#ifdef DEVELOPER
 	item_list.append(new Action("Start BUS Trace", SocketTest :: profiler, 2, 1));
 	item_list.append(new Action("Stop BUS Trace", SocketTest :: profiler, 2, 0));
 	item_list.append(new Action("Save BUS Trace", SocketTest :: saveTrace, 3, 0));
+#endif
 	return 3;
 }
 
