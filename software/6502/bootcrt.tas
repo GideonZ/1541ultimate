@@ -353,11 +353,11 @@ self2
 	and #$30
 	bne fault
 
-	ldx #2
--	lda $380 + (uci_command_bytes - capture_routine),x
-	sta uci_command
-	dex 
-	bne -
+    ; Target #4, command #3
+    lda #$04
+    sta uci_command
+    lda #$03
+    sta uci_command
 	lda #$08
 	sta uci_control
 	lda #$01
@@ -388,8 +388,6 @@ capture_message
     .text "ULTIMATE IS CAPTURING TAPE - JUST WAIT", 13
 done_message
 	.text "DONE"
-uci_command_bytes
-	.byte $00, $03
 	 
 CAPTURE_MSG_LEN = *-capture_message    
 CAPTURE_ROUTINE_LEN = *-capture_routine

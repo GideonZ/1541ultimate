@@ -29,13 +29,11 @@ extern uint32_t _ultimate_app_end;
 extern uint32_t _rom_pack_start;
 extern uint32_t _rom_pack_end;
 
-/*
 extern uint32_t _ultimate_recovery_rbf_start;
 extern uint32_t _ultimate_recovery_rbf_end;
 
 extern uint32_t _recovery_app_start;
 extern uint32_t _recovery_app_end;
-*/
 
 void do_update(void)
 {

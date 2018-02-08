@@ -109,7 +109,7 @@ SRCS_CC	 =  small_printf.cc \
 			command_intf.cc \
 			dos.cc \
 			network_target.cc \
-			uci_commands.cc \
+			control_target.cc \
 			iec.cc \
 			mps_printer.cc \
 			mps_printer_cbm.cc \

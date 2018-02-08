@@ -2,6 +2,7 @@
 #include "disk_image.h"
 #include <string.h>
 #include "c64.h"
+#include "tape_recorder.h"
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
@@ -103,7 +104,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
     // the first byte of the command lead us here to this function.
     // the second byte is the command byte for the DOS; the third and forth byte are the length
     // data follows after the 4th byte and is thus aligned for copy.    
-    SubsysCommand *c64_command;
+    SubsysCommand *cmd;
     *reply  = &c_message_empty;
     *status = &c_status_unknown_command;
 
@@ -116,14 +117,21 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
         	decode_track(command, reply, status);
         	break;
         case CTRL_CMD_FREEZE:
-            c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_PUSH_BUTTON, (int)0, "", "");
-            c64_command->execute();
+            cmd = new SubsysCommand(NULL, SUBSYSID_C64, C64_PUSH_BUTTON, (int)0, "", "");
+            cmd->execute();
             *status = &c_message_empty;
             break;
         case CTRL_CMD_REBOOT:
-            c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_REBOOT, (int)0, "", "");
-            c64_command->execute();
+            cmd = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_REBOOT, (int)0, "", "");
+            cmd->execute();
             *status = &c_message_empty;
+            break;
+        case CTRL_CMD_FINISH_CAPTURE:
+            printf("Finish tape capture command!\n");
+            cmd = new SubsysCommand(NULL, SUBSYSID_TAPE_RECORDER, MENU_REC_FINISH, 0, "", "");
+            cmd->execute();
+            *reply  = &c_message_empty;
+            *status = &c_status_ok;
             break;
     }
 }
