@@ -6,11 +6,14 @@
 ; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
 ;
 ; DESCRIPTION
-;   Routines for handling key presses for changing song and fast forward.
+;   Routines for handling key presses for changing song, fast forward
+;   and for returning to Ultimate menu.
+;
 ;   The following keys are supported:
 ;     <- for fast forward
 ;     1-0 for selecting sub tune 1 to 10
 ;     + and - for increasing/decreasing the song selection
+;     runstop for going back to Ultimate menu
 ;
 ; Use 64tass version 1.53.1515 or higher to assemble the code
 ;-----------------------------------------------------------------------
@@ -23,8 +26,16 @@ handleKeyboard  ldx #7
                 bne keyPressed
                 sta currentKey,x
                 dex
-                bne -             ; ignore row 1 (x = 0) since those keys are not supported for now
+                bne -               ; ignore row 1 (x = 0) since those keys are not supported for now
 
+.if INCLUDE_RUNSTOP==1
+                lda runStopPressed  ; check if runstop key is pressed and released
+                beq +
+                lda #$00
+                sta runStopPressed
+                jmp gotoUltimateMenu
++
+.fi
                 ldy #0
                 jmp fastForward
 
@@ -42,7 +53,10 @@ keyPressed      cmp currentKey,x
 
 .if INCLUDE_RUNSTOP==1
                 cmp #$7f            ; check if runstop key is pressed
-                beq gotoUltimateMenu
+                bne noRunStop
+                lda #$01
+                sta runStopPressed
+noRunStop
 .fi
                 cmp #$fd
                 bne +
@@ -132,4 +146,5 @@ keyRow          .byte $fe, $fd, $fb, $f7, $ef, $df, $bf, $7f
 currentKey      .byte 0, 0, 0, 0, 0, 0, 0, 0
 tuneSelect      .byte 0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 0, 0, 0, 0, 0, 0
 fastForwardOn   .byte 0
+runStopPressed  .byte 0
                 .send data
