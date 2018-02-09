@@ -514,28 +514,7 @@ void C64::backup_io(void)
     VIC_CTRL = 0;
     BORDER = 0; // black
     BACKGROUND = 0; // black for later
-
-    // Mute SID(s)
-    C64_POKE(0xD400, 0);
-    C64_POKE(0xD401, 0);
-    C64_POKE(0xD407, 0);
-    C64_POKE(0xD408, 0);
-    C64_POKE(0xD40E, 0);
-    C64_POKE(0xD40F, 0);
-
-    C64_POKE(0xD420, 0);
-    C64_POKE(0xD421, 0);
-    C64_POKE(0xD427, 0);
-    C64_POKE(0xD428, 0);
-    C64_POKE(0xD42E, 0);
-    C64_POKE(0xD42F, 0);
-
-    C64_POKE(0xD500, 0);
-    C64_POKE(0xD501, 0);
-    C64_POKE(0xD507, 0);
-    C64_POKE(0xD508, 0);
-    C64_POKE(0xD50E, 0);
-    C64_POKE(0xD50F, 0);
+    SID_VOLUME = 0;
 
     // have a look at the timers.
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
@@ -687,7 +666,7 @@ void C64::restore_io(void)
 
 //    restore_cia();  // Restores the interrupt generation
 
-//    SID_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
+    SID_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
     SID_DUMMY = 0;   // clear internal charge on databus!
 }
 
