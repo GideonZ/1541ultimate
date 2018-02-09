@@ -2338,24 +2338,24 @@ S65818580Lbl    .text '6581 / 8580', 0
 SUnknownLbl     .text 'UNKOWN', 0
                 .enc 'none'
 
-ASCII             .byte $c0, $c1, $c2, $c3, $c4, $c5, $c6             ; all A variants
-                  .byte $e0, $e1, $e2, $e3, $e4, $e5, $e6             ; all a variants
-                  .byte $c8, $c9, $ca, $cb                            ; all E variants
-                  .byte $e8, $e9, $ea, $eb                            ; all e variants
-                  .byte $cc, $cd, $ce, $cf                            ; all I variants
-                  .byte $ec, $ed, $ee, $ef                            ; all i variants
-                  .byte $d2, $d3, $d4, $d5, $d6, $d8                  ; all O variants
-                  .byte $f2, $f3, $f4, $f5, $f6, $f8                  ; all o variants
-                  .byte $d9, $da, $db, $dc                            ; all U variants
-                  .byte $f9, $fa, $fb, $fc                            ; all u variants
-                  .byte $c7, $e7, $d1, $f1, $dd, $9f, $fd, $ff, $df   ; other chars
-                  .byte 0
-                  ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
-PETSCII           .null 'AAAAAAAaaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYYyyB'
+ASCII           .byte $c0, $c1, $c2, $c3, $c4, $c5, $c6             ; all A variants
+                .byte $e0, $e1, $e2, $e3, $e4, $e5, $e6             ; all a variants
+                .byte $c8, $c9, $ca, $cb                            ; all E variants
+                .byte $e8, $e9, $ea, $eb                            ; all e variants
+                .byte $cc, $cd, $ce, $cf                            ; all I variants
+                .byte $ec, $ed, $ee, $ef                            ; all i variants
+                .byte $d2, $d3, $d4, $d5, $d6, $d8                  ; all O variants
+                .byte $f2, $f3, $f4, $f5, $f6, $f8                  ; all o variants
+                .byte $d9, $da, $db, $dc                            ; all U variants
+                .byte $f9, $fa, $fb, $fc                            ; all u variants
+                .byte $c7, $e7, $d1, $f1, $dd, $9f, $fd, $ff, $df   ; other chars
+                .byte 0
+                ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
+PETSCII         .null 'AAAAAAAaaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYYyyB'
 
-                  ;examples special characters:
-                  ; /HVSC/C64Music/MUSICIANS/W/Walt/Maelkeboetten.sid (Mæclkebøtten)
-                  ; /HVSC/C64Music/MUSICIANS/A/Ass_It/Lasst_Uns_Froh.sid (Laßt Uns Froh)
-                  ; /HVSC/C64Music/GAMES/A-F/Captain_Blood.sid (by François Lionet)
-                  ; /HVSC/C64Music/MUSICIANS/D/Da_Blondie/Brain_Damage.sid (by Attila Szõke)
-                  ; etc.
+                ;examples special characters:
+                ; /HVSC/C64Music/MUSICIANS/W/Walt/Maelkeboetten.sid (Mæclkebøtten)
+                ; /HVSC/C64Music/MUSICIANS/A/Ass_It/Lasst_Uns_Froh.sid (Laßt Uns Froh)
+                ; /HVSC/C64Music/GAMES/A-F/Captain_Blood.sid (by François Lionet)
+                ; /HVSC/C64Music/MUSICIANS/D/Da_Blondie/Brain_Damage.sid (by Attila Szõke)
+                ; etc.
