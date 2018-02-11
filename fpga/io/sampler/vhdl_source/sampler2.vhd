@@ -41,10 +41,10 @@ architecture gideon of sampler is
     -- The ratios are: 1, 5/4 and 4/3, or 12/12, 15/12 and 16/12.  So we should divide by this value
     -- Or multiply by:  20/20, 16/20 and 15/20 
 
-    constant c_iterations : natural := iif(g_clock_freq = 50_000_000, 8, 10);
+    constant c_prescale_numerator   : natural := iif(g_clock_freq = 50_000_000, 1, iif(g_clock_freq = 62_500_000, 4, 3));
+    constant c_prescale_denominator : natural := iif(g_clock_freq = 50_000_000, 1, iif(g_clock_freq = 62_500_000, 5, 4));
+
     signal voice_i       : integer range 0 to g_num_voices-1;
-    signal iter_i        : integer range 0 to c_iterations-1;
-    signal active_i      : std_logic;
     
     signal voice_state        : t_voice_state_array(0 to g_num_voices-1) := (others => c_voice_state_init);
     signal voice_sample_reg_h : t_sample_byte_array(0 to g_num_voices-1) := (others => (others => '0'));
@@ -89,19 +89,11 @@ begin
     begin
         if rising_edge(clock) then
             if voice_i = g_num_voices-1 then
-                active_i <= '0';
+                voice_i <= 0;
             else
                 voice_i <= voice_i + 1;            
             end if;
  
-            if iter_i = c_iterations-1 then
-                voice_i <= 0;
-                iter_i <= 0;
-                active_i <= '1';
-            else
-                iter_i <= iter_i + 1;            
-            end if;
-
             for i in interrupt'range loop
                 if interrupt_clr(i)='1' then
                     interrupt(i) <= '0';
@@ -116,7 +108,7 @@ begin
 
             case current_state.state is
             when idle =>
-                if current_control.enable and voice_i <= g_num_voices then
+                if current_control.enable then -- and voice_i <= g_num_voices
                     next_state.state      := fetch1;
                     next_state.position   := (others => '0');
                     next_state.divider    := current_control.rate;
@@ -124,23 +116,31 @@ begin
                 end if;
             
             when playing =>
-                if current_state.divider = 0 then
-                    next_state.divider    := current_control.rate;
-                    next_state.sample_out := sample_reg;
-                    next_state.state      := fetch1;
-                    if (current_state.position = current_control.repeat_b) then
-                        if current_control.enable and current_control.repeat then
-                            next_state.position := current_control.repeat_a;
+                if current_state.prescale + c_prescale_numerator >= c_prescale_denominator then
+                    next_state.prescale := current_state.prescale + c_prescale_numerator - c_prescale_denominator;
+
+                    if current_state.divider = 0 then
+                        next_state.divider    := current_control.rate;
+                        next_state.sample_out := sample_reg;
+                        next_state.state      := fetch1;
+                        if (current_state.position = current_control.repeat_b) then
+                            if current_control.enable and current_control.repeat then
+                                next_state.position := current_control.repeat_a;
+                            end if;
+                        elsif current_state.position = current_control.length then
+                            next_state.state    := finished;
+                            if current_control.interrupt then
+                                interrupt(voice_i) <= '1';
+                            end if;                        
                         end if;
-                    elsif current_state.position = current_control.length then
-                        next_state.state    := finished;
-                        if current_control.interrupt then
-                            interrupt(voice_i) <= '1';
-                        end if;                        
+                    else
+                        next_state.divider := current_state.divider - 1;
                     end if;
+
                 else
-                    next_state.divider := current_state.divider - 1;
+                    next_state.prescale := current_state.prescale + c_prescale_numerator;
                 end if;
+
                 if not current_control.enable and not current_control.repeat then
                     next_state.state := idle;
                 end if;
@@ -193,12 +193,7 @@ begin
             end if;
             
             -- write port - state --
-            if active_i = '1' then
-                voice_state <= voice_state(1 to g_num_voices-1) & next_state;
-            else
-                cur_sam <= (others => '0');
-                fetch_en <= '0';
-            end if;
+            voice_state <= voice_state(1 to g_num_voices-1) & next_state;
                         
             -- write port - sample data --
             if mem_resp.dack_tag(7 downto 5) = "110" then
@@ -212,8 +207,6 @@ begin
 
             if reset='1' then
                 voice_i <= 0;
-                iter_i  <= 0;
-                active_i <= '1';
                 next_state.state := finished; -- shifted into the voice state vector automatically.
                 interrupt <= (others => '0');
             end if;
