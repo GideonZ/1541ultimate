@@ -575,9 +575,9 @@ DRESULT UsbScsi :: read_capacity(uint32_t *num_blocks, uint32_t *blk_size)
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;
 
-    uint8_t read_cap_command[] = { 0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    uint8_t read_cap_command[] = { 0x25, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     // printf("Read capacity.\n");
-    int stat = driver->exec_command(lun, 10, false, read_cap_command, 8, buf, false);
+    int stat = driver->exec_command(lun, 10, false, read_cap_command, 8, (uint8_t *)buf, false);
     
     if(stat >= 0) {
     	*num_blocks = LD_DWORD_BE(&buf[0]);
@@ -586,6 +586,10 @@ DRESULT UsbScsi :: read_capacity(uint32_t *num_blocks, uint32_t *blk_size)
         // printf("Block Size: %d. Num Blocks: %d\n", *blk_size, *num_blocks);
         this->block_size = int(*blk_size);
         this->capacity   = *num_blocks;
+
+        if ((this->block_size < 0) || (this->block_size > 4096)) {
+            return RES_PARERR;
+        }
         return RES_OK;
     } else { // command failed
         printf("Read capacity failed.\n");
