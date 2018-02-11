@@ -11,6 +11,7 @@ package sampler_pkg is
         state       : t_sample_state;
         position    : unsigned(23 downto 0);
         divider     : unsigned(15 downto 0);
+        prescale    : integer range 0 to 15;
         sample_out  : signed(15 downto 0);
     end record;
 
@@ -18,6 +19,7 @@ package sampler_pkg is
         state       => idle,
         position    => to_unsigned(0, 24),
         divider     => to_unsigned(0, 16),
+        prescale    => 0,
         sample_out  => to_signed(0, 16) );
     
     type t_voice_control is record
