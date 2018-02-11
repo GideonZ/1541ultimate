@@ -45,7 +45,7 @@ static const char *helptext=
 		"            You can use ? as a\n"
 		"            wildcard.\n"
 		"\n"
-		"F6:         Show debug log\n"
+//		"F6:         Show debug log\n"
 		"\nRUN/STOP to close this window.";
 
 #include "stream_textlog.h"
@@ -353,11 +353,13 @@ int TreeBrowser :: handle_key(int c)
         case KEY_F2: // F2 -> config
             config();
             break;
+/*
         case KEY_F4: // F4 -> show threads
         	reset_quick_seek();
         	state->refresh = true;
         	tasklist();
         	break;
+*/
         case KEY_SCRLOCK:
         case KEY_ESCAPE:
         	ret = -1;
