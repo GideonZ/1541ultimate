@@ -23,8 +23,8 @@
 #define HUB_RESET_1   U2PIO_HUB_RESET = 0
 
 static void _wait() {
-	for(int i=0;i<2;i++)
-		;
+	for(int i=0;i<10;i++)
+	    (void)GET_SCL;
 }
 
 static void i2c_start()
@@ -78,6 +78,7 @@ static int i2c_send_byte(const uint8_t byte)
 			SET_SDA_LOW;
 		}
 		data <<= 1;
+        _wait();
 		SET_SCL_HIGH;
 		_wait();
 		SET_SCL_LOW;
