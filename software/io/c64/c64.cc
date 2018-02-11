@@ -515,6 +515,8 @@ void C64::backup_io(void)
     BORDER = 0; // black
     BACKGROUND = 0; // black for later
     SID_VOLUME = 0;
+    SID2_VOLUME = 0;
+    SID3_VOLUME = 0;
 
     // have a look at the timers.
     // These printfs introduce some delay.. if you remove this, some programs won't resume well. Why?!
@@ -667,7 +669,11 @@ void C64::restore_io(void)
 //    restore_cia();  // Restores the interrupt generation
 
     SID_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
+    SID2_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
+    SID3_VOLUME = 15;  // turn on volume. Unfortunately we could not know what it was set to.
     SID_DUMMY = 0;   // clear internal charge on databus!
+    SID2_DUMMY = 0;   // clear internal charge on databus!
+    SID3_DUMMY = 0;   // clear internal charge on databus!
 }
 
 void C64::unfreeze(void *vdef, int mode)
