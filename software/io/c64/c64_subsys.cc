@@ -387,7 +387,6 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
     	c64->stop(false);
     }
 
-    C64_MODE = MODE_NORMAL;
     C64_POKE(0x162, run_code);
 
 	int len = strlen(name);
