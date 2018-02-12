@@ -151,7 +151,7 @@ begin
                     end if;
                     state      <= encode;
 
-                elsif enabled='0' then
+                elsif stream_en='0' then
                     state <= idle;
                 end if;
             
