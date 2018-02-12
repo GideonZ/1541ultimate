@@ -351,7 +351,7 @@ begin
     -- Tape
     c2n_motor_in <= CAS_MOTOR;
     CAS_SENSE    <= '0' when c2n_sense_out = '1' else 'Z';
-    c2n_sense_in <= CAS_SENSE;
+    c2n_sense_in <= not CAS_SENSE;
     CAS_READ     <= c2n_read_out when c2n_read_en = '1' else 'Z';
     c2n_read_in  <= CAS_READ;
     CAS_WRITE    <= c2n_write_out when c2n_write_en = '1' else 'Z';
