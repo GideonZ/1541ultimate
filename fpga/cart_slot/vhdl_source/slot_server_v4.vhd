@@ -708,7 +708,7 @@ begin
                         (control.c64_reset='1') else '1';
     dman_o  <= '0' when (dma_n='0' or kernal_probe='1') else '1';
     
-    process(control, serve_enable, exrom_n, game_n, force_ultimax, kernal_probe)
+    process(control, status, exrom_n, game_n, force_ultimax, kernal_probe)
     begin
         exromn_o <= '1';
         gamen_o  <= '1';
@@ -718,10 +718,10 @@ begin
             gamen_o <= '0';
             exromn_o <= '0';
         else
-            if (serve_enable='1' and exrom_n='0') then
+            if (status.cart_active='1' and exrom_n='0') then
                 exromn_o <= '0';
             end if;
-            if (serve_enable='1' and game_n='0') then
+            if (status.cart_active='1' and game_n='0') then
                 gamen_o <= '0';
             end if;
         end if;
