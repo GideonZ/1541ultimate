@@ -566,6 +566,8 @@ runner_st
     lda #$40
 	sta	$dfff		; disable boot cart
 	cli
+    lda #0
+    sta $02
 runner_relinkjsr = *-runner_st+RUNNER
 	jsr	$a533		; relink
 	jsr	$a659		; clr, setup chrget/chrgot ptr
@@ -575,6 +577,8 @@ RUNNER_LEN	= *-runner_st
 
 JUMPER = $0150
 jumper_code
+    lda #0
+    sta $02
     lda #$40
 	sta $dfff
 	cli
