@@ -51,6 +51,7 @@ AUTO_DEP_PATHS  = $(wildcard ../vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../vhdl_sim/)
 AUTO_DEP_PATHS += $(wildcard ../usb_stuff/)
 AUTO_DEP_PATHS += $(wildcard ../packages/vhdl_source/)
+AUTO_DEP_PATHS += $(wildcard ../../../fpga/altera/)
 AUTO_DEP_PATHS += $(wildcard ../../../fpga/*/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../../fpga/*/*/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../../fpga/*/*/*/vhdl_source/)
@@ -246,21 +247,7 @@ $(TESTBENCH)_DO_GUI_OVERRIDE	:=
 ###############################################################################
 
 ### tc1 #####
-TESTCASE 					:= harness_v2_mk1
-TESTCASES					:= $(TESTCASES) $(TESTCASE)
-$(TESTCASE)_SRC				:= $(TESTCASE).vhd
-$(TESTCASE)_ENTITY			:= $(TESTCASE)
-$(TESTCASE)_TIME			:= 20 us;
-$(TESTCASE)_DO_GUI_BEFORE	:= 
-
-TESTCASE 					:= harness_v4
-TESTCASES					:= $(TESTCASES) $(TESTCASE)
-$(TESTCASE)_SRC				:= $(TESTCASE).vhd
-$(TESTCASE)_ENTITY			:= $(TESTCASE)
-$(TESTCASE)_TIME			:= 20 us;
-$(TESTCASE)_DO_GUI_BEFORE	:= 
-
-TESTCASE 					:= harness_logic_32
+TESTCASE 					:= harness_logic_32_no_dram
 TESTCASES					:= $(TESTCASES) $(TESTCASE)
 $(TESTCASE)_SRC				:= $(TESTCASE).vhd
 $(TESTCASE)_ENTITY			:= $(TESTCASE)

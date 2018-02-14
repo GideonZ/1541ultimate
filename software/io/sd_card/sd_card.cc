@@ -98,7 +98,7 @@ DSTATUS SdCard :: init(void)
 
     sdio_init(); // force SPI mode
 
-	sdio_set_speed(200); // slllooooowww
+	sdio_set_speed(2); // slllooooowww
 
 //    printf("Reset card...");
 	/* Try to send reset command up to 100 times */

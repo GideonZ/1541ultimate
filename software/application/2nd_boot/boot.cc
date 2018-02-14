@@ -183,10 +183,10 @@ int main(int argc, char *argv[])
 	dump_hex(0, 16);
 	// set(0, 0xB0000000);
 
-	if (getFpgaCapabilities() & CAPAB_SIMULATION) {
-        ioWrite8(UART_DATA, '*');
-        jump_run(APPLICATION_RUN_ADDRESS);
-    }
+//	if (getFpgaCapabilities() & CAPAB_SIMULATION) {
+//        ioWrite8(UART_DATA, '*');
+//        jump_run(APPLICATION_RUN_ADDRESS);
+//    }
 
     FRESULT res = FR_DISK_ERR;
     int file_system_err;

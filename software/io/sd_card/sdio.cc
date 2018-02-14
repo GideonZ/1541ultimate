@@ -13,7 +13,7 @@ int sdio_sense(void)
 
 void sdio_init(void)
 {
-    SDIO_SPEED = 254;
+    SDIO_SPEED = 2;
     SDIO_CTRL  = SPI_FORCE_SS | SPI_LEVEL_SS;
     
     for(int i=0;i<100;i++) {

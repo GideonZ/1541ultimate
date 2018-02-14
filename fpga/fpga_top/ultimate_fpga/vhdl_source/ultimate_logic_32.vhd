@@ -406,6 +406,12 @@ architecture logic of ultimate_logic_32 is
 
 
     signal audio_speaker_tmp : signed(17 downto 0);
+
+    function iif(c : boolean; t : natural; f : natural) return natural is
+    begin
+        if c then return t; else return f; end if;
+    end function iif;
+    constant c_sd_card_initial_speed : natural := iif(g_simulation, 1, 500);
 begin
     r_mb: if g_microblaze generate
         signal invalidate       : std_logic;
@@ -823,7 +829,7 @@ begin
     i_sd: entity work.spi_peripheral_io
     generic map (
         g_fixed_rate => false,
-        g_init_rate  => 500,
+        g_init_rate  => c_sd_card_initial_speed,
         g_crc        => true )
     port map (
         clock       => sys_clock,

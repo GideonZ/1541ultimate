@@ -13,10 +13,10 @@ use work.command_if_pkg.all;
 library std;
 use std.textio.all;
 
-entity harness_logic_32 is
+entity harness_logic_32_no_dram is
 end entity;
 
-architecture tb of harness_logic_32 is
+architecture tb of harness_logic_32_no_dram is
     constant c_uart_divisor : natural := 50;
 
     signal PHI2        : std_logic := '0';
@@ -63,10 +63,6 @@ architecture tb of harness_logic_32 is
     signal SLOT_ADDR   : std_logic_vector(15 downto 0);
     signal SLOT_DATA   : std_logic_vector(7 downto 0);
     signal RWn         : std_logic := '1';
-    signal CAS_MOTOR   : std_logic := '1';
-    signal CAS_SENSE   : std_logic := '0';
-    signal CAS_READ    : std_logic := '0';
-    signal CAS_WRITE   : std_logic := '0';
     signal RTC_CS      : std_logic;
     signal RTC_SCK     : std_logic;
     signal RTC_MOSI    : std_logic;
@@ -112,17 +108,6 @@ architecture tb of harness_logic_32 is
     signal IRQn_o           : std_logic;
     signal NMIn_o           : std_logic;
 
-    signal CLOCK_50        : std_logic := '0';
-    signal SDRAM_CLK       : std_logic;
-    signal SDRAM_CKE       : std_logic;
-    signal SDRAM_CSn       : std_logic := '1';
-    signal SDRAM_RASn      : std_logic := '1';
-    signal SDRAM_CASn      : std_logic := '1';
-    signal SDRAM_WEn       : std_logic := '1';
-    signal SDRAM_DQM       : std_logic := '0';
-    signal SDRAM_A         : std_logic_vector(12 downto 0);
-    signal SDRAM_BA        : std_logic_vector(1 downto 0);
-    signal SDRAM_DQ        : std_logic_vector(7 downto 0) := (others => 'Z');
 begin
     sys_clock <= not sys_clock after 10 ns;
     sys_clock_2x <= not sys_clock_2x after 5 ns;
@@ -247,32 +232,23 @@ begin
     SLOT_ADDR(11 downto  0) <= SLOT_ADDR_o(11 downto  0) when SLOT_ADDR_tl = '1' else (others => 'Z');     
     SLOT_DATA               <= SLOT_DATA_o when SLOT_DATA_t = '1' else (others => 'Z');
 
-    i_mem_ctrl: entity work.ext_mem_ctrl_v5
-    generic map (
-        g_simulation => false )
+    sd: entity work.sdcard_bfm
     port map (
-        clock       => sys_clock,
-        clk_2x      => sys_clock_2x,
-        reset       => sys_reset,
+        clock => SD_CLK,
+        ss_n  => SD_SSn,
+        mosi  => SD_MOSI,
+        miso  => SD_MISO
+    );
     
-        inhibit     => mem_inhibit,
-        is_idle     => open,
-    
-        req         => mem_req,
-        resp        => mem_resp,
-    
-        SDRAM_CLK   => SDRAM_CLK,
-        SDRAM_CKE   => SDRAM_CKE,
-        SDRAM_CSn   => SDRAM_CSn,
-        SDRAM_RASn  => SDRAM_RASn,
-        SDRAM_CASn  => SDRAM_CASn,
-        SDRAM_WEn   => SDRAM_WEn,
-        SDRAM_DQM   => SDRAM_DQM,
-    
-        SDRAM_BA    => SDRAM_BA,
-        SDRAM_A     => SDRAM_A,
-        SDRAM_DQ    => SDRAM_DQ );
-
+    ram: entity work.mem_bus_32_slave_bfm
+    generic map(
+        g_latency => 2
+    )
+    port map (
+        clock     => sys_clock,
+        req       => mem_req,
+        resp      => mem_resp
+    );
 
 	ULPI_CLOCK <= not ULPI_CLOCK after 8.333 ns; -- 60 MHz
     ULPI_RESET <= '1', '0' after 100 ns;
@@ -320,28 +296,6 @@ begin
 			wait until PHI2='0';
 		end loop;
 	end process;
-
-    ram: entity work.dram_8
-    generic map(
-        g_cas_latency => 3,
-        g_burst_len_r => 4,
-        g_burst_len_w => 4,
-        g_column_bits => 10,
-        g_row_bits    => 13,
-        g_bank_bits   => 2
-    )
-    port map(
-        CLK           => SDRAM_CLK,
-        CKE           => SDRAM_CKE,
-        A             => SDRAM_A,
-        BA            => SDRAM_BA,
-        CSn           => SDRAM_CSn,
-        RASn          => SDRAM_RASn,
-        CASn          => SDRAM_CASn,
-        WEn           => SDRAM_WEn,
-        DQM           => SDRAM_DQM,
-        DQ            => SDRAM_DQ
-    );
 
 --    i_ulpi_phy: entity work.ulpi_master_bfm
 --    generic map (
@@ -404,65 +358,65 @@ begin
         end if;
     end process;
     
-    process
-        variable io : p_io_bus_bfm_object;
-    begin
-        wait until sys_reset='0';
-        wait until sys_clock='1';
-        bind_io_bus_bfm("io_bfm", io);
-        io_write(io, X"40000" + c_cart_c64_mode, X"04"); -- reset
-        io_write(io, X"40000" + c_cart_cartridge_type, X"06"); -- retro
-        io_write(io, X"40000" + c_cart_c64_mode, X"08"); -- unreset
-        io_write(io, X"44000" + c_cif_io_slot_base, X"7E"); 
-        io_write(io, X"44000" + c_cif_io_slot_enable, X"01"); 
-        wait for 6 us;
-        wait until sys_clock='1';
-        --io_write(io, X"42002", X"42"); 
-        wait;
-    end process;
+--    process
+--        variable io : p_io_bus_bfm_object;
+--    begin
+--        wait until sys_reset='0';
+--        wait until sys_clock='1';
+--        bind_io_bus_bfm("io_bfm", io);
+--        io_write(io, X"40000" + c_cart_c64_mode, X"04"); -- reset
+--        io_write(io, X"40000" + c_cart_cartridge_type, X"06"); -- retro
+--        io_write(io, X"40000" + c_cart_c64_mode, X"08"); -- unreset
+--        io_write(io, X"44000" + c_cif_io_slot_base, X"7E"); 
+--        io_write(io, X"44000" + c_cif_io_slot_enable, X"01"); 
+--        wait for 6 us;
+--        wait until sys_clock='1';
+--        --io_write(io, X"42002", X"42"); 
+--        wait;
+--    end process;
 
-    process
-        procedure send_char(i: std_logic_vector(7 downto 0)) is
-        begin
-            if tx_done /= '1' then
-                wait until tx_done = '1';
-            end if;
-            wait until sys_clock='1';
-            tx_char <= i;
-            do_tx   <= '1';
-            wait until tx_done = '0';
-            wait until sys_clock='1';
-            do_tx   <= '0';
-        end procedure;        
-
-        procedure send_string(i : string) is
-            variable b : std_logic_vector(7 downto 0);
-        begin
-            for n in i'range loop
-                b := std_logic_vector(to_unsigned(character'pos(i(n)), 8));
-                send_char(b);
-            end loop;
-            send_char(X"0d");
-            send_char(X"0a");
-        end procedure;
-
-    begin
-        wait for 2 ms;
-
-        --send_string("wd 4005000 12345678");
-        send_string("run");
---        send_string("m 100000");
---        send_string("w 400000F 4");
-        wait;
-    end process;
+--    process
+--        procedure send_char(i: std_logic_vector(7 downto 0)) is
+--        begin
+--            if tx_done /= '1' then
+--                wait until tx_done = '1';
+--            end if;
+--            wait until sys_clock='1';
+--            tx_char <= i;
+--            do_tx   <= '1';
+--            wait until tx_done = '0';
+--            wait until sys_clock='1';
+--            do_tx   <= '0';
+--        end procedure;        
+--
+--        procedure send_string(i : string) is
+--            variable b : std_logic_vector(7 downto 0);
+--        begin
+--            for n in i'range loop
+--                b := std_logic_vector(to_unsigned(character'pos(i(n)), 8));
+--                send_char(b);
+--            end loop;
+--            send_char(X"0d");
+--            send_char(X"0a");
+--        end procedure;
+--
+--    begin
+--        wait for 2 ms;
+--
+--        --send_string("wd 4005000 12345678");
+--        send_string("run");
+----        send_string("m 100000");
+----        send_string("w 400000F 4");
+--        wait;
+--    end process;
     
-    -- check timing data
-    process(PHI2)
-    begin
-        if falling_edge(PHI2) then
-            assert SLOT_DATA'last_event >= 189 ns
-                report "Timing error on C64 bus."
-                severity error;
-        end if;
-    end process;
+--    -- check timing data
+--    process(PHI2)
+--    begin
+--        if falling_edge(PHI2) then
+--            assert SLOT_DATA'last_event >= 189 ns
+--                report "Timing error on C64 bus."
+--                severity error;
+--        end if;
+--    end process;
 end tb;
