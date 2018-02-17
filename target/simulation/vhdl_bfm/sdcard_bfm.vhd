@@ -15,7 +15,7 @@ library ieee;
 use work.tl_string_util_pkg.all;
     
 library work;
-    use work.io_bus_pkg.all;
+    use work.sdcard_pkg.all;
 
 entity sdcard_bfm is
 port (
@@ -30,8 +30,7 @@ architecture gideon of sdcard_bfm is
     signal input_byte   : std_logic_vector(7 downto 0);
     signal input_dav    : std_logic;
     
-    type t_byte_array is array(natural range <>) of std_logic_vector(7 downto 0);
-    shared variable output_message  : t_byte_array(0 to 1023);
+    shared variable output_message  : t_sdrom_array(0 to 1023);
     shared variable output_length   : natural := 0;
     shared variable output_pointer  : natural := 0;
     shared variable output_busy     : boolean := false;
@@ -63,11 +62,47 @@ architecture gideon of sdcard_bfm is
 
     procedure execute_command(command : std_logic_vector(7 downto 0); param_x, param_y : std_logic_vector(15 downto 0)) is
     begin
+        output_pointer := 0;
         case command is
-        when X"00" => -- reset
+        when X"00" | X"37" => -- reset, ACMD55
             output_message(0 to 2) := (X"FF", X"FF", X"01");
             output_length := 3;
             output_busy := true;
+        when X"29" =>
+            output_message(0 to 2) := (X"FF", X"FF", X"00");
+            output_length := 3;
+            output_busy := true;
+        when X"3A" =>
+            output_message(0 to 6) := (X"FF", X"FF", X"00", X"40", X"F8", X"00", X"00");
+            output_length := 7;
+            output_busy := true;
+        when X"08" =>
+            output_message(0 to 2) := (X"FF", X"FF", X"01");
+            output_message(3) := param_x(15 downto 8);                
+            output_message(4) := param_x(7 downto 0);                
+            output_message(5) := param_y(15 downto 8);                
+            output_message(6) := param_y(7 downto 0);
+            output_length := 7;
+            output_busy := true;
+        when X"09" | X"0A" =>
+            output_message(0 to 2) := (X"FF", X"FF", X"FE");
+            output_message(3 to 15+3) := (X"00", X"01", X"02", X"03", X"04", X"05", X"06", X"07",
+                                          X"08", X"09", X"0A", X"0B", X"0C", X"0D", X"0E", X"0F" );
+            output_length := 19;
+            output_busy := true;
+
+        when X"11" => -- read block
+            output_message(0 to 2) := (X"00", X"FF", X"FE");
+            case param_y is
+            when X"0000" =>
+                output_message(3 to 511+3) := sector0;
+            when X"2000" =>
+                output_message(3 to 511+3) := sector8192;
+            when others =>
+                output_message(3 to 511+3) := (others => X"00");
+            end case;
+            output_length := 512 + 3;
+            output_busy := true;                            
         when others =>
             report "Unknown command " & hstr(command);
         end case;
@@ -127,7 +162,7 @@ begin
                 state <= crc;
             when crc =>
                 execute_command(command, param_x, param_y);
-                state <= reply;
+                state <= idle;
             when reply =>
                 if not output_busy then
                     state <= idle;

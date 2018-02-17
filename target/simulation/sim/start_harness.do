@@ -1,4 +1,4 @@
-restart -f
+restart 
 #Load the program
 mem load -infile ../../software/mb_boot/output/mb_boot.m32 -format hex /harness_logic_32_no_dram/mut/r_mb/i_cpu/i_proc/d_cache/i_cache_ram/ram
 mem load -infile ../../software/mb_boot/output/mb_boot.m32 -format hex /harness_logic_32_no_dram/mut/r_mb/i_cpu/i_proc/i_cache/i_cache_ram/ram

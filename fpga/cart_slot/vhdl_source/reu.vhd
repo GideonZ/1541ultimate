@@ -204,10 +204,14 @@ begin
                     state <= do_read_reu;
             end case;
         end procedure;
+
+        variable laddr : unsigned(4 downto 0);
     begin
         if rising_edge(clock) then
+            laddr := slot_req.io_address(4 downto 0);
+
             if io_write='1' then  --$DF00-$DF1F, decoded below in a concurrent statement
-                case slot_req.io_address(4 downto 0) is
+                case laddr is
                 when c_c64base_l  => c64_base(7 downto 0) <= io_wdatau;
                                      c64_addr <= c64_base(15 downto 8) & io_wdatau;  -- half autoload bug
                 when c_c64base_h  => c64_base(15 downto 8) <= io_wdatau;
@@ -248,7 +252,7 @@ begin
 
             -- extended registers
             if io_write='1' and g_extended then  --$DF00-$DF1F, decoded below in a concurrent statement
-                case slot_req.io_address(4 downto 0) is
+                case laddr is
                 when c_start_delay =>
                     start_delay <= io_wdatau;
                 when c_rate_div    =>

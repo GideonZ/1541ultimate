@@ -7,7 +7,6 @@ extern "C" {
 
 
 void (*function)();
-
 void jump_run(uint32_t a)
 {
 	uint32_t *dp = (uint32_t *)&function;

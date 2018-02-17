@@ -23,3 +23,11 @@ vcom -work mblite ../../../fpga/cpu_unit/vhdl_source/dm_simple.vhd
 vcom -work mblite ../../../fpga/cpu_unit/vhdl_source/dm_with_invalidate.vhd
 vcom -work mblite ../../../fpga/cpu_unit/vhdl_source/dmem_arbiter.vhd
 vcom -work mblite ../../../fpga/cpu_unit/vhdl_source/cached_mblite.vhd
+
+vlib unisim
+
+vcom -work unisim ../../../fpga/altera/xilinx_primitives/unisim_VPKG.vhd
+vcom -work unisim ../../../fpga/altera/xilinx_primitives/unisim_VCOMP.vhd
+vcom -work unisim ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S18.vhd
+vcom -work unisim ../../../fpga/altera/xilinx_primitives/RAMB16_S9_S36.vhd
+vcom -work unisim ../../../fpga/altera/xilinx_primitives/RAMB16BWE_S36_S9.vhd

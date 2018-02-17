@@ -1,0 +1,24 @@
+This is the revision_history of the makefile environment for VHDL development.
+
+Current state		: pre-beta
+
+Note:
+Currently the makefile environment is under development. Use them with care.
+Report any bugs/whishes in the CVStrac database:
+
+file:///g:/proj/TIP_Technolution_Intern_Project/05010_Programmable_Logic_Design_Guide/HomePage/index.htm
+
+
+Version 0.0x		
+GNU make version	: 3.80
+
+Changes
+-
+
+Bugfixes
+-
+
+Notes:
+- Debug version - use with care!!
+- Initial setup - prototyping, no official version yet
+

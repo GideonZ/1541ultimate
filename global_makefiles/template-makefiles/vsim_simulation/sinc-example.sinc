@@ -1,0 +1,20 @@
+# Syntax of the source-include lines:
+# 1 = language
+# 2 = library (destination)
+# 3 = source file
+# 4 = space separated list of dependencies
+#
+# Note: paths are not necessary if the paths are already included in the "AUTO_DEP_PATHS".
+
+vhdl,pci,../vhdl_sim/PCIDef.vhd
+vhdl,work,../vhdl_sim/pci_master_bfm_server.vhd,../vhdl_sim/PCIDef.vhd
+vhdl,work,../vhdl_sim/pci_master_bfm.vhd,../vhdl_sim/pci_master_bfm_server.vhd ../vhdl_sim/PCIDef.vhd
+
+vhdl,work,../vhdl_sim/AD1216_bfm_pkg.vhd,
+vhdl,work,../vhdl_sim/AD1216_bfm.vhd,../vhdl_sim/AD1216_bfm_pkg.vhd
+
+vhdl,work,../vhdl_sim/AD5662_bfm_pkg.vhd,
+vhdl,work,../vhdl_sim/AD5662_bfm.vhd,../vhdl_sim/AD5662_bfm_pkg.vhd
+
+vhdl,work,../vhdl_sim/i2c_master_bfm_pkg.vhd
+vhdl,work,../vhdl_sim/i2c_master_bfm.vhd,../vhdl_sim/i2c_master_bfm_pkg.vhd

@@ -352,7 +352,7 @@ begin
                     write(s, char);
                 end if;
             end if;
-            if mem_resp.rack = '1' and mem_req.address < 16 then
+            if mem_resp.rack = '1' and (mem_req.address < 16 or mem_req.address = X"00004004") then
                 report "Access to address " & integer'image(to_integer(mem_req.address)) severity error;
             end if;
         end if;

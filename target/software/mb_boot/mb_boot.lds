@@ -7,7 +7,7 @@ _HEAP_SIZE = DEFINED(_HEAP_SIZE) ? _HEAP_SIZE : 0x0;
 MEMORY
 {
     CACHE (rx)  : ORIGIN = 0x00000000, LENGTH = 2k
-    DRAM (rwx)  : ORIGIN = 0x00004000, LENGTH = 0x00E7C000 /* thus until 00E80000 */
+    DRAM (rwx)  : ORIGIN = 0x00000800, LENGTH = 0x00E7F800 /* thus until 00E80000 */
 }
 
 SECTIONS
@@ -70,7 +70,7 @@ SECTIONS
     __data_end = .;
   } > CACHE
 
-  . = 0x4000;
+  . = 0xC00;
   
   __bss_start = .;
   __bss_start__ = .;
