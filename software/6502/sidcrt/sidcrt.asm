@@ -1294,6 +1294,11 @@ setupScreen     jsr copyChars
 
                 jsr writeScreenData
 
+                ldy #$04            ; read version of header
+                jsr readHeader
+                cmp #$03
+                bcc noMoreSids      ; don't read 2nd SID address when SID header version is less than 3
+
                 ldy #$7a            ; is second SID address defined?
                 jsr readHeader
                 beq noMoreSids
@@ -1479,6 +1484,11 @@ printSidInfo
                 sta TEMP
                 ldx #$01            ; first SID
                 jsr printSingleSidInfo
+
+                ldy #$04            ; read version of header
+                jsr readHeader
+                cmp #$03
+                bcc noMoreSids2     ; don't read 2nd SID address when SID header version is less than 3
 
                 ldy #$7a            ; is second SID address defined?
                 jsr readHeader
