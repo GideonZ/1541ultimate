@@ -67,7 +67,7 @@ class IecPrinter
         FileManager *fm;
 
         /* Output base filename */
-        const char *filename;
+        const char *output_filename;
 
         /* Printer emulation interface */
         MpsPrinter *mps;
@@ -95,7 +95,7 @@ class IecPrinter
         {
             fm = FileManager::getFileManager();
 
-            filename = NULL;
+            output_filename = NULL;
             f = NULL;
             mps = MpsPrinter::getMpsPrinter();
             buffer_pointer = 0;

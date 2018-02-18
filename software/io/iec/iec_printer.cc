@@ -259,8 +259,8 @@ int IecPrinter::reset(void)
 
 int IecPrinter::set_filename(const char *file)
 {
-    filename = file;
-    mps->setFilename((char *)filename);
+    output_filename = file;
+    mps->setFilename((char *)output_filename);
 
     return IEC_OK;
 }
@@ -506,6 +506,11 @@ int IecPrinter::set_output_type(int t)
 
 int IecPrinter::open_file(void)
 {
+    char filename[40];
+
+    /* Add .txt extension if ASCII output type */
+    sprintf(filename,(output_type == PRINTER_ASCII_OUTPUT) ? "%s.txt" : "%s", output_filename);
+
     FRESULT fres = fm->fopen((const char *) NULL, filename, FA_WRITE|FA_OPEN_ALWAYS, &f);
 
     if(f)
