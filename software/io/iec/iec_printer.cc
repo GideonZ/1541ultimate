@@ -73,21 +73,21 @@ int IecPrinter::push_data(uint8_t b)
 {
     if (output_type == PRINTER_ASCII_OUTPUT)
     {
-        if ((buffer[pointer] = ascii_lut[b]))
-            pointer++;
+        if ((buffer[buffer_pointer] = ascii_lut[b]))
+            buffer_pointer++;
     }
     else
     {
-        buffer[pointer++] = b;
+        buffer[buffer_pointer++] = b;
     }
 
-    if(pointer == IEC_PRINTER_BUFFERSIZE)
+    if(buffer_pointer == IEC_PRINTER_BUFFERSIZE)
     {
         switch (output_type)
         {
             case PRINTER_PNG_OUTPUT:
                 mps->Interpreter(buffer,IEC_PRINTER_BUFFERSIZE);
-                pointer = 0;
+                buffer_pointer = 0;
                 break;
 
             case PRINTER_RAW_OUTPUT:
@@ -99,11 +99,11 @@ int IecPrinter::push_data(uint8_t b)
                 {
                     uint32_t bytes;
                     f->write(buffer, IEC_PRINTER_BUFFERSIZE, &bytes);
-                    pointer = 0;
+                    buffer_pointer = 0;
                 }
                 else
                 {
-                    pointer--;
+                    buffer_pointer--;
                     return IEC_BYTE_LOST;
                 }
 
@@ -136,10 +136,10 @@ int IecPrinter::push_command(uint8_t b)
         case 0xFE: // Received printer OPEN
         case 0x00: // CURSOR UP (graphics/upper case) mode (default)
             if (output_type == PRINTER_PNG_OUTPUT) {
-                if (pointer)
+                if (buffer_pointer)
                 {
-                    mps->Interpreter(buffer,pointer);
-                    pointer=0;
+                    mps->Interpreter(buffer,buffer_pointer);
+                    buffer_pointer=0;
                 }
                 mps->setCharsetVariant(0);
             }
@@ -148,10 +148,10 @@ int IecPrinter::push_command(uint8_t b)
 
         case 0x07: // CURSOR DOWN (upper case/lower case) mode
             if (output_type == PRINTER_PNG_OUTPUT) {
-                if (pointer)
+                if (buffer_pointer)
                 {
-                    mps->Interpreter(buffer,pointer);
-                    pointer=0;
+                    mps->Interpreter(buffer,buffer_pointer);
+                    buffer_pointer=0;
                 }
                 mps->setCharsetVariant(1);
             }
@@ -185,7 +185,7 @@ int IecPrinter::push_command(uint8_t b)
 
 int IecPrinter::flush(void)
 {
-    if (pointer && output_type != PRINTER_PNG_OUTPUT && !f)
+    if (buffer_pointer && output_type != PRINTER_PNG_OUTPUT && !f)
         open_file();
 
     close_file();
@@ -235,7 +235,7 @@ int IecPrinter::init_done(void)
 
 int IecPrinter::reset(void)
 {
-    pointer = 0;
+    buffer_pointer = 0;
     mps->Reset();
 
     return IEC_OK;
@@ -287,10 +287,10 @@ int IecPrinter::set_filename(const char *file)
 
 int IecPrinter::set_emulation(int d)
 {
-    if (output_type == PRINTER_PNG_OUTPUT && pointer)
+    if (output_type == PRINTER_PNG_OUTPUT && buffer_pointer)
     {
-        mps->Interpreter(buffer,pointer);
-        pointer=0;
+        mps->Interpreter(buffer,buffer_pointer);
+        buffer_pointer=0;
     }
 
     switch (d)
@@ -326,10 +326,10 @@ int IecPrinter::set_emulation(int d)
 
 int IecPrinter::set_ink_density(int d)
 {
-    if (output_type == PRINTER_PNG_OUTPUT && pointer)
+    if (output_type == PRINTER_PNG_OUTPUT && buffer_pointer)
     {
-        mps->Interpreter(buffer,pointer);
-        pointer=0;
+        mps->Interpreter(buffer,buffer_pointer);
+        buffer_pointer=0;
     }
 
     mps->setDotSize(d);
@@ -360,10 +360,10 @@ int IecPrinter::set_ink_density(int d)
 
 int IecPrinter::set_cbm_charset(int d)
 {
-    if (output_type == PRINTER_PNG_OUTPUT && pointer)
+    if (output_type == PRINTER_PNG_OUTPUT && buffer_pointer)
     {
-        mps->Interpreter(buffer,pointer);
-        pointer=0;
+        mps->Interpreter(buffer,buffer_pointer);
+        buffer_pointer=0;
     }
 
     mps->setCBMCharset(d);
@@ -396,10 +396,10 @@ int IecPrinter::set_cbm_charset(int d)
 
 int IecPrinter::set_epson_charset(int d)
 {
-    if (output_type == PRINTER_PNG_OUTPUT && pointer)
+    if (output_type == PRINTER_PNG_OUTPUT && buffer_pointer)
     {
-        mps->Interpreter(buffer,pointer);
-        pointer=0;
+        mps->Interpreter(buffer,buffer_pointer);
+        buffer_pointer=0;
     }
 
     mps->setEpsonCharset(d);
@@ -429,10 +429,10 @@ int IecPrinter::set_epson_charset(int d)
 
 int IecPrinter::set_ibm_charset(int d)
 {
-    if (output_type == PRINTER_PNG_OUTPUT && pointer)
+    if (output_type == PRINTER_PNG_OUTPUT && buffer_pointer)
     {
-        mps->Interpreter(buffer,pointer);
-        pointer=0;
+        mps->Interpreter(buffer,buffer_pointer);
+        buffer_pointer=0;
     }
 
     mps->setIBMCharset(d);
@@ -553,10 +553,10 @@ int IecPrinter::close_file(void) // file should be open
     switch (output_type)
     {
         case PRINTER_PNG_OUTPUT:
-            if (pointer > 0)
+            if (buffer_pointer > 0)
             {
-                mps->Interpreter(buffer, pointer);
-                pointer=0;
+                mps->Interpreter(buffer, buffer_pointer);
+                buffer_pointer=0;
             }
 
             mps->FormFeed();
@@ -567,12 +567,12 @@ int IecPrinter::close_file(void) // file should be open
         case PRINTER_ASCII_OUTPUT:
             if(f)
             {
-                if (pointer > 0)
+                if (buffer_pointer > 0)
                 {
                     uint32_t bytes;
 
-                    f->write(buffer, pointer, &bytes);
-                    pointer = 0;
+                    f->write(buffer, buffer_pointer, &bytes);
+                    buffer_pointer = 0;
                 }
 
                 fm->fclose(f);
