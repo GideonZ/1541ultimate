@@ -57,17 +57,32 @@ enum t_printer_output_type {
 class IecPrinter
 {
     private:
+        /* PETASCII to ASCII lookup table */
         static uint8_t ascii_lut[256];
 
+        /* Ultimate IEC interface */
         IecInterface *interface;
+
+        /* Ultimate filesystem interface */
         FileManager *fm;
+
+        /* Output base filename */
         const char *filename;
+
+        /* Printer emulation interface */
         MpsPrinter *mps;
 
+        /* Printer buffer ant its pointer */
         uint8_t buffer[IEC_PRINTER_BUFFERSIZE];
-        int  pointer;
+        int  buffer_pointer;
+
+        /* Output file descriptor */
         File *f;
+
+        /* Selected output type (RAW, PNG, ASCII) */
         t_printer_output_type output_type;
+
+        /* Flag set to true while in Ultimate init sequence */
         bool init;
 
     public:
@@ -78,12 +93,12 @@ class IecPrinter
         /* =======  Constructors */
         IecPrinter()
         {
-            fm = FileManager :: getFileManager();
+            fm = FileManager::getFileManager();
 
             filename = NULL;
             f = NULL;
             mps = MpsPrinter::getMpsPrinter();
-            pointer = 0;
+            buffer_pointer = 0;
             output_type = PRINTER_PNG_OUTPUT;
             init = true;
         }
