@@ -113,6 +113,7 @@
 #define CART_TYPE_BBASIC      0x16
 #define CART_TYPE_PAGEFOX     0x17
 #define CART_TYPE_128         0x18
+#define CART_TYPE_FC3PLUS     0x19
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))

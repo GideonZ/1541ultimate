@@ -689,7 +689,10 @@ void FileTypeCRT::configure_cart(void)
         C64_CARTRIDGE_TYPE = CART_TYPE_EPYX; // Epyx
         break;
     case CART_FINAL3:
-        C64_CARTRIDGE_TYPE = CART_TYPE_FC3; // Final3
+        if (total_read > 16384)
+           C64_CARTRIDGE_TYPE = CART_TYPE_FC3PLUS; // Final3plus
+	else
+           C64_CARTRIDGE_TYPE = CART_TYPE_FC3; // Final3
         break;
     case CART_SYSTEM3:
         C64_CARTRIDGE_TYPE = CART_TYPE_SYSTEM3; // System3

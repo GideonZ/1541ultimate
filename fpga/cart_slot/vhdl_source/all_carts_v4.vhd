@@ -104,6 +104,7 @@ architecture gideon of all_carts_v4 is
     constant c_bbasic       : std_logic_vector(4 downto 0) := "10110";
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10111";
     constant c_128          : std_logic_vector(4 downto 0) := "11000";
+    constant c_fc3plus      : std_logic_vector(4 downto 0) := "11001";
     
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -178,6 +179,31 @@ begin
 --                unfreeze <= '0';
                 if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
                     bank_bits <= io_wdata(1 downto 0) & '0';
+                    mode_bits <= '0' & io_wdata(4) & io_wdata(5);
+                    unfreeze  <= '1';
+                    cart_en   <= not io_wdata(7);
+                    hold_nmi  <= not io_wdata(6);
+                end if;
+                if freeze_act='1' then
+                    game_n  <= '0';
+                    exrom_n <= '1';
+                else
+                    game_n  <= mode_bits(0);
+                    exrom_n <= mode_bits(1);
+                end if;
+                if mode_bits(1 downto 0)="10" then
+                    serve_vic <= '1';
+                end if;
+                serve_rom <= '1';
+                serve_io1 <= '1';
+                serve_io2 <= '1';
+                irq_n     <= '1';
+                nmi_n     <= not(freeze_trig or freeze_act or hold_nmi);
+                                    
+            when c_fc3plus =>
+                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
+                    bank_bits <= io_wdata(1 downto 0) & '0';
+		    ext_bank  <= '0' & io_wdata(3 downto 2);
                     mode_bits <= '0' & io_wdata(4) & io_wdata(5);
                     unfreeze  <= '1';
                     cart_en   <= not io_wdata(7);
@@ -688,8 +714,8 @@ begin
                end if;
             end if;
 
-        when c_fc3 | c_comal80 =>
-            mem_addr_i(15 downto 0) <= bank_bits(15 downto 14) & slot_addr(13 downto 0); -- 16K banks
+        when c_fc3 | c_comal80 | c_fc3plus =>
+            mem_addr_i(17 downto 0) <= ext_bank(17 downto 16) & bank_bits(15 downto 14) & slot_addr(13 downto 0); -- 16K banks
             
         when c_ss5 =>
             if mode_bits(1 downto 0)="00" then
