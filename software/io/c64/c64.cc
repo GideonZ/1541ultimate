@@ -117,9 +117,11 @@ const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140
 const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "120ns" };
 const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
 const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
+const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
 
 struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
+    { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartidge 3 Mode",        "%s", fc3mode,    0,  2, 0 },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
@@ -691,6 +693,11 @@ void C64::unfreeze(void *vdef, int mode)
         // resume C64
         resume();
     } else {
+        if (vdef == 0 && mode == 1) {    
+	     int cart = cfg->get_value(CFG_C64_CART);
+             vdef = (void*) &cartridges[cart];
+	}
+    
         VIC_REG(32) = 0; // black border
         VIC_REG(17) = 0; // screen off
 
@@ -699,8 +706,11 @@ void C64::unfreeze(void *vdef, int mode)
         C64_MODE = C64_MODE_RESET;
         wait_ms(1);
         C64_STOP = 0;
-        set_cartridge(def);
-        C64_MODE = C64_MODE_UNRESET;
+	if (mode != 2)
+	{
+            set_cartridge(def);
+            C64_MODE = C64_MODE_UNRESET;
+	}
     }
     stopped = false;
 }
@@ -778,6 +788,25 @@ void C64::set_cartridge(cart_def *def)
     } else if (def->id && def->type) {
         printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
         flash->read_image(def->id, (void *) mem_addr, def->length);
+	int fc3mode = cfg->get_value(CFG_C64_FC3MODE);
+	if ((def->id == FLASH_ID_FINAL3) && fc3mode)
+	{
+	   int found = -1;
+	   unsigned char* mem_addr8 = (unsigned char*) mem_addr;
+	   for (int i=0; i<300; i++)
+	      if ( mem_addr8[i+0] == 0x58 && mem_addr8[i+1] == 0x68 
+	           && mem_addr8[i+2] == 0xAA && mem_addr8[i+3] == 0x68
+	           && mem_addr8[i+4] == 0xE0 && mem_addr8[i+5] == 0x7F 
+		   && (mem_addr8[i+6] == 0xD0 || mem_addr8[i+6] == 0xF0) 
+		   && mem_addr8[i+8] == 0xe0 && mem_addr8[i+9] == 0xDF
+		   && mem_addr8[i+10] == 0xf0 )
+		       found = i;
+		       
+           if (found != -1)
+	   {
+	      mem_addr8[found+6] = fc3mode == 1 ? 0xF0 : 0xD0;
+	   } 
+	}
     } else if (def->id && !def->type) {
 #ifndef RECOVERYAPP
 #ifndef NO_FILE_ACCESS
@@ -831,9 +860,29 @@ void C64::init_cartridge()
     }
 
     int cart = cfg->get_value(CFG_C64_CART);
-    set_cartridge(&cartridges[cart]);
+    cart_def *cart2 = &cartridges[cart];
 
-    C64_MODE = C64_MODE_UNRESET;
+    if (cart2->id ==  FLASH_ID_FINAL3)
+    {
+        C64_MODE = C64_MODE_UNRESET;
+	wait_ms(100);
+        freeze();
+	wait_ms(1400);
+	unfreeze((void*) cart2, 1);
+    }
+    else if (cart2->id == FLASH_ID_CUSTOM_ROM && !cart2->type)
+    {
+        C64_MODE = C64_MODE_UNRESET;
+	wait_ms(100);
+        freeze();
+	wait_ms(1400);
+	unfreeze((void*) cart2, 1);
+    }
+    else
+    {
+       set_cartridge(cart2);
+       C64_MODE = C64_MODE_UNRESET;
+    }
 }
 
 void C64::cartridge_test(void)

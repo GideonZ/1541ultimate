@@ -219,8 +219,7 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
             }
             return -1;
         }
-
-        c64->unfreeze(0, 0);
+        c64->unfreeze(0, 2);
         configure_cart();
 
         fm->fclose(file);
@@ -318,13 +317,15 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
                 mem_addr += load - 0x8000;
             } else if (type_select == CART_NORMAL) {
                 mem_addr += (load & 0x2000); // use bit 13 of the load address
+            } else if (type_select == CART_FINAL3) {
+                mem_addr += 0x4000 * uint32_t(bank) + (load & 0x2000);
             } else if (split) {
                 mem_addr += 0x2000 * uint32_t(bank);
             } else {
                 mem_addr += uint32_t(size) * uint32_t(bank);
             }
 
-            if (load == 0xA000 && type_select != CART_KCS) {
+            if (load == 0xA000 && type_select != CART_KCS && type_select != CART_FINAL3) {
                 mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
                 load_at_a000 = true;
             }
@@ -566,13 +567,15 @@ bool FileTypeCRT::read_chip_packet(File *f)
         mem_addr += load - 0x8000;
     } else if (type_select == CART_NORMAL) {
         mem_addr += (load & 0x2000); // use bit 13 of the load address
+    } else if (type_select == CART_FINAL3) {
+        mem_addr += 0x4000 * uint32_t(bank) + (load & 0x2000);
     } else if (split) {
         mem_addr += 0x2000 * uint32_t(bank);
     } else {
         mem_addr += uint32_t(size) * uint32_t(bank);
     }
 
-    if (load == 0xA000 && type_select != CART_KCS) {
+    if (load == 0xA000 && type_select != CART_KCS && type_select != CART_FINAL3) {
         mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
         load_at_a000 = true;
     }
