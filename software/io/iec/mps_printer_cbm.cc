@@ -274,6 +274,7 @@ MpsPrinter::CBM_Interpreter(uint8_t input)
                     head_y += next_interline;
                     head_x  = 0;
                     quoted = false;
+                    reverse = false;
                     if (head_y > margin_bottom)
                         FormFeed();
                     break;
