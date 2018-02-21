@@ -118,6 +118,7 @@ SRCS_CC	 =  u2p_init.cc \
 			network_target.cc \
 			control_target.cc \
 			iec.cc \
+			iec_printer.cc \
 			mps_printer.cc \
 			mps_printer_cbm.cc \
 			mps_printer_epson.cc \
