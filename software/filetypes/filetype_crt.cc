@@ -350,12 +350,6 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
         return -1;
     }
 
-    C64_MODE = C64_MODE_RESET;
-    C64_REU_ENABLE = 0;
-    C64_ETHERNET_ENABLE = 0;
-
-    C64_CARTRIDGE_TYPE = CART_TYPE_NONE;
-
     uint16_t b = max_bank;
     uint16_t mask = 0;
     while (b) {
@@ -384,22 +378,9 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
         C64_CARTRIDGE_TYPE = CART_TYPE_DOMARK;
         break;
     case CART_OCEAN:
-//            if ((total_read > 0x20000)&&(total_read <= 0x40000)) { // 16K banks
-//                C64_CARTRIDGE_TYPE = 0x0B; // Ocean 256K
-//                if(!load_at_a000) { // error! There is no data for upper range
-//                    printf("Fixing Ocean 256, by copying second 128K to A000 range\n");
-//                    uint32_t mem_base = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
-//                    memcpy((void *)(mem_base + 512*1024), (void *)(mem_base + 128*1024), 128*1024);
-//                }
-//            } else {
-//                C64_CARTRIDGE_TYPE = 0x09; // Ocean 128K/512K
-//            }                
-//
         if (load_at_a000) {
             C64_CARTRIDGE_TYPE = CART_TYPE_OCEAN256; // Ocean 256K
         } else {
-//                uint32_t mem_base = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
-//                memcpy((void *)(mem_base + 256*1024), (void *)(mem_base + 0*1024), 256*1024);
             C64_CARTRIDGE_TYPE = CART_TYPE_OCEAN128; // Ocean 128K/512K
         }
         break;
@@ -445,10 +426,24 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
     }
     printf("*%b*\n", C64_CARTRIDGE_TYPE);
 
+    return 0;
+}
+
+/*
+int runCrt(void)
+{
+	C64_MODE = C64_MODE_RESET;
+    C64_REU_ENABLE = 0;
+    C64_ETHERNET_ENABLE = 0;
+
+    C64_CARTRIDGE_TYPE = CART_TYPE_NONE;
+
+
     C64_MODE = C64_MODE_UNRESET;
 
     return 0;
 }
+*/
 
 int FileTypeCRT::executeFlash(SubsysCommand *cmd)
 {
@@ -636,15 +631,10 @@ void FileTypeCRT::configure_cart(void)
     case CART_NORMAL:
         if ((crt_header[0x18] == 1) && (crt_header[0x19] == 0)) { // only special case that we check
             C64_CARTRIDGE_TYPE = CART_TYPE_16K_UMAX;
-        } /*else if ((crt_header[0x18] == 0) && (crt_header[0x19] == 0)) {
-         C64_CARTRIDGE_TYPE = CART_TYPE_16K;
-         } else if ((crt_header[0x18] == 0) && (crt_header[0x19] == 1)) {
-         C64_CARTRIDGE_TYPE = CART_TYPE_8K;
-         } */else {
-            if (total_read > 8192)
-                C64_CARTRIDGE_TYPE = CART_TYPE_16K; // 16K
-            else
-                C64_CARTRIDGE_TYPE = CART_TYPE_8K; // 8K
+        } else if (total_read > 8192) {
+			C64_CARTRIDGE_TYPE = CART_TYPE_16K; // 16K
+    	} else {
+            C64_CARTRIDGE_TYPE = CART_TYPE_8K; // 8K
         }
         break;
     case CART_ACTION:
@@ -657,22 +647,9 @@ void FileTypeCRT::configure_cart(void)
         C64_CARTRIDGE_TYPE = CART_TYPE_DOMARK;
         break;
     case CART_OCEAN:
-//            if ((total_read > 0x20000)&&(total_read <= 0x40000)) { // 16K banks
-//                C64_CARTRIDGE_TYPE = 0x0B; // Ocean 256K
-//                if(!load_at_a000) { // error! There is no data for upper range
-//                    printf("Fixing Ocean 256, by copying second 128K to A000 range\n");
-//                    uint32_t mem_base = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
-//                    memcpy((void *)(mem_base + 512*1024), (void *)(mem_base + 128*1024), 128*1024);
-//                }
-//            } else {
-//                C64_CARTRIDGE_TYPE = 0x09; // Ocean 128K/512K
-//            }                
-//
         if (load_at_a000) {
             C64_CARTRIDGE_TYPE = CART_TYPE_OCEAN256; // Ocean 256K
         } else {
-//                uint32_t mem_base = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
-//                memcpy((void *)(mem_base + 256*1024), (void *)(mem_base + 0*1024), 256*1024);
             C64_CARTRIDGE_TYPE = CART_TYPE_OCEAN128; // Ocean 128K/512K
         }
         break;
