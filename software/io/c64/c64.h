@@ -113,6 +113,7 @@
 #define CART_TYPE_BBASIC      0x16
 #define CART_TYPE_PAGEFOX     0x17
 #define CART_TYPE_128         0x18
+#define CART_TYPE_FC3PLUS     0x19
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
@@ -174,6 +175,7 @@
 #define CFG_C64_RATE        0xCD
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
+#define CFG_C64_FC3MODE     0x73
 #define CFG_C64_REU_PRE     0x80
 #define CFG_C64_REU_IMG     0x81
 #define CFG_C64_REU_OFFS    0x82
