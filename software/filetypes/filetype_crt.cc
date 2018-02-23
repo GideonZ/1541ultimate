@@ -219,8 +219,7 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
             }
             return -1;
         }
-
-        c64->unfreeze(0, 0);
+        c64->unfreeze(0, 2);
         configure_cart();
 
         fm->fclose(file);
@@ -318,13 +317,15 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
                 mem_addr += load - 0x8000;
             } else if (type_select == CART_NORMAL) {
                 mem_addr += (load & 0x2000); // use bit 13 of the load address
+            } else if (type_select == CART_FINAL3) {
+                mem_addr += 0x4000 * uint32_t(bank) + (load & 0x2000);
             } else if (split) {
                 mem_addr += 0x2000 * uint32_t(bank);
             } else {
                 mem_addr += uint32_t(size) * uint32_t(bank);
             }
 
-            if (load == 0xA000 && type_select != CART_KCS) {
+            if (load == 0xA000 && type_select != CART_KCS && type_select != CART_FINAL3) {
                 mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
                 load_at_a000 = true;
             }
@@ -561,13 +562,15 @@ bool FileTypeCRT::read_chip_packet(File *f)
         mem_addr += load - 0x8000;
     } else if (type_select == CART_NORMAL) {
         mem_addr += (load & 0x2000); // use bit 13 of the load address
+    } else if (type_select == CART_FINAL3) {
+        mem_addr += 0x4000 * uint32_t(bank) + (load & 0x2000);
     } else if (split) {
         mem_addr += 0x2000 * uint32_t(bank);
     } else {
         mem_addr += uint32_t(size) * uint32_t(bank);
     }
 
-    if (load == 0xA000 && type_select != CART_KCS) {
+    if (load == 0xA000 && type_select != CART_KCS && type_select != CART_FINAL3) {
         mem_addr += 512 * 1024; // interleaved mode (TODO: make it the same in hardware as well, currently only for EasyFlash)
         load_at_a000 = true;
     }
@@ -663,7 +666,10 @@ void FileTypeCRT::configure_cart(void)
         C64_CARTRIDGE_TYPE = CART_TYPE_EPYX; // Epyx
         break;
     case CART_FINAL3:
-        C64_CARTRIDGE_TYPE = CART_TYPE_FC3; // Final3
+        if (total_read > 16384)
+           C64_CARTRIDGE_TYPE = CART_TYPE_FC3PLUS; // Final3plus
+	else
+           C64_CARTRIDGE_TYPE = CART_TYPE_FC3; // Final3
         break;
     case CART_SYSTEM3:
         C64_CARTRIDGE_TYPE = CART_TYPE_SYSTEM3; // System3

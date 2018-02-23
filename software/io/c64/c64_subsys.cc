@@ -147,8 +147,8 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 			c64->client->release_host(); // disconnect from user interface
 			c64->client = 0;
 		}
-		c64->unfreeze(0, 0);
-		c64->init_cartridge();
+		c64->unfreeze(0, 1);
+		// c64->init_cartridge();
 		break;
 	case C64_START_CART:
 		if(c64->client) { // we can't execute this yet
