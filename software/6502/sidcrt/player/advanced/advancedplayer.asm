@@ -16,7 +16,7 @@
 ;-----------------------------------------------------------------------
 
 headersize      .word headerEnd - headersize
-codeSize        .word codeEnd - codeStart
+codeSize        .word codeEnd
 playerLoc       .word player + 1                  ; offset of address of player
 
 clockLoc        .word clock.digit + 2             ; offset of address of screen location for clock
@@ -54,9 +54,10 @@ musColorsLoc    .word musColors                   ; offset of address where the 
 numColorsLoc    .word numOfColors + 1             ; offset of number of colors to write
 headerEnd
 
+codeStart
                 .logical $0000
 ;---------------------------------------
-codeStart       jmp extraPlayer
+                jmp extraPlayer
                 jsr init
 player          jsr $0000     ; init player
 
@@ -98,6 +99,7 @@ musTune         lda #$00
 +
                 jsr clock.initClock
                 jsr detectSidModel
+                stx sidModel
                 jsr displaySysInfo
 
                 jsr fixTimer
@@ -162,6 +164,7 @@ selectSubTune   sei
                 jsr timebar.afterInit
 
                 jsr detectSidModel
+                stx sidModel
                 jsr displaySysInfo
 
                 lda currentSong
@@ -239,7 +242,7 @@ displaySongLength
                 tax
 
                 lda extraPlayLoc
-                adc #>songLength - codeStart
+                adc #>songLength
                 sta slDataLoc+2
 
                 inx
@@ -288,8 +291,7 @@ detectSidModel  lda #$ff        ; make sure the check is not done on a bad line
                 cmp #$03
                 beq +
 unknownSid      ldx #$02
-+               stx sidModel    ; output 0 = 8580, 1 = 6581, 2 = unknown
-                rts
++               rts             ; output 0 = 8580, 1 = 6581, 2 = unknown
 
 displaySysInfo  jsr setBankAllRam
 

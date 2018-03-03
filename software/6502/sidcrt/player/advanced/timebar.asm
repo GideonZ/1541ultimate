@@ -138,7 +138,7 @@ songLengthToBin lda #$00
                 tax
 
                 lda extraPlayLoc
-                adc #>songLength - codeStart
+                adc #>songLength
                 sta slDataLoc2+2
                 sta slDataLoc3+2
 

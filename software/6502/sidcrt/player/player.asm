@@ -67,10 +67,9 @@ offFastForw     .word fastForward + 1   ; offset of flag indicating the player s
 offNumLines     .word numOfLines + 1    ; offset of value of the number of line where the colors should be set for
 headerEnd
                 .logical $0000
-
 playRoutine
 
-hiPlayer        jsr player - playRoutine
+hiPlayer        jsr player
 playerLoop      clc
                 bcc *
 
@@ -167,18 +166,18 @@ basicSongNr     lda #$00
 prgFile         lda #$00
                 bne +
 
-                lda #<playerLoop - playRoutine
+                lda #<playerLoop
                 sta $0300
 basicEnd        lda #$00
                 sta $0301
 
 +
-reloc1          jmp playerStart - playRoutine   ; skip psid init since it is an RSID tune
+reloc1          jmp playerStart   ; skip psid init since it is an RSID tune
 
 psidTune
-                lda #<irqbrk - playRoutine
+                lda #<irqbrk
                 sta $0316
-hiBrk           lda #>irqbrk - playRoutine
+hiBrk           lda #>irqbrk
                 sta $0317
 
                 ; clear zero page
@@ -246,12 +245,12 @@ clock           ldy #$00            ; clock flag PAL on PAL machine. 0 = PAL, 1 
                 clc
                 adc #$02
 speed60Hz       tax
-ciaLookup1      lda @w ciaValues - playRoutine,x
+ciaLookup1      lda @w ciaValues,x
                 sta $dc04
-ciaSpeedFix1    sta @w loSpeed - playRoutine + 1
-ciaLookup2      lda @w ciaValues - playRoutine + 1,x
+ciaSpeedFix1    sta @w loSpeed + 1
+ciaLookup2      lda @w ciaValues + 1,x
                 sta $dc05
-ciaSpeedFix2    sta @w hiSpeed - playRoutine + 1
+ciaSpeedFix2    sta @w hiSpeed + 1
 
 playIsNull      lda #$00
                 beq installIrq
@@ -268,9 +267,9 @@ speedFlag2      ldx #$00
                 dex
                 beq endIrqInit
 
-installIrq      ldy #<irqciaFFFE - playRoutine
-                lda #<irqcia0314 - playRoutine
-hiIrq           ldx #>irqcia0314 - playRoutine
+installIrq      ldy #<irqciaFFFE
+                lda #<irqcia0314
+hiIrq           ldx #>irqcia0314
 installIrqVec   sta $0314
                 stx $0315
                 sty $fffe
@@ -282,7 +281,7 @@ enableCia       stx $dc0e           ; start Timer A, continuous
                 sta $dc0d
 endIrqInit
 
-ciaFixSet       stx @w ciaFix - playRoutine + 1
+ciaFixSet       stx @w ciaFix + 1
 
 playerStart     lda #$00
                 sta $aa
