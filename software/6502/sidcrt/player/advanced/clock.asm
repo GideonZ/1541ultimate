@@ -58,7 +58,7 @@ digit           sta $0798,y
                 bpl -
                 rts
 
-initClock       sei
+detectC64Clock
 -               lda $d012
 -               cmp $d012
                 beq -
@@ -75,12 +75,16 @@ initClock       sei
                 inx
                 bmi +
                 lda #$03
-+               sta palntsc
-
++
 ; 00 = PAL (312 raster lines, 63 cycles per line)
 ; 01 = NTSC (263 raster lines, 65 cycles per line)
 ; 02 = NTSC (262 raster lines, 64 cycles per line, old VIC with bug)
 ; 03 = PAL Drean (312 raster lines, 65 cycles per line)
+                rts
+
+initClock       sei
+-               jsr detectC64Clock
++               sta palntsc
 
                 ldy #$01        ; INC instruction to compensate timer
 

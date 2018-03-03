@@ -30,18 +30,18 @@ PAGE_START = $aa
 PAGE_SIZE = $ab
 PAGE_END = $ac
 
-cleanupVars     lda #$00
-                sta LOAD_ADDRESS
-                sta LOAD_END_ADDRESS
-                sta TEMP
-                sta BANK
-                sta LOOP_INDEX
-                sta LOOP_END_INDEX
-                sta LOOP_SIZE
-                sta PAGE_START
-                sta PAGE_SIZE
-                sta PAGE_END
-                rts
+ZERO_PAGE_ADDRESSES_MEMALLOC = [
+    LOAD_ADDRESS,
+    LOAD_END_ADDRESS,
+    TEMP,
+    BANK,
+    LOOP_INDEX,
+    LOOP_END_INDEX,
+    LOOP_SIZE,
+    PAGE_START,
+    PAGE_SIZE,
+    PAGE_END
+]
 
 ; =========== PLAYER, SCREEN AND CHARROM LOCATION CALCULATION ==================
 
@@ -56,8 +56,8 @@ calcPlayerLocations
                 ldx #$fc            ; screen
                 ldy #$f8            ; charrom
                 jmp setLocations
-noBasic
-                jsr readLoadAddresses
+
+noBasic         jsr readLoadAddresses
 
                 ; first check areas where default charrom can be used
                 ldy #$10            ; charrom ($10 = default location)

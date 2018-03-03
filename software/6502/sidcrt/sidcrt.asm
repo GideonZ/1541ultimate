@@ -34,6 +34,9 @@ DMA_MODE = $ab
 OFFSET_SYSTEM_SCREEN_LOCATION = $ec       ; location at screen + $0300 -> $03ec
 OFFSET_SONG_SCREEN_LOCATION = $ee         ; location at screen + $0300 -> $03ee
 
+SYSTEM_SCREEN_LOCATION = $b4
+SONG_SCREEN_LOCATION = $b5
+
 ; ZERO PAGE ADDRESSES
 CURRENT_LINE = $a0
 
@@ -53,6 +56,29 @@ SID_HEADER_LO = $fa                       ; lo-byte of sid header address
 SID_HEADER_HI = $fb                       ; hi-byte of sid header address
 SONG_TO_PLAY = $fc                        ; song to play where value 0 is song 1 and $ff is song 256
 SCREEN_LOCATION = $fd                     ; hi-byte of screen location
+
+ZERO_PAGE_ADDRESSES_MAIN = [
+    CURRENT_LINE,
+    DD00_VALUE,
+    D018_VALUE,
+    $a5, $a6, $a7, $a8, $a9,
+
+    EXTRA_PLAYER_SIZE,
+    EXTRA_PLAYER_LOCATION,
+    PLAYER_LOCATION,
+    CHARROM_LOCATION,
+    TEMP,
+    SID_MODEL,
+    C64_CLOCK,
+
+    $f7, $f8,
+
+    SID_HEADER_LO,
+    SID_HEADER_HI,
+    SONG_TO_PLAY,
+    SCREEN_LOCATION,
+    $fe
+]
 
                 * = $8000           ; base address of cartridge
 
@@ -141,7 +167,7 @@ alternative_ff87
                 sta $0284
                 lda #$08
                 sta $0282
-                lda #$04
+                lsr
                 sta $0288
                 rts
 
@@ -187,12 +213,10 @@ basicStartedIRQ
 
                 lda $dc0d           ; acknowledge IRQ
 
-                ldx #$00
--               lda initMem,x
-                sta $0100,x
-                inx
-                cpx #initMemEnd - initMem
-                bne -
+                lda #<initMem
+                ldx #>initMem
+                ldy #initMemEnd - initMem
+                jsr copyTo0100
 
                 lda $02
                 cmp #SID_MODE
@@ -384,40 +408,36 @@ cleanupMemory   ldy #$7f            ; clean SID header
                 dey
                 bpl -
 
-                lda #$00            ; clear temp variables
-                sta CURRENT_LINE    ; $a0
-                sta DD00_VALUE      ; $a3
-                sta D018_VALUE      ; $a4
-
-                sta $a6
-                sta $a7
-                sta $a8
-                sta $a9
-
-                sta EXTRA_PLAYER_SIZE     ; $b6
-                sta EXTRA_PLAYER_LOCATION ; $b7
-                sta PLAYER_LOCATION       ; $b8
-                sta CHARROM_LOCATION      ; $b9
-
-                sta TEMP            ; $bc
-                sta SID_MODEL       ; $bc
-                sta C64_CLOCK       ; $bd
-
-                jsr relocator.cleanupVars
-                jsr memalloc.cleanupVars
-
-                sta $f7
-                sta $f8
-
-                sta SID_HEADER_LO   ; $fa
-                sta SID_HEADER_HI   ; $fb
-                sta SONG_TO_PLAY    ; $fc
-                sta SCREEN_LOCATION ; $fd
-                sta $fe
-
                 lda #$20
                 sta $ff
+
+                lda #<cleanUpRoutine
+                ldx #>cleanUpRoutine
+                ldy #cleanUpRoutineEnd - cleanUpRoutine
+runAt0100       jsr copyTo0100
+                jmp $0100
+
+copyTo0100      sta $aa
+                stx $ab
+-               lda ($aa),y
+                sta $0100,y
+                dey
+                bpl -
                 rts
+
+cleanUpRoutine
+                .logical $0100
+                ldx #$00
+                ldy #$00
+-               lda zpAddressesUsed,x
+                beq +
+                sta zeroPageWrite + 1
+zeroPageWrite   sty $00
+                inx
+                jmp -
++               rts
+                .here
+cleanUpRoutineEnd
 
 calculateLocations
                 ldy #$78            ; get free page base
@@ -435,15 +455,13 @@ calcLocBasedOnLoadArea
                 jsr memalloc.calcPlayerLocations
                 jmp memalloc.calcExtraPlayerLocation
 
-noAreaPossible  jsr memalloc.calcSmallestPlayerLocation
-                lda #$00
+noAreaPossible  lda #$00
                 sta EXTRA_PLAYER_LOCATION
-                rts
+                jmp memalloc.calcSmallestPlayerLocation
 
 calcLocBasedOnFreePages
                 jsr memalloc.calcPlayerScreenLocForRelocArea
-                jsr memalloc.calcExtraPlayerLocForRelocArea
-                rts
+                jmp memalloc.calcExtraPlayerLocForRelocArea
 
 relocateExtraPlayer
                 lda EXTRA_PLAYER_LOCATION
@@ -510,100 +528,84 @@ setExtraPlayerVars
                 iny
                 jsr writeAddress
 
-                lda player.offSongNr + 1
-                clc
-                adc PLAYER_LOCATION
-                pha
                 lda player.offSongNr
                 ldy extraPlayer.songNumSet
                 ldx extraPlayer.songNumSet + 1
                 jsr setValue
                 iny
-                pla
+                lda player.offSongNr + 1
+                clc
+                adc PLAYER_LOCATION
                 jsr writeAddress
 
-                lda SCREEN_LOCATION
-                clc
-                adc #$03
-                pha
                 lda #$80
                 ldy extraPlayer.spriteLoc
                 ldx extraPlayer.spriteLoc + 1
                 jsr setValue
                 iny
-                pla
+                lda SCREEN_LOCATION
+                clc
+                adc #$03
                 jsr writeAddress
 
-                lda player.offPlayLoop + 1
-                clc
-                adc PLAYER_LOCATION
-                pha
                 lda player.offPlayLoop
                 ldy extraPlayer.playerLoopLoc
                 ldx extraPlayer.playerLoopLoc + 1
                 jsr setValue
                 iny
-                pla
-                jsr writeAddress
-
-                lda player.offExtraPlay1 + 1
+                lda player.offPlayLoop + 1
                 clc
                 adc PLAYER_LOCATION
-                pha
+                jsr writeAddress
+
                 lda player.offExtraPlay1
                 ldy extraPlayer.epCallLoc
                 ldx extraPlayer.epCallLoc + 1
                 jsr setValue
                 iny
-                pla
-                jsr writeAddress
-
-                lda player.offFastForw + 1
+                lda player.offExtraPlay1 + 1
                 clc
                 adc PLAYER_LOCATION
-                pha
+                jsr writeAddress
+
                 lda player.offFastForw
                 ldy extraPlayer.fastFwd
                 ldx extraPlayer.fastFwd + 1
                 jsr setValue
                 iny
-                pla
-                jsr writeAddress
-
-                lda player.offSpeed1 + 1
+                lda player.offFastForw + 1
                 clc
                 adc PLAYER_LOCATION
-                pha
+                jsr writeAddress
+
                 lda player.offSpeed1
                 ldy extraPlayer.hdrSpeedFlag1
                 ldx extraPlayer.hdrSpeedFlag1 + 1
                 jsr setValue
                 iny
-                pla
-                jsr writeAddress
-
-                lda player.offSpeed2 + 1
+                lda player.offSpeed1 + 1
                 clc
                 adc PLAYER_LOCATION
-                pha
+                jsr writeAddress
+
                 lda player.offSpeed2
                 ldy extraPlayer.hdrSpeedFlag2
                 ldx extraPlayer.hdrSpeedFlag2 + 1
                 jsr setValue
                 iny
-                pla
-                jsr writeAddress
-
-                lda player.offSpeed3 + 1
+                lda player.offSpeed2 + 1
                 clc
                 adc PLAYER_LOCATION
-                pha
+                jsr writeAddress
+
                 lda player.offSpeed3
                 ldy extraPlayer.hdrSpeedFlag3
                 ldx extraPlayer.hdrSpeedFlag3 + 1
                 jsr setValue
                 iny
-                pla
+                lda player.offSpeed3 + 1
+                clc
+                adc PLAYER_LOCATION
                 jsr writeAddress
 
                 ldy #$12            ; byte 4 of speed flags
@@ -624,14 +626,12 @@ setExtraPlayerVars
                 ldy #$03
                 jsr writeAddress
 
-                lda PLAYER_LOCATION
-                pha
                 lda #$00
                 ldy extraPlayer.playerLoc
                 ldx extraPlayer.playerLoc + 1
                 jsr setValue
                 iny
-                pla
+                lda PLAYER_LOCATION
                 jsr writeAddress
 
                 ldy #$77
@@ -739,19 +739,27 @@ setPlayerVars   lda PLAYER_LOCATION
                 jsr writeAddress
 
                 ldy player.offReloc1
-                ldx player.offReloc1 + 1
+                lda player.offReloc1 + 1
                 jsr relocator.relocByte
 
                 ldy player.offCiaLU1
-                ldx player.offCiaLU1 + 1
+                lda player.offCiaLU1 + 1
                 jsr relocator.relocByte
 
                 ldy player.offCiaLU2
-                ldx player.offCiaLU2 + 1
+                lda player.offCiaLU2 + 1
                 jsr relocator.relocByte
 
                 ldy player.offCiaFix
-                ldx player.offCiaFix + 1
+                lda player.offCiaFix + 1
+                jsr relocator.relocByte
+
+                ldy player.offCiaFix1
+                lda player.offCiaFix1 + 1
+                jsr relocator.relocByte
+
+                ldy player.offCiaFix2
+                lda player.offCiaFix2 + 1
                 jsr relocator.relocByte
 
                 lda relocator.BASE_ADDRESS
@@ -763,14 +771,6 @@ setPlayerVars   lda PLAYER_LOCATION
                 ldy player.offHiPlayer
                 ldx player.offHiPlayer + 1
                 jsr setValue
-
-                ldy player.offCiaFix1
-                ldx player.offCiaFix1 + 1
-                jsr relocator.relocByte
-
-                ldy player.offCiaFix2
-                ldx player.offCiaFix2 + 1
-                jsr relocator.relocByte
 
                 jsr isRsid
                 ldy player.offRsid
@@ -868,11 +868,11 @@ continueInitPlayer
                 jsr setValue
 
                 ldy player.offHiIrq
-                ldx player.offHiIrq + 1
+                lda player.offHiIrq + 1
                 jsr relocator.relocByte
 
                 ldy player.offHiBrk
-                ldx player.offHiBrk + 1
+                lda player.offHiBrk + 1
                 jsr relocator.relocByte
 
                 ldy #$77
@@ -908,9 +908,6 @@ continueInitPlayer
                 jsr readHeader
                 beq noExtraPlayWithFF   ; is play address zero?
 +
-                lda EXTRA_PLAYER_LOCATION
-                pha
-
                 lda #$20            ; JSR
                 ldy player.offExtraPlay1
                 ldx player.offExtraPlay1 + 1
@@ -919,13 +916,10 @@ continueInitPlayer
                 lda #$00            ; lo-byte of extra player
                 jsr writeAddress
                 iny
-                pla
+                lda EXTRA_PLAYER_LOCATION
                 jsr writeAddress
 
 extraPLayForFF
-                lda EXTRA_PLAYER_LOCATION
-                pha
-
                 lda #$20            ; JSP
                 ldy player.offExtraPlay2
                 ldx player.offExtraPlay2 + 1
@@ -934,9 +928,8 @@ extraPLayForFF
                 lda #$00            ; lo-byte of extra player
                 jsr writeAddress
                 iny
-                pla
-                jsr writeAddress
-                rts
+                lda EXTRA_PLAYER_LOCATION
+                jmp writeAddress
 
 noExtraPlayer   lda #$ea            ; NOP
                 ldy player.offExtraPlay1
@@ -953,8 +946,7 @@ noExtraPlayer   lda #$ea            ; NOP
                 iny
                 jsr writeAddress
                 iny
-                jsr writeAddress
-                rts
+                jmp writeAddress
 
 noExtraPlayWithFF
                 lda EXTRA_PLAYER_LOCATION
@@ -1149,19 +1141,18 @@ runPlayer       lda $aa
                 pha
                 lda $ab
                 pha
+
                 jsr cleanupMemory
+
+                lda #<runRoutine
+                ldx #>runRoutine
+                ldy #runRoutineEnd - runRoutine
+                jsr copyTo0100
+
                 pla
                 sta $ab
                 pla
                 sta $aa
-
-                ldx #$00
--               lda runRoutine,x
-                sta $0100,x
-                inx
-                cpx #runRoutineEnd - runRoutine
-                bne -
-
                 jmp $0100
 
 copyChars       lda CHARROM_LOCATION
@@ -1169,19 +1160,17 @@ copyChars       lda CHARROM_LOCATION
                 cmp #$10
                 beq dontCopyChar
 
+                lda #<CharROMCopy
+                ldx #>CharROMCopy
+                ldy #CharROMCopyEnd - CharROMCopy
+                jsr copyTo0100
+
                 lda #$d0
                 sta $f8
 
                 ldy #$00
                 sty $fe
                 sty $f7
-
-                ldx #$00
--               lda CharROMCopy,x
-                sta $0100,x
-                inx
-                cpx #CharROMCopyEnd - CharROMCopy
-                bne -
 
 copyChrLoop     jsr $0100
                 iny
@@ -1218,12 +1207,10 @@ setupScreen     jsr copyChars
                 ora #$94
                 sta DD00_VALUE
 
-                ldx #$00
--               lda screenWriteBegin,x
-                sta $0100,x
-                inx
-                cpx #(screenWriteEnd - screenWriteBegin) + 1
-                bne -
+                lda #<screenWriteBegin
+                ldx #>screenWriteBegin
+                ldy #screenWriteEnd - screenWriteBegin
+                jsr copyTo0100
 
                 lda SCREEN_LOCATION
                 pha
@@ -1703,8 +1690,7 @@ fillData        jsr readHeader
 
                 ; ascii special character to petscii conversion
                 sta $a6
-                tya
-                pha                 ; save index
+                sty $a5             ; save index
 
                 ldy #$00
 charConvLoop    lda ($a9),y
@@ -1714,24 +1700,24 @@ charConvLoop    lda ($a9),y
 
                 lda ($a7),y
                 sta $a6
-                bne conversionEnd
+                bne writeToScreen
 
 checkNextChar   iny
                 bne charConvLoop
 
-conversionEnd   pla
-                tay
-                lda $a6
-
-                pha
+conversionEnd   lda $a6
                 and #$40
-                beq noConversion
-                pla
-                and #$9f
-                pha
-noConversion    pla
+                bne +
+
+                lda $a6
                 and #$7f            ; only first 128 chars allowed, so map last 128 to first 128 chars
+                bne writeToScreen
+
++               lda $a6
+                and #$1f
+writeToScreen   ldy $a5
                 jsr screenWrite
+
                 iny
                 dex
                 bne fillData
@@ -1826,13 +1812,10 @@ screenBankTemp
                 .here
 screenWriteEnd
 
-reset           ldx #$00
--               lda resetRoutine,x
-                sta $0100,x
-                inx
-                cpx #resetRoutineEnd - resetRoutine
-                bne -
-                jmp $0100
+reset           lda #<resetRoutine
+                ldx #>resetRoutine
+                ldy #resetRoutineEnd - resetRoutine
+                jmp runAt0100
 
 resetRoutine    inc $8005
 
@@ -1856,8 +1839,7 @@ resetRoutine    inc $8005
                 ; Now wait patiently, note A = 01
 -               bne -
 
-noUCI           lda #$40
-                sta $dfff
+noUCI           jsr turnOffCart
 
                 cli
                 jmp ($fffc)
@@ -1928,8 +1910,7 @@ run_basic
                 pla                 ; 3x from the interrupt
                 pla
                 pla
-                lda #$40
-                sta $dfff           ; turn off cartridge
+                jsr turnOffCart
                 cli                 ; we just let the interrupt occur again
                 lda #1              ; disable cursor blink
                 sta $CC
@@ -1947,8 +1928,7 @@ run_basic
 
 go_basic
 ; WE GET HERE ON INTERRUPT!
-                lda #$40
-                sta $dfff           ; turn off cartridge
+                jsr turnOffCart
                 jmp $ea31
 initMemEnd
 
@@ -1994,9 +1974,13 @@ bankValue
 readMemEnd
 
 runRoutine      lda #$40
-                sta $dfff
+                sta $dfff           ; turn off cartridge
                 jmp ($00aa)
 runRoutineEnd
+
+turnOffCart     lda #$40
+                sta $dfff           ; turn off cartridge
+                rts
 
 writeScreenData
 -               ldy #$00
@@ -2346,6 +2330,11 @@ S6581Lbl        .text '6581', 0
 S8580Lbl        .text '8580', 0
 S65818580Lbl    .text '6581 / 8580', 0
 SUnknownLbl     .text 'UNKOWN', 0
+
+                ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
+PETSCII         .text 'AAAAAAAAAAAAAAEEEEEEEEIIIIIIIIOOOOOOOOOOOOUUUUUUUUCCNNYYYYB'
+                .byte $64   ; PETSCII underscore
+                .byte 0
                 .enc 'none'
 
 ASCII           .byte $c0, $c1, $c2, $c3, $c4, $c5, $c6             ; all A variants
@@ -2359,9 +2348,8 @@ ASCII           .byte $c0, $c1, $c2, $c3, $c4, $c5, $c6             ; all A vari
                 .byte $d9, $da, $db, $dc                            ; all U variants
                 .byte $f9, $fa, $fb, $fc                            ; all u variants
                 .byte $c7, $e7, $d1, $f1, $dd, $9f, $fd, $ff, $df   ; other chars
+                .byte '_'
                 .byte 0
-                ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
-PETSCII         .null 'AAAAAAAaaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYYyyB'
 
                 ;examples special characters:
                 ; /HVSC/C64Music/MUSICIANS/W/Walt/Maelkeboetten.sid (Mæclkebøtten)
@@ -2369,3 +2357,5 @@ PETSCII         .null 'AAAAAAAaaaaaaaEEEEeeeeIIIIiiiiOOOOOOooooooUUUUuuuuCcNnYYy
                 ; /HVSC/C64Music/GAMES/A-F/Captain_Blood.sid (by François Lionet)
                 ; /HVSC/C64Music/MUSICIANS/D/Da_Blondie/Brain_Damage.sid (by Attila Szõke)
                 ; etc.
+
+zpAddressesUsed .null ZERO_PAGE_ADDRESSES_MAIN, relocator.ZERO_PAGE_ADDRESSES_RELOC, memalloc.ZERO_PAGE_ADDRESSES_MEMALLOC
