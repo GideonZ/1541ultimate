@@ -51,6 +51,7 @@ CHARROM_LOCATION = $b9                    ; hi-byte of the character ROM address
 TEMP = $bc
 SID_MODEL = $bc
 C64_CLOCK = $bd
+SIDFX_DETECTED = $be
 
 SID_HEADER_LO = $fa                       ; lo-byte of sid header address
 SID_HEADER_HI = $fb                       ; hi-byte of sid header address
@@ -70,6 +71,7 @@ ZERO_PAGE_ADDRESSES_MAIN = [
     TEMP,
     SID_MODEL,
     C64_CLOCK,
+    SIDFX_DETECTED,
 
     $f7, $f8,
 
@@ -351,7 +353,7 @@ calculateExtraPlayerSize
 
 fixHeader       ; load end address is always 2 bytes off (needs to be fixed in the Ultimate firmware)
                 ldy #$7e
--               jsr readHeader
+                jsr readHeader
                 clc
                 adc #$02
                 sta (SID_HEADER_LO),y
@@ -360,6 +362,18 @@ fixHeader       ; load end address is always 2 bytes off (needs to be fixed in t
                 jsr readHeader
                 clc
                 adc #$01
+                sta (SID_HEADER_LO),y
++
+                ldy #$04            ; read version of header
+                jsr readHeader
+                cmp #$03
+                bcs +
+
+                ; remove info about 2nd and 3rd SID when header version if not 3 or higher
+                lda #$00
+                ldy #$7a            ; remove 2nd SID address
+                sta (SID_HEADER_LO),y
+                iny                 ; remove 2nd SID address
                 sta (SID_HEADER_LO),y
 +               rts
 
@@ -1281,11 +1295,6 @@ setupScreen     jsr copyChars
 
                 jsr writeScreenData
 
-                ldy #$04            ; read version of header
-                jsr readHeader
-                cmp #$03
-                bcc noMoreSids      ; don't read 2nd SID address when SID header version is less than 3
-
                 ldy #$7a            ; is second SID address defined?
                 jsr readHeader
                 beq noMoreSids
@@ -1447,8 +1456,7 @@ splitReleasedField
                 lda #$08
                 sta CURRENT_LINE
 
-printSidInfo
-                lda $f7             ; restore sid header address
+printSidInfo    lda $f7             ; restore sid header address
                 sta SID_HEADER_LO
 
                 lda $f8
@@ -1459,6 +1467,8 @@ printSidInfo
                 jsr detection.detectSystem
                 sta C64_CLOCK
                 sty SID_MODEL
+                stx SIDFX_DETECTED
+
                 ldx #$00            ; 0 indicates that system info is presented
                 jsr printSingleSidInfo
 
@@ -1471,11 +1481,6 @@ printSidInfo
                 sta TEMP
                 ldx #$01            ; first SID
                 jsr printSingleSidInfo
-
-                ldy #$04            ; read version of header
-                jsr readHeader
-                cmp #$03
-                bcc noMoreSids2     ; don't read 2nd SID address when SID header version is less than 3
 
                 ldy #$7a            ; is second SID address defined?
                 jsr readHeader
@@ -1974,12 +1979,12 @@ bankValue
 readMemEnd
 
 runRoutine      lda #$40
-                sta $dfff           ; turn off cartridge
+                sta $dfff                   ; turn off cartridge
                 jmp ($00aa)
 runRoutineEnd
 
 turnOffCart     lda #$40
-                sta $dfff           ; turn off cartridge
+                sta $dfff                   ; turn off cartridge
                 rts
 
 writeScreenData
@@ -1996,7 +2001,7 @@ writeScreenData
                 lda ($fe),y
                 ldy #$00
 -
-                jsr screenWrite           ; write to screen
+                jsr screenWrite             ; write to screen
                 inc $f7
                 bne +
                 inc $f8
@@ -2010,7 +2015,7 @@ writeScreenData
                 inc $ff
 +               bne --
 
-writeData       jsr screenWrite           ; write to screen
+writeData       jsr screenWrite             ; write to screen
 
                 inc $f7
                 bne +
@@ -2024,31 +2029,19 @@ endScreenWrite  rts
 setCurrentLineOffset
                 lda CURRENT_LINE
                 sta $fe
+                lda #$28                    ; multiply current line by 40
+                sta $ff
+
+                ldx #$08
                 lda #$00
-                sta $ff
-
-                ; multiply by 40
-                ldx $ff
-                lda $fe
-                asl
-                rol $ff
-                asl
-                rol $ff
-
+-               lsr
+                ror $fe
+                bcc +
                 clc
-                adc $fe
-                sta $fe
-                txa
                 adc $ff
++               dex
+                bpl -
                 sta $ff
-
-                asl $fe
-                rol $ff
-
-                asl $fe
-                rol $ff
-                asl $fe
-                rol $ff
                 rts
 
 setCurrentLinePosition
@@ -2281,6 +2274,7 @@ extraPlayerEnd
 relocator       .binclude 'relocator.asm'
 memalloc        .binclude 'memalloc.asm'
 detection       .binclude 'detection.asm'
+sidFx           .binclude 'sidfx.asm'
 songlengths     .binclude 'songlengths.asm'
 
                 .enc 'screen'
