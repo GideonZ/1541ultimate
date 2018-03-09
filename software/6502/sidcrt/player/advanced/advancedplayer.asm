@@ -204,8 +204,7 @@ calcSpeedFlag   cmp #32             ; check if less than 32
                 rts
 
 ;-------------------------------------------------------------------
-resetVariables
-                jsr clock.resetClock
+resetVariables  jsr clock.resetClock
 
                 lda currentSong
                 jsr math.convertNumToDecDigit
@@ -217,9 +216,7 @@ resetVariables
 
                 jmp timebar.initTimeBar
 
-displaySongInfo
-displaySongNums
-                ldx #$00
+displaySongInfo ldx #$00
                 ldy #$00
                 sty totalSng + 1
 -               lda curSongDigit1,x
