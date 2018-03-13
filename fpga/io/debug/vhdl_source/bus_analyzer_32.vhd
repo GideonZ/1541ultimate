@@ -30,7 +30,9 @@ port (
     IRQn        : in  std_logic;
     NMIn        : in  std_logic;
     
-    cart_led_n  : in  std_logic;
+    trigger     : in  std_logic;
+    sync        : in  std_logic;
+
     ---
     mem_req     : out t_mem_req_32;
     mem_resp    : in  t_mem_resp_32;
@@ -41,7 +43,7 @@ port (
 end entity;
 
 architecture gideon of bus_analyzer_32 is
-    type t_state is (idle, writing, recording, wait_trigger);
+    type t_state is (idle, writing, recording, wait_trigger, wait_sync);
     signal enable_log   : std_logic;
     signal ev_addr      : unsigned(24 downto 0);
     signal state        : t_state;
@@ -59,12 +61,14 @@ architecture gideon of bus_analyzer_32 is
     signal io           : std_logic;
     signal interrupt    : std_logic;
     signal rom          : std_logic;
+    signal frame_tick   : std_logic := '0';
+    signal counter      : integer range 0 to 312*63; -- PAL
 begin
     io <= io1n and io2n;
     rom <= romln and romhn;
     interrupt <= irqn and nmin;
     
-    vector_in <= phi2 & dman & exromn & ba & irqn & rom & nmin & rwn & data & addr;
+    vector_in <= phi2 & frame_tick & exromn & ba & irqn & rom & nmin & rwn & data & addr;
     --vector_in <= phi2 & gamen & exromn & ba & irqn & rom & nmin & rwn & data & addr;
     --vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
 
@@ -81,6 +85,18 @@ begin
             vector_d3 <= vector_d2;
             vector_d4 <= vector_d3;
 
+            if sync = '1' then
+                counter <= 312 * 63 - 1;
+            elsif phi_d1 = '1' and phi_d2 = '0' then
+                if counter = 0 then
+                    counter <= 312 * 63 - 1;
+                    frame_tick <= '1';
+                else
+                    counter <= counter - 1;
+                    frame_tick <= '0';
+                end if;
+            end if;
+
             case state is
             when idle =>
                 if enable_log = '1' then
@@ -90,10 +106,17 @@ begin
             when wait_trigger =>
                 if enable_log = '0' then
                     state <= idle;
-                elsif cart_led_n = '1' then -- loader cartridge went off
-                    state <= recording;
+                elsif trigger = '1' then
+                    state <= wait_sync;
                 end if;
                 
+            when wait_sync =>
+                if enable_log = '0' then
+                    state <= idle;
+                elsif frame_tick = '1' then
+                    state <= recording;
+                end if;
+
             when recording =>
                 mem_wdata <= byte_swap(vector_d4, g_big_endian);
                 if phi_d2 /= phi_d1 then

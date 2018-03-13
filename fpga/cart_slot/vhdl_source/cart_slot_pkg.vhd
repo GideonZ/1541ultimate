@@ -48,6 +48,8 @@ package cart_slot_pkg is
         clock_detect   : std_logic;
         cart_active    : std_logic;
         c64_vcc        : std_logic;
+        exrom          : std_logic;
+        game           : std_logic;
     end record;
 
     constant c_cart_control_init : t_cart_control := (

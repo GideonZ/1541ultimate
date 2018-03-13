@@ -198,6 +198,7 @@ port (
     ext_mem_resp: out t_mem_resp_32;
     
     cpu_irq     : out std_logic;
+    trigger     : in  std_logic := '0';
     
     -- Buttons
     button      : in  std_logic_vector(2 downto 0) );
@@ -371,7 +372,9 @@ architecture logic of ultimate_logic_32 is
     signal c2n_play_motor_out   : std_logic := '0';
     signal c2n_rec_sense_out    : std_logic := '0';
     signal c2n_rec_motor_out    : std_logic := '0';
-    
+    signal c2n_read_en_i        : std_logic := '0';
+    signal c2n_read_out_i       : std_logic := '0';
+        
     -- miscellaneous interconnect
     signal c64_reset_in_n   : std_logic;
     signal c64_irq_n        : std_logic;
@@ -395,6 +398,7 @@ architecture logic of ultimate_logic_32 is
     signal dman_oi          : std_logic;
     signal trigger_1        : std_logic;
     signal trigger_2        : std_logic;
+    signal sync             : std_logic;
     signal sys_irq_usb      : std_logic := '0';
     signal sys_irq_tape     : std_logic := '0';
     signal sys_irq_iec      : std_logic := '0';
@@ -403,7 +407,6 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_eth_rx   : std_logic := '0';
     signal misc_io          : std_logic_vector(7 downto 0);
     signal profiler_irq_flags   : std_logic_vector(7 downto 0);
-
 
     signal audio_speaker_tmp : signed(17 downto 0);
 begin
@@ -671,6 +674,7 @@ begin
 
             -- debug
             freezer_state   => freezer_state,
+            sync            => sync,
             trigger_1       => trigger_1,
             trigger_2       => trigger_2,
             
@@ -978,18 +982,20 @@ begin
             resp            => io_resp_c2n,
 
 			c64_stopped		=> c64_stopped,
-            phi2_tick       => phi2_tick,
 
             c2n_sense_in    => c2n_sense_in,
             c2n_motor_in    => c2n_motor_in,
 
             c2n_sense_out   => c2n_play_sense_out,
             c2n_motor_out   => c2n_play_motor_out,
-            c2n_out_en_r    => c2n_read_en,
+            c2n_out_en_r    => c2n_read_en_i,
             c2n_out_en_w    => c2n_write_en,
-            c2n_out_r       => c2n_read_out,
+            c2n_out_r       => c2n_read_out_i,
             c2n_out_w       => c2n_write_out );
     end generate;
+
+    c2n_read_out <= c2n_read_out_i;
+    c2n_read_en  <= c2n_read_en_i;
     
     r_c2n_rec: if g_c2n_recorder generate -- signals => tap
         i_c2n: entity work.c2n_record
@@ -1122,7 +1128,7 @@ begin
     process(sys_clock)
     begin
         if rising_edge(sys_clock) then
-            cas_read_c  <= c2n_read_in;
+            cas_read_c  <= (c2n_read_in and not c2n_read_en_i) or (c2n_read_out_i and c2n_read_en_i);
             cas_write_c <= c2n_write_in;
 
             audio_left <= (others => '0');
@@ -1294,7 +1300,8 @@ begin
             ROMHn        => ROMHn_i,
             EXROMn       => EXROMn_i,
             GAMEn        => GAMEn_i,
-            cart_led_n   => cart_led_n,
+            sync         => sync,
+            trigger      => trigger,
             mem_req      => mem_req_32_debug,
             mem_resp     => mem_resp_32_debug,
             io_req       => io_req_debug,
