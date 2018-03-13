@@ -114,7 +114,7 @@ begin
                     mdio_o <= io_req.data(0);
                 when X"C" =>
                     speaker_en_i <= io_req.data(0);
-		    speaker_vol_i <= io_req.data(4 downto 1);
+                    speaker_vol_i <= io_req.data(4 downto 1);
                 when X"D" =>
                     hub_reset_i <= io_req.data(0);
                 when X"E" =>

@@ -58,7 +58,7 @@ extern constructor __CTOR_END__[];
 
 void _do_ctors(void)
 {
-  constructor* ctor;
+    constructor* ctor;
 
 //  for (ctor = &__CTOR_END__[-1]; ctor >= __CTOR_LIST__; ctor--) {
   for (ctor = __CTOR_LIST__; ctor != &__CTOR_END__[0]; ctor++) {
