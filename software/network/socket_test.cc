@@ -40,6 +40,7 @@ int  SocketTest::fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 
 int SocketTest :: profiler(SubsysCommand *cmd) {
 	if (cmd->mode) {
+        PROFILER_STOP = 1;
 		PROFILER_START = 1;
 	} else {
 		PROFILER_STOP = 1;
