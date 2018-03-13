@@ -221,7 +221,7 @@ void U64Config :: setScanMode(ConfigItem *it)
 int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 {
 	int count = 0;
-#if DEVELOPER == 2
+#if DEVELOPER > 1
 	if(fm->is_path_writable(p)) {
     	item_list.append(new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID));
     	count ++;
@@ -229,7 +229,7 @@ int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
         count ++;
     }
 #endif
-#ifdef DEVELOPER
+#if DEVELOPER
 	item_list.append(new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE));  count++;
 	item_list.append(new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE));  count++;
     item_list.append(new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT));  count++;

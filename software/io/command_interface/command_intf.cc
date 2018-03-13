@@ -157,7 +157,7 @@ void CommandInterface :: copy_result(Message *data, Message *status)
 
 int  CommandInterface :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
-#ifdef DEVELOPER
+#if DEVELOPER
 	item_list.append(new Action("Run Command Cart", getID(), MENU_CMD_RUNCMDCART, 0));
     return 1;
 #else
