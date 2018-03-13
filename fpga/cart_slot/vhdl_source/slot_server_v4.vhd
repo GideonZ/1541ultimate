@@ -80,7 +80,7 @@ port (
 
     -- debug
     freezer_state   : out   std_logic_vector(1 downto 0);
-
+    sync            : out   std_logic;
     -- audio output
     sid_left         : out signed(17 downto 0);
     sid_right        : out signed(17 downto 0);
@@ -493,6 +493,7 @@ begin
         game_n          => game_n,
         sense           => sense,
     
+        sync            => sync,
         CART_LEDn       => cart_led_n,
         size_ctrl       => control.reu_size );
 
@@ -796,29 +797,32 @@ begin
         if rising_edge(clock) then
             memctrl_inhibit <= timing_inhibit;
             status.c64_vcc <= VCC;            
+            status.exrom <= not exromn_i;
+            status.game <= not gamen_i;
         end if;
     end process;
 
-    -- Stand alone tick output
-    process(clock)
-    begin
-        if rising_edge(clock) then
-            stand_alone_tick <= '0';
-            if tick_div = 0 then
-                stand_alone_tick <= '1';
-                if control.tick_ntsc = '1' then
-                    tick_div <= 48; -- 49 => 1.0204 MHz (-0.15%)
-                else
-                    tick_div <= 50; -- 51 => 0.9804 MHz (-0.49%)
-                end if;
-            else
-                tick_div <= tick_div - 1;
-            end if;
-        end if;
-    end process;
+--    -- Stand alone tick output
+--    process(clock)
+--    begin
+--        if rising_edge(clock) then
+--            stand_alone_tick <= '0';
+--            if tick_div = 0 then
+--                stand_alone_tick <= '1';
+--                if control.tick_ntsc = '1' then
+--                    tick_div <= 48; -- 49 => 1.0204 MHz (-0.15%)
+--                else
+--                    tick_div <= 50; -- 51 => 0.9804 MHz (-0.49%)
+--                end if;
+--            else
+--                tick_div <= tick_div - 1;
+--            end if;
+--        end if;
+--    end process;
+--    phi2_tick_avail <= stand_alone_tick when status.clock_detect = '0' else phi2_tick_i;
+    phi2_tick_avail <= phi2_tick_i;
 
-    phi2_tick_avail <= stand_alone_tick when status.clock_detect = '0' else phi2_tick_i;
-    phi2_tick <= phi2_tick_avail;
-
+    phi2_tick   <= phi2_tick_avail;
+    
     c64_stopped <= status.c64_stopped;
 end structural;

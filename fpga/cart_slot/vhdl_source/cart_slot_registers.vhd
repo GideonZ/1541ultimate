@@ -92,6 +92,8 @@ begin
                 when c_cart_c64_clock_detect =>
                     io_resp.data(0) <= status.clock_detect;
                     io_resp.data(1) <= status.c64_vcc;
+                    io_resp.data(2) <= status.exrom;
+                    io_resp.data(3) <= status.game;
                 when c_cart_cartridge_rom_base =>
                     io_resp.data <= std_logic_vector(g_rom_base(23 downto 16));
                 when c_cart_cartridge_type =>

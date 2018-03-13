@@ -52,7 +52,7 @@ port (
     sense           : in  std_logic;
 
     CART_LEDn       : out std_logic;
-
+    sync            : out std_logic; -- pulse when 0D is written to DFFF (for syncing VIC)
     size_ctrl       : in  std_logic_vector(2 downto 0) := "001" );
 
 end all_carts_v4;    
@@ -144,7 +144,8 @@ begin
             reset_in     <= reset or RST_in or c64_reset;
             freeze_act_d <= freeze_act;
             unfreeze     <= '0';
-            
+            sync <= '0';
+                        
             -- control register
             if reset_in='1' then
                 cart_logic_d <= cart_logic; -- activate change of mode!
@@ -203,7 +204,7 @@ begin
             when c_fc3plus =>
                 if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' then -- DFFF
                     bank_bits <= io_wdata(1 downto 0) & '0';
-		    ext_bank  <= '0' & io_wdata(3 downto 2);
+                    ext_bank  <= '0' & io_wdata(3 downto 2);
                     mode_bits <= '0' & io_wdata(4) & io_wdata(5);
                     unfreeze  <= '1';
                     cart_en   <= not io_wdata(7);
@@ -326,8 +327,13 @@ begin
                 nmi_n     <= not(freeze_trig or freeze_act);
 
             when c_8k =>
-                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' and io_wdata(7 downto 6) = "01" then -- DFFF
-                    cart_en <= '0'; -- permanent off
+                if io_write='1' and io_addr(8 downto 0) = "111111111" then -- DFFF
+                    if cart_en='1' and io_wdata(7 downto 6) = "01" then
+                        cart_en <= '0'; -- permanent off
+                    end if;
+                    if io_wdata(3 downto 0) = X"D" then
+                        sync <= '1';
+                    end if;
                 end if;
                 game_n    <= '1';
                 exrom_n   <= '0';
@@ -338,8 +344,13 @@ begin
                 nmi_n     <= '1';
 
             when c_16k =>
-                if io_write='1' and io_addr(8 downto 0) = "111111111" and cart_en='1' and io_wdata(7 downto 6) = "01" then -- DFFF
-                    cart_en <= '0'; -- permanent off
+                if io_write='1' and io_addr(8 downto 0) = "111111111" then -- DFFF
+                    if cart_en='1' and io_wdata(7 downto 6) = "01" then
+                        cart_en <= '0'; -- permanent off
+                    end if;
+                    if io_wdata(3 downto 0) = X"D" then
+                        sync <= '1';
+                    end if;
                 end if;
                 game_n    <= '0';
                 exrom_n   <= '0';
