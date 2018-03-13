@@ -1,0 +1,197 @@
+/*
+ * test_loader.cc
+ *
+ *  Created on: Nov 20, 2016
+ *      Author: gideon
+ */
+
+#include <stdio.h>
+#include "system.h"
+#include <stdint.h>
+#include <string.h>
+#include <stdlib.h>
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "alt_types.h"
+#include "dump_hex.h"
+#include "iomap.h"
+#include "itu.h"
+#include "profiler.h"
+#include "u2p.h"
+#include "usb_base.h"
+#include "filemanager.h"
+#include "fpll.h"
+#include "chargen.h"
+#include "screen.h"
+#include "rtc.h"
+#include "prog_flash.h"
+
+typedef struct {
+	const char *fileName;
+	const char *romName;
+	const uint32_t flashAddress;
+	uint32_t *buffer;
+	uint32_t  size;
+} BinaryImage_t;
+
+
+BinaryImage_t images[] = {
+     { "/Usb?/u64/u64.swp",      "FPGA Binary",         0x000000, 0, 0 },
+     { "/Usb?/u64/ultimate.app", "Application Binary",  0x290000, 0, 0 },
+     { "/Usb?/u64/ar5pal.bin",   "Action Replay 5",     0x400000, 0, 0 },
+     { "/Usb?/u64/ar6pal.bin",   "Action Replay 6",     0x408000, 0, 0 },
+     { "/Usb?/u64/final3.bin",   "Final Cartridge III", 0x410000, 0, 0 },
+     { "/Usb?/u64/rr38pal.bin",  "Retro Replay",        0x420000, 0, 0 },
+     { "/Usb?/u64/ss5pal.bin",   "Super Snapshot",      0x430000, 0, 0 },
+     { "/Usb?/u64/kcs.bin",      "KCS",                 0x440000, 0, 0 },
+     { "/Usb?/u64/epyx.bin",     "Epyx Fastloader",     0x444000, 0, 0 },
+     { "/Usb?/u64/kerna*.bin",   "Kernal ROM",          0x446000, 0, 0 },
+};
+
+#define NUM_IMAGES (sizeof(images) / sizeof(BinaryImage_t))
+
+void jump_run(uint32_t a)
+{
+	void (*function)();
+	uint32_t *dp = (uint32_t *)&function;
+    *dp = a;
+    function();
+}
+
+const char *getBoardRevision(void)
+{
+    uint8_t rev = (U2PIO_BOARDREV >> 3);
+
+    switch (rev) {
+    case 0x10:
+        return "U64 Prototype";
+    case 0x11:
+        return "U64 V1.1 (Null Series)";
+    case 0x12:
+        return "U64 V1.2 (Mass Prod)";
+    }
+    return "Unknown";
+}
+
+int load_file(BinaryImage_t *flashFile)
+{
+	FRESULT fres;
+	File *file;
+	uint32_t transferred;
+
+	FileManager *fm = FileManager :: getFileManager();
+	fres = fm->fopen(flashFile->fileName, FA_READ, &file);
+	if (fres == FR_OK) {
+		flashFile->size = file->get_size();
+		flashFile->buffer = (uint32_t *)malloc(flashFile->size + 8);
+		fres = file->read(flashFile->buffer, flashFile->size, &transferred);
+		if (transferred != flashFile->size) {
+			printf("Expected to read %d bytes, but got %d bytes.\n", flashFile->size, transferred);
+			return -1;
+		}
+	} else {
+		printf("Warning: Could not open file '%s'! %s\n", flashFile->fileName, FileSystem :: get_error_string(fres));
+		return -2;
+	}
+    printf("Successfully read %s.\n", flashFile->fileName);
+	return 0;
+}
+
+Screen *screen;
+
+#define CHARGEN_BASE      0xA0040000
+#define CHARGEN_TIMING    (CHARGEN_BASE + 0x0000)
+#define CHARGEN_REGISTERS (CHARGEN_BASE + 0x4000)
+#define CHARGEN_SCREEN    (CHARGEN_BASE + 0x5000)
+#define CHARGEN_COLOR     (CHARGEN_BASE + 0x6000)
+
+extern "C" {
+    static void screen_outbyte(int c) {
+        screen->output(c);
+    }
+}
+
+// -- A0040000 is chargen base
+// Mapping:
+// 0000 : timing
+// 4000 : chargen registers
+// 5000 : screen
+// 6000 : color ram
+
+void do_update(void)
+{
+    char time_buffer[32];
+    printf("\n%s ", rtc.get_long_date(time_buffer, 32));
+    printf("%s\n", rtc.get_time_string(time_buffer, 32));
+
+    Flash *flash2 = get_flash();
+    printf("\033\024Detected Flash: %s\n", flash2->get_type_string());
+
+    const char *fpgaType = (getFpgaCapabilities() & CAPAB_FPGA_TYPE) ? "5CEBA4" : "5CEBA2";
+    printf("Detected FPGA Type: %s.\nBoard Revision: %s\n\033\037\n", fpgaType, getBoardRevision());
+
+    flash2->protect_disable();
+    for(int i=0;i<NUM_IMAGES;i++) {
+        flash_buffer_length(flash2, screen, images[i].flashAddress, false, images[i].buffer, images[i].size, "?", images[i].romName);
+    }
+    printf("\nConfiguring Flash write protection..\n");
+    flash2->protect_configure();
+    flash2->protect_enable();
+    printf("Done!                            \n");
+}
+
+#define CHARGEN_REGS  ((volatile t_chargen_registers *)CHARGEN_REGISTERS)
+
+void initScreen()
+{
+    TVideoMode mode = { 01, 25175000,  640, 16,  96,  48, 0,   480, 10, 2, 33, 0, 1, 0 };  // VGA 60
+    SetScanModeRegisters((volatile t_video_timing_regs *)CHARGEN_TIMING, &mode);
+
+    CHARGEN_REGS->TRANSPARENCY     = 0;
+    CHARGEN_REGS->CHAR_WIDTH       = 8;
+    CHARGEN_REGS->CHAR_HEIGHT      = 0x80 | 16;
+    CHARGEN_REGS->CHARS_PER_LINE   = 79;
+    CHARGEN_REGS->ACTIVE_LINES     = 29;
+    CHARGEN_REGS->X_ON_HI          = 0;
+    CHARGEN_REGS->X_ON_LO          = 0;
+    CHARGEN_REGS->Y_ON_HI          = 0;
+    CHARGEN_REGS->Y_ON_LO          = 8;
+    CHARGEN_REGS->POINTER_HI       = 0;
+    CHARGEN_REGS->POINTER_LO       = 0;
+    CHARGEN_REGS->PERFORM_SYNC     = 0;
+    CHARGEN_REGS->TRANSPARENCY     = 0x84;
+
+    screen = new Screen_MemMappedCharMatrix((char *)CHARGEN_SCREEN, (char *)CHARGEN_COLOR, 79, 29);
+    screen->clear();
+    custom_outbyte = screen_outbyte;
+    printf("Screen Initialized.\n");
+}
+
+extern "C" {
+	void main_task(void *context)
+	{
+	    initScreen();
+	    printf("Ultimate-64 - LOADER...\n");
+
+		usb2.initHardware();
+		FileManager *fm = FileManager :: getFileManager();
+
+		printf("Waiting for USB storage device to become available.\n");
+		FileInfo info(32);
+		FRESULT res;
+		do {
+			vTaskDelay(100);
+			res = fm->fstat("/Usb?", info);
+			//printf("%s\n", FileSystem :: get_error_string(res));
+		} while (res != FR_OK);
+
+		for(int i=0;i<NUM_IMAGES;i++) {
+		    if(load_file(&images[i])) {
+		        printf("\033\022Could not load image. Did not flash.\n");
+		        return;
+		    }
+		}
+        do_update();
+	}
+}
