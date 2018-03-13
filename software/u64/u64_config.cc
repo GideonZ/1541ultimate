@@ -25,16 +25,19 @@ extern "C" {
 // static pointer
 U64Config u64_configurator;
 
-#define CFG_SCANLINES        0x01
-#define CFG_SID1_ADDRESS     0x02
-#define CFG_SID2_ADDRESS     0x03
-#define CFG_EMUSID1_ADDRESS  0x04
-#define CFG_EMUSID2_ADDRESS  0x05
-#define CFG_AUDIO_LEFT_OUT	 0x06
-#define CFG_AUDIO_RIGHT_OUT	 0x07
-#define CFG_COLOR_CLOCK_ADJ  0x08
+#define CFG_SCANLINES         0x01
+#define CFG_SID1_ADDRESS      0x02
+#define CFG_SID2_ADDRESS      0x03
+#define CFG_EMUSID1_ADDRESS   0x04
+#define CFG_EMUSID2_ADDRESS   0x05
+#define CFG_AUDIO_LEFT_OUT	  0x06
+#define CFG_AUDIO_RIGHT_OUT	  0x07
+#define CFG_COLOR_CLOCK_ADJ   0x08
+#define CFG_ANALOG_OUT_SELECT 0x09
+#define CFG_CHROMA_DELAY      0x0A
+#define CFG_COLOR_CODING      0x0B
 
-#define CFG_SCAN_MODE_TEST   0xA8
+#define CFG_SCAN_MODE_TEST    0xA8
 
 const char *u64_sid_base[] = { "$D400-$D7FF", "$D400", "$D420", "$D440", "$D480", "$D500", "$D600", "$D700",
                            "$DE00", "$DE20", "$DE40", "$DE60",
@@ -71,7 +74,8 @@ uint8_t u64_sid_mask[]    = { 0xC0, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  };
 
 static const char *en_dis4[] = { "Disabled", "Enabled" };
-
+static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
+static const char *color_sel[] = { "PAL", "NTSC" };
 static const char *audio_sel[] = { "Emulated SID 1", "Emulated SID 2", "SID Socket 1", "SID Socket 2",
 								   "Sampler Left", "Sampler Right", "Drive A", "Drive B", "Tape Read", "Tape Write" };
 // Ultimate:
@@ -106,7 +110,9 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_AUDIO_LEFT_OUT,       CFG_TYPE_ENUM, "Output Selector Left",         "%s", audio_sel,    0,  9, 0 },
     { CFG_AUDIO_RIGHT_OUT,      CFG_TYPE_ENUM, "Output Selector Right",        "%s", audio_sel,    0,  9, 0 },
     { CFG_COLOR_CLOCK_ADJ, 		CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
-    { CFG_SCAN_MODE_TEST,       CFG_TYPE_ENUM, "HDMI Scan Mode Test",          "%s", scan_modes,   0, 14, 0 },
+    { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video",                 "%s", video_sel,    0,  1, 0 },
+    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
+//    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 extern "C" {
@@ -145,6 +151,35 @@ void U64Config :: effectuate_settings()
     C64_EMUSID1_MASK =  u64_sid_mask[cfg->get_value(CFG_EMUSID1_ADDRESS)];
     C64_EMUSID2_MASK =  u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)];
 
+    int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
+    if (chromaDelay < 0) {
+        C64_LUMA_DELAY   = -chromaDelay;
+        C64_CHROMA_DELAY = 0;
+    } else {
+        C64_LUMA_DELAY   = 0;
+        C64_CHROMA_DELAY = chromaDelay;
+    }
+
+    if (cfg->get_value(CFG_ANALOG_OUT_SELECT)) {
+        C64_VIDEOFORMAT = 0x04;
+    }
+/*
+    else if (cfg->get_value(CFG_COLOR_CODING)) {
+        C64_VIDEOFORMAT = 0x01;
+        C64_BURST_PHASE = 32;
+    }
+*/
+    else { // PAL
+        C64_VIDEOFORMAT = 0x00;
+        C64_BURST_PHASE = 24;
+    }
+
+    /*
+    C64_LINE_PHASE   = 9;
+    C64_PHASE_INCR   = 9;
+    C64_BURST_PHASE  = 24;
+*/
+
     uint8_t sel_left  = cfg->get_value(CFG_AUDIO_RIGHT_OUT);
     uint8_t sel_right = cfg->get_value(CFG_AUDIO_LEFT_OUT);
     // Ultimate:
@@ -179,6 +214,9 @@ void U64Config :: setScanMode(ConfigItem *it)
 
 #define MENU_U64_SAVEEDID 1
 #define MENU_U64_SAVEEEPROM 2
+#define MENU_U64_WIFI_DISABLE 3
+#define MENU_U64_WIFI_ENABLE 4
+#define MENU_U64_WIFI_BOOT 5
 
 int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 {
@@ -189,6 +227,9 @@ int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
         item_list.append(new Action("Save I2C ROM to file", SUBSYSID_U64, MENU_U64_SAVEEEPROM));
         count ++;
     }
+    item_list.append(new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE));  count++;
+	item_list.append(new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE));  count++;
+    item_list.append(new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT));  count++;
 	return count;
 
 }
@@ -240,6 +281,22 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
                 }
             }
         }
+        break;
+
+    case MENU_U64_WIFI_DISABLE:
+        U64_WIFI_CONTROL = 0;
+        break;
+
+    case MENU_U64_WIFI_ENABLE:
+        U64_WIFI_CONTROL = 0;
+        vTaskDelay(50);
+        U64_WIFI_CONTROL = 5;
+        break;
+
+    case MENU_U64_WIFI_BOOT:
+        U64_WIFI_CONTROL = 2;
+        vTaskDelay(150);
+        U64_WIFI_CONTROL = 7;
         break;
 
     default:

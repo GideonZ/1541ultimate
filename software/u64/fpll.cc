@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "u64.h"
+#include "fpll.h"
 
 #define FPLL_REFERENCES         1
 #define FPLL_N_MAX              2
@@ -161,22 +162,23 @@ extern "C" void SetHdmiClock(int Hz)
 	U64_HDMI_PLL_RESET = 0;
 }
 
-typedef struct {
-	int vic;
-	int frequency;
-	int hactive;
-	int hfrontporch;
-	int hsync;
-	int hbackporch;
-	int hsyncpol;
-	int vactive;
-	int vfrontporch;
-	int vsync;
-	int vbackporch;
-	int vsyncpol;
-	int pixel_repetition;
-	int color_mode;
-} TVideoMode;
+extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, TVideoMode *mode)
+{
+    regs->VID_HSYNCPOL     = mode->hsyncpol;
+    regs->VID_HSYNCTIME    = mode->hsync >> 1;
+    regs->VID_HBACKPORCH   = mode->hbackporch >> 1;
+    regs->VID_HACTIVE      = mode->hactive >> 3;
+    regs->VID_HFRONTPORCH  = mode->hfrontporch >> 1;
+    regs->VID_HREPETITION  = 0;
+    regs->VID_VSYNCPOL     = mode->vsyncpol;
+    regs->VID_VSYNCTIME    = mode->vsync;
+    regs->VID_VBACKPORCH   = mode->vbackporch;
+    regs->VID_VACTIVE      = mode->vactive >> 3;
+    regs->VID_VFRONTPORCH  = mode->vfrontporch;
+    regs->VID_VIC          = mode->vic;
+    regs->VID_REPCN        = mode->pixel_repetition - 1;
+    regs->VID_Y            = mode->color_mode;
+}
 
 extern "C" void SetScanMode(int modeIndex)
 {
@@ -198,22 +200,6 @@ extern "C" void SetScanMode(int modeIndex)
 			{ 14, 54000000, 1440, 32, 124, 120, 0,   480,  9, 6, 30, 0, 2, 0 },  // VIC 14, 720x480 with double pixels
 	};
 	TVideoMode *mode = &modes[modeIndex];
-
-	VID_HSYNCPOL     = mode->hsyncpol;
-	VID_HSYNCTIME    = mode->hsync >> 1;
-	VID_HBACKPORCH   = mode->hbackporch >> 1;
-	VID_HACTIVE      = mode->hactive >> 3;
-	VID_HFRONTPORCH  = mode->hfrontporch >> 1;
-	VID_HREPETITION  = 0;
-	VID_VSYNCPOL     = mode->vsyncpol;
-	VID_VSYNCTIME    = mode->vsync;
-	VID_VBACKPORCH   = mode->vbackporch;
-	VID_VACTIVE      = mode->vactive >> 3;
-	VID_VFRONTPORCH  = mode->vfrontporch;
-	VID_VIC			 = mode->vic;
-	VID_REPCN        = mode->pixel_repetition - 1;
-	VID_Y			 = mode->color_mode;
-
+	SetScanModeRegisters((volatile t_video_timing_regs *)VID_IO_BASE, mode);
 	SetHdmiClock(mode->frequency);
-
 }

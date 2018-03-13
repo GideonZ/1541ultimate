@@ -12,7 +12,7 @@ HEXLAST  =  0x07FF
 HEXBASE  =  0x20000000
 HEXEND   =  0x200007FF
 
-SRCS_C   =	ddr2_calibrator.c small_printf.c itu.c
+SRCS_C   =	bootloader.c ddr2_calibrator.c small_printf.c itu.c
                         
 SRCS_CC	 =  
 

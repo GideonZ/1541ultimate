@@ -40,14 +40,14 @@ extern uint32_t _recovery_app_end;
 
 const char *getBoardRevision(void)
 {
-	uint8_t rev = (U2PIO_BOARDREV >> 3) ^ 0x1F;
+	uint8_t rev = (U2PIO_BOARDREV >> 3);
 
 	switch (rev) {
-	case 0x08:
+	case 0x10:
 		return "U64 Prototype";
-	case 0x09:
+	case 0x11:
 		return "U64 V1.1 (Null Series)";
-	case 0x0A:
+	case 0x12:
 		return "U64 V1.2 (Mass Prod)";
 	}
 	return "Unknown";

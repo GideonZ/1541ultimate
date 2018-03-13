@@ -65,7 +65,7 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
     int count = 0;
     int size = node->getInfo()->size;
 
-#if DEVELOPER
+#if DEVELOPER == 2
     if (size == 256) {
         list.append(new Action("Write EEPROM", FileTypeBin :: execute_st, CMD_WRITE_EEPROM, (int)this));
         count++;
@@ -152,7 +152,7 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     	}
         fm->fclose(file);
 
-#if DEVELOPER
+#if DEVELOPER == 2
         if (cmd->functionID == CMD_WRITE_EEPROM) {
             for(int i=0;i<256;i++) {
                 ext_i2c_write_byte(0xA0, i, buffer[i]);
@@ -174,13 +174,13 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     			if (id == FLASH_ID_KERNAL_ROM) {
 					// Success!
 					C64 :: enable_kernal(buffer);
-                    cmd->user_interface->popup("Now use Alternate Kernal.", BUTTON_OK);
+                    cmd->user_interface->popup("Now using Alternate Kernal.", BUTTON_OK);
 
     			} else if (id == FLASH_ID_CUSTOM_DRV) {
         			cmd->user_interface->popup("Now use Custom 1541 ROM.", BUTTON_OK);
     			}
                 else if (id == FLASH_ID_CUSTOM_ROM) {
-                    cmd->user_interface->popup("Now use appropriate Custom Catridge.", BUTTON_OK);
+                    cmd->user_interface->popup("Now use appropriate Custom Cartridge.", BUTTON_OK);
                 }
     		}
     	}
