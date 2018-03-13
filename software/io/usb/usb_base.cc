@@ -29,7 +29,7 @@ UsbBase :: UsbBase()
 	rootDevice = NULL;
 	initialized = false;
 	bus_speed = -1;
-
+	setupBuffer = new uint8_t[8];
 //	initHardware();
 }
 
@@ -588,11 +588,19 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
     	return -9;
     }
 
+    if (outlen != 8) {
+        printf("Unsupported setup length.\n");
+        return -10;
+    }
+
+    memcpy(setupBuffer, out, 8);
+    uint32_t outAddress = (uint32_t)setupBuffer;
+
     USB2_CMD_DevEP  = pipe->DevEP;
 	USB2_CMD_Length = outlen;
 	USB2_CMD_MaxTrans = pipe->MaxTrans;
-	USB2_CMD_MemHi = ((uint32_t)out) >> 16;
-	USB2_CMD_MemLo = ((uint32_t)out) & 0xFFFF;
+	USB2_CMD_MemHi = outAddress >> 16;
+	USB2_CMD_MemLo = outAddress & 0xFFFF;
 	USB2_CMD_SplitCtl = pipe->SplitCtl;
 
 	uint16_t result = 0;

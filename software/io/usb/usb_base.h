@@ -47,6 +47,7 @@ class UsbBase
 {
     int bus_speed;
     uint8_t deviceUsed[128];
+    uint8_t *setupBuffer;
 
 	QueueHandle_t queue;
 	QueueHandle_t cleanup_queue;
