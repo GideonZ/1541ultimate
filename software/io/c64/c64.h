@@ -131,7 +131,9 @@
 #define BACKGROUND   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD021))
 #define VIC_MMAP     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD018))
 #define CIA2_DPA     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD00))
+#define CIA2_DPB     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD01))
 #define CIA2_DDRA    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD02))
+#define CIA2_DDRB    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDD03))
 #define CIA1_DPA     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00))
 #define CIA1_DPB     *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC01))
 #define CIA1_DDRA    *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC02))
@@ -225,11 +227,21 @@ class C64 : public GenericHost, ConfigurableObject
     void restore_io(void);
     void set_cartridge(cart_def *def);
     void set_emulation_flags(cart_def *def);
+    void disable_kernal();
 
     void stop(bool do_raster = true);
     void resume(void);
-
     void freeze(void);
+
+    uint8_t get_exrom_game(void) {
+        return (C64_CLOCK_DETECT & 0x0C) >> 2;
+    }
+    bool phi2_present(void) {
+        return (C64_CLOCK_DETECT & 1) == 1;
+    }
+    bool powered_by_c64(void) {
+        return (C64_CLOCK_DETECT & 2) == 2;
+    }
 
 public:
     C64();
