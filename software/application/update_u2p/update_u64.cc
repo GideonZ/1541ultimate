@@ -122,7 +122,7 @@ void do_update(void)
         flash2->protect_disable();
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");
         flash_buffer_at(flash2, screen, 0x290000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
-        flash_buffer_at(flash2, screen, 0x380000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
+        flash_buffer_at(flash2, screen, 0x400000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
 
     	console_print(screen, "\nConfiguring Flash write protection..\n");
     	flash2->protect_configure();
