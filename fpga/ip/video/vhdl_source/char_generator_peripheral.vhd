@@ -34,6 +34,7 @@ port (
     keyb_col        : inout std_logic_vector(7 downto 0) := (others => '0');
     pix_clock       : in  std_logic;
     pix_reset       : in  std_logic;
+    data_enable     : in  std_logic := '1';
     h_count         : in  unsigned(11 downto 0);
     v_count         : in  unsigned(11 downto 0);
     pixel_active    : out std_logic;
@@ -120,6 +121,7 @@ begin
         clock           => pix_clock,
         reset           => pix_reset,
                                        
+        data_enable     => data_enable,
         h_count         => h_count,
         v_count         => v_count,
                                        

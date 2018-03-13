@@ -51,7 +51,8 @@ begin
                     when c_chargen_char_width =>
                         control_i.char_width <= unsigned(io_req.data(2 downto 0));
                     when c_chargen_char_height =>
-                        control_i.char_height <= unsigned(io_req.data(3 downto 0));
+                        control_i.char_height <= unsigned(io_req.data(4 downto 0));
+                        control_i.stretch_y <= io_req.data(7);
                     when c_chargen_chars_per_line =>
                         control_i.chars_per_line <= unsigned(io_req.data);
                     when c_chargen_active_lines =>

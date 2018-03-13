@@ -25,6 +25,7 @@ port (
     clock           : in  std_logic;
     reset           : in  std_logic;
         
+    data_enable     : in  std_logic;
     h_count         : in  unsigned(11 downto 0);
     v_count         : in  unsigned(11 downto 0);
     
@@ -75,7 +76,7 @@ begin
                 pointer <= control.pointer(pointer'range);
                 char_y  <= (others => '0');
                 remaining_lines <= control.active_lines;
-                if (v_count = control.y_on) and (control.overlay_on = '1') then
+                if (v_count = control.y_on) and (control.overlay_on = '1') and (data_enable = '1') then
                     state <= active_line;
                 end if;
                 
@@ -85,7 +86,7 @@ begin
                 
                 if remaining_lines = 0 then
                     state <= idle;
-                elsif h_count = control.x_on then
+                elsif h_count = control.x_on and (data_enable = '1') then
                     state <= draw;
                 end if;
             
@@ -148,7 +149,9 @@ begin
     end process;
     
     screen_addr <= pointer + char_x;
-    char_addr   <= unsigned(screen_data) & char_y_d(2 downto 0) when char_y_d(3)='0' else 
+
+    char_addr   <= unsigned(screen_data) & char_y_d(3 downto 1) when control.stretch_y = '1' else 
+                   unsigned(screen_data) & char_y_d(2 downto 0) when char_y_d(3)='0' else 
                    screen_data(7) & "0000000000";
     
 end architecture;
