@@ -58,6 +58,55 @@ void jump_run(uint32_t a)
     *dp = a;
     function();
 }
+#define ESP_UART_BASE  0xA0000500
+
+#define ESP_UART_DATA  (ESP_UART_BASE + 0x00)
+#define ESP_UART_GET   (ESP_UART_BASE + 0x01)
+#define ESP_UART_FLAGS (ESP_UART_BASE + 0x02)
+#define ESP_UART_ICTRL (ESP_UART_BASE + 0x03)
+
+int esp32_get_byte(int delay)
+{
+    uint8_t d;
+
+    ioWrite8(ITU_TIMER, 240);
+    while(!(ioRead8(ESP_UART_FLAGS) & UART_RxDataAv)) {
+        if (!ioRead8(ITU_TIMER)) {
+            ioWrite8(ITU_TIMER, 240);
+            delay --;
+            if (delay <= 0) {
+                return -2;
+            }
+        }
+    }
+    d = ioRead8(ESP_UART_DATA);
+    ioWrite8(ESP_UART_GET, 0);
+    return (int)d;
+}
+
+char *esp32_get_string(char *buffer, int buflen)
+{
+    buffer[buflen - 1] = 0;
+    for(int i=0;i<buflen-1;i++) {
+        int c = esp32_get_byte(100);
+        if ((c == -2) || (c == 0x0a)) {
+            buffer[i] = 0;
+            break;
+        }
+        if (c == 0x0d) {
+            continue;
+        }
+        buffer[i] = c;
+    }
+    return buffer;
+}
+
+void esp32_put_byte(uint8_t c)
+{
+    while(ioRead8(ESP_UART_FLAGS) & UART_TxFifoFull)
+        ;
+    ioWrite8(ESP_UART_DATA, c);
+}
 
 const char *getBoardRevision(void)
 {
@@ -118,6 +167,49 @@ extern "C" {
 // 4000 : chargen registers
 // 5000 : screen
 // 6000 : color ram
+
+void test_esp32(void)
+{
+    char buffer[100];
+
+    for(int i=0;i<16;i++) {
+        ioWrite8(ESP_UART_GET, 0);
+    }
+
+    // First boot in bootloader mode
+//    screen->clear();
+//    screen->move_cursor(0,0);
+    printf("\033\036Listening to BOOT...\n\033\030");
+    U64_WIFI_CONTROL = 2;
+    vTaskDelay(150);
+    U64_WIFI_CONTROL = 7;
+
+
+    for (int i=0;i<200000;i++) {
+        if (ioRead8(ESP_UART_FLAGS) & UART_RxDataAv) {
+            uint8_t c = ioRead8(ESP_UART_DATA);
+            screen->output(c);
+            ioWrite8(ESP_UART_GET, 0);
+        }
+    }
+    printf("###\n");
+
+    printf("\033\036Listening to RUN...\n\033\030");
+
+    // Then boot in normal mode:
+    U64_WIFI_CONTROL = 0;
+    vTaskDelay(50);
+    U64_WIFI_CONTROL = 5;
+
+    for (int i=0;i<200000;i++) {
+        if (ioRead8(ESP_UART_FLAGS) & UART_RxDataAv) {
+            uint8_t c = ioRead8(ESP_UART_DATA);
+            screen->output(c);
+            ioWrite8(ESP_UART_GET, 0);
+        }
+    }
+    printf("###\n");
+}
 
 void do_update(void)
 {
@@ -192,6 +284,13 @@ extern "C" {
 		        return;
 		    }
 		}
+		screen->clear();
+		screen->move_cursor(0,0);
         do_update();
+        test_esp32();
+
+        printf("\n\033\025Waiting for you to turn off the machine..\n");
+        while (1)
+            ;
 	}
 }
