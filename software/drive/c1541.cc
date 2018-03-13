@@ -181,6 +181,12 @@ int  C1541 :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
 	int items = 1;
     char buffer[32];
+
+    // don't show items for disabled drives
+    if (cfg->get_value(CFG_C1541_POWERED) == 0) {
+        return 0;
+    }
+
     sprintf(buffer, "Reset 1541 Drive %c", drive_letter);
 	item_list.append(new Action(buffer, getID(), MENU_1541_RESET, 0));
 
