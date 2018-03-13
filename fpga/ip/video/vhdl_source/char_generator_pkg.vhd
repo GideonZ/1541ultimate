@@ -20,7 +20,7 @@ package char_generator_pkg is
     type t_chargen_control is record
         clocks_per_line     : unsigned(11 downto 0);
         char_width          : unsigned(2 downto 0);
-        char_height         : unsigned(3 downto 0);
+        char_height         : unsigned(4 downto 0);
         chars_per_line      : unsigned(7 downto 0);
         active_lines        : unsigned(5 downto 0);
         x_on                : unsigned(11 downto 0);
@@ -28,13 +28,14 @@ package char_generator_pkg is
         pointer             : unsigned(14 downto 0);
         perform_sync        : std_logic;
         overlay_on          : std_logic;
+        stretch_y           : std_logic;
         transparent         : std_logic_vector(3 downto 0);
     end record;
 
     constant c_chargen_control_init : t_chargen_control := (
         clocks_per_line     => to_unsigned(672, 12),
         char_width          => to_unsigned(0, 3),
-        char_height         => to_unsigned(9, 4),
+        char_height         => to_unsigned(9, 5),
         chars_per_line      => to_unsigned(60, 8),
         active_lines        => to_unsigned(30, 6),
         x_on                => to_unsigned(15, 12),
@@ -42,19 +43,21 @@ package char_generator_pkg is
         pointer             => to_unsigned(0, 15),
         perform_sync        => '0',
         overlay_on          => '0',
+        stretch_y           => '0',
         transparent         => X"5" );
 
     -- 640x225 (80x25 => 8x9 chars, in 45 C64 chars width)
     constant c_chargen_control_init_orig : t_chargen_control := (
         clocks_per_line     => to_unsigned(896, 12),
         char_width          => to_unsigned(0, 3),
-        char_height         => to_unsigned(8, 4),
+        char_height         => to_unsigned(8, 5),
         chars_per_line      => to_unsigned(80, 8),
         active_lines        => to_unsigned(25, 6),
         x_on                => to_unsigned(190, 12),
         y_on                => to_unsigned(46, 12),
         pointer             => to_unsigned(0, 15),
         overlay_on          => '0',
+        stretch_y           => '0',
         perform_sync        => '0',
         transparent         => X"5" );
 
@@ -62,13 +65,14 @@ package char_generator_pkg is
     constant c_chargen_control_init_480 : t_chargen_control := (
         clocks_per_line     => to_unsigned(672, 12),
         char_width          => to_unsigned(6, 3),
-        char_height         => to_unsigned(8, 4),
+        char_height         => to_unsigned(8, 5),
         chars_per_line      => to_unsigned(80, 8),
         active_lines        => to_unsigned(25, 6),
         x_on                => to_unsigned(142, 12),
         y_on                => to_unsigned(48, 12),
         pointer             => to_unsigned(0, 15),
         overlay_on          => '0',
+        stretch_y           => '0',
         perform_sync        => '0',
         transparent         => X"5" );
 
