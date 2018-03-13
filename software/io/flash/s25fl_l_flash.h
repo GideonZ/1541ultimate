@@ -37,6 +37,7 @@
 #define S25FLL_ReadAnyRegister						0x65
 
 #define S25FLL_WriteEnable							0x06
+#define S25FLL_WriteEnableVolatile                  0x50
 #define S25FLL_WriteDisable							0x04
 #define S25FLL_WriteRegisters						0x01
 #define S25FLL_WriteAnyRegister						0x71

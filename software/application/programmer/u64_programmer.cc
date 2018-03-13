@@ -224,8 +224,13 @@ void do_update(void)
     printf("Detected FPGA Type: %s.\nBoard Revision: %s\n\033\037\n", fpgaType, getBoardRevision());
 
     flash2->protect_disable();
+
     for(int i=0;i<NUM_IMAGES;i++) {
-        flash_buffer_length(flash2, screen, images[i].flashAddress, false, images[i].buffer, images[i].size, "?", images[i].romName);
+        if (! flash_buffer_length(flash2, screen, images[i].flashAddress, false, images[i].buffer, images[i].size, "?", images[i].romName)) {
+            printf("\033\022ERROR!\n\n");
+            while(1)
+                ;
+        }
     }
     printf("\nConfiguring Flash write protection..\n");
     flash2->protect_configure();
@@ -287,6 +292,9 @@ extern "C" {
 		screen->clear();
 		screen->move_cursor(0,0);
         do_update();
+        vTaskDelay(250);
+        screen->clear();
+        screen->move_cursor(0,0);
         test_esp32();
 
         printf("\n\033\025Waiting for you to turn off the machine..\n");
