@@ -917,6 +917,9 @@ synchronize
 	; GO!
 	jsr SYNCLOC
 
+    lda #$0d
+    sta $dfff
+
 	; disable VIC interrupt once again
 	lda #$00
 	sta $d01a
