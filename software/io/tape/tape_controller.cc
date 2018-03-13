@@ -13,10 +13,20 @@ TapeController *tape_controller = NULL; // globally static
 #define MENU_C2N_STATUS        0x3203
 #define MENU_C2N_STOP          0x3204
 
+const char *tick_rates[] = { "0.98 MHz (PAL)", "1.02 MHz (NTSC)" };
+
+#define CFG_TAPE_RATE  1
+
+struct t_cfg_definition tape_config[] = {
+    { CFG_TAPE_RATE,    CFG_TYPE_ENUM,   "Tape Playback Rate",           "%s", tick_rates, 0,  1, 0 },
+    { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
+};
+
 TapeController :: TapeController() : SubSystem(SUBSYSID_TAPE_PLAYER)
 {
     fm = FileManager :: getFileManager();
-	file = NULL;
+    register_store(0x54415045, "Tape Settings", tape_config);
+    file = NULL;
 	paused = 0;
 	recording = 0;
 	controlByte = 0;
@@ -85,6 +95,7 @@ void TapeController :: close()
 void TapeController :: start(int playout_pin) // pin = 1: read, pin = 2: write
 {
 	stop();
+
 	printf("Start Tape.. Status = %b. [", PLAYBACK_STATUS);
 	PLAYBACK_CONTROL = C2N_CLEAR_ERROR | C2N_FLUSH_FIFO;
 	PLAYBACK_CONTROL = 0;
@@ -94,17 +105,14 @@ void TapeController :: start(int playout_pin) // pin = 1: read, pin = 2: write
     *PLAYBACK_DATA = 0x00;
     *PLAYBACK_DATA = 0x95; //0xA2;
     *PLAYBACK_DATA = 0x95; //0x08;
-    *PLAYBACK_DATA = 0x25; //0x0F;
+    *PLAYBACK_DATA = 0x25; //0x0F; 25
 
 	controlByte = C2N_ENABLE | uint8_t(mode << 3) | uint8_t(playout_pin << 6);
 	if (playout_pin == 1) { // normal playback: WE control the Sense PIN
 		controlByte |= C2N_SENSE;
-	} else { // record!
-		// insert one second pause to start with
-		//*PLAYBACK_DATA = 0x00;
-		//*PLAYBACK_DATA = 0xA2;
-		//*PLAYBACK_DATA = 0x08;
-		//*PLAYBACK_DATA = 0x0F;
+	}
+	if (cfg->get_value(CFG_TAPE_RATE)) {
+	    controlByte |= C2N_RATE;
 	}
 
 	// preload some blocks
@@ -117,7 +125,7 @@ void TapeController :: start(int playout_pin) // pin = 1: read, pin = 2: write
 
 	PLAYBACK_CONTROL = controlByte;
     recording = (playout_pin == 2);
-	printf("] Status = %b.\n", PLAYBACK_STATUS);
+	printf("%b] Status = %b.\n", controlByte, PLAYBACK_STATUS);
 	state = 0;
 }
 	
@@ -138,7 +146,7 @@ void TapeController :: read_block()
 	if(block > length)
 		block = length;
 
-	if(!block) {
+	if(block <= 0) {
 		state = 1;
 		return;
 	}	
@@ -152,7 +160,7 @@ void TapeController :: read_block()
 	}
 
 	printf(".");
-	length -= bytes_read;
+	length -= block;
 	block = 512;
 }
 	
