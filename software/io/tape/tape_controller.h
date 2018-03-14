@@ -6,7 +6,7 @@
 #include "iomap.h"
 #include "filemanager.h"
 #include "subsys.h"
-
+#include "config.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -20,6 +20,8 @@
 #define C2N_FLUSH_FIFO  0x04
 #define C2N_MODE_SELECT 0x08
 #define C2N_SENSE		0x10
+#define C2N_RATE        0x20
+
 #define C2N_OUT_READ    0x00
 #define C2N_OUT_WRITE   0x40
 #define C2N_OUT_WRITE_N 0x80
@@ -32,7 +34,7 @@
 #define C2N_STAT_STREAM_EN  0x40
 #define C2N_STAT_FIFO_EMPTY 0x80
 
-class TapeController : public SubSystem, ObjectWithMenu
+class TapeController : public SubSystem, ObjectWithMenu, ConfigurableObject
 {
 	FileManager *fm;
 	File *file;

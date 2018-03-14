@@ -20,6 +20,7 @@
 #include "rtc.h"
 #include "userinterface.h"
 #include "s25fl_l_flash.h"
+#include "u64.h"
 
 extern uint32_t _u64_rbf_start;
 extern uint32_t _u64_rbf_end;
@@ -40,14 +41,14 @@ extern uint32_t _recovery_app_end;
 
 const char *getBoardRevision(void)
 {
-	uint8_t rev = (U2PIO_BOARDREV >> 3) ^ 0x1F;
+	uint8_t rev = (U2PIO_BOARDREV >> 3);
 
 	switch (rev) {
-	case 0x08:
+	case 0x10:
 		return "U64 Prototype";
-	case 0x09:
+	case 0x11:
 		return "U64 V1.1 (Null Series)";
-	case 0x0A:
+	case 0x12:
 		return "U64 V1.2 (Mass Prod)";
 	}
 	return "Unknown";
@@ -122,12 +123,13 @@ void do_update(void)
         flash2->protect_disable();
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");
         flash_buffer_at(flash2, screen, 0x290000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
-        flash_buffer_at(flash2, screen, 0x380000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
+        flash_buffer_at(flash2, screen, 0x400000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
 
     	console_print(screen, "\nConfiguring Flash write protection..\n");
     	flash2->protect_configure();
     	flash2->protect_enable();
     	console_print(screen, "Done!                            \n");
+        console_print(screen, "\n\033\022Turning OFF machine in 5 seconds....\n");
     }
 
 /*
@@ -146,9 +148,12 @@ void do_update(void)
     }
 */
 
-    wait_ms(2000);
-    REMOTE_RECONFIG = 0xBE;
-	console_print(screen, "You shouldn't see this!\n");
+    wait_ms(5000);
+    U64_POWER_REG = 0x2B;
+    U64_POWER_REG = 0xB2;
+    U64_POWER_REG = 0x2B;
+    U64_POWER_REG = 0xB2;
+    console_print(screen, "You shouldn't see this!\n");
 }
 
 extern "C" int ultimate_main(int argc, char *argv[])

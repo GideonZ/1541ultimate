@@ -15,7 +15,6 @@ port (
     req             : in  t_io_req;
     resp            : out t_io_resp;
     
-    phi2_tick       : in  std_logic;
     c64_stopped		: in  std_logic;
     
     c2n_motor_in    : in  std_logic;
@@ -50,6 +49,7 @@ architecture gideon of c2n_playback_io is
     signal mode             : std_logic;
     signal sel              : std_logic_vector(1 downto 0);
     signal motor_en         : std_logic;
+    signal speed_sel        : std_logic;
     signal tick_out         : std_logic;
     attribute register_duplication  : string;
     attribute register_duplication of stream_en : signal is "no";
@@ -80,6 +80,7 @@ begin
                     fifo_flush <= req.data(2);
                     mode <= req.data(3);
                     c2n_sense_out <= req.data(4);
+                    speed_sel <= req.data(5);
                     sel  <= req.data(7 downto 6);
                 end if;
             elsif req.read='1' then
@@ -98,6 +99,7 @@ begin
                             counter  <= to_unsigned(256*8, counter'length);
                             counter2 <= to_unsigned(256*4, counter2'length);
                             state <= count_down;
+                            write_pulse <= '0'; -- not really a pulse
                         end if;                    
                     else
                         counter  <= unsigned("0000000000000" & fifo_dout & "000");
@@ -238,10 +240,11 @@ begin
     generic map (
         g_clock_freq => g_clock_freq )
     port map (
-        clock    => clock,
-        reset    => reset,
-        motor_en => motor_en,
-        tick_out => tick_out
+        clock     => clock,
+        reset     => reset,
+        speed_sel => speed_sel,
+        motor_en  => motor_en,
+        tick_out  => tick_out
     );
 
 end gideon;
