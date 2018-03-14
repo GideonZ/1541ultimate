@@ -30,7 +30,7 @@ int  SocketTest::fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
 //	item_list.append(new Action("Socket Test Server", SocketTest :: doTest1, 0, 0));
 //	item_list.append(new Action("Socket Test Client", SocketTest :: doTest2, 1, 0));
-#ifdef DEVELOPER
+#if DEVELOPER
 	item_list.append(new Action("Start BUS Trace", SocketTest :: profiler, 2, 1));
 	item_list.append(new Action("Stop BUS Trace", SocketTest :: profiler, 2, 0));
 	item_list.append(new Action("Save BUS Trace", SocketTest :: saveTrace, 3, 0));
@@ -40,6 +40,7 @@ int  SocketTest::fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 
 int SocketTest :: profiler(SubsysCommand *cmd) {
 	if (cmd->mode) {
+        PROFILER_STOP = 1;
 		PROFILER_START = 1;
 	} else {
 		PROFILER_STOP = 1;
