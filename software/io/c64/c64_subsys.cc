@@ -148,7 +148,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 			c64->client = 0;
 		}
 		c64->unfreeze(0, 1);
-		c64->init_cartridge();
+		// c64->init_cartridge(); // unfreeze already does that with mode=1
 		break;
 	case C64_START_CART:
 		if(c64->client) { // we can't execute this yet

@@ -888,11 +888,7 @@ void C64::init_cartridge()
 
     int cart = cfg->get_value(CFG_C64_CART);
     cart_def *cart2 = &cartridges[cart];
-    set_cartridge(cart2);
-    wait_ms(100);
-    C64_MODE = C64_MODE_UNRESET;
 
-/*
     if (cart2->id ==  FLASH_ID_FINAL3)
     {
         C64_MODE = C64_MODE_UNRESET;
@@ -912,9 +908,9 @@ void C64::init_cartridge()
     else
     {
        set_cartridge(cart2);
+       wait_ms(100);
        C64_MODE = C64_MODE_UNRESET;
     }
-*/
 }
 
 void C64::cartridge_test(void)
