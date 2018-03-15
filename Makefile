@@ -56,6 +56,7 @@ u2plus:
 	@$(MAKE) -C target/software/nios2_elf_lwip
 	@$(MAKE) -C target/software/nios2_loader1
 	@$(MAKE) -C target/software/nios2_loader2
+	@$(MAKE) -C target/fpga/u2plus_recovery
 	@$(MAKE) -C target/fpga/u2plus_run
 	@$(MAKE) -C target/software/nios2_ultimate
 	@$(MAKE) -C target/software/nios2_recovery
