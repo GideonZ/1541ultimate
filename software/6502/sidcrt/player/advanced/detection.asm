@@ -9,25 +9,14 @@
 ;   Dectection routines for system info.
 ;-----------------------------------------------------------------------
 
-; detectSystem
+; detectC64Clock
 ;   input: none
 ;   output:
 ;   - AC: system clock type
 ;       00 = PAL (312 raster lines, 63 cycles per line)
 ;       01 = NTSC (263 raster lines, 65 cycles per line)
 ;       02 = NTSC (262 raster lines, 64 cycles per line, old VIC with bug)
-;       03 = PAL Drean (312 raster lines, 65 cycles per line)
-;   - YR: SID model
-;       00 = 8580
-;       01 = 6581
-;       02 = unknown
-detectSystem    jsr detectC64Clock
-                pha
-                jsr detectSidModel
-                tay
-                pla
-                rts
-
+;       04 = PAL Drean (312 raster lines, 65 cycles per line)
 detectC64Clock
 -               lda $d012
 -               cmp $d012
@@ -44,14 +33,16 @@ detectC64Clock
                 bne -
                 inx
                 bmi +
-                lda #$03
-+
-; 00 = PAL (312 raster lines, 63 cycles per line)
-; 01 = NTSC (263 raster lines, 65 cycles per line)
-; 02 = NTSC (262 raster lines, 64 cycles per line, old VIC with bug)
-; 03 = PAL Drean (312 raster lines, 65 cycles per line)
-                rts
+                lda #$04
++               rts
 
+; detectSidModel
+;   input: none
+;   output:
+;   - AC: SID model
+;       00 = 8580
+;       01 = 6581
+;       02 = unknown
 detectSidModel  lda #$ff        ; make sure the check is not done on a bad line
 -               cmp $d012
                 bne -
@@ -68,5 +59,5 @@ detectSidModel  lda #$ff        ; make sure the check is not done on a bad line
                 cmp #$03
                 beq +
 unknownSid      ldx #$02
-+               txa             ; output 0 = 8580, 1 = 6581, 2 = unknown
-                rts
++               txa
+                rts             ; output 0 = 8580, 1 = 6581, 2 = unknown
