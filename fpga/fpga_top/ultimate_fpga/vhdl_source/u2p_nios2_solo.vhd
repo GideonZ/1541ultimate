@@ -208,6 +208,8 @@ architecture rtl of u2p_nios_solo is
     signal i2c_scl_i   : std_logic;
     signal i2c_scl_o   : std_logic;
     signal mdio_o      : std_logic;
+
+    signal trigger     : std_logic;
         
     -- IEC open drain
     signal iec_atn_o   : std_logic;
@@ -416,7 +418,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"0F",
+        g_version       => X"10",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -577,8 +579,19 @@ begin
         rmii_txd    => RMII_TX_DATA,
 
         -- Buttons
+        trigger     => trigger,
         BUTTON      => button_i );
 
+    process(sys_clock)
+        variable c, d  : std_logic := '0';
+    begin
+        if rising_edge(sys_clock) then
+            trigger <= d;
+            d := c;
+            c := button_i(0);
+        end if;
+    end process;
+    
     SLOT_RSTn <= '0' when RSTn_out = '0' else 'Z';
     SLOT_ADDR(15 downto 12) <= slot_addr_o(15 downto 12) when slot_addr_th = '1' else (others => 'Z');
     SLOT_ADDR(11 downto 00) <= slot_addr_o(11 downto 00) when slot_addr_tl = '1' else (others => 'Z');

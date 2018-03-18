@@ -7,7 +7,6 @@ _HEAP_SIZE = DEFINED(_HEAP_SIZE) ? _HEAP_SIZE : 0x0;
 MEMORY
 {
     CACHE (rx)  : ORIGIN = 0x00000000, LENGTH = 2k
-    DRAM (rwx)  : ORIGIN = 0x00004000, LENGTH = 0x00E7C000 /* thus until 00E80000 */
 }
 
 SECTIONS
@@ -70,8 +69,6 @@ SECTIONS
     __data_end = .;
   } > CACHE
 
-  . = 0x4000;
-  
   __bss_start = .;
   __bss_start__ = .;
   .bss ALIGN(4) (NOLOAD) :
@@ -83,7 +80,7 @@ SECTIONS
       _end.  Align after .bss to ensure correct alignment even if the
       .bss section disappears because there are no input sections.  */
    . = ALIGN(32 / 8);
-  } > DRAM
+  } > CACHE
   . = ALIGN(32 / 8);
   _end = .;
   _bss_end__ = . ; __bss_end__ = . ; __end__ = . ;

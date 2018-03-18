@@ -30,6 +30,7 @@
 #include "integer.h"
 #include "dump_hex.h"
 #include "c64.h"
+#include "u64.h"
 #include "flash.h"
 #include "keyboard_c64.h"
 
@@ -114,8 +115,8 @@ const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB
 const char *en_dis2[] = { "Disabled", "Enabled" };
 const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
-const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "120ns" };
-const char *tick_rates[] = { "0.98 MHz", "1.02 MHz" };
+const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "128ns" };
+const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
 const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
 const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
 
@@ -140,8 +141,6 @@ struct t_cfg_definition c64_config[] = {
 #endif
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", ultimatedos,0,  3, 0 },
     { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis2,0,  1, 0 },
-//  { CFG_C64_RATE,     CFG_TYPE_ENUM,   "Stand-Alone Tick Rate",        "%s", tick_rates, 0,  1, 0 },
-//    { CFG_C64_ETH_EN,   CFG_TYPE_ENUM,   "Ethernet CS8900A",        "%s", en_dis2,     0,  1, 0 },
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
@@ -168,7 +167,7 @@ C64::C64()
 
     client = 0;
 
-    if (C64_CLOCK_DETECT == 0)
+    if (!phi2_present())
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
 
     effectuate_settings();
@@ -247,13 +246,13 @@ void C64::set_emulation_flags(cart_def *def)
         C64_TIMING_ADDR_VALID = cfg->get_value(CFG_C64_TIMING);
     } else { // U64
         C64_PHI2_EDGE_RECOVER = 0;
-        C64_TIMING_ADDR_VALID = 3;
+        C64_TIMING_ADDR_VALID = 5;
     }
 }
 
 bool C64::exists(void)
 {
-    if (C64_CLOCK_DETECT != 0) {
+    if (phi2_present()) {
         return true;
     }
     C64_STOP_MODE = STOP_COND_FORCE;
@@ -557,6 +556,7 @@ void C64::backup_io(void)
     cia_backup[4] = CIA1_DPA;
     cia_backup[6] = CIA1_CRA;
     cia_backup[7] = CIA1_CRB;
+
 }
 
 void C64::init_io(void)
@@ -602,7 +602,7 @@ void C64::init_io(void)
 
 void C64::freeze(void)
 {
-    if (C64_CLOCK_DETECT == 0)
+    if (!phi2_present())
         return;
 
     stop();
@@ -682,7 +682,7 @@ void C64::unfreeze(void *vdef, int mode)
 {
     cart_def *def = (cart_def *) vdef;
 
-    if (C64_CLOCK_DETECT == 0)
+    if (!phi2_present())
         return;
 
     keyb->wait_free();
@@ -694,9 +694,9 @@ void C64::unfreeze(void *vdef, int mode)
         resume();
     } else {
         if (vdef == 0 && mode == 1) {    
-	     int cart = cfg->get_value(CFG_C64_CART);
-             vdef = (void*) &cartridges[cart];
-	}
+            int cart = cfg->get_value(CFG_C64_CART);
+            vdef = (void*) &cartridges[cart];
+        }
     
         VIC_REG(32) = 0; // black border
         VIC_REG(17) = 0; // screen off
@@ -706,11 +706,23 @@ void C64::unfreeze(void *vdef, int mode)
         C64_MODE = C64_MODE_RESET;
         wait_ms(1);
         C64_STOP = 0;
-	if (mode != 2)
-	{
+
+        if (mode != 2)
+        {
+            C64_KERNAL_ENABLE = 0;
+        	
+            if (cfg->get_value(CFG_C64_ALT_KERN)) {
+                uint8_t *temp = new uint8_t[8192];
+                flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
+                enable_kernal(temp);
+                delete[] temp;
+            } else {
+                disable_kernal();
+            }
+
             set_cartridge(def);
             C64_MODE = C64_MODE_UNRESET;
-	}
+        }
     }
     stopped = false;
 }
@@ -788,25 +800,25 @@ void C64::set_cartridge(cart_def *def)
     } else if (def->id && def->type) {
         printf("Requesting copy from Flash, id = %b to mem addr %p\n", def->id, mem_addr);
         flash->read_image(def->id, (void *) mem_addr, def->length);
-	int fc3mode = cfg->get_value(CFG_C64_FC3MODE);
-	if ((def->id == FLASH_ID_FINAL3) && fc3mode)
-	{
-	   int found = -1;
-	   unsigned char* mem_addr8 = (unsigned char*) mem_addr;
-	   for (int i=0; i<300; i++)
-	      if ( mem_addr8[i+0] == 0x58 && mem_addr8[i+1] == 0x68 
-	           && mem_addr8[i+2] == 0xAA && mem_addr8[i+3] == 0x68
-	           && mem_addr8[i+4] == 0xE0 && mem_addr8[i+5] == 0x7F 
-		   && (mem_addr8[i+6] == 0xD0 || mem_addr8[i+6] == 0xF0) 
-		   && mem_addr8[i+8] == 0xe0 && mem_addr8[i+9] == 0xDF
-		   && mem_addr8[i+10] == 0xf0 )
-		       found = i;
-		       
-           if (found != -1)
-	   {
-	      mem_addr8[found+6] = fc3mode == 1 ? 0xF0 : 0xD0;
-	   } 
-	}
+        int fc3mode = cfg->get_value(CFG_C64_FC3MODE);
+
+        if ((def->id == FLASH_ID_FINAL3) && fc3mode)
+        {
+           int found = -1;
+           unsigned char* mem_addr8 = (unsigned char*) mem_addr;
+           for (int i=0; i<300; i++)
+              if ( mem_addr8[i+0] == 0x58 && mem_addr8[i+1] == 0x68
+                   && mem_addr8[i+2] == 0xAA && mem_addr8[i+3] == 0x68
+                   && mem_addr8[i+4] == 0xE0 && mem_addr8[i+5] == 0x7F
+                   && (mem_addr8[i+6] == 0xD0 || mem_addr8[i+6] == 0xF0)
+                   && mem_addr8[i+8] == 0xe0 && mem_addr8[i+9] == 0xDF
+                   && mem_addr8[i+10] == 0xf0 )
+                   found = i;
+
+           if (found != -1) {
+               mem_addr8[found+6] = fc3mode == 1 ? 0xF0 : 0xD0;
+           }
+        }
     } else if (def->id && !def->type) {
 #ifndef RECOVERYAPP
 #ifndef NO_FILE_ACCESS
@@ -834,14 +846,26 @@ void C64::set_colors(int background, int border)
 
 void C64::enable_kernal(uint8_t *rom)
 {
-    C64_KERNAL_ENABLE = 1;
-    uint8_t *src = rom;
-    uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
-    for (int i = 0; i < 8192; i++) {
-        *(dst) = *(src++);
-        dst += 2;
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        memcpy((void *)U64_KERNAL_BASE, rom, 8192); // as simple as that
+    } else { // the good old way
+        C64_KERNAL_ENABLE = 1;
+        uint8_t *src = rom;
+        uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
+        for (int i = 0; i < 8192; i++) {
+            *(dst) = *(src++);
+            dst += 2;
+        }
     }
-    dump_hex((void *) (C64_KERNAL_BASE + 0x3FD0), 48);
+}
+
+void C64::disable_kernal()
+{
+    C64_KERNAL_ENABLE = 0;
+
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
+    }
 }
 
 void C64::init_cartridge()
@@ -852,11 +876,25 @@ void C64::init_cartridge()
     C64_MODE = C64_MODE_RESET;
     C64_KERNAL_ENABLE = 0;
 
+    C64_CARTRIDGE_TYPE = 0;
+
     if (cfg->get_value(CFG_C64_ALT_KERN)) {
         uint8_t *temp = new uint8_t[8192];
         flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
         enable_kernal(temp);
         delete[] temp;
+    } else {
+        disable_kernal();
+    }
+
+    // In case of the U64, when an external cartridge is detected, we should not enable our cart
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        if (get_exrom_game() != 0) { // An external cartridge has been enabled
+            printf("External Cartridge Detected. Not initializing cartridge.\n");
+            wait_ms(100);
+            C64_MODE = C64_MODE_UNRESET;
+            return;
+        }
     }
 
     int cart = cfg->get_value(CFG_C64_CART);
@@ -865,22 +903,23 @@ void C64::init_cartridge()
     if (cart2->id ==  FLASH_ID_FINAL3)
     {
         C64_MODE = C64_MODE_UNRESET;
-	wait_ms(100);
+        wait_ms(100);
         freeze();
-	wait_ms(1400);
-	unfreeze((void*) cart2, 1);
+        wait_ms(1400);
+        unfreeze((void*) cart2, 1);
     }
     else if (cart2->id == FLASH_ID_CUSTOM_ROM && !cart2->type)
     {
         C64_MODE = C64_MODE_UNRESET;
-	wait_ms(100);
+        wait_ms(100);
         freeze();
-	wait_ms(1400);
-	unfreeze((void*) cart2, 1);
+        wait_ms(1400);
+        unfreeze((void*) cart2, 1);
     }
     else
     {
        set_cartridge(cart2);
+       wait_ms(100);
        C64_MODE = C64_MODE_UNRESET;
     }
 }
