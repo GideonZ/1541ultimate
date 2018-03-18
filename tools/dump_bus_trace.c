@@ -29,7 +29,7 @@ static char *bin(uint64_t val, int bits, char *buffer)
   return buffer;
 }
 
-void dump_trace(FILE *fi, int max)
+void dump_trace(FILE *fi, int max, int text_mode)
 {
     uint32_t time = 0;
     int   r,i,z;
@@ -43,47 +43,95 @@ void dump_trace(FILE *fi, int max)
     //   ev_data_c <= sub & task & ev_data;
     //    vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
     //
-    const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","EXROMn","GAMEn","PHI2" };
+    // vector_in <= phi2 & dman & exromn & ba & irqn & rom & nmin & rwn & data & addr;
+    const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","EXROMn","SYNC","PHI2" };
 
-    uint8_t   b;
+    uint8_t   b,fla;
         
     z = 4;
 
-    printf(vcd_header);
-    
-    printf("$var wire 16 z addr $end\n");
-    printf("$var wire 8 y data $end\n");
-    for(b=0;b<8;b++) {
-        if(*labels[b])
-            printf("$var wire 1 %c %s $end\n", 65+b, labels[b]);
-    }    
-      
-    printf(vcd_middle);
+    if (!text_mode) {
+        printf(vcd_header);
+        printf("$var wire 16 z addr $end\n");
+        printf("$var wire 8 y data $end\n");
+        printf("$var wire 9 x line $end\n");
+        printf("$var wire 6 w cycle $end\n");
+        for(b=0;b<8;b++) {
+            if(*labels[b])
+                printf("$var wire 1 %c %s $end\n", 65+b, labels[b]);
+        }
+
+        printf(vcd_middle);
+    } else {
+        printf("ADDR,DATA,");
+        for(b=0;b<8;b++) {
+            printf("%s,", labels[b]);
+        }
+        printf("ADDR,DATA,");
+        for(b=0;b<8;b++) {
+            printf("%s,", labels[b]);
+        }
+        printf("Cycle,Line,Cycle\n");
+    }
     char buffer[32];
-    
+    int cycle = 0;
     for(i=0;i<max;i++) {
         r = fread(&d, z, 1, fi);
         if(r != 1)
             break;
 
         time ++;
-        if (!(d.flags & 0x80))
-            continue;
-        printf("#%ld\n", time);
-    	if (prev.addr != d.addr) {
-    		printf("b%s z\n", bin(d.addr, 16, buffer));
-    	}
-    	if (prev.data != d.data) {
-    		printf("b%s y\n", bin(d.data, 8, buffer));
-    	}
-    	uint8_t change = prev.flags ^ d.flags;
-    	for(b=0;b<8;b++) {
-            if((change & 1)||(i==0)) {
-                printf("%c%c\n", ((d.flags >> b) & 1)+48, 65+b);
+//        if (!(d.flags & 0x80))
+//            continue;
+        if ((d.flags & 0x80) == 0) {
+            if (d.flags & 0x40) {
+                cycle = 16027;
+            } else {
+                cycle ++;
             }
-            change >>= 1;
+            cycle = cycle % 19656;
         }
-        prev = d;
+
+        if (text_mode) {
+            printf("\"%04x\",\"%02x\",", d.addr, d.data);
+            for(fla=d.flags,b=0;b<8;b++) {
+                printf("%d,", fla & 1);
+                fla >>= 1;
+            }
+            if (d.flags & 0x80) {
+                printf("%d,%d,%d\n", cycle, cycle / 63, cycle % 63);
+            }
+        } else {
+            printf("#%ld\n", time);
+            if (prev.addr != d.addr) {
+                printf("b%s z\n", bin(d.addr, 16, buffer));
+            }
+            if (prev.data != d.data) {
+                printf("b%s y\n", bin(d.data, 8, buffer));
+            }
+            if ((d.flags & 0x80) == 0) {
+                if ((cycle % 63) == 0) {
+                    printf("b%s x\n", bin(cycle / 63, 9, buffer));
+                }
+                printf("b%s w\n", bin(cycle % 63, 6, buffer));
+            }
+/*
+            else {
+                if ((cycle % 63) == 57) {
+                    fprintf(stderr, "Line: %3d, Addr: %04x\n", cycle/63, d.addr);
+                }
+            }
+*/
+
+            uint8_t change = prev.flags ^ d.flags;
+            for(b=0;b<8;b++) {
+                if((change & 1)||(i==0)) {
+                    printf("%c%c\n", ((d.flags >> b) & 1)+48, 65+b);
+                }
+                change >>= 1;
+            }
+            prev = d;
+        }
     }
 }
 
@@ -91,15 +139,23 @@ int main(int argc, char **argv)
 {
     FILE *fi;
     
-    if(argc != 2) {
-        printf("Usage: dump_vcd <file>\n");
+    if(argc < 2) {
+        printf("Usage: dump_vcd [-t] <file>\n");
         exit(1);
     }
-    fi = fopen(argv[1], "rb");
+    int i = 1;
+    int text_mode = 0;
+    int length = 63*2*312*25;
+    if (strcmp(argv[i], "-t") == 0) {
+        i++;
+        text_mode = 1;
+        length = 63*2*312*3;
+    }
+    fi = fopen(argv[i], "rb");
     if(fi) {
 //    	fseek(fi, 0xe6c000, SEEK_SET);
     	fseek(fi, 0x000000, SEEK_SET);
-    	dump_trace(fi, 63*2*312*100);
+    	dump_trace(fi, length, text_mode);
     } else {
         fprintf(stderr, "Can't open file.\n");
         exit(2);

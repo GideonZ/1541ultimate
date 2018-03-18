@@ -27,7 +27,7 @@ static bool my_memcmp(Screen *screen, void *a, void *b, int len)
     return true;
 }
 
-bool flash_buffer(Flash *flash, Screen *screen, int id, void *buffer, void *buf_end, char *version, char *descr)
+bool flash_buffer(Flash *flash, Screen *screen, int id, void *buffer, void *buf_end, const char *version, const char *descr)
 {
 	t_flash_address image_address;
 	flash->get_image_addresses(id, &image_address);
@@ -35,7 +35,14 @@ bool flash_buffer(Flash *flash, Screen *screen, int id, void *buffer, void *buf_
 	return flash_buffer_at(flash, screen, address, image_address.has_header, buffer, buf_end, version, descr);
 }
 
-bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, void *buffer, void *buf_end, char *version, char *descr)
+bool flash_buffer_length(Flash *flash, Screen *screen, int address, bool header, void *buffer, uint32_t length, const char *version, const char *descr)
+{
+    char *buf_end = (char *)buffer;
+    buf_end += length;
+    return flash_buffer_at(flash, screen, address, header, buffer, buf_end, version, descr);
+}
+
+bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, void *buffer, void *buf_end, const char *version, const char *descr)
 {
 	static int last_sector = -1;
 	int length = (int)buf_end - (int)buffer;
@@ -61,7 +68,7 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
         p = (char *)bin;
     }
     else {
-        console_print(screen, "Flashing  \033\027%s\033\037..\n", descr);
+        console_print(screen, "Flashing  \033\027%s\033\037..      \n", descr);
         p = (char *)buffer;
     }
 
@@ -72,9 +79,9 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
 			sector = flash->page_to_sector(page);
 			if (sector != last_sector) {
 				last_sector = sector;
-				printf("Erasing     %d   \n", sector);
+				//printf("Erasing     %d   \n", sector);
 				if(!flash->erase_sector(sector)) {
-			        // user_interface->popup("Erasing failed...", BUTTON_CANCEL);
+			        printf("Erase failed...\n");
 					last_sector = -1;
 					return false;
 				}
@@ -98,9 +105,9 @@ bool flash_buffer_at(Flash *flash, Screen *screen, int address, bool header, voi
             retry = -2;
         }
         if(retry != -2) {
-			//last_sector = -1;
-            //user_interface->popup("Programming failed...", BUTTON_CANCEL);
-            // return false;
+			last_sector = -1;
+            printf("Programming failed...\n");
+            return false;
         }
         page ++;
         p += page_size;

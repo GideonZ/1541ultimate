@@ -321,16 +321,16 @@ int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
     // list.append(new Action("Read status",    SUBSYSID_IEC, MENU_READ_STATUS));
     // list.append(new Action("Send command",   SUBSYSID_IEC, MENU_SEND_COMMAND));
 
-#ifndef DEVELOPER
-	return count;
-#endif
 
+#if DEVELOPER
 	if(!(getFpgaCapabilities() & CAPAB_ANALYZER))
         return count;
 
 	list.append(new Action("Trace IEC",      SUBSYSID_IEC, MENU_IEC_TRACE_ON));
     list.append(new Action("Dump IEC Trace", SUBSYSID_IEC, MENU_IEC_TRACE_OFF));
     count += 2;
+#endif
+
 	return count;
 }
 
