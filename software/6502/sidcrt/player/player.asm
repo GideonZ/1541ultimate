@@ -59,38 +59,44 @@ offPrgFile      .word prgFile + 1       ; offset of flag indicating if the tune 
 
 offExtraPlay1   .word extraPlayer + 0   ; offset of JSR instruction for calling extra player (NOP out when there is no extra player)
 offExtraPlay2   .word extraPlayer2 + 0  ; offset of JSR instruction for calling extra player (NOP out when there is no extra player)
+offExtraPlay3   .word extraPlayer3 + 0  ; offset of JSR instruction for calling extra player (NOP out when there is no extra player)
+offAdvInit      .word advInitCall + 0   ; offset of JSR instruction for calling advanced initialization routines like system detection, SIDFX detection, etc. (ignored by default)
+offHiAdvInit    .word hiAdvInit + 2     ; offset of hi byte of advanced initialization routines
 
 offPlayLoop     .word playerLoop + 0    ; offset of player loop which can be disabled to write $60
 
 offFastForw     .word fastForward + 1   ; offset of flag indicating the player should fast forward the tune (0 = normal, other value is fast forward)
 
 offNumLines     .word numOfLines + 1    ; offset of value of the number of line where the colors should be set for
+
+offPalNtsc      .word palNtsc + 1       ; offset of value to indicate if it is a PAL or NTSC machine (0 and 4 is PAL, 1 and 2 is NTSC)
 headerEnd
                 .logical $0000
+hiAdvInit       jsr advInit
+extraPlayer3    bit @w $0003            ; call to extra player init routine (if installed in memory)
 
-playRoutine
-
-hiPlayer        jsr player - playRoutine
+playerMain
+hiPlayer        jsr player
 playerLoop      clc
                 bcc *
 
 player          sei
-                lda #$00
-                sta $d020
-                sta $d021
+                ldx #$00
+                stx $d020
+                stx $d021
+
+                ldy #$28
+-               lda #$01        ; first line is white
+                sta $d800 - 1,y
+                txa             ; line with sprite for timebar is black
+                sta $db70 - 1,y
+                dey
+                bne -
 
                 ldy #$50
                 lda #$0f        ; 2nd, 3rd, 2nd last and last line is light grey
 -               sta $d828 - 1,y
                 sta $db98 - 1,y
-                dey
-                bne -
-
-                ldy #$28
--               lda #$01        ; first line is white
-                sta $d800 - 1,y
-                lda #$00        ; line with sprite for timebar is black
-                sta $db70 - 1,y
                 dey
                 bne -
 
@@ -167,50 +173,30 @@ basicSongNr     lda #$00
 prgFile         lda #$00
                 bne +
 
-                lda #<playerLoop - playRoutine
+                lda #<playerLoop
                 sta $0300
 basicEnd        lda #$00
                 sta $0301
-
 +
-reloc1          jmp playerStart - playRoutine   ; skip psid init since it is an RSID tune
+reloc1          jmp playerStart     ; skip psid init since it is an RSID tune
 
 psidTune
-                lda #<irqbrk - playRoutine
-                sta $0316
-hiBrk           lda #>irqbrk - playRoutine
-                sta $0317
-
                 ; clear zero page
                 ldx #$fe
-                lda #$00
+                ; AC is already zero
 -               sta $01,x
                 dex
                 bne -
-noZeroPageFill
 
-detectPalNtsc
--               lda $d012
--               cmp $d012
-                beq -
-                bmi --
-                and #$03
-                eor #$03
+                lda #<irqbrk
+                sta $0316
+hiBrk           lda #>irqbrk
+                sta $0317
+
+palNtsc         lda #$00            ; check if PAL or NTSC (0 or 4 for PAL, 1 or 2 for NTSC)
+                beq PAL
+                cmp #$04
                 bne NTSC
-                ; check for pal / drean pal-n
-                tax
--               inx
-                ldy #$2c
-                cpy $d012
-                bne -
-                inx
-                bmi +
-                lda #$04
-+
-; 00 = PAL (312 raster lines, 63 cycles per line)
-; 01 = NTSC (263 raster lines, 65 cycles per line)
-; 02 = NTSC (262 raster lines, 64 cycles per line, old VIC with bug)
-; 04 = PAL Drean (312 raster lines, 65 cycles per line)
 
 ; speedflag  machine clock  sid clock  timer
 ;         1            PAL        PAL  PAL60
@@ -235,7 +221,6 @@ NTSC            asl
                 and #$04
                 ; 1 -> 0
                 ; 2 -> 4
-
 +
 speedFlag       ldx #$00            ; speed flag set on PAL machine. 0 = not set, 1 = set
                 bne speed60Hz
@@ -246,12 +231,12 @@ clock           ldy #$00            ; clock flag PAL on PAL machine. 0 = PAL, 1 
                 clc
                 adc #$02
 speed60Hz       tax
-ciaLookup1      lda @w ciaValues - playRoutine,x
+ciaLookup1      lda @w ciaValues,x
                 sta $dc04
-ciaSpeedFix1    sta @w loSpeed - playRoutine + 1
-ciaLookup2      lda @w ciaValues - playRoutine + 1,x
+ciaSpeedFix1    sta @w loSpeed + 1
+ciaLookup2      lda @w ciaValues + 1,x
                 sta $dc05
-ciaSpeedFix2    sta @w hiSpeed - playRoutine + 1
+ciaSpeedFix2    sta @w hiSpeed + 1
 
 playIsNull      lda #$00
                 beq installIrq
@@ -268,9 +253,9 @@ speedFlag2      ldx #$00
                 dex
                 beq endIrqInit
 
-installIrq      ldy #<irqciaFFFE - playRoutine
-                lda #<irqcia0314 - playRoutine
-hiIrq           ldx #>irqcia0314 - playRoutine
+installIrq      ldy #<irqciaFFFE
+                lda #<irqcia0314
+hiIrq           ldx #>irqcia0314
 installIrqVec   sta $0314
                 stx $0315
                 sty $fffe
@@ -282,7 +267,7 @@ enableCia       stx $dc0e           ; start Timer A, continuous
                 sta $dc0d
 endIrqInit
 
-ciaFixSet       stx @w ciaFix - playRoutine + 1
+ciaFixSet       stx @w ciaFix + 1
 
 playerStart     lda #$00
                 sta $aa
@@ -399,5 +384,13 @@ ciaValues       .word $42c6         ; NTSC 60Hz (NTSC speed (263 * 65 - 1))
                 .word $4cc7         ; PAL 50Hz (312 * 63 - 1)
                 .word $4203         ; PAL DREAN 60Hz (312 * 65 * 50 / 60 - 1)
                 .word $4f37         ; PAL DREAN 50Hz (312 * 65 - 1)
+
+advInit         sei
+                lda #$35
+                sta $01
+advInitCall     bit @w $0000
+                lda #$37
+                sta $01
+                rts
 
 .here

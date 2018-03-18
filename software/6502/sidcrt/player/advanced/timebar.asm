@@ -138,7 +138,7 @@ songLengthToBin lda #$00
                 tax
 
                 lda extraPlayLoc
-                adc #>songLength - codeStart
+                adc #>songLength
                 sta slDataLoc2+2
                 sta slDataLoc3+2
 
@@ -166,8 +166,7 @@ slDataLoc3      lda songLength+1,x
                 sta songLengthBin+1
 
                 lda palntsc
-                beq pal
-                cmp #$03
+                and #$03
                 beq pal
                 jsr math.multiply6        ; multiply by 6 for NTSC
                 clc

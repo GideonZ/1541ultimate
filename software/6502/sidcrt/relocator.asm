@@ -16,13 +16,13 @@ END_LO = $ac
 END_HI = $ad
 BASE_ADDRESS = $ae
 
-cleanupVars     lda #$00
-                sta BASE_ADDRESS
-                sta START_LO
-                sta START_HI
-                sta END_LO
-                sta END_HI
-                rts
+ZERO_PAGE_ADDRESSES_RELOC = [
+    START_LO,
+    START_HI,
+    END_LO,
+    END_HI,
+    BASE_ADDRESS
+]
 
 ; relocateCode
 ;   input:
@@ -72,12 +72,10 @@ readNext        pla
                 bne -
                 rts
 
-relocByte       tya
-                sta START_LO
-                txa
-                clc
+relocByte       clc
                 adc BASE_ADDRESS
                 sta START_HI
+                sty START_LO
                 ldy #$00
                 jsr readAddress
                 clc
