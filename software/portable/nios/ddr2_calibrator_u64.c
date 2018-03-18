@@ -73,8 +73,8 @@ void ddr2_calibrate()
     }
     //    alt_putstr("DDR2 Initialized!\n\r"); // delay!
 
-    DDR2_TESTLOC0 = TESTVALUE1;
-    DDR2_TESTLOC1 = TESTVALUE2;
+    uint32_t testvalue1 = TESTVALUE1;
+    uint32_t testvalue2 = TESTVALUE2;
 
     int mode, phase, rep, good;
     int last_begin, best_pos, best_length;
@@ -84,7 +84,9 @@ void ddr2_calibrate()
     int best_overall = -1;
 
     for (mode = 0; mode < 4; mode ++) {
-        // outbyte('\n');
+//        outbyte('\n');
+        DDR2_TESTLOC0 = testvalue1;
+        DDR2_TESTLOC1 = testvalue2;
         DDR2_READMODE = mode;
         state = 0;
         best_pos = -1;
@@ -93,13 +95,13 @@ void ddr2_calibrate()
             good = 0;
 //          hexword(DDR2_TESTLOC0);
             for (rep = 0; rep < 7; rep ++) {
-                if (DDR2_TESTLOC0 == TESTVALUE1)
+                if (DDR2_TESTLOC0 == testvalue1)
                     good++;
-                if (DDR2_TESTLOC1 == TESTVALUE2)
+                if (DDR2_TESTLOC1 == testvalue2)
                     good++;
             }
             DDR2_PLLPHASE = 0x33; // move read clock
-//          outbyte(hexchars[good]);
+//            outbyte(hexchars[good]);
 
             if ((state == 0) && (good >= 13)) {
                 last_begin = phase;
@@ -118,6 +120,8 @@ void ddr2_calibrate()
             best_mode = mode;
             final_pos = best_pos;
         }
+        if (testvalue1 & 0x80000000) testvalue1 = (testvalue1 << 1) | 1; else testvalue1 <<= 1;
+        if (testvalue2 & 0x80000000) testvalue2 = (testvalue2 << 1) | 1; else testvalue2 <<= 1;
     }
 
     //printf("Chosen: Mode = %d, Pos = %d. Window = %d ps\n\r", best_mode, final_pos, 100 * best_overall);
