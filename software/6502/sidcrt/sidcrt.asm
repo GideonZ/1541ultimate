@@ -1,5 +1,5 @@
 ;-----------------------------------------------------------------------
-; Ultimate SID Player V2.0 - Sidplayer for the Ultimate hardware
+; Ultimate SID Player V2.0a - Sidplayer for the Ultimate hardware
 ;
 ; Written by Wilfred Bos - April 2009
 ;                          August 2017 - January 2018
@@ -49,9 +49,9 @@ PLAYER_LOCATION = $b8                     ; hi-byte of the player address
 CHARROM_LOCATION = $b9                    ; hi-byte of the character ROM address where value $10 is the default CHARROM
 
 TEMP = $bc
-SID_MODEL = $bc
-C64_CLOCK = $bd
-SIDFX_DETECTED = $be
+SID_MODEL = $48
+C64_CLOCK = $49
+SIDFX_DETECTED = $4a
 
 SID_HEADER_LO = $fa                       ; lo-byte of sid header address
 SID_HEADER_HI = $fb                       ; hi-byte of sid header address
@@ -90,7 +90,7 @@ ZERO_PAGE_ADDRESSES_MAIN = [
                 .byte >startNMI
                 .byte 'C' + $80, 'B' + $80, 'M' + $80, '8', '0'   ; CBM80
 
-                .text 0, 'Ultimate SID Player Cartridge V2.0 - Copyright (c) 2009-2018 Wilfred Bos / Gideon Zweijtzer', 0
+                .text 0, 'Ultimate SID Player Cartridge V2.0a - Copyright (c) 2009-2018 Wilfred Bos / Gideon Zweijtzer', 0
 
 startNMI        pla                 ; ignore pressing restore key
                 tay
@@ -296,14 +296,7 @@ SidHeaderDetected
                 jsr relocateExtraPlayer
                 jsr setExtraPlayerVars
 +
-                lda EXTRA_PLAYER_LOCATION
-                beq +
-                sta $ab
-                lda #$03
-                sta $aa
-                jmp runPlayer
-
-+               lda PLAYER_LOCATION
+                lda PLAYER_LOCATION
                 sta $ab
                 lda #$00
                 sta $aa
@@ -640,7 +633,7 @@ setExtraPlayerVars
                 ldy #$03
                 jsr writeAddress
 
-                lda #$00
+                lda #<player.playerMain
                 ldy extraPlayer.playerLoc
                 ldx extraPlayer.playerLoc + 1
                 jsr setValue
@@ -660,6 +653,16 @@ setExtraPlayerVars
 +               lsr                   ; value is 1 for NTSC, otherwise 0 for PAL / UNKNOWN clock. If PAL is set then value is always 0.
                 ldy extraPlayer.c64ModelFlag
                 ldx extraPlayer.c64ModelFlag + 1
+                jsr setValue
+
+                lda SIDFX_DETECTED
+                ldy extraPlayer.sidFxFound
+                ldx extraPlayer.sidFxFound + 1
+                jsr setValue
+
+                lda SID_MODEL
+                ldy extraPlayer.sidModelFound
+                ldx extraPlayer.sidModelFound + 1
                 jsr setValue
 
                 lda SONG_TO_PLAY
@@ -784,6 +787,10 @@ setPlayerVars   lda PLAYER_LOCATION
                 lda player.offHiBrk + 1
                 jsr relocator.relocByte
 
+                ldy player.offHiAdvInit
+                lda player.offHiAdvInit + 1
+                jsr relocator.relocByte
+
                 lda relocator.BASE_ADDRESS
                 ldy player.offBasicEnd
                 ldx player.offBasicEnd + 1
@@ -903,17 +910,25 @@ continueInitPlayer
                 ldx player.offClock + 1
                 jsr setValue
 
+                lda C64_CLOCK
+                ldy player.offPalNtsc
+                ldx player.offPalNtsc + 1
+                jsr setValue
+
                 ; speed flags
                 lda SONG_TO_PLAY    ; read current song
                 jsr calcSpeedFlag
                 jsr setSpeedFlags
 
                 cmp #$01            ; do not use extra player when speed flag is 1
-                beq noExtraPlayWithFF
+                bne +
+                jmp noExtraPlayWithFF
 
-                lda EXTRA_PLAYER_LOCATION
-                beq noExtraPlayer
++               lda EXTRA_PLAYER_LOCATION
+                bne enableExtraPlayerCalls
+                jmp noExtraPlayer
 
+enableExtraPlayerCalls
                 ; do not use extra player when play address is zero
                 ldy #$0c            ; get play address
                 jsr readHeader
@@ -939,6 +954,17 @@ extraPlayForFF  lda #$20            ; JSP
                 jsr setValue
                 iny
                 lda #$00            ; lo-byte of extra player
+                jsr writeAddress
+                iny
+                lda EXTRA_PLAYER_LOCATION
+                jsr writeAddress
+
+                lda #$4c            ; JMP
+                ldy player.offExtraPlay3
+                ldx player.offExtraPlay3 + 1
+                jsr setValue
+                iny
+                lda #<extraPlayer.initMain      ; lo-byte of extra player init routine
                 jsr writeAddress
                 iny
                 lda EXTRA_PLAYER_LOCATION
@@ -2078,8 +2104,7 @@ printModel      jsr setCurrentLinePosition
                 bne checkSidHeader2
                 ; print system info
                 lda C64_CLOCK
-                beq printPal
-                cmp #$03
+                and #$03
                 beq printPal
                 jmp printNtsc
 
@@ -2169,7 +2194,7 @@ extraPlayer     .binclude 'player/advanced/advancedplayer.asm'
 extraPlayerEnd
 relocator       .binclude 'relocator.asm'
 memalloc        .binclude 'memalloc.asm'
-detection       .binclude 'detection.asm'
+detection       .binclude 'detectionwrapper.asm'
 sidFx           .binclude 'sidfx.asm'
 songlengths     .binclude 'songlengths.asm'
 

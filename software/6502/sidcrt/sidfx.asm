@@ -132,10 +132,12 @@ detectSfxModel  lda $d41e
 sfxUnknown      lda #$02        ; output 2 = unknown
                 rts
 
-sciGet
+sciGet          ldx #$00        ; break loop after 256 tries
 -               bit $d41f       ; read SCI ready flag
-                bpl -           ; wait until data ready
-
+                bmi +           ; wait until data ready
+                dex
+                beq -
++
 sciSyn          ldx #$0f        ; delay
 -               dex
                 bpl -

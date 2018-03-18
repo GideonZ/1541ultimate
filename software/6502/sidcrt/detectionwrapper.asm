@@ -1,12 +1,12 @@
 ;-----------------------------------------------------------------------
-; FILE detection.asm
+; FILE detectionwrapper.asm
 ;
 ; Written by Wilfred Bos
 ;
 ; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
 ;
 ; DESCRIPTION
-;   Dectection routines for system info.
+;   Wrapper of dectection routines for system info and SIDFX support.
 ;-----------------------------------------------------------------------
 
 ; detectSystem
@@ -16,7 +16,7 @@
 ;       00 = PAL (312 raster lines, 63 cycles per line)
 ;       01 = NTSC (263 raster lines, 65 cycles per line)
 ;       02 = NTSC (262 raster lines, 64 cycles per line, old VIC with bug)
-;       03 = PAL Drean (312 raster lines, 65 cycles per line)
+;       04 = PAL Drean (312 raster lines, 65 cycles per line)
 ;   - YR: SID model
 ;       00 = 8580
 ;       01 = 6581
@@ -24,7 +24,7 @@
 ;   - XR: SIDFX detection
 ;       00 = no SIDFX
 ;       01 = SIDFX found
-detectSystem    jsr extraPlayer.codeStart + extraPlayer.clock.detectC64Clock
+detectSystem    jsr extraPlayer.codeStart + extraPlayer.detection.detectC64Clock
                 pha
                 jsr detectSidModel
                 tay
@@ -41,10 +41,9 @@ detectSidModel  jsr sidFx.detectSidFx
                 ldx #$01        ; 1 = SIDFX found
                 rts
 
-detectNormalSid jsr extraPlayer.codeStart + extraPlayer.detectSidModel
-                txa             ; 0 = 8580, 1 = 6581, 2 = unknown
-                ldx #$00        ; 0 = no SIDFX
-                rts
+detectNormalSid jsr extraPlayer.codeStart + extraPlayer.detection.detectSidModel
+                ldx #$00        ; XR: 0 = no SIDFX
+                rts             ; AC: 0 = 8580, 1 = 6581, 2 = unknown
 
 getRequiredSidInfo
                 ldy #$7a
@@ -61,7 +60,7 @@ getRequiredSidInfo
                 rts
 +               cmp #$e0
                 bne monoSid
-                lda #$06
+                lda #$06        ; Stereo, SID#2 on $DE00
                 rts
 
 monoSid         ldy #$77
