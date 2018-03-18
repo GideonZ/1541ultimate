@@ -38,6 +38,7 @@ U64Config u64_configurator;
 #define CFG_COLOR_CODING      0x0B
 
 #define CFG_SCAN_MODE_TEST    0xA8
+#define CFG_VIC_TEST          0xA9
 
 const char *u64_sid_base[] = { "$D400-$D7FF", "$D400", "$D420", "$D440", "$D480", "$D500", "$D600", "$D700",
                            "$DE00", "$DE20", "$DE40", "$DE60",
@@ -112,7 +113,10 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_COLOR_CLOCK_ADJ, 		CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video",                 "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
-//    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
+#if DEVELOPER
+    { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis4,      0,  1, 0 },
+#endif
+    //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 extern "C" {
@@ -174,6 +178,9 @@ void U64Config :: effectuate_settings()
         C64_BURST_PHASE = 24;
     }
 
+#if DEVELOPER
+    C64_VIC_TEST = cfg->get_value(CFG_VIC_TEST);
+#endif
     /*
     C64_LINE_PHASE   = 9;
     C64_PHASE_INCR   = 9;

@@ -211,6 +211,61 @@ void test_esp32(void)
     printf("###\n");
 }
 
+int test_memory(void)
+{
+    uint16_t *random = new uint16_t[4096];
+
+    uint16_t seed = 0x1B7F;
+    for(int i=0; i < 4096; i++) {
+        if (seed & 0x8000) {
+            seed = (seed << 1) ^ 0x8004;
+        } else {
+            seed = (seed << 1) | 1;
+        }
+        random[i] = seed;
+    }
+
+    uint32_t dest = 0;
+    uint16_t *src = random;
+    int retval = 0;
+
+    while (dest < (64*1024*1024)) {
+        memcpy((void *)dest, src, 256);
+        printf(">");
+        src += 132;
+        if (!dest) {
+            dest = 0x100;
+        } else {
+            dest <<= 1;
+        }
+    }
+
+    printf("\n");
+    dest = 0;
+    src = random;
+    uint32_t verifyBuffer[64];
+
+    while (dest < (64*1024*1024)) {
+        memcpy(verifyBuffer, (void *)dest, 256);
+        printf("<");
+
+        if(memcmp(verifyBuffer, src, 256) != 0) {
+            printf("Verify failure. RAM error at address %p.\n", dest);
+            dump_hex_verify(src, verifyBuffer, 256);
+            retval = -3;
+            break;
+        }
+
+        src += 132;
+        if (!dest) {
+            dest = 0x100;
+        } else {
+            dest <<= 1;
+        }
+    }
+    return retval;
+}
+
 void do_update(void)
 {
     char time_buffer[32];
@@ -265,38 +320,46 @@ void initScreen()
     printf("Screen Initialized.\n");
 }
 
+int load_images(void)
+{
+    usb2.initHardware();
+    FileManager *fm = FileManager :: getFileManager();
+
+    printf("Waiting for USB storage device to become available.\n");
+    FileInfo info(32);
+    FRESULT res;
+    do {
+        vTaskDelay(100);
+        res = fm->fstat("/Usb?", info);
+        //printf("%s\n", FileSystem :: get_error_string(res));
+    } while (res != FR_OK);
+
+    for(int i=0;i<NUM_IMAGES;i++) {
+        if(load_file(&images[i])) {
+            printf("\033\022Could not load image. Did not flash.\n");
+            return -1;
+        }
+    }
+    return 0;
+}
+
 extern "C" {
 	void main_task(void *context)
 	{
 	    initScreen();
 	    printf("Ultimate-64 - LOADER...\n");
 
-		usb2.initHardware();
-		FileManager *fm = FileManager :: getFileManager();
-
-		printf("Waiting for USB storage device to become available.\n");
-		FileInfo info(32);
-		FRESULT res;
-		do {
-			vTaskDelay(100);
-			res = fm->fstat("/Usb?", info);
-			//printf("%s\n", FileSystem :: get_error_string(res));
-		} while (res != FR_OK);
-
-		for(int i=0;i<NUM_IMAGES;i++) {
-		    if(load_file(&images[i])) {
-		        printf("\033\022Could not load image. Did not flash.\n");
-		        return;
-		    }
-		}
-		screen->clear();
-		screen->move_cursor(0,0);
-        do_update();
-        vTaskDelay(250);
-        screen->clear();
-        screen->move_cursor(0,0);
-        test_esp32();
-
+	    if (!test_memory()) {
+	        if (!load_images()) {
+	            screen->clear();
+	            screen->move_cursor(0,0);
+	            do_update();
+	            vTaskDelay(250);
+	            screen->clear();
+	            screen->move_cursor(0,0);
+	            test_esp32();
+	        }
+	    }
         printf("\n\033\025Waiting for you to turn off the machine..\n");
         while (1)
             ;

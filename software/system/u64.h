@@ -45,7 +45,7 @@
 #define C64_LUMA_DELAY   (*(volatile uint8_t *)(C64_IO_BASE + 0x04))
 #define C64_CHROMA_DELAY (*(volatile uint8_t *)(C64_IO_BASE + 0x05))
 #define C64_BURST_PHASE  (*(volatile uint8_t *)(C64_IO_BASE + 0x06))
-
+#define C64_VIC_TEST     (*(volatile uint8_t *)(C64_IO_BASE + 0x07))
 #define C64_SID1_BASE    (*(volatile uint8_t *)(C64_IO_BASE + 0x08))
 #define C64_SID2_BASE    (*(volatile uint8_t *)(C64_IO_BASE + 0x09))
 #define C64_EMUSID1_BASE (*(volatile uint8_t *)(C64_IO_BASE + 0x0A))
