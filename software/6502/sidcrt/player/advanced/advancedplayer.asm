@@ -17,49 +17,52 @@
 
 headersize      .word headerEnd - headersize
 codeSize        .word codeEnd
-playerLoc       .word player + 1                  ; offset of address of player
+playerLoc       .word player + 1                    ; offset of address of player
 
-clockLoc        .word clock.digit + 2             ; offset of address of screen location for clock
+clockLoc        .word clock.digit + 2               ; offset of address of screen location for clock
 
-songLenLoc1     .word songLengthDigit1 + 2        ; offset of address of screen location for song length
-songLenLoc2     .word songLengthDigit2 + 2        ; offset of address of screen location for song length
+songLenLoc1     .word songLengthDigit1 + 2          ; offset of address of screen location for song length
+songLenLoc2     .word songLengthDigit2 + 2          ; offset of address of screen location for song length
 
-songNumLoc      .word songDigit + 1               ; offset of address of screen location for song number
+songNumLoc      .word songDigit + 1                 ; offset of address of screen location for song number
 
-sidModelLoc     .word sidModelWrite + 1           ; offset of address of screen location for system SID model
-c64ModelLoc     .word c64ModelWrite + 1           ; offset of address of screen location for system C64 model
+sidModelLoc     .word sidModelWrite + 1             ; offset of address of screen location for system SID model
+c64ModelLoc     .word c64ModelWrite + 1             ; offset of address of screen location for system C64 model
 
-songNumSet      .word setSubTune + 1              ; offset of address where the sub tune number must be set
+songNumSet      .word setSubTune + 1                ; offset of address where the sub tune number must be set
 
-songNum         .word currentSong                 ; offset of address of the current song number
-maxSongLoc      .word maxSong                     ; offset of address of the max song number
+songNum         .word currentSong                   ; offset of address of the current song number
+maxSongLoc      .word maxSong                       ; offset of address of the max song number
 
-hdrSpeedFlags   .word speedFlags                  ; offset of address that holds the 4 byte speed flags
-hdrSpeedFlag1   .word speedFlag1 + 1              ; offset of address where the address of the current speed flag must be stored
-hdrSpeedFlag2   .word speedFlag2 + 1              ; offset of address where the address of the current speed flag must be stored
-hdrSpeedFlag3   .word speedFlag3 + 1              ; offset of address where the address of the current speed flag must be stored
+hdrSpeedFlags   .word speedFlags                    ; offset of address that holds the 4 byte speed flags
+hdrSpeedFlag1   .word speedFlag1 + 1                ; offset of address where the address of the current speed flag must be stored
+hdrSpeedFlag2   .word speedFlag2 + 1                ; offset of address where the address of the current speed flag must be stored
+hdrSpeedFlag3   .word speedFlag3 + 1                ; offset of address where the address of the current speed flag must be stored
 
-fastFwd         .word keyboard.fastForward + 1    ; offset of address where to store the address of the fastforward indicator
+fastFwd         .word keyboard.fastForward + 1      ; offset of address where to store the address of the fastforward indicator
 
-songLenData     .word songLength                  ; offset of songlength data
+songLenData     .word songLength                    ; offset of songlength data
 
-c64ModelFlag    .word sidC64Model                 ; offset of address of the C64 model specificied in the SID
-playerLoopLoc   .word playerLoop + 1              ; offset of address where the address of the player loop must be stored
-epCallLoc       .word playerCall + 1              ; offset of address where the extra player is called
+c64ModelFlag    .word sidC64Model                   ; offset of address of the C64 model specificied in the SID
+playerLoopLoc   .word playerLoop + 1                ; offset of address where the address of the player loop must be stored
+epCallLoc       .word playerCall + 1                ; offset of address where the extra player is called
 
-spriteLoc       .word timebar.spriteLocation + 1  ; offset of address of the location of the sprite for the time bar
+spriteLoc       .word timebar.spriteLocation + 1    ; offset of address of the location of the sprite for the time bar
 
-musTuneFlag     .word musTune + 1                 ; offset of flag indicating if the tune is a MUS tune
-musColorsLoc    .word musColors                   ; offset of address where the colors are stored when the tune is a MUS file
-numColorsLoc    .word numOfColors + 1             ; offset of number of colors to write
+musTuneFlag     .word musTune + 1                   ; offset of flag indicating if the tune is a MUS tune
+musColorsLoc    .word musColors                     ; offset of address where the colors are stored when the tune is a MUS file
+numColorsLoc    .word numOfColors + 1               ; offset of number of colors to write
+
+sidFxFound      .word sidFxDetected + 1             ; offset of address of flag that indicated if SIDFX was found
+sidModelFound   .word sidModel                      ; offset of address of detected SID model
 headerEnd
 
 codeStart
                 .logical $0000
 ;---------------------------------------
                 jmp extraPlayer
-                jsr init
-player          jsr $0000     ; init player
+initMain        jsr init
+player          jsr $0006     ; init player
 
 loop            jsr extraPlayer
 
@@ -99,7 +102,7 @@ musTune         lda #$00
 +
                 jsr clock.initClock
                 jsr detectSidModel
-                stx sidModel
+                sta sidModel
                 jsr displaySysInfo
 
                 jsr fixTimer
@@ -108,15 +111,13 @@ musTune         lda #$00
 fixTimer        lda sidC64Model
                 beq sidPal
 
-                lda palntsc       ; check if palntsc is PAL (0 or 3)
-                beq timerOutsideIrq
-                cmp #$03
+                lda palntsc       ; check if palntsc is PAL (0 or 4)
+                and #$03
                 beq timerOutsideIrq
 noFreqFix       rts
 
-sidPal          lda palntsc       ; check if palntsc is PAL (0 or 3)
-                beq noFreqFix
-                cmp #$03
+sidPal          lda palntsc       ; check if palntsc is PAL (0 or 4)
+                and #$03
                 beq noFreqFix
 timerOutsideIrq
                 ; System is NTSC but SID is PAL
@@ -164,7 +165,7 @@ selectSubTune   sei
                 jsr timebar.afterInit
 
                 jsr detectSidModel
-                stx sidModel
+                sta sidModel
                 jsr displaySysInfo
 
                 lda currentSong
@@ -272,23 +273,13 @@ songLengthDigit2
                 bpl -
                 rts
 
-detectSidModel  lda #$ff        ; make sure the check is not done on a bad line
--               cmp $d012
-                bne -
-                lda #$48        ; test bit should be set
-                sta $d412
-                sta $d40f
-                lsr             ; activate sawtooth waveform
-                sta $d412
-                lda $d41b
-                tax
-                and #$fe
-                bne unknownSid  ; unknown SID chip, most likely emulated or no SID in socket
-                lda $d41b       ; try to read another time where the value should always be $03 on a real SID for all SID models
-                cmp #$03
-                beq +
-unknownSid      ldx #$02
-+               rts             ; output 0 = 8580, 1 = 6581, 2 = unknown
+detectSidModel
+sidFxDetected   lda #$00        ; was SIDFX detected?
+                beq noSidFx
+                lda sidModel    ; return detected SIDFX model
+                rts
+
+noSidFx         jmp detection.detectSidModel
 
 displaySysInfo  jsr setBankAllRam
 
@@ -305,8 +296,7 @@ sidModelWrite   sta $0570,y
 
 +               ldx #$00
                 lda palntsc
-                beq +
-                cmp #$03
+                and #$03
                 beq +
                 ldx #$07
 +
@@ -371,6 +361,7 @@ clock           .binclude 'clock.asm'
 keyboard        .binclude 'keyboard.asm'
 timebar         .binclude 'timebar.asm'
 math            .binclude 'math.asm'
+detection       .binclude 'detection.asm'
 
 codeEnd
 
