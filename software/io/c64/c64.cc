@@ -709,6 +709,17 @@ void C64::unfreeze(void *vdef, int mode)
 
         if (mode != 2)
         {
+            C64_KERNAL_ENABLE = 0;
+        	
+            if (cfg->get_value(CFG_C64_ALT_KERN)) {
+                uint8_t *temp = new uint8_t[8192];
+                flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
+                enable_kernal(temp);
+                delete[] temp;
+            } else {
+                disable_kernal();
+            }
+
             set_cartridge(def);
             C64_MODE = C64_MODE_UNRESET;
         }
