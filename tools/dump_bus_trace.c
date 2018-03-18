@@ -29,7 +29,7 @@ static char *bin(uint64_t val, int bits, char *buffer)
   return buffer;
 }
 
-void dump_trace(FILE *fi, int max, int text_mode)
+void dump_trace(FILE *fi, int max, int text_mode, int trigger)
 {
     uint32_t time = 0;
     int   r,i,z;
@@ -81,8 +81,6 @@ void dump_trace(FILE *fi, int max, int text_mode)
             break;
 
         time ++;
-//        if (!(d.flags & 0x80))
-//            continue;
         if ((d.flags & 0x80) == 0) {
             if (d.flags & 0x40) {
                 cycle = 16027;
@@ -90,6 +88,15 @@ void dump_trace(FILE *fi, int max, int text_mode)
                 cycle ++;
             }
             cycle = cycle % 19656;
+        }
+
+        if (trigger >= 0) {
+            if (((d.flags & 0x80) != 0) && (d.addr == trigger)) {
+                trigger = -1;
+            } else {
+                i--;
+                continue;
+            }
         }
 
         if (text_mode) {
@@ -140,22 +147,28 @@ int main(int argc, char **argv)
     FILE *fi;
     
     if(argc < 2) {
-        printf("Usage: dump_vcd [-t] <file>\n");
+        printf("Usage: dump_vcd [-t] [-w trig] <file>\n");
         exit(1);
     }
     int i = 1;
     int text_mode = 0;
     int length = 63*2*312*25;
+    int trigger = -1;
     if (strcmp(argv[i], "-t") == 0) {
         i++;
         text_mode = 1;
         length = 63*2*312*3;
     }
+    if (strcmp(argv[i], "-w") == 0) {
+        i++;
+        trigger = strtol(argv[i], NULL, 16);
+        i++;
+    }
     fi = fopen(argv[i], "rb");
     if(fi) {
 //    	fseek(fi, 0xe6c000, SEEK_SET);
     	fseek(fi, 0x000000, SEEK_SET);
-    	dump_trace(fi, length, text_mode);
+    	dump_trace(fi, length, text_mode, trigger);
     } else {
         fprintf(stderr, "Can't open file.\n");
         exit(2);
