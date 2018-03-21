@@ -819,9 +819,11 @@ int checkUsbHub(JTAG_Access_t *target, int timeout, char **log)
 {
 	uint32_t powerBits = (IORD_ALTERA_AVALON_PIO_DATA(PIO_1_BASE) & 0x700) >> 8;
 	printf("Before turning on USB power: Power bits: %2x\n", powerBits);
+/*
 	if (powerBits != 0x00) {
 		printf("-> There seems to be power on the USB sticks, while they have not yet been turned on. (Check VR6)\n");
 	}
+*/
 	// Now, let's start the USB stack on the DUT
 	int usb = executeDutCommand(target, 11, timeout, log);
 	if (usb) {
@@ -1352,7 +1354,7 @@ void usage()
 	char date[48];
 	char time[48];
 
-	printf("\n** Ultimate 2+ Tester *** V1.6 *** ");
+	printf("\n** Ultimate 2+ Tester *** V1.7 *** ");
 	printf("%s %s ***\n", rtc.get_long_date(date, 40), rtc.get_time_string(time, 40));
 	printf("Press 'j' or left button on Tester to run test on JIG.\n");
 	printf("Press 's' or right button on Tester to run test in Slot.\n");

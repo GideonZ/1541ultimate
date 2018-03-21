@@ -9,7 +9,9 @@ extern "C" {
 #include "usb_hub.h"
 #include "FreeRTOS.h"
 
-// #define printf(...)
+#if DISABLE_USB_DEBUG
+    #define printf(...)
+#endif
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
