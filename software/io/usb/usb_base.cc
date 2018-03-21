@@ -19,7 +19,9 @@ extern "C" {
 
 UsbBase usb2;
 
-// #define printf(...)
+#if DISABLE_USB_DEBUG
+    #define printf(...)
+#endif
 
 UsbBase :: UsbBase()
 {

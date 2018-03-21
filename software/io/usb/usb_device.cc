@@ -8,7 +8,9 @@ extern "C" {
 #include <string.h>
 #include "task.h"
 
-// #define printf(...)
+#if DISABLE_USB_DEBUG
+    #define printf(...)
+#endif
 
 __inline uint16_t le16_to_cpu(uint16_t h)
 {
