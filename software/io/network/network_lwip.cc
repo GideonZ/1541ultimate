@@ -321,10 +321,16 @@ void NetworkLWIP :: free_pbuf(struct pbuf_custom *pbuf)
 
 void NetworkLWIP :: effectuate_settings(void)
 {
-	my_ip.addr = inet_addr(cfg->get_string(CFG_NET_IP));
-	my_netmask.addr = inet_addr(cfg->get_string(CFG_NET_NETMASK));
-	my_gateway.addr = inet_addr(cfg->get_string(CFG_NET_GATEWAY));
-	dhcp_enable = cfg->get_value(CFG_NET_DHCP_EN);
+    dhcp_enable = cfg->get_value(CFG_NET_DHCP_EN);
+    if (!dhcp_enable) {
+        my_ip.addr = inet_addr(cfg->get_string(CFG_NET_IP));
+        my_netmask.addr = inet_addr(cfg->get_string(CFG_NET_NETMASK));
+        my_gateway.addr = inet_addr(cfg->get_string(CFG_NET_GATEWAY));
+    } else { // in case of DHCP, we start using 0.0.0.0
+        my_ip.addr = 0L;
+        my_netmask.addr = 0L;
+        my_gateway.addr = 0L;
+    }
 
 /* 3 states:
  * NetIF is not added yet. State = NULL. We only need to set our own ip addresses, since they will be copied upon net_if_add

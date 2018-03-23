@@ -459,7 +459,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/cpu_unit/vhdl_source/mem4k.v
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/cyclone4_test/vhdl_source/u2p_tester.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/ultimate_logic_32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio_select/vhdl_source/audio_select.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/i2s_serializer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/i2s_serializer_old.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/lp_filter2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sine_osc.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/c2n_playback/vhdl_source/c2n_playback_io.vhd
@@ -483,6 +483,13 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source
 set_global_assignment -name VHDL_FILE ../../../fpga/io/iec_interface/vhdl_source/iec_processor.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/itu/vhdl_source/itu.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/debug/vhdl_source/bus_analyzer_32.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_peripheral.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_slave.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_regs.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_rom_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/video/vhdl_source/char_generator_rom.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/crc32.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_filter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd

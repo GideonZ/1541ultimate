@@ -819,9 +819,11 @@ int checkUsbHub(JTAG_Access_t *target, int timeout, char **log)
 {
 	uint32_t powerBits = (IORD_ALTERA_AVALON_PIO_DATA(PIO_1_BASE) & 0x700) >> 8;
 	printf("Before turning on USB power: Power bits: %2x\n", powerBits);
+/*
 	if (powerBits != 0x00) {
 		printf("-> There seems to be power on the USB sticks, while they have not yet been turned on. (Check VR6)\n");
 	}
+*/
 	// Now, let's start the USB stack on the DUT
 	int usb = executeDutCommand(target, 11, timeout, log);
 	if (usb) {
@@ -968,6 +970,31 @@ int copyRtc(JTAG_Access_t *target, int timeout, char **log)
 	return retval;
 }
 
+int checkJigHasRun(JTAG_Access_t *target, int timeout, char **log)
+{
+    static uint32_t buffer[1024];
+
+    uint32_t dut_addr = 0xC00000; // 12 MB from start - arbitrary! Should use malloc
+    uint32_t destination = jigReport.flashAddress;
+    uint32_t length = 4096;
+    int words = (length + 3) >> 2;
+    vji_write_memory(target, PROGRAM_ADDR, 1, &destination);
+    vji_write_memory(target, PROGRAM_DATALEN, 1, &length);
+    vji_write_memory(target, PROGRAM_DATALOC, 1, &dut_addr);
+    int retval = executeDutCommand(target, 18, timeout, log);
+    if (!retval) {
+        vji_read_memory(target, dut_addr, words, buffer);
+        uint8_t *c = (uint8_t *)buffer;
+        if (c[0] == 0xFF) {
+            printf("\e[32m ** Please run JIG test FIRST - before SLOT test! ** \n\n\e[0m");
+            return -9;
+        } else {
+            return 0;
+        }
+    }
+    return retval;
+}
+
 int readReports(JTAG_Access_t *target, int timeout, char **log)
 {
 	static uint32_t buffer[2048];
@@ -1045,6 +1072,7 @@ TestDefinition_t slot_tests[] = {
 		{ "Verify reference clock", checkReferenceClock,     1,  true, false,  true },
 		{ "Memory Test", 			checkMemory,             1,  true, false, false },
 		{ "Run DUT Application",    checkApplicationRun,   150,  true, false,  true },
+		{ "Check if Jig was run",   checkJigHasRun,        150,  true, false,  true },
 		{ "Button Test", 			checkButtons,		  3000, false,  true,  true },
 		{ "Check Flash Types",      checkFlashSwitch,      150, false, false,  true },
 		{ "Audio input test",       slotAudioInput,        600, false, false,  true },
@@ -1326,7 +1354,7 @@ void usage()
 	char date[48];
 	char time[48];
 
-	printf("\n** Ultimate 2+ Tester *** V1.6 *** ");
+	printf("\n** Ultimate 2+ Tester *** V1.7 *** ");
 	printf("%s %s ***\n", rtc.get_long_date(date, 40), rtc.get_time_string(time, 40));
 	printf("Press 'j' or left button on Tester to run test on JIG.\n");
 	printf("Press 's' or right button on Tester to run test in Slot.\n");

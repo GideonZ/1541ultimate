@@ -630,7 +630,7 @@ begin
             rx_data(7 downto 0) => audio_in_data(31 downto 24)
         );
 
-        i2s: entity work.i2s_serializer
+        i2s: entity work.i2s_serializer_old
         port map (
             clock            => audio_clock,
             reset            => audio_reset,

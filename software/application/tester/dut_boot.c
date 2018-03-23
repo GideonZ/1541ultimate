@@ -43,9 +43,12 @@ void hexword(uint32_t data)
 	outbyte('\n');
 }
 
-#define CLK_DIVIDER 9
+#define CLK_DIVIDER 10
 #define VCO_PHASE_STEPS 8
 #define PHASE_STEPS (CLK_DIVIDER * VCO_PHASE_STEPS)
+
+// EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE0000000000000000000000000000000000000000000EEEEEE
+// EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE0000000000000000000000000000000000000000000EEEEEE
 
 int main()
 {
@@ -104,17 +107,15 @@ int main()
 	}
 	//    alt_putstr("DDR2 Initialized!\n\r"); // delay!
 
-	outbyte('W');
-
-	DDR2_TESTLOC0 = TESTVALUE1;
-    DDR2_TESTLOC1 = TESTVALUE2;
-
     int mode, phase, rep, good;
     int last_begin, best_pos, best_length;
     int state;
     int best_mode = -1;
     int final_pos = 0;
     int best_overall = -1;
+
+    uint32_t testvalue1 = TESTVALUE1;
+    uint32_t testvalue2 = TESTVALUE2;
 
     for (mode = 0; mode < 4; mode ++) {
     	outbyte('\n');
@@ -123,12 +124,14 @@ int main()
     	best_pos = -1;
     	best_length = 0;
     	for (phase = 0; phase < (2 * PHASE_STEPS); phase ++) { // 720 degrees
+            DDR2_TESTLOC0 = testvalue1;
+            DDR2_TESTLOC1 = testvalue2;
     		good = 0;
 //    		hexword(DDR2_TESTLOC0);
     		for (rep = 0; rep < 7; rep ++) {
-    			if (DDR2_TESTLOC0 == TESTVALUE1)
+    			if (DDR2_TESTLOC0 == testvalue1)
     				good++;
-    			if (DDR2_TESTLOC1 == TESTVALUE2)
+    			if (DDR2_TESTLOC1 == testvalue2)
     				good++;
     		}
 			DDR2_PLLPHASE = 0x33; // move read clock
@@ -147,8 +150,9 @@ int main()
     				best_pos = last_begin + (best_length >> 1);
     			}
     		}
+            if (testvalue1 & 0x80000000) testvalue1 = (testvalue1 << 1) | 1; else testvalue1 <<= 1;
+            if (testvalue2 & 0x80000000) testvalue2 = (testvalue2 << 1) | 1; else testvalue2 <<= 1;
     	}
-//    	printf(": %d\n\r", best_pos);
     	if (best_length > best_overall) {
     		best_overall = best_length;
     		best_mode = mode;
@@ -168,7 +172,20 @@ int main()
 	outbyte('\r');
 	outbyte('\n');
 
-	while(1) {
+	int errors = 0;
+	for (i=0;i<2000;i++)
+        ram[i] = 0xABCDE000 + i;
+    for (i=0;i<2000;i++)
+        if (ram[i] != 0xABCDE000 + i)
+            errors++;
+
+    if (errors) {
+        puts("RAM ERROR");
+        while(1)
+            ;
+    }
+
+    while(1) {
 		puts("Waiting for JTAG download");
 		JUMP_LOCATION = 0;
 		while(!JUMP_LOCATION)

@@ -425,7 +425,7 @@ begin
 
     i_data: altddio_bidir
     generic map (
-        extend_oe_disable => "UNUSED",
+        extend_oe_disable => "OFF",
         implement_input_in_lcell => "UNUSED",
         intended_device_family => "Cyclone IV E",
         invert_output => "OFF",
@@ -437,7 +437,7 @@ begin
         padio     => mem_dq,
         outclock  => mem_write_clock,
         inclock   => mem_read_clock,
-        oe        => dqs_oe, -- wdata_oe_r,
+        oe        => wdata_oe_r,
         datain_h  => wdata_half(g_data_width-1 downto 0),
         datain_l  => wdata_half(2*g_data_width-1 downto g_data_width),
         dataout_h => rdata_h,
