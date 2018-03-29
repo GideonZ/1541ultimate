@@ -178,6 +178,7 @@
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FC3MODE     0x73
+#define CFG_C64_FASTRESET   0x74
 #define CFG_C64_REU_PRE     0x80
 #define CFG_C64_REU_IMG     0x81
 #define CFG_C64_REU_OFFS    0x82
@@ -232,7 +233,7 @@ class C64 : public GenericHost, ConfigurableObject
     void stop(bool do_raster = true);
     void resume(void);
     void freeze(void);
-
+    
     uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }
@@ -275,10 +276,16 @@ public:
     void    releaseScreen(void);
     Keyboard *getKeyboard(void);
 
+    int  get_cfg_value(uint8_t id)
+    {
+       if (!cfg) return 0;
+       return cfg->get_value(id);	
+    }
+    
     /* C64 specifics */
     void unfreeze(void *def, int mode);  // called from crt... hmm FIXME
 
-    static void enable_kernal(uint8_t *rom);
+    static void enable_kernal(uint8_t *rom, bool fastreset = false);
     void init_cartridge(void);
     void cartridge_test(void);
     void reset(void);

@@ -702,13 +702,9 @@ void FileTypeCRT::configure_cart(void)
             for (int i = 16383; i >= 0; i--)
                 *(src + 2 * i + 1) = *(src + i);
         } else {
-            C64_KERNAL_ENABLE = 1;
             uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
-            uint8_t *dst = (uint8_t *) (C64_KERNAL_BASE + 1);
-            for (int i = 0; i < 8192; i++) {
-                *(dst) = *(src++);
-                dst += 2;
-            }
+            int fastreset = c64->get_cfg_value(CFG_C64_FASTRESET);
+            C64 :: enable_kernal( src, fastreset);
         }
         break;
 
