@@ -335,16 +335,29 @@ FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char 
 			break;
 		}
 	} while(1);
+	
+	int dir_t = ((DirInD64 *)dir->handle)->curr_t;
+	int dir_s = ((DirInD64 *)dir->handle)->curr_s;
+	int dir_idx = (((DirInD64 *)dir->handle)->idx - 1) % 8;
 
 	dir_close(dir);
 
 	FileInD64 *ff = new FileInD64(this);
 	*file = new File(this, ff);
-
-	FRESULT res = ff->open(&info, flags);
-	if(res == FR_OK) {
-		return res;
+	
+	FRESULT res;
+	
+	if (!stricmp (info.extension, "CVT"))
+	{
+            res = ff->openCVT(&info, flags, dir_t, dir_s, dir_idx);
+            //res = ff->open(&info, flags);
 	}
+	else
+	{
+            res = ff->open(&info, flags);
+	}
+        if(res == FR_OK)
+	   return res;
 	delete ff;
 	delete *file;
 	return res;
@@ -429,6 +442,8 @@ FRESULT DirInD64 :: read(FileInfo *f)
 		f->attrib  = AM_VOL;
         f->cluster = fs->get_root_sector();
         f->extension[0] = '\0';
+        curr_t = -1;
+        curr_s = -1;
 
         /* Volume name extraction */
 		if(fs->move_window(fs->get_root_sector()) == FR_OK) {
@@ -458,6 +473,8 @@ FRESULT DirInD64 :: read(FileInfo *f)
                     next_t = (int)fs->sect_buffer[0];
                     next_s = (int)fs->sect_buffer[1];
                 }
+                curr_t = next_t;
+                curr_s = next_s;
                 // printf("- Reading %d %d - \n", next_t, next_s);
                 if(!next_t) { // end of list
                     return FR_NO_FILE;
@@ -495,13 +512,17 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 f->attrib = (p[2] & 0x40)?AM_RDO:0;
                 f->cluster = fs->get_abs_sector((int)p[3], (int)p[4]);
                 f->size = (int)p[30] + 256*(int)p[31];
-                if (tp == 1) {
+                if (tp >= 1 && tp <= 3 && (p[0x17] == 0 || p[0x17] == 1) && p[0x15] >= 1 && p[0x15] <= 35 && p[0x16] <= 21) {
+                	strncpy(f->extension, "CVT", 4);
+                } else if (tp == 1) {
                 	strncpy(f->extension, "SEQ", 4);
                 } else if (tp == 2) {
                 	strncpy(f->extension, "PRG", 4);
                 } else if (tp == 3) {
                 	strncpy(f->extension, "USR", 4);
                 }
+                strcat(f->lfname, ".");
+                strcat(f->lfname, f->extension);
                 idx ++;
                 return FR_OK;
             }
@@ -524,7 +545,9 @@ FileInD64 :: FileInD64(FileSystemD64 *f)
     dir_sect = -1;
     dir_entry_offset = 0;
     visited = 0;
+    section = -3;
     fs = f;
+    isVlir = false;
 }
 
 FRESULT FileInD64 :: open(FileInfo *info, uint8_t flags)
@@ -549,9 +572,35 @@ FRESULT FileInD64 :: open(FileInfo *info, uint8_t flags)
     }
 
     visit(); // mark initial sector
+    section = 0;
 
 	return FR_OK;
 }
+
+FRESULT FileInD64 :: openCVT(FileInfo *info, uint8_t flags, int t, int s, int i)
+{
+	if(info->fs != fs)
+		return FR_INVALID_OBJECT;
+		
+
+	start_cluster = -1;
+	current_track = t;
+	current_sector = s;
+	dir_entry_offset = i*32;
+
+	offset_in_sector = 2;
+
+	num_blocks = info->size;
+
+    visited = new uint8_t[fs->num_sectors];
+    for (int i=0; i<fs->num_sectors; i++) {
+        visited[i] = 0;
+    }
+    
+    visit();
+    return FR_OK;
+}
+
 
 FRESULT FileInD64 :: close(void)
 {
@@ -575,10 +624,13 @@ FRESULT FileInD64 :: visit(void)
     return FR_OK;
 }
 
+static unsigned char cvtSignature[] = { 0x50, 0x52, 0x47, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x74, 0x65, 0x64, 0x20, 0x47, 0x45, 0x4f, 0x53, 0x20, 0x66, 0x69, 0x6c, 0x65, 0x20, 0x56, 0x31, 0x2e, 0x30};
+
 FRESULT FileInD64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
 {
-
-	FRESULT res;
+    bool isCVT = start_cluster == -1;
+    bool lastSection = false;
+    FRESULT res;
 
     uint8_t *dst = (uint8_t *)buffer;
     uint8_t *src;
@@ -587,7 +639,7 @@ FRESULT FileInD64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
     int tr;
 
     *transferred = 0;
-
+    
     if(!len)
         return FR_OK;
 
@@ -596,10 +648,71 @@ FRESULT FileInD64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
         res = fs->move_window(fs->get_abs_sector(current_track, current_sector));
         if(res != FR_OK)
             return res;
+
         src = &(fs->sect_buffer[offset_in_sector]);
 
+        if (section == -3)
+        {
+           memset(vlir, 0, 256);
+           vlir[0] = 0;
+           vlir[1] = 255;
+           memcpy(vlir+2, fs->sect_buffer+dir_entry_offset+2, 30);
+           memcpy(vlir+32, cvtSignature, sizeof(cvtSignature));
+           memcpy(tmpBuffer, vlir, 256);
+           tmpBuffer[0x15] = 1;
+           tmpBuffer[0x16] = 255;
+           isVlir = vlir[0x17];
+           if (isVlir)
+           {
+               tmpBuffer[3] = 1;
+               tmpBuffer[4] = 255;
+           }
+           else
+           {
+               int t1, t2;
+               followChain( vlir[3], vlir[4], t1, t2 );
+               tmpBuffer[3] = t1;
+               tmpBuffer[4] = t2;
+           }
+           src = tmpBuffer+offset_in_sector;
+        }
+        if (section == -1 && !vlir[1])
+        {
+           memcpy(vlir, fs->sect_buffer, 256);
+           memset(tmpBuffer, 0, 256);
+           tmpBuffer[1] = 255;
+           for (int i=0; i<127; i++)
+           {
+               if (! vlir[2+2*i] )
+               {
+                   tmpBuffer[3+2*i] = vlir[3+2*i];
+               }
+               else
+               {
+               	   int t1, t2;
+               	   followChain( vlir[2+2*i], vlir[3+2*i], t1, t2 );
+                   tmpBuffer[2+2*i] = t1;
+                   tmpBuffer[3+2*i] = t2;
+               }
+           }
+           // memcpy(tmpBuffer, fs->sect_buffer, 256);
+           src = tmpBuffer + offset_in_sector;
+        }
+        
+        if (isCVT && isVlir && section >= 0)
+        {
+            int nextSection = section;
+            if (nextSection < 127)
+                nextSection++;
+               
+            while ( nextSection < 127 && !vlir[2+2*nextSection] && ( vlir[3+2*nextSection] == 0 || vlir[3+2*nextSection] == 255))
+                nextSection++;
+                
+            lastSection = nextSection >= 127;
+        }
+
         // determine the number of bytes left in sector
-        if(fs->sect_buffer[0] == 0) { // last sector
+        if(section >= 0 && fs->sect_buffer[0] == 0 && (!isVlir || lastSection)) { // last sector
             bytes_left = (1 + fs->sect_buffer[1]) - offset_in_sector;
         } else {
             bytes_left = 256 - offset_in_sector;
@@ -619,15 +732,48 @@ FRESULT FileInD64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
         offset_in_sector += tr;
         *transferred += tr;
 
-        // check for end of file
-        if((bytes_left == tr) && (fs->sect_buffer[0] == 0))
-            return FR_OK;
-
         // continue
-        if(offset_in_sector == 256) { // proceed to the next sector
-            current_track = fs->sect_buffer[0];
-            current_sector = fs->sect_buffer[1];
-            offset_in_sector = 2;
+        if (offset_in_sector == 256 || (section >= 0 && fs->sect_buffer[0] == 0 && offset_in_sector > fs->sect_buffer[1] && (!isVlir || lastSection))) { // proceed to the next sector
+            if (section == -3)
+            {
+               current_track = vlir[0x15];
+               current_sector = vlir[0x16];
+               offset_in_sector = 2;
+               section = -2;
+            }
+            else if (section == -2)
+            {
+               current_track = vlir[3];
+               current_sector = vlir[4];
+               offset_in_sector = 2;
+               section = isVlir ? -1 : 0;
+               vlir[0] = vlir[1] = 0;
+            }
+            else if (isCVT && isVlir && !fs->sect_buffer[0])
+            {
+               if (section < 127)
+                   section++;
+               
+               while ( section < 127 && !vlir[2+2*section] && ( vlir[3+2*section] == 0 || vlir[3+2*section] == 255))
+                   section++;
+
+               if (section < 127)
+               {
+               	   current_track = vlir[2+2*section];
+               	   current_sector = vlir[3+2*section];
+               	   offset_in_sector = 2;
+               }
+               else
+                  return FR_OK;
+            }
+            else
+            {
+              if((fs->sect_buffer[0] == 0) && !isVlir && section >= 0)
+                  return FR_OK;
+               current_track = fs->sect_buffer[0];
+               current_sector = fs->sect_buffer[1];
+               offset_in_sector =  2;
+            }
             res = visit();  // mark and check for cyclic link
             if(res != FR_OK) {
                 return res;
@@ -738,6 +884,27 @@ FRESULT FileInD64 :: seek(uint32_t pos)
         pos -= 254;
 	}
 	offset_in_sector = pos + 2;
+	return FR_OK;
+}
+
+FRESULT FileInD64 :: followChain(int track, int sector, int& noSectors, int& bytesLastSector)
+{
+        noSectors = 0;
+        FRESULT res = fs->move_window(fs->get_abs_sector(track, sector));
+            if(res != FR_OK)
+                return res;
+        
+        while ( fs->sect_buffer[0] )
+        {
+            FRESULT res = fs->move_window(fs->get_abs_sector(track, sector));
+            if(res != FR_OK)
+                return res;
+            track = fs->sect_buffer[0];
+            sector = fs->sect_buffer[1];
+            noSectors++;
+        }
+        bytesLastSector = fs->sect_buffer[1];
+
 	return FR_OK;
 }
 
