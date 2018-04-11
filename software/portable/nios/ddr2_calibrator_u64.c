@@ -84,7 +84,7 @@ void ddr2_calibrate()
     int best_overall = -1;
 
     for (mode = 0; mode < 4; mode ++) {
-//        outbyte('\n');
+        outbyte('\n');
         DDR2_TESTLOC0 = testvalue1;
         DDR2_TESTLOC1 = testvalue2;
         DDR2_READMODE = mode;
@@ -101,7 +101,7 @@ void ddr2_calibrate()
                     good++;
             }
             DDR2_PLLPHASE = 0x33; // move read clock
-//            outbyte(hexchars[good]);
+            outbyte(hexchars[good]);
 
             if ((state == 0) && (good >= 13)) {
                 last_begin = phase;
