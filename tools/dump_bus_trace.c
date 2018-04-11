@@ -44,7 +44,13 @@ void dump_trace(FILE *fi, int max, int text_mode, int trigger)
     //    vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
     //
     // vector_in <= phi2 & dman & exromn & ba & irqn & rom & nmin & rwn & data & addr;
-    const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","EXROMn","SYNC","PHI2" };
+    // const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","EXROMn","SYNC","PHI2" };
+    const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","DMAn","SYNC","PHI2" };
+    const char *vic_regs[47] = { "M0X", "M0Y", "M1X", "M1Y", "M2X", "M2Y", "M3X", "M3Y",
+            "M4X", "M4Y", "M5X", "M5Y", "M6X", "M6Y", "M7X", "M7Y",
+            "MX8th", "D011", "D012", "LPX", "LPY", "SPREN", "D016", "SPEXPY", "MEMPNT", "IRQREG", "IRQEN",
+            "SPPRI", "SPMC", "SPEXPX", "SSCOL", "SGCOL", "D020", "D021", "D022", "D023", "D024", "MM0", "MM1",
+            "M0COL", "M1COL", "M2COL", "M3COL", "M4COL", "M5COL", "M6COL", "M7COL" };
 
     uint8_t   b,fla;
         
@@ -52,15 +58,17 @@ void dump_trace(FILE *fi, int max, int text_mode, int trigger)
 
     if (!text_mode) {
         printf(vcd_header);
-        printf("$var wire 16 z addr $end\n");
-        printf("$var wire 8 y data $end\n");
-        printf("$var wire 9 x line $end\n");
-        printf("$var wire 6 w cycle $end\n");
+        printf("$var wire 16 ! addr $end\n");
+        printf("$var wire 8 # data $end\n");
+        printf("$var wire 9 $ line $end\n");
+        printf("$var wire 6 * cycle $end\n");
         for(b=0;b<8;b++) {
             if(*labels[b])
-                printf("$var wire 1 %c %s $end\n", 65+b, labels[b]);
+                printf("$var wire 1 %c %s $end\n", 48+b, labels[b]);
         }
-
+        for(b=0;b<47;b++) {
+            printf("$var wire 8 %c _%s $end\n", 56+b, vic_regs[b]);
+        }
         printf(vcd_middle);
     } else {
         printf("ADDR,DATA,");
@@ -75,20 +83,29 @@ void dump_trace(FILE *fi, int max, int text_mode, int trigger)
     }
     char buffer[32];
     int cycle = 0;
+    int enable = 0;
+
     for(i=0;i<max;i++) {
         r = fread(&d, z, 1, fi);
         if(r != 1)
             break;
 
-        time ++;
         if ((d.flags & 0x80) == 0) {
             if (d.flags & 0x40) {
-                cycle = 16027;
+                enable = 1;
+                cycle = 16028;
             } else {
                 cycle ++;
             }
             cycle = cycle % 19656;
         }
+
+        if (!enable) {
+            i--;
+            continue;
+        }
+
+        time ++;
 
         if (trigger >= 0) {
             if (((d.flags & 0x80) != 0) && (d.addr == trigger)) {
@@ -111,16 +128,19 @@ void dump_trace(FILE *fi, int max, int text_mode, int trigger)
         } else {
             printf("#%ld\n", time);
             if (prev.addr != d.addr) {
-                printf("b%s z\n", bin(d.addr, 16, buffer));
+                printf("b%s !\n", bin(d.addr, 16, buffer));
             }
             if (prev.data != d.data) {
-                printf("b%s y\n", bin(d.data, 8, buffer));
+                printf("b%s #\n", bin(d.data, 8, buffer));
             }
             if ((d.flags & 0x80) == 0) {
                 if ((cycle % 63) == 0) {
-                    printf("b%s x\n", bin(cycle / 63, 9, buffer));
+                    printf("b%s $\n", bin(cycle / 63, 9, buffer));
                 }
-                printf("b%s w\n", bin(cycle % 63, 6, buffer));
+                printf("b%s *\n", bin(cycle % 63, 6, buffer));
+            }
+            if (((d.flags & 0xA1) == 0xA0) && ((d.addr & 0xFC3F) >= 0xD000) && ((d.addr & 0xFC3F) <= 0xD02F)) {
+                printf("b%s %c\n", bin(d.data, 8, buffer), 56+(d.addr & 0x3F));
             }
 /*
             else {
@@ -133,7 +153,7 @@ void dump_trace(FILE *fi, int max, int text_mode, int trigger)
             uint8_t change = prev.flags ^ d.flags;
             for(b=0;b<8;b++) {
                 if((change & 1)||(i==0)) {
-                    printf("%c%c\n", ((d.flags >> b) & 1)+48, 65+b);
+                    printf("%c%c\n", ((d.flags >> b) & 1)+48, 48+b);
                 }
                 change >>= 1;
             }
@@ -152,7 +172,7 @@ int main(int argc, char **argv)
     }
     int i = 1;
     int text_mode = 0;
-    int length = 63*2*312*25;
+    int length = 63*2*312*85;
     int trigger = -1;
     if (strcmp(argv[i], "-t") == 0) {
         i++;
