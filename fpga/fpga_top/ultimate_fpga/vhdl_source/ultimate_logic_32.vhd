@@ -45,7 +45,8 @@ generic (
     g_sampler       : boolean := true;
     g_profiler      : boolean := true;
     g_rmii          : boolean := false;
-    g_analyzer      : boolean := false );
+    g_analyzer      : boolean := false;
+    g_kernal_repl   : boolean := true );
 port (
     -- globals
     sys_clock   : in    std_logic;
@@ -199,7 +200,8 @@ port (
     
     cpu_irq     : out std_logic;
     trigger     : in  std_logic := '0';
-    
+    sw_trigger  : out std_logic;
+        
     -- Buttons
     button      : in  std_logic_vector(2 downto 0) );
     
@@ -611,6 +613,7 @@ begin
             g_ram_base_cart => X"0EF0000", -- should be on a 64K boundary
             g_big_endian    => g_big_endian,
             g_control_read  => true,
+            g_kernal_repl   => g_kernal_repl,
             g_ram_expansion => g_ram_expansion,
             g_extended_reu  => g_extended_reu,
             g_command_intf  => g_command_intf,
@@ -675,6 +678,7 @@ begin
             -- debug
             freezer_state   => freezer_state,
             sync            => sync,
+            sw_trigger      => sw_trigger,
             trigger_1       => trigger_1,
             trigger_2       => trigger_2,
             
@@ -792,7 +796,7 @@ begin
 --            ULPI_NXT    => ULPI_NXT,
 --            ULPI_STP    => ULPI_STP,
 --        
---			usb_busy	=> usb_busy, -- LED interface
+--            usb_busy    => usb_busy, -- LED interface
 --			
 --            -- register interface bus
 --            sys_clock   => sys_clock,
