@@ -25,7 +25,8 @@ entity mem_io is
 
         user_clock_1    : out std_logic := '0';
         user_clock_2    : out std_logic := '0';
-
+        user_clock_3    : out std_logic := '0';
+        
         phasecounterselect : in  std_logic_vector(2 downto 0);
         phasestep          : in  std_logic;
         phaseupdown        : in  std_logic;
