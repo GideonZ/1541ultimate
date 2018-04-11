@@ -36,6 +36,7 @@
 #include "home_directory.h"
 #include "reu_preloader.h"
 #include "u2p.h"
+#include "u64.h"
 #include "keyboard_usb.h"
 
 // these should move to main_loop.h
@@ -87,7 +88,7 @@ extern "C" void ultimate_main(void *a)
 
     char title[48];
     if(capabilities & CAPAB_ULTIMATE64) {
-    	sprintf(title, "\eA*** Ultimate 64 - %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+    	sprintf(title, "\eA*** Ultimate 64 V1.%b - %s ***\eO", C64_CORE_VERSION, APPL_VERSION);
     } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
     	sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
     } else {
