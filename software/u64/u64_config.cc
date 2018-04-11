@@ -36,6 +36,7 @@ U64Config u64_configurator;
 #define CFG_ANALOG_OUT_SELECT 0x09
 #define CFG_CHROMA_DELAY      0x0A
 #define CFG_COLOR_CODING      0x0B
+#define CFG_HDMI_ENABLE       0x0C
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -75,6 +76,7 @@ uint8_t u64_sid_mask[]    = { 0xC0, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  };
 
 static const char *en_dis4[] = { "Disabled", "Enabled" };
+static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
 static const char *audio_sel[] = { "Emulated SID 1", "Emulated SID 2", "SID Socket 1", "SID Socket 2",
@@ -104,6 +106,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SCANLINES,    		CFG_TYPE_ENUM, "HDMI Scanlines",          	   "%s", en_dis4,      0,  1, 0 },
+    { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
     { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 23, 0 },
     { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 23, 0 },
     { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 23, 0 },
@@ -154,6 +157,7 @@ void U64Config :: effectuate_settings()
     C64_SID2_MASK	 =  u64_sid_mask[cfg->get_value(CFG_SID2_ADDRESS)];
     C64_EMUSID1_MASK =  u64_sid_mask[cfg->get_value(CFG_EMUSID1_ADDRESS)];
     C64_EMUSID2_MASK =  u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)];
+    U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
 
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
@@ -228,14 +232,14 @@ void U64Config :: setScanMode(ConfigItem *it)
 int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 {
 	int count = 0;
-#if DEVELOPER > 1
 	if(fm->is_path_writable(p)) {
     	item_list.append(new Action("Save EDID to file", SUBSYSID_U64, MENU_U64_SAVEEDID));
     	count ++;
+#if DEVELOPER > 1
         item_list.append(new Action("Save I2C ROM to file", SUBSYSID_U64, MENU_U64_SAVEEEPROM));
         count ++;
-    }
 #endif
+    }
 #if DEVELOPER
 	item_list.append(new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE));  count++;
 	item_list.append(new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE));  count++;
@@ -253,6 +257,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	char name[32];
 	FRESULT fres;
 	uint32_t trans;
+	name[0] = 0;
 
     switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -272,6 +277,8 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     			        	fm->fclose(f);
     			        }
     				}
+    			} else {
+    			    cmd->user_interface->popup("Failed to read EDID", BUTTON_OK);
     			}
     			U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
     		}
