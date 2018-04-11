@@ -52,7 +52,6 @@ port (
     sense           : in  std_logic;
 
     CART_LEDn       : out std_logic;
-    sync            : out std_logic; -- pulse when 0D is written to DFFF (for syncing VIC)
     size_ctrl       : in  std_logic_vector(2 downto 0) := "001" );
 
 end all_carts_v4;    
@@ -144,7 +143,6 @@ begin
             reset_in     <= reset or RST_in or c64_reset;
             freeze_act_d <= freeze_act;
             unfreeze     <= '0';
-            sync <= '0';
                         
             -- control register
             if reset_in='1' then
@@ -331,9 +329,6 @@ begin
                     if cart_en='1' and io_wdata(7 downto 6) = "01" then
                         cart_en <= '0'; -- permanent off
                     end if;
-                    if io_wdata(3 downto 0) = X"D" then
-                        sync <= '1';
-                    end if;
                 end if;
                 game_n    <= '1';
                 exrom_n   <= '0';
@@ -347,9 +342,6 @@ begin
                 if io_write='1' and io_addr(8 downto 0) = "111111111" then -- DFFF
                     if cart_en='1' and io_wdata(7 downto 6) = "01" then
                         cart_en <= '0'; -- permanent off
-                    end if;
-                    if io_wdata(3 downto 0) = X"D" then
-                        sync <= '1';
                     end if;
                 end if;
                 game_n    <= '0';

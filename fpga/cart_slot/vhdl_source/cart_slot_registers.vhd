@@ -8,6 +8,7 @@ use work.cart_slot_pkg.all;
 
 entity cart_slot_registers is
 generic (
+    g_kernal_repl   : boolean := true;
     g_rom_base      : unsigned(27 downto 0) := X"0F80000";
     g_ram_base      : unsigned(27 downto 0) := X"0F70000";
     g_ram_expansion : boolean := true );
@@ -55,8 +56,10 @@ begin
                 when c_cart_cartridge_kill =>
                     control_i.cartridge_kill <= '1';
                 when c_cart_kernal_enable =>
-                    control_i.kernal_enable <= io_req.data(0);
-                    control_i.kernal_16k <= io_req.data(1);
+                    if g_kernal_repl then
+                        control_i.kernal_enable <= io_req.data(0);
+                        control_i.kernal_16k <= io_req.data(1);
+                    end if;
                 when c_cart_reu_enable =>
                     control_i.reu_enable <= io_req.data(0);
                 when c_cart_reu_size =>

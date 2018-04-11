@@ -25,6 +25,7 @@ port (
 
     user_clock_1  : out std_logic := '0';
     user_clock_2  : out std_logic := '0';
+    user_clock_3  : out std_logic := '0';
 
     clock       : in  std_logic := '0';
     reset       : in  std_logic := '0';
@@ -328,6 +329,7 @@ begin
 
         user_clock_1       => user_clock_1,
         user_clock_2       => user_clock_2,
+        user_clock_3       => user_clock_3,
 
         mem_clk_p          => SDRAM_CLK,
         mem_clk_n          => SDRAM_CLKn,
