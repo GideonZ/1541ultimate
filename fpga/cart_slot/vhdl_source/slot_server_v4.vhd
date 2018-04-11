@@ -18,6 +18,7 @@ generic (
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
     g_big_endian    : boolean;
+    g_kernal_repl   : boolean := true;
     g_control_read  : boolean := true;
     g_command_intf  : boolean := true;
     g_ram_expansion : boolean := true;
@@ -81,6 +82,8 @@ port (
     -- debug
     freezer_state   : out   std_logic_vector(1 downto 0);
     sync            : out   std_logic;
+    sw_trigger      : out   std_logic;
+    
     -- audio output
     sid_left         : out signed(17 downto 0);
     sid_right        : out signed(17 downto 0);
@@ -281,6 +284,7 @@ begin
 
     i_registers: entity work.cart_slot_registers
     generic map (
+        g_kernal_repl   => g_kernal_repl,
         g_rom_base      => g_rom_base_cart,
         g_ram_base      => g_ram_base_cart,
 --        g_control_read  => g_control_read,
@@ -493,7 +497,6 @@ begin
         game_n          => game_n,
         sense           => sense,
     
-        sync            => sync,
         CART_LEDn       => cart_led_n,
         size_ctrl       => control.reu_size );
 
@@ -825,4 +828,9 @@ begin
     phi2_tick   <= phi2_tick_avail;
     
     c64_stopped <= status.c64_stopped;
+    
+    -- write 0x54 to $DFFE to generate a trigger
+    sw_trigger  <= '1' when slot_req.io_write = '1' and slot_req.io_address(8 downto 0) = "111111110" and slot_req.data = X"54" else '0';
+    -- write 0x0D to $DFFF to generate a sync
+    sync        <= '1' when slot_req.io_write = '1' and slot_req.io_address(8 downto 0) = "111111111" and slot_req.data = X"0D" else '0';
 end structural;

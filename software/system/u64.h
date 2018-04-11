@@ -28,6 +28,7 @@
 #define U64_WIFI_CONTROL   (*(volatile uint8_t *)(U64_IO_BASE + 0x05))
 #define U64_EXT_I2C_SCL    (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
 #define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
+#define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
 
 #define U64_HDMI_DDC_ENABLE     0x20
 #define U64_HDMI_DDC_DISABLE    0x10
@@ -54,6 +55,7 @@
 #define C64_SID2_MASK	 (*(volatile uint8_t *)(C64_IO_BASE + 0x0D))
 #define C64_EMUSID1_MASK (*(volatile uint8_t *)(C64_IO_BASE + 0x0E))
 #define C64_EMUSID2_MASK (*(volatile uint8_t *)(C64_IO_BASE + 0x0F))
+#define C64_CORE_VERSION (*(volatile uint8_t *)(C64_IO_BASE + 0x10))
 
 typedef struct {
     uint8_t VID_HSYNCPOL;
