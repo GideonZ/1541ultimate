@@ -452,10 +452,10 @@ void FTPDaemonThread :: cmd_mlst(const char *arg)
     char buffer[200];
     if (isDir)
        sprintf(buffer, "250- Listing %s\r\n type=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
-               type, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
+               st.name, type, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
     else
        sprintf(buffer, "250- Listing %s\r\n type=%s;size=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
-               type, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
+               st.name, type, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
     send_msg(buffer);
 }
 
