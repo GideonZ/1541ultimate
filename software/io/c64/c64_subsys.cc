@@ -504,12 +504,6 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 		for (int i=0;i<transferred;i++) {
 			*(d++) = dma_load_buffer_b[i];
 		}
-		d = dest;
-		for (int i=0; i<transferred; i++, d++) {
-			if (*d != dma_load_buffer_b[i]) {
-				printf("Verify error: %b <> %b @ %7x\n", *d, dma_load_buffer[i], d);
-			}
-		}
 		if (transferred < block) {
 			break;
 		}
