@@ -45,7 +45,7 @@ int dbg_printf(const char *fmt, ...);
 #define msg150stor "150 Opening BINARY mode data connection for %s."
 #define msg200 "200 Command okay."
 #define msg202 "202 Command not implemented, superfluous at this site."
-#define msg211 "211-Features:\r\nMLST ;size*;type*;\r\n211 End"
+#define msg211 "211-Features:\r\n MLST size*;type*;modify*\r\n MLSD\r\n211 End"
 #define msg212 "212 Directory status."
 #define msg213 "213 %d"
 #define msg214 "214 %s."
@@ -451,10 +451,10 @@ void FTPDaemonThread :: cmd_mlst(const char *arg)
     }
     char buffer[200];
     if (isDir)
-       sprintf(buffer, "250- Listing %s\r\n type=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
+       sprintf(buffer, "250- Listing %s\r\ntype=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
                st.name, type, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
     else
-       sprintf(buffer, "250- Listing %s\r\n type=%s;size=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
+       sprintf(buffer, "250- Listing %s\r\ntype=%s;size=%s;modify=%04d%02d%02d%02d%02d%02d; %s\r\n250 End",
                st.name, type, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec, st.name);
     send_msg(buffer);
 }
@@ -959,10 +959,10 @@ void FTPDataConnection :: directory(int listType, vfs_dir_t *dir)
 	    	    case 2:
                     vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
                     if ( VFS_ISDIR(st.st_mode) )
-                       len = sprintf(buffer, " type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
+                       len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
                             st.year, st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name);
                     else
-                       len = sprintf(buffer, " type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
+                       len = sprintf(buffer, "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
                             st.st_size,
 	    	                st.year, st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name);
 	    	        break;
