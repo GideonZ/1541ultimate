@@ -116,15 +116,18 @@ void UsbHidDriver :: interrupt_handler(uint8_t *irq_data, int data_len)
 	} printf("\n");
 
 */
-	if (keyboard) { // keyboard
+
+    if (keyboard) { // keyboard
+/*
 		printf("HID (ADDR=%d:%d) IRQ KB data: ", device->current_address, irq_in);
 		for(int i=0;i<data_len;i++) {
 			printf("%b ", irq_data[i]);
 		} printf("\n");
 
+*/
 		system_usb_keyboard.process_data(irq_data);
 	}
-	host->resume_input_pipe(this->irq_transaction);
+    host->resume_input_pipe(this->irq_transaction);
 }
 
 void UsbHidDriver :: pipe_error(int pipe) // called from IRQ!

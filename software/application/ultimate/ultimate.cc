@@ -97,6 +97,7 @@ extern "C" void ultimate_main(void *a)
 
     if(capabilities & CAPAB_ULTIMATE64) {
         system_usb_keyboard.setMatrix((volatile uint8_t *)MATRIX_KEYB);
+        system_usb_keyboard.enableMatrix(true);
     }
 
 /*
