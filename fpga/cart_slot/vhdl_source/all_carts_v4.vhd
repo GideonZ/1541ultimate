@@ -104,6 +104,7 @@ architecture gideon of all_carts_v4 is
     constant c_pagefox      : std_logic_vector(4 downto 0) := "10111";
     constant c_128          : std_logic_vector(4 downto 0) := "11000";
     constant c_fc3plus      : std_logic_vector(4 downto 0) := "11001";
+    constant c_comal80pakma : std_logic_vector(4 downto 0) := "11010";
     
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
@@ -444,6 +445,20 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= '1';
 
+
+            when c_comal80pakma =>
+                if io_write='1' and io_addr(8)='0' then -- DE00-DEFF
+                    bank_bits <= io_wdata(1 downto 0) & '0';
+                    ext_bank <= "00" & io_wdata(2);
+                end if;
+                game_n    <= '0';
+                exrom_n   <= '0';
+                serve_rom <= '1';
+                serve_io1 <= '0';
+                serve_io2 <= '0';
+                irq_n     <= '1';
+                nmi_n     <= '1';
+
             when c_sbasic => -- 16K, upper 8k enabled by writing to DExx
                              -- and disabled by reading
                 if io_write='1' and io_addr(8)='0' then
@@ -717,7 +732,7 @@ begin
                end if;
             end if;
 
-        when c_fc3 | c_comal80 | c_fc3plus =>
+        when c_fc3 | c_comal80 | c_fc3plus | c_comal80pakma =>
             mem_addr_i(17 downto 0) <= ext_bank(17 downto 16) & bank_bits(15 downto 14) & slot_addr(13 downto 0); -- 16K banks
             
         when c_ss5 =>
