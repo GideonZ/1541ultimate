@@ -681,7 +681,10 @@ void FileTypeCRT::configure_cart(void)
         C64_CARTRIDGE_TYPE = CART_TYPE_FINAL12; // System3
         break;
     case CART_COMAL80:
-        C64_CARTRIDGE_TYPE = CART_TYPE_COMAL80; // Comal 80
+        if (total_read > 65536)
+           C64_CARTRIDGE_TYPE = CART_TYPE_COMAL80PAKMA; // Comal 80 Pakma
+	else
+           C64_CARTRIDGE_TYPE = CART_TYPE_COMAL80; // Comal 80
         break;
     case CART_SBASIC:
         C64_CARTRIDGE_TYPE = CART_TYPE_SBASIC; // Simons Basic
