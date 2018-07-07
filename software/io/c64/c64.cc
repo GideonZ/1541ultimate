@@ -1,4 +1,4 @@
-/*
+#/*
  * c64.cc
  *
  * Written by 
@@ -48,6 +48,9 @@
 
 int ultimatedosversion = 0;
 bool allowUltimateDosDateSet = false;
+#ifndef RECOVERYAPP
+extern bool connectedToU64;
+#endif
 
 /* Configuration */
 const char *cart_mode[] = { "None",
@@ -237,7 +240,11 @@ void C64::set_emulation_flags(cart_def *def)
             int choice = cfg->get_value(CFG_CMD_ENABLE);
             CMD_IF_SLOT_ENABLE = !!choice;
             ultimatedosversion = choice;
-            CMD_IF_SLOT_BASE = 0x47; // $DF1C
+#ifdef RECOVERYAPP
+            CMD_IF_SLOT_BASE = 0x47; // $$DF1C
+#else
+            CMD_IF_SLOT_BASE = connectedToU64 ? 0x46 : 0x47; // $DF18 when 1541 U2(+) connected to U64, $DF1C else.
+#endif
             choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
             allowUltimateDosDateSet = choice;
         }

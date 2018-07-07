@@ -42,6 +42,8 @@
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
 
+bool connectedToU64 = false;
+
 C1541 *c1541_A;
 C1541 *c1541_B;
 
@@ -61,7 +63,6 @@ void outbyte_log(int c)
 {
 	textLog.charout(c);
 }
-
 
 extern "C" void ultimate_main(void *a)
 {
@@ -112,7 +113,24 @@ extern "C" void ultimate_main(void *a)
 
     } else
 */
+#if (CLOCK_FREQ == 62500000) || (CLOCK_FREQ == 50000000)
+    if (c64)
+       for (int i=0; i<70; i++)
+       {
+          if (c64->exists())  break;
+          wait_ms(100);
+          connectedToU64 = true;
+       }
 
+    if (connectedToU64)
+        if(capabilities & CAPAB_ULTIMATE64) {
+    	    // Empty
+        } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
+    	    sprintf(title, "\eA*** Ultimate-II+ U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        } else {
+    	    sprintf(title, "\eA*** Ultimate-II  U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        }
+#endif    
     if(c64 && c64->exists()) {
         primaryUserInterface = new UserInterface(title);
 
