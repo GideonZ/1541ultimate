@@ -162,7 +162,7 @@ C64::C64()
     C64_MODE = MODE_NORMAL;
     C64_STOP = 0;
     stopped = false;
-    C64_MODE = C64_MODE_RESET;
+//    C64_MODE = C64_MODE_RESET;
     buttonPushSeen = false;
 
     client = 0;
@@ -171,7 +171,10 @@ C64::C64()
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
 
     effectuate_settings();
-    init_cartridge();
+
+    if (cfg->get_value(CFG_C64_CART) || cfg->get_value(CFG_C64_ALT_KERN)) {
+        init_cartridge();
+    }
 }
 
 C64::~C64()
@@ -875,7 +878,6 @@ void C64::init_cartridge()
 
     C64_MODE = C64_MODE_RESET;
     C64_KERNAL_ENABLE = 0;
-
     C64_CARTRIDGE_TYPE = 0;
 
     if (cfg->get_value(CFG_C64_ALT_KERN)) {
