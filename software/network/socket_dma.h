@@ -16,7 +16,10 @@
 
 class SocketDMA {
 	static void dmaThread(void *a);
-	static void parseBuffer(void *load_buffer, int length);
+	static void performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint16_t len);
+	static int  readSocket(int socket, void *buffer, int max_remain);
+	static int  writeSocket(int socket, void *buffer, int length);
+
 	uint8_t load_buffer[SOCKET_BUFFER_SIZE];
 public:
 	SocketDMA();
