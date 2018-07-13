@@ -51,5 +51,6 @@ package nano_cpu_pkg is
     constant c_alu_add  : std_logic_vector(2 downto 0) := "100";
     constant c_alu_sub  : std_logic_vector(2 downto 0) := "101";
     constant c_alu_addc : std_logic_vector(2 downto 0) := "110";
+    constant c_alu_ext  : std_logic_vector(2 downto 0) := "111";
     
 end;

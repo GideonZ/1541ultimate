@@ -1,6 +1,10 @@
+from __future__ import print_function
 import sys
 import logging
 
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+    
 console = logging.StreamHandler()
 logger = logging.getLogger()
 logger.addHandler(console)
@@ -77,8 +81,8 @@ def add_label(line):
 def _addr(params, mnem, code):
     addr = _get_value(params)
     if addr > 0x3FF:
-        print "Error, address too large: %03x: %s $%03x" % (pc, mnem, addr)
-        exit() 
+        eprint ("Error, address too large: %03x: %s $%03x" % (pc, mnem, addr))
+        sys.exit(1) 
     code |= addr
     logger.info("PC: %03x: %04x | %s $%03x" % (pc, code, mnem, addr))
     _output_direct(code)
@@ -87,8 +91,8 @@ def _addr(params, mnem, code):
 def _addr_imm(params, mnem, code):
     addr = _get_value_imm(params)
     if addr > 0x3FF:
-        print "Error, address too large: %03x: %s $%03x" % (pc, mnem, addr)
-        exit() 
+        eprint ("Error, address too large: %03x: %s $%03x" % (pc, mnem, addr))
+        sys.exit(1) 
     code |= addr
     logger.info("PC: %03x: %04x | %s $%03x" % (pc, code, mnem, addr))
     _output_direct(code)
@@ -97,21 +101,21 @@ def _addr_imm(params, mnem, code):
 def _addr_rel(params, mnem, code):
     parsed = params.split(',')
     if len(parsed) < 2:
-        print "Syntax error in relative addressing mode: %03x: %s $%03x" % (pc, mnem, addr)
-        exit()
+        eprint ("Line %d: Syntax error in relative addressing mode: %03x: %s %s" % (nr, pc, mnem, params))
+        sys.exit(1) 
         
     addr = _get_value(parsed[0])
     if phase == 2:
         if (addr < 0x3F8) or (addr > 0x3FF):
-            print "Relative addressing base pointers shall be at $7F8-$7FF: %03x: %s $%03x" % (pc, mnem, addr)
-            exit()
+            eprint ("Line %d: Relative addressing base pointers shall be at $3F8-$3FF: %03x: %s $%03x" % (nr, pc, mnem, addr))
+            sys.exit(1) 
 
     offset = _get_value(parsed[1])
     if offset > 0xFF:
-        print "Error, offset too large: %03x: %s $%03x,$%02x" % (pc, mnem, addr, offset)
-        exit() 
-    code |= ((addr & 0x07) << 8)
-    code |= offset
+        eprint ("Line %d: Error, offset too large: %03x: %s $%03x,$%02x" % (nr, pc, mnem, addr, offset))
+        sys.exit(1) 
+    code |= (addr & 0x07)
+    code |= (offset << 3)
     
     logger.info("PC: %03x: %04x | %s $%03x,$%02x" % (pc, code, mnem, addr, offset))
     _output_direct(code)
@@ -133,8 +137,8 @@ def _block(params, mnem, code):
 def _addr_io(params, mnem, code):
     addr = _get_value(params)
     if addr > 0xFF:
-        print "Error, address too large: %03x: %s $%03x" % (pc, mnem, addr)
-        exit() 
+        eprint ("Error, address too large: %03x: %s $%03x" % (pc, mnem, addr))
+        sys.exit(1) 
     code |= addr
     logger.info("PC: %03x: %04x | %s $%03x" % (pc, code, mnem, addr))
     _output_direct(code)
@@ -146,7 +150,7 @@ def _no_addr(params, mnem, code):
     return code
     
 def unknown_mnem(params):
-    print "Unknown mnemonic: '%s'" % params
+    eprint ("Unknown mnemonic: '%s'" % params)
 
 def dump_bram_init():
     bram = [0]*2048
@@ -161,7 +165,7 @@ def dump_bram_init():
         hx = ''
         for j in range(31,-1,-1):
             hx = hx + "%02X" % bram[i*32+j]
-        print "        INIT_%02X => X\"%s\"," % (i, hx)
+        print ("        INIT_%02X => X\"%s\"," % (i, hx))
                      
 def dump_nan_file(filename):
     f = open(filename, "wb")
@@ -177,8 +181,8 @@ def dump_nan_file(filename):
 mnemonics = {
     'LOAD'  : ( _addr_imm, 0x0800 ),
     'STORE' : ( _addr,     0x8000 ),
-    'LOADR' : ( _addr_rel, 0x8800 ),
-    'STORR' : ( _addr_rel, 0x9000 ),
+    'LOADI' : ( _addr_rel, 0x8800 ),
+    'STORI' : ( _addr_rel, 0x9000 ),
     'OR'    : ( _addr_imm, 0x1800 ),
     'AND'   : ( _addr_imm, 0x2800 ),
     'XOR'   : ( _addr_imm, 0x3800 ),
@@ -215,7 +219,7 @@ def parse_lines(lines):
         if (line[0] != ' ') and (line[0] != '\t'):
             add_label(line.rstrip())
             if (phase == 2):
-                print "            ", line
+                print ("            ", line)
             continue
         #print "Line: '%s'" % line_strip
         line_split = line_strip.split(" ", 1)
@@ -231,7 +235,7 @@ def parse_lines(lines):
         except IndexError,e:
             raise ValueError("Value error in line %d" % (nr,))
         if (phase == 2):
-            print "%03X: %04X | " % (pc-1, code),line
+            print ("%03X: %04X | " % (pc-1, code),line)
     
 def resolve_immediates():
     global pc
@@ -268,7 +272,7 @@ if __name__ == "__main__":
     parse_lines(lines)
     for imm in imm_values:
         logger.info("PC: %03x: .dw $%04x" % (pc, imm))
-        print "%03X: %04X | IMM #%d" % (pc, imm, imm)
+        print ("%03X: %04X | IMM #%d" % (pc, imm, imm))
         _output_direct(imm)
         
     dump_bram_init()
