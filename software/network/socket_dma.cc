@@ -37,7 +37,11 @@ SocketDMA socket_dma; // global that causes the object to exist
 extern cart_def sid_cart;
 extern cart_def boot_cart;
 
-void sample_sid(void);
+void sample_sid(void) __attribute__((weak));
+void sample_sid(void)
+{
+
+}
 
 SocketDMA::SocketDMA() {
 	xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
