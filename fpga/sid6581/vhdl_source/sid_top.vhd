@@ -20,6 +20,7 @@ use work.io_bus_pkg.all;
 entity sid_top is
 generic (
     g_filter_div  : natural := 221; -- for 50 MHz
+    g_8voices     : boolean := false;
     g_num_voices  : natural := 16 );
 port (
     clock         : in  std_logic;
@@ -125,6 +126,8 @@ architecture structural of sid_top is
 begin
  
     i_regs: entity work.sid_regs
+    generic map (
+        g_8voices     => g_8voices )
     port map (
         clock       => clock,
         reset       => reset,
