@@ -10,7 +10,7 @@ use unisim.vcomponents.all;
 
 entity nano is
 generic (
-    g_big_endian  : boolean );
+    g_big_endian  : boolean := false );
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;

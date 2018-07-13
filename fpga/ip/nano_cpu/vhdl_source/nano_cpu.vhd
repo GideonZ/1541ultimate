@@ -26,20 +26,34 @@ port (
 end entity;
 
 architecture gideon of nano_cpu is
-    signal i_addr       : unsigned(9 downto 0);
-    signal inst         : std_logic_vector(15 downto 11) := (others => '0');
     signal accu         : unsigned(15 downto 0);
     signal branch_taken : boolean;
     signal n, z, c      : boolean;
-    signal stack_top    : std_logic_vector(i_addr'range);
     signal push         : std_logic;
     signal pop          : std_logic;
-    signal update_accu  : std_logic;
-    signal update_flag  : std_logic;
-    signal long_inst    : std_logic;
     
-    type t_state is (fetch_inst, decode_inst, data_state, external_data);
+    type t_state is (fetch_inst, decode_inst, indirect_load, indirect_store, external_read, external_write);
     signal state        : t_state;
+
+    type t_state_vector is record
+        state        : t_state;
+        i_addr       : unsigned(9 downto 0);
+        update_accu  : std_logic;
+        update_flags : std_logic;
+        alu_oper     : std_logic_vector(14 downto 12);
+    end record;
+
+    constant c_default : t_state_vector := (
+        state        => fetch_inst,
+        i_addr       => (others => '0'),
+        update_accu  => '0',
+        update_flags => '0',
+        alu_oper     => "000" );
+    
+    
+    signal cur, nxt : t_state_vector;
+    signal stack_top    : std_logic_vector(cur.i_addr'range);
+
 begin
     with ram_rdata(c_br_eq'range) select branch_taken <=
         z     when c_br_eq,    
@@ -52,103 +66,125 @@ begin
         true  when c_br_call,
         false when others;
         
-    with state select ram_addr <=
-        std_logic_vector(i_addr) when fetch_inst,
-        ram_rdata(ram_addr'range) when others;
-
     io_wdata  <= std_logic_vector(accu);
     ram_wdata <= std_logic_vector(accu);
-    ram_en    <= '0' when (state = decode_inst) and (ram_rdata(c_store'range) = c_store) else not stall;
-    
-    push <= '1' when (state = decode_inst) and (ram_rdata(c_br_call'range) = c_br_call) and (ram_rdata(c_branch'range) = c_branch) else '0';
-    pop  <= '1' when (state = decode_inst) and (ram_rdata(c_return'range) = c_return) else '0';
-    
-    with ram_rdata(inst'range) select long_inst <= 
-        '1' when c_store,
-        '1' when c_load_ind,
-        '1' when c_store_ind,
-        '0' when others;
-    
+
+    process(ram_rdata, cur, stack_top, branch_taken)
+        variable v_inst : std_logic_vector(15 downto 11);
+    begin
+        ram_we   <= '0';
+        ram_en   <= '0';
+        ram_addr <= (others => 'X');
+        io_addr  <= (others => 'X');
+        io_write <= '0';
+        io_read  <= '0';
+        push     <= '0';
+        pop      <= '0';
+        nxt      <= cur;
+                        
+        v_inst := ram_rdata(v_inst'range);
+        
+        case cur.state is
+        when fetch_inst =>
+            ram_addr <= std_logic_vector(cur.i_addr);
+            ram_en   <= '1';
+            nxt.i_addr <= cur.i_addr + 1;
+            nxt.state  <= decode_inst;
+            nxt.update_accu  <= '0';
+            nxt.update_flags <= '0';
+        
+        when decode_inst =>
+            nxt.alu_oper <= ram_rdata(nxt.alu_oper'range);
+            
+            -- IN instruction
+            if v_inst = c_in then
+                nxt.state <= external_read;
+                io_addr <= unsigned(ram_rdata(io_addr'range));
+                io_read <= '1';
+
+            -- ALU instruction
+            elsif ram_rdata(15) = '0' then
+                ram_addr <= ram_rdata(ram_addr'range);
+                ram_en   <= '1';
+                nxt.state <= fetch_inst;
+                nxt.update_accu <= ram_rdata(11);
+                nxt.update_flags <= '1';
+            -- BRANCH
+            elsif ram_rdata(c_branch'range) = c_branch then
+                if branch_taken then
+                    nxt.i_addr <= unsigned(ram_rdata(cur.i_addr'range));
+                end if;
+                if ram_rdata(c_br_call'range) = c_br_call then
+                    push <= '1';
+                end if;
+            -- SPECIALS
+            else
+                case v_inst is
+                when c_store =>
+                    ram_we <= '1';
+                when c_load_ind =>
+                    -- ram_addr(ram_addr'high downto 3) <= '1';
+                    -- nxt.offset <= unsigned(ram_data(11 downto 3));
+                    nxt.state <= indirect_load;
+                when c_store_ind =>
+                    -- ram_addr(ram_addr'high downto 3) <= '1';
+                    -- nxt.offset <= unsigned(ram_data(11 downto 3));
+                    nxt.state <= indirect_store;
+                when c_out =>
+                    io_addr <= unsigned(ram_rdata(io_addr'range));
+                    io_write <= '1';
+                    if ram_rdata(7) = '1' then -- optimization: for ulpi access only
+                        nxt.state <= external_write;
+                    end if;
+                when c_return =>                
+                    nxt.i_addr <= unsigned(stack_top);
+                    pop <= '1';
+                when others =>
+                    null;
+                end case;                
+            end if;
+            
+        when indirect_load =>
+            ram_addr <= ram_rdata(ram_addr'range);
+            ram_en   <= '1';
+            nxt.state <= fetch_inst;
+            nxt.update_accu  <= '1';
+            nxt.update_flags <= '1';
+            
+        when indirect_store =>
+            ram_addr  <= ram_rdata(ram_addr'range);
+            ram_en    <= '1';
+            ram_we    <= '1';
+            nxt.state <= fetch_inst;
+            
+        when external_read =>
+            io_read   <= '1';
+            io_addr <= unsigned(ram_rdata(io_addr'range));
+            nxt.update_accu  <= '1';
+            nxt.update_flags <= '1';
+            nxt.state <= fetch_inst;
+            
+        when external_write =>
+            io_write  <= '1';
+            io_addr <= unsigned(ram_rdata(io_addr'range));
+            nxt.state <= fetch_inst;
+            
+        when others =>
+            nxt.state <= fetch_inst;
+        
+        end case;
+    end process;
+
     process(clock)
     begin
         if rising_edge(clock) then
-            if stall='0' then
-                io_addr     <= unsigned(ram_rdata(io_addr'range));
-                update_accu <= '0';
-                update_flag <= '0';
+            if reset = '1' then
+                cur <= c_default;
+            elsif stall='0' then
+                cur <= nxt;
             end if;
-            io_write    <= '0';
-            io_read     <= '0';
-            ram_we      <= '0';
-                                                
-            case state is
-            when fetch_inst =>
-                i_addr <= i_addr + 1;
-                state <= decode_inst;
-                
-            when decode_inst =>
-                state <= fetch_inst;
-                inst <= ram_rdata(inst'range);
-                update_accu <= ram_rdata(11);
-                update_flag <= not ram_rdata(15);
-
-                -- special instructions
-                if ram_rdata(c_in'range) = c_in then
-                    io_read <= '1';
-                    state <= external_data;
-                elsif ram_rdata(c_branch'range) = c_branch then
-                    update_accu <= '0';
-                    update_flag <= '0';
-                    if branch_taken then
-                        i_addr <= unsigned(ram_rdata(i_addr'range));
-                    end if;
-                elsif ram_rdata(c_return'range) = c_return then
-                    i_addr <= unsigned(stack_top);
-                    update_accu <= '0';
-                    update_flag <= '0';
-                elsif ram_rdata(c_out'range) = c_out then
-                    io_write <= '1';
-                    if ram_rdata(7) = '1' then -- optimization: for ulpi access only
-                        state <= external_data;
-                    end if;
-                -- not so special instructions: alu instructions!
-                else
-                    if long_inst='1' then
-                        state <= data_state;
-                    end if;
-                    if ram_rdata(c_store'range) = c_store then
-                        ram_we <= '1';
-                    end if;
-                    if ram_rdata(c_store_ind'range) = c_store_ind then
-                        ram_we <= '1';
-                    end if;
-                end if;
-                    
-            when external_data =>
-                if stall = '0' then
-                    update_accu <= '0';
-                    update_flag <= '0';
-                    state <= fetch_inst;
-                end if;
-                
-            when data_state =>
-                if inst = c_load_ind then
-                    update_accu <= '1';
-                    update_flag <= '1';
-                end if;
-                state <= fetch_inst;
-                            
-            when others =>
-                state <= fetch_inst;
-            
-            end case;
-            
-            if reset='1' then
-                state  <= fetch_inst;
-                i_addr <= (others => '0');
-            end if;                
         end if;
-    end process;
+    end process;                
     
     i_alu: entity work.nano_alu
     port map (
@@ -157,9 +193,9 @@ begin
         
         value_in    => unsigned(ram_rdata),
         ext_in      => unsigned(io_rdata),
-        alu_oper    => inst(14 downto 12),
-        update_accu => update_accu,
-        update_flag => update_flag,
+        alu_oper    => cur.alu_oper,
+        update_accu => cur.update_accu,
+        update_flag => cur.update_flags,
         accu        => accu,
         z           => z,
         n           => n,
@@ -167,7 +203,7 @@ begin
 
     i_stack : entity work.distributed_stack
     generic map (
-        width => i_addr'length,
+        width => stack_top'length,
         simultaneous_pushpop => false )     
     port map (
         clock       => clock,
@@ -175,7 +211,7 @@ begin
         pop         => pop,
         push        => push,
         flush       => '0',
-        data_in     => std_logic_vector(i_addr),
+        data_in     => std_logic_vector(cur.i_addr),
         data_out    => stack_top,
         full        => open,
         data_valid  => open );
