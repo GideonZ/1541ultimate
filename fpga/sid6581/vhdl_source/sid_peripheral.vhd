@@ -22,6 +22,7 @@ use work.sid_io_regs_pkg.all;
 entity sid_peripheral is
 generic (
     g_filter_div  : natural := 221; -- for 50 MHz
+    g_8voices     : boolean := false;
     g_num_voices  : natural := 16 );
 port (
     clock         : in  std_logic;
@@ -52,8 +53,6 @@ architecture structural of sid_peripheral is
     signal sid_wren     : std_logic;
     signal sid_wdata    : std_logic_vector(7 downto 0);
     signal sid_rdata    : std_logic_vector(7 downto 0);
-
-    signal sid_write    : std_logic;
 begin
     -- first we split our I/O bus in max 4 ranges, of 2K each.
     i_split: entity work.io_bus_splitter
@@ -75,6 +74,7 @@ begin
 
     i_regs: entity work.sid_io_regs
     generic map (
+        g_8voices     => g_8voices,
         g_filter_div  => g_filter_div,
         g_num_voices  => g_num_voices )
     port map (
@@ -104,6 +104,7 @@ begin
     i_sid_engine: entity work.sid_top
     generic map (
         g_filter_div  => g_filter_div,
+        g_8voices     => g_8voices,
         g_num_voices  => g_num_voices )
     port map (
         clock         => clock,
@@ -123,7 +124,5 @@ begin
         start_iter    => start_iter,
         sample_left   => sample_left,
         sample_right  => sample_right );
-    
-    sid_write <= '1' when slot_req.bus_write='1' and slot_req.bus_address(15 downto 8)=X"D4" else '0';
     
 end structural;
