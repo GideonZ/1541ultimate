@@ -260,7 +260,7 @@ do_suspend
     AND   #3
     ADD   #LinkRegisterMapSuspended
     STORE _reset_temp
-    LOADI _reset_temp
+    LOADI _reset_temp,0
     OUTP  ULPI_W_FUNC_CTRL
 
     LOAD  LinkSpeed
@@ -393,12 +393,10 @@ _reset_end
     AND   #3
     ADD   #LinkRegisterMap
     STORE _reset_temp
-    LOADI _reset_temp
+    LOADI _reset_temp,0
     OUTP  ULPI_W_FUNC_CTRL
     OUTP  DISCONNECTED
     RET
-_reset_temp
-    .dw 0
 _reset_chirp_heard    
     LOAD  #2
     STORE LinkSpeed
@@ -442,9 +440,6 @@ _loop_timer_1
     SUB   #1
     BPL   _loop_timer_1
     RET
-
-temp
-    .dw 0
 
 ResetTimer
 DelayTimer
@@ -799,7 +794,7 @@ check_pipes
     LOAD  #0
     STORE PipeNumber
 _chk_pipe
-    LOADI PipeAddr
+    LOADI PipeAddr,0
     BEQ   _nxt_pipe
     STORE Current_Command
     AND   #CMD_REQ_PAUSED
@@ -822,13 +817,13 @@ _valid_pipe
     LOAD  PipeAddr
     ADD   #Offset_Command_Interval
     STORE temp
-    LOADI temp
+    LOADI temp,0
     STORE Interval
 
     LOAD  PipeAddr
     ADD   #Offset_Command_LastFrame
     STORE temp
-    LOADI temp
+    LOADI temp,0
     STORE LastFrame
     
     INP   FRAME_COUNTER
@@ -839,7 +834,7 @@ _valid_pipe
     
 _interval_ok
     INP   FRAME_COUNTER
-    STORI temp ;; still holds the address to LastFrame of command
+    STORI temp,0 ;; still holds the address to LastFrame of command
 
 _need_to_exectue
     CALL  attr_fifo_full
@@ -848,7 +843,7 @@ _need_to_exectue
     LOAD  Current_Command
     AND   #CMD_REQ_USEBLOCK
     BNE   _prepare_block
-    LOADI PipeAddr
+    LOADI PipeAddr,0
     AND   #CMD_REQ_USECIRC
     BNE   _prepare_circ
     ; invalid -> no memory address
@@ -860,7 +855,7 @@ store_updated_command
     ADD    #Offset_Command
     STORE  temp
     LOAD   Interval
-    STORI  temp
+    STORI  temp,0
     RET
 
 _add_block_offset
@@ -971,25 +966,25 @@ _other_params
     LOAD  PipeAddr
     ADD   #Offset_Command_DevEP
     STORE temp
-    LOADI temp
+    LOADI temp,0
     STORE Current_Command_DevEP
 
     LOAD  PipeAddr
     ADD   #Offset_Command_Length
     STORE temp
-    LOADI temp
+    LOADI temp,0
     STORE Current_Command_Length
 
     LOAD  PipeAddr
     ADD   #Offset_Command_MaxTrans
     STORE temp
-    LOADI temp
+    LOADI temp,0
     STORE Current_Command_MaxTrans
 
     LOAD  PipeAddr
     ADD   #Offset_Command_SplitCtl
     STORE temp
-    LOADI temp
+    LOADI temp,0
     STORE Current_Command_SplitCtl
     RET
 
@@ -1010,7 +1005,7 @@ blk_fifo_read
     LOAD  tail_pointer_blk
     ADD   #block_fifo
     STORE fifo_temp_addr
-    LOADI fifo_temp_addr
+    LOADI fifo_temp_addr,0
     RET
     
 blk_fifo_adv
@@ -1034,7 +1029,7 @@ attr_fifo_push
     ADD    #attrib_fifo
     STORE  fifo_temp_addr
     LOAD   fifo_temp_data
-    STORI  fifo_temp_addr
+    STORI  fifo_temp_addr,0
     LOAD   head_pointer_atr
     ADD    #1
     AND    #$7F
@@ -1049,8 +1044,6 @@ other_irq
 	RET
 
 fifo_temp_data
-    .dw 0
-fifo_temp_addr
     .dw 0
 AllowedErrors
     .dw 0
@@ -1079,8 +1072,6 @@ Current_Command_Result
 Current_Word_Offset
     .dw 0
     
-PipeAddr
-    .dw 0
 PipeNumber
     .dw 0
 Interval
@@ -1089,4 +1080,8 @@ LastFrame
     .dw 0
 BlockOffset
     .dw 0
-    
+
+fifo_temp_addr = 0x3FF
+temp           = 0x3FE
+_reset_temp    = 0x3FD
+PipeAddr       = 0x3FC
