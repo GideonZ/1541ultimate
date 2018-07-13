@@ -163,10 +163,6 @@ architecture structural of ultimate_mb_700a is
     signal audio_left  : signed(18 downto 0);
     signal audio_right : signed(18 downto 0);
 
-    -- debug
-    signal scale_cnt        : unsigned(11 downto 0) := X"000";
-    attribute iob : string;
-    attribute iob of scale_cnt : signal is "false";
 begin
     reset_in <= '1' when BUTTON="000" else '0'; -- all 3 buttons pressed
     button_i <= not BUTTON;
@@ -390,13 +386,6 @@ begin
         end if;
         if reset_in='1' then
             ulpi_reset_i <= '1';
-        end if;
-    end process;
-
-    process(ulpi_clock)
-    begin
-        if rising_edge(ulpi_clock) then
-            scale_cnt <= scale_cnt + 1;
         end if;
     end process;
 
