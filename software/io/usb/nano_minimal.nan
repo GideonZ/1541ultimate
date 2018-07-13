@@ -835,30 +835,11 @@ _valid_pipe
     SUB   LastFrame
     ;; accu now holds time since last
     CMP   Interval
-    BPL   _interval_ok
-    BRA    _nxt_pipe    
-
-store_last_frame
-    STORE  Interval
-    LOAD   PipeAddr
-    ADD    #Offset_Command_LastFrame
-    STORE  temp
-    LOAD   Interval
-    STORI  temp
-    RET
-        
-store_updated_command
-    STORE  Interval ;; just a temporary
-    LOAD   PipeAddr
-    ADD    #Offset_Command
-    STORE  temp
-    LOAD   Interval
-    STORI  temp
-    RET
-
+    BMI   _nxt_pipe
+    
 _interval_ok
     INP   FRAME_COUNTER
-    CALL   store_last_frame
+    STORI temp ;; still holds the address to LastFrame of command
 
 _need_to_exectue
     CALL  attr_fifo_full
@@ -872,6 +853,15 @@ _need_to_exectue
     BNE   _prepare_circ
     ; invalid -> no memory address
     BRA   _nxt_pipe    
+
+store_updated_command
+    STORE  Interval ;; just a temporary
+    LOAD   PipeAddr
+    ADD    #Offset_Command
+    STORE  temp
+    LOAD   Interval
+    STORI  temp
+    RET
 
 _add_block_offset
     LOAD  BlockOffset

@@ -14,6 +14,7 @@ imm_values = []
 
 nr = 0
 
+
 def _get_value_imm(str):
     if str[0] == '#':
         if phase == 1:
@@ -93,6 +94,29 @@ def _addr_imm(params, mnem, code):
     _output_direct(code)
     return code
 
+def _addr_rel(params, mnem, code):
+    parsed = params.split(',')
+    if len(parsed) < 2:
+        print "Syntax error in relative addressing mode: %03x: %s $%03x" % (pc, mnem, addr)
+        exit()
+        
+    addr = _get_value(parsed[0])
+    if phase == 2:
+        if (addr < 0x3F8) or (addr > 0x3FF):
+            print "Relative addressing base pointers shall be at $7F8-$7FF: %03x: %s $%03x" % (pc, mnem, addr)
+            exit()
+
+    offset = _get_value(parsed[1])
+    if offset > 0xFF:
+        print "Error, offset too large: %03x: %s $%03x,$%02x" % (pc, mnem, addr, offset)
+        exit() 
+    code |= ((addr & 0x07) << 8)
+    code |= offset
+    
+    logger.info("PC: %03x: %04x | %s $%03x,$%02x" % (pc, code, mnem, addr, offset))
+    _output_direct(code)
+    return code
+
 def _data(params, mnem, code):
     data = _get_value(params)
     logger.info("PC: %03x: %s $%04x" % (pc, mnem, data))
@@ -153,8 +177,8 @@ def dump_nan_file(filename):
 mnemonics = {
     'LOAD'  : ( _addr_imm, 0x0800 ),
     'STORE' : ( _addr,     0x8000 ),
-    'LOADI' : ( _addr,     0x8800 ),
-    'STORI' : ( _addr,     0x9000 ),
+    'LOADR' : ( _addr_rel, 0x8800 ),
+    'STORR' : ( _addr_rel, 0x9000 ),
     'OR'    : ( _addr_imm, 0x1800 ),
     'AND'   : ( _addr_imm, 0x2800 ),
     'XOR'   : ( _addr_imm, 0x3800 ),
