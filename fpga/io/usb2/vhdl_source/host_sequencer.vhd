@@ -222,7 +222,8 @@ begin
                         -- default response
                         usb_cmd_resp.no_data <= '1';
                         usb_cmd_resp.data_length <= (others => '0');
-    
+                        usb_cmd_resp.togglebit <= '0';
+                        
                         usb_tx_req_i.split_token.e  <= '0';
                         usb_tx_req_i.split_token.et <= usb_cmd_req.split_et;
                         usb_tx_req_i.split_token.sc <= usb_cmd_req.split_sc;

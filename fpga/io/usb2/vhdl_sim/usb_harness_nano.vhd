@@ -20,7 +20,6 @@ end entity;
 
 architecture arch of usb_harness_nano is
     signal sys_clock    : std_logic := '1';
-    signal sys_clock_2x : std_logic := '1';
     signal sys_reset    : std_logic;
     signal clock        : std_logic := '0';
     signal reset        : std_logic;
@@ -35,20 +34,8 @@ architecture arch of usb_harness_nano is
     signal ulpi_dir     : std_logic;
     signal ulpi_data    : std_logic_vector(7 downto 0);
 
-    signal SDRAM_CLK    : std_logic;
-    signal SDRAM_CKE    : std_logic;
-    signal SDRAM_CSn    : std_logic := '1';
-    signal SDRAM_RASn   : std_logic := '1';
-    signal SDRAM_CASn   : std_logic := '1';
-    signal SDRAM_WEn    : std_logic := '1';
-    signal SDRAM_DQM    : std_logic := '0';
-    signal SDRAM_A      : std_logic_vector(12 downto 0);
-    signal SDRAM_BA     : std_logic_vector(1 downto 0);
-    signal SDRAM_DQ     : std_logic_vector(7 downto 0) := (others => 'Z');
-
 begin
     sys_clock <= not sys_clock after 10 ns when not clocks_stopped;
-    sys_clock_2x <= not sys_clock_2x after 5 ns when not clocks_stopped;
     sys_reset <= '1', '0' after 50 ns;
     clock <= not clock after 8.333 ns when not clocks_stopped;
     reset <= '1', '0' after 250 ns;
@@ -64,6 +51,7 @@ begin
     
     i_host: entity work.usb_host_nano
     generic map (
+        g_big_endian => true,
         g_simulation => true )
     port map (
         clock       => clock,
@@ -94,53 +82,15 @@ begin
 
     i_device: entity work.usb_device_model;
 
-    i_mem_ctrl: entity work.ext_mem_ctrl_v5
+    i_memory: entity work.mem_bus_32_slave_bfm
     generic map (
-        g_simulation => true )
-    port map (
-        clock       => sys_clock,
-        clk_2x      => sys_clock_2x,
-        reset       => sys_reset,
-    
-        inhibit     => '0',
-        is_idle     => open,
-    
-        req         => sys_mem_req,
-        resp        => sys_mem_resp,
-    
-        SDRAM_CLK   => SDRAM_CLK,
-        SDRAM_CKE   => SDRAM_CKE,
-        SDRAM_CSn   => SDRAM_CSn,
-        SDRAM_RASn  => SDRAM_RASn,
-        SDRAM_CASn  => SDRAM_CASn,
-        SDRAM_WEn   => SDRAM_WEn,
-        SDRAM_DQM   => SDRAM_DQM,
-    
-        SDRAM_BA    => SDRAM_BA,
-        SDRAM_A     => SDRAM_A,
-        SDRAM_DQ    => SDRAM_DQ );
-
-    ram: entity work.dram_8
-    generic map(
-        g_cas_latency => 3,
-        g_burst_len_r => 4,
-        g_burst_len_w => 4,
-        g_column_bits => 10,
-        g_row_bits    => 13,
-        g_bank_bits   => 2
+        g_name    => "memory",
+        g_latency => 3
     )
-    port map(
-        CLK           => SDRAM_CLK,
-        CKE           => SDRAM_CKE,
-        A             => SDRAM_A,
-        BA            => SDRAM_BA,
-        CSn           => SDRAM_CSn,
-        RASn          => SDRAM_RASn,
-        CASn          => SDRAM_CASn,
-        WEn           => SDRAM_WEn,
-        DQM           => SDRAM_DQM,
-        DQ            => SDRAM_DQ
+    port map (
+        clock     => sys_clock,
+        req       => sys_mem_req,
+        resp      => sys_mem_resp
     );
-
 
 end arch;

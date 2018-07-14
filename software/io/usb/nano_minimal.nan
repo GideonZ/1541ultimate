@@ -25,7 +25,13 @@ Circ_Offset             = $3E3
 MemBlock_Base_High      = $3E4
 MemBlock_Base_Low       = $3E5
 
-RAM_STATUS            = $3E6
+RAM_STATUS              = $3E6
+
+Simulation      = $3EB
+DO_SUSPEND      = $3EC
+DO_RESET        = $3ED
+LinkSpeed       = $3EE
+
 AbortCurrentCommand   = $3EF
 User_Command          = $3F0
 User_Command_DevEP    = $3F1
@@ -41,10 +47,10 @@ head_pointer_atr = 0x3F9 ; updated by nano only
 tail_pointer_blk = 0x3FA ; updated by nano only
 head_pointer_blk = 0x3FB ; updated by software only
 
-DO_SUSPEND      = $3FC
-DO_RESET        = $3FD
-LinkSpeed       = $3FE
-Simulation      = $3FF
+PipeAddr       = 0x3FC
+_reset_temp    = 0x3FD
+temp           = 0x3FE
+fifo_temp_addr = 0x3FF
 
 ; Read registers
 FILTERED_STAT_1 = $39
@@ -122,6 +128,9 @@ ULPI_R_VENDOR      = $80
 ULPI_R_PRODUCT_LOW = $82
 
 begin
+    LOAD  Simulation
+    BNE   startsim
+    
     ; turn off power first
     LOAD  #$06
     OUTP  ULPI_W_OTG_CONTROL
@@ -228,6 +237,7 @@ _delay
     STORE DelayTimer
     BNE   _delay
     RET    
+    
 
 check_disconnect
     INP   DISCONNECTED
@@ -238,6 +248,17 @@ check_disconnect
 _no_disconnect
     RET
 
+startsim
+    INP   ULPI_R_PRODUCT_LOW
+    LOAD  #$66
+    OUTP  ULPI_W_OTG_CONTROL  ; turn on our power
+    LOAD  #$45
+    OUTP  ULPI_W_FUNC_CTRL
+    LOAD LinkSpeed
+    OUTP SPEED
+    OUTP  SET_SOF_ENABLE
+    ; fall through into main loop
+    
 main_loop
     CALL  check_disconnect
     BNE   _disconnected
@@ -785,7 +806,6 @@ _check_nyet_response_out
     BEQ  _out_success ; Should switch to PING, but we ignore that for now
     BRA  _try_complete_out
 
-
     
 ; Pipe check loop
 check_pipes
@@ -794,7 +814,7 @@ check_pipes
     LOAD  #0
     STORE PipeNumber
 _chk_pipe
-    LOADI PipeAddr,0
+    LOADI PipeAddr,Offset_Command
     BEQ   _nxt_pipe
     STORE Current_Command
     AND   #CMD_REQ_PAUSED
@@ -814,16 +834,10 @@ _pipes_done
     
 _valid_pipe
     ; check interval
-    LOAD  PipeAddr
-    ADD   #Offset_Command_Interval
-    STORE temp
-    LOADI temp,0
+    LOADI PipeAddr,Offset_Command_Interval
     STORE Interval
 
-    LOAD  PipeAddr
-    ADD   #Offset_Command_LastFrame
-    STORE temp
-    LOADI temp,0
+    LOADI PipeAddr,Offset_Command_LastFrame
     STORE LastFrame
     
     INP   FRAME_COUNTER
@@ -834,7 +848,7 @@ _valid_pipe
     
 _interval_ok
     INP   FRAME_COUNTER
-    STORI temp,0 ;; still holds the address to LastFrame of command
+    STORI PipeAddr,Offset_Command_LastFrame
 
 _need_to_exectue
     CALL  attr_fifo_full
@@ -843,20 +857,12 @@ _need_to_exectue
     LOAD  Current_Command
     AND   #CMD_REQ_USEBLOCK
     BNE   _prepare_block
-    LOADI PipeAddr,0
+    LOAD  Current_Command
     AND   #CMD_REQ_USECIRC
     BNE   _prepare_circ
     ; invalid -> no memory address
     BRA   _nxt_pipe    
 
-store_updated_command
-    STORE  Interval ;; just a temporary
-    LOAD   PipeAddr
-    ADD    #Offset_Command
-    STORE  temp
-    LOAD   Interval
-    STORI  temp,0
-    RET
 
 _add_block_offset
     LOAD  BlockOffset
@@ -886,8 +892,8 @@ _prepare_block
     CALL  _other_params
     CALL  _execute_cmd
 
-    LOAD  Current_Command
-    CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
+    LOAD   Current_Command
+    STORI  PipeAddr,Offset_Command  ; We do this to make sure we will expect the correct toggle next time
 
     ;; Now what will we tell the host?  Was the transfer successful?
     LOAD  Transferred
@@ -916,7 +922,7 @@ _prepare_circ
 	; when the transfer had an error, we pause the pipe, which also updates the command
 	; and when it is successful, pause pipe will also be called, see below
     ; LOAD  Current_Command
-    ; CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
+    ; STOREI PipeAddr,Offset_Command  ;  We do this to make sure we will expect the correct toggle next time
 
     ;; Now what will we tell the host?  Was the transfer successful?
     LOAD  Transferred
@@ -945,7 +951,8 @@ pause_pipe
     LOAD  Current_Command
 	 ; we add the pause bit, so that it will only occur once
     OR    #CMD_REQ_PAUSED
-    BRA  store_updated_command ; We do this to make sure we will expect the correct toggle next time
+    STORI PipeAddr,Offset_Command  ; We do this to make sure we will expect the correct toggle next time
+    RET
 
 _unsuccessful
     LOAD Current_Command_Result
@@ -963,28 +970,16 @@ _unsuccessful
     BRA  _nxt_pipe
 
 _other_params
-    LOAD  PipeAddr
-    ADD   #Offset_Command_DevEP
-    STORE temp
-    LOADI temp,0
+    LOADI PipeAddr,Offset_Command_DevEP 
     STORE Current_Command_DevEP
 
-    LOAD  PipeAddr
-    ADD   #Offset_Command_Length
-    STORE temp
-    LOADI temp,0
+    LOADI PipeAddr,Offset_Command_Length
     STORE Current_Command_Length
 
-    LOAD  PipeAddr
-    ADD   #Offset_Command_MaxTrans
-    STORE temp
-    LOADI temp,0
+    LOADI PipeAddr,Offset_Command_MaxTrans
     STORE Current_Command_MaxTrans
 
-    LOAD  PipeAddr
-    ADD   #Offset_Command_SplitCtl
-    STORE temp
-    LOADI temp,0
+    LOADI PipeAddr,Offset_Command_SplitCtl
     STORE Current_Command_SplitCtl
     RET
 
@@ -1080,8 +1075,3 @@ LastFrame
     .dw 0
 BlockOffset
     .dw 0
-
-fifo_temp_addr = 0x3FF
-temp           = 0x3FE
-_reset_temp    = 0x3FD
-PipeAddr       = 0x3FC

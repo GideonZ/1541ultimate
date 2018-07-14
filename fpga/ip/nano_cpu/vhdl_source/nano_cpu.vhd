@@ -72,7 +72,7 @@ begin
     ram_wdata <= std_logic_vector(accu);
     io_addr   <= unsigned(ram_rdata(io_addr'range));
 
-    process(ram_rdata, cur, stack_top, branch_taken)
+    process(ram_rdata, cur, stack_top, branch_taken, stall)
         variable v_inst : std_logic_vector(15 downto 11);
     begin
         ram_we   <= '0';
@@ -100,9 +100,12 @@ begin
             
             -- IN instruction
             if v_inst = c_in then
-                nxt.state <= external;
+                if ram_rdata(7) = '1' then -- optimization: for ulpi access only
+                    nxt.state <= external;
+                end if;
                 io_read <= '1';
-
+                nxt.update_accu  <= '1';
+                nxt.update_flags <= '1';
             -- ALU instruction
             elsif ram_rdata(15) = '0' then
                 ram_en_i <= '1';
@@ -121,8 +124,10 @@ begin
                 case v_inst is
                 when c_store =>
                     ram_we <= '1';
+                    ram_en_i <= '1';
                 when c_load_ind | c_store_ind =>
                     ram_addr(ram_addr'high downto 3) <= (others => '1');
+                    ram_en_i <= '1';
                     nxt.offset <= unsigned(ram_rdata(10 downto 3));
                     nxt.state <= indirect;
                 when c_out =>
@@ -154,7 +159,7 @@ begin
             ram_addr  <= std_logic_vector(unsigned(ram_rdata(ram_addr'range)) + cur.offset);
             -- differentiate between load and store (read and write)
             if cur.alu_oper = c_alu_ext then
-                io_read   <= '1';
+                io_read   <= stall;
                 nxt.update_accu  <= '1';
                 nxt.update_flags <= '1';
             else

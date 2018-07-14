@@ -77,6 +77,8 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
+            crc_sync <= '0';
+            
             case state is
             when idle =>
                 tx_start  <= '0';
@@ -110,6 +112,7 @@ begin
                     tx_start <= '1';
                     tx_valid <= '1';
                     tx_data_i <= X"4" & usb_tx_req.pid;
+                    crc_sync <= '1';
                     state <= wait4next;
                 end if;             
             
@@ -241,7 +244,7 @@ begin
     end process;
 
     crc_dvalid   <= '1' when (state = transmit) and tx_next='1' else '0';
-    crc_sync     <= '1' when (state = idle) else '0';
+    -- crc_sync     <= '1' when (state = idle) else '0';
     busy         <= '0' when (state = idle) else '1'; -- or (state = gap) else '1';
         
     g_token: if g_support_token generate
