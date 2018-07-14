@@ -55,7 +55,7 @@ begin
         begin
             L1: while true loop
                 io_read(io => io, addr => Command, data => res);
-                if res = X"00" then
+                if res(1) = '1' then -- check if paused bit has been set
                     exit L1;
                 end if;
             end loop;
@@ -86,6 +86,8 @@ begin
         io_write_word(Command_MemHi,    X"0004");
         io_write_word(Command_MemLo,    X"1328");
         io_write_word(Command_Length,   X"0008");
+        io_write_word(Command_Timeout,  X"0004");
+        io_write_word(Command_Started,  X"0000");
         io_write_word(Command,          X"8040"); -- setup with mem read
 
         wait_command_done;
@@ -119,8 +121,8 @@ begin
 
         sctb_open_region("Testing Out request", 0);
         start := now;
-        --io_write_word(Command_MemHi,    X"0001");
-        --io_write_word(Command_MemLo,    X"0402");
+        io_write_word(Command_MemHi,    X"0004");
+        io_write_word(Command_MemLo,    X"1328");
         io_write_word(Command_MaxTrans, X"0200");
         io_write_word(Command_DevEP,    X"0005");
         io_write_word(Command_Length,   std_logic_vector(to_unsigned(c_tx_size, 16)));

@@ -92,7 +92,8 @@ begin
             nxt.state  <= decode_inst;
             nxt.update_accu  <= '0';
             nxt.update_flags <= '0';
-        
+            nxt.offset <= X"00";
+            
         when decode_inst =>
             nxt.alu_oper <= ram_rdata(cur.alu_oper'range);
             nxt.state <= fetch_inst;
