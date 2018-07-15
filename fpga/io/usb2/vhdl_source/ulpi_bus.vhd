@@ -34,6 +34,10 @@ port (
     tx_start    : in    std_logic;
     tx_next     : out   std_logic;
 
+    -- for the tracer
+    rx_cmd      : out   std_logic;
+    rx_ourdata  : out   std_logic;
+
     rx_data     : out   std_logic_vector(7 downto 0);
     rx_register : out   std_logic;
     rx_last     : out   std_logic;
@@ -83,11 +87,13 @@ begin
     rx_valid     <= ulpi_dir_d1 and ulpi_dir_d2;
     rx_last      <= not ulpi_dir_d1 and ulpi_dir_d2;
     rx_status_i  <= ulpi_dir_d1 and ulpi_dir_d2 and not ulpi_nxt_d1 and not rx_reg_i;
-
     rx_reg_i     <= (ulpi_dir_d1 and ulpi_dir_d2 and not ulpi_dir_d3) and
                     (not ulpi_nxt_d1 and not ulpi_nxt_d2 and ulpi_nxt_d3) and
                     reg_cmd_d3;
 
+    rx_cmd       <= rx_status_i;
+    rx_ourdata   <= not ulpi_dir_d1 and ulpi_nxt_d1; -- next = 1 and dir = 0, same delay as rx_data (1)
+    
     rx_register  <= rx_reg_i;
     reg_ack      <= rx_reg_i or tx_reg_i;
     
