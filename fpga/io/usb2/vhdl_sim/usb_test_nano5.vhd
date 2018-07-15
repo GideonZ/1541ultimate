@@ -16,13 +16,13 @@ use work.tl_string_util_pkg.all;
 use work.nano_addresses_pkg.all;
 use work.tl_flat_memory_model_pkg.all;
 
-entity usb_test_nano1 is
+entity usb_test_nano5 is
     generic (
-        g_report_file_name : string := "work/usb_test_nano1.rpt"
+        g_report_file_name : string := "work/usb_test_nano5.rpt"
     );
 end entity;
 
-architecture arch of usb_test_nano1 is
+architecture arch of usb_test_nano5 is
     signal clocks_stopped   : boolean := false;
 
     constant c_rx_size  : integer := 4096 + 512;
@@ -83,16 +83,21 @@ begin
         write_memory_8(mem, X"0004132E", X"77");        
         write_memory_8(mem, X"0004132F", X"88");        
 
+        io_write_word(Command_SplitCtl, X"8132"); -- Hub Address 1, Port 2, Speed = FS, EP = interrupt 
         io_write_word(Command_DevEP,    X"0000");
         io_write_word(Command_MaxTrans, X"0040");
         io_write_word(Command_MemHi,    X"0004");
         io_write_word(Command_MemLo,    X"1328");
         io_write_word(Command_Length,   X"0008");
-        io_write_word(Command_Timeout,  X"0004");
+        io_write_word(Command_Timeout,  X"0444");
         io_write_word(Command_Started,  X"0000");
         io_write_word(Command,          X"8040"); -- setup with mem read
 
         wait_command_done;
+        io_read_word(Command_Result, data);
+        sctb_trace("Command result: " & hstr(data));
+        io_read_word(Command_Length, data);
+        sctb_trace("Command length: " & hstr(data));
         sctb_close_region;
 
         sctb_open_region("Testing In request", 0);
@@ -101,6 +106,7 @@ begin
         io_write_word(Command_DevEP,    X"0004");
         io_write_word(Command_MaxTrans, X"0100");
         io_write_word(Command_Length,   X"0FFF");
+        io_write_word(Command_Started,  X"0000");
         io_write_word(Command,          X"4042"); -- in with mem write
         wait_command_done;
         stop := now;
@@ -154,4 +160,4 @@ begin
         
 end arch;
 
--- restart; mem load -infile nano_code.hex -format hex /usb_test_nano1/i_harness/i_host/i_nano/i_buf_ram/mem; run 1100 us
+-- restart; mem load -infile nano_code.hex -format hex /usb_test_nano5/i_harness/i_host/i_nano/i_buf_ram/mem; run 2000 us

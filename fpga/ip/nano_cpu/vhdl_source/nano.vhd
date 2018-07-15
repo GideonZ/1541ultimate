@@ -46,9 +46,9 @@ architecture structural of nano is
     signal sys_io_req_regs  : t_io_req;
     signal sys_io_resp_regs : t_io_resp;
 
-    signal sys_core_reset   : std_logic;
-    signal usb_reset_tig    : std_logic;
-    signal usb_core_reset   : std_logic;    
+    signal sys_core_reset   : std_logic := '1';
+    signal usb_reset_tig    : std_logic := '1';
+    signal usb_core_reset   : std_logic := '1';    
     signal bram_data        : std_logic_vector(7 downto 0);
 begin
     i_split: entity work.io_bus_splitter

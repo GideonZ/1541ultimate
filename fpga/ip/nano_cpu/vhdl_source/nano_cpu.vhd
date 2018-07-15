@@ -33,7 +33,6 @@ architecture gideon of nano_cpu is
     signal pop          : std_logic;
     
     type t_state is (fetch_inst, decode_inst, indirect, external);
-    signal state        : t_state;
 
     type t_state_vector is record
         state        : t_state;

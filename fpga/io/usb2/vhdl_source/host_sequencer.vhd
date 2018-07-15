@@ -15,6 +15,9 @@ use ieee.numeric_std.all;
 use work.usb_pkg.all;
 use work.usb_cmd_pkg.all;
 
+--use work.tl_sctb_pkg.all;
+--use work.tl_string_util_pkg.all;
+
 entity host_sequencer is
 generic (
     g_buffer_depth_bits : natural := 11 ); -- 2K
@@ -48,8 +51,8 @@ end entity;
 
 architecture rtl of host_sequencer is
     -- length identifiers to ram address counters
-    signal tx_length        : unsigned(9 downto 0);
-    signal tx_no_data       : std_logic;
+    signal tx_length        : unsigned(9 downto 0) := (others => '0');
+    signal tx_no_data       : std_logic := '1';
     signal receive_en       : std_logic := '0';
     signal rx_length        : unsigned(9 downto 0);
     signal rx_no_data       : std_logic;
@@ -87,6 +90,9 @@ begin
         begin
             if rising_edge(clock) then
                 if usb_rx.data_start = '1' or send_packet_cmd = '1' then
+--                    if (send_packet_cmd = '0') then
+--                        sctb_trace("Receiving data in buffer " & hstr(buffer_index));
+--                    end if;
                     buffer_addr_i <= (others => '0');
                     rx_no_data <= '1';
                 elsif (receive_en = '1' and usb_rx.data_valid = '1') or
@@ -106,6 +112,7 @@ begin
                 case state is
                 when idle =>
                     if send_packet_cmd = '1' then
+--                        sctb_trace("Sending data from buffer " & hstr(buffer_index));
                         state <= prefetch;
                     end if;
 
