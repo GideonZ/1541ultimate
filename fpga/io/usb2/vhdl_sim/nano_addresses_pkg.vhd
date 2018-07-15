@@ -29,6 +29,7 @@ package nano_addresses_pkg is
     constant c_nano_dosuspend  : unsigned(19 downto 0) := X"007D8";
     constant c_nano_doreset    : unsigned(19 downto 0) := X"007DA";
     constant c_nano_busspeed   : unsigned(19 downto 0) := X"007DC";
+    constant c_nano_numpipes   : unsigned(19 downto 0) := X"007DE";
     constant c_nano_enable     : unsigned(19 downto 0) := X"00800";
 
 end package;

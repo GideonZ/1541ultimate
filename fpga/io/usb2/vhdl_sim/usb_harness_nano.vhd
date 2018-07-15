@@ -14,7 +14,8 @@ use work.mem_bus_pkg.all;
 
 entity usb_harness_nano is
 port (
-    clocks_stopped : in boolean := false );
+    interrupt       : out std_logic;
+    clocks_stopped  : in boolean := false );
 
 end entity;
 
@@ -51,7 +52,7 @@ begin
     
     i_host: entity work.usb_host_nano
     generic map (
-        g_big_endian => true,
+        g_big_endian => false,
         g_simulation => true )
     port map (
         clock       => clock,
@@ -61,6 +62,7 @@ begin
         ulpi_stp    => ulpi_stp,
         ulpi_data   => ulpi_data,
 
+        sys_irq     => interrupt,
         sys_clock   => sys_clock,
         sys_reset   => sys_reset,
         sys_mem_req => sys_mem_req,
