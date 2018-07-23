@@ -11,6 +11,7 @@
 #define CTRL_CMD_REBOOT         0x06
 #define CTRL_CMD_DECODE_TRACK   0x11
 #define CTRL_CMD_ENCODE_TRACK   0x12
+#define CTRL_CMD_GET_HWINFO     0x28
 
 class ControlTarget : CommandTarget
 {
