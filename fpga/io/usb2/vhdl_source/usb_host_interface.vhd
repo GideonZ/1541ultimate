@@ -7,7 +7,6 @@ use work.usb_pkg.all;
 
 entity usb_host_interface is
 generic (
-    g_rx_all        : boolean := false;
     g_simulation    : boolean := false );
 port (
     clock       : in    std_logic;
@@ -101,8 +100,8 @@ begin
 
     i_rx: entity work.ulpi_rx
         generic map (
-            g_support_split  => g_rx_all,
-            g_support_token  => g_rx_all ) -- hosts do not receive tokens
+            g_support_split  => false,
+            g_support_token  => false ) -- hosts do not receive tokens
         port map (
             clock           => clock,
             reset           => reset,
@@ -148,7 +147,7 @@ begin
             tx_valid    => tx_valid,
             tx_next     => tx_next,
             tx_data     => tx_data,
-            --rx_busy     => rx_store,
+            rx_busy     => rx_store,
             
             -- interface to DATA CRC (shared resource)
             crc_sync    => tx_crc_sync,

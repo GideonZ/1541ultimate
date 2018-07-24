@@ -891,7 +891,15 @@ _chk_pipe
     LOAD  Descriptor
     CMP   TTDescriptor
     BEQ   _nxt_pipe
+
+_read_stable
     LOADI Descriptor,Offset_Command
+    STORE temp
+    LOADI Descriptor,Offset_Command
+    CMP   temp
+    BNE   _read_stable
+
+    LOAD  temp    
     BEQ   _nxt_pipe
     AND   #CMD_REQ_PAUSED
     BEQ   _valid_pipe
@@ -991,8 +999,7 @@ attr_fifo_push
     RET
     
 status_irq
-	LOAD  #$FFFF
-other_irq
+	OR    #$FFF0
 	CALL  attr_fifo_push
     OUTP  SEND_INTERRUPT
 	RET
