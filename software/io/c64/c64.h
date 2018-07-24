@@ -162,6 +162,7 @@
 #define CART_REU 0x80 
 #define CART_ETH 0x40
 #define CART_RAM 0x20
+#define CART_UCI 0x100
 
 #define CFG_C64_CART        0xC1
 #define CFG_C64_CUSTOM      0xC2
@@ -193,7 +194,7 @@ typedef struct _cart
     uint8_t  id;
     void *custom_addr; // dynamically filled in
     uint32_t length;
-    uint8_t  type;
+    uint16_t  type;
 } cart_def;
 
 

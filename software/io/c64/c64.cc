@@ -93,7 +93,7 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_TAR_NTSC,  0x000000, 0x10000,  0x06 | CART_ETH },
                           { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0E },
                           { FLASH_ID_KCS,       0x000000, 0x04000,  0x10 },
-                          { 0x00,               0x000000, 0x04000,  0x15 }, // GeoRam
+                          { 0x00,               0x000000, 0x04000,  0x15 | CART_UCI }, // GeoRam
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
 /*
@@ -228,6 +228,8 @@ void C64::set_emulation_flags(cart_def *def)
                 printf("disabled.\n");
             }
         }
+    }
+    if (def->type & (CART_REU | CART_UCI)) {
         if (getFpgaCapabilities() & CAPAB_COMMAND_INTF) {
             int choice = cfg->get_value(CFG_CMD_ENABLE);
             CMD_IF_SLOT_ENABLE = !!choice;
@@ -769,8 +771,8 @@ void C64::set_cartridge(cart_def *def)
     }
     lastCartridgeId = def->id;
 
-    printf("Setting cart mode %b. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
-    C64_CARTRIDGE_TYPE = def->type & 0x1F;
+    printf("Setting cart mode %u. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
+    C64_CARTRIDGE_TYPE = (uint8_t) (def->type & 0x1F);
 //    push_event(e_cart_mode_change, NULL, def->type);
 
     set_emulation_flags(def);
