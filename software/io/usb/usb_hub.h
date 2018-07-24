@@ -17,10 +17,12 @@ class UsbHubDriver : public UsbDriver
     bool compound;
 
     int  irq_transaction;
+    struct t_pipe ipipe;
+
     int  reset_timeout;
     uint8_t buf[64];
     uint8_t dummy[16];
-    volatile uint8_t irq_data[4];
+    volatile uint8_t irq_data[64];
     
     UsbBase   *host;
     UsbDevice *device;
@@ -40,7 +42,7 @@ public:
 	void pipe_error(int pipe);
 	void reset_port(int port);
 
-	void interrupt_handler(uint8_t *, int);
+	void interrupt_handler();
 
 	UsbDevice *getChild(int index) {
 		if (index < 0) {

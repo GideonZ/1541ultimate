@@ -142,7 +142,6 @@ extern uint8_t _nano_minimal_b_start;
 extern uint32_t _nano_minimal_b_size;
 
 uint16_t *attr_fifo_data = (uint16_t *)ATTR_FIFO_BASE;
-uint16_t *block_fifo_data = (uint16_t *)BLOCK_FIFO_BASE;
 
 static void poll_usb2(void *a)
 {
@@ -162,13 +161,11 @@ void UsbBase :: initHardware()
 {
 	irq_count = 0;
 	prev_status = 0xFF;
-    blockBufferBase = NULL;
-    circularBufferBase = NULL;
 
     if(getFpgaCapabilities() & CAPAB_USB_HOST2) {
     	mutex = xSemaphoreCreateMutex();
     	enumeration_lock = false;
-    	queue = xQueueCreate(64, sizeof(struct usb_event));
+    	queue = xQueueCreate(16, sizeof(uint16_t));
         cleanup_queue = xQueueCreate(16, sizeof(UsbDevice *));
         commandSemaphore = xSemaphoreCreateBinary();
         NANO_START = 0;
@@ -206,17 +203,18 @@ void UsbBase :: input_task_start(void *u)
 void UsbBase :: input_task_impl(void)
 {
 	printf("USB input task is now running. this = %p\n", this);
-	struct usb_event ev;
+	uint16_t fifoWord;
+
 	while(1) {
 		if (!queue) {
 			printf("Bleh!\n");
 			vTaskDelay(10);
 			continue;
 		}
-		if (xQueueReceive(queue, &ev, 5000) == pdTRUE) {
+		if (xQueueReceive(queue, &fifoWord, 5000) == pdTRUE) {
 			// printf("{%04x:%04x}", ev.fifo_word[0], ev.fifo_word[1]);
 			PROFILER_SUB = 5;
-			process_fifo(&ev);
+			process_fifo(fifoWord);
 		} else {
 			printf("@");
 		}
@@ -224,17 +222,18 @@ void UsbBase :: input_task_impl(void)
 }
 
 // Called from event context
-void UsbBase :: process_fifo(struct usb_event *ev)
+void UsbBase :: process_fifo(uint16_t pipe)
 {
-	int pipe = ev->fifo_word[0] & 0x0F;
 	int error = 0;
 
-	if ((ev->fifo_word[0] & 0xFFF0) == 0xFFF0) {
-		if (pipe == 15) {
-			printf("USB Other IRQ. Status = %b\n", ev->fifo_word[1]);
-			handle_status(ev->fifo_word[1]);
-			return;
-		} else {
+	if ((pipe & 0xFFF0) == 0xFFF0) {
+	    uint16_t status = pipe & 0xF;
+	    printf("USB Other IRQ. Status = %b\n", status);
+        handle_status(status);
+        return;
+    }
+
+/*
 			// pause_input_pipe(pipe);
 			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, ev->fifo_word[1]);
 			void *object = inputPipeObjects[pipe];
@@ -243,16 +242,8 @@ void UsbBase :: process_fifo(struct usb_event *ev)
 			}
 			return;
 		}
-	}
+*/
 
-	uint8_t *buffer = 0;
-	if (inputPipeBufferMethod[pipe] == e_block) {
-		uint16_t idx = (ev->fifo_word[0] & 0xFFF0) / 384;
-		free_map[idx] = 1; // allocated
-		buffer = (uint8_t *) & blockBufferBase[ev->fifo_word[0] & 0xFFF0];
-	} else {
-		buffer = (uint8_t *) & circularBufferBase[ev->fifo_word[0] & 0xFFF0];
-	}
 	void *object = inputPipeObjects[pipe];
 
 	PROFILER_SUB = 3;
@@ -260,7 +251,7 @@ void UsbBase :: process_fifo(struct usb_event *ev)
 		printf("** INVALID USB PACKET RECEIVED IN QUEUE! Pipe : %d\n", pipe);
 		return;
 	}
-	inputPipeCallBacks[pipe](buffer, ev->fifo_word[1], object);
+	inputPipeCallBacks[pipe](object);
 	PROFILER_SUB = 12;
 }
 
@@ -306,41 +297,8 @@ void UsbBase :: bus_reset()
 	set_bus_speed(NANO_LINK_SPEED);
 }
 
-// Called from where?  During Init, and from
-// anyone that uses the blocks. In this case only the tcpip thread.
-// But is there only one?  Should we protect this? TODO
-bool UsbBase :: put_block_fifo(uint16_t in)
-{
-	uint16_t tail;
-
-	do {
-		tail = BLOCK_FIFO_TAIL;
-	} while(tail != BLOCK_FIFO_TAIL);
-
-	uint16_t idx = (in / 384);
-	if (!free_map[idx]) {
-		ioWrite8(UART_DATA, '^');
-		return true;
-	}
-	free_map[idx] = 0;
-
-	uint16_t head = BLOCK_FIFO_HEAD;
-	uint16_t head_next = head + 1;
-	if (head_next == BLOCK_FIFO_ENTRIES)
-		head_next = 0;
-	if (head_next == tail) {
-		printf("block fifo full! free dropped\n");
-		return false;
-	}
-
-	block_fifo_data[head] = in;
-	BLOCK_FIFO_HEAD = head_next;
-	return true;
-}
-
 
 ///////////////////////////////////////////////////////
-
 // Called from poll / cleanup context
 void UsbBase :: init(void)
 {
@@ -352,18 +310,14 @@ void UsbBase :: init(void)
 
 	NANO_START = 0;
 
-	// initialize the buffers
-    blockBufferBase = new uint32_t[384 * BLOCK_FIFO_ENTRIES];
-    circularBufferBase = new uint8_t[4096];
-
     // load the nano CPU code and start it.
     int size = (int)&_nano_minimal_b_size;
     uint8_t *src = &_nano_minimal_b_start;
     uint16_t *dst = (uint16_t *)NANO_BASE;
     uint16_t temp;
     for(int i=0;i<size;i+=2) {
-    	temp = (uint16_t(*(src++)) << 8);
-    	temp |= uint16_t(*(src++));
+    	temp = uint16_t(*(src++));
+        temp |= (uint16_t(*(src++)) << 8);
     	*(dst++) = temp;
 	}
     for(int i=size;i<2048;i+=2) {
@@ -373,22 +327,6 @@ void UsbBase :: init(void)
     uint32_t ul = *pul;
     printf("Nano CPU based USB Controller: %d bytes loaded from %p. First DW: %08x\n", size, &_nano_minimal_b_start, ul);
 
-    printf("Circular Buffer Base = %p\n", circularBufferBase);
-    memset (circularBufferBase, 0xe0, 4096);
-
-	USB2_CIRC_MEMADDR_START_HI  = ((uint32_t)circularBufferBase) >> 16;
-	USB2_CIRC_MEMADDR_START_LO  = ((uint32_t)circularBufferBase) & 0xFFFF;
-	USB2_CIRC_BUF_SIZE		  	= 4096;
-	USB2_CIRC_BUF_OFFSET		= 0;
-	USB2_BLOCK_BASE_HI 			= ((uint32_t)blockBufferBase) >> 16;
-	USB2_BLOCK_BASE_LO  		= ((uint32_t)blockBufferBase) & 0xFFFF;
-
-	for (int i=0;i<BLOCK_FIFO_ENTRIES;i++) {
-		block_fifo_data[i] = uint16_t(i * 384);
-		free_map[i] = 0;
-	}
-	BLOCK_FIFO_HEAD = BLOCK_FIFO_ENTRIES - 1;
-	state = 0;
 	ioWrite8(ITU_IRQ_CLEAR,  0x04);
 	ioWrite8(ITU_IRQ_ENABLE, 0x04);
 	NANO_START = 1;
@@ -435,12 +373,16 @@ void UsbBase :: deinit(void)
 // Called from protected function 'allocate input pipe'
 int UsbBase :: open_pipe()
 {
-	uint16_t *pipe = (uint16_t *)USB2_PIPES_BASE;
-	for(int i=0;i<USB2_NUM_PIPES;i++) {
-		if (*pipe == 0) {
-			return i;
+    volatile t_usb_descriptor *descr = &USB2_DESCRIPTORS[1];
+
+	for(int i=1;i<USB2_NUM_PIPES;i++) {
+		if (descr->command == 0) {
+		    if (NANO_NUM_PIPES < (i+1)) {
+		        NANO_NUM_PIPES = i+1;
+		    }
+		    return i;
 		}
-		pipe += 8;
+		descr++;
 	}
 	return -1;
 }
@@ -448,82 +390,74 @@ int UsbBase :: open_pipe()
 // Called from protected function 'allocate input pipe'
 void UsbBase :: init_pipe(int index, struct t_pipe *init)
 {
-	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
-	pipe[PIPE_OFFS_DevEP]    = init->DevEP;
-	pipe[PIPE_OFFS_Length]   = init->Length;
-	pipe[PIPE_OFFS_MaxTrans] = init->MaxTrans;
-	pipe[PIPE_OFFS_Interval] = init->Interval;
-	pipe[PIPE_OFFS_SplitCtl] = init->SplitCtl;
+    volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(index);
+
+    descr->devEP    = init->DevEP;
+	descr->maxTrans = init->MaxTrans;
+	descr->interval = init->Interval;
+	descr->splitCtl = init->SplitCtl;
+	descr->command  = 0;
+
+	// the rest is set by the resume command (which should maybe be called trigger)
 
 	if (init->Command) {
-		pipe[PIPE_OFFS_Command] = init->Command | UCMD_PAUSED;
-		inputPipeCommand[index] = init->Command;
+		descr->command = init->Command | UCMD_PAUSED;
 	} else {
 		uint16_t command = UCMD_MEMWRITE | UCMD_DO_DATA | UCMD_IN;
-		if (init->Length <= 16) {
-			command |=  UCMD_USE_CIRC;
-			inputPipeBufferMethod[index] = e_circular;
-		} else {
-			command |= UCMD_USE_BLOCK;
-			inputPipeBufferMethod[index] = e_block;
-		}
-		pipe[PIPE_OFFS_Command] = command | UCMD_PAUSED;
-		inputPipeCommand[index] = command;
+		init->Command = command;
+		descr->command = command | UCMD_PAUSED;
 	}
 }
 
 // Still used? -> Yes
 void UsbBase :: pause_input_pipe(int index)
 {
-	uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
-	uint16_t command = pipe[PIPE_OFFS_Command];
+    volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(index);
+
+	uint16_t command = descr->command;
 	if (command & UCMD_PAUSED) {
 		printf("Pause was already set %04x\n", command);
 		return;
 	}
 	command |= UCMD_PAUSED;
-	pipe[PIPE_OFFS_Command] = command;
+	descr->command = command;
 }
 
 // Called from event context (pipe input processor)
 void UsbBase :: resume_input_pipe(int index)
 {
-	volatile uint16_t *pipe = (uint16_t *)(USB2_PIPES_BASE + USB2_PIPE_SIZE * index);
-	uint16_t command = pipe[PIPE_OFFS_Command];
+    volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(index);
+    struct t_pipe *init = inputPipeDefinitions[index];
+
+    descr->length   = init->Length;
+    uint32_t address = (uint32_t)init->buffer;
+    descr->memHi    = address >> 16;
+    descr->memLo    = address & 0xFFFF;
+    descr->started  = 0;
+
+    uint16_t command = descr->command;
 	command &= ~UCMD_PAUSED;
-	pipe[PIPE_OFFS_Command] = command;
+    descr->command = command;
 	//printf("Input pipe %d resumed: %04x\n", index, pipe[PIPE_OFFS_Command]);
-}
-
-void UsbBase :: free_input_buffer(int inpipe, uint8_t *buffer)
-{
-	if (inputPipeBufferMethod[inpipe] != e_block)
-		return;
-
-	// block returned to queue!
-	unsigned int offset = (unsigned int)buffer - (unsigned int)blockBufferBase;
-	put_block_fifo(uint16_t(offset >> 2));
 }
 
 void UsbBase :: close_pipe(int pipe)
 {
-	uint16_t *p = (uint16_t *)USB2_PIPES_BASE;
-	p[(8 * pipe)] = 0;
+    volatile t_usb_descriptor *descr = &USB2_DESCRIPTORS[pipe];
+    descr->command = 0;
 }
 
 uint16_t UsbBase :: complete_command(int timeout)
 {
 	uint16_t result;
 
+    volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
+
 	if (! xSemaphoreTake(commandSemaphore, timeout)) {
-		USB2_CMD_Abort = 1;
-		if (! xSemaphoreTake(commandSemaphore, 100)) {
-			printf("Aborted command didn't return.\n");
-			// FIXME: Recover from this state by a full reset
-		}
-		result = USB2_CMD_Result | URES_ABORTED;
+	    pause_input_pipe(0);
+	    result = descr->result | URES_ABORTED;
 	} else {
-		result = USB2_CMD_Result & ~URES_ABORTED;
+		result = descr->result & ~URES_ABORTED;
 	}
 	return result;
 }
@@ -554,9 +488,9 @@ void UsbBase :: power_off()
     }
 
     printf("Turning USB bus off...\n");
-    USB2_CMD_Command = UCMD_OFF;
+    descr->command = UCMD_OFF;
     vTaskDelay(10);
-    USB2_CMD_Command = 0;
+    descr->command = 0;
 
     xSemaphoreGive(mutex);
 */
@@ -570,14 +504,13 @@ void UsbBase :: doPing(struct t_pipe *pipe)
 	}
 
 	uint16_t result;
+    volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
 	do {
-		USB2_CMD_DevEP  = pipe->DevEP;
-		USB2_CMD_Length = 0;
-		USB2_CMD_Command = UCMD_PING;
-
-		while(USB2_CMD_Command)
-			;
-		result = USB2_CMD_Result;
+		descr->devEP   = pipe->DevEP;
+		descr->length  = 0;
+		descr->command = UCMD_PING;
+		descr->started = 0;
+		result = complete_command(100);
 	} while ((result & URES_RESULT_MSK) == URES_NAK);
 	pipe->needPing = 0;
 }
@@ -598,15 +531,17 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
     memcpy(setupBuffer, out, 8);
     uint32_t outAddress = (uint32_t)setupBuffer;
 
-    USB2_CMD_DevEP  = pipe->DevEP;
-	USB2_CMD_Length = outlen;
-	USB2_CMD_MaxTrans = pipe->MaxTrans;
-	USB2_CMD_MemHi = outAddress >> 16;
-	USB2_CMD_MemLo = outAddress & 0xFFFF;
-	USB2_CMD_SplitCtl = pipe->SplitCtl;
+    volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
+    descr->devEP  = pipe->DevEP;
+	descr->length = outlen;
+	descr->maxTrans = pipe->MaxTrans;
+	descr->memHi = outAddress >> 16;
+	descr->memLo = outAddress & 0xFFFF;
+	descr->splitCtl = pipe->SplitCtl;
+	descr->started  = 0;
 
 	uint16_t result = 0;
-	USB2_CMD_Command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_SETUP;
+	descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_SETUP;
 
 	result = complete_command(100);
 	if ((result & URES_RESULT_MSK) != URES_ACK) {
@@ -615,19 +550,20 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 		return -1;
 	}
 
-	USB2_CMD_Length = inlen;
+	descr->length = inlen;
 	uint16_t command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT;// start with toggle bit 1
 
 	if (in) {
-		USB2_CMD_MemHi = ((uint32_t)in) >> 16;
-		USB2_CMD_MemLo = ((uint32_t)in) & 0xFFFF;
+		descr->memHi = ((uint32_t)in) >> 16;
+		descr->memLo = ((uint32_t)in) & 0xFFFF;
 		command |= UCMD_MEMWRITE;
 	}
-	USB2_CMD_Command = command;
+    descr->started = 0;
+	descr->command = command;
 
 	result = complete_command(100);
 
-	uint32_t transferred = inlen - USB2_CMD_Length;
+	uint32_t transferred = inlen - descr->length;
 	// printf("In: %d bytes (Result = %4x)\n", transferred, result);
 	// dump_hex(read_buf, transferred);
 
@@ -637,8 +573,9 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 	}
 
 	if (transferred > 0) {
-		USB2_CMD_Length = 0;
-		USB2_CMD_Command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT | UCMD_RETRY_ON_NAK; // send zero bytes as out packet
+		descr->length = 0;
+	    descr->started = 0;
+		descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT | UCMD_RETRY_ON_NAK; // send zero bytes as out packet
 
 		result = complete_command(100);
 
@@ -666,31 +603,35 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
     	printf("USB unavailable.\n");
     	return -9;
     }
-	USB2_CMD_DevEP  = pipe->DevEP;
-	USB2_CMD_Length = setup_len;
-	USB2_CMD_MaxTrans = pipe->MaxTrans;
-	USB2_CMD_MemHi = ((uint32_t)setup_out) >> 16;
-	USB2_CMD_MemLo = ((uint32_t)setup_out) & 0xFFFF;
-	USB2_CMD_SplitCtl = pipe->SplitCtl;
-	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
+    volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
+	descr->devEP  = pipe->DevEP;
+	descr->length = setup_len;
+	descr->maxTrans = pipe->MaxTrans;
+	descr->memHi = ((uint32_t)setup_out) >> 16;
+	descr->memLo = ((uint32_t)setup_out) & 0xFFFF;
+	descr->splitCtl = pipe->SplitCtl;
+	descr->started = 0;
+	descr->command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
 
 	uint16_t result = complete_command(100);
 
 	// printf("Setup Result: %04x\n", USB2_CMD_Result);
 
-	USB2_CMD_Length = data_len;
-	USB2_CMD_MemHi = ((uint32_t)data_out) >> 16;
-	USB2_CMD_MemLo = ((uint32_t)data_out) & 0xFFFF;
-	USB2_CMD_Command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // start with toggle bit 1;
+	descr->length = data_len;
+	descr->memHi = ((uint32_t)data_out) >> 16;
+	descr->memLo = ((uint32_t)data_out) & 0xFFFF;
+    descr->started = 0;
+	descr->command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // start with toggle bit 1;
 
 	result = complete_command(100);
 
-	uint32_t transferred = data_len - USB2_CMD_Length;
+	uint32_t transferred = data_len - descr->length;
 	// printf("Out: %d bytes (Result = %4x)\n", transferred, USB2_CMD_Result);
 	// dump_hex(read_buf, transferred);
 
-	USB2_CMD_Length = 0;
-	USB2_CMD_Command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT; // do an in transfer to end control write
+	descr->length = 0;
+    descr->started = 0;
+	descr->command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT; // do an in transfer to end control write
 
 	result = complete_command(100);
 
@@ -700,16 +641,17 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
 }
 
 // Protected by Mutex
-int  UsbBase :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(uint8_t *buf, int len, void *obj), void *object)
+int  UsbBase :: allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, void *object)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("USB unavailable.\n");
     	return -9;
     }
 	int index = open_pipe();
-	if (index >= 0) {
+	if (index > 0) {
 		inputPipeCallBacks[index] = callback;
 		inputPipeObjects[index] = object;
+		inputPipeDefinitions[index] = pipe;
 
 		init_pipe(index, pipe);
 	}
@@ -720,6 +662,13 @@ int  UsbBase :: allocate_input_pipe(struct t_pipe *pipe, void(*callback)(uint8_t
 */
 	xSemaphoreGive(mutex);
 	return index;
+}
+
+int  UsbBase :: getReceivedLength(int index)
+{
+    volatile t_usb_descriptor *descr = &USB2_DESCRIPTORS[index];
+    struct t_pipe *pipe = inputPipeDefinitions[index];
+    return (pipe->Length) - (descr->length);
 }
 
 void UsbBase :: free_input_pipe(int index)
@@ -746,6 +695,7 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 	// printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
 
 	uint8_t sub = PROFILER_SUB; PROFILER_SUB = 13;
+    volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
 
 /*
     if (((uint32_t)buf) & 3) {
@@ -758,27 +708,27 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
     uint32_t addr = ((uint32_t)buf);
 	int total_trans = 0;
 
-
 	uint16_t result;
 	int current_len = 0;
 
 	do {
 		current_len = (len > 49152) ? 49152 : len;
-		USB2_CMD_DevEP    = pipe->DevEP;
-		USB2_CMD_MaxTrans = pipe->MaxTrans;
-		USB2_CMD_SplitCtl = pipe->SplitCtl;
-		USB2_CMD_MemHi    = addr >> 16;
-		USB2_CMD_MemLo    = addr & 0xFFFF;
-		USB2_CMD_Length   = current_len;
+		descr->devEP    = pipe->DevEP;
+		descr->maxTrans = pipe->MaxTrans;
+		descr->splitCtl = pipe->SplitCtl;
+		descr->memHi    = addr >> 16;
+		descr->memLo    = addr & 0xFFFF;
+		descr->length   = current_len;
 
 		uint16_t cmd = pipe->Command | UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_RETRY_ON_NAK;
 		//printf("%d: %4x ", len, cmd);
 
-		USB2_CMD_Command = cmd;
+		descr->started = 0;
+		descr->command = cmd;
 		// wait until it gets zero again
 		result = complete_command(timeout);
 
-		pipe->Command = (result & URES_TOGGLE); // that's what we start with next time.
+		pipe->Command = (descr->command & URES_TOGGLE); // that's what we start with next time.
 
 		if (((result & URES_RESULT_MSK) != URES_ACK) && ((result & URES_RESULT_MSK) != URES_NYET)) {
 			printf("Bulk Out error: $%4x, Transferred: %d\n", result, total_trans);
@@ -786,7 +736,7 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 		}
 
 		//printf("Res = %4x\n", result);
-		int transferred = current_len - USB2_CMD_Length;
+		int transferred = current_len - descr->length;
 		total_trans += transferred;
 		addr += transferred;
 		len -= transferred;
@@ -812,23 +762,26 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
     	while(1);
     }
 
+    volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
+
     // printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
 	uint32_t addr = (uint32_t)buf;
 	int total_trans = 0;
 
-	USB2_CMD_DevEP    = pipe->DevEP;
-	USB2_CMD_MaxTrans = (len > pipe->MaxTrans) ? pipe->MaxTrans : len;
-	USB2_CMD_SplitCtl = pipe->SplitCtl;
-	USB2_CMD_MemHi = addr >> 16;
-	USB2_CMD_MemLo = addr & 0xFFFF;
+	descr->devEP    = pipe->DevEP;
+	descr->maxTrans = (len > pipe->MaxTrans) ? pipe->MaxTrans : len;
+	descr->splitCtl = pipe->SplitCtl;
+	descr->memHi = addr >> 16;
+	descr->memLo = addr & 0xFFFF;
 
 	do {
 		int current_len = (len > 49152) ? 49152 : len;
-		USB2_CMD_Length = current_len;
+		descr->length = current_len;
 		uint16_t cmd = pipe->Command | UCMD_MEMWRITE | UCMD_DO_DATA | UCMD_IN | UCMD_RETRY_ON_NAK;
 
 		//printf("%d: %4x \n", len, cmd);
-		USB2_CMD_Command = cmd;
+		descr->started = 0;
+		descr->command = cmd;
 		uint16_t result = complete_command(timeout);
 
 		if ((result & URES_RESULT_MSK) != URES_PACKET) {
@@ -842,11 +795,11 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 		}
 
 		//printf("Res = %4x\n", result);
-		int transferred = current_len - USB2_CMD_Length;
+		int transferred = current_len - descr->length;
 		total_trans += transferred;
 		addr += transferred;
 		len -= transferred;
-		pipe->Command = (result & URES_TOGGLE) ^ URES_TOGGLE; // that's what we start with next time.
+		pipe->Command = descr->command & URES_TOGGLE; // that's what we start with next time.
 		if (transferred != current_len) { // some bytes remained?
 			//printf("CMD res: %4x\n", result);
 			//dump_hex_relative(buf, transferred);
@@ -893,25 +846,14 @@ BaseType_t UsbBase :: irq_handler(void)
 
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 	while (get_fifo(&read)) {
-		if (read == 0xFFFE) {
+		if (read == 0x0000) {
 			xSemaphoreGiveFromISR(commandSemaphore, &xHigherPriorityTaskWoken);
-			state = 0;
 			continue;
-		} else if (read == 0xFFFF) {
-			event.fifo_word[0] = read;
-			event.fifo_word[1] = USB2_STATUS;
-			state = 2;
 		} else {
-			event.fifo_word[state++] = read;
-		}
-
-		if (state == 2) {
-			state = 0;
-			//printf("[%04x:%04x]", event.fifo_word[0], event.fifo_word[1]);
-			if (!queue) {
+		    if (!queue) {
 				ioWrite8(UART_DATA, '#');
 			} else {
-				xQueueSendFromISR(queue, &event, &xHigherPriorityTaskWoken);
+				xQueueSendFromISR(queue, &read, &xHigherPriorityTaskWoken);
 			}
 		}
 	}
