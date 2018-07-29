@@ -480,8 +480,10 @@ void TreeBrowser :: paste(void)
 		const char *fn = clipboard.getFileNameByIndex(i);
 		FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath());  // from path, filename, dest path
 		if (res != FR_OK) {
+	                screen->restore();
 			printf("Error while copying: %d %s to %s\n", res, fn, this->getPath());
 			int resp = user_interface->popup("Copy error occurred. Continue?", BUTTON_YES | BUTTON_NO);
+			screen->backup();
 			if (resp == BUTTON_NO)
 				break;
 		}

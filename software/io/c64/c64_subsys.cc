@@ -10,6 +10,9 @@
 #include <ctype.h>
 #include "init_function.h"
 #include "userinterface.h"
+#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
+#include "u64.h"
+#endif
 
 /* other external references */
 extern uint8_t _bootcrt_65_start;
@@ -60,6 +63,10 @@ int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list
 	int count = 2;
 	item_list.append(new Action("Reset C64", SUBSYSID_C64, MENU_C64_RESET));
 	item_list.append(new Action("Reboot C64", SUBSYSID_C64, MENU_C64_REBOOT));
+#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
+	item_list.append(new Action("Poweroff C64", SUBSYSID_C64, MENU_C64_POWEROFF));
+	count++;
+#endif
     //item_list.append(new Action("Hard System Reboot", SUBSYSID_C64, MENU_C64_HARD_BOOT));
     //item_list.append(new Action("Boot Alternate FPGA", SUBSYSID_C64, MENU_C64_BOOTFPGA));
     //item_list.append(new Action("Save SID Trace", SUBSYSID_C64, MENU_C64_TRACE));
@@ -142,6 +149,14 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 		c64->unfreeze(0, 0);
 		c64->reset();
 		break;
+#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
+    case MENU_C64_POWEROFF:
+                U64_POWER_REG = 0x2B;
+                U64_POWER_REG = 0xB2;
+                U64_POWER_REG = 0x2B;
+                U64_POWER_REG = 0xB2;
+		break;
+#endif
 	case MENU_C64_REBOOT:
 		if(c64->client) { // we can't execute this yet
 			c64->client->release_host(); // disconnect from user interface
@@ -488,12 +503,6 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 		volatile uint8_t *d = dest;
 		for (int i=0;i<transferred;i++) {
 			*(d++) = dma_load_buffer_b[i];
-		}
-		d = dest;
-		for (int i=0; i<transferred; i++, d++) {
-			if (*d != dma_load_buffer_b[i]) {
-				printf("Verify error: %b <> %b @ %7x\n", *d, dma_load_buffer[i], d);
-			}
 		}
 		if (transferred < block) {
 			break;
