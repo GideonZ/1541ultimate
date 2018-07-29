@@ -16,6 +16,7 @@ class FileSystemD64;
 class DirInD64
 {
     int idx;
+    int curr_t, curr_s;
     uint8_t *visited;  // this should probably be a bit vector
 
     FileSystemD64 *fs;
@@ -26,6 +27,7 @@ public:
     FRESULT open(FileInfo *info);
     FRESULT close(void);
     FRESULT read(FileInfo *f);
+    friend class FileSystemD64;
 };
 
 class FileInD64
@@ -39,16 +41,22 @@ class FileInD64
     int num_blocks;
     int dir_sect;
     int dir_entry_offset;
+    int section;
+    uint8_t vlir[256];
+    uint8_t tmpBuffer[256];
+    bool isVlir;
     uint8_t *visited;  // this should probably be a bit vector
 
     FileSystemD64 *fs;
 
     FRESULT visit(void);
+    FRESULT followChain(int track, int sector, int& noSectors, int& bytesLastSector);
 public:
     FileInD64(FileSystemD64 *);
     ~FileInD64() { }
 
     FRESULT open(FileInfo *info, uint8_t flags);
+    FRESULT openCVT(FileInfo *info, uint8_t flags,int,int,int);
     FRESULT close(void);
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT write(const void *buffer, uint32_t len, uint32_t *transferred);
