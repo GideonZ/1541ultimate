@@ -37,6 +37,9 @@ U64Config u64_configurator;
 #define CFG_CHROMA_DELAY      0x0A
 #define CFG_COLOR_CODING      0x0B
 #define CFG_HDMI_ENABLE       0x0C
+#define CFG_SID1_TYPE		  0x0D
+#define CFG_SID2_TYPE		  0x0E
+#define CFG_PADDLE_EN		  0x0F
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -79,6 +82,7 @@ static const char *en_dis4[] = { "Disabled", "Enabled" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
+static const char *sid_types[] = { "None", "6581", "8580", "SidFX", "fpgaSID" };
 static const char *audio_sel[] = { "Emulated SID 1", "Emulated SID 2", "SID Socket 1", "SID Socket 2",
 								   "Sampler Left", "Sampler Right", "Drive A", "Drive B", "Tape Read", "Tape Write" };
 // Ultimate:
@@ -105,10 +109,13 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 */
 
 struct t_cfg_definition u64_cfg[] = {
-    { CFG_SCANLINES,    		CFG_TYPE_ENUM, "HDMI Scanlines",          	   "%s", en_dis4,      0,  1, 0 },
+    { CFG_SCANLINES,    		CFG_TYPE_ENUM, "HDMI Scan lines",          	   "%s", en_dis4,      0,  1, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
+    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  4, 0 },
+    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  4, 0 },
     { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 23, 0 },
     { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 23, 0 },
+    { CFG_PADDLE_EN,			CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
     { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 23, 0 },
     { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 23, 0 },
     { CFG_AUDIO_LEFT_OUT,       CFG_TYPE_ENUM, "Output Selector Left",         "%s", audio_sel,    0,  9, 0 },
@@ -149,6 +156,9 @@ void U64Config :: effectuate_settings()
         return;
 
     C64_SCANLINES    =  cfg->get_value(CFG_SCANLINES);
+    C64_PADDLE_EN    =  cfg->get_value(CFG_PADDLE_EN);
+    C64_SID1_EN      =  cfg->get_value(CFG_SID1_TYPE) ? 1 : 0;
+    C64_SID2_EN      =  cfg->get_value(CFG_SID2_TYPE) ? 1 : 0;
     C64_SID1_BASE    =  u64_sid_offsets[cfg->get_value(CFG_SID1_ADDRESS)];
     C64_SID2_BASE    =  u64_sid_offsets[cfg->get_value(CFG_SID2_ADDRESS)];
     C64_EMUSID1_BASE =  u64_sid_offsets[cfg->get_value(CFG_EMUSID1_ADDRESS)];

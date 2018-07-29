@@ -57,6 +57,9 @@
 #define C64_EMUSID1_MASK (*(volatile uint8_t *)(C64_IO_BASE + 0x0E))
 #define C64_EMUSID2_MASK (*(volatile uint8_t *)(C64_IO_BASE + 0x0F))
 #define C64_CORE_VERSION (*(volatile uint8_t *)(C64_IO_BASE + 0x10))
+#define C64_SID1_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x11))
+#define C64_SID2_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x12))
+#define C64_PADDLE_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x13))
 
 typedef struct {
     uint8_t VID_HSYNCPOL;
