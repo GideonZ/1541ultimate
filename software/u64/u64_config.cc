@@ -40,11 +40,18 @@ U64Config u64_configurator;
 #define CFG_SID1_TYPE		  0x0D
 #define CFG_SID2_TYPE		  0x0E
 #define CFG_PADDLE_EN		  0x0F
-
+#define CFG_STEREO_DIFF	      0x10
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
 
-const char *u64_sid_base[] = { "$D400-$D7FF", "$D400", "$D420", "$D440", "$D480", "$D500", "$D600", "$D700",
+const char *u64_sid_base[] = { "$D400-$D7FF", // 10 bits
+		                       "$D400-$D5FF", // 9 bits
+		                       "$D600-$D7FF", // 9 bits
+		                       "$D400-$D4FF", // 8 bits
+		                       "$D500-$D5FF", // 8 bits
+		                       "$D600-$D6FF", // 8 bits
+		                       "$D700-$D7FF", // 8 bits
+		                   "$D400", "$D420", "$D440", "$D480", "$D500", "$D600", "$D700",
                            "$DE00", "$DE20", "$DE40", "$DE60",
                            "$DE80", "$DEA0", "$DEC0", "$DEE0",
                            "$DF00", "$DF20", "$DF40", "$DF60",
@@ -68,16 +75,19 @@ const char *scan_modes[] = {
 	"720(1440)x480 54MHz",
 };
 
-uint8_t u64_sid_offsets[] = { 0x40, 0x40, 0x42, 0x44, 0x48, 0x50, 0x60, 0x70,
+uint8_t u64_sid_offsets[] = { 0x40, 0x40, 0x60, 0x40, 0x50, 0x60, 0x70,
+						  0x40, 0x42, 0x44, 0x48, 0x50, 0x60, 0x70,
 						  0xE0, 0xE2, 0xE4, 0xE6, 0xE8, 0xEA, 0xEC, 0xEE,
 						  0xF0, 0xF2, 0xF4, 0xF6, 0xF8, 0xFA, 0xFC, 0xFE,
 						  };
 
-uint8_t u64_sid_mask[]    = { 0xC0, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
+uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0,
+						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  };
 
+static const char *stereo_addr[] = { "A5", "A8" };
 static const char *en_dis4[] = { "Disabled", "Enabled" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
@@ -113,9 +123,10 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
     { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  4, 0 },
     { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  4, 0 },
-    { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 23, 0 },
-    { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 23, 0 },
+    { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 29, 0 },
+    { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 29, 0 },
     { CFG_PADDLE_EN,			CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
+    { CFG_STEREO_DIFF,			CFG_TYPE_ENUM, "Ext StereoSID addrline",       "%s", stereo_addr,  0,  1, 0 },
     { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 23, 0 },
     { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 23, 0 },
     { CFG_AUDIO_LEFT_OUT,       CFG_TYPE_ENUM, "Output Selector Left",         "%s", audio_sel,    0,  9, 0 },
@@ -157,6 +168,7 @@ void U64Config :: effectuate_settings()
 
     C64_SCANLINES    =  cfg->get_value(CFG_SCANLINES);
     C64_PADDLE_EN    =  cfg->get_value(CFG_PADDLE_EN);
+    C64_STEREO_ADDRSEL = cfg->get_value(CFG_STEREO_DIFF);
     C64_SID1_EN      =  cfg->get_value(CFG_SID1_TYPE) ? 1 : 0;
     C64_SID2_EN      =  cfg->get_value(CFG_SID2_TYPE) ? 1 : 0;
     C64_SID1_BASE    =  u64_sid_offsets[cfg->get_value(CFG_SID1_ADDRESS)];
