@@ -60,6 +60,7 @@
 #define C64_SID1_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x11))
 #define C64_SID2_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x12))
 #define C64_PADDLE_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x13))
+#define C64_STEREO_ADDRSEL (*(volatile uint8_t *)(C64_IO_BASE + 0x14))
 
 typedef struct {
     uint8_t VID_HSYNCPOL;
