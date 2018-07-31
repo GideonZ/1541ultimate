@@ -29,6 +29,9 @@ _rom_pack_start:
 .incbin "kcs.bin"
 .incbin "epyx.bin"
 .incbin "kernal.901227-03.bin"
+.incbin "basic.901226-01.bin"
+.incbin "characters.901225-01.bin"
+
 
 .global _rom_pack_end
 _rom_pack_end:

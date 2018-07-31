@@ -31,6 +31,10 @@
 #include "userinterface.h"
 #include "ext_i2c.h"
 
+#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
+#include "u64.h"
+#endif
+
 extern "C" {
     #include "dump_hex.h"
 }
@@ -39,6 +43,8 @@ extern "C" {
 #define CMD_SET_DRIVEROM 0x4202
 #define CMD_SET_CARTROM  0x4203
 #define CMD_WRITE_EEPROM 0x4204
+#define CMD_SET_BASIC    0x4205
+#define CMD_SET_CHARSET  0x4206
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_bin(FileType :: getFileTypeFactory(), FileTypeBin :: test_type);
@@ -72,9 +78,19 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
     }
 #endif
 
-    if (size == 8192) {
+    if (size == 4096) {
+#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
+      list.append(new Action("Use as Charset ROM", FileTypeBin :: execute_st, CMD_SET_CHARSET, (int)this));
+      count++;
+#endif
+    }
+    else if (size == 8192) {
       list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
       count++;
+#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
+      list.append(new Action("Use as BASIC ROM", FileTypeBin :: execute_st, CMD_SET_BASIC, (int)this));
+      count++;
+#endif
     }
     else if (size == 16384 || size == 32768) {
         list.append(new Action("Use as Drive ROM", FileTypeBin :: execute_st, CMD_SET_DRIVEROM, (int)this));
@@ -131,7 +147,17 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
       size = 8192;
       id = FLASH_ID_KERNAL_ROM;
       break;
+
+    case CMD_SET_BASIC:
+      size = 8192;
+      id = FLASH_ID_BASIC_ROM;
+      break;
       
+    case CMD_SET_CHARSET:
+      size = 4096;
+      id = FLASH_ID_CHARGEN_ROM;
+      break;
+
     case CMD_SET_CARTROM:
       size = node->getInfo()->size;
       id = FLASH_ID_CUSTOM_ROM;

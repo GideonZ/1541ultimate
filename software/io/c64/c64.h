@@ -185,6 +185,8 @@
 #define CFG_C64_REU_PRE     0x80
 #define CFG_C64_REU_IMG     0x81
 #define CFG_C64_REU_OFFS    0x82
+#define CFG_C64_ALT_BASI    0x83
+#define CFG_C64_ALT_CHAR    0x84
 
 #define ID_MODPLAYER 0xAA
 #define ID_SIDCART   0xBB
@@ -232,6 +234,8 @@ class C64 : public GenericHost, ConfigurableObject
     void set_cartridge(cart_def *def);
     void set_emulation_flags(cart_def *def);
     void disable_kernal();
+    void disable_basic();
+    void disable_chargen();
 
     void stop(bool do_raster = true);
     void resume(void);
@@ -289,6 +293,8 @@ public:
     void unfreeze(void *def, int mode);  // called from crt... hmm FIXME
 
     static void enable_kernal(uint8_t *rom, bool fastreset = false);
+    static void enable_basic(uint8_t *rom);
+    static void enable_chargen(uint8_t *rom);
     void init_cartridge(void);
     void cartridge_test(void);
     void reset(void);
