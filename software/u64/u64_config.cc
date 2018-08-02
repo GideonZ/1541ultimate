@@ -41,6 +41,29 @@ U64Config u64_configurator;
 #define CFG_SID2_TYPE		  0x0E
 #define CFG_PADDLE_EN		  0x0F
 #define CFG_STEREO_DIFF	      0x10
+
+#define CFG_MIXER0_VOL        0x20
+#define CFG_MIXER1_VOL        0x21
+#define CFG_MIXER2_VOL        0x22
+#define CFG_MIXER3_VOL        0x23
+#define CFG_MIXER4_VOL        0x24
+#define CFG_MIXER5_VOL        0x25
+#define CFG_MIXER6_VOL        0x26
+#define CFG_MIXER7_VOL        0x27
+#define CFG_MIXER8_VOL        0x28
+#define CFG_MIXER9_VOL        0x29
+
+#define CFG_MIXER0_PAN        0x30
+#define CFG_MIXER1_PAN        0x31
+#define CFG_MIXER2_PAN        0x32
+#define CFG_MIXER3_PAN        0x33
+#define CFG_MIXER4_PAN        0x34
+#define CFG_MIXER5_PAN        0x35
+#define CFG_MIXER6_PAN        0x36
+#define CFG_MIXER7_PAN        0x37
+#define CFG_MIXER8_PAN        0x38
+#define CFG_MIXER9_PAN        0x39
+
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
 
@@ -108,8 +131,22 @@ static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
 static const char *sid_types[] = { "None", "6581", "8580", "SidFX", "fpgaSID" };
-static const char *audio_sel[] = { "Emulated SID 1", "Emulated SID 2", "SID Socket 1", "SID Socket 2",
-								   "Sampler Left", "Sampler Right", "Drive A", "Drive B", "Tape Read", "Tape Write" };
+
+static const char *volumes[] = { "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
+                                 "-2 dB", "-3 dB", "-4 dB", "-5 dB", "-6 dB", "-7 dB", "-8 dB", "-9 dB",
+                                 "-10 dB","-11 dB","-12 dB","-13 dB","-14 dB","-15 dB","-16 dB","-17 dB",
+                                 "-18 dB","-24 dB","-27 dB","-30 dB","-36 dB","-42 dB","Off" }; // 31 settings
+
+static const char *pannings[] = { "Left 5", "Left 4", "Left 3", "Left 2", "Left 1", "Center",
+                                  "Right 1", "Right 2", "Right 3", "Right 4", "Right 5" }; // 11 settings
+
+static const uint8_t volume_ctrl[] = { 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90, 0x80, 0x72,
+                                       0x66, 0x5b, 0x51, 0x48, 0x40, 0x39, 0x33, 0x2d,
+                                       0x28, 0x24, 0x20, 0x1d, 0x1a, 0x17, 0x14, 0x12,
+                                       0x10, 0x08, 0x06, 0x04, 0x02, 0x01, 0x00 };
+
+static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
+
 // Ultimate:
 // "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right"
 static const uint8_t ult_select_map[] = { 4, 4, 4, 4, // sid from ultimate, not implemented, so silence
@@ -144,8 +181,6 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_STEREO_DIFF,			CFG_TYPE_ENUM, "Ext StereoSID addrline",       "%s", stereo_addr,  0,  1, 0 },
     { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 23, 0 },
     { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 23, 0 },
-    { CFG_AUDIO_LEFT_OUT,       CFG_TYPE_ENUM, "Output Selector Left",         "%s", audio_sel,    0,  9, 0 },
-    { CFG_AUDIO_RIGHT_OUT,      CFG_TYPE_ENUM, "Output Selector Right",        "%s", audio_sel,    0,  9, 0 },
     { CFG_COLOR_CLOCK_ADJ, 		CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video",                 "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
@@ -153,6 +188,27 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis4,      0,  1, 0 },
 #endif
     //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
+    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol EmuSid1",                  "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER0_PAN,           CFG_TYPE_ENUM, "Pan EmuSid1",                  "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol EmuSid2",                  "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER1_PAN,           CFG_TYPE_ENUM, "Pan EmuSid2",                  "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER2_PAN,           CFG_TYPE_ENUM, "Pan Socket 1",                 "%s", pannings,     0, 10, 2 },
+    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER3_PAN,           CFG_TYPE_ENUM, "Pan Socket 2",                 "%s", pannings,     0, 10, 8 },
+    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER4_PAN,           CFG_TYPE_ENUM, "Pan Sampler L",                "%s", pannings,     0, 10, 2 },
+    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER5_PAN,           CFG_TYPE_ENUM, "Pan Sampler R",                "%s", pannings,     0, 10, 8 },
+    { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 12 },
+    { CFG_MIXER6_PAN,           CFG_TYPE_ENUM, "Pan Drive 1",                  "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 12 },
+    { CFG_MIXER7_PAN,           CFG_TYPE_ENUM, "Pan Drive 2",                  "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 30 },
+    { CFG_MIXER8_PAN,           CFG_TYPE_ENUM, "Pan Tape Read",                "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 30 },
+    { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
+
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 extern "C" {
@@ -229,20 +285,19 @@ void U64Config :: effectuate_settings()
     C64_PHASE_INCR   = 9;
     C64_BURST_PHASE  = 24;
 */
+    // Now, configure the mixer
+    volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
 
-    uint8_t sel_left  = cfg->get_value(CFG_AUDIO_RIGHT_OUT);
-    uint8_t sel_right = cfg->get_value(CFG_AUDIO_LEFT_OUT);
-    // Ultimate:
-    // "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right"
-    if (sel_left > 3) {
-    	ioWrite8(AUDIO_SELECT_LEFT, ult_select_map[sel_left]);
-    	sel_left = 4;  // left channel from ultimate
+    for(int i=0; i<10; i++) {
+        uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
+        uint8_t pan = cfg->get_value(CFG_MIXER0_PAN + i);
+        uint16_t panL = pan_ctrl[pan];
+        uint16_t panR = pan_ctrl[10 - pan];
+        uint8_t vol_left = (panL * vol) >> 8;
+        uint8_t vol_right = (panR * vol) >> 8;
+        *(mixer++) = vol_left;
+        *(mixer++) = vol_right;
     }
-    if (sel_right > 3) {
-    	ioWrite8(AUDIO_SELECT_RIGHT, ult_select_map[sel_right]);
-    	sel_right = 5; // right channel from ultimate
-	}
-    U64_AUDIO_SEL_REG = U64_AUDIO_SEL_REG_BAK = (sel_left << 4) | sel_right;
 
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
     setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));

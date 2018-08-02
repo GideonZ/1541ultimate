@@ -11,7 +11,9 @@
 #include <stdint.h>
 
 #ifndef U64_IO_BASE
-#define U64_IO_BASE  0xA0000400
+#define U64_IO_BASE     0xA0000400
+#define U64_AUDIO_MIXER 0xA0000500
+
 #define VID_IO_BASE  0xA0040000
 #define C64_IO_BASE  0xA0080000
 #define C64_SID_BASE 0xA0090000
@@ -24,7 +26,6 @@
 #define U64_HDMI_REG       (*(volatile uint8_t *)(U64_IO_BASE + 0x00))
 #define U64_POWER_REG      (*(volatile uint8_t *)(U64_IO_BASE + 0x01))
 #define U64_RESTORE_REG    (*(volatile uint8_t *)(U64_IO_BASE + 0x02))
-#define U64_AUDIO_SEL_REG  (*(volatile uint8_t *)(U64_IO_BASE + 0x03))
 #define U64_HDMI_PLL_RESET (*(volatile uint8_t *)(U64_IO_BASE + 0x04))
 #define U64_WIFI_CONTROL   (*(volatile uint8_t *)(U64_IO_BASE + 0x05))
 #define U64_EXT_I2C_SCL    (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
