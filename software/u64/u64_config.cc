@@ -44,6 +44,21 @@ U64Config u64_configurator;
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
 
+extern uint8_t C64_EMUSID1_BASE_BAK;
+extern uint8_t C64_EMUSID2_BASE_BAK;
+extern uint8_t C64_SID1_BASE_BAK;
+extern uint8_t C64_SID2_BASE_BAK;
+
+extern uint8_t C64_EMUSID1_MASK_BAK;
+extern uint8_t C64_EMUSID2_MASK_BAK;
+extern uint8_t C64_SID1_MASK_BAK;
+extern uint8_t C64_SID2_MASK_BAK;
+
+extern uint8_t U64_AUDIO_SEL_REG_BAK;
+extern uint8_t C64_STEREO_ADDRSEL_BAK;
+extern uint8_t C64_SID1_EN_BAK;
+extern uint8_t C64_SID2_EN_BAK;
+
 const char *u64_sid_base[] = { "$D400-$D7FF", // 10 bits
 		                       "$D400-$D5FF", // 9 bits
 		                       "$D600-$D7FF", // 9 bits
@@ -168,17 +183,19 @@ void U64Config :: effectuate_settings()
 
     C64_SCANLINES    =  cfg->get_value(CFG_SCANLINES);
     C64_PADDLE_EN    =  cfg->get_value(CFG_PADDLE_EN);
-    C64_STEREO_ADDRSEL = cfg->get_value(CFG_STEREO_DIFF);
+    C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK = cfg->get_value(CFG_STEREO_DIFF);
+    C64_SID1_EN_BAK = cfg->get_value(CFG_SID1_TYPE);
+    C64_SID2_EN_BAK = cfg->get_value(CFG_SID2_TYPE);
     C64_SID1_EN      =  cfg->get_value(CFG_SID1_TYPE) ? 1 : 0;
     C64_SID2_EN      =  cfg->get_value(CFG_SID2_TYPE) ? 1 : 0;
-    C64_SID1_BASE    =  u64_sid_offsets[cfg->get_value(CFG_SID1_ADDRESS)];
-    C64_SID2_BASE    =  u64_sid_offsets[cfg->get_value(CFG_SID2_ADDRESS)];
-    C64_EMUSID1_BASE =  u64_sid_offsets[cfg->get_value(CFG_EMUSID1_ADDRESS)];
-    C64_EMUSID2_BASE =  u64_sid_offsets[cfg->get_value(CFG_EMUSID2_ADDRESS)];
-    C64_SID1_MASK	 =  u64_sid_mask[cfg->get_value(CFG_SID1_ADDRESS)];
-    C64_SID2_MASK	 =  u64_sid_mask[cfg->get_value(CFG_SID2_ADDRESS)];
-    C64_EMUSID1_MASK =  u64_sid_mask[cfg->get_value(CFG_EMUSID1_ADDRESS)];
-    C64_EMUSID2_MASK =  u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)];
+    C64_SID1_BASE    =  C64_SID1_BASE_BAK = u64_sid_offsets[cfg->get_value(CFG_SID1_ADDRESS)];
+    C64_SID2_BASE    =  C64_SID2_BASE_BAK = u64_sid_offsets[cfg->get_value(CFG_SID2_ADDRESS)];
+    C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK =  u64_sid_offsets[cfg->get_value(CFG_EMUSID1_ADDRESS)];
+    C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK =  u64_sid_offsets[cfg->get_value(CFG_EMUSID2_ADDRESS)];
+    C64_SID1_MASK	 =  C64_SID1_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_SID1_ADDRESS)];
+    C64_SID2_MASK	 =  C64_SID2_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_SID2_ADDRESS)];
+    C64_EMUSID1_MASK =  C64_EMUSID1_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID1_ADDRESS)];
+    C64_EMUSID2_MASK =  C64_EMUSID2_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)];
     U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
 
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
@@ -225,7 +242,7 @@ void U64Config :: effectuate_settings()
     	ioWrite8(AUDIO_SELECT_RIGHT, ult_select_map[sel_right]);
     	sel_right = 5; // right channel from ultimate
 	}
-    U64_AUDIO_SEL_REG = (sel_left << 4) | sel_right;
+    U64_AUDIO_SEL_REG = U64_AUDIO_SEL_REG_BAK = (sel_left << 4) | sel_right;
 
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
     setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
