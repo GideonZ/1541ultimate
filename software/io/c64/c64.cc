@@ -1,4 +1,4 @@
-/*
+#/*
  * c64.cc
  *
  * Written by 
@@ -48,6 +48,9 @@
 
 int ultimatedosversion = 0;
 bool allowUltimateDosDateSet = false;
+#ifndef RECOVERYAPP
+extern bool connectedToU64;
+#endif
 
 /* Configuration */
 const char *cart_mode[] = { "None",
@@ -125,6 +128,10 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartidge 3 Mode",        "%s", fc3mode,    0,  2, 0 },
     { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
+#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
+    { CFG_C64_ALT_BASI, CFG_TYPE_ENUM,   "Alternate Basic",              "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_ALT_CHAR, CFG_TYPE_ENUM,   "Alternate Chargen",            "%s", en_dis2,    0,  1, 0 },
+#endif
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
     { CFG_C64_REU_PRE,  CFG_TYPE_ENUM,   "REU Preload",                  "%s", en_dis2,    0,  1, 0 },
@@ -237,7 +244,11 @@ void C64::set_emulation_flags(cart_def *def)
             int choice = cfg->get_value(CFG_CMD_ENABLE);
             CMD_IF_SLOT_ENABLE = !!choice;
             ultimatedosversion = choice;
-            CMD_IF_SLOT_BASE = 0x47; // $DF1C
+#ifdef RECOVERYAPP
+            CMD_IF_SLOT_BASE = 0x47; // $$DF1C
+#else
+            CMD_IF_SLOT_BASE = connectedToU64 ? 0x46 : 0x47; // $DF18 when 1541 U2(+) connected to U64, $DF1C else.
+#endif
             choice = cfg->get_value(CFG_CMD_ALLOW_WRITE);
             allowUltimateDosDateSet = choice;
         }
@@ -729,6 +740,26 @@ void C64::unfreeze(void *vdef, int mode)
                 disable_kernal();
             }
 
+#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
+            if (cfg->get_value(CFG_C64_ALT_BASI)) {
+                uint8_t *temp = new uint8_t[8192];
+                flash->read_image(FLASH_ID_BASIC_ROM, temp, 8192);
+                enable_basic(temp);
+                delete[] temp;
+            } else {
+                disable_basic();
+            }
+
+            if (cfg->get_value(CFG_C64_ALT_CHAR)) {
+                uint8_t *temp = new uint8_t[4096];
+                flash->read_image(FLASH_ID_CHARGEN_ROM, temp, 4096);
+                enable_chargen(temp);
+                delete[] temp;
+            } else {
+                disable_chargen();
+            }
+#endif
+
             set_cartridge(def);
             C64_MODE = C64_MODE_UNRESET;
         }
@@ -871,6 +902,21 @@ void C64::enable_kernal(uint8_t *rom, bool fastreset)
     }
 }
 
+void C64::enable_basic(uint8_t *rom)
+{
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        memcpy((void *)U64_BASIC_BASE, rom, 8192); // as simple as that
+    }
+}
+
+void C64::enable_chargen(uint8_t *rom)
+{
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        memcpy((void *)U64_CHARROM_BASE, rom, 4096); // as simple as that
+    }
+}
+
+
 void C64::disable_kernal()
 {
     C64_KERNAL_ENABLE = 0;
@@ -881,6 +927,20 @@ void C64::disable_kernal()
         flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
         if (cfg->get_value(CFG_C64_FASTRESET))
             memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+    }
+}
+
+void C64::disable_basic()
+{
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        flash->read_image(FLASH_ID_ORIG_BASIC, (uint8_t *)U64_BASIC_BASE, 8192);
+    }
+}
+
+void C64::disable_chargen()
+{
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        flash->read_image(FLASH_ID_ORIG_CHARGEN, (uint8_t *)U64_CHARROM_BASE, 4096);
     }
 }
 
@@ -901,6 +961,26 @@ void C64::init_cartridge()
     } else {
         disable_kernal();
     }
+
+#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
+            if (cfg->get_value(CFG_C64_ALT_BASI)) {
+                uint8_t *temp = new uint8_t[8192];
+                flash->read_image(FLASH_ID_BASIC_ROM, temp, 8192);
+                enable_basic(temp);
+                delete[] temp;
+            } else {
+                disable_basic();
+            }
+
+            if (cfg->get_value(CFG_C64_ALT_CHAR)) {
+                uint8_t *temp = new uint8_t[4096];
+                flash->read_image(FLASH_ID_CHARGEN_ROM, temp, 4096);
+                enable_chargen(temp);
+                delete[] temp;
+            } else {
+                disable_chargen();
+            }
+#endif
 
     // In case of the U64, when an external cartridge is detected, we should not enable our cart
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
