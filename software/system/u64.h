@@ -31,6 +31,7 @@
 #define U64_EXT_I2C_SCL    (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
 #define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
+#define U64_PARCABLE_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
 
 #define U64_HDMI_DDC_ENABLE     0x20
 #define U64_HDMI_DDC_DISABLE    0x10
