@@ -41,6 +41,7 @@ U64Config u64_configurator;
 #define CFG_SID2_TYPE		  0x0E
 #define CFG_PADDLE_EN		  0x0F
 #define CFG_STEREO_DIFF	      0x10
+#define CFG_PARCABLE_ENABLE   0x11
 
 #define CFG_MIXER0_VOL        0x20
 #define CFG_MIXER1_VOL        0x21
@@ -173,6 +174,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SCANLINES,    		CFG_TYPE_ENUM, "HDMI Scan lines",          	   "%s", en_dis4,      0,  1, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
+    { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
     { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  4, 0 },
     { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  4, 0 },
     { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 29, 0 },
@@ -253,7 +255,7 @@ void U64Config :: effectuate_settings()
     C64_EMUSID1_MASK =  C64_EMUSID1_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID1_ADDRESS)];
     C64_EMUSID2_MASK =  C64_EMUSID2_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)];
     U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
-
+    U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
         C64_LUMA_DELAY   = -chromaDelay;
