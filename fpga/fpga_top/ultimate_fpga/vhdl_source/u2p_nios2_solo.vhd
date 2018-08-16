@@ -244,6 +244,17 @@ architecture rtl of u2p_nios_solo is
     signal io_req_ddr2      : t_io_req;
     signal io_resp_ddr2     : t_io_resp;
 
+    -- Parallel cable connection
+    signal drv_via1_port_a_o    : std_logic_vector(7 downto 0);
+    signal drv_via1_port_a_i    : std_logic_vector(7 downto 0);
+    signal drv_via1_port_a_t    : std_logic_vector(7 downto 0);
+    signal drv_via1_ca2_o       : std_logic;
+    signal drv_via1_ca2_i       : std_logic;
+    signal drv_via1_ca2_t       : std_logic;
+    signal drv_via1_cb1_o       : std_logic;
+    signal drv_via1_cb1_i       : std_logic;
+    signal drv_via1_cb1_t       : std_logic;
+
     -- audio
     signal audio_speaker    : signed(12 downto 0);
     signal audio_left       : signed(18 downto 0);
@@ -529,6 +540,17 @@ begin
         CART_LEDn   => led_n(2),
         SDACT_LEDn  => led_n(3),
 
+        -- Parallel cable pins
+        drv_via1_port_a_o   => drv_via1_port_a_o,
+        drv_via1_port_a_i   => drv_via1_port_a_i,
+        drv_via1_port_a_t   => drv_via1_port_a_t,
+        drv_via1_ca2_o      => drv_via1_ca2_o,
+        drv_via1_ca2_i      => drv_via1_ca2_i,
+        drv_via1_ca2_t      => drv_via1_ca2_t,
+        drv_via1_cb1_o      => drv_via1_cb1_o,
+        drv_via1_cb1_i      => drv_via1_cb1_i,
+        drv_via1_cb1_t      => drv_via1_cb1_t,
+
         -- Debug UART
         UART_TXD    => uart_txd_from_logic,
         UART_RXD    => UART_RXD,
@@ -582,6 +604,12 @@ begin
         -- Buttons
         trigger     => trigger,
         BUTTON      => button_i );
+
+    -- Parallel cable not implemented. This is the way to stub it...
+    drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
+    drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
+    drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
+
 
     process(sys_clock)
         variable c, d  : std_logic := '0';
