@@ -35,6 +35,8 @@ package io_bus_bfm_pkg is
     ------------------------------------------------------------------------------------
     procedure io_read(variable io : inout p_io_bus_bfm_object; addr : unsigned; data : out std_logic_vector(7 downto 0));
     procedure io_write(variable io : inout p_io_bus_bfm_object; addr : unsigned; data : std_logic_vector(7 downto 0));
+    procedure io_read_32(variable io : inout p_io_bus_bfm_object; addr : unsigned; data : out std_logic_vector(31 downto 0));
+    procedure io_write_32(variable io : inout p_io_bus_bfm_object; addr : unsigned; data : std_logic_vector(31 downto 0));
 
 end io_bus_bfm_pkg;
 
@@ -106,6 +108,24 @@ package body io_bus_bfm_pkg is
         while io.command /= e_io_none loop
             wait for 10 ns;
         end loop;
+    end procedure;
+
+    procedure io_write_32(variable io : inout p_io_bus_bfm_object; addr : unsigned;
+                       data : std_logic_vector(31 downto 0)) is
+    begin
+        io_write(io, addr+0, data(7 downto 0));
+        io_write(io, addr+1, data(15 downto 8));
+        io_write(io, addr+2, data(23 downto 16));
+        io_write(io, addr+3, data(31 downto 24));
+    end procedure;
+
+    procedure io_read_32(variable io : inout p_io_bus_bfm_object; addr : unsigned;
+                      data : out std_logic_vector(31 downto 0)) is
+    begin
+        io_read(io, addr+0, data(7 downto 0));
+        io_read(io, addr+1, data(15 downto 8));
+        io_read(io, addr+2, data(23 downto 16));
+        io_read(io, addr+3, data(31 downto 24));
     end procedure;
 end;
 
