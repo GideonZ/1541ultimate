@@ -107,6 +107,13 @@ port (
     audio_right      : out signed(18 downto 0);
     speaker_vol      : in std_logic_vector(3 downto 0) := X"0";
 
+    aud_drive1       : out signed(17 downto 0); 
+    aud_drive2       : out signed(17 downto 0); 
+    aud_tape_r       : out signed(17 downto 0); 
+    aud_tape_w       : out signed(17 downto 0); 
+    aud_samp_l       : out signed(17 downto 0); 
+    aud_samp_r       : out signed(17 downto 0); 
+
     -- IEC bus
     -- actual levels of the pins --
     iec_reset_i : in    std_logic := '1';
@@ -1131,6 +1138,14 @@ begin
     audio_tape_read  <= to_signed(-10000, 19) when cas_read_c = '0' else to_signed(10000, 19);
     audio_tape_write <= to_signed(-10000, 19) when cas_write_c = '0' else to_signed(10000, 19);  
         
+    -- direct outputs for mixing in U64
+    aud_drive1  <= drive_sample_1(11 downto 0) & "000000";
+    aud_drive2  <= drive_sample_2(11 downto 0) & "000000";
+    aud_tape_r  <= audio_tape_read(18 downto 1);
+    aud_tape_w  <= audio_tape_write(18 downto 1);
+    aud_samp_l  <= samp_left;
+    aud_samp_r  <= samp_right;
+
     process(sys_clock)
     begin
         if rising_edge(sys_clock) then
