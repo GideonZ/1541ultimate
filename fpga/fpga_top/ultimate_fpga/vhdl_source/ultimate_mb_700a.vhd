@@ -187,6 +187,8 @@ begin
         g_version       => g_version,
         g_simulation    => false,
         g_clock_freq    => 50_000_000,
+        g_mhz_nom       => 50,
+        g_mhz_denom     => 1,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
         g_icap          => true,
