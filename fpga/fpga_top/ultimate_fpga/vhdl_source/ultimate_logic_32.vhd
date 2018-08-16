@@ -126,6 +126,17 @@ port (
 	SDACT_LEDn	: out   std_logic;
     MOTOR_LEDn  : out   std_logic;
 	
+    -- Parallel cable pins
+    drv_via1_port_a_o   : out std_logic_vector(7 downto 0);
+    drv_via1_port_a_i   : in  std_logic_vector(7 downto 0);
+    drv_via1_port_a_t   : out std_logic_vector(7 downto 0);
+    drv_via1_ca2_o      : out std_logic;
+    drv_via1_ca2_i      : in  std_logic;
+    drv_via1_ca2_t      : out std_logic;
+    drv_via1_cb1_o      : out std_logic;
+    drv_via1_cb1_i      : in  std_logic;
+    drv_via1_cb1_t      : out std_logic;
+
 	-- Debug UART
 	UART_TXD	: out   std_logic;
 	UART_RXD	: in    std_logic := '1';
@@ -543,6 +554,17 @@ begin
             iec_reset_n     => iec_reset_i,
             c64_reset_n     => c64_reset_in_n,
             
+            -- Parallel cable pins
+            via1_port_a_o   => drv_via1_port_a_o,
+            via1_port_a_i   => drv_via1_port_a_i,
+            via1_port_a_t   => drv_via1_port_a_t,
+            via1_ca2_o      => drv_via1_ca2_o,
+            via1_ca2_i      => drv_via1_ca2_i,
+            via1_ca2_t      => drv_via1_ca2_t,
+            via1_cb1_o      => drv_via1_cb1_o,
+            via1_cb1_i      => drv_via1_cb1_i,
+            via1_cb1_t      => drv_via1_cb1_t,
+
             -- LED
             act_led_n       => DISK_ACTn,
             motor_led_n     => motor_led_n,
@@ -556,6 +578,17 @@ begin
     audio_speaker <= audio_speaker_tmp(16 downto 4);
 
     r_drive_2: if g_drive_1541_2 generate
+        -- Parallel cable pins
+        signal via1_port_a_o   : std_logic_vector(7 downto 0);
+        signal via1_port_a_i   : std_logic_vector(7 downto 0);
+        signal via1_port_a_t   : std_logic_vector(7 downto 0);
+        signal via1_ca2_o      : std_logic;
+        signal via1_ca2_i      : std_logic;
+        signal via1_ca2_t      : std_logic;
+        signal via1_cb1_o      : std_logic;
+        signal via1_cb1_i      : std_logic;
+        signal via1_cb1_t      : std_logic;
+
     begin
         i_drive: entity work.c1541_drive
         generic map (
@@ -594,6 +627,17 @@ begin
             iec_reset_n     => iec_reset_i,
             c64_reset_n     => c64_reset_in_n,
 
+            -- Parallel cable pins
+            via1_port_a_o   => via1_port_a_o,
+            via1_port_a_i   => via1_port_a_i,
+            via1_port_a_t   => via1_port_a_t,
+            via1_ca2_o      => via1_ca2_o,
+            via1_ca2_i      => via1_ca2_i,
+            via1_ca2_t      => via1_ca2_t,
+            via1_cb1_o      => via1_cb1_o,
+            via1_cb1_i      => via1_cb1_i,
+            via1_cb1_t      => via1_cb1_t,
+
             -- LED
             act_led_n       => open, --DISK_ACTn,
             motor_led_n     => open, --MOTOR_LEDn,
@@ -601,6 +645,10 @@ begin
 
             -- audio out
             audio_sample    => drive_sample_2 );
+
+        via1_port_a_i <= via1_port_a_o or not via1_port_a_t;
+        via1_ca2_i    <= via1_ca2_o    or not via1_ca2_t;
+        via1_cb1_i    <= via1_cb1_o    or not via1_cb1_t;
     end generate;
 
     r_cart: if g_cartridge generate
