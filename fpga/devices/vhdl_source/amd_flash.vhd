@@ -61,6 +61,7 @@ begin
                 io_resp.ack <= '1';
                 erase_sectors <= X"00";
                 io_irq <= '0';
+                dirty <= '0';
             end if;
 
             if write = '1' then
@@ -166,6 +167,7 @@ begin
                 erase_sectors <= (others => '0');
                 io_irq <= '0';
                 toggle <= '0';
+                dirty <= '0';
             end if;
         end if;
     end process;
