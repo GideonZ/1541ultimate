@@ -12,7 +12,8 @@ use unisim.vcomponents.all;
 
 entity iec_processor_io is
 generic (
-    g_half_mhz      : natural := 100);
+    g_mhz_nom       : natural := 200;
+    g_mhz_denom     : natural := 3 );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -73,7 +74,8 @@ begin
 
     i_proc: entity work.iec_processor
     generic map (
-        g_half_mhz      => g_half_mhz )
+        g_mhz_nom       => g_mhz_nom,
+        g_mhz_denom     => g_mhz_denom )
     port map (
         clock           => clock,
         reset           => proc_reset,

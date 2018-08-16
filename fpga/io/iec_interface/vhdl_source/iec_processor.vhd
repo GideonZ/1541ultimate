@@ -5,7 +5,8 @@ use ieee.numeric_std.all;
 
 entity iec_processor is
 generic (
-    g_half_mhz      : natural := 100);
+    g_mhz_nom       : natural := 200;
+    g_mhz_denom     : natural := 3 );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -68,7 +69,8 @@ architecture mixed of iec_processor is
     signal pc           : unsigned(instr_addr'range);
     signal pc_ret_std   : std_logic_vector(instr_addr'range);
     signal pop, push    : std_logic;
-    signal presc        : integer range 0 to g_half_mhz;
+    signal presc        : integer range 0 to g_mhz_nom + g_mhz_denom;
+    signal us_tick      : std_logic;
     signal timer_done   : std_logic;
     signal atn_i_d      : std_logic;
     signal valid_reg    : std_logic := '0';
@@ -126,7 +128,7 @@ begin
     instruction <= instr_data;
     
     process(clock)
-        variable v_bit  : std_logic;
+        variable v_presc_next   : natural range 0 to g_mhz_denom + g_mhz_nom;
     begin
         if rising_edge(clock) then
             up_fifo_put   <= '0';
@@ -138,19 +140,21 @@ begin
                 down_fifo_flush <= '0';
             end if;
 
-            if (presc = 0) or (presc = g_half_mhz / 2) then
+            us_tick <= '0';
+            v_presc_next := presc + g_mhz_denom;
+            if (v_presc_next >= g_mhz_nom) then
+                us_tick <= '1';
+                v_presc_next := v_presc_next - g_mhz_nom;
+            end if;
+            presc <= v_presc_next;
+            
+            if us_tick = '1' then
                 if timer = 1 then
                     timer_done <= '1';
                 end if;
                 if timer /= 0 then
                     timer <= timer - 1;
                 end if;
-            end if;
-
-            if presc = 0 then
-                presc <= g_half_mhz-1;
-            else
-                presc <= presc - 1;
             end if;
 
             case state is
