@@ -507,9 +507,16 @@ begin
                  
         -- Audio outputs
         audio_speaker   => audio_speaker,
-        audio_left      => audio_left,
-        audio_right     => audio_right,
         speaker_vol     => speaker_vol,
+
+        aud_drive1      => ult_drive1, 
+        aud_drive2      => ult_drive2, 
+        aud_tape_r      => ult_tape_r, 
+        aud_tape_w      => ult_tape_w, 
+        aud_samp_l      => ult_samp_l, 
+        aud_samp_r      => ult_samp_r, 
+        aud_sid_1       => ult_sid_1,
+        aud_sid_2       => ult_sid_2,
         
         -- IEC bus
         iec_reset_i => IEC_RESET,
@@ -645,45 +652,32 @@ begin
     
         dac_out => SPEAKER_DATA );
 
-    b_audio: block
-        signal audio_get_sample : std_logic;
-        signal sys_get_sample   : std_logic;
-        signal stream_out_data  : std_logic_vector(23 downto 0);
-        signal stream_out_tag   : std_logic_vector(0 downto 0);
-        signal stream_out_valid : std_logic;
-        signal stream_in_data   : std_logic_vector(23 downto 0);
-        signal stream_in_tag    : std_logic_vector(0 downto 0);
-        signal stream_in_ready  : std_logic;
-        signal audio_left_filt  : signed(17 downto 0);
-        signal audio_right_filt : signed(17 downto 0);
-        signal audio_audio_left : std_logic_vector(audio_left_filt'range);
-        signal audio_audio_right: std_logic_vector(audio_right_filt'range);
-
+    b_audio: block        
+        signal aud_drive1       : signed(17 downto 0);
+        signal aud_drive2       : signed(17 downto 0);
+        signal aud_tape_r       : signed(17 downto 0);
+        signal aud_tape_w       : signed(17 downto 0);
+        signal aud_samp_l       : signed(17 downto 0);
+        signal aud_samp_r       : signed(17 downto 0);
+        signal aud_sid_1        : signed(17 downto 0);
+        signal aud_sid_2        : signed(17 downto 0);
+        signal audio_sid1       : std_logic_vector(17 downto 0);
+        signal audio_sid2       : std_logic_vector(17 downto 0);
         signal codec_left_in    : std_logic_vector(23 downto 0);
         signal codec_right_in   : std_logic_vector(23 downto 0);
         signal codec_left_out   : std_logic_vector(23 downto 0);
         signal codec_right_out  : std_logic_vector(23 downto 0);
+        signal audio_get_sample : std_logic;
+        signal sys_get_sample       : std_logic;
+        signal inputs               : t_audio_array(0 to 9);
     begin
-        i_filt_left: entity work.lp_filter
-        port map (
-            clock     => sys_clock,
-            reset     => sys_reset,
-            signal_in => audio_left(18 downto 1),
-            low_pass  => audio_left_filt );
-        
-        i_filt_right: entity work.lp_filter
-        port map (
-            clock     => sys_clock,
-            reset     => sys_reset,
-            signal_in => audio_right(18 downto 1),
-            low_pass  => audio_right_filt );
-
+        -- the SID sound from the socket comes in from the codec
         i2s: entity work.i2s_serializer
         port map (
             clock            => audio_clock,
             reset            => audio_reset,
-            i2s_out          => AUDIO_SDO,
-            i2s_in           => AUDIO_SDI,
+            i2s_out          => AUDIO_SDI,
+            i2s_in           => AUDIO_SDO,
             i2s_bclk         => AUDIO_BCLK,
             i2s_fs           => AUDIO_LRCLK,
             sample_pulse     => audio_get_sample,
@@ -703,40 +697,44 @@ begin
             pulse_out => sys_get_sample
         );
 
-        i_sync_left: entity work.synchronizer_gzw
-        generic map (
-            g_width     => audio_left_filt'length,
-            g_fast      => false
-        )
-        port map(
-            tx_clock    => sys_clock,
-            tx_push     => sys_get_sample,
-            tx_data     => std_logic_vector(audio_left_filt),
-            tx_done     => open,
-            rx_clock    => audio_clock,
-            rx_new_data => open,
-            rx_data     => audio_audio_left
-        );
+        i_ultfilt1: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_drive1, audio_clock, aud_drive1 );
+        i_ultfilt2: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_drive2, audio_clock, aud_drive2 );
+        i_ultfilt3: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_tape_r, audio_clock, aud_tape_r );
+        i_ultfilt4: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_tape_w, audio_clock, aud_tape_w );
+        i_ultfilt5: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_samp_l, audio_clock, aud_samp_l );
+        i_ultfilt6: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_samp_r, audio_clock, aud_samp_r );
+        i_ultfilt7: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_sid_1,  audio_clock, aud_sid_1 );
+        i_ultfilt8: entity work.sys_to_aud port map(sys_clock, sys_reset, sys_get_sample, ult_sid_2,  audio_clock, aud_sid_2 );
         
-        i_sync_right: entity work.synchronizer_gzw
-        generic map (
-            g_width     => audio_right_filt'length,
-            g_fast      => false
+        inputs(0) <= aud_sid_1;
+        inputs(1) <= aud_sid_2;
+        inputs(2) <= signed(codec_left_in(23 downto 6));
+        inputs(3) <= signed(codec_right_in(23 downto 6));
+        inputs(4) <= aud_samp_l;
+        inputs(5) <= aud_samp_r;
+        inputs(6) <= aud_drive1;
+        inputs(7) <= aud_drive2;
+        inputs(8) <= aud_tape_r;
+        inputs(9) <= aud_tape_w;
+
+        -- Now we have ten sources, all in audio domain, let's do some mixing
+        i_mixer: entity work.generic_mixer
+        generic map(
+            g_num_sources => 10
         )
         port map(
-            tx_clock    => sys_clock,
-            tx_push     => sys_get_sample,
-            tx_data     => std_logic_vector(audio_right_filt),
-            tx_done     => open,
-            rx_clock    => audio_clock,
-            rx_new_data => open,
-            rx_data     => audio_audio_right
+            clock         => audio_clock,
+            reset         => audio_reset,
+            start         => audio_get_sample,
+            sys_clock     => sys_clock,
+            req           => io_req_mixer,
+            resp          => io_resp_mixer,
+            inputs        => inputs,
+            out_L         => codec_left_out,
+            out_R         => codec_right_out
         );
- 
-        codec_left_out  <= std_logic_vector(left_scale(signed(audio_audio_left), 1)) & "0000000";
-        codec_right_out <= std_logic_vector(left_scale(signed(audio_audio_right), 1)) & "0000000";
 
-    end block;    
+    end block;
     
     SLOT_BUFFER_ENn <= not buffer_en;
 end architecture;
