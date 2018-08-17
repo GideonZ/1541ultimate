@@ -11,6 +11,7 @@ library ieee;
     use work.io_bus_pkg.all;
     use work.mem_bus_pkg.all;
     use work.my_math_pkg.all;
+    use work.audio_type_pkg.all;
         
 entity u2p_nios_solo is
 port (
@@ -237,18 +238,29 @@ architecture rtl of u2p_nios_solo is
     signal io_resp      : t_io_resp;
     signal io_u2p_req   : t_io_req;
     signal io_u2p_resp  : t_io_resp;
+    signal io_u2p_req_small : t_io_req;
+    signal io_u2p_resp_small: t_io_resp;
     signal io_req_new_io    : t_io_req;
     signal io_resp_new_io   : t_io_resp;
     signal io_req_remote    : t_io_req;
     signal io_resp_remote   : t_io_resp;
     signal io_req_ddr2      : t_io_req;
     signal io_resp_ddr2     : t_io_resp;
-
+    signal io_req_mixer     : t_io_req;
+    signal io_resp_mixer    : t_io_resp;
+    
     -- audio
     signal audio_speaker    : signed(12 downto 0);
-    signal audio_left       : signed(18 downto 0);
-    signal audio_right      : signed(18 downto 0);
     signal speaker_vol      : std_logic_vector(3 downto 0);
+
+    signal ult_drive1       : signed(17 downto 0);
+    signal ult_drive2       : signed(17 downto 0);
+    signal ult_tape_r       : signed(17 downto 0);
+    signal ult_tape_w       : signed(17 downto 0);
+    signal ult_samp_l       : signed(17 downto 0);
+    signal ult_samp_r       : signed(17 downto 0);
+    signal ult_sid_1        : signed(17 downto 0);
+    signal ult_sid_2        : signed(17 downto 0);
 begin
     process(RMII_REFCLK)
     begin
@@ -323,6 +335,22 @@ begin
         mem_mem_resp_rack_tag   => cpu_mem_resp.rack_tag
     );
 
+    i_split_u2p: entity work.io_bus_splitter
+    generic map (
+        g_range_lo => 16,
+        g_range_hi => 16,
+        g_ports    => 2
+    )
+    port map (
+        clock      => sys_clock,
+        req        => io_u2p_req,
+        resp       => io_u2p_resp,
+        reqs(0)    => io_u2p_req_small,
+        reqs(1)    => io_req_mixer,
+        resps(0)   => io_u2p_resp_small,
+        resps(1)   => io_resp_mixer
+    );
+
     i_split: entity work.io_bus_splitter
     generic map (
         g_range_lo => 8,
@@ -331,8 +359,8 @@ begin
     )
     port map (
         clock      => sys_clock,
-        req        => io_u2p_req,
-        resp       => io_u2p_resp,
+        req        => io_u2p_req_small,
+        resp       => io_u2p_resp_small,
         reqs(0)    => io_req_new_io,
         reqs(1)    => io_req_ddr2,
         reqs(2)    => io_req_remote,
@@ -676,8 +704,8 @@ begin
         port map (
             clock            => audio_clock,
             reset            => audio_reset,
-            i2s_out          => AUDIO_SDI,
-            i2s_in           => AUDIO_SDO,
+            i2s_out          => AUDIO_SDO,
+            i2s_in           => AUDIO_SDI,
             i2s_bclk         => AUDIO_BCLK,
             i2s_fs           => AUDIO_LRCLK,
             sample_pulse     => audio_get_sample,

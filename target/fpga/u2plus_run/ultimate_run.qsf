@@ -40,7 +40,7 @@
 set_global_assignment -name FAMILY "Cyclone IV E"
 set_global_assignment -name DEVICE EP4CE22F17C8
 set_global_assignment -name TOP_LEVEL_ENTITY u2p_nios_solo
-set_global_assignment -name LAST_QUARTUS_VERSION 15.1.0
+set_global_assignment -name LAST_QUARTUS_VERSION "16.1.0 Lite Edition"
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 set_global_assignment -name MIN_CORE_JUNCTION_TEMP 0
 set_global_assignment -name MAX_CORE_JUNCTION_TEMP 85
@@ -410,6 +410,10 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_DAT
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_SRQ_IN
 
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/lp_filter2.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/audio_type_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/generic_mixer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/mul_add.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sys_to_aud.vhd
 set_global_assignment -name SDC_FILE ultimate_altera.sdc
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_nios2_solo.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd

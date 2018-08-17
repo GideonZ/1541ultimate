@@ -14,9 +14,10 @@
 #define U2P_IO_BASE 0xA0000000
 #endif
 
-#define DDR2_BASE     (U2P_IO_BASE + 0x0100)
-#define REMOTE_BASE   (U2P_IO_BASE + 0x0200)
-#define MATRIX_KEYB   (U2P_IO_BASE + 0x0300)
+#define DDR2_BASE       (U2P_IO_BASE + 0x0100)
+#define REMOTE_BASE     (U2P_IO_BASE + 0x0200)
+#define MATRIX_KEYB     (U2P_IO_BASE + 0x0300)
+#define U2P_AUDIO_MIXER (U2P_IO_BASE + 0x10000)
 
 #define DDR2_ADDR_LOW  (*(volatile uint8_t *)(DDR2_BASE + 0x00))
 #define DDR2_ADDR_HIGH (*(volatile uint8_t *)(DDR2_BASE + 0x01))

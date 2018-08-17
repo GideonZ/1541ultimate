@@ -113,6 +113,8 @@ port (
     aud_tape_w       : out signed(17 downto 0); 
     aud_samp_l       : out signed(17 downto 0); 
     aud_samp_r       : out signed(17 downto 0); 
+    aud_sid_1        : out signed(17 downto 0);
+    aud_sid_2        : out signed(17 downto 0);
 
     -- IEC bus
     -- actual levels of the pins --
@@ -1145,7 +1147,9 @@ begin
     aud_tape_w  <= audio_tape_write(18 downto 1);
     aud_samp_l  <= samp_left;
     aud_samp_r  <= samp_right;
-
+    aud_sid_1   <= sid_left;
+    aud_sid_2   <= sid_right;
+    
     process(sys_clock)
     begin
         if rising_edge(sys_clock) then
