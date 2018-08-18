@@ -186,6 +186,10 @@ architecture structural of slot_server_v4 is
     signal io_resp_copper   : t_io_resp := c_io_resp_init;
     signal io_req_samp_cpu  : t_io_req;
     signal io_resp_samp_cpu : t_io_resp := c_io_resp_init;
+    signal io_req_flash     : t_io_req;
+    signal io_resp_flash    : t_io_resp := c_io_resp_init;
+    signal io_req_eeprom    : t_io_req;
+    signal io_resp_eeprom   : t_io_resp := c_io_resp_init;
     
     signal dma_req_io       : t_dma_req;
     signal dma_resp_io      : t_dma_resp := c_dma_resp_init;
@@ -263,7 +267,7 @@ begin
     generic map (
         g_range_lo  => 13,
         g_range_hi  => 15,
-        g_ports     => 5 )
+        g_ports     => 7 )
     port map (
         clock    => clock,
         
@@ -275,12 +279,16 @@ begin
         reqs(2)  => io_req_cmd,      -- 4044000
         reqs(3)  => io_req_copper,   -- 4046000
         reqs(4)  => io_req_samp_cpu, -- 4048000
-        
+        reqs(5)  => io_req_flash,    -- 404A000
+        reqs(6)  => io_req_eeprom,   -- 404C000
+
         resps(0) => io_resp_regs,
         resps(1) => io_resp_sid,
         resps(2) => io_resp_cmd,
         resps(3) => io_resp_copper,
-        resps(4) => io_resp_samp_cpu );
+        resps(4) => io_resp_samp_cpu,
+        resps(5) => io_resp_flash,
+        resps(6) => io_resp_eeprom );
         
 
     i_registers: entity work.cart_slot_registers
@@ -481,6 +489,12 @@ begin
         slot_req        => slot_req,
         slot_resp       => slot_resp_cart,
 
+        io_req_flash    => io_req_flash,
+        io_resp_flash   => io_resp_flash,
+        
+        io_req_eeprom   => io_req_eeprom,
+        io_resp_eeprom  => io_resp_eeprom,
+
         mem_addr        => mem_req_32_slot.address, 
         serve_enable    => serve_enable,
         serve_vic       => serve_vic,
@@ -546,6 +560,21 @@ begin
 
     end generate;
     
+--    g_par: if g_parallel_cable generate
+--        i_par: entity work.parallel_cable
+--        port map (
+--            clock           => clock,
+--            reset           => reset,
+--            
+--            slot_req        => slot_req,
+--            slot_resp       => slot_resp_par,
+--            
+--            drv_par_o       => drv_par_o,
+--            drv_par_i       => drv_par_i,
+--            drv_par_hs_o    => drv_par_hs_o,
+--            drv_par_hs_i    => drv_par_hs_i );
+--    end generate;
+
     g_cmd: if g_command_intf generate
         i_cmd: entity work.command_interface
         port map (

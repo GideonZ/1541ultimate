@@ -157,10 +157,12 @@ begin
             end if;
 
             slot_req.bus_write <= '0';
+            slot_req.bus_read <= '0';
             if do_sample_io='1' then
                 cpu_write  <= not RWn;
 
                 slot_req.bus_write  <= not RWn;
+                slot_req.bus_read   <= RWn;
                 slot_req.io_address <= unsigned(address_c);
                 mem_wdata_i         <= data_c;
 
@@ -206,6 +208,9 @@ begin
                             elsif address_c(8)='1' and serve_io2='1' then
                                 io_out <= (rwn_c='1');
                             end if;
+                        elsif slot_resp.rom_override = '1' then
+                            mem_data_0 <= slot_resp.rom_data;
+                            dav <= '1';
                         else -- non-IO, always serve
                             mem_req_ff <= '1';
                             state      <= mem_access;
@@ -251,7 +256,7 @@ begin
                         mem_data_0 <= mem_rdata(7 downto 0);
                         mem_data_1 <= mem_rdata(15 downto 8);
                     end if;
-                    dav      <= '1';
+                    dav <= '1';
                 end if;
                 if phi2_tick='1' or do_io_event='1' then -- around the clock edges
                     kernal_area_i <= '0';
@@ -339,7 +344,10 @@ begin
                                 
     slot_req.data        <= mem_wdata_i;
     slot_req.bus_address <= unsigned(address_c(15 downto 0));
-
+    slot_req.bus_rwn     <= rwn_c;
+    slot_req.rom_l       <= not romln_c;
+    slot_req.rom_h       <= not romhn_c;
+       
     kernal_probe <= kernal_probe_i;
     kernal_area  <= kernal_area_i;
 end gideon;

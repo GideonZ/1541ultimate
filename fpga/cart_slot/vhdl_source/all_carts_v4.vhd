@@ -4,6 +4,7 @@ use ieee.numeric_std.all;
 
 library work;
 use work.slot_bus_pkg.all;
+use work.io_bus_pkg.all;
 
 entity all_carts_v4 is
 generic (
@@ -20,6 +21,11 @@ port (
     RST_in          : in  std_logic;
     c64_reset       : in  std_logic;
     
+    io_req_flash    : in  t_io_req;
+    io_resp_flash   : out t_io_resp := c_io_resp_init;
+    io_req_eeprom   : in  t_io_req;
+    io_resp_eeprom  : out t_io_resp := c_io_resp_init;
+
     ethernet_enable : in  std_logic := '1';
     kernal_enable   : in  std_logic;
     kernal_16k      : in  std_logic;
@@ -79,7 +85,13 @@ architecture gideon of all_carts_v4 is
     signal eth_addr     : boolean;
     signal cart_logic_d : std_logic_vector(cart_logic'range) := (others => '0');
     signal mem_addr_i   : std_logic_vector(27 downto 0);
-        
+
+    signal flash_allow_write    : std_logic;
+    signal flash_rdata          : std_logic_vector(7 downto 0);
+    signal flash_rdata_valid    : std_logic;
+    signal ee_clk, ee_sel       : std_logic;
+    signal ee_rdata, ee_wdata   : std_logic;
+            
     constant c_none         : std_logic_vector(4 downto 0) := "00000";
     constant c_8k           : std_logic_vector(4 downto 0) := "00001";
     constant c_16k          : std_logic_vector(4 downto 0) := "00010";
@@ -105,7 +117,8 @@ architecture gideon of all_carts_v4 is
     constant c_128          : std_logic_vector(4 downto 0) := "11000";
     constant c_fc3plus      : std_logic_vector(4 downto 0) := "11001";
     constant c_comal80pakma : std_logic_vector(4 downto 0) := "11010";
-    
+    constant c_gmod2        : std_logic_vector(4 downto 0) := "11011"; 
+        
     constant c_serve_rom_rr : std_logic_vector(0 to 7) := "11011111";
     constant c_serve_io_rr  : std_logic_vector(0 to 7) := "10101111";
     
@@ -524,7 +537,7 @@ begin
                 elsif io_read='1' and io_addr(8)='0' then
                     mode_bits(0) <= '1';
                 end if;
-                        if mode_bits(0)='1' then
+                if mode_bits(0)='1' then
                    game_n    <= '0';
                    exrom_n   <= '0';
                 elsif slot_addr(15)='1' and not(slot_addr(14 downto 13) = "10") then
@@ -549,6 +562,27 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= '1';
             
+            when c_gmod2 =>
+--                bit7    bit6    mode
+--                0   0   regular 8K Game mode, ROM readable at $8000
+--                0   1   EEPROM selected, Flash inactive. EEPROM can be used via bits 4/5/7
+--                1   0   illegal, do not use
+--                1   1   Flash ROM writing enabled                
+
+                if io_write='1' and io_addr(8) = '0' then -- DE00-DEFF
+                    bank_bits <= io_wdata(2 downto 0);
+                    ext_bank  <= io_wdata(5 downto 3);
+                    mode_bits <= '0' & io_wdata(7 downto 6);
+                end if;
+                game_n <= '1';
+                exrom_n <= '1';
+
+                if slot_req.bus_rwn = '0' and slot_req.bus_address(15) = '1' and mode_bits(1) = '1' then
+                    game_n <= '0';
+                else
+                    exrom_n <= mode_bits(0);
+                end if;
+                
             when c_kcs =>
                 -- mode_bit(0) -> ULTIMAX
                 -- mode_bit(1) -> 16K Mode
@@ -668,7 +702,9 @@ begin
 
     -- determine address
 --  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank, sense)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank,
+            eth_addr, kernal_area, georam_bank, sense, kernal_16k, ef_write, ef_write_addr,
+            flash_allow_write)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -801,6 +837,10 @@ begin
               allow_write <= '1';
            end if;
 
+        when c_gmod2 =>
+            mem_addr_i <= g_rom_base(27 downto 19) & ext_bank & bank_bits & slot_addr(12 downto 0);
+            allow_write <= flash_allow_write and mode_bits(1);
+            
         when c_pagefox =>
            if bank_bits(15) = '0' then
               mem_addr_i <= g_rom_base(27 downto 16) & bank_bits(14) & bank_bits(13) & slot_addr(13 downto 0); 
@@ -810,7 +850,6 @@ begin
                  allow_write <= '1';
               end if;
            end if;
-
 
         when others =>
             null;
@@ -836,14 +875,91 @@ begin
 
     mem_addr <= unsigned(mem_addr_i(mem_addr'range));
 
-    slot_resp.data(7) <= bank_bits(15);
-    slot_resp.data(6) <= '1';
-    slot_resp.data(5) <= '0';
-    slot_resp.data(4) <= bank_bits(14);
-    slot_resp.data(3) <= bank_bits(13);
-    slot_resp.data(2) <= '0'; -- freeze button pressed
-    slot_resp.data(1) <= allow_bank; -- '1'; -- allow bank bit stuck at '1' for 1541U
-    slot_resp.data(0) <= '0';
-    
-    slot_resp.reg_output <= '1' when (slot_addr(8 downto 1)="00000000") and (cart_logic_d = c_retro) else '0';
+    process(bank_bits, ext_bank, mode_bits, allow_bank, cart_logic_d, slot_addr, flash_rdata, flash_rdata_valid, ee_rdata)
+    begin
+        slot_resp <= c_slot_resp_init;
+        ee_sel <= '0';
+        ee_clk <= '0';
+        ee_wdata <= '0';
+        
+        case cart_logic_d is
+        when c_retro =>
+            slot_resp.data(7) <= bank_bits(15);
+            slot_resp.data(6) <= '1';
+            slot_resp.data(5) <= '0';
+            slot_resp.data(4) <= bank_bits(14);
+            slot_resp.data(3) <= bank_bits(13);
+            slot_resp.data(2) <= '0'; -- freeze button pressed
+            slot_resp.data(1) <= allow_bank; -- '1'; -- allow bank bit stuck at '1' for 1541U
+            slot_resp.data(0) <= '0';
+            if slot_addr(8 downto 1) = X"00" then
+                slot_resp.reg_output <= '1';
+            end if;
+        
+        when c_gmod2 =>
+            -- Are the bank bits readable?
+            slot_resp.data(7) <= ee_rdata;
+            if slot_addr(8) = '0' then
+                slot_resp.reg_output <= '1';
+            end if;
+            ee_sel <= mode_bits(0);
+            ee_clk <= ext_bank(18);
+            ee_wdata <= ext_bank(17);
+                         
+            -- Return flash data, when active
+            slot_resp.rom_override <= flash_rdata_valid;
+            slot_resp.rom_data <= flash_rdata;
+            
+        when others =>
+            null;        
+        end case;
+    end process;
+
+    b_flash: block
+        signal flash_write          : std_logic;
+        signal flash_read           : std_logic;
+    begin
+        process(slot_req, mode_bits, cart_logic_d)
+        begin
+            flash_write <= '0';
+            flash_read  <= '0';
+            if cart_logic_d = c_gmod2 then
+                if slot_req.bus_write = '1' and slot_req.bus_address(15 downto 13) = "111" and mode_bits(1) = '1' then
+                    flash_write <= '1';
+                end if;
+                if slot_req.bus_read = '1' and slot_req.rom_l = '1' then
+                    flash_read <= '1';
+                end if;
+            end if;
+        end process;
+
+        i_flash: entity work.amd_flash
+        port map (
+            clock       => clock,
+            reset       => reset,
+            io_req      => io_req_flash,
+            io_resp     => io_resp_flash,
+            io_irq      => open,
+            allow_write => flash_allow_write,
+            address     => unsigned(mem_addr_i(18 downto 0)),
+            wdata       => slot_req.data,
+            write       => flash_write,
+            read        => flash_read,
+            rdata       => flash_rdata,
+            rdata_valid => flash_rdata_valid
+        );
+
+        i_ee: entity work.microwire_eeprom
+        port map(
+            clock    => clock,
+            reset    => reset,
+            io_req   => io_req_eeprom,
+            io_resp  => io_resp_eeprom,
+            sel_in   => ee_sel,
+            clk_in   => ee_clk,
+            data_in  => ee_wdata,
+            data_out => ee_rdata
+        );
+    end block;    
+
 end gideon;
