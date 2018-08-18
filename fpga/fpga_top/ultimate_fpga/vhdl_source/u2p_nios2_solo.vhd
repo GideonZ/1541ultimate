@@ -422,6 +422,8 @@ begin
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
+        g_mhz_nom       => 125,
+        g_mhz_denom     => 2,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
         g_microblaze    => false,
