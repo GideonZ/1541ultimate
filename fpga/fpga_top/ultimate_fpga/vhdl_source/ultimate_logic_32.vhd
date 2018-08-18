@@ -14,6 +14,8 @@ generic (
     g_ultimate2plus : boolean := false;
     g_ultimate_64   : boolean := false;
     g_clock_freq    : natural := 50_000_000;
+    g_mhz_nom       : natural := 50;
+    g_mhz_denom     : natural := 1;
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
     g_fpga_type     : natural := 0;
@@ -964,7 +966,8 @@ begin
     r_iec: if g_hardware_iec generate
         i_iec: entity work.iec_processor_io
         generic map (
-            g_half_mhz      =>  g_clock_freq / 500_000 )
+            g_mhz_denom     =>  g_mhz_denom,
+            g_mhz_nom       =>  g_mhz_nom )
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
