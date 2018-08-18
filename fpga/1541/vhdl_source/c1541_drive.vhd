@@ -43,6 +43,17 @@ port (
     iec_reset_n     : in  std_logic := '1';
     c64_reset_n     : in  std_logic := '1';
     
+    -- Parallel cable pins
+    via1_port_a_o   : out std_logic_vector(7 downto 0);
+    via1_port_a_i   : in  std_logic_vector(7 downto 0);
+    via1_port_a_t   : out std_logic_vector(7 downto 0);
+    via1_ca2_o      : out std_logic;
+    via1_ca2_i      : in  std_logic;
+    via1_ca2_t      : out std_logic;
+    via1_cb1_o      : out std_logic;
+    via1_cb1_i      : in  std_logic;
+    via1_cb1_t      : out std_logic;
+
     -- LED
     act_led_n       : out std_logic;
     motor_led_n     : out std_logic;
@@ -169,6 +180,17 @@ begin
         drv_rdata       => disk_rdata,
         drv_wdata       => disk_wdata,
     
+        -- Parallel cable pins
+        via1_port_a_o   => via1_port_a_o,
+        via1_port_a_i   => via1_port_a_i,
+        via1_port_a_t   => via1_port_a_t,
+        via1_ca2_o      => via1_ca2_o,
+        via1_ca2_i      => via1_ca2_i,
+        via1_ca2_t      => via1_ca2_t,
+        via1_cb1_o      => via1_cb1_o,
+        via1_cb1_i      => via1_cb1_i,
+        via1_cb1_t      => via1_cb1_t,
+        
         -- other
         act_led         => act_led_n );
     
