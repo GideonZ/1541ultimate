@@ -544,19 +544,20 @@ begin
     begin
         i_drive: entity work.c1541_drive
         generic map (
-            g_clock_freq    => g_clock_freq,
             g_big_endian    => g_big_endian,
             g_cpu_tag       => c_tag_1541_cpu_1,
             g_floppy_tag    => c_tag_1541_floppy_1,
             g_audio_tag     => c_tag_1541_audio_1,
             g_audio         => g_drive_sound,
-            g_audio_div     => (g_clock_freq / 22500),
             g_audio_base    => X"0EC0000",
             g_ram_base      => X"0EE0000" )
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
             drive_stop      => c64_stopped,
+            
+            -- timing
+            tick_4MHz       => tick_4MHz,
             
             -- slave port on io bus
             io_req          => io_req_1541_1,
@@ -617,13 +618,11 @@ begin
     begin
         i_drive: entity work.c1541_drive
         generic map (
-            g_clock_freq    => g_clock_freq,
             g_big_endian    => g_big_endian,
             g_cpu_tag       => c_tag_1541_cpu_2,
             g_floppy_tag    => c_tag_1541_floppy_2,
             g_audio_tag     => c_tag_1541_audio_2,
             g_audio         => g_drive_sound,
-            g_audio_div     => (g_clock_freq / 22500),
             g_audio_base    => X"0EC0000",
             g_ram_base      => X"0ED0000" )
         port map (
@@ -631,6 +630,9 @@ begin
             reset           => sys_reset,
             drive_stop      => c64_stopped,
             
+            -- timing
+            tick_4MHz       => tick_4MHz,
+
             -- slave port on io bus
             io_req          => io_req_1541_2,
             io_resp         => io_resp_1541_2,

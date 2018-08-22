@@ -8,13 +8,11 @@ use work.mem_bus_pkg.all;
 
 entity c1541_drive is
 generic (
-    g_clock_freq    : natural := 50000000;
     g_big_endian    : boolean;
     g_audio_tag     : std_logic_vector(7 downto 0) := X"01";
     g_floppy_tag    : std_logic_vector(7 downto 0) := X"02";
     g_cpu_tag       : std_logic_vector(7 downto 0) := X"04";
     g_audio         : boolean := true;
-    g_audio_div     : integer := 2222; -- 22500 Hz (from 50 MHz)
     g_audio_base    : unsigned(27 downto 0) := X"0030000";
     g_ram_base      : unsigned(27 downto 0) := X"0060000" );
 port (
@@ -22,6 +20,9 @@ port (
     reset           : in  std_logic;
     drive_stop      : in  std_logic := '0';
     
+    -- timing
+    tick_4MHz       : in  std_logic;
+
     -- slave port on io bus
     io_req          : in  t_io_req;
     io_resp         : out t_io_resp;
@@ -116,12 +117,12 @@ begin
     drive_stop_i <= drive_stop and stop_on_freeze;
     
     i_timing: entity work.c1541_timing
-    generic map (
-        g_clock_freq    => g_clock_freq )
     port map (
         clock        => clock,
         reset        => reset,
         
+        tick_4MHz    => tick_4MHz,
+
         use_c64_reset=> use_c64_reset,
         c64_reset_n  => c64_reset_n,
         iec_reset_n  => iec_reset_n,
@@ -238,7 +239,6 @@ begin
         i_snd: entity work.floppy_sound
         generic map (
             g_tag          => g_audio_tag,
-            rate_div       => g_audio_div, -- 22050 Hz
             sound_base     => g_audio_base(27 downto 16),
             motor_hum_addr => X"0000",
             flop_slip_addr => X"1200",
@@ -252,9 +252,11 @@ begin
             head_bang_len  => X"0880" ) -- ~100 ms;
         
         port map (
-            clock           => clock, -- 50 MHz
+            clock           => clock,
             reset           => drv_reset,
             
+            tick_4MHz       => tick_4MHz,
+
             do_trk_out      => do_track_out,
             do_trk_in       => do_track_in,
             do_head_bang    => do_head_bang,
