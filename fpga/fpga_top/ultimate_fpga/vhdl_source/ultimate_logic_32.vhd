@@ -14,8 +14,8 @@ generic (
     g_ultimate2plus : boolean := false;
     g_ultimate_64   : boolean := false;
     g_clock_freq    : natural := 50_000_000;
-    g_mhz_nom       : natural := 50;
-    g_mhz_denom     : natural := 1;
+    g_numerator     : natural := 2;
+    g_denominator   : natural := 25;
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
     g_fpga_type     : natural := 0;
@@ -225,7 +225,6 @@ port (
         
     -- Buttons
     button      : in  std_logic_vector(2 downto 0) );
-    
 	
 end ultimate_logic_32;
 
@@ -290,6 +289,11 @@ architecture logic of ultimate_logic_32 is
     constant c_tag_cpu_i         : std_logic_vector(7 downto 0) := X"0A";
     constant c_tag_cpu_d         : std_logic_vector(7 downto 0) := X"0B";
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
+
+    -- Timing
+    signal tick_4MHz        : std_logic;
+    signal tick_1MHz        : std_logic;
+    signal tick_1kHz        : std_logic;    
 
 	-- Memory interface
     signal mem_req_32_cpu        : t_mem_req_32 := c_mem_req_32_init;
@@ -486,6 +490,17 @@ begin
         req         => io_req,
         resp        => io_resp );
 
+    i_timing: entity work.fractional_div
+    generic map(
+        g_numerator   => g_numerator,
+        g_denominator => g_denominator
+    )
+    port map(
+        clock         => sys_clock,
+        tick          => tick_4MHz,
+        quarter       => tick_1MHz,
+        one_4000      => tick_1kHz
+    );
 
     i_itu: entity work.itu
     generic map (
@@ -495,8 +510,7 @@ begin
         g_frequency     => g_clock_freq,
         g_edge_init     => "00000101",
         g_edge_write    => false,
-        g_baudrate      => g_baud_rate,
-        g_timer_rate    => g_timer_rate)
+        g_baudrate      => g_baud_rate )
     port map (
         clock       => sys_clock,
         reset       => sys_reset,
@@ -504,6 +518,8 @@ begin
         io_req      => io_req_itu,
         io_resp     => io_resp_itu,
     
+        tick_1us    => tick_1MHz,
+        tick_1ms    => tick_1kHz,
         buttons     => button,
 
         irq_in(7)   => '0',
@@ -1013,13 +1029,12 @@ begin
 
     r_iec: if g_hardware_iec generate
         i_iec: entity work.iec_processor_io
-        generic map (
-            g_mhz_denom     =>  g_mhz_denom,
-            g_mhz_nom       =>  g_mhz_nom )
         port map (
             clock           => sys_clock,
             reset           => sys_reset,
         
+            tick            => tick_1MHz,
+
             srq_i           => srq_i,
             srq_o           => hw_srq_o,
             atn_i           => atn_i,

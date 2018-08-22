@@ -1,0 +1,88 @@
+--------------------------------------------------------------------------------
+-- Entity: fractional_div
+-- Date:2018-08-18  
+-- Author: gideon     
+--
+-- Description: Fractional Divider
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity fractional_div is
+generic (
+    g_numerator     : natural :=   3;
+    g_denominator   : natural := 200 );
+port (
+    clock       : in  std_logic;
+    tick        : out std_logic; -- this should yield a 4 MHz tick (for drive logic)
+    quarter     : out std_logic; -- this should yield an 1 MHz tick (i.e. for IEC processor)
+    one_4000    : out std_logic ); -- and thus, this should yield a 1 ms tick
+end entity;
+
+architecture arch of fractional_div is
+    constant c_min  : integer := -g_numerator;
+    constant c_max  : integer :=  g_denominator - g_numerator - 1;
+
+    function log2_ceil(arg: integer) return natural is
+        variable v_temp   : integer;
+        variable v_result : natural;
+    begin
+        v_result    := 0;
+        v_temp      := arg / 2;
+        while v_temp /= 0 loop
+            v_temp      := v_temp / 2;
+            v_result    := v_result + 1;
+        end loop;
+        if 2**v_result < arg then
+            v_result := v_result + 1;
+        end if;
+        assert false report "Ceil: " & integer'image(arg) & " result: " & integer'image(v_result) severity warning;
+        return v_result;
+    end function;
+    
+    function maxof2(a, b : integer) return integer is
+        variable res : integer;
+    begin
+        res := b;
+        assert false report "Max: " & integer'image(a) & " and " & integer'image(b) severity warning;
+        if a > b then
+            res := a;
+        end if;
+        return res;
+    end function;
+    
+    signal c_bits_min   : integer := 1 + log2_ceil(-c_min - 1);
+    signal c_bits_max   : integer := 1 + log2_ceil(c_max);
+
+    signal accu     : signed(7 downto 0) := (others => '0'); 
+    signal div4000  : unsigned(11 downto 0) := to_unsigned(128, 12);
+    
+begin
+    assert c_bits_max <= 8 report "Need more bits for accu (max:"&integer'image(c_max)&", but Xilinx doesn't let me define this dynamically:" & integer'image(c_bits_max) severity error;
+    assert c_bits_min <= 8 report "Need more bits for accu (max:"&integer'image(c_min)&", but Xilinx doesn't let me define this dynamically:" & integer'image(c_bits_min) severity error;
+    
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            tick <= '0';
+            one_4000 <= '0';
+            quarter <= '0';
+            if accu(accu'high) = '1' then
+                if div4000 = 0 then
+                    one_4000 <= '1';
+                    div4000 <= to_unsigned(3999, 12);
+                else
+                    div4000 <= div4000 - 1;
+                end if;
+                if div4000(1 downto 0) = "01" then
+                    quarter <= '1';
+                end if;
+                tick <= '1';
+                accu <= accu + (g_denominator - g_numerator);
+            else
+                accu <= accu - g_numerator;
+            end if;
+        end if;
+    end process;    
+end architecture;

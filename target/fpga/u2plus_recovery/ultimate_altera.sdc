@@ -117,6 +117,7 @@ set_false_path -from [get_keepers {sld_hub:*|sld_shadow_jsm:shadow_jsm|state[1]}
 
 set_false_path -from {ddr2_ctrl:i_memphy|mem_io:i_phy|sys_reset_pipe[0]} -to {ddr2_ctrl:i_memphy|mem_io:i_phy|altddio_out:i_dqs|ddio_out_dih:auto_generated|ddio_outa[0]~DFFHI}
 set_false_path -from {ddr2_ctrl:i_memphy|mem_io:i_phy|sys_reset_pipe[0]} -to {ddr2_ctrl:i_memphy|mem_io:i_phy|altddio_out:i_dqs|ddio_out_dih:auto_generated|ddio_outa[0]~DFFLO}
+set_false_path -from {ddr2_ctrl:i_memphy|mem_io:i_phy|sys_reset_pipe[0]} -to {ddr2_ctrl:i_memphy|mem_io:i_phy|altddio_out:i_dqs|ddio_out_dih:auto_generated|dffe1a[0]}
 
 
 #**************************************************************
