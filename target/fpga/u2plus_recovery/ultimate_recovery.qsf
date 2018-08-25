@@ -402,6 +402,10 @@ set_global_assignment -name GENERATE_RBF_FILE ON
 set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/io_bus_bridge2.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/lp_filter2.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/audio_type_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/generic_mixer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/mul_add.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sys_to_aud.vhd
 set_global_assignment -name SDC_FILE ultimate_altera.sdc
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_nios2_solo.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd
