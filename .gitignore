@@ -6,6 +6,8 @@
 /*.u2u
 /*.u2p
 /audio
+tools/*.vcd
+tools/*.bin
 fpga/altera/sim
 fpga/cpu_unit/mblite/designs
 fpga/cpu_unit/mblite/doc
