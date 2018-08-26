@@ -288,17 +288,21 @@ const char *ConfigStore :: get_string(uint8_t id)
 void ConfigStore :: set_value(uint8_t id, int value)
 {
     ConfigItem *i = find_item(id);
-    if(i)
+    if(i) {
         i->value = value;
+        dirty = true;
+    }
 }
 
 void ConfigStore :: set_string(uint8_t id, char *s)
 {
     ConfigItem *i = find_item(id);
-    if(i)
-        if(i->string)
+    if(i) {
+        if(i->string) {
             strncpy(i->string, s, i->definition->max);
-
+            dirty = true;
+        }
+    }
 }
 
 void ConfigStore :: dump(void)

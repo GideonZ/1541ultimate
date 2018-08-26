@@ -707,7 +707,7 @@ void FileTypeCRT::configure_cart(void)
         } else {
             uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
             int fastreset = c64->get_cfg_value(CFG_C64_FASTRESET);
-            C64 :: enable_kernal( src, fastreset);
+            C64 :: getMachine()->enable_kernal( src, fastreset);
         }
         break;
 

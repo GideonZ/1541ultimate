@@ -25,9 +25,22 @@ public:
 
     static void setPllOffset(ConfigItem *it);
     static void setScanMode(ConfigItem *it);
-
+    static void setMixer(ConfigItem *it);
 };
 
 extern U64Config u64_configurator;
+
+extern uint8_t C64_EMUSID1_BASE_BAK;
+extern uint8_t C64_EMUSID2_BASE_BAK;
+extern uint8_t C64_SID1_BASE_BAK;
+extern uint8_t C64_SID2_BASE_BAK;
+extern uint8_t C64_EMUSID1_MASK_BAK;
+extern uint8_t C64_EMUSID2_MASK_BAK;
+extern uint8_t C64_SID1_MASK_BAK;
+extern uint8_t C64_SID2_MASK_BAK;
+extern uint8_t C64_SID1_EN_BAK;
+extern uint8_t C64_SID2_EN_BAK;
+extern uint8_t C64_STEREO_ADDRSEL_BAK;
+
 
 #endif /* U64_CONFIG_H_ */

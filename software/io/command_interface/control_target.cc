@@ -3,25 +3,10 @@
 #include <string.h>
 #include "c64.h"
 #include "tape_recorder.h"
-
-#if (CLOCK_FREQ == 62500000) || (CLOCK_FREQ == 50000000)
-#include "audio_select.h"
+#if U64
+#include "u64_config.h"
 #else
-uint8_t C64_EMUSID1_BASE_BAK;
-uint8_t C64_EMUSID2_BASE_BAK;
-uint8_t C64_SID1_BASE_BAK;
-uint8_t C64_SID2_BASE_BAK;
-
-uint8_t C64_EMUSID1_MASK_BAK;
-uint8_t C64_EMUSID2_MASK_BAK;
-uint8_t C64_SID1_MASK_BAK;
-uint8_t C64_SID2_MASK_BAK;
-
-uint8_t U64_AUDIO_SEL_REG_BAK;
-
-uint8_t C64_SID1_EN_BAK;
-uint8_t C64_SID2_EN_BAK;
-uint8_t C64_STEREO_ADDRSEL_BAK;
+#include "audio_select.h"
 #endif
 
 __inline uint32_t cpu_to_32le(uint32_t a)
@@ -162,91 +147,80 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             }
             else
             {
-               int device = command->message[2];
-               int frmt = command->message[3];
-#if (CLOCK_FREQ == 62500000) || (CLOCK_FREQ == 50000000)
-               if (device == 0)
-               {
-               	unsigned char* data = (unsigned char*) data_message.message;
-               	strcpy((char*) data, "1541 ULTIMATE II");
-               	data_message.length = strlen((char*) data);
+                int device = command->message[2];
+                int frmt = command->message[3];
+#ifndef U64
+                if (device == 0) {
+                    unsigned char* data = (unsigned char*) data_message.message;
+                    strcpy((char*) data, "1541 ULTIMATE II");
+                    data_message.length = strlen((char*) data);
     
                     *status = &c_status_ok;
                     data_message.last_part = true;
                     *reply = &data_message;
-               }
-               else if (device == 1)
-               {
-               	unsigned char* data = (unsigned char*) data_message.message;
-               	unsigned char el = !!ioRead8(SID_ENABLE_LEFT);
-               	unsigned char er = !!ioRead8(SID_ENABLE_RIGHT);
-               	unsigned char bl = ioRead8(SID_BASE_LEFT);
-               	unsigned char br = ioRead8(SID_BASE_RIGHT);
-               	
-               	data[0] = el+er;
-               	data_message.length = 1 + data[0] * 5;
-               	if (el)
-                    {
-                        data[1] = bl << 4;
-                        data[2] = 0xd0 | (bl >> 4);
-                        data[3] = 0;
-                        data[4] = 0;
-                        data[5] = 1;
-                    }
-                    if (er)
-                    {
-                        data[1+5*el] = br << 4;
-                        data[2+5*el] = 0xd0 | (br >> 4);
-                        data[3+5*el] = 0;
-                        data[3+5*el] = 0;
-                        data[4+5*el] = 1;
-                    }
+                }
+                else if (device == 1) {
+                    unsigned char* data = (unsigned char*) data_message.message;
+                    unsigned char el = !!ioRead8(SID_ENABLE_LEFT);
+                    unsigned char er = !!ioRead8(SID_ENABLE_RIGHT);
+                    unsigned char bl = ioRead8(SID_BASE_LEFT);
+                    unsigned char br = ioRead8(SID_BASE_RIGHT);
+
+                    data[0] = el+er;
+                    data_message.length = 1 + data[0] * 5;
+                    if (el)
+                        {
+                            data[1] = bl << 4;
+                            data[2] = 0xd0 | (bl >> 4);
+                            data[3] = 0;
+                            data[4] = 0;
+                            data[5] = 1;
+                        }
+                        if (er)
+                        {
+                            data[1+5*el] = br << 4;
+                            data[2+5*el] = 0xd0 | (br >> 4);
+                            data[3+5*el] = 0;
+                            data[3+5*el] = 0;
+                            data[4+5*el] = 1;
+                        }
+                        *status = &c_status_ok;
+                        data_message.last_part = true;
+                        *reply = &data_message;
+                }
+                else {
+                    *reply = &c_message_empty;
+                    *status = &c_status_unknown_command;
+                }
+#else // U64
+                if (device == 0) {
+                    char* data = (char*) data_message.message;
+                    strcpy(data, "ULTIMATE 64");
+                    data_message.length = strlen(data);
                     *status = &c_status_ok;
                     data_message.last_part = true;
                     *reply = &data_message;
-               }
-               else
-               {
-                   *reply = &c_message_empty;
-                   *status = &c_status_unknown_command;
-               }
-#else
-               if (device == 0)
-               {
-               	unsigned char* data = (unsigned char*) data_message.message;
-               	strcpy(data, "ULTIMATE 64");
-               	data_message.length = strlen(data);
-                    *status = &c_status_ok;
-                    data_message.last_part = true;
-                    *reply = &data_message;
-               }
-               else if (device == 1)
-               {
+                }
+                else if (device == 1) {
                	    unsigned char* data = (unsigned char*) data_message.message;
                 
                	    data[0] = 2 + (C64_SID1_EN_BAK ? 1 : 0) + (C64_SID2_EN_BAK ? 1 : 0);
                	    data_message.length = 11 + (C64_SID1_EN_BAK ? 5 : 0) + (C64_SID2_EN_BAK ? 5 : 0);
 
-                    uint8_t audioselect = U64_AUDIO_SEL_REG_BAK;
-                    bool sel1 = ((audioselect & 0xf0) == 0x00) | ((audioselect & 0xf) == 0x0);
-                    bool sel2 = ((audioselect & 0xf0) == 0x10) | ((audioselect & 0xf) == 0x1);
-                    bool sel3 = ((audioselect & 0xf0) == 0x20) | ((audioselect & 0xf) == 0x2);
-                    bool sel4 = ((audioselect & 0xf0) == 0x30) | ((audioselect & 0xf) == 0x3);
-    
                     unsigned int base, mask;
                     base = C64_EMUSID1_BASE_BAK; mask = C64_EMUSID1_MASK_BAK;
                     data[1] = base << 4;
                     data[2] = 0xd0 | (base >> 4);
                     data[3] = 0;
                     data[4] = 0;
-                    data[5] = ((mask == 0xFE) ? 2 : 3) | (sel1 ? 128 : 0);
+                    data[5] = ((mask == 0xFE) ? 2 : 3) | (true ? 128 : 0);
                     
                     base = C64_EMUSID2_BASE_BAK; mask = C64_EMUSID2_MASK_BAK;
                     data[6] = base << 4;
                     data[7] = 0xd0 | (base >> 4);
                     data[8] = 0;
                     data[9] = 0;
-                    data[10] = ((mask == 0xFE) ? 2 : 3) | (sel2 ? 128 : 0);
+                    data[10] = ((mask == 0xFE) ? 2 : 3) | (true ? 128 : 0);
     
                     if ( C64_SID1_EN_BAK )
                     {
@@ -260,7 +234,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                            data[13] = data[11] | (C64_STEREO_ADDRSEL_BAK ? 0x20: 0);
                            data[14] = data[12] | (C64_STEREO_ADDRSEL_BAK ? 0: 1);
                         }
-                        data[15] = ((mask == 0xFE) ? 4 : 5) | (sel3 ? 128 : 0);
+                        data[15] = ((mask == 0xFE) ? 4 : 5) | (true ? 128 : 0);
                     }
                     uint8_t ofsTmp = C64_SID1_EN_BAK ? 5 : 0;
                     
@@ -276,21 +250,20 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                            data[13+ofsTmp] = data[11+ofsTmp] | (C64_STEREO_ADDRSEL_BAK ? 0x20: 0);
                            data[14+ofsTmp] = data[12+ofsTmp] | (C64_STEREO_ADDRSEL_BAK ? 0: 1);
                         }
-                        data[15+ofsTmp] = ((mask == 0xFE) ? 4 : 5) | (sel4 ? 128 : 0);
+                        data[15+ofsTmp] = ((mask == 0xFE) ? 4 : 5) | (true ? 128 : 0);
                     }
     
                     *status = &c_status_ok;
                     data_message.last_part = true;
                     *reply = &data_message;
-               }
-               else
-               {
-                   *reply = &c_message_empty;
-                   *status = &c_status_unknown_command;
-               }
+                }
+                else {
+                    *reply = &c_message_empty;
+                    *status = &c_status_unknown_command;
+                }
 #endif
-           }
-           break;
+            }
+            break;
         }
     
     }

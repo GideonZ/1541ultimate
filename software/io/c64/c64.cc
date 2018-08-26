@@ -60,10 +60,12 @@ const char *cart_mode[] = { "None",
                       "Retro Replay V3.8q PAL",
                       "SuperSnapshot V5.22 PAL",
                       "TAsm / CodeNet PAL",
+#ifndef U64
                       "Action Replay V5.0 NTSC",
                       "Retro Replay V3.8y NTSC",
                       "SuperSnapshot V5.22 NTSC",
                       "TAsm / CodeNet NTSC",
+#endif
                       "Epyx Fastloader",
                       "KCS Power Cartridge",
                       "GeoRAM",
@@ -90,10 +92,13 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_RR38PAL,   0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
                           { FLASH_ID_SS5PAL,    0x000000, 0x10000,  0x05 | CART_REU },
                           { FLASH_ID_TAR_PAL,   0x000000, 0x10000,  0x06 | CART_ETH },
+
+#ifndef U64
                           { FLASH_ID_AR5NTSC,   0x000000, 0x08000,  0x07 },
                           { FLASH_ID_RR38NTSC,  0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
                           { FLASH_ID_SS5NTSC,   0x000000, 0x10000,  0x05 | CART_REU },
                           { FLASH_ID_TAR_NTSC,  0x000000, 0x10000,  0x06 | CART_ETH },
+#endif
                           { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0E },
                           { FLASH_ID_KCS,       0x000000, 0x04000,  0x10 },
                           { 0x00,               0x000000, 0x04000,  0x15 | CART_UCI }, // GeoRam
@@ -113,24 +118,31 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x00000,  0x00 }
  };
                           
-const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
-const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
-const char *en_dis2[] = { "Disabled", "Enabled" };
-const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
-const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
-const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "128ns" };
-const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
-const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
-const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
+static const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
+static const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
+static const char *en_dis2[] = { "Disabled", "Enabled" };
+static const char *rom_sel[] = { "Boot", "Original", "Alternative" };
+static const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
+static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
+static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "128ns" };
+static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
+static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
+static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
 
 struct t_cfg_definition c64_config[] = {
+#if U64
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 17, 4 },
+#else
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
-    { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartidge 3 Mode",        "%s", fc3mode,    0,  2, 0 },
+#endif
+    { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartridge 3 Mode",       "%s", fc3mode,    0,  2, 0 },
     { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis2,    0,  1, 0 },
+#if U64
+    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", rom_sel,    0,  2, 0 },
+    { CFG_C64_ALT_BASI, CFG_TYPE_ENUM,   "Alternate Basic",              "%s", rom_sel,    0,  2, 0 },
+    { CFG_C64_ALT_CHAR, CFG_TYPE_ENUM,   "Alternate Chargen",            "%s", rom_sel,    0,  2, 0 },
+#else
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
-#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
-    { CFG_C64_ALT_BASI, CFG_TYPE_ENUM,   "Alternate Basic",              "%s", en_dis2,    0,  1, 0 },
-    { CFG_C64_ALT_CHAR, CFG_TYPE_ENUM,   "Alternate Chargen",            "%s", en_dis2,    0,  1, 0 },
 #endif
     { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
@@ -183,7 +195,10 @@ C64::C64()
 
     effectuate_settings();
 
-    if (cfg->get_value(CFG_C64_CART) || cfg->get_value(CFG_C64_ALT_KERN)) {
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        init_system_roms();
+        init_cartridge();
+    } else if (cfg->get_value(CFG_C64_CART) || cfg->get_value(CFG_C64_ALT_KERN)) {
         init_cartridge();
     }
 }
@@ -202,6 +217,10 @@ C64::~C64()
         delete screen;
 }
 
+C64 *C64 :: getMachine(void) {
+    return c64;
+}
+
 void C64::effectuate_settings(void)
 {
     // this function will set the parameters that can be switched while the machine is running
@@ -212,6 +231,32 @@ void C64::effectuate_settings(void)
     int cart = cfg->get_value(CFG_C64_CART);
     def = &cartridges[cart];
     set_emulation_flags(def);
+}
+
+void C64::new_system_rom(uint8_t flashId)
+{
+    switch(flashId) {
+    case FLASH_ID_ORIG_BASIC:
+        cfg->set_value(CFG_C64_ALT_BASI, 1);
+        break;
+    case FLASH_ID_BASIC_ROM:
+        cfg->set_value(CFG_C64_ALT_BASI, 2);
+        break;
+    case FLASH_ID_ORIG_KERNAL:
+        cfg->set_value(CFG_C64_ALT_KERN, 1);
+        break;
+    case FLASH_ID_KERNAL_ROM:
+        cfg->set_value(CFG_C64_ALT_KERN, 2);
+        break;
+    case FLASH_ID_ORIG_CHARGEN:
+        cfg->set_value(CFG_C64_ALT_CHAR, 1);
+        break;
+    case FLASH_ID_CHARGEN_ROM:
+        cfg->set_value(CFG_C64_ALT_CHAR, 2);
+        break;
+    }
+    cfg->write();
+    init_system_roms();
 }
 
 void C64::set_emulation_flags(cart_def *def)
@@ -698,6 +743,60 @@ void C64::restore_io(void)
     SID3_DUMMY = 0;   // clear internal charge on databus!
 }
 
+void C64::init_system_roms(void)
+{
+    C64_KERNAL_ENABLE = 0;
+
+#if U64
+    if (cfg->get_value(CFG_C64_ALT_KERN)) {
+        uint8_t *temp = new uint8_t[8192];
+        if (cfg->get_value(CFG_C64_ALT_KERN) == 1) {
+            flash->read_image(FLASH_ID_ORIG_KERNAL, temp, 8192);
+        } else {
+            flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
+        }
+        unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
+        memcpy(kernal, temp, 8192); // as simple as that
+        delete[] temp;
+
+        if (cfg->get_value(CFG_C64_FASTRESET)) {
+            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+        }
+    }
+
+    if (cfg->get_value(CFG_C64_ALT_BASI)) {
+        uint8_t *temp = new uint8_t[8192];
+        if (cfg->get_value(CFG_C64_ALT_BASI) == 1) {
+            flash->read_image(FLASH_ID_ORIG_BASIC, temp, 8192);
+        } else {
+            flash->read_image(FLASH_ID_BASIC_ROM, temp, 8192);
+        }
+        memcpy((void *)U64_BASIC_BASE, temp, 8192); // as simple as that
+        delete[] temp;
+    }
+
+    if (cfg->get_value(CFG_C64_ALT_CHAR)) {
+        uint8_t *temp = new uint8_t[4096];
+        if (cfg->get_value(CFG_C64_ALT_CHAR) == 1) {
+            flash->read_image(FLASH_ID_ORIG_CHARGEN, temp, 4096);
+        } else {
+            flash->read_image(FLASH_ID_CHARGEN_ROM, temp, 4096);
+        }
+        memcpy((void *)U64_CHARROM_BASE, temp, 4096); // as simple as that
+        delete[] temp;
+    }
+#else // non-U64
+    if (cfg->get_value(CFG_C64_ALT_KERN)) {
+        uint8_t *temp = new uint8_t[8192];
+        flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
+        enable_kernal(temp, cfg->get_value(CFG_C64_FASTRESET));
+        delete[] temp;
+    } else {
+        disable_kernal();
+    }
+#endif
+}
+
 void C64::unfreeze(void *vdef, int mode)
 {
     cart_def *def = (cart_def *) vdef;
@@ -729,36 +828,7 @@ void C64::unfreeze(void *vdef, int mode)
 
         if (mode != 2)
         {
-            C64_KERNAL_ENABLE = 0;
-        	
-            if (cfg->get_value(CFG_C64_ALT_KERN)) {
-                uint8_t *temp = new uint8_t[8192];
-                flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
-                enable_kernal(temp, cfg->get_value(CFG_C64_FASTRESET));
-                delete[] temp;
-            } else {
-                disable_kernal();
-            }
-
-#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
-            if (cfg->get_value(CFG_C64_ALT_BASI)) {
-                uint8_t *temp = new uint8_t[8192];
-                flash->read_image(FLASH_ID_BASIC_ROM, temp, 8192);
-                enable_basic(temp);
-                delete[] temp;
-            } else {
-                disable_basic();
-            }
-
-            if (cfg->get_value(CFG_C64_ALT_CHAR)) {
-                uint8_t *temp = new uint8_t[4096];
-                flash->read_image(FLASH_ID_CHARGEN_ROM, temp, 4096);
-                enable_chargen(temp);
-                delete[] temp;
-            } else {
-                disable_chargen();
-            }
-#endif
+            init_system_roms();
 
             set_cartridge(def);
             C64_MODE = C64_MODE_UNRESET;
@@ -902,45 +972,15 @@ void C64::enable_kernal(uint8_t *rom, bool fastreset)
     }
 }
 
-void C64::enable_basic(uint8_t *rom)
-{
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        memcpy((void *)U64_BASIC_BASE, rom, 8192); // as simple as that
-    }
-}
-
-void C64::enable_chargen(uint8_t *rom)
-{
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        memcpy((void *)U64_CHARROM_BASE, rom, 4096); // as simple as that
-    }
-}
-
-
 void C64::disable_kernal()
 {
     C64_KERNAL_ENABLE = 0;
 
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
     	uint8_t* kernal = (uint8_t *)U64_KERNAL_BASE;
-    	
         flash->read_image(FLASH_ID_ORIG_KERNAL, (uint8_t *)U64_KERNAL_BASE, 8192);
         if (cfg->get_value(CFG_C64_FASTRESET))
             memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
-    }
-}
-
-void C64::disable_basic()
-{
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        flash->read_image(FLASH_ID_ORIG_BASIC, (uint8_t *)U64_BASIC_BASE, 8192);
-    }
-}
-
-void C64::disable_chargen()
-{
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        flash->read_image(FLASH_ID_ORIG_CHARGEN, (uint8_t *)U64_CHARROM_BASE, 4096);
     }
 }
 
@@ -953,34 +993,7 @@ void C64::init_cartridge()
     C64_KERNAL_ENABLE = 0;
     C64_CARTRIDGE_TYPE = 0;
 
-    if (cfg->get_value(CFG_C64_ALT_KERN)) {
-        uint8_t *temp = new uint8_t[8192];
-        flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
-        enable_kernal(temp, cfg->get_value(CFG_C64_FASTRESET));
-        delete[] temp;
-    } else {
-        disable_kernal();
-    }
-
-#if (CLOCK_FREQ != 62500000) && (CLOCK_FREQ != 50000000)
-            if (cfg->get_value(CFG_C64_ALT_BASI)) {
-                uint8_t *temp = new uint8_t[8192];
-                flash->read_image(FLASH_ID_BASIC_ROM, temp, 8192);
-                enable_basic(temp);
-                delete[] temp;
-            } else {
-                disable_basic();
-            }
-
-            if (cfg->get_value(CFG_C64_ALT_CHAR)) {
-                uint8_t *temp = new uint8_t[4096];
-                flash->read_image(FLASH_ID_CHARGEN_ROM, temp, 4096);
-                enable_chargen(temp);
-                delete[] temp;
-            } else {
-                disable_chargen();
-            }
-#endif
+    init_system_roms();
 
     // In case of the U64, when an external cartridge is detected, we should not enable our cart
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
