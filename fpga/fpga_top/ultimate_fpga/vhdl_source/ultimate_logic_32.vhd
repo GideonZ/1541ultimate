@@ -25,6 +25,7 @@ generic (
     g_video_overlay : boolean := false;
     g_icap          : boolean := false;
     g_uart          : boolean := true;
+    g_uart_rx       : boolean := false;
     g_drive_1541    : boolean := true;
     g_drive_1541_2  : boolean := false;
     g_hardware_gcr  : boolean := true;
@@ -509,7 +510,7 @@ begin
 		g_version	    => g_version,
         g_capabilities  => c_capabilities,
         g_uart          => g_uart,
-        g_frequency     => g_clock_freq,
+        g_uart_rx       => g_uart_rx,
         g_edge_init     => "00000101",
         g_edge_write    => false,
         g_baudrate      => g_baud_rate )
@@ -520,6 +521,7 @@ begin
         io_req      => io_req_itu,
         io_resp     => io_resp_itu,
     
+        tick_4MHz   => tick_4MHz,
         tick_1us    => tick_1MHz,
         tick_1ms    => tick_1kHz,
         buttons     => button,

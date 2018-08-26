@@ -16,7 +16,7 @@ generic (clks_per_bit : integer := 434); -- 115k2 @ 50 MHz
 port (
     clk     : in  std_logic;
     reset   : in  std_logic;
-
+    tick    : in  std_logic;
     rxd     : in  std_logic;
     
     rxchar  : out std_logic_vector(7 downto 0);
@@ -36,38 +36,40 @@ begin
         if clk'event and clk='1' then
             rxd_c  <= rxd;
             rx_ack <= '0';
-            case state is
-            when Idle =>
-                if rxd_c = '0' then
-                    timer <= (clks_per_bit / 2) - 1;
-                    state <= startbit;
-                end if;
-            
-            when StartBit =>
-                if rxd_c = '1' then
-                    state <= Idle;
-                elsif timer = 0 then
-                    timer  <= clks_per_bit - 1;
-                    state  <= receiving;
-                    bitcnt <= 8;
-                else
-                    timer <= timer - 1;
-                end if;
-            
-            when Receiving =>
-                if timer=0 then
-                    timer <= clks_per_bit - 1;
-                    bitvec <= rxd_c & bitvec(8 downto 1);
-                    if bitcnt = 0 then
-                        state  <= Idle;
-                        rx_ack <= '1';
-                    else
-                        bitcnt <= bitcnt - 1;
+            if tick = '1' then
+                case state is
+                when Idle =>
+                    if rxd_c = '0' then
+                        timer <= (clks_per_bit / 2) - 1;
+                        state <= startbit;
                     end if;
-                else
-                    timer <= timer - 1;
-                end if;
-            end case;                
+                
+                when StartBit =>
+                    if rxd_c = '1' then
+                        state <= Idle;
+                    elsif timer = 0 then
+                        timer  <= clks_per_bit - 1;
+                        state  <= receiving;
+                        bitcnt <= 8;
+                    else
+                        timer <= timer - 1;
+                    end if;
+                
+                when Receiving =>
+                    if timer=0 then
+                        timer <= clks_per_bit - 1;
+                        bitvec <= rxd_c & bitvec(8 downto 1);
+                        if bitcnt = 0 then
+                            state  <= Idle;
+                            rx_ack <= '1';
+                        else
+                            bitcnt <= bitcnt - 1;
+                        end if;
+                    else
+                        timer <= timer - 1;
+                    end if;
+                end case;                
+            end if;
         end if;
         if reset='1' then
             state  <= Idle;
