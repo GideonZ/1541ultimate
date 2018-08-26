@@ -97,3 +97,6 @@ u64.swp: $(OUTPUT)/u64.pof
 	$(SWAP) -h $< $(OUTPUT)/$@ 290000 
 	 
 update_binaries_u64.o: u64.swp ../nios2_u64/result/ultimate.bin
+
+../nios2_u64/result/ultimate.bin::
+	make -C ../nios2_u64

@@ -234,8 +234,7 @@ class C64 : public GenericHost, ConfigurableObject
     void set_cartridge(cart_def *def);
     void set_emulation_flags(cart_def *def);
     void disable_kernal();
-    void disable_basic();
-    void disable_chargen();
+    void init_system_roms(void);
 
     void stop(bool do_raster = true);
     void resume(void);
@@ -254,6 +253,9 @@ class C64 : public GenericHost, ConfigurableObject
 public:
     C64();
     ~C64();
+
+    /* Get static object */
+    static C64 *getMachine(void);
 
     /* Configurable Object */
     void effectuate_settings(void);
@@ -292,9 +294,8 @@ public:
     /* C64 specifics */
     void unfreeze(void *def, int mode);  // called from crt... hmm FIXME
 
-    static void enable_kernal(uint8_t *rom, bool fastreset = false);
-    static void enable_basic(uint8_t *rom);
-    static void enable_chargen(uint8_t *rom);
+    void enable_kernal(uint8_t *rom, bool fastreset = false);
+    void new_system_rom(uint8_t flashId);
     void init_cartridge(void);
     void cartridge_test(void);
     void reset(void);

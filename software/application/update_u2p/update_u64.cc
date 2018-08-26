@@ -129,24 +129,16 @@ void do_update(void)
     	flash2->protect_configure();
     	flash2->protect_enable();
     	console_print(screen, "Done!                            \n");
-        console_print(screen, "\n\033\022Turning OFF machine in 5 seconds....\n");
+
+        if(user_interface->popup("Reset Configuration? (Recommended)", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+            int num = flash2->get_number_of_config_pages();
+            for (int i=0; i < num; i++) {
+                flash2->clear_config_page(i);
+            }
+        }
+
+    	console_print(screen, "\n\033\022Turning OFF machine in 5 seconds....\n");
     }
-
-/*
-    if(user_interface->popup("Flash Recovery?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-    	REMOTE_FLASHSEL_0;
-        REMOTE_FLASHSELCK_0;
-        REMOTE_FLASHSELCK_1;
-
-        Flash *flash1 = get_flash();
-        flash1->protect_disable();
-        flash_buffer_at(flash1, screen, 0x000000, false, &_ultimate_recovery_rbf_start,   &_ultimate_recovery_rbf_end,   "V1.0", "Recovery FPGA");
-        flash_buffer_at(flash1, screen, 0x080000, false, &_recovery_app_start,  &_recovery_app_end,  "V1.0", "Recovery Application");
-
-    	console_print(screen, "\nConfiguring Flash write protection..\n");
-    	console_print(screen, "Done!                            \n");
-    }
-*/
 
     wait_ms(5000);
     U64_POWER_REG = 0x2B;

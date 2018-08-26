@@ -26,28 +26,18 @@ _rom_pack_start:
 .incbin "final3.bin"
 .incbin "rr38pal.bin"
 .incbin "ss5pal.bin"
+.incbin "tar_pal.bin"
 .incbin "kcs.bin"
 .incbin "epyx.bin"
-.incbin "kernal.901227-03.bin"
-.incbin "basic.901226-01.bin"
-.incbin "characters.901225-01.bin"
 
+#.incbin "characters.901225-01.bin"
+#.incbin "kernal.901227-03.bin"
+#.incbin "basic.901226-01.bin"
 
 .global _rom_pack_end
 _rom_pack_end:
 
 
-#    { FLASH_ID_AR5PAL,     0x00, 0x400000, 0x400000, 0x08000 },
-#    { FLASH_ID_AR6PAL,     0x00, 0x408000, 0x408000, 0x08000 },
-#    { FLASH_ID_FINAL3,     0x00, 0x410000, 0x410000, 0x10000 },
-#    { FLASH_ID_RR38PAL,    0x00, 0x420000, 0x420000, 0x10000 },
-#    { FLASH_ID_SS5PAL,     0x00, 0x430000, 0x430000, 0x10000 },
-#    { FLASH_ID_KCS,        0x00, 0x440000, 0x440000, 0x04000 },
-#    { FLASH_ID_EPYX,       0x00, 0x444000, 0x444000, 0x02000 },
-#    { FLASH_ID_ORIG_KERNAL,0x00, 0x446000, 0x446000, 0x02000 },
-#    { FLASH_ID_KERNAL_ROM, 0x00, 0x448000, 0x448000, 0x02000 },
-#    { FLASH_ID_CUSTOM_DRV, 0x00, 0x450000, 0x450000, 0x08000 },
-#    { FLASH_ID_CUSTOM_ROM, 0x00, 0x458000, 0x458000, 0x28000 }, // max size: 128K
 #.align 4
 #
 #.global _recovery_app_start

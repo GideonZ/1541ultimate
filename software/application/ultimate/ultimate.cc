@@ -113,16 +113,16 @@ extern "C" void ultimate_main(void *a)
 
     } else
 */
-#if (CLOCK_FREQ == 62500000) || (CLOCK_FREQ == 50000000)
-    if (c64)
+#ifndef U64
+    if (c64) {
        for (int i=0; i<70; i++)
        {
           if (c64->exists())  break;
-          wait_ms(100);
+          vTaskDelay(20);
           connectedToU64 = true;
        }
-
-    if (connectedToU64)
+    }
+    if (connectedToU64) {
         if(capabilities & CAPAB_ULTIMATE64) {
     	    // Empty
         } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
@@ -130,7 +130,9 @@ extern "C" void ultimate_main(void *a)
         } else {
     	    sprintf(title, "\eA*** Ultimate-II  U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
         }
-#endif    
+    }
+#endif
+
     if(c64 && c64->exists()) {
         primaryUserInterface = new UserInterface(title);
 

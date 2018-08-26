@@ -68,20 +68,19 @@ U64Config u64_configurator;
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
 
-extern uint8_t C64_EMUSID1_BASE_BAK;
-extern uint8_t C64_EMUSID2_BASE_BAK;
-extern uint8_t C64_SID1_BASE_BAK;
-extern uint8_t C64_SID2_BASE_BAK;
+uint8_t C64_EMUSID1_BASE_BAK;
+uint8_t C64_EMUSID2_BASE_BAK;
+uint8_t C64_SID1_BASE_BAK;
+uint8_t C64_SID2_BASE_BAK;
 
-extern uint8_t C64_EMUSID1_MASK_BAK;
-extern uint8_t C64_EMUSID2_MASK_BAK;
-extern uint8_t C64_SID1_MASK_BAK;
-extern uint8_t C64_SID2_MASK_BAK;
+uint8_t C64_EMUSID1_MASK_BAK;
+uint8_t C64_EMUSID2_MASK_BAK;
+uint8_t C64_SID1_MASK_BAK;
+uint8_t C64_SID2_MASK_BAK;
 
-extern uint8_t U64_AUDIO_SEL_REG_BAK;
-extern uint8_t C64_STEREO_ADDRSEL_BAK;
-extern uint8_t C64_SID1_EN_BAK;
-extern uint8_t C64_SID2_EN_BAK;
+uint8_t C64_STEREO_ADDRSEL_BAK;
+uint8_t C64_SID1_EN_BAK;
+uint8_t C64_SID2_EN_BAK;
 
 const char *u64_sid_base[] = { "$D400-$D7FF", // 10 bits
 		                       "$D400-$D5FF", // 9 bits
@@ -133,25 +132,21 @@ static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
 static const char *sid_types[] = { "None", "6581", "8580", "SidFX", "fpgaSID" };
 
-static const char *volumes[] = { "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
+static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
                                  "-2 dB", "-3 dB", "-4 dB", "-5 dB", "-6 dB", "-7 dB", "-8 dB", "-9 dB",
                                  "-10 dB","-11 dB","-12 dB","-13 dB","-14 dB","-15 dB","-16 dB","-17 dB",
-                                 "-18 dB","-24 dB","-27 dB","-30 dB","-36 dB","-42 dB","Off" }; // 31 settings
+                                 "-18 dB","-24 dB","-27 dB","-30 dB","-36 dB","-42 dB"  }; // 31 settings
 
 static const char *pannings[] = { "Left 5", "Left 4", "Left 3", "Left 2", "Left 1", "Center",
                                   "Right 1", "Right 2", "Right 3", "Right 4", "Right 5" }; // 11 settings
 
-static const uint8_t volume_ctrl[] = { 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90, 0x80, 0x72,
+static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90, 0x80, 0x72,
                                        0x66, 0x5b, 0x51, 0x48, 0x40, 0x39, 0x33, 0x2d,
                                        0x28, 0x24, 0x20, 0x1d, 0x1a, 0x17, 0x14, 0x12,
-                                       0x10, 0x08, 0x06, 0x04, 0x02, 0x01, 0x00 };
+                                       0x10, 0x08, 0x06, 0x04, 0x02, 0x01 };
 
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
-// Ultimate:
-// "Drive A", "Drive B", "Cassette Read", "Cassette Write", "SID Left", "SID Right", "Sampler Left", "Sampler Right"
-static const uint8_t ult_select_map[] = { 4, 4, 4, 4, // sid from ultimate, not implemented, so silence
-										  6, 7, 0, 1, 2, 3 };
 /*
 00 ff ff ff ff ff ff 00  09 d1 db 78 45 54 00 00
 0b 1b 01 03 80 30 1b 78  2e 34 55 a7 55 52 a0 27
@@ -190,17 +185,17 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis4,      0,  1, 0 },
 #endif
     //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
-    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol EmuSid1",                  "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol EmuSid1",                  "%s", volumes,      0, 30, 7 },
     { CFG_MIXER0_PAN,           CFG_TYPE_ENUM, "Pan EmuSid1",                  "%s", pannings,     0, 10, 5 },
-    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol EmuSid2",                  "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol EmuSid2",                  "%s", volumes,      0, 30, 7 },
     { CFG_MIXER1_PAN,           CFG_TYPE_ENUM, "Pan EmuSid2",                  "%s", pannings,     0, 10, 5 },
-    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 7 },
     { CFG_MIXER2_PAN,           CFG_TYPE_ENUM, "Pan Socket 1",                 "%s", pannings,     0, 10, 2 },
-    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 7 },
     { CFG_MIXER3_PAN,           CFG_TYPE_ENUM, "Pan Socket 2",                 "%s", pannings,     0, 10, 8 },
-    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 7 },
     { CFG_MIXER4_PAN,           CFG_TYPE_ENUM, "Pan Sampler L",                "%s", pannings,     0, 10, 2 },
-    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 6 },
+    { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 7 },
     { CFG_MIXER5_PAN,           CFG_TYPE_ENUM, "Pan Sampler R",                "%s", pannings,     0, 10, 8 },
     { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 12 },
     { CFG_MIXER6_PAN,           CFG_TYPE_ENUM, "Pan Drive 1",                  "%s", pannings,     0, 10, 5 },
@@ -225,6 +220,14 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 		register_store(store, "U64 Specific Settings", def);
 
 		set_sid_coefficients((volatile uint8_t *)C64_SID_BASE);
+
+		// enable "hot" updates for mixer
+		for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
+		    cfg->set_change_hook(b, U64Config :: setMixer);
+		}
+        for (uint8_t b = CFG_MIXER0_PAN; b <= CFG_MIXER9_PAN; b++) {
+            cfg->set_change_hook(b, U64Config :: setMixer);
+        }
 
 		cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config :: setScanMode);
 		cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config :: setPllOffset);
@@ -287,8 +290,17 @@ void U64Config :: effectuate_settings()
     C64_PHASE_INCR   = 9;
     C64_BURST_PHASE  = 24;
 */
+    setMixer(cfg->items[0]);
+
+    setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
+    setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
+}
+
+void U64Config :: setMixer(ConfigItem *it)
+{
     // Now, configure the mixer
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
+    ConfigStore *cfg = it->store;
 
     for(int i=0; i<10; i++) {
         uint8_t vol = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL + i)];
@@ -300,9 +312,6 @@ void U64Config :: effectuate_settings()
         *(mixer++) = vol_left;
         *(mixer++) = vol_right;
     }
-
-    setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
-    setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
 }
 
 void U64Config :: setPllOffset(ConfigItem *it)
