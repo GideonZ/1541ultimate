@@ -1,0 +1,133 @@
+;-------------------------------------------------
+; System ROM initialization (without actual Kernal/Basic ROM)
+;
+; Programmed by Gideon Zweijtzer
+;
+; Copyright (c) 2018 - Gideon Zweijtzer
+;
+;-------------------------------------------------
+;
+
+; System ROM = 16K, of which the first 8K will be mapped to $A000. However, we won't use it
+; so we can fool the assembler that we start a 16K contiguous block at $C000
+
+    *= $C000            
+
+signature
+    .byte $55
+    .byte $66
+    
+    *= $F000
+
+start
+	sei
+	ldx #$ff
+	txs
+
+; Init VIC chip
+	LDX #$2F        ; set the count/index
+-	LDA vic_init-1,X     ; get a vic ii chip initialisation value
+	STA $CFFF,X     ; save it to the vic ii chip
+	DEX             ; decrement the count/index
+	BNE -       	; loop if more to do
+
+; Init color ram
+	lda #0
+	ldx #0
+-	sta $d800,x
+	sta $d900,x
+	sta $da00,x
+	sta $db00,x
+	inx
+	bne -	
+
+; Init screen text
+	lda #<welcome
+	sta $fb
+	lda #>welcome
+	sta $fc
+	
+	ldy #0
+-	lda ($fb),y
+	jsr fix
+	sta $0400,y
+	iny
+	bne -
+	inc $fc
+	ldy #0
+-	lda ($fb),y
+	jsr fix
+	sta $0500,y
+	iny
+	bne -
+	inc $fc
+	ldy #0
+-	lda ($fb),y
+	jsr fix
+	sta $0600,y
+	iny
+	bne -
+	inc $fc
+	ldy #0
+-	lda ($fb),y
+	jsr fix
+	sta $0700,y
+	iny
+	cpy #$e8
+	bne -
+	
+-	jmp -
+
+fix
+	pha
+	and #$20
+	bne +
+	pla
+	eor #$40
+	rts
++	pla
+	rts
+
+
+welcome
+	.enc "screen"
+	.text "                                        "
+	.text "     Welcome to the Ultimate-64!        "
+	.text "                                        "
+	.text " To avoid any potential legal issues,   "
+	.text " the Ultimate-64 is shipped without     "
+	.text " System ROMs, eg. Kernal and Basic ROM. "
+	.text "                                        "
+	.text " You can obtain these ROMs from an      "
+	.text " original Commodore C64 machine, or     "
+	.text " download them from the internet.       "
+	.text "                                        "
+	.text " Once you have the ROMs on a USB stick, "
+	.text " you can save them into the Ultimate 64."
+	.text "                                        "
+	.text " 1) Press the power button briefly to   "
+	.text "    enter the Ultimate Browser Menu.    "
+	.text "                                        "
+	.text " 2) Browse to the folder with the ROMs. "
+	.text "                                        "
+	.text " 3) Select the appropriate ROM and      "
+	.text "    press RETURN. Choose 'Flash as...'  "
+	.text "                                        "
+	.text " 4) Repeat (3) for all ROMs.            "
+	.text "                                        "
+	.text " 5) Reboot, and have fun! :-)           "
+	.enc "none"
+
+restore
+	rti
+
+        
+vic_init
+	.byte 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	.byte 0, $9B, $37, 0, 0, 0, 8, 0, $16, $0F, 0, 0, 0, 0, 0, 0
+	.byte 6, 12, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 6, 7 
+
+	*=$FFFA
+	.word restore
+	.word start
+	.word restore
