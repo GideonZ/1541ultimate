@@ -10,7 +10,7 @@ entity itu is
 generic (
     g_version	    : unsigned(7 downto 0) := X"FE";
     g_uart          : boolean := true;
-    g_frequency     : integer := 50_000_000;
+    g_uart_rx       : boolean := true;
     g_edge_init     : std_logic_vector(7 downto 0) := "00000001";
     g_capabilities  : std_logic_vector(31 downto 0) := X"5555AAAA";
     g_edge_write    : boolean := true;
@@ -23,6 +23,7 @@ port (
     io_resp         : out t_io_resp;
     irq_out         : out std_logic;
     
+    tick_4MHz       : in  std_logic;
     tick_1us        : in  std_logic;
     tick_1ms        : in  std_logic;
     buttons         : in  std_logic_vector(2 downto 0);
@@ -43,7 +44,7 @@ end itu;
 
 architecture gideon of itu is
     constant c_timer_div : integer := 5;
-    constant c_baud_div  : integer := g_frequency / g_baudrate;
+    constant c_baud_div  : integer := (4_000_000 + g_baudrate / 2) / g_baudrate;
     
     signal imask        : std_logic_vector(7 downto 0);
     signal iedge        : std_logic_vector(7 downto 0) := g_edge_init;
@@ -272,10 +273,12 @@ begin
     r_uart: if g_uart generate
         uart: entity work.uart_peripheral_io
         generic map (
+            g_impl_rx   => g_uart_rx,
             g_divisor   => c_baud_div )
         port map (
             clock       => clock,
             reset       => reset,
+            tick        => tick_4MHz,
             
             io_req      => io_req_uart,
             io_resp     => io_resp_uart,
