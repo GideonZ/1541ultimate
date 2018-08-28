@@ -228,8 +228,10 @@ void ContextMenu :: draw()
 		window->move_cursor(0, i);
 		if ((i + first) == item_index) {
 			window->set_color(user_interface->color_sel);
+			window->set_background(user_interface->color_sel_bg);
 		} else {
 			window->set_color(user_interface->color_fg);
+            window->set_background(0);
 		}
 		window->output_line(t->getName());
 	}

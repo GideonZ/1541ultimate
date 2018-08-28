@@ -9,6 +9,7 @@ public:
 
     // functions called directly, or from a window
     virtual void  cursor_visible(int a) { }
+    virtual void set_background(int c) { }
     virtual void set_color(int c) { }
     virtual int  get_color() { return 0; }
     virtual void reverse_mode(int r) { }
@@ -62,6 +63,7 @@ class Screen_MemMappedCharMatrix : public Screen
 protected:
     // draw mode
     int color;
+    int background;
     int reverse;
     int cursor_on;
     bool allow_scroll;
@@ -78,6 +80,7 @@ public:
 
     // functions called directly, or from a window
     void  cursor_visible(int a);
+    void  set_background(int c) { background = c; };
     void  set_color(int c) {color=c;}
     int   get_color() { return color; }
     void  reverse_mode(int r) {reverse=r;}
@@ -118,6 +121,7 @@ public:
     void getOffsets(int &ox, int &oy) { ox = offset_x; oy = offset_y; }
 
     virtual void  set_color(int);
+    virtual void  set_background(int);
     virtual void  reverse_mode(int);
     virtual void  no_scroll(void);
 
