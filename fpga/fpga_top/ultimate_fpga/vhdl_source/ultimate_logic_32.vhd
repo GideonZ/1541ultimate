@@ -1207,8 +1207,8 @@ begin
         select_right    => audio_select_right );
         
     -- generate raw samples for audio
-    audio_tape_read  <= to_signed(-10000, 19) when cas_read_c = '0' else to_signed(10000, 19);
-    audio_tape_write <= to_signed(-10000, 19) when cas_write_c = '0' else to_signed(10000, 19);  
+    audio_tape_read  <= to_signed(-100000, 19) when cas_read_c = '0' else to_signed(100000, 19);
+    audio_tape_write <= to_signed(-100000, 19) when cas_write_c = '0' else to_signed(100000, 19);  
         
     -- direct outputs for mixing in U64
     aud_drive1  <= drive_sample_1(11 downto 0) & "000000";
