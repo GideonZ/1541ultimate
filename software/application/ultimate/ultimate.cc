@@ -106,10 +106,12 @@ extern "C" void ultimate_main(void *a)
     overlay = NULL;
 
     if ((capabilities & CAPAB_OVERLAY) && (capabilities & CAPAB_ULTIMATE64)) {
-        printf("Initializing Overlay module to be used as user interface...\n");
-        overlay = new Overlay(false);
-        Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA);
-        overlay->setKeyboard(kb);
+        if (U64_HDMI_REG & U64_HDMI_HPD_CURRENT) {
+            printf("--> Screen attached to HDMI connector.. allowing overlay..\n");
+            overlay = new Overlay(false);
+            Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA);
+            overlay->setKeyboard(kb);
+        }
     }
 
 #ifndef U64
