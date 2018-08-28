@@ -26,6 +26,7 @@ Screen_MemMappedCharMatrix :: Screen_MemMappedCharMatrix(char *b, char *c, int s
     size_y     = sy;
 
     color      = 15;
+    background = 0;
     reverse    = 0;
     allow_scroll = true;
     cursor_on	 = 0;
@@ -150,6 +151,8 @@ int  Screen_MemMappedCharMatrix :: output(char c)
 			reverse_mode(1);
 		} else if (c == 'r') {
 			reverse_mode(0);
+		} else if (c == 'B') {
+		    set_background(c & 15);
 		} else {
 			set_color(c & 15);
 		}
@@ -210,7 +213,7 @@ void Screen_MemMappedCharMatrix :: output_raw(char c)
             else
                 char_base[pointer] = c;
 
-            color_base[pointer] = (char)color;
+            color_base[pointer] = (char)(color | background << 4);
             pointer ++;
             cursor_x++;
 
@@ -294,6 +297,11 @@ Window :: ~Window()
 void Window :: set_color(int c)
 {
     parent->set_color(c);
+}
+
+void Window :: set_background(int c)
+{
+    parent->set_background(c);
 }
 
 void Window :: no_scroll(void)

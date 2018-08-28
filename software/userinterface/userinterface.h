@@ -15,14 +15,15 @@
 
 #define MAX_UI_OBJECTS  8
 
-#define CFG_USERIF_BACKGROUND 0x01
-#define CFG_USERIF_BORDER     0x02
-#define CFG_USERIF_FOREGROUND 0x03
-#define CFG_USERIF_SELECTED   0x04
-#define CFG_USERIF_WORDWRAP   0x05
-#define CFG_USERIF_START_HOME 0x06
-#define CFG_USERIF_HOME_DIR   0x07
-#define CFG_USERIF_ITYPE      0x08
+#define CFG_USERIF_BACKGROUND  0x01
+#define CFG_USERIF_BORDER      0x02
+#define CFG_USERIF_FOREGROUND  0x03
+#define CFG_USERIF_SELECTED    0x04
+#define CFG_USERIF_WORDWRAP    0x05
+#define CFG_USERIF_START_HOME  0x06
+#define CFG_USERIF_HOME_DIR    0x07
+#define CFG_USERIF_ITYPE       0x08
+#define CFG_USERIF_SELECTED_BG 0x09
 
 typedef enum {
     ui_idle,
@@ -50,7 +51,7 @@ private:
     void swapDisk(void);
     UIStatusBox *status_box;
 public:
-    int color_border, color_bg, color_fg, color_sel;
+    int color_border, color_bg, color_fg, color_sel, color_sel_bg;
 
     GenericHost *host;
     Keyboard *keyboard;

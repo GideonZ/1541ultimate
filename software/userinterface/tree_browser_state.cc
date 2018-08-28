@@ -99,6 +99,7 @@ void TreeBrowserState :: draw()
 	}
 
     browser->window->set_color(12);
+    browser->window->set_background(0);
     browser->window->getScreen()->move_cursor(0, 24);
     browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->get_size_x()-9);
 
@@ -145,13 +146,16 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
     if (t) {
 		if (selected) {
 			browser->window->set_color(browser->user_interface->color_sel);
+            browser->window->set_background(browser->user_interface->color_sel_bg);
 		} else if(t->isSelectable()) {
 			browser->window->set_color(browser->user_interface->color_fg);
+            browser->window->set_background(0);
 		} else { // non selectable item
 			browser->window->set_color(12); // TODO
 		}
 		t->getDisplayString(buffer, browser->window->get_size_x());
 		browser->window->output_line(buffer);
+        browser->window->set_background(0);
     } else {
 		// draw an empty line
 		browser->window->output_line("");
@@ -167,6 +171,7 @@ void TreeBrowserState :: update_selected(void)
 
     browser->window->move_cursor(0, selected_line);
     browser->window->set_color(browser->user_interface->color_sel); // highlighted
+    browser->window->set_background(browser->user_interface->color_sel_bg);
     under_cursor->getDisplayString(buffer, browser->window->get_size_x());
     browser->window->output_line(buffer);
 }
