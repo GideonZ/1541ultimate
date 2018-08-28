@@ -36,15 +36,17 @@ FileTypeREU :: ~FileTypeREU()
 
 int FileTypeREU :: fetch_context_items(IndexedList<Action *> &list)
 {
-    int count = 1;
+    int count = 0;
 
-    list.append(new Action("Load into REU", FileTypeREU :: execute_st, REUFILE_LOAD));
-    list.append(new Action("Preload on Startup", FileTypeREU :: execute_st, REUFILE_SET_PRELOAD));
     uint32_t capabilities = getFpgaCapabilities();
     if ((type == REU_TYPE_MOD) && (capabilities & CAPAB_SAMPLER)) {
         list.append(new Action("Play MOD", FileTypeREU :: execute_st, REUFILE_PLAYMOD));
         count++;
     }
+    list.append(new Action("Load into REU", FileTypeREU :: execute_st, REUFILE_LOAD));
+    list.append(new Action("Preload on Startup", FileTypeREU :: execute_st, REUFILE_SET_PRELOAD));
+    count += 2;
+
     return count;
 }
 
