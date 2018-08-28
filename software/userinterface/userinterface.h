@@ -22,6 +22,7 @@
 #define CFG_USERIF_WORDWRAP   0x05
 #define CFG_USERIF_START_HOME 0x06
 #define CFG_USERIF_HOME_DIR   0x07
+#define CFG_USERIF_ITYPE      0x08
 
 typedef enum {
     ui_idle,
@@ -78,7 +79,8 @@ public:
     void appear(void);
     void set_screen(Screen *s); /* Only used in updater */
     int  activate_uiobject(UIObject *obj);
-        
+    int  getPreferredType(void);
+
     void run_editor(const char *);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }

@@ -35,6 +35,7 @@ extern "C" {
 #define ITU_INTERRUPT_CMDIF  0x10
 #define ITU_INTERRUPT_RMIIRX 0x20
 #define ITU_INTERRUPT_RMIITX 0x40
+#define ITU_INTERRUPT_RESET  0x80
 
 
 #define CAPAB_UART          0x00000001

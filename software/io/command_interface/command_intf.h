@@ -64,6 +64,7 @@ class ObjectWithMenu;
 class CommandInterface : public SubSystem, ObjectWithMenu
 {
 	TaskHandle_t taskHandle;
+	TaskHandle_t resetTaskHandle;
 
 	uint8_t *command_buffer;
     uint8_t *response_buffer;
@@ -75,7 +76,9 @@ class CommandInterface : public SubSystem, ObjectWithMenu
     int cart_mode;
     
     static void start_task(void *a);
+    static void reset_task(void *a);
     void run_task(void);
+    void run_reset_task(void);
 
     int executeCommand(SubsysCommand *cmd);
 public:

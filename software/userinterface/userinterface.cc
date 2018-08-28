@@ -16,12 +16,16 @@
 #endif // NO_FILE_ACCESS
 
 /* Configuration */
-const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
+static const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
                          "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
                           
-const char *en_dis4[]    = { "Disabled", "Enabled" };
+static const char *en_dis4[]    = { "Disabled", "Enabled" };
+static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
 
 struct t_cfg_definition user_if_config[] = {
+#if U64
+    { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 0 },
+#endif
     { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 0 },
     { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 0 },
     { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 12 },
@@ -80,6 +84,11 @@ void UserInterface :: init(GenericHost *h)
     	state = ui_host_permanent;
     	appear();
     }
+}
+
+int UserInterface :: getPreferredType(void)
+{
+    return cfg->get_value(CFG_USERIF_ITYPE);
 }
 
 void UserInterface :: set_screen(Screen *s)
@@ -147,6 +156,8 @@ void UserInterface :: run(void)
 				if (host->is_accessible()) {
 					if (!pollFocussed()) {
 						host->release_ownership();
+					} else if (host->buttonPush()) {
+                        host->release_ownership();
 					}
 				} else {
 					if ((system_usb_keyboard.getch() == KEY_SCRLOCK) || (host->buttonPush())) {

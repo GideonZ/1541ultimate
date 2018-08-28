@@ -137,7 +137,7 @@ ConfigStore :: ConfigStore(uint32_t store_id, const char *name, int page, int pa
     obj = ob;
     dirty = false;
     
-    for(int i=0;i<32;i++) {
+    for(int i=0;i<64;i++) {
         if(defs[i].type == CFG_TYPE_END)
             break;
         if(defs[i].id == 0xFF)

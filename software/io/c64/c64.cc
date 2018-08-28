@@ -121,7 +121,7 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 static const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *en_dis2[] = { "Disabled", "Enabled" };
-static const char *rom_sel[] = { "Boot", "Original", "Alternative" };
+static const char *rom_sel[] = { "Factory", "Original", "Alternative" };
 static const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
 static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "128ns" };
@@ -804,7 +804,7 @@ void C64::unfreeze(void *vdef, int mode)
     if (!phi2_present())
         return;
 
-    keyb->wait_free();
+    // keyb->wait_free();
 
     if (mode == 0) {
         // bring back C64 in original state
