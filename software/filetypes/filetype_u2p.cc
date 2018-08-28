@@ -127,6 +127,8 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 			}
 		}
 		fm->fclose(file);
+		// this is a hack!
+		cmd->user_interface->host->release_ownership();
 		file = NULL;
 		jump_run(header.start);
 	} else {
