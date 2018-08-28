@@ -20,6 +20,7 @@
 #include "usb_nano.h"
 #include "u64.h"
 
+void ResetInterruptHandler(void) __attribute__ ((weak));
 void RmiiRxInterruptHandler(void) __attribute__ ((weak));
 uint8_t command_interface_irq(void) __attribute__ ((weak));
 uint8_t tape_recorder_irq(void) __attribute__ ((weak));
@@ -33,6 +34,11 @@ void RmiiRxInterruptHandler() {
 
 }
 
+void ResetInterruptHandler()
+{
+    ioWrite8(UART_DATA, 'R');
+}
+
 static void ituIrqHandler(void *context) {
 	static uint8_t pending;
 
@@ -43,6 +49,10 @@ static void ituIrqHandler(void *context) {
 
 	BaseType_t do_switch = pdFALSE;
 
+	if (pending & 0x80) {
+	    ResetInterruptHandler();
+	    do_switch = pdTRUE;
+	}
 	if (pending & 0x20) {
 		RmiiRxInterruptHandler();
 		do_switch = pdTRUE;

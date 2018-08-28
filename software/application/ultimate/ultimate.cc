@@ -101,18 +101,17 @@ extern "C" void ultimate_main(void *a)
         system_usb_keyboard.enableMatrix(true);
     }
 
-/*
-    if(capabilities & CAPAB_OVERLAY) {
-            printf("Using Overlay module as user interface...\n");
-            overlay = new Overlay(false);
-            primaryUserInterface = new UserInterface(title);
-            Browsable *root = new BrowsableRoot();
-        	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
-            primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
-            primaryUserInterface->init(overlay);
+    primaryUserInterface = 0;
 
-    } else
-*/
+    overlay = NULL;
+
+    if ((capabilities & CAPAB_OVERLAY) && (capabilities & CAPAB_ULTIMATE64)) {
+        printf("Initializing Overlay module to be used as user interface...\n");
+        overlay = new Overlay(false);
+        Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA);
+        overlay->setKeyboard(kb);
+    }
+
 #ifndef U64
     if (c64) {
        for (int i=0; i<70; i++)
@@ -133,30 +132,18 @@ extern "C" void ultimate_main(void *a)
     }
 #endif
 
-    if(c64 && c64->exists()) {
-        primaryUserInterface = new UserInterface(title);
+    primaryUserInterface = new UserInterface(title);
+    // Instantiate and attach the root tree browser
+    Browsable *root = new BrowsableRoot();
+    root_tree_browser = new TreeBrowser(primaryUserInterface, root);
+    primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
 
-    	// Instantiate and attach the root tree browser
-        Browsable *root = new BrowsableRoot();
-    	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
-        primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+    if ((primaryUserInterface->getPreferredType() == 1) && (overlay)) {
+        primaryUserInterface->init(overlay);
+    } else if (c64 && c64->exists()) {
         primaryUserInterface->init(c64);
-
-    } else {
-    	// from now on, log to memory, freeing the uart
-/*
-    	custom_outbyte = outbyte_log;
-
-    	Stream *stream = new Stream_UART;
-        GenericHost *host = new HostStream(stream);
-        ui = new UserInterface;
-        ui->init(host);
-        // Instantiate and attach the root tree browser
-        Browsable *root = new BrowsableRoot();
-    	root_tree_browser = new TreeBrowser(ui, root);
-        ui->activate_uiobject(root_tree_browser); // root of all evil!
-*/
     }
+
 
     if(capabilities & CAPAB_C2N_STREAMER)
 	    tape_controller = new TapeController;

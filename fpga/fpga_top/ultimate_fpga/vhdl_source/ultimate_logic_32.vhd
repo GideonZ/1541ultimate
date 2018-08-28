@@ -511,7 +511,7 @@ begin
         g_capabilities  => c_capabilities,
         g_uart          => g_uart,
         g_uart_rx       => g_uart_rx,
-        g_edge_init     => "00000101",
+        g_edge_init     => "10000101",
         g_edge_write    => false,
         g_baudrate      => g_baud_rate )
     port map (
@@ -526,7 +526,7 @@ begin
         tick_1ms    => tick_1kHz,
         buttons     => button,
 
-        irq_in(7)   => '0',
+        irq_in(7)   => not c64_reset_in_n,
         irq_in(6)   => sys_irq_eth_tx,
         irq_in(5)   => sys_irq_eth_rx,
         irq_in(4)   => sys_irq_cmdif,

@@ -196,6 +196,9 @@ int TreeBrowser :: poll(int sub_returned)
     }
     if(c >= 0) {
     	ret = handle_key(c);
+    	if(ret < 0) {
+            keyb->wait_free();
+        }
     }
 	return ret;
 }
