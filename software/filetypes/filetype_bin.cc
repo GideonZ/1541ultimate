@@ -95,13 +95,13 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         count++;
     }
     if (size == 8192) {
-        list.append(new Action("Flash as Orig. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ORIG, (int)this));
-        count++;
-        list.append(new Action("Flash as Alt. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ALT, (int)this));
-        count++;
         list.append(new Action("Flash as Orig. Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL_ORIG, (int)this));
         count++;
         list.append(new Action("Flash as Alt. Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT, (int)this));
+        count++;
+        list.append(new Action("Flash as Orig. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ORIG, (int)this));
+        count++;
+        list.append(new Action("Flash as Alt. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ALT, (int)this));
         count++;
     }
 #else
@@ -251,38 +251,72 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
 #endif
 
         if (transferred == size) { // this should now match
-    		int retval = get_flash()->write_image(id, buffer, size);
-    		if (retval) {
-    			printf("Flashing Kernal or drive ROM Failed: %d\n", retval);
-    			cmd->user_interface->popup("Flashing Failed", BUTTON_OK);
-    		} else {
-    			switch (cmd->functionID) {
-                // For all U64 flash functions, also set the config accordingly
-    			case CMD_SET_BASIC_ORIG:
-                case CMD_SET_BASIC_ALT:
-                case CMD_SET_KERNAL_ORIG:
-                case CMD_SET_KERNAL_ALT:
-                case CMD_SET_CHAR_ORIG:
-                case CMD_SET_CHAR_ALT:
-                    C64 :: getMachine()->new_system_rom(id);
-                    cmd->user_interface->popup("System ROM Flashed.", BUTTON_OK);
-                    break;
+            uint32_t *rom = (uint32_t *)buffer;
+            bool ok = true;
 
-                case CMD_SET_CARTROM:
-                    cmd->user_interface->popup("Now select appropriate Custom Cart", BUTTON_OK);
-                    break;
+            switch (cmd->functionID) {
+            case CMD_SET_BASIC_ORIG:
+            case CMD_SET_BASIC_ALT:
+                if ((rom[1] != 0x424D4243) || (rom[2] != 0x43495341)) {
+                    if (cmd->user_interface->popup("Are you sure this is a BASIC ROM?", BUTTON_YES | BUTTON_NO) == BUTTON_NO) {
+                        ok = false;
+                    }
+                }
+                break;
 
-                case CMD_SET_DRIVEROM:
-                    cmd->user_interface->popup("Please select Custom 1541 ROM.", BUTTON_OK);
-                    break;
+            case CMD_SET_KERNAL_ORIG:
+            case CMD_SET_KERNAL_ALT:
+                if (rom[0] != 0x0F205685) {
+                    if (cmd->user_interface->popup("Are you sure this is a KERNAL ROM?", BUTTON_YES | BUTTON_NO) == BUTTON_NO) {
+                        ok = false;
+                    }
+                }
+                break;
 
-                // For U2/U2+ flash function, tell user that alternate kernal is being used.
-                case CMD_SET_KERNAL:
-                    C64 :: getMachine()->enable_kernal(buffer);
-                    cmd->user_interface->popup("Now using Alternate Kernal.", BUTTON_OK);
-                    break;
-    			}
-    		}
+            case CMD_SET_CHAR_ORIG:
+            case CMD_SET_CHAR_ALT:
+                if (rom[0] != 0x6E6E663C) {
+                    if (cmd->user_interface->popup("Are you sure this is a CHAR ROM?", BUTTON_YES | BUTTON_NO) == BUTTON_NO) {
+                        ok = false;
+                    }
+                }
+                break;
+            }
+
+            if (ok) {
+                int retval = get_flash()->write_image(id, buffer, size);
+                if (retval) {
+                    printf("Flashing Kernal or drive ROM Failed: %d\n", retval);
+                    cmd->user_interface->popup("Flashing Failed", BUTTON_OK);
+                } else {
+                    switch (cmd->functionID) {
+                    // For all U64 flash functions, also set the config accordingly
+                    case CMD_SET_BASIC_ORIG:
+                    case CMD_SET_BASIC_ALT:
+                    case CMD_SET_KERNAL_ORIG:
+                    case CMD_SET_KERNAL_ALT:
+                    case CMD_SET_CHAR_ORIG:
+                    case CMD_SET_CHAR_ALT:
+                        C64 :: getMachine()->new_system_rom(id);
+                        cmd->user_interface->popup("System ROM Flashed.", BUTTON_OK);
+                        break;
+
+                    case CMD_SET_CARTROM:
+                        cmd->user_interface->popup("Now select appropriate Custom Cart", BUTTON_OK);
+                        break;
+
+                    case CMD_SET_DRIVEROM:
+                        cmd->user_interface->popup("Please select Custom 1541 ROM.", BUTTON_OK);
+                        break;
+
+                    // For U2/U2+ flash function, tell user that alternate kernal is being used.
+                    case CMD_SET_KERNAL:
+                        C64 :: getMachine()->enable_kernal(buffer);
+                        cmd->user_interface->popup("Now using Alternate Kernal.", BUTTON_OK);
+                        break;
+                    }
+                }
+            }
     	}
         delete buffer;
     } else {
