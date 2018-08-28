@@ -110,7 +110,7 @@ welcome
 	.text "                                        "
 	.text " 2) Browse to the folder with the ROMs. "
 	.text "                                        "
-	.text " 3) Select the appropriate ROM and      "
+	.text " 3) Select ROM file (.bin/.rom) and     "
 	.text "    press RETURN. Choose 'Flash as...'  "
 	.text "                                        "
 	.text " 4) Repeat (3) for all ROMs.            "
