@@ -11,6 +11,7 @@ extern "C" {
 #include "keyboard_usb.h"
 #include "iomap.h"
 #include "chargen.h"
+#include "u64.h"
 
 #define OVERLAY_REGS              ((volatile t_chargen_registers *)OVERLAY_BASE)
 
@@ -92,6 +93,10 @@ public:
 
     void release_ownership() {
         OVERLAY_REGS->TRANSPARENCY = 0x00;
+        // THIS IS A HACK... This is not part of the overlay function, but it is the best place to perform this function
+        // to make the 'gap' the smallest possible between a write to the CIA and one from the system CPU.
+        *C64_PLD_PORTA = C64_PLD_STATE0;
+        *C64_PLD_PORTB = C64_PLD_STATE1;
         enabled = false;
         //system_usb_keyboard.enableMatrix(true);
     }
