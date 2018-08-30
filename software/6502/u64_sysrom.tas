@@ -91,31 +91,31 @@ fix
 
 welcome
 	.enc "screen"
-	.text "                                        "
-	.text "     Welcome to the Ultimate-64!        "
-	.text "                                        "
-	.text " To avoid any potential legal issues,   "
-	.text " the Ultimate-64 is shipped without     "
-	.text " System ROMs, eg. Kernal and Basic ROM. "
-	.text "                                        "
-	.text " You can obtain these ROMs from an      "
-	.text " original Commodore C64 machine, or     "
-	.text " download them from the internet.       "
-	.text "                                        "
-	.text " Once you have the ROMs on a USB stick, "
-	.text " you can save them into the Ultimate 64."
-	.text "                                        "
-	.text " 1) Press the power button briefly to   "
-	.text "    enter the Ultimate Browser Menu.    "
-	.text "                                        "
-	.text " 2) Browse to the folder with the ROMs. "
-	.text "                                        "
-	.text " 3) Select ROM file (.bin/.rom) and     "
-	.text "    press RETURN. Choose 'Flash as...'  "
-	.text "                                        "
-	.text " 4) Repeat (3) for all ROMs.            "
-	.text "                                        "
-	.text " 5) Reboot, and have fun! :-)           "
+    .text "                                        " ; 1
+	.text "     Welcome to the Ultimate-64!        " ; 2
+	.text "                                        " ; 3
+	.text " To avoid any potential legal issues,   " ; 4
+	.text " the Ultimate-64 is shipped without     " ; 5
+	.text " System ROMs. You can obtain these ROMs " ; 6
+	.text " from an original Commodore C64 machine," ; 7
+	.text " or download them from the internet.    " ; 8
+	.text "                                        " ; 9
+	.text " Once you have the ROMs on a USB stick, " ; 10
+	.text " you can save them into the Ultimate 64:" ; 11
+	.text "                                        " ; 12
+	.text " 1) Press the power button briefly to   " ; 13
+	.text "    enter the Ultimate Browser Menu.    " ; 14
+	.text "                                        " ; 15
+	.text " 2) Browse to the folder with the ROMs. " ; 16
+	.text "                                        " ; 17
+    .text " 3) For Basic, Kernal and Character     " ; 18
+    .text "    ROMs, repeat:                       " ; 19
+    .text "                                        " ; 20
+	.text "    - Select ROM file (.bin or .rom) and" ; 21
+	.text "      press RETURN. Choose 'Flash as...'" ; 22
+	.text "                                        " ; 23
+	.text " 4) Reboot, and have fun! :-)           " ; 24
+    .text "                                        " ; 25
 	.enc "none"
 
 restore
