@@ -11,10 +11,17 @@
 #include "config.h"
 #include "filemanager.h"
 #include "subsys.h"
+#include "sid_config.h"
 
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
 	FileManager *fm;
+
+    uint8_t GetSidType(int slot);
+    void SetSidType(int slot, uint8_t sidType);
+    bool SetSidAddress(int slot, uint8_t actualType, uint8_t base);
+    bool MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any);
+    void SetMixerAutoSid(uint8_t *slots, int count);
 public:
     U64Config();
     ~U64Config() {}
@@ -26,6 +33,8 @@ public:
     static void setPllOffset(ConfigItem *it);
     static void setScanMode(ConfigItem *it);
     static void setMixer(ConfigItem *it);
+
+    bool SidAutoConfig(int count, t_sid_definition *requested);
 };
 
 extern U64Config u64_configurator;

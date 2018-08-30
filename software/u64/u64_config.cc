@@ -427,3 +427,246 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     }
     return 0;
 }
+
+
+uint8_t U64Config :: GetSidType(int slot)
+{
+    uint8_t val;
+
+    switch(slot) {
+    case 0: // slot 1A
+        val = cfg->get_value(CFG_SID1_TYPE);
+        switch (val) {  // "None", "6581", "8580", "SidFX", "fpgaSID" };
+        case 0:
+            return 0;
+        case 1:
+            return 1;
+        case 2:
+            return 2;
+        case 3:
+            return 1; // to be implemented
+        case 4:
+            return 3; // either type, we can TELL the fpgaSID to configure itself in the right mode
+        default:
+            return 0;
+        }
+        break;
+
+    case 1: // slot 2A
+        val = cfg->get_value(CFG_SID2_TYPE);
+        switch (val) {  // "None", "6581", "8580", "SidFX", "fpgaSID" };
+        case 0:
+            return 0;
+        case 1:
+            return 1;
+        case 2:
+            return 2;
+        case 3:
+            return 1; // to be implemented
+        case 4:
+            return 3; // either type, we can TELL the fpgaSID to configure itself in the right mode
+        default:
+            return 0;
+        }
+        break;
+
+    case 5: // slot 1B
+        val = cfg->get_value(CFG_SID1_TYPE);
+        if (val == 4) { // fpgaSID
+            return 3;
+        }
+        return 0; // no "other" SID available in slot 1.
+
+    case 6: // slot 2B
+        val = cfg->get_value(CFG_SID2_TYPE);
+        if (val == 4) { // fpgaSID
+            return 3;
+        }
+        return 0; // no "other" SID available in slot 2.
+
+    case 2:
+    case 3:
+        return 1;
+
+    }
+    return 0;
+}
+
+bool U64Config :: SetSidAddress(int slot, uint8_t actualType, uint8_t base)
+{
+    uint8_t other = 0x00;
+    if (actualType >= 3) {
+        switch(C64_STEREO_ADDRSEL_BAK) {
+        case 0: // A5:
+            other = 0x02;
+            break;
+        case 1: // A8:
+            other = 0x10;
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (slot < 4) { // for the first four SIDs, we can set the base address
+        // if the base address already has this "other" bit set, we cannot map it.
+        if (base & other) {
+            return false;
+        }
+
+        switch(slot) {
+        case 0: // Socket 1 address
+            C64_SID1_BASE = C64_SID1_BASE_BAK = base;
+            C64_SID1_MASK = C64_SID1_MASK_BAK = 0xFE & ~other;
+            return true;
+        case 1: // Socket 2 address
+            C64_SID2_BASE = C64_SID2_BASE_BAK = base;
+            C64_SID2_MASK = C64_SID2_MASK_BAK = 0xFE & ~other;
+            return true;
+        case 2:
+            C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK = base;
+            C64_EMUSID1_MASK = C64_EMUSID1_MASK_BAK = 0xFE & ~other;
+            return true;
+        case 3:
+            C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK = base;
+            C64_EMUSID2_MASK = C64_EMUSID2_MASK_BAK = 0xFE & ~other;
+            return true;
+        }
+        return false;
+    }
+    // ok, so now we are ODD.. Let's see if we can use the existing mapping of the other channel
+
+    switch(slot) {
+    case 4:
+        return ((C64_SID1_BASE_BAK | other) == base);
+    case 5:
+        return ((C64_SID2_BASE_BAK | other) == base);
+    case 6:
+        return ((C64_EMUSID1_BASE_BAK | other) == base);
+    case 7:
+        return ((C64_EMUSID2_BASE_BAK | other) == base);
+    }
+    return false;
+}
+
+void U64Config :: SetSidType(int slot, uint8_t sidType)
+{
+    printf("Set SID type of logical SID %d to %d.\n", slot, sidType);
+}
+
+bool U64Config :: MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any)
+{
+    // definition of SID slots:
+    // 0/1 : Socket 1
+    // 2/3 : Socket 2
+    // 4/5/6/7: Internally emulated SIDs. 0-3 have priority
+    bool found = false;
+
+    static const char *sidTypes[] = { "None", "6581", "8580", "Either" };
+
+    for (int i=0; i < 8; i++) {
+        if (mappedSids & (1 << i)) {
+            continue;
+        }
+        uint8_t actualType = GetSidType(i);
+        if ((actualType & requested->sidType) || any) { //  bit mask != 0
+            if (SetSidAddress(i, actualType, requested->baseAddress)) {
+                mappedSids |= (1 << i);
+                mappedOnSlot[index] = i;
+                printf("SID %d (type %s) mapped on logical SID %d (type %s), at address $D%02x0\n", index,
+                        sidTypes[requested->sidType & 3], i, sidTypes[actualType], requested->baseAddress);
+                found = true;
+                if (actualType == 3) {
+                    SetSidType(i, requested->sidType);
+                }
+                break;
+            }
+        }
+    }
+    return found;
+}
+
+void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
+{
+    static const uint8_t channelMap[4] = { 4, 6, 0, 2 };
+
+    // these are the 0 dB values... is this the right way to do it?
+    uint8_t selectedVolumes[4];
+    selectedVolumes[0] = volume_ctrl[cfg->get_value(CFG_MIXER2_VOL)];
+    selectedVolumes[1] = volume_ctrl[cfg->get_value(CFG_MIXER3_VOL)];
+    selectedVolumes[2] = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL)];
+    selectedVolumes[3] = volume_ctrl[cfg->get_value(CFG_MIXER1_VOL)];
+
+    // first mute the SIDs
+    volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
+    for (int i=0;i<8;i++) {
+        mixer[i] = 0;
+    }
+
+    if (count > 4) {
+        printf("I don't know how to map %d inputs on the mixer.\n", count);
+        count = 4;
+    }
+
+    static const int channelPanning[20] = { 0, 0, 0, 0, 5, 0, 0, 0, 3, 7, 0, 0, 2, 5, 8, 0, 1, 3, 7, 9 };
+    //                                      -  -  -  -|CNT -  -  - |L2 R2 -  - |L3 CN R3 - |L4 L2 R2 R4
+
+    for (int i=0;i<count;i++) {
+        uint8_t volume = selectedVolumes[slots[i]];
+        if (!volume) { // setting was OFF => default to 0 dB
+            volume = 0x80;
+        }
+        int pan = channelPanning[4*count + i];
+        printf("Sid %d was mapped to slot %d, which has volume setting %02x. Setting pan to %s.\n", i, slots[i], volume, pannings[pan]);
+        mixer[0 + channelMap[slots[i]]] = (pan_ctrl[pan] * volume) >> 8;
+        mixer[1 + channelMap[slots[i]]] = (pan_ctrl[10-pan] * volume) >> 8;
+    }
+}
+
+bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
+{
+    uint16_t mappedSids;
+    uint8_t *mappedOnSlot;
+
+    memset(mappedOnSlot, 0, 8);
+    mappedSids = 0;
+    bool failed = false;
+    for (int i=0; i < count; i++) {
+        if (!MapSid(i, mappedSids, mappedOnSlot, &requested[i], false)) {
+            failed = true;
+        }
+    }
+    if (failed) {
+        mappedSids = 0;
+        memset(mappedOnSlot, 0, 8);
+        failed = false;
+        for (int i=count-1; i >= 0; i--) {
+            if (!MapSid(i, mappedSids, mappedOnSlot, &requested[i], false)) {
+                failed = true;
+            }
+        }
+    }
+    if (failed) {
+        mappedSids = 0;
+        memset(mappedOnSlot, 0, 8);
+        failed = false;
+        for (int i=0; i < count; i++) {
+            if (!MapSid(i, mappedSids, mappedOnSlot, &requested[i], true)) {
+                failed = true;
+            }
+        }
+    }
+    if (failed) {
+        printf("No valid mapping found.\n");
+        return false;
+    }
+
+    SetMixerAutoSid(mappedOnSlot, count);
+    return true;
+}
+
+// this function overrides the weak function in FiletypeSID.. ;-)
+bool SidAutoConfig(int count, t_sid_definition *requested)
+{
+    return u64_configurator.SidAutoConfig(count, requested);
+}

@@ -9,6 +9,7 @@
 #include "stream_textlog.h"
 #include "init_function.h"
 #include "dump_hex.h"
+#include "sid_config.h"
 
 extern uint8_t _sidcrt_bin_start;
 extern uint8_t _sidcrt_bin_end;
@@ -60,6 +61,48 @@ static void initSidCart(void *object, void *param)
     memcpy(sid_rom_area + 0x2000, &_basic_bin_start, 8192);
 }
 InitFunction sidCart_initializer(initSidCart, NULL, NULL);
+
+
+// on U64, this function will fall through in the audio configurator. On other platforms, the function below (empty) will be called.
+bool SidAutoConfig(int count, t_sid_definition *requests) __attribute__((weak));
+
+bool SidAutoConfig(int count, t_sid_definition *requests)
+{
+
+}
+
+
+bool FileTypeSID :: ConfigSIDs(void)
+{
+    t_sid_definition requests[3]; // SID tunes never ask for more than 3 sids
+    int count = 1;
+    requests[0].baseAddress = 0x40; // D400
+    requests[0].sidType = 3; // not specified
+    requests[1].sidType = 3; // not specified
+    requests[2].sidType = 3; // not specified
+
+    if (offset > 0x76) { // PSID2, 3 or 4
+        if ((flags >> 4) & 3) { // if the SID file specifies the type, we'll copy it
+            requests[0].sidType = (flags >> 4) & 3;
+        }
+        if ((flags >> 6) & 3) { // if the SID file specifies the type, we'll copy it
+            requests[0].sidType = (flags >> 6) & 3;
+        }
+        if ((flags >> 8) & 3) { // if the SID file specifies the type, we'll copy it
+            requests[0].sidType = (flags >> 8) & 3;
+        }
+        if (sid_header[0x7A]) {
+            requests[1].baseAddress = sid_header[0x7A];
+            count = 2;
+        }
+        if (sid_header[0x7B]) {
+            requests[2].baseAddress = sid_header[0x7A];
+            count = 3;
+        }
+    }
+    return SidAutoConfig(count, requests);
+}
+
 
 /*************************************************************/
 /* SID File Browser Handling                                 */
@@ -318,6 +361,9 @@ int FileTypeSID :: prepare(bool use_default)
 	length = (file->get_size() - offset) - 2;
 	end = start + length;
 
+	flags = ((uint16_t)sid_header[0x76]) << 8;
+	flags |= sid_header[0x77];
+
 	sid_header[0x7e] = uint8_t(end & 0xFF);
 	sid_header[0x7f] = uint8_t(end >> 8);
 
@@ -367,6 +413,8 @@ int FileTypeSID :: prepare(bool use_default)
 	header_valid = false;
 
 	readSongLengths();
+
+	ConfigSIDs();
 
 	// Now, start to access the C64..
 	SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64, C64_STOP_COMMAND, (int)0, "", "");
