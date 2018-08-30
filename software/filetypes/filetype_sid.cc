@@ -86,17 +86,17 @@ bool FileTypeSID :: ConfigSIDs(void)
             requests[0].sidType = (flags >> 4) & 3;
         }
         if ((flags >> 6) & 3) { // if the SID file specifies the type, we'll copy it
-            requests[0].sidType = (flags >> 6) & 3;
+            requests[1].sidType = (flags >> 6) & 3;
         }
         if ((flags >> 8) & 3) { // if the SID file specifies the type, we'll copy it
-            requests[0].sidType = (flags >> 8) & 3;
+            requests[2].sidType = (flags >> 8) & 3;
         }
         if (sid_header[0x7A]) {
             requests[1].baseAddress = sid_header[0x7A];
             count = 2;
         }
         if (sid_header[0x7B]) {
-            requests[2].baseAddress = sid_header[0x7A];
+            requests[2].baseAddress = sid_header[0x7B];
             count = 3;
         }
     }
