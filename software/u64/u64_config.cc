@@ -42,6 +42,7 @@ U64Config u64_configurator;
 #define CFG_PADDLE_EN		  0x0F
 #define CFG_STEREO_DIFF	      0x10
 #define CFG_PARCABLE_ENABLE   0x11
+#define CFG_PLAYER_AUTOCONFIG 0x12
 
 #define CFG_MIXER0_VOL        0x20
 #define CFG_MIXER1_VOL        0x21
@@ -172,6 +173,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
     { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  4, 0 },
     { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  4, 0 },
+    { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis4,      0,  1, 1 },
     { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 29, 0 },
     { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 29, 0 },
     { CFG_PADDLE_EN,			CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
@@ -518,10 +520,12 @@ bool U64Config :: SetSidAddress(int slot, uint8_t actualType, uint8_t base)
         case 0: // Socket 1 address
             C64_SID1_BASE = C64_SID1_BASE_BAK = base;
             C64_SID1_MASK = C64_SID1_MASK_BAK = 0xFE & ~other;
+            C64_SID1_EN = 1;
             return true;
         case 1: // Socket 2 address
             C64_SID2_BASE = C64_SID2_BASE_BAK = base;
             C64_SID2_MASK = C64_SID2_MASK_BAK = 0xFE & ~other;
+            C64_SID2_EN = 1;
             return true;
         case 2:
             C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK = base;
@@ -564,16 +568,19 @@ bool U64Config :: MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot,
 
     static const char *sidTypes[] = { "None", "6581", "8580", "Either" };
 
+    C64_SID1_EN = 0;
+    C64_SID2_EN = 0;
+
     for (int i=0; i < 8; i++) {
         if (mappedSids & (1 << i)) {
             continue;
         }
         uint8_t actualType = GetSidType(i);
-        if ((actualType & requested->sidType) || any) { //  bit mask != 0
+        if ((actualType & requested->sidType) || (any && actualType)) { //  bit mask != 0
             if (SetSidAddress(i, actualType, requested->baseAddress)) {
                 mappedSids |= (1 << i);
                 mappedOnSlot[index] = i;
-                printf("SID %d (type %s) mapped on logical SID %d (type %s), at address $D%02x0\n", index,
+                printf("Trying to map SID %d (type %s) on logical SID %d (type %s), at address $D%02x0\n", index,
                         sidTypes[requested->sidType & 3], i, sidTypes[actualType], requested->baseAddress);
                 found = true;
                 if (actualType == 3) {
@@ -625,8 +632,17 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
 
 bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
 {
+    if (!(cfg->get_value(CFG_PLAYER_AUTOCONFIG))) {
+        printf("SID Player Autoconfig Disabled, not configuring.\n");
+        return true;
+    }
+
     uint16_t mappedSids;
-    uint8_t *mappedOnSlot;
+    uint8_t mappedOnSlot[8];
+
+    if (count > 8) {
+        count = 8;
+    }
 
     memset(mappedOnSlot, 0, 8);
     mappedSids = 0;
