@@ -43,6 +43,7 @@ U64Config u64_configurator;
 #define CFG_STEREO_DIFF	      0x10
 #define CFG_PARCABLE_ENABLE   0x11
 #define CFG_PLAYER_AUTOCONFIG 0x12
+#define CFG_ALLOW_EMUSID      0x13
 
 #define CFG_MIXER0_VOL        0x20
 #define CFG_MIXER1_VOL        0x21
@@ -128,6 +129,7 @@ uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0,
 
 static const char *stereo_addr[] = { "A5", "A8" };
 static const char *en_dis4[] = { "Disabled", "Enabled" };
+static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
@@ -174,6 +176,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  4, 0 },
     { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  4, 0 },
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis4,      0,  1, 1 },
+    { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses EmuSid", "%s", yes_no,       0,  1, 1 },
     { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 29, 0 },
     { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 29, 0 },
     { CFG_PADDLE_EN,			CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
@@ -472,23 +475,27 @@ uint8_t U64Config :: GetSidType(int slot)
         }
         break;
 
-    case 5: // slot 1B
+    case 2:
+    case 3:
+        if (cfg->get_value(CFG_ALLOW_EMUSID)) {
+            return 1;
+        } else {
+            return 0;
+        }
+
+    case 4: // slot 1B
         val = cfg->get_value(CFG_SID1_TYPE);
         if (val == 4) { // fpgaSID
             return 3;
         }
         return 0; // no "other" SID available in slot 1.
 
-    case 6: // slot 2B
+    case 5: // slot 2B
         val = cfg->get_value(CFG_SID2_TYPE);
         if (val == 4) { // fpgaSID
             return 3;
         }
         return 0; // no "other" SID available in slot 2.
-
-    case 2:
-    case 3:
-        return 1;
 
     }
     return 0;
@@ -520,18 +527,18 @@ bool U64Config :: SetSidAddress(int slot, uint8_t actualType, uint8_t base)
         case 0: // Socket 1 address
             C64_SID1_BASE = C64_SID1_BASE_BAK = base;
             C64_SID1_MASK = C64_SID1_MASK_BAK = 0xFE & ~other;
-            C64_SID1_EN = 1;
+            C64_SID1_EN = C64_SID1_EN_BAK = 1;
             return true;
         case 1: // Socket 2 address
             C64_SID2_BASE = C64_SID2_BASE_BAK = base;
             C64_SID2_MASK = C64_SID2_MASK_BAK = 0xFE & ~other;
-            C64_SID2_EN = 1;
+            C64_SID2_EN = C64_SID2_EN_BAK = 1;
             return true;
-        case 2:
+        case 2: // EmuSID 1 address
             C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK = base;
             C64_EMUSID1_MASK = C64_EMUSID1_MASK_BAK = 0xFE & ~other;
             return true;
-        case 3:
+        case 3: // EmuSID 2 address
             C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK = base;
             C64_EMUSID2_MASK = C64_EMUSID2_MASK_BAK = 0xFE & ~other;
             return true;
@@ -561,15 +568,14 @@ void U64Config :: SetSidType(int slot, uint8_t sidType)
 bool U64Config :: MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any)
 {
     // definition of SID slots:
-    // 0/1 : Socket 1
-    // 2/3 : Socket 2
-    // 4/5/6/7: Internally emulated SIDs. 0-3 have priority
+    // 0 : Socket 1
+    // 1 : Socket 2
+    // 2/3: Internally emulated SIDs.
+    // 4...7: "B" (other channel of a socket, addressed with address select pin)
+
     bool found = false;
 
     static const char *sidTypes[] = { "None", "6581", "8580", "Either" };
-
-    C64_SID1_EN = 0;
-    C64_SID2_EN = 0;
 
     for (int i=0; i < 8; i++) {
         if (mappedSids & (1 << i)) {
@@ -597,7 +603,6 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
 {
     static const uint8_t channelMap[4] = { 4, 6, 0, 2 };
 
-    // these are the 0 dB values... is this the right way to do it?
     uint8_t selectedVolumes[4];
     selectedVolumes[0] = volume_ctrl[cfg->get_value(CFG_MIXER2_VOL)];
     selectedVolumes[1] = volume_ctrl[cfg->get_value(CFG_MIXER3_VOL)];
@@ -644,6 +649,9 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         count = 8;
     }
 
+    C64_SID1_EN = C64_SID1_EN_BAK = 0;
+    C64_SID2_EN = C64_SID2_EN_BAK = 0;
+
     memset(mappedOnSlot, 0, 8);
     mappedSids = 0;
     bool failed = false;
@@ -653,6 +661,8 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         }
     }
     if (failed) {
+        C64_SID1_EN = C64_SID1_EN_BAK = 0;
+        C64_SID2_EN = C64_SID2_EN_BAK = 0;
         mappedSids = 0;
         memset(mappedOnSlot, 0, 8);
         failed = false;
@@ -663,6 +673,8 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         }
     }
     if (failed) {
+        C64_SID1_EN = C64_SID1_EN_BAK = 0;
+        C64_SID2_EN = C64_SID2_EN_BAK = 0;
         mappedSids = 0;
         memset(mappedOnSlot, 0, 8);
         failed = false;
@@ -676,6 +688,12 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         printf("No valid mapping found.\n");
         return false;
     }
+
+    printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s)  Emu1: %02X/%02X  Emu2: %02X/%02X\n",
+            C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
+            C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis4[C64_SID2_EN_BAK],
+            C64_EMUSID1_BASE_BAK, C64_EMUSID1_MASK_BAK,
+            C64_EMUSID2_BASE_BAK, C64_EMUSID2_MASK_BAK );
 
     SetMixerAutoSid(mappedOnSlot, count);
     return true;
