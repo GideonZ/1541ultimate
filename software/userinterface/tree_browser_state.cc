@@ -100,7 +100,7 @@ void TreeBrowserState :: draw()
 
     browser->window->set_color(12);
     browser->window->set_background(0);
-    browser->window->getScreen()->move_cursor(0, 24);
+    browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
     browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->get_size_x()-9);
 
     //	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children->get_elements());
