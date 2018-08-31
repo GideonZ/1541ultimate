@@ -620,8 +620,8 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
         count = 4;
     }
 
-    static const int channelPanning[20] = { 0, 0, 0, 0, 5, 0, 0, 0, 3, 7, 0, 0, 2, 5, 8, 0, 1, 3, 7, 9 };
-    //                                      -  -  -  -|CNT -  -  - |L2 R2 -  - |L3 CN R3 - |L4 L2 R2 R4
+    static const int channelPanning[20] = { 0, 0, 0, 0, 5, 0, 0, 0, 3, 7, 0, 0, 5, 2, 8, 0, 3, 7, 1, 9 };
+    //                                      -  -  -  -|CNT -  -  - |L2 R2 -  - |CN L3 R3 - |L2 R2 L4 R4
 
     for (int i=0;i<count;i++) {
         uint8_t volume = selectedVolumes[slots[i]];
