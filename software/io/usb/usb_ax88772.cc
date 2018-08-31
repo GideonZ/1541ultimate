@@ -80,13 +80,13 @@ __inline uint16_t le16_to_cpu(uint16_t h)
 }
 
 // Entry point for call-backs.
-void UsbAx88772Driver_interrupt_callback(uint8_t *data, int data_length, void *object) {
-	((UsbAx88772Driver *)object)->interrupt_handler(data, data_length);
+void UsbAx88772Driver_interrupt_callback(void *object) {
+	((UsbAx88772Driver *)object)->interrupt_handler();
 }
 
 // Entry point for call-backs.
-void UsbAx88772Driver_bulk_callback(uint8_t *data, int data_length, void *object) {
-	((UsbAx88772Driver *)object)->bulk_handler(data, data_length);
+void UsbAx88772Driver_bulk_callback(void *object) {
+	((UsbAx88772Driver *)object)->bulk_handler();
 }
 
 // entry point for free buffer callback
@@ -107,19 +107,25 @@ uint8_t UsbAx88772Driver_output(void *drv, void *b, int len) {
 FactoryRegistrator<UsbInterface *, UsbDriver *> ax88772_tester(UsbInterface :: getUsbDriverFactory(), UsbAx88772Driver :: test_driver);
 
 
-UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbDriver(intf)
+UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbDriver(intf), freeBuffers(NUM_BUFFERS, NULL)
 {
     device = NULL;
     host = NULL;
     netstack = NULL;
     link_up = false;
     this->prodID = prodID;
+
+    dataBuffersBlock = new uint8_t[1536 * NUM_BUFFERS];
+    for (int i=0; i < NUM_BUFFERS; i++) {
+        freeBuffers.push(&dataBuffersBlock[1536 * i]);
+    }
 }
 
 UsbAx88772Driver :: ~UsbAx88772Driver()
 {
 	if(netstack)
 		releaseNetworkStack(netstack);
+	delete[] dataBuffersBlock;
 }
 
 UsbDriver * UsbAx88772Driver :: test_driver(UsbInterface *intf)
@@ -307,25 +313,25 @@ void UsbAx88772Driver :: install(UsbInterface *intf)
     
     if (netstack) {
     	//printf("Network stack: %s\n", netstack->identify());
-    	struct t_pipe ipipe;
 		ipipe.DevEP = uint16_t((device->current_address << 8) | irq_in);
 		ipipe.Interval = 8000; // 1 Hz
 		ipipe.Length = 8; // just read 8 bytes max
-		ipipe.MaxTrans = 16; // iin->max_packet_size;
+		ipipe.MaxTrans = iin->max_packet_size;
+		ipipe.buffer = irq_data;
 		ipipe.SplitCtl = 0;
 		ipipe.Command = 0; // driver will fill in the command
 
 		irq_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_interrupt_callback, this);
 		host->resume_input_pipe(irq_transaction);
 
-		ipipe.DevEP = uint16_t((device->current_address << 8) | bulk_in);
-		ipipe.Interval = 1; // fast!
-		ipipe.Length = 1536; // big blocks!
-		ipipe.MaxTrans = bin->max_packet_size;
-		ipipe.SplitCtl = 0;
-		ipipe.Command = 0; // driver will fill in the command
-
-		bulk_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_bulk_callback, this);
+		bpipe.DevEP = uint16_t((device->current_address << 8) | bulk_in);
+		bpipe.Interval = 1; // fast!
+		bpipe.Length = 1536; // big blocks!
+		bpipe.MaxTrans = bin->max_packet_size;
+		bpipe.SplitCtl = 0;
+		bpipe.Command = 0; // driver will fill in the command
+		bpipe.buffer = getBuffer();
+		bulk_transaction = host->allocate_input_pipe(&bpipe, UsbAx88772Driver_bulk_callback, this);
 
 		netstack->start();
     }
@@ -386,42 +392,49 @@ void UsbAx88772Driver :: poll(void)
 		netstack->poll();
 }
 
-void UsbAx88772Driver :: interrupt_handler(uint8_t *irq_data, int data_len)
+void UsbAx88772Driver :: interrupt_handler()
 {
-/*
+    int data_len = host->getReceivedLength(irq_transaction);
+
+    /*
     printf("AX88772 (ADDR=%d) IRQ data: ", device->current_address);
 	for(int i=0;i<data_len;i++) {
 		printf("%b ", irq_data[i]);
 	} printf("\n");
 */
 
-	if(irq_data[2] & 0x01) {
-		if(!link_up) {
-			printf("Bringing link up.\n");
-			host->resume_input_pipe(bulk_transaction);
-			if (netstack)
-				netstack->link_up();
-			link_up = true;
-		}
-	} else {
-		if(link_up) {
-			printf("Bringing link down.\n");
-			host->pause_input_pipe(bulk_transaction);
-			if (netstack)
-				netstack->link_down();
-			link_up = false;
-		}
-	}
+    if(data_len) {
+        if(irq_data[2] & 0x01) {
+            if(!link_up) {
+                printf("Bringing link up.\n");
+                host->resume_input_pipe(bulk_transaction);
+                if (netstack)
+                    netstack->link_up();
+                link_up = true;
+            }
+        } else {
+            if(link_up) {
+                printf("Bringing link down.\n");
+                host->pause_input_pipe(bulk_transaction);
+                if (netstack)
+                    netstack->link_down();
+                link_up = false;
+            }
+        }
+    }
 	host->resume_input_pipe(this->irq_transaction);
 }
 
-void UsbAx88772Driver :: bulk_handler(uint8_t *usb_buffer, int data_len)
+void UsbAx88772Driver :: bulk_handler()
 {
-	//printf("Packet %p Len: %d\n", usb_buffer, data_len);
+    uint8_t *usb_buffer = lastPacketBuffer;
+    int data_len = host->getReceivedLength(this->bulk_transaction);
+
+    //printf("Packet %p Len: %d\n", usb_buffer, data_len);
 	PROFILER_SUB = 6;
 
 	if (!link_up) {
-		host->free_input_buffer(bulk_transaction, usb_buffer);
+	    free_buffer(usb_buffer);
 		PROFILER_SUB = 0;
 		return;
 	}
@@ -436,7 +449,10 @@ void UsbAx88772Driver :: bulk_handler(uint8_t *usb_buffer, int data_len)
 
 	if (pkt_size != pkt_size2) {
 		printf("ERROR: Corrupted packet %4x %4x\n", pkt_size, pkt_size2);
-		host->free_input_buffer(bulk_transaction, usb_buffer);
+        volatile t_usb_descriptor *descr = &USB2_DESCRIPTORS[bulk_transaction];
+        dump_hex(usb_buffer, 64);
+        dump_hex((void *)descr, 24);
+		free_buffer(usb_buffer);
         //LINK_STATS_INC(link.drop);
 		PROFILER_SUB = 0;
 		return;
@@ -444,7 +460,11 @@ void UsbAx88772Driver :: bulk_handler(uint8_t *usb_buffer, int data_len)
 
 	if (int(pkt_size) > (data_len - 4)) {
 		printf("ERROR: Not enough data? %d %d\n", pkt_size, data_len);
-		host->free_input_buffer(bulk_transaction, usb_buffer);
+	    volatile t_usb_descriptor *descr = &USB2_DESCRIPTORS[bulk_transaction];
+		dump_hex(usb_buffer, 64);
+		dump_hex((void *)descr, 24);
+
+		free_buffer(usb_buffer);
         //LINK_STATS_INC(link.drop);
 		PROFILER_SUB = 0;
 		return;
@@ -454,19 +474,25 @@ void UsbAx88772Driver :: bulk_handler(uint8_t *usb_buffer, int data_len)
 
 	if(netstack) {
 		if (!netstack->input(usb_buffer, usb_buffer+4, pkt_size)) {
-			host->free_input_buffer(bulk_transaction, usb_buffer);
+		    free_buffer(usb_buffer);
 		} /*else { // this else is to free immediately. this is temporary in order to test. free from lwip is not performed
 			host->free_input_buffer(bulk_transaction, usb_buffer);
 		}*/
 	} else {
-		host->free_input_buffer(bulk_transaction, usb_buffer);
+	    free_buffer(usb_buffer);
+	}
+	bpipe.buffer = getBuffer();
+	if (bpipe.buffer) {
+	    host->resume_input_pipe(bulk_transaction);
+	} else {
+	    printf("ERROR: No free buffers.");
 	}
 }
  	
 void UsbAx88772Driver :: free_buffer(uint8_t *buffer)
 {
 //	printf("FREE PBUF CALLED %p!\n", buffer);
-	host->free_input_buffer(bulk_transaction, buffer);
+    freeBuffers.push(buffer);
 }
 
 void UsbAx88772Driver :: read_srom()
@@ -615,4 +641,10 @@ uint8_t UsbAx88772Driver :: output_packet(uint8_t *buffer, int pkt_len)
 	host->bulk_out(&bulk_out_pipe, size, pkt_len + 4);
 
 	return 0;
+}
+
+uint8_t *UsbAx88772Driver :: getBuffer()
+{
+    lastPacketBuffer = freeBuffers.pop();
+    return lastPacketBuffer;
 }

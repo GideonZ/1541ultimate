@@ -3,8 +3,7 @@
 -- Entity: usb_test1
 -- Date:2015-01-27  
 -- Author: Gideon     
--- Description: Testcase 2 for USB host
--- This testcase initializes a repeated IN transfer in Circular Mem Buffer mode
+-- Description: Testcase 6 for USB host
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -17,21 +16,18 @@ use work.tl_string_util_pkg.all;
 use work.nano_addresses_pkg.all;
 use work.tl_flat_memory_model_pkg.all;
 
-entity usb_test_nano2 is
+entity usb_test_nano6 is
     generic (
-        g_report_file_name : string := "work/usb_test_nano2.rpt"
+        g_report_file_name : string := "work/usb_test_nano6.rpt"
     );
-
 end entity;
 
-architecture arch of usb_test_nano2 is
+architecture arch of usb_test_nano6 is
     signal clocks_stopped   : boolean := false;
     signal interrupt        : std_logic;
-    
     constant Attr_Fifo_Base         : unsigned(19 downto 0) := X"00700"; -- 380 * 2 
     constant Attr_Fifo_Tail_Address : unsigned(19 downto 0) := X"007F0"; -- 3f8 * 2
     constant Attr_Fifo_Head_Address : unsigned(19 downto 0) := X"007F2"; -- 3f9 * 2
-
 begin
     i_harness: entity work.usb_harness_nano
     port map (
@@ -41,11 +37,12 @@ begin
     process
         variable io : p_io_bus_bfm_object;
         variable mem : h_mem_object;
+        variable data : std_logic_vector(15 downto 0);
         variable res  : std_logic_vector(7 downto 0);
+        variable pipe : integer;
         variable attr_fifo_tail : integer := 0;
         variable attr_fifo_head : integer := 0;
-        variable data   : std_logic_vector(15 downto 0);
-        
+                
         procedure io_write_word(addr : unsigned(19 downto 0); word : std_logic_vector(15 downto 0)) is
         begin
             io_write(io => io, addr => (addr + 0), data => word(7 downto 0));
@@ -62,15 +59,6 @@ begin
             variable data   : std_logic_vector(15 downto 0);
         begin
             wait until interrupt = '1';
---            io_read_word(addr => Attr_Fifo_Head_Address, word => data);
---            attr_fifo_head := to_integer(unsigned(data));
---            L1: while true loop
---                io_read_word(addr => Attr_Fifo_Head_Address, word => data);
---                attr_fifo_head := to_integer(unsigned(data));
---                if (attr_fifo_head /= attr_fifo_tail) then
---                    exit L1;
---                end if;
---            end loop;
             io_read_word(addr => (Attr_Fifo_Base + attr_fifo_tail*2), word => data);
             attr_fifo_tail := attr_fifo_tail + 1;
             if attr_fifo_tail = 16 then
@@ -81,35 +69,10 @@ begin
             result := data;
         end procedure;
 
-        procedure check_result(expected : std_logic_vector(7 downto 0); exp_result : std_logic_vector(15 downto 0)) is
-            variable data : std_logic_vector(15 downto 0);
-            variable byte : std_logic_vector(7 downto 0);
-        begin
-            io_read_word(Command_Length, data);
-            sctb_trace("Command length: " & hstr(data));
-            io_read_word(Command_Result, data);
-            sctb_trace("Command result: " & hstr(data));
-            sctb_check(data, exp_result, "Unexpected response");
-            byte := read_memory_8(mem, X"00550000");
-            sctb_check(byte, expected, "Erroneous byte");
-            write_memory_8(mem, X"00550000", X"00");
-        end procedure;
-                
---        procedure wait_command_done is
---        begin
---            L1: while true loop
---                io_read(io => io, addr => Command, data => res);
---                if res(1) = '1' then -- check if paused bit has been set
---                    exit L1;
---                end if;
---            end loop;
---        end procedure;
-
     begin
         bind_io_bus_bfm("io", io);
         bind_mem_model("memory", mem);
-        sctb_open_simulation("path::path", g_report_file_name);
-        sctb_open_region("Testing Setup request", 0);
+        sctb_open_simulation("path:path", g_report_file_name);
         sctb_set_log_level(c_log_level_trace);
         wait for 70 ns;
         io_write_word(c_nano_simulation, X"0001"  ); -- set nano to simulation mode
@@ -117,30 +80,43 @@ begin
         io_write(io, c_nano_enable, X"01"  ); -- enable nano
         wait for 4 us;
 
-        io_write_word(Command_DevEP,    X"0007"); -- EP7: NAK NAK DATA0 NAK NAK DATA1 NAK STALL
-        io_write_word(Command_MemHi,    X"0055");
-        io_write_word(Command_MemLo,    X"0000");
-        io_write_word(Command_MaxTrans, X"0010");
-        io_write_word(Command_Interval, X"0002"); -- every other microframe
-        io_write_word(Command_Length,   X"0010");
+        sctb_open_region("Testing In request and out request at the same time, using split", 0);
 
-        -- arm
+        io_write_word(Command_SplitCtl, X"8132"); -- Hub Address 1, Port 2, Speed = FS, EP = interrupt 
+        io_write_word(Command_DevEP,    X"0004");
+        io_write_word(Command_MaxTrans, X"0100");
+        io_write_word(Command_Length,   X"0400");
+        io_write_word(Command_MemHi,    X"0005");
         io_write_word(Command_MemLo,    X"0000");
-        io_write_word(Command,          X"5042"); -- in with mem write, using cercular buffer
-        read_attr_fifo(data);
-        check_result(X"44", X"8001");
 
-        -- arm
-        io_write_word(Command_MemLo,    X"0000");
-        io_write_word(Command,          X"5842"); -- in with mem write, using cercular buffer
+        io_write_word(c_nano_numpipes,   X"0002"  ); -- Set active pipes to 2
+
+        io_write_word(Command_SplitCtl + Command_Size, X"8132"); -- Hub Address 1, Port 2, Speed = FS, EP = interrupt 
+        io_write_word(Command_DevEP + Command_Size,    X"0005");
+        io_write_word(Command_MaxTrans + Command_Size, X"0200");
+        io_write_word(Command_Length + Command_Size,   X"0600");
+        io_write_word(Command_MemHi + Command_Size,    X"0004");
+        io_write_word(Command_MemLo + Command_Size,    X"0000");
+
+        io_write_word(Command + Command_Size, X"8041"); -- out with mem read
+        io_write_word(Command, X"4042"); -- in with mem write
+
+
         read_attr_fifo(data);
-        check_result(X"6B", X"8801");
-            
-        -- arm
-        io_write_word(Command_MemLo,    X"0000");
-        io_write_word(Command,          X"5042"); -- in with mem write, using cercular buffer
+        pipe := Command_size * to_integer(unsigned(data));
+        io_read_word(Command_Result + pipe, data);
+        sctb_trace("Command result: " & hstr(data));
+        io_read_word(Command_Length + pipe, data);
+        sctb_trace("Command length: " & hstr(data));
+        sctb_check(data, X"0000", "All data should have been transferred.");
+
         read_attr_fifo(data);
-        check_result(X"00", X"C400");
+        pipe := Command_size * to_integer(unsigned(data));
+        io_read_word(Command_Result + pipe, data);
+        sctb_trace("Command result: " & hstr(data));
+        io_read_word(Command_Length + pipe, data);
+        sctb_trace("Command length: " & hstr(data));
+        sctb_check(data, X"0000", "All data should have been transferred.");
 
         sctb_close_region;
 
@@ -151,4 +127,5 @@ begin
     end process;
         
 end arch;
---restart; mem load -infile nano_code.hex -format hex /usb_test_nano2/i_harness/i_host/i_nano/i_buf_ram/mem; run 2000 us
+
+-- restart; mem load -infile nano_code.hex -format hex /usb_test_nano4/i_harness/i_host/i_nano/i_buf_ram/mem; run 1100 us
