@@ -10,7 +10,7 @@ use unisim.vcomponents.all;
 
 entity nano is
 generic (
-    g_big_endian  : boolean );
+    g_big_endian  : boolean := false );
 port (
     clock       : in  std_logic;
     reset       : in  std_logic;
@@ -46,9 +46,9 @@ architecture structural of nano is
     signal sys_io_req_regs  : t_io_req;
     signal sys_io_resp_regs : t_io_resp;
 
-    signal sys_core_reset   : std_logic;
-    signal usb_reset_tig    : std_logic;
-    signal usb_core_reset   : std_logic;    
+    signal sys_core_reset   : std_logic := '1';
+    signal usb_reset_tig    : std_logic := '1';
+    signal usb_core_reset   : std_logic := '1';    
     signal bram_data        : std_logic_vector(7 downto 0);
 begin
     i_split: entity work.io_bus_splitter
@@ -88,6 +88,7 @@ begin
         io_rdata    => io_rdata,
         stall       => stall );
 
+    --i_buf_ram: entity unisim.RAMB16_S9_S18(model)
     i_buf_ram: RAMB16_S9_S18
     port map (
 		CLKB  => clock,

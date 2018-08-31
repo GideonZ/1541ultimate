@@ -7,8 +7,9 @@
 class UsbHidDriver : public UsbDriver
 {
 	int  irq_transaction;
+    struct t_pipe ipipe;
 
-    uint8_t temp_buffer[16];
+    uint8_t irq_data[64];
     
     UsbBase   *host;
     UsbDevice *device;
@@ -27,7 +28,7 @@ public:
 	void poll(void);
 	void pipe_error(int pipe);
 
-    void interrupt_handler(uint8_t *, int);
+    void interrupt_handler();
 };
 
 #endif

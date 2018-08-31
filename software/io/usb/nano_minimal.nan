@@ -8,43 +8,35 @@ Offset_Command_Interval  = 4
 Offset_Command_LastFrame = 5
 Offset_Command_SplitCtl  = 6
 Offset_Command_Result    = 7
+Offset_Command_MemLo     = 8
+Offset_Command_MemHi     = 9
+Offset_Command_Started   = 10
+Offset_Command_Timeout   = 11
 
-; Max number of pipes = 8: 8x8 = $40
+PipeSize = 12
+
+; Max number of pipes = 8: 8x12 = $60
 NUM_PIPES = 8
-Pipes    = 0x2E0
-PipesEnd = 0x320
+Pipes    = 0x300
+; PipesEnd = 0x360 ; Unfortunately we don't have expressions in the parser
 
-attrib_fifo      = 0x320 ; 128 entries (up to 39F)
-block_fifo       = 0x3A0 ; 64 entries (up to 3DF)
+attrib_fifo     = 0x380 ; 16 entries (up to 38F)
 
-Circ_MemAddr_Start_High = $3E0
-Circ_MemAddr_Start_Low  = $3E1
-Circ_Size               = $3E2
-Circ_Offset             = $3E3
+RAM_STATUS      = $3E6
 
-MemBlock_Base_High      = $3E4
-MemBlock_Base_Low       = $3E5
-
-RAM_STATUS            = $3E6
-AbortCurrentCommand   = $3EF
-User_Command          = $3F0
-User_Command_DevEP    = $3F1
-User_Command_Length   = $3F2
-User_Command_MaxTrans = $3F3
-User_Command_MemHi    = $3F4
-User_Command_MemLo    = $3F5
-User_Command_SplitCtl = $3F6
-User_Command_Result   = $3F7
+Simulation      = $3EB
+DO_SUSPEND      = $3EC
+DO_RESET        = $3ED
+LinkSpeed       = $3EE
+PipesInUse      = $3EF
 
 tail_pointer_atr = 0x3F8 ; updated by software only
 head_pointer_atr = 0x3F9 ; updated by nano only 
-tail_pointer_blk = 0x3FA ; updated by nano only
-head_pointer_blk = 0x3FB ; updated by software only
 
-DO_SUSPEND      = $3FC
-DO_RESET        = $3FD
-LinkSpeed       = $3FE
-Simulation      = $3FF
+Descriptor     = 0x3FC
+_reset_temp    = 0x3FD
+temp           = 0x3FE
+fifo_temp_addr = 0x3FF
 
 ; Read registers
 FILTERED_STAT_1 = $39
@@ -77,11 +69,8 @@ CMD_RESPONSE         = $64
 
 CMD_REQ_MEMREAD      = $8000
 CMD_REQ_MEMWRITE     = $4000
-CMD_REQ_USEBLOCK     = $2000
-CMD_REQ_USECIRC      = $1000
 CMD_TOGGLE_BIT       = $0800
 CMD_TOGGLE_BIT_NOT   = $F7FF
-CMD_REQ_RETRY_ON_NAK = $0400
 CMD_REQ_PAUSED       = $0200
 CMD_REQ_NOT_PAUSED   = $FDFF
 CMD_REQ_DO_DATA      = $0040
@@ -101,6 +90,7 @@ CMD_RES_NO_DATA      = $0400
 CMD_RES_LEN_MASK     = $03FF
 
 SPLIT_COMPLETE       = $0080
+SPLIT_COMPLETE_NOT   = $FF7F
 
 ; Command interface to Memory Controller
 MEM_ADDR_LO          = $70
@@ -122,6 +112,15 @@ ULPI_R_VENDOR      = $80
 ULPI_R_PRODUCT_LOW = $82
 
 begin
+; Reset number of pipes and clear first command
+    LOAD  #1
+    STORE PipesInUse
+    LOAD  #0
+    STORE Pipes
+    
+    LOAD  Simulation
+    BNE   startsim
+    
     ; turn off power first
     LOAD  #$06
     OUTP  ULPI_W_OTG_CONTROL
@@ -228,6 +227,7 @@ _delay
     STORE DelayTimer
     BNE   _delay
     RET    
+    
 
 check_disconnect
     INP   DISCONNECTED
@@ -238,6 +238,17 @@ check_disconnect
 _no_disconnect
     RET
 
+startsim
+    INP   ULPI_R_PRODUCT_LOW
+    LOAD  #$66
+    OUTP  ULPI_W_OTG_CONTROL  ; turn on our power
+    LOAD  #$45
+    OUTP  ULPI_W_FUNC_CTRL
+    LOAD LinkSpeed
+    OUTP SPEED
+    OUTP  SET_SOF_ENABLE
+    ; fall through into main loop
+    
 main_loop
     CALL  check_disconnect
     BNE   _disconnected
@@ -245,7 +256,6 @@ main_loop
     BNE   do_reset
     LOAD  DO_SUSPEND
     BNE   do_suspend
-    CALL  check_command
     CALL  check_pipes
     BRA   main_loop
 
@@ -260,7 +270,7 @@ do_suspend
     AND   #3
     ADD   #LinkRegisterMapSuspended
     STORE _reset_temp
-    LOADI _reset_temp
+    LOADI _reset_temp,0
     OUTP  ULPI_W_FUNC_CTRL
 
     LOAD  LinkSpeed
@@ -393,12 +403,10 @@ _reset_end
     AND   #3
     ADD   #LinkRegisterMap
     STORE _reset_temp
-    LOADI _reset_temp
+    LOADI _reset_temp,0
     OUTP  ULPI_W_FUNC_CTRL
     OUTP  DISCONNECTED
     RET
-_reset_temp
-    .dw 0
 _reset_chirp_heard    
     LOAD  #2
     STORE LinkSpeed
@@ -443,9 +451,6 @@ _loop_timer_1
     BPL   _loop_timer_1
     RET
 
-temp
-    .dw 0
-
 ResetTimer
 DelayTimer
     .dw 0
@@ -468,573 +473,515 @@ NumberOfChirps
     .dw 75
 
 
-check_command
-    LOAD User_Command
-	STORE Current_Command
-    CMP  User_Command
-    BNE  check_command
-	LOAD Current_Command
-    BNE  _copy_user_cmd
-    RET ; zero = no command
+is_ssplit_allowed
+    LOAD  TTDescriptor
+    BNE   _answer_no   
 
-_copy_user_cmd
-;    LOAD  User_Command
-;    STORE Current_Command
-    LOAD  User_Command_DevEP
-    STORE Current_Command_DevEP    
-    LOAD  User_Command_Length
-    STORE Current_Command_Length   
-    LOAD  User_Command_MaxTrans
-    STORE Current_Command_MaxTrans 
-    LOAD  User_Command_MemHi
-    STORE Current_Command_MemHi    
-    LOAD  User_Command_MemLo
-    STORE Current_Command_MemLo    
-    LOAD  User_Command_SplitCtl
-    STORE Current_Command_SplitCtl 
-    CALL  _execute_cmd
-    LOAD  Current_Command_Result
-    STORE User_Command_Result
-    LOAD  Current_Command_Length
-    STORE User_Command_Length
-	LOAD  #0
-	STORE AbortCurrentCommand
-    STORE User_Command
-    LOAD  #$FFFE
-    BRA   other_irq
-    
-;	 LOAD  #0
-;    STORE User_Command
-;    RET
-    
-_execute_cmd
-    LOAD Current_Command_DevEP
-    OUTP CMD_DEVICE_ENDPOINT
-    LOAD #3
-    STORE AllowedErrors
+    INP   FRAME_COUNTER
+    AND   #7
+    CMP   #5
+    BPL   _answer_no
     LOAD  #0
-    STORE Transferred
-    LOAD  Current_Command
+    RET
+_answer_no
+    LOAD  #1
+    RET
+
+        
+issue_ssplit
+    LOAD  Descriptor
+    STORE TTDescriptor
+    LOAD  PipeNumber
+    STORE TTPipeNumber
+    LOADI Descriptor,Offset_Command_SplitCtl
+    OUTP  CMD_SPLIT_CONTROL
+    LOADI Descriptor,Offset_Command
+    OUTP  CMD_REQUEST ; Do it!!
+    INP   FRAME_COUNTER
+    STORE LastStartSplit
+    INP   FRAME_COUNTER
+    STORI Descriptor,Offset_Command_LastFrame
+    RET
+        
+reset_split
+    LOAD  #0
+    STORE TTDescriptor
+    RET
+
+init_cmd
+    LOADI Descriptor,Offset_Command_DevEP
+    OUTP  CMD_DEVICE_ENDPOINT
+    LOADI Descriptor,Offset_Command_MemHi
+    OUTP  MEM_ADDR_HI
+    LOADI Descriptor,Offset_Command_MemLo
+    OUTP  MEM_ADDR_LO
+    LOAD  #3
+    STORE AllowedErrors
+    RET
+
+_complete_cmd
+    CALL  init_cmd
+    LOADI Descriptor,Offset_Command
+    BMI   _out_complete
+
+_in_complete
+    ; Actual data transfer has not taken place yet 
+    LOADI Descriptor,Offset_Command_SplitCtl
+    OR    #SPLIT_COMPLETE
+    OUTP  CMD_SPLIT_CONTROL
+    LOAD  CurrentBuffer
+    OUTP  CMD_DATA_BUFFER_CTRL
+    BRA   _do_in_cmd
+
+_out_complete
+    ; Actual data transfer has taken place during SSPLIT
+    LOADI Descriptor,Offset_Command_SplitCtl    
+    OR    #SPLIT_COMPLETE
+    OUTP  CMD_SPLIT_CONTROL
+    LOADI Descriptor,Offset_Command
+    AND   #CMD_REQ_NOT_DO_DATA
+    OUTP  CMD_REQUEST
+
+_wait_out_cmd_csplit
+    INP   CMD_RESPONSE
+    BPL   _wait_out_cmd_csplit
+    STORE LastResult
+    STORI Descriptor,Offset_Command_Result
+
+    AND  #CMD_RES_MASK
+    CMP  #CMD_RES_ERROR
+    BEQ  _out_done
+    CMP  #CMD_RES_ACK
+    BEQ  _out_success_csplit
+    CMP  #CMD_RES_NYET
+    BEQ  _check_nyet_response_out
+    CMP  #CMD_RES_NAK
+    BEQ  _leave_out
+    BRA  _out_done
+
+_out_success_csplit
+    CALL reset_split
+    BRA  _out_success
+
+_check_nyet_response_out
+    INP   FRAME_COUNTER    
+    SUB   LastStartSplit
+    CMP   #4
+    BCC   _leave_out ;; try later
+
+    CALL  reset_split
+    BRA   _out_done
+
+
+
+_execute_cmd
+    LOADI Descriptor,Offset_Command_Started
+    BNE   _start_set
+    INP   FRAME_COUNTER
+    STORI Descriptor,Offset_Command_Started
+_start_set    
+    CALL  init_cmd
+    LOADI Descriptor,Offset_Command
     BMI   _out_command
-;	BRA   _start_in
-;	
-;	CMP   #CMD_REQ_POWER_OFF
-;	BNE   _start_in
-;   LOAD  #$0E
-;   OUTP  ULPI_W_OTG_CONTROL
-;_off
-;	BRA   _off   
 		
 _start_in
-    LOAD Current_Command_MemHi
-    OUTP MEM_ADDR_HI
-    LOAD Current_Command_MemLo
-    OUTP MEM_ADDR_LO
-; If we get here, we assume that it is an IN command
 _next_in_chunk
-	LOAD AbortCurrentCommand
-	BNE  _in_done ; we just stop trying, as requested
-    LOAD CurrentBuffer
-    OUTP CMD_DATA_BUFFER_CTRL
-    LOAD Current_Command_SplitCtl
-    OUTP CMD_SPLIT_CONTROL
-    LOAD Current_Command
-    OUTP CMD_REQUEST ; Do it!!
-    LOAD Current_Command_SplitCtl
-    BNE  _wait_in_cmd_ssplit
-_wait_in_cmd
-    INP  CMD_RESPONSE
-    BPL  _wait_in_cmd
-    STORE Current_Command_Result
+    CALL  init_cmd
+    LOAD  CurrentBuffer
+    OUTP  CMD_DATA_BUFFER_CTRL
+
+    LOADI Descriptor,Offset_Command_SplitCtl
+    BEQ   _no_split_in
+    CALL  is_ssplit_allowed
+    BNE   _leave_in
+    
+    CALL  issue_ssplit
+_wait_in_cmd_ssplit
+    INP   CMD_RESPONSE
+    BPL   _wait_in_cmd_ssplit
+    STORI Descriptor,Offset_Command_Result
     AND  #CMD_RES_MASK
-    CMP  #CMD_RES_DATA
-    BEQ  _in_success
-    CMP  #CMD_RES_NAK
-    BEQ  _check_nak_response_in
-    CMP  #CMD_RES_NYET
-    BEQ  _try_complete_split_in
-    CMP  #CMD_RES_STALL
-    BEQ  _in_done
-    CMP  #CMD_RES_ERROR
-    BNE  _in_done ; I don't know how to handle this
+    CMP  #CMD_RES_ACK
+    BEQ  _leave_in   ; ssplit got acked! yey!   done for now 
+    
+    ; We are allowed to reset the TT Busy flag right away
+    ; Because we just issued a start split, which failed.
+    LOAD  #0
+    STORE TTDescriptor
+    BRA  _leave_in   ; we will just try again later
+    
+_no_split_in
+    LOAD  #0
+    OUTP  CMD_SPLIT_CONTROL
+    INP   FRAME_COUNTER
+    STORI Descriptor,Offset_Command_LastFrame
+
+_do_in_cmd
+    LOADI Descriptor,Offset_Command
+    OUTP  CMD_REQUEST ; Do it!!
+_wait_in_cmd
+    INP   CMD_RESPONSE
+    BPL   _wait_in_cmd
+    STORE LastResult
+    STORI Descriptor,Offset_Command_Result
+
+_evaluate_in
+    LOADI Descriptor,Offset_Command_SplitCtl
+    BEQ   _hs_in_result
+
+_fs_ls_in_result
+    LOAD  LastResult
+    AND   #CMD_RES_MASK
+    CMP   #CMD_RES_NYET
+    BEQ   _check_nyet_response_in
+    ; Not a NYET. Then there is a valid response from the hub
+    ; In case it was a split, make sure to reset it for next time back to SSPLIT
+    
+    CALL  reset_split
+    
+_hs_in_result
+    LOAD  LastResult
+    AND   #CMD_RES_MASK
+    CMP   #CMD_RES_DATA
+    BEQ   _in_success
+    CMP   #CMD_RES_NAK
+    BEQ   _leave_in
+    CMP   #CMD_RES_STALL
+    BEQ   _in_done
+    CMP   #CMD_RES_ERROR
+    BNE   _in_done ; I don't know how to handle this
+
 _check_in_error
     LOAD  AllowedErrors
     BEQ   _in_done ; no more!
     SUB   #1
     STORE AllowedErrors
-    BRA   _next_in_chunk ; Retry!
+    BRA   _do_in_cmd
 
-_wait_in_cmd_ssplit
-    INP  CMD_RESPONSE
-    BPL  _wait_in_cmd_ssplit
-    STORE Current_Command_Result
-    AND  #CMD_RES_MASK
-    CMP  #CMD_RES_ACK
-    BNE  _check_in_error
-; ssplit got acked! yey!    
+_check_nyet_response_in
+    INP   FRAME_COUNTER    
+    SUB   LastStartSplit
+    CMP   #4
+    BCC   _leave_in ;; try later
 
-_try_complete_split_in
-    CALL loop_timer
-    LOAD Current_Command_SplitCtl
-    OR   #SPLIT_COMPLETE
-    OUTP CMD_SPLIT_CONTROL
-    LOAD Current_Command
-    OUTP CMD_REQUEST ; Do it!!
-    BRA  _wait_in_cmd    
-
-_check_nak_response_in
-    LOAD Transferred
-    BNE  _next_in_chunk
-    LOAD Current_Command
-    AND  #CMD_REQ_RETRY_ON_NAK
-    BNE  _next_in_chunk
-    BRA  _in_done    
+    CALL  reset_split
+    BRA   _in_done
 
 _in_success
-    LOAD Current_Command_Result
-    AND  #CMD_RES_LEN_MASK
+    LOADI Descriptor,Offset_Command_Result
+    AND   #CMD_RES_LEN_MASK
     STORE CurrentLength
-    LOAD #3
-    STORE AllowedErrors
 
 _check_rx_toggle
-    LOAD Current_Command
-    XOR  Current_Command_Result
-    AND  #CMD_TOGGLE_BIT
-    BEQ  _toggle_ok
-    LOAD #0
+    LOADI Descriptor,Offset_Command
+    XOR   LastResult
+    AND   #CMD_TOGGLE_BIT
+    BEQ   _toggle_ok
+    LOAD  #0
     STORE CurrentLength
 	BRA   _toggle_error
 	
 _toggle_ok
-    LOAD Current_Command
-    AND  #CMD_REQ_MEMWRITE
-    BEQ  _no_mem_write
+    LOADI Descriptor,Offset_Command
+    AND   #CMD_REQ_MEMWRITE
+    BEQ   _no_mem_write
 
 _wait_mem2
     INP  MEM_CTRL_READY
     BPL  _wait_mem2
 
-    LOAD CurrentBuffer
-    OUTP MEM_BUFFER_INDEX
-    LOAD CurrentLength
-    BEQ  _no_mem_write
-    ADD  #3
-    OUTP MEM_TRANSFER_WRITE     
-    LOAD  Transferred
-    ADD   CurrentLength
-    STORE Transferred
-    
-_no_mem_write
-    LOAD  Current_Command
-    XOR   #CMD_TOGGLE_BIT
-    STORE Current_Command
+    LOAD  CurrentBuffer
+    OUTP  MEM_BUFFER_INDEX
+    LOAD  CurrentLength
+    BEQ   _no_mem_write
+    ADD   #3
+    OUTP  MEM_TRANSFER_WRITE     
 
-_toggle_error
     LOAD  CurrentBuffer
     ADD   #$4000
     STORE CurrentBuffer
 
-    LOAD Current_Command_Length
-    SUB  CurrentLength
-    STORE Current_Command_Length
-    BEQ  _in_done
-    BMI  _in_done
-    LOAD CurrentLength
-    CMP  Current_Command_MaxTrans
-    BPL  _next_in_chunk
+; Increment the address
+    LOADI Descriptor,Offset_Command_MemLo
+    ADD   CurrentLength
+    STORI Descriptor,Offset_Command_MemLo
+    LOADI Descriptor,Offset_Command_MemHi
+    ADDC  #0
+    STORI Descriptor,Offset_Command_MemHi
+
+_no_mem_write
+    LOADI Descriptor,Offset_Command
+    XOR   #CMD_TOGGLE_BIT
+    STORI Descriptor,Offset_Command
+
+    LOADI Descriptor,Offset_Command_Length
+    SUB   CurrentLength
+    STORI Descriptor,Offset_Command_Length
+
+_toggle_error
+    LOADI Descriptor,Offset_Command_Length
+    BEQ   _in_done
+    BMI   _in_done
+    LOADI Descriptor,Offset_Command_MaxTrans
+    CMP   CurrentLength
+    BEQ   _next_in_chunk
     
 _in_done
+    
     INP  MEM_CTRL_READY
     BPL  _in_done
+    ; Note that bit 15 is 1, so the return value is non-zero Report!
     RET
     
+;; Exit point without report to the software
+_leave_in
+    LOAD  #0
+    RET
+
 do_mem_read
-    LOAD Current_Command_MemHi
-    OUTP MEM_ADDR_HI
-    LOAD Current_Command_MemLo
-    OUTP MEM_ADDR_LO
-    AND  #3
+    LOADI Descriptor,Offset_Command_MemHi
+    OUTP  MEM_ADDR_HI
+    LOADI Descriptor,Offset_Command_MemLo
+    OUTP  MEM_ADDR_LO
+    AND   #3
     STORE Current_Word_Offset
-    LOAD CurrentBuffer
-    OUTP MEM_BUFFER_INDEX
+    ;; reading always pre-increments the buffer
+    LOAD  CurrentBuffer
+    ADD   #$4000
+    STORE CurrentBuffer
+    OUTP  MEM_BUFFER_INDEX
 determine_length
-    LOAD Current_Command_Length
-    CMP  Current_Command_MaxTrans
+    LOADI Descriptor,Offset_Command_MaxTrans
+    STORE MaxTrans
+    LOADI Descriptor,Offset_Command_Length
+    CMP   MaxTrans
     BMI  _no_truncate
-    LOAD Current_Command_MaxTrans
+    LOAD  MaxTrans
 _no_truncate
     STORE CurrentLength
     ADD   Current_Word_Offset
     ADD   #3
     OUTP  MEM_TRANSFER_READ
-    LOAD  Current_Command_MemLo
-    ADD   CurrentLength
-    STORE Current_Command_MemLo
-    LOAD  Current_Command_MemHi
-    ADDC  #0
-    STORE Current_Command_MemHi
     RET
-        
-_out_command
-    CALL do_mem_read ; first time
-_next_out_chunk
-	LOAD AbortCurrentCommand
-	BNE  _out_done ; we just stop trying, as requested
-    LOAD CurrentLength
-    BNE  _has_data
-    OR   #CMD_BUF_NODATA
+
+set_out_buffer_params        
+    LOAD  CurrentLength
+    BNE   _has_data
+    OR    #CMD_BUF_NODATA
 _has_data
-    OR   CurrentBuffer
-    OUTP CMD_DATA_BUFFER_CTRL
-    LOAD Current_Command_SplitCtl
-    OUTP CMD_SPLIT_CONTROL
+    OR    CurrentBuffer
+    OUTP  CMD_DATA_BUFFER_CTRL
+    RET
+    
+_out_command
+    LOADI Descriptor,Offset_Command_SplitCtl
+    BEQ   _hs_out_start
+
+; full/low speed through HUB
+    CALL  is_ssplit_allowed
+    BNE   _leave_out
+    
+_out_with_split
+    CALL  do_mem_read
+    CALL  set_out_buffer_params
+_wait_mem3
+    INP  MEM_CTRL_READY
+    BPL  _wait_mem3
+    CALL  issue_ssplit
+
+_wait_out_cmd_ssplit
+    INP   CMD_RESPONSE
+    BPL   _wait_out_cmd_ssplit
+    STORI Descriptor,Offset_Command_Result
+    AND   #CMD_RES_MASK
+    CMP   #CMD_RES_ACK
+    BEQ   _leave_out ; start split successful
+
+    ; Not OK.. we cannot trust the SSPLIT
+    CALL  reset_split
+    BRA   _out_done ; exit, hub didn't accept out packet; bad boy!
+
+_hs_out_start
+    CALL  do_mem_read ; first time
+    CALL  set_out_buffer_params
+    LOAD  #0
+    OUTP  CMD_SPLIT_CONTROL
+    INP   FRAME_COUNTER
+    STORI Descriptor,Offset_Command_LastFrame
 
 _wait_mem1
     INP  MEM_CTRL_READY
     BPL  _wait_mem1
 
-    LOAD Current_Command
-    OUTP CMD_REQUEST ; Do it!!
+    LOADI Descriptor,Offset_Command
+    OUTP  CMD_REQUEST ; Do it!!
 
-    ; Next buffer, lets see if we need to read more
-    LOAD  CurrentBuffer
-    ADD   #$4000
-    STORE CurrentBuffer
-
-    LOAD Current_Command_Length
-    SUB  CurrentLength
-    STORE Current_Command_Length
-    BEQ  _no_more_read_out
-
-    CALL do_mem_read ; second and subsequent times
-
-_no_more_read_out
-    LOAD Current_Command_SplitCtl
-    BNE  _wait_out_cmd_ssplit
 _wait_out_cmd
-    INP  CMD_RESPONSE
-    BPL  _wait_out_cmd
-    STORE Current_Command_Result
+    INP   CMD_RESPONSE
+    BPL   _wait_out_cmd
+    STORE LastResult
+    STORI Descriptor,Offset_Command_Result
+
     AND  #CMD_RES_MASK
     CMP  #CMD_RES_ACK
     BEQ  _out_success
     CMP  #CMD_RES_NYET
-    BEQ  _check_nyet_response_out
+    BEQ  _out_success
     CMP  #CMD_RES_NAK
-    BEQ  _check_nak_response_out
+    BEQ  _leave_out
     CMP  #CMD_RES_ERROR
-    BRA  _out_done  ; exit
+    BRA  _out_done
 
-_wait_out_cmd_ssplit
-    INP   CMD_RESPONSE
-    BPL   _wait_out_cmd_ssplit
-    STORE Current_Command_Result
-    AND   #CMD_RES_MASK
-    CMP   #CMD_RES_ACK
-    BNE   _out_done ; exit
-
-    ; start split successful
-    LOAD  Current_Command_SplitCtl    
-    OR    #SPLIT_COMPLETE
-    OUTP  CMD_SPLIT_CONTROL
-_try_complete_out
-    CALL  loop_timer
-    LOAD  Current_Command
-    AND   #CMD_REQ_NOT_DO_DATA
-    OUTP  CMD_REQUEST
-    BRA   _wait_out_cmd
-
-_check_out_error
-    LOAD AllowedErrors
-    BEQ  _out_done ; exit
-    SUB  #1
-    STORE AllowedErrors
-    BRA  _retry_out
-    
 _out_success
-    LOAD  Current_Command
+    LOADI Descriptor,Offset_Command
     XOR   #CMD_TOGGLE_BIT
-    STORE Current_Command
+    STORI Descriptor,Offset_Command
 
-    LOAD  #3
-    STORE AllowedErrors
-    
-    LOAD  Transferred
+    LOADI Descriptor,Offset_Command_MemLo
     ADD   CurrentLength
-    STORE Transferred
+    STORI Descriptor,Offset_Command_MemLo
+    LOADI Descriptor,Offset_Command_MemHi
+    ADDC  #0
+    STORI Descriptor,Offset_Command_MemHi
 
-    LOAD  Current_Command_Length
-    BNE  _next_out_chunk
+    LOADI Descriptor,Offset_Command_Length
+    SUB   CurrentLength
+    STORI Descriptor,Offset_Command_Length
+
+    BNE   _leave_out ; more to do! (Length != 0)
+
 _out_done
-    LOAD  Current_Command
-    AND   #CMD_TOGGLE_BIT
-    STORE temp
-    LOAD  Current_Command_Result
-    AND   #CMD_TOGGLE_BIT_NOT
-    OR    temp
-    STORE Current_Command_Result
+    LOAD #1
     RET
 
-_check_nak_response_out
-    LOAD Current_Command
-    AND  #CMD_REQ_RETRY_ON_NAK
-    BEQ  _out_done
-_retry_out
-    LOAD Current_Command
-    OUTP CMD_REQUEST ; Do it!!
-    BRA  _wait_out_cmd
-
-_check_nyet_response_out
-    LOAD Current_Command_SplitCtl
-    BEQ  _out_success ; Should switch to PING, but we ignore that for now
-    BRA  _try_complete_out
-
+_leave_out
+    LOAD #0
+    RET
 
     
 ; Pipe check loop
 check_pipes
+    INP   FRAME_TICK
+    BEQ   _chk_pipe_loop
+    OUTP  FRAME_TICK      
+    LOAD  TTDescriptor
+    BEQ   _chk_pipe_loop    
+    STORE Descriptor
+    CALL  attr_fifo_full
+    BEQ   _chk_pipe_loop
+    CALL  _complete_cmd
+    BEQ   _no_complete_report 
+    LOAD  TTPipeNumber
+    CALL  _report
+    BRA   _chk_pipe_loop
+
+_no_complete_report
+    LOADI Descriptor,Offset_Command_Timeout
+    BEQ   _chk_pipe_loop
+    CALL  _check_timeout
+    BCC   _chk_pipe_loop
+    CALL  _report
+
+_chk_pipe_loop
     LOAD  #Pipes
-    STORE PipeAddr
+    STORE Descriptor
     LOAD  #0
     STORE PipeNumber
 _chk_pipe
-    LOADI PipeAddr
+    LOAD  Descriptor
+    CMP   TTDescriptor
     BEQ   _nxt_pipe
-    STORE Current_Command
+
+_read_stable
+    LOADI Descriptor,Offset_Command
+    STORE temp
+    LOADI Descriptor,Offset_Command
+    CMP   temp
+    BNE   _read_stable
+
+    LOAD  temp    
+    BEQ   _nxt_pipe
     AND   #CMD_REQ_PAUSED
     BEQ   _valid_pipe
 	
 _nxt_pipe
+    LOAD  Descriptor
+    ADD   #PipeSize
+    STORE Descriptor
     LOAD  PipeNumber
     ADD   #1
     STORE PipeNumber
-    LOAD  PipeAddr
-    ADD   #8
-    STORE PipeAddr
-    CMP   #PipesEnd
+    CMP   PipesInUse
     BNE   _chk_pipe
 _pipes_done
     RET
     
 _valid_pipe
     ; check interval
-    LOAD  PipeAddr
-    ADD   #Offset_Command_Interval
-    STORE temp
-    LOADI temp
+    LOADI Descriptor,Offset_Command_Interval
     STORE Interval
 
-    LOAD  PipeAddr
-    ADD   #Offset_Command_LastFrame
-    STORE temp
-    LOADI temp
+    LOADI Descriptor,Offset_Command_LastFrame
     STORE LastFrame
     
     INP   FRAME_COUNTER
     SUB   LastFrame
     ;; accu now holds time since last
     CMP   Interval
-    BPL   _interval_ok
-    BRA    _nxt_pipe    
-
-store_last_frame
-    STORE  Interval
-    LOAD   PipeAddr
-    ADD    #Offset_Command_LastFrame
-    STORE  temp
-    LOAD   Interval
-    STORI  temp
-    RET
-        
-store_updated_command
-    STORE  Interval ;; just a temporary
-    LOAD   PipeAddr
-    ADD    #Offset_Command
-    STORE  temp
-    LOAD   Interval
-    STORI  temp
-    RET
-
+    BCC   _nxt_pipe
+    
 _interval_ok
-    INP   FRAME_COUNTER
-    CALL   store_last_frame
-
-_need_to_exectue
     CALL  attr_fifo_full
     BEQ   _nxt_pipe
 
-    LOAD  Current_Command
-    AND   #CMD_REQ_USEBLOCK
-    BNE   _prepare_block
-    LOADI PipeAddr
-    AND   #CMD_REQ_USECIRC
-    BNE   _prepare_circ
-    ; invalid -> no memory address
-    BRA   _nxt_pipe    
+    LOADI Descriptor,Offset_Command_MemHi
+    BEQ   _nxt_pipe  ; invalid -> no memory address
 
-_add_block_offset
-    LOAD  BlockOffset
-    ADD   Current_Command_MemLo
-    STORE Current_Command_MemLo
-    LOAD  Current_Command_MemHi
-    ADDC  #0
-    STORE Current_Command_MemHi
+    CALL  _execute_cmd
+    BEQ   _nothing_to_report  ; when 0, nothing to report 
+    LOAD  PipeNumber
+    CALL  _report
+    BRA   _nxt_pipe
+
+_nothing_to_report
+    LOADI Descriptor,Offset_Command_Timeout
+    BEQ   _nxt_pipe   ; No timeout set
+    CALL  _check_timeout
+    BCC   _nxt_pipe
+    LOAD  PipeNumber
+    CALL  _report
+    BRA   _nxt_pipe
+    
+_check_timeout
+    STORE Interval 
+    LOADI Descriptor,Offset_Command_Started
+    STORE LastFrame
+    INP   FRAME_COUNTER
+    SUB   LastFrame
+    CMP   Interval
     RET
     
-_prepare_block
-    CALL  blk_fifo_empty
-    BEQ   _nxt_pipe    
-    CALL  blk_fifo_read
-    STORE BlockOffset
-
-    ;; calculate memory address (= MemBlock_Base + 4*fifo_value)
-    ADD   MemBlock_Base_Low
-    STORE Current_Command_MemLo
-    LOAD  MemBlock_Base_High
-    ADDC  #0
-    STORE Current_Command_MemHi
-
-    CALL  _add_block_offset ; *2
-    CALL  _add_block_offset ; *3
-    CALL  _add_block_offset ; *4
-    CALL  _other_params
-    CALL  _execute_cmd
-
-    LOAD  Current_Command
-    CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
-
-    ;; Now what will we tell the host?  Was the transfer successful?
-    LOAD  Transferred
-    BEQ   _unsuccessful
-
-    LOAD  BlockOffset
-    OR    PipeNumber
+_report
+    ;; Store value to report
     CALL  attr_fifo_push
-    LOAD  Transferred
-    CALL  attr_fifo_push
-    OUTP  SEND_INTERRUPT
-    CALL  blk_fifo_adv
-    BRA   _nxt_pipe
 
-_prepare_circ
-    LOAD  Circ_MemAddr_Start_Low
-    ADD   Circ_Offset
-    STORE Current_Command_MemLo
-    LOAD  Circ_MemAddr_Start_High
-    ADDC  #0
-    STORE Current_Command_MemHi
-    CALL  _other_params
-    CALL  _execute_cmd
-
-	; Not required to call store updated command, because
-	; when the transfer had an error, we pause the pipe, which also updates the command
-	; and when it is successful, pause pipe will also be called, see below
-    ; LOAD  Current_Command
-    ; CALL  store_updated_command ; We do this to make sure we will expect the correct toggle next time
-
-    ;; Now what will we tell the host?  Was the transfer successful?
-    LOAD  Transferred
-    BEQ   _unsuccessful
-
-	CALL  pause_pipe  ; Circular data always gets paused, because they represent interrupts
-	
-    ;; report back to host
-    LOAD  Circ_Offset
-    OR    PipeNumber
-    CALL  attr_fifo_push ; address
-    LOAD  Transferred
-    CALL  attr_fifo_push ; length
-    OUTP  SEND_INTERRUPT
-
-    LOAD  Circ_Offset
-    ADD   #16
-    STORE Circ_Offset
-    CMP   Circ_Size
-    BNE   _nxt_pipe
-    LOAD  #0
-    STORE Circ_Offset
-    BRA   _nxt_pipe
-    
-pause_pipe
-    LOAD  Current_Command
-	 ; we add the pause bit, so that it will only occur once
+    ;; we set the pause bit, so that it will only occur once
+    LOADI Descriptor,Offset_Command
     OR    #CMD_REQ_PAUSED
-    BRA  store_updated_command ; We do this to make sure we will expect the correct toggle next time
+    STORI Descriptor,Offset_Command  ; We leave the command intact, to make sure we will expect the correct toggle next time
 
-_unsuccessful
-    LOAD Current_Command_Result
-    AND  #CMD_RES_MASK
-    CMP  #CMD_RES_NAK
-    BEQ  _nxt_pipe   ; we just got NAK, no worries, don't report    
-
-	CALL  pause_pipe
-    LOAD #$FFF0
-    OR   PipeNumber
-    CALL attr_fifo_push
-    LOAD Current_Command_Result
-    CALL attr_fifo_push
+    ;; Let's send the host an interrupt
     OUTP  SEND_INTERRUPT
-    BRA  _nxt_pipe
-
-_other_params
-    LOAD  PipeAddr
-    ADD   #Offset_Command_DevEP
-    STORE temp
-    LOADI temp
-    STORE Current_Command_DevEP
-
-    LOAD  PipeAddr
-    ADD   #Offset_Command_Length
-    STORE temp
-    LOADI temp
-    STORE Current_Command_Length
-
-    LOAD  PipeAddr
-    ADD   #Offset_Command_MaxTrans
-    STORE temp
-    LOADI temp
-    STORE Current_Command_MaxTrans
-
-    LOAD  PipeAddr
-    ADD   #Offset_Command_SplitCtl
-    STORE temp
-    LOADI temp
-    STORE Current_Command_SplitCtl
     RET
+
 
 ; Buffer management:
-; Fifo with numeric values that are offsets to a base pointer, in dwords: 256K addressing space
-
-; BLOCK FIFO
-; check if fifo empty. Will return 0 (BEQ..) when fifo is empty
-blk_fifo_empty
-    LOAD head_pointer_blk
-    CMP  head_pointer_blk
-    BNE  blk_fifo_empty
-    CMP  tail_pointer_blk
-    RET
-    
-; get a value from the fifo
-blk_fifo_read
-    LOAD  tail_pointer_blk
-    ADD   #block_fifo
-    STORE fifo_temp_addr
-    LOADI fifo_temp_addr
-    RET
-    
-blk_fifo_adv
-    LOAD  tail_pointer_blk
-    ADD   #1
-    AND   #$3F
-    STORE tail_pointer_blk
-    RET
 
 ; ATTRIBUTE FIFO
 attr_fifo_full
     LOAD head_pointer_atr
     ADD  #1
-    AND  #$7F
+    AND  #$0F
     XOR  tail_pointer_atr
     RET
 
@@ -1044,59 +991,42 @@ attr_fifo_push
     ADD    #attrib_fifo
     STORE  fifo_temp_addr
     LOAD   fifo_temp_data
-    STORI  fifo_temp_addr
+    STORI  fifo_temp_addr,0
     LOAD   head_pointer_atr
     ADD    #1
-    AND    #$7F
+    AND    #$0F
     STORE  head_pointer_atr
     RET
     
 status_irq
-	LOAD  #$FFFF
-other_irq
+	OR    #$FFF0
 	CALL  attr_fifo_push
     OUTP  SEND_INTERRUPT
 	RET
 
 fifo_temp_data
     .dw 0
-fifo_temp_addr
-    .dw 0
 AllowedErrors
-    .dw 0
-Transferred
     .dw 0
 CurrentLength
     .dw 0
 CurrentBuffer
     .dw 0
-Current_Command
-    .dw 0          
-Current_Command_DevEP    
-    .dw 0          
-Current_Command_Length   
-    .dw 0          
-Current_Command_MaxTrans 
-    .dw 0          
-Current_Command_MemHi    
-    .dw 0          
-Current_Command_MemLo    
-    .dw 0          
-Current_Command_SplitCtl 
-    .dw 0          
-Current_Command_Result   
-    .dw 0          
 Current_Word_Offset
-    .dw 0
-    
-PipeAddr
-    .dw 0
-PipeNumber
-    .dw 0
-Interval
     .dw 0
 LastFrame
     .dw 0
-BlockOffset
+Interval
     .dw 0
-    
+PipeNumber
+    .dw 0
+TTDescriptor
+    .dw 0
+TTPipeNumber
+    .dw 0
+LastStartSplit
+    .dw 0
+LastResult
+    .dw 0
+MaxTrans
+    .dw 0

@@ -4,14 +4,26 @@
 #include "usb_base.h"
 #include "usb_device.h"
 #include "network_interface.h"
+#include "fifo.h"
+
+#define NUM_BUFFERS 64
 
 class UsbAx88772Driver : public UsbDriver
 {
 	int  irq_transaction;
     int  bulk_transaction;
 
+    uint8_t  irq_data[16];
+    uint8_t *lastPacketBuffer;
+
     uint8_t temp_buffer[16];
     
+    struct t_pipe ipipe;
+    struct t_pipe bpipe;
+
+    Fifo<uint8_t *> freeBuffers;
+    uint8_t *dataBuffersBlock;
+
     UsbBase   *host;
     UsbDevice *device;
     UsbInterface *interface;
@@ -33,6 +45,7 @@ class UsbAx88772Driver : public UsbDriver
     void write_phy_register(uint8_t reg, uint16_t value);
     uint16_t read_phy_register(uint8_t reg);
 
+    uint8_t *getBuffer();
 public:
 	static UsbDriver *test_driver(UsbInterface *intf);
 
@@ -48,8 +61,8 @@ public:
     //BYTE output_callback(struct netif *, struct pbuf *);
     uint8_t output_packet(uint8_t *buffer, int pkt_len);
 
-    void interrupt_handler(uint8_t *, int);
-    void bulk_handler(uint8_t *, int);
+    void interrupt_handler();
+    void bulk_handler();
     void free_buffer(uint8_t *b);
 };
 
