@@ -53,6 +53,7 @@ SRCS_CC	 =  u2p_init.cc \
 			embedded_t64.cc \
 			embedded_iso.cc \
 			embedded_fat.cc \
+			u64_config.cc \
 			rtc_i2c.cc \
 			c64.cc \
 			c64_subsys.cc \
@@ -136,7 +137,6 @@ SRCS_CC	 =  u2p_init.cc \
             home_directory.cc \
 			reu_preloader.cc \
 			socket_test.cc \
-			u64_config.cc \
 			fpll.cc \
 			$(PRJ).cc
 
