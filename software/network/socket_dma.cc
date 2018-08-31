@@ -237,8 +237,8 @@ void SocketDMA::dmaThread(void *load_buffer)
 
 
 		/* If connection is established then start communicating */
-		char *mempntr = (char *)load_buffer;
-		char buf[16];
+		uint8_t *mempntr = (uint8_t *)load_buffer;
+		uint8_t buf[16];
 
 		while(1) {
 	        n = recv(newsockfd, buf, 2, 0);
