@@ -113,10 +113,12 @@ void UsbHidDriver :: interrupt_handler()
 {
     int data_len = host->getReceivedLength(irq_transaction);
 
+/*
     printf("HID (ADDR=%d) IRQ data: ", device->current_address);
 	for(int i=0;i<data_len;i++) {
 		printf("%b ", irq_data[i]);
 	} printf("\n");
+*/
 
     if (keyboard) { // keyboard
 		system_usb_keyboard.process_data(irq_data);
