@@ -106,7 +106,6 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_scsi.cc \
 			usb_hub.cc \
 			usb_ax88772.cc \
-			usb_em1010.cc \
 			usb_hid.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
@@ -138,7 +137,11 @@ SRCS_CC	 =  u2p_init.cc \
 			reu_preloader.cc \
 			socket_test.cc \
 			fpll.cc \
+			fastuart.cc \
+			wifi.cc \
 			$(PRJ).cc
+
+#			usb_em1010.cc \
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
