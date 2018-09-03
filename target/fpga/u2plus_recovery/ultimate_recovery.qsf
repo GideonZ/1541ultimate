@@ -578,10 +578,8 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper
 set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_regs.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_engine.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_zpu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi.vhd
