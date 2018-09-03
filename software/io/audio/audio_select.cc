@@ -91,18 +91,18 @@ struct t_cfg_definition audio_cfg_no_sid[] = {
     { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices2, 0,  3, 1 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
-static const char *volumes[] = { "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
+static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
                                  "-2 dB", "-3 dB", "-4 dB", "-5 dB", "-6 dB", "-7 dB", "-8 dB", "-9 dB",
                                  "-10 dB","-11 dB","-12 dB","-13 dB","-14 dB","-15 dB","-16 dB","-17 dB",
-                                 "-18 dB","-24 dB","-27 dB","-30 dB","-36 dB","-42 dB","Off" }; // 31 settings
+                                 "-18 dB","-24 dB","-27 dB","-30 dB","-36 dB","-42 dB" }; // 31 settings
 
 static const char *pannings[] = { "Left 5", "Left 4", "Left 3", "Left 2", "Left 1", "Center",
                                   "Right 1", "Right 2", "Right 3", "Right 4", "Right 5" }; // 11 settings
 
-static const uint8_t volume_ctrl[] = { 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90, 0x80, 0x72,
+static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90, 0x80, 0x72,
                                        0x66, 0x5b, 0x51, 0x48, 0x40, 0x39, 0x33, 0x2d,
                                        0x28, 0x24, 0x20, 0x1d, 0x1a, 0x17, 0x14, 0x12,
-                                       0x10, 0x08, 0x06, 0x04, 0x02, 0x01, 0x00 };
+                                       0x10, 0x08, 0x06, 0x04, 0x02, 0x01 };
 
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
@@ -118,24 +118,24 @@ struct t_cfg_definition audio_cfg_plus[] = {
     { CFG_AUDIO_SID_WAVE_RIGHT, CFG_TYPE_ENUM, "SID Right Combined Waveforms", "%s", sidchip_sel, 0,  1, 0 },
 //    { CFG_AUDIO_SAMPLER_IO,     CFG_TYPE_ENUM, "Map Sampler in $DF20-DFFF",    "%s", en_dis3,     0,  1, 0 },
     { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol EmuSid1",                  "%s", volumes,      0, 30, 6 },
-    { CFG_MIXER0_PAN,           CFG_TYPE_ENUM, "Pan EmuSid1",                  "%s", pannings,     0, 10, 5 },
     { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol EmuSid2",                  "%s", volumes,      0, 30, 6 },
-    { CFG_MIXER1_PAN,           CFG_TYPE_ENUM, "Pan EmuSid2",                  "%s", pannings,     0, 10, 5 },
     { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol ExtIn Left",               "%s", volumes,      0, 30, 6 },
-    { CFG_MIXER2_PAN,           CFG_TYPE_ENUM, "Pan ExtIn Left",               "%s", pannings,     0, 10, 2 },
     { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol ExtIn Right",              "%s", volumes,      0, 30, 6 },
-    { CFG_MIXER3_PAN,           CFG_TYPE_ENUM, "Pan ExtIn Right",              "%s", pannings,     0, 10, 8 },
     { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 6 },
-    { CFG_MIXER4_PAN,           CFG_TYPE_ENUM, "Pan Sampler L",                "%s", pannings,     0, 10, 2 },
     { CFG_MIXER5_VOL,           CFG_TYPE_ENUM, "Vol Sampler R",                "%s", volumes,      0, 30, 6 },
-    { CFG_MIXER5_PAN,           CFG_TYPE_ENUM, "Pan Sampler R",                "%s", pannings,     0, 10, 8 },
     { CFG_MIXER6_VOL,           CFG_TYPE_ENUM, "Vol Drive 1",                  "%s", volumes,      0, 30, 12 },
-    { CFG_MIXER6_PAN,           CFG_TYPE_ENUM, "Pan Drive 1",                  "%s", pannings,     0, 10, 5 },
     { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 12 },
-    { CFG_MIXER7_PAN,           CFG_TYPE_ENUM, "Pan Drive 2",                  "%s", pannings,     0, 10, 5 },
     { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 30 },
-    { CFG_MIXER8_PAN,           CFG_TYPE_ENUM, "Pan Tape Read",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 30 },
+    { CFG_MIXER0_PAN,           CFG_TYPE_ENUM, "Pan EmuSid1",                  "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER1_PAN,           CFG_TYPE_ENUM, "Pan EmuSid2",                  "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER2_PAN,           CFG_TYPE_ENUM, "Pan ExtIn Left",               "%s", pannings,     0, 10, 2 },
+    { CFG_MIXER3_PAN,           CFG_TYPE_ENUM, "Pan ExtIn Right",              "%s", pannings,     0, 10, 8 },
+    { CFG_MIXER4_PAN,           CFG_TYPE_ENUM, "Pan Sampler L",                "%s", pannings,     0, 10, 2 },
+    { CFG_MIXER5_PAN,           CFG_TYPE_ENUM, "Pan Sampler R",                "%s", pannings,     0, 10, 8 },
+    { CFG_MIXER6_PAN,           CFG_TYPE_ENUM, "Pan Drive 1",                  "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER7_PAN,           CFG_TYPE_ENUM, "Pan Drive 2",                  "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER8_PAN,           CFG_TYPE_ENUM, "Pan Tape Read",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,        0,  0, 0 } };
@@ -208,6 +208,7 @@ void AudioConfig :: effectuate_settings()
 
         set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x800));
     }
+
     if(getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
         unsigned char tmp = cfg->get_value(CFG_AUDIO_SPEAKER_EN);
     	U2PIO_SPEAKER_EN = (tmp << 1) | (tmp != 0);
