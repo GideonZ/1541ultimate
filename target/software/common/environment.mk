@@ -35,6 +35,8 @@ OUTPUT_FP = $(shell pwd)/$(OUTPUT)
 
 PATH_SW  =  ../../../software
 
+LWIP ?= lwip-1.4.1
+
 VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/application/ultimate \
 			$(PATH_SW)/filesystem \
@@ -61,6 +63,8 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/io/command_interface \
 			$(PATH_SW)/io/copper \
 			$(PATH_SW)/io/network \
+			$(PATH_SW)/io/uart \
+			$(PATH_SW)/io/wifi \
 			$(PATH_SW)/network/config \
 			$(PATH_SW)/io/iec \
 			$(PATH_SW)/6502 \
@@ -71,10 +75,10 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/FreeRTOS/Source \
 			$(PATH_SW)/FreeRTOS/Source/include \
 			$(PATH_SW)/FreeRTOS/Source/MemMang \
-			$(PATH_SW)/lwip-1.4.1/src/include \
-			$(PATH_SW)/lwip-1.4.1/src/include/ipv4 \
-			$(PATH_SW)/lwip-1.4.1/src/include/posix/sys \
-			$(PATH_SW)/lwip-1.4.1/src/include/posix \
+			$(PATH_SW)/$(LWIP)/src/include \
+			$(PATH_SW)/$(LWIP)/src/include/ipv4 \
+			$(PATH_SW)/$(LWIP)/src/include/posix/sys \
+			$(PATH_SW)/$(LWIP)/src/include/posix \
 			$(ROMS)
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
