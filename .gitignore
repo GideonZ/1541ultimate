@@ -251,3 +251,4 @@ software/6502/sidcrt/target
 *.d
 tools/dump_bus_trace
 tools/64tass/*.o
+/chars/
