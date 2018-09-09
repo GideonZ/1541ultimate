@@ -76,7 +76,15 @@ start
 	cpy #$e8
 	bne -
 	
--	jmp -
+do_jingle
+    jsr jingle 
+
+    lda #30
+-   jsr delay
+    sec
+    sbc #1
+    bne -    
+	jmp do_jingle
 
 fix
 	pha
@@ -88,7 +96,61 @@ fix
 +	pla
 	rts
 
+jingle
+    lda #$0f
+    sta $d418
+    lda #$29
+    sta $d405
+    lda #$00
+    sta $d406
 
+    lda #$10
+    sta $d404
+    lda #$4b
+    sta $d400
+    lda #$22
+    sta $d401
+    lda #$11
+    sta $d404
+    jsr delay
+        
+    lda #$10
+    sta $d404
+    lda #$34
+    sta $d400
+    lda #$2b
+    sta $d401
+    lda #$11
+    sta $d404
+    jsr delay
+
+    lda #$10
+    sta $d404
+    lda #$61
+    sta $d400
+    lda #$33
+    sta $d401
+    lda #$11
+    sta $d404
+    jsr delay
+
+    lda #$10
+    sta $d404
+    rts
+    
+
+; more or less half a second
+delay
+    ldx #145
+    ldy #0
+-   iny
+    nop
+    nop
+    bne -
+    dex
+    bne -
+    rts
+    
 welcome
 	.enc "screen"
     .text "                                        " ; 1
