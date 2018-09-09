@@ -42,7 +42,7 @@ set_global_assignment -name DEVICE EP4CE22F17C8
 set_global_assignment -name TOP_LEVEL_ENTITY u2p_slot_tester
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 16.1.0
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "09:10:33  SEPTEMBER 08, 2018"
-set_global_assignment -name LAST_QUARTUS_VERSION "16.1.0 Lite Edition"
+set_global_assignment -name LAST_QUARTUS_VERSION 15.1.0
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/memory/vhdl_source/spram.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/cyclone4_test/vhdl_source/u64test_remote.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/cyclone4_test/vhdl_source/u2p_slot_tester.vhd
@@ -55,7 +55,6 @@ set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
 set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
 set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
-set_global_assignment -name STRATIXV_CONFIGURATION_SCHEME "PASSIVE SERIAL"
 
 set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVCMOS"
 

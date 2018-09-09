@@ -16,7 +16,7 @@ port (
     SLOT_PHI2        : in    std_logic;
     SLOT_DOTCLK      : in    std_logic;
     SLOT_BA          : in    std_logic;
-    SLOT_RSTn        : inout std_logic;
+    SLOT_RSTn        : in    std_logic;
     SLOT_ADDR        : inout std_logic_vector(15 downto 0);
     SLOT_DATA        : inout std_logic_vector(7 downto 0);
     SLOT_RWn         : inout std_logic;

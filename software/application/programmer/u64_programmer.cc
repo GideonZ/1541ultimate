@@ -162,7 +162,8 @@ int load_file(BinaryImage_t *flashFile)
 		return -2;
 	}
     printf("Successfully read %s.\n", flashFile->fileName);
-	return 0;
+    fm->fclose(file);
+    return 0;
 }
 
 Screen *screen;
@@ -372,24 +373,25 @@ extern "C" {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
-	            do_update();
-	            vTaskDelay(250);
-	            screen->clear();
-	            screen->move_cursor(0,0);
 	            test_esp32();
 	            errors  = U64TestKeyboard();
 	            errors += U64TestUserPort();
+                errors += U64TestIEC();
 	            errors += U64TestCartridge();
-	            errors += U64TestIEC();
 	            errors += U64TestCassette();
+	            if (!rtc.is_valid()) {
+	                errors ++;
+	                printf("\e2RTC not valid. Battery inserted?\n\eO");
+	            }
 	            if (errors) {
-	                printf("\n\e2** BOARD FAILED **");
+	                printf("\n\e2** BOARD FAILED **\n");
 	            } else {
-	                printf("\n\e5-> Passed!");
+	                printf("\n\e5-> Passed! Now programming....\eO\n");
+	                do_update();
 	            }
 	        }
 	    }
-        printf("\n\033\025Waiting for you to turn off the machine..\n");
+        printf("\n\n\033\023Waiting for you to turn off the machine..\n");
         while (1)
             ;
 	}
