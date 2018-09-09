@@ -26,6 +26,7 @@
 #include "screen.h"
 #include "rtc.h"
 #include "prog_flash.h"
+#include "u64_tester.h"
 
 typedef struct {
 	const char *fileName;
@@ -366,6 +367,7 @@ extern "C" {
 	    initScreen();
 	    printf("Ultimate-64 - LOADER...\n");
 
+	    int errors = 0;
 	    if (!test_memory()) {
 	        if (!load_images()) {
 	            screen->clear();
@@ -375,6 +377,16 @@ extern "C" {
 	            screen->clear();
 	            screen->move_cursor(0,0);
 	            test_esp32();
+	            errors  = U64TestKeyboard();
+	            errors += U64TestUserPort();
+	            errors += U64TestCartridge();
+	            errors += U64TestIEC();
+	            errors += U64TestCassette();
+	            if (errors) {
+	                printf("\n\e2** BOARD FAILED **");
+	            } else {
+	                printf("\n\e5-> Passed!");
+	            }
 	        }
 	    }
         printf("\n\033\025Waiting for you to turn off the machine..\n");
