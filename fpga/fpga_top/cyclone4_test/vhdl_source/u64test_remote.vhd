@@ -28,7 +28,7 @@ port  (
     
     IRQn    : inout std_logic;
     NMIn    : inout std_logic;
-    RESETn  : inout std_logic;
+    RESETn  : in   std_logic;
     
     D       : inout std_logic_vector(7 downto 0);
     A       : inout std_logic_vector(15 downto 0);
@@ -60,7 +60,7 @@ architecture arch of u64test_remote is
     signal ram_rdata    : std_logic_vector(7 downto 0);
     signal iec_out      : std_logic_vector(4 downto 0);
     signal addr_out     : std_logic_vector(15 downto 0);
-    signal cart_out     : std_logic_vector(5 downto 0);
+    signal cart_out     : std_logic_vector(7 downto 0);
     signal reg_out      : std_logic_vector(7 downto 0);
     signal led_out      : std_logic_vector(3 downto 0);
 
@@ -126,6 +126,7 @@ begin
     ram_we      <= not RWn and not IO2n;
     
     with A(2 downto 0) select reg_out <=
+        cart_out       when "000",
         cart_in        when "001",
         A(15 downto 8) when "010",
         A(7 downto 0)  when "011", -- lower 3 bits will always read as "011"
@@ -174,12 +175,12 @@ begin
     cart_in(5) <= RESETn;
     cart_in(6) <= BA;
     
-    IRQn       <= '0' when cart_out(0) <= '1' else 'Z';
-    NMIn       <= '0' when cart_out(1) <= '1' else 'Z';
-    GAMEn      <= '0' when cart_out(2) <= '1' else 'Z';
-    EXROMn     <= '0' when cart_out(3) <= '1' else 'Z';
-    DMAn       <= '0' when cart_out(4) <= '1' else 'Z';
-    RESETn     <= '0' when cart_out(5) <= '1' else 'Z';
+    IRQn       <= '0' when cart_out(0) = '1' else 'Z';
+    NMIn       <= '0' when cart_out(1) = '1' else 'Z';
+    GAMEn      <= '0' when cart_out(2) = '1' else 'Z';
+    EXROMn     <= '0' when cart_out(3) = '1' else 'Z';
+    DMAn       <= '0' when cart_out(4) = '1' else 'Z';
+    -- RESETn     <= '0' when cart_out(5) <= '1' else 'Z';
 
     LED_MOTORn <= not led_out(0); 
     LED_DISKn  <= not led_out(1); 

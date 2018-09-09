@@ -48,6 +48,7 @@ public:
 	Rtc();
 	~Rtc();
 
+	bool is_valid(void);
 	int  get_correction(void);
 	void get_time_from_chip(void);
 	void set_time_in_chip(int, int y, int M, int D, int wd, int h, int m, int s);

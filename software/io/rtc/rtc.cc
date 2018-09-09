@@ -132,6 +132,11 @@ void Rtc::read_all(void)
     LEAVE_SAFE_SECTION
 }
 
+bool Rtc::is_valid(void)
+{
+    return (rtc_regs[RTC_ADDR_WEEKDAYS] != 0xFF);
+}
+
 void Rtc::get_time_from_chip(void)
 {
     read_all();
