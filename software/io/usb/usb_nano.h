@@ -59,8 +59,7 @@ typedef struct _t_usb_descriptor {
 
 #define UCMD_MEMREAD      0x8000
 #define UCMD_MEMWRITE	  0x4000
-#define UCMD_USE_BLOCK    0x2000
-#define UCMD_USE_CIRC     0x1000
+#define UCMD_PING_ENABLE  0x2000
 #define UCMD_TOGGLEBIT	  0x0800
 #define UCMD_RETRY_ON_NAK 0x0400
 #define UCMD_PAUSED		  0x0200

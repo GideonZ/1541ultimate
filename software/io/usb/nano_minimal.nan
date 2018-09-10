@@ -69,6 +69,9 @@ CMD_RESPONSE         = $64
 
 CMD_REQ_MEMREAD      = $8000
 CMD_REQ_MEMWRITE     = $4000
+CMD_REQ_PING_ENABLE  = $2000
+CMD_REQ_NOT_PING_EN  = $DFFF
+; CMD_REQ_PING_ON_NAK  = $1000
 CMD_TOGGLE_BIT       = $0800
 CMD_TOGGLE_BIT_NOT   = $F7FF
 CMD_REQ_PAUSED       = $0200
@@ -802,6 +805,11 @@ _wait_out_cmd_ssplit
     BRA   _out_done ; exit, hub didn't accept out packet; bad boy!
 
 _hs_out_start
+    LOADI Descriptor,Offset_Command
+    AND   #CMD_REQ_PING_ENABLE
+    BNE   _hs_out_ping
+    
+_hs_out_no_ping
     CALL  do_mem_read ; first time
     CALL  set_out_buffer_params
     LOAD  #0
@@ -826,11 +834,16 @@ _wait_out_cmd
     CMP  #CMD_RES_ACK
     BEQ  _out_success
     CMP  #CMD_RES_NYET
-    BEQ  _out_success
+    BEQ  _out_enable_ping_nyet
     CMP  #CMD_RES_NAK
-    BEQ  _leave_out
+    BEQ  _out_enable_ping_nak
     CMP  #CMD_RES_ERROR
     BRA  _out_done
+
+_out_enable_ping_nyet
+    LOADI Descriptor,Offset_Command
+    OR    #CMD_REQ_PING_ENABLE
+    STORI Descriptor,Offset_Command
 
 _out_success
     LOADI Descriptor,Offset_Command
@@ -854,10 +867,38 @@ _out_done
     LOAD #1
     RET
 
+_out_enable_ping_nak
+    LOADI Descriptor,Offset_Command
+    OR    #CMD_REQ_PING_ENABLE
+    STORI Descriptor,Offset_Command
+
 _leave_out
     LOAD #0
     RET
 
+_hs_out_ping
+    OR   #3
+    OUTP  CMD_REQUEST ; Do ping!!
+
+_wait_ping_cmd
+    INP   CMD_RESPONSE
+    BPL   _wait_ping_cmd
+    STORE LastResult
+    STORI Descriptor,Offset_Command_Result
+
+    AND  #CMD_RES_MASK
+    CMP  #CMD_RES_ACK
+    BEQ  _out_ping_ok
+    CMP  #CMD_RES_NAK
+    BEQ  _leave_out  ; not yet done
+    BRA  _out_done
+
+_out_ping_ok
+    LOADI Descriptor,Offset_Command
+    AND   #CMD_REQ_NOT_PING_EN
+    STORI Descriptor,Offset_Command
+    BRA   _hs_out_no_ping
+    
     
 ; Pipe check loop
 check_pipes
