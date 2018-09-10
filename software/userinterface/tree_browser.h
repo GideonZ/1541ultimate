@@ -76,6 +76,7 @@ public:
     virtual ~TreeBrowser();
 
     virtual void init(Screen *scr, Keyboard *k);
+    virtual void redraw(void);
     void deinit(void);
 
     virtual int poll(int);

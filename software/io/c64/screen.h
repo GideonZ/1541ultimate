@@ -134,7 +134,9 @@ public:
     virtual void  output_length(const char *, int);
     virtual void  repeat(char a, int len);
     virtual void  draw_border(void);
+    virtual void  reset_border(void);
     virtual void  draw_border_horiz(void);
+    virtual void  reset_border_horiz(void);
     virtual int   get_size_x(void);
     virtual int   get_size_y(void);
     virtual void  set_char(int x, int y, char);

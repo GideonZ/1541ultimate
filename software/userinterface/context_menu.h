@@ -41,6 +41,7 @@ class ContextMenu : public UIObject
     int item_index;
     int first;
     int y_offs;
+    int hook_y;
     int corner;
 public:
     ContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y);
@@ -49,8 +50,10 @@ public:
     virtual void executeAction();
 
     virtual void init(Window *pwin, Keyboard *keyb);
+    virtual void deinit(void);
     virtual int poll(int);
     virtual void draw();
+    void redraw(void);
 
     friend class TaskMenu;
 };

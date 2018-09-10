@@ -64,6 +64,15 @@ ConfigStore *ConfigManager :: register_store(uint32_t store_id, const char *name
         return NULL;
     }
 
+    // Check if the store was already opened
+    for (int i=0; i<stores.get_elements(); i++) {
+        ConfigStore *cfgStore = stores[i];
+        if (cfgStore->id == store_id) {
+            cfgStore->addObject(ob);
+            return cfgStore;
+        }
+    }
+
     int page_size = flash->get_page_size();
     uint32_t id;
     ConfigStore *s;
@@ -105,7 +114,7 @@ void ConfigManager :: add_custom_store(ConfigStore *cfg)
 
 void ConfigManager :: remove_store(ConfigStore *cfg)
 {
-	stores.remove(cfg);
+    stores.remove(cfg);
 }
 
 ConfigStore *ConfigManager :: open_store(uint32_t id)
@@ -123,7 +132,7 @@ ConfigStore *ConfigManager :: open_store(uint32_t id)
 /*** CONFIGURATION STORE ***/
 //   ===================
 ConfigStore :: ConfigStore(uint32_t store_id, const char *name, int page, int page_size,
-                           t_cfg_definition *defs, ConfigurableObject *ob) : store_name(name), items(16, NULL)
+                           t_cfg_definition *defs, ConfigurableObject *ob) : store_name(name), items(16, NULL), objects(4, NULL)
 {
     //printf("Create configstore %8x with size %d..", store_id, page_size);
     if(page_size)
@@ -134,7 +143,7 @@ ConfigStore :: ConfigStore(uint32_t store_id, const char *name, int page, int pa
     block_size = page_size;
     flash_page = page;
     id = store_id;
-    obj = ob;
+    objects.append(ob);
     dirty = false;
     
     for(int i=0;i<64;i++) {
@@ -163,6 +172,17 @@ ConfigStore :: ~ConfigStore()
     	delete mem_block;
 }
         
+void ConfigStore :: addObject(ConfigurableObject *obj)
+{
+    objects.append(obj);
+}
+
+int ConfigStore :: unregister(ConfigurableObject *obj)
+{
+    objects.remove(obj);
+    return objects.get_elements();
+}
+
 void ConfigStore :: pack()
 {
     int remain = block_size;
@@ -188,8 +208,13 @@ void ConfigStore :: pack()
 
 void ConfigStore :: effectuate()
 {
-    if(obj)
-        obj->effectuate_settings();
+    printf("Calling Effectuate for %d objects.\n", objects.get_elements());
+    for(int i=0; i<objects.get_elements(); i++) {
+        ConfigurableObject *obj = objects[i];
+        if(obj) {
+            obj->effectuate_settings();
+        }
+    }
 }
     
 void ConfigStore :: write()

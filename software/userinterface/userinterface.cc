@@ -46,7 +46,7 @@ UserInterface :: UserInterface(const char *title) : title(title)
     keyboard = NULL;
     alt_keyboard = NULL;
     screen = NULL;
-
+    doBreak = false;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -58,7 +58,6 @@ UserInterface :: ~UserInterface()
     	ui_objects[focus]->deinit();
     	delete ui_objects[focus--];
     } while(focus>=0);
-
     printf(" bye UI!\n");
 }
 
@@ -83,7 +82,6 @@ void UserInterface :: init(GenericHost *h)
 	screen = h->getScreen();
     initialized = true;
     if (host->is_permanent()) {
-    	state = ui_host_permanent;
     	appear();
     }
 }
@@ -98,84 +96,79 @@ void UserInterface :: set_screen(Screen *s)
     screen = s;
 }
 
+void UserInterface :: run_remote(void)
+{
+    host->take_ownership(this);
+    appear();
+    while(1) {
+        if (!pollFocussed()) {
+            host->releaseScreen();
+            return; // User Interface ceases to exist
+        }
+        vTaskDelay(3);
+    }
+}
+
 void UserInterface :: run(void)
 {
-#ifndef NO_FILE_ACCESS
     while(1) {
-    	host->checkButton();
-    	switch(state) {
-			case ui_idle:
-				if (!host->hasButton()) { // FIXME: We should just initialize the UI in the right state. This is too implicit
-					state = ui_host_remote;
-					host->take_ownership(this);
-					appear();
-					break;
-				}
-				if (host->exists() && host->buttonPush()) {
-                    if(buttonDownFor(1000)) {
-                        swapDisk();
-                    } else {
-                		state = ui_host_owned;
-                		host->take_ownership(this);
-                        appear();
-                    }
-                    break;
-				}
-				switch(system_usb_keyboard.getch()) {
-				case KEY_SCRLOCK:
-					state = ui_host_owned;
-					host->take_ownership(this);
-                    appear();
-                    break;
-				case 0x04: // CTRL-D
-                    swapDisk();
-                    break;
-				}
-				break;
-
-			case ui_host_owned:
-				if (!host->exists()) {
-					state = ui_idle;
-				} else if (host->buttonPush()) {
-					state = ui_idle;
-					release_host();
-					host->release_ownership();
-				} else if (!pollFocussed()) {
-					host->releaseScreen();
-					host->release_ownership();
-					state = ui_idle;
-				}
-				break;
-
-			case ui_host_remote:
-				if (!pollFocussed()) {
-					host->releaseScreen();
-					return; // User Interface ceases to exist
-				}
-				break;
-
-			case ui_host_permanent:
-				if (host->is_accessible()) {
-					if (!pollFocussed()) {
-						host->release_ownership();
-					} else if (host->buttonPush()) {
-                        host->release_ownership();
-					}
-				} else {
-					if ((system_usb_keyboard.getch() == KEY_SCRLOCK) || (host->buttonPush())) {
-						host->take_ownership(0);
-						appear();
-					}
-				}
-				break;
-
-			default:
-				return; // User Interface ceases to exist
-		}
-		vTaskDelay(3);
+        if (host->exists()) {
+            host->checkButton();
+            if (host->buttonPush()) {
+                run_once();
+                continue;
+            }
+            switch(system_usb_keyboard.getch()) {
+            case KEY_SCRLOCK:
+                run_once();
+                continue;
+            case 0x04: // CTRL-D
+                swapDisk();
+                break;
+            }
+        }
+        vTaskDelay(3);
     }
+}
+
+void UserInterface :: run_once(void)
+{
+#ifndef NO_FILE_ACCESS
+
+    if (!host->exists())
+        return;
+
+    if(buttonDownFor(1000)) {
+        swapDisk();
+        return;
+    }
+
+    host->take_ownership(this);
+    if (!host->is_permanent()) {
+        appear();
+    }
+
+    while(!doBreak) {
+        host->checkButton();
+        if (!host->exists()) {
+            break;
+        } else if (host->buttonPush()) {
+            if (!host->is_permanent()) {
+                release_host();
+            }
+            host->release_ownership();
+            break;
+        } else if (!pollFocussed()) {
+            host->releaseScreen();
+            host->release_ownership();
+            break;
+        }
+        vTaskDelay(3);
+    }
+    doBreak = false;
 #endif
 }
+
 
 #ifndef RECOVERYAPP
 bool UserInterface :: buttonDownFor(uint32_t ms)
@@ -228,8 +221,12 @@ bool UserInterface :: pollFocussed(void)
     do {
         ret = ui_objects[focus]->poll(ret); // param pass chain
         if(!ret) // return value of 0 keeps us in the same state
-            return true;
+            break;
         printf("Object level %d returned %d.\n", focus, ret);
+
+        if (host->is_permanent() && (!focus)) {
+            return false;
+        }
         ui_objects[focus]->deinit();
         if(focus) {
             focus--;
@@ -237,6 +234,7 @@ bool UserInterface :: pollFocussed(void)
         	return false;
         }
     } while(1);
+    return true;
 }
 
 void UserInterface :: appear(void)
@@ -246,16 +244,21 @@ void UserInterface :: appear(void)
 	for(int i=0;i<=focus;i++) {  // build up
 		//printf("Going to (re)init objects %d.\n", i);
 		ui_objects[i]->init(screen, keyboard);
+		ui_objects[i]->redraw();
 	}
 }
 
 void UserInterface :: release_host(void)
 {
-	for(int i=focus;i>=0;i--) {  // tear down
+    for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
     }
     host->releaseScreen();
 
+    if (!host->is_permanent()) {
+        doBreak = true;
+    }
+/*
     // This bit of state machine needs to be here, because the
     // browser doesn't know that a command actually causes the
     // C64 to unfreeze.
@@ -265,6 +268,7 @@ void UserInterface :: release_host(void)
     } else {
     	state = ui_idle;
     }
+*/
 
 }
 

@@ -40,6 +40,8 @@ private:
     void effectuate_settings(void);
 
     bool initialized;
+    bool doBreak;
+
     mstring title;
     t_ui_state state;
 
@@ -48,7 +50,6 @@ private:
     void set_screen_title(void);
     bool pollFocussed(void);
     bool buttonDownFor(uint32_t ms);
-    void swapDisk(void);
     UIStatusBox *status_box;
 public:
     int color_border, color_bg, color_fg, color_sel, color_sel_bg;
@@ -67,6 +68,8 @@ public:
 
     virtual bool is_available(void);
     virtual void run();
+    virtual void run_once();
+    virtual void run_remote();
     virtual int  popup(const char *msg, uint8_t flags); // blocking
     virtual int  string_box(const char *msg, char *buffer, int maxlen); // blocking
 
@@ -83,6 +86,7 @@ public:
     int  getPreferredType(void);
 
     void run_editor(const char *);
+    void swapDisk(void);
 
     UIObject *get_root_object(void) { return ui_objects[0]; }
 
