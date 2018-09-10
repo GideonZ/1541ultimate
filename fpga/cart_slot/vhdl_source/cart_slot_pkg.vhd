@@ -54,7 +54,7 @@ package cart_slot_pkg is
 
     constant c_cart_control_init : t_cart_control := (
         c64_nmi        => '0',
-        c64_reset      => '1',
+        c64_reset      => '0',
         c64_ultimax    => '0',
         c64_stop       => '0',
         c64_stop_mode  => "00",
