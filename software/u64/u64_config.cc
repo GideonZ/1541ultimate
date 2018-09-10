@@ -299,6 +299,12 @@ void U64Config :: effectuate_settings()
 
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
     setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
+
+    printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s)  Emu1: %02X/%02X  Emu2: %02X/%02X\n",
+            C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
+            C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis4[C64_SID2_EN_BAK],
+            C64_EMUSID1_BASE_BAK, C64_EMUSID1_MASK_BAK,
+            C64_EMUSID2_BASE_BAK, C64_EMUSID2_MASK_BAK );
 }
 
 void U64Config :: setMixer(ConfigItem *it)

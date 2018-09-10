@@ -21,6 +21,7 @@ ContextMenu :: ContextMenu(UserInterface *ui, TreeBrowserState *state, int initi
     y_offs = y-1;
     corner = y;
     first = 0;
+    hook_y = 0;
     quick_seek_length = 0;
     item_index = initial;
 }
@@ -43,8 +44,8 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
 
     keyb = key;
 
-    int ox, oy;
-    parwin->getOffsets(ox, oy);
+    int ox;
+    parwin->getOffsets(ox, hook_y);
 
     if(context_state == e_new) {
     	contextable->fetch_context_items(actions);
@@ -66,7 +67,7 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
         if(y_offs < 0)
             y_offs = 0;
         
-        y_offs += oy;
+        y_offs += hook_y;
 
         max_len = 0;
         for(int i=0;i<actions.get_elements();i++) {
@@ -81,21 +82,15 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
 
     this->screen = scr;
     window = new Window(scr, ox + parwin->get_size_x()-2-max_len, y_offs, max_len+2, rows);
-    window->set_color(user_interface->color_fg);
-    window->draw_border();
-    y_offs -= oy;
-    if((corner == y_offs)||(corner == (y_offs+rows-1))) {
-        window->set_char(0, corner-y_offs, 2);
-    } else if(corner == 0) {
-    	window->set_char(0, corner-y_offs, 8);
-    } else {
-        window->set_char(0, corner-y_offs, 3);
-    }
     context_state = e_active;
-
-    draw();
+    redraw();
 }
-    
+
+void ContextMenu :: deinit()
+{
+    window->reset_border();
+}
+
 void ContextMenu :: executeAction()
 {
 	Action *act = actions[item_index];
@@ -213,6 +208,22 @@ bool ContextMenu :: perform_quick_seek(void)
 void ContextMenu :: reset_quick_seek(void)
 {
     quick_seek_length = 0;
+}
+
+void ContextMenu :: redraw()
+{
+    window->set_color(user_interface->color_fg);
+    window->draw_border();
+    int rows = window->get_size_y();
+    int oy = y_offs - hook_y;
+    if((corner == oy)||(corner == (oy+rows-1))) {
+        window->set_char(0, corner-oy, 2);
+    } else if(corner == 0) {
+        window->set_char(0, corner-oy, 8);
+    } else {
+        window->set_char(0, corner-oy, 3);
+    }
+    draw();
 }
 
 void ContextMenu :: draw()

@@ -88,7 +88,8 @@ class ConfigStore
     int    flash_page;
     uint8_t  *mem_block;
     int    block_size;
-    ConfigurableObject *obj;
+    IndexedList<ConfigurableObject *> objects;
+//    ConfigurableObject *obj;
     mstring store_name;
     
     void pack(void);
@@ -100,6 +101,8 @@ public:
 
     ConfigStore(uint32_t id, const char *name, int page, int page_size, t_cfg_definition *defs, ConfigurableObject *obj);
     virtual ~ConfigStore();
+    void addObject(ConfigurableObject *obj);
+    int  unregister(ConfigurableObject *obj);
 
 // Interface functions
     virtual void read(void);
@@ -153,10 +156,15 @@ public:
     ConfigurableObject() {
     	cfg = NULL;
     }
+
     virtual ~ConfigurableObject() {
-    	if (cfg) {
-    		ConfigManager :: getConfigManager()->remove_store(cfg);
-    	}
+        if(cfg) {
+            int remainingObjects = cfg->unregister(this);
+            if (!remainingObjects) {
+                ConfigManager :: getConfigManager()->remove_store(cfg);
+                delete cfg;
+            }
+        }
     }
     
     virtual bool register_store(uint32_t store_id, const char *name, t_cfg_definition *defs)
@@ -164,7 +172,7 @@ public:
         cfg = ConfigManager :: getConfigManager()->register_store(store_id, name, defs, this);
         return (cfg != NULL);
     }
-    
+
     virtual void effectuate_settings() { }
 };
 

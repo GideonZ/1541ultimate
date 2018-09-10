@@ -156,6 +156,10 @@ void TreeBrowser :: test_editor(void)
     edit->deinit();
 }
     
+void TreeBrowser :: redraw(void)
+{
+    state->draw();
+}
 
 int TreeBrowser :: poll(int sub_returned)
 {

@@ -403,6 +403,17 @@ void Window :: draw_border(void)
     move_cursor(0, 0);
 }
 
+void Window :: reset_border(void)
+{
+    // Quick fix
+    offset_x --;
+    offset_y --;
+    window_x += 2;
+    window_y += 2;
+    border_h --;
+    border_v --;
+}
+
 void Window :: draw_border_horiz(void)
 {
     parent->move_cursor(offset_x, offset_y);
@@ -414,6 +425,13 @@ void Window :: draw_border_horiz(void)
     window_y -=2;
     cursor_x = cursor_y = 0;
     border_h ++;
+}
+
+void Window :: reset_border_horiz(void)
+{
+    offset_y --;
+    window_y +=2;
+    border_h --;
 }
 
 int Window :: get_size_x(void)
