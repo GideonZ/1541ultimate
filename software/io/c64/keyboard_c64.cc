@@ -238,8 +238,12 @@ void Keyboard_C64 :: wait_free(void)
         return;
 
     *col_register = 0; // select all rows
-    while(*row_register != 0xFF)
-        ;
+
+    int timeout = 2000;
+    while ((*row_register != 0xFF) && (timeout)) {
+        timeout--;
+        wait_ms(1);
+    }
     *col_register = 0xFF;
 }
 
