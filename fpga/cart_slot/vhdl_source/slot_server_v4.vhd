@@ -17,6 +17,7 @@ generic (
     g_ram_base_reu  : unsigned(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
+    g_cartreset_init: std_logic := '0';
     g_big_endian    : boolean;
     g_kernal_repl   : boolean := true;
     g_control_read  : boolean := true;
@@ -289,6 +290,7 @@ begin
         g_rom_base      => g_rom_base_cart,
         g_ram_base      => g_ram_base_cart,
 --        g_control_read  => g_control_read,
+        g_cartreset_init=> g_cartreset_init,
         g_ram_expansion => g_ram_expansion )
     port map (
         clock           => clock,

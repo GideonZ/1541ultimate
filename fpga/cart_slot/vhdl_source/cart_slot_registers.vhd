@@ -8,6 +8,7 @@ use work.cart_slot_pkg.all;
 
 entity cart_slot_registers is
 generic (
+    g_cartreset_init: std_logic := '0';
     g_kernal_repl   : boolean := true;
     g_rom_base      : unsigned(27 downto 0) := X"0F80000";
     g_ram_base      : unsigned(27 downto 0) := X"0F70000";
@@ -130,6 +131,7 @@ begin
                         
             if reset='1' then
                 control_i <= c_cart_control_init;
+                control_i.c64_reset <= g_cartreset_init;
             end if;
         end if;
     end process;
