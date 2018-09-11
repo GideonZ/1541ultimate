@@ -34,6 +34,10 @@ public:
     {
         return -1;
     }
+    virtual int  poll_inactive(void)
+    {
+        return 0;
+    }
 };
 
 class UIPopup : public UIObject

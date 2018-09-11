@@ -41,12 +41,12 @@ UserInterface :: UserInterface(const char *title) : title(title)
 {
     initialized = false;
     focus = -1;
-    state = ui_idle;
     host = NULL;
     keyboard = NULL;
     alt_keyboard = NULL;
     screen = NULL;
     doBreak = false;
+    available = false;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -100,10 +100,12 @@ void UserInterface :: run_remote(void)
 {
     host->take_ownership(this);
     appear();
+    available = true;
     while(1) {
         if (!pollFocussed()) {
+            available = false;
             host->releaseScreen();
-            return; // User Interface ceases to exist
+            break;
         }
         vTaskDelay(3);
     }
@@ -148,17 +150,20 @@ void UserInterface :: run_once(void)
         appear();
     }
 
+    available = true;
     while(!doBreak) {
         host->checkButton();
         if (!host->exists()) {
             break;
         } else if (host->buttonPush()) {
             if (!host->is_permanent()) {
+                available = false;
                 release_host();
             }
             host->release_ownership();
             break;
         } else if (!pollFocussed()) {
+            available = false;
             host->releaseScreen();
             host->release_ownership();
             break;
@@ -215,6 +220,11 @@ void UserInterface :: swapDisk(void)
 #endif                                                                
 }
 
+int UserInterface :: pollInactive(void)
+{
+    return ui_objects[focus]->poll_inactive();
+}
+
 bool UserInterface :: pollFocussed(void)
 {
 	int ret = 0;
@@ -258,23 +268,11 @@ void UserInterface :: release_host(void)
     if (!host->is_permanent()) {
         doBreak = true;
     }
-/*
-    // This bit of state machine needs to be here, because the
-    // browser doesn't know that a command actually causes the
-    // C64 to unfreeze.
-
-    if (!host->hasButton()) {
-    	state = ui_host_permanent;
-    } else {
-    	state = ui_idle;
-    }
-*/
-
 }
 
 bool UserInterface :: is_available(void)
 {
-    return (state != ui_idle);
+    return available;
 }
 
 int UserInterface :: activate_uiobject(UIObject *obj)

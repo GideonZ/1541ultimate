@@ -133,6 +133,10 @@ extern "C" void ultimate_main(void *a)
         root_tree_browser = new TreeBrowser(overlayUserInterface, root);
         overlayUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
         overlayUserInterface->init(overlay);
+        if(overlayUserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
+            new HomeDirectory(overlayUserInterface, root_tree_browser);
+            // will clean itself up
+        }
     }
 
     UserInterface *c64UserInterface = new UserInterface(title);
@@ -141,6 +145,10 @@ extern "C" void ultimate_main(void *a)
     root_tree_browser = new TreeBrowser(c64UserInterface, root);
     c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
     c64UserInterface->init(c64);
+    if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
+        new HomeDirectory(c64UserInterface, root_tree_browser);
+        // will clean itself up
+    }
 
     if(capabilities & CAPAB_C2N_STREAMER)
 	    tape_controller = new TapeController;
@@ -159,8 +167,6 @@ extern "C" void ultimate_main(void *a)
     if(c1541_B) {
     	c1541_B->init();
     }
-
-    home_directory = new HomeDirectory(c64UserInterface, root_tree_browser);
 
     reu_preloader = new REUPreloader();
     
@@ -193,6 +199,12 @@ extern "C" void ultimate_main(void *a)
         }
 
         switch (doIt) {
+        case 0:
+            c64UserInterface->pollInactive();
+            if (overlayUserInterface) {
+                overlayUserInterface->pollInactive();
+            }
+            break;
         case 1:
             ui->run_once();
             break;
