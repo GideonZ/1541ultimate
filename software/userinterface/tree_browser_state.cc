@@ -290,6 +290,10 @@ void TreeBrowserState :: into3(const char* name)
 {
     Browsable *browsable = 0;
     
+    if (needs_reload) {
+        reload();
+    }
+
     for(int i=0; i<children->get_elements(); i++) {
         if(strcasecmp((*children)[i]->getName(), name) == 0) {
             browsable = (*children)[i];

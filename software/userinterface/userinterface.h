@@ -25,14 +25,6 @@
 #define CFG_USERIF_ITYPE       0x08
 #define CFG_USERIF_SELECTED_BG 0x09
 
-typedef enum {
-    ui_idle,
-    ui_host_owned,
-    ui_host_remote,
-    ui_host_permanent
-} t_ui_state;
-
-
 class UserInterface : public ConfigurableObject, public HostClient
 {
 private:
@@ -41,9 +33,9 @@ private:
 
     bool initialized;
     bool doBreak;
+    bool available;
 
     mstring title;
-    t_ui_state state;
 
     UIObject *ui_objects[MAX_UI_OBJECTS];
     
@@ -70,6 +62,7 @@ public:
     virtual void run();
     virtual void run_once();
     virtual void run_remote();
+    virtual int  pollInactive();
     virtual int  popup(const char *msg, uint8_t flags); // blocking
     virtual int  string_box(const char *msg, char *buffer, int maxlen); // blocking
 

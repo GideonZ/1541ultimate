@@ -805,3 +805,12 @@ void get_extension(const char *name, char *ext)
 		}
 	}
 }
+
+const char *FileManager :: eventStrings[] = {
+    "eRefreshDirectory",  // Contents of directory have changed
+    "eNodeAdded",         // New Node
+    "eNodeRemoved",       // Node no longer exists (deleted)
+    "eNodeMediaRemoved",  // Node lost all its children
+    "eNodeUpdated",       // Node status changed (= redraw line)
+    "eChangeDirectory",   // Request to change current directory within observer task
+};

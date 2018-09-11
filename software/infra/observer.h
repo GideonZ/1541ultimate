@@ -23,11 +23,9 @@ public:
 	virtual ~ObserverQueue() {
 		vQueueDelete(queue);
 	}
-	void putEvent(void *el, int q) {
+	bool putEvent(void *el) {
 #ifdef OS
-		if (!xQueueSend(queue, &el, 5)) {
-			printf("Failed to post message to queue #%d (polled %d times).\n", q, polls);
-		}
+		return xQueueSend(queue, &el, 5);
 #endif
 	}
 	void *waitForEvent(uint32_t ticks) {
