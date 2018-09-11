@@ -759,11 +759,13 @@ void C64::init_system_roms(void)
         }
         unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
         memcpy(kernal, temp, 8192); // as simple as that
-        delete[] temp;
 
         if (cfg->get_value(CFG_C64_FASTRESET)) {
-            memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+            if (!memcmp((void *) (temp+0x1d6c), (void *) fastresetOrg, sizeof(fastresetOrg))) {
+                memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
+            }
         }
+        delete[] temp;
     }
 
     if (cfg->get_value(CFG_C64_ALT_BASI)) {
