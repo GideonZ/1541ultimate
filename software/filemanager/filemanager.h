@@ -207,8 +207,8 @@ public:
     	printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
     	for(int i=0;i<observers.get_elements();i++) {
     		FileManagerEvent *ev = new FileManagerEvent(e, p, n);
-    		if (!observers[i]->putEvent(ev)) {
-                printf("Failed to post message to queue #%d.\n", i);
+    		if (!(observers[i]->putEvent(ev))) {
+                printf("Failed to post message to queue #%d - %s.\n", i, observers[i]->getName());
     		}
     	}
     }

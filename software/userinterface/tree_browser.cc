@@ -69,7 +69,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
     state_root = 0;
     fm = FileManager :: getFileManager();
     path = fm->get_new_path("Tree Browser");
-    observerQueue = new ObserverQueue();
+    observerQueue = new ObserverQueue("TreeBrowser");
     fm->registerObserver(observerQueue);
 
     if(!state) {
