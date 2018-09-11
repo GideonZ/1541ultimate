@@ -195,7 +195,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                 transferred = 0;
                 
                 cmd->user_interface->show_progress("Saving REU file..", 32);
-                src = (BYTE *)(REU_MEMORY_BASE + REU_MAX_SIZE - current_reu_size);
+                src = (BYTE *)REU_MEMORY_BASE;
                 
                 while(remain != 0) {
                     f->write(src, bytes_per_step, &bytes_written);
