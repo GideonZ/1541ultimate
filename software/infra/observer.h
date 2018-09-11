@@ -14,9 +14,10 @@
 
 class ObserverQueue {
 	QueueHandle_t queue;
+	const char *name;
 	int polls;
 public:
-	ObserverQueue() {
+	ObserverQueue(const char *n) : name(n) {
 		queue = xQueueCreate(8, sizeof(void *));
 		polls = 0;
 	}
@@ -33,6 +34,10 @@ public:
 		void *result = 0;
 		xQueueReceive(queue, &result, (TickType_t)ticks);
 		return result;
+	}
+
+	const char *getName(void) {
+	    return name;
 	}
 };
 
