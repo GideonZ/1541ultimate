@@ -88,7 +88,9 @@ void ContextMenu :: init(Window *parwin, Keyboard *key)
 
 void ContextMenu :: deinit()
 {
-    window->reset_border();
+    if (window) {
+        window->reset_border();
+    }
 }
 
 void ContextMenu :: executeAction()
