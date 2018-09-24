@@ -14,6 +14,7 @@
 #include "dump_hex.h"
 #include "c64.h"
 #include "c64_subsys.h"
+#include "u64.h"
 #include "c1541.h"
 
 #define SOCKET_CMD_DMA         0xFF01
@@ -106,7 +107,11 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         /* GZW: Actually a driver for the cartridge mapping should be called here. */
         offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8);
         for (i=2; i<len; i++)
+#if U64
+           *(uint8_t *)(U64_KERNAL_BASE+1+((offs32+i-2)&0x1fff)) = buf[i];
+#else
            *(uint8_t *)(C64_KERNAL_BASE+1+2*((offs32+i-2)&0x1fff)) = buf[i];
+#endif
         break;
     case SOCKET_CMD_LOADSIDCRT:
         size = (len > 0x2000) ? 0x2000 : len;
