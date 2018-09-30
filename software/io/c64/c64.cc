@@ -122,6 +122,9 @@ static const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", 
 static const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *en_dis2[] = { "Disabled", "Enabled" };
 static const char *rom_sel[] = { "Factory", "Original", "Alternative" };
+#if U64
+static const char *rom_sel_ker[] = { "Factory", "Original", "Alternative", "Alt. 2" };
+#endif
 static const char *buttons[] = { "Reset|Menu|Freezer", "Freezer|Menu|Reset" };
 static const char *timing1[] = { "20ns", "40ns", "60ns", "80ns", "100ns", "120ns", "140ns", "160ns" };
 static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns", "112ns", "128ns" };
@@ -138,7 +141,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartridge 3 Mode",       "%s", fc3mode,    0,  2, 0 },
     { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis2,    0,  1, 0 },
 #if U64
-    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", rom_sel,    0,  2, 0 },
+    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", rom_sel_ker,0,  3, 0 },
     { CFG_C64_ALT_BASI, CFG_TYPE_ENUM,   "Alternate Basic",              "%s", rom_sel,    0,  2, 0 },
     { CFG_C64_ALT_CHAR, CFG_TYPE_ENUM,   "Alternate Chargen",            "%s", rom_sel,    0,  2, 0 },
 #else
@@ -754,8 +757,10 @@ void C64::init_system_roms(void)
         uint8_t *temp = new uint8_t[8192];
         if (cfg->get_value(CFG_C64_ALT_KERN) == 1) {
             flash->read_image(FLASH_ID_ORIG_KERNAL, temp, 8192);
-        } else {
+        } else if (cfg->get_value(CFG_C64_ALT_KERN) == 2) {
             flash->read_image(FLASH_ID_KERNAL_ROM, temp, 8192);
+        } else {
+            flash->read_image(FLASH_ID_KERNAL_ROM2, temp, 8192);
         }
         unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE;
         memcpy(kernal, temp, 8192); // as simple as that
