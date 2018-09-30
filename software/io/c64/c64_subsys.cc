@@ -283,6 +283,22 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     case MENU_C64_HARD_BOOT:
 		c64->flash->reboot(0);
 		break;
+    case C64_READ_FLASH:
+    	        {
+    	        	switch (cmd->mode)
+    	        	{
+    	        		case RUNCODE_FLASH_PAGESIZE:
+    	        			*(int*)cmd->buffer = c64->flash->get_page_size();
+    	        			break;
+    	        		case RUNCODE_FLASH_NOPAGES:
+    	        			*(int*)cmd->buffer = c64->flash->get_number_of_pages();
+    	        			break;
+    	        	        default:
+    	        	               if (cmd->bufferSize >= c64->flash->get_page_size()) 
+    	        	                  c64->flash->read_page(cmd->mode-RUNCODE_FLASH_GETPAGE, cmd->buffer);
+    	        	}
+    	        }
+    	        break;
     default:
 		break;
 	}

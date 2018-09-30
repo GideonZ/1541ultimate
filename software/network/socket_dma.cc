@@ -32,6 +32,7 @@
 #define SOCKET_CMD_LOADBOOTCRT 0xFF72
 #define SOCKET_CMD_SAMPLE      0xFF73
 #define SOCKET_CMD_READMEM     0xFF74
+#define SOCKET_CMD_READFLASH   0xFF75
 
 SocketDMA socket_dma; // global that causes the object to exist
 
@@ -150,6 +151,49 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         }
         c64_command->execute();
         break;
+    case SOCKET_CMD_READFLASH:
+    	switch (buf[0])
+    	{
+           case 0:
+           {
+              unsigned int len;
+              unsigned char tmp[4];
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_PAGESIZE, (uint8_t*) &len, 0);
+              c64_command->execute();
+              tmp[0] = len;
+              tmp[1] = len >> 8;
+              tmp[2] = len >> 16;
+              tmp[3] = len >> 24;
+              writeSocket(socket, tmp, 4);
+              break;
+           }
+           case 1:
+           {
+              unsigned int len;
+              unsigned char tmp[4];
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_NOPAGES, (uint8_t*) &len, 0);
+              c64_command->execute();
+              tmp[0] = len;
+              tmp[1] = len >> 8;
+              tmp[2] = len >> 16;
+              tmp[3] = len >> 24;
+              writeSocket(socket, tmp, 4);
+              break;
+           }
+           case 2:
+           {
+              int len;
+              int page = (((uint32_t)buf[1]) ) | (((uint32_t)buf[2]) << 8) | (((uint32_t)buf[3]) << 16);
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_PAGESIZE, (uint8_t*) &len, 0);
+              c64_command->execute();
+              char* buffer = new char[len];
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_GETPAGE+page, buffer, len);
+              c64_command->execute();
+              writeSocket(socket, buffer, len);
+              delete[] buffer;              
+              break;
+           }
+    	}
     }
 }
 
