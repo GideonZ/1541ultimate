@@ -44,6 +44,7 @@ extern "C" {
 #define CMD_SET_CARTROM  0x4203
 #define CMD_WRITE_EEPROM 0x4204
 #define CMD_SET_DRIVEROM2 0x4205
+#define CMD_SET_DRIVEROM3 0x4206
 #define CMD_TEST_CHARS   0x4222
 
 #define CMD_SET_KERNAL_ORIG  0x4211
@@ -53,6 +54,7 @@ extern "C" {
 #define CMD_SET_CHAR_ORIG    0x4215
 #define CMD_SET_CHAR_ALT     0x4216
 #define CMD_SET_KERNAL_ALT2  0x4217
+#define CMD_SET_KERNAL_ALT3  0x4218
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_bin(FileType :: getFileTypeFactory(), FileTypeBin :: test_type);
@@ -103,9 +105,18 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         count++;
         list.append(new Action("Flash as Alt. Kernal 2", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT2, (int)this));
         count++;
+        list.append(new Action("Flash as Alt. Kernal 3", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT3, (int)this));
+        count++;
         list.append(new Action("Flash as Orig. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ORIG, (int)this));
         count++;
         list.append(new Action("Flash as Alt. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ALT, (int)this));
+        count++;
+    }
+#elif CLOCK_FREQ == 62500000
+    if (size == 8192) {
+        list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
+        count++;
+        list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT2, (int)this));
         count++;
     }
 #else
@@ -119,6 +130,11 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         list.append(new Action("Use as Drive ROM", FileTypeBin :: execute_st, CMD_SET_DRIVEROM, (int)this));
         count++;
 #if U64
+        list.append(new Action("Use as Drive ROM 2", FileTypeBin :: execute_st, CMD_SET_DRIVEROM2, (int)this));
+        count++;
+        list.append(new Action("Use as Drive ROM 3", FileTypeBin :: execute_st, CMD_SET_DRIVEROM3, (int)this));
+        count++;
+#elif CLOCK_FREQ == 62500000
         list.append(new Action("Use as Drive ROM 2", FileTypeBin :: execute_st, CMD_SET_DRIVEROM2, (int)this));
         count++;
 #endif
@@ -177,6 +193,11 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
         id = FLASH_ID_CUSTOM2_DRV;
         break;
 
+    case CMD_SET_DRIVEROM3:
+        size = 32768;
+        id = FLASH_ID_CUSTOM3_DRV;
+        break;
+
     case CMD_SET_KERNAL:
     case CMD_SET_KERNAL_ALT:
         size = 8192;
@@ -191,6 +212,11 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     case CMD_SET_KERNAL_ALT2:
         size = 8192;
         id = FLASH_ID_KERNAL_ROM2;
+        break;
+
+    case CMD_SET_KERNAL_ALT3:
+        size = 8192;
+        id = FLASH_ID_KERNAL_ROM3;
         break;
 
     case CMD_SET_BASIC_ORIG:
@@ -314,6 +340,7 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
                     case CMD_SET_KERNAL_ORIG:
                     case CMD_SET_KERNAL_ALT:
                     case CMD_SET_KERNAL_ALT2:
+                    case CMD_SET_KERNAL_ALT3:
                     case CMD_SET_CHAR_ORIG:
                     case CMD_SET_CHAR_ALT:
                         C64 :: getMachine()->new_system_rom(id);
@@ -330,6 +357,10 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
                         
                     case CMD_SET_DRIVEROM2:
                         cmd->user_interface->popup("Please select Custom 1541 ROM 2.", BUTTON_OK);
+                        break;
+
+                    case CMD_SET_DRIVEROM3:
+                        cmd->user_interface->popup("Please select Custom 1541 ROM 3.", BUTTON_OK);
                         break;
 
                     // For U2/U2+ flash function, tell user that alternate kernal is being used.

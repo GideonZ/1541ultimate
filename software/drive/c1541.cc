@@ -20,6 +20,8 @@
 const char *en_dis[] = { "Disabled", "Enabled" };
 const char *yes_no[] = { "No", "Yes" };
 #if U64
+const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Custom1*", "Custom2*", "Custom3*" };
+#elif CLOCK_FREQ == 62500000
 const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Custom1*", "Custom2*" };
 #else
 const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Custom*" };
@@ -34,7 +36,7 @@ const char *ram_board[] = { "Off", "$8000-$BFFF (16K)",
 t_1541_ram ram_modes[] = { e_ram_none, e_ram_8000_BFFF, e_ram_4000_7FFF, e_ram_4000_BFFF,
 						   e_ram_2000_3FFF, e_ram_2000_7FFF, e_ram_2000_BFFF };
 
-t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom, e_rom_custom2 };
+t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom, e_rom_custom2, e_rom_custom3 };
 
 #define CFG_C1541_POWERED   0xD1
 #define CFG_C1541_BUS_ID    0xD2
@@ -51,6 +53,8 @@ struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",                 "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",          "%d", NULL,       8, 11, 8 },
 #if U64
+    { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  5, 2 },
+#elif CLOCK_FREQ == 62500000
     { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  4, 2 },
 #else
     { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  3, 2 },
@@ -155,7 +159,7 @@ void C1541 :: effectuate_settings(void)
 
     t_1541_rom rom = rom_modes[cfg->get_value(CFG_C1541_ROMSEL)];
     if((rom != current_rom)||
-       (rom == e_rom_custom) || (rom == e_rom_custom2)) {
+       (rom == e_rom_custom) || (rom == e_rom_custom2) || (rom == e_rom_custom3)) {
 
         set_rom(rom);
     }
@@ -308,6 +312,10 @@ void C1541 :: set_rom(t_1541_rom rom)
             break;
         case e_rom_custom2:
             flash->read_image(FLASH_ID_CUSTOM2_DRV, (void *)&memory_map[0x8000], 0x8000);
+			large_rom = true;
+             break;
+        case e_rom_custom3:
+            flash->read_image(FLASH_ID_CUSTOM3_DRV, (void *)&memory_map[0x8000], 0x8000);
 			large_rom = true;
              break;
         default: // custom
