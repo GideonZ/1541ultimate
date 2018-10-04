@@ -120,6 +120,8 @@ extern "C" void ultimate_main(void *a)
         } else {
     	    sprintf(title, "\eA*** Ultimate-II  U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
         }
+        c64->effectuate_settings();
+        c64->init_cartridge();
     }
 #endif
 
