@@ -27,6 +27,7 @@
 #include "filemanager.h"
 #include "menu.h"
 #include "c64.h"
+#include "c1541.h"
 #include "subsys.h"
 #include "userinterface.h"
 #include "ext_i2c.h"
@@ -55,6 +56,8 @@ extern "C" {
 #define CMD_SET_CHAR_ALT     0x4216
 #define CMD_SET_KERNAL_ALT2  0x4217
 #define CMD_SET_KERNAL_ALT3  0x4218
+#define CMD_LOAD_KERNAL      0x4219
+#define CMD_LOAD_DOS         0x421A
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_bin(FileType :: getFileTypeFactory(), FileTypeBin :: test_type);
@@ -111,6 +114,8 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         count++;
         list.append(new Action("Flash as Alt. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ALT, (int)this));
         count++;
+        list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
+        count++;
     }
 #elif CLOCK_FREQ == 62500000
     if (size == 8192) {
@@ -118,16 +123,22 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         count++;
         list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT2, (int)this));
         count++;
+        list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
+        count++;
     }
 #else
     if (size == 8192) {
         list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
+        count++;
+        list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
         count++;
     }
 #endif
 
     if (size == 16384 || size == 32768) {
         list.append(new Action("Use as Drive ROM", FileTypeBin :: execute_st, CMD_SET_DRIVEROM, (int)this));
+        count++;
+        list.append(new Action("Load Drive ROM", FileTypeBin :: load_dos_st, CMD_LOAD_DOS, (int)this));
         count++;
 #if U64
         list.append(new Action("Use as Drive ROM 2", FileTypeBin :: execute_st, CMD_SET_DRIVEROM2, (int)this));
@@ -379,4 +390,73 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
         return -2;
     }
     return 0;
+}
+
+int FileTypeBin :: load_kernal_st(SubsysCommand *cmd)
+{
+	return ((FileTypeBin *)cmd->mode)->load_kernal(cmd);
+}
+
+int FileTypeBin :: load_kernal(SubsysCommand *cmd)
+{
+    File *file = 0;
+
+    FileManager *fm = FileManager :: getFileManager();
+
+    uint32_t size = 8192;
+
+    printf("Binary Load.. %s\n", cmd->filename.c_str());
+    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+
+    if(file) {
+    	uint8_t *buffer = new uint8_t[size];
+    	uint32_t transferred = 0;
+    	file->read(buffer, size, &transferred);
+        fm->fclose(file);
+
+        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_SET_KERNAL, 0, buffer, size);
+        c64_command->execute();
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0, 0, 0);
+        c64_command->execute();
+        
+        delete[] buffer;
+   }
+}
+
+int FileTypeBin :: load_dos_st(SubsysCommand *cmd)
+{
+	return ((FileTypeBin *)cmd->mode)->load_dos(cmd);
+}
+
+int FileTypeBin :: load_dos(SubsysCommand *cmd)
+{
+    File *file = 0;
+
+    FileManager *fm = FileManager :: getFileManager();
+
+    uint32_t size = 32768;
+
+    printf("Binary Load.. %s\n", cmd->filename.c_str());
+    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+
+    if(file) {
+    	uint8_t *buffer = new uint8_t[size];
+    	uint32_t transferred = 0;
+    	file->read(buffer, size, &transferred);
+        fm->fclose(file);
+
+    	if ((size == 32768) && (transferred == 16384)) {
+    		memcpy(buffer + 16384, buffer, 16384);
+    		transferred *= 2;
+    	}
+
+        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, FLOPPY_LOAD_DOS, 0, buffer, size);
+        c64_command->execute();
+
+        c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_RESET, 0, 0, 0);
+        c64_command->execute();
+         
+        
+        delete[] buffer;
+   }
 }
