@@ -791,6 +791,10 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
     case MENU_1541_SWAP:
         swap_disk();
         break;
+    case FLOPPY_LOAD_DOS:
+    	memcpy((void *)&memory_map[0x8000], (void*) cmd->buffer, 0x8000);
+        break;
+    	
 	default:
 		printf("Unhandled menu item for C1541.\n");
 		return -1;

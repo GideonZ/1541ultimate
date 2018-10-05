@@ -299,6 +299,11 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
     	        	}
     	        }
     	        break;
+    case C64_SET_KERNAL:
+                c64->enable_kernal( (uint8_t*) cmd->buffer );
+                // c64->reset();
+    	        break;
+
     default:
 		break;
 	}
