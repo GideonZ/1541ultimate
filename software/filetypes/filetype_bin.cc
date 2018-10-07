@@ -119,9 +119,9 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
     }
 #elif CLOCK_FREQ == 62500000
     if (size == 8192) {
-        list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
+        list.append(new Action("Flash as Alt. Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
         count++;
-        list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT2, (int)this));
+        list.append(new Action("Flash as Alt. Kernal 2", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT2, (int)this));
         count++;
         list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
         count++;
