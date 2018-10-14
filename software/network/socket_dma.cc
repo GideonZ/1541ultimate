@@ -307,9 +307,11 @@ void SocketDMA::dmaThread(void *load_buffer)
                 break;
             }
 	        uint16_t len = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
-
-	        if (len) {
-	            n = readSocket(newsockfd, mempntr, len);
+	        uint32_t len32 = len;
+	        if ( (cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG))
+                   len32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8) | (((uint32_t)buf[2]) << 16);
+	        if (len32) {
+	            n = readSocket(newsockfd, mempntr, len32);
 	        }
 	        if (n <= 0) {
 	            break;
