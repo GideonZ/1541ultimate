@@ -703,7 +703,6 @@ begin
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 16,
             g_8voices       => g_8voices,
-            g_sid_filter_div=> (g_clock_freq / 226244),
             g_vic_copper    => g_vic_copper )
         port map (
             clock           => sys_clock,

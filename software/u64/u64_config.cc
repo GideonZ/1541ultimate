@@ -10,6 +10,7 @@ extern "C" {
     #include "itu.h"
 	#include "dump_hex.h"
     #include "small_printf.h"
+    #include "sid_coeff.h"
 }
 #include <string.h>
 #include "menu.h"
@@ -21,7 +22,6 @@ extern "C" {
 #include "fpll.h"
 #include "i2c.h"
 #include "ext_i2c.h"
-
 // static pointer
 U64Config u64_configurator;
 
@@ -44,6 +44,12 @@ U64Config u64_configurator;
 #define CFG_PARCABLE_ENABLE   0x11
 #define CFG_PLAYER_AUTOCONFIG 0x12
 #define CFG_ALLOW_EMUSID      0x13
+#define CFG_EMUSID1_FILTER    0x14
+#define CFG_EMUSID2_FILTER    0x15
+#define CFG_EMUSID1_WAVES     0x16
+#define CFG_EMUSID2_WAVES     0x17
+#define CFG_EMUSID1_RESONANCE 0x18
+#define CFG_EMUSID2_RESONANCE 0x19
 
 #define CFG_MIXER0_VOL        0x20
 #define CFG_MIXER1_VOL        0x21
@@ -134,6 +140,9 @@ static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
 static const char *sid_types[] = { "None", "6581", "8580", "SidFX", "fpgaSID" };
+static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
+static const char *filter_res[] = { "Low", "High" };
+static const char *comb_wave[] = { "6581", "8580" };
 
 static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
                                  "-2 dB", "-3 dB", "-4 dB", "-5 dB", "-6 dB", "-7 dB", "-8 dB", "-9 dB",
@@ -173,16 +182,22 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SCANLINES,    		CFG_TYPE_ENUM, "HDMI Scan lines",          	   "%s", en_dis4,      0,  1, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
-    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  4, 0 },
-    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  4, 0 },
+    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  2, 0 },
+    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  2, 0 },
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis4,      0,  1, 1 },
-    { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses EmuSid", "%s", yes_no,       0,  1, 1 },
+    { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
     { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 29, 0 },
     { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 29, 0 },
     { CFG_PADDLE_EN,			CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
     { CFG_STEREO_DIFF,			CFG_TYPE_ENUM, "Ext StereoSID addrline",       "%s", stereo_addr,  0,  1, 0 },
     { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 23, 0 },
     { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 23, 0 },
+    { CFG_EMUSID1_FILTER,       CFG_TYPE_ENUM, "UltiSID 1 Filter Curve",       "%s", filter_sel,   0,  6, 0 },
+    { CFG_EMUSID2_FILTER,       CFG_TYPE_ENUM, "UltiSID 2 Filter Curve",       "%s", filter_sel,   0,  6, 0 },
+    { CFG_EMUSID1_RESONANCE,    CFG_TYPE_ENUM, "UltiSID 1 Filter Resonance",   "%s", filter_res,   0,  1, 0 },
+    { CFG_EMUSID2_RESONANCE,    CFG_TYPE_ENUM, "UltiSID 2 Filter Resonance",   "%s", filter_res,   0,  1, 0 },
+    { CFG_EMUSID1_WAVES,        CFG_TYPE_ENUM, "UltiSID 1 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
+    { CFG_EMUSID2_WAVES,        CFG_TYPE_ENUM, "UltiSID 2 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
     { CFG_COLOR_CLOCK_ADJ, 		CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video",                 "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
@@ -190,8 +205,8 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis4,      0,  1, 0 },
 #endif
     //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
-    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol EmuSid1",                  "%s", volumes,      0, 30, 7 },
-    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol EmuSid2",                  "%s", volumes,      0, 30, 7 },
+    { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 7 },
+    { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 7 },
     { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 7 },
     { CFG_MIXER3_VOL,           CFG_TYPE_ENUM, "Vol Socket 2",                 "%s", volumes,      0, 30, 7 },
     { CFG_MIXER4_VOL,           CFG_TYPE_ENUM, "Vol Sampler L",                "%s", volumes,      0, 30, 7 },
@@ -200,8 +215,8 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_MIXER7_VOL,           CFG_TYPE_ENUM, "Vol Drive 2",                  "%s", volumes,      0, 30, 11 },
     { CFG_MIXER8_VOL,           CFG_TYPE_ENUM, "Vol Tape Read",                "%s", volumes,      0, 30, 29 },
     { CFG_MIXER9_VOL,           CFG_TYPE_ENUM, "Vol Tape Write",               "%s", volumes,      0, 30, 29 },
-    { CFG_MIXER0_PAN,           CFG_TYPE_ENUM, "Pan EmuSid1",                  "%s", pannings,     0, 10, 5 },
-    { CFG_MIXER1_PAN,           CFG_TYPE_ENUM, "Pan EmuSid2",                  "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER0_PAN,           CFG_TYPE_ENUM, "Pan UltiSID 1",                "%s", pannings,     0, 10, 5 },
+    { CFG_MIXER1_PAN,           CFG_TYPE_ENUM, "Pan UltiSID 2",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER2_PAN,           CFG_TYPE_ENUM, "Pan Socket 1",                 "%s", pannings,     0, 10, 2 },
     { CFG_MIXER3_PAN,           CFG_TYPE_ENUM, "Pan Socket 2",                 "%s", pannings,     0, 10, 8 },
     { CFG_MIXER4_PAN,           CFG_TYPE_ENUM, "Pan Sampler L",                "%s", pannings,     0, 10, 2 },
@@ -213,9 +228,6 @@ struct t_cfg_definition u64_cfg[] = {
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
-extern "C" {
-    void set_sid_coefficients(volatile uint8_t *);
-}
 
 U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
@@ -223,8 +235,6 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 		struct t_cfg_definition *def = u64_cfg;
 		uint32_t store = 0x55363443;
 		register_store(store, "U64 Specific Settings", def);
-
-		set_sid_coefficients((volatile uint8_t *)C64_SID_BASE);
 
 		// enable "hot" updates for mixer
 		for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
@@ -234,9 +244,14 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
             cfg->set_change_hook(b, U64Config :: setMixer);
         }
 
-		cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config :: setScanMode);
+        cfg->set_change_hook(CFG_EMUSID1_FILTER, U64Config :: setFilter);
+        cfg->set_change_hook(CFG_EMUSID2_FILTER, U64Config :: setFilter);
+        cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config :: setScanMode);
 		cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config :: setPllOffset);
-
+		cfg->set_change_hook(CFG_EMUSID1_RESONANCE, U64Config :: setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID2_RESONANCE, U64Config :: setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID1_WAVES, U64Config :: setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID2_WAVES, U64Config :: setSidEmuParams);
 		effectuate_settings();
 	}
 	fm = FileManager :: getFileManager();
@@ -296,15 +311,64 @@ void U64Config :: effectuate_settings()
     C64_BURST_PHASE  = 24;
 */
     setMixer(cfg->items[0]);
-
+    setFilter(cfg->find_item(CFG_EMUSID1_FILTER));
+    setFilter(cfg->find_item(CFG_EMUSID2_FILTER));
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
     setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID1_RESONANCE));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID2_RESONANCE));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID1_WAVES));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID2_WAVES));
 
+/*
     printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s)  Emu1: %02X/%02X  Emu2: %02X/%02X\n",
             C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
             C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis4[C64_SID2_EN_BAK],
             C64_EMUSID1_BASE_BAK, C64_EMUSID1_MASK_BAK,
             C64_EMUSID2_BASE_BAK, C64_EMUSID2_MASK_BAK );
+*/
+}
+
+void U64Config :: setFilter(ConfigItem *it)
+{
+    volatile uint8_t *base = (volatile uint8_t *)(C64_SID_BASE + 0x1000);
+    if (it->definition->id == CFG_EMUSID2_FILTER) {
+        base += 0x800;
+    }
+    uint16_t *coef = sid8580_filter_coefficients;
+    int mul = 1;
+    int div = 4;
+    switch(it->value) {
+    case 0:
+        coef = sid8580_filter_coefficients;
+        break;
+    case 1:
+        coef = sid8580_filter_coefficients;
+        mul = 2;
+        div = 7;
+        break;
+    case 2:
+        coef = sid6581_filter_coefficients;
+        break;
+    case 3:
+        coef = sid6581_filter_coefficients_temp;
+        break;
+    case 4:
+        coef = sid_curve_original;
+        mul = 2;
+        div = 3;
+        break;
+    case 5:
+        coef = sid_curve_original;
+        div = 1;
+        break;
+    case 6:
+        coef = sid_curve_original;
+        mul = 3;
+        div = 2;
+        break;
+    }
+    set_sid_coefficients(base, coef, mul, div);
 }
 
 void U64Config :: setMixer(ConfigItem *it)
@@ -337,6 +401,24 @@ void U64Config :: setScanMode(ConfigItem *it)
 	if(it) {
 //		SetScanMode(it->value);
 	}
+}
+
+void U64Config :: setSidEmuParams(ConfigItem *it)
+{
+    switch(it->definition->id) {
+    case CFG_EMUSID1_RESONANCE:
+        C64_EMUSID1_RES = it->value;
+        break;
+    case CFG_EMUSID2_RESONANCE:
+        C64_EMUSID2_RES = it->value;
+        break;
+    case CFG_EMUSID1_WAVES:
+        C64_EMUSID1_WAVES = it->value;
+        break;
+    case CFG_EMUSID2_WAVES:
+        C64_EMUSID2_WAVES = it->value;
+        break;
+    }
 }
 
 #define MENU_U64_SAVEEDID 1

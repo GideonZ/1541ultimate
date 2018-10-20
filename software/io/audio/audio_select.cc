@@ -206,7 +206,8 @@ void AudioConfig :: effectuate_settings()
         ioWrite8(SID_EXTEND_RIGHT,  cfg->get_value(CFG_AUDIO_SID_EXT_RIGHT));
         ioWrite8(SID_COMBSEL_RIGHT, cfg->get_value(CFG_AUDIO_SID_WAVE_RIGHT));
 
-        set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x800));
+        set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x1000));
+//        set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x1800));
     }
 
     if(getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {

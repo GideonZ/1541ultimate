@@ -33,6 +33,8 @@ public:
     static void setPllOffset(ConfigItem *it);
     static void setScanMode(ConfigItem *it);
     static void setMixer(ConfigItem *it);
+    static void setFilter(ConfigItem *it);
+    static void setSidEmuParams(ConfigItem *it);
 
     bool SidAutoConfig(int count, t_sid_definition *requested);
 };

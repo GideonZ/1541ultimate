@@ -54,10 +54,10 @@ architecture structural of sid_peripheral is
     signal sid_wdata    : std_logic_vector(7 downto 0);
     signal sid_rdata    : std_logic_vector(7 downto 0);
 begin
-    -- first we split our I/O bus in max 4 ranges, of 2K each.
+    -- first we split our I/O bus in max 2 ranges, of 4K each.
     i_split: entity work.io_bus_splitter
     generic map (
-        g_range_lo  => 11,
+        g_range_lo  => 12,
         g_range_hi  => 12,
         g_ports     => 2 )
     port map (
@@ -67,7 +67,7 @@ begin
         resp     => io_resp,
         
         reqs(0)  => io_req_regs, -- 4042000
-        reqs(1)  => io_req_filt, -- 4042800
+        reqs(1)  => io_req_filt, -- 4043000
         
         resps(0) => io_resp_regs,
         resps(1) => io_resp_filt );
