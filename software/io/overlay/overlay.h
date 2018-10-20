@@ -36,20 +36,25 @@ public:
         enabled = active;
         buttonPushSeen = false;
         
+        int activeX = 40;
+        int activeY = 20;
+        int X_on = 366;
+        int Y_on = 314; //346
+
         if(getFpgaCapabilities() & CAPAB_OVERLAY) {
             OVERLAY_REGS->CHAR_WIDTH       = 8;
             OVERLAY_REGS->CHAR_HEIGHT      = 9;
-            OVERLAY_REGS->CHARS_PER_LINE   = 40;
-            OVERLAY_REGS->ACTIVE_LINES     = 25;
-            OVERLAY_REGS->X_ON_HI          = 1;
-            OVERLAY_REGS->X_ON_LO          = 110;
-            OVERLAY_REGS->Y_ON_HI          = 1;
-            OVERLAY_REGS->Y_ON_LO          = 90;
+            OVERLAY_REGS->CHARS_PER_LINE   = activeX;
+            OVERLAY_REGS->ACTIVE_LINES     = activeY;
+            OVERLAY_REGS->X_ON_HI          = X_on >> 8;
+            OVERLAY_REGS->X_ON_LO          = X_on & 0xFF;
+            OVERLAY_REGS->Y_ON_HI          = Y_on >> 8;
+            OVERLAY_REGS->Y_ON_LO          = Y_on & 0xFF;
             OVERLAY_REGS->POINTER_HI       = 0;
             OVERLAY_REGS->POINTER_LO       = 0;
             OVERLAY_REGS->PERFORM_SYNC     = 0;
 
-            screen = new Screen_MemMappedCharMatrix((char *)CHARGEN_SCREEN_RAM, (char *)CHARGEN_COLOR_RAM, 40, 25);
+            screen = new Screen_MemMappedCharMatrix((char *)CHARGEN_SCREEN_RAM, (char *)CHARGEN_COLOR_RAM, activeX, activeY);
 
             if (enabled) {
             	take_ownership(0);
