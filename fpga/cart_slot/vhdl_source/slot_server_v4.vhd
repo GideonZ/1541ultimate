@@ -26,7 +26,6 @@ generic (
     g_extended_reu  : boolean := false;
     g_sampler       : boolean := false;
     g_implement_sid : boolean := true;
-    g_sid_filter_div: natural := 221;
     g_sid_voices    : natural := 3;
     g_8voices       : boolean := false;
     g_vic_copper    : boolean := false );
@@ -529,7 +528,6 @@ begin
         i_sid: entity work.sid_peripheral
         generic map (
             g_8voices     => g_8voices,
-            g_filter_div  => g_sid_filter_div,
             g_num_voices  => g_sid_voices )
             
         port map (
