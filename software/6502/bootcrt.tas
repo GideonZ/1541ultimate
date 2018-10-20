@@ -12,6 +12,7 @@
         * = $8000
 
 flag_zp	= $02
+do_sync = $014F
 runcode = $0162
 device  = $0163
 namelen = $0164
@@ -557,9 +558,10 @@ rp_skp1
 
 	jsr $ff84
 
-;	jsr synchronize
-	
-	jmp	RUNNER
+    lda do_sync
+    beq +
+	jsr synchronize
++	jmp	RUNNER
 
 RUNNER		=	$0150
 runner_st
@@ -572,6 +574,8 @@ runner_relinkjsr = *-runner_st+RUNNER
 	jsr	$a533		; relink
 	jsr	$a659		; clr, setup chrget/chrgot ptr
 runner_runjmp	= *-runner_st+RUNNER
+    lda #$54
+    sta $dffe       ; trigger
 	jmp	$a7ae		; run
 RUNNER_LEN	= *-runner_st
 
