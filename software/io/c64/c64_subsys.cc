@@ -346,6 +346,8 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
     C64_POKE(0x162, run_code);
 
+    C64_POKE(0x14f, c64->cfg->get_value(CFG_C64_DO_SYNC));
+
 	int len = strlen(name);
 	if (len > 30)
 		len = 30;
