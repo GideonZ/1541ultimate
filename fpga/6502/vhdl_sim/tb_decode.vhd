@@ -38,7 +38,7 @@ architecture tb of tb_decode is
     signal s_is_illegal          :  boolean;
     signal s_select_index_y      :  boolean;
     signal s_store_a_from_alu    :  boolean;
-    signal s_load_a              :  boolean;    
+--    signal s_load_a              :  boolean;    
     signal s_load_x              :  boolean;    
     signal s_load_y              :  boolean;    
     signal opcode                : string(1 to 13);
@@ -64,7 +64,7 @@ begin
     s_is_illegal          <= is_illegal(i_reg);
     s_select_index_y      <= select_index_y(i_reg);
     s_store_a_from_alu    <= store_a_from_alu(i_reg);
-    s_load_a              <= load_a(i_reg);
+    --s_load_a              <= load_a(i_reg);
     s_load_x              <= load_x(i_reg);
     s_load_y              <= load_y(i_reg);
 
