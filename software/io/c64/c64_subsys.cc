@@ -12,6 +12,14 @@
 #include "userinterface.h"
 #include "u64.h"
 
+#define C64_BOOTCRT_DOSYNC    0x014F
+#define C64_BOOTCRT_RUNCODE   0x0172
+#define C64_BOOTCRT_DRIVENUM  0x0173
+#define C64_BOOTCRT_NAMELEN   0x0174
+#define C64_BOOTCRT_NAME      0x0175
+#define C64_BOOTCRT_HANDSHAKE 0x02
+#define C64_BOOTCRT_JUMPADDR  0x00AA
+
 /* other external references */
 extern uint8_t _bootcrt_65_start;
 extern uint8_t _bootcrt_65_end;
@@ -344,19 +352,19 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
     	c64->stop(false);
     }
 
-    C64_POKE(0x162, run_code);
+    C64_POKE(C64_BOOTCRT_RUNCODE, run_code);
 
-    C64_POKE(0x14f, c64->cfg->get_value(CFG_C64_DO_SYNC));
+    C64_POKE(C64_BOOTCRT_DOSYNC, (c64->cfg->get_value(CFG_C64_DO_SYNC) == 1) ? 1 : 0);
 
 	int len = strlen(name);
 	if (len > 30)
 		len = 30;
 
 	for (int i=0; i < len; i++) {
-        C64_POKE(0x165+i, toupper(name[i]));
+        C64_POKE(C64_BOOTCRT_NAME+i, toupper(name[i]));
     }
-    C64_POKE(0x164, len);
-    C64_POKE(2, 0x80); // initial boot cart handshake
+    C64_POKE(C64_BOOTCRT_NAMELEN, len);
+    C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x80); // initial boot cart handshake
 
     boot_cart.custom_addr = (void *)&_bootcrt_65_start;
     c64->unfreeze(&boot_cart, 1);
@@ -366,9 +374,9 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
 
 	// handshake with boot cart
     c64->stop(false);
-	C64_POKE(0x163, c64->cfg->get_value(CFG_C64_DMA_ID));    // drive number for printout
+	C64_POKE(C64_BOOTCRT_DRIVENUM, c64->cfg->get_value(CFG_C64_DMA_ID));    // drive number for printout
 
-	C64_POKE(2, 0x40);  // signal cart ready for DMA load
+	C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x40);  // signal cart ready for DMA load
 
 	if ( !(run_code & RUNCODE_REAL_BIT) ) {
         int timeout = 0;
@@ -388,16 +396,16 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
         } else {
             // If we need to jump, the first two bytes are the jump address
             if (run_code & RUNCODE_JUMP_BIT) {
-            	C64_POKE(0xAA, buffer[0]);
-            	C64_POKE(0xAB, buffer[1]);
+            	C64_POKE(C64_BOOTCRT_JUMPADDR, buffer[0]);
+            	C64_POKE(C64_BOOTCRT_JUMPADDR+1, buffer[1]);
             	load_buffer_dma(buffer+2, bufferSize-2, 0);
             } else {
             	load_buffer_dma(buffer, bufferSize, 0);
             }
         }
 
-        C64_POKE(2, 0); // signal DMA load done
-        C64_POKE(0x0162, run_code);
+        C64_POKE(C64_BOOTCRT_HANDSHAKE, 0); // signal DMA load done
+        C64_POKE(C64_BOOTCRT_RUNCODE, run_code);
         C64_POKE(0x00BA, c64->cfg->get_value(CFG_C64_DMA_ID));    // fix drive number
 	}
 
@@ -458,6 +466,8 @@ int C64_Subsys :: load_file_dma(File *f, uint16_t reloc)
 	uint16_t end_address = load_address + total_trans;
 	printf("DMA load complete: $%4x-$%4x\n", load_address, end_address);
 
+	// The following pokes are documented in the C64 documentation and are not
+	// Ultimate specific.
 	C64_POKE(0x002D, end_address);
 	C64_POKE(0x002E, end_address >> 8);
 	C64_POKE(0x002F, end_address);
@@ -492,6 +502,8 @@ int C64_Subsys :: load_buffer_dma(const uint8_t *buffer, const int bufferSize, u
 	uint16_t end_address = load_address + bufferSize - 2;
 	printf("DMA load complete: $%4x-$%4x\n", load_address, end_address);
 
+    // The following pokes are documented in the C64 documentation and are not
+    // Ultimate specific.
 	C64_POKE(0x002D, end_address);
 	C64_POKE(0x002E, end_address >> 8);
 	C64_POKE(0x002F, end_address);
