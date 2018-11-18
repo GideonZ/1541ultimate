@@ -16,16 +16,22 @@
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
 	FileManager *fm;
+	bool skipReset;
+    TaskHandle_t resetTaskHandle;
 
-    uint8_t GetSidType(int slot);
+	uint8_t GetSidType(int slot);
     void SetSidType(int slot, uint8_t sidType);
     bool SetSidAddress(int slot, uint8_t actualType, uint8_t base);
     bool MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any);
     void SetMixerAutoSid(uint8_t *slots, int count);
+    static void reset_task(void *a);
+    void run_reset_task();
+
 public:
     U64Config();
     ~U64Config() {}
 
+    void ResetHandler();
     void effectuate_settings();
     int fetch_task_items(Path *p, IndexedList<Action*> &item_list);
     int executeCommand(SubsysCommand *cmd);

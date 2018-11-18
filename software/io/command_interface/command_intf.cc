@@ -17,7 +17,7 @@ CommandInterface cmd_if;
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 
 // Semaphore set by interrupt
-SemaphoreHandle_t resetSemaphore;
+static SemaphoreHandle_t resetSemaphore;
 
 // cart definition
 extern uint8_t _cmd_test_rom_65_start;
@@ -26,7 +26,7 @@ cart_def cmd_cart  = { ID_CMDTEST, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM
 #define MENU_CMD_RUNCMDCART 0xC180
 
 extern "C" {
-void ResetInterruptHandler()
+void ResetInterruptHandlerCmdIf()
 {
     BaseType_t woken;
     uint8_t new_flags = CMD_ABORT_DATA;
