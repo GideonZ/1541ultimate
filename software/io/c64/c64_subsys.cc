@@ -73,7 +73,12 @@ int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list
 	item_list.append(new Action("Power OFF", SUBSYSID_C64, MENU_C64_POWEROFF));
 	count++;
 #endif
-    //item_list.append(new Action("Hard System Reboot", SUBSYSID_C64, MENU_C64_HARD_BOOT));
+#if DEVELOPER >= 0
+    item_list.append(new Action("Pause",  SUBSYSID_C64, MENU_C64_PAUSE));
+    item_list.append(new Action("Resume", SUBSYSID_C64, MENU_C64_RESUME));
+    count+=2;
+#endif
+	//item_list.append(new Action("Hard System Reboot", SUBSYSID_C64, MENU_C64_HARD_BOOT));
     //item_list.append(new Action("Boot Alternate FPGA", SUBSYSID_C64, MENU_C64_BOOTFPGA));
     //item_list.append(new Action("Save SID Trace", SUBSYSID_C64, MENU_C64_TRACE));
 
@@ -155,6 +160,14 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 		c64->unfreeze(0, 0);
 		c64->reset();
 		break;
+
+    case MENU_C64_PAUSE:
+        c64->stop(false);
+        break;
+
+    case MENU_C64_RESUME:
+        c64->resume();
+        break;
 
     case MENU_C64_POWEROFF:
         U64_POWER_REG = 0x2B;
