@@ -110,7 +110,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     static void run(void *a);
 
     void save_disk_to_file(SubsysCommand *cmd);
-    void drive_reset(void);
+    void drive_reset(uint8_t doit);
     void set_hw_address(int addr);
     void set_sw_address(int addr);
     void set_rom(t_1541_rom rom);
