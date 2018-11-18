@@ -22,8 +22,11 @@ extern "C" {
 #include "fpll.h"
 #include "i2c.h"
 #include "ext_i2c.h"
+
 // static pointer
 U64Config u64_configurator;
+// Semaphore set by interrupt
+static SemaphoreHandle_t resetSemaphore;
 
 #define CFG_SCANLINES         0x01
 #define CFG_SID1_ADDRESS      0x02
@@ -255,6 +258,38 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 		effectuate_settings();
 	}
 	fm = FileManager :: getFileManager();
+
+	skipReset = false;
+    xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
+    resetSemaphore = xSemaphoreCreateBinary();
+}
+
+void U64Config :: ResetHandler()
+{
+    BaseType_t woken;
+    xSemaphoreGiveFromISR(resetSemaphore, &woken);
+}
+
+void U64Config :: reset_task(void *a)
+{
+    U64Config *configurator = (U64Config *)a;
+    configurator->run_reset_task();
+}
+
+void U64Config :: run_reset_task()
+{
+    while(1) {
+        xSemaphoreTake(resetSemaphore, portMAX_DELAY);
+
+        printf("U64 reset handler. ");
+        if (! skipReset) {
+            printf("Resetting Settings\n");
+            effectuate_settings();
+        } else {
+            printf("SKIP\n");
+        }
+        skipReset = false;
+    }
 }
 
 void U64Config :: effectuate_settings()
@@ -725,6 +760,9 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
 
 bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
 {
+    // the first reset of the machine should not re-initialize the settings from the config
+    skipReset = true;
+
     if (!(cfg->get_value(CFG_PLAYER_AUTOCONFIG))) {
         printf("SID Player Autoconfig Disabled, not configuring.\n");
         return true;
@@ -791,4 +829,11 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
 bool SidAutoConfig(int count, t_sid_definition *requested)
 {
     return u64_configurator.SidAutoConfig(count, requested);
+}
+
+extern "C" {
+    void ResetInterruptHandlerU64()
+    {
+        u64_configurator.ResetHandler();
+    }
 }
