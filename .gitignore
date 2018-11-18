@@ -1,8 +1,8 @@
 /*.bin
 /*.bit
 /*.mcs
-/*.zip
-/*.u64
+*.zip
+*.u64
 /*.u2u
 /*.u2p
 /audio
