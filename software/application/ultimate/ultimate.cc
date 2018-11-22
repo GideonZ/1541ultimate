@@ -42,6 +42,8 @@
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
 
+bool connectedToU64 = false;
+
 C1541 *c1541_A;
 C1541 *c1541_B;
 
@@ -50,7 +52,6 @@ StreamMenu *root_menu;
 Overlay *overlay;
 C64 *c64;
 C64_Subsys *c64_subsys;
-UserInterface *primaryUserInterface = 0;
 HomeDirectory *home_directory;
 REUPreloader *reu_preloader;
 StreamTextLog textLog(65536);
@@ -61,7 +62,6 @@ void outbyte_log(int c)
 {
 	textLog.charout(c);
 }
-
 
 extern "C" void ultimate_main(void *a)
 {
@@ -97,44 +97,57 @@ extern "C" void ultimate_main(void *a)
 
     if(capabilities & CAPAB_ULTIMATE64) {
         system_usb_keyboard.setMatrix((volatile uint8_t *)MATRIX_KEYB);
+        system_usb_keyboard.enableMatrix(true);
     }
 
-/*
-    if(capabilities & CAPAB_OVERLAY) {
-            printf("Using Overlay module as user interface...\n");
-            overlay = new Overlay(false);
-            primaryUserInterface = new UserInterface(title);
-            Browsable *root = new BrowsableRoot();
-        	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
-            primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
-            primaryUserInterface->init(overlay);
+    overlay = NULL;
 
-    } else
-*/
 
-    if(c64 && c64->exists()) {
-        primaryUserInterface = new UserInterface(title);
+#ifndef U64
+    if (c64) {
+       for (int i=0; i<70; i++)
+       {
+          if (c64->exists())  break;
+          vTaskDelay(20);
+          connectedToU64 = true;
+       }
+    }
+    if (connectedToU64) {
+        if(capabilities & CAPAB_ULTIMATE64) {
+    	    // Empty
+        } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
+    	    sprintf(title, "\eA*** Ultimate-II+ U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        } else {
+    	    sprintf(title, "\eA*** Ultimate-II  U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
+        }
+    }
+#endif
 
-    	// Instantiate and attach the root tree browser
+    UserInterface *overlayUserInterface = NULL;
+    if ((capabilities & CAPAB_OVERLAY) && (capabilities & CAPAB_ULTIMATE64)) {
+        overlay = new Overlay(false);
+        Keyboard *kb = new Keyboard_C64(overlay, C64_PLD_PORTB, C64_PLD_PORTA);
+        overlay->setKeyboard(kb);
+        overlayUserInterface = new UserInterface(title);
         Browsable *root = new BrowsableRoot();
-    	root_tree_browser = new TreeBrowser(primaryUserInterface, root);
-        primaryUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
-        primaryUserInterface->init(c64);
+        root_tree_browser = new TreeBrowser(overlayUserInterface, root);
+        overlayUserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+        overlayUserInterface->init(overlay);
+        if(overlayUserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
+            new HomeDirectory(overlayUserInterface, root_tree_browser);
+            // will clean itself up
+        }
+    }
 
-    } else {
-    	// from now on, log to memory, freeing the uart
-/*
-    	custom_outbyte = outbyte_log;
-
-    	Stream *stream = new Stream_UART;
-        GenericHost *host = new HostStream(stream);
-        ui = new UserInterface;
-        ui->init(host);
-        // Instantiate and attach the root tree browser
-        Browsable *root = new BrowsableRoot();
-    	root_tree_browser = new TreeBrowser(ui, root);
-        ui->activate_uiobject(root_tree_browser); // root of all evil!
-*/
+    UserInterface *c64UserInterface = new UserInterface(title);
+    // Instantiate and attach the root tree browser
+    Browsable *root = new BrowsableRoot();
+    root_tree_browser = new TreeBrowser(c64UserInterface, root);
+    c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+    c64UserInterface->init(c64);
+    if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
+        new HomeDirectory(c64UserInterface, root_tree_browser);
+        // will clean itself up
     }
 
     if(capabilities & CAPAB_C2N_STREAMER)
@@ -155,7 +168,6 @@ extern "C" void ultimate_main(void *a)
     	c1541_B->init();
     }
 
-    home_directory = new HomeDirectory(primaryUserInterface, root_tree_browser);
     reu_preloader = new REUPreloader();
     
     printf("All linked modules have been initialized and are now running.\n");
@@ -163,9 +175,46 @@ extern "C" void ultimate_main(void *a)
     vTaskList(buffer);
     puts(buffer);
 
-    if(primaryUserInterface) {
-    	primaryUserInterface->run();
+    while(1) {
+        int doIt = 0;
+        c64->checkButton();
+        if (c64->buttonPush()) {
+            doIt = 1;
+        }
+        switch(system_usb_keyboard.getch()) {
+        case KEY_SCRLOCK:
+            doIt = 1;
+            break;
+        case 0x04: // CTRL-D
+            doIt = 2;
+            break;
+        }
+        UserInterface *ui = c64UserInterface;
+        if (overlayUserInterface) {
+            if ((U64_HDMI_REG & U64_HDMI_HPD_CURRENT) && (doIt)) {
+                if (overlayUserInterface->getPreferredType() == 1) {
+                    ui = overlayUserInterface;
+                }
+            }
+        }
+
+        switch (doIt) {
+        case 0:
+            c64UserInterface->pollInactive();
+            if (overlayUserInterface) {
+                overlayUserInterface->pollInactive();
+            }
+            break;
+        case 1:
+            ui->run_once();
+            break;
+        case 2:
+            ui->swapDisk();
+            break;
+        }
+        vTaskDelay(3);
     }
+
 /*
     else {
     	vTaskDelay(2000);
@@ -198,8 +247,10 @@ extern "C" void ultimate_main(void *a)
         delete overlay;
     if(root_tree_browser)
         delete root_tree_browser;
-    if(primaryUserInterface)
-        delete primaryUserInterface;
+    if(overlayUserInterface)
+        delete overlayUserInterface;
+    if(c64UserInterface)
+        delete c64UserInterface;
     if(c64_subsys)
     	delete c64_subsys;
     if(c64)

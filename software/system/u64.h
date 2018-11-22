@@ -11,24 +11,28 @@
 #include <stdint.h>
 
 #ifndef U64_IO_BASE
-#define U64_IO_BASE  0xA0000400
+#define U64_IO_BASE     0xA0000400
+#define U64_AUDIO_MIXER 0xA0000500
+#define U64_WIFI_UART   0xA0000600
+
 #define VID_IO_BASE  0xA0040000
 #define C64_IO_BASE  0xA0080000
 #define C64_SID_BASE 0xA0090000
 #define U64_ROMS_BASE    0xA00A0000
 #define U64_BASIC_BASE   (U64_ROMS_BASE + 0x0000)
 #define U64_KERNAL_BASE  (U64_ROMS_BASE + 0x2000)
+#define U64_CHARROM_BASE (U64_ROMS_BASE + 0x4000)
 #endif
 
 #define U64_HDMI_REG       (*(volatile uint8_t *)(U64_IO_BASE + 0x00))
 #define U64_POWER_REG      (*(volatile uint8_t *)(U64_IO_BASE + 0x01))
 #define U64_RESTORE_REG    (*(volatile uint8_t *)(U64_IO_BASE + 0x02))
-#define U64_AUDIO_SEL_REG  (*(volatile uint8_t *)(U64_IO_BASE + 0x03))
 #define U64_HDMI_PLL_RESET (*(volatile uint8_t *)(U64_IO_BASE + 0x04))
 #define U64_WIFI_CONTROL   (*(volatile uint8_t *)(U64_IO_BASE + 0x05))
 #define U64_EXT_I2C_SCL    (*(volatile uint8_t *)(U64_IO_BASE + 0x06))
 #define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
+#define U64_PARCABLE_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
 
 #define U64_HDMI_DDC_ENABLE     0x20
 #define U64_HDMI_DDC_DISABLE    0x10
@@ -56,6 +60,18 @@
 #define C64_EMUSID1_MASK (*(volatile uint8_t *)(C64_IO_BASE + 0x0E))
 #define C64_EMUSID2_MASK (*(volatile uint8_t *)(C64_IO_BASE + 0x0F))
 #define C64_CORE_VERSION (*(volatile uint8_t *)(C64_IO_BASE + 0x10))
+#define C64_SID1_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x11))
+#define C64_SID2_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x12))
+#define C64_PADDLE_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x13))
+#define C64_STEREO_ADDRSEL (*(volatile uint8_t *)(C64_IO_BASE + 0x14))
+#define C64_PLD_PORTA      ((volatile uint8_t *)(C64_IO_BASE + 0x16))
+#define C64_PLD_PORTB      ((volatile uint8_t *)(C64_IO_BASE + 0x17))
+#define C64_PLD_STATE0    (*(volatile uint8_t *)(C64_IO_BASE + 0x18))
+#define C64_PLD_STATE1    (*(volatile uint8_t *)(C64_IO_BASE + 0x19))
+#define C64_EMUSID1_WAVES (*(volatile uint8_t *)(C64_IO_BASE + 0x20))
+#define C64_EMUSID2_WAVES (*(volatile uint8_t *)(C64_IO_BASE + 0x21))
+#define C64_EMUSID1_RES   (*(volatile uint8_t *)(C64_IO_BASE + 0x22))
+#define C64_EMUSID2_RES   (*(volatile uint8_t *)(C64_IO_BASE + 0x23))
 
 typedef struct {
     uint8_t VID_HSYNCPOL;

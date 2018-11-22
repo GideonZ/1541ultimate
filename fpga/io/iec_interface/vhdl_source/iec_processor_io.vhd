@@ -11,11 +11,10 @@ library unisim;
 use unisim.vcomponents.all;
 
 entity iec_processor_io is
-generic (
-    g_half_mhz      : natural := 100);
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
+    tick            : in  std_logic;
     
     req             : in  t_io_req;
     resp            : out t_io_resp;
@@ -72,12 +71,11 @@ architecture structural of iec_processor_io is
 begin
 
     i_proc: entity work.iec_processor
-    generic map (
-        g_half_mhz      => g_half_mhz )
     port map (
         clock           => clock,
         reset           => proc_reset,
-        
+        tick            => tick,
+                
         -- instruction ram interface
         instr_addr      => instr_addr,
         instr_en        => instr_en,

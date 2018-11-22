@@ -410,6 +410,10 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_DAT
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IEC_SRQ_IN
 
 set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/lp_filter2.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/audio_type_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/generic_mixer.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/mul_add.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sys_to_aud.vhd
 set_global_assignment -name SDC_FILE ultimate_altera.sdc
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_nios2_solo.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd
@@ -496,6 +500,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_alu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/real_time_clock.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/fractional_div.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/pulse_synchronizer.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/level_synchronizer.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/synchroniser/vhdl_source/synchroniser.vhd
@@ -582,10 +587,8 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper
 set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_regs.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper_engine.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/copper/vhdl_source/copper.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_zpu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi.vhd

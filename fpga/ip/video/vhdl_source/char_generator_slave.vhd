@@ -65,6 +65,7 @@ architecture gideon of char_generator_slave is
     
 begin
     process(clock)
+        variable v_char_data : std_logic_vector(7 downto 0);
     begin
         if rising_edge(clock) then
             active_d1 <= '0';
@@ -122,7 +123,11 @@ begin
             -- pixel output
             pixel_active <= active_d2;
 			if active_d2='1' then
-				if char_data(to_integer(pixel_sel_d2))='1' then
+                v_char_data := char_data;
+                if char_data /= X"18" and char_y(3) = '1' and control.stretch_y = '0' then -- allow a vertical line to continue
+                    v_char_data := X"00";
+                end if;
+				if v_char_data(to_integer(pixel_sel_d2))='1' then
 		            pixel_data <= unsigned(color_data_d(3 downto 0));
                     if color_data_d(3 downto 0) = control.transparent then
                         pixel_opaque <= '0';
@@ -152,6 +157,6 @@ begin
 
     char_addr   <= unsigned(screen_data) & char_y_d(3 downto 1) when control.stretch_y = '1' else 
                    unsigned(screen_data) & char_y_d(2 downto 0) when char_y_d(3)='0' else 
-                   screen_data(7) & "0000000000";
+                   unsigned(screen_data) & "111"; -- keep repeating the last line
     
 end architecture;

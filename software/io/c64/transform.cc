@@ -46,37 +46,68 @@ const uint8_t keymap_usb[] = {
     KEY_RETURN, '1', '2', '3', '4', '5', '6', '7',
     '8', '9', '0', '.', 0x00 };
 
+const uint8_t keymap_usb_shifted[] = {
+    0x00, KEY_ERR, KEY_ERR, KEY_ERR, 'A', 'B', 'C', 'D',
+    'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+    'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
+    'U', 'V', 'W', 'X', 'Y', 'Z', '!', '@',
+    '#', '$', '%', '^', '&', '*', '(', ')',
+    0x8D, KEY_ESCAPE, KEY_INSERT, KEY_TAB, KEY_SHIFT_SP, '-', '+', '{',
+    '}', '|', 0x00, ':', '\"', '~', '<', '>',
+    '?', KEY_CAPS, KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6,
+    KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12, KEY_PRSCR, KEY_SCRLOCK,
+    KEY_BREAK, KEY_INSERT, KEY_HOME, KEY_PAGEUP, KEY_DELETE, KEY_END, KEY_PAGEDOWN, KEY_RIGHT,
+    KEY_LEFT, KEY_DOWN, KEY_UP, KEY_NUMLOCK, '/', '*', '-', '+',
+    0x8D, '1', '2', '3', '4', '5', '6', '7',
+    '8', '9', '0', '.', 0x00 };
+
 // BSS, thus zero
 uint8_t mapped[64];
 
+void createmap(const uint8_t *keymap_usb, int size,
+        const uint8_t *keymap_c64, const uint8_t *keymap_shifted)
+{
+    for (int i=0;i<size;i++) {
+        uint8_t usbkey = keymap_usb[i];
+        uint8_t c64keypos = 0xFF;
+        uint8_t modi = 0;
+        for (int j=0;j<64;j++) {
+            if (keymap_c64[j] == usbkey) {
+                c64keypos = j;
+                break;
+            }
+        }
+        if (c64keypos == 0xFF) {
+            for (int j=0;j<64;j++) {
+                if (keymap_shifted[j] == usbkey) {
+                    c64keypos = j | 0x80;
+                    break;
+                }
+            }
+        }
+        // printf("USB KEY %02X => %02X (%c) => %02X\n", i, usbkey, ((usbkey >= ' ') && (usbkey < 0x7F))?usbkey:'?', c64keypos);
+        if ((i % 8) == 0)
+            printf("\n    ");
+        printf("0x%02X, ", c64keypos);
+        mapped[c64keypos] = 1;
+    }
+    printf("};\n\n");
+}
+
 int main(void)
 {
-	for (int i=0;i<sizeof(keymap_usb);i++) {
-		uint8_t usbkey = keymap_usb[i];
-		uint8_t c64keypos = 0xFF;
-		uint8_t modi = 0;
-		for (int j=0;j<sizeof(keymap_c64);j++) {
-			if (keymap_c64[j] == usbkey) {
-				c64keypos = j;
-				break;
-			}
-		}
-		if (c64keypos == 0xFF) {
-			for (int j=0;j<sizeof(keymap_shifted);j++) {
-				if (keymap_shifted[j] == usbkey) {
-					c64keypos = j | 0x80;
-					break;
-				}
-			}
-		}
-		// printf("USB KEY %02X => %02X (%c) => %02X\n", i, usbkey, ((usbkey >= ' ') && (usbkey < 0x7F))?usbkey:'?', c64keypos);
-		printf("0x%02X, ", c64keypos);
-		mapped[c64keypos] = 1;
-	}
-	for(int i=0;i<64;i++) {
-		if (mapped[i])
-			continue;
-		printf("Warning: Key '%c' (%02x) not mapped\n", keymap_c64[i], keymap_c64[i]);
-	}
-	return 0;
+    printf("const uint8_t keymap_usb2matrix[] = {");
+    createmap(keymap_usb, sizeof(keymap_usb), keymap_c64, keymap_shifted);
+
+    printf("const uint8_t keymap_usb2matrix_shift[] = {");
+    createmap(keymap_usb_shifted, sizeof(keymap_usb_shifted), keymap_c64, keymap_shifted);
+
+    for(int i=0;i<64;i++) {
+        if (mapped[i])
+            continue;
+        if (keymap_c64[i])
+            printf("Warning: Key '%c' (%02x) not mapped\n", keymap_c64[i], keymap_c64[i]);
+    }
+
+    return 0;
 }

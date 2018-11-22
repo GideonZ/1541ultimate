@@ -16,7 +16,8 @@
 #define FPLL_MIN_VCO_FREQ       600
 #define FPLL_MAX_VCO_FREQ       1300
 #define FPLL_MFRAC_BITS         32
-#define MFRAC_BASE				0x9C76584C
+//#define MFRAC_BASE				0x9C76584C
+#define MFRAC_BASE              0xEAB16BF3
 #define DEFAULT_M				12
 #define REFERENCE_CLOCK			630559111 // 50000000
 
@@ -98,7 +99,8 @@ extern "C" void pllOffsetHz(int Hz)
 extern "C" void pllOffsetPpm(int ppm)
 {
 	// Normal setting = 0C.9C76584C = 54164609100 / 1000000 = 54164,6091
-	int offset = ppm * 54165;
+    // Normal setting = 12.EAB16BF3 = 81246907379 / 1000000 = 81246,9074
+    int offset = ppm * 81246;
 	uint32_t mfrac = MFRAC_BASE + offset;
 	setMFrac(mfrac);
 }

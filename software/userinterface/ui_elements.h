@@ -28,12 +28,16 @@ public:
     virtual ~UIObject() { }
 
     virtual void init(Screen *scr, Keyboard *key) { }
+    virtual void redraw(void) { }
     virtual void deinit(void) { }
     virtual int  poll(int)
     {
         return -1;
     }
-//    virtual int redraw(void);
+    virtual int  poll_inactive(void)
+    {
+        return 0;
+    }
 };
 
 class UIPopup : public UIObject

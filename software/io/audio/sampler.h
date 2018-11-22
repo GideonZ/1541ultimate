@@ -25,19 +25,22 @@
 #define VOICE_CTRL_8BIT     0x00
 #define VOICE_CTRL_16BIT    0x10
 
-/*
-#define MENU_SAMP_PLAY8B  0x8301
-#define MENU_SAMP_PLAY16B 0x8302
 
-class Sampler : public ObjectWithMenu
+class Sampler //: public ObjectWithMenu
 {
 public:
-    Sampler();
-    ~Sampler();
+    Sampler() {}
+    ~Sampler() {}
 
-    void poll(Event &e);
-	int  fetch_task_items(IndexedList<Action*> &item_list);
+	int  fetch_task_items(IndexedList<Action*> &item_list) {
+	    return 0;
+	}
+
+	static void reset(void) {
+        for(int i=0; i < 8; i++) {
+            ioWrite8(VOICE_CONTROL(i), 0);
+        }
+    }
 };
-*/
 
 #endif

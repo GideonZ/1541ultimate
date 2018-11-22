@@ -11,7 +11,7 @@ REUPreloader::REUPreloader()
         path = fm->get_new_path("REUPreloader");
         path->cd(cfg->get_string(CFG_C64_REU_IMG));
 
-        observerQueue = new ObserverQueue();
+        observerQueue = new ObserverQueue("REU Preloader");
         fm->registerObserver(observerQueue);
 
         xTaskCreate( REUPreloader :: poll_reu_preload, "REU Preloader", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL);

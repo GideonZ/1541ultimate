@@ -29,11 +29,19 @@
 #define SOCKET_CMD_RUN_IMG     0xFF0B
 #define SOCKET_CMD_LOADSIDCRT  0xFF71
 #define SOCKET_CMD_LOADBOOTCRT 0xFF72
+#define SOCKET_CMD_SAMPLE      0xFF73
+#define SOCKET_CMD_READMEM     0xFF74
 
 SocketDMA socket_dma; // global that causes the object to exist
 
 extern cart_def sid_cart;
 extern cart_def boot_cart;
+
+void sample_sid(void) __attribute__((weak));
+void sample_sid(void)
+{
+
+}
 
 SocketDMA::SocketDMA() {
 	xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
@@ -43,108 +51,137 @@ SocketDMA::~SocketDMA() {
 
 }
 
-void SocketDMA :: parseBuffer(void *load_buffer, int length)
+void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint16_t len)
 {
 	uint8_t *buf = (uint8_t *)load_buffer;
-	int remaining = length;
 	SubsysCommand *c64_command;
 
-	while (remaining > 0) {
-		uint16_t cmd = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
-		buf += 2;
-		remaining -= 2;
-		uint16_t len = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
-		buf += 2;
-		remaining -= 2;
-		uint16_t offs;
-		uint32_t offs32;
-		uint32_t len32;
-		uint16_t i;
-		uint16_t size;
+    uint16_t offs;
+    uint32_t offs32;
+    uint32_t len32;
+    uint16_t i;
+    uint16_t size;
 
-		// TODO: check len > remaining
+    // TODO: check len > remaining
 
-		switch(cmd) {
-		case SOCKET_CMD_DMA:
-			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD, buf, len);
-			c64_command->execute();
-			break;
-		case SOCKET_CMD_DMARUN:
-			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_RUN, buf, len);
-			c64_command->execute();
-			break;
-		case SOCKET_CMD_DMAJUMP:
-			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_JUMP, buf, len);
-			c64_command->execute();
-			break;
-		case SOCKET_CMD_DMAWRITE:
-			offs = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
-			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, offs, buf + 2, len - 2);
-			c64_command->execute();
-			break;
-		case SOCKET_CMD_KEYB:
-			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x0277, buf, len);
-			c64_command->execute();
-			buf[0] = len;
-			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x00C6, buf, 1);
-			c64_command->execute();
-			break;
-		case SOCKET_CMD_RESET:
-			c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0, buf, len);
-			c64_command->execute();
-			break;
-		case SOCKET_CMD_WAIT:
-			vTaskDelay(len);
-			len = 0;
-			break;
-		case SOCKET_CMD_REUWRITE:
-			offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8) | (((uint32_t)buf[2]) << 16);
-			for (i=3; i<len; i++)
-			   *(uint8_t *)(REU_MEMORY_BASE+ ((offs32+i-3)&0xffffff)) = buf[i];
-			break;
-		case SOCKET_CMD_KERNALWRITE:
-		    /* GZW: Actually a driver for the cartridge mapping should be called here. */
-		    offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8);
-			for (i=2; i<len; i++)
-			   *(uint8_t *)(C64_KERNAL_BASE+1+2*((offs32+i-2)&0x1fff)) = buf[i];
-			break;
-		case SOCKET_CMD_LOADSIDCRT:
-		    size = (len > 0x2000) ? 0x2000 : len;
-		    if (sid_cart.custom_addr) {
-		        memcpy(sid_cart.custom_addr, buf, size);
-		        //sid_cart.length = size;
-		    }
-		    break;
-        case SOCKET_CMD_LOADBOOTCRT:
-            size = (len > 0x2000) ? 0x2000 : len;
-            if (boot_cart.custom_addr) {
-                memcpy(boot_cart.custom_addr, buf, size);
-                boot_cart.length = size;
-            }
-            break;
-		case SOCKET_CMD_MOUNT_IMG:
-		case SOCKET_CMD_RUN_IMG:
-			// TODO, let 'len' be uint32_t? Beneficial for REU commands too
-			len32 = (uint32_t)len | (((uint32_t)buf[0]) << 16);
-			buf += 1;
-			if (cmd == SOCKET_CMD_MOUNT_IMG) {
-				c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_MOUNT,
-					RUNCODE_MOUNT_BUFFER|RUNCODE_NO_CHECKSAVE|RUNCODE_NO_UNFREEZE, buf, len32);
-			} else {
-				c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_RUN, 
-					RUNCODE_MOUNT_BUFFER, buf, len32);
-				
-			}
-			c64_command->execute();
-			buf += len32;
-			remaining -= len32 + 1;
-			len = 0;
-			break;
-		}
+    switch(cmd) {
+    case SOCKET_CMD_DMA:
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD, buf, len);
+        c64_command->execute();
+        break;
+    case SOCKET_CMD_DMARUN:
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_RUN, buf, len);
+        c64_command->execute();
+        break;
+    case SOCKET_CMD_DMAJUMP:
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_BUFFER, RUNCODE_DMALOAD_JUMP, buf, len);
+        c64_command->execute();
+        break;
+    case SOCKET_CMD_DMAWRITE:
+        offs = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, offs, buf + 2, len - 2);
+        c64_command->execute();
+        break;
+    case SOCKET_CMD_KEYB:
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x0277, buf, len);
+        c64_command->execute();
+        buf[0] = len;
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_DMA_RAW, 0x00C6, buf, 1);
+        c64_command->execute();
+        break;
+    case SOCKET_CMD_RESET:
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0, buf, len);
+        c64_command->execute();
+        break;
+    case SOCKET_CMD_WAIT:
+        vTaskDelay(len);
+        len = 0;
+        break;
+    case SOCKET_CMD_REUWRITE:
+        offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8) | (((uint32_t)buf[2]) << 16);
+        for (i=3; i<len; i++)
+           *(uint8_t *)(REU_MEMORY_BASE+ ((offs32+i-3)&0xffffff)) = buf[i];
+        break;
+    case SOCKET_CMD_KERNALWRITE:
+        /* GZW: Actually a driver for the cartridge mapping should be called here. */
+        offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8);
+        for (i=2; i<len; i++)
+           *(uint8_t *)(C64_KERNAL_BASE+1+2*((offs32+i-2)&0x1fff)) = buf[i];
+        break;
+    case SOCKET_CMD_LOADSIDCRT:
+        size = (len > 0x2000) ? 0x2000 : len;
+        if (sid_cart.custom_addr) {
+            memcpy(sid_cart.custom_addr, buf, size);
+            //sid_cart.length = size;
+        }
+        break;
+    case SOCKET_CMD_LOADBOOTCRT:
+        size = (len > 0x2000) ? 0x2000 : len;
+        if (boot_cart.custom_addr) {
+            memcpy(boot_cart.custom_addr, buf, size);
+            boot_cart.length = size;
+        }
+        break;
+    case SOCKET_CMD_SAMPLE:
+        printf("Sampling audio codec...");
+        sample_sid();
+        break;
+    case SOCKET_CMD_READMEM:
+        printf("Sending data...");
+        writeSocket(socket, (void *)0x2000000, 0x800000);
+        break;
+    case SOCKET_CMD_MOUNT_IMG:
+    case SOCKET_CMD_RUN_IMG:
+        // TODO, let 'len' be uint32_t? Beneficial for REU commands too
+        len32 = (uint32_t)len | (((uint32_t)buf[0]) << 16);
+        buf += 1;
+        if (cmd == SOCKET_CMD_MOUNT_IMG) {
+            c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_MOUNT,
+                RUNCODE_MOUNT_BUFFER|RUNCODE_NO_CHECKSAVE|RUNCODE_NO_UNFREEZE, buf, len32);
+        } else {
+            c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_RUN,
+                RUNCODE_MOUNT_BUFFER, buf, len32);
 
-		buf += len;
-		remaining -= len;
-	}
+        }
+        c64_command->execute();
+        break;
+    }
+}
+
+int SocketDMA::readSocket(int socket, void *buffer, int max_remain)
+{
+    int received = 0;
+    int n;
+    uint8_t *buf = (uint8_t *)buffer;
+    do {
+        int current = (max_remain > 8192) ? 8192 : max_remain;
+        n = recv(socket, buf, current, 0);
+        buf += n;
+        max_remain -= n;
+        received += n;
+    } while((n > 0) && (max_remain > 0));
+    if (n < 0) {
+        return n;
+    }
+    return received;
+}
+
+int SocketDMA::writeSocket(int socket, void *buffer, int length)
+{
+    uint8_t *buf = (uint8_t *)buffer;
+    int sent = 0;
+    int n;
+    do {
+        int current = (length > 2048) ? 2048 : length;
+        n = send(socket, buf, current, 0);
+        buf += n;
+        length -= n;
+        sent += n;
+    } while((n > 0) && (length > 0));
+    if (n < 0) {
+        return n;
+    }
+    return sent;
 }
 
 void SocketDMA::dmaThread(void *load_buffer)
@@ -200,26 +237,39 @@ void SocketDMA::dmaThread(void *load_buffer)
 
 
 		/* If connection is established then start communicating */
-		char *mempntr = (char *)load_buffer;
-		int max_remain = SOCKET_BUFFER_SIZE;
-		int received = 0;
+		uint8_t *mempntr = (uint8_t *)load_buffer;
+		uint8_t buf[16];
 
-		do {
-			int current = (max_remain > 8192) ? 8192 : max_remain;
-			n = recv(newsockfd, mempntr, current, 0);
-			mempntr += n;
-			max_remain -= n;
-			received += n;
-		} while((n > 0) && (max_remain > 0));
+		while(1) {
+	        n = recv(newsockfd, buf, 2, 0);
+	        if (n <= 0) {
+	            break;
+	        }
+	        // assume n = 2
+	        uint16_t cmd = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
 
-		lwip_close(newsockfd);
-		if (n < 0) {
-			puts("ERROR reading from socket");
-		} else {
-			parseBuffer(load_buffer, received);
+	        if ((cmd & 0xFF00) != 0xFF00) {
+	            printf("Illegal command: %04x\n", cmd);
+	            continue;
+	        }
+
+	        n = recv(newsockfd, buf, 2, 0);
+            if (n <= 0) {
+                break;
+            }
+	        uint16_t len = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
+
+	        if (len) {
+	            n = readSocket(newsockfd, mempntr, len);
+	        }
+	        if (n <= 0) {
+	            break;
+	        }
+            performCommand(newsockfd, load_buffer, n, cmd, len);
 		}
+        puts("ERROR reading from socket");
+        lwip_close(newsockfd);
     }
-
     // this will never happen
     lwip_close(sockfd);
 }

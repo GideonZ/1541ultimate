@@ -18,6 +18,7 @@
 #include "browsable_root.h"
 #include "tree_browser.h"
 #include "versions.h"
+#include "home_directory.h"
 
 SocketGui socket_gui; // global that causes us to exist
 
@@ -58,7 +59,12 @@ void socket_gui_task(void *a)
 	TreeBrowser *tree_browser = new TreeBrowser(user_interface, root);
 	user_interface->activate_uiobject(tree_browser);
 
-	user_interface->run();
+    if(user_interface->cfg->get_value(CFG_USERIF_START_HOME)) {
+        new HomeDirectory(user_interface, tree_browser);
+        // will clean itself up
+    }
+
+	user_interface->run_remote();
 
 	puts("User Interface on stream returned.");
 	str->close();
@@ -111,7 +117,7 @@ int SocketGui :: listenTask(void)
 		struct timeval tv;
 		tv.tv_sec = 20; // bug in lwip; this is just used directly as tick value
 		tv.tv_usec = 20;
-		// setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+		setsockopt(actual_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
 		SocketStream *stream = new SocketStream(actual_socket);
 		xTaskCreate( socket_gui_task, "Socket Gui Task", configMINIMAL_STACK_SIZE, stream, tskIDLE_PRIORITY + 1, NULL );

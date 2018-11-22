@@ -33,6 +33,7 @@ port (
     chirp_data      : out std_logic;
 
     -- Functional Level
+    cmd_response    : in  std_logic_vector(15 downto 0) := X"0BAD";
     frame_count     : in  unsigned(15 downto 0) := (others => '0');
     mem_ctrl_ready  : in  std_logic := '0';
     connected       : out std_logic; -- '1' when a USB device is connected
@@ -195,41 +196,52 @@ begin
     end process;
 
     ulpi_access <= io_addr(7);
-    stall <= ((stall_i or io_read or io_write) and ulpi_access) and not reg_ack; -- stall right away, and continue right away also when the data is returned
+    stall <= stall_i and not reg_ack; -- stall right away, and continue right away also when the data is returned
     
-    process( reg_rdata, io_addr, status, disconn_latched, filter_st1, mem_ctrl_ready, frame_count, sof_tick_latch)
+--    process( reg_rdata, io_addr, status, disconn_latched, filter_st1, mem_ctrl_ready, frame_count, sof_tick_latch)
+    process(clock)
         variable adlo   : unsigned(3 downto 0);
         variable adhi   : unsigned(7 downto 4);
     begin
-        io_rdata <= (others => '0');
-        adlo := io_addr(3 downto 0);
-        adhi := io_addr(7 downto 4);
-
-        case adhi is
-        when X"3" =>
-            case adlo(3 downto 0) is
-            when X"9" =>
-                io_rdata(15) <= filter_st1;
-            when X"B" =>
-                io_rdata <= std_logic_vector(frame_count);
-            when X"C" =>
-                io_rdata(15) <= sof_tick_latch;
-            when X"D" =>
-                io_rdata(15) <= mem_ctrl_ready;
-            when X"E" =>
-                io_rdata(15) <= disconn_latched;            
-            when X"F" =>
-                io_rdata(7 downto 0) <= status;
+        if rising_edge(clock) then
+            io_rdata <= (others => '0');
+            adlo := io_addr(3 downto 0);
+            adhi := io_addr(7 downto 4);
+    
+            case adhi is
+            when X"3" =>
+                case adlo is
+                when X"9" =>
+                    io_rdata(15) <= filter_st1;
+                when X"B" =>
+                    io_rdata <= std_logic_vector(frame_count);
+                when X"C" =>
+                    io_rdata(15) <= sof_tick_latch;
+                when X"D" =>
+                    io_rdata(15) <= mem_ctrl_ready;
+                when X"E" =>
+                    io_rdata(15) <= disconn_latched;            
+                when X"F" =>
+                    io_rdata(7 downto 0) <= status;
+                when others =>
+                    null;
+                end case;
+    
+            when X"6" =>
+                case adlo is
+                when X"4" =>
+                    io_rdata <= cmd_response;
+                when others =>
+                    null;
+                end case;
+                
+            when X"8"|X"9"|X"A"|X"B" =>
+                io_rdata <= X"00" & reg_rdata;
+                
             when others =>
                 null;
             end case;
-
-        when X"8"|X"9"|X"A"|X"B" =>
-            io_rdata <= X"00" & reg_rdata;
-            
-        when others =>
-            null;
-        end case;
+        end if;
     end process;
 
 end architecture;

@@ -232,7 +232,7 @@ begin
         io_write          => nano_write,
         io_read           => nano_read,
         io_wdata          => nano_wdata,
-        io_rdata          => nano_rdata_regs,
+        io_rdata          => nano_rdata,
         stall             => nano_stall,
 
         reg_read          => reg_read,
@@ -242,6 +242,7 @@ begin
         reg_wdata         => reg_wdata,
         reg_rdata         => reg_rdata,
 
+        cmd_response      => nano_rdata_cmd,
         status            => status,
         mem_ctrl_ready    => mem_ctrl_ready,
         frame_count       => frame_count,
@@ -270,7 +271,6 @@ begin
 
         io_addr     => nano_addr,
         io_write    => nano_write,
-        io_read     => nano_read,
         io_wdata    => nano_wdata,
         io_rdata    => nano_rdata_cmd,
 
@@ -294,7 +294,5 @@ begin
         sys_reset   => sys_reset,
         sys_io_req  => sys_io_req,
         sys_io_resp => sys_io_resp  );
-
-    nano_rdata <= nano_rdata_regs or nano_rdata_cmd;
 
 end arch;

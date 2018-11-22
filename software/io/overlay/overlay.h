@@ -11,6 +11,7 @@ extern "C" {
 #include "keyboard_usb.h"
 #include "iomap.h"
 #include "chargen.h"
+#include "u64.h"
 
 #define OVERLAY_REGS              ((volatile t_chargen_registers *)OVERLAY_BASE)
 
@@ -27,27 +28,33 @@ class Overlay : public GenericHost
     Screen *screen;
     bool enabled;
     bool buttonPushSeen;
+//    uint8_t backgroundColor;
+
 public:
     Overlay(bool active) {
         keyb = NULL;
         enabled = active;
         buttonPushSeen = false;
         
+        int activeX = 40;
+        int activeY = 20;
+        int X_on = 366;
+        int Y_on = 314; //346
+
         if(getFpgaCapabilities() & CAPAB_OVERLAY) {
             OVERLAY_REGS->CHAR_WIDTH       = 8;
             OVERLAY_REGS->CHAR_HEIGHT      = 9;
-            OVERLAY_REGS->CHARS_PER_LINE   = 40;
-            OVERLAY_REGS->ACTIVE_LINES     = 25;
-            OVERLAY_REGS->X_ON_HI          = 1;
-            OVERLAY_REGS->X_ON_LO          = 120;
-            OVERLAY_REGS->Y_ON_HI          = 1;
-            OVERLAY_REGS->Y_ON_LO          = 90;
+            OVERLAY_REGS->CHARS_PER_LINE   = activeX;
+            OVERLAY_REGS->ACTIVE_LINES     = activeY;
+            OVERLAY_REGS->X_ON_HI          = X_on >> 8;
+            OVERLAY_REGS->X_ON_LO          = X_on & 0xFF;
+            OVERLAY_REGS->Y_ON_HI          = Y_on >> 8;
+            OVERLAY_REGS->Y_ON_LO          = Y_on & 0xFF;
             OVERLAY_REGS->POINTER_HI       = 0;
             OVERLAY_REGS->POINTER_LO       = 0;
             OVERLAY_REGS->PERFORM_SYNC     = 0;
 
-            keyb = new Keyboard_C64(this, &(OVERLAY_REGS->KEYB_ROW), &(OVERLAY_REGS->KEYB_COL));
-            screen = new Screen_MemMappedCharMatrix((char *)CHARGEN_SCREEN_RAM, (char *)CHARGEN_COLOR_RAM, 40, 25);
+            screen = new Screen_MemMappedCharMatrix((char *)CHARGEN_SCREEN_RAM, (char *)CHARGEN_COLOR_RAM, activeX, activeY);
 
             if (enabled) {
             	take_ownership(0);
@@ -57,11 +64,15 @@ public:
         }
     }
     ~Overlay() {
-        if(keyb)
-            delete keyb;
         if(screen)
         	delete screen;
     }
+
+/*
+    void set_colors(int background, int border) {
+        this->backgroundColor = background;
+    }
+*/
 
     bool exists(void) {
         if(getFpgaCapabilities() & CAPAB_OVERLAY) {
@@ -82,13 +93,17 @@ public:
     void take_ownership(HostClient *h) {
         OVERLAY_REGS->TRANSPARENCY = 0x80;
         enabled = true;
-        system_usb_keyboard.enableMatrix(false);
+        //system_usb_keyboard.enableMatrix(false);
     }
 
     void release_ownership() {
-        OVERLAY_REGS->TRANSPARENCY = 0x01;
+        OVERLAY_REGS->TRANSPARENCY = 0x00;
+        // THIS IS A HACK... This is not part of the overlay function, but it is the best place to perform this function
+        // to make the 'gap' the smallest possible between a write to the CIA and one from the system CPU.
+        *C64_PLD_PORTA = C64_PLD_STATE0;
+        *C64_PLD_PORTB = C64_PLD_STATE1;
         enabled = false;
-        system_usb_keyboard.enableMatrix(true);
+        //system_usb_keyboard.enableMatrix(true);
     }
 
     bool hasButton(void) {
@@ -124,6 +139,10 @@ public:
     /* We should actually just return an input device type */
     Keyboard *getKeyboard(void) {
         return keyb;
+    }
+
+    void setKeyboard(Keyboard *kb) {
+        keyb = kb;
     }
 };
 

@@ -31,6 +31,10 @@
 #include "userinterface.h"
 #include "ext_i2c.h"
 
+#if U64
+#include "u64.h"
+#endif
+
 extern "C" {
     #include "dump_hex.h"
 }
@@ -39,6 +43,14 @@ extern "C" {
 #define CMD_SET_DRIVEROM 0x4202
 #define CMD_SET_CARTROM  0x4203
 #define CMD_WRITE_EEPROM 0x4204
+#define CMD_TEST_CHARS   0x4222
+
+#define CMD_SET_KERNAL_ORIG  0x4211
+#define CMD_SET_KERNAL_ALT   0x4212
+#define CMD_SET_BASIC_ORIG   0x4213
+#define CMD_SET_BASIC_ALT    0x4214
+#define CMD_SET_CHAR_ORIG    0x4215
+#define CMD_SET_CHAR_ALT     0x4216
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_bin(FileType :: getFileTypeFactory(), FileTypeBin :: test_type);
@@ -70,16 +82,39 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         list.append(new Action("Write EEPROM", FileTypeBin :: execute_st, CMD_WRITE_EEPROM, (int)this));
         count++;
     }
+    if (size <= 4098) {
+        list.append(new Action("Test Chars", FileTypeBin :: execute_st, CMD_TEST_CHARS, (int)this));
+    }
 #endif
 
-    if (size == 8192) {
-      list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
-      count++;
+#if U64
+    if (size == 4096) {
+        list.append(new Action("Flash as Orig. Char ROM", FileTypeBin :: execute_st, CMD_SET_CHAR_ORIG, (int)this));
+        count++;
+        list.append(new Action("Flash as Alt. Char ROM", FileTypeBin :: execute_st, CMD_SET_CHAR_ALT, (int)this));
+        count++;
     }
-    else if (size == 16384 || size == 32768) {
+    if (size == 8192) {
+        list.append(new Action("Flash as Orig. Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL_ORIG, (int)this));
+        count++;
+        list.append(new Action("Flash as Alt. Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT, (int)this));
+        count++;
+        list.append(new Action("Flash as Orig. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ORIG, (int)this));
+        count++;
+        list.append(new Action("Flash as Alt. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ALT, (int)this));
+        count++;
+    }
+#else
+    if (size == 8192) {
+        list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
+        count++;
+    }
+#endif
+
+    if (size == 16384 || size == 32768) {
         list.append(new Action("Use as Drive ROM", FileTypeBin :: execute_st, CMD_SET_DRIVEROM, (int)this));
         count++;
-      }
+    }
 
     if(size == 65536 || size == 32768 || size == 16384 || size == 8192) {
       list.append(new Action("Use as Cartridge ROM", FileTypeBin :: execute_st, CMD_SET_CARTROM, (int)this));
@@ -95,6 +130,8 @@ FileType *FileTypeBin :: test_type(BrowsableDirEntry *obj)
     if(strcmp(inf->extension, "BIN")==0)
         return new FileTypeBin(obj);
     if(strcmp(inf->extension, "ROM")==0)
+        return new FileTypeBin(obj);
+    if(strcmp(inf->extension, "64C")==0)
         return new FileTypeBin(obj);
     return NULL;
 }
@@ -123,20 +160,53 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
         break;
 
     case CMD_SET_DRIVEROM:
-      size = 32768;
-      id = FLASH_ID_CUSTOM_DRV;
-      break;
+        size = 32768;
+        id = FLASH_ID_CUSTOM_DRV;
+        break;
 
     case CMD_SET_KERNAL:
-      size = 8192;
-      id = FLASH_ID_KERNAL_ROM;
-      break;
+    case CMD_SET_KERNAL_ALT:
+        size = 8192;
+        id = FLASH_ID_KERNAL_ROM;
+        break;
+
+    case CMD_SET_KERNAL_ORIG:
+        size = 8192;
+        id = FLASH_ID_ORIG_KERNAL;
+        break;
+
+    case CMD_SET_BASIC_ORIG:
+        size = 8192;
+        id = FLASH_ID_ORIG_BASIC;
+        break;
       
+    case CMD_SET_BASIC_ALT:
+        size = 8192;
+        id = FLASH_ID_BASIC_ROM;
+        break;
+
+    case CMD_SET_CHAR_ORIG:
+        size = 4096;
+        id = FLASH_ID_ORIG_CHARGEN;
+        break;
+
+    case CMD_SET_CHAR_ALT:
+        size = 4096;
+        id = FLASH_ID_CHARGEN_ROM;
+        break;
+
     case CMD_SET_CARTROM:
-      size = node->getInfo()->size;
-      id = FLASH_ID_CUSTOM_ROM;
+        size = node->getInfo()->size;
+        id = FLASH_ID_CUSTOM_ROM;
+        break;
+
+    case CMD_TEST_CHARS:
+        size = node->getInfo()->size;
+
     }  
     
+
+
     printf("Binary Load.. %s\n", cmd->filename.c_str());
     FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 
@@ -153,6 +223,21 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
         fm->fclose(file);
 
 #if DEVELOPER == 2
+        if (cmd->functionID == CMD_TEST_CHARS) {
+            uint8_t *src = buffer;
+            src += (size & 0x7);
+            size &= 0xFFF8;
+            int remain = 4096;
+            uint8_t *dest = (uint8_t *)U64_CHARROM_BASE;
+            while (remain > 0) {
+                int current = (remain < size) ? remain : size;
+                memcpy(dest, src, current); // as simple as that
+                dest += current;
+                remain -= current;
+            }
+            delete buffer;
+            return 0;
+        }
         if (cmd->functionID == CMD_WRITE_EEPROM) {
             for(int i=0;i<256;i++) {
                 ext_i2c_write_byte(0xA0, i, buffer[i]);
@@ -166,23 +251,72 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
 #endif
 
         if (transferred == size) { // this should now match
-    		int retval = get_flash()->write_image(id, buffer, size);
-    		if (retval) {
-    			printf("Flashing Kernal or drive ROM Failed: %d\n", retval);
-    			cmd->user_interface->popup("Flashing Failed", BUTTON_OK);
-    		} else {
-    			if (id == FLASH_ID_KERNAL_ROM) {
-					// Success!
-					C64 :: enable_kernal(buffer);
-                    cmd->user_interface->popup("Now using Alternate Kernal.", BUTTON_OK);
+            uint32_t *rom = (uint32_t *)buffer;
+            bool ok = true;
 
-    			} else if (id == FLASH_ID_CUSTOM_DRV) {
-        			cmd->user_interface->popup("Now use Custom 1541 ROM.", BUTTON_OK);
-    			}
-                else if (id == FLASH_ID_CUSTOM_ROM) {
-                    cmd->user_interface->popup("Now use appropriate Custom Cartridge.", BUTTON_OK);
+            switch (cmd->functionID) {
+            case CMD_SET_BASIC_ORIG:
+            case CMD_SET_BASIC_ALT:
+                if ((rom[1] != 0x424D4243) || (rom[2] != 0x43495341)) {
+                    if (cmd->user_interface->popup("Are you sure this is a BASIC ROM?", BUTTON_YES | BUTTON_NO) == BUTTON_NO) {
+                        ok = false;
+                    }
                 }
-    		}
+                break;
+
+            case CMD_SET_KERNAL_ORIG:
+            case CMD_SET_KERNAL_ALT:
+                if (rom[0] != 0x0F205685) {
+                    if (cmd->user_interface->popup("Are you sure this is a KERNAL ROM?", BUTTON_YES | BUTTON_NO) == BUTTON_NO) {
+                        ok = false;
+                    }
+                }
+                break;
+
+            case CMD_SET_CHAR_ORIG:
+            case CMD_SET_CHAR_ALT:
+                if (rom[0] != 0x6E6E663C) {
+                    if (cmd->user_interface->popup("Are you sure this is a CHAR ROM?", BUTTON_YES | BUTTON_NO) == BUTTON_NO) {
+                        ok = false;
+                    }
+                }
+                break;
+            }
+
+            if (ok) {
+                int retval = get_flash()->write_image(id, buffer, size);
+                if (retval) {
+                    printf("Flashing Kernal or drive ROM Failed: %d\n", retval);
+                    cmd->user_interface->popup("Flashing Failed", BUTTON_OK);
+                } else {
+                    switch (cmd->functionID) {
+                    // For all U64 flash functions, also set the config accordingly
+                    case CMD_SET_BASIC_ORIG:
+                    case CMD_SET_BASIC_ALT:
+                    case CMD_SET_KERNAL_ORIG:
+                    case CMD_SET_KERNAL_ALT:
+                    case CMD_SET_CHAR_ORIG:
+                    case CMD_SET_CHAR_ALT:
+                        C64 :: getMachine()->new_system_rom(id);
+                        cmd->user_interface->popup("System ROM Flashed.", BUTTON_OK);
+                        break;
+
+                    case CMD_SET_CARTROM:
+                        cmd->user_interface->popup("Now select appropriate Custom Cart", BUTTON_OK);
+                        break;
+
+                    case CMD_SET_DRIVEROM:
+                        cmd->user_interface->popup("Please select Custom 1541 ROM.", BUTTON_OK);
+                        break;
+
+                    // For U2/U2+ flash function, tell user that alternate kernal is being used.
+                    case CMD_SET_KERNAL:
+                        C64 :: getMachine()->enable_kernal(buffer);
+                        cmd->user_interface->popup("Now using Alternate Kernal.", BUTTON_OK);
+                        break;
+                    }
+                }
+            }
     	}
         delete buffer;
     } else {

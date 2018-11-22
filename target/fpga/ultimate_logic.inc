@@ -31,6 +31,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_slave.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_peripheral.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/real_time_clock.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/fractional_div.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/audio_select/vhdl_source/audio_select.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/tx.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/rx.vhd \

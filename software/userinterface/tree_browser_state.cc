@@ -98,8 +98,9 @@ void TreeBrowserState :: draw()
 		return;
 	}
 
-    browser->window->set_color(12);
-    browser->window->getScreen()->move_cursor(0, 24);
+    browser->window->set_color(11);
+    browser->window->set_background(0);
+    browser->window->getScreen()->move_cursor(0, browser->window->getScreen()->get_size_y()-1);
     browser->window->getScreen()->output_fixed_length(browser->path->get_path(), 0, browser->window->get_size_x()-9);
 
     //	printf("Draw. First=%d. Selected_line=%d. Number of el=%d\n", first_item_on_screen, selected_line, children->get_elements());
@@ -145,13 +146,16 @@ void TreeBrowserState :: draw_item(Browsable *t, int line, bool selected)
     if (t) {
 		if (selected) {
 			browser->window->set_color(browser->user_interface->color_sel);
+            browser->window->set_background(browser->user_interface->color_sel_bg);
 		} else if(t->isSelectable()) {
 			browser->window->set_color(browser->user_interface->color_fg);
+            browser->window->set_background(0);
 		} else { // non selectable item
 			browser->window->set_color(12); // TODO
 		}
 		t->getDisplayString(buffer, browser->window->get_size_x());
 		browser->window->output_line(buffer);
+        browser->window->set_background(0);
     } else {
 		// draw an empty line
 		browser->window->output_line("");
@@ -167,6 +171,7 @@ void TreeBrowserState :: update_selected(void)
 
     browser->window->move_cursor(0, selected_line);
     browser->window->set_color(browser->user_interface->color_sel); // highlighted
+    browser->window->set_background(browser->user_interface->color_sel_bg);
     under_cursor->getDisplayString(buffer, browser->window->get_size_x());
     browser->window->output_line(buffer);
 }
@@ -285,6 +290,10 @@ void TreeBrowserState :: into3(const char* name)
 {
     Browsable *browsable = 0;
     
+    if (needs_reload) {
+        reload();
+    }
+
     for(int i=0; i<children->get_elements(); i++) {
         if(strcasecmp((*children)[i]->getName(), name) == 0) {
             browsable = (*children)[i];

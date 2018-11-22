@@ -10,12 +10,11 @@ entity itu is
 generic (
     g_version	    : unsigned(7 downto 0) := X"FE";
     g_uart          : boolean := true;
-    g_frequency     : integer := 50_000_000;
+    g_uart_rx       : boolean := true;
     g_edge_init     : std_logic_vector(7 downto 0) := "00000001";
     g_capabilities  : std_logic_vector(31 downto 0) := X"5555AAAA";
     g_edge_write    : boolean := true;
-    g_baudrate      : integer := 115_200;
-    g_timer_rate    : integer := 200_000 ); -- 5�s (should not result in more than 8 bits div)
+    g_baudrate      : integer := 115_200 );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -24,6 +23,9 @@ port (
     io_resp         : out t_io_resp;
     irq_out         : out std_logic;
     
+    tick_4MHz       : in  std_logic;
+    tick_1us        : in  std_logic;
+    tick_1ms        : in  std_logic;
     buttons         : in  std_logic_vector(2 downto 0);
     
     irq_timer_tick  : in  std_logic := '0';
@@ -41,9 +43,8 @@ port (
 end itu;
 
 architecture gideon of itu is
-    constant c_timer_div : integer := g_frequency / g_timer_rate;
-    constant c_baud_div  : integer := g_frequency / g_baudrate;
-    constant c_ms_div    : integer := g_timer_rate / 1000;
+    constant c_timer_div : integer := 5;
+    constant c_baud_div  : integer := (4_000_000 + g_baudrate / 2) / g_baudrate;
     
     signal imask        : std_logic_vector(7 downto 0);
     signal iedge        : std_logic_vector(7 downto 0) := g_edge_init;
@@ -71,7 +72,6 @@ architecture gideon of itu is
     signal io_req_ms        : t_io_req;
     signal io_resp_ms       : t_io_resp;
 
-    signal ms_timer_presc   : integer range 0 to c_ms_div-1 := 0;
     signal ms_timer         : unsigned(15 downto 0) := (others => '0');
     
     signal usb_busy         : std_logic;
@@ -81,24 +81,25 @@ begin
         variable new_irq_edge_flag  : std_logic_vector(irq_edge_flag'range);
     begin
         if rising_edge(clock) then
-            if timer_div = 0 then
-                timer_div <= c_timer_div - 1;
-                timer_tick <= '1';
-            else
-                timer_div <= timer_div - 1;
-                timer_tick <= '0';
+            timer_tick <= '0';
+
+            if tick_1us = '1' then
+                if timer_div = 0 then
+                    timer_div <= c_timer_div - 1;
+                    timer_tick <= '1';
+                else
+                    timer_div <= timer_div - 1;
+                end if;
             end if;
-            
+                        
             if timer_tick='1' then
                 if timer /= X"00" then
                     timer <= timer - 1;
                 end if;
-                if ms_timer_presc = 0 then
-                    ms_timer <= ms_timer + 1;
-                    ms_timer_presc <= c_ms_div - 1;
-                else
-                    ms_timer_presc <= ms_timer_presc - 1;
-                end if;                  
+            end if;
+
+            if tick_1ms = '1' then
+                ms_timer <= ms_timer + 1;
             end if;
 
             irq_c(7 downto 2) <= irq_in(7 downto 2);
@@ -272,10 +273,12 @@ begin
     r_uart: if g_uart generate
         uart: entity work.uart_peripheral_io
         generic map (
+            g_impl_rx   => g_uart_rx,
             g_divisor   => c_baud_div )
         port map (
             clock       => clock,
             reset       => reset,
+            tick        => tick_4MHz,
             
             io_req      => io_req_uart,
             io_resp     => io_resp_uart,

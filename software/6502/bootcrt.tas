@@ -12,10 +12,11 @@
         * = $8000
 
 flag_zp	= $02
-runcode = $0162
-device  = $0163
-namelen = $0164
-name    = $0165
+do_sync = $014F
+runcode = $0172
+device  = $0173
+namelen = $0174
+name    = $0175
 
 uci_status  = $df1c
 uci_control = $df1c
@@ -535,30 +536,49 @@ rp_lp1
 
 	tya
 	beq	rp_skp1		;Y=0, run program
+;	lda #$6c
+;	sta runner_runjmp+0
 	lda	#$74
 	sta	runner_runjmp+1
 	lda	#$a4
 	sta	runner_runjmp+2
 	dey
 	beq	rp_skp1		;Y=1, load program
+
 ; Y=2, exit to basic
 	lda	#$2c
 	sta	runner_relinkjsr
 
 rp_skp1
-
-; important for basic
-	ldx	#$fb
-	txs
-
 ; turn off os messages for run
 	lda	#$00
 	jsr	$ff90
 
 	jsr $ff84
 
-;	jsr synchronize
-	
+    ; cleaning up some traces
+    lda #$a7
+    sta $01fb
+    lda #$9c
+    sta $01fe
+    lda #$e3
+    sta $01ff
+    lda #$1a
+    sta $a1
+    lda #$A0
+    sta $c2 ; current byte pointer of memory test
+    lda #$01
+    sta $c5 ; matrix code of key previously pressed (return)
+    sta $cb ; matrix code of key currently pressed (return)    
+    lda #$20
+    sta $ce ; screen code of char under cursor
+
+    lda do_sync
+    beq +
+	jsr synchronize
+; important for basic
++   ldx #$fb
+    txs
 	jmp	RUNNER
 
 RUNNER		=	$0150
@@ -566,6 +586,8 @@ runner_st
     lda #$40
 	sta	$dfff		; disable boot cart
 	cli
+    lda #$54
+    sta $dffe       ; trigger
     lda #0
     sta $02
 runner_relinkjsr = *-runner_st+RUNNER

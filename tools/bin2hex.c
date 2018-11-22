@@ -47,7 +47,7 @@ int main(int argc, char** argv)
     int      unnamed    = 0;
     int      add_length = 0;
     int      word_mode  = 0;
-    
+    int      raw_mode   = 0; 
     char     name_in[1024];
     char     name_out[1024];
     char     version[16];
@@ -76,6 +76,10 @@ int main(int argc, char** argv)
 
             case 'h':
                 help = 1;
+                break;
+
+            case 'r':
+                raw_mode = 1;
                 break;
 
             case 'o':
@@ -187,6 +191,13 @@ int main(int argc, char** argv)
     int line_length = (word_mode)?4:32;
     
     while(length && !feof(fi)) {
+        if (raw_mode) {
+            if (fread(buffer, 1, 1, fi) > 0) {
+                fprintf(fo, "%02x\n", *buffer);
+            }
+            length--;
+            continue;
+        }
         bytes_in_segment = 65536 - (hex_offset & 0xFFFF);
         if((bytes_in_segment == 65536)||(segment == -1)) {
             //:020000040000FA
@@ -219,7 +230,7 @@ int main(int argc, char** argv)
         length     -= bytes_read;
     }
 
-    if(eof) {
+    if(eof && !raw_mode) {
         fprintf(fo, ":00000001FF\n");
     }
     fclose(fo);

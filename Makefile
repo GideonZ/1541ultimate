@@ -71,13 +71,6 @@ niosapps:
 	@$(MAKE) -C target/software/nios2_update
 	@cp target/software/nios2_update/result/update.app ./update.u2p
 
-u64apps:
-	@$(MAKE) -C target/software/nios2_u64
-	@$(MAKE) -C target/software/nios2_update_u64
-	@$(MAKE) -C target/software/nios2_update_u64a4
-	@cp target/software/nios2_update_u64/result/update.app ./update_5ceba2.u64
-	@cp target/software/nios2_update_u64a4/result/update.app ./update_5ceba4.u64
-
 k1:
 	@svn up
 	@$(MAKE) -C tools
@@ -181,3 +174,22 @@ u2_swonly:
 	@$(MAKE) -C target/software/mb_boot_dd
 	@$(MAKE) -C target/software/mb_boot2
 	@$(MAKE) -C target/software/mb_ultimate
+	
+u64:
+	@$(MAKE) -C tools
+	@$(MAKE) -C software/nios_solo_bsp
+	@$(MAKE) -C software/nios_appl_bsp
+	@$(MAKE) -C target/software/nios2_elf_lwip
+	@$(MAKE) -C target/software/nios2_u64
+	@$(MAKE) -C target/software/nios2_update_u64a4
+	@cp target/software/nios2_update_u64a4/result/update.app ./update.u64
+
+u64dev:
+	@$(MAKE) -C tools
+	@$(MAKE) -C software/nios_solo_bsp
+	@$(MAKE) -C software/nios_appl_bsp
+	@$(MAKE) -C target/software/nios2_elf_lwip
+	@$(MAKE) -C target/software/nios2_u64_dev
+	@$(MAKE) -C target/software/nios2_update_u64dev
+	@cp target/software/nios2_update_u64dev/result/update.app ./update_dev.u64
+	

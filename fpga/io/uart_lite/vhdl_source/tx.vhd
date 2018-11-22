@@ -18,6 +18,7 @@ generic (clks_per_bit : integer := 434); -- 115k2 @ 50 MHz
 port (
     clk     : in  std_logic;
     reset   : in  std_logic;
+    tick    : in  std_logic;
     
     dotx    : in  std_logic;
     txchar  : in  std_logic_vector(7 downto 0);
@@ -55,16 +56,18 @@ begin
                     state <= Transmitting;
                 end if;
             when Transmitting =>
-                if timer=0 then
-                    timer <= clks_per_bit - 1;
-                    if bitcnt = 0 then
-                        state <= Idle;
+                if tick = '1' then
+                    if timer=0 then
+                        timer <= clks_per_bit - 1;
+                        if bitcnt = 0 then
+                            state <= Idle;
+                        else
+                            bitcnt <= bitcnt - 1;
+                            bitvec <= '0' & bitvec(8 downto 1);
+                        end if;
                     else
-                        bitcnt <= bitcnt - 1;
-                        bitvec <= '0' & bitvec(8 downto 1);
+                        timer <= timer - 1;
                     end if;
-                else
-                    timer <= timer - 1;
                 end if;
             end case;                
         end if;

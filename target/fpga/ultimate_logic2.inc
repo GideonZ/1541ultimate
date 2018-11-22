@@ -35,6 +35,7 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_slave.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/video/vhdl_source/char_generator_peripheral.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/real_time_clock.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/ip/clock/vhdl_source/fractional_div.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_cpu_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_alu.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano_cpu.vhd \

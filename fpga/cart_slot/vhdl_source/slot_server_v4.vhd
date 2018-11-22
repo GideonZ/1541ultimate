@@ -17,6 +17,7 @@ generic (
     g_ram_base_reu  : unsigned(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
+    g_cartreset_init: std_logic := '0';
     g_big_endian    : boolean;
     g_kernal_repl   : boolean := true;
     g_control_read  : boolean := true;
@@ -25,8 +26,8 @@ generic (
     g_extended_reu  : boolean := false;
     g_sampler       : boolean := false;
     g_implement_sid : boolean := true;
-    g_sid_filter_div: natural := 221;
     g_sid_voices    : natural := 3;
+    g_8voices       : boolean := false;
     g_vic_copper    : boolean := false );
 
 port (
@@ -288,6 +289,7 @@ begin
         g_rom_base      => g_rom_base_cart,
         g_ram_base      => g_ram_base_cart,
 --        g_control_read  => g_control_read,
+        g_cartreset_init=> g_cartreset_init,
         g_ram_expansion => g_ram_expansion )
     port map (
         clock           => clock,
@@ -525,7 +527,7 @@ begin
 
         i_sid: entity work.sid_peripheral
         generic map (
-            g_filter_div  => g_sid_filter_div,
+            g_8voices     => g_8voices,
             g_num_voices  => g_sid_voices )
             
         port map (

@@ -159,14 +159,21 @@ architecture structural of ultimate_mb_700a is
     signal c2n_motor_in     : std_logic;
     signal c2n_motor_out    : std_logic;
 
+    -- Parallel cable connection
+    signal drv_via1_port_a_o    : std_logic_vector(7 downto 0);
+    signal drv_via1_port_a_i    : std_logic_vector(7 downto 0);
+    signal drv_via1_port_a_t    : std_logic_vector(7 downto 0);
+    signal drv_via1_ca2_o       : std_logic;
+    signal drv_via1_ca2_i       : std_logic;
+    signal drv_via1_ca2_t       : std_logic;
+    signal drv_via1_cb1_o       : std_logic;
+    signal drv_via1_cb1_i       : std_logic;
+    signal drv_via1_cb1_t       : std_logic;
+
     -- Audio outputs
     signal audio_left  : signed(18 downto 0);
     signal audio_right : signed(18 downto 0);
 
-    -- debug
-    signal scale_cnt        : unsigned(11 downto 0) := X"000";
-    attribute iob : string;
-    attribute iob of scale_cnt : signal is "false";
 begin
     reset_in <= '1' when BUTTON="000" else '0'; -- all 3 buttons pressed
     button_i <= not BUTTON;
@@ -188,7 +195,6 @@ begin
         g_simulation    => false,
         g_clock_freq    => 50_000_000,
         g_baud_rate     => 115_200,
-        g_timer_rate    => 200_000,
         g_icap          => true,
         g_uart          => true,
         g_drive_1541    => true,
@@ -197,6 +203,7 @@ begin
         g_ram_expansion => true,
         g_extended_reu  => false,
         g_stereo_sid    => not g_dual_drive,
+        g_8voices       => false,
         g_hardware_iec  => true,
         g_iec_prog_tim  => false,
         g_c2n_streamer  => true,
@@ -276,6 +283,17 @@ begin
         iec_clock_o => iec_clock_o,
         iec_srq_o   => iec_srq_o,
                                     
+        -- Parallel cable pins
+        drv_via1_port_a_o   => drv_via1_port_a_o,
+        drv_via1_port_a_i   => drv_via1_port_a_i,
+        drv_via1_port_a_t   => drv_via1_port_a_t,
+        drv_via1_ca2_o      => drv_via1_ca2_o,
+        drv_via1_ca2_i      => drv_via1_ca2_i,
+        drv_via1_ca2_t      => drv_via1_ca2_t,
+        drv_via1_cb1_o      => drv_via1_cb1_o,
+        drv_via1_cb1_i      => drv_via1_cb1_i,
+        drv_via1_cb1_t      => drv_via1_cb1_t,
+
         DISK_ACTn   => DISK_ACTn, -- activity LED
         CART_LEDn   => CART_LEDn,
         SDACT_LEDn  => SDACT_LEDn,
@@ -329,6 +347,11 @@ begin
         
         -- Buttons
         BUTTON      => button_i );
+
+    -- Parallel cable not implemented. This is the way to stub it...
+    drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
+    drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
+    drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
 
     irq_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => irq_oc, oc_out => IRQn);
     nmi_push: entity work.oc_pusher port map(clock => sys_clock, sig_in => nmi_oc, oc_out => NMIn);
@@ -390,13 +413,6 @@ begin
         end if;
         if reset_in='1' then
             ulpi_reset_i <= '1';
-        end if;
-    end process;
-
-    process(ulpi_clock)
-    begin
-        if rising_edge(ulpi_clock) then
-            scale_cnt <= scale_cnt + 1;
         end if;
     end process;
 

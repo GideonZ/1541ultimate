@@ -5,6 +5,9 @@ use ieee.numeric_std.all;
 use work.mem_bus_pkg.all;
 use work.endianness_pkg.all;
 
+--use work.tl_sctb_pkg.all;
+--use work.tl_string_util_pkg.all;
+
 -- This module performs the memory operations that are instructed
 -- by the nano_cpu. This controller copies data to or from a
 -- designated BRAM, and notifies the nano_cpu that the transfer
@@ -147,8 +150,10 @@ begin
                 if rwn='1' then
                     mreq <= '1';
                     state <= reading;
+--                    sctb_trace("Reading buffer " & hstr(buffer_idx) & " from memory address " & hstr(mem_addr_r));
                 else
                     state <= prefetch;
+--                    sctb_trace("Writing buffer " & hstr(buffer_idx) & " to memory address " & hstr(mem_addr_r));
                 end if;
             
             when reading =>

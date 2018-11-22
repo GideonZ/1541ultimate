@@ -17,6 +17,7 @@ class FileTypeSID : public FileType
 	uint16_t end;
 	uint16_t player;
 	uint32_t offset;
+	uint16_t flags;
 	bool header_valid;
 	int numberOfSongs;
 
@@ -27,6 +28,7 @@ class FileTypeSID : public FileType
     int   readHeader(void);
     void  showInfo(void);
     void  readSongLengths(void);
+    bool  ConfigSIDs(void);
 public:
     FileTypeSID(BrowsableDirEntry *n);
     ~FileTypeSID();
