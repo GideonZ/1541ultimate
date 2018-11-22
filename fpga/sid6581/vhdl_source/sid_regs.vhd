@@ -15,6 +15,8 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 entity sid_regs is
+generic (
+    g_8voices     : boolean := false );
 port (
     clock         : in  std_logic;
     reset         : in  std_logic;
@@ -178,7 +180,7 @@ begin
                                   filter_bp_l <= wdata_d(5);
                                   filter_lp_l <= wdata_d(4);
                                   volume_l    <= unsigned(wdata_d(3 downto 0));
-                    when "100" => filt_en_i(7 downto 0)  <= wdata_d;
+                    when "100" => if g_8voices then filt_en_i(7 downto 0)  <= wdata_d; end if;
                     when others => null;
                     end case;
                 else -- Global register for right
@@ -193,7 +195,7 @@ begin
                                   filter_bp_r <= wdata_d(5);
                                   filter_lp_r <= wdata_d(4);
                                   volume_r    <= unsigned(wdata_d(3 downto 0));
-                    when "100" => filt_en_i(15 downto 8) <= wdata_d;
+                    when "100" => if g_8voices then  filt_en_i(15 downto 8) <= wdata_d; end if;
                     when others => null;
                     end case;
                 end if;

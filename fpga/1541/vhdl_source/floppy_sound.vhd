@@ -8,7 +8,6 @@ use work.mem_bus_pkg.all;
 entity floppy_sound is
 generic (
     g_tag          : std_logic_vector(7 downto 0) := X"04";
-    rate_div       : natural := 2176; -- 22050 Hz
     sound_base     : unsigned(27 downto 16) := X"103";
     motor_hum_addr : unsigned(15 downto 0) := X"0000";
     flop_slip_addr : unsigned(15 downto 0) := X"1200";
@@ -24,6 +23,8 @@ generic (
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
+    
+    tick_4MHz       : in  std_logic;
     
     do_trk_out      : in  std_logic;
     do_trk_in       : in  std_logic;
@@ -41,7 +42,9 @@ port (
 end floppy_sound;
     
 architecture gideon of floppy_sound is
-    signal rate_count   : integer range 0 to rate_div;
+    constant c_rate_div : integer := 4000000 / 22050;
+
+    signal rate_count   : integer range 0 to c_rate_div;
     signal motor_sample : signed(7 downto 0);
     signal head_sample  : signed(7 downto 0);
     signal sample_tick  : std_logic;
@@ -71,13 +74,15 @@ begin
     begin
         if rising_edge(clock) then
             sample_tick <= '0';
-            if rate_count = 0 then
-                signed_sum := motor_sample + (head_sample(head_sample'high) & head_sample & "0000");
-                sample_out  <= signed_sum;
-                rate_count  <= rate_div;
-                sample_tick <= '1';
-            else
-                rate_count <= rate_count - 1;
+            if tick_4MHz = '1' then
+                if rate_count = 0 then
+                    signed_sum := motor_sample + (head_sample(head_sample'high) & head_sample & "0000");
+                    sample_out  <= signed_sum;
+                    rate_count  <= c_rate_div;
+                    sample_tick <= '1';
+                else
+                    rate_count <= rate_count - 1;
+                end if;
             end if;
 
             case serve_state is

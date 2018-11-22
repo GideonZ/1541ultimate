@@ -16,16 +16,21 @@
 #endif // NO_FILE_ACCESS
 
 /* Configuration */
-const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
+static const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Green", "Blue", "Yellow",
                          "Orange", "Brown", "Pink", "Dark Grey", "Mid Grey", "Light Green", "Light Blue", "Light Grey" };
                           
-const char *en_dis4[]    = { "Disabled", "Enabled" };
+static const char *en_dis4[]    = { "Disabled", "Enabled" };
+static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
 
 struct t_cfg_definition user_if_config[] = {
+#if U64
+    { CFG_USERIF_ITYPE,      CFG_TYPE_ENUM,   "Interface Type",       "%s", itype,   0,  1, 0 },
+#endif
     { CFG_USERIF_BACKGROUND, CFG_TYPE_ENUM,   "Background color",     "%s", colors,  0, 15, 0 },
     { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 0 },
     { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 12 },
     { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 1 },
+    { CFG_USERIF_SELECTED_BG,CFG_TYPE_ENUM,   "Selected Backgr (Overlay)",  "%s", colors,  0, 15, 6 },
 //    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
     { CFG_USERIF_HOME_DIR,   CFG_TYPE_STRING, "Home Directory",        "%s", NULL, 0, 31, (int)"" },
     { CFG_USERIF_START_HOME, CFG_TYPE_ENUM,   "Enter Home on Startup", "%s", en_dis4, 0,  1, 0 },
@@ -36,12 +41,12 @@ UserInterface :: UserInterface(const char *title) : title(title)
 {
     initialized = false;
     focus = -1;
-    state = ui_idle;
     host = NULL;
     keyboard = NULL;
     alt_keyboard = NULL;
     screen = NULL;
-
+    doBreak = false;
+    available = false;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -53,7 +58,6 @@ UserInterface :: ~UserInterface()
     	ui_objects[focus]->deinit();
     	delete ui_objects[focus--];
     } while(focus>=0);
-
     printf(" bye UI!\n");
 }
 
@@ -63,6 +67,7 @@ void UserInterface :: effectuate_settings(void)
     color_fg     = cfg->get_value(CFG_USERIF_FOREGROUND);
     color_bg     = cfg->get_value(CFG_USERIF_BACKGROUND);
     color_sel    = cfg->get_value(CFG_USERIF_SELECTED);
+    color_sel_bg = cfg->get_value(CFG_USERIF_SELECTED_BG);
 
     if(host && host->is_accessible())
         host->set_colors(color_bg, color_border);
@@ -77,9 +82,13 @@ void UserInterface :: init(GenericHost *h)
 	screen = h->getScreen();
     initialized = true;
     if (host->is_permanent()) {
-    	state = ui_host_permanent;
     	appear();
     }
+}
+
+int UserInterface :: getPreferredType(void)
+{
+    return cfg->get_value(CFG_USERIF_ITYPE);
 }
 
 void UserInterface :: set_screen(Screen *s)
@@ -87,82 +96,84 @@ void UserInterface :: set_screen(Screen *s)
     screen = s;
 }
 
+void UserInterface :: run_remote(void)
+{
+    host->take_ownership(this);
+    appear();
+    available = true;
+    while(1) {
+        if (!pollFocussed()) {
+            available = false;
+            host->releaseScreen();
+            break;
+        }
+        vTaskDelay(3);
+    }
+}
+
 void UserInterface :: run(void)
 {
-#ifndef NO_FILE_ACCESS
     while(1) {
-    	host->checkButton();
-    	switch(state) {
-			case ui_idle:
-				if (!host->hasButton()) { // FIXME: We should just initialize the UI in the right state. This is too implicit
-					state = ui_host_remote;
-					host->take_ownership(this);
-					appear();
-					break;
-				}
-				if (host->exists() && host->buttonPush()) {
-                    if(buttonDownFor(1000)) {
-                        swapDisk();
-                    } else {
-                		state = ui_host_owned;
-                		host->take_ownership(this);
-                        appear();
-                    }
-                    break;
-				}
-				switch(system_usb_keyboard.getch()) {
-				case KEY_SCRLOCK:
-					state = ui_host_owned;
-					host->take_ownership(this);
-                    appear();
-                    break;
-				case 0x04: // CTRL-D
-                    swapDisk();
-                    break;
-				}
-				break;
-
-			case ui_host_owned:
-				if (!host->exists()) {
-					state = ui_idle;
-				} else if (host->buttonPush()) {
-					state = ui_idle;
-					release_host();
-					host->release_ownership();
-				} else if (!pollFocussed()) {
-					host->releaseScreen();
-					host->release_ownership();
-					state = ui_idle;
-				}
-				break;
-
-			case ui_host_remote:
-				if (!pollFocussed()) {
-					host->releaseScreen();
-					return; // User Interface ceases to exist
-				}
-				break;
-
-			case ui_host_permanent:
-				if (host->is_accessible()) {
-					if (!pollFocussed()) {
-						host->release_ownership();
-					}
-				} else {
-					if ((system_usb_keyboard.getch() == KEY_SCRLOCK) || (host->buttonPush())) {
-						host->take_ownership(0);
-						appear();
-					}
-				}
-				break;
-
-			default:
-				return; // User Interface ceases to exist
-		}
-		vTaskDelay(3);
+        if (host->exists()) {
+            host->checkButton();
+            if (host->buttonPush()) {
+                run_once();
+                continue;
+            }
+            switch(system_usb_keyboard.getch()) {
+            case KEY_SCRLOCK:
+                run_once();
+                continue;
+            case 0x04: // CTRL-D
+                swapDisk();
+                break;
+            }
+        }
+        vTaskDelay(3);
     }
+}
+
+void UserInterface :: run_once(void)
+{
+#ifndef NO_FILE_ACCESS
+
+    if (!host->exists())
+        return;
+
+    if(buttonDownFor(1000)) {
+        swapDisk();
+        return;
+    }
+
+    host->take_ownership(this);
+    if (!host->is_permanent()) {
+        appear();
+    }
+
+    available = true;
+    while(!doBreak) {
+        host->checkButton();
+        if (!host->exists()) {
+            break;
+        } else if (host->buttonPush()) {
+            if (!host->is_permanent()) {
+                available = false;
+                release_host();
+            }
+            host->release_ownership();
+            break;
+        } else if (!pollFocussed()) {
+            available = false;
+            host->releaseScreen();
+            host->release_ownership();
+            break;
+        }
+        vTaskDelay(3);
+    }
+    doBreak = false;
 #endif
 }
+
 
 #ifndef RECOVERYAPP
 bool UserInterface :: buttonDownFor(uint32_t ms)
@@ -209,14 +220,23 @@ void UserInterface :: swapDisk(void)
 #endif                                                                
 }
 
+int UserInterface :: pollInactive(void)
+{
+    return ui_objects[focus]->poll_inactive();
+}
+
 bool UserInterface :: pollFocussed(void)
 {
 	int ret = 0;
     do {
         ret = ui_objects[focus]->poll(ret); // param pass chain
         if(!ret) // return value of 0 keeps us in the same state
-            return true;
+            break;
         printf("Object level %d returned %d.\n", focus, ret);
+
+        if (host->is_permanent() && (!focus)) {
+            return false;
+        }
         ui_objects[focus]->deinit();
         if(focus) {
             focus--;
@@ -224,6 +244,7 @@ bool UserInterface :: pollFocussed(void)
         	return false;
         }
     } while(1);
+    return true;
 }
 
 void UserInterface :: appear(void)
@@ -233,31 +254,25 @@ void UserInterface :: appear(void)
 	for(int i=0;i<=focus;i++) {  // build up
 		//printf("Going to (re)init objects %d.\n", i);
 		ui_objects[i]->init(screen, keyboard);
+		ui_objects[i]->redraw();
 	}
 }
 
 void UserInterface :: release_host(void)
 {
-	for(int i=focus;i>=0;i--) {  // tear down
+    for(int i=focus;i>=0;i--) {  // tear down
         ui_objects[i]->deinit();
     }
     host->releaseScreen();
 
-    // This bit of state machine needs to be here, because the
-    // browser doesn't know that a command actually causes the
-    // C64 to unfreeze.
-
-    if (!host->hasButton()) {
-    	state = ui_host_permanent;
-    } else {
-    	state = ui_idle;
+    if (!host->is_permanent()) {
+        doBreak = true;
     }
-
 }
 
 bool UserInterface :: is_available(void)
 {
-    return (state != ui_idle);
+    return available;
 }
 
 int UserInterface :: activate_uiobject(UIObject *obj)

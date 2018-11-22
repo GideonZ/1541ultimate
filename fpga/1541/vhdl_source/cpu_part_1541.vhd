@@ -35,6 +35,17 @@ port (
     -- configuration
     bank_is_ram     : in  std_logic_vector(7 downto 0);
     
+    -- Parallel cable pins
+    via1_port_a_o   : out std_logic_vector(7 downto 0);
+    via1_port_a_i   : in  std_logic_vector(7 downto 0);
+    via1_port_a_t   : out std_logic_vector(7 downto 0);
+    via1_ca2_o      : out std_logic;
+    via1_ca2_i      : in  std_logic;
+    via1_ca2_t      : out std_logic;
+    via1_cb1_o      : out std_logic;
+    via1_cb1_i      : in  std_logic;
+    via1_cb1_t      : out std_logic;
+
     -- drive pins
     power           : in  std_logic;
     drive_address   : in  std_logic_vector(1 downto 0);
@@ -65,27 +76,15 @@ architecture structural of cpu_part_1541 is
     signal io_rdata         : std_logic_vector(7 downto 0);
     signal via1_data        : std_logic_vector(7 downto 0);
     signal via2_data        : std_logic_vector(7 downto 0);
-    signal ram_en           : std_logic;
     signal via1_wen         : std_logic;
     signal via1_ren         : std_logic;
     signal via2_wen         : std_logic;
     signal via2_ren         : std_logic;
 
-    signal via1_port_a_o    : std_logic_vector(7 downto 0);
-    signal via1_port_a_t    : std_logic_vector(7 downto 0);
-    signal via1_port_a_i    : std_logic_vector(7 downto 0);
-
     signal via1_port_b_o    : std_logic_vector(7 downto 0);
     signal via1_port_b_t    : std_logic_vector(7 downto 0);
     signal via1_port_b_i    : std_logic_vector(7 downto 0);
-
     signal via1_ca1         : std_logic;
-    signal via1_ca2_o       : std_logic;
-    signal via1_ca2_i       : std_logic;
-    signal via1_ca2_t       : std_logic;
-    signal via1_cb1_o       : std_logic;
-    signal via1_cb1_i       : std_logic;
-    signal via1_cb1_t       : std_logic;
     signal via1_cb2_o       : std_logic;
     signal via1_cb2_i       : std_logic;
     signal via1_cb2_t       : std_logic;
@@ -333,17 +332,11 @@ begin
     
     -- correctly attach the VIA pins to the outside world
     
-    -- pull up when not driven...
-    via1_port_a_i(7 downto 1) <= (others => '1');
-    via1_port_a_i(0)          <= track_is_0;
-    
     via1_ca1         <= not atn_i;
-
-    via1_ca2_i      <= via1_ca2_o or not via1_ca2_t;
-    via1_cb1_i      <= via1_cb1_o or not via1_cb1_t;
-    via1_cb2_i      <= via1_cb2_o or not via1_cb2_t;
+    via1_cb2_i       <= via1_cb2_o or not via1_cb2_t;
     
 
+    -- Because Port B reads its own output when set to output, we do not need to consider the direction here
     via1_port_b_i(7) <= not atn_i;
     -- the following bits should read 0 when the jumper is closed (drive select = 0) or when driven low by the VIA itself
     via1_port_b_i(6) <= drive_address(1); -- drive select

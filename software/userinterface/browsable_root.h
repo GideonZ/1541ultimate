@@ -114,6 +114,7 @@ public:
 			delete infos;
 			error = -1;
 		} else {
+		    error = 0;
 			for(int i=0;i<infos->get_elements();i++) {
 				FileInfo *inf = (*infos)[i];
 				children.append(new BrowsableDirEntry(path, this, inf, !(inf->attrib & AM_VOL))); // pass ownership of the FileInfo to the browsable object

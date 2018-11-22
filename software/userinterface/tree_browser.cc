@@ -69,8 +69,13 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
     state_root = 0;
     fm = FileManager :: getFileManager();
     path = fm->get_new_path("Tree Browser");
-    observerQueue = new ObserverQueue();
+    observerQueue = new ObserverQueue("TreeBrowser");
     fm->registerObserver(observerQueue);
+
+    if(!state) {
+        state = new TreeBrowserState(root, this, 0);
+        state_root = state;
+    }
 }
 
 TreeBrowser :: ~TreeBrowser()
@@ -93,10 +98,6 @@ void TreeBrowser :: init(Screen *screen, Keyboard *k) // call on root!
 
 	window = new Window(screen, 0, 2, screen->get_size_x(), screen->get_size_y()-3);
 	keyb = k;
-	if(!state) {
-		state = new TreeBrowserState(root, this, 0);
-		state_root = state;
-	}
     state->reload();
 	// state->do_refresh();
 }
@@ -156,6 +157,16 @@ void TreeBrowser :: test_editor(void)
     edit->deinit();
 }
     
+void TreeBrowser :: redraw(void)
+{
+    state->draw();
+}
+
+int TreeBrowser :: poll_inactive()
+{
+    checkFileManagerEvent();
+    return 0;
+}
 
 int TreeBrowser :: poll(int sub_returned)
 {
@@ -196,6 +207,9 @@ int TreeBrowser :: poll(int sub_returned)
     }
     if(c >= 0) {
     	ret = handle_key(c);
+    	if(ret < 0) {
+            keyb->wait_free();
+        }
     }
 	return ret;
 }
@@ -204,7 +218,7 @@ void TreeBrowser :: checkFileManagerEvent(void)
 {
     FileManagerEvent *event = (FileManagerEvent *)observerQueue->waitForEvent(0);
     if (event) {
-    	printf("Event %d on %s\n", event->eventType, event->pathName.c_str() );
+    	printf("Event %s on %s\n", FileManager :: eventStrings[(int)event->eventType], event->pathName.c_str() );
 
     	// example: browser path = /SD/Hallo  Event = media removed /SD/
 
@@ -294,6 +308,11 @@ void TreeBrowser :: checkFileManagerEvent(void)
     			state->refresh = true;
     		}
     		break;
+
+    	case eChangeDirectory: // a request to change directory
+    	    this->cd_impl(event->pathName.c_str());
+    	    break;
+
     	default:
     		break;
     	}
@@ -480,8 +499,10 @@ void TreeBrowser :: paste(void)
 		const char *fn = clipboard.getFileNameByIndex(i);
 		FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath());  // from path, filename, dest path
 		if (res != FR_OK) {
+	                screen->restore();
 			printf("Error while copying: %d %s to %s\n", res, fn, this->getPath());
 			int resp = user_interface->popup("Copy error occurred. Continue?", BUTTON_YES | BUTTON_NO);
+			screen->backup();
 			if (resp == BUTTON_NO)
 				break;
 		}
@@ -492,8 +513,14 @@ void TreeBrowser :: paste(void)
 }
 
 
-void TreeBrowser :: cd(const char *dst) {
-    
+void TreeBrowser :: cd(const char *dst)
+{
+    observerQueue->putEvent(new FileManagerEvent(eChangeDirectory, dst));
+}
+
+// private
+void TreeBrowser :: cd_impl(const char *dst)
+{
     // get the destination path to navigate to
     Path *destination = fm->get_new_path("Tree Browser");
     destination->cd(dst);

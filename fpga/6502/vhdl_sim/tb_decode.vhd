@@ -1,7 +1,6 @@
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_unsigned.all;
-use ieee.std_logic_arith.all;
+use ieee.numeric_std.all;
 
 library work;
 use work.pkg_6502_defs.all;
@@ -38,11 +37,37 @@ architecture tb of tb_decode is
     signal s_is_illegal          :  boolean;
     signal s_select_index_y      :  boolean;
     signal s_store_a_from_alu    :  boolean;
-    signal s_load_a              :  boolean;    
+--    signal s_load_a              :  boolean;    
     signal s_load_x              :  boolean;    
     signal s_load_y              :  boolean;    
-    signal opcode                : string(1 to 13);
 
+    signal clock        : std_logic := '0';
+    signal reset        : std_logic := '0';
+
+    type t_state is (fetch, decode, absolute, abs_hi, abs_fix, branch, branch_fix,
+                     indir1, indir2, jump_sub, jump, retrn, rmw1, rmw2, vector, startup,
+                     zp, zp_idx, zp_indir, push1, push2, push3, pull1, pull2, pull3 );
+
+    signal state        : t_state;
+    signal state_idx    : integer range 0 to 31;
+
+    signal opcode       : string(1 to 13);
+    signal sync         : std_logic;
+    signal dummy_cycle  : std_logic;
+    signal latch_dreg   : std_logic;
+    signal copy_d2p     : std_logic;
+    signal reg_update   : std_logic;
+    signal rwn          : std_logic;
+    signal vect_addr    : std_logic_vector(3 downto 0);
+    signal a16          : std_logic;
+    signal a_mux        : t_amux := c_amux_pc;
+    signal dout_mux     : t_dout_mux;
+    signal pc_oper      : t_pc_oper;
+    signal s_oper       : t_sp_oper;
+    signal adl_oper     : t_adl_oper;
+    signal adh_oper     : t_adh_oper;
+    
+    signal stop_clock   : boolean := false;
 begin
 
     s_is_absolute         <= is_absolute(i_reg);
@@ -64,18 +89,19 @@ begin
     s_is_illegal          <= is_illegal(i_reg);
     s_select_index_y      <= select_index_y(i_reg);
     s_store_a_from_alu    <= store_a_from_alu(i_reg);
-    s_load_a              <= load_a(i_reg);
+    --s_load_a              <= load_a(i_reg);
     s_load_x              <= load_x(i_reg);
     s_load_y              <= load_y(i_reg);
 
     test: process
+        variable ireg : std_logic_vector(7 downto 0);
+        variable v_opcode : string(1 to 13);
     begin
         for i in 0 to 255 loop
-            i_reg  <= conv_std_logic_vector(i, 8);
-            opcode <= opcode_array(i); 
-            wait for 1 us;
-            assert not (opcode(4)=' ' and s_is_illegal) report "Function says it's illegal, opcode does not." severity error;
-            assert not (opcode(4)='*' and not s_is_illegal) report "Opcode says it's illegal, function says it's not." severity error; 
+            ireg  := std_logic_vector(to_unsigned(i, 8));
+            v_opcode := opcode_array(i); 
+            assert not (v_opcode(4)=' ' and is_illegal(ireg)) report "Function says it's illegal, opcode does not." & v_opcode severity error;
+            assert not (v_opcode(4)='*' and not is_illegal(ireg)) report "Opcode says it's illegal, function says it's not." & v_opcode severity error; 
         end loop;        
         wait;
     end process;
@@ -126,7 +152,7 @@ begin
             constant c_shift_sel_str : t_string_array(0 to 3) := ( "0xFF ", "data ", "accu ", " A&D " );
         begin
             if bool then
-                write_str(L, c_shift_sel_str(conv_integer(sel)));
+                write_str(L, c_shift_sel_str(to_integer(unsigned(sel))));
             else
                 write_str(L, "  .  ");
             end if;
@@ -139,14 +165,14 @@ begin
             writeline(output, L);
             write_str(L, "    ");
             for x in 0 to 7 loop
-                inst := conv_std_logic_vector(x*32, 8);
+                inst := std_logic_vector(to_unsigned(x*32, 8));
                 write(L, VecToHex(inst, 2));
                 write_str(L, "   ");
             end loop;
             writeline(output, L);
             
             for y in 0 to 31 loop
-                inst := conv_std_logic_vector(y, 8);
+                inst := std_logic_vector(to_unsigned(y, 8));
                 write(L, VecToHex(inst, 2));
                 write(L, ' ');
                 for x in 0 to 7 loop
@@ -165,14 +191,14 @@ begin
             writeline(output, L);
             write_str(L, "    ");
             for x in 0 to 7 loop
-                inst := conv_std_logic_vector(x*32, 8);
+                inst := std_logic_vector(to_unsigned(x*32, 8));
                 write(L, VecToHex(inst, 2));
                 write_str(L, "   ");
             end loop;
             writeline(output, L);
             
             for y in 0 to 31 loop
-                inst := conv_std_logic_vector(y, 8);
+                inst := std_logic_vector(to_unsigned(y, 8));
                 write(L, VecToHex(inst, 2));
                 write(L, ' ');
                 for x in 0 to 7 loop
@@ -184,9 +210,40 @@ begin
             writeline(output, L);
         end procedure;
 
+        procedure write_bool(variable L : inout line; b : boolean; t : string; f : string := "") is
+        begin
+            write(L, ";");
+            if b then
+                write(L, t);
+            else
+                write(L, f);
+            end if;          
+        end procedure;
+
+        procedure write_signals(variable L : inout line) is
+        begin
+            write_bool(L, latch_dreg='1', "LatchDREG");
+            write_bool(L, reg_update='1', "RegUpdate");
+            write_bool(L, copy_d2p='1', "Load P");
+            write_bool(L, rwn='0', "Write");
+            write_bool(L, a16='1', "Inst", "Data");
+            write(L, ";ADDR:" & t_amux'image(a_mux)); 
+            write(L, ";DOUT:" & t_dout_mux'image(dout_mux)); 
+            write(L, ";PC:" & t_pc_oper'image(pc_oper)); 
+            write(L, ";SP:" & t_sp_oper'image(s_oper)); 
+            write(L, ";ADL:" & t_adl_oper'image(adl_oper)); 
+            write(L, ";ADH:" & t_adh_oper'image(adh_oper)); 
+        end procedure;
+
+        file fout : text;
+        type t_string_array is array(natural range <>) of string(1 to 3);
+
+        constant alu_strings : t_string_array(0 to 7) := ("OR ", "AND", "EOR", "ADC", "---", "LD ", "CMP", "SBC" );
+        constant shift_strings : t_string_array(0 to 7) := ("ASL", "ROL", "LSR", "ROR", "---", "LD ", "DEC", "INC" );
+        variable j : integer;         
     begin
         for i in 0 to 255 loop
-            inst := conv_std_logic_vector(i, 8);
+            inst := std_logic_vector(to_unsigned(i, 8));
             b_is_absolute(i)         := is_absolute(inst);
             b_is_abs_jump(i)         := is_abs_jump(inst);
             b_is_immediate(i)        := is_immediate(inst);    
@@ -227,8 +284,94 @@ begin
         print_table(b_select_index_y      , "Select index Y");
         print_table(b_store_a_from_alu    , "Store A from ALU");
         print_sel_table("Shifter Input");
+
+        reset <= '1';
+        wait until clock = '1';
+        wait until clock = '1';
+        reset <= '0';
+        
+        file_open(fout, "opcodes.csv", WRITE_MODE);
+        
+        write(L, "Code;Opcode;State;IMM#;IMPL;ABS;REL;RMW;ZP;INDIR;INDEXED;X/Y;AJMP;JUMP;STACK;PUSH;LOAD;STORE;SHIFT;ALU;ALU->A;->SH" );
+        writeline(fout, L);   
+
+        for i in 0 to 256 loop
+            j := i mod 256;
+            while sync /= '1' loop
+                write(L, ";;" & t_state'image(state));
+                write(L, ";;;;;;;;;;;;;;;;;;;");
+                write_signals(L);
+                writeline(fout,L);
+                wait until clock = '1';
+            end loop;
+            i_reg <= std_logic_vector(to_unsigned(j, 8));
+            write(L, VecToHex(std_logic_vector(to_unsigned(j, 8)), 2));
+            write(L, ";" & opcode_array(j));
+            write(L, ";" & t_state'image(state));
+            write_bool(L, b_is_immediate(j)  , "IMM#");    
+            write_bool(L, b_is_implied(j)    , "IMPL");
+            write_bool(L, b_is_absolute(j)   , "ABS");
+            write_bool(L, b_is_relative(j)   , "REL");
+            write_bool(L, b_is_rmw(j)        , "RMW");
+            write_bool(L, b_is_zeropage(j)   , "ZP");
+            write_bool(L, b_is_indirect(j)   , "INDIR");
+            write_bool(L, b_is_postindexed(j), "INDEXED");
+            write_bool(L, b_select_index_y(j), "Y", "X" );
+            write_bool(L, b_is_abs_jump(j)   , "AJMP");
+            write_bool(L, b_is_jump(j)       , "JUMP");
+            write_bool(L, b_is_stack(j)      , "STACK");
+            write_bool(L, b_is_push(j) and b_is_stack(j), "PUSH");
+            write_bool(L, b_is_load(j)       , "LOAD");
+            write_bool(L, b_is_store(j)      , "STORE");
+            write_bool(L, b_is_shift(j)      , "SHIFT:" & shift_strings(to_integer(unsigned(i_reg(7 downto 5)))));
+            write_bool(L, b_is_alu(j)        , "ALU:" & alu_strings(to_integer(unsigned(i_reg(7 downto 5)))));
+            write_bool(L, b_store_a_from_alu(j), "ALU->A");
+            write(L, ";");
+            output_shift_sel(b_is_shift(j), b_shift_sel(j));
+            write_signals(L);
+            writeline(fout,L);
+            wait until clock = '1';
+        end loop;
+        stop_clock <= true;
+        file_close(fout);
         wait;
     end process;
 
+    clock <= not clock after 0.5 us when not stop_clock;
+
+    i_proc: entity work.proc_control
+    generic map (true)
+    port map (
+        clock        => clock,
+        clock_en     => '1',
+        ready        => '1',
+        reset        => reset,
+        interrupt    => '0',
+        i_reg        => i_reg,
+        index_carry  => '0',
+        pc_carry     => '0',
+        branch_taken => true,
+        sync         => sync,
+        dummy_cycle  => open,
+        state_idx    => state_idx,
+        latch_dreg   => latch_dreg,
+        copy_d2p     => copy_d2p,
+        reg_update   => reg_update,
+        rwn          => rwn,
+--        set_i_flag   => set_i_flag,
+--        nmi_done     => nmi_done,
+        vect_sel     => "00",
+        vect_addr    => vect_addr,
+        a16          => a16,
+        a_mux        => a_mux,
+        dout_mux     => dout_mux,
+        pc_oper      => pc_oper,
+        s_oper       => s_oper,
+        adl_oper     => adl_oper,
+        adh_oper     => adh_oper
+    );
+
+    state <= t_state'val(state_idx);
+    opcode <= opcode_array(to_integer(unsigned(i_reg)));
 end tb;    
 

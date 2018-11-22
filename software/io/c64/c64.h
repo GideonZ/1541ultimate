@@ -21,6 +21,9 @@
 #define MENU_C64_SAVEEASYFLASH 0x6406
 #define MENU_C64_BOOTFPGA   0x6408
 #define MENU_C64_HARD_BOOT  0x6409
+#define MENU_C64_POWEROFF   0x640A
+#define MENU_C64_PAUSE      0x640B
+#define MENU_C64_RESUME     0x640C
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
 #define C64_DMA_LOAD_RAW	0x6466
@@ -114,6 +117,7 @@
 #define CART_TYPE_PAGEFOX     0x17
 #define CART_TYPE_128         0x18
 #define CART_TYPE_FC3PLUS     0x19
+#define CART_TYPE_COMAL80PAKMA 0x1A
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
@@ -161,6 +165,7 @@
 #define CART_REU 0x80 
 #define CART_ETH 0x40
 #define CART_RAM 0x20
+#define CART_UCI 0x100
 
 #define CFG_C64_CART        0xC1
 #define CFG_C64_CUSTOM      0xC2
@@ -178,9 +183,13 @@
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FC3MODE     0x73
+#define CFG_C64_FASTRESET   0x74
+#define CFG_C64_DO_SYNC     0x75
 #define CFG_C64_REU_PRE     0x80
 #define CFG_C64_REU_IMG     0x81
 #define CFG_C64_REU_OFFS    0x82
+#define CFG_C64_ALT_BASI    0x83
+#define CFG_C64_ALT_CHAR    0x84
 
 #define ID_MODPLAYER 0xAA
 #define ID_SIDCART   0xBB
@@ -191,7 +200,7 @@ typedef struct _cart
     uint8_t  id;
     void *custom_addr; // dynamically filled in
     uint32_t length;
-    uint8_t  type;
+    uint16_t  type;
 } cart_def;
 
 
@@ -228,11 +237,12 @@ class C64 : public GenericHost, ConfigurableObject
     void set_cartridge(cart_def *def);
     void set_emulation_flags(cart_def *def);
     void disable_kernal();
+    void init_system_roms(void);
 
     void stop(bool do_raster = true);
     void resume(void);
     void freeze(void);
-
+    
     uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }
@@ -246,6 +256,9 @@ class C64 : public GenericHost, ConfigurableObject
 public:
     C64();
     ~C64();
+
+    /* Get static object */
+    static C64 *getMachine(void);
 
     /* Configurable Object */
     void effectuate_settings(void);
@@ -275,10 +288,17 @@ public:
     void    releaseScreen(void);
     Keyboard *getKeyboard(void);
 
+    int  get_cfg_value(uint8_t id)
+    {
+       if (!cfg) return 0;
+       return cfg->get_value(id);	
+    }
+    
     /* C64 specifics */
     void unfreeze(void *def, int mode);  // called from crt... hmm FIXME
 
-    static void enable_kernal(uint8_t *rom);
+    void enable_kernal(uint8_t *rom, bool fastreset = false);
+    void new_system_rom(uint8_t flashId);
     void init_cartridge(void);
     void cartridge_test(void);
     void reset(void);

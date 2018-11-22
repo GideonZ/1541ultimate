@@ -104,9 +104,15 @@ void Keyboard_C64 :: scan(void)
     uint8_t mod = 0;
     bool joy = false;
     
+    if(!host) {
+        return;
+    }
     // check if we have access to the I/O
     if(!(host->is_accessible()))
         return;
+
+    *row_register = 0xFF;
+    *row_register = 0xFF;
 
     // Scan Joystick Port 2 first
     *col_register = 0xFF; // deselect keyboard for pure joystick scan
@@ -223,13 +229,21 @@ int Keyboard_C64 :: getch(void)
 
 void Keyboard_C64 :: wait_free(void)
 {
+    if(!host) {
+        return;
+    }
+
     // check if we have access to the I/O
     if(!(host->is_accessible()))
         return;
 
     *col_register = 0; // select all rows
-    while(*row_register != 0xFF)
-        ;
+
+    int timeout = 2000;
+    while ((*row_register != 0xFF) && (timeout)) {
+        timeout--;
+        wait_ms(1);
+    }
     *col_register = 0xFF;
 }
 

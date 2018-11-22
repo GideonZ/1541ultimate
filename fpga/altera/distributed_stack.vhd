@@ -39,8 +39,8 @@ end distributed_stack;
 
 architecture  Gideon  of  distributed_stack  is
 
-    signal pointer         : unsigned(3 downto 0);
-    signal address         : unsigned(3 downto 0);
+    signal pointer         : unsigned(3 downto 0) := X"0";
+    signal address         : unsigned(3 downto 0) := X"0";
     signal we              : std_logic;
     signal en              : std_logic;
     signal data_valid_i    : std_logic;

@@ -409,7 +409,8 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 	fres = fs->file_open(pathInfo.getPathFromLastFS(workPathFromFSRoot), dir, filename, flags, file);
 	if (fres == FR_OK) {
 //		fs->collect_file_info(*file, (*file)->getFileInfo());
-		pathInfo.workPath.getTail(0, (*file)->get_path_reference());
+	    open_file_list.append(*file);
+	    pathInfo.workPath.getTail(0, (*file)->get_path_reference());
 	}
 	return fres;
 }
@@ -804,3 +805,12 @@ void get_extension(const char *name, char *ext)
 		}
 	}
 }
+
+const char *FileManager :: eventStrings[] = {
+    "eRefreshDirectory",  // Contents of directory have changed
+    "eNodeAdded",         // New Node
+    "eNodeRemoved",       // Node no longer exists (deleted)
+    "eNodeMediaRemoved",  // Node lost all its children
+    "eNodeUpdated",       // Node status changed (= redraw line)
+    "eChangeDirectory",   // Request to change current directory within observer task
+};

@@ -41,6 +41,8 @@ package nano_cpu_pkg is
     constant c_br_c     : std_logic_vector(13 downto 11) := "110"; -- carry
     constant c_br_nc    : std_logic_vector(13 downto 11) := "111"; -- not carry
 
+    constant c_call     : std_logic_vector(15 downto 11) := c_branch & c_br_call;
+
     -- ALU operations
     constant c_alu_load : std_logic_vector(2 downto 0) := "000";
     constant c_alu_or   : std_logic_vector(2 downto 0) := "001";
@@ -49,5 +51,6 @@ package nano_cpu_pkg is
     constant c_alu_add  : std_logic_vector(2 downto 0) := "100";
     constant c_alu_sub  : std_logic_vector(2 downto 0) := "101";
     constant c_alu_addc : std_logic_vector(2 downto 0) := "110";
+    constant c_alu_ext  : std_logic_vector(2 downto 0) := "111";
     
 end;

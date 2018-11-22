@@ -45,6 +45,7 @@ typedef enum  {
 	eNodeRemoved,       // Node no longer exists (deleted)
 	eNodeMediaRemoved,  // Node lost all its children
 	eNodeUpdated,		// Node status changed (= redraw line)
+	eChangeDirectory,   // Request to change current directory within observer task
 } eFileManagerEventType;
 
 class FileManagerEvent
@@ -60,7 +61,7 @@ public:
 
 class FileManager
 {
-	SemaphoreHandle_t serializer;
+    SemaphoreHandle_t serializer;
 
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
@@ -124,7 +125,9 @@ public:
 #endif
 	}
 
-	void dump(void) {
+    static const char *eventStrings[];
+
+    void dump(void) {
 		lock();
 		printf("** This is a dump of the state of the file manager **\n");
 		root->dump(0);
@@ -204,7 +207,9 @@ public:
     	printf("Sending FM event to %d observers: %d %s %s\n", observers.get_elements(), e, p, n);
     	for(int i=0;i<observers.get_elements();i++) {
     		FileManagerEvent *ev = new FileManagerEvent(e, p, n);
-    		observers[i]->putEvent(ev, i);
+    		if (!(observers[i]->putEvent(ev))) {
+                printf("Failed to post message to queue #%d - %s.\n", i, observers[i]->getName());
+    		}
     	}
     }
 };

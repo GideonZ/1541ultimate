@@ -269,7 +269,7 @@ void UsbScsi :: reset(void)
 
 //	printf("Going to do inquiry..\n");
     inquiry();
-    driver->request_sense(lun, false);
+    driver->request_sense(lun, true);
 
 //    test_unit_ready();
 //	printf("Reset Done..\n");
@@ -358,7 +358,11 @@ int UsbScsiDriver :: request_sense(int lun, bool debug)
     for(int i=6;i<16;i++)
     	cbw.cmd[i] = 0;
     
-    host->bulk_out(&bulk_out, &cbw, 31);
+    int outResult = host->bulk_out(&bulk_out, &cbw, 31);
+    if (outResult != 31) {
+        printf("Request sense command could not be sent.\n");
+        return -11;
+    }
     int len = host->bulk_in(&bulk_in, sense_data, 18);
     if(debug) {
         printf("%d bytes sense data returned: ", len);

@@ -117,7 +117,7 @@ typedef unsigned long UBaseType_t;
 /*-----------------------------------------------------------*/
 
 extern void vTaskSwitchContext( void );
-#define portYIELD()									asm volatile ( "trap" );
+#define portYIELD()									__asm__ volatile ( "trap" );
 #define portEND_SWITCHING_ISR( xSwitchRequired ) 	if( xSwitchRequired ) 	vTaskSwitchContext()
 
 

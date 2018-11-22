@@ -18,7 +18,6 @@ entity usb_cmd_nano is
 
         io_addr     : in  unsigned(7 downto 0);
         io_write    : in  std_logic;
-        io_read     : in  std_logic;
         io_wdata    : in  std_logic_vector(15 downto 0);
         io_rdata    : out std_logic_vector(15 downto 0);
 
@@ -77,22 +76,12 @@ begin
         end if;
     end process;
     
-    process(io_read, io_addr, cmd_resp, done_latch) 
+    process(cmd_resp, done_latch) 
     begin
-        io_rdata <= (others => '0');
-        
-        if io_read = '1' then
-            case io_addr is
-            when X"64" =>
-                io_rdata(15) <= done_latch;
-                io_rdata(14 downto 12) <= std_logic_vector(to_unsigned(t_usb_result'pos(cmd_resp.result), 3));
-                io_rdata(11) <= cmd_resp.togglebit;
-                io_rdata(10) <= cmd_resp.no_data;
-                io_rdata(9 downto 0) <= std_logic_vector(cmd_resp.data_length(9 downto 0));            
-
-            when others =>
-                null;
-            end case;
-        end if;
+        io_rdata(15) <= done_latch;
+        io_rdata(14 downto 12) <= std_logic_vector(to_unsigned(t_usb_result'pos(cmd_resp.result), 3));
+        io_rdata(11) <= cmd_resp.togglebit;
+        io_rdata(10) <= cmd_resp.no_data;
+        io_rdata(9 downto 0) <= std_logic_vector(cmd_resp.data_length(9 downto 0));            
     end process;
 end arch;

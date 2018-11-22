@@ -50,6 +50,7 @@ public:
 class TreeBrowser : public UIObject
 {
 	void tasklist(void);
+    void cd_impl(const char *path);
 public:
     char quick_seek_string[MAX_SEARCH_LEN_TB];
     int  quick_seek_length;
@@ -76,9 +77,11 @@ public:
     virtual ~TreeBrowser();
 
     virtual void init(Screen *scr, Keyboard *k);
+    virtual void redraw(void);
     void deinit(void);
 
     virtual int poll(int);
+    virtual int poll_inactive(void);
     virtual int handle_key(int);
     virtual void checkFileManagerEvent(void);
 

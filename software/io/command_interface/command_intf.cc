@@ -5,6 +5,7 @@ extern "C" {
 }
 #include "command_intf.h"
 #include "c64.h"
+#include "sampler.h"
 
 // this target is a dummy.
 CommandTarget cmd_if_empty_target;
@@ -15,11 +16,24 @@ CommandInterface cmd_if;
 // these globals will be filled in by the clients
 CommandTarget *command_targets[CMD_IF_MAX_TARGET+1];
 
+// Semaphore set by interrupt
+static SemaphoreHandle_t resetSemaphore;
+
 // cart definition
 extern uint8_t _cmd_test_rom_65_start;
 cart_def cmd_cart  = { ID_CMDTEST, (void *)0, 0x1000, 0x01 | CART_REU | CART_RAM };
 
 #define MENU_CMD_RUNCMDCART 0xC180
+
+extern "C" {
+void ResetInterruptHandlerCmdIf()
+{
+    BaseType_t woken;
+    uint8_t new_flags = CMD_ABORT_DATA;
+    xSemaphoreGiveFromISR(resetSemaphore, &woken);
+    xQueueSendFromISR(cmd_if.queue, &new_flags, &woken);
+}
+}
 
 CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
 {
@@ -43,8 +57,15 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
         
         queue = xQueueCreate(16, sizeof(uint8_t));
         xTaskCreate( CommandInterface :: start_task, "UCI Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &taskHandle );
-        ioWrite8(ITU_IRQ_ENABLE, 0x10);
+        xTaskCreate( CommandInterface :: reset_task, "UCI Reset Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
+        ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_CMDIF);
         CMD_IF_IRQMASK_CLEAR = 7;
+
+        // enable IRQ on C64 reset
+        ioWrite8(ITU_IRQ_CLEAR,  ITU_INTERRUPT_RESET);
+        ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_RESET);
+
+        resetSemaphore = xSemaphoreCreateBinary();
     }
     target = CMD_TARGET_NONE;
     cart_mode = 0;
@@ -53,7 +74,7 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
 
 CommandInterface :: ~CommandInterface()
 {
-    ioWrite8(ITU_IRQ_DISABLE, 0x10);
+    ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_CMDIF);
 }
     
 int CommandInterface :: executeCommand(SubsysCommand *cmd)
@@ -70,6 +91,12 @@ void CommandInterface :: start_task(void *a)
 	uci->run_task();
 }
 
+void CommandInterface :: reset_task(void *a)
+{
+    CommandInterface *uci = (CommandInterface *)a;
+    uci->run_reset_task();
+}
+
 extern "C" BaseType_t command_interface_irq(void) {
 
 	uint8_t status_byte = CMD_IF_STATUSBYTE;
@@ -79,6 +106,15 @@ extern "C" BaseType_t command_interface_irq(void) {
 	BaseType_t retval;
 	xQueueSendFromISR(cmd_if.queue, &new_flags, &retval);
 	return retval;
+}
+
+void CommandInterface :: run_reset_task(void)
+{
+    while (1) {
+        xSemaphoreTake(resetSemaphore, portMAX_DELAY);
+        // now also clear the audio sampler stuff
+        Sampler :: reset();
+    }
 }
 
 void CommandInterface :: run_task(void)

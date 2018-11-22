@@ -14,15 +14,6 @@ class UsbDriver;
 
 extern "C" BaseType_t usb_irq(void);
 
-struct usb_event {
-	uint16_t fifo_word[2];
-};
-
-typedef enum {
-	e_circular = 0,
-	e_block = 1
-} t_buffer_method;
-
 struct t_pipe {
 	uint16_t Command;
 	uint16_t DevEP;
@@ -32,6 +23,7 @@ struct t_pipe {
 	uint16_t SplitCtl;
 	uint16_t needPing;
 	uint16_t highSpeed;
+	void *buffer;
 };
 
 typedef enum {
@@ -41,7 +33,9 @@ typedef enum {
 	e_interrupt
 } t_endpoint_type;
 
-typedef void (*usb_callback)(uint8_t *buf, int len, void *obj);
+typedef void (*usb_callback)(void *obj);
+
+#define BLOCK_FIFO_ENTRIES 64
 
 class UsbBase
 {
@@ -55,23 +49,16 @@ class UsbBase
 	SemaphoreHandle_t commandSemaphore;
 	volatile bool enumeration_lock;
 
-	struct usb_event event;
-	int state;
 	int irq_count;
 
-    void  (*inputPipeCallBacks[USB2_NUM_PIPES])(uint8_t *buf, int len, void *obj);
+    void  (*inputPipeCallBacks[USB2_NUM_PIPES])(void *obj);
     void  *inputPipeObjects[USB2_NUM_PIPES];
-    uint8_t   inputPipeBufferMethod[USB2_NUM_PIPES];
-    uint16_t   inputPipeCommand[USB2_NUM_PIPES];
-
-    uint32_t *blockBufferBase;
-    uint8_t  *circularBufferBase;
-    uint8_t free_map[BLOCK_FIFO_ENTRIES];
+    struct t_pipe *inputPipeDefinitions[USB2_NUM_PIPES];
 
     uint16_t  prev_status;
     bool  get_fifo(uint16_t *out);
     bool  put_block_fifo(uint16_t in);
-    void process_fifo(struct usb_event *);
+    void process_fifo(uint16_t);
     void handle_status(uint16_t status);
     uint16_t complete_command(int timeout);
 
@@ -117,6 +104,7 @@ public:
     void bus_reset();
 
     uint16_t getSplitControl(int addr, int port, int speed, int type);
+    int  getReceivedLength(int index);
     int  control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen);
     int  control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len);
     int  allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, void *object);

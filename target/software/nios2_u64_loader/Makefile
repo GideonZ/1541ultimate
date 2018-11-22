@@ -33,7 +33,8 @@ SRCS_C   =	start_rtos.c \
             ddr2_calibrator_u64.c \
             ff2.c \
             ffsyscall.c \
-            ccsbcs.c
+            ccsbcs.c \
+            u64_tester.c
                         
 SRCS_CC	 =  small_printf.cc \
 			usb_base.cc \

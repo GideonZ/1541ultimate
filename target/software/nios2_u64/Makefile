@@ -53,6 +53,7 @@ SRCS_CC	 =  u2p_init.cc \
 			embedded_t64.cc \
 			embedded_iso.cc \
 			embedded_fat.cc \
+			u64_config.cc \
 			rtc_i2c.cc \
 			c64.cc \
 			c64_subsys.cc \
@@ -105,7 +106,6 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_scsi.cc \
 			usb_hub.cc \
 			usb_ax88772.cc \
-			usb_em1010.cc \
 			usb_hid.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
@@ -136,9 +136,12 @@ SRCS_CC	 =  u2p_init.cc \
             home_directory.cc \
 			reu_preloader.cc \
 			socket_test.cc \
-			u64_config.cc \
 			fpll.cc \
+			fastuart.cc \
+			wifi.cc \
 			$(PRJ).cc
+
+#			usb_em1010.cc \
 
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
@@ -167,7 +170,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_appl_bsp

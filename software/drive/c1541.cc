@@ -135,8 +135,10 @@ C1541* C1541 :: get_last_mounted_drive() {
 
 void C1541 :: effectuate_settings(void)
 {
-	if(!lock(this->drive_name.c_str()))
-		return;
+	if(!lock(this->drive_name.c_str())) {
+	    printf("** ERROR ** Effectuate drive settings could not be executed, as the drive was locked.\n");
+        return;
+	}
 
 	printf("Effectuate 1541 settings:\n");
     ram = ram_modes[cfg->get_value(CFG_C1541_RAMBOARD)];
@@ -151,6 +153,8 @@ void C1541 :: effectuate_settings(void)
 
         set_rom(rom);
     }
+
+    drive_reset(0);
 
     if(registers[C1541_POWER] != cfg->get_value(CFG_C1541_POWERED)) {
         drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
@@ -217,13 +221,13 @@ void C1541 :: drive_power(bool on)
 {
     registers[C1541_POWER] = on?1:0;
     if(on)
-        drive_reset();
+        drive_reset(1);
     registers[C1541_ANYDIRTY] = 0;
 }
 
-void C1541 :: drive_reset(void)
+void C1541 :: drive_reset(uint8_t doit)
 {
-    registers[C1541_RESET] = 1;
+    registers[C1541_RESET] = doit;
     wait_ms(1);
     uint8_t reg = 0;
     
@@ -306,7 +310,7 @@ void C1541 :: set_rom(t_1541_rom rom)
 		memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
 	
     set_ram(ram); // use previous value
-    drive_reset();
+    drive_reset(1);
 }
 
 void C1541 :: set_ram(t_1541_ram ram_setting)

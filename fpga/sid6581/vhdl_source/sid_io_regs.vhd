@@ -20,6 +20,7 @@ use work.sid_io_regs_pkg.all;
 
 entity sid_io_regs is
 generic (
+    g_8voices     : boolean := false;
     g_filter_div  : natural := 221; -- for 50 MHz
     g_num_voices  : natural := 16 );
 port (
@@ -59,9 +60,13 @@ begin
                 when c_sid_enable_right =>
                     control_i.enable_right <= io_req.data(0);
                 when c_sid_extend_left  =>
-                    control_i.extend_left  <= io_req.data(0);
+                    if g_8voices then
+                        control_i.extend_left  <= io_req.data(0);
+                    end if;
                 when c_sid_extend_right =>
-                    control_i.extend_right <= io_req.data(0);
+                    if g_8voices then
+                        control_i.extend_right <= io_req.data(0);
+                    end if;
                 when c_sid_wavesel_left =>
                     control_i.comb_wave_left <= io_req.data(0);
                 when c_sid_wavesel_right =>

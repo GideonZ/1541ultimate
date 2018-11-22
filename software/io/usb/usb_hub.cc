@@ -110,8 +110,8 @@ UsbDriver *UsbHubDriver :: test_driver(UsbInterface *intf)
 #define BIT1_PORT_HIGH_SPEED  0x04
 
 // Entry point for call-backs.
-void UsbHubDriver_interrupt_handler(uint8_t *irq_data_in, int data_length, void *object) {
-	((UsbHubDriver *)object)->interrupt_handler(irq_data_in, data_length);
+void UsbHubDriver_interrupt_handler(void *object) {
+	((UsbHubDriver *)object)->interrupt_handler();
 }
 
 
@@ -192,13 +192,13 @@ void UsbHubDriver :: install(UsbInterface *intf)
 
     struct t_endpoint_descriptor *iin = intf->find_endpoint(0x83);
     int endpoint = iin->endpoint_address & 0x0F;
-    struct t_pipe ipipe;
     ipipe.DevEP = uint16_t((dev->current_address << 8) | endpoint);
     ipipe.Interval = 1160; // 50 Hz; // added 1000 for making it slower
     ipipe.Length = 2; // just read 2 bytes max (max 15 port hub)
     ipipe.MaxTrans = 64;
     ipipe.SplitCtl = 0;
     ipipe.Command = 0; // driver will fill in the command
+    ipipe.buffer = (void *)irq_data;
 
     irq_transaction = host->allocate_input_pipe(&ipipe, UsbHubDriver_interrupt_handler, this);
     printf("Poll installed on irq_transaction %d\n", irq_transaction);
@@ -239,16 +239,14 @@ void UsbHubDriver :: poll()
 }
 
 // called from USB message thread
-void UsbHubDriver :: interrupt_handler(uint8_t *irq_data_in, int data_length)
+void UsbHubDriver :: interrupt_handler()
 {
+    int data_length = host->getReceivedLength(irq_transaction);
+
     //printf("This = %p. HUB (ADDR=%d) IRQ data (%d bytes), at %p: ", this, device->current_address, data_length, irq_data_in);
 	configASSERT(data_length <= 4);
 
-	for(int i=0;i<data_length;i++) {
-        irq_data[i] = irq_data_in[i];
-    }
-
-//	irq_stopped = true;
+	host->resume_input_pipe(irq_transaction);
 }
 
 void UsbHubDriver :: handle_irqdata(void)

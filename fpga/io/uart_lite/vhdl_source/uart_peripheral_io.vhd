@@ -7,12 +7,15 @@ use work.io_bus_pkg.all;
 
 entity uart_peripheral_io is
 generic (
+    g_impl_irq  : boolean := false;
+    g_impl_rx   : boolean := true;
     g_tx_fifo   : boolean := true;
-	g_divisor	: natural := 417 );
+	g_divisor	: natural := 35 );
 port (
 	clock		: in  std_logic;
 	reset		: in  std_logic;
 	
+    tick        : in  std_logic;
     io_req      : in  t_io_req;
     io_resp     : out t_io_resp;
 	irq         : out std_logic;
@@ -27,14 +30,14 @@ architecture gideon of uart_peripheral_io is
 	signal dotx			: std_logic;
 	signal done			: std_logic;
 	signal rxchar		: std_logic_vector(7 downto 0);
-	signal rx_ack		: std_logic;
-	signal rxfifo_get	: std_logic;
-	signal rxfifo_dout	: std_logic_vector(7 downto 0);
-	signal rxfifo_full	: std_logic;
-	signal rxfifo_dav	: std_logic;
-	signal overflow		: std_logic;
+	signal rx_ack		: std_logic := '0';
+	signal rxfifo_get	: std_logic := '0';
+	signal rxfifo_dout	: std_logic_vector(7 downto 0) := X"00";
+	signal rxfifo_full	: std_logic := '0';
+	signal rxfifo_dav	: std_logic := '0';
+	signal overflow		: std_logic := '0';
 	signal flags		: std_logic_vector(7 downto 0);
-	signal imask		: std_logic_vector(7 downto 6);
+	signal imask		: std_logic_vector(1 downto 0) := "00";
     signal rdata_mux    : std_logic_vector(7 downto 0);
 
     signal txfifo_get   : std_logic;
@@ -55,7 +58,8 @@ begin
     port map (
         clk     => clock,
         reset   => reset,
-        
+        tick    => tick,
+    
         dotx    => dotx,
         txchar  => txchar,
         cts     => cts,
@@ -63,32 +67,35 @@ begin
         txd     => txd,
         done    => done );
 
-    my_rx: entity work.rx 
-    generic map (g_divisor)
-    port map (
-        clk     => clock,
-        reset   => reset,
-    
-        rxd     => rxd,
+    r_rx: if g_impl_rx generate
+        my_rx: entity work.rx 
+        generic map (g_divisor)
+        port map (
+            clk     => clock,
+            reset   => reset,
+            tick    => tick,
         
-        rxchar  => rxchar,
-        rx_ack  => rx_ack );
+            rxd     => rxd,
+            
+            rxchar  => rxchar,
+            rx_ack  => rx_ack );
 
-	my_rxfifo: entity work.srl_fifo
-	generic map (
-		Width     => 8,
-        Threshold => 12 )
-	port map (
-	    clock       => clock,
-	    reset       => reset,
-	    GetElement  => rxfifo_get,
-	    PutElement  => rx_ack,
-	    FlushFifo   => '0',
-	    DataIn      => rxchar,
-	    DataOut     => rxfifo_dout,
-	    SpaceInFifo => open,
-	    AlmostFull  => rxfifo_full,
-	    DataInFifo  => rxfifo_dav );
+    	my_rxfifo: entity work.srl_fifo
+    	generic map (
+    		Width     => 8,
+            Threshold => 12 )
+    	port map (
+    	    clock       => clock,
+    	    reset       => reset,
+    	    GetElement  => rxfifo_get,
+    	    PutElement  => rx_ack,
+    	    FlushFifo   => '0',
+    	    DataIn      => rxchar,
+    	    DataOut     => rxfifo_dout,
+    	    SpaceInFifo => open,
+    	    AlmostFull  => rxfifo_full,
+    	    DataInFifo  => rxfifo_dav );
+    end generate;
 
     gentx: if g_tx_fifo generate
     	my_txfifo: entity work.srl_fifo
@@ -147,7 +154,9 @@ begin
 					overflow <= overflow and not io_req.data(0);
 
 				when c_uart_imask => -- interrupt control
-					imask <= io_req.data(7 downto 6);
+                    if g_impl_irq then
+                        imask <= io_req.data(1 downto 0);
+                    end if;
 
 				when others =>
 					null;
@@ -158,19 +167,14 @@ begin
                 io_resp.data <= rdata_mux;
 			end if;
 
-            if (flags(7 downto 6) and imask) /= "00" then
-            	irq <= '1';
-            else
-                irq <= '0';
-            end if;
-
-
 			if reset='1' then
 				overflow <= '0';
 				imask    <= (others => '0');
 			end if;
 		end if;
 	end process;
+
+    irq <= (flags(6) and imask(1)) or (flags(7) and imask(0));
 
 	flags(0) <= overflow;
 	flags(1) <= '0';
@@ -186,7 +190,7 @@ begin
 	with io_req.address(1 downto 0) select rdata_mux <=
 		rxfifo_dout      when c_uart_data,
 		flags            when c_uart_flags,
-		imask & "000000" when c_uart_imask,
+		"000000" & imask when c_uart_imask,
 		X"00"            when others;
 
 end gideon;

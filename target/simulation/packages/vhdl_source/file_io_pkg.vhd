@@ -214,13 +214,13 @@ package body file_io_pkg is
         end if;
     end hexout;
 
-    procedure initrecord(rec : inout binaryfilerec) is
+    procedure initrecord(rec : inout t_binary_file_handle) is
     begin
         rec.offset  := 0;
         rec.longvec := (others => '0');
     end procedure;
 
-    procedure readbyte(file f : binary_file; b : out t_byte; rec : inout binaryfilerec) is
+    procedure readbyte(file f : t_binary_file; b : out t_byte; rec : inout t_binary_file_handle) is
         variable i : integer;
     begin
         if rec.offset = 0 then
@@ -236,7 +236,7 @@ package body file_io_pkg is
         end if;
     end procedure;
 
-    procedure writebyte(file f : binary_file; b : in t_byte; rec : inout binaryfilerec) is
+    procedure writebyte(file f : t_binary_file; b : in t_byte; rec : inout t_binary_file_handle) is
         variable i : integer;
     begin
         rec.longvec(31 downto 24) := b;
@@ -250,7 +250,7 @@ package body file_io_pkg is
         end if;
     end procedure;
 
-    procedure purge(file f : binary_file; rec : inout binaryfilerec) is
+    procedure purge(file f : t_binary_file; rec : inout t_binary_file_handle) is
         variable i : integer;
     begin
         if rec.offset /= 0 then

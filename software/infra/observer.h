@@ -14,20 +14,19 @@
 
 class ObserverQueue {
 	QueueHandle_t queue;
+	const char *name;
 	int polls;
 public:
-	ObserverQueue() {
+	ObserverQueue(const char *n) : name(n) {
 		queue = xQueueCreate(8, sizeof(void *));
 		polls = 0;
 	}
 	virtual ~ObserverQueue() {
 		vQueueDelete(queue);
 	}
-	void putEvent(void *el, int q) {
+	bool putEvent(void *el) {
 #ifdef OS
-		if (!xQueueSend(queue, &el, 5)) {
-			printf("Failed to post message to queue #%d (polled %d times).\n", q, polls);
-		}
+		return xQueueSend(queue, &el, 5);
 #endif
 	}
 	void *waitForEvent(uint32_t ticks) {
@@ -35,6 +34,10 @@ public:
 		void *result = 0;
 		xQueueReceive(queue, &result, (TickType_t)ticks);
 		return result;
+	}
+
+	const char *getName(void) {
+	    return name;
 	}
 };
 
