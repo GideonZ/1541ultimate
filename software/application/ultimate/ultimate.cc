@@ -177,6 +177,7 @@ extern "C" void ultimate_main(void *a)
     vTaskList(buffer);
     puts(buffer);
 
+/*
 #ifdef U64
     {
        *C64_PLD_PORTA = 251;
@@ -196,6 +197,7 @@ extern "C" void ultimate_main(void *a)
 
     }
 #endif
+*/
 
     while(1) {
         int doIt = 0;
