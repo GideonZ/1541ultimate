@@ -8,8 +8,6 @@ class FileTypeBin : public FileType
 {
 	BrowsableDirEntry *node;
     static int execute_st(SubsysCommand *cmd);
-    static int load_kernal_st(SubsysCommand *cmd);
-    static int load_dos_st(SubsysCommand *cmd);
     int execute(SubsysCommand *cmd);
     int load_kernal(SubsysCommand *cmd);
     int load_dos(SubsysCommand *cmd);
