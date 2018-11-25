@@ -17,6 +17,7 @@
 #include "u64.h"
 #include "c1541.h"
 
+// "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
 #define SOCKET_CMD_DMARUN      0xFF02
 #define SOCKET_CMD_KEYB        0xFF03
@@ -28,11 +29,14 @@
 #define SOCKET_CMD_DMAJUMP     0xFF09
 #define SOCKET_CMD_MOUNT_IMG   0xFF0A
 #define SOCKET_CMD_RUN_IMG     0xFF0B
-#define SOCKET_CMD_LOADSIDCRT  0xFF71
-#define SOCKET_CMD_LOADBOOTCRT 0xFF72
-#define SOCKET_CMD_SAMPLE      0xFF73
-#define SOCKET_CMD_READMEM     0xFF74
-#define SOCKET_CMD_READFLASH   0xFF75
+
+// Undocumented, shall only be used by developers.
+#define SOCKET_CMD_LOADSIDCRT   0xFF71
+#define SOCKET_CMD_LOADBOOTCRT  0xFF72
+#define SOCKET_CMD_SAMPLE       0xFF73
+#define SOCKET_CMD_READMEM      0xFF74
+#define SOCKET_CMD_READFLASH    0xFF75
+#define SOCKET_CMD_DEBUG_REG    0xFF76
 
 SocketDMA socket_dma; // global that causes the object to exist
 
@@ -53,14 +57,13 @@ SocketDMA::~SocketDMA() {
 
 }
 
-void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint16_t len)
+void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len)
 {
 	uint8_t *buf = (uint8_t *)load_buffer;
 	SubsysCommand *c64_command;
 
     uint16_t offs;
     uint32_t offs32;
-    uint32_t len32;
     uint16_t i;
     uint16_t size;
 
@@ -138,19 +141,27 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
     case SOCKET_CMD_MOUNT_IMG:
     case SOCKET_CMD_RUN_IMG:
-        // TODO, let 'len' be uint32_t? Beneficial for REU commands too
-        len32 = (uint32_t)len | (((uint32_t)buf[0]) << 16);
         buf += 1;
         if (cmd == SOCKET_CMD_MOUNT_IMG) {
             c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_MOUNT,
-                RUNCODE_MOUNT_BUFFER|RUNCODE_NO_CHECKSAVE|RUNCODE_NO_UNFREEZE, buf, len32);
+                RUNCODE_MOUNT_BUFFER|RUNCODE_NO_CHECKSAVE|RUNCODE_NO_UNFREEZE, buf, len);
         } else {
             c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_RUN,
-                RUNCODE_MOUNT_BUFFER, buf, len32);
+                RUNCODE_MOUNT_BUFFER, buf, len);
 
         }
         c64_command->execute();
         break;
+#ifdef U64
+    case SOCKET_CMD_DEBUG_REG:
+        uint8_t reg;
+        reg = U64_DEBUG_REGISTER;
+        writeSocket(socket, &reg, 1);
+        if (len > 0) {
+            U64_DEBUG_REGISTER = buf[0];
+        }
+        break;
+#endif
     case SOCKET_CMD_READFLASH:
     	switch (buf[0])
     	{
@@ -308,8 +319,12 @@ void SocketDMA::dmaThread(void *load_buffer)
             }
 	        uint16_t len = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
 	        uint32_t len32 = len;
-	        if ( (cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG))
-                   len32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8) | (((uint32_t)buf[2]) << 16);
+	        if ((cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG)) {
+                len32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8) | (((uint32_t)buf[2]) << 16);
+	        }
+	        if (len32 > SOCKET_BUFFER_SIZE) {
+	            len32 = SOCKET_BUFFER_SIZE;
+	        }
 	        if (len32) {
 	            n = readSocket(newsockfd, mempntr, len32);
 	        }

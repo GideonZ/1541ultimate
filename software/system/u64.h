@@ -22,6 +22,8 @@
 #define U64_BASIC_BASE   (U64_ROMS_BASE + 0x0000)
 #define U64_KERNAL_BASE  (U64_ROMS_BASE + 0x2000)
 #define U64_CHARROM_BASE (U64_ROMS_BASE + 0x4000)
+#define U64_DEBUG_REGISTER (*(volatile uint8_t *)(U64_ROMS_BASE + 0x8000))
+
 #define U64_RAM_BASE     0xA00C0000
 #endif
 
