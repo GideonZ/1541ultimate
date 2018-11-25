@@ -21,6 +21,7 @@
 #include "userinterface.h"
 #include "s25fl_l_flash.h"
 #include "u64.h"
+#include "checksums.h"
 
 extern uint32_t _u64_rbf_start;
 extern uint32_t _u64_rbf_end;
@@ -38,6 +39,21 @@ extern uint32_t _ultimate_recovery_rbf_end;
 extern uint32_t _recovery_app_start;
 extern uint32_t _recovery_app_end;
 */
+
+int calc_checksum(uint8_t *buffer, uint8_t *buffer_end)
+{
+    int check = 0;
+    int b;
+    while(buffer != buffer_end) {
+        b = (int)*buffer;
+        if(check < 0)
+            check = check ^ 0x801618D5; // makes it positive! ;)
+        check <<= 1;
+        check += b;
+        buffer++;
+    }
+    return check;
+}
 
 const char *getBoardRevision(void)
 {
@@ -87,6 +103,28 @@ void do_update(void)
 
     const char *fpgaType = (getFpgaCapabilities() & CAPAB_FPGA_TYPE) ? "5CEBA4" : "5CEBA2";
     console_print(screen, "Detected FPGA Type: %s.\nBoard Revision: %s\n\033\037\n", fpgaType, getBoardRevision());
+
+
+    /* Extra check on the loaded images */
+    const char *check_error = "\033\022\nBAD...\n\nNot flashing.\n";
+    const char *check_ok = "\033\025OK!\n\033\037";
+
+    console_print(screen, "\033\027Checking checksums of loaded images..\n");
+
+    console_print(screen, "\033\037Checksum of FPGA image:   ");
+    if(calc_checksum((uint8_t *)&_u64_rbf_start, (uint8_t *)&_u64_rbf_end) == CHK_u64_swp) {
+        console_print(screen, check_ok);
+    } else {
+        console_print(screen, check_error);
+        while(1);
+    }
+    console_print(screen, "\033\037Checksum of Application:  ");
+    if(calc_checksum((uint8_t *)&_ultimate_app_start, (uint8_t *)&_ultimate_app_end) == CHK_ultimate_app) {
+        console_print(screen, check_ok);
+    } else {
+        console_print(screen, check_error);
+        while(1);
+    }
 
 /*
     uint8_t was;

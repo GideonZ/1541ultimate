@@ -96,7 +96,20 @@ $(OUTPUT)/u64.pof: u64.sof u64.cof
 u64.swp: $(OUTPUT)/u64.pof
 	$(SWAP) -h $< $(OUTPUT)/$@ 290000 
 	 
-update_binaries_u64.o: u64.swp ../nios2_u64/result/ultimate.bin
+u64.chk: u64.swp
+	@echo Calculating checksum of $< binary to $(@F)..
+	@$(CHECKSUM) $(OUTPUT)/$(<F) $(OUTPUT)/$(@F)
+
+ultimate.chk: ../nios2_u64/result/ultimate.app
+	@echo Calculating checksum of $< binary to $(@F)..
+	@$(CHECKSUM) $< $(OUTPUT)/$(@F)
+
+update_binaries_u64.o: u64.swp ../nios2_u64/result/ultimate.app
 
 ../nios2_u64/result/ultimate.bin::
 	make -C ../nios2_u64
+
+update_u64.o: update_u64.cc $(INCLUDES) $(CHK_BIN) ultimate.chk u64.chk
+	@echo "Compiling $(notdir $<)"
+	@cat $(addprefix $(OUTPUT)/,$(CHK_BIN)) $(OUTPUT)/ultimate.chk $(OUTPUT)/u64.chk >$(OUTPUT)/checksums.h
+	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
