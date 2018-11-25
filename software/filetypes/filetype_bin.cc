@@ -114,7 +114,7 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         count++;
         list.append(new Action("Flash as Alt. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ALT, (int)this));
         count++;
-        list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
+        list.append(new Action("Load Kernal", FileTypeBin :: execute_st, CMD_LOAD_KERNAL, (int)this));
         count++;
     }
 #elif CLOCK_FREQ == 62500000
@@ -123,14 +123,14 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         count++;
         list.append(new Action("Flash as Alt. Kernal 2", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT2, (int)this));
         count++;
-        list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
+        list.append(new Action("Load Kernal", FileTypeBin :: execute_st, CMD_LOAD_KERNAL, (int)this));
         count++;
     }
 #else
     if (size == 8192) {
         list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
         count++;
-        list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
+        list.append(new Action("Load Kernal", FileTypeBin :: execute_st, CMD_LOAD_KERNAL, (int)this));
         count++;
     }
 #endif
@@ -138,7 +138,7 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
     if (size == 16384 || size == 32768) {
         list.append(new Action("Use as Drive ROM", FileTypeBin :: execute_st, CMD_SET_DRIVEROM, (int)this));
         count++;
-        list.append(new Action("Load Drive ROM", FileTypeBin :: load_dos_st, CMD_LOAD_DOS, (int)this));
+        list.append(new Action("Load Drive ROM", FileTypeBin :: execute_st, CMD_LOAD_DOS, (int)this));
         count++;
 #if U64
         list.append(new Action("Use as Drive ROM 2", FileTypeBin :: execute_st, CMD_SET_DRIVEROM2, (int)this));
@@ -257,10 +257,15 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
 
     case CMD_TEST_CHARS:
         size = node->getInfo()->size;
+        break;
+
+    case CMD_LOAD_KERNAL:
+        return load_kernal(cmd);
+
+    case CMD_LOAD_DOS:
+        return load_dos(cmd);
 
     }  
-    
-
 
     printf("Binary Load.. %s\n", cmd->filename.c_str());
     FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
@@ -392,11 +397,6 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     return 0;
 }
 
-int FileTypeBin :: load_kernal_st(SubsysCommand *cmd)
-{
-	return ((FileTypeBin *)cmd->mode)->load_kernal(cmd);
-}
-
 int FileTypeBin :: load_kernal(SubsysCommand *cmd)
 {
     File *file = 0;
@@ -420,12 +420,9 @@ int FileTypeBin :: load_kernal(SubsysCommand *cmd)
         c64_command->execute();
         
         delete[] buffer;
-   }
-}
-
-int FileTypeBin :: load_dos_st(SubsysCommand *cmd)
-{
-	return ((FileTypeBin *)cmd->mode)->load_dos(cmd);
+        return 0;
+    }
+    return fres;
 }
 
 int FileTypeBin :: load_dos(SubsysCommand *cmd)
@@ -458,5 +455,7 @@ int FileTypeBin :: load_dos(SubsysCommand *cmd)
          
         
         delete[] buffer;
-   }
+        return 0;
+    }
+    return fres;
 }

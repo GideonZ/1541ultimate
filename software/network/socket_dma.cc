@@ -158,7 +158,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
            {
               unsigned int len;
               unsigned char tmp[4];
-              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_PAGESIZE, (uint8_t*) &len, 0);
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_PAGESIZE, (uint8_t*) &len, 0);
               c64_command->execute();
               tmp[0] = len;
               tmp[1] = len >> 8;
@@ -171,7 +171,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
            {
               unsigned int len;
               unsigned char tmp[4];
-              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_NOPAGES, (uint8_t*) &len, 0);
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_NOPAGES, (uint8_t*) &len, 0);
               c64_command->execute();
               tmp[0] = len;
               tmp[1] = len >> 8;
@@ -184,10 +184,10 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
            {
               int len;
               int page = (((uint32_t)buf[1]) ) | (((uint32_t)buf[2]) << 8) | (((uint32_t)buf[3]) << 16);
-              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_PAGESIZE, (uint8_t*) &len, 0);
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_PAGESIZE, (uint8_t*) &len, 0);
               c64_command->execute();
               char* buffer = new char[len];
-              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_GETPAGE+page, buffer, len);
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_GETPAGE + page, buffer, len);
               c64_command->execute();
               writeSocket(socket, buffer, len);
               delete[] buffer;              
