@@ -130,6 +130,7 @@ clean:
 	@rm -rf target/fpga/boot_700
 	@rm -rf target/fpga/work250
 	@rm -rf target/fpga/mb700
+	@rm -rf target/fpga/mb700dd
 	@rm -rf target/fpga/_xm*
 	@rm -rf target/fpga/x*
 	@rm -rf target/fpga/*.x*
