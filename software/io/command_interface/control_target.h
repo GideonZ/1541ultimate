@@ -9,6 +9,7 @@
 #define CTRL_CMD_FINISH_CAPTURE 0x03
 #define CTRL_CMD_FREEZE         0x05
 #define CTRL_CMD_REBOOT         0x06
+#define CTRL_CMD_U64_SAVEMEM    0x0F
 #define CTRL_CMD_DECODE_TRACK   0x11
 #define CTRL_CMD_ENCODE_TRACK   0x12
 #define CTRL_CMD_GET_HWINFO     0x28
@@ -18,6 +19,7 @@ class ControlTarget : CommandTarget
     Message data_message;
     Message status_message;
     void decode_track(Message *command, Message **reply, Message **status);
+    void save_u64_memory(Message *command);
 public:
     ControlTarget(int id);
     ~ControlTarget();

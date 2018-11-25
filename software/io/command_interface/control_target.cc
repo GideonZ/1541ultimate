@@ -5,6 +5,7 @@
 #include "tape_recorder.h"
 #if U64
 #include "u64_config.h"
+#include "u64.h"
 #else
 #include "audio_select.h"
 #endif
@@ -138,6 +139,14 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             *reply  = &c_message_empty;
             *status = &c_status_ok;
             break;
+#ifdef U64
+        case CTRL_CMD_U64_SAVEMEM:
+            printf("U64 Save C64 Memory\n");
+            save_u64_memory(command);
+            *reply  = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+#endif
         case CTRL_CMD_GET_HWINFO: {
         	
             if (command->length < 4)
@@ -268,6 +277,29 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
     
     }
 }
+
+#ifdef U64
+void ControlTarget :: save_u64_memory(Message *command)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    File *f;
+
+    FRESULT res = fm->fopen("/Usb1", "c64_memory.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+    if(res == FR_OK) {
+        printf("Opened file successfully.\n");
+
+        uint8_t *src = (uint8_t *)U64_RAM_BASE;
+        uint8_t *dest = new uint8_t[65536];
+        memcpy(dest, src, 65536);
+        uint32_t bytes_written;
+
+        f->write(dest, 0x10000, &bytes_written);
+        printf("written: %d...", bytes_written);
+        fm->fclose(f);
+        delete[] dest;
+    }
+}
+#endif
 
 void ControlTarget :: get_more_data(Message **reply, Message **status)
 {
