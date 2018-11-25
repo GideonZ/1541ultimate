@@ -31,7 +31,6 @@ class mysocket:
         while bytes_recd < maxlen:
             chunk = self.sock.recv(min(maxlen - bytes_recd, 2048))
             bytes_recd = bytes_recd + len(chunk)
-            print bytes_recd
             if chunk == '':
                 print "Number of chunks received so far:", len(chunks), bytes_recd
                 break            
@@ -76,6 +75,20 @@ if __name__ == "__main__":
         text_file.close()        
         s.sock.shutdown(0)
         s.sock.close()
+
+    elif (sys.argv[1] == 'D'):
+        s = mysocket()
+        s.connect(sys.argv[2], 64)
+        s.mysend(pack("<H", 0xFF76))
+        if len(sys.argv) > 3:
+            s.mysend(pack("<H", 1))
+            s.mysend(pack("B", int(sys.argv[3])))
+        else:
+            s.mysend(pack("<H", 0))
+        bytes = s.myreceive(1)
+        s.sock.shutdown(0)
+        s.sock.close()
+        print ":".join("{:02x}".format(ord(c)) for c in bytes)
 
     elif (sys.argv[1] == 'u'):
         with open(sys.argv[2], "rb") as f:
