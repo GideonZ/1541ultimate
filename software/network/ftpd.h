@@ -72,6 +72,7 @@ class FTPDaemonThread
 	uint8_t my_ip[4];
 	uint8_t your_ip[4];
 	uint16_t your_port;
+        int d64asdir;
 
 	enum ftpd_state_e {
 		FTPD_USER,

@@ -27,6 +27,7 @@
 #include "filemanager.h"
 #include "menu.h"
 #include "c64.h"
+#include "c1541.h"
 #include "subsys.h"
 #include "userinterface.h"
 #include "ext_i2c.h"
@@ -43,6 +44,8 @@ extern "C" {
 #define CMD_SET_DRIVEROM 0x4202
 #define CMD_SET_CARTROM  0x4203
 #define CMD_WRITE_EEPROM 0x4204
+#define CMD_SET_DRIVEROM2 0x4205
+#define CMD_SET_DRIVEROM3 0x4206
 #define CMD_TEST_CHARS   0x4222
 
 #define CMD_SET_KERNAL_ORIG  0x4211
@@ -51,6 +54,10 @@ extern "C" {
 #define CMD_SET_BASIC_ALT    0x4214
 #define CMD_SET_CHAR_ORIG    0x4215
 #define CMD_SET_CHAR_ALT     0x4216
+#define CMD_SET_KERNAL_ALT2  0x4217
+#define CMD_SET_KERNAL_ALT3  0x4218
+#define CMD_LOAD_KERNAL      0x4219
+#define CMD_LOAD_DOS         0x421A
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_bin(FileType :: getFileTypeFactory(), FileTypeBin :: test_type);
@@ -99,14 +106,31 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
         count++;
         list.append(new Action("Flash as Alt. Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT, (int)this));
         count++;
+        list.append(new Action("Flash as Alt. Kernal 2", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT2, (int)this));
+        count++;
+        list.append(new Action("Flash as Alt. Kernal 3", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT3, (int)this));
+        count++;
         list.append(new Action("Flash as Orig. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ORIG, (int)this));
         count++;
         list.append(new Action("Flash as Alt. Basic ROM", FileTypeBin :: execute_st, CMD_SET_BASIC_ALT, (int)this));
+        count++;
+        list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
+        count++;
+    }
+#elif CLOCK_FREQ == 62500000
+    if (size == 8192) {
+        list.append(new Action("Flash as Alt. Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
+        count++;
+        list.append(new Action("Flash as Alt. Kernal 2", FileTypeBin :: execute_st, CMD_SET_KERNAL_ALT2, (int)this));
+        count++;
+        list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
         count++;
     }
 #else
     if (size == 8192) {
         list.append(new Action("Use as Kernal ROM", FileTypeBin :: execute_st, CMD_SET_KERNAL, (int)this));
+        count++;
+        list.append(new Action("Load Kernal", FileTypeBin :: load_kernal_st, CMD_LOAD_KERNAL, (int)this));
         count++;
     }
 #endif
@@ -114,6 +138,17 @@ int FileTypeBin :: fetch_context_items(IndexedList<Action *> &list)
     if (size == 16384 || size == 32768) {
         list.append(new Action("Use as Drive ROM", FileTypeBin :: execute_st, CMD_SET_DRIVEROM, (int)this));
         count++;
+        list.append(new Action("Load Drive ROM", FileTypeBin :: load_dos_st, CMD_LOAD_DOS, (int)this));
+        count++;
+#if U64
+        list.append(new Action("Use as Drive ROM 2", FileTypeBin :: execute_st, CMD_SET_DRIVEROM2, (int)this));
+        count++;
+        list.append(new Action("Use as Drive ROM 3", FileTypeBin :: execute_st, CMD_SET_DRIVEROM3, (int)this));
+        count++;
+#elif CLOCK_FREQ == 62500000
+        list.append(new Action("Use as Drive ROM 2", FileTypeBin :: execute_st, CMD_SET_DRIVEROM2, (int)this));
+        count++;
+#endif
     }
 
     if(size == 65536 || size == 32768 || size == 16384 || size == 8192) {
@@ -164,6 +199,16 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
         id = FLASH_ID_CUSTOM_DRV;
         break;
 
+    case CMD_SET_DRIVEROM2:
+        size = 32768;
+        id = FLASH_ID_CUSTOM2_DRV;
+        break;
+
+    case CMD_SET_DRIVEROM3:
+        size = 32768;
+        id = FLASH_ID_CUSTOM3_DRV;
+        break;
+
     case CMD_SET_KERNAL:
     case CMD_SET_KERNAL_ALT:
         size = 8192;
@@ -173,6 +218,16 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
     case CMD_SET_KERNAL_ORIG:
         size = 8192;
         id = FLASH_ID_ORIG_KERNAL;
+        break;
+
+    case CMD_SET_KERNAL_ALT2:
+        size = 8192;
+        id = FLASH_ID_KERNAL_ROM2;
+        break;
+
+    case CMD_SET_KERNAL_ALT3:
+        size = 8192;
+        id = FLASH_ID_KERNAL_ROM3;
         break;
 
     case CMD_SET_BASIC_ORIG:
@@ -295,6 +350,8 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
                     case CMD_SET_BASIC_ALT:
                     case CMD_SET_KERNAL_ORIG:
                     case CMD_SET_KERNAL_ALT:
+                    case CMD_SET_KERNAL_ALT2:
+                    case CMD_SET_KERNAL_ALT3:
                     case CMD_SET_CHAR_ORIG:
                     case CMD_SET_CHAR_ALT:
                         C64 :: getMachine()->new_system_rom(id);
@@ -307,6 +364,14 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
 
                     case CMD_SET_DRIVEROM:
                         cmd->user_interface->popup("Please select Custom 1541 ROM.", BUTTON_OK);
+                        break;
+                        
+                    case CMD_SET_DRIVEROM2:
+                        cmd->user_interface->popup("Please select Custom 1541 ROM 2.", BUTTON_OK);
+                        break;
+
+                    case CMD_SET_DRIVEROM3:
+                        cmd->user_interface->popup("Please select Custom 1541 ROM 3.", BUTTON_OK);
                         break;
 
                     // For U2/U2+ flash function, tell user that alternate kernal is being used.
@@ -325,4 +390,73 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
         return -2;
     }
     return 0;
+}
+
+int FileTypeBin :: load_kernal_st(SubsysCommand *cmd)
+{
+	return ((FileTypeBin *)cmd->mode)->load_kernal(cmd);
+}
+
+int FileTypeBin :: load_kernal(SubsysCommand *cmd)
+{
+    File *file = 0;
+
+    FileManager *fm = FileManager :: getFileManager();
+
+    uint32_t size = 8192;
+
+    printf("Binary Load.. %s\n", cmd->filename.c_str());
+    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+
+    if(file) {
+    	uint8_t *buffer = new uint8_t[size];
+    	uint32_t transferred = 0;
+    	file->read(buffer, size, &transferred);
+        fm->fclose(file);
+
+        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_SET_KERNAL, 0, buffer, size);
+        c64_command->execute();
+        c64_command = new SubsysCommand(NULL, SUBSYSID_C64, MENU_C64_RESET, 0, 0, 0);
+        c64_command->execute();
+        
+        delete[] buffer;
+   }
+}
+
+int FileTypeBin :: load_dos_st(SubsysCommand *cmd)
+{
+	return ((FileTypeBin *)cmd->mode)->load_dos(cmd);
+}
+
+int FileTypeBin :: load_dos(SubsysCommand *cmd)
+{
+    File *file = 0;
+
+    FileManager *fm = FileManager :: getFileManager();
+
+    uint32_t size = 32768;
+
+    printf("Binary Load.. %s\n", cmd->filename.c_str());
+    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+
+    if(file) {
+    	uint8_t *buffer = new uint8_t[size];
+    	uint32_t transferred = 0;
+    	file->read(buffer, size, &transferred);
+        fm->fclose(file);
+
+    	if ((size == 32768) && (transferred == 16384)) {
+    		memcpy(buffer + 16384, buffer, 16384);
+    		transferred *= 2;
+    	}
+
+        SubsysCommand *c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, FLOPPY_LOAD_DOS, 0, buffer, size);
+        c64_command->execute();
+
+        c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, MENU_1541_RESET, 0, 0, 0);
+        c64_command->execute();
+         
+        
+        delete[] buffer;
+   }
 }
