@@ -120,6 +120,8 @@ extern "C" void ultimate_main(void *a)
         } else {
     	    sprintf(title, "\eA*** Ultimate-II  U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
         }
+        c64->effectuate_settings();
+        c64->init_cartridge();
     }
 #endif
 
@@ -174,6 +176,26 @@ extern "C" void ultimate_main(void *a)
     static char buffer[8192];
     vTaskList(buffer);
     puts(buffer);
+
+#ifdef U64
+    {
+       *C64_PLD_PORTA = 251;
+       uint8_t k1 = *C64_PLD_PORTB;
+       *C64_PLD_PORTA = 247;
+       uint8_t k2 = *C64_PLD_PORTB;
+       *C64_PLD_PORTA = 255;
+
+       if (k1 == 239)
+          C64_VIDEOFORMAT = 0, C64_BURST_PHASE=24;
+       if (k1 == 253)
+          C64_VIDEOFORMAT = 4;
+       if (k1 == 251)
+          U64_HDMI_ENABLE = 0;
+       if (k2 == 223)
+          U64_HDMI_ENABLE = 1;
+
+    }
+#endif
 
     while(1) {
         int doIt = 0;

@@ -40,11 +40,13 @@
 #define G64FILE_MOUNT_RO   0x2123
 #define G64FILE_MOUNT_UL   0x2124
 
+#define FLOPPY_LOAD_DOS    0x2131
+
 #define RUNCODE_NO_UNFREEZE  0x01
 #define RUNCODE_NO_CHECKSAVE 0x02
 #define RUNCODE_MOUNT_BUFFER 0x10
 
-typedef enum { e_rom_1541=0, e_rom_1541c=1, e_rom_1541ii=2, e_rom_custom=3, e_rom_unset=99 } t_1541_rom;
+typedef enum { e_rom_1541=0, e_rom_1541c=1, e_rom_1541ii=2, e_rom_custom=3, e_rom_custom2=4, e_rom_custom3=5,  e_rom_unset=99 } t_1541_rom;
 typedef enum { e_ram_none      = 0x00,
                e_ram_8000_BFFF = 0x30,
                e_ram_4000_7FFF = 0x0C,

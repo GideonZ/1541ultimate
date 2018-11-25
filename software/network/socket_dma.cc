@@ -14,6 +14,7 @@
 #include "dump_hex.h"
 #include "c64.h"
 #include "c64_subsys.h"
+#include "u64.h"
 #include "c1541.h"
 
 #define SOCKET_CMD_DMA         0xFF01
@@ -31,6 +32,7 @@
 #define SOCKET_CMD_LOADBOOTCRT 0xFF72
 #define SOCKET_CMD_SAMPLE      0xFF73
 #define SOCKET_CMD_READMEM     0xFF74
+#define SOCKET_CMD_READFLASH   0xFF75
 
 SocketDMA socket_dma; // global that causes the object to exist
 
@@ -106,7 +108,11 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         /* GZW: Actually a driver for the cartridge mapping should be called here. */
         offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8);
         for (i=2; i<len; i++)
+#if U64
+           *(uint8_t *)(U64_KERNAL_BASE+1+((offs32+i-2)&0x1fff)) = buf[i];
+#else
            *(uint8_t *)(C64_KERNAL_BASE+1+2*((offs32+i-2)&0x1fff)) = buf[i];
+#endif
         break;
     case SOCKET_CMD_LOADSIDCRT:
         size = (len > 0x2000) ? 0x2000 : len;
@@ -145,6 +151,49 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         }
         c64_command->execute();
         break;
+    case SOCKET_CMD_READFLASH:
+    	switch (buf[0])
+    	{
+           case 0:
+           {
+              unsigned int len;
+              unsigned char tmp[4];
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_PAGESIZE, (uint8_t*) &len, 0);
+              c64_command->execute();
+              tmp[0] = len;
+              tmp[1] = len >> 8;
+              tmp[2] = len >> 16;
+              tmp[3] = len >> 24;
+              writeSocket(socket, tmp, 4);
+              break;
+           }
+           case 1:
+           {
+              unsigned int len;
+              unsigned char tmp[4];
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_NOPAGES, (uint8_t*) &len, 0);
+              c64_command->execute();
+              tmp[0] = len;
+              tmp[1] = len >> 8;
+              tmp[2] = len >> 16;
+              tmp[3] = len >> 24;
+              writeSocket(socket, tmp, 4);
+              break;
+           }
+           case 2:
+           {
+              int len;
+              int page = (((uint32_t)buf[1]) ) | (((uint32_t)buf[2]) << 8) | (((uint32_t)buf[3]) << 16);
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_PAGESIZE, (uint8_t*) &len, 0);
+              c64_command->execute();
+              char* buffer = new char[len];
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, RUNCODE_FLASH_GETPAGE+page, buffer, len);
+              c64_command->execute();
+              writeSocket(socket, buffer, len);
+              delete[] buffer;              
+              break;
+           }
+    	}
     }
 }
 
@@ -258,9 +307,11 @@ void SocketDMA::dmaThread(void *load_buffer)
                 break;
             }
 	        uint16_t len = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
-
-	        if (len) {
-	            n = readSocket(newsockfd, mempntr, len);
+	        uint32_t len32 = len;
+	        if ( (cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG))
+                   len32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8) | (((uint32_t)buf[2]) << 16);
+	        if (len32) {
+	            n = readSocket(newsockfd, mempntr, len32);
 	        }
 	        if (n <= 0) {
 	            break;
