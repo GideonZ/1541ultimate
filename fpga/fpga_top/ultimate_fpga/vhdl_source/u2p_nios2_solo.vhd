@@ -210,6 +210,7 @@ architecture rtl of u2p_nios_solo is
     signal i2c_scl_o   : std_logic;
     signal mdio_o      : std_logic;
 
+    signal sw_trigger     : std_logic;
     signal trigger     : std_logic;
         
     -- IEC open drain
@@ -640,7 +641,8 @@ begin
         rmii_txd    => RMII_TX_DATA,
 
         -- Buttons
-        trigger     => trigger,
+        sw_trigger  => sw_trigger,
+        trigger     => sw_trigger,
         BUTTON      => button_i );
 
     -- Parallel cable not implemented. This is the way to stub it...
