@@ -9,10 +9,11 @@
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
-use ieee.std_logic_unsigned.all;
+use ieee.numeric_std.all;
 
 use work.io_bus_pkg.all;
 use work.slot_bus_pkg.all;
+use work.acia6551_pkg.all;
 
 entity acia6551 is
 port (
@@ -20,9 +21,9 @@ port (
     reset           : in  std_logic;
 
     -- C64 side interface
+    slot_base       : in  unsigned(8 downto 2) := to_unsigned(0, 7);
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
-    slot_irq        : out std_logic;
         
     -- io interface for local cpu
     io_req          : in  t_io_req;
@@ -32,18 +33,14 @@ port (
 end entity;
 
 architecture arch of acia6551 is
-    constant c_addr_data_register       : unsigned(1 downto 0) := "00";
-    constant c_addr_status_register     : unsigned(1 downto 0) := "01"; -- writing causes reset
-    constant c_addr_command_register    : unsigned(1 downto 0) := "10";
-    constant c_addr_control_register    : unsigned(1 downto 0) := "11";
-
     signal rx_data          : std_logic_vector(7 downto 0);
-    signal status           : std_logic_vector(7 downto 0);
+    signal status           : std_logic_vector(7 downto 0) := X"00";
     signal command          : std_logic_vector(7 downto 0);
     signal control          : std_logic_vector(7 downto 0);
 
-    signal tx_data_push : std_logic;
-    signal rx_data_pull : std_logic;
+    signal tx_data          : std_logic_vector(7 downto 0);
+    signal tx_data_push     : std_logic;
+    signal rx_data_valid    : std_logic;
     
     alias irq           : std_logic is status(7);
     alias dsr_n         : std_logic is status(6);
@@ -54,19 +51,33 @@ architecture arch of acia6551 is
     alias framing_err   : std_logic is status(1);
     alias parity_err    : std_logic is status(0);
 
+    alias dtr           : std_logic is command(0);
+    
+    signal enable           : std_logic;
+    signal irq_en           : std_logic;
     signal soft_reset       : std_logic;
-    signal rx_interrupt     : std_logic;
-    signal tx_interrupt     : std_logic;
+    signal rx_interrupt     : std_logic := '0';
+    signal tx_interrupt     : std_logic := '0';
+
     signal cts              : std_logic; -- written by sys
     signal rts              : std_logic; -- written by slot (command register)
 
     signal rx_head, rx_tail : unsigned(7 downto 0);
     signal tx_head, tx_tail : unsigned(7 downto 0);
 
-    signal b_address        : unsigned(9 downto 0);
+    signal b_address        : unsigned(8 downto 0);
     signal b_rdata          : std_logic_vector(7 downto 0);
     signal b_wdata          : std_logic_vector(7 downto 0);
     signal b_en, b_we       : std_logic;
+    signal b_pending        : std_logic;
+
+    signal io_req_regs      : t_io_req;
+    signal io_resp_regs     : t_io_resp := c_io_resp_init;
+    signal io_req_ram       : t_io_req;
+    signal io_resp_ram      : t_io_resp := c_io_resp_init;
+    signal io_ram_ack       : std_logic;
+    signal io_ram_en        : std_logic;
+    signal io_ram_rdata     : std_logic_vector(7 downto 0);
 begin
     with slot_req.bus_address(1 downto 0) select slot_resp.data <=
         rx_data     when c_addr_data_register,
@@ -75,39 +86,41 @@ begin
         control     when c_addr_control_register,
         X"FF"       when others;   
 
-    irq       <= (rx_interrupt and command(1)) or (tx_interrupt and command(2) and not command(3));
-    slot_irq  <= irq;
+    slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 2) = slot_base else '0';
+    slot_resp.irq  <= irq;
+
+    irq       <= (rx_interrupt and not command(1)) or (tx_interrupt and command(2) and not command(3));
     rts       <= command(2) or command(3);
+    rx_empty  <= not rx_data_valid;
+    tx_empty  <= '0' when (tx_head + 1) = tx_tail else '1';
+
+    tx_interrupt <= tx_empty;
+    rx_interrupt <= rx_data_valid;
     
     process(clock)
     begin
         if rising_edge(clock) then
             soft_reset <= '0';
             tx_data_push <= '0';
-            rx_data_pull <= '0';
             
             b_en <= '0';
             b_we <= '0';
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
 
-            if tx_data_push = '1' then
-                b_address <= tx_head;
+            if tx_data_push = '1' and tx_empty = '1' then
+                b_address <= '0' & tx_head;
                 b_wdata <= tx_data;
                 b_we <= '1';
                 b_en <= '1';
-                tx_head <= tx_head + 1; -- TODO: Bounds check
-            elsif rx_data_valid = '0' and rx_head /= rx_tail and b_pending = '0' then
-                b_address <= rx_tail;
+                tx_head <= tx_head + 1;
+            elsif rx_data_valid = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' then
+                b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
             end if;
-            if b_en = '0' then
-                b_pending <= '0';
-            end if;
-             
 
-            if (slot_req.io_address(8 downto 2) = slot_base) and (enabled = '1') then
+            if (slot_req.io_address(8 downto 2) = slot_base) and (enable = '1') then
                 if slot_req.io_write='1' then
                     case slot_req.io_address(1 downto 0) is
                     when c_addr_data_register =>
@@ -128,7 +141,7 @@ begin
                         parity_err <= '0';
                         framing_err <= '0';
                         overrun_err <= '0';
-                        rx_data_pull <= '1';
+                        rx_data_valid <= '0';
                     when c_addr_status_register =>
                         null;
                     when c_addr_command_register =>
@@ -141,45 +154,62 @@ begin
                 end if;
             end if;
 
-            io_resp <= c_io_resp_init;
-            if io_req.write='1' then
-                io_resp.ack <= '1';
-                case io_req.address(3 downto 0) is
+            io_resp_regs <= c_io_resp_init;
+            if io_req_regs.write='1' then
+                io_resp_regs.ack <= '1';
+                case io_req_regs.address(3 downto 0) is
                 when c_reg_rx_head =>
-                    rx_head <= unsigned(io_req.data);
+                    rx_head <= unsigned(io_req_regs.data);
                 when c_reg_tx_tail =>
-                    tx_tail <= unsigned(io_req.data);
+                    tx_tail <= unsigned(io_req_regs.data);
+                when c_reg_enable =>
+                    enable <= io_req_regs.data(0);
+                    irq_en <= io_req_regs.data(1);
+                when c_reg_handsh =>
+                    cts   <= io_req_regs.data(0);
+                    dsr_n <= not io_req_regs.data(2);
+                    dcd_n <= not io_req_regs.data(4);
                 when others =>
                     null;
                 end case;
-            elsif io_req.read='1' then
-                io_resp.ack <= '1';
-                case io_req.address(3 downto 0) is
+            elsif io_req_regs.read='1' then
+                io_resp_regs.ack <= '1';
+                case io_req_regs.address(3 downto 0) is
                 when c_reg_rx_head =>
-                    io_resp.data <= std_logic_vector(rx_head);
+                    io_resp_regs.data <= std_logic_vector(rx_head);
                 when c_reg_rx_tail =>
-                    io_resp.data <= std_logic_vector(rx_tail);
+                    io_resp_regs.data <= std_logic_vector(rx_tail);
                 when c_reg_tx_head =>
-                    io_resp.data <= std_logic_vector(tx_head);
+                    io_resp_regs.data <= std_logic_vector(tx_head);
                 when c_reg_tx_tail =>
-                    io_resp.data <= std_logic_vector(tx_tail);
+                    io_resp_regs.data <= std_logic_vector(tx_tail);
                 when c_reg_control =>
-                    io_resp.data <= control;
+                    io_resp_regs.data <= control;
                 when c_reg_command =>
-                    io_resp.data <= command;
+                    io_resp_regs.data <= command;
+                when c_reg_enable =>
+                    io_resp_regs.data(0) <= enable;
+                    io_resp_regs.data(1) <= irq_en;
+                when c_reg_handsh =>
+                    io_resp_regs.data(0) <= cts;
+                    io_resp_regs.data(1) <= rts;
+                    io_resp_regs.data(2) <= not dsr_n;
+                    io_resp_regs.data(3) <= dtr;
+                    io_resp_regs.data(4) <= not dcd_n;
                 when others =>
                     null;
                 end case;
             end if;                     
 
-
-            if tx_data_push_clr = '1' then
-                tx_data_push <= '0';
-                tx_head <= tx_head + 1;
-            end if;
-            if rx_data_push_clr = '1' then
-                rx_data_push <= '0';
-                rx_head <= rx_head + 1;
+            -- first cycle b_en = 1 and b_pending = 1
+            -- then b_en = 0 and b_pending is still = 1. In this cycle RAM result is available.
+            if b_pending = '1' then
+                if b_en = '0' then
+                    rx_tail <= rx_tail + 1;
+                    rx_data_valid <= '1';
+                    rx_data <= b_rdata;
+                    b_pending <= '0';
+                end if;
             end if;
 
             if reset = '1' then
@@ -189,36 +219,18 @@ begin
                 rx_tail <= X"00";
                 tx_head <= X"00";
                 tx_tail <= X"00";
+                enable  <= '0';
+                b_pending <= '0';
+                rx_data_valid <= '0';
+                cts <= '0';
+                dsr_n <= '1';
+                dcd_n <= '1';
             end if;
             if soft_reset = '1' then
                 command(4 downto 0) <= "00010";
             end if;
         end if;
     end process;
-
-    process(tx_data_push, tx_data, tx_head,
-            rx_data_push, sys_rx_data, rx_head,
-    begin
-        en <= '0';
-        we <= '0';
-        wdata <= (others => 'X');
-        address <= (others => 'X');
-        
-        tx_data_push_clr <= '0';
-        
-        if tx_data_push = '1' then
-            address <= tx_head;
-            wdata <= tx_data;
-            en <= '1';
-            we <= '1';
-            tx_data_push_clr <= '1';    
-        elsif rx_data_push = '1' then
-            address <= rx_head;
-            wdata <= sys_rx_data;
-            en <= '1';
-            we <= '1';
-            rx_data_push_clr <= '1';    
-        elsif rx_data_pull = '1' then
             
 
     -- first we split our I/O bus in max 4 ranges, of 2K each.
@@ -260,7 +272,7 @@ begin
 
     port map (
         a_clock                 => clock,
-        a_address               => io_req_ram.address(10 downto 0),
+        a_address               => io_req_ram.address(8 downto 0),
         a_rdata                 => io_ram_rdata,
         a_wdata                 => io_req_ram.data,
         a_en                    => io_ram_en,
