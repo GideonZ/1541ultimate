@@ -347,7 +347,8 @@ FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char 
 	
 	FRESULT res;
 	
-	if (!stricmp (info.extension, "CVT"))
+	if (!stricmp (info.extension, "CVT"))
+
 	{
             res = ff->openCVT(&info, flags, dir_t, dir_s, dir_idx);
             //res = ff->open(&info, flags);
@@ -495,7 +496,7 @@ FRESULT DirInD64 :: read(FileInfo *f)
             uint8_t *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
             //dump_hex(p, 32);
             uint8_t tp = (p[2] & 0x0f);
-            if ((tp == 0x01) || (tp == 0x02) || (tp == 0x03)) { // PRG
+            if ((tp == 0x00) || (tp == 0x01) || (tp == 0x02) || (tp == 0x03) || (tp == 0x04)) { // PRG
                 int j = 0;
                 for(int i=5;i<21;i++) {
                 	if ((p[i] == 0xA0) || (p[i] < 0x20))
@@ -514,12 +515,16 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 f->size = (int)p[30] + 256*(int)p[31];
                 if (tp >= 1 && tp <= 3 && (p[0x17] == 0 || p[0x17] == 1) && p[0x15] >= 1 && p[0x15] <= 35 && p[0x16] <= 21) {
                 	strncpy(f->extension, "CVT", 4);
+                } else if (tp == 0) {
+                	strncpy(f->extension, "DEL", 4);
                 } else if (tp == 1) {
                 	strncpy(f->extension, "SEQ", 4);
                 } else if (tp == 2) {
                 	strncpy(f->extension, "PRG", 4);
                 } else if (tp == 3) {
                 	strncpy(f->extension, "USR", 4);
+                } else if (tp == 4) {
+                	strncpy(f->extension, "REL", 4);
                 }
                 strcat(f->lfname, ".");
                 strcat(f->lfname, f->extension);

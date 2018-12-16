@@ -252,3 +252,4 @@ software/6502/sidcrt/target
 tools/dump_bus_trace
 tools/64tass/*.o
 /chars/
+.vscode/c_cpp_properties.json

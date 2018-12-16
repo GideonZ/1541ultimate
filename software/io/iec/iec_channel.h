@@ -155,7 +155,9 @@ public:
         if(info) {
             size = info->size;
         }
-        size /= 254;
+        if (size > 254)
+            size /= 254;
+            
         if(size > 9999)
             size = 9999;
         size2 = size;
@@ -498,6 +500,7 @@ public:
         	name = inf->lfname;
     	}
     	mstring previous_path(interface->path->get_path());
+
     	interface->path->cd(name);  // just try!
     	FRESULT res = interface->readDirectory(); // just try!
     	if (res == FR_OK) {
