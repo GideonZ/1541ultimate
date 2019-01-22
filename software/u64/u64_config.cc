@@ -22,6 +22,8 @@ extern "C" {
 #include "fpll.h"
 #include "i2c.h"
 #include "ext_i2c.h"
+#include "overlay.h"
+#include "u2p.h"
 
 // static pointer
 U64Config u64_configurator;
@@ -75,6 +77,8 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_MIXER7_PAN        0x37
 #define CFG_MIXER8_PAN        0x38
 #define CFG_MIXER9_PAN        0x39
+
+#define CFG_SYSTEM_MODE       0x41
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -183,6 +187,10 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SCANLINES,    		CFG_TYPE_ENUM, "HDMI Scan lines",          	   "%s", en_dis4,      0,  1, 0 },
+    { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  1, 0 },
+    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
+    { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video",                 "%s", video_sel,    0,  1, 0 },
+    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
     { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  2, 0 },
@@ -201,9 +209,6 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_EMUSID2_RESONANCE,    CFG_TYPE_ENUM, "UltiSID 2 Filter Resonance",   "%s", filter_res,   0,  1, 0 },
     { CFG_EMUSID1_WAVES,        CFG_TYPE_ENUM, "UltiSID 1 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
     { CFG_EMUSID2_WAVES,        CFG_TYPE_ENUM, "UltiSID 2 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
-    { CFG_COLOR_CLOCK_ADJ, 		CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
-    { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video",                 "%s", video_sel,    0,  1, 0 },
-    { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
 #if DEVELOPER
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis4,      0,  1, 0 },
 #endif
@@ -232,9 +237,14 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 
+extern Overlay *overlay;
+
 U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
-	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+    systemMode = -1;
+
+
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		struct t_cfg_definition *def = u64_cfg;
 		uint32_t store = 0x55363443;
 		register_store(store, "U64 Specific Settings", def);
@@ -323,19 +333,33 @@ void U64Config :: effectuate_settings()
         C64_CHROMA_DELAY = chromaDelay;
     }
 
+    uint8_t format = 0;
+
     if (cfg->get_value(CFG_ANALOG_OUT_SELECT)) {
-        C64_VIDEOFORMAT = 0x04;
+        format |= VIDEO_FMT_RGB_OUTPUT;
     }
-/*
-    else if (cfg->get_value(CFG_COLOR_CODING)) {
-        C64_VIDEOFORMAT = 0x01;
+
+    bool doPll = false;
+    if (cfg->get_value(CFG_SYSTEM_MODE) != systemMode) {
+        systemMode = cfg->get_value(CFG_SYSTEM_MODE);
+        doPll = true;
+    }
+
+    if (systemMode) {
+        format |= VIDEO_FMT_CYCLES_65 | VIDEO_FMT_NTSC_ENCODING | VIDEO_FMT_NTSC_FREQ | VIDEO_FMT_60_HZ;
         C64_BURST_PHASE = 32;
-    }
-*/
-    else { // PAL
-        C64_VIDEOFORMAT = 0x00;
+    } else {
+        format |= VIDEO_FMT_CYCLES_63;
         C64_BURST_PHASE = 24;
     }
+    if (doPll) {
+        SetVideoPll(systemMode);
+        SetHdmiPll(systemMode);
+        SetVideoMode(systemMode);
+        ResetHdmiPll();
+        overlay->initRegs();
+    }
+    C64_VIDEOFORMAT = format;
 
 #if DEVELOPER
     C64_VIC_TEST = cfg->get_value(CFG_VIC_TEST);
@@ -362,6 +386,7 @@ void U64Config :: effectuate_settings()
             C64_EMUSID1_BASE_BAK, C64_EMUSID1_MASK_BAK,
             C64_EMUSID2_BASE_BAK, C64_EMUSID2_MASK_BAK );
 */
+
 }
 
 void U64Config :: setFilter(ConfigItem *it)

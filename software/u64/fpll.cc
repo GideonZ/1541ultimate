@@ -17,8 +17,13 @@
 #define FPLL_MAX_VCO_FREQ       1300
 #define FPLL_MFRAC_BITS         32
 //#define MFRAC_BASE				0x9C76584C
-#define MFRAC_BASE              0xEAB16BF3
-#define DEFAULT_M				12
+#define M_PAL                   18
+#define M_NTSC                  19
+#define MFRAC_BASE_PAL          0xEAB16BF3
+#define MFRAC_BASE_NTSC         0xA2E89059
+#define AUDIO_DIV_PAL           77
+#define AUDIO_DIV_NTSC          80
+
 #define REFERENCE_CLOCK			630559111 // 50000000
 
 #define FPLL_RECONFIG_REGS      ((volatile uint32_t*)0x92000000)
@@ -80,8 +85,10 @@ extern "C" void dumpPllParams(void)
 
 void setMFrac(uint32_t frac)
 {
+/*
 	FPLL_RECONFIG_MFRAC_K = frac;
 	FPLL_RECONFIG_START = 0;
+*/
 }
 
 extern "C" void pllOffsetHz(int Hz)
@@ -92,7 +99,7 @@ extern "C" void pllOffsetHz(int Hz)
 	// Color clock offset = (9 / 1280) * 50 MHz * mfrac = 450 MHz / 1280 * mfrac = 45/128 MHz * mfrac.
 	// 2^32 / (45/128 MHz) => 12216,795864178 = step size
 	int offset = (Hz * 781875) / 64; // 2^40 / 50 MHz
-	uint32_t mfrac = MFRAC_BASE + offset;
+	uint32_t mfrac = MFRAC_BASE_PAL + offset;
 	setMFrac(mfrac);
 }
 
@@ -101,7 +108,7 @@ extern "C" void pllOffsetPpm(int ppm)
 	// Normal setting = 0C.9C76584C = 54164609100 / 1000000 = 54164,6091
     // Normal setting = 12.EAB16BF3 = 81246907379 / 1000000 = 81246,9074
     int offset = ppm * 81246;
-	uint32_t mfrac = MFRAC_BASE + offset;
+	uint32_t mfrac = MFRAC_BASE_PAL + offset;
 	setMFrac(mfrac);
 }
 
@@ -119,6 +126,7 @@ uint32_t IntToPll(int value)
 	result |= value; // << 8);
 	return result;
 }
+
 
 extern "C" void SetHdmiClock(int Hz)
 {
@@ -164,7 +172,7 @@ extern "C" void SetHdmiClock(int Hz)
 	U64_HDMI_PLL_RESET = 0;
 }
 
-extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, TVideoMode *mode)
+extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const TVideoMode *mode)
 {
     regs->VID_HSYNCPOL     = mode->hsyncpol;
     regs->VID_HSYNCTIME    = mode->hsync >> 1;
@@ -204,4 +212,54 @@ extern "C" void SetScanMode(int modeIndex)
 	TVideoMode *mode = &modes[modeIndex];
 	SetScanModeRegisters((volatile t_video_timing_regs *)VID_IO_BASE, mode);
 	SetHdmiClock(mode->frequency);
+}
+
+extern "C" void SetVideoPll(int mode)
+{
+    // Clock 0
+
+    FPLL_RECONFIG_MODE = 0; // no polling
+    if (mode == 0) { // PAL
+        FPLL_RECONFIG_M = IntToPll(M_PAL);
+        FPLL_RECONFIG_C = IntToPll(AUDIO_DIV_PAL) | (4 << 18);
+        FPLL_RECONFIG_MFRAC_K = MFRAC_BASE_PAL;
+    } else { // NTSC
+        FPLL_RECONFIG_M = IntToPll(M_NTSC);
+        FPLL_RECONFIG_C = IntToPll(AUDIO_DIV_NTSC) | (4 << 18);
+        FPLL_RECONFIG_MFRAC_K = MFRAC_BASE_NTSC;
+    }
+    FPLL_RECONFIG_START = 1;
+}
+
+extern "C" void SetHdmiPll(int mode)
+{
+    HDMIPLL_RECONFIG_MODE = 0; // no polling
+    if (mode == 0) { // PAL
+        HDMIPLL_RECONFIG_M = IntToPll(24);
+        HDMIPLL_RECONFIG_N = IntToPll(7);
+    } else { // NTSC
+        HDMIPLL_RECONFIG_M = IntToPll(33);
+        HDMIPLL_RECONFIG_N = IntToPll(10);
+    }
+    HDMIPLL_RECONFIG_START = 1;
+}
+
+extern "C" void SetVideoMode(int mode)
+{
+    volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)VID_IO_BASE;
+
+    const TVideoMode pal  =  { 17, 27023962,  720, 12,  64,  68, 0,   576,  4, 5, 39, 0, 1, 0 };  // VIC 17/18 720x576 @ 50.12Hz (624 lines) (!) // detuned + one line less
+    const TVideoMode ntsc =  { 03, 27000000,  720, 16,  62,  60, 0,   480,  9, 6, 29, 0, 1, 0 };  // VIC 2/3 720x480 @ 60Hz
+
+    if (mode == 0) { // PAL
+        SetScanModeRegisters(regs, &pal);
+    } else { // NTSC
+        SetScanModeRegisters(regs, &ntsc);
+    }
+}
+
+extern "C" void ResetHdmiPll(void)
+{
+    U64_HDMI_PLL_RESET = 1;
+    U64_HDMI_PLL_RESET = 0;
 }

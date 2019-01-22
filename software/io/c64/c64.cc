@@ -62,12 +62,14 @@ const char *cart_mode[] = { "None",
                       "TAsm / CodeNet PAL",
 #ifndef U64
                       "Action Replay V5.0 NTSC",
+#endif
                       "Retro Replay V3.8y NTSC",
                       "SuperSnapshot V5.22 NTSC",
                       "TAsm / CodeNet NTSC",
-#endif
+
                       "Epyx Fastloader",
                       "KCS Power Cartridge",
+
                       "GeoRAM",
                       "Custom 8K ROM",
                       "Custom 16K ROM",
@@ -95,12 +97,14 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 
 #ifndef U64
                           { FLASH_ID_AR5NTSC,   0x000000, 0x08000,  0x07 },
+#endif
                           { FLASH_ID_RR38NTSC,  0x000000, 0x10000,  0x06 | CART_REU | CART_ETH },
                           { FLASH_ID_SS5NTSC,   0x000000, 0x10000,  0x05 | CART_REU },
                           { FLASH_ID_TAR_NTSC,  0x000000, 0x10000,  0x06 | CART_ETH },
-#endif
+
                           { FLASH_ID_EPYX,      0x000000, 0x02000,  0x0E },
                           { FLASH_ID_KCS,       0x000000, 0x04000,  0x10 },
+
                           { 0x00,               0x000000, 0x04000,  0x15 | CART_UCI }, // GeoRam
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
