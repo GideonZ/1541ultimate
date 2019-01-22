@@ -219,7 +219,7 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
             }
             return -1;
         }
-        c64->unfreeze(0, 2);
+        c64->start_cartridge(NULL, true);
         configure_cart();
 
         fm->fclose(file);
