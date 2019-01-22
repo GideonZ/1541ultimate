@@ -903,10 +903,11 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     // Only in normal mode we can access the RAM. It is important that we clear the CBM80 string here.
     // To be discussed: Should this only happen with the reboot command?
     C64_MODE = MODE_NORMAL;
-//    C64_POKE(0x8005, 0);
+    C64_POKE(0x8005, 0);
 
     // Now, let's reset the machine and release it into run mode
     C64_MODE = C64_MODE_RESET;
+    C64_CARTRIDGE_TYPE = 0; // disable our carts
     vTaskDelay(10);
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_STOP = 0;
@@ -916,12 +917,21 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     if (!startLater)
     {
         init_system_roms();
+        bool external = false;
+#if U64
+        // In case of the U64, when an external cartridge is detected, we should not enable our cart
+        if (get_exrom_game() != 0) { // An external cartridge has been enabled
+            external = true;
+        }
+#endif
         // Passing 0 to this function means that the default selected cartridge should be run
         if (def == 0) {
             int cart = cfg->get_value(CFG_C64_CART);
             def = &cartridges[cart];
         }
-        set_cartridge(def);
+        if (!external) {
+            set_cartridge(def);
+        }
         C64_MODE = C64_MODE_UNRESET;
     }
 
