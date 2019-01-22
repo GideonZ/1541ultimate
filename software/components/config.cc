@@ -143,7 +143,9 @@ ConfigStore :: ConfigStore(uint32_t store_id, const char *name, int page, int pa
     block_size = page_size;
     flash_page = page;
     id = store_id;
-    objects.append(ob);
+    if (ob) {
+        objects.append(ob);
+    }
     dirty = false;
     
     for(int i=0;i<64;i++) {
