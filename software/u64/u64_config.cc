@@ -307,6 +307,7 @@ void U64Config :: effectuate_settings()
     if(!cfg)
         return;
 
+    U2PIO_SPEAKER_EN = 0x1F;
     C64_SCANLINES    =  cfg->get_value(CFG_SCANLINES);
     C64_PADDLE_EN    =  cfg->get_value(CFG_PADDLE_EN);
     C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK = cfg->get_value(CFG_STEREO_DIFF);

@@ -139,6 +139,7 @@ SRCS_CC	 =  u2p_init.cc \
 			fpll.cc \
 			fastuart.cc \
 			wifi.cc \
+			led_strip.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \
