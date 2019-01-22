@@ -375,7 +375,7 @@ extern "C" {
 	            screen->move_cursor(0,0);
 	            test_esp32();
 	            errors  = U64TestKeyboard();
-	            errors += U64TestUserPort();
+	            //errors += U64TestUserPort();
                 errors += U64TestIEC();
 	            errors += U64TestCartridge();
 	            errors += U64TestCassette();
