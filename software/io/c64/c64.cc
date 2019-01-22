@@ -200,7 +200,7 @@ C64::C64()
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
     C64_STOP = 0;
-    stopped = false;
+    isFrozen = false;
 //    C64_MODE = C64_MODE_RESET;
     buttonPushSeen = false;
 
@@ -221,10 +221,10 @@ C64::C64()
 
 C64::~C64()
 {
-    if (stopped) {
+    if (isFrozen) {
         restore_io();
         resume();
-        stopped = false;
+        isFrozen = false;
     }
 
     delete keyb;
@@ -687,16 +687,10 @@ void C64::freeze(void)
         return;
 
     stop();
-
-    // turn off button interrupts on SD-CPU
-//    GPIO_IMASK  &= ~BUTTONS;
-
-//	dump_hex((void *)C64_MEMORY_BASE, 0x400);
-
     backup_io();
     init_io();
 
-    stopped = true;
+    isFrozen = true;
 }
 
 /*
@@ -832,44 +826,79 @@ void C64::init_system_roms(void)
 #endif
 }
 
-void C64::unfreeze(void *vdef, int mode)
+/*
+ * Unfreeze - Resumes the C64 after it was frozen by entering the Ultimate Menu.
+ */
+void C64::unfreeze()
 {
-    cart_def *def = (cart_def *) vdef;
 
     if (!phi2_present())
         return;
 
-    // keyb->wait_free();
+    // bring back C64 in original state
+    restore_io();
+    // resume C64
+    resume();
 
-    if (mode == 0) {
-        // bring back C64 in original state
-        restore_io();
-        // resume C64
-        resume();
+    isFrozen = false;
+}
+
+void C64 :: start_cartridge(void *vdef, bool startLater)
+{
+    cart_def *def = (cart_def *) vdef;
+
+#if U64
+    // On the U64, the external carts should be turned off, otherwise the external cart will conflict with our
+    // internal cart, or even override it altogether. This is only done when a custom cart definition is given.
+    // TODO: What happens when the reboot / reset command is given and a real cartridge is attached?
+    if ((def != 0) || startLater) { // special cart
+        U64_CART_DISABLE = 1;
     } else {
-        if (vdef == 0 && mode == 1) {    
-            int cart = cfg->get_value(CFG_C64_CART);
-            vdef = (void*) &cartridges[cart];
-        }
-    
-        VIC_REG(32) = 0; // black border
-        VIC_REG(17) = 0; // screen off
-
-        C64_STOP_MODE = STOP_COND_FORCE;
-        C64_MODE = MODE_NORMAL;
-        C64_MODE = C64_MODE_RESET;
-        wait_ms(1);
-        C64_STOP = 0;
-
-        if (mode != 2)
-        {
-            init_system_roms();
-
-            set_cartridge(def);
-            C64_MODE = C64_MODE_UNRESET;
-        }
+        U64_CART_DISABLE = 0;
     }
-    stopped = false;
+#endif
+    // If we are called from the overlay or telnet menu, it may be so that the C64 is not even frozen.
+    // In this case, we need to stop the machine first in order to poke anything into memory
+    if (!C64_HAS_STOPPED) {
+        C64_STOP_MODE = STOP_COND_FORCE;
+        C64_STOP = 1;
+        // wait until it is stopped (it always will!)
+        while (!C64_HAS_STOPPED)
+            ;
+    }
+    // Now that the machine is stopped, we can clear certain VIC registers. This is required for the FC3
+    // cartridge, but maybe also for others. Obviously, we may not know in what mode we are, so we
+    // force Ultimax mode, so that the IO range is accessible.
+    C64_MODE = MODE_ULTIMAX;
+    VIC_REG(32) = 0; // black border
+    VIC_REG(17) = 0; // screen off
+
+    // Only in normal mode we can access the RAM. It is important that we clear the CBM80 string here.
+    // To be discussed: Should this only happen with the reboot command?
+    C64_MODE = MODE_NORMAL;
+//    C64_POKE(0x8005, 0);
+
+    // Now, let's reset the machine and release it into run mode
+    C64_MODE = C64_MODE_RESET;
+    vTaskDelay(10);
+    C64_STOP_MODE = STOP_COND_FORCE;
+    C64_STOP = 0;
+
+
+    // The machine is running again, but still in reset.
+    if (!startLater)
+    {
+        init_system_roms();
+        // Passing 0 to this function means that the default selected cartridge should be run
+        if (def == 0) {
+            int cart = cfg->get_value(CFG_C64_CART);
+            def = &cartridges[cart];
+        }
+        set_cartridge(def);
+        C64_MODE = C64_MODE_UNRESET;
+    }
+
+    isFrozen = false;
 }
 
 Screen *C64::getScreen(void)
@@ -894,7 +923,7 @@ void C64::releaseScreen()
 
 bool C64::is_accessible(void)
 {
-    return stopped;
+    return isFrozen;
 }
 
 Keyboard *C64::getKeyboard(void)
@@ -1032,6 +1061,7 @@ void C64::init_cartridge()
 
     // In case of the U64, when an external cartridge is detected, we should not enable our cart
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+        U64_CART_DISABLE = 0;
         if (get_exrom_game() != 0) { // An external cartridge has been enabled
             printf("External Cartridge Detected. Not initializing cartridge.\n");
             wait_ms(100);
@@ -1049,7 +1079,7 @@ void C64::init_cartridge()
         wait_ms(100);
         freeze();
         wait_ms(1400);
-        unfreeze((void*) cart2, 1);
+        start_cartridge(cart2, false);
     }
     else if (cart2->id == FLASH_ID_CUSTOM_ROM && !cart2->type)
     {
@@ -1057,7 +1087,7 @@ void C64::init_cartridge()
         wait_ms(100);
         freeze();
         wait_ms(1400);
-        unfreeze((void*) cart2, 1);
+        start_cartridge(cart2, false);
     }
     else
     {

@@ -150,14 +150,14 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 			c64->client->release_host(); // disconnect from user interface
 			c64->client = 0;
 		}
-		c64->unfreeze(0, 0);
+		c64->unfreeze();
     	break;
     case MENU_C64_RESET:
 		if(c64->client) { // we can't execute this yet
 			c64->client->release_host(); // disconnect from user interface
 			c64->client = 0;
 		}
-		c64->unfreeze(0, 0);
+		c64->unfreeze();
 		c64->reset();
 		break;
 
@@ -181,17 +181,18 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 			c64->client->release_host(); // disconnect from user interface
 			c64->client = 0;
 		}
-		c64->unfreeze(0, 1);
-		// c64->init_cartridge(); // unfreeze already does that with mode=1
+		c64->start_cartridge(NULL, false);
 		break;
-	case C64_START_CART:
+
+    case C64_START_CART:
 		if(c64->client) { // we can't execute this yet
 			c64->client->release_host(); // disconnect from user interface
 			c64->client = 0;
 		}
-		c64->unfreeze((cart_def *)cmd->mode, 1);
+		c64->start_cartridge((cart_def *)cmd->mode, false);
 		break;
-	case MENU_C64_SAVEREU:
+
+    case MENU_C64_SAVEREU:
         ram_size = 128 * 1024;
         ram_size <<= c64->cfg->get_value(CFG_C64_REU_SIZE);
         
@@ -336,7 +337,7 @@ int C64_Subsys :: dma_load_raw(File *f)
     	c64->client->release_host(); // disconnect from user interface
     	c64->release_ownership();
 	}
-	if(!c64->stopped) {
+	if(!c64->isFrozen) {
 		c64->stop(false);
         C64_MODE = MODE_NORMAL;
 		i_stopped_it = true;
@@ -356,7 +357,7 @@ int C64_Subsys :: dma_load_raw_buffer(uint16_t offset, const uint8_t *buffer, in
     	c64->client->release_host(); // disconnect from user interface
     	c64->release_ownership();
 	}
-	if(!c64->stopped) {
+	if(!c64->isFrozen) {
 		c64->stop(false);
 		i_stopped_it = true;
 	}
@@ -379,7 +380,7 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
     	c64->client->release_host(); // disconnect from user interface
     	c64->client = 0;
 	}
-    if(!c64->stopped) {
+    if(!c64->isFrozen) {
     	c64->stop(false);
     }
 
@@ -398,7 +399,7 @@ int C64_Subsys :: dma_load(File *f, const uint8_t *buffer, const int bufferSize,
     C64_POKE(C64_BOOTCRT_HANDSHAKE, 0x80); // initial boot cart handshake
 
     boot_cart.custom_addr = (void *)&_bootcrt_65_start;
-    c64->unfreeze(&boot_cart, 1);
+    c64->start_cartridge(&boot_cart, false);
 
 	// perform DMA load
     wait_ms(100);

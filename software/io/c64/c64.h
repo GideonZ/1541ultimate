@@ -235,7 +235,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
 
-    bool stopped;
+    bool isFrozen;
     void determine_d012(void);
     void backup_io(void);
     void init_io(void);
@@ -275,7 +275,7 @@ public:
     	freeze();
     }
     void release_ownership(void) {
-    	unfreeze(0, 0); // continue where we left off
+    	unfreeze();
     	this->client = 0;
     }
 
@@ -301,8 +301,9 @@ public:
     }
     
     /* C64 specifics */
-    void unfreeze(void *def, int mode);  // called from crt... hmm FIXME
-
+    void resetConfigInFlash(int page);
+    void unfreeze(void);
+    void start_cartridge(void *def, bool startLater);
     void enable_kernal(uint8_t *rom, bool fastreset = false);
     void new_system_rom(uint8_t flashId);
     void init_cartridge(void);
