@@ -66,9 +66,31 @@ const char *getBoardRevision(void)
 		return "U64 V1.1 (Null Series)";
 	case 0x12:
 		return "U64 V1.2 (Mass Prod)";
+	case 0x13:
+	    return "U64 V1.3 (Elite)";
 	}
 	return "Unknown";
 }
+
+const uint8_t orig_kernal[] = {
+        0x85, 0x56, 0x20, 0x0f, 0xbc, 0xa5, 0x61, 0xc9, 0x88, 0x90, 0x03, 0x20, 0xd4, 0xba, 0x20, 0xcc
+};
+
+static bool original_kernal_found(Flash *flash, int addr)
+{
+    uint8_t buffer[16];
+    flash->read_linear_addr(addr, 16, buffer);
+    return (memcmp(buffer, orig_kernal, 16) == 0);
+}
+
+static void move_roms(Flash *flash, Screen *screen)
+{
+    uint8_t *original_data = new uint8_t[0xA000];
+    flash->read_linear_addr(0x456000, 0xA000, original_data);
+    flash_buffer_at(flash, screen, 0x486000, false, original_data, original_data + 0xA000, "", "Moving User ROMs");
+    delete[] original_data;
+}
+
 
 void do_update(void)
 {
@@ -157,8 +179,16 @@ void do_update(void)
     }
     console_print(screen, "Verify errors: %d\n", errors);
 */
+    bool kernalFound = original_kernal_found(flash2, 0x488000);
+
     if(user_interface->popup("About to flash. Continue?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
         flash2->protect_disable();
+        // If original flash was found at the original location, then move it
+        if (original_kernal_found(flash2, 0x458000)) {
+            move_roms(flash2, screen);
+            kernalFound = true;
+        }
+
         flash_buffer_at(flash2, screen, 0x000000, false, &_u64_rbf_start, &_u64_rbf_end,   "V1.0", "Runtime FPGA");
         flash_buffer_at(flash2, screen, 0x290000, false, &_ultimate_app_start,  &_ultimate_app_end,  "V1.0", "Ultimate Application");
         flash_buffer_at(flash2, screen, 0x400000, false, &_rom_pack_start, &_rom_pack_end, "V0.0", "ROMs Pack");
@@ -167,16 +197,19 @@ void do_update(void)
     	flash2->protect_configure();
     	flash2->protect_enable();
     	console_print(screen, "Done!                            \n");
-
-        if(user_interface->popup("Reset Configuration? (Recommended)", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
-            int num = flash2->get_number_of_config_pages();
-            for (int i=0; i < num; i++) {
-                flash2->clear_config_page(i);
-            }
-        }
-
-    	console_print(screen, "\n\033\022Turning OFF machine in 5 seconds....\n");
     }
+
+    if(user_interface->popup(kernalFound ? "Reset Configuration? (Not required)" : "Reset Configuration? (Recommended)", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+        int num = flash2->get_number_of_config_pages();
+        for (int i=0; i < num; i++) {
+            flash2->clear_config_page(i);
+        }
+        if (kernalFound) {
+            c64->resetConfigInFlash(0);
+        }
+    }
+
+    console_print(screen, "\n\033\022Turning OFF machine in 5 seconds....\n");
 
     wait_ms(5000);
     U64_POWER_REG = 0x2B;

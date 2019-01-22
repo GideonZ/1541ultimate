@@ -109,6 +109,9 @@ public:
     virtual void write(void);
     virtual void effectuate(void);
 
+    int  get_page(void) { return flash_page; }
+    int  get_page_size(void) { return block_size; }
+
     void set_change_hook(uint8_t id, t_change_hook hook);
     ConfigItem *find_item(uint8_t id);
     int  get_value(uint8_t id);

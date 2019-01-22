@@ -33,6 +33,7 @@
 #include "u64.h"
 #include "flash.h"
 #include "keyboard_c64.h"
+#include "config.h"
 
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
@@ -231,6 +232,32 @@ C64::~C64()
 
     if (screen)
         delete screen;
+}
+
+void C64 :: resetConfigInFlash(int page)
+{
+    uint8_t kern = cfg->get_value(CFG_C64_ALT_KERN);
+#if U64
+    uint8_t basic = cfg->get_value(CFG_C64_ALT_BASI);
+    uint8_t chars = cfg->get_value(CFG_C64_ALT_CHAR);
+
+    if (kern > 2) {
+        kern = 1;
+    }
+#endif
+    if (page < 0) {
+        page = cfg->get_page();
+    }
+
+    ConfigStore *newConfig = new ConfigStore(0x43363420, "C64 and cartridge settings", page, cfg->get_page_size(), c64_config, NULL);
+
+    newConfig->set_value(CFG_C64_ALT_KERN, kern);
+#if U64
+    newConfig->set_value(CFG_C64_ALT_BASI, basic);
+    newConfig->set_value(CFG_C64_ALT_CHAR, chars);
+#endif
+    newConfig->dirty = true;
+    newConfig->write();
 }
 
 C64 *C64 :: getMachine(void) {
