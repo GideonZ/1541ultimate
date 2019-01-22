@@ -15,7 +15,8 @@
 
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
-	FileManager *fm;
+    int systemMode;
+    FileManager *fm;
 	bool skipReset;
     TaskHandle_t resetTaskHandle;
 
