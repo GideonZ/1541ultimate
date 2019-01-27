@@ -320,6 +320,7 @@ void UsbAx88772Driver :: install(UsbInterface *intf)
 		ipipe.buffer = irq_data;
 		ipipe.SplitCtl = 0;
 		ipipe.Command = 0; // driver will fill in the command
+		ipipe.device = device;
 
 		irq_transaction = host->allocate_input_pipe(&ipipe, UsbAx88772Driver_interrupt_callback, this);
 		host->resume_input_pipe(irq_transaction);
@@ -331,6 +332,7 @@ void UsbAx88772Driver :: install(UsbInterface *intf)
 		bpipe.SplitCtl = 0;
 		bpipe.Command = 0; // driver will fill in the command
 		bpipe.buffer = getBuffer();
+		bpipe.device = device;
 		bulk_transaction = host->allocate_input_pipe(&bpipe, UsbAx88772Driver_bulk_callback, this);
 
 		netstack->start();
