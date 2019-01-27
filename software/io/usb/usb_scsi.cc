@@ -126,6 +126,8 @@ void UsbScsiDriver :: install(UsbInterface *intf)
     if(dev) {
     	host = dev->host;
     	device = dev;
+    	bulk_in.device = dev;
+    	bulk_out.device = dev;
     	bulk_in.DevEP  = ((dev->current_address) << 8) | bi;
         bulk_out.DevEP = ((dev->current_address) << 8) | bo;
         bulk_in.MaxTrans = bin->max_packet_size;

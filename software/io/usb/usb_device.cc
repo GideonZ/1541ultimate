@@ -81,6 +81,9 @@ UsbDevice :: UsbDevice(UsbBase *u, int speed)
     }
     num_interfaces = 0;
     control_pipe.DevEP = 0;
+    control_pipe.device = this;
+    strcpy(control_pipe.name, "Root|0");
+
     this->speed = speed;
     if (speed == 0) {
     	control_pipe.MaxTrans = 8;
@@ -180,7 +183,7 @@ bool UsbDevice :: get_device_descriptor()
     return true;
 }
 
-void UsbDevice :: set_address(int address)
+bool UsbDevice :: set_address(int address)
 {
     printf ("Setting address to %d: \n", address);
 
@@ -193,7 +196,9 @@ void UsbDevice :: set_address(int address)
     if(i >= 0) {
         current_address = address;
         control_pipe.DevEP = (address << 8);
+        return true;
     }
+    return false;
 }
 
 bool UsbDevice :: get_configuration(uint8_t index)
@@ -357,8 +362,7 @@ bool UsbDevice :: init(int address)
     }
 
     // set address and create new control pipes for this address
-    set_address(address);
-    return true;
+    return set_address(address);
 }
 
 bool UsbDevice :: init2(void)

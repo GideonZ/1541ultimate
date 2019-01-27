@@ -98,12 +98,12 @@ bool UsbBase :: init_device(UsbDevice *dev) // This function only gives the devi
     printf("Installing %s Parent = %p, ParentPort = %d\n", buf, dev->parent, dev->parent_port);
 
     bool ok = false;
-    for(int i=0;i<5;i++) { // try 5 times!
+    for(int i=0;i<3;i++) { // try 3 times!
         if(dev->init(idx)) {
             ok = true;
             break;
         } else {
-        	wait_ms(100*i);
+        	vTaskDelay(35*i);
         }
     }
     return ok;
@@ -392,6 +392,12 @@ void UsbBase :: init_pipe(int index, struct t_pipe *init)
 {
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(index);
 
+    memset(init->name, 0, 8);
+    init->device->get_pathname(init->name, 7);
+    char *pn = "|0";
+    pn[1] = (init->DevEP & 0x0F) | 0x30;
+    strcat(init->name, pn);
+
     descr->devEP    = init->DevEP;
 	descr->maxTrans = init->MaxTrans;
 	descr->interval = init->Interval;
@@ -416,7 +422,7 @@ void UsbBase :: pause_input_pipe(int index)
 
 	uint16_t command = descr->command;
 	if (command & UCMD_PAUSED) {
-		printf("Pause was already set %04x\n", command);
+		printf("Pause was already set %04x on pipe %d\n", command, index);
 		return;
 	}
 	command |= UCMD_PAUSED;
@@ -519,12 +525,12 @@ void UsbBase :: doPing(struct t_pipe *pipe)
 int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
 
     if (outlen != 8) {
-        printf("Unsupported setup length.\n");
+        printf("%s Unsupported setup length.\n", pipe->name);
         return -10;
     }
 
@@ -545,7 +551,7 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 
 	result = complete_command(100);
 	if ((result & URES_RESULT_MSK) != URES_ACK) {
-		printf("Setup Result: %04x\n", result);
+		printf("%s Setup Result: %04x\n", pipe->name, result);
 	    xSemaphoreGive(mutex);
 		return -1;
 	}
@@ -575,8 +581,8 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 	if (transferred > 0) {
 		descr->length = 0;
 	    descr->started = 0;
+        descr->result = 0xFFFF;
 		descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT | UCMD_RETRY_ON_NAK; // send zero bytes as out packet
-
 		result = complete_command(100);
 
 		switch (result & URES_RESULT_MSK) {
@@ -588,7 +594,7 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 			pipe->needPing = 1;
 			break;
 		default:
-			printf("Control status phase Out error: $%4x\n", result);
+			printf("%s Control status phase Out error: $%4x\n", pipe->name, result);
 			break;
 		}
 	}
@@ -600,7 +606,7 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
@@ -615,7 +621,11 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
 
 	uint16_t result = complete_command(100);
 
-	// printf("Setup Result: %04x\n", USB2_CMD_Result);
+    if ((result & URES_RESULT_MSK) != URES_ACK) {
+        printf("%s Setup Result: %04x\n", pipe->name, result);
+        xSemaphoreGive(mutex);
+        return -1;
+    }
 
 	descr->length = data_len;
 	descr->memHi = ((uint32_t)data_out) >> 16;
@@ -625,9 +635,13 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
 
 	result = complete_command(100);
 
+    if ((result & URES_RESULT_MSK) != URES_ACK) {
+        printf("%s Setup Out Result: %04x\n", pipe->name, result);
+        xSemaphoreGive(mutex);
+        return -2;
+    }
+
 	uint32_t transferred = data_len - descr->length;
-	// printf("Out: %d bytes (Result = %4x)\n", transferred, USB2_CMD_Result);
-	// dump_hex(read_buf, transferred);
 
 	descr->length = 0;
     descr->started = 0;
@@ -635,7 +649,11 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
 
 	result = complete_command(100);
 
-	// printf("In Result = %4x\n", USB2_CMD_Result);
+    if ((result & URES_RESULT_MSK) != URES_ACK) {
+        printf("%s Setup Out Status Phase Result: %04x\n", pipe->name, result);
+        xSemaphoreGive(mutex);
+        return -3;
+    }
     xSemaphoreGive(mutex);
 	return transferred;
 }
@@ -644,7 +662,7 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
 int  UsbBase :: allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, void *object)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
 	int index = open_pipe();
@@ -689,7 +707,7 @@ void UsbBase :: free_input_pipe(int index)
 int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
 	// printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
@@ -731,7 +749,7 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 		pipe->Command = (descr->command & URES_TOGGLE); // that's what we start with next time.
 
 		if (((result & URES_RESULT_MSK) != URES_ACK) && ((result & URES_RESULT_MSK) != URES_NYET)) {
-			printf("Bulk Out error: $%4x, Transferred: %d\n", result, total_trans);
+			printf("%s Bulk Out error: $%4x, Transferred: %d\n", pipe->name, result, total_trans);
 			break;
 		}
 
@@ -753,12 +771,12 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) // blocking
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
 
     if (((uint32_t)buf) & 3) {
-    	printf("Bulk_in: Unaligned buffer %p\n", buf);
+    	printf("%s Bulk_in: Unaligned buffer %p\n", pipe->name, buf);
     	while(1);
     }
 
@@ -785,7 +803,7 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 		uint16_t result = complete_command(timeout);
 
 		if ((result & URES_RESULT_MSK) != URES_PACKET) {
-			printf("Bulk IN error: $%4x, Transferred: %d\n", result, total_trans);
+			printf("%s Bulk IN error: $%4x, Transferred: %d\n", pipe->name, result, total_trans);
 			if ((result & URES_RESULT_MSK) == URES_STALL) {
 				total_trans = -4; // error code
 			} else {

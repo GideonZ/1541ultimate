@@ -192,6 +192,8 @@ void UsbHubDriver :: install(UsbInterface *intf)
 
     struct t_endpoint_descriptor *iin = intf->find_endpoint(0x83);
     int endpoint = iin->endpoint_address & 0x0F;
+
+    ipipe.device = dev;
     ipipe.DevEP = uint16_t((dev->current_address << 8) | endpoint);
     ipipe.Interval = 1160; // 50 Hz; // added 1000 for making it slower
     ipipe.Length = 2; // just read 2 bytes max (max 15 port hub)

@@ -15,7 +15,9 @@ class UsbDriver;
 extern "C" BaseType_t usb_irq(void);
 
 struct t_pipe {
-	uint16_t Command;
+    UsbDevice *device;
+    char     name[8];
+    uint16_t Command;
 	uint16_t DevEP;
 	uint16_t Length;
 	uint16_t MaxTrans;
