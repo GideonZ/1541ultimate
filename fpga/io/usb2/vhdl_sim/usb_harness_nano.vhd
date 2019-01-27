@@ -14,6 +14,8 @@ use work.mem_bus_pkg.all;
 
 entity usb_harness_nano is
 port (
+    nyet_count      : in natural := 2;
+    ack_on_ping     : in boolean := true;
     interrupt       : out std_logic;
     clocks_stopped  : in boolean := false );
 
@@ -82,7 +84,11 @@ begin
         ulpi_dir        => ulpi_dir,
         ulpi_data       => ulpi_data );
 
-    i_device: entity work.usb_device_model;
+    i_device: entity work.usb_device_model
+    port map (
+        nyet_count  => nyet_count,
+        ack_on_ping => ack_on_ping
+    );
 
     i_memory: entity work.mem_bus_32_slave_bfm
     generic map (
