@@ -71,11 +71,10 @@ CMD_REQ_MEMREAD      = $8000
 CMD_REQ_MEMWRITE     = $4000
 CMD_REQ_PING_ENABLE  = $2000
 CMD_REQ_NOT_PING_EN  = $DFFF
-; CMD_REQ_PING_ON_NAK  = $1000
 CMD_TOGGLE_BIT       = $0800
 CMD_TOGGLE_BIT_NOT   = $F7FF
-CMD_REQ_PAUSED       = $0200
-CMD_REQ_NOT_PAUSED   = $FDFF
+CMD_REQ_DONE         = $0200
+CMD_REQ_ABORT_REQ    = $0100
 CMD_REQ_DO_DATA      = $0040
 CMD_REQ_NOT_DO_DATA  = $FFBF
 CMD_REQ_POWER_OFF	 = $0003
@@ -88,7 +87,10 @@ CMD_RES_NAK          = $2000
 CMD_RES_NYET         = $3000
 CMD_RES_STALL        = $4000
 CMD_RES_ERROR        = $5000
+CMD_RES_ABORTED      = $6000
 CMD_RES_MASK         = $7000
+CMD_RES_MASK12       = $0FFF
+CMD_RES_TIMEOUT      = $0800
 CMD_RES_NO_DATA      = $0400
 CMD_RES_LEN_MASK     = $03FF
 
@@ -552,19 +554,19 @@ _wait_out_cmd_csplit
     STORI Descriptor,Offset_Command_Result
 
     AND  #CMD_RES_MASK
-    CMP  #CMD_RES_ERROR
-    BEQ  _out_done
-    CMP  #CMD_RES_ACK
-    BEQ  _out_success_csplit
     CMP  #CMD_RES_NYET
     BEQ  _check_nyet_response_out
-    CMP  #CMD_RES_NAK
-    BEQ  _leave_out
-    BRA  _out_done
 
-_out_success_csplit
     CALL reset_split
-    BRA  _out_success
+    LOAD LastResult
+    AND  #CMD_RES_MASK
+    CMP  #CMD_RES_ACK
+    BEQ  _out_success
+    CMP  #CMD_RES_ERROR
+    BEQ  _out_done
+    CMP  #CMD_RES_NAK
+    BEQ  _out_check_timeout
+    BRA  _out_done
 
 _check_nyet_response_out
     INP   FRAME_COUNTER    
@@ -575,7 +577,25 @@ _check_nyet_response_out
     CALL  reset_split
     BRA   _out_done
 
-
+_out_check_timeout
+_in_check_timeout
+    LOADI Descriptor,Offset_Command
+    AND   #CMD_REQ_ABORT_REQ
+    BEQ   _timeout_only
+    LOADI Descriptor,Offset_Command_Result
+    AND   #CMD_RES_MASK12
+    OR    #CMD_RES_ABORTED
+    STORI Descriptor,Offset_Command_Result
+    BRA   _out_done
+_timeout_only
+    LOADI Descriptor,Offset_Command_Timeout
+    BEQ   _leave_out   ; No timeout set, try later (indefinitely)
+    CALL  _check_timeout
+    BCC   _leave_out   ; Timeout condition not yet met
+    LOADI Descriptor,Offset_Command_Result
+    OR    #CMD_RES_TIMEOUT
+    STORI Descriptor,Offset_Command_Result
+    BRA   _out_done
 
 _execute_cmd
     LOADI Descriptor,Offset_Command_Started
@@ -648,7 +668,7 @@ _hs_in_result
     CMP   #CMD_RES_DATA
     BEQ   _in_success
     CMP   #CMD_RES_NAK
-    BEQ   _leave_in
+    BEQ   _in_check_timeout
     CMP   #CMD_RES_STALL
     BEQ   _in_done
     CMP   #CMD_RES_ERROR
@@ -871,7 +891,8 @@ _out_enable_ping_nak
     LOADI Descriptor,Offset_Command
     OR    #CMD_REQ_PING_ENABLE
     STORI Descriptor,Offset_Command
-
+    BRA   _out_check_timeout
+    
 _leave_out
     LOAD #0
     RET
@@ -890,7 +911,7 @@ _wait_ping_cmd
     CMP  #CMD_RES_ACK
     BEQ  _out_ping_ok
     CMP  #CMD_RES_NAK
-    BEQ  _leave_out  ; not yet done
+    BEQ  _out_check_timeout  ; not yet done
     BRA  _out_done
 
 _out_ping_ok
@@ -911,17 +932,17 @@ check_pipes
     CALL  attr_fifo_full
     BEQ   _chk_pipe_loop
     CALL  _complete_cmd
-    BEQ   _no_complete_report 
+    BEQ   _chk_pipe_loop ;no_complete_report 
     LOAD  TTPipeNumber
     CALL  _report
     BRA   _chk_pipe_loop
 
-_no_complete_report
-    LOADI Descriptor,Offset_Command_Timeout
-    BEQ   _chk_pipe_loop
-    CALL  _check_timeout
-    BCC   _chk_pipe_loop
-    CALL  _report
+;_no_complete_report
+;    LOADI Descriptor,Offset_Command_Timeout
+;    BEQ   _chk_pipe_loop
+;    CALL  _check_timeout
+;    BCC   _chk_pipe_loop
+;    CALL  _report
 
 _chk_pipe_loop
     LOAD  #Pipes
@@ -942,7 +963,7 @@ _read_stable
 
     LOAD  temp    
     BEQ   _nxt_pipe
-    AND   #CMD_REQ_PAUSED
+    AND   #CMD_REQ_DONE
     BEQ   _valid_pipe
 	
 _nxt_pipe
@@ -979,20 +1000,11 @@ _interval_ok
     BEQ   _nxt_pipe  ; invalid -> no memory address
 
     CALL  _execute_cmd
-    BEQ   _nothing_to_report  ; when 0, nothing to report 
+    BEQ   _nxt_pipe  ; when 0, nothing to report 
     LOAD  PipeNumber
     CALL  _report
     BRA   _nxt_pipe
 
-_nothing_to_report
-    LOADI Descriptor,Offset_Command_Timeout
-    BEQ   _nxt_pipe   ; No timeout set
-    CALL  _check_timeout
-    BCC   _nxt_pipe
-    LOAD  PipeNumber
-    CALL  _report
-    BRA   _nxt_pipe
-    
 _check_timeout
     STORE Interval 
     LOADI Descriptor,Offset_Command_Started
@@ -1008,7 +1020,7 @@ _report
 
     ;; we set the pause bit, so that it will only occur once
     LOADI Descriptor,Offset_Command
-    OR    #CMD_REQ_PAUSED
+    OR    #CMD_REQ_DONE
     STORI Descriptor,Offset_Command  ; We leave the command intact, to make sure we will expect the correct toggle next time
 
     ;; Let's send the host an interrupt
