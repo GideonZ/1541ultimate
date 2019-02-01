@@ -21,6 +21,7 @@ port (
     drive_stop      : in  std_logic := '0';
     
     -- timing
+    tick_16MHz      : in  std_logic;
     tick_4MHz       : in  std_logic;
 
     -- slave port on io bus
@@ -202,6 +203,7 @@ begin
     port map (
         sys_clock       => clock,
         drv_reset       => drv_reset,
+        tick_16MHz      => tick_16MHz,
         
         -- signals from MOS 6522 VIA
         motor_on        => motor_on,

@@ -14,7 +14,7 @@ generic (
     g_ultimate2plus : boolean := false;
     g_ultimate_64   : boolean := false;
     g_clock_freq    : natural := 50_000_000;
-    g_numerator     : natural := 2;
+    g_numerator     : natural := 8;
     g_denominator   : natural := 25;
     g_baud_rate     : natural := 115_200;
     g_timer_rate    : natural := 200_000;
@@ -295,6 +295,7 @@ architecture logic of ultimate_logic_32 is
     constant c_tag_rmii          : std_logic_vector(7 downto 0) := X"0E"; -- and 0F
 
     -- Timing
+    signal tick_16MHz       : std_logic;
     signal tick_4MHz        : std_logic;
     signal tick_1MHz        : std_logic;
     signal tick_1kHz        : std_logic;    
@@ -501,9 +502,10 @@ begin
     )
     port map(
         clock         => sys_clock,
-        tick          => tick_4MHz,
-        quarter       => tick_1MHz,
-        one_4000      => tick_1kHz
+        tick          => tick_16MHz,
+        tick_by_4     => tick_4MHz,
+        tick_by_16    => tick_1MHz,
+        one_16000     => tick_1kHz
     );
 
     i_itu: entity work.itu
@@ -562,6 +564,7 @@ begin
             drive_stop      => c64_stopped,
             
             -- timing
+            tick_16MHz      => tick_16MHz,
             tick_4MHz       => tick_4MHz,
             
             -- slave port on io bus
@@ -636,6 +639,7 @@ begin
             drive_stop      => c64_stopped,
             
             -- timing
+            tick_16MHz      => tick_16MHz,
             tick_4MHz       => tick_4MHz,
 
             -- slave port on io bus
