@@ -463,7 +463,7 @@ begin
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
-        g_numerator     => 8,
+        g_numerator     => 32,
         g_denominator   => 125,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
