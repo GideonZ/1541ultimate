@@ -19,8 +19,9 @@
 ##		- target names must be lowercase
 ###############################################################################
 
-# GLOBAL_INCS should point to the make include files directory
-export GLOBAL_INCS = $(strip $(shell pwd)/../../../global_makefiles)
+ENVIRONMENTS = cocotb-riviera aldec/riviera
+
+GLOBAL_INCS = ../../../global_makefiles
 
 .SUFFIXES:		#delete all known suffixes
 
@@ -51,7 +52,7 @@ SOURCE_INCLUDES =
 
 AUTO_DEP_PATHS  = $(wildcard ../vhdl_bfm/)
 AUTO_DEP_PATHS += $(wildcard ../vhdl_sim/)
-AUTO_DEP_PATHS += $(wildcard ../tl_packages/vhdl_source/)
+AUTO_DEP_PATHS += $(wildcard ../../../target/simulation/packages/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../*/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../*/*/vhdl_source/)
 AUTO_DEP_PATHS += $(wildcard ../../*/vhdl_sim/)
@@ -70,48 +71,7 @@ AUTO_DEP_PATHS += $(wildcard ../../altera/xilinx_primitives/)
 ###############################################################################
 
 #### tb1 #####
-
-TESTBENCH 						:= tb_ulpi_bus
-TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
-$(TESTBENCH)_SRC				:= 
-$(TESTBENCH)_ENTITY				:= 
-$(TESTBENCH)_TIME				:= 
-$(TESTBENCH)_DO_GUI_BEFORE		:= 
-$(TESTBENCH)_DO_GUI_AFTER		:= 
-$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
-
-#### tb2 #####
-TESTBENCH 						:= tb_ulpi_tx
-TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
-$(TESTBENCH)_SRC				:= 
-$(TESTBENCH)_ENTITY				:= 
-$(TESTBENCH)_TIME				:= 
-$(TESTBENCH)_DO_GUI_BEFORE		:= 
-$(TESTBENCH)_DO_GUI_AFTER		:= 
-$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
-
-#### tb3 #####
-TESTBENCH 						:= tb_ulpi_host
-TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
-$(TESTBENCH)_SRC				:= 
-$(TESTBENCH)_ENTITY				:= 
-$(TESTBENCH)_TIME				:= 
-$(TESTBENCH)_DO_GUI_BEFORE		:= 
-$(TESTBENCH)_DO_GUI_AFTER		:= 
-$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
-
-#### tb4 #####
-TESTBENCH 						:= tb_usb_host
-TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
-$(TESTBENCH)_SRC				:= 
-$(TESTBENCH)_ENTITY				:= 
-$(TESTBENCH)_TIME				:= 
-$(TESTBENCH)_DO_GUI_BEFORE		:= 
-$(TESTBENCH)_DO_GUI_AFTER		:= 
-$(TESTBENCH)_DO_GUI_OVERRIDE	:= 
-
-#### tb4 #####
-TESTBENCH 						:= tb_via6522
+TESTBENCH 						:= harness_floppy
 TESTBENCHES						:= $(TESTBENCHES) $(TESTBENCH)
 $(TESTBENCH)_SRC				:= 
 $(TESTBENCH)_ENTITY				:= 

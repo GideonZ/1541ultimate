@@ -25,7 +25,8 @@ generic (
 port (
     sys_clock       : in  std_logic;
     drv_reset       : in  std_logic;
-    
+    tick_16MHz      : in  std_logic;
+        
     -- signals from MOS 6522 VIA
     motor_on        : in  std_logic;
     mode            : in  std_logic;
@@ -80,6 +81,7 @@ begin
     port map (
         clock           => sys_clock,
         reset           => drv_reset,
+        tick_16MHz      => tick_16MHz,
         
 		mem_rdata		=> mem_rdata,
         do_read         => do_read,

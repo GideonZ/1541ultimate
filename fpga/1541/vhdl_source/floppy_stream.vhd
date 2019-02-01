@@ -14,8 +14,6 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
---use ieee.std_logic_arith.all;
---use ieee.std_logic_unsigned.all;
 
 --library work;
 --use work.floppy_emu_pkg.all;
@@ -24,6 +22,7 @@ entity floppy_stream is
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
+    tick_16MHz      : in  std_logic;
     
     -- data from memory
     mem_rdata       : in  std_logic_vector(7 downto 0);
@@ -68,17 +67,24 @@ architecture gideon of floppy_stream is
     signal sync_i      : std_logic;
     signal byte_rdy_i  : std_logic;
     alias  mem_rd_bit  : std_logic is mem_shift(7);
-    --signal track_c     : unsigned(6 downto 2);
     signal track_i     : unsigned(6 downto 0);
     signal mode_d      : std_logic;
     signal write_delay : integer range 0 to 3;
 
+    -- resample
+    signal transition_pulse : std_logic;
+    signal cnt16            : unsigned(3 downto 0);
+    signal sampl            : unsigned(3 downto 0);
+    signal rd_shift_pulse   : std_logic;
+    signal rd_shift_data    : std_logic;
+    signal rd_shift_phase   : std_logic;
+    
     -- weak bit implementation
-    signal random_data : std_logic_vector(15 downto 0);
-    signal bit_slip    : std_logic;
-    signal bit_flip    : std_logic;
-    signal weak_count  : integer range 0 to 63 := 0;
-    signal enable_slip : std_logic;
+--    signal random_data : std_logic_vector(15 downto 0);
+--    signal bit_slip    : std_logic;
+--    signal bit_flip    : std_logic;
+--    signal weak_count  : integer range 0 to 63 := 0;
+--    signal enable_slip : std_logic;
 begin
     p_clock_div: process(clock)
     begin
@@ -107,17 +113,17 @@ begin
         end if;            
     end process;
     
-    i_noise: entity work.noise_generator
-    generic map (
-        g_type          => "Galois",
-        g_polynom       => X"1020",
-        g_seed          => X"569A"
-    )
-    port map (
-        clock           => clock,
-        enable          => bit_tick,
-        reset           => reset,
-        q               => random_data  );
+--    i_noise: entity work.noise_generator
+--    generic map (
+--        g_type          => "Galois",
+--        g_polynom       => X"1020",
+--        g_seed          => X"569A"
+--    )
+--    port map (
+--        clock           => clock,
+--        enable          => bit_tick,
+--        reset           => reset,
+--        q               => random_data  );
     
     -- stream from memory
     p_stream: process(clock)
@@ -126,24 +132,24 @@ begin
         if rising_edge(clock) then
             do_read <= '0';
             if bit_tick='1' then
-                history  := history(3 downto 0) & mem_rd_bit;
-                bit_slip <= '0';
-                bit_flip <= '0';
-                if history = "00000" and mode = '1' then -- something weird can happen now:
-                -- nothing
-                -- bit flip
-                -- bit slip (generates less bits)
-                    bit_slip <= random_data(2) and random_data(7) and random_data(11) and enable_slip; -- 12.5%
-                    bit_flip <= random_data(6) and random_data(14); -- 25%                    
-                    if weak_count = 63 then
-                        enable_slip <= '1';
-                    else
-                        weak_count <= weak_count + 1;
-                    end if;
-                else
-                    weak_count <= 0;
-                    enable_slip <= '0';
-                end if;
+--                history  := history(3 downto 0) & mem_rd_bit;
+--                bit_slip <= '0';
+--                bit_flip <= '0';
+--                if history = "00000" and mode = '1' then -- something weird can happen now:
+--                -- nothing
+--                -- bit flip
+--                -- bit slip (generates less bits)
+--                    bit_slip <= random_data(2) and random_data(7) and random_data(11) and enable_slip; -- 12.5%
+--                    bit_flip <= random_data(6) and random_data(14); -- 25%                    
+--                    if weak_count = 63 then
+--                        enable_slip <= '1';
+--                    else
+--                        weak_count <= weak_count + 1;
+--                    end if;
+--                else
+--                    weak_count <= 0;
+--                    enable_slip <= '0';
+--                end if;
 
                 mem_bit_cnt <= mem_bit_cnt + 1;
                 if mem_bit_cnt="000" then
@@ -156,13 +162,43 @@ begin
             if reset='1' then
                 mem_shift    <= (others => '1');
                 mem_bit_cnt  <= "000";
-                bit_flip     <= '0';
-                bit_slip     <= '0';
-                enable_slip  <= '0';
+--                bit_flip     <= '0';
+--                bit_slip     <= '0';
+--                enable_slip  <= '0';
             end if;
         end if;
     end process;
     
+    -- Pulse from the floppy (a one-clock pulse that happens only when data is '1')
+    transition_pulse <= bit_tick and mem_rd_bit;
+    p_resample: process(clock)
+    begin
+        if rising_edge(clock) then
+            if transition_pulse = '1' then
+                cnt16 <= "00" & unsigned(rate_ctrl);
+            elsif tick_16MHz = '1' then
+                if cnt16 = X"F" then
+                    cnt16 <= "00" & unsigned(rate_ctrl);
+                else            
+                    cnt16 <= cnt16 + 1;
+                end if;
+            end if;
+
+            rd_shift_pulse <= '0';
+            rd_shift_phase <= sampl(1);
+            if transition_pulse = '1' then
+                sampl <= (others => '0');
+            elsif tick_16MHz = '1' and cnt16 = X"F" then
+                if sampl(1 downto 0) = "01" then
+                    rd_shift_pulse <= '1';
+                end if;
+                sampl <= sampl + 1;
+            end if;    
+        end if;
+    end process;
+    rd_shift_data  <= sampl(3) nor sampl(2);
+
+
     -- parallelize stream and generate sync
     -- and handle writes
     p_reading: process(clock)
@@ -193,15 +229,15 @@ begin
                 end if;
             end if;
             
-            if bit_tick='1' and bit_slip = '0' then
-                rd_shift   <= rd_shift(8 downto 0) & (mem_rd_bit or bit_flip);
+            if rd_shift_pulse = '1' then -- and bit_slip = '0' then
+                rd_shift   <= rd_shift(8 downto 0) & rd_shift_data; --(mem_rd_bit or bit_flip);
                 rd_bit_cnt <= rd_bit_cnt + 1;
             end if;
             if s = '0' then
                 rd_bit_cnt <= "000";
             end if;
 
-            if (rd_bit_cnt="111") and (soe = '1') and (bit_square='1') and (bit_slip = '0') then
+            if (rd_bit_cnt="111") and (soe = '1') and (rd_shift_phase='1') then -- and (bit_slip = '0') then
                 byte_rdy_i <= '0';
             else
                 byte_rdy_i <= '1';
@@ -241,8 +277,6 @@ begin
             end if;            
         end if;
     end process;
-
-    -- track_i    <= track_c & unsigned(step_d);
 
     -- outputs
     sync       <= sync_i;

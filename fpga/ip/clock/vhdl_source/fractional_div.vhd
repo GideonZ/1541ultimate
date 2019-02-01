@@ -15,9 +15,10 @@ generic (
     g_denominator   : natural := 200 );
 port (
     clock       : in  std_logic;
-    tick        : out std_logic; -- this should yield a 4 MHz tick (for drive logic)
-    quarter     : out std_logic; -- this should yield an 1 MHz tick (i.e. for IEC processor)
-    one_4000    : out std_logic ); -- and thus, this should yield a 1 ms tick
+    tick        : out std_logic; -- this should yield a 16 MHz tick
+    tick_by_4   : out std_logic; -- this should yield a 4 MHz tick (for drive logic)
+    tick_by_16  : out std_logic; -- this should yield an 1 MHz tick (i.e. for IEC processor)
+    one_16000   : out std_logic ); -- and thus, this should yield a 1 ms tick
 end entity;
 
 architecture arch of fractional_div is
@@ -55,8 +56,8 @@ architecture arch of fractional_div is
     signal c_bits_min   : integer := 1 + log2_ceil(-c_min - 1);
     signal c_bits_max   : integer := 1 + log2_ceil(c_max);
 
-    signal accu     : signed(7 downto 0) := (others => '0'); 
-    signal div4000  : unsigned(11 downto 0) := to_unsigned(128, 12);
+    signal accu      : signed(7 downto 0) := (others => '0'); 
+    signal div16000  : unsigned(13 downto 0) := to_unsigned(128, 14);
     
 begin
     assert c_bits_max <= 8 report "Need more bits for accu (max:"&integer'image(c_max)&", but Xilinx doesn't let me define this dynamically:" & integer'image(c_bits_max) severity error;
@@ -66,17 +67,21 @@ begin
     begin
         if rising_edge(clock) then
             tick <= '0';
-            one_4000 <= '0';
-            quarter <= '0';
+            one_16000 <= '0';
+            tick_by_4 <= '0';
+            tick_by_16 <= '0';
             if accu(accu'high) = '1' then
-                if div4000 = 0 then
-                    one_4000 <= '1';
-                    div4000 <= to_unsigned(3999, 12);
+                if div16000 = 0 then
+                    one_16000 <= '1';
+                    div16000 <= to_unsigned(15999, 14);
                 else
-                    div4000 <= div4000 - 1;
+                    div16000 <= div16000 - 1;
                 end if;
-                if div4000(1 downto 0) = "01" then
-                    quarter <= '1';
+                if div16000(3 downto 0) = "0001" then
+                    tick_by_16 <= '1';
+                end if;
+                if div16000(1 downto 0) = "01" then
+                    tick_by_4 <= '1';
                 end if;
                 tick <= '1';
                 accu <= accu + (g_denominator - g_numerator);
