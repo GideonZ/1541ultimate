@@ -508,15 +508,12 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_sour
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_zpu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spike_filter/vhdl_source/spike_filter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_zpu.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/bridge_to_mem_ctrl.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/data_crc.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/host_sequencer.vhd
@@ -556,6 +553,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_to
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_bus_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_to_io_bridge.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/real_time_clock.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/fractional_div.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/free_queue.vhd

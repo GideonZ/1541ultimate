@@ -1072,7 +1072,7 @@ TestDefinition_t slot_tests[] = {
 		{ "Verify reference clock", checkReferenceClock,     1,  true, false,  true },
 		{ "Memory Test", 			checkMemory,             1,  true, false, false },
 		{ "Run DUT Application",    checkApplicationRun,   150,  true, false,  true },
-		{ "Check if Jig was run",   checkJigHasRun,        150,  true, false,  true },
+//		{ "Check if Jig was run",   checkJigHasRun,        150,  true, false,  true },
 		{ "Button Test", 			checkButtons,		  3000, false,  true,  true },
 		{ "Check Flash Types",      checkFlashSwitch,      150, false, false,  true },
 		{ "Audio input test",       slotAudioInput,        600, false, false,  true },
