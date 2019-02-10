@@ -13,11 +13,13 @@ class FileDevice : public CachedTreeNode
     Disk *disk;
     const char *display_name;
     bool initialized;
+    bool isFloppy;
 public:
     FileDevice(BlockDevice *b, const char *n, const char *dispn);
     virtual ~FileDevice();
     
-	bool is_ready(void);
+    void setFloppy(void) { isFloppy = true; }
+    bool is_ready(void);
     void attach_disk(int block_size);
     void detach_disk(void);
     int  probe(void);

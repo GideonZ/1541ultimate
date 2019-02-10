@@ -191,16 +191,12 @@ void UsbHubDriver :: install(UsbInterface *intf)
     printf("-- Install Complete.. HUB on address %d.. --\n", dev->current_address);
 
     struct t_endpoint_descriptor *iin = intf->find_endpoint(0x83);
-    int endpoint = iin->endpoint_address & 0x0F;
 
-    ipipe.device = dev;
-    ipipe.DevEP = uint16_t((dev->current_address << 8) | endpoint);
+    host->initialize_pipe(&ipipe, dev, iin);
     ipipe.Interval = 1160; // 50 Hz; // added 1000 for making it slower
     ipipe.Length = 2; // just read 2 bytes max (max 15 port hub)
-    ipipe.MaxTrans = 64;
-    ipipe.SplitCtl = 0;
-    ipipe.Command = 0; // driver will fill in the command
     ipipe.buffer = (void *)irq_data;
+    ipipe.MaxTrans = 64; // fix?
 
     irq_transaction = host->allocate_input_pipe(&ipipe, UsbHubDriver_interrupt_handler, this);
     printf("Poll installed on irq_transaction %d\n", irq_transaction);

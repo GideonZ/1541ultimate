@@ -24,7 +24,7 @@ public:
     Disk(BlockDevice *b, int sec_size); /* constructor */
     ~Disk();                            /* destructor  */
 
-    int Init(void);             /* Initialize disk, read structures */
+    int Init(bool isFloppy);            /* Initialize disk, read structures */
 };
 
 #endif

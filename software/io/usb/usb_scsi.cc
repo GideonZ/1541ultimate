@@ -118,28 +118,14 @@ void UsbScsiDriver :: install(UsbInterface *intf)
     cbw.signature[2] = 0x42;
     cbw.signature[3] = 0x43;
 
-    struct t_endpoint_descriptor *bin = interface->find_endpoint(0x82);
-    struct t_endpoint_descriptor *bout = interface->find_endpoint(0x02);
 
-    int bi = bin->endpoint_address & 0x0F;
-    int bo = bout->endpoint_address & 0x0F;
     if(dev) {
+        struct t_endpoint_descriptor *bin = interface->find_endpoint(0x82);
+        struct t_endpoint_descriptor *bout = interface->find_endpoint(0x02);
     	host = dev->host;
     	device = dev;
-    	bulk_in.device = dev;
-    	bulk_out.device = dev;
-    	bulk_in.DevEP  = ((dev->current_address) << 8) | bi;
-        bulk_out.DevEP = ((dev->current_address) << 8) | bo;
-        bulk_in.MaxTrans = bin->max_packet_size;
-        bulk_out.MaxTrans = bout->max_packet_size;
-        bulk_in.Command = 0; // used to store toggle bit
-        bulk_out.Command = 0; // used to store toggle bit
-        bulk_in.SplitCtl = host->getSplitControl(dev->parent->current_address, dev->parent_port + 1, dev->speed, 2);
-        bulk_out.SplitCtl = bulk_in.SplitCtl;
-        bulk_in.needPing = 0;
-        bulk_out.needPing = 0;
-        bulk_in.highSpeed = (dev->speed == 2) ? 1 : 0;
-        bulk_out.highSpeed = (dev->speed == 2) ? 1 : 0;
+    	host->initialize_pipe(&bulk_in, dev, bin);
+    	host->initialize_pipe(&bulk_out, dev, bout);
     }
 
 	// create a block device for each LUN
@@ -246,6 +232,7 @@ UsbScsi :: UsbScsi(UsbScsiDriver *drv, int unit, int ml)
     removable = 0;
     block_size = 512;
     capacity = 0;
+    no_more = false;
 }
 
 UsbScsi :: ~UsbScsi()
@@ -271,9 +258,8 @@ void UsbScsi :: reset(void)
 
 //	printf("Going to do inquiry..\n");
     inquiry();
-    driver->request_sense(lun, true);
+    driver->request_sense(lun, true, false);
 
-//    test_unit_ready();
 //	printf("Reset Done..\n");
 }
 
@@ -338,7 +324,7 @@ int UsbScsiDriver :: mass_storage_reset()
 	return i;
 }
 
-int UsbScsiDriver :: request_sense(int lun, bool debug)
+int UsbScsiDriver :: request_sense(int lun, bool debug, bool handle)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
     	printf("UsbScsiDriver unavailable (SR).\n");
@@ -374,8 +360,12 @@ int UsbScsiDriver :: request_sense(int lun, bool debug)
         printf(")\n");
     }
 	if(debug)
-		print_sense_error();
+		print_sense_error(sense_data);
 	int retval = status_transport(true);
+
+	if (len == 18) {
+        scsi_blk_dev[lun]->handle_sense_error(sense_data);
+	}
 	xSemaphoreGive(mutex);
 	return retval;
 }
@@ -454,12 +444,12 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
     /* DATA PHASE */
     if((data)&&(datalen)) {
     	if(out) {
-			len = host->bulk_out(&bulk_out, data, datalen, 2000); // 10 seconds
+			len = host->bulk_out(&bulk_out, data, datalen, 24000); // 3 seconds
 			if(debug) {
 				printf("%d data bytes sent.\n", len);
 			}
     	} else { // in
-			len = host->bulk_in(&bulk_in, data, datalen, 400); // 2 seconds
+			len = host->bulk_in(&bulk_in, data, datalen, 24000); // 3 seconds
 			if(debug) {
 				printf("%d data bytes received:\n", len);
 				dump_hex(data, len);
@@ -493,8 +483,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 
 	xSemaphoreGive(mutex);
 	if(st == 1) {
-		request_sense(lun, debug);
-		scsi_blk_dev[lun]->handle_sense_error(sense_data);
+		request_sense(lun, debug, true);
 		retval = -7;
 	}
 	if(st < 0) {
@@ -505,7 +494,7 @@ int UsbScsiDriver :: exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, i
 
 void UsbScsi :: inquiry(void)
 {
-    uint32_t resp_buffer[16];
+    uint32_t resp_buffer[64];
     uint8_t *response = (uint8_t *)resp_buffer;
 
     int len, i;
@@ -557,10 +546,14 @@ bool UsbScsi :: test_unit_ready(void)
     if(!initialized)
         return false;
 
+    if (no_more) {
+        no_more = false;
+        return (driver->request_sense(lun, false, true) > 0);
+    }
     uint8_t test_ready_command[12] = { 0x00, uint8_t(lun << 5), 0, 0, 0, 0,
                                           0, 0, 0, 0, 0, 0 };
     int res = driver->exec_command(lun, 6, true, test_ready_command, 0, NULL, false);
-	if(res == -7) {
+    if (res == -7) {
 		return true; // handled by sense
 	}
 	if(res >= 0) {
@@ -568,6 +561,8 @@ bool UsbScsi :: test_unit_ready(void)
 		return true;
 	}
 	printf("ERROR Testing Unit.. %d\n", res);
+	no_more = true;
+
 	return false;
 }
 
@@ -818,12 +813,12 @@ struct t_sense_code sense_codes[] = {
 	{ 0xFF, 0xFF, "End of list" } };
 
  
-void UsbScsiDriver :: print_sense_error(void)
+void UsbScsiDriver :: print_sense_error(uint8_t *sd)
 {
-	printf("Sense code: %b (%s)\n", sense_data[2], sense_strings[sense_data[2]] );
+	printf("Sense code: %b (%s)\n", sd[2], sense_strings[sd[2]] );
 	for(int i=0; sense_codes[i].major != 0xFF; i++) {
-		if((sense_codes[i].major == sense_data[12]) &&
-		   (sense_codes[i].minor == sense_data[13])) {
+		if((sense_codes[i].major == sd[12]) &&
+		   (sense_codes[i].minor == sd[13])) {
 		   printf("%s\n", sense_codes[i].string);
 		   break;
 		}
@@ -832,7 +827,7 @@ void UsbScsiDriver :: print_sense_error(void)
 #else
 void UsbScsiDriver :: print_sense_error(void)
 {
-	printf("Sense code: %b, (%b.%b)", sense_data[2], sense_data[12], sense_data[13]);
+	printf("Sense code: %b, (%b.%b)", sd[2], sd[12], sd[13]);
 }
 #endif
 

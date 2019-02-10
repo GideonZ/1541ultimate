@@ -16,6 +16,8 @@ entity usb_harness_nano is
 port (
     nyet_count      : in natural := 2;
     ack_on_ping     : in boolean := true;
+    transfer_size   : in natural := 256;
+    packet_size     : in natural := 256;
     interrupt       : out std_logic;
     clocks_stopped  : in boolean := false );
 
@@ -86,6 +88,8 @@ begin
 
     i_device: entity work.usb_device_model
     port map (
+        transfer_size => transfer_size,
+        packet_size => packet_size,
         nyet_count  => nyet_count,
         ack_on_ping => ack_on_ping
     );
