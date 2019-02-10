@@ -73,7 +73,7 @@ int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list
 	item_list.append(new Action("Power OFF", SUBSYSID_C64, MENU_C64_POWEROFF));
 	count++;
 #endif
-#if DEVELOPER >= 0
+#if DEVELOPER > 0
     item_list.append(new Action("Pause",  SUBSYSID_C64, MENU_C64_PAUSE));
     item_list.append(new Action("Resume", SUBSYSID_C64, MENU_C64_RESUME));
     count+=2;
