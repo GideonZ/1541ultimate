@@ -502,6 +502,7 @@ begin
         g_big_endian    => false,
         g_icap          => false,
         g_uart          => true,
+        g_uart_rx       => true,
         g_drive_1541    => false,
         g_drive_1541_2  => false,
         g_hardware_gcr  => false,

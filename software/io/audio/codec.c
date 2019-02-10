@@ -51,7 +51,9 @@ void codec_init(void)
     i2c_write_word(0x14, SGTL5000_CHIP_SSS_CTRL, 0x0150); // I2S => DAP+DAC. ADC => I2S
 
     i2c_write_word(0x14, SGTL5000_CHIP_DAC_VOL, 0x3C3C);
+#if U64
     i2c_write_word(0x14, SGTL5000_CHIP_ANA_ADC_CTRL, 0x0100); // turn ON -6dB for ADC to avoid clipping from SIDs
+#endif
     // write CHIP_ADCDAC_CTRL to unmute DAC left and right
     i2c_write_word(0x14, SGTL5000_CHIP_ANA_CTRL, 0x0014); // select LINE_IN for ADC
     i2c_write_word(0x14, SGTL5000_CHIP_ADCDAC_CTRL, 0x0200); // unmute
