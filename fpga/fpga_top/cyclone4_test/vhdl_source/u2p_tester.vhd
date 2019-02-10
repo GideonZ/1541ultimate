@@ -276,6 +276,16 @@ architecture rtl of u2p_tester is
     signal jtag_in_valid           : std_logic                     := 'X';             -- valid
     signal jtag_in_ready           : std_logic;                                        -- ready
 
+    -- Parallel cable connection
+    signal drv_via1_port_a_o    : std_logic_vector(7 downto 0);
+    signal drv_via1_port_a_i    : std_logic_vector(7 downto 0);
+    signal drv_via1_port_a_t    : std_logic_vector(7 downto 0);
+    signal drv_via1_ca2_o       : std_logic;
+    signal drv_via1_ca2_i       : std_logic;
+    signal drv_via1_ca2_t       : std_logic;
+    signal drv_via1_cb1_o       : std_logic;
+    signal drv_via1_cb1_i       : std_logic;
+    signal drv_via1_cb1_t       : std_logic;
 begin
     process(RMII_REFCLK)
     begin
@@ -484,6 +494,8 @@ begin
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
+        g_numerator     => 32,
+        g_denominator   => 125,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
         g_microblaze    => false,
@@ -548,6 +560,17 @@ begin
         ULPI_DIR    => ULPI_DIR,
         ULPI_DATA   => ULPI_DATA,
     
+        -- Parallel cable pins
+        drv_via1_port_a_o   => drv_via1_port_a_o,
+        drv_via1_port_a_i   => drv_via1_port_a_i,
+        drv_via1_port_a_t   => drv_via1_port_a_t,
+        drv_via1_ca2_o      => drv_via1_ca2_o,
+        drv_via1_ca2_i      => drv_via1_ca2_i,
+        drv_via1_ca2_t      => drv_via1_ca2_t,
+        drv_via1_cb1_o      => drv_via1_cb1_o,
+        drv_via1_cb1_i      => drv_via1_cb1_i,
+        drv_via1_cb1_t      => drv_via1_cb1_t,
+
         -- Ethernet Interface (RMII)
         eth_clock   => RMII_REFCLK, 
         eth_reset   => eth_reset,
@@ -559,6 +582,10 @@ begin
         -- Buttons
         BUTTON      => not BUTTON );
 
+    -- Parallel cable not implemented. This is the way to stub it...
+    drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
+    drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
+    drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
 
 --    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
 --    generic map (

@@ -11,26 +11,26 @@ library ieee;
     use work.io_bus_pkg.all;
     use work.mem_bus_pkg.all;
     
-entity u2p_dut is
+entity u2p_test is
 port (
     -- slot side
     SLOT_BUFFER_ENn  : out   std_logic;
     SLOT_PHI2        : in    std_logic;
     SLOT_DOTCLK      : in    std_logic;
-    SLOT_RSTn        : in    std_logic;
-    SLOT_ADDR        : in    std_logic_vector(15 downto 0);
-    SLOT_DATA        : in    std_logic_vector(7 downto 0);
-    SLOT_RWn         : in    std_logic;
+    SLOT_RSTn        : inout std_logic;
+    SLOT_ADDR        : inout std_logic_vector(15 downto 0);
+    SLOT_DATA        : inout std_logic_vector(7 downto 0);
+    SLOT_RWn         : inout std_logic;
     SLOT_BA          : in    std_logic;
-    SLOT_DMAn        : in    std_logic;
-    SLOT_EXROMn      : in    std_logic;
-    SLOT_GAMEn       : in    std_logic;
-    SLOT_ROMHn       : in    std_logic;
-    SLOT_ROMLn       : in    std_logic;
-    SLOT_IO1n        : in    std_logic;
-    SLOT_IO2n        : in    std_logic;
-    SLOT_IRQn        : in    std_logic;
-    SLOT_NMIn        : in    std_logic;
+    SLOT_DMAn        : inout std_logic;
+    SLOT_EXROMn      : inout std_logic;
+    SLOT_GAMEn       : inout std_logic;
+    SLOT_ROMHn       : inout std_logic;
+    SLOT_ROMLn       : inout std_logic;
+    SLOT_IO1n        : inout std_logic;
+    SLOT_IO2n        : inout std_logic;
+    SLOT_IRQn        : inout std_logic;
+    SLOT_NMIn        : inout std_logic;
     SLOT_VCC         : in    std_logic;
     
     -- memory
@@ -55,11 +55,11 @@ port (
     AUDIO_SDI   : in    std_logic;
 
     -- IEC bus
-    IEC_ATN     : in    std_logic;
-    IEC_DATA    : in    std_logic;
-    IEC_CLOCK   : in    std_logic;
-    IEC_RESET   : in    std_logic;
-    IEC_SRQ_IN  : in    std_logic;
+    IEC_ATN     : inout std_logic;
+    IEC_DATA    : inout std_logic;
+    IEC_CLOCK   : inout std_logic;
+    IEC_RESET   : inout std_logic;
+    IEC_SRQ_IN  : inout std_logic;
     
     LED_DISKn   : out   std_logic; -- activity LED
     LED_CARTn   : out   std_logic;
@@ -117,17 +117,17 @@ port (
     BOARD_REVn  : in    std_logic_vector(4 downto 0);
 
     -- Cassette Interface
-    CAS_MOTOR   : in    std_logic := '0';
-    CAS_SENSE   : in    std_logic := 'Z';
-    CAS_READ    : in    std_logic := 'Z';
-    CAS_WRITE   : in    std_logic := 'Z';
+    CAS_MOTOR   : inout std_logic := '0';
+    CAS_SENSE   : inout std_logic := 'Z';
+    CAS_READ    : inout std_logic := 'Z';
+    CAS_WRITE   : inout std_logic := 'Z';
     
     -- Buttons
     BUTTON      : in    std_logic_vector(2 downto 0));
 
 end entity;
 
-architecture rtl of u2p_dut is
+architecture rtl of u2p_test is
     component nios_dut is
         port (
             audio_in_data           : in    std_logic_vector(31 downto 0) := (others => 'X'); -- data
@@ -252,16 +252,7 @@ architecture rtl of u2p_dut is
     signal slot_test_vector     : std_logic_vector(47 downto 0);
     signal jtag_write_vector    : std_logic_vector(7 downto 0);
 
-    -- Parallel cable connection
-    signal drv_via1_port_a_o    : std_logic_vector(7 downto 0);
-    signal drv_via1_port_a_i    : std_logic_vector(7 downto 0);
-    signal drv_via1_port_a_t    : std_logic_vector(7 downto 0);
-    signal drv_via1_ca2_o       : std_logic;
-    signal drv_via1_ca2_i       : std_logic;
-    signal drv_via1_ca2_t       : std_logic;
-    signal drv_via1_cb1_o       : std_logic;
-    signal drv_via1_cb1_i       : std_logic;
-    signal drv_via1_cb1_t       : std_logic;
+    signal test_shift           : std_logic_vector(47 downto 0);
 begin
     process(RMII_REFCLK)
     begin
@@ -469,8 +460,6 @@ begin
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
-        g_numerator     => 32,
-        g_denominator   => 125,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
         g_microblaze    => false,
@@ -535,17 +524,6 @@ begin
         ULPI_DIR    => ULPI_DIR,
         ULPI_DATA   => ULPI_DATA,
     
-        -- Parallel cable pins
-        drv_via1_port_a_o   => drv_via1_port_a_o,
-        drv_via1_port_a_i   => drv_via1_port_a_i,
-        drv_via1_port_a_t   => drv_via1_port_a_t,
-        drv_via1_ca2_o      => drv_via1_ca2_o,
-        drv_via1_ca2_i      => drv_via1_ca2_i,
-        drv_via1_ca2_t      => drv_via1_ca2_t,
-        drv_via1_cb1_o      => drv_via1_cb1_o,
-        drv_via1_cb1_i      => drv_via1_cb1_i,
-        drv_via1_cb1_t      => drv_via1_cb1_t,
-
         -- Ethernet Interface (RMII)
         eth_clock   => RMII_REFCLK, 
         eth_reset   => eth_reset,
@@ -557,10 +535,6 @@ begin
         -- Buttons
         BUTTON      => not BUTTON );
     
-    -- Parallel cable not implemented. This is the way to stub it...
-    drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
-    drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
-    drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
 
     i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
     generic map (
@@ -710,5 +684,43 @@ begin
                          SLOT_VCC    &
                          SLOT_DATA   &
                          SLOT_ADDR;
+
+    process(sys_clock)
+    begin
+        if rising_edge(sys_clock) then
+            if sys_reset = '1' then
+                test_shift <= (0 => '1', 1 => '1', 2 => '1', others => '0');
+            else
+                test_shift <= test_shift(test_shift'high-1 downto 0) & test_shift(test_shift'high);
+            end if;    
+        end if;
+    end process;
+
+    CAS_MOTOR   <= test_shift(47);
+    CAS_SENSE   <= test_shift(46);
+    CAS_READ    <= test_shift(45);
+    CAS_WRITE   <= test_shift(44);
+    IEC_ATN     <= test_shift(43);
+    IEC_DATA    <= test_shift(42);
+    IEC_CLOCK   <= test_shift(41); 
+    IEC_RESET   <= test_shift(40);
+    IEC_SRQ_IN  <= test_shift(39);
+--    SLOT_PHI2   <= test_shift(38);
+--    SLOT_DOTCLK <= test_shift(37);
+    SLOT_RSTn   <= test_shift(36);
+    SLOT_RWn    <= test_shift(35);
+--    SLOT_BA     <= test_shift(34);
+    SLOT_DMAn   <= test_shift(33);
+    SLOT_EXROMn <= test_shift(32);
+    SLOT_GAMEn  <= test_shift(31);
+    SLOT_ROMHn  <= test_shift(30);
+    SLOT_ROMLn  <= test_shift(29);
+    SLOT_IO1n   <= test_shift(28);
+    SLOT_IO2n   <= test_shift(27);
+    SLOT_IRQn   <= test_shift(26);
+    SLOT_NMIn   <= test_shift(25);
+--    SLOT_VCC    <= test_shift(24);
+    SLOT_DATA   <= test_shift(23 downto 16);
+    SLOT_ADDR   <= test_shift(15 downto 0);
 
 end architecture;
