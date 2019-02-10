@@ -13,9 +13,13 @@ library ieee;
     use ieee.std_logic_1164.all;
     use ieee.numeric_std.all;
 
+library std;
+    use std.textio.all;
+    
 library work;
     use work.tl_string_util_pkg.all;    
-
+    use work.rocket_pkg.all;
+    
 entity harness_floppy is
 
 end entity;
@@ -37,16 +41,29 @@ architecture Harness of harness_floppy is
     signal byte_ready      : std_logic;
     signal soe             : std_logic := '1';
     signal rate_ctrl       : std_logic_vector(1 downto 0) := "11";
-    constant bytes_per_track : natural := 16#1AA0#;
+    signal read_data       : std_logic_vector(7 downto 0);
+    signal read_data_d     : std_logic_vector(7 downto 0) := X"FF";
+
+    type t_bytes is array(natural range <>) of std_logic_vector(7 downto 0);
+    constant input : t_bytes := ( X"FF", X"FF", X"55", X"55", X"00", X"00", X"00", X"00", X"00", X"00", X"00", 
+                                  X"00", X"00", X"00", X"00", X"55", X"F7", X"54", X"55", X"55", X"55", X"55",
+                                  X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"AA" );
+
+--    constant input : t_bytes := (
+--        X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", 
+--        X"55", X"55", X"55", X"55", X"55", X"55", X"5F", X"55", X"55", X"F5", X"25", X"4B", X"52", X"94", X"B5", X"29", 
+--        X"4A", X"52", X"94", X"A4", X"A4", X"A4", X"A4", X"A4", X"A4", X"A4", X"A4", X"AB", X"BB", X"FF", X"FF", X"FF", 
+--        X"FF", X"FF", X"FD", X"57", X"56", X"A9", X"24", X"00", X"02", X"AB", X"53", X"BB", X"BB", X"BB", X"BB", X"BB", 
+--        X"BB", X"BB", X"BA", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", 
+--        X"A9", X"6A", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", X"A9" ); 
+
+
+    --constant bytes_per_track : natural := rocket_array'length;
+    constant bytes_per_track : natural := 7756;
     constant bits_per_track  : natural := 8 * bytes_per_track;
     constant half_clocks_per_track : natural := 100_000_000 / 5; -- 5 RPS = 300 RPM
     signal bit_time        : unsigned(9 downto 0) := to_unsigned(half_clocks_per_track / bits_per_track, 10); -- steps of 10 ns (half clocks)
-    signal read_data       : std_logic_vector(7 downto 0);
 
-    type t_bytes is array(natural range <>) of std_logic_vector(7 downto 0);
-    constant input : t_bytes := ( X"FF", X"FF", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", 
-                                  X"55", X"55", X"55", X"33", X"56", X"47", X"EA", X"00", X"00", X"00", X"00",
-                                  X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"AA" );
 begin
     clock <= not clock after 10 ns; -- 50 MHz
     reset <= '1', '0' after 100 ns;
@@ -95,8 +112,27 @@ begin
         variable last : time := 0.0 ns;
     begin
         if falling_edge(byte_ready) then
-            report hstr(read_data) & " after " & time'image(now - last);
+            read_data_d <= read_data;
+--            report hstr(read_data) & " after " & time'image(now - last);
             last := now;
+        end if;
+    end process;
+
+    process
+        variable L : line;
+        variable limit : natural := 0;
+    begin
+        wait until byte_ready = '0' or sync = '0';
+        if sync = '0' then
+            writeline(output, L);
+            write(L, "sync ");
+            limit := 0;
+        end if;
+        if byte_ready = '0' then
+            limit := limit + 1;
+            if limit <= 32 then
+                write(L, hstr(read_data) & " ");
+            end if;
         end if;
     end process;
 
