@@ -12,6 +12,7 @@ FileDevice :: FileDevice(BlockDevice *b, const char *n, const char *dn) : Cached
     info.cluster = 0; // indicate root dir
     info.attrib = AM_DIR; // ;-)
     info.special_display = 1;
+    isFloppy = false;
     //printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s, info = %p\n", this, disk, b, n, dn, get_file_info());
 }
 
@@ -67,7 +68,7 @@ int FileDevice :: probe(void) {
     }
 
     // this function converts the partitions below the disk into browsable items
-    int p_count = disk->Init();
+    int p_count = disk->Init(isFloppy);
     
     if(p_count < 0) {
         printf("Error initializing disk..%d\n", p_count);

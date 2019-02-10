@@ -164,13 +164,27 @@ bool UsbDevice :: get_device_descriptor()
     i = host->control_exchange(&control_pipe, c_get_device_descriptor, 8, &device_descr, 18);
 	if(i != 18) {
 		printf("Error: Expected 18 bytes on device descriptor.. got %d.\n", i);
-		if (i == 8) {
-			dump_hex(&device_descr, i);
-			control_pipe.MaxTrans = 8;
+		if (i >= 8) {
+			dump_hex_relative(&device_descr, i);
+			control_pipe.MaxTrans = device_descr.max_packet_size;
 			printf("Switched to 8 byte control pipe.\n");
 		}
 		return false;
-	}
+	} else {
+	    switch(device_descr.max_packet_size) {
+	    case 8:
+        case 16:
+        case 32:
+        case 64:
+	        control_pipe.MaxTrans = device_descr.max_packet_size;
+	        printf("This device has a valid maxPacketSize of %d for the control pipe.\n", device_descr.max_packet_size);
+	        break;
+        default:
+            printf("Erroneous maxPacketSize for control pipe:\n");
+            dump_hex_relative(&device_descr, 18);
+            break;
+	    }
+    }
 
 	vendorID = le16_to_cpu(device_descr.vendor);
 	productID = le16_to_cpu(device_descr.product);
@@ -404,13 +418,19 @@ char *UsbDevice :: get_pathname(char *dest, int len)
 // USB INTERFACE
 // =========================================================
 
-void UsbInterface :: getHidReportDescriptor(void) {
+uint8_t *UsbInterface :: getHidReportDescriptor(int *len) {
 	if (!hid_descriptor_valid) {
-		return;
+		return NULL;
 	}
+    uint8_t *pnt = (uint8_t *)&hid_descriptor;
+    int hid_len = int(pnt[7]) + 256*int(pnt[8]);
+    *len = hid_len;
+
+	if (hid_report_descriptor) {
+	    return hid_report_descriptor;
+	}
+
 	uint8_t buf[2];
-	uint8_t *pnt = (uint8_t *)&hid_descriptor;
-	int hid_len = int(pnt[7]) + 256*int(pnt[8]);
 	hid_report_descriptor = new uint8_t[hid_len];
 
 	if (hid_report_descriptor) {
@@ -422,9 +442,10 @@ void UsbInterface :: getHidReportDescriptor(void) {
 		c_get_hid_report_descriptor[7] = pnt[8];
 		hid_len = parentDevice->host->control_exchange(&parentDevice->control_pipe, c_get_hid_report_descriptor, 8, hid_report_descriptor, hid_len);
 		// dump_hex(hid_report_descriptor, hid_len);
+		return hid_report_descriptor;
 	}
+	return NULL; // insufficient mem.. FATAL
 }
-
 
 
 IndexedList<UsbDriver *> usb_drivers(16, NULL);

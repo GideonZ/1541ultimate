@@ -65,7 +65,7 @@ class UsbBase
     uint16_t complete_command(int timeout);
 
     int   open_pipe();
-    void  init_pipe(int index, struct t_pipe *init);
+    void  activate_autopipe(int index, struct t_pipe *init);
     void  close_pipe(int pipe);
 
     static void input_task_start(void *);
@@ -110,18 +110,14 @@ public:
     int  control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen);
     int  control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len);
     int  allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, void *object);
+    void initialize_pipe(struct t_pipe *pipe, UsbDevice *device, struct t_endpoint_descriptor *ep);
     void free_input_pipe(int index);
     void pause_input_pipe(int index);
     void resume_input_pipe(int index);
 
-    int  bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout = 2000); // 10 seconds
-    int  bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout = 2000); // 10 seconds
+    int  bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout = 20000);
+    int  bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout = 20000);
 
-    void free_input_buffer(int inpipe, uint8_t *buffer);
-
-    int  create_pipe(int addr, struct t_endpoint_descriptor *epd);
-    void free_pipe(int index);
-    
     // special bootloader function
     UsbDevice *init_simple(void);
 

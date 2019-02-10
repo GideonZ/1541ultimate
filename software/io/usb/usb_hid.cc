@@ -57,29 +57,32 @@ void UsbHidDriver :: install(UsbInterface *intf)
 	dev->set_interface(interface->getInterfaceDescriptor()->interface_number,
 			interface->getInterfaceDescriptor()->alternate_setting);
 
-    struct t_endpoint_descriptor *iin = interface->find_endpoint(0x83);
-    irq_in   = (iin->endpoint_address & 0x0F);
+	int len = 0;
+	uint8_t *reportDescriptor = intf->getHidReportDescriptor(&len);
+	if (reportDescriptor) {
+	    dump_hex_relative(reportDescriptor, len);
+	}
 
-	ipipe.DevEP = uint16_t((device->current_address << 8) | irq_in);
+
+	struct t_endpoint_descriptor *iin = interface->find_endpoint(0x83);
+
+    host->initialize_pipe(&ipipe, device, iin);
 	ipipe.Interval = 160; // 50 Hz
 	ipipe.Length = 16; // just read 8 bytes max
 	ipipe.MaxTrans = 16; // iin->max_packet_size;
-	ipipe.SplitCtl = host->getSplitControl(device->parent->current_address, device->parent_port + 1, device->speed, 3);
-	ipipe.Command = 0; // driver will fill in the command
-	ipipe.highSpeed = 0;
 	ipipe.buffer = this->irq_data;
 
 	irq_transaction = host->allocate_input_pipe(&ipipe, UsbHidDriver_interrupt_callback, this);
 
-	if (interface->getInterfaceDescriptor()->sub_class == 1) {
+    uint8_t c_set_idle[]     = { 0x21, 0x0A, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
+    uint8_t c_set_protocol[] = { 0x21, 0x0B, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
+    c_set_idle[4] = interface->getInterfaceDescriptor()->interface_number;
+    c_set_protocol[4] = interface->getInterfaceDescriptor()->interface_number;
+
+    if (interface->getInterfaceDescriptor()->sub_class == 1) {
 		if (interface->getInterfaceDescriptor()->protocol == 1) {
 			printf("Boot Keyboard found!\n");
 			keyboard = true;
-
-			uint8_t c_set_idle[]     = { 0x21, 0x0A, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
-			uint8_t c_set_protocol[] = { 0x21, 0x0B, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 };
-			c_set_idle[4] = interface->getInterfaceDescriptor()->interface_number;
-			c_set_protocol[4] = interface->getInterfaceDescriptor()->interface_number;
 
 			host->control_exchange(&dev->control_pipe, c_set_protocol, 8, NULL, 0);
 			host->control_exchange(&dev->control_pipe, c_set_idle, 8, NULL, 0);
@@ -88,10 +91,11 @@ void UsbHidDriver :: install(UsbInterface *intf)
 			printf("Boot Mouse found (maxtrans = %d)!\n", iin->max_packet_size);
             host->resume_input_pipe(irq_transaction); // start polling
 			// Note: Polling is not started!
-		} else {
+		}
+    } else {
+            host->resume_input_pipe(irq_transaction); // start polling
 			// Another HID device which we cannot decode just yet
 			// Note: Polling is not started!
-		}
 	}
 }
 
@@ -113,15 +117,13 @@ void UsbHidDriver :: interrupt_handler()
 {
     int data_len = host->getReceivedLength(irq_transaction);
 
-/*
-    printf("HID (ADDR=%d) IRQ data: ", device->current_address);
-	for(int i=0;i<data_len;i++) {
-		printf("%b ", irq_data[i]);
-	} printf("\n");
-*/
-
     if (keyboard) { // keyboard
 		system_usb_keyboard.process_data(irq_data);
+	} else {
+	    printf("HID (ADDR=%d) IRQ data: ", device->current_address);
+	    for(int i=0;i<data_len;i++) {
+	        printf("%b ", irq_data[i]);
+	    } printf("\n");
 	}
     host->resume_input_pipe(this->irq_transaction);
 }

@@ -24,6 +24,7 @@ attrib_fifo     = 0x380 ; 16 entries (up to 38F)
 
 RAM_STATUS      = $3E6
 
+ReportedAt      = $3EA
 Simulation      = $3EB
 DO_SUSPEND      = $3EC
 DO_RESET        = $3ED
@@ -66,6 +67,8 @@ CMD_DATA_BUFFER_CTRL = $61
 CMD_DEVICE_ENDPOINT  = $62
 CMD_SPLIT_CONTROL    = $63
 CMD_RESPONSE         = $64
+
+DEBUG_REPORT         = $55
 
 CMD_REQ_MEMREAD      = $8000
 CMD_REQ_MEMWRITE     = $4000
@@ -491,7 +494,6 @@ is_ssplit_allowed
 _answer_no
     LOAD  #1
     RET
-
         
 issue_ssplit
     LOAD  Descriptor
@@ -592,6 +594,7 @@ _timeout_only
     BEQ   _leave_out   ; No timeout set, try later (indefinitely)
     CALL  _check_timeout
     BCC   _leave_out   ; Timeout condition not yet met
+    OUTP  DEBUG_REPORT
     LOADI Descriptor,Offset_Command_Result
     OR    #CMD_RES_TIMEOUT
     STORI Descriptor,Offset_Command_Result
@@ -929,6 +932,8 @@ check_pipes
     LOAD  TTDescriptor
     BEQ   _chk_pipe_loop    
     STORE Descriptor
+    LOAD  TTPipeNumber
+    STORE PipeNumber
     CALL  attr_fifo_full
     BEQ   _chk_pipe_loop
     CALL  _complete_cmd
@@ -936,13 +941,6 @@ check_pipes
     LOAD  TTPipeNumber
     CALL  _report
     BRA   _chk_pipe_loop
-
-;_no_complete_report
-;    LOADI Descriptor,Offset_Command_Timeout
-;    BEQ   _chk_pipe_loop
-;    CALL  _check_timeout
-;    BCC   _chk_pipe_loop
-;    CALL  _report
 
 _chk_pipe_loop
     LOAD  #Pipes
@@ -1016,8 +1014,16 @@ _check_timeout
     
 _report
     ;; Store value to report
+    STORE temp
     CALL  attr_fifo_push
 
+    LOAD  temp
+    BNE   _non_zero_pipe
+
+    INP   FRAME_COUNTER
+    STORE ReportedAt
+
+_non_zero_pipe
     ;; we set the pause bit, so that it will only occur once
     LOADI Descriptor,Offset_Command
     OR    #CMD_REQ_DONE

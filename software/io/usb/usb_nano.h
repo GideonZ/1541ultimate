@@ -19,6 +19,7 @@
 
 #define USB2_STATUS 	    (*(volatile uint16_t *)(NANO_BASE + 0x7CC))
 
+#define NANO_REPORT_FRAME   (*(volatile uint16_t *)(NANO_BASE + 0x7D4))
 #define NANO_SIMULATION	    (*(volatile uint16_t *)(NANO_BASE + 0x7D6))
 #define NANO_DO_SUSPEND	    (*(volatile uint16_t *)(NANO_BASE + 0x7D8))
 #define NANO_DO_RESET	    (*(volatile uint16_t *)(NANO_BASE + 0x7DA))
@@ -63,6 +64,7 @@ typedef struct _t_usb_descriptor {
 #define UCMD_TOGGLEBIT	  0x0800
 #define UCMD_RETRY_ON_NAK 0x0400
 #define UCMD_PAUSED		  0x0200
+#define UCMD_ABORT_REQ    0x0100
 #define UCMD_DO_DATA	  0x0040
 #define UCMD_SETUP		  0x0000
 #define UCMD_OUT		  0x0001
@@ -81,13 +83,13 @@ typedef struct _t_usb_descriptor {
 #define SPLIT_DO_SPLIT	0x8000
 
 
-#define URES_ABORTED    0x8000
 #define URES_PACKET	    0x0000
 #define URES_ACK	    0x1000
 #define URES_NAK	    0x2000
 #define URES_NYET	    0x3000
 #define URES_STALL      0x4000
-#define URES_ERROR	    0x5000
+#define URES_ERROR      0x5000
+#define URES_ABORTED    0x6000
 #define URES_RESULT_MSK 0xF000
 #define URES_TOGGLE     0x0800
 #define URES_NO_DATA    0x0400

@@ -182,7 +182,7 @@ public:
     	hid_descriptor_valid = true;
     }
 
-    void getHidReportDescriptor(void);
+    uint8_t *getHidReportDescriptor(int *len);
 
     void setDriver(UsbDriver *drv) {
     	driver = drv;
@@ -209,7 +209,6 @@ public:
     }
 
     void install(void) {
-		getHidReportDescriptor();
     	UsbDriver *driver = getUsbDriverFactory()->create(this);
     	setDriver(driver);
     	if (driver) {
