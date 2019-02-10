@@ -55,7 +55,6 @@ port (
 end floppy_stream;    
 
 architecture gideon of floppy_stream is
-    signal bit_square  : std_logic;
     signal bit_tick    : std_logic;
     signal bit_timer   : unsigned(8 downto 0);
     signal bit_carry   : std_logic;
@@ -70,6 +69,7 @@ architecture gideon of floppy_stream is
     signal track_i     : unsigned(6 downto 0);
     signal mode_d      : std_logic;
     signal write_delay : integer range 0 to 3;
+    signal random_bit  : std_logic;
 
     -- resample
     signal transition_pulse : std_logic;
@@ -80,7 +80,8 @@ architecture gideon of floppy_stream is
     signal rd_shift_phase   : std_logic;
     
     -- weak bit implementation
---    signal random_data : std_logic_vector(15 downto 0);
+    signal random_data   : std_logic_vector(15 downto 0);
+    signal random_trans  : std_logic;
 --    signal bit_slip    : std_logic;
 --    signal bit_flip    : std_logic;
 --    signal weak_count  : integer range 0 to 63 := 0;
@@ -101,10 +102,6 @@ begin
             else
                 bit_timer <= bit_timer - 1;
             end if;
-            bit_square <= '0';
-            if bit_timer < ('0' & bit_time(9 downto 2)) then
-                bit_square <= '1';
-            end if;
             
             if reset='1' then
                 bit_timer <= to_unsigned(10, bit_timer'length);
@@ -113,17 +110,17 @@ begin
         end if;            
     end process;
     
---    i_noise: entity work.noise_generator
---    generic map (
---        g_type          => "Galois",
---        g_polynom       => X"1020",
---        g_seed          => X"569A"
---    )
---    port map (
---        clock           => clock,
---        enable          => bit_tick,
---        reset           => reset,
---        q               => random_data  );
+    i_noise: entity work.noise_generator
+    generic map (
+        g_type          => "Galois",
+        g_polynom       => X"1020",
+        g_seed          => X"569A"
+    )
+    port map (
+        clock           => clock,
+        enable          => tick_16MHz,
+        reset           => reset,
+        q               => random_data  );
     
     -- stream from memory
     p_stream: process(clock)
@@ -132,24 +129,11 @@ begin
         if rising_edge(clock) then
             do_read <= '0';
             if bit_tick='1' then
---                history  := history(3 downto 0) & mem_rd_bit;
---                bit_slip <= '0';
---                bit_flip <= '0';
---                if history = "00000" and mode = '1' then -- something weird can happen now:
---                -- nothing
---                -- bit flip
---                -- bit slip (generates less bits)
---                    bit_slip <= random_data(2) and random_data(7) and random_data(11) and enable_slip; -- 12.5%
---                    bit_flip <= random_data(6) and random_data(14); -- 25%                    
---                    if weak_count = 63 then
---                        enable_slip <= '1';
---                    else
---                        weak_count <= weak_count + 1;
---                    end if;
---                else
---                    weak_count <= 0;
---                    enable_slip <= '0';
---                end if;
+                random_bit <= '0';
+                history  := history(3 downto 0) & mem_rd_bit;
+                if history = "00000" and mode = '1' then -- something weird can happen now:
+                    random_bit <= '1'; --random_data(2) and random_data(7) and random_data(11) and random_data(12); -- 1/16 
+                end if;
 
                 mem_bit_cnt <= mem_bit_cnt + 1;
                 if mem_bit_cnt="000" then
@@ -162,15 +146,15 @@ begin
             if reset='1' then
                 mem_shift    <= (others => '1');
                 mem_bit_cnt  <= "000";
---                bit_flip     <= '0';
---                bit_slip     <= '0';
---                enable_slip  <= '0';
+                random_bit <= '0';
             end if;
         end if;
     end process;
     
     -- Pulse from the floppy (a one-clock pulse that happens only when data is '1')
-    transition_pulse <= bit_tick and mem_rd_bit;
+    random_trans <= '1' when random_data(10 downto 0) = "10010010101" else '0';
+    
+    transition_pulse <= (bit_tick and mem_rd_bit) or (random_trans and random_bit);
     p_resample: process(clock)
     begin
         if rising_edge(clock) then
@@ -185,7 +169,6 @@ begin
             end if;
 
             rd_shift_pulse <= '0';
-            rd_shift_phase <= sampl(1);
             if transition_pulse = '1' then
                 sampl <= (others => '0');
             elsif tick_16MHz = '1' and cnt16 = X"F" then
@@ -197,6 +180,7 @@ begin
         end if;
     end process;
     rd_shift_data  <= sampl(3) nor sampl(2);
+    rd_shift_phase <= not sampl(1);
 
 
     -- parallelize stream and generate sync
