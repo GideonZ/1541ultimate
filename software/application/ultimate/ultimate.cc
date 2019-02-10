@@ -207,6 +207,7 @@ extern "C" void ultimate_main(void *a)
         }
         switch(system_usb_keyboard.getch()) {
         case KEY_SCRLOCK:
+        case KEY_F10:
             doIt = 1;
             break;
         case 0x04: // CTRL-D

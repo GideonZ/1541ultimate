@@ -122,6 +122,7 @@ void UserInterface :: run(void)
             }
             switch(system_usb_keyboard.getch()) {
             case KEY_SCRLOCK:
+            case KEY_F10:
                 run_once();
                 continue;
             case 0x04: // CTRL-D

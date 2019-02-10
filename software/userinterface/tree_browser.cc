@@ -380,6 +380,7 @@ int TreeBrowser :: handle_key(int c)
         	break;
 */
         case KEY_SCRLOCK:
+        case KEY_F10:
         case KEY_ESCAPE:
         	ret = -1;
         	break;
