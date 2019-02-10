@@ -33,6 +33,10 @@ extern "C" {
 	#include "dump_hex.h"
 }
 
+#ifdef U64
+#include "wifi.h"
+#endif
+
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_u2p(FileType :: getFileTypeFactory(), FileTypeUpdate :: test_type);
 
@@ -130,6 +134,9 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		// this is a hack!
 		cmd->user_interface->host->release_ownership();
 		file = NULL;
+#if U64
+		wifi.Disable();
+#endif
 		jump_run(header.start);
 	} else {
 		printf("Error opening file.\n");

@@ -589,6 +589,7 @@ void C64::resume(void)
 
 void C64::reset(void)
 {
+    C64_MODE = MODE_NORMAL;
     C64_MODE = C64_MODE_RESET;
     ioWrite8(ITU_TIMER, 20);
     while (ioRead8(ITU_TIMER))
@@ -908,7 +909,7 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     // Now, let's reset the machine and release it into run mode
     C64_MODE = C64_MODE_RESET;
     C64_CARTRIDGE_TYPE = 0; // disable our carts
-    vTaskDelay(10);
+    wait_ms(50);
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_STOP = 0;
 
@@ -916,6 +917,12 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     // The machine is running again, but still in reset.
     if (!startLater)
     {
+        // start clean
+        C64_CARTRIDGE_TYPE = 0;
+        C64_REU_ENABLE = 0;
+        C64_SAMPLER_ENABLE = 0;
+        CMD_IF_SLOT_ENABLE = 0;
+
         init_system_roms();
         bool external = false;
 #if U64

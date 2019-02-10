@@ -27,8 +27,9 @@ SRCS_C   =	itu.c \
             mdio.c \
             nios_main.c \
             alt_malloc_lock.c \
-            alt_do_ctors.c
-                        
+            alt_do_ctors.c \
+            alt_load.c
+             
 SRCS_CC	 =  memory.cc \
 			small_printf.cc \
 			flash.cc \
