@@ -181,9 +181,11 @@ void C1541 :: init(void)
     printf("Init C1541. Cfg = %p\n", cfg);
     
     volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
+    uint32_t rotation_speed = (CLOCK_FREQ / 20); // 2 (half clocks) * 1/8 (bytes) * clocks per track. 300 RPM = 5 RPS. (5 * 8 / 2) = 20
+    uint32_t bit_time = rotation_speed / 0x1A00;
     for(int i=0;i<C1541_MAXTRACKS;i++) {
     	*(param++) = (uint32_t)gcr_image->dummy_track;
-        *(param++) = 0x01450010;
+        *(param++) = (bit_time << 16) | 0x100;
     }
 	registers[C1541_SENSOR] = SENSOR_LIGHT;
     registers[C1541_INSERTED] = 0;
@@ -371,9 +373,11 @@ void C1541 :: remove_disk(void)
     wait_ms(100 * cfg->get_value(CFG_C1541_SWAPDELAY));
 
     volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
+    uint32_t rotation_speed = (CLOCK_FREQ / 20); // 2 (half clocks) * 1/8 (bytes) * clocks per track. 300 RPM = 5 RPS. (5 * 8 / 2) = 20
+    uint32_t bit_time = rotation_speed / 0x1A00;
     for(int i=0;i<C1541_MAXTRACKS;i++) {
-    	*(param++) = (uint32_t)gcr_image->dummy_track;
-        *(param++) = 0x01450010;
+        *(param++) = (uint32_t)gcr_image->dummy_track;
+        *(param++) = (bit_time << 16) | 0x100;
     }
 
     registers[C1541_SENSOR] = SENSOR_LIGHT;
