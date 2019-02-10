@@ -965,7 +965,7 @@ char *IecInterface :: getIecName(char *in)
 		memcpy(out, "SEQ", 3);
 	}
 
-	for(int i=0;i<15;i++) {
+	for(int i=0;i<16;i++) {
 		char o;
 		if(temp[i] == 0) {
 			break;
