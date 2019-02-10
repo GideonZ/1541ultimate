@@ -38,8 +38,7 @@ public:
 };
 
 
-
-
+extern WiFi wifi;
 
 
 #endif /* WIFI_H_ */
