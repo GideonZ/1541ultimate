@@ -141,7 +141,6 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
     case SOCKET_CMD_MOUNT_IMG:
     case SOCKET_CMD_RUN_IMG:
-        buf += 1;
         if (cmd == SOCKET_CMD_MOUNT_IMG) {
             c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_MOUNT,
                 RUNCODE_MOUNT_BUFFER|RUNCODE_NO_CHECKSAVE|RUNCODE_NO_UNFREEZE, buf, len);
@@ -319,7 +318,9 @@ void SocketDMA::dmaThread(void *load_buffer)
             }
 	        uint16_t len = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
 	        uint32_t len32 = len;
+
 	        if ((cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG)) {
+	            n = recv(newsockfd, buf+2, 2, 0);
                 len32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8) | (((uint32_t)buf[2]) << 16);
 	        }
 	        if (len32 > SOCKET_BUFFER_SIZE) {
@@ -331,7 +332,7 @@ void SocketDMA::dmaThread(void *load_buffer)
 	        if (n <= 0) {
 	            break;
 	        }
-            performCommand(newsockfd, load_buffer, n, cmd, len);
+            performCommand(newsockfd, load_buffer, n, cmd, len32);
 		}
         puts("ERROR reading from socket");
         lwip_close(newsockfd);
