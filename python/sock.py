@@ -76,6 +76,21 @@ if __name__ == "__main__":
         s.sock.shutdown(0)
         s.sock.close()
 
+    elif (sys.argv[1] == 'i'):
+        with open(sys.argv[2], "rb") as f:
+            bytes = f.read(200000) # max 200K 
+            if bytes != "":
+                s = mysocket()
+                s.connect(sys.argv[3], 64)
+
+                s.mysend(pack("<H", 0xFF0B))
+                s.mysend(pack("<L", len(bytes)))
+                s.mysend(bytes)
+                
+                s.sock.shutdown(0)
+                s.sock.close()
+
+
     elif (sys.argv[1] == 'D'):
         s = mysocket()
         s.connect(sys.argv[2], 64)
