@@ -79,7 +79,7 @@ int init_fat(void)
 {
     dsk   = new Disk(blk, 512);
 
-    int res = dsk->Init();
+    int res = dsk->Init(false);
     printf("Disk initialized. Returned: %d\n", res);
 
     if(res < 1) {
