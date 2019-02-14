@@ -347,7 +347,7 @@ FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char 
 	
 	FRESULT res;
 	
-	if (!stricmp (info.extension, "CVT"))
+	if (!strcasecmp (info.extension, "CVT"))
 	{
             res = ff->openCVT(&info, flags, dir_t, dir_s, dir_idx);
             //res = ff->open(&info, flags);

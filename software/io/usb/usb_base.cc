@@ -402,7 +402,7 @@ void UsbBase :: initialize_pipe(struct t_pipe *pipe, UsbDevice *dev, struct t_en
 
     memset(pipe->name, 0, 8);
     dev->get_pathname(pipe->name, 7);
-    char *pn = "|0";
+    char pn[3] = { '|', 0, 0 };
     pn[1] = (ep_addr | 0x30);
     strcat(pipe->name, pn);
     printf("Assigned '%s' to pipe. Split = %04x\n", pipe->name, pipe->SplitCtl);
