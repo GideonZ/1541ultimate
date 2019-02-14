@@ -152,6 +152,20 @@ void operator delete(void *p)
 #endif
 }
 
+void operator delete(void *p, unsigned int something)
+{
+#if USE_MEM_TRACE == 1
+    if(mem_manager.enabled) {
+        mem_manager.qfree(p);
+    } else {
+        free(p);
+    }
+#else
+    //printf("Freeing %p\n", p);
+    free(p);
+#endif
+}
+
 void * operator new[](size_t size)
 {
     return get_mem(size);

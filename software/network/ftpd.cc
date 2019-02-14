@@ -326,7 +326,7 @@ void FTPDaemonThread :: send_msg(const char *msg, ...)
 
 void FTPDaemonThread :: cmd_user(const char *arg)
 {
-	d64asdir = !stricmp(arg, "d64") ? 1 : !stricmp(arg, "d642") ? 0 : 2;
+	d64asdir = !strcasecmp(arg, "d64") ? 1 : !strcasecmp(arg, "d642") ? 0 : 2;
 	send_msg(msg331);
 	state = FTPD_PASS;
 }
