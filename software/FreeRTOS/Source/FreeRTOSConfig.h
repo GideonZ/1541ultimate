@@ -81,6 +81,7 @@ void vAssertCalled( const char* fileName, uint16_t lineNo );
 
 #include "profiler.h"
 #define traceTASK_SWITCHED_OUT(x)  PROFILER_TASK = 0;
-#define traceTASK_SWITCHED_IN(x)   PROFILER_TASK = pxCurrentTCB->uxTaskNumber;
+#define traceTASK_SWITCHED_IN(x)   PROFILER_TASK = pxCurrentTCB->uxTCBNumber;
+//#define traceTASK_SWITCHED_IN(x)   do { PROFILER_TASK = pxCurrentTCB->uxTCBNumber; outbyte(0x40 + (pxCurrentTCB->uxTCBNumber)); } while(0);
 
 #endif /* FREERTOS_CONFIG_H */
