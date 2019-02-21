@@ -92,6 +92,8 @@ MpsPrinter::MpsPrinter(char * filename)
 #endif
     strcpy(outfile,filename);
 
+    bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE];
+
     /* Initialise PNG convertor attributes */
     lodepng_state_init(&lodepng_state);
 
@@ -186,6 +188,7 @@ MpsPrinter::~MpsPrinter()
     fm->release_path(path);
 #endif
     lodepng_state_cleanup(&lodepng_state);
+    delete[] bitmap;
     DBGMSG("deletion");
 }
 
