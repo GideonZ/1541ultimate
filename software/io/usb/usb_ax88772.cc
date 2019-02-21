@@ -116,8 +116,9 @@ UsbAx88772Driver :: UsbAx88772Driver(UsbInterface *intf, uint16_t prodID) : UsbD
     this->prodID = prodID;
 
     dataBuffersBlock = new uint8_t[1536 * NUM_BUFFERS];
+
     for (int i=0; i < NUM_BUFFERS; i++) {
-        freeBuffers.push(&dataBuffersBlock[1536 * i]);
+        freeBuffers.push(&dataBuffersBlock[0x80000000 + 1536 * i]); // set bit 31, so that it is non-cacheable
     }
 }
 
@@ -387,6 +388,7 @@ void UsbAx88772Driver :: interrupt_handler()
 		printf("%b ", irq_data[i]);
 	} printf("\n");
 */
+    cache_load(irq_data, data_len);
 
     if(data_len) {
         if(irq_data[2] & 0x01) {

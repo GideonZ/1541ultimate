@@ -23,6 +23,25 @@ UsbBase usb2;
     #define printf(...)
 #endif
 
+#define BIT31 0x80000000
+
+/*
+ * This function is required to fill the cache manually after a USB transfer. This is required, since
+ * the hardware invalidation has been turned off. The cache invalidation seems to cause random crashes.
+ */
+void cache_load(uint8_t *buffer, int length)
+{
+    if (length <= 0) {
+        return;
+    }
+    uint32_t addr = (uint32_t)buffer;
+    addr &= 0x7FFFFFFF;
+
+    uint8_t *source = (uint8_t *)(addr | BIT31);
+    uint8_t *dest   = (uint8_t *)addr;
+    memcpy(buffer, source, length);
+}
+
 UsbBase :: UsbBase()
 {
     ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_USB);
@@ -593,6 +612,9 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 	result = complete_command(100);
 
 	uint32_t transferred = inlen - descr->length;
+
+	cache_load((uint8_t *)in, transferred);
+
 	// printf("In: %d bytes (Result = %4x)\n", transferred, result);
 	// dump_hex(read_buf, transferred);
 
@@ -841,6 +863,9 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 
 		//printf("Res = %4x\n", result);
 		int transferred = current_len - descr->length;
+
+	    cache_load((uint8_t *)addr, transferred);
+
 		total_trans += transferred;
 		addr += transferred;
 		len -= transferred;
