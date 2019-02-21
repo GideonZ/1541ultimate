@@ -87,9 +87,7 @@
 /* Tasks are started with interrupts enabled. */
 #define portINITIAL_MSR_STATE		( ( StackType_t ) 0x02 )
 
-/* Tasks are started with a critical section nesting of 0 - however prior
-to the scheduler being commenced we don't want the critical nesting level
-to reach zero, so it is initialised to a high value. */
+/* Tasks are started with a critical section nesting of 0 */
 #define portINITIAL_NESTING_VALUE	( 0xff )
 
 /* Our hardware setup only uses one counter. */
@@ -99,17 +97,20 @@ to reach zero, so it is initialised to a high value. */
 debugging. */
 #define portISR_STACK_FILL_VALUE	0x55555555
 
+/* To limit the amount of stack required by each task, this port uses a
+separate stack for interrupts. */
+uint32_t *pulISRStack;
+
+/* Globally static temporaries */
+uint32_t ulPortTempR31;
+
 /* Counts the nesting depth of calls to portENTER_CRITICAL().  Each task 
 maintains it's own count, so this variable is saved as part of the task
 context. */
 volatile UBaseType_t uxCriticalNesting = portINITIAL_NESTING_VALUE;
 
-/* To limit the amount of stack required by each task, this port uses a
-separate stack for interrupts. */
-uint32_t *pulISRStack;
 
 /*-----------------------------------------------------------*/
-
 /*
  * Sets up the periodic ISR used for the RTOS tick.  This uses timer 0, but
  * could have alternatively used the watchdog timer or timer 1.
@@ -118,7 +119,7 @@ static void prvSetupTimerInterrupt( void )
 {
 	ioWrite8(ITU_IRQ_TIMER_EN, 0);
 	ioWrite8(ITU_IRQ_DISABLE, 0xFF);
-	ioWrite8(ITU_IRQ_TIMER_HI, 3);
+	ioWrite8(ITU_IRQ_TIMER_HI, 0x3);
 	ioWrite8(ITU_IRQ_TIMER_LO, 208); // 0x03D0 => 200 Hz
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
@@ -129,149 +130,67 @@ static void prvSetupTimerInterrupt( void )
 /*-----------------------------------------------------------*/
 
 /* 
- * Initialise the stack of a task to look exactly as if a call to 
+ * Initialize the stack of a task to look exactly as if a call to
  * portSAVE_CONTEXT had been made.
  * 
  * See the header file portable.h.
  */
 StackType_t *pxPortInitialiseStack( StackType_t *pxTopOfStack, TaskFunction_t pxCode, void *pvParameters )
 {
-extern void *_SDA2_BASE_, *_SDA_BASE_;
-const uint32_t ulR2 = ( uint32_t ) &_SDA2_BASE_;
-const uint32_t ulR13 = ( uint32_t ) &_SDA_BASE_;
+    extern void *_SDA2_BASE_, *_SDA_BASE_;
+    const uint32_t ulR2 = ( uint32_t ) &_SDA2_BASE_;
+    const uint32_t ulR13 = ( uint32_t ) &_SDA_BASE_;
 
-	/* Place a few bytes of known values on the bottom of the stack. 
-	This is essential for the Microblaze port and these lines must
-	not be omitted.  The parameter value will overwrite the 
-	0x22222222 value during the function prologue. */
-	*pxTopOfStack = ( StackType_t ) 0x11111111;
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x22222222;
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x33333333;
-	pxTopOfStack--; 
+    /* Let's get our own "block" of data that we use to store the processor state, and initialize it. */
+    // 31 registers, processor State, MSR in location 0, others on offset equal to register number.
+    // Entry 32 is reserved for the critical nexting value.
 
-	/* First stack an initial value for the critical section nesting.  This
-	is initialised to zero as tasks are started with interrupts enabled. */
-	*pxTopOfStack = ( StackType_t ) 0x00;	/* R0. */
+    uint32_t *processorStateBlock = pvPortMalloc(4 * 33);
 
-	/* Place an initial value for all the general purpose registers. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) ulR2;	/* R2 - small data area. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x03;	/* R3. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x04;	/* R4. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) pvParameters;/* R5 contains the function call parameters. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x06;	/* R6. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x07;	/* R7. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x08;	/* R8. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x09;	/* R9. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x0a;	/* R10. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x0b;	/* R11. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x0c;	/* R12. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) ulR13;	/* R13 - small data read write area. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) pxCode;	/* R14. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x0f;	/* R15. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x10;	/* R16. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x11;	/* R17. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x12;	/* R18. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x13;	/* R19. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x14;	/* R20. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x15;	/* R21. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x16;	/* R22. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x17;	/* R23. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x18;	/* R24. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x19;	/* R25. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x1a;	/* R26. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x1b;	/* R27. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x1c;	/* R28. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x1d;	/* R29. */
-	pxTopOfStack--;
-	*pxTopOfStack = ( StackType_t ) 0x1e;	/* R30. */
-	pxTopOfStack--;
+    int i;
+    for (i = 0; i < 32; i++) {
+        processorStateBlock[i] = (uint32_t)i;
+    }
+    processorStateBlock[ 0] = portINITIAL_MSR_STATE;
+    processorStateBlock[ 1] = (uint32_t)pxTopOfStack;
+    processorStateBlock[ 2] = ulR2;
+    processorStateBlock[ 5] = (uint32_t)pvParameters;
+    processorStateBlock[13] = ulR13;
+    processorStateBlock[14] = (uint32_t)pxCode;
+    processorStateBlock[32] = 0;
 
-	/* The MSR is stacked between R30 and R31. */
-	*pxTopOfStack = portINITIAL_MSR_STATE;
-	pxTopOfStack--;
-
-	*pxTopOfStack = ( StackType_t ) 0x1f;	/* R31. */
-	pxTopOfStack--;
-
-	/* Return a pointer to the top of the stack we have generated so this can
-	be stored in the task control block for the task. */
-	return pxTopOfStack;
+    // Return our own data block as pxTopOfStack value, such that we can use this as indirect pointer that never changes during execution
+    return processorStateBlock;
 }
+
 /*-----------------------------------------------------------*/
 
 BaseType_t xPortStartScheduler( void )
 {
-extern void ( __FreeRTOS_interrupt_handler )( void );
-extern void ( vStartFirstTask )( void );
-
+    extern void ( __FreeRTOS_interrupt_handler )( void );
+    extern void ( vStartFirstTask )( void );
 
 	/* Setup the FreeRTOS interrupt handler.   */
-/*
-	__asm__ volatile ( 	"la	r6, r0, __FreeRTOS_interrupt_handler	\n\t" \
-					"swi  r6, r1, 4 								\n\t" \
-					"lhui r7, r1, 4 								\n\t" \
-					"ori  r7, r7, 0xB0000000						\n\t" \
-					"swi  r7, r0, 0x10								\n\t" \
-					"swi  r7, r0, 0x18								\n\t" \
-					"andi r6, r6, 0xFFFF							\n\t" \
-					"ori  r6, r6, 0xB8080000						\n\t" \
-					"swi  r6, r0, 0x14 								\n\t" \
-					"swi  r6, r0, 0x1C " );
-*/
-	volatile uint32_t *p = (volatile uint32_t *)0x10;
+    volatile uint32_t *p = (volatile uint32_t *)0x10;
 	uint32_t addr = (uint32_t)__FreeRTOS_interrupt_handler;
-	*p++ = (0xB0000000 | (addr >> 16));
-	*p++ = (0xB8080000 | (addr & 0xFFFF));
-	*p++ = (0xB0000000 | (addr >> 16));
-	*p++ = (0xB8080000 | (addr & 0xFFFF));
+	*p++ = (0xB0000000 | (addr >> 16));    // imm  #<high>
+	*p++ = (0xB8080000 | (addr & 0xFFFF)); // brai <low>
 
 	/* Setup the hardware to generate the tick.  Interrupts are disabled when
 	this function is called. */
 	prvSetupTimerInterrupt();
 
-	/* Allocate the stack to be used by the interrupt handler. */
+	// Allocate the stack to be used by the interrupt handler.
 	pulISRStack = ( uint32_t * ) pvPortMalloc( configMINIMAL_STACK_SIZE * sizeof( StackType_t ) );
 
-	/* Restore the context of the first task that is going to run. */
+	// Restore the context of the first task that is going to run.
 	if( pulISRStack != NULL )
 	{
-		/* Fill the ISR stack with a known value to facilitate debugging. */
+		// Fill the ISR stack with a known value to facilitate debugging.
 		memset( pulISRStack, portISR_STACK_FILL_VALUE, configMINIMAL_STACK_SIZE * sizeof( StackType_t ) );
 		pulISRStack += ( configMINIMAL_STACK_SIZE - 1 );
 
-		portENABLE_INTERRUPTS();
-
-		/* Kick off the first task. */
+		// Kick off the first task.
 		vStartFirstTask();
 	}
 
@@ -284,45 +203,6 @@ void vPortEndScheduler( void )
 {
 	/* Not implemented. */
 }
-/*-----------------------------------------------------------*/
-
-/*
- * Manual context switch called by portYIELD or taskYIELD.  
- */
-void vPortYield( void )
-{
-extern void VPortYieldASM( void );
-
-	/* Perform the context switch in a critical section to assure it is
-	not interrupted by the tick ISR.  It is not a problem to do this as
-	each task maintains it's own interrupt status. */
-	portENTER_CRITICAL();
-		/* Jump directly to the yield function to ensure there is no
-		compiler generated prologue code. */
-		__asm__ volatile (	"bralid r14, VPortYieldASM		\n\t" \
-						"or r0, r0, r0					\n\t" );
-	portEXIT_CRITICAL();
-}
-/*-----------------------------------------------------------*/
-
-/*
- * The interrupt handler placed in the interrupt vector when the scheduler is
- * started.  The task context has already been saved when this is called.
- * This handler determines the interrupt source and calls the relevant 
- * peripheral handler.
- */
-/*
- * Handler for the timer interrupt.
- */
-/*void vTickISR( void )
-{
-	// Increment the RTOS tick - this might cause a task to unblock.
-	if( xTaskIncrementTick() != pdFALSE )
-	{
-		vTaskSwitchContext();
-	}
-}
-*/
 /*-----------------------------------------------------------*/
 BaseType_t uart_irq() __attribute__ ((weak));
 BaseType_t usb_irq() __attribute__ ((weak));
@@ -353,18 +233,13 @@ BaseType_t command_interface_irq()
 
 void vTaskISRHandler( void )
 {
-static uint8_t pending;
+    uint8_t pending;
 
 	PROFILER_SUB = 1;
 
 	/* Which interrupts are pending? */
 	pending = ioRead8(ITU_IRQ_ACTIVE);
 	ioWrite8(ITU_IRQ_CLEAR, pending);
-	//const uint8_t hex[] = "0123456789ABCDEF";
-
-	//ioWrite8(UART_DATA, hex[pending >> 4]);
-	//ioWrite8(UART_DATA, hex[pending & 0x0F]);
-	//ioWrite8(UART_DATA, '|');
 
 	BaseType_t do_switch = pdFALSE;
 
@@ -381,12 +256,13 @@ static uint8_t pending;
 		do_switch |= uart_irq();
 	}
 	if (pending & 0x01) {
-		do_switch |= xTaskIncrementTick();
+        do_switch |= xTaskIncrementTick();
 	}
 	if (do_switch != pdFALSE) {
 		vTaskSwitchContext();
 	}
 }
+
 /*-----------------------------------------------------------*/
 void vAssertCalled(const char* fileName, uint16_t lineNo )
 {

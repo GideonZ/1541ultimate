@@ -111,8 +111,6 @@ typedef unsigned long UBaseType_t;
 /*-----------------------------------------------------------*/
 
 /* Interrupt control macros. */
-//void microblaze_disable_interrupts( void );
-//void microblaze_enable_interrupts( void );
 
 #define portDISABLE_INTERRUPTS()	{ __asm__ ("msrclr r0, 2\n\t") ; }
 #define portENABLE_INTERRUPTS()		{ __asm__ ("msrset r0, 2\n\t") ; } //microblaze_enable_interrupts()
@@ -143,8 +141,14 @@ void vPortExitCritical( void );
 /*-----------------------------------------------------------*/
 
 /* Task utilities. */
-void vPortYield( void );
-#define portYIELD() vPortYield()
+/* Mimic interrupt handler to be called, jump to PortYieldASM */
+#define portYIELD()  extern volatile UBaseType_t uxCriticalNesting; \
+                     configASSERT( uxCriticalNesting == 0); \
+                     __asm__ volatile (  "msrclr r0, 2                  \n\t" \
+                                         "nop                           \n\t" \
+                                         "bralid r14, VPortYieldASM      \n\t" \
+                                         "or r0, r0, r0                  \n\t" );
+
 
 void vTaskSwitchContext();
 #define portYIELD_FROM_ISR() vTaskSwitchContext()
@@ -160,6 +164,10 @@ void vTaskSwitchContext();
 /* Task function macros as described on the FreeRTOS.org WEB site. */
 #define portTASK_FUNCTION_PROTO( vFunction, pvParameters ) void vFunction( void *pvParameters )
 #define portTASK_FUNCTION( vFunction, pvParameters ) void vFunction( void *pvParameters )
+
+/* Port specific implementations */
+
+#define portCLEAN_UP_TCB(x)   {  vPortFree((void *)(x -> pxTopOfStack)); }
 
 #ifdef __cplusplus
 }
