@@ -141,15 +141,18 @@ extern "C" void ultimate_main(void *a)
         }
     }
 
-    UserInterface *c64UserInterface = new UserInterface(title);
-    // Instantiate and attach the root tree browser
-    Browsable *root = new BrowsableRoot();
-    root_tree_browser = new TreeBrowser(c64UserInterface, root);
-    c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
-    c64UserInterface->init(c64);
-    if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
-        new HomeDirectory(c64UserInterface, root_tree_browser);
-        // will clean itself up
+    UserInterface *c64UserInterface = NULL;
+    if(c64) {
+        c64UserInterface = new UserInterface(title);
+        // Instantiate and attach the root tree browser
+        Browsable *root = new BrowsableRoot();
+        root_tree_browser = new TreeBrowser(c64UserInterface, root);
+        c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+        c64UserInterface->init(c64);
+        if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
+            new HomeDirectory(c64UserInterface, root_tree_browser);
+            // will clean itself up
+        }
     }
 
     if(capabilities & CAPAB_C2N_STREAMER)
@@ -199,7 +202,7 @@ extern "C" void ultimate_main(void *a)
 #endif
 */
 
-    while(1) {
+    while(c64) {
         int doIt = 0;
         c64->checkButton();
         if (c64->buttonPush()) {
