@@ -100,6 +100,9 @@ void UsbBase :: attach_root(void)
     UsbDevice *dev = new UsbDevice(this, get_bus_speed());
     if (init_device(dev)) {
     	rootDevice = dev;
+    } else {
+        printf("Attach root failed. Exit.\n");
+        return;
     }
     if (!rootDevice->init2()) {
     	printf("Failed to initialize device %s\n", dev->get_pathname(buf, 16));
@@ -252,17 +255,6 @@ void UsbBase :: process_fifo(uint16_t pipe)
         return;
     }
 
-/*
-			// pause_input_pipe(pipe);
-			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, ev->fifo_word[1]);
-			void *object = inputPipeObjects[pipe];
-			if (object) {
-				((UsbDriver *)object)->pipe_error(pipe);
-			}
-			return;
-		}
-*/
-
 	void *object = inputPipeObjects[pipe];
 
 	PROFILER_SUB = 3;
@@ -346,14 +338,12 @@ void UsbBase :: init(void)
     uint32_t ul = *pul;
     printf("Nano CPU based USB Controller: %d bytes loaded from %p. First DW: %08x\n", size, &_nano_minimal_b_start, ul);
 
-	ioWrite8(ITU_IRQ_CLEAR,  0x04);
-	ioWrite8(ITU_IRQ_ENABLE, 0x04);
+	ioWrite8(ITU_IRQ_CLEAR,  ITU_INTERRUPT_USB);
+	ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_USB);
 	NANO_START = 1;
 
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
 	xTaskCreate( UsbBase :: input_task_start, "USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
-
-	ioWrite8(ITU_MISC_IO, 1); // coherency is on
 }
 
 // Called from poll / cleanup context

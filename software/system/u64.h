@@ -43,6 +43,7 @@
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
 #define U64_PARCABLE_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
 #define U64_CART_DISABLE   (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Logical disable of external cart
+#define U64_MB_RESET       (*(volatile uint8_t *)(U64_IO_BASE + 0x0B)) // Write a 0 to start the microblaze, if available
 
 #define U64_HDMI_DDC_ENABLE     0x20
 #define U64_HDMI_DDC_DISABLE    0x10
