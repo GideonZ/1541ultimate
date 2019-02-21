@@ -20,7 +20,7 @@ class SocketDMA {
 	static int  readSocket(int socket, void *buffer, int max_remain);
 	static int  writeSocket(int socket, void *buffer, int length);
 
-	uint8_t load_buffer[SOCKET_BUFFER_SIZE];
+	uint8_t *load_buffer;
 public:
 	SocketDMA();
 	virtual ~SocketDMA();

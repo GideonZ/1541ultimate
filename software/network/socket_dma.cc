@@ -50,11 +50,14 @@ void sample_sid(void)
 }
 
 SocketDMA::SocketDMA() {
-	xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
+	load_buffer = new uint8_t[SOCKET_BUFFER_SIZE];
+	if (load_buffer) {
+	    xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
+	}
 }
 
 SocketDMA::~SocketDMA() {
-
+    delete[] load_buffer;
 }
 
 void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len)

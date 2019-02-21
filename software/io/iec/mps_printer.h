@@ -152,7 +152,7 @@ class MpsPrinter
         uint16_t *vtab;
 
         /* Page bitmap */
-        uint8_t bitmap[MPS_PRINTER_BITMAP_SIZE];
+        uint8_t *bitmap;
 
         /* How many pages printed since start */
         int page_num;
