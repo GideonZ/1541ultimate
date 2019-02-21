@@ -127,5 +127,5 @@ public:
 #include "usb_device.h"
 
 extern UsbBase usb2;
-
+extern void cache_load(uint8_t *buffer, int length);
 #endif

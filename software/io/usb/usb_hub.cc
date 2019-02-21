@@ -241,6 +241,8 @@ void UsbHubDriver :: interrupt_handler()
 {
     int data_length = host->getReceivedLength(irq_transaction);
 
+    cache_load((uint8_t *)irq_data, data_length);
+
     //printf("This = %p. HUB (ADDR=%d) IRQ data (%d bytes), at %p: ", this, device->current_address, data_length, irq_data_in);
 	configASSERT(data_length <= 4);
 
