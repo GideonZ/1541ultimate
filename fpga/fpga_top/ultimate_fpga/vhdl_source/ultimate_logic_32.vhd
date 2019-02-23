@@ -56,7 +56,8 @@ port (
     -- globals
     sys_clock   : in    std_logic;
     sys_reset   : in    std_logic;
-
+    mb_reset    : in    std_logic := '0';
+    
     ulpi_clock  : in    std_logic;
     ulpi_reset  : in    std_logic;
 
@@ -326,6 +327,7 @@ architecture logic of ultimate_logic_32 is
     signal mem_resp_32_rmii      : t_mem_resp_32 := c_mem_resp_32_init;
 
     -- IO Bus
+    signal cpu_io_busy      : std_logic;
     signal cpu_io_req       : t_io_req;
     signal cpu_io_resp      : t_io_resp := c_io_resp_init;
     signal io_req           : t_io_req;
@@ -368,8 +370,6 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
     signal io_req_debug     : t_io_req;
     signal io_resp_debug    : t_io_resp := c_io_resp_init;
-    signal io_req_led       : t_io_req;
-    signal io_resp_led      : t_io_resp := c_io_resp_init;
     signal io_req_rmii      : t_io_req;
     signal io_resp_rmii     : t_io_resp := c_io_resp_init;
     signal io_irq           : std_logic;
@@ -408,6 +408,7 @@ architecture logic of ultimate_logic_32 is
     signal c2n_read_out_i       : std_logic := '0';
         
     -- miscellaneous interconnect
+    signal c64_reset_in     : std_logic;
     signal c64_reset_in_n   : std_logic;
     signal c64_irq_n        : std_logic;
     signal c64_irq          : std_logic;
@@ -419,9 +420,10 @@ architecture logic of ultimate_logic_32 is
 	signal sd_busy          : std_logic;
 	signal sd_act_stretched : std_logic;
 	signal error			: std_logic;
-	signal act_led_n		: std_logic := '1';
+	signal disk_led_n		: std_logic := '1';
 	signal motor_led_n		: std_logic := '1';
 	signal cart_led_n		: std_logic := '1';
+    signal task             : std_logic_vector(3 downto 0);
 	signal c2n_pull_sense   : std_logic := '0';
     signal freezer_state    : std_logic_vector(1 downto 0);
     signal dirty_led_1_n    : std_logic := '1';
@@ -453,8 +455,11 @@ begin
         port map (
             clock       => sys_clock,
             reset       => sys_reset,
+            mb_reset    => mb_reset,
             
             irq_i       => io_irq,
+            disable_i   => misc_io(1),
+            disable_d   => misc_io(2),
             invalidate  => invalidate,
             inv_addr    => inv_addr,
             
@@ -462,6 +467,7 @@ begin
             mem_req     => mem_req_32_cpu,
             mem_resp    => mem_resp_32_cpu,
             
+            io_busy     => cpu_io_busy,
             io_req      => cpu_io_req,
             io_resp     => cpu_io_resp );
 
@@ -471,11 +477,11 @@ begin
         inv_addr(25 downto 0) <= std_logic_vector(mem_req_32_usb.address);
     end generate;
 
-    r_no_mb: if not g_microblaze generate
-        -- route the memory access of the processor to the outside world
-        mem_req_32_cpu <= ext_mem_req;
-        ext_mem_resp   <= mem_resp_32_cpu;
-    end generate;
+--    r_no_mb: if not g_microblaze generate
+--        -- route the memory access of the processor to the outside world
+--        mem_req_32_cpu <= ext_mem_req;
+--        ext_mem_resp   <= mem_resp_32_cpu;
+--    end generate;
 
     cpu_irq <= io_irq;
 		
@@ -508,6 +514,8 @@ begin
         one_16000     => tick_1kHz
     );
 
+    c64_reset_in <= not c64_reset_in_n;
+    
     i_itu: entity work.itu
     generic map (
 		g_version	    => g_version,
@@ -529,7 +537,7 @@ begin
         tick_1ms    => tick_1kHz,
         buttons     => button,
 
-        irq_in(7)   => not c64_reset_in_n,
+        irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,
         irq_in(5)   => sys_irq_eth_rx,
         irq_in(4)   => sys_irq_cmdif,
@@ -600,7 +608,7 @@ begin
             via1_cb1_t      => drv_via1_cb1_t,
 
             -- LED
-            act_led_n       => DISK_ACTn,
+            act_led_n       => disk_led_n,
             motor_led_n     => motor_led_n,
             dirty_led_n     => dirty_led_1_n,
 
@@ -819,7 +827,7 @@ begin
     generic map (
         g_range_lo  => 14,
         g_range_hi  => 15,
-        g_ports     => 4 )
+        g_ports     => 3 )
     port map (
         clock    => sys_clock,
         
@@ -829,12 +837,10 @@ begin
         reqs(0)  => io_req_1541_1,  -- 4020000
         reqs(1)  => io_req_1541_2,  -- 4024000
         reqs(2)  => io_req_iec,     -- 4028000
-        reqs(3)  => io_req_led,     -- 402C000
 
         resps(0) => io_resp_1541_1,
         resps(1) => io_resp_1541_2,
-        resps(2) => io_resp_iec,
-        resps(3) => io_resp_led );
+        resps(2) => io_resp_iec );
 
     i_split3: entity work.io_bus_splitter
     generic map (
@@ -1174,7 +1180,7 @@ begin
 
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
-        g_ports      => 7,
+        g_ports      => 8,
         g_registered => false )
     port map (
         clock       => sys_clock,
@@ -1185,16 +1191,18 @@ begin
         reqs(2)     => mem_req_32_1541_2,
         reqs(3)     => mem_req_32_rmii,
         reqs(4)     => mem_req_32_debug,
-        reqs(5)     => mem_req_32_cpu,
-        reqs(6)     => mem_req_32_usb,
+        reqs(5)     => mem_req_32_usb,
+        reqs(6)     => mem_req_32_cpu,
+        reqs(7)     => ext_mem_req,
         
         resps(0)    => mem_resp_32_cart,
         resps(1)    => mem_resp_32_1541,
         resps(2)    => mem_resp_32_1541_2,
         resps(3)    => mem_resp_32_rmii,
         resps(4)    => mem_resp_32_debug,
-        resps(5)    => mem_resp_32_cpu,
-        resps(6)    => mem_resp_32_usb,
+        resps(5)    => mem_resp_32_usb,
+        resps(6)    => mem_resp_32_cpu,
+        resps(7)    => ext_mem_resp,
         
         req         => mem_req,
         resp        => mem_resp );        
@@ -1298,11 +1306,17 @@ begin
     iec_data_o   <= '0' when data_o='0' or data_o_2='0' or hw_data_o='0' else '1';
     iec_srq_o    <= hw_srq_o; -- only source
         
-    error <= sys_reset;
+    error <= cpu_io_busy;
 
-	MOTOR_LEDn  <= motor_led_n xor error;
-    CART_LEDn   <= cart_led_n xor error;
-	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or busy_led)) xor error;
+    MOTOR_LEDn  <= motor_led_n;
+	DISK_ACTn   <= disk_led_n;
+    CART_LEDn   <= cart_led_n;
+	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or busy_led));
+
+--    MOTOR_LEDn  <= not task(3);
+--    DISK_ACTn   <= not task(2);
+--    CART_LEDn   <= not task(1);
+--    SDACT_LEDn  <= not task(0);
 
     filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_i,    atn_i);
     filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_i,  clk_i);
