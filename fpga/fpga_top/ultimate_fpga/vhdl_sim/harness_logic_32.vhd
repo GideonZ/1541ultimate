@@ -17,7 +17,7 @@ entity harness_logic_32 is
 end entity;
 
 architecture tb of harness_logic_32 is
-    constant c_uart_divisor : natural := 50;
+    constant c_uart_divisor : natural := 10;
 
     signal PHI2        : std_logic := '0';
     signal RSTn        : std_logic := 'H';
@@ -34,7 +34,36 @@ architecture tb of harness_logic_32 is
     signal IRQn        : std_logic := '1';
     signal NMIn        : std_logic := '1';
 
-    signal PWM_OUT     : std_logic_vector(1 downto 0);
+    signal slot_addr_o : std_logic_vector(15 downto 0);
+    signal slot_addr_i : std_logic_vector(15 downto 0) := (others => '1');
+    signal slot_addr_tl: std_logic;
+    signal slot_addr_th: std_logic;
+    signal slot_data_o : std_logic_vector(7 downto 0);
+    signal slot_data_i : std_logic_vector(7 downto 0) := (others => '1');
+    signal slot_data_t : std_logic;
+
+    -- Cassette
+    signal c2n_read_in      : std_logic;
+    signal c2n_write_in     : std_logic;
+    signal c2n_read_out     : std_logic;
+    signal c2n_write_out    : std_logic;
+    signal c2n_read_en      : std_logic;
+    signal c2n_write_en     : std_logic;
+    signal c2n_sense_in     : std_logic;
+    signal c2n_sense_out    : std_logic;
+    signal c2n_motor_in     : std_logic;
+    signal c2n_motor_out    : std_logic;
+
+    -- Parallel cable connection
+    signal drv_via1_port_a_o    : std_logic_vector(7 downto 0);
+    signal drv_via1_port_a_i    : std_logic_vector(7 downto 0);
+    signal drv_via1_port_a_t    : std_logic_vector(7 downto 0);
+    signal drv_via1_ca2_o       : std_logic;
+    signal drv_via1_ca2_i       : std_logic;
+    signal drv_via1_ca2_t       : std_logic;
+    signal drv_via1_cb1_o       : std_logic;
+    signal drv_via1_cb1_i       : std_logic;
+    signal drv_via1_cb1_t       : std_logic;
 
     signal IEC_ATN     : std_logic := '1';
     signal IEC_DATA    : std_logic := '1';
@@ -117,7 +146,7 @@ begin
     sys_clock <= not sys_clock after 10 ns;
     sys_clock_2x <= not sys_clock_2x after 5 ns;
     sys_reset <= '1', '0' after 100 ns;
-    
+
     mut: entity work.ultimate_logic_32
     generic map (
         g_version       => X"02",
@@ -156,27 +185,61 @@ begin
         sys_reset       => sys_reset,
         ulpi_clock      => ulpi_clock,
         ulpi_reset      => ulpi_reset,
-        PHI2            => PHI2,
-        DOTCLK          => DOTCLK,
-        RSTn            => RSTn,
-        BUFFER_ENn      => BUFFER_ENn,
-        SLOT_ADDR       => SLOT_ADDR,
-        SLOT_DATA       => SLOT_DATA,
-        RWn             => RWn,
-        BA              => BA,
-        DMAn            => DMAn,
-        EXROMn          => EXROMn,
-        GAMEn           => GAMEn,
-        ROMHn           => ROMHn,
-        ROMLn           => ROMLn,
-        IO1n            => IO1n,
-        IO2n            => IO2n,
-        IRQn            => IRQn,
-        NMIn            => NMIn,
+
+        phi2_i            => PHI2,
+        dotclk_i          => DOTCLK,
+        rstn_o            => RSTn,
+        rstn_i            => RSTn,
+        slot_addr_o       => slot_addr_o,
+        slot_addr_i       => SLOT_ADDR,
+        slot_addr_tl      => slot_addr_tl,
+        slot_addr_th      => slot_addr_th,
+        slot_data_o       => slot_data_o,
+        slot_data_i       => SLOT_DATA,
+        slot_data_t       => slot_data_t,
+        rwn_i             => RWn,
+        rwn_o             => RWn,
+        exromn_i          => EXROMn,
+        exromn_o          => EXROMn,
+        gamen_i           => GAMEn,
+        gamen_o           => GAMEn,
+        irqn_i            => IRQn,
+        irqn_o            => IRQn,
+        nmin_i            => NMIn,
+        nmin_o            => NMIn,
+        ba_i              => BA,
+        dman_o            => DMAn,
+        romhn_i           => ROMHn,
+        romln_i           => ROMLn,
+        io1n_i            => IO1n,
+        io2n_i            => IO2n,
+
+        -- Parallel cable pins
+        drv_via1_port_a_o   => drv_via1_port_a_o,
+        drv_via1_port_a_i   => drv_via1_port_a_i,
+        drv_via1_port_a_t   => drv_via1_port_a_t,
+        drv_via1_ca2_o      => drv_via1_ca2_o,
+        drv_via1_ca2_i      => drv_via1_ca2_i,
+        drv_via1_ca2_t      => drv_via1_ca2_t,
+        drv_via1_cb1_o      => drv_via1_cb1_o,
+        drv_via1_cb1_i      => drv_via1_cb1_i,
+        drv_via1_cb1_t      => drv_via1_cb1_t,
+
+        -- Cassette Interface
+        c2n_read_in    => c2n_read_in, 
+        c2n_write_in   => c2n_write_in, 
+        c2n_read_out   => c2n_read_out, 
+        c2n_write_out  => c2n_write_out, 
+        c2n_read_en    => c2n_read_en, 
+        c2n_write_en   => c2n_write_en, 
+        c2n_sense_in   => c2n_sense_in, 
+        c2n_sense_out  => c2n_sense_out, 
+        c2n_motor_in   => c2n_motor_in, 
+        c2n_motor_out  => c2n_motor_out, 
+
         mem_inhibit     => mem_inhibit,
         mem_req         => mem_req,
         mem_resp        => mem_resp,
-        PWM_OUT         => PWM_OUT,
         iec_reset_i     => IEC_RESET,
         iec_atn_i       => IEC_ATN,
         iec_data_i      => IEC_DATA,
@@ -212,13 +275,17 @@ begin
         ULPI_STP        => ULPI_STP,
         ULPI_DIR        => ULPI_DIR,
         ULPI_DATA       => ULPI_DATA,
-        CAS_MOTOR       => CAS_MOTOR,
-        CAS_SENSE       => CAS_SENSE,
-        CAS_READ        => CAS_READ,
-        CAS_WRITE       => CAS_WRITE,
-        sim_io_req      => io_req,
-        sim_io_resp     => io_resp );
+        ext_io_req      => io_req,
+        ext_io_resp     => io_resp );
     
+    SLOT_ADDR(15 downto 12) <= slot_addr_o(15 downto 12) when slot_addr_th = '1' else (others => 'H');
+    SLOT_ADDR(11 downto 00) <= slot_addr_o(11 downto 00) when slot_addr_tl = '1' else (others => 'H');
+    SLOT_DATA               <= slot_data_o when slot_data_t = '1' else (others => 'H');
+
+    -- Parallel cable not implemented. This is the way to stub it...
+    drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
+    drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
+    drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
 
     i_mem_ctrl: entity work.ext_mem_ctrl_v5
     generic map (
@@ -336,6 +403,7 @@ begin
         clk     => sys_clock,
         reset   => sys_reset,
     
+        tick    => '1',
         rxd     => UART_TXD,
         
         rxchar  => rx_char,
@@ -347,6 +415,7 @@ begin
         clk     => sys_clock,
         reset   => sys_reset,
     
+        tick    => '1',
         dotx    => do_tx,
         txchar  => tx_char,
         done    => tx_done,
