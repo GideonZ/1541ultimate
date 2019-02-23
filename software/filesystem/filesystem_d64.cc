@@ -521,8 +521,9 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 } else if (tp == 3) {
                 	strncpy(f->extension, "USR", 4);
                 }
-                strcat(f->lfname, ".");
-                strcat(f->lfname, f->extension);
+                // GZW: This is wrong!
+                //strcat(f->lfname, ".");
+                //strcat(f->lfname, f->extension);
                 idx ++;
                 return FR_OK;
             }
