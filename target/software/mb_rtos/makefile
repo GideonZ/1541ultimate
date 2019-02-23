@@ -2,8 +2,9 @@
 include ../common/environment.mk
 
 PRJ      =  free_rtos_demo
-FINAL      =  $(RESULT)/$(PRJ).bin
+FINAL      =  $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).sim
 LINKMETHOD = ld
+SIMOFFSET  = 65536
 
 VPATH += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 VPATH += $(PATH_SW)/application/rtos
