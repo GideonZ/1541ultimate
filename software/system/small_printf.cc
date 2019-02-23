@@ -317,7 +317,7 @@ extern "C" int _vscanf(const char *buf, const char *fmt, va_list ap)
 	return count;
 }
 
-extern "C" int sscanf(char *buf, const char *fmt, ...)
+extern "C" int sscanf(const char *buf, const char *fmt, ...)
 {
     va_list ap;
     int ret;
