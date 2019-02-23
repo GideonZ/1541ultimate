@@ -159,8 +159,8 @@ target/software/mb_rtos/output
 target/software/mb_rtos/result
 target/software/mb_rtos_netw/output_mb
 target/software/mb_rtos_netw/result_mb
-target/software/mb_sim_boot/output_mb
-target/software/mb_sim_boot/result_mb
+target/software/mb_sim_boot/output
+target/software/mb_sim_boot/result
 target/software/mb_test_fileio/output
 target/software/mb_ui/output
 target/software/mb_ultimate/d*
@@ -208,6 +208,8 @@ target/software/nios2_testflasher/result
 target/software/nios2_testloader/output
 target/software/nios2_testloader/python*
 target/software/nios2_testloader/result
+target/software/nios2_u64_boot/output
+target/software/nios2_u64_boot/result
 target/software/nios2_u64/output
 target/software/nios2_u64/python*
 target/software/nios2_u64/result
