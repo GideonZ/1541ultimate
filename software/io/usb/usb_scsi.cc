@@ -862,7 +862,9 @@ DRESULT UsbScsi :: read(uint8_t *buf, uint32_t sector, int num_sectors)
 
         // printf("Read USB sector: %d (%d).\n", sector, num_sectors);
 
-    uint8_t read_10_command[] = { 0x28, uint8_t(lun << 5), 0,0,0,0, 0x00, 0, num_sectors, 0 };
+	uint8_t read_10_command[] = { 0x28, uint8_t(lun << 5), 0,0,0,0, 0x00, 0, 0, 0 };
+    read_10_command[8] = (uint8_t)num_sectors;
+    read_10_command[7] = (uint8_t)(num_sectors >> 8);
     
     int len, stat_len;
 
@@ -894,7 +896,9 @@ DRESULT UsbScsi :: write(const uint8_t *buf, uint32_t sector, int num_sectors)
 	if(get_state() != e_device_ready)
         return RES_NOTRDY;
 
-    uint8_t write_10_command[] = { 0x2A, uint8_t(lun << 5), 0,0,0,0, 0x00, 0, num_sectors, 0 };
+    uint8_t write_10_command[] = { 0x2A, uint8_t(lun << 5), 0,0,0,0, 0x00, 0, 0, 0 };
+    write_10_command[8] = (uint8_t)num_sectors;
+    write_10_command[7] = (uint8_t)(num_sectors >> 8);
     
     int len, stat_len;
 
