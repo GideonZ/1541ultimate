@@ -4,6 +4,7 @@ include ../common/environment.mk
 PRJ        =  ultimate
 FINAL      =  $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).sim
 LINKMETHOD = ld
+SIMOFFSET  = 65536
 
 SRCS_C   =	mbstart_rtos.c \
 			malloc_lock.c \
