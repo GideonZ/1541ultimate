@@ -323,8 +323,8 @@ void SocketDMA::dmaThread(void *load_buffer)
 	        uint32_t len32 = len;
 
 	        if ((cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG)) {
-	            n = recv(newsockfd, buf+2, 2, 0);
-                len32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8) | (((uint32_t)buf[2]) << 16);
+	            n = recv(newsockfd, buf+2, 1, 0);
+                len32 |= (((uint32_t)buf[2]) << 16);
 	        }
 	        if (len32 > SOCKET_BUFFER_SIZE) {
 	            len32 = SOCKET_BUFFER_SIZE;

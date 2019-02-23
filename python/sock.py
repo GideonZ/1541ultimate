@@ -84,7 +84,8 @@ if __name__ == "__main__":
                 s.connect(sys.argv[3], 64)
 
                 s.mysend(pack("<H", 0xFF0B))
-                s.mysend(pack("<L", len(bytes)))
+                lenbytes = pack("<L", len(bytes))
+                s.mysend(lenbytes[0:3]) # Send only 3 of the 4 bytes. Who invented this?!
                 s.mysend(bytes)
                 
                 s.sock.shutdown(0)
