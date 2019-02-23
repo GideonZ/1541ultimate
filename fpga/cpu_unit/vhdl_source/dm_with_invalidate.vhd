@@ -20,6 +20,7 @@ entity dm_with_invalidate is
         clock       : in  std_logic;
         reset       : in  std_logic;
         
+        disable     : in  std_logic := '0';
         invalidate  : in  std_logic;
         inv_addr    : in  std_logic_vector(31 downto 0);
 
@@ -169,7 +170,7 @@ begin
     d_tag_ram_out <= vector_to_tag(tag_ram_a_rdata);
 
     -- handle the dmem address request here; split it up
-    process(state, dmem_i, dmem_r, mem_i, d_tag_ram_out, cache_ram_a_rdata, invalidate, inv_addr)
+    process(state, dmem_i, dmem_r, mem_i, d_tag_ram_out, cache_ram_a_rdata, invalidate, inv_addr, disable)
     begin
         dmem_o_comb.ena_i <= '0'; -- registered out, use this signal as register load enable
         dmem_o_comb.dat_i <= (others => 'X');
@@ -224,7 +225,7 @@ begin
         case state is
         when idle =>
             if dmem_r.ena_o = '1' then -- registered (=delayed request valid)
-                if (address_to_tag(dmem_r.adr_o, '1') = d_tag_ram_out) and (dmem_r.we_o='0') and is_cacheable(dmem_r.adr_o) then -- read hit!
+                if (address_to_tag(dmem_r.adr_o, '1') = d_tag_ram_out) and (dmem_r.we_o='0') and is_cacheable(dmem_r.adr_o) and disable = '0' then -- read hit!
                     dmem_o_comb.dat_i <= cache_ram_a_rdata;
                     dmem_o_comb.ena_i <= '1';
                 else -- miss or write
@@ -240,10 +241,6 @@ begin
                 dmem_o_comb.ena_i <= '1';
 
                 if dmem_r.we_o='0' and is_cacheable(dmem_r.adr_o) then -- was a read
---                    assert dmem_r.sel_o = X"F" 
---                        report "Cache write of less than a word? " & hstr(dmem_r.adr_o)
---                        severity error;
-                        
                     tag_ram_b_en <= '1';
                     cache_ram_b_en <= '1';
                     tag_ram_b_we <= '1';

@@ -18,20 +18,27 @@ library mblite;
 
 entity mblite_wrapper is
 generic (
+    g_icache        : boolean := true;
+    g_dcache        : boolean := true;
     g_tag_i         : std_logic_vector(7 downto 0) := X"20";
     g_tag_d         : std_logic_vector(7 downto 0) := X"21" );
 port (
     clock           : in    std_logic;
     reset           : in    std_logic;
+    mb_reset        : in    std_logic;
     
     irq_i           : in    std_logic := '0';
     irq_o           : out   std_logic;
+    
+    disable_i       : in    std_logic := '0';
+    disable_d       : in    std_logic := '0';
     
     invalidate      : in    std_logic := '0';
     inv_addr        : in    std_logic_vector(31 downto 0);
 
     io_req          : out   t_io_req;
     io_resp         : in    t_io_resp;
+    io_busy         : out   std_logic;
     
     mem_req         : out   t_mem_req_32;
     mem_resp        : in    t_mem_resp_32 );
@@ -40,6 +47,8 @@ end entity;
 
 architecture arch of mblite_wrapper is
 
+    signal reset_i     : std_logic;
+    
     signal dmem_o      : dmem_out_type;
     signal dmem_i      : dmem_in_type;
     signal imem_o      : dmem_out_type;
@@ -50,10 +59,18 @@ architecture arch of mblite_wrapper is
     signal imem_req    : t_mem_req_32;
     signal imem_resp   : t_mem_resp_32;
 begin
+    reset_i <= mb_reset or reset when rising_edge(clock);
+
     i_proc: entity mblite.cached_mblite
+    generic map (
+        g_icache    => g_icache,
+        g_dcache    => g_dcache )
     port map (
         clock       => clock,
-        reset       => reset,
+        reset       => reset_i,
+
+        disable_i   => disable_i,
+        disable_d   => disable_d,
         invalidate  => invalidate,
         inv_addr    => inv_addr,
         dmem_o      => dmem_o,
@@ -69,7 +86,7 @@ begin
         g_support_io => false )
     port map (
         clock        => clock,
-        reset        => reset,
+        reset        => reset_i,
         dmem_i       => imem_i,
         dmem_o       => imem_o,
         mem_req      => imem_req,
@@ -83,11 +100,12 @@ begin
         g_support_io => true )
     port map (
         clock        => clock,
-        reset        => reset,
+        reset        => reset_i,
         dmem_i       => dmem_i,
         dmem_o       => dmem_o,
         mem_req      => dmem_req,
         mem_resp     => dmem_resp,
+        io_busy      => io_busy,
         io_req       => io_req,
         io_resp      => io_resp );
 
