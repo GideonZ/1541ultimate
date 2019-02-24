@@ -49,17 +49,17 @@ BEGIN
         clk_i  => clock );
 
     -- IRQ generation @ 100 kHz (every 10 us)
---    process
---    begin
---        wait for 600 us;
---        while true loop
---            wait for 10 us;
---            wait until clock='1';
---            irq_i <= '1';
---            wait until clock='1';
---            irq_i <= '0';
---        end loop;
---    end process;
+    process
+    begin
+        wait for 600 us;
+        while true loop
+            wait for 10 us;
+            wait until clock='1';
+            irq_i <= '1';
+            wait until clock='1';
+            irq_i <= '0';
+        end loop;
+    end process;
 
 
     -- memory and IO
