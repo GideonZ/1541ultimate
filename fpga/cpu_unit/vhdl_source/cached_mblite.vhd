@@ -88,19 +88,18 @@ BEGIN
         cimem_i.ena_i <= imem_i.ena_i;
     end generate;
 
-
     r_dcache: if g_dcache generate
-        d_cache: entity work.dm_simple --with_invalidate
-        generic map (
-            g_data_register => true,
-            g_mem_direct    => true )
+        d_cache: entity work.dm_with_invalidate
+--        generic map (
+--            g_data_register => true,
+--            g_mem_direct    => true )
         port map (
             clock      => clock,
             reset      => reset,
     
             disable    => disable_d,
-    --        invalidate => invalidate,
-    --        inv_addr   => inv_addr,
+            invalidate => invalidate,
+            inv_addr   => inv_addr,
     
             dmem_i     => cdmem_o,
             dmem_o     => cdmem_i,

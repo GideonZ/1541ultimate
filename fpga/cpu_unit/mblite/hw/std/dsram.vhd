@@ -47,10 +47,10 @@ begin
     begin
         if rising_edge(clk_i) then
             if ena_i = '1' then
-                dat_o <= ram(my_conv_integer(adr_i));
                 if wre_i = '1' then
                     ram(my_conv_integer(adr_w_i)) <= dat_w_i;
                 end if;
+                dat_o <= ram(my_conv_integer(adr_i));
             end if;
         end if;
     end process;

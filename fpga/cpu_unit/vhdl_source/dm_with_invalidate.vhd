@@ -130,8 +130,8 @@ begin
         g_width_bits   => c_tag_width,
         g_depth_bits   => c_tag_size_bits,
         g_global_init  => c_valid_zero_tag_vector,
-        g_read_first_a => true,
-        g_read_first_b => true,
+        g_read_first_a => false,
+        g_read_first_b => false,
         g_storage      => "block" )
     port map (
         clock          => clock,
@@ -151,8 +151,8 @@ begin
         g_width_bits   => 32,
         g_depth_bits   => c_cache_size_bits-2,
         g_global_init  => X"FFFFFFFF",
-        g_read_first_a => true,
-        g_read_first_b => true,
+        g_read_first_a => false,
+        g_read_first_b => false,
         g_storage      => "block" )
     port map (
         clock          => clock,
