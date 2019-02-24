@@ -3,8 +3,8 @@ U2+:
 - Altera Quartus (tested with 15.1 Lite Edition) 
 
 U2:
-- Xilinx ISE 13.x, or 14.x
-- Xilinx SDK 2016.3
+- Xilinx ISE 13.x, or 14.x for the FPGA itself
+- Xilinx SDK 2018.2 for the software running on the Microblaze processor.
 
 In the near future, you may need the Xilinx SDK as well for the U2+, if you like to build the "Turbo" version.
 The Nios-IIe processor that is license free has the advantage that you can use a JTAG debugger to test/debug
@@ -26,12 +26,25 @@ Xilinx made a complete mess out of their Microblaze compiler and support librari
   that you try to access address 0, it emits an endless loop to itself (lockup). Be aware, just in case you
   want to intentionally write address 0.   In order to run SDK2016.3, you will need to have 32 bit libraries
   installed:
-
 sudo apt-get install libstdc++6:i386
 sudo apt-get install libgtk2.0-0:i386
 sudo apt-get install dpkg-dev:i386
 
+* SDK 2018.2 uses the GNU 7.2.0 compiler. This compiler is again stricter than previous versions and also emits
+  different code. The sources have been changed to support GNU 7. However, when using the -Os optimization flag,
+  SOME return values from functions are incorrect. This is because the compiler swaps an instruction from the delay
+  slot with another instruction, which is not allowed.
+
 ==> You may compile the sources using ISE 13, with the built-in SDK. This works!
+==> Compiling the sources using the SDK 2018.2 is possible by adding the -mcpu=v5.00.0 flag to the compiler. This
+    enables the use of PCMPEQ and PCMPNE instructions, which effectively fixes the branch delay swap issue. These
+    instructions were added to the Microblaze core on Feb 23, 2019.
+    
+In retrospect, the Microblaze compiler has issues emitting correct code when the processor is crippled; i.e. when
+it does not have a barrel shifter, nor a multiplier, nor pattern compare instructions. Once either the barrel shifter
+or the pattern compare instructions are enabled, the emitted code seems to be correct.
+
+    
 
 
 Environment variables
