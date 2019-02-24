@@ -54,6 +54,8 @@ BEGIN
     --plaag_interrupt <= transport '0', '1' after 25 ms, '0' after 30 ms; 
     i_core: entity work.mblite_wrapper
     generic map (
+        g_icache   => false,
+        g_dcache   => false,
         g_tag_i    => X"0A",
         g_tag_d    => X"0B"
     )

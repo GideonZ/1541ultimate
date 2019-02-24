@@ -164,6 +164,7 @@ begin
         end case;
 
         result_add := add(alu_src_a, alu_src_b, carry);
+        equal      := compare(dat_a, dat_b); 
 
         case exec_i.ctrl_ex.alu_op is
             when ALU_ADD    => result := result_add;
@@ -223,7 +224,6 @@ begin
         end if;
 
         zero := is_zero(dat_a);
-        equal := compare(dat_a, dat_b); 
         
         -- Overwrite branch condition
         if reg.flush_ex = '1' then
