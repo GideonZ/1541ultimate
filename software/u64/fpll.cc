@@ -249,7 +249,7 @@ extern "C" void SetVideoMode(int mode)
     volatile t_video_timing_regs *regs = (volatile t_video_timing_regs *)VID_IO_BASE;
 
     const TVideoMode pal  =  { 17, 27023962,  720, 12,  64,  68, 0,   576,  4, 5, 39, 0, 1, 0 };  // VIC 17/18 720x576 @ 50.12Hz (624 lines) (!) // detuned + one line less
-    const TVideoMode ntsc =  { 03, 27000000,  720, 16,  62,  60, 0,   480,  9, 6, 29, 0, 1, 0 };  // VIC 2/3 720x480 @ 60Hz
+    const TVideoMode ntsc =  { 03, 27000000,  720, 16,  62,  60, 0,   480,  9, 6, 31, 0, 1, 0 };  // VIC 2/3 720x480 @ 60Hz
 
     if (mode == 0) { // PAL
         SetScanModeRegisters(regs, &pal);
