@@ -581,6 +581,15 @@ FRESULT FileManager :: rename(Path *path, const char *old_name, const char *new_
 	return rename_impl(pathInfoFrom, pathInfoTo);
 }
 
+FRESULT FileManager :: rename(Path *old_path, const char *old_name, Path *new_path, const char *new_name)
+{
+    PathInfo pathInfoFrom(rootfs);
+    pathInfoFrom.init(old_path, old_name);
+    PathInfo pathInfoTo(rootfs);
+    pathInfoTo.init(new_path, new_name);
+    return rename_impl(pathInfoFrom, pathInfoTo);
+}
+
 FRESULT FileManager :: rename(const char *old_name, const char *new_name)
 {
 	PathInfo pathInfoFrom(rootfs);
