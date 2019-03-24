@@ -242,6 +242,7 @@ int _conv(const char *buf, int pos, int radix, int *result)
 	*result = 0;
 	char c;
 	int nega = 0;
+	int start = 1;
 	if (buf[pos] == '-') {
 		nega = 1;
 		pos++;
@@ -252,10 +253,12 @@ int _conv(const char *buf, int pos, int radix, int *result)
 		if (isdigit(c)) {
 			*result *= radix;
 			*result += ((int)c) - 48;
+			start = 0;
 		} else if ( (radix > 10) && (((c >= 'A') && (c <= 'F')) || ((c >= 'a') && (c <= 'f')))) {
 			*result *= radix;
 			*result += ((int)(c & 0x0F)) + 9;
-		} else if ((c == ' ') || (c == '\n') || (c == '\r') || (c == '\t')) {
+            start = 0;
+		} else if (((c == ' ') || (c == '\n') || (c == '\r') || (c == '\t')) && (start)) {
 			continue;
 		} else {
 			break;

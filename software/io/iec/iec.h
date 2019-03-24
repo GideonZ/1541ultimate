@@ -53,23 +53,24 @@
 #define LOGGER_CMD_STOP        0x44
 
 class IecChannel;
+class IecCommandChannel;
 class IecPrinter;
 class UltiCopy;
+class IecFileSystem;
 
 class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
 {
     TaskHandle_t taskHandle;
-	FileManager *fm;
-    IndexedList<FileInfo *> *dirlist;
-    IndexedList<char *> *iecNames;
-    Path *path;
-    Path *cmd_path;
     UserInterface *cmd_ui;
     SemaphoreHandle_t ulticopyBusy;
     SemaphoreHandle_t ulticopyMutex;
     QueueHandle_t queueGuiToIec;
+    Path *cmd_path;
+    FileManager *fm;
+    IecFileSystem *vfs;
 
-	int last_addr;
+    const char *rootPath;
+    int last_addr;
     int last_printer_addr;
     bool wait_irq;
     bool atn;
@@ -97,8 +98,6 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     UltiCopy *ui_window;
     uint8_t last_track;
     static void iec_task(void *a);
-    void cleanupDir(void);
-    char *getIecName(char *in);
 public:
     int last_error;
     uint8_t iec_enable;
@@ -111,10 +110,9 @@ public:
 
     int fetch_task_items(Path *path, IndexedList<Action *> &list);
     void effectuate_settings(void); // from ConfigurableObject
-    int get_last_error(char *); // writes string into buffer
-
-    FRESULT readDirectory(void);
-    int findIecName(const char *name, const char *ext);
+    int get_last_error(char *, int track = 0, int sector = 0); // writes string into buffer
+    IecCommandChannel *get_command_channel();
+    const char *get_root_path();
 
     friend class IecChannel;
     friend class IecCommandChannel;
@@ -148,6 +146,7 @@ public:
 
 #define ERR_OK							00
 #define ERR_FILES_SCRATCHED				01
+#define ERR_PARTITION_OK                02
 #define ERR_READ_ERROR					20
 #define ERR_WRITE_ERROR					25
 #define ERR_WRITE_PROTECT_ON			26
@@ -165,6 +164,7 @@ public:
 #define ERR_FILE_NOT_FOUND				62
 #define ERR_FILE_EXISTS					63
 #define ERR_FILE_TYPE_MISMATCH			64
+#define ERR_FRESULT_CODE                69
 #define ERR_NO_CHANNEL          		70
 #define ERR_DIRECTORY_ERROR				71
 #define ERR_DISK_FULL					72
@@ -173,6 +173,7 @@ public:
 // custom
 #define ERR_BAD_COMMAND					75
 #define ERR_UNIMPLEMENTED				76
+#define ERR_PARTITION_ERROR             77
 
 typedef struct {
 	uint8_t nr;
