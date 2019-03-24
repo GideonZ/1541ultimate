@@ -62,7 +62,9 @@ mstring& mstring :: operator=(const char *rhs)
 //    printf("Operator = char*rhs=%s. This = %p.\n", rhs, this);
     int n = strlen(rhs);
     if((n+1) > alloc) {    
-        delete[] cp;
+        if(cp) {
+            delete[] cp;
+        }
         cp = new char[n+1];
         alloc = n+1;
     }
@@ -75,7 +77,9 @@ mstring& mstring :: operator=(mstring &rhs)
 //    printf("Assignment operator. Left = %s(%p), Right = %s(%p)\n", c_str(), this, rhs.c_str(), &rhs);
     if(this != &rhs) {
         if((rhs.length()+1) > alloc) {
-            delete[] cp;
+            if (cp) {
+                delete[] cp;
+            }
             cp = new char[rhs.alloc];
             alloc = rhs.alloc;
         }
@@ -92,10 +96,15 @@ mstring& mstring :: operator+=(const char rhs)
     if(n > alloc) { // doesnt fit
         char *new_cp = new char[n];
         alloc = n;
-        strcpy(new_cp, cp);
-        new_cp[n-2] = rhs;
-        new_cp[n-1] = 0;
-        delete[] cp;
+        if (cp) {
+            strcpy(new_cp, cp);
+            new_cp[n-2] = rhs;
+            new_cp[n-1] = 0;
+            delete[] cp;
+        } else {
+            new_cp[n-2] = rhs;
+            new_cp[n-1] = 0;
+        }
         cp = new_cp;
     } else { // fits
         cp[n-2] = rhs;
@@ -111,9 +120,13 @@ mstring& mstring :: operator+=(const char *rhs)
     if(n > alloc) { // doesnt fit
         char *new_cp = new char[n];
         alloc = n;
-        strcpy(new_cp, cp);
-        strcat(new_cp, rhs);
-        delete[] cp;
+        if (cp) {
+            strcpy(new_cp, cp);
+            strcat(new_cp, rhs);
+            delete[] cp;
+        } else {
+            strcpy(new_cp, rhs);
+        }
         cp = new_cp;
 //        printf("%s\n", new_cp);
     } else { // fits
@@ -129,9 +142,13 @@ mstring& mstring :: operator+=(mstring &rhs)
     if(n > alloc) { // doesnt fit
         char *new_cp = new char[n];
         alloc = n;
-        strcpy(new_cp, cp);
-        strcat(new_cp, rhs.cp);
-        delete[] cp;
+        if (cp) {
+            strcpy(new_cp, cp);
+            strcat(new_cp, rhs.cp);
+            delete[] cp;
+        } else {
+            strcpy(new_cp, rhs.cp);
+        }
         cp = new_cp;
     } else { // fits
         strcat(cp, rhs.cp);
