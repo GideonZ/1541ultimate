@@ -93,7 +93,8 @@ IecInterface iec_if;
 // The track and sector will be send seperately
 
 const char msg00[] = " OK";						//00
-const char msg01[] = "FILES SCRATCHED";			//01	Track number shows how many files were removed
+const char msg01[] = " FILES SCRATCHED";		//01	Track number shows how many files were removed
+const char msg02[] = "PARTITION SELECTED";      //02
 const char msg20[] = "READ ERROR"; 				//20 (Block Header Not Found)
 //const char msg21[] = "READ ERROR"; 				//21 (No Sync Character)
 //const char msg22[] = "READ ERROR"; 				//22 (Data Block not Present)
@@ -121,12 +122,13 @@ const char msg64[] = "FILE TYPE MISMATCH";		//64
 //const char msg65[] = "NO BLOCK";				//65
 //const char msg66[] = "ILLEGAL TRACK AND SECTOR";//66
 //const char msg67[] = "ILLEGAL SYSTEM T OR S";	//67
+const char msg69[] = "FILESYSTEM ERROR";        //69
 const char msg70[] = "NO CHANNEL";	            //70
 const char msg71[] = "DIRECTORY ERROR";			//71
 const char msg72[] = "DISK FULL";				//72
-const char msg73[] = "ULTIMATE IEC DOS V0.8";	//73 DOS MISMATCH(Returns DOS Version)
+const char msg73[] = "ULTIMATE IEC DOS V0.9";	//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
-
+const char msg77[] = "SELECTED PARTITION ILLEGAL"; //77
 const char msg_c1[] = "BAD COMMAND";			//custom
 const char msg_c2[] = "UNIMPLEMENTED";			//custom
 
@@ -134,6 +136,7 @@ const char msg_c2[] = "UNIMPLEMENTED";			//custom
 const IEC_ERROR_MSG last_error_msgs[] = {
 		{ 00,(char*)msg00,NR_OF_EL(msg00) - 1 },
 		{ 01,(char*)msg01,NR_OF_EL(msg01) - 1 },
+        { 02,(char*)msg02,NR_OF_EL(msg02) - 1 },
 		{ 20,(char*)msg20,NR_OF_EL(msg20) - 1 },
 //		{ 21,(char*)msg21,NR_OF_EL(msg21) - 1 },
 //		{ 22,(char*)msg22,NR_OF_EL(msg22) - 1 },
@@ -161,11 +164,13 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 //		{ 65,(char*)msg65,NR_OF_EL(msg65) - 1 },
 //		{ 66,(char*)msg66,NR_OF_EL(msg66) - 1 },
 //		{ 67,(char*)msg67,NR_OF_EL(msg67) - 1 },
+        { 69,(char*)msg69,NR_OF_EL(msg69) - 1 },
 		{ 70,(char*)msg70,NR_OF_EL(msg70) - 1 },
 		{ 71,(char*)msg71,NR_OF_EL(msg71) - 1 },
 		{ 72,(char*)msg72,NR_OF_EL(msg72) - 1 },
 		{ 73,(char*)msg73,NR_OF_EL(msg73) - 1 },
 		{ 74,(char*)msg74,NR_OF_EL(msg74) - 1 },
+        { 77,(char*)msg77,NR_OF_EL(msg77) - 1 },
 
 		{ 75,(char*)msg_c1,NR_OF_EL(msg_c1) - 1 },
 		{ 76,(char*)msg_c2,NR_OF_EL(msg_c2) - 1 }
@@ -200,13 +205,9 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     printf("%d bytes loaded.\n", size);
 
     atn = false;
-    path = fm->get_new_path("IEC");
-    path->cd(cfg->get_string(CFG_IEC_PATH));
     cmd_path = fm->get_new_path("IEC Gui Path");
     cmd_ui = 0;
 
-    dirlist = new IndexedList<FileInfo *>(8, NULL);
-	iecNames = new IndexedList<char *>(8, NULL);
     last_error = ERR_DOS;
     current_channel = 0;
     talking = false;
@@ -219,6 +220,8 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     start_address = 0x1000000;
 
     effectuate_settings();
+
+    vfs = new IecFileSystem(this);
 
     for(int i=0;i<15;i++) {
         channels[i] = new IecChannel(this, i);
@@ -246,8 +249,12 @@ IecInterface :: ~IecInterface()
         delete channels[i];
 
     delete channel_printer;
-    fm->release_path(path);
     fm->release_path(cmd_path);
+}
+
+IecCommandChannel *IecInterface :: get_command_channel(void)
+{
+    return (IecCommandChannel *)channels[15];
 }
 
 void IecInterface :: effectuate_settings(void)
@@ -291,6 +298,7 @@ void IecInterface :: effectuate_settings(void)
         last_printer_addr = bus_id;   
     }
 
+    rootPath = cfg->get_string(CFG_IEC_PATH);
     channel_printer->set_filename(cfg->get_string(CFG_IEC_PRINTER_FILENAME));
     channel_printer->set_output_type(cfg->get_value(CFG_IEC_PRINTER_TYPE));
     channel_printer->set_ink_density(cfg->get_value(CFG_IEC_PRINTER_DENSITY));
@@ -303,6 +311,11 @@ void IecInterface :: effectuate_settings(void)
     HW_IEC_RESET_ENABLE = iec_enable;
 }
     
+
+const char *IecInterface :: get_root_path(void)
+{
+    return rootPath;
+}
 
 // called from GUI task
 int IecInterface :: fetch_task_items(Path *path, IndexedList<Action *> &list)
@@ -358,7 +371,9 @@ void IecInterface :: poll()
 		while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
 			data = HW_IEC_RX_DATA;
 			if(a & IEC_FIFO_CTRL) {
-				//printf("<%b>", data);
+#if IECDEBUG
+				printf("<%b>", data);
+#endif
 				switch(data) {
 					case 0xDA:
 						HW_IEC_TX_DATA = 0x00; // handshake and wait for IRQ
@@ -414,7 +429,9 @@ void IecInterface :: poll()
 				}
 			} else {
 				if(atn) {
-					//printf("[/%b] ", data);
+#if IECDEBUG
+					printf("[/%b] ", data);
+#endif
 					if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
 						if (printer) {
 							channel_printer->push_command(data & 0x7);
@@ -427,7 +444,9 @@ void IecInterface :: poll()
 					if (printer) {
 						channel_printer->push_data(data);
 					} else {
-						//printf("[%b] ", data);
+#if IECDEBUG
+						printf("[%b] ", data);
+#endif
 						channels[current_channel]->push_data(data);
 					}
 				}
@@ -742,12 +761,12 @@ void IecInterface :: save_copied_disk()
 	}
 }
                 
-int IecInterface :: get_last_error(char *buffer)
+int IecInterface :: get_last_error(char *buffer, int track, int sector)
 {
 	int len;
 	for(int i = 0; i < NR_OF_EL(last_error_msgs); i++) {
 		if(last_error == last_error_msgs[i].nr) {
-			return sprintf(buffer,"%02d,%s,%02d,00\015", last_error,last_error_msgs[i].msg, 0);
+			return sprintf(buffer,"%02d,%s,%02d,%02d\015", last_error,last_error_msgs[i].msg, track, sector);
 		}
 	}
     return sprintf(buffer,"99,UNKNOWN,00,00\015");
@@ -914,90 +933,6 @@ void IecInterface :: test_master(int test)
     default:
         printf("To be defined.\n");
     }
-}
-
-void IecInterface :: cleanupDir() {
-	if (!dirlist)
-		return;
-	for(int i=0;i < dirlist->get_elements();i++) {
-		delete (*dirlist)[i];
-		delete (*iecNames)[i];
-
-	}
-	dirlist->clear_list();
-	iecNames->clear_list();
-}
-
-FRESULT IecInterface :: readDirectory()
-{
-	cleanupDir();
-	FRESULT res = path->get_directory(*dirlist);
-	for(int i=0;i<dirlist->get_elements();i++) {
-		iecNames->append(getIecName((*dirlist)[i]->lfname));
-	}
-	return res;
-}
-
-char *IecInterface :: getIecName(char *in)
-{
-	char *out = new char[24];
-	memset(out, 0, 24);
-
-	char temp[64];
-	strncpy(temp, in, 64);
-
-	char ext[8];
-	get_extension(in, ext);
-
-	if (strcmp(ext, "PRG") == 0) {
-		memcpy(out, ext, 3);
-		set_extension(temp, "", 64);
-	} else if (strcmp(ext, "SEQ") == 0) {
-		memcpy(out, ext, 3);
-		set_extension(temp, "", 64);
-	} else if (strcmp(ext, "REL") == 0) {
-		memcpy(out, ext, 3);
-		set_extension(temp, "", 64);
-	} else if (strcmp(ext, "USR") == 0) {
-		memcpy(out, ext, 3);
-		set_extension(temp, "", 64);
-	} else {
-		memcpy(out, "SEQ", 3);
-	}
-
-	for(int i=0;i<16;i++) {
-		char o;
-		if(temp[i] == 0) {
-			break;
-		} else if(temp[i] == '_') {
-			o = 164;
-		} else if(temp[i] < 32) {
-			o = 32;
-		} else {
-			o = toupper(in[i]);
-		}
-		out[i+3] = o;
-	}
-	return out;
-}
-
-int IecInterface :: findIecName(const char *name, const char *ext)
-{
-	char temp[32];
-	if (ext[0]=='.')
-		ext++;
-	temp[0] = toupper(ext[0]);
-	temp[1] = toupper(ext[1]);
-	temp[2] = toupper(ext[2]);
-
-	strncpy(temp+3, name, 28);
-
-	for(int i=0;i<iecNames->get_elements();i++) {
-		if (pattern_match(temp, (*iecNames)[i], false)) {
-			return i;
-		}
-	}
-	return -1;
 }
 
 /*********************************************************************/
