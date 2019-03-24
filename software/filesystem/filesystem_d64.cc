@@ -512,6 +512,7 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 f->attrib = (p[2] & 0x40)?AM_RDO:0;
                 f->cluster = fs->get_abs_sector((int)p[3], (int)p[4]);
                 f->size = (int)p[30] + 256*(int)p[31];
+                f->size *= 254;
                 if (tp >= 1 && tp <= 3 && (p[0x17] == 0 || p[0x17] == 1) && p[0x15] >= 1 && p[0x15] <= 35 && p[0x16] <= 21) {
                 	strncpy(f->extension, "CVT", 4);
                 } else if (tp == 1) {
@@ -563,7 +564,7 @@ FRESULT FileInD64 :: open(FileInfo *info, uint8_t flags)
 
 	offset_in_sector = 2;
 
-	num_blocks = info->size;
+	num_blocks = (info->size + 253) / 254;
 //	dir_sect = info->dir_sector;
 //	dir_entry_offset = info->dir_offset;
 
@@ -591,7 +592,7 @@ FRESULT FileInD64 :: openCVT(FileInfo *info, uint8_t flags, int t, int s, int i)
 
 	offset_in_sector = 2;
 
-	num_blocks = info->size;
+    num_blocks = (info->size + 253) / 254;
 
     visited = new uint8_t[fs->num_sectors];
     for (int i=0; i<fs->num_sectors; i++) {
