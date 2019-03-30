@@ -5,7 +5,7 @@ ARCHITECTURE = nios2
 
 include ../common/environment.mk
 
-FPGA_PATH = ../../../../ult64/target/u64_a4
+FPGA_PATH ?= ../../../external
 
 PRJ      =  update
 FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf
@@ -64,8 +64,7 @@ VPATH +=	$(PATH_SW)/nios_appl_bsp
 VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 VPATH +=    $(PATH_SW)/application/update_u2p
-VPATH +=    $(FPGA_PATH)/work
-VPATH +=    $(PATH_SW)/../../ult64/target/ledflash/output_files
+VPATH +=    $(FPGA_PATH)
 VPATH +=    $(PATH_SW)/../target/software/nios2_u64/result
 
 SRCS_ASM = update_binaries_u64.s
