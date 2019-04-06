@@ -9,7 +9,7 @@
 		<user_name>Page_0</user_name>
 		<page_flags>1</page_flags>
 		<bit0>
-			<sof_filename>../../../../ult64/target/u64_a4/work/u64.sof</sof_filename> 
+			<sof_filename>../../../external/u64.sof</sof_filename> 
 		</bit0>
 	</sof_data>
 	<version>9</version>
