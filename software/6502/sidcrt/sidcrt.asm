@@ -2037,8 +2037,7 @@ printSingleSidInfo
                 jsr readHeader
                 jsr printHex
 
-checkVersion    pla                 ; check if system info needs to be printed
-                pha
+checkVersion    txa                 ; check if system info needs to be printed
                 bne checkSidHeader1
                 ; print system info
                 lda SID_MODEL
@@ -2086,7 +2085,10 @@ printUnknownModel
                 lda #>SUnknownLbl
                 sta $ab
 
-printModel      jsr setCurrentLinePosition
+printModel      pla
+                txa
+                pha
+                jsr setCurrentLinePosition
                 lda $fe
                 clc
                 adc #16
