@@ -44,6 +44,8 @@
 #define U64_PARCABLE_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
 #define U64_CART_DISABLE   (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Logical disable of external cart
 #define U64_MB_RESET       (*(volatile uint8_t *)(U64_IO_BASE + 0x0B)) // Write a 0 to start the microblaze, if available
+#define U64_LEDSTRIP_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x0C)) // Write a 1 to make CIA_PWM pins become LED strip control pins
+#define U64_PWM_DUTY       (*(volatile uint8_t *)(U64_IO_BASE + 0x0D)) // any value between 00 (off) and FF (nearly full phase)
 
 #define U64_HDMI_DDC_ENABLE     0x20
 #define U64_HDMI_DDC_DISABLE    0x10
