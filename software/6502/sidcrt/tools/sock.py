@@ -24,17 +24,17 @@ class mysocket:
             if sent == 0:
                 raise RuntimeError("socket connection broken")
             totalsent = totalsent + sent
-        
+
     def myreceive(self, maxlen):
         chunks = []
         bytes_recd = 0
         while bytes_recd < maxlen:
             chunk = self.conn.recv(min(maxlen - bytes_recd, 2048))
             bytes_recd = bytes_recd + len(chunk)
-            print bytes_recd
+            print(bytes_recd)
             if chunk == '':
-                print "Number of chunks received so far:", len(chunks), bytes_recd
-                break            
+                print("Number of chunks received so far:", len(chunks), bytes_recd)
+                break
                 #raise RuntimeError("socket connection broken")
             chunks.append(chunk)
         return ''.join(chunks)
@@ -43,17 +43,17 @@ class mysocket:
         self.sock.bind(('', port))
         self.sock.listen(2)
         conn, addr = self.sock.accept()
-        print conn, addr
+        print(conn, addr)
         self.conn = conn
-        
+
 if __name__ == "__main__":
     if (sys.argv[1] == 'c'):
         s = mysocket()
-        
+
         message = (("abcdefghijklmnopqrstuvwxyz" * 5) + ("0123456789" * 10)) * 10
         #print message
         message = message * 2000
-        
+
         if (len(sys.argv) == 3):
             s.connect(sys.argv[2], 5001)
         else:
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
     elif (sys.argv[1] == 't'):
         s = mysocket()
-        
+
         if (len(sys.argv) == 3):
             s.connect(sys.argv[2], 5002)
         else:
@@ -73,7 +73,7 @@ if __name__ == "__main__":
         msg = s.myreceive(2*1024*1024)
         text_file = open("trace.log", "wb")
         text_file.write(msg)
-        text_file.close()        
+        text_file.close()
         s.sock.shutdown(0)
         s.sock.close()
 
@@ -87,10 +87,10 @@ if __name__ == "__main__":
                 s.mysend(bytes)
                 s.sock.shutdown(0)
                 s.sock.close()
-                
+
     elif (sys.argv[1] == 's'):
         with open(sys.argv[2], "rb") as f:
-            bytes = f.read(65536) # max 64K 
+            bytes = f.read(65536) # max 64K
             if bytes != "":
                 s = mysocket()
                 s.connect(sys.argv[3], 64)
@@ -99,8 +99,8 @@ if __name__ == "__main__":
                 s.mysend(bytes)
                 s.sock.shutdown(0)
                 s.sock.close()
-                
-                
+
+
     elif (sys.argv[1] == 'p'):
         #define SOCKET_CMD_DMA    0xFF01
         #define SOCKET_CMD_DMARUN 0xFF02
@@ -110,14 +110,14 @@ if __name__ == "__main__":
         #define SOCKET_CMD_DMAWRITE  0xFF06
         #define SOCKET_CMD_DMAJUMP   0xFF09
         #define SOCKET_CMD_LOADSIDCRT 0xFF71
-        
-        
+
+
         with open(sys.argv[2], "rb") as f:
-            bytes = f.read(65536) # max 64K 
+            bytes = f.read(65536) # max 64K
             if bytes != "":
                 s = mysocket()
                 s.connect(sys.argv[3], 64)
-                # # reset 
+                # # reset
                 # s.mysend(pack("<H", 0xFF04))
                 # s.mysend(pack("<H", 0))
                 # # wait 3 seconds
@@ -148,7 +148,7 @@ if __name__ == "__main__":
                 s.mysend(pack("<H", 0xFF02))
                 s.mysend(pack("<H", len(bytes)))
                 s.mysend(bytes)
-                
+
                 s.sock.shutdown(0)
                 s.sock.close()
 
@@ -162,13 +162,12 @@ if __name__ == "__main__":
                 s.mysend(bytes)
                 s.sock.shutdown(0)
                 s.sock.close()
-                
-        
+
+
     else: # server
         s = mysocket()
         s.serve(5001)
         msg = s.myreceive(1024*1024)
-        print "Received: ", len(msg), "bytes"
+        print("Received: ", len(msg), "bytes")
         s.sock.shutdown(0)
         s.sock.close()
-        

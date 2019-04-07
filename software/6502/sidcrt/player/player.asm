@@ -3,7 +3,7 @@
 ;
 ; Written by Wilfred Bos
 ;
-; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2009 - 2019 Wilfred Bos / Gideon Zweijtzer
 ;
 ; DESCRIPTION
 ;   This is the SID player which is built-in the Ultimate devices. The
@@ -66,6 +66,7 @@ offHiAdvInit    .word hiAdvInit + 2     ; offset of hi byte of advanced initiali
 offPlayLoop     .word playerLoop + 0    ; offset of player loop which can be disabled to write $60
 
 offFastForw     .word fastForward + 1   ; offset of flag indicating the player should fast forward the tune (0 = normal, other value is fast forward)
+offPause        .word pauseKey + 1      ; offset of flag indicating the player should pause the tune (0 = play, other value is pause)
 
 offNumLines     .word numOfLines + 1    ; offset of value of the number of line where the colors should be set for
 
@@ -326,8 +327,12 @@ irqciaFFFE      pha
                 tya
                 pha
 
-irqcia0314      lda $01
+irqcia0314
 .endp
+pauseKey        lda #$00
+                bne extraPlayer
+
+                lda $01
                 pha
 playBank        lda #$00
                 sta $01

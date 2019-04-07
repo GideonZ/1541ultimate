@@ -1,10 +1,10 @@
 ;-----------------------------------------------------------------------
-; Ultimate SID Player V2.0a - Sidplayer for the Ultimate hardware
+; Ultimate SID Player V2.0b - Sidplayer for the Ultimate hardware
 ;
 ; Written by Wilfred Bos - April 2009
 ;                          August 2017 - January 2018
 ;
-; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2009 - 2019 Wilfred Bos / Gideon Zweijtzer
 ;
 ; Info:
 ;  Editing the source code should be done in a text editor which supports UTF-8.
@@ -39,6 +39,7 @@ SONG_SCREEN_LOCATION = $b5
 
 ; ZERO PAGE ADDRESSES
 CURRENT_LINE = $a0
+CANT_PAUSE = $a0
 
 DD00_VALUE = $a3
 D018_VALUE = $a4
@@ -90,7 +91,7 @@ ZERO_PAGE_ADDRESSES_MAIN = [
                 .byte >startNMI
                 .byte 'C' + $80, 'B' + $80, 'M' + $80, '8', '0'   ; CBM80
 
-                .text 0, 'Ultimate SID Player Cartridge V2.0a - Copyright (c) 2009-2018 Wilfred Bos / Gideon Zweijtzer', 0
+                .text 0, 'Ultimate SID Player Cartridge V2.0b - Copyright (c) 2009-2019 Wilfred Bos / Gideon Zweijtzer', 0
 
 startNMI        pla                 ; ignore pressing restore key
                 tay
@@ -510,8 +511,7 @@ setExtraPlayerVars
                 ldx extraPlayer.songNumLoc + 1
                 jsr setValue
                 pla
-                iny
-                jsr writeAddress
+                jsr writeNextAddress
 
                 ldy #OFFSET_SYSTEM_SCREEN_LOCATION
                 jsr getVariableWord
@@ -521,8 +521,7 @@ setExtraPlayerVars
                 ldx extraPlayer.sidModelLoc + 1
                 jsr setValue
                 pla
-                iny
-                jsr writeAddress
+                jsr writeNextAddress
 
                 ldy #OFFSET_SYSTEM_SCREEN_LOCATION
                 jsr getVariableWord
@@ -532,88 +531,79 @@ setExtraPlayerVars
                 ldx extraPlayer.c64ModelLoc + 1
                 jsr setValue
                 pla
-                iny
-                jsr writeAddress
+                jsr writeNextAddress
 
                 lda player.offSongNr
                 ldy extraPlayer.songNumSet
                 ldx extraPlayer.songNumSet + 1
                 jsr setValue
-                iny
                 lda player.offSongNr + 1
-                clc
-                adc PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeAtPlayerLocation
 
                 lda #$80
                 ldy extraPlayer.spriteLoc
                 ldx extraPlayer.spriteLoc + 1
                 jsr setValue
-                iny
                 lda SCREEN_LOCATION
                 clc
                 adc #$03
-                jsr writeAddress
+                jsr writeNextAddress
 
                 lda player.offPlayLoop
                 ldy extraPlayer.playerLoopLoc
                 ldx extraPlayer.playerLoopLoc + 1
                 jsr setValue
-                iny
                 lda player.offPlayLoop + 1
-                clc
-                adc PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeAtPlayerLocation
 
                 lda player.offExtraPlay1
                 ldy extraPlayer.epCallLoc
                 ldx extraPlayer.epCallLoc + 1
                 jsr setValue
-                iny
                 lda player.offExtraPlay1 + 1
-                clc
-                adc PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeAtPlayerLocation
 
                 lda player.offFastForw
                 ldy extraPlayer.fastFwd
                 ldx extraPlayer.fastFwd + 1
                 jsr setValue
-                iny
                 lda player.offFastForw + 1
-                clc
-                adc PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeAtPlayerLocation
+
+                lda player.offPause
+                ldy extraPlayer.pauseKey
+                ldx extraPlayer.pauseKey + 1
+                jsr setValue
+                lda player.offPause + 1
+                jsr writeAtPlayerLocation
+
+                lda CANT_PAUSE
+                bne +
+                jsr isRsid
++               ldy extraPlayer.cantPauseLoc        ; can't pause tune when it's an RSID tune or when play address is zero
+                ldx extraPlayer.cantPauseLoc + 1
+                jsr setValue
 
                 lda player.offSpeed1
                 ldy extraPlayer.hdrSpeedFlag1
                 ldx extraPlayer.hdrSpeedFlag1 + 1
                 jsr setValue
-                iny
                 lda player.offSpeed1 + 1
-                clc
-                adc PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeAtPlayerLocation
 
                 lda player.offSpeed2
                 ldy extraPlayer.hdrSpeedFlag2
                 ldx extraPlayer.hdrSpeedFlag2 + 1
                 jsr setValue
-                iny
                 lda player.offSpeed2 + 1
-                clc
-                adc PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeAtPlayerLocation
 
                 lda player.offSpeed3
                 ldy extraPlayer.hdrSpeedFlag3
                 ldx extraPlayer.hdrSpeedFlag3 + 1
                 jsr setValue
-                iny
                 lda player.offSpeed3 + 1
-                clc
-                adc PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeAtPlayerLocation
 
                 ldy #$12            ; byte 4 of speed flags
                 jsr readHeader
@@ -637,9 +627,8 @@ setExtraPlayerVars
                 ldy extraPlayer.playerLoc
                 ldx extraPlayer.playerLoc + 1
                 jsr setValue
-                iny
                 lda PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeNextAddress
 
                 ldy #$77
                 jsr readHeader
@@ -698,6 +687,13 @@ getVariableByte lda #$00
 
                 jmp readScreen
 
+writeAtPlayerLocation
+                clc
+                adc PLAYER_LOCATION
+writeNextAddress
+                iny
+                jmp writeAddress
+
 getVariableWord jsr getVariableByte
                 tax
                 iny
@@ -738,9 +734,8 @@ setPlayerVars   lda PLAYER_LOCATION
                 ldy player.offInit
                 ldx player.offInit + 1
                 jsr setValue
-                iny
                 pla
-                jsr writeAddress
+                jsr writeNextAddress
 
                 ; handle play address
                 ldy #$0d            ; get play address hi-byte (note that SID header is converted to little endian here)
@@ -751,9 +746,8 @@ setPlayerVars   lda PLAYER_LOCATION
                 ldy player.offPlay
                 ldx player.offPlay + 1
                 jsr setValue
-                iny
                 pla
-                jsr writeAddress
+                jsr writeNextAddress
 
                 ldy player.offReloc1
                 lda player.offReloc1 + 1
@@ -822,9 +816,8 @@ setPlayerVars   lda PLAYER_LOCATION
                 ldy player.offInit
                 ldx player.offInit + 1
                 jsr setValue
-                iny
                 lda #$a7
-                jsr writeAddress
+                jsr writeNextAddress
 
 noBasic         ldy #$7e            ; read lo-byte of load end address
                 jsr readHeader
@@ -852,12 +845,8 @@ noBasic         ldy #$7e            ; read lo-byte of load end address
                 ldx player.offPlayBank + 1
                 jsr setValue
 
-                ldy #$0c            ; get play address lo-byte
-                jsr readHeader
+                jsr isPlayZero
                 bne playNotZero
-                iny
-                jsr readHeader
-                bne playNotZero     ; is play address zero?
 
                 ; play address is zero
 
@@ -873,17 +862,15 @@ noBasic         ldy #$7e            ; read lo-byte of load end address
                 ldy player.offInitAfter
                 ldx player.offInitAfter + 1
                 jsr setValue
-                iny                 ; write another NOP
-                jsr writeAddress
+                jsr writeNextAddress ; write another NOP
                 jmp continueInitPlayer
 
 playNotZero     lda #$85            ; STA $01
                 ldy player.offInitAfter
                 ldx player.offInitAfter + 1
                 jsr setValue
-                iny
                 lda #$01
-                jsr writeAddress
+                jsr writeNextAddress
 
 continueInitPlayer
                 lda D018_VALUE
@@ -915,6 +902,9 @@ continueInitPlayer
                 ldx player.offPalNtsc + 1
                 jsr setValue
 
+                lda #$00
+                sta CANT_PAUSE
+
                 ; speed flags
                 lda SONG_TO_PLAY    ; read current song
                 jsr calcSpeedFlag
@@ -928,67 +918,52 @@ continueInitPlayer
                 bne enableExtraPlayerCalls
                 jmp noExtraPlayer
 
-enableExtraPlayerCalls
-                ; do not use extra player when play address is zero
-                ldy #$0c            ; get play address
+isPlayZero      ldy #$0c            ; get play address
                 jsr readHeader
                 bne +
                 iny
                 jsr readHeader
-                beq noExtraPlayWithFF   ; is play address zero?
++               rts
+
+enableExtraPlayerCalls
+                jsr isPlayZero
+                beq noExtraPlayWithFF
 +
                 lda #$20            ; JSR
                 ldy player.offExtraPlay1
                 ldx player.offExtraPlay1 + 1
                 jsr setValue
-                iny
                 lda #$00            ; lo-byte of extra player
-                jsr writeAddress
-                iny
+                jsr writeNextAddress
                 lda EXTRA_PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeNextAddress
 
-extraPlayForFF  lda #$20            ; JSP
+extraPlayForFF  lda #$20            ; JSR
                 ldy player.offExtraPlay2
                 ldx player.offExtraPlay2 + 1
                 jsr setValue
-                iny
                 lda #$00            ; lo-byte of extra player
-                jsr writeAddress
-                iny
+                jsr writeNextAddress
                 lda EXTRA_PLAYER_LOCATION
-                jsr writeAddress
+                jsr writeNextAddress
 
                 lda #$4c            ; JMP
                 ldy player.offExtraPlay3
                 ldx player.offExtraPlay3 + 1
                 jsr setValue
-                iny
                 lda #<extraPlayer.initMain      ; lo-byte of extra player init routine
-                jsr writeAddress
-                iny
+                jsr writeNextAddress
                 lda EXTRA_PLAYER_LOCATION
-                jmp writeAddress
-
-noExtraPlayer   lda #$ea            ; NOP
-                ldy player.offExtraPlay1
-                ldx player.offExtraPlay1 + 1
-                jsr setValue
-                iny
-                jsr writeAddress
-                iny
-                jsr writeAddress
-
-                ldy player.offExtraPlay2
-                ldx player.offExtraPlay2 + 1
-                jsr setValue
-                iny
-                jsr writeAddress
-                iny
-                jmp writeAddress
+                jmp writeNextAddress
 
 noExtraPlayWithFF
-                lda EXTRA_PLAYER_LOCATION
+                jsr isPlayZero
+                bne +
+
+                lda #$01
+                sta CANT_PAUSE      ; can't pause tune when play address is zero since it runs in its own IRQ
+
++               lda EXTRA_PLAYER_LOCATION
                 beq noExtraPlayer
 
                 jsr isBasic
@@ -1011,11 +986,22 @@ playInLoop
                 ldy player.offExtraPlay1
                 ldx player.offExtraPlay1 + 1
                 jsr setValue
-                iny
-                jsr writeAddress
-                iny
-                jsr writeAddress
+                jsr writeNextAddress
+                jsr writeNextAddress
                 jmp extraPlayForFF
+
+noExtraPlayer   lda #$ea            ; NOP
+                ldy player.offExtraPlay1
+                ldx player.offExtraPlay1 + 1
+                jsr setValue
+                jsr writeNextAddress
+                jsr writeNextAddress
+
+                ldy player.offExtraPlay2
+                ldx player.offExtraPlay2 + 1
+                jsr setValue
+                jsr writeNextAddress
+                jmp writeNextAddress
 
 setValue        pha
                 tya
@@ -2037,8 +2023,7 @@ printSingleSidInfo
                 jsr readHeader
                 jsr printHex
 
-checkVersion    pla                 ; check if system info needs to be printed
-                pha
+checkVersion    txa                 ; check if system info needs to be printed
                 bne checkSidHeader1
                 ; print system info
                 lda SID_MODEL
@@ -2086,7 +2071,10 @@ printUnknownModel
                 lda #>SUnknownLbl
                 sta $ab
 
-printModel      jsr setCurrentLinePosition
+printModel      pla
+                txa
+                pha
+                jsr setCurrentLinePosition
                 lda $fe
                 clc
                 adc #16
