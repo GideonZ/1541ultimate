@@ -99,7 +99,6 @@ void LedStrip :: task(void *a)
 // globally static, causes constructor to be called
 LedStrip ledstrip;
 
-
 void LedStrip :: effectuate_settings(void)
 {
     mode  = cfg->get_value(CFG_LED_MODE);
@@ -107,6 +106,9 @@ void LedStrip :: effectuate_settings(void)
     red   = cfg->get_value(CFG_LED_RED);
     green = cfg->get_value(CFG_LED_GREEN);
     blue  = cfg->get_value(CFG_LED_BLUE);
+
+    U64_LEDSTRIP_EN = (mode == 0) ? 0 : 1;
+    U64_PWM_DUTY = 0xC0;
 }
 
 void LedStrip :: hot_effectuate(ConfigItem *item)
