@@ -14,6 +14,7 @@
 ;     1-0 for selecting sub tune 1 to 10
 ;     + and - for increasing/decreasing the song selection
 ;     runstop for going back to Ultimate menu
+;     space for pausing/resuming playback
 ;
 ; Use 64tass version 1.53.1515 or higher to assemble the code
 ;-----------------------------------------------------------------------
