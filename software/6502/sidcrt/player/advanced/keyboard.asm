@@ -3,7 +3,7 @@
 ;
 ; Written by Wilfred Bos
 ;
-; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2009 - 2019 Wilfred Bos / Gideon Zweijtzer
 ;
 ; DESCRIPTION
 ;   Routines for handling key presses for changing song, fast forward
@@ -48,8 +48,8 @@ keyPressed      cmp currentKey,x
                 cpx #$05
                 beq row6
 
-                cpx #$07            ; check for runstop to exit player and for <- key to fastforward tune
-                bne +
+                cpx #$07            ; check for runstop to exit player, <- key to fastforward tune and space to pause
+                bne checkNumKeys
 
 .if INCLUDE_RUNSTOP==1
                 cmp #$7f            ; check if runstop key is pressed
@@ -58,38 +58,53 @@ keyPressed      cmp currentKey,x
                 sta runStopPressed
 noRunStop
 .fi
-                cmp #$fd
-                bne +
+                ldy cantPause
+                bne checkOtherKeys
+
+                cmp #$ef            ; check if space key is pressed
+                bne checkOtherKeys
+
+                lda pauseTune
+                sta $d418           ; toggle volume off
+                eor #$1f
+                sta pauseTune
+pause           sta @w $0000
+notReleased     rts
+
+checkOtherKeys  cmp #$fd
+                bne checkNumKeys
                 ldy #$01
                 sty fastForwardOn
 fastForward     sty @w $0000
-notReleased     rts
+                rts
 
-+               cmp #$f6
+checkNumKeys    ldy pauseTune
+                bne skipKeyCheck
+
+                cmp #$f6
                 beq skipKeyCheck
                 ; handle keys 0-9
                 tay
                 and #$f6            ; check for values $fe and $f7
                 cmp #$f6
-                beq +
-                rts
+                bne skipKeyCheck
 
-+               txa
+                txa
                 asl
                 tax
                 tya
                 lsr
                 lda #$00
                 adc tuneSelect,x
-                jmp selectSong
-
-selectSong      cmp maxSong
-                beq +
+                cmp maxSong
+                beq setCurrentSong
                 bcs skipKeyCheck
-+               sta currentSong
-                jmp selectSubTune
+                jmp setCurrentSong
 
-row6            cmp #$fe
+row6            ldy pauseTune
+                bne skipKeyCheck
+
+                cmp #$fe
                 beq plusKey
                 cmp #$f7
                 beq minKey
@@ -100,15 +115,14 @@ minKey          dec currentSong
                 cmp #$ff
                 bne +
                 lda maxSong
-                sta currentSong
-+               jmp selectSubTune
+                jmp setCurrentSong
 
 plusKey         lda currentSong
                 inc currentSong
                 cmp maxSong
                 bcc +
                 lda #0
-                sta currentSong
+setCurrentSong  sta currentSong
 +               jmp selectSubTune
 
 .if INCLUDE_RUNSTOP==1

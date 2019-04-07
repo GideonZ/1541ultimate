@@ -3,7 +3,7 @@
 ;
 ; Written by Wilfred Bos
 ;
-; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2009 - 2019 Wilfred Bos / Gideon Zweijtzer
 ;
 ; DESCRIPTION
 ;   This is the advanced SID player that will display a clock with time bar
@@ -40,6 +40,8 @@ hdrSpeedFlag2   .word speedFlag2 + 1                ; offset of address where th
 hdrSpeedFlag3   .word speedFlag3 + 1                ; offset of address where the address of the current speed flag must be stored
 
 fastFwd         .word keyboard.fastForward + 1      ; offset of address where to store the address of the fastforward indicator
+pauseKey        .word keyboard.pause + 1            ; offset of address where to store the address of the pause indicator
+cantPauseLoc    .word cantPause                     ; offset of address where to store the address of the cantPause indicator
 
 songLenData     .word songLength                    ; offset of songlength data
 
@@ -136,10 +138,12 @@ extraPlayer     lda afterInitDone
                 inc afterInitDone
                 jsr afterInit
 
-+               jsr clock.countClock
++               lda pauseTune
+                bne +
+                jsr clock.countClock
                 jsr clock.displayClock
                 jsr timebar.countTimeBar
-                jmp keyboard.handleKeyboard
++               jmp keyboard.handleKeyboard
 
 selectSubTune   sei
                 lda #$00
@@ -383,6 +387,8 @@ delayFrame      .byte 0
 
 currentSong     .byte 0
 maxSong         .byte 0
+pauseTune       .byte 0
+cantPause       .byte 0
 
 curSongDigit1   .byte 0
 curSongDigit2   .byte 0
