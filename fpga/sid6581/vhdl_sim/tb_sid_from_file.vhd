@@ -21,7 +21,7 @@ architecture tb of tb_sid_from_file is
 
     signal clock       : std_logic := '0';
     signal reset       : std_logic;
-    signal addr        : unsigned(6 downto 0) := (others => '0');
+    signal addr        : unsigned(7 downto 0) := (others => '0');
     signal wren        : std_logic := '0';
     signal wdata       : std_logic_vector(7 downto 0) := (others => '0');
     signal rdata       : std_logic_vector(7 downto 0) := (others => '0');
@@ -44,8 +44,7 @@ begin
 
     sid: entity work.sid_top
     generic map (
-        g_filter_div  => 20,  -- 194 for 50 MHz; 
-        g_num_voices  => 3 )
+        g_num_voices  => 8 )
         
     port map (
         clock       => clock,
@@ -57,7 +56,7 @@ begin
         rdata       => rdata,
     
         start_iter  => start_iter,
-        sample_out  => sample_out );
+        sample_left => sample_out );
     
 --    i_pdm_sid: entity work.sigma_delta_dac
 --    generic map (
@@ -104,7 +103,7 @@ begin
         
         L1: while now < 5000 ms loop
             b := read_memory_8(trace_in, std_logic_vector(to_unsigned(addr_i, 32)));
-            addr  <= unsigned(b(6 downto 0));
+            addr  <= unsigned(b(7 downto 0));
             wdata <= read_memory_8(trace_in, std_logic_vector(to_unsigned(addr_i+1, 32)));
             t(23 downto 16) := unsigned(read_memory_8(trace_in, std_logic_vector(to_unsigned(addr_i+2, 32))));
             t(15 downto  8) := unsigned(read_memory_8(trace_in, std_logic_vector(to_unsigned(addr_i+3, 32))));
@@ -118,7 +117,7 @@ begin
             wren <= '1';
             wait for 1 * c_clock;
             wren <= '0';
-            wait for 3 * c_clock;
+            wait for 7 * c_clock;
         end loop; 
 
         stop_clock <= true;
@@ -127,7 +126,7 @@ begin
     
     process
     begin
-        wait for 3 * c_clock;
+        wait for 7 * c_clock;
         start_iter <= '1';
         wait for 1 * c_clock;
         start_iter <= '0';
