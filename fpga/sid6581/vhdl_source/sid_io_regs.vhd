@@ -21,7 +21,6 @@ use work.sid_io_regs_pkg.all;
 entity sid_io_regs is
 generic (
     g_8voices     : boolean := false;
-    g_filter_div  : natural := 221; -- for 50 MHz
     g_num_voices  : natural := 16 );
 port (
     clock         : in  std_logic;
@@ -79,8 +78,6 @@ begin
                 case io_req.address(3 downto 0) is
                 when c_sid_voices       =>
                     io_resp.data <= std_logic_vector(to_unsigned(g_num_voices, 8));
-                when c_sid_filter_div   =>
-                    io_resp.data <= std_logic_vector(to_unsigned(g_filter_div, 8));
                 when c_sid_base_left    =>
                     io_resp.data <= std_logic_vector(control_i.base_left);
                 when c_sid_base_right   =>
