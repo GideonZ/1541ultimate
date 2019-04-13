@@ -197,7 +197,7 @@ begin
     io_coef_en   <= io_req.read or io_req.write;
     io_coef_en_d <= io_coef_en when rising_edge(clock);
     io_resp.ack  <= io_coef_en_d;
-    io_resp.data <= io_rdata when io_coef_en_d = '1' else X"00";
+    io_resp.data <= X"00"; --io_rdata when io_coef_en_d = '1' else X"00";
 
     process(clock)
     begin
