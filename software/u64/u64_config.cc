@@ -79,6 +79,8 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_MIXER9_PAN        0x39
 
 #define CFG_SYSTEM_MODE       0x41
+#define CFG_LED_SELECT_0      0x42
+#define CFG_LED_SELECT_1      0x43
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -151,6 +153,9 @@ static const char *sid_types[] = { "None", "6581", "8580", "SidFX", "fpgaSID" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
 static const char *filter_res[] = { "Low", "High" };
 static const char *comb_wave[] = { "6581", "8580" };
+static const char *ledselects[] = { "On", "Off", "Drive A Pwr", "DrvAPwr + DrvBPwr", "Drive A Act", "DrvAAct + DrvBAct",
+                                    "DrvAPwr ^ DrvAAct", "USB Activity", "Any Activity", "!(DrvAAct)", "!(DrvAAct+DrvBAct)",
+                                    "!(USB Act)", "!(Any Act)", "IRQ Line", "!(IRQ Line)" };
 
 static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
                                  "-2 dB", "-3 dB", "-4 dB", "-5 dB", "-6 dB", "-7 dB", "-8 dB", "-9 dB",
@@ -234,6 +239,8 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_MIXER7_PAN,           CFG_TYPE_ENUM, "Pan Drive 2",                  "%s", pannings,     0, 10, 7 },
     { CFG_MIXER8_PAN,           CFG_TYPE_ENUM, "Pan Tape Read",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
+    { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 14, 0 },
+    { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 14, 4 },
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
@@ -266,6 +273,8 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_EMUSID2_RESONANCE, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_EMUSID1_WAVES, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_EMUSID2_WAVES, U64Config :: setSidEmuParams);
+        cfg->set_change_hook(CFG_LED_SELECT_0, U64Config :: setLedSelector);
+        cfg->set_change_hook(CFG_LED_SELECT_1, U64Config :: setLedSelector);
 		effectuate_settings();
 	}
 	fm = FileManager :: getFileManager();
@@ -380,7 +389,7 @@ void U64Config :: effectuate_settings()
     setSidEmuParams(cfg->find_item(CFG_EMUSID2_RESONANCE));
     setSidEmuParams(cfg->find_item(CFG_EMUSID1_WAVES));
     setSidEmuParams(cfg->find_item(CFG_EMUSID2_WAVES));
-
+    setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
 /*
     printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s)  Emu1: %02X/%02X  Emu2: %02X/%02X\n",
             C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
@@ -463,6 +472,16 @@ void U64Config :: setScanMode(ConfigItem *it)
 	if(it) {
 //		SetScanMode(it->value);
 	}
+}
+
+void U64Config :: setLedSelector(ConfigItem *it)
+{
+    if(it) {
+        ConfigStore *cfg = it->store;
+        uint8_t sel0 = (uint8_t)cfg->get_value(CFG_LED_SELECT_0);
+        uint8_t sel1 = (uint8_t)cfg->get_value(CFG_LED_SELECT_1);
+        U64_CASELED_SELECT = (sel1 << 4) | sel0;
+    }
 }
 
 void U64Config :: setSidEmuParams(ConfigItem *it)
