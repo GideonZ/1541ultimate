@@ -226,6 +226,11 @@ basicStartedIRQ
                 beq loadSid
                 jmp $0100           ; clear memory and execute DMA load, and do run
 
+reset           lda #<resetRoutine
+                ldx #>resetRoutine
+                ldy #resetRoutineEnd - resetRoutine
+                jmp runAt0100
+
 loadSid         ldx #$ff            ; init stack pointer
                 txs
                 lda #$fc            ; push reset address on stack
@@ -250,23 +255,15 @@ loadSid         ldx #$ff            ; init stack pointer
 
                 jsr moveSidHeader   ; move to location where it can be modified
 
-                ldy #$01            ; detect if header is a real SID header
-                jsr readHeader
-                cmp #'S'
-                bne noSid
-                iny
-                jsr readHeader
-                cmp #'I'
-                bne noSid
-                iny
-                jsr readHeader
-                cmp #'D'
-                beq SidHeaderDetected
-noSid           jmp reset           ; header is no real header so disable cartridge and perform a reset
+                ldy #$03
+-               jsr readHeader
+                cmp SIDMagic - 1,y ; detect if header is a real SID header
+                bne reset           ; header is no real header so perform a reset
+                dey
+                bne -
 
 ;##################################################
 
-SidHeaderDetected
                 jsr fixHeader       ; fix header after it has been moved (temporary fix)
                 jsr prepareSidHeader
 
@@ -388,10 +385,8 @@ moveSidHeader   ldy #$7d            ; read hi byte of load address
                 dey
                 bpl -
                 lda #$80
-                sta SID_HEADER_LO
-                lda #$03
-                sta SID_HEADER_HI
-noMoveNeeded    rts
+                ldy #$03
+                jmp setSidHeaderAddr
 
 moveToEndOfMem  lda SID_HEADER_HI
                 cmp #$ff
@@ -405,10 +400,11 @@ moveToEndOfMem  lda SID_HEADER_HI
                 dey
                 bpl -
                 lda #$00
+                ldy #$ff
+setSidHeaderAddr
                 sta SID_HEADER_LO
-                lda #$ff
-                sta SID_HEADER_HI
-                rts
+                sty SID_HEADER_HI
+noMoveNeeded    rts
 
 cleanupMemory   ldy #$7f            ; clean SID header
                 lda #$00
@@ -488,9 +484,7 @@ setExtraPlayerVars
                 lda EXTRA_PLAYER_LOCATION
                 sta relocator.BASE_ADDRESS
 
-                lda SCREEN_LOCATION
-                clc
-                adc #$03
+                jsr getScreenLocationLastHi
                 ldy extraPlayer.clockLoc
                 ldx extraPlayer.clockLoc + 1
                 jsr setValue
@@ -544,9 +538,7 @@ setExtraPlayerVars
                 ldy extraPlayer.spriteLoc
                 ldx extraPlayer.spriteLoc + 1
                 jsr setValue
-                lda SCREEN_LOCATION
-                clc
-                adc #$03
+                jsr getScreenLocationLastHi
                 jsr writeNextAddress
 
                 lda player.offPlayLoop
@@ -605,7 +597,19 @@ setExtraPlayerVars
                 lda player.offSpeed3 + 1
                 jsr writeAtPlayerLocation
 
-                ldy #$12            ; byte 4 of speed flags
+                jsr getSecondSidAddress
+                beq +
+                ldy extraPlayer.sid2Vol
+                ldx extraPlayer.sid2Vol + 1
+                jsr writeSidVolAddr
+
++               jsr getThirdSidAddress
+                beq +
+                ldy extraPlayer.sid3Vol
+                ldx extraPlayer.sid3Vol + 1
+                jsr writeSidVolAddr
+
++               ldy #$12            ; byte 4 of speed flags
                 jsr readHeader
                 ldy extraPlayer.hdrSpeedFlags
                 ldx extraPlayer.hdrSpeedFlags + 1
@@ -637,9 +641,9 @@ setExtraPlayerVars
                 and #$03
                 tax
                 and #$01
-                bne +                 ; when PAL flag is set then always write 0 (therefore jump to lsr)
+                bne +               ; when PAL flag is set then always write 0 (therefore jump to lsr)
                 txa
-+               lsr                   ; value is 1 for NTSC, otherwise 0 for PAL / UNKNOWN clock. If PAL is set then value is always 0.
++               lsr                 ; value is 1 for NTSC, otherwise 0 for PAL / UNKNOWN clock. If PAL is set then value is always 0.
                 ldy extraPlayer.c64ModelFlag
                 ldx extraPlayer.c64ModelFlag + 1
                 jsr setValue
@@ -678,13 +682,28 @@ setExtraPlayerVars
 
                 jmp songlengths.loadSongLengths
 
-getVariableByte lda #$00
-                sta $b0
+writeSidVolAddr pha
+                asl
+                asl
+                asl
+                asl
+                ora #$18
+                jsr setValue
+                pla
+                lsr
+                lsr
+                lsr
+                lsr
+                ora #$d0
+                jmp writeNextAddress
+
+getScreenLocationLastHi
                 lda SCREEN_LOCATION
                 clc
                 adc #$03
-                sta $b1
+                rts
 
+getVariableByte jsr setScreenLocPointer
                 jmp readScreen
 
 writeAtPlayerLocation
@@ -699,13 +718,15 @@ getVariableWord jsr getVariableByte
                 iny
                 jmp readScreen
 
-setVariableByte pha
+setScreenLocPointer
                 lda #$00
                 sta $b0
-                lda SCREEN_LOCATION
-                clc
-                adc #$03
+                jsr getScreenLocationLastHi
                 sta $b1
+                rts
+
+setVariableByte pha
+                jsr setScreenLocPointer
                 pla
                 jmp writeScreen
 
@@ -726,11 +747,9 @@ setPlayerVars   lda PLAYER_LOCATION
                 jsr setValue
 
                 ; handle init address
-                ldy #$0b            ; get init address hi-byte (note that SID header is converted to little endian here)
-                jsr readHeader
+                jsr getInitHi
                 pha
-                ldy #$0a            ; get init address lo-byte (note that SID header is converted to little endian here)
-                jsr readHeader
+                jsr getInitLo
                 ldy player.offInit
                 ldx player.offInit + 1
                 jsr setValue
@@ -738,11 +757,9 @@ setPlayerVars   lda PLAYER_LOCATION
                 jsr writeNextAddress
 
                 ; handle play address
-                ldy #$0d            ; get play address hi-byte (note that SID header is converted to little endian here)
-                jsr readHeader
+                jsr getPlayHi
                 pha
-                ldy #$0c            ; get play address lo-byte (note that SID header is converted to little endian here)
-                jsr readHeader
+                jsr getPlayLo
                 ldy player.offPlay
                 ldx player.offPlay + 1
                 jsr setValue
@@ -831,15 +848,13 @@ noBasic         ldy #$7e            ; read lo-byte of load end address
                 ldx player.offhiEnd + 1
                 jsr setValue
 
-                ldy #$0b            ; get init address hi-byte
-                jsr readHeader
+                jsr getInitHi
                 jsr getBankInit
                 ldy player.offInitBank
                 ldx player.offInitBank + 1
                 jsr setValue
 
-                ldy #$0d            ; get play address hi-byte
-                jsr readHeader
+                jsr getPlayHi
                 jsr getBankPlay
                 ldy player.offPlayBank
                 ldx player.offPlayBank + 1
@@ -918,11 +933,9 @@ continueInitPlayer
                 bne enableExtraPlayerCalls
                 jmp noExtraPlayer
 
-isPlayZero      ldy #$0c            ; get play address
-                jsr readHeader
+isPlayZero      jsr getPlayLo
                 bne +
-                iny
-                jsr readHeader
+                jsr getPlayHi
 +               rts
 
 enableExtraPlayerCalls
@@ -1103,11 +1116,9 @@ prepareSidHeader
                 ldy #$09            ; set load address high
                 sta (SID_HEADER_LO),y
 +
-                ldy #$0a            ; get init address
-                jsr readHeader
+                jsr getInitLo
                 bne +
-                iny
-                jsr readHeader
+                jsr getInitHi
                 bne +               ; is init address zero?
 
                 ; init address is zero therefore overwrite it with load address
@@ -1121,19 +1132,15 @@ prepareSidHeader
                 sta (SID_HEADER_LO),y
 +
                 ; check if init is same as play, then ignore play address
-                ldy #$0c            ; get play address low
-                jsr readHeader
+                jsr getPlayLo
                 sta $aa
-                ldy #$0a            ; compare with init low
-                jsr readHeader
-                cmp $aa
+                jsr getInitLo
+                cmp $aa             ; compare with init low
                 bne +
-                ldy #$0d            ; get play address high
-                jsr readHeader
+                jsr getPlayHi
                 sta $aa
-                ldy #$0b            ; compare with init high
-                jsr readHeader
-                cmp $aa
+                jsr getInitHi
+                cmp $aa             ; compare with init high
                 bne +
 
                 ; clear play address
@@ -1246,10 +1253,7 @@ setupScreen     jsr copyChars
                 sta $f8
 
                 lda #<screenData1
-                sta $fe
-                lda #>screenData1
-                sta $ff
-
+                ldy #>screenData1
                 jsr writeScreenData
 
                 jsr canReleaseFieldSplit
@@ -1258,38 +1262,25 @@ setupScreen     jsr copyChars
 
                 ; write year label
                 lda #<screenData2
-                sta $fe
-                lda #>screenData2
-                sta $ff
-
+                ldy #>screenData2
                 jsr writeScreenData
 +
                 ; write empty line
                 lda #<screenData3
-                sta $fe
-                lda #>screenData3
-                sta $ff
-
+                ldy #>screenData3
                 jsr writeScreenData
 
                 ; write system label
                 lda #<screenData4
-                sta $fe
-                lda #>screenData4
-                sta $ff
-
+                ldy #>screenData4
                 jsr writeScreenData
 
                 ; write SID label
                 lda #<screenData5
-                sta $fe
-                lda #>screenData5
-                sta $ff
-
+                ldy #>screenData5
                 jsr writeScreenData
 
-                ldy #$7a            ; is second SID address defined?
-                jsr readHeader
+                jsr getSecondSidAddress ; is second SID address defined?
                 beq noMoreSids
 
                 lda #1
@@ -1297,34 +1288,26 @@ setupScreen     jsr copyChars
 
                 ; write SID label
                 lda #<screenData5
-                sta $fe
-                lda #>screenData5
-                sta $ff
-
+                ldy #>screenData5
                 jsr writeScreenData
+
                 lda #2
                 jsr writeSidChipCount
 
-                ldy #$7b            ; is third SID address defined?
-                jsr readHeader
+                jsr getThirdSidAddress ; is third SID address defined?
                 beq noMoreSids
 
                 ; write SID label
                 lda #<screenData5
-                sta $fe
-                lda #>screenData5
-                sta $ff
-
+                ldy #>screenData5
                 jsr writeScreenData
+
                 lda #3
                 jsr writeSidChipCount
 noMoreSids
                 ; write SONG label
                 lda #<screenData6
-                sta $fe
-                lda #>screenData6
-                sta $ff
-
+                ldy #>screenData6
                 jsr writeScreenData
 
                 lda #(40 * 24) >> 8
@@ -1336,10 +1319,7 @@ noMoreSids
 
                 ; write time bar
                 lda #<screenData7
-                sta $fe
-                lda #>screenData7
-                sta $ff
-
+                ldy #>screenData7
                 jsr writeScreenData
 
                 pla
@@ -1412,6 +1392,14 @@ canReleaseFieldSplit
 cannotSplit     ldy #00
 +               rts
 
+getSecondSidAddress
+                ldy #$7a
+                jmp readHeader
+
+getThirdSidAddress
+                ldy #$7b
+                jmp readHeader
+
 splitReleasedField
                 tya
                 sec
@@ -1475,8 +1463,7 @@ printSidInfo    lda $f7             ; restore sid header address
                 ldx #$01            ; first SID
                 jsr printSingleSidInfo
 
-                ldy #$7a            ; is second SID address defined?
-                jsr readHeader
+                jsr getSecondSidAddress ; is second SID address defined?
                 beq noMoreSids2
 
                 ldy #$77
@@ -1517,9 +1504,7 @@ noMoreSids2
                 jsr setVariableWord
 
                 ; set sprite pointer
-                lda SCREEN_LOCATION
-                clc
-                adc #$03
+                jsr getScreenLocationLastHi
                 asl
                 asl
                 ora #$02            ; since we want to have the sprite pointing at offset $0380 we can set bit 1  ($80 shr 6)
@@ -1611,7 +1596,6 @@ calcSpeedFlag   pha
 getBankInit     ldy #$7f  ;get load end address high
                 jmp getBank
 getBankPlay     ldy #$0d  ;get play address
-                jmp getBank
 
 getBank         and #$f0
                 cmp #$d0
@@ -1635,6 +1619,18 @@ isBankBasic     jsr readHeader
                 rts
 bankDefault     lda #$37
                 rts
+
+getInitLo       ldy #$0a            ; get init address lo-byte (note that SID header is converted to little endian here)
+                jmp readHeader
+
+getInitHi       ldy #$0b            ; get init address hi-byte (note that SID header is converted to little endian here)
+                jmp readHeader
+
+getPlayLo       ldy #$0c            ; get play address lo-byte (note that SID header is converted to little endian here)
+                jmp readHeader
+
+getPlayHi       ldy #$0d            ; get play address hi-byte (note that SID header is converted to little endian here)
+                jmp readHeader
 
 ;------ X is length
 printData       lda SID_HEADER_LO
@@ -1729,11 +1725,6 @@ screenWriteAddress
 screenBankTemp
                 .here
 screenWriteEnd
-
-reset           lda #<resetRoutine
-                ldx #>resetRoutine
-                ldy #resetRoutineEnd - resetRoutine
-                jmp runAt0100
 
 resetRoutine    inc $8005
 
@@ -1892,15 +1883,17 @@ bankValue
 readMemEnd
 
 runRoutine      lda #$40
-                sta $dfff                   ; turn off cartridge
+                sta $dfff           ; turn off cartridge
                 jmp ($00aa)
 runRoutineEnd
 
 turnOffCart     lda #$40
-                sta $dfff                   ; turn off cartridge
+                sta $dfff           ; turn off cartridge
                 rts
 
-writeScreenData
+writeScreenData sta $fe
+                sty $ff
+
 -               ldy #$00
                 lda ($fe),y
                 beq endScreenWrite
@@ -1914,7 +1907,7 @@ writeScreenData
                 lda ($fe),y
                 ldy #$00
 -
-                jsr screenWrite             ; write to screen
+                jsr screenWrite     ; write to screen
                 inc $f7
                 bne +
                 inc $f8
@@ -1928,7 +1921,7 @@ writeScreenData
                 inc $ff
 +               bne --
 
-writeData       jsr screenWrite             ; write to screen
+writeData       jsr screenWrite     ; write to screen
 
                 inc $f7
                 bne +
@@ -1942,7 +1935,7 @@ endScreenWrite  rts
 setCurrentLineOffset
                 lda CURRENT_LINE
                 sta $fe
-                lda #$28                    ; multiply current line by 40
+                lda #$28            ; multiply current line by 40
                 sta $ff
 
                 ldx #$08
@@ -2005,8 +1998,8 @@ printSingleSidInfo
                 adc #10
                 sta $fe
 
-                ldy #$7a            ; is second SID address defined?
-                jsr readHeader
+                ; print SID address for second SID
+                jsr getSecondSidAddress
                 jsr printHex
                 jmp checkVersion
 
@@ -2018,9 +2011,8 @@ printSingleSidInfo
                 adc #10
                 sta $fe
 
-                ; print SID address for second SID
-                ldy #$7b            ; is second SID address defined?
-                jsr readHeader
+                ; print SID address for third SID
+                jsr getThirdSidAddress
                 jsr printHex
 
 checkVersion    txa                 ; check if system info needs to be printed
@@ -2046,32 +2038,24 @@ checkSidHeader1 ldy #$04            ; check version
                 cmp #$02
                 beq print8580
 
-                ; print '6581 / 8580'
-                lda #<S65818580Lbl
-                sta $aa
-                lda #>S65818580Lbl
-                sta $ab
+                lda #<S65818580Lbl  ; print '6581 / 8580'
+                ldy #>S65818580Lbl
                 jmp printModel
 
 print6581       lda #<S6581Lbl
-                sta $aa
-                lda #>S6581Lbl
-                sta $ab
+                ldy #>S6581Lbl
                 jmp printModel
 
 print8580       lda #<S8580Lbl
-                sta $aa
-                lda #>S8580Lbl
-                sta $ab
+                ldy #>S8580Lbl
                 jmp printModel
 
 printUnknownModel
                 lda #<SUnknownLbl
-                sta $aa
-                lda #>SUnknownLbl
-                sta $ab
-
-printModel      pla
+                ldy #>SUnknownLbl
+printModel      sta $aa
+                sty $ab
+                pla
                 txa
                 pha
                 jsr setCurrentLinePosition
@@ -2113,32 +2097,24 @@ checkSidHeader2 ldy #$04            ; check version
                 cmp #$02
                 beq printNtsc
 
-                ; print 'PAL / NTSC'
-                lda #<PALNTSCLbl
-                sta $aa
-                lda #>PALNTSCLbl
-                sta $ab
+                lda #<PALNTSCLbl    ; print 'PAL / NTSC'
+                ldy #>PALNTSCLbl
                 jmp printClock
 
 printPal        lda #<PALLbl
-                sta $aa
-                lda #>PALLbl
-                sta $ab
+                ldy #>PALLbl
                 jmp printClock
 
 printNtsc       lda #<NTSCLbl
-                sta $aa
-                lda #>NTSCLbl
-                sta $ab
+                ldy #>NTSCLbl
                 jmp printClock
 
 printUnknownClock
                 lda #<UnknownLbl
-                sta $aa
-                lda #>UnknownLbl
-                sta $ab
-
-printClock      lda $fe
+                ldy #>UnknownLbl
+printClock      sta $aa
+                sty $ab
+                lda $fe
                 clc
                 adc $ac
                 sta $fe
@@ -2239,6 +2215,8 @@ PETSCII         .text 'AAAAAAAAAAAAAAEEEEEEEEIIIIIIIIOOOOOOOOOOOOUUUUUUUUCCNNYYY
                 .byte $64   ; PETSCII underscore
                 .byte 0
                 .enc 'none'
+
+SIDMagic        .text 'SID'
 
 ASCII           .byte $c0, $c1, $c2, $c3, $c4, $c5, $c6             ; all A variants
                 .byte $e0, $e1, $e2, $e3, $e4, $e5, $e6             ; all a variants

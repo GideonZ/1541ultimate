@@ -3,7 +3,7 @@
 ;
 ; Written by Wilfred Bos
 ;
-; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2009 - 2019 Wilfred Bos / Gideon Zweijtzer
 ;
 ; DESCRIPTION
 ;   Calculates the locations in memory for the player, screen and charrom
@@ -211,14 +211,12 @@ calcSmallestPlayerLocation
 
                 jsr readLoadAddresses
 
-                ldy #$79            ; get free page size
-                jsr readHeader
+                jsr getFreePageSize
                 cmp #$02
                 bcc +
 
                 ; set player location to start of free page area
-                ldy #$78            ; get free page base
-                jsr readHeader
+                jsr getFreePageBase
 
                 sta PLAYER_LOCATION
                 jmp setScreenArea
@@ -379,17 +377,18 @@ setLocationsDefaultChar
                 sta CHARROM_LOCATION
 
                 lda LOOP_INDEX
+                tay
                 and #$02
                 beq +
 
-                lda LOOP_INDEX
+                tya
                 sta PLAYER_LOCATION
                 clc
                 adc #SIZE_PLAYER
                 sta SCREEN_LOCATION
                 rts
 +
-                lda LOOP_INDEX
+                tya
                 sta SCREEN_LOCATION
                 clc
                 adc #SIZE_SCREEN
@@ -425,9 +424,11 @@ notPossible     rts
                 sta LOOP_INDEX
 +
                 lda LOOP_INDEX
+                tay
                 and #$06
                 bne +
-                lda LOOP_INDEX
+
+                tya
                 sta CHARROM_LOCATION
                 clc
                 adc #SIZE_CHARROM
@@ -437,10 +438,10 @@ notPossible     rts
                 sta PLAYER_LOCATION
                 rts
 +
-                lda LOOP_INDEX
+                tya
                 and #$02
                 bne +
-                lda LOOP_INDEX
+                tya
                 sta SCREEN_LOCATION
                 clc
                 adc #SIZE_SCREEN
@@ -450,12 +451,12 @@ notPossible     rts
                 sta PLAYER_LOCATION
                 rts
 +
-                lda LOOP_INDEX
+                tya
                 clc
                 adc #$02
                 and #$06
                 bne +
-                lda LOOP_INDEX
+                tya
                 sta PLAYER_LOCATION
                 clc
                 adc #SIZE_PLAYER
@@ -465,7 +466,7 @@ notPossible     rts
                 sta SCREEN_LOCATION
                 rts
 +
-                lda LOOP_INDEX
+                tya
                 sta PLAYER_LOCATION
                 clc
                 adc #SIZE_PLAYER
@@ -476,15 +477,13 @@ notPossible     rts
                 rts
 
 calcPlayerScreenLocForRelocArea
-                ldy #$78            ; get free page base
-                jsr readHeader
+                jsr getFreePageBase
                 sta PAGE_START
 
                 and #$01
                 sta TEMP
 
-                ldy #$79            ; get free page size
-                jsr readHeader
+                jsr getFreePageSize
                 sta PAGE_SIZE
 
                 cmp #$02
@@ -539,15 +538,19 @@ tooSmall        jmp calcSmallestPlayerLocation
 playerLocFound
                 rts
 
+getFreePageBase ldy #$78            ; get free page base
+                jmp readHeader
+
+getFreePageSize ldy #$79            ; get free page size
+                jmp readHeader
+
 ; =========== ADVANCED PLAYER LOCATION CALCULATION ==================
 
 calcExtraPlayerLocForRelocArea
-                ldy #$78            ; get free page base
-                jsr readHeader
+                jsr getFreePageBase
                 sta LOOP_INDEX
 
-                ldy #$79            ; get free page size
-                jsr readHeader
+                jsr getFreePageSize
                 cmp EXTRA_PLAYER_SIZE
                 bcc noExtraPlayer
 
