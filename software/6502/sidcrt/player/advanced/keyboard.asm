@@ -67,6 +67,8 @@ noRunStop
 
                 lda pauseTune
                 sta $d418           ; toggle volume off
+sid2            sta $d418
+sid3            sta $d418
                 eor #$1f
                 sta pauseTune
 pause           sta @w $0000
