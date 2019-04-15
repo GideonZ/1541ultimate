@@ -598,6 +598,37 @@ int IecCommandChannel :: push_data(uint8_t b)
     return IEC_BYTE_LOST;
 }
 
+void IecCommandChannel :: mem_read(void)
+{
+    int addr = (int)buffer[3];
+    addr |= ((int)buffer[4]) << 8;
+    int len = (int)buffer[5];
+
+    memcpy(buffer, interface->getRam() + addr, len);
+
+    last_byte = len - 1;
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = last_byte;
+    interface->last_error = ERR_OK;
+
+}
+
+void IecCommandChannel :: mem_write(void)
+{
+    int addr = (int)buffer[3];
+    addr |= ((int)buffer[4]) << 8;
+    int len = (int)buffer[5];
+
+    // maximize to the number of bytes actually received
+    if (len > (pointer - 6)) {
+        len = pointer - 6;
+    }
+
+    memcpy(interface->getRam() + addr, buffer + 6, len);
+
+    get_last_error(ERR_OK);
+}
 
 void IecCommandChannel :: exec_command(command_t &command)
 {
@@ -834,7 +865,15 @@ int IecCommandChannel :: push_command(uint8_t b)
             break;
         case 0x00: // end of data, command received in buffer
             buffer[pointer]=0;
-            printf("Command received: %s\n", buffer);
+            // printf("Command received:\n");
+            // dump_hex(buffer, pointer);
+            if (strncmp((char *)buffer, "M-R", 3) == 0) {
+                mem_read();
+                break;
+            } else if (strncmp((char *)buffer, "M-W", 3) == 0) {
+                mem_write();
+                break;
+            }
             parse_command((char *)buffer, &command);
             dump_command(command);
             exec_command(command);

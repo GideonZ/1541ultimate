@@ -761,7 +761,11 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 /* some handy functions */
 void set_extension(char *buffer, const char *ext, int buf_size)
 {
-	int ext_len = strlen(ext);
+    // skip leading dots of extension to set
+    while(*ext == '.') {
+        ext++;
+    }
+    int ext_len = strlen(ext);
 	if(buf_size < 1+ext_len)
 		return; // cant append, even to an empty base
 
