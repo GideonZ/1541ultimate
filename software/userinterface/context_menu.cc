@@ -215,9 +215,13 @@ void ContextMenu :: reset_quick_seek(void)
 void ContextMenu :: redraw()
 {
     window->set_color(user_interface->color_fg);
-    window->draw_border();
+    window->set_background(user_interface->color_bg);
+
+    // for the hook, use the old size parameters
     int rows = window->get_size_y();
     int oy = y_offs - hook_y;
+
+    window->draw_border();
     if((corner == oy)||(corner == (oy+rows-1))) {
         window->set_char(0, corner-oy, 2);
     } else if(corner == 0) {

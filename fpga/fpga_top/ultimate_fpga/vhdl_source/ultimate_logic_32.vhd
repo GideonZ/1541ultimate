@@ -135,11 +135,13 @@ port (
     iec_clock_o : out   std_logic;
     iec_srq_o   : out   std_logic;
 
+    MOTOR_LEDn  : out   std_logic;
     DISK_ACTn   : out   std_logic; -- activity LED
 	CART_LEDn	: out   std_logic;
 	SDACT_LEDn	: out   std_logic;
-    MOTOR_LEDn  : out   std_logic;
-	
+    motor_led2n : out   std_logic;
+    disk_act2n  : out   std_logic;
+    	
     -- Parallel cable pins
     drv_via1_port_a_o   : out std_logic_vector(7 downto 0);
     drv_via1_port_a_i   : in  std_logic_vector(7 downto 0);
@@ -683,8 +685,8 @@ begin
             via1_cb1_t      => via1_cb1_t,
 
             -- LED
-            act_led_n       => open, --DISK_ACTn,
-            motor_led_n     => open, --MOTOR_LEDn,
+            act_led_n       => disk_act2n,
+            motor_led_n     => motor_led2n,
             dirty_led_n     => dirty_led_2_n,
 
             -- audio out
