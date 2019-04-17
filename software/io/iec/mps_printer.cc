@@ -92,52 +92,11 @@ MpsPrinter::MpsPrinter(char * filename)
 #endif
     strcpy(outfile,filename);
 
-    bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE];
+    /* =======  Color printer init */
+    bitmap = NULL;
+    setColorMode(false);
 
-    /* Initialise PNG convertor attributes */
-    lodepng_state_init(&lodepng_state);
-
-    /* PNG compression settings */
-    lodepng_state.encoder.zlibsettings.btype        = 2;
-    lodepng_state.encoder.zlibsettings.use_lz77     = true;
-    lodepng_state.encoder.zlibsettings.windowsize   = 1024;
-    lodepng_state.encoder.zlibsettings.minmatch     = 3;
-    lodepng_state.encoder.zlibsettings.nicematch    = 128;
-
-    /* Initialise color palette for memory bitmap and file output */
-    lodepng_palette_clear(&lodepng_state.info_png.color);
-    lodepng_palette_clear(&lodepng_state.info_raw);
-
-    /* White */
-    lodepng_palette_add(&lodepng_state.info_png.color, 255, 255, 255, 255);
-    lodepng_palette_add(&lodepng_state.info_raw, 255, 255, 255, 255);
-
-    /* Light grey */
-    lodepng_palette_add(&lodepng_state.info_png.color, 224, 224, 224, 255);
-    lodepng_palette_add(&lodepng_state.info_raw, 224, 224, 224, 255);
-
-    /* Dark grey */
-    lodepng_palette_add(&lodepng_state.info_png.color, 160, 160, 160, 255);
-    lodepng_palette_add(&lodepng_state.info_raw, 160, 160, 160, 255);
-
-    /* Black */
-    lodepng_palette_add(&lodepng_state.info_png.color, 0, 0, 0, 255);
-    lodepng_palette_add(&lodepng_state.info_raw, 0, 0, 0, 255);
-
-    /* Bitmap uses 2 bit depth and a palette */
-    lodepng_state.info_png.color.colortype  = LCT_PALETTE;
-    lodepng_state.info_png.color.bitdepth   = 2;
-    lodepng_state.info_raw.colortype        = LCT_PALETTE;
-    lodepng_state.info_raw.bitdepth         = 2;
-
-    /* Physical page description (A4 240x216 dpi) */
-    lodepng_state.info_png.phys_defined     = 1;
-    lodepng_state.info_png.phys_x           = 9448;
-    lodepng_state.info_png.phys_y           = 8687;
-    lodepng_state.info_png.phys_unit        = 1;
-
-    /* I rule, you don't */
-    lodepng_state.encoder.auto_convert      = 0;
+    /* =======  Default configuration */
 
         /*-
          *
@@ -151,7 +110,6 @@ MpsPrinter::MpsPrinter(char * filename)
          *
         -*/
 
-    /* =======  Default configuration */
     page_num = 1;
     dot_size = 1;
     interpreter = MPS_PRINTER_INTERPRETER_CBM;
@@ -325,11 +283,31 @@ MpsPrinter::setInterpreter(mps_printer_interpreter_t in)
 void
 MpsPrinter::Clear(void)
 {
-    bzero (bitmap,MPS_PRINTER_BITMAP_SIZE);
+    DBGMSG("clear page bitmap");
+
+    if (color_mode)
+    {
+        bzero (bitmap,MPS_PRINTER_BITMAP_SIZE_COLOR);
+    }
+    else
+    {
+        bzero (bitmap,MPS_PRINTER_BITMAP_SIZE);
+    }
+
     head_x = margin_left;
     head_y = margin_top;
     clean  = true;
     quoted = false;
+    /*
+    int x, y, i;
+    
+    for ( x=0; x<256; x++)
+        for ( y=0; y<256; y++)
+        {
+            int c = (x >> 4) | (y & 0xF0);
+            InkTest(x,y,c);
+        }
+    */
 }
 
 /************************************************************************
@@ -357,6 +335,158 @@ MpsPrinter::Reset(void)
     Init();
 
     /* -------  Clear the bitmap (all white) */
+    Clear();
+}
+
+/************************************************************************
+*                    MpsPrinter::setColorMode(mode)                     *
+*                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                     *
+* Function : Set printer to color or black and white mode               *
+*            the current page is lost                                   *
+*-----------------------------------------------------------------------*
+* Inputs:                                                               *
+*                                                                       *
+*    mode: (bool) true for color, false for greyscale                   *
+*                                                                       *
+*-----------------------------------------------------------------------*
+* Outputs:                                                              *
+*                                                                       *
+*    none                                                               *
+*                                                                       *
+************************************************************************/
+
+void
+MpsPrinter::setColorMode(bool mode)
+{
+    DBGMSGV("interpreter set color mode to %d", mode);
+
+    /* =======  Default printer attributes */
+
+    if (bitmap && color_mode == mode)
+        return;
+
+    color_mode = mode;
+
+    if (bitmap)
+    {
+        DBGMSG("Delete old bitmap");
+        delete bitmap;
+        bitmap = NULL;
+        lodepng_state_cleanup(&lodepng_state);
+    }
+
+    /* Initialise PNG convertor attributes */
+    lodepng_state_init(&lodepng_state);
+
+    /* PNG compression settings */
+    lodepng_state.encoder.zlibsettings.btype        = 2;
+    lodepng_state.encoder.zlibsettings.use_lz77     = true;
+    lodepng_state.encoder.zlibsettings.windowsize   = 1024;
+    lodepng_state.encoder.zlibsettings.minmatch     = 3;
+    lodepng_state.encoder.zlibsettings.nicematch    = 128;
+
+    /* Initialise color palette for memory bitmap and file output */
+    lodepng_palette_clear(&lodepng_state.info_png.color);
+    lodepng_palette_clear(&lodepng_state.info_raw);
+
+    if (color_mode)
+    {
+        /* =======  Color printer */
+        
+        /* Gamma curve */
+        static double grey[4] = { 0.0, 1.0-224.0/255.0, 1.0-160.0/255.0, 1.0 };
+
+        /* Raw bitmap data */
+        bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE_COLOR];
+
+        /* Each byte of the bitmap represents a pixel */
+
+            /*-
+             *  Each color is coded on 2 bits (3 shades + white)
+             *  bits 7,6 : black
+             *  bits 4,5 : yellow
+             *  bits 2,3 : magenta
+             *  bits 0,1 : cyan
+            -*/
+
+        uint16_t i;
+
+        for (i=0; i<256; i++)
+        {
+            /* Convert cmyk to rgb */
+
+            float c = grey[(i & 0x03)];
+            float m = grey[((i>>2) & 0x03)];
+            float y = grey[((i>>4) & 0x03)];
+            float k = grey[((i>>6) & 0x03)];
+
+            c = c * (1.0 - k) + k;
+            m = m * (1.0 - k) + k;
+            y = y * (1.0 - k) + k;
+
+            uint8_t r = (uint8_t) ((1.0 - c) * 255.0);
+            uint8_t g = (uint8_t) ((1.0 - m) * 255.0);
+            uint8_t b = (uint8_t) ((1.0 - y) * 255.0);
+
+            /* printf("%03d: #%02X%02X%02X - (%3d %3d %3d) %4.2f %4.2f %4.2f %4.2f - %d %d %d %d\n", 
+                i,
+                r, g, b,
+                r, g, b,
+                c, m, y, k,
+                i & 0x03,
+                (i>>2) & 0x03,
+                (i>>4) & 0x03,
+                (i>>6) & 0x03);*/
+
+            lodepng_palette_add(&lodepng_state.info_png.color, r, g, b, 255);
+            lodepng_palette_add(&lodepng_state.info_raw, r, g, b, 255);
+        }
+
+        /* Bitmap uses 6 bit depth and a palette */
+        lodepng_state.info_png.color.colortype  = LCT_PALETTE;
+        lodepng_state.info_png.color.bitdepth   = MPS_PRINTER_PAGE_DEPTH_COLOR;
+        lodepng_state.info_raw.colortype        = LCT_PALETTE;
+        lodepng_state.info_raw.bitdepth         = MPS_PRINTER_PAGE_DEPTH_COLOR;
+    }
+    else
+    {
+        /* =======  Greyscale printer */
+
+        /* Raw bitmap data */
+        bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE];
+
+        /* White */
+        lodepng_palette_add(&lodepng_state.info_png.color, 255, 255, 255, 255);
+        lodepng_palette_add(&lodepng_state.info_raw, 255, 255, 255, 255);
+
+        /* Light grey */
+        lodepng_palette_add(&lodepng_state.info_png.color, 224, 224, 224, 255);
+        lodepng_palette_add(&lodepng_state.info_raw, 224, 224, 224, 255);
+
+        /* Dark grey */
+        lodepng_palette_add(&lodepng_state.info_png.color, 160, 160, 160, 255);
+        lodepng_palette_add(&lodepng_state.info_raw, 160, 160, 160, 255);
+
+        /* Black */
+        lodepng_palette_add(&lodepng_state.info_png.color, 0, 0, 0, 255);
+        lodepng_palette_add(&lodepng_state.info_raw, 0, 0, 0, 255);
+
+        /* Bitmap uses 2 bit depth and a palette */
+        lodepng_state.info_png.color.colortype  = LCT_PALETTE;
+        lodepng_state.info_png.color.bitdepth   = MPS_PRINTER_PAGE_DEPTH;
+        lodepng_state.info_raw.colortype        = LCT_PALETTE;
+        lodepng_state.info_raw.bitdepth         = MPS_PRINTER_PAGE_DEPTH;
+    }
+
+    /* Physical page description (A4 240x216 dpi) */
+    lodepng_state.info_png.phys_defined     = 1;
+    lodepng_state.info_png.phys_x           = 9448;
+    lodepng_state.info_png.phys_y           = 8687;
+    lodepng_state.info_png.phys_unit        = 1;
+
+    /* I rule, you don't */
+    lodepng_state.encoder.auto_convert      = 0;
+
     Clear();
 }
 
@@ -399,6 +529,7 @@ MpsPrinter::Init(void)
     next_interline  = interline;
     charset_variant = 0;
     bim_density     = 0;
+    color           = MPS_PRINTER_COLOR_BLACK;
     italic          = false;
     underline       = false;
     overline        = false;
@@ -662,11 +793,11 @@ MpsPrinter::Dot(uint16_t x, uint16_t y, bool b)
 
     switch (dot_size)
     {
-        case 0:     // Density 0 : 1 single black point (diameter 1 pixel) mostly for debug
+        case 0:     // Density 0 : 1 single full color point (diameter 1 pixel) mostly for debug
             Ink(x,y);
             break;
 
-        case 1:     // Density 1 : 1 black point with gray around (looks like diameter 2)
+        case 1:     // Density 1 : 1 full color point with shade around (looks like diameter 2)
             Ink(x,y);
             Ink(x-1,y-1,1);
             Ink(x+1,y+1,1);
@@ -678,7 +809,7 @@ MpsPrinter::Dot(uint16_t x, uint16_t y, bool b)
             Ink(x+1,y,2);
             break;
 
-        case 2:     // Density 2 : 4 black points with gray around (looks like diameter 3)
+        case 2:     // Density 2 : 4 full color points with shade around (looks like diameter 3)
         default:
             Ink(x,y);
             Ink(x,y+1);
@@ -723,13 +854,14 @@ MpsPrinter::Dot(uint16_t x, uint16_t y, bool b)
 *                             ~~~~~~~~~~~~~~~~~~~~~~                    *
 * Function : Add ink on a single pixel position. If ink as already been *
 *            added on this position it will add more ink to be darker   *
+*            On color printer, use the current color ribbon for ink     *
 *-----------------------------------------------------------------------*
 * Inputs:                                                               *
 *                                                                       *
 *    x : (uint16_t) pixel position from left of printable area of page  *
 *    y : (uint16_t) pixel position from top of printable area of page   *
-*    c : (uint8_t) grey level                                           *
-*        0=black (default), 1=dark grey, 2=light grey                   *
+*    c : (uint8_t) shade level                                          *
+*        0=full (default), 1=dark shade, 2=light shade                  *
 *                                                                       *
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
@@ -746,45 +878,141 @@ MpsPrinter::Ink(uint16_t x, uint16_t y, uint8_t c)
     uint16_t ty=y+MPS_PRINTER_PAGE_OFFSET_TOP;
     uint8_t current;
 
-    /* -------  Which byte address is it on raster buffer */
-    uint32_t byte = ((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH)>>3;
-
-    /* -------  Whitch bits on byte are coding the pixe (4 pixels per byte) */
-    uint8_t sub = tx & 0x3;
-    c &= 0x3;
-
-    /* =======  Add ink to the pixel */
-    switch (sub)
+    if (color_mode)
     {
-        case 0:
-            current = (bitmap[byte] >> 6) & 0x03;
-            c = Combine(c, current);
-            bitmap[byte] &= 0x3F;
-            bitmap[byte] |= c << 6;
-            break;
+        /* =======  Color printer mode, each pixel is coded with 8 bits */
+        /* -------  Which byte address is it on raster buffer */
+        uint32_t byte = ((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH_COLOR)>>3;
 
-        case 1:
-            current = (bitmap[byte] >> 4) & 0x03;
-            c = Combine(c, current);
-            bitmap[byte] &= 0xCF;
-            bitmap[byte] |= c << 4;
-            break;
+        /* -------  Which bits on byte are coding the color (1 pixel per byte) */
+        switch (color)
+        {
+            case MPS_PRINTER_COLOR_BLACK:
+                current = (bitmap[byte] >> 6) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0x3F;
+                bitmap[byte] |= c << 6;
+                break;
 
-        case 2:
-            current = (bitmap[byte] >> 2) & 0x03;
-            c = Combine(c, current);
-            bitmap[byte] &= 0xF3;
-            bitmap[byte] |= c << 2;
-            break;
+            case MPS_PRINTER_COLOR_YELLOW:
+                current = (bitmap[byte] >> 4) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xCF;
+                bitmap[byte] |= c << 4;
+                break;
 
-        case 3:
-            current = bitmap[byte] & 0x03;
-            c = Combine(c, current);
-            bitmap[byte] &= 0xFC;
-            bitmap[byte] |= c;
-            break;
+            case MPS_PRINTER_COLOR_MAGENTA:
+                current = (bitmap[byte] >> 2) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xF3;
+                bitmap[byte] |= c << 2;
+                break;
+
+            case MPS_PRINTER_COLOR_CYAN:
+                current = bitmap[byte] & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xFC;
+                bitmap[byte] |= c;
+                break;
+
+            case MPS_PRINTER_COLOR_VIOLET:      // CYAN + MAGENTA
+                // CYAN
+                current = bitmap[byte] & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xFC;
+                bitmap[byte] |= c;
+                // MAGENTA
+                current = (bitmap[byte] >> 2) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xF3;
+                bitmap[byte] |= c << 2;
+                break;
+
+            case MPS_PRINTER_COLOR_ORANGE:      // MANGENTA + YELLOW
+                // MAGENTA
+                current = (bitmap[byte] >> 2) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xF3;
+                bitmap[byte] |= c << 2;
+                // YELLOW
+                current = (bitmap[byte] >> 4) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xCF;
+                bitmap[byte] |= c << 4;
+                break;
+
+            case MPS_PRINTER_COLOR_GREEN:       // CYAN + YELLOW
+                // CYAN
+                current = bitmap[byte] & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xFC;
+                bitmap[byte] |= c;
+                // YELLOW
+                current = (bitmap[byte] >> 4) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xCF;
+                bitmap[byte] |= c << 4;
+                break;
+        }
+    }
+    else
+    {
+        /* =======  Greyscale printer mode, each pixel is coded with 2 bits */
+        /* -------  Which byte address is it on raster buffer */
+        uint32_t byte = ((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH)>>3;
+
+        /* -------  Whitch bits on byte are coding the pixel (4 pixels per byte) */
+        uint8_t sub = tx & 0x3;
+        c &= 0x3;
+
+        /* =======  Add ink to the pixel */
+        switch (sub)
+        {
+            case 0:
+                current = (bitmap[byte] >> 6) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0x3F;
+                bitmap[byte] |= c << 6;
+                break;
+
+            case 1:
+                current = (bitmap[byte] >> 4) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xCF;
+                bitmap[byte] |= c << 4;
+                break;
+
+            case 2:
+                current = (bitmap[byte] >> 2) & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xF3;
+                bitmap[byte] |= c << 2;
+                break;
+
+            case 3:
+                current = bitmap[byte] & 0x03;
+                c = Combine(c, current);
+                bitmap[byte] &= 0xFC;
+                bitmap[byte] |= c;
+                break;
+        }
     }
 }
+
+/*
+void
+MpsPrinter::InkTest(uint16_t x, uint16_t y, uint8_t c)
+{
+    uint16_t tx=x+MPS_PRINTER_PAGE_OFFSET_LEFT;
+    uint16_t ty=y+MPS_PRINTER_PAGE_OFFSET_TOP;
+
+    if (color_mode)
+    {
+        uint32_t byte = ((ty*MPS_PRINTER_PAGE_WIDTH+tx)*MPS_PRINTER_PAGE_DEPTH_COLOR)>>3;
+        bitmap[byte]=c;
+    }
+}
+*/
 
 /************************************************************************
 *                       MpsPrinter::Combine(c1,c2)            Private   *
@@ -1179,8 +1407,8 @@ MpsPrinter::CharNLQ(uint16_t c, uint16_t x, uint16_t y)
 }
 
 /************************************************************************
-*               MpsPrinter::Interprepter(buffer, size)          Public  *
-*               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                  *
+*                MpsPrinter::Interpreter(buffer, size)          Public  *
+*                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                  *
 * Function : Interpret a set of data as sent by the computer            *
 *-----------------------------------------------------------------------*
 * Inputs:                                                               *
