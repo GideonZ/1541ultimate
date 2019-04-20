@@ -292,6 +292,14 @@ void ConfigStore :: set_change_hook(uint8_t id, t_change_hook hook)
     }
 }
 
+void ConfigStore :: disable(uint8_t id)
+{
+    ConfigItem *i = find_item(id);
+    if (i) {
+        i->setEnabled(false);
+    }
+}
+
 int ConfigStore :: get_value(uint8_t id)
 {
     ConfigItem *i = find_item(id);
@@ -381,6 +389,7 @@ ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d)
         value = d->def;
         string = NULL;
     }
+    enabled = true;
 }
 
 ConfigItem :: ~ConfigItem()
@@ -507,7 +516,7 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
     dst = &buffer[width+1];
     for(int b = len-1; b >= 0; b--)
         *(dst--) = buf[b];
-    *(dst--) = 7;
+    *(dst--) = (enabled) ? 7 : 11;
     *(dst--) = '\033'; // escape code = set color
     return (const char *)buffer;
 }
