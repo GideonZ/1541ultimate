@@ -81,6 +81,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SYSTEM_MODE       0x41
 #define CFG_LED_SELECT_0      0x42
 #define CFG_LED_SELECT_1      0x43
+#define CFG_SPEAKER_VOL       0x44
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -156,6 +157,7 @@ static const char *comb_wave[] = { "6581", "8580" };
 static const char *ledselects[] = { "On", "Off", "Drive A Pwr", "DrvAPwr + DrvBPwr", "Drive A Act", "DrvAAct + DrvBAct",
                                     "DrvAPwr ^ DrvAAct", "USB Activity", "Any Activity", "!(DrvAAct)", "!(DrvAAct+DrvBAct)",
                                     "!(USB Act)", "!(Any Act)", "IRQ Line", "!(IRQ Line)" };
+const char *speaker_vol[] = { "Disabled", "Vol 1", "Vol 2", "Vol 3", "Vol 4", "Vol 5", "Vol 6", "Vol 7", "Vol 8", "Vol 9", "Vol 10", "Vol 11", "Vol 12", "Vol 13", "Vol 14", "Vol 15" };
 
 static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
                                  "-2 dB", "-3 dB", "-4 dB", "-5 dB", "-6 dB", "-7 dB", "-8 dB", "-9 dB",
@@ -241,6 +243,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 14, 0 },
     { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 14, 4 },
+    { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 15, 15 },
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
@@ -317,7 +320,10 @@ void U64Config :: effectuate_settings()
     if(!cfg)
         return;
 
-    U2PIO_SPEAKER_EN = 0x1F;
+    uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
+
+    U2PIO_SPEAKER_EN = sp_vol ? sp_vol | 0x10 : 0;
+
     C64_SCANLINES    =  cfg->get_value(CFG_SCANLINES);
     C64_PADDLE_EN    =  cfg->get_value(CFG_PADDLE_EN);
     C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK = cfg->get_value(CFG_STEREO_DIFF);
