@@ -130,11 +130,11 @@ int FileTypeSID :: readHeader(void)
     uint32_t bytes_read;
     uint32_t *magic;
 	FRESULT fres;
-    
+
 	// if we didn't open the file yet, open it now
 	if(!file)
 		fres = fm->fopen(node->getPath(), node->getName(), FA_READ, &file);
-	else {		
+	else {
 		if(file->seek(0) != FR_OK) {
 			fm->fclose(file);
 			file = NULL;
@@ -151,11 +151,11 @@ int FileTypeSID :: readHeader(void)
 		file = NULL;
 		return -1;
 	}
-	
+
     // header checks
     magic = (uint32_t *)sid_header;
     if((*magic != magic_rsid)&&(*magic != magic_psid)) {
-        printf("Filetype not as expected. (%08x)\n", *magic); 
+        printf("Filetype not as expected. (%08x)\n", *magic);
 		fm->fclose(file);
 		file = NULL;
         return -1;
@@ -178,7 +178,7 @@ void FileTypeSID :: showInfo()
         memcpy(new_name, &sid_header[string_offsets[b]], len);
 		new_name[len] = 0;
 		stream.format("%s\n", new_name);
-    }    
+    }
 	stream.format("\nSID version: %b\n", sid_header[4]);
     stream.format("\nNumber of songs: %d\n", numberOfSongs);
 	uint16_t sng = ((uint16_t)sid_header[0x10]) << 8;
@@ -235,7 +235,7 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 		"File type error", "Internal error",
 		"No memory location for player data",
 	    "Illegal: Load rolls over $FFFF" };
-		
+
 	int selection = cmd->functionID;
 	this->cmd = cmd;
 
@@ -301,12 +301,12 @@ int FileTypeSID :: prepare(bool use_default)
     } else {
 	   printf("PREPARE SONG #%d in %s.\n", song, node->getName());
 	}
-	
+
 	FileInfo *info;
 	uint32_t bytes_read;
 	int  error = 0;
 	int  length;
-	
+
 	// reload header, reset state of file
 	uint32_t *magic = (uint32_t *)sid_header;
 	if(!file) {
@@ -322,7 +322,7 @@ int FileTypeSID :: prepare(bool use_default)
 		return 3;
 	}
     if((*magic != magic_rsid)&&(*magic != magic_psid)) {
-        printf("Filetype not as expected. (%08x)\n", *magic); 
+        printf("Filetype not as expected. (%08x)\n", *magic);
 		return 4;
     }
 
@@ -334,7 +334,7 @@ int FileTypeSID :: prepare(bool use_default)
 		if(!song)
 			song = 1;
 	}
-	
+
 	// write back the default song, for some players that only look here
 
 	sid_header[0x10] = (song - 1) >> 8;
@@ -373,8 +373,8 @@ int FileTypeSID :: prepare(bool use_default)
 	}
 
 	// Now determine where to put the SID player header
-    if (sid_header[4] < 0x02) {
-        if(end <= 0xCF00) {
+    if (sid_header[5] < 0x02) {		// note that endian conversion isn't done yet, so we need to check position 5 for version
+        if (end < 0xCF00) {
 			player = 0xCF00;
         } else if (start >= 0x1000) {
             player = 0x0800;
@@ -389,7 +389,7 @@ int FileTypeSID :: prepare(bool use_default)
 		}
         if(sid_header[0x78] == 0x00) {
             printf("Clean SID file.. checking start/stop\n");
-            if(end <= 0xCF00) {
+            if (end < 0xCF00) {
 				player = 0xCF00;
             } else if (start >= 0x1000) {
                 player = 0x0800;
@@ -402,7 +402,7 @@ int FileTypeSID :: prepare(bool use_default)
 				return 6;
 			}
             player = ((uint16_t)sid_header[0x78]) << 8;
-        }            
+        }
     }
     printf("Player address: %04x.\n", player);
 
@@ -453,7 +453,7 @@ int FileTypeSID :: prepare(bool use_default)
 void FileTypeSID :: load(void)
 {
 	uint32_t bytes_read;
-	
+
 	printf("Loading SID..\n");
 
 	// handshake with sid player cart
@@ -478,7 +478,7 @@ void FileTypeSID :: load(void)
 		printf("/");
 		c64->stop(false);
 	}
-	
+
     // clear the entire memory
 	memset((void *)(C64_MEMORY_BASE + 0x0400), 0x00, 0xFC00);
 
@@ -532,9 +532,9 @@ void FileTypeSID :: load(void)
 	C64_POKE(0x0090, 0x40); // Load status
 	C64_POKE(0x0035, 0);    // FRESPC
 	C64_POKE(0x0036, 0xA0);
-	
+
 //    SID_REGS(0) = 0x33; // start trace
-    
+
 	c64->resume();
 
 	fm->fclose(file);
@@ -543,6 +543,6 @@ void FileTypeSID :: load(void)
 	// In this special case, we do NOT restore the cartridge right away,
 	// but we do this as soon as the button is pressed, not earlier.
 	// c64_subsys->restoreCart();
-	
+
 	return;
 }

@@ -45,6 +45,7 @@ class BrowsableConfigItem : public Browsable
 public:
 	BrowsableConfigItem(ConfigItem *i) {
 		item = i;
+		selectable = i->isEnabled();
 	}
 	~BrowsableConfigItem() {}
 
