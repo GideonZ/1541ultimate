@@ -112,7 +112,7 @@ static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90,
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
 struct t_cfg_definition audio_cfg_plus[] = {
-    { CFG_AUDIO_SPEAKER_EN,     CFG_TYPE_ENUM, "Built-in Speaker (Drive-A)",   "%s", speaker_vol,     0,  15, 15 },
+    { CFG_AUDIO_SPEAKER_EN,     CFG_TYPE_ENUM, "Built-in Speaker (Drive-A)",   "%s", speaker_vol, 0,  15, 15 },
     { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis3,     0,  1, 1 },
     { CFG_AUDIO_SID_BASE_LEFT,  CFG_TYPE_ENUM, "SID Left Base",                "%s", sid_base,    0, 24, 0 },
     { CFG_AUDIO_SID_EXT_LEFT,   CFG_TYPE_ENUM, "SID Left Mode",                "%s", sid_voices,  0,  1, 0 },
