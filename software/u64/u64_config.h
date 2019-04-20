@@ -20,7 +20,8 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 	bool skipReset;
     TaskHandle_t resetTaskHandle;
 
-	uint8_t GetSidType(int slot);
+    int DetectSid(void);
+    uint8_t GetSidType(int slot);
     void SetSidType(int slot, uint8_t sidType);
     bool SetSidAddress(int slot, bool single, uint8_t actualType, uint8_t base);
     bool MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any);

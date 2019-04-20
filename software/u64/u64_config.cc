@@ -571,6 +571,7 @@ void U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_DISABLE 3
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
+#define MENU_U64_DETECT_SIDS 6
 
 int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 {
@@ -583,6 +584,9 @@ int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
         count ++;
 #endif
     }
+    item_list.append(new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS));
+    count ++;
+
 #if DEVELOPER
 	item_list.append(new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE));  count++;
 	item_list.append(new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE));  count++;
@@ -601,8 +605,11 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	FRESULT fres;
 	uint32_t trans;
 	name[0] = 0;
+	int sid1, sid2;
+	char sidString[40];
+	const char *sidTypes[] = { "8580", "6581", "None" };
 
-    switch(cmd->functionID) {
+	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
     	// Try to read EDID, just a hardware test
     	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
@@ -658,6 +665,24 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         U64_WIFI_CONTROL = 2;
         vTaskDelay(150);
         U64_WIFI_CONTROL = 7;
+        break;
+
+    case MENU_U64_DETECT_SIDS:
+        C64_SID1_BASE = 0x40;
+        C64_SID2_BASE = 0x40;
+        C64_SID1_MASK = 0xFE;
+        C64_SID2_MASK = 0xFE;
+
+        C64_SID1_EN = 1;
+        C64_SID2_EN = 0;
+        sid1 = DetectSid();
+        C64_SID1_EN = 0;
+        C64_SID2_EN = 1;
+        sid2 = DetectSid();
+
+        sprintf(sidString, "Socket1: %s  Socket2: %s", sidTypes[sid1], sidTypes[sid2]);
+        cmd->user_interface->popup(sidString, BUTTON_OK);
+        effectuate_settings();
         break;
 
     default:
@@ -951,3 +976,75 @@ extern "C" {
         u64_configurator.ResetHandler();
     }
 }
+
+#pragma GCC push_options
+#pragma GCC optimize ("O1")
+#include "c64.h"
+
+int U64Config :: DetectSid(void)
+{
+    c64->stop(false);
+
+    uint8_t samples1[100];
+    uint8_t samples2[100];
+    uint8_t result1, result2;
+
+    for(int x = 0; x < 100; x++) {
+        ENTER_SAFE_SECTION;
+        while (C64_PEEK(0xD012) != 0xFF)
+            ;
+
+        C64_POKE(0xD412, 0x48);
+        C64_POKE(0xD40F, 0x48);
+        C64_POKE(0xD412, 0x24);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        result1 = C64_PEEK(0xD41B);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        result2 = C64_PEEK(0xD41B);
+        LEAVE_SAFE_SECTION;
+        samples1[x] = result1;
+        samples2[x] = result2;
+    }
+    c64->resume();
+
+    for (int x=0;x<100;x++) {
+        printf("%2d ", samples1[x]);
+    } printf("\n");
+    for (int x=0;x<100;x++) {
+        printf("%2d ", samples2[x]);
+    } printf("\n");
+
+    if (samples2[0] != 3) {
+        return 2;
+    }
+    return (int)samples1[0];
+
+    /*
+    detectSidModel  lda #$ff        ; make sure the check is not done on a bad line
+    -               cmp $d012
+                    bne -
+                    lda #$48        ; test bit should be set
+                    sta $d412
+                    sta $d40f
+                    lsr             ; activate sawtooth waveform
+                    sta $d412
+                    lda $d41b
+                    tax
+                    and #$fe
+                    bne unknownSid  ; unknown SID chip, most likely emulated or no SID in socket
+                    lda $d41b       ; try to read another time where the value should always be $03 on a real SID for all SID models
+                    cmp #$03
+                    beq +
+    unknownSid      ldx #$02
+    +               txa
+                    rts             ; output 0 = 8580, 1 = 6581, 2 = unknown
+*/
+
+
+}
+#pragma GCC pop_options

@@ -309,11 +309,12 @@ public:
     void init_cartridge(void);
     void cartridge_test(void);
     void reset(void);
-        
+
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access
     friend class REUPreloader; // preloader needs to access config
     friend class FileTypeREU; // REU file needs to access config 
+    friend class U64Config; // For SID detection we need to access the C64 bus
 };
 
 extern C64 *c64;
