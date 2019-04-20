@@ -55,6 +55,10 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_EMUSID2_WAVES     0x17
 #define CFG_EMUSID1_RESONANCE 0x18
 #define CFG_EMUSID2_RESONANCE 0x19
+#define CFG_SID1_SHUNT        0x1A
+#define CFG_SID2_SHUNT        0x1B
+#define CFG_SID1_CAPS         0x1C
+#define CFG_SID2_CAPS         0x1D
 
 #define CFG_MIXER0_VOL        0x20
 #define CFG_MIXER1_VOL        0x21
@@ -151,6 +155,8 @@ static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
 static const char *sid_types[] = { "None", "6581", "8580", "SidFX", "fpgaSID" };
+static const char *sid_shunt[] = { "Off", "On" };
+static const char *sid_caps[] = { "470 pF", "22 nF" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
 static const char *filter_res[] = { "Low", "High" };
 static const char *comb_wave[] = { "6581", "8580" };
@@ -196,13 +202,17 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SCANLINES,    		CFG_TYPE_ENUM, "HDMI Scan lines",          	   "%s", en_dis4,      0,  1, 0 },
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  1, 0 },
-    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
+//    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video",                 "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
     { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  2, 0 },
     { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  2, 0 },
+    { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
+    { CFG_SID2_SHUNT,           CFG_TYPE_ENUM, "SID Socket 2 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
+    { CFG_SID1_CAPS,            CFG_TYPE_ENUM, "SID Socket 1 Capacitors",      "%s", sid_caps,     0,  1, 0 },
+    { CFG_SID2_CAPS,            CFG_TYPE_ENUM, "SID Socket 2 Capacitors",      "%s", sid_caps,     0,  1, 0 },
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis4,      0,  1, 1 },
     { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
     { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 29, 0 },
@@ -282,6 +292,14 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 	}
 	fm = FileManager :: getFileManager();
 
+    uint8_t rev = (U2PIO_BOARDREV >> 3);
+    if (rev != 0x13) {
+        cfg->disable(CFG_SID1_SHUNT);
+        cfg->disable(CFG_SID2_SHUNT);
+        cfg->disable(CFG_SID1_CAPS);
+        cfg->disable(CFG_SID2_CAPS);
+    }
+
 	skipReset = false;
     xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
     resetSemaphore = xSemaphoreCreateBinary();
@@ -324,6 +342,44 @@ void U64Config :: effectuate_settings()
 
     U2PIO_SPEAKER_EN = sp_vol ? sp_vol | 0x10 : 0;
 
+    {
+        uint8_t typ = cfg->get_value(CFG_SID1_TYPE); // 0 = none, 1 = 6581, 2 = 8580
+        uint8_t shu = cfg->get_value(CFG_SID1_SHUNT);
+        uint8_t cap = 1-cfg->get_value(CFG_SID1_CAPS);
+        uint8_t reg;
+        switch (typ) {
+            case 1: reg = 3; break;
+            case 2: reg = 2; break;
+            default: reg = 0; break;
+        }
+        // bit 0 = voltage
+        // bit 1 = regulator enable
+        // bit 2 = shunt
+        // bit 3 = caps
+        uint8_t value = reg | (shu << 2) | (cap << 3);
+        //C64_PLD_SIDCTRL1 = value | 0xB0;
+        C64_PLD_SIDCTRL1 = value | 0x50;
+    }
+
+    {
+        uint8_t typ = cfg->get_value(CFG_SID2_TYPE); // 0 = none, 1 = 6581, 2 = 8580
+        uint8_t shu = cfg->get_value(CFG_SID2_SHUNT);
+        uint8_t cap = 1-cfg->get_value(CFG_SID2_CAPS);
+        uint8_t reg;
+        switch (typ) {
+            case 1: reg = 3; break;
+            case 2: reg = 2; break;
+            default: reg = 0; break;
+        }
+        // bit 0 = voltage
+        // bit 1 = regulator enable
+        // bit 2 = shunt
+        // bit 3 = caps
+        uint8_t value = reg | (shu << 2) | (cap << 3);
+        C64_PLD_SIDCTRL2 = value | 0xB0;
+        //C64_PLD_SIDCTRL2 = value | 0x50;
+    }
+
     C64_SCANLINES    =  cfg->get_value(CFG_SCANLINES);
     C64_PADDLE_EN    =  cfg->get_value(CFG_PADDLE_EN);
     C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK = cfg->get_value(CFG_STEREO_DIFF);
@@ -341,6 +397,7 @@ void U64Config :: effectuate_settings()
     C64_EMUSID2_MASK =  C64_EMUSID2_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)];
     U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
+
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
         C64_LUMA_DELAY   = -chromaDelay;
@@ -396,6 +453,7 @@ void U64Config :: effectuate_settings()
     setSidEmuParams(cfg->find_item(CFG_EMUSID1_WAVES));
     setSidEmuParams(cfg->find_item(CFG_EMUSID2_WAVES));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
+
 /*
     printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s)  Emu1: %02X/%02X  Emu2: %02X/%02X\n",
             C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
