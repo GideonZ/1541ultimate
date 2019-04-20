@@ -42,6 +42,7 @@ public:
     static void setMixer(ConfigItem *it);
     static void setFilter(ConfigItem *it);
     static void setSidEmuParams(ConfigItem *it);
+    static void setLedSelector(ConfigItem *it);
 
     bool SidAutoConfig(int count, t_sid_definition *requested);
 };

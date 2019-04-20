@@ -62,6 +62,7 @@ public:
 class ConfigItem
 {
 	t_change_hook hook;
+	bool enabled;
 public:    
     ConfigStore *store;
     t_cfg_definition *definition;
@@ -80,6 +81,8 @@ public:
     void execute(int sel);
     void setChanged(void);
     void setChangeHook(t_change_hook hook) { this->hook = hook; }
+    bool isEnabled(void) { return enabled; }
+    void setEnabled(bool en) { enabled = en; }
 };
 
 
@@ -113,6 +116,8 @@ public:
     int  get_page_size(void) { return block_size; }
 
     void set_change_hook(uint8_t id, t_change_hook hook);
+    void disable(uint8_t id);
+
     ConfigItem *find_item(uint8_t id);
     int  get_value(uint8_t id);
     const char *get_store_name() { return store_name.c_str(); }
