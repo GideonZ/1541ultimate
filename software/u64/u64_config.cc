@@ -734,7 +734,7 @@ uint8_t U64Config :: GetSidType(int slot)
     return 0;
 }
 
-bool U64Config :: SetSidAddress(int slot, uint8_t actualType, uint8_t base)
+bool U64Config :: SetSidAddress(int slot, bool single, uint8_t actualType, uint8_t base)
 {
     uint8_t other = 0x00;
     if (actualType >= 3) {
@@ -748,6 +748,10 @@ bool U64Config :: SetSidAddress(int slot, uint8_t actualType, uint8_t base)
         default:
             break;
         }
+    }
+    // Kludge: If this is the only SID, just enable all address bits
+    if (single) {
+        other = 0x3F;
     }
 
     if (slot < 4) { // for the first four SIDs, we can set the base address
@@ -798,7 +802,7 @@ void U64Config :: SetSidType(int slot, uint8_t sidType)
     printf("Set SID type of logical SID %d to %d.\n", slot, sidType);
 }
 
-bool U64Config :: MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any)
+bool U64Config :: MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any)
 {
     // definition of SID slots:
     // 0 : Socket 1
@@ -816,7 +820,7 @@ bool U64Config :: MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot,
         }
         uint8_t actualType = GetSidType(i);
         if ((actualType & requested->sidType) || (any && actualType)) { //  bit mask != 0
-            if (SetSidAddress(i, actualType, requested->baseAddress)) {
+            if (SetSidAddress(i, (totalCount == 1), actualType, requested->baseAddress)) {
                 mappedSids |= (1 << i);
                 mappedOnSlot[index] = i;
                 printf("Trying to map SID %d (type %s) on logical SID %d (type %s), at address $D%02x0\n", index,
@@ -892,7 +896,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
     mappedSids = 0;
     bool failed = false;
     for (int i=0; i < count; i++) {
-        if (!MapSid(i, mappedSids, mappedOnSlot, &requested[i], false)) {
+        if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], false)) {
             failed = true;
         }
     }
@@ -903,7 +907,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         memset(mappedOnSlot, 0, 8);
         failed = false;
         for (int i=count-1; i >= 0; i--) {
-            if (!MapSid(i, mappedSids, mappedOnSlot, &requested[i], false)) {
+            if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], false)) {
                 failed = true;
             }
         }
@@ -915,7 +919,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         memset(mappedOnSlot, 0, 8);
         failed = false;
         for (int i=0; i < count; i++) {
-            if (!MapSid(i, mappedSids, mappedOnSlot, &requested[i], true)) {
+            if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], true)) {
                 failed = true;
             }
         }
