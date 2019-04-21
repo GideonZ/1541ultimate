@@ -89,6 +89,8 @@
 #define C64_VOICE1_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x24))
 #define C64_VOICE2_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x25))
 #define C64_VOICE3_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x26))
+#define C64_PLD_SIDCTRL2  (*(volatile uint8_t *)(C64_IO_BASE + 0x3A))
+#define C64_PLD_SIDCTRL1  (*(volatile uint8_t *)(C64_IO_BASE + 0x3B))
 
 #define VIDEO_FMT_NTSC_ENCODING 0x01
 #define VIDEO_FMT_60_HZ         0x02

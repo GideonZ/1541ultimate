@@ -137,6 +137,8 @@ const char *getBoardRevision(void)
         return "U64 V1.1 (Null Series)";
     case 0x12:
         return "U64 V1.2 (Mass Prod)";
+    case 0x13:
+        return "U64 V1.3 (Elite)";
     }
     return "Unknown";
 }
