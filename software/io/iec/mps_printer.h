@@ -61,6 +61,9 @@
 #define MPS_PRINTER_SCRIPT_SUPER            2
 #define MPS_PRINTER_SCRIPT_SUB              4
 
+/* Define this for computed RGB palette but not realistic */
+//#define TRUE_CMYK
+
 #ifdef NIOS
 #define FS_ROOT "/Usb0/"
 #else
@@ -70,7 +73,7 @@
 /******************************  Debug macros  **************************/
 
 /* Uncomment to enable debug messages to serial port */
-#define DEBUG
+//#define DEBUG
 
 #ifdef DEBUG
 #define DBGMSG(x) printf(__FILE__ " %d: " x "\n", __LINE__)
@@ -150,6 +153,11 @@ class MpsPrinter
 
         /* CBM character specia for quote mode */
         static uint8_t cbm_special[MPS_PRINTER_MAX_SPECIAL];
+
+#ifndef TRUE_CMYK
+        /* RGB palette for color printer PNG output */
+        static uint8_t rgb_palette[768];
+#endif /* TRUE_CMYK */
 
         /* =======  Configuration */
         /* PNG file basename */
@@ -296,7 +304,9 @@ class MpsPrinter
 #endif
         void Print(const char* filename);
         void Ink(uint16_t x, uint16_t y, uint8_t c=3);
-        //void InkTest(uint16_t x, uint16_t y, uint8_t c);
+#ifdef DEBUG
+        void InkTest(uint16_t x, uint16_t y, uint8_t c);
+#endif
         void Dot(uint16_t x, uint16_t y, bool b=false);
         uint16_t Charset2Chargen(uint8_t input);
         uint16_t Char(uint16_t c);
