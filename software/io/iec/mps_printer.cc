@@ -70,7 +70,7 @@ uint8_t MpsPrinter::spacing_y[6][17] =
         /*-
          * Palette made by hand with photoshop and saved to .act file
          * CMYK with C,M,Y from values 0% 25% 50% 100%
-         * K from values 0% 40% 80% 100%
+         * K from values 0% 14% 45% 100%
          * black dot compensation applied for colors where C,M,Y = 0,0,0
          * in this table each value is RED then GREEN then BLUE on 8 bits
          * for 256 colors
