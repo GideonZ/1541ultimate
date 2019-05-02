@@ -34,6 +34,22 @@
 #include "lodepng.h"
 #include "mps_printer.h"
 
+#ifndef NOT_ULTIMATE
+
+/*-
+ * On 1541 ULTIMATE II the new/delete allocation of the bitmap seems to
+ * be problematic. No problem on 1541 ULTIMATE II+ but I prefer to
+ * allocate the bitmap memory for a color printer even if the B&W does
+ * not need so much memory. It's a waste of memory but it will not
+ * crash the cartridge when switching from color and b&w several times
+ *
+ * as a temporary workaround, define MALLOCBUG 
+-*/
+
+#define MALLOCBUG 1
+
+#endif /* NOT_ULTIMATE */
+
 /************************************************************************
 *                                                                       *
 *               G L O B A L   M O D U L E   V A R I A B L E S           *
@@ -454,11 +470,19 @@ MpsPrinter::setColorMode(bool mode)
 
     if (bitmap)
     {
+#ifndef MALLOCBUG
         DBGMSG("Delete old bitmap");
         delete bitmap;
         bitmap = NULL;
+#endif /* MALLOCBUG */
         lodepng_state_cleanup(&lodepng_state);
     }
+#ifdef MALLOCBUG
+    else
+    {
+        bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE_COLOR];
+    }
+#endif /* MALLOCBUG */
 
     /* Initialise PNG convertor attributes */
     lodepng_state_init(&lodepng_state);
@@ -479,8 +503,10 @@ MpsPrinter::setColorMode(bool mode)
         /* =======  Color printer */
         uint16_t i;
 
+#ifndef MALLOCBUG
         /* Raw bitmap data */
         bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE_COLOR];
+#endif /* MALLOCBUG */
 
             /*-
              *  Each color is coded on 2 bits (3 shades + white)
@@ -545,8 +571,10 @@ MpsPrinter::setColorMode(bool mode)
     {
         /* =======  Greyscale printer */
 
+#ifndef MALLOCBUG
         /* Raw bitmap data */
         bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE];
+#endif /* MALLOCBUG */
 
         /* White */
         lodepng_palette_add(&lodepng_state.info_png.color, 255, 255, 255, 255);
