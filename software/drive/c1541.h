@@ -144,6 +144,7 @@ public:
     // called from IEC (UltiCopy)
     int  get_current_iec_address(void);    
     void drive_power(bool on);
+    bool get_drive_power();
 
     // Called from user interface thread?  Is this allowed at all? -> no no, the interface thread should
     // issue a subsys command.
