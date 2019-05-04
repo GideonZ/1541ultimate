@@ -239,6 +239,11 @@ void C1541 :: drive_power(bool on)
     registers[C1541_ANYDIRTY] = 0;
 }
 
+bool C1541 :: get_drive_power() 
+{
+	return registers[C1541_POWER];
+}
+
 void C1541 :: drive_reset(uint8_t doit)
 {
     registers[C1541_RESET] = doit;
