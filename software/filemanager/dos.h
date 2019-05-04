@@ -33,12 +33,6 @@
 #define DOS_CMD_SWAP_DISK      0x25
 #define DOS_CMD_GET_TIME       0x26
 #define DOS_CMD_SET_TIME       0x27
-#define DOS_CMD_ENABLE_DISK_A  0x30
-#define DOS_CMD_DISABLE_DISK_A 0x31
-#define DOS_CMD_ENABLE_DISK_B  0x32
-#define DOS_CMD_DISABLE_DISK_B 0x33
-#define DOS_CMD_DISK_A_POWER   0x34
-#define DOS_CMD_DISK_B_POWER   0x35
 #define DOS_CMD_ECHO           0xF0
 
 typedef enum _e_dos_state {
