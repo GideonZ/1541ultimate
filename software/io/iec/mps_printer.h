@@ -51,8 +51,9 @@
 #define MPS_PRINTER_MAX_VTABULATIONS        32
 #define MPS_PRINTER_MAX_VTABSTORES          8
 
-#define MPS_PRINTER_BITMAP_SIZE             ((MPS_PRINTER_PAGE_WIDTH*MPS_PRINTER_PAGE_HEIGHT*MPS_PRINTER_PAGE_DEPTH+7)>>3)
+#define MPS_PRINTER_BITMAP_SIZE_BW          ((MPS_PRINTER_PAGE_WIDTH*MPS_PRINTER_PAGE_HEIGHT*MPS_PRINTER_PAGE_DEPTH+7)>>3)
 #define MPS_PRINTER_BITMAP_SIZE_COLOR       ((MPS_PRINTER_PAGE_WIDTH*MPS_PRINTER_PAGE_HEIGHT*MPS_PRINTER_PAGE_DEPTH_COLOR+7)>>3)
+#define MPS_PRINTER_BITMAP_SIZE             MPS_PRINTER_BITMAP_SIZE_COLOR
 
 #define MPS_PRINTER_MAX_BIM_SUB             256
 #define MPS_PRINTER_MAX_SPECIAL             46
@@ -175,7 +176,7 @@ class MpsPrinter
         bool color_mode;
 
         /* Page bitmap */
-        uint8_t *bitmap;
+        uint8_t bitmap[MPS_PRINTER_BITMAP_SIZE];
 
         /* How many pages printed since start */
         int page_num;
@@ -287,7 +288,7 @@ class MpsPrinter
         void setCBMCharset(uint8_t in);
         void setEpsonCharset(uint8_t in);
         void setIBMCharset(uint8_t in);
-        void setColorMode(bool in);
+        void setColorMode(bool in, bool init=false);
 
         /* =======  Feed interpreter */
         void Interpreter(const uint8_t * input, uint32_t size);

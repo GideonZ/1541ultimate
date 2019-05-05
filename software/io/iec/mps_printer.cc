@@ -34,22 +34,6 @@
 #include "lodepng.h"
 #include "mps_printer.h"
 
-#ifndef NOT_ULTIMATE
-
-/*-
- * On 1541 ULTIMATE II the new/delete allocation of the bitmap seems to
- * be problematic. No problem on 1541 ULTIMATE II+ but I prefer to
- * allocate the bitmap memory for a color printer even if the B&W does
- * not need so much memory. It's a waste of memory but it will not
- * crash the cartridge when switching from color and b&w several times
- *
- * as a temporary workaround, define MALLOCBUG 
--*/
-
-#define MALLOCBUG 1
-
-#endif /* NOT_ULTIMATE */
-
 /************************************************************************
 *                                                                       *
 *               G L O B A L   M O D U L E   V A R I A B L E S           *
@@ -191,9 +175,8 @@ MpsPrinter::MpsPrinter(char * filename)
 #endif
     strcpy(outfile,filename);
 
-    /* =======  Color printer init */
-    bitmap = NULL;
-    setColorMode(false);
+    /* =======  BW/Color printer init (default is BW) */
+    setColorMode(false, true);
 
     /* =======  Default configuration */
 
@@ -245,7 +228,6 @@ MpsPrinter::~MpsPrinter()
     fm->release_path(path);
 #endif
     lodepng_state_cleanup(&lodepng_state);
-    delete[] bitmap;
     DBGMSG("deletion");
 }
 
@@ -390,7 +372,7 @@ MpsPrinter::Clear(void)
     }
     else
     {
-        bzero (bitmap,MPS_PRINTER_BITMAP_SIZE);
+        bzero (bitmap,MPS_PRINTER_BITMAP_SIZE_BW);
     }
 
     head_x = margin_left;
@@ -440,14 +422,15 @@ MpsPrinter::Reset(void)
 }
 
 /************************************************************************
-*                    MpsPrinter::setColorMode(mode)                     *
-*                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                     *
+*                    MpsPrinter::setColorMode(mode,init)                *
+*                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                *
 * Function : Set printer to color or black and white mode               *
 *            the current page is lost                                   *
 *-----------------------------------------------------------------------*
 * Inputs:                                                               *
 *                                                                       *
 *    mode: (bool) true for color, false for greyscale                   *
+*    init: (bool) true if called from the printer constructor           *
 *                                                                       *
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
@@ -457,32 +440,23 @@ MpsPrinter::Reset(void)
 ************************************************************************/
 
 void
-MpsPrinter::setColorMode(bool mode)
+MpsPrinter::setColorMode(bool mode, bool init)
 {
     DBGMSGV("interpreter set color mode to %d", mode);
 
     /* =======  Default printer attributes */
 
-    if (bitmap && color_mode == mode)
+    /* Except on first call, don't do anything if config has not changed */
+    if (!init && color_mode == mode)
         return;
 
     color_mode = mode;
 
-    if (bitmap)
+    /* Except on first call, release resources of previous configuration */
+    if (!init)
     {
-#ifndef MALLOCBUG
-        DBGMSG("Delete old bitmap");
-        delete bitmap;
-        bitmap = NULL;
-#endif /* MALLOCBUG */
         lodepng_state_cleanup(&lodepng_state);
     }
-#ifdef MALLOCBUG
-    else
-    {
-        bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE_COLOR];
-    }
-#endif /* MALLOCBUG */
 
     /* Initialise PNG convertor attributes */
     lodepng_state_init(&lodepng_state);
@@ -502,11 +476,6 @@ MpsPrinter::setColorMode(bool mode)
     {
         /* =======  Color printer */
         uint16_t i;
-
-#ifndef MALLOCBUG
-        /* Raw bitmap data */
-        bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE_COLOR];
-#endif /* MALLOCBUG */
 
             /*-
              *  Each color is coded on 2 bits (3 shades + white)
@@ -570,11 +539,6 @@ MpsPrinter::setColorMode(bool mode)
     else
     {
         /* =======  Greyscale printer */
-
-#ifndef MALLOCBUG
-        /* Raw bitmap data */
-        bitmap = new uint8_t[MPS_PRINTER_BITMAP_SIZE];
-#endif /* MALLOCBUG */
 
         /* White */
         lodepng_palette_add(&lodepng_state.info_png.color, 255, 255, 255, 255);
