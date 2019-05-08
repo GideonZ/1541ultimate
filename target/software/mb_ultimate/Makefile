@@ -85,6 +85,8 @@ SRCS_CC	 =  small_printf.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
 			filetype_prg.cc \
+			filetype_mus.cc \
+			filetype_ddl.cc \
 			filetype_u2u.cc \
 			filetype_reu.cc \
 			filetype_crt.cc \

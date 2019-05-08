@@ -80,6 +80,8 @@ SRCS_CC	 =  stream.cc \
 			filetype_g64.cc \
 			filetype_t64.cc \
 			filetype_prg.cc \
+			filetype_mus.cc \
+			filetype_ddl.cc \
 			filetype_tap.cc \
 			filetype_sid.cc \
 			filetype_reu.cc \
