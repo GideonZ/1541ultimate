@@ -95,7 +95,17 @@ public:
         } else if (strcmp(ext, "USR") == 0) {
             memcpy(out, ext, 3);
             set_extension(temp, "", 64);
-        } else {
+        } else if (strcmp(ext, "D64") == 0) {
+            memcpy(out, ext, 3);
+            set_extension(temp, "", 64);
+        } else if (strcmp(ext, "D71") == 0) {
+            memcpy(out, ext, 3);
+            set_extension(temp, "", 64);
+        } else if (strcmp(ext, "D81") == 0) {
+            memcpy(out, ext, 3);
+            set_extension(temp, "", 64);
+        }
+         else {
             memcpy(out, "SEQ", 3);
         }
 
