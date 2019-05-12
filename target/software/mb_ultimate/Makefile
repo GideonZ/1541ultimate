@@ -143,7 +143,7 @@ SRCS_ASM =  mb_crt0.s portasm.s
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  basic.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin
+SRCS_BIN =  basic.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -158,7 +158,7 @@ CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
 LIBS     = ../mb_lwip/result/liblwip.a
 LFLAGS   = --gc-sections  --relax
-	
+
 include ../common/rules.mk
 
 lodepng.o: lodepng.cc
@@ -167,5 +167,11 @@ lodepng.o: lodepng.cc
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 $(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/muscrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/musplayer.bin::
 	make -C $(PATH_SW)/6502/sidcrt
 
