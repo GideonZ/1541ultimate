@@ -15,17 +15,21 @@ class FileTypeSID : public FileType
 	uint16_t song;
 	uint16_t start;
 	uint16_t end;
-	uint16_t player;
+	uint16_t header_location;
 	uint32_t offset;
 	uint16_t flags;
 	bool header_valid;
 	int numberOfSongs;
+	bool mus_file;
 
 	int  prepare(bool);
 	void load(void);
+	int loadFile(File *file, int offset);
+	bool loadStereoMus(int offset);
     int execute(SubsysCommand *cmd);
     static int execute_st(SubsysCommand *cmd);
     int   readHeader(void);
+	int   createMusHeader(void);
     void  showInfo(void);
     void  readSongLengths(void);
     bool  ConfigSIDs(void);

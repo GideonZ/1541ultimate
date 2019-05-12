@@ -24,16 +24,16 @@ all: $(OUTPUT) $(RESULT) $(FINAL)
 mem: $(OUTPUT)/$(PRJ).mem
 
 $(OUTPUT):
-	@echo crearing output directory $(OUTPUT)
+	@echo creating output directory $(OUTPUT)
 	@mkdir -p $(OUTPUT)
 
 $(RESULT):
-	@echo crearing result directory $(RESULT)
+	@echo creating result directory $(RESULT)
 	@mkdir -p $(RESULT)
 		
 $(RESULT)/$(PRJ).a: $(OBJS_C)
 	@echo Creating Archive $@
-	$(AR) -rc $@ $(ALL_OBJS)
+	$(AR) -rc "$@" $(ALL_OBJS)
 
 $(RESULT)/$(PRJ).u2u: $(OUTPUT)/$(PRJ).out
 	@echo Creating Updater Binary $@

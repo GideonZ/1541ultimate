@@ -32,7 +32,7 @@ SRCS_C   =	itu.c \
             nios_main.c \
             alt_malloc_lock.c \
             alt_do_ctors.c
-                        
+
 SRCS_CC	 =  u2p_init.cc \
 			small_printf.cc \
             stream.cc \
@@ -166,7 +166,7 @@ SRCS_ASMS = port_asm.S
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  basic.bin sidcrt.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
+SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -189,4 +189,10 @@ lodepng.o: lodepng.cc
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 $(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/muscrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/musplayer.bin::
 	make -C $(PATH_SW)/6502/sidcrt
