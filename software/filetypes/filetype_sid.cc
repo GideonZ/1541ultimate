@@ -407,7 +407,7 @@ void FileTypeSID :: readSongLengths(void)
 	}
 }
 
-bool FileTypeSID :: loadStereoMus(int offset)
+bool FileTypeSID :: tryLoadStereoMus(int offset)
 {
 	if (mus_file) {
 		File *strFile;
@@ -625,11 +625,31 @@ void FileTypeSID :: load(void)
 	int offsetLoadEnd = loadFile(file, start);
 
 	if (mus_file) {
-		bool stereo = loadStereoMus(offsetLoadEnd);
+		bool stereo = false;
+		uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE);
+
+		int musTextOffset = start + ((dest[start + 1] + dest[start + 3] + dest[start + 5]) << 8) + dest[start] + dest[start + 2] + dest[start + 4] + 6;
+		int nextSongIndex = offsetLoadEnd;
+
+		for (int i = musTextOffset; i < offsetLoadEnd; i++) {
+			if (dest[i] == 0) {
+				nextSongIndex = i + 3;
+				break;
+			}
+		}
+
+		if (nextSongIndex + 5 < offsetLoadEnd) {
+			// one file MUS/SID file includes stereo song
+			stereo = true;
+			offsetLoadEnd = nextSongIndex;
+		} else {
+			if (!stereo) {
+				stereo = tryLoadStereoMus(offsetLoadEnd);
+			}
+		}
 
 		// install mus player
 		int mus_player_size = (int)&_musplayer_bin_end - (int)&_musplayer_bin_start;
-		uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE);
 		memcpy(&dest[0xe000], &_musplayer_bin_start, mus_player_size);
 
 		C64_POKE(0xEC6E, start);

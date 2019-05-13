@@ -25,7 +25,7 @@ class FileTypeSID : public FileType
 	int  prepare(bool);
 	void load(void);
 	int loadFile(File *file, int offset);
-	bool loadStereoMus(int offset);
+	bool tryLoadStereoMus(int offset);
     int execute(SubsysCommand *cmd);
     static int execute_st(SubsysCommand *cmd);
     int   readHeader(void);
