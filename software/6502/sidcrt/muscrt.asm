@@ -550,9 +550,10 @@ noMoreSids
 
                 lda #(16 + 40 * 5)
                 ldy MUS_NUMBER_OF_LINES
+                beq +
 -               clc
                 adc #40
-                sta CURRENT_LINE_CALC_LO
++               sta CURRENT_LINE_CALC_LO
                 bcc +
                 inc CURRENT_LINE_CALC_HI
 +               dey
