@@ -28,6 +28,9 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_sid(FileType :: getFi
 #define SIDFILE_PLAY_LAST 0x5402
 #define SIDFILE_SHOW_INFO 0x5403
 
+const uint8_t DEFAULT_SONG_LENGTH_MUS = 3;		// in minutes
+const uint8_t DEFAULT_SONG_LENGTH_SID = 5;		// in minutes
+
 #if NIOS
 const uint32_t magic_psid = 0x44495350; // little endian
 const uint32_t magic_rsid = 0x44495352; // little endian
@@ -134,12 +137,13 @@ FileTypeSID :: FileTypeSID(BrowsableDirEntry *node)
 
 	FileInfo *inf = node->getInfo();
 	mus_file = strcmp(inf->extension, "MUS") == 0 || strcmp(inf->extension, "STR") == 0;
+	sid_file = !mus_file;
 }
 
 FileTypeSID :: ~FileTypeSID()
 {
 	if (file)
-		fm -> fclose(file);
+		fm->fclose(file);
 }
 
 int FileTypeSID :: readHeader(void)
@@ -150,19 +154,21 @@ int FileTypeSID :: readHeader(void)
 	FRESULT fres;
 
 	// if we didn't open the file yet, open it now
-	if (!file)
+	if (!file) {
 		fres = fm->fopen(node->getPath(), node->getName(), FA_READ, &file);
-	else {
+
+		if (fres != FR_OK) {
+			printf("opening file was not successful. %s\n", FileSystem :: get_error_string(fres));
+			return -3;
+		}
+	} else {
 		if (file->seek(0) != FR_OK) {
 			fm->fclose(file);
 			file = NULL;
 			return -1;
 		}
 	}
-	if (!file) {
-		printf("opening file was not successful. %s\n", FileSystem :: get_error_string(fres));
-		return -3;
-	}
+
     fres = file->read(sid_header, 0x7e, &bytes_read);
 	if (fres != FR_OK) {
 		fm->fclose(file);
@@ -296,15 +302,17 @@ void FileTypeSID :: showInfo()
 int FileTypeSID :: fetch_context_items(IndexedList<Action *> &list)
 {
 	if (!header_valid) {
-		if (mus_file) {
+		if (mus_file && !sid_file) {
 			createMusHeader();
 		} else {
 			readHeader();
 		}
+
+		if (!header_valid) {
+			return 0;
+		}
 	}
-	if (!header_valid) {
-		return 0;
-	}
+
 	if (!c64->exists()) {
 		return 0;
 	}
@@ -373,38 +381,74 @@ int FileTypeSID :: execute(SubsysCommand *cmd)
 
 void FileTypeSID :: readSongLengths(void)
 {
-	if (!mus_file) {
-		Path *slPath = fm->get_new_path("sid file");
-		File *sslFile;
+	Path *slPath = fm->get_new_path("sid file");
+	File *sslFile;
 
-		slPath->cd(cmd->path.c_str());
-		slPath->cd("SONGLENGTHS");
-		char filename[80];
-		strncpy(filename, cmd->filename.c_str(), 79);
-		filename[79] = 0;
+	slPath->cd(cmd->path.c_str());
+	slPath->cd("SONGLENGTHS");
+	char filename[80];
+	strncpy(filename, cmd->filename.c_str(), 79);
+	filename[79] = 0;
 
-		set_extension(filename, ".ssl", 80);
+	set_extension(filename, ".ssl", 80);
 
-		uint8_t *sid_rom = (uint8_t *)sid_cart.custom_addr;
-		// just clear the first few bytes for the player to know there
-		// are no song lengths loaded
-		memset(sid_rom + 0x3000, 0, 512);
+	uint8_t *sid_rom;
 
-		uint32_t songLengthsArrayLength = 0;
-		if (fm->fopen(slPath->get_path(), filename, FA_READ, &sslFile) == FR_OK) {
-			sslFile->read(sid_rom + 0x3000, 512, &songLengthsArrayLength);
-			printf("Song length array loaded. %d bytes\n", songLengthsArrayLength);
-			fm->fclose(sslFile);
-		} else {
-			printf("Cannot open file with song lengths.\n");
+	if (mus_file) {
+		sid_rom = (uint8_t *)mus_cart.custom_addr;
+	} else {
+	 	sid_rom = (uint8_t *)sid_cart.custom_addr;
+	}
+	// just clear the first few bytes for the player to know there
+	// are no song lengths loaded
+	memset(sid_rom + 0x3000, 0, 512);
+
+	uint32_t songLengthsArrayLength = 0;
+	if (fm->fopen(slPath->get_path(), filename, FA_READ, &sslFile) == FR_OK) {
+		sslFile->read(sid_rom + 0x3000, 512, &songLengthsArrayLength);
+		printf("Song length array loaded. %d bytes\n", songLengthsArrayLength);
+		fm->fclose(sslFile);
+	} else {
+		printf("Cannot open file with song lengths.\n");
+
+		if (sid_header[0x04] == 2) {	// check if version of header is 2 (little endian)
+			// support song length for hacked SID files
+			// only song length of first song is support
+			// no song length for 2SID and 3SID songs is supported
+			if ((sid_header[0x7B] < 0xA0) && ((sid_header[0x7B] & 0x0F) < 0x0A) &&
+				(sid_header[0x7A] < 0xA0) && ((sid_header[0x7A] & 0x0F) < 0x0A)) {
+
+				int song_index = (default_song - 1) * 2;
+				sid_rom[0x3000 + song_index] = sid_header[0x7B];
+				sid_rom[0x3001 + song_index] = sid_header[0x7A];
+			}
+
+			// clean-up SID header
+			sid_header[0x7A] = 0;
+			sid_header[0x7B] = 0;
+		}
+	}
+
+	// if not all song lengths are set or if value is invalid, set the default value
+	for (int i = 0; i < numberOfSongs * 2; i = i + 2) {
+		uint8_t minutes = sid_rom[0x3000 + i];
+		uint8_t seconds = sid_rom[0x3001 + i];
+
+		// check if values are real BCD values
+		if ((minutes > 0x99) || ((minutes & 0x0F) > 0x09) ||
+			(seconds > 0x59) || ((seconds & 0x0F) > 0x09)) {
+			sid_rom[0x3000 + i] = 0;
+			sid_rom[0x3001 + i] = 0;
+			minutes = 0;
+			seconds = 0;
 		}
 
-		fm->release_path(slPath);
-	} else {
-		uint8_t *sid_rom = (uint8_t *)mus_cart.custom_addr;
-		memset(sid_rom + 0x3000, 0, 512);
-		sid_rom[0x3000] = 3;			// default is 3 minutes for MUS songs
+		if ((minutes == 0) && (seconds == 0)) {
+			sid_rom[0x3000 + i] = mus_file ? DEFAULT_SONG_LENGTH_MUS : DEFAULT_SONG_LENGTH_SID;
+		}
 	}
+
+	fm->release_path(slPath);
 }
 
 bool FileTypeSID :: tryLoadStereoMus(int offset)
@@ -420,6 +464,7 @@ bool FileTypeSID :: tryLoadStereoMus(int offset)
 
 		if (fm->fopen(node->getPath(), filename, FA_READ, &strFile) == FR_OK) {
 			if (strFile->seek(2) != FR_OK) {	// skip first 2 bytes
+				fm->fclose(strFile);
 				return false;
 			}
 
@@ -450,7 +495,7 @@ int FileTypeSID :: prepare(bool use_default)
 	strncpy(filename, cmd->filename.c_str(), 79);
 	filename[79] = 0;
 
-	if (mus_file) {
+	if (mus_file && !sid_file) {
 		// when .str file is selected, first load the .mus file
 		set_extension(filename, ".mus", 80);
 	}
@@ -459,7 +504,7 @@ int FileTypeSID :: prepare(bool use_default)
 	uint32_t *magic = (uint32_t *)sid_header;
 	if (!file) {
 		if (fm->fopen(cmd->path.c_str(), filename, FA_READ, &file) != FR_OK) {
-			file = 0;
+			file = NULL;
 			return 1;
 		}
 	}
@@ -467,7 +512,7 @@ int FileTypeSID :: prepare(bool use_default)
 		return 2;
 	}
 
-	if (mus_file) {
+	if (mus_file && !sid_file) {
 		createMusHeader();
 
 		start = 0x1000;			// sidplayer music data at $1000
@@ -489,7 +534,7 @@ int FileTypeSID :: prepare(bool use_default)
 		offset = uint32_t(sid_header[0x06]) << 8;
 		offset |= sid_header[0x07];
 
-		if (sid_header[0x77] & 1 == 1) {
+		if ((sid_header[0x77] & 1) == 1) {
 			createMusHeader();
 			mus_file = true;
 
@@ -539,13 +584,16 @@ int FileTypeSID :: prepare(bool use_default)
 
     printf("SID header address: %04x.\n", header_location);
 
+	default_song = ((uint16_t)sid_header[0x10]) << 8;
+	default_song |= sid_header[0x11];
+	if (!default_song) {
+		default_song = 1;
+	}
+
 	// extract default song
 	if (use_default) {
-		song = ((uint16_t)sid_header[0x10]) << 8;
-	    song |= sid_header[0x11];
-		printf("Default song = %d\n", song);
-		if (!song)
-			song = 1;
+		song = default_song;
+		printf("Default song = %d\n", song + 1);
 	}
 
 	// write back the default song, for some players that only look here
@@ -623,6 +671,7 @@ void FileTypeSID :: load(void)
 	memset((void *)(C64_MEMORY_BASE + 0x0340), 0x00, 0xFCC0);
 
 	int offsetLoadEnd = loadFile(file, start);
+	file = NULL;
 
 	if (mus_file) {
 		bool stereo = false;
@@ -642,10 +691,8 @@ void FileTypeSID :: load(void)
 			// one file MUS/SID file includes stereo song
 			stereo = true;
 			offsetLoadEnd = nextSongIndex;
-		} else {
-			if (!stereo) {
-				stereo = tryLoadStereoMus(offsetLoadEnd);
-			}
+		} else if (!stereo) {
+			stereo = tryLoadStereoMus(offsetLoadEnd);
 		}
 
 		// install mus player
@@ -674,8 +721,8 @@ void FileTypeSID :: load(void)
 		}
 	}
 
-	sid_header[0x7e] = uint8_t(end & 0xFF);
-	sid_header[0x7f] = uint8_t(end >> 8);
+	sid_header[0x7E] = uint8_t(end & 0xFF);
+	sid_header[0x7F] = uint8_t(end >> 8);
 
 	ConfigSIDs();
 
@@ -704,8 +751,6 @@ void FileTypeSID :: load(void)
 
 	c64->resume();
 
-	file = NULL;
-
 	// In this special case, we do NOT restore the cartridge right away,
 	// but we do this as soon as the button is pressed, not earlier.
 	// c64_subsys->restoreCart();
@@ -724,6 +769,7 @@ int FileTypeSID :: loadFile(File *file, int offset)
 
 	uint8_t dma_load_buffer[512];
 	uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE);
+
 	while (max_length > 0) {
 		file->read(dma_load_buffer, block, &bytes_read);
     	total_trans += bytes_read;
@@ -743,9 +789,9 @@ int FileTypeSID :: loadFile(File *file, int offset)
     	max_length -= bytes_read;
     	block = 512;
     }
+
 	fm->fclose(file);
 
 	printf("Bytes loaded: %d. $%4x-$%4x\n", total_trans, start, end);
-
 	return offset;
 }

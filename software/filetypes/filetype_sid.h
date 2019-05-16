@@ -13,6 +13,7 @@ class FileTypeSID : public FileType
 	File *file;
 	uint8_t sid_header[0x80];
 	uint16_t song;
+	uint16_t default_song;
 	uint16_t start;
 	uint16_t end;
 	uint16_t header_location;
@@ -21,6 +22,7 @@ class FileTypeSID : public FileType
 	bool header_valid;
 	int numberOfSongs;
 	bool mus_file;
+	bool sid_file;
 
 	int  prepare(bool);
 	void load(void);

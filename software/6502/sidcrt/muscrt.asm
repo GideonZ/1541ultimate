@@ -101,6 +101,7 @@ baseCrt         .binclude 'basecrt.asm'
                 jsr setupScreen
                 jsr writeScreenLabels
                 jsr printMusInfo
+
                 jsr songlengths.displayCurSongLength
 
                 jsr copyPlayer
@@ -113,6 +114,10 @@ baseCrt         .binclude 'basecrt.asm'
                 jsr relocateExtraPlayer
                 jsr setExtraPlayerVars
                 jsr setMusExtraPlayerVars
+
+                lda #$03
+                sta songlengths.DEFAULT_SONG_LENGTH
+
                 jsr setupSldb
 +
                 lda PLAYER_LOCATION
