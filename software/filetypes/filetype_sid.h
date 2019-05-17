@@ -24,22 +24,23 @@ class FileTypeSID : public FileType
 	bool mus_file;
 	bool sid_file;
 
-	int  prepare(bool);
+	int prepare(bool);
 	void load(void);
 	int loadFile(File *file, int offset);
 	bool tryLoadStereoMus(int offset);
     int execute(SubsysCommand *cmd);
     static int execute_st(SubsysCommand *cmd);
-    int   readHeader(void);
-	int   createMusHeader(void);
-    void  showInfo(void);
-    void  readSongLengths(void);
-    bool  ConfigSIDs(void);
+    int readHeader(void);
+	int createMusHeader(void);
+    void showInfo(void);
+    void readSongLengths(void);
+	void configureMusEnv(int offsetLoadEnd);
+    bool ConfigSIDs(void);
 public:
     FileTypeSID(BrowsableDirEntry *n);
     ~FileTypeSID();
 
-    int   fetch_context_items(IndexedList<Action *> &list);
+    int fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
 };
 

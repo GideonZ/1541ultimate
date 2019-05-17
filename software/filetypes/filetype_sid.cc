@@ -41,6 +41,34 @@ const uint32_t magic_rsid = 0x52534944; // big endian
 
 const int string_offsets[4] = { 0x16, 0x36, 0x56, 0x76 };
 
+const uint8_t petscii[59] = {
+	'A', 'A', 'A', 'A', 'A', 'A', 'A',
+	'a', 'a', 'a', 'a', 'a', 'a', 'a',
+	'E', 'E', 'E', 'E',
+	'e', 'e', 'e', 'e',
+	'I', 'I', 'I', 'I',
+	'i', 'i', 'i', 'i',
+	'O', 'O', 'O', 'O', 'O', 'O',
+	'o', 'o', 'o', 'o', 'o', 'o',
+	'U', 'U', 'U', 'U',
+	'u', 'u', 'u', 'u',
+	'C', 'c', 'N', 'n', 'Y', 'Y', 'y', 'y', 'B'
+};
+
+const uint8_t ascii[59] = {
+	0XC0, 0XC1, 0XC2, 0XC3, 0XC4, 0XC5, 0XC6, // all A variants
+	0XE0, 0XE1, 0XE2, 0XE3, 0XE4, 0XE5, 0XE6, // all a variants
+	0XC8, 0XC9, 0XCA, 0XCB,                   // all E variants
+	0XE8, 0XE9, 0XEA, 0XEB,                   // all e variants
+	0XCC, 0XCD, 0XCE, 0XCF,                   // all I variants
+	0XEC, 0XED, 0XEE, 0XEF,                   // all i variants
+	0XD2, 0XD3, 0XD4, 0XD5, 0XD6, 0XD8,       // all O variants
+	0XF2, 0XF3, 0XF4, 0XF5, 0XF6, 0XF8,       // all o variants
+	0XD9, 0XDA, 0XDB, 0XDC,                   // all U variants
+	0XF9, 0XFA, 0XFB, 0XFC,                   // all u variants
+	0XC7, 0XE7, 0XD1, 0XF1, 0XDD, 0X9F, 0XFD, 0XFF, 0xDF // other chars
+};
+
 cart_def sid_cart = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 cart_def mus_cart = { ID_SIDCART, (void *)0, 0x4000, CART_TYPE_16K | CART_RAM };
 
@@ -188,6 +216,11 @@ int FileTypeSID :: readHeader(void)
 	numberOfSongs = ((int)sid_header[0x0e]) << 8;
     numberOfSongs |= (int)sid_header[0x0f];
 
+	if ((sid_header[0x77] & 1) == 1) {
+		createMusHeader();
+		mus_file = true;
+	}
+
 	fm->fclose(file);
 	file = NULL;
 	header_valid = true;
@@ -277,6 +310,18 @@ void FileTypeSID :: showInfo()
 		int len = string_offsets[b+1]-string_offsets[b];
         memcpy(new_name, &sid_header[string_offsets[b]], len);
 		new_name[len] = 0;
+
+		// convert special characters not in petscii to their equivalent
+		for (int j = 0; j < len; j++) {
+			uint8_t c = new_name[j];
+			for (int i = 0; i < sizeof(ascii); i++) {
+				if (c == ascii[i]) {
+					new_name[j] = petscii[i];
+					break;
+				}
+			}
+		}
+
 		stream.format("%s\n", new_name);
 		if (mus_file) {
 			break;		// only show the title of the MUS file
@@ -674,51 +719,7 @@ void FileTypeSID :: load(void)
 	file = NULL;
 
 	if (mus_file) {
-		bool stereo = false;
-		uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE);
-
-		int musTextOffset = start + ((dest[start + 1] + dest[start + 3] + dest[start + 5]) << 8) + dest[start] + dest[start + 2] + dest[start + 4] + 6;
-		int nextSongIndex = offsetLoadEnd;
-
-		for (int i = musTextOffset; i < offsetLoadEnd; i++) {
-			if (dest[i] == 0) {
-				nextSongIndex = i + 3;
-				break;
-			}
-		}
-
-		if (nextSongIndex + 5 < offsetLoadEnd) {
-			// one file MUS/SID file includes stereo song
-			stereo = true;
-			offsetLoadEnd = nextSongIndex;
-		} else if (!stereo) {
-			stereo = tryLoadStereoMus(offsetLoadEnd);
-		}
-
-		// install mus player
-		int mus_player_size = (int)&_musplayer_bin_end - (int)&_musplayer_bin_start;
-		memcpy(&dest[0xe000], &_musplayer_bin_start, mus_player_size);
-
-		C64_POKE(0xEC6E, start);
-		C64_POKE(0xEC70, start >> 8);	// sidplayer data location
-
-		if (stereo) {
-			sid_header[0x0A] = 0x90;
-			sid_header[0x0B] = 0xFC;	// stereo init address (in little endian)
-			sid_header[0x0C] = 0x96;
-			sid_header[0x0D] = 0xFC;	// stereo play address (in little endian)
-
-			sid_header[0x7A] = 0x50;	// address of second SID chip is at $D500
-			sid_header[0x77] |= 0x80;	// set second SID to 8580
-
-			C64_POKE(0xFC6E, offsetLoadEnd);
-			C64_POKE(0xFC70, offsetLoadEnd >> 8);	// sidplayer data location start of stereo file
-		}
-
-		if (end >= 0xC400) {
-			sid_header[0x78] = 0x04;
-			sid_header[0x79] = 0x0C;
-		}
+		configureMusEnv(offsetLoadEnd);
 	}
 
 	sid_header[0x7E] = uint8_t(end & 0xFF);
@@ -794,4 +795,53 @@ int FileTypeSID :: loadFile(File *file, int offset)
 
 	printf("Bytes loaded: %d. $%4x-$%4x\n", total_trans, start, end);
 	return offset;
+}
+
+void FileTypeSID :: configureMusEnv(int offsetLoadEnd)
+{
+	bool stereo = false;
+	uint8_t *dest = (uint8_t *)(C64_MEMORY_BASE);
+
+	int musTextOffset = start + ((dest[start + 1] + dest[start + 3] + dest[start + 5]) << 8) + dest[start] + dest[start + 2] + dest[start + 4] + 6;
+	int nextSongIndex = offsetLoadEnd;
+
+	for (int i = musTextOffset; i < offsetLoadEnd; i++) {
+		if (dest[i] == 0) {
+			nextSongIndex = i + 3;
+			break;
+		}
+	}
+
+	if (nextSongIndex + 5 < offsetLoadEnd) {
+		// one file MUS/SID file includes stereo song
+		stereo = true;
+		offsetLoadEnd = nextSongIndex;
+	} else if (!stereo) {
+		stereo = tryLoadStereoMus(offsetLoadEnd);
+	}
+
+	// install mus player
+	int mus_player_size = (int)&_musplayer_bin_end - (int)&_musplayer_bin_start;
+	memcpy(&dest[0xe000], &_musplayer_bin_start, mus_player_size);
+
+	C64_POKE(0xEC6E, start);
+	C64_POKE(0xEC70, start >> 8);	// sidplayer data location
+
+	if (stereo) {
+		sid_header[0x0A] = 0x90;
+		sid_header[0x0B] = 0xFC;	// stereo init address (in little endian)
+		sid_header[0x0C] = 0x96;
+		sid_header[0x0D] = 0xFC;	// stereo play address (in little endian)
+
+		sid_header[0x7A] = 0x50;	// address of second SID chip is at $D500
+		sid_header[0x77] |= 0x80;	// set second SID to 8580
+
+		C64_POKE(0xFC6E, offsetLoadEnd);
+		C64_POKE(0xFC70, offsetLoadEnd >> 8);	// sidplayer data location start of stereo file
+	}
+
+	if (end >= 0xC400) {
+		sid_header[0x78] = 0x04;
+		sid_header[0x79] = 0x0C;
+	}
 }
