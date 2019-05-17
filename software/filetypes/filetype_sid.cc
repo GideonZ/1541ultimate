@@ -338,7 +338,7 @@ void FileTypeSID :: showInfo()
     stream.format("\nNumber of songs: %d\n", numberOfSongs);
 	uint16_t sng = ((uint16_t)sid_header[0x10]) << 8;
     sng |= sid_header[0x11];
-    stream.format("Default song = %d\n", sng);
+    stream.format("Default song: %d\n", sng);
 
 	cmd->user_interface->run_editor(stream.getText());
 	// stream gets out of scope.
