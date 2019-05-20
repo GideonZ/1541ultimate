@@ -121,29 +121,30 @@ bool FileTypeSID :: ConfigSIDs(void)
     requests[0].baseAddress = 0x40; // D400
     requests[0].sidType = 3; // not specified
 
-	int version = ((int)sid_header[0x04]) << 8;
-    version |= (int)sid_header[0x05];
-
-    if (version >= 2) {
+    if ((mus_file) || ((data_offset >= 0x7C) && (header_version >= 2))) {
         if ((flags >> 4) & 3) { // if the SID file specifies the type, we'll copy it
             requests[0].sidType = (flags >> 4) & 3;
         }
-        if ((version >= 3) && (sid_header[0x7A])) {
+        if ((header_version >= 3) && (sid_header[0x7A])) {
             requests[1].baseAddress = sid_header[0x7A];
 			requests[1].sidType = 3; // not specified
             count = 2;
 
 			if ((flags >> 6) & 3) { // if the SID file specifies the type, we'll copy it
 				requests[1].sidType = (flags >> 6) & 3;
+			} else {
+				requests[1].sidType = requests[0].sidType;
 			}
         }
-        if ((version >= 4) && (sid_header[0x7B])) {
+        if ((header_version >= 4) && (sid_header[0x7B])) {
             requests[2].baseAddress = sid_header[0x7B];
 		    requests[2].sidType = 3; // not specified
             count = 3;
 
 			if ((flags >> 8) & 3) { // if the SID file specifies the type, we'll copy it
 				requests[2].sidType = (flags >> 8) & 3;
+			} else {
+				requests[2].sidType = requests[0].sidType;
 			}
         }
     }
@@ -160,7 +161,7 @@ FileTypeSID :: FileTypeSID(BrowsableDirEntry *node)
 	printf("Creating SID type from info: %s\n", node->getName());
     file = NULL;
     header_valid = false;
-    numberOfSongs = 0;
+    number_of_songs = 0;
     cmd = NULL;
 
 	FileInfo *inf = node->getInfo();
@@ -213,10 +214,16 @@ int FileTypeSID :: readHeader(void)
         return -1;
     }
 
-	numberOfSongs = ((int)sid_header[0x0e]) << 8;
-    numberOfSongs |= (int)sid_header[0x0f];
+	header_version = ((int)sid_header[0x04]) << 8;
+    header_version |= (int)sid_header[0x05];
 
-	if ((sid_header[0x77] & 1) == 1) {
+	data_offset = uint32_t(sid_header[0x06]) << 8;
+	data_offset |= sid_header[0x07];
+
+	number_of_songs = ((int)sid_header[0x0e]) << 8;
+    number_of_songs |= (int)sid_header[0x0f];
+
+	if ((data_offset >= 0x7C) && ((sid_header[0x77] & 1) == 1)) {
 		createMusHeader();
 		mus_file = true;
 	}
@@ -224,11 +231,14 @@ int FileTypeSID :: readHeader(void)
 	fm->fclose(file);
 	file = NULL;
 	header_valid = true;
-	return numberOfSongs;
+	return number_of_songs;
 }
 
 int FileTypeSID :: createMusHeader(void)
 {
+	number_of_songs = 1;
+	header_version = 3;			// version 3 for support of 2nd SID chip
+
     for (int b = 0; b < 0x80; b++) {
 		sid_header[b] = 0;
     }
@@ -238,7 +248,7 @@ int FileTypeSID :: createMusHeader(void)
 	sid_header[0x02] = 'I';
 	sid_header[0x03] = 'D';
 
-	sid_header[0x05] = 0x03;	// version of header, 3 for support of 2nd SID chip
+	sid_header[0x05] = (uint8_t)header_version;
 	sid_header[0x07] = 0x7C;	// header size
 
 	sid_header[0x0A] = 0xEC;	// init address
@@ -246,7 +256,7 @@ int FileTypeSID :: createMusHeader(void)
 	sid_header[0x0C] = 0xEC;	// play address
 	sid_header[0x0D] = 0x80;
 
-	sid_header[0x0F] = 0x01;	// number of songs 1
+	sid_header[0x0F] = (uint8_t)number_of_songs;
 	sid_header[0x11] = 0x01;	// default song 1
 
 	sid_header[0x15] = 0x01;	// play at CIA speed
@@ -296,9 +306,7 @@ int FileTypeSID :: createMusHeader(void)
     }
 
 	header_valid = true;
-	numberOfSongs = 1;
-
-	return numberOfSongs;
+	return number_of_songs;
 }
 
 void FileTypeSID :: showInfo()
@@ -335,7 +343,7 @@ void FileTypeSID :: showInfo()
 		stream.format("\nSID version: %d\n", version);
 	}
 
-    stream.format("\nNumber of songs: %d\n", numberOfSongs);
+    stream.format("\nNumber of songs: %d\n", number_of_songs);
 	uint16_t sng = ((uint16_t)sid_header[0x10]) << 8;
     sng |= sid_header[0x11];
     stream.format("Default song: %d\n", sng);
@@ -364,13 +372,13 @@ int FileTypeSID :: fetch_context_items(IndexedList<Action *> &list)
 	list.append(new Action("Play Main Tune", FileTypeSID :: execute_st, SIDFILE_PLAY_MAIN, (int)this ));
 	list.append(new Action("Show Info", FileTypeSID :: execute_st, SIDFILE_SHOW_INFO, (int)this ));
 
-    if (numberOfSongs > 1) {
+    if (number_of_songs > 1) {
 		char buffer[16];
-		for (int i = 0; i < numberOfSongs; i++) {
+		for (int i = 0; i < number_of_songs; i++) {
 			sprintf(buffer, "Play Song %d", i+1);
 			list.append(new Action(buffer, FileTypeSID :: execute_st, i+1, (int)this ));
 		}
-		return numberOfSongs + 2;
+		return number_of_songs + 2;
     }
     return 2;
 }
@@ -475,7 +483,7 @@ void FileTypeSID :: readSongLengths(void)
 	}
 
 	// if not all song lengths are set or if value is invalid, set the default value
-	for (int i = 0; i < numberOfSongs * 2; i = i + 2) {
+	for (int i = 0; i < number_of_songs * 2; i = i + 2) {
 		uint8_t minutes = sid_rom[0x3000 + i];
 		uint8_t seconds = sid_rom[0x3001 + i];
 
@@ -557,13 +565,16 @@ int FileTypeSID :: prepare(bool use_default)
 		return 2;
 	}
 
+	int bytesToSkip = 0;
+
 	if (mus_file && !sid_file) {
 		createMusHeader();
 
 		start = 0x1000;			// sidplayer music data at $1000
-		offset = 2;
+		data_offset = 0;
+		bytesToSkip = 2;
 
-		if (file->seek(offset) != FR_OK) {
+		if (file->seek(data_offset + bytesToSkip) != FR_OK) {
 			return 2;
 		}
 	} else {
@@ -575,23 +586,26 @@ int FileTypeSID :: prepare(bool use_default)
 			return 4;
 		}
 
-		// get offset, file start, file end, update header.
-		offset = uint32_t(sid_header[0x06]) << 8;
-		offset |= sid_header[0x07];
+		header_version = ((int)sid_header[0x04]) << 8;
+		header_version |= (int)sid_header[0x05];
 
-		if ((sid_header[0x77] & 1) == 1) {
+		// get data offset, file start, file end, update header.
+		data_offset = uint32_t(sid_header[0x06]) << 8;
+		data_offset |= sid_header[0x07];
+
+		if ((data_offset >= 0x7C) && ((sid_header[0x77] & 1) == 1)) {
 			createMusHeader();
 			mus_file = true;
 
 			song = 1;
 			start = 0x1000;		// sidplayer music data at $1000
+			bytesToSkip = 2;
 
-			offset += 2;
-			if (file->seek(offset) != FR_OK) {
+			if (file->seek(data_offset + bytesToSkip) != FR_OK) {
 				return 2;
 			}
 		} else {
-			if (file->seek(offset) != FR_OK) {
+			if (file->seek(data_offset) != FR_OK) {
 				return 2;
 			}
 			start = uint16_t(sid_header[0x08]) << 8;
@@ -602,12 +616,12 @@ int FileTypeSID :: prepare(bool use_default)
 					return 3;
 				}
 			}
-			offset += 2;
+			bytesToSkip = 2;
 			start = le2cpu(start);
 		}
 	}
 
-	length = (file->get_size() - offset);
+	length = (file->get_size() - data_offset - bytesToSkip);
 	end = start + length;
 
 	sid_header[0x7e] = uint8_t(end & 0xFF);
@@ -645,8 +659,12 @@ int FileTypeSID :: prepare(bool use_default)
 	sid_header[0x10] = (song - 1) >> 8;
 	sid_header[0x11] = (song - 1) & 0xFF;
 
-	flags = ((uint16_t)sid_header[0x76]) << 8;
-	flags |= sid_header[0x77];
+	if (data_offset >= 0x7C) {
+		flags = ((uint16_t)sid_header[0x76]) << 8;
+		flags |= sid_header[0x77];
+	} else {
+		flags = 0;
+	}
 
 	// convert big endian to little endian format
 	uint16_t *pus = (uint16_t *)&sid_header[4];

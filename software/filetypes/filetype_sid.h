@@ -12,15 +12,16 @@ class FileTypeSID : public FileType
 
 	File *file;
 	uint8_t sid_header[0x80];
+	int header_version;
 	uint16_t song;
 	uint16_t default_song;
 	uint16_t start;
 	uint16_t end;
 	uint16_t header_location;
-	uint32_t offset;
+	uint32_t data_offset;
 	uint16_t flags;
 	bool header_valid;
-	int numberOfSongs;
+	int number_of_songs;
 	bool mus_file;
 	bool sid_file;
 
