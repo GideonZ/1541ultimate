@@ -69,9 +69,10 @@ monoSid         ldy #$77
                 lsr
                 lsr
                 lsr
-                and #$03
-                beq +
-                cmp #$03
+                and #$03        ; supported model: 00: unknown, 01: 6581, 02: 8580, 03: 6581 and 8580
+                beq +           ; when SID model is unknown always force to play it on socket SID#1
+                eor #$02        ; the rest of the code uses $00 for 8580, so fix that. this also forces using SID#1 when both chips are supported
+                cmp #$03        ; the eor messes up the code for 6581, change it back to $01
                 bne ++
-+               lda #$01        ; when SID model is unknown or if it supports both, then always force to play on socket SID#1
++               lda #$01
 +               rts
