@@ -67,19 +67,6 @@ ZERO_PAGE_ADDRESSES_MAIN = [
     $fe
 ]
 
-fixHeader       ldy #$04            ; read version of header
-                jsr readHeader
-                cmp #$03
-                bcs +
-
-                ; remove info about 2nd and 3rd SID when header version is not 3 or higher
-                lda #$00
-                ldy #$7a            ; remove 2nd SID address
-                sta (SID_HEADER_LO),y
-                iny                 ; remove 3rd SID address
-                sta (SID_HEADER_LO),y
-+               rts
-
 cleanupMemory   ldy #$7f            ; clean SID header
                 lda #$00
 -               sta (SID_HEADER_LO),y

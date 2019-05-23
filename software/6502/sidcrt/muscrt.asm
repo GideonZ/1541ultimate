@@ -80,7 +80,6 @@ baseCrt         .binclude 'basecrt.asm'
                 dey
                 bne -
 
-                jsr fixHeader       ; fix header after it has been moved (temporary fix)
                 jsr prepareSidHeader
 
                 ldy #$10            ; default song offset
