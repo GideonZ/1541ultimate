@@ -175,7 +175,7 @@ FileTypeSID :: ~FileTypeSID()
 		fm->fclose(file);
 }
 
-void FileTypeSID :: readHeader(void)
+int FileTypeSID :: readHeader(void)
 {
     int b, i, entries;
     uint32_t bytes_read;
@@ -217,6 +217,7 @@ void FileTypeSID :: readHeader(void)
 	fm->fclose(file);
 	file = NULL;
 	header_valid = true;
+	return 0;
 }
 
 void FileTypeSID :: processHeader(void)
