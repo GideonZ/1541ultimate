@@ -31,7 +31,8 @@ class FileTypeSID : public FileType
 	bool tryLoadStereoMus(int offset);
     int execute(SubsysCommand *cmd);
     static int execute_st(SubsysCommand *cmd);
-    int readHeader(void);
+    void readHeader(void);
+	void processHeader(void);
 	int createMusHeader(void);
     void showInfo(void);
     void readSongLengths(void);

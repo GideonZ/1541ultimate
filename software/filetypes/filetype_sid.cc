@@ -121,7 +121,7 @@ bool FileTypeSID :: ConfigSIDs(void)
     requests[0].baseAddress = 0x40; // D400
     requests[0].sidType = 3; // not specified
 
-    if ((mus_file) || ((data_offset >= 0x7C) && (header_version >= 2))) {
+    if (header_version >= 2) {
         if ((flags >> 4) & 3) { // if the SID file specifies the type, we'll copy it
             requests[0].sidType = (flags >> 4) & 3;
         }
@@ -175,7 +175,7 @@ FileTypeSID :: ~FileTypeSID()
 		fm->fclose(file);
 }
 
-int FileTypeSID :: readHeader(void)
+void FileTypeSID :: readHeader(void)
 {
     int b, i, entries;
     uint32_t bytes_read;
@@ -214,32 +214,47 @@ int FileTypeSID :: readHeader(void)
         return -1;
     }
 
+	fm->fclose(file);
+	file = NULL;
+	header_valid = true;
+}
+
+void FileTypeSID :: processHeader(void)
+{
 	header_version = ((int)sid_header[0x04]) << 8;
     header_version |= (int)sid_header[0x05];
 
 	data_offset = uint32_t(sid_header[0x06]) << 8;
 	data_offset |= sid_header[0x07];
 
+	if (data_offset < 0x7C) {
+		// convert header to V2 header
+		for (int i = data_offset; i < 0x7C; i++) {
+			sid_header[i] = 0;
+		}
+		sid_header[0x04] = 0;
+		sid_header[0x05] = 2;
+		header_version = 2;
+		// only update data offset in header
+		sid_header[0x07] = 0x7C;
+	}
+
 	number_of_songs = ((int)sid_header[0x0e]) << 8;
     number_of_songs |= (int)sid_header[0x0f];
 
-	if ((data_offset >= 0x7C) && ((sid_header[0x77] & 1) == 1)) {
+	if ((sid_header[0x77] & 1) == 1) {
 		createMusHeader();
-		mus_file = true;
 	}
-
-	fm->fclose(file);
-	file = NULL;
-	header_valid = true;
-	return number_of_songs;
 }
 
 int FileTypeSID :: createMusHeader(void)
 {
-	number_of_songs = 1;
+	mus_file = true;
 	header_version = 3;			// version 3 for support of 2nd SID chip
+	number_of_songs = 1;
+	song = 1;
 
-    for (int b = 0; b < 0x80; b++) {
+	for (int b = 0; b < 0x80; b++) {
 		sid_header[b] = 0;
     }
 
@@ -337,10 +352,7 @@ void FileTypeSID :: showInfo()
     }
 
 	if (!mus_file) {
-		int version = ((int)sid_header[0x04]) << 8;
-		version |= (int)sid_header[0x05];
-
-		stream.format("\nSID version: %d\n", version);
+		stream.format("\nSID version: %d\n", header_version);
 	}
 
     stream.format("\nNumber of songs: %d\n", number_of_songs);
@@ -359,6 +371,7 @@ int FileTypeSID :: fetch_context_items(IndexedList<Action *> &list)
 			createMusHeader();
 		} else {
 			readHeader();
+			processHeader();
 		}
 
 		if (!header_valid) {
@@ -391,7 +404,8 @@ FileType *FileTypeSID :: test_type(BrowsableDirEntry *obj)
     return NULL;
 }
 
-int FileTypeSID :: execute_st(SubsysCommand *cmd) {
+int FileTypeSID :: execute_st(SubsysCommand *cmd)
+{
 	printf("FileTypeSID :: execute_st: Mode = %p\n", cmd->mode);
 	return ((FileTypeSID *)cmd->mode)->execute(cmd);
 }
@@ -570,8 +584,8 @@ int FileTypeSID :: prepare(bool use_default)
 	if (mus_file && !sid_file) {
 		createMusHeader();
 
-		start = 0x1000;			// sidplayer music data at $1000
 		data_offset = 0;
+		start = 0x1000;			// sidplayer music data at $1000
 		bytesToSkip = 2;
 
 		if (file->seek(data_offset + bytesToSkip) != FR_OK) {
@@ -586,18 +600,9 @@ int FileTypeSID :: prepare(bool use_default)
 			return 4;
 		}
 
-		header_version = ((int)sid_header[0x04]) << 8;
-		header_version |= (int)sid_header[0x05];
+		processHeader();
 
-		// get data offset, file start, file end, update header.
-		data_offset = uint32_t(sid_header[0x06]) << 8;
-		data_offset |= sid_header[0x07];
-
-		if ((data_offset >= 0x7C) && ((sid_header[0x77] & 1) == 1)) {
-			createMusHeader();
-			mus_file = true;
-
-			song = 1;
+		if ((sid_header[0x77] & 1) == 1) {
 			start = 0x1000;		// sidplayer music data at $1000
 			bytesToSkip = 2;
 
@@ -659,12 +664,8 @@ int FileTypeSID :: prepare(bool use_default)
 	sid_header[0x10] = (song - 1) >> 8;
 	sid_header[0x11] = (song - 1) & 0xFF;
 
-	if (data_offset >= 0x7C) {
-		flags = ((uint16_t)sid_header[0x76]) << 8;
-		flags |= sid_header[0x77];
-	} else {
-		flags = 0;
-	}
+	flags = ((uint16_t)sid_header[0x76]) << 8;
+	flags |= sid_header[0x77];
 
 	// convert big endian to little endian format
 	uint16_t *pus = (uint16_t *)&sid_header[4];
