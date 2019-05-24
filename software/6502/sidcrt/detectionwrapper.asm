@@ -70,8 +70,8 @@ monoSid         ldy #$77
                 lsr
                 lsr
                 and #$03
-                beq +
-                cmp #$03
-                bne ++
-+               lda #$01        ; when SID model is unknown or if it supports both, then always force to play on socket SID#1
-+               rts
+                tax
+                lda translationTbl,x
+                rts
+
+translationTbl  .byte $ff, $01, $00, $ff ; when SID model is unknown or if it supports both, then always force to play on socket SID#1
