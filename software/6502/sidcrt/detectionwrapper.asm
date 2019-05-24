@@ -9,6 +9,11 @@
 ;   Wrapper of dectection routines for system info and SIDFX support.
 ;-----------------------------------------------------------------------
 
+; CONSTANTS
+MODEL_8580 = 0
+MODEL_6581 = 1
+MODEL_UNKNOWN = 2
+
 ; detectSystem
 ;   input: none
 ;   output:
@@ -71,7 +76,7 @@ monoSid         ldy #$77
                 lsr
                 and #$03
                 tax
-                lda translationTbl,x
-                rts
+                lda modelMapping,x
+                rts             ; AC: 0 = 8580, 1 = 6581, 2 = unknown
 
-translationTbl  .byte $ff, $01, $00, $ff ; when SID model is unknown or if it supports both, then always force to play on socket SID#1
+modelMapping    .byte MODEL_UNKNOWN, MODEL_6581, MODEL_8580, MODEL_6581 ; when SID tune supports both models, then always force to play on 6581
