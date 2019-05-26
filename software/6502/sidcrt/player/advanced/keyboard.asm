@@ -46,6 +46,8 @@ keyPressed      cmp currentKey,x
 
                 cpx #$06            ; check for row 7 (which is not handled)
                 beq skipKeyCheck
+                cpx #$01
+                beq row2
                 cpx #$05
                 beq row6
 
@@ -103,6 +105,14 @@ checkNumKeys    ldy pauseTune
                 beq setCurrentSong
                 bcs skipKeyCheck
                 jmp setCurrentSong
+
+row2            and #$7f
+                cmp #$5f            ; check for S and shift-S key
+                bne +
+                lda $d011           ; toggle screen on/off
+                eor #$10
+                sta $d011
++               rts
 
 row6            ldy pauseTune
                 bne skipKeyCheck
