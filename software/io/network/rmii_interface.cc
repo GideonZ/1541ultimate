@@ -41,6 +41,11 @@ uint8_t RmiiInterface_output(void *drv, void *b, int len) {
 	return ((RmiiInterface *)drv)->output_packet((uint8_t *)b, len);
 }
 
+// configuration
+void RmiiInterface_config(void *drv, int feature, void *params) {
+    ((RmiiInterface *)drv)->configure(feature, params);
+}
+
 extern "C" {
 	void RmiiRxInterruptHandler(void)
 	{
@@ -50,6 +55,11 @@ extern "C" {
 
 RmiiInterface :: RmiiInterface()
 {
+    my_ip = 0;
+    vic_dest_ip = 0;
+    vic_dest_port = 0;
+    vic_enable = 0;
+
     if(getFpgaCapabilities() & CAPAB_ETH_RMII) {
 		netstack = NULL;
 		link_up = false;
@@ -77,7 +87,7 @@ void RmiiInterface :: startRmiiTask(void *a)
 
 void RmiiInterface :: rmiiTask(void)
 {
-	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
+	netstack = getNetworkStack(this, RmiiInterface_config, RmiiInterface_output, RmiiInterface_free_buffer);
 
 	uint8_t flash_serial[8];
 	Flash *flash = get_flash();
@@ -220,3 +230,112 @@ uint8_t rmiiTransmit(uint8_t *buffer, int pkt_len)
 	return rmii_interface.output_packet(buffer, pkt_len);
 }
 */
+
+void RmiiInterface :: configure(int feature, void *params)
+{
+    switch(feature) {
+    case NET_FEATURE_SET_IP:
+        my_ip = *((uint32_t *)params);
+        break;
+
+    case 100:
+        vic_enable = *((uint8_t *)params);
+        break;
+
+    case 101:
+        vic_dest_ip = *((uint32_t *)params);
+        break;
+
+    case 102:
+        vic_dest_port = *((int *)params);
+        break;
+    }
+
+    calculate_udp_headers();
+}
+
+#include "u64.h"
+void RmiiInterface :: calculate_udp_headers()
+{
+    printf("__Calculate UDP Headers__\nIP = %08x, Dest = %08x:%d, Enable = %d\n", my_ip, vic_dest_ip, vic_dest_port, vic_enable);
+
+    uint8_t *hardware = (uint8_t *)U64_UDP_BASE;
+
+    uint8_t header[42] = { 0x01, 0x00, 0x5E, 0x00, 0x01, 0x40, // destination MAC
+                           0x00, 0x15, 0x41, 0xAA, 0xAA, 0x01, // source MAC
+                           0x08, 0x00, // ethernet type = IP
+                           // Ethernet Header (offset 14)
+                           0x45, 0x00,
+                           0x00, 0x1C, // 16, length = 28, but needs to be updated
+                           0xBB, 0xBB, // 18, ID // sum = 100e5 => 00e6
+                           0x40, 0x00, // 20, fragmenting and stuff => disable, no offset
+                           0x03, 0x11, // 22, TTL, protocol = UDP
+                           0x00, 0x00, // 24, checksum to be filled in
+                           0xEF, 0x00, 0x01, 0x40, // 26, source IP
+                           0xC0, 0xA8, 0x01, 0x40, // 30, destination IP
+                           // UDP header
+                           0xD0, 0x00, // 34, source port (53248 = VIC)
+                           0x2A, 0xF8, // 36, destination port (11000)
+                           0x00, 0x08, // 38, Length of UDP = 8 + payload length
+                           0x00, 0x00 }; // 40, unused checksum
+
+    if ((my_ip == 0) || (vic_enable == 0)) {
+        hardware[63] = 0; // disable
+        return;
+    }
+
+    // Source MAC
+    memcpy(header+6, local_mac, 6);
+
+    // Source IP
+    header[29] = (uint8_t)(my_ip >> 24);
+    header[28] = (uint8_t)(my_ip >> 16);
+    header[27] = (uint8_t)(my_ip >> 8);
+    header[26] = (uint8_t)(my_ip >> 0);
+
+    // Destination IP
+    header[33] = (uint8_t)(vic_dest_ip >> 24);
+    header[32] = (uint8_t)(vic_dest_ip >> 16);
+    header[31] = (uint8_t)(vic_dest_ip >> 8);
+    header[30] = (uint8_t)(vic_dest_ip >> 0);
+
+    // destination mac
+    if ((vic_dest_ip & 0x000000F8) == 0x000000E8) {
+        header[3] = header[31] & 0x7F;
+        header[4] = header[32];
+        header[5] = header[33];
+    } else { // also covers the case 255.255.255.255
+        memset(header, 0xFF, 6); // broadcast
+    }
+
+    // Destination port
+    header[36] = (uint8_t)(vic_dest_port >> 8);
+    header[37] = (uint8_t)(vic_dest_port & 0xFF);
+
+    // Now recalculate the IP checksum
+    uint32_t sum = 0;
+    for (int i=0; i < 10; i++) {
+        uint16_t temp = ((uint16_t)header[2*i + 14]) << 8;
+        temp |= header[2*i + 15];
+        sum += temp;
+    }
+    // one's complement fix up
+    while(sum & 0xFFFF0000) {
+        sum += (sum >> 16);
+        sum &= 0xFFFF;
+    }
+    // write back
+    header[24] = 0xFF ^ (uint8_t)(sum >> 8);
+    header[25] = 0xFF ^ (uint8_t)sum;
+
+    // copy to hw
+    for(int i=0;i<42;i++) {
+        hardware[i] = header[i];
+    }
+
+    dump_hex_relative(header, 42);
+
+    // enable
+    hardware[63] = 1;
+}
+

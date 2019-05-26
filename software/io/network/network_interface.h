@@ -5,6 +5,9 @@
 #include <string.h>
 #include "indexed_list.h"
 
+#define NET_FEATURE_SET_IP  1
+// 100 and up are private codes
+
 class NetworkInterface  {
 	static IndexedList<NetworkInterface *>netInterfaces;
 public:
@@ -36,6 +39,7 @@ public:
     virtual void set_mac_address(uint8_t *mac) {
     	memcpy(mac_address, mac, 6);
     }
+
     virtual bool input(uint8_t *raw_buffer, uint8_t *payload, int pkt_size) { return false; }
     virtual bool output(uint8_t *raw_buffer, int pkt_size) { return false; }
     virtual void effectuate_settings(void) { }
@@ -46,11 +50,13 @@ public:
 	virtual char *getIpAddrString(char *buf, int buflen) { buf[0] = 0; return buf; }
 };
 
+typedef void (*configure_feature_function_t)(void *driver, int feature, void *params);
 typedef void (*driver_free_function_t)(void *driver, void *buffer);
 typedef uint8_t (*driver_output_function_t)(void *driver, void *buffer, int length);
 
 NetworkInterface *getNetworkStack(void *driver,
-								  driver_output_function_t out,
+                                  configure_feature_function_t conf,
+                                  driver_output_function_t out,
 								  driver_free_function_t free );
 
 void releaseNetworkStack(void *s);
