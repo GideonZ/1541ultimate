@@ -46,11 +46,13 @@ keyPressed      cmp currentKey,x
 
                 cpx #$06            ; check for row 7 (which is not handled)
                 beq skipKeyCheck
-                cpx #$01
-                beq row2
-                cpx #$05
-                beq row6
 
+                cpx #$01
+                bne +
+                jsr handleRow2
++
+                cpx #$05
+                beq handleRow6
                 cpx #$07            ; check for runstop to exit player, <- key to fastforward tune and space to pause
                 bne checkNumKeys
 
@@ -81,19 +83,19 @@ checkOtherKeys  cmp #$fd
                 ldy #$01
                 sty fastForwardOn
 fastForward     sty @w $0000
-                rts
+skipKeyCheck    rts
 
 checkNumKeys    ldy pauseTune
                 bne skipKeyCheck
 
-                cmp #$f6
-                beq skipKeyCheck
                 ; handle keys 0-9
                 tay
-                and #$f6            ; check for values $fe and $f7
-                cmp #$f6
+                and #$7f
+                cmp #$7e
+                beq +
+                cmp #$77
                 bne skipKeyCheck
-
++
                 txa
                 asl
                 tax
@@ -106,22 +108,24 @@ checkNumKeys    ldy pauseTune
                 bcs skipKeyCheck
                 jmp setCurrentSong
 
-row2            and #$7f
+handleRow2      pha
+                and #$7f
                 cmp #$5f            ; check for S and shift-S key
                 bne +
                 lda $d011           ; toggle screen on/off
                 eor #$10
                 sta $d011
-+               rts
++               pla
+                rts
 
-row6            ldy pauseTune
+handleRow6      ldy pauseTune
                 bne skipKeyCheck
 
                 cmp #$fe
                 beq plusKey
                 cmp #$f7
                 beq minKey
-skipKeyCheck    rts
+                rts
 
 minKey          dec currentSong
                 lda currentSong
