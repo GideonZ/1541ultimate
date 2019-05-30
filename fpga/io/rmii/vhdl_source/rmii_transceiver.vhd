@@ -35,7 +35,6 @@ port (
     eth_rx_valid        : out std_logic;
     
     eth_tx_data         : in  std_logic_vector(7 downto 0);
-    eth_tx_sof          : in  std_logic;
     eth_tx_eof          : in  std_logic;
     eth_tx_valid        : in  std_logic;
     eth_tx_ready        : out std_logic;

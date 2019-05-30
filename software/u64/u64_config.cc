@@ -111,6 +111,8 @@ const char *u64_sid_base[] = { "$D400-$D7FF", // 10 bits
 		                       "$D500-$D5FF", // 8 bits
 		                       "$D600-$D6FF", // 8 bits
 		                       "$D700-$D7FF", // 8 bits
+		                       "$DE00-$DEFF", // 8 bits
+		                       "$DF00-$DFFF", // 8 bits
 		                   "$D400", "$D420", "$D440", "$D480", "$D500", "$D600", "$D700",
                            "$DE00", "$DE20", "$DE40", "$DE60",
                            "$DE80", "$DEA0", "$DEC0", "$DEE0",
@@ -135,13 +137,13 @@ const char *scan_modes[] = {
 	"720(1440)x480 54MHz",
 };
 
-uint8_t u64_sid_offsets[] = { 0x40, 0x40, 0x60, 0x40, 0x50, 0x60, 0x70,
+uint8_t u64_sid_offsets[] = { 0x40, 0x40, 0x60, 0x40, 0x50, 0x60, 0x70, 0xE0, 0xF0,
 						  0x40, 0x42, 0x44, 0x48, 0x50, 0x60, 0x70,
 						  0xE0, 0xE2, 0xE4, 0xE6, 0xE8, 0xEA, 0xEC, 0xEE,
 						  0xF0, 0xF2, 0xF4, 0xF6, 0xF8, 0xFA, 0xFC, 0xFE,
 						  };
 
-uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0,
+uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0,
 						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
@@ -215,12 +217,12 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SID2_CAPS,            CFG_TYPE_ENUM, "SID Socket 2 Capacitors",      "%s", sid_caps,     0,  1, 0 },
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis4,      0,  1, 1 },
     { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
-    { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 29, 0 },
-    { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 29, 0 },
+    { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 31, 0 },
+    { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 31, 0 },
     { CFG_PADDLE_EN,			CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
     { CFG_STEREO_DIFF,			CFG_TYPE_ENUM, "Ext StereoSID addrline",       "%s", stereo_addr,  0,  1, 0 },
-    { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 23, 0 },
-    { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 23, 0 },
+    { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 31, 0 },
+    { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 31, 0 },
     { CFG_EMUSID1_FILTER,       CFG_TYPE_ENUM, "UltiSID 1 Filter Curve",       "%s", filter_sel,   0,  6, 0 },
     { CFG_EMUSID2_FILTER,       CFG_TYPE_ENUM, "UltiSID 2 Filter Curve",       "%s", filter_sel,   0,  6, 0 },
     { CFG_EMUSID1_RESONANCE,    CFG_TYPE_ENUM, "UltiSID 1 Filter Resonance",   "%s", filter_res,   0,  1, 0 },
@@ -253,7 +255,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 14, 0 },
     { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 14, 4 },
-    { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 15, 15 },
+    { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
@@ -340,7 +342,7 @@ void U64Config :: effectuate_settings()
 
     uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
 
-    U2PIO_SPEAKER_EN = sp_vol ? sp_vol | 0x10 : 0;
+    U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
 
     {
         uint8_t typ = cfg->get_value(CFG_SID1_TYPE); // 0 = none, 1 = 6581, 2 = 8580

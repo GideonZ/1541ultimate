@@ -8,6 +8,7 @@
 #include "network_interface.h"
 
 NetworkInterface *getNetworkStack(void *driver,
+                                  configure_feature_function_t config,
 								  driver_output_function_t out,
 								  driver_free_function_t free) __attribute__((weak));
 
@@ -15,6 +16,7 @@ void releaseNetworkStack(void *s) __attribute__((weak));
 
 
 NetworkInterface *getNetworkStack(void *driver,
+                                  configure_feature_function_t config,
 								  driver_output_function_t out,
 								  driver_free_function_t free )
 {
