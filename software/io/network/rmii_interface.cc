@@ -231,6 +231,8 @@ uint8_t rmiiTransmit(uint8_t *buffer, int pkt_len)
 }
 */
 
+#ifdef U64
+
 void RmiiInterface :: configure(int feature, void *params)
 {
     switch(feature) {
@@ -339,3 +341,11 @@ void RmiiInterface :: calculate_udp_headers()
     hardware[63] = 1;
 }
 
+#else // not U64
+
+void RmiiInterface :: configure(int feature, void *params)
+{
+
+}
+
+#endif

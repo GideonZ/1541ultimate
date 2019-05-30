@@ -130,12 +130,13 @@ NetworkLWIP :: NetworkLWIP(void *driver,
 	dhcp_enable = false;
 
 	// Disable some items if not applicable for the interface
-	if (!config) {
-        cfg->disable(CFG_VIC_UDP_IP);
-	    cfg->disable(CFG_VIC_UDP_EN);
-	}
+#ifndef U64
+    cfg->disable(CFG_VIC_UDP_IP);
+    cfg->disable(CFG_VIC_UDP_EN);
+    cfg->disable(CFG_VIC_UDP_PORT);
+#endif
 
-	NetworkInterface :: registerNetworkInterface(this);
+    NetworkInterface :: registerNetworkInterface(this);
 
 	// quick hack to perform update on the browser
 	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
