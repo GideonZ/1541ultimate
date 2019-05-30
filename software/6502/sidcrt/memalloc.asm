@@ -553,6 +553,7 @@ calcExtraPlayerLocForRelocArea
                 jsr getFreePageSize
                 cmp EXTRA_PLAYER_SIZE
                 bcc noExtraPlayer
+                beq noExtraPlayer
 
                 sec
                 sbc EXTRA_PLAYER_SIZE
@@ -571,7 +572,8 @@ loopFreePages   jsr checkIfAllFit
 checkNext       inc LOOP_INDEX
                 lda LOOP_INDEX
                 cmp LOOP_END_INDEX
-                bne loopFreePages
+                bcc loopFreePages
+                beq loopFreePages
 
 checkIfAllFit   lda PLAYER_LOCATION
                 ldx #$02            ; player size
@@ -638,6 +640,11 @@ calcExtraPlayerLocation
                 bcc noSpaceBeforeLoad
                 sta LOOP_END_INDEX
 
+                lda LOOP_INDEX
+                cmp LOOP_END_INDEX
+                beq noExtraPlayer
+                bcs noExtraPlayer
+
                 jsr findExtraPlayerLoc
 
                 lda EXTRA_PLAYER_LOCATION
@@ -688,8 +695,7 @@ epLocFound
 checkNext2      inc LOOP_INDEX
                 lda LOOP_INDEX
                 cmp LOOP_END_INDEX
-                bne loopLocations
+                bcc loopLocations
+                beq loopLocations
 
-                lda #$00
-                sta EXTRA_PLAYER_LOCATION
-                rts
+                jmp noExtraPlayer
