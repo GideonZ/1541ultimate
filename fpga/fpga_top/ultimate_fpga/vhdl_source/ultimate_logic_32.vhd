@@ -199,14 +199,17 @@ port (
     c2n_motor_in    : in  std_logic := '0';
     c2n_motor_out   : out std_logic := '0';
     
-    -- Ethernet RMII interface
+    -- Ethernet interface
     eth_clock       : in std_logic := '0';
     eth_reset       : in std_logic := '0';
-
-    rmii_crs_dv     : in  std_logic := '0';
-    rmii_rxd        : in  std_logic_vector(1 downto 0) := "00";
-    rmii_tx_en      : out std_logic;
-    rmii_txd        : out std_logic_vector(1 downto 0);
+    eth_tx_data     : out std_logic_vector(7 downto 0);
+    eth_tx_eof      : out std_logic;
+    eth_tx_valid    : out std_logic;
+    eth_tx_ready    : in  std_logic;
+    eth_rx_data     : in  std_logic_vector(7 downto 0);
+    eth_rx_sof      : in  std_logic;
+    eth_rx_eof      : in  std_logic;
+    eth_rx_valid    : in  std_logic;
 
     -- Interface to other graphical output (Full HD of course and in 3D!) ;-)
     vid_clock   : in    std_logic := '0';
@@ -1435,7 +1438,7 @@ begin
 
     r_rmii: if g_rmii generate
     begin
-        i_rmii: entity work.ethernet_rmii
+        i_rmii: entity work.ethernet_interface
         generic map (
             g_mem_tag   => c_tag_rmii
         )
@@ -1449,12 +1452,17 @@ begin
             mem_req     => mem_req_32_rmii,
             mem_resp    => mem_resp_32_rmii,
             
-            eth_clock   => eth_clock,
-            eth_reset   => eth_reset,
-            rmii_crs_dv => rmii_crs_dv,
-            rmii_rxd    => rmii_rxd,
-            rmii_tx_en  => rmii_tx_en,
-            rmii_txd    => rmii_txd );
+            eth_clock       => eth_clock,
+            eth_reset       => eth_reset,
+            eth_rx_data     => eth_rx_data,
+            eth_rx_sof      => eth_rx_sof,
+            eth_rx_eof      => eth_rx_eof,
+            eth_rx_valid    => eth_rx_valid,
+    
+            eth_tx_data     => eth_tx_data,
+            eth_tx_eof      => eth_tx_eof,
+            eth_tx_valid    => eth_tx_valid,
+            eth_tx_ready    => eth_tx_ready );
         
     end generate;
 
