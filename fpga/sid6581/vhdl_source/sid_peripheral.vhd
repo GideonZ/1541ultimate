@@ -21,7 +21,6 @@ use work.sid_io_regs_pkg.all;
 
 entity sid_peripheral is
 generic (
-    g_filter_div  : natural := 221; -- for 50 MHz
     g_8voices     : boolean := false;
     g_num_voices  : natural := 16 );
 port (
@@ -44,8 +43,10 @@ architecture structural of sid_peripheral is
     signal io_req_regs  : t_io_req;
     signal io_resp_regs : t_io_resp;
 
-    signal io_req_filt  : t_io_req;
-    signal io_resp_filt : t_io_resp;
+    signal io_req_filt0 : t_io_req;
+    signal io_resp_filt0: t_io_resp;
+    signal io_req_filt1 : t_io_req;
+    signal io_resp_filt1: t_io_resp;
 
     signal control      : t_sid_control;
 
@@ -54,28 +55,29 @@ architecture structural of sid_peripheral is
     signal sid_wdata    : std_logic_vector(7 downto 0);
     signal sid_rdata    : std_logic_vector(7 downto 0);
 begin
-    -- first we split our I/O bus in max 2 ranges, of 4K each.
+    -- first we split our I/O bus in max 4 ranges, of 2K each.
     i_split: entity work.io_bus_splitter
     generic map (
-        g_range_lo  => 12,
+        g_range_lo  => 11,
         g_range_hi  => 12,
-        g_ports     => 2 )
+        g_ports     => 3 )
     port map (
         clock    => clock,
         
         req      => io_req,
         resp     => io_resp,
         
-        reqs(0)  => io_req_regs, -- 4042000
-        reqs(1)  => io_req_filt, -- 4043000
+        reqs(0)  => io_req_regs,  -- 4042000
+        reqs(1)  => io_req_filt0, -- 4042800
+        reqs(2)  => io_req_filt1, -- 4043000
         
         resps(0) => io_resp_regs,
-        resps(1) => io_resp_filt );
+        resps(1) => io_resp_filt0,
+        resps(2) => io_resp_filt1 );
 
     i_regs: entity work.sid_io_regs
     generic map (
         g_8voices     => g_8voices,
-        g_filter_div  => g_filter_div,
         g_num_voices  => g_num_voices )
     port map (
         clock    => clock,
@@ -103,7 +105,6 @@ begin
 
     i_sid_engine: entity work.sid_top
     generic map (
-        g_filter_div  => g_filter_div,
         g_8voices     => g_8voices,
         g_num_voices  => g_num_voices )
     port map (
@@ -118,8 +119,10 @@ begin
         comb_wave_l   => control.comb_wave_left,
         comb_wave_r   => control.comb_wave_right,
 
-        io_req_filt   => io_req_filt,
-        io_resp_filt  => io_resp_filt,
+        io_req_filt0  => io_req_filt0,
+        io_resp_filt0 => io_resp_filt0,
+        io_req_filt1  => io_req_filt1,
+        io_resp_filt1 => io_resp_filt1,
     
         start_iter    => start_iter,
         sample_left   => sample_left,

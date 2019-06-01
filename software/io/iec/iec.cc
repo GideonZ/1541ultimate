@@ -48,9 +48,9 @@ extern uint32_t _ulticopy_65_size;
 #define CFG_IEC_PRINTER_IBM_CHAR   0x37
 
 static const char *en_dis[] = { "Disabled", "Enabled" };
-static const char *pr_typ[] = { "RAW", "PNG", "ASCII" };
+static const char *pr_typ[] = { "RAW", "ASCII", "PNG B&W", "PNG COLOR" };
 static const char *pr_ink[] = { "Low", "Medium", "High" };
-static const char *pr_emu[] = { "Commodore MPS", "Epson FX-80", "IBM Graphics Printer", "IBM Proprinter" };
+static const char *pr_emu[] = { "Commodore MPS", "Epson FX-80/JX-80", "IBM Graphics Printer", "IBM Proprinter" };
 static const char *pr_cch[] = { "USA/UK", "Denmark", "France/Italy", "Germany", "Spain", "Sweden", "Switzerland" };
 static const char *pr_ech[] = { "Basic", "USA", "France", "Germany", "UK", "Denmark I",
                                 "Sweden", "Italy", "Spain", "Japan", "Norway", "Denmark II" };
@@ -62,7 +62,7 @@ static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",              "%s", NULL,       0, 30, (int) FS_ROOT },
     { CFG_IEC_PRINTER_ID,       CFG_TYPE_VALUE,  "Printer Bus ID",       "%d", NULL,   4,  5, 4 },
     { CFG_IEC_PRINTER_FILENAME, CFG_TYPE_STRING, "Printer output file",  "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
-    { CFG_IEC_PRINTER_TYPE,     CFG_TYPE_ENUM,   "Printer output type",  "%s", pr_typ, 0,  2, 1 },
+    { CFG_IEC_PRINTER_TYPE,     CFG_TYPE_ENUM,   "Printer output type",  "%s", pr_typ, 0,  3, 2 },
     { CFG_IEC_PRINTER_DENSITY,  CFG_TYPE_ENUM,   "Printer ink density",  "%s", pr_ink, 0,  2, 1 },
     { CFG_IEC_PRINTER_EMULATION,CFG_TYPE_ENUM,   "Printer emulation",    "%s", pr_emu, 0,  3, 0 },
     { CFG_IEC_PRINTER_CBM_CHAR, CFG_TYPE_ENUM,   "Printer Commodore charset", "%s", pr_cch, 0,  6, 0 },
@@ -233,6 +233,9 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     ulticopyBusy = xSemaphoreCreateBinary();
     ulticopyMutex = xSemaphoreCreateMutex();
     queueGuiToIec = xQueueCreate(2, sizeof(int));
+
+    emulatedRam = new uint8_t[65536];
+    memset(emulatedRam, 0x44, 65536);
 
     xTaskCreate( IecInterface :: iec_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
 }

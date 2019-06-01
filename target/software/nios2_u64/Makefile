@@ -8,6 +8,8 @@ include ../common/environment.mk
 PRJ      =  ultimate
 FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
+BSP      = $(PATH_SW)/nios_appl_bsp
+
 SRCS_C   =	itu.c \
 			dump_hex.c \
 			assert.c \
@@ -32,7 +34,7 @@ SRCS_C   =	itu.c \
             nios_main.c \
             alt_malloc_lock.c \
             alt_do_ctors.c
-                        
+
 SRCS_CC	 =  u2p_init.cc \
 			small_printf.cc \
             stream.cc \
@@ -149,9 +151,9 @@ SRCS_CC	 =  u2p_init.cc \
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/u64
-VPATH +=	$(PATH_SW)/nios_appl_bsp
-VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
-VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
+VPATH +=	$(BSP)
+VPATH +=	$(BSP)/HAL/inc
+VPATH +=	$(BSP)/drivers/inc
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 
 #            sock_echo.c \
@@ -166,7 +168,7 @@ SRCS_ASMS = port_asm.S
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  basic.bin sidcrt.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
+SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -176,7 +178,6 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-BSP      = $(PATH_SW)/nios_appl_bsp
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a ../nios2_elf_lwip/result/liblwip.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
@@ -189,4 +190,10 @@ lodepng.o: lodepng.cc
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 $(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/muscrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/musplayer.bin::
 	make -C $(PATH_SW)/6502/sidcrt

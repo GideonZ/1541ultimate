@@ -3,6 +3,7 @@ extern "C" {
     #include "itu.h"
 	#include "dump_hex.h"
     #include "small_printf.h"
+    #include "sid_coeff.h"
 }
 #include "audio_select.h"
 #include <string.h>
@@ -28,6 +29,8 @@ AudioConfig audio_configurator;
 #define CFG_AUDIO_SID_EXT_RIGHT  0x5F
 #define CFG_AUDIO_SAMPLER_IO     0x60
 #define CFG_AUDIO_SPEAKER_EN     0x61
+#define CFG_AUDIO_SID_FILT_LEFT  0x62
+#define CFG_AUDIO_SID_FILT_RIGHT 0x63
 
 #define CFG_MIXER0_VOL        0x20
 #define CFG_MIXER1_VOL        0x21
@@ -78,12 +81,14 @@ struct t_cfg_definition audio_cfg[] = {
     { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis3,     0,  1, 1 },
     { CFG_AUDIO_SID_BASE_LEFT,  CFG_TYPE_ENUM, "SID Left Base",                "%s", sid_base,    0, 24, 0 },
     { CFG_AUDIO_SID_EXT_LEFT,   CFG_TYPE_ENUM, "SID Left Mode",                "%s", sid_voices,  0,  1, 0 },
+    { CFG_AUDIO_SID_FILT_LEFT,  CFG_TYPE_ENUM, "SID Left Filter Curve",        "%s", sidchip_sel, 0,  1, 0 },
     { CFG_AUDIO_SID_WAVE_LEFT,  CFG_TYPE_ENUM, "SID Left Combined Waveforms",  "%s", sidchip_sel, 0,  1, 0 },
     { CFG_AUDIO_SID_ENABLE_R,   CFG_TYPE_ENUM, "SID Right",                    "%s", en_dis3,     0,  1, 1 },
     { CFG_AUDIO_SID_BASE_RIGHT, CFG_TYPE_ENUM, "SID Right Base",               "%s", sid_base,    0, 24, 8 },
     { CFG_AUDIO_SID_EXT_RIGHT,  CFG_TYPE_ENUM, "SID Right Mode",               "%s", sid_voices,  0,  1, 0 },
+    { CFG_AUDIO_SID_FILT_RIGHT, CFG_TYPE_ENUM, "SID Right Filter Curve",       "%s", sidchip_sel, 0,  1, 0 },
     { CFG_AUDIO_SID_WAVE_RIGHT, CFG_TYPE_ENUM, "SID Right Combined Waveforms", "%s", sidchip_sel, 0,  1, 0 },
-//    { CFG_AUDIO_SAMPLER_IO,     CFG_TYPE_ENUM, "Map Sampler in $DF20-DFFF",    "%s", en_dis3,     0,  1, 0 },
+    //    { CFG_AUDIO_SAMPLER_IO,     CFG_TYPE_ENUM, "Map Sampler in $DF20-DFFF",    "%s", en_dis3,     0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,        0,  0, 0 } };
 
 struct t_cfg_definition audio_cfg_no_sid[] = {
@@ -107,14 +112,16 @@ static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90,
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
 struct t_cfg_definition audio_cfg_plus[] = {
-    { CFG_AUDIO_SPEAKER_EN,     CFG_TYPE_ENUM, "Built-in Speaker (Drive-A)",   "%s", speaker_vol,     0,  15, 15 },
+    { CFG_AUDIO_SPEAKER_EN,     CFG_TYPE_ENUM, "Built-in Speaker (Drive-A)",   "%s", speaker_vol, 0,  15, 15 },
     { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis3,     0,  1, 1 },
     { CFG_AUDIO_SID_BASE_LEFT,  CFG_TYPE_ENUM, "SID Left Base",                "%s", sid_base,    0, 24, 0 },
     { CFG_AUDIO_SID_EXT_LEFT,   CFG_TYPE_ENUM, "SID Left Mode",                "%s", sid_voices,  0,  1, 0 },
+    { CFG_AUDIO_SID_FILT_LEFT,  CFG_TYPE_ENUM, "SID Left Filter Curve",        "%s", sidchip_sel, 0,  1, 0 },
     { CFG_AUDIO_SID_WAVE_LEFT,  CFG_TYPE_ENUM, "SID Left Combined Waveforms",  "%s", sidchip_sel, 0,  1, 0 },
     { CFG_AUDIO_SID_ENABLE_R,   CFG_TYPE_ENUM, "SID Right",                    "%s", en_dis3,     0,  1, 1 },
     { CFG_AUDIO_SID_BASE_RIGHT, CFG_TYPE_ENUM, "SID Right Base",               "%s", sid_base,    0, 24, 8 },
     { CFG_AUDIO_SID_EXT_RIGHT,  CFG_TYPE_ENUM, "SID Right Mode",               "%s", sid_voices,  0,  1, 0 },
+    { CFG_AUDIO_SID_FILT_RIGHT, CFG_TYPE_ENUM, "SID Right Filter Curve",       "%s", sidchip_sel, 0,  1, 0 },
     { CFG_AUDIO_SID_WAVE_RIGHT, CFG_TYPE_ENUM, "SID Right Combined Waveforms", "%s", sidchip_sel, 0,  1, 0 },
 //    { CFG_AUDIO_SAMPLER_IO,     CFG_TYPE_ENUM, "Map Sampler in $DF20-DFFF",    "%s", en_dis3,     0,  1, 0 },
     { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol EmuSid1",                  "%s", volumes,      0, 30, 7 },
@@ -180,9 +187,6 @@ AudioConfig :: AudioConfig()
     effectuate_settings();
 }
     
-extern "C" {
-    void set_sid_coefficients(volatile uint8_t *);
-}
 
 void AudioConfig :: effectuate_settings()
 {
@@ -206,8 +210,17 @@ void AudioConfig :: effectuate_settings()
         ioWrite8(SID_EXTEND_RIGHT,  cfg->get_value(CFG_AUDIO_SID_EXT_RIGHT));
         ioWrite8(SID_COMBSEL_RIGHT, cfg->get_value(CFG_AUDIO_SID_WAVE_RIGHT));
 
-        set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x1000));
-//        set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x1800));
+        if (cfg->get_value(CFG_AUDIO_SID_FILT_LEFT)) {
+            set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x0800), sid8580_filter_coefficients, 1, 4);
+        } else {
+            set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x0800), sid_curve_original, 1, 1);
+        }
+
+        if (cfg->get_value(CFG_AUDIO_SID_FILT_RIGHT)) {
+            set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x1000), sid8580_filter_coefficients, 1, 4);
+        } else {
+            set_sid_coefficients((volatile uint8_t *)(SID_BASE + 0x1000), sid_curve_original, 1, 1);
+        }
     }
 
     if(getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {

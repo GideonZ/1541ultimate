@@ -450,8 +450,9 @@ int IecPrinter::set_ibm_charset(int d)
 *                                                                       *
 *    d: (int) charset                                                   *
 *         0 = RAW                                                       *
-*         1 = PNG (printer emulation)                                   *
-*         2 = ASCII                                                     *
+*         1 = ASCII                                                     *
+*         2 = PNG (greyscale printer emulation)                         *
+*         3 = PNG (color printer emulation)                             *
 *                                                                       *
 *-----------------------------------------------------------------------*
 * Outputs:                                                              *
@@ -470,12 +471,18 @@ int IecPrinter::set_output_type(int t)
             new_output_type = PRINTER_RAW_OUTPUT;
             break;
 
-        case 1: // PNG output format
-            new_output_type = PRINTER_PNG_OUTPUT;
+        case 1: // ASCII output format
+            new_output_type = PRINTER_ASCII_OUTPUT;
             break;
 
-        case 2: // ASCII output format
-            new_output_type = PRINTER_ASCII_OUTPUT;
+        case 2: // PNG grey output format
+            new_output_type = PRINTER_PNG_OUTPUT;
+            mps->setColorMode(false);
+            break;
+
+        case 3: // PNG color output format
+            new_output_type = PRINTER_PNG_OUTPUT;
+            mps->setColorMode(true);
             break;
     }
 
