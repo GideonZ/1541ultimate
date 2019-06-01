@@ -85,7 +85,9 @@ BITGEN_FLAGS     := 	-w -d \
 ## (for example: vhdl,work,../../dummy.vhdl)
 ################################################################################
 
-ULTIMATE_FPGA := ../../fpga
+ULTIMATE_FPGA   := ../../fpga
+ULTIMATE_64_CPU := ../../../ult64/proglogic/c64
+
 include ultimate_logic2.inc
 
 SYNTH_PROJ	:= 	$(ALL_ULTIMATE_LOGIC) \
