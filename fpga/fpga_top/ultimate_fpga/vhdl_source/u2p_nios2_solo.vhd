@@ -274,6 +274,16 @@ architecture rtl of u2p_nios_solo is
     signal ult_samp_r       : signed(17 downto 0);
     signal ult_sid_1        : signed(17 downto 0);
     signal ult_sid_2        : signed(17 downto 0);
+
+    signal eth_tx_data   : std_logic_vector(7 downto 0);
+    signal eth_tx_last   : std_logic;
+    signal eth_tx_valid  : std_logic;
+    signal eth_tx_ready  : std_logic := '1';
+
+    signal eth_rx_data   : std_logic_vector(7 downto 0);
+    signal eth_rx_sof    : std_logic;
+    signal eth_rx_eof    : std_logic;
+    signal eth_rx_valid  : std_logic;
 begin
     process(RMII_REFCLK)
     begin
@@ -633,12 +643,16 @@ begin
         c2n_motor_out  => c2n_motor_out, 
         
         -- Ethernet Interface (RMII)
-        eth_clock   => RMII_REFCLK, 
-        eth_reset   => eth_reset,
-        rmii_crs_dv => RMII_CRS_DV, 
-        rmii_rxd    => RMII_RX_DATA,
-        rmii_tx_en  => RMII_TX_EN,
-        rmii_txd    => RMII_TX_DATA,
+        eth_clock    => RMII_REFCLK, 
+        eth_reset    => eth_reset,
+        eth_rx_data  => eth_rx_data,
+        eth_rx_sof   => eth_rx_sof,
+        eth_rx_eof   => eth_rx_eof,
+        eth_rx_valid => eth_rx_valid,
+        eth_tx_data  => eth_tx_data,
+        eth_tx_eof   => eth_tx_last,
+        eth_tx_valid => eth_tx_valid,
+        eth_tx_ready => eth_tx_ready,
 
         -- Buttons
         sw_trigger  => sw_trigger,
@@ -798,5 +812,27 @@ begin
     end block;
     
     SLOT_BUFFER_ENn <= not buffer_en;
+
+    -- Transceiver
+    i_rmii: entity work.rmii_transceiver
+    port map (
+        clock           => RMII_REFCLK,
+        reset           => eth_reset,
+        rmii_crs_dv     => RMII_CRS_DV, 
+        rmii_rxd        => RMII_RX_DATA,
+        rmii_tx_en      => RMII_TX_EN,
+        rmii_txd        => RMII_TX_DATA,
+        
+        eth_rx_data     => eth_rx_data,
+        eth_rx_sof      => eth_rx_sof,
+        eth_rx_eof      => eth_rx_eof,
+        eth_rx_valid    => eth_rx_valid,
+
+        eth_tx_data     => eth_tx_data,
+        eth_tx_eof      => eth_tx_last,
+        eth_tx_valid    => eth_tx_valid,
+        eth_tx_ready    => eth_tx_ready,
+        ten_meg_mode    => '0'   );
+
 end architecture;
 
