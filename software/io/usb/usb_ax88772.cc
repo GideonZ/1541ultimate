@@ -195,7 +195,7 @@ void UsbAx88772Driver :: install(UsbInterface *intf)
 
 #endif
 
-    netstack = getNetworkStack(this, UsbAx88772Driver_output, UsbAx88772Driver_free_buffer);
+    netstack = getNetworkStack(this, NULL, UsbAx88772Driver_output, UsbAx88772Driver_free_buffer);
     if(!netstack) {
     	puts("** Warning! No network stack available!");
     }

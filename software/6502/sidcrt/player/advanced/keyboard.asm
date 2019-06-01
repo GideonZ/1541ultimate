@@ -14,6 +14,7 @@
 ;     1-0 for selecting sub tune 1 to 10
 ;     + and - for increasing/decreasing the song selection
 ;     runstop for going back to Ultimate menu
+;     space for pausing/resuming playback
 ;
 ; Use 64tass version 1.53.1515 or higher to assemble the code
 ;-----------------------------------------------------------------------
@@ -45,9 +46,13 @@ keyPressed      cmp currentKey,x
 
                 cpx #$06            ; check for row 7 (which is not handled)
                 beq skipKeyCheck
-                cpx #$05
-                beq row6
 
+                cpx #$01
+                bne +
+                jsr handleRow2
++
+                cpx #$05
+                beq handleRow6
                 cpx #$07            ; check for runstop to exit player, <- key to fastforward tune and space to pause
                 bne checkNumKeys
 
@@ -66,6 +71,8 @@ noRunStop
 
                 lda pauseTune
                 sta $d418           ; toggle volume off
+sid2            sta $d418
+sid3            sta $d418
                 eor #$1f
                 sta pauseTune
 pause           sta @w $0000
@@ -76,19 +83,19 @@ checkOtherKeys  cmp #$fd
                 ldy #$01
                 sty fastForwardOn
 fastForward     sty @w $0000
-                rts
+skipKeyCheck    rts
 
 checkNumKeys    ldy pauseTune
                 bne skipKeyCheck
 
-                cmp #$f6
-                beq skipKeyCheck
                 ; handle keys 0-9
                 tay
-                and #$f6            ; check for values $fe and $f7
-                cmp #$f6
+                and #$7f
+                cmp #$7e
+                beq +
+                cmp #$77
                 bne skipKeyCheck
-
++
                 txa
                 asl
                 tax
@@ -101,14 +108,24 @@ checkNumKeys    ldy pauseTune
                 bcs skipKeyCheck
                 jmp setCurrentSong
 
-row6            ldy pauseTune
+handleRow2      pha
+                and #$7f
+                cmp #$5f            ; check for S and shift-S key
+                bne +
+                lda $d011           ; toggle screen on/off
+                eor #$10
+                sta $d011
++               pla
+                rts
+
+handleRow6      ldy pauseTune
                 bne skipKeyCheck
 
                 cmp #$fe
                 beq plusKey
                 cmp #$f7
                 beq minKey
-skipKeyCheck    rts
+                rts
 
 minKey          dec currentSong
                 lda currentSong

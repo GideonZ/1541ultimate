@@ -12,28 +12,37 @@ class FileTypeSID : public FileType
 
 	File *file;
 	uint8_t sid_header[0x80];
+	int header_version;
 	uint16_t song;
+	uint16_t default_song;
 	uint16_t start;
 	uint16_t end;
-	uint16_t player;
-	uint32_t offset;
+	uint16_t header_location;
+	uint32_t data_offset;
 	uint16_t flags;
 	bool header_valid;
-	int numberOfSongs;
+	int number_of_songs;
+	bool mus_file;
+	bool sid_file;
 
-	int  prepare(bool);
+	int prepare(bool);
 	void load(void);
+	int loadFile(File *file, int offset);
+	bool tryLoadStereoMus(int offset);
     int execute(SubsysCommand *cmd);
     static int execute_st(SubsysCommand *cmd);
-    int   readHeader(void);
-    void  showInfo(void);
-    void  readSongLengths(void);
-    bool  ConfigSIDs(void);
+    int readHeader(void);
+	void processHeader(void);
+	int createMusHeader(void);
+    void showInfo(void);
+    void readSongLengths(void);
+	void configureMusEnv(int offsetLoadEnd);
+    bool ConfigSIDs(void);
 public:
     FileTypeSID(BrowsableDirEntry *n);
     ~FileTypeSID();
 
-    int   fetch_context_items(IndexedList<Action *> &list);
+    int fetch_context_items(IndexedList<Action *> &list);
     static FileType *test_type(BrowsableDirEntry *obj);
 };
 

@@ -19,7 +19,6 @@ use work.io_bus_pkg.all;
 
 entity sid_top is
 generic (
-    g_filter_div  : natural := 221; -- for 50 MHz
     g_8voices     : boolean := false;
     g_num_voices  : natural := 16 );
 port (
@@ -34,8 +33,10 @@ port (
     comb_wave_l   : in  std_logic := '0';
     comb_wave_r   : in  std_logic := '0';
 
-    io_req_filt   : in  t_io_req := c_io_req_init;
-    io_resp_filt  : out t_io_resp;
+    io_req_filt0  : in  t_io_req := c_io_req_init;
+    io_resp_filt0 : out t_io_resp;
+    io_req_filt1  : in  t_io_req := c_io_req_init;
+    io_resp_filt1 : out t_io_resp;
 
     start_iter    : in  std_logic;
     sample_left   : out signed(17 downto 0);
@@ -296,14 +297,12 @@ begin
 
 
     i_filt_left: entity work.sid_filter
-    generic map (
-        g_divider   => g_filter_div )
     port map (
         clock       => clock,
         reset       => reset,
         
-        io_req      => io_req_filt,
-        io_resp     => io_resp_filt,
+        io_req      => io_req_filt0,
+        io_resp     => io_resp_filt0,
         
         filt_co     => filter_co_l,
         filt_res    => filter_res_l,
@@ -349,14 +348,12 @@ begin
 
     r_right_filter: if g_num_voices > 8 generate
         i_filt: entity work.sid_filter
-        generic map (
-            g_divider   => g_filter_div )
         port map (
             clock       => clock,
             reset       => reset,
             
-            io_req      => io_req_filt,
-            io_resp     => open, -- write only
+            io_req      => io_req_filt1,
+            io_resp     => io_resp_filt1,
 
             filt_co     => filter_co_r,
             filt_res    => filter_res_r,

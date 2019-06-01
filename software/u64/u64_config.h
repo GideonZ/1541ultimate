@@ -22,8 +22,8 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 
 	uint8_t GetSidType(int slot);
     void SetSidType(int slot, uint8_t sidType);
-    bool SetSidAddress(int slot, uint8_t actualType, uint8_t base);
-    bool MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any);
+    bool SetSidAddress(int slot, bool single, uint8_t actualType, uint8_t base);
+    bool MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any);
     void SetMixerAutoSid(uint8_t *slots, int count);
     static void reset_task(void *a);
     void run_reset_task();
@@ -42,6 +42,7 @@ public:
     static void setMixer(ConfigItem *it);
     static void setFilter(ConfigItem *it);
     static void setSidEmuParams(ConfigItem *it);
+    static void setLedSelector(ConfigItem *it);
 
     bool SidAutoConfig(int count, t_sid_definition *requested);
 };
