@@ -70,7 +70,7 @@ configureSidFx  pha
 
 ; setSidFxModel
 ;   input:
-;   - AC = required SID model
+;   - AC = required SID model or stereo config (0 = 8580, 1 = 6581, 2 = unknown, 4 = SID2@D420, 5 = SID2@D500, 6 = SID2@DE00)
 ;   - XR = SID model first SID (0 = 8580, 1 = 6581, 2 = unknown)
 ;   - YR = switch 1 position (0 = center (software control), 1 = left (SID1), 2 = right (SID2))
 ;   output:
@@ -84,6 +84,10 @@ setSidFxModel   cpy #$00                ; is switch set to software control?
                 bne setPlaybackMode     ; if bit 2 is set, then set the SIDFX to stereo
 
                 cpx TEMP                ; is SID#1 the required SID model?
+                beq switchToSid1
+
+                lda TEMP
+                cmp #$02                ; when SID model is unknown, use SID#1 no matter what the configuration is
                 beq switchToSid1
 
                 ; switch to SID#2

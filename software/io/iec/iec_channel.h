@@ -368,6 +368,10 @@ class IecCommandChannel : public IecChannel
 {
 //    BYTE error_buf[40];
     int track_counter;
+    void mem_read(void);
+    void mem_write(void);
+    void renam(command_t& command);
+    void copy(command_t& command);
 public:
     IecCommandChannel(IecInterface *intf, int ch);
     virtual ~IecCommandChannel();
@@ -375,8 +379,6 @@ public:
     int pop_data(void);
     int push_data(uint8_t b);
     void exec_command(command_t &command);
-    void renam(command_t& command);
-    void copy(command_t& command);
     int push_command(uint8_t b);
 };
 

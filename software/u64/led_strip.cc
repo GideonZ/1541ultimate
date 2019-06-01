@@ -50,8 +50,10 @@ void LedStrip :: task(void *a)
             LEDSTRIP_LEN = 25;
             start ++;
             vTaskDelay(200);
+            U64_LEDSTRIP_EN = 0;
             break;
         case 1:
+            U64_LEDSTRIP_EN = 1;
             LEDSTRIP_DATA[offset++] = 0xE0 | strip->intensity;
             LEDSTRIP_DATA[offset++] = strip->blue;
             LEDSTRIP_DATA[offset++] = strip->green;
@@ -62,6 +64,7 @@ void LedStrip :: task(void *a)
             vTaskDelay(50);
             break;
         case 2:
+            U64_LEDSTRIP_EN = 1;
             LEDSTRIP_DATA[offset++] = 0xE0 | strip->intensity;
             LEDSTRIP_DATA[offset++] = C64_VOICE1_ADSR;
             LEDSTRIP_DATA[offset++] = C64_VOICE2_ADSR;
@@ -73,6 +76,7 @@ void LedStrip :: task(void *a)
             vTaskDelay(7);
             break;
         case 3:
+            U64_LEDSTRIP_EN = 1;
             LEDSTRIP_DATA[offset++] = 0xE0 | strip->intensity;
             LEDSTRIP_DATA[offset++] = C64_VOICE1_ADSR;
             LEDSTRIP_DATA[offset++] = C64_VOICE2_ADSR;
@@ -83,6 +87,7 @@ void LedStrip :: task(void *a)
             vTaskDelay(3);
             break;
         case 4:
+            U64_LEDSTRIP_EN = 1;
             LEDSTRIP_DATA[offset++] = 0xE0 | strip->intensity;
             LEDSTRIP_DATA[offset++] = C64_VOICE1_ADSR;
             LEDSTRIP_DATA[offset++] = C64_VOICE2_ADSR;
@@ -107,7 +112,6 @@ void LedStrip :: effectuate_settings(void)
     green = cfg->get_value(CFG_LED_GREEN);
     blue  = cfg->get_value(CFG_LED_BLUE);
 
-    U64_LEDSTRIP_EN = (mode == 0) ? 0 : 1;
     U64_PWM_DUTY = 0xC0;
 }
 

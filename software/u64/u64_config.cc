@@ -55,6 +55,10 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_EMUSID2_WAVES     0x17
 #define CFG_EMUSID1_RESONANCE 0x18
 #define CFG_EMUSID2_RESONANCE 0x19
+#define CFG_SID1_SHUNT        0x1A
+#define CFG_SID2_SHUNT        0x1B
+#define CFG_SID1_CAPS         0x1C
+#define CFG_SID2_CAPS         0x1D
 
 #define CFG_MIXER0_VOL        0x20
 #define CFG_MIXER1_VOL        0x21
@@ -79,6 +83,9 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_MIXER9_PAN        0x39
 
 #define CFG_SYSTEM_MODE       0x41
+#define CFG_LED_SELECT_0      0x42
+#define CFG_LED_SELECT_1      0x43
+#define CFG_SPEAKER_VOL       0x44
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -104,6 +111,8 @@ const char *u64_sid_base[] = { "$D400-$D7FF", // 10 bits
 		                       "$D500-$D5FF", // 8 bits
 		                       "$D600-$D6FF", // 8 bits
 		                       "$D700-$D7FF", // 8 bits
+		                       "$DE00-$DEFF", // 8 bits
+		                       "$DF00-$DFFF", // 8 bits
 		                   "$D400", "$D420", "$D440", "$D480", "$D500", "$D600", "$D700",
                            "$DE00", "$DE20", "$DE40", "$DE60",
                            "$DE80", "$DEA0", "$DEC0", "$DEE0",
@@ -128,13 +137,13 @@ const char *scan_modes[] = {
 	"720(1440)x480 54MHz",
 };
 
-uint8_t u64_sid_offsets[] = { 0x40, 0x40, 0x60, 0x40, 0x50, 0x60, 0x70,
+uint8_t u64_sid_offsets[] = { 0x40, 0x40, 0x60, 0x40, 0x50, 0x60, 0x70, 0xE0, 0xF0,
 						  0x40, 0x42, 0x44, 0x48, 0x50, 0x60, 0x70,
 						  0xE0, 0xE2, 0xE4, 0xE6, 0xE8, 0xEA, 0xEC, 0xEE,
 						  0xF0, 0xF2, 0xF4, 0xF6, 0xF8, 0xFA, 0xFC, 0xFE,
 						  };
 
-uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0,
+uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0,
 						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
@@ -142,14 +151,21 @@ uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0,
 
 static const char *stereo_addr[] = { "A5", "A8" };
 static const char *en_dis4[] = { "Disabled", "Enabled" };
+static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
 static const char *sid_types[] = { "None", "6581", "8580", "SidFX", "fpgaSID" };
+static const char *sid_shunt[] = { "Off", "On" };
+static const char *sid_caps[] = { "470 pF", "22 nF" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
 static const char *filter_res[] = { "Low", "High" };
 static const char *comb_wave[] = { "6581", "8580" };
+static const char *ledselects[] = { "On", "Off", "Drive A Pwr", "DrvAPwr + DrvBPwr", "Drive A Act", "DrvAAct + DrvBAct",
+                                    "DrvAPwr ^ DrvAAct", "USB Activity", "Any Activity", "!(DrvAAct)", "!(DrvAAct+DrvBAct)",
+                                    "!(USB Act)", "!(Any Act)", "IRQ Line", "!(IRQ Line)" };
+const char *speaker_vol[] = { "Disabled", "Vol 1", "Vol 2", "Vol 3", "Vol 4", "Vol 5", "Vol 6", "Vol 7", "Vol 8", "Vol 9", "Vol 10", "Vol 11", "Vol 12", "Vol 13", "Vol 14", "Vol 15" };
 
 static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
                                  "-2 dB", "-3 dB", "-4 dB", "-5 dB", "-6 dB", "-7 dB", "-8 dB", "-9 dB",
@@ -188,21 +204,25 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SCANLINES,    		CFG_TYPE_ENUM, "HDMI Scan lines",          	   "%s", en_dis4,      0,  1, 0 },
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  1, 0 },
-    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
+//    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video",                 "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
     { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  2, 0 },
     { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  2, 0 },
+    { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
+    { CFG_SID2_SHUNT,           CFG_TYPE_ENUM, "SID Socket 2 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
+    { CFG_SID1_CAPS,            CFG_TYPE_ENUM, "SID Socket 1 Capacitors",      "%s", sid_caps,     0,  1, 0 },
+    { CFG_SID2_CAPS,            CFG_TYPE_ENUM, "SID Socket 2 Capacitors",      "%s", sid_caps,     0,  1, 0 },
     { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis4,      0,  1, 1 },
     { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
-    { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 29, 0 },
-    { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 29, 0 },
+    { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 31, 0 },
+    { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 31, 0 },
     { CFG_PADDLE_EN,			CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
     { CFG_STEREO_DIFF,			CFG_TYPE_ENUM, "Ext StereoSID addrline",       "%s", stereo_addr,  0,  1, 0 },
-    { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 23, 0 },
-    { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 23, 0 },
+    { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 31, 0 },
+    { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 31, 0 },
     { CFG_EMUSID1_FILTER,       CFG_TYPE_ENUM, "UltiSID 1 Filter Curve",       "%s", filter_sel,   0,  6, 0 },
     { CFG_EMUSID2_FILTER,       CFG_TYPE_ENUM, "UltiSID 2 Filter Curve",       "%s", filter_sel,   0,  6, 0 },
     { CFG_EMUSID1_RESONANCE,    CFG_TYPE_ENUM, "UltiSID 1 Filter Resonance",   "%s", filter_res,   0,  1, 0 },
@@ -210,7 +230,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_EMUSID1_WAVES,        CFG_TYPE_ENUM, "UltiSID 1 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
     { CFG_EMUSID2_WAVES,        CFG_TYPE_ENUM, "UltiSID 2 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
 #if DEVELOPER
-    { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis4,      0,  1, 0 },
+    { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
     //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
     { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 7 },
@@ -233,6 +253,9 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_MIXER7_PAN,           CFG_TYPE_ENUM, "Pan Drive 2",                  "%s", pannings,     0, 10, 7 },
     { CFG_MIXER8_PAN,           CFG_TYPE_ENUM, "Pan Tape Read",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
+    { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 14, 0 },
+    { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 14, 4 },
+    { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
@@ -265,9 +288,19 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_EMUSID2_RESONANCE, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_EMUSID1_WAVES, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_EMUSID2_WAVES, U64Config :: setSidEmuParams);
+        cfg->set_change_hook(CFG_LED_SELECT_0, U64Config :: setLedSelector);
+        cfg->set_change_hook(CFG_LED_SELECT_1, U64Config :: setLedSelector);
 		effectuate_settings();
 	}
 	fm = FileManager :: getFileManager();
+
+    uint8_t rev = (U2PIO_BOARDREV >> 3);
+    if (rev != 0x13) {
+        cfg->disable(CFG_SID1_SHUNT);
+        cfg->disable(CFG_SID2_SHUNT);
+        cfg->disable(CFG_SID1_CAPS);
+        cfg->disable(CFG_SID2_CAPS);
+    }
 
 	skipReset = false;
     xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
@@ -307,7 +340,48 @@ void U64Config :: effectuate_settings()
     if(!cfg)
         return;
 
-    U2PIO_SPEAKER_EN = 0x1F;
+    uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
+
+    U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
+
+    {
+        uint8_t typ = cfg->get_value(CFG_SID1_TYPE); // 0 = none, 1 = 6581, 2 = 8580
+        uint8_t shu = cfg->get_value(CFG_SID1_SHUNT);
+        uint8_t cap = 1-cfg->get_value(CFG_SID1_CAPS);
+        uint8_t reg;
+        switch (typ) {
+            case 1: reg = 3; break;
+            case 2: reg = 2; break;
+            default: reg = 0; break;
+        }
+        // bit 0 = voltage
+        // bit 1 = regulator enable
+        // bit 2 = shunt
+        // bit 3 = caps
+        uint8_t value = reg | (shu << 2) | (cap << 3);
+        //C64_PLD_SIDCTRL1 = value | 0xB0;
+        C64_PLD_SIDCTRL1 = value | 0x50;
+    }
+
+    {
+        uint8_t typ = cfg->get_value(CFG_SID2_TYPE); // 0 = none, 1 = 6581, 2 = 8580
+        uint8_t shu = cfg->get_value(CFG_SID2_SHUNT);
+        uint8_t cap = 1-cfg->get_value(CFG_SID2_CAPS);
+        uint8_t reg;
+        switch (typ) {
+            case 1: reg = 3; break;
+            case 2: reg = 2; break;
+            default: reg = 0; break;
+        }
+        // bit 0 = voltage
+        // bit 1 = regulator enable
+        // bit 2 = shunt
+        // bit 3 = caps
+        uint8_t value = reg | (shu << 2) | (cap << 3);
+        C64_PLD_SIDCTRL2 = value | 0xB0;
+        //C64_PLD_SIDCTRL2 = value | 0x50;
+    }
+
     C64_SCANLINES    =  cfg->get_value(CFG_SCANLINES);
     C64_PADDLE_EN    =  cfg->get_value(CFG_PADDLE_EN);
     C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK = cfg->get_value(CFG_STEREO_DIFF);
@@ -325,6 +399,7 @@ void U64Config :: effectuate_settings()
     C64_EMUSID2_MASK =  C64_EMUSID2_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)];
     U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
+
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
         C64_LUMA_DELAY   = -chromaDelay;
@@ -379,6 +454,7 @@ void U64Config :: effectuate_settings()
     setSidEmuParams(cfg->find_item(CFG_EMUSID2_RESONANCE));
     setSidEmuParams(cfg->find_item(CFG_EMUSID1_WAVES));
     setSidEmuParams(cfg->find_item(CFG_EMUSID2_WAVES));
+    setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
 
 /*
     printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s)  Emu1: %02X/%02X  Emu2: %02X/%02X\n",
@@ -462,6 +538,16 @@ void U64Config :: setScanMode(ConfigItem *it)
 	if(it) {
 //		SetScanMode(it->value);
 	}
+}
+
+void U64Config :: setLedSelector(ConfigItem *it)
+{
+    if(it) {
+        ConfigStore *cfg = it->store;
+        uint8_t sel0 = (uint8_t)cfg->get_value(CFG_LED_SELECT_0);
+        uint8_t sel1 = (uint8_t)cfg->get_value(CFG_LED_SELECT_1);
+        U64_CASELED_SELECT = (sel1 << 4) | sel0;
+    }
 }
 
 void U64Config :: setSidEmuParams(ConfigItem *it)
@@ -650,7 +736,7 @@ uint8_t U64Config :: GetSidType(int slot)
     return 0;
 }
 
-bool U64Config :: SetSidAddress(int slot, uint8_t actualType, uint8_t base)
+bool U64Config :: SetSidAddress(int slot, bool single, uint8_t actualType, uint8_t base)
 {
     uint8_t other = 0x00;
     if (actualType >= 3) {
@@ -664,6 +750,10 @@ bool U64Config :: SetSidAddress(int slot, uint8_t actualType, uint8_t base)
         default:
             break;
         }
+    }
+    // Kludge: If this is the only SID, just enable all address bits
+    if (single) {
+        other = 0x3F;
     }
 
     if (slot < 4) { // for the first four SIDs, we can set the base address
@@ -714,7 +804,7 @@ void U64Config :: SetSidType(int slot, uint8_t sidType)
     printf("Set SID type of logical SID %d to %d.\n", slot, sidType);
 }
 
-bool U64Config :: MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any)
+bool U64Config :: MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any)
 {
     // definition of SID slots:
     // 0 : Socket 1
@@ -732,7 +822,7 @@ bool U64Config :: MapSid(int index, uint16_t& mappedSids, uint8_t *mappedOnSlot,
         }
         uint8_t actualType = GetSidType(i);
         if ((actualType & requested->sidType) || (any && actualType)) { //  bit mask != 0
-            if (SetSidAddress(i, actualType, requested->baseAddress)) {
+            if (SetSidAddress(i, (totalCount == 1), actualType, requested->baseAddress)) {
                 mappedSids |= (1 << i);
                 mappedOnSlot[index] = i;
                 printf("Trying to map SID %d (type %s) on logical SID %d (type %s), at address $D%02x0\n", index,
@@ -808,7 +898,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
     mappedSids = 0;
     bool failed = false;
     for (int i=0; i < count; i++) {
-        if (!MapSid(i, mappedSids, mappedOnSlot, &requested[i], false)) {
+        if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], false)) {
             failed = true;
         }
     }
@@ -819,7 +909,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         memset(mappedOnSlot, 0, 8);
         failed = false;
         for (int i=count-1; i >= 0; i--) {
-            if (!MapSid(i, mappedSids, mappedOnSlot, &requested[i], false)) {
+            if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], false)) {
                 failed = true;
             }
         }
@@ -831,7 +921,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         memset(mappedOnSlot, 0, 8);
         failed = false;
         for (int i=0; i < count; i++) {
-            if (!MapSid(i, mappedSids, mappedOnSlot, &requested[i], true)) {
+            if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], true)) {
                 failed = true;
             }
         }
