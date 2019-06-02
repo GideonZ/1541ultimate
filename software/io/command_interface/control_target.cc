@@ -139,6 +139,84 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             *reply  = &c_message_empty;
             *status = &c_status_ok;
             break;
+        case CTRL_CMD_ENABLE_DISK_A: {
+            if (c1541_A) {
+                c1541_A->drive_power(true);
+            }
+            *reply = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+        }
+        case CTRL_CMD_DISABLE_DISK_A: {
+            if (c1541_A) {
+                c1541_A->drive_power(false);
+            }
+            *reply = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+        }
+        case CTRL_CMD_ENABLE_DISK_B: {
+            if (c1541_B) {
+                c1541_B->drive_power(true);
+            }
+            *reply = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+        }
+        case CTRL_CMD_DISABLE_DISK_B: {
+            if (c1541_B) {
+                c1541_B->drive_power(false);
+            }
+            *reply = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+        }
+        case CTRL_CMD_DISK_A_POWER: {
+            bool drivepower = false;
+
+            if (c1541_A) {
+                drivepower = c1541_A->get_drive_power();
+            }
+
+            if(drivepower == false)
+            {
+                sprintf((char*) data_message.message,"off");
+            }
+            else
+            {
+                sprintf((char*) data_message.message,"on ");
+            }
+                
+                
+            data_message.length = 3;
+            *status = &c_status_ok;
+            data_message.last_part = true;
+            *reply = &data_message;
+            break;
+        }
+        case CTRL_CMD_DISK_B_POWER: {
+            bool drivepower = false;
+
+            if (c1541_B) {
+                drivepower = c1541_B->get_drive_power();
+            }
+
+            if(drivepower == false)
+            {
+                sprintf((char*) data_message.message,"off");
+            }
+            else
+            {
+                sprintf((char*) data_message.message,"on ");
+            }
+                
+                
+            data_message.length = 3;
+            *status = &c_status_ok;
+            data_message.last_part = true;
+            *reply = &data_message;
+            break;
+        }
 #ifdef U64
         case CTRL_CMD_U64_SAVEMEM:
             printf("U64 Save C64 Memory\n");

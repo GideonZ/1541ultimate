@@ -605,7 +605,6 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         }
         break;
     }
-
     default:
         *reply = &c_message_empty;
         *status = &c_status_unknown_command;
