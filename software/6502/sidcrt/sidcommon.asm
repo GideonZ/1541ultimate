@@ -1546,11 +1546,11 @@ continueInitPlayer
 PALLbl          .text '/ PAL', 0
 NTSCLbl         .text '/ NTSC', 0
 PALNTSCLbl      .text '/ PAL / NTSC', 0
-UnknownLbl      .text '/ UNKOWN', 0
+UnknownLbl      .text '/ UNKNOWN', 0
 S6581Lbl        .text '6581', 0
 S8580Lbl        .text '8580', 0
 S65818580Lbl    .text '6581 / 8580', 0
-SUnknownLbl     .text 'UNKOWN', 0
+SUnknownLbl     .text 'UNKNOWN', 0
 
                 ;     'ÀÁÂÃÄÅÆàáâãäåæÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖØòóôõöøÙÚÛÜùúûüÇçÑñÝŸýÿß'
 PETSCII         .text 'AAAAAAAAAAAAAAEEEEEEEEIIIIIIIIOOOOOOOOOOOOUUUUUUUUCCNNYYYYB'
