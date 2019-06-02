@@ -3,6 +3,7 @@
 
 #include "integer.h"
 #include "command_intf.h"
+#include "c1541.h"
 
 #define CTRL_CMD_IDENTIFY       0x01
 #define CTRL_CMD_READ_RTC		0x02
@@ -13,6 +14,12 @@
 #define CTRL_CMD_DECODE_TRACK   0x11
 #define CTRL_CMD_ENCODE_TRACK   0x12
 #define CTRL_CMD_GET_HWINFO     0x28
+#define CTRL_CMD_ENABLE_DISK_A  0x30
+#define CTRL_CMD_DISABLE_DISK_A 0x31
+#define CTRL_CMD_ENABLE_DISK_B  0x32
+#define CTRL_CMD_DISABLE_DISK_B 0x33
+#define CTRL_CMD_DISK_A_POWER   0x34
+#define CTRL_CMD_DISK_B_POWER   0x35
 
 class ControlTarget : CommandTarget
 {
