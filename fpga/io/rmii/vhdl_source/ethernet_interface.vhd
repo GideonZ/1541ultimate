@@ -3,7 +3,7 @@
 -- (C) COPYRIGHT Gideon's Logic Architectures
 --
 -------------------------------------------------------------------------------
--- Title      : ethernet_rmii
+-- Title      : ethernet_interface
 -- Author     : Gideon Zweijtzer <gideon.zweijtzer@gmail.com>
 -------------------------------------------------------------------------------
 -- Description: Filter block for ethernet frames
@@ -18,7 +18,7 @@ library work;
     use work.block_bus_pkg.all;
     use work.mem_bus_pkg.all;
 
-entity ethernet_rmii is
+entity ethernet_interface is
 generic (
     g_mem_tag       : std_logic_vector(7 downto 0) := X"12" );
 port (
@@ -39,25 +39,20 @@ port (
     eth_clock       : in std_logic;
     eth_reset       : in std_logic;
 
-    rmii_crs_dv     : in  std_logic;
-    rmii_rxd        : in  std_logic_vector(1 downto 0);
-    rmii_tx_en      : out std_logic;
-    rmii_txd        : out std_logic_vector(1 downto 0) );
+    eth_tx_data     : out std_logic_vector(7 downto 0);
+    eth_tx_sof      : out std_logic := '0';
+    eth_tx_eof      : out std_logic;
+    eth_tx_valid    : out std_logic;
+    eth_tx_ready    : in  std_logic;
+
+    eth_rx_data     : in  std_logic_vector(7 downto 0);
+    eth_rx_sof      : in  std_logic;
+    eth_rx_eof      : in  std_logic;
+    eth_rx_valid    : in  std_logic );
 
 end entity;
 
-architecture gideon of ethernet_rmii is
-    signal eth_tx_data     : std_logic_vector(7 downto 0);
-    signal eth_tx_sof      : std_logic := '0';
-    signal eth_tx_eof      : std_logic;
-    signal eth_tx_valid    : std_logic;
-    signal eth_tx_ready    : std_logic;
-    signal eth_rx_data     : std_logic_vector(7 downto 0);
-    signal eth_rx_sof      : std_logic;
-    signal eth_rx_eof      : std_logic;
-    signal eth_rx_valid    : std_logic;
-    signal ten_meg_mode    : std_logic := '0';
-
+architecture gideon of ethernet_interface is
     signal io_req_free     : t_io_req;
     signal io_resp_free    : t_io_resp;
     signal io_req_rx       : t_io_req;
@@ -75,24 +70,6 @@ architecture gideon of ethernet_rmii is
     signal mem_resp_rx     : t_mem_resp_32;
 
 begin
-    i_rmii: entity work.rmii_transceiver
-    port map (
-        clock           => eth_clock,
-        reset           => eth_reset,
-        rmii_crs_dv     => rmii_crs_dv,
-        rmii_rxd        => rmii_rxd,
-        rmii_tx_en      => rmii_tx_en,
-        rmii_txd        => rmii_txd,
-        eth_rx_data     => eth_rx_data,
-        eth_rx_sof      => eth_rx_sof,
-        eth_rx_eof      => eth_rx_eof,
-        eth_rx_valid    => eth_rx_valid,
-        eth_tx_data     => eth_tx_data,
-        eth_tx_eof      => eth_tx_eof,
-        eth_tx_valid    => eth_tx_valid,
-        eth_tx_ready    => eth_tx_ready,
-        ten_meg_mode    => ten_meg_mode   );
-    
     i_split: entity work.io_bus_splitter
     generic map (
         g_range_lo => 4,

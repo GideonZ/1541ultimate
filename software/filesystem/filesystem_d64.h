@@ -27,6 +27,7 @@ public:
     FRESULT open(FileInfo *info);
     FRESULT close(void);
     FRESULT read(FileInfo *f);
+    FRESULT create(FileInfo *info);
     friend class FileSystemD64;
 };
 
@@ -41,6 +42,7 @@ class FileInD64
     int num_blocks;
     int dir_sect;
     int dir_entry_offset;
+    int dir_entry_modified;
     int section;
     uint8_t vlir[256];
     uint8_t tmpBuffer[256];
@@ -55,7 +57,7 @@ public:
     FileInD64(FileSystemD64 *);
     ~FileInD64() { }
 
-    FRESULT open(FileInfo *info, uint8_t flags);
+    FRESULT open(FileInfo *info, uint8_t flags,int,int,int);
     FRESULT openCVT(FileInfo *info, uint8_t flags,int,int,int);
     FRESULT close(void);
     FRESULT read(void *buffer, uint32_t len, uint32_t *transferred);
@@ -95,6 +97,7 @@ public:
     FRESULT dir_open(const char *path, Directory **, FileInfo *inf = 0); // Opens directory (creates dir object, NULL = root)
     void dir_close(Directory *d);    // Closes (and destructs dir object)
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
+    FRESULT dir_create_file(Directory *d, FileInfo *info);
 
     // functions for reading and writing files
     FRESULT file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file);  // Opens file (creates file object)
