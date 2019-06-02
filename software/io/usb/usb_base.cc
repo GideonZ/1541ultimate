@@ -812,15 +812,19 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
     	return -9;
     }
 
+    uint8_t *origbuf = (uint8_t *)buf;
+    uint8_t *newbuf = (uint8_t *)buf;
+    int origlen = len;
+
     if (((uint32_t)buf) & 3) {
     	printf("%s Bulk_in: Unaligned buffer %p\n", pipe->name, buf);
-    	while(1);
+    	newbuf = new uint8_t[len];
     }
 
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
 
     //printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
-    uint32_t addr = (uint32_t)buf;
+    uint32_t addr = (uint32_t)newbuf;
 	int total_trans = 0;
 
 	descr->devEP    = pipe->DevEP;
@@ -870,6 +874,11 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 
     // printf("Bulk in done: %d\n", total_trans);
     xSemaphoreGive(mutex);
+
+    if (origbuf != newbuf) {
+        memcpy(origbuf, newbuf, origlen);
+        delete[] newbuf;
+    }
 
     return total_trans;
 }

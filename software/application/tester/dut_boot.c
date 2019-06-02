@@ -2,12 +2,15 @@
 #include "itu.h"
 #include <stdio.h>
 
-#define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0000))
-#define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0004))
+#define DDR2_TESTLOC0  (*(volatile uint32_t *)(0x0630))
+#define DDR2_TESTLOC1  (*(volatile uint32_t *)(0x0634))
 #define JUMP_LOCATION  (*(volatile uint32_t *)(0x20000780))
 
+                      // BA 11 10 9                    8               7            6 5 4          3             2 1 0
 #define MR     0x0232 // 00 | 0 0 1 (write recovery=2) 0 (dll reset) | 0 (testmode) 0 1 1 (CL=3) | 0 (seq burst) 0 1 0 (BL=4)
 #define MR8    0x0233 // 00 | 0 0 1 (write recovery=2) 0 (dll reset) | 0 (testmode) 0 1 1 (CL=3) | 0 (seq burst) 0 1 1 (BL=8)
+
+                      // BA 12 11 10          987          6          543         2           1              0
 #define EMR    0x4440 // 01 0 0 0 1 (no DQSn) 000 (no OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (full drive) 0 (dll used)
 #define EMROCD 0x47C0 // 01 0 0 0 1 (no DQSn) 111 (do OCD) 1 (150ohm) 000 (no AL) 0 (150 ohm) 0 (full drive) 0 (dll used)
 #define EMR2   0x8000 // no extended refresh
@@ -15,7 +18,7 @@
 #define DLLRST 0x0100 // MR DLL RESET
 
 #define TESTVALUE1  0x55AA6699
-#define TESTVALUE2  0x12345678
+#define TESTVALUE2  0x87654321
 
 const uint8_t hexchars[] = "0123456789ABCDEF";
 
@@ -40,7 +43,7 @@ void hexword(uint32_t data)
 		outbyte(hexchars[data >> 28]);
 		data <<= 4;
 	}
-	outbyte('\n');
+	outbyte(' ');
 }
 
 #define CLK_DIVIDER 10
@@ -124,10 +127,11 @@ int main()
     	best_pos = -1;
     	best_length = 0;
     	for (phase = 0; phase < (2 * PHASE_STEPS); phase ++) { // 720 degrees
-            DDR2_TESTLOC0 = testvalue1;
+    	    DDR2_TESTLOC0 = testvalue1;
             DDR2_TESTLOC1 = testvalue2;
+            //DDR2_COMMAND   = 2; // Precharge all
     		good = 0;
-//    		hexword(DDR2_TESTLOC0);
+
     		for (rep = 0; rep < 7; rep ++) {
     			if (DDR2_TESTLOC0 == testvalue1)
     				good++;
@@ -136,7 +140,7 @@ int main()
     		}
 			DDR2_PLLPHASE = 0x33; // move read clock
 			outbyte(hexchars[good]);
-
+			//outbyte('\n');
 			//    		printf("%x", good);
 
     		if ((state == 0) && (good >= 13)) {
@@ -172,12 +176,16 @@ int main()
 	outbyte('\r');
 	outbyte('\n');
 
+    //DDR2_COMMAND   = 2; // Precharge all
 	int errors = 0;
-	for (i=0;i<2000;i++)
+	for (i=0;i<2000;i++) {
         ram[i] = 0xABCDE000 + i;
+	}
     for (i=0;i<2000;i++)
-        if (ram[i] != 0xABCDE000 + i)
+        if (ram[i] != 0xABCDE000 + i) {
+            hexword(ram[i]);
             errors++;
+        }
 
     if (errors) {
         puts("RAM ERROR");

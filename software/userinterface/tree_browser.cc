@@ -480,14 +480,18 @@ void TreeBrowser :: copy_selection(void)
 	for(int i=0;i<state->children->get_elements();i++) {
 		Browsable *t = (*state->children)[i];
 		if (t && t->getSelection()) {
-			clipboard.addFile(t->getName());
+		    t->setSelection(false);
+		    clipboard.addFile(t->getName());
 		}
 	}
 	if (clipboard.getNumberOfFiles() == 0) {
 		Browsable *t = state->under_cursor;
 		clipboard.addFile(t->getName());
 	}
-	printf("Copied %d files in path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
+	char buffer[40];
+	sprintf(buffer, "%d files placed on clipboard", clipboard.getNumberOfFiles());
+	user_interface->popup(buffer, BUTTON_OK);
+//	printf("Copied %d files in path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
 }
 
 void TreeBrowser :: paste(void)

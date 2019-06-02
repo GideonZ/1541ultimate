@@ -409,7 +409,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/audio/sys_to_aud.vhd
 set_global_assignment -name SDC_FILE ultimate_altera.sdc
 set_global_assignment -name VHDL_FILE ../../../fpga/fpga_top/ultimate_fpga/vhdl_source/u2p_nios2_solo.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_transmit.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/ethernet_rmii.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/ethernet_interface.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/eth_filter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/free_queue.vhd
