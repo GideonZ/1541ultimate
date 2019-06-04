@@ -931,7 +931,14 @@ lwip_sendto(int s, const void *data, size_t size, int flags,
     }
   }
 #else /* LWIP_NETIF_TX_SINGLE_PBUF */
-  err = netbuf_ref(&buf, data, short_size);
+  // err = netbuf_ref(&buf, data, short_size);
+  if (netbuf_alloc(&buf, short_size)) {
+      memcpy(buf.p->payload, data, short_size);
+      err = ERR_OK;
+  } else {
+      err = ERR_MEM;
+  }
+
 #endif /* LWIP_NETIF_TX_SINGLE_PBUF */
   if (err == ERR_OK) {
     /* send the data */
