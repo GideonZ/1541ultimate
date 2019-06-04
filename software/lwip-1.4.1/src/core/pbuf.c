@@ -559,7 +559,11 @@ pbuf_header(struct pbuf *p, s16_t header_size_increment)
     }
   /* pbuf types refering to external payloads? */
   } else if (type == PBUF_REF || type == PBUF_ROM) {
-	  // just ALWAYS do this, since references are only used to read!
+      // if it's positive, we can't do this, but if it's negative we can
+      if (header_size_increment > 0) {
+          return 1; // fail!
+      }
+      // just ALWAYS do this for negative values, since references are only used to read!
       p->payload = (u8_t *)p->payload - header_size_increment;
 
 /*
