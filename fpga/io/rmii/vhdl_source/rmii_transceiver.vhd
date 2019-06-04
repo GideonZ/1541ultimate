@@ -63,7 +63,7 @@ architecture rtl of rmii_transceiver is
     signal rx_crc       : std_logic_vector(31 downto 0);
     signal crc_ok       : std_logic;
     
-    signal tx_count : natural range 0 to 15;
+    signal tx_count : natural range 0 to 63;
     signal tx_crc_dav   : std_logic;
     signal tx_crc_sync  : std_logic;
     signal tx_crc_data  : std_logic_vector(1 downto 0);
@@ -232,7 +232,7 @@ begin
                 rmii_tx_en <= '1';
                 rmii_txd <= tx_crc(31 - tx_count*2 downto 30 - tx_count*2);                
                 if tx_count = 0 then
-                    tx_count <= 15;
+                    tx_count <= 63;
                     tx_state <= gap;
                 else
                     tx_count <= tx_count - 1;
