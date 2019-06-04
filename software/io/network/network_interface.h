@@ -46,16 +46,15 @@ public:
 
 	virtual void getIpAddr(uint8_t *a)  { bzero(a, 12); }
 	virtual void getMacAddr(uint8_t *a) { bzero(a, 6); }
+	virtual bool peekArpTable(uint32_t ip, uint8_t *mac) { return false; }
 	virtual void setIpAddr(uint8_t *a)  { }
 	virtual char *getIpAddrString(char *buf, int buflen) { buf[0] = 0; return buf; }
 };
 
-typedef void (*configure_feature_function_t)(void *driver, int feature, void *params);
 typedef void (*driver_free_function_t)(void *driver, void *buffer);
 typedef uint8_t (*driver_output_function_t)(void *driver, void *buffer, int length);
 
 NetworkInterface *getNetworkStack(void *driver,
-                                  configure_feature_function_t conf,
                                   driver_output_function_t out,
 								  driver_free_function_t free );
 

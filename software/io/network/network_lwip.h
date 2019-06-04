@@ -56,10 +56,8 @@ public:
     void *driver;
     void (*driver_free_function)(void *driver, void *buffer);
     uint8_t (*driver_output_function)(void *driver, void *buffer, int pkt_len);
-    void (*configure_feature)(void *driver, int feature, void *params);
 
     NetworkLWIP(void *driver,
-                configure_feature_function_t config,
                 driver_output_function_t out,
 				driver_free_function_t free);
     virtual ~NetworkLWIP();
@@ -88,6 +86,7 @@ public:
 	void getMacAddr(uint8_t *a);
 	void setIpAddr(uint8_t *a);
 	char *getIpAddrString(char *buf, int buflen);
+	bool peekArpTable(uint32_t ipToQuery, uint8_t *mac);
 
 	// callbacks
 	static void statusCallback(struct netif *);
