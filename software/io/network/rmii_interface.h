@@ -43,14 +43,9 @@ class RmiiInterface
 	uint8_t local_mac[6];
 	QueueHandle_t queue;
 
-    uint32_t my_ip;
-    uint32_t vic_dest_ip;
-    int      vic_dest_port;
-    uint8_t  vic_enable;
 
 	static void startRmiiTask(void *);
     void rmiiTask(void);
-    void calculate_udp_headers();
 public:
 	RmiiInterface();
 	~RmiiInterface();
@@ -59,7 +54,6 @@ public:
 	uint8_t output_packet(uint8_t *buffer, int pkt_len);
     void free_buffer(uint8_t *b);
     void rx_interrupt_handler(void);
-    void configure(int feature, void *params);
 };
 
 #endif
