@@ -68,7 +68,9 @@ ConfigStore *ConfigManager :: register_store(uint32_t store_id, const char *name
     for (int i=0; i<stores.get_elements(); i++) {
         ConfigStore *cfgStore = stores[i];
         if (cfgStore->id == store_id) {
-            cfgStore->addObject(ob);
+            if (ob) {
+                cfgStore->addObject(ob);
+            }
             return cfgStore;
         }
     }

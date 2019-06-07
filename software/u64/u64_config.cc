@@ -265,7 +265,7 @@ extern Overlay *overlay;
 U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
     systemMode = -1;
-
+    U64_ETHSTREAM_ENA = 0;
 
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		struct t_cfg_definition *def = u64_cfg;
