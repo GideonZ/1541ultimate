@@ -32,10 +32,10 @@ class DataStreamer : public ObjectWithMenu
     uint32_t my_ip;
 
     stream_config_t streams[4];
+    void *timers[4];
 
-    static int S_startStream(SubsysCommand *cmd);
-    static int S_stopStream(SubsysCommand *cmd);
 
+    static void S_timer(void *);
     int startStream(SubsysCommand *cmd);
     int stopStream(SubsysCommand *cmd);
 
@@ -44,6 +44,9 @@ class DataStreamer : public ObjectWithMenu
 public:
     DataStreamer();
     virtual ~DataStreamer();
+
+    static int  S_startStream(SubsysCommand *cmd);
+    static int  S_stopStream(SubsysCommand *cmd);
 
     // from ObjectWithMenu
     int fetch_task_items(Path *path, IndexedList<Action*> &item_list);

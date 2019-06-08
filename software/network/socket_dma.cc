@@ -16,6 +16,7 @@
 #include "c64_subsys.h"
 #include "u64.h"
 #include "c1541.h"
+#include "data_streamer.h"
 
 // "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
@@ -30,10 +31,16 @@
 #define SOCKET_CMD_MOUNT_IMG   0xFF0A
 #define SOCKET_CMD_RUN_IMG     0xFF0B
 
+// Only available on U64
+#define SOCKET_CMD_VICSTREAM_ON    0xFF20
+#define SOCKET_CMD_AUDIOSTREAM_ON  0xFF21
+#define SOCKET_CMD_VICSTREAM_OFF   0xFF30
+#define SOCKET_CMD_AUDIOSTREAM_OFF 0xFF31
+
+
 // Undocumented, shall only be used by developers.
 #define SOCKET_CMD_LOADSIDCRT   0xFF71
 #define SOCKET_CMD_LOADBOOTCRT  0xFF72
-#define SOCKET_CMD_SAMPLE       0xFF73
 #define SOCKET_CMD_READMEM      0xFF74
 #define SOCKET_CMD_READFLASH    0xFF75
 #define SOCKET_CMD_DEBUG_REG    0xFF76
@@ -42,12 +49,6 @@ SocketDMA socket_dma; // global that causes the object to exist
 
 extern cart_def sid_cart;
 extern cart_def boot_cart;
-
-void sample_sid(void) __attribute__((weak));
-void sample_sid(void)
-{
-
-}
 
 SocketDMA::SocketDMA() {
 	load_buffer = new uint8_t[SOCKET_BUFFER_SIZE];
@@ -60,7 +61,7 @@ SocketDMA::~SocketDMA() {
     delete[] load_buffer;
 }
 
-void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len)
+void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip)
 {
 	uint8_t *buf = (uint8_t *)load_buffer;
 	SubsysCommand *c64_command;
@@ -69,7 +70,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
     uint32_t offs32;
     uint16_t i;
     uint16_t size;
-
+    const char *name = "";
     // TODO: check len > remaining
 
     switch(cmd) {
@@ -134,10 +135,6 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
             boot_cart.length = size;
         }
         break;
-    case SOCKET_CMD_SAMPLE:
-        printf("Sampling audio codec...");
-        sample_sid();
-        break;
     case SOCKET_CMD_READMEM:
         printf("Sending data...");
         writeSocket(socket, (void *)0x2000000, 0x800000);
@@ -154,6 +151,45 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         }
         c64_command->execute();
         break;
+
+    case SOCKET_CMD_VICSTREAM_ON:
+        if (len > 2) {
+            name = (const char *)&buf[2];
+        }
+        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, name, "");
+
+        if ((len >= 2) && (buf[0] || buf[1])) {
+            c64_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
+            c64_command->direct_call = DataStreamer :: S_startStream;
+        }
+        c64_command->execute();
+        break;
+
+    case SOCKET_CMD_AUDIOSTREAM_ON:
+        if (len > 2) {
+            name = (const char *)&buf[2];
+        }
+        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, name, "");
+
+        if ((len >= 2) && (buf[0] || buf[1])) {
+            c64_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
+            c64_command->direct_call = DataStreamer :: S_startStream;
+        }
+        c64_command->execute();
+        break;
+
+    case SOCKET_CMD_VICSTREAM_OFF:
+        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
+        c64_command->direct_call = DataStreamer :: S_stopStream;
+        c64_command->execute();
+        break;
+
+    case SOCKET_CMD_AUDIOSTREAM_OFF:
+        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, "", "");
+        c64_command->direct_call = DataStreamer :: S_stopStream;
+        c64_command->execute();
+        break;
+
 #ifdef U64
     case SOCKET_CMD_DEBUG_REG:
         uint8_t reg;
@@ -285,6 +321,8 @@ void SocketDMA::dmaThread(void *load_buffer)
 
     listen(sockfd, 5);
     clilen = sizeof(cli_addr);
+    uint8_t your_ip[4];
+    uint16_t your_port;
 
     while(1) {
 		/* Accept actual connection from the client */
@@ -295,8 +333,13 @@ void SocketDMA::dmaThread(void *load_buffer)
 			return;
 		}
 
-		printf("dmaThread newsockfd = %8x\n", newsockfd);
+		uint32_t addr = cli_addr.sin_addr.s_addr;
+		your_ip[3] = addr >> 24;
+	    your_ip[2] = (addr >> 16) & 0xFF;
+	    your_ip[1] = (addr >> 8) & 0xFF;
+	    your_ip[0] = addr & 0xFF;
 
+		printf("dmaThread newsockfd = %8x. Client = %d.%d.%d.%d : %d\n", newsockfd, your_ip[0], your_ip[1], your_ip[2], your_ip[3], cli_addr.sin_port);
 
 		/* If connection is established then start communicating */
 		uint8_t *mempntr = (uint8_t *)load_buffer;
@@ -335,7 +378,7 @@ void SocketDMA::dmaThread(void *load_buffer)
 	        if (n <= 0) {
 	            break;
 	        }
-            performCommand(newsockfd, load_buffer, n, cmd, len32);
+            performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr);
 		}
         puts("ERROR reading from socket");
         lwip_close(newsockfd);
