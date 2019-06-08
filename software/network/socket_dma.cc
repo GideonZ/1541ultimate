@@ -153,6 +153,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
 
     case SOCKET_CMD_VICSTREAM_ON:
+        buf[len] = 0;
         if (len > 2) {
             name = (const char *)&buf[2];
         }
@@ -166,6 +167,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         break;
 
     case SOCKET_CMD_AUDIOSTREAM_ON:
+        buf[len] = 0;
         if (len > 2) {
             name = (const char *)&buf[2];
         }
