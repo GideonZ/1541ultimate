@@ -6,6 +6,7 @@
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 #include "task.h"
+#include "timers.h"
 #include "profiler.h"
 #include "u64.h"
 #include "network_interface.h"
@@ -38,6 +39,9 @@ DataStreamer :: DataStreamer()
 
     cfg = ConfigManager :: getConfigManager()->register_store(0x44617461, "Data Streams", stream_cfg, NULL);
 
+    for (int i=0; i < 4; i++) {
+        timers[i] = xTimerCreate("StreamTimer", 100, pdFALSE, (void *)i, DataStreamer :: S_timer);
+    }
 }
 
 // This should never be called
@@ -45,6 +49,8 @@ DataStreamer :: ~DataStreamer()
 {
 
 }
+
+DataStreamer dataStreamer;
 
 int DataStreamer :: S_startStream(SubsysCommand *cmd)
 {
@@ -56,6 +62,17 @@ int DataStreamer :: S_stopStream(SubsysCommand *cmd)
 {
     DataStreamer *str = (DataStreamer *)cmd->functionID;
     return str->stopStream(cmd);
+}
+
+void DataStreamer :: S_timer(TimerHandle_t a)
+{
+    int streamID = (int)pvTimerGetTimerID(a);
+    printf("S_timer %p %d\n", a, streamID);
+    if ((streamID >= 0) && (streamID <= 3)) {
+        stream_config_t *stream = &dataStreamer.streams[streamID];
+        stream->enable = 0;
+        dataStreamer.calculate_udp_headers(streamID);
+    }
 }
 
 int DataStreamer :: startStream(SubsysCommand *cmd)
@@ -93,20 +110,27 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
         return -4;
     }
 
+/*
     printf("** Interface is up with valid IP. %08X (MAC: %b:%b:%b:%b:%b:%b)\n", my_ip,
             my_mac[0], my_mac[1], my_mac[2], my_mac[3], my_mac[4], my_mac[5]);
+*/
 
     char dest_host[40];
-    const char *default_host = cfg->get_string(CFG_STREAM_DEST0 + streamID);
-    if (default_host) {
-        strncpy(dest_host, default_host, 36);
-    }
-    if (cmd->user_interface) {
-        if (cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) {
-            return -5;
+
+    if (cmd->path.length() > 0) {
+        strncpy(dest_host, cmd->path.c_str(), 36);
+    } else {
+        const char *default_host = cfg->get_string(CFG_STREAM_DEST0 + streamID);
+        if (default_host) {
+            strncpy(dest_host, default_host, 36);
         }
-        cfg->set_string(CFG_STREAM_DEST0 + streamID, dest_host);
-        cfg->write();
+        if (cmd->user_interface) {
+            if (cmd->user_interface->string_box("Send to...", dest_host, 36) < 0) {
+                return -5;
+            }
+            cfg->set_string(CFG_STREAM_DEST0 + streamID, dest_host);
+            cfg->write();
+        }
     }
 
     int len = strlen(dest_host);
@@ -130,6 +154,7 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
 
     if (!ret_host) {
         if (cmd->user_interface) cmd->user_interface->popup("Host could not be resolved.", BUTTON_OK);
+        else printf("Host '%s' could not be resolved.", dest_host);
         return -9;
     }
     uint32_t *addrs = (uint32_t *)*(ret_host->h_addr_list);
@@ -153,6 +178,7 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
         sscanf(behind_colon, "%d", &stream->dest_port);
     }
     if (!stream->dest_port) {
+        if (cmd->user_interface) cmd->user_interface->popup("Destination Port cannot be 0.", BUTTON_OK);
         return -7;
     }
 
@@ -183,6 +209,19 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
 
     // start stream!
     calculate_udp_headers(streamID);
+
+    if (cmd->bufferSize) {
+        int stopAfter = cmd->bufferSize;
+        cmd->bufferSize = 0;
+
+        if (xTimerChangePeriod(timers[streamID], stopAfter, 50) == pdTRUE) {
+            if (xTimerStart(timers[streamID], 50) != pdTRUE) {
+                return -12;
+            }
+            printf("Timer started to stop stream %d after %d ticks.\n", streamID, stopAfter);
+
+        }
+    }
 
     return 0;
 }
@@ -338,5 +377,3 @@ void DataStreamer :: calculate_udp_headers(int id)
     // enable
     U64_ETHSTREAM_ENA |= (1 << id);
 }
-
-DataStreamer dataStreamer;
