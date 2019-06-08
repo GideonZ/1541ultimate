@@ -560,9 +560,16 @@ pbuf_header(struct pbuf *p, s16_t header_size_increment)
   /* pbuf types refering to external payloads? */
   } else if (type == PBUF_REF || type == PBUF_ROM) {
       // if it's positive, we can't do this, but if it's negative we can
+      // Newer versions of lwIP have a 'force' parameter. We don't have that yet.
+      // For now we always allow this, but it will fail dramatically if this
+      // causes user stack to be overwritten.
+/*
+      // a PBUF ref actually needs another field; to know where the buffer starts.
+      // Fow now we allow this, as we fixed the use of PBUF_REF in udp.c
       if (header_size_increment > 0) {
           return 1; // fail!
       }
+*/
       // just ALWAYS do this for negative values, since references are only used to read!
       p->payload = (u8_t *)p->payload - header_size_increment;
 
