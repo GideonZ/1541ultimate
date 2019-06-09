@@ -67,9 +67,10 @@ for frame in range(numFrames):
 print ("{0:d} frames grabbed. Now converting...".format(len(frames)))
 
 for fr, raw in enumerate(frames):
-    newImg1 = pimg.new('RGB', (384, 272))
+    lines = len(raw) // 192
+    newImg1 = pimg.new('RGB', (384, lines))
     i = 0
-    for y in range(272):
+    for y in range(lines):
         for x in range(192):
             b = raw[i]
             newImg1.putpixel((2*x,y), colors[b & 0xF])
