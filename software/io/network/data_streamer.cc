@@ -117,7 +117,7 @@ int DataStreamer :: startStream(SubsysCommand *cmd)
 
     char dest_host[40];
 
-    if (cmd->path.length() > 0) {
+    if ((cmd->path.length() > 0) && (cmd->user_interface == NULL)) { // we were not called from the menu, and a destination name is given in the path.
         strncpy(dest_host, cmd->path.c_str(), 36);
     } else {
         const char *default_host = cfg->get_string(CFG_STREAM_DEST0 + streamID);
