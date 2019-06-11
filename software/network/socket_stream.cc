@@ -31,7 +31,15 @@ int SocketStream :: get_char()
 	memset(buffer, 0, 4);
 	int n = recv(actual_socket, buffer, 1, 0);
 	if (n > 0) {
-		return (int)buffer[0];
+	    if (buffer[0] == -1) {
+	        skip = 2;
+	        return -1;
+	    }
+	    if (skip > 0) {
+	        skip --;
+	        return -1;
+	    }
+	    return (int)buffer[0];
 	} else if (n < 0) {
 		if (errno == EAGAIN)
 			return -1;
