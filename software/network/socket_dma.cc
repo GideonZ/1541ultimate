@@ -152,6 +152,7 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         c64_command->execute();
         break;
 
+#ifdef U64
     case SOCKET_CMD_VICSTREAM_ON:
         buf[len] = 0;
         if (len > 2) {
@@ -192,7 +193,6 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         c64_command->execute();
         break;
 
-#ifdef U64
     case SOCKET_CMD_DEBUG_REG:
         uint8_t reg;
         reg = U64_DEBUG_REGISTER;
