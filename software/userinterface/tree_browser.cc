@@ -408,6 +408,7 @@ int TreeBrowser :: handle_key(int c)
         	break;
         case KEY_CTRL_C: // copy
         	copy_selection();
+            state->refresh = true;
         	break;
         case KEY_CTRL_V: // paste
         	paste();
