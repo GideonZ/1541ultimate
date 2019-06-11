@@ -20,6 +20,7 @@ class SocketStream : public Stream
 
 	int buf_size;
 	int buf_remaining;
+	int skip;
 	char *buf_pos;
 	char *buf_start;
 public:
@@ -29,6 +30,7 @@ public:
 		buf_start = new char[buf_size];
 		buf_pos = buf_start;
 		buf_remaining = buf_size;
+		skip = 0;
 	}
 	~SocketStream() {
 		delete[] buf_start;
