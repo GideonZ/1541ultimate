@@ -385,7 +385,7 @@ bool NetworkLWIP :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
 
     query_ip.addr = ipToQuery;
 
-    vTaskEnterCritical();
+    portENTER_CRITICAL();
     etharp_find_addr(&my_net_if, &query_ip, &his_mac, &his_ip);
 
     bool ret = false;
@@ -394,7 +394,7 @@ bool NetworkLWIP :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
         ret = true;
     }
 
-    vTaskExitCritical();
+    portEXIT_CRITICAL();
 
     return ret;
 }
