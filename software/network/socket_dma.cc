@@ -159,10 +159,10 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
             name = (const char *)&buf[2];
         }
         c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, name, "");
+        c64_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
             c64_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
-            c64_command->direct_call = DataStreamer :: S_startStream;
         }
         c64_command->execute();
         break;
@@ -173,10 +173,10 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
             name = (const char *)&buf[2];
         }
         c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, name, "");
+        c64_command->direct_call = DataStreamer :: S_startStream;
 
         if ((len >= 2) && (buf[0] || buf[1])) {
             c64_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
-            c64_command->direct_call = DataStreamer :: S_startStream;
         }
         c64_command->execute();
         break;
