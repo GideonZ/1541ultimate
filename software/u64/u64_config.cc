@@ -478,6 +478,8 @@ void U64Config :: setFilter(ConfigItem *it)
     switch(it->value) {
     case 0:
         coef = sid8580_filter_coefficients;
+        mul = 7;
+        div = 32;
         break;
     case 1:
         coef = sid8580_filter_coefficients;
