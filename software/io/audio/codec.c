@@ -52,7 +52,12 @@ void codec_init(void)
 
     i2c_write_word(0x14, SGTL5000_CHIP_DAC_VOL, 0x3C3C);
 #if U64
-    i2c_write_word(0x14, SGTL5000_CHIP_ANA_ADC_CTRL, 0x0100); // turn ON -6dB for ADC to avoid clipping from SIDs
+    uint8_t rev = (U2PIO_BOARDREV >> 3);
+    if (rev != 0x13) {  // IN the Elite hardware this has been fixed.
+        i2c_write_word(0x14, SGTL5000_CHIP_ANA_ADC_CTRL, 0x0100); // turn ON -6dB for ADC to avoid clipping from SIDs
+    } else {
+        i2c_write_word(0x14, SGTL5000_CHIP_ANA_ADC_CTRL, 0x0000); // turn OFF -6dB for ADC
+    }
 #endif
     // write CHIP_ADCDAC_CTRL to unmute DAC left and right
     i2c_write_word(0x14, SGTL5000_CHIP_ANA_CTRL, 0x0014); // select LINE_IN for ADC
