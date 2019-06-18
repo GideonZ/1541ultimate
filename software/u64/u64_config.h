@@ -43,6 +43,7 @@ public:
     static void setFilter(ConfigItem *it);
     static void setSidEmuParams(ConfigItem *it);
     static void setLedSelector(ConfigItem *it);
+    static void SetResampleFilter(int mode);
 
     bool SidAutoConfig(int count, t_sid_definition *requested);
 };
