@@ -125,18 +125,18 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_io_regs.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_mapper.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/sid6581/vhdl_source/sid_peripheral.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/pkg_6502_defs.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/pkg_6502_decode.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/shifter.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/implied.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/bit_cpx_cpy.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/alu.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/proc_registers.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/proc_interrupt.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/proc_control.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/data_oper.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/proc_core.vhd \
-				vhdl,work,$(ULTIMATE_64_CPU)/cpu6502.vhd \
+				vhdl,work,$(ULTIMATE_6502)/pkg_6502_defs.vhd \
+				vhdl,work,$(ULTIMATE_6502)/pkg_6502_decode.vhd \
+				vhdl,work,$(ULTIMATE_6502)/shifter.vhd \
+				vhdl,work,$(ULTIMATE_6502)/implied.vhd \
+				vhdl,work,$(ULTIMATE_6502)/bit_cpx_cpy.vhd \
+				vhdl,work,$(ULTIMATE_6502)/alu.vhd \
+				vhdl,work,$(ULTIMATE_6502)/proc_registers.vhd \
+				vhdl,work,$(ULTIMATE_6502)/proc_interrupt.vhd \
+				vhdl,work,$(ULTIMATE_6502)/proc_control.vhd \
+				vhdl,work,$(ULTIMATE_6502)/data_oper.vhd \
+				vhdl,work,$(ULTIMATE_6502)/proc_core.vhd \
+				vhdl,work,$(ULTIMATE_6502)/cpu6502.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/1541/vhdl_source/floppy_stream.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/1541/vhdl_source/floppy_mem.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/1541/vhdl_source/floppy_param_mem.vhd \
