@@ -59,6 +59,8 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SID2_SHUNT        0x1B
 #define CFG_SID1_CAPS         0x1C
 #define CFG_SID2_CAPS         0x1D
+#define CFG_EMUSID1_DIGI      0x1E
+#define CFG_EMUSID2_DIGI      0x1F
 
 #define CFG_MIXER0_VOL        0x20
 #define CFG_MIXER1_VOL        0x21
@@ -152,6 +154,7 @@ uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0x
 static const char *stereo_addr[] = { "A5", "A8" };
 static const char *en_dis4[] = { "Disabled", "Enabled" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
+static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
 static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
@@ -229,6 +232,8 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_EMUSID2_RESONANCE,    CFG_TYPE_ENUM, "UltiSID 2 Filter Resonance",   "%s", filter_res,   0,  1, 0 },
     { CFG_EMUSID1_WAVES,        CFG_TYPE_ENUM, "UltiSID 1 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
     { CFG_EMUSID2_WAVES,        CFG_TYPE_ENUM, "UltiSID 2 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
+    { CFG_EMUSID1_DIGI,         CFG_TYPE_ENUM, "UltiSID 1 Digis Level",        "%s", digi_levels,  0,  3, 2 },
+    { CFG_EMUSID2_DIGI,         CFG_TYPE_ENUM, "UltiSID 2 Digis Level",        "%s", digi_levels,  0,  3, 2 },
 #if DEVELOPER
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
@@ -288,6 +293,8 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_EMUSID2_RESONANCE, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_EMUSID1_WAVES, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_EMUSID2_WAVES, U64Config :: setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID1_DIGI, U64Config :: setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID2_DIGI, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_LED_SELECT_0, U64Config :: setLedSelector);
         cfg->set_change_hook(CFG_LED_SELECT_1, U64Config :: setLedSelector);
 		effectuate_settings();
@@ -455,6 +462,8 @@ void U64Config :: effectuate_settings()
     setSidEmuParams(cfg->find_item(CFG_EMUSID2_RESONANCE));
     setSidEmuParams(cfg->find_item(CFG_EMUSID1_WAVES));
     setSidEmuParams(cfg->find_item(CFG_EMUSID2_WAVES));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID1_DIGI));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID2_DIGI));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
 
 /*
@@ -466,6 +475,7 @@ void U64Config :: effectuate_settings()
 */
 
 }
+
 
 void U64Config :: setFilter(ConfigItem *it)
 {
@@ -567,6 +577,12 @@ void U64Config :: setSidEmuParams(ConfigItem *it)
         break;
     case CFG_EMUSID2_WAVES:
         C64_EMUSID2_WAVES = it->value;
+        break;
+    case CFG_EMUSID1_DIGI:
+        C64_EMUSID1_DIGI = it->value;
+        break;
+    case CFG_EMUSID2_DIGI:
+        C64_EMUSID2_DIGI = it->value;
         break;
     }
 }
