@@ -14,6 +14,7 @@
 #define U64_IO_BASE     0xA0000400
 #define U64_AUDIO_MIXER 0xA0000500
 #define U64_WIFI_UART   0xA0000600
+#define U64_RESAMPLER   0xA0000700
 
 #define VID_IO_BASE  0xA0040000
 #define C64_IO_BASE  0xA0080000
@@ -50,6 +51,11 @@
 #define U64_PWM_DUTY       (*(volatile uint8_t *)(U64_IO_BASE + 0x0D)) // any value between 00 (off) and FF (nearly full phase)
 #define U64_CASELED_SELECT (*(volatile uint8_t *)(U64_IO_BASE + 0x0E)) // Two nibbles with selectors
 #define U64_ETHSTREAM_ENA  (*(volatile uint8_t *)(U64_IO_BASE + 0x0F)) // Ethernet stream generators 0 = vic, 1 = audio, 2 = bus, 3 = iec
+
+#define U64_RESAMPLE_RESET (*(volatile uint8_t *)(U64_RESAMPLER + 0x04))
+#define U64_RESAMPLE_LABOR (*(volatile uint8_t *)(U64_RESAMPLER + 0x08))
+#define U64_RESAMPLE_FLUSH (*(volatile uint8_t *)(U64_RESAMPLER + 0x09))
+#define U64_RESAMPLE_DATA  (*(volatile uint32_t *)(U64_RESAMPLER + 0x00))
 
 #define U64_HDMI_DDC_ENABLE     0x20
 #define U64_HDMI_DDC_DISABLE    0x10
