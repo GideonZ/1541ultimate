@@ -19,10 +19,12 @@
 #define VID_IO_BASE  0xA0040000
 #define C64_IO_BASE  0xA0080000
 #define C64_IO_LED   0xA0081000
+#define C64_IO_DEBUG 0xA0082000
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0x1FE))
 #define LEDSTRIP_LEN  (*(volatile uint8_t *)(C64_IO_LED + 0x1FF))
+#define U64_DEBUG_REGISTER (*(volatile uint8_t *)C64_IO_DEBUG)
 
 #define C64_SID_BASE     0xA0088000
 #define U64_ROMS_BASE    0xA0090000
@@ -31,7 +33,6 @@
 #define U64_BASIC_BASE   (U64_ROMS_BASE + 0x0000)
 #define U64_KERNAL_BASE  (U64_ROMS_BASE + 0x2000)
 #define U64_CHARROM_BASE (U64_ROMS_BASE + 0x4000)
-#define U64_DEBUG_REGISTER (*(volatile uint8_t *)(U64_ROMS_BASE + 0x8000))
 
 #define U64_RAM_BASE     0xA00C0000
 #endif
