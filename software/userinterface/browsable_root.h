@@ -146,7 +146,7 @@ public:
 	}
 
 	virtual void fetch_context_items(IndexedList<Action *>&items) {
-		if (!type)
+		if ((!type) && (!this->info->attrib & AM_DIR))
 			type = FileType :: getFileTypeFactory()->create(this);
 		if (type) {
 			type->fetch_context_items(items);
