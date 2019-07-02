@@ -175,6 +175,12 @@ int TreeBrowser :: poll(int sub_returned)
 	int c;
     int ret = 0;
 
+    mstring *msg = this->user_interface->getMessage();
+    if (msg) {
+        user_interface->popup(msg->c_str(), BUTTON_OK);
+        delete msg;
+    }
+
     if(contextMenu) {
         if(sub_returned < 0) {
         	delete contextMenu;
@@ -386,7 +392,7 @@ int TreeBrowser :: handle_key(int c)
         case KEY_ESCAPE:
         	ret = -1;
         	break;
-        	/*
+/*
         case KEY_F6: // F6 -> show log
         	reset_quick_seek();
         	state->refresh = true;

@@ -83,6 +83,9 @@ public:
 
     UIObject *get_root_object(void) { return ui_objects[0]; }
 
+    static void postMessage(const char *msg);
+    mstring *getMessage();
+
     friend class HomeDirectory;
 };
 
