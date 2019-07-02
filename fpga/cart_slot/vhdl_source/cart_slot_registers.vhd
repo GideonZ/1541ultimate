@@ -9,6 +9,7 @@ use work.cart_slot_pkg.all;
 entity cart_slot_registers is
 generic (
     g_cartreset_init: std_logic := '0';
+    g_boot_stop     : boolean := false;
     g_kernal_repl   : boolean := true;
     g_rom_base      : unsigned(27 downto 0) := X"0F80000";
     g_ram_base      : unsigned(27 downto 0) := X"0F70000";
@@ -36,6 +37,8 @@ begin
         if rising_edge(clock) then
             io_resp <= c_io_resp_init;
             control_i.cartridge_kill <= '0'; 
+            control_i.cartridge_force <= '0';
+            
             if io_req.write='1' then
                 io_resp.ack <= '1';
                 case io_req.address(3 downto 0) is
@@ -54,6 +57,7 @@ begin
                     control_i.c64_stop_mode <= io_req.data(1 downto 0);
                 when c_cart_cartridge_type =>
                     control_i.cartridge_type <= io_req.data(4 downto 0);
+                    control_i.cartridge_force <= io_req.data(7);
                 when c_cart_cartridge_kill =>
                     control_i.cartridge_kill <= '1';
                 when c_cart_kernal_enable =>
@@ -132,6 +136,10 @@ begin
             if reset='1' then
                 control_i <= c_cart_control_init;
                 control_i.c64_reset <= g_cartreset_init;
+                if g_boot_stop then
+                    control_i.c64_stop <= '1';
+                    control_i.c64_stop_mode <= "10";
+                end if;
             end if;
         end if;
     end process;

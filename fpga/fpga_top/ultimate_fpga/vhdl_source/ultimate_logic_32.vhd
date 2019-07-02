@@ -20,6 +20,7 @@ generic (
     g_timer_rate    : natural := 200_000;
     g_fpga_type     : natural := 0;
     g_cartreset_init: std_logic := '0';
+    g_boot_stop     : boolean := false;
     g_microblaze    : boolean := true;
     g_big_endian    : boolean := true;
     g_boot_rom      : boolean := false;
@@ -711,6 +712,7 @@ begin
             g_ram_base_cart => X"0EF0000", -- should be on a 64K boundary
             g_big_endian    => g_big_endian,
             g_cartreset_init=> g_cartreset_init,
+            g_boot_stop     => g_boot_stop,
             g_control_read  => true,
             g_kernal_repl   => g_kernal_repl,
             g_ram_expansion => g_ram_expansion,

@@ -30,6 +30,7 @@ package cart_slot_pkg is
         c64_stop_mode  : std_logic_vector(1 downto 0);
         cartridge_type : std_logic_vector(4 downto 0);
         cartridge_kill : std_logic;
+        cartridge_force: std_logic;
         kernal_enable  : std_logic;
         kernal_16k     : std_logic;
         reu_enable     : std_logic;
@@ -60,6 +61,7 @@ package cart_slot_pkg is
         c64_stop_mode  => "00",
         cartridge_type => "00000",
         cartridge_kill => '0',
+        cartridge_force=> '0',
         kernal_enable  => '0',
         kernal_16k     => '0',
         reu_enable     => '0',

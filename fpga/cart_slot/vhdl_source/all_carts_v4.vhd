@@ -31,6 +31,7 @@ port (
 
     cart_kill       : in  std_logic;
     cart_logic      : in  std_logic_vector(4 downto 0);   -- 1 out of 32 logic emulations
+    cart_force    : in  std_logic;
 
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
@@ -168,10 +169,14 @@ begin
                 cart_en    <= '1';
 --                unfreeze   <= '0';
                 hold_nmi   <= '1';
-            elsif cart_en = '0' then
+            elsif cart_en = '0' then 
                 cart_logic_d <= cart_logic; -- activate change of mode!
             end if;
 
+            if cart_force = '1' then
+                cart_logic_d <= cart_logic; -- activate change of mode!
+            end if;
+                            
             serve_vic <= '0';
             
             case cart_logic_d is
