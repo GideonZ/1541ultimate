@@ -200,7 +200,7 @@ C64::C64()
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-    C64_STOP = 0;
+//    C64_STOP = 0;
     isFrozen = false;
 //    C64_MODE = C64_MODE_RESET;
     buttonPushSeen = false;
@@ -212,12 +212,15 @@ C64::C64()
 
     effectuate_settings();
 
+    force_cart = 0x80;
+
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
         init_system_roms();
         init_cartridge();
     } else if (cfg->get_value(CFG_C64_CART) || cfg->get_value(CFG_C64_ALT_KERN)) {
         init_cartridge();
     }
+    C64_STOP = 0; // GO!
 }
 
 C64::~C64()
@@ -984,7 +987,8 @@ void C64::set_cartridge(cart_def *def)
     lastCartridgeId = def->id;
 
     printf("Setting cart mode %u. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
-    C64_CARTRIDGE_TYPE = (uint8_t) (def->type & 0x1F);
+    C64_CARTRIDGE_TYPE = (uint8_t) (def->type & 0x1F) | force_cart;
+    force_cart = 0;
 //    push_event(e_cart_mode_change, NULL, def->type);
 
     set_emulation_flags(def);
@@ -1097,7 +1101,9 @@ void C64::init_cartridge()
     if (!cfg)
         return;
 
-    C64_MODE = C64_MODE_RESET;
+    if (C64_STOP == 0) {
+        C64_MODE = C64_MODE_RESET;
+    }
     C64_KERNAL_ENABLE = 0;
     C64_CARTRIDGE_TYPE = 0;
 
@@ -1110,6 +1116,7 @@ void C64::init_cartridge()
             printf("External Cartridge Detected. Not initializing cartridge.\n");
             wait_ms(100);
             C64_MODE = C64_MODE_UNRESET;
+            C64_STOP = 0;
             return;
         }
     }
@@ -1120,6 +1127,7 @@ void C64::init_cartridge()
     if (cart2->id ==  FLASH_ID_FINAL3)
     {
         C64_MODE = C64_MODE_UNRESET;
+        C64_STOP = 0;
         wait_ms(100);
         freeze();
         wait_ms(1400);
@@ -1128,6 +1136,7 @@ void C64::init_cartridge()
     else if (cart2->id == FLASH_ID_CUSTOM_ROM && !cart2->type)
     {
         C64_MODE = C64_MODE_UNRESET;
+        C64_STOP = 0;
         wait_ms(100);
         freeze();
         wait_ms(1400);
@@ -1138,6 +1147,7 @@ void C64::init_cartridge()
        set_cartridge(cart2);
        wait_ms(100);
        C64_MODE = C64_MODE_UNRESET;
+       C64_STOP = 0;
     }
 }
 
