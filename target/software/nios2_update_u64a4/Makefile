@@ -64,6 +64,7 @@ VPATH +=	$(PATH_SW)/nios_appl_bsp
 VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
 VPATH +=    $(PATH_SW)/application/update_u2p
+VPATH +=    $(PATH_SW)/u64
 VPATH +=    $(FPGA_PATH)
 VPATH +=    $(PATH_SW)/../target/software/nios2_u64/result
 
