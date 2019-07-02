@@ -51,6 +51,8 @@ static const char *helptext=
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
 
+int swap_joystick() __attribute__ ((weak));
+
 /***********************/
 /* Tree Browser Object */
 /***********************/
@@ -413,6 +415,9 @@ int TreeBrowser :: handle_key(int c)
         case KEY_CTRL_V: // paste
         	paste();
         	break;
+        case KEY_CTRL_J: // joyswap
+            ret = swap_joystick();
+            break;
         case KEY_RETURN: // CR = select
             reset_quick_seek();
             context(0);
@@ -551,4 +556,9 @@ void TreeBrowser :: cd_impl(const char *dst)
 
 const char *TreeBrowser :: getPath() {
 	return path->get_path();
+}
+
+int swap_joystick()
+{
+    return 0;
 }
