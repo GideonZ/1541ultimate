@@ -231,6 +231,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_irq;
     uint8_t vic_d011;
     uint8_t vic_d012;
+    uint8_t force_cart;
 
     uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
@@ -314,6 +315,7 @@ public:
     friend class C64_Subsys; // the wrapper with file access
     friend class REUPreloader; // preloader needs to access config
     friend class FileTypeREU; // REU file needs to access config 
+    friend class U64Config; // U64 config needs to stop / resume for SID detection
 };
 
 extern C64 *c64;
