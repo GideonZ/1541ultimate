@@ -376,3 +376,32 @@ int UserInterface :: enterSelection()
 #endif
 	return -1;
 }
+
+QueueHandle_t userMessageQueue = 0;
+
+void UserInterface :: postMessage(const char *msg)
+{
+    if (!userMessageQueue) {
+        userMessageQueue = xQueueCreate(4, sizeof(void *));
+    }
+    if (!userMessageQueue) {
+        return;
+    }
+    // Message handler becomes owner of object
+    mstring *message = new mstring(msg);
+
+    xQueueSend(userMessageQueue, &message, 0);
+}
+
+mstring *UserInterface :: getMessage(void)
+{
+    mstring *msg = NULL;
+
+    if (!userMessageQueue) {
+        userMessageQueue = xQueueCreate(4, sizeof(void *));
+    }
+    if (userMessageQueue) {
+        xQueueReceive(userMessageQueue, &msg, 0);
+    }
+    return msg;
+}
