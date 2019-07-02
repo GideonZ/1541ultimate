@@ -250,14 +250,17 @@ class C64 : public GenericHost, ConfigurableObject
     void resume(void);
     void freeze(void);
     
-    uint8_t get_exrom_game(void) {
+    static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }
-    bool phi2_present(void) {
+    static bool phi2_present(void) {
         return (C64_CLOCK_DETECT & 1) == 1;
     }
-    bool powered_by_c64(void) {
+    static bool powered_by_c64(void) {
         return (C64_CLOCK_DETECT & 2) == 2;
+    }
+    static bool c64_reset_detect(void) {
+        return (C64_CLOCK_DETECT & 0x10) == 0x10;
     }
 
 public:
