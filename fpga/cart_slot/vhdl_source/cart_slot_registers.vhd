@@ -102,6 +102,7 @@ begin
                     io_resp.data(1) <= status.c64_vcc;
                     io_resp.data(2) <= status.exrom;
                     io_resp.data(3) <= status.game;
+                    io_resp.data(4) <= status.reset_in;
                 when c_cart_cartridge_rom_base =>
                     io_resp.data <= std_logic_vector(g_rom_base(23 downto 16));
                 when c_cart_cartridge_type =>

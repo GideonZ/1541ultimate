@@ -51,6 +51,7 @@ package cart_slot_pkg is
         c64_vcc        : std_logic;
         exrom          : std_logic;
         game           : std_logic;
+        reset_in       : std_logic;
     end record;
 
     constant c_cart_control_init : t_cart_control := (

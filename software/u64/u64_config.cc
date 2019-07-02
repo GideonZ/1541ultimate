@@ -293,6 +293,8 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
         int sid1, sid2;
         C64_MODE = C64_MODE_UNRESET;
+        while (C64 :: c64_reset_detect())
+            ;
         S_SidDetector(sid1, sid2);
         printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
 

@@ -805,9 +805,11 @@ begin
     begin
         if rising_edge(clock) then
             memctrl_inhibit <= timing_inhibit;
+
             status.c64_vcc <= VCC;            
             status.exrom <= not exromn_i;
             status.game <= not gamen_i;
+            status.reset_in <= not rstn_i;
         end if;
     end process;
 
