@@ -22,6 +22,7 @@
 #include "s25fl_l_flash.h"
 #include "u64.h"
 #include "checksums.h"
+#include "overlay.h"
 
 extern uint32_t _u64_rbf_start;
 extern uint32_t _u64_rbf_end;
@@ -109,6 +110,8 @@ void do_update(void)
     	host = new HostStream(stream);
     }
     Screen *screen = host->getScreen();
+
+    OVERLAY_REGS->TRANSPARENCY = 0x00;
 
     UserInterface *user_interface = new UserInterface("\033\021** Ultimate 64 Updater **\n\033\037");
     user_interface->init(host);
