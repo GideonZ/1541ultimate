@@ -4,7 +4,7 @@
  *  Created on: Jul 22, 2015
  *      Author: Gideon
  */
-
+#include "../network/user_listener.h"
 #include "network_target.h"
 #include "network_interface.h"
 #include "socket.h"
@@ -29,6 +29,8 @@ NetworkTarget::NetworkTarget(int id)
     command_targets[id] = this;
     data_message.message = new uint8_t[512];
     status_message.message = new uint8_t[80];
+
+	userlistener.set_state(INCOMING_SOCKET_STATE_NOT_LISTENING);
 }
 
 NetworkTarget::~NetworkTarget()
@@ -165,6 +167,40 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
         case NET_CMD_WRITE_SOCKET:
         	write_socket(command, reply, status);
         	break;
+		case NET_CMD_START_LISTEN_SOCKET:
+			if (userlistener.get_state() == INCOMING_SOCKET_STATE_NOT_LISTENING)
+			{
+				userlistener.set_state(INCOMING_SOCKET_STATE_LISTENING);
+			}
+			*reply = &c_message_empty;
+            *status = &c_status_ok;
+			break;
+		case NET_CMD_STOP_LISTEN_SOCKET:
+			if(userlistener.get_state() == INCOMING_SOCKET_STATE_LISTENING)
+			{
+				userlistener.set_state(INCOMING_SOCKET_STATE_NOT_LISTENING);
+			}
+			*reply = &c_message_empty;
+            *status = &c_status_ok;
+			break;
+		case NET_CMD_GET_LISTEN_STATE:
+			uint8_t listenstate;
+			listenstate = userlistener.get_state();
+            *status = &c_status_ok;
+			*reply = &data_message;
+        	data_message.message[0] = listenstate;
+        	data_message.length = 1;
+            data_message.last_part = true;
+			break;
+		case NET_CMD_GET_LISTEN_SOCKET:
+			int listensocket;
+			listensocket = userlistener.get_socket();
+            *status = &c_status_ok;
+			*reply = &data_message;
+			data_message.message[0] = (uint8_t)listensocket;
+			data_message.length = 1;
+			data_message.last_part = true;
+			break;
         default:
             *reply  = &c_message_empty;
             *status = &c_status_unknown_command;

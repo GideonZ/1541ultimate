@@ -22,12 +22,25 @@
 #define NET_CMD_READ_SOCKET         0x10
 #define NET_CMD_WRITE_SOCKET        0x11
 
+#define NET_CMD_START_LISTEN_SOCKET 0x12
+#define NET_CMD_STOP_LISTEN_SOCKET  0x13
+#define NET_CMD_GET_LISTEN_STATE    0x14
+#define NET_CMD_GET_LISTEN_SOCKET   0x15
+
+#define LISTEN_STATE_NOT_LISTENING  0x00
+#define LISTEN_STATE_LISTENING      0x01
+#define LISTEN_STATE_CONNECTED      0x02
+
+
 #define NET_CMD_BUFSIZE 2048
 
 class NetworkTarget : public CommandTarget {
     Message data_message;
     Message status_message;
     uint8_t buffer[NET_CMD_BUFSIZE];
+    UserListener userlistener;
+    bool isListening;
+    int connectedSocket;
     void open_socket(Message *command, Message **reply, Message **status, int);
     void read_socket(Message *command, Message **reply, Message **status);
     void write_socket(Message *command, Message **reply, Message **status);

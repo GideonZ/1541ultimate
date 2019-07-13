@@ -33,7 +33,7 @@ SRCS_C   =	itu.c \
             sid_coeff.c \
             nios_main.c \
             alt_malloc_lock.c \
-            alt_do_ctors.c
+            alt_do_ctors.c 
 
 SRCS_CC	 =  u2p_init.cc \
 			small_printf.cc \
@@ -135,6 +135,7 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_tap.cc \
             socket_stream.cc \
             socket_gui.cc \
+			user_listener.cc \
 			socket_dma.cc \
 			rmii_interface.cc \
             home_directory.cc \

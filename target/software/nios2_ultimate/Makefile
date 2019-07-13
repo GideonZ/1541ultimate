@@ -131,6 +131,7 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_tap.cc \
 			socket_stream.cc \
 			socket_gui.cc \
+			user_listener.cc \
 			socket_dma.cc \
 			socket_test.cc \
 			rmii_interface.cc \
