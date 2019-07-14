@@ -133,6 +133,12 @@ bool flash_buffer(int id, void *buffer, void *buf_end, const char *version, cons
 		return true;
 	}
 
+	if (image_address.max_length < length) {
+	    console_print(screen, "\033\032** PANIC: %s too large to fit in flash. Aborted.\n", descr);
+	    console_print(screen, "\033\022-> Exceeded by %d bytes.\n", length - image_address.max_length);
+	    while (1);
+	}
+
 	int address = image_address.start;
     int page_size = flash->get_page_size();
     int page = address / page_size;

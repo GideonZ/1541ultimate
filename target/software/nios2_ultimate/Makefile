@@ -90,6 +90,7 @@ SRCS_CC	 =  u2p_init.cc \
 			audio_select.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
+			filetype_t64.cc \
 			filetype_prg.cc \
 			filetype_u2p.cc \
 			filetype_reu.cc \

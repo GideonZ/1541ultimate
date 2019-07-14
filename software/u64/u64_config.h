@@ -28,6 +28,9 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     static void reset_task(void *a);
     void run_reset_task();
 
+    static void DetectSidImpl(uint8_t *buffer) __attribute__ ((section ("detect_sid")));
+    static int S_SidDetector(int &sid1, int &sid2);
+
 public:
     U64Config();
     ~U64Config() {}
@@ -43,6 +46,7 @@ public:
     static void setFilter(ConfigItem *it);
     static void setSidEmuParams(ConfigItem *it);
     static void setLedSelector(ConfigItem *it);
+    static void SetResampleFilter(int mode);
 
     bool SidAutoConfig(int count, t_sid_definition *requested);
 };

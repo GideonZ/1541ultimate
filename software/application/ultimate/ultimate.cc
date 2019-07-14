@@ -88,7 +88,12 @@ extern "C" void ultimate_main(void *a)
 
     char title[48];
     if(capabilities & CAPAB_ULTIMATE64) {
-    	sprintf(title, "\eA*** Ultimate 64 V1.%b - %s ***\eO", C64_CORE_VERSION, APPL_VERSION);
+        uint8_t rev = (U2PIO_BOARDREV >> 3);
+        if (rev == 0x13) {
+            sprintf(title, "\eA** Ultimate 64 Elite V1.%b - %s **\eO", C64_CORE_VERSION, APPL_VERSION);
+        } else {
+            sprintf(title, "\eA*** Ultimate 64 V1.%b - %s ***\eO", C64_CORE_VERSION, APPL_VERSION);
+        }
     } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
     	sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
     } else {

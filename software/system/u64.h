@@ -14,14 +14,17 @@
 #define U64_IO_BASE     0xA0000400
 #define U64_AUDIO_MIXER 0xA0000500
 #define U64_WIFI_UART   0xA0000600
+#define U64_RESAMPLER   0xA0000700
 
 #define VID_IO_BASE  0xA0040000
 #define C64_IO_BASE  0xA0080000
 #define C64_IO_LED   0xA0081000
+#define C64_IO_DEBUG 0xA0082000
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0x1FE))
 #define LEDSTRIP_LEN  (*(volatile uint8_t *)(C64_IO_LED + 0x1FF))
+#define U64_DEBUG_REGISTER (*(volatile uint8_t *)C64_IO_DEBUG)
 
 #define C64_SID_BASE     0xA0088000
 #define U64_ROMS_BASE    0xA0090000
@@ -30,7 +33,6 @@
 #define U64_BASIC_BASE   (U64_ROMS_BASE + 0x0000)
 #define U64_KERNAL_BASE  (U64_ROMS_BASE + 0x2000)
 #define U64_CHARROM_BASE (U64_ROMS_BASE + 0x4000)
-#define U64_DEBUG_REGISTER (*(volatile uint8_t *)(U64_ROMS_BASE + 0x8000))
 
 #define U64_RAM_BASE     0xA00C0000
 #endif
@@ -49,6 +51,12 @@
 #define U64_LEDSTRIP_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x0C)) // Write a 1 to make CIA_PWM pins become LED strip control pins
 #define U64_PWM_DUTY       (*(volatile uint8_t *)(U64_IO_BASE + 0x0D)) // any value between 00 (off) and FF (nearly full phase)
 #define U64_CASELED_SELECT (*(volatile uint8_t *)(U64_IO_BASE + 0x0E)) // Two nibbles with selectors
+#define U64_ETHSTREAM_ENA  (*(volatile uint8_t *)(U64_IO_BASE + 0x0F)) // Ethernet stream generators 0 = vic, 1 = audio, 2 = bus, 3 = iec
+
+#define U64_RESAMPLE_RESET (*(volatile uint8_t *)(U64_RESAMPLER + 0x04))
+#define U64_RESAMPLE_LABOR (*(volatile uint8_t *)(U64_RESAMPLER + 0x08))
+#define U64_RESAMPLE_FLUSH (*(volatile uint8_t *)(U64_RESAMPLER + 0x09))
+#define U64_RESAMPLE_DATA  (*(volatile uint32_t *)(U64_RESAMPLER + 0x00))
 
 #define U64_HDMI_DDC_ENABLE     0x20
 #define U64_HDMI_DDC_DISABLE    0x10
@@ -91,8 +99,11 @@
 #define C64_VOICE1_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x24))
 #define C64_VOICE2_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x25))
 #define C64_VOICE3_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x26))
+#define C64_EMUSID1_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x27))
+#define C64_EMUSID2_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x28))
 #define C64_PLD_SIDCTRL2  (*(volatile uint8_t *)(C64_IO_BASE + 0x3A))
 #define C64_PLD_SIDCTRL1  (*(volatile uint8_t *)(C64_IO_BASE + 0x3B))
+#define C64_PLD_JOYCTRL   (*(volatile uint8_t *)(C64_IO_BASE + 0x3E))
 
 #define VIDEO_FMT_NTSC_ENCODING 0x01
 #define VIDEO_FMT_60_HZ         0x02

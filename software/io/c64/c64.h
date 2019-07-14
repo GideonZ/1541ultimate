@@ -231,6 +231,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_irq;
     uint8_t vic_d011;
     uint8_t vic_d012;
+    uint8_t force_cart;
 
     uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
@@ -249,14 +250,17 @@ class C64 : public GenericHost, ConfigurableObject
     void resume(void);
     void freeze(void);
     
-    uint8_t get_exrom_game(void) {
+    static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }
-    bool phi2_present(void) {
+    static bool phi2_present(void) {
         return (C64_CLOCK_DETECT & 1) == 1;
     }
-    bool powered_by_c64(void) {
+    static bool powered_by_c64(void) {
         return (C64_CLOCK_DETECT & 2) == 2;
+    }
+    static bool c64_reset_detect(void) {
+        return (C64_CLOCK_DETECT & 0x10) == 0x10;
     }
 
 public:
@@ -314,6 +318,7 @@ public:
     friend class C64_Subsys; // the wrapper with file access
     friend class REUPreloader; // preloader needs to access config
     friend class FileTypeREU; // REU file needs to access config 
+    friend class U64Config; // U64 config needs to stop / resume for SID detection
 };
 
 extern C64 *c64;

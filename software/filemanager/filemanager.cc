@@ -721,7 +721,12 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 			ret = fopen(sp, filename, FA_READ, &fi);
 			if (fi) {
 				File *fo = 0;
-				ret = fopen(dp, filename, FA_CREATE_NEW | FA_WRITE, &fo);
+	            char dest_name[100];
+	            strncpy(dest_name, filename, 100);
+	            // This may look odd, but files inside a D64 for instance, do not have the extension in the filename anymore
+	            // so we add it here.
+	            set_extension(dest_name, info->extension, 100);
+	            ret = fopen(dp, dest_name, FA_CREATE_NEW | FA_WRITE, &fo);
 				if (fo) {
 					uint8_t *buffer = new uint8_t[32768];
 					uint32_t transferred, written;

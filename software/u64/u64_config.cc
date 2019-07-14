@@ -24,6 +24,8 @@ extern "C" {
 #include "ext_i2c.h"
 #include "overlay.h"
 #include "u2p.h"
+#include "sys/alt_irq.h"
+#include "c64.h"
 
 // static pointer
 U64Config u64_configurator;
@@ -59,6 +61,8 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SID2_SHUNT        0x1B
 #define CFG_SID1_CAPS         0x1C
 #define CFG_SID2_CAPS         0x1D
+#define CFG_EMUSID1_DIGI      0x1E
+#define CFG_EMUSID2_DIGI      0x1F
 
 #define CFG_MIXER0_VOL        0x20
 #define CFG_MIXER1_VOL        0x21
@@ -86,6 +90,8 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_LED_SELECT_0      0x42
 #define CFG_LED_SELECT_1      0x43
 #define CFG_SPEAKER_VOL       0x44
+#define CFG_SOCKET1_ENABLE    0x45
+#define CFG_SOCKET2_ENABLE    0x46
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -152,6 +158,7 @@ uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0x
 static const char *stereo_addr[] = { "A5", "A8" };
 static const char *en_dis4[] = { "Disabled", "Enabled" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
+static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
 static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
@@ -182,6 +189,7 @@ static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90,
 
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
 
+
 /*
 00 ff ff ff ff ff ff 00  09 d1 db 78 45 54 00 00
 0b 1b 01 03 80 30 1b 78  2e 34 55 a7 55 52 a0 27
@@ -209,8 +217,10 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
-    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID in Socket 1",              "%s", sid_types,    0,  2, 0 },
-    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID in Socket 2",              "%s", sid_types,    0,  2, 0 },
+    { CFG_SOCKET1_ENABLE,       CFG_TYPE_ENUM, "SID Socket 1",                 "%s", en_dis4,      0,  1, 0 },
+    { CFG_SOCKET2_ENABLE,       CFG_TYPE_ENUM, "SID Socket 2",                 "%s", en_dis4,      0,  1, 0 },
+    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  2, 0 },
+    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  2, 0 },
     { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID2_SHUNT,           CFG_TYPE_ENUM, "SID Socket 2 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID1_CAPS,            CFG_TYPE_ENUM, "SID Socket 1 Capacitors",      "%s", sid_caps,     0,  1, 0 },
@@ -229,6 +239,8 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_EMUSID2_RESONANCE,    CFG_TYPE_ENUM, "UltiSID 2 Filter Resonance",   "%s", filter_res,   0,  1, 0 },
     { CFG_EMUSID1_WAVES,        CFG_TYPE_ENUM, "UltiSID 1 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
     { CFG_EMUSID2_WAVES,        CFG_TYPE_ENUM, "UltiSID 2 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
+    { CFG_EMUSID1_DIGI,         CFG_TYPE_ENUM, "UltiSID 1 Digis Level",        "%s", digi_levels,  0,  3, 2 },
+    { CFG_EMUSID2_DIGI,         CFG_TYPE_ENUM, "UltiSID 2 Digis Level",        "%s", digi_levels,  0,  3, 2 },
 #if DEVELOPER
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
@@ -265,14 +277,67 @@ extern Overlay *overlay;
 U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 {
     systemMode = -1;
+    U64_ETHSTREAM_ENA = 0;
 
+/*
+    // This is a work around for warm start tests
+    C64_STOP_MODE = STOP_COND_FORCE;
+    C64_STOP = 1;
+    C64_MODE = C64_MODE_RESET;
+*/
 
     if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
 		struct t_cfg_definition *def = u64_cfg;
 		uint32_t store = 0x55363443;
 		register_store(store, "U64 Specific Settings", def);
 
-		// enable "hot" updates for mixer
+        int sid1, sid2;
+        C64_MODE = C64_MODE_UNRESET;
+        while (C64 :: c64_reset_detect())
+            ;
+        S_SidDetector(sid1, sid2);
+        printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
+
+        // Configuration has changed? Then disable the sockets until the user
+        // has approved the detection. We only do this for 12V. We simply enable
+        // for 9V supply.
+        if (sid1 != cfg->get_value(CFG_SID1_TYPE)) {
+            cfg->set_value(CFG_SID1_TYPE, sid1);
+            switch(sid1) {
+            case 1: // 6581
+                cfg->set_value(CFG_SOCKET1_ENABLE, 0);
+                cfg->set_value(CFG_SID1_CAPS, 0);
+                cfg->set_value(CFG_SID1_SHUNT, 1);
+                break;
+            case 2: // 8580
+                cfg->set_value(CFG_SOCKET1_ENABLE, 1);
+                cfg->set_value(CFG_SID1_CAPS, 1);
+                cfg->set_value(CFG_SID1_SHUNT, 0);
+                break;
+            }
+        }
+
+        if (sid2 != cfg->get_value(CFG_SID2_TYPE)) {
+            cfg->set_value(CFG_SID2_TYPE, sid2);
+            switch(sid2) {
+            case 1: // 6581
+                cfg->set_value(CFG_SOCKET2_ENABLE, 0);
+                cfg->set_value(CFG_SID2_CAPS, 0);
+                cfg->set_value(CFG_SID2_SHUNT, 1);
+                break;
+            case 2: // 8580
+                cfg->set_value(CFG_SOCKET2_ENABLE, 1);
+                cfg->set_value(CFG_SID2_CAPS, 1);
+                cfg->set_value(CFG_SID2_SHUNT, 0);
+                break;
+            }
+        }
+        if (cfg->dirty) {
+            cfg->write();
+            UserInterface :: postMessage("SID changed. Please review settings");
+        }
+
+        // enable "hot" updates for mixer
 		for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
 		    cfg->set_change_hook(b, U64Config :: setMixer);
 		}
@@ -288,18 +353,24 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_EMUSID2_RESONANCE, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_EMUSID1_WAVES, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_EMUSID2_WAVES, U64Config :: setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID1_DIGI, U64Config :: setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID2_DIGI, U64Config :: setSidEmuParams);
         cfg->set_change_hook(CFG_LED_SELECT_0, U64Config :: setLedSelector);
         cfg->set_change_hook(CFG_LED_SELECT_1, U64Config :: setLedSelector);
 		effectuate_settings();
 	}
 	fm = FileManager :: getFileManager();
 
+	// This field shows what was detected and cannot be changed
+	cfg->disable(CFG_SID1_TYPE);
+    cfg->disable(CFG_SID2_TYPE);
+    cfg->disable(CFG_SID1_CAPS);
+    cfg->disable(CFG_SID2_CAPS);
+
     uint8_t rev = (U2PIO_BOARDREV >> 3);
     if (rev != 0x13) {
         cfg->disable(CFG_SID1_SHUNT);
         cfg->disable(CFG_SID2_SHUNT);
-        cfg->disable(CFG_SID1_CAPS);
-        cfg->disable(CFG_SID2_CAPS);
     }
 
 	skipReset = false;
@@ -348,18 +419,19 @@ void U64Config :: effectuate_settings()
         uint8_t typ = cfg->get_value(CFG_SID1_TYPE); // 0 = none, 1 = 6581, 2 = 8580
         uint8_t shu = cfg->get_value(CFG_SID1_SHUNT);
         uint8_t cap = 1-cfg->get_value(CFG_SID1_CAPS);
-        uint8_t reg;
-        switch (typ) {
-            case 1: reg = 3; break;
-            case 2: reg = 2; break;
-            default: reg = 0; break;
+        uint8_t reg = 0;
+        if (cfg->get_value(CFG_SOCKET1_ENABLE)) {
+            switch (typ) {
+                case 1: reg = 3; break;
+                case 2: reg = 2; break;
+                default: reg = 2; break;
+            }
         }
         // bit 0 = voltage
         // bit 1 = regulator enable
         // bit 2 = shunt
         // bit 3 = caps
         uint8_t value = reg | (shu << 2) | (cap << 3);
-        //C64_PLD_SIDCTRL1 = value | 0xB0;
         C64_PLD_SIDCTRL1 = value | 0x50;
     }
 
@@ -367,11 +439,13 @@ void U64Config :: effectuate_settings()
         uint8_t typ = cfg->get_value(CFG_SID2_TYPE); // 0 = none, 1 = 6581, 2 = 8580
         uint8_t shu = cfg->get_value(CFG_SID2_SHUNT);
         uint8_t cap = 1-cfg->get_value(CFG_SID2_CAPS);
-        uint8_t reg;
-        switch (typ) {
-            case 1: reg = 3; break;
-            case 2: reg = 2; break;
-            default: reg = 0; break;
+        uint8_t reg = 0;
+        if (cfg->get_value(CFG_SOCKET2_ENABLE)) {
+            switch (typ) {
+                case 1: reg = 3; break;
+                case 2: reg = 2; break;
+                default: reg = 2; break;
+            }
         }
         // bit 0 = voltage
         // bit 1 = regulator enable
@@ -379,16 +453,15 @@ void U64Config :: effectuate_settings()
         // bit 3 = caps
         uint8_t value = reg | (shu << 2) | (cap << 3);
         C64_PLD_SIDCTRL2 = value | 0xB0;
-        //C64_PLD_SIDCTRL2 = value | 0x50;
     }
 
     C64_SCANLINES    =  cfg->get_value(CFG_SCANLINES);
     C64_PADDLE_EN    =  cfg->get_value(CFG_PADDLE_EN);
     C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK = cfg->get_value(CFG_STEREO_DIFF);
-    C64_SID1_EN_BAK = cfg->get_value(CFG_SID1_TYPE);
-    C64_SID2_EN_BAK = cfg->get_value(CFG_SID2_TYPE);
-    C64_SID1_EN      =  cfg->get_value(CFG_SID1_TYPE) ? 1 : 0;
-    C64_SID2_EN      =  cfg->get_value(CFG_SID2_TYPE) ? 1 : 0;
+    C64_SID1_EN_BAK = cfg->get_value(CFG_SOCKET1_ENABLE);
+    C64_SID2_EN_BAK = cfg->get_value(CFG_SOCKET2_ENABLE);
+    C64_SID1_EN      =  cfg->get_value(CFG_SOCKET1_ENABLE) ? 1 : 0;
+    C64_SID2_EN      =  cfg->get_value(CFG_SOCKET2_ENABLE) ? 1 : 0;
     C64_SID1_BASE    =  C64_SID1_BASE_BAK = u64_sid_offsets[cfg->get_value(CFG_SID1_ADDRESS)];
     C64_SID2_BASE    =  C64_SID2_BASE_BAK = u64_sid_offsets[cfg->get_value(CFG_SID2_ADDRESS)];
     C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK =  u64_sid_offsets[cfg->get_value(CFG_EMUSID1_ADDRESS)];
@@ -433,6 +506,7 @@ void U64Config :: effectuate_settings()
         SetHdmiPll(systemMode);
         SetVideoMode(systemMode);
         ResetHdmiPll();
+        SetResampleFilter(systemMode);
         overlay->initRegs();
     }
     C64_VIDEOFORMAT = format;
@@ -454,6 +528,8 @@ void U64Config :: effectuate_settings()
     setSidEmuParams(cfg->find_item(CFG_EMUSID2_RESONANCE));
     setSidEmuParams(cfg->find_item(CFG_EMUSID1_WAVES));
     setSidEmuParams(cfg->find_item(CFG_EMUSID2_WAVES));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID1_DIGI));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID2_DIGI));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
 
 /*
@@ -465,6 +541,7 @@ void U64Config :: effectuate_settings()
 */
 
 }
+
 
 void U64Config :: setFilter(ConfigItem *it)
 {
@@ -478,6 +555,8 @@ void U64Config :: setFilter(ConfigItem *it)
     switch(it->value) {
     case 0:
         coef = sid8580_filter_coefficients;
+        mul = 7;
+        div = 32;
         break;
     case 1:
         coef = sid8580_filter_coefficients;
@@ -565,6 +644,12 @@ void U64Config :: setSidEmuParams(ConfigItem *it)
     case CFG_EMUSID2_WAVES:
         C64_EMUSID2_WAVES = it->value;
         break;
+    case CFG_EMUSID1_DIGI:
+        C64_EMUSID1_DIGI = it->value;
+        break;
+    case CFG_EMUSID2_DIGI:
+        C64_EMUSID2_DIGI = it->value;
+        break;
     }
 }
 
@@ -573,6 +658,7 @@ void U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_DISABLE 3
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
+#define MENU_U64_DETECT_SIDS 6
 
 int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 {
@@ -586,6 +672,7 @@ int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 #endif
     }
 #if DEVELOPER
+    item_list.append(new Action("Detect SIDs", SUBSYSID_U64, MENU_U64_DETECT_SIDS));  count ++;
 	item_list.append(new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE));  count++;
 	item_list.append(new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE));  count++;
     item_list.append(new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT));  count++;
@@ -603,6 +690,8 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	FRESULT fres;
 	uint32_t trans;
 	name[0] = 0;
+	int sid1, sid2;
+	char sidString[40];
 
     switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -660,6 +749,15 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         U64_WIFI_CONTROL = 2;
         vTaskDelay(150);
         U64_WIFI_CONTROL = 7;
+        break;
+
+    case MENU_U64_DETECT_SIDS:
+        c64->stop(false);
+        S_SidDetector(sid1, sid2);
+        c64->resume();
+        sprintf(sidString, "Socket1: %s  Socket2: %s", sid_types[sid1], sid_types[sid2]);
+        cmd->user_interface->popup(sidString, BUTTON_OK);
+        effectuate_settings();
         break;
 
     default:
@@ -952,4 +1050,290 @@ extern "C" {
     {
         u64_configurator.ResetHandler();
     }
+}
+
+
+const uint32_t c_filter2_coef_pal_alt[] = {
+    5, 4, 5, 6, 8, 10, 13, 16, 19, 22, 26, 31, 36, 41, 47, 54, 61, 68, 75, 84, 92, 101,
+    110, 119, 128, 137, 146, 155, 163, 171, 179, 186, 192, 197, 201, 203, 204, 204, 202,
+    198, 193, 185, 176, 164, 150, 134, 116, 96, 73, 49, 22, -6, -36, -68, -100, -134,
+    -168, -203, -238, -273, -308, -341, -374, -405, -434, -460, -484, -505, -522, -536,
+    -546, -552, -553, -549, -541, -528, -511, -488, -461, -429, -392, -352, -307, -259,
+    -208, -155, -99, -42, 16, 74, 132, 189, 243, 296, 345, 390, 430, 466, 495, 518, 535,
+    544, 545, 539, 525, 502, 472, 433, 388, 334, 274, 208, 135, 58, -23, -108, -194,
+    -282, -370, -457, -542, -623, -700, -771, -836, -892, -940, -978, -1005, -1021,
+    -1026, -1018, -997, -964, -918, -859, -788, -705, -611, -507, -394, -273, -145,
+    -12, 125, 264, 404, 542, 677, 806, 929, 1044, 1147, 1239, 1317, 1380, 1427, 1456,
+    1467, 1459, 1432, 1384, 1318, 1231, 1126, 1003, 863, 707, 537, 355, 162, -38,
+    -244, -453, -663, -871, -1073, -1268, -1452, -1622, -1777, -1913, -2028, -2121,
+    -2189, -2230, -2244, -2229, -2184, -2110, -2007, -1874, -1714, -1526, -1314,
+    -1078, -822, -547, -258, 42, 350, 663, 975, 1283, 1583, 1871, 2142, 2393, 2619,
+    2817, 2984, 3116, 3211, 3266, 3279, 3250, 3177, 3059, 2898, 2694, 2449, 2164,
+    1842, 1487, 1101, 690, 258, -191, -650, -1115, -1578, -2034, -2477, -2900, -3298,
+    -3664, -3993, -4278, -4516, -4701, -4830, -4899, -4905, -4846, -4722, -4531, -4274,
+    -3953, -3569, -3126, -2628, -2079, -1485, -852, -187, 501, 1206, 1917, 2627, 3325,
+    4003, 4650, 5257, 5816, 6316, 6749, 7108, 7385, 7574, 7668, 7664, 7557, 7345, 7028,
+    6604, 6076, 5447, 4720, 3901, 2997, 2016, 967, -139, -1289, -2472, -3673, -4879,
+    -6073, -7241, -8366, -9432, -10422, -11321, -12113, -12782, -13314, -13695, -13912,
+    -13953, -13809, -13470, -12929, -12181, -11221, -10048, -8661, -7063, -5258, -3251,
+    -1051, 1332, 3887, 6600, 9456, 12437, 15525, 18701, 21943, 25230, 28538, 31845,
+    35126, 38358, 41517, 44580, 47522, 50323, 52959, 55412, 57662, 59690, 61482, 63023,
+    64301, 65306, 66029, 66466, 66612, 66466, 66029, 65306, 64301, 63023, 61482, 59690,
+    57662, 55412, 52959, 50323, 47522, 44580, 41517, 38358, 35126, 31845, 28538, 25230,
+    21943, 18701, 15525, 12437, 9456, 6600, 3887, 1332, -1051, -3251, -5258, -7063,
+    -8661, -10048, -11221, -12181, -12929, -13470, -13809, -13953, -13912, -13695,
+    -13314, -12782, -12113, -11321, -10422, -9432, -8366, -7241, -6073, -4879, -3673,
+    -2472, -1289, -139, 967, 2016, 2997, 3901, 4720, 5447, 6076, 6604, 7028, 7345,
+    7557, 7664, 7668, 7574, 7385, 7108, 6749, 6316, 5816, 5257, 4650, 4003, 3325,
+    2627, 1917, 1206, 501, -187, -852, -1485, -2079, -2628, -3126, -3569, -3953,
+    -4274, -4531, -4722, -4846, -4905, -4899, -4830, -4701, -4516, -4278, -3993,
+    -3664, -3298, -2900, -2477, -2034, -1578, -1115, -650, -191, 258, 690, 1101,
+    1487, 1842, 2164, 2449, 2694, 2898, 3059, 3177, 3250, 3279, 3266, 3211, 3116,
+    2984, 2817, 2619, 2393, 2142, 1871, 1583, 1283, 975, 663, 350, 42, -258, -547,
+    -822, -1078, -1314, -1526, -1714, -1874, -2007, -2110, -2184, -2229, -2244,
+    -2230, -2189, -2121, -2028, -1913, -1777, -1622, -1452, -1268, -1073, -871,
+    -663, -453, -244, -38, 162, 355, 537, 707, 863, 1003, 1126, 1231, 1318, 1384,
+    1432, 1459, 1467, 1456, 1427, 1380, 1317, 1239, 1147, 1044, 929, 806, 677,
+    542, 404, 264, 125, -12, -145, -273, -394, -507, -611, -705, -788, -859, -918,
+    -964, -997, -1018, -1026, -1021, -1005, -978, -940, -892, -836, -771, -700,
+    -623, -542, -457, -370, -282, -194, -108, -23, 58, 135, 208, 274, 334, 388,
+    433, 472, 502, 525, 539, 545, 544, 535, 518, 495, 466, 430, 390, 345, 296, 243,
+    189, 132, 74, 16, -42, -99, -155, -208, -259, -307, -352, -392, -429, -461,
+    -488, -511, -528, -541, -549, -553, -552, -546, -536, -522, -505, -484, -460,
+    -434, -405, -374, -341, -308, -273, -238, -203, -168, -134, -100, -68, -36,
+    -6, 22, 49, 73, 96, 116, 134, 150, 164, 176, 185, 193, 198, 202, 204, 204,
+    203, 201, 197, 192, 186, 179, 171, 163, 155, 146, 137, 128, 119, 110, 101,
+    92, 84, 75, 68, 61, 54, 47, 41, 36, 31, 26, 22, 19, 16, 13, 10, 8, 6, 5, 4, 5 };
+
+
+/*
+-- Generated with paramters: Gain 2.8  (remember: Pal had 14 while oversampling factor was 15, thus here we use 14/15 * 3 = 2.8)
+-- Fs = 383400 Hz (3 * 127800). Pass : 0-19000, Stopband: 23000 - 191700, 0.4 dB / -80 dB
+-- Taps = 507 (510 did not work)
+-- Result = 0.01 dB ripple, -108 dB atten!  The perfect filter ;)
+*/
+
+const uint32_t c_filter2_coef_ntsc[] = {
+    -1, -1, -1, -2, -3, -4, -5, -6, -7, -8, -8, -8, -7, -5, -3, 0, 4, 7, 11, 15, 18, 20, 21,
+    20, 18, 15, 11, 6, 0, -5, -10, -14, -16, -16, -14, -9, -4, 4, 11, 18, 24, 28, 30, 29, 24,
+    17, 7, -4, -15, -25, -33, -38, -39, -35, -27, -16, -1, 15, 30, 43, 53, 57, 55, 47, 33, 14,
+    -7, -29, -49, -65, -75, -77, -70, -55, -32, -5, 25, 54, 79, 96, 104, 100, 85, 59, 25, -14,
+    -54, -90, -118, -134, -136, -122, -94, -53, -4, 48, 98, 139, 167, 178, 168, 139, 93, 33,
+    -34, -100, -159, -202, -225, -224, -196, -145, -75, 8, 94, 174, 238, 278, 288, 266, 212,
+    131, 32, -77, -182, -271, -334, -361, -349, -296, -206, -89, 45, 179, 300, 392, 443, 446,
+    398, 302, 167, 6, -163, -320, -449, -531, -557, -520, -421, -270, -80, 127, 329, 502, 625,
+    682, 664, 568, 403, 184, -66, -320, -548, -723, -823, -833, -747, -572, -323, -26, 287,
+    582, 822, 979, 1030, 965, 785, 508, 159, -224, -598, -921, -1152, -1261, -1229, -1055,
+    -751, -346, 118, 590, 1016, 1345, 1534, 1556, 1399, 1072, 606, 47, -546, -1105, -1565,
+    -1867, -1969, -1848, -1507, -973, -298, 449, 1185, 1826, 2291, 2517, 2464, 2121, 1511,
+    687, -269, -1255, -2160, -2873, -3301, -3372, -3055, -2356, -1328, -63, 1312, 2647, 3785,
+    4579, 4906, 4683, 3883, 2537, 740, -1353, -3540, -5585, -7236, -8252, -8424, -7592, -5669,
+    -2651, 1379, 6251, 11720, 17477, 23177, 28462, 32991, 36464, 38646, 39390, 38646, 36464,
+    32991, 28462, 23177, 17477, 11720, 6251, 1379, -2651, -5669, -7592, -8424, -8252, -7236,
+    -5585, -3540, -1353, 740, 2537, 3883, 4683, 4906, 4579, 3785, 2647, 1312, -63, -1328,
+    -2356, -3055, -3372, -3301, -2873, -2160, -1255, -269, 687, 1511, 2121, 2464, 2517,
+    2291, 1826, 1185, 449, -298, -973, -1507, -1848, -1969, -1867, -1565, -1105, -546, 47,
+    606, 1072, 1399, 1556, 1534, 1345, 1016, 590, 118, -346, -751, -1055, -1229, -1261,
+    -1152, -921, -598, -224, 159, 508, 785, 965, 1030, 979, 822, 582, 287, -26, -323, -572,
+    -747, -833, -823, -723, -548, -320, -66, 184, 403, 568, 664, 682, 625, 502, 329, 127,
+    -80, -270, -421, -520, -557, -531, -449, -320, -163, 6, 167, 302, 398, 446, 443, 392,
+    300, 179, 45, -89, -206, -296, -349, -361, -334, -271, -182, -77, 32, 131, 212, 266,
+    288, 278, 238, 174, 94, 8, -75, -145, -196, -224, -225, -202, -159, -100, -34, 33, 93,
+    139, 168, 178, 167, 139, 98, 48, -4, -53, -94, -122, -136, -134, -118, -90, -54, -14,
+    25, 59, 85, 100, 104, 96, 79, 54, 25, -5, -32, -55, -70, -77, -75, -65, -49, -29, -7,
+    14, 33, 47, 55, 57, 53, 43, 30, 15, -1, -16, -27, -35, -39, -38, -33, -25, -15, -4, 7,
+    17, 24, 29, 30, 28, 24, 18, 11, 4, -4, -9, -14, -16, -16, -14, -10, -5, 0, 6, 11, 15,
+    18, 20, 21, 20, 18, 15, 11, 7, 4, 0, -3, -5, -7, -8, -8, -8, -7, -6, -5, -4, -3, -2,
+    -1, -1, -1, 0, 0, 0, 0, 0 };
+
+
+void U64Config :: SetResampleFilter(int mode)
+{
+    const uint32_t *pulFilter = (mode == 0) ? c_filter2_coef_pal_alt : c_filter2_coef_ntsc;
+    int size = (mode == 0) ? 675 : 512;
+
+    U64_RESAMPLE_RESET = 1;
+    U64_RESAMPLE_FLUSH = 1;
+    for(int i=0; i < size; i++) {
+        U64_RESAMPLE_DATA = *(pulFilter ++);
+    }
+    U64_RESAMPLE_LABOR = (mode == 0) ? 45 : 169; // 675 / 15 and 510 / 3
+    U64_RESAMPLE_FLUSH = 0;
+}
+
+#pragma GCC push_options
+#pragma GCC optimize ("O1")
+
+void U64Config :: DetectSidImpl(uint8_t *buffer)
+{
+    uint8_t result1, result2, result3, result4;
+
+    while (C64_PEEK(0xD012) != 0xFF)
+        ;
+
+    for(int x = 0; x < 16; x++) {
+
+        C64_POKE(0xD412, 0x48);
+        C64_POKE(0xD40F, 0x48);
+        C64_POKE(0xD412, 0x24);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        result1 = C64_PEEK(0xD41B);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        C64_POKE(0xD41F, 0x00);
+        result2 = C64_PEEK(0xD41B);
+
+        C64_POKE(0xD512, 0x48);
+        C64_POKE(0xD50F, 0x48);
+        C64_POKE(0xD512, 0x24);
+        C64_POKE(0xD51F, 0x00);
+        C64_POKE(0xD51F, 0x00);
+        C64_POKE(0xD51F, 0x00);
+        result3 = C64_PEEK(0xD51B);
+        C64_POKE(0xD51F, 0x00);
+        C64_POKE(0xD51F, 0x00);
+        C64_POKE(0xD51F, 0x00);
+        C64_POKE(0xD51F, 0x00);
+        result4 = C64_PEEK(0xD51B);
+
+        buffer[x + 0] = result1;
+        buffer[x + 16] = result2;
+        buffer[x + 32] = result3;
+        buffer[x + 48] = result4;
+    }
+
+
+    /*
+    detectSidModel  lda #$ff        ; make sure the check is not done on a bad line
+    -               cmp $d012
+                    bne -
+                    lda #$48        ; test bit should be set
+                    sta $d412
+                    sta $d40f
+                    lsr             ; activate sawtooth waveform
+                    sta $d412
+                    lda $d41b
+                    tax
+                    and #$fe
+                    bne unknownSid  ; unknown SID chip, most likely emulated or no SID in socket
+                    lda $d41b       ; try to read another time where the value should always be $03 on a real SID for all SID models
+                    cmp #$03
+                    beq +
+    unknownSid      ldx #$02
+    +               txa
+                    rts             ; output 0 = 8580, 1 = 6581, 2 = unknown
+*/
+
+
+}
+
+#pragma GCC pop_options
+
+#define ONCHIP 0x30000020
+
+extern uint32_t __start_detect_sid;
+extern uint32_t __stop_detect_sid;
+
+typedef void (*func)(uint8_t *);
+
+int U64Config :: S_SidDetector(int &sid1, int &sid2)
+{
+    uint32_t *begin = &__start_detect_sid;
+    uint32_t *end = &__stop_detect_sid;
+
+    // This check forces a reference to U64Config::DetectSid, so it will not be left out by the linker
+    // Note: we never jump to this function, we only take its pointer and jump to the copied version!
+    if ((void *)&U64Config::DetectSidImpl != begin) {
+        printf("Routine location error.\n");
+        return -1;
+    }
+
+    // Configure Socket 1 to be at $D400 and Socket 2 to be at $D500
+    // UltiSid is set to $D600 to make sure it doesn't trigger
+    C64_SID1_BASE = 0x40;
+    C64_SID2_BASE = 0x50;
+    C64_SID1_MASK = 0xFE;
+    C64_SID2_MASK = 0xFE;
+    C64_EMUSID1_BASE = 0x60;
+    C64_EMUSID2_BASE = 0x60;
+    C64_EMUSID1_MASK = 0xFE;
+    C64_EMUSID2_MASK = 0xFE;
+
+    // Prepare the function in fast ram
+    uint32_t *dest = (uint32_t *)ONCHIP;
+    for (uint32_t *pul = begin; pul < end; pul++) {
+        *(dest++) = *pul;
+    }
+    func detection = (func)ONCHIP;
+
+    uint8_t buffer[64];
+
+    sid1 = sid2 = 0;
+
+    for (int attempt = 0; attempt < 3; attempt++) {
+        // Prepare the machine to execute the detection code
+
+        C64_SID1_EN = 1;
+        C64_SID2_EN = 1;
+
+        alt_irq_context context = alt_irq_disable_all();
+        detection(buffer);  // <-- jumps to fast ram!
+        alt_irq_enable_all(context);
+
+        C64_SID1_EN = 0;
+        C64_SID2_EN = 0;
+
+        // Now analyze the data
+        if ((buffer[16] == 2) && (buffer[0] == 0))  {
+            sid1 = 2;
+        } else if ((buffer[16] == 2) && (buffer[0] == 1)) {
+            sid1 = 1;
+        }
+
+        if ((buffer[48] == 2) && (buffer[32] == 0))  {
+            sid2 = 2;
+        } else if ((buffer[48] == 2) && (buffer[32] == 1)) {
+            sid2 = 1;
+        }
+
+        // check consistency. If not consistent, invalidate. If consistent, break
+        bool consistent = true;
+        for(int i=1;i<16;i++) {
+            if (sid1) {
+                if (buffer[i]    != buffer[0])  { consistent = false; sid1 = 0; break; }
+                if (buffer[i+16] != buffer[16]) { consistent = false; sid1 = 0; break; }
+            }
+            if (sid2) {
+                if (buffer[i+32] != buffer[32]) { consistent = false; sid2 = 0; break; }
+                if (buffer[i+48] != buffer[48]) { consistent = false; sid2 = 0; break; }
+            }
+        }
+
+        if (consistent) {
+            break;
+        }
+    }
+    return 1;
+}
+
+int swap_joystick()
+{
+    static uint8_t toggle = 0;
+
+    uint8_t rev = (U2PIO_BOARDREV >> 3);
+    if (rev != 0x13) {
+        return 0;
+    }
+
+    toggle ^= 1;
+
+    C64_PLD_JOYCTRL = toggle;
+
+    printf("*S%d*", toggle);
+
+    // swap performed, now exit menu
+    return -1;
 }

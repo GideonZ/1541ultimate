@@ -30,6 +30,7 @@ public:
 #define KEY_CTRL_C 0x03
 #define KEY_CTRL_N 0x0E
 #define KEY_CTRL_V 0x16
+#define KEY_CTRL_J 0x0A
 
 #define KEY_F1     0x85
 #define KEY_F3     0x86

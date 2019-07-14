@@ -21,10 +21,16 @@ struct t_cfg_definition net_config[] = {
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
-	{ CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name", 					 "%s", NULL,       3, 18, (int)"Ultimate-II" },
-    { CFG_VIC_UDP_EN,  CFG_TYPE_ENUM,   "VIC Stream Enable",             "%s", net_en_dis, 0, 1, 0 },
-    { CFG_VIC_UDP_IP,  CFG_TYPE_STRING, "VIC Stream dest IP",            "%s", NULL,       7, 16, (int)"239.0.1.64" },
-    { CFG_VIC_UDP_PORT,CFG_TYPE_STRING, "VIC Stream dest Port",          "%s", NULL,       7, 16, (int)"11000" },
+#ifdef U64
+	{ CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name", 					 "%s", NULL,       3, 18, (int)"Ultimate 64" },
+#else
+
+#if FREQUENCY == 62500000
+    { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II+" },
+#else
+    { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II" },
+#endif
+#endif
 	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -97,11 +103,10 @@ void lwip_free_callback(void *p)
  * Factory
  */
 NetworkInterface *getNetworkStack(void *driver,
-                                  configure_feature_function_t config,
 								  driver_output_function_t out,
 								  driver_free_function_t free)
 {
-	return new NetworkLWIP (driver, config, out, free);
+	return new NetworkLWIP (driver, out, free);
 }
 
 void releaseNetworkStack(void *netstack)
@@ -113,14 +118,12 @@ void releaseNetworkStack(void *netstack)
  * Class / instance functions
  */
 NetworkLWIP :: NetworkLWIP(void *driver,
-                            configure_feature_function_t config,
 							driver_output_function_t out,
 							driver_free_function_t free) : pbuf_fifo(PBUF_FIFO_SIZE, NULL)
 {
     register_store(0x4E657477, "Network settings", net_config);
 
     this->driver = driver;
-	this->configure_feature = config;
     this->driver_free_function = free;
 	this->driver_output_function = out;
 	if_up = false;
@@ -128,13 +131,6 @@ NetworkLWIP :: NetworkLWIP(void *driver,
 		pbuf_fifo.push(&pbuf_array[i]);
 	}
 	dhcp_enable = false;
-
-	// Disable some items if not applicable for the interface
-#ifndef U64
-    cfg->disable(CFG_VIC_UDP_IP);
-    cfg->disable(CFG_VIC_UDP_EN);
-    cfg->disable(CFG_VIC_UDP_PORT);
-#endif
 
     NetworkInterface :: registerNetworkInterface(this);
 
@@ -195,10 +191,6 @@ void NetworkLWIP :: statusUpdate(void)
 {
     char str[16];
     printf("Status update IP = %s\n", ipaddr_ntoa_r(&(my_net_if.ip_addr), str, sizeof(str)));
-
-    if (configure_feature) {
-        configure_feature(this->driver, NET_FEATURE_SET_IP, &my_net_if.ip_addr.addr);
-    }
 
     // quick hack to perform update on the browser
 	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
@@ -349,18 +341,6 @@ void NetworkLWIP :: effectuate_settings(void)
         my_gateway.addr = 0L;
     }
 
-    if (configure_feature) {
-        struct ip_addr vic_dest;
-        vic_dest.addr = inet_addr(cfg->get_string(CFG_VIC_UDP_IP));
-        uint8_t enable = cfg->get_value(CFG_VIC_UDP_EN);
-        int port;
-        sscanf(cfg->get_string(CFG_VIC_UDP_PORT), "%d", &port);
-        configure_feature(this->driver, 100, &enable);
-        configure_feature(this->driver, 101, &vic_dest.addr);
-        configure_feature(this->driver, 102, &port);
-    }
-
-
 /* 3 states:
  * NetIF is not added yet. State = NULL. We only need to set our own ip addresses, since they will be copied upon net_if_add
  * NetIF is added, but there is no link. State != NULL. DHCP is not started yet. We can just call netif_set_addr
@@ -368,9 +348,6 @@ void NetworkLWIP :: effectuate_settings(void)
  */
 	if (my_net_if.state) { // is it initialized?
 		netifapi_netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
-		if (configure_feature) {
-		    configure_feature(driver, NET_FEATURE_SET_IP, &my_ip.addr);
-		}
 
 		if (netif_is_link_up(&my_net_if)) {
 			netifapi_dhcp_stop(&my_net_if);
@@ -407,4 +384,26 @@ void NetworkLWIP :: setIpAddr(uint8_t *buf)
 	if (my_net_if.state) { // is it initialized?
 		netifapi_netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
 	}
+}
+
+bool NetworkLWIP :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
+{
+    struct eth_addr *his_mac = 0;
+    struct ip_addr *his_ip = 0;
+    struct ip_addr query_ip;
+
+    query_ip.addr = ipToQuery;
+
+    portENTER_CRITICAL();
+    etharp_find_addr(&my_net_if, &query_ip, &his_mac, &his_ip);
+
+    bool ret = false;
+    if (his_mac) {
+        memcpy(mac, his_mac->addr, 6);
+        ret = true;
+    }
+
+    portEXIT_CRITICAL();
+
+    return ret;
 }
