@@ -22,7 +22,7 @@ UserListener :: UserListener()
 
 void UserListener :: listenTask(void)
 {
-	int sockfd, portno;
+	int sockfd;
 	socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
     
@@ -31,13 +31,13 @@ void UserListener :: listenTask(void)
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
        puts("ERROR opening socket");
+       this->state = INCOMING_SOCKET_STATE_BIND_ERROR;
        return;
     }
     memset((char *) &serv_addr, 0, sizeof(serv_addr));
-    portno = 6400;
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(portno);
+    serv_addr.sin_port = htons(port);
     if (bind(sockfd, (struct sockaddr *) &serv_addr,
              sizeof(serv_addr)) < 0) {
         puts("ERROR on binding");
@@ -68,6 +68,11 @@ void UserListener :: listenTask(void)
 uint8_t UserListener :: get_state(void)
 {
     return state;
+}
+
+void UserListener :: set_port(int newport)
+{
+    port = newport;
 }
 
 void UserListener :: set_state(uint8_t newstate)

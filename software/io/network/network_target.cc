@@ -23,6 +23,7 @@ Message c_status_no_socket           = { 23, true, (uint8_t *)"85,ERROR OPENING 
 Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLOSED BY HOST" };
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
+Message c_status_listen_bind_error	 = { 30, true, (uint8_t *)"87,LISTENER PORT BINDING ERROR" };
 
 NetworkTarget::NetworkTarget(int id)
 {
@@ -170,10 +171,19 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
 		case NET_CMD_START_LISTEN_SOCKET:
 			if (userlistener.get_state() == INCOMING_SOCKET_STATE_NOT_LISTENING)
 			{
+				int port_number = uint16_t(command->message[2]) | (uint16_t(command->message[3]) << 8);
+				userlistener.set_port(port_number);
 				userlistener.set_state(INCOMING_SOCKET_STATE_LISTENING);
+
+				if(userlistener.get_state() == INCOMING_SOCKET_STATE_BIND_ERROR)
+				{
+					*reply = &c_message_empty;
+					*status = &c_status_listen_bind_error;
+					break;
+				}
+				*reply = &c_message_empty;
+				*status = &c_status_ok;
 			}
-			*reply = &c_message_empty;
-            *status = &c_status_ok;
 			break;
 		case NET_CMD_STOP_LISTEN_SOCKET:
 			if(userlistener.get_state() == INCOMING_SOCKET_STATE_LISTENING)
