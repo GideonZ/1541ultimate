@@ -1268,6 +1268,11 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
     for (uint32_t *pul = begin; pul < end; pul++) {
         *(dest++) = *pul;
     }
+    if (!(C64_STOP & C64_HAS_STOPPED)) {
+        C64_STOP_MODE = STOP_COND_FORCE;
+        C64_STOP = 1;
+    }
+
     func detection = (func)ONCHIP;
 
     uint8_t buffer[64];
