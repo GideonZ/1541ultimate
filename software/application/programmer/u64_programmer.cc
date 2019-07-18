@@ -46,26 +46,29 @@ BinaryImage_t images[] = {
      { "/Usb?/u64/rr38pal.bin",  "Retro Replay",        0x420000, 0, 0 },
 	 { "/Usb?/u64/ss5pal.bin",   "Super Snapshot",      0x430000, 0, 0 },
 	 { "/Usb?/u64/tar_pal.bin",  "Turbo Assembler",     0x440000, 0, 0 },
-	 { "/Usb?/u64/kcs.bin",      "KCS",                 0x450000, 0, 0 },
-     { "/Usb?/u64/epyx.bin",     "Epyx Fastloader",     0x454000, 0, 0 },
+     { "/Usb?/u64/rr38ntsc.bin", "Retro Replay NTSC",   0x450000, 0, 0 },
+     { "/Usb?/u64/ss5ntsc.bin",  "Super Snapshot NTSC", 0x460000, 0, 0 },
+     { "/Usb?/u64/tar_ntsc.bin", "Turbo Assembler NTSC",0x470000, 0, 0 },
+	 { "/Usb?/u64/kcs.bin",      "KCS",                 0x480000, 0, 0 },
+     { "/Usb?/u64/epyx.bin",     "Epyx Fastloader",     0x484000, 0, 0 },
 //     { "/Usb?/u64/kerna*.bin",   "Kernal ROM",          0x446000, 0, 0 },
 };
 
 /*
-{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x290000 }, // 282BD4
-{ FLASH_ID_APPL,       0x01, 0x290000, 0x290000, 0x170000 }, // Max 1.5 MB
-
 { FLASH_ID_AR5PAL,     0x00, 0x400000, 0x400000, 0x08000 },
 { FLASH_ID_AR6PAL,     0x00, 0x408000, 0x408000, 0x08000 },
 { FLASH_ID_FINAL3,     0x00, 0x410000, 0x410000, 0x10000 },
 { FLASH_ID_RR38PAL,    0x00, 0x420000, 0x420000, 0x10000 },
 { FLASH_ID_SS5PAL,     0x00, 0x430000, 0x430000, 0x10000 },
 { FLASH_ID_TAR_PAL,    0x00, 0x440000, 0x440000, 0x10000 },
-{ FLASH_ID_KCS,        0x00, 0x450000, 0x450000, 0x04000 },
-{ FLASH_ID_EPYX,       0x00, 0x454000, 0x454000, 0x02000 },
-// End of ROM Pack
-*/
 
+{ FLASH_ID_RR38NTSC,   0x00, 0x450000, 0x450000, 0x10000 },
+{ FLASH_ID_SS5NTSC,    0x00, 0x460000, 0x460000, 0x10000 },
+{ FLASH_ID_TAR_NTSC,   0x00, 0x470000, 0x470000, 0x10000 },
+
+{ FLASH_ID_KCS,        0x00, 0x480000, 0x480000, 0x04000 },
+{ FLASH_ID_EPYX,       0x00, 0x484000, 0x484000, 0x02000 },
+*/
 
 #define NUM_IMAGES (sizeof(images) / sizeof(BinaryImage_t))
 
