@@ -63,6 +63,7 @@ SRCS_CC	 =  u2p_init.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
+			c1581.cc \
 			bam_header.cc \
 			mystring.cc \
 			path.cc \
@@ -101,6 +102,7 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_crt.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
+			filetype_d81.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \

@@ -105,6 +105,7 @@ SRCS_CC	 =  stream.cc \
 			keyboard.cc \
 			disk_image.cc \
 			c1541.cc \
+			c1581.cc \
 			bam_header.cc \
 			mystring.cc \
 			path.cc \
