@@ -25,16 +25,14 @@ void UserListener :: listenTask(void)
 {
     socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
-    
+
     listen_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_socket < 0) {
         puts("ERROR opening socket");
         close_all();
-        state = INCOMING_SOCKET_STATE_PORT_IN_USE;
+        state = INCOMING_SOCKET_STATE_OPEN_ERROR;
         return;
     }
-    int optval = 1;
-    setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval, sizeof(int));
 
     memset((char *) &serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
@@ -52,7 +50,7 @@ void UserListener :: listenTask(void)
     {
         puts("ERROR on listen");
         close_all();
-        state = INCOMING_SOCKET_STATE_PORT_IN_USE;
+        state = INCOMING_SOCKET_STATE_LISTEN_ERROR;
         return;
     }
 
@@ -60,30 +58,22 @@ void UserListener :: listenTask(void)
         clilen = sizeof(cli_addr);
         answer_socket = accept(listen_socket, (struct sockaddr *) &cli_addr, &clilen);
 
-        if(state != INCOMING_SOCKET_STATE_LISTENING)
-        {
+        if (answer_socket < 0) {
+            puts("ERROR on accept");
             close_all();
+            state = INCOMING_SOCKET_STATE_ACCEPT_ERROR;
             return;
         }
-        else
-        {
-            if (answer_socket < 0) {
-                puts("ERROR on accept");
-                shutdown(answer_socket, SHUT_RDWR);
-                closesocket(answer_socket);
-                state = INCOMING_SOCKET_STATE_NOT_LISTENING;
-                return;
-            }
 
-            struct timeval tv;
-            tv.tv_sec = 20; // bug in lwip; this is just used directly as tick value
-            tv.tv_usec = 20;
-            setsockopt(answer_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+        struct timeval tv;
+        tv.tv_sec = 20; // bug in lwip; this is just used directly as tick value
+        tv.tv_usec = 20;
+        setsockopt(answer_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
-            state = INCOMING_SOCKET_STATE_CONNECTED;
-        }
-        
-        
+        shutdown(listen_socket, SHUT_RDWR);
+        closesocket(listen_socket);
+        state = INCOMING_SOCKET_STATE_CONNECTED;
+        return;
     }
 
 }

@@ -24,7 +24,9 @@ Message c_status_socket_closed       = { 28, true, (uint8_t *)"01,CONNECTION CLO
 Message c_status_net_no_data         = { 26, true, (uint8_t *)"03,MORE DATA NOT SUPPORTED" };
 Message c_status_internal_error      = { 17, true, (uint8_t *)"86,INTERNAL ERROR" };
 Message c_status_listen_bind_error	 = { 30, true, (uint8_t *)"87,LISTENER PORT BINDING ERROR" };
-Message c_status_listen_port_in_use	 = { 23, true, (uint8_t *)"88,LISTENER PORT IN USE" };
+Message c_status_listen_open_error	 = { 27, true, (uint8_t *)"88,LISTENER PORT OPEN ERROR" };
+Message c_status_listen_error 		 = { 29, true, (uint8_t *)"88,LISTENER PORT LISTEN ERROR" };
+Message c_status_listen_accept_error = { 29, true, (uint8_t *)"88,LISTENER PORT ACCEPT ERROR" };
 Message c_status_listen_connected    = { 29, true, (uint8_t *)"89,LISTENER ALREADY CONNECTED" };
 
 NetworkTarget::NetworkTarget(int id)
@@ -205,10 +207,22 @@ void NetworkTarget :: parse_command(Message *command, Message **reply, Message *
 				*status = &c_status_listen_bind_error;
 				break;
 			}
-			if(lstnState == INCOMING_SOCKET_STATE_PORT_IN_USE)
+			if(lstnState == INCOMING_SOCKET_STATE_OPEN_ERROR)
 			{
 				*reply = &c_message_empty;
-				*status = &c_status_listen_port_in_use;
+				*status = &c_status_listen_open_error;
+				break;
+			}
+			if(lstnState == INCOMING_SOCKET_STATE_LISTEN_ERROR)
+			{
+				*reply = &c_message_empty;
+				*status = &c_status_listen_error;
+				break;
+			}
+			if(lstnState == INCOMING_SOCKET_STATE_ACCEPT_ERROR)
+			{
+				*reply = &c_message_empty;
+				*status = &c_status_listen_accept_error;
 				break;
 			}
 			break;
