@@ -278,26 +278,59 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         }
         break;
 
-	case MENU_C64_SAVEMODULE:       ram_size = 1024 * 1024;       res = fm->fopen(cmd->path.c_str(), "module.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);       if(res == FR_OK) {       uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;           printf("Opened file successfully.\n");           f->write((void *)mem_addr, ram_size, &transferred);           printf("written: %d...", transferred);           fm->fclose(f);       } else {           printf("Couldn't open file..\n");       }       break;
-	case MENU_C64_SAVEEASYFLASH:        res = fm->fopen(cmd->path.c_str(), "module.crt", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
-        if(res == FR_OK) {	        uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;            printf("Opened file successfully.\n");
-            uint8_t header[64] = { 0x43, 0x36, 0x34, 0x20, 0x43, 0x41, 0x52, 0x54, 0x52, 0x49, 0x44, 0x47, 0x45, 0x20, 0x20, 0x20,                    0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0x00, 0x20, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x45, 0x61,
-                    0x73, 0x79, 0x46, 0x6c, 0x61, 0x73, 0x68, 0x20, 0x43, 0x61, 0x72, 0x74, 0x72, 0x69, 0x64, 0x67, 0x65, 0x00,
-                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-            uint8_t header2[16] = { 0x43, 0x48, 0x49, 0x50, 0x00, 0x00, 0x20, 0x10, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00, 0x20, 0x00 };
-	        int size = 64;
-            f->write((void *)header, size, &transferred);            printf("written: %d...", transferred);
-	        for (int i=0; i<64; i++) {	            header2[11] = i;	            header2[12] = 0x80;
-	            size = 16;	            f->write((void *)header2, size, &transferred);	            printf("written: %d...", transferred);
-	            size = 8192;	            f->write((void *)(mem_addr+8192*i), size, &transferred);	            printf("written: %d...", transferred);
-	            header2[12] = 0xA0;	            size = 16;	            f->write((void *)header2, size, &transferred);	            printf("written: %d...", transferred);
-	            char* eapi = (char*)(mem_addr + 512*1024 + 0x1800);
-	            if (i == 0 && eapi[0] == 0x65 && eapi[1] == 0x61 && eapi[2] == 0x70 && eapi[3] == 0x69) {
-
-	                size = 0x1800;	                f->write((void *)(mem_addr+512*1024), size, &transferred);	                printf("written: %d...", transferred);
-	                size = 0x300;	                f->write(eapiOrg, size, &transferred);	                printf("written: %d...", transferred);
-	                size = 0x500;                    f->write((void *)(mem_addr+512*1024+6144+768), size, &transferred);                    printf("written: %d...", transferred);	            }
-	            else {	                size = 8192;                    f->write((void *)(mem_addr+512*1024+8192*i), size, &transferred);                    printf("written: %d...", transferred);                }	        }            fm->fclose(f);        } else {            printf("Couldn't open file..\n");        }        break;
+        case MENU_C64_SAVEMODULE:
+            ram_size = 1024 * 1024;
+            res = fm->fopen(cmd->path.c_str(), "module.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+            if(res == FR_OK){
+                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+                printf("Opened file successfully.\n");
+                f->write((void *)mem_addr, ram_size, &transferred);
+                printf("written: %d...", transferred);
+                fm->fclose(f);
+            } else { 
+                printf("Couldn't open file..\n");
+            }       
+            break;
+        case MENU_C64_SAVEEASYFLASH:
+            res = fm->fopen(cmd->path.c_str(), "module.crt", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+            if(res == FR_OK) {
+                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+                printf("Opened file successfully.\n");
+                uint8_t header[64] = { 0x43, 0x36, 0x34, 0x20, 0x43, 0x41, 0x52, 0x54, 0x52, 0x49, 0x44, 0x47, 0x45, 0x20, 0x20, 0x20,                    0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0x00, 0x20, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x45, 0x61,
+                             0x73, 0x79, 0x46, 0x6c, 0x61, 0x73, 0x68, 0x20, 0x43, 0x61, 0x72, 0x74, 0x72, 0x69, 0x64, 0x67, 0x65, 0x00,
+                             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+                        
+                uint8_t header2[16] = { 0x43, 0x48, 0x49, 0x50, 0x00, 0x00, 0x20, 0x10, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00, 0x20, 0x00 };
+                int size = 64;
+                f->write((void *)header, size, &transferred);
+                printf("written: %d...", transferred);
+                for (int i=0; i<64; i++) {
+                    header2[11] = i;
+                    header2[12] = 0x80;
+                    size = 16;
+                    f->write((void *)header2, size, &transferred);
+                    printf("written: %d...", transferred);
+                    size = 8192;
+                    f->write((void *)(mem_addr+8192*i), size, &transferred);
+                    printf("written: %d...", transferred);
+                    header2[12] = 0xA0;
+                    size = 16;
+                    f->write((void *)header2, size, &transferred);
+                    printf("written: %d...", transferred);
+                    char* eapi = (char*)(mem_addr + 512*1024 + 0x1800);
+                    if (i == 0 && eapi[0] == 0x65 && eapi[1] == 0x61 && eapi[2] == 0x70 && eapi[3] == 0x69) {
+                        size = 0x1800; f->write((void *)(mem_addr+512*1024), size, &transferred); printf("written: %d...", transferred);
+                        size = 0x300; f->write(eapiOrg, size, &transferred); printf("written: %d...", transferred);
+                        size = 0x500;f->write((void *)(mem_addr+512*1024+6144+768), size, &transferred);printf("written: %d...", transferred);
+                    } else {
+                        size = 8192; f->write((void *)(mem_addr+512*1024+8192*i), size, &transferred);printf("written: %d...", transferred);
+                    }
+                }
+                fm->fclose(f);
+            } else {
+                printf("Couldn't open file..\n");
+            }
+            break;
 
     case MENU_C64_SAVEFLASH: // doesn't belong here, but i need it fast
         res = fm->fopen(cmd->path.c_str(), "flash_dump.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
