@@ -225,9 +225,50 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             *status = &c_status_ok;
             break;
 #endif
+        case CTRL_CMD_EASYFLASH:
+            if (command->length < 3)
+            {
+                *status = &c_status_unknown_command;
+                *reply = &c_message_empty;
+            }
+            else
+            {
+                unsigned char subcommand = command->message[2];
+                switch (subcommand)
+                {
+                    case 0:
+                    {
+                        if (command->length < 5)
+                        {
+                            *status = &c_status_unknown_command;
+                            *reply = &c_message_empty;
+                            break;
+                        }
+
+                        uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+                        unsigned char bank = command->message[3];
+                        unsigned char baseAddr = command->message[4];
+                        mem_addr += (bank & 0x38) * 8192;
+                        if (baseAddr & 0x20) mem_addr += 512*1024;
+                        for (int i=0; i<65536; i++)
+                            *(char*)(mem_addr+i) = 0xff;
+                        *reply  = &c_message_empty;
+                        *status = &c_status_ok;
+                        break;
+                    }
+
+                    default:
+                        *reply = &c_message_empty;
+                        *status = &c_status_unknown_command;
+                }
+                *reply  = &c_message_empty;
+                *status = &c_status_ok;
+            }
+            break;
+
         case CTRL_CMD_GET_HWINFO: {
         	
-            if (command->length < 4)
+            if (command->length < 3)
             {
                 *status = &c_status_unknown_command;
                 *reply = &c_message_empty;
