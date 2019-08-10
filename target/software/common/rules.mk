@@ -158,7 +158,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 
 %.o: %.cc
 	@echo Compiling $(<F)
-	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
+	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 	@$(CPP) $(CPPOPT) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 %.d: %.cc
