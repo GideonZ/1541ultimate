@@ -761,6 +761,10 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         effectuate_settings();
         break;
 
+    case 0xFFFE: // dummy
+        DetectSidImpl(edid);
+        break;
+
     default:
     	printf("U64 does not know this command\n");
     }
@@ -1245,12 +1249,14 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
     uint32_t *begin = &__start_detect_sid;
     uint32_t *end = &__stop_detect_sid;
 
+/*
     // This check forces a reference to U64Config::DetectSid, so it will not be left out by the linker
     // Note: we never jump to this function, we only take its pointer and jump to the copied version!
     if ((void *)&U64Config::DetectSidImpl != begin) {
         printf("Routine location error.\n");
         return -1;
     }
+*/
 
     // Configure Socket 1 to be at $D400 and Socket 2 to be at $D500
     // UltiSid is set to $D600 to make sure it doesn't trigger

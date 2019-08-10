@@ -28,7 +28,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     static void reset_task(void *a);
     void run_reset_task();
 
-    static void DetectSidImpl(uint8_t *buffer) __attribute__ ((section ("detect_sid")));
+    static void DetectSidImpl(uint8_t *buffer) __attribute__ ((section ("detect_sid"), used));
     static int S_SidDetector(int &sid1, int &sid2);
 
 public:
