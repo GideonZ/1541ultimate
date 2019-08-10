@@ -172,7 +172,9 @@ static const char *filter_res[] = { "Low", "High" };
 static const char *comb_wave[] = { "6581", "8580" };
 static const char *ledselects[] = { "On", "Off", "Drive A Pwr", "DrvAPwr + DrvBPwr", "Drive A Act", "DrvAAct + DrvBAct",
                                     "DrvAPwr ^ DrvAAct", "USB Activity", "Any Activity", "!(DrvAAct)", "!(DrvAAct+DrvBAct)",
-                                    "!(USB Act)", "!(Any Act)", "IRQ Line", "!(IRQ Line)" };
+                                    "!(USB Act)", "!(Any Act)", "IRQ Line", "!(IRQ Line)", "Drive B Act" };
+
+
 const char *speaker_vol[] = { "Disabled", "Vol 1", "Vol 2", "Vol 3", "Vol 4", "Vol 5", "Vol 6", "Vol 7", "Vol 8", "Vol 9", "Vol 10", "Vol 11", "Vol 12", "Vol 13", "Vol 14", "Vol 15" };
 
 static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
@@ -266,8 +268,8 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_MIXER7_PAN,           CFG_TYPE_ENUM, "Pan Drive 2",                  "%s", pannings,     0, 10, 7 },
     { CFG_MIXER8_PAN,           CFG_TYPE_ENUM, "Pan Tape Read",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
-    { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 14, 0 },
-    { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 14, 4 },
+    { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
+    { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 15, 4 },
     { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
