@@ -30,13 +30,56 @@ void FastUART :: Write(const uint8_t *buffer, int length)
     }
 }
 
+#define sendchar(x) { 	while(uart->flags & FUART_TxFifoFull) { vTaskDelay(2); } uart->data = x; }
+
+void FastUART :: SendSlipPacket(const uint8_t *buffer, int length)
+{
+	// Start Character
+	sendchar(0xC0);
+	// Escaped Body
+    for (int i=0; i < length; i++) {
+    	uint8_t data = *(buffer++);
+    	if (data == 0xC0) {
+    		sendchar(0xDB);
+    		sendchar(0xDC);
+    	} else if (data == 0xDB) {
+    		sendchar(0xDB);
+    		sendchar(0xDD);
+    	} else {
+    		sendchar(data);
+    	}
+    }
+	// End Character
+	sendchar(0xC0);
+}
+
 int FastUART :: Read(uint8_t *buffer, int bufferSize)
 {
-    int ret = 0;
-    while ((rxTail != rxHead) && (ret < bufferSize)) {
-        *(buffer++) = rxBuffer[rxTail++];
+	return ReadImpl(&stdRx, buffer, bufferSize);
+}
+
+int FastUART :: GetSlipPacket(uint8_t *buffer, int bufferSize, uint32_t timeout)
+{
+	slipElement_t slipElement;
+
+	if (xQueueReceive(slipQueue, &slipElement, timeout)) {
+		if ((slipElement.size <= bufferSize) && (!slipElement.error)) {
+			return ReadImpl(&slipRx, buffer, bufferSize);
+		}
+		slipRx.rxTail += slipElement.size;
+		slipRx.rxTail &= 4095;
+		return -1;
+	}
+	return -2;
+}
+
+int FastUART :: ReadImpl(rxBuffer_t *b, uint8_t *buffer, int bufferSize)
+{
+	int ret = 0;
+    while ((b->rxTail != b->rxHead) && (ret < bufferSize)) {
+        *(buffer++) = b->rxBuffer[b->rxTail++];
         ret++;
-        rxTail &= 8191;
+        b->rxTail &= 4095;
     }
     return ret;
 }
@@ -61,16 +104,74 @@ void FastUART :: FastUartRxInterrupt(void *context)
 
 BaseType_t FastUART :: RxInterrupt()
 {
-    while(uart->flags & FUART_RxDataAv) {
+	slipElement_t slipElement;
+    BaseType_t woken = pdFALSE;
+    bool giveSem = false;
+    bool store;
+
+	while(uart->flags & FUART_RxDataAv) {
         // try allocating space in buffer
-        int next = (rxHead + 1) & 8191;
-        if (next != rxTail) {
-            rxBuffer[rxHead] = uart->data;
-            rxHead = next;
-        }
+    	uint8_t data = uart->data;
         uart->get = 1; // possibly drop the char, if our buffer is full.. otherwise we keep getting interrupts
+        store = true;
+
+    	switch(data) {
+    	case 0xC0:
+    		store = false;
+    		slipEscape = false;
+    		if ((slipMode) && (slipLength > 0)) {
+    			slipElement.size = slipLength;
+    			slipElement.error = slipError;
+    			xQueueSendFromISR(slipQueue, &slipElement, &woken);
+    			slipError = false;
+    			slipMode = false;
+    			slipLength = 0;
+    		} else {
+    			slipMode = true;
+    			slipLength = 0;
+    		}
+    		break;
+    	case 0xDB:
+    		if (slipMode) {
+        		slipEscape = true;
+        		store = false;
+    		}
+    		break;
+    	case 0xDC:
+    		if (slipEscape) {
+    			data = 0xC0;
+    			slipEscape = false;
+    		}
+    		break;
+    	case 0xDD:
+    		if (slipEscape) {
+    			data = 0xDB;
+    			slipEscape = false;
+    		}
+    		break;
+    	default:
+    		slipEscape = false;
+    		break;
+    	}
+
+    	rxBuffer_t* b;
+    	if (slipMode) {
+    		b = &slipRx;
+    	} else {
+    		b = &stdRx;
+    		giveSem = true;
+    	}
+
+    	if (store) {
+			int next = (b->rxHead + 1) & 4095;
+			if (next != b->rxTail) {
+				b->rxBuffer[b->rxHead] = data;
+				b->rxHead = next;
+			}
+    	}
     }
-    BaseType_t woken;
-    xSemaphoreGiveFromISR(rxSemaphore, &woken);
+	if (giveSem) {
+		xSemaphoreGiveFromISR(rxSemaphore, &woken);
+	}
     return woken;
 }

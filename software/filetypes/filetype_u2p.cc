@@ -135,7 +135,7 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		cmd->user_interface->host->release_ownership();
 		file = NULL;
 #if U64
-		wifi.Disable();
+		wifi.Quit();
 #endif
 		jump_run(header.start);
 	} else {

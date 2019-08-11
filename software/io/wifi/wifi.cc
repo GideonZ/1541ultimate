@@ -14,6 +14,21 @@ extern "C" {
 int alt_irq_register(int, int, void (*)(void*));
 }
 
+typedef enum {
+	WIFI_OFF = 0,
+	WIFI_QUIT,
+	WIFI_BOOTMODE,
+	WIFI_DOWNLOAD,
+	WIFI_START,
+} wifiCommand_e;
+
+typedef struct {
+	wifiCommand_e commandCode;
+	void *data;
+	uint32_t address;
+	uint32_t length;
+} wifiCommand_t;
+
 WiFi :: WiFi()
 {
     rxSemaphore = xSemaphoreCreateBinary();
@@ -24,13 +39,14 @@ WiFi :: WiFi()
         puts("Failed to install WifiUART IRQ handler.");
     }
 
+    commandQueue = xQueueCreate(8, sizeof(wifiCommand_t));
     xTaskCreate( WiFi :: TaskStart, "WiFi Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     doClose = false;
 }
 
+
 void WiFi :: Disable()
 {
-    uart->EnableRxIRQ(false);
     U64_WIFI_CONTROL = 0;
 }
 
@@ -48,6 +64,29 @@ void WiFi :: Boot()
     U64_WIFI_CONTROL = 3;
 }
 
+void WiFi :: Download(uint8_t *binary, uint32_t address, uint32_t length)
+{
+	const uint8_t syncFrame[] = { 0x07, 0x07, 0x12, 0x20,
+								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+	};
+	static uint8_t receiveBuffer[512];
+	bool synced = false;
+
+	for(int i = 0; i < 10; i ++) {
+		uart->SendSlipPacket(syncFrame, 36);
+		int r = uart->GetSlipPacket(receiveBuffer, 512, 200);
+		if ((r == 36) && (memcmp(receiveBuffer, syncFrame, 36) == 0)) {
+			synced = true;
+			break;
+		}
+	}
+	if (!synced) {
+		printf("ESP did not sync\n");
+	}
+}
 
 void WiFi :: TaskStart(void *context)
 {
@@ -78,7 +117,48 @@ void WiFi :: Thread()
 {
     uart->EnableRxIRQ(true);
 
-    int sockfd, portno;
+    wifiCommand_t command;
+    bool run = true;
+
+    while(run) {
+    	xQueueReceive(commandQueue, &command, portMAX_DELAY);
+
+    	switch(command.commandCode) {
+    	case WIFI_QUIT:
+    		run = false;
+    		break;
+    	case WIFI_OFF:
+    		Disable();
+    		break;
+    	case WIFI_BOOTMODE:
+    		Boot();
+    		break;
+    	case WIFI_START:
+    		Enable();
+    		break;
+    	case WIFI_DOWNLOAD:
+    		Download((uint8_t *)command.data, command.address, command.length);
+    		break;
+    	default:
+    		break;
+    	}
+    }
+
+	Disable();
+    uart->EnableRxIRQ(false);
+    vTaskDelete(NULL);
+}
+
+void WiFi :: Quit()
+{
+    uart->EnableRxIRQ(false);
+	Disable();
+	// Should also kill the thread?
+}
+
+void WiFi :: Listen()
+{
+	int sockfd, portno;
     unsigned long int clilen;
     struct sockaddr_in serv_addr, cli_addr;
     int  n;
@@ -178,5 +258,28 @@ void WiFi :: Thread()
     }
 }
 
+BaseType_t WiFi :: doDownload(uint8_t *data, uint32_t address, uint32_t length)
+{
+    wifiCommand_t command;
+    command.commandCode = WIFI_DOWNLOAD;
+    command.data = data;
+    command.address = address;
+    command.length = length;
+    return xQueueSend(commandQueue, &command, 200);
+}
+
+BaseType_t WiFi :: doBootMode()
+{
+    wifiCommand_t command;
+    command.commandCode = WIFI_BOOTMODE;
+    return xQueueSend(commandQueue, &command, 200);
+}
+
+BaseType_t WiFi :: doStart()
+{
+    wifiCommand_t command;
+    command.commandCode = WIFI_START;
+    return xQueueSend(commandQueue, &command, 200);
+}
 
 WiFi wifi;

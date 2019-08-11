@@ -23,18 +23,27 @@ class WiFi
     FastUART *uart;
     SemaphoreHandle_t rxSemaphore;
     TaskHandle_t relayTask;
-    bool doClose;
+    QueueHandle_t commandQueue;
 
-    static void TaskStart(void *context);
-    static void EthernetRelay(void *context);
-    void Thread();
-    int actualSocket;
-public:
-    WiFi();
+    bool doClose;
 
     void Enable();
     void Disable();
     void Boot();
+    void Download(uint8_t *binary, uint32_t address, uint32_t length);
+
+    static void TaskStart(void *context);
+    static void EthernetRelay(void *context);
+    void Thread();
+    void Listen();
+    int actualSocket;
+public:
+    WiFi();
+    void Quit();
+
+    BaseType_t doBootMode();
+    BaseType_t doStart();
+    BaseType_t doDownload(uint8_t *binary, uint32_t address, uint32_t length);
 };
 
 

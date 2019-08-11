@@ -26,6 +26,7 @@ extern "C" {
 #include "u2p.h"
 #include "sys/alt_irq.h"
 #include "c64.h"
+#include "wifi.h"
 
 // static pointer
 U64Config u64_configurator;
@@ -660,6 +661,7 @@ void U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
+#define MENU_U64_WIFI_DOWNLOAD 7
 
 int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 {
@@ -677,8 +679,9 @@ int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 	item_list.append(new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE));  count++;
 	item_list.append(new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE));  count++;
     item_list.append(new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT));  count++;
+    item_list.append(new Action("WiFi Download", SUBSYSID_U64, MENU_U64_WIFI_DOWNLOAD));  count++;
 #endif
-	return count;
+    return count;
 
 }
 
@@ -741,16 +744,16 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         break;
 
     case MENU_U64_WIFI_ENABLE:
-        U64_WIFI_CONTROL = 0;
-        vTaskDelay(50);
-        U64_WIFI_CONTROL = 5;
-        break;
+    	wifi.doStart();
+    	break;
 
     case MENU_U64_WIFI_BOOT:
-        U64_WIFI_CONTROL = 2;
-        vTaskDelay(150);
-        U64_WIFI_CONTROL = 7;
+    	wifi.doBootMode();
         break;
+
+    case MENU_U64_WIFI_DOWNLOAD:
+    	wifi.doDownload(NULL, 0, 0);
+    	break;
 
     case MENU_U64_DETECT_SIDS:
         c64->stop(false);
