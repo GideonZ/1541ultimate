@@ -66,25 +66,39 @@ void WiFi :: Boot()
 
 void WiFi :: Download(uint8_t *binary, uint32_t address, uint32_t length)
 {
-	const uint8_t syncFrame[] = { 0x07, 0x07, 0x12, 0x20,
+	const uint8_t syncFrame[] = { 0x00, 0x08, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,
+	                              0x07, 0x07, 0x12, 0x20,
 								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
 								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
 								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
 								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
 	};
+	const uint8_t syncResp[] = { 0x01, 0x08, 0x04, 0x00, 0x07, 0x07, 0x12, 0x20,
+	                             0x00, 0x00, 0x00, 0x00 };
+
 	static uint8_t receiveBuffer[512];
 	bool synced = false;
 
+	if (uart->Read(receiveBuffer, 512) > 0) {
+	    printf("Boot message:\n%s\n", receiveBuffer);
+	}
+
 	for(int i = 0; i < 10; i ++) {
-		uart->SendSlipPacket(syncFrame, 36);
+		uart->SendSlipPacket(syncFrame, 44);
 		int r = uart->GetSlipPacket(receiveBuffer, 512, 200);
-		if ((r == 36) && (memcmp(receiveBuffer, syncFrame, 36) == 0)) {
+		if ((r == 12) && (memcmp(receiveBuffer, syncResp, 12) == 0)) {
 			synced = true;
 			break;
 		}
 	}
 	if (!synced) {
 		printf("ESP did not sync\n");
+	} else {
+	    int r;
+	    do {
+	        r = uart->GetSlipPacket(receiveBuffer, 512, 20);
+	        printf("%d.", r);
+	    } while(r > 0);
 	}
 }
 

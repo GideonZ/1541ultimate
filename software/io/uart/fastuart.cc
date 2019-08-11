@@ -64,7 +64,7 @@ int FastUART :: GetSlipPacket(uint8_t *buffer, int bufferSize, uint32_t timeout)
 
 	if (xQueueReceive(slipQueue, &slipElement, timeout)) {
 		if ((slipElement.size <= bufferSize) && (!slipElement.error)) {
-			return ReadImpl(&slipRx, buffer, bufferSize);
+			return ReadImpl(&slipRx, buffer, slipElement.size);
 		}
 		slipRx.rxTail += slipElement.size;
 		slipRx.rxTail &= 4095;
@@ -114,7 +114,6 @@ BaseType_t FastUART :: RxInterrupt()
     	uint8_t data = uart->data;
         uart->get = 1; // possibly drop the char, if our buffer is full.. otherwise we keep getting interrupts
         store = true;
-
     	switch(data) {
     	case 0xC0:
     		store = false;
@@ -140,17 +139,22 @@ BaseType_t FastUART :: RxInterrupt()
     	case 0xDC:
     		if (slipEscape) {
     			data = 0xC0;
+                slipLength++;
     			slipEscape = false;
     		}
     		break;
     	case 0xDD:
     		if (slipEscape) {
     			data = 0xDB;
+    			slipLength++;
     			slipEscape = false;
     		}
     		break;
     	default:
     		slipEscape = false;
+    		if (slipMode) {
+    		    slipLength++;
+    		}
     		break;
     	}
 
@@ -167,6 +171,8 @@ BaseType_t FastUART :: RxInterrupt()
 			if (next != b->rxTail) {
 				b->rxBuffer[b->rxHead] = data;
 				b->rxHead = next;
+			} else if (slipMode) {
+			    slipError = true;
 			}
     	}
     }
