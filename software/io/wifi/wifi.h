@@ -30,7 +30,7 @@ class WiFi
     void Enable();
     void Disable();
     void Boot();
-    int  Download(uint8_t *binary, uint32_t address, uint32_t length);
+    int  Download(const uint8_t *binary, uint32_t address, uint32_t length);
     void PackParams(uint8_t *buffer, int numparams, ...);
     bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
 
