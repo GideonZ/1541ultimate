@@ -87,7 +87,7 @@ void WiFi :: PackParams(uint8_t *buffer, int numparams, ...)
     va_end(ap);
 }
 
-int WiFi :: Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout)
+bool WiFi :: Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout)
 {
 	uart->SendSlipOpen();
 	uint8_t header[8];
@@ -99,7 +99,27 @@ int WiFi :: Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
 	uart->SendSlipData(header, 8);
 	uart->SendSlipData(data, length);
 	uart->SendSlipClose();
-	return uart->GetSlipPacket(receiveBuffer, 512, timeout);
+
+	int r = uart->GetSlipPacket(receiveBuffer, 512, timeout);
+
+	if (r > 0) {
+		if (receiveBuffer[0] == 1) {
+			if (receiveBuffer[1] == opcode) {
+				uint8_t size = receiveBuffer[2];
+				uint8_t success = receiveBuffer[6 + size];
+				uint8_t error = receiveBuffer[7 + size];
+				if (((size == 2) || (size == 4)) && (success == 0)) {
+					return true;
+				} else {
+					printf("Command: %b. Error = %b. Returned:\n", opcode, error);
+					dump_hex_relative(receiveBuffer, r);
+				}
+			}
+		}
+	} else {
+		printf("No response to command with opcode %b\n", opcode);
+	}
+	return false;
 }
 
 int WiFi :: Download(uint8_t *binary, uint32_t address, uint32_t length)

@@ -32,7 +32,7 @@ class WiFi
     void Boot();
     int  Download(uint8_t *binary, uint32_t address, uint32_t length);
     void PackParams(uint8_t *buffer, int numparams, ...);
-    int  Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
+    bool Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout);
 
     static void TaskStart(void *context);
     static void EthernetRelay(void *context);
