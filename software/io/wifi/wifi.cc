@@ -110,7 +110,9 @@ bool WiFi :: Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data
 	header[3] = length >> 8;
 	header[4] = chk;
 	uart->SendSlipData(header, 8);
+    printf("-> "); dump_hex_relative(header, 8);
 	uart->SendSlipData(data, length);
+    printf("=> "); dump_hex_relative(data, length);
 	uart->SendSlipClose();
 
 	do {
@@ -121,12 +123,12 @@ bool WiFi :: Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data
             if (receiveBuffer[0] == 1) {
                 if (receiveBuffer[1] == opcode) {
                     uint8_t size = receiveBuffer[2];
-                    uint8_t success = receiveBuffer[6 + size];
-                    uint8_t error = receiveBuffer[7 + size];
+                    uint8_t success = receiveBuffer[8];
+                    uint8_t error = receiveBuffer[9];
                     if (((size == 2) || (size == 4)) && (success == 0)) {
                         return true;
                     } else {
-                        printf("Command: %b. Error = %b. Returned:\n", opcode, error);
+                        printf("Command: %b. Error = %b.\n", opcode, error);
                         break;
                     }
                 }
@@ -148,7 +150,7 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
 								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
 	};
-	const uint8_t syncResp[] = { 0x01, 0x08, 0x04, 0x00, 0x07, 0x07, 0x12, 0x20,
+	const uint8_t syncResp[] = { 0x01, 0x08, 0x04, 0x00, 0xEE, 0xEE, 0xEE, 0xEE,
 	                             0x00, 0x00, 0x00, 0x00 };
 
 	static uint8_t receiveBuffer[512];
@@ -163,6 +165,8 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 	for(int i = 0; i < 10; i ++) {
 		uart->SendSlipPacket(syncFrame, 44);
 		int r = uart->GetSlipPacket(receiveBuffer, 512, 200);
+		dump_hex_relative(receiveBuffer, r);
+		memset(receiveBuffer+4, 0xEE, 4);
 		if ((r == 12) && (memcmp(receiveBuffer, syncResp, 12) == 0)) {
 			synced = true;
 			break;
@@ -211,14 +215,17 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 	printf("Number of blocks to program: %d\n", blocks);
 
 	for (uint32_t i=0; i < blocks; i ++, pb += block_size) {
+        uint32_t now = (remain > block_size) ? block_size : remain;
 		uint8_t chk = 0xEF;
-		for(int m=0; m < block_size; m++) {
+		for(int m=0; m < now; m++) {
 			chk ^= pb[m];
 		}
-		memcpy(flashBlock + 16, pb, block_size);
-		PackParams(flashBlock, 4, (remain > block_size) ? block_size : remain, i, 0, 0);
-		if(!Command(ESP_FLASH_DATA, 16 + block_size, chk, flashBlock, receiveBuffer, 5 * 200))
+		memcpy(flashBlock + 16, pb, now);
+		PackParams(flashBlock, 4, now, i, 0, 0);
+		if(!Command(ESP_FLASH_DATA, 16 + now, chk, flashBlock, receiveBuffer, 5 * 200))
 			return -5;
+		remain -= now;
+		pb += now;
 	}
 
 	PackParams(parambuf, 1, 1); // Stay in the Loader

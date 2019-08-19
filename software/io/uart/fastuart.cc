@@ -118,6 +118,7 @@ void FastUART :: FastUartRxInterrupt(void *context)
     }
 }
 
+#include <stdio.h>
 BaseType_t FastUART :: RxInterrupt()
 {
 	slipElement_t slipElement;
@@ -129,6 +130,7 @@ BaseType_t FastUART :: RxInterrupt()
         // try allocating space in buffer
     	uint8_t data = uart->data;
         uart->get = 1; // possibly drop the char, if our buffer is full.. otherwise we keep getting interrupts
+        printf("[%b]", data);
         store = true;
     	switch(data) {
     	case 0xC0:
