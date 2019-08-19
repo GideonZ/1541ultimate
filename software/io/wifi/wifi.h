@@ -45,7 +45,7 @@ public:
 
     BaseType_t doBootMode();
     BaseType_t doStart();
-    BaseType_t doDownload(uint8_t *binary, uint32_t address, uint32_t length);
+    BaseType_t doDownload(uint8_t *binary, uint32_t address, uint32_t length, bool doFree);
 };
 
 

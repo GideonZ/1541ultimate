@@ -744,16 +744,16 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         break;
 
     case MENU_U64_WIFI_ENABLE:
-    	wifi.doStart();
-    	break;
+        wifi.doStart();
+        break;
 
     case MENU_U64_WIFI_BOOT:
-    	wifi.doBootMode();
+        wifi.doBootMode();
         break;
 
     case MENU_U64_WIFI_DOWNLOAD:
-    	wifi.doDownload(NULL, 0, 0);
-    	break;
+        wifi.doDownload(NULL, 0, 0, false);
+        break;
 
     case MENU_U64_DETECT_SIDS:
         c64->stop(false);

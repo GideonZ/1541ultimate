@@ -26,6 +26,7 @@ typedef struct
     const void *data;
     uint32_t address;
     uint32_t length;
+    bool doFree;
 } wifiCommand_t;
 
 #define ESP_FLASH_BEGIN		 0x02
@@ -288,8 +289,11 @@ void WiFi::Thread()
             Enable();
             break;
         case WIFI_DOWNLOAD:
-//    		Download((uint8_t *)command.data, command.address, command.length);
-            Download(partition_table, 0x8000, 144);
+            Boot();
+            Download((const uint8_t *)command.data, command.address, command.length);
+            if (command.doFree) {
+                free((void *)command.data);
+            }
             break;
         default:
             break;
@@ -407,13 +411,21 @@ void WiFi::Listen()
     }
 }
 
-BaseType_t WiFi::doDownload(uint8_t *data, uint32_t address, uint32_t length)
+BaseType_t WiFi::doDownload(uint8_t *data, uint32_t address, uint32_t length, bool doFree)
 {
     wifiCommand_t command;
     command.commandCode = WIFI_DOWNLOAD;
-    command.data = data;
-    command.address = address;
-    command.length = length;
+    if (!data) {
+        command.data = partition_table;
+        command.address = 0x8000;
+        command.length = 144;
+        command.doFree = false;
+    } else {
+        command.data = data;
+        command.address = address;
+        command.length = length;
+        command.doFree = doFree;
+    }
     return xQueueSend(commandQueue, &command, 200);
 }
 
