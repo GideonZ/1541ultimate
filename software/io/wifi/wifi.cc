@@ -9,6 +9,7 @@
 #include "socket.h"
 #include "u64.h"
 #include "dump_hex.h"
+#include <stdarg.h>
 
 extern "C" {
 int alt_irq_register(int, int, void (*)(void*));
@@ -28,6 +29,13 @@ typedef struct {
 	uint32_t address;
 	uint32_t length;
 } wifiCommand_t;
+
+#define ESP_FLASH_BEGIN		 0x02
+#define ESP_FLASH_DATA		 0x03
+#define ESP_FLASH_END		 0x04
+#define ESP_SET_FLASH_PARAMS 0x0B
+#define ESP_ATTACH_SPI       0x0D
+#define FLASH_TRANSFER_SIZE  0x1000
 
 WiFi :: WiFi()
 {
@@ -64,7 +72,37 @@ void WiFi :: Boot()
     U64_WIFI_CONTROL = 3;
 }
 
-void WiFi :: Download(uint8_t *binary, uint32_t address, uint32_t length)
+void WiFi :: PackParams(uint8_t *buffer, int numparams, ...)
+{
+    va_list ap;
+    va_start(ap, numparams);
+    for(int i=0; i < numparams; i++) {
+    	uint32_t param = va_arg(ap, uint32_t);
+    	buffer[0] = param & 0xFF; param >>= 8;
+    	buffer[1] = param & 0xFF; param >>= 8;
+    	buffer[2] = param & 0xFF; param >>= 8;
+    	buffer[3] = param & 0xFF; param >>= 8;
+    	buffer += 4;
+    }
+    va_end(ap);
+}
+
+int WiFi :: Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout)
+{
+	uart->SendSlipOpen();
+	uint8_t header[8];
+	memset(header, 0, 8);
+	header[1] = opcode;
+	header[2] = length & 0xFF;
+	header[3] = length >> 8;
+	header[4] = chk;
+	uart->SendSlipData(header, 8);
+	uart->SendSlipData(data, length);
+	uart->SendSlipClose();
+	return uart->GetSlipPacket(receiveBuffer, 512, timeout);
+}
+
+int WiFi :: Download(uint8_t *binary, uint32_t address, uint32_t length)
 {
 	const uint8_t syncFrame[] = { 0x00, 0x08, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,
 	                              0x07, 0x07, 0x12, 0x20,
@@ -77,6 +115,8 @@ void WiFi :: Download(uint8_t *binary, uint32_t address, uint32_t length)
 	                             0x00, 0x00, 0x00, 0x00 };
 
 	static uint8_t receiveBuffer[512];
+	static uint8_t flashBlock[16 + FLASH_TRANSFER_SIZE];
+
 	bool synced = false;
 
 	if (uart->Read(receiveBuffer, 512) > 0) {
@@ -93,13 +133,59 @@ void WiFi :: Download(uint8_t *binary, uint32_t address, uint32_t length)
 	}
 	if (!synced) {
 		printf("ESP did not sync\n");
-	} else {
-	    int r;
-	    do {
-	        r = uart->GetSlipPacket(receiveBuffer, 512, 20);
-	        printf("%d.", r);
-	    } while(r > 0);
+		return -1;
 	}
+	int r;
+	do {
+		r = uart->GetSlipPacket(receiveBuffer, 512, 20);
+		printf("%d.", r);
+	} while(r > 0);
+
+	uint8_t parambuf[32]; // up to 8 ints
+
+	// Attach SPI Flash
+	PackParams(parambuf, 2, 0, 0); // Default Flash
+	if(!Command(ESP_ATTACH_SPI, 8, 0, parambuf, receiveBuffer, 200))
+		return -2;
+
+	// Set SPI Flash Parameters
+	PackParams(parambuf, 6, 0, // FlashID
+			0x400000, // 4 MB
+			 0x10000, // 64 KB block size
+			  0x1000, // 4 KB sector size
+			   0x100, // 256 byte page size
+			  0xFFFF); // Status mask
+	if(!Command(ESP_SET_FLASH_PARAMS, 24, 0, parambuf, receiveBuffer, 200))
+		return -3;
+
+	uint32_t block_size = FLASH_TRANSFER_SIZE;
+	uint32_t blocks = (length + block_size - 1) / block_size;
+
+	// Now start Flashing
+	PackParams(parambuf, 4, length, blocks, block_size, address);
+	if(!Command(ESP_FLASH_BEGIN, 16, 0, parambuf, receiveBuffer, 15 * 200))
+		return -4;
+
+	// Flash Blocks
+	uint8_t *pb = binary;
+	uint32_t remain = length;
+
+	for (uint32_t i=0; i < blocks; i ++, pb += block_size) {
+		uint8_t chk = 0xEF;
+		for(int m=0; m < block_size; m++) {
+			chk ^= pb[m];
+		}
+		memcpy(flashBlock + 16, pb, block_size);
+		PackParams(flashBlock, 4, (remain > block_size) ? block_size : remain, i, 0, 0);
+		if(!Command(ESP_FLASH_DATA, 16 + block_size, chk, flashBlock, receiveBuffer, 5 * 200))
+			return -5;
+	}
+
+	PackParams(parambuf, 1, 1); // Stay in the Loader
+	if (!Command(ESP_FLASH_END, 4, 0, parambuf, receiveBuffer, 200))
+		return -6;
+
+	return 0;
 }
 
 void WiFi :: TaskStart(void *context)
@@ -297,3 +383,16 @@ BaseType_t WiFi :: doStart()
 }
 
 WiFi wifi;
+
+// Single APP partition table
+const uint8_t partition_table[] = {
+	0xaa, 0x50, 0x01, 0x02, 0x00, 0x90, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x6e, 0x76, 0x73, 0x00, //  |.P.......`..nvs.|
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //  |................|
+	0xaa, 0x50, 0x01, 0x01, 0x00, 0xf0, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x70, 0x68, 0x79, 0x5f, //  |.P..........phy_|
+	0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //  |init............|
+	0xaa, 0x50, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x66, 0x61, 0x63, 0x74, //  |.P..........fact|
+	0x6f, 0x72, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //  |ory.............|
+	0xeb, 0xeb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //  |................|
+	0xf4, 0xad, 0x4f, 0x45, 0x38, 0x56, 0x4b, 0x5d, 0x74, 0x35, 0xb6, 0x2c, 0x75, 0xb6, 0x95, 0x24, //  |..OE8VK]t5.,u..$|
+	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, //  |................|
+};

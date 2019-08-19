@@ -32,10 +32,8 @@ void FastUART :: Write(const uint8_t *buffer, int length)
 
 #define sendchar(x) { 	while(uart->flags & FUART_TxFifoFull) { vTaskDelay(2); } uart->data = x; }
 
-void FastUART :: SendSlipPacket(const uint8_t *buffer, int length)
+void FastUART :: SendSlipData(const uint8_t *buffer, int length)
 {
-	// Start Character
-	sendchar(0xC0);
 	// Escaped Body
     for (int i=0; i < length; i++) {
     	uint8_t data = *(buffer++);
@@ -49,8 +47,26 @@ void FastUART :: SendSlipPacket(const uint8_t *buffer, int length)
     		sendchar(data);
     	}
     }
-	// End Character
+}
+
+void FastUART :: SendSlipOpen(void)
+{
 	sendchar(0xC0);
+}
+
+void FastUART :: SendSlipClose(void)
+{
+	sendchar(0xC0);
+}
+
+void FastUART :: SendSlipPacket(const uint8_t *buffer, int length)
+{
+	// Start Character
+	SendSlipOpen();
+	// Body
+	SendSlipData(buffer, length);
+	// End Character
+	SendSlipClose();
 }
 
 int FastUART :: Read(uint8_t *buffer, int bufferSize)

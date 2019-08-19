@@ -74,6 +74,9 @@ public:
 
     int  GetSlipPacket(uint8_t *buffer, int bufferSize, uint32_t timeout);
     void SendSlipPacket(const uint8_t *buffer, int length);
+    void SendSlipData(const uint8_t *buffer, int length);
+    void SendSlipOpen(void);
+    void SendSlipClose(void);
 };
 
 #endif /* FASTUART_H_ */
