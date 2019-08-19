@@ -15,19 +15,17 @@ extern "C" {
 int alt_irq_register(int, int, void (*)(void*));
 }
 
-typedef enum {
-	WIFI_OFF = 0,
-	WIFI_QUIT,
-	WIFI_BOOTMODE,
-	WIFI_DOWNLOAD,
-	WIFI_START,
+typedef enum
+{
+    WIFI_OFF = 0, WIFI_QUIT, WIFI_BOOTMODE, WIFI_DOWNLOAD, WIFI_START,
 } wifiCommand_e;
 
-typedef struct {
-	wifiCommand_e commandCode;
-	const void *data;
-	uint32_t address;
-	uint32_t length;
+typedef struct
+{
+    wifiCommand_e commandCode;
+    const void *data;
+    uint32_t address;
+    uint32_t length;
 } wifiCommand_t;
 
 #define ESP_FLASH_BEGIN		 0x02
@@ -85,37 +83,42 @@ void WiFi :: Boot()
     U64_WIFI_CONTROL = 3;
 }
 
-void WiFi :: PackParams(uint8_t *buffer, int numparams, ...)
+void WiFi::PackParams(uint8_t *buffer, int numparams, ...)
 {
     va_list ap;
     va_start(ap, numparams);
-    for(int i=0; i < numparams; i++) {
-    	uint32_t param = va_arg(ap, uint32_t);
-    	buffer[0] = param & 0xFF; param >>= 8;
-    	buffer[1] = param & 0xFF; param >>= 8;
-    	buffer[2] = param & 0xFF; param >>= 8;
-    	buffer[3] = param & 0xFF; param >>= 8;
-    	buffer += 4;
+    for (int i = 0; i < numparams; i++) {
+        uint32_t param = va_arg(ap, uint32_t);
+        buffer[0] = param & 0xFF;
+        param >>= 8;
+        buffer[1] = param & 0xFF;
+        param >>= 8;
+        buffer[2] = param & 0xFF;
+        param >>= 8;
+        buffer[3] = param & 0xFF;
+        param >>= 8;
+        buffer += 4;
     }
     va_end(ap);
 }
 
-bool WiFi :: Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data, uint8_t *receiveBuffer, int timeout)
+bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
+        uint8_t *receiveBuffer, int timeout)
 {
-	uart->SendSlipOpen();
-	uint8_t header[8];
-	memset(header, 0, 8);
-	header[1] = opcode;
-	header[2] = length & 0xFF;
-	header[3] = length >> 8;
-	header[4] = chk;
-	uart->SendSlipData(header, 8);
-    printf("-> "); dump_hex_relative(header, 8);
-	uart->SendSlipData(data, length);
-    printf("=> "); dump_hex_relative(data, length);
-	uart->SendSlipClose();
+    uart->SendSlipOpen();
+    uint8_t header[8];
+    memset(header, 0, 8);
+    header[1] = opcode;
+    header[2] = length & 0xFF;
+    header[3] = length >> 8;
+    header[4] = chk;
+    uart->SendSlipData(header, 8);
+    //printf("-> "); dump_hex_relative(header, 8);
+    uart->SendSlipData(data, length);
+    //printf("=> "); dump_hex_relative(data, length);
+    uart->SendSlipClose();
 
-	do {
+    do {
         int r = uart->GetSlipPacket(receiveBuffer, 512, timeout);
 
         if (r > 0) {
@@ -137,116 +140,117 @@ bool WiFi :: Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data
             printf("No response to command with opcode %b\n", opcode);
             break;
         }
-	} while(1);
-	return false;
+    } while (1);
+    return false;
 }
 
 int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 {
-	const uint8_t syncFrame[] = { 0x00, 0x08, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,
-	                              0x07, 0x07, 0x12, 0x20,
-								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
-								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
-								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
-								  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
-	};
-	const uint8_t syncResp[] = { 0x01, 0x08, 0x04, 0x00, 0xEE, 0xEE, 0xEE, 0xEE,
-	                             0x00, 0x00, 0x00, 0x00 };
+    const uint8_t syncFrame[] = { 0x00, 0x08, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                  0x07, 0x07, 0x12, 0x20,
+                                  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+                                  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+                                  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+                                  0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+    };
+    const uint8_t syncResp[] = { 0x01, 0x08, 0x04, 0x00, 0xEE, 0xEE, 0xEE, 0xEE,
+                                 0x00, 0x00, 0x00, 0x00 };
 
-	static uint8_t receiveBuffer[512];
-	static uint8_t flashBlock[16 + FLASH_TRANSFER_SIZE];
+    static uint8_t receiveBuffer[512];
+    static uint8_t flashBlock[16 + FLASH_TRANSFER_SIZE];
 
-	bool synced = false;
+    bool synced = false;
 
-	if (uart->Read(receiveBuffer, 512) > 0) {
-	    printf("Boot message:\n%s\n", receiveBuffer);
-	}
+    if (uart->Read(receiveBuffer, 512) > 0) {
+        printf("Boot message:\n%s\n", receiveBuffer);
+    }
 
-	for(int i = 0; i < 10; i ++) {
-		uart->SendSlipPacket(syncFrame, 44);
-		int r = uart->GetSlipPacket(receiveBuffer, 512, 200);
-		dump_hex_relative(receiveBuffer, r);
-		memset(receiveBuffer+4, 0xEE, 4);
-		if ((r == 12) && (memcmp(receiveBuffer, syncResp, 12) == 0)) {
-			synced = true;
-			break;
-		}
-	}
-	if (!synced) {
-		printf("ESP did not sync\n");
-		return -1;
-	}
-	int r;
-	do {
-		r = uart->GetSlipPacket(receiveBuffer, 512, 20);
-		printf("%d.", r);
-	} while(r > 0);
+    for (int i = 0; i < 10; i++) {
+        uart->SendSlipPacket(syncFrame, 44);
+        int r = uart->GetSlipPacket(receiveBuffer, 512, 200);
+        dump_hex_relative(receiveBuffer, r);
+        memset(receiveBuffer + 4, 0xEE, 4);
+        if ((r == 12) && (memcmp(receiveBuffer, syncResp, 12) == 0)) {
+            synced = true;
+            break;
+        }
+    }
+    if (!synced) {
+        printf("ESP did not sync\n");
+        return -1;
+    }
+    int r;
+    do {
+        r = uart->GetSlipPacket(receiveBuffer, 512, 20);
+        printf("%d.", r);
+    } while (r > 0);
 
-	printf("Setting up Flashing ESP32.\n");
-	uint8_t parambuf[32]; // up to 8 ints
+    printf("Setting up Flashing ESP32.\n");
+    uint8_t parambuf[32]; // up to 8 ints
 
-	// Attach SPI Flash
-	PackParams(parambuf, 2, 0, 0); // Default Flash
-	if(!Command(ESP_ATTACH_SPI, 8, 0, parambuf, receiveBuffer, 500))
-		return -2;
+    // Attach SPI Flash
+    PackParams(parambuf, 2, 0, 0); // Default Flash
+    if (!Command(ESP_ATTACH_SPI, 8, 0, parambuf, receiveBuffer, 500))
+        return -2;
 
-	// Set SPI Flash Parameters
-	PackParams(parambuf, 6, 0, // FlashID
-			0x400000, // 4 MB
-			 0x10000, // 64 KB block size
-			  0x1000, // 4 KB sector size
-			   0x100, // 256 byte page size
-			  0xFFFF); // Status mask
-	if(!Command(ESP_SET_FLASH_PARAMS, 24, 0, parambuf, receiveBuffer, 200))
-		return -3;
+    // Set SPI Flash Parameters
+    PackParams(parambuf, 6, 0, // FlashID
+                    0x400000, // 4 MB
+                     0x10000, // 64 KB block size
+                      0x1000, // 4 KB sector size
+                       0x100, // 256 byte page size
+                     0xFFFF); // Status mask
+    if (!Command(ESP_SET_FLASH_PARAMS, 24, 0, parambuf, receiveBuffer, 200))
+        return -3;
 
-	uint32_t block_size = FLASH_TRANSFER_SIZE;
-	uint32_t blocks = (length + block_size - 1) / block_size;
+    uint32_t block_size = FLASH_TRANSFER_SIZE;
+    uint32_t blocks = (length + block_size - 1) / block_size;
 
-	// Now start Flashing
-	PackParams(parambuf, 4, length, blocks, block_size, address);
-	if(!Command(ESP_FLASH_BEGIN, 16, 0, parambuf, receiveBuffer, 15 * 200))
-		return -4;
+    // Now start Flashing
+    PackParams(parambuf, 4, length, blocks, block_size, address);
+    if (!Command(ESP_FLASH_BEGIN, 16, 0, parambuf, receiveBuffer, 15 * 200))
+        return -4;
 
-	// Flash Blocks
-	const uint8_t *pb = binary;
-	uint32_t remain = length;
+    // Flash Blocks
+    const uint8_t *pb = binary;
+    uint32_t remain = length;
 
-	printf("Number of blocks to program: %d\n", blocks);
+    printf("Number of blocks to program: %d\n", blocks);
 
-	for (uint32_t i=0; i < blocks; i ++, pb += block_size) {
+    for (uint32_t i = 0; i < blocks; i++, pb += block_size) {
         uint32_t now = (remain > block_size) ? block_size : remain;
-		uint8_t chk = 0xEF;
-		for(int m=0; m < now; m++) {
-			chk ^= pb[m];
-		}
-		memcpy(flashBlock + 16, pb, now);
-		PackParams(flashBlock, 4, now, i, 0, 0);
-		if(!Command(ESP_FLASH_DATA, 16 + now, chk, flashBlock, receiveBuffer, 5 * 200))
-			return -5;
-		remain -= now;
-		pb += now;
-	}
+        uint8_t chk = 0xEF;
+        for (int m = 0; m < now; m++) {
+            chk ^= pb[m];
+        }
+        memcpy(flashBlock + 16, pb, now);
+        PackParams(flashBlock, 4, now, i, 0, 0);
+        if (!Command(ESP_FLASH_DATA, 16 + now, chk, flashBlock, receiveBuffer, 5 * 200))
+            return -5;
+        remain -= now;
+        pb += now;
+    }
 
-	PackParams(parambuf, 1, 1); // Stay in the Loader
-	if (!Command(ESP_FLASH_END, 4, 0, parambuf, receiveBuffer, 200))
-		return -6;
+    PackParams(parambuf, 1, 1); // Stay in the Loader
+    if (!Command(ESP_FLASH_END, 4, 0, parambuf, receiveBuffer, 200))
+        return -6;
 
-	return 0;
+    printf("Programming ESP32 was a success!\n");
+    return 0;
 }
 
-void WiFi :: TaskStart(void *context)
+void WiFi::TaskStart(void *context)
 {
-    WiFi *w = (WiFi *)context;
+    WiFi *w = (WiFi *) context;
     w->Thread();
 }
 
-void WiFi :: EthernetRelay(void *context)
+void WiFi::EthernetRelay(void *context)
 {
-    WiFi *w = (WiFi *)context;
+    WiFi *w = (WiFi *) context;
     uint8_t buffer[256];
     int ret;
-    while(1) {
+    while (1) {
         ret = recv(w->actualSocket, buffer, 256, 0);
         if (ret > 0) {
             printf(">%d|", ret);
@@ -260,62 +264,61 @@ void WiFi :: EthernetRelay(void *context)
     vTaskDelete(w->relayTask);
 }
 
-void WiFi :: Thread()
+void WiFi::Thread()
 {
     uart->EnableRxIRQ(true);
 
     wifiCommand_t command;
     bool run = true;
 
-    while(run) {
-    	xQueueReceive(commandQueue, &command, portMAX_DELAY);
+    while (run) {
+        xQueueReceive(commandQueue, &command, portMAX_DELAY);
 
-    	switch(command.commandCode) {
-    	case WIFI_QUIT:
-    		run = false;
-    		break;
-    	case WIFI_OFF:
-    		Disable();
-    		break;
-    	case WIFI_BOOTMODE:
-    		Boot();
-    		break;
-    	case WIFI_START:
-    		Enable();
-    		break;
-    	case WIFI_DOWNLOAD:
+        switch (command.commandCode) {
+        case WIFI_QUIT:
+            run = false;
+            break;
+        case WIFI_OFF:
+            Disable();
+            break;
+        case WIFI_BOOTMODE:
+            Boot();
+            break;
+        case WIFI_START:
+            Enable();
+            break;
+        case WIFI_DOWNLOAD:
 //    		Download((uint8_t *)command.data, command.address, command.length);
             Download(partition_table, 0x8000, 144);
-    		break;
-    	default:
-    		break;
-    	}
+            break;
+        default:
+            break;
+        }
     }
 
-	Disable();
+    Disable();
     uart->EnableRxIRQ(false);
     vTaskDelete(NULL);
 }
 
-void WiFi :: Quit()
+void WiFi::Quit()
 {
     uart->EnableRxIRQ(false);
-	Disable();
-	// Should also kill the thread?
+    Disable();
+    // Should also kill the thread?
 }
 
-void WiFi :: Listen()
+void WiFi::Listen()
 {
-	int sockfd, portno;
+    int sockfd, portno;
     unsigned long int clilen;
     struct sockaddr_in serv_addr, cli_addr;
-    int  n;
+    int n;
 
     /* First call to socket() function */
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
-    if (sockfd < 0)
-    {
+    if (sockfd < 0) {
         puts("ERROR wifiThread opening socket");
         return;
     }
@@ -331,15 +334,14 @@ void WiFi :: Listen()
     serv_addr.sin_port = htons(portno);
 
     /* Now bind the host address using bind() call.*/
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
-    {
+    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
         puts("wifiThread ERROR on binding");
         return;
     }
 
     /* Now start listening for the clients, here process will
-    * go in sleep mode and will wait for the incoming connection
-    */
+     * go in sleep mode and will wait for the incoming connection
+     */
 
     listen(sockfd, 5);
     clilen = sizeof(cli_addr);
@@ -347,11 +349,10 @@ void WiFi :: Listen()
     uint8_t buffer[512];
     int read, ret;
 
-    while(1) {
+    while (1) {
         /* Accept actual connection from the client */
-        actualSocket = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
-        if (actualSocket < 0)
-        {
+        actualSocket = accept(sockfd, (struct sockaddr * )&cli_addr, &clilen);
+        if (actualSocket < 0) {
             puts("wifiThread ERROR on accept");
             return;
         }
@@ -370,11 +371,11 @@ void WiFi :: Listen()
         struct timeval tv;
         tv.tv_sec = 1; // bug in lwip; this is just used directly as tick value
         tv.tv_usec = 1;
-        setsockopt(actualSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+        setsockopt(actualSocket, SOL_SOCKET, SO_RCVTIMEO, (char * )&tv, sizeof(struct timeval));
 
-        while(!doClose) {
+        while (!doClose) {
             // UART RX => Ethernet
-            if(xSemaphoreTake(rxSemaphore, 1) == pdTRUE) {
+            if (xSemaphoreTake(rxSemaphore, 1) == pdTRUE) {
                 do {
                     read = uart->Read(buffer, 512);
                     if (read) {
@@ -386,7 +387,7 @@ void WiFi :: Listen()
                             break;
                         }
                     }
-                } while(read);
+                } while (read);
             }
 
             // Ethernet => UART TX
@@ -396,7 +397,7 @@ void WiFi :: Listen()
                 //dump_hex_relative(buffer, ret);
                 printf(">%d|", ret);
                 uart->Write(buffer, ret);
-            } else if(ret == 0) {
+            } else if (ret == 0) {
                 printf("Receive returned 0. Exiting\n");
                 break;
             }
@@ -406,7 +407,7 @@ void WiFi :: Listen()
     }
 }
 
-BaseType_t WiFi :: doDownload(uint8_t *data, uint32_t address, uint32_t length)
+BaseType_t WiFi::doDownload(uint8_t *data, uint32_t address, uint32_t length)
 {
     wifiCommand_t command;
     command.commandCode = WIFI_DOWNLOAD;
@@ -416,14 +417,14 @@ BaseType_t WiFi :: doDownload(uint8_t *data, uint32_t address, uint32_t length)
     return xQueueSend(commandQueue, &command, 200);
 }
 
-BaseType_t WiFi :: doBootMode()
+BaseType_t WiFi::doBootMode()
 {
     wifiCommand_t command;
     command.commandCode = WIFI_BOOTMODE;
     return xQueueSend(commandQueue, &command, 200);
 }
 
-BaseType_t WiFi :: doStart()
+BaseType_t WiFi::doStart()
 {
     wifiCommand_t command;
     command.commandCode = WIFI_START;
