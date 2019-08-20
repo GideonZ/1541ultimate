@@ -218,15 +218,19 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 
     printf("Number of blocks to program: %d\n", blocks);
 
-    for (uint32_t i = 0; i < blocks; i++, pb += block_size) {
+    for (uint32_t i = 0; i < blocks; i++) {
         uint32_t now = (remain > block_size) ? block_size : remain;
+        memcpy(flashBlock + 16, pb, now);
+        // Fill the remaining part of this block with FF
+        if (now < block_size) {
+            memset(flashBlock + 16 + now, 0xFF, block_size - now);
+        }
         uint8_t chk = 0xEF;
-        for (int m = 0; m < now; m++) {
+        for (int m = 0; m < block_size; m++) {
             chk ^= pb[m];
         }
-        memcpy(flashBlock + 16, pb, now);
-        PackParams(flashBlock, 4, now, i, 0, 0);
-        if (!Command(ESP_FLASH_DATA, 16 + now, chk, flashBlock, receiveBuffer, 5 * 200))
+        PackParams(flashBlock, 4, block_size, i, 0, 0);
+        if (!Command(ESP_FLASH_DATA, 16 + block_size, chk, flashBlock, receiveBuffer, 5 * 200))
             return -5;
         remain -= now;
         pb += now;
