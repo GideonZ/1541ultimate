@@ -41,6 +41,7 @@ class FastUART
     rxBuffer_t stdRx;
     rxBuffer_t slipRx;
 
+    bool slipEnabled;
     bool slipMode;
     bool slipError;
     bool slipEscape;
@@ -66,6 +67,7 @@ public:
         slipEscape = false;
         slipError = false;
         slipQueue = xQueueCreate(8, sizeof(slipElement_t));
+        slipEnabled = false;
     }
 
     void EnableRxIRQ(bool);
@@ -77,6 +79,7 @@ public:
     // never blocking
     int Read(uint8_t *buffer, int bufferSize);
 
+    void EnableSlip(bool enabled);
     int GetSlipPacket(uint8_t *buffer, int bufferSize, uint32_t timeout);
     void SendSlipPacket(const uint8_t *buffer, int length);
     void SendSlipData(const uint8_t *buffer, int length);

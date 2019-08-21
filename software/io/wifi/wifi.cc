@@ -97,7 +97,6 @@ void WiFi::PackParams(uint8_t *buffer, int numparams, ...)
         buffer[2] = param & 0xFF;
         param >>= 8;
         buffer[3] = param & 0xFF;
-        param >>= 8;
         buffer += 4;
     }
     va_end(ap);
@@ -114,16 +113,13 @@ bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
     header[3] = length >> 8;
     header[4] = chk;
     uart->SendSlipData(header, 8);
-    //printf("-> "); dump_hex_relative(header, 8);
     uart->SendSlipData(data, length);
-    //printf("=> "); dump_hex_relative(data, length);
     uart->SendSlipClose();
 
     do {
         int r = uart->GetSlipPacket(receiveBuffer, 512, timeout);
 
         if (r > 0) {
-            dump_hex_relative(receiveBuffer, r);
             if (receiveBuffer[0] == 1) {
                 if (receiveBuffer[1] == opcode) {
                     uint8_t size = receiveBuffer[2];
@@ -133,6 +129,7 @@ bool WiFi::Command(uint8_t opcode, uint16_t length, uint8_t chk, uint8_t *data,
                         return true;
                     } else {
                         printf("Command: %b. Error = %b.\n", opcode, error);
+                        dump_hex_relative(receiveBuffer, r);
                         break;
                     }
                 }
@@ -196,7 +193,7 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 
     // Set SPI Flash Parameters
     PackParams(parambuf, 6, 0, // FlashID
-                    0x400000, // 4 MB
+                    0x200000, // 2 MB
                      0x10000, // 64 KB block size
                       0x1000, // 4 KB sector size
                        0x100, // 256 byte page size
@@ -231,10 +228,6 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
             chk ^= flashBlock[m];
         }
         PackParams(flashBlock, 4, block_size, i, 0, 0);
-        if (i > (blocks-3)) {
-            printf("CHK: %b\n", chk);
-            dump_hex_relative(flashBlock, 16+block_size);
-        }
         if (!Command(ESP_FLASH_DATA, 16 + block_size, chk, flashBlock, receiveBuffer, 5 * 200))
             return -5;
         remain -= now;
@@ -290,14 +283,18 @@ void WiFi::Thread()
             break;
         case WIFI_OFF:
             Disable();
+            uart->EnableSlip(false);
             break;
         case WIFI_BOOTMODE:
+            uart->EnableSlip(true);
             Boot();
             break;
         case WIFI_START:
+            uart->EnableSlip(true);
             Enable();
             break;
         case WIFI_DOWNLOAD:
+            uart->EnableSlip(true);
             Boot();
             Download((const uint8_t *)command.data, command.address, command.length);
             if (command.doFree) {
@@ -373,6 +370,7 @@ void WiFi::Listen()
         printf("wifiThread actualSocket = %8x\n", actualSocket);
 
         Boot();
+        uart->EnableSlip(false);
 
         vTaskDelay(100);
         read = uart->Read(buffer, 512);

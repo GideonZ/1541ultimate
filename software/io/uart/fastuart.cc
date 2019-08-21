@@ -131,48 +131,50 @@ BaseType_t FastUART::RxInterrupt()
         uart->get = 1; // possibly drop the char, if our buffer is full.. otherwise we keep getting interrupts
         //printf("[%b]", data);
         store = true;
-        switch (data) {
-        case 0xC0:
-            store = false;
-            slipEscape = false;
-            if ((slipMode) && (slipLength > 0)) {
-                slipElement.size = slipLength;
-                slipElement.error = slipError;
-                xQueueSendFromISR(slipQueue, &slipElement, &woken);
-                slipError = false;
-                slipMode = false;
-                slipLength = 0;
-            } else {
-                slipMode = true;
-                slipLength = 0;
-            }
-            break;
-        case 0xDB:
-            if (slipMode) {
-                slipEscape = true;
+        if (slipEnabled) {
+            switch (data) {
+            case 0xC0:
                 store = false;
-            }
-            break;
-        case 0xDC:
-            if (slipEscape) {
-                data = 0xC0;
-                slipLength++;
                 slipEscape = false;
-            }
-            break;
-        case 0xDD:
-            if (slipEscape) {
-                data = 0xDB;
-                slipLength++;
+                if ((slipMode) && (slipLength > 0)) {
+                    slipElement.size = slipLength;
+                    slipElement.error = slipError;
+                    xQueueSendFromISR(slipQueue, &slipElement, &woken);
+                    slipError = false;
+                    slipMode = false;
+                    slipLength = 0;
+                } else {
+                    slipMode = true;
+                    slipLength = 0;
+                }
+                break;
+            case 0xDB:
+                if (slipMode) {
+                    slipEscape = true;
+                    store = false;
+                }
+                break;
+            case 0xDC:
+                if (slipEscape) {
+                    data = 0xC0;
+                    slipLength++;
+                    slipEscape = false;
+                }
+                break;
+            case 0xDD:
+                if (slipEscape) {
+                    data = 0xDB;
+                    slipLength++;
+                    slipEscape = false;
+                }
+                break;
+            default:
                 slipEscape = false;
+                if (slipMode) {
+                    slipLength++;
+                }
+                break;
             }
-            break;
-        default:
-            slipEscape = false;
-            if (slipMode) {
-                slipLength++;
-            }
-            break;
         }
 
         rxBuffer_t* b;
@@ -197,4 +199,11 @@ BaseType_t FastUART::RxInterrupt()
         xSemaphoreGiveFromISR(rxSemaphore, &woken);
     }
     return woken;
+}
+
+void FastUART :: EnableSlip(bool enabled)
+{
+    slipEnabled = enabled;
+    slipMode = false;
+    slipError = false;
 }
