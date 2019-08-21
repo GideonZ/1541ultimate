@@ -115,7 +115,7 @@ int FileTypeESP::execute(SubsysCommand *cmd)
                 cmd->user_interface->popup("Incorrect signature in file.", BUTTON_OK);
                 break;
             }
-            dest = malloc(header.length);
+            dest = (uint8_t *)malloc(header.length);
             if (!dest) {
                 cmd->user_interface->popup("Couldn't alloc mem to load segment.", BUTTON_OK);
                 break;

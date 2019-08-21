@@ -34,7 +34,7 @@ typedef struct
 #define ESP_FLASH_END		 0x04
 #define ESP_SET_FLASH_PARAMS 0x0B
 #define ESP_ATTACH_SPI       0x0D
-#define FLASH_TRANSFER_SIZE  0x1000
+#define FLASH_TRANSFER_SIZE  0x400
 
 // Single APP partition table
 const uint8_t partition_table[] = {
@@ -206,9 +206,10 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
 
     uint32_t block_size = FLASH_TRANSFER_SIZE;
     uint32_t blocks = (length + block_size - 1) / block_size;
+    uint32_t total_length = blocks * block_size;
 
     // Now start Flashing
-    PackParams(parambuf, 4, length, blocks, block_size, address);
+    PackParams(parambuf, 4, total_length, blocks, block_size, address);
     if (!Command(ESP_FLASH_BEGIN, 16, 0, parambuf, receiveBuffer, 15 * 200))
         return -4;
 
@@ -226,10 +227,14 @@ int WiFi :: Download(const uint8_t *binary, uint32_t address, uint32_t length)
             memset(flashBlock + 16 + now, 0xFF, block_size - now);
         }
         uint8_t chk = 0xEF;
-        for (int m = 0; m < block_size; m++) {
-            chk ^= pb[m];
+        for (int m = 16; m < 16 + block_size; m++) {
+            chk ^= flashBlock[m];
         }
         PackParams(flashBlock, 4, block_size, i, 0, 0);
+        if (i > (blocks-3)) {
+            printf("CHK: %b\n", chk);
+            dump_hex_relative(flashBlock, 16+block_size);
+        }
         if (!Command(ESP_FLASH_DATA, 16 + block_size, chk, flashBlock, receiveBuffer, 5 * 200))
             return -5;
         remain -= now;
