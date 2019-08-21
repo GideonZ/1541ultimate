@@ -598,7 +598,8 @@ DRESULT UsbScsi :: read_capacity(uint32_t *num_blocks, uint32_t *blk_size)
     }
 }
 
-#ifndef BOOTLOADER
+// #ifndef BOOTLOADER
+#if 0
 const char *sense_strings[] = {
  "No sense",
  "Recovered error",
@@ -825,7 +826,7 @@ void UsbScsiDriver :: print_sense_error(uint8_t *sd)
 	}
 }
 #else
-void UsbScsiDriver :: print_sense_error(void)
+void UsbScsiDriver :: print_sense_error(uint8_t *sd)
 {
 	printf("Sense code: %b, (%b.%b)", sd[2], sd[12], sd[13]);
 }
