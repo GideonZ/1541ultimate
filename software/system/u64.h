@@ -101,6 +101,7 @@
 #define C64_VOICE3_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x26))
 #define C64_EMUSID1_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x27))
 #define C64_EMUSID2_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x28))
+#define C64_EMUSID_SPLIT  (*(volatile uint8_t *)(C64_IO_BASE + 0x29))
 #define C64_PLD_SIDCTRL2  (*(volatile uint8_t *)(C64_IO_BASE + 0x3A))
 #define C64_PLD_SIDCTRL1  (*(volatile uint8_t *)(C64_IO_BASE + 0x3B))
 #define C64_PLD_JOYCTRL   (*(volatile uint8_t *)(C64_IO_BASE + 0x3E))
