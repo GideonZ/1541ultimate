@@ -96,15 +96,13 @@
 #define C64_EMUSID2_WAVES (*(volatile uint8_t *)(C64_IO_BASE + 0x21))
 #define C64_EMUSID1_RES   (*(volatile uint8_t *)(C64_IO_BASE + 0x22))
 #define C64_EMUSID2_RES   (*(volatile uint8_t *)(C64_IO_BASE + 0x23))
-#define C64_VOICE1_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x24))
-#define C64_VOICE2_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x25))
-#define C64_VOICE3_ADSR   (*(volatile uint8_t *)(C64_IO_BASE + 0x26))
 #define C64_EMUSID1_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x27))
 #define C64_EMUSID2_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x28))
 #define C64_EMUSID_SPLIT  (*(volatile uint8_t *)(C64_IO_BASE + 0x29))
 #define C64_PLD_SIDCTRL2  (*(volatile uint8_t *)(C64_IO_BASE + 0x3A))
 #define C64_PLD_SIDCTRL1  (*(volatile uint8_t *)(C64_IO_BASE + 0x3B))
 #define C64_PLD_JOYCTRL   (*(volatile uint8_t *)(C64_IO_BASE + 0x3E))
+#define C64_VOICE_ADSR(x) (*(volatile uint8_t *)(C64_IO_BASE + 0x80 + x))
 
 #define VIDEO_FMT_NTSC_ENCODING 0x01
 #define VIDEO_FMT_60_HZ         0x02

@@ -11,9 +11,12 @@
 #include "u64.h"
 
 static const char *modes[] = {"Off", "Fixed Color", "SID Pulse", "SID Scroll 1", "SID Scroll 2" };
+static const char *sidsel[] = { "UltiSID1-A", "UltiSID1-B", "UltiSID1-C", "UltiSID1-D",
+                                "UltiSID2-A", "UltiSID2-B", "UltiSID2-C", "UltiSID2-D" };
 
 static struct t_cfg_definition cfg_definition[] = {
     { CFG_LED_MODE,             CFG_TYPE_ENUM,  "LedStrip Mode",                "%s", modes,        0,  4,  0  },
+    { CFG_LED_SIDSELECT,        CFG_TYPE_ENUM,  "LedStrip SID Select",          "%s", sidsel,       0,  7,  0  },
     { CFG_LED_INTENSITY,        CFG_TYPE_VALUE, "Strip Intensity",              "%d", NULL,         0, 31, 16  },
     { CFG_LED_RED,              CFG_TYPE_VALUE, "Fixed Color Red",            "%02x", NULL,         0,255, 128 },
     { CFG_LED_GREEN,            CFG_TYPE_VALUE, "Fixed Color Green",          "%02x", NULL,         0,255, 0   },
@@ -31,6 +34,7 @@ LedStrip :: LedStrip()
     cfg->set_change_hook(CFG_LED_RED,       LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_GREEN,     LedStrip :: hot_effectuate);
     cfg->set_change_hook(CFG_LED_BLUE,      LedStrip :: hot_effectuate);
+    cfg->set_change_hook(CFG_LED_SIDSELECT, LedStrip :: hot_effectuate);
 }
 
 void LedStrip :: task(void *a)
@@ -39,7 +43,12 @@ void LedStrip :: task(void *a)
 
     uint8_t offset = 0;
     uint8_t start = 0;
+    uint8_t v1, v2, v3;
+
     while(1) {
+        v1 = C64_VOICE_ADSR(strip->sidsel * 4 + 0);
+        v2 = C64_VOICE_ADSR(strip->sidsel * 4 + 1);
+        v3 = C64_VOICE_ADSR(strip->sidsel * 4 + 2);
         switch (strip->mode) {
         case 0:
             LEDSTRIP_DATA[offset++] = 0xE0; // intensity 0
@@ -66,9 +75,9 @@ void LedStrip :: task(void *a)
         case 2:
             U64_LEDSTRIP_EN = 1;
             LEDSTRIP_DATA[offset++] = 0xE0 | strip->intensity;
-            LEDSTRIP_DATA[offset++] = C64_VOICE1_ADSR;
-            LEDSTRIP_DATA[offset++] = C64_VOICE2_ADSR;
-            LEDSTRIP_DATA[offset++] = C64_VOICE3_ADSR;
+            LEDSTRIP_DATA[offset++] = v1;
+            LEDSTRIP_DATA[offset++] = v2;
+            LEDSTRIP_DATA[offset++] = v3;
             // LEDSTRIP_FROM = 0x40 | (start & 0x3F);
             LEDSTRIP_FROM = 0x00 | (start & 0x3F);
             LEDSTRIP_LEN = 25;
@@ -78,9 +87,9 @@ void LedStrip :: task(void *a)
         case 3:
             U64_LEDSTRIP_EN = 1;
             LEDSTRIP_DATA[offset++] = 0xE0 | strip->intensity;
-            LEDSTRIP_DATA[offset++] = C64_VOICE1_ADSR;
-            LEDSTRIP_DATA[offset++] = C64_VOICE2_ADSR;
-            LEDSTRIP_DATA[offset++] = C64_VOICE3_ADSR;
+            LEDSTRIP_DATA[offset++] = v1;
+            LEDSTRIP_DATA[offset++] = v2;
+            LEDSTRIP_DATA[offset++] = v3;
             LEDSTRIP_FROM = 0x40 | ((start - 24) & 0x3F);
             LEDSTRIP_LEN = 25;
             start ++;
@@ -89,9 +98,9 @@ void LedStrip :: task(void *a)
         case 4:
             U64_LEDSTRIP_EN = 1;
             LEDSTRIP_DATA[offset++] = 0xE0 | strip->intensity;
-            LEDSTRIP_DATA[offset++] = C64_VOICE1_ADSR;
-            LEDSTRIP_DATA[offset++] = C64_VOICE2_ADSR;
-            LEDSTRIP_DATA[offset++] = C64_VOICE3_ADSR;
+            LEDSTRIP_DATA[offset++] = v1;
+            LEDSTRIP_DATA[offset++] = v2;
+            LEDSTRIP_DATA[offset++] = v3;
             LEDSTRIP_FROM = 0x80 | (start & 0x3F);
             LEDSTRIP_LEN = 25;
             start ++;
@@ -111,6 +120,7 @@ void LedStrip :: effectuate_settings(void)
     red   = cfg->get_value(CFG_LED_RED);
     green = cfg->get_value(CFG_LED_GREEN);
     blue  = cfg->get_value(CFG_LED_BLUE);
+    sidsel = cfg->get_value(CFG_LED_SIDSELECT);
 
     U64_PWM_DUTY = 0xC0;
 }
