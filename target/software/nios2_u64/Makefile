@@ -146,6 +146,7 @@ SRCS_CC	 =  u2p_init.cc \
 			wifi.cc \
 			led_strip.cc \
 			data_streamer.cc \
+			configio.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \
