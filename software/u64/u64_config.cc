@@ -158,7 +158,7 @@ uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0, 0x
 						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
 						  };
 
-static const char *stereo_addr[] = { "A5", "A8", "A7", "A6" };
+static const char *stereo_addr[] = { "Mono", "A5", "A6", "A7", "A8" };
 static const char *en_dis4[] = { "Disabled", "Enabled" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
@@ -194,6 +194,9 @@ static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90,
                                        0x10, 0x08, 0x06, 0x04, 0x02, 0x01 };
 
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
+
+static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10 };
+static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
 
 
 /*
@@ -236,7 +239,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 32, 0 },
     { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 32, 0 },
     { CFG_PADDLE_EN,			CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
-    { CFG_STEREO_DIFF,			CFG_TYPE_ENUM, "Ext StereoSID addrline",       "%s", stereo_addr,  0,  3, 0 },
+    { CFG_STEREO_DIFF,			CFG_TYPE_ENUM, "Ext StereoSID addrline",       "%s", stereo_addr,  0,  4, 0 },
     { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 32, 0 },
     { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 32, 0 },
     { CFG_EMUSID_SPLIT,         CFG_TYPE_ENUM, "UltiSID Range Split",          "%s", sid_split,    0,  7, 0 },
@@ -473,10 +476,16 @@ void U64Config :: effectuate_settings()
     C64_SID2_BASE    =  C64_SID2_BASE_BAK = u64_sid_offsets[cfg->get_value(CFG_SID2_ADDRESS)];
     C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK =  u64_sid_offsets[cfg->get_value(CFG_EMUSID1_ADDRESS)];
     C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK =  u64_sid_offsets[cfg->get_value(CFG_EMUSID2_ADDRESS)];
-    C64_SID1_MASK	 =  C64_SID1_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_SID1_ADDRESS)];
-    C64_SID2_MASK	 =  C64_SID2_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_SID2_ADDRESS)];
-    C64_EMUSID1_MASK =  C64_EMUSID1_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID1_ADDRESS)];
-    C64_EMUSID2_MASK =  C64_EMUSID2_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)];
+
+    uint8_t mask1 = u64_sid_mask[cfg->get_value(CFG_EMUSID1_ADDRESS)] & ~split_bits[cfg->get_value(CFG_EMUSID_SPLIT)];
+    uint8_t mask2 = u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)] & ~split_bits[cfg->get_value(CFG_EMUSID_SPLIT)];
+    uint8_t mask3 = u64_sid_mask[cfg->get_value(CFG_SID1_ADDRESS)] & ~stereo_bits[cfg->get_value(CFG_STEREO_DIFF)];
+    uint8_t mask4 = u64_sid_mask[cfg->get_value(CFG_SID2_ADDRESS)] & ~stereo_bits[cfg->get_value(CFG_STEREO_DIFF)];
+
+    C64_SID1_MASK	 =  C64_SID1_MASK_BAK = mask3;
+    C64_SID2_MASK	 =  C64_SID2_MASK_BAK = mask4;
+    C64_EMUSID1_MASK =  C64_EMUSID1_MASK_BAK = mask1;
+    C64_EMUSID2_MASK =  C64_EMUSID2_MASK_BAK = mask2;
     C64_EMUSID_SPLIT =  C64_EMUSID_SPLIT_BAK = cfg->get_value(CFG_EMUSID_SPLIT);
     U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
