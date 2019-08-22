@@ -24,8 +24,6 @@ extern "C" {
 }
 #include "config.h"
 #include <string.h>
-#include "subsys.h"
-#include "userinterface.h"
 
 /*** CONFIGURATION MANAGER ***/
 ConfigManager :: ConfigManager() : stores(16, NULL)
@@ -132,43 +130,6 @@ ConfigStore *ConfigManager :: open_store(uint32_t id)
     return NULL;
 }
 
-void ConfigManager :: write_to_file(File *f)
-{
-    ConfigStore *s;
-    for(int n = 0; n < stores.get_elements();n++) {
-        s = stores[n];
-        s->write_to_file(f);
-    }
-}
-
-int  ConfigManager :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
-{
-    item_list.append(new Action("Save Config to File", ConfigManager :: S_save_to_file, 0, 0));
-    return 1;
-}
-
-int ConfigManager :: S_save_to_file(SubsysCommand *cmd)
-{
-    char buffer[64];
-    buffer[0] = 0;
-
-    FileManager *fm = FileManager::getFileManager();
-    File *f;
-
-    int res = cmd->user_interface->string_box("Give filename..", buffer, 22);
-    set_extension(buffer, ".cfg", 32);
-    if (res > 0) {
-        FRESULT fres = fm->fopen(cmd->path.c_str(), buffer, FA_CREATE_ALWAYS, &f);
-        if (fres == FR_OK) {
-            ConfigManager :: getConfigManager()->write_to_file(f);
-        } else {
-            sprintf(buffer, "Error: %s", FileSystem::get_error_string(fres));
-            cmd->user_interface->popup(buffer, BUTTON_OK);
-        }
-    }
-    return 0;
-}
-
 //   ===================
 /*** CONFIGURATION STORE ***/
 //   ===================
@@ -247,35 +208,6 @@ void ConfigStore :: pack()
         }
     }
     *b = 0xFF;
-}
-
-void ConfigStore :: write_to_file(File *f)
-{
-    ConfigItem *i;
-    char buffer[64]; // should be enough, as it should fit on 40 col screen
-    int len = 0;
-    uint32_t tr;
-
-    len = sprintf(buffer, "[%s]\n", this->store_name.c_str() );
-    if (len) {
-        f->write(buffer, len, &tr);
-    }
-    for(int n = 0; n < items.get_elements(); n++) {
-        i = items[n];
-        len = 0;
-        if(i->definition->type == CFG_TYPE_STRING) {
-            len = sprintf(buffer, "%s = %s\n", i->definition->item_text, i->string);
-        } else if(i->definition->type == CFG_TYPE_ENUM) {
-            len = sprintf(buffer, "%s = %s\n", i->definition->item_text, i->definition->items[i->value]);
-        } else {
-            len = sprintf(buffer, "%s = %d\n", i->definition->item_text, i->value);
-        }
-        if (len) {
-            f->write(buffer, len, &tr);
-        }
-    }
-    len = sprintf(buffer, "\n");
-    f->write(buffer, len, &tr);
 }
 
 void ConfigStore :: effectuate()
