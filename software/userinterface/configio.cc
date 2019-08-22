@@ -88,3 +88,124 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
     f->write(buffer, len, &tr);
 }
 
+bool ConfigIO :: S_read_from_file(File *f)
+{
+    char c;
+    char line[128];
+    uint32_t tr;
+    bool allOK = true;
+    ConfigStore *store;
+    ConfigManager *cm = ConfigManager :: getConfigManager();
+
+    while(1) {
+        for(int i=0;i<128;) {
+            FRESULT fres = f->read(&c, 1, &tr);
+            if ((fres == FR_OK) && tr) {
+                if (c == 0x0D) {
+                    continue;
+                }
+                if (c == 0x0A) {
+                    line[i] = 0;
+                    break;
+                }
+                line[i++] = c;
+            } else {
+                return allOK;
+            }
+        }
+        if ((line[0] == '#') || (line[0] == ';')) {
+            continue;
+        }
+        if (line[0] == '[') {
+            for(int i=1;i<128;i++) {
+                if (line[i] == ']') {
+                    line[i] = 0;
+                    store = S_find_store(cm, line + 1);
+                    continue;
+                }
+            }
+        }
+        // trim line? well for now let's assume correct spacing
+        if (strlen(line) > 0) {
+            if (store) {
+                allOK &= S_read_store_element(store, line);
+            } else {
+                printf("No store selected for line '%s'\n", line);
+                allOK = false;
+            }
+        }
+    }
+    return allOK;
+}
+
+ConfigStore *ConfigIO :: S_find_store(ConfigManager *cm, char *storename)
+{
+    for(int i=0; i < cm->stores.get_elements(); i++) {
+        ConfigStore *st = cm->stores[i];
+        if (strcasecmp(st->store_name.c_str(), storename) == 0) {
+            return st;
+        }
+    }
+    printf("Store name '%s' not found!\n", storename);
+    return NULL;
+}
+
+bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line)
+{
+    char itemname[40];
+    const char *valuestr = 0;
+    // first look for the first occurrence of '='
+    int len = strlen(line);
+
+    for(int i=0; (i < len) && (i < 40); i++) {
+        if (line[i] == '=') {
+            itemname[i] = 0;
+            valuestr = line + i + 1;
+            break;
+        }
+        itemname[i] = line[i];
+    }
+    if (!valuestr) {
+        return false;
+    }
+    if (strlen(itemname) == 0) {
+        return false;
+    }
+    // now look for the store element with the itemname
+    ConfigItem *item = 0;
+    for(int n = 0; n < st->items.get_elements(); n++) {
+        item = st->items[n];
+        if (strcasecmp(itemname, item->definition->item_text) == 0) {
+            break;
+        }
+    }
+    if (!item) {
+        printf("Item '%s' not found in this store [%s].\n", itemname, st->store_name.c_str());
+        return false;
+    }
+
+    // now we know what item should be configured, and how to 'read' the string
+    bool found = false;
+    if (item->definition->type == CFG_TYPE_VALUE) {
+        sscanf(valuestr, "%d", item->value);
+        st->dirty = true;
+    } else if (item->definition->type == CFG_TYPE_STRING) {
+        strncpy(item->string, valuestr, item->definition->max);
+        st->dirty = true;
+    } else if (item->definition->type == CFG_TYPE_ENUM) {
+        // this is the most nasty one. Let's just iterate over the possibilities and compare the resulting strings
+        for(int n = item->definition->min; n < item->definition->max; n++) {
+            if (strcasecmp(valuestr, item->definition->items[n]) == 0) {
+                item->value = n;
+                st->dirty = true;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            printf("Value '%s' is not a valid choice for item %s\n", valuestr, item->definition->item_text);
+            return false;
+        }
+    }
+    return true;
+}
