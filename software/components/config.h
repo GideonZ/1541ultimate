@@ -26,6 +26,8 @@
 #include "indexed_list.h"
 #include "mystring.h"
 //#include "path.h"
+#include "filemanager.h"
+#include "menu.h"
 
 #define CFG_TYPE_VALUE  0x01
 #define CFG_TYPE_ENUM   0x02
@@ -126,11 +128,12 @@ public:
     void set_string(uint8_t id, char *s);
     void dump(void);
     void check_bounds(void);
-    
+    void write_to_file(File *f);
+
     IndexedList <ConfigItem *> *getItems() { return &items; }
 };
     
-class ConfigManager
+class ConfigManager : public ObjectWithMenu
 {
 	IndexedList<ConfigStore*> stores;
     int num_pages;
@@ -148,11 +151,14 @@ public:
     ConfigStore *open_store(uint32_t store_id);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
+    void write_to_file(File *f);
 
 	Flash *get_flash_access(void) { return flash; }
 	IndexedList<ConfigStore*> *getStores() { return &stores; }
-};
 
+    int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
+    static int S_save_to_file(SubsysCommand *cmd);
+};
 
 
 // Base class for any configurable object

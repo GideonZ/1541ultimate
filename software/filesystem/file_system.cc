@@ -9,7 +9,7 @@ bool FileInfo :: is_writable(void)
     }
 //    printf("Checking writability of %s.\n", lfname);
     if(!fs->is_writable()) {
-        printf("%s: FileSystem is not writable..\n", lfname);
+        //printf("%s: FileSystem is not writable..\n", lfname);
         return false;
     }
 //    printf("Attrib: %b\n", attrib);
