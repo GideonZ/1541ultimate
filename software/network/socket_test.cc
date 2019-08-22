@@ -34,8 +34,9 @@ int  SocketTest::fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 	item_list.append(new Action("Start BUS Trace", SocketTest :: profiler, 2, 1));
 	item_list.append(new Action("Stop BUS Trace", SocketTest :: profiler, 2, 0));
 	item_list.append(new Action("Save BUS Trace", SocketTest :: saveTrace, 3, 0));
+    return 3;
 #endif
-	return 3;
+    return 0;
 }
 
 int SocketTest :: profiler(SubsysCommand *cmd) {
