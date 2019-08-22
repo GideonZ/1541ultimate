@@ -16,6 +16,9 @@ class ConfigIO : public ObjectWithMenu
 {
     static void S_write_to_file(File *f);
     static void S_write_store_to_file(ConfigStore *s, File *f);
+    static bool S_read_store_element(ConfigStore *st, const char *line);
+    static ConfigStore *S_find_store(ConfigManager *cm, char *storename);
+    static bool S_read_from_file(File *f);
 
 public:
     ConfigIO();
