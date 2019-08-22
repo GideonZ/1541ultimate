@@ -121,9 +121,10 @@ bool ConfigIO :: S_read_from_file(File *f)
                 if (line[i] == ']') {
                     line[i] = 0;
                     store = S_find_store(cm, line + 1);
-                    continue;
+                    break;
                 }
             }
+            continue;
         }
         // trim line? well for now let's assume correct spacing
         if (strlen(line) > 0) {
@@ -187,14 +188,14 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line)
     // now we know what item should be configured, and how to 'read' the string
     bool found = false;
     if (item->definition->type == CFG_TYPE_VALUE) {
-        sscanf(valuestr, "%d", item->value);
+        sscanf(valuestr, "%d", &item->value);
         st->dirty = true;
     } else if (item->definition->type == CFG_TYPE_STRING) {
         strncpy(item->string, valuestr, item->definition->max);
         st->dirty = true;
     } else if (item->definition->type == CFG_TYPE_ENUM) {
         // this is the most nasty one. Let's just iterate over the possibilities and compare the resulting strings
-        for(int n = item->definition->min; n < item->definition->max; n++) {
+        for(int n = item->definition->min; n <= item->definition->max; n++) {
             if (strcasecmp(valuestr, item->definition->items[n]) == 0) {
                 item->value = n;
                 st->dirty = true;
@@ -209,3 +210,5 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line)
     }
     return true;
 }
+
+ConfigIO config_io;
