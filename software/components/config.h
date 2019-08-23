@@ -71,6 +71,7 @@ public:
     ConfigItem(ConfigStore *s, t_cfg_definition *d);
     ~ConfigItem();
 
+    void reset(void);
     int pack(uint8_t *buffer, int len);
     void unpack(uint8_t *buffer, int len);
 
@@ -107,6 +108,7 @@ public:
     int  unregister(ConfigurableObject *obj);
 
 // Interface functions
+    virtual void reset(void);
     virtual void read(void);
     virtual void write(void);
     virtual void effectuate(void);
