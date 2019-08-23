@@ -365,7 +365,7 @@ void RtcConfigStore::at_open_config(void)
     check_bounds();
 }
 
-void RtcConfigStore::effectuate(void)
+void RtcConfigStore::at_close_config(void)
 {
     printf("** Cfg RTC Write **\n");
 
