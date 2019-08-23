@@ -348,31 +348,31 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         }
 
         // enable "hot" updates for mixer
-		for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
-		    cfg->set_change_hook(b, U64Config :: setMixer);
-		}
+        for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
+            cfg->set_change_hook(b, U64Config::setMixer);
+        }
         for (uint8_t b = CFG_MIXER0_PAN; b <= CFG_MIXER9_PAN; b++) {
-            cfg->set_change_hook(b, U64Config :: setMixer);
+            cfg->set_change_hook(b, U64Config::setMixer);
         }
 
-        cfg->set_change_hook(CFG_EMUSID1_FILTER, U64Config :: setFilter);
-        cfg->set_change_hook(CFG_EMUSID2_FILTER, U64Config :: setFilter);
-        cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config :: setScanMode);
-		cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config :: setPllOffset);
-		cfg->set_change_hook(CFG_EMUSID1_RESONANCE, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID2_RESONANCE, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID1_WAVES, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID2_WAVES, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID1_DIGI, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID2_DIGI, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_LED_SELECT_0, U64Config :: setLedSelector);
-        cfg->set_change_hook(CFG_LED_SELECT_1, U64Config :: setLedSelector);
-		effectuate_settings();
-	}
-	fm = FileManager :: getFileManager();
+        cfg->set_change_hook(CFG_EMUSID1_FILTER, U64Config::setFilter);
+        cfg->set_change_hook(CFG_EMUSID2_FILTER, U64Config::setFilter);
+        cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config::setScanMode);
+        cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
+        cfg->set_change_hook(CFG_EMUSID1_RESONANCE, U64Config::setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID2_RESONANCE, U64Config::setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID1_WAVES, U64Config::setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID2_WAVES, U64Config::setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID1_DIGI, U64Config::setSidEmuParams);
+        cfg->set_change_hook(CFG_EMUSID2_DIGI, U64Config::setSidEmuParams);
+        cfg->set_change_hook(CFG_LED_SELECT_0, U64Config::setLedSelector);
+        cfg->set_change_hook(CFG_LED_SELECT_1, U64Config::setLedSelector);
+        effectuate_settings();
+    }
+    fm = FileManager::getFileManager();
 
-	// This field shows what was detected and cannot be changed
-	cfg->disable(CFG_SID1_TYPE);
+    // This field shows what was detected and cannot be changed
+    cfg->disable(CFG_SID1_TYPE);
     cfg->disable(CFG_SID2_TYPE);
     cfg->disable(CFG_SID1_CAPS);
     cfg->disable(CFG_SID2_CAPS);
