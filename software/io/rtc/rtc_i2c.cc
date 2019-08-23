@@ -281,7 +281,7 @@ Rtc rtc; // global
 // ============================================================
 // == Functions that link the RTC to the configuration manager
 // ============================================================
-void RtcConfigStore::read(void)
+void RtcConfigStore::at_open_config(void)
 {
     printf("** Cfg RTC Read **\n");
     int y, M, D, wd, h, m, s;
@@ -325,7 +325,7 @@ void RtcConfigStore::read(void)
     check_bounds();
 }
 
-void RtcConfigStore::write(void)
+void RtcConfigStore::effectuate(void)
 {
     printf("** Cfg RTC Write **\n");
 
