@@ -143,6 +143,7 @@ int ConfigBrowser :: handle_key(int c)
             if (state->level == 1) { // going to level 0
                 ConfigStore *st = ((BrowsableConfigStore *) state->previous->under_cursor)->getStore();
                 if (st->dirty) {
+                    st->at_close_config();
                     st->effectuate();
                 }
             }

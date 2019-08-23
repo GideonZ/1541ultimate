@@ -34,8 +34,9 @@ public:
 
 	void read(void) { }
 	void write(void) { }
+    void effectuate(void) { }
 	void at_open_config(void);
-	void effectuate(void);
+	void at_close_config(void);
 };
 
 class Rtc
