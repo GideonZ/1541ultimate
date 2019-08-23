@@ -22,8 +22,11 @@ ConfigIO::~ConfigIO()
 
 int  ConfigIO :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
+    item_list.append(new Action("Save Config", ConfigIO :: S_save, 0, 0));
+    item_list.append(new Action("Reset to Factory Defaults", ConfigIO :: S_reset, 0, 0));
     item_list.append(new Action("Save Config to File", ConfigIO :: S_save_to_file, 0, 0));
-    return 1;
+
+    return 3;
 }
 
 int ConfigIO :: S_save_to_file(SubsysCommand *cmd)
@@ -57,6 +60,38 @@ void ConfigIO :: S_write_to_file(File *f)
         s = cm->stores[n];
         S_write_store_to_file(s, f);
     }
+}
+
+int ConfigIO :: S_save(SubsysCommand *cmd)
+{
+    ConfigManager *cm = ConfigManager :: getConfigManager();
+    ConfigStore *s;
+    for(int n = 0; n < cm->stores.get_elements();n++) {
+        s = cm->stores[n];
+        if (s->dirty) {
+            s->write();
+            s->dirty = false;
+        }
+    }
+    cmd->user_interface->popup("Configuration saved.", BUTTON_OK);
+    return 0;
+}
+
+int ConfigIO :: S_reset(SubsysCommand *cmd)
+{
+    int res = cmd->user_interface->popup("Are you sure to clear settings?", BUTTON_YES | BUTTON_NO);
+    if (res != BUTTON_YES) {
+        return 0;
+    }
+    ConfigManager *cm = ConfigManager :: getConfigManager();
+    ConfigStore *s;
+    for(int n = 0; n < cm->stores.get_elements();n++) {
+        s = cm->stores[n];
+        s->reset();
+        s->write();
+        s->effectuate();
+    }
+    return 0;
 }
 
 void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)

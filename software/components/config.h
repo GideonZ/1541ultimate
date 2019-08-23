@@ -111,6 +111,7 @@ public:
     virtual void reset(void);
     virtual void read(void);
     virtual void write(void);
+    virtual void at_open_config(void) { }
     virtual void effectuate(void);
 
     int  get_page(void) { return flash_page; }

@@ -441,7 +441,7 @@ int TreeBrowser :: handle_key(int c)
             break;
        case KEY_CTRL_HOME: // set home
            user_interface->cfg->set_string(CFG_USERIF_HOME_DIR, (char*)path->get_path());
-           user_interface->cfg->write();
+           //user_interface->cfg->write();
            HomeDirectory :: setHomeDirectory(path->get_path());
            user_interface->popup("Current dir set as home dir", BUTTON_OK);
            break;

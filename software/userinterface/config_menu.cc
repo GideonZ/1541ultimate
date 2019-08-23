@@ -63,13 +63,12 @@ void ConfigBrowserState :: into(void)
 
 void ConfigBrowserState :: level_up(void)
 {
-	if(level == 1) { // going to level 0, we need to store in flash
-		ConfigStore *st = ((BrowsableConfigStore *)(previous->under_cursor))->getStore();
-		if(st->dirty) {
-			st->write();
-			st->effectuate();
-		}
-	}
+    if (level == 1) { // going to level 0, we need to store in flash
+        ConfigStore *st = ((BrowsableConfigStore *) (previous->under_cursor))->getStore();
+        if (st->dirty) {
+            st->effectuate();
+        }
+    }
     browser->state = previous;
     previous->refresh = true;
     previous = NULL; // unlink;
@@ -141,14 +140,13 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_F8: // exit
         case KEY_BREAK: // runstop
         case KEY_ESCAPE:
-        	if(state->level == 1) { // going to level 0, we need to store in flash
-        		ConfigStore *st = ((BrowsableConfigStore *)state->previous->under_cursor)->getStore();
-        		if(st->dirty) {
-        			st->write();
-        			st->effectuate();
-        		}
-        	}
-        	ret = -2;
+            if (state->level == 1) { // going to level 0
+                ConfigStore *st = ((BrowsableConfigStore *) state->previous->under_cursor)->getStore();
+                if (st->dirty) {
+                    st->effectuate();
+                }
+            }
+            ret = -2;
             break;
         case KEY_DOWN: // down
             state->down(1);
@@ -195,10 +193,3 @@ int ConfigBrowser :: handle_key(int c)
     return ret;
 }
 
-/*
-// ConfigContextMenu
-ConfigContextMenu :: ConfigContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y) :
-	ContextMenu(ui, state, initial, y)
-{
-}
-*/

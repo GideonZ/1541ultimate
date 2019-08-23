@@ -32,8 +32,8 @@ public:
 	RtcConfigStore(const char *name, t_cfg_definition *defs) : ConfigStore(0, name, -1, 0, defs, NULL) { }
 	~RtcConfigStore() { if(dirty) write(); }
 
-	void read(void);
-	void write(void);
+	void at_open_config(void);
+	void effectuate(void);
 };
 
 class Rtc
