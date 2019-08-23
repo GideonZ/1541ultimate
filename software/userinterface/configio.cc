@@ -171,16 +171,6 @@ bool ConfigIO :: S_read_from_file(File *f)
             }
         }
     }
-
-    ConfigStore *s;
-    for(int n = 0; n < cm->stores.get_elements();n++) {
-        s = cm->stores[n];
-        if (s->dirty) {
-            s->effectuate();
-            s->dirty = false;
-        }
-    }
-
     return allOK;
 }
 

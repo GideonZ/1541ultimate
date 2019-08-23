@@ -84,6 +84,19 @@ int FileTypeCfg :: execute(SubsysCommand *cmd)
         } else {
             cmd->user_interface->popup("There were errors.", BUTTON_OK);
         }
+        ConfigStore *s;
+        ConfigManager *cm = ConfigManager :: getConfigManager();
+        IndexedList<ConfigStore*> *stores = cm->getStores();
+        for(int n = 0; n < stores->get_elements();n++) {
+            s = (*stores)[n];
+            if (s->dirty) {
+                printf("Effectuating settings of store '%s' after loading.\n", s->get_store_name());
+                s->effectuate();
+                s->dirty = false;
+            } else {
+                printf("Store '%s' is clean after loading.\n", s->get_store_name());
+            }
+        }
     } else {
         printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
