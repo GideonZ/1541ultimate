@@ -358,6 +358,16 @@ void ConfigStore :: dump(void)
     }
 }
 
+void ConfigStore :: reset(void)
+{
+    ConfigItem *i;
+    for(int n = 0; n < items.get_elements(); n++) {
+        i = items[n];
+        i->reset();
+    }
+    dirty = true;
+}
+
 void ConfigStore :: check_bounds(void)
 {
     ConfigItem *i;
@@ -385,19 +395,27 @@ ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d)
     store = s;
     if(d->type == CFG_TYPE_STRING) {
         string = new char[d->max+1];
-        strncpy(string, (char *)d->def, d->max);
-        value = 0;
     } else {
-        value = d->def;
         string = NULL;
     }
     enabled = true;
+    reset();
 }
 
 ConfigItem :: ~ConfigItem()
 {
     if(string)
         delete[] string;
+}
+
+void ConfigItem :: reset(void)
+{
+    if (definition->type == CFG_TYPE_STRING) {
+        strncpy(string, (char *)definition->def, definition->max);
+        value = 0;
+    } else {
+        value = definition->def;
+    }
 }
 
 void ConfigItem :: unpack(uint8_t *buffer, int len)
