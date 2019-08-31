@@ -60,6 +60,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
 {
 	// initialize state
 	user_interface = ui;
+	screen = NULL;
 	window = NULL;
     keyb = NULL;
     contextMenu = NULL;

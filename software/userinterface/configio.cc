@@ -22,11 +22,12 @@ ConfigIO::~ConfigIO()
 
 int  ConfigIO :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
 {
-    item_list.append(new Action("Save Config", ConfigIO :: S_save, 0, 0));
+    item_list.append(new Action("Reload Configuration", ConfigIO :: S_restore, 0, 0));
+    item_list.append(new Action("Store Configuration", ConfigIO :: S_save, 0, 0));
     item_list.append(new Action("Reset to Factory Defaults", ConfigIO :: S_reset, 0, 0));
     item_list.append(new Action("Save Config to File", ConfigIO :: S_save_to_file, 0, 0));
 
-    return 3;
+    return 4;
 }
 
 int ConfigIO :: S_save_to_file(SubsysCommand *cmd)
@@ -88,6 +89,18 @@ int ConfigIO :: S_reset(SubsysCommand *cmd)
         s = cm->stores[n];
         s->reset();
         s->write();
+        s->effectuate();
+    }
+    return 0;
+}
+
+int ConfigIO :: S_restore(SubsysCommand *cmd)
+{
+    ConfigManager *cm = ConfigManager :: getConfigManager();
+    ConfigStore *s;
+    for(int n = 0; n < cm->stores.get_elements();n++) {
+        s = cm->stores[n];
+        s->read();
         s->effectuate();
     }
     return 0;

@@ -24,6 +24,7 @@
 #define CFG_USERIF_HOME_DIR    0x07
 #define CFG_USERIF_ITYPE       0x08
 #define CFG_USERIF_SELECTED_BG 0x09
+#define CFG_USERIF_CFG_SAVE    0x0A
 
 class UserInterface : public ConfigurableObject, public HostClient
 {
@@ -44,7 +45,7 @@ private:
     bool buttonDownFor(uint32_t ms);
     UIStatusBox *status_box;
 public:
-    int color_border, color_bg, color_fg, color_sel, color_sel_bg;
+    int color_border, color_bg, color_fg, color_sel, color_sel_bg, config_save;
 
     GenericHost *host;
     Keyboard *keyboard;
