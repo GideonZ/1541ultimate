@@ -270,6 +270,8 @@ void ConfigStore :: read()
 	    flash->read_config_page(flash_page, block_size, mem_block);
 	    unpack();
 	}
+	staleEffect = true;
+	staleFlash = false;
 	check_bounds();
 }
 

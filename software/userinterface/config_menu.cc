@@ -89,8 +89,8 @@ void ConfigBrowserState :: change(void)
                 max = 79;
             strncpy(buffer, it->getString(), max);
             if(browser->user_interface->string_box(it->get_item_name(), buffer, max)) {
-                update_selected();
                 it->setString(buffer);
+                update_selected();
             }
             break;
         default:
@@ -110,8 +110,8 @@ void ConfigBrowserState :: increase(void)
                 value++;
             else
                 value = it->definition->min; // circular
-            update_selected();
             it->setValue(value);
+            update_selected();
             break;
             
         default:
@@ -130,8 +130,8 @@ void ConfigBrowserState :: decrease(void)
                 value--;
             else
                 value = it->definition->max; // circular
-            update_selected();
             it->setValue(value);
+            update_selected();
             break;
         default:
             //level_up();
@@ -139,10 +139,46 @@ void ConfigBrowserState :: decrease(void)
     }
 }
     
+void ConfigBrowser :: on_exit(void)
+{
+    if (user_interface->config_save == 0) {
+        return;
+    }
+    bool stale = false;
+    IndexedList<ConfigStore *> *storeList = ConfigManager :: getConfigManager()->getStores();
+    for (int i=0; i < storeList->get_elements(); i++) {
+        if ((*storeList)[i]->is_flash_stale()) {
+            stale = true;
+            break;
+        }
+    }
+    if (!stale) {
+        return;
+    }
+    bool write = false;
+    if (user_interface->config_save == 1) { // ask
+        if (user_interface->popup("Save changes to Flash?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+            write = true;
+        }
+    } else {
+        write = true; // must be 2 (always)
+    }
+
+    if (write) {
+        for (int i=0; i < storeList->get_elements(); i++) {
+            if ((*storeList)[i]->is_flash_stale()) {
+                (*storeList)[i]->write();
+                break;
+            }
+        }
+    }
+}
+
 int ConfigBrowser :: handle_key(int c)
 {
     int ret = 0;
     
+    BrowsableConfigRoot *br;
     switch(c) {
         case KEY_F8: // exit
         case KEY_BREAK: // runstop
@@ -151,6 +187,8 @@ int ConfigBrowser :: handle_key(int c)
                 ConfigStore *st = ((BrowsableConfigStore *) state->previous->under_cursor)->getStore();
                 st->at_close_config();
             }
+            // check if we need to save to flash
+            on_exit();
             ret = -2;
             break;
         case KEY_DOWN: // down
@@ -181,15 +219,17 @@ int ConfigBrowser :: handle_key(int c)
                 state->increase();
             break;
         case KEY_LEFT: // left
-            if(state->level==0)
-                ret = -1; // leave
-            else
+            if(state->level==0) {
+                on_exit();
+                ret = -2; // leave
+            } else
                 state->decrease();
             break;
 		case KEY_BACK: // del
-            if(state->level==0)
-                ret = -1; // leave
-            else
+            if(state->level==0) {
+                on_exit();
+                ret = -2; // leave
+            } else
             	state->level_up();
 			break;
         default:

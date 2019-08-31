@@ -26,6 +26,7 @@ public:
     int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
     static int S_save_to_file(SubsysCommand *cmd);
     static int S_save(SubsysCommand *cmd);
+    static int S_restore(SubsysCommand *cmd);
     static int S_reset(SubsysCommand *cmd);
     static bool S_read_from_file(File *f);
 };
