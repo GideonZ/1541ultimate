@@ -30,7 +30,7 @@ class RtcConfigStore : public ConfigStore
 {
 public:
 	RtcConfigStore(const char *name, t_cfg_definition *defs) : ConfigStore(0, name, -1, 0, defs, NULL) { }
-	~RtcConfigStore() { if(dirty) write(); }
+	~RtcConfigStore() {  }
 
 	void read(void) { }
 	void write(void) { }

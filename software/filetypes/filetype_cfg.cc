@@ -89,10 +89,10 @@ int FileTypeCfg :: execute(SubsysCommand *cmd)
         IndexedList<ConfigStore*> *stores = cm->getStores();
         for(int n = 0; n < stores->get_elements();n++) {
             s = (*stores)[n];
-            if (s->dirty) {
+            if (s->need_effectuate()) {
                 printf("Effectuating settings of store '%s' after loading.\n", s->get_store_name());
                 s->effectuate();
-                s->dirty = false;
+                s->set_effectuated();
             } else {
                 printf("Store '%s' is clean after loading.\n", s->get_store_name());
             }

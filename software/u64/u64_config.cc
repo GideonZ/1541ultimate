@@ -342,7 +342,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
                 break;
             }
         }
-        if (cfg->dirty) {
+        if (cfg->is_flash_stale()) {
             cfg->write();
             UserInterface :: postMessage("SID changed. Please review settings");
         }

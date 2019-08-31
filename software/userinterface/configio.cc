@@ -68,9 +68,8 @@ int ConfigIO :: S_save(SubsysCommand *cmd)
     ConfigStore *s;
     for(int n = 0; n < cm->stores.get_elements();n++) {
         s = cm->stores[n];
-        if (s->dirty) {
+        if (s->is_flash_stale()) {
             s->write();
-            s->dirty = false;
         }
     }
     cmd->user_interface->popup("Configuration saved.", BUTTON_OK);
@@ -222,18 +221,29 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line)
 
     // now we know what item should be configured, and how to 'read' the string
     bool found = false;
+    int value;
     if (item->definition->type == CFG_TYPE_VALUE) {
-        sscanf(valuestr, "%d", &item->value);
-        st->dirty = true;
+        sscanf(valuestr, "%d", &value);
+        if (value != item->value) {
+            item->value = value;
+            st->staleEffect = true;
+            st->staleFlash = true;
+        }
     } else if (item->definition->type == CFG_TYPE_STRING) {
-        strncpy(item->string, valuestr, item->definition->max);
-        st->dirty = true;
+        if (strncmp(item->string, valuestr, item->definition->max) != 0) {
+            strncpy(item->string, valuestr, item->definition->max);
+            st->staleEffect = true;
+            st->staleFlash = true;
+        }
     } else if (item->definition->type == CFG_TYPE_ENUM) {
         // this is the most nasty one. Let's just iterate over the possibilities and compare the resulting strings
         for(int n = item->definition->min; n <= item->definition->max; n++) {
             if (strcasecmp(valuestr, item->definition->items[n]) == 0) {
-                item->value = n;
-                st->dirty = true;
+                if (n != item->value) {
+                    item->value = n;
+                    st->staleEffect = true;
+                    st->staleFlash = true;
+                }
                 found = true;
                 break;
             }

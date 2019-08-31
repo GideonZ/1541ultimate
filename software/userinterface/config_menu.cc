@@ -65,9 +65,7 @@ void ConfigBrowserState :: level_up(void)
 {
     if (level == 1) { // going to level 0, we need to store in flash
         ConfigStore *st = ((BrowsableConfigStore *) (previous->under_cursor))->getStore();
-        if (st->dirty) {
-            st->effectuate();
-        }
+        st->at_close_config();
     }
     browser->state = previous;
     previous->refresh = true;
@@ -142,10 +140,7 @@ int ConfigBrowser :: handle_key(int c)
         case KEY_ESCAPE:
             if (state->level == 1) { // going to level 0
                 ConfigStore *st = ((BrowsableConfigStore *) state->previous->under_cursor)->getStore();
-                if (st->dirty) {
-                    st->at_close_config();
-                    st->effectuate();
-                }
+                st->at_close_config();
             }
             ret = -2;
             break;

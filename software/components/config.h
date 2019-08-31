@@ -92,15 +92,16 @@ class ConfigStore
     uint8_t  *mem_block;
     int    block_size;
     IndexedList<ConfigurableObject *> objects;
-//    ConfigurableObject *obj;
     mstring store_name;
+    bool  staleEffect;
+    bool  staleFlash;
+
     
     void pack(void);
     void unpack(void);
 public:
     IndexedList <ConfigItem*> items;
     uint32_t id;
-    bool  dirty;
 
     ConfigStore(uint32_t id, const char *name, int page, int page_size, t_cfg_definition *defs, ConfigurableObject *obj);
     virtual ~ConfigStore();
@@ -112,7 +113,15 @@ public:
     virtual void read(void);
     virtual void write(void);
     virtual void at_open_config(void) { }
-    virtual void at_close_config(void) { }
+
+    virtual void at_close_config(void)
+    {
+        if (need_effectuate()) {
+            effectuate();
+            set_effectuated();
+        }
+    }
+
     virtual void effectuate(void);
 
     int  get_page(void) { return flash_page; }
@@ -129,10 +138,14 @@ public:
     void set_string(uint8_t id, char *s);
     void dump(void);
     void check_bounds(void);
+    bool is_flash_stale(void) { return staleFlash; }
+    bool need_effectuate(void) { return staleEffect; }
+    void set_effectuated(void) { staleEffect = false; }
 
     IndexedList <ConfigItem *> *getItems() { return &items; }
 
     friend class ConfigIO;
+    friend class ConfigItem;
 };
     
 class ConfigManager
