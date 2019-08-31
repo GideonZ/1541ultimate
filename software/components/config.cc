@@ -325,9 +325,7 @@ void ConfigStore :: set_value(uint8_t id, int value)
 {
     ConfigItem *i = find_item(id);
     if(i) {
-        i->value = value;
-        staleEffect = true;
-        staleFlash = true;
+        i->setValue(value);
     }
 }
 
@@ -335,11 +333,7 @@ void ConfigStore :: set_string(uint8_t id, char *s)
 {
     ConfigItem *i = find_item(id);
     if(i) {
-        if(i->string) {
-            strncpy(i->string, s, i->definition->max);
-            staleEffect = true;
-            staleFlash = true;
-        }
+        i->setString(s);
     }
 }
 
@@ -578,13 +572,22 @@ void ConfigItem :: execute(int sel)
     setChanged();
 }
 
+void ConfigItem :: setString(const char *s)
+{
+    if(this->string) {
+        strncpy(this->string, s, this->definition->max);
+        this->string[this->definition->max - 1] = 0;
+        setChanged();
+    }
+}
+
 void ConfigItem :: setChanged()
 {
-    store->staleFlash = true;
+    store->set_need_flash_write();
     if(hook) {
     	hook(this);
     } else {
-        store->staleEffect = true;
+        store->set_need_effectuate();
     }
 }
 

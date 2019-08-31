@@ -62,27 +62,36 @@ class ConfigItem
 {
 	t_change_hook hook;
 	bool enabled;
+    int  value;
+    char *string;
+
+    void setChanged(void);
+    int  pack(uint8_t *buffer, int len);
+    void unpack(uint8_t *buffer, int len);
+    void reset(void);
 public:    
     ConfigStore *store;
-    t_cfg_definition *definition;
-    int     value;
-    char    *string;
+    const t_cfg_definition *definition;
 
     ConfigItem(ConfigStore *s, t_cfg_definition *d);
     ~ConfigItem();
-
-    void reset(void);
-    int pack(uint8_t *buffer, int len);
-    void unpack(uint8_t *buffer, int len);
 
     const char *get_item_name() { return definition->item_text; }
     const char *get_display_string(char *buffer, int width);
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
-    void setChanged(void);
     void setChangeHook(t_change_hook hook) { this->hook = hook; }
     bool isEnabled(void) { return enabled; }
     void setEnabled(bool en) { enabled = en; }
+
+    const int getValue() { return value; }
+    const char *getString() { return string; }
+    void setValue(int v) { value = v; setChanged(); }
+    void setString(const char *str);
+
+    friend class ConfigStore;
+    friend class RtcConfigStore;
+    friend class ConfigIO; // this is an extension to config.cc, so direct access is granted
 };
 
 
@@ -141,6 +150,8 @@ public:
     bool is_flash_stale(void) { return staleFlash; }
     bool need_effectuate(void) { return staleEffect; }
     void set_effectuated(void) { staleEffect = false; }
+    const void set_need_flash_write(void) { staleFlash = true; }
+    const void set_need_effectuate(void) { staleEffect = true; }
 
     IndexedList <ConfigItem *> *getItems() { return &items; }
 

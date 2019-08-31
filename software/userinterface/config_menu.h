@@ -59,8 +59,7 @@ public:
 	static int contextSelect(SubsysCommand *cmd) {
 		ConfigItem *it = (ConfigItem *)cmd->functionID;
 		printf("ContextSelect of item %s, set value to %d.\n", it->get_item_name(), cmd->mode);
-		it->value = cmd->mode;
-    	it->setChanged();
+		it->setValue(cmd->mode);
 		return 0;
 	}
 
