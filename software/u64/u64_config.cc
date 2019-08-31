@@ -570,7 +570,7 @@ void U64Config :: setFilter(ConfigItem *it)
     uint16_t *coef = sid8580_filter_coefficients;
     int mul = 1;
     int div = 4;
-    switch(it->value) {
+    switch(it->getValue()) {
     case 0:
         coef = sid8580_filter_coefficients;
         mul = 7;
@@ -626,7 +626,7 @@ void U64Config :: setMixer(ConfigItem *it)
 void U64Config :: setPllOffset(ConfigItem *it)
 {
 	if(it) {
-		pllOffsetPpm(it->value); // Set correct mfrac
+		pllOffsetPpm(it->getValue()); // Set correct mfrac
 	}
 }
 
@@ -649,24 +649,25 @@ void U64Config :: setLedSelector(ConfigItem *it)
 
 void U64Config :: setSidEmuParams(ConfigItem *it)
 {
+    int value = it->getValue();
     switch(it->definition->id) {
     case CFG_EMUSID1_RESONANCE:
-        C64_EMUSID1_RES = it->value;
+        C64_EMUSID1_RES = value;
         break;
     case CFG_EMUSID2_RESONANCE:
-        C64_EMUSID2_RES = it->value;
+        C64_EMUSID2_RES = value;
         break;
     case CFG_EMUSID1_WAVES:
-        C64_EMUSID1_WAVES = it->value;
+        C64_EMUSID1_WAVES = value;
         break;
     case CFG_EMUSID2_WAVES:
-        C64_EMUSID2_WAVES = it->value;
+        C64_EMUSID2_WAVES = value;
         break;
     case CFG_EMUSID1_DIGI:
-        C64_EMUSID1_DIGI = it->value;
+        C64_EMUSID1_DIGI = value;
         break;
     case CFG_EMUSID2_DIGI:
-        C64_EMUSID2_DIGI = it->value;
+        C64_EMUSID2_DIGI = value;
         break;
     }
 }

@@ -338,15 +338,16 @@ void RtcConfigStore::at_close_config(void)
 
     for (int n = 0; n < items.get_elements(); n++) {
         i = items[n];
+        int value = i->getValue();
         switch (i->definition->id) {
         case CFG_RTC_YEAR:
-            y = i->value - 1980;
+            y = value - 1980;
             break;
         case CFG_RTC_MONTH:
-            M = i->value;
+            M = value;
             break;
         case CFG_RTC_DATE:
-            D = i->value;
+            D = value;
             break;
             /*
              case CFG_RTC_WEEKDAY:
@@ -354,16 +355,16 @@ void RtcConfigStore::at_close_config(void)
              break;
              */
         case CFG_RTC_HOUR:
-            h = i->value;
+            h = value;
             break;
         case CFG_RTC_MINUTE:
-            m = i->value;
+            m = value;
             break;
         case CFG_RTC_SECOND:
-            s = i->value;
+            s = value;
             break;
         case CFG_RTC_CORR:
-            corr = i->value;
+            corr = value;
             break;
         default:
             break;

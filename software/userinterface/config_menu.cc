@@ -76,14 +76,21 @@ void ConfigBrowserState :: level_up(void)
 void ConfigBrowserState :: change(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
+    char buffer[80];
+    int max;
+
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
-            browser->context(it->value - it->definition->min);
+            browser->context(it->getValue() - it->definition->min);
             break;
         case CFG_TYPE_STRING:
-            if(browser->user_interface->string_box(it->definition->item_text, it->string, it->definition->max)) {
-            	update_selected();
-            	it->setChanged();
+            max = it->definition->max;
+            if (max > 79)
+                max = 79;
+            strncpy(buffer, it->getString(), max);
+            if(browser->user_interface->string_box(it->get_item_name(), buffer, max)) {
+                update_selected();
+                it->setString(buffer);
             }
             break;
         default:
@@ -95,15 +102,16 @@ void ConfigBrowserState :: increase(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
 
+    int value = it->getValue();
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
-            if(it->value < it->definition->max)
-                it->value++;
+            if(value < it->definition->max)
+                value++;
             else
-                it->value = it->definition->min; // circular
+                value = it->definition->min; // circular
             update_selected();
-        	it->setChanged();
+            it->setValue(value);
             break;
             
         default:
@@ -114,15 +122,16 @@ void ConfigBrowserState :: increase(void)
 void ConfigBrowserState :: decrease(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
+    int value = it->getValue();
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
-            if(it->value > it->definition->min)
-                it->value--;
+            if(value > it->definition->min)
+                value--;
             else
-                it->value = it->definition->max; // circular
+                value = it->definition->max; // circular
             update_selected();
-        	it->setChanged();
+            it->setValue(value);
             break;
         default:
             //level_up();
