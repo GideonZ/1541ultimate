@@ -259,8 +259,9 @@ void C64 :: resetConfigInFlash(int page)
     newConfig->set_value(CFG_C64_ALT_BASI, basic);
     newConfig->set_value(CFG_C64_ALT_CHAR, chars);
 #endif
-    newConfig->dirty = true;
-    newConfig->write();
+    if (newConfig->is_flash_stale()) {
+        newConfig->write();
+    }
 }
 
 C64 *C64 :: getMachine(void) {

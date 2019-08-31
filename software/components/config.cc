@@ -148,7 +148,9 @@ ConfigStore :: ConfigStore(uint32_t store_id, const char *name, int page, int pa
     if (ob) {
         objects.append(ob);
     }
-    dirty = false;
+
+    staleEffect = true;
+    staleFlash = false;
     
     for(int i=0;i<64;i++) {
         if(defs[i].type == CFG_TYPE_END)
@@ -162,10 +164,6 @@ ConfigStore :: ConfigStore(uint32_t store_id, const char *name, int page, int pa
 
 ConfigStore :: ~ConfigStore()
 {
-    if(dirty) {
-        write();
-    }
-        
     ConfigItem *i;
     for(int n = 0; n < items.get_elements();n++) {
     	i = items[n];
@@ -219,6 +217,7 @@ void ConfigStore :: effectuate()
             obj->effectuate_settings();
         }
     }
+    staleEffect = false;
 }
     
 void ConfigStore :: write()
@@ -229,7 +228,7 @@ void ConfigStore :: write()
 	Flash *flash = ConfigManager :: getConfigManager()->get_flash_access();
 	if(flash) {
 	    flash->write_config_page(flash_page, mem_block);
-	    dirty = false;
+	    staleFlash = false;
 	    printf(" done.\n");
 	} else {
 		printf(" error.\n");
@@ -327,7 +326,8 @@ void ConfigStore :: set_value(uint8_t id, int value)
     ConfigItem *i = find_item(id);
     if(i) {
         i->value = value;
-        dirty = true;
+        staleEffect = true;
+        staleFlash = true;
     }
 }
 
@@ -337,7 +337,8 @@ void ConfigStore :: set_string(uint8_t id, char *s)
     if(i) {
         if(i->string) {
             strncpy(i->string, s, i->definition->max);
-            dirty = true;
+            staleEffect = true;
+            staleFlash = true;
         }
     }
 }
@@ -365,7 +366,8 @@ void ConfigStore :: reset(void)
         i = items[n];
         i->reset();
     }
-    dirty = true;
+    staleEffect = true;
+    staleFlash = true;
 }
 
 void ConfigStore :: check_bounds(void)
@@ -377,10 +379,12 @@ void ConfigStore :: check_bounds(void)
 		   (i->definition->type == CFG_TYPE_VALUE)) {
 			if(i->value < i->definition->min) {
 				i->value = i->definition->min;
-				dirty = true;
+			    staleEffect = true;
+			    staleFlash = true;
 			} else if(i->value > i->definition->max) {
 				i->value = i->definition->max;
-				dirty = true;
+			    staleEffect = true;
+			    staleFlash = true;
 			}
 		}
 	}
@@ -576,9 +580,11 @@ void ConfigItem :: execute(int sel)
 
 void ConfigItem :: setChanged()
 {
-    store->dirty = true;
+    store->staleFlash = true;
     if(hook) {
     	hook(this);
+    } else {
+        store->staleEffect = true;
     }
 }
 
