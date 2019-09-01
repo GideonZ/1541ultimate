@@ -493,6 +493,8 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
             *(buffer++) = (uint8_t)strlen(string);
             strcpy((char *)buffer, string);
             return 3+strlen(string);
+        case CFG_TYPE_FUNC:
+            break; // do nothing, do not store
         default:
             printf("Error: unknown type packing flash configuration.\n");
     }
@@ -517,6 +519,9 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
             break;
         case CFG_TYPE_STRING:
             sprintf(buf, definition->item_format, string);
+            break;
+        case CFG_TYPE_FUNC:
+            sprintf(buf, definition->item_format);
             break;
         default:
             sprintf(buf, "Unknown type.");
