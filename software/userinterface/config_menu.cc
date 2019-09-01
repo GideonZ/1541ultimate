@@ -107,42 +107,15 @@ void ConfigBrowserState :: change(void)
 void ConfigBrowserState :: increase(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-
-    int value = it->getValue();
-    switch(it->definition->type) {
-        case CFG_TYPE_ENUM:
-        case CFG_TYPE_VALUE:
-            if(value < it->definition->max)
-                value++;
-            else
-                value = it->definition->min; // circular
-            it->setValue(value);
-            update_selected();
-            break;
-            
-        default:
-            break;
-    }
+    it->next();
+    update_selected();
 }
     
 void ConfigBrowserState :: decrease(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    int value = it->getValue();
-    switch(it->definition->type) {
-        case CFG_TYPE_ENUM:
-        case CFG_TYPE_VALUE:
-            if(value > it->definition->min)
-                value--;
-            else
-                value = it->definition->max; // circular
-            it->setValue(value);
-            update_selected();
-            break;
-        default:
-            //level_up();
-            break;
-    }
+    it->previous();
+    update_selected();
 }
     
 void ConfigBrowser :: on_exit(void)
