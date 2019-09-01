@@ -29,8 +29,11 @@
 #define CFG_TYPE_VALUE  0x01
 #define CFG_TYPE_ENUM   0x02
 #define CFG_TYPE_STRING 0x03
+#define CFG_TYPE_FUNC   0x04
 #define CFG_TYPE_END    0xFF
 
+class UserInterface;
+typedef void (*t_cfg_func)(UserInterface *);
 
 struct t_cfg_definition
 {

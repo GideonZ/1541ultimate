@@ -78,6 +78,7 @@ void ConfigBrowserState :: change(void)
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
     char buffer[80];
     int max;
+    t_cfg_func func;
 
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
@@ -92,6 +93,11 @@ void ConfigBrowserState :: change(void)
                 it->setString(buffer);
                 update_selected();
             }
+            break;
+        case CFG_TYPE_FUNC:
+            refresh = true;
+            func = (t_cfg_func)(it->definition->items);
+            func(browser->user_interface);
             break;
         default:
             break;
