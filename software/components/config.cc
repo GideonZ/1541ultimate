@@ -588,6 +588,41 @@ void ConfigItem :: setString(const char *s)
     }
 }
 
+void ConfigItem :: next(void)
+{
+    int value = getValue();
+    switch(definition->type) {
+        case CFG_TYPE_ENUM:
+        case CFG_TYPE_VALUE:
+            if(value < definition->max)
+                value++;
+            else
+                value = definition->min; // circular
+            setValue(value);
+            break;
+
+        default:
+            break;
+    }
+}
+
+void ConfigItem :: previous(void)
+{
+    int value = getValue();
+    switch(definition->type) {
+        case CFG_TYPE_ENUM:
+        case CFG_TYPE_VALUE:
+            if(value > definition->min)
+                value--;
+            else
+                value = definition->max; // circular
+            setValue(value);
+            break;
+        default:
+            break;
+    }
+}
+
 void ConfigItem :: setChanged()
 {
     store->set_need_flash_write();
