@@ -40,12 +40,15 @@ SocketGui :: SocketGui()
 void socket_gui_task(void *a)
 {
     char title[64];
+#if U64
+    sprintf(title, "\eA*** Ultimate-64 %s (1%b) *** Remote ***\eO", APPL_VERSION, getFpgaVersion());
+#else
     if(getFpgaCapabilities() & CAPAB_ULTIMATE2PLUS) {
     	sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) *** Remote ***\eO", APPL_VERSION, getFpgaVersion());
     } else {
     	sprintf(title, "\eA**** 1541 Ultimate %s (%b) - Remote ****\eO", APPL_VERSION, getFpgaVersion());
     }
-
+#endif
 	SocketStream *str = (SocketStream *)a;
 
 	HostStream *host = new HostStream(str);
