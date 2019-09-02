@@ -46,6 +46,7 @@ struct t_cfg_definition
     int  def;
 };
 
+class ConfigPage;
 class ConfigStore;
 class ConfigurableObject;
 class ConfigItem;
@@ -102,22 +103,18 @@ public:
 
 class ConfigStore
 {
-    int    flash_page;
-    uint8_t  *mem_block;
-    int    block_size;
     IndexedList<ConfigurableObject *> objects;
     mstring store_name;
+    ConfigPage *page;
     bool  staleEffect;
     bool  staleFlash;
-
     
-    void pack(void);
-    void unpack(void);
+    int  pack(uint8_t *buffer, int len);
+    void unpack(uint8_t *buffer, int len);
 public:
     IndexedList <ConfigItem*> items;
-    uint32_t id;
 
-    ConfigStore(uint32_t id, const char *name, int page, int page_size, t_cfg_definition *defs, ConfigurableObject *obj);
+    ConfigStore(ConfigPage *page, const char *name, t_cfg_definition *defs, ConfigurableObject *obj);
     virtual ~ConfigStore();
     void addObject(ConfigurableObject *obj);
     int  unregister(ConfigurableObject *obj);
@@ -138,8 +135,10 @@ public:
 
     virtual void effectuate(void);
 
+/*
     int  get_page(void) { return flash_page; }
     int  get_page_size(void) { return block_size; }
+*/
 
     void set_change_hook(uint8_t id, t_change_hook hook);
     void disable(uint8_t id);
@@ -157,18 +156,54 @@ public:
     void set_effectuated(void) { staleEffect = false; }
     const void set_need_flash_write(void) { staleFlash = true; }
     const void set_need_effectuate(void) { staleEffect = true; }
+    ConfigPage *get_page(void) { return page; }
 
     IndexedList <ConfigItem *> *getItems() { return &items; }
 
     friend class ConfigIO;
     friend class ConfigItem;
+    friend class ConfigPage;
 };
     
+class ConfigPage
+{
+    uint32_t id;
+    int  block_size;
+    int  flash_page;
+    uint8_t *mem_block;
+    IndexedList<ConfigStore*> stores;
+    Flash *flash;
+
+    void pack(void);
+    void unpack(void);
+
+public:
+    ConfigPage(Flash *fl, int id, int page, int page_size) : flash(fl), id(id), flash_page(page), block_size(page_size), stores(4, NULL) {
+        mem_block = new uint8_t[page_size];
+    }
+
+    virtual ~ConfigPage() {
+        delete[] mem_block;
+    }
+
+    void add_store(ConfigStore *s) {
+        stores.append(s);
+    }
+    uint32_t get_id() {
+        return id;
+    }
+
+    void read();
+    void write();
+    void unpack(ConfigStore *s);
+};
+
 class ConfigManager
 {
 	IndexedList<ConfigStore*> stores;
-    int num_pages;
+	IndexedList<ConfigPage*> pages;
     Flash *flash;
+    int num_pages;
 
     ConfigManager();
     ~ConfigManager();
@@ -178,8 +213,7 @@ public:
 		return &config_manager;
 	}
     
-    ConfigStore *register_store(uint32_t store_id, const char *name, t_cfg_definition *defs, ConfigurableObject *ob);
-    ConfigStore *open_store(uint32_t store_id);
+    ConfigStore *register_store(uint32_t page_id, const char *name, t_cfg_definition *defs, ConfigurableObject *ob);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
 

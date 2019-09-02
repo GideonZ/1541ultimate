@@ -248,19 +248,15 @@ void C64 :: resetConfigInFlash(int page)
         kern = 1;
     }
 #endif
-    if (page < 0) {
-        page = cfg->get_page();
-    }
+    cfg->reset();
 
-    ConfigStore *newConfig = new ConfigStore(0x43363420, "C64 and cartridge settings", page, cfg->get_page_size(), c64_config, NULL);
-
-    newConfig->set_value(CFG_C64_ALT_KERN, kern);
+    cfg->set_value(CFG_C64_ALT_KERN, kern);
 #if U64
-    newConfig->set_value(CFG_C64_ALT_BASI, basic);
-    newConfig->set_value(CFG_C64_ALT_CHAR, chars);
+    cfg->set_value(CFG_C64_ALT_BASI, basic);
+    cfg->set_value(CFG_C64_ALT_CHAR, chars);
 #endif
-    if (newConfig->is_flash_stale()) {
-        newConfig->write();
+    if (cfg->is_flash_stale()) {
+        cfg->write();
     }
 }
 
