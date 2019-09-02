@@ -148,6 +148,7 @@ SRCS_CC	 =  u2p_init.cc \
 			led_strip.cc \
 			data_streamer.cc \
 			configio.cc \
+			sid_editor.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \

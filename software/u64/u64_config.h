@@ -21,7 +21,41 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 	bool skipReset;
     TaskHandle_t resetTaskHandle;
 
-	uint8_t GetSidType(int slot);
+    class U64Mixer : public ConfigurableObject
+    {
+    public:
+        U64Mixer();
+        void effectuate_settings();
+    };
+
+    class U64SidSockets : public ConfigurableObject
+    {
+    public:
+        U64SidSockets();
+        void effectuate_settings();
+        void detect();
+    };
+
+    class U64SidAddressing : public ConfigurableObject
+    {
+    public:
+        U64SidAddressing();
+        void effectuate_settings();
+    };
+
+    class U64UltiSids : public ConfigurableObject
+    {
+    public:
+        U64UltiSids();
+        void effectuate_settings();
+    };
+
+    U64Mixer mixer;
+    U64SidSockets sockets;
+    U64UltiSids ultisids;
+    U64SidAddressing sidaddressing;
+
+    uint8_t GetSidType(int slot);
     void SetSidType(int slot, uint8_t sidType);
     bool SetSidAddress(int slot, bool single, uint8_t actualType, uint8_t base);
     bool MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any);
@@ -36,9 +70,9 @@ public:
     ~U64Config() {}
 
     void ResetHandler();
-    void effectuate_settings();
     int fetch_task_items(Path *p, IndexedList<Action*> &item_list);
     int executeCommand(SubsysCommand *cmd);
+    void effectuate_settings();
 
     static void setPllOffset(ConfigItem *it);
     static void setScanMode(ConfigItem *it);
