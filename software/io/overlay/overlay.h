@@ -41,9 +41,9 @@ public:
         buttonPushSeen = false;
         
         activeX = 40;
-        activeY = 20;
+        activeY = 25;
         X_on = 366;
-        Y_on = 314; //346
+        Y_on = 314-40; //346
 
         if(getFpgaCapabilities() & CAPAB_OVERLAY) {
             initRegs();
