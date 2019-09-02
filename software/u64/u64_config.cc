@@ -96,6 +96,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SOCKET2_ENABLE    0x46
 #define CFG_EMUSID_SPLIT      0x47
 #define CFG_SHOW_SID_ADDR     0x48
+#define CFG_JOYSWAP           0x49
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -195,6 +196,7 @@ uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0, 0x
 const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
 const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
 
+static const char *joyswaps[] = { "Normal", "Swapped" };
 static const char *en_dis4[] = { "Disabled", "Enabled" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
@@ -255,7 +257,8 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  1, 0 },
-//    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
+    { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
+    //    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
@@ -606,6 +609,7 @@ void U64Config :: effectuate_settings()
 
     U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
+    C64_PLD_JOYCTRL  =  cfg->get_value(CFG_JOYSWAP) ^ 1;
 
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
@@ -1475,18 +1479,18 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
 
 int swap_joystick()
 {
-    static uint8_t toggle = 0;
-
     uint8_t rev = (U2PIO_BOARDREV >> 3);
     if (rev != 0x13) {
         return 0;
     }
 
-    toggle ^= 1;
+    ConfigItem *item = u64_configurator.cfg->find_item(CFG_JOYSWAP);
+    int swap = item->getValue();
+    swap ^= 1;
+    item->setValue(swap);
+    C64_PLD_JOYCTRL = (uint8_t)(swap ^ 1);
 
-    C64_PLD_JOYCTRL = toggle;
-
-    printf("*S%d*", toggle);
+    printf("*S%d*", swap);
 
     // swap performed, now exit menu
     return -1;
