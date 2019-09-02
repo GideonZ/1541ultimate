@@ -124,7 +124,7 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
             len = sprintf(buffer, "%s=%s\n", i->definition->item_text, i->string);
         } else if(i->definition->type == CFG_TYPE_ENUM) {
             len = sprintf(buffer, "%s=%s\n", i->definition->item_text, i->definition->items[i->getValue()]);
-        } else {
+        } else if(i->definition->type != CFG_TYPE_FUNC) {
             len = sprintf(buffer, "%s=%d\n", i->definition->item_text, i->getValue());
         }
         if (len) {
