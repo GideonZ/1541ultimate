@@ -16,6 +16,7 @@ class SidEditor: public UIObject {
     ConfigStore *cfg;
     ConfigItem *address_item[4];
     ConfigItem *split_item[4];
+    ConfigItem *mirror_item;
 
     UserInterface *user_interface;
     Screen   *screen;
@@ -23,7 +24,6 @@ class SidEditor: public UIObject {
     Keyboard *keyb;
 
     int edit; // which SID we are editing
-    bool mirror;
 
     // private functions:
     virtual int handle_key(int c);

@@ -107,14 +107,14 @@ void ConfigBrowserState :: change(void)
 void ConfigBrowserState :: increase(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    it->next();
+    it->next(1);
     update_selected();
 }
     
 void ConfigBrowserState :: decrease(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    it->previous();
+    it->previous(1);
     update_selected();
 }
     

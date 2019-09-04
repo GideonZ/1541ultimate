@@ -15,6 +15,7 @@
 #define CFG_EMUSID2_ADDRESS   0x05
 #define CFG_STEREO_DIFF       0x10
 #define CFG_EMUSID_SPLIT      0x47
+#define CFG_AUTO_MIRRORING    0x4A
 
 SidEditor :: SidEditor(UserInterface *intf, ConfigStore *cfg)
 {
@@ -26,7 +27,7 @@ SidEditor :: SidEditor(UserInterface *intf, ConfigStore *cfg)
     this->window = 0;
 
     edit = 0;
-    mirror = false;
+    mirror_item = cfg->find_item(CFG_AUTO_MIRRORING);
 
     address_item[0] = cfg->find_item(CFG_SID1_ADDRESS);
     address_item[1] = cfg->find_item(CFG_SID2_ADDRESS);
@@ -114,21 +115,29 @@ void SidEditor :: draw()
     window->move_cursor(33, 3);
     window->set_color(13);
     window->reverse_mode(1);
+    window->output("1");
+    window->move_cursor(33, 4);
     window->output("SKT1 ");
 
-    window->move_cursor(33, 5);
+    window->move_cursor(33, 6);
     window->set_color(14);
     window->reverse_mode(1);
+    window->output("2");
+    window->move_cursor(33, 7);
     window->output("SKT2 ");
 
-    window->move_cursor(33, 7);
+    window->move_cursor(33, 9);
     window->set_color(7);
     window->reverse_mode(1);
+    window->output("3");
+    window->move_cursor(33, 10);
     window->output("USID1");
 
-    window->move_cursor(33, 9);
+    window->move_cursor(33, 12);
     window->set_color(10);
     window->reverse_mode(1);
+    window->output("4");
+    window->move_cursor(33, 13);
     window->output("USID2");
 
     draw_edit();
@@ -147,7 +156,7 @@ void SidEditor :: redraw(void)
         base_orig[i] = base[i];
     }
     U64Config :: fix_splits(base, mask, split);
-    if (mirror) {
+    if (mirror_item->getValue()) {
         U64Config :: auto_mirror(base, mask, split, 4);
     }
 
@@ -220,7 +229,10 @@ void SidEditor :: draw_edit(void)
     window->output("       ");
 
     window->move_cursor(0, 19);
-    window->output("Split: ");
+    window->reverse_mode(1);
+    window->output('S');
+    window->reverse_mode(0);
+    window->output("plit: ");
     if (edit < 2) {
         window->output(stereo_addr[split_item[edit]->getValue()]);
     } else {
@@ -229,8 +241,11 @@ void SidEditor :: draw_edit(void)
     window->output("        ");
 
     window->move_cursor(23, 19);
-    window->output("Mirroring: ");
-    window->output(mirror ? "On " : "Off");
+    window->reverse_mode(1);
+    window->output('M');
+    window->reverse_mode(0);
+    window->output("irroring: ");
+    window->output(mirror_item->getValue() ? "On " : "Off");
 }
 
 int SidEditor :: handle_key(int c)
@@ -247,38 +262,44 @@ int SidEditor :: handle_key(int c)
         draw_edit();
         break;
 
-    case KEY_UP:
-        edit += 3;
-        edit &= 3;
+    case 'U':
+        address_item[edit]->setValue(0);
         draw_edit();
+        redraw();
+        break;
+
+    case KEY_UP:
+        address_item[edit]->previous(1);
+        draw_edit();
+        redraw();
         break;
 
     case KEY_DOWN:
-        edit += 1;
-        edit &= 3;
+        address_item[edit]->next(1);
         draw_edit();
+        redraw();
         break;
 
     case KEY_RIGHT:
-        address_item[edit]->next();
+        address_item[edit]->next(8);
         draw_edit();
         redraw();
         break;
 
     case KEY_LEFT:
-        address_item[edit]->previous();
+        address_item[edit]->previous(8);
         draw_edit();
         redraw();
         break;
 
     case 's':
-        split_item[edit]->next();
+        split_item[edit]->next(1);
         draw_edit();
         redraw();
         break;
 
     case 'm':
-        mirror = !mirror;
+        mirror_item->setValue(1 - mirror_item->getValue());
         draw_edit();
         redraw();
         break;
@@ -286,6 +307,7 @@ int SidEditor :: handle_key(int c)
     case KEY_ESCAPE:
     case KEY_F8:
     case KEY_BREAK:
+    case KEY_BACK:
         return -2;
 
     default:

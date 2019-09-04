@@ -633,16 +633,17 @@ void ConfigItem :: setString(const char *s)
     }
 }
 
-void ConfigItem :: next(void)
+void ConfigItem :: next(int a)
 {
     int value = getValue();
     switch(definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
-            if(value < definition->max)
-                value++;
-            else
-                value = definition->min; // circular
+            value += a;
+            // circular
+            while (value > definition->max) {
+                value -= (1 + definition->max - definition->min);
+            }
             setValue(value);
             break;
 
@@ -651,16 +652,17 @@ void ConfigItem :: next(void)
     }
 }
 
-void ConfigItem :: previous(void)
+void ConfigItem :: previous(int a)
 {
     int value = getValue();
     switch(definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
-            if(value > definition->min)
-                value--;
-            else
-                value = definition->max; // circular
+            value -= a;
+            // circular
+            while (value < definition->min) {
+                value += (1 + definition->max - definition->min);
+            }
             setValue(value);
             break;
         default:
