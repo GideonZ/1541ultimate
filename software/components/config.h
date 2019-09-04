@@ -92,8 +92,8 @@ public:
     const char *getString() { return string; }
     void setValue(int v) { value = v; setChanged(); }
     void setString(const char *str);
-    void next(void);
-    void previous(void);
+    void next(int);
+    void previous(int);
 
     friend class ConfigStore;
     friend class RtcConfigStore;
