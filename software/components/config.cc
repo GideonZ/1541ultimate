@@ -188,18 +188,21 @@ int ConfigStore :: unregister(ConfigurableObject *obj)
     return objects.get_elements();
 }
 
-void ConfigPage :: pack(void)
+int ConfigPage :: pack(void)
 {
     memset(mem_block, 0xFF, block_size);
 
     uint8_t *b = &mem_block[4];
     (*(uint32_t *)mem_block) = id;
     int remain = block_size - 4;
-
+    int size;
     for(int n = 0; n < stores.get_elements(); n++) {
         ConfigStore *s = stores[n];
-        remain = s->pack(b, remain);
+        size = s->pack(b, remain);
+        remain -= size;
+        b += size;
     }
+    return block_size - remain;
 }
 
 void ConfigPage :: unpack(void)
@@ -219,13 +222,14 @@ int ConfigStore :: pack(uint8_t *b, int remain)
 {
     ConfigItem *i;
     int len;
-
+    int total = 0;
     //    printf("Packing ConfigStore %s.\n", store_name);
     for(int n = 0; n < items.get_elements();n++) {
     	i = items[n];
     	len = i->pack(b, remain);
         b += len;
         remain -= len;
+        total += len;
         if(remain < 1) {
             printf("Configuration item doesn't fit. Dropped.\n");
             break;
@@ -233,7 +237,7 @@ int ConfigStore :: pack(uint8_t *b, int remain)
     }
     *b = 0xFF;
 
-    return remain;
+    return total;
 }
 
 void ConfigStore :: effectuate()
@@ -260,7 +264,8 @@ void ConfigStore :: write()
 void ConfigPage :: write()
 {
     printf("Page: %d", flash_page);
-	pack();
+	int size = pack();
+	dump_hex_relative(mem_block, size);
 	if(flash) {
 	    flash->write_config_page(flash_page, mem_block);
 	    printf(" done.\n");

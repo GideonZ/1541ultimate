@@ -174,7 +174,7 @@ class ConfigPage
     IndexedList<ConfigStore*> stores;
     Flash *flash;
 
-    void pack(void);
+    int pack(void);
     void unpack(void);
 
 public:
