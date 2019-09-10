@@ -49,7 +49,7 @@ t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom, 
 #define CFG_C1541_GCRALIGN  0xDA
 #define CFG_C1541_STOPFREEZ 0xDB
 
-struct t_cfg_definition c1541_config[] = {
+const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",                 "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",          "%d", NULL,       8, 11, 8 },
 #if U64
@@ -87,9 +87,15 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 	flash = get_flash();
     fm = FileManager :: getFileManager();
     
+    // Create local copy of configuration definition, since the default differs.
+    int size = sizeof(c1541_config);
+    int elements = size / sizeof(t_cfg_definition);
+    local_config_definitions = new t_cfg_definition[elements];
+    memcpy(local_config_definitions, c1541_config, size);
+
     char buffer[32];
-    c1541_config[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
-    c1541_config[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
+    local_config_definitions[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
+    local_config_definitions[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
         
     uint32_t mem_address = ((uint32_t)registers[C1541_MEM_ADDR]) << 16;
     memory_map = (volatile uint8_t *)mem_address;
@@ -110,7 +116,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     bin_image = new BinImage(drive_name.c_str());
     
     sprintf(buffer, "1541 Drive %c Settings", letter);    
-    register_store((uint32_t)regs, buffer, c1541_config);
+    register_store((uint32_t)regs, buffer, local_config_definitions);
 
     disk_state = e_no_disk;
     iec_address = 8 + int(letter - 'A');
