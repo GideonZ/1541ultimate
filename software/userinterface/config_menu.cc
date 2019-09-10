@@ -147,7 +147,6 @@ void ConfigBrowser :: on_exit(void)
         for (int i=0; i < storeList->get_elements(); i++) {
             if ((*storeList)[i]->is_flash_stale()) {
                 (*storeList)[i]->write();
-                break;
             }
         }
     }
