@@ -351,7 +351,7 @@ U64Config :: U64SidSockets :: U64SidSockets()
     }
 }
 
-int U64Config :: detectRemakes(int socket)
+int U64Config :: detectFPGASID(int socket)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
 
@@ -366,8 +366,12 @@ int U64Config :: detectRemakes(int socket)
         base[26] = 0;
         return 3;
     }
+    return 0;
+}
 
-    // OK, it's not FPGA SID.. Maybe it's Swinsid Ultimate or ARM(2)SID
+int U64Config :: detectRemakes(int socket)
+{
+    volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
 
     base[29] = 0;
     C64_PEEK(2); // dummy cycle
@@ -417,11 +421,23 @@ int U64Config :: detectRemakes(int socket)
 
 void U64Config :: U64SidSockets :: detect(void)
 {
-    int sid1, sid2;
+    int sid1, sid2, fpgasid1, fpgasid2;
     C64_MODE = C64_MODE_UNRESET;
     while (C64 :: c64_reset_detect())
         ;
+
+    fpgasid1 = detectFPGASID(0);
+    fpgasid2 = detectFPGASID(1);
+
     S_SidDetector(sid1, sid2);
+
+    if (fpgasid1) {
+        sid1 = 3;
+    }
+    if (fpgasid2) {
+        sid2 = 3;
+    }
+
     printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
 
     if (!sid1) {
@@ -430,8 +446,6 @@ void U64Config :: U64SidSockets :: detect(void)
     if (!sid2) {
         sid2 = detectRemakes(1);
     }
-
-    printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
 
     // Configuration has changed? Then disable the sockets until the user
     // has approved the detection. We only do this for 12V. We simply enable

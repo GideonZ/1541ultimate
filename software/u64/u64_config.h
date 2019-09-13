@@ -66,6 +66,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     static void DetectSidImpl(uint8_t *buffer) __attribute__ ((section ("detect_sid"), used));
     static int S_SidDetector(int &sid1, int &sid2);
     static int detectRemakes(int socket);
+    static int detectFPGASID(int socket);
 public:
     U64Config();
     ~U64Config() {}
