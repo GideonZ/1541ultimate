@@ -135,6 +135,7 @@ int ContextMenu :: poll(int dummy)
 int ContextMenu :: handle_key(int c)
 {
     int ret = 0;
+    int newpos;
     
     switch(c) {
         case KEY_LEFT: // left
@@ -159,6 +160,30 @@ int ContextMenu :: handle_key(int c)
         		draw();
         	}
         	break;
+        case KEY_F1: // page up
+        case KEY_PAGEUP:
+            newpos = item_index - 10;
+            if (newpos < 0) {
+                newpos = 0;
+            }
+            if (newpos != item_index) {
+                item_index = newpos;
+                draw();
+            }
+            break;
+
+        case KEY_F7: // page up
+        case KEY_PAGEDOWN:
+            newpos = item_index + 10;
+            if (newpos >  actions.get_elements()-1) {
+                newpos = actions.get_elements()-1;
+            }
+            if (newpos != item_index) {
+                item_index = newpos;
+                draw();
+            }
+            break;
+
         case KEY_BACK: // backspace
 /*
             if(quick_seek_length) {
