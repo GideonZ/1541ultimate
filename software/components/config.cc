@@ -265,7 +265,7 @@ void ConfigPage :: write()
 {
     printf("Page: %d", flash_page);
 	int size = pack();
-	dump_hex_relative(mem_block, size);
+	//dump_hex_relative(mem_block, size);
 	if(flash) {
 	    flash->write_config_page(flash_page, mem_block);
 	    printf(" done.\n");
