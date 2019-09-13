@@ -439,6 +439,8 @@ void U64Config :: U64SidSockets :: detect(void)
     while (C64 :: c64_reset_detect())
         ;
 
+    S_SetupDetectionAddresses();
+
     fpgasid1 = detectFPGASID(0);
     fpgasid2 = detectFPGASID(1);
 
@@ -1476,6 +1478,20 @@ extern uint32_t __stop_detect_sid;
 
 typedef void (*func)(uint8_t *);
 
+void U64Config :: S_SetupDetectionAddresses()
+{
+    // Configure Socket 1 to be at $D400 and Socket 2 to be at $D500
+    // UltiSid is set to $D600 to make sure it doesn't trigger
+    C64_SID1_BASE = 0x40;
+    C64_SID2_BASE = 0x50;
+    C64_SID1_MASK = 0xFE;
+    C64_SID2_MASK = 0xFE;
+    C64_EMUSID1_BASE = 0x60;
+    C64_EMUSID2_BASE = 0x60;
+    C64_EMUSID1_MASK = 0xFE;
+    C64_EMUSID2_MASK = 0xFE;
+}
+
 int U64Config :: S_SidDetector(int &sid1, int &sid2)
 {
     uint32_t *begin = &__start_detect_sid;
@@ -1489,17 +1505,7 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
         return -1;
     }
 */
-
-    // Configure Socket 1 to be at $D400 and Socket 2 to be at $D500
-    // UltiSid is set to $D600 to make sure it doesn't trigger
-    C64_SID1_BASE = 0x40;
-    C64_SID2_BASE = 0x50;
-    C64_SID1_MASK = 0xFE;
-    C64_SID2_MASK = 0xFE;
-    C64_EMUSID1_BASE = 0x60;
-    C64_EMUSID2_BASE = 0x60;
-    C64_EMUSID1_MASK = 0xFE;
-    C64_EMUSID2_MASK = 0xFE;
+    S_SetupDetectionAddresses();
 
     // Prepare the function in fast ram
     uint32_t *dest = (uint32_t *)ONCHIP;
