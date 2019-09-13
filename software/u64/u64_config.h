@@ -64,6 +64,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     void run_reset_task();
     static void show_mapping(uint8_t *base, uint8_t *mask, uint8_t *split, int count);
     static void DetectSidImpl(uint8_t *buffer) __attribute__ ((section ("detect_sid"), used));
+    static void S_SetupDetectionAddresses();
     static int S_SidDetector(int &sid1, int &sid2);
     static int detectRemakes(int socket);
     static int detectFPGASID(int socket);
