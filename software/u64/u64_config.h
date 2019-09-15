@@ -72,6 +72,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     static int S_SidDetector(int &sid1, int &sid2);
     static int detectRemakes(int socket);
     int detectFPGASID(int socket);
+    SidDevice *getDevice(int index) { return sidDevice[index]; }
 public:
     U64Config();
     ~U64Config() {}

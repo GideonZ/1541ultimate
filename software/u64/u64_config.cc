@@ -615,6 +615,14 @@ void U64Config :: U64SidAddressing :: effectuate_settings()
     C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK = cfg->get_value(CFG_STEREO_DIFF);
     C64_EMUSID_SPLIT =  C64_EMUSID_SPLIT_BAK = cfg->get_value(CFG_EMUSID_SPLIT);
 
+    SidDevice *dev = u64_configurator.getDevice(0);
+    if (dev) {
+        dev->set_address((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + ((int)base[0]) << 4 ));
+    }
+    dev = u64_configurator.getDevice(1);
+    if (dev) {
+        dev->set_address((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + ((int)base[1]) << 4 ));
+    }
 
     printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s) SlotSplit: %02X.  Emu1: %02X/%02X  Emu2: %02X/%02X  Emu Split: %02X\n",
             C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
