@@ -26,6 +26,7 @@ extern "C" {
 #include "sys/alt_irq.h"
 #include "c64.h"
 #include "sid_editor.h"
+#include "sid_device_fpgasid.h"
 
 // static pointer
 U64Config u64_configurator;
@@ -373,6 +374,8 @@ int U64Config :: detectFPGASID(int socket)
     // Read Identification
     if ((id1 == 0x1D) && (id2 == 0xF5)) {
         // FPGASID found
+        sidDevice[socket] = new SidDeviceFpgaSid(socket, base);
+
         base[25] = 0;
         base[26] = 0;
         return SID_TYPE_FPGASID;
@@ -441,8 +444,8 @@ void U64Config :: U64SidSockets :: detect(void)
 
     S_SetupDetectionAddresses();
 
-    fpgasid1 = detectFPGASID(0);
-    fpgasid2 = detectFPGASID(1);
+    fpgasid1 = u64_configurator.detectFPGASID(0);
+    fpgasid2 = u64_configurator.detectFPGASID(1);
 
     S_SidDetector(sid1, sid2);
 
@@ -649,6 +652,8 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         mixer.effectuate_settings();
         ultisids.effectuate_settings();
         sidaddressing.effectuate_settings();
+        sidDevice[0] = NULL;
+        sidDevice[1] = NULL;
 
         uint8_t rev = (U2PIO_BOARDREV >> 3);
         if (rev != 0x13) {
@@ -1490,6 +1495,8 @@ void U64Config :: S_SetupDetectionAddresses()
     C64_EMUSID2_BASE = 0x60;
     C64_EMUSID1_MASK = 0xFE;
     C64_EMUSID2_MASK = 0xFE;
+    C64_SID1_EN = 1;
+    C64_SID2_EN = 1;
 }
 
 int U64Config :: S_SidDetector(int &sid1, int &sid2)
@@ -1526,15 +1533,10 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
     for (int attempt = 0; attempt < 3; attempt++) {
         // Prepare the machine to execute the detection code
 
-        C64_SID1_EN = 1;
-        C64_SID2_EN = 1;
 
         alt_irq_context context = alt_irq_disable_all();
         detection(buffer);  // <-- jumps to fast ram!
         alt_irq_enable_all(context);
-
-        C64_SID1_EN = 0;
-        C64_SID2_EN = 0;
 
         // Now analyze the data
         if ((buffer[16] == 2) && (buffer[0] == 0))  {
@@ -1716,4 +1718,40 @@ void U64Config :: show_sid_addr(UserInterface *intf)
     SidEditor *se = new SidEditor(intf, u64_configurator.sidaddressing.cfg);
     se->init(intf->screen, intf->keyboard);
     intf->activate_uiobject(se);
+}
+
+void U64Config :: access_socket_pre(int socket)
+{
+    alt_irq_context irq_context = alt_irq_disable_all();
+    if (socket) {
+        C64_SID2_EN = 1;
+    } else {
+        C64_SID1_EN = 1;
+    }
+
+    if (!(C64_STOP & C64_HAS_STOPPED)) {
+        C64_STOP_MODE = STOP_COND_FORCE;
+        C64_STOP = 1;
+        C64_PEEK(2);
+        C64_PEEK(2);
+        C64_PEEK(2);
+        temporary_stop = true;
+    } else {
+        temporary_stop = false;
+    }
+}
+
+void U64Config :: access_socket_post(int socket)
+{
+    if (socket) {
+        C64_SID2_EN = C64_SID2_EN_BAK;
+    } else {
+        C64_SID1_EN = C64_SID1_EN_BAK;
+    }
+
+    if (temporary_stop) {
+        C64_STOP = 0;
+    }
+
+    alt_irq_enable_all(irq_context);
 }

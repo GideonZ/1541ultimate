@@ -13,6 +13,7 @@
 #include "subsys.h"
 #include "sid_config.h"
 #include "menu.h"
+#include "sid_device.h"
 
 class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
 {
@@ -20,6 +21,9 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     FileManager *fm;
 	bool skipReset;
     TaskHandle_t resetTaskHandle;
+    SidDevice *sidDevice[2];
+    alt_irq_context irq_context;
+    bool temporary_stop;
 
     class U64Mixer : public ConfigurableObject
     {
@@ -67,7 +71,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     static void S_SetupDetectionAddresses();
     static int S_SidDetector(int &sid1, int &sid2);
     static int detectRemakes(int socket);
-    static int detectFPGASID(int socket);
+    int detectFPGASID(int socket);
 public:
     U64Config();
     ~U64Config() {}
@@ -90,6 +94,9 @@ public:
 
     bool SidAutoConfig(int count, t_sid_definition *requested);
     static void show_sid_addr(UserInterface *intf);
+
+    void access_socket_pre(int socket);
+    void access_socket_post(int socket);
 };
 
 extern U64Config u64_configurator;
