@@ -481,6 +481,11 @@ void U64Config :: U64SidSockets :: detect(void)
             cfg->set_value(CFG_SID1_CAPS, 1);
             cfg->set_value(CFG_SID1_SHUNT, 0);
             break;
+        case 0:
+            // Leave the socket enabled if it is already was enabled
+            break;
+        default: // other than None, 6581 or 8580
+            cfg->set_value(CFG_SOCKET1_ENABLE, 1);
         }
     }
 
@@ -497,6 +502,11 @@ void U64Config :: U64SidSockets :: detect(void)
             cfg->set_value(CFG_SID2_CAPS, 1);
             cfg->set_value(CFG_SID2_SHUNT, 0);
             break;
+        case 0:
+            // Leave the socket enabled if it is already was enabled
+            break;
+        default: // other than None, 6581 or 8580
+            cfg->set_value(CFG_SOCKET1_ENABLE, 1);
         }
     }
     if (cfg->is_flash_stale()) {
