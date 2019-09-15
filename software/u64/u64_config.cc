@@ -1730,11 +1730,15 @@ void U64Config :: access_socket_pre(int socket)
     }
 
     if (!(C64_STOP & C64_HAS_STOPPED)) {
-        C64_STOP_MODE = STOP_COND_FORCE;
-        C64_STOP = 1;
-        C64_PEEK(2);
-        C64_PEEK(2);
-        C64_PEEK(2);
+        if (c64) { // in case this gets called before the object is created
+            c64->stop(false);
+        } else {
+            C64_STOP_MODE = STOP_COND_FORCE;
+            C64_STOP = 1;
+            while (!(C64_STOP & C64_HAS_STOPPED))
+                ;
+            C64_PEEK(2);
+        }
         temporary_stop = true;
     } else {
         temporary_stop = false;
