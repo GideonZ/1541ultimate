@@ -142,6 +142,7 @@ public:
 
     void set_change_hook(uint8_t id, t_change_hook hook);
     void disable(uint8_t id);
+    ConfigurableObject *get_first_object(void) { return objects[0]; }
 
     ConfigItem *find_item(uint8_t id);
     int  get_value(uint8_t id);

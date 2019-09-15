@@ -20,6 +20,24 @@ class SidDeviceFpgaSid: public SidDevice {
     public:
         FpgaSidConfig(SidDeviceFpgaSid *parent);
         void effectuate_settings();
+
+        static volatile uint8_t *pre(ConfigItem *it, int sid);
+        static void post(ConfigItem *it);
+
+        static uint8_t getByte31Sid1(ConfigStore *cfg);
+        static uint8_t getByte31Sid2(ConfigStore *cfg);
+        static uint8_t getByte30Sid1(ConfigStore *cfg);
+        static uint8_t getByte30Sid2(ConfigStore *cfg);
+
+        static void S_cfg_fpgasid_sid1_byte31    (ConfigItem *it);
+        static void S_cfg_fpgasid_sid1_digifix   (ConfigItem *it);
+        static void S_cfg_fpgasid_sid1_filterbias(ConfigItem *it);
+        static void S_cfg_fpgasid_sid1_outputmode(ConfigItem *it);
+
+        static void S_cfg_fpgasid_sid2_byte31    (ConfigItem *it);
+        static void S_cfg_fpgasid_sid2_digifix   (ConfigItem *it);
+        static void S_cfg_fpgasid_sid2_filterbias(ConfigItem *it);
+        static void S_cfg_fpgasid_sid2_outputmode(ConfigItem *it);
     };
 
     FpgaSidConfig config;
