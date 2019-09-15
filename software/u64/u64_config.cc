@@ -1497,6 +1497,7 @@ void U64Config :: S_SetupDetectionAddresses()
     C64_EMUSID2_MASK = 0xFE;
     C64_SID1_EN = 1;
     C64_SID2_EN = 1;
+    wait_ms(1);
 }
 
 int U64Config :: S_SidDetector(int &sid1, int &sid2)
