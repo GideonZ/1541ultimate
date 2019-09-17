@@ -11,6 +11,9 @@ extern "C" {
 #include "userinterface.h"
 #include "disk_image.h"
 #include "pattern.h"
+#include "../drive/1581/c1581.h"
+
+extern C1581 *c1581_C;
 
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
@@ -38,6 +41,7 @@ extern uint32_t _ulticopy_65_size;
 #define CFG_IEC_ENABLE   0x51
 #define CFG_IEC_BUS_ID   0x52
 #define CFG_IEC_PATH     0x53
+#define CFG_IEC_MODE     0x54
 #define CFG_IEC_PRINTER_ID 	 0x30
 #define CFG_IEC_PRINTER_FILENAME 0x31
 #define CFG_IEC_PRINTER_TYPE     0x32
@@ -55,10 +59,12 @@ static const char *pr_cch[] = { "USA/UK", "Denmark", "France/Italy", "Germany", 
 static const char *pr_ech[] = { "Basic", "USA", "France", "Germany", "UK", "Denmark I",
                                 "Sweden", "Italy", "Spain", "Japan", "Norway", "Denmark II" };
 static const char *pr_ich[] = { "International 1", "International 2", "Israel", "Greece", "Portugal", "Spain" };
+static const char *dr_mod[] = { "Native", "1581" };
 
 static struct t_cfg_definition iec_config[] = {
     { CFG_IEC_ENABLE,    CFG_TYPE_ENUM,   "IEC Drive and printer",     "%s", en_dis,     0,  1, 0 },
-    { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive Bus ID",         "%d", NULL,       8, 30, 10 },
+    { CFG_IEC_MODE,		 CFG_TYPE_ENUM,   "Soft Drive C Mode",         "%s", dr_mod,     0,  1, 0 },
+    { CFG_IEC_BUS_ID,    CFG_TYPE_VALUE,  "Soft Drive C Bus ID",       "%d", NULL,       8, 30, 10 },
     { CFG_IEC_PATH,      CFG_TYPE_STRING, "Default Path",              "%s", NULL,       0, 30, (int) FS_ROOT },
     { CFG_IEC_PRINTER_ID,       CFG_TYPE_VALUE,  "Printer Bus ID",       "%d", NULL,   4,  5, 4 },
     { CFG_IEC_PRINTER_FILENAME, CFG_TYPE_STRING, "Printer output file",  "%s", NULL,   1, 31, (int) FS_ROOT "printer" },
@@ -120,7 +126,7 @@ const char msg62[] = "FILE NOT FOUND";			//62
 const char msg63[] = "FILE EXISTS";				//63
 const char msg64[] = "FILE TYPE MISMATCH";		//64
 //const char msg65[] = "NO BLOCK";				//65
-//const char msg66[] = "ILLEGAL TRACK AND SECTOR";//66
+const char msg66[] = "ILLEGAL TRACK AND SECTOR";//66
 //const char msg67[] = "ILLEGAL SYSTEM T OR S";	//67
 const char msg69[] = "FILESYSTEM ERROR";        //69
 const char msg70[] = "NO CHANNEL";	            //70
@@ -162,7 +168,7 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 		{ 63,(char*)msg63,NR_OF_EL(msg63) - 1 },
 		{ 64,(char*)msg64,NR_OF_EL(msg64) - 1 },
 //		{ 65,(char*)msg65,NR_OF_EL(msg65) - 1 },
-//		{ 66,(char*)msg66,NR_OF_EL(msg66) - 1 },
+		{ 66,(char*)msg66,NR_OF_EL(msg66) - 1 },
 //		{ 67,(char*)msg67,NR_OF_EL(msg67) - 1 },
         { 69,(char*)msg69,NR_OF_EL(msg69) - 1 },
 		{ 70,(char*)msg70,NR_OF_EL(msg70) - 1 },
@@ -267,6 +273,7 @@ void IecInterface :: effectuate_settings(void)
     uint32_t was_printer_listen = 0x18800020 + last_printer_addr;
     
 //            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
+
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
     if(bus_id != last_addr) {
         printf("Setting IEC bus ID to %d.\n", bus_id);
@@ -311,6 +318,11 @@ void IecInterface :: effectuate_settings(void)
     channel_printer->set_ibm_charset(cfg->get_value(CFG_IEC_PRINTER_IBM_CHAR));
 
     iec_enable = uint8_t(cfg->get_value(CFG_IEC_ENABLE));
+    drive_mode = uint8_t(cfg->get_value(CFG_IEC_MODE));
+
+    if(drive_mode == 1)
+    	c1581_C->iec_address = last_addr;
+
     HW_IEC_RESET_ENABLE = iec_enable;
 }
     
@@ -402,13 +414,19 @@ void IecInterface :: poll()
 							channel_printer->push_command(0xFF);
 							printer = false;
 						} else {
-							channels[current_channel]->push_command(0);
+							if(drive_mode == 1)
+								c1581_C->channels[current_channel]->push_command(0);
+							else
+								channels[current_channel]->push_command(0);
 						}
 						break;
 					case 0x41:
 						atn = true;
 						if (talking) {
-							channels[current_channel]->reset_prefetch();
+							if(drive_mode == 1)
+								c1581_C->channels[current_channel]->reset_prefetch();
+							else
+								channels[current_channel]->reset_prefetch();
 							talking = false;
 						}
 						//printf("<1>", data);
@@ -419,7 +437,10 @@ void IecInterface :: poll()
 						break;
 					case 0x47:
 						if (!printer) {
-							channels[current_channel]->pop_data();
+							if(drive_mode == 1)
+								c1581_C->channels[current_channel]->pop_data();
+							else
+								channels[current_channel]->pop_data();
 						}
 						break;
 					case 0x46:
@@ -440,7 +461,11 @@ void IecInterface :: poll()
 							channel_printer->push_command(data & 0x7);
 						} else {
 							current_channel = int(data & 0x0F);
-							channels[current_channel]->push_command(data & 0xF0);
+
+							if(drive_mode == 1)
+								c1581_C->channels[current_channel]->push_command(data & 0xF0);
+							else
+								channels[current_channel]->push_command(data & 0xF0);
 						}
 					}
 				} else {
@@ -450,7 +475,10 @@ void IecInterface :: poll()
 #if IECDEBUG
 						printf("[%b] ", data);
 #endif
-						channels[current_channel]->push_data(data);
+						if(drive_mode == 1)
+							c1581_C->channels[current_channel]->push_data(data);
+						else
+							channels[current_channel]->push_data(data);
 					}
 				}
 			}
@@ -462,7 +490,12 @@ void IecInterface :: poll()
 		int st;
 		if(talking) {
 			while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
-				st = channels[current_channel]->prefetch_data(data);
+
+				if(drive_mode == 1)
+					st = c1581_C->channels[current_channel]->prefetch_data(data);
+				else
+					st = channels[current_channel]->prefetch_data(data);
+
 				if(st == IEC_OK) {
 					HW_IEC_TX_DATA = data;
 				} else if(st == IEC_LAST) {

@@ -316,7 +316,7 @@ class IecChannel
 
 	int  channel;
     int  write;
-    uint8_t buffer[256];
+   
     int  size;
     int  pointer;
     int  prefetch;
@@ -335,6 +335,7 @@ class IecChannel
     uint32_t bytes;
 
 public:
+     uint8_t buffer[256];
     IecChannel(IecInterface *intf, int ch);
     virtual ~IecChannel();
     virtual void reset_prefetch(void);

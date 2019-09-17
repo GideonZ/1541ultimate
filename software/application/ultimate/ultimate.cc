@@ -9,6 +9,7 @@
 #include "c64.h"
 #include "c64_subsys.h"
 #include "c1541.h"
+#include "c1581.h"
 #include "screen.h"
 #include "keyboard.h"
 #include "userinterface.h"
@@ -52,6 +53,7 @@ bool connectedToU64 = false;
 
 C1541 *c1541_A;
 C1541 *c1541_B;
+C1581 *c1581_C;
 
 TreeBrowser *root_tree_browser;
 StreamMenu *root_menu;
@@ -162,6 +164,11 @@ extern "C" void ultimate_main(void *a)
     	c1541_B->init();
     }
 
+    c1581_C = new C1581('C');
+	if(c1581_C) {
+		c1581_C->init();
+	}
+
     reu_preloader = new REUPreloader();
     
     printf("All linked modules have been initialized and are now running.\n");
@@ -258,6 +265,8 @@ extern "C" void ultimate_main(void *a)
         delete c1541_A;
     if(c1541_B)
         delete c1541_B;
+    if(c1581_C)
+    	delete c1581_C;
     if(tape_controller)
 	    delete tape_controller;
     if(tape_recorder)

@@ -46,6 +46,7 @@ VPATH     = $(PATH_SW)/application \
 			$(PATH_SW)/infra \
 			$(PATH_SW)/io/flash \
 			$(PATH_SW)/drive \
+			$(PATH_SW)/drive/1581 \
 			$(PATH_SW)/components \
 			$(PATH_SW)/network \
 			$(PATH_SW)/userinterface \
