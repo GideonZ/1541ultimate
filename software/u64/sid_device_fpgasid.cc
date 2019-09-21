@@ -332,11 +332,11 @@ int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_quick(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 0);  // get access to socket and put SID1 in config mode
     int value = it->getValue();
-    it->store->find_item(CFG_FPGASID_SID1_FILTER)->setValue(value);
-    it->store->find_item(CFG_FPGASID_SID1_CRUNCY)->setValue(value);
-    it->store->find_item(CFG_FPGASID_SID1_MIXEDWAVE)->setValue(value);
-    it->store->find_item(CFG_FPGASID_SID1_REGDELAY)->setValue(value);
-    it->store->find_item(CFG_FPGASID_SID1_READBACK)->setValue(value * 3);
+    it->store->find_item(CFG_FPGASID_SID1_FILTER)->setValueQuietly(value);
+    it->store->find_item(CFG_FPGASID_SID1_CRUNCY)->setValueQuietly(value);
+    it->store->find_item(CFG_FPGASID_SID1_MIXEDWAVE)->setValueQuietly(value);
+    it->store->find_item(CFG_FPGASID_SID1_REGDELAY)->setValueQuietly(value);
+    it->store->find_item(CFG_FPGASID_SID1_READBACK)->setValueQuietly(value * 3);
     base[31] = getByte31Sid1(it->store);
     post(it); // restore
     return 1;
@@ -346,11 +346,11 @@ int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_quick(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 1);  // get access to socket and put SID1 in config mode
     int value = it->getValue();
-    it->store->find_item(CFG_FPGASID_SID2_FILTER)->setValue(value);
-    it->store->find_item(CFG_FPGASID_SID2_CRUNCY)->setValue(value);
-    it->store->find_item(CFG_FPGASID_SID2_MIXEDWAVE)->setValue(value);
-    it->store->find_item(CFG_FPGASID_SID2_REGDELAY)->setValue(value);
-    it->store->find_item(CFG_FPGASID_SID2_READBACK)->setValue(value * 3);
+    it->store->find_item(CFG_FPGASID_SID2_FILTER)->setValueQuietly(value);
+    it->store->find_item(CFG_FPGASID_SID2_CRUNCY)->setValueQuietly(value);
+    it->store->find_item(CFG_FPGASID_SID2_MIXEDWAVE)->setValueQuietly(value);
+    it->store->find_item(CFG_FPGASID_SID2_REGDELAY)->setValueQuietly(value);
+    it->store->find_item(CFG_FPGASID_SID2_READBACK)->setValueQuietly(value * 3);
     base[31] = getByte31Sid2(it->store);
     post(it); // restore
     return 1;
