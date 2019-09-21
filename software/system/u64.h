@@ -92,6 +92,7 @@
 #define C64_PLD_PORTB      ((volatile uint8_t *)(C64_IO_BASE + 0x17))
 #define C64_PLD_STATE0    (*(volatile uint8_t *)(C64_IO_BASE + 0x18))
 #define C64_PLD_STATE1    (*(volatile uint8_t *)(C64_IO_BASE + 0x19))
+#define C64_PADDLE_SWAP   (*(volatile uint8_t *)(C64_IO_BASE + 0x1A))
 #define C64_EMUSID1_WAVES (*(volatile uint8_t *)(C64_IO_BASE + 0x20))
 #define C64_EMUSID2_WAVES (*(volatile uint8_t *)(C64_IO_BASE + 0x21))
 #define C64_EMUSID1_RES   (*(volatile uint8_t *)(C64_IO_BASE + 0x22))

@@ -722,6 +722,7 @@ void U64Config :: effectuate_settings()
     U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
     C64_PLD_JOYCTRL  =  cfg->get_value(CFG_JOYSWAP) ^ 1;
+    C64_PADDLE_SWAP  =  cfg->get_value(CFG_JOYSWAP);
 
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
@@ -1616,6 +1617,7 @@ int swap_joystick()
     swap ^= 1;
     item->setValue(swap);
     C64_PLD_JOYCTRL = (uint8_t)(swap ^ 1);
+    C64_PADDLE_SWAP = (uint8_t)swap;
 
     printf("*S%d*", swap);
 
