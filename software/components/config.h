@@ -91,6 +91,7 @@ public:
     const int getValue() { return value; }
     const char *getString() { return string; }
     int  setValue(int v) { value = v; return setChanged(); }
+    void setValueQuietly(int v) { value = v; }
     void setString(const char *str);
     int next(int);
     int previous(int);
