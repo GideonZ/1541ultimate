@@ -369,8 +369,11 @@ int U64Config :: detectFPGASID(int socket)
 
     uint8_t id1 = base[0];
     uint8_t id2 = base[1];
+    uint8_t un1 = base[2];
+    uint8_t un2 = base[3];
+    uint8_t un3 = base[4];
 
-    printf("FPGASID Detection: %b %b\n", id1, id2);
+    printf("FPGASID Detection: %b %b (%b %b %b)\n", id1, id2, un1, un2, un3);
     // Read Identification
     if ((id1 == 0x1D) && (id2 == 0xF5)) {
         // FPGASID found
@@ -625,15 +628,6 @@ void U64Config :: U64SidAddressing :: effectuate_settings()
     C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK = cfg->get_value(CFG_STEREO_DIFF);
     C64_EMUSID_SPLIT =  C64_EMUSID_SPLIT_BAK = cfg->get_value(CFG_EMUSID_SPLIT);
 
-    SidDevice *dev = u64_configurator.getDevice(0);
-    if (dev) {
-        dev->set_address((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + ((int)base[0]) << 4 ));
-    }
-    dev = u64_configurator.getDevice(1);
-    if (dev) {
-        dev->set_address((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + ((int)base[1]) << 4 ));
-    }
-
     printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s) SlotSplit: %02X.  Emu1: %02X/%02X  Emu2: %02X/%02X  Emu Split: %02X\n",
             C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
             C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis4[C64_SID2_EN_BAK], C64_STEREO_ADDRSEL,
@@ -807,7 +801,7 @@ void U64Config :: fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split)
     }
 }
 
-void U64Config :: setFilter(ConfigItem *it)
+int U64Config :: setFilter(ConfigItem *it)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_SID_BASE + 0x1000);
     if (it->definition->id == CFG_EMUSID2_FILTER) {
@@ -849,9 +843,10 @@ void U64Config :: setFilter(ConfigItem *it)
         break;
     }
     set_sid_coefficients(base, coef, mul, div);
+    return 0;
 }
 
-void U64Config :: setMixer(ConfigItem *it)
+int U64Config :: setMixer(ConfigItem *it)
 {
     // Now, configure the mixer
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
@@ -867,23 +862,26 @@ void U64Config :: setMixer(ConfigItem *it)
         *(mixer++) = vol_left;
         *(mixer++) = vol_right;
     }
+    return 0;
 }
 
-void U64Config :: setPllOffset(ConfigItem *it)
+int U64Config :: setPllOffset(ConfigItem *it)
 {
 	if(it) {
 		pllOffsetPpm(it->getValue()); // Set correct mfrac
 	}
+    return 0;
 }
 
-void U64Config :: setScanMode(ConfigItem *it)
+int U64Config :: setScanMode(ConfigItem *it)
 {
 	if(it) {
 //		SetScanMode(it->value);
 	}
+    return 0;
 }
 
-void U64Config :: setLedSelector(ConfigItem *it)
+int U64Config :: setLedSelector(ConfigItem *it)
 {
     if(it) {
         ConfigStore *cfg = it->store;
@@ -891,9 +889,10 @@ void U64Config :: setLedSelector(ConfigItem *it)
         uint8_t sel1 = (uint8_t)cfg->get_value(CFG_LED_SELECT_1);
         U64_CASELED_SELECT = (sel1 << 4) | sel0;
     }
+    return 0;
 }
 
-void U64Config :: setSidEmuParams(ConfigItem *it)
+int U64Config :: setSidEmuParams(ConfigItem *it)
 {
     int value = it->getValue();
     switch(it->definition->id) {
@@ -916,6 +915,7 @@ void U64Config :: setSidEmuParams(ConfigItem *it)
         C64_EMUSID2_DIGI = value;
         break;
     }
+    return 0;
 }
 
 #define MENU_U64_SAVEEDID 1
@@ -1518,6 +1518,20 @@ void U64Config :: S_SetupDetectionAddresses()
     wait_ms(1);
 }
 
+void U64Config :: S_RestoreDetectionAddresses()
+{
+    C64_SID1_BASE    = C64_SID1_BASE_BAK;
+    C64_SID2_BASE    = C64_SID2_BASE_BAK;
+    C64_SID1_MASK    = C64_SID1_MASK_BAK;
+    C64_SID2_MASK    = C64_SID2_MASK_BAK;
+    C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK;
+    C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK;
+    C64_EMUSID1_MASK = C64_EMUSID1_MASK_BAK;
+    C64_EMUSID2_MASK = C64_EMUSID2_MASK_BAK;
+    C64_SID1_EN = C64_SID1_EN_BAK;
+    C64_SID2_EN = C64_SID2_EN_BAK;
+}
+
 int U64Config :: S_SidDetector(int &sid1, int &sid2)
 {
     uint32_t *begin = &__start_detect_sid;
@@ -1739,14 +1753,11 @@ void U64Config :: show_sid_addr(UserInterface *intf)
     intf->activate_uiobject(se);
 }
 
-void U64Config :: access_socket_pre(int socket)
+volatile uint8_t *U64Config :: access_socket_pre(int socket)
 {
     alt_irq_context irq_context = alt_irq_disable_all();
-    if (socket) {
-        C64_SID2_EN = 1;
-    } else {
-        C64_SID1_EN = 1;
-    }
+
+    S_SetupDetectionAddresses();
 
     if (!(C64_STOP & C64_HAS_STOPPED)) {
         if (c64) { // in case this gets called before the object is created
@@ -1762,18 +1773,24 @@ void U64Config :: access_socket_pre(int socket)
     } else {
         temporary_stop = false;
     }
+
+    volatile uint8_t *base;
+    if (socket) {
+        base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500);
+    } else {
+        base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400);
+    }
+    return base;
 }
 
 void U64Config :: access_socket_post(int socket)
 {
-    if (socket) {
-        C64_SID2_EN = C64_SID2_EN_BAK;
-    } else {
-        C64_SID1_EN = C64_SID1_EN_BAK;
-    }
+    S_RestoreDetectionAddresses();
 
     if (temporary_stop) {
-        C64_STOP = 0;
+        if (c64) {
+            c64->resume();
+        }
     }
 
     alt_irq_enable_all(irq_context);

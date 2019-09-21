@@ -17,6 +17,7 @@ class SidDeviceFpgaSid: public SidDevice {
     class FpgaSidConfig : ConfigurableObject
     {
         SidDeviceFpgaSid *parent;
+
     public:
         FpgaSidConfig(SidDeviceFpgaSid *parent);
         void effectuate_settings();
@@ -28,19 +29,22 @@ class SidDeviceFpgaSid: public SidDevice {
         static uint8_t getByte31Sid2(ConfigStore *cfg);
         static uint8_t getByte30Sid1(ConfigStore *cfg);
         static uint8_t getByte30Sid2(ConfigStore *cfg);
+        static void setItemsEnable(ConfigItem *it);
 
-        static void S_cfg_fpgasid_sid1_byte31    (ConfigItem *it);
-        static void S_cfg_fpgasid_sid1_digifix   (ConfigItem *it);
-        static void S_cfg_fpgasid_sid1_filterbias(ConfigItem *it);
-        static void S_cfg_fpgasid_sid1_outputmode(ConfigItem *it);
+        static int  S_cfg_fpgasid_mode           (ConfigItem *it);
 
-        static void S_cfg_fpgasid_sid2_byte31    (ConfigItem *it);
-        static void S_cfg_fpgasid_sid2_digifix   (ConfigItem *it);
-        static void S_cfg_fpgasid_sid2_filterbias(ConfigItem *it);
-        static void S_cfg_fpgasid_sid2_outputmode(ConfigItem *it);
+        static int  S_cfg_fpgasid_sid1_byte31    (ConfigItem *it);
+        static int  S_cfg_fpgasid_sid1_digifix   (ConfigItem *it);
+        static int  S_cfg_fpgasid_sid1_filterbias(ConfigItem *it);
+        static int  S_cfg_fpgasid_sid1_outputmode(ConfigItem *it);
+
+        static int  S_cfg_fpgasid_sid2_byte31    (ConfigItem *it);
+        static int  S_cfg_fpgasid_sid2_digifix   (ConfigItem *it);
+        static int  S_cfg_fpgasid_sid2_filterbias(ConfigItem *it);
+        static int  S_cfg_fpgasid_sid2_outputmode(ConfigItem *it);
     };
 
-    FpgaSidConfig config;
+    FpgaSidConfig *config;
 public:
     SidDeviceFpgaSid(int socket, volatile uint8_t *base);
     virtual ~SidDeviceFpgaSid();

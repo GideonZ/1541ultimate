@@ -8,6 +8,8 @@
 #include "sid_device_fpgasid.h"
 #include "config.h"
 #include <stdio.h>
+#include "c64.h"
+#include "dump_hex.h"
 
 #define CFG_FPGASID_MODE            0x01
 #define CFG_FPGASID_SID1_FILTER     0x10
@@ -62,13 +64,14 @@ static struct t_cfg_definition fpga_sid_config[] = {
     { CFG_TYPE_END,                CFG_TYPE_END,  "",                             "",   NULL,       0,  0, 0 } };
 
 
-SidDeviceFpgaSid::SidDeviceFpgaSid(int socket, volatile uint8_t *base) : SidDevice(socket, base), config(this)
+SidDeviceFpgaSid::SidDeviceFpgaSid(int socket, volatile uint8_t *base) : SidDevice(socket)
 {
     // we enter this constructor when the FPGASID is still in diag mode
     for(int i=0; i<8; i++) {
         unique[i] = base[i + 4];
     }
-    config.effectuate_settings();
+    config = new SidDeviceFpgaSid :: FpgaSidConfig(this);
+    config->effectuate_settings();
 }
 
 SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
@@ -81,6 +84,7 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     register_store(id, name, fpga_sid_config);
 
     // Make most settings 'hot' ;)
+    cfg->set_change_hook(CFG_FPGASID_MODE           , S_cfg_fpgasid_mode);
     cfg->set_change_hook(CFG_FPGASID_SID1_FILTER    , S_cfg_fpgasid_sid1_byte31 );
     cfg->set_change_hook(CFG_FPGASID_SID1_CRUNCY    , S_cfg_fpgasid_sid1_byte31 );
     cfg->set_change_hook(CFG_FPGASID_SID1_MIXEDWAVE , S_cfg_fpgasid_sid1_byte31 );
@@ -99,6 +103,9 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     cfg->set_change_hook(CFG_FPGASID_SID2_DIGIFIX   , S_cfg_fpgasid_sid2_digifix   );
     cfg->set_change_hook(CFG_FPGASID_SID2_FILTERBIAS, S_cfg_fpgasid_sid2_filterbias);
     cfg->set_change_hook(CFG_FPGASID_SID2_OUTPUTMODE, S_cfg_fpgasid_sid2_outputmode);
+
+    ConfigItem *it = cfg->find_item(CFG_FPGASID_MODE);
+    setItemsEnable(it);
 }
 
 uint8_t SidDeviceFpgaSid :: FpgaSidConfig :: getByte31Sid1(ConfigStore *cfg)
@@ -155,9 +162,8 @@ uint8_t SidDeviceFpgaSid :: FpgaSidConfig :: getByte30Sid2(ConfigStore *cfg)
 
 void SidDeviceFpgaSid :: FpgaSidConfig :: effectuate_settings()
 {
-    parent->pre();
     // Config SID 1 mode
-    volatile uint8_t *base = parent->currentAddress;
+    volatile uint8_t *base = parent->pre();
 
     base[25] = 0x80;
     base[26] = 0x65;
@@ -191,8 +197,7 @@ SidDeviceFpgaSid::~SidDeviceFpgaSid()
 volatile uint8_t *SidDeviceFpgaSid::FpgaSidConfig::pre(ConfigItem *it, int sid)
 {
     SidDeviceFpgaSid::FpgaSidConfig *obj = (SidDeviceFpgaSid::FpgaSidConfig *)it->store->get_first_object();
-    volatile uint8_t *base = obj->parent->currentAddress;
-    obj->parent->pre();
+    volatile uint8_t *base = obj->parent->pre();
     base[25] = (sid) ? 0x82 : 0x80;
     base[26] = 0x65;
     return base;
@@ -207,58 +212,102 @@ void SidDeviceFpgaSid::FpgaSidConfig::post(ConfigItem *it)
     obj->parent->post();
 }
 
-void SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_byte31(ConfigItem* it)
+void SidDeviceFpgaSid::FpgaSidConfig::setItemsEnable(ConfigItem *it)
+{
+    ConfigStore *store = it->store;
+    switch(it->getValue()) {
+    case 0: // mono
+        store->disable(CFG_FPGASID_SID2_FILTER);
+        store->disable(CFG_FPGASID_SID2_CRUNCY    );
+        store->disable(CFG_FPGASID_SID2_MIXEDWAVE );
+        store->disable(CFG_FPGASID_SID2_REGDELAY  );
+        store->disable(CFG_FPGASID_SID2_READBACK  );
+        store->disable(CFG_FPGASID_SID2_EXTIN     );
+        store->disable(CFG_FPGASID_SID2_DIGIFIX   );
+        store->disable(CFG_FPGASID_SID2_FILTERBIAS);
+        store->disable(CFG_FPGASID_SID2_OUTPUTMODE);
+        break;
+    default:
+        store->enable(CFG_FPGASID_SID2_FILTER);
+        store->enable(CFG_FPGASID_SID2_CRUNCY    );
+        store->enable(CFG_FPGASID_SID2_MIXEDWAVE );
+        store->enable(CFG_FPGASID_SID2_REGDELAY  );
+        store->enable(CFG_FPGASID_SID2_READBACK  );
+        store->enable(CFG_FPGASID_SID2_EXTIN     );
+        store->enable(CFG_FPGASID_SID2_DIGIFIX   );
+        store->enable(CFG_FPGASID_SID2_FILTERBIAS);
+        store->enable(CFG_FPGASID_SID2_OUTPUTMODE);
+        break;
+    }
+}
+
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_mode(ConfigItem *it)
+{
+    setItemsEnable(it);
+    S_cfg_fpgasid_sid1_outputmode(it);
+    return 1;
+}
+
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_byte31(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 0);  // get access to socket and put SID1 in config mode
     base[31] = getByte31Sid1(it->store);
     post(it); // restore
+    return 0;
 }
 
-void SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_digifix(ConfigItem* it)
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_digifix(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 0);  // get access to socket and put SID1 in config mode
     base[29] = (uint8_t)((int8_t)it->getValue());
     post(it); // restore
+    return 0;
 }
 
-void SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_filterbias(ConfigItem* it)
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_filterbias(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 0);  // get access to socket and put SID1 in config mode
     base[28] = (uint8_t)((int8_t)it->getValue());
     post(it); // restore
+    return 0;
 }
 
-void SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_outputmode(ConfigItem* it)
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_outputmode(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 0);  // get access to socket and put SID1 in config mode
     base[31] = getByte30Sid1(it->store);
     post(it); // restore
+    return 0;
 }
 
-void SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_byte31(ConfigItem* it)
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_byte31(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 1);  // get access to socket and put SID2 in config mode
     base[31] = getByte31Sid2(it->store);
     post(it); // restore
+    return 0;
 }
 
-void SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_digifix(ConfigItem* it)
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_digifix(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 1);  // get access to socket and put SID2 in config mode
     base[29] = (uint8_t)((int8_t)it->getValue());
     post(it); // restore
+    return 0;
 }
 
-void SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_filterbias(ConfigItem* it)
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_filterbias(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 1);  // get access to socket and put SID2 in config mode
     base[28] = (uint8_t)((int8_t)it->getValue());
     post(it); // restore
+    return 0;
 }
 
-void SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_outputmode(ConfigItem* it)
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_outputmode(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 1);  // get access to socket and put SID2 in config mode
     base[31] = getByte30Sid2(it->store);
     post(it); // restore
+    return 0;
 }

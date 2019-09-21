@@ -15,11 +15,10 @@ public:
     int socket;
     volatile uint8_t *currentAddress;
 
-    SidDevice(int socket, volatile uint8_t *base);
+    SidDevice(int socket);
     virtual ~SidDevice();
 
-    void set_address(volatile uint8_t *base);
-    void pre(void);
+    volatile uint8_t *pre(void);
     void post(void);
 };
 
