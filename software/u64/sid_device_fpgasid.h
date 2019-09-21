@@ -17,7 +17,7 @@ class SidDeviceFpgaSid: public SidDevice {
     class FpgaSidConfig : ConfigurableObject
     {
         SidDeviceFpgaSid *parent;
-
+        static void S_effectuate(volatile uint8_t *base, ConfigStore *store);
     public:
         FpgaSidConfig(SidDeviceFpgaSid *parent);
         void effectuate_settings();
@@ -32,12 +32,13 @@ class SidDeviceFpgaSid: public SidDevice {
         static void setItemsEnable(ConfigItem *it);
 
         static int  S_cfg_fpgasid_mode           (ConfigItem *it);
-
+        static int  S_cfg_fpgasid_sid1_quick     (ConfigItem *it);
         static int  S_cfg_fpgasid_sid1_byte31    (ConfigItem *it);
         static int  S_cfg_fpgasid_sid1_digifix   (ConfigItem *it);
         static int  S_cfg_fpgasid_sid1_filterbias(ConfigItem *it);
         static int  S_cfg_fpgasid_sid1_outputmode(ConfigItem *it);
 
+        static int  S_cfg_fpgasid_sid2_quick     (ConfigItem *it);
         static int  S_cfg_fpgasid_sid2_byte31    (ConfigItem *it);
         static int  S_cfg_fpgasid_sid2_digifix   (ConfigItem *it);
         static int  S_cfg_fpgasid_sid2_filterbias(ConfigItem *it);
