@@ -1043,7 +1043,10 @@ uint8_t U64Config :: GetSidType(int slot)
 
     switch(slot) {
     case 0: // slot 1A
-        val = cfg->get_value(CFG_SID1_TYPE);
+        if (!(sockets.cfg->get_value(CFG_SOCKET1_ENABLE))) {
+            return 0;
+        }
+        val = sockets.cfg->get_value(CFG_SID1_TYPE);
         switch (val) {
         case SID_TYPE_NONE:
             return 0;
@@ -1062,7 +1065,10 @@ uint8_t U64Config :: GetSidType(int slot)
         break;
 
     case 1: // slot 2A
-        val = cfg->get_value(CFG_SID2_TYPE);
+        if (!(sockets.cfg->get_value(CFG_SOCKET2_ENABLE))) {
+            return 0;
+        }
+        val = sockets.cfg->get_value(CFG_SID2_TYPE);
         switch (val) {
         case SID_TYPE_NONE:
             return 0;
@@ -1082,22 +1088,24 @@ uint8_t U64Config :: GetSidType(int slot)
 
     case 2:
     case 3:
+    case 6:
+    case 7:
         if (cfg->get_value(CFG_ALLOW_EMUSID)) {
-            return 1;
+            return 3;
         } else {
             return 0;
         }
 
     case 4: // slot 1B
-        val = cfg->get_value(CFG_SID1_TYPE);
-        if (val == 4) { // fpgaSID
+        val = sockets.cfg->get_value(CFG_SID1_TYPE);
+        if (val > 2) {
             return 3;
         }
         return 0; // no "other" SID available in slot 1.
 
     case 5: // slot 2B
-        val = cfg->get_value(CFG_SID2_TYPE);
-        if (val == 4) { // fpgaSID
+        val = sockets.cfg->get_value(CFG_SID2_TYPE);
+        if (val > 2) {
             return 3;
         }
         return 0; // no "other" SID available in slot 2.
@@ -1235,6 +1243,18 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
     }
 }
 
+void U64Config :: unmapAllSids(void)
+{
+    C64_SID1_BASE = C64_SID1_BASE_BAK = UNMAPPED_BASE;
+    C64_SID1_MASK = C64_SID1_MASK_BAK = UNMAPPED_MASK;
+    C64_SID2_BASE = C64_SID2_BASE_BAK = UNMAPPED_BASE;
+    C64_SID2_MASK = C64_SID2_MASK_BAK = UNMAPPED_MASK;
+    C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK = UNMAPPED_BASE;
+    C64_EMUSID1_MASK = C64_EMUSID1_MASK_BAK = UNMAPPED_MASK;
+    C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK = UNMAPPED_BASE;
+    C64_EMUSID2_MASK = C64_EMUSID2_MASK_BAK = UNMAPPED_MASK;
+}
+
 bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
 {
     // the first reset of the machine should not re-initialize the settings from the config
@@ -1252,20 +1272,18 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         count = 8;
     }
 
-    C64_SID1_BASE = C64_SID1_BASE_BAK = UNMAPPED_BASE;
-    C64_SID1_MASK = C64_SID1_MASK_BAK = UNMAPPED_MASK;
-
+    unmapAllSids();
     memset(mappedOnSlot, 0, 8);
     mappedSids = 0;
     bool failed = false;
+
     for (int i=0; i < count; i++) {
         if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], false)) {
             failed = true;
         }
     }
     if (failed) {
-        C64_SID1_BASE = C64_SID1_BASE_BAK = UNMAPPED_BASE;
-        C64_SID1_MASK = C64_SID1_MASK_BAK = UNMAPPED_MASK;
+        unmapAllSids();
         mappedSids = 0;
         memset(mappedOnSlot, 0, 8);
         failed = false;
@@ -1276,8 +1294,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         }
     }
     if (failed) {
-        C64_SID1_BASE = C64_SID1_BASE_BAK = UNMAPPED_BASE;
-        C64_SID1_MASK = C64_SID1_MASK_BAK = UNMAPPED_MASK;
+        unmapAllSids();
         mappedSids = 0;
         memset(mappedOnSlot, 0, 8);
         failed = false;
