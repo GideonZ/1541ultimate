@@ -291,7 +291,7 @@ int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_filterbias(ConfigItem* i
 int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid1_outputmode(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 0);  // get access to socket and put SID1 in config mode
-    base[31] = getByte30Sid1(it->store);
+    base[30] = getByte30Sid1(it->store);
     post(it); // restore
     return 0;
 }
@@ -323,7 +323,7 @@ int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_filterbias(ConfigItem* i
 int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_outputmode(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 1);  // get access to socket and put SID2 in config mode
-    base[31] = getByte30Sid2(it->store);
+    base[30] = getByte30Sid2(it->store);
     post(it); // restore
     return 0;
 }
