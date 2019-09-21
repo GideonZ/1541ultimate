@@ -64,6 +64,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     bool SetSidAddress(int slot, bool single, uint8_t actualType, uint8_t base);
     bool MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any);
     void SetMixerAutoSid(uint8_t *slots, int count);
+    static void unmapAllSids(void);
     static void reset_task(void *a);
     void run_reset_task();
     static void show_mapping(uint8_t *base, uint8_t *mask, uint8_t *split, int count);
