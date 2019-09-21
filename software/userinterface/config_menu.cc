@@ -80,6 +80,10 @@ void ConfigBrowserState :: change(void)
     int max;
     t_cfg_func func;
 
+    if (!it->isEnabled()) {
+        return;
+    }
+
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
             browser->context(it->getValue() - it->definition->min);
@@ -107,15 +111,27 @@ void ConfigBrowserState :: change(void)
 void ConfigBrowserState :: increase(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    it->next(1);
-    update_selected();
+    if (!it->isEnabled()) {
+        return;
+    }
+    if (it->next(1)) {
+        refresh = true;
+    } else {
+        update_selected();
+    }
 }
     
 void ConfigBrowserState :: decrease(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    it->previous(1);
-    update_selected();
+    if (!it->isEnabled()) {
+        return;
+    }
+    if (it->previous(1)) {
+        refresh = true;
+    } else {
+        update_selected();
+    }
 }
     
 void ConfigBrowser :: on_exit(void)

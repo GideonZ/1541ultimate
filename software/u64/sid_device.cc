@@ -8,24 +8,20 @@
 #include "sid_device.h"
 #include "u64_config.h"
 
-SidDevice::SidDevice(int socket, volatile uint8_t *base)
+SidDevice::SidDevice(int socket)
 {
     this->socket = socket;
-    currentAddress = base;
+    currentAddress = 0;
 }
 
 SidDevice::~SidDevice()
 {
 }
 
-void SidDevice::set_address(volatile uint8_t *base)
+volatile uint8_t *SidDevice::pre(void)
 {
-    currentAddress = base;
-}
-
-void SidDevice::pre(void)
-{
-    u64_configurator.access_socket_pre(socket);
+    currentAddress = u64_configurator.access_socket_pre(socket);
+    return currentAddress;
 }
 
 void SidDevice::post(void)

@@ -348,6 +348,14 @@ void ConfigStore :: disable(uint8_t id)
     }
 }
 
+void ConfigStore :: enable(uint8_t id)
+{
+    ConfigItem *i = find_item(id);
+    if (i) {
+        i->setEnabled(true);
+    }
+}
+
 int ConfigStore :: get_value(uint8_t id)
 {
     ConfigItem *i = find_item(id);
@@ -633,9 +641,10 @@ void ConfigItem :: setString(const char *s)
     }
 }
 
-void ConfigItem :: next(int a)
+int ConfigItem :: next(int a)
 {
     int value = getValue();
+    int ret = 0;
     switch(definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
@@ -644,17 +653,19 @@ void ConfigItem :: next(int a)
             while (value > definition->max) {
                 value -= (1 + definition->max - definition->min);
             }
-            setValue(value);
+            ret = setValue(value);
             break;
 
         default:
             break;
     }
+    return ret;
 }
 
-void ConfigItem :: previous(int a)
+int ConfigItem :: previous(int a)
 {
     int value = getValue();
+    int ret = 0;
     switch(definition->type) {
         case CFG_TYPE_ENUM:
         case CFG_TYPE_VALUE:
@@ -663,21 +674,24 @@ void ConfigItem :: previous(int a)
             while (value < definition->min) {
                 value += (1 + definition->max - definition->min);
             }
-            setValue(value);
+            ret = setValue(value);
             break;
         default:
             break;
     }
+    return ret;
 }
 
-void ConfigItem :: setChanged()
+int ConfigItem :: setChanged()
 {
     store->set_need_flash_write();
+    int ret = 0;
     if(hook) {
-    	hook(this);
+        ret = hook(this);
     } else {
         store->set_need_effectuate();
     }
+    return ret;
 }
 
 ConfigSetting :: ConfigSetting(int index, ConfigItem *p, char *name) : setting_name(name)

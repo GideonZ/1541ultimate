@@ -69,6 +69,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     static void show_mapping(uint8_t *base, uint8_t *mask, uint8_t *split, int count);
     static void DetectSidImpl(uint8_t *buffer) __attribute__ ((section ("detect_sid"), used));
     static void S_SetupDetectionAddresses();
+    static void S_RestoreDetectionAddresses();
     static int S_SidDetector(int &sid1, int &sid2);
     static int detectRemakes(int socket);
     int detectFPGASID(int socket);
@@ -82,12 +83,13 @@ public:
     int executeCommand(SubsysCommand *cmd);
     void effectuate_settings();
 
-    static void setPllOffset(ConfigItem *it);
-    static void setScanMode(ConfigItem *it);
-    static void setMixer(ConfigItem *it);
-    static void setFilter(ConfigItem *it);
-    static void setSidEmuParams(ConfigItem *it);
-    static void setLedSelector(ConfigItem *it);
+    static int setPllOffset(ConfigItem *it);
+    static int setScanMode(ConfigItem *it);
+    static int setMixer(ConfigItem *it);
+    static int setFilter(ConfigItem *it);
+    static int setSidEmuParams(ConfigItem *it);
+    static int setLedSelector(ConfigItem *it);
+
     static void SetResampleFilter(int mode);
     static void auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int count);
     static void get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split);
@@ -96,7 +98,7 @@ public:
     bool SidAutoConfig(int count, t_sid_definition *requested);
     static void show_sid_addr(UserInterface *intf);
 
-    void access_socket_pre(int socket);
+    volatile uint8_t *access_socket_pre(int socket);
     void access_socket_post(int socket);
 };
 
