@@ -180,7 +180,7 @@ static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
-static const char *sid_types[] = { "None", "6581", "8580", "SidFX", "fpgaSID" };
+static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSid Ultimate", "ARMSID", "ARM2SID" };
 static const char *sid_shunt[] = { "Off", "On" };
 static const char *sid_caps[] = { "470 pF", "22 nF" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
@@ -254,8 +254,8 @@ struct t_cfg_definition u64_cfg[] = {
 struct t_cfg_definition u64_sid_detection_cfg[] = {
     { CFG_SOCKET1_ENABLE,       CFG_TYPE_ENUM, "SID Socket 1",                 "%s", en_dis4,      0,  1, 0 },
     { CFG_SOCKET2_ENABLE,       CFG_TYPE_ENUM, "SID Socket 2",                 "%s", en_dis4,      0,  1, 0 },
-    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  2, 0 },
-    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  2, 0 },
+    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  6, 0 },
+    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  6, 0 },
     { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID2_SHUNT,           CFG_TYPE_ENUM, "SID Socket 2 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID1_CAPS,            CFG_TYPE_ENUM, "SID Socket 1 Capacitors",      "%s", sid_caps,     0,  1, 0 },
@@ -351,6 +351,70 @@ U64Config :: U64SidSockets :: U64SidSockets()
     }
 }
 
+int U64Config :: detectRemakes(int socket)
+{
+    volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
+
+    // For FPGASID: Switch to DIAG mode
+    base[25] = 0xEE;
+    base[26] = 0xAB;
+
+    // Read Identification
+    if ((base[0] == 0x1D) && (base[1] == 0xF5)) {
+        // FPGASID found
+        base[25] = 0;
+        base[26] = 0;
+        return 3;
+    }
+
+    // OK, it's not FPGA SID.. Maybe it's Swinsid Ultimate or ARM(2)SID
+
+    base[29] = 0;
+    C64_PEEK(2); // dummy cycle
+    base[30] = 0;
+    C64_PEEK(2); // dummy cycle
+    base[31] = 0;
+    C64_PEEK(2); // dummy cycle
+
+    wait_ms(1);
+
+    base[29] = 'S';
+    C64_PEEK(2); // dummy cycle
+    base[30] = 'I';
+    C64_PEEK(2); // dummy cycle
+    base[31] = 'D';
+    C64_PEEK(2); // dummy cycle
+
+    wait_ms(1);
+
+    uint8_t id1 = base[27];
+    C64_PEEK(2); // dummy cycle
+    uint8_t id2 = base[28];
+    C64_PEEK(2); // dummy cycle
+    base[29] = 0; // clear to be safe
+
+    if ((id1 == 'S') && (id2 == 'W')) {
+        base[29] = 0;
+        C64_PEEK(2); // dummy cycle
+        return 4; // SwinSid Ultimate
+    }
+
+    if (((id1 == 'N') && (id2 == 'O')) ||
+        ((id1 == 'n') && (id2 == 'o'))) {
+        base[31] = 'I';
+        C64_PEEK(2); // dummy cycle
+        uint8_t id1 = base[27];
+        base[29] = 0;
+        C64_PEEK(2); // dummy cycle
+        if ((id1 == 'L') || (id1 == 'R')) {
+            return 6; // ARM2SID
+        }
+        return 5; // ARMSID
+    }
+
+    return 0;
+}
+
 void U64Config :: U64SidSockets :: detect(void)
 {
     int sid1, sid2;
@@ -358,6 +422,15 @@ void U64Config :: U64SidSockets :: detect(void)
     while (C64 :: c64_reset_detect())
         ;
     S_SidDetector(sid1, sid2);
+    printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
+
+    if (!sid1) {
+        sid1 = detectRemakes(0);
+    }
+    if (!sid2) {
+        sid2 = detectRemakes(1);
+    }
+
     printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
 
     // Configuration has changed? Then disable the sockets until the user
