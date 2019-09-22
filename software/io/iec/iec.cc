@@ -734,7 +734,7 @@ void IecInterface :: get_warp_error(void)
 
 void IecInterface :: save_copied_disk()
 {
-    char buffer[40];
+    static char buffer[40];
     int save_result;
     File *f = 0;
     int res;
@@ -744,7 +744,9 @@ void IecInterface :: save_copied_disk()
     static_bin_image.num_tracks = 35; // standard!
 
 	// buffer[0] = 0;
-	static_bin_image.get_sensible_name(buffer);
+    if (cmd_ui->cfg->get_value(CFG_USERIF_ULTICOPY_NAME)) {
+        static_bin_image.get_sensible_name(buffer);
+    }
 	res = cmd_ui->string_box("Give name for copied disk..", buffer, 22);
 	if(res > 0) {
 		fix_filename(buffer);
