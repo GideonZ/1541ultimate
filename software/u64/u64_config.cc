@@ -378,9 +378,6 @@ int U64Config :: detectFPGASID(int socket)
     if ((id1 == 0x1D) && (id2 == 0xF5)) {
         // FPGASID found
         sidDevice[socket] = new SidDeviceFpgaSid(socket, base);
-
-        base[25] = 0;
-        base[26] = 0;
         return SID_TYPE_FPGASID;
     }
     return SID_TYPE_NONE;
@@ -440,33 +437,39 @@ int U64Config :: detectRemakes(int socket)
 
 void U64Config :: U64SidSockets :: detect(void)
 {
-    int sid1, sid2, fpgasid1, fpgasid2;
+    int sid1 = 0, sid2 = 0, realsid1, realsid2;
     C64_MODE = C64_MODE_UNRESET;
     while (C64 :: c64_reset_detect())
         ;
 
     S_SetupDetectionAddresses();
+    sid1 = u64_configurator.detectFPGASID(0);
 
-    fpgasid1 = u64_configurator.detectFPGASID(0);
-    fpgasid2 = u64_configurator.detectFPGASID(1);
+    S_SetupDetectionAddresses();
+    sid2 = u64_configurator.detectFPGASID(1);
 
-    S_SidDetector(sid1, sid2);
-
-    if (fpgasid1) {
-        sid1 = SID_TYPE_FPGASID;
+    S_SetupDetectionAddresses();
+    if (sid1 == SID_TYPE_NONE) {
+        sid1 = detectRemakes(0);
     }
-    if (fpgasid2) {
-        sid2 = SID_TYPE_FPGASID;
+
+    S_SetupDetectionAddresses();
+    if (sid2 == SID_TYPE_NONE) {
+        sid2 = detectRemakes(1);
+    }
+
+    if ((sid1 == SID_TYPE_NONE) || (sid2 == SID_TYPE_NONE)) {
+        S_SidDetector(realsid1, realsid2);
+        if (realsid1 && sid1 == SID_TYPE_NONE) {
+            sid1 = realsid1;
+        }
+        if (realsid2 && sid2 == SID_TYPE_NONE) {
+            sid2 = realsid2;
+        }
     }
 
     printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
 
-    if (!sid1) {
-        sid1 = detectRemakes(0);
-    }
-    if (!sid2) {
-        sid2 = detectRemakes(1);
-    }
 
     // Configuration has changed? Then disable the sockets until the user
     // has approved the detection. We only do this for 12V. We simply enable
@@ -661,7 +664,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_LED_SELECT_1, U64Config::setLedSelector);
         effectuate_settings();
         sockets.effectuate_settings();
-        mixer.effectuate_settings();
+        mixercfg.effectuate_settings();
         ultisids.effectuate_settings();
         sidaddressing.effectuate_settings();
         sidDevice[0] = NULL;
@@ -1211,7 +1214,7 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
     static const uint8_t channelMap[4] = { 4, 6, 0, 2 };
 
     uint8_t selectedVolumes[4];
-    ConfigStore *cs = this->mixer.cfg;
+    ConfigStore *cs = this->mixercfg.cfg;
     selectedVolumes[0] = volume_ctrl[cs->get_value(CFG_MIXER2_VOL)];
     selectedVolumes[1] = volume_ctrl[cs->get_value(CFG_MIXER3_VOL)];
     selectedVolumes[2] = volume_ctrl[cs->get_value(CFG_MIXER0_VOL)];

@@ -54,7 +54,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
         void effectuate_settings();
     };
 
-    U64Mixer mixer;
+    U64Mixer mixercfg;
     U64SidSockets sockets;
     U64UltiSids ultisids;
     U64SidAddressing sidaddressing;
