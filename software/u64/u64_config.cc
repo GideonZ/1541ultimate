@@ -1661,8 +1661,8 @@ void U64Config :: auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int 
     // are already don't care. This fills up the address space with
     // mirrors without introducing overlaps that were not already there.
 
-    printf("Before:\n");
-    show_mapping(base, mask, split, count);
+    //printf("Before:\n");
+    //show_mapping(base, mask, split, count);
 
     for (int i=0; i<4; i++) {
         base[i] &= ~split[i];
@@ -1711,8 +1711,8 @@ void U64Config :: auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int 
         }
     }
 
-    printf("After:\n");
-    show_mapping(base, mask, split, count);
+    //printf("After:\n");
+    //show_mapping(base, mask, split, count);
 }
 
 void U64Config :: show_mapping(uint8_t *base, uint8_t *mask, uint8_t *split, int count)
@@ -1786,7 +1786,7 @@ void U64Config :: show_sid_addr(UserInterface *intf)
 
 volatile uint8_t *U64Config :: access_socket_pre(int socket)
 {
-    alt_irq_context irq_context = alt_irq_disable_all();
+    irq_context = alt_irq_disable_all();
 
     S_SetupDetectionAddresses();
 
