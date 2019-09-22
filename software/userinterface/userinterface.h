@@ -25,6 +25,7 @@
 #define CFG_USERIF_ITYPE       0x08
 #define CFG_USERIF_SELECTED_BG 0x09
 #define CFG_USERIF_CFG_SAVE    0x0A
+#define CFG_USERIF_ULTICOPY_NAME 0x0B
 
 class UserInterface : public ConfigurableObject, public HostClient
 {
