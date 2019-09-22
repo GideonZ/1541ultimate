@@ -79,6 +79,26 @@ SidDeviceFpgaSid::SidDeviceFpgaSid(int socket, volatile uint8_t *base) : SidDevi
     config->effectuate_settings();
 }
 
+void SidDeviceFpgaSid :: SetSidType(int type)
+{
+    volatile uint8_t *base = pre();
+    pre_mode = C64_MODE;
+    C64_MODE = MODE_ULTIMAX; // force I/O range on
+
+    type--; // receive 1 = 6581, 2 = 8580 => map to 0 and 1
+    base[25] = 0x80;
+    base[26] = 0x65;
+
+    base[31] = (type) ? 0xFF : 0x40; // set bit bit 7 and 5..0 to '1' when 8580. ExtIn is DigiFix for 8580 and disabled for 6581
+
+    base[25] = 0x00;
+    base[26] = 0x00;
+
+    C64_MODE = pre_mode;
+    post();
+}
+
+
 SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
 {
     this->parent = parent;
