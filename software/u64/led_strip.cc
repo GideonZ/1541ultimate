@@ -125,7 +125,8 @@ void LedStrip :: effectuate_settings(void)
     U64_PWM_DUTY = 0xC0;
 }
 
-void LedStrip :: hot_effectuate(ConfigItem *item)
+int LedStrip :: hot_effectuate(ConfigItem *item)
 {
     item->store->effectuate();
+    return 0;
 }
