@@ -33,6 +33,7 @@ class SidDeviceFpgaSid: public SidDevice {
         static void setItemsEnable(ConfigItem *it);
 
         static int  S_cfg_fpgasid_mode           (ConfigItem *it);
+        static int  S_cfg_fpgasid_leds           (ConfigItem *it);
         static int  S_cfg_fpgasid_sid1_quick     (ConfigItem *it);
         static int  S_cfg_fpgasid_sid1_byte31    (ConfigItem *it);
         static int  S_cfg_fpgasid_sid1_digifix   (ConfigItem *it);
