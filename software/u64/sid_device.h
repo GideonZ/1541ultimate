@@ -12,12 +12,14 @@
 
 class SidDevice {
 public:
+    uint8_t pre_mode;
     int socket;
     volatile uint8_t *currentAddress;
 
     SidDevice(int socket);
     virtual ~SidDevice();
 
+    virtual void SetSidType(int type) { }
     volatile uint8_t *pre(void);
     void post(void);
 };

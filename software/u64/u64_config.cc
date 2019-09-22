@@ -656,7 +656,10 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 		struct t_cfg_definition *def = u64_cfg;
 		register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
 
-		sockets.detect();
+        sidDevice[0] = NULL;
+        sidDevice[1] = NULL;
+
+        sockets.detect();
 
         cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config::setScanMode);
         cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
@@ -667,8 +670,6 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         mixercfg.effectuate_settings();
         ultisids.effectuate_settings();
         sidaddressing.effectuate_settings();
-        sidDevice[0] = NULL;
-        sidDevice[1] = NULL;
 
         uint8_t rev = (U2PIO_BOARDREV >> 3);
         if (rev != 0x13) {
@@ -1173,6 +1174,14 @@ bool U64Config :: SetSidAddress(int slot, bool single, uint8_t actualType, uint8
 void U64Config :: SetSidType(int slot, uint8_t sidType)
 {
     printf("Set SID type of logical SID %d to %d.\n", slot, sidType);
+    if (slot < 2) {
+        SidDevice *dev = sidDevice[slot];
+        if (dev) {
+            dev->SetSidType(sidType);
+        } else {
+            printf("Null pointer.\n");
+        }
+    }
 }
 
 bool U64Config :: MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any)

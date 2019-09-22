@@ -21,6 +21,7 @@ class SidDeviceFpgaSid: public SidDevice {
     public:
         FpgaSidConfig(SidDeviceFpgaSid *parent);
         void effectuate_settings();
+        ConfigStore *getConfigStore(void) { return cfg; }
 
         static volatile uint8_t *pre(ConfigItem *it, int sid);
         static void post(ConfigItem *it);
@@ -49,6 +50,7 @@ public:
     SidDeviceFpgaSid(int socket, volatile uint8_t *base);
     virtual ~SidDeviceFpgaSid();
 
+    void SetSidType(int type);
 };
 
 #endif /* SID_DEVICE_FPGASID_H_ */
