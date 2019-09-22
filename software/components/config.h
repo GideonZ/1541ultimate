@@ -50,7 +50,7 @@ class ConfigPage;
 class ConfigStore;
 class ConfigurableObject;
 class ConfigItem;
-typedef void (*t_change_hook)(ConfigItem *);
+typedef int (*t_change_hook)(ConfigItem *);
 
 class ConfigSetting
 {
@@ -69,7 +69,7 @@ class ConfigItem
     int  value;
     char *string;
 
-    void setChanged(void);
+    int setChanged(void);
     int  pack(uint8_t *buffer, int len);
     void unpack(uint8_t *buffer, int len);
     void reset(void);
@@ -90,10 +90,11 @@ public:
 
     const int getValue() { return value; }
     const char *getString() { return string; }
-    void setValue(int v) { value = v; setChanged(); }
+    int  setValue(int v) { value = v; return setChanged(); }
+    void setValueQuietly(int v) { value = v; }
     void setString(const char *str);
-    void next(int);
-    void previous(int);
+    int next(int);
+    int previous(int);
 
     friend class ConfigStore;
     friend class RtcConfigStore;
@@ -142,6 +143,8 @@ public:
 
     void set_change_hook(uint8_t id, t_change_hook hook);
     void disable(uint8_t id);
+    void enable(uint8_t id);
+    ConfigurableObject *get_first_object(void) { return objects[0]; }
 
     ConfigItem *find_item(uint8_t id);
     int  get_value(uint8_t id);

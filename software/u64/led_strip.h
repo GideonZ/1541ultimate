@@ -22,7 +22,7 @@ class LedStrip : public ConfigurableObject
     volatile uint8_t mode, intensity, sidsel;
     volatile uint8_t red, green, blue;
     static void task(void *);
-    static void hot_effectuate(ConfigItem *item);
+    static int hot_effectuate(ConfigItem *item);
 public:
     LedStrip();
     void effectuate_settings(void);

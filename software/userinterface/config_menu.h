@@ -46,7 +46,7 @@ class BrowsableConfigItem : public Browsable
 public:
 	BrowsableConfigItem(ConfigItem *i) {
 		item = i;
-		selectable = i->isEnabled();
+		selectable = true; // i->isEnabled();
 	}
 	~BrowsableConfigItem() {}
 
@@ -125,7 +125,8 @@ public:
 	BrowsableConfigRoot()  : children(4, NULL) {
 
 	}
-	~BrowsableConfigRoot() {}
+	~BrowsableConfigRoot() {
+	}
 
 	IndexedList<Browsable *> *getSubItems(int &error) {
 		if (children.get_elements() == 0) {
