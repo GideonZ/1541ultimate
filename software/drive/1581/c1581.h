@@ -109,7 +109,7 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
 		int findFreeSector(uint8_t *track, uint8_t *sector);
 		
 		int readFile(uint8_t* filename, uint8_t* buffer, int *size);
-		int getFileTrackSector(char *filename, uint8_t *track, uint8_t *sector);
+		int getFileTrackSector(char *filename, uint8_t *track, uint8_t *sector, bool deleted);
 		int setTrackSectorAllocation(uint8_t track, uint8_t sector, bool allocate);
 		int getNextFileSector(uint8_t* filename);
 

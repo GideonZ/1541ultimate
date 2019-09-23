@@ -186,7 +186,10 @@ int C1581 :: executeCommand(SubsysCommand *cmd)
 			strcpy(mounted_filename, cmd->filename.c_str());
 
 			mount_d81(false, file);
-			c64->unfreeze();
+
+			//c64->unfreeze();
+			SubsysCommand *c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,C64_UNFREEZE, 0, "", "");
+			c64_command->execute();
 		}
 		break;
 		default:
@@ -294,14 +297,7 @@ int C1581::bufferRead(uint8_t track, uint8_t sector, uint8_t buffer)
 
 void C1581::writeSector(void)
 {
-	//uint32_t offset = trackOffset[curtrack-1];
-	//offset = offset + cursector * BLOCK_SIZE;
-
-	//for (int x = 0; x < BLOCK_SIZE; x++)
-	//	mount_file[offset + x] = sectorBuffer[x];
-
 	write_d81();
-
 	return;
 }
 
@@ -363,8 +359,6 @@ int C1581::findFreeSector(uint8_t *track, uint8_t *sector)
 	alloc.sector = 0;
 	uint8_t *bamdata = BAMCache1 + 0x10;
 
-	// bamp[1 + alloc.sector / 8] & (1 << (alloc.sector % 8));
-
 	while (1)
 	{
 		if (bamdata[offset] > 0)
@@ -389,11 +383,6 @@ int C1581::findFreeSector(uint8_t *track, uint8_t *sector)
 						// test output
 						//printf("\n * Track %d, Sector %d", alloc.track, alloc.sector);
 						return ERR_OK;
-					}
-					else
-					{
-						// test output
-						//printf("\n x Track %d, Sector %d", alloc.track, alloc.sector);
 					}
 
 					bit = bit / 2;	
@@ -485,7 +474,7 @@ int C1581::setTrackSectorAllocation(uint8_t track, uint8_t sector, bool allocate
 	return IEC_OK;
 }
 
-int C1581::getFileTrackSector(char *filename, uint8_t *track, uint8_t *sector)
+int C1581::getFileTrackSector(char *filename, uint8_t *track, uint8_t *sector, bool deleted)
 {
 	static bool firstcall = true;
 	static int dirctr = 0;
@@ -501,29 +490,31 @@ int C1581::getFileTrackSector(char *filename, uint8_t *track, uint8_t *sector)
 
 	while (dirptr != -1)
 	{
-		char line[17];
-		uint8_t z = 0;
-		for(; z < 16; z++)
+		if((deleted == false && dirEntry->file_type != 0) || deleted == true)
 		{
-			if (dirEntry->filename[z] == 0xa0)
-				break;
+			char line[17];
+			uint8_t z = 0;
+			for(; z < 16; z++)
+			{
+				if (dirEntry->filename[z] == 0xa0)
+					break;
 
-			line[z] = dirEntry->filename[z];
+				line[z] = dirEntry->filename[z];
+			}
+
+			line[z] = 0;
+
+			if (strcmp(line, filename) == 0)
+			{
+				*track = dirEntry->first_data_track;
+				*sector = dirEntry->first_data_sector;
+				firstcall = true;
+				dirctr = 0;
+				lastdirsector = false;
+				delete dirEntry;
+				return ERR_OK;
+			}
 		}
-		
-		line[z] = 0;
-
-		if (strcmp(line, filename) == 0)
-		{
-			*track = dirEntry->first_data_track;
-			*sector = dirEntry->first_data_sector;
-			firstcall = true;
-			dirctr = 0;
-			lastdirsector = false;
-			delete dirEntry;
-			return ERR_OK;
-		}
-
 		dirptr = getNextDirectoryEntry(&firstcall, &dirctr, &lastdirsector, dirEntry);
 	}
 
@@ -724,7 +715,8 @@ int C1581::getNextDirectoryEntry(bool *firstcall, int *dirctr, bool *lastdirsect
 			}
 			else
 			{
-				return ERR_READ_ERROR;
+				get_last_error(last_error_msgs[20].msg,nxttrack,nxtsector);
+				return -1;
 			}
 
 		}
@@ -977,10 +969,19 @@ int C1581::readFile(uint8_t* filename, uint8_t* buffer, int *size)
 		resp = getNextFileSector(filename);
 
 		if(resp == IEC_LAST || resp == IEC_OK)
-			for(int x=0; x<BLOCK_SIZE; x++)
+		{
+			int tmp = BLOCK_SIZE;
+
+			if(resp == IEC_LAST)
+				tmp = sectorBuffer[1] + 1;
+
+			for(int x=0; x<tmp; x++)
 				buffer[(*size)++] = sectorBuffer[x];
 
-		if(resp != IEC_OK)
+			if(resp == IEC_LAST)
+				break;
+		}
+		else
 			break;
 	}
 
@@ -997,7 +998,7 @@ int C1581::getNextFileSector(uint8_t* filename)
 	if (firstcall)
 	{
 		firstcall = false;
-		int resp = getFileTrackSector((char *)filename, &file_track, &file_sector);
+		int resp = getFileTrackSector((char *)filename, &file_track, &file_sector, false);
 
 		if(resp != ERR_OK)
 		{
@@ -1022,7 +1023,7 @@ int C1581::getNextFileSector(uint8_t* filename)
 		return IEC_LAST;
 	}
 
-	return ERR_OK;
+	return IEC_OK;
 }
 
 int C1581::updateFileInfo(char *filename, uint16_t blocks)

@@ -51,13 +51,10 @@ protected:
 	int last_byte;
 	int prefetch;
 	int prefetch_max;
-
 };
 
 class C1581_CommandChannel : public C1581_Channel
 {
-//    BYTE error_buf[40];
-    int track_counter;
     void mem_read(void);
     void mem_write(void);
     void renam(command_t& command);

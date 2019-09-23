@@ -11,9 +11,6 @@ extern "C" {
 #include "userinterface.h"
 #include "disk_image.h"
 #include "pattern.h"
-#include "../drive/1581/c1581.h"
-
-extern C1581 *c1581_C;
 
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
@@ -265,6 +262,9 @@ IecCommandChannel *IecInterface :: get_command_channel(void)
     return (IecCommandChannel *)channels[15];
 }
 
+#include "../drive/1581/c1581.h"
+extern C1581 *c1581_C;
+
 void IecInterface :: effectuate_settings(void)
 {
     uint32_t was_talk   = 0x18800040 + last_addr; // compare instruction
@@ -324,7 +324,7 @@ void IecInterface :: effectuate_settings(void)
 
     HW_IEC_RESET_ENABLE = iec_enable;
 }
-    
+
 
 const char *IecInterface :: get_root_path(void)
 {
