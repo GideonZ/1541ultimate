@@ -56,25 +56,6 @@ int C1581_Channel :: push_data(uint8_t b)
 		case e_file:
 			buffer[pointer++] = b;
 
-			if(b == 0)
-			{
-				zctr++;
-				if(zctr > 2)
-				{
-					c1581->goTrackSector(writetrack, writesector);
-					c1581->sectorBuffer[0] = 0x00;		// last track
-					c1581->sectorBuffer[1] = pointer-1;	// last byte
-
-					for(int t = 2; t< pointer; t++)
-						c1581->sectorBuffer[t] = buffer[t];
-
-					writeblock++;
-					//close_file();
-				}
-			}
-			else
-				zctr=0;
-
 			if(pointer == BLOCK_SIZE) {
 				uint8_t newTrack;
 				uint8_t newSector;
@@ -445,18 +426,20 @@ uint8_t C1581_Channel::open_file(void)
 
 		// Check if file exists
 		uint8_t tmptrack, tmpsector;
-		int err = c1581->getFileTrackSector((char *)file_name, &tmptrack, &tmpsector);
+		int err = c1581->getFileTrackSector((char *)file_name, &tmptrack, &tmpsector, false);
 
 		if(err == ERR_FILE_NOT_FOUND)
 		{
-			// Create directory entry
+			// Create directory entry and allocate
 			err = c1581->createDirectoryEntry((char *)file_name, ftype, &track, &sector);
+
 			if(err != ERR_OK)
 			{
 				state = e_error;
 				return err;
 			}
 
+			writeblock = 1;
 			writetrack = track;
 			writesector = sector;
 			pointer=2;
@@ -465,6 +448,10 @@ uint8_t C1581_Channel::open_file(void)
 	else
 	{
 		int err = c1581->readFile(file_name, localbuffer, &last_byte);
+
+		//if(err < ERR_OK)
+		//	return err;
+
 		blocknumber = 0;
 		read_block();
 
@@ -523,12 +510,31 @@ uint8_t C1581_Channel::close_file()
 
 	if(write)
 	{
+		c1581->goTrackSector(writetrack, writesector);
+		c1581->sectorBuffer[0] = 0x00;		// last track
+		c1581->sectorBuffer[1] = pointer-1;	// last byte
+
+		for(int t = 2; t< pointer; t++)
+			c1581->sectorBuffer[t] = buffer[t];
+
 		c1581->updateFileInfo((char *)file_name, writeblock);
 		c1581->write_d81();
-		writeblock=0;
-		write=0;
+
 	}
 
+	writeblock=0;
+	write=0;
+	pointer=0;
+	writetrack = 0;
+	writesector = 0;
+	buffer[0] = 0;
+	blocknumber=0;
+	size=0;
+	localbuffer[0]=0;
+	file_name[0]=0;
+	last_byte = 0;
+	prefetch = 0;
+	prefetch_max =0;
 	state = e_idle;
 	return 0;
 }
@@ -537,7 +543,6 @@ uint8_t C1581_Channel::close_file()
 
 C1581_CommandChannel::C1581_CommandChannel()
 {
-	track_counter = 0;
 
 }
 C1581_CommandChannel::~C1581_CommandChannel()
@@ -545,13 +550,13 @@ C1581_CommandChannel::~C1581_CommandChannel()
 
 }
 
-void C1581_CommandChannel::init(C1581 *parent, int ch)
+void C1581_CommandChannel :: init(C1581 *parent, int ch)
 {
 	c1581 = parent;
 	channel = ch;
 }
 
-void C1581_CommandChannel::get_last_error(int err = -1, int track = 0, int sector = 0)
+void C1581_CommandChannel :: get_last_error(int err = -1, int track = 0, int sector = 0)
 {
     if(err >= 0)
         c1581->last_error = err;
@@ -564,7 +569,7 @@ void C1581_CommandChannel::get_last_error(int err = -1, int track = 0, int secto
     c1581->last_error = ERR_OK;
 }
 
-int C1581_CommandChannel::pop_data(void)
+int C1581_CommandChannel :: pop_data(void)
 {
     if(pointer > last_byte) {
         return IEC_NO_FILE;
@@ -576,7 +581,7 @@ int C1581_CommandChannel::pop_data(void)
     pointer++;
     return IEC_OK;
 }
-int C1581_CommandChannel::push_data(uint8_t b)
+int C1581_CommandChannel :: push_data(uint8_t b)
 {
     if(pointer < 64) {
         buffer[pointer++] = b;
@@ -584,8 +589,37 @@ int C1581_CommandChannel::push_data(uint8_t b)
     }
     return IEC_BYTE_LOST;
 }
+int C1581_CommandChannel :: push_command(uint8_t b)
+{
+    command_t command;
 
-void C1581_CommandChannel::exec_command(command_t &command)
+    switch(b) {
+        case 0x60:
+        case 0xE0:
+        case 0xF0:
+            pointer = 0;
+            break;
+        case 0x00: // end of data, command received in buffer
+            buffer[pointer]=0;
+            // printf("Command received:\n");
+            // dump_hex(buffer, pointer);
+            if (strncmp((char *)buffer, "M-R", 3) == 0) {
+                mem_read();
+                break;
+            } else if (strncmp((char *)buffer, "M-W", 3) == 0) {
+                mem_write();
+                break;
+            }
+            parse_command((char *)buffer, &command);
+            //dump_command(command);
+            exec_command(command);
+            break;
+        default:
+            printf("Error on channel %d. Unknown command: %b\n", channel, b);
+    }
+    return IEC_OK;
+}
+void C1581_CommandChannel:: exec_command(command_t &command)
 {
     if (strncmp(command.cmd, "SCRATCH", strlen(command.cmd))== 0) {
         scratch(command);
@@ -907,7 +941,9 @@ void C1581_CommandChannel :: u1(command_t& command)
 	}
 
 	c1581->goTrackSector(itrk, isec);
-	memcpy(c1581->channels[ichanl]->buffer, c1581->sectorBuffer, BLOCK_SIZE);
+	for(int t=0; t< BLOCK_SIZE;t++)
+		c1581->channels[ichanl]->buffer[t] = c1581->sectorBuffer[t];
+
 	c1581->channels[ichanl]->last_byte = BLOCK_SIZE-1;
 	c1581->channels[ichanl]->pointer = 0;
 	c1581->channels[ichanl]->prefetch = 0;
@@ -1104,36 +1140,7 @@ void C1581_CommandChannel :: mem_exec(command_t& command)
 	get_last_error(ERR_OK);
 }
 
-int C1581_CommandChannel :: push_command(uint8_t b)
-{
-    command_t command;
 
-    switch(b) {
-        case 0x60:
-        case 0xE0:
-        case 0xF0:
-            pointer = 0;
-            break;
-        case 0x00: // end of data, command received in buffer
-            buffer[pointer]=0;
-            // printf("Command received:\n");
-            // dump_hex(buffer, pointer);
-            if (strncmp((char *)buffer, "M-R", 3) == 0) {
-                mem_read();
-                break;
-            } else if (strncmp((char *)buffer, "M-W", 3) == 0) {
-                mem_write();
-                break;
-            }
-            parse_command((char *)buffer, &command);
-            //dump_command(command);
-            exec_command(command);
-            break;
-        default:
-            printf("Error on channel %d. Unknown command: %b\n", channel, b);
-    }
-    return IEC_OK;
-}
 
 
 
