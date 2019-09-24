@@ -11,8 +11,10 @@
 #include "c64.h"
 #include "dump_hex.h"
 
+#define CFG_FPGASID_UNIQUEID        0x00
 #define CFG_FPGASID_MODE            0x01
 #define CFG_FPGASID_LEDS            0x02
+#define CFG_FPGASID_FPGAREV         0x03
 #define CFG_FPGASID_OUTPUTMODE      0x18
 
 #define CFG_FPGASID_SID1_QUICK      0x1F
@@ -47,6 +49,8 @@ static const char *outmodes[] = { "Two signals", "One signal" };
 static const char *voices[] = { "All", ". 2 3", "1 . 3", ". . 3", "1 2 .", ". 2 .", "1 . .", "None" };
 
 static struct t_cfg_definition fpga_sid_config[] = {
+    { CFG_FPGASID_UNIQUEID,        CFG_TYPE_INFO, "Unique ID",                    "%s", NULL,       0, 20, 0 },
+    { CFG_FPGASID_FPGAREV,         CFG_TYPE_INFO, "FPGA Revision",                "%s", NULL,       0,  4, 0 },
     { CFG_FPGASID_MODE,            CFG_TYPE_ENUM, "Fundamental Mode",             "%s", modes,      0,  2, 0 },
     { CFG_FPGASID_OUTPUTMODE,      CFG_TYPE_ENUM, "Output Mode",                  "%s", outmodes,   0,  1, 0 },
 //    { CFG_FPGASID_LEDS,            CFG_TYPE_ENUM, "LEDs",                         "%s", onoff,      0,  1, 0 },
@@ -83,6 +87,7 @@ SidDeviceFpgaSid::SidDeviceFpgaSid(int socket, volatile uint8_t *base) : SidDevi
     for(int i=0; i<8; i++) {
         unique[i] = base[i + 4];
     }
+    fpga_rev = base[3];
     config = new SidDeviceFpgaSid :: FpgaSidConfig(this);
     config->effectuate_settings();
 }
@@ -112,9 +117,17 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     this->parent = parent;
     uint32_t id = 0x46534944 + parent->socket; // FSID
     char name[40];
-    sprintf(name, "FPGASID in Socket %d (..%b%b)", parent->socket + 1, parent->unique[6], parent->unique[7]);
+    sprintf(name, "FPGASID in Socket %d", parent->socket + 1);
 
     register_store(id, name, fpga_sid_config);
+
+    sprintf(name, "%b%b%b%b%b%b%b%b", parent->unique[0], parent->unique[1], parent->unique[2], parent->unique[3],
+                parent->unique[4], parent->unique[5], parent->unique[6], parent->unique[7]);
+
+    cfg->set_string(CFG_FPGASID_UNIQUEID, name);
+
+    sprintf(name, "%b", parent->fpga_rev);
+    cfg->set_string(CFG_FPGASID_FPGAREV, name);
 
     // Make most settings 'hot' ;)
     cfg->set_change_hook(CFG_FPGASID_MODE           , S_cfg_fpgasid_mode);
@@ -141,8 +154,8 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     cfg->set_change_hook(CFG_FPGASID_SID2_FILTERBIAS, S_cfg_fpgasid_sid2_filterbias);
     cfg->set_change_hook(CFG_FPGASID_SID2_VOICEMUTE , S_cfg_fpgasid_sid2_byte30 );
 
-    ConfigItem *it = cfg->find_item(CFG_FPGASID_MODE);
-    setItemsEnable(it);
+//    ConfigItem *it = cfg->find_item(CFG_FPGASID_MODE);
+//    setItemsEnable(it);
 }
 
 uint8_t SidDeviceFpgaSid :: FpgaSidConfig :: getByte31Sid1(ConfigStore *cfg)

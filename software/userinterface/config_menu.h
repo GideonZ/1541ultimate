@@ -46,7 +46,7 @@ class BrowsableConfigItem : public Browsable
 public:
 	BrowsableConfigItem(ConfigItem *i) {
 		item = i;
-		selectable = (i->definition->type != CFG_TYPE_SEP);
+		selectable = (i->definition->type != CFG_TYPE_SEP) && (i->definition->type != CFG_TYPE_INFO);
 	}
 	~BrowsableConfigItem() {}
 

@@ -446,7 +446,7 @@ ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d)
 	hook = NULL;
 	definition = d;
     store = s;
-    if(d->type == CFG_TYPE_STRING) {
+    if ((d->type == CFG_TYPE_STRING)||(d->type == CFG_TYPE_INFO)) {
         string = new char[d->max+1];
     } else {
         string = NULL;
@@ -548,6 +548,7 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
             return 3+strlen(string);
         case CFG_TYPE_FUNC:
         case CFG_TYPE_SEP:
+        case CFG_TYPE_INFO:
             break; // do nothing, do not store
         default:
             printf("Error: unknown type packing flash configuration.\n");
@@ -572,9 +573,11 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
             sprintf(buf, definition->item_format, definition->items[value]);
             break;
         case CFG_TYPE_STRING:
+        case CFG_TYPE_INFO:
             sprintf(buf, definition->item_format, string);
             break;
         case CFG_TYPE_FUNC:
+        case CFG_TYPE_SEP:
             sprintf(buf, definition->item_format);
             break;
         default:
@@ -638,7 +641,9 @@ void ConfigItem :: setString(const char *s)
     if(this->string) {
         strncpy(this->string, s, this->definition->max);
         this->string[this->definition->max - 1] = 0;
-        setChanged();
+        if (definition->type == CFG_TYPE_STRING) {
+            setChanged();
+        }
     }
 }
 

@@ -13,6 +13,7 @@
 
 class SidDeviceFpgaSid: public SidDevice {
     uint8_t unique[8];
+    uint8_t fpga_rev;
 
     class FpgaSidConfig : ConfigurableObject
     {

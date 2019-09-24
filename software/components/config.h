@@ -31,6 +31,7 @@
 #define CFG_TYPE_STRING 0x03
 #define CFG_TYPE_FUNC   0x04
 #define CFG_TYPE_SEP    0x05
+#define CFG_TYPE_INFO   0x06
 #define CFG_TYPE_END    0xFF
 
 class UserInterface;
