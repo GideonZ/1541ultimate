@@ -41,6 +41,7 @@ class SidDeviceFpgaSid: public SidDevice {
         static int  S_cfg_fpgasid_outputmode(ConfigItem *it);
 
         static int  S_cfg_fpgasid_sid2_quick     (ConfigItem *it);
+        static int  S_cfg_fpgasid_sid2_byte30    (ConfigItem *it);
         static int  S_cfg_fpgasid_sid2_byte31    (ConfigItem *it);
         static int  S_cfg_fpgasid_sid2_digifix   (ConfigItem *it);
         static int  S_cfg_fpgasid_sid2_filterbias(ConfigItem *it);

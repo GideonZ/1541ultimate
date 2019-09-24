@@ -547,6 +547,7 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
             strcpy((char *)buffer, string);
             return 3+strlen(string);
         case CFG_TYPE_FUNC:
+        case CFG_TYPE_SEP:
             break; // do nothing, do not store
         default:
             printf("Error: unknown type packing flash configuration.\n");
