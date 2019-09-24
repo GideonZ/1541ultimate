@@ -30,6 +30,7 @@
 #define CFG_TYPE_ENUM   0x02
 #define CFG_TYPE_STRING 0x03
 #define CFG_TYPE_FUNC   0x04
+#define CFG_TYPE_SEP    0x05
 #define CFG_TYPE_END    0xFF
 
 class UserInterface;

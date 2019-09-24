@@ -24,6 +24,7 @@
 #define CFG_FPGASID_SID1_EXTIN      0x15
 #define CFG_FPGASID_SID1_DIGIFIX    0x16
 #define CFG_FPGASID_SID1_FILTERBIAS 0x17
+#define CFG_FPGASID_SID1_VOICEMUTE  0x19
 
 #define CFG_FPGASID_SID2_QUICK      0x2F
 #define CFG_FPGASID_SID2_FILTER     0x20
@@ -34,6 +35,7 @@
 #define CFG_FPGASID_SID2_EXTIN      0x25
 #define CFG_FPGASID_SID2_DIGIFIX    0x26
 #define CFG_FPGASID_SID2_FILTERBIAS 0x27
+#define CFG_FPGASID_SID2_VOICEMUTE  0x29
 #define CFG_FPGASID_SEPARATOR       0xFE
 
 static const char *modes[] = { "Mono", "Stereo", "DualSocket" };
@@ -41,14 +43,15 @@ static const char *chips[] = { "6581", "8580" };
 static const char *readbacks[] = { "Bitrot 6581", "Always Value", "Always $00", "Bitrot 8580" };
 static const char *extins[] = { "Analog In", "Disabled", "Other SID", "DigiFix (8580)" };
 static const char *outmodes[] = { "Two signals", "One signal" };
-static const char *onoff[] = { "On", "Off" };
+//static const char *onoff[] = { "On", "Off" };
+static const char *voices[] = { "All", ". 2 3", "1 . 3", ". . 3", "1 2 .", ". 2 .", "1 . .", "None" };
 
 static struct t_cfg_definition fpga_sid_config[] = {
     { CFG_FPGASID_MODE,            CFG_TYPE_ENUM, "Fundamental Mode",             "%s", modes,      0,  2, 0 },
     { CFG_FPGASID_OUTPUTMODE,      CFG_TYPE_ENUM, "Output Mode",                  "%s", outmodes,   0,  1, 0 },
 //    { CFG_FPGASID_LEDS,            CFG_TYPE_ENUM, "LEDs",                         "%s", onoff,      0,  1, 0 },
 
-    { CFG_FPGASID_SEPARATOR,       CFG_TYPE_VALUE,"",                             "",   NULL,       0,  0, 0 },
+    { CFG_FPGASID_SEPARATOR,       CFG_TYPE_SEP,  "",                             "",   NULL,       0,  0, 0 },
     { CFG_FPGASID_SID1_QUICK,      CFG_TYPE_ENUM, "SID1: Quick type select",      "%s", chips,      0,  1, 0 },
     { CFG_FPGASID_SID1_FILTER,     CFG_TYPE_ENUM, "SID1: Filter Mode",            "%s", chips,      0,  1, 0 },
     { CFG_FPGASID_SID1_CRUNCY,     CFG_TYPE_ENUM, "SID1: Crunchy DAC",            "%s", chips,      0,  1, 0 },
@@ -58,7 +61,8 @@ static struct t_cfg_definition fpga_sid_config[] = {
     { CFG_FPGASID_SID1_EXTIN,      CFG_TYPE_ENUM, "SID1: EXT IN Source",          "%s", extins,     0,  3, 0 },
     { CFG_FPGASID_SID1_DIGIFIX,    CFG_TYPE_VALUE,"SID1: DigiFix Value (8580)",   "%d", NULL,     -128,127,0 },
     { CFG_FPGASID_SID1_FILTERBIAS, CFG_TYPE_VALUE,"SID1: 6581 Filter Bias",       "%d", NULL,       0, 15, 6 },
-    { CFG_FPGASID_SEPARATOR,       CFG_TYPE_VALUE,"",                             "",   NULL,       0,  0, 0 },
+    { CFG_FPGASID_SID1_VOICEMUTE,  CFG_TYPE_ENUM, "SID1: Enabled Voices",         "%s", voices,     0,  7, 0 },
+    { CFG_FPGASID_SEPARATOR,       CFG_TYPE_SEP,  "",                             "",   NULL,       0,  0, 0 },
     { CFG_FPGASID_SID2_QUICK,      CFG_TYPE_ENUM, "SID2: Quick type select",      "%s", chips,      0,  1, 0 },
     { CFG_FPGASID_SID2_FILTER,     CFG_TYPE_ENUM, "SID2: Filter Mode",            "%s", chips,      0,  1, 0 },
     { CFG_FPGASID_SID2_CRUNCY,     CFG_TYPE_ENUM, "SID2: Crunchy DAC",            "%s", chips,      0,  1, 0 },
@@ -68,6 +72,7 @@ static struct t_cfg_definition fpga_sid_config[] = {
     { CFG_FPGASID_SID2_EXTIN,      CFG_TYPE_ENUM, "SID2: EXT IN Source",          "%s", extins,     0,  3, 0 },
     { CFG_FPGASID_SID2_DIGIFIX,    CFG_TYPE_VALUE,"SID2: DigiFix Value (8580)",   "%d", NULL,     -128,127,0 },
     { CFG_FPGASID_SID2_FILTERBIAS, CFG_TYPE_VALUE,"SID2: 6581 Filter Bias",       "%d", NULL,       0, 15, 6 },
+    { CFG_FPGASID_SID2_VOICEMUTE,  CFG_TYPE_ENUM, "SID2: Enabled Voices",         "%s", voices,     0,  7, 0 },
 
     { CFG_TYPE_END,                CFG_TYPE_END,  "",                             "",   NULL,       0,  0, 0 } };
 
@@ -124,6 +129,7 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     cfg->set_change_hook(CFG_FPGASID_SID1_EXTIN     , S_cfg_fpgasid_sid1_byte31 );
     cfg->set_change_hook(CFG_FPGASID_SID1_DIGIFIX   , S_cfg_fpgasid_sid1_digifix   );
     cfg->set_change_hook(CFG_FPGASID_SID1_FILTERBIAS, S_cfg_fpgasid_sid1_filterbias);
+    cfg->set_change_hook(CFG_FPGASID_SID1_VOICEMUTE , S_cfg_fpgasid_outputmode );
     cfg->set_change_hook(CFG_FPGASID_SID2_QUICK     , S_cfg_fpgasid_sid2_quick );
     cfg->set_change_hook(CFG_FPGASID_SID2_FILTER    , S_cfg_fpgasid_sid2_byte31 );
     cfg->set_change_hook(CFG_FPGASID_SID2_CRUNCY    , S_cfg_fpgasid_sid2_byte31 );
@@ -133,6 +139,7 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     cfg->set_change_hook(CFG_FPGASID_SID2_EXTIN     , S_cfg_fpgasid_sid2_byte31 );
     cfg->set_change_hook(CFG_FPGASID_SID2_DIGIFIX   , S_cfg_fpgasid_sid2_digifix   );
     cfg->set_change_hook(CFG_FPGASID_SID2_FILTERBIAS, S_cfg_fpgasid_sid2_filterbias);
+    cfg->set_change_hook(CFG_FPGASID_SID2_VOICEMUTE , S_cfg_fpgasid_sid2_byte30 );
 
     ConfigItem *it = cfg->find_item(CFG_FPGASID_MODE);
     setItemsEnable(it);
@@ -186,6 +193,7 @@ uint8_t SidDeviceFpgaSid :: FpgaSidConfig :: getByte30Sid1(ConfigStore *cfg)
         b30 |= 0x80;
     }
 */
+    b30 |= (uint8_t)(cfg->get_value(CFG_FPGASID_SID1_VOICEMUTE) << 4);
 
     return b30;
 }
@@ -198,6 +206,8 @@ uint8_t SidDeviceFpgaSid :: FpgaSidConfig :: getByte30Sid2(ConfigStore *cfg)
         b30 |= 0x80;
     }
 */
+    b30 |= (uint8_t)(cfg->get_value(CFG_FPGASID_SID2_VOICEMUTE) << 4);
+
     return b30;
 }
 
@@ -288,7 +298,7 @@ void SidDeviceFpgaSid::FpgaSidConfig::setItemsEnable(ConfigItem *it)
 
 int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_mode(ConfigItem *it)
 {
-    setItemsEnable(it);
+    //setItemsEnable(it);
     volatile uint8_t *base = pre(it, 0);
     S_effectuate(base, it->store);
     post(it);
@@ -333,6 +343,14 @@ int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_outputmode(ConfigItem* it)
 {
     volatile uint8_t *base = pre(it, 0);  // get access to socket and put SID1 in config mode
     base[30] = getByte30Sid1(it->store);
+    post(it); // restore
+    return 0;
+}
+
+int SidDeviceFpgaSid::FpgaSidConfig::S_cfg_fpgasid_sid2_byte30(ConfigItem* it)
+{
+    volatile uint8_t *base = pre(it, 1);  // get access to socket and put SID2 in config mode
+    base[30] = getByte30Sid2(it->store);
     post(it); // restore
     return 0;
 }
