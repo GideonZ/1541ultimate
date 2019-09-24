@@ -63,6 +63,8 @@ class C1581_CommandChannel : public C1581_Channel
     void scratch(command_t& command);
     void u1(command_t& command);
     void u2(command_t& command);
+    void block_allocate(command_t& command);
+    void block_free(command_t& command);
     void mem_exec(command_t& command);
 public:
     using C1581_Channel::operator=;
