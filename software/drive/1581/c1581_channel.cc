@@ -629,7 +629,7 @@ void C1581_CommandChannel:: exec_command(command_t &command)
         copy(command);
     } else if (strncmp(command.cmd , "NEW", strlen(command.cmd)) == 0) {
         format(command);
-    } else if (strncmp(command.cmd , "INITIALIZE", strlen(command.cmd)) == 0) {
+    } else if ((strncmp(command.cmd , "INITIALIZE", strlen(command.cmd)) == 0) || (strcmp(command.cmd , "I0") == 0)) {
         get_last_error(ERR_OK);
     } else if (strcmp(command.cmd, "UI") == 0) {
         get_last_error(ERR_DOS);
