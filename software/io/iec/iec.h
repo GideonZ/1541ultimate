@@ -167,6 +167,7 @@ public:
 #define ERR_FILE_NOT_FOUND				62
 #define ERR_FILE_EXISTS					63
 #define ERR_FILE_TYPE_MISMATCH			64
+#define ERR_NO_BLOCK					65
 #define ERR_ILLEGAL_TRACK_SECTOR		66
 #define ERR_FRESULT_CODE                69
 #define ERR_NO_CHANNEL          		70

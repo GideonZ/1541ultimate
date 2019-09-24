@@ -639,6 +639,10 @@ void C1581_CommandChannel:: exec_command(command_t &command)
         u2(command);
     } else if (command.cmd[0] == 'M' && command.cmd[1] == '-' && command.cmd[2] == 'E') {
         mem_exec(command);
+    } else if (command.cmd[0] == 'B' && command.cmd[1] == '-' && command.cmd[2] == 'A') {
+        block_allocate(command);
+    } else if (command.cmd[0] == 'B' && command.cmd[1] == '-' && command.cmd[2] == 'F') {
+            block_free(command);
     }
     else { // unknown command
         get_last_error(ERR_SYNTAX_ERROR_CMD);
@@ -958,6 +962,128 @@ void C1581_CommandChannel :: u1(command_t& command)
 void C1581_CommandChannel :: u2(command_t& command)
 {
 	get_last_error(ERR_OK);
+}
+
+void C1581_CommandChannel :: block_allocate(command_t& command)
+{
+	// parse the command into its component strings
+	char * pch;
+	char cmdbuf[255];
+	char drv[255];
+	char trk[255];
+	char sec[255];
+	uint8_t paramctr = 0;
+	uint8_t itrk = 0;
+	uint8_t isec = 0;
+	uint8_t ichanl = 0;
+
+	pch = strtok(command.cmd," ");
+
+	while (pch != NULL)
+	{
+		if(paramctr == 0)
+			strcpy(cmdbuf, pch);
+		else if (paramctr == 1)
+			strcpy(drv, pch);
+		else if (paramctr == 2)
+			strcpy(trk, pch);
+		else if (paramctr == 3)
+			strcpy(sec, pch);
+
+		pch = strtok (NULL, " ");
+		paramctr++;
+	}
+
+	itrk = atoi(trk);
+	isec = atoi(sec);
+
+	if(itrk < 1 || itrk > 80)
+	{
+		get_last_error(ERR_ILLEGAL_TRACK_SECTOR, itrk, isec);
+		return;
+	}
+
+	if(isec < 0 || isec > 39)
+	{
+		get_last_error(ERR_ILLEGAL_TRACK_SECTOR, itrk, isec);
+		return;
+	}
+
+	if (c1581->channels[ichanl]->channelopen == false)
+	{
+		get_last_error(ERR_NO_CHANNEL);
+		return;
+	}
+
+	bool isallocated = c1581->getTrackSectorAllocation(itrk, isec);
+
+	if(isallocated)
+	{
+		uint8_t newTrk, newSector;
+		c1581->findFreeSector(&newTrk, &newSector);
+		get_last_error(ERR_NO_BLOCK, newTrk,newSector);
+	}
+	else
+	{
+		c1581->setTrackSectorAllocation(itrk, isec, true);
+		get_last_error(ERR_OK, 0,0);
+	}
+}
+
+void C1581_CommandChannel :: block_free(command_t& command)
+{
+	// parse the command into its component strings
+	char * pch;
+	char cmdbuf[255];
+	char drv[255];
+	char trk[255];
+	char sec[255];
+	uint8_t paramctr = 0;
+	uint8_t itrk = 0;
+	uint8_t isec = 0;
+	uint8_t ichanl = 0;
+
+	pch = strtok(command.cmd," ");
+
+	while (pch != NULL)
+	{
+		if(paramctr == 0)
+			strcpy(cmdbuf, pch);
+		else if (paramctr == 1)
+			strcpy(drv, pch);
+		else if (paramctr == 2)
+			strcpy(trk, pch);
+		else if (paramctr == 3)
+			strcpy(sec, pch);
+
+		pch = strtok (NULL, " ");
+		paramctr++;
+	}
+
+	itrk = atoi(trk);
+	isec = atoi(sec);
+
+	if(itrk < 1 || itrk > 80)
+	{
+		get_last_error(ERR_ILLEGAL_TRACK_SECTOR, itrk, isec);
+		return;
+	}
+
+	if(isec < 0 || isec > 39)
+	{
+		get_last_error(ERR_ILLEGAL_TRACK_SECTOR, itrk, isec);
+		return;
+	}
+
+	if (c1581->channels[ichanl]->channelopen == false)
+	{
+		get_last_error(ERR_NO_CHANNEL);
+		return;
+	}
+
+	c1581->setTrackSectorAllocation(itrk, isec, false);
+	get_last_error(ERR_OK, 0,0);
+
 }
 
 void C1581_CommandChannel :: format(command_t& command)

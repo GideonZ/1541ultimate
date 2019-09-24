@@ -82,7 +82,7 @@ const char msg61[] = "FILE NOT OPEN";			//61
 const char msg62[] = "FILE NOT FOUND";			//62
 const char msg63[] = "FILE EXISTS";				//63
 const char msg64[] = "FILE TYPE MISMATCH";		//64
-//const char msg65[] = "NO BLOCK";				//65
+const char msg65[] = "NO BLOCK";				//65
 const char msg66[] = "ILLEGAL TRACK AND SECTOR";//66
 //const char msg67[] = "ILLEGAL SYSTEM T OR S";	//67
 const char msg69[] = "FILESYSTEM ERROR";        //69
@@ -123,7 +123,7 @@ const IEC_ERROR_MSG last_error_msgs[] = {
 		{ 62,(char*)msg62,NR_OF_EL(msg62) - 1 },
 		{ 63,(char*)msg63,NR_OF_EL(msg63) - 1 },
 		{ 64,(char*)msg64,NR_OF_EL(msg64) - 1 },
-//		{ 65,(char*)msg65,NR_OF_EL(msg65) - 1 },
+		{ 65,(char*)msg65,NR_OF_EL(msg65) - 1 },
 		{ 66,(char*)msg66,NR_OF_EL(msg66) - 1 },
 //		{ 67,(char*)msg67,NR_OF_EL(msg67) - 1 },
         { 69,(char*)msg69,NR_OF_EL(msg69) - 1 },
@@ -422,6 +422,47 @@ int C1581::findFreeSector(uint8_t *track, uint8_t *sector)
 	}
 
 	return ERR_OK;
+}
+
+bool C1581::getTrackSectorAllocation(uint8_t track, uint8_t sector)
+{
+	uint8_t t = 0;
+	uint8_t *bam;
+
+	if(track < 41)
+	{
+		t = track;
+		bam = BAMCache1;
+	}
+	else
+	{
+		t = track - 40;
+		bam = BAMCache2;
+	}
+
+	// position at the track BAM allocation record
+	uint8_t *bamdata = bam + 0x10 + (6 * (t-1));
+
+	uint8_t s;
+	if(sector < 8)
+		s = 1;
+	else if (sector < 16)
+		s = 2;
+	else if (sector < 24)
+		s = 3;
+	else if (sector < 32)
+		s = 4;
+	else if (sector < 40)
+		s = 5;
+
+	uint8_t bit = (sector % 8);
+	uint8_t bits[] = { 1,2,4,8,16,32,64,128};
+
+
+	if((bamdata[s] & bits[bit]) == 0)
+		return true;
+	else
+		return false;
 }
 
 int C1581::setTrackSectorAllocation(uint8_t track, uint8_t sector, bool allocate)
