@@ -27,6 +27,7 @@ extern "C" {
 #include "c64.h"
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
+#include "sid_device_swinsid.h"
 
 // static pointer
 U64Config u64_configurator;
@@ -180,7 +181,7 @@ static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
-static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSid Ultimate", "ARMSID", "ARM2SID", "SidFx" };
+static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx" };
 static const char *sid_shunt[] = { "Off", "On" };
 static const char *sid_caps[] = { "470 pF", "22 nF" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
@@ -369,11 +370,8 @@ int U64Config :: detectFPGASID(int socket)
 
     uint8_t id1 = base[0];
     uint8_t id2 = base[1];
-    uint8_t un1 = base[2];
-    uint8_t un2 = base[3];
-    uint8_t un3 = base[4];
 
-    printf("FPGASID Detection: %b %b (%b %b %b)\n", id1, id2, un1, un2, un3);
+    printf("FPGASID Detection: %b %b\n", id1, id2);
     // Read Identification
     if ((id1 == 0x1D) && (id2 == 0xF5)) {
         // FPGASID found
@@ -387,14 +385,16 @@ int U64Config :: detectRemakes(int socket)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
 
+/*
     base[29] = 0;
     C64_PEEK(2); // dummy cycle
     base[30] = 0;
     C64_PEEK(2); // dummy cycle
     base[31] = 0;
     C64_PEEK(2); // dummy cycle
+*/
 
-    wait_ms(1);
+    wait_ms(10);
 
     base[29] = 'S';
     C64_PEEK(2); // dummy cycle
@@ -416,6 +416,7 @@ int U64Config :: detectRemakes(int socket)
     if ((id1 == 'S') && (id2 == 'W')) {
         base[29] = 0;
         C64_PEEK(2); // dummy cycle
+        sidDevice[socket] = new SidDeviceSwinSid(socket, base);
         return SID_TYPE_SWINSID; // SwinSid Ultimate
     }
 
@@ -450,12 +451,12 @@ void U64Config :: U64SidSockets :: detect(void)
 
     S_SetupDetectionAddresses();
     if (sid1 == SID_TYPE_NONE) {
-        sid1 = detectRemakes(0);
+        sid1 = u64_configurator.detectRemakes(0);
     }
 
     S_SetupDetectionAddresses();
     if (sid2 == SID_TYPE_NONE) {
-        sid2 = detectRemakes(1);
+        sid2 = u64_configurator.detectRemakes(1);
     }
 
     if ((sid1 == SID_TYPE_NONE) || (sid2 == SID_TYPE_NONE)) {
