@@ -43,13 +43,14 @@ static const char *chips[] = { "6581", "8580" };
 static const char *readbacks[] = { "Bitrot 6581", "Always Value", "Always $00", "Bitrot 8580" };
 static const char *extins[] = { "Analog In", "Disabled", "Other SID", "DigiFix (8580)" };
 static const char *outmodes[] = { "Two signals", "One signal" };
-//static const char *onoff[] = { "On", "Off" };
+static const char *ledmodes[] = { "On", "Only voice", "Only heart", "Off" };
+// static const char *onoff[] = { "On", "Off" };
 static const char *voices[] = { "All", ". 2 3", "1 . 3", ". . 3", "1 2 .", ". 2 .", "1 . .", "None" };
 
 static struct t_cfg_definition fpga_sid_config[] = {
     { CFG_FPGASID_MODE,            CFG_TYPE_ENUM, "Fundamental Mode",             "%s", modes,      0,  2, 0 },
     { CFG_FPGASID_OUTPUTMODE,      CFG_TYPE_ENUM, "Output Mode",                  "%s", outmodes,   0,  1, 0 },
-//    { CFG_FPGASID_LEDS,            CFG_TYPE_ENUM, "LEDs",                         "%s", onoff,      0,  1, 0 },
+    { CFG_FPGASID_LEDS,            CFG_TYPE_ENUM, "LEDs",                         "%s", ledmodes,   0,  3, 0 },
 
     { CFG_FPGASID_SEPARATOR,       CFG_TYPE_SEP,  "",                             "",   NULL,       0,  0, 0 },
     { CFG_FPGASID_SID1_QUICK,      CFG_TYPE_ENUM, "SID1: Quick type select",      "%s", chips,      0,  1, 0 },
@@ -119,7 +120,7 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     // Make most settings 'hot' ;)
     cfg->set_change_hook(CFG_FPGASID_MODE           , S_cfg_fpgasid_mode);
     cfg->set_change_hook(CFG_FPGASID_OUTPUTMODE,      S_cfg_fpgasid_outputmode);
-//    cfg->set_change_hook(CFG_FPGASID_LEDS,            S_cfg_fpgasid_leds);
+    cfg->set_change_hook(CFG_FPGASID_LEDS,            S_cfg_fpgasid_leds);
     cfg->set_change_hook(CFG_FPGASID_SID1_QUICK     , S_cfg_fpgasid_sid1_quick );
     cfg->set_change_hook(CFG_FPGASID_SID1_FILTER    , S_cfg_fpgasid_sid1_byte31 );
     cfg->set_change_hook(CFG_FPGASID_SID1_CRUNCY    , S_cfg_fpgasid_sid1_byte31 );
@@ -188,11 +189,10 @@ uint8_t SidDeviceFpgaSid :: FpgaSidConfig :: getByte30Sid1(ConfigStore *cfg)
 
     b30 |= (uint8_t)(cfg->get_value(CFG_FPGASID_OUTPUTMODE)) << 3;
 
-/*
-    if (cfg->get_value(CFG_FPGASID_LEDS)) {
+    if (cfg->get_value(CFG_FPGASID_LEDS) & 1) {
         b30 |= 0x80;
     }
-*/
+
     b30 |= (uint8_t)(cfg->get_value(CFG_FPGASID_SID1_VOICEMUTE) << 4);
 
     return b30;
@@ -201,11 +201,11 @@ uint8_t SidDeviceFpgaSid :: FpgaSidConfig :: getByte30Sid1(ConfigStore *cfg)
 uint8_t SidDeviceFpgaSid :: FpgaSidConfig :: getByte30Sid2(ConfigStore *cfg)
 {
     uint8_t b30 = 0;
-/*
-    if (cfg->get_value(CFG_FPGASID_LEDS)) {
+
+    if (cfg->get_value(CFG_FPGASID_LEDS) & 2) {
         b30 |= 0x80;
     }
-*/
+
     b30 |= (uint8_t)(cfg->get_value(CFG_FPGASID_SID2_VOICEMUTE) << 4);
 
     return b30;
