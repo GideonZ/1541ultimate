@@ -151,6 +151,7 @@ SRCS_CC	 =  u2p_init.cc \
 			sid_editor.cc \
 			sid_device.cc \
 			sid_device_fpgasid.cc \
+			sid_device_swinsid.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \
