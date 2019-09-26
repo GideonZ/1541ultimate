@@ -72,7 +72,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     static void S_SetupDetectionAddresses();
     static void S_RestoreDetectionAddresses();
     static int S_SidDetector(int &sid1, int &sid2);
-    static int detectRemakes(int socket);
+    int detectRemakes(int socket);
     int detectFPGASID(int socket);
     SidDevice *getDevice(int index) { return sidDevice[index]; }
 public:
