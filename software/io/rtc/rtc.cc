@@ -369,7 +369,7 @@ void RtcConfigStore::at_close_config(void)
 {
     printf("** Cfg RTC Write **\n");
 
-    if (!dirty)
+    if (!need_effectuate())
         return;
 
     int y, M, D, wd, h, m, s, corr;
@@ -428,7 +428,7 @@ void RtcConfigStore::at_close_config(void)
     rtc.set_time(y, M, D, wd, h, m, s);
     rtc.set_time_in_chip(corr, y, M, D, wd, h, m, s);
 
-    dirty = false;
+    set_effectuated();
 }
 
 extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 20-16: Day(1-31) */
