@@ -40,7 +40,6 @@ SRCS_CC	 =  small_printf.cc \
 			file_partition.cc \
 			embedded_d64.cc \
 			embedded_t64.cc \
-			embedded_iso.cc \
 			embedded_fat.cc \
 			rtc.cc \
 			c64.cc \
@@ -62,7 +61,6 @@ SRCS_CC	 =  small_printf.cc \
 			diskio.cc \
 			directory.cc \
 			file.cc \
-			filesystem_iso9660.cc \
             filesystem_root.cc \
 			filesystem_d64.cc \
 			filesystem_t64.cc \
@@ -91,6 +89,7 @@ SRCS_CC	 =  small_printf.cc \
 			filetype_crt.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
+			filetype_cfg.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
@@ -128,6 +127,7 @@ SRCS_CC	 =  small_printf.cc \
 			socket_dma.cc \
             home_directory.cc \
             reu_preloader.cc \
+            configio.cc \
             $(PRJ).cc
 
 #            sock_echo.c \

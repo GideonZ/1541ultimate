@@ -370,6 +370,7 @@ void RtcConfigStore::at_close_config(void)
             break;
         }
     }
+
     int yz, mz, cz;
     mz = M;
     yz = y + 1980;
@@ -383,11 +384,12 @@ void RtcConfigStore::at_close_config(void)
     wd = wd % 7;
     if (wd < 0)
         wd += 7;
+
     printf("Writing time: %d-%d-%d (%d) %02d:%02d:%02d\n", y, M, D, wd, h, m, s);
     rtc.set_time(y, M, D, wd, h, m, s);
     rtc.set_time_in_chip(corr, y, M, D, wd, h, m, s);
 
-    set_effectuated();;
+    set_effectuated();
 }
 
 extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 20-16: Day(1-31) */
