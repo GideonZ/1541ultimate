@@ -603,10 +603,7 @@ int C1581_CommandChannel :: push_command(uint8_t b)
             buffer[pointer]=0;
             // printf("Command received:\n");
             // dump_hex(buffer, pointer);
-            if (strncmp((char *)buffer, "M-R", 3) == 0) {
-                mem_read();
-                break;
-            } else if (strncmp((char *)buffer, "M-W", 3) == 0) {
+            if (strncmp((char *)buffer, "M-W", 3) == 0) {
                 mem_write();
                 break;
             }
@@ -637,12 +634,16 @@ void C1581_CommandChannel:: exec_command(command_t &command)
     	u1(command);
     } else if (strncmp(command.cmd, "U2", 2) == 0) {
         u2(command);
+    } else if (strncmp(command.cmd, "M-R", 3) == 0) {
+        mem_read(command);
     } else if (command.cmd[0] == 'M' && command.cmd[1] == '-' && command.cmd[2] == 'E') {
         mem_exec(command);
     } else if (command.cmd[0] == 'B' && command.cmd[1] == '-' && command.cmd[2] == 'A') {
         block_allocate(command);
     } else if (command.cmd[0] == 'B' && command.cmd[1] == '-' && command.cmd[2] == 'F') {
-            block_free(command);
+        block_free(command);
+    } else if (command.cmd[0] == '/') {
+    	get_last_error(ERR_OK);
     }
     else { // unknown command
         get_last_error(ERR_SYNTAX_ERROR_CMD);
@@ -1253,8 +1254,46 @@ void C1581_CommandChannel :: format(command_t& command)
 	get_last_error(ERR_OK);
 }
 
-void C1581_CommandChannel :: mem_read(void)
+void C1581_CommandChannel :: mem_read(command_t& command)
 {
+	// parse the command into its component strings
+	char * pch;
+	char cmdbuf[255];
+	char clo[255];
+	char chi[255];
+	char ccount[255];
+	uint8_t paramctr = 0;
+	uint8_t lo = 0;
+	uint8_t hi = 0;
+	uint8_t count = 0;
+
+	lo = command.cmd[3];
+	hi = command.cmd[4];
+	count = command.cmd[5];
+
+	if(count == 0)
+		count = 1;
+
+	uint16_t location = hi * 256 + lo;
+
+	if(location == 0xFEA0)
+	{
+		buffer[0] = 255;
+		buffer[1] = 255;
+	}
+
+	if(location == 0xA6E9)
+	{
+		buffer[0] = 0x38;
+		buffer[1] = 0xb1;
+	}
+
+	last_byte = count-1;
+	pointer = 0;
+	prefetch = 0;
+	prefetch_max = count-1;
+	state = e_file;
+
 }
 
 void C1581_CommandChannel :: mem_write(void)
