@@ -55,7 +55,7 @@ protected:
 
 class C1581_CommandChannel : public C1581_Channel
 {
-    void mem_read(void);
+    void mem_read(command_t& command);
     void mem_write(void);
     void renam(command_t& command);
     void copy(command_t& command);
