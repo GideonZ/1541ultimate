@@ -55,8 +55,6 @@ protected:
 
 class C1581_CommandChannel : public C1581_Channel
 {
-    void mem_read(command_t& command);
-    void mem_write(void);
     void renam(command_t& command);
     void copy(command_t& command);
     void format(command_t& command);
@@ -66,6 +64,8 @@ class C1581_CommandChannel : public C1581_Channel
     void block_allocate(command_t& command);
     void block_free(command_t& command);
     void mem_exec(command_t& command);
+    void mem_read(command_t& command);
+    void mem_write(command_t& command);
 public:
     using C1581_Channel::operator=;
     C1581_CommandChannel();

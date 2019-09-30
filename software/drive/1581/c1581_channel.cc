@@ -449,17 +449,14 @@ uint8_t C1581_Channel::open_file(void)
 	{
 		int err = c1581->readFile(file_name, localbuffer, &last_byte);
 
-		//if(err < ERR_OK)
-		//	return err;
-
-		blocknumber = 0;
-		read_block();
-
-		/*if(err != ERR_OK)
+		if(err != ERR_OK)
 		{
 			state = e_error;
 			return err;
-		}*/
+		}
+
+		blocknumber = 0;
+		read_block();
 	}
 	return ERR_OK;
 }
@@ -603,10 +600,6 @@ int C1581_CommandChannel :: push_command(uint8_t b)
             buffer[pointer]=0;
             // printf("Command received:\n");
             // dump_hex(buffer, pointer);
-            if (strncmp((char *)buffer, "M-W", 3) == 0) {
-                mem_write();
-                break;
-            }
             parse_command((char *)buffer, &command);
             //dump_command(command);
             exec_command(command);
@@ -616,7 +609,9 @@ int C1581_CommandChannel :: push_command(uint8_t b)
     }
     return IEC_OK;
 }
-void C1581_CommandChannel:: exec_command(command_t &command)
+
+
+void C1581_CommandChannel :: exec_command(command_t &command)
 {
     if (strncmp(command.cmd, "SCRATCH", strlen(command.cmd))== 0) {
         scratch(command);
@@ -636,6 +631,8 @@ void C1581_CommandChannel:: exec_command(command_t &command)
         u2(command);
     } else if (strncmp(command.cmd, "M-R", 3) == 0) {
         mem_read(command);
+    } else if (strncmp(command.cmd, "M-W", 3) == 0) {
+        mem_write(command);
     } else if (command.cmd[0] == 'M' && command.cmd[1] == '-' && command.cmd[2] == 'E') {
         mem_exec(command);
     } else if (command.cmd[0] == 'B' && command.cmd[1] == '-' && command.cmd[2] == 'A') {
@@ -1296,7 +1293,7 @@ void C1581_CommandChannel :: mem_read(command_t& command)
 
 }
 
-void C1581_CommandChannel :: mem_write(void)
+void C1581_CommandChannel :: mem_write(command_t& command)
 {
 }
 
