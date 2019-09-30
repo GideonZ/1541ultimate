@@ -1003,7 +1003,43 @@ int C1581::updateDirectoryEntry(char *filename, char* extension, DirectoryEntry 
 int C1581::readFile(uint8_t* filename, uint8_t* buffer, int *size)
 {
 	int resp = ERR_OK;
+	static char lastfilename[16];
 	*size = 0;
+
+	if(!strcmp((const char*)filename,"*"))
+	{
+		static bool firstcall = true;
+		static int dirctr = 0;
+		static bool lastdirsector = false;
+		int offset = 0;
+
+		DirectoryEntry *dirEntry = new DirectoryEntry();
+
+		offset = getNextDirectoryEntry(&firstcall, &dirctr, &lastdirsector, dirEntry);
+
+		while (offset != -1)
+		{
+			if (dirEntry->file_type == 0x82 || dirEntry->file_type == 0xc2)
+			{
+				strcpy((char *)filename, (const char*)dirEntry->filename);
+
+				for(int z=0; z<16;z++)
+					if(filename[z] == 160)
+						filename[z] = 0;
+
+				break;
+			}
+			offset = getNextDirectoryEntry(&firstcall, &dirctr, &lastdirsector, dirEntry);
+		}
+
+		firstcall = true;
+		dirctr = 0;
+		lastdirsector = false;
+		delete dirEntry;
+
+		if (offset == -1)
+			return ERR_FILE_NOT_FOUND;
+	}
 
 	while(1)
 	{
@@ -1020,7 +1056,11 @@ int C1581::readFile(uint8_t* filename, uint8_t* buffer, int *size)
 				buffer[(*size)++] = sectorBuffer[x];
 
 			if(resp == IEC_LAST)
+			{
+				resp = ERR_OK;
 				break;
+			}
+
 		}
 		else
 			break;
