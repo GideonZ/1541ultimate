@@ -633,6 +633,8 @@ void C1581_CommandChannel :: exec_command(command_t &command)
         mem_read(command);
     } else if (strncmp(command.cmd, "M-W", 3) == 0) {
         mem_write(command);
+    } else if (strncmp(command.cmd, "U0>", 3) == 0) {
+        change_devicenum(command);
     } else if (command.cmd[0] == 'M' && command.cmd[1] == '-' && command.cmd[2] == 'E') {
         mem_exec(command);
     } else if (command.cmd[0] == 'B' && command.cmd[1] == '-' && command.cmd[2] == 'A') {
@@ -1302,7 +1304,18 @@ void C1581_CommandChannel :: mem_exec(command_t& command)
 	get_last_error(ERR_OK);
 }
 
-
+void C1581_CommandChannel :: change_devicenum(command_t& command)
+{
+	if(command.digits > 7 && command.digits < 30)
+	{
+		c1581->iec_address = command.digits;
+		get_last_error(ERR_OK);
+	}
+	else
+	{
+		get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
+	}
+}
 
 
 

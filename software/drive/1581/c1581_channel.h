@@ -4,9 +4,7 @@
 #include "c1581.h"
 #include <stdint.h>
 
-
 class C1581;
-//class C1581_CommandChannel;
 
 class C1581_Channel
 {
@@ -66,6 +64,7 @@ class C1581_CommandChannel : public C1581_Channel
     void mem_exec(command_t& command);
     void mem_read(command_t& command);
     void mem_write(command_t& command);
+    void change_devicenum(command_t& command);
 public:
     using C1581_Channel::operator=;
     C1581_CommandChannel();
