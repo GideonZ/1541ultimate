@@ -40,7 +40,7 @@
 #define CFG_FPGASID_SID2_VOICEMUTE  0x29
 #define CFG_FPGASID_SEPARATOR       0xFE
 
-static const char *modes[] = { "Mono", "Stereo", "DualSocket" };
+static const char *modes[] = { "Mono", "Stereo" };
 static const char *chips[] = { "6581", "8580" };
 static const char *readbacks[] = { "Bitrot 6581", "Always Value", "Always $00", "Bitrot 8580" };
 static const char *extins[] = { "Analog In", "Disabled", "Other SID", "DigiFix (8580)" };
@@ -52,7 +52,7 @@ static const char *voices[] = { "All", ". 2 3", "1 . 3", ". . 3", "1 2 .", ". 2 
 static struct t_cfg_definition fpga_sid_config[] = {
     { CFG_FPGASID_UNIQUEID,        CFG_TYPE_INFO, "Unique ID",                    "%s", NULL,       0, 20, 0 },
     { CFG_FPGASID_FPGAREV,         CFG_TYPE_INFO, "FPGA Revision",                "%s", NULL,       0,  4, 0 },
-    { CFG_FPGASID_MODE,            CFG_TYPE_ENUM, "Fundamental Mode",             "%s", modes,      0,  2, 0 },
+    { CFG_FPGASID_MODE,            CFG_TYPE_ENUM, "Fundamental Mode",             "%s", modes,      0,  1, 0 },
     { CFG_FPGASID_OUTPUTMODE,      CFG_TYPE_ENUM, "Output Mode",                  "%s", outmodes,   0,  1, 0 },
     { CFG_FPGASID_LEDS,            CFG_TYPE_ENUM, "LEDs",                         "%s", ledmodes,   0,  3, 0 },
 
@@ -113,6 +113,8 @@ void SidDeviceFpgaSid :: SetSidType(int type)
 }
 
 
+bool SidDeviceFpgaSid :: FpgaSidConfig :: dukestahAdapterPresent;
+
 SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
 {
     this->parent = parent;
@@ -154,6 +156,8 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     cfg->set_change_hook(CFG_FPGASID_SID2_DIGIFIX   , S_cfg_fpgasid_sid2_digifix   );
     cfg->set_change_hook(CFG_FPGASID_SID2_FILTERBIAS, S_cfg_fpgasid_sid2_filterbias);
     cfg->set_change_hook(CFG_FPGASID_SID2_VOICEMUTE , S_cfg_fpgasid_sid2_byte30 );
+    
+    dukestahAdapterPresent = false;
 
 //    ConfigItem *it = cfg->find_item(CFG_FPGASID_MODE);
 //    setItemsEnable(it);
@@ -191,10 +195,7 @@ uint8_t SidDeviceFpgaSid :: FpgaSidConfig :: getByte30Sid1(ConfigStore *cfg)
         b30 = 0x00;
         break;
     case 1: // Stereo
-        b30 = 0x01; // Always use A5
-        break;
-    case 2: // Dual Socket mode
-        b30 = 0x04; // Use DE00 (IO1)
+        b30 = dukestahAdapterPresent ? 0x04 : 0x01;
         break;
     default:
         break;

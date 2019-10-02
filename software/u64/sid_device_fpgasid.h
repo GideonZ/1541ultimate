@@ -19,7 +19,10 @@ class SidDeviceFpgaSid: public SidDevice {
     {
         SidDeviceFpgaSid *parent;
         static void S_effectuate(volatile uint8_t *base, ConfigStore *store);
+        static bool dukestahAdapterPresent;
     public:
+        static void setDukestahAdapterPresent() {dukestahAdapterPresent = true;}
+
         FpgaSidConfig(SidDeviceFpgaSid *parent);
         void effectuate_settings();
         ConfigStore *getConfigStore(void) { return cfg; }
@@ -51,6 +54,8 @@ class SidDeviceFpgaSid: public SidDevice {
     FpgaSidConfig *config;
 public:
     SidDeviceFpgaSid(int socket, volatile uint8_t *base);
+    void effectuate_settings() { config->effectuate_settings(); }
+    void setDukestahAdapterPresent() { config->setDukestahAdapterPresent(); }
     virtual ~SidDeviceFpgaSid();
 
     void SetSidType(int type);
