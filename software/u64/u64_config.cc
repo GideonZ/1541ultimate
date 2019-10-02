@@ -130,7 +130,7 @@ uint8_t C64_SID2_EN_BAK;
 #define SID_TYPE_ARMSID  5
 #define SID_TYPE_ARM2SID 6
 #define SID_TYPE_SIDFX   7
-
+#define SID_TYPE_FPGASID_DUKESTAH 8
 
 const char *u64_sid_base[] = { "Unmapped",
                                "$D400", "$D420", "$D440", "$D460", "$D480", "$D4A0", "$D4C0", "$D4E0",
@@ -181,7 +181,7 @@ static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
-static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx" };
+static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah" };
 static const char *sid_shunt[] = { "Off", "On" };
 static const char *sid_caps[] = { "470 pF", "22 nF" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
@@ -255,8 +255,8 @@ struct t_cfg_definition u64_cfg[] = {
 struct t_cfg_definition u64_sid_detection_cfg[] = {
     { CFG_SOCKET1_ENABLE,       CFG_TYPE_ENUM, "SID Socket 1",                 "%s", en_dis4,      0,  1, 0 },
     { CFG_SOCKET2_ENABLE,       CFG_TYPE_ENUM, "SID Socket 2",                 "%s", en_dis4,      0,  1, 0 },
-    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  7, 0 },
-    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  7, 0 },
+    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  8, 0 },
+    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  8, 0 },
     { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID2_SHUNT,           CFG_TYPE_ENUM, "SID Socket 2 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID1_CAPS,            CFG_TYPE_ENUM, "SID Socket 1 Capacitors",      "%s", sid_caps,     0,  1, 0 },
@@ -350,6 +350,47 @@ U64Config :: U64SidSockets :: U64SidSockets()
         cfg->disable(CFG_SID1_SHUNT);
         cfg->disable(CFG_SID2_SHUNT);
     }
+}
+
+int U64Config :: detectDukestahAdapter()
+{
+    volatile uint8_t *base1 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400); // D400
+    volatile uint8_t *base2 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500); // D500
+
+    if (!(C64_STOP & C64_HAS_STOPPED)) {
+        C64_STOP_MODE = STOP_COND_FORCE;
+        C64_STOP = 1;
+        C64_PEEK(2);
+        C64_PEEK(2);
+        C64_PEEK(2);
+    }
+    
+    base1[25] = 0x81; // Enter config mode
+    base1[26] = 0x65;
+    base1[30] = 4;   // Set FPGASID to stereo
+
+    base1[25] = 0x82;  // Swap mode
+    base1[26] = 0x65;
+    base1[28] = 3;
+
+    base1[25] = 0x81; // Enter config mode
+    base1[26] = 0x65;
+
+    base1[28] = 5;
+    base2[28] = 13;
+    
+    base1[25] = 0x82;   // Swap mode
+    base1[26] = 0x65;
+    uint8_t tmp1 = base1[28] & 15;   // Read SID2 register 28
+    base1[25] = 0x00;   // normal mode
+    base1[26] = 0x00;
+
+    if (tmp1 == 13) ((SidDeviceFpgaSid*)(sidDevice[0]))->setDukestahAdapterPresent();
+    ((SidDeviceFpgaSid*)(sidDevice[0]))->effectuate_settings();
+
+    if (tmp1 == 13) return SID_TYPE_FPGASID_DUKESTAH;
+    
+    return SID_TYPE_FPGASID;
 }
 
 int U64Config :: detectFPGASID(int socket)
@@ -467,6 +508,13 @@ void U64Config :: U64SidSockets :: detect(void)
         if (realsid2 && sid2 == SID_TYPE_NONE) {
             sid2 = realsid2;
         }
+    }
+
+    if ((sid1 == SID_TYPE_FPGASID) && (sid2 == SID_TYPE_NONE)) {
+    	S_SetupDetectionAddresses();
+    	int tmp = u64_configurator.detectDukestahAdapter();
+    	if (tmp == SID_TYPE_FPGASID_DUKESTAH)
+           sid1 = sid2 = tmp;
     }
 
     printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
@@ -1063,6 +1111,7 @@ uint8_t U64Config :: GetSidType(int slot)
         case SID_TYPE_ARMSID:
         case SID_TYPE_ARM2SID:
         case SID_TYPE_SWINSID:
+        case SID_TYPE_FPGASID_DUKESTAH:
             return 3; // either type, we can TELL the fpgaSID to configure itself in the right mode
         default:
             return 0;
@@ -1085,6 +1134,7 @@ uint8_t U64Config :: GetSidType(int slot)
         case SID_TYPE_ARMSID:
         case SID_TYPE_ARM2SID:
         case SID_TYPE_SWINSID:
+        case SID_TYPE_FPGASID_DUKESTAH:
             return 3; // either type, we can TELL the fpgaSID to configure itself in the right mode
         default:
             return 0;
