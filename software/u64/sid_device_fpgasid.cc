@@ -8,6 +8,7 @@
 #include "sid_device_fpgasid.h"
 #include "config.h"
 #include <stdio.h>
+#include <string.h>
 #include "c64.h"
 #include "dump_hex.h"
 
@@ -131,6 +132,12 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
 
     sprintf(name, "%b", parent->fpga_rev);
     cfg->set_string(CFG_FPGASID_FPGAREV, name);
+    
+    if (parent->fpga_rev == 9)
+    {
+       cfg->disable(CFG_FPGASID_OUTPUTMODE);
+       cfg->disable(CFG_FPGASID_LEDS);
+    }
 
     // Make most settings 'hot' ;)
     cfg->set_change_hook(CFG_FPGASID_MODE           , S_cfg_fpgasid_mode);
