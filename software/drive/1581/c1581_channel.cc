@@ -210,6 +210,10 @@ void C1581_Channel :: parse_command(char *buffer, command_t *command)
         }
     }
 
+    // user commands should be interpreted by the caller
+    if(command->cmd[0] == 'U')
+    	return;
+
     // look for : and split
     for(int j=0;j<5;j++) {
         char *s = command->names[j].name;
@@ -307,10 +311,9 @@ uint8_t C1581_Channel::open_file(void)
 	parse_command((char *)buffer, &command);
 
 	// First determine the direction
+	write = 0;
 	if(channel == 1)
 		write = 1;
-	else
-		write = 0;
 
 	int tp = 1;
 	if (command.names[1].name) {
@@ -371,6 +374,12 @@ uint8_t C1581_Channel::open_file(void)
 		pointer = 0;
 		state = e_file;
 		return ERR_OK;
+	}
+
+	if (c1581->disk_state == e_no_disk81)
+	{
+		state = e_error;
+		return ERR_FILE_NOT_FOUND;
 	}
 
 	if (command.cmd[0] == '$')
@@ -617,17 +626,19 @@ int C1581_CommandChannel :: push_command(uint8_t b)
 
 void C1581_CommandChannel :: exec_command(command_t &command)
 {
-    if (strncmp(command.cmd, "SCRATCH", strlen(command.cmd))== 0) {
-        scratch(command);
-    } else if (strncmp(command.cmd , "RENAME", strlen(command.cmd)) == 0) {
-        renam(command);
-    } else if (strncmp(command.cmd , "COPY", strlen(command.cmd)) == 0) {
-        copy(command);
-    } else if (strncmp(command.cmd , "NEW", strlen(command.cmd)) == 0) {
+    if (strncmp(command.cmd , "NEW", strlen(command.cmd)) == 0) {
         format(command);
-    } else if ((strncmp(command.cmd , "INITIALIZE", strlen(command.cmd)) == 0) || (strcmp(command.cmd , "I0") == 0)) {
+    } else if (strncmp(command.cmd, "COPY", strlen(command.cmd)) == 0) {
+        copy(command);
+    } else if (strncmp(command.cmd, "RENAME", strlen(command.cmd)) == 0) {
+        renam(command);
+    } else if (strncmp(command.cmd, "SCRATCH", strlen(command.cmd))== 0) {
+        scratch(command);
+    } else if (strncmp(command.cmd, "VALIDATE", strlen(command.cmd))== 0) {
+        validate(command);
+    } else if ((strncmp(command.cmd, "INITIALIZE", strlen(command.cmd)) == 0) || (strcmp(command.cmd , "I0") == 0) || (strcmp(command.cmd , "U0>B0") == 0)) {
         get_last_error(ERR_OK,0,0);
-    } else if ((strcmp(command.cmd, "UI") == 0) || (strcmp(command.cmd, "UJ") == 0) || (strcmp(command.cmd, "U9") == 0) || (strcmp(command.cmd, "U") == 0)) {
+    } else if ((strncmp(command.cmd, "UI", 2) == 0) || (strncmp(command.cmd, "UJ", 2) == 0) || (strncmp(command.cmd, "U9", 2) == 0)) {
         get_last_error(ERR_DOS,0,0);
     } else if ((strncmp(command.cmd, "U1", 2) == 0) || (strncmp(command.cmd, "UA", 2) == 0)) {
     	u1(command);
@@ -655,125 +666,171 @@ void C1581_CommandChannel :: exec_command(command_t &command)
     }
 }
 
-void C1581_CommandChannel :: scratch(command_t& command)
+void C1581_CommandChannel :: format(command_t& command)
 {
-    char name[32];
-    int  part;
+	char name[32];
+	char id[3];
+	int  part;
+	uint8_t tmp[256];
+	bool softFormat = true;
 
-    bool dummy;
-    bool keepExtension = false;
-    if (!command.names[0].name) {
-        get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
-        return;
-    }
-
-    const char *fromExt = "???";
-    strcpy(name, command.names[0].name);
-    part = command.names[0].drive;
-
-    // does the from name have an extension specified?
-    if (command.names[1].name) { // yes!
-        const char *ext = GetExtension(command.names[1].name[0], dummy);
-        if (dummy) {
-            fromExt = ext;
-        }
-    }
-
-    DirectoryEntry *dirEntry = new DirectoryEntry();
-    int x = c1581->findDirectoryEntry(name, (char *)fromExt, dirEntry);
-
-    if(x > -1)
-    {
-    	dirEntry->file_type = 0x00;
-    	x = c1581->updateDirectoryEntry(name, (char*)fromExt, dirEntry);
-
-    	if (x > -1)
-    		c1581->setTrackSectorAllocation(dirEntry->first_data_track, dirEntry->first_data_sector, false);
-    }
-
-    delete [] dirEntry;
-
-    if (x > -1)
-    	get_last_error(ERR_FILES_SCRATCHED, 1);
-    else
-    	get_last_error(ERR_FILES_SCRATCHED, 0);
-}
-
-void C1581_CommandChannel :: renam(command_t& command)
-{
-	char fromName[32];
-	int  fromPart;
-	char toName[32];
-	int  toPart;
-
-	if ((!command.names[1].name) || (!command.names[0].name)) {
-		get_last_error(ERR_SYNTAX_ERROR_GEN,0,0);
+	if (!command.names[0].name) {
+		get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
 		return;
 	}
 
-	strcpy(toName, command.names[0].name);
-	toPart = command.names[0].drive;
+	strcpy(name, command.names[0].name);
+	part = command.names[0].drive;
 
-	// 1581 does doesnt care what the 'to part' is
+	// if there is an ID, perform a hard format
+	if (command.names[1].name) {
 
-	strcpy(fromName, command.names[1].name);
-	fromPart = command.names[1].drive;
+		if(command.names[1].separator != ',')
+		{
+			get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
+			return;
+		}
 
-	// but it does care about to from part
-	if(fromPart != -1 && fromPart != 0)
-	{
-		get_last_error(ERR_SYNTAX_ERROR_CMD);
-		return;
+		softFormat = false;
+
+		strcpy(id, command.names[1].name);
 	}
 
-	// file types are not allowed (no commas)
-	if(command.names[0].separator != ' ' || command.names[2].separator != ' ')
+	// clear a tmp buffer
+	for(int t=0;t < 256;t++)
+		tmp[t] = 0;
+
+	if (softFormat == false)
 	{
-		get_last_error(ERR_SYNTAX_ERROR_GEN);
-		return;
+		// Clear each track / sector
+		for(int trk=1; trk<81; trk++)
+			for(int sec=0; sec<40; sec++)
+			{
+				c1581->goTrackSector(trk, sec);
+				memcpy(c1581->sectorBuffer, tmp, 256);
+			}
 	}
 
-	if (command.names[1].separator != '=')
+
+	// set bam header sector
+	c1581->goTrackSector(40, 0);
+	tmp[0] = 0x28;	// track of first BAM
+	tmp[1] = 0x03;	// sector of first BAM
+	tmp[2] = 0x44;	// dos version type
+
+	int z=0;
+	// disk title
+	for(; z<strlen(name); z++)
+		tmp[0x04+z] = name[z];
+
+	// filename padding with int 160
+	for(; z<16;z++)
+		tmp[0x04+z] = 0xa0;
+
+	// disk id
+	if (softFormat == false)
 	{
-		get_last_error(ERR_SYNTAX_ERROR_CMD);
-		return;
-	}
-
-	printf("From: %d:%s To: %d:%s\n", fromPart, fromName, toPart, toName);
-
-	DirectoryEntry *dirEntry = new DirectoryEntry();
-	int x = c1581->findDirectoryEntry(toName, NULL, dirEntry);
-
-	if (x > -1)
-	{
-		get_last_error(ERR_FILE_EXISTS, 0);
-		return;
-	}
-
-	x = c1581->findDirectoryEntry(fromName, NULL, dirEntry);
-
-	if(x > -1)
-	{
-		for(int t=0;t<16;t++)
-			dirEntry->filename[t] = 0;
-
-		int t=0;
-		for(;t<strlen(toName);t++)
-			dirEntry->filename[t] = toName[t];
-
-		for(;t<16;t++)
-			dirEntry->filename[t] = 160;
-
-		x = c1581->updateDirectoryEntry(fromName, NULL, dirEntry);
-		get_last_error(ERR_OK, 0);
+		tmp[0x16] = id[0];
+		tmp[0x17] = id[1];
 	}
 	else
 	{
-		get_last_error(ERR_FILE_NOT_FOUND, 0);
+		tmp[0x16] = c1581->sectorBuffer[0x16];
+		tmp[0x17] = c1581->sectorBuffer[0x17];
 	}
 
-	delete [] dirEntry;
-	return;
+	tmp[0x18] = 0xa0;
+	tmp[0x19] = 0x33;	// dos version
+	tmp[0x1a] = 0x44;	//
+	tmp[0x1b] = 0xa0;
+	tmp[0x1c] = 0xa0;
+
+	for(z=0x1d; z<= 0xff; z++)
+		tmp[z] = 0x00;
+
+	// transfer tmp buffer to the sector
+	memcpy(c1581->sectorBuffer, tmp, 256);
+
+	// clear buffer
+	for(int t=0;t < 256;t++)
+		tmp[t] = 0;
+
+	// BAM side 1
+	c1581->goTrackSector(40, 1);
+	tmp[0x00] = 0x28;	// next track
+	tmp[0x01] = 0x02;	// next sector
+	tmp[0x02] = 0x44;	// version #
+	tmp[0x03] = 0xbb;	// one compliment above
+
+	// disk id
+	if (softFormat == false)
+	{
+		tmp[0x04] = id[0];
+		tmp[0x05] = id[1];
+	}
+	else
+	{
+		tmp[0x04] = c1581->sectorBuffer[0x04];
+		tmp[0x05] = c1581->sectorBuffer[0x05];
+	}
+
+	tmp[0x06] = 0xc0;	// verify/crc flags
+	tmp[0x07] = 0x00; 	// autoboot loader flag
+
+	uint8_t tbam[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x24, 0xf0, 0xff, 0xff, 0xff, 0xff
+	};
+
+	for(z=0x08;z<=0xff;z++)
+		tmp[z] = tbam[z-0x08];
+
+	// transfer tmp buffer to the sector
+	memcpy(c1581->sectorBuffer, tmp, 256);
+
+	// BAM side 2
+	c1581->goTrackSector(40, 2);
+	tmp[0x00] = 0x00;	// next track
+	tmp[0x01] = 0xff;	// next sector
+	tmp[0xfa] = 0x28;
+	tmp[0xfb] = 0xff;
+
+	// transfer tmp buffer to the sector
+	memcpy(c1581->sectorBuffer, tmp, 256);
+
+	// dir sector
+	c1581->goTrackSector(40, 3);
+
+	// preferably in a soft format, the dir sector
+	// isnt cleared.  just the links are cleared
+	// but sd2iec does the same thing.
+	for(int t=0;t < 256;t++)
+		tmp[t] = 0;
+
+	tmp[0] = 0x00;
+	tmp[1] = 0xff;
+
+	// transfer tmp buffer to the sector
+	memcpy(c1581->sectorBuffer, tmp, 256);
+
+	// rewrite the image
+	c1581->write_d81();
+
+	// done
+	get_last_error(ERR_OK,0,0);
 }
 
 void C1581_CommandChannel :: copy(command_t& command)
@@ -791,7 +848,7 @@ void C1581_CommandChannel :: copy(command_t& command)
 	uint8_t srcSizeLo;
 
 	if ((!command.names[1].name) || (!command.names[0].name)) {
-		get_last_error(ERR_SYNTAX_ERROR_GEN);
+		get_last_error(ERR_SYNTAX_ERROR_GEN,0,0);
 		return;
 	}
 
@@ -806,20 +863,20 @@ void C1581_CommandChannel :: copy(command_t& command)
 	// but it does care about to from part
 	if(fromPart != -1 && fromPart != 0)
 	{
-		get_last_error(ERR_SYNTAX_ERROR_CMD);
+		get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
 		return;
 	}
 
 	// file types are not allowed (no commas)
 	if(command.names[0].separator != ' ' || command.names[2].separator != ' ')
 	{
-		get_last_error(ERR_SYNTAX_ERROR_GEN);
+		get_last_error(ERR_SYNTAX_ERROR_GEN,0,0);
 		return;
 	}
 
 	if (command.names[1].separator != '=')
 	{
-		get_last_error(ERR_SYNTAX_ERROR_CMD);
+		get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
 		return;
 	}
 
@@ -829,7 +886,7 @@ void C1581_CommandChannel :: copy(command_t& command)
 
 	if (c1581->findDirectoryEntry(toName, NULL, dirEntry) > -1)
 	{
-		get_last_error(ERR_FILE_EXISTS, 0);
+		get_last_error(ERR_FILE_EXISTS, 0,0);
 		return;
 	}
 
@@ -883,15 +940,244 @@ void C1581_CommandChannel :: copy(command_t& command)
 
 		c1581->updateDirectoryEntry(toName, NULL, dirEntry);
 		c1581->write_d81();
-		get_last_error(ERR_OK, 0);
+		get_last_error(ERR_OK, 0,0);
 
 	}
 	else
 	{
-		get_last_error(ERR_FILE_NOT_FOUND, 0);
+		get_last_error(ERR_FILE_NOT_FOUND, 0,0);
 	}
 
 	delete [] dirEntry;
+	return;
+}
+
+void C1581_CommandChannel :: renam(command_t& command)
+{
+	char fromName[32];
+	int  fromPart;
+	char toName[32];
+	int  toPart;
+
+	if ((!command.names[1].name) || (!command.names[0].name)) {
+		get_last_error(ERR_SYNTAX_ERROR_GEN,0,0);
+		return;
+	}
+
+	strcpy(toName, command.names[0].name);
+	toPart = command.names[0].drive;
+
+	// 1581 does doesnt care what the 'to part' is
+
+	strcpy(fromName, command.names[1].name);
+	fromPart = command.names[1].drive;
+
+	// but it does care about to from part
+	if(fromPart != -1 && fromPart != 0)
+	{
+		get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
+		return;
+	}
+
+	// file types are not allowed (no commas)
+	if(command.names[0].separator != ' ' || command.names[2].separator != ' ')
+	{
+		get_last_error(ERR_SYNTAX_ERROR_GEN,0,0);
+		return;
+	}
+
+	if (command.names[1].separator != '=')
+	{
+		get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
+		return;
+	}
+
+	printf("From: %d:%s To: %d:%s\n", fromPart, fromName, toPart, toName);
+
+	DirectoryEntry *dirEntry = new DirectoryEntry();
+	int x = c1581->findDirectoryEntry(toName, NULL, dirEntry);
+
+	if (x > -1)
+	{
+		get_last_error(ERR_FILE_EXISTS,0,0);
+		return;
+	}
+
+	x = c1581->findDirectoryEntry(fromName, NULL, dirEntry);
+
+	if(x > -1)
+	{
+		for(int t=0;t<16;t++)
+			dirEntry->filename[t] = 0;
+
+		int t=0;
+		for(;t<strlen(toName);t++)
+			dirEntry->filename[t] = toName[t];
+
+		for(;t<16;t++)
+			dirEntry->filename[t] = 160;
+
+		x = c1581->updateDirectoryEntry(fromName, NULL, dirEntry);
+		get_last_error(ERR_OK,0,0);
+	}
+	else
+	{
+		get_last_error(ERR_FILE_NOT_FOUND,0,0);
+	}
+
+	delete [] dirEntry;
+	return;
+}
+
+void C1581_CommandChannel :: scratch(command_t& command)
+{
+    char name[32];
+    int  part;
+
+    bool dummy;
+    bool keepExtension = false;
+    if (!command.names[0].name) {
+        get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
+        return;
+    }
+
+    const char *fromExt = "???";
+    strcpy(name, command.names[0].name);
+    part = command.names[0].drive;
+
+    // does the from name have an extension specified?
+    if (command.names[1].name) { // yes!
+        const char *ext = GetExtension(command.names[1].name[0], dummy);
+        if (dummy) {
+            fromExt = ext;
+        }
+    }
+
+    DirectoryEntry *dirEntry = new DirectoryEntry();
+    int x = c1581->findDirectoryEntry(name, (char *)fromExt, dirEntry);
+
+    if(x > -1)
+    {
+    	dirEntry->file_type = 0x00;
+    	x = c1581->updateDirectoryEntry(name, (char*)fromExt, dirEntry);
+
+    	if (x > -1)
+    		c1581->setTrackSectorAllocation(dirEntry->first_data_track, dirEntry->first_data_sector, false);
+    }
+
+    delete [] dirEntry;
+
+    if (x > -1)
+    	get_last_error(ERR_FILES_SCRATCHED, 1,0);
+    else
+    	get_last_error(ERR_FILES_SCRATCHED, 0,0);
+}
+
+void C1581_CommandChannel :: validate(command_t& command)
+{
+	uint8_t tmp[256];
+	int z=0;
+
+	// clear a tmp buffer
+	for(int t=0;t < 256;t++)
+		tmp[t] = 0;
+
+	//
+	// Clear the BAM completely to rebuild it
+	//
+
+	// BAM side 1
+	c1581->goTrackSector(40, 1);
+	tmp[0x00] = 0x28;	// next track
+	tmp[0x01] = 0x02;	// next sector
+	tmp[0x02] = 0x44;	// version #
+	tmp[0x03] = 0xbb;	// one compliment above
+
+	// disk id
+	tmp[0x04] = c1581->sectorBuffer[0x04];
+	tmp[0x05] = c1581->sectorBuffer[0x05];
+	tmp[0x06] = 0xc0;	// verify/crc flags
+	tmp[0x07] = 0x00; 	// autoboot loader flag
+
+	uint8_t tbam[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
+			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
+			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
+			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x24, 0xf0, 0xff, 0xff, 0xff, 0xff
+	};
+
+	for(z=0x08;z<=0xff;z++)
+		tmp[z] = tbam[z-0x08];
+
+	// transfer tmp buffer to the sector
+	memcpy(c1581->sectorBuffer, tmp, 256);
+
+	// BAM side 2
+	c1581->goTrackSector(40, 2);
+	tmp[0x00] = 0x00;	// next track
+	tmp[0x01] = 0xff;	// next sector
+	tmp[0xfa] = 0x28;
+	tmp[0xfb] = 0xff;
+
+	// transfer tmp buffer to the sector
+	memcpy(c1581->sectorBuffer, tmp, 256);
+
+	//
+	// Read disk directory and allocate the appropriate chain
+	//
+	int dirptr = 0;
+	bool firstcall = true;
+	int dirctr = 0;
+	bool lastdirsector = false;
+	DirectoryEntry *dirEntry = new DirectoryEntry;
+
+	dirptr = c1581->getNextDirectoryEntry(&firstcall, &dirctr, &lastdirsector, dirEntry);
+
+	while (dirptr != -1)
+	{
+		// file is not a splat file
+		if((dirEntry->file_type & 128) == 128)
+		{
+			uint8_t dirtrack = c1581->curtrack;
+			uint8_t dirsector = c1581->cursector;
+
+			uint8_t trk = dirEntry->first_data_track;
+			uint8_t sec = dirEntry->first_data_sector;
+
+			c1581->setTrackSectorAllocation(trk, sec, true);
+
+			while(trk != 0)
+			{
+				c1581->goTrackSector(trk, sec);
+				trk = c1581->sectorBuffer[0];
+				sec = c1581->sectorBuffer[1];
+				c1581->setTrackSectorAllocation(trk, sec, true);
+			}
+
+			c1581->goTrackSector(dirtrack, dirsector);
+		}
+		else
+		{
+			// file is a splat file.  remove it from directory
+			c1581->sectorBuffer[dirptr + 0x02] = 0x00;
+		}
+
+		dirptr = c1581->getNextDirectoryEntry(&firstcall, &dirctr, &lastdirsector, dirEntry);
+	}
+
+	delete dirEntry;
+	c1581->write_d81();
 	return;
 }
 
@@ -1135,172 +1421,7 @@ void C1581_CommandChannel :: block_pointer(command_t& command)
 	// past the end of the buffer
 }
 
-void C1581_CommandChannel :: format(command_t& command)
-{
-	char name[32];
-	char id[3];
-	int  part;
-	uint8_t tmp[256];
-	bool softFormat = true;
 
-	if (!command.names[0].name) {
-		get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
-		return;
-	}
-
-	strcpy(name, command.names[0].name);
-	part = command.names[0].drive;
-
-	// if there is an ID, perform a hard format
-	if (command.names[1].name) {
-
-		if(command.names[1].separator != ',')
-		{
-			get_last_error(ERR_SYNTAX_ERROR_CMD);
-			return;
-		}
-
-		softFormat = false;
-
-		strcpy(id, command.names[1].name);
-	}
-
-	// clear a tmp buffer
-	for(int t=0;t < 256;t++)
-		tmp[t] = 0;
-
-	if (softFormat == false)
-	{
-		// Clear each track / sector
-		for(int trk=1; trk<81; trk++)
-			for(int sec=0; sec<40; sec++)
-			{
-				c1581->goTrackSector(trk, sec);
-				memcpy(c1581->sectorBuffer, tmp, 256);
-			}
-	}
-
-
-	// set bam header sector
-	c1581->goTrackSector(40, 0);
-	tmp[0] = 0x28;	// track of first BAM
-	tmp[1] = 0x03;	// sector of first BAM
-	tmp[2] = 0x44;	// dos version type
-
-	int z=0;
-	// disk title
-	for(; z<strlen(name); z++)
-		tmp[0x04+z] = name[z];
-
-	// filename padding with int 160
-	for(; z<16;z++)
-		tmp[0x04+z] = 0xa0;
-
-	// disk id
-	if (softFormat == false)
-	{
-		tmp[0x16] = id[0];
-		tmp[0x17] = id[1];
-	}
-	else
-	{
-		tmp[0x16] = c1581->sectorBuffer[0x16];
-		tmp[0x17] = c1581->sectorBuffer[0x17];
-	}
-
-	tmp[0x18] = 0xa0;
-	tmp[0x19] = 0x33;	// dos version
-	tmp[0x1a] = 0x44;	//
-	tmp[0x1b] = 0xa0;
-	tmp[0x1c] = 0xa0;
-
-	for(z=0x1d; z<= 0xff; z++)
-		tmp[z] = 0x00;
-
-	// transfer tmp buffer to the sector
-	memcpy(c1581->sectorBuffer, tmp, 256);
-
-	// clear buffer
-	for(int t=0;t < 256;t++)
-		tmp[t] = 0;
-
-	// BAM side 1
-	c1581->goTrackSector(40, 1);
-	tmp[0x00] = 0x28;	// next track
-	tmp[0x01] = 0x02;	// next sector
-	tmp[0x02] = 0x44;	// version #
-	tmp[0x03] = 0xbb;	// one compliment above
-
-	// disk id
-	if (softFormat == false)
-	{
-		tmp[0x04] = id[0];
-		tmp[0x05] = id[1];
-	}
-	else
-	{
-		tmp[0x04] = c1581->sectorBuffer[0x04];
-		tmp[0x05] = c1581->sectorBuffer[0x05];
-	}
-
-	tmp[0x06] = 0xc0;	// verify/crc flags
-	tmp[0x07] = 0x00; 	// autoboot loader flag
-
-	uint8_t tbam[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
-			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
-			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
-			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
-			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
-			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
-			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
-			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
-			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
-			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
-			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
-			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff,
-			0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff,
-			0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x28, 0xff,
-			0xff, 0xff, 0xff, 0xff, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0x24, 0xf0, 0xff, 0xff, 0xff, 0xff
-	};
-
-	for(z=0x08;z<=0xff;z++)
-		tmp[z] = tbam[z-0x08];
-
-	// transfer tmp buffer to the sector
-	memcpy(c1581->sectorBuffer, tmp, 256);
-
-	// BAM side 2
-	c1581->goTrackSector(40, 2);
-	tmp[0x00] = 0x00;	// next track
-	tmp[0x01] = 0xff;	// next sector
-	tmp[0xfa] = 0x28;
-	tmp[0xfb] = 0xff;
-
-	// transfer tmp buffer to the sector
-	memcpy(c1581->sectorBuffer, tmp, 256);
-
-	// dir sector
-	c1581->goTrackSector(40, 3);
-
-	// preferably in a soft format, the dir sector
-	// isnt cleared.  just the links are cleared
-	// but sd2iec does the same thing.
-	for(int t=0;t < 256;t++)
-		tmp[t] = 0;
-
-	tmp[0] = 0x00;
-	tmp[1] = 0xff;
-
-	// transfer tmp buffer to the sector
-	memcpy(c1581->sectorBuffer, tmp, 256);
-
-	// rewrite the image
-	c1581->write_d81();
-
-	// done
-	get_last_error(ERR_OK);
-}
 
 void C1581_CommandChannel :: mem_read(command_t& command)
 {
@@ -1334,6 +1455,12 @@ void C1581_CommandChannel :: mem_read(command_t& command)
 	{
 		buffer[0] = 0x38;
 		buffer[1] = 0xb1;
+	}
+
+	if(location == 0xC000)
+	{
+		buffer[0] = 0xC0;
+		buffer[1] = 0x00;
 	}
 
 	last_byte = count-1;

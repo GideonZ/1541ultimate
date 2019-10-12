@@ -53,10 +53,11 @@ protected:
 
 class C1581_CommandChannel : public C1581_Channel
 {
+	void format(command_t& command);
+	void copy(command_t& command);
     void renam(command_t& command);
-    void copy(command_t& command);
-    void format(command_t& command);
     void scratch(command_t& command);
+    void validate(command_t& command);
     void u1(command_t& command);
     void u2(command_t& command);
     void block_allocate(command_t& command);
