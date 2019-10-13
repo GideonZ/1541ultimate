@@ -34,6 +34,7 @@ port (
     SLOT_IRQn        : inout std_logic;
     SLOT_NMIn        : inout std_logic;
     SLOT_VCC         : in    std_logic;
+    SLOT_DRV_RST     : out   std_logic := '0';
     
     -- memory
     SDRAM_A     : out   std_logic_vector(13 downto 0); -- DRAM A
@@ -469,7 +470,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"14",
+        g_version       => X"15",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,

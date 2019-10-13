@@ -117,6 +117,7 @@ set_location_assignment PIN_B16 -to SLOT_IRQn
 set_location_assignment PIN_C15 -to SLOT_NMIn
 set_location_assignment PIN_C16 -to SLOT_RSTn
 set_location_assignment PIN_D15 -to SLOT_ROMHn
+set_location_assignment PIN_D3 -to SLOT_RST_DRV
 set_location_assignment PIN_E9 -to IEC_RESET
 set_location_assignment PIN_D9 -to IEC_CLOCK
 set_location_assignment PIN_D11 -to IEC_DATA
