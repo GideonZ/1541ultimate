@@ -104,6 +104,7 @@ public:
     void access_socket_post(int socket);
 };
 
+bool isEliteBoard(void);
 extern U64Config u64_configurator;
 
 extern uint8_t C64_EMUSID1_BASE_BAK;

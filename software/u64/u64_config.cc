@@ -346,8 +346,7 @@ U64Config :: U64SidSockets :: U64SidSockets()
     cfg->disable(CFG_SID1_CAPS);
     cfg->disable(CFG_SID2_CAPS);
 
-    uint8_t rev = (U2PIO_BOARDREV >> 3);
-    if (rev != 0x13) {
+    if (!isEliteBoard()) {
         cfg->disable(CFG_SID1_SHUNT);
         cfg->disable(CFG_SID2_SHUNT);
     }
@@ -725,8 +724,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         ultisids.effectuate_settings();
         sidaddressing.effectuate_settings();
 
-        uint8_t rev = (U2PIO_BOARDREV >> 3);
-        if (rev != 0x13) {
+        if (!isEliteBoard()) {
             cfg->disable(CFG_JOYSWAP);
         }
     }
@@ -1694,8 +1692,7 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
 
 int swap_joystick()
 {
-    uint8_t rev = (U2PIO_BOARDREV >> 3);
-    if (rev != 0x13) {
+    if (!isEliteBoard()) {
         return 0;
     }
 
@@ -1710,6 +1707,22 @@ int swap_joystick()
 
     // swap performed, now exit menu
     return -1;
+}
+
+bool isEliteBoard(void)
+{
+    uint8_t rev = (U2PIO_BOARDREV >> 3);
+    if (rev != 0x13) {
+        return true;
+    }
+    if (rev == 0x14) { // may be either!
+        uint8_t joyswap = C64_PLD_JOYCTRL;
+        if (joyswap & 0x80) {
+            return true;
+        }
+        return false;
+    }
+    return false;
 }
 
 void U64Config :: auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int count)
