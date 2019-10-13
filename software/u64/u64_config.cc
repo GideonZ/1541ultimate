@@ -443,30 +443,27 @@ int U64Config :: detectRemakes(int socket)
     base[31] = 'D';
     C64_PEEK(2); // dummy cycle
 
-    wait_ms(5);
+    wait_ms(10);
 
     uint8_t id1 = base[27];
     C64_PEEK(2); // dummy cycle
     uint8_t id2 = base[28];
     C64_PEEK(2); // dummy cycle
-    base[29] = 0; // clear to be safe
 
     printf("ARMSID Detect: %b %b\n", id1, id2);
 
     if ((id1 == 'S') && (id2 == 'W')) {
         base[29] = 0;
-        C64_PEEK(2); // dummy cycle
         sidDevice[socket] = new SidDeviceSwinSid(socket, base);
         return SID_TYPE_SWINSID; // SwinSid Ultimate
     }
 
-    if (((id1 == 'N') && (id2 == 'O')) ||
-        ((id1 == 'n') && (id2 == 'o'))) {
+    if ((id1 == 'N') && (id2 == 'O')) {
         base[31] = 'I';
         C64_PEEK(2); // dummy cycle
         base[30] = 'I';
         C64_PEEK(2); // dummy cycle
-        wait_ms(5);
+        wait_ms(10);
         uint8_t id1 = base[27];
         base[29] = 0;
         C64_PEEK(2); // dummy cycle

@@ -56,13 +56,13 @@ static const char *filthi8[] = {
 };
 
 static const char *filtlow8[] = {
-        " 30",
-        "~45",
-        "~70",
-        "100",
+        "  30",
+        " ~45",
+        " ~70",
+        " 100",
         "~150",
         "~220",
-        "330",
+        " 330",
 };
 
 
@@ -230,7 +230,7 @@ void SidDeviceArmSid :: ArmSidConfig :: S_config_mode(volatile uint8_t *base)
     base[30] = 'I';
     C64_PEEK(2);
     base[31] = 'D';
-    wait_ms(2);
+    wait_ms(10);
 }
 
 void SidDeviceArmSid :: ArmSidConfig :: S_set_mode(volatile uint8_t *base, uint8_t mode)
@@ -241,7 +241,7 @@ void SidDeviceArmSid :: ArmSidConfig :: S_set_mode(volatile uint8_t *base, uint8
     base[30] = 'E';
     C64_PEEK(2);
     base[31] = mode;
-    wait_ms(5);
+    wait_ms(10);
 }
 
 void SidDeviceArmSid :: ArmSidConfig :: S_set_filt(volatile uint8_t *base, ConfigStore *store)
@@ -306,4 +306,20 @@ int SidDeviceArmSid::ArmSidConfig:: S_cfg_armsid_filt(ConfigItem *it)
     S_save_ram(base);
 
     post(it);
+}
+
+void SidDeviceArmSid :: SetSidType(int type)
+{
+    volatile uint8_t *base = pre();
+    pre_mode = C64_MODE;
+    C64_MODE = MODE_ULTIMAX; // force I/O range on
+
+    SidDeviceArmSid :: ArmSidConfig :: S_config_mode(base);
+
+    type--; // receive 1 = 6581, 2 = 8580 => map to 0 and 1
+
+    SidDeviceArmSid :: ArmSidConfig :: S_set_mode(base, (type) ? '8' : '6');
+
+    C64_MODE = pre_mode;
+    post();
 }
