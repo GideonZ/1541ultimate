@@ -28,6 +28,7 @@ extern "C" {
 #include "sid_editor.h"
 #include "sid_device_fpgasid.h"
 #include "sid_device_swinsid.h"
+#include "sid_device_armsid.h"
 
 // static pointer
 U64Config u64_configurator;
@@ -435,8 +436,6 @@ int U64Config :: detectRemakes(int socket)
     C64_PEEK(2); // dummy cycle
 */
 
-    wait_ms(10);
-
     base[29] = 'S';
     C64_PEEK(2); // dummy cycle
     base[30] = 'I';
@@ -444,7 +443,7 @@ int U64Config :: detectRemakes(int socket)
     base[31] = 'D';
     C64_PEEK(2); // dummy cycle
 
-    wait_ms(1);
+    wait_ms(5);
 
     uint8_t id1 = base[27];
     C64_PEEK(2); // dummy cycle
@@ -465,9 +464,14 @@ int U64Config :: detectRemakes(int socket)
         ((id1 == 'n') && (id2 == 'o'))) {
         base[31] = 'I';
         C64_PEEK(2); // dummy cycle
+        base[30] = 'I';
+        C64_PEEK(2); // dummy cycle
+        wait_ms(5);
         uint8_t id1 = base[27];
         base[29] = 0;
         C64_PEEK(2); // dummy cycle
+        sidDevice[socket] = new SidDeviceArmSid(socket, base);
+
         if ((id1 == 'L') || (id1 == 'R')) {
             return SID_TYPE_ARM2SID; // ARM2SID
         }
@@ -490,14 +494,18 @@ void U64Config :: U64SidSockets :: detect(void)
     S_SetupDetectionAddresses();
     sid2 = u64_configurator.detectFPGASID(1);
 
-    S_SetupDetectionAddresses();
-    if (sid1 == SID_TYPE_NONE) {
-        sid1 = u64_configurator.detectRemakes(0);
-    }
+    if ((sid1 == SID_TYPE_NONE) || (sid2 == SID_TYPE_NONE)) {
+        wait_ms(100);
 
-    S_SetupDetectionAddresses();
-    if (sid2 == SID_TYPE_NONE) {
-        sid2 = u64_configurator.detectRemakes(1);
+        S_SetupDetectionAddresses();
+        if (sid1 == SID_TYPE_NONE) {
+            sid1 = u64_configurator.detectRemakes(0);
+        }
+
+        S_SetupDetectionAddresses();
+        if (sid2 == SID_TYPE_NONE) {
+            sid2 = u64_configurator.detectRemakes(1);
+        }
     }
 
     if ((sid1 == SID_TYPE_NONE) || (sid2 == SID_TYPE_NONE)) {
