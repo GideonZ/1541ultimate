@@ -29,6 +29,7 @@
 #include "menu.h"
 #include "subsys.h"
 #include "userinterface.h"
+#include "stream_textlog.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_cfg(FileType :: getFileTypeFactory(), FileTypeCfg :: test_type);
@@ -75,14 +76,16 @@ int FileTypeCfg :: execute(SubsysCommand *cmd)
 
     FileManager *fm = FileManager :: getFileManager();
     FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
+    StreamTextLog log(8192);
 
     if(file) {
-        bool ok = ConfigIO :: S_read_from_file(file);
+        bool ok = ConfigIO :: S_read_from_file(file, &log);
         fm->fclose(file);
         if (ok) {
             cmd->user_interface->popup("Loading configuration successful!", BUTTON_OK);
         } else {
             cmd->user_interface->popup("There were errors.", BUTTON_OK);
+            cmd->user_interface->run_editor(log.getText());
         }
         ConfigStore *s;
         ConfigManager *cm = ConfigManager :: getConfigManager();
