@@ -211,11 +211,11 @@ int  C1541 :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
         return 0;
     }
 
-    sprintf(buffer, "Reset 1541 Drive %c", drive_letter);
+    sprintf(buffer, "Reset 1541 drive %c", drive_letter);
 	item_list.append(new Action(buffer, getID(), MENU_1541_RESET, 0));
 
 	if(disk_state != e_no_disk) {
-        sprintf(buffer, "Remove disk from Drive %c", drive_letter);
+        sprintf(buffer, "Remove disk from drive %c", drive_letter);
 		item_list.append(new Action(buffer, getID(), MENU_1541_REMOVE, 0));
 		items++;
 

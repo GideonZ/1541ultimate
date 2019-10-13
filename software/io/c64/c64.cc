@@ -194,7 +194,7 @@ C64::C64()
 {
     flash = get_flash();
 
-    register_store(0x43363420, "C64 and cartridge settings", c64_config);
+    register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
 
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);

@@ -182,7 +182,7 @@ AudioConfig :: AudioConfig()
             def[1].max = 3;
         }
     }        
-    register_store(store, "Audio Output settings", def);
+    register_store(store, "Audio Output Settings", def);
 
     effectuate_settings();
 }
