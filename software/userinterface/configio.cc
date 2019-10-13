@@ -59,7 +59,9 @@ void ConfigIO :: S_write_to_file(File *f)
     ConfigStore *s;
     for(int n = 0; n < cm->stores.get_elements();n++) {
         s = cm->stores[n];
-        S_write_store_to_file(s, f);
+        if (s->get_page()) { // If the store doesn't have a flash page, we won't write it out either
+            S_write_store_to_file(s, f);
+        }
     }
 }
 
@@ -135,7 +137,7 @@ void ConfigIO :: S_write_store_to_file(ConfigStore *st, File *f)
     f->write(buffer, len, &tr);
 }
 
-bool ConfigIO :: S_read_from_file(File *f)
+bool ConfigIO :: S_read_from_file(File *f, StreamTextLog *log)
 {
     char c;
     char line[128];
@@ -143,6 +145,7 @@ bool ConfigIO :: S_read_from_file(File *f)
     bool allOK = true;
     ConfigStore *store;
     ConfigManager *cm = ConfigManager :: getConfigManager();
+    int linenr = 0;
 
     while(1) {
         for(int i=0;i<128;) {
@@ -153,6 +156,7 @@ bool ConfigIO :: S_read_from_file(File *f)
                 }
                 if (c == 0x0A) {
                     line[i] = 0;
+                    linenr++;
                     break;
                 }
                 line[i++] = c;
@@ -168,6 +172,9 @@ bool ConfigIO :: S_read_from_file(File *f)
                 if (line[i] == ']') {
                     line[i] = 0;
                     store = S_find_store(cm, line + 1);
+                    if (!store) {
+                        log->format("Line %d: Store name '%s' not found.\n", linenr, line + 1);
+                    }
                     break;
                 }
             }
@@ -176,9 +183,9 @@ bool ConfigIO :: S_read_from_file(File *f)
         // trim line? well for now let's assume correct spacing
         if (strlen(line) > 0) {
             if (store) {
-                allOK &= S_read_store_element(store, line);
+                allOK &= S_read_store_element(store, line, linenr, log);
             } else {
-                printf("No store selected for line '%s'\n", line);
+                log->format("Line %d: Not inside valid store.\n", linenr);
                 allOK = false;
             }
         }
@@ -194,11 +201,10 @@ ConfigStore *ConfigIO :: S_find_store(ConfigManager *cm, char *storename)
             return st;
         }
     }
-    printf("Store name '%s' not found!\n", storename);
     return NULL;
 }
 
-bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line)
+bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line, int linenr, StreamTextLog *log)
 {
     char itemname[40];
     const char *valuestr = 0;
@@ -213,22 +219,24 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line)
         }
         itemname[i] = line[i];
     }
-    if (!valuestr) {
+    if (strlen(itemname) == 0) {
+        log->format("Line %d: No item name.\n", linenr);
         return false;
     }
-    if (strlen(itemname) == 0) {
+    if (!valuestr) {
+        log->format("Line %d: No value given for item '%s'.\n", linenr, itemname);
         return false;
     }
     // now look for the store element with the itemname
     ConfigItem *item = 0;
     for(int n = 0; n < st->items.get_elements(); n++) {
-        item = st->items[n];
-        if (strcasecmp(itemname, item->definition->item_text) == 0) {
+        if (strcasecmp(itemname, st->items[n]->definition->item_text) == 0) {
+            item = st->items[n];
             break;
         }
     }
     if (!item) {
-        printf("Item '%s' not found in this store [%s].\n", itemname, st->store_name.c_str());
+        log->format("Line %d: Item '%s' not found in this store [%s].\n", linenr, itemname, st->store_name.c_str());
         return false;
     }
 
@@ -262,7 +270,7 @@ bool ConfigIO :: S_read_store_element(ConfigStore *st, const char *line)
             }
         }
         if (!found) {
-            printf("Value '%s' is not a valid choice for item %s\n", valuestr, item->definition->item_text);
+            log->format("Line %d: Value '%s' is not a valid choice for item %s\n", linenr, valuestr, item->definition->item_text);
             return false;
         }
     }
