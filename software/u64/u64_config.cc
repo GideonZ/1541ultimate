@@ -1712,7 +1712,7 @@ int swap_joystick()
 bool isEliteBoard(void)
 {
     uint8_t rev = (U2PIO_BOARDREV >> 3);
-    if (rev != 0x13) {
+    if (rev == 0x13) {
         return true;
     }
     if (rev == 0x14) { // may be either!
