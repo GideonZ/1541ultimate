@@ -133,8 +133,7 @@ SidDeviceFpgaSid :: FpgaSidConfig :: FpgaSidConfig(SidDeviceFpgaSid *parent)
     sprintf(name, "%b", parent->fpga_rev);
     cfg->set_string(CFG_FPGASID_FPGAREV, name);
     
-    if (parent->fpga_rev == 9)
-    {
+    if (parent->fpga_rev <= 9) {
        cfg->disable(CFG_FPGASID_OUTPUTMODE);
        cfg->disable(CFG_FPGASID_LEDS);
     }
