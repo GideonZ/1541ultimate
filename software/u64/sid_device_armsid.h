@@ -41,6 +41,8 @@ class SidDeviceArmSid: public SidDevice {
 
         static int  S_cfg_armsid_type           (ConfigItem *it);
         static int  S_cfg_armsid_filt           (ConfigItem *it);
+
+        friend class SidDeviceArmSid; // yes, my father is also my friend
     };
 
     ArmSidConfig *config;
@@ -48,6 +50,7 @@ public:
     SidDeviceArmSid(int socket, volatile uint8_t *base);
     virtual ~SidDeviceArmSid();
 
+    void SetSidType(int type);
 };
 
 #endif /* SID_DEVICE_ARMSID_H_ */
