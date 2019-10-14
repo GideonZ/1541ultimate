@@ -161,6 +161,8 @@ C1581 ::C1581(char letter) : SubSystem(SUBSYSID_DRIVE_C)
 	disk_state = e_no_disk81;
 	sectorBuffer = 0;
 	last_error = ERR_DOS;
+	curbamtrack = 40;
+	curbamsector = 1;
 
 	char buffer[32];
 	sprintf(buffer, "1581 Drive %c Settings", letter);    
@@ -322,10 +324,10 @@ int C1581::readBAMtocache(void)
 	uint8_t tmptrack = curtrack;
 	uint8_t tmpsector = cursector;
 
-	goTrackSector(40,1);
+	goTrackSector(curbamtrack,curbamsector);
 	memcpy(BAMCache1, sectorBuffer, BLOCK_SIZE);
 
-	goTrackSector(40,2);
+	goTrackSector(curbamtrack,curbamsector+1);
 	memcpy(BAMCache2, sectorBuffer, BLOCK_SIZE);
 
 	goTrackSector(tmptrack, tmpsector);
@@ -337,10 +339,10 @@ int C1581::writeBAMfromcache(void)
 	uint8_t tmptrack = curtrack;
 	uint8_t tmpsector = cursector;
 
-	goTrackSector(40,1);
+	goTrackSector(curbamtrack,curbamsector);
 	memcpy(sectorBuffer, BAMCache1, BLOCK_SIZE);
 
-	goTrackSector(40,2);
+	goTrackSector(curbamtrack,curbamsector+1);
 	memcpy(sectorBuffer, BAMCache2, BLOCK_SIZE);
 	writeSector();
 

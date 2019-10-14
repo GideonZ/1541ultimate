@@ -41,8 +41,8 @@ void C1581_Channel::init(C1581 *parent, int ch)
 
 void C1581_Channel :: reset_prefetch(void)
 {
-	if(pointer == -1)
-		pointer = last_byte;
+	//if(pointer == -1)
+	//	pointer = last_byte;
 
 	prefetch = pointer;
 }
@@ -93,7 +93,22 @@ int C1581_Channel :: push_command(uint8_t b)
 
     switch(b) {
         case 0xF0: // open
-            close_file();
+            //close_file();
+
+        	writeblock=0;
+			write=0;
+			pointer=0;
+			writetrack = 0;
+			writesector = 0;
+			buffer[0] = 0;
+			blocknumber=0;
+			size=0;
+			localbuffer[0]=0;
+			file_name[0]=0;
+			last_byte = 0;
+			prefetch = 0;
+			prefetch_max =0;
+
             state = e_filename;
             pointer = 0;
             break;
@@ -136,7 +151,8 @@ int C1581_Channel :: prefetch_data(uint8_t& data)
     }
     if (prefetch == last_byte) {
         data = buffer[prefetch];
-        pointer = -1;
+        //pointer = -1;
+        prefetch++;
         return IEC_LAST;
     }
     if (prefetch < prefetch_max) {
@@ -564,6 +580,7 @@ void C1581_CommandChannel :: init(C1581 *parent, int ch)
 {
 	c1581 = parent;
 	channel = ch;
+	get_last_error(ERR_DOS,0,0);
 }
 
 void C1581_CommandChannel :: get_last_error(int err = -1, int track = 0, int sector = 0)
@@ -626,7 +643,8 @@ int C1581_CommandChannel :: push_command(uint8_t b)
 
 void C1581_CommandChannel :: exec_command(command_t &command)
 {
-    if (strncmp(command.cmd , "NEW", strlen(command.cmd)) == 0) {
+
+	if (strncmp(command.cmd , "NEW", strlen(command.cmd)) == 0) {
         format(command);
     } else if (strncmp(command.cmd, "COPY", strlen(command.cmd)) == 0) {
         copy(command);
@@ -659,7 +677,7 @@ void C1581_CommandChannel :: exec_command(command_t &command)
     } else if (command.cmd[0] == 'B' && command.cmd[1] == '-' && command.cmd[2] == 'P') {
         block_pointer(command);
     } else if (command.cmd[0] == '/') {
-    	get_last_error(ERR_OK,0,0);
+    	get_last_error(ERR_PARTITION_OK,1,80);
     }
     else { // unknown command
         get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
@@ -692,8 +710,13 @@ void C1581_CommandChannel :: format(command_t& command)
 		}
 
 		softFormat = false;
-
 		strcpy(id, command.names[1].name);
+	}
+
+	if(c1581->disk_state == e_no_disk81)
+	{
+		get_last_error(ERR_DRIVE_NOT_READY, 40, 0);
+		return;
 	}
 
 	// clear a tmp buffer
@@ -880,6 +903,12 @@ void C1581_CommandChannel :: copy(command_t& command)
 		return;
 	}
 
+	if(c1581->disk_state == e_no_disk81)
+	{
+		get_last_error(ERR_DRIVE_NOT_READY, 40, 0);
+		return;
+	}
+
 	printf("From: %d:%s To: %d:%s\n", fromPart, fromName, toPart, toName);
 
 	DirectoryEntry *dirEntry = new DirectoryEntry();
@@ -992,6 +1021,13 @@ void C1581_CommandChannel :: renam(command_t& command)
 		return;
 	}
 
+	if(c1581->disk_state == e_no_disk81)
+	{
+		get_last_error(ERR_DRIVE_NOT_READY, 40, 0);
+		return;
+	}
+
+
 	printf("From: %d:%s To: %d:%s\n", fromPart, fromName, toPart, toName);
 
 	DirectoryEntry *dirEntry = new DirectoryEntry();
@@ -1053,6 +1089,12 @@ void C1581_CommandChannel :: scratch(command_t& command)
         }
     }
 
+    if(c1581->disk_state == e_no_disk81)
+	{
+		get_last_error(ERR_DRIVE_NOT_READY, 40, 0);
+		return;
+	}
+
     DirectoryEntry *dirEntry = new DirectoryEntry();
     int x = c1581->findDirectoryEntry(name, (char *)fromExt, dirEntry);
 
@@ -1077,6 +1119,12 @@ void C1581_CommandChannel :: validate(command_t& command)
 {
 	uint8_t tmp[256];
 	int z=0;
+
+	if(c1581->disk_state == e_no_disk81)
+	{
+		get_last_error(ERR_DRIVE_NOT_READY, 40, 0);
+		return;
+	}
 
 	// clear a tmp buffer
 	for(int t=0;t < 256;t++)
@@ -1151,6 +1199,8 @@ void C1581_CommandChannel :: validate(command_t& command)
 		{
 			uint8_t dirtrack = c1581->curtrack;
 			uint8_t dirsector = c1581->cursector;
+			uint8_t dirnxttrack = c1581->nxttrack;
+			uint8_t dirnxtsector = c1581->nxtsector;
 
 			uint8_t trk = dirEntry->first_data_track;
 			uint8_t sec = dirEntry->first_data_sector;
@@ -1166,6 +1216,8 @@ void C1581_CommandChannel :: validate(command_t& command)
 			}
 
 			c1581->goTrackSector(dirtrack, dirsector);
+			c1581->nxttrack = c1581->sectorBuffer[0x00];
+			c1581->nxtsector = c1581->sectorBuffer[0x01];
 		}
 		else
 		{
