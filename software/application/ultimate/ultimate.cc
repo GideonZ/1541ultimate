@@ -41,7 +41,12 @@
 
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
-bool isEliteBoard(void);
+
+bool isEliteBoard(void) __attribute__((weak));
+bool isEliteBoard(void)
+{
+    return false;
+}
 
 bool connectedToU64 = false;
 
