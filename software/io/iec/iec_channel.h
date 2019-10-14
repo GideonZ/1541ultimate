@@ -10,7 +10,7 @@
 #include "mystring.h"
 
 typedef enum _t_channel_state {
-    e_idle, e_filename, e_file, e_dir, e_complete, e_error
+    e_idle, e_filename, e_file, e_dir, e_complete, e_error, e_block
     
 } t_channel_state;
 

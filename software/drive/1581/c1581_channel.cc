@@ -37,6 +37,8 @@ void C1581_Channel::init(C1581 *parent, int ch)
 {
 	c1581 = parent;
 	channel = ch;
+
+	memset(buffer,0,256);
 }
 
 void C1581_Channel :: reset_prefetch(void)
@@ -55,6 +57,9 @@ int C1581_Channel :: push_data(uint8_t b)
 		case e_filename:
 			if(pointer < 64)
 				buffer[pointer++] = b;
+			break;
+		case e_block:
+			buffer[pointer++] = b;
 			break;
 		case e_file:
 			buffer[pointer++] = b;
@@ -115,20 +120,7 @@ int C1581_Channel :: push_command(uint8_t b)
         case 0xE0: // close
             //printf("close %d %d\n", pointer, write);
             if(write) {
-                //dump_hex(buffer, pointer);
-                /*if (f) {
-                    if (pointer > 0) {
-                        FRESULT res = f->write(buffer, pointer, &bytes);
-                        if (res != FR_OK) {
-                            state = e_error;
-                            return IEC_WRITE_ERROR;
-                        }
-                    }*/
-                    close_file();
-                //} else {
-                //    state = e_error;
-                //    return IEC_WRITE_ERROR;
-               // }
+            	close_file();
             }
             state = e_idle;
             break;
@@ -173,6 +165,7 @@ int C1581_Channel :: pop_data(void)
     switch(state) {
     	case e_dir:
         case e_file:
+        case e_block:
             if(pointer == last_byte)
             {
                 state = e_complete;
@@ -388,7 +381,7 @@ uint8_t C1581_Channel::open_file(void)
 	{
 		// Block read command
 		pointer = 0;
-		state = e_file;
+		state = e_block;
 		return ERR_OK;
 	}
 
@@ -1305,7 +1298,72 @@ void C1581_CommandChannel :: u1(command_t& command)
 
 void C1581_CommandChannel :: u2(command_t& command)
 {
-	get_last_error(ERR_OK,0,0);
+	// parse the command into its component strings
+	char * pch;
+	char cmdbuf[255];
+	char chanl[255];
+	char drv[255];
+	char trk[255];
+	char sec[255];
+	uint8_t paramctr = 0;
+	uint8_t itrk = 0;
+	uint8_t isec = 0;
+	uint8_t ichanl = 0;
+
+	pch = strtok(command.cmd," ");
+
+	while (pch != NULL)
+	{
+		if(paramctr == 0)
+			strcpy(cmdbuf, pch);
+		else if (paramctr == 1)
+			strcpy(chanl, pch);
+		else if (paramctr == 2)
+			strcpy(drv, pch);
+		else if (paramctr == 3)
+			strcpy(trk, pch);
+		else if (paramctr == 4)
+			strcpy(sec, pch);
+
+		pch = strtok (NULL, " ");
+		paramctr++;
+	}
+
+	itrk = atoi(trk);
+	isec = atoi(sec);
+	ichanl = atoi(chanl);
+
+	if(itrk < 1 || itrk > 80)
+	{
+		get_last_error(ERR_ILLEGAL_TRACK_SECTOR, itrk, isec);
+		return;
+	}
+
+	if(isec < 0 || isec > 39)
+	{
+		get_last_error(ERR_ILLEGAL_TRACK_SECTOR, itrk, isec);
+		return;
+	}
+
+	if (c1581->channels[ichanl]->channelopen == false)
+	{
+		get_last_error(ERR_NO_CHANNEL,0,0);
+		return;
+	}
+
+	c1581->goTrackSector(itrk, isec);
+
+	for(int t=0; t< BLOCK_SIZE;t++)
+		c1581->sectorBuffer[t] = c1581->channels[ichanl]->buffer[t];
+
+	c1581->channels[ichanl]->last_byte = BLOCK_SIZE-1;
+	c1581->channels[ichanl]->pointer = 0;
+	c1581->channels[ichanl]->prefetch = 0;
+	c1581->channels[ichanl]->prefetch_max = BLOCK_SIZE-1;
+	//c1581->channels[ichanl]->state = e_block;
+
+	c1581->write_d81();
+	get_last_error(ERR_OK, 0,0);
 }
 
 void C1581_CommandChannel :: block_allocate(command_t& command)
@@ -1355,7 +1413,7 @@ void C1581_CommandChannel :: block_allocate(command_t& command)
 
 	if (c1581->channels[ichanl]->channelopen == false)
 	{
-		get_last_error(ERR_NO_CHANNEL);
+		get_last_error(ERR_NO_CHANNEL,0,0);
 		return;
 	}
 
