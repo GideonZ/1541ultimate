@@ -9,6 +9,10 @@
 #include "menu.h"
 #include "subsys.h"
 #include "config.h"
+#include "FreeRTOS.h"
+#include "FreeRTOSConfig.h"
+#include "task.h"
+#include "timers.h"
 
 extern "C" {
 #include "arch/sys_arch.h"
@@ -32,10 +36,10 @@ class DataStreamer : public ObjectWithMenu
     uint32_t my_ip;
 
     stream_config_t streams[4];
-    void *timers[4];
+    TimerHandle_t timers[4];
 
 
-    static void S_timer(void *);
+    static void S_timer(TimerHandle_t a);
     int startStream(SubsysCommand *cmd);
     int stopStream(SubsysCommand *cmd);
 
