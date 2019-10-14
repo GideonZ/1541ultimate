@@ -87,6 +87,8 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
 		uint8_t prevtrack;
 		uint8_t prevsector;
 		uint8_t *sectorBuffer;
+		uint8_t curbamtrack;
+		uint8_t curbamsector;
 		int last_error;
 		uint8_t buffers[7][256];
 		
