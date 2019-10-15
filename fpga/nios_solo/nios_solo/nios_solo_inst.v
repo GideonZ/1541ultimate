@@ -1,5 +1,6 @@
 	nios_solo u0 (
 		.clk_clk                 (<connected-to-clk_clk>),                 //    clk.clk
+		.dummy_export            (<connected-to-dummy_export>),            //  dummy.export
 		.io_ack                  (<connected-to-io_ack>),                  //     io.ack
 		.io_rdata                (<connected-to-io_rdata>),                //       .rdata
 		.io_read                 (<connected-to-io_read>),                 //       .read
@@ -23,7 +24,6 @@
 		.mem_mem_resp_dack_tag   (<connected-to-mem_mem_resp_dack_tag>),   //       .mem_resp_dack_tag
 		.mem_mem_resp_data       (<connected-to-mem_mem_resp_data>),       //       .mem_resp_data
 		.mem_mem_resp_rack_tag   (<connected-to-mem_mem_resp_rack_tag>),   //       .mem_resp_rack_tag
-		.reset_reset_n           (<connected-to-reset_reset_n>),           //  reset.reset_n
-		.dummy_export            (<connected-to-dummy_export>)             //  dummy.export
+		.reset_reset_n           (<connected-to-reset_reset_n>)            //  reset.reset_n
 	);
 

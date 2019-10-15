@@ -1,4 +1,4 @@
-//Legal Notice: (C)2016 Altera Corporation. All rights reserved.  Your
+//Legal Notice: (C)2019 Altera Corporation. All rights reserved.  Your
 //use of Altera Corporation's design tools, logic functions and other
 //software and tools, and its AMPP partner logic functions, and any
 //output files any of the foregoing (including device programming or
@@ -92,30 +92,31 @@ module nios_solo_nios2_gen2_0_cpu_debug_slave_wrapper (
   input            trigbrktype;
   input            trigger_state_1;
 
-  wire    [ 37: 0] jdo;
-  wire             jrst_n;
-  wire    [ 37: 0] sr;
-  wire             st_ready_test_idle;
-  wire             take_action_break_a;
-  wire             take_action_break_b;
-  wire             take_action_break_c;
-  wire             take_action_ocimem_a;
-  wire             take_action_ocimem_b;
-  wire             take_action_tracectrl;
-  wire             take_no_action_break_a;
-  wire             take_no_action_break_b;
-  wire             take_no_action_break_c;
-  wire             take_no_action_ocimem_a;
-  wire             vji_cdr;
-  wire    [  1: 0] vji_ir_in;
-  wire    [  1: 0] vji_ir_out;
-  wire             vji_rti;
-  wire             vji_sdr;
-  wire             vji_tck;
-  wire             vji_tdi;
-  wire             vji_tdo;
-  wire             vji_udr;
-  wire             vji_uir;
+
+wire    [ 37: 0] jdo;
+wire             jrst_n;
+wire    [ 37: 0] sr;
+wire             st_ready_test_idle;
+wire             take_action_break_a;
+wire             take_action_break_b;
+wire             take_action_break_c;
+wire             take_action_ocimem_a;
+wire             take_action_ocimem_b;
+wire             take_action_tracectrl;
+wire             take_no_action_break_a;
+wire             take_no_action_break_b;
+wire             take_no_action_break_c;
+wire             take_no_action_ocimem_a;
+wire             vji_cdr;
+wire    [  1: 0] vji_ir_in;
+wire    [  1: 0] vji_ir_out;
+wire             vji_rti;
+wire             vji_sdr;
+wire             vji_tck;
+wire             vji_tdi;
+wire             vji_tdo;
+wire             vji_udr;
+wire             vji_uir;
   //Change the sld_virtual_jtag_basic's defparams to
   //switch between a regular Nios II or an internally embedded Nios II.
   //For a regular Nios II, sld_mfg_id = 70, sld_type_id = 34.

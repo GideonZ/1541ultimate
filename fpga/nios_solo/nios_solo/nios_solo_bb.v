@@ -1,6 +1,7 @@
 
 module nios_solo (
 	clk_clk,
+	dummy_export,
 	io_ack,
 	io_rdata,
 	io_read,
@@ -24,10 +25,10 @@ module nios_solo (
 	mem_mem_resp_dack_tag,
 	mem_mem_resp_data,
 	mem_mem_resp_rack_tag,
-	reset_reset_n,
-	dummy_export);	
+	reset_reset_n);	
 
 	input		clk_clk;
+	input		dummy_export;
 	input		io_ack;
 	input	[7:0]	io_rdata;
 	output		io_read;
@@ -52,5 +53,4 @@ module nios_solo (
 	input	[31:0]	mem_mem_resp_data;
 	input	[7:0]	mem_mem_resp_rack_tag;
 	input		reset_reset_n;
-	input		dummy_export;
 endmodule

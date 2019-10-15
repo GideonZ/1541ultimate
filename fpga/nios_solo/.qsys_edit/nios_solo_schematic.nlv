@@ -1,0 +1,25 @@
+# # File gsaved with Nlview version 6.3.8  2013-12-19 bk=1.2992 VDI=34 GEI=35
+# 
+preplace inst nios_solo.pio_0 -pg 1 -lvl 3 -y 100
+preplace inst nios_solo.nios2_gen2_0 -pg 1 -lvl 2 -y 50
+preplace inst nios_solo.nios2_gen2_0.cpu -pg 1
+preplace inst nios_solo.avalon2mem_0 -pg 1 -lvl 3 -y 540
+preplace inst nios_solo.nios2_gen2_0.reset_bridge -pg 1
+preplace inst nios_solo.io_bridge_0 -pg 1 -lvl 3 -y 220
+preplace inst nios_solo.io_bridge_1 -pg 1 -lvl 3 -y 340
+preplace inst nios_solo.onchip_memory2_0 -pg 1 -lvl 3 -y 460
+preplace inst nios_solo.clk_0 -pg 1 -lvl 1 -y 200
+preplace inst nios_solo -pg 1 -lvl 1 -y 40 -regy -20
+preplace inst nios_solo.nios2_gen2_0.clock_bridge -pg 1
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)nios_solo.reset,(SLAVE)clk_0.clk_in_reset) 1 0 1 NJ
+preplace netloc FAN_OUT<net_container>nios_solo</net_container>(SLAVE)pio_0.irq,(SLAVE)io_bridge_0.irq,(MASTER)nios2_gen2_0.irq,(SLAVE)io_bridge_1.irq) 1 2 1 680
+preplace netloc INTERCONNECT<net_container>nios_solo</net_container>(SLAVE)pio_0.s1,(SLAVE)io_bridge_0.avalon_slave_0,(SLAVE)io_bridge_1.avalon_slave_0,(SLAVE)nios2_gen2_0.debug_mem_slave,(MASTER)nios2_gen2_0.data_master,(MASTER)nios2_gen2_0.instruction_master,(SLAVE)avalon2mem_0.avalon_slave_0,(SLAVE)onchip_memory2_0.s1) 1 1 2 300 410 660
+preplace netloc FAN_OUT<net_container>nios_solo</net_container>(SLAVE)pio_0.clk,(SLAVE)onchip_memory2_0.clk1,(MASTER)clk_0.clk,(SLAVE)nios2_gen2_0.clk,(SLAVE)io_bridge_0.clock,(SLAVE)io_bridge_1.clock,(SLAVE)avalon2mem_0.clock) 1 1 2 260 430 720
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)avalon2mem_0.mem,(SLAVE)nios_solo.mem) 1 0 3 NJ 590 NJ 590 NJ
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)nios_solo.io,(SLAVE)io_bridge_0.io) 1 0 3 NJ 270 NJ 270 NJ
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)nios_solo.dummy,(SLAVE)pio_0.external_connection) 1 0 3 NJ 190 NJ 190 NJ
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)clk_0.clk_in,(SLAVE)nios_solo.clk) 1 0 1 NJ
+preplace netloc FAN_OUT<net_container>nios_solo</net_container>(SLAVE)io_bridge_1.reset,(SLAVE)pio_0.reset,(SLAVE)io_bridge_0.reset,(SLAVE)onchip_memory2_0.reset1,(MASTER)clk_0.clk_reset,(SLAVE)nios2_gen2_0.reset,(SLAVE)avalon2mem_0.reset) 1 1 2 280 610 740
+preplace netloc EXPORT<net_container>nios_solo</net_container>(SLAVE)nios_solo.io_u2p,(SLAVE)io_bridge_1.io) 1 0 3 NJ 390 NJ 390 NJ
+levelinfo -pg 1 0 50 950
+levelinfo -hier nios_solo 60 90 420 790 940

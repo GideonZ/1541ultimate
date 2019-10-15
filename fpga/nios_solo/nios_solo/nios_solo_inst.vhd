@@ -1,6 +1,7 @@
 	component nios_solo is
 		port (
 			clk_clk                 : in  std_logic                     := 'X';             -- clk
+			dummy_export            : in  std_logic                     := 'X';             -- export
 			io_ack                  : in  std_logic                     := 'X';             -- ack
 			io_rdata                : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- rdata
 			io_read                 : out std_logic;                                        -- read
@@ -24,14 +25,14 @@
 			mem_mem_resp_dack_tag   : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- mem_resp_dack_tag
 			mem_mem_resp_data       : in  std_logic_vector(31 downto 0) := (others => 'X'); -- mem_resp_data
 			mem_mem_resp_rack_tag   : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- mem_resp_rack_tag
-			reset_reset_n           : in  std_logic                     := 'X';             -- reset_n
-			dummy_export            : in  std_logic                     := 'X'              -- export
+			reset_reset_n           : in  std_logic                     := 'X'              -- reset_n
 		);
 	end component nios_solo;
 
 	u0 : component nios_solo
 		port map (
 			clk_clk                 => CONNECTED_TO_clk_clk,                 --    clk.clk
+			dummy_export            => CONNECTED_TO_dummy_export,            --  dummy.export
 			io_ack                  => CONNECTED_TO_io_ack,                  --     io.ack
 			io_rdata                => CONNECTED_TO_io_rdata,                --       .rdata
 			io_read                 => CONNECTED_TO_io_read,                 --       .read
@@ -55,7 +56,6 @@
 			mem_mem_resp_dack_tag   => CONNECTED_TO_mem_mem_resp_dack_tag,   --       .mem_resp_dack_tag
 			mem_mem_resp_data       => CONNECTED_TO_mem_mem_resp_data,       --       .mem_resp_data
 			mem_mem_resp_rack_tag   => CONNECTED_TO_mem_mem_resp_rack_tag,   --       .mem_resp_rack_tag
-			reset_reset_n           => CONNECTED_TO_reset_reset_n,           --  reset.reset_n
-			dummy_export            => CONNECTED_TO_dummy_export             --  dummy.export
+			reset_reset_n           => CONNECTED_TO_reset_reset_n            --  reset.reset_n
 		);
 

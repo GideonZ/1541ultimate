@@ -1,20 +1,20 @@
-// (C) 2001-2015 Altera Corporation. All rights reserved.
-// Your use of Altera Corporation's design tools, logic functions and other 
+// (C) 2001-2019 Intel Corporation. All rights reserved.
+// Your use of Intel Corporation's design tools, logic functions and other 
 // software and tools, and its AMPP partner logic functions, and any output 
-// files any of the foregoing (including device programming or simulation 
+// files from any of the foregoing (including device programming or simulation 
 // files), and any associated documentation or information are expressly subject 
-// to the terms and conditions of the Altera Program License Subscription 
-// Agreement, Altera MegaCore Function License Agreement, or other applicable 
+// to the terms and conditions of the Intel Program License Subscription 
+// Agreement, Intel FPGA IP License Agreement, or other applicable 
 // license agreement, including, without limitation, that your use is for the 
-// sole purpose of programming logic devices manufactured by Altera and sold by 
-// Altera or its authorized distributors.  Please refer to the applicable 
+// sole purpose of programming logic devices manufactured by Intel and sold by 
+// Intel or its authorized distributors.  Please refer to the applicable 
 // agreement for further details.
 
 
-// $Id: //acds/rel/15.1/ip/merlin/altera_merlin_demultiplexer/altera_merlin_demultiplexer.sv.terp#1 $
+// $Id: //acds/rel/19.1std/ip/merlin/altera_merlin_demultiplexer/altera_merlin_demultiplexer.sv.terp#1 $
 // $Revision: #1 $
-// $Date: 2015/08/09 $
-// $Author: swbranch $
+// $Date: 2018/11/07 $
+// $Author: psgswbuild $
 
 // -------------------------------------
 // Merlin Demultiplexer
@@ -31,7 +31,7 @@
 //   ST_DATA_W:           108
 //   ST_CHANNEL_W:        6
 //   NUM_OUTPUTS:         3
-//   VALID_WIDTH:         1
+//   VALID_WIDTH:         6
 // ------------------------------------------
 
 //------------------------------------------
@@ -45,7 +45,7 @@ module nios_solo_mm_interconnect_0_cmd_demux_001
     // -------------------
     // Sink
     // -------------------
-    input  [1-1      : 0]   sink_valid,
+    input  [6-1      : 0]   sink_valid,
     input  [108-1    : 0]   sink_data, // ST_DATA_W=108
     input  [6-1 : 0]   sink_channel, // ST_CHANNEL_W=6
     input                         sink_startofpacket,
@@ -99,21 +99,21 @@ module nios_solo_mm_interconnect_0_cmd_demux_001
         src0_endofpacket   = sink_endofpacket;
         src0_channel       = sink_channel >> NUM_OUTPUTS;
 
-        src0_valid         = sink_channel[0] && sink_valid;
+        src0_valid         = sink_channel[0] && sink_valid[0];
 
         src1_data          = sink_data;
         src1_startofpacket = sink_startofpacket;
         src1_endofpacket   = sink_endofpacket;
         src1_channel       = sink_channel >> NUM_OUTPUTS;
 
-        src1_valid         = sink_channel[1] && sink_valid;
+        src1_valid         = sink_channel[1] && sink_valid[1];
 
         src2_data          = sink_data;
         src2_startofpacket = sink_startofpacket;
         src2_endofpacket   = sink_endofpacket;
         src2_channel       = sink_channel >> NUM_OUTPUTS;
 
-        src2_valid         = sink_channel[2] && sink_valid;
+        src2_valid         = sink_channel[2] && sink_valid[2];
 
     end
 
@@ -127,5 +127,4 @@ module nios_solo_mm_interconnect_0_cmd_demux_001
     assign sink_ready = |(sink_channel & {{3{1'b0}},{ready_vector[NUM_OUTPUTS - 1 : 0]}});
 
 endmodule
-
 
