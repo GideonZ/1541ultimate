@@ -813,20 +813,24 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 			// if a deleted or empty entry, we can use this
 			if(dirEntry->file_type == 0x00)
 			{
+				// if not CBM file type (they have already been allocated)
 				// allocate a starting sector for the file
-				int err = findFreeSector(track, sector);
-				if(err != ERR_OK)
+				if(filetype != 0x85)
 				{
-					delete dirEntry;
-					return err;
-				}
+					int err = findFreeSector(track, sector);
+					if(err != ERR_OK)
+					{
+						delete dirEntry;
+						return err;
+					}
 
-				// allocate the sector
-				err = setTrackSectorAllocation(*track, *sector, true);
-				if(err != ERR_OK)
-				{
-					delete dirEntry;
-					return err;
+					// allocate the sector
+					err = setTrackSectorAllocation(*track, *sector, true);
+					if(err != ERR_OK)
+					{
+						delete dirEntry;
+						return err;
+					}
 				}
 
 				// the 1st dir entry has next dir track/sector
@@ -878,20 +882,24 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 		sectorBuffer[1] = cursector + 1;	// sector to the new one
 		writeSector();						// write the current dir sector back
 
+		// if not CBM file type (they have already been allocated)
 		// allocate a starting sector for the file
-		int err = findFreeSector(track, sector);
-		if(err != ERR_OK)
+		if(filetype != 0x85)
 		{
-			delete dirEntry;
-			return err;
-		}
+			int err = findFreeSector(track, sector);
+			if(err != ERR_OK)
+			{
+				delete dirEntry;
+				return err;
+			}
 
-		// allocate the sector
-		err = setTrackSectorAllocation(*track, *sector, true);
-		if(err != ERR_OK)
-		{
-			delete dirEntry;
-			return err;
+			// allocate the sector
+			err = setTrackSectorAllocation(*track, *sector, true);
+			if(err != ERR_OK)
+			{
+				delete dirEntry;
+				return err;
+			}
 		}
 
 		// add the new directory entry to new sector
