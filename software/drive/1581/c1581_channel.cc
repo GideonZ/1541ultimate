@@ -670,7 +670,7 @@ void C1581_CommandChannel :: exec_command(command_t &command)
     } else if (command.cmd[0] == 'B' && command.cmd[1] == '-' && command.cmd[2] == 'P') {
         block_pointer(command);
     } else if (command.cmd[0] == '/') {
-    	get_last_error(ERR_PARTITION_OK,1,80);
+    	create_select_partition(command);
     }
     else { // unknown command
         get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
@@ -1093,11 +1093,42 @@ void C1581_CommandChannel :: scratch(command_t& command)
 
     if(x > -1)
     {
-    	dirEntry->file_type = 0x00;
-    	x = c1581->updateDirectoryEntry(name, (char*)fromExt, dirEntry);
+    	// if partition, delete and deallocate the range of blocks
+    	if(dirEntry->file_type == 0x85)
+    	{
+    		// temporary, so we can return to the proper directory track/sector
+			uint8_t dirtrack = c1581->curtrack;
+			uint8_t dirsector = c1581->cursector;
 
-    	if (x > -1)
-    		c1581->setTrackSectorAllocation(dirEntry->first_data_track, dirEntry->first_data_sector, false);
+			uint8_t ptrk = dirEntry->first_data_track;
+			uint8_t psec = dirEntry->first_data_sector;
+			int psize = dirEntry->size_hi * 256 + dirEntry->size_lo;
+
+			for(int y=0; y<psize;y++)
+			{
+				c1581->setTrackSectorAllocation(ptrk, psec, false);
+
+				psec++;
+				if(psec > 39)
+				{
+					psec=0;
+					ptrk++;
+				}
+			}
+
+			// return to the directory track/sector
+			c1581->goTrackSector(dirtrack, dirsector);
+			c1581->nxttrack = c1581->sectorBuffer[0x00];
+			c1581->nxtsector = c1581->sectorBuffer[0x01];
+    	}
+
+		// just update the file type to 0, and deallocate the BAM
+		dirEntry->file_type = 0x00;
+		x = c1581->updateDirectoryEntry(name, (char*)fromExt, dirEntry);
+
+		if (x > -1)
+			c1581->setTrackSectorAllocation(dirEntry->first_data_track, dirEntry->first_data_sector, false);
+
     }
 
     delete [] dirEntry;
@@ -1190,27 +1221,63 @@ void C1581_CommandChannel :: validate(command_t& command)
 		// file is not a splat file
 		if((dirEntry->file_type & 128) == 128)
 		{
-			uint8_t dirtrack = c1581->curtrack;
-			uint8_t dirsector = c1581->cursector;
-			uint8_t dirnxttrack = c1581->nxttrack;
-			uint8_t dirnxtsector = c1581->nxtsector;
-
-			uint8_t trk = dirEntry->first_data_track;
-			uint8_t sec = dirEntry->first_data_sector;
-
-			c1581->setTrackSectorAllocation(trk, sec, true);
-
-			while(trk != 0)
+			// if partition (CBM), just allocate the space
+			if(dirEntry->file_type == 0x85)
 			{
-				c1581->goTrackSector(trk, sec);
-				trk = c1581->sectorBuffer[0];
-				sec = c1581->sectorBuffer[1];
-				c1581->setTrackSectorAllocation(trk, sec, true);
-			}
+				// temporary, so we can return to the proper directory track/sector
+				uint8_t dirtrack = c1581->curtrack;
+				uint8_t dirsector = c1581->cursector;
 
-			c1581->goTrackSector(dirtrack, dirsector);
-			c1581->nxttrack = c1581->sectorBuffer[0x00];
-			c1581->nxtsector = c1581->sectorBuffer[0x01];
+				uint8_t ptrk = dirEntry->first_data_track;
+				uint8_t psec = dirEntry->first_data_sector;
+				int psize = dirEntry->size_hi * 256 + dirEntry->size_lo;
+
+				for(int y=0; y<psize;y++)
+				{
+					c1581->setTrackSectorAllocation(ptrk, psec, true);
+
+					psec++;
+					if(psec > 39)
+					{
+						psec=0;
+						ptrk++;
+					}
+				}
+
+				// return to the directory track/sector
+				c1581->goTrackSector(dirtrack, dirsector);
+				c1581->nxttrack = c1581->sectorBuffer[0x00];
+				c1581->nxtsector = c1581->sectorBuffer[0x01];
+			}
+			else
+			{
+				// otherwise follow the file chain and allocate
+
+				// temporary, so we can return to the proper directory track/sector
+				uint8_t dirtrack = c1581->curtrack;
+				uint8_t dirsector = c1581->cursector;
+				uint8_t dirnxttrack = c1581->nxttrack;
+				uint8_t dirnxtsector = c1581->nxtsector;
+
+				uint8_t trk = dirEntry->first_data_track;
+				uint8_t sec = dirEntry->first_data_sector;
+
+				c1581->setTrackSectorAllocation(trk, sec, true);
+
+				// follow the file chain and allocate
+				while(trk != 0)
+				{
+					c1581->goTrackSector(trk, sec);
+					trk = c1581->sectorBuffer[0];
+					sec = c1581->sectorBuffer[1];
+					c1581->setTrackSectorAllocation(trk, sec, true);
+				}
+
+				// return to the directory track/sector
+				c1581->goTrackSector(dirtrack, dirsector);
+				c1581->nxttrack = c1581->sectorBuffer[0x00];
+				c1581->nxtsector = c1581->sectorBuffer[0x01];
+			}
 		}
 		else
 		{
@@ -1531,7 +1598,133 @@ void C1581_CommandChannel :: block_pointer(command_t& command)
 	// past the end of the buffer
 }
 
+void C1581_CommandChannel :: create_select_partition(command_t& command)
+{
+	// parse the command into its component strings
+	char * pch;
+	char cmdbuf[255];
+	uint8_t istarting_track;
+	uint8_t istarting_sector;
+	uint8_t ilo_numsectors;
+	uint8_t ihi_numsectors;
+	uint16_t numsectors;
+	uint8_t t=0;
 
+	if(c1581->disk_state == e_no_disk81)
+	{
+		get_last_error(ERR_DRIVE_NOT_READY, 40, 0);
+		return;
+	}
+
+	for(t=0; t<255;t++)
+	{
+		cmdbuf[t] = command.names[0].name[t];
+		if(command.names[0].name[t] == 0)
+		{
+			t++;
+			break;
+		}
+	}
+
+	if(t == 255)
+	{
+		get_last_error(ERR_SYNTAX_ERROR_CMD, 0,0);
+		return;
+	}
+
+	istarting_track  = command.names[0].name[t++];
+	istarting_sector = command.names[0].name[t++];
+	ilo_numsectors   = command.names[0].name[t++];
+	ihi_numsectors   = command.names[0].name[t++];
+
+	if(command.names[0].name[t++] != ',')
+	{
+		get_last_error(ERR_SYNTAX_ERROR_CMD, 0,0);
+		return;
+	}
+
+	if(command.names[0].name[t++] != 'C')
+	{
+		get_last_error(ERR_SYNTAX_ERROR_CMD, 0,0);
+		return;
+	}
+
+	if(command.names[0].name[t] != 0)
+	{
+		get_last_error(ERR_SYNTAX_ERROR_CMD, 0,0);
+		return;
+	}
+
+	numsectors = (ihi_numsectors * 256) + ilo_numsectors;
+
+	uint8_t trk = istarting_track;
+	uint8_t sec = istarting_sector;
+
+	// next, check if the requested sectors are available
+	for(uint8_t x=0; x<numsectors;x++)
+	{
+		bool isallocated = c1581->getTrackSectorAllocation(trk, sec);
+
+		if(isallocated)
+		{
+			get_last_error(ERR_ILLEGAL_TRACK_SECTOR, trk,sec);
+			return;
+		}
+
+		sec++;
+		if(sec > 39)
+		{
+			trk++;
+			sec = 0;
+
+			if(trk > 80)
+			{
+				get_last_error(ERR_ILLEGAL_TRACK_SECTOR, trk,sec);
+				return;
+			}
+		}
+
+	}
+
+	trk = istarting_track;
+	sec = istarting_sector;
+
+	// next, allocate the sectors
+	for(uint8_t x=0; x<numsectors;x++)
+	{
+		c1581->setTrackSectorAllocation(trk, sec, true);
+
+		sec++;
+		if(sec > 39)
+		{
+			trk++;
+			sec = 0;
+		}
+	}
+
+	//add the directory entry
+	c1581->createDirectoryEntry(cmdbuf, 0x85, &istarting_track, &istarting_sector);
+
+	//update the file size
+
+	DirectoryEntry *dirEntry = new DirectoryEntry();
+	strcpy((char*)dirEntry->filename, cmdbuf);
+	dirEntry->file_type = 0x85;
+	dirEntry->first_data_track = istarting_track;
+	dirEntry->first_data_sector = istarting_sector;
+	dirEntry->size_hi = ihi_numsectors;
+	dirEntry->size_lo = ilo_numsectors;
+
+	uint8_t z = strlen((const char*)dirEntry->filename);
+	for(; z < 16; z++)
+		dirEntry->filename[z] = 0xa0;
+
+	c1581->updateDirectoryEntry(cmdbuf, "CBM", dirEntry);
+
+	delete dirEntry;
+
+	get_last_error(ERR_PARTITION_OK, istarting_track, istarting_sector);
+}
 
 void C1581_CommandChannel :: mem_read(command_t& command)
 {
@@ -1571,6 +1764,12 @@ void C1581_CommandChannel :: mem_read(command_t& command)
 	{
 		buffer[0] = 0xC0;
 		buffer[1] = 0x00;
+	}
+
+	if(location == 0xe5c6)
+	{
+		buffer[0] = 0xff;
+		buffer[1] = 0xff;
 	}
 
 	last_byte = count-1;
