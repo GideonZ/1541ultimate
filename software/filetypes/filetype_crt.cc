@@ -88,25 +88,26 @@ struct t_cart {
     const char *cart_name;
 };
 
-#define CART_NOT_IMPL  0xFFFF
-#define CART_NORMAL    1
-#define CART_ACTION    2
-#define CART_RETRO     3
-#define CART_DOMARK    4
-#define CART_OCEAN     5
-#define CART_EASYFLASH 6
-#define CART_SUPERSNAP 7
-#define CART_EPYX      8
-#define CART_FINAL3    9
-#define CART_SYSTEM3   10
-#define CART_KCS       11
-#define CART_FINAL12   12
-#define CART_COMAL80   13
-#define CART_SBASIC    14
+#define CART_NOT_IMPL    0xFFFF
+#define CART_NORMAL      1
+#define CART_ACTION      2
+#define CART_RETRO       3
+#define CART_DOMARK      4
+#define CART_OCEAN       5
+#define CART_EASYFLASH   6
+#define CART_SUPERSNAP   7
+#define CART_EPYX        8
+#define CART_FINAL3      9
+#define CART_SYSTEM3    10
+#define CART_KCS        11
+#define CART_FINAL12    12
+#define CART_COMAL80    13
+#define CART_SBASIC     14
 #define CART_WESTERMANN 15
-#define CART_BBASIC    16
-#define CART_PAGEFOX   17
-#define CART_EXOS      18
+#define CART_BBASIC     16
+#define CART_PAGEFOX    17
+#define CART_EXOS       18
+#define CART_SUPERGAMES 19
 
 const struct t_cart c_recognized_carts[] = {
     {  0, CART_NORMAL,    "Normal cartridge" },
@@ -117,7 +118,7 @@ const struct t_cart c_recognized_carts[] = {
     {  5, CART_OCEAN,     "Ocean type 1 (256 and 128 Kb)" },
     {  6, CART_NOT_IMPL,  "Expert Cartridge" },
     {  7, CART_NOT_IMPL,  "Fun Play" },
-    {  8, CART_NOT_IMPL,  "Super Games" },
+    {  8, CART_SUPERGAMES,"Super Games" },
     {  9, CART_RETRO,     "Atomic Power" },
     { 10, CART_EPYX,      "Epyx Fastload" },
     { 11, CART_WESTERMANN,"Westermann" },
@@ -738,6 +739,9 @@ void FileTypeCRT::configure_cart(void)
         break;
     case CART_PAGEFOX:
         C64_CARTRIDGE_TYPE = CART_TYPE_PAGEFOX; // Business Basic
+        break;
+    case CART_SUPERGAMES:
+        C64_CARTRIDGE_TYPE = CART_TYPE_SUPERGAMES; // Super Games, 16K banks
         break;
     case CART_EXOS:
         if (total_read > 8192) {
