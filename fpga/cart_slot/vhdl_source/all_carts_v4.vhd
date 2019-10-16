@@ -12,7 +12,6 @@ generic (
     g_georam_base   : std_logic_vector(27 downto 0) := X"1000000"; -- Shared with reu
     g_ram_base      : std_logic_vector(27 downto 0) := X"0EF0000" ); -- multiple of 64K
 
-
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -569,34 +568,49 @@ begin
                 nmi_n     <= '1';
             
             when c_kcs =>
+-- M1 M0 Ga Act      | M1 M0 Ex Ga              | M2 M1 M0 Recoded
+---------------------+--------------------------+-----------------
+--  x  x  x Reset    |  0  0  0  0  (reset:16K) |  0  0  0  16K
+--  x  x  x Freeze   |  1  1  1  0  (freeze)    |  0  1  0  UmaxF  
+--  x  x  x R:DE00   |  1  0  0  1  (8K mode)   |  0  0  1   8K
+--  x  x  x R:DE02   |  1  0  1  1  (off1)      |  0  1  1  Off1
+--  x  x  x W:DE80   |  0  0  0  0  (reset:16K) |  0  0  0  16K
+--  0  x  0 W:DE0x   |  0  1  1  0  (Ultimax)   |  1  1  0  UmaxS
+--  0  x  1 W:DE0x   |  0  1  1  1  (Off2)      |  1  1  1  Off2
+--  1  1  x W:DE00   |  0  0  0  0  (reset:16K) |  0  0  0  16K
+--  1  1  x W:DE02   |  1  0  0  1  (8K mode)   |  0  0  1   8K
+--   
+-- 0 0 0 0 16K
+-- 0 1 0 0 ?
+-- 0 0 1 0 ?
+-- 0 1 1 0 Ultimax
+-- 
+-- 0 0 0 1 ?
+-- 0 1 0 1 ?
+-- 0 0 1 1 ?
+-- 0 1 1 1 Off2
+
                 -- mode_bit(0) -> ULTIMAX
                 -- mode_bit(1) -> 16K Mode
                 -- io1 read
                 if io_read='1' and io_addr(8) = '0' then -- DE00-DEFF
-                   game_n       <= '1';                 -- When read and addr bit 1=0 : 8k GAME mode
-                   exrom_n      <= io_addr(1);          -- When read and addr bit 1=1 : Cartridge disabled mode
-                   mode_bits(0) <= '0';
-                   mode_bits(1) <= '0';
+                    mode_bits(0) <= '1';            -- When read and addr bit 1=0 : 8k GAME mode            
+                    mode_bits(1) <= io_addr(1);     -- When read and addr bit 1=1 : Cartridge disabled mode 
+                    mode_bits(2) <= '0';
                 end if;
 
                 -- io1 write
                 if io_write='1' and io_addr(8 downto 7) = "01" then -- DE80-DEFF
-                    game_n       <= '0';        -- When write 16K GAME mode
-                    exrom_n      <= '0';
-                    mode_bits(0) <= '0';
-                    mode_bits(1) <= '1';
+                    mode_bits <= "000"; -- 16K mode
                 end if;
                 if io_write='1' and io_addr(8 downto 7) = "00" then -- DE00-DE7F
-                    if mode_bits(1) = '1' then      -- Already in 16K Mode
-                        exrom_n      <= '1';        -- When write ULTIMAX mode
-                        mode_bits(0) <= '1';
-                        mode_bits(1) <= '0';
-                    elsif mode_bits(0) = '1' then   -- Already in ULTIMAX mode
-                        game_n       <= io_addr(1); -- When addr bit 1=0 : 16k GAME mode
-                        exrom_n      <= '0';        -- When addr bit 1=1 : 8k GAME mode
-                        mode_bits(0) <= '0';
-                        mode_bits(1) <= not io_addr(1);
-                    end if;
+                    -- if in 16K 000 / UmaxS 110 / Off2 111
+                    if mode_bits = "000" then -- 16K
+                        mode_bits <= "110";
+                    elsif mode_bits = "010" or mode_bits = "111" then -- Freeze of Off2
+                        mode_bits <= "000";          -- When addr bit 1=0 : 16k GAME mode
+                        mode_bits(0) <= io_addr(1);  -- When addr bit 1=1 : 8k GAME mode 
+                    end if;                    
                 end if;
                 -- io2 read
                 if io_read='1' and io_addr(8 downto 7) = "11" then -- DF80-DFFF
@@ -604,23 +618,15 @@ begin
                 end if;
                 -- on freeze
                 if freeze_act='1' then
-                    game_n       <= '0';   -- ULTIMAX mode
-                    exrom_n      <= '1';
-                    mode_bits(0) <= '1';
-                    mode_bits(1) <= '0';
-                end if;
-                -- on reset
-                if reset_in='1' then
-                    game_n       <= '0';   -- 16K GAME mode
-                    exrom_n      <= '0';
-                    mode_bits(0) <= '0';
-                    mode_bits(1) <= '1';
+                    mode_bits <= "010";
                 end if;
 
+                game_n    <= mode_bits(0);
+                exrom_n   <= mode_bits(1);
                 serve_io1 <= '1';
                 serve_io2 <= '1';
                 serve_rom <= '1';
-                serve_vic <= mode_bits(0);
+                serve_vic <= mode_bits(1);
                 nmi_n     <= not(freeze_trig or freeze_act);
 
             when c_fc =>
