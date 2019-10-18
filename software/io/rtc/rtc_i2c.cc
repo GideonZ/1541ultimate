@@ -281,7 +281,7 @@ Rtc rtc; // global
 // ============================================================
 // == Functions that link the RTC to the configuration manager
 // ============================================================
-void RtcConfigStore::read(void)
+void RtcConfigStore::at_open_config(void)
 {
     printf("** Cfg RTC Read **\n");
     int y, M, D, wd, h, m, s;
@@ -325,11 +325,11 @@ void RtcConfigStore::read(void)
     check_bounds();
 }
 
-void RtcConfigStore::write(void)
+void RtcConfigStore::at_close_config(void)
 {
     printf("** Cfg RTC Write **\n");
 
-    if (!dirty)
+    if (!need_effectuate())
         return;
 
     int y, M, D, wd, h, m, s, corr;
@@ -338,15 +338,16 @@ void RtcConfigStore::write(void)
 
     for (int n = 0; n < items.get_elements(); n++) {
         i = items[n];
+        int value = i->getValue();
         switch (i->definition->id) {
         case CFG_RTC_YEAR:
-            y = i->value - 1980;
+            y = value - 1980;
             break;
         case CFG_RTC_MONTH:
-            M = i->value;
+            M = value;
             break;
         case CFG_RTC_DATE:
-            D = i->value;
+            D = value;
             break;
             /*
              case CFG_RTC_WEEKDAY:
@@ -354,21 +355,22 @@ void RtcConfigStore::write(void)
              break;
              */
         case CFG_RTC_HOUR:
-            h = i->value;
+            h = value;
             break;
         case CFG_RTC_MINUTE:
-            m = i->value;
+            m = value;
             break;
         case CFG_RTC_SECOND:
-            s = i->value;
+            s = value;
             break;
         case CFG_RTC_CORR:
-            corr = i->value;
+            corr = value;
             break;
         default:
             break;
         }
     }
+
     int yz, mz, cz;
     mz = M;
     yz = y + 1980;
@@ -382,11 +384,12 @@ void RtcConfigStore::write(void)
     wd = wd % 7;
     if (wd < 0)
         wd += 7;
+
     printf("Writing time: %d-%d-%d (%d) %02d:%02d:%02d\n", y, M, D, wd, h, m, s);
     rtc.set_time(y, M, D, wd, h, m, s);
     rtc.set_time_in_chip(corr, y, M, D, wd, h, m, s);
 
-    dirty = false;
+    set_effectuated();
 }
 
 extern "C" uint32_t get_fattime(void) /* 31-25: Year(0-127 org.1980), 24-21: Month(1-12), 20-16: Day(1-31) */

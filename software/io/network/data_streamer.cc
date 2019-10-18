@@ -3,10 +3,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "FreeRTOS.h"
-#include "FreeRTOSConfig.h"
-#include "task.h"
-#include "timers.h"
 #include "profiler.h"
 #include "u64.h"
 #include "network_interface.h"

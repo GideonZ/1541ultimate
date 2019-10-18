@@ -101,6 +101,7 @@ SRCS_CC	 =  u2p_init.cc \
 			filetype_crt.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
+			filetype_cfg.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
@@ -146,6 +147,12 @@ SRCS_CC	 =  u2p_init.cc \
 			wifi.cc \
 			led_strip.cc \
 			data_streamer.cc \
+			configio.cc \
+			sid_editor.cc \
+			sid_device.cc \
+			sid_device_fpgasid.cc \
+			sid_device_swinsid.cc \
+			sid_device_armsid.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \

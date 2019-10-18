@@ -15,13 +15,14 @@
 #define CFG_LED_GREEN         0x03
 #define CFG_LED_BLUE          0x04
 #define CFG_LED_INTENSITY     0x05
+#define CFG_LED_SIDSELECT     0x06
 
 class LedStrip : public ConfigurableObject
 {
-    volatile uint8_t mode, intensity;
+    volatile uint8_t mode, intensity, sidsel;
     volatile uint8_t red, green, blue;
     static void task(void *);
-    static void hot_effectuate(ConfigItem *item);
+    static int hot_effectuate(ConfigItem *item);
 public:
     LedStrip();
     void effectuate_settings(void);

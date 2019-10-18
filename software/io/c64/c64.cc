@@ -84,7 +84,9 @@ const char *cart_mode[] = { "None",
                       "Custom Snappy ROM",
                       "Custom KCS ROM",
                       "Custom Final V1/V2 ROM",
+#ifndef U64
                       "Custom C128 External ROM",
+#endif
                       "Custom CRT"
                    };
 
@@ -119,7 +121,9 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x10000,  0x05 | CART_REU },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x10 },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x11 },
+#ifndef U64
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x08000,  0x18 | CART_REU | CART_ETH },
+#endif
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x00000,  0x00 }
  };
                           
@@ -141,7 +145,7 @@ static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 17, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 19, 4 },
 #else
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
 #endif
@@ -190,7 +194,7 @@ C64::C64()
 {
     flash = get_flash();
 
-    register_store(0x43363420, "C64 and cartridge settings", c64_config);
+    register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
 
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
@@ -248,19 +252,16 @@ void C64 :: resetConfigInFlash(int page)
         kern = 1;
     }
 #endif
-    if (page < 0) {
-        page = cfg->get_page();
-    }
+    cfg->reset();
 
-    ConfigStore *newConfig = new ConfigStore(0x43363420, "C64 and cartridge settings", page, cfg->get_page_size(), c64_config, NULL);
-
-    newConfig->set_value(CFG_C64_ALT_KERN, kern);
+    cfg->set_value(CFG_C64_ALT_KERN, kern);
 #if U64
-    newConfig->set_value(CFG_C64_ALT_BASI, basic);
-    newConfig->set_value(CFG_C64_ALT_CHAR, chars);
+    cfg->set_value(CFG_C64_ALT_BASI, basic);
+    cfg->set_value(CFG_C64_ALT_CHAR, chars);
 #endif
-    newConfig->dirty = true;
-    newConfig->write();
+    if (cfg->is_flash_stale()) {
+        cfg->write();
+    }
 }
 
 C64 *C64 :: getMachine(void) {

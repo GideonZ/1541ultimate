@@ -13,7 +13,6 @@ extern "C" {
     #include "sid_coeff.h"
 }
 #include <string.h>
-#include "menu.h"
 #include "flash.h"
 #include "userinterface.h"
 #include "u64.h"
@@ -27,11 +26,17 @@ extern "C" {
 #include "sys/alt_irq.h"
 #include "c64.h"
 #include "wifi.h"
+#include "sid_editor.h"
+#include "sid_device_fpgasid.h"
+#include "sid_device_swinsid.h"
+#include "sid_device_armsid.h"
 
 // static pointer
 U64Config u64_configurator;
 // Semaphore set by interrupt
 static SemaphoreHandle_t resetSemaphore;
+
+#define STORE_PAGE_ID 0x55363443
 
 #define CFG_SCANLINES         0x01
 #define CFG_SID1_ADDRESS      0x02
@@ -93,6 +98,10 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEAKER_VOL       0x44
 #define CFG_SOCKET1_ENABLE    0x45
 #define CFG_SOCKET2_ENABLE    0x46
+#define CFG_EMUSID_SPLIT      0x47
+#define CFG_SHOW_SID_ADDR     0x48
+#define CFG_JOYSWAP           0x49
+#define CFG_AUTO_MIRRORING    0x4A
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -106,26 +115,44 @@ uint8_t C64_EMUSID1_MASK_BAK;
 uint8_t C64_EMUSID2_MASK_BAK;
 uint8_t C64_SID1_MASK_BAK;
 uint8_t C64_SID2_MASK_BAK;
+uint8_t C64_EMUSID_SPLIT_BAK;
 
 uint8_t C64_STEREO_ADDRSEL_BAK;
 uint8_t C64_SID1_EN_BAK;
 uint8_t C64_SID2_EN_BAK;
 
-const char *u64_sid_base[] = { "$D400-$D7FF", // 10 bits
-		                       "$D400-$D5FF", // 9 bits
-		                       "$D600-$D7FF", // 9 bits
-		                       "$DE00-$DFFF", // 9 bits
-		                       "$D400-$D4FF", // 8 bits
-		                       "$D500-$D5FF", // 8 bits
-		                       "$D600-$D6FF", // 8 bits
-		                       "$D700-$D7FF", // 8 bits
-		                       "$DE00-$DEFF", // 8 bits
-		                       "$DF00-$DFFF", // 8 bits
-		                   "$D400", "$D420", "$D440", "$D480", "$D500", "$D600", "$D700",
-                           "$DE00", "$DE20", "$DE40", "$DE60",
-                           "$DE80", "$DEA0", "$DEC0", "$DEE0",
-                           "$DF00", "$DF20", "$DF40", "$DF60",
-                           "$DF80", "$DFA0", "$DFC0", "$DFE0" };
+#define UNMAPPED_BASE 0x01
+#define UNMAPPED_MASK 0xFE
+
+#define SID_TYPE_NONE    0
+#define SID_TYPE_6581    1
+#define SID_TYPE_8580    2
+#define SID_TYPE_FPGASID 3
+#define SID_TYPE_SWINSID 4
+#define SID_TYPE_ARMSID  5
+#define SID_TYPE_ARM2SID 6
+#define SID_TYPE_SIDFX   7
+#define SID_TYPE_FPGASID_DUKESTAH 8
+
+const char *u64_sid_base[] = { "Unmapped",
+                               "$D400", "$D420", "$D440", "$D460", "$D480", "$D4A0", "$D4C0", "$D4E0",
+                               "$D500", "$D520", "$D540", "$D560", "$D580", "$D5A0", "$D5C0", "$D5E0",
+                               "$D600", "$D620", "$D640", "$D660", "$D680", "$D6A0", "$D6C0", "$D6E0",
+                               "$D700", "$D720", "$D740", "$D760", "$D780", "$D7A0", "$D7C0", "$D7E0",
+                               "$DE00", "$DE20", "$DE40", "$DE60",
+                               "$DE80", "$DEA0", "$DEC0", "$DEE0",
+                               "$DF00", "$DF20", "$DF40", "$DF60",
+                               "$DF80", "$DFA0", "$DFC0", "$DFE0" };
+
+uint8_t u64_sid_offsets[] = { UNMAPPED_BASE,
+                              0x40, 0x42, 0x44, 0x46, 0x48, 0x4A, 0x4C, 0x4E,
+                              0x50, 0x52, 0x54, 0x56, 0x58, 0x5A, 0x5C, 0x5E,
+                              0x60, 0x62, 0x64, 0x66, 0x68, 0x6A, 0x6C, 0x6E,
+                              0x70, 0x72, 0x74, 0x76, 0x78, 0x7A, 0x7C, 0x7E,
+                              0xE0, 0xE2, 0xE4, 0xE6, 0xE8, 0xEA, 0xEC, 0xEE,
+                              0xF0, 0xF2, 0xF4, 0xF6, 0xF8, 0xFA, 0xFC, 0xFE,
+                            };
+
 
 const char *scan_modes[] = {
 	"VGA 60",
@@ -145,19 +172,10 @@ const char *scan_modes[] = {
 	"720(1440)x480 54MHz",
 };
 
-uint8_t u64_sid_offsets[] = { 0x40, 0x40, 0x60, 0xE0, 0x40, 0x50, 0x60, 0x70, 0xE0, 0xF0,
-						  0x40, 0x42, 0x44, 0x48, 0x50, 0x60, 0x70,
-						  0xE0, 0xE2, 0xE4, 0xE6, 0xE8, 0xEA, 0xEC, 0xEE,
-						  0xF0, 0xF2, 0xF4, 0xF6, 0xF8, 0xFA, 0xFC, 0xFE,
-						  };
+const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
+const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
 
-uint8_t u64_sid_mask[]    = { 0xC0, 0xE0, 0xE0, 0xE0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0,
-						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
-						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
-						  0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE,
-						  };
-
-static const char *stereo_addr[] = { "A5", "A8" };
+static const char *joyswaps[] = { "Normal", "Swapped" };
 static const char *en_dis4[] = { "Disabled", "Enabled" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
@@ -165,7 +183,7 @@ static const char *yes_no[] = { "No", "Yes" };
 static const char *dvi_hdmi[] = { "DVI", "HDMI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
-static const char *sid_types[] = { "None", "6581", "8580", "SidFX", "fpgaSID" };
+static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah" };
 static const char *sid_shunt[] = { "Off", "On" };
 static const char *sid_caps[] = { "470 pF", "22 nF" };
 static const char *filter_sel[] = { "8580 Lo", "8580 Hi", "6581", "6581 Alt", "U2 Low", "U2 Mid", "U2 High" };
@@ -173,7 +191,9 @@ static const char *filter_res[] = { "Low", "High" };
 static const char *comb_wave[] = { "6581", "8580" };
 static const char *ledselects[] = { "On", "Off", "Drive A Pwr", "DrvAPwr + DrvBPwr", "Drive A Act", "DrvAAct + DrvBAct",
                                     "DrvAPwr ^ DrvAAct", "USB Activity", "Any Activity", "!(DrvAAct)", "!(DrvAAct+DrvBAct)",
-                                    "!(USB Act)", "!(Any Act)", "IRQ Line", "!(IRQ Line)" };
+                                    "!(USB Act)", "!(Any Act)", "IRQ Line", "!(IRQ Line)", "Drive B Act" };
+
+
 const char *speaker_vol[] = { "Disabled", "Vol 1", "Vol 2", "Vol 3", "Vol 4", "Vol 5", "Vol 6", "Vol 7", "Vol 8", "Vol 9", "Vol 10", "Vol 11", "Vol 12", "Vol 13", "Vol 14", "Vol 15" };
 
 static const char *volumes[] = { "OFF", "+6 dB", "+5 dB", "+4 dB", "+3 dB", "+2 dB", "+1 dB", " 0 dB", "-1 dB",
@@ -190,6 +210,9 @@ static const uint8_t volume_ctrl[] = { 0x00, 0xff, 0xe4, 0xcb, 0xb5, 0xa1, 0x90,
                                        0x10, 0x08, 0x06, 0x04, 0x02, 0x01 };
 
 static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 253, 256 };
+
+static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
+static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
 
 
 /*
@@ -212,29 +235,49 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 */
 
 struct t_cfg_definition u64_cfg[] = {
-    { CFG_SCANLINES,    		CFG_TYPE_ENUM, "HDMI Scan lines",          	   "%s", en_dis4,      0,  1, 0 },
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  1, 0 },
-//    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
-    { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video",                 "%s", video_sel,    0,  1, 0 },
+    { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
+    //    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
+    { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
+    { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis4,      0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
+    { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
+    { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 15, 4 },
+    { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
+    { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis4,      0,  1, 1 },
+    { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
+#if DEVELOPER
+    //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
+    { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
+#endif
+    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
+
+struct t_cfg_definition u64_sid_detection_cfg[] = {
     { CFG_SOCKET1_ENABLE,       CFG_TYPE_ENUM, "SID Socket 1",                 "%s", en_dis4,      0,  1, 0 },
     { CFG_SOCKET2_ENABLE,       CFG_TYPE_ENUM, "SID Socket 2",                 "%s", en_dis4,      0,  1, 0 },
-    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  2, 0 },
-    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  2, 0 },
+    { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  8, 0 },
+    { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  8, 0 },
     { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID2_SHUNT,           CFG_TYPE_ENUM, "SID Socket 2 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
     { CFG_SID1_CAPS,            CFG_TYPE_ENUM, "SID Socket 1 Capacitors",      "%s", sid_caps,     0,  1, 0 },
     { CFG_SID2_CAPS,            CFG_TYPE_ENUM, "SID Socket 2 Capacitors",      "%s", sid_caps,     0,  1, 0 },
-    { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis4,      0,  1, 1 },
-    { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
-    { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 32, 0 },
-    { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 32, 0 },
-    { CFG_PADDLE_EN,			CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
-    { CFG_STEREO_DIFF,			CFG_TYPE_ENUM, "Ext StereoSID addrline",       "%s", stereo_addr,  0,  1, 0 },
-    { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 32, 0 },
-    { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 32, 0 },
+    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
+
+struct t_cfg_definition u64_sid_addressing_cfg[] = {
+    { CFG_SID1_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 1 Address",         "%s", u64_sid_base, 0, 48, 1 },
+    { CFG_SID2_ADDRESS,   		CFG_TYPE_ENUM, "SID Socket 2 Address",         "%s", u64_sid_base, 0, 48, 1 },
+    { CFG_STEREO_DIFF,			CFG_TYPE_ENUM, "Ext DualSID Range Split",      "%s", stereo_addr,  0,  5, 0 },
+    { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 48, 1 },
+    { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 48, 1 },
+    { CFG_EMUSID_SPLIT,         CFG_TYPE_ENUM, "UltiSID Range Split",          "%s", sid_split,    0,  7, 0 },
+    { CFG_PADDLE_EN,            CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
+    { CFG_AUTO_MIRRORING,       CFG_TYPE_ENUM, "Auto Address Mirroring",       "%s", en_dis4,      0,  1, 1 },
+    { CFG_SHOW_SID_ADDR,        CFG_TYPE_FUNC, "Visual SID Address Editor",   "-->", (const char **)U64Config :: show_sid_addr, 0, 0, 0 },
+    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
+
+struct t_cfg_definition u64_ultisid_cfg[] = {
     { CFG_EMUSID1_FILTER,       CFG_TYPE_ENUM, "UltiSID 1 Filter Curve",       "%s", filter_sel,   0,  6, 0 },
     { CFG_EMUSID2_FILTER,       CFG_TYPE_ENUM, "UltiSID 2 Filter Curve",       "%s", filter_sel,   0,  6, 0 },
     { CFG_EMUSID1_RESONANCE,    CFG_TYPE_ENUM, "UltiSID 1 Filter Resonance",   "%s", filter_res,   0,  1, 0 },
@@ -243,10 +286,9 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_EMUSID2_WAVES,        CFG_TYPE_ENUM, "UltiSID 2 Combined Waveforms", "%s", comb_wave,    0,  1, 0 },
     { CFG_EMUSID1_DIGI,         CFG_TYPE_ENUM, "UltiSID 1 Digis Level",        "%s", digi_levels,  0,  3, 2 },
     { CFG_EMUSID2_DIGI,         CFG_TYPE_ENUM, "UltiSID 2 Digis Level",        "%s", digi_levels,  0,  3, 2 },
-#if DEVELOPER
-    { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
-#endif
-    //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
+    { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
+
+struct t_cfg_definition u64_mixer_cfg[] = {
     { CFG_MIXER0_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 1",                "%s", volumes,      0, 30, 7 },
     { CFG_MIXER1_VOL,           CFG_TYPE_ENUM, "Vol UltiSid 2",                "%s", volumes,      0, 30, 7 },
     { CFG_MIXER2_VOL,           CFG_TYPE_ENUM, "Vol Socket 1",                 "%s", volumes,      0, 30, 7 },
@@ -267,156 +309,275 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_MIXER7_PAN,           CFG_TYPE_ENUM, "Pan Drive 2",                  "%s", pannings,     0, 10, 7 },
     { CFG_MIXER8_PAN,           CFG_TYPE_ENUM, "Pan Tape Read",                "%s", pannings,     0, 10, 5 },
     { CFG_MIXER9_PAN,           CFG_TYPE_ENUM, "Pan Tape Write",               "%s", pannings,     0, 10, 5 },
-    { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 14, 0 },
-    { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 14, 4 },
-    { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
-
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 
 extern Overlay *overlay;
 
-U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
+
+////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+U64Config :: U64Mixer :: U64Mixer()
 {
-    systemMode = -1;
-    U64_ETHSTREAM_ENA = 0;
+    register_store(STORE_PAGE_ID, "Audio Mixer", u64_mixer_cfg);
 
-/*
-    // This is a work around for warm start tests
-    C64_STOP_MODE = STOP_COND_FORCE;
-    C64_STOP = 1;
-    C64_MODE = C64_MODE_RESET;
-*/
+    // enable "hot" updates for mixer
+    for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
+        cfg->set_change_hook(b, U64Config::setMixer);
+    }
+    for (uint8_t b = CFG_MIXER0_PAN; b <= CFG_MIXER9_PAN; b++) {
+        cfg->set_change_hook(b, U64Config::setMixer);
+    }
+}
 
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-		struct t_cfg_definition *def = u64_cfg;
-		uint32_t store = 0x55363443;
-		register_store(store, "U64 Specific Settings", def);
+void U64Config :: U64Mixer :: effectuate_settings()
+{
+    //printf("U64Mixer :: effectuate_settings()\n");
+    setMixer(cfg->items[0]);
+}
+////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+U64Config :: U64SidSockets :: U64SidSockets()
+{
+    register_store(STORE_PAGE_ID, "SID Sockets Configuration", u64_sid_detection_cfg);
 
-        int sid1, sid2;
-        C64_MODE = C64_MODE_UNRESET;
-        while (C64 :: c64_reset_detect())
-            ;
-        S_SidDetector(sid1, sid2);
-        printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
-
-        // Configuration has changed? Then disable the sockets until the user
-        // has approved the detection. We only do this for 12V. We simply enable
-        // for 9V supply.
-        if (sid1 != cfg->get_value(CFG_SID1_TYPE)) {
-            cfg->set_value(CFG_SID1_TYPE, sid1);
-            switch(sid1) {
-            case 1: // 6581
-                cfg->set_value(CFG_SOCKET1_ENABLE, 0);
-                cfg->set_value(CFG_SID1_CAPS, 0);
-                cfg->set_value(CFG_SID1_SHUNT, 1);
-                break;
-            case 2: // 8580
-                cfg->set_value(CFG_SOCKET1_ENABLE, 1);
-                cfg->set_value(CFG_SID1_CAPS, 1);
-                cfg->set_value(CFG_SID1_SHUNT, 0);
-                break;
-            }
-        }
-
-        if (sid2 != cfg->get_value(CFG_SID2_TYPE)) {
-            cfg->set_value(CFG_SID2_TYPE, sid2);
-            switch(sid2) {
-            case 1: // 6581
-                cfg->set_value(CFG_SOCKET2_ENABLE, 0);
-                cfg->set_value(CFG_SID2_CAPS, 0);
-                cfg->set_value(CFG_SID2_SHUNT, 1);
-                break;
-            case 2: // 8580
-                cfg->set_value(CFG_SOCKET2_ENABLE, 1);
-                cfg->set_value(CFG_SID2_CAPS, 1);
-                cfg->set_value(CFG_SID2_SHUNT, 0);
-                break;
-            }
-        }
-        if (cfg->dirty) {
-            cfg->write();
-            UserInterface :: postMessage("SID changed. Please review settings");
-        }
-
-        // enable "hot" updates for mixer
-		for (uint8_t b = CFG_MIXER0_VOL; b <= CFG_MIXER9_VOL; b++) {
-		    cfg->set_change_hook(b, U64Config :: setMixer);
-		}
-        for (uint8_t b = CFG_MIXER0_PAN; b <= CFG_MIXER9_PAN; b++) {
-            cfg->set_change_hook(b, U64Config :: setMixer);
-        }
-
-        cfg->set_change_hook(CFG_EMUSID1_FILTER, U64Config :: setFilter);
-        cfg->set_change_hook(CFG_EMUSID2_FILTER, U64Config :: setFilter);
-        cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config :: setScanMode);
-		cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config :: setPllOffset);
-		cfg->set_change_hook(CFG_EMUSID1_RESONANCE, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID2_RESONANCE, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID1_WAVES, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID2_WAVES, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID1_DIGI, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_EMUSID2_DIGI, U64Config :: setSidEmuParams);
-        cfg->set_change_hook(CFG_LED_SELECT_0, U64Config :: setLedSelector);
-        cfg->set_change_hook(CFG_LED_SELECT_1, U64Config :: setLedSelector);
-		effectuate_settings();
-	}
-	fm = FileManager :: getFileManager();
-
-	// This field shows what was detected and cannot be changed
-	cfg->disable(CFG_SID1_TYPE);
+    // This field shows what was detected and cannot be changed
+    cfg->disable(CFG_SID1_TYPE);
     cfg->disable(CFG_SID2_TYPE);
     cfg->disable(CFG_SID1_CAPS);
     cfg->disable(CFG_SID2_CAPS);
 
-    uint8_t rev = (U2PIO_BOARDREV >> 3);
-    if (rev != 0x13) {
+    if (!isEliteBoard()) {
         cfg->disable(CFG_SID1_SHUNT);
         cfg->disable(CFG_SID2_SHUNT);
     }
-
-	skipReset = false;
-    xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
-    resetSemaphore = xSemaphoreCreateBinary();
 }
 
-void U64Config :: ResetHandler()
+int U64Config :: detectDukestahAdapter()
 {
-    BaseType_t woken;
-    xSemaphoreGiveFromISR(resetSemaphore, &woken);
+    volatile uint8_t *base1 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400); // D400
+    volatile uint8_t *base2 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500); // D500
+
+    if (!(C64_STOP & C64_HAS_STOPPED)) {
+        C64_STOP_MODE = STOP_COND_FORCE;
+        C64_STOP = 1;
+        C64_PEEK(2);
+        C64_PEEK(2);
+        C64_PEEK(2);
+    }
+    
+    base1[25] = 0x81; // Enter config mode
+    base1[26] = 0x65;
+    base1[30] = 4;   // Set FPGASID to stereo
+
+    base1[25] = 0x82;  // Swap mode
+    base1[26] = 0x65;
+    base1[28] = 3;
+
+    base1[25] = 0x81; // Enter config mode
+    base1[26] = 0x65;
+
+    base1[28] = 5;
+    base2[28] = 13;
+    
+    base1[25] = 0x82;   // Swap mode
+    base1[26] = 0x65;
+    uint8_t tmp1 = base1[28] & 15;   // Read SID2 register 28
+    base1[25] = 0x00;   // normal mode
+    base1[26] = 0x00;
+
+    if (tmp1 == 13) ((SidDeviceFpgaSid*)(sidDevice[0]))->setDukestahAdapterPresent();
+    ((SidDeviceFpgaSid*)(sidDevice[0]))->effectuate_settings();
+
+    if (tmp1 == 13) return SID_TYPE_FPGASID_DUKESTAH;
+    
+    return SID_TYPE_FPGASID;
 }
 
-void U64Config :: reset_task(void *a)
+int U64Config :: detectFPGASID(int socket)
 {
-    U64Config *configurator = (U64Config *)a;
-    configurator->run_reset_task();
+    volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
+
+    if (!(C64_STOP & C64_HAS_STOPPED)) {
+        C64_STOP_MODE = STOP_COND_FORCE;
+        C64_STOP = 1;
+        C64_PEEK(2);
+        C64_PEEK(2);
+        C64_PEEK(2);
+    }
+
+    // For FPGASID: Switch to DIAG mode
+    base[25] = 0xEE;
+    base[26] = 0xAB;
+
+    uint8_t id1 = base[0];
+    uint8_t id2 = base[1];
+
+    printf("FPGASID Detection: %b %b\n", id1, id2);
+    // Read Identification
+    if ((id1 == 0x1D) && (id2 == 0xF5)) {
+        // FPGASID found
+        sidDevice[socket] = new SidDeviceFpgaSid(socket, base);
+        return SID_TYPE_FPGASID;
+    }
+    return SID_TYPE_NONE;
 }
 
-void U64Config :: run_reset_task()
+int U64Config :: detectRemakes(int socket)
 {
-    while(1) {
-        xSemaphoreTake(resetSemaphore, portMAX_DELAY);
+    volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
 
-        printf("U64 reset handler. ");
-        if (! skipReset) {
-            printf("Resetting Settings\n");
-            effectuate_settings();
-        } else {
-            printf("SKIP\n");
+/*
+    base[29] = 0;
+    C64_PEEK(2); // dummy cycle
+    base[30] = 0;
+    C64_PEEK(2); // dummy cycle
+    base[31] = 0;
+    C64_PEEK(2); // dummy cycle
+*/
+
+    base[29] = 'S';
+    C64_PEEK(2); // dummy cycle
+    base[30] = 'I';
+    C64_PEEK(2); // dummy cycle
+    base[31] = 'D';
+    C64_PEEK(2); // dummy cycle
+
+    wait_ms(10);
+
+    uint8_t id1 = base[27];
+    C64_PEEK(2); // dummy cycle
+    uint8_t id2 = base[28];
+    C64_PEEK(2); // dummy cycle
+
+    printf("ARMSID Detect: %b %b\n", id1, id2);
+
+    if ((id1 == 'S') && (id2 == 'W')) {
+        base[29] = 0;
+        sidDevice[socket] = new SidDeviceSwinSid(socket, base);
+        return SID_TYPE_SWINSID; // SwinSid Ultimate
+    }
+
+    if ((id1 == 'N') && (id2 == 'O')) {
+        base[31] = 'I';
+        C64_PEEK(2); // dummy cycle
+        base[30] = 'I';
+        C64_PEEK(2); // dummy cycle
+        wait_ms(10);
+        uint8_t id1 = base[27];
+        base[29] = 0;
+        C64_PEEK(2); // dummy cycle
+        sidDevice[socket] = new SidDeviceArmSid(socket, base);
+
+        if ((id1 == 'L') || (id1 == 'R')) {
+            return SID_TYPE_ARM2SID; // ARM2SID
         }
-        skipReset = false;
+        return SID_TYPE_ARMSID; // ARMSID
+    }
+
+    return 0;
+}
+
+void U64Config :: U64SidSockets :: detect(void)
+{
+    int sid1 = 0, sid2 = 0, realsid1, realsid2;
+    C64_MODE = C64_MODE_UNRESET;
+    while (C64 :: c64_reset_detect())
+        ;
+
+    S_SetupDetectionAddresses();
+    sid1 = u64_configurator.detectFPGASID(0);
+
+    S_SetupDetectionAddresses();
+    sid2 = u64_configurator.detectFPGASID(1);
+
+    if ((sid1 == SID_TYPE_NONE) || (sid2 == SID_TYPE_NONE)) {
+        wait_ms(100);
+
+        S_SetupDetectionAddresses();
+        if (sid1 == SID_TYPE_NONE) {
+            sid1 = u64_configurator.detectRemakes(0);
+        }
+
+        S_SetupDetectionAddresses();
+        if (sid2 == SID_TYPE_NONE) {
+            sid2 = u64_configurator.detectRemakes(1);
+        }
+    }
+
+    if ((sid1 == SID_TYPE_NONE) || (sid2 == SID_TYPE_NONE)) {
+        S_SidDetector(realsid1, realsid2);
+        if (realsid1 && sid1 == SID_TYPE_NONE) {
+            sid1 = realsid1;
+        }
+        if (realsid2 && sid2 == SID_TYPE_NONE) {
+            sid2 = realsid2;
+        }
+    }
+
+    if ((sid1 == SID_TYPE_FPGASID) && (sid2 == SID_TYPE_NONE)) {
+    	S_SetupDetectionAddresses();
+    	int tmp = u64_configurator.detectDukestahAdapter();
+    	if (tmp == SID_TYPE_FPGASID_DUKESTAH)
+           sid1 = sid2 = tmp;
+    }
+
+    printf("$$ SID1 = %d. SID2 = %d\n", sid1, sid2);
+
+
+    // Configuration has changed? Then disable the sockets until the user
+    // has approved the detection. We only do this for 12V. We simply enable
+    // for 9V supply.
+    if (sid1 != cfg->get_value(CFG_SID1_TYPE)) {
+        cfg->set_value(CFG_SID1_TYPE, sid1);
+        switch(sid1) {
+        case 1: // 6581
+            cfg->set_value(CFG_SOCKET1_ENABLE, 0);
+            cfg->set_value(CFG_SID1_CAPS, 0);
+            cfg->set_value(CFG_SID1_SHUNT, 1);
+            break;
+        case 2: // 8580
+            cfg->set_value(CFG_SOCKET1_ENABLE, 1);
+            cfg->set_value(CFG_SID1_CAPS, 1);
+            cfg->set_value(CFG_SID1_SHUNT, 0);
+            break;
+        case 0:
+            // Leave the socket enabled if it is already was enabled
+            break;
+        default: // other than None, 6581 or 8580
+            cfg->set_value(CFG_SOCKET1_ENABLE, 1);
+        }
+    }
+
+    if (sid2 != cfg->get_value(CFG_SID2_TYPE)) {
+        cfg->set_value(CFG_SID2_TYPE, sid2);
+        switch(sid2) {
+        case 1: // 6581
+            cfg->set_value(CFG_SOCKET2_ENABLE, 0);
+            cfg->set_value(CFG_SID2_CAPS, 0);
+            cfg->set_value(CFG_SID2_SHUNT, 1);
+            break;
+        case 2: // 8580
+            cfg->set_value(CFG_SOCKET2_ENABLE, 1);
+            cfg->set_value(CFG_SID2_CAPS, 1);
+            cfg->set_value(CFG_SID2_SHUNT, 0);
+            break;
+        case 0:
+            // Leave the socket enabled if it is already was enabled
+            break;
+        default: // other than None, 6581 or 8580
+            cfg->set_value(CFG_SOCKET2_ENABLE, 1);
+        }
+    }
+    if (cfg->is_flash_stale()) {
+        cfg->write();
+        UserInterface :: postMessage("SID changed. Please review settings");
     }
 }
 
-void U64Config :: effectuate_settings()
+void U64Config :: U64SidSockets :: effectuate_settings()
 {
-    if(!cfg)
-        return;
-
-    uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
-
-    U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
-
+    //printf("U64Sockets :: effectuate_settings()\n");
     {
         uint8_t typ = cfg->get_value(CFG_SID1_TYPE); // 0 = none, 1 = 6581, 2 = 8580
         uint8_t shu = cfg->get_value(CFG_SID1_SHUNT);
@@ -457,23 +618,168 @@ void U64Config :: effectuate_settings()
         C64_PLD_SIDCTRL2 = value | 0xB0;
     }
 
-    C64_SCANLINES    =  cfg->get_value(CFG_SCANLINES);
-    C64_PADDLE_EN    =  cfg->get_value(CFG_PADDLE_EN);
+    C64_SID1_EN_BAK  = cfg->get_value(CFG_SOCKET1_ENABLE);
+    C64_SID2_EN_BAK  = cfg->get_value(CFG_SOCKET2_ENABLE);
+    C64_SID1_EN      = cfg->get_value(CFG_SOCKET1_ENABLE) ? 1 : 0;
+    C64_SID2_EN      = cfg->get_value(CFG_SOCKET2_ENABLE) ? 1 : 0;
+}
+////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+U64Config :: U64UltiSids :: U64UltiSids()
+{
+    register_store(STORE_PAGE_ID, "UltiSID Configuration", u64_ultisid_cfg);
+
+    cfg->set_change_hook(CFG_EMUSID1_FILTER, U64Config::setFilter);
+    cfg->set_change_hook(CFG_EMUSID2_FILTER, U64Config::setFilter);
+    cfg->set_change_hook(CFG_EMUSID1_RESONANCE, U64Config::setSidEmuParams);
+    cfg->set_change_hook(CFG_EMUSID2_RESONANCE, U64Config::setSidEmuParams);
+    cfg->set_change_hook(CFG_EMUSID1_WAVES, U64Config::setSidEmuParams);
+    cfg->set_change_hook(CFG_EMUSID2_WAVES, U64Config::setSidEmuParams);
+    cfg->set_change_hook(CFG_EMUSID1_DIGI, U64Config::setSidEmuParams);
+    cfg->set_change_hook(CFG_EMUSID2_DIGI, U64Config::setSidEmuParams);
+}
+
+void U64Config :: U64UltiSids :: effectuate_settings()
+{
+    //printf("U64UltiSids :: effectuate_settings()\n");
+
+    setFilter(cfg->find_item(CFG_EMUSID1_FILTER));
+    setFilter(cfg->find_item(CFG_EMUSID2_FILTER));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID1_RESONANCE));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID2_RESONANCE));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID1_WAVES));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID2_WAVES));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID1_DIGI));
+    setSidEmuParams(cfg->find_item(CFG_EMUSID2_DIGI));
+}
+////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+U64Config :: U64SidAddressing :: U64SidAddressing()
+{
+    register_store(STORE_PAGE_ID, "SID Addressing", u64_sid_addressing_cfg);
+}
+
+void U64Config :: U64SidAddressing :: effectuate_settings()
+{
+    //printf("U64SidAddressing :: effectuate_settings()\n");
+    uint8_t base[4];
+    uint8_t mask[4];
+    uint8_t split[4];
+
+    get_sid_addresses(cfg, base, mask, split);
+    fix_splits(base, mask, split);
+    if (cfg->get_value(CFG_AUTO_MIRRORING)) {
+        auto_mirror(base, mask, split, 4);
+    }
+
+    C64_SID1_BASE    = C64_SID1_BASE_BAK = base[0];
+    C64_SID2_BASE    = C64_SID2_BASE_BAK = base[1];
+    C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK =  base[2];
+    C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK =  base[3];
+
+    C64_SID1_MASK    = C64_SID1_MASK_BAK = mask[0];
+    C64_SID2_MASK    = C64_SID2_MASK_BAK = mask[1];
+    C64_EMUSID1_MASK = C64_EMUSID1_MASK_BAK = mask[2];
+    C64_EMUSID2_MASK = C64_EMUSID2_MASK_BAK = mask[3];
+
     C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK = cfg->get_value(CFG_STEREO_DIFF);
-    C64_SID1_EN_BAK = cfg->get_value(CFG_SOCKET1_ENABLE);
-    C64_SID2_EN_BAK = cfg->get_value(CFG_SOCKET2_ENABLE);
-    C64_SID1_EN      =  cfg->get_value(CFG_SOCKET1_ENABLE) ? 1 : 0;
-    C64_SID2_EN      =  cfg->get_value(CFG_SOCKET2_ENABLE) ? 1 : 0;
-    C64_SID1_BASE    =  C64_SID1_BASE_BAK = u64_sid_offsets[cfg->get_value(CFG_SID1_ADDRESS)];
-    C64_SID2_BASE    =  C64_SID2_BASE_BAK = u64_sid_offsets[cfg->get_value(CFG_SID2_ADDRESS)];
-    C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK =  u64_sid_offsets[cfg->get_value(CFG_EMUSID1_ADDRESS)];
-    C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK =  u64_sid_offsets[cfg->get_value(CFG_EMUSID2_ADDRESS)];
-    C64_SID1_MASK	 =  C64_SID1_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_SID1_ADDRESS)];
-    C64_SID2_MASK	 =  C64_SID2_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_SID2_ADDRESS)];
-    C64_EMUSID1_MASK =  C64_EMUSID1_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID1_ADDRESS)];
-    C64_EMUSID2_MASK =  C64_EMUSID2_MASK_BAK = u64_sid_mask[cfg->get_value(CFG_EMUSID2_ADDRESS)];
+    C64_EMUSID_SPLIT =  C64_EMUSID_SPLIT_BAK = cfg->get_value(CFG_EMUSID_SPLIT);
+
+    printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s) SlotSplit: %02X.  Emu1: %02X/%02X  Emu2: %02X/%02X  Emu Split: %02X\n",
+            C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
+            C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis4[C64_SID2_EN_BAK], C64_STEREO_ADDRSEL,
+            C64_EMUSID1_BASE_BAK, C64_EMUSID1_MASK_BAK,
+            C64_EMUSID2_BASE_BAK, C64_EMUSID2_MASK_BAK, C64_EMUSID_SPLIT_BAK );
+}
+////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+
+U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
+{
+    systemMode = -1;
+    U64_ETHSTREAM_ENA = 0;
+
+/*
+    // This is a work around for warm start tests
+    C64_STOP_MODE = STOP_COND_FORCE;
+    C64_STOP = 1;
+    C64_MODE = C64_MODE_RESET;
+*/
+
+    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
+		struct t_cfg_definition *def = u64_cfg;
+		register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
+
+        sidDevice[0] = NULL;
+        sidDevice[1] = NULL;
+
+        sockets.detect();
+
+        cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config::setScanMode);
+        cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
+        cfg->set_change_hook(CFG_LED_SELECT_0, U64Config::setLedSelector);
+        cfg->set_change_hook(CFG_LED_SELECT_1, U64Config::setLedSelector);
+        effectuate_settings();
+        sockets.effectuate_settings();
+        mixercfg.effectuate_settings();
+        ultisids.effectuate_settings();
+        sidaddressing.effectuate_settings();
+
+        if (!isEliteBoard()) {
+            cfg->disable(CFG_JOYSWAP);
+        }
+    }
+    fm = FileManager::getFileManager();
+
+	skipReset = false;
+    xTaskCreate( U64Config :: reset_task, "U64 Reset Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 3, &resetTaskHandle );
+    resetSemaphore = xSemaphoreCreateBinary();
+}
+
+void U64Config :: ResetHandler()
+{
+    BaseType_t woken;
+    xSemaphoreGiveFromISR(resetSemaphore, &woken);
+}
+
+void U64Config :: reset_task(void *a)
+{
+    U64Config *configurator = (U64Config *)a;
+    configurator->run_reset_task();
+}
+
+void U64Config :: run_reset_task()
+{
+    while(1) {
+        xSemaphoreTake(resetSemaphore, portMAX_DELAY);
+
+        printf("U64 reset handler. ");
+        if (! skipReset) {
+            printf("Resetting Settings\n");
+            effectuate_settings();
+        } else {
+            printf("SKIP\n");
+        }
+        skipReset = false;
+    }
+}
+
+void U64Config :: effectuate_settings()
+{
+    if(!cfg)
+        return;
+
+    //printf("U64Config :: effectuate_settings()\n");
+    uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
+
+    U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
+    C64_SCANLINES    = cfg->get_value(CFG_SCANLINES);
+    C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
+
     U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
+    C64_PLD_JOYCTRL  =  cfg->get_value(CFG_JOYSWAP) ^ 1;
+    C64_PADDLE_SWAP  =  cfg->get_value(CFG_JOYSWAP);
 
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
@@ -521,31 +827,39 @@ void U64Config :: effectuate_settings()
     C64_PHASE_INCR   = 9;
     C64_BURST_PHASE  = 24;
 */
-    setMixer(cfg->items[0]);
-    setFilter(cfg->find_item(CFG_EMUSID1_FILTER));
-    setFilter(cfg->find_item(CFG_EMUSID2_FILTER));
     setPllOffset(cfg->find_item(CFG_COLOR_CLOCK_ADJ));
     setScanMode(cfg->find_item(CFG_SCAN_MODE_TEST));
-    setSidEmuParams(cfg->find_item(CFG_EMUSID1_RESONANCE));
-    setSidEmuParams(cfg->find_item(CFG_EMUSID2_RESONANCE));
-    setSidEmuParams(cfg->find_item(CFG_EMUSID1_WAVES));
-    setSidEmuParams(cfg->find_item(CFG_EMUSID2_WAVES));
-    setSidEmuParams(cfg->find_item(CFG_EMUSID1_DIGI));
-    setSidEmuParams(cfg->find_item(CFG_EMUSID2_DIGI));
     setLedSelector(cfg->find_item(CFG_LED_SELECT_0)); // does both anyway
-
-/*
-    printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s)  Emu1: %02X/%02X  Emu2: %02X/%02X\n",
-            C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
-            C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis4[C64_SID2_EN_BAK],
-            C64_EMUSID1_BASE_BAK, C64_EMUSID1_MASK_BAK,
-            C64_EMUSID2_BASE_BAK, C64_EMUSID2_MASK_BAK );
-*/
 
 }
 
+void U64Config :: get_sid_addresses(ConfigStore *cfg, uint8_t *base, uint8_t *mask, uint8_t *split)
+{
+    base[0] = u64_sid_offsets[cfg->get_value(CFG_SID1_ADDRESS)];
+    base[1] = u64_sid_offsets[cfg->get_value(CFG_SID2_ADDRESS)];
+    base[2] = u64_sid_offsets[cfg->get_value(CFG_EMUSID1_ADDRESS)];
+    base[3] = u64_sid_offsets[cfg->get_value(CFG_EMUSID2_ADDRESS)];
 
-void U64Config :: setFilter(ConfigItem *it)
+    mask[0] = 0xFE; // & ~stereo_bits[cfg->get_value(CFG_STEREO_DIFF)];
+    mask[1] = 0xFE; // & ~stereo_bits[cfg->get_value(CFG_STEREO_DIFF)];
+    mask[2] = 0xFE; // & ~split_bits[cfg->get_value(CFG_EMUSID_SPLIT)];
+    mask[3] = 0xFE; // & ~split_bits[cfg->get_value(CFG_EMUSID_SPLIT)];
+
+    split[0] = stereo_bits[cfg->get_value(CFG_STEREO_DIFF)];
+    split[1] = stereo_bits[cfg->get_value(CFG_STEREO_DIFF)];
+    split[2] = split_bits[cfg->get_value(CFG_EMUSID_SPLIT)];
+    split[3] = split_bits[cfg->get_value(CFG_EMUSID_SPLIT)];
+}
+
+void U64Config :: fix_splits(uint8_t *base, uint8_t *mask, uint8_t *split)
+{
+    for (int i=0; i<4; i++) {
+        base[i] &= ~split[i];
+        mask[i] &= ~split[i];
+    }
+}
+
+int U64Config :: setFilter(ConfigItem *it)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_SID_BASE + 0x1000);
     if (it->definition->id == CFG_EMUSID2_FILTER) {
@@ -554,7 +868,7 @@ void U64Config :: setFilter(ConfigItem *it)
     uint16_t *coef = sid8580_filter_coefficients;
     int mul = 1;
     int div = 4;
-    switch(it->value) {
+    switch(it->getValue()) {
     case 0:
         coef = sid8580_filter_coefficients;
         mul = 7;
@@ -587,9 +901,10 @@ void U64Config :: setFilter(ConfigItem *it)
         break;
     }
     set_sid_coefficients(base, coef, mul, div);
+    return 0;
 }
 
-void U64Config :: setMixer(ConfigItem *it)
+int U64Config :: setMixer(ConfigItem *it)
 {
     // Now, configure the mixer
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
@@ -605,23 +920,26 @@ void U64Config :: setMixer(ConfigItem *it)
         *(mixer++) = vol_left;
         *(mixer++) = vol_right;
     }
+    return 0;
 }
 
-void U64Config :: setPllOffset(ConfigItem *it)
+int U64Config :: setPllOffset(ConfigItem *it)
 {
 	if(it) {
-		pllOffsetPpm(it->value); // Set correct mfrac
+		pllOffsetPpm(it->getValue()); // Set correct mfrac
 	}
+    return 0;
 }
 
-void U64Config :: setScanMode(ConfigItem *it)
+int U64Config :: setScanMode(ConfigItem *it)
 {
 	if(it) {
 //		SetScanMode(it->value);
 	}
+    return 0;
 }
 
-void U64Config :: setLedSelector(ConfigItem *it)
+int U64Config :: setLedSelector(ConfigItem *it)
 {
     if(it) {
         ConfigStore *cfg = it->store;
@@ -629,30 +947,33 @@ void U64Config :: setLedSelector(ConfigItem *it)
         uint8_t sel1 = (uint8_t)cfg->get_value(CFG_LED_SELECT_1);
         U64_CASELED_SELECT = (sel1 << 4) | sel0;
     }
+    return 0;
 }
 
-void U64Config :: setSidEmuParams(ConfigItem *it)
+int U64Config :: setSidEmuParams(ConfigItem *it)
 {
+    int value = it->getValue();
     switch(it->definition->id) {
     case CFG_EMUSID1_RESONANCE:
-        C64_EMUSID1_RES = it->value;
+        C64_EMUSID1_RES = value;
         break;
     case CFG_EMUSID2_RESONANCE:
-        C64_EMUSID2_RES = it->value;
+        C64_EMUSID2_RES = value;
         break;
     case CFG_EMUSID1_WAVES:
-        C64_EMUSID1_WAVES = it->value;
+        C64_EMUSID1_WAVES = value;
         break;
     case CFG_EMUSID2_WAVES:
-        C64_EMUSID2_WAVES = it->value;
+        C64_EMUSID2_WAVES = value;
         break;
     case CFG_EMUSID1_DIGI:
-        C64_EMUSID1_DIGI = it->value;
+        C64_EMUSID1_DIGI = value;
         break;
     case CFG_EMUSID2_DIGI:
-        C64_EMUSID2_DIGI = it->value;
+        C64_EMUSID2_DIGI = value;
         break;
     }
+    return 0;
 }
 
 #define MENU_U64_SAVEEDID 1
@@ -781,17 +1102,22 @@ uint8_t U64Config :: GetSidType(int slot)
 
     switch(slot) {
     case 0: // slot 1A
-        val = cfg->get_value(CFG_SID1_TYPE);
-        switch (val) {  // "None", "6581", "8580", "SidFX", "fpgaSID" };
-        case 0:
+        if (!(sockets.cfg->get_value(CFG_SOCKET1_ENABLE))) {
             return 0;
-        case 1:
+        }
+        val = sockets.cfg->get_value(CFG_SID1_TYPE);
+        switch (val) {
+        case SID_TYPE_NONE:
+            return 0;
+        case SID_TYPE_6581:
             return 1;
-        case 2:
+        case SID_TYPE_8580:
             return 2;
-        case 3:
-            return 1; // to be implemented
-        case 4:
+        case SID_TYPE_FPGASID:
+        case SID_TYPE_ARMSID:
+        case SID_TYPE_ARM2SID:
+        case SID_TYPE_SWINSID:
+        case SID_TYPE_FPGASID_DUKESTAH:
             return 3; // either type, we can TELL the fpgaSID to configure itself in the right mode
         default:
             return 0;
@@ -799,17 +1125,22 @@ uint8_t U64Config :: GetSidType(int slot)
         break;
 
     case 1: // slot 2A
-        val = cfg->get_value(CFG_SID2_TYPE);
-        switch (val) {  // "None", "6581", "8580", "SidFX", "fpgaSID" };
-        case 0:
+        if (!(sockets.cfg->get_value(CFG_SOCKET2_ENABLE))) {
             return 0;
-        case 1:
+        }
+        val = sockets.cfg->get_value(CFG_SID2_TYPE);
+        switch (val) {
+        case SID_TYPE_NONE:
+            return 0;
+        case SID_TYPE_6581:
             return 1;
-        case 2:
+        case SID_TYPE_8580:
             return 2;
-        case 3:
-            return 1; // to be implemented
-        case 4:
+        case SID_TYPE_FPGASID:
+        case SID_TYPE_ARMSID:
+        case SID_TYPE_ARM2SID:
+        case SID_TYPE_SWINSID:
+        case SID_TYPE_FPGASID_DUKESTAH:
             return 3; // either type, we can TELL the fpgaSID to configure itself in the right mode
         default:
             return 0;
@@ -818,22 +1149,24 @@ uint8_t U64Config :: GetSidType(int slot)
 
     case 2:
     case 3:
+    case 6:
+    case 7:
         if (cfg->get_value(CFG_ALLOW_EMUSID)) {
-            return 1;
+            return 3;
         } else {
             return 0;
         }
 
     case 4: // slot 1B
-        val = cfg->get_value(CFG_SID1_TYPE);
-        if (val == 4) { // fpgaSID
+        val = sockets.cfg->get_value(CFG_SID1_TYPE);
+        if (val > 2) {
             return 3;
         }
         return 0; // no "other" SID available in slot 1.
 
     case 5: // slot 2B
-        val = cfg->get_value(CFG_SID2_TYPE);
-        if (val == 4) { // fpgaSID
+        val = sockets.cfg->get_value(CFG_SID2_TYPE);
+        if (val > 2) {
             return 3;
         }
         return 0; // no "other" SID available in slot 2.
@@ -846,17 +1179,9 @@ bool U64Config :: SetSidAddress(int slot, bool single, uint8_t actualType, uint8
 {
     uint8_t other = 0x00;
     if (actualType >= 3) {
-        switch(C64_STEREO_ADDRSEL_BAK) {
-        case 0: // A5:
-            other = 0x02;
-            break;
-        case 1: // A8:
-            other = 0x10;
-            break;
-        default:
-            break;
-        }
+        other = stereo_bits[C64_STEREO_ADDRSEL_BAK];
     }
+
     // Kludge: If this is the only SID, just enable all address bits
     if (single) {
         other = 0x3F;
@@ -872,12 +1197,10 @@ bool U64Config :: SetSidAddress(int slot, bool single, uint8_t actualType, uint8
         case 0: // Socket 1 address
             C64_SID1_BASE = C64_SID1_BASE_BAK = base;
             C64_SID1_MASK = C64_SID1_MASK_BAK = 0xFE & ~other;
-            C64_SID1_EN = C64_SID1_EN_BAK = 1;
             return true;
         case 1: // Socket 2 address
             C64_SID2_BASE = C64_SID2_BASE_BAK = base;
             C64_SID2_MASK = C64_SID2_MASK_BAK = 0xFE & ~other;
-            C64_SID2_EN = C64_SID2_EN_BAK = 1;
             return true;
         case 2: // EmuSID 1 address
             C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK = base;
@@ -908,6 +1231,14 @@ bool U64Config :: SetSidAddress(int slot, bool single, uint8_t actualType, uint8
 void U64Config :: SetSidType(int slot, uint8_t sidType)
 {
     printf("Set SID type of logical SID %d to %d.\n", slot, sidType);
+    if (slot < 2) {
+        SidDevice *dev = sidDevice[slot];
+        if (dev) {
+            dev->SetSidType(sidType);
+        } else {
+            printf("Null pointer.\n");
+        }
+    }
 }
 
 bool U64Config :: MapSid(int index, int totalCount, uint16_t& mappedSids, uint8_t *mappedOnSlot, t_sid_definition *requested, bool any)
@@ -949,10 +1280,11 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
     static const uint8_t channelMap[4] = { 4, 6, 0, 2 };
 
     uint8_t selectedVolumes[4];
-    selectedVolumes[0] = volume_ctrl[cfg->get_value(CFG_MIXER2_VOL)];
-    selectedVolumes[1] = volume_ctrl[cfg->get_value(CFG_MIXER3_VOL)];
-    selectedVolumes[2] = volume_ctrl[cfg->get_value(CFG_MIXER0_VOL)];
-    selectedVolumes[3] = volume_ctrl[cfg->get_value(CFG_MIXER1_VOL)];
+    ConfigStore *cs = this->mixercfg.cfg;
+    selectedVolumes[0] = volume_ctrl[cs->get_value(CFG_MIXER2_VOL)];
+    selectedVolumes[1] = volume_ctrl[cs->get_value(CFG_MIXER3_VOL)];
+    selectedVolumes[2] = volume_ctrl[cs->get_value(CFG_MIXER0_VOL)];
+    selectedVolumes[3] = volume_ctrl[cs->get_value(CFG_MIXER1_VOL)];
 
     // first mute the SIDs
     volatile uint8_t *mixer = (volatile uint8_t *)U64_AUDIO_MIXER;
@@ -980,6 +1312,18 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
     }
 }
 
+void U64Config :: unmapAllSids(void)
+{
+    C64_SID1_BASE = C64_SID1_BASE_BAK = UNMAPPED_BASE;
+    C64_SID1_MASK = C64_SID1_MASK_BAK = UNMAPPED_MASK;
+    C64_SID2_BASE = C64_SID2_BASE_BAK = UNMAPPED_BASE;
+    C64_SID2_MASK = C64_SID2_MASK_BAK = UNMAPPED_MASK;
+    C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK = UNMAPPED_BASE;
+    C64_EMUSID1_MASK = C64_EMUSID1_MASK_BAK = UNMAPPED_MASK;
+    C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK = UNMAPPED_BASE;
+    C64_EMUSID2_MASK = C64_EMUSID2_MASK_BAK = UNMAPPED_MASK;
+}
+
 bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
 {
     // the first reset of the machine should not re-initialize the settings from the config
@@ -997,20 +1341,18 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         count = 8;
     }
 
-    C64_SID1_EN = C64_SID1_EN_BAK = 0;
-    C64_SID2_EN = C64_SID2_EN_BAK = 0;
-
+    unmapAllSids();
     memset(mappedOnSlot, 0, 8);
     mappedSids = 0;
     bool failed = false;
+
     for (int i=0; i < count; i++) {
         if (!MapSid(i, count, mappedSids, mappedOnSlot, &requested[i], false)) {
             failed = true;
         }
     }
     if (failed) {
-        C64_SID1_EN = C64_SID1_EN_BAK = 0;
-        C64_SID2_EN = C64_SID2_EN_BAK = 0;
+        unmapAllSids();
         mappedSids = 0;
         memset(mappedOnSlot, 0, 8);
         failed = false;
@@ -1021,8 +1363,7 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
         }
     }
     if (failed) {
-        C64_SID1_EN = C64_SID1_EN_BAK = 0;
-        C64_SID2_EN = C64_SID2_EN_BAK = 0;
+        unmapAllSids();
         mappedSids = 0;
         memset(mappedOnSlot, 0, 8);
         failed = false;
@@ -1247,6 +1588,39 @@ extern uint32_t __stop_detect_sid;
 
 typedef void (*func)(uint8_t *);
 
+void U64Config :: S_SetupDetectionAddresses()
+{
+    // Configure Socket 1 to be at $D400 and Socket 2 to be at $D500
+    // UltiSid is set to $D600 to make sure it doesn't trigger
+    C64_SID1_BASE = 0x40;
+    C64_SID2_BASE = 0x50;
+    C64_SID1_MASK = 0xFE;
+    C64_SID2_MASK = 0xFE;
+    C64_EMUSID1_BASE = 0x60;
+    C64_EMUSID2_BASE = 0x60;
+    C64_EMUSID1_MASK = 0xFE;
+    C64_EMUSID2_MASK = 0xFE;
+    C64_SID1_EN = 1;
+    C64_SID2_EN = 1;
+    C64_STEREO_ADDRSEL = 0;
+    wait_ms(1);
+}
+
+void U64Config :: S_RestoreDetectionAddresses()
+{
+    C64_SID1_BASE    = C64_SID1_BASE_BAK;
+    C64_SID2_BASE    = C64_SID2_BASE_BAK;
+    C64_SID1_MASK    = C64_SID1_MASK_BAK;
+    C64_SID2_MASK    = C64_SID2_MASK_BAK;
+    C64_EMUSID1_BASE = C64_EMUSID1_BASE_BAK;
+    C64_EMUSID2_BASE = C64_EMUSID2_BASE_BAK;
+    C64_EMUSID1_MASK = C64_EMUSID1_MASK_BAK;
+    C64_EMUSID2_MASK = C64_EMUSID2_MASK_BAK;
+    C64_SID1_EN = C64_SID1_EN_BAK;
+    C64_SID2_EN = C64_SID2_EN_BAK;
+    C64_STEREO_ADDRSEL = C64_STEREO_ADDRSEL_BAK;
+}
+
 int U64Config :: S_SidDetector(int &sid1, int &sid2)
 {
     uint32_t *begin = &__start_detect_sid;
@@ -1260,17 +1634,7 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
         return -1;
     }
 */
-
-    // Configure Socket 1 to be at $D400 and Socket 2 to be at $D500
-    // UltiSid is set to $D600 to make sure it doesn't trigger
-    C64_SID1_BASE = 0x40;
-    C64_SID2_BASE = 0x50;
-    C64_SID1_MASK = 0xFE;
-    C64_SID2_MASK = 0xFE;
-    C64_EMUSID1_BASE = 0x60;
-    C64_EMUSID2_BASE = 0x60;
-    C64_EMUSID1_MASK = 0xFE;
-    C64_EMUSID2_MASK = 0xFE;
+    S_SetupDetectionAddresses();
 
     // Prepare the function in fast ram
     uint32_t *dest = (uint32_t *)ONCHIP;
@@ -1291,15 +1655,10 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
     for (int attempt = 0; attempt < 3; attempt++) {
         // Prepare the machine to execute the detection code
 
-        C64_SID1_EN = 1;
-        C64_SID2_EN = 1;
 
         alt_irq_context context = alt_irq_disable_all();
         detection(buffer);  // <-- jumps to fast ram!
         alt_irq_enable_all(context);
-
-        C64_SID1_EN = 0;
-        C64_SID2_EN = 0;
 
         // Now analyze the data
         if ((buffer[16] == 2) && (buffer[0] == 0))  {
@@ -1336,19 +1695,208 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
 
 int swap_joystick()
 {
-    static uint8_t toggle = 0;
-
-    uint8_t rev = (U2PIO_BOARDREV >> 3);
-    if (rev != 0x13) {
+    if (!isEliteBoard()) {
         return 0;
     }
 
-    toggle ^= 1;
+    ConfigItem *item = u64_configurator.cfg->find_item(CFG_JOYSWAP);
+    int swap = item->getValue();
+    swap ^= 1;
+    item->setValue(swap);
+    C64_PLD_JOYCTRL = (uint8_t)(swap ^ 1);
+    C64_PADDLE_SWAP = (uint8_t)swap;
 
-    C64_PLD_JOYCTRL = toggle;
-
-    printf("*S%d*", toggle);
+    printf("*S%d*", swap);
 
     // swap performed, now exit menu
     return -1;
+}
+
+bool isEliteBoard(void)
+{
+    uint8_t rev = (U2PIO_BOARDREV >> 3);
+    if (rev == 0x13) {
+        return true;
+    }
+    if (rev == 0x14) { // may be either!
+        uint8_t joyswap = C64_PLD_JOYCTRL;
+        if (joyswap & 0x80) {
+            return true;
+        }
+        return false;
+    }
+    return false;
+}
+
+void U64Config :: auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int count)
+{
+    // this function sets 'don't care' bits in the mask for A5..A9 if
+    // all of the address bits are the same for all decodes, OR when they
+    // are already don't care. This fills up the address space with
+    // mirrors without introducing overlaps that were not already there.
+
+    //printf("Before:\n");
+    //show_mapping(base, mask, split, count);
+
+    for (int i=0; i<4; i++) {
+        base[i] &= ~split[i];
+        mask[i] &= ~split[i];
+    }
+
+    for (int a = 5; a <= 9; a++) {
+        bool same = true;
+        bool set = false;
+        int bit = 0, temp;
+
+        for (int i = 0; i < count; i++) {
+            // only consider SIDs in D400-D7FF range
+            if ((base[i] < 0x40) || (base[i] >= 0x80)) {
+                continue;
+            }
+            // masks bits that are already "don't care" are not considered
+//            if (mask[i] & (1 << (a - 4)) == 0) {
+//                continue;
+//            }
+            if (!set) {
+                bit = (base[i] >> (a - 4)) & 1;
+                bit <<= 1;
+                bit |= (mask[i] >> (a - 4)) & 1;
+                set = true;
+            } else {
+                temp = (base[i] >> (a - 4)) & 1;
+                temp <<= 1;
+                temp |= (mask[i] >> (a - 4)) & 1;
+
+                if (temp != bit) {
+                    same = false;
+                }
+            }
+        }
+        if (same) {
+            for (int i = 0; i < count; i++) {
+                // only consider SIDs in D400-D7FF range
+                if ((base[i] < 0x40) || (base[i] >= 0x80)) {
+                    continue;
+                }
+                // clear corresponding mask bit
+                mask[i] &= ~(1 << (a - 4));
+                base[i] &= ~(1 << (a - 4));
+            }
+        }
+    }
+
+    //printf("After:\n");
+    //show_mapping(base, mask, split, count);
+}
+
+void U64Config :: show_mapping(uint8_t *base, uint8_t *mask, uint8_t *split, int count)
+{
+    // split can be single bit, in which it is easy to determine whether it is A or B, just check for 0
+    // In case split is two bits, we need to see if it is A, B, C, or D.
+    // In case split is 06 => 00, 02, 04, 06 => divide by 2
+    // In case split is 12 => 00, 02, 10, 12 => divide by 2, if >= 8: do -6.
+    // In case split is 18 => 00, 08, 10, 18 => divide by 8
+/*
+    printf("    DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD\n");
+    printf("    44444444555555556666666677777777\n");
+    printf("    02468ACE02468ACE02468ACE02468ACE\n");
+    printf("    00000000000000000000000000000000\n");
+    char m;
+
+    for(int i=0;i<count;i++) {
+        printf("%2d: ", i);
+        for (int a = 0x40; a < 0x80; a+=2) {
+            if ((a & mask[i]) == base[i]) {
+                switch (split[i]) {
+                case 0:
+                    m = '*';
+                    break;
+                case 0x06:
+                    m = 'A' + ((a & split[i]) >> 1);
+                    break;
+                case 0x18:
+                    m = 'A' + ((a & split[i]) >> 3);
+                    break;
+                case 0x12:
+                    m = 'A' + ((a & split[i] & 2) >> 1) + ((a & split[i] & 0x10) >> 3);
+                    break;
+                default:
+                    m = (a & split[i]) ? 'B' : 'A';
+                }
+                printf("%c", m);
+            } else {
+                printf(" ");
+            }
+        }
+        printf("\n");
+    }
+*/
+    printf("   A9 A8 A7 A6 A5\n");
+    for (int i=0; i < count; i++) {
+        printf("%2d:", i);
+        for(int a = 9-4; a >= 5-4; a--) {
+            int m = (mask[i] >> a) & 1;
+            int b = (base[i] >> a) & 1;
+            if ((m == 1) && (b == 0)) {
+                printf(" 0 ");
+            } else if ((m == 1) && (b == 1)) {
+                printf(" 1 ");
+            } else if ((m == 0) && (b == 0)) {
+                printf(" - ");
+            } else {
+                printf(" #!");
+            }
+        }
+        printf("\n");
+    }
+}
+
+void U64Config :: show_sid_addr(UserInterface *intf)
+{
+    SidEditor *se = new SidEditor(intf, u64_configurator.sidaddressing.cfg);
+    se->init(intf->screen, intf->keyboard);
+    intf->activate_uiobject(se);
+}
+
+volatile uint8_t *U64Config :: access_socket_pre(int socket)
+{
+    irq_context = alt_irq_disable_all();
+
+    S_SetupDetectionAddresses();
+
+    if (!(C64_STOP & C64_HAS_STOPPED)) {
+        if (c64) { // in case this gets called before the object is created
+            c64->stop(false);
+        } else {
+            C64_STOP_MODE = STOP_COND_FORCE;
+            C64_STOP = 1;
+            while (!(C64_STOP & C64_HAS_STOPPED))
+                ;
+            C64_PEEK(2);
+        }
+        temporary_stop = true;
+    } else {
+        temporary_stop = false;
+    }
+
+    volatile uint8_t *base;
+    if (socket) {
+        base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500);
+    } else {
+        base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400);
+    }
+    return base;
+}
+
+void U64Config :: access_socket_post(int socket)
+{
+    S_RestoreDetectionAddresses();
+
+    if (temporary_stop) {
+        if (c64) {
+            c64->resume();
+        }
+    }
+
+    alt_irq_enable_all(irq_context);
 }

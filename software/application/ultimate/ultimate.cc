@@ -42,6 +42,12 @@
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
 
+bool isEliteBoard(void) __attribute__((weak));
+bool isEliteBoard(void)
+{
+    return false;
+}
+
 bool connectedToU64 = false;
 
 C1541 *c1541_A;
@@ -88,8 +94,7 @@ extern "C" void ultimate_main(void *a)
 
     char title[48];
     if(capabilities & CAPAB_ULTIMATE64) {
-        uint8_t rev = (U2PIO_BOARDREV >> 3);
-        if (rev == 0x13) {
+        if (isEliteBoard()) {
             sprintf(title, "\eA** Ultimate 64 Elite V1.%b - %s **\eO", C64_CORE_VERSION, APPL_VERSION);
         } else {
             sprintf(title, "\eA*** Ultimate 64 V1.%b - %s ***\eO", C64_CORE_VERSION, APPL_VERSION);

@@ -26,7 +26,7 @@ extern "C" {
 #include <string.h>
 
 /*** CONFIGURATION MANAGER ***/
-ConfigManager :: ConfigManager() : stores(16, NULL)
+ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
 {
 	flash = get_flash();
 	if(!flash) {
@@ -48,26 +48,32 @@ ConfigManager :: ~ConfigManager()
 		delete s;
     }
     stores.clear_list();
+
+    ConfigPage *p;
+    for(int n = 0; n < stores.get_elements();n++) {
+        p = (ConfigPage *)pages[n];
+        delete p;
+    }
+
 }
 
-ConfigStore *ConfigManager :: register_store(uint32_t store_id, const char *name,
+ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
                                 t_cfg_definition *defs, ConfigurableObject *ob) 
 {
 	if(!flash) {
-        printf("register_store %s: Can't open flash\n", name);
         flash = get_flash();
         printf("register_store %s: Can't open flash\n", name);
 		return NULL; // fail
 	}
-    if(store_id == 0) {
+    if(page_id == 0) {
         printf("ERROR: Requesting to register a store with ID=0\n");
         return NULL;
     }
 
-    // Check if the store was already opened
+    // Check if the store was already opened, just add the object to it
     for (int i=0; i<stores.get_elements(); i++) {
         ConfigStore *cfgStore = stores[i];
-        if (cfgStore->id == store_id) {
+        if (strcmp(cfgStore->get_store_name(), name) == 0) {
             if (ob) {
                 cfgStore->addObject(ob);
             }
@@ -76,36 +82,55 @@ ConfigStore *ConfigManager :: register_store(uint32_t store_id, const char *name
     }
 
     int page_size = flash->get_page_size();
-    uint32_t id;
-    ConfigStore *s;
 
-    for(int i=0;i<num_pages;i++) {
-        flash->read_config_page(i, 4, &id);
-        if (store_id == id) {
-            s = new ConfigStore(store_id, name, i, page_size, defs, ob); // TODO
-            s->read();
-            //printf("APPENDING STORE %p %s\n", s, s->get_name());
-            stores.append(s);
-            return s;
+    // Try to obtain page object that already represents the page in Flash
+    ConfigPage *page = NULL;
+    for(int n=0; n<pages.get_elements(); n++) {
+        ConfigPage *p = pages[n];
+        if (p->get_id() == page_id) {
+            page = p;
+            break;
         }
     }
-    //printf("Store %8x not found..\n", store_id);
-    for(int i=0;i<num_pages;i++) {
-        flash->read_config_page(i, 4, &id);
-        if (id == 0xFFFFFFFF) {
-            //printf("Found empty spot on config page %d, for ID=%8x. Size=%d. Defs=%p. Name=%s\n", i, store_id, page_size, defs, name);
-            s = new ConfigStore(store_id, name, i, page_size, defs, ob); // TODO
-            s->write();
-            stores.append(s);
-            return s;
+
+    bool write = false;
+    // Try to find the page in Flash
+    if (!page) {
+        uint32_t id;
+        for(int i=0;i<num_pages;i++) {
+            flash->read_config_page(i, 4, &id);
+            if (page_id == id) {
+                page = new ConfigPage(flash, id, i, page_size);
+                page->read();
+                pages.append(page);
+                break;
+            }
         }
     }
-    // no entry in flash found, no place to create one.
-    // create a temporary one in memory.
-    s = new ConfigStore(store_id, name, -1, page_size, defs, ob); // TODO
-    if(s) {
-        stores.append(s);
+
+    // if still no luck, try to create a page in flash
+    if (!page) {
+        uint32_t id;
+        for(int i=0;i<num_pages;i++) {
+            flash->read_config_page(i, 4, &id);
+            if (id == 0xFFFFFFFF) {
+                //printf("Found empty spot on config page %d, for ID=%8x. Size=%d. Defs=%p. Name=%s\n", i, store_id, page_size, defs, name);
+                page = new ConfigPage(flash, page_id, i, page_size);
+                pages.append(page);
+                write = true;
+                break;
+            }
+        }
     }
+
+    ConfigStore *s = new ConfigStore(page, name, defs, ob);
+    stores.append(s);
+    page->add_store(s);
+
+    if (write) {
+        page->write();
+    }
+    s->read();
     return s;
 }
 
@@ -119,36 +144,18 @@ void ConfigManager :: remove_store(ConfigStore *cfg)
     stores.remove(cfg);
 }
 
-ConfigStore *ConfigManager :: open_store(uint32_t id)
-{
-    ConfigStore *s;
-    for(int n = 0; n < stores.get_elements();n++) {
-        s = stores[n];
-        if(s->id == id)
-            return s;
-    }
-    return NULL;
-}
-
 //   ===================
 /*** CONFIGURATION STORE ***/
 //   ===================
-ConfigStore :: ConfigStore(uint32_t store_id, const char *name, int page, int page_size,
+ConfigStore :: ConfigStore(ConfigPage *page, const char *name,
                            t_cfg_definition *defs, ConfigurableObject *ob) : store_name(name), items(16, NULL), objects(4, NULL)
 {
-    //printf("Create configstore %8x with size %d..", store_id, page_size);
-    if(page_size)
-        mem_block = new uint8_t[page_size];
-    else
-        mem_block = NULL;
-        
-    block_size = page_size;
-    flash_page = page;
-    id = store_id;
     if (ob) {
         objects.append(ob);
     }
-    dirty = false;
+    this->page = page;
+    staleEffect = true;
+    staleFlash = false;
     
     for(int i=0;i<64;i++) {
         if(defs[i].type == CFG_TYPE_END)
@@ -162,18 +169,12 @@ ConfigStore :: ConfigStore(uint32_t store_id, const char *name, int page, int pa
 
 ConfigStore :: ~ConfigStore()
 {
-    if(dirty) {
-        write();
-    }
-        
     ConfigItem *i;
     for(int n = 0; n < items.get_elements();n++) {
     	i = items[n];
 		delete i;
     }
     items.clear_list();
-    if(mem_block)
-    	delete mem_block;
 }
         
 void ConfigStore :: addObject(ConfigurableObject *obj)
@@ -187,27 +188,56 @@ int ConfigStore :: unregister(ConfigurableObject *obj)
     return objects.get_elements();
 }
 
-void ConfigStore :: pack()
+int ConfigPage :: pack(void)
 {
-    int remain = block_size;
-	memset(mem_block, 0xFF, block_size);
+    memset(mem_block, 0xFF, block_size);
+
     uint8_t *b = &mem_block[4];
+    (*(uint32_t *)mem_block) = id;
+    int remain = block_size - 4;
+    int size;
+    for(int n = 0; n < stores.get_elements(); n++) {
+        ConfigStore *s = stores[n];
+        size = s->pack(b, remain);
+        remain -= size;
+        b += size;
+    }
+    return block_size - remain;
+}
+
+void ConfigPage :: unpack(void)
+{
+    for(int n = 0; n < stores.get_elements(); n++) {
+        ConfigStore *s = stores[n];
+        s->unpack(mem_block, block_size);
+    }
+}
+
+void ConfigPage :: unpack(ConfigStore *s)
+{
+    s->unpack(mem_block, block_size);
+}
+
+int ConfigStore :: pack(uint8_t *b, int remain)
+{
     ConfigItem *i;
     int len;
-    (*(uint32_t *)mem_block) = id;
-
+    int total = 0;
     //    printf("Packing ConfigStore %s.\n", store_name);
     for(int n = 0; n < items.get_elements();n++) {
     	i = items[n];
     	len = i->pack(b, remain);
         b += len;
         remain -= len;
+        total += len;
         if(remain < 1) {
             printf("Configuration item doesn't fit. Dropped.\n");
             break;
         }
     }
     *b = 0xFF;
+
+    return total;
 }
 
 void ConfigStore :: effectuate()
@@ -219,24 +249,32 @@ void ConfigStore :: effectuate()
             obj->effectuate_settings();
         }
     }
+    staleEffect = false;
 }
     
 void ConfigStore :: write()
 {
-	printf("Writing config store '%s' to flash, page %d..", store_name.c_str(), flash_page);
+	printf("Writing config store '%s' to flash..", store_name.c_str());
+	if(page) {
+	    page->write();
+        staleFlash = false;
+	}
+}
 
-	pack();
-	Flash *flash = ConfigManager :: getConfigManager()->get_flash_access();
+void ConfigPage :: write()
+{
+    printf("Page: %d", flash_page);
+	int size = pack();
+	//dump_hex_relative(mem_block, size);
 	if(flash) {
 	    flash->write_config_page(flash_page, mem_block);
-	    dirty = false;
 	    printf(" done.\n");
 	} else {
 		printf(" error.\n");
 	}
 }
 
-void ConfigStore :: unpack()
+void ConfigStore :: unpack(uint8_t *mem_block, int block_size)
 {
     int index = 4;
     uint8_t id;
@@ -264,13 +302,21 @@ void ConfigStore :: unpack()
     }
 }
 
+void ConfigPage :: read()
+{
+    if(flash) {
+        flash->read_config_page(flash_page, block_size, mem_block);
+    }
+}
+
 void ConfigStore :: read()
 {
-	Flash *flash = ConfigManager :: getConfigManager()->get_flash_access();
-	if(flash) {
-	    flash->read_config_page(flash_page, block_size, mem_block);
-	    unpack();
+	if(page) {
+	    page->read();
+	    page->unpack(this);
 	}
+	staleEffect = true;
+	staleFlash = false;
 	check_bounds();
 }
 
@@ -302,6 +348,14 @@ void ConfigStore :: disable(uint8_t id)
     }
 }
 
+void ConfigStore :: enable(uint8_t id)
+{
+    ConfigItem *i = find_item(id);
+    if (i) {
+        i->setEnabled(true);
+    }
+}
+
 int ConfigStore :: get_value(uint8_t id)
 {
     ConfigItem *i = find_item(id);
@@ -326,8 +380,7 @@ void ConfigStore :: set_value(uint8_t id, int value)
 {
     ConfigItem *i = find_item(id);
     if(i) {
-        i->value = value;
-        dirty = true;
+        i->setValue(value);
     }
 }
 
@@ -335,10 +388,7 @@ void ConfigStore :: set_string(uint8_t id, char *s)
 {
     ConfigItem *i = find_item(id);
     if(i) {
-        if(i->string) {
-            strncpy(i->string, s, i->definition->max);
-            dirty = true;
-        }
+        i->setString(s);
     }
 }
 
@@ -358,6 +408,17 @@ void ConfigStore :: dump(void)
     }
 }
 
+void ConfigStore :: reset(void)
+{
+    ConfigItem *i;
+    for(int n = 0; n < items.get_elements(); n++) {
+        i = items[n];
+        i->reset();
+    }
+    staleEffect = true;
+    staleFlash = true;
+}
+
 void ConfigStore :: check_bounds(void)
 {
     ConfigItem *i;
@@ -367,10 +428,12 @@ void ConfigStore :: check_bounds(void)
 		   (i->definition->type == CFG_TYPE_VALUE)) {
 			if(i->value < i->definition->min) {
 				i->value = i->definition->min;
-				dirty = true;
+			    staleEffect = true;
+			    staleFlash = true;
 			} else if(i->value > i->definition->max) {
 				i->value = i->definition->max;
-				dirty = true;
+			    staleEffect = true;
+			    staleFlash = true;
 			}
 		}
 	}
@@ -383,21 +446,29 @@ ConfigItem :: ConfigItem(ConfigStore *s, t_cfg_definition *d)
 	hook = NULL;
 	definition = d;
     store = s;
-    if(d->type == CFG_TYPE_STRING) {
+    if ((d->type == CFG_TYPE_STRING)||(d->type == CFG_TYPE_INFO)) {
         string = new char[d->max+1];
-        strncpy(string, (char *)d->def, d->max);
-        value = 0;
     } else {
-        value = d->def;
         string = NULL;
     }
     enabled = true;
+    reset();
 }
 
 ConfigItem :: ~ConfigItem()
 {
     if(string)
         delete[] string;
+}
+
+void ConfigItem :: reset(void)
+{
+    if (definition->type == CFG_TYPE_STRING) {
+        strncpy(string, (char *)definition->def, definition->max);
+        value = 0;
+    } else {
+        value = definition->def;
+    }
 }
 
 void ConfigItem :: unpack(uint8_t *buffer, int len)
@@ -475,6 +546,10 @@ int ConfigItem :: pack(uint8_t *buffer, int len)
             *(buffer++) = (uint8_t)strlen(string);
             strcpy((char *)buffer, string);
             return 3+strlen(string);
+        case CFG_TYPE_FUNC:
+        case CFG_TYPE_SEP:
+        case CFG_TYPE_INFO:
+            break; // do nothing, do not store
         default:
             printf("Error: unknown type packing flash configuration.\n");
     }
@@ -498,7 +573,12 @@ const char *ConfigItem :: get_display_string(char *buffer, int width)
             sprintf(buf, definition->item_format, definition->items[value]);
             break;
         case CFG_TYPE_STRING:
+        case CFG_TYPE_INFO:
             sprintf(buf, definition->item_format, string);
+            break;
+        case CFG_TYPE_FUNC:
+        case CFG_TYPE_SEP:
+            sprintf(buf, definition->item_format);
             break;
         default:
             sprintf(buf, "Unknown type.");
@@ -556,12 +636,68 @@ void ConfigItem :: execute(int sel)
     setChanged();
 }
 
-void ConfigItem :: setChanged()
+void ConfigItem :: setString(const char *s)
 {
-    store->dirty = true;
-    if(hook) {
-    	hook(this);
+    if(this->string) {
+        strncpy(this->string, s, this->definition->max);
+        this->string[this->definition->max - 1] = 0;
+        if (definition->type == CFG_TYPE_STRING) {
+            setChanged();
+        }
     }
+}
+
+int ConfigItem :: next(int a)
+{
+    int value = getValue();
+    int ret = 0;
+    switch(definition->type) {
+        case CFG_TYPE_ENUM:
+        case CFG_TYPE_VALUE:
+            value += a;
+            // circular
+            while (value > definition->max) {
+                value -= (1 + definition->max - definition->min);
+            }
+            ret = setValue(value);
+            break;
+
+        default:
+            break;
+    }
+    return ret;
+}
+
+int ConfigItem :: previous(int a)
+{
+    int value = getValue();
+    int ret = 0;
+    switch(definition->type) {
+        case CFG_TYPE_ENUM:
+        case CFG_TYPE_VALUE:
+            value -= a;
+            // circular
+            while (value < definition->min) {
+                value += (1 + definition->max - definition->min);
+            }
+            ret = setValue(value);
+            break;
+        default:
+            break;
+    }
+    return ret;
+}
+
+int ConfigItem :: setChanged()
+{
+    store->set_need_flash_write();
+    int ret = 0;
+    if(hook) {
+        ret = hook(this);
+    } else {
+        store->set_need_effectuate();
+    }
+    return ret;
 }
 
 ConfigSetting :: ConfigSetting(int index, ConfigItem *p, char *name) : setting_name(name)

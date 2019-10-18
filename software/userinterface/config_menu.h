@@ -23,6 +23,7 @@ public:
 
 class ConfigBrowser : public TreeBrowser
 {
+    void on_exit(void);
 public:
 	ConfigBrowser(UserInterface *ui, Browsable *);
 	virtual ~ConfigBrowser();
@@ -45,7 +46,7 @@ class BrowsableConfigItem : public Browsable
 public:
 	BrowsableConfigItem(ConfigItem *i) {
 		item = i;
-		selectable = i->isEnabled();
+		selectable = (i->definition->type != CFG_TYPE_SEP) && (i->definition->type != CFG_TYPE_INFO);
 	}
 	~BrowsableConfigItem() {}
 
@@ -59,8 +60,7 @@ public:
 	static int contextSelect(SubsysCommand *cmd) {
 		ConfigItem *it = (ConfigItem *)cmd->functionID;
 		printf("ContextSelect of item %s, set value to %d.\n", it->get_item_name(), cmd->mode);
-		it->value = cmd->mode;
-    	it->setChanged();
+		it->setValue(cmd->mode);
 		return 0;
 	}
 
@@ -106,7 +106,7 @@ public:
 	IndexedList<Browsable *> *getSubItems(int &error) {
 		if (children.get_elements() == 0) {
 			IndexedList<ConfigItem *> *itemList = store->getItems();
-			store->read();
+			store->at_open_config();
 			for (int i=0; i < itemList->get_elements(); i++) {
 				children.append(new BrowsableConfigItem((*itemList)[i]));
 			}
@@ -125,7 +125,8 @@ public:
 	BrowsableConfigRoot()  : children(4, NULL) {
 
 	}
-	~BrowsableConfigRoot() {}
+	~BrowsableConfigRoot() {
+	}
 
 	IndexedList<Browsable *> *getSubItems(int &error) {
 		if (children.get_elements() == 0) {

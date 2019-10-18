@@ -25,13 +25,17 @@
 #include "flash.h"
 #include "indexed_list.h"
 #include "mystring.h"
-//#include "path.h"
 
 #define CFG_TYPE_VALUE  0x01
 #define CFG_TYPE_ENUM   0x02
 #define CFG_TYPE_STRING 0x03
+#define CFG_TYPE_FUNC   0x04
+#define CFG_TYPE_SEP    0x05
+#define CFG_TYPE_INFO   0x06
 #define CFG_TYPE_END    0xFF
 
+class UserInterface;
+typedef void (*t_cfg_func)(UserInterface *);
 
 struct t_cfg_definition
 {
@@ -44,10 +48,11 @@ struct t_cfg_definition
     int  def;
 };
 
+class ConfigPage;
 class ConfigStore;
 class ConfigurableObject;
 class ConfigItem;
-typedef void (*t_change_hook)(ConfigItem *);
+typedef int (*t_change_hook)(ConfigItem *);
 
 class ConfigSetting
 {
@@ -63,60 +68,85 @@ class ConfigItem
 {
 	t_change_hook hook;
 	bool enabled;
+    int  value;
+    char *string;
+
+    int setChanged(void);
+    int  pack(uint8_t *buffer, int len);
+    void unpack(uint8_t *buffer, int len);
+    void reset(void);
 public:    
     ConfigStore *store;
-    t_cfg_definition *definition;
-    int     value;
-    char    *string;
+    const t_cfg_definition *definition;
 
     ConfigItem(ConfigStore *s, t_cfg_definition *d);
     ~ConfigItem();
-
-    int pack(uint8_t *buffer, int len);
-    void unpack(uint8_t *buffer, int len);
 
     const char *get_item_name() { return definition->item_text; }
     const char *get_display_string(char *buffer, int width);
     int  fetch_possible_settings(IndexedList<ConfigSetting *> &list);
     void execute(int sel);
-    void setChanged(void);
     void setChangeHook(t_change_hook hook) { this->hook = hook; }
     bool isEnabled(void) { return enabled; }
     void setEnabled(bool en) { enabled = en; }
+
+    const int getValue() { return value; }
+    const char *getString() { return string; }
+    int  setValue(int v) { value = v; return setChanged(); }
+    void setValueQuietly(int v) { value = v; }
+    void setString(const char *str);
+    int next(int);
+    int previous(int);
+
+    friend class ConfigStore;
+    friend class RtcConfigStore;
+    friend class ConfigIO; // this is an extension to config.cc, so direct access is granted
 };
 
 
 class ConfigStore
 {
-    int    flash_page;
-    uint8_t  *mem_block;
-    int    block_size;
     IndexedList<ConfigurableObject *> objects;
-//    ConfigurableObject *obj;
     mstring store_name;
+    ConfigPage *page;
+    bool  staleEffect;
+    bool  staleFlash;
     
-    void pack(void);
-    void unpack(void);
+    int  pack(uint8_t *buffer, int len);
+    void unpack(uint8_t *buffer, int len);
 public:
     IndexedList <ConfigItem*> items;
-    uint32_t id;
-    bool  dirty;
 
-    ConfigStore(uint32_t id, const char *name, int page, int page_size, t_cfg_definition *defs, ConfigurableObject *obj);
+    ConfigStore(ConfigPage *page, const char *name, t_cfg_definition *defs, ConfigurableObject *obj);
     virtual ~ConfigStore();
     void addObject(ConfigurableObject *obj);
     int  unregister(ConfigurableObject *obj);
 
 // Interface functions
+    virtual void reset(void);
     virtual void read(void);
     virtual void write(void);
+    virtual void at_open_config(void) { }
+
+    virtual void at_close_config(void)
+    {
+        if (need_effectuate()) {
+            effectuate();
+            set_effectuated();
+        }
+    }
+
     virtual void effectuate(void);
 
+/*
     int  get_page(void) { return flash_page; }
     int  get_page_size(void) { return block_size; }
+*/
 
     void set_change_hook(uint8_t id, t_change_hook hook);
     void disable(uint8_t id);
+    void enable(uint8_t id);
+    ConfigurableObject *get_first_object(void) { return objects[0]; }
 
     ConfigItem *find_item(uint8_t id);
     int  get_value(uint8_t id);
@@ -126,15 +156,59 @@ public:
     void set_string(uint8_t id, char *s);
     void dump(void);
     void check_bounds(void);
-    
+    bool is_flash_stale(void) { return staleFlash; }
+    bool need_effectuate(void) { return staleEffect; }
+    void set_effectuated(void) { staleEffect = false; }
+    const void set_need_flash_write(void) { staleFlash = true; }
+    const void set_need_effectuate(void) { staleEffect = true; }
+    ConfigPage *get_page(void) { return page; }
+
     IndexedList <ConfigItem *> *getItems() { return &items; }
+
+    friend class ConfigIO;
+    friend class ConfigItem;
+    friend class ConfigPage;
 };
     
+class ConfigPage
+{
+    uint32_t id;
+    int  block_size;
+    int  flash_page;
+    uint8_t *mem_block;
+    IndexedList<ConfigStore*> stores;
+    Flash *flash;
+
+    int pack(void);
+    void unpack(void);
+
+public:
+    ConfigPage(Flash *fl, int id, int page, int page_size) : flash(fl), id(id), flash_page(page), block_size(page_size), stores(4, NULL) {
+        mem_block = new uint8_t[page_size];
+    }
+
+    virtual ~ConfigPage() {
+        delete[] mem_block;
+    }
+
+    void add_store(ConfigStore *s) {
+        stores.append(s);
+    }
+    uint32_t get_id() {
+        return id;
+    }
+
+    void read();
+    void write();
+    void unpack(ConfigStore *s);
+};
+
 class ConfigManager
 {
 	IndexedList<ConfigStore*> stores;
-    int num_pages;
+	IndexedList<ConfigPage*> pages;
     Flash *flash;
+    int num_pages;
 
     ConfigManager();
     ~ConfigManager();
@@ -144,15 +218,15 @@ public:
 		return &config_manager;
 	}
     
-    ConfigStore *register_store(uint32_t store_id, const char *name, t_cfg_definition *defs, ConfigurableObject *ob);
-    ConfigStore *open_store(uint32_t store_id);
+    ConfigStore *register_store(uint32_t page_id, const char *name, t_cfg_definition *defs, ConfigurableObject *ob);
     void add_custom_store(ConfigStore *cfg);
     void remove_store(ConfigStore *cfg);
 
 	Flash *get_flash_access(void) { return flash; }
 	IndexedList<ConfigStore*> *getStores() { return &stores; }
-};
 
+	friend class ConfigIO;
+};
 
 
 // Base class for any configurable object

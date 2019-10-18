@@ -34,6 +34,7 @@ port (
     SLOT_IRQn        : inout std_logic;
     SLOT_NMIn        : inout std_logic;
     SLOT_VCC         : in    std_logic;
+    SLOT_DRV_RST     : out   std_logic := '0';
     
     -- memory
     SDRAM_A     : out   std_logic_vector(13 downto 0); -- DRAM A
@@ -469,7 +470,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"14",
+        g_version       => X"15",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -676,6 +677,8 @@ begin
     end process;
     
     SLOT_RSTn <= '0' when RSTn_out = '0' else 'Z';
+    SLOT_DRV_RST <= not RSTn_out; -- Drive this pin HIGH when we want to reset the C64 (uses NFET on Rev.E boards)
+    
     SLOT_ADDR(15 downto 12) <= slot_addr_o(15 downto 12) when slot_addr_th = '1' else (others => 'Z');
     SLOT_ADDR(11 downto 00) <= slot_addr_o(11 downto 00) when slot_addr_tl = '1' else (others => 'Z');
     SLOT_DATA <= slot_data_o when slot_data_t = '1' else (others => 'Z');

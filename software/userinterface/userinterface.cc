@@ -21,6 +21,7 @@ static const char *colors[] = { "Black", "White", "Red", "Cyan", "Purple", "Gree
                           
 static const char *en_dis4[]    = { "Disabled", "Enabled" };
 static const char *itype[]      = { "Freeze", "Overlay on HDMI" };
+static const char *cfg_save[]   = { "No", "Ask", "Yes" };
 
 struct t_cfg_definition user_if_config[] = {
 #if U64
@@ -30,10 +31,14 @@ struct t_cfg_definition user_if_config[] = {
     { CFG_USERIF_BORDER,     CFG_TYPE_ENUM,   "Border color",         "%s", colors,  0, 15, 0 },
     { CFG_USERIF_FOREGROUND, CFG_TYPE_ENUM,   "Foreground color",     "%s", colors,  0, 15, 12 },
     { CFG_USERIF_SELECTED,   CFG_TYPE_ENUM,   "Selected Item color",  "%s", colors,  0, 15, 1 },
+#if U64
     { CFG_USERIF_SELECTED_BG,CFG_TYPE_ENUM,   "Selected Backgr (Overlay)",  "%s", colors,  0, 15, 6 },
+#endif
 //    { CFG_USERIF_WORDWRAP,   CFG_TYPE_ENUM,   "Wordwrap text viewer", "%s", en_dis,  0,  1, 1 },
     { CFG_USERIF_HOME_DIR,   CFG_TYPE_STRING, "Home Directory",        "%s", NULL, 0, 31, (int)"" },
     { CFG_USERIF_START_HOME, CFG_TYPE_ENUM,   "Enter Home on Startup", "%s", en_dis4, 0,  1, 0 },
+    { CFG_USERIF_CFG_SAVE,   CFG_TYPE_ENUM,   "Auto Save Config",      "%s", cfg_save, 0, 2, 1 },
+    { CFG_USERIF_ULTICOPY_NAME, CFG_TYPE_ENUM, "Ulticopy Uses disk name", "%s", en_dis4, 0, 1, 1 },
     { CFG_TYPE_END,           CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
 
@@ -47,6 +52,7 @@ UserInterface :: UserInterface(const char *title) : title(title)
     screen = NULL;
     doBreak = false;
     available = false;
+    color_sel_bg = 0;
     register_store(0x47454E2E, "User Interface Settings", user_if_config);
     effectuate_settings();
 }
@@ -67,7 +73,10 @@ void UserInterface :: effectuate_settings(void)
     color_fg     = cfg->get_value(CFG_USERIF_FOREGROUND);
     color_bg     = cfg->get_value(CFG_USERIF_BACKGROUND);
     color_sel    = cfg->get_value(CFG_USERIF_SELECTED);
+#if U64
     color_sel_bg = cfg->get_value(CFG_USERIF_SELECTED_BG);
+#endif
+    config_save  = cfg->get_value(CFG_USERIF_CFG_SAVE);
 
     if(host && host->is_accessible())
         host->set_colors(color_bg, color_border);
@@ -239,6 +248,9 @@ bool UserInterface :: pollFocussed(void)
             return false;
         }
         ui_objects[focus]->deinit();
+        if (ret == -2) {
+            delete ui_objects[focus];
+        }
         if(focus) {
             focus--;
         } else {

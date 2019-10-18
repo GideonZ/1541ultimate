@@ -90,6 +90,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     static C1541* last_mounted_drive;
     volatile uint8_t *memory_map;
     volatile uint8_t *registers;
+    t_cfg_definition *local_config_definitions;
     mstring drive_name;
     FileManager *fm;
     
