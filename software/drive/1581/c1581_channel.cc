@@ -43,9 +43,6 @@ void C1581_Channel::init(C1581 *parent, int ch)
 
 void C1581_Channel :: reset_prefetch(void)
 {
-	//if(pointer == -1)
-	//	pointer = last_byte;
-
 	prefetch = pointer;
 }
 
@@ -142,13 +139,12 @@ int C1581_Channel :: prefetch_data(uint8_t& data)
         return IEC_NO_FILE;
     }
     if (prefetch == last_byte) {
-        data = buffer[prefetch];
-        //pointer = -1;
+    	data = buffer[prefetch];
         prefetch++;
         return IEC_LAST;
     }
     if (prefetch < prefetch_max) {
-		data = buffer[prefetch];
+    	data = buffer[prefetch];
 		prefetch++;
 		return IEC_OK;
     }
@@ -161,11 +157,9 @@ int C1581_Channel :: prefetch_data(uint8_t& data)
 
 int C1581_Channel :: pop_data(void)
 {
-
     switch(state) {
     	case e_dir:
         case e_file:
-        case e_block:
             if(pointer == last_byte)
             {
                 state = e_complete;
@@ -176,6 +170,24 @@ int C1581_Channel :: pop_data(void)
 					return IEC_READ_ERROR;
 				else
 					return IEC_OK;
+			}
+            // fix for seq read bug
+            if(prefetch > last_byte)
+            {
+            	prefetch = pointer+1;
+            }
+            break;
+        case e_block:
+        	// channel will remain in the e_block state
+            if(pointer == last_byte)
+            {
+            	pointer = 0;
+            	prefetch = 0;
+                return IEC_NO_FILE; // no more data
+            }
+            if(prefetch > last_byte)
+			{
+				prefetch = pointer+1;
 			}
             break;
         default:
@@ -377,18 +389,18 @@ uint8_t C1581_Channel::open_file(void)
 
 	channelopen = true;
 
+	if (c1581->disk_state == e_no_disk81)
+	{
+		state = e_error;
+		return ERR_DRIVE_NOT_READY;
+	}
+
 	if (command.cmd[0] == '#')
 	{
 		// Block read command
 		pointer = 0;
 		state = e_block;
 		return ERR_OK;
-	}
-
-	if (c1581->disk_state == e_no_disk81)
-	{
-		state = e_error;
-		return ERR_FILE_NOT_FOUND;
 	}
 
 	if (command.cmd[0] == '$')
@@ -1352,6 +1364,7 @@ void C1581_CommandChannel :: u1(command_t& command)
 	for(int t=0; t< BLOCK_SIZE;t++)
 		c1581->channels[ichanl]->buffer[t] = c1581->sectorBuffer[t];
 
+	c1581->channels[ichanl]->state = e_block;
 	c1581->channels[ichanl]->last_byte = BLOCK_SIZE-1;
 	c1581->channels[ichanl]->pointer = 0;
 	c1581->channels[ichanl]->prefetch = 0;
@@ -1423,11 +1436,11 @@ void C1581_CommandChannel :: u2(command_t& command)
 	for(int t=0; t< BLOCK_SIZE;t++)
 		c1581->sectorBuffer[t] = c1581->channels[ichanl]->buffer[t];
 
+	c1581->channels[ichanl]->state = e_block;
 	c1581->channels[ichanl]->last_byte = BLOCK_SIZE-1;
 	c1581->channels[ichanl]->pointer = 0;
 	c1581->channels[ichanl]->prefetch = 0;
 	c1581->channels[ichanl]->prefetch_max = BLOCK_SIZE-1;
-	//c1581->channels[ichanl]->state = e_block;
 
 	c1581->write_d81();
 	get_last_error(ERR_OK, 0,0);
@@ -1613,6 +1626,13 @@ void C1581_CommandChannel :: create_select_partition(command_t& command)
 	if(c1581->disk_state == e_no_disk81)
 	{
 		get_last_error(ERR_DRIVE_NOT_READY, 40, 0);
+		return;
+	}
+
+	if(command.names[0].name == 0)
+	{
+		// switch partitions
+		get_last_error(ERR_PARTITION_OK, 0, 0);
 		return;
 	}
 
