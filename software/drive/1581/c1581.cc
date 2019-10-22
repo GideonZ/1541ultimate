@@ -283,7 +283,6 @@ uint8_t C1581::goTrackSector(uint8_t track, uint8_t sector)
 	offset = offset + cursector * BLOCK_SIZE;
 	
 	sectorBuffer = &(mount_file[offset]);
-
 	return 0;
 }
 
@@ -315,7 +314,6 @@ void C1581::write_d81(void)
 	FRESULT res = fm->fopen(mounted_path, mounted_filename, FA_CREATE_ALWAYS | FA_WRITE, &file);
 	file->write(mount_file, (uint32_t)DISK_SIZE, &bytesWritten);
 	fm->fclose(file);
-
 }
 
 // BAM Functions

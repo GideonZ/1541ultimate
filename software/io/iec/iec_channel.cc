@@ -65,6 +65,11 @@ int IecChannel :: pop_data(void)
                 else
                     return IEC_OK;
             }
+            // temp fix to correct seq read bug
+            if(prefetch > last_byte)
+			{
+				prefetch = pointer+1;
+			}
             break;
         case e_dir:
             if(pointer == last_byte) {
