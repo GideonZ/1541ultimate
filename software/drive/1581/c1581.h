@@ -89,6 +89,8 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
 		uint8_t *sectorBuffer;
 		uint8_t curbamtrack;
 		uint8_t curbamsector;
+		uint8_t startingDirTrack;
+		uint8_t startingDirSector;
 		int last_error;
 		uint8_t buffers[7][256];
 		
@@ -108,7 +110,7 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
 		void write_d81(void);
 		int readBAMtocache(void);
 		int writeBAMfromcache(void);
-		int findFreeSector(uint8_t *track, uint8_t *sector);
+		int findFreeSector(bool file,uint8_t *track, uint8_t *sector);
 		
 		int readFile(uint8_t* filename, uint8_t* buffer, int *size);
 		int getFileTrackSector(char *filename, uint8_t *track, uint8_t *sector, bool deleted);
@@ -123,6 +125,7 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
 		int createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track, uint8_t *sector);
 		int findDirectoryEntry(char *filename, char* extension, DirectoryEntry *dirEntry);
 		int updateDirectoryEntry(char *filename, char* extension, DirectoryEntry *dirEntry);
+		int getBlocksFree(void);
 		int updateFileInfo(char *filename, uint16_t blocks);
 
 		int get_last_error(char *buffer, int track, int sector);
