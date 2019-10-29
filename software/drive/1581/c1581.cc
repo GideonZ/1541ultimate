@@ -163,6 +163,8 @@ C1581 ::C1581(char letter) : SubSystem(SUBSYSID_DRIVE_C)
 	last_error = ERR_DOS;
 	curbamtrack = 40;
 	curbamsector = 1;
+	startingDirTrack = 40;
+	startingDirSector = 3;
 
 	char buffer[32];
 	sprintf(buffer, "1581 Drive %c Settings", letter);    
@@ -242,6 +244,13 @@ int C1581 :: mount_d81(bool protect, File *file)
 	res = file->read(mount_file, DISK_SIZE, &transferred);
 	if(res != FR_OK)
 		return -2;
+
+	curbamtrack = 40;
+	curbamsector = 1;
+	curtrack = curbamtrack;
+	cursector = 0;
+	startingDirTrack = curbamtrack;
+	startingDirSector = 3;
 
 	readBAMtocache();
 
@@ -349,18 +358,27 @@ int C1581::writeBAMfromcache(void)
 	return IEC_OK;
 }
 
-int C1581::findFreeSector(uint8_t *track, uint8_t *sector)
+int C1581::findFreeSector(bool file, uint8_t *track, uint8_t *sector)
 {
-	bool notFound = true;
-	int offset = 0;
-	uint8_t side = 1;
+	static int direction = 1;
 
-	alloc.track = 1;
+	if(file)
+	{
+		if(curbamtrack == 40)
+			direction = -direction;
+		else
+			direction = 1;
+	}
+
+	alloc.track = curbamtrack + direction;
 	alloc.sector = 0;
-	uint8_t *bamdata = BAMCache1 + 0x10;
+
+	uint8_t *bamdata = (direction == -1 ? BAMCache1 : BAMCache2);
+	int offset = (direction == -1 ? 0xF4 : 0x10);
 
 	while (1)
 	{
+		// first byte represents number of free sectors on track
 		if (bamdata[offset] > 0)
 		{
 			// next 5 bytes are sector allocation for the track in reverse
@@ -369,56 +387,41 @@ int C1581::findFreeSector(uint8_t *track, uint8_t *sector)
 				uint8_t bit = 128;	
 				uint8_t b = bamdata[++offset];
 
-				// reverse the bits
+				// reverse the bits (makes the math easier)
 				b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
 				b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
 				b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
 					
 				do {
+					// locate the free track / sector
 					if ((b & bit) == bit)
 					{
 						*track = alloc.track;
 						*sector = alloc.sector;
-
-						// test output
-						//printf("\n * Track %d, Sector %d", alloc.track, alloc.sector);
 						return ERR_OK;
 					}
 
+					// 'bit' goes from 128, 64, 32, 16, 8, 4 , 2 ,1
+					// to check each bit. 1 = free, 0 = allocated
 					bit = bit / 2;	
 					alloc.sector++;
 
 				} while (bit >= 1);
 			
 			}
-
-			alloc.track++;
-			alloc.sector = 0;
-			offset++;
+			// we should not be here if the BAM sector
+			// count byte is accurate
 		}
 		else
 		{
-			//printf("\n x Track %d", alloc.track);
-			alloc.track++;
+			// no free sectors. proceed to next track
+			alloc.track += direction;
 			alloc.sector = 0;
-			offset += 6;
+			offset += (6 * direction);
 		}
 
-		// allocated, so move to next track data
-		if (alloc.track == 41)
-		{
-			side++;
-			bamdata = BAMCache2 + 0x10; //sectorBuffer + 0x10;
-			offset = 0;
-		}
-
-		// if all of side 2 is allocated
-		if (alloc.track == 81)
-		{
-			// disk is full
+		if (alloc.track < 1 || alloc.track > 80)
 			return ERR_DISK_FULL;
-		}
-
 	}
 
 	return ERR_OK;
@@ -427,21 +430,18 @@ int C1581::findFreeSector(uint8_t *track, uint8_t *sector)
 bool C1581::getTrackSectorAllocation(uint8_t track, uint8_t sector)
 {
 	uint8_t t = 0;
-	uint8_t *bam;
+	uint8_t *bamdata;
 
-	if(track < 41)
+	if(track <= 40)
 	{
-		t = track;
-		bam = BAMCache1;
+		// position at the track BAM allocation record (side 0)
+		bamdata = BAMCache1 + 0x10 + ((track-1)*6);
 	}
 	else
 	{
-		t = track - 40;
-		bam = BAMCache2;
+		// position at the track BAM allocation record (side 1)
+		bamdata = BAMCache2 + 0x10 + ((track-41)*6);
 	}
-
-	// position at the track BAM allocation record
-	uint8_t *bamdata = bam + 0x10 + (6 * (t-1));
 
 	uint8_t s;
 	if(sector < 8)
@@ -468,21 +468,18 @@ bool C1581::getTrackSectorAllocation(uint8_t track, uint8_t sector)
 int C1581::setTrackSectorAllocation(uint8_t track, uint8_t sector, bool allocate)
 {
 	uint8_t t = 0;
-	uint8_t *bam;
+	uint8_t *bamdata;
 
-	if(track < 41)
+	if(track <= 40)
 	{
-		t = track;
-		bam = BAMCache1;
+		// position at the track BAM allocation record (side 0)
+		bamdata = BAMCache1 + 0x10 + ((track-1)*6);
 	}
 	else
 	{
-		t = track - 40;
-		bam = BAMCache2;
+		// position at the track BAM allocation record (side 1)
+		bamdata = BAMCache2 + 0x10 + ((track-41)*6);
 	}
-
-	// position at the track BAM allocation record
-	uint8_t *bamdata = bam + 0x10 + (6 * (t-1));
 
 	uint8_t s;
 	if(sector < 8)
@@ -574,7 +571,7 @@ int C1581::get_directory(uint8_t *buffer)
 	static bool lastdirsector = false;
 	DirectoryEntry *dirEntry = new DirectoryEntry;
 	int ptr = 0;
-	uint16_t blocksfree = 3160;
+	uint16_t blocksfree = 0;
 	uint16_t nextLinePtr = 0;
 
 	uint8_t filetypes[6][3] = {
@@ -586,7 +583,15 @@ int C1581::get_directory(uint8_t *buffer)
 			{ 'C', 'B', 'M' }
 	};
 
-	goTrackSector(40, 0);
+	goTrackSector(curbamtrack, 0);
+
+	// best way i could find to check
+	// if the subdir has been formatted
+	// 1st byte of BAM should always be
+	// the curent BAM track.
+	if(sectorBuffer[0] != curbamtrack)
+		return -1;
+
 
 	buffer[ptr++] = 0x01;
 	buffer[ptr++] = 0x08;
@@ -636,7 +641,6 @@ int C1581::get_directory(uint8_t *buffer)
 			line[linePtr++] = dirEntry->size_hi;
 
 			int blocks = dirEntry->size_hi * 256 + dirEntry->size_lo;
-			blocksfree -= blocks;
 			int digits = 1;
 			while (blocks >= 0)
 			{
@@ -706,6 +710,9 @@ int C1581::get_directory(uint8_t *buffer)
 
 	nextLinePtr = ptr;
 	ptr += 2;
+
+	blocksfree = getBlocksFree();
+
 	sprintf(((char *)buffer + ptr), "%c%cBLOCKS FREE.              ", blocksfree % 256, blocksfree / 256);
 	ptr += 29;
 
@@ -736,7 +743,7 @@ int C1581::getNextDirectoryEntry(bool *firstcall, int *dirctr, bool *lastdirsect
 	if (*firstcall == true)
 	{
 		*firstcall = false;
-		goTrackSector(40, 3);
+		goTrackSector(startingDirTrack, startingDirSector);
 		nxttrack = sectorBuffer[0x00];
 		nxtsector = sectorBuffer[0x01];
 		*dirctr = 0;
@@ -815,7 +822,7 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 				// allocate a starting sector for the file
 				if(filetype != 0x85)
 				{
-					int err = findFreeSector(track, sector);
+					int err = findFreeSector(true, track, sector);
 					if(err != ERR_OK)
 					{
 						delete dirEntry;
@@ -884,7 +891,7 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 		// allocate a starting sector for the file
 		if(filetype != 0x85)
 		{
-			int err = findFreeSector(track, sector);
+			int err = findFreeSector(true, track, sector);
 			if(err != ERR_OK)
 			{
 				delete dirEntry;
@@ -1005,6 +1012,29 @@ int C1581::updateDirectoryEntry(char *filename, char* extension, DirectoryEntry 
 	delete [] dirEntry;
 	write_d81();
 	return ERR_OK;
+}
+
+int C1581::getBlocksFree(void)
+{
+	int blocksFree = 0;
+	int bf2 = 0;
+	int offset = 0x10;
+
+	while(offset < 0xfa)
+	{
+		blocksFree += BAMCache1[offset];
+		offset += 6;
+	}
+
+	offset = 0x10;
+	while(offset < 256)
+	{
+		bf2 += BAMCache2[offset];
+		blocksFree += BAMCache2[offset];
+		offset += 6;
+	}
+
+	return blocksFree;
 }
 
 // File Functions
