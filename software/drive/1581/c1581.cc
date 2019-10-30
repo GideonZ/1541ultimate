@@ -351,16 +351,15 @@ int C1581::writeBAMfromcache(void)
 
 	goTrackSector(curbamtrack,curbamsector+1);
 	memcpy(sectorBuffer, BAMCache2, BLOCK_SIZE);
-	writeSector();
 
 	goTrackSector(tmptrack, tmpsector);
-
 	return IEC_OK;
 }
 
 int C1581::findFreeSector(bool file, uint8_t *track, uint8_t *sector)
 {
 	static int direction = 1;
+	uint8_t *bamdata;
 
 	if(file)
 	{
@@ -370,11 +369,15 @@ int C1581::findFreeSector(bool file, uint8_t *track, uint8_t *sector)
 			direction = 1;
 	}
 
+	if(curbamtrack == 40)
+		bamdata = (direction == -1 ? BAMCache1 : BAMCache2);
+	else
+		bamdata = BAMCache1;
+
+	int offset = (direction == -1 ? 0xF4 : 0x10);
+
 	alloc.track = curbamtrack + direction;
 	alloc.sector = 0;
-
-	uint8_t *bamdata = (direction == -1 ? BAMCache1 : BAMCache2);
-	int offset = (direction == -1 ? 0xF4 : 0x10);
 
 	while (1)
 	{
@@ -470,16 +473,25 @@ int C1581::setTrackSectorAllocation(uint8_t track, uint8_t sector, bool allocate
 	uint8_t t = 0;
 	uint8_t *bamdata;
 
-	if(track <= 40)
+	if(curbamtrack == 40)
 	{
-		// position at the track BAM allocation record (side 0)
-		bamdata = BAMCache1 + 0x10 + ((track-1)*6);
+		if(track <= 40)
+		{
+			// position at the track BAM allocation record (side 0)
+			bamdata = BAMCache1 + 0x10 + ((track-1)*6);
+		}
+		else
+		{
+			// position at the track BAM allocation record (side 1)
+			bamdata = BAMCache2 + 0x10 + ((track-41)*6);
+		}
 	}
 	else
 	{
-		// position at the track BAM allocation record (side 1)
-		bamdata = BAMCache2 + 0x10 + ((track-41)*6);
+		//subdirs
+		bamdata = BAMCache1 + 0x10 + ((track-curbamtrack-1)*6);
 	}
+
 
 	uint8_t s;
 	if(sector < 8)
@@ -1026,12 +1038,15 @@ int C1581::getBlocksFree(void)
 		offset += 6;
 	}
 
-	offset = 0x10;
-	while(offset < 256)
+	if(curbamtrack == 40)
 	{
-		bf2 += BAMCache2[offset];
-		blocksFree += BAMCache2[offset];
-		offset += 6;
+		offset = 0x10;
+		while(offset < 256)
+		{
+			bf2 += BAMCache2[offset];
+			blocksFree += BAMCache2[offset];
+			offset += 6;
+		}
 	}
 
 	return blocksFree;
@@ -1158,7 +1173,7 @@ int C1581::updateFileInfo(char *filename, uint16_t blocks)
 		if (firstcall == true)
 		{
 			firstcall = false;
-			goTrackSector(40, 3);
+			goTrackSector(curbamtrack, 3);
 			nxttrack = sectorBuffer[0x00];
 			nxtsector = sectorBuffer[0x01];
 			dirctr = 0;
