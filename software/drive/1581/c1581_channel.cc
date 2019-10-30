@@ -66,6 +66,7 @@ int C1581_Channel :: push_data(uint8_t b)
 				uint8_t newSector;
 
 				c1581->findFreeSector(false, &newTrack, &newSector);
+
 				c1581->setTrackSectorAllocation(newTrack, newSector, true);
 				c1581->goTrackSector(writetrack, writesector);
 
@@ -75,6 +76,7 @@ int C1581_Channel :: push_data(uint8_t b)
 				for(int t = 2; t< BLOCK_SIZE; t++)
 					c1581->sectorBuffer[t] = buffer[t];
 
+				writetrack = newTrack;
 				writesector = newSector;
 				writeblock++;
 				pointer = 2;
@@ -488,6 +490,12 @@ uint8_t C1581_Channel::open_file(void)
 			writetrack = track;
 			writesector = sector;
 			pointer=2;
+		}
+		else
+		{
+			write = 0;
+			state = e_error;
+			return ERR_FILE_EXISTS;
 		}
 	}
 	else
@@ -1330,6 +1338,7 @@ void C1581_CommandChannel :: validate(command_t& command)
 
 	delete dirEntry;
 	c1581->write_d81();
+	get_last_error(ERR_OK, 0, 0);
 	return;
 }
 
