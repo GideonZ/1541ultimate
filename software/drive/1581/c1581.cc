@@ -165,6 +165,7 @@ C1581 ::C1581(char letter) : SubSystem(SUBSYSID_DRIVE_C)
 	curbamsector = 1;
 	startingDirTrack = 40;
 	startingDirSector = 3;
+	curDirTotalBlocks = 3200;
 
 	char buffer[32];
 	sprintf(buffer, "1581 Drive %c Settings", letter);    
@@ -251,6 +252,7 @@ int C1581 :: mount_d81(bool protect, File *file)
 	cursector = 0;
 	startingDirTrack = curbamtrack;
 	startingDirSector = 3;
+	curDirTotalBlocks = 3200;
 
 	readBAMtocache();
 
@@ -356,25 +358,136 @@ int C1581::writeBAMfromcache(void)
 	return IEC_OK;
 }
 
+int C1581::resetBAM(uint8_t* id)
+{
+	uint8_t tmp[256];
+
+	// clear buffer
+	memset(tmp, 0, 256);
+
+	// =======================================
+	// BAM side 1
+	// =======================================
+	goTrackSector(curbamtrack, 1);
+
+	tmp[0x00] = curbamtrack;				// next track
+	tmp[0x01] = 0x02;						// next sector
+	tmp[0x02] = 0x44;						// version #
+	tmp[0x03] = 0xbb;						// one compliment above
+	tmp[0x04] = id[0];						// disk id
+	tmp[0x05] = id[1];
+	tmp[0x06] = 0xc0;						// verify/crc flags
+	tmp[0x07] = 0x00; 						// autoboot loader flag
+
+	uint8_t offset = 0x10;
+
+	if(curbamtrack < 41)
+	{
+		uint8_t startBAMTrack = (curbamtrack == 40 ? 1 : curbamtrack);
+		uint8_t endBAMTrack   = (curbamtrack == 40 ? curDirTotalBlocks / 40 / 2 : curDirTotalBlocks / 40);
+
+		for(uint8_t m = startBAMTrack-1; m <= (startBAMTrack+endBAMTrack)-2; m++)
+		{
+			tmp[(m*6) + offset + 0]	= 0x28;	// 40 sectors free
+			tmp[(m*6) + offset + 1] = 0xff;	// all bits set (unallocated)
+			tmp[(m*6) + offset + 2] = 0xff;	// all bits set (unallocated)
+			tmp[(m*6) + offset + 3] = 0xff;	// all bits set (unallocated)
+			tmp[(m*6) + offset + 4] = 0xff;	// all bits set (unallocated)
+			tmp[(m*6) + offset + 5] = 0xff;	// all bits set (unallocated)
+		}
+
+		// allocate the BAM / directory track
+		uint8_t bamPtr = 0x10 + ((curbamtrack-1) * 6);
+		tmp[bamPtr]   = 0x24;
+		tmp[bamPtr+1] = 0xf0;
+	}
+	else
+	{
+		// subdirs which start after track 40 do not use this BAM
+		for(uint8_t m = 0; m < 40; m++)
+		{
+			tmp[offset++] = 0x00;
+			tmp[offset++] = 0x00;
+			tmp[offset++] = 0x00;
+			tmp[offset++] = 0x00;
+			tmp[offset++] = 0x00;
+			tmp[offset++] = 0x00;
+		}
+	}
+
+	// transfer tmp buffer to the sector
+	memcpy(sectorBuffer, tmp, 256);
+
+	// clear tmp allocation for side 2
+	for(int t = 0x0f; t <= 0xff; t++)
+		tmp[t] = 0x00;
+
+	// =======================================
+	// BAM side 2
+	// =======================================
+	goTrackSector(curbamtrack, 2);
+	tmp[0x00] = 0x00;	// next track
+	tmp[0x01] = 0xff;	// next sector
+
+	offset = 0x10;
+
+	if(curbamtrack >= 40)
+	{
+		uint8_t startBAMTrack = (curbamtrack == 40 ? 1 : curbamtrack - 40);
+		uint8_t endBAMTrack   = (curbamtrack == 40 ? curDirTotalBlocks / 40 / 2 : curDirTotalBlocks / 40);
+
+		for(uint8_t m = startBAMTrack-1; m <= (startBAMTrack+endBAMTrack)-2; m++)
+		{
+			tmp[(m*6) + offset + 0]	= 0x28;	// 40 sectors free
+			tmp[(m*6) + offset + 1] = 0xff;	// all bits set (unallocated)
+			tmp[(m*6) + offset + 2] = 0xff;	// all bits set (unallocated)
+			tmp[(m*6) + offset + 3] = 0xff;	// all bits set (unallocated)
+			tmp[(m*6) + offset + 4] = 0xff;	// all bits set (unallocated)
+			tmp[(m*6) + offset + 5] = 0xff;	// all bits set (unallocated)
+		}
+
+		// allocate the BAM / directory track
+		if(curbamtrack != 40)
+		{
+			uint8_t bamPtr = 0x10 + ((curbamtrack-41) * 6);
+			tmp[bamPtr]   = 0x24;
+			tmp[bamPtr+1] = 0xf0;
+		}
+
+	}
+
+	// transfer tmp buffer to the sector
+	memcpy(sectorBuffer, tmp, 256);
+}
+
 int C1581::findFreeSector(bool file, uint8_t *track, uint8_t *sector)
 {
 	static int direction = 1;
-	uint8_t *bamdata;
+	uint8_t *bamSector;
 
-	if(file)
+	// 1581 spreads files inside out from track 40
+	// in root directory
+	if(file && (curbamtrack == 40))
+		direction = -direction;
+
+	int offset = 0;
+
+	// select BAM sector and starting offset
+	if(curbamtrack < 40)
 	{
-		if(curbamtrack == 40)
-			direction = -direction;
-		else
-			direction = 1;
+		bamSector = BAMCache1;
+		offset = 0x10 + (curbamtrack * 6);
 	}
-
-	if(curbamtrack == 40)
-		bamdata = (direction == -1 ? BAMCache1 : BAMCache2);
+	else if(curbamtrack == 40)
+	{
+		bamSector = (direction == -1 ? BAMCache1 : BAMCache2);
+		offset = (direction == -1 ? 0xF4 : 0x10);
+	}
 	else
-		bamdata = BAMCache1;
-
-	int offset = (direction == -1 ? 0xF4 : 0x10);
+	{
+		bamSector = BAMCache2;
+		offset = 0x10 + ((curbamtrack-40) * 6);
+	}
 
 	alloc.track = curbamtrack + direction;
 	alloc.sector = 0;
@@ -382,13 +495,13 @@ int C1581::findFreeSector(bool file, uint8_t *track, uint8_t *sector)
 	while (1)
 	{
 		// first byte represents number of free sectors on track
-		if (bamdata[offset] > 0)
+		if (bamSector[offset] > 0)
 		{
 			// next 5 bytes are sector allocation for the track in reverse
 			for (int z = 0; z < 5; z++)
 			{			
 				uint8_t bit = 128;	
-				uint8_t b = bamdata[++offset];
+				uint8_t b = bamSector[++offset];
 
 				// reverse the bits (makes the math easier)
 				b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
@@ -433,17 +546,29 @@ int C1581::findFreeSector(bool file, uint8_t *track, uint8_t *sector)
 bool C1581::getTrackSectorAllocation(uint8_t track, uint8_t sector)
 {
 	uint8_t t = 0;
-	uint8_t *bamdata;
+	uint8_t *bamPtr;
 
-	if(track <= 40)
+	// select BAM sector and starting offset
+	if(curbamtrack < 40)
 	{
-		// position at the track BAM allocation record (side 0)
-		bamdata = BAMCache1 + 0x10 + ((track-1)*6);
+		bamPtr = BAMCache1 + 0x10 + ((track-1) * 6);
+	}
+	else if(curbamtrack == 40)
+	{
+		if(track <= 40)
+		{
+			// position at the track BAM allocation record (side 0)
+			bamPtr = BAMCache1 + 0x10 + ((track-1)*6);
+		}
+		else
+		{
+			// position at the track BAM allocation record (side 1)
+			bamPtr = BAMCache2 + 0x10 + ((track-41)*6);
+		}
 	}
 	else
 	{
-		// position at the track BAM allocation record (side 1)
-		bamdata = BAMCache2 + 0x10 + ((track-41)*6);
+		bamPtr = BAMCache2 + 0x10 + ((track-41) * 6);
 	}
 
 	uint8_t s;
@@ -462,7 +587,7 @@ bool C1581::getTrackSectorAllocation(uint8_t track, uint8_t sector)
 	uint8_t bits[] = { 1,2,4,8,16,32,64,128};
 
 
-	if((bamdata[s] & bits[bit]) == 0)
+	if((bamPtr[s] & bits[bit]) == 0)
 		return true;
 	else
 		return false;
@@ -471,27 +596,32 @@ bool C1581::getTrackSectorAllocation(uint8_t track, uint8_t sector)
 int C1581::setTrackSectorAllocation(uint8_t track, uint8_t sector, bool allocate)
 {
 	uint8_t t = 0;
-	uint8_t *bamdata;
+	uint8_t *bamPtr;
 
-	if(curbamtrack == 40)
+	int offset = 0;
+
+	// select BAM sector and starting offset
+	if(curbamtrack < 40)
+	{
+		bamPtr = BAMCache1 + 0x10 + ((track-1) * 6);
+	}
+	else if(curbamtrack == 40)
 	{
 		if(track <= 40)
 		{
 			// position at the track BAM allocation record (side 0)
-			bamdata = BAMCache1 + 0x10 + ((track-1)*6);
+			bamPtr = BAMCache1 + 0x10 + ((track-1)*6);
 		}
 		else
 		{
 			// position at the track BAM allocation record (side 1)
-			bamdata = BAMCache2 + 0x10 + ((track-41)*6);
+			bamPtr = BAMCache2 + 0x10 + ((track-41)*6);
 		}
 	}
 	else
 	{
-		//subdirs
-		bamdata = BAMCache1 + 0x10 + ((track-curbamtrack-1)*6);
+		bamPtr = BAMCache2 + 0x10 + ((track-41) * 6);
 	}
-
 
 	uint8_t s;
 	if(sector < 8)
@@ -510,14 +640,14 @@ int C1581::setTrackSectorAllocation(uint8_t track, uint8_t sector, bool allocate
 	if(allocate == true)
 	{
 		// allocate the sector
-		bamdata[s] = (bamdata[s] & ~(1 << (bit - 1))); // turn off bit
-		bamdata[0]--; // free sectors -1
+		bamPtr[s] = (bamPtr[s] & ~(1 << (bit - 1))); // turn off bit
+		bamPtr[0]--; // free sectors -1
 	}
 	else
 	{
 		// deallocate the sector
-		bamdata[s] = (bamdata[s] | (1 << (bit - 1))); // turn on bit
-		bamdata[0]++; // free sectors + 1
+		bamPtr[s] = (bamPtr[s] | (1 << (bit - 1))); // turn on bit
+		bamPtr[0]++; // free sectors + 1
 	}
 
 	writeBAMfromcache();
@@ -1032,22 +1162,27 @@ int C1581::getBlocksFree(void)
 	int bf2 = 0;
 	int offset = 0x10;
 
-	while(offset < 0xfa)
+	if(curbamtrack <= 40)
 	{
-		blocksFree += BAMCache1[offset];
-		offset += 6;
+		while(offset < 256)
+		{
+			blocksFree += BAMCache1[offset];
+			offset += 6;
+		}
 	}
 
-	if(curbamtrack == 40)
+	if(curbamtrack >= 40)
 	{
 		offset = 0x10;
 		while(offset < 256)
 		{
-			bf2 += BAMCache2[offset];
 			blocksFree += BAMCache2[offset];
 			offset += 6;
 		}
 	}
+
+	if(curbamtrack == 40)
+		blocksFree -= 36;
 
 	return blocksFree;
 }

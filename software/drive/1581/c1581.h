@@ -20,7 +20,6 @@
 #include "semphr.h"
 #include "c1581_channel.h"
 
-
 #define DISK_SIZE			819200
 #define BLOCK_SIZE			256
 #define D81FILE_MOUNT      	0x2102
@@ -89,6 +88,7 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
 		uint8_t *sectorBuffer;
 		uint8_t curbamtrack;
 		uint8_t curbamsector;
+		int curDirTotalBlocks;
 		uint8_t startingDirTrack;
 		uint8_t startingDirSector;
 		int last_error;
@@ -110,6 +110,7 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
 		void write_d81(void);
 		int readBAMtocache(void);
 		int writeBAMfromcache(void);
+		int resetBAM(uint8_t* id);
 		int findFreeSector(bool file,uint8_t *track, uint8_t *sector);
 		
 		int readFile(uint8_t* filename, uint8_t* buffer, int *size);
