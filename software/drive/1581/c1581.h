@@ -103,9 +103,7 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
         int mount_d81(bool protect, File *);
         void mount_blank();
         
-        void getcurrentsector(uint8_t *buf);
 		uint8_t goTrackSector(uint8_t track, uint8_t sector);
-		int bufferRead(uint8_t track, uint8_t sector, uint8_t buffer);
 		void writeSector(void);
 		void write_d81(void);
 		int readBAMtocache(void);
