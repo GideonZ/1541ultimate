@@ -87,7 +87,7 @@ port (
 
     -- Debug UART
     UART_TXD    : out   std_logic;
-    UART_RXD    : in    std_logic;
+    UART_RXD    : inout std_logic;
     
     -- I2C Interface for RTC, audio codec and usb hub
     I2C_SDA     : inout std_logic := 'Z';
@@ -286,6 +286,18 @@ architecture rtl of u2p_tester is
     signal drv_via1_cb1_o       : std_logic;
     signal drv_via1_cb1_i       : std_logic;
     signal drv_via1_cb1_t       : std_logic;
+
+    signal eth_tx_data   : std_logic_vector(7 downto 0);
+    signal eth_tx_last   : std_logic;
+    signal eth_tx_valid  : std_logic;
+    signal eth_tx_ready  : std_logic := '1';
+
+    signal eth_rx_data   : std_logic_vector(7 downto 0);
+    signal eth_rx_sof    : std_logic;
+    signal eth_rx_eof    : std_logic;
+    signal eth_rx_valid  : std_logic;
+
+    signal rxd_drive     : std_logic;
 begin
     process(RMII_REFCLK)
     begin
@@ -295,6 +307,7 @@ begin
             else
                 por_n <= '0';
                 por_count <= por_count + 1;
+                rxd_drive <= BUTTON(0);
             end if;
         end if;
     end process;
@@ -490,7 +503,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"7F",
+        g_version       => X"6F",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -572,13 +585,17 @@ begin
         drv_via1_cb1_i      => drv_via1_cb1_i,
         drv_via1_cb1_t      => drv_via1_cb1_t,
 
-        -- Ethernet Interface (RMII)
-        eth_clock   => RMII_REFCLK, 
-        eth_reset   => eth_reset,
-        rmii_crs_dv => RMII_CRS_DV, 
-        rmii_rxd    => RMII_RX_DATA,
-        rmii_tx_en  => RMII_TX_EN,
-        rmii_txd    => RMII_TX_DATA,
+        -- Ethernet interface
+        eth_clock    => RMII_REFCLK, 
+        eth_reset    => eth_reset,
+        eth_rx_data  => eth_rx_data,
+        eth_rx_sof   => eth_rx_sof,
+        eth_rx_eof   => eth_rx_eof,
+        eth_rx_valid => eth_rx_valid,
+        eth_tx_data  => eth_tx_data,
+        eth_tx_eof   => eth_tx_last,
+        eth_tx_valid => eth_tx_valid,
+        eth_tx_ready => eth_tx_ready,
 
         -- Buttons
         BUTTON      => not BUTTON );
@@ -587,6 +604,27 @@ begin
     drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
     drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
     drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
+
+    -- Transceiver
+    i_rmii: entity work.rmii_transceiver
+    port map (
+        clock           => RMII_REFCLK,
+        reset           => eth_reset,
+        rmii_crs_dv     => RMII_CRS_DV, 
+        rmii_rxd        => RMII_RX_DATA,
+        rmii_tx_en      => RMII_TX_EN,
+        rmii_txd        => RMII_TX_DATA,
+        
+        eth_rx_data     => eth_rx_data,
+        eth_rx_sof      => eth_rx_sof,
+        eth_rx_eof      => eth_rx_eof,
+        eth_rx_valid    => eth_rx_valid,
+
+        eth_tx_data     => eth_tx_data,
+        eth_tx_eof      => eth_tx_last,
+        eth_tx_valid    => eth_tx_valid,
+        eth_tx_ready    => eth_tx_ready,
+        ten_meg_mode    => '0'   );
 
 --    i_pwm0: entity work.sigma_delta_dac --delta_sigma_2to5
 --    generic map (
@@ -861,5 +899,7 @@ begin
         jtag_in_data(0) <= jtag_tdi;
         jtag_in_valid   <= edge and pio_out_port(16);
     end block;
+
+    UART_RXD <= '1' when rxd_drive = '0' else 'Z'; -- apply small current as pull-up.
 
 end architecture;
