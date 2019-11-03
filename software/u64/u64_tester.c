@@ -10,6 +10,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include "dump_hex.h"
 
 typedef struct _t_genericvector {
     char *pinName;
@@ -256,5 +259,176 @@ int U64TestCassette()
     } else {
         printf("\e2Cassette IEC test FAILED.\n");
     }
+    return errors;
+}
+
+int U64EliteTestJoystick(void)
+{
+    // with this test, the fire button is used as output to clock the counter.
+    // then the counter reaches 15 for the second time, bit 0 to bit 3 have been tested.
+    // In order to make sure that the keyboard test does not see the counter, the isolate
+    // mode is turned on here.
+
+    PLD_CIA1_A = 0xFF;
+    PLD_CIA1_B = 0xFF;
+
+    if (PLD_RD_VERSION != 0x16) {
+        printf("\e\022PLD version should be V1.6 for this test to work.\n");
+        return 1;
+    }
+    PLD_JOYSWAP = 0x02; // Isolate mode
+
+    int ok1 = -1;
+    int ok2 = -1;
+    const char correct[16] = "@ABCDEFGHIJKLMNO";
+    uint8_t buffer[32];
+    memset(buffer, 0xAA, 32);
+
+    for (int i=0; i<32; i++) {
+        PLD_CIA1_A = 0xEF;
+        vTaskDelay(1);
+        PLD_CIA1_A = 0xFF;
+        vTaskDelay(1);
+        buffer[i] = (PLD_RD_JOY & 0x0F) | 0x40;
+        if ((buffer[i] == 0x4F) && (i >= 16)) {
+            ok1 = memcmp(&buffer[i-15], correct, 16);
+            break;
+        }
+    }
+    if (ok1) {
+        printf("\e\022Joystick Port A:\n");
+        dump_hex_relative(buffer, 32);
+        printf("\e\037");
+    }
+
+    PLD_JOYSWAP = 0x03; // Isolate mode, swap ports
+
+    memset(buffer, 0xAA, 32);
+    for (int i=0; i<32; i++) {
+        PLD_CIA1_A = 0xEF;
+        vTaskDelay(1);
+        PLD_CIA1_A = 0xFF;
+        vTaskDelay(1);
+        buffer[i] = (PLD_RD_JOY & 0x0F) | 0x40;
+        if ((buffer[i] == 0x4F) && (i >= 16)) {
+            ok2 = memcmp(&buffer[i-15], correct, 16);
+            break;
+        }
+    }
+    if (ok2) {
+        printf("\e\022Joystick Port B:\e\022\n");
+        dump_hex_relative(buffer, 32);
+        printf("\e\037");
+    }
+
+    PLD_JOYSWAP = 0x02; // Isolate mode
+
+    if (ok1) {
+        return -1;
+    }
+    if (ok2) {
+        return -2;
+    }
+    printf("\e\025Joystick Ports passed.\n");
+    return 0;
+}
+
+int U64PaddleTest(void)
+{
+    LOCAL_PADDLESEL = 1;
+    vTaskDelay(2);
+    uint8_t x1 = LOCAL_PADDLE_X;
+    uint8_t y1 = LOCAL_PADDLE_Y;
+
+    LOCAL_PADDLESEL = 2;
+    vTaskDelay(2);
+    uint8_t x2 = LOCAL_PADDLE_X;
+    uint8_t y2 = LOCAL_PADDLE_Y;
+
+    // Expected values:
+    // X1: 52, Y1: 6, X2: 106, Y2: 19
+    // 10% tolerance:
+    // X1: 5, Y1: 2, X2: 10, Y2: 2
+
+    int errors = 0;
+    if ((x1 < 47) || (x1 > 57)) {
+        printf("\e\022Paddle X on Port 1 FAIL. Expected ~52, got %d\n", x1);
+        errors++;
+    }
+    if ((y1 < 4) || (y1 > 8)) {
+        printf("\e\022Paddle Y on Port 1 FAIL. Expected ~7, got: %d\n", y1);
+        errors++;
+    }
+    if ((x2 < 96) || (x2 > 116)) {
+        printf("\e\022Paddle X on Port 2 FAIL. Expected ~106, got: %d\n", x2);
+        errors++;
+    }
+    if ((y2 < 17) || (y2 > 21)) {
+        printf("\e\022Paddle Y on Port 2 FAIL. Expected ~19, got: %d\n", y2);
+        errors++;
+    }
+    if (!errors) {
+        printf("\e\025Paddle test passed.\n");
+    }
+    return errors;
+}
+
+void codec_loopback(int enable);
+
+int U64AudioCodecTest(void)
+{
+    codec_loopback(0); // we should now sample "silence"
+    AUDIO_SAMPLER_START = 0; // trigger a sample
+    vTaskDelay(5);
+
+    int maxL = 0, maxR = 0;
+    for (int i=0; i<(AUDIO_SAMPLE_COUNT*2); i+=2) {
+        if(abs(AUDIO_SAMPLES[i]) > maxL) {
+            maxL = abs(AUDIO_SAMPLES[i]);
+        }
+        if(abs(AUDIO_SAMPLES[i+1]) > maxR) {
+            maxR = abs(AUDIO_SAMPLES[i+1]);
+        }
+    }
+    int errors = 0;
+    if (maxL > 10000) errors ++;
+    if (maxR > 10000) errors ++;
+    if (errors) {
+        printf("\e\022Audio codec silence level too high: %d %d\n", maxL, maxR);
+    }
+
+    codec_loopback(1); // we should now sample what we send
+    AUDIO_SAMPLER_START = 0; // trigger a sample
+    vTaskDelay(5);
+
+    maxL = 0;
+    maxR = 0;
+    uint8_t start = AUDIO_SAMPLER_START; // reading this byte will give the initial value of the counter
+    int errors2 = 0;
+
+    for (int i=0; i<(AUDIO_SAMPLE_COUNT*2); i+=2) {
+        uint32_t expected = start;
+        expected *= 0x010101; // triplicate
+        uint32_t read = (uint32_t)AUDIO_SAMPLES[i+1]; // read left sample
+        if ((read & 0xFFFFFF) != expected) {
+            printf("L Expected: %08x, got: %08x\n", expected, read & 0xFFFFFF);
+            errors2 ++;
+        }
+        read = (uint32_t)AUDIO_SAMPLES[i]; // read right sample
+        expected ^= 0xFF0000;
+        if ((read & 0xFFFFFF) != expected) {
+            printf("R Expected: %08x, got: %08x\n", expected, read & 0xFFFFFF);
+            errors2 ++;
+        }
+        start++;
+    }
+    if (errors2) {
+        printf("\e\022Codec loopback gave wrong results.\n");
+    }
+    errors += errors2;
+    if (!errors) {
+        printf("\e\025Audio codec passed.\n");
+    }
+
     return errors;
 }
