@@ -1373,13 +1373,13 @@ extern "C" {
 		IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xFF);
 		IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x08); // green
 		configure_adc();
-		printf("Welcome to the Ultimate-II+ automated test system.\n");
+		printf("Welcome to the Ultimate-II+ automated test system. (Build October 2019, FPGA Version: %b)\n", getFpgaVersion());
 		printf("Initializing local USB devices...\n");
 
 		// rtc.set_time_in_chip(0, 2016 - 1980, 11, 19, 6, 17, 45, 0);
 		custom_outbyte = outbyte_log;
 
-		usb2.initHardware();
+	    usb2.initHardware();
 		FileManager *fm = FileManager :: getFileManager();
 
 		printf("Waiting for USB storage device to become available.\n");
