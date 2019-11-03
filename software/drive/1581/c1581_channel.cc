@@ -681,12 +681,12 @@ void C1581_CommandChannel :: exec_command(command_t &command)
         validate(command);
     } else if ((strncmp(command.cmd, "INITIALIZE", strlen(command.cmd)) == 0) || (strcmp(command.cmd , "I0") == 0) || (strcmp(command.cmd , "U0>B0") == 0)) {
     	c1581->writeBAMfromcache();
-		c1581->curbamtrack = 40;
-		c1581->curbamsector = 1;
-		c1581->startingDirTrack = 40;
-		c1581->startingDirSector = 3;
-		c1581->curDirTotalBlocks = 3200;
-		c1581->readBAMtocache();
+			c1581->curbamtrack = 40;
+			c1581->curbamsector = 1;
+			c1581->startingDirTrack = 40;
+			c1581->startingDirSector = 3;
+			c1581->curDirTotalBlocks = 3200;
+			c1581->readBAMtocache();
         get_last_error(ERR_OK,0,0);
     } else if ((strncmp(command.cmd, "UI", 2) == 0) || (strncmp(command.cmd, "UJ", 2) == 0) || (strncmp(command.cmd, "U9", 2) == 0)) {
         get_last_error(ERR_DOS,0,0);
@@ -769,6 +769,7 @@ void C1581_CommandChannel :: format(command_t& command)
 	// BAM header sector
 	// ==========================================
 	c1581->goTrackSector(c1581->curbamtrack, 0);
+	memset(tmp,0,256);
 
 	if(softFormat == true)
 	{
@@ -781,14 +782,11 @@ void C1581_CommandChannel :: format(command_t& command)
 	tmp[2] = 0x44;					// dos version type ('D')
 	tmp[3] = 0x00;					// 0x00
 
-	int z=0;
-	// disk title
-	for(; z<strlen(name); z++)
-		tmp[0x04+z] = name[z];
-
-	// filename padding with shifted spaces (160)
-	for(; z<16;z++)
+	// disk title padded with shifted spaces (160)
+	for(uint8_t z=0; z<16;z++)
 		tmp[0x04+z] = 0xa0;
+	for(uint8_t z=0; z<strlen(name); z++)
+		tmp[0x04+z] = name[z];
 
 	tmp[0x16] = id[0];	// disk id
 	tmp[0x17] = id[1];
@@ -798,111 +796,10 @@ void C1581_CommandChannel :: format(command_t& command)
 	tmp[0x1b] = 0xa0;	// 0xa0
 	tmp[0x1c] = 0xa0;	// 0xa0
 
-	// 0x1d - 0xff = unused, 0x00
-	for(z=0x1d; z<= 0xff; z++)
-		tmp[z] = 0x00;
-
 	// transfer tmp buffer to the sector
 	memcpy(c1581->sectorBuffer, tmp, 256);
 
 	c1581->resetBAM((uint8_t *)id);
-/*
-	// =======================================
-	// BAM side 1
-	// =======================================
-	c1581->goTrackSector(c1581->curbamtrack, 1);
-
-	tmp[0x00] = c1581->curbamtrack;			// next track
-	tmp[0x01] = 0x02;						// next sector
-	tmp[0x02] = 0x44;						// version #
-	tmp[0x03] = 0xbb;						// one compliment above
-	tmp[0x04] = id[0];						// disk id
-	tmp[0x05] = id[1];
-	tmp[0x06] = 0xc0;						// verify/crc flags
-	tmp[0x07] = 0x00; 						// autoboot loader flag
-
-	uint8_t offset = 0x10;
-
-	if(c1581->curbamtrack < 41)
-	{
-		uint8_t startBAMTrack = (c1581->curbamtrack == 40 ? 1 : c1581->curbamtrack);
-		uint8_t endBAMTrack   = (c1581->curbamtrack == 40 ? c1581->curDirTotalBlocks / 40 / 2 : c1581->curDirTotalBlocks / 40);
-
-		for(uint8_t m = startBAMTrack-1; m <= (startBAMTrack+endBAMTrack)-2; m++)
-		{
-			tmp[(m*6) + offset + 0]	= 0x28;	// 40 sectors free
-			tmp[(m*6) + offset + 1] = 0xff;	// all bits set (unallocated)
-			tmp[(m*6) + offset + 2] = 0xff;	// all bits set (unallocated)
-			tmp[(m*6) + offset + 3] = 0xff;	// all bits set (unallocated)
-			tmp[(m*6) + offset + 4] = 0xff;	// all bits set (unallocated)
-			tmp[(m*6) + offset + 5] = 0xff;	// all bits set (unallocated)
-		}
-
-		// allocate the BAM / directory track
-		uint8_t bamPtr = 0x10 + ((c1581->curbamtrack-1) * 6);
-		tmp[bamPtr]   = 0x24;
-		tmp[bamPtr+1] = 0xf0;
-	}
-	else
-	{
-		// subdirs which start after track 40 do not use this BAM
-		for(uint8_t m = 0; m < 40; m++)
-		{
-			tmp[++offset] = 0x00;
-			tmp[++offset] = 0x00;
-			tmp[++offset] = 0x00;
-			tmp[++offset] = 0x00;
-			tmp[++offset] = 0x00;
-			tmp[++offset] = 0x00;
-		}
-	}
-
-	// transfer tmp buffer to the sector
-	memcpy(c1581->sectorBuffer, tmp, 256);
-
-	// clear tmp allocation for side 2
-	for(int t = 0x0f; t <= 0xff; t++)
-		tmp[t] = 0x00;
-
-	// =======================================
-	// BAM side 2
-	// =======================================
-	c1581->goTrackSector(c1581->curbamtrack, 2);
-	tmp[0x00] = 0x00;	// next track
-	tmp[0x01] = 0xff;	// next sector
-
-	offset = 0x0f;
-
-	if(c1581->curbamtrack >= 40)
-	{
-		int tmpTtl = c1581->curDirTotalBlocks / 40;
-
-		if(c1581->curbamtrack == 40)
-			tmpTtl = tmpTtl / 2;
-
-		for(uint8_t m = 0; m < tmpTtl; m++)
-		{
-			tmp[++offset] = 0x28;	// 40 sectors free
-			tmp[++offset] = 0xff;	// all bits set (unallocated)
-			tmp[++offset] = 0xff;	// all bits set (unallocated)
-			tmp[++offset] = 0xff;	// all bits set (unallocated)
-			tmp[++offset] = 0xff;	// all bits set (unallocated)
-			tmp[++offset] = 0xff;	// all bits set (unallocated)
-		}
-
-		if(c1581->curbamtrack > 40)
-		{
-			// allocate the BAM / directory track
-			tmp[0x10] = 0x24;
-			tmp[0x11] = 0xf0;
-		}
-
-	}
-
-
-	// transfer tmp buffer to the sector
-	memcpy(c1581->sectorBuffer, tmp, 256);
-*/
 
 	// ==========================================
 	// dir sector
@@ -1806,7 +1703,6 @@ void C1581_CommandChannel :: create_select_partition(command_t& command)
 	else
 	{
 		// user attempting to switch partitions
-
 		// first, find the directory entry which contains track and sector
 		DirectoryEntry *dirEntry = new DirectoryEntry();
 		int err = c1581->findDirectoryEntry(cmdbuf, "CBM", dirEntry);

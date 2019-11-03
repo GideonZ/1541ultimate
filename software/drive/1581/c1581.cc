@@ -268,12 +268,6 @@ void C1581 :: mount_blank()
 
 }
 
-void C1581 :: getcurrentsector(uint8_t *buf)
-{
-	memcpy(buf, this->sectorBuffer, BLOCK_SIZE);
-	return;
-}
-
 uint8_t C1581::goTrackSector(uint8_t track, uint8_t sector)
 {
 	if (track < 1 || track > MAX_TRACK || sector < 0 || sector > MAX_SECTOR)
@@ -290,21 +284,9 @@ uint8_t C1581::goTrackSector(uint8_t track, uint8_t sector)
 	nxttrack = 0;
 	nxtsector = 0;
 
-	uint32_t offset = trackOffset[curtrack-1];
-	offset = offset + cursector * BLOCK_SIZE;
-	
+	uint32_t offset = trackOffset[curtrack-1] + (cursector * BLOCK_SIZE);
 	sectorBuffer = &(mount_file[offset]);
 	return 0;
-}
-
-int C1581::bufferRead(uint8_t track, uint8_t sector, uint8_t buffer)
-{
-	goTrackSector(track, sector);
-
-	for(int x=0; x<BLOCK_SIZE; x++)
-		buffers[buffer][x] = sectorBuffer[x];
-
-	return ERR_OK;
 }
 
 void C1581::writeSector(void)
@@ -419,7 +401,7 @@ int C1581::resetBAM(uint8_t* id)
 	memcpy(sectorBuffer, tmp, 256);
 
 	// clear tmp allocation for side 2
-	for(int t = 0x0f; t <= 0xff; t++)
+	for(int t = 0x10; t < 256; t++)
 		tmp[t] = 0x00;
 
 	// =======================================
@@ -458,6 +440,7 @@ int C1581::resetBAM(uint8_t* id)
 
 	// transfer tmp buffer to the sector
 	memcpy(sectorBuffer, tmp, 256);
+	readBAMtocache();
 }
 
 int C1581::findFreeSector(bool file, uint8_t *track, uint8_t *sector)
@@ -855,18 +838,20 @@ int C1581::get_directory(uint8_t *buffer)
 
 	blocksfree = getBlocksFree();
 
-	sprintf(((char *)buffer + ptr), "%c%cBLOCKS FREE.              ", blocksfree % 256, blocksfree / 256);
-	ptr += 29;
+	sprintf(((char *)buffer + ptr), "%c%c", blocksfree % 256, blocksfree / 256);
+	ptr += 2;
+
+	sprintf(((char *)buffer + ptr), "BLOCKS FREE.             ");
+	ptr += 25;
 
 	buffer[nextLinePtr] = (0x0801 + ptr) & 0xff;
 	buffer[nextLinePtr + 1] = ((0x0801 + ptr) >> 8) & 0xff;
 
 	// end of program
+	buffer[ptr++] = 0;
+	buffer[ptr++] = 0;
+	buffer[ptr++] = 0;
 	buffer[ptr] = 0;
-	buffer[ptr + 1] = 0;
-	buffer[ptr + 2] = 0;
-	buffer[ptr + 3] = 0;
-	ptr += 4;
 
 	firstcall = true;
 	dirctr = 0;
@@ -1160,24 +1145,37 @@ int C1581::getBlocksFree(void)
 {
 	int blocksFree = 0;
 	int bf2 = 0;
-	int offset = 0x10;
+
+	uint8_t startTrack = 1;
+	uint8_t endTrack = 80;
+
+	if(curbamtrack != 40)
+	{
+		startTrack = curbamtrack;
+		endTrack = startTrack + (curDirTotalBlocks / 40) - 1;
+	}
+
 
 	if(curbamtrack <= 40)
 	{
-		while(offset < 256)
+		uint8_t tmp = startTrack;
+		while(tmp <= endTrack && tmp <= 40)
 		{
+			int offset = 0x10 + ((tmp-1) * 6);
 			blocksFree += BAMCache1[offset];
-			offset += 6;
+			tmp++;
 		}
 	}
 
 	if(curbamtrack >= 40)
 	{
-		offset = 0x10;
-		while(offset < 256)
+		uint8_t tmp = (curbamtrack == 40 ? 41 : startTrack);
+
+		while(tmp <= endTrack && tmp <= 80)
 		{
+			int offset = 0x10 + ((tmp-41) * 6);
 			blocksFree += BAMCache2[offset];
-			offset += 6;
+			tmp++;
 		}
 	}
 
