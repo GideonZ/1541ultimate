@@ -236,6 +236,7 @@ class C64 : public GenericHost, ConfigurableObject
 
     uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
+    volatile bool available;
 
     bool isFrozen;
     void determine_d012(void);
@@ -264,6 +265,8 @@ class C64 : public GenericHost, ConfigurableObject
         return (C64_CLOCK_DETECT & 0x10) == 0x10;
     }
 
+    static void init_poll_task(void *a);
+    void init(void);
 public:
     C64();
     ~C64();

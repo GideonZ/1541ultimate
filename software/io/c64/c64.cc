@@ -208,12 +208,28 @@ C64::C64()
     isFrozen = false;
 //    C64_MODE = C64_MODE_RESET;
     buttonPushSeen = false;
-
     client = 0;
+    available = false;
 
-    if (!phi2_present())
+    if (phi2_present()) {
+        init();
+    }
+#ifndef U64
+#ifdef OS
+    else {
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
+        xTaskCreate(C64 :: init_poll_task, "C64 Init poll task", 500, this, 2, NULL);
+    }
+#endif
+#else
+    else {
+        printf("U64, and no PHI2?  Something is seriously wrong!!\n");
+    }
+#endif
+}
 
+void C64 :: init(void)
+{
     effectuate_settings();
 
     force_cart = 0x80;
@@ -225,7 +241,21 @@ C64::C64()
         init_cartridge();
     }
     C64_STOP = 0; // GO!
+
+    available = true;
 }
+
+#ifdef OS
+void C64 :: init_poll_task(void *a)
+{
+    C64 *obj = (C64 *)a;
+    while(!phi2_present()) {
+        vTaskDelay(100);
+    }
+    obj->init();
+    vTaskDelete(NULL);
+}
+#endif
 
 C64::~C64()
 {
@@ -1179,6 +1209,10 @@ void C64::checkButton(void)
 {
     static uint8_t button_prev;
 
+    // Dont check the button if we are in stand alone mode, since we don't have a cartridge port
+    if (!available) {
+        return;
+    }
     uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
     if ((buttons & ~button_prev) & ITU_BUTTON1) {
         buttonPushSeen = true;
