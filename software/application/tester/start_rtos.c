@@ -11,7 +11,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "i2c.h"
 #include "mdio.h"
 #include "alt_types.h"
 #include "dump_hex.h"
@@ -78,6 +77,7 @@ static void ituIrqHandler(void *context)
 int alt_irq_register(int, int, void(*)(void*));
 
 void main_task(void *context);
+void USb2512Init();
 
 int main(int argc, char *argv[])
 {
