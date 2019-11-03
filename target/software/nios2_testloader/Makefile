@@ -10,7 +10,6 @@ PRJ      =  test_loader
 FINAL    =  $(RESULT)/$(PRJ).elf $(RESULT)/$(PRJ).app
 
 SRCS_C   =	start_rtos.c \
-			i2c.c \
 			itu.c \
 			dump_hex.c \
 			assert.c \
@@ -31,6 +30,7 @@ SRCS_C   =	start_rtos.c \
             ccsbcs.c
                         
 SRCS_CC	 =  small_printf.cc \
+            i2c_drv.cc \
 			usb_base.cc \
 			usb_hub.cc \
 			usb_device.cc \

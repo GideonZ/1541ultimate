@@ -10,7 +10,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include "i2c.h"
+#include "i2c_drv.h"
 #include "mdio.h"
 #include "alt_types.h"
 #include "dump_hex.h"
@@ -951,12 +951,13 @@ int checkDigitalIO(JTAG_Access_t *target, int timeout, char **log)
 
 int copyRtc(JTAG_Access_t *target, int timeout, char **log)
 {
-	ENTER_SAFE_SECTION
+    I2C_Driver i2c;
+    ENTER_SAFE_SECTION
 	uint32_t timebuf[3];
 	uint8_t *pb = (uint8_t *)timebuf;
     int res;
 	for(int i=0;i<11;i++) {
-        *(pb++) = i2c_read_byte(0xA2, i, &res);
+        *(pb++) = i2c.i2c_read_byte(0xA2, i, &res);
         if (res) {
         	break;
         }

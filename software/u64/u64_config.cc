@@ -19,8 +19,7 @@ extern "C" {
 #include "u64_config.h"
 #include "audio_select.h"
 #include "fpll.h"
-#include "i2c.h"
-#include "ext_i2c.h"
+#include "i2c_drv.h"
 #include "overlay.h"
 #include "u2p.h"
 #include "sys/alt_irq.h"
@@ -1015,7 +1014,9 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	int sid1, sid2;
 	char sidString[40];
 
-    switch(cmd->functionID) {
+	I2C_Driver i2c;
+
+	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
     	// Try to read EDID, just a hardware test
     	if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
@@ -1024,7 +1025,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     		if (U64_HDMI_REG & U64_HDMI_HPD_CURRENT) {
     			U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
     			printf("Monitor detected, now reading EDID.\n");
-    			if (i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
+    			if (i2c.i2c_read_block(0xA0, 0x00, edid, 256) == 0) {
     				if (cmd->user_interface->string_box("Reading EDID OK. Save to:", name, 31) > 0) {
     					set_extension(name, ".bin", 32);
     			        fres = fm->fopen(cmd->path.c_str(), name, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
@@ -1040,6 +1041,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
     		}
     	}
     	break;
+#if 0
     case MENU_U64_SAVEEEPROM:
         // Try to read EDID, just a hardware test
         if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
@@ -1056,6 +1058,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
             }
         }
         break;
+#endif
 
     case MENU_U64_WIFI_DISABLE:
         U64_WIFI_CONTROL = 0;

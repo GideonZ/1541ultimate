@@ -60,7 +60,7 @@ static void ituIrqHandler(void *context)
 		do_switch |= tape_recorder_irq();
 	}
 	if (pending & 0x04) {
-		do_switch |= usb_irq();
+	    do_switch |= usb_irq();
 	}
 /*
 	if (pending & 0x02) {

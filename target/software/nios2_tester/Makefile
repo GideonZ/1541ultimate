@@ -14,9 +14,7 @@ PRJ      =  tester_main
 FINAL    =  $(RESULT)/$(PRJ).elf $(RESULT)/$(PRJ).app 
 
 SRCS_C   =	start_rtos.c \
-			i2c.c \
 			mdio.c \
-			codec.c \
 			fix_fft.c \
 			itu.c \
 			dump_hex.c \
@@ -42,6 +40,8 @@ SRCS_C   =	start_rtos.c \
             ccsbcs.c
                         
 SRCS_CC	 =  small_printf.cc \
+            i2c_drv.cc \
+            codec.cc \
 			flash_switch.cc \
 			flash.cc \
 			w25q_flash.cc \

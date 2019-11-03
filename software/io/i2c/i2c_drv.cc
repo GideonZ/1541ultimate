@@ -1,95 +1,83 @@
 /*
- * i2c.c
+ * i2c_drv.cc
  *
- *  Created on: Apr 30, 2016
+ *  Created on: Oct 26, 2016
  *      Author: gideon
  */
 
 #include <stdint.h>
 #include <stdio.h>
 
-#include "system.h"
-//#include "altera_avalon_pio_regs.h"
-#include "u2p.h"
-#include "dump_hex.h"
+#include "i2c_drv.h"
 
-#define SET_SCL_LOW   U2PIO_SET_SCL = 0
-#define SET_SCL_HIGH  U2PIO_SET_SCL = 1
-#define SET_SDA_LOW   U2PIO_SET_SDA = 0
-#define SET_SDA_HIGH  U2PIO_SET_SDA = 1
-#define GET_SCL       U2PIO_GET_SCL
-#define GET_SDA       U2PIO_GET_SDA
-#define HUB_RESET_0   U2PIO_HUB_RESET = 1
-#define HUB_RESET_1   U2PIO_HUB_RESET = 0
-
-static void _wait() {
-	for(int i=0;i<10;i++)
-	    (void)GET_SCL;
+void I2C_Driver :: _wait() {
+	for(int i=0;i<40;i++)
+	    I2C_Driver::GET_SCL();
 }
 
-static void i2c_start()
+void I2C_Driver :: i2c_start()
 {
-	SET_SCL_HIGH;
-	SET_SDA_HIGH;
+	SET_SCL_HIGH();
+	SET_SDA_HIGH();
 	_wait();
-	SET_SDA_LOW;
+	SET_SDA_LOW();
 	_wait();
-	SET_SCL_LOW;
+	SET_SCL_LOW();
 	_wait();
 }
 
-static void i2c_restart()
+void I2C_Driver :: i2c_restart()
 {
 	// SET_MARKER;
-	if (!GET_SDA) {
+	if (!GET_SDA()) {
 		printf("On restart, SDA should be 1\n");
 	}
-	SET_SCL_HIGH;
+	SET_SCL_HIGH();
 	_wait();
 	// CLR_MARKER;
 }
 
 
-static void i2c_stop()
+void I2C_Driver :: i2c_stop()
 {
-	SET_SDA_LOW;
+	SET_SDA_LOW();
 	_wait();
-	SET_SCL_HIGH;
+	SET_SCL_HIGH();
 	_wait();
-	SET_SDA_HIGH;
+	SET_SDA_HIGH();
 	_wait();
 }
 
-static int i2c_send_byte(const uint8_t byte)
+int I2C_Driver :: i2c_send_byte(const uint8_t byte)
 {
 	uint8_t data = byte;
-	if (GET_SDA) {
-		SET_SDA_LOW;
+	if (GET_SDA()) {
+		SET_SDA_LOW();
 		_wait();
 	}
-	if (GET_SCL) {
-		SET_SCL_LOW;
+	if (GET_SCL()) {
+		SET_SCL_LOW();
 		_wait();
 	}
 	for(int i=0;i<8;i++) {
 		if (data & 0x80) {
-			SET_SDA_HIGH;
+			SET_SDA_HIGH();
 		} else {
-			SET_SDA_LOW;
+			SET_SDA_LOW();
 		}
 		data <<= 1;
         _wait();
-		SET_SCL_HIGH;
+		SET_SCL_HIGH();
 		_wait();
-		SET_SCL_LOW;
+		SET_SCL_LOW();
 		_wait();
 	}
-	SET_SDA_HIGH;
+	SET_SDA_HIGH();
 	_wait();
-	SET_SCL_HIGH;
-	int ack = GET_SDA;
+	SET_SCL_HIGH();
+	int ack = GET_SDA();
 	_wait();
-	SET_SCL_LOW;
+	SET_SCL_LOW();
 	_wait();
 
 	if(ack) {
@@ -98,37 +86,41 @@ static int i2c_send_byte(const uint8_t byte)
 	return 0;
 }
 
-static uint8_t i2c_receive_byte(int ack)
+uint8_t I2C_Driver :: i2c_receive_byte(int ack)
 {
 	uint8_t result = 0;
 	for(int i=0;i<8;i++) {
 		result <<= 1;
-		SET_SCL_HIGH;
-		_wait();
-		if (GET_SDA) {
+		SET_SCL_HIGH();
+
+		do { // allow clock stretching
+		    _wait();
+		} while(!GET_SCL());
+
+		if (GET_SDA()) {
 			result |= 1;
 		}
-		SET_SCL_LOW;
+		SET_SCL_LOW();
 		_wait();
 	}
 	if (ack) {
-		SET_SDA_LOW;
+		SET_SDA_LOW();
 	} else {
-		SET_SDA_HIGH;
+		SET_SDA_HIGH();
 	}
 	_wait();
-	SET_SCL_HIGH;
+	SET_SCL_HIGH();
 	_wait();
-	SET_SCL_LOW;
-	SET_SDA_HIGH;
+	SET_SCL_LOW();
+	SET_SDA_HIGH();
 	_wait();
 
 	return result;
 }
 
-void i2c_scan_bus(void)
+void I2C_Driver :: i2c_scan_bus(void)
 {
-	for(int i=1;i<255;i++) {
+	for(int i=1;i<255;i+=2) {
 		i2c_start();
 		int res = i2c_send_byte((uint8_t)i);
 		printf("[%2x:%d] ", i, res);
@@ -137,7 +129,7 @@ void i2c_scan_bus(void)
 	printf("\n");
 }
 
-uint8_t i2c_read_byte(const uint8_t devaddr, const uint8_t regaddr, int *res)
+uint8_t I2C_Driver :: i2c_read_byte(const uint8_t devaddr, const uint8_t regaddr, int *res)
 {
 	i2c_start();
 	*res = 0;
@@ -160,7 +152,7 @@ uint8_t i2c_read_byte(const uint8_t devaddr, const uint8_t regaddr, int *res)
 	return result;
 }
 
-int i2c_write_byte(const uint8_t devaddr, const uint8_t regaddr, const uint8_t data)
+int I2C_Driver :: i2c_write_byte(const uint8_t devaddr, const uint8_t regaddr, const uint8_t data)
 {
 	i2c_start();
 	int res;
@@ -184,7 +176,7 @@ int i2c_write_byte(const uint8_t devaddr, const uint8_t regaddr, const uint8_t d
 	return res;
 }
 
-uint16_t i2c_read_word(const uint8_t devaddr, const uint16_t regaddr)
+uint16_t I2C_Driver :: i2c_read_word(const uint8_t devaddr, const uint16_t regaddr)
 {
 	i2c_start();
 	int res;
@@ -208,7 +200,7 @@ uint16_t i2c_read_word(const uint8_t devaddr, const uint16_t regaddr)
 	return result;
 }
 
-int i2c_write_word(const uint8_t devaddr, const uint16_t regaddr, const uint16_t data)
+int I2C_Driver :: i2c_write_word(const uint8_t devaddr, const uint16_t regaddr, const uint16_t data)
 {
 	i2c_start();
 	int res;
@@ -234,7 +226,7 @@ int i2c_write_word(const uint8_t devaddr, const uint16_t regaddr, const uint16_t
 	return res;
 }
 
-int i2c_write_block(const uint8_t devaddr, const uint8_t regaddr, const uint8_t *data, int length)
+int I2C_Driver :: i2c_write_block(const uint8_t devaddr, const uint8_t regaddr, const uint8_t *data, int length)
 {
 	i2c_start();
 	int res;
@@ -268,7 +260,7 @@ int i2c_write_block(const uint8_t devaddr, const uint8_t regaddr, const uint8_t 
 	return 0;
 }
 
-int i2c_read_block(const uint8_t devaddr, const uint8_t regaddr, uint8_t *data, const int length)
+int I2C_Driver :: i2c_read_block(const uint8_t devaddr, const uint8_t regaddr, uint8_t *data, const int length)
 {
 	if(!length)
 		return 0;
@@ -300,7 +292,6 @@ int i2c_read_block(const uint8_t devaddr, const uint8_t regaddr, uint8_t *data, 
 	return 0;
 }
 
-
 #define HUB_ADDRESS 0x58
 
 #define VIDL    0x00
@@ -331,35 +322,46 @@ static uint8_t hub_registers[] = {
         0x02, 0x00, 0x00, 0x00, 0x01, 0x32, 0x01, 0x32,
         0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-void USb2512Init(void)
-{
-    uint8_t status;
+#define HUB_RESET_0   U2PIO_HUB_RESET = 1
+#define HUB_RESET_1   U2PIO_HUB_RESET = 0
 
-	HUB_RESET_0;
-	_wait();
-	HUB_RESET_1;
-	_wait();
+extern "C" {
+    void USb2512Init(void)
+    {
+        uint8_t status;
 
-    uint8_t buffer[32];
-    const uint8_t reset = 0x02;
-    const uint8_t start = 0x01;
+        HUB_RESET_0;
+        for(int i=0;i<50;i++) {
+            (void)U2PIO_HUB_RESET;
+        }
+        HUB_RESET_1;
+        for(int i=0;i<50;i++) {
+            (void)U2PIO_HUB_RESET;
+        }
 
-    // Reset the USB hub
-    if (i2c_write_block(HUB_ADDRESS, STCD, &reset, 1)) {
-        puts("Failed to reset the USB hub");
-        return;
+        uint8_t buffer[32];
+        const uint8_t reset = 0x02;
+        const uint8_t start = 0x01;
+
+        I2C_Driver i2c;
+
+        // Reset the USB hub
+        if (i2c.i2c_write_block(HUB_ADDRESS, STCD, &reset, 1)) {
+            puts("Failed to reset the USB hub");
+            return;
+        }
+
+        // Configure the USB hub
+        if (i2c.i2c_write_block(HUB_ADDRESS, 0, hub_registers, sizeof(hub_registers))) {
+            puts("Failed to configure the USB hub");
+            return;
+        }
+
+        // Start the USB hub with the new settings
+        if (i2c.i2c_write_block(HUB_ADDRESS, STCD, &start, 1)) {
+            puts("Failed to start the USB hub");
+            return;
+        }
+        puts("USB Hub successfully configured.");
     }
-
-    // Configure the USB hub
-    if (i2c_write_block(HUB_ADDRESS, 0, hub_registers, sizeof(hub_registers))) {
-        puts("Failed to configure the USB hub");
-        return;
-    }
-
-    // Start the USB hub with the new settings
-    if (i2c_write_block(HUB_ADDRESS, STCD, &start, 1)) {
-        puts("Failed to start the USB hub");
-        return;
-    }
-    puts("USB Hub successfully configured.");
 }

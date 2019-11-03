@@ -10,9 +10,7 @@ PRJ      =  dut
 FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf
 
 SRCS_C   =	start_rtos.c \
-			i2c.c \
 			mdio.c \
-			codec.c \
 			itu.c \
 			dump_hex.c \
 			assert.c \
@@ -30,6 +28,8 @@ SRCS_C   =	start_rtos.c \
             alt_do_ctors.c
                         
 SRCS_CC	 =  cia_main.cc \
+            i2c_drv.cc \
+            codec.cc \
 			small_printf.cc
 			
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
