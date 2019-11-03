@@ -30,7 +30,6 @@
 #include "c1541.h"
 #include "subsys.h"
 #include "userinterface.h"
-#include "ext_i2c.h"
 
 #if U64
 #include "u64.h"

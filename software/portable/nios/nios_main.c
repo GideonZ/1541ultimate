@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "i2c.h"
 #include "mdio.h"
 #include "alt_types.h"
 #include "dump_hex.h"
@@ -92,6 +91,7 @@ void ultimate_main(void *context);
 #include "dump_hex.h"
 
 void codec_init();
+void USb2512Init();
 
 static void test_i2c_mdio(void) {
 	// mdio_reset();
