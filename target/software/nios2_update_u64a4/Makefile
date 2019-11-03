@@ -23,7 +23,6 @@ SRCS_C   =	itu.c \
             timers.c \
             port.c \
             heap_3.c \
-            i2c.c \
             mdio.c \
             nios_main.c \
             alt_malloc_lock.c \
@@ -31,6 +30,7 @@ SRCS_C   =	itu.c \
             alt_load.c
              
 SRCS_CC	 =  memory.cc \
+            i2c_drv.cc \
 			small_printf.cc \
 			flash.cc \
 			at45_flash.cc \

@@ -10,11 +10,11 @@ FINAL    =  $(RESULT)/$(PRJ).elf
 
 SRCS_C   =	itu.c \
 			dump_hex.c \
-			codec.c \
-			i2c.c \
             alt_do_ctors.c
                         
 SRCS_CC	 =	memory.cc \
+                i2c_drv.cc \
+                codec.cc \
 			prog_flash.cc \
 			small_printf.cc \
             stream.cc \

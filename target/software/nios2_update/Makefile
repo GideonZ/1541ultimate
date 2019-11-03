@@ -10,7 +10,6 @@ FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf
 
 SRCS_C   =	itu.c \
 			dump_hex.c \
-			codec.c \
 			assert.c \
 			profiler.c \
 			croutine.c \
@@ -25,13 +24,14 @@ SRCS_C   =	itu.c \
             ccsbcs.c \
             ffsyscall.c \
             time.c \
-            i2c.c \
             mdio.c \
             nios_main.c \
             alt_malloc_lock.c \
             alt_do_ctors.c
                         
 SRCS_CC	 =  memory.cc \
+            i2c_drv.cc \
+            codec.cc \
 			small_printf.cc \
 			flash.cc \
 			at45_flash.cc \
