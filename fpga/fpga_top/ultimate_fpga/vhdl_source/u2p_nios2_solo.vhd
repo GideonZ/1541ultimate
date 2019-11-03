@@ -677,7 +677,7 @@ begin
     end process;
     
     SLOT_RSTn <= '0' when RSTn_out = '0' else 'Z';
-    SLOT_DRV_RST <= not RSTn_out; -- Drive this pin HIGH when we want to reset the C64 (uses NFET on Rev.E boards)
+    SLOT_DRV_RST <= not RSTn_out when rising_edge(sys_clock); -- Drive this pin HIGH when we want to reset the C64 (uses NFET on Rev.E boards)
     
     SLOT_ADDR(15 downto 12) <= slot_addr_o(15 downto 12) when slot_addr_th = '1' else (others => 'Z');
     SLOT_ADDR(11 downto 00) <= slot_addr_o(11 downto 00) when slot_addr_tl = '1' else (others => 'Z');
