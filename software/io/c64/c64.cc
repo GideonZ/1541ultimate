@@ -240,9 +240,12 @@ void C64 :: init(void)
     } else if (cfg->get_value(CFG_C64_CART) || cfg->get_value(CFG_C64_ALT_KERN)) {
         init_cartridge();
     }
-    C64_STOP = 0; // GO!
-
     available = true;
+}
+
+void C64 :: start(void)
+{
+    C64_STOP = 0;
 }
 
 #ifdef OS
@@ -250,9 +253,11 @@ void C64 :: init_poll_task(void *a)
 {
     C64 *obj = (C64 *)a;
     while(!phi2_present()) {
+        ioWrite8(UART_DATA, '\\');
         vTaskDelay(100);
     }
     obj->init();
+    obj->start(); // assumed that this will only happen on a U2/U2+ inside a U64
     vTaskDelete(NULL);
 }
 #endif
@@ -294,7 +299,12 @@ void C64 :: resetConfigInFlash(int page)
     }
 }
 
-C64 *C64 :: getMachine(void) {
+C64 *C64 :: getMachine(void)
+{
+    static C64 *c64 = NULL;
+    if (!c64) {
+        c64 = new C64();
+    }
     return c64;
 }
 
@@ -434,6 +444,11 @@ void C64::determine_d012(void)
     VIC_REG(25) = 0x81; // clear raster interrupt
 }
 
+void C64 :: goUltimax(void)
+{
+    C64_MODE = MODE_ULTIMAX;
+}
+
 void C64::stop(bool do_raster)
 {
     int b, w;
@@ -464,7 +479,7 @@ void C64::stop(bool do_raster)
             if (C64_STOP & C64_HAS_STOPPED) {  // has the C64 stopped already?
                 //            VIC_REG(48) = 0;  // switch to slow mode (C128)
                 // enter ultimax mode, so we can be sure that we can access IO space!
-                C64_MODE = MODE_ULTIMAX;
+                goUltimax();
 
                 printf("Ultimax set.. Now reading registers..\n");
                 raster = VIC_REG(18);
@@ -645,10 +660,8 @@ void C64::reset(void)
 void C64::backup_io(void)
 {
     int i;
-//	char *scr = (char *)SCREEN1_ADDR;
-
     // enter ultimax mode, as this might not have taken place already!
-    C64_MODE = MODE_ULTIMAX;
+    goUltimax();
 
     // back up VIC registers
     for (i = 0; i < NUM_VICREGS; i++)
@@ -909,16 +922,6 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
 {
     cart_def *def = (cart_def *) vdef;
 
-#if U64
-    // On the U64, the external carts should be turned off, otherwise the external cart will conflict with our
-    // internal cart, or even override it altogether. This is only done when a custom cart definition is given.
-    // TODO: What happens when the reboot / reset command is given and a real cartridge is attached?
-    if ((def != 0) || startLater) { // special cart
-        U64_CART_DISABLE = 1;
-    } else {
-        U64_CART_DISABLE = 0;
-    }
-#endif
     // If we are called from the overlay or telnet menu, it may be so that the C64 is not even frozen.
     // In this case, we need to stop the machine first in order to poke anything into memory
     if (!C64_HAS_STOPPED) {
@@ -931,7 +934,8 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     // Now that the machine is stopped, we can clear certain VIC registers. This is required for the FC3
     // cartridge, but maybe also for others. Obviously, we may not know in what mode we are, so we
     // force Ultimax mode, so that the IO range is accessible.
-    C64_MODE = MODE_ULTIMAX;
+    goUltimax();
+
     VIC_REG(32) = 0; // black border
     VIC_REG(17) = 0; // screen off
 
@@ -944,6 +948,17 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     C64_MODE = C64_MODE_RESET;
     C64_CARTRIDGE_TYPE = 0; // disable our carts
     wait_ms(50);
+
+#if U64
+    // On the U64, the external carts should be turned off, otherwise the external cart will conflict with our
+    // internal cart, or even override it altogether. This is only done when a custom cart definition is given.
+
+    if ((def != 0) || startLater) { // special cart
+        U64_CART_PREF = U64_CARTRIDGE_INTERNAL;
+        // this register will be set back to the correct value upon a reset interrupt, that calls u64_configurator.effectuate_settings()
+    }
+#endif
+
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_STOP = 0;
 
@@ -961,7 +976,7 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
         bool external = false;
 #if U64
         // In case of the U64, when an external cartridge is detected, we should not enable our cart
-        if (get_exrom_game() != 0) { // An external cartridge has been enabled
+        if (!(U64_CART_PREF & 0x80)) {
             external = true;
         }
 #endif
@@ -1140,17 +1155,15 @@ void C64::init_cartridge()
 
     init_system_roms();
 
-    // In case of the U64, when an external cartridge is detected, we should not enable our cart
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        U64_CART_DISABLE = 0;
-        if (get_exrom_game() != 0) { // An external cartridge has been enabled
-            printf("External Cartridge Detected. Not initializing cartridge.\n");
-            wait_ms(100);
-            C64_MODE = C64_MODE_UNRESET;
-            C64_STOP = 0;
-            return;
-        }
+#if U64
+    if (!(U64_CART_PREF & 0x80)) { // external cart selected
+        printf("External Cartridge Selected. Not initializing cartridge.\n");
+        wait_ms(100);
+        C64_MODE = C64_MODE_UNRESET;
+        C64_STOP = 0;
+        return;
     }
+#endif
 
     int cart = cfg->get_value(CFG_C64_CART);
     cart_def *cart2 = &cartridges[cart];

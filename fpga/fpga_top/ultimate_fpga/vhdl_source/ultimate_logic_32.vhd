@@ -83,6 +83,7 @@ port (
     rwn_i       : in    std_logic := '1';
     rwn_o       : out   std_logic;
         
+    ultimax     : out   std_logic;
     exromn_i    : in    std_logic := '1';
     exromn_o    : out   std_logic;
     gamen_i     : in    std_logic := '1';
@@ -750,6 +751,7 @@ begin
             ba_i            => ba_i,
             dman_o          => dman_oi,
                                        
+            ultimax         => ultimax,
             exromn_i        => exromn_i,
             exromn_o        => exromn_o,
             gamen_i         => gamen_i,

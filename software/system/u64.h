@@ -46,7 +46,7 @@
 #define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
 #define U64_PARCABLE_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
-#define U64_CART_DISABLE   (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Logical disable of external cart
+#define U64_CART_PREF      (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Logical disable of external cart
 #define U64_MB_RESET       (*(volatile uint8_t *)(U64_IO_BASE + 0x0B)) // Write a 0 to start the microblaze, if available
 #define U64_LEDSTRIP_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x0C)) // Write a 1 to make CIA_PWM pins become LED strip control pins
 #define U64_PWM_DUTY       (*(volatile uint8_t *)(U64_IO_BASE + 0x0D)) // any value between 00 (off) and FF (nearly full phase)
@@ -57,6 +57,10 @@
 #define U64_RESAMPLE_LABOR (*(volatile uint8_t *)(U64_RESAMPLER + 0x08))
 #define U64_RESAMPLE_FLUSH (*(volatile uint8_t *)(U64_RESAMPLER + 0x09))
 #define U64_RESAMPLE_DATA  (*(volatile uint32_t *)(U64_RESAMPLER + 0x00))
+
+#define U64_CARTRIDGE_AUTO     0
+#define U64_CARTRIDGE_INTERNAL 1
+#define U64_CARTRIDGE_EXTERNAL 2
 
 #define U64_HDMI_DDC_ENABLE     0x20
 #define U64_HDMI_DDC_DISABLE    0x10

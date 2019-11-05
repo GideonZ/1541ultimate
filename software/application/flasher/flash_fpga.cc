@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
     GenericHost *host = 0;
     Stream *stream = new Stream_UART;
 
-    C64 *c64 = new C64;
+    C64 *c64 = C64 :: getMachine();
     c64->reset();
 
     if (c64->exists()) {

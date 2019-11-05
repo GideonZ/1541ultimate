@@ -83,14 +83,16 @@ extern "C" void ultimate_main(void *a)
 
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
-	usb2.initHardware();
     
 	if (capabilities & CAPAB_CARTRIDGE) {
-		c64 = new C64;
+		c64 = C64 :: getMachine();
 		c64_subsys = new C64_Subsys(c64);
+		c64->start();
 	} else {
 		c64 = NULL;
 	}
+
+    usb2.initHardware();
 
     char title[48];
     if(capabilities & CAPAB_ULTIMATE64) {
@@ -111,7 +113,6 @@ extern "C" void ultimate_main(void *a)
     }
 
     overlay = NULL;
-
 
     UserInterface *overlayUserInterface = NULL;
     if ((capabilities & CAPAB_OVERLAY) && (capabilities & CAPAB_ULTIMATE64)) {

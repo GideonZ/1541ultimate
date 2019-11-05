@@ -61,6 +61,7 @@ port (
     rwn_o           : out   std_logic;
     rwn_i           : in    std_logic;
 
+    ultimax         : out   std_logic;
     exromn_i        : in    std_logic := '1';
     exromn_o        : out   std_logic;
     gamen_i         : in    std_logic := '1';
@@ -836,6 +837,7 @@ begin
     phi2_tick   <= phi2_tick_avail;
     
     c64_stopped <= status.c64_stopped;
+    ultimax <= control.c64_ultimax;
     
     -- write 0x54 to $DFFE to generate a trigger
     sw_trigger  <= '1' when slot_req.io_write = '1' and slot_req.io_address(8 downto 0) = "111111110" and slot_req.data = X"54" else '0';
