@@ -100,6 +100,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SHOW_SID_ADDR     0x48
 #define CFG_JOYSWAP           0x49
 #define CFG_AUTO_MIRRORING    0x4A
+#define CFG_CART_PREFERENCE   0x4B
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -190,7 +191,7 @@ static const char *comb_wave[] = { "6581", "8580" };
 static const char *ledselects[] = { "On", "Off", "Drive A Pwr", "DrvAPwr + DrvBPwr", "Drive A Act", "DrvAAct + DrvBAct",
                                     "DrvAPwr ^ DrvAAct", "USB Activity", "Any Activity", "!(DrvAAct)", "!(DrvAAct+DrvBAct)",
                                     "!(USB Act)", "!(Any Act)", "IRQ Line", "!(IRQ Line)", "Drive B Act" };
-
+static const char *cartmodes[] = { "Auto", "Internal", "External" };
 
 const char *speaker_vol[] = { "Disabled", "Vol 1", "Vol 2", "Vol 3", "Vol 4", "Vol 5", "Vol 6", "Vol 7", "Vol 8", "Vol 9", "Vol 10", "Vol 11", "Vol 12", "Vol 13", "Vol 14", "Vol 15" };
 
@@ -235,6 +236,7 @@ dc 0c 11 00 00 9e 01 1d  00 72 51 d0 1e 20 6e 28
 struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  1, 0 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
+    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 },
     //    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
@@ -479,6 +481,9 @@ int U64Config :: detectRemakes(int socket)
 void U64Config :: U64SidSockets :: detect(void)
 {
     int sid1 = 0, sid2 = 0, realsid1, realsid2;
+
+    // we know that the function below initializes the cartridge correctly
+    C64 :: getMachine();
     C64_MODE = C64_MODE_UNRESET;
     while (C64 :: c64_reset_detect())
         ;
@@ -708,6 +713,10 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 		struct t_cfg_definition *def = u64_cfg;
 		register_store(STORE_PAGE_ID, "U64 Specific Settings", def);
 
+		// Tweak: This has to be done first in order to make sure that the correct cart is started
+		// at cold boot.
+		U64_CART_PREF    =  cfg->get_value(CFG_CART_PREFERENCE);
+
         sidDevice[0] = NULL;
         sidDevice[1] = NULL;
 
@@ -755,6 +764,10 @@ void U64Config :: run_reset_task()
         if (! skipReset) {
             printf("Resetting Settings\n");
             effectuate_settings();
+            sockets.effectuate_settings();
+            mixercfg.effectuate_settings();
+            ultisids.effectuate_settings();
+            sidaddressing.effectuate_settings();
         } else {
             printf("SKIP\n");
         }
@@ -778,7 +791,7 @@ void U64Config :: effectuate_settings()
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
     C64_PLD_JOYCTRL  =  cfg->get_value(CFG_JOYSWAP) ^ 1;
     C64_PADDLE_SWAP  =  cfg->get_value(CFG_JOYSWAP);
-
+    U64_CART_PREF    =  cfg->get_value(CFG_CART_PREFERENCE);
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
         C64_LUMA_DELAY   = -chromaDelay;
@@ -1013,7 +1026,7 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	name[0] = 0;
 	int sid1, sid2;
 	char sidString[40];
-
+	C64 *machine;
 	I2C_Driver i2c;
 
 	switch(cmd->functionID) {
@@ -1077,9 +1090,10 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         break;
 
     case MENU_U64_DETECT_SIDS:
-        c64->stop(false);
+        machine = C64 :: getMachine();
+        machine->stop(false);
         S_SidDetector(sid1, sid2);
-        c64->resume();
+        machine->resume();
         sprintf(sidString, "Socket1: %s  Socket2: %s", sid_types[sid1], sid_types[sid2]);
         cmd->user_interface->popup(sidString, BUTTON_OK);
         effectuate_settings();
@@ -1860,13 +1874,16 @@ void U64Config :: show_sid_addr(UserInterface *intf)
 
 volatile uint8_t *U64Config :: access_socket_pre(int socket)
 {
-    irq_context = alt_irq_disable_all();
+    C64 *machine = C64 :: getMachine();
 
+    irq_context = alt_irq_disable_all();
     S_SetupDetectionAddresses();
 
     if (!(C64_STOP & C64_HAS_STOPPED)) {
-        if (c64) { // in case this gets called before the object is created
-            c64->stop(false);
+        machine->stop(false);
+/*
+        if (machine) { // in case this gets called before the object is created
+            machine->stop(false);
         } else {
             C64_STOP_MODE = STOP_COND_FORCE;
             C64_STOP = 1;
@@ -1874,6 +1891,7 @@ volatile uint8_t *U64Config :: access_socket_pre(int socket)
                 ;
             C64_PEEK(2);
         }
+*/
         temporary_stop = true;
     } else {
         temporary_stop = false;
@@ -1892,10 +1910,9 @@ void U64Config :: access_socket_post(int socket)
 {
     S_RestoreDetectionAddresses();
 
+    C64 *machine = C64 :: getMachine();
     if (temporary_stop) {
-        if (c64) {
-            c64->resume();
-        }
+        machine->resume();
     }
 
     alt_irq_enable_all(irq_context);

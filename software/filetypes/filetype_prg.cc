@@ -61,7 +61,8 @@ int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 	int mode = (has_header)?1:0;
 
 	int count = 0;
-	if (!c64->exists()) {
+    C64 *machine = C64 :: getMachine();
+	if (!machine->exists()) {
 		return 0;
 	}
 

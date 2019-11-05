@@ -3,7 +3,7 @@
 REUPreloader::REUPreloader()
 {
 #ifndef NO_FILE_ACCESS
-    cfg = c64->cfg;
+    cfg = C64::getMachine()->cfg;
 
     if(cfg->get_value(CFG_C64_REU_PRE)) {
 

@@ -240,6 +240,7 @@ class C64 : public GenericHost, ConfigurableObject
 
     bool isFrozen;
     void determine_d012(void);
+    void goUltimax(void);
     void backup_io(void);
     void init_io(void);
     void restore_io(void);
@@ -267,8 +268,9 @@ class C64 : public GenericHost, ConfigurableObject
 
     static void init_poll_task(void *a);
     void init(void);
-public:
+
     C64();
+public:
     ~C64();
 
     /* Get static object */
@@ -317,6 +319,7 @@ public:
     void init_cartridge(void);
     void cartridge_test(void);
     void reset(void);
+    void start(void);
         
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access
@@ -325,6 +328,6 @@ public:
     friend class U64Config; // U64 config needs to stop / resume for SID detection
 };
 
-extern C64 *c64;
+// extern C64 *c64;
 
 #endif
