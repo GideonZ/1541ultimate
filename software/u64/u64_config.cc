@@ -928,8 +928,8 @@ int U64Config :: setMixer(ConfigItem *it)
         uint16_t panR = pan_ctrl[10 - pan];
         uint8_t vol_left = (panL * vol) >> 8;
         uint8_t vol_right = (panR * vol) >> 8;
-        *(mixer++) = vol_left;
         *(mixer++) = vol_right;
+        *(mixer++) = vol_left;
     }
     return 0;
 }
@@ -1321,8 +1321,8 @@ void U64Config :: SetMixerAutoSid(uint8_t *slots, int count)
         }
         int pan = channelPanning[4*count + i];
         printf("Sid %d was mapped to slot %d, which has volume setting %02x. Setting pan to %s.\n", i, slots[i], volume, pannings[pan]);
-        mixer[0 + channelMap[slots[i]]] = (pan_ctrl[pan] * volume) >> 8;
-        mixer[1 + channelMap[slots[i]]] = (pan_ctrl[10-pan] * volume) >> 8;
+        mixer[0 + channelMap[slots[i]]] = (pan_ctrl[10-pan] * volume) >> 8;
+        mixer[1 + channelMap[slots[i]]] = (pan_ctrl[pan] * volume) >> 8;
     }
 }
 
