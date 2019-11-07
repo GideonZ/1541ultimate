@@ -145,7 +145,7 @@ static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 19, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 19, 0 },
 #else
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
 #endif
