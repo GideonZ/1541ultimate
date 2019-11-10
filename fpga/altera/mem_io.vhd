@@ -53,8 +53,7 @@ architecture arch of mem_io is
     signal sys_clock_i      : std_logic;
     signal sys_reset_pipe   : std_logic_vector(3 downto 0);
     signal pll_locked       : std_logic;
-    signal mem_measure_clock: std_logic;
-    signal mem_resync_clock : std_logic;
+    signal mem_sys_clock    : std_logic;
     signal mem_addr_clock   : std_logic;
     signal mem_write_clock  : std_logic;
     signal mem_read_clock   : std_logic;
@@ -192,7 +191,7 @@ begin
         clk3_duty_cycle => 50,
         clk3_multiply_by => 5,
         clk3_phase_shift => "4480", -- was 2000 for zero delay design
-        clk4_divide_by => 2,
+        clk4_divide_by => 4,
         clk4_duty_cycle => 50,
         clk4_multiply_by => 5,
         clk4_phase_shift => "0",
@@ -261,7 +260,7 @@ begin
         clk(1) => mem_addr_clock,
         clk(2) => mem_write_clock,
         clk(3) => mem_read_clock,
-        clk(4) => mem_measure_clock,
+        clk(4) => mem_sys_clock,
         locked => pll_locked,
         phasedone => phasedone
     );
@@ -292,7 +291,7 @@ begin
     ) port map (
         padio(0)  => mem_clk_p,
         outclock  => mem_addr_clock,
-        inclock   => mem_measure_clock,
+        inclock   => mem_read_clock, -- was measure clock
         oe        => '1',
         datain_h  => "0",
         datain_l  => "1",
@@ -318,7 +317,7 @@ begin
     ) port map (
         padio(0)  => mem_clk_n,
         outclock  => mem_addr_clock,
-        inclock   => mem_measure_clock,
+        inclock   => mem_read_clock, -- was measure clock
         oe        => '1',
         datain_h  => "1",
         datain_l  => "0",
@@ -333,58 +332,59 @@ begin
 
     not_sys_clock <= not sys_clock_i;
     
-    b_measure: block
-        signal measure_l_r  : std_logic;
-        signal measure_h_r  : std_logic;
-        signal count        : unsigned(5 downto 0) := (others => '0');
-        signal value_h      : unsigned(5 downto 0) := (others => '0');
-        signal value_l      : unsigned(5 downto 0) := (others => '0');
-        signal count_h      : unsigned(5 downto 0) := (others => '0');
-        signal count_l      : unsigned(5 downto 0) := (others => '0');
-        signal new_values   : std_logic := '0';
-    begin
-        process(mem_measure_clock)
-        begin
-            if rising_edge(mem_measure_clock) then
-                measure_l_r <= measure_l;
-                measure_h_r <= measure_h;
-                count <= count + 1;
-                new_values <= '0';
-                if signed(count) = -1 then
-                    value_h <= count_h; 
-                    count_h <= (others => '0');
-                    value_l <= count_l; 
-                    count_l <= (others => '0');
-                    new_values <= '1';
-                else
-                    if measure_l_r = '1' then
-                        count_l <= count_l + 1;
-                    end if;
-                    if measure_h_r = '1' then
-                        count_h <= count_h + 1;
-                    end if;
-                end if;
-            end if;
-        end process;
+--    b_measure: block
+--        signal measure_l_r  : std_logic;
+--        signal measure_h_r  : std_logic;
+--        signal count        : unsigned(5 downto 0) := (others => '0');
+--        signal value_h      : unsigned(5 downto 0) := (others => '0');
+--        signal value_l      : unsigned(5 downto 0) := (others => '0');
+--        signal count_h      : unsigned(5 downto 0) := (others => '0');
+--        signal count_l      : unsigned(5 downto 0) := (others => '0');
+--        signal new_values   : std_logic := '0';
+--    begin
+--        process(mem_measure_clock)
+--        begin
+--            if rising_edge(mem_measure_clock) then
+--                measure_l_r <= measure_l;
+--                measure_h_r <= measure_h;
+--                count <= count + 1;
+--                new_values <= '0';
+--                if signed(count) = -1 then
+--                    value_h <= count_h; 
+--                    count_h <= (others => '0');
+--                    value_l <= count_l; 
+--                    count_l <= (others => '0');
+--                    new_values <= '1';
+--                else
+--                    if measure_l_r = '1' then
+--                        count_l <= count_l + 1;
+--                    end if;
+--                    if measure_h_r = '1' then
+--                        count_h <= count_h + 1;
+--                    end if;
+--                end if;
+--            end if;
+--        end process;
+--
+--        i_sync: entity work.synchronizer_gzw
+--        generic map(
+--            g_width     => 12,
+--            g_fast      => false
+--        )
+--        port map (
+--            tx_clock    => mem_measure_clock,
+--            tx_push     => new_values,
+--            tx_data(11 downto 6) => std_logic_vector(value_h),
+--            tx_data( 5 downto 0) => std_logic_vector(value_l),
+--            tx_done     => open,
+--            rx_clock    => sys_clock_i,
+--            rx_new_data => open,
+--            rx_data     => measurement
+--        );
+--
+--    end block;
 
-        i_sync: entity work.synchronizer_gzw
-        generic map(
-            g_width     => 12,
-            g_fast      => false
-        )
-        port map (
-            tx_clock    => mem_measure_clock,
-            tx_push     => new_values,
-            tx_data(11 downto 6) => std_logic_vector(value_h),
-            tx_data( 5 downto 0) => std_logic_vector(value_l),
-            tx_done     => open,
-            rx_clock    => sys_clock_i,
-            rx_new_data => open,
-            rx_data     => measurement
-        );
-        
-
-    end block;
+    measurement <= X"555";
 
     i_addr: altddio_out 
     generic map (
@@ -510,9 +510,9 @@ begin
         end if;
     end process;
 
-    process(sys_clock_i)
+    process(mem_sys_clock)
     begin
-        if rising_edge(sys_clock_i) then
+        if rising_edge(mem_sys_clock) then
             mode_r <= mode;
             case mode_r is
             when "00" =>
