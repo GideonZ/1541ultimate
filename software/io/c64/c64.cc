@@ -142,10 +142,12 @@ static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns",
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
 static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
 static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
+static const char *cartmodes[] = { "Auto", "Internal", "External" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 19, 0 },
+    { CFG_C64_CART_PREF,CFG_TYPE_ENUM,   "Cartridge Preference",         "%s", cartmodes,  0,  2, 0 },
 #else
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
 #endif

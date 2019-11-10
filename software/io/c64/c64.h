@@ -187,6 +187,7 @@
 #define CFG_C64_TIMING      0xCB
 #define CFG_C64_PHI2_REC    0xCC
 #define CFG_C64_RATE        0xCD
+#define CFG_C64_CART_PREF   0xCE
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FC3MODE     0x73
