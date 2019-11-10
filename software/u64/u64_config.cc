@@ -1608,8 +1608,8 @@ void U64Config :: S_SetupDetectionAddresses()
     // UltiSid is set to $D600 to make sure it doesn't trigger
     C64_SID1_BASE = 0x40;
     C64_SID2_BASE = 0x50;
-    C64_SID1_MASK = 0xFE;
-    C64_SID2_MASK = 0xFE;
+    C64_SID1_MASK = 0xF0; // only check upper 8 bits, these bits may be faster through DMA
+    C64_SID2_MASK = 0xF0; // only check upper 8 bits
     C64_EMUSID1_BASE = 0x60;
     C64_EMUSID2_BASE = 0x60;
     C64_EMUSID1_MASK = 0xFE;
