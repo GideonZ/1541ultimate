@@ -650,11 +650,11 @@ extern "C" {
 	    }
         printf("\n\n\033\023Press power button to turn off the machine..\n");
         wait_button();
-        U64_POWER_REG = 0x2B;
-        U64_POWER_REG = 0xB2;
-        U64_POWER_REG = 0x2B;
-        U64_POWER_REG = 0xB2;
-        while (1)
-            ;
+        while(1) {
+            U64_POWER_REG = 0x2B;
+            wait_ms(1);
+            U64_POWER_REG = 0xB2;
+            wait_ms(1);
+        }
 	}
 }
