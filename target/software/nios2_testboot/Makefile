@@ -12,7 +12,7 @@ HEXLAST  =  0x07FF
 HEXBASE  =  0x20000000
 HEXEND   =  0x200007FF
 
-SRCS_C   =	tester_boot.c small_printf.c
+SRCS_C   =	tester_boot.c small_printf.c ddr2_calibrator.c
                         
 SRCS_CC	 =  
 

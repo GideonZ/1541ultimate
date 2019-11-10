@@ -38,8 +38,8 @@ int getNetworkPacket(uint8_t **payload, int *length);
 
 #include "usb_base.h"
 
-extern unsigned char _dut_b_start;
-extern unsigned char _dut_b_size;
+extern unsigned char _dut_start;
+extern unsigned char _dut_end;
 extern unsigned char _dut_application_start;
 
 typedef struct {
@@ -1057,7 +1057,7 @@ TestDefinition_t jig_tests[] = {
 		{ "Verify USB Phy clock",   checkUsbClock,           1, false, false,  true },
 		{ "Verify LED presence",    checkLEDs,               2, false, false, false },
 		{ "Memory Test", 			checkMemory,             1,  true, false, false },
-		{ "Run DUT Application",    checkApplicationRun,   150,  true, false,  true },
+		{ "Run DUT Application",    checkApplicationRun,   350,  true, false,  true },
 		{ "Check Flash Types",      checkFlashSwitch,      150,  true, false,  true },
 		{ "Audio amplifier test",   checkSpeaker,          150, false, false,  true },
 		{ "Verify USB Phy type",    checkUsbPhy,           150, false, false,  true },
@@ -1401,12 +1401,12 @@ extern "C" {
 		}
 
 		// Initialize fpga and application structures for DUT
-//		dutFpga.buffer = (uint32_t *)&_dut_b_start;
-//		dutFpga.size   = (uint32_t)&_dut_b_size;
-//		dutAppl.buffer = (uint32_t *)&_dut_application_start;
+		dutFpga.buffer = (uint32_t *)&_dut_start;
+		dutFpga.size   = (uint32_t)&_dut_end - (uint32_t)&_dut_start;
+		dutAppl.buffer = (uint32_t *)&_dut_application_start;
 
-		load_file(&dutFpga);
-		load_file(&dutAppl);
+//		load_file(&dutFpga);
+//		load_file(&dutAppl);
 
 		TestSuite jigSuite("JIG Test Suite", jig_tests);
 		TestSuite slotSuite("Slot Test Suite", slot_tests);
@@ -1442,6 +1442,9 @@ extern "C" {
 					if (ub == 'a') {
 						report_analog();
 						ub = -1;
+					} else if (ub == 'j') {
+					    ub = -1;
+					    checkReferenceClock(jigSuite.getTarget(), 100, NULL);
 					}
 				} while(ub < 0);
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF0); // turn off DUT

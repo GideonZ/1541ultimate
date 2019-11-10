@@ -121,8 +121,8 @@ int checkUsbPhy()
     uint16_t *dst = (uint16_t *)NANO_BASE;
     uint16_t temp;
     for(int i=0;i<size;i+=2) {
-    	temp = (uint16_t)((*(src++)) << 8);
-    	temp |= (uint16_t)(*(src++));
+    	temp = (uint16_t)(*(src++));
+        temp |= (uint16_t)((*(src++)) << 8);
     	*(dst++) = temp;
 	}
     for(int i=size;i<2048;i+=2) {

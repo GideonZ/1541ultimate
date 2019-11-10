@@ -11,8 +11,8 @@
 #include "i2c_drv.h"
 
 void I2C_Driver :: _wait() {
-	for(int i=0;i<40;i++)
-	    I2C_Driver::GET_SCL();
+	for(int i=0;i<10;i++)
+	    GET_SCL();
 }
 
 void I2C_Driver :: i2c_start()
