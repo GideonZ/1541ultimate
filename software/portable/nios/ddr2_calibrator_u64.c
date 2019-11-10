@@ -21,6 +21,9 @@ const uint8_t hexchars[] = "0123456789ABCDEF";
 #define CLK_DIVIDER 9
 #define VCO_PHASE_STEPS 8
 #define PHASE_STEPS (CLK_DIVIDER * VCO_PHASE_STEPS)
+#define MOVE_READ_CLOCK 0x33
+//#define MOVE_MEASURE_CLOCK 0x34
+
 
 int try_mode(int mode);
 
@@ -28,6 +31,9 @@ void ddr2_calibrate()
 {
     outbyte('@');
     DDR2_ENABLE    = 1;
+    int i;
+    for (i=0;i<1000;i++)
+        ;
 
     DDR2_ADDR_LOW  = 0x00;
     DDR2_ADDR_HIGH = 0x04;
@@ -73,7 +79,6 @@ void ddr2_calibrate()
     for (int i=0;i<1000;i++) {
 
     }
-    //    alt_putstr("DDR2 Initialized!\n\r"); // delay!
 
     while(1) {
         if (try_mode(2)) {
@@ -125,7 +130,7 @@ int try_mode(int mode)
             if (DDR2_TESTLOC1 == testvalue2)
                 good++;
         }
-        DDR2_PLLPHASE = 0x33; // move read clock
+        DDR2_PLLPHASE = MOVE_READ_CLOCK;
         outbyte(hexchars[good]);
 
         if ((state == 0) && (good >= 13)) {
@@ -155,7 +160,7 @@ int try_mode(int mode)
 
     //printf("Chosen: Mode = %d, Pos = %d. Window = %d ps\n\r", best_mode, final_pos, 100 * best_overall);
     for (phase = 0; phase < best_pos; phase ++) {
-        DDR2_PLLPHASE = 0x33; // move read clock
+        DDR2_PLLPHASE = MOVE_READ_CLOCK;
     }
     outbyte('\n');
     outbyte(hexchars[mode & 15]);
