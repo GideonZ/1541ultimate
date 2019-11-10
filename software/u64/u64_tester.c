@@ -346,9 +346,9 @@ int U64PaddleTest(void)
     uint8_t y2 = LOCAL_PADDLE_Y;
 
     // Expected values:
-    // X1: 52, Y1: 6, X2: 106, Y2: 19
+    // X1: 52, Y1: 6, X2: 106, Y2: 31
     // 10% tolerance:
-    // X1: 5, Y1: 2, X2: 10, Y2: 2
+    // X1: 5, Y1: 2, X2: 10, Y2: 3
 
     int errors = 0;
     if ((x1 < 47) || (x1 > 57)) {
@@ -363,8 +363,8 @@ int U64PaddleTest(void)
         printf("\e\022Paddle X on Port 2 FAIL. Expected ~106, got: %d\n", x2);
         errors++;
     }
-    if ((y2 < 17) || (y2 > 21)) {
-        printf("\e\022Paddle Y on Port 2 FAIL. Expected ~19, got: %d\n", y2);
+    if ((y2 < 28) || (y2 > 34)) {
+        printf("\e\022Paddle Y on Port 2 FAIL. Expected ~31, got: %d\n", y2);
         errors++;
     }
     if (!errors) {
