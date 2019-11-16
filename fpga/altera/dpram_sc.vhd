@@ -39,8 +39,10 @@ architecture altera of dpram_sc is
         end if;
         return b;
     end function;
-    constant a_new_data : string := string_select("OLD_DATA", "NEW_DATA", g_read_first_a);
-    constant b_new_data : string := string_select("OLD_DATA", "NEW_DATA", g_read_first_b);
+    -- Error (14271): Illegal value NEW_DATA for port_b_read_during_write_mode parameter in WYSIWYG primitive "ram_block1a9" -- value must be new_data_no_nbe_read, new_data_with_nbe_read or old_data
+
+    constant a_new_data : string := string_select("OLD_DATA", "new_data_no_nbe_read", g_read_first_a);
+    constant b_new_data : string := string_select("OLD_DATA", "new_data_no_nbe_read", g_read_first_b);
 
     signal wren_a   : std_logic;
     signal wren_b   : std_logic;
@@ -48,6 +50,8 @@ begin
 --    assert g_global_init = X"0000"
 --        report "Output register initialization of BRAM is not supported for Altera"
 --        severity failure;
+    assert not g_read_first_a report "Port A. Cyclone V does not support reading of old data while writing. Forcing new data to be read! Results may differ!" severity warning;
+    assert not g_read_first_b report "Port B. Cyclone V does not support reading of old data while writing. Forcing new data to be read! Results may differ!" severity warning;
         
     altsyncram_component : altsyncram
     GENERIC MAP (
@@ -67,9 +71,9 @@ begin
         outdata_reg_a => "UNREGISTERED",
         outdata_reg_b => "UNREGISTERED",
         power_up_uninitialized => "FALSE",
-        read_during_write_mode_mixed_ports => "OLD_DATA",
-        read_during_write_mode_port_a => a_new_data,
-        read_during_write_mode_port_b => b_new_data,
+        read_during_write_mode_mixed_ports => "dont_care", --"OLD_DATA",
+        read_during_write_mode_port_a => "new_data_no_nbe_read",
+        read_during_write_mode_port_b => "new_data_no_nbe_read",
         widthad_a => g_depth_bits,
         widthad_b => g_depth_bits,
         width_a => g_width_bits,

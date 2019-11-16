@@ -581,6 +581,15 @@ FRESULT FileManager :: rename(Path *path, const char *old_name, const char *new_
 	return rename_impl(pathInfoFrom, pathInfoTo);
 }
 
+FRESULT FileManager :: rename(Path *old_path, const char *old_name, Path *new_path, const char *new_name)
+{
+    PathInfo pathInfoFrom(rootfs);
+    pathInfoFrom.init(old_path, old_name);
+    PathInfo pathInfoTo(rootfs);
+    pathInfoTo.init(new_path, new_name);
+    return rename_impl(pathInfoFrom, pathInfoTo);
+}
+
 FRESULT FileManager :: rename(const char *old_name, const char *new_name)
 {
 	PathInfo pathInfoFrom(rootfs);
@@ -712,7 +721,12 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 			ret = fopen(sp, filename, FA_READ, &fi);
 			if (fi) {
 				File *fo = 0;
-				ret = fopen(dp, filename, FA_CREATE_NEW | FA_WRITE, &fo);
+	            char dest_name[100];
+	            strncpy(dest_name, filename, 100);
+	            // This may look odd, but files inside a D64 for instance, do not have the extension in the filename anymore
+	            // so we add it here.
+	            set_extension(dest_name, info->extension, 100);
+	            ret = fopen(dp, dest_name, FA_CREATE_NEW | FA_WRITE, &fo);
 				if (fo) {
 					uint8_t *buffer = new uint8_t[32768];
 					uint32_t transferred, written;
@@ -752,26 +766,32 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 /* some handy functions */
 void set_extension(char *buffer, const char *ext, int buf_size)
 {
-	int ext_len = strlen(ext);
+    // skip leading dots of extension to set
+    while(*ext == '.') {
+        ext++;
+    }
+    int ext_len = strlen(ext) + 1; // +1 because of dot
 	if(buf_size < 1+ext_len)
 		return; // cant append, even to an empty base
 
 	// try to remove the extension
 	int name_len = strlen(buffer);
-/*
-	int min_dot = name_len-ext_len;
-	if(min_dot < 0)
-		min_dot = 0;
-*/
+
 	for(int i=name_len-1;i>=0;i--) {
-		if(buffer[i] == '.')
+		if(buffer[i] == '.') {
 			buffer[i] = 0;
+			break;
+		}
+	}
+	if (!(*ext)) { // there is nothing to append
+	    return;
 	}
 
 	name_len = strlen(buffer);
 	if(name_len + ext_len + 1 > buf_size) {
-		buffer[buf_size-ext_len] = 0; // truncate to make space for extension!
+		buffer[buf_size-ext_len-1] = 0; // truncate to make space for extension!
 	}
+    strcat(buffer, ".");
 	strcat(buffer, ext);
 }
 

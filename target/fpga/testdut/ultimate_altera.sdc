@@ -39,7 +39,7 @@ set_time_format -unit ns -decimal_places 3
 # Create Clock
 #**************************************************************
 
-create_clock -name {altera_reserved_tck} -period 100.000 -waveform { 0.000 50.000 } [get_ports {altera_reserved_tck}]
+create_clock -name {altera_reserved_tck} -period 20.000 -waveform { 0.000 10.000 } [get_ports {altera_reserved_tck}]
 create_clock -name {ref_clock} -period 20.000 -waveform { 0.000 10.000 } [get_ports {RMII_REFCLK}]
 create_clock -name {ulpi_clock} -period 16.666 -waveform { 0.000 8.333 } [get_ports {ULPI_CLOCK}]
 derive_pll_clocks
@@ -61,7 +61,7 @@ set sys_clock "i_memphy|i_phy|i_pll|auto_generated|pll1|clk[0]"
 # Set Clock Uncertainty
 #**************************************************************
 
-set_clock_uncertainty -from { altera_reserved_tck } -to { altera_reserved_tck } 0.1
+set_clock_uncertainty -from { altera_reserved_tck } -to { altera_reserved_tck } 0.2
 set_clock_uncertainty -from { ref_clock } -to { ref_clock } 0.1
 set_clock_uncertainty -from { ulpi_clock } -to { ulpi_clock } 0.1
 

@@ -64,9 +64,9 @@ public:
 	void poll(void);
 
     int status_transport(bool);
-    int  request_sense(int lun, bool debug = false);
-    int  exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, int resplen, uint8_t *response, bool debug = false);
-	void print_sense_error(void);
+    virtual int  request_sense(int lun, bool debug = false, bool handle = false);
+    virtual int  exec_command(int lun, int cmdlen, bool out, uint8_t *cmd, int resplen, uint8_t *response, bool debug = false);
+	void print_sense_error(uint8_t *);
 };
 #endif
 
@@ -75,6 +75,7 @@ class UsbScsi : public BlockDevice
     bool       initialized;
     //UsbDevice *device;
     UsbScsiDriver *driver;
+    bool       no_more;
     int        lun;
     int		   max_lun;
     int		   removable;
@@ -87,7 +88,7 @@ class UsbScsi : public BlockDevice
 public:
     UsbScsi(UsbScsiDriver *drv, int unit, int max_lun);
     ~UsbScsi();
-    
+
     void reset(void);
     char *get_name(void) { return name; }
     char *get_disp_name(void) { return disp_name; }

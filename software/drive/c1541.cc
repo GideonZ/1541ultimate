@@ -19,7 +19,13 @@
 
 const char *en_dis[] = { "Disabled", "Enabled" };
 const char *yes_no[] = { "No", "Yes" };
+#if U64
+const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Custom1*", "Custom2*", "Custom3*" };
+#elif CLOCK_FREQ == 62500000
+const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Custom1*", "Custom2*" };
+#else
 const char *rom_sel[] = { "CBM 1541", "1541 C", "1541-II", "Custom*" };
+#endif
 const char *ram_board[] = { "Off", "$8000-$BFFF (16K)",
 							 "$4000-$7FFF (16K)",
 							 "$4000-$BFFF (32K)",
@@ -30,7 +36,7 @@ const char *ram_board[] = { "Off", "$8000-$BFFF (16K)",
 t_1541_ram ram_modes[] = { e_ram_none, e_ram_8000_BFFF, e_ram_4000_7FFF, e_ram_4000_BFFF,
 						   e_ram_2000_3FFF, e_ram_2000_7FFF, e_ram_2000_BFFF };
 
-t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom };
+t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom, e_rom_custom2, e_rom_custom3 };
 
 #define CFG_C1541_POWERED   0xD1
 #define CFG_C1541_BUS_ID    0xD2
@@ -43,10 +49,16 @@ t_1541_rom rom_modes[] = { e_rom_1541, e_rom_1541c, e_rom_1541ii, e_rom_custom }
 #define CFG_C1541_GCRALIGN  0xDA
 #define CFG_C1541_STOPFREEZ 0xDB
 
-struct t_cfg_definition c1541_config[] = {
+const struct t_cfg_definition c1541_config[] = {
     { CFG_C1541_POWERED,   CFG_TYPE_ENUM,   "1541 Drive",                 "%s", en_dis,     0,  1, 1 },
     { CFG_C1541_BUS_ID,    CFG_TYPE_VALUE,  "1541 Drive Bus ID",          "%d", NULL,       8, 11, 8 },
+#if U64
+    { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  5, 2 },
+#elif CLOCK_FREQ == 62500000
+    { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  4, 2 },
+#else
     { CFG_C1541_ROMSEL,    CFG_TYPE_ENUM,   "1541 ROM Select",            "%s", rom_sel,    0,  3, 2 },
+#endif
     { CFG_C1541_RAMBOARD,  CFG_TYPE_ENUM,   "1541 RAM BOard",             "%s", ram_board,  0,  6, 0 },
     { CFG_C1541_SWAPDELAY, CFG_TYPE_VALUE,  "1541 Disk swap delay",       "%d00 ms", NULL,  1, 10, 1 },
     { CFG_C1541_C64RESET,  CFG_TYPE_ENUM,   "1541 Resets when C64 resets","%s", yes_no,     0,  1, 1 },
@@ -75,9 +87,15 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
 	flash = get_flash();
     fm = FileManager :: getFileManager();
     
+    // Create local copy of configuration definition, since the default differs.
+    int size = sizeof(c1541_config);
+    int elements = size / sizeof(t_cfg_definition);
+    local_config_definitions = new t_cfg_definition[elements];
+    memcpy(local_config_definitions, c1541_config, size);
+
     char buffer[32];
-    c1541_config[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
-    c1541_config[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
+    local_config_definitions[0].def = (letter == 'A')?1:0;   // drive A is default 8, drive B is default 9, etc
+    local_config_definitions[1].def = 8 + int(letter - 'A'); // only drive A is by default ON.
         
     uint32_t mem_address = ((uint32_t)registers[C1541_MEM_ADDR]) << 16;
     memory_map = (volatile uint8_t *)mem_address;
@@ -98,7 +116,7 @@ C1541 :: C1541(volatile uint8_t *regs, char letter) : SubSystem((letter == 'A')?
     bin_image = new BinImage(drive_name.c_str());
     
     sprintf(buffer, "1541 Drive %c Settings", letter);    
-    register_store((uint32_t)regs, buffer, c1541_config);
+    register_store((uint32_t)regs, buffer, local_config_definitions);
 
     disk_state = e_no_disk;
     iec_address = 8 + int(letter - 'A');
@@ -135,8 +153,10 @@ C1541* C1541 :: get_last_mounted_drive() {
 
 void C1541 :: effectuate_settings(void)
 {
-	if(!lock(this->drive_name.c_str()))
-		return;
+	if(!lock(this->drive_name.c_str())) {
+	    printf("** ERROR ** Effectuate drive settings could not be executed, as the drive was locked.\n");
+        return;
+	}
 
 	printf("Effectuate 1541 settings:\n");
     ram = ram_modes[cfg->get_value(CFG_C1541_RAMBOARD)];
@@ -147,10 +167,12 @@ void C1541 :: effectuate_settings(void)
 
     t_1541_rom rom = rom_modes[cfg->get_value(CFG_C1541_ROMSEL)];
     if((rom != current_rom)||
-       (rom == e_rom_custom)) {
+       (rom == e_rom_custom) || (rom == e_rom_custom2) || (rom == e_rom_custom3)) {
 
         set_rom(rom);
     }
+
+    drive_reset(0);
 
     if(registers[C1541_POWER] != cfg->get_value(CFG_C1541_POWERED)) {
         drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
@@ -165,9 +187,11 @@ void C1541 :: init(void)
     printf("Init C1541. Cfg = %p\n", cfg);
     
     volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
+    uint32_t rotation_speed = (CLOCK_FREQ / 20); // 2 (half clocks) * 1/8 (bytes) * clocks per track. 300 RPM = 5 RPS. (5 * 8 / 2) = 20
+    uint32_t bit_time = rotation_speed / 0x1A00;
     for(int i=0;i<C1541_MAXTRACKS;i++) {
     	*(param++) = (uint32_t)gcr_image->dummy_track;
-        *(param++) = 0x01450010;
+        *(param++) = (bit_time << 16) | 0x100;
     }
 	registers[C1541_SENSOR] = SENSOR_LIGHT;
     registers[C1541_INSERTED] = 0;
@@ -187,11 +211,11 @@ int  C1541 :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
         return 0;
     }
 
-    sprintf(buffer, "Reset 1541 Drive %c", drive_letter);
+    sprintf(buffer, "Reset 1541 drive %c", drive_letter);
 	item_list.append(new Action(buffer, getID(), MENU_1541_RESET, 0));
 
 	if(disk_state != e_no_disk) {
-        sprintf(buffer, "Remove disk from Drive %c", drive_letter);
+        sprintf(buffer, "Remove disk from drive %c", drive_letter);
 		item_list.append(new Action(buffer, getID(), MENU_1541_REMOVE, 0));
 		items++;
 
@@ -217,13 +241,18 @@ void C1541 :: drive_power(bool on)
 {
     registers[C1541_POWER] = on?1:0;
     if(on)
-        drive_reset();
+        drive_reset(1);
     registers[C1541_ANYDIRTY] = 0;
 }
 
-void C1541 :: drive_reset(void)
+bool C1541 :: get_drive_power() 
 {
-    registers[C1541_RESET] = 1;
+	return registers[C1541_POWER];
+}
+
+void C1541 :: drive_reset(uint8_t doit)
+{
+    registers[C1541_RESET] = doit;
     wait_ms(1);
     uint8_t reg = 0;
     
@@ -298,6 +327,14 @@ void C1541 :: set_rom(t_1541_rom rom)
 //            flash->read_image(FLASH_ID_ROM1541C, (void *)&memory_map[0xC000], 0x4000);
             memcpy((void *)&memory_map[0xC000], &_1541c_bin_start, 0x4000);
             break;
+        case e_rom_custom2:
+            flash->read_image(FLASH_ID_CUSTOM2_DRV, (void *)&memory_map[0x8000], 0x8000);
+			large_rom = true;
+             break;
+        case e_rom_custom3:
+            flash->read_image(FLASH_ID_CUSTOM3_DRV, (void *)&memory_map[0x8000], 0x8000);
+			large_rom = true;
+             break;
         default: // custom
             flash->read_image(FLASH_ID_CUSTOM_DRV, (void *)&memory_map[0x8000], 0x8000);
 			large_rom = true;
@@ -306,7 +343,7 @@ void C1541 :: set_rom(t_1541_rom rom)
 		memcpy((void *)&memory_map[0x8000], (void *)&memory_map[0xC000], 0x4000);
 	
     set_ram(ram); // use previous value
-    drive_reset();
+    drive_reset(1);
 }
 
 void C1541 :: set_ram(t_1541_ram ram_setting)
@@ -347,9 +384,11 @@ void C1541 :: remove_disk(void)
     wait_ms(100 * cfg->get_value(CFG_C1541_SWAPDELAY));
 
     volatile uint32_t *param = (volatile uint32_t *)&registers[C1541_PARAM_RAM];
+    uint32_t rotation_speed = (CLOCK_FREQ / 20); // 2 (half clocks) * 1/8 (bytes) * clocks per track. 300 RPM = 5 RPS. (5 * 8 / 2) = 20
+    uint32_t bit_time = rotation_speed / 0x1A00;
     for(int i=0;i<C1541_MAXTRACKS;i++) {
-    	*(param++) = (uint32_t)gcr_image->dummy_track;
-        *(param++) = 0x01450010;
+        *(param++) = (uint32_t)gcr_image->dummy_track;
+        *(param++) = (bit_time << 16) | 0x100;
     }
 
     registers[C1541_SENSOR] = SENSOR_LIGHT;
@@ -771,6 +810,10 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
     case MENU_1541_SWAP:
         swap_disk();
         break;
+    case FLOPPY_LOAD_DOS:
+    	memcpy((void *)&memory_map[0x8000], (void*) cmd->buffer, 0x8000);
+        break;
+    	
 	default:
 		printf("Unhandled menu item for C1541.\n");
 		return -1;

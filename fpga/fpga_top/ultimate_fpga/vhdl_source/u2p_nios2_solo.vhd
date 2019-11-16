@@ -34,6 +34,7 @@ port (
     SLOT_IRQn        : inout std_logic;
     SLOT_NMIn        : inout std_logic;
     SLOT_VCC         : in    std_logic;
+    SLOT_DRV_RST     : out   std_logic := '0';
     
     -- memory
     SDRAM_A     : out   std_logic_vector(13 downto 0); -- DRAM A
@@ -210,6 +211,7 @@ architecture rtl of u2p_nios_solo is
     signal i2c_scl_o   : std_logic;
     signal mdio_o      : std_logic;
 
+    signal sw_trigger     : std_logic;
     signal trigger     : std_logic;
         
     -- IEC open drain
@@ -273,6 +275,16 @@ architecture rtl of u2p_nios_solo is
     signal ult_samp_r       : signed(17 downto 0);
     signal ult_sid_1        : signed(17 downto 0);
     signal ult_sid_2        : signed(17 downto 0);
+
+    signal eth_tx_data   : std_logic_vector(7 downto 0);
+    signal eth_tx_last   : std_logic;
+    signal eth_tx_valid  : std_logic;
+    signal eth_tx_ready  : std_logic := '1';
+
+    signal eth_rx_data   : std_logic_vector(7 downto 0);
+    signal eth_rx_sof    : std_logic;
+    signal eth_rx_eof    : std_logic;
+    signal eth_rx_valid  : std_logic;
 begin
     process(RMII_REFCLK)
     begin
@@ -458,11 +470,11 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"12",
+        g_version       => X"15",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
-        g_numerator     => 8,
+        g_numerator     => 32,
         g_denominator   => 125,
         g_baud_rate     => 115_200,
         g_timer_rate    => 200_000,
@@ -632,15 +644,20 @@ begin
         c2n_motor_out  => c2n_motor_out, 
         
         -- Ethernet Interface (RMII)
-        eth_clock   => RMII_REFCLK, 
-        eth_reset   => eth_reset,
-        rmii_crs_dv => RMII_CRS_DV, 
-        rmii_rxd    => RMII_RX_DATA,
-        rmii_tx_en  => RMII_TX_EN,
-        rmii_txd    => RMII_TX_DATA,
+        eth_clock    => RMII_REFCLK, 
+        eth_reset    => eth_reset,
+        eth_rx_data  => eth_rx_data,
+        eth_rx_sof   => eth_rx_sof,
+        eth_rx_eof   => eth_rx_eof,
+        eth_rx_valid => eth_rx_valid,
+        eth_tx_data  => eth_tx_data,
+        eth_tx_eof   => eth_tx_last,
+        eth_tx_valid => eth_tx_valid,
+        eth_tx_ready => eth_tx_ready,
 
         -- Buttons
-        trigger     => trigger,
+        sw_trigger  => sw_trigger,
+        trigger     => sw_trigger,
         BUTTON      => button_i );
 
     -- Parallel cable not implemented. This is the way to stub it...
@@ -660,6 +677,8 @@ begin
     end process;
     
     SLOT_RSTn <= '0' when RSTn_out = '0' else 'Z';
+    SLOT_DRV_RST <= not RSTn_out when rising_edge(sys_clock); -- Drive this pin HIGH when we want to reset the C64 (uses NFET on Rev.E boards)
+    
     SLOT_ADDR(15 downto 12) <= slot_addr_o(15 downto 12) when slot_addr_th = '1' else (others => 'Z');
     SLOT_ADDR(11 downto 00) <= slot_addr_o(11 downto 00) when slot_addr_tl = '1' else (others => 'Z');
     SLOT_DATA <= slot_data_o when slot_data_t = '1' else (others => 'Z');
@@ -796,5 +815,27 @@ begin
     end block;
     
     SLOT_BUFFER_ENn <= not buffer_en;
+
+    -- Transceiver
+    i_rmii: entity work.rmii_transceiver
+    port map (
+        clock           => RMII_REFCLK,
+        reset           => eth_reset,
+        rmii_crs_dv     => RMII_CRS_DV, 
+        rmii_rxd        => RMII_RX_DATA,
+        rmii_tx_en      => RMII_TX_EN,
+        rmii_txd        => RMII_TX_DATA,
+        
+        eth_rx_data     => eth_rx_data,
+        eth_rx_sof      => eth_rx_sof,
+        eth_rx_eof      => eth_rx_eof,
+        eth_rx_valid    => eth_rx_valid,
+
+        eth_tx_data     => eth_tx_data,
+        eth_tx_eof      => eth_tx_last,
+        eth_tx_valid    => eth_tx_valid,
+        eth_tx_ready    => eth_tx_ready,
+        ten_meg_mode    => '0'   );
+
 end architecture;
 

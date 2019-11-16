@@ -79,10 +79,11 @@ int FileTypeREU :: execute_st(SubsysCommand *cmd)
     fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
 
     if (cmd->functionID == REUFILE_SET_PRELOAD) {
+        C64 *machine = C64 :: getMachine();
         char path[1024];
         sprintf(path, "%s%s", cmd->path.c_str(), cmd->filename.c_str());
-        c64->cfg->set_string(CFG_C64_REU_IMG, path);
-        c64->cfg->write();
+        machine->cfg->set_string(CFG_C64_REU_IMG, path);
+        //c64->cfg->write();
         cmd->user_interface->popup("Set as REU Preload Image", BUTTON_OK);
         return 0;
     }

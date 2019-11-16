@@ -26,6 +26,289 @@ static uint8_t c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
 
 class IecCommandChannel;
 
+typedef struct {
+    int drive;
+    char *name;
+    char separator;
+} name_t;
+
+typedef struct {
+    char *cmd;
+    int digits;
+    name_t names[5];
+} command_t;
+
+#define MAX_PARTITIONS 256
+
+class IecFileSystem;
+
+class IecPartition
+{
+    IndexedList<FileInfo *> *dirlist;
+    IndexedList<char *> *iecNames;
+    Path *path;
+    FileManager *fm;
+    IecFileSystem *vfs;
+    int partitionNumber;
+
+public:
+    IecPartition(IecFileSystem *vfs, int nr) {
+        fm = FileManager :: getFileManager();
+        this->vfs = vfs;
+        partitionNumber = nr;
+        path = fm->get_new_path("IEC Partition");
+        dirlist = NULL;
+        iecNames = NULL;
+        dirlist = new IndexedList<FileInfo *>(8, NULL);
+        iecNames = new IndexedList<char *>(8, NULL);
+
+        SetInitialPath(); // constructs root path string
+    }
+
+    int GetPartitionNumber(void)
+    {
+        return partitionNumber;
+    }
+
+    void SetInitialPath(void);
+    bool IsValid(); // implemented in iec_channel.cc, to resolve an illegal forward reference
+
+    char *CreateIecName(char *in, char *ext, bool dir)
+    {
+        char *out = new char[24];
+        memset(out, 0, 24);
+
+        char temp[64];
+        strncpy(temp, in, 64);
+
+        if (dir) {
+            memcpy(out, "DIR", 3);
+        } else if (strcmp(ext, "PRG") == 0) {
+            memcpy(out, ext, 3);
+            set_extension(temp, "", 64);
+        } else if (strcmp(ext, "SEQ") == 0) {
+            memcpy(out, ext, 3);
+            set_extension(temp, "", 64);
+        } else if (strcmp(ext, "REL") == 0) {
+            memcpy(out, ext, 3);
+            set_extension(temp, "", 64);
+        } else if (strcmp(ext, "USR") == 0) {
+            memcpy(out, ext, 3);
+            set_extension(temp, "", 64);
+        } else {
+            memcpy(out, "SEQ", 3);
+        }
+
+        for(int i=0;i<16;i++) {
+            char o;
+            if(temp[i] == 0) {
+                break;
+            } else if(temp[i] == '_') {
+                o = 164;
+            } else if(temp[i] < 32) {
+                o = 32;
+            } else {
+                o = toupper(in[i]);
+            }
+            out[i+3] = o;
+        }
+        return out;
+    }
+
+    int FindIecName(const char *name, const char *ext, bool allowDir)
+    {
+        char temp[32];
+        if (ext[0]=='.')
+            ext++;
+        temp[0] = toupper(ext[0]);
+        temp[1] = toupper(ext[1]);
+        temp[2] = toupper(ext[2]);
+
+        strncpy(temp+3, name, 28);
+
+        for(int i=0;i<iecNames->get_elements();i++) {
+            if (pattern_match(temp, (*iecNames)[i], false)) {
+                if (allowDir || !((*dirlist)[i]->attrib & AM_DIR)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    void CleanupDir() {
+        if (!dirlist)
+            return;
+        for(int i=0;i < dirlist->get_elements();i++) {
+            delete (*dirlist)[i];
+            delete (*iecNames)[i];
+
+        }
+        dirlist->clear_list();
+        iecNames->clear_list();
+    }
+
+    FRESULT ReadDirectory()
+    {
+        CleanupDir();
+        FRESULT res = path->get_directory(*dirlist);
+        for(int i=0;i<dirlist->get_elements();i++) {
+            FileInfo *inf = (*dirlist)[i];
+            iecNames->append(CreateIecName(inf->lfname, inf->extension, inf->attrib & AM_DIR));
+        }
+        return res;
+    }
+
+    int GetDirItemCount(void)
+    {
+        return dirlist->get_elements();
+    }
+
+    const char *GetIecName(int index)
+    {
+        return (*iecNames)[index];
+    }
+
+    FileInfo *GetSystemFile(int index)
+    {
+        return (*dirlist)[index];
+    }
+
+    Path *GetPath()
+    {
+        return path;
+    }
+
+    const char *GetFullPath()
+    {
+        return path->get_path();
+    }
+
+    FRESULT MakeDirectory(const char *name)
+    {
+        FRESULT res = fm->create_dir(path, name);
+        return res;
+    }
+
+    FRESULT RemoveFile(const char *name)
+    {
+        FRESULT res = fm->delete_file(path, name);
+        return res;
+    }
+
+    bool cd(const char *name)
+    {
+        if (name[0] == '_') { // left arrow
+            // return to root of partition
+            SetInitialPath();
+            if (!fm->is_path_valid(path)) {
+                CleanupDir();
+                return false;
+            }
+            FRESULT res = ReadDirectory(); // just try!
+            if (res == FR_OK) {
+                return true;
+            }
+            return false;
+        }
+
+        // Not the <- case
+        int index = FindIecName(name, "DIR", true);
+        if (index >= 0) {
+            FileInfo *inf = (*dirlist)[index];
+            name = inf->lfname;
+        }
+        mstring previous_path(path->get_path());
+        path->cd(name);  // just try!
+        if (!fm->is_path_valid(path)) {
+            path->cd(previous_path.c_str()); // revert
+            return false;
+        }
+        FRESULT res = ReadDirectory(); // just try!
+        if (res == FR_OK) {
+            return true;
+        }
+        path->cd(previous_path.c_str()); // revert
+        ReadDirectory();
+        return false;
+    }
+
+    int Remove(command_t& command, bool dir) {
+        if (!command.names[0].name) {
+            return -1;
+        }
+        int f = 0;
+        for(int i=0;i<5;i++) {
+            if (!command.names[i].name) {
+                break;
+            }
+            char *name = command.names[i].name;
+            int idx = -1;
+            for (int fl=0; fl < iecNames->get_elements(); fl++) {
+                char *iecName = (*iecNames)[fl];
+                if (pattern_match(name, &iecName[3], false)) {
+                    FileInfo *inf = (*dirlist)[fl];
+                    if ( ((inf->attrib & AM_DIR) && !dir) || (!(inf->attrib & AM_DIR) && dir) ) {
+                        continue; // skip entries that are not of the right type
+                    }
+                    FRESULT res = RemoveFile(inf->lfname);
+                    if (res == FR_OK) {
+                        f++;
+                        dirlist->remove(inf);
+                        iecNames->remove(iecName);
+                        fl--;
+                    }
+                }
+            }
+
+        }
+        return f;
+    }
+};
+
+class IecFileSystem
+{
+    FileManager *fm;
+    int currentPartition;
+    IecPartition *partitions[MAX_PARTITIONS];
+    IecInterface *interface;
+public:
+    IecFileSystem(IecInterface *intf)
+    {
+        interface = intf;
+        fm = FileManager :: getFileManager();
+        for (int i=0; i<MAX_PARTITIONS; i++) {
+            partitions[i] = 0;
+        }
+        currentPartition = 0;
+        partitions[0] = new IecPartition(this, 0);
+    }
+
+    const char *GetRootPath() {
+        return interface->get_root_path();
+    }
+
+    IecPartition *GetPartition(int index) {
+        if (index < 0) {
+            index = currentPartition;
+        }
+        if (!partitions[index]) {
+            partitions[index] = new IecPartition(this, index);
+        }
+        return partitions[index];
+    }
+
+    void SetCurrentPartition(int pn) {
+        currentPartition = pn;
+    }
+/*
+    int GetCurrentPartition(void) {
+        return currentPartition;
+    }
+*/
+};
+
+
 class IecChannel
 {
     IecInterface *interface;
@@ -42,8 +325,9 @@ class IecChannel
     int  last_command;
     int  dir_index;
     int  dir_last;
-    
+    IecPartition *dirPartition;
     t_channel_state state;
+    mstring dirpattern;
 
     int  last_byte;
 
@@ -51,372 +335,22 @@ class IecChannel
     uint32_t bytes;
 
 public:
-    IecChannel(IecInterface *intf, int ch)
-    {
-    	fm = FileManager :: getFileManager();
-    	interface = intf;
-        channel = ch;
-        f = NULL;
-        pointer = 0;
-        write = 0;
-        state = e_idle;
-        dir_index = 0;
-        dir_last = 0;
-        bytes = 0;
-        last_byte = 0;
-        size = 0;
-        last_command = 0;
-        prefetch = 0;
-        prefetch_max = 0;
-    }
-    
-    virtual ~IecChannel()
-    {
-    	close_file();
-    }
-
-    virtual void reset_prefetch(void)
-    {
-    	prefetch = pointer;
-    }
-
-    virtual int prefetch_data(uint8_t& data)
-    {
-    	if (state == e_error) {
-    		return IEC_NO_FILE;
-    	}
-    	if (prefetch == last_byte) {
-    		data = buffer[prefetch];
-    		prefetch++;
-    		return IEC_LAST;
-    	}
-    	if (prefetch < prefetch_max) {
-    		data = buffer[prefetch];
-    		prefetch++;
-    		return IEC_OK;
-    	}
-    	if (prefetch > prefetch_max) {
-    		return IEC_NO_FILE;
-    	}
-    	return IEC_BUFFER_END;
-    }
-
-    virtual int pop_data(void)
-    {
-    	switch(state) {
-            case e_file:
-                if(pointer == last_byte) {
-                    state = e_complete;
-                    return IEC_NO_FILE; // no more data?
-                } else if(pointer == 255) {
-                    if(read_block())  // also resets pointer.
-                        return IEC_READ_ERROR;
-                    else
-                    	return IEC_OK;
-                }            
-                break;
-            case e_dir:                
-                if(pointer == last_byte) {
-                    state = e_complete;
-                    return IEC_NO_FILE; // no more data?
-                } else if(pointer == 31) {
-                    if(read_dir_entry())
-                        return IEC_READ_ERROR;
-                    else
-                    	return IEC_OK;
-                }
-                break;
-            default:
-                return IEC_NO_FILE;
-        }
-
-        pointer++;
-        return IEC_OK;
-    }
-    
-    int read_dir_entry(void)
-    {
-        if(dir_index >= dir_last) {
-            buffer[2] = 9999 & 255;
-            buffer[3] = 9999 >> 8;
-            memcpy(&buffer[4], "BLOCKS FREE.             \0\0\0", 28);
-            last_byte = 31;
-            pointer = 0;
-            prefetch_max = 31;
-            prefetch = 0;
-            return 0;
-        }
-        printf("Dir index = %d %s\n", dir_index, (*interface->iecNames)[dir_index]);
-        FileInfo *info = (*interface->dirlist)[dir_index];
-
-        //printf("info = %p\n", info);
-        uint32_t size = 0;
-        uint32_t size2 = 0;
-        if(info) {
-            size = info->size;
-        }
-        size /= 254;
-        if(size > 9999)
-            size = 9999;
-        size2 = size;
-        int chars=1;
-        while(size2 >= 10) {
-            size2 /= 10;
-            chars ++;
-        }        
-        int spaces=3-chars;
-        buffer[2] = size & 255;
-        buffer[3] = size >> 8;
-        int pos = 4;
-        while((spaces--)>=0)
-            buffer[pos++] = 32;
-        buffer[pos++]=34;
-        char *name = (*interface->iecNames)[dir_index];
-        char *src = name+3;
-        while(*src)
-            buffer[pos++] = *(src++);
-        buffer[pos++] = 34;
-        while(pos < 32)
-            buffer[pos++] = 32;
-
-        if (info->is_directory()) {
-        	memcpy(&buffer[27-chars], "DIR", 3);
-        } else {
-            memcpy(&buffer[27-chars], name, 3);
-        }
-
-        buffer[31] = 0;
-        pointer = 0;
-        prefetch_max = 32;
-        prefetch = 0;
-        dir_index ++;
-        return 0;
-    }
-    
-    int read_block(void)
-    {
-        FRESULT res = FR_DENIED;
-        uint32_t bytes;
-        if(f) {
-            res = f->read(buffer, 256, &bytes);
-            printf("\nSize was %d. Read %d bytes. ", size, bytes);
-        }
-        if(res != FR_OK) {
-            state = e_error;
-            return IEC_READ_ERROR;
-        }
-        if(bytes == 0)
-            state = e_complete; // end should have triggered already
-            
-        if(bytes != 256) {
-            last_byte = int(bytes)-1;
-        } else if(size == 256) {
-            last_byte = 255;
-        }
-        size -= 256;
-        pointer = 0;
-        prefetch = 0;
-        prefetch_max = 256;
-        return 0;
-    }
-            
-    virtual int push_data(uint8_t b)
-    {
-        uint32_t bytes;
-
-        switch(state) {
-            case e_filename:
-                if(pointer < 64)
-                    buffer[pointer++] = b;
-                break;    
-            case e_file:
-                buffer[pointer++] = b;
-                if(pointer == 256) {
-                    FRESULT res = FR_DENIED;
-                	if(f) {
-                        res = f->write(buffer, 256, &bytes);
-                    }
-                    if(res != FR_OK) {
-                        fm->fclose(f);
-                        f = NULL;
-                        state = e_error;
-                        return IEC_WRITE_ERROR;
-                    }
-                    pointer = 0;
-                }
-                return IEC_BYTE_LOST;
-
-            default:
-                return IEC_BYTE_LOST;
-        }
-        return IEC_OK;
-    }
-    
-    virtual int push_command(uint8_t b)
-    {
-        if(b)
-            last_command = b;
-
-        switch(b) {
-            case 0xF0: // open
-                close_file();
-                state = e_filename;
-                pointer = 0;
-                break;
-            case 0xE0: // close
-                printf("close %d %d\n", pointer, write);
-                if(write) {
-                    dump_hex(buffer, pointer);
-                    if (f) {
-                    	if (pointer > 0) {
-                    		FRESULT res = f->write(buffer, pointer, &bytes);
-                    		if (res != FR_OK) {
-                                state = e_error;
-                                return IEC_WRITE_ERROR;
-                    		}
-                    	}
-                        close_file();
-                    } else {
-                        state = e_error;
-                        return IEC_WRITE_ERROR;
-                    }
-                }            
-                state = e_idle;
-                break;
-            case 0x60:
-                break;
-            case 0x00: // end of data
-                if(last_command == 0xF0)
-                    open_file();
-                break;
-            default:
-                printf("Error on channel %d. Unknown command: %b\n", channel, b);
-        }
-        return IEC_OK;
-    }
-    
+    IecChannel(IecInterface *intf, int ch);
+    virtual ~IecChannel();
+    virtual void reset_prefetch(void);
+    virtual int prefetch_data(uint8_t& data);
+    virtual int pop_data(void);
+    int read_dir_entry(void);
+    int read_block(void);
+    virtual int push_data(uint8_t b);
+    virtual int push_command(uint8_t b);
+    void parse_command(char *buffer, command_t *command);
+    void dump_command(command_t& cmd);
+    bool hasIllegalChars(const char *name);
+    const char *GetExtension(char specifiedType, bool &explicitExt);
 private:
-    int open_file(void)  // name should be in buffer
-    {
-        const char *extension;
-        
-        buffer[pointer] = 0; // string terminator
-        printf("Open file. Raw Filename = '%s'\n", buffer);
-
-        // defaults
-        if(channel == 1)
-            write = 1;
-        else
-            write = 0;
-
-        if(channel < 2)
-            extension = ".prg";
-        else
-            extension = ".seq";
-
-        // parse filename parameters, look for ,                       
-        for(int i=0;i<pointer;i++) {
-            if(buffer[i] == ',') {
-                buffer[i] = 0;
-                switch(buffer[i+1]) {
-                    case 'R':
-                        write = 0;
-                        break;
-                    case 'W':
-                        write = 1;
-                        break;
-                    case 'P':
-                        extension = ".prg";
-                        break;
-                    case 'S':
-                        extension = ".seq";
-                        break;
-                    case 'U':
-                        extension = ".usr";
-                        break;
-                    default:
-                        printf("Unknown control char in filename: %c\n", buffer[i+1]);
-                }
-                buffer[i] = tolower(buffer[i]);
-                break;
-            }
-        }
-        printf("Filename after parsing: '%s'. Extension = '%s'. Write = %d\n", buffer, extension, write);
-
-        uint8_t flags = FA_READ;
-
-        if(buffer[0] == '$') {
-            printf("IEC Channel: Opening directory...\n");
-            interface->readDirectory();
-            state = e_dir;
-            pointer = 0;
-            prefetch = 0;
-            prefetch_max = 32;
-            last_byte = -1;
-            size = 32;
-            memcpy(buffer, c_header, 32);
-
-            const char *name = interface->path->get_path();
-            int pos = 8;
-            while((pos < 23) && (*name))
-                buffer[pos++] = toupper(*(name++));
-            dump_hex(buffer, 32);
-            dir_last = interface->dirlist->get_elements();
-            dir_index = 0;
-            return 0;
-        }
-
-        interface->readDirectory();
-        int pos = interface->findIecName((char *)buffer, extension);
-
-        char *filename;
-
-        if(write) {
-        	if (pos >= 0) {
-        		interface->last_error = ERR_FILE_EXISTS;
-        		state = e_error;
-        		return 0;
-        	} else {
-        		strcat((char *)buffer, extension);
-        		filename = (char *)buffer;
-        	}
-        } else { // read
-            if (pos < 0) {
-            	interface->last_error = ERR_FILE_NOT_FOUND;
-        		state = e_error;
-            	return 0;
-            }
-            FileInfo *info = (*interface->dirlist)[pos];
-            filename = info->lfname;
-        }
-
-        FRESULT fres = fm->fopen(interface->path, filename, (write)?(FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS):(FA_READ), &f);
-        if(f) {
-            printf("Successfully opened file %s in %s\n", buffer, interface->path->get_path());
-            last_byte = -1;
-            pointer = 0;
-            prefetch = 0;
-            prefetch_max = 256;
-            state = e_file;
-            if(!write) {
-                size = f->get_size();
-                return read_block();
-            }
-        } else {
-            printf("Can't open file %s in %s: %s\n", buffer, interface->path->get_path(), FileSystem :: get_error_string(fres));
-    		state = e_error;
-        }            
-        return 0;
-    }
-    
-    int close_file(void) // file should be open
-    {
-        if(f)
-            fm->fclose(f);
-        f = NULL;
-        state = e_idle;
-        return 0;
-    }
+    int open_file(void);  // name should be in buffer
+    int close_file(void); // file should be open
     friend class IecCommandChannel;
 };
 
@@ -424,91 +358,18 @@ class IecCommandChannel : public IecChannel
 {
 //    BYTE error_buf[40];
     int track_counter;
+    void mem_read(void);
+    void mem_write(void);
+    void renam(command_t& command);
+    void copy(command_t& command);
 public:
-    IecCommandChannel(IecInterface *intf, int ch) : IecChannel(intf, ch)
-    {
-        get_last_error();
-    }
-    ~IecCommandChannel() { }
-
-    void get_last_error(int err = -1)
-    {
-        if(err >= 0)
-            interface->last_error = err;
-
-        last_byte = interface->get_last_error((char *)buffer) - 1;
-        printf("Get last error: last = %d. buffer = %s.\n", last_byte, buffer);
-        pointer = 0;
-        prefetch = 0;
-        prefetch_max = last_byte;
-    	interface->last_error = ERR_OK;
-    }
-
-    int pop_data(void)
-    {
-        if(pointer > last_byte) {
-            return IEC_NO_FILE;
-        }
-        if(pointer == last_byte) {
-            get_last_error();
-            return IEC_LAST;
-        }
-        pointer++;
-        return IEC_OK;
-    }
-
-    int push_data(uint8_t b)
-    {
-        if(pointer < 64) {
-            buffer[pointer++] = b;
-            return IEC_OK;
-        }
-        return IEC_BYTE_LOST;
-    }
-
-    int push_command(uint8_t b)
-    {
-        switch(b) {
-            case 0x60:
-            case 0xE0:
-            case 0xF0:
-                pointer = 0;
-                break;
-            case 0x00: // end of data, command received in buffer
-                buffer[pointer]=0;
-                printf("Command received: %s\n", buffer);
-                if (strncmp((char *)buffer, "CD:", 3) == 0) {
-                	cd((char *)&buffer[3]);
-                } else if (strncmp((char *)buffer, "UI", 2) == 0) {
-                	get_last_error(ERR_DOS);
-                } else { // unknown command
-                	get_last_error(ERR_SYNTAX_ERROR_CMD);
-                }
-                break;
-            default:
-                printf("Error on channel %d. Unknown command: %b\n", channel, b);
-        }
-        return IEC_OK;
-    }
-
-    bool cd(char *name) {
-    	int index = interface->findIecName(name, "");
-    	if (index >= 0) {
-        	FileInfo *inf = (*(interface->dirlist))[index];
-        	name = inf->lfname;
-    	}
-    	mstring previous_path(interface->path->get_path());
-    	interface->path->cd(name);  // just try!
-    	FRESULT res = interface->readDirectory(); // just try!
-    	if (res == FR_OK) {
-        	get_last_error(ERR_OK);
-    		return true;
-    	}
-    	interface->path->cd(previous_path.c_str()); // revert
-    	interface->readDirectory();
-    	get_last_error(ERR_DIRECTORY_ERROR);
-    	return false;
-    }
+    IecCommandChannel(IecInterface *intf, int ch);
+    virtual ~IecCommandChannel();
+    void get_last_error(int err = -1, int track = 0, int sector = 0);
+    int pop_data(void);
+    int push_data(uint8_t b);
+    void exec_command(command_t &command);
+    int push_command(uint8_t b);
 };
 
 #endif /* IEC_CHANNEL_H */

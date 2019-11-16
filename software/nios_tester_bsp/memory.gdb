@@ -3,7 +3,7 @@
 # Machine generated for CPU 'nios2_gen2_0' in SOPC Builder design 'nios_tester'
 # SOPC Builder design path: ../../fpga/nios_tester/nios_tester.sopcinfo
 #
-# Generated: Sat Nov 05 15:45:45 CET 2016
+# Generated: Tue Oct 22 22:11:01 CEST 2019
 
 # DO NOT MODIFY THIS FILE
 #

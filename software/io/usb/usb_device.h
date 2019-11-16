@@ -182,7 +182,7 @@ public:
     	hid_descriptor_valid = true;
     }
 
-    void getHidReportDescriptor(void);
+    uint8_t *getHidReportDescriptor(int *len);
 
     void setDriver(UsbDriver *drv) {
     	driver = drv;
@@ -209,7 +209,6 @@ public:
     }
 
     void install(void) {
-		getHidReportDescriptor();
     	UsbDriver *driver = getUsbDriverFactory()->create(this);
     	setDriver(driver);
     	if (driver) {
@@ -288,6 +287,10 @@ public:
     	parent_port = port;
     	control_pipe.SplitCtl = host->getSplitControl(parent->current_address, parent_port + 1, speed, 0);
     	//printf("SplitCtl = %4x\n", control_pipe.SplitCtl);
+
+    	memset(control_pipe.name, 0, 8);
+        get_pathname(control_pipe.name, 7);
+        strcat(control_pipe.name, "|0");
     }
 
     void device_reset() {
@@ -304,7 +307,7 @@ public:
     char *get_pathname(char *dest, int len);
     bool get_device_descriptor();
     struct t_device_configuration *get_device_config();
-    void set_address(int address);
+    bool set_address(int address);
     bool get_configuration(uint8_t index);
     void set_configuration(uint8_t config);
     void set_interface(uint8_t intf, uint8_t alt);

@@ -40,6 +40,7 @@
 #define MPS_PRINTER_PAGE_WIDTH              1984
 #define MPS_PRINTER_PAGE_HEIGHT             2580
 #define MPS_PRINTER_PAGE_DEPTH              2
+#define MPS_PRINTER_PAGE_DEPTH_COLOR        8
 #define MPS_PRINTER_PAGE_OFFSET_LEFT        32
 #define MPS_PRINTER_PAGE_OFFSET_TOP         210
 #define MPS_PRINTER_PAGE_PRINTABLE_WIDTH    1920
@@ -50,7 +51,9 @@
 #define MPS_PRINTER_MAX_VTABULATIONS        32
 #define MPS_PRINTER_MAX_VTABSTORES          8
 
-#define MPS_PRINTER_BITMAP_SIZE             ((MPS_PRINTER_PAGE_WIDTH*MPS_PRINTER_PAGE_HEIGHT*MPS_PRINTER_PAGE_DEPTH+7)>>3)
+#define MPS_PRINTER_BITMAP_SIZE_BW          ((MPS_PRINTER_PAGE_WIDTH*MPS_PRINTER_PAGE_HEIGHT*MPS_PRINTER_PAGE_DEPTH+7)>>3)
+#define MPS_PRINTER_BITMAP_SIZE_COLOR       ((MPS_PRINTER_PAGE_WIDTH*MPS_PRINTER_PAGE_HEIGHT*MPS_PRINTER_PAGE_DEPTH_COLOR+7)>>3)
+#define MPS_PRINTER_BITMAP_SIZE             MPS_PRINTER_BITMAP_SIZE_COLOR
 
 #define MPS_PRINTER_MAX_BIM_SUB             256
 #define MPS_PRINTER_MAX_SPECIAL             46
@@ -58,6 +61,9 @@
 #define MPS_PRINTER_SCRIPT_NORMAL           0
 #define MPS_PRINTER_SCRIPT_SUPER            2
 #define MPS_PRINTER_SCRIPT_SUB              4
+
+/* Define this for computed RGB palette but not realistic */
+//#define TRUE_CMYK
 
 #ifdef NIOS
 #define FS_ROOT "/Usb0/"
@@ -107,6 +113,16 @@ typedef enum mps_printer_step {
     MPS_PRINTER_STEPS
 } mps_printer_step_t;
 
+typedef enum mps_printer_color {
+    MPS_PRINTER_COLOR_BLACK,
+    MPS_PRINTER_COLOR_MAGENTA,
+    MPS_PRINTER_COLOR_CYAN,
+    MPS_PRINTER_COLOR_VIOLET,       // CYAN + MAGENTA
+    MPS_PRINTER_COLOR_YELLOW,
+    MPS_PRINTER_COLOR_ORANGE,       // MANGENTA + YELLOW
+    MPS_PRINTER_COLOR_GREEN         // CYAN + YELLOW
+} mps_printer_color_t;
+
 /*======================================================================*/
 /* Class MpsPrinter                                                     */
 /*======================================================================*/
@@ -139,6 +155,11 @@ class MpsPrinter
         /* CBM character specia for quote mode */
         static uint8_t cbm_special[MPS_PRINTER_MAX_SPECIAL];
 
+#ifndef TRUE_CMYK
+        /* RGB palette for color printer PNG output */
+        static uint8_t rgb_palette[768];
+#endif /* TRUE_CMYK */
+
         /* =======  Configuration */
         /* PNG file basename */
         char outfile[32];
@@ -150,6 +171,9 @@ class MpsPrinter
         uint16_t htab[MPS_PRINTER_MAX_HTABULATIONS];
         uint16_t vtab_store[MPS_PRINTER_MAX_VTABSTORES][MPS_PRINTER_MAX_VTABULATIONS];
         uint16_t *vtab;
+
+        /* True if color printer */
+        bool color_mode;
 
         /* Page bitmap */
         uint8_t bitmap[MPS_PRINTER_BITMAP_SIZE];
@@ -172,6 +196,9 @@ class MpsPrinter
         /* =======  Print head configuration */
         /* Ink density */
         uint8_t dot_size;
+
+        /* Ink color */
+        mps_printer_color_t color;
 
         /* Printer head position */
         uint16_t head_x;
@@ -261,6 +288,7 @@ class MpsPrinter
         void setCBMCharset(uint8_t in);
         void setEpsonCharset(uint8_t in);
         void setIBMCharset(uint8_t in);
+        void setColorMode(bool in, bool init=false);
 
         /* =======  Feed interpreter */
         void Interpreter(const uint8_t * input, uint32_t size);
@@ -277,6 +305,9 @@ class MpsPrinter
 #endif
         void Print(const char* filename);
         void Ink(uint16_t x, uint16_t y, uint8_t c=3);
+#ifdef DEBUG
+        void InkTest(uint16_t x, uint16_t y, uint8_t c);
+#endif
         void Dot(uint16_t x, uint16_t y, bool b=false);
         uint16_t Charset2Chargen(uint8_t input);
         uint16_t Char(uint16_t c);

@@ -10,7 +10,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include "i2c.h"
+#include "i2c_drv.h"
 #include "mdio.h"
 #include "alt_types.h"
 #include "dump_hex.h"
@@ -38,8 +38,8 @@ int getNetworkPacket(uint8_t **payload, int *length);
 
 #include "usb_base.h"
 
-extern unsigned char _dut_b_start;
-extern unsigned char _dut_b_size;
+extern unsigned char _dut_start;
+extern unsigned char _dut_end;
 extern unsigned char _dut_application_start;
 
 typedef struct {
@@ -951,12 +951,13 @@ int checkDigitalIO(JTAG_Access_t *target, int timeout, char **log)
 
 int copyRtc(JTAG_Access_t *target, int timeout, char **log)
 {
-	ENTER_SAFE_SECTION
+    I2C_Driver i2c;
+    ENTER_SAFE_SECTION
 	uint32_t timebuf[3];
 	uint8_t *pb = (uint8_t *)timebuf;
     int res;
 	for(int i=0;i<11;i++) {
-        *(pb++) = i2c_read_byte(0xA2, i, &res);
+        *(pb++) = i2c.i2c_read_byte(0xA2, i, &res);
         if (res) {
         	break;
         }
@@ -1056,7 +1057,7 @@ TestDefinition_t jig_tests[] = {
 		{ "Verify USB Phy clock",   checkUsbClock,           1, false, false,  true },
 		{ "Verify LED presence",    checkLEDs,               2, false, false, false },
 		{ "Memory Test", 			checkMemory,             1,  true, false, false },
-		{ "Run DUT Application",    checkApplicationRun,   150,  true, false,  true },
+		{ "Run DUT Application",    checkApplicationRun,   350,  true, false,  true },
 		{ "Check Flash Types",      checkFlashSwitch,      150,  true, false,  true },
 		{ "Audio amplifier test",   checkSpeaker,          150, false, false,  true },
 		{ "Verify USB Phy type",    checkUsbPhy,           150, false, false,  true },
@@ -1072,7 +1073,7 @@ TestDefinition_t slot_tests[] = {
 		{ "Verify reference clock", checkReferenceClock,     1,  true, false,  true },
 		{ "Memory Test", 			checkMemory,             1,  true, false, false },
 		{ "Run DUT Application",    checkApplicationRun,   150,  true, false,  true },
-		{ "Check if Jig was run",   checkJigHasRun,        150,  true, false,  true },
+//		{ "Check if Jig was run",   checkJigHasRun,        150,  true, false,  true },
 		{ "Button Test", 			checkButtons,		  3000, false,  true,  true },
 		{ "Check Flash Types",      checkFlashSwitch,      150, false, false,  true },
 		{ "Audio input test",       slotAudioInput,        600, false, false,  true },
@@ -1372,13 +1373,13 @@ extern "C" {
 		IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xFF);
 		IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x08); // green
 		configure_adc();
-		printf("Welcome to the Ultimate-II+ automated test system.\n");
+		printf("Welcome to the Ultimate-II+ automated test system. (Build October 2019, FPGA Version: %b)\n", getFpgaVersion());
 		printf("Initializing local USB devices...\n");
 
 		// rtc.set_time_in_chip(0, 2016 - 1980, 11, 19, 6, 17, 45, 0);
 		custom_outbyte = outbyte_log;
 
-		usb2.initHardware();
+	    usb2.initHardware();
 		FileManager *fm = FileManager :: getFileManager();
 
 		printf("Waiting for USB storage device to become available.\n");
@@ -1400,12 +1401,12 @@ extern "C" {
 		}
 
 		// Initialize fpga and application structures for DUT
-//		dutFpga.buffer = (uint32_t *)&_dut_b_start;
-//		dutFpga.size   = (uint32_t)&_dut_b_size;
-//		dutAppl.buffer = (uint32_t *)&_dut_application_start;
+		dutFpga.buffer = (uint32_t *)&_dut_start;
+		dutFpga.size   = (uint32_t)&_dut_end - (uint32_t)&_dut_start;
+		dutAppl.buffer = (uint32_t *)&_dut_application_start;
 
-		load_file(&dutFpga);
-		load_file(&dutAppl);
+//		load_file(&dutFpga);
+//		load_file(&dutAppl);
 
 		TestSuite jigSuite("JIG Test Suite", jig_tests);
 		TestSuite slotSuite("Slot Test Suite", slot_tests);
@@ -1441,6 +1442,9 @@ extern "C" {
 					if (ub == 'a') {
 						report_analog();
 						ub = -1;
+					} else if (ub == 'j') {
+					    ub = -1;
+					    checkReferenceClock(jigSuite.getTarget(), 100, NULL);
 					}
 				} while(ub < 0);
 				IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xF0); // turn off DUT

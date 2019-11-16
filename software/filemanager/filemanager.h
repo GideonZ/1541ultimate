@@ -185,6 +185,7 @@ public:
     void 	fclose(File *f);
     FRESULT fcopy(const char *path, const char *filename, const char *dest);
 
+    FRESULT rename(Path *old_path, const char *old_name, Path *new_path, const char *new_name);
     FRESULT rename(Path *path, const char *old_name, const char *new_name);
     FRESULT rename(const char *old_name, const char *new_name);
 

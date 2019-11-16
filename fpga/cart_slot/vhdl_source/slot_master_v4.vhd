@@ -6,6 +6,8 @@ library work;
 use work.dma_bus_pkg.all;
 
 entity slot_master_v4 is
+generic (
+    g_start_in_stopped_state    : boolean := false );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -30,7 +32,6 @@ port (
     phi2_recovered  : in  std_logic;
     phi2_tick       : in  std_logic;
     do_sample_addr  : in  std_logic;
-    do_sample_io    : in  std_logic;
     do_io_event     : in  std_logic;
     reu_dma_n       : in  std_logic := '1';
     cmd_if_freeze   : in  std_logic := '0';
@@ -188,9 +189,15 @@ begin
             end if;
 
             if reset='1' then
-                state           <= idle;
-                dma_n_i         <= '1';
-                c64_stopped     <= '0';
+                if g_start_in_stopped_state then
+                    state           <= stopped;
+                    dma_n_i         <= '0';
+                    c64_stopped     <= '1';
+                else
+                    state           <= idle;
+                    dma_n_i         <= '1';
+                    c64_stopped     <= '0';
+                end if;
                 rwn_out_i       <= '1';
                 addr_out        <= (others => '1');
             end if;

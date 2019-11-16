@@ -4,7 +4,7 @@ ROMS = ../../roms
 SVFDUMP = ../../tools/svf_dump
 
 all: $(FLASH) $(FLASH)/rompack.bin $(FLASH)/ultimate_run.swp $(FLASH)/ultimate_recovery.swp $(FLASH)/ultimate.app $(FLASH)/recovery.app \
-	 $(TESTER) $(TESTER)/dut.fpga $(TESTER)/dut.app $(TESTER)/tester.app \
+	 $(TESTER) $(TESTER)/dut.fpga $(TESTER)/tester.app \
 	 $(FLASH)/testexec.swp $(FLASH)/test_loader.app
 
 force::

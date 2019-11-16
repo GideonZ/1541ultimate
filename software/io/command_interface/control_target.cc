@@ -5,6 +5,7 @@
 #include "tape_recorder.h"
 #if U64
 #include "u64_config.h"
+#include "u64.h"
 #else
 #include "audio_select.h"
 #endif
@@ -138,9 +139,136 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
             *reply  = &c_message_empty;
             *status = &c_status_ok;
             break;
+        case CTRL_CMD_ENABLE_DISK_A: {
+            if (c1541_A) {
+                c1541_A->drive_power(true);
+            }
+            *reply = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+        }
+        case CTRL_CMD_DISABLE_DISK_A: {
+            if (c1541_A) {
+                c1541_A->drive_power(false);
+            }
+            *reply = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+        }
+        case CTRL_CMD_ENABLE_DISK_B: {
+            if (c1541_B) {
+                c1541_B->drive_power(true);
+            }
+            *reply = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+        }
+        case CTRL_CMD_DISABLE_DISK_B: {
+            if (c1541_B) {
+                c1541_B->drive_power(false);
+            }
+            *reply = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+        }
+        case CTRL_CMD_DISK_A_POWER: {
+            bool drivepower = false;
+
+            if (c1541_A) {
+                drivepower = c1541_A->get_drive_power();
+            }
+
+            if(drivepower == false)
+            {
+                sprintf((char*) data_message.message,"off");
+            }
+            else
+            {
+                sprintf((char*) data_message.message,"on ");
+            }
+                
+                
+            data_message.length = 3;
+            *status = &c_status_ok;
+            data_message.last_part = true;
+            *reply = &data_message;
+            break;
+        }
+        case CTRL_CMD_DISK_B_POWER: {
+            bool drivepower = false;
+
+            if (c1541_B) {
+                drivepower = c1541_B->get_drive_power();
+            }
+
+            if(drivepower == false)
+            {
+                sprintf((char*) data_message.message,"off");
+            }
+            else
+            {
+                sprintf((char*) data_message.message,"on ");
+            }
+                
+                
+            data_message.length = 3;
+            *status = &c_status_ok;
+            data_message.last_part = true;
+            *reply = &data_message;
+            break;
+        }
+#ifdef U64
+        case CTRL_CMD_U64_SAVEMEM:
+            printf("U64 Save C64 Memory\n");
+            save_u64_memory(command);
+            *reply  = &c_message_empty;
+            *status = &c_status_ok;
+            break;
+#endif
+        case CTRL_CMD_EASYFLASH:
+            if (command->length < 3)
+            {
+                *status = &c_status_unknown_command;
+                *reply = &c_message_empty;
+            }
+            else
+            {
+                unsigned char subcommand = command->message[2];
+                switch (subcommand)
+                {
+                    case 0:
+                    {
+                        if (command->length < 5)
+                        {
+                            *status = &c_status_unknown_command;
+                            *reply = &c_message_empty;
+                            break;
+                        }
+
+                        uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+                        unsigned char bank = command->message[3];
+                        unsigned char baseAddr = command->message[4];
+                        mem_addr += (bank & 0x38) * 8192;
+                        if (baseAddr & 0x20) mem_addr += 512*1024;
+                        for (int i=0; i<65536; i++)
+                            *(char*)(mem_addr+i) = 0xff;
+                        *reply  = &c_message_empty;
+                        *status = &c_status_ok;
+                        break;
+                    }
+
+                    default:
+                        *reply = &c_message_empty;
+                        *status = &c_status_unknown_command;
+                }
+                *reply  = &c_message_empty;
+                *status = &c_status_ok;
+            }
+            break;
+
         case CTRL_CMD_GET_HWINFO: {
         	
-            if (command->length < 4)
+            if (command->length < 3)
             {
                 *status = &c_status_unknown_command;
                 *reply = &c_message_empty;
@@ -268,6 +396,29 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
     
     }
 }
+
+#ifdef U64
+void ControlTarget :: save_u64_memory(Message *command)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    File *f;
+
+    FRESULT res = fm->fopen("/Usb1", "c64_memory.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+    if(res == FR_OK) {
+        printf("Opened file successfully.\n");
+
+        uint8_t *src = (uint8_t *)U64_RAM_BASE;
+        uint8_t *dest = new uint8_t[65536];
+        memcpy(dest, src, 65536);
+        uint32_t bytes_written;
+
+        f->write(dest, 0x10000, &bytes_written);
+        printf("written: %d...", bytes_written);
+        fm->fclose(f);
+        delete[] dest;
+    }
+}
+#endif
 
 void ControlTarget :: get_more_data(Message **reply, Message **status)
 {

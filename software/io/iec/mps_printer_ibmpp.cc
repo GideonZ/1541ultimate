@@ -373,6 +373,26 @@ MpsPrinter::IBMpp_Interpreter(uint8_t input)
                     state = MPS_PRINTER_STATE_ESC_PARAM;
                     break;
 
+                case 0x62:  // ESC b : Black ink
+                    color = MPS_PRINTER_COLOR_BLACK;
+                    state = MPS_PRINTER_STATE_INITIAL;
+                    break;
+
+                case 0x63:  // ESC c : Cyan ink
+                    color = MPS_PRINTER_COLOR_CYAN;
+                    state = MPS_PRINTER_STATE_INITIAL;
+                    break;
+
+                case 0x6d:  // ESC m : Magenta ink
+                    color = MPS_PRINTER_COLOR_MAGENTA;
+                    state = MPS_PRINTER_STATE_INITIAL;
+                    break;
+
+                case 0x79:  // ESC y : Yellow ink
+                    color = MPS_PRINTER_COLOR_YELLOW;
+                    state = MPS_PRINTER_STATE_INITIAL;
+                    break;
+
                 case 0x7E:  // ESC ~ : MPS-1230 extension
                     state = MPS_PRINTER_STATE_ESC_PARAM;
                     break;

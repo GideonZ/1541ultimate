@@ -92,7 +92,7 @@ begin
             end if;
 
             if reset='1' then
-                control_i <= c_chargen_control_init;
+--                control_i <= c_chargen_control_init;
                 keyb_col  <= (others => '1');
             end if;
         end if;

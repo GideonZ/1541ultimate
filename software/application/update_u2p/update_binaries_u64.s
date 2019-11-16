@@ -27,6 +27,9 @@ _rom_pack_start:
 .incbin "rr38pal.bin"
 .incbin "ss5pal.bin"
 .incbin "tar_pal.bin"
+.incbin "rr38ntsc.bin"
+.incbin "ss5ntsc.bin"
+.incbin "tar_ntsc.bin"
 .incbin "kcs.bin"
 .incbin "epyx.bin"
 

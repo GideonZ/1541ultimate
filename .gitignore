@@ -1,11 +1,14 @@
 /*.bin
 /*.bit
 /*.mcs
-/*.zip
-/*.u64
+*.zip
+*.u64
 /*.u2u
 /*.u2p
 /audio
+**/.asdb
+dataset.*
+/sim/work
 tools/*.vcd
 tools/*.bin
 fpga/altera/sim
@@ -158,10 +161,11 @@ target/software/mb_rtos/output
 target/software/mb_rtos/result
 target/software/mb_rtos_netw/output_mb
 target/software/mb_rtos_netw/result_mb
-target/software/mb_sim_boot/output_mb
-target/software/mb_sim_boot/result_mb
+target/software/mb_sim_boot/output
+target/software/mb_sim_boot/result
 target/software/mb_test_fileio/output
 target/software/mb_ui/output
+target/software/mb_ultimate/d*
 target/software/mb_ultimate/output
 target/software/mb_ultimate/python_out_iec
 target/software/mb_ultimate/python_out_nano
@@ -206,6 +210,8 @@ target/software/nios2_testflasher/result
 target/software/nios2_testloader/output
 target/software/nios2_testloader/python*
 target/software/nios2_testloader/result
+target/software/nios2_u64_boot/output
+target/software/nios2_u64_boot/result
 target/software/nios2_u64/output
 target/software/nios2_u64/python*
 target/software/nios2_u64/result
@@ -252,3 +258,7 @@ software/6502/sidcrt/target
 tools/dump_bus_trace
 tools/64tass/*.o
 /chars/
+.vscode
+.idea
+python/grab*
+

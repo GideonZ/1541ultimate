@@ -191,7 +191,7 @@ void TapeController :: poll()
 					close();
 	                stop();
 			        if (recording) {
-			        	c64->setButtonPushed();
+			        	C64::getMachine()->setButtonPushed();
 			        }
 			    }
 				break;

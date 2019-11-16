@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "rtc_only.h"
-#include "i2c.h"
+#include "i2c_drv.h"
 #include "itu.h"
 
 const char *month_strings_short[]={ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -52,8 +52,9 @@ Rtc :: ~Rtc()
 
 void Rtc :: write_byte(int addr, uint8_t val)
 {
-	ENTER_SAFE_SECTION
-	i2c_write_byte(0xA2, addr, val);
+    I2C_Driver i2c;
+    ENTER_SAFE_SECTION
+	i2c.i2c_write_byte(0xA2, addr, val);
 	LEAVE_SAFE_SECTION
 	rtc_regs[addr] = val; // update internal structure as well.
 }
@@ -61,10 +62,11 @@ void Rtc :: write_byte(int addr, uint8_t val)
 
 void Rtc :: read_all(void)
 {
+    I2C_Driver i2c;
 	ENTER_SAFE_SECTION
 	int dummy;
 	for(int i=0;i<11;i++) {
-        rtc_regs[i] = i2c_read_byte(0xA2, i, &dummy);
+        rtc_regs[i] = i2c.i2c_read_byte(0xA2, i, &dummy);
 
     }
 	LEAVE_SAFE_SECTION

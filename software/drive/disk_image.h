@@ -50,7 +50,7 @@ class GcrImage
     // temporaries that don't need to be allocated over and over
     uint8_t header[8];
     uint8_t sector_buffer[352]; // 260 for bin sector, 349 for gcr sector + header (352 to be a multiple of 4)
-    uint8_t gcr_data[C1541_MAX_GCR_LEN];
+    uint8_t *gcr_data;
 
     // private functions
     static uint8_t *wrap(uint8_t **, uint8_t *, uint8_t *, int, uint8_t *buffer);

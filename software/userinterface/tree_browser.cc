@@ -51,6 +51,8 @@ static const char *helptext=
 #include "stream_textlog.h"
 extern StreamTextLog textLog; // the global log
 
+int swap_joystick() __attribute__ ((weak));
+
 /***********************/
 /* Tree Browser Object */
 /***********************/
@@ -58,6 +60,7 @@ TreeBrowser :: TreeBrowser(UserInterface *ui, Browsable *root)
 {
 	// initialize state
 	user_interface = ui;
+	screen = NULL;
 	window = NULL;
     keyb = NULL;
     contextMenu = NULL;
@@ -172,6 +175,12 @@ int TreeBrowser :: poll(int sub_returned)
 {
 	int c;
     int ret = 0;
+
+    mstring *msg = this->user_interface->getMessage();
+    if (msg) {
+        user_interface->popup(msg->c_str(), BUTTON_OK);
+        delete msg;
+    }
 
     if(contextMenu) {
         if(sub_returned < 0) {
@@ -380,10 +389,11 @@ int TreeBrowser :: handle_key(int c)
         	break;
 */
         case KEY_SCRLOCK:
+        case KEY_F10:
         case KEY_ESCAPE:
         	ret = -1;
         	break;
-        	/*
+/*
         case KEY_F6: // F6 -> show log
         	reset_quick_seek();
         	state->refresh = true;
@@ -407,10 +417,14 @@ int TreeBrowser :: handle_key(int c)
         	break;
         case KEY_CTRL_C: // copy
         	copy_selection();
+            state->refresh = true;
         	break;
         case KEY_CTRL_V: // paste
         	paste();
         	break;
+        case KEY_CTRL_J: // joyswap
+            ret = swap_joystick();
+            break;
         case KEY_RETURN: // CR = select
             reset_quick_seek();
             context(0);
@@ -428,7 +442,7 @@ int TreeBrowser :: handle_key(int c)
             break;
        case KEY_CTRL_HOME: // set home
            user_interface->cfg->set_string(CFG_USERIF_HOME_DIR, (char*)path->get_path());
-           user_interface->cfg->write();
+           //user_interface->cfg->write();
            HomeDirectory :: setHomeDirectory(path->get_path());
            user_interface->popup("Current dir set as home dir", BUTTON_OK);
            break;
@@ -479,14 +493,18 @@ void TreeBrowser :: copy_selection(void)
 	for(int i=0;i<state->children->get_elements();i++) {
 		Browsable *t = (*state->children)[i];
 		if (t && t->getSelection()) {
-			clipboard.addFile(t->getName());
+		    t->setSelection(false);
+		    clipboard.addFile(t->getName());
 		}
 	}
 	if (clipboard.getNumberOfFiles() == 0) {
 		Browsable *t = state->under_cursor;
 		clipboard.addFile(t->getName());
 	}
-	printf("Copied %d files in path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
+	char buffer[40];
+	sprintf(buffer, "%d files placed on clipboard", clipboard.getNumberOfFiles());
+	user_interface->popup(buffer, BUTTON_OK);
+//	printf("Copied %d files in path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
 }
 
 void TreeBrowser :: paste(void)
@@ -545,4 +563,9 @@ void TreeBrowser :: cd_impl(const char *dst)
 
 const char *TreeBrowser :: getPath() {
 	return path->get_path();
+}
+
+int swap_joystick()
+{
+    return 0;
 }

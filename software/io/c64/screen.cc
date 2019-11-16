@@ -284,6 +284,7 @@ Window :: Window(Screen *parent, int x1, int y1, int sx, int sy)
     border_v   = 0;
     this->parent = parent;
     old_color = parent->get_color();
+    parent->set_background(0); // default
     parent->set_color(15); // default
     parent->reverse_mode(0);
 }

@@ -23,6 +23,25 @@ UsbBase usb2;
     #define printf(...)
 #endif
 
+#define BIT31 0x80000000
+
+/*
+ * This function is required to fill the cache manually after a USB transfer. This is required, since
+ * the hardware invalidation has been turned off. The cache invalidation seems to cause random crashes.
+ */
+void cache_load(uint8_t *buffer, int length)
+{
+    if (length <= 0) {
+        return;
+    }
+    uint32_t addr = (uint32_t)buffer;
+    addr &= 0x7FFFFFFF;
+
+    uint8_t *source = (uint8_t *)(addr | BIT31);
+    uint8_t *dest   = (uint8_t *)addr;
+    memcpy(buffer, source, length);
+}
+
 UsbBase :: UsbBase()
 {
     ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_USB);
@@ -81,6 +100,9 @@ void UsbBase :: attach_root(void)
     UsbDevice *dev = new UsbDevice(this, get_bus_speed());
     if (init_device(dev)) {
     	rootDevice = dev;
+    } else {
+        printf("Attach root failed. Exit.\n");
+        return;
     }
     if (!rootDevice->init2()) {
     	printf("Failed to initialize device %s\n", dev->get_pathname(buf, 16));
@@ -98,12 +120,12 @@ bool UsbBase :: init_device(UsbDevice *dev) // This function only gives the devi
     printf("Installing %s Parent = %p, ParentPort = %d\n", buf, dev->parent, dev->parent_port);
 
     bool ok = false;
-    for(int i=0;i<5;i++) { // try 5 times!
+    for(int i=0;i<3;i++) { // try 3 times!
         if(dev->init(idx)) {
             ok = true;
             break;
         } else {
-        	wait_ms(100*i);
+        	vTaskDelay(35*i);
         }
     }
     return ok;
@@ -233,21 +255,10 @@ void UsbBase :: process_fifo(uint16_t pipe)
         return;
     }
 
-/*
-			// pause_input_pipe(pipe);
-			printf("USB Pipe Error. Pipe %d: Status: %4x\n", pipe, ev->fifo_word[1]);
-			void *object = inputPipeObjects[pipe];
-			if (object) {
-				((UsbDriver *)object)->pipe_error(pipe);
-			}
-			return;
-		}
-*/
-
 	void *object = inputPipeObjects[pipe];
 
 	PROFILER_SUB = 3;
-	if (!object) {
+    if (!object || (pipe >= USB2_NUM_PIPES)) {
 		printf("** INVALID USB PACKET RECEIVED IN QUEUE! Pipe : %d\n", pipe);
 		return;
 	}
@@ -327,14 +338,12 @@ void UsbBase :: init(void)
     uint32_t ul = *pul;
     printf("Nano CPU based USB Controller: %d bytes loaded from %p. First DW: %08x\n", size, &_nano_minimal_b_start, ul);
 
-	ioWrite8(ITU_IRQ_CLEAR,  0x04);
-	ioWrite8(ITU_IRQ_ENABLE, 0x04);
+	ioWrite8(ITU_IRQ_CLEAR,  ITU_INTERRUPT_USB);
+	ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_USB);
 	NANO_START = 1;
 
     printf("Queue = %p. Creating USB task. This = %p\n", queue, this);
 	xTaskCreate( UsbBase :: input_task_start, "USB Input Event Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 4, NULL );
-
-	ioWrite8(ITU_MISC_IO, 1); // coherency is on
 }
 
 // Called from poll / cleanup context
@@ -387,8 +396,30 @@ int UsbBase :: open_pipe()
 	return -1;
 }
 
+void UsbBase :: initialize_pipe(struct t_pipe *pipe, UsbDevice *dev, struct t_endpoint_descriptor *ep)
+{
+    int ep_addr = ep->endpoint_address & 0x0F;
+    int ep_type = ep->attributes & 0x03;
+
+    pipe->device = dev;
+    pipe->DevEP  = ((dev->current_address) << 8) | ep_addr;
+    pipe->MaxTrans = ep->max_packet_size;
+    pipe->Command = 0; // used to store toggle bit
+    pipe->SplitCtl = getSplitControl(dev->parent->current_address, dev->parent_port + 1, dev->speed, ep_type);
+    pipe->needPing = 0;
+    pipe->highSpeed = (dev->speed == 2) ? 1 : 0;
+
+    memset(pipe->name, 0, 8);
+    dev->get_pathname(pipe->name, 7);
+    char pn[3] = { '|', 0, 0 };
+    pn[1] = (ep_addr | 0x30);
+    strcat(pipe->name, pn);
+    printf("Assigned '%s' to pipe. Split = %04x\n", pipe->name, pipe->SplitCtl);
+}
+
+
 // Called from protected function 'allocate input pipe'
-void UsbBase :: init_pipe(int index, struct t_pipe *init)
+void UsbBase :: activate_autopipe(int index, struct t_pipe *init)
 {
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(index);
 
@@ -416,7 +447,7 @@ void UsbBase :: pause_input_pipe(int index)
 
 	uint16_t command = descr->command;
 	if (command & UCMD_PAUSED) {
-		printf("Pause was already set %04x\n", command);
+		printf("Pause was already set %04x on pipe %d\n", command, index);
 		return;
 	}
 	command |= UCMD_PAUSED;
@@ -453,11 +484,18 @@ uint16_t UsbBase :: complete_command(int timeout)
 
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
 
-	if (! xSemaphoreTake(commandSemaphore, timeout)) {
-	    pause_input_pipe(0);
-	    result = descr->result | URES_ABORTED;
+    if (! xSemaphoreTake(commandSemaphore, timeout)) {
+	    uint16_t command = descr->command;
+	    command |= UCMD_ABORT_REQ;
+	    descr->command = command;
+	    if (! xSemaphoreTake(commandSemaphore, timeout)) {
+	        printf("FATAL: USB did not abort after abort request was set.\n");
+	        result = 0xFFFF;
+	    } else {
+	        result = descr->result & 0x7FFF;
+	    }
 	} else {
-		result = descr->result & ~URES_ABORTED;
+		result = descr->result & 0x7FFF;
 	}
 	return result;
 }
@@ -519,12 +557,12 @@ void UsbBase :: doPing(struct t_pipe *pipe)
 int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void *in, int inlen)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
 
     if (outlen != 8) {
-        printf("Unsupported setup length.\n");
+        printf("%s Unsupported setup length.\n", pipe->name);
         return -10;
     }
 
@@ -545,7 +583,7 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 
 	result = complete_command(100);
 	if ((result & URES_RESULT_MSK) != URES_ACK) {
-		printf("Setup Result: %04x\n", result);
+		printf("%s Setup Result: %04x\n", pipe->name, result);
 	    xSemaphoreGive(mutex);
 		return -1;
 	}
@@ -564,6 +602,9 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 	result = complete_command(100);
 
 	uint32_t transferred = inlen - descr->length;
+
+	cache_load((uint8_t *)in, transferred);
+
 	// printf("In: %d bytes (Result = %4x)\n", transferred, result);
 	// dump_hex(read_buf, transferred);
 
@@ -575,8 +616,8 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 	if (transferred > 0) {
 		descr->length = 0;
 	    descr->started = 0;
+        descr->result = 0xFFFF;
 		descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT | UCMD_RETRY_ON_NAK; // send zero bytes as out packet
-
 		result = complete_command(100);
 
 		switch (result & URES_RESULT_MSK) {
@@ -588,7 +629,7 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 			pipe->needPing = 1;
 			break;
 		default:
-			printf("Control status phase Out error: $%4x\n", result);
+			printf("%s Control status phase Out error: $%4x\n", pipe->name, result);
 			break;
 		}
 	}
@@ -600,7 +641,7 @@ int UsbBase :: control_exchange(struct t_pipe *pipe, void *out, int outlen, void
 int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len, void *data_out, int data_len)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
@@ -611,31 +652,44 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
 	descr->memLo = ((uint32_t)setup_out) & 0xFFFF;
 	descr->splitCtl = pipe->SplitCtl;
 	descr->started = 0;
-	descr->command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_SETUP;
+	descr->timeout = 15000; // almost 2 seconds!
+	descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_SETUP;
 
-	uint16_t result = complete_command(100);
+	uint16_t result = complete_command(500); // more than 2 seconds
 
-	// printf("Setup Result: %04x\n", USB2_CMD_Result);
+    if ((result & URES_RESULT_MSK) != URES_ACK) {
+        printf("%s Setup Result: %04x\n", pipe->name, result);
+        xSemaphoreGive(mutex);
+        return -1;
+    }
 
 	descr->length = data_len;
 	descr->memHi = ((uint32_t)data_out) >> 16;
 	descr->memLo = ((uint32_t)data_out) & 0xFFFF;
     descr->started = 0;
-	descr->command = UCMD_MEMREAD | UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // start with toggle bit 1;
+	descr->command = UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_TOGGLEBIT; // start with toggle bit 1;
 
-	result = complete_command(100);
+	result = complete_command(500);
+
+    if ((result & URES_RESULT_MSK) != URES_ACK) {
+        printf("%s Setup Out Result: %04x\n", pipe->name, result);
+        xSemaphoreGive(mutex);
+        return -2;
+    }
 
 	uint32_t transferred = data_len - descr->length;
-	// printf("Out: %d bytes (Result = %4x)\n", transferred, USB2_CMD_Result);
-	// dump_hex(read_buf, transferred);
 
-	descr->length = 0;
+	descr->length = 4;
     descr->started = 0;
-	descr->command = UCMD_RETRY_ON_NAK | UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT; // do an in transfer to end control write
+	descr->command = UCMD_DO_DATA | UCMD_IN | UCMD_TOGGLEBIT; // do an in transfer to end control write
 
-	result = complete_command(100);
+	result = complete_command(500);
 
-	// printf("In Result = %4x\n", USB2_CMD_Result);
+    if ((result & URES_RESULT_MSK) != URES_PACKET) {
+        printf("%s Setup Out Status Phase Result: %04x (MaxTrans = %d)\n", pipe->name, result, pipe->MaxTrans);
+        xSemaphoreGive(mutex);
+        return -3;
+    }
     xSemaphoreGive(mutex);
 	return transferred;
 }
@@ -644,7 +698,7 @@ int UsbBase :: control_write(struct t_pipe *pipe, void *setup_out, int setup_len
 int  UsbBase :: allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, void *object)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
 	int index = open_pipe();
@@ -653,7 +707,7 @@ int  UsbBase :: allocate_input_pipe(struct t_pipe *pipe, usb_callback callback, 
 		inputPipeObjects[index] = object;
 		inputPipeDefinitions[index] = pipe;
 
-		init_pipe(index, pipe);
+		activate_autopipe(index, pipe);
 	}
 /*
 	for(int i=0;i<8;i++) {
@@ -689,7 +743,7 @@ void UsbBase :: free_input_pipe(int index)
 int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
 	// printf("BULK OUT to %4x, len = %d\n", pipe->DevEP, len);
@@ -721,17 +775,18 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 		descr->length   = current_len;
 
 		uint16_t cmd = pipe->Command | UCMD_MEMREAD | UCMD_DO_DATA | UCMD_OUT | UCMD_RETRY_ON_NAK;
-		//printf("%d: %4x ", len, cmd);
 
+//		printf("BO %4x: (%4x) ->", len, cmd);
+		descr->timeout = timeout;
 		descr->started = 0;
 		descr->command = cmd;
-		// wait until it gets zero again
-		result = complete_command(timeout);
+		result = complete_command(timeout); // much longer, as the timeout in usb = 8000 Hz ticks, and these are 200 Hz ticks
+//        printf(" %4x (%4x)\n", result, descr->command);
 
 		pipe->Command = (descr->command & URES_TOGGLE); // that's what we start with next time.
 
 		if (((result & URES_RESULT_MSK) != URES_ACK) && ((result & URES_RESULT_MSK) != URES_NYET)) {
-			printf("Bulk Out error: $%4x, Transferred: %d\n", result, total_trans);
+			printf("%s Bulk Out error: $%4x, Transferred: %d. Started = %04x. Ended: %04x\n", pipe->name, result, total_trans, descr->started, NANO_REPORT_FRAME);
 			break;
 		}
 
@@ -753,19 +808,23 @@ int  UsbBase :: bulk_out(struct t_pipe *pipe, void *buf, int len, int timeout)
 int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) // blocking
 {
     if (!xSemaphoreTake(mutex, 5000)) {
-    	printf("USB unavailable.\n");
+    	printf("%s USB unavailable.\n", pipe->name);
     	return -9;
     }
 
+    uint8_t *origbuf = (uint8_t *)buf;
+    uint8_t *newbuf = (uint8_t *)buf;
+    int origlen = len;
+
     if (((uint32_t)buf) & 3) {
-    	printf("Bulk_in: Unaligned buffer %p\n", buf);
-    	while(1);
+    	printf("%s Bulk_in: Unaligned buffer %p\n", pipe->name, buf);
+    	newbuf = new uint8_t[len];
     }
 
     volatile t_usb_descriptor *descr = USB2_DESCRIPTOR(0);
 
-    // printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
-	uint32_t addr = (uint32_t)buf;
+    //printf("BULK IN from %4x, len = %d\n", pipe->DevEP, len);
+    uint32_t addr = (uint32_t)newbuf;
 	int total_trans = 0;
 
 	descr->devEP    = pipe->DevEP;
@@ -773,19 +832,21 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 	descr->splitCtl = pipe->SplitCtl;
 	descr->memHi = addr >> 16;
 	descr->memLo = addr & 0xFFFF;
+	descr->timeout = (uint16_t)timeout;
 
 	do {
 		int current_len = (len > 49152) ? 49152 : len;
 		descr->length = current_len;
 		uint16_t cmd = pipe->Command | UCMD_MEMWRITE | UCMD_DO_DATA | UCMD_IN | UCMD_RETRY_ON_NAK;
 
-		//printf("%d: %4x \n", len, cmd);
+//		printf("BI %4x: (%4x) ->", len, cmd);
 		descr->started = 0;
 		descr->command = cmd;
 		uint16_t result = complete_command(timeout);
+//		printf(" %4x (%4x)\n", result, descr->command);
 
 		if ((result & URES_RESULT_MSK) != URES_PACKET) {
-			printf("Bulk IN error: $%4x, Transferred: %d\n", result, total_trans);
+			printf("%s Bulk IN error: $%4x, Transferred: %d. Started = %04x. Ended: %04x\n", pipe->name, result, total_trans, descr->started, NANO_REPORT_FRAME);
 			if ((result & URES_RESULT_MSK) == URES_STALL) {
 				total_trans = -4; // error code
 			} else {
@@ -796,6 +857,9 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 
 		//printf("Res = %4x\n", result);
 		int transferred = current_len - descr->length;
+
+	    cache_load((uint8_t *)addr, transferred);
+
 		total_trans += transferred;
 		addr += transferred;
 		len -= transferred;
@@ -810,6 +874,11 @@ int  UsbBase :: bulk_in(struct t_pipe *pipe, void *buf, int len, int timeout) //
 
     // printf("Bulk in done: %d\n", total_trans);
     xSemaphoreGive(mutex);
+
+    if (origbuf != newbuf) {
+        memcpy(origbuf, newbuf, origlen);
+        delete[] newbuf;
+    }
 
     return total_trans;
 }

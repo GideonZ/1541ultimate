@@ -63,13 +63,10 @@ void ConfigBrowserState :: into(void)
 
 void ConfigBrowserState :: level_up(void)
 {
-	if(level == 1) { // going to level 0, we need to store in flash
-		ConfigStore *st = ((BrowsableConfigStore *)(previous->under_cursor))->getStore();
-		if(st->dirty) {
-			st->write();
-			st->effectuate();
-		}
-	}
+    if (level == 1) { // going to level 0, we need to store in flash
+        ConfigStore *st = ((BrowsableConfigStore *) (previous->under_cursor))->getStore();
+        st->at_close_config();
+    }
     browser->state = previous;
     previous->refresh = true;
     previous = NULL; // unlink;
@@ -79,15 +76,32 @@ void ConfigBrowserState :: level_up(void)
 void ConfigBrowserState :: change(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
+    char buffer[80];
+    int max;
+    t_cfg_func func;
+
+    if (!it->isEnabled()) {
+        return;
+    }
+
     switch(it->definition->type) {
         case CFG_TYPE_ENUM:
-            browser->context(it->value - it->definition->min);
+            browser->context(it->getValue() - it->definition->min);
             break;
         case CFG_TYPE_STRING:
-            if(browser->user_interface->string_box(it->definition->item_text, it->string, it->definition->max)) {
-            	update_selected();
-            	it->setChanged();
+            max = it->definition->max;
+            if (max > 79)
+                max = 79;
+            strncpy(buffer, it->getString(), max);
+            if(browser->user_interface->string_box(it->get_item_name(), buffer, max)) {
+                it->setString(buffer);
+                update_selected();
             }
+            break;
+        case CFG_TYPE_FUNC:
+            refresh = true;
+            func = (t_cfg_func)(it->definition->items);
+            func(browser->user_interface);
             break;
         default:
             break;
@@ -97,58 +111,79 @@ void ConfigBrowserState :: change(void)
 void ConfigBrowserState :: increase(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-
-    switch(it->definition->type) {
-        case CFG_TYPE_ENUM:
-        case CFG_TYPE_VALUE:
-            if(it->value < it->definition->max)
-                it->value++;
-            else
-                it->value = it->definition->min; // circular
-            update_selected();
-        	it->setChanged();
-            break;
-            
-        default:
-            break;
+    if (!it->isEnabled()) {
+        return;
+    }
+    if (it->next(1)) {
+        refresh = true;
+    } else {
+        update_selected();
     }
 }
     
 void ConfigBrowserState :: decrease(void)
 {
     ConfigItem *it = ((BrowsableConfigItem *)under_cursor)->getItem();
-    switch(it->definition->type) {
-        case CFG_TYPE_ENUM:
-        case CFG_TYPE_VALUE:
-            if(it->value > it->definition->min)
-                it->value--;
-            else
-                it->value = it->definition->max; // circular
-            update_selected();
-        	it->setChanged();
-            break;
-        default:
-            //level_up();
-            break;
+    if (!it->isEnabled()) {
+        return;
+    }
+    if (it->previous(1)) {
+        refresh = true;
+    } else {
+        update_selected();
     }
 }
     
+void ConfigBrowser :: on_exit(void)
+{
+    if (user_interface->config_save == 0) {
+        return;
+    }
+    bool stale = false;
+    IndexedList<ConfigStore *> *storeList = ConfigManager :: getConfigManager()->getStores();
+    for (int i=0; i < storeList->get_elements(); i++) {
+        if ((*storeList)[i]->is_flash_stale()) {
+            stale = true;
+            break;
+        }
+    }
+    if (!stale) {
+        return;
+    }
+    bool write = false;
+    if (user_interface->config_save == 1) { // ask
+        if (user_interface->popup("Save changes to Flash?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+            write = true;
+        }
+    } else {
+        write = true; // must be 2 (always)
+    }
+
+    if (write) {
+        for (int i=0; i < storeList->get_elements(); i++) {
+            if ((*storeList)[i]->is_flash_stale()) {
+                (*storeList)[i]->write();
+            }
+        }
+    }
+}
+
 int ConfigBrowser :: handle_key(int c)
 {
     int ret = 0;
     
+    BrowsableConfigRoot *br;
     switch(c) {
         case KEY_F8: // exit
         case KEY_BREAK: // runstop
         case KEY_ESCAPE:
-        	if(state->level == 1) { // going to level 0, we need to store in flash
-        		ConfigStore *st = ((BrowsableConfigStore *)state->previous->under_cursor)->getStore();
-        		if(st->dirty) {
-        			st->write();
-        			st->effectuate();
-        		}
-        	}
-        	ret = -2;
+            if (state->level == 1) { // going to level 0
+                ConfigStore *st = ((BrowsableConfigStore *) state->previous->under_cursor)->getStore();
+                st->at_close_config();
+            }
+            // check if we need to save to flash
+            on_exit();
+            ret = -2;
             break;
         case KEY_DOWN: // down
             state->down(1);
@@ -178,15 +213,17 @@ int ConfigBrowser :: handle_key(int c)
                 state->increase();
             break;
         case KEY_LEFT: // left
-            if(state->level==0)
-                ret = -1; // leave
-            else
+            if(state->level==0) {
+                on_exit();
+                ret = -2; // leave
+            } else
                 state->decrease();
             break;
 		case KEY_BACK: // del
-            if(state->level==0)
-                ret = -1; // leave
-            else
+            if(state->level==0) {
+                on_exit();
+                ret = -2; // leave
+            } else
             	state->level_up();
 			break;
         default:
@@ -195,10 +232,3 @@ int ConfigBrowser :: handle_key(int c)
     return ret;
 }
 
-/*
-// ConfigContextMenu
-ConfigContextMenu :: ConfigContextMenu(UserInterface *ui, TreeBrowserState *state, int initial, int y) :
-	ContextMenu(ui, state, initial, y)
-{
-}
-*/

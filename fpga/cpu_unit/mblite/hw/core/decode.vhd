@@ -29,6 +29,7 @@ entity decode is generic
     G_USE_HW_MUL : boolean := CFG_USE_HW_MUL;
     G_USE_BARREL : boolean := CFG_USE_BARREL;
     G_SUPPORT_SPR: boolean := true;
+    g_USE_PCMP   : boolean := true;
     G_DEBUG      : boolean := CFG_DEBUG
 );
 port
@@ -194,6 +195,7 @@ begin
         v.ctrl_ex.alu_src_a := ALU_SRC_REGA;
         v.ctrl_ex.alu_src_b := ALU_SRC_REGB;
         v.ctrl_ex.operation := "00";
+        v.ctrl_ex.compare_op := '0';
         v.ctrl_ex.carry := CARRY_ZERO;
         v.ctrl_ex.carry_keep := CARRY_KEEP;
         v.ctrl_ex.delay := '0';
@@ -258,6 +260,7 @@ begin
 
             -- Pass modifier for CMP and CMPU
             if (compare(opcode, "000101") = '1') then
+                v.ctrl_ex.compare_op := '1';
                 v.ctrl_ex.operation := instruction(1 downto 0);
             end if;
 
@@ -278,25 +281,43 @@ begin
             -- Flag writeback
             v.ctrl_wrb.reg_write := '1';
 
-        elsif (compare(opcode(5 downto 2), "1000") or compare(opcode(5 downto 2), "1010")) = '1' then
+        elsif compare(opcode(5 downto 2), "1000") = '1' then
         -- OR, AND, XOR, ANDN
+        -- PCMPEQ, PCMPNE
+            if G_USE_PCMP and instruction(10) = '1' then -- Pattern Compare
+                v.ctrl_ex.alu_op := ALU_PEQ;
+                v.ctrl_ex.operation(0) := opcode(0);
+            else
+                case opcode(1 downto 0) is
+                    when "00" => v.ctrl_ex.alu_op := ALU_OR;
+                    when "10" => v.ctrl_ex.alu_op := ALU_XOR;
+                    when others => v.ctrl_ex.alu_op := ALU_AND;
+                end case;
+            end if;
+            
+            if compare(opcode(1 downto 0), "11") = '1' then
+                v.ctrl_ex.alu_src_b := ALU_SRC_NOT_REGB;
+            else
+                v.ctrl_ex.alu_src_b := ALU_SRC_REGB;
+            end if;
+
+            -- Flag writeback
+            v.ctrl_wrb.reg_write := '1';
+
+        elsif compare(opcode(5 downto 2), "1010") = '1' then
         -- ORI, ANDI, XORI, ANDNI
             case opcode(1 downto 0) is
                 when "00" => v.ctrl_ex.alu_op := ALU_OR;
                 when "10" => v.ctrl_ex.alu_op := ALU_XOR;
                 when others => v.ctrl_ex.alu_op := ALU_AND;
             end case;
-
-            if opcode(3) = '1' and compare(opcode(1 downto 0), "11") = '1' then
+        
+            if compare(opcode(1 downto 0), "11") = '1' then
                 v.ctrl_ex.alu_src_b := ALU_SRC_NOT_IMM;
-            elsif opcode(3) = '1' then
-                v.ctrl_ex.alu_src_b := ALU_SRC_IMM;
-            elsif opcode(3) = '0' and compare(opcode(1 downto 0), "11") = '1' then
-                v.ctrl_ex.alu_src_b := ALU_SRC_NOT_REGB;
             else
-                v.ctrl_ex.alu_src_b := ALU_SRC_REGB;
+                v.ctrl_ex.alu_src_b := ALU_SRC_IMM;
             end if;
-
+        
             -- Flag writeback
             v.ctrl_wrb.reg_write := '1';
 
@@ -494,6 +515,7 @@ begin
             r.ctrl_ex.alu_src_a      <= ALU_SRC_REGA;
             r.ctrl_ex.alu_src_b      <= ALU_SRC_REGB;
             r.ctrl_ex.operation      <= "00";
+            r.ctrl_ex.compare_op     <= '0';
             r.ctrl_ex.carry          <= CARRY_ZERO;
             r.ctrl_ex.carry_keep     <= CARRY_NOT_KEEP;
             r.ctrl_ex.delay          <= '0';

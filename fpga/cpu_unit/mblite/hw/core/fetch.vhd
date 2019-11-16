@@ -46,7 +46,7 @@ begin
     fetch_o.instruction <= imem_i.dat_i;
     fetch_o.inst_valid <= possibly_valid and imem_i.ena_i;
     
-    ena_o <= ena_i and imem_i.ena_i;
+    ena_o <= ena_i and imem_i.ena_i and not rst_i;
     imem_o.adr_o <= rin.program_counter;
     imem_o.ena_o <= ena_o;
 

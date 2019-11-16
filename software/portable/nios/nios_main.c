@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "i2c.h"
 #include "mdio.h"
 #include "alt_types.h"
 #include "dump_hex.h"
@@ -20,7 +19,8 @@
 #include "usb_nano.h"
 #include "u64.h"
 
-void ResetInterruptHandler(void) __attribute__ ((weak));
+void ResetInterruptHandlerCmdIf(void) __attribute__ ((weak));
+void ResetInterruptHandlerU64(void) __attribute__ ((weak));
 void RmiiRxInterruptHandler(void) __attribute__ ((weak));
 uint8_t command_interface_irq(void) __attribute__ ((weak));
 uint8_t tape_recorder_irq(void) __attribute__ ((weak));
@@ -34,9 +34,12 @@ void RmiiRxInterruptHandler() {
 
 }
 
-void ResetInterruptHandler()
+void ResetInterruptHandlerCmdIf()
 {
-    ioWrite8(UART_DATA, 'R');
+}
+
+void ResetInterruptHandlerU64()
+{
 }
 
 static void ituIrqHandler(void *context) {
@@ -50,7 +53,8 @@ static void ituIrqHandler(void *context) {
 	BaseType_t do_switch = pdFALSE;
 
 	if (pending & 0x80) {
-	    ResetInterruptHandler();
+        ResetInterruptHandlerCmdIf();
+	    ResetInterruptHandlerU64();
 	    do_switch = pdTRUE;
 	}
 	if (pending & 0x20) {
@@ -87,6 +91,7 @@ void ultimate_main(void *context);
 #include "dump_hex.h"
 
 void codec_init();
+void USb2512Init();
 
 static void test_i2c_mdio(void) {
 	// mdio_reset();
@@ -95,6 +100,7 @@ static void test_i2c_mdio(void) {
 
 	codec_init();
 
+/*
     uint16_t *base = (uint16_t *)NANO_BASE;
     if (*base) {
     	printf("Detected debug session. Dumping current USB state.\n");
@@ -105,6 +111,7 @@ static void test_i2c_mdio(void) {
     		} printf("\n");
     	}
     }
+*/
 
 	NANO_START = 0;
 	U2PIO_ULPI_RESET = 1;
@@ -118,6 +125,10 @@ static void test_i2c_mdio(void) {
 	// enable buffer
 	U2PIO_ULPI_RESET = U2PIO_UR_BUFFER_ENABLE;
  }
+
+#ifndef CLOCK_FREQ
+#define CLOCK_FREQ 50000000
+#endif
 
 int main(int argc, char *argv[]) {
 	/* When re-starting a debug session (rather than cold booting) we want
@@ -138,11 +149,16 @@ int main(int argc, char *argv[]) {
 		puts("Failed to install ITU IRQ handler.");
 	}
 
+	uint32_t freq = CLOCK_FREQ;
+	freq >>= 8;
+	freq /= 200;
+	freq -= 1;
+
 	ioWrite8(ITU_IRQ_TIMER_EN, 0);
 	ioWrite8(ITU_IRQ_DISABLE, 0xFF);
 	ioWrite8(ITU_IRQ_CLEAR, 0xFF);
-	ioWrite8(ITU_IRQ_TIMER_HI, 3);
-	ioWrite8(ITU_IRQ_TIMER_LO, 208); // 0x03D0 => 200 Hz
+	ioWrite8(ITU_IRQ_TIMER_HI, (uint8_t)(freq >> 8));
+	ioWrite8(ITU_IRQ_TIMER_LO, (uint8_t)(freq & 0xFF));
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
 	ioWrite8(UART_DATA, 0x35);

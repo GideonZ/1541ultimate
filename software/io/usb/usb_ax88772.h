@@ -29,9 +29,6 @@ class UsbAx88772Driver : public UsbDriver
     UsbInterface *interface;
     NetworkInterface *netstack;
 
-    int  bulk_in;
-    int  bulk_out;
-    int  irq_in;
     struct t_pipe bulk_out_pipe;
 
     bool link_up;

@@ -88,7 +88,6 @@ begin
         eth_rx_eof      => eth_rx_eof,
         eth_rx_valid    => eth_rx_valid,
         eth_tx_data     => eth_tx_data,
-        eth_tx_sof      => eth_tx_sof,
         eth_tx_eof      => eth_tx_eof,
         eth_tx_valid    => eth_tx_valid,
         eth_tx_ready    => eth_tx_ready,

@@ -151,6 +151,16 @@ static const char *month_table[16] = {
 };
 
 
+static int EndsWith(const char *str, const char *suffix)
+{
+    if (!str || !suffix)
+        return 0;
+    size_t lenstr = strlen(str);
+    size_t lensuffix = strlen(suffix);
+    if (lensuffix >  lenstr)
+        return 0;
+    return strncmp(str + lenstr - lensuffix, suffix, lensuffix) == 0;
+}
 FTPDaemon ftpd; // the class that causes us to exist
 
 FTPDaemon :: FTPDaemon()
@@ -316,6 +326,7 @@ void FTPDaemonThread :: send_msg(const char *msg, ...)
 
 void FTPDaemonThread :: cmd_user(const char *arg)
 {
+	d64asdir = !strcasecmp(arg, "d64") ? 1 : !strcasecmp(arg, "d642") ? 0 : 2;
 	send_msg(msg331);
 	state = FTPD_PASS;
 }
@@ -958,7 +969,14 @@ void FTPDataConnection :: directory(int listType, vfs_dir_t *dir)
 	    			break;
 	    	    case 2:
                     vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
-                    if ( VFS_ISDIR(st.st_mode) )
+                    if (parent->d64asdir == 2 && (EndsWith(vfs_dirent->name, ".d64") || EndsWith(vfs_dirent->name, ".D64")))
+                       len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n"
+                                             "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
+                            st.year, st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name,
+                            st.st_size,
+	    	                st.year, st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name);
+                    else
+                    if ( VFS_ISDIR(st.st_mode) || (parent->d64asdir && (EndsWith(vfs_dirent->name, ".d64") || EndsWith(vfs_dirent->name, ".D64"))))
                        len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n",
                             st.year, st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name);
                     else

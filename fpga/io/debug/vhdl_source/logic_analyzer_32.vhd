@@ -17,7 +17,7 @@ port (
     
     ev_dav      : in  std_logic;
     ev_data     : in  std_logic_vector(7 downto 0);
-    
+    task        : out std_logic_vector(3 downto 0);
     ---
     mem_req     : out t_mem_req_32;
     mem_resp    : in  t_mem_resp_32;
@@ -38,7 +38,7 @@ architecture gideon of logic_analyzer_32 is
     signal stamp        : unsigned(14 downto 0);
     type t_state is (idle, writing);
     signal state        : t_state;
-    signal sub, task    : std_logic_vector(3 downto 0);
+    signal sub, task_i  : std_logic_vector(3 downto 0);
 begin
     process(clock)
     begin
@@ -57,16 +57,16 @@ begin
                 end if;
             end if;
 
-            ev_data_c <= sub & task & ev_data;
+            ev_data_c <= sub & task_i & ev_data;
 
             case state is
             when idle =>
-                if enable_log = '1' then
-                    if ev_dav='1' or ev_tick='1' then
-                        if (ev_data_c /= ev_data_d) or (ev_dav = '1') then
-                            ev_wdata <= ev_data_c & ev_dav & std_logic_vector(stamp);
-                            ev_data_d <= ev_data_c;
-                            stamp <= (others => '0');
+                if ev_dav='1' or ev_tick='1' then
+                    if (ev_data_c /= ev_data_d) or (ev_dav = '1') then
+                        ev_wdata <= ev_data_c & ev_dav & std_logic_vector(stamp);
+                        ev_data_d <= ev_data_c;
+                        stamp <= (others => '0');
+                        if enable_log = '1' then
                             state <= writing;
                         end if;
                     end if;
@@ -102,7 +102,7 @@ begin
                     when "100" =>
                         io_resp.data <= X"0" & sub;
                     when "101" =>
-                        io_resp.data <= X"0" & task;
+                        io_resp.data <= X"0" & task_i;
                     when others =>
                         null;
                     end case;
@@ -119,7 +119,7 @@ begin
                     when "100" =>
                         io_resp.data <= X"0" & sub;
                     when "101" =>
-                        io_resp.data <= X"0" & task;
+                        io_resp.data <= X"0" & task_i;
                     when others =>
                         null;
                     end case;
@@ -135,7 +135,7 @@ begin
                 when "110" =>
                     enable_log <= '0';
                 when "101" =>
-                    task <= io_req.data(3 downto 0);
+                    task_i <= io_req.data(3 downto 0);
                 when "100" =>
                     sub <= io_req.data(3 downto 0);
                 when others =>
@@ -146,7 +146,7 @@ begin
             if reset='1' then
                 state      <= idle;
                 sub        <= X"0";
-                task       <= X"0";
+                task_i     <= X"0";
                 enable_log <= '0';
                 ev_timer   <= 0;
                 mem_req.request <= '0';
@@ -163,4 +163,6 @@ begin
     mem_req.address     <= "01" & unsigned(ev_addr);
     mem_req.read_writen <= '0'; -- write only
     mem_req.byte_en     <= "1111";
+    
+    task <= task_i;
 end gideon;

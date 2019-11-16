@@ -61,7 +61,8 @@ int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 	int mode = (has_header)?1:0;
 
 	int count = 0;
-	if (!c64->exists()) {
+    C64 *machine = C64 :: getMachine();
+	if (!machine->exists()) {
 		return 0;
 	}
 
@@ -73,16 +74,20 @@ int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 	if (!c1541_A)
 		return count;
 
-	// if this file is inside of a D64, then there should be a mount point already of this D64,
-	// otherwise we would not even know that this PRG (that is part of a D64) exists, right?
+	BrowsableDirEntry *parentEntry = (BrowsableDirEntry *)(node->getParent());
+	FileInfo *parentInfo = parentEntry->getInfo();
+	if (strcasecmp("D64", parentInfo->extension) == 0) {
+	    // if this file is inside of a D64, then there should be a mount point already of this D64,
+	    // if not, we cannot mount the disk.
 
-	MountPoint *mp = FileManager :: getFileManager() -> find_mount_point(((BrowsableDirEntry *)(node->getParent()))->getInfo(), 0, 0, 0);
-	if(mp) {
-    	list.append(new Action("Mount & Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_RUN, mode));
-    	count++;
-    	list.append(new Action("Real Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_REAL_RUN, mode));
-    	count++;
-    }
+	    MountPoint *mp = FileManager :: getFileManager() -> find_mount_point(parentInfo, 0, 0, 0);
+        if(mp) {
+            list.append(new Action("Mount & Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_RUN, mode));
+            count++;
+            list.append(new Action("Real Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_REAL_RUN, mode));
+            count++;
+        }
+	}
     return count;
 }
 

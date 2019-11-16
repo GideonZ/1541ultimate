@@ -28,6 +28,9 @@ extern "C" {
 #define CFG_NET_NETMASK		0xE2
 #define CFG_NET_GATEWAY		0xE3
 #define CFG_NET_HOSTNAME    0xE4
+#define CFG_VIC_UDP_IP      0xE8
+#define CFG_VIC_UDP_PORT    0xE9
+#define CFG_VIC_UDP_EN      0xEA
 
 #include "network_interface.h"
 #include "fifo.h" // my oh so cool fifo! :)
@@ -55,7 +58,7 @@ public:
     uint8_t (*driver_output_function)(void *driver, void *buffer, int pkt_len);
 
     NetworkLWIP(void *driver,
-				driver_output_function_t out,
+                driver_output_function_t out,
 				driver_free_function_t free);
     virtual ~NetworkLWIP();
 
@@ -83,6 +86,7 @@ public:
 	void getMacAddr(uint8_t *a);
 	void setIpAddr(uint8_t *a);
 	char *getIpAddrString(char *buf, int buflen);
+	bool peekArpTable(uint32_t ipToQuery, uint8_t *mac);
 
 	// callbacks
 	static void statusCallback(struct netif *);

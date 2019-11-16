@@ -31,6 +31,7 @@ entity dmem_splitter is
         mem_req     : out t_mem_req_32;
         mem_resp    : in  t_mem_resp_32;
         
+        io_busy     : out std_logic;
         io_req      : out t_io_req;
         io_resp     : in  t_io_resp );
 
@@ -47,7 +48,6 @@ architecture arch of dmem_splitter is
     constant c_remain   : t_int4_array(0 to 15) := ( 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 3 );
     signal remain       : integer range 0 to 3;
 begin
-    io_req <= io_req_i;
     mem_req <= mem_req_i;
     
     process(state, mem_resp)
@@ -66,23 +66,28 @@ begin
             dmem_i.ena_i <= '0';
         end case;
     end process;
-    
+
+    process(io_req_i, mem_req_i)
+    begin
+        io_req <= io_req_i;
+
+        -- Fill in the byte to write, based on the address
+        -- Note that mem-req stored the 32 bits data, so we can use it, dmem.o might have become invalid
+        case io_req_i.address(1 downto 0) is
+        when "00" =>
+            io_req.data <= mem_req_i.data(31 downto 24);
+        when "01" =>
+            io_req.data <= mem_req_i.data(23 downto 16);
+        when "10" =>
+            io_req.data <= mem_req_i.data(15 downto 08);
+        when "11" =>
+            io_req.data <= mem_req_i.data(07 downto 00);
+        when others =>
+            null;
+        end case; 
+    end process;
+
     process(clock)
-        impure function get_next_io_byte(a : unsigned(1 downto 0)) return std_logic_vector is
-        begin
-            case a is
-            when "00" =>
-                return dmem_o.dat_o(23 downto 16);
-            when "01" =>
-                return dmem_o.dat_o(15 downto 8);
-            when "10" =>
-                return dmem_o.dat_o(7 downto 0);
-            when "11" =>
-                return dmem_o.dat_o(31 downto 24);
-            when others =>
-                return "XXXXXXXX";
-            end case;                            
-        end function;
     begin
         if rising_edge(clock) then
             io_req_i.read <= '0';
@@ -90,8 +95,8 @@ begin
             
             case state is
             when idle =>
-                dmem_i.dat_i <= (others => 'X');
                 if dmem_o.ena_o = '1' then
+                    dmem_i.dat_i <= (others => 'X');
                     mem_req_i.address <= unsigned(dmem_o.adr_o(mem_req_i.address'range));
                     mem_req_i.address(1 downto 0) <= "00";
                     mem_req_i.byte_en <= dmem_o.sel_o;
@@ -99,7 +104,7 @@ begin
                     mem_req_i.read_writen <= not dmem_o.we_o;
                     mem_req_i.tag <= g_tag;
                     io_req_i.address <= unsigned(dmem_o.adr_o(19 downto 0));
-                    io_req_i.data <= get_next_io_byte("11");
+                    remain <= c_remain(to_integer(unsigned(dmem_o.sel_o)));
                     
                     if dmem_o.adr_o(26) = '0' or not g_support_io then
                         mem_req_i.request <= '1';
@@ -109,7 +114,6 @@ begin
                             state <= mem_read;
                         end if;
                     else -- I/O
-                        remain <= c_remain(to_integer(unsigned(dmem_o.sel_o)));
                         if dmem_o.we_o = '1' then
                             io_req_i.write <= '1';
                         else
@@ -149,8 +153,6 @@ begin
                 end case;
 
                 if io_resp.ack = '1' then
-                    io_req_i.data <= get_next_io_byte(io_req_i.address(1 downto 0));
-
                     if remain = 0 then
                         state <= idle;
                     else
@@ -170,8 +172,10 @@ begin
 
             if reset='1' then
                 state <= idle;
+                mem_req_i.request <= '0';
             end if;
         end if;
     end process;
+    io_busy <= '1' when state = io_access else '0';
+    
 end arch;
-

@@ -18,7 +18,7 @@
 #include "dump_hex.h"
 #include "u2p.h"
 #include "bist.h"
-#include "i2c.h"
+#include "i2c_drv.h"
 #include "rtc.h"
 
 extern uint32_t _ultimate_recovery_rbf_start;
@@ -55,7 +55,7 @@ int main(int argc, char *argv[])
     GenericHost *host = 0;
     Stream *stream = new Stream_UART;
 
-    C64 *c64 = new C64;
+    C64 *c64 = C64 :: getMachine();
     c64->reset();
 
     if (c64->exists()) {
@@ -75,16 +75,18 @@ int main(int argc, char *argv[])
 	int test_c = 0;
 	int dummy;
 
+	I2C_Driver i2c;
+
 	ENTER_SAFE_SECTION
-	i2c_write_byte(0xA2, 0x03, 0x55);
-	uint8_t rambyte = i2c_read_byte(0xA2, 0x03, &dummy);
+	i2c.i2c_write_byte(0xA2, 0x03, 0x55);
+	uint8_t rambyte = i2c.i2c_read_byte(0xA2, 0x03, &dummy);
 	LEAVE_SAFE_SECTION
 	if (rambyte != 0x55)
 		test_c ++;
 
 	ENTER_SAFE_SECTION
-	i2c_write_byte(0xA2, 0x03, 0xAA);
-	rambyte = i2c_read_byte(0xA2, 0x03, &dummy);
+	i2c.i2c_write_byte(0xA2, 0x03, 0xAA);
+	rambyte = i2c.i2c_read_byte(0xA2, 0x03, &dummy);
 	LEAVE_SAFE_SECTION
 	if (rambyte != 0xAA)
 		test_c ++;

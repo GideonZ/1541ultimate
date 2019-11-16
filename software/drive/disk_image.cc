@@ -98,6 +98,9 @@ GcrImage :: GcrImage(void)
         gcr_table_initialized = true;
     }
 #endif
+    gcr_data = new uint8_t[C1541_MAX_GCR_LEN];
+    gcr_data += 0x80000000; // make it uncachable
+
     gcr_image = gcr_data; // point to my own array
 //    mounted_on = NULL;
 
@@ -136,7 +139,13 @@ void GcrImage :: blank(void)
     
 GcrImage :: ~GcrImage(void)
 {
-//    if(mounted_on)
+    // restore modified pointer
+    gcr_data -= 0x80000000;
+
+    // free
+    delete[] gcr_data;
+
+    //    if(mounted_on)
 //        mounted_on->remove_disk();
 }
 

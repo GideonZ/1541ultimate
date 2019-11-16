@@ -192,7 +192,7 @@ void RmiiInterface :: free_buffer(uint8_t *buffer)
 {
 	uint32_t offset = (uint32_t)buffer - (uint32_t)ram_base;
 	uint8_t id = (offset / 1536);
-	//printf("FREE PBUF CALLED %p (=> %8x => %b)!\n", buffer, offset, id);
+	// printf("FREE PBUF CALLED %p (=> %8x => %b)!\n", buffer, offset, id);
 	RMII_FREE_PUT = id;
 }
 

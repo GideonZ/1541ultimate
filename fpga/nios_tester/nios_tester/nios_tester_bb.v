@@ -29,6 +29,9 @@ module nios_tester (
 	jtag1_jtag_tms,
 	jtag1_jtag_tdi,
 	jtag1_jtag_tdo,
+	jtag_in_data,
+	jtag_in_valid,
+	jtag_in_ready,
 	mem_mem_req_address,
 	mem_mem_req_byte_en,
 	mem_mem_req_read_writen,
@@ -49,10 +52,7 @@ module nios_tester (
 	uart_rxd,
 	uart_txd,
 	uart_cts_n,
-	uart_rts_n,
-	jtag_in_data,
-	jtag_in_valid,
-	jtag_in_ready);	
+	uart_rts_n);	
 
 	input	[31:0]	audio_in_data;
 	input		audio_in_valid;
@@ -83,6 +83,9 @@ module nios_tester (
 	output		jtag1_jtag_tms;
 	output		jtag1_jtag_tdi;
 	input		jtag1_jtag_tdo;
+	input	[7:0]	jtag_in_data;
+	input		jtag_in_valid;
+	output		jtag_in_ready;
 	output	[25:0]	mem_mem_req_address;
 	output	[3:0]	mem_mem_req_byte_en;
 	output		mem_mem_req_read_writen;
@@ -104,7 +107,4 @@ module nios_tester (
 	output		uart_txd;
 	input		uart_cts_n;
 	output		uart_rts_n;
-	input	[7:0]	jtag_in_data;
-	input		jtag_in_valid;
-	output		jtag_in_ready;
 endmodule

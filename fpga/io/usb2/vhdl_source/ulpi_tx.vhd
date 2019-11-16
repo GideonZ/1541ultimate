@@ -61,7 +61,9 @@ architecture gideon of ulpi_tx is
     signal tx_allowed   : std_logic;
     signal start_value  : unsigned(10 downto 0);
     signal start_timer  : std_logic;
-    
+    signal tx_put       : std_logic;
+    signal almost_full  : std_logic;
+        
     -- internal fifo is 3 bytes as it seems. 3 bytes is at max 40 bits incl. 1.5 SE0 EOP. at Full speed this is 40*5 = 200 clocks
     -- at low speed this is 40*40 clocks = 1600 
     type t_int_array is array (natural range <>) of integer;
@@ -254,6 +256,8 @@ begin
 
     tx_last <= tx_last_i;
     rd_next <= '1' when (tx_next = '1') and (state = transmit) else '0';
+    tx_put  <= usb_tx_req.data_valid and not almost_full;
+    usb_tx_resp.data_wait <= almost_full;
     
     i_tx_fifo: entity work.srl_fifo
     generic map (
@@ -263,14 +267,14 @@ begin
         clock               => clock,
         reset               => reset,
         GetElement          => rd_next,
-        PutElement          => usb_tx_req.data_valid,
+        PutElement          => tx_put,
         FlushFifo           => fifo_flush,
         DataIn(8)           => usb_tx_req.data_last,
         DataIn(7 downto 0)  => usb_tx_req.data,
         DataOut(8)          => rd_last,
         DataOut(7 downto 0) => rd_data,
         SpaceInFifo         => open,
-        AlmostFull          => usb_tx_resp.data_wait,
+        AlmostFull          => almost_full,
         DataInFifo          => open );
     
     data_to_crc <= rd_data;

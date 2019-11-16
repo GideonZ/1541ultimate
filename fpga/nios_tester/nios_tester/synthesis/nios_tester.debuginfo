@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <EnsembleReport name="nios_tester" kind="system" version="15.1" fabric="QSYS">
  <!-- Format version 15.1 185 (Future versions may contain additional information.) -->
- <!-- 2016.11.20.20:44:33 -->
+ <!-- 2019.11.10.10:12:35 -->
  <!-- A collection of modules and connections -->
  <parameter name="clockCrossingAdapter">
   <type>com.altera.sopcmodel.ensemble.EClockAdapter</type>
@@ -53,7 +53,7 @@
  </parameter>
  <parameter name="generationId">
   <type>int</type>
-  <value>1479671062</value>
+  <value>1573377140</value>
   <derived>false</derived>
   <enabled>true</enabled>
   <visible>true</visible>
@@ -28308,5 +28308,5 @@ parameters are a RESULT of the module parameters. -->
   <version>15.1</version>
  </plugin>
  <reportVersion>15.1 185</reportVersion>
- <uniqueIdentifier>4CCC6A06B379000001588344A563</uniqueIdentifier>
+ <uniqueIdentifier>4CCC6A06B3790000016E5495F15B</uniqueIdentifier>
 </EnsembleReport>
