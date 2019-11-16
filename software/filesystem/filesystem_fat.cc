@@ -228,6 +228,10 @@ FileSystem *FileSystemFAT::test (Partition *prt)
     if(secsize < 512)
         return NULL;
 
+    if(prt->get_type() == 1) { // already preset to FAT12
+        return new FileSystemFAT(prt);
+    }
+
     buf = new uint8_t[secsize];
 
     DRESULT dr = prt->read(buf, 0, 1);

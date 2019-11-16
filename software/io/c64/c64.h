@@ -22,6 +22,8 @@
 #define MENU_C64_BOOTFPGA   0x6408
 #define MENU_C64_HARD_BOOT  0x6409
 #define MENU_C64_POWEROFF   0x640A
+#define MENU_C64_PAUSE      0x640B
+#define MENU_C64_RESUME     0x640C
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
 #define C64_DMA_LOAD_RAW	0x6466
@@ -34,6 +36,7 @@
 #define C64_UNFREEZE		0x647A
 #define C64_STOP_COMMAND	0x647B
 #define C64_SET_KERNAL		0x647C
+#define C64_READ_FLASH      0x647D
 
 //#define SID_TRACE_END           *((volatile uint32_t *)(C64_TRACE_BASE + 0x80))
 //#define SID_REGS(x)             *((volatile uint8_t *)(C64_TRACE_BASE + x))
@@ -91,6 +94,11 @@
 #define RUNCODE_TAPE_LOAD_RUN     (RUNCODE_TAPE_BIT | RUNCODE_REAL_BIT | RUNCODE_LOAD_BIT | RUNCODE_RUN_BIT)
 #define RUNCODE_TAPE_RECORD       (RUNCODE_TAPE_BIT | RUNCODE_RECORD_BIT | RUNCODE_REAL_BIT)
 
+#define FLASH_CMD_PAGESIZE    0x01
+#define FLASH_CMD_NOPAGES     0x02
+#define FLASH_CMD_GETPAGE     0x03
+
+
 #define CART_TYPE_NONE        0x00
 #define CART_TYPE_8K          0x01
 #define CART_TYPE_16K         0x02
@@ -116,6 +124,7 @@
 #define CART_TYPE_128         0x18
 #define CART_TYPE_FC3PLUS     0x19
 #define CART_TYPE_COMAL80PAKMA 0x1A
+#define CART_TYPE_SUPERGAMES   0x1B
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
@@ -178,6 +187,7 @@
 #define CFG_C64_TIMING      0xCB
 #define CFG_C64_PHI2_REC    0xCC
 #define CFG_C64_RATE        0xCD
+#define CFG_C64_CART_PREF   0xCE
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FC3MODE     0x73
@@ -223,12 +233,15 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_irq;
     uint8_t vic_d011;
     uint8_t vic_d012;
+    uint8_t force_cart;
 
     uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
+    volatile bool available;
 
-    bool stopped;
+    bool isFrozen;
     void determine_d012(void);
+    void goUltimax(void);
     void backup_io(void);
     void init_io(void);
     void restore_io(void);
@@ -241,18 +254,24 @@ class C64 : public GenericHost, ConfigurableObject
     void resume(void);
     void freeze(void);
     
-    uint8_t get_exrom_game(void) {
+    static uint8_t get_exrom_game(void) {
         return (C64_CLOCK_DETECT & 0x0C) >> 2;
     }
-    bool phi2_present(void) {
+    static bool phi2_present(void) {
         return (C64_CLOCK_DETECT & 1) == 1;
     }
-    bool powered_by_c64(void) {
+    static bool powered_by_c64(void) {
         return (C64_CLOCK_DETECT & 2) == 2;
     }
+    static bool c64_reset_detect(void) {
+        return (C64_CLOCK_DETECT & 0x10) == 0x10;
+    }
 
-public:
+    static void init_poll_task(void *a);
+    void init(void);
+
     C64();
+public:
     ~C64();
 
     /* Get static object */
@@ -267,7 +286,7 @@ public:
     	freeze();
     }
     void release_ownership(void) {
-    	unfreeze(0, 0); // continue where we left off
+    	unfreeze();
     	this->client = 0;
     }
 
@@ -293,20 +312,23 @@ public:
     }
     
     /* C64 specifics */
-    void unfreeze(void *def, int mode);  // called from crt... hmm FIXME
-
+    void resetConfigInFlash(int page);
+    void unfreeze(void);
+    void start_cartridge(void *def, bool startLater);
     void enable_kernal(uint8_t *rom, bool fastreset = false);
     void new_system_rom(uint8_t flashId);
     void init_cartridge(void);
     void cartridge_test(void);
     void reset(void);
+    void start(void);
         
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access
     friend class REUPreloader; // preloader needs to access config
     friend class FileTypeREU; // REU file needs to access config 
+    friend class U64Config; // U64 config needs to stop / resume for SID detection
 };
 
-extern C64 *c64;
+// extern C64 *c64;
 
 #endif

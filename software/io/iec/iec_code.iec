@@ -211,48 +211,48 @@ _recv0
 
 RECEIVE_ATN_BYTE
             SET DATA=1
-            WAIT UNTIL CLK=0 FOR 1000 us
-            IF TIMEOUT THEN _error
+            WAIT UNTIL CLK=0    # Possibly forever!
+            IF TIMEOUT THEN _error1
 
 _recv8bits
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT0=DATA
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
 
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT1=DATA
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
 
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT2=DATA
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
 
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT3=DATA
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
 
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT4=DATA
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
 
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT5=DATA
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
 
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT6=DATA
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
 
             WAIT UNTIL CLK=1 FOR Ts
             IN   DATABIT7=DATA
-            IF TIMEOUT THEN _error
+            IF TIMEOUT THEN _error2
             WAIT UNTIL CLK=0 FOR Tv
             WAIT FOR 20 us
 			SET DATA=0
@@ -296,6 +296,16 @@ _dont_print
 # Below are some different error codes for debug
 _error
             LOAD $EE
+            PUSHC
+            JUMP RELEASE
+
+_error1
+            LOAD $E8
+            PUSHC
+            JUMP RELEASE
+
+_error2
+            LOAD $E9
             PUSHC
             JUMP RELEASE
 

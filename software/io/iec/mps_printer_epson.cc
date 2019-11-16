@@ -562,6 +562,10 @@ MpsPrinter::Epson_Interpreter(uint8_t input)
                     state = MPS_PRINTER_STATE_ESC_PARAM;
                     break;
 
+                case 0x72:  // ESC r : Color ink selection
+                    state = MPS_PRINTER_STATE_ESC_PARAM;
+                    break;
+
                 case 0x73:  // ESC s : Half speed printing ON/OFF
                     state = MPS_PRINTER_STATE_ESC_PARAM;
                     break;
@@ -637,7 +641,6 @@ MpsPrinter::Epson_Interpreter(uint8_t input)
                     /* Follows the BIM data */
                     if (param_count>3)
                     {
-                        printf("BIM 0x%02X %d\n",input,param_count);
                         head_x += EpsonBim(input);
                         if (param_count - 3 >= param_build)
                             state = MPS_PRINTER_STATE_INITIAL;
@@ -931,6 +934,47 @@ MpsPrinter::Epson_Interpreter(uint8_t input)
                 case 0x70:  // ESC p : Proportional spacing ON/OFF
                     state = MPS_PRINTER_STATE_INITIAL;
                     // ignore
+                    break;
+
+                case 0x72:  // ESC r : Color ink selection
+                    switch (input)
+                    {
+                        case 0x00:  // Black
+                        case 0x30:
+                            color = MPS_PRINTER_COLOR_BLACK;
+                            break;
+
+                        case 0x01:  // Magenta
+                        case 0x31:
+                            color = MPS_PRINTER_COLOR_MAGENTA;
+                            break;
+
+                        case 0x02:  // Cyan
+                        case 0x32:
+                            color = MPS_PRINTER_COLOR_CYAN;
+                            break;
+
+                        case 0x03:  // Violet
+                        case 0x33:
+                            color = MPS_PRINTER_COLOR_VIOLET;
+                            break;
+
+                        case 0x04:  // Yellow
+                        case 0x34:
+                            color = MPS_PRINTER_COLOR_YELLOW;
+                            break;
+
+                        case 0x05:  // Orange
+                        case 0x35:
+                            color = MPS_PRINTER_COLOR_ORANGE;
+                            break;
+
+                        case 0x06:  // Green
+                        case 0x36:
+                            color = MPS_PRINTER_COLOR_GREEN;
+                            break;
+                    }
+                    state = MPS_PRINTER_STATE_INITIAL;
                     break;
 
                 case 0x73:  // ESC s : Half speed printing ON/OFF

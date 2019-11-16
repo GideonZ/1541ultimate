@@ -4,6 +4,7 @@ include ../common/environment.mk
 PRJ        =  ultimate
 FINAL      =  $(RESULT)/$(PRJ).bin $(OUTPUT)/$(PRJ).sim
 LINKMETHOD = ld
+SIMOFFSET  = 65536
 
 SRCS_C   =	mbstart_rtos.c \
 			malloc_lock.c \
@@ -39,7 +40,6 @@ SRCS_CC	 =  small_printf.cc \
 			file_partition.cc \
 			embedded_d64.cc \
 			embedded_t64.cc \
-			embedded_iso.cc \
 			embedded_fat.cc \
 			rtc.cc \
 			c64.cc \
@@ -61,7 +61,6 @@ SRCS_CC	 =  small_printf.cc \
 			diskio.cc \
 			directory.cc \
 			file.cc \
-			filesystem_iso9660.cc \
             filesystem_root.cc \
 			filesystem_d64.cc \
 			filesystem_t64.cc \
@@ -83,12 +82,14 @@ SRCS_CC	 =  small_printf.cc \
 			audio_select.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
+			filetype_t64.cc \
 			filetype_prg.cc \
 			filetype_u2u.cc \
 			filetype_reu.cc \
 			filetype_crt.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
+			filetype_cfg.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
@@ -110,6 +111,7 @@ SRCS_CC	 =  small_printf.cc \
 			network_target.cc \
 			control_target.cc \
 			iec.cc \
+			iec_channel.cc \
 			iec_printer.cc \
 			mps_printer.cc \
 			mps_printer_cbm.cc \
@@ -125,6 +127,7 @@ SRCS_CC	 =  small_printf.cc \
 			socket_dma.cc \
             home_directory.cc \
             reu_preloader.cc \
+            configio.cc \
             $(PRJ).cc
 
 #            sock_echo.c \
@@ -141,7 +144,7 @@ SRCS_ASM =  mb_crt0.s portasm.s
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  basic.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin
+SRCS_BIN =  basic.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin sidcrt.bin muscrt.bin musplayer.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -150,13 +153,13 @@ SRCS_NANO = nano_minimal.nan
 # TOOLCHAIN ?= $(XILINX_EDK)/gnu/microblaze/lin64
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -nostartfiles -Os -DOS -DCLOCK_FREQ=50000000
+OPTIONS  = -g -ffunction-sections -nostartfiles -mcpu=v5.00.a -Os -DOS -DCLOCK_FREQ=50000000
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
 LIBS     = ../mb_lwip/result/liblwip.a
-LFLAGS   = --gc-sections 
-	
+LFLAGS   = --gc-sections  --relax
+
 include ../common/rules.mk
 
 lodepng.o: lodepng.cc
@@ -165,5 +168,11 @@ lodepng.o: lodepng.cc
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 $(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/muscrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/musplayer.bin::
 	make -C $(PATH_SW)/6502/sidcrt
 

@@ -291,8 +291,10 @@ begin
                     toggle <= not toggle;
                     if toggle = '0' then
                         mem_data(31 downto 16) <= rd_dout(15 downto 0);
-                        write_req <= '1';
-                        state <= ram_write;
+                        if for_me = '1' or promiscuous = '1' then
+                            write_req <= '1';
+                            state <= ram_write;
+                        end if;
                     else
                         mem_data(15 downto 0) <= rd_dout(15 downto 0);
                     end if;                    
@@ -309,8 +311,13 @@ begin
                     when "11" =>
                         -- correct packet!
                         used_req.bytes <= unsigned(rd_dout(used_req.bytes'range)) - 5; -- snoop FF and CRC
-                        write_req <= '1';
-                        state <= valid_packet;
+                        
+                        if for_me = '1' or promiscuous = '1' then
+                            write_req <= '1';
+                            state <= valid_packet;
+                        else
+                            state <= idle;
+                        end if;
                     when others =>
                         null;
                     end case;

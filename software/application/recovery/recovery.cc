@@ -50,8 +50,9 @@ extern "C" void ultimate_main(void *a)
 
 	UserInterface *ui = 0;
     
-    c64 = new C64;
+    c64 = C64 :: getMachine();
     c64_subsys = new C64_Subsys(c64);
+    c64->start();
 
     if(c64 && c64->exists()) {
         ui = new UserInterface("** Ultimate-II+ Recovery **");

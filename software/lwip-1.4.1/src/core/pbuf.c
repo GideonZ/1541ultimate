@@ -559,7 +559,18 @@ pbuf_header(struct pbuf *p, s16_t header_size_increment)
     }
   /* pbuf types refering to external payloads? */
   } else if (type == PBUF_REF || type == PBUF_ROM) {
-	  // just ALWAYS do this, since references are only used to read!
+      // if it's positive, we can't do this, but if it's negative we can
+      // Newer versions of lwIP have a 'force' parameter. We don't have that yet.
+      // For now we always allow this, but it will fail dramatically if this
+      // causes user stack to be overwritten.
+/*
+      // a PBUF ref actually needs another field; to know where the buffer starts.
+      // Fow now we allow this, as we fixed the use of PBUF_REF in udp.c
+      if (header_size_increment > 0) {
+          return 1; // fail!
+      }
+*/
+      // just ALWAYS do this for negative values, since references are only used to read!
       p->payload = (u8_t *)p->payload - header_size_increment;
 
 /*
@@ -654,11 +665,13 @@ pbuf_free(struct pbuf *p)
      * further protection. */
     SYS_ARCH_PROTECT(old_level);
     /* all pbufs in a chain are referenced at least once */
+/*
     if (p->ref <= 0) {
     	printf("p->ref = %d. p = %p. payload = %p. prev = %p\n", p->ref, p, p->payload, prev);
     	dump_hex(p, sizeof(struct pbuf));
     	dump_hex(prev, sizeof(struct pbuf));
     }
+*/
     prev = p;
     LWIP_ASSERT("pbuf_free: p->ref > 0", p->ref > 0);
     /* decrease reference count (number of pointers to pbuf) */

@@ -42,6 +42,12 @@
 // these should move to main_loop.h
 extern "C" void main_loop(void *a);
 
+bool isEliteBoard(void) __attribute__((weak));
+bool isEliteBoard(void)
+{
+    return false;
+}
+
 bool connectedToU64 = false;
 
 C1541 *c1541_A;
@@ -77,18 +83,24 @@ extern "C" void ultimate_main(void *a)
 
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
-	usb2.initHardware();
     
 	if (capabilities & CAPAB_CARTRIDGE) {
-		c64 = new C64;
+		c64 = C64 :: getMachine();
 		c64_subsys = new C64_Subsys(c64);
+		c64->start();
 	} else {
 		c64 = NULL;
 	}
 
+    usb2.initHardware();
+
     char title[48];
     if(capabilities & CAPAB_ULTIMATE64) {
-    	sprintf(title, "\eA*** Ultimate 64 V1.%b - %s ***\eO", C64_CORE_VERSION, APPL_VERSION);
+        if (isEliteBoard()) {
+            sprintf(title, "\eA** Ultimate 64 Elite V1.%b - %s **\eO", C64_CORE_VERSION, APPL_VERSION);
+        } else {
+            sprintf(title, "\eA*** Ultimate 64 V1.%b - %s ***\eO", C64_CORE_VERSION, APPL_VERSION);
+        }
     } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
     	sprintf(title, "\eA*** Ultimate-II Plus %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
     } else {
@@ -101,27 +113,6 @@ extern "C" void ultimate_main(void *a)
     }
 
     overlay = NULL;
-
-
-#ifndef U64
-    if (c64) {
-       for (int i=0; i<70; i++)
-       {
-          if (c64->exists())  break;
-          vTaskDelay(20);
-          connectedToU64 = true;
-       }
-    }
-    if (connectedToU64) {
-        if(capabilities & CAPAB_ULTIMATE64) {
-    	    // Empty
-        } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
-    	    sprintf(title, "\eA*** Ultimate-II+ U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
-        } else {
-    	    sprintf(title, "\eA*** Ultimate-II  U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
-        }
-    }
-#endif
 
     UserInterface *overlayUserInterface = NULL;
     if ((capabilities & CAPAB_OVERLAY) && (capabilities & CAPAB_ULTIMATE64)) {
@@ -139,15 +130,18 @@ extern "C" void ultimate_main(void *a)
         }
     }
 
-    UserInterface *c64UserInterface = new UserInterface(title);
-    // Instantiate and attach the root tree browser
-    Browsable *root = new BrowsableRoot();
-    root_tree_browser = new TreeBrowser(c64UserInterface, root);
-    c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
-    c64UserInterface->init(c64);
-    if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
-        new HomeDirectory(c64UserInterface, root_tree_browser);
-        // will clean itself up
+    UserInterface *c64UserInterface = NULL;
+    if(c64) {
+        c64UserInterface = new UserInterface(title);
+        // Instantiate and attach the root tree browser
+        Browsable *root = new BrowsableRoot();
+        root_tree_browser = new TreeBrowser(c64UserInterface, root);
+        c64UserInterface->activate_uiobject(root_tree_browser); // root of all evil!
+        c64UserInterface->init(c64);
+        if(c64UserInterface->cfg->get_value(CFG_USERIF_START_HOME)) {
+            new HomeDirectory(c64UserInterface, root_tree_browser);
+            // will clean itself up
+        }
     }
 
     if(capabilities & CAPAB_C2N_STREAMER)
@@ -175,7 +169,29 @@ extern "C" void ultimate_main(void *a)
     vTaskList(buffer);
     puts(buffer);
 
-    while(1) {
+/*
+#ifdef U64
+    {
+       *C64_PLD_PORTA = 251;
+       uint8_t k1 = *C64_PLD_PORTB;
+       *C64_PLD_PORTA = 247;
+       uint8_t k2 = *C64_PLD_PORTB;
+       *C64_PLD_PORTA = 255;
+
+       if (k1 == 239)
+          C64_VIDEOFORMAT = 0, C64_BURST_PHASE=24;
+       if (k1 == 253)
+          C64_VIDEOFORMAT = 4;
+       if (k1 == 251)
+          U64_HDMI_ENABLE = 0;
+       if (k2 == 223)
+          U64_HDMI_ENABLE = 1;
+
+    }
+#endif
+*/
+
+    while(c64) {
         int doIt = 0;
         c64->checkButton();
         if (c64->buttonPush()) {
@@ -183,6 +199,7 @@ extern "C" void ultimate_main(void *a)
         }
         switch(system_usb_keyboard.getch()) {
         case KEY_SCRLOCK:
+        case KEY_F10:
             doIt = 1;
             break;
         case 0x04: // CTRL-D
@@ -214,24 +231,6 @@ extern "C" void ultimate_main(void *a)
         }
         vTaskDelay(3);
     }
-
-/*
-    else {
-    	vTaskDelay(2000);
-    	printf("Attempting to write a test file to /Usb0.\n");
-    	FileManager *fm = FileManager :: getFileManager();
-    	File *file;
-    	FRESULT fres;
-    	DWORD tr;
-    	fres = fm->fopen("/Usb0/testje.txt", FA_CREATE_NEW|FA_CREATE_ALWAYS|FA_WRITE, &file);
-    	printf("%s\n", FileSystem :: get_error_string(fres) );
-    	if (fres == FR_OK) {
-    		file->write(buffer, 8192, &tr);
-    		fm->fclose(file);
-    	}
-    	vTaskSuspend(NULL); // Stop main task and wait forever
-    }
-*/
 
     custom_outbyte = 0; // stop logging
     printf("GUI running on C64 host has terminated? This should not happen.\n");

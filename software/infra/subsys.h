@@ -79,8 +79,6 @@ struct SubsysResult
 
 class SubsysCommand
 {
-	SubSystem   *subsys;	// filled in by factory
-
 public:
 	SubsysCommand(UserInterface *ui, Action *act, const char *p, const char *fn) :
 		user_interface(ui),
@@ -89,7 +87,6 @@ public:
 		mode(act->mode),
 		direct_call(act->func),
 		path(p), filename(fn) {
-		subsys	       = 0;
 		buffer = NULL;
 		bufferSize = 0;
 	}
@@ -101,7 +98,6 @@ public:
 		mode(mode),
 		direct_call(0),
 		path(p), filename(fn) {
-		subsys	       = 0;
 		buffer = NULL;
 		bufferSize = 0;
 	}
@@ -115,7 +111,6 @@ public:
 		path(""), filename(""),
 		buffer(buffer),
 		bufferSize(bufferSize) {
-		subsys	       = 0;
 	}
 
 	int execute(void) {
@@ -123,6 +118,7 @@ public:
 		if(direct_call) {
 			retval = direct_call(this);
 		} else {
+		    SubSystem *subsys;    // filled in by factory
 			subsys = (*SubSystem :: getSubSystems())[subsysID];
 			if (subsys) {
 				printf("About to execute a command in subsys %s (%p)\n", subsys->identify(), subsys->myMutex);

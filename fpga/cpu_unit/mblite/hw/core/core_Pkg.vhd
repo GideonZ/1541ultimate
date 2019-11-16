@@ -31,7 +31,7 @@ package core_Pkg is
 -- TYPES USED IN MB-LITE
 ----------------------------------------------------------------------------------------------
 
-    type alu_operation    is (ALU_ADD, ALU_OR, ALU_AND, ALU_XOR, ALU_SHIFT, ALU_SEXT8, ALU_SEXT16, ALU_MUL, ALU_BS);
+    type alu_operation    is (ALU_ADD, ALU_OR, ALU_AND, ALU_XOR, ALU_SHIFT, ALU_SEXT8, ALU_SEXT16, ALU_MUL, ALU_BS, ALU_PEQ);
     type src_type_a       is (ALU_SRC_REGA, ALU_SRC_NOT_REGA, ALU_SRC_PC, ALU_SRC_SPR);
     type src_type_b       is (ALU_SRC_REGB, ALU_SRC_NOT_REGB, ALU_SRC_IMM, ALU_SRC_NOT_IMM);
     type carry_type       is (CARRY_ZERO, CARRY_ONE, CARRY_ALU, CARRY_ARITH);
@@ -44,6 +44,7 @@ package core_Pkg is
         alu_op      : alu_operation;
         alu_src_a   : src_type_a;
         alu_src_b   : src_type_b;
+        compare_op  : std_logic;
         operation   : std_logic_vector(1 downto 0);
         carry       : carry_type;
         carry_keep  : carry_keep_type;

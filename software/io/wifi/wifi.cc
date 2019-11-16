@@ -30,6 +30,7 @@ WiFi :: WiFi()
 
 void WiFi :: Disable()
 {
+    uart->EnableRxIRQ(false);
     U64_WIFI_CONTROL = 0;
 }
 

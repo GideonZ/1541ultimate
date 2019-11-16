@@ -24,16 +24,16 @@ all: $(OUTPUT) $(RESULT) $(FINAL)
 mem: $(OUTPUT)/$(PRJ).mem
 
 $(OUTPUT):
-	@echo crearing output directory $(OUTPUT)
+	@echo creating output directory $(OUTPUT)
 	@mkdir -p $(OUTPUT)
 
 $(RESULT):
-	@echo crearing result directory $(RESULT)
+	@echo creating result directory $(RESULT)
 	@mkdir -p $(RESULT)
 		
 $(RESULT)/$(PRJ).a: $(OBJS_C)
 	@echo Creating Archive $@
-	$(AR) -rc $@ $(ALL_OBJS)
+	$(AR) -rc "$@" $(ALL_OBJS)
 
 $(RESULT)/$(PRJ).u2u: $(OUTPUT)/$(PRJ).out
 	@echo Creating Updater Binary $@
@@ -158,7 +158,7 @@ $(OUTPUT)/$(PRJ).shex: $(OUTPUT)/$(PRJ).out
 
 %.o: %.cc
 	@echo Compiling $(<F)
-	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
+	@$(CPP) $(CPPOPT) $(PATH_INC) -B. -c -Wa,-ahlms=$(OUTPUT)/$(@:.o=.lst) -o $(OUTPUT)/$(@F) $<
 	@$(CPP) $(CPPOPT) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 %.d: %.cc

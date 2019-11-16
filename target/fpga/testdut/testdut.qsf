@@ -119,6 +119,7 @@ set_location_assignment PIN_B16 -to SLOT_IRQn
 set_location_assignment PIN_C15 -to SLOT_NMIn
 set_location_assignment PIN_C16 -to SLOT_RSTn
 set_location_assignment PIN_D15 -to SLOT_ROMHn
+set_location_assignment PIN_D3 -to SLOT_RST_DRV
 set_location_assignment PIN_E9 -to IEC_RESET
 set_location_assignment PIN_D9 -to IEC_CLOCK
 set_location_assignment PIN_D11 -to IEC_DATA
@@ -226,6 +227,7 @@ set_location_assignment PIN_L13 -to I2C_SCL_18
 set_location_assignment PIN_J13 -to I2C_SDA_18
 set_location_assignment PIN_E8 -to SLOT_BUFFER_ENn
 
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "2.5 V"
 
 set_instance_assignment -name IO_STANDARD "1.8 V" -to BOARD_REVn[0]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to AUDIO_BCLK
@@ -328,6 +330,7 @@ set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ROMHn
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ROMLn
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_RSTn
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_RWn
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_RST_DRV
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_RXD
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD
 set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_CLOCK
@@ -379,10 +382,16 @@ set_global_assignment -name GENERATE_RBF_FILE ON
 set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON
 
 set_global_assignment -name ENABLE_SIGNALTAP OFF
-set_global_assignment -name USE_SIGNALTAP_FILE output_files/stp1.stp
+set_global_assignment -name USE_SIGNALTAP_FILE jtag.stp
 
+
+
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DM
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DQ
+
+set_global_assignment -name GENERATE_SVF_FILE ON
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/ethernet_interface.vhd
 set_global_assignment -name QIP_FILE ../../../fpga/nios_dut/nios_dut/synthesis/nios_dut.qip
-
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.qip
 set_global_assignment -name SDC_FILE ultimate_altera.sdc
 set_global_assignment -name VHDL_FILE ../../../fpga/1541/vhdl_source/bin2gcr.vhd
@@ -512,15 +521,12 @@ set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_sour
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/noise_generator.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/sigma_delta_dac/vhdl_source/sigma_delta_dac.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral_zpu.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi_peripheral.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spi/vhdl_source/spi.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/spike_filter/vhdl_source/spike_filter.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/rx.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/tx.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_io.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral_zpu.vhd
-set_global_assignment -name VHDL_FILE ../../../fpga/io/uart_lite/vhdl_source/uart_peripheral.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/bridge_to_mem_ctrl.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/data_crc.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/io/usb2/vhdl_source/host_sequencer.vhd
@@ -560,6 +566,7 @@ set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/mem_to
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_bus_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/busses/vhdl_source/slot_to_io_bridge.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/real_time_clock.vhd
+set_global_assignment -name VHDL_FILE ../../../fpga/ip/clock/vhdl_source/fractional_div.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/fall_through/vhdl_source/fall_through_add_on.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/block_bus_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../fpga/ip/free_queue/vhdl_source/free_queue.vhd
@@ -600,9 +607,5 @@ set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_s
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_string_util_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_vector_pkg.vhd
 set_global_assignment -name CDF_FILE dut.cdf
-
-set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DM
-set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to SDRAM_DQ
-
-set_global_assignment -name GENERATE_SVF_FILE ON
+set_global_assignment -name SIGNALTAP_FILE jtag.stp
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

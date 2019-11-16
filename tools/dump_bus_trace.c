@@ -146,7 +146,7 @@ void mask_refresh(struct data_entry *entries, int max, struct format *fmt)
     }
 }
 
-void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, int trigger)
+void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, int trigger, int skip_frames)
 {
     uint32_t time = 0;
     int   r,i,z;
@@ -156,6 +156,8 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
     find_format(entries, size, &fmt);
     if (fmt.valid)
         mask_refresh(entries, size, &fmt);
+    fmt.offset += fmt.frameLength * skip_frames;
+    size -= fmt.frameLength * skip_frames;
 
     static struct data_entry init = { 0x1234, 0x56, 0x00 };
     struct data_entry *d;
@@ -216,6 +218,7 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
     }
 
     for(i=0;i<size;i++) {
+        d->flags |= 0x40;
 /*
         if ((d->flags & 0x80) == 0) {
             if (d->flags & 0x40) {
@@ -313,11 +316,22 @@ int main(int argc, char **argv)
     int length = 63*2*312*85;
     int trigger = -1;
     int file_size = 0;
+    int skip_frames = 0;
+    int temp = 1;
 
+    if (strcmp(argv[i], "-f") == 0) {
+        i++;
+        skip_frames = strtol(argv[i], NULL, 10);
+        fprintf(stderr, "Skipping %d frames.\n", skip_frames);
+        i++;
+    }
     if (strcmp(argv[i], "-t") == 0) {
         i++;
         text_mode = 1;
-        length = 63*2*312*50;
+        temp = strtol(argv[i], NULL, 10);
+        fprintf(stderr, "Text mode %d frames.\n", temp);
+        i++;
+        length = 63*2*312*temp;
     }
     if (strcmp(argv[i], "-w") == 0) {
         i++;
@@ -333,7 +347,7 @@ int main(int argc, char **argv)
         struct data_entry *entries = (struct data_entry *)malloc(file_size);
         int numberOfEntries = fread(entries, 4, file_size / 4, fi);
         fprintf(stderr, "%d number of entries read.\n", numberOfEntries);
-        dump_trace(entries, numberOfEntries, length, text_mode, trigger);
+        dump_trace(entries, numberOfEntries, length, text_mode, trigger, skip_frames);
         free(entries);
     } else {
         fprintf(stderr, "Can't open file.\n");

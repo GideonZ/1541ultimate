@@ -11,7 +11,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "i2c.h"
 #include "mdio.h"
 #include "alt_types.h"
 #include "dump_hex.h"
@@ -60,7 +59,7 @@ static void ituIrqHandler(void *context)
 		do_switch |= tape_recorder_irq();
 	}
 	if (pending & 0x04) {
-		do_switch |= usb_irq();
+	    do_switch |= usb_irq();
 	}
 /*
 	if (pending & 0x02) {
@@ -78,10 +77,11 @@ static void ituIrqHandler(void *context)
 int alt_irq_register(int, int, void(*)(void*));
 
 void main_task(void *context);
+void USb2512Init();
 
 int main(int argc, char *argv[])
 {
-	printf("AA");
+	//printf("AA");
 	/* When re-starting a debug session (rather than cold booting) we want
     to ensure the installed interrupt handlers do not execute until after the
     scheduler has been started. */
@@ -96,11 +96,11 @@ int main(int argc, char *argv[])
     USb2512Init();
     U2PIO_ULPI_RESET = 0;
 
-    ioWrite8(UART_DATA, 0x33);
+    ioWrite8(UART_DATA, 0x31);
 
     xTaskCreate( main_task, "Tester Main", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL );
 
-    ioWrite8(UART_DATA, 0x34);
+    ioWrite8(UART_DATA, 0x32);
 
     if ( -EINVAL == alt_irq_register( 0, 0x0, ituIrqHandler ) ) {
 		puts("Failed to install ITU IRQ handler.");
@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
 	ioWrite8(ITU_IRQ_TIMER_LO, 208); // 0x03D0 => 200 Hz
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
-    ioWrite8(UART_DATA, 0x35);
+    ioWrite8(UART_DATA, 0x33);
 
     // Finally start the scheduler.
     vTaskStartScheduler();

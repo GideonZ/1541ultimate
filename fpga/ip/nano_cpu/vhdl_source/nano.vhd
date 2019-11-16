@@ -88,7 +88,7 @@ begin
         io_rdata    => io_rdata,
         stall       => stall );
 
-    --i_buf_ram: entity unisim.RAMB16_S9_S18(model)
+    --i_buf_ram: entity work.RAMB16_S9_S18(model)
     i_buf_ram: RAMB16_S9_S18
     port map (
 		CLKB  => clock,

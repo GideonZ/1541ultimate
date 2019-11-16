@@ -3,7 +3,7 @@
 ;
 ; Written by Wilfred Bos
 ;
-; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2009 - 2019 Wilfred Bos / Gideon Zweijtzer
 ;
 ; DESCRIPTION
 ;   This is the advanced SID player that will display a clock with time bar
@@ -29,6 +29,9 @@ songNumLoc      .word songDigit + 1                 ; offset of address of scree
 sidModelLoc     .word sidModelWrite + 1             ; offset of address of screen location for system SID model
 c64ModelLoc     .word c64ModelWrite + 1             ; offset of address of screen location for system C64 model
 
+sid2Vol         .word keyboard.sid2 + 1             ; offset of address where SID volume of SID 2 is set
+sid3Vol         .word keyboard.sid3 + 1             ; offset of address where SID volume of SID 3 is set
+
 songNumSet      .word setSubTune + 1                ; offset of address where the sub tune number must be set
 
 songNum         .word currentSong                   ; offset of address of the current song number
@@ -40,6 +43,8 @@ hdrSpeedFlag2   .word speedFlag2 + 1                ; offset of address where th
 hdrSpeedFlag3   .word speedFlag3 + 1                ; offset of address where the address of the current speed flag must be stored
 
 fastFwd         .word keyboard.fastForward + 1      ; offset of address where to store the address of the fastforward indicator
+pauseKey        .word keyboard.pause + 1            ; offset of address where to store the address of the pause indicator
+cantPauseLoc    .word cantPause                     ; offset of address where to store the address of the cantPause indicator
 
 songLenData     .word songLength                    ; offset of songlength data
 
@@ -62,7 +67,7 @@ codeStart
 ;---------------------------------------
                 jmp extraPlayer
 initMain        jsr init
-player          jsr $0006     ; init player
+player          jsr $0006           ; init player
 
 loop            jsr extraPlayer
 
@@ -82,7 +87,7 @@ loop            jsr extraPlayer
 
 init            sei
                 lda @w *+2
-                sta extraPlayLoc        ; store hi-byte of the extra player
+                sta extraPlayLoc    ; store hi-byte of the extra player
 
                 tsx
                 stx sp
@@ -111,21 +116,21 @@ musTune         lda #$00
 fixTimer        lda sidC64Model
                 beq sidPal
 
-                lda palntsc       ; check if palntsc is PAL (0 or 4)
+                lda palntsc         ; check if palntsc is PAL (0 or 4)
                 and #$03
                 beq timerOutsideIrq
 noFreqFix       rts
 
-sidPal          lda palntsc       ; check if palntsc is PAL (0 or 4)
+sidPal          lda palntsc         ; check if palntsc is PAL (0 or 4)
                 and #$03
                 beq noFreqFix
 timerOutsideIrq
                 ; System is NTSC but SID is PAL
                 ; or system is PAL but SID is NTSC
 
-                lda #$2c              ; BIT
+                lda #$2c            ; BIT
 playerCall      sta @w $0000
-                lda #$60              ; RTS
+                lda #$60            ; RTS
 playerLoop      sta @w $0000
                 rts
 
@@ -136,10 +141,12 @@ extraPlayer     lda afterInitDone
                 inc afterInitDone
                 jsr afterInit
 
-+               jsr clock.countClock
++               lda pauseTune
+                bne +
+                jsr clock.countClock
                 jsr clock.displayClock
                 jsr timebar.countTimeBar
-                jmp keyboard.handleKeyboard
++               jmp keyboard.handleKeyboard
 
 selectSubTune   sei
                 lda #$00
@@ -177,7 +184,7 @@ speedFlag2      sta @w $0000
 speedFlag3      sta @w $0000
 
                 ldx sp
-                txs         ; reset stack pointer to its original state
+                txs                 ; reset stack pointer to its original state
                 jmp player
 
 ; speed flag of tune 32 is also used for tunes 33 - 256
@@ -274,9 +281,9 @@ songLengthDigit2
                 rts
 
 detectSidModel
-sidFxDetected   lda #$00        ; was SIDFX detected?
+sidFxDetected   lda #$00            ; was SIDFX detected?
                 beq noSidFx
-                lda sidModel    ; return detected SIDFX model
+                lda sidModel        ; return detected SIDFX model
                 rts
 
 noSidFx         jmp detection.detectSidModel
@@ -383,6 +390,8 @@ delayFrame      .byte 0
 
 currentSong     .byte 0
 maxSong         .byte 0
+pauseTune       .byte 0
+cantPause       .byte 0
 
 curSongDigit1   .byte 0
 curSongDigit2   .byte 0

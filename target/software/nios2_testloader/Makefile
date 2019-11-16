@@ -10,7 +10,6 @@ PRJ      =  test_loader
 FINAL    =  $(RESULT)/$(PRJ).elf $(RESULT)/$(PRJ).app
 
 SRCS_C   =	start_rtos.c \
-			i2c.c \
 			itu.c \
 			dump_hex.c \
 			assert.c \
@@ -31,6 +30,7 @@ SRCS_C   =	start_rtos.c \
             ccsbcs.c
                         
 SRCS_CC	 =  small_printf.cc \
+            i2c_drv.cc \
 			usb_base.cc \
 			usb_hub.cc \
 			usb_device.cc \
@@ -75,7 +75,7 @@ SRCS_IEC =
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DOS=1 -DNIOS=1
+OPTIONS  = -g -ffunction-sections -Os -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DOS=1 -DNIOS=1 -DDISABLE_USB_DEBUG=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 BSP      = $(PATH_SW)/nios_tester_bsp

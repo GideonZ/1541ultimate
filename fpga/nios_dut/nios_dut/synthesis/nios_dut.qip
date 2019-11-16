@@ -2,7 +2,7 @@ set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_TOOL_NAME 
 set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_TOOL_VERSION "15.1"
 set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_TOOL_ENV "Qsys"
 set_global_assignment -library "nios_dut" -name SOPCINFO_FILE [file join $::quartus(qip_path) "../../nios_dut.sopcinfo"]
-set_global_assignment -entity "nios_dut" -library "nios_dut" -name SLD_INFO "QSYS_NAME nios_dut HAS_SOPCINFO 1 GENERATION_ID 1479314539"
+set_global_assignment -entity "nios_dut" -library "nios_dut" -name SLD_INFO "QSYS_NAME nios_dut HAS_SOPCINFO 1 GENERATION_ID 1573377301"
 set_global_assignment -library "nios_dut" -name MISC_FILE [file join $::quartus(qip_path) "../nios_dut.cmp"]
 set_global_assignment -library "nios_dut" -name SLD_FILE [file join $::quartus(qip_path) "nios_dut.regmap"]
 set_global_assignment -library "nios_dut" -name SLD_FILE [file join $::quartus(qip_path) "nios_dut.debuginfo"]
@@ -16,7 +16,7 @@ set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_COMPONENT_
 set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_COMPONENT_REPORT_HIERARCHY "On"
 set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_COMPONENT_INTERNAL "Off"
 set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_COMPONENT_VERSION "MS4w"
-set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_COMPONENT_PARAMETER "QVVUT19HRU5FUkFUSU9OX0lE::MTQ3OTMxNDUzOQ==::QXV0byBHRU5FUkFUSU9OX0lE"
+set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_COMPONENT_PARAMETER "QVVUT19HRU5FUkFUSU9OX0lE::MTU3MzM3NzMwMQ==::QXV0byBHRU5FUkFUSU9OX0lE"
 set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0VfRkFNSUxZ::Q3ljbG9uZSBJViBF::QXV0byBERVZJQ0VfRkFNSUxZ"
 set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0U=::RVA0Q0UyMkYxN0M4::QXV0byBERVZJQ0U="
 set_global_assignment -entity "nios_dut" -library "nios_dut" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0VfU1BFRURHUkFERQ==::OA==::QXV0byBERVZJQ0VfU1BFRURHUkFERQ=="

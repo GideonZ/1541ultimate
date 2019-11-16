@@ -28,6 +28,9 @@
 		.jtag1_jtag_tms          (<connected-to-jtag1_jtag_tms>),          //          .jtag_tms
 		.jtag1_jtag_tdi          (<connected-to-jtag1_jtag_tdi>),          //          .jtag_tdi
 		.jtag1_jtag_tdo          (<connected-to-jtag1_jtag_tdo>),          //          .jtag_tdo
+		.jtag_in_data            (<connected-to-jtag_in_data>),            //   jtag_in.data
+		.jtag_in_valid           (<connected-to-jtag_in_valid>),           //          .valid
+		.jtag_in_ready           (<connected-to-jtag_in_ready>),           //          .ready
 		.mem_mem_req_address     (<connected-to-mem_mem_req_address>),     //       mem.mem_req_address
 		.mem_mem_req_byte_en     (<connected-to-mem_mem_req_byte_en>),     //          .mem_req_byte_en
 		.mem_mem_req_read_writen (<connected-to-mem_mem_req_read_writen>), //          .mem_req_read_writen
@@ -48,9 +51,6 @@
 		.uart_rxd                (<connected-to-uart_rxd>),                //      uart.rxd
 		.uart_txd                (<connected-to-uart_txd>),                //          .txd
 		.uart_cts_n              (<connected-to-uart_cts_n>),              //          .cts_n
-		.uart_rts_n              (<connected-to-uart_rts_n>),              //          .rts_n
-		.jtag_in_data            (<connected-to-jtag_in_data>),            //   jtag_in.data
-		.jtag_in_valid           (<connected-to-jtag_in_valid>),           //          .valid
-		.jtag_in_ready           (<connected-to-jtag_in_ready>)            //          .ready
+		.uart_rts_n              (<connected-to-uart_rts_n>)               //          .rts_n
 	);
 

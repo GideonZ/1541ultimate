@@ -445,8 +445,32 @@ MpsPrinter::CBM_Interpreter(uint8_t input)
                     script = MPS_PRINTER_SCRIPT_NORMAL;
                     break;
 
+                case 0x62:  // ESC B : Black ink
+                    color = MPS_PRINTER_COLOR_BLACK;
+                    state = MPS_PRINTER_STATE_INITIAL;
+                    break;
+
+                case 0x63:  // ESC C : Cyan ink
+                    color = MPS_PRINTER_COLOR_CYAN;
+                    state = MPS_PRINTER_STATE_INITIAL;
+                    break;
+
+                case 0x6d:  // ESC M : Magenta ink
+                    color = MPS_PRINTER_COLOR_MAGENTA;
+                    state = MPS_PRINTER_STATE_INITIAL;
+                    break;
+
+                case 0x72:  // ESC R : Color ink selection
+                    state = MPS_PRINTER_STATE_ESC_PARAM;
+                    break;
+
                 case 0x78:  // ESC X : DRAFT/NLQ print mode selection
                     state = MPS_PRINTER_STATE_ESC_PARAM;
+                    break;
+
+                case 0x79:  // ESC Y : Yellow ink
+                    color = MPS_PRINTER_COLOR_YELLOW;
+                    state = MPS_PRINTER_STATE_INITIAL;
                     break;
 
                 case 0x5B:  // ESC [ : Print style selection
@@ -559,6 +583,47 @@ MpsPrinter::CBM_Interpreter(uint8_t input)
                             step = new_step;
                         state = MPS_PRINTER_STATE_INITIAL;
                     }
+                    break;
+
+                case 0x72:  // ESC R : Color ink selection
+                    switch (input)
+                    {
+                        case 0x00:  // Black
+                        case 0x30:
+                            color = MPS_PRINTER_COLOR_BLACK;
+                            break;
+
+                        case 0x01:  // Magenta
+                        case 0x31:
+                            color = MPS_PRINTER_COLOR_MAGENTA;
+                            break;
+
+                        case 0x02:  // Cyan
+                        case 0x32:
+                            color = MPS_PRINTER_COLOR_CYAN;
+                            break;
+
+                        case 0x03:  // Violet
+                        case 0x33:
+                            color = MPS_PRINTER_COLOR_VIOLET;
+                            break;
+
+                        case 0x04:  // Yellow
+                        case 0x34:
+                            color = MPS_PRINTER_COLOR_YELLOW;
+                            break;
+
+                        case 0x05:  // Orange
+                        case 0x35:
+                            color = MPS_PRINTER_COLOR_ORANGE;
+                            break;
+
+                        case 0x06:  // Green
+                        case 0x36:
+                            color = MPS_PRINTER_COLOR_GREEN;
+                            break;
+                    }
+                    state = MPS_PRINTER_STATE_INITIAL;
                     break;
 
                 case 0x78:  // ESC x : DRAFT/NLQ print mode selection

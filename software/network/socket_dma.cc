@@ -14,8 +14,11 @@
 #include "dump_hex.h"
 #include "c64.h"
 #include "c64_subsys.h"
+#include "u64.h"
 #include "c1541.h"
+#include "data_streamer.h"
 
+// "Ok ok, use them then..."
 #define SOCKET_CMD_DMA         0xFF01
 #define SOCKET_CMD_DMARUN      0xFF02
 #define SOCKET_CMD_KEYB        0xFF03
@@ -27,41 +30,47 @@
 #define SOCKET_CMD_DMAJUMP     0xFF09
 #define SOCKET_CMD_MOUNT_IMG   0xFF0A
 #define SOCKET_CMD_RUN_IMG     0xFF0B
-#define SOCKET_CMD_LOADSIDCRT  0xFF71
-#define SOCKET_CMD_LOADBOOTCRT 0xFF72
-#define SOCKET_CMD_SAMPLE      0xFF73
-#define SOCKET_CMD_READMEM     0xFF74
+
+// Only available on U64
+#define SOCKET_CMD_VICSTREAM_ON    0xFF20
+#define SOCKET_CMD_AUDIOSTREAM_ON  0xFF21
+#define SOCKET_CMD_VICSTREAM_OFF   0xFF30
+#define SOCKET_CMD_AUDIOSTREAM_OFF 0xFF31
+
+
+// Undocumented, shall only be used by developers.
+#define SOCKET_CMD_LOADSIDCRT   0xFF71
+#define SOCKET_CMD_LOADBOOTCRT  0xFF72
+#define SOCKET_CMD_READMEM      0xFF74
+#define SOCKET_CMD_READFLASH    0xFF75
+#define SOCKET_CMD_DEBUG_REG    0xFF76
 
 SocketDMA socket_dma; // global that causes the object to exist
 
 extern cart_def sid_cart;
 extern cart_def boot_cart;
 
-void sample_sid(void) __attribute__((weak));
-void sample_sid(void)
-{
-
-}
-
 SocketDMA::SocketDMA() {
-	xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
+	load_buffer = new uint8_t[SOCKET_BUFFER_SIZE];
+	if (load_buffer) {
+	    xTaskCreate( dmaThread, "DMA Load Task", configMINIMAL_STACK_SIZE, (void *)load_buffer, tskIDLE_PRIORITY + 1, NULL );
+	}
 }
 
 SocketDMA::~SocketDMA() {
-
+    delete[] load_buffer;
 }
 
-void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint16_t len)
+void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint16_t cmd, uint32_t len, struct in_addr *client_ip)
 {
 	uint8_t *buf = (uint8_t *)load_buffer;
 	SubsysCommand *c64_command;
 
     uint16_t offs;
     uint32_t offs32;
-    uint32_t len32;
     uint16_t i;
     uint16_t size;
-
+    const char *name = "";
     // TODO: check len > remaining
 
     switch(cmd) {
@@ -106,7 +115,11 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
         /* GZW: Actually a driver for the cartridge mapping should be called here. */
         offs32 = (uint32_t)buf[0] | (((uint32_t)buf[1]) << 8);
         for (i=2; i<len; i++)
+#if U64
+           *(uint8_t *)(U64_KERNAL_BASE+1+((offs32+i-2)&0x1fff)) = buf[i];
+#else
            *(uint8_t *)(C64_KERNAL_BASE+1+2*((offs32+i-2)&0x1fff)) = buf[i];
+#endif
         break;
     case SOCKET_CMD_LOADSIDCRT:
         size = (len > 0x2000) ? 0x2000 : len;
@@ -122,29 +135,116 @@ void SocketDMA :: performCommand(int socket, void *load_buffer, int length, uint
             boot_cart.length = size;
         }
         break;
-    case SOCKET_CMD_SAMPLE:
-        printf("Sampling audio codec...");
-        sample_sid();
-        break;
     case SOCKET_CMD_READMEM:
         printf("Sending data...");
         writeSocket(socket, (void *)0x2000000, 0x800000);
         break;
     case SOCKET_CMD_MOUNT_IMG:
     case SOCKET_CMD_RUN_IMG:
-        // TODO, let 'len' be uint32_t? Beneficial for REU commands too
-        len32 = (uint32_t)len | (((uint32_t)buf[0]) << 16);
-        buf += 1;
         if (cmd == SOCKET_CMD_MOUNT_IMG) {
             c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_MOUNT,
-                RUNCODE_MOUNT_BUFFER|RUNCODE_NO_CHECKSAVE|RUNCODE_NO_UNFREEZE, buf, len32);
+                RUNCODE_MOUNT_BUFFER|RUNCODE_NO_CHECKSAVE|RUNCODE_NO_UNFREEZE, buf, len);
         } else {
             c64_command = new SubsysCommand(NULL, SUBSYSID_DRIVE_A, D64FILE_RUN,
-                RUNCODE_MOUNT_BUFFER, buf, len32);
+                RUNCODE_MOUNT_BUFFER, buf, len);
 
         }
         c64_command->execute();
         break;
+
+#ifdef U64
+    case SOCKET_CMD_VICSTREAM_ON:
+        buf[len] = 0;
+        if (len > 2) {
+            name = (const char *)&buf[2];
+        }
+        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, name, "");
+        c64_command->direct_call = DataStreamer :: S_startStream;
+
+        if ((len >= 2) && (buf[0] || buf[1])) {
+            c64_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
+        }
+        c64_command->execute();
+        break;
+
+    case SOCKET_CMD_AUDIOSTREAM_ON:
+        buf[len] = 0;
+        if (len > 2) {
+            name = (const char *)&buf[2];
+        }
+        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, name, "");
+        c64_command->direct_call = DataStreamer :: S_startStream;
+
+        if ((len >= 2) && (buf[0] || buf[1])) {
+            c64_command->bufferSize = (((uint32_t)buf[1]) << 8) | buf[0];
+        }
+        c64_command->execute();
+        break;
+
+    case SOCKET_CMD_VICSTREAM_OFF:
+        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 0, "", "");
+        c64_command->direct_call = DataStreamer :: S_stopStream;
+        c64_command->execute();
+        break;
+
+    case SOCKET_CMD_AUDIOSTREAM_OFF:
+        c64_command = new SubsysCommand(NULL, -1, (int)&dataStreamer, 1, "", "");
+        c64_command->direct_call = DataStreamer :: S_stopStream;
+        c64_command->execute();
+        break;
+
+    case SOCKET_CMD_DEBUG_REG:
+        uint8_t reg;
+        reg = U64_DEBUG_REGISTER;
+        writeSocket(socket, &reg, 1);
+        if (len > 0) {
+            U64_DEBUG_REGISTER = buf[0];
+        }
+        break;
+#endif
+    case SOCKET_CMD_READFLASH:
+    	switch (buf[0])
+    	{
+           case 0:
+           {
+              unsigned int len;
+              unsigned char tmp[4];
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_PAGESIZE, (uint8_t*) &len, 0);
+              c64_command->execute();
+              tmp[0] = len;
+              tmp[1] = len >> 8;
+              tmp[2] = len >> 16;
+              tmp[3] = len >> 24;
+              writeSocket(socket, tmp, 4);
+              break;
+           }
+           case 1:
+           {
+              unsigned int len;
+              unsigned char tmp[4];
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_NOPAGES, (uint8_t*) &len, 0);
+              c64_command->execute();
+              tmp[0] = len;
+              tmp[1] = len >> 8;
+              tmp[2] = len >> 16;
+              tmp[3] = len >> 24;
+              writeSocket(socket, tmp, 4);
+              break;
+           }
+           case 2:
+           {
+              int len;
+              int page = (((uint32_t)buf[1]) ) | (((uint32_t)buf[2]) << 8) | (((uint32_t)buf[3]) << 16);
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_PAGESIZE, (uint8_t*) &len, 0);
+              c64_command->execute();
+              char* buffer = new char[len];
+              c64_command = new SubsysCommand(NULL, SUBSYSID_C64, C64_READ_FLASH, FLASH_CMD_GETPAGE + page, buffer, len);
+              c64_command->execute();
+              writeSocket(socket, buffer, len);
+              delete[] buffer;              
+              break;
+           }
+    	}
     }
 }
 
@@ -223,6 +323,8 @@ void SocketDMA::dmaThread(void *load_buffer)
 
     listen(sockfd, 5);
     clilen = sizeof(cli_addr);
+    uint8_t your_ip[4];
+    uint16_t your_port;
 
     while(1) {
 		/* Accept actual connection from the client */
@@ -233,8 +335,13 @@ void SocketDMA::dmaThread(void *load_buffer)
 			return;
 		}
 
-		printf("dmaThread newsockfd = %8x\n", newsockfd);
+		uint32_t addr = cli_addr.sin_addr.s_addr;
+		your_ip[3] = addr >> 24;
+	    your_ip[2] = (addr >> 16) & 0xFF;
+	    your_ip[1] = (addr >> 8) & 0xFF;
+	    your_ip[0] = addr & 0xFF;
 
+		printf("dmaThread newsockfd = %8x. Client = %d.%d.%d.%d : %d\n", newsockfd, your_ip[0], your_ip[1], your_ip[2], your_ip[3], cli_addr.sin_port);
 
 		/* If connection is established then start communicating */
 		uint8_t *mempntr = (uint8_t *)load_buffer;
@@ -258,14 +365,22 @@ void SocketDMA::dmaThread(void *load_buffer)
                 break;
             }
 	        uint16_t len = (uint16_t)buf[0] | (((uint16_t)buf[1]) << 8);
+	        uint32_t len32 = len;
 
-	        if (len) {
-	            n = readSocket(newsockfd, mempntr, len);
+	        if ((cmd == SOCKET_CMD_MOUNT_IMG) || (cmd == SOCKET_CMD_RUN_IMG)) {
+	            n = recv(newsockfd, buf+2, 1, 0);
+                len32 |= (((uint32_t)buf[2]) << 16);
+	        }
+	        if (len32 > SOCKET_BUFFER_SIZE) {
+	            len32 = SOCKET_BUFFER_SIZE;
+	        }
+	        if (len32) {
+	            n = readSocket(newsockfd, mempntr, len32);
 	        }
 	        if (n <= 0) {
 	            break;
 	        }
-            performCommand(newsockfd, load_buffer, n, cmd, len);
+            performCommand(newsockfd, load_buffer, n, cmd, len32, &cli_addr.sin_addr);
 		}
         puts("ERROR reading from socket");
         lwip_close(newsockfd);

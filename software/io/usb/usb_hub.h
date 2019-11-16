@@ -22,6 +22,7 @@ class UsbHubDriver : public UsbDriver
     int  reset_timeout;
     uint8_t buf[64];
     uint8_t dummy[16];
+    uint32_t alignment;
     volatile uint8_t irq_data[64];
     
     UsbBase   *host;

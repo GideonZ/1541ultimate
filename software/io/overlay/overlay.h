@@ -29,6 +29,10 @@ class Overlay : public GenericHost
     bool enabled;
     bool buttonPushSeen;
 //    uint8_t backgroundColor;
+    int activeX;
+    int activeY;
+    int X_on;
+    int Y_on; //346
 
 public:
     Overlay(bool active) {
@@ -36,24 +40,13 @@ public:
         enabled = active;
         buttonPushSeen = false;
         
-        int activeX = 40;
-        int activeY = 20;
-        int X_on = 366;
-        int Y_on = 314; //346
+        activeX = 40;
+        activeY = 25;
+        X_on = 366;
+        Y_on = 314-40; //346
 
         if(getFpgaCapabilities() & CAPAB_OVERLAY) {
-            OVERLAY_REGS->CHAR_WIDTH       = 8;
-            OVERLAY_REGS->CHAR_HEIGHT      = 9;
-            OVERLAY_REGS->CHARS_PER_LINE   = activeX;
-            OVERLAY_REGS->ACTIVE_LINES     = activeY;
-            OVERLAY_REGS->X_ON_HI          = X_on >> 8;
-            OVERLAY_REGS->X_ON_LO          = X_on & 0xFF;
-            OVERLAY_REGS->Y_ON_HI          = Y_on >> 8;
-            OVERLAY_REGS->Y_ON_LO          = Y_on & 0xFF;
-            OVERLAY_REGS->POINTER_HI       = 0;
-            OVERLAY_REGS->POINTER_LO       = 0;
-            OVERLAY_REGS->PERFORM_SYNC     = 0;
-
+            initRegs();
             screen = new Screen_MemMappedCharMatrix((char *)CHARGEN_SCREEN_RAM, (char *)CHARGEN_COLOR_RAM, activeX, activeY);
 
             if (enabled) {
@@ -143,6 +136,20 @@ public:
 
     void setKeyboard(Keyboard *kb) {
         keyb = kb;
+    }
+
+    void initRegs(void) {
+        OVERLAY_REGS->CHAR_WIDTH       = 8;
+        OVERLAY_REGS->CHAR_HEIGHT      = 9;
+        OVERLAY_REGS->CHARS_PER_LINE   = activeX;
+        OVERLAY_REGS->ACTIVE_LINES     = activeY;
+        OVERLAY_REGS->X_ON_HI          = X_on >> 8;
+        OVERLAY_REGS->X_ON_LO          = X_on & 0xFF;
+        OVERLAY_REGS->Y_ON_HI          = Y_on >> 8;
+        OVERLAY_REGS->Y_ON_LO          = Y_on & 0xFF;
+        OVERLAY_REGS->POINTER_HI       = 0;
+        OVERLAY_REGS->POINTER_LO       = 0;
+        OVERLAY_REGS->PERFORM_SYNC     = 0;
     }
 };
 

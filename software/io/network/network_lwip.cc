@@ -21,7 +21,16 @@ struct t_cfg_definition net_config[] = {
 	{ CFG_NET_IP,      CFG_TYPE_STRING, "Static IP",					 "%s", NULL,       7, 16, (int)"192.168.2.64" },
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
-	{ CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name", 					 "%s", NULL,       3, 18, (int)"Ultimate-II" },
+#ifdef U64
+	{ CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name", 					 "%s", NULL,       3, 18, (int)"Ultimate 64" },
+#else
+
+#if FREQUENCY == 62500000
+    { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II+" },
+#else
+    { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II" },
+#endif
+#endif
 	{ CFG_TYPE_END,    CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
 };
 
@@ -115,7 +124,7 @@ NetworkLWIP :: NetworkLWIP(void *driver,
     register_store(0x4E657477, "Network settings", net_config);
 
     this->driver = driver;
-	this->driver_free_function = free;
+    this->driver_free_function = free;
 	this->driver_output_function = out;
 	if_up = false;
 	for(int i=0;i<PBUF_FIFO_SIZE-1;i++) {
@@ -123,7 +132,7 @@ NetworkLWIP :: NetworkLWIP(void *driver,
 	}
 	dhcp_enable = false;
 
-	NetworkInterface :: registerNetworkInterface(this);
+    NetworkInterface :: registerNetworkInterface(this);
 
 	// quick hack to perform update on the browser
 	FileManager :: getFileManager() -> sendEventToObservers(eRefreshDirectory, "/", "");
@@ -339,6 +348,7 @@ void NetworkLWIP :: effectuate_settings(void)
  */
 	if (my_net_if.state) { // is it initialized?
 		netifapi_netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
+
 		if (netif_is_link_up(&my_net_if)) {
 			netifapi_dhcp_stop(&my_net_if);
 			if (dhcp_enable) {
@@ -374,4 +384,26 @@ void NetworkLWIP :: setIpAddr(uint8_t *buf)
 	if (my_net_if.state) { // is it initialized?
 		netifapi_netif_set_addr(&my_net_if, &my_ip, &my_netmask, &my_gateway);
 	}
+}
+
+bool NetworkLWIP :: peekArpTable(uint32_t ipToQuery, uint8_t *mac)
+{
+    struct eth_addr *his_mac = 0;
+    struct ip_addr *his_ip = 0;
+    struct ip_addr query_ip;
+
+    query_ip.addr = ipToQuery;
+
+    portENTER_CRITICAL();
+    etharp_find_addr(&my_net_if, &query_ip, &his_mac, &his_ip);
+
+    bool ret = false;
+    if (his_mac) {
+        memcpy(mac, his_mac->addr, 6);
+        ret = true;
+    }
+
+    portEXIT_CRITICAL();
+
+    return ret;
 }

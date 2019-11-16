@@ -27,6 +27,7 @@
 #include "rtc.h"
 #include "prog_flash.h"
 #include "u64_tester.h"
+#include "i2c_drv_sockettest.h"
 
 typedef struct {
 	const char *fileName;
@@ -46,28 +47,38 @@ BinaryImage_t images[] = {
      { "/Usb?/u64/rr38pal.bin",  "Retro Replay",        0x420000, 0, 0 },
 	 { "/Usb?/u64/ss5pal.bin",   "Super Snapshot",      0x430000, 0, 0 },
 	 { "/Usb?/u64/tar_pal.bin",  "Turbo Assembler",     0x440000, 0, 0 },
-	 { "/Usb?/u64/kcs.bin",      "KCS",                 0x450000, 0, 0 },
-     { "/Usb?/u64/epyx.bin",     "Epyx Fastloader",     0x454000, 0, 0 },
+     { "/Usb?/u64/rr38ntsc.bin", "Retro Replay NTSC",   0x450000, 0, 0 },
+     { "/Usb?/u64/ss5ntsc.bin",  "Super Snapshot NTSC", 0x460000, 0, 0 },
+     { "/Usb?/u64/tar_ntsc.bin", "Turbo Assembler NTSC",0x470000, 0, 0 },
+	 { "/Usb?/u64/kcs.bin",      "KCS",                 0x480000, 0, 0 },
+     { "/Usb?/u64/epyx.bin",     "Epyx Fastloader",     0x484000, 0, 0 },
 //     { "/Usb?/u64/kerna*.bin",   "Kernal ROM",          0x446000, 0, 0 },
 };
 
 /*
-{ FLASH_ID_BOOTFPGA,   0x01, 0x000000, 0x000000, 0x290000 }, // 282BD4
-{ FLASH_ID_APPL,       0x01, 0x290000, 0x290000, 0x170000 }, // Max 1.5 MB
-
 { FLASH_ID_AR5PAL,     0x00, 0x400000, 0x400000, 0x08000 },
 { FLASH_ID_AR6PAL,     0x00, 0x408000, 0x408000, 0x08000 },
 { FLASH_ID_FINAL3,     0x00, 0x410000, 0x410000, 0x10000 },
 { FLASH_ID_RR38PAL,    0x00, 0x420000, 0x420000, 0x10000 },
 { FLASH_ID_SS5PAL,     0x00, 0x430000, 0x430000, 0x10000 },
 { FLASH_ID_TAR_PAL,    0x00, 0x440000, 0x440000, 0x10000 },
-{ FLASH_ID_KCS,        0x00, 0x450000, 0x450000, 0x04000 },
-{ FLASH_ID_EPYX,       0x00, 0x454000, 0x454000, 0x02000 },
-// End of ROM Pack
+
+{ FLASH_ID_RR38NTSC,   0x00, 0x450000, 0x450000, 0x10000 },
+{ FLASH_ID_SS5NTSC,    0x00, 0x460000, 0x460000, 0x10000 },
+{ FLASH_ID_TAR_NTSC,   0x00, 0x470000, 0x470000, 0x10000 },
+
+{ FLASH_ID_KCS,        0x00, 0x480000, 0x480000, 0x04000 },
+{ FLASH_ID_EPYX,       0x00, 0x484000, 0x484000, 0x02000 },
 */
 
-
 #define NUM_IMAGES (sizeof(images) / sizeof(BinaryImage_t))
+
+void wait_button(void)
+{
+    while(!U64_POWER_REG) {
+        vTaskDelay(1);
+    }
+}
 
 void jump_run(uint32_t a)
 {
@@ -137,6 +148,10 @@ const char *getBoardRevision(void)
         return "U64 V1.1 (Null Series)";
     case 0x12:
         return "U64 V1.2 (Mass Prod)";
+    case 0x13:
+        return "U64 V1.3 (Elite)";
+    case 0x14:
+        return "U64 V1.4 (Std/Elite)";
     }
     return "Unknown";
 }
@@ -187,10 +202,11 @@ extern "C" {
 // 5000 : screen
 // 6000 : color ram
 
-void test_esp32(void)
+int test_esp32(void)
 {
-    char buffer[100];
-
+    char buffer[256];
+    const char message1[] = "rst:0x1 (POWERON_RESET),boot:0x3 (DOWNLOAD_BOOT";
+    const char message2[] = "rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLA";
     for(int i=0;i<16;i++) {
         ioWrite8(ESP_UART_GET, 0);
     }
@@ -198,36 +214,75 @@ void test_esp32(void)
     // First boot in bootloader mode
 //    screen->clear();
 //    screen->move_cursor(0,0);
-    printf("\033\036Listening to BOOT...\n\033\030");
+    printf("\033\037Listening to ESP32 BOOT...");
     U64_WIFI_CONTROL = 2;
     vTaskDelay(150);
     U64_WIFI_CONTROL = 7;
 
 
+    int j = 0;
     for (int i=0;i<200000;i++) {
         if (ioRead8(ESP_UART_FLAGS) & UART_RxDataAv) {
             uint8_t c = ioRead8(ESP_UART_DATA);
-            screen->output(c);
             ioWrite8(ESP_UART_GET, 0);
+            buffer[j++] = c;
+            // screen->output(c);
+            if (j == 120) {
+                break;
+            }
         }
     }
-    printf("###\n");
+    int ok1 = -1;
+    for(int i=0;((i<50) && (i<j));i++) {
+        if ((buffer[i] == 'r') && (buffer[i+1] == 's')) {
+            ok1 = strncmp(&buffer[i], message1, strlen(message1));
+            break;
+        }
+    }
+    //printf("#%d#\n", j);
+    if (ok1) {
+        printf("\033\022FAIL.\n");
+    } else {
+        printf("\033\025OK!\n");
+    }
 
-    printf("\033\036Listening to RUN...\n\033\030");
+    printf("\033\037Listening to ESP32 RUN...");
 
     // Then boot in normal mode:
     U64_WIFI_CONTROL = 0;
     vTaskDelay(50);
     U64_WIFI_CONTROL = 5;
 
+    j = 0;
     for (int i=0;i<200000;i++) {
         if (ioRead8(ESP_UART_FLAGS) & UART_RxDataAv) {
             uint8_t c = ioRead8(ESP_UART_DATA);
-            screen->output(c);
             ioWrite8(ESP_UART_GET, 0);
+            // screen->output(c);
+            buffer[j++] = c;
+            // screen->output(c);
+            if (j == 120) {
+                break;
+            }
         }
     }
-    printf("###\n");
+    int ok2 = -1;
+    for(int i=0;((i<50) && (i<j));i++) {
+        if ((buffer[i] == 'r') && (buffer[i+1] == 's')) {
+            ok2 = strncmp(&buffer[i], message2, strlen(message2));
+            break;
+        }
+    }
+    //printf("#%d#\n", j);
+    if (ok2) {
+        printf("\033\022FAIL.\n");
+    } else {
+        printf("\033\025OK!\n");
+    }
+    if ((!ok1) && (!ok2)) {
+        return 0;
+    }
+    return 1;
 }
 
 int test_memory(void)
@@ -282,20 +337,29 @@ int test_memory(void)
             dest <<= 1;
         }
     }
+    printf("\n");
     return retval;
 }
 
 void do_update(void)
 {
+/*
     char time_buffer[32];
     printf("\n%s ", rtc.get_long_date(time_buffer, 32));
     printf("%s\n", rtc.get_time_string(time_buffer, 32));
+*/
 
     Flash *flash2 = get_flash();
     printf("\033\024Detected Flash: %s\n", flash2->get_type_string());
-
     const char *fpgaType = (getFpgaCapabilities() & CAPAB_FPGA_TYPE) ? "5CEBA4" : "5CEBA2";
     printf("Detected FPGA Type: %s.\nBoard Revision: %s\n\033\037\n", fpgaType, getBoardRevision());
+
+    uint32_t test;
+    flash2->read_linear_addr(0x1000, 4, &test);
+    if (test != 0xFFFFFFFF) {
+        printf("Press power button to start programming.\n");
+        wait_button();
+    }
 
     flash2->protect_disable();
 
@@ -362,20 +426,213 @@ int load_images(void)
     return 0;
 }
 
+/*
+#define PLD_WR_CTRL1      (*(volatile uint8_t *)(U64TESTER_PLD_BASE + 0x12))
+#define PLD_WR_CTRL2      (*(volatile uint8_t *)(U64TESTER_PLD_BASE + 0x13))
+#define PLD_JOYSWAP       (*(volatile uint8_t *)(U64TESTER_PLD_BASE + 0x112))
+#define PLD_RD_CTRL       (*(volatile uint8_t *)(U64TESTER_PLD_BASE + 0x13)) // not implemented in version < 16
+#define PLD_RD_VERSION    (*(volatile uint8_t *)(U64TESTER_PLD_BASE + 0x113))
+ */
+
+void read_socket_analog(I2C_Driver_SocketTest& i2c, int& vdd, int& vcc, int& mid)
+{
+    uint8_t buf[4];
+    i2c.read_results(0xC8, buf);
+    vdd = (301 * (int)buf[0]) >> 2;
+    vcc = 32 * (int)buf[1];
+    mid = 32 * (int)buf[2];
+}
+
+void read_caps(volatile socket_tester_t *test, int &cap1, int &cap2)
+{
+    test->capsel = 0;
+    wait_ms(5);
+    cap1 = (370 * (int)test->capval) / 3 - 616;
+    test->capsel = 1;
+    wait_ms(5);
+    cap2 = (370 * (int)test->capval) / 3 - 616;
+}
+
+int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t magic)
+{
+//    PLD_WR_CTRL1 = 0xBF; // all on = 12V, 22 nF, 1K
+//    PLD_WR_CTRL2 = 0x5F; // all on = 12V, 22 nF, 1K
+    int error = 0;
+
+    if (test->id != 0x34) {
+        printf("\e2Socket Tester not found\n");
+        return -1;
+    }
+
+    // bit 3: Capsel (1 = 470 pF)
+    // bit 2: 1K shunt
+    // bit 1: Regulator enable
+    // bit 0: regulator select (1 = 12V, 0 = 9V)
+    I2C_Driver_SocketTest i2c(test);
+#if 1
+    // Setup byte: 1.101.0000 (unipolar, internal clock, reference always on)
+    // Configuration byte: 0.00.0011.1
+    if (i2c.i2c_write_byte(0xC8, 0xD0, 0x07) < 0) {
+        printf("\e2Unable to access I2C ADC on tester\n");
+        return -2;
+    }
+
+    int vdd, vcc, mid;
+
+    *ctrl  = magic | 0;
+    wait_ms(200);
+    read_socket_analog(i2c, vdd, vcc, mid);
+
+    // 4% range for VCC: 0.96*5000 < vcc < 1.04*5000
+    if ((vcc < 4800) || (vcc > 5200)) {
+        printf("\e2VCC Out Of Range: %d mV  (should be 5V)\n", vcc);
+        error |= (1 << 0);
+    }
+
+    if ((vdd < 4800) || (vdd > 5200)) {
+        printf("\e2VDD Out Of Range: %d mV  (should be 5V in this mode)\n", vdd);
+        error |= (1 << 1);
+    }
+
+    if (abs(mid * 2 - vdd) > 150) {
+        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
+        error |= (1 << 2);
+    }
+
+    *ctrl  = magic | 2; // 9V
+    wait_ms(200);
+    read_socket_analog(i2c, vdd, vcc, mid);
+
+    // 4% range for VDD
+    if ((vdd < 8640) || (vdd > 9360)) {
+        printf("\e2VDD Out Of Range: %d mV  (should be 9V in this mode)\n", vdd);
+        error |= (1 << 3);
+    }
+
+    if (abs(mid * 2 - vdd) > 150) {
+        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
+        error |= (1 << 4);
+    }
+
+    *ctrl  = magic | 3; // 12V
+    wait_ms(200);
+    read_socket_analog(i2c, vdd, vcc, mid);
+
+    // 5% range for VDD
+    if ((vdd < 11600) || (vdd > 12800)) {
+        printf("\e2VDD Out Of Range: %d mV  (should be 12V in this mode)\n", vdd);
+        error |= (1 << 5);
+    }
+
+    if (abs(mid * 2 - vdd) > 300) {
+        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
+        error |= (1 << 6);
+    }
+
+    // Now turn on the shunt and see that the output voltage reduces to 68%
+    *ctrl  = magic | 7; // 12V with shunt
+    wait_ms(200);
+    read_socket_analog(i2c, vdd, vcc, mid);
+
+//    // 5% range for VDD
+    if ((vdd < 11600) || (vdd > 12800)) {
+        printf("\e2VDD Out Of Range: %d mV  (should be 12V in this mode)\n", vdd);
+        error |= (1 << 7);
+    }
+
+    vdd *= 68;
+    vdd /= 100;
+
+    if (abs(mid * 2 - vdd) > 300) {
+        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
+        error |= (1 << 8);
+    }
+#endif
+    int cap1, cap2;
+
+    *ctrl  = magic | 7; // 12V with shunt
+    wait_ms(50);
+    // should be in 22 nF mode now. 5-7% caps
+    read_caps(test, cap1, cap2);
+    if ((cap1 < 21000) || (cap1 > 23600)) {
+        printf("\e2CAP1 out of range: %d pF, expected 22470 pF (%b)\n", cap1, PLD_RD_CTRL);
+        error |= (1 << 9);
+    }
+    if ((cap2 < 21000) || (cap2 > 23600)) {
+        printf("\e2CAP2 out of range: %d pF, expected 22470 pF (%b)\n", cap2, PLD_RD_CTRL);
+        error |= (1 << 10);
+    }
+
+    *ctrl  = magic | 15; // 12V with shunt and small caps
+    wait_ms(50);
+    // should be in 22 nF mode now. 5-7% caps
+    read_caps(test, cap1, cap2);
+    if ((cap1 < 200) || (cap1 > 900)) {
+        printf("\e2CAP1 out of range: %d pF, expected 470 pF\n", cap1);
+        error |= (1 << 11);
+    }
+    if ((cap2 < 200) || (cap2 > 900)) {
+        printf("\e2CAP2 out of range: %d pF, expected 470 pF\n", cap2);
+        error |= (1 << 12);
+    }
+
+    if (!error) {
+        return 0;
+    }
+    return error;
+
+    // One LSB = 4.096 / 256 = 16 mV
+    // Input 0: VDD Sense, 2.7k / 10k, thus 0,212598425 times input voltage. Thus one LSB = 75,259259329 mV  (Sample read: 7A => 122 * 75.26 = 9.181V)
+    // Input 1: VCC Sense, 10k / 10k, thus 0.5 times input voltage. Thus one LSB = 32 mV (Sample read: 9E => 158 * 32 = 5.056V)
+    // Input 2: AOUTDC: 100k / 100k, thus 0.5 times input voltage. Thus one LSB = 32 mV (Sample read: 8E => 142 * 32 = 4.544V)
+    // Input 3: unused.
+}
+
+int TestSidSockets(void)
+{
+    LOCAL_CART = 0x20; // Reset PLD in socket!
+    vTaskDelay(10);
+    LOCAL_CART = 0x00; // release reset for PLD. This should enable the oscillator
+
+    int error = 0;
+    if(socket_test(SOCKET1, &PLD_WR_CTRL2, 0x50) == 0) {
+        printf("\e5SID Socket 1 passed.\n");
+    } else {
+        printf("\e2SID Socket 1 FAILED!\n");
+        error = 1;
+    }
+
+    if(socket_test(SOCKET2, &PLD_WR_CTRL1, 0xB0) == 0) {
+        printf("\e5SID Socket 2 passed.\n");
+    } else {
+        printf("\e2SID Socket 2 FAILED!\n");
+        error = 1;
+    }
+    return error;
+}
+
+
 extern "C" {
-	void main_task(void *context)
+    void codec_init(void);
+
+    void main_task(void *context)
 	{
 	    initScreen();
 	    printf("Ultimate-64 - LOADER...\n");
+        codec_init();
 
 	    int errors = 0;
 	    if (!test_memory()) {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
-	            test_esp32();
-	            errors  = U64TestKeyboard();
-	            errors += U64TestUserPort();
+	            errors =  test_esp32();
+	            errors += U64AudioCodecTest();
+	            errors += U64EliteTestJoystick();
+	            errors += U64PaddleTest();
+	            errors += TestSidSockets();
+	            errors += U64TestKeyboard();
+	            //errors += U64TestUserPort();
                 errors += U64TestIEC();
 	            errors += U64TestCartridge();
 	            errors += U64TestCassette();
@@ -386,13 +643,18 @@ extern "C" {
 	            if (errors) {
 	                printf("\n\e2** BOARD FAILED **\n");
 	            } else {
-	                printf("\n\e5-> Passed! Now programming....\eO\n");
+	                printf("\n\e5-> Passed!\n\e?");
 	                do_update();
 	            }
 	        }
 	    }
-        printf("\n\n\033\023Waiting for you to turn off the machine..\n");
-        while (1)
-            ;
+        printf("\n\n\033\023Press power button to turn off the machine..\n");
+        wait_button();
+        while(1) {
+            U64_POWER_REG = 0x2B;
+            wait_ms(1);
+            U64_POWER_REG = 0xB2;
+            wait_ms(1);
+        }
 	}
 }

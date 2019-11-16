@@ -65,6 +65,7 @@ begin
         variable result : std_logic_vector(CFG_DMEM_WIDTH downto 0);
         variable result_add : std_logic_vector(CFG_DMEM_WIDTH downto 0);
         variable zero : std_logic;
+        variable equal : std_logic;
 
         variable dat_a, dat_b : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
         variable sel_dat_a, sel_dat_b, sel_dat_d : std_logic_vector(CFG_DMEM_WIDTH - 1 downto 0);
@@ -163,6 +164,7 @@ begin
         end case;
 
         result_add := add(alu_src_a, alu_src_b, carry);
+        equal      := compare(dat_a, dat_b); 
 
         case exec_i.ctrl_ex.alu_op is
             when ALU_ADD    => result := result_add;
@@ -172,6 +174,7 @@ begin
             when ALU_SHIFT  => result := alu_src_a(0) & carry & alu_src_a(CFG_DMEM_WIDTH - 1 downto 1);
             when ALU_SEXT8  => result := '0' & sign_extend(alu_src_a(7 downto 0), alu_src_a(7), 32);
             when ALU_SEXT16 => result := '0' & sign_extend(alu_src_a(15 downto 0), alu_src_a(15), 32);
+            when ALU_PEQ    => result := X"00000000" & (equal xor exec_i.ctrl_ex.operation(0));
             when ALU_MUL =>
                 if G_USE_HW_MUL = true then
                     result := '0' & multiply(alu_src_a, alu_src_b);
@@ -221,7 +224,7 @@ begin
         end if;
 
         zero := is_zero(dat_a);
-
+        
         -- Overwrite branch condition
         if reg.flush_ex = '1' then
             v.branch := '0';
@@ -240,13 +243,16 @@ begin
         end if;
 
         v.alu_result := result(CFG_DMEM_WIDTH - 1 downto 0);
-        -- Handle CMPU and CMP
-        if ( exec_i.ctrl_ex.operation = "11" ) then
-            v.alu_result(CFG_DMEM_WIDTH - 1) := not result_add(CFG_DMEM_WIDTH); -- unsigned = bit 32 of result
-        elsif ( exec_i.ctrl_ex.operation = "01" ) then
-            v.alu_result(CFG_DMEM_WIDTH - 1) := (result_add(CFG_DMEM_WIDTH) xor alu_src_a(CFG_DMEM_WIDTH-1) xor alu_src_b(CFG_DMEM_WIDTH-1)); -- signed
-        end if;
 
+        -- Handle CMPU and CMP
+        if exec_i.ctrl_ex.compare_op = '1' then
+            if ( exec_i.ctrl_ex.operation = "11" ) then
+                v.alu_result(CFG_DMEM_WIDTH - 1) := not result_add(CFG_DMEM_WIDTH); -- unsigned = bit 32 of result
+            elsif ( exec_i.ctrl_ex.operation = "01" ) then
+                v.alu_result(CFG_DMEM_WIDTH - 1) := (result_add(CFG_DMEM_WIDTH) xor alu_src_a(CFG_DMEM_WIDTH-1) xor alu_src_b(CFG_DMEM_WIDTH-1)); -- signed
+            end if;
+        end if;
+        
         v.program_counter := exec_i.program_counter;
 
         -- Determine flush signals

@@ -8,6 +8,8 @@ include ../common/environment.mk
 PRJ      =  ultimate
 FINAL    =  $(RESULT)/$(PRJ).app $(RESULT)/$(PRJ).elf $(OUTPUT)/$(PRJ).sim
 
+BSP      = $(PATH_SW)/nios_appl_bsp
+
 SRCS_C   =	itu.c \
 			dump_hex.c \
 			assert.c \
@@ -24,16 +26,15 @@ SRCS_C   =	itu.c \
             ccsbcs.c \
             ffsyscall.c \
             time.c \
-            i2c.c \
-            ext_i2c.c \
             mdio.c \
-			codec.c \
             sid_coeff.c \
             nios_main.c \
             alt_malloc_lock.c \
             alt_do_ctors.c
-                        
+
 SRCS_CC	 =  u2p_init.cc \
+            i2c_drv.cc \
+            codec.cc \
 			small_printf.cc \
             stream.cc \
 			stream_uart.cc \
@@ -92,12 +93,14 @@ SRCS_CC	 =  u2p_init.cc \
 			task_menu.cc \
 			filetype_d64.cc \
 			filetype_g64.cc \
+			filetype_t64.cc \
 			filetype_prg.cc \
 			filetype_u2p.cc \
 			filetype_reu.cc \
 			filetype_crt.cc \
 			filetype_sid.cc \
 			filetype_bin.cc \
+			filetype_cfg.cc \
             host_stream.cc \
             keyboard_vt100.cc \
             screen_vt100.cc \
@@ -107,6 +110,7 @@ SRCS_CC	 =  u2p_init.cc \
 			usb_hub.cc \
 			usb_ax88772.cc \
 			usb_hid.cc \
+			usb_ms_cbi.cc \
 			keyboard_usb.cc \
 			network_interface.cc \
 			network_lwip.cc \
@@ -119,6 +123,7 @@ SRCS_CC	 =  u2p_init.cc \
 			network_target.cc \
 			control_target.cc \
 			iec.cc \
+			iec_channel.cc \
 			iec_printer.cc \
 			mps_printer.cc \
 			mps_printer_cbm.cc \
@@ -139,6 +144,14 @@ SRCS_CC	 =  u2p_init.cc \
 			fpll.cc \
 			fastuart.cc \
 			wifi.cc \
+			led_strip.cc \
+			data_streamer.cc \
+			configio.cc \
+			sid_editor.cc \
+			sid_device.cc \
+			sid_device_fpgasid.cc \
+			sid_device_swinsid.cc \
+			sid_device_armsid.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \
@@ -146,9 +159,9 @@ SRCS_CC	 =  u2p_init.cc \
 VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
 VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/u64
-VPATH +=	$(PATH_SW)/nios_appl_bsp
-VPATH +=	$(PATH_SW)/nios_appl_bsp/HAL/inc
-VPATH +=	$(PATH_SW)/nios_appl_bsp/drivers/inc
+VPATH +=	$(BSP)
+VPATH +=	$(BSP)/HAL/inc
+VPATH +=	$(BSP)/drivers/inc
 VPATH +=	$(PATH_SW)/6502/sidcrt/target
 
 #            sock_echo.c \
@@ -163,7 +176,7 @@ SRCS_ASMS = port_asm.S
 
 SRCS_6502 = bootcrt.tas cmd_test_rom.tas ulticopy.tas
 
-SRCS_BIN =  basic.bin sidcrt.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
+SRCS_BIN =  basic.bin sidcrt.bin muscrt.bin musplayer.bin chars.bin 1541.bin 1541c.bin 1541-ii.bin sounds.bin module.bin
 
 SRCS_IEC = iec_code.iec
 
@@ -173,7 +186,6 @@ PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-BSP      = $(PATH_SW)/nios_appl_bsp
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a ../nios2_elf_lwip/result/liblwip.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o
@@ -186,4 +198,10 @@ lodepng.o: lodepng.cc
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 $(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/muscrt.bin::
+	make -C $(PATH_SW)/6502/sidcrt
+
+$(PATH_SW)/6502/sidcrt/target/musplayer.bin::
 	make -C $(PATH_SW)/6502/sidcrt

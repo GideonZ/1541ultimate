@@ -295,7 +295,8 @@ void TreeBrowserState :: into3(const char* name)
     }
 
     for(int i=0; i<children->get_elements(); i++) {
-        if(strcasecmp((*children)[i]->getName(), name) == 0) {
+        if(pattern_match(name, (*children)[i]->getName(), false)) {
+        //if(strcasecmp((*children)[i]->getName(), name) == 0) {
             browsable = (*children)[i];
             break;
         }

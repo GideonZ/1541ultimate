@@ -100,8 +100,8 @@ begin
 
     i_rx: entity work.ulpi_rx
         generic map (
-            g_support_split  => false,
-            g_support_token  => false ) -- hosts do not receive tokens
+            g_support_split  => g_simulation,
+            g_support_token  => g_simulation ) -- hosts do not receive tokens
         port map (
             clock           => clock,
             reset           => reset,

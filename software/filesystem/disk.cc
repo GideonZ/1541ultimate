@@ -28,7 +28,7 @@ Disk::~Disk()
     }
 }
 
-int Disk::Init(void)
+int Disk::Init(bool isFloppy)
 {
     bool fat = false;
 
@@ -51,6 +51,14 @@ int Disk::Init(void)
     // Read Master Boot Record and check for validity
     if(dev->read(buf, 0L, 1) != RES_OK)
         return -2; // disk unreadable
+
+    if(isFloppy) {
+        if(dev->ioctl(GET_SECTOR_COUNT, &size) == RES_OK) {
+            partition_list = new Partition(dev, 0L, size, 0x01);
+            return 1; // one default partition, starting on sector 0
+        }
+        return -3;
+    }
 
     if(LD_WORD(buf + BS_Signature) != 0xAA55) {
         if(dev->ioctl(GET_SECTOR_COUNT, &size) == RES_OK) {

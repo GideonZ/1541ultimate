@@ -18,6 +18,7 @@ generic (
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
     g_cartreset_init: std_logic := '0';
+    g_boot_stop     : boolean := false;
     g_big_endian    : boolean;
     g_kernal_repl   : boolean := true;
     g_control_read  : boolean := true;
@@ -60,6 +61,7 @@ port (
     rwn_o           : out   std_logic;
     rwn_i           : in    std_logic;
 
+    ultimax         : out   std_logic;
     exromn_i        : in    std_logic := '1';
     exromn_o        : out   std_logic;
     gamen_i         : in    std_logic := '1';
@@ -288,7 +290,7 @@ begin
         g_kernal_repl   => g_kernal_repl,
         g_rom_base      => g_rom_base_cart,
         g_ram_base      => g_ram_base_cart,
---        g_control_read  => g_control_read,
+        g_boot_stop     => g_boot_stop,
         g_cartreset_init=> g_cartreset_init,
         g_ram_expansion => g_ram_expansion )
     port map (
@@ -402,6 +404,9 @@ begin
         BUFFER_ENn      => BUFFER_ENn );
 
     i_master: entity work.slot_master_v4
+    generic map (
+        g_start_in_stopped_state => g_boot_stop )
+    
     port map (
         clock           => clock,
         reset           => reset,
@@ -426,7 +431,6 @@ begin
         phi2_recovered  => phi2_recovered,
         phi2_tick       => phi2_tick_i,
         do_sample_addr  => do_sample_addr,
-        do_sample_io    => do_sample_io,
         do_io_event     => do_io_event,
         reu_dma_n       => reu_dma_n,
         cmd_if_freeze   => cmd_if_freeze,
@@ -476,6 +480,7 @@ begin
         cart_active     => status.cart_active,
         
         cart_logic      => control.cartridge_type,
+        cart_force      => control.cartridge_force,
         cart_kill       => control.cartridge_kill,
         epyx_timeout    => epyx_timeout,
 
@@ -801,9 +806,11 @@ begin
     begin
         if rising_edge(clock) then
             memctrl_inhibit <= timing_inhibit;
+
             status.c64_vcc <= VCC;            
             status.exrom <= not exromn_i;
             status.game <= not gamen_i;
+            status.reset_in <= not rstn_i;
         end if;
     end process;
 
@@ -830,6 +837,7 @@ begin
     phi2_tick   <= phi2_tick_avail;
     
     c64_stopped <= status.c64_stopped;
+    ultimax <= control.c64_ultimax;
     
     -- write 0x54 to $DFFE to generate a trigger
     sw_trigger  <= '1' when slot_req.io_write = '1' and slot_req.io_address(8 downto 0) = "111111110" and slot_req.data = X"54" else '0';

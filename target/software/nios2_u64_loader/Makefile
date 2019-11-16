@@ -14,7 +14,6 @@ HEXBASE  =  0x30000000
 HEXEND   =  0x3001FFFF
 
 SRCS_C   =	start_rtos.c \
-			i2c.c \
 			itu.c \
 			dump_hex.c \
 			assert.c \
@@ -34,9 +33,11 @@ SRCS_C   =	start_rtos.c \
             ff2.c \
             ffsyscall.c \
             ccsbcs.c \
-            u64_tester.c
+            u64_tester.c \
                         
 SRCS_CC	 =  small_printf.cc \
+            codec.cc \
+			i2c_drv.cc \
 			usb_base.cc \
 			usb_hub.cc \
 			usb_device.cc \

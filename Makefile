@@ -111,6 +111,29 @@ u2p_tester:
 	@touch software/nios_tester_bsp/public.mk
 	@$(MAKE) -C software/nios_dut_bsp
 	@$(MAKE) -C software/nios_tester_bsp
+	@$(MAKE) -C target/software/nios2_dut clean
+	@$(MAKE) -C target/software/nios2_tester clean
+	@$(MAKE) -C target/software/nios2_testloader clean
+	@$(MAKE) -C target/software/nios2_testflasher clean
+	@$(MAKE) -C target/software/nios2_dut
+	@$(MAKE) -C target/software/nios2_tester
+	@$(MAKE) -C target/software/nios2_testloader
+	@$(MAKE) -C target/software/nios2_testflasher
+	@$(MAKE) -C target/tester_package force
+	@$(MAKE) -C target/tester_package force
+
+u2p_tester_sw:
+	@$(MAKE) -C target/software/nios2_elf_lwip
+	@touch software/nios_dut_bsp/Makefile
+	@touch software/nios_dut_bsp/public.mk
+	@touch software/nios_tester_bsp/Makefile
+	@touch software/nios_tester_bsp/public.mk
+	@$(MAKE) -C software/nios_dut_bsp
+	@$(MAKE) -C software/nios_tester_bsp
+	@$(MAKE) -C target/software/nios2_dut clean
+	@$(MAKE) -C target/software/nios2_tester clean
+	@$(MAKE) -C target/software/nios2_testloader clean
+	@$(MAKE) -C target/software/nios2_testflasher clean
 	@$(MAKE) -C target/software/nios2_dut
 	@$(MAKE) -C target/software/nios2_tester
 	@$(MAKE) -C target/software/nios2_testloader
@@ -130,6 +153,7 @@ clean:
 	@rm -rf target/fpga/boot_700
 	@rm -rf target/fpga/work250
 	@rm -rf target/fpga/mb700
+	@rm -rf target/fpga/mb700dd
 	@rm -rf target/fpga/_xm*
 	@rm -rf target/fpga/x*
 	@rm -rf target/fpga/*.x*

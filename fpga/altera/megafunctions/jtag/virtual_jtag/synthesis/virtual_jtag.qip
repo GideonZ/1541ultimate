@@ -1,0 +1,39 @@
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_TOOL_NAME "Qsys"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_TOOL_VERSION "15.1"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_TOOL_ENV "Qsys"
+set_global_assignment -library "virtual_jtag" -name SOPCINFO_FILE [file join $::quartus(qip_path) "../../virtual_jtag.sopcinfo"]
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name SLD_INFO "QSYS_NAME virtual_jtag HAS_SOPCINFO 1 GENERATION_ID 1571822020"
+set_global_assignment -library "virtual_jtag" -name MISC_FILE [file join $::quartus(qip_path) "../virtual_jtag.cmp"]
+set_global_assignment -library "virtual_jtag" -name SLD_FILE [file join $::quartus(qip_path) "virtual_jtag.debuginfo"]
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_TARGETED_DEVICE_FAMILY "Cyclone IV E"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_GENERATED_DEVICE_FAMILY "{Cyclone IV E}"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_QSYS_MODE "STANDALONE"
+set_global_assignment -name SYNTHESIS_ONLY_QIP ON
+set_global_assignment -library "virtual_jtag" -name MISC_FILE [file join $::quartus(qip_path) "../../virtual_jtag.qsys"]
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_NAME "dmlydHVhbF9qdGFn"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_DISPLAY_NAME "dmlydHVhbF9qdGFn"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_REPORT_HIERARCHY "On"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_INTERNAL "Off"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_VERSION "MS4w"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_PARAMETER "QVVUT19HRU5FUkFUSU9OX0lE::MTU3MTgyMjAyMA==::QXV0byBHRU5FUkFUSU9OX0lE"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0VfRkFNSUxZ::Q3ljbG9uZSBJViBF::QXV0byBERVZJQ0VfRkFNSUxZ"
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0U=::RVA0Q0UyMkYxN0M4::QXV0byBERVZJQ0U="
+set_global_assignment -entity "virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_PARAMETER "QVVUT19ERVZJQ0VfU1BFRURHUkFERQ==::OA==::QXV0byBERVZJQ0VfU1BFRURHUkFERQ=="
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_NAME "c2xkX3ZpcnR1YWxfanRhZw=="
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_DISPLAY_NAME "QWx0ZXJhIFZpcnR1YWwgSlRBRw=="
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_REPORT_HIERARCHY "Off"
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_INTERNAL "Off"
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_AUTHOR "QWx0ZXJhIENvcnBvcmF0aW9u"
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_VERSION "MTUuMQ=="
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_DESCRIPTION "VmlydHVhbCBKVEFHIEludGVyZmFjZSAoVkpJKSBtZWdhZnVuY3Rpb24uIFRoaXMgbWVnYWZ1bmN0aW9uIHByb3ZpZGVzIGFjY2VzcyB0byB0aGUgUExEIHNvdXJjZSB0aHJvdWdoIHRoZSBKVEFHIGludGVyZmFjZS4KVGhlIFF1YXJ0dXMgUHJpbWUgc29mdHdhcmUgb3IgSlRBRyBjb250cm9sIGhvc3QgaWRlbnRpZmllcyBlYWNoIGluc3RhbmNlIG9mIHRoaXMgbWVnYWZ1bmN0aW9uIGJ5IGEgdW5pcXVlIGluZGV4LiBFYWNoIG1lZ2FmdW5jdGlvbiBpbnN0YW5jZQpmdW5jdGlvbnMgaW4gYSBmbG93IHRoYXQgcmVzZW1ibGVzIHRoZSBKVEFHIG9wZXJhdGlvbiBvZiBhIGRldmljZS4gVGhlIGxvZ2ljIHRoYXQgdXNlcyB0aGlzIGludGVyZmFjZSBtdXN0IG1haW50YWluIHRoZSBjb250aW51aXR5IG9mCnRoZSBKVEFHIGNoYWluIG9uIGJlaGFsZiB0aGUgUExEIGRldmljZSB3aGVuIHRoaXMgaW5zdGFuY2UgYmVjb21lcyBhY3RpdmUu"
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_PARAMETER "ZGV2aWNlX2ZhbWlseQ==::Q3ljbG9uZSBJViBF::ZGV2aWNlX2ZhbWlseQ=="
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_PARAMETER "Z3VpX3VzZV9hdXRvX2luZGV4::dHJ1ZQ==::QXV0b21hdGljIEluc3RhbmNlIEluZGV4IEFzc2lnbm1lbnQ="
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_PARAMETER "c2xkX2F1dG9faW5zdGFuY2VfaW5kZXg=::WUVT::c2xkX2F1dG9faW5zdGFuY2VfaW5kZXg="
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_PARAMETER "c2xkX2lyX3dpZHRo::NA==::SW5zdHJ1Y3Rpb24gUmVnaXN0ZXIgV2lkdGggWzEuLjI0XQ=="
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_COMPONENT_PARAMETER "Q1JFQVRFX1BSSU1JVElWRV9KVEFHX1NUQVRFX1NJR05BTF9QT1JUUw==::ZmFsc2U=::Q3JlYXRlIHByaW1pdGl2ZSBKVEFHIHN0YXRlIHNpZ25hbCBwb3J0cw=="
+
+set_global_assignment -library "virtual_jtag" -name VHDL_FILE [file join $::quartus(qip_path) "virtual_jtag.vhd"]
+
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_TOOL_NAME "altera_virtual_jtag"
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_TOOL_VERSION "15.1"
+set_global_assignment -entity "sld_virtual_jtag" -library "virtual_jtag" -name IP_TOOL_ENV "Qsys"

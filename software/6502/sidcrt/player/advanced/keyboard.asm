@@ -3,7 +3,7 @@
 ;
 ; Written by Wilfred Bos
 ;
-; Copyright (c) 2009 - 2018 Wilfred Bos / Gideon Zweijtzer
+; Copyright (c) 2009 - 2019 Wilfred Bos / Gideon Zweijtzer
 ;
 ; DESCRIPTION
 ;   Routines for handling key presses for changing song, fast forward
@@ -14,6 +14,7 @@
 ;     1-0 for selecting sub tune 1 to 10
 ;     + and - for increasing/decreasing the song selection
 ;     runstop for going back to Ultimate menu
+;     space for pausing/resuming playback
 ;
 ; Use 64tass version 1.53.1515 or higher to assemble the code
 ;-----------------------------------------------------------------------
@@ -45,11 +46,15 @@ keyPressed      cmp currentKey,x
 
                 cpx #$06            ; check for row 7 (which is not handled)
                 beq skipKeyCheck
-                cpx #$05
-                beq row6
 
-                cpx #$07            ; check for runstop to exit player and for <- key to fastforward tune
+                cpx #$01
                 bne +
+                jsr handleRow2
++
+                cpx #$05
+                beq handleRow6
+                cpx #$07            ; check for runstop to exit player, <- key to fastforward tune and space to pause
+                bne checkNumKeys
 
 .if INCLUDE_RUNSTOP==1
                 cmp #$7f            ; check if runstop key is pressed
@@ -58,57 +63,83 @@ keyPressed      cmp currentKey,x
                 sta runStopPressed
 noRunStop
 .fi
-                cmp #$fd
-                bne +
+                ldy cantPause
+                bne checkOtherKeys
+
+                cmp #$ef            ; check if space key is pressed
+                bne checkOtherKeys
+
+                lda pauseTune
+                sta $d418           ; toggle volume off
+sid2            sta $d418
+sid3            sta $d418
+                eor #$1f
+                sta pauseTune
+pause           sta @w $0000
+notReleased     rts
+
+checkOtherKeys  cmp #$fd
+                bne checkNumKeys
                 ldy #$01
                 sty fastForwardOn
 fastForward     sty @w $0000
-notReleased     rts
+skipKeyCheck    rts
 
-+               cmp #$f6
-                beq skipKeyCheck
+checkNumKeys    ldy pauseTune
+                bne skipKeyCheck
+
                 ; handle keys 0-9
                 tay
-                and #$f6            ; check for values $fe and $f7
-                cmp #$f6
+                and #$7f
+                cmp #$7e
                 beq +
-                rts
-
-+               txa
+                cmp #$77
+                bne skipKeyCheck
++
+                txa
                 asl
                 tax
                 tya
                 lsr
                 lda #$00
                 adc tuneSelect,x
-                jmp selectSong
-
-selectSong      cmp maxSong
-                beq +
+                cmp maxSong
+                beq setCurrentSong
                 bcs skipKeyCheck
-+               sta currentSong
-                jmp selectSubTune
+                jmp setCurrentSong
 
-row6            cmp #$fe
+handleRow2      pha
+                and #$7f
+                cmp #$5f            ; check for S and shift-S key
+                bne +
+                lda $d011           ; toggle screen on/off
+                eor #$10
+                sta $d011
++               pla
+                rts
+
+handleRow6      ldy pauseTune
+                bne skipKeyCheck
+
+                cmp #$fe
                 beq plusKey
                 cmp #$f7
                 beq minKey
-skipKeyCheck    rts
+                rts
 
 minKey          dec currentSong
                 lda currentSong
                 cmp #$ff
                 bne +
                 lda maxSong
-                sta currentSong
-+               jmp selectSubTune
+                jmp setCurrentSong
 
 plusKey         lda currentSong
                 inc currentSong
                 cmp maxSong
                 bcc +
                 lda #0
-                sta currentSong
+setCurrentSong  sta currentSong
 +               jmp selectSubTune
 
 .if INCLUDE_RUNSTOP==1

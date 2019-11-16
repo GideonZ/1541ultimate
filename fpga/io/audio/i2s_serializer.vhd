@@ -40,25 +40,25 @@ begin
             i2s_fs    <= bit_count(7); 
             sample_pulse <= '0';
             
-            if bit_count = X"00" then
-                sample_pulse <= '1';
-            end if;
-            
             if bit_count(1 downto 0) = "00" then
                 i2s_out <= shift_reg(shift_reg'left);
             elsif bit_count(1 downto 0) = "10" then
                 shift_reg <= shift_reg(shift_reg'left-1 downto 0) & i2s_in;
             end if;            
 
-            if bit_count(6 downto 0) = "1111110" then
-                if bit_count(7) = '0' then
-                    left_sample_out  <= shift_reg(shift_reg'left-2 downto shift_reg'left - 25);
-                    shift_reg <= '0' & left_sample_in & "0000000";
-                else
-                    right_sample_out <= shift_reg(shift_reg'left-2 downto shift_reg'left - 25);
-                    shift_reg <= '0' & right_sample_in & "0000000";
-                end if;
-            end if;
+            case bit_count is
+            when X"7E" =>
+                left_sample_out  <= shift_reg(shift_reg'left-2 downto shift_reg'left - 25);
+            when X"FE" =>
+                right_sample_out <= shift_reg(shift_reg'left-2 downto shift_reg'left - 25);
+                sample_pulse <= '1';
+            when X"02" =>
+                shift_reg <= left_sample_in & "0000000" & i2s_in;
+            when X"82" =>
+                shift_reg <= right_sample_in & "0000000" & i2s_in;
+            when others =>
+                null;            
+            end case;
             
             if reset='1' then
                 bit_count <= (others => '1');
