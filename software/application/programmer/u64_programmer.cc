@@ -504,7 +504,7 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
     read_socket_analog(i2c, vdd, vcc, mid);
 
     // 4% range for VDD
-    if ((vdd < 8640) || (vdd > 9360)) {
+    if ((vdd < 8640) || (vdd > 9500)) {
         printf("\e2VDD Out Of Range: %d mV  (should be 9V in this mode)\n", vdd);
         error |= (1 << 3);
     }
@@ -554,11 +554,11 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
     wait_ms(50);
     // should be in 22 nF mode now. 5-7% caps
     read_caps(test, cap1, cap2);
-    if ((cap1 < 21000) || (cap1 > 23600)) {
+    if ((cap1 < 21000) || (cap1 > 24000)) {
         printf("\e2CAP1 out of range: %d pF, expected 22470 pF (%b)\n", cap1, PLD_RD_CTRL);
         error |= (1 << 9);
     }
-    if ((cap2 < 21000) || (cap2 > 23600)) {
+    if ((cap2 < 21000) || (cap2 > 24000)) {
         printf("\e2CAP2 out of range: %d pF, expected 22470 pF (%b)\n", cap2, PLD_RD_CTRL);
         error |= (1 << 10);
     }
