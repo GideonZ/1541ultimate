@@ -316,10 +316,18 @@ const char *C1581_Channel :: GetExtension(char specifiedType, bool &explicitExt)
         extension = ".usr";
         explicitExt = true;
         break;
+    case 'R':
+		extension = ".rel";
+		explicitExt = true;
+		break;
     case 'D':
-        extension = ".dir";
+        extension = ".del";
         explicitExt = true;
         break;
+    case 'C':
+		extension = ".cbm";
+		explicitExt = true;
+		break;
     default:
         printf("Unknown filetype: %c\n", specifiedType);
     }
@@ -329,6 +337,7 @@ const char *C1581_Channel :: GetExtension(char specifiedType, bool &explicitExt)
 uint8_t C1581_Channel::open_file(void)
 {
 	const char *extension;
+	bool explicitExt = false;
 
 	buffer[pointer] = 0; // string terminator
 	printf("Open file. Raw Filename = '%s'\n", buffer);
@@ -336,51 +345,58 @@ uint8_t C1581_Channel::open_file(void)
 	command_t command;
 	parse_command((char *)buffer, &command);
 
-	// First determine the direction
-	write = 0;
-	if(channel == 1)
-		write = 1;
-
-	int tp = 1;
-	if (command.names[1].name) {
-		switch(command.names[1].name[0]) {
-		case 'R':
-			write = 0;
-			tp = 2;
-			break;
-		case 'W':
+	if(command.cmd[0] != '$')
+	{
+		// First determine the direction
+		write = 0;
+		if(channel == 1)
 			write = 1;
-			tp = 2;
-			break;
-		default:
-			printf("Unknown direction: %c\n", command.names[2].name[0]);
+
+		int tp = 1;
+		if (command.names[1].name) {
+			switch(command.names[1].name[0]) {
+			case 'R':
+				write = 0;
+				tp = 2;
+				break;
+			case 'W':
+				write = 1;
+				tp = 2;
+				break;
+			default:
+				printf("Unknown direction: %c\n", command.names[2].name[0]);
+			}
+		}
+
+		if ((command.names[2].name) && (tp == 1)) {
+			switch(command.names[2].name[0]) {
+			case 'R':
+				write = 0;
+				break;
+			case 'W':
+				write = 1;
+				break;
+			default:
+				printf("Unknown direction: %c\n", command.names[2].name[0]);
+			}
+		}
+
+		// Then determine the type (or extension) to be used
+		explicitExt = false;
+		if(channel < 2) {
+			extension = ".prg";
+		} else if (write) {
+			extension = ".seq";
+		} else {
+			extension = ".???";
+		}
+
+		if (command.names[tp].name) {
+			extension = GetExtension(command.names[1].name[0], explicitExt);
 		}
 	}
-
-	if ((command.names[2].name) && (tp == 1)) {
-		switch(command.names[2].name[0]) {
-		case 'R':
-			write = 0;
-			break;
-		case 'W':
-			write = 1;
-			break;
-		default:
-			printf("Unknown direction: %c\n", command.names[2].name[0]);
-		}
-	}
-
-	// Then determine the type (or extension) to be used
-	bool explicitExt = false;
-	if(channel < 2) {
-		extension = ".prg";
-	} else if (write) {
-		extension = ".seq";
-	} else {
-		extension = ".???";
-	}
-
-	if (command.names[tp].name) {
+	else
+	{
 		extension = GetExtension(command.names[1].name[0], explicitExt);
 	}
 
@@ -668,7 +684,6 @@ int C1581_CommandChannel :: push_command(uint8_t b)
 
 void C1581_CommandChannel :: exec_command(command_t &command)
 {
-
 	if (strncmp(command.cmd , "NEW", strlen(command.cmd)) == 0) {
         format(command);
     } else if (strncmp(command.cmd, "COPY", strlen(command.cmd)) == 0) {
@@ -1714,6 +1729,7 @@ void C1581_CommandChannel :: create_select_partition(command_t& command)
 		else
 		{
 			//if the requirements are not met for a subdir,
+
 			//you may not switch to the partition
 			int partSize = dirEntry->size_hi * 256 + dirEntry->size_lo;
 

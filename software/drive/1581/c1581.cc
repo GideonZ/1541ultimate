@@ -27,15 +27,8 @@
 const char *en_dis_81[] = { "Disabled", "Enabled" };
 const char *yes_no_81[] = { "No", "Yes" };
 
-#define CFG_C1581_POWERED   0xD1
-#define CFG_C1581_BUS_ID    0xD2
-
-#define CFG_C1541_RAMBOARD  0xD5
-#define CFG_C1541_SWAPDELAY 0xD6
-#define CFG_C1541_LASTMOUNT 0xD7
-#define CFG_C1541_C64RESET  0xD8
-#define CFG_C1541_GCRALIGN  0xDA
-#define CFG_C1541_STOPFREEZ 0xDB
+#define CFG_C1581_POWERED   0xE1
+#define CFG_C1581_BUS_ID    0xE2
 
 #define BASIC_START			0x0801
 #define MAX_FILE_COUNT		296
@@ -175,6 +168,61 @@ C1581 ::~C1581()
 {
 }
 
+void C1581 :: drive_reset(uint8_t doit)
+{
+	last_error = ERR_DOS;
+	curbamtrack = 40;
+	curbamsector = 1;
+	startingDirTrack = 40;
+	startingDirSector = 3;
+
+	for (int x = 0; x < CMD_CHANNEL; x++)
+		channels[x]->init(this, x);
+
+	channels[15]->init(this, CMD_CHANNEL);
+
+	goTrackSector(40, 1);
+}
+
+void C1581 :: remove_disk(void)
+{
+	disk_state = e_no_disk81;
+
+	memset(mount_file, 0, DISK_SIZE);
+}
+
+int  C1581 :: fetch_task_items(Path *path, IndexedList<Action*> &item_list)
+{
+	int items = 1;
+    char buffer[32];
+
+    // don't show items for disabled drives
+    if (this->disk_state == e_d81_disabled) {
+        return 0;
+    }
+
+    sprintf(buffer, "Reset 1581 Drive %c", drive_letter);
+	item_list.append(new Action(buffer, getID(), MENU_1581_RESET, 0));
+
+	if(disk_state != e_no_disk81) {
+        sprintf(buffer, "Remove disk from Drive %c", drive_letter);
+		item_list.append(new Action(buffer, getID(), MENU_1581_REMOVE, 0));
+		items++;
+
+		/*if (fm->is_path_writable(path))
+        {
+            sprintf(buffer, "Save disk in drive %c as D64", drive_letter);
+    		item_list.append(new Action(buffer, getID(), 0, 0));
+    		items++;
+    	}*/
+	} else {
+        sprintf(buffer, "Insert blank disk in drive %c", drive_letter);
+		item_list.append(new Action(buffer, getID(), MENU_1581_BLANK, 0));
+		items++;
+    }
+	return items;
+}
+
 int C1581 :: executeCommand(SubsysCommand *cmd)
 {
 	File *file;
@@ -197,6 +245,22 @@ int C1581 :: executeCommand(SubsysCommand *cmd)
 			c64_command->execute();
 		}
 		break;
+		case MENU_1581_RESET:
+		{
+			drive_reset(1);
+			break;
+		}
+		case MENU_1581_REMOVE:
+		{
+			remove_disk();
+			break;
+		}
+		case MENU_1581_BLANK:
+		{
+			mount_blank();
+			save_disk_to_file(cmd);
+			break;
+		}
 		default:
 			printf("Unhandled menu item for C1581.\n");
 			return -1;
@@ -265,7 +329,38 @@ int C1581 :: mount_d81(bool protect, File *file)
 
 void C1581 :: mount_blank()
 {
+	drive_reset(1);
+	memset(mount_file, 0, DISK_SIZE);
+	disk_state = e_d81_disk;
+}
 
+void C1581 :: save_disk_to_file(SubsysCommand *cmd)
+{
+    static char buffer[32] = {0};
+	File *file = 0;
+	uint32_t bytes_written = 0;
+	FRESULT fres;
+	int res;
+
+	res = cmd->user_interface->string_box("Give name for image file..", buffer, 24);
+	if(res > 0) {
+		set_extension(buffer, (char *)".d81", 32);
+		fix_filename(buffer);
+
+		strcpy(mounted_filename, buffer);
+		strcpy(mounted_path, cmd->path.c_str());
+
+		fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW, &file);
+		if(fres == FR_OK) {
+			//cmd->user_interface->update_progress("Saving D81...", 0);
+			cmd->user_interface->show_progress("Saving D81...", 84);
+			file->write(mount_file, (uint32_t) DISK_SIZE, &bytes_written);
+			cmd->user_interface->hide_progress();
+			fm->fclose(file);
+		} else {
+			cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
+		}
+	}
 }
 
 uint8_t C1581::goTrackSector(uint8_t track, uint8_t sector)
