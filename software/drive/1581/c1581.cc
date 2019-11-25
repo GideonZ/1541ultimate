@@ -352,7 +352,6 @@ void C1581 :: save_disk_to_file(SubsysCommand *cmd)
 
 		fres = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW, &file);
 		if(fres == FR_OK) {
-			//cmd->user_interface->update_progress("Saving D81...", 0);
 			cmd->user_interface->show_progress("Saving D81...", 84);
 			file->write(mount_file, (uint32_t) DISK_SIZE, &bytes_written);
 			cmd->user_interface->hide_progress();
