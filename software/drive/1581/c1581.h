@@ -24,7 +24,13 @@
 #define BLOCK_SIZE			256
 #define D81FILE_MOUNT      	0x2102
 
+#define MENU_1581_RESET     0x1581
+#define MENU_1581_REMOVE    0x1582
+#define MENU_1581_SAVED81   0x1583
+#define MENU_1581_BLANK     0x1584
+
 typedef enum {
+	e_d81_disabled,
 	e_no_disk81,
     e_disk81_file_closed,
     e_d81_disk
@@ -97,11 +103,15 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
 		C1581(char letter);
         ~C1581();
 
+        void drive_reset(uint8_t doit);
+        int  fetch_task_items(Path *path, IndexedList<Action*> &item_list);
 		int  executeCommand(SubsysCommand *cmd);
 		void init();
         void unlink(void);
         int mount_d81(bool protect, File *);
         void mount_blank();
+        void remove_disk(void);
+        void save_disk_to_file(SubsysCommand *cmd);
         
 		uint8_t goTrackSector(uint8_t track, uint8_t sector);
 		void writeSector(void);

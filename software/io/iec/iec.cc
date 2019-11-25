@@ -320,7 +320,14 @@ void IecInterface :: effectuate_settings(void)
     drive_mode = uint8_t(cfg->get_value(CFG_IEC_MODE));
 
     if(drive_mode == 1)
+    {
+    	c1581_C->disk_state = e_no_disk81;
     	c1581_C->iec_address = last_addr;
+    }
+    else
+    {
+    	c1581_C->disk_state = e_d81_disabled;
+    }
 
     HW_IEC_RESET_ENABLE = iec_enable;
 }
