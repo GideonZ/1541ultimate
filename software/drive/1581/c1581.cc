@@ -47,7 +47,6 @@ uint32_t trackOffset[80] = {
 		0xA0000,0xA2B00,0xA5000,0xA7800,0xAA000,0xAC800,0xAF000,0xB1800,0xB4000,0xB6800,0xB9000,0xBB800,0xBE000,0xC0800,0xC3000,0xC5800
 };
 
-
 const char msg00[] = " OK";						//00
 const char msg01[] = " FILES SCRATCHED";		//01	Track number shows how many files were removed
 const char msg02[] = "PARTITION SELECTED";      //02

@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <math.h>
 
 #include "c1581.h"
 #include "c1581_channel.h"
@@ -221,6 +222,10 @@ void C1581_Channel :: parse_command(char *buffer, command_t *command)
         buffer[len] = 0;
     }
 
+    // relative file [P]osition command should not be parsed further
+    if(command->cmd[0] == 'P')
+        	return;
+
     // look for , and split
     int idx = 0;
     command->names[0].name = buffer;
@@ -317,6 +322,7 @@ const char *C1581_Channel :: GetExtension(char specifiedType, bool &explicitExt)
         explicitExt = true;
         break;
     case 'R':
+    case 'L':
 		extension = ".rel";
 		explicitExt = true;
 		break;
@@ -400,6 +406,16 @@ uint8_t C1581_Channel::open_file(void)
 		extension = GetExtension(command.names[1].name[0], explicitExt);
 	}
 
+	if(strcmp(extension,".rel") == 0)
+	{
+		relrecordsize = command.names[2].name[0];
+		relfile = true;
+	}
+	else
+	{
+		relfile = false;
+	}
+
 	const char *first = (command.names[0].name) ? command.names[0].name : "*";
 	printf("Filename after parsing: '%s' %d:%s. Extension = '%s'. Write = %d\n", command.cmd, command.digits, first, extension, write);
 
@@ -468,33 +484,82 @@ uint8_t C1581_Channel::open_file(void)
 	strcpy((char *)file_name, rawName);
 	state = e_file;
 
-	if(write)
+	if(relfile == false)
 	{
-		uint8_t track;
-		uint8_t sector;
-		uint8_t ftype;
+		if(write)
+		{
+			uint8_t track;
+			uint8_t sector;
+			uint8_t ftype;
 
-		if(strcmp(extension, ".del") == 0)
-			ftype = 0;
-		else if(strcmp(extension, ".seq") == 0)
-			ftype = 1;
-		else if(strcmp(extension, ".prg") == 0)
-			ftype = 2;
-		else if(strcmp(extension, ".usr") == 0)
-			ftype = 3;
-		else if(strcmp(extension, ".rel") == 0)
-			ftype = 4;
-		else if(strcmp(extension, ".cbm") == 0)
-			ftype = 5;
+			if(strcmp(extension, ".del") == 0)
+				ftype = 0;
+			else if(strcmp(extension, ".seq") == 0)
+				ftype = 1;
+			else if(strcmp(extension, ".prg") == 0)
+				ftype = 2;
+			else if(strcmp(extension, ".usr") == 0)
+				ftype = 3;
+			else if(strcmp(extension, ".rel") == 0)
+				ftype = 4;
+			else if(strcmp(extension, ".cbm") == 0)
+				ftype = 5;
 
+			// Check if file exists
+			uint8_t tmptrack, tmpsector;
+			int err = c1581->getFileTrackSector((char *)file_name, &tmptrack, &tmpsector, false);
+
+			if(err == ERR_FILE_NOT_FOUND)
+			{
+				// Create directory entry and allocate
+				err = c1581->createDirectoryEntry((char *)file_name, ftype, &track, &sector);
+
+				if(err != ERR_OK)
+				{
+					state = e_error;
+					return err;
+				}
+
+				writeblock = 1;
+				writetrack = track;
+				writesector = sector;
+				pointer=2;
+			}
+			else
+			{
+				write = 0;
+				state = e_error;
+
+				return ERR_FILE_EXISTS;
+			}
+		}
+		// read
+		else
+		{
+			int err = c1581->readFile(file_name, localbuffer, &last_byte);
+
+			if(err != ERR_OK)
+			{
+				state = e_error;
+				return err;
+			}
+
+			blocknumber = 0;
+			read_block();
+		}
+	}
+	// relative file (r/w)
+	else
+	{
 		// Check if file exists
 		uint8_t tmptrack, tmpsector;
 		int err = c1581->getFileTrackSector((char *)file_name, &tmptrack, &tmpsector, false);
 
+		// create the file if not found
 		if(err == ERR_FILE_NOT_FOUND)
 		{
 			// Create directory entry and allocate
-			err = c1581->createDirectoryEntry((char *)file_name, ftype, &track, &sector);
+			err = c1581->createDirectoryEntry((char *)file_name, 4, &track, &sector);
 
 			if(err != ERR_OK)
 			{
@@ -509,24 +574,27 @@ uint8_t C1581_Channel::open_file(void)
 		}
 		else
 		{
-			write = 0;
-			state = e_error;
-			return ERR_FILE_EXISTS;
+			int err = c1581->readFile(file_name, localbuffer, &last_byte);
+
+			if(err != ERR_OK)
+			{
+				state = e_error;
+				return err;
+			}
+
+			DirectoryEntry *relDirEntry = new DirectoryEntry();
+			err = c1581->findDirectoryEntry((char *)file_name, ".rel", relDirEntry);
+
+			relssbtrack = relDirEntry->first_track_ssb;
+			relssbsector = relDirEntry->first_sector_ssb;
+
+			delete [] relDirEntry;
+
+			blocknumber = 0;
+			read_block();
 		}
 	}
-	else
-	{
-		int err = c1581->readFile(file_name, localbuffer, &last_byte);
 
-		if(err != ERR_OK)
-		{
-			state = e_error;
-			return err;
-		}
-
-		blocknumber = 0;
-		read_block();
-	}
 	return ERR_OK;
 }
 
@@ -602,6 +670,10 @@ uint8_t C1581_Channel::close_file()
 	prefetch = 0;
 	prefetch_max =0;
 	state = e_idle;
+	relfile = false;
+	relrecordsize = 0;
+	relssbtrack = 0;
+	relssbsector = 0;
 	return 0;
 }
 
@@ -725,6 +797,9 @@ void C1581_CommandChannel :: exec_command(command_t &command)
         block_pointer(command);
     } else if (command.cmd[0] == '/') {
     	create_select_partition(command);
+    }
+    else if (command.cmd[0] == 'P') {
+    	position_relative_record(command);
     }
     else { // unknown command
         get_last_error(ERR_SYNTAX_ERROR_CMD,0,0);
@@ -1831,5 +1906,87 @@ void C1581_CommandChannel :: change_devicenum(command_t& command)
 	}
 }
 
+void C1581_CommandChannel :: position_relative_record(command_t& command)
+{
+	// parse the command into its component strings
+	char * pch;
+	char cmdbuf[255];
+
+	uint8_t paramctr = 0;
+	uint8_t chanl = command.cmd[1];
+	uint8_t reclo = command.cmd[2];
+	uint8_t rechi = command.cmd[3];
+	uint8_t offset = command.cmd[4];
+	uint8_t startssbtrack = c1581->channels[chanl]->relssbtrack;
+	uint8_t startssbsector = c1581->channels[chanl]->relssbsector;
+
+	// handle if user sent channel > 95
+	if(chanl > 95)
+		chanl = chanl - 96;
+
+	uint16_t recnum = rechi * 256 + reclo;
+
+	// read super side sector
+	c1581->goTrackSector(startssbtrack, startssbsector);
+
+	uint16_t ssbgroup = recnum / 720;
+
+	uint8_t sidesectortrack = c1581->sectorBuffer[3+(2*ssbgroup)];
+	uint8_t sidesectorsector = c1581->sectorBuffer[4+(2*ssbgroup)];
+
+	// read side sector
+	c1581->goTrackSector(sidesectortrack, sidesectorsector);
+
+	// calc offset byte of side sector
+	double tmp1 = (recnum -1) * c1581->channels[chanl]->relrecordsize;
+	double tmp2 = tmp1 / 254;
+	double tmp3 = (int)tmp2 + 1;
+	double tmp4 = tmp3 / 120;
+	double tmp5 = ((int)tmp4);
+
+	uint8_t page = 14 + (tmp3 * 2);
+
+	uint8_t data_trk = c1581->sectorBuffer[page];
+	uint8_t data_sector = c1581->sectorBuffer[page+1];
+
+	uint8_t recstart = round((tmp2 - ((int)tmp2)) * 254) + 2;
+	uint16_t recposition = recstart + offset;
+
+	c1581->goTrackSector(data_trk, data_sector);
+
+
+	c1581->channels[chanl]->pointer = 0;
+	c1581->channels[chanl]->prefetch = 0;
+	c1581->channels[chanl]->state = e_block;
+	c1581->channels[chanl]->last_byte = recstart + c1581->channels[chanl]->relrecordsize;
+	c1581->channels[chanl]->prefetch_max =	recstart + c1581->channels[chanl]->relrecordsize;
+
+	uint8_t ctr = c1581->channels[chanl]->relrecordsize;
+
+	// push bytes to the channel buffer
+	do
+	{
+		if(recposition-1 > 255)
+		{
+			data_trk = c1581->sectorBuffer[0];
+			data_sector = c1581->sectorBuffer[1];
+			c1581->goTrackSector(data_trk, data_sector);
+			recposition = (recposition - 256)+2;
+			ctr = ctr - recposition - 256;
+		}
+
+		uint8_t b = c1581->sectorBuffer[recposition-1];
+		c1581->channels[chanl]->push_data(b);
+		recposition++;
+		ctr--;
+
+	} while(ctr > 0);
+
+	int xsd=0;
+	xsd++;
+
+
+
+}
 
 

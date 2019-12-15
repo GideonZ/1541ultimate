@@ -23,6 +23,11 @@ class C1581_Channel
 	int blocknumber;
 	uint8_t file_name[16];
 
+	bool relfile;
+	uint8_t relrecordsize;
+	uint8_t relssbtrack;
+	uint8_t relssbsector;
+
 public:
 	uint8_t buffer[256];
 	C1581_Channel();
@@ -64,6 +69,7 @@ class C1581_CommandChannel : public C1581_Channel
     void block_free(command_t& command);
     void block_pointer(command_t& command);
     void create_select_partition(command_t& command);
+    void position_relative_record(command_t& command);
     void mem_exec(command_t& command);
     void mem_read(command_t& command);
     void mem_write(command_t& command);
