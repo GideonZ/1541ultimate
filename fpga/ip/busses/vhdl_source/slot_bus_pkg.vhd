@@ -19,6 +19,7 @@ package slot_bus_pkg is
         data        : std_logic_vector(7 downto 0);
         reg_output  : std_logic;
         irq         : std_logic;
+        nmi         : std_logic;
     end record;
 
     constant c_slot_req_init : t_slot_req := (
@@ -34,7 +35,8 @@ package slot_bus_pkg is
     constant c_slot_resp_init : t_slot_resp := (
         data       => X"00",
         reg_output => '0',
-        irq        => '0' );
+        irq        => '0',
+        nmi        => '0' );
         
     type t_slot_req_array is array(natural range <>) of t_slot_req;
     type t_slot_resp_array is array(natural range <>) of t_slot_resp;
@@ -53,6 +55,7 @@ package body slot_bus_pkg is
                 ret.data := ret.data or ar(i).data;
             end if;
             ret.irq := ret.irq or ar(i).irq;
+            ret.nmi := ret.nmi or ar(i).nmi;
         end loop;
         return ret;        
     end function or_reduce;

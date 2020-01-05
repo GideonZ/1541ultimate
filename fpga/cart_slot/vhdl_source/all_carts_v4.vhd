@@ -33,7 +33,7 @@ port (
     cart_force      : in  std_logic;
 
     slot_req        : in  t_slot_req;
-    slot_resp       : out t_slot_resp;
+    slot_resp       : out t_slot_resp := c_slot_resp_init;
 
     epyx_timeout    : in  std_logic;
     serve_enable    : out std_logic; -- enables fetching bus address PHI2=1
@@ -871,4 +871,5 @@ begin
     slot_resp.data(0) <= '0';
     
     slot_resp.reg_output <= '1' when (slot_addr(8 downto 1)="00000000") and (cart_logic_d = c_retro) else '0';
+
 end gideon;

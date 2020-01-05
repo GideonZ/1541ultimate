@@ -21,7 +21,6 @@ port (
     reset           : in  std_logic;
 
     -- C64 side interface
-    slot_base       : in  unsigned(8 downto 2) := to_unsigned(0, 7);
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
         
@@ -33,6 +32,7 @@ port (
 end entity;
 
 architecture arch of acia6551 is
+    signal slot_base        : unsigned(8 downto 2) := (others => '0');
     signal rx_data          : std_logic_vector(7 downto 0);
     signal status           : std_logic_vector(7 downto 0) := X"00";
     signal command          : std_logic_vector(7 downto 0);
@@ -55,6 +55,7 @@ architecture arch of acia6551 is
     signal dtr_d, rts_d     : std_logic;
     
     signal enable           : std_logic;
+    signal nmi_selected     : std_logic;
     signal tx_irq_en        : std_logic;
     signal rx_irq_en        : std_logic;
     signal soft_reset       : std_logic;
@@ -95,9 +96,10 @@ begin
         X"FF"       when others;   
 
     slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 2) = slot_base else '0';
-    slot_resp.irq  <= irq;
+    slot_resp.irq  <= irq and not nmi_selected;
+    slot_resp.nmi  <= irq and nmi_selected;
 
-    irq       <= (rx_interrupt and not command(1)) or (tx_interrupt and command(2) and not command(3));
+    irq       <= enable and ((rx_interrupt and not command(1)) or (tx_interrupt and command(2) and not command(3)));
     rts       <= command(2) or command(3);
     rx_full   <= rx_data_valid;
     tx_empty  <= '0' when (tx_head + 1) = tx_tail else '1';
@@ -197,6 +199,9 @@ begin
                     if io_req_regs.data(4) = '1' then
                         rts_dtr_change <= '0';
                     end if;
+                when c_reg_slot_base =>
+                    slot_base <= unsigned(io_req_regs.data(6 downto 0));
+                    nmi_selected <= io_req_regs.data(7);
                     
                 when others =>
                     null;
@@ -216,6 +221,8 @@ begin
                     io_resp_regs.data <= control;
                 when c_reg_command =>
                     io_resp_regs.data <= command;
+                when c_reg_status =>
+                    io_resp_regs.data <= status;
                 when c_reg_enable =>
                     io_resp_regs.data(0) <= enable;
                     io_resp_regs.data(1) <= rx_irq_en;
@@ -233,6 +240,8 @@ begin
                     io_resp_regs.data(2) <= appl_tx_irq;
                     io_resp_regs.data(3) <= control_change;
                     io_resp_regs.data(4) <= rts_dtr_change;
+                when c_reg_slot_base =>
+                    io_resp_regs.data(6 downto 0) <= std_logic_vector(slot_base);
                 when others =>
                     null;
                 end case;
@@ -272,6 +281,7 @@ begin
                 hs_irq_en <= '0';
                 rts_dtr_change <= '0';
                 control_change <= '0';
+                slot_base <= (others => '0');
             end if;
             if soft_reset = '1' then
                 command(4 downto 0) <= "00010";
