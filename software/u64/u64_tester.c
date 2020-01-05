@@ -363,7 +363,7 @@ int U64PaddleTest(void)
         printf("\e\022Paddle X on Port 2 FAIL. Expected ~106, got: %d\n", x2);
         errors++;
     }
-    if ((y2 < 28) || (y2 > 34)) {
+    if ((y2 < 12) || (y2 > 34)) {
         printf("\e\022Paddle Y on Port 2 FAIL. Expected ~31, got: %d\n", y2);
         errors++;
     }
