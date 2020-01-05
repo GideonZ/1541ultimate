@@ -21,7 +21,9 @@ package acia6551_pkg is
     constant c_reg_tx_tail      : unsigned(3 downto 0) := X"3";
     constant c_reg_control      : unsigned(3 downto 0) := X"4";
     constant c_reg_command      : unsigned(3 downto 0) := X"5";
-    constant c_reg_enable       : unsigned(3 downto 0) := X"6";
-    constant c_reg_handsh       : unsigned(3 downto 0) := X"7";
-    constant c_reg_irq_source   : unsigned(3 downto 0) := X"8";
+    constant c_reg_status       : unsigned(3 downto 0) := X"6";
+    constant c_reg_enable       : unsigned(3 downto 0) := X"7";
+    constant c_reg_handsh       : unsigned(3 downto 0) := X"8";
+    constant c_reg_irq_source   : unsigned(3 downto 0) := X"9";
+    constant c_reg_slot_base    : unsigned(3 downto 0) := X"A";
 end package;

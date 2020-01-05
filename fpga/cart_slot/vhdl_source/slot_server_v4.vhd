@@ -26,6 +26,7 @@ generic (
     g_ram_expansion : boolean := true;
     g_extended_reu  : boolean := false;
     g_sampler       : boolean := false;
+    g_acia          : boolean := false;
     g_implement_sid : boolean := true;
     g_sid_voices    : natural := 3;
     g_8voices       : boolean := false;
@@ -105,7 +106,8 @@ port (
     -- slave on io bus
     io_req          : in    t_io_req;
     io_resp         : out   t_io_resp;
-    io_irq_cmd      : out   std_logic );
+    io_irq_cmd      : out   std_logic;
+    io_irq_acia     : out   std_logic );
 
 end slot_server_v4;    
 
@@ -188,6 +190,8 @@ architecture structural of slot_server_v4 is
     signal io_resp_copper   : t_io_resp := c_io_resp_init;
     signal io_req_samp_cpu  : t_io_req;
     signal io_resp_samp_cpu : t_io_resp := c_io_resp_init;
+    signal io_req_acia      : t_io_req;
+    signal io_resp_acia     : t_io_resp := c_io_resp_init;
     
     signal dma_req_io       : t_dma_req;
     signal dma_resp_io      : t_dma_resp := c_dma_resp_init;
@@ -205,6 +209,7 @@ architecture structural of slot_server_v4 is
     signal slot_resp_sid    : t_slot_resp := c_slot_resp_init;
     signal slot_resp_cmd    : t_slot_resp := c_slot_resp_init;
     signal slot_resp_samp   : t_slot_resp := c_slot_resp_init;
+    signal slot_resp_acia   : t_slot_resp := c_slot_resp_init;
     
     signal mem_req_reu      : t_mem_req   := c_mem_req_init; 
     signal mem_resp_reu     : t_mem_resp  := c_mem_resp_init;
@@ -265,7 +270,7 @@ begin
     generic map (
         g_range_lo  => 13,
         g_range_hi  => 15,
-        g_ports     => 5 )
+        g_ports     => 6 )
     port map (
         clock    => clock,
         
@@ -277,12 +282,14 @@ begin
         reqs(2)  => io_req_cmd,      -- 4044000
         reqs(3)  => io_req_copper,   -- 4046000
         reqs(4)  => io_req_samp_cpu, -- 4048000
+        reqs(5)  => io_req_acia,     -- 404A000
         
         resps(0) => io_resp_regs,
         resps(1) => io_resp_sid,
         resps(2) => io_resp_cmd,
         resps(3) => io_resp_copper,
-        resps(4) => io_resp_samp_cpu );
+        resps(4) => io_resp_samp_cpu,
+        resps(5) => io_resp_acia );
         
 
     i_registers: entity work.cart_slot_registers
@@ -685,7 +692,32 @@ begin
 
     end generate;
 
-    slot_resp <= or_reduce(slot_resp_reu & slot_resp_cart & slot_resp_sid & slot_resp_cmd & slot_resp_samp);
+    r_acia: if g_acia generate
+        i_acia: entity work.acia6551
+        port map (
+            clock     => clock,
+            reset     => actual_c64_reset,
+            -- slot_base => slot_base, -- defaults to DE00
+            slot_req  => slot_req,
+            slot_resp => slot_resp_acia,
+            io_req    => io_req_acia,
+            io_resp   => io_resp_acia,
+            io_irq    => io_irq_acia
+        );
+    end generate;
+
+    r_no_acia: if not g_acia generate
+        i_dummy: entity work.io_dummy
+        port map (
+            clock   => clock,
+            io_req  => io_req_acia,
+            io_resp => io_resp_acia
+        );
+        
+    end generate;
+
+    slot_resp <= or_reduce(slot_resp_reu & slot_resp_cart & slot_resp_sid & slot_resp_cmd &
+                           slot_resp_samp & slot_resp_acia);
 
     p_probe_address_delay: process(clock)
         variable kernal_probe_d : std_logic_vector(2 downto 0) := (others => '0');
@@ -714,7 +746,7 @@ begin
 
     -- open drain outputs
     irqn_o  <= '0' when irq_n='0' or slot_resp.irq='1' else '1';
-    nmin_o  <= '0' when (control.c64_nmi='1')   or (nmi_n='0') else '1';
+    nmin_o  <= '0' when (control.c64_nmi='1') or (nmi_n='0') or (slot_resp.nmi='1') else '1';
     rstn_o  <= '0' when (reset_button='1' and status.c64_stopped='0' and mask_buttons='0') or
                         (control.c64_reset='1') else '1';
     dman_o  <= '0' when (dma_n='0' or kernal_probe='1') else '1';

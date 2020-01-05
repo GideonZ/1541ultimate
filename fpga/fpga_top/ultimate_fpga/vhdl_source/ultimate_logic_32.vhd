@@ -33,6 +33,7 @@ generic (
     g_hardware_gcr  : boolean := true;
     g_cartridge     : boolean := true;
     g_command_intf  : boolean := true;
+    g_acia          : boolean := false;
     g_stereo_sid    : boolean := true;
     g_8voices       : boolean := true;
     g_ram_expansion : boolean := true;
@@ -281,6 +282,7 @@ architecture logic of ultimate_logic_32 is
         cap(24) := to_std(g_rmii);
         cap(25) := to_std(g_ultimate2plus);
         cap(26) := to_std(g_ultimate_64);
+        cap(27) := to_std(g_acia);
         cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -444,6 +446,7 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_tape     : std_logic := '0';
     signal sys_irq_iec      : std_logic := '0';
     signal sys_irq_cmdif    : std_logic := '0';
+    signal sys_irq_acia     : std_logic := '0';
     signal sys_irq_eth_tx   : std_logic := '0';
     signal sys_irq_eth_rx   : std_logic := '0';
     signal misc_io          : std_logic_vector(7 downto 0);
@@ -544,6 +547,7 @@ begin
         tick_1ms    => tick_1kHz,
         buttons     => button,
 
+        irq_high(0) => sys_irq_acia,
         irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,
         irq_in(5)   => sys_irq_eth_rx,
@@ -719,6 +723,7 @@ begin
             g_ram_expansion => g_ram_expansion,
             g_extended_reu  => g_extended_reu,
             g_command_intf  => g_command_intf,
+            g_acia          => g_acia,
             g_sampler       => g_sampler,
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 16,
@@ -797,7 +802,8 @@ begin
             -- slave on io bus
             io_req          => io_req_cart,
             io_resp         => io_resp_cart,
-            io_irq_cmd      => sys_irq_cmdif );
+            io_irq_cmd      => sys_irq_cmdif,
+            io_irq_acia     => sys_irq_acia );
 
         dman_o <= dman_oi;
     end generate;
