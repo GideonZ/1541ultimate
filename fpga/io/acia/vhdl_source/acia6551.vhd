@@ -46,19 +46,27 @@ architecture arch of acia6551 is
     alias dsr_n         : std_logic is status(6);
     alias dcd_n         : std_logic is status(5);
     alias tx_empty      : std_logic is status(4);
-    alias rx_empty      : std_logic is status(3);
+    alias rx_full       : std_logic is status(3);
     alias overrun_err   : std_logic is status(2);
     alias framing_err   : std_logic is status(1);
     alias parity_err    : std_logic is status(0);
 
     alias dtr           : std_logic is command(0);
+    signal dtr_d, rts_d     : std_logic;
     
     signal enable           : std_logic;
-    signal irq_en           : std_logic;
+    signal tx_irq_en        : std_logic;
+    signal rx_irq_en        : std_logic;
     signal soft_reset       : std_logic;
     signal rx_interrupt     : std_logic := '0';
     signal tx_interrupt     : std_logic := '0';
-
+    signal appl_tx_irq      : std_logic := '0';
+    signal appl_rx_irq      : std_logic := '0';
+    signal ctrl_irq_en      : std_logic;
+    signal hs_irq_en        : std_logic;
+    signal control_change   : std_logic;
+    signal rts_dtr_change   : std_logic;
+    
     signal cts              : std_logic; -- written by sys
     signal rts              : std_logic; -- written by slot (command register)
 
@@ -91,18 +99,27 @@ begin
 
     irq       <= (rx_interrupt and not command(1)) or (tx_interrupt and command(2) and not command(3));
     rts       <= command(2) or command(3);
-    rx_empty  <= not rx_data_valid;
+    rx_full   <= rx_data_valid;
     tx_empty  <= '0' when (tx_head + 1) = tx_tail else '1';
 
+    -- IRQs to the Host (Slot side)
     tx_interrupt <= tx_empty;
     rx_interrupt <= rx_data_valid;
+    
+    -- IRQs to the Application (IO side)
+    appl_rx_irq  <= '0' when (rx_head + 1) = rx_tail else '1'; -- RX = Appl -> Host (room for data appl can write)
+    appl_tx_irq  <= '1' when tx_head /= tx_tail else '0';      -- TX = Host -> Appl (data appl should read)
+    io_irq       <= (appl_rx_irq and rx_irq_en) or (appl_tx_irq and tx_irq_en) or
+                    (control_change and ctrl_irq_en) or (rts_dtr_change and hs_irq_en);
     
     process(clock)
     begin
         if rising_edge(clock) then
             soft_reset <= '0';
             tx_data_push <= '0';
-            
+            rts_d <= rts;
+            dtr_d <= dtr;
+                 
             b_en <= '0';
             b_we <= '0';
             b_address <= (others => 'X');
@@ -132,6 +149,7 @@ begin
                         command <= slot_req.data;
                     when c_addr_control_register =>
                         control <= slot_req.data;
+                        control_change <= '1';
                     when others =>
                         null;
                     end case;
@@ -164,11 +182,22 @@ begin
                     tx_tail <= unsigned(io_req_regs.data);
                 when c_reg_enable =>
                     enable <= io_req_regs.data(0);
-                    irq_en <= io_req_regs.data(1);
+                    rx_irq_en <= io_req_regs.data(1);
+                    tx_irq_en <= io_req_regs.data(2);
+                    ctrl_irq_en <= io_req_regs.data(3);
+                    hs_irq_en <= io_req_regs.data(4);
                 when c_reg_handsh =>
                     cts   <= io_req_regs.data(0);
                     dsr_n <= not io_req_regs.data(2);
                     dcd_n <= not io_req_regs.data(4);
+                when c_reg_irq_source =>
+                    if io_req_regs.data(3) = '1' then
+                        control_change <= '0';
+                    end if;
+                    if io_req_regs.data(4) = '1' then
+                        rts_dtr_change <= '0';
+                    end if;
+                    
                 when others =>
                     null;
                 end case;
@@ -189,13 +218,21 @@ begin
                     io_resp_regs.data <= command;
                 when c_reg_enable =>
                     io_resp_regs.data(0) <= enable;
-                    io_resp_regs.data(1) <= irq_en;
+                    io_resp_regs.data(1) <= rx_irq_en;
+                    io_resp_regs.data(2) <= tx_irq_en;
+                    io_resp_regs.data(3) <= ctrl_irq_en;
+                    io_resp_regs.data(4) <= hs_irq_en;
                 when c_reg_handsh =>
                     io_resp_regs.data(0) <= cts;
                     io_resp_regs.data(1) <= rts;
                     io_resp_regs.data(2) <= not dsr_n;
                     io_resp_regs.data(3) <= dtr;
                     io_resp_regs.data(4) <= not dcd_n;
+                when c_reg_irq_source =>
+                    io_resp_regs.data(1) <= appl_rx_irq;
+                    io_resp_regs.data(2) <= appl_tx_irq;
+                    io_resp_regs.data(3) <= control_change;
+                    io_resp_regs.data(4) <= rts_dtr_change;
                 when others =>
                     null;
                 end case;
@@ -212,6 +249,10 @@ begin
                 end if;
             end if;
 
+            if (dtr /= dtr_d) or (rts /= rts_d) then
+                rts_dtr_change <= '1';
+            end if;
+
             if reset = '1' then
                 command <= X"02";
                 control <= X"00";
@@ -225,6 +266,12 @@ begin
                 cts <= '0';
                 dsr_n <= '1';
                 dcd_n <= '1';
+                tx_irq_en <= '0';
+                rx_irq_en <= '0';
+                ctrl_irq_en <= '0';
+                hs_irq_en <= '0';
+                rts_dtr_change <= '0';
+                control_change <= '0';
             end if;
             if soft_reset = '1' then
                 command(4 downto 0) <= "00010";
