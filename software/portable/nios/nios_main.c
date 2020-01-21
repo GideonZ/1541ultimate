@@ -25,9 +25,17 @@ void RmiiRxInterruptHandler(void) __attribute__ ((weak));
 uint8_t command_interface_irq(void) __attribute__ ((weak));
 uint8_t tape_recorder_irq(void) __attribute__ ((weak));
 uint8_t usb_irq(void) __attribute__ ((weak));
+uint8_t acia_irq(void) __attribute__ ((weak));
 
 uint8_t command_interface_irq(void) {
+    return 0;
+}
 
+uint8_t acia_irq(void)
+{
+    // We shouldn't come here.
+    ioWrite8(ITU_IRQ_HIGH_ACT, 0);
+    return 0;
 }
 
 void RmiiRxInterruptHandler() {
@@ -79,6 +87,10 @@ static void ituIrqHandler(void *context) {
 	if (pending & 0x01) {
 		do_switch |= xTaskIncrementTick();
 	}
+	if (ioRead8(ITU_IRQ_HIGH_ACT) & ITU_IRQHIGH_ACIA) {
+	    do_switch |= acia_irq();
+	}
+
 	if (do_switch != pdFALSE) {
 		vTaskSwitchContext();
 	}
