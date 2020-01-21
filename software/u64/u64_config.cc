@@ -179,7 +179,7 @@ static const char *en_dis4[] = { "Disabled", "Enabled" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
 static const char *yes_no[] = { "No", "Yes" };
-static const char *dvi_hdmi[] = { "DVI", "HDMI" };
+static const char *dvi_hdmi[] = { "Auto", "HDMI", "DVI" };
 static const char *video_sel[] = { "CVBS + SVideo", "RGB" };
 static const char *color_sel[] = { "PAL", "NTSC" };
 static const char *sid_types[] = { "None", "6581", "8580", "FPGASID", "SwinSID Ultimate", "ARMSID", "ARM2SID", "SidFx", "FPGASID Dukestah" };
@@ -239,7 +239,7 @@ struct t_cfg_definition u64_cfg[] = {
     //    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
-    { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  1, 0 },
+    { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
     { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis4,      0,  1, 0 },
     { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
@@ -722,6 +722,8 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
         sockets.detect();
 
+        hdmiMonitor = IsMonitorHDMI();
+
         cfg->set_change_hook(CFG_SCAN_MODE_TEST, U64Config::setScanMode);
         cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
         cfg->set_change_hook(CFG_LED_SELECT_0, U64Config::setLedSelector);
@@ -787,7 +789,14 @@ void U64Config :: effectuate_settings()
     C64_SCANLINES    = cfg->get_value(CFG_SCANLINES);
     C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
 
-    U64_HDMI_ENABLE  =  cfg->get_value(CFG_HDMI_ENABLE);
+    uint8_t hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
+
+    if (!hdmiSetting) { // Auto = 0
+        U64_HDMI_ENABLE = hdmiMonitor ? 1 : 0;
+    } else {
+        U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
+    }
+
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
     C64_PLD_JOYCTRL  =  cfg->get_value(CFG_JOYSWAP) ^ 1;
     C64_PADDLE_SWAP  =  cfg->get_value(CFG_JOYSWAP);
@@ -1916,4 +1925,44 @@ void U64Config :: access_socket_post(int socket)
     }
 
     alt_irq_enable_all(irq_context);
+}
+
+bool U64Config :: IsMonitorHDMI()
+{
+    const uint8_t header_expected[8] = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
+    uint8_t header[8];
+    uint8_t extension[8];
+    I2C_Driver i2c;
+
+    if ((U64_HDMI_REG & U64_HDMI_HPD_CURRENT) == 0) {
+        printf("No HPD - no digital monitor attached.\n");
+        return false;
+    }
+
+    U64_HDMI_REG = U64_HDMI_DDC_ENABLE;
+    if (i2c.i2c_read_block(0xA0, 0x00, header, 8) != 0) {
+        printf("EDID Read FAILED.\n");
+        U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+        return false;
+    }
+    if (i2c.i2c_read_block(0xA0, 0x80, extension, 8) != 0) {
+        printf("EDID Read FAILED.\n");
+        U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+        return false;
+    }
+    U64_HDMI_REG = U64_HDMI_DDC_DISABLE;
+    if (memcmp(header, header_expected, 8) != 0) {
+        printf("EDID Header incorrect.\n");
+        return false;
+    }
+    if (extension[0] != 0x02) {
+        printf("EDID Extension not of CEA type.\n");
+        return false;
+    }
+    if ((extension[3] & 0x70) == 0) {
+        printf("EDID no support for any HDMI specific stuff.\n");
+        return false;
+    }
+    printf("EDID: Monitor is HDMI!\n");
+    return true;
 }

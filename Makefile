@@ -1,7 +1,7 @@
 
 # .PHONY: all mk1 mk2 mk3 mk3only prog special clean sw_clean loader
 
-all: mk3 u2plus
+all: mk3 u2plus u64
 
 mk3:
 	@$(MAKE) -C tools
