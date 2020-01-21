@@ -346,7 +346,8 @@ begin
 
     port map (
         a_clock                 => clock,
-        a_address               => io_req_ram.address(8 downto 0),
+        a_address(8)            => io_req_ram.address(9), -- intentional mirroring
+        a_address(7 downto 0)   => io_req_ram.address(7 downto 0),
         a_rdata                 => io_ram_rdata,
         a_wdata                 => io_req_ram.data,
         a_en                    => io_ram_en,
