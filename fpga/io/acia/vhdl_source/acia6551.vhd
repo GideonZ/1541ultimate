@@ -19,8 +19,10 @@ entity acia6551 is
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
-
+    c64_reset       : in  std_logic := '0';
+    
     -- C64 side interface
+    slot_tick       : in  std_logic;
     slot_req        : in  t_slot_req;
     slot_resp       : out t_slot_resp;
         
@@ -74,6 +76,9 @@ architecture arch of acia6551 is
     signal rx_head, rx_tail : unsigned(7 downto 0);
     signal tx_head, tx_tail : unsigned(7 downto 0);
 
+    signal rx_rate          : unsigned(7 downto 0);
+    signal rx_rate_cnt      : unsigned(7 downto 0);
+
     signal b_address        : unsigned(8 downto 0);
     signal b_rdata          : std_logic_vector(7 downto 0);
     signal b_wdata          : std_logic_vector(7 downto 0);
@@ -106,7 +111,7 @@ begin
 
     -- IRQs to the Host (Slot side)
     tx_interrupt <= tx_empty;
-    rx_interrupt <= rx_data_valid;
+    rx_interrupt <= rx_data_valid when rx_rate_cnt = X"00" else '0';
     
     -- IRQs to the Application (IO side)
     appl_rx_irq  <= '0' when (rx_head + 1) = rx_tail else '1'; -- RX = Appl -> Host (room for data appl can write)
@@ -126,6 +131,12 @@ begin
             b_we <= '0';
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
+
+            if slot_tick = '1' then
+                if rx_rate_cnt /= X"00" then
+                    rx_rate_cnt <= rx_rate_cnt - 1;
+                end if;
+            end if;
 
             if tx_data_push = '1' and tx_empty = '1' then
                 b_address <= '0' & tx_head;
@@ -162,6 +173,7 @@ begin
                         framing_err <= '0';
                         overrun_err <= '0';
                         rx_data_valid <= '0';
+                        rx_rate_cnt <= rx_rate;
                     when c_addr_status_register =>
                         null;
                     when c_addr_command_register =>
@@ -202,7 +214,8 @@ begin
                 when c_reg_slot_base =>
                     slot_base <= unsigned(io_req_regs.data(6 downto 0));
                     nmi_selected <= io_req_regs.data(7);
-                    
+                when c_reg_rx_rate =>
+                    rx_rate <= unsigned(io_req_regs.data);
                 when others =>
                     null;
                 end case;
@@ -242,6 +255,9 @@ begin
                     io_resp_regs.data(4) <= rts_dtr_change;
                 when c_reg_slot_base =>
                     io_resp_regs.data(6 downto 0) <= std_logic_vector(slot_base);
+                    io_resp_regs.data(7) <= nmi_selected;
+                when c_reg_rx_rate =>
+                    io_resp_regs.data <= std_logic_vector(rx_rate);
                 when others =>
                     null;
                 end case;
@@ -282,8 +298,9 @@ begin
                 rts_dtr_change <= '0';
                 control_change <= '0';
                 slot_base <= (others => '0');
+                rx_rate <= X"55";
             end if;
-            if soft_reset = '1' then
+            if soft_reset = '1' or c64_reset = '1' then
                 command(4 downto 0) <= "00010";
             end if;
         end if;

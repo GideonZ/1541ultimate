@@ -56,7 +56,6 @@ port (
     kernal_probe    : out std_logic := '0';
     kernal_area     : out std_logic := '0';
     force_ultimax   : out std_logic := '0';
-    do_reg_output   : in  std_logic := '0';
 
     epyx_timeout    : out std_logic; -- '0' => epyx is on, '1' epyx is off    
     cpu_write       : out std_logic; -- for freezer

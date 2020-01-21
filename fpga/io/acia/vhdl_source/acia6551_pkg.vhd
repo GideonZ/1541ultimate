@@ -26,4 +26,5 @@ package acia6551_pkg is
     constant c_reg_handsh       : unsigned(3 downto 0) := X"8";
     constant c_reg_irq_source   : unsigned(3 downto 0) := X"9";
     constant c_reg_slot_base    : unsigned(3 downto 0) := X"A";
+    constant c_reg_rx_rate      : unsigned(3 downto 0) := X"B";
 end package;
