@@ -696,8 +696,9 @@ begin
         i_acia: entity work.acia6551
         port map (
             clock     => clock,
-            reset     => actual_c64_reset,
-            -- slot_base => slot_base, -- defaults to DE00
+            reset     => reset,
+            c64_reset => actual_c64_reset,
+            slot_tick => phi2_tick_i,
             slot_req  => slot_req,
             slot_resp => slot_resp_acia,
             io_req    => io_req_acia,
