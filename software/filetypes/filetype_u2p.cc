@@ -35,6 +35,7 @@ extern "C" {
 
 #ifdef U64
 #include "wifi.h"
+#include "acia.h"
 #endif
 
 // tester instance
@@ -136,6 +137,7 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		file = NULL;
 #if U64
 		wifi.Disable();
+		acia.deinit();
 #endif
 		jump_run(header.start);
 	} else {

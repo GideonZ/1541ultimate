@@ -17,10 +17,51 @@ Acia :: Acia(uint32_t base)
 
     regs->slot_base = 0;
     regs->enable = 0;
-    ioWrite8(ITU_IRQ_HIGH_EN, 1);
     controlQueue = NULL;
     dataQueue = NULL;
     buffer = NULL;
+
+    xTaskCreate( Acia :: TaskStart, "ACIA Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
+}
+
+void Acia :: TaskStart(void *a)
+{
+    Acia *obj = (Acia *)a;
+    obj->Task();
+}
+
+void Acia :: Task()
+{
+    QueueHandle_t queue = xQueueCreate(16, sizeof(AciaMessage_t));
+    DataBuffer *buf = new DataBuffer(2048); // 2K receive buffer
+    AciaMessage_t message;
+    char outbuf[32];
+    uint8_t txbuf[32];
+    int len;
+
+    init(0xDE00, true, queue, queue, buf);
+    const int baudRates[] = { -1, 100, 150, 220, 269, 300, 600, 1200, 2400, 3600, 4800, 7200, 9600, 14400, 19200, 38400 };
+
+    while(1) {
+        xQueueReceive(dataQueue, &message, portMAX_DELAY);
+        printf("Message type: %d. Value: %b. DataLen: %d Buffer: %d\n", message.messageType, message.smallValue, message.dataLength, buffer->availableData());
+        switch(message.messageType) {
+        case ACIA_MSG_CONTROL:
+            sprintf(outbuf, "BAUD=%d\r", baudRates[message.smallValue & 0x0F]);
+            this->send((uint8_t *)outbuf, strlen(outbuf));
+            break;
+        case ACIA_MSG_HANDSH:
+            sprintf(outbuf, "HANDSH=%b\r", message.smallValue);
+            this->send((uint8_t *)outbuf, strlen(outbuf));
+            break;
+        case ACIA_MSG_TXDATA:
+            len = buf->get(txbuf, 30);
+            txbuf[len] = 0;
+            sprintf(outbuf, "DATA=%s\r", txbuf);
+            this->send((uint8_t *)outbuf, strlen(outbuf));
+            break;
+        }
+    }
 }
 
 int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHandle_t dataQueue, DataBuffer *buffer)
@@ -49,6 +90,7 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
         enable |= ACIA_IRQ_TX;
     }
     regs->enable = enable;
+    ioWrite8(ITU_IRQ_HIGH_EN, 1);
 
     return 0;
 }
@@ -58,6 +100,24 @@ void Acia :: deinit(void)
     regs->enable = 0;
     this->controlQueue = NULL;
     this->dataQueue = NULL;
+    if (buffer) {
+        delete buffer;
+        buffer = NULL;
+    }
+    ioWrite8(ITU_IRQ_HIGH_EN, 0);
+}
+
+int Acia :: send(uint8_t *data, int length)
+{
+    uint8_t head = regs->rx_head;
+    uint8_t tail = regs->rx_tail;
+    uint8_t space = (tail - head) - 1; // wrap around 8 bit size... Hack!
+    if (length > space) {
+        length = space;
+    }
+    memcpy((void *)(rx_ram + head), data, length);
+    regs->rx_head = head + (uint8_t)length;
+    return length;
 }
 
 uint8_t Acia :: IrqHandler(void)
@@ -69,7 +129,7 @@ uint8_t Acia :: IrqHandler(void)
     BaseType_t retVal = pdFALSE;
 
     if (source & ACIA_IRQ_CTRL) { //
-//        printf("ACIA_CONTROL: %b\n", regs->control);
+        //printf("ACIA_CONTROL: %b\n", regs->control);
         if (controlQueue) {
             msg.messageType = ACIA_MSG_CONTROL;
             msg.smallValue = regs->control;
@@ -79,7 +139,7 @@ uint8_t Acia :: IrqHandler(void)
         regs->irq_source = ACIA_IRQ_CTRL;
     }
     if (source & ACIA_IRQ_HANDSH) { //
-//        printf("ACIA_HANDSH: %b\n", regs->handsh);
+        //printf("ACIA_HANDSH: %b\n", regs->handsh);
         if (controlQueue) {
             msg.messageType = ACIA_MSG_HANDSH;
             msg.smallValue = regs->handsh;
