@@ -51,13 +51,6 @@ class DataBuffer
     int head;
     int tail;
 
-    int availableData() {
-        int p = head - tail;
-        if (p < 0) {
-            p += size;
-        }
-        return p;
-    }
     int availableSpace() {
         return size - availableData() - 1;
     }
@@ -71,6 +64,14 @@ public:
     }
     virtual ~DataBuffer() {
         delete[] data;
+    }
+
+    int availableData() {
+        int p = head - tail;
+        if (p < 0) {
+            p += size;
+        }
+        return p;
     }
     int put(uint8_t *d, int length) {
         int available = availableSpace();
@@ -125,13 +126,19 @@ class Acia
     QueueHandle_t controlQueue;
     QueueHandle_t dataQueue;
     DataBuffer *buffer;
+    static void TaskStart(void *a);
+    void Task();
 public:
     Acia(uint32_t base);
     virtual ~Acia() {}
 
     int  init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHandle_t dataQueue, DataBuffer *buffer);
     void deinit(void);
+    int  send(uint8_t *data, int length);
+
     uint8_t IrqHandler(void);
 };
+
+extern Acia acia;
 
 #endif
