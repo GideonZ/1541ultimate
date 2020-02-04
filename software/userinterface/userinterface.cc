@@ -61,8 +61,11 @@ UserInterface :: ~UserInterface()
 {
 	printf("Destructing user interface..\n");
     do {
-    	ui_objects[focus]->deinit();
-    	delete ui_objects[focus--];
+        if (ui_objects[focus]) {
+            ui_objects[focus]->deinit();
+            delete ui_objects[focus];
+        }
+        focus--;
     } while(focus>=0);
     printf(" bye UI!\n");
 }
@@ -250,6 +253,7 @@ bool UserInterface :: pollFocussed(void)
         ui_objects[focus]->deinit();
         if (ret == -2) {
             delete ui_objects[focus];
+            ui_objects[focus] = NULL;
         }
         if(focus) {
             focus--;
