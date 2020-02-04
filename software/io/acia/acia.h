@@ -43,6 +43,10 @@ typedef struct _AciaMessage_t
 #define ACIA_MSG_CONTROL 1
 #define ACIA_MSG_HANDSH  2
 #define ACIA_MSG_TXDATA  3
+#define ACIA_MSG_RXDATA  4
+#define ACIA_MSG_DCD     5
+#define ACIA_MSG_DSR     6
+#define ACIA_MSG_CTS     7
 
 class DataBuffer
 {
@@ -51,8 +55,8 @@ class DataBuffer
     int head;
     int tail;
 
-    int availableSpace() {
-        return size - availableData() - 1;
+    int AvailableSpace() {
+        return size - AvailableData() - 1;
     }
 
 public:
@@ -66,15 +70,15 @@ public:
         delete[] data;
     }
 
-    int availableData() {
+    int AvailableData() {
         int p = head - tail;
         if (p < 0) {
             p += size;
         }
         return p;
     }
-    int put(uint8_t *d, int length) {
-        int available = availableSpace();
+    int Put(uint8_t *d, int length) {
+        int available = AvailableSpace();
         if (length > available) {
             length = available;
         }
@@ -95,8 +99,8 @@ public:
         return length;
     }
 
-    int get(uint8_t *d, int length) {
-        int available = availableData();
+    int Get(uint8_t *d, int length) {
+        int available = AvailableData();
         if (length > available) {
             length = available;
         }
@@ -109,12 +113,27 @@ public:
             memcpy(d + now, data, remain);
         }
 
+        AdvanceReadPointer(length);
+        return length;
+    }
+
+    int AvailableContiguous() {
+        if (head < tail) { // wrap
+            return size - tail;
+        }
+        return head - tail;
+    }
+
+    uint8_t *GetReadPointer() {
+        return &data[tail];
+    }
+
+    void AdvanceReadPointer(int length) {
         int newTail = tail + length;
         while (newTail >= size) {
             newTail -= size;
         }
         tail = newTail;
-        return length;
     }
 };
 
@@ -134,7 +153,15 @@ public:
 
     int  init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHandle_t dataQueue, DataBuffer *buffer);
     void deinit(void);
-    int  send(uint8_t *data, int length);
+    int  SendToRx(uint8_t *data, int length);
+    void SetDCD(uint8_t value);
+    void SetDSR(uint8_t value);
+    void SetCTS(uint8_t value);
+
+    // efficient transfers
+    int      GetRxSpace(void);
+    volatile uint8_t *GetRxPointer(void);
+    void     AdvanceRx(int);
 
     uint8_t IrqHandler(void);
 };
