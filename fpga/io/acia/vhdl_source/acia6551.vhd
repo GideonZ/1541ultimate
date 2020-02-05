@@ -111,7 +111,7 @@ begin
 
     -- IRQs to the Host (Slot side)
     tx_interrupt <= tx_empty;
-    rx_interrupt <= rx_data_valid when rx_rate_cnt = X"00" else '0';
+    rx_interrupt <= (rx_data_valid and rts) when rx_rate_cnt = X"00" else '0';
     
     -- IRQs to the Application (IO side)
     appl_rx_irq  <= '0' when (rx_head + 1) = rx_tail else '1'; -- RX = Appl -> Host (room for data appl can write)
