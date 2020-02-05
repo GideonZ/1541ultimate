@@ -73,7 +73,8 @@ int Acia :: SendToRx(uint8_t *data, int length)
     if (length > space) {
         length = space;
     }
-    memcpy((void *)(rx_ram + head), data, length);
+    uint8_t *dest =  (uint8_t *)(rx_ram + head);
+    memcpy(dest, data, length);
     regs->rx_head = head + (uint8_t)length;
     return length;
 }
@@ -109,7 +110,7 @@ uint8_t Acia :: IrqHandler(void)
 {
     uint8_t source = regs->irq_source;
     uint8_t tx_head;
-    uint32_t length;
+    uint8_t length;
     AciaMessage_t msg;
     BaseType_t retVal = pdFALSE;
 
