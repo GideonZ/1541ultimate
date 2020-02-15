@@ -17,6 +17,7 @@ typedef struct _acia_t {
     uint8_t handsh;
     uint8_t irq_source;
     uint8_t slot_base;
+    uint8_t rx_rate;
 } acia_t;
 
 #define ACIA_TX_RAM_OFFSET 0x800
@@ -157,6 +158,7 @@ public:
     void SetDCD(uint8_t value);
     void SetDSR(uint8_t value);
     void SetCTS(uint8_t value);
+    void SetRxRate(uint8_t value);
 
     // efficient transfers
     int      GetRxSpace(void);

@@ -77,7 +77,8 @@ architecture arch of acia6551 is
     signal tx_head, tx_tail : unsigned(7 downto 0);
 
     signal rx_rate          : unsigned(7 downto 0);
-    signal rx_rate_cnt      : unsigned(7 downto 0);
+    signal rx_rate_cnt      : unsigned(12 downto 0) := (others => '0');
+    signal rx_rate_expired  : std_logic := '1';
 
     signal b_address        : unsigned(8 downto 0);
     signal b_rdata          : std_logic_vector(7 downto 0);
@@ -111,7 +112,7 @@ begin
 
     -- IRQs to the Host (Slot side)
     tx_interrupt <= tx_empty;
-    rx_interrupt <= (rx_data_valid and rts) when rx_rate_cnt = X"00" else '0';
+    -- rx_interrupt <= (rx_data_valid and rts) when rx_rate_cnt = X"00" else '0';
     
     -- IRQs to the Application (IO side)
     appl_rx_irq  <= '0' when (rx_head + 1) = rx_tail else '1'; -- RX = Appl -> Host (room for data appl can write)
@@ -132,8 +133,14 @@ begin
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
 
-            if slot_tick = '1' then
-                if rx_rate_cnt /= X"00" then
+            if rx_data_valid = '1' and rts = '1' and rx_rate_expired = '1' then
+                rx_interrupt <= '1';
+                rx_rate_expired <= '0';
+                rx_rate_cnt <= rx_rate & "00000";
+            elsif slot_tick = '1' and rx_rate_expired = '0' then
+                if rx_rate_cnt = 0 then
+                    rx_rate_expired <= '1';
+                else
                     rx_rate_cnt <= rx_rate_cnt - 1;
                 end if;
             end if;
@@ -173,7 +180,7 @@ begin
                         framing_err <= '0';
                         overrun_err <= '0';
                         rx_data_valid <= '0';
-                        rx_rate_cnt <= rx_rate;
+                        rx_interrupt <= '0';
                     when c_addr_status_register =>
                         null;
                     when c_addr_command_register =>
