@@ -316,6 +316,7 @@ class IecChannel
 
 	int  channel;
     int  write;
+    int  append;
     uint8_t buffer[256];
     int  size;
     int  pointer;
