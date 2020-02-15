@@ -34,7 +34,9 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
     if (useNMI) {
         base |= 0x80;
     }
+    // regs->enable = 0;
     regs->slot_base = (uint8_t)base;
+    printf("ACIA: Wrote %b to the base register.\n", (uint8_t)base);
 
     this->controlQueue = controlQueue;
     this->dataQueue = dataQueue;
@@ -47,6 +49,8 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
     if (dataQueue) {
         enable |= ACIA_IRQ_TX;
     }
+    //regs->tx_tail = regs->tx_head; // clear upstream buffer
+    //regs->rx_head = regs->rx_tail; // clear downstream buffer
     regs->enable = enable;
     ioWrite8(ITU_IRQ_HIGH_EN, 1);
 
@@ -172,6 +176,11 @@ volatile uint8_t *Acia :: GetRxPointer(void)
 void Acia :: AdvanceRx(int adv)
 {
     regs->rx_head += adv;
+}
+
+void Acia :: SetRxRate(uint8_t value)
+{
+    regs->rx_rate = value;
 }
 
 // Global Static

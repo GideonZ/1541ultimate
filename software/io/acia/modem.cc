@@ -80,8 +80,8 @@ const AciaMessage_t rxData = { ACIA_MSG_RXDATA, 0, 0 };
 void Modem :: RunRelay(int socket)
 {
     struct timeval tv;
-    tv.tv_sec = 100; // bug in lwip; this is just used directly as tick value
-    tv.tv_usec = 100;
+    tv.tv_sec = 10; // bug in lwip; this is just used directly as tick value
+    tv.tv_usec = 10;
     setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
     printf("Modem: Running Relay to socket %d.\n", socket);
@@ -90,17 +90,17 @@ void Modem :: RunRelay(int socket)
         int space = acia.GetRxSpace();
         volatile uint8_t *dest = acia.GetRxPointer();
         if (space > 0) {
-            printf("RELAY: Recv %p %d ", dest, space);
+            //printf("RELAY: Recv %p %d ", dest, space);
             ret = recv(socket, (void *)dest, space, 0);
-            printf("%d\n", ret);
             if (ret > 0) {
                 acia.AdvanceRx(ret);
+                //printf("%d\n", ret);
             } else if(ret == 0) {
                 printf("Receive returned 0. Exiting\n");
                 break;
             }
         } else {
-            vTaskDelay(100);
+            vTaskDelay(10);
         }
         int avail = aciaTxBuffer->AvailableContiguous();
         if (avail > 0) {
@@ -175,7 +175,6 @@ void Modem :: Caller()
             acia.SendToRx((uint8_t *)"MODEM BUSY\r", 11);
             continue;
         }
-
 
         for(int i=2;i<cmd.length;i++) {
             if (cmd.command[i] == ':') {
@@ -273,7 +272,8 @@ void Modem :: ExecuteCommand(ModemCommand_t *cmd)
 
 void Modem :: ModemTask()
 {
-    const int baudRates[] = { -1, 100, 150, 220, 269, 300, 600, 1200, 2400, 3600, 4800, 7200, 9600, 14400, 19200, 38400 };
+    const int baudRates[]      = {   -1,  100,  150,  220, 269,   300,  600, 1200, 2400, 3600, 4800, 7200, 9600, 14400, 19200, 38400 };
+    const uint8_t rateValues[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x82, 0x56, 0x41, 0x2B, 0x20, 0x16, 0x10, 0x08 };
 
     AciaMessage_t message;
     char outbuf[32];
@@ -293,6 +293,7 @@ void Modem :: ModemTask()
         switch(message.messageType) {
         case ACIA_MSG_CONTROL:
             printf("BAUD=%d\n", baudRates[message.smallValue & 0x0F]);
+            acia.SetRxRate(rateValues[message.smallValue & 0x0F]);
             //acia.SendToRx((uint8_t *)outbuf, strlen(outbuf));
             break;
         case ACIA_MSG_DCD:
