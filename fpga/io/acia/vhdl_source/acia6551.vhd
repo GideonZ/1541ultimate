@@ -105,7 +105,7 @@ begin
     slot_resp.irq  <= irq and not nmi_selected;
     slot_resp.nmi  <= irq and nmi_selected;
 
-    irq       <= enable and ((rx_interrupt and not command(1)) or (tx_interrupt and command(2) and not command(3)));
+    irq       <= enable and (rx_interrupt and not command(1));-- or (tx_interrupt and command(2) and not command(3)));
     rts       <= command(2) or command(3);
     rx_full   <= rx_data_valid;
     tx_empty  <= '0' when (tx_head + 1) = tx_tail else '1';
@@ -180,8 +180,8 @@ begin
                         framing_err <= '0';
                         overrun_err <= '0';
                         rx_data_valid <= '0';
-                        rx_interrupt <= '0';
                     when c_addr_status_register =>
+                        rx_interrupt <= '0';
                         null;
                     when c_addr_command_register =>
                         null;
@@ -305,7 +305,7 @@ begin
                 rts_dtr_change <= '0';
                 control_change <= '0';
                 slot_base <= (others => '0');
-                rx_rate <= X"55";
+                rx_rate <= X"82";
             end if;
             if soft_reset = '1' or c64_reset = '1' then
                 command(4 downto 0) <= "00010";

@@ -719,3 +719,5 @@ Flash *get_flash(void)
 {
 	return new Flash(); // stubbed base
 }
+
+const char *en_dis[]    = { "Disabled", "Enabled" };

@@ -258,4 +258,6 @@ public:
     virtual void effectuate_settings() { }
 };
 
+extern const char *en_dis[];
+
 #endif

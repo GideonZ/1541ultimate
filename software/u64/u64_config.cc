@@ -175,7 +175,6 @@ const char *stereo_addr[] = { "Off", "A5", "A6", "A7", "A8", "A9" };
 const char *sid_split[] = { "Off", "1/2 (A5)", "1/2 (A6)", "1/2 (A7)", "1/2 (A8)", "1/4 (A5,A6)", "1/4 (A5,A8)", "1/4 (A7,A8)" };
 
 static const char *joyswaps[] = { "Normal", "Swapped" };
-static const char *en_dis4[] = { "Disabled", "Enabled" };
 static const char *en_dis5[] = { "Disabled", "Enabled", "Transp. Border" };
 static const char *digi_levels[] = { "Off", "Low", "Medium", "High" };
 static const char *yes_no[] = { "No", "Yes" };
@@ -240,12 +239,12 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
-    { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis4,      0,  1, 0 },
-    { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis4,      0,  1, 0 },
+    { CFG_SCANLINES,            CFG_TYPE_ENUM, "HDMI Scan lines",              "%s", en_dis,       0,  1, 0 },
+    { CFG_PARCABLE_ENABLE,      CFG_TYPE_ENUM, "SpeedDOS Parallel Cable",      "%s", en_dis,       0,  1, 0 },
     { CFG_LED_SELECT_0,         CFG_TYPE_ENUM, "LED Select Top",               "%s", ledselects,   0, 15, 0 },
     { CFG_LED_SELECT_1,         CFG_TYPE_ENUM, "LED Select Bot",               "%s", ledselects,   0, 15, 4 },
     { CFG_SPEAKER_VOL,          CFG_TYPE_ENUM, "Speaker Volume (SpkDat)",      "%s", speaker_vol,  0, 10, 5 },
-    { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis4,      0,  1, 1 },
+    { CFG_PLAYER_AUTOCONFIG,    CFG_TYPE_ENUM, "SID Player Autoconfig",        "%s", en_dis,       0,  1, 1 },
     { CFG_ALLOW_EMUSID,         CFG_TYPE_ENUM, "Allow Autoconfig uses UltiSid","%s", yes_no,       0,  1, 1 },
 #if DEVELOPER
     //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
@@ -254,8 +253,8 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_sid_detection_cfg[] = {
-    { CFG_SOCKET1_ENABLE,       CFG_TYPE_ENUM, "SID Socket 1",                 "%s", en_dis4,      0,  1, 0 },
-    { CFG_SOCKET2_ENABLE,       CFG_TYPE_ENUM, "SID Socket 2",                 "%s", en_dis4,      0,  1, 0 },
+    { CFG_SOCKET1_ENABLE,       CFG_TYPE_ENUM, "SID Socket 1",                 "%s", en_dis,       0,  1, 0 },
+    { CFG_SOCKET2_ENABLE,       CFG_TYPE_ENUM, "SID Socket 2",                 "%s", en_dis,       0,  1, 0 },
     { CFG_SID1_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 1",        "%s", sid_types,    0,  8, 0 },
     { CFG_SID2_TYPE,			CFG_TYPE_ENUM, "SID Detected Socket 2",        "%s", sid_types,    0,  8, 0 },
     { CFG_SID1_SHUNT,           CFG_TYPE_ENUM, "SID Socket 1 1K Ohm Resistor", "%s", sid_shunt,    0,  1, 0 },
@@ -271,8 +270,8 @@ struct t_cfg_definition u64_sid_addressing_cfg[] = {
     { CFG_EMUSID1_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 1 Address",            "%s", u64_sid_base, 0, 48, 1 },
     { CFG_EMUSID2_ADDRESS,   	CFG_TYPE_ENUM, "UltiSID 2 Address",            "%s", u64_sid_base, 0, 48, 1 },
     { CFG_EMUSID_SPLIT,         CFG_TYPE_ENUM, "UltiSID Range Split",          "%s", sid_split,    0,  7, 0 },
-    { CFG_PADDLE_EN,            CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis4,      0,  1, 1 },
-    { CFG_AUTO_MIRRORING,       CFG_TYPE_ENUM, "Auto Address Mirroring",       "%s", en_dis4,      0,  1, 1 },
+    { CFG_PADDLE_EN,            CFG_TYPE_ENUM, "Paddle Override",              "%s", en_dis,       0,  1, 1 },
+    { CFG_AUTO_MIRRORING,       CFG_TYPE_ENUM, "Auto Address Mirroring",       "%s", en_dis,       0,  1, 1 },
     { CFG_SHOW_SID_ADDR,        CFG_TYPE_FUNC, "Visual SID Address Editor",   "-->", (const char **)U64Config :: show_sid_addr, 0, 0, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
@@ -688,8 +687,8 @@ void U64Config :: U64SidAddressing :: effectuate_settings()
     C64_EMUSID_SPLIT =  C64_EMUSID_SPLIT_BAK = cfg->get_value(CFG_EMUSID_SPLIT);
 
     printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s) SlotSplit: %02X.  Emu1: %02X/%02X  Emu2: %02X/%02X  Emu Split: %02X\n",
-            C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
-            C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis4[C64_SID2_EN_BAK], C64_STEREO_ADDRSEL,
+            C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis[C64_SID1_EN_BAK],
+            C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis[C64_SID2_EN_BAK], C64_STEREO_ADDRSEL,
             C64_EMUSID1_BASE_BAK, C64_EMUSID1_MASK_BAK,
             C64_EMUSID2_BASE_BAK, C64_EMUSID2_MASK_BAK, C64_EMUSID_SPLIT_BAK );
 }
@@ -1402,8 +1401,8 @@ bool U64Config :: SidAutoConfig(int count, t_sid_definition *requested)
     }
 
     printf("Resulting address map: Slot1: %02X/%02X (%s) Slot2: %02X/%02X (%s)  Emu1: %02X/%02X  Emu2: %02X/%02X\n",
-            C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis4[C64_SID1_EN_BAK],
-            C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis4[C64_SID2_EN_BAK],
+            C64_SID1_BASE_BAK, C64_SID1_MASK_BAK, en_dis[C64_SID1_EN_BAK],
+            C64_SID2_BASE_BAK, C64_SID2_MASK_BAK, en_dis[C64_SID2_EN_BAK],
             C64_EMUSID1_BASE_BAK, C64_EMUSID1_MASK_BAK,
             C64_EMUSID2_BASE_BAK, C64_EMUSID2_MASK_BAK );
 

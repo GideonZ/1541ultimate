@@ -159,7 +159,7 @@ uint8_t Acia :: IrqHandler(void)
     return 0;
 }
 
-int      Acia :: GetRxSpace(void)
+int Acia :: GetRxSpace(void)
 {
     uint8_t head = regs->rx_head;
     uint8_t tail = regs->rx_tail;

@@ -8,6 +8,7 @@ ListenerSocket :: ListenerSocket(const char *socketName, SpawnFunction_t spawn, 
     this->spawnName = spawnName;
     port = 0;
     listenfd = 0;
+    listenerTask = 0;
 }
 
 ListenerSocket :: ~ListenerSocket()
@@ -48,6 +49,11 @@ void ListenerSocket :: ListenerTask()
 int ListenerSocket :: Start(int port)
 {
     struct sockaddr_in serv_addr;
+
+    if (listenerTask) {
+        vTaskDelete(listenerTask);
+        listenerTask = 0;
+    }
 
     if (listenfd) {
         closesocket(listenfd);

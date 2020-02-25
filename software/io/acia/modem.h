@@ -14,6 +14,12 @@ typedef struct {
     char command[MAX_MODEM_COMMAND_LENGTH+1];
 } ModemCommand_t;
 
+#define MODEM_NUM_REGS 16
+#define MODEM_REG_AUTOANSWER  0
+#define MODEM_REG_RINGCOUNTER 1
+#define MODEM_REG_ESCAPE      2
+#define MODEM_REG_ESCAPETIME  12
+
 class Modem : public ConfigurableObject
 {
     static void task(void *a);
@@ -23,8 +29,11 @@ class Modem : public ConfigurableObject
     void IncomingConnection(int socket);
     void Caller(void);
     void CollectCommand(ModemCommand_t *cmd, char *buf, int len);
-    void ExecuteCommand(ModemCommand_t *cmd);
+    bool ExecuteCommand(ModemCommand_t *cmd);
     void RunRelay(int socket);
+    void ResetRegisters();
+    void WriteRegister(int value);
+    int  ReadRegister();
 
     QueueHandle_t commandQueue;
     QueueHandle_t connectQueue;
@@ -32,7 +41,12 @@ class Modem : public ConfigurableObject
     QueueHandle_t aciaQueue;
     DataBuffer *aciaTxBuffer;
     ListenerSocket *listenerSocket;
-    bool connected;
+    bool keepConnection;
+    bool commandMode;
+    int baudRate;
+    bool dropOnDTR;
+    int registerSelect;
+    uint8_t registerValues[MODEM_NUM_REGS];
 public:
     Modem();
     void effectuate_settings();
