@@ -10,6 +10,7 @@
 #define CFG_MODEM_INTF        0x01
 #define CFG_MODEM_ACIA        0x02
 #define CFG_MODEM_LISTEN_PORT 0x03
+#define CFG_MODEM_DTRDROP     0x05
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
@@ -19,6 +20,7 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_INTF,          CFG_TYPE_ENUM,   "Modem Interface",               "%s", interfaces,   0,  0, 0 },
     { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mode",              "%s", acia_mode,    0,  6, 0 },
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
+    { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR=0",      "%s", en_dis,       0,  1, 1 },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };
 
 
@@ -36,7 +38,11 @@ Modem :: Modem()
     xTaskCreate( Modem :: task, "Modem Task", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     xTaskCreate( Modem :: callerTask, "Outgoing Caller", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     listenerSocket = new ListenerSocket("Modem Listener", Modem :: listenerTask, "Modem External Connection");
-    connected = false;
+    keepConnection = false;
+    commandMode = true;
+    baudRate = 0;
+    dropOnDTR = true;
+    ResetRegisters();
 }
 
 /*
@@ -62,8 +68,8 @@ void Modem :: listenerTask(void *a)
 {
     int socketNumber = (int)a;
     char buffer[64];
-    int len = sprintf(buffer, "You are connected to the modem!\n");
-    send(socketNumber, buffer, len, 0);
+    //int len = sprintf(buffer, "You are connected to the modem!\n");
+    //send(socketNumber, buffer, len, 0);
 
     modem.IncomingConnection(socketNumber);
 
@@ -83,10 +89,18 @@ void Modem :: RunRelay(int socket)
     tv.tv_sec = 10; // bug in lwip; this is just used directly as tick value
     tv.tv_usec = 10;
     setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+    //currentRelaySocket = socket;
+    ModemCommand_t modemCommand;
 
     printf("Modem: Running Relay to socket %d.\n", socket);
     int ret;
-    while(1) {
+    commandMode = false;
+    uint8_t escape = registerValues[MODEM_REG_ESCAPE];
+    int escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME]; // Ultimate Timer is 200 Hz, hence *4, register specifies fiftieths of seconds
+    int escapeCount = 0;
+    TickType_t escapeDetectTime = 0;
+
+    while(keepConnection) {
         int space = acia.GetRxSpace();
         volatile uint8_t *dest = acia.GetRxPointer();
         if (space > 0) {
@@ -102,17 +116,43 @@ void Modem :: RunRelay(int socket)
         } else {
             vTaskDelay(10);
         }
-        int avail = aciaTxBuffer->AvailableContiguous();
-        if (avail > 0) {
-            ret = send(socket, aciaTxBuffer->GetReadPointer(), avail, 0);
-            if (ret > 0) {
-                aciaTxBuffer->AdvanceReadPointer(ret);
-            } else if(ret < 0) {
-                printf("Error writing to socket. Exiting\n");
-                break;
+        if (escapeCount == 3) {
+            TickType_t since = xTaskGetTickCount() - escapeDetectTime;
+            if (since >= escapeTime) {
+                printf("Modem Escape detected!\n");
+                escapeCount = 0;
+                commandMode = true;
             }
         }
+        if (!commandMode) {
+            int avail = aciaTxBuffer->AvailableContiguous();
+            if (avail > 0) {
+                uint8_t *pnt = aciaTxBuffer->GetReadPointer();
+                for(int i=0;i<avail;i++) {
+                    if (pnt[i] == escape) {
+                        escapeCount ++;
+                        if (escapeCount == 3) {
+                            escapeDetectTime = xTaskGetTickCount();
+                        }
+                    } else {
+                        escapeCount = 0;
+                    }
+                }
+                ret = send(socket, pnt, avail, 0);
+                if (ret > 0) {
+                    aciaTxBuffer->AdvanceReadPointer(ret);
+                } else if(ret < 0) {
+                    printf("Error writing to socket. Exiting\n");
+                    break;
+                }
+            }
+        }
+        BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 0);
+        if (cmdAvailable) {
+            ExecuteCommand(&modemCommand);
+        }
     }
+    commandMode = true;
 }
 
 void Modem :: IncomingConnection(int socket)
@@ -126,27 +166,34 @@ void Modem :: IncomingConnection(int socket)
     xQueueSend(aciaQueue, &setCTS, portMAX_DELAY);
 
     ModemCommand_t modemCommand;
-
-    for(int rings=0; rings<5; rings++) {
+    registerValues[MODEM_REG_RINGCOUNTER] = 0;
+    for(int rings=0; rings < 10; rings++) {
         acia.SendToRx((uint8_t *)"RING\r", 5);
         int len = sprintf(buffer, "RING\n");
-        send(socket, buffer, len, 0);
+        registerValues[MODEM_REG_RINGCOUNTER] ++;
+        if (send(socket, buffer, len, 0) <= 0) {
+            break;
+        }
+        if (registerValues[MODEM_REG_AUTOANSWER]) {
+            if (registerValues[MODEM_REG_RINGCOUNTER] >= registerValues[MODEM_REG_AUTOANSWER]) {
+                keepConnection = true;
+                break;
+            }
+        }
         BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 600); // wait max 3 seconds for a command
         if (cmdAvailable) {
-            modemCommand.command[modemCommand.length] = 0;
-            printf("MODEM COMMAND: '%s'\n", modemCommand.command);
-
-            if ((modemCommand.length > 0) && (modemCommand.command[0] == 'A')) {
-                acia.SendToRx((uint8_t *)"CONNECT 19200\r", 14);
-                int len = sprintf(buffer, "CONNECT 19200\n");
-                send(socket, buffer, len, 0);
-                connected = true;
+            if (ExecuteCommand(&modemCommand)) {
                 break;
             }
         }
     }
 
-    if (connected) {
+    if (keepConnection) {
+        int len = sprintf(buffer, "CONNECT %d\r", baudRate);
+        acia.SendToRx((uint8_t*)buffer, len);
+        buffer[len-1] = 0x0a; // Use Newline instead of carriage return for the socket
+        send(socket, buffer, len, 0);
+
         xQueueSend(aciaQueue, &setDCD, portMAX_DELAY);
         RunRelay(socket);
     } else {
@@ -156,8 +203,9 @@ void Modem :: IncomingConnection(int socket)
 
     xQueueSend(aciaQueue, &clrDCD, portMAX_DELAY);
     xQueueSend(aciaQueue, &clrCTS, portMAX_DELAY);
-    connected = false;
+    keepConnection = false;
     xSemaphoreGive(connectionLock);
+    commandMode = true;
 }
 
 void Modem :: Caller()
@@ -184,7 +232,7 @@ void Modem :: Caller()
             }
         }
         // setup the connection
-        int result = gethostbyname_r(&cmd.command[2], &my_host, buffer, 128, &ret_host, &error);
+        int result = gethostbyname_r(cmd.command, &my_host, buffer, 128, &ret_host, &error);
 
         if (!ret_host) {
             acia.SendToRx((uint8_t *)"RESOLVE ERROR\r", 14);
@@ -209,7 +257,7 @@ void Modem :: Caller()
         serv_addr.sin_port = htons(portno);
 
         if (connect(sock_fd, (struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
-            acia.SendToRx((uint8_t *)"CAN'T CONNECT\r", 14);
+            acia.SendToRx((uint8_t *)"NO CARRIER\r", 14);
             xSemaphoreGive(connectionLock);
             continue;
         }
@@ -218,9 +266,10 @@ void Modem :: Caller()
         // run the relay
 
         acia.SendToRx((uint8_t *)"CONNECTED\r", 10);
-        connected = true;
+        keepConnection = true;
         RunRelay(sock_fd);
-        connected = false;
+        lwip_close(sock_fd);
+        keepConnection = false;
         xSemaphoreGive(connectionLock);
     }
 }
@@ -259,15 +308,117 @@ void Modem :: CollectCommand(ModemCommand_t *cmd, char *buf, int len)
     }
 }
 
-void Modem :: ExecuteCommand(ModemCommand_t *cmd)
+bool Modem :: ExecuteCommand(ModemCommand_t *cmd)
 {
-    if(strncmp(cmd->command, "DT", 2) == 0) {
-        printf("I need to make an outgoing call to '%s'!\n", &cmd->command[2]);
-        xQueueSend(connectQueue, cmd, 10);
-    } else {
-        acia.SendToRx((uint8_t *)"?\r", 2);
+    bool connectionStateChange = false;
+    char *c;
+    const char *response = "OK\r";
+    char responseBuffer[16];
+    int registerValue, temp;
+
+    printf("MODEM COMMAND: '%s'\n", cmd->command);
+
+    // Parse Command string
+    for(int i=0; i < cmd->length; i++) {
+        switch(cmd->command[i]) {
+        case 'D': // Dial
+            c = cmd->command; // overwrite current command
+            for(int j=i+2; j < cmd->length; j++) {
+                *(c++) = cmd->command[j];
+            }
+            *(c++) = 0;
+            printf("I need to make an outgoing call to '%s'!\n", cmd->command);
+            xQueueSend(connectQueue, cmd, 10);
+            i = cmd->length; // break outer loop
+            response = "";
+            break;
+        case 'Z': // reset
+            ResetRegisters();
+            keepConnection = false;
+            connectionStateChange = true;
+            break;
+        case 'H': // hang up
+            sscanf(cmd->command + i + 1, "%d", &temp);
+            while(i < cmd->length && (isdigit(cmd->command[i+1])))
+                i++;
+            if (temp == 0) {
+                keepConnection = false;
+            } else {
+                if (keepConnection) {
+                    response = "";
+                } else {
+                    response = "NO DIALTONE\r";
+                }
+            }
+            connectionStateChange = true;
+            break;
+        case 'A': // answer
+            if (keepConnection) {
+                commandMode = false;
+            }
+            keepConnection = true;
+            connectionStateChange = true;
+            break;
+        case 'O': // Return Online
+            if (keepConnection) {
+                commandMode = false;
+                response = "";
+            } else {
+                response = "NO CARRIER\r";
+            }
+            break;
+        case 'V': // Verbose mode
+            sscanf(cmd->command + i + 1, "%d", &temp);
+            while(i < cmd->length && (isdigit(cmd->command[i+1])))
+                i++;
+            break;
+        case 'S': // register select
+            registerSelect = 0;
+            sscanf(cmd->command + i + 1, "%d", &registerSelect);
+            while(i < cmd->length && (isdigit(cmd->command[i+1])))
+                i++;
+            break;
+        case '?': // print register value
+            sprintf(responseBuffer, "%d\r", ReadRegister());
+            response = responseBuffer;
+            break;
+        case '=':
+            registerValue = 0;
+            sscanf(cmd->command + i + 1, "%d", &registerValue);
+            while(i < cmd->length && (isdigit(cmd->command[i+1])))
+                i++;
+            WriteRegister(registerValue);
+            break;
+        default:
+            response = "?\r";
+            i = cmd->length; // break outer loop
+            break;
+        }
     }
-    xSemaphoreGive(connectionLock);
+    acia.SendToRx((uint8_t *)response, strlen(response));
+    return connectionStateChange;
+}
+
+void Modem :: ResetRegisters()
+{
+    const uint8_t defaults[MODEM_NUM_REGS] = { 0, 0, 43, 13, 10, 8, 2, 50, 2, 6, 14, 95, 50, 0, 0, 0 };
+    memcpy(registerValues, defaults, MODEM_NUM_REGS);
+}
+
+void Modem :: WriteRegister(int value)
+{
+    printf("MODEM: Write Register %d to %d.\n", registerSelect, value);
+    if (registerSelect < MODEM_NUM_REGS) {
+        registerValues[registerSelect] = (uint8_t)value;
+    }
+}
+
+int Modem :: ReadRegister()
+{
+    if (registerSelect < MODEM_NUM_REGS) {
+        return (int)registerValues[registerSelect];
+    }
+    return 0;
 }
 
 void Modem :: ModemTask()
@@ -286,6 +437,8 @@ void Modem :: ModemTask()
 
     // first time configuration
     cfg->effectuate();
+    acia.SetRxRate(rateValues[8]);
+    baudRate = baudRates[8];
 
     while(1) {
         xQueueReceive(aciaQueue, &message, portMAX_DELAY);
@@ -294,6 +447,7 @@ void Modem :: ModemTask()
         case ACIA_MSG_CONTROL:
             printf("BAUD=%d\n", baudRates[message.smallValue & 0x0F]);
             acia.SetRxRate(rateValues[message.smallValue & 0x0F]);
+            baudRate = baudRates[message.smallValue & 0x0F];
             //acia.SendToRx((uint8_t *)outbuf, strlen(outbuf));
             break;
         case ACIA_MSG_DCD:
@@ -307,20 +461,28 @@ void Modem :: ModemTask()
             break;
         case ACIA_MSG_HANDSH:
             printf("HANDSH=%b\n", message.smallValue);
+            if (!(message.smallValue && ACIA_HANDSH_DTR) && dropOnDTR) {
+                keepConnection = false;
+                //commandMode = true;
+            }
             //acia.SendToRx((uint8_t *)outbuf, strlen(outbuf));
             break;
         case ACIA_MSG_TXDATA:
-            if (!connected) {
+            if (commandMode) {
                 len = aciaTxBuffer->Get(txbuf, 30);
-                acia.SendToRx(txbuf, len); // local echo if there is no connection
+                acia.SendToRx(txbuf, len); // local echo
                 txbuf[len] = 0;
                 CollectCommand(&modemCommand, (char *)txbuf, len);
                 if (modemCommand.state == 3) {
+                    // Let's check if the modem is in a call
                     if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
                         if (xQueueSend(commandQueue, &modemCommand, 10) == pdFALSE) {
                             acia.SendToRx((uint8_t *)"NAK\r", 4);
                         }
                     } else {
+                        // we were not in a call, release the semaphore that we got
+                        xSemaphoreGive(connectionLock);
+                        // Not in a call, we just execute the command right away
                         ExecuteCommand(&modemCommand);
                     }
                     modemCommand.state = 0;
@@ -343,6 +505,8 @@ void Modem :: effectuate_settings()
     } else {
         acia.init(base & 0xFFFE, base & 1, aciaQueue, aciaQueue, aciaTxBuffer);
     }
+
+    dropOnDTR = cfg->get_value(CFG_MODEM_DTRDROP);
 
     listenerSocket->Start(newPort);
 }
