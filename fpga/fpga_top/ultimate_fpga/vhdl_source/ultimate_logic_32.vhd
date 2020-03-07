@@ -156,6 +156,11 @@ port (
     drv_via1_cb1_i      : in  std_logic;
     drv_via1_cb1_t      : out std_logic;
 
+    -- Debug port
+    debug_data          : out std_logic_vector(31 downto 0);
+    debug_valid         : out std_logic;
+    debug_ready         : in  std_logic := '0';
+
 	-- Debug UART
 	UART_TXD	: out   std_logic;
 	UART_RXD	: in    std_logic := '1';
@@ -394,6 +399,11 @@ architecture logic of ultimate_logic_32 is
     signal audio_select_left    : std_logic_vector(3 downto 0);
     signal audio_select_right   : std_logic_vector(3 downto 0);
     
+    signal bus_debug_data       : std_logic_vector(31 downto 0);
+    signal bus_debug_valid      : std_logic;
+    signal drv_debug_data       : std_logic_vector(31 downto 0);
+    signal drv_debug_valid      : std_logic;
+
     -- IEC signal routing
     signal atn_o, atn_i     : std_logic := '1';
     signal clk_o, clk_i     : std_logic := '1';
@@ -607,6 +617,10 @@ begin
             iec_reset_n     => iec_reset_i,
             c64_reset_n     => c64_reset_in_n,
             
+            -- Debug port
+            debug_data      => drv_debug_data,
+            debug_valid     => drv_debug_valid,
+
             -- Parallel cable pins
             via1_port_a_o   => drv_via1_port_a_o,
             via1_port_a_i   => drv_via1_port_a_i,
@@ -1406,6 +1420,9 @@ begin
 --    end generate;
 
     g_ela32: if g_profiler generate
+        signal drv_pending  : std_logic;
+        signal bus_pending  : std_logic;
+        signal drv_debug_enable : std_logic;
     begin
         i_ela: entity work.bus_analyzer_32
         generic map (
@@ -1431,11 +1448,43 @@ begin
             GAMEn        => GAMEn_i,
             sync         => sync,
             trigger      => trigger,
+
+            debug_data   => bus_debug_data,
+            debug_valid  => bus_debug_valid,
+            drv_enable   => drv_debug_enable,
+
             mem_req      => mem_req_32_debug,
             mem_resp     => mem_resp_32_debug,
             io_req       => io_req_debug,
             io_resp      => io_resp_debug
         );
+
+        process(sys_clock)
+        begin
+            if rising_edge(sys_clock) then
+                if sys_reset = '1' then
+                    drv_pending <= '0';
+                    bus_pending <= '0';
+                else
+                    if debug_ready = '1' then
+                        if bus_pending = '1' then
+                            bus_pending <= '0';
+                        elsif drv_pending = '1' then
+                            drv_pending <= '0';
+                        end if;
+                    end if;
+                    if drv_debug_valid = '1' and drv_debug_enable = '1' then
+                        drv_pending <= '1';
+                    end if;
+                    if bus_debug_valid = '1' then
+                        bus_pending <= '1';
+                    end if;
+                end if;
+            end if;
+        end process;
+
+        debug_data  <= bus_debug_data when bus_pending = '1' else drv_debug_data;
+        debug_valid <= bus_pending or drv_pending;
     end generate;
 
     g_no_elas: if not g_profiler and not g_analyzer generate
