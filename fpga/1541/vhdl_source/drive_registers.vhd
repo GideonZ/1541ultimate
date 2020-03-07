@@ -25,7 +25,7 @@ port (
     drive_address   : out std_logic_vector(1 downto 0);
     floppy_inserted : out std_logic;
     write_prot_n    : out std_logic;
-    bank_is_ram     : out std_logic_vector(7 downto 0);
+    bank_is_ram     : out std_logic_vector(7 downto 1);
     dirty_led_n     : out std_logic;
     stop_on_freeze  : out std_logic;
     
@@ -53,7 +53,7 @@ architecture rtl of drive_registers is
     signal use_c64_reset_i  : std_logic;
     signal drive_address_i  : std_logic_vector(1 downto 0);
     signal sensor_i         : std_logic;
-    signal bank_is_ram_i    : std_logic_vector(7 downto 0);
+    signal bank_is_ram_i    : std_logic_vector(7 downto 1);
     signal inserted_i       : std_logic;
     signal stop_when_frozen : std_logic;
 begin
@@ -89,7 +89,7 @@ begin
                     when c_drvreg_inserted =>
                         inserted_i <= io_req.data(0);
                     when c_drvreg_rammap =>
-                        bank_is_ram_i <= io_req.data;
+                        bank_is_ram_i <= io_req.data(7 downto 1);
                     when c_drvreg_anydirty =>
                         any_dirty <= '0';
                     when c_drvreg_dirtyirq =>
@@ -126,7 +126,7 @@ begin
                     when c_drvreg_inserted =>
                         io_resp.data(0) <= inserted_i;
                     when c_drvreg_rammap =>
-                        io_resp.data <= bank_is_ram_i;
+                        io_resp.data <= bank_is_ram_i & '0';
                     when c_drvreg_anydirty =>
                         io_resp.data(0) <= any_dirty;
                     when c_drvreg_dirtyirq =>
