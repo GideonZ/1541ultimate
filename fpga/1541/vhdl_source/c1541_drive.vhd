@@ -45,6 +45,10 @@ port (
     iec_reset_n     : in  std_logic := '1';
     c64_reset_n     : in  std_logic := '1';
     
+    -- Debug port
+    debug_data      : out std_logic_vector(31 downto 0);
+    debug_valid     : out std_logic;
+
     -- Parallel cable pins
     via1_port_a_o   : out std_logic_vector(7 downto 0);
     via1_port_a_i   : in  std_logic_vector(7 downto 0);
@@ -67,9 +71,9 @@ port (
 end c1541_drive;
 
 architecture structural of c1541_drive is
+    signal tick_16M_i       : std_logic;
     signal cia_rising       : std_logic;
     signal cpu_clock_en     : std_logic;
-    signal drv_clock_en     : std_logic;
     signal iec_reset_o      : std_logic;
     
     signal param_write      : std_logic;
@@ -86,7 +90,7 @@ architecture structural of c1541_drive is
 
     signal use_c64_reset    : std_logic;
     signal floppy_inserted  : std_logic := '0';
-    signal bank_is_ram      : std_logic_vector(7 downto 0);
+    signal bank_is_ram      : std_logic_vector(7 downto 1);
     signal power            : std_logic;
     signal motor_on         : std_logic;
     signal mode             : std_logic;
@@ -111,11 +115,13 @@ architecture structural of c1541_drive is
     signal mem_resp_flop    : t_mem_resp;
     signal mem_req_snd      : t_mem_req := c_mem_req_init;
     signal mem_resp_snd     : t_mem_resp;
-
+    signal mem_busy         : std_logic;
+    
     signal count            : unsigned(7 downto 0) := X"00";
 	signal led_intensity	: unsigned(1 downto 0);
 begin        
     drive_stop_i <= drive_stop and stop_on_freeze;
+    tick_16M_i   <= tick_16MHz and not drive_stop_i;
     
     i_timing: entity work.c1541_timing
     port map (
@@ -123,6 +129,7 @@ begin
         reset        => reset,
         
         tick_4MHz    => tick_4MHz,
+        mem_busy     => mem_busy,
 
         use_c64_reset=> use_c64_reset,
         c64_reset_n  => c64_reset_n,
@@ -131,9 +138,8 @@ begin
     
         drive_stop   => drive_stop_i,
     
-        drv_clock_en => drv_clock_en,   -- 1/12.5 (4 MHz)
         cia_rising   => cia_rising,
-        cpu_clock_en => cpu_clock_en ); -- 1/50   (1 MHz)
+        cpu_clock_en => cpu_clock_en ); -- 1 MHz
 
     i_cpu: entity work.cpu_part_1541
     generic map (
@@ -155,9 +161,9 @@ begin
         data_o      => data_o, -- open drain
         data_i      => data_i,
 
-        
         -- trace data
-        cpu_pc      => open, --cpu_pc_1541,
+        debug_data  => debug_data,
+        debug_valid => debug_valid,
         
 		-- configuration
         bank_is_ram    => bank_is_ram,
@@ -165,6 +171,7 @@ begin
 		-- memory interface
         mem_req         => mem_req_cpu,
         mem_resp        => mem_resp_cpu,
+        mem_busy        => mem_busy,
 
         -- drive pins
         power           => power,
@@ -203,7 +210,7 @@ begin
     port map (
         sys_clock       => clock,
         drv_reset       => drv_reset,
-        tick_16MHz      => tick_16MHz,
+        tick_16MHz      => tick_16M_i,
         
         -- signals from MOS 6522 VIA
         motor_on        => motor_on,

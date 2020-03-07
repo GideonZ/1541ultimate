@@ -28,12 +28,14 @@ port (
     -- memory interface
     mem_req         : out t_mem_req;
     mem_resp        : in  t_mem_resp;
-    
-    -- trace out
-    cpu_pc          : out std_logic_vector(15 downto 0);
+    mem_busy        : out std_logic;
+
+    -- Debug port
+    debug_data      : out std_logic_vector(31 downto 0);
+    debug_valid     : out std_logic;
     
     -- configuration
-    bank_is_ram     : in  std_logic_vector(7 downto 0);
+    bank_is_ram     : in  std_logic_vector(7 downto 1);
     
     -- Parallel cable pins
     via1_port_a_o   : out std_logic_vector(7 downto 0);
@@ -67,6 +69,7 @@ port (
 end cpu_part_1541;
 
 architecture structural of cpu_part_1541 is
+    signal bank_is_ram_i    : std_logic_vector(7 downto 0);
     signal cpu_write        : std_logic;
     signal cpu_wdata        : std_logic_vector(7 downto 0);
     signal cpu_rdata        : std_logic_vector(7 downto 0);
@@ -102,14 +105,10 @@ architecture structural of cpu_part_1541 is
     signal via2_cb2_i       : std_logic;
     signal via2_cb2_t       : std_logic;
     signal via2_irq         : std_logic;
-    signal bank_is_io       : std_logic_vector(7 downto 0);
     signal io_select        : std_logic;
-    signal rdata_mux        : std_logic;
-    signal cpu_ready     : std_logic;
-    signal cpu_rising    : std_logic;
-    signal need_cycle   : unsigned(2 downto 0);
-    signal done_cycle   : unsigned(2 downto 0);
-    type   t_mem_state  is (idle, cpubusy, newcycle, extcycle);
+    signal cpu_clk_en       : std_logic;
+    signal cpu_rising       : std_logic;
+    type   t_mem_state  is (idle, newcycle, extcycle);
     signal mem_state    : t_mem_state;
 
     -- "old" style signals
@@ -134,26 +133,40 @@ begin
     cpu: entity work.cpu6502(cycle_exact)
     port map (
         cpu_clk     => clock,
+        cpu_clk_en  => cpu_clk_en,
         cpu_reset   => reset,    
     
-        cpu_ready   => cpu_ready,
         cpu_write   => cpu_write,
         
         cpu_wdata   => cpu_wdata,
         cpu_rdata   => cpu_rdata,
         cpu_addr    => cpu_addr,
-        cpu_pc      => cpu_pc,
+        --cpu_pc      => cpu_pc,
         
         IRQn        => cpu_irqn, -- IRQ interrupt (level sensitive)
         NMIn        => '1',
     
         SOn         => byte_ready );
 
+    -- Generate an output stream to debug internal operation of 1541 CPU
+    process(clock)
+    begin
+        if rising_edge(clock) then
+            debug_valid <= '0';
+            if cpu_clk_en = '1' then
+                debug_data  <= '0' & atn_i & data_i & clk_i & sync & byte_ready & cpu_irqn & not cpu_write & cpu_rdata & cpu_addr(15 downto 0);
+                debug_valid <= '1';
+                if cpu_write = '1' then
+                    debug_data(23 downto 16) <= cpu_wdata;
+                end if;
+            end if;
+        end if;
+    end process;
 
     via1: entity work.via6522
     port map (
         clock       => clock,
-        falling     => cpu_ready,
+        falling     => cpu_clk_en,
         rising      => cpu_rising,
         reset       => reset,
                                 
@@ -192,7 +205,7 @@ begin
     via2: entity work.via6522
     port map (
         clock       => clock,
-        falling     => cpu_ready,
+        falling     => cpu_clk_en,
         rising      => cpu_rising,
         reset       => reset,
                                 
@@ -228,68 +241,61 @@ begin
                             
         irq         => via2_irq  );
 
-    cpu_irqn <= not(via1_irq or via2_irq);
+    cpu_irqn   <= not(via1_irq or via2_irq);
+    cpu_clk_en <= falling;
+    cpu_rising <= rising;
+    mem_busy   <= '0' when mem_state = idle else '1';
 
-
+    bank_is_ram_i <= bank_is_ram & '0';
+    
     -- Fetch ROM byte
     process(clock)
     begin
         if rising_edge(clock) then
-            if falling='1' then
-                need_cycle <= need_cycle + 1;
-            end if;
-
-            bank_is_io <= "0000" & not bank_is_ram(3 downto 1) & '1';
             mem_addr(25 downto 16) <= g_ram_base(25 downto 16);
-            
-            cpu_ready <= '0';
-            cpu_rising <= '0';
             
             case mem_state is
             when idle =>
-                if need_cycle /= done_cycle then
-                    cpu_ready <= '1';
-                    mem_state <= cpubusy;
+                if cpu_clk_en = '1' then
+                    mem_state <= newcycle;
                 end if;
             
-            when cpubusy =>
-                mem_state <= newcycle;
-            
             when newcycle => -- we have a new address now
-                cpu_rising <= '1';
                 mem_addr(15 downto  0) <= unsigned(cpu_addr(15 downto 0));
-                io_select <= '0';
-                if bank_is_io(to_integer(unsigned(cpu_addr(15 downto 13))))='1' then
-                    rdata_mux  <= '1'; -- io
-                    if cpu_addr(12)='0' then -- lower 4K of IO block is possibly RAM
+                io_select <= '0'; -- not active
+
+                -- Start by checking whether it is an extended RAM block
+                if bank_is_ram_i(to_integer(unsigned(cpu_addr(15 downto 13))))='1' then
+                    mem_request <= '1';
+                    mem_state   <= extcycle;
+                elsif cpu_addr(15) = '1' then -- ROM Area, which is not overridden as RAM
+                    if cpu_write = '0' then
                         mem_request <= '1';
                         mem_state <= extcycle;
-                        mem_addr(14 downto 13) <= "00"; -- cause mirroring
-                    else
-                        io_select  <= '1';
-                        done_cycle <= done_cycle + 1;
+                    else -- writing to rom -> ignore
                         mem_state  <= idle;
                     end if;
-                elsif cpu_write='0' or bank_is_ram(to_integer(unsigned(cpu_addr(15 downto 13))))='1' then -- ram is writeable, rom is not
-                    rdata_mux <= '0';
-                    mem_request   <= '1';
+                -- It's not extended RAM, not ROM, so it must be internal RAM or I/O.
+                elsif cpu_addr(12 downto 11) = "00" then -- Internal RAM
+                    mem_addr(14 downto 13) <= "00"; -- force mirroring for 2000-27FF, 4000-47FF and 6000-67FF.
+                    mem_request <= '1';
                     mem_state <= extcycle;
-                else -- write to rom -> ignore
-                    done_cycle <= done_cycle + 1;
-                    mem_state  <= idle;
+                else
+                    if cpu_addr(12 downto 10) = "101" or cpu_addr(12 downto 10) = "111" then
+                        io_select <= '1';
+                        mem_state  <= idle;
+                    end if;
                 end if;
             
             when extcycle =>
                 if mem_rack='1' then
                     mem_request <= '0';
                     if cpu_write='1' then
-                        done_cycle <= done_cycle + 1;
                         mem_state  <= idle;
                     end if;                    
                 end if;                        
                 if mem_dack='1' and cpu_write='0' then -- only for reads
                     ext_rdata  <= mem_resp.data;
-                    done_cycle <= done_cycle + 1;
                     mem_state  <= idle;
                 end if;
             
@@ -298,14 +304,9 @@ begin
             end case;                        
 
             if reset='1' then
-                rdata_mux   <= '0';
                 io_select   <= '0';
-                cpu_ready   <= '0';
-                cpu_rising  <= '0';
                 mem_request <= '0';
                 mem_state   <= idle;
-                need_cycle  <= "000";
-                done_cycle  <= "000";
             end if;
         end if;
     end process;
@@ -315,13 +316,11 @@ begin
 
     -- address decoding and data muxing
     with cpu_addr(12 downto 10) select io_rdata <= 
-        ext_rdata when "000",
-        ext_rdata when "001",
         via1_data when "110",
         via2_data when "111",
         X"FF"     when others;
 
-    cpu_rdata <= io_rdata when rdata_mux='1' else ext_rdata;
+    cpu_rdata <= io_rdata when io_select='1' else ext_rdata;
 
     via1_wen <= '1' when cpu_write='1' and io_select='1' and cpu_addr(12 downto 10)="110" else '0';
     via1_ren <= '1' when cpu_write='0' and io_select='1' and cpu_addr(12 downto 10)="110" else '0';
@@ -331,10 +330,9 @@ begin
 
     
     -- correctly attach the VIA pins to the outside world
-    
     via1_ca1         <= not atn_i;
     via1_cb2_i       <= via1_cb2_o or not via1_cb2_t;
-    
+ 
 
     -- Because Port B reads its own output when set to output, we do not need to consider the direction here
     via1_port_b_i(7) <= not atn_i;
@@ -352,7 +350,7 @@ begin
     clk_o  <= not power or (not (via1_port_b_o(3) or not via1_port_b_t(3)));
     atn_o  <= '1';
     
-    -- Do the same for VIA 2. Pin levels intead of output register.    
+    -- Do the same for VIA 2. Pin levels instead of output register.    
     via2_port_b_i(7) <= sync;
     via2_port_b_i(6) <= '1'; --Density
     via2_port_b_i(5) <= '1'; --Density
