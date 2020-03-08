@@ -35,7 +35,7 @@ class Modem : public ConfigurableObject
     void WriteRegister(int value);
     int  ReadRegister();
     void SetHandshakes(bool connected);
-    void RelayFileToSocket(const char *filename, int socket);
+    void RelayFileToSocket(const char *filename, int socket, const char *alt);
 
     QueueHandle_t commandQueue;
     QueueHandle_t connectQueue;
