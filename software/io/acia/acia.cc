@@ -83,6 +83,11 @@ int Acia :: SendToRx(uint8_t *data, int length)
     return length;
 }
 
+void Acia :: SetHS(uint8_t value)
+{
+    regs->handsh = value;
+}
+
 void Acia :: SetDCD(uint8_t value)
 {
     if (value) {

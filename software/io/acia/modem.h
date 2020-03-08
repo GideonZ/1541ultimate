@@ -34,6 +34,8 @@ class Modem : public ConfigurableObject
     void ResetRegisters();
     void WriteRegister(int value);
     int  ReadRegister();
+    void SetHandshakes(bool connected);
+    void RelayFileToSocket(const char *filename, int socket);
 
     QueueHandle_t commandQueue;
     QueueHandle_t connectQueue;
@@ -41,6 +43,7 @@ class Modem : public ConfigurableObject
     QueueHandle_t aciaQueue;
     DataBuffer *aciaTxBuffer;
     ListenerSocket *listenerSocket;
+    uint8_t ctsMode, dsrMode, dcdMode;
     bool keepConnection;
     bool commandMode;
     int baudRate;
