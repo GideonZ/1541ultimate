@@ -211,13 +211,13 @@ begin
                 end if;                
             elsif io_req.write='1' then
                 io_resp.ack <= '1';
-                case io_req.address(2 downto 0) is
-                when "111" =>
+                case io_req.address(3 downto 0) is
+                when X"6" =>
+                    enable_log <= '0';
+                when X"7" =>
                     ev_addr <= (others => '0');
                     enable_log <= '1';
-                when "110" =>
-                    enable_log <= '0';
-                when "101" =>
+                when X"8" =>
                     cpu_cycle_enable <= io_req.data(0);
                     vic_cycle_enable <= io_req.data(1);
                     drv_enable       <= io_req.data(2);
