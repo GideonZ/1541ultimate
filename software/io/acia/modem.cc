@@ -16,6 +16,7 @@
 #define CFG_MODEM_DSR         0x07
 #define CFG_MODEM_CTS         0x08
 #define CFG_MODEM_BUSYFILE    0x09
+#define CFG_MODEM_CONNFILE    0x0A
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
@@ -41,6 +42,7 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
     { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
     { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
+    { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };
 
 
@@ -175,8 +177,10 @@ void Modem :: IncomingConnection(int socket)
 {
     char buffer[64];
     if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
-        RelayFileToSocket(cfg->get_string(CFG_MODEM_BUSYFILE), socket);
+        RelayFileToSocket(cfg->get_string(CFG_MODEM_BUSYFILE), socket, "The modem you are connecting to is currently busy.\n");
         return;
+    } else {
+        RelayFileToSocket(cfg->get_string(CFG_MODEM_CONNFILE), socket, "Welcome to the Modem Emulation Layer of the Ultimate 64!\n");
     }
 
     ModemCommand_t modemCommand;
@@ -209,6 +213,8 @@ void Modem :: IncomingConnection(int socket)
         send(socket, buffer, len, 0);
 
         RunRelay(socket);
+        len = sprintf(buffer, "NO CARRIER\r");
+        acia.SendToRx((uint8_t*)buffer, len);
     } else {
         int len = sprintf(buffer, "NO ANSWER\n");
         send(socket, buffer, len, 0);
@@ -331,6 +337,7 @@ void Modem :: Caller()
         keepConnection = true;
         RunRelay(sock_fd);
         lwip_close(sock_fd);
+        acia.SendToRx((uint8_t *)"NO CARRIER\r", 14);
         keepConnection = false;
         xSemaphoreGive(connectionLock);
     }
@@ -561,7 +568,7 @@ void Modem :: ModemTask()
     }
 }
 
-void Modem :: RelayFileToSocket(const char *filename, int socket)
+void Modem :: RelayFileToSocket(const char *filename, int socket, const char *alt)
 {
     FileManager *fm = FileManager :: getFileManager();
     File *f;
@@ -577,9 +584,8 @@ void Modem :: RelayFileToSocket(const char *filename, int socket)
             }
         } while(tr == 512);
         fm->fclose(f);
-    } else {
-        int len = sprintf((char *)buffer, "The modem you are connecting to is currently busy.\n");
-        send(socket, buffer, len, 0);
+    } else if (alt) {
+        send(socket, alt, strlen(alt), 0);
     }
     delete[] buffer;
 }
