@@ -48,6 +48,7 @@ typedef struct _AciaMessage_t
 #define ACIA_MSG_DCD     5
 #define ACIA_MSG_DSR     6
 #define ACIA_MSG_CTS     7
+#define ACIA_MSG_SETHS   8
 
 class DataBuffer
 {
@@ -155,6 +156,7 @@ public:
     int  init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHandle_t dataQueue, DataBuffer *buffer);
     void deinit(void);
     int  SendToRx(uint8_t *data, int length);
+    void SetHS(uint8_t value);
     void SetDCD(uint8_t value);
     void SetDSR(uint8_t value);
     void SetCTS(uint8_t value);

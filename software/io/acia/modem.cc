@@ -5,22 +5,42 @@
 #include "netdb.h"
 #include <ctype.h>
 
+#include "filemanager.h"
 #include "dump_hex.h"
 
 #define CFG_MODEM_INTF        0x01
 #define CFG_MODEM_ACIA        0x02
 #define CFG_MODEM_LISTEN_PORT 0x03
 #define CFG_MODEM_DTRDROP     0x05
+#define CFG_MODEM_DCD         0x06
+#define CFG_MODEM_DSR         0x07
+#define CFG_MODEM_CTS         0x08
+#define CFG_MODEM_BUSYFILE    0x09
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
+static const char *dcd_dsr[] = { "Active (Low)", "Active when connected", "Inactive when connected", "Inactive (High)" };
 static const int acia_base[] = { 0, 0xDE00, 0xDE01, 0xDF00, 0xDF01, 0xDF80, 0xDF81 };
+
+/*
+static const AciaMessage_t setDSR = { ACIA_MSG_DSR, 1, 0 };
+static const AciaMessage_t clrDSR = { ACIA_MSG_DSR, 0, 0 };
+static const AciaMessage_t setDCD = { ACIA_MSG_DCD, 1, 0 };
+static const AciaMessage_t clrDCD = { ACIA_MSG_DCD, 0, 0 };
+static const AciaMessage_t setCTS = { ACIA_MSG_CTS, 1, 0 };
+static const AciaMessage_t clrCTS = { ACIA_MSG_CTS, 0, 0 };
+static const AciaMessage_t rxData = { ACIA_MSG_RXDATA, 0, 0 };
+*/
 
 struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_INTF,          CFG_TYPE_ENUM,   "Modem Interface",               "%s", interfaces,   0,  0, 0 },
     { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mode",              "%s", acia_mode,    0,  6, 0 },
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR=0",      "%s", en_dis,       0,  1, 1 },
+    { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  3, 0 },
+    { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
+    { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
+    { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };
 
 
@@ -77,12 +97,6 @@ void Modem :: listenerTask(void *a)
     vTaskDelete(NULL);
 }
 
-const AciaMessage_t setDCD = { ACIA_MSG_DCD, 1, 0 };
-const AciaMessage_t clrDCD = { ACIA_MSG_DCD, 0, 0 };
-const AciaMessage_t setCTS = { ACIA_MSG_CTS, 1, 0 };
-const AciaMessage_t clrCTS = { ACIA_MSG_CTS, 0, 0 };
-const AciaMessage_t rxData = { ACIA_MSG_RXDATA, 0, 0 };
-
 void Modem :: RunRelay(int socket)
 {
     struct timeval tv;
@@ -94,6 +108,7 @@ void Modem :: RunRelay(int socket)
 
     printf("Modem: Running Relay to socket %d.\n", socket);
     int ret;
+    SetHandshakes(true);
     commandMode = false;
     uint8_t escape = registerValues[MODEM_REG_ESCAPE];
     int escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME]; // Ultimate Timer is 200 Hz, hence *4, register specifies fiftieths of seconds
@@ -153,17 +168,16 @@ void Modem :: RunRelay(int socket)
         }
     }
     commandMode = true;
+    SetHandshakes(false);
 }
 
 void Modem :: IncomingConnection(int socket)
 {
     char buffer[64];
     if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
-        int len = sprintf(buffer, "The modem is already in an active connection. Try again later.\n");
-        send(socket, buffer, len, 0);
+        RelayFileToSocket(cfg->get_string(CFG_MODEM_BUSYFILE), socket);
         return;
     }
-    xQueueSend(aciaQueue, &setCTS, portMAX_DELAY);
 
     ModemCommand_t modemCommand;
     registerValues[MODEM_REG_RINGCOUNTER] = 0;
@@ -194,18 +208,66 @@ void Modem :: IncomingConnection(int socket)
         buffer[len-1] = 0x0a; // Use Newline instead of carriage return for the socket
         send(socket, buffer, len, 0);
 
-        xQueueSend(aciaQueue, &setDCD, portMAX_DELAY);
         RunRelay(socket);
     } else {
         int len = sprintf(buffer, "NO ANSWER\n");
         send(socket, buffer, len, 0);
     }
 
-    xQueueSend(aciaQueue, &clrDCD, portMAX_DELAY);
-    xQueueSend(aciaQueue, &clrCTS, portMAX_DELAY);
     keepConnection = false;
     xSemaphoreGive(connectionLock);
     commandMode = true;
+}
+
+void Modem :: SetHandshakes(bool connected)
+{
+    uint8_t handshakes = 0;
+
+    switch(ctsMode) {
+    case 0: // active
+        handshakes |= ACIA_HANDSH_CTS;
+        break;
+    case 1: // active when connected
+        handshakes |= (connected) ? ACIA_HANDSH_CTS : 0;
+        break;
+    case 2: // inactive when connected
+        handshakes |= (connected) ? 0 : ACIA_HANDSH_CTS;
+        break;
+    default:
+        break;
+    }
+
+    switch(dcdMode) {
+    case 0: // active
+        handshakes |= ACIA_HANDSH_DCD;
+        break;
+    case 1: // active when connected
+        handshakes |= (connected) ? ACIA_HANDSH_DCD : 0;
+        break;
+    case 2: // inactive when connected
+        handshakes |= (connected) ? 0 : ACIA_HANDSH_DCD;
+        break;
+    default:
+        break;
+    }
+
+    switch(dsrMode) {
+    case 0: // active
+        handshakes |= ACIA_HANDSH_DSR;
+        break;
+    case 1: // active when connected
+        handshakes |= (connected) ? ACIA_HANDSH_DSR : 0;
+        break;
+    case 2: // inactive when connected
+        handshakes |= (connected) ? 0 : ACIA_HANDSH_DSR;
+        break;
+    default:
+        break;
+    }
+
+    AciaMessage_t setHS = { ACIA_MSG_SETHS, 0, 0 };
+    setHS.smallValue = handshakes;
+    xQueueSend(aciaQueue, &setHS, portMAX_DELAY);
 }
 
 void Modem :: Caller()
@@ -450,6 +512,7 @@ void Modem :: ModemTask()
             baudRate = baudRates[message.smallValue & 0x0F];
             //acia.SendToRx((uint8_t *)outbuf, strlen(outbuf));
             break;
+/*
         case ACIA_MSG_DCD:
             acia.SetDCD(message.smallValue);
             break;
@@ -458,6 +521,10 @@ void Modem :: ModemTask()
             break;
         case ACIA_MSG_CTS:
             acia.SetCTS(message.smallValue);
+            break;
+*/
+        case ACIA_MSG_SETHS:
+            acia.SetHS(message.smallValue);
             break;
         case ACIA_MSG_HANDSH:
             printf("HANDSH=%b\n", message.smallValue);
@@ -494,6 +561,29 @@ void Modem :: ModemTask()
     }
 }
 
+void Modem :: RelayFileToSocket(const char *filename, int socket)
+{
+    FileManager *fm = FileManager :: getFileManager();
+    File *f;
+    uint32_t tr = 0;
+    FRESULT fres = fm->fopen(filename, FA_READ, &f);
+
+    uint8_t *buffer = new uint8_t[512];
+    if (fres == FR_OK) {
+        do {
+            f->read(buffer, 512, &tr);
+            if (tr) {
+                send(socket, buffer, tr, 0);
+            }
+        } while(tr == 512);
+        fm->fclose(f);
+    } else {
+        int len = sprintf((char *)buffer, "The modem you are connecting to is currently busy.\n");
+        send(socket, buffer, len, 0);
+    }
+    delete[] buffer;
+}
+
 void Modem :: effectuate_settings()
 {
     int newPort;
@@ -507,7 +597,9 @@ void Modem :: effectuate_settings()
     }
 
     dropOnDTR = cfg->get_value(CFG_MODEM_DTRDROP);
-
+    ctsMode = cfg->get_value(CFG_MODEM_CTS);
+    dsrMode = cfg->get_value(CFG_MODEM_DSR);
+    dcdMode = cfg->get_value(CFG_MODEM_DCD);
     listenerSocket->Start(newPort);
 }
 
