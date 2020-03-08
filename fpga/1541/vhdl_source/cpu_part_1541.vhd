@@ -281,10 +281,8 @@ begin
                     mem_request <= '1';
                     mem_state <= extcycle;
                 else
-                    if cpu_addr(12 downto 10) = "101" or cpu_addr(12 downto 10) = "111" then
-                        io_select <= '1';
-                        mem_state  <= idle;
-                    end if;
+                    io_select <= '1';
+                    mem_state  <= idle;
                 end if;
             
             when extcycle =>

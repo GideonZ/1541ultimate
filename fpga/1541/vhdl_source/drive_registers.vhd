@@ -177,6 +177,7 @@ begin
                 any_dirty <= '0';
                 irq_en    <= '0';
                 wd        <= '0';
+                stop_when_frozen <= '1';
             end if;    
         end if;
     end process;
