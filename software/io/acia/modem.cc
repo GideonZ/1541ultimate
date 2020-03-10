@@ -535,7 +535,7 @@ void Modem :: ModemTask()
             break;
         case ACIA_MSG_HANDSH:
             printf("HANDSH=%b\n", message.smallValue);
-            if (!(message.smallValue && ACIA_HANDSH_DTR) && dropOnDTR) {
+            if (!(message.smallValue & ACIA_HANDSH_DTR) && dropOnDTR) {
                 keepConnection = false;
                 //commandMode = true;
             }
