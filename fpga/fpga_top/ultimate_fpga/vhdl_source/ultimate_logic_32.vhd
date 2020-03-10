@@ -558,6 +558,7 @@ begin
         buttons     => button,
 
         irq_high(0) => sys_irq_acia,
+        irq_high(7 downto 1) => "0000000",
         irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,
         irq_in(5)   => sys_irq_eth_rx,
