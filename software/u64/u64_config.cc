@@ -1001,6 +1001,7 @@ int U64Config :: setSidEmuParams(ConfigItem *it)
 #define MENU_U64_WIFI_ENABLE 4
 #define MENU_U64_WIFI_BOOT 5
 #define MENU_U64_DETECT_SIDS 6
+#define MENU_U64_POKE 7
 
 int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 {
@@ -1018,6 +1019,7 @@ int U64Config :: fetch_task_items(Path *p, IndexedList<Action*> &item_list)
 	item_list.append(new Action("Disable WiFi", SUBSYSID_U64, MENU_U64_WIFI_DISABLE));  count++;
 	item_list.append(new Action("Enable WiFi",  SUBSYSID_U64, MENU_U64_WIFI_ENABLE));  count++;
     item_list.append(new Action("Enable WiFi Boot", SUBSYSID_U64, MENU_U64_WIFI_BOOT));  count++;
+    item_list.append(new Action("Poke", SUBSYSID_U64, MENU_U64_POKE));  count++;
 #endif
 	return count;
 
@@ -1036,6 +1038,8 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
 	char sidString[40];
 	C64 *machine;
 	I2C_Driver i2c;
+	static char poke_buffer[16];
+	uint32_t addr, value;
 
 	switch(cmd->functionID) {
     case MENU_U64_SAVEEDID:
@@ -1095,6 +1099,27 @@ int U64Config :: executeCommand(SubsysCommand *cmd)
         U64_WIFI_CONTROL = 2;
         vTaskDelay(150);
         U64_WIFI_CONTROL = 7;
+        break;
+
+    case MENU_U64_POKE:
+        if (cmd->user_interface->string_box("Poke AAAA,DD", poke_buffer, 16)) {
+
+            sscanf(poke_buffer, "%x,%x", &addr, &value);
+
+            C64 *machine = C64 :: getMachine();
+            irq_context = alt_irq_disable_all();
+
+            if (!(C64_STOP & C64_HAS_STOPPED)) {
+                machine->stop(false);
+
+                C64_POKE(addr, value);
+
+                machine->resume();
+            } else {
+                C64_POKE(addr, value);
+            }
+            alt_irq_enable_all(irq_context);
+        }
         break;
 
     case MENU_U64_DETECT_SIDS:
