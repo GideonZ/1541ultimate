@@ -417,6 +417,10 @@ ms_skp3
 	and	#RUNCODE_RUN_BIT
 	beq	load_program
 
+    jsr extra_delay
+    jsr extra_delay
+    jsr extra_delay
+    jsr extra_delay
 	jsr	print_run
 	jmp	run_program
 
