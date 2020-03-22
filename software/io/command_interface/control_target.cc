@@ -3,12 +3,15 @@
 #include <string.h>
 #include "c64.h"
 #include "tape_recorder.h"
+#include "reu_preloader.h"
 #if U64
 #include "u64_config.h"
 #include "u64.h"
 #else
 #include "audio_select.h"
 #endif
+
+extern REUPreloader *reu_preloader;
 
 __inline uint32_t cpu_to_32le(uint32_t a)
 {
@@ -34,10 +37,13 @@ __inline uint16_t cpu_to_16le(uint16_t a)
 // crate and register ourselves!
 ControlTarget ct1(4);
 
-static Message c_message_identification     = { 19, true, (uint8_t *)"CONTROL TARGET V1.0" };
+static Message c_message_identification     = { 19, true, (uint8_t *)"CONTROL TARGET V1.1" };
 static Message c_status_invalid_params      = { 17, true, (uint8_t *)"81,INVALID PARAMS" };
 static Message c_status_errors_on_track     = { 18, true, (uint8_t *)"82,ERRORS ON TRACK" };
 static Message c_status_no_data             = { 19, true, (uint8_t *)"83,NOT IN DATA MODE" };
+static Message c_status_reu_disabled        = { 18, true, (uint8_t *)"84,REU NOT ENABLED" };
+static Message c_status_cannot_open_file    = { 28, true, (uint8_t *)"85,REU FILE CANNOT BE OPENED" };
+static Message c_status_reu_not_saved       = { 31, true, (uint8_t *)"86,REU OFFSET > SIZE. NOT SAVED" };
 
 ControlTarget :: ControlTarget(int id)
 {
@@ -110,6 +116,8 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
     // the first byte of the command lead us here to this function.
     // the second byte is the command byte for the DOS; the third and forth byte are the length
     // data follows after the 4th byte and is thus aligned for copy.    
+    int retVal;
+    uint32_t *pul;
     SubsysCommand *cmd;
     *reply  = &c_message_empty;
     *status = &c_status_unknown_command;
@@ -187,7 +195,6 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 sprintf((char*) data_message.message,"on ");
             }
                 
-                
             data_message.length = 3;
             *status = &c_status_ok;
             data_message.last_part = true;
@@ -263,6 +270,30 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                 }
                 *reply  = &c_message_empty;
                 *status = &c_status_ok;
+            }
+            break;
+
+        case CTRL_CMD_LOAD_REU:
+        case CTRL_CMD_SAVE_REU:
+            *reply  = &data_message;
+            *status = &c_status_ok;
+            if (command->message[1] == CTRL_CMD_LOAD_REU) {
+                retVal = reu_preloader->LoadREU((char *)data_message.message + 4);
+            } else {
+                retVal = reu_preloader->SaveREU((char *)data_message.message + 4);
+            }
+            pul = (uint32_t *)data_message.message;
+            data_message.last_part = true;
+            *pul = cpu_to_32le(retVal);
+            strupr((char *)data_message.message + 4);
+            data_message.length = 4 + strlen((char *)data_message.message + 4);
+
+            if (retVal == -3) {
+                *status = &c_status_reu_not_saved;
+            } else if (retVal == -2) {
+                *status = &c_status_reu_disabled;
+            } else if (retVal == -1) {
+                *status = &c_status_cannot_open_file;
             }
             break;
 
