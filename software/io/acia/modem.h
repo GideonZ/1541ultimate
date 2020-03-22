@@ -44,6 +44,7 @@ class Modem : public ConfigurableObject
     DataBuffer *aciaTxBuffer;
     ListenerSocket *listenerSocket;
     uint8_t ctsMode, dsrMode, dcdMode;
+    uint8_t lastHandshake;
     bool keepConnection;
     bool commandMode;
     int baudRate;
