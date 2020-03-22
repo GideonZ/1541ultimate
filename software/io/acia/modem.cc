@@ -17,6 +17,7 @@
 #define CFG_MODEM_CTS         0x08
 #define CFG_MODEM_BUSYFILE    0x09
 #define CFG_MODEM_CONNFILE    0x0A
+#define CFG_MODEM_OFFLINEFILE 0x0B
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
@@ -41,8 +42,9 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  3, 0 },
     { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
     { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
-    { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
+    { CFG_MODEM_OFFLINEFILE,   CFG_TYPE_STRING, "Modem Offline Text",            "%s", NULL,         0, 30, (int)"/Usb0/offline.txt" },
     { CFG_MODEM_CONNFILE,      CFG_TYPE_STRING, "Modem Connect Text",            "%s", NULL,         0, 30, (int)"/Usb0/welcome.txt" },
+    { CFG_MODEM_BUSYFILE,      CFG_TYPE_STRING, "Modem Busy Text",               "%s", NULL,         0, 30, (int)"/Usb0/busy.txt" },
     { CFG_TYPE_END,            CFG_TYPE_END,    "",                              "",   NULL,         0,  0, 0 } };
 
 
@@ -64,6 +66,7 @@ Modem :: Modem()
     commandMode = true;
     baudRate = 0;
     dropOnDTR = true;
+    lastHandshake = 0;
     ResetRegisters();
 }
 
@@ -178,6 +181,10 @@ void Modem :: IncomingConnection(int socket)
     char buffer[64];
     if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
         RelayFileToSocket(cfg->get_string(CFG_MODEM_BUSYFILE), socket, "The modem you are connecting to is currently busy.\n");
+        return;
+    } else if(!(lastHandshake & ACIA_HANDSH_DTR)) {
+        RelayFileToSocket(cfg->get_string(CFG_MODEM_OFFLINEFILE), socket, "Modem Software is currently not running...\n");
+        xSemaphoreGive(connectionLock);
         return;
     } else {
         RelayFileToSocket(cfg->get_string(CFG_MODEM_CONNFILE), socket, "Welcome to the Modem Emulation Layer of the Ultimate 64!\n");
@@ -534,7 +541,8 @@ void Modem :: ModemTask()
             acia.SetHS(message.smallValue);
             break;
         case ACIA_MSG_HANDSH:
-            printf("HANDSH=%b\n", message.smallValue);
+            //printf("HANDSH=%b\n", message.smallValue);
+            lastHandshake = message.smallValue;
             if (!(message.smallValue & ACIA_HANDSH_DTR) && dropOnDTR) {
                 keepConnection = false;
                 //commandMode = true;
