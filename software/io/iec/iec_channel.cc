@@ -389,9 +389,17 @@ int IecChannel :: open_file(void)  // name should be in buffer
     buffer[pointer] = 0; // string terminator
     printf("Open file. Raw Filename = '%s'\n", buffer);
 
+    // Temporary fix.. replace all slashes with -
+    for (int i=0;i<pointer;i++) {
+        if (buffer[i] == '/') {
+            buffer[i] = '-';
+        }
+    }
+
     command_t command;
     parse_command((char *)buffer, &command);
     dump_command(command);
+
 
     // First determine the direction
     append = 0;
