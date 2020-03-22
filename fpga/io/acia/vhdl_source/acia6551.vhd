@@ -107,8 +107,9 @@ begin
 
     irq       <= enable and (rx_interrupt and not command(1));-- or (tx_interrupt and command(2) and not command(3)));
     rts       <= command(2) or command(3);
-    rx_full   <= rx_data_valid;
-    tx_empty  <= '0' when (tx_head + 1) = tx_tail else '1';
+
+    rx_full   <= rx_data_valid when rising_edge(clock); -- to have a register for the status word in signaltap
+    --tx_empty  <= '0' when (tx_head + 1) = tx_tail else '1';
 
     -- IRQs to the Host (Slot side)
     tx_interrupt <= tx_empty;
@@ -127,17 +128,18 @@ begin
             tx_data_push <= '0';
             rts_d <= rts;
             dtr_d <= dtr;
+            if tx_head + 1 = tx_tail then
+                tx_empty <= '0';
+            else
+                tx_empty <= '1';
+            end if;
                  
             b_en <= '0';
             b_we <= '0';
             b_address <= (others => 'X');
             b_wdata <= (others => 'X');
 
-            if rx_data_valid = '1' and rts = '1' and rx_rate_expired = '1' then
-                rx_interrupt <= '1';
-                rx_rate_expired <= '0';
-                rx_rate_cnt <= rx_rate & "00000";
-            elsif slot_tick = '1' and rx_rate_expired = '0' then
+            if slot_tick = '1' and rx_rate_expired = '0' then
                 if rx_rate_cnt = 0 then
                     rx_rate_expired <= '1';
                 else
@@ -151,10 +153,13 @@ begin
                 b_we <= '1';
                 b_en <= '1';
                 tx_head <= tx_head + 1;
-            elsif rx_data_valid = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' then
+            elsif rx_data_valid = '0' and rx_head /= rx_tail and b_pending = '0' and dtr = '1' and rts = '1' and rx_rate_expired = '1' then
+                rx_rate_expired <= '0';
+                rx_rate_cnt <= rx_rate & "00011";
                 b_address <= '1' & rx_tail;
                 b_en <= '1';
                 b_pending <= '1';
+                rx_tail <= rx_tail + 1;
             end if;
 
             if (slot_req.io_address(8 downto 2) = slot_base) and (enable = '1') then
@@ -274,8 +279,8 @@ begin
             -- then b_en = 0 and b_pending is still = 1. In this cycle RAM result is available.
             if b_pending = '1' then
                 if b_en = '0' then
-                    rx_tail <= rx_tail + 1;
                     rx_data_valid <= '1';
+                    rx_interrupt <= '1';
                     rx_data <= b_rdata;
                     b_pending <= '0';
                 end if;
@@ -295,6 +300,7 @@ begin
                 enable  <= '0';
                 b_pending <= '0';
                 rx_data_valid <= '0';
+                rx_interrupt <= '0';
                 cts <= '0';
                 dsr_n <= '1';
                 dcd_n <= '1';
