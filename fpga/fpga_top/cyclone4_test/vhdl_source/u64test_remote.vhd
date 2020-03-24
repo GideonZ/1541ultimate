@@ -13,6 +13,8 @@ entity u64test_remote is
 port  (
     arst    : in  std_logic;
     
+    BUTTON  : in  std_logic_vector(2 downto 0);
+
     PHI2    : in  std_logic;
     DOTCLK  : in  std_logic;
     IO1n    : in  std_logic;
@@ -57,6 +59,7 @@ architecture arch of u64test_remote is
     signal ram_address  : unsigned(7 downto 0);
     signal ram_en       : std_logic;
     signal ram_we       : std_logic;
+    signal ram_wdata    : std_logic_vector(7 downto 0);
     signal ram_rdata    : std_logic_vector(7 downto 0);
     signal iec_out      : std_logic_vector(4 downto 0);
     signal addr_out     : std_logic_vector(15 downto 0);
@@ -67,6 +70,10 @@ architecture arch of u64test_remote is
     signal cart_in      : std_logic_vector(7 downto 0) := X"00";
     signal iec_in       : std_logic_vector(7 downto 0) := X"00";
     signal cas_in       : std_logic_vector(7 downto 0) := X"00";
+
+    signal phi2_d       : std_logic := '1';
+    signal io2n_d       : std_logic := '1';
+    signal rwn_d        : std_logic := '1';
 begin
     clock <= not PHI2;
 
@@ -112,18 +119,27 @@ begin
         g_depth_bits => 8
     )
     port map (
-        clock        => clock,
+        clock        => DOTCLK,
         address      => ram_address,
         rdata        => ram_rdata,
-        wdata        => D,
+        wdata        => ram_wdata,
         en           => ram_en,
         we           => ram_we
     );
-   
     
-    ram_address <= unsigned(A(7 downto 0));
     ram_en      <= '1';
-    ram_we      <= not RWn and not IO2n;
+
+    process(DOTCLK)
+    begin
+        if rising_edge(DOTCLK) then
+            ram_address <= unsigned(A(7 downto 0));
+            phi2_d <= PHI2;
+            io2n_d <= IO2n;
+            rwn_d  <= RWn;
+            ram_wdata <= D;
+        end if;
+    end process;
+    ram_we <= '1' when phi2_d = '1' and PHI2 = '0' and io2n_d = '0' and rwn_d = '0' else '0';
     
     with A(2 downto 0) select reg_out <=
         cart_out       when "000",
@@ -175,8 +191,8 @@ begin
     cart_in(5) <= RESETn;
     cart_in(6) <= BA;
     
-    IRQn       <= '0' when cart_out(0) = '1' else 'Z';
-    NMIn       <= '0' when cart_out(1) = '1' else 'Z';
+    IRQn       <= '0' when cart_out(0) = '1' or button(2) = '0' else 'Z';
+    NMIn       <= '0' when cart_out(1) = '1' or button(1) = '0' else 'Z';
     GAMEn      <= '0' when cart_out(2) = '1' else 'Z';
     EXROMn     <= '0' when cart_out(3) = '1' else 'Z';
     DMAn       <= '0' when cart_out(4) = '1' else 'Z';
