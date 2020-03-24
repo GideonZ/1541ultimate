@@ -147,7 +147,7 @@ begin
                 end if;
             end if;
 
-            if tx_data_push = '1' and tx_empty = '1' then
+            if tx_data_push = '1' and tx_empty = '1' and dtr = '1' then
                 b_address <= '0' & tx_head;
                 b_wdata <= tx_data;
                 b_we <= '1';

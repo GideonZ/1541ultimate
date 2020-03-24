@@ -18,6 +18,7 @@
 #define CFG_MODEM_BUSYFILE    0x09
 #define CFG_MODEM_CONNFILE    0x0A
 #define CFG_MODEM_OFFLINEFILE 0x0B
+#define CFG_MODEM_LISTEN_RING 0x0C
 
 static const char *interfaces[] = { "ACIA / SwiftLink" };
 static const char *acia_mode[] = { "Off", "DE00/IRQ", "DE00/NMI", "DF00/IRQ", "DF00/NMI", "DF80/IRQ", "DF80/NMI" };
@@ -38,6 +39,7 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_INTF,          CFG_TYPE_ENUM,   "Modem Interface",               "%s", interfaces,   0,  0, 0 },
     { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mode",              "%s", acia_mode,    0,  6, 0 },
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
+    { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR=0",      "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  3, 0 },
     { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
@@ -187,46 +189,51 @@ void Modem :: IncomingConnection(int socket)
         xSemaphoreGive(connectionLock);
         return;
     } else {
-        RelayFileToSocket(cfg->get_string(CFG_MODEM_CONNFILE), socket, "Welcome to the Modem Emulation Layer of the Ultimate 64!\n");
+        RelayFileToSocket(cfg->get_string(CFG_MODEM_CONNFILE), socket, "Welcome to the Modem Emulation Layer of the Ultimate!\n");
     }
 
-    ModemCommand_t modemCommand;
-    registerValues[MODEM_REG_RINGCOUNTER] = 0;
-    for(int rings=0; rings < 10; rings++) {
-        acia.SendToRx((uint8_t *)"RING\r", 5);
-        int len = sprintf(buffer, "RING\n");
-        registerValues[MODEM_REG_RINGCOUNTER] ++;
-        if (send(socket, buffer, len, 0) <= 0) {
-            break;
-        }
-        if (registerValues[MODEM_REG_AUTOANSWER]) {
-            if (registerValues[MODEM_REG_RINGCOUNTER] >= registerValues[MODEM_REG_AUTOANSWER]) {
-                keepConnection = true;
+    if (cfg->get_value(CFG_MODEM_LISTEN_RING)) {
+        ModemCommand_t modemCommand;
+        registerValues[MODEM_REG_RINGCOUNTER] = 0;
+        for(int rings=0; rings < 10; rings++) {
+            acia.SendToRx((uint8_t *)"RING\r", 5);
+            int len = sprintf(buffer, "RING\n");
+            registerValues[MODEM_REG_RINGCOUNTER] ++;
+            if (send(socket, buffer, len, 0) <= 0) {
                 break;
             }
-        }
-        BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 600); // wait max 3 seconds for a command
-        if (cmdAvailable) {
-            if (ExecuteCommand(&modemCommand)) {
-                break;
+            if (registerValues[MODEM_REG_AUTOANSWER]) {
+                if (registerValues[MODEM_REG_RINGCOUNTER] >= registerValues[MODEM_REG_AUTOANSWER]) {
+                    keepConnection = true;
+                    break;
+                }
+            }
+            BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 600); // wait max 3 seconds for a command
+            if (cmdAvailable) {
+                if (ExecuteCommand(&modemCommand)) {
+                    break;
+                }
             }
         }
-    }
 
-    if (keepConnection) {
-        int len = sprintf(buffer, "CONNECT %d\r", baudRate);
-        acia.SendToRx((uint8_t*)buffer, len);
-        buffer[len-1] = 0x0a; // Use Newline instead of carriage return for the socket
-        send(socket, buffer, len, 0);
+        if (keepConnection) {
+            int len = sprintf(buffer, "CONNECT %d\r", baudRate);
+            acia.SendToRx((uint8_t*)buffer, len);
+            buffer[len-1] = 0x0a; // Use Newline instead of carriage return for the socket
+            send(socket, buffer, len, 0);
 
-        RunRelay(socket);
-        len = sprintf(buffer, "NO CARRIER\r");
-        acia.SendToRx((uint8_t*)buffer, len);
+            RunRelay(socket);
+            len = sprintf(buffer, "NO CARRIER\r");
+            acia.SendToRx((uint8_t*)buffer, len);
+        } else {
+            int len = sprintf(buffer, "NO ANSWER\n");
+            send(socket, buffer, len, 0);
+        }
     } else {
-        int len = sprintf(buffer, "NO ANSWER\n");
-        send(socket, buffer, len, 0);
+        // Silent relay
+        keepConnection = true;
+        RunRelay(socket);
     }
-
     keepConnection = false;
     xSemaphoreGive(connectionLock);
     commandMode = true;
