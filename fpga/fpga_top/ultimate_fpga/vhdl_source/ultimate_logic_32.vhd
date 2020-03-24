@@ -146,6 +146,7 @@ port (
     disk_act2n  : out   std_logic;
     	
     -- Parallel cable pins
+    drv_track_is_0      : out std_logic;
     drv_via1_port_a_o   : out std_logic_vector(7 downto 0);
     drv_via1_port_a_i   : in  std_logic_vector(7 downto 0);
     drv_via1_port_a_t   : out std_logic_vector(7 downto 0);
@@ -623,6 +624,7 @@ begin
             debug_valid     => drv_debug_valid,
 
             -- Parallel cable pins
+            track_is_0      => drv_track_is_0,
             via1_port_a_o   => drv_via1_port_a_o,
             via1_port_a_i   => drv_via1_port_a_i,
             via1_port_a_t   => drv_via1_port_a_t,
@@ -656,7 +658,7 @@ begin
         signal via1_cb1_o      : std_logic;
         signal via1_cb1_i      : std_logic;
         signal via1_cb1_t      : std_logic;
-
+        signal track_is_0      : std_logic;
     begin
         i_drive: entity work.c1541_drive
         generic map (
@@ -698,6 +700,7 @@ begin
             c64_reset_n     => c64_reset_in_n,
 
             -- Parallel cable pins
+            track_is_0      => track_is_0,
             via1_port_a_o   => via1_port_a_o,
             via1_port_a_i   => via1_port_a_i,
             via1_port_a_t   => via1_port_a_t,
@@ -716,7 +719,9 @@ begin
             -- audio out
             audio_sample    => drive_sample_2 );
 
-        via1_port_a_i <= via1_port_a_o or not via1_port_a_t;
+        via1_port_a_i(7 downto 1) <= via1_port_a_o(7 downto 1) or not via1_port_a_t(7 downto 1);
+        via1_port_a_i(0)          <= track_is_0; -- for 1541C
+        
         via1_ca2_i    <= via1_ca2_o    or not via1_ca2_t;
         via1_cb1_i    <= via1_cb1_o    or not via1_cb1_t;
     end generate;

@@ -50,6 +50,8 @@ port (
     debug_valid     : out std_logic;
 
     -- Parallel cable pins
+    track_is_0      : out std_logic; -- conflicts on PA0 when parallel cable is used
+
     via1_port_a_o   : out std_logic_vector(7 downto 0);
     via1_port_a_i   : in  std_logic_vector(7 downto 0);
     via1_port_a_t   : out std_logic_vector(7 downto 0);
@@ -100,7 +102,6 @@ architecture structural of c1541_drive is
     signal byte_ready       : std_logic;
     signal sync             : std_logic;
     signal track            : std_logic_vector(6 downto 0);
-    signal track_is_0       : std_logic;
 	signal drive_address	: std_logic_vector(1 downto 0) := "00";
 	signal write_prot_n	    : std_logic := '1';
     signal drv_reset        : std_logic := '1';
@@ -184,7 +185,6 @@ begin
         rate_ctrl       => rate_ctrl,
         byte_ready      => byte_ready,
         sync            => sync,
-        track_is_0      => track_is_0,
         
         drv_rdata       => disk_rdata,
         drv_wdata       => disk_wdata,
