@@ -262,7 +262,7 @@ int U64TestCassette()
     return errors;
 }
 
-int U64EliteTestJoystick(void)
+int U64EliteTestJoystick()
 {
     // with this test, the fire button is used as output to clock the counter.
     // then the counter reaches 15 for the second time, bit 0 to bit 3 have been tested.
@@ -274,7 +274,7 @@ int U64EliteTestJoystick(void)
 
     if (PLD_RD_VERSION != 0x16) {
         printf("\e\022PLD version should be V1.6 for this test to work.\n");
-        return 1;
+        return -1;
     }
     PLD_JOYSWAP = 0x02; // Isolate mode
 

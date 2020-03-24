@@ -607,17 +607,22 @@ extern "C" {
 	    printf("Ultimate-64 - LOADER...\n");
         codec_init();
         bool elite = isEliteBoard();
-	    int errors = 0;
+	    int errors = 0, joy = 0;
 	    if (!test_memory()) {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
 	            errors =  test_esp32();
 	            errors += U64AudioCodecTest();
-	            if (elite) {
-	                errors += U64EliteTestJoystick();
-	            }
                 errors += TestSidSockets(elite);
+	            if (elite) {
+	                joy = U64EliteTestJoystick();
+	                if (joy < 0) {
+	                    elite = false;
+	                } else {
+	                    errors += joy;
+	                }
+	            }
 	            errors += U64PaddleTest();
 	            if (!elite) {
 	                printf("\e?Remove joystick tester boards and press power button.\n");
