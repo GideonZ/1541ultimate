@@ -585,6 +585,11 @@ void Modem :: ModemTask()
 
 void Modem :: RelayFileToSocket(const char *filename, int socket, const char *alt)
 {
+    // Simply do nothing if filename is empty
+    if (strlen(filename) == 0) {
+        return;
+    }
+
     FileManager *fm = FileManager :: getFileManager();
     File *f;
     uint32_t tr = 0;
