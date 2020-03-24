@@ -45,7 +45,8 @@ port (
     do_probe_end    : in  std_logic;
     do_sample_io    : in  std_logic;
     do_io_event     : in  std_logic;
-
+    dma_active_n    : in  std_logic := '1';
+    
     -- interface with freezer (cartridge) logic
     allow_serve     : in  std_logic := '0'; -- from timing unit (modified version of serve_enable)
     serve_rom       : in  std_logic := '0'; -- ROML or ROMH
@@ -147,7 +148,7 @@ begin
             if epyx_reset='1' then
                 epyx_timer <= (others => '1');
                 epyx_timeout <= '0';
-            elsif phi2_tick='1' then
+            elsif phi2_tick='1' and dma_active_n = '1' then
                 if epyx_timer = "0000000" then
                     epyx_timeout <= '1';
                 else

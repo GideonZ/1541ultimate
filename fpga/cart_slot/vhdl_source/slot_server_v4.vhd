@@ -387,6 +387,7 @@ begin
         do_sample_io    => do_sample_io,
         do_io_event     => do_io_event,
         do_probe_end    => do_probe_end,
+        dma_active_n    => dma_n,  -- required to stop epyx cap to discharge (!)
     
         -- interface with freezer (cartridge) logic
         allow_serve     => allow_serve,
