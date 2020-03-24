@@ -250,6 +250,7 @@ architecture rtl of u2p_nios_solo is
     signal io_resp_ddr2     : t_io_resp;
 
     -- Parallel cable connection
+    signal drv_track_is_0       : std_logic;
     signal drv_via1_port_a_o    : std_logic_vector(7 downto 0);
     signal drv_via1_port_a_i    : std_logic_vector(7 downto 0);
     signal drv_via1_port_a_t    : std_logic_vector(7 downto 0);
@@ -592,6 +593,7 @@ begin
         SDACT_LEDn  => led_n(3),
 
         -- Parallel cable pins
+        drv_track_is_0      => drv_track_is_0,
         drv_via1_port_a_o   => drv_via1_port_a_o,
         drv_via1_port_a_i   => drv_via1_port_a_i,
         drv_via1_port_a_t   => drv_via1_port_a_t,
@@ -662,7 +664,8 @@ begin
         BUTTON      => button_i );
 
     -- Parallel cable not implemented. This is the way to stub it...
-    drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
+    drv_via1_port_a_i(7 downto 1) <= drv_via1_port_a_o(7 downto 1) or not drv_via1_port_a_t(7 downto 1);
+    drv_via1_port_a_i(0)          <= drv_track_is_0; -- for 1541C
     drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
     drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
 

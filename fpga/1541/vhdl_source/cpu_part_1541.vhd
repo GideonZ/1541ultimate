@@ -59,7 +59,6 @@ port (
     rate_ctrl       : out std_logic_vector(1 downto 0);
     byte_ready      : in  std_logic;
     sync            : in  std_logic;
-    track_is_0      : in  std_logic;
     
     drv_rdata       : in  std_logic_vector(7 downto 0);
     drv_wdata       : out std_logic_vector(7 downto 0);
