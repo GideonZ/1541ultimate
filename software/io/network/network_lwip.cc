@@ -2,6 +2,7 @@
 #include "init_function.h"
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "lwip/netifapi.h"
 #include "ftpd.h"
 #include "filemanager.h"
@@ -20,11 +21,11 @@ struct t_cfg_definition net_config[] = {
 	{ CFG_NET_NETMASK, CFG_TYPE_STRING, "Static Netmask",				 "%s", NULL,       7, 16, (int)"255.255.255.0" },
 	{ CFG_NET_GATEWAY, CFG_TYPE_STRING, "Static Gateway",				 "%s", NULL,       7, 16, (int)"192.168.2.1" },
 #ifdef U64
-	{ CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name", 					 "%s", NULL,       3, 18, (int)"Ultimate 64" },
+	{ CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name", 					 "%s", NULL,       3, 18, (int)"Ultimate-64" },
 #else
 
 #if FREQUENCY == 62500000
-    { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II+" },
+    { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II-Plus" },
 #else
     { CFG_NET_HOSTNAME,CFG_TYPE_STRING, "Host Name",                     "%s", NULL,       3, 18, (int)"Ultimate-II" },
 #endif
@@ -227,7 +228,7 @@ void NetworkLWIP :: init_callback( )
     
 #if LWIP_NETIF_HOSTNAME
     /* Initialize interface hostname */
-	my_net_if.hostname = (char *)cfg->get_string(CFG_NET_HOSTNAME); // "Ultimate-II";
+	my_net_if.hostname = this->hostname;
 #endif /* LWIP_NETIF_HOSTNAME */
 
     /*
@@ -338,6 +339,21 @@ void NetworkLWIP :: effectuate_settings(void)
         my_netmask.addr = 0L;
         my_gateway.addr = 0L;
     }
+
+    const char *h = cfg->get_string(CFG_NET_HOSTNAME);
+    const int len = strlen(h);
+    int out = 0;
+    for(int i=0; i < len; i++) {
+        if (isalpha(h[i]) || isdigit(h[i]) || h[i] == '-') {
+            hostname[out++] = h[i];
+        }
+    }
+    hostname[out] = 0;
+    // correct in configuration if invalid chars exist
+    if (out != len) {
+        cfg->set_string(CFG_NET_HOSTNAME, hostname);
+    }
+
 
 /* 3 states:
  * NetIF is not added yet. State = NULL. We only need to set our own ip addresses, since they will be copied upon net_if_add
