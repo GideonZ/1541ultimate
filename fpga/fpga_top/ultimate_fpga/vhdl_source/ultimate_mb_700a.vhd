@@ -10,7 +10,7 @@ use work.io_bus_pkg.all;
 entity ultimate_mb_700a is
 generic (
     g_dual_drive    : boolean := false;
-    g_version       : unsigned(7 downto 0) := X"14" );
+    g_version       : unsigned(7 downto 0) := X"16" );
 port (
     CLOCK       : in    std_logic;
     
@@ -220,6 +220,7 @@ begin
         g_vic_copper    => false,
         g_video_overlay => false,
         g_sampler       => not g_dual_drive,
+        g_acia          => g_dual_drive,
         g_analyzer      => false,
         g_profiler      => false )
     port map (
