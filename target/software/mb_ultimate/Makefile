@@ -128,6 +128,9 @@ SRCS_CC	 =  small_printf.cc \
             home_directory.cc \
             reu_preloader.cc \
             configio.cc \
+            listener_socket.cc \
+            acia.cc \
+            modem.cc \
             $(PRJ).cc
 
 #            sock_echo.c \
@@ -164,7 +167,7 @@ include ../common/rules.mk
 
 lodepng.o: lodepng.cc
 	@echo Compiling $(<F) optimized for speed
-	@$(CPP) $(CPPOPT) -O3 $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
+	@$(CPP) $(CPPOPT) -Os $(PATH_INC) -B. -c -o $(OUTPUT)/$(@F) $<
 	@$(CPP) -MM $(PATH_INC) $< >$(OUTPUT)/$(@F:.o=.d)
 
 $(PATH_SW)/6502/sidcrt/target/sidcrt.bin::
