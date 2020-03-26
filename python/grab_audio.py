@@ -34,14 +34,15 @@ with open("audio.wav", "wb") as outfile:
     for frame in range(250 * seconds):
         data, address = sock.recvfrom(1024)
         (number, ) = struct.unpack("<H", data[0:2])
-        if previous and (previos + 1) != number:
+        if previous and (previous + 1) != number:
             print ('X', end = '')
         else:
             print ('.', end = '')
-            
+
         sys.stdout.flush()
         outfile.write(data[4:])
         total_length += len(data) - 4
+        previous = number
     
     header  = struct.pack(">L", 0x52494646) # "RIFF"
     header += struct.pack("<L", total_length - 8) # Remaining Chunk Size
