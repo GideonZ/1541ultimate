@@ -62,6 +62,11 @@ int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHa
 
 void Acia :: deinit(void)
 {
+    ioWrite8(ITU_IRQ_HIGH_EN, 0);
+    if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
+        return;
+    }
+
     regs->enable = 0;
     this->controlQueue = NULL;
     this->dataQueue = NULL;
@@ -69,7 +74,6 @@ void Acia :: deinit(void)
         delete buffer;
         buffer = NULL;
     }
-    ioWrite8(ITU_IRQ_HIGH_EN, 0);
 }
 
 int Acia :: SendToRx(uint8_t *data, int length)
