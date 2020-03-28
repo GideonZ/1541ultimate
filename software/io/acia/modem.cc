@@ -52,6 +52,9 @@ struct t_cfg_definition modem_cfg[] = {
 
 Modem :: Modem()
 {
+    if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
+        return;
+    }
     register_store(0x4D4F444D, "Modem Settings", modem_cfg);
 
     aciaQueue = xQueueCreate(16, sizeof(AciaMessage_t));

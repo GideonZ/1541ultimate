@@ -208,6 +208,7 @@ BaseType_t uart_irq() __attribute__ ((weak));
 BaseType_t usb_irq() __attribute__ ((weak));
 BaseType_t tape_recorder_irq() __attribute__ ((weak));
 BaseType_t command_interface_irq() __attribute__ ((weak));
+uint8_t acia_irq(void) __attribute__ ((weak));
 
 BaseType_t uart_irq()
 {
@@ -228,6 +229,14 @@ BaseType_t command_interface_irq()
 {
 	return pdFALSE;
 }
+
+uint8_t acia_irq(void)
+{
+    // We shouldn't come here.
+    ioWrite8(ITU_IRQ_HIGH_ACT, 0);
+    return (BaseType_t)pdFALSE;
+}
+
 
 #include "profiler.h"
 
@@ -258,6 +267,9 @@ void vTaskISRHandler( void )
 	if (pending & 0x01) {
         do_switch |= xTaskIncrementTick();
 	}
+    if (ioRead8(ITU_IRQ_HIGH_ACT) & ITU_IRQHIGH_ACIA) {
+        do_switch |= acia_irq();
+    }
 	if (do_switch != pdFALSE) {
 		vTaskSwitchContext();
 	}
