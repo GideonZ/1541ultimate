@@ -24,6 +24,9 @@ Acia :: Acia(uint32_t base)
 
 int Acia :: init(uint16_t base, bool useNMI, QueueHandle_t controlQueue, QueueHandle_t dataQueue, DataBuffer *buffer)
 {
+    if (!(getFpgaCapabilities() & CAPAB_ACIA)) {
+        return -2;
+    }
     if ((base < 0xDE00) || (base > 0xDFFC)) {
         return -1;
     }
