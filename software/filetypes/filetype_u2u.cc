@@ -126,6 +126,7 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 			total_bytes_read += bytes_read;
 		}
 		fm->fclose(file);
+        acia.deinit();
 		file = NULL;
 /*
 		if ((*(uint32_t *)REU_MEMORY_BASE) != 0x3021FFD8) {

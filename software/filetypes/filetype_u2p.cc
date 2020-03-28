@@ -137,8 +137,8 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 		file = NULL;
 #if U64
 		wifi.Disable();
-		acia.deinit();
 #endif
+        acia.deinit();
 		jump_run(header.start);
 	} else {
 		printf("Error opening file.\n");
