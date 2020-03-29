@@ -175,6 +175,8 @@ void Modem :: RunRelay(int socket)
         BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 0);
         if (cmdAvailable) {
             ExecuteCommand(&modemCommand);
+            escape = registerValues[MODEM_REG_ESCAPE];
+            escapeTime = 4 * (int)registerValues[MODEM_REG_ESCAPETIME]; // Ultimate Timer is 200 Hz, hence *4, register specifies fiftieths of seconds
         }
     }
     commandMode = true;
@@ -422,6 +424,9 @@ bool Modem :: ExecuteCommand(ModemCommand_t *cmd)
             xQueueSend(connectQueue, cmd, 10);
             i = cmd->length; // break outer loop
             response = "";
+            break;
+        case 'I': // identify
+            response = "ULTIMATE-II MODEM EMULATION LAYER\rMADE BY GIDEON\rVERSION V1.0\r";
             break;
         case 'Z': // reset
             ResetRegisters();
