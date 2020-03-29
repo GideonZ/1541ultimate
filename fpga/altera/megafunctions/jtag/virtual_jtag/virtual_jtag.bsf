@@ -1,0 +1,148 @@
+/*
+WARNING: Do NOT edit the input and output ports in this file in a text
+editor if you plan to continue editing the block that represents it in
+the Block Editor! File corruption is VERY likely to occur.
+*/
+/*
+Copyright (C) 1991-2015 Altera Corporation. All rights reserved.
+Your use of Altera Corporation's design tools, logic functions 
+and other software and tools, and its AMPP partner logic 
+functions, and any output files from any of the foregoing 
+(including device programming or simulation files), and any 
+associated documentation or information are expressly subject 
+to the terms and conditions of the Altera Program License 
+Subscription Agreement, the Altera Quartus Prime License Agreement,
+the Altera MegaCore Function License Agreement, or other 
+applicable license agreement, including, without limitation, 
+that your use is for the sole purpose of programming logic 
+devices manufactured by Altera and sold by Altera or its 
+authorized distributors.  Please refer to the applicable 
+agreement for further details.
+*/
+(header "symbol" (version "1.1"))
+(symbol
+	(rect 0 0 304 280)
+	(text "virtual_jtag" (rect 121 -1 163 11)(font "Arial" (font_size 10)))
+	(text "inst" (rect 8 264 20 276)(font "Arial" ))
+	(port
+		(pt 0 88)
+		(input)
+		(text "tdo" (rect 0 0 11 12)(font "Arial" (font_size 8)))
+		(text "tdo" (rect 4 77 22 88)(font "Arial" (font_size 8)))
+		(line (pt 0 88)(pt 96 88)(line_width 1))
+	)
+	(port
+		(pt 0 120)
+		(input)
+		(text "ir_out[3..0]" (rect 0 0 42 12)(font "Arial" (font_size 8)))
+		(text "ir_out[3..0]" (rect 4 109 76 120)(font "Arial" (font_size 8)))
+		(line (pt 0 120)(pt 96 120)(line_width 3))
+	)
+	(port
+		(pt 0 72)
+		(output)
+		(text "tdi" (rect 0 0 8 12)(font "Arial" (font_size 8)))
+		(text "tdi" (rect 4 61 22 72)(font "Arial" (font_size 8)))
+		(line (pt 0 72)(pt 96 72)(line_width 1))
+	)
+	(port
+		(pt 0 104)
+		(output)
+		(text "ir_in[3..0]" (rect 0 0 36 12)(font "Arial" (font_size 8)))
+		(text "ir_in[3..0]" (rect 4 93 70 104)(font "Arial" (font_size 8)))
+		(line (pt 0 104)(pt 96 104)(line_width 3))
+	)
+	(port
+		(pt 0 136)
+		(output)
+		(text "virtual_state_cdr" (rect 0 0 67 12)(font "Arial" (font_size 8)))
+		(text "virtual_state_cdr" (rect 4 125 106 136)(font "Arial" (font_size 8)))
+		(line (pt 0 136)(pt 96 136)(line_width 1))
+	)
+	(port
+		(pt 0 152)
+		(output)
+		(text "virtual_state_sdr" (rect 0 0 67 12)(font "Arial" (font_size 8)))
+		(text "virtual_state_sdr" (rect 4 141 106 152)(font "Arial" (font_size 8)))
+		(line (pt 0 152)(pt 96 152)(line_width 1))
+	)
+	(port
+		(pt 0 168)
+		(output)
+		(text "virtual_state_e1dr" (rect 0 0 70 12)(font "Arial" (font_size 8)))
+		(text "virtual_state_e1dr" (rect 4 157 112 168)(font "Arial" (font_size 8)))
+		(line (pt 0 168)(pt 96 168)(line_width 1))
+	)
+	(port
+		(pt 0 184)
+		(output)
+		(text "virtual_state_pdr" (rect 0 0 67 12)(font "Arial" (font_size 8)))
+		(text "virtual_state_pdr" (rect 4 173 106 184)(font "Arial" (font_size 8)))
+		(line (pt 0 184)(pt 96 184)(line_width 1))
+	)
+	(port
+		(pt 0 200)
+		(output)
+		(text "virtual_state_e2dr" (rect 0 0 71 12)(font "Arial" (font_size 8)))
+		(text "virtual_state_e2dr" (rect 4 189 112 200)(font "Arial" (font_size 8)))
+		(line (pt 0 200)(pt 96 200)(line_width 1))
+	)
+	(port
+		(pt 0 216)
+		(output)
+		(text "virtual_state_udr" (rect 0 0 67 12)(font "Arial" (font_size 8)))
+		(text "virtual_state_udr" (rect 4 205 106 216)(font "Arial" (font_size 8)))
+		(line (pt 0 216)(pt 96 216)(line_width 1))
+	)
+	(port
+		(pt 0 232)
+		(output)
+		(text "virtual_state_cir" (rect 0 0 63 12)(font "Arial" (font_size 8)))
+		(text "virtual_state_cir" (rect 4 221 106 232)(font "Arial" (font_size 8)))
+		(line (pt 0 232)(pt 96 232)(line_width 1))
+	)
+	(port
+		(pt 0 248)
+		(output)
+		(text "virtual_state_uir" (rect 0 0 63 12)(font "Arial" (font_size 8)))
+		(text "virtual_state_uir" (rect 4 237 106 248)(font "Arial" (font_size 8)))
+		(line (pt 0 248)(pt 96 248)(line_width 1))
+	)
+	(port
+		(pt 304 72)
+		(output)
+		(text "tck" (rect 0 0 11 12)(font "Arial" (font_size 8)))
+		(text "tck" (rect 288 61 306 72)(font "Arial" (font_size 8)))
+		(line (pt 304 72)(pt 208 72)(line_width 1))
+	)
+	(drawing
+		(text "jtag" (rect 76 43 176 99)(font "Arial" (color 128 0 0)(font_size 9)))
+		(text "tdi" (rect 101 67 220 144)(font "Arial" (color 0 0 0)))
+		(text "tdo" (rect 101 83 220 176)(font "Arial" (color 0 0 0)))
+		(text "ir_in" (rect 101 99 232 208)(font "Arial" (color 0 0 0)))
+		(text "ir_out" (rect 101 115 238 240)(font "Arial" (color 0 0 0)))
+		(text "virtual_state_cdr" (rect 101 131 304 272)(font "Arial" (color 0 0 0)))
+		(text "virtual_state_sdr" (rect 101 147 304 304)(font "Arial" (color 0 0 0)))
+		(text "virtual_state_e1dr" (rect 101 163 310 336)(font "Arial" (color 0 0 0)))
+		(text "virtual_state_pdr" (rect 101 179 304 368)(font "Arial" (color 0 0 0)))
+		(text "virtual_state_e2dr" (rect 101 195 310 400)(font "Arial" (color 0 0 0)))
+		(text "virtual_state_udr" (rect 101 211 304 432)(font "Arial" (color 0 0 0)))
+		(text "virtual_state_cir" (rect 101 227 304 464)(font "Arial" (color 0 0 0)))
+		(text "virtual_state_uir" (rect 101 243 304 496)(font "Arial" (color 0 0 0)))
+		(text "tck" (rect 209 43 436 99)(font "Arial" (color 128 0 0)(font_size 9)))
+		(text "clk" (rect 193 67 404 144)(font "Arial" (color 0 0 0)))
+		(text " virtual_jtag " (rect 253 264 590 538)(font "Arial" ))
+		(line (pt 96 32)(pt 208 32)(line_width 1))
+		(line (pt 208 32)(pt 208 264)(line_width 1))
+		(line (pt 96 264)(pt 208 264)(line_width 1))
+		(line (pt 96 32)(pt 96 264)(line_width 1))
+		(line (pt 97 52)(pt 97 252)(line_width 1))
+		(line (pt 98 52)(pt 98 252)(line_width 1))
+		(line (pt 207 52)(pt 207 76)(line_width 1))
+		(line (pt 206 52)(pt 206 76)(line_width 1))
+		(line (pt 0 0)(pt 304 0)(line_width 1))
+		(line (pt 304 0)(pt 304 280)(line_width 1))
+		(line (pt 0 280)(pt 304 280)(line_width 1))
+		(line (pt 0 0)(pt 0 280)(line_width 1))
+	)
+)

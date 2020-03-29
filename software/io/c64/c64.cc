@@ -129,7 +129,6 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           
 static const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
-static const char *en_dis2[] = { "Disabled", "Enabled" };
 static const char *rom_sel[] = { "Factory", "Original", "Alternative" };
 #if U64
 static const char *rom_sel_ker[] = { "Factory", "Original", "Alternative", "Alt. 2", "Alt. 3" };
@@ -142,15 +141,17 @@ static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns",
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
 static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
 static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
+static const char *cartmodes[] = { "Auto", "Internal", "External" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 19, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 19, 0 },
+    { CFG_C64_CART_PREF,CFG_TYPE_ENUM,   "Cartridge Preference",         "%s", cartmodes,  0,  2, 0 },
 #else
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
 #endif
     { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartridge 3 Mode",       "%s", fc3mode,    0,  2, 0 },
-    { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis,     0,  1, 0 },
 #if U64
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", rom_sel_ker,0,  4, 0 },
     { CFG_C64_ALT_BASI, CFG_TYPE_ENUM,   "Alternate Basic",              "%s", rom_sel,    0,  2, 0 },
@@ -158,29 +159,29 @@ struct t_cfg_definition c64_config[] = {
 #elif CLOCK_FREQ == 62500000
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", rom_sel_ker,0,  2, 0 },
 #else
-    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis,     0,  1, 0 },
 #endif
-    { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis,     0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
-    { CFG_C64_REU_PRE,  CFG_TYPE_ENUM,   "REU Preload",                  "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_REU_PRE,  CFG_TYPE_ENUM,   "REU Preload",                  "%s", en_dis,     0,  1, 0 },
     { CFG_C64_REU_IMG,  CFG_TYPE_STRING, "REU Preload Image",            "%s", NULL,       0, 31, (int)"/Usb0/preload.reu" },
     { CFG_C64_REU_OFFS, CFG_TYPE_ENUM,   "REU Preload Offset",           "%s", reu_offset, 0,  8, 0 }, 
-    { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis,     0,  1, 0 },
     { CFG_C64_DMA_ID,   CFG_TYPE_VALUE,  "DMA Load Mimics ID:",          "%d", NULL,       8, 31, 8 },
 #ifndef U64
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",                 "%s", buttons,    0,  1, 1 },
 #endif
 #if CLOCK_FREQ == 62500000
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing2,    0,  7, 5 },
-    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #elif CLOCK_FREQ == 50000000
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
-    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #endif
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", ultimatedos,0,  3, 0 },
-    { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis2,    0,  1, 0 },
+    { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis,     0,  1, 0 },
 #if DEVELOPER > 0
-    { CFG_C64_DO_SYNC,  CFG_TYPE_ENUM,   "Perform VIC sync at DMA RUN",  "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_DO_SYNC,  CFG_TYPE_ENUM,   "Perform VIC sync at DMA RUN",  "%s", en_dis,     0,  1, 0 },
 #endif
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };
@@ -208,12 +209,28 @@ C64::C64()
     isFrozen = false;
 //    C64_MODE = C64_MODE_RESET;
     buttonPushSeen = false;
-
     client = 0;
+    available = false;
 
-    if (!phi2_present())
+    if (phi2_present()) {
+        init();
+    }
+#ifndef U64
+#ifdef OS
+    else {
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
+        xTaskCreate(C64 :: init_poll_task, "C64 Init poll task", 500, this, 2, NULL);
+    }
+#endif
+#else
+    else {
+        printf("U64, and no PHI2?  Something is seriously wrong!!\n");
+    }
+#endif
+}
 
+void C64 :: init(void)
+{
     effectuate_settings();
 
     force_cart = 0x80;
@@ -224,8 +241,27 @@ C64::C64()
     } else if (cfg->get_value(CFG_C64_CART) || cfg->get_value(CFG_C64_ALT_KERN)) {
         init_cartridge();
     }
-    C64_STOP = 0; // GO!
+    available = true;
 }
+
+void C64 :: start(void)
+{
+    C64_STOP = 0;
+}
+
+#ifdef OS
+void C64 :: init_poll_task(void *a)
+{
+    C64 *obj = (C64 *)a;
+    while(!phi2_present()) {
+        ioWrite8(UART_DATA, '\\');
+        vTaskDelay(100);
+    }
+    obj->init();
+    obj->start(); // assumed that this will only happen on a U2/U2+ inside a U64
+    vTaskDelete(NULL);
+}
+#endif
 
 C64::~C64()
 {
@@ -264,7 +300,12 @@ void C64 :: resetConfigInFlash(int page)
     }
 }
 
-C64 *C64 :: getMachine(void) {
+C64 *C64 :: getMachine(void)
+{
+    static C64 *c64 = NULL;
+    if (!c64) {
+        c64 = new C64();
+    }
     return c64;
 }
 
@@ -404,6 +445,11 @@ void C64::determine_d012(void)
     VIC_REG(25) = 0x81; // clear raster interrupt
 }
 
+void C64 :: goUltimax(void)
+{
+    C64_MODE = MODE_ULTIMAX;
+}
+
 void C64::stop(bool do_raster)
 {
     int b, w;
@@ -434,7 +480,7 @@ void C64::stop(bool do_raster)
             if (C64_STOP & C64_HAS_STOPPED) {  // has the C64 stopped already?
                 //            VIC_REG(48) = 0;  // switch to slow mode (C128)
                 // enter ultimax mode, so we can be sure that we can access IO space!
-                C64_MODE = MODE_ULTIMAX;
+                goUltimax();
 
                 printf("Ultimax set.. Now reading registers..\n");
                 raster = VIC_REG(18);
@@ -615,10 +661,8 @@ void C64::reset(void)
 void C64::backup_io(void)
 {
     int i;
-//	char *scr = (char *)SCREEN1_ADDR;
-
     // enter ultimax mode, as this might not have taken place already!
-    C64_MODE = MODE_ULTIMAX;
+    goUltimax();
 
     // back up VIC registers
     for (i = 0; i < NUM_VICREGS; i++)
@@ -879,16 +923,6 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
 {
     cart_def *def = (cart_def *) vdef;
 
-#if U64
-    // On the U64, the external carts should be turned off, otherwise the external cart will conflict with our
-    // internal cart, or even override it altogether. This is only done when a custom cart definition is given.
-    // TODO: What happens when the reboot / reset command is given and a real cartridge is attached?
-    if ((def != 0) || startLater) { // special cart
-        U64_CART_DISABLE = 1;
-    } else {
-        U64_CART_DISABLE = 0;
-    }
-#endif
     // If we are called from the overlay or telnet menu, it may be so that the C64 is not even frozen.
     // In this case, we need to stop the machine first in order to poke anything into memory
     if (!C64_HAS_STOPPED) {
@@ -901,7 +935,8 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     // Now that the machine is stopped, we can clear certain VIC registers. This is required for the FC3
     // cartridge, but maybe also for others. Obviously, we may not know in what mode we are, so we
     // force Ultimax mode, so that the IO range is accessible.
-    C64_MODE = MODE_ULTIMAX;
+    goUltimax();
+
     VIC_REG(32) = 0; // black border
     VIC_REG(17) = 0; // screen off
 
@@ -914,6 +949,17 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     C64_MODE = C64_MODE_RESET;
     C64_CARTRIDGE_TYPE = 0; // disable our carts
     wait_ms(50);
+
+#if U64
+    // On the U64, the external carts should be turned off, otherwise the external cart will conflict with our
+    // internal cart, or even override it altogether. This is only done when a custom cart definition is given.
+
+    if ((def != 0) || startLater) { // special cart
+        U64_CART_PREF = U64_CARTRIDGE_INTERNAL;
+        // this register will be set back to the correct value upon a reset interrupt, that calls u64_configurator.effectuate_settings()
+    }
+#endif
+
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_STOP = 0;
 
@@ -931,7 +977,7 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
         bool external = false;
 #if U64
         // In case of the U64, when an external cartridge is detected, we should not enable our cart
-        if (get_exrom_game() != 0) { // An external cartridge has been enabled
+        if (!(U64_CART_PREF & 0x80)) {
             external = true;
         }
 #endif
@@ -1110,17 +1156,15 @@ void C64::init_cartridge()
 
     init_system_roms();
 
-    // In case of the U64, when an external cartridge is detected, we should not enable our cart
-    if (getFpgaCapabilities() & CAPAB_ULTIMATE64) {
-        U64_CART_DISABLE = 0;
-        if (get_exrom_game() != 0) { // An external cartridge has been enabled
-            printf("External Cartridge Detected. Not initializing cartridge.\n");
-            wait_ms(100);
-            C64_MODE = C64_MODE_UNRESET;
-            C64_STOP = 0;
-            return;
-        }
+#if U64
+    if (!(U64_CART_PREF & 0x80)) { // external cart selected
+        printf("External Cartridge Selected. Not initializing cartridge.\n");
+        wait_ms(100);
+        C64_MODE = C64_MODE_UNRESET;
+        C64_STOP = 0;
+        return;
     }
+#endif
 
     int cart = cfg->get_value(CFG_C64_CART);
     cart_def *cart2 = &cartridges[cart];
@@ -1179,6 +1223,10 @@ void C64::checkButton(void)
 {
     static uint8_t button_prev;
 
+    // Dont check the button if we are in stand alone mode, since we don't have a cartridge port
+    if (!available) {
+        return;
+    }
     uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
     if ((buttons & ~button_prev) & ITU_BUTTON1) {
         buttonPushSeen = true;

@@ -7,6 +7,8 @@
 /*.u2p
 /audio
 **/.asdb
+dataset.*
+/sim/work
 tools/*.vcd
 tools/*.bin
 fpga/altera/sim
@@ -258,3 +260,5 @@ tools/64tass/*.o
 /chars/
 .vscode
 .idea
+python/grab*
+

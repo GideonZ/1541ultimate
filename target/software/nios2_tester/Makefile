@@ -9,14 +9,13 @@ TESTER     =  tester
 
 include ../common/environment.mk
 PATH_DUTFPGA = ../../fpga/testdut
+SVFDUMP = ../../../tools/svf_dump
 
 PRJ      =  tester_main
 FINAL    =  $(RESULT)/$(PRJ).elf $(RESULT)/$(PRJ).app 
 
 SRCS_C   =	start_rtos.c \
-			i2c.c \
 			mdio.c \
-			codec.c \
 			fix_fft.c \
 			itu.c \
 			dump_hex.c \
@@ -42,6 +41,8 @@ SRCS_C   =	start_rtos.c \
             ccsbcs.c
                         
 SRCS_CC	 =  small_printf.cc \
+            i2c_drv.cc \
+            codec.cc \
 			flash_switch.cc \
 			flash.cc \
 			w25q_flash.cc \
@@ -81,7 +82,7 @@ VPATH +=	$(PATH_SW)/portable/nios
 VPATH +=	$(PATH_SW)/nios_tester_bsp
 VPATH +=	$(PATH_SW)/nios_tester_bsp/HAL/inc
 VPATH +=	$(PATH_SW)/nios_tester_bsp/drivers/inc
-VPATH +=    ../../fpga/testdut/output_files
+VPATH +=    $(PATH_DUTFPGA)/output_files
 VPATH +=    ../nios2_dut/result
 
 SRCS_ASM = tester_binaries.s
@@ -107,5 +108,11 @@ LFLAGS   = --gc-sections -msys-crt0='$(BSP)/obj/HAL/src/crt0.o'  -msys-lib=hal_b
 
 include ../common/rules.mk
 
-tester_binaries.o: $(PATH_SW)/application/tester/waves_8_12.bin
-#../nios2_dut/result/dut.app
+../nios2_dut/result/dut.app::
+	make -C ../nios2_dut
+	
+$(PATH_DUTFPGA)/output_files/dut.fpga: $(PATH_DUTFPGA)/output_files/testdut.svf
+	@$(SVFDUMP) $< >/dev/null
+	@mv dump.bin $@
+
+tester_binaries.o: $(PATH_SW)/application/tester/waves_8_12.bin ../nios2_dut/result/dut.app $(PATH_DUTFPGA)/output_files/dut.fpga

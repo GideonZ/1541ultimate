@@ -148,6 +148,8 @@ begin
     port map(
         arst      => ref_reset,
         
+        BUTTON    => BUTTON,
+        
         PHI2      => SLOT_PHI2,
         DOTCLK    => SLOT_DOTCLK,
         IO1n      => SLOT_IO1n,

@@ -289,46 +289,46 @@ set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_DM
 set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_ODT
 set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_RASn
 set_instance_assignment -name IO_STANDARD "SSTL-18 CLASS I" -to SDRAM_WEn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[0]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[10]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[11]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[12]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[13]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[14]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[15]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[1]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[2]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[3]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[4]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[5]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[6]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[7]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[8]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ADDR[9]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_BA
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[0]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[1]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[2]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[3]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[4]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[5]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[6]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DATA[7]
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DMAn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_DOTCLK
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_EXROMn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_GAMEn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_IO1n
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_IO2n
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_IRQn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_NMIn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_PHI2
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ROMHn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_ROMLn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_RSTn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to SLOT_RWn
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_RXD
-set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to UART_TXD
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[10]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[11]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[12]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[13]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[14]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[15]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[8]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ADDR[9]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_BA
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DATA[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DATA[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DATA[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DATA[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DATA[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DATA[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DATA[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DATA[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DMAn
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_DOTCLK
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_EXROMn
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_GAMEn
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_IO1n
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_IO2n
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_IRQn
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_NMIn
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_PHI2
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ROMHn
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_ROMLn
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_RSTn
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to SLOT_RWn
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to UART_RXD
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to UART_TXD
 set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_CLOCK
 set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[0]
 set_instance_assignment -name IO_STANDARD "1.8 V" -to ULPI_DATA[1]
@@ -377,6 +377,11 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to BOARD_REVn[0]
 set_global_assignment -name GENERATE_RBF_FILE ON
 set_global_assignment -name ON_CHIP_BITSTREAM_DECOMPRESSION ON
 
+
+set_global_assignment -name ENABLE_SIGNALTAP OFF
+set_global_assignment -name USE_SIGNALTAP_FILE usb.stp
+set_global_assignment -name GENERATE_SVF_FILE ON
+set_global_assignment -name VHDL_FILE ../../../fpga/io/rmii/vhdl_source/ethernet_interface.vhd
 set_global_assignment -name QIP_FILE ../../../fpga/altera/megafunctions/update/synthesis/update.qip
 set_global_assignment -name QSYS_FILE ../../../fpga/altera/megafunctions/jtag/virtual_jtag.qsys
 set_global_assignment -name QSYS_FILE ../../../fpga/nios_tester/nios_tester.qsys
@@ -593,11 +598,58 @@ set_global_assignment -name VHDL_FILE ../../../fpga/sid6581/vhdl_source/wave_map
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_file_io_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_string_util_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../../target/simulation/packages/vhdl_source/tl_vector_pkg.vhd
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "2.5 V"
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MINIMUM CURRENT" -to UART_RXD
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to UART_RXD
+set_global_assignment -name SIGNALTAP_FILE usb.stp
 
-set_global_assignment -name ENABLE_SIGNALTAP ON
-set_global_assignment -name USE_SIGNALTAP_FILE ../testdut/jtag2.stp
-set_global_assignment -name SIGNALTAP_FILE output_files/stp1.stp
-set_global_assignment -name SIGNALTAP_FILE stp2.stp
-set_global_assignment -name GENERATE_SVF_FILE ON
-set_global_assignment -name SIGNALTAP_FILE ../testdut/jtag2.stp
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[15]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[14]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[13]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[12]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[11]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[10]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[9]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[8]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[7]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[6]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[5]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[4]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[3]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[2]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[1]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_ADDR[0]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_DATA[7]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_DATA[6]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_DATA[5]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_DATA[4]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_DATA[3]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_DATA[2]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_DATA[1]
+set_instance_assignment -name CURRENT_STRENGTH_NEW 2MA -to SLOT_DATA[0]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[15]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[14]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[13]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[12]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[11]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[10]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[9]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[8]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[7]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[6]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[5]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[4]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[3]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[2]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[1]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_ADDR[0]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_DATA[7]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_DATA[6]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_DATA[5]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_DATA[4]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_DATA[3]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_DATA[2]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_DATA[1]
+#set_instance_assignment -name SLEW_RATE 1 -to SLOT_DATA[0]
+
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

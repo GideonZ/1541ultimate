@@ -42,6 +42,8 @@ ALL_ULTIMATE_LOGIC := \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/nano_cpu/vhdl_source/nano.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/free_queue/vhdl_source/block_bus_pkg.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/ip/free_queue/vhdl_source/free_queue.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/acia/vhdl_source/acia6551_pkg.vhd \
+				vhdl,work,$(ULTIMATE_FPGA)/io/acia/vhdl_source/acia6551.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/audio_select/vhdl_source/audio_select.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/tx.vhd \
 				vhdl,work,$(ULTIMATE_FPGA)/io/uart_lite/vhdl_source/rx.vhd \

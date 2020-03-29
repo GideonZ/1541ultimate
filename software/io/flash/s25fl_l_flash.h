@@ -6,6 +6,8 @@
 #include "w25q_flash.h"
 #include "iomap.h"
 
+#define S25FLXXXL_NUM_CONFIG_PAGES 24
+
 #define S25FLL_PageShift	8  // (256 bytes per page)
 
 #define S25FLL_JEDEC_ID					            0x9F
@@ -68,6 +70,9 @@ public:
 	virtual bool erase_sector(int sector);
 	virtual bool read_page(int page, void *buffer);
 	virtual bool write_page(int page, void *buffer);
+	virtual int  get_number_of_config_pages(void) {
+	    return S25FLXXXL_NUM_CONFIG_PAGES;
+	}
 
 	static uint8_t write_config_register(uint8_t *was);
 };

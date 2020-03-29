@@ -67,8 +67,8 @@ void jtag_senddata(volatile uint32_t *host, uint8_t *data, int length, uint8_t *
 			cmd |= (7 << 16); // 8 bits, not last
 		}
 		host[0] = cmd;
-		if (readback) {
-			uint32_t rb = host[0];
+        uint32_t rb = host[0];
+        if (readback) {
 			*(readback++) = (uint8_t)rb;
 		}
 		length -= 8;
@@ -273,28 +273,46 @@ int FindJtagAccess(volatile uint32_t *host, JTAG_Access_t *access)
 	uint8_t hub_info[8] = {0, 0, 0, 0, 0, 0, 0, 0 };
 	uint8_t hub_data;
 
-	jtag_instruction(host, 14); // user 1
-	jtag_senddata(host, hub_info, 64, NULL);
-	jtag_instruction(host, 12); // user 0
-	uint32_t info = 0;
-	for(int i=0; i<8; i++) {
-		info >>= 4;
-		jtag_senddata(host, hub_info, 4, &hub_data);
-		info |= ((uint32_t)hub_data) << 28;
-	}
-	//printf("Hub: %08X\n", info);
+    uint32_t info;
+    int mfg;
+    for (int r=0;r<5;r++) {
+        jtag_instruction(host, 14); // user 1
+        jtag_senddata(host, hub_info, 64, NULL);
+        jtag_instruction(host, 12); // user 0
+
+        jtag_instruction(host, 14); // user 1
+        jtag_senddata(host, hub_info, 64, NULL);
+        jtag_instruction(host, 12); // user 0
+
+        info = 0;
+        for(int i=0; i<8; i++) {
+            info >>= 4;
+            jtag_senddata(host, hub_info, 4, &hub_data);
+            info |= ((uint32_t)hub_data) << 28;
+        }
+        printf("Hub: %08X\n", info);
+        mfg = (info & 0x7ff00) >> 8;
+        if (mfg == 0x6e) {
+            break;
+        }
+    }
 
 	if (info == 0xFFFFFFFF) {
 		printf("No Hub found.\n");
 		return -1;
 	}
-
 /*
 	printf("  m   = %d\n", info & 255);
 	printf("  mfg = %03x\n", (info & 0x7ff00) >> 8);
 	printf("  N   = %d\n", (info & 0x7f80000) >> 19);
 	printf("  ver = %02X\n", (info >> 27));
 */
+
+	if (mfg != 0x6E) {
+	    printf("The Hub does not have the correct manufacturer ID...\n");
+	    return -2;
+	}
+
 	int N = (info & 0x7f80000) >> 19;
 	int m = info & 255;
 	int vji = -1;
@@ -307,6 +325,7 @@ int FindJtagAccess(volatile uint32_t *host, JTAG_Access_t *access)
 			info |= ((uint32_t)hub_data) << 28;
 		}
 		uint32_t node_id = (info & 0x7f80000) >> 19;
+
 /*
 		printf("Node %d: %08X\n", j, info);
 		printf("  inst ID = %02x\n", info & 255);
@@ -314,6 +333,7 @@ int FindJtagAccess(volatile uint32_t *host, JTAG_Access_t *access)
 		printf("  node ID = %02x\n", node_id);
 		printf("  version = %03X\n", (info >> 27));
 */
+
 		if (node_id == 8) {
 			vji = j;
 		}

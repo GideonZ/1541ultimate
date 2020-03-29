@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "i2c.h"
 #include "mdio.h"
 #include "alt_types.h"
 #include "dump_hex.h"
@@ -26,9 +25,17 @@ void RmiiRxInterruptHandler(void) __attribute__ ((weak));
 uint8_t command_interface_irq(void) __attribute__ ((weak));
 uint8_t tape_recorder_irq(void) __attribute__ ((weak));
 uint8_t usb_irq(void) __attribute__ ((weak));
+uint8_t acia_irq(void) __attribute__ ((weak));
 
 uint8_t command_interface_irq(void) {
+    return 0;
+}
 
+uint8_t acia_irq(void)
+{
+    // We shouldn't come here.
+    ioWrite8(ITU_IRQ_HIGH_ACT, 0);
+    return 0;
 }
 
 void RmiiRxInterruptHandler() {
@@ -80,6 +87,10 @@ static void ituIrqHandler(void *context) {
 	if (pending & 0x01) {
 		do_switch |= xTaskIncrementTick();
 	}
+	if (ioRead8(ITU_IRQ_HIGH_ACT) & ITU_IRQHIGH_ACIA) {
+	    do_switch |= acia_irq();
+	}
+
 	if (do_switch != pdFALSE) {
 		vTaskSwitchContext();
 	}
@@ -92,6 +103,7 @@ void ultimate_main(void *context);
 #include "dump_hex.h"
 
 void codec_init();
+void USb2512Init();
 
 static void test_i2c_mdio(void) {
 	// mdio_reset();

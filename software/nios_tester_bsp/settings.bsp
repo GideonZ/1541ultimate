@@ -2,8 +2,8 @@
 <sch:Settings xmlns:sch="http://www.altera.com/embeddedsw/bsp/schema">
         <BspType>hal</BspType>
         <BspVersion>default</BspVersion>
-        <BspGeneratedTimeStamp>Nov 20, 2016 9:04:23 PM</BspGeneratedTimeStamp>
-        <BspGeneratedUnixTimeStamp>1479672263830</BspGeneratedUnixTimeStamp>
+        <BspGeneratedTimeStamp>Nov 10, 2019 10:13:31 AM</BspGeneratedTimeStamp>
+        <BspGeneratedUnixTimeStamp>1573377211159</BspGeneratedUnixTimeStamp>
         <BspGeneratedLocation>/home/gideon/proj/ultimate/software/nios_tester_bsp</BspGeneratedLocation>
         <BspSettingsFile>/home/gideon/proj/ultimate/software/nios_tester_bsp/settings.bsp</BspSettingsFile>
         <SopcDesignFile>../../fpga/nios_tester/nios_tester.sopcinfo</SopcDesignFile>

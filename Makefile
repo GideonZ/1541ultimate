@@ -1,7 +1,7 @@
 
 # .PHONY: all mk1 mk2 mk3 mk3only prog special clean sw_clean loader
 
-all: mk3 u2plus
+all: mk3 u2plus u64
 
 mk3:
 	@$(MAKE) -C tools
@@ -111,6 +111,10 @@ u2p_tester:
 	@touch software/nios_tester_bsp/public.mk
 	@$(MAKE) -C software/nios_dut_bsp
 	@$(MAKE) -C software/nios_tester_bsp
+	@$(MAKE) -C target/software/nios2_dut clean
+	@$(MAKE) -C target/software/nios2_tester clean
+	@$(MAKE) -C target/software/nios2_testloader clean
+	@$(MAKE) -C target/software/nios2_testflasher clean
 	@$(MAKE) -C target/software/nios2_dut
 	@$(MAKE) -C target/software/nios2_tester
 	@$(MAKE) -C target/software/nios2_testloader
@@ -126,6 +130,10 @@ u2p_tester_sw:
 	@touch software/nios_tester_bsp/public.mk
 	@$(MAKE) -C software/nios_dut_bsp
 	@$(MAKE) -C software/nios_tester_bsp
+	@$(MAKE) -C target/software/nios2_dut clean
+	@$(MAKE) -C target/software/nios2_tester clean
+	@$(MAKE) -C target/software/nios2_testloader clean
+	@$(MAKE) -C target/software/nios2_testflasher clean
 	@$(MAKE) -C target/software/nios2_dut
 	@$(MAKE) -C target/software/nios2_tester
 	@$(MAKE) -C target/software/nios2_testloader

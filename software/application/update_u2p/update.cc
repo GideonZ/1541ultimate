@@ -47,7 +47,7 @@ void do_update(void)
     GenericHost *host = 0;
     Stream *stream = new Stream_UART;
 
-    C64 *c64 = new C64;
+    C64 *c64 = C64 :: getMachine();
 
     if (c64->exists()) {
     	host = c64;

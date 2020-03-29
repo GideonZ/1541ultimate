@@ -73,7 +73,7 @@ extern "C" {
 		IOWR_ALTERA_AVALON_PIO_CLEAR_BITS(PIO_1_BASE, 0xFF);
 		IOWR_ALTERA_AVALON_PIO_SET_BITS(PIO_1_BASE, 0x0F); // turn on all LEDs, indicating loader state
 
-		printf("Ultimate-II+ automated test system - LOADER...\n");
+		printf("Ultimate-II+ automated test system - LOADER... (FPGA Version: %b)\n", getFpgaVersion());
 
 		usb2.initHardware();
 		FileManager *fm = FileManager :: getFileManager();

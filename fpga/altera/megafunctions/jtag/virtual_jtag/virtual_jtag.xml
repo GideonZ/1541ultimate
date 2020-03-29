@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<deploy
+ date="2019.10.23.11:13:40"
+ outputDirectory="/home/gideon/proj/ultimate/fpga/altera/megafunctions/jtag/virtual_jtag/">
+ <perimeter>
+  <parameter
+     name="AUTO_GENERATION_ID"
+     type="Integer"
+     defaultValue="0"
+     onHdl="0"
+     affectsHdl="1" />
+  <parameter
+     name="AUTO_UNIQUE_ID"
+     type="String"
+     defaultValue=""
+     onHdl="0"
+     affectsHdl="1" />
+  <parameter
+     name="AUTO_DEVICE_FAMILY"
+     type="String"
+     defaultValue="Cyclone IV E"
+     onHdl="0"
+     affectsHdl="1" />
+  <parameter
+     name="AUTO_DEVICE"
+     type="String"
+     defaultValue="EP4CE22F17C8"
+     onHdl="0"
+     affectsHdl="1" />
+  <parameter
+     name="AUTO_DEVICE_SPEEDGRADE"
+     type="String"
+     defaultValue="8"
+     onHdl="0"
+     affectsHdl="1" />
+  <interface name="jtag" kind="conduit" start="0">
+   <property name="associatedClock" value="tck" />
+   <property name="associatedReset" value="" />
+   <port name="tdi" direction="output" role="tdi" width="1" />
+   <port name="tdo" direction="input" role="tdo" width="1" />
+   <port name="ir_in" direction="output" role="ir_in" width="4" />
+   <port name="ir_out" direction="input" role="ir_out" width="4" />
+   <port
+       name="virtual_state_cdr"
+       direction="output"
+       role="virtual_state_cdr"
+       width="1" />
+   <port
+       name="virtual_state_sdr"
+       direction="output"
+       role="virtual_state_sdr"
+       width="1" />
+   <port
+       name="virtual_state_e1dr"
+       direction="output"
+       role="virtual_state_e1dr"
+       width="1" />
+   <port
+       name="virtual_state_pdr"
+       direction="output"
+       role="virtual_state_pdr"
+       width="1" />
+   <port
+       name="virtual_state_e2dr"
+       direction="output"
+       role="virtual_state_e2dr"
+       width="1" />
+   <port
+       name="virtual_state_udr"
+       direction="output"
+       role="virtual_state_udr"
+       width="1" />
+   <port
+       name="virtual_state_cir"
+       direction="output"
+       role="virtual_state_cir"
+       width="1" />
+   <port
+       name="virtual_state_uir"
+       direction="output"
+       role="virtual_state_uir"
+       width="1" />
+  </interface>
+  <interface name="tck" kind="clock" start="1">
+   <property name="associatedDirectClock" value="" />
+   <property name="clockRate" value="0" />
+   <property name="clockRateKnown" value="false" />
+   <property name="externallyDriven" value="false" />
+   <property name="ptfSchematicName" value="" />
+   <port name="tck" direction="output" role="clk" width="1" />
+  </interface>
+ </perimeter>
+ <entity
+   path=""
+   parameterizationKey="virtual_jtag:1.0:AUTO_DEVICE=EP4CE22F17C8,AUTO_DEVICE_FAMILY=Cyclone IV E,AUTO_DEVICE_SPEEDGRADE=8,AUTO_GENERATION_ID=1571822020,AUTO_UNIQUE_ID=(altera_virtual_jtag:15.1:CREATE_PRIMITIVE_JTAG_STATE_SIGNAL_PORTS=false,device_family=Cyclone IV E,gui_use_auto_index=true,sld_auto_instance_index=YES,sld_instance_index=0,sld_ir_width=4)"
+   instancePathKey="virtual_jtag"
+   kind="virtual_jtag"
+   version="1.0"
+   name="virtual_jtag">
+  <parameter name="AUTO_GENERATION_ID" value="1571822020" />
+  <parameter name="AUTO_DEVICE" value="EP4CE22F17C8" />
+  <parameter name="AUTO_DEVICE_FAMILY" value="Cyclone IV E" />
+  <parameter name="AUTO_UNIQUE_ID" value="" />
+  <parameter name="AUTO_DEVICE_SPEEDGRADE" value="8" />
+  <generatedFiles>
+   <file
+       path="/home/gideon/proj/ultimate/fpga/altera/megafunctions/jtag/virtual_jtag/synthesis/virtual_jtag.vhd"
+       type="VHDL" />
+  </generatedFiles>
+  <childGeneratedFiles/>
+  <sourceFiles>
+   <file
+       path="/home/gideon/proj/ultimate/fpga/altera/megafunctions/jtag/virtual_jtag.qsys" />
+  </sourceFiles>
+  <childSourceFiles>
+   <file
+       path="/opt/altera_lite/15.1/ip/altera/sld/jtag/altera_virtual_jtag/altera_virtual_jtag_hw.tcl" />
+  </childSourceFiles>
+  <messages>
+   <message level="Debug" culprit="virtual_jtag">queue size: 0 starting:virtual_jtag "virtual_jtag"</message>
+   <message level="Progress" culprit="min"></message>
+   <message level="Progress" culprit="max"></message>
+   <message level="Progress" culprit="current"></message>
+   <message level="Debug">Transform: CustomInstructionTransform</message>
+   <message level="Debug">No custom instruction connections, skipping transform </message>
+   <message level="Debug" culprit="merlin_custom_instruction_transform"><![CDATA[After transform: <b>1</b> modules, <b>0</b> connections]]></message>
+   <message level="Debug">Transform: MMTransform</message>
+   <message level="Debug">Transform: InterruptMapperTransform</message>
+   <message level="Debug">Transform: InterruptSyncTransform</message>
+   <message level="Debug">Transform: InterruptFanoutTransform</message>
+   <message level="Debug">Transform: AvalonStreamingTransform</message>
+   <message level="Debug">Transform: ResetAdaptation</message>
+   <message level="Debug" culprit="virtual_jtag"><![CDATA["<b>virtual_jtag</b>" reuses <b>altera_virtual_jtag</b> "<b>submodules/sld_virtual_jtag</b>"]]></message>
+   <message level="Debug" culprit="virtual_jtag">queue size: 0 starting:altera_virtual_jtag "submodules/sld_virtual_jtag"</message>
+   <message level="Info" culprit="virtual_jtag_0"><![CDATA["<b>virtual_jtag</b>" instantiated <b>altera_virtual_jtag</b> "<b>virtual_jtag_0</b>"]]></message>
+  </messages>
+ </entity>
+ <entity
+   path="submodules/"
+   parameterizationKey="altera_virtual_jtag:15.1:CREATE_PRIMITIVE_JTAG_STATE_SIGNAL_PORTS=false,device_family=Cyclone IV E,gui_use_auto_index=true,sld_auto_instance_index=YES,sld_instance_index=0,sld_ir_width=4"
+   instancePathKey="virtual_jtag:.:virtual_jtag_0"
+   kind="altera_virtual_jtag"
+   version="15.1"
+   name="sld_virtual_jtag">
+  <parameter name="sld_auto_instance_index" value="YES" />
+  <parameter name="sld_instance_index" value="0" />
+  <parameter name="CREATE_PRIMITIVE_JTAG_STATE_SIGNAL_PORTS" value="false" />
+  <parameter name="device_family" value="Cyclone IV E" />
+  <parameter name="gui_use_auto_index" value="true" />
+  <parameter name="sld_ir_width" value="4" />
+  <generatedFiles/>
+  <childGeneratedFiles/>
+  <sourceFiles>
+   <file
+       path="/opt/altera_lite/15.1/ip/altera/sld/jtag/altera_virtual_jtag/altera_virtual_jtag_hw.tcl" />
+  </sourceFiles>
+  <childSourceFiles/>
+  <instantiator instantiator="virtual_jtag" as="virtual_jtag_0" />
+  <messages>
+   <message level="Debug" culprit="virtual_jtag">queue size: 0 starting:altera_virtual_jtag "submodules/sld_virtual_jtag"</message>
+   <message level="Info" culprit="virtual_jtag_0"><![CDATA["<b>virtual_jtag</b>" instantiated <b>altera_virtual_jtag</b> "<b>virtual_jtag_0</b>"]]></message>
+  </messages>
+ </entity>
+</deploy>

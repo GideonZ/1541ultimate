@@ -64,23 +64,24 @@ int main()
     uint32_t run_address = SPI_FLASH_DATA_32;
 //    uint32_t version = SPI_FLASH_DATA_32;
 
+    puts(APPL);
     if(length != -1) {
         while(length > 0) {
             *(dest++) = SPI_FLASH_DATA_32;
             length -= 4;
         }
     	SPI_FLASH_CTRL = 0; // reset SPI chip select to idle
-        puts("Running " APPL ".");
+        puts("Running");
     	uint8_t buttons = ioRead8(ITU_BUTTON_REG) & ITU_BUTTONS;
     	if ((buttons & ITU_BUTTON2) == 0) {  // right button not pressed
     		jump_run(run_address);
     	} else {
-    		puts(APPL " Lock");
+    		puts("Lock");
     	}
         while(1);
     }
 
-    puts("No " APPL ".");
+    puts("Empty");
     while(1)
     	;
     return 0;

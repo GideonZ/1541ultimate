@@ -29,6 +29,9 @@
 			jtag1_jtag_tms          : out std_logic;                                        -- jtag_tms
 			jtag1_jtag_tdi          : out std_logic;                                        -- jtag_tdi
 			jtag1_jtag_tdo          : in  std_logic                     := 'X';             -- jtag_tdo
+			jtag_in_data            : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- data
+			jtag_in_valid           : in  std_logic                     := 'X';             -- valid
+			jtag_in_ready           : out std_logic;                                        -- ready
 			mem_mem_req_address     : out std_logic_vector(25 downto 0);                    -- mem_req_address
 			mem_mem_req_byte_en     : out std_logic_vector(3 downto 0);                     -- mem_req_byte_en
 			mem_mem_req_read_writen : out std_logic;                                        -- mem_req_read_writen
@@ -49,10 +52,7 @@
 			uart_rxd                : in  std_logic                     := 'X';             -- rxd
 			uart_txd                : out std_logic;                                        -- txd
 			uart_cts_n              : in  std_logic                     := 'X';             -- cts_n
-			uart_rts_n              : out std_logic;                                        -- rts_n
-			jtag_in_data            : in  std_logic_vector(7 downto 0)  := (others => 'X'); -- data
-			jtag_in_valid           : in  std_logic                     := 'X';             -- valid
-			jtag_in_ready           : out std_logic                                         -- ready
+			uart_rts_n              : out std_logic                                         -- rts_n
 		);
 	end component nios_tester;
 
@@ -87,6 +87,9 @@
 			jtag1_jtag_tms          => CONNECTED_TO_jtag1_jtag_tms,          --          .jtag_tms
 			jtag1_jtag_tdi          => CONNECTED_TO_jtag1_jtag_tdi,          --          .jtag_tdi
 			jtag1_jtag_tdo          => CONNECTED_TO_jtag1_jtag_tdo,          --          .jtag_tdo
+			jtag_in_data            => CONNECTED_TO_jtag_in_data,            --   jtag_in.data
+			jtag_in_valid           => CONNECTED_TO_jtag_in_valid,           --          .valid
+			jtag_in_ready           => CONNECTED_TO_jtag_in_ready,           --          .ready
 			mem_mem_req_address     => CONNECTED_TO_mem_mem_req_address,     --       mem.mem_req_address
 			mem_mem_req_byte_en     => CONNECTED_TO_mem_mem_req_byte_en,     --          .mem_req_byte_en
 			mem_mem_req_read_writen => CONNECTED_TO_mem_mem_req_read_writen, --          .mem_req_read_writen
@@ -107,9 +110,6 @@
 			uart_rxd                => CONNECTED_TO_uart_rxd,                --      uart.rxd
 			uart_txd                => CONNECTED_TO_uart_txd,                --          .txd
 			uart_cts_n              => CONNECTED_TO_uart_cts_n,              --          .cts_n
-			uart_rts_n              => CONNECTED_TO_uart_rts_n,              --          .rts_n
-			jtag_in_data            => CONNECTED_TO_jtag_in_data,            --   jtag_in.data
-			jtag_in_valid           => CONNECTED_TO_jtag_in_valid,           --          .valid
-			jtag_in_ready           => CONNECTED_TO_jtag_in_ready            --          .ready
+			uart_rts_n              => CONNECTED_TO_uart_rts_n               --          .rts_n
 		);
 

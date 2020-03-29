@@ -83,14 +83,16 @@ extern "C" void ultimate_main(void *a)
 
 	puts("Executing init functions.");
 	InitFunction :: executeAll();
-	usb2.initHardware();
     
 	if (capabilities & CAPAB_CARTRIDGE) {
-		c64 = new C64;
+		c64 = C64 :: getMachine();
 		c64_subsys = new C64_Subsys(c64);
+		c64->start();
 	} else {
 		c64 = NULL;
 	}
+
+    usb2.initHardware();
 
     char title[48];
     if(capabilities & CAPAB_ULTIMATE64) {
@@ -111,29 +113,6 @@ extern "C" void ultimate_main(void *a)
     }
 
     overlay = NULL;
-
-
-#ifndef U64
-    if (c64) {
-       for (int i=0; i<70; i++)
-       {
-          if (c64->exists())  break;
-          vTaskDelay(20);
-          connectedToU64 = true;
-       }
-    }
-    if (connectedToU64) {
-        if(capabilities & CAPAB_ULTIMATE64) {
-    	    // Empty
-        } else if(capabilities & CAPAB_ULTIMATE2PLUS) {
-    	    sprintf(title, "\eA*** Ultimate-II+ U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
-        } else {
-    	    sprintf(title, "\eA*** Ultimate-II  U64 %s (1%b) ***\eO", APPL_VERSION, getFpgaVersion());
-        }
-        c64->effectuate_settings();
-        c64->init_cartridge();
-    }
-#endif
 
     UserInterface *overlayUserInterface = NULL;
     if ((capabilities & CAPAB_OVERLAY) && (capabilities & CAPAB_ULTIMATE64)) {
@@ -252,24 +231,6 @@ extern "C" void ultimate_main(void *a)
         }
         vTaskDelay(3);
     }
-
-/*
-    else {
-    	vTaskDelay(2000);
-    	printf("Attempting to write a test file to /Usb0.\n");
-    	FileManager *fm = FileManager :: getFileManager();
-    	File *file;
-    	FRESULT fres;
-    	DWORD tr;
-    	fres = fm->fopen("/Usb0/testje.txt", FA_CREATE_NEW|FA_CREATE_ALWAYS|FA_WRITE, &file);
-    	printf("%s\n", FileSystem :: get_error_string(fres) );
-    	if (fres == FR_OK) {
-    		file->write(buffer, 8192, &tr);
-    		fm->fclose(file);
-    	}
-    	vTaskSuspend(NULL); // Stop main task and wait forever
-    }
-*/
 
     custom_outbyte = 0; // stop logging
     printf("GUI running on C64 host has terminated? This should not happen.\n");

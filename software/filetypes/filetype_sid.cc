@@ -380,7 +380,7 @@ int FileTypeSID :: fetch_context_items(IndexedList<Action *> &list)
 		}
 	}
 
-	if (!c64->exists()) {
+	if (!(C64::getMachine()->exists())) {
 		return 0;
 	}
 	list.append(new Action("Play Main Tune", FileTypeSID :: execute_st, SIDFILE_PLAY_MAIN, (int)this ));
@@ -714,22 +714,24 @@ void FileTypeSID :: load(void)
 	printf("Loading SID..\n");
 
 	// handshake with sid player cart
-	c64->stop(false);
+    C64 *machine = C64 :: getMachine();
+
+	machine->stop(false);
 
 	int timeout = 0;
 	while (C64_PEEK(2) != 0x01) {
-		c64->resume();
+		machine->resume();
 		timeout++;
 		if (timeout == 30) {
             printf("Time out!\n");
 			fm->fclose(file);
 			file = NULL;
-			c64->init_cartridge();
+			machine->init_cartridge();
 			return;
 		}
 		wait_ms(25);
 		printf("/");
-		c64->stop(false);
+		machine->stop(false);
 	}
 
     // clear the entire memory
@@ -770,7 +772,7 @@ void FileTypeSID :: load(void)
 
 //    SID_REGS(0) = 0x33; // start trace
 
-	c64->resume();
+	machine->resume();
 
 	// In this special case, we do NOT restore the cartridge right away,
 	// but we do this as soon as the button is pressed, not earlier.

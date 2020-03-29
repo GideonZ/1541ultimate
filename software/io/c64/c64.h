@@ -187,6 +187,7 @@
 #define CFG_C64_TIMING      0xCB
 #define CFG_C64_PHI2_REC    0xCC
 #define CFG_C64_RATE        0xCD
+#define CFG_C64_CART_PREF   0xCE
 #define CFG_CMD_ENABLE      0x71
 #define CFG_CMD_ALLOW_WRITE 0x72
 #define CFG_C64_FC3MODE     0x73
@@ -236,9 +237,11 @@ class C64 : public GenericHost, ConfigurableObject
 
     uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
+    volatile bool available;
 
     bool isFrozen;
     void determine_d012(void);
+    void goUltimax(void);
     void backup_io(void);
     void init_io(void);
     void restore_io(void);
@@ -264,8 +267,11 @@ class C64 : public GenericHost, ConfigurableObject
         return (C64_CLOCK_DETECT & 0x10) == 0x10;
     }
 
-public:
+    static void init_poll_task(void *a);
+    void init(void);
+
     C64();
+public:
     ~C64();
 
     /* Get static object */
@@ -314,6 +320,7 @@ public:
     void init_cartridge(void);
     void cartridge_test(void);
     void reset(void);
+    void start(void);
         
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access
@@ -322,6 +329,6 @@ public:
     friend class U64Config; // U64 config needs to stop / resume for SID detection
 };
 
-extern C64 *c64;
+// extern C64 *c64;
 
 #endif

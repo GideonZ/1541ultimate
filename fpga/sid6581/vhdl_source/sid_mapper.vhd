@@ -131,6 +131,7 @@ begin
         end if;
     end process;
 
+    slot_resp.nmi        <= '0';
     slot_resp.irq        <= '0';
     slot_resp.reg_output <= '0';
 

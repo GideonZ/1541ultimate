@@ -14,6 +14,7 @@ extern "C" {
 #define PROFILER_STOP  *((volatile uint8_t *)(TRACE_BASE + 0x06))
 #define PROFILER_START *((volatile uint8_t *)(TRACE_BASE + 0x07))
 #define PROFILER_ADDR *((volatile uint32_t *)(TRACE_BASE + 0x00))
+#define PROFILER_MODE  *((volatile uint8_t *)(TRACE_BASE + 0x08))
 
 void *profiled_memcpy(void *str1, const void *str2, size_t n);
 

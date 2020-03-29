@@ -17,7 +17,7 @@
 #include "u2p.h"
 #include "usb_nano.h"
 #include "dump_hex.h"
-#include "i2c.h"
+#include "i2c_drv.h"
 #include "rtc_only.h"
 #include "usb_base.h"
 
@@ -121,8 +121,8 @@ int checkUsbPhy()
     uint16_t *dst = (uint16_t *)NANO_BASE;
     uint16_t temp;
     for(int i=0;i<size;i+=2) {
-    	temp = (uint16_t)((*(src++)) << 8);
-    	temp |= (uint16_t)(*(src++));
+    	temp = (uint16_t)(*(src++));
+        temp |= (uint16_t)((*(src++)) << 8);
     	*(dst++) = temp;
 	}
     for(int i=size;i<2048;i+=2) {
@@ -206,10 +206,11 @@ int testRtcAccess(void)
 {
 	int test_c = 0;
 
+	I2C_Driver i2c;
 	ENTER_SAFE_SECTION
-	i2c_write_byte(0xA2, 0x03, 0x55);
+	i2c.i2c_write_byte(0xA2, 0x03, 0x55);
 	int res;
-	uint8_t rambyte = i2c_read_byte(0xA2, 0x03, &res);
+	uint8_t rambyte = i2c.i2c_read_byte(0xA2, 0x03, &res);
 	LEAVE_SAFE_SECTION
 	if (res)
 		return -9;
@@ -218,8 +219,8 @@ int testRtcAccess(void)
 		test_c ++;
 
 	ENTER_SAFE_SECTION
-	i2c_write_byte(0xA2, 0x03, 0xAA);
-	rambyte = i2c_read_byte(0xA2, 0x03, &res);
+	i2c.i2c_write_byte(0xA2, 0x03, 0xAA);
+	rambyte = i2c.i2c_read_byte(0xA2, 0x03, &res);
 	LEAVE_SAFE_SECTION
 	if (res)
 		return -9;
@@ -231,11 +232,13 @@ int testRtcAccess(void)
 
 int readRtc()
 {
-	ENTER_SAFE_SECTION
+	I2C_Driver i2c;
+
+    ENTER_SAFE_SECTION
 	volatile uint8_t *pb = TIME;
 	int res;
 	for(int i=0;i<11;i++) {
-        *(pb++) = i2c_read_byte(0xA2, i, &res);
+        *(pb++) = i2c.i2c_read_byte(0xA2, i, &res);
         if (res) {
         	break;
         }
@@ -246,11 +249,12 @@ int readRtc()
 
 int writeRtc()
 {
+    I2C_Driver i2c;
 	ENTER_SAFE_SECTION
 	volatile uint8_t *pb = TIME;
 	int result = 0;
 	for(int i = 0; (i < 11) && (result == 0); i++) {
-        result |= i2c_write_byte(0xA2, i, *(pb++));
+        result |= i2c.i2c_write_byte(0xA2, i, *(pb++));
     }
 	LEAVE_SAFE_SECTION
 	char date[32], time[32];

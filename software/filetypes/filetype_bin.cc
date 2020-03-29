@@ -30,7 +30,6 @@
 #include "c1541.h"
 #include "subsys.h"
 #include "userinterface.h"
-#include "ext_i2c.h"
 
 #if U64
 #include "u64.h"
@@ -298,6 +297,8 @@ int FileTypeBin :: execute(SubsysCommand *cmd)
             delete buffer;
             return 0;
         }
+#endif
+#if 0
         if (cmd->functionID == CMD_WRITE_EEPROM) {
             for(int i=0;i<256;i++) {
                 ext_i2c_write_byte(0xA0, i, buffer[i]);

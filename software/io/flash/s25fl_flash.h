@@ -6,9 +6,6 @@
 #include "w25q_flash.h"
 #include "iomap.h"
 
-#define S25FL_PAGE_CONFIG_START (8192-256)
-#define S25FL_NUM_CONFIG_PAGES  16
-
 #define S25FL_ContinuousArrayRead_LowFrequency       0x03
 #define S25FL_ContinuousArrayRead_HighFrequency      0x0B
 #define S25FL_JEDEC_ID					            0x9F

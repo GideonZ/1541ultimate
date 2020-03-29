@@ -1,0 +1,28 @@
+Info: Starting: Create block symbol file (.bsf)
+Info: qsys-generate /home/gideon/proj/ultimate/fpga/altera/megafunctions/jtag/virtual_jtag.qsys --block-symbol-file --output-directory=/home/gideon/proj/ultimate/fpga/altera/megafunctions/jtag/virtual_jtag --family="Cyclone IV E" --part=EP4CE22F17C8
+Progress: Loading jtag/virtual_jtag.qsys
+Progress: Reading input file
+Progress: Adding virtual_jtag_0 [altera_virtual_jtag 15.1]
+Progress: Parameterizing module virtual_jtag_0
+Progress: Building connections
+Progress: Parameterizing connections
+Progress: Validating
+Progress: Done reading input file
+Info: qsys-generate succeeded.
+Info: Finished: Create block symbol file (.bsf)
+Info: 
+Info: Starting: Create HDL design files for synthesis
+Info: qsys-generate /home/gideon/proj/ultimate/fpga/altera/megafunctions/jtag/virtual_jtag.qsys --synthesis=VHDL --output-directory=/home/gideon/proj/ultimate/fpga/altera/megafunctions/jtag/virtual_jtag/synthesis --family="Cyclone IV E" --part=EP4CE22F17C8
+Progress: Loading jtag/virtual_jtag.qsys
+Progress: Reading input file
+Progress: Adding virtual_jtag_0 [altera_virtual_jtag 15.1]
+Progress: Parameterizing module virtual_jtag_0
+Progress: Building connections
+Progress: Parameterizing connections
+Progress: Validating
+Progress: Done reading input file
+Info: virtual_jtag: Generating virtual_jtag "virtual_jtag" for QUARTUS_SYNTH
+Info: virtual_jtag_0: "virtual_jtag" instantiated altera_virtual_jtag "virtual_jtag_0"
+Info: virtual_jtag: Done "virtual_jtag" with 2 modules, 1 files
+Info: qsys-generate succeeded.
+Info: Finished: Create HDL design files for synthesis

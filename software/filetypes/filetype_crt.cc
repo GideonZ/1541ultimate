@@ -176,7 +176,8 @@ FileTypeCRT::~FileTypeCRT()
 
 int FileTypeCRT::fetch_context_items(IndexedList<Action *> &list)
 {
-    if (c64) {
+    C64 *machine = C64 :: getMachine();
+    if (machine->exists()) {
         list.append(new Action("Run Cart", FileTypeCRT::execute_st, CRTFILE_RUN, (int) this));
         list.append(new Action("Flash Cart", FileTypeCRT::executeFlash_st,
         CRTFILE_FLASH, (int) this));
@@ -259,7 +260,7 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
             }
             return -1;
         }
-        c64->start_cartridge(NULL, true);
+        C64 :: getMachine()->start_cartridge(NULL, true);
         configure_cart();
 
         fm->fclose(file);
@@ -751,7 +752,7 @@ void FileTypeCRT::configure_cart(void)
                 *(src + 2 * i + 1) = *(src + i);
         } else {
             uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
-            int fastreset = c64->get_cfg_value(CFG_C64_FASTRESET);
+            int fastreset = C64 :: getMachine()->get_cfg_value(CFG_C64_FASTRESET);
             C64 :: getMachine()->enable_kernal( src, fastreset);
         }
         break;

@@ -33,6 +33,7 @@ generic (
     g_hardware_gcr  : boolean := true;
     g_cartridge     : boolean := true;
     g_command_intf  : boolean := true;
+    g_acia          : boolean := false;
     g_stereo_sid    : boolean := true;
     g_8voices       : boolean := true;
     g_ram_expansion : boolean := true;
@@ -83,6 +84,7 @@ port (
     rwn_i       : in    std_logic := '1';
     rwn_o       : out   std_logic;
         
+    ultimax     : out   std_logic;
     exromn_i    : in    std_logic := '1';
     exromn_o    : out   std_logic;
     gamen_i     : in    std_logic := '1';
@@ -144,6 +146,7 @@ port (
     disk_act2n  : out   std_logic;
     	
     -- Parallel cable pins
+    drv_track_is_0      : out std_logic;
     drv_via1_port_a_o   : out std_logic_vector(7 downto 0);
     drv_via1_port_a_i   : in  std_logic_vector(7 downto 0);
     drv_via1_port_a_t   : out std_logic_vector(7 downto 0);
@@ -153,6 +156,11 @@ port (
     drv_via1_cb1_o      : out std_logic;
     drv_via1_cb1_i      : in  std_logic;
     drv_via1_cb1_t      : out std_logic;
+
+    -- Debug port
+    debug_data          : out std_logic_vector(31 downto 0);
+    debug_valid         : out std_logic;
+    debug_ready         : in  std_logic := '0';
 
 	-- Debug UART
 	UART_TXD	: out   std_logic;
@@ -280,6 +288,7 @@ architecture logic of ultimate_logic_32 is
         cap(24) := to_std(g_rmii);
         cap(25) := to_std(g_ultimate2plus);
         cap(26) := to_std(g_ultimate_64);
+        cap(27) := to_std(g_acia);
         cap(29 downto 28) := std_logic_vector(to_unsigned(g_fpga_type, 2));
         cap(30) := to_std(g_boot_rom);
         cap(31) := to_std(g_simulation);
@@ -391,6 +400,11 @@ architecture logic of ultimate_logic_32 is
     signal audio_select_left    : std_logic_vector(3 downto 0);
     signal audio_select_right   : std_logic_vector(3 downto 0);
     
+    signal bus_debug_data       : std_logic_vector(31 downto 0);
+    signal bus_debug_valid      : std_logic;
+    signal drv_debug_data       : std_logic_vector(31 downto 0);
+    signal drv_debug_valid      : std_logic;
+
     -- IEC signal routing
     signal atn_o, atn_i     : std_logic := '1';
     signal clk_o, clk_i     : std_logic := '1';
@@ -443,6 +457,7 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_tape     : std_logic := '0';
     signal sys_irq_iec      : std_logic := '0';
     signal sys_irq_cmdif    : std_logic := '0';
+    signal sys_irq_acia     : std_logic := '0';
     signal sys_irq_eth_tx   : std_logic := '0';
     signal sys_irq_eth_rx   : std_logic := '0';
     signal misc_io          : std_logic_vector(7 downto 0);
@@ -543,6 +558,8 @@ begin
         tick_1ms    => tick_1kHz,
         buttons     => button,
 
+        irq_high(0) => sys_irq_acia,
+        irq_high(7 downto 1) => "0000000",
         irq_in(7)   => c64_reset_in,
         irq_in(6)   => sys_irq_eth_tx,
         irq_in(5)   => sys_irq_eth_rx,
@@ -602,7 +619,12 @@ begin
             iec_reset_n     => iec_reset_i,
             c64_reset_n     => c64_reset_in_n,
             
+            -- Debug port
+            debug_data      => drv_debug_data,
+            debug_valid     => drv_debug_valid,
+
             -- Parallel cable pins
+            track_is_0      => drv_track_is_0,
             via1_port_a_o   => drv_via1_port_a_o,
             via1_port_a_i   => drv_via1_port_a_i,
             via1_port_a_t   => drv_via1_port_a_t,
@@ -636,7 +658,7 @@ begin
         signal via1_cb1_o      : std_logic;
         signal via1_cb1_i      : std_logic;
         signal via1_cb1_t      : std_logic;
-
+        signal track_is_0      : std_logic;
     begin
         i_drive: entity work.c1541_drive
         generic map (
@@ -678,6 +700,7 @@ begin
             c64_reset_n     => c64_reset_in_n,
 
             -- Parallel cable pins
+            track_is_0      => track_is_0,
             via1_port_a_o   => via1_port_a_o,
             via1_port_a_i   => via1_port_a_i,
             via1_port_a_t   => via1_port_a_t,
@@ -696,7 +719,9 @@ begin
             -- audio out
             audio_sample    => drive_sample_2 );
 
-        via1_port_a_i <= via1_port_a_o or not via1_port_a_t;
+        via1_port_a_i(7 downto 1) <= via1_port_a_o(7 downto 1) or not via1_port_a_t(7 downto 1);
+        via1_port_a_i(0)          <= track_is_0; -- for 1541C
+        
         via1_ca2_i    <= via1_ca2_o    or not via1_ca2_t;
         via1_cb1_i    <= via1_cb1_o    or not via1_cb1_t;
     end generate;
@@ -718,6 +743,7 @@ begin
             g_ram_expansion => g_ram_expansion,
             g_extended_reu  => g_extended_reu,
             g_command_intf  => g_command_intf,
+            g_acia          => g_acia,
             g_sampler       => g_sampler,
             g_implement_sid => g_stereo_sid,
             g_sid_voices    => 16,
@@ -750,6 +776,7 @@ begin
             ba_i            => ba_i,
             dman_o          => dman_oi,
                                        
+            ultimax         => ultimax,
             exromn_i        => exromn_i,
             exromn_o        => exromn_o,
             gamen_i         => gamen_i,
@@ -795,7 +822,8 @@ begin
             -- slave on io bus
             io_req          => io_req_cart,
             io_resp         => io_resp_cart,
-            io_irq_cmd      => sys_irq_cmdif );
+            io_irq_cmd      => sys_irq_cmdif,
+            io_irq_acia     => sys_irq_acia );
 
         dman_o <= dman_oi;
     end generate;
@@ -1398,6 +1426,9 @@ begin
 --    end generate;
 
     g_ela32: if g_profiler generate
+        signal drv_pending  : std_logic;
+        signal bus_pending  : std_logic;
+        signal drv_debug_enable : std_logic;
     begin
         i_ela: entity work.bus_analyzer_32
         generic map (
@@ -1423,11 +1454,43 @@ begin
             GAMEn        => GAMEn_i,
             sync         => sync,
             trigger      => trigger,
+
+            debug_data   => bus_debug_data,
+            debug_valid  => bus_debug_valid,
+            drv_enable   => drv_debug_enable,
+
             mem_req      => mem_req_32_debug,
             mem_resp     => mem_resp_32_debug,
             io_req       => io_req_debug,
             io_resp      => io_resp_debug
         );
+
+        process(sys_clock)
+        begin
+            if rising_edge(sys_clock) then
+                if sys_reset = '1' then
+                    drv_pending <= '0';
+                    bus_pending <= '0';
+                else
+                    if debug_ready = '1' then
+                        if bus_pending = '1' then
+                            bus_pending <= '0';
+                        elsif drv_pending = '1' then
+                            drv_pending <= '0';
+                        end if;
+                    end if;
+                    if drv_debug_valid = '1' and drv_debug_enable = '1' then
+                        drv_pending <= '1';
+                    end if;
+                    if bus_debug_valid = '1' then
+                        bus_pending <= '1';
+                    end if;
+                end if;
+            end if;
+        end process;
+
+        debug_data  <= bus_debug_data when bus_pending = '1' else drv_debug_data;
+        debug_valid <= bus_pending or drv_pending;
     end generate;
 
     g_no_elas: if not g_profiler and not g_analyzer generate

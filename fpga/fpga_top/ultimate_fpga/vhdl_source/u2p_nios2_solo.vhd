@@ -250,6 +250,7 @@ architecture rtl of u2p_nios_solo is
     signal io_resp_ddr2     : t_io_resp;
 
     -- Parallel cable connection
+    signal drv_track_is_0       : std_logic;
     signal drv_via1_port_a_o    : std_logic_vector(7 downto 0);
     signal drv_via1_port_a_i    : std_logic_vector(7 downto 0);
     signal drv_via1_port_a_t    : std_logic_vector(7 downto 0);
@@ -470,7 +471,7 @@ begin
 
     i_logic: entity work.ultimate_logic_32
     generic map (
-        g_version       => X"15",
+        g_version       => X"16",
         g_simulation    => false,
         g_ultimate2plus => true,
         g_clock_freq    => 62_500_000,
@@ -505,6 +506,7 @@ begin
         g_video_overlay => false,
         g_sampler       => true,
         g_analyzer      => false,
+        g_acia          => true,
         g_profiler      => true,
         g_rmii          => true )
     port map (
@@ -591,6 +593,7 @@ begin
         SDACT_LEDn  => led_n(3),
 
         -- Parallel cable pins
+        drv_track_is_0      => drv_track_is_0,
         drv_via1_port_a_o   => drv_via1_port_a_o,
         drv_via1_port_a_i   => drv_via1_port_a_i,
         drv_via1_port_a_t   => drv_via1_port_a_t,
@@ -661,7 +664,8 @@ begin
         BUTTON      => button_i );
 
     -- Parallel cable not implemented. This is the way to stub it...
-    drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
+    drv_via1_port_a_i(7 downto 1) <= drv_via1_port_a_o(7 downto 1) or not drv_via1_port_a_t(7 downto 1);
+    drv_via1_port_a_i(0)          <= drv_track_is_0; -- for 1541C
     drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
     drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
 
@@ -677,7 +681,7 @@ begin
     end process;
     
     SLOT_RSTn <= '0' when RSTn_out = '0' else 'Z';
-    SLOT_DRV_RST <= not RSTn_out; -- Drive this pin HIGH when we want to reset the C64 (uses NFET on Rev.E boards)
+    SLOT_DRV_RST <= not RSTn_out when rising_edge(sys_clock); -- Drive this pin HIGH when we want to reset the C64 (uses NFET on Rev.E boards)
     
     SLOT_ADDR(15 downto 12) <= slot_addr_o(15 downto 12) when slot_addr_th = '1' else (others => 'Z');
     SLOT_ADDR(11 downto 00) <= slot_addr_o(11 downto 00) when slot_addr_tl = '1' else (others => 'Z');

@@ -26,16 +26,15 @@ SRCS_C   =	itu.c \
             ccsbcs.c \
             ffsyscall.c \
             time.c \
-            i2c.c \
-            ext_i2c.c \
             mdio.c \
-			codec.c \
             sid_coeff.c \
             nios_main.c \
             alt_malloc_lock.c \
             alt_do_ctors.c
 
 SRCS_CC	 =  u2p_init.cc \
+            i2c_drv.cc \
+            codec.cc \
 			small_printf.cc \
             stream.cc \
 			stream_uart.cc \
@@ -153,6 +152,9 @@ SRCS_CC	 =  u2p_init.cc \
 			sid_device_fpgasid.cc \
 			sid_device_swinsid.cc \
 			sid_device_armsid.cc \
+			acia.cc \
+			modem.cc \
+			listener_socket.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \

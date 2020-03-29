@@ -10,6 +10,8 @@
 #define CTRL_CMD_FINISH_CAPTURE 0x03
 #define CTRL_CMD_FREEZE         0x05
 #define CTRL_CMD_REBOOT         0x06
+#define CTRL_CMD_LOAD_REU       0x08
+#define CTRL_CMD_SAVE_REU       0x09
 #define CTRL_CMD_U64_SAVEMEM    0x0F
 #define CTRL_CMD_DECODE_TRACK   0x11
 #define CTRL_CMD_ENCODE_TRACK   0x12

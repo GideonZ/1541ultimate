@@ -10,7 +10,7 @@ use work.io_bus_pkg.all;
 entity ultimate_mb_700a is
 generic (
     g_dual_drive    : boolean := false;
-    g_version       : unsigned(7 downto 0) := X"14" );
+    g_version       : unsigned(7 downto 0) := X"16" );
 port (
     CLOCK       : in    std_logic;
     
@@ -160,6 +160,7 @@ architecture structural of ultimate_mb_700a is
     signal c2n_motor_out    : std_logic;
 
     -- Parallel cable connection
+    signal drv_track_is_0       : std_logic;
     signal drv_via1_port_a_o    : std_logic_vector(7 downto 0);
     signal drv_via1_port_a_i    : std_logic_vector(7 downto 0);
     signal drv_via1_port_a_t    : std_logic_vector(7 downto 0);
@@ -219,6 +220,7 @@ begin
         g_vic_copper    => false,
         g_video_overlay => false,
         g_sampler       => not g_dual_drive,
+        g_acia          => g_dual_drive,
         g_analyzer      => false,
         g_profiler      => false )
     port map (
@@ -284,6 +286,7 @@ begin
         iec_srq_o   => iec_srq_o,
                                     
         -- Parallel cable pins
+        drv_track_is_0      => drv_track_is_0,
         drv_via1_port_a_o   => drv_via1_port_a_o,
         drv_via1_port_a_i   => drv_via1_port_a_i,
         drv_via1_port_a_t   => drv_via1_port_a_t,
@@ -349,7 +352,8 @@ begin
         BUTTON      => button_i );
 
     -- Parallel cable not implemented. This is the way to stub it...
-    drv_via1_port_a_i <= drv_via1_port_a_o or not drv_via1_port_a_t;
+    drv_via1_port_a_i(7 downto 1) <= drv_via1_port_a_o(7 downto 1) or not drv_via1_port_a_t(7 downto 1);
+    drv_via1_port_a_i(0)          <= drv_track_is_0; -- for 1541C
     drv_via1_ca2_i    <= drv_via1_ca2_o    or not drv_via1_ca2_t;
     drv_via1_cb1_i    <= drv_via1_cb1_o    or not drv_via1_cb1_t;
 
