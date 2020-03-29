@@ -28,6 +28,7 @@
 #include "userinterface.h"
 #include "c64.h"
 #include "browsable_root.h"
+#include "acia.h"
 
 extern "C" {
 	#include "dump_hex.h"
