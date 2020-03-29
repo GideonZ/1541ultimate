@@ -380,7 +380,12 @@ void Modem :: CollectCommand(ModemCommand_t *cmd, char *buf, int len)
             }
             break;
         case 2:
-            if (c == 0x0D) {
+            if ((c == 0x08) || (c == 0x14)) {
+                if (cmd->length > 0) {
+                    cmd->length --;
+                    cmd->command[cmd->length] = 0;
+                }
+            } else if (c == 0x0D) {
                 cmd->state = 3;
                 cmd->command[cmd->length] = 0;
                 break;
