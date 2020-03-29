@@ -146,24 +146,33 @@ void mask_refresh(struct data_entry *entries, int max, struct format *fmt)
     }
 }
 
-void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, int trigger, int skip_frames)
+void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, int trigger, int skip_frames, int drive_mode)
 {
-    uint32_t time = 0;
+    uint32_t time = 0, drive_time = 0, cpu_time = 0;
+
     int   r,i,z;
     
     struct format fmt;
+    fmt.valid = 0;
+    fmt.type = 0;
+    fmt.offset = 0;
+    fmt.lineLength = 63;
+    fmt.frameLength = 63 * 312;
 
-    find_format(entries, size, &fmt);
+    if (!drive_mode)
+        find_format(entries, size, &fmt);
     if (fmt.valid)
         mask_refresh(entries, size, &fmt);
     fmt.offset += fmt.frameLength * skip_frames;
     size -= fmt.frameLength * skip_frames;
 
-    static struct data_entry init = { 0x1234, 0x56, 0x00 };
+    static struct data_entry init1 = { 0x1234, 0x56, 0x00 };
+    static struct data_entry init2 = { 0x5678, 0x89, 0x00 };
     struct data_entry *d;
-    struct data_entry *prev = &init;
+    struct data_entry *prev = &init1;
+    struct data_entry *prev_drv = &init2;
 
-    const char vcd_header[] = "$timescale\n 500 ns\n$end\n\n";
+    const char vcd_header[] = "$timescale\n %d ns\n$end\n\n";
     const char vcd_middle[] = "\n$enddefinitions $end\n\n#0\n$dumpvars\n";
 
     //   ev_data_c <= sub & task & ev_data;
@@ -171,7 +180,8 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
     //
     // vector_in <= phi2 & dman & exromn & ba & irqn & rom & nmin & rwn & data & addr;
     // const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","EXROMn","SYNC","PHI2" };
-    const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","DMAn","SYNC","PHI2" };
+    const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","DMAn","FSYNC","PHI2" };
+    const char *drive_labels[8] = { "1541_RWn", "1541_IRQn", "1541_BYTEREADY", "1541_SYNC", "1541_CLOCK", "1541_DATA", "1541_ATN", "nul" };
     const char *vic_regs[47] = { "M0X", "M0Y", "M1X", "M1Y", "M2X", "M2Y", "M3X", "M3Y",
             "M4X", "M4Y", "M5X", "M5Y", "M6X", "M6Y", "M7X", "M7Y",
             "MX8th", "D011", "D012", "LPX", "LPY", "SPREN", "D016", "SPEXPY", "MEMPNT", "IRQREG", "IRQEN",
@@ -181,7 +191,7 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
     uint8_t   b,fla;
         
     if (!text_mode) {
-        printf(vcd_header);
+        printf(vcd_header, drive_mode ? 1 : 500);
         printf("$var wire 16 ! addr $end\n");
         printf("$var wire 8 # data $end\n");
         printf("$var wire 9 $ line $end\n");
@@ -189,6 +199,13 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
         for(b=0;b<8;b++) {
             if(*labels[b])
                 printf("$var wire 1 %c %s $end\n", 48+b, labels[b]);
+        }
+        if (drive_mode) {
+            printf("$var wire 16 ( 1541_addr $end\n");
+            printf("$var wire 8 ) 1541_data $end\n");
+            for(b=0;b<7;b++) {
+                printf("$var wire 1 %c %s $end\n", 104+b, drive_labels[b]);
+            }
         }
         for(b=0;b<47;b++) {
             printf("$var wire 8 %c _%s $end\n", 56+b, vic_regs[b]);
@@ -236,9 +253,6 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
         }
         cycle = cycle % fmt.frameLength;
 
-
-        time ++;
-
         if (trigger >= 0) {
             if (((d->flags & 0x80) != 0) && (d->addr == trigger)) {
                 trigger = -1;
@@ -255,6 +269,23 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
             break;
         }
         lines--;
+
+        if (drive_mode) {
+            if ((d->flags & 0x80) == 0) {
+                drive_time += 1000;
+                time = drive_time;
+            } else { // CPU
+                cpu_time += 1014; // PAL assumed for now
+                if (cpu_time < time+1) {
+                    fprintf(stderr, "Adjusting cpu time from %d to %d (%d)\n", cpu_time, time + 1, time - cpu_time);
+                    cpu_time = time + 1;
+                }
+                time = cpu_time;
+            }
+        } else {
+            time ++;
+        }
+
         if (text_mode) {
             printf("\"%04X\",\"%02X\",", d->addr, d->data);
             for(fla=d->flags,b=0;b<8;b++) {
@@ -267,37 +298,49 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
             d++;
         } else {
             printf("#%u\n", time);
-            if (prev->addr != d->addr) {
-                printf("b%s !\n", bin(d->addr, 16, buffer));
-            }
-            if (prev->data != d->data) {
-                printf("b%s #\n", bin(d->data, 8, buffer));
-            }
-            if ((d->flags & 0x80) == 0) {
+            if (((d->flags & 0x80) == 0) && (!drive_mode)) {
                 if ((cycle % 63) == 0) {
                     printf("b%s $\n", bin(cycle / 63, 9, buffer));
                 }
                 printf("b%s *\n", bin(cycle % 63, 6, buffer));
             }
+
+            // VIC Register update!
             if (((d->flags & 0xA1) == 0xA0) && ((d->addr & 0xFC3F) >= 0xD000) && ((d->addr & 0xFC3F) <= 0xD02F)) {
                 printf("b%s %c\n", bin(d->data, 8, buffer), 56+(d->addr & 0x3F));
             }
-/*
-            else {
-                if ((cycle % 63) == 57) {
-                    fprintf(stderr, "Line: %3d, Addr: %04x\n", cycle/63, d->addr);
-                }
-            }
-*/
 
-            uint8_t change = prev->flags ^ d->flags;
-            for(b=0;b<8;b++) {
-                if((change & 1)||(i==0)) {
-                    printf("%c%c\n", ((d->flags >> b) & 1)+48, 48+b);
+            if ((!drive_mode) || (d->flags & 0x80)) {
+                if (prev->addr != d->addr) {
+                    printf("b%s !\n", bin(d->addr, 16, buffer));
                 }
-                change >>= 1;
+                if (prev->data != d->data) {
+                    printf("b%s #\n", bin(d->data, 8, buffer));
+                }
+                uint8_t change = prev->flags ^ d->flags;
+                for(b=0;b<8;b++) {
+                    if((change & 1)||(i==0)) {
+                        printf("%c%c\n", ((d->flags >> b) & 1)+48, 48+b);
+                    }
+                    change >>= 1;
+                }
+                prev = d;
+            } else { // 1541
+                if (prev_drv->addr != d->addr) {
+                    printf("b%s (\n", bin(d->addr, 16, buffer));
+                }
+                if (prev_drv->data != d->data) {
+                    printf("b%s )\n", bin(d->data, 8, buffer));
+                }
+                uint8_t change = prev_drv->flags ^ d->flags;
+                for(b=0;b<8;b++) {
+                    if((change & 1)||(i==0)) {
+                        printf("%c%c\n", ((d->flags >> b) & 1)+48, 104+b);
+                    }
+                    change >>= 1;
+                }
+                prev_drv = d;
             }
-            prev = d;
             d++;
         }
     }
@@ -308,7 +351,7 @@ int main(int argc, char **argv)
     FILE *fi;
     
     if(argc < 2) {
-        printf("Usage: dump_vcd [-t] [-w trig] <file>\n");
+        printf("Usage: dump_vcd [-d] [-t frames] [-w trig] <file>\n");
         exit(1);
     }
     int i = 1;
@@ -318,7 +361,12 @@ int main(int argc, char **argv)
     int file_size = 0;
     int skip_frames = 0;
     int temp = 1;
+    int drive_mode = 0;
 
+    if (strcmp(argv[i], "-d") == 0) {
+        drive_mode = 1; // if this is set, entries with bit 31 cleared are 1541 accesses
+        i++;
+    }
     if (strcmp(argv[i], "-f") == 0) {
         i++;
         skip_frames = strtol(argv[i], NULL, 10);
@@ -338,6 +386,7 @@ int main(int argc, char **argv)
         trigger = strtol(argv[i], NULL, 16);
         i++;
     }
+
     fi = fopen(argv[i], "rb");
 
     if(fi) {
@@ -347,7 +396,7 @@ int main(int argc, char **argv)
         struct data_entry *entries = (struct data_entry *)malloc(file_size);
         int numberOfEntries = fread(entries, 4, file_size / 4, fi);
         fprintf(stderr, "%d number of entries read.\n", numberOfEntries);
-        dump_trace(entries, numberOfEntries, length, text_mode, trigger, skip_frames);
+        dump_trace(entries, numberOfEntries, length, text_mode, trigger, skip_frames, drive_mode);
         free(entries);
     } else {
         fprintf(stderr, "Can't open file.\n");
