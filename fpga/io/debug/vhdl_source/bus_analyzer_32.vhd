@@ -70,6 +70,7 @@ architecture gideon of bus_analyzer_32 is
     signal rom          : std_logic;
     signal frame_tick   : std_logic := '0';
     signal counter      : integer range 0 to 312*63; -- PAL
+    signal drv_enable_i : std_logic;
     
     signal cpu_cycle_enable : std_logic := '1';
     signal vic_cycle_enable : std_logic := '1';
@@ -78,7 +79,7 @@ begin
     rom <= romln and romhn;
     interrupt <= irqn and nmin;
     
-    vector_in <= phi2 & frame_tick & exromn & ba & irqn & rom & nmin & rwn & data & addr;
+    vector_in <= phi2 & gamen & exromn & ba & irqn & rom & nmin & rwn & data & addr;
     --vector_in <= phi2 & gamen & exromn & ba & irqn & rom & nmin & rwn & data & addr;
     --vector_in <= phi2 & gamen & exromn & ba & interrupt & rom & io & rwn & data & addr;
 
@@ -112,7 +113,7 @@ begin
                 end if;
                 
                 if phi_d2 = '1' then
-                    if (vector_d3(28) = '1' or ba_history /= "000") and cpu_cycle_enable = '1' then
+                    if (vector_d3(28) = '1' or ba_history /= "000" or drv_enable_i = '1') and cpu_cycle_enable = '1' then
                         debug_valid_i <= '1';
                     elsif vic_cycle_enable = '1' then
                         debug_valid_i <= '1';
@@ -220,7 +221,7 @@ begin
                 when X"8" =>
                     cpu_cycle_enable <= io_req.data(0);
                     vic_cycle_enable <= io_req.data(1);
-                    drv_enable       <= io_req.data(2);
+                    drv_enable_i     <= io_req.data(2);
                 when others =>
                     null;
                 end case;                    
@@ -231,11 +232,13 @@ begin
                 enable_log <= '0';
                 mem_request <= '0';
                 ev_addr    <= (others => '0');
-                drv_enable <= '0';
+                drv_enable_i <= '0';
             end if;
         end if;
     end process;
 
+    drv_enable          <= drv_enable_i;
+    
     mem_req.data        <= byte_swap(debug_data_i, g_big_endian);
     mem_req.request     <= mem_request;
     mem_req.tag         <= X"F0";
