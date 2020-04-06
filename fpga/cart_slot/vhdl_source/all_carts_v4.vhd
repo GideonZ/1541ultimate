@@ -465,12 +465,15 @@ begin
                 nmi_n     <= '1';
 
             when c_supergames =>
-                if io_write='1' and io_addr(8)='1' then -- DF00-DFFF
+                if io_write='1' and io_addr(8)='1' and mode_bits(1) = '0' then -- DF00-DFFF
                     bank_bits <= io_wdata(1 downto 0) & '0';
                     mode_bits(1 downto 0) <= io_wdata(3 downto 2);                
                 end if;
+                if mode_bits(1 downto 0) = "11" then -- Mostly to visualize
+                    cart_en <= '0';
+                end if;
                 game_n    <= mode_bits(0);
-                exrom_n   <= mode_bits(1);
+                exrom_n   <= mode_bits(0);
                 serve_rom <= '1';
                 serve_io1 <= '0';
                 serve_io2 <= '0';
