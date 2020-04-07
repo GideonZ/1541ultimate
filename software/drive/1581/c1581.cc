@@ -1018,7 +1018,7 @@ int C1581::getNextDirectoryEntry(bool *firstcall, int *dirctr, bool *lastdirsect
 
 }
 
-int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track, uint8_t *sector)
+int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track, uint8_t *sector, uint8_t relRecordLength, uint8_t *relssbtrack, uint8_t *relssbsector)
 {
 	bool firstcall = true;
 	int dirctr = 0;
@@ -1071,10 +1071,14 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 					sectorBuffer[dirptr + 0x01] = 0x00;
 				}
 
+				// filetype byte
 				sectorBuffer[dirptr + 0x02] = filetype;
+
+				// track/sector of first sector of file or partition
 				sectorBuffer[dirptr + 0x03] = *track;
 				sectorBuffer[dirptr + 0x04] = *sector;
 
+				// filename
 				int v = 0;
 				for (; v < strlen(filename); v++)
 					sectorBuffer[dirptr + 0x05 + v] = filename[v];
@@ -1082,13 +1086,28 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 				for (; v < 16; v++)
 					sectorBuffer[dirptr + 0x05 + v] = 160;
 
-				sectorBuffer[dirptr + 0x15] = 0;
-				sectorBuffer[dirptr + 0x16] = 0;
-				sectorBuffer[dirptr + 0x17] = 0;
+				// Track/sector of first super side sector block (REL only)
+				if(dirEntry->file_type == 0x84)
+				{
+					sectorBuffer[dirptr + 0x15] = *relssbtrack;
+					sectorBuffer[dirptr + 0x16] = *relssbsector;
+					sectorBuffer[dirptr + 0x17] = relRecordLength;
 
+					// not a splat file
+					sectorBuffer[dirptr + 0x02] = sectorBuffer[dirptr + 0x02] | 0x80;
+				}
+				else
+				{
+					sectorBuffer[dirptr + 0x15] = 0;
+					sectorBuffer[dirptr + 0x16] = 0;
+					sectorBuffer[dirptr + 0x17] = 0;
+				}
+
+				// unused (except for GEOS files)
 				for (int v = 0; v < 6; v++)
 					sectorBuffer[dirptr + 0x18 + v] = 0;
 
+				// file size (blocks) lo/hi
 				sectorBuffer[dirptr + 0x1e] = 0;
 				sectorBuffer[dirptr + 0x1f] = 0;
 

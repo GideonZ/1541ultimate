@@ -27,6 +27,10 @@ C1581_Channel::C1581_Channel()
 	writesector = 0;
 	writetrack = 0;
 	writeblock = 0;
+	relssbtrack = 0;
+	relssbsector = 0;
+	relfile = false;
+	relrecordsize = 0;
 }
 
 C1581_Channel::~C1581_Channel()
@@ -512,7 +516,7 @@ uint8_t C1581_Channel::open_file(void)
 			if(err == ERR_FILE_NOT_FOUND)
 			{
 				// Create directory entry and allocate
-				err = c1581->createDirectoryEntry((char *)file_name, ftype, &track, &sector);
+				err = c1581->createDirectoryEntry((char *)file_name, ftype, &track, &sector,0 ,NULL, NULL);
 
 				if(err != ERR_OK)
 				{
@@ -559,7 +563,7 @@ uint8_t C1581_Channel::open_file(void)
 		if(err == ERR_FILE_NOT_FOUND)
 		{
 			// Create directory entry and allocate
-			err = c1581->createDirectoryEntry((char *)file_name, 4, &track, &sector);
+			err = c1581->createDirectoryEntry((char *)file_name, 4, &track, &sector, relrecordsize, &relssbtrack, &relssbsector);
 
 			if(err != ERR_OK)
 			{
@@ -988,7 +992,7 @@ void C1581_CommandChannel :: copy(command_t& command)
 		srcSizeHi = dirEntry->size_hi;
 		srcSizeLo = dirEntry->size_lo;
 
-		c1581->createDirectoryEntry((char *)toName, ftype, &destTrack, &destSector);
+		c1581->createDirectoryEntry((char *)toName, ftype, &destTrack, &destSector, 0, NULL, NULL);
 
 		uint8_t nxt_srcTrack;
 		uint8_t nxt_srcSector;
@@ -1768,7 +1772,7 @@ void C1581_CommandChannel :: create_select_partition(command_t& command)
 		}
 
 		//add the directory entry
-		c1581->createDirectoryEntry(cmdbuf, 0x85, &istarting_track, &istarting_sector);
+		c1581->createDirectoryEntry(cmdbuf, 0x85, &istarting_track, &istarting_sector, 0, NULL, NULL);
 
 		//update the file size
 		DirectoryEntry *dirEntry = new DirectoryEntry();
