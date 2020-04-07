@@ -62,6 +62,8 @@ SRCS_CC	 =  u2p_init.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
+			c1581.cc \
+			c1581_channel.cc \
 			bam_header.cc \
 			mystring.cc \
 			path.cc \
@@ -92,6 +94,7 @@ SRCS_CC	 =  u2p_init.cc \
 			context_menu.cc \
 			task_menu.cc \
 			filetype_d64.cc \
+			filetype_d81.cc \
 			filetype_g64.cc \
 			filetype_t64.cc \
 			filetype_prg.cc \
@@ -186,7 +189,7 @@ SRCS_IEC = iec_code.iec
 SRCS_NANO = nano_minimal.nan
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -Os -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
+OPTIONS  = -g -ffunction-sections -O0 -DOS -DDEVELOPER=0 -DNIOS=1 -DCLOCK_FREQ=66666667 -DU64=1 -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
 LINK 	 = $(BSP)/linker.x
