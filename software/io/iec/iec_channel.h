@@ -319,7 +319,7 @@ class IecChannel
 
     int  size;
     int  append;
-    uint8_t buffer[256];
+    //uint8_t buffer[256];
 
     int  pointer;
     int  prefetch;
