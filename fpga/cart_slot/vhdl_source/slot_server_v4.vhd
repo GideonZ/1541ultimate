@@ -17,6 +17,7 @@ generic (
     g_ram_base_reu  : unsigned(27 downto 0) := X"1000000"; -- should be on 16M boundary, or should be limited in size
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
+    g_direct_dma    : boolean := false;
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
     g_big_endian    : boolean;
@@ -98,6 +99,9 @@ port (
     phi2_tick       : out   std_logic;
     c64_stopped     : out   std_logic;
 
+    direct_dma_req  : out   t_dma_req := c_dma_req_init;
+    direct_dma_resp : in    t_dma_resp := c_dma_resp_init;
+
     -- master on memory bus
     memctrl_inhibit : out   std_logic;
     mem_req         : out   t_mem_req_32;
@@ -160,7 +164,6 @@ architecture structural of slot_server_v4 is
     signal reu_dma_n       : std_logic := '1'; -- direct from REC
     signal cmd_if_freeze    : std_logic := '0'; -- same function as reu_dma_n, but then from CI
 
-    signal mask_buttons     : std_logic := '0';
     signal reset_button     : std_logic;
     signal freeze_button    : std_logic;
 
@@ -411,47 +414,55 @@ begin
         -- interface with hardware
         BUFFER_ENn      => BUFFER_ENn );
 
-    i_master: entity work.slot_master_v4
-    generic map (
-        g_start_in_stopped_state => g_boot_stop )
-    
-    port map (
-        clock           => clock,
-        reset           => reset,
+    r_master: if not g_direct_dma generate
+        i_master: entity work.slot_master_v4
+        generic map (
+            g_start_in_stopped_state => g_boot_stop )
         
-        -- Cartridge pins
-        DMAn            => dma_n,
-        BA              => ba_i,
-        RWn_in          => rwn_i,
-        RWn_out         => rwn_o,
-        RWn_tri         => open,
+        port map (
+            clock           => clock,
+            reset           => reset,
+            
+            -- Cartridge pins
+            DMAn            => dma_n,
+            BA              => ba_i,
+            RWn_in          => rwn_i,
+            RWn_out         => rwn_o,
+            RWn_tri         => open,
+            
+            ADDRESS_out     => address_out,
+            ADDRESS_tri_h   => address_tri_h,
+            ADDRESS_tri_l   => address_tri_l,
+            
+            DATA_in         => slot_data_i,
+            DATA_out        => master_dout,
+            DATA_tri        => master_dtri,
         
-        ADDRESS_out     => address_out,
-        ADDRESS_tri_h   => address_tri_h,
-        ADDRESS_tri_l   => address_tri_l,
+            -- timing inputs
+            vic_cycle       => vic_cycle,    
+            phi2_recovered  => phi2_recovered,
+            phi2_tick       => phi2_tick_i,
+            do_sample_addr  => do_sample_addr,
+            do_io_event     => do_io_event,
+            reu_dma_n       => reu_dma_n,
+            cmd_if_freeze   => cmd_if_freeze,
+            
+            -- request from the cpu to do a cycle on the cart bus
+            dma_req         => dma_req,
+            dma_resp        => dma_resp,
         
-        DATA_in         => slot_data_i,
-        DATA_out        => master_dout,
-        DATA_tri        => master_dtri,
-    
-        -- timing inputs
-        vic_cycle       => vic_cycle,    
-        phi2_recovered  => phi2_recovered,
-        phi2_tick       => phi2_tick_i,
-        do_sample_addr  => do_sample_addr,
-        do_io_event     => do_io_event,
-        reu_dma_n       => reu_dma_n,
-        cmd_if_freeze   => cmd_if_freeze,
-        
-        -- request from the cpu to do a cycle on the cart bus
-        dma_req         => dma_req,
-        dma_resp        => dma_resp,
-    
-        -- system control
-        stop_cond       => control.c64_stop_mode,
-        c64_stop        => control.c64_stop,
-        c64_stopped     => status.c64_stopped );
-    
+            -- system control
+            stop_cond       => control.c64_stop_mode,
+            c64_stop        => control.c64_stop,
+            c64_stopped     => status.c64_stopped );
+    end generate;    
+
+    r_no_master: if g_direct_dma generate
+        status.c64_stopped <= control.c64_stop;
+        dma_n              <= not control.c64_stop;
+        direct_dma_req <= dma_req;
+        dma_resp       <= direct_dma_resp;        
+    end generate;
 
     i_freeze: entity work.freezer
     port map (
@@ -749,7 +760,7 @@ begin
     -- open drain outputs
     irqn_o  <= '0' when irq_n='0' or slot_resp.irq='1' else '1';
     nmin_o  <= '0' when (control.c64_nmi='1') or (nmi_n='0') or (slot_resp.nmi='1') else '1';
-    rstn_o  <= '0' when (reset_button='1' and status.c64_stopped='0' and mask_buttons='0') or
+    rstn_o  <= '0' when (reset_button='1' and status.c64_stopped='0') or
                         (control.c64_reset='1') else '1';
     dman_o  <= '0' when (dma_n='0' or kernal_probe='1') else '1';
     
