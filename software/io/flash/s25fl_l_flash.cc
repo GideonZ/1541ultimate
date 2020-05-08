@@ -68,7 +68,7 @@ Flash *S25FLxxxL_Flash :: tester()
 	if (mem_type != 0x60) { // not the right type of flash
 		return NULL;
 	}
-    printf("S25FL L MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
+    // printf("S25FL L MANUF: %b MEM_TYPE: %b CAPACITY: %b\n", manuf, mem_type, capacity);
 	
 	if(capacity == 0x17) { // 64 Mbit
 		sector_size  = 16;

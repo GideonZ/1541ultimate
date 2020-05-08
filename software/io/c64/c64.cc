@@ -129,7 +129,6 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
                           
 static const char *reu_size[] = { "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
 static const char *reu_offset[] = { "0 KB", "128 KB", "256 KB", "512 KB", "1 MB", "2 MB", "4 MB", "8 MB", "16 MB" };
-static const char *en_dis2[] = { "Disabled", "Enabled" };
 static const char *rom_sel[] = { "Factory", "Original", "Alternative" };
 #if U64
 static const char *rom_sel_ker[] = { "Factory", "Original", "Alternative", "Alt. 2", "Alt. 3" };
@@ -152,7 +151,7 @@ struct t_cfg_definition c64_config[] = {
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
 #endif
     { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartridge 3 Mode",       "%s", fc3mode,    0,  2, 0 },
-    { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis,     0,  1, 0 },
 #if U64
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", rom_sel_ker,0,  4, 0 },
     { CFG_C64_ALT_BASI, CFG_TYPE_ENUM,   "Alternate Basic",              "%s", rom_sel,    0,  2, 0 },
@@ -160,29 +159,29 @@ struct t_cfg_definition c64_config[] = {
 #elif CLOCK_FREQ == 62500000
     { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", rom_sel_ker,0,  2, 0 },
 #else
-    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_ALT_KERN, CFG_TYPE_ENUM,   "Alternate Kernal",             "%s", en_dis,     0,  1, 0 },
 #endif
-    { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_REU_EN,   CFG_TYPE_ENUM,   "RAM Expansion Unit",           "%s", en_dis,     0,  1, 0 },
     { CFG_C64_REU_SIZE, CFG_TYPE_ENUM,   "REU Size",                     "%s", reu_size,   0,  7, 4 },
-    { CFG_C64_REU_PRE,  CFG_TYPE_ENUM,   "REU Preload",                  "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_REU_PRE,  CFG_TYPE_ENUM,   "REU Preload",                  "%s", en_dis,     0,  1, 0 },
     { CFG_C64_REU_IMG,  CFG_TYPE_STRING, "REU Preload Image",            "%s", NULL,       0, 31, (int)"/Usb0/preload.reu" },
     { CFG_C64_REU_OFFS, CFG_TYPE_ENUM,   "REU Preload Offset",           "%s", reu_offset, 0,  8, 0 }, 
-    { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_MAP_SAMP, CFG_TYPE_ENUM,   "Map Ultimate Audio $DF20-DFFF","%s", en_dis,     0,  1, 0 },
     { CFG_C64_DMA_ID,   CFG_TYPE_VALUE,  "DMA Load Mimics ID:",          "%d", NULL,       8, 31, 8 },
 #ifndef U64
     { CFG_C64_SWAP_BTN, CFG_TYPE_ENUM,   "Button order",                 "%s", buttons,    0,  1, 1 },
 #endif
 #if CLOCK_FREQ == 62500000
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing2,    0,  7, 5 },
-    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #elif CLOCK_FREQ == 50000000
     { CFG_C64_TIMING,   CFG_TYPE_ENUM,   "CPU Addr valid after PHI2",    "%s", timing1,    0,  7, 3 },
-    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_PHI2_REC, CFG_TYPE_ENUM,   "PHI2 edge recovery",           "%s", en_dis,     0,  1, 0 },
 #endif
     { CFG_CMD_ENABLE,   CFG_TYPE_ENUM,   "Command Interface",            "%s", ultimatedos,0,  3, 0 },
-    { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis2,    0,  1, 0 },
+    { CFG_CMD_ALLOW_WRITE, CFG_TYPE_ENUM,   "UltiDOS: Allow SetDate",    "%s", en_dis,     0,  1, 0 },
 #if DEVELOPER > 0
-    { CFG_C64_DO_SYNC,  CFG_TYPE_ENUM,   "Perform VIC sync at DMA RUN",  "%s", en_dis2,    0,  1, 0 },
+    { CFG_C64_DO_SYNC,  CFG_TYPE_ENUM,   "Perform VIC sync at DMA RUN",  "%s", en_dis,     0,  1, 0 },
 #endif
     { CFG_TYPE_END,     CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }         
 };

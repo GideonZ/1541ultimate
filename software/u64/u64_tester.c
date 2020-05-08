@@ -262,7 +262,7 @@ int U64TestCassette()
     return errors;
 }
 
-int U64EliteTestJoystick(void)
+int U64EliteTestJoystick()
 {
     // with this test, the fire button is used as output to clock the counter.
     // then the counter reaches 15 for the second time, bit 0 to bit 3 have been tested.
@@ -274,7 +274,7 @@ int U64EliteTestJoystick(void)
 
     if (PLD_RD_VERSION != 0x16) {
         printf("\e\022PLD version should be V1.6 for this test to work.\n");
-        return 1;
+        return -1;
     }
     PLD_JOYSWAP = 0x02; // Isolate mode
 
@@ -363,7 +363,11 @@ int U64PaddleTest(void)
         printf("\e\022Paddle X on Port 2 FAIL. Expected ~106, got: %d\n", x2);
         errors++;
     }
+<<<<<<< HEAD
     if ((y2 < 28) || (y2 > 35)) {
+=======
+    if ((y2 < 12) || (y2 > 34)) {
+>>>>>>> 2caf1187d20a85ed78ab721cafa171faeec971a1
         printf("\e\022Paddle Y on Port 2 FAIL. Expected ~31, got: %d\n", y2);
         errors++;
     }

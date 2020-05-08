@@ -14,9 +14,6 @@ end harness_c1541;
 
 architecture harness of harness_c1541 is
     signal clock        : std_logic := '0';
-    signal clk_shifted  : std_logic := '0';
-    signal cpu_clock_en : std_logic := '0';
-    signal drv_clock_en : std_logic := '0';
     
     signal reset        : std_logic := '0';
     signal io_req       : t_io_req;
@@ -38,10 +35,23 @@ architecture harness of harness_c1541 is
     signal act_led_n    : std_logic;
     signal audio_sample : signed(12 downto 0);
 
+    signal tick_16MHz   : std_logic := '0';
+    signal tick_4MHz    : std_logic := '0';
 begin
     clock <= not clock after 10 ns;
-    reset <= '1', '0' after 100 ns;
-    clk_shifted <= transport clock after 15 ns;
+    reset <= '1', '0' after 1000 ns;
+    
+    process
+    begin
+        --wait until clock = '1'; tick_16MHz <= '0'; tick_4MHz <= '0';
+        wait until clock = '1'; tick_16MHz <= '1'; tick_4MHz <= '0';
+        --wait until clock = '1'; tick_16MHz <= '0'; tick_4MHz <= '0';
+        wait until clock = '1'; tick_16MHz <= '1'; tick_4MHz <= '0';
+        --wait until clock = '1'; tick_16MHz <= '0'; tick_4MHz <= '0';
+        wait until clock = '1'; tick_16MHz <= '1'; tick_4MHz <= '0';
+        --wait until clock = '1'; tick_16MHz <= '0'; tick_4MHz <= '0';
+        wait until clock = '1'; tick_16MHz <= '1'; tick_4MHz <= '1';
+    end process;
     
 --    process(clock)
 --        variable count : integer := 0;
@@ -74,16 +84,18 @@ begin
 
     i_drive: entity work.c1541_drive 
     generic map (
-        g_clock_freq    => 50000000,
         g_big_endian    => false,
         g_audio         => true,
-        g_audio_div     => 100, -- for simulation: 500 ksps
         g_audio_base    => X"0010000",
         g_ram_base      => X"0000000" )
     port map (
         clock           => clock,
         reset           => reset,
         
+        -- timing
+        tick_16MHz      => tick_16MHz,
+        tick_4MHz       => tick_4MHz,
+
         -- slave port on io bus
         io_req          => io_req,
         io_resp         => io_resp,
@@ -92,6 +104,10 @@ begin
         mem_req         => mem_req,
         mem_resp        => mem_resp,
         
+        via1_port_a_i   => X"FF",
+        via1_ca2_i      => '1',
+        via1_cb1_i      => '1',
+
         -- serial bus pins
         atn_o           => iec_atn_o, -- open drain
         atn_i           => iec_atn_i,

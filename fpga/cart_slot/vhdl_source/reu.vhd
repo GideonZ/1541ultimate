@@ -452,6 +452,7 @@ begin
 
     irq_pend <= control.irq_en and ((control.irq_done and trans_done) or (control.irq_error and verify_error));
 
+    slot_resp.nmi        <= '0';
     slot_resp.irq        <= irq_pend;
     slot_resp.data       <= io_rdata;
     slot_resp.reg_output <= enable when slot_req.bus_address(8 downto 5)=X"8" and

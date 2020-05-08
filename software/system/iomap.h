@@ -17,6 +17,7 @@
 #define CMD_IF_BASE        (IOBASE + 0x44000)
 #define COPPER_BASE        (IOBASE + 0x46000)
 #define SAMPLER_BASE       (IOBASE + 0x48000)
+#define ACIA_BASE          (IOBASE + 0x4A000)
 #define C64_MEMORY_BASE    (IOBASE + 0x50000)
 #define SDCARD_BASE        (IOBASE + 0x60000)
 #define RTC_BASE           (IOBASE + 0x60100)

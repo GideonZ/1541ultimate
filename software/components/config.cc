@@ -123,6 +123,11 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
         }
     }
 
+    // No space in Flash! Issue warning and create page in memory
+    if (!page) {
+        page = new ConfigPage(NULL, page_id, -1, page_size);
+        pages.append(page);
+    }
     ConfigStore *s = new ConfigStore(page, name, defs, ob);
     stores.append(s);
     page->add_store(s);
@@ -306,6 +311,8 @@ void ConfigPage :: read()
 {
     if(flash) {
         flash->read_config_page(flash_page, block_size, mem_block);
+    } else {
+        memset(mem_block, 0xFF, block_size);
     }
 }
 
@@ -712,3 +719,5 @@ Flash *get_flash(void)
 {
 	return new Flash(); // stubbed base
 }
+
+const char *en_dis[]    = { "Disabled", "Enabled" };

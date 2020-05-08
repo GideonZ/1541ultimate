@@ -9,6 +9,7 @@
 #include "socket.h"
 #include "netdb.h"
 #include "userinterface.h"
+#include "profiler.h"
 
 extern "C" {
 #include "dump_hex.h"
@@ -18,12 +19,17 @@ extern "C" {
 #define CFG_STREAM_DEST1    0xD1
 #define CFG_STREAM_DEST2    0xD2
 #define CFG_STREAM_DEST3    0xD3
+#define CFG_STREAM_BUSMODE  0xD4
+
+static const char *modes[] = { "6510 Only", "VIC Only", "6510 & VIC", "1541 Only", "6510 & 1541" };
+static const uint8_t modeBytes[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x00, 0x00, 0x00 };
 
 struct t_cfg_definition stream_cfg[] = {
     { CFG_STREAM_DEST0,         CFG_TYPE_STRING, "Stream VIC to",     "%s", NULL,  0, 36, (int)"239.0.1.64:11000" },
     { CFG_STREAM_DEST1,         CFG_TYPE_STRING, "Stream Audio to",   "%s", NULL,  0, 36, (int)"239.0.1.65:11001" },
-//    { CFG_STREAM_DEST2,         CFG_TYPE_STRING, "Stream Bus to",     "%s", NULL,  0, 36, (int)"239.0.1.66:11002" },
-//    { CFG_STREAM_DEST3,         CFG_TYPE_STRING, "Stream IEC to",     "%s", NULL,  0, 36, (int)"239.0.1.67:11003" },
+    { CFG_STREAM_DEST2,         CFG_TYPE_STRING, "Stream Debug to",   "%s", NULL,  0, 36, (int)"239.0.1.66:11002" },
+    { CFG_STREAM_BUSMODE,       CFG_TYPE_ENUM,   "Debug Stream Mode", "%s", modes, 0, 4,  0 },
+    //    { CFG_STREAM_DEST3,         CFG_TYPE_STRING, "Stream IEC to",     "%s", NULL,  0, 36, (int)"239.0.1.67:11003" },
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,  0,  0, 0 } };
 
@@ -240,7 +246,9 @@ int  DataStreamer :: fetch_task_items(Path *path, IndexedList<Action*> &item_lis
     item_list.append(new Action("Stop VIC Stream", DataStreamer :: S_stopStream, (int)this, 0));
     item_list.append(new Action("Start Audio Stream", DataStreamer :: S_startStream, (int)this, 1));
     item_list.append(new Action("Stop Audio Stream", DataStreamer :: S_stopStream, (int)this, 1));
-    return 4;
+    item_list.append(new Action("Start Debug Stream", DataStreamer :: S_startStream, (int)this, 2));
+    item_list.append(new Action("Stop Debug Stream", DataStreamer :: S_stopStream, (int)this, 2));
+    return 6;
 }
 
 void DataStreamer :: send_udp_packet(uint32_t ip, uint16_t port)
@@ -370,6 +378,10 @@ void DataStreamer :: calculate_udp_headers(int id)
 
     dump_hex_relative(header, 42);
 
+    if (id == 2) { // debug stream
+        uint8_t mode = cfg->get_value(CFG_STREAM_BUSMODE);
+        PROFILER_MODE = modeBytes[mode & 7];
+    }
     // enable
     U64_ETHSTREAM_ENA |= (1 << id);
 }

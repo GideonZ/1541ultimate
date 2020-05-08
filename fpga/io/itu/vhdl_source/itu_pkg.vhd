@@ -27,4 +27,6 @@ package itu_pkg is
     constant c_itu_usb_busy      : unsigned(3 downto 0) := X"4";
     constant c_itu_sd_busy       : unsigned(3 downto 0) := X"5";
     constant c_itu_misc_io       : unsigned(3 downto 0) := X"6";
+    constant c_itu_irq_en_high   : unsigned(3 downto 0) := X"7";
+    constant c_itu_irq_act_high  : unsigned(3 downto 0) := X"8";
 end package;
