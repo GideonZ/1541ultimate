@@ -31,6 +31,7 @@ port (
     irq_timer_tick  : in  std_logic := '0';
     irq_in          : in  std_logic_vector(7 downto 2);
     irq_flags       : out std_logic_vector(7 downto 0);
+    irq_high        : in  std_logic_vector(7 downto 0) := X"00";
 
     busy_led        : out std_logic;
     misc_io         : out std_logic_vector(7 downto 0);
@@ -51,6 +52,7 @@ architecture gideon of itu is
     signal timer        : unsigned(7 downto 0);
     signal timer_tick   : std_logic;
     signal timer_div    : integer range 0 to c_timer_div - 1;
+    signal imask_high   : std_logic_vector(7 downto 0);
 
     signal irq_timer_val    : unsigned(15 downto 0);
     signal irq_timer_cnt    : unsigned(23 downto 0);
@@ -200,6 +202,8 @@ begin
                     sd_busy <= io_req_ms.data(0);
                 when c_itu_misc_io =>
                     misc_io <= io_req_ms.data;
+                when c_itu_irq_en_high =>
+                    imask_high <= io_req_ms.data;
                 when others =>
                     null;
                 end case;            
@@ -211,6 +215,10 @@ begin
                     io_resp_ms.data <= std_logic_vector(ms_timer(7 downto 0));
                 when c_itu_ms_timer_hi =>
                     io_resp_ms.data <= std_logic_vector(ms_timer(15 downto 8));
+                when c_itu_irq_act_high =>
+                    io_resp_ms.data <= irq_high;
+                when c_itu_irq_en_high =>
+                    io_resp_ms.data <= imask_high;
                 when others =>
                     null;
                 end case;
@@ -230,11 +238,15 @@ begin
                 if (irq_active and imask) /= X"00" then
                     irq_out <= '1';
                 end if;
+                if (irq_high and imask_high) /= X"00" then
+                    irq_out <= '1';
+                end if;
             end if;
                             
             if reset='1' then
                 irq_en        <= '1';
                 imask         <= (others => '0');
+                imask_high    <= (others => '0');
                 iedge         <= g_edge_init;
                 irq_edge_flag <= (others => '0');
                 timer         <= (others => '0');

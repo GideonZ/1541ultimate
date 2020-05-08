@@ -71,19 +71,18 @@ uint8_t sid_offsets[] = { 0x40, 0x42, 0x48, 0x50, 0x52, 0x58, 0x60, 0x62, 0x68, 
                        0xf0, 0xf2, 0xf4, 0xf6, 0xf8, 0xfa, 0xfc, 0xfe };
                        
 const char *sid_voices[] = { "Standard", "8 Voices" };
-const char *en_dis3[] = { "Disabled", "Enabled" };
 const char *sidchip_sel[] = { "6581", "8580" };
 const char *speaker_vol[] = { "Disabled", "Vol 1", "Vol 2", "Vol 3", "Vol 4", "Vol 5", "Vol 6", "Vol 7", "Vol 8", "Vol 9", "Vol 10", "Vol 11", "Vol 12", "Vol 13", "Vol 14", "Vol 15" };
 
 struct t_cfg_definition audio_cfg[] = {
     { CFG_AUDIO_SELECT_LEFT,    CFG_TYPE_ENUM, "Left Channel Output",          "%s", aud_choices, 0,  7, 0 },
     { CFG_AUDIO_SELECT_RIGHT,   CFG_TYPE_ENUM, "Right Channel Output",         "%s", aud_choices, 0,  7, 1 },
-    { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis3,     0,  1, 1 },
+    { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis,      0,  1, 1 },
     { CFG_AUDIO_SID_BASE_LEFT,  CFG_TYPE_ENUM, "SID Left Base",                "%s", sid_base,    0, 24, 0 },
     { CFG_AUDIO_SID_EXT_LEFT,   CFG_TYPE_ENUM, "SID Left Mode",                "%s", sid_voices,  0,  1, 0 },
     { CFG_AUDIO_SID_FILT_LEFT,  CFG_TYPE_ENUM, "SID Left Filter Curve",        "%s", sidchip_sel, 0,  1, 0 },
     { CFG_AUDIO_SID_WAVE_LEFT,  CFG_TYPE_ENUM, "SID Left Combined Waveforms",  "%s", sidchip_sel, 0,  1, 0 },
-    { CFG_AUDIO_SID_ENABLE_R,   CFG_TYPE_ENUM, "SID Right",                    "%s", en_dis3,     0,  1, 1 },
+    { CFG_AUDIO_SID_ENABLE_R,   CFG_TYPE_ENUM, "SID Right",                    "%s", en_dis,      0,  1, 1 },
     { CFG_AUDIO_SID_BASE_RIGHT, CFG_TYPE_ENUM, "SID Right Base",               "%s", sid_base,    0, 24, 8 },
     { CFG_AUDIO_SID_EXT_RIGHT,  CFG_TYPE_ENUM, "SID Right Mode",               "%s", sid_voices,  0,  1, 0 },
     { CFG_AUDIO_SID_FILT_RIGHT, CFG_TYPE_ENUM, "SID Right Filter Curve",       "%s", sidchip_sel, 0,  1, 0 },
@@ -113,12 +112,12 @@ static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 25
 
 struct t_cfg_definition audio_cfg_plus[] = {
     { CFG_AUDIO_SPEAKER_EN,     CFG_TYPE_ENUM, "Built-in Speaker (Drive-A)",   "%s", speaker_vol, 0,  15, 15 },
-    { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis3,     0,  1, 1 },
+    { CFG_AUDIO_SID_ENABLE_L,   CFG_TYPE_ENUM, "SID Left",                     "%s", en_dis,      0,  1, 1 },
     { CFG_AUDIO_SID_BASE_LEFT,  CFG_TYPE_ENUM, "SID Left Base",                "%s", sid_base,    0, 24, 0 },
     { CFG_AUDIO_SID_EXT_LEFT,   CFG_TYPE_ENUM, "SID Left Mode",                "%s", sid_voices,  0,  1, 0 },
     { CFG_AUDIO_SID_FILT_LEFT,  CFG_TYPE_ENUM, "SID Left Filter Curve",        "%s", sidchip_sel, 0,  1, 0 },
     { CFG_AUDIO_SID_WAVE_LEFT,  CFG_TYPE_ENUM, "SID Left Combined Waveforms",  "%s", sidchip_sel, 0,  1, 0 },
-    { CFG_AUDIO_SID_ENABLE_R,   CFG_TYPE_ENUM, "SID Right",                    "%s", en_dis3,     0,  1, 1 },
+    { CFG_AUDIO_SID_ENABLE_R,   CFG_TYPE_ENUM, "SID Right",                    "%s", en_dis,      0,  1, 1 },
     { CFG_AUDIO_SID_BASE_RIGHT, CFG_TYPE_ENUM, "SID Right Base",               "%s", sid_base,    0, 24, 8 },
     { CFG_AUDIO_SID_EXT_RIGHT,  CFG_TYPE_ENUM, "SID Right Mode",               "%s", sid_voices,  0,  1, 0 },
     { CFG_AUDIO_SID_FILT_RIGHT, CFG_TYPE_ENUM, "SID Right Filter Curve",       "%s", sidchip_sel, 0,  1, 0 },

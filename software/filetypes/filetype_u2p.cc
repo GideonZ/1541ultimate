@@ -36,6 +36,7 @@ extern "C" {
 #ifdef U64
 #include "wifi.h"
 #endif
+#include "acia.h"
 
 // tester instance
 FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_u2p(FileType :: getFileTypeFactory(), FileTypeUpdate :: test_type);
@@ -137,7 +138,10 @@ int FileTypeUpdate :: execute(SubsysCommand *cmd)
 #if U64
 		wifi.Disable();
 #endif
-		jump_run(header.start);
+#ifndef RECOVERYAPP
+        acia.deinit();
+#endif
+        jump_run(header.start);
 	} else {
 		printf("Error opening file.\n");
         cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);

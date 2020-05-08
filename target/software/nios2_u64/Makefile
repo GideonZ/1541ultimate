@@ -152,6 +152,9 @@ SRCS_CC	 =  u2p_init.cc \
 			sid_device_fpgasid.cc \
 			sid_device_swinsid.cc \
 			sid_device_armsid.cc \
+			acia.cc \
+			modem.cc \
+			listener_socket.cc \
 			$(PRJ).cc
 
 #			usb_em1010.cc \

@@ -5,9 +5,9 @@ use ieee.std_logic_unsigned.all;
 entity cpu6502 is
 port (
     cpu_clk     : in  std_logic;
+    cpu_clk_en  : in  std_logic;
     cpu_reset   : in  std_logic;    
 
-    cpu_ready   : in  std_logic;
     cpu_write   : out std_logic;
     
     cpu_wdata   : out std_logic_vector(7 downto 0);
@@ -37,7 +37,7 @@ begin
         support_bcd  => true )
     port map(
         clock        => cpu_clk,
-        clock_en     => cpu_ready,
+        clock_en     => cpu_clk_en,
         reset        => cpu_reset,
 
         irq_n        => IRQn,

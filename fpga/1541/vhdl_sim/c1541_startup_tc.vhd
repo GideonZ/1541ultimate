@@ -29,14 +29,14 @@ begin
         bind_mem_model("dram", dram);
 
         load_memory("../../../roms/1541-ii.bin", dram, X"0000C000");
-        load_memory("./via.prg", dram, X"0000C020");
-        load_memory("./via_load.prg", dram, X"0000C000");
-        write_memory_16(dram, X"0000FFFC", X"C000"); 
+        --load_memory("./via.prg", dram, X"0000C020");
+        --load_memory("./via_load.prg", dram, X"0000C000");
+        --write_memory_16(dram, X"0000FFFC", X"C000"); 
         load_memory("../../../roms/sounds.bin", dram, X"00010000");
 
-        wait for 30 us;
+        wait for 20 us;
         io_write(io, c_drvreg_power, X"01");
-        wait for 30 us;
+        wait for 20 us;
         io_write(io, c_drvreg_reset, X"00");
 
         wait for 89 ms;

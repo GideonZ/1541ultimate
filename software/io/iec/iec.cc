@@ -47,7 +47,6 @@ extern uint32_t _ulticopy_65_size;
 #define CFG_IEC_PRINTER_EPSON_CHAR 0x36
 #define CFG_IEC_PRINTER_IBM_CHAR   0x37
 
-static const char *en_dis[] = { "Disabled", "Enabled" };
 static const char *pr_typ[] = { "RAW", "ASCII", "PNG B&W", "PNG COLOR" };
 static const char *pr_ink[] = { "Low", "Medium", "High" };
 static const char *pr_emu[] = { "Commodore MPS", "Epson FX-80/JX-80", "IBM Graphics Printer", "IBM Proprinter" };

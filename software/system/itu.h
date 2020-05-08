@@ -27,6 +27,8 @@ extern "C" {
 #define ITU_USB_BUSY	  (ITU_BASE + 0x24)
 #define ITU_SD_BUSY	      (ITU_BASE + 0x25)
 #define ITU_MISC_IO	      (ITU_BASE + 0x26)
+#define ITU_IRQ_HIGH_EN   (ITU_BASE + 0x27)
+#define ITU_IRQ_HIGH_ACT  (ITU_BASE + 0x28)
 
 #define ITU_INTERRUPT_TIMER  0x01
 #define ITU_INTERRUPT_UART   0x02
@@ -36,7 +38,7 @@ extern "C" {
 #define ITU_INTERRUPT_RMIIRX 0x20
 #define ITU_INTERRUPT_RMIITX 0x40
 #define ITU_INTERRUPT_RESET  0x80
-
+#define ITU_IRQHIGH_ACIA     0x01
 
 #define CAPAB_UART          0x00000001
 #define CAPAB_DRIVE_1541_1  0x00000002
@@ -65,6 +67,7 @@ extern "C" {
 #define CAPAB_ETH_RMII		0x01000000
 #define CAPAB_ULTIMATE2PLUS 0x02000000
 #define CAPAB_ULTIMATE64    0x04000000
+#define CAPAB_ACIA          0x08000000
 #define CAPAB_FPGA_TYPE     0x30000000
 #define CAPAB_BOOT_FPGA     0x40000000
 #define CAPAB_SIMULATION    0x80000000

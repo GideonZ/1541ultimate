@@ -47,6 +47,7 @@ architecture rtl of slot_to_io_bridge is
     signal last_read    : std_logic_vector(7 downto 0);
     signal reg_output   : std_logic;
 begin
+    slot_resp.nmi        <= '0';
     slot_resp.irq        <= irq_in and enable;
     slot_resp.data       <= last_read when reg_output='1' else X"00";
     

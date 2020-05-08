@@ -58,6 +58,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     U64SidSockets sockets;
     U64UltiSids ultisids;
     U64SidAddressing sidaddressing;
+    bool hdmiMonitor;
 
     uint8_t GetSidType(int slot);
     void SetSidType(int slot, uint8_t sidType);
@@ -75,6 +76,7 @@ class U64Config : public ConfigurableObject, ObjectWithMenu, SubSystem
     int detectRemakes(int socket);
     int detectFPGASID(int socket);
     int detectDukestahAdapter();
+    bool IsMonitorHDMI();
     SidDevice *getDevice(int index) { return sidDevice[index]; }
 public:
     U64Config();

@@ -232,6 +232,7 @@ int test_esp32(void)
             }
         }
     }
+    buffer[j] = 0;
     int ok1 = -1;
     for(int i=0;((i<50) && (i<j));i++) {
         if ((buffer[i] == 'r') && (buffer[i+1] == 's')) {
@@ -241,7 +242,7 @@ int test_esp32(void)
     }
     //printf("#%d#\n", j);
     if (ok1) {
-        printf("\033\022FAIL.\n");
+        printf("\033\022FAIL. '%s'\n", buffer);
     } else {
         printf("\033\025OK!\n");
     }
@@ -266,6 +267,7 @@ int test_esp32(void)
             }
         }
     }
+    buffer[j] = 0;
     int ok2 = -1;
     for(int i=0;((i<50) && (i<j));i++) {
         if ((buffer[i] == 'r') && (buffer[i+1] == 's')) {
@@ -275,7 +277,7 @@ int test_esp32(void)
     }
     //printf("#%d#\n", j);
     if (ok2) {
-        printf("\033\022FAIL.\n");
+        printf("\033\022FAIL. %s\n", buffer);
     } else {
         printf("\033\025OK!\n");
     }
@@ -453,7 +455,74 @@ void read_caps(volatile socket_tester_t *test, int &cap1, int &cap2)
     cap2 = (370 * (int)test->capval) / 3 - 616;
 }
 
-int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t magic)
+int test_socket_voltages(I2C_Driver_SocketTest& i2c, volatile uint8_t *ctrl, uint8_t ctrlbyte, int low, int high, bool shunt)
+{
+    if (ctrl) {
+        *ctrl  = ctrlbyte;
+    }
+    wait_ms(200);
+    int vdd, vcc, mid, error = 0;
+    read_socket_analog(i2c, vdd, vcc, mid);
+
+    // 4% range for VCC: 0.96*5000 < vcc < 1.04*5000
+    if ((vcc < 4800) || (vcc > 5200)) {
+        printf("\e2VCC Out Of Range: %d mV  (should be 5V)\n", vcc);
+        error |= (1 << 0);
+    }
+
+    if ((vdd < low) || (vdd > high)) {
+        printf("\e2VDD Out Of Range: %d mV  (should be between %d and %d mV)\n", vdd, low, high);
+        error |= (1 << 1);
+    }
+
+    if (shunt) {
+        vdd *= 68;
+        vdd /= 100;
+    }
+    if (abs(mid * 2 - vdd) > 250) {
+        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
+        error |= (1 << 2);
+    }
+    return error;
+}
+
+<<<<<<< HEAD
+    *ctrl  = magic | 2; // 9V
+    wait_ms(200);
+    read_socket_analog(i2c, vdd, vcc, mid);
+
+    // 4% range for VDD
+    if ((vdd < 8640) || (vdd > 9500)) {
+        printf("\e2VDD Out Of Range: %d mV  (should be 9V in this mode)\n", vdd);
+        error |= (1 << 3);
+    }
+
+    if (abs(mid * 2 - vdd) > 150) {
+        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
+        error |= (1 << 4);
+=======
+int test_socket_caps(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t ctrlbyte, int low, int high, int expected)
+{
+    int cap1, cap2;
+    int error = 0;
+    if(ctrl) {
+        *ctrl  = ctrlbyte;
+>>>>>>> 2caf1187d20a85ed78ab721cafa171faeec971a1
+    }
+    wait_ms(50);
+    // should be in 22 nF mode now. 5-7% caps
+    read_caps(test, cap1, cap2);
+    if ((cap1 < low) || (cap1 > high)) {
+        printf("\e2CAP1 out of range: %d pF, expected %d pF\n", cap1, expected);
+        error |= (1 << 0);
+    }
+    if ((cap2 < low) || (cap2 > high)) {
+        printf("\e2CAP2 out of range: %d pF, expected %d pF\n", cap2, expected);
+        error |= (1 << 1);
+    }
+    return error;
+}
+int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t magic, bool elite)
 {
 //    PLD_WR_CTRL1 = 0xBF; // all on = 12V, 22 nF, 1K
 //    PLD_WR_CTRL2 = 0x5F; // all on = 12V, 22 nF, 1K
@@ -469,87 +538,8 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
     // bit 1: Regulator enable
     // bit 0: regulator select (1 = 12V, 0 = 9V)
     I2C_Driver_SocketTest i2c(test);
-#if 1
-    // Setup byte: 1.101.0000 (unipolar, internal clock, reference always on)
-    // Configuration byte: 0.00.0011.1
-    if (i2c.i2c_write_byte(0xC8, 0xD0, 0x07) < 0) {
-        printf("\e2Unable to access I2C ADC on tester\n");
-        return -2;
-    }
 
-    int vdd, vcc, mid;
-
-    *ctrl  = magic | 0;
-    wait_ms(200);
-    read_socket_analog(i2c, vdd, vcc, mid);
-
-    // 4% range for VCC: 0.96*5000 < vcc < 1.04*5000
-    if ((vcc < 4800) || (vcc > 5200)) {
-        printf("\e2VCC Out Of Range: %d mV  (should be 5V)\n", vcc);
-        error |= (1 << 0);
-    }
-
-    if ((vdd < 4800) || (vdd > 5200)) {
-        printf("\e2VDD Out Of Range: %d mV  (should be 5V in this mode)\n", vdd);
-        error |= (1 << 1);
-    }
-
-    if (abs(mid * 2 - vdd) > 150) {
-        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
-        error |= (1 << 2);
-    }
-
-    *ctrl  = magic | 2; // 9V
-    wait_ms(200);
-    read_socket_analog(i2c, vdd, vcc, mid);
-
-    // 4% range for VDD
-    if ((vdd < 8640) || (vdd > 9500)) {
-        printf("\e2VDD Out Of Range: %d mV  (should be 9V in this mode)\n", vdd);
-        error |= (1 << 3);
-    }
-
-    if (abs(mid * 2 - vdd) > 150) {
-        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
-        error |= (1 << 4);
-    }
-
-    *ctrl  = magic | 3; // 12V
-    wait_ms(200);
-    read_socket_analog(i2c, vdd, vcc, mid);
-
-    // 5% range for VDD
-    if ((vdd < 11600) || (vdd > 12800)) {
-        printf("\e2VDD Out Of Range: %d mV  (should be 12V in this mode)\n", vdd);
-        error |= (1 << 5);
-    }
-
-    if (abs(mid * 2 - vdd) > 300) {
-        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
-        error |= (1 << 6);
-    }
-
-    // Now turn on the shunt and see that the output voltage reduces to 68%
-    *ctrl  = magic | 7; // 12V with shunt
-    wait_ms(200);
-    read_socket_analog(i2c, vdd, vcc, mid);
-
-//    // 5% range for VDD
-    if ((vdd < 11600) || (vdd > 12800)) {
-        printf("\e2VDD Out Of Range: %d mV  (should be 12V in this mode)\n", vdd);
-        error |= (1 << 7);
-    }
-
-    vdd *= 68;
-    vdd /= 100;
-
-    if (abs(mid * 2 - vdd) > 300) {
-        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
-        error |= (1 << 8);
-    }
-#endif
-    int cap1, cap2;
-
+<<<<<<< HEAD
     *ctrl  = magic | 7; // 12V with shunt
     wait_ms(50);
     // should be in 22 nF mode now. 5-7% caps
@@ -561,19 +551,29 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
     if ((cap2 < 21000) || (cap2 > 24000)) {
         printf("\e2CAP2 out of range: %d pF, expected 22470 pF (%b)\n", cap2, PLD_RD_CTRL);
         error |= (1 << 10);
+=======
+    // Setup byte: 1.101.0000 (unipolar, internal clock, reference always on)
+    // Configuration byte: 0.00.0011.1
+    if (i2c.i2c_write_byte(0xC8, 0xD0, 0x07) < 0) {
+        printf("\e2Unable to access I2C ADC on tester\n");
+        return -2;
+>>>>>>> 2caf1187d20a85ed78ab721cafa171faeec971a1
     }
 
-    *ctrl  = magic | 15; // 12V with shunt and small caps
-    wait_ms(50);
-    // should be in 22 nF mode now. 5-7% caps
-    read_caps(test, cap1, cap2);
-    if ((cap1 < 200) || (cap1 > 900)) {
-        printf("\e2CAP1 out of range: %d pF, expected 470 pF\n", cap1);
-        error |= (1 << 11);
-    }
-    if ((cap2 < 200) || (cap2 > 900)) {
-        printf("\e2CAP2 out of range: %d pF, expected 470 pF\n", cap2);
-        error |= (1 << 12);
+    if (elite) {
+        error |= test_socket_voltages(i2c, ctrl, magic | 0,  4800,  5200, false);
+        error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9400, false) << 3;
+        error |= test_socket_voltages(i2c, ctrl, magic | 3, 11600, 12800, false) << 6;
+        error |= test_socket_voltages(i2c, ctrl, magic | 7, 11600, 12800, true) << 9;
+        error |= test_socket_caps(test, ctrl, magic | 7, 21000, 24800, 22470) << 12;
+        error |= test_socket_caps(test, ctrl, magic | 15, 200, 900, 470) << 14;
+    } else {
+        error |= test_socket_voltages(i2c, 0, 0, 11600, 12800, true);
+        error |= test_socket_caps(test, 0, 0, 200, 900, 470) << 3;
+        printf("\e?Place all jumpers for socket %d and press power button.\n", (test == SOCKET1)?1:2);
+        wait_button();
+        error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9400, true) << 8;
+        error |= test_socket_caps(test, 0, 0, 21000, 24800, 22470) << 11;
     }
 
     if (!error) {
@@ -588,21 +588,21 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
     // Input 3: unused.
 }
 
-int TestSidSockets(void)
+int TestSidSockets(bool elite)
 {
     LOCAL_CART = 0x20; // Reset PLD in socket!
     vTaskDelay(10);
     LOCAL_CART = 0x00; // release reset for PLD. This should enable the oscillator
 
     int error = 0;
-    if(socket_test(SOCKET1, &PLD_WR_CTRL2, 0x50) == 0) {
+    if(socket_test(SOCKET1, &PLD_WR_CTRL2, 0x50, elite) == 0) {
         printf("\e5SID Socket 1 passed.\n");
     } else {
         printf("\e2SID Socket 1 FAILED!\n");
         error = 1;
     }
 
-    if(socket_test(SOCKET2, &PLD_WR_CTRL1, 0xB0) == 0) {
+    if(socket_test(SOCKET2, &PLD_WR_CTRL1, 0xB0, elite) == 0) {
         printf("\e5SID Socket 2 passed.\n");
     } else {
         printf("\e2SID Socket 2 FAILED!\n");
@@ -615,22 +615,49 @@ int TestSidSockets(void)
 extern "C" {
     void codec_init(void);
 
+    bool isEliteBoard(void)
+    {
+        uint8_t rev = (U2PIO_BOARDREV >> 3);
+        if (rev == 0x13) {
+            return true;
+        }
+        if (rev == 0x14) { // may be either!
+            uint8_t joyswap = C64_PLD_JOYCTRL;
+            if (joyswap & 0x80) {
+                return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
     void main_task(void *context)
 	{
 	    initScreen();
 	    printf("Ultimate-64 - LOADER...\n");
         codec_init();
-
-	    int errors = 0;
+        bool elite = isEliteBoard();
+	    int errors = 0, joy = 0;
 	    if (!test_memory()) {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
 	            errors =  test_esp32();
 	            errors += U64AudioCodecTest();
-	            errors += U64EliteTestJoystick();
+                errors += TestSidSockets(elite);
+	            if (elite) {
+	                joy = U64EliteTestJoystick();
+	                if (joy < 0) {
+	                    elite = false;
+	                } else {
+	                    errors += joy;
+	                }
+	            }
 	            errors += U64PaddleTest();
-	            errors += TestSidSockets();
+	            if (!elite) {
+	                printf("\e?Remove joystick tester boards and press power button.\n");
+	                wait_button();
+	            }
 	            errors += U64TestKeyboard();
 	            //errors += U64TestUserPort();
                 errors += U64TestIEC();

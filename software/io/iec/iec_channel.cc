@@ -389,11 +389,20 @@ int IecChannel :: open_file(void)  // name should be in buffer
     buffer[pointer] = 0; // string terminator
     printf("Open file. Raw Filename = '%s'\n", buffer);
 
+    // Temporary fix.. replace all slashes with -
+    for (int i=0;i<pointer;i++) {
+        if (buffer[i] == '/') {
+            buffer[i] = '-';
+        }
+    }
+
     command_t command;
     parse_command((char *)buffer, &command);
     dump_command(command);
 
+
     // First determine the direction
+    append = 0;
     if(channel == 1)
         write = 1;
     else
@@ -410,8 +419,13 @@ int IecChannel :: open_file(void)  // name should be in buffer
             write = 1;
             tp = 2;
             break;
+        case 'A':
+            write = 1;
+            append = 1;
+            tp = 2;
+            break;
         default:
-            printf("Unknown direction: %c\n", command.names[2].name[0]);
+            printf("Unknown direction: %c\n", command.names[1].name[0]);
         }
     }
 
@@ -422,6 +436,10 @@ int IecChannel :: open_file(void)  // name should be in buffer
             break;
         case 'W':
             write = 1;
+            break;
+        case 'A':
+            write = 1;
+            append = 1;
             break;
         default:
             printf("Unknown direction: %c\n", command.names[2].name[0]);
@@ -447,6 +465,7 @@ int IecChannel :: open_file(void)  // name should be in buffer
 
     uint8_t flags = FA_READ;
 
+    dirPartition = interface->vfs->GetPartition(command.names[0].drive);
     if(command.cmd[0] == '$') {
         if (explicitExt) {
             dirpattern = &extension[1]; // skip the .
@@ -455,7 +474,6 @@ int IecChannel :: open_file(void)  // name should be in buffer
         }
         dirpattern += first;
         printf("IEC Channel: Opening directory... (Pattern = %s)\n", dirpattern.c_str());
-        dirPartition = interface->vfs->GetPartition(command.names[0].drive);
         if (dirPartition->ReadDirectory()) {
             interface->get_command_channel()->get_last_error(ERR_DRIVE_NOT_READY, dirPartition->GetPartitionNumber());
             return 0;
@@ -501,9 +519,18 @@ int IecChannel :: open_file(void)  // name should be in buffer
     char temp_fn[32];
     char *filename;
 
-    if(write) {
+    if(append) {
+        if (pos < 0) {
+            interface->get_command_channel()->get_last_error(ERR_FILE_NOT_FOUND, dirPartition->GetPartitionNumber());
+            state = e_error;
+            return 0;
+        } else {
+            FileInfo *info = partition->GetSystemFile(pos);
+            filename = info->lfname;
+        }
+    } else if(write) {
         if ((pos >= 0) && (!replace)) { // file exists, and not allowed to overwrite
-            interface->last_error = ERR_FILE_EXISTS;
+            interface->get_command_channel()->get_last_error(ERR_FILE_EXISTS, dirPartition->GetPartitionNumber());
             state = e_error;
             return 0;
         } else {
@@ -513,7 +540,7 @@ int IecChannel :: open_file(void)  // name should be in buffer
         }
     } else { // read
         if (pos < 0) {
-            interface->last_error = ERR_FILE_NOT_FOUND;
+            interface->get_command_channel()->get_last_error(ERR_FILE_NOT_FOUND, dirPartition->GetPartitionNumber());
             state = e_error;
             return 0;
         }
@@ -525,9 +552,21 @@ int IecChannel :: open_file(void)  // name should be in buffer
     if (replace) {
         flags &= ~FA_CREATE_NEW;
     }
+    if (append) {
+        flags &= ~(FA_CREATE_ALWAYS | FA_CREATE_NEW);
+    }
     FRESULT fres = fm->fopen(partition->GetPath(), filename, flags, &f);
     if(f) {
         printf("Successfully opened file %s in %s\n", buffer, partition->GetFullPath());
+        size = 0;
+        if (append) {
+            fres = f->seek(f->get_size());
+            if (fres != FR_OK) {
+                interface->get_command_channel()->get_last_error(ERR_FRESULT_CODE, fres);
+                state = e_error;
+                return 0;
+            }
+        }
         last_byte = -1;
         pointer = 0;
         prefetch = 0;
