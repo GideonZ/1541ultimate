@@ -117,7 +117,7 @@ architecture gideon of slot_slave is
 --    attribute fsm_encoding : string;
 --    attribute fsm_encoding of state : signal is "sequential";
 
-    signal epyx_timer       : unsigned(6 downto 0) := (others => '0');
+    signal epyx_timer       : unsigned(7 downto 0) := (others => '0');
     signal epyx_reset       : std_logic := '0';
 begin
     slot_req.io_write      <= do_io_event and io_write_cond;
@@ -145,11 +145,14 @@ begin
             ultimax_d <= ultimax;
             ultimax_d2 <= ultimax_d;
             
+            -- 470 nF / 3.3K pup / Vih = 2V, but might be lower
+            -- Voh buffer = 0.3V, so let's take a threshold of 1.2V => 400 cycles
+            -- Now implemented: 256
             if epyx_reset='1' then
                 epyx_timer <= (others => '1');
                 epyx_timeout <= '0';
             elsif phi2_tick='1' and dma_active_n = '1' then
-                if epyx_timer = "0000000" then
+                if epyx_timer = 0 then
                     epyx_timeout <= '1';
                 else
                     epyx_timer <= epyx_timer - 1;
@@ -197,10 +200,10 @@ begin
                             kernal_area_i  <= '1';
                         end if;
                         if addr_is_io then
-                            if ba_c='1' then -- only serve IO when BA='1' (Fix for Ethernet)
+                            --if ba_c='1' then -- only serve IO when BA='1' (Fix for Ethernet)
                                 mem_req_ff <= '1';
                                 state      <= mem_access;
-                            end if;
+                            --end if;
                             if address_c(8)='0' and serve_io1='1' then
                                 io_out <= (rwn_c='1');
                             elsif address_c(8)='1' and serve_io2='1' then
