@@ -23,7 +23,7 @@ port (
     GAMEn           : in  std_logic;
     EXROMn          : in  std_logic;
     RWn             : in  std_logic;
-    ADDRESS         : in  std_logic_vector(15 downto 0);
+    ADDRESS         : in  unsigned(15 downto 0);
     DATA_in         : in  std_logic_vector(7 downto 0);
     DATA_out        : out std_logic_vector(7 downto 0) := (others => '0');
     DATA_tri        : out std_logic;
@@ -70,7 +70,7 @@ port (
 end slot_slave;    
 
 architecture gideon of slot_slave is
-    signal address_c    : std_logic_vector(15 downto 0) := (others => '0');
+    signal address_c    : unsigned(15 downto 0) := (others => '0');
     signal data_c       : std_logic_vector(7 downto 0) := X"FF";
     signal io1n_c       : std_logic := '1';
     signal io2n_c       : std_logic := '1';
@@ -161,7 +161,7 @@ begin
                 cpu_write  <= not RWn;
 
                 slot_req.bus_write  <= not RWn;
-                slot_req.io_address <= unsigned(address_c);
+                slot_req.io_address <= address_c;
                 mem_wdata_i         <= data_c;
 
                 late_write_cond <= not rwn_c;

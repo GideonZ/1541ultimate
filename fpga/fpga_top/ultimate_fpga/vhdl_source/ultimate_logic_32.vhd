@@ -72,8 +72,8 @@ port (
     rstn_o      : out   std_logic := '1';
     rstn_i      : in    std_logic := '1';
 
-    slot_addr_o : out   std_logic_vector(15 downto 0);
-    slot_addr_i : in    std_logic_vector(15 downto 0) := (others => '1');
+    slot_addr_o : out   unsigned(15 downto 0);
+    slot_addr_i : in    unsigned(15 downto 0) := (others => '1');
     slot_addr_tl: out   std_logic;
     slot_addr_th: out   std_logic;
     
@@ -1437,7 +1437,7 @@ begin
         port map (
             clock        => sys_clock,
             reset        => sys_reset,
-            addr         => SLOT_ADDR_i,
+            addr         => std_logic_vector(SLOT_ADDR_i),
             data         => SLOT_DATA_i,
             rstn         => RSTn_i,
             phi2         => PHI2_i,
