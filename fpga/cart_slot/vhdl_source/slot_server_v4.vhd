@@ -118,6 +118,7 @@ end slot_server_v4;
 architecture structural of slot_server_v4 is
 
     signal phi2_tick_i     : std_logic;
+    signal phi2_fall       : std_logic;
     signal phi2_recovered  : std_logic;
     signal vic_cycle       : std_logic;
     signal do_sample_addr  : std_logic;
@@ -139,7 +140,7 @@ architecture structural of slot_server_v4 is
     signal rwn_out         : std_logic;
 
     signal control         : t_cart_control;
-    signal status          : t_cart_status;
+    signal status          : t_cart_status := (others => '0');
 
     signal allow_serve     : std_logic;
 
@@ -332,6 +333,7 @@ begin
         edge_recover    => control.phi2_edge_recover,
     
         phi2_tick       => phi2_tick_i,
+        phi2_fall       => phi2_fall,
         phi2_recovered  => phi2_recovered,
         clock_det       => status.clock_detect,
         vic_cycle       => vic_cycle,    
