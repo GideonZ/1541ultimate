@@ -233,8 +233,6 @@ architecture structural of slot_server_v4 is
     signal mem_dack_slot    : std_logic;
 
     signal phi2_tick_avail  : std_logic;
-    signal stand_alone_tick : std_logic;
-    signal tick_div         : integer range 0 to 63;
 begin
     reset_button  <= buttons(0) when control.swap_buttons='0' else buttons(2);
     freeze_button <= buttons(2) when control.swap_buttons='0' else buttons(0);
@@ -529,26 +527,6 @@ begin
 
     r_sid: if g_implement_sid generate
     begin
---    i_trce: entity work.sid_trace
---    generic map (
---        g_mem_tag   => X"CE" )
---    port map (
---        clock       => clock,
---        reset       => actual_c64_reset,
---        
---        addr        => unsigned(slot_addr(6 downto 0)),
---        wren        => sid_write,
---        wdata       => io_wdata,
---    
---        phi2_tick   => phi2_tick_i,
---        
---        io_req      => io_req_trace,
---        io_resp     => io_resp_trace,
---    
---        mem_req     => mem_req_trace,
---        mem_resp    => mem_resp_trace );
-
-
         i_sid: entity work.sid_peripheral
         generic map (
             g_8voices     => g_8voices,
@@ -859,26 +837,7 @@ begin
         end if;
     end process;
 
---    -- Stand alone tick output
---    process(clock)
---    begin
---        if rising_edge(clock) then
---            stand_alone_tick <= '0';
---            if tick_div = 0 then
---                stand_alone_tick <= '1';
---                if control.tick_ntsc = '1' then
---                    tick_div <= 48; -- 49 => 1.0204 MHz (-0.15%)
---                else
---                    tick_div <= 50; -- 51 => 0.9804 MHz (-0.49%)
---                end if;
---            else
---                tick_div <= tick_div - 1;
---            end if;
---        end if;
---    end process;
---    phi2_tick_avail <= stand_alone_tick when status.clock_detect = '0' else phi2_tick_i;
     phi2_tick_avail <= phi2_tick_i;
-
     phi2_tick   <= phi2_tick_avail;
     
     c64_stopped <= status.c64_stopped;

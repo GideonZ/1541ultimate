@@ -40,7 +40,6 @@ package cart_slot_pkg is
         swap_buttons   : std_logic;
         timing_addr_valid   : unsigned(2 downto 0);
         phi2_edge_recover   : std_logic;
-        tick_ntsc           : std_logic;
         serve_while_stopped : std_logic;
     end record;
     
@@ -72,7 +71,6 @@ package cart_slot_pkg is
         timing_addr_valid => "100",
         phi2_edge_recover => '1',
         swap_buttons   => '1',
-        tick_ntsc      => '0',
         serve_while_stopped => '0' );
 
 
