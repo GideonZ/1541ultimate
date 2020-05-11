@@ -6,6 +6,7 @@ use ieee.numeric_std.all;
 library work;
 use work.mem_bus_pkg.all;
 use work.io_bus_pkg.all;
+use work.dma_bus_pkg.all;
 
 entity ultimate_logic_32 is
 generic (
@@ -21,6 +22,7 @@ generic (
     g_fpga_type     : natural := 0;
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
+    g_direct_dma    : boolean := false;
     g_microblaze    : boolean := true;
     g_big_endian    : boolean := true;
     g_boot_rom      : boolean := false;
@@ -109,6 +111,10 @@ port (
     mem_req     : out   t_mem_req_32;
     mem_resp    : in    t_mem_resp_32;
     
+    -- Direct DMA for U64
+    direct_dma_req   : out   t_dma_req := c_dma_req_init;
+    direct_dma_resp  : in    t_dma_resp := c_dma_resp_init;
+
     -- Audio outputs
     audio_speaker    : out signed(12 downto 0);
     audio_left       : out signed(18 downto 0);
@@ -730,6 +736,7 @@ begin
         i_slot_srv: entity work.slot_server_v4
         generic map (
             g_clock_freq    => g_clock_freq,
+            g_direct_dma    => g_direct_dma,
             g_tag_slot      => c_tag_slot,
             g_tag_reu       => c_tag_reu,
             g_ram_base_reu  => X"1000000", -- should be on 16M boundary, or should be limited in size
@@ -818,6 +825,9 @@ begin
             memctrl_inhibit => mem_inhibit,
             mem_req         => mem_req_32_cart,
             mem_resp        => mem_resp_32_cart,
+
+            direct_dma_req  => direct_dma_req,
+            direct_dma_resp => direct_dma_resp,
             
             -- slave on io bus
             io_req          => io_req_cart,
