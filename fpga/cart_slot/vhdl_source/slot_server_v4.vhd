@@ -99,13 +99,13 @@ port (
     phi2_tick       : out   std_logic;
     c64_stopped     : out   std_logic;
 
-    direct_dma_req  : out   t_dma_req := c_dma_req_init;
-    direct_dma_resp : in    t_dma_resp := c_dma_resp_init;
-
     -- master on memory bus
     memctrl_inhibit : out   std_logic;
     mem_req         : out   t_mem_req_32;
     mem_resp        : in    t_mem_resp_32;
+
+    direct_dma_req  : out   t_dma_req := c_dma_req_init;
+    direct_dma_resp : in    t_dma_resp := c_dma_resp_init;
 
     -- slave on io bus
     io_req          : in    t_io_req;
@@ -456,8 +456,21 @@ begin
     end generate;    
 
     r_no_master: if g_direct_dma generate
-        status.c64_stopped <= control.c64_stop;
-        dma_n              <= not control.c64_stop;
+        process(clock)
+        begin
+            if rising_edge(clock) then
+                if phi2_fall = '1' then
+                    status.c64_stopped <= control.c64_stop;
+                end if;
+            end if;
+        end process;
+
+        dma_n              <= not status.c64_stopped and reu_dma_n;
+        RWN_out            <= '1';
+        ADDRESS_out        <= (others => '1');
+        ADDRESS_tri_h      <= '0';
+        ADDRESS_tri_l      <= '0';
+        
         direct_dma_req <= dma_req;
         dma_resp       <= direct_dma_resp;        
     end generate;
