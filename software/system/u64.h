@@ -20,6 +20,7 @@
 #define C64_IO_BASE  0xA0080000
 #define C64_IO_LED   0xA0081000
 #define C64_IO_DEBUG 0xA0082000
+#define C64_PLD_ACC  0xA0083000
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0x1FE))
@@ -92,10 +93,6 @@
 #define C64_SID2_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x12))
 #define C64_PADDLE_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x13))
 #define C64_STEREO_ADDRSEL (*(volatile uint8_t *)(C64_IO_BASE + 0x14))
-#define C64_PLD_PORTA      ((volatile uint8_t *)(C64_IO_BASE + 0x16))
-#define C64_PLD_PORTB      ((volatile uint8_t *)(C64_IO_BASE + 0x17))
-#define C64_PLD_STATE0    (*(volatile uint8_t *)(C64_IO_BASE + 0x18))
-#define C64_PLD_STATE1    (*(volatile uint8_t *)(C64_IO_BASE + 0x19))
 #define C64_PADDLE_SWAP   (*(volatile uint8_t *)(C64_IO_BASE + 0x1A))
 #define C64_EMUSID1_WAVES (*(volatile uint8_t *)(C64_IO_BASE + 0x20))
 #define C64_EMUSID2_WAVES (*(volatile uint8_t *)(C64_IO_BASE + 0x21))
@@ -104,9 +101,25 @@
 #define C64_EMUSID1_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x27))
 #define C64_EMUSID2_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x28))
 #define C64_EMUSID_SPLIT  (*(volatile uint8_t *)(C64_IO_BASE + 0x29))
+
+/*
+#define C64_PLD_PORTA      ((volatile uint8_t *)(C64_IO_BASE + 0x16))
+#define C64_PLD_PORTB      ((volatile uint8_t *)(C64_IO_BASE + 0x17))
+#define C64_PLD_STATE0    (*(volatile uint8_t *)(C64_IO_BASE + 0x18))
+#define C64_PLD_STATE1    (*(volatile uint8_t *)(C64_IO_BASE + 0x19))
 #define C64_PLD_SIDCTRL2  (*(volatile uint8_t *)(C64_IO_BASE + 0x3A))
 #define C64_PLD_SIDCTRL1  (*(volatile uint8_t *)(C64_IO_BASE + 0x3B))
 #define C64_PLD_JOYCTRL   (*(volatile uint8_t *)(C64_IO_BASE + 0x3E))
+*/
+
+#define C64_PLD_PORTA      ((volatile uint8_t *)(C64_PLD_ACC + 0x10))
+#define C64_PLD_PORTB      ((volatile uint8_t *)(C64_PLD_ACC + 0x11))
+#define C64_PLD_STATE0    (*(volatile uint8_t *)(C64_PLD_ACC + 0x00))
+#define C64_PLD_STATE1    (*(volatile uint8_t *)(C64_PLD_ACC + 0x01))
+#define C64_PLD_SIDCTRL2  (*(volatile uint8_t *)(C64_PLD_ACC + 0x1A))
+#define C64_PLD_SIDCTRL1  (*(volatile uint8_t *)(C64_PLD_ACC + 0x1B))
+#define C64_PLD_JOYCTRL   (*(volatile uint8_t *)(C64_PLD_ACC + 0x1E))
+
 #define C64_VOICE_ADSR(x) (*(volatile uint8_t *)(C64_IO_BASE + 0x80 + x))
 
 #define VIDEO_FMT_NTSC_ENCODING 0x01
