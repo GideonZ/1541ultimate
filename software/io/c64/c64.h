@@ -125,6 +125,7 @@
 #define CART_TYPE_FC3PLUS     0x19
 #define CART_TYPE_COMAL80PAKMA 0x1A
 #define CART_TYPE_SUPERGAMES   0x1B
+#define CART_TYPE_NORDIC      0x1C
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
