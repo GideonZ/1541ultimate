@@ -51,8 +51,8 @@ port (
     rstn_i          : in    std_logic := '1';
     rstn_o          : out   std_logic := '1';
 
-    slot_addr_o     : out   std_logic_vector(15 downto 0);
-    slot_addr_i     : in    std_logic_vector(15 downto 0) := (others => '1');
+    slot_addr_o     : out   unsigned(15 downto 0);
+    slot_addr_i     : in    unsigned(15 downto 0) := (others => '1');
     slot_addr_tl    : out   std_logic;
     slot_addr_th    : out   std_logic;
                     
@@ -721,7 +721,7 @@ begin
 
     process(address_out, kernal_addr_out, kernal_probe, address_tri_l, address_tri_h)
     begin
-        slot_addr_o <= address_out;
+        slot_addr_o <= unsigned(address_out);
         slot_addr_tl <= address_tri_l;
         slot_addr_th <= address_tri_h;
         if kernal_addr_out='1' and kernal_probe='1' then

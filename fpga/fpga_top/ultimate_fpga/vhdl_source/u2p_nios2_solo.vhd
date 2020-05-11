@@ -20,7 +20,7 @@ port (
     SLOT_DOTCLK      : in    std_logic;
     SLOT_RSTn        : inout std_logic;
     SLOT_BUFFER_ENn  : out   std_logic;
-    SLOT_ADDR        : inout std_logic_vector(15 downto 0);
+    SLOT_ADDR        : inout unsigned(15 downto 0);
     SLOT_DATA        : inout std_logic_vector(7 downto 0);
     SLOT_RWn         : inout std_logic;
     SLOT_BA          : in    std_logic;
@@ -177,7 +177,7 @@ architecture rtl of u2p_nios_solo is
     signal led_n        : std_logic_vector(0 to 3);
     signal RSTn_out     : std_logic;
     signal irq_oc, nmi_oc, rst_oc, dma_oc, exrom_oc, game_oc    : std_logic;
-    signal slot_addr_o  : std_logic_vector(15 downto 0);
+    signal slot_addr_o  : unsigned(15 downto 0);
     signal slot_addr_tl : std_logic;
     signal slot_addr_th : std_logic;
     signal slot_data_o  : std_logic_vector(7 downto 0);
