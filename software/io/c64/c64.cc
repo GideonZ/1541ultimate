@@ -1075,15 +1075,17 @@ void C64::set_cartridge(cart_def *def)
         {
            int found = -1;
            unsigned char* mem_addr8 = (unsigned char*) mem_addr;
-           for (int i=0; i<300; i++)
+           for (int i=0; i<300; i++) {
               if ( mem_addr8[i+0] == 0x58 && mem_addr8[i+1] == 0x68
                    && mem_addr8[i+2] == 0xAA && mem_addr8[i+3] == 0x68
                    && mem_addr8[i+4] == 0xE0 && mem_addr8[i+5] == 0x7F
                    && (mem_addr8[i+6] == 0xD0 || mem_addr8[i+6] == 0xF0)
                    && mem_addr8[i+8] == 0xe0 && mem_addr8[i+9] == 0xDF
-                   && mem_addr8[i+10] == 0xf0 )
+                   && mem_addr8[i+10] == 0xf0 ) {
                    found = i;
-
+                   break;
+              }
+           }
            if (found != -1) {
                mem_addr8[found+6] = fc3mode == 1 ? 0xF0 : 0xD0;
            }
