@@ -101,6 +101,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_JOYSWAP           0x49
 #define CFG_AUTO_MIRRORING    0x4A
 // #define CFG_CART_PREFERENCE   0x4B // moved to C64 for user experience consistency
+#define CFG_SPEED_REGS        0x4C
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -250,6 +251,7 @@ struct t_cfg_definition u64_cfg[] = {
     //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
+    { CFG_SPEED_REGS,           CFG_TYPE_ENUM, "Turbo Registers",              "%s", en_dis,       0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_sid_detection_cfg[] = {
@@ -796,6 +798,7 @@ void U64Config :: effectuate_settings()
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
+    C64_TURBOREGS_EN =  cfg->get_value(CFG_SPEED_REGS);
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
     C64_PLD_JOYCTRL  =  cfg->get_value(CFG_JOYSWAP) ^ 1;
     C64_PADDLE_SWAP  =  cfg->get_value(CFG_JOYSWAP);
