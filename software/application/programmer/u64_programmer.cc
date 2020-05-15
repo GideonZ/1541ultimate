@@ -486,42 +486,27 @@ int test_socket_voltages(I2C_Driver_SocketTest& i2c, volatile uint8_t *ctrl, uin
     return error;
 }
 
-<<<<<<< HEAD
-    *ctrl  = magic | 2; // 9V
-    wait_ms(200);
-    read_socket_analog(i2c, vdd, vcc, mid);
-
-    // 4% range for VDD
-    if ((vdd < 8640) || (vdd > 9500)) {
-        printf("\e2VDD Out Of Range: %d mV  (should be 9V in this mode)\n", vdd);
-        error |= (1 << 3);
-    }
-
-    if (abs(mid * 2 - vdd) > 150) {
-        printf("\e2Mid level Out Of Range: %d (Expected %d mV)\n", mid, vdd / 2);
-        error |= (1 << 4);
-=======
 int test_socket_caps(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t ctrlbyte, int low, int high, int expected)
 {
     int cap1, cap2;
     int error = 0;
     if(ctrl) {
         *ctrl  = ctrlbyte;
->>>>>>> 2caf1187d20a85ed78ab721cafa171faeec971a1
     }
     wait_ms(50);
     // should be in 22 nF mode now. 5-7% caps
     read_caps(test, cap1, cap2);
     if ((cap1 < low) || (cap1 > high)) {
-        printf("\e2CAP1 out of range: %d pF, expected %d pF\n", cap1, expected);
+        printf("\e2CAP1 out of range: %d pF, expected (%d-%d-%d) pF\n", cap1, low, expected, high);
         error |= (1 << 0);
     }
     if ((cap2 < low) || (cap2 > high)) {
-        printf("\e2CAP2 out of range: %d pF, expected %d pF\n", cap2, expected);
+        printf("\e2CAP2 out of range: %d pF, expected (%d-%d-%d) pF\n", cap2, low, expected, high);
         error |= (1 << 1);
     }
     return error;
 }
+
 int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t magic, bool elite)
 {
 //    PLD_WR_CTRL1 = 0xBF; // all on = 12V, 22 nF, 1K
@@ -539,25 +524,11 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
     // bit 0: regulator select (1 = 12V, 0 = 9V)
     I2C_Driver_SocketTest i2c(test);
 
-<<<<<<< HEAD
-    *ctrl  = magic | 7; // 12V with shunt
-    wait_ms(50);
-    // should be in 22 nF mode now. 5-7% caps
-    read_caps(test, cap1, cap2);
-    if ((cap1 < 21000) || (cap1 > 24000)) {
-        printf("\e2CAP1 out of range: %d pF, expected 22470 pF (%b)\n", cap1, PLD_RD_CTRL);
-        error |= (1 << 9);
-    }
-    if ((cap2 < 21000) || (cap2 > 24000)) {
-        printf("\e2CAP2 out of range: %d pF, expected 22470 pF (%b)\n", cap2, PLD_RD_CTRL);
-        error |= (1 << 10);
-=======
     // Setup byte: 1.101.0000 (unipolar, internal clock, reference always on)
     // Configuration byte: 0.00.0011.1
     if (i2c.i2c_write_byte(0xC8, 0xD0, 0x07) < 0) {
         printf("\e2Unable to access I2C ADC on tester\n");
         return -2;
->>>>>>> 2caf1187d20a85ed78ab721cafa171faeec971a1
     }
 
     if (elite) {
@@ -565,7 +536,7 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
         error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9400, false) << 3;
         error |= test_socket_voltages(i2c, ctrl, magic | 3, 11600, 12800, false) << 6;
         error |= test_socket_voltages(i2c, ctrl, magic | 7, 11600, 12800, true) << 9;
-        error |= test_socket_caps(test, ctrl, magic | 7, 21000, 24800, 22470) << 12;
+        error |= test_socket_caps(test, ctrl, magic | 7, 20000, 24800, 22470) << 12;
         error |= test_socket_caps(test, ctrl, magic | 15, 200, 900, 470) << 14;
     } else {
         error |= test_socket_voltages(i2c, 0, 0, 11600, 12800, true);
@@ -573,7 +544,7 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
         printf("\e?Place all jumpers for socket %d and press power button.\n", (test == SOCKET1)?1:2);
         wait_button();
         error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9400, true) << 8;
-        error |= test_socket_caps(test, 0, 0, 21000, 24800, 22470) << 11;
+        error |= test_socket_caps(test, 0, 0, 20000, 24800, 22470) << 11;
     }
 
     if (!error) {
@@ -642,6 +613,7 @@ extern "C" {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
+                printf("\e4U64 Tester - 15.05.2020\e?\n");
 	            errors =  test_esp32();
 	            errors += U64AudioCodecTest();
                 errors += TestSidSockets(elite);
