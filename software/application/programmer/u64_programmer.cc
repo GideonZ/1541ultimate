@@ -533,9 +533,9 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
 
     if (elite) {
         error |= test_socket_voltages(i2c, ctrl, magic | 0,  4800,  5200, false);
-        error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9400, false) << 3;
-        error |= test_socket_voltages(i2c, ctrl, magic | 3, 11600, 12800, false) << 6;
-        error |= test_socket_voltages(i2c, ctrl, magic | 7, 11600, 12800, true) << 9;
+        error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9560, false) << 3;
+        error |= test_socket_voltages(i2c, ctrl, magic | 3, 11600, 13000, false) << 6;
+        error |= test_socket_voltages(i2c, ctrl, magic | 7, 11600, 13000, true) << 9;
         error |= test_socket_caps(test, ctrl, magic | 7, 20000, 24800, 22470) << 12;
         error |= test_socket_caps(test, ctrl, magic | 15, 200, 900, 470) << 14;
     } else {
@@ -613,7 +613,7 @@ extern "C" {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
-                printf("\e4U64 Tester - 15.05.2020\e?\n");
+                printf("\e4U64 Tester - 15.05.2020 - 10:52\e?\n");
 	            errors =  test_esp32();
 	            errors += U64AudioCodecTest();
                 errors += TestSidSockets(elite);
