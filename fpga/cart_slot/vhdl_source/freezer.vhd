@@ -2,6 +2,8 @@ library ieee;
 use ieee.std_logic_1164.all;
 
 entity freezer is
+generic (
+    g_ext_activate  : boolean := false );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -11,6 +13,7 @@ port (
     
     cpu_cycle_done  : in  std_logic;
     cpu_write       : in  std_logic;
+    activate        : in  std_logic := '0';
     
     freezer_state   : out std_logic_vector(1 downto 0); -- debug
 
@@ -25,7 +28,9 @@ architecture gideon of freezer is
     signal wr_cnt      : integer range 0 to 3;
     signal do_freeze   : std_logic;
     signal do_freeze_d : std_logic;
-
+    signal activate_c  : std_logic;
+    signal activate_d  : std_logic;
+    
     type t_state is (idle, triggered, enter_freeze, button);
     signal state : t_state;
 
@@ -35,6 +40,9 @@ begin
     process(clock)
     begin
         if rising_edge(clock) then
+            activate_c  <= activate;
+            activate_d  <= activate_c;
+            
             do_freeze   <= button_freeze;
             do_freeze_d <= do_freeze;
             reset_in <= reset or RST_in;
@@ -57,7 +65,7 @@ begin
                 end if;
 
             when triggered =>
-                if wr_cnt=3 then
+                if (g_ext_activate and activate_d='1') or (not g_ext_activate and wr_cnt=3) then
                     state <= enter_freeze;
                     freeze_act <= '1';
                 end if;
@@ -80,6 +88,7 @@ begin
             if reset_in='1' then
                 state <= idle;
                 wr_cnt <= 0;
+                activate_d <= '0';
             end if; 
         end if;
     end process;
