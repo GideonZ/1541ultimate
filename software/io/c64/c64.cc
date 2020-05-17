@@ -754,7 +754,7 @@ void C64::init_io(void)
     VIC_REG(22) = 0xC8; // Screen = 40 cols with correct scroll
     VIC_REG(32) = 0x00; // black border
     //VIC_REG(26) = 0x01; // Enable Raster interrupt
-    VIC_REG(48) = 252;
+    //VIC_REG(48) = 252;
 }
 
 void C64::freeze(void)
