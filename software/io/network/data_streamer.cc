@@ -380,7 +380,8 @@ void DataStreamer :: calculate_udp_headers(int id)
 
     if (id == 2) { // debug stream
         uint8_t mode = cfg->get_value(CFG_STREAM_BUSMODE);
-        PROFILER_MODE = modeBytes[mode & 7];
+        U64_ETHSTREAM_ENA &= 0x0F;
+        U64_ETHSTREAM_ENA |= (modeBytes[mode & 7] << 4);
     }
     // enable
     U64_ETHSTREAM_ENA |= (1 << id);
