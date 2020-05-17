@@ -23,6 +23,7 @@ generic (
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
     g_direct_dma    : boolean := false;
+    g_ext_freeze_act: boolean := false;
     g_microblaze    : boolean := true;
     g_big_endian    : boolean := true;
     g_boot_rom      : boolean := false;
@@ -105,7 +106,8 @@ port (
     io2n_i      : in    std_logic := '1';
 
     VCC         : in    std_logic := '1';
-    
+    freeze_activate : in  std_logic := '0';
+
     -- local bus side
     mem_inhibit : out   std_logic;
     mem_req     : out   t_mem_req_32;
@@ -737,6 +739,7 @@ begin
         generic map (
             g_clock_freq    => g_clock_freq,
             g_direct_dma    => g_direct_dma,
+            g_ext_freeze_act=> g_ext_freeze_act,
             g_tag_slot      => c_tag_slot,
             g_tag_reu       => c_tag_reu,
             g_ram_base_reu  => X"1000000", -- should be on 16M boundary, or should be limited in size
@@ -811,6 +814,7 @@ begin
             samp_right      => samp_right,
 
             -- debug
+            freeze_activate => freeze_activate,
             freezer_state   => freezer_state,
             sync            => sync,
             sw_trigger      => sw_trigger,

@@ -18,6 +18,7 @@ generic (
     g_ram_base_cart : unsigned(27 downto 0) := X"0F70000"; -- should be on a 64K boundary
     g_rom_base_cart : unsigned(27 downto 0) := X"0F80000"; -- should be on a 512K boundary
     g_direct_dma    : boolean := false;
+    g_ext_freeze_act: boolean := false;
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
     g_big_endian    : boolean;
@@ -76,7 +77,6 @@ port (
     -- other hardware pins
     BUFFER_ENn      : out   std_logic;
     sense           : in    std_logic;
-    
 
     buttons         : in    std_logic_vector(2 downto 0);
     cart_led_n      : out   std_logic;
@@ -84,7 +84,8 @@ port (
     trigger_1       : out   std_logic;
     trigger_2       : out   std_logic;
 
-    -- debug
+    -- debug / freezer
+    freeze_activate : in    std_logic := '0';
     freezer_state   : out   std_logic_vector(1 downto 0);
     sync            : out   std_logic;
     sw_trigger      : out   std_logic;
@@ -178,7 +179,7 @@ architecture structural of slot_server_v4 is
 
     signal unfreeze         : std_logic;
     signal freeze_trig      : std_logic;
-    signal freeze_act       : std_logic;
+    signal freeze_active    : std_logic;
 
     signal io_req_dma       : t_io_req;
     signal io_resp_dma      : t_io_resp := c_io_resp_init;
@@ -478,6 +479,8 @@ begin
     end generate;
 
     i_freeze: entity work.freezer
+    generic map (
+        g_ext_activate  => g_ext_freeze_act )
     port map (
         clock           => clock,
         reset           => reset,
@@ -487,12 +490,13 @@ begin
     
         cpu_cycle_done  => do_io_event,
         cpu_write       => cpu_write,
+        activate        => freeze_activate, 
 
         freezer_state   => freezer_state,
 
         unfreeze        => unfreeze,
         freeze_trig     => freeze_trig,
-        freeze_act      => freeze_act );
+        freeze_act      => freeze_active );
 
 
     i_cart_logic: entity work.all_carts_v4
@@ -507,7 +511,7 @@ begin
 
         ethernet_enable => control.eth_enable,
         freeze_trig     => freeze_trig,
-        freeze_act      => freeze_act, 
+        freeze_act      => freeze_active, 
         unfreeze        => unfreeze,
         cart_active     => status.cart_active,
         
