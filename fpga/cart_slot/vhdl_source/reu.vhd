@@ -29,7 +29,8 @@ port (
     reu_dma_n       : out std_logic := '1';
     size_ctrl       : in  std_logic_vector(2 downto 0) := "001";
     enable          : in  std_logic;
-    
+    inhibit         : in  std_logic; -- to pause a transfer, because Ultimate menu is active
+
     -- memory interface
     mem_req         : out t_mem_req;
     mem_resp        : in  t_mem_resp;
@@ -52,7 +53,7 @@ end reu;
 
 architecture gideon of reu is
 
-    type t_state is (idle, do_read_c64, do_write_c64, do_read_reu, do_write_reu, check_end, delay);
+    type t_state is (idle, do_read_c64, use_data, do_write_c64, do_read_reu, do_write_reu, reu_write_done, check_end, delay);
     signal state     : t_state;
     
     attribute fsm_encoding : string;
@@ -204,10 +205,13 @@ begin
                     state <= do_read_reu;
             end case;
         end procedure;
+
+        variable r: unsigned(7 downto 0);
     begin
         if rising_edge(clock) then
+            r := "000" & slot_req.io_address(4 downto 0);
             if io_write='1' then  --$DF00-$DF1F, decoded below in a concurrent statement
-                case slot_req.io_address(4 downto 0) is
+                case r is
                 when c_c64base_l  => c64_base(7 downto 0) <= io_wdatau;
                                      c64_addr <= c64_base(15 downto 8) & io_wdatau;  -- half autoload bug
                 when c_c64base_h  => c64_base(15 downto 8) <= io_wdatau;
@@ -248,7 +252,7 @@ begin
 
             -- extended registers
             if io_write='1' and g_extended then  --$DF00-$DF1F, decoded below in a concurrent statement
-                case slot_req.io_address(4 downto 0) is
+                case r is
                 when c_start_delay =>
                     start_delay <= io_wdatau;
                 when c_rate_div    =>
@@ -263,7 +267,7 @@ begin
 
             -- clear on read flags
             if io_read='1' then
-                if slot_req.io_address(4 downto 0) = c_status then
+                if r = c_status then
                     verify_error <= '0';
                     trans_done   <= '0';
                 end if;
@@ -303,6 +307,11 @@ begin
                 end if;
                 if reu_dack='1' then
                     reu_read_reg <= mem_resp.data;
+                    state <= use_data;
+                end if;
+            
+            when use_data =>
+                if inhibit = '0' then
                     case command.mode is
                         when c_mode_swap | c_mode_verify =>
                             c64_req <= '1';
@@ -312,8 +321,8 @@ begin
                             c64_req <= '1';
                             glob_rwn <= '0';
                             state <= do_write_c64;
-                    end case;                        
-                end if;
+                    end case;
+                end if;                
 
             when do_write_c64 =>
                 if c64_rack='1' then
@@ -348,16 +357,21 @@ begin
             when do_write_reu =>
                 if reu_rack='1' then
                 	reu_req <= '0';
-                    case command.mode is
-                        when c_mode_swap =>
+                    state <= reu_write_done;
+                end if;
+            
+            when reu_write_done =>
+                case command.mode is
+                    when c_mode_swap =>
+                        if inhibit = '0' then
                             c64_req <= '1';
                             glob_rwn <= '0';
                             state <= do_write_c64;
-                        when others =>
-                            next_address;
-                            state <= check_end;
-                    end case;
-                end if;
+                        end if;
+                    when others =>
+                        next_address;
+                        state <= check_end;
+                end case;
                 
             when check_end =>
                 ext_count <= rate_div;
@@ -365,7 +379,7 @@ begin
                     transfer_end;
                 elsif g_extended then
                     state <= delay;
-                else
+                elsif inhibit = '0' then
                     dispatch;
                 end if;
 
@@ -401,9 +415,12 @@ begin
     
     p_read: process(slot_req, control, command, count, c64_addr, reu_addr, verify_error, trans_done, irq_pend,
                 c64_base, reu_base, length_reg, reserved, mask, start_delay, rate_div)
+
+        variable r: unsigned(7 downto 0);
     begin
         io_rdata <= X"FF";
-        case slot_req.bus_address(4 downto 0) is
+        r := "000" & slot_req.bus_address(4 downto 0);
+        case r is
         when c_status     =>
             io_rdata(7) <= irq_pend;
             io_rdata(6) <= trans_done;
