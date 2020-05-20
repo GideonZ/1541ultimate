@@ -468,7 +468,7 @@ begin
             end if;
         end process;
 
-        dma_n              <= not status.c64_stopped and reu_dma_n;
+        dma_n              <= not (status.c64_stopped or not reu_dma_n or cmd_if_freeze);
         RWN_out            <= '1';
         ADDRESS_out        <= (others => '1');
         ADDRESS_tri_h      <= '0';
@@ -603,6 +603,7 @@ begin
             -- system interface
             phi2_tick       => do_io_event,
             reu_dma_n       => reu_dma_n,
+            inhibit         => status.c64_stopped,
             size_ctrl       => control.reu_size,
             enable          => control.reu_enable,
             
