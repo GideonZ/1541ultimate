@@ -1,4 +1,4 @@
-#/*
+/*
  * c64.cc
  *
  * Written by 
@@ -31,6 +31,7 @@
 #include "dump_hex.h"
 #include "c64.h"
 #include "u64.h"
+#include "u64_config.h"
 #include "flash.h"
 #include "keyboard_c64.h"
 #include "config.h"
@@ -141,12 +142,19 @@ static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns",
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
 static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
 static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
-static const char *cartmodes[] = { "Auto", "Internal", "External" };
+static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
+static const char *bus_modes[] = { "Quiet", "Writes", "CPU", "CPU/VIC", "VIC" };
+static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x03, 0x07, 0x04 };
+static const char *bus_sharing[] = { "Internal", "External", "Both" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 19, 0 },
-    { CFG_C64_CART_PREF,CFG_TYPE_ENUM,   "Cartridge Preference",         "%s", cartmodes,  0,  2, 0 },
+    { CFG_C64_CART,        CFG_TYPE_ENUM, "Cartridge",                    "%s", cart_mode,  0, 19, 0 },
+    { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
+    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  4, 0 },
+    { CFG_BUS_SHARING_ROM, CFG_TYPE_ENUM, "Bus Sharing - ROMs",           "%s", bus_sharing,  0,  2, 2 },
+    { CFG_BUS_SHARING_IO,  CFG_TYPE_ENUM, "Bus Sharing - I/O",            "%s", bus_sharing,  0,  2, 2 },
+    { CFG_BUS_SHARING_IRQ, CFG_TYPE_ENUM, "Bus Sharing - Interrupts",     "%s", bus_sharing,  0,  2, 2 },
 #else
     { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
 #endif
@@ -197,6 +205,9 @@ C64::C64()
 
     register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
 
+    cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);
+    setCartPref(cfg->find_item(CFG_C64_CART_PREF));
+
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
     char_set = (uint8_t *) &_chars_bin_start;
@@ -227,6 +238,21 @@ C64::C64()
         printf("U64, and no PHI2?  Something is seriously wrong!!\n");
     }
 #endif
+}
+
+int C64 :: setCartPref(ConfigItem *item)
+{
+    // This is only a UI thing
+    if (item->getValue() == 3) { // If manual, enable the other settings
+        item->store->enable(CFG_BUS_SHARING_ROM);
+        item->store->enable(CFG_BUS_SHARING_IO);
+        item->store->enable(CFG_BUS_SHARING_IRQ);
+    } else {
+        item->store->disable(CFG_BUS_SHARING_ROM);
+        item->store->disable(CFG_BUS_SHARING_IO);
+        item->store->disable(CFG_BUS_SHARING_IRQ);
+    }
+    return 1;
 }
 
 void C64 :: init(void)
@@ -955,8 +981,10 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     // internal cart, or even override it altogether. This is only done when a custom cart definition is given.
 
     if ((def != 0) || startLater) { // special cart
-        U64_CART_PREF = U64_CARTRIDGE_INTERNAL;
-        // this register will be set back to the correct value upon a reset interrupt, that calls u64_configurator.effectuate_settings()
+        // C64_BUS_BRIDGE   = 0; // Quiet mode  (to hear the SID difference, let's not set this register now)
+        C64_BUS_INTERNAL = 7; // All ON
+        C64_BUS_EXTERNAL = 0; // All OFF
+        // these registers will be set back to the correct value upon a reset interrupt, that calls u64_configurator.effectuate_settings()
     }
 #endif
 
@@ -977,9 +1005,8 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
         bool external = false;
 #if U64
         // In case of the U64, when an external cartridge is detected, we should not enable our cart
-        if (!(U64_CART_PREF & 0x80)) {
-            external = true;
-        }
+        external = ConfigureU64SystemBus();
+        // Or should it depend on the automatic setting what we do here?
 #endif
         // Passing 0 to this function means that the default selected cartridge should be run
         if (def == 0) {
@@ -1159,7 +1186,7 @@ void C64::init_cartridge()
     init_system_roms();
 
 #if U64
-    if (!(U64_CART_PREF & 0x80)) { // external cart selected
+    if (ConfigureU64SystemBus()) { // returns true if external cartridge is present and has preference
         printf("External Cartridge Selected. Not initializing cartridge.\n");
         wait_ms(100);
         C64_MODE = C64_MODE_UNRESET;
@@ -1235,3 +1262,82 @@ void C64::checkButton(void)
     }
     button_prev = buttons;
 }
+
+#if U64
+bool C64 :: ConfigureU64SystemBus(void)
+{
+    C64_BUS_BRIDGE   = bus_mode_values[cfg->get_value(CFG_BUS_MODE)];
+    uint8_t internal = 0;
+    uint8_t external = 0;
+    bool ext_cart = ((U64_CART_DETECT & 3) != 3); // true when external cartridge is present
+
+    switch (cfg->get_value(CFG_C64_CART_PREF)) {
+    case 0: // Automatic: If external cartridge is present, switch entire bus to external
+        if (ext_cart) {
+            internal = 0;
+            external = 7;
+        } else {
+            internal = 7;
+            external = 0;
+        }
+        break;
+    case 1: // Internal: Force all internal resources
+        internal = 7;
+        external = 0;
+        ext_cart = false;
+        break;
+    case 2: // External: Force all external resources
+        internal = 7;
+        external = 0;
+        break;
+
+    case 3: // Manual: Take settings from other config items
+        ext_cart = false; // let's assume there is none
+
+        switch (cfg->get_value(CFG_BUS_SHARING_ROM)) {
+        case 0: // Internal
+            internal |= 0x02;
+            break;
+        case 1: // External
+            external |= 0x02;
+            break;
+        case 2: // Both
+            internal |= 0x02;
+            external |= 0x02;
+            break;
+        }
+
+        switch (cfg->get_value(CFG_BUS_SHARING_IRQ)) {
+        case 0: // Internal
+            internal |= 0x04;
+            break;
+        case 1: // External
+            external |= 0x04;
+            break;
+        case 2: // Both
+            internal |= 0x04;
+            external |= 0x04;
+            break;
+        }
+
+        switch (cfg->get_value(CFG_BUS_SHARING_IO)) {
+        case 0: // Internal
+            internal |= 0x01;
+            break;
+        case 1: // External
+            external |= 0x01;
+            break;
+        case 2: // Both
+            internal |= 0x01;
+            external |= 0x01;
+            break;
+        }
+
+    }
+
+    C64_BUS_INTERNAL = internal;
+    C64_BUS_EXTERNAL = external;
+
+    return ext_cart;
+}
+#endif

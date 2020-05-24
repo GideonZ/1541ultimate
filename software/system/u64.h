@@ -47,7 +47,7 @@
 #define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
 #define U64_PARCABLE_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
-#define U64_CART_PREF      (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Logical disable of external cart
+#define U64_CART_DETECT    (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Inputs Game (bit 0) and Exrom (bit 1) lines
 #define U64_MB_RESET       (*(volatile uint8_t *)(U64_IO_BASE + 0x0B)) // Write a 0 to start the microblaze, if available
 #define U64_LEDSTRIP_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x0C)) // Write a 1 to make CIA_PWM pins become LED strip control pins
 #define U64_PWM_DUTY       (*(volatile uint8_t *)(U64_IO_BASE + 0x0D)) // any value between 00 (off) and FF (nearly full phase)
@@ -100,6 +100,9 @@
 #define C64_EMUSID1_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x27))
 #define C64_EMUSID2_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x28))
 #define C64_EMUSID_SPLIT  (*(volatile uint8_t *)(C64_IO_BASE + 0x29))
+#define C64_BUS_BRIDGE    (*(volatile uint8_t *)(C64_IO_BASE + 0x2A))
+#define C64_BUS_INTERNAL  (*(volatile uint8_t *)(C64_IO_BASE + 0x2B))
+#define C64_BUS_EXTERNAL  (*(volatile uint8_t *)(C64_IO_BASE + 0x2C))
 
 /*
 #define C64_PLD_PORTA      ((volatile uint8_t *)(C64_IO_BASE + 0x16))

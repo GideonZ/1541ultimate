@@ -199,6 +199,11 @@
 #define CFG_C64_ALT_BASI    0x83
 #define CFG_C64_ALT_CHAR    0x84
 
+#define CFG_BUS_MODE          0x4D
+#define CFG_BUS_SHARING_ROM   0x4E
+#define CFG_BUS_SHARING_IO    0x4F
+#define CFG_BUS_SHARING_IRQ   0x50
+
 #define ID_MODPLAYER 0xAA
 #define ID_SIDCART   0xBB
 #define ID_CMDTEST   0xCC
@@ -268,7 +273,12 @@ class C64 : public GenericHost, ConfigurableObject
     }
 
     static void init_poll_task(void *a);
+    static int setCartPref(ConfigItem *item);
     void init(void);
+
+#if U64
+    bool ConfigureU64SystemBus(void);
+#endif
 
     C64();
 public:
