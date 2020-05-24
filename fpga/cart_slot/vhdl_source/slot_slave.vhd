@@ -149,7 +149,7 @@ begin
             -- Voh buffer = 0.3V, so let's take a threshold of 1.2V => 400 cycles
             -- Now implemented: 256
             if epyx_reset='1' then
-                epyx_timer <= (others => '1');
+                epyx_timer <= to_unsigned(128, epyx_timer'length);
                 epyx_timeout <= '0';
             elsif phi2_tick='1' and dma_active_n = '1' then
                 if epyx_timer = 0 then
