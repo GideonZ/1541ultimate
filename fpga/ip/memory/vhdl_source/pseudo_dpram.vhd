@@ -31,6 +31,8 @@ architecture xilinx of pseudo_dpram is
     -- Xilinx and Altera attributes
     attribute ram_style        : string;
     attribute ram_style of ram : variable is g_storage;
+    attribute ramstyle         : string;
+    attribute ramstyle of ram  : variable is g_storage;
 begin
     process(clock)
     begin
