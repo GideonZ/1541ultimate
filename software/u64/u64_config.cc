@@ -715,8 +715,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.
-		machine = C64 :: getMachine();
-		U64_CART_PREF    =  machine->cfg->get_value(CFG_C64_CART_PREF);
+		C64 :: getMachine() -> ConfigureU64SystemBus();
 
         sidDevice[0] = NULL;
         sidDevice[1] = NULL;
@@ -783,12 +782,16 @@ void U64Config :: effectuate_settings()
     if(!cfg)
         return;
 
+    C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
+    C64_TURBOREGS_EN = cfg->get_value(CFG_SPEED_REGS);
+    C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
+    C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP);
+
     //printf("U64Config :: effectuate_settings()\n");
     uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
 
     U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
     C64_SCANLINES    = cfg->get_value(CFG_SCANLINES);
-    C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
 
     uint8_t hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
 
@@ -798,11 +801,10 @@ void U64Config :: effectuate_settings()
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-    C64_TURBOREGS_EN =  cfg->get_value(CFG_SPEED_REGS);
+
+    C64 :: getMachine() -> ConfigureU64SystemBus();
+
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
-    C64_PLD_JOYCTRL  =  cfg->get_value(CFG_JOYSWAP) ^ 1;
-    C64_PADDLE_SWAP  =  cfg->get_value(CFG_JOYSWAP);
-    U64_CART_PREF    =  C64::getMachine()->cfg->get_value(CFG_C64_CART_PREF); // moved to C64 for user experience consistency
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
         C64_LUMA_DELAY   = -chromaDelay;
