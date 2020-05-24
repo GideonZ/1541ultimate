@@ -81,7 +81,7 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
         }
     }
 
-    int page_size = flash->get_page_size();
+    int page_size = flash->get_config_page_size();
 
     // Try to obtain page object that already represents the page in Flash
     ConfigPage *page = NULL;
