@@ -802,9 +802,6 @@ void U64Config :: effectuate_settings()
         U64_HDMI_ENABLE = (hdmiSetting == 1) ? 1 : 0; // 1 = HDMI, 2 = DVI
     }
 
-
-    C64 :: getMachine() -> ConfigureU64SystemBus();
-
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
