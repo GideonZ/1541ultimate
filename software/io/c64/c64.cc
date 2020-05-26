@@ -341,6 +341,9 @@ void C64::effectuate_settings(void)
     // init_cartridge is called only at reboot, and will cause the C64 to reset.
     C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
 
+#if U64
+    ConfigureU64SystemBus();
+#endif
     cart_def *def;
     int cart = cfg->get_value(CFG_C64_CART);
     def = &cartridges[cart];
