@@ -56,14 +56,14 @@ architecture gideon of free_queue is
     signal offset_c         : unsigned(23 downto 0);
     signal offset_r         : unsigned(offset_c'range);
         
-    signal alloc_head       : unsigned(7 downto 0);
-    signal alloc_tail       : unsigned(7 downto 0);
-    signal free_head        : unsigned(7 downto 0);
-    signal free_tail        : unsigned(7 downto 0);
-    signal alloc_head_next  : unsigned(7 downto 0);
-    signal alloc_tail_next  : unsigned(7 downto 0);
-    signal free_head_next   : unsigned(7 downto 0);
-    signal free_tail_next   : unsigned(7 downto 0);
+    signal used_head        : unsigned(6 downto 0);
+    signal used_tail        : unsigned(6 downto 0);
+    signal free_head        : unsigned(6 downto 0);
+    signal free_tail        : unsigned(6 downto 0);
+    signal used_head_next   : unsigned(6 downto 0);
+    signal used_tail_next   : unsigned(6 downto 0);
+    signal free_head_next   : unsigned(6 downto 0);
+    signal free_tail_next   : unsigned(6 downto 0);
 
     signal table_addr       : unsigned(7 downto 0);
     signal table_rdata      : std_logic_vector(19 downto 0) := (others => '0');
@@ -79,10 +79,10 @@ architecture gideon of free_queue is
     signal sw_pop_valid     : std_logic;
     signal sw_pop_id        : std_logic_vector(7 downto 0) := (others => '0');
     signal sw_pop_size      : std_logic_vector(11 downto 0) := (others => '0');
-    signal alloc_valid      : std_logic;
+    signal used_valid       : std_logic;
     signal soft_reset       : std_logic;
 begin
-    io_irq <= alloc_valid;
+    io_irq <= used_valid;
     
     process(clock)
         alias local_addr : unsigned(3 downto 0) is io_req.address(3 downto 0);
@@ -96,16 +96,16 @@ begin
             end if;
             
             -- fall through logic
-            if alloc_valid = '0' then
+            if used_valid = '0' then
                 if sw_pop_valid = '1' then
                     sw_pop_id <= table_rdata(7 downto 0);
                     if g_store_size then
                         sw_pop_size <= table_rdata(19 downto 8);
                     end if;
-                    alloc_valid <= '1';
+                    used_valid <= '1';
                     sw_pop <= '0';
                 end if;
-                if (alloc_head /= alloc_tail) and sw_pop = '0' then
+                if (used_head /= used_tail) and sw_pop = '0' then
                     sw_pop <= '1';
                 end if;
             end if;
@@ -127,7 +127,7 @@ begin
                     sw_id <= io_req.data;
                     sw_insert <= '1';
                 when X"F" =>
-                    alloc_valid <= '0';
+                    used_valid <= '0';
                 when X"E" =>
                     soft_reset <= '1';
                 when others =>
@@ -148,7 +148,7 @@ begin
                 when X"B" =>
                     io_resp.data <= X"0" & sw_pop_size(11 downto 8);
                 when X"F" =>
-                    io_resp.data(0) <= alloc_valid;
+                    io_resp.data(0) <= used_valid;
 
                 when others =>
                     null; 
@@ -158,21 +158,15 @@ begin
             if reset = '1' then
                 sw_insert <= '0';
                 sw_pop <= '0';
-                alloc_valid <= '0';
+                used_valid <= '0';
             end if;
         end if;
     end process;
 
     -- Important note:
-    -- Because the allocation gets and used puts will always occur in the same order,
-    -- the same memory can be used for both "fifos". The "free" can be in any order.
-    -- So, there are four pointers pointing to the same array, while in normal fifo
-    -- configurations, you would need two pointers per fifo, thus per memory area.
-    -- As soon as the order of used/writes will become different from the order
-    -- of allocation, the memory needs to be split into two areas. This can easily be
-    -- achieved by appending a '0' in front of the address of the free pointers and
-    -- a '1' in front of the alloc pointers (or vice versa). The number of elements
-    -- then needs to be halved, or the memory doubled.
+    -- This 'RAM' makes up two small FIFOs, so there are four pointers and two areas.
+    -- One area is for free blocks; the other for allocated blocks. Number of free
+    -- blocks is now limited to 128.
 
     i_table: entity work.spram
     generic map (
@@ -193,18 +187,18 @@ begin
     alloc_resp <= alloc_resp_i;
     
     process(alloc_req, alloc_resp_i, state, sw_insert, sw_pop, sw_id, sw_addr, used_req,
-            free_head, free_tail, alloc_head, alloc_tail, offset_r, table_rdata)
+            free_head, free_tail, used_head, used_tail, offset_r, table_rdata)
     begin
         next_state <= state;
         alloc_resp_c <= alloc_resp_i;
         table_addr <= (others => 'X');
-        table_wdata <= (others => 'X');
+        table_wdata <= (others => '0');
         table_we <= '0';
         table_en <= '0';
-        free_head_next  <= free_head;
-        free_tail_next  <= free_tail;
-        alloc_head_next <= alloc_head;
-        alloc_tail_next <= alloc_tail;
+        free_head_next <= free_head;
+        free_tail_next <= free_tail;
+        used_head_next <= used_head;
+        used_tail_next <= used_tail;
         used_resp <= '0';
         sw_done <= '0';
         sw_pop_valid <= '0';
@@ -218,21 +212,24 @@ begin
         case state is
         when idle =>
             if sw_insert = '1' then
-                table_addr  <= free_head;
+                -- Push into Free area
+                table_addr  <= '0' & free_head;
                 table_wdata(7 downto 0) <= sw_id;
                 table_we <= '1';
                 table_en <= '1';
                 free_head_next <= free_head + 1;
                 sw_done <= '1';
             elsif used_req.request = '1' then
-                table_addr  <= alloc_head;
+                -- Push into Used Area
+                table_addr  <= '1' & used_head;
                 table_wdata(7 downto 0) <= std_logic_vector(used_req.id);
                 table_we <= '1';
                 table_en <= '1';
                 used_resp <= '1';
-                alloc_head_next <= alloc_head + 1;
+                used_head_next <= used_head + 1;
             elsif alloc_req = '1' and alloc_resp_i.done = '0' then
-                table_addr <= free_tail;
+                -- Pop from Free area
+                table_addr <= '0' & free_tail;
                 table_en <= '1';
                 if free_tail = free_head then
                     alloc_resp_c.error <= '1';
@@ -241,9 +238,10 @@ begin
                     next_state <= allocating;
                 end if;
             elsif sw_pop = '1' then
-                table_addr  <= alloc_tail;
+                -- Pop from Used area
+                table_addr  <= '1' & used_tail;
                 table_en    <= '1';
-                if alloc_tail /= alloc_head then
+                if used_tail /= used_head then
                     next_state <= popping;
                 end if;
             end if;
@@ -264,7 +262,7 @@ begin
             next_state <= idle;
         
         when popping =>
-            alloc_tail_next <= alloc_tail + 1;
+            used_tail_next <= used_tail + 1;
             sw_pop_valid <= '1';
             next_state <= idle;
         end case;
@@ -277,15 +275,15 @@ begin
             offset_r <= offset_c;
             free_tail <= free_tail_next;
             free_head <= free_head_next;
-            alloc_tail <= alloc_tail_next;
-            alloc_head <= alloc_head_next;
+            used_tail <= used_tail_next;
+            used_head <= used_head_next;
             state <= next_state;
 
             if reset = '1' or soft_reset = '1' then
                 state <= idle;
                 alloc_resp_i <= c_alloc_resp_init;
-                alloc_tail <= (others => '0');
-                alloc_head <= (others => '0');
+                used_tail <= (others => '0');
+                used_head <= (others => '0');
                 free_tail <= (others => '0');
                 free_head <= (others => '0');
             end if;
