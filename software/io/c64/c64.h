@@ -24,6 +24,7 @@
 #define MENU_C64_POWEROFF   0x640A
 #define MENU_C64_PAUSE      0x640B
 #define MENU_C64_RESUME     0x640C
+#define MENU_U64_SAVERAM    0x640D
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
 #define C64_DMA_LOAD_RAW	0x6466
