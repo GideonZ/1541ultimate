@@ -123,6 +123,10 @@ int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list
     if(fm->is_path_writable(path)) {
     	item_list.append(new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU));
     	count ++;
+#if U64
+        item_list.append(new Action("Save C64 Memory", SUBSYSID_C64, MENU_U64_SAVERAM));
+        count ++;
+#endif
         // item_list.append(new Action("Save Flash", SUBSYSID_C64, MENU_C64_SAVEFLASH));
     }
 #if 0
@@ -255,7 +259,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                 transferred = 0;
                 
                 cmd->user_interface->show_progress("Saving REU file..", 32);
-                src = (BYTE *)REU_MEMORY_BASE;
+                src = (uint8_t *)REU_MEMORY_BASE;
                 
                 while(remain != 0) {
                     f->write(src, bytes_per_step, &bytes_written);
@@ -281,7 +285,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         case MENU_C64_SAVEMODULE:
             ram_size = 1024 * 1024;
             res = fm->fopen(cmd->path.c_str(), "module.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
-            if(res == FR_OK){
+            if(res == FR_OK) {
                 uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
                 printf("Opened file successfully.\n");
                 f->write((void *)mem_addr, ram_size, &transferred);
@@ -291,6 +295,35 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                 printf("Couldn't open file..\n");
             }       
             break;
+        case MENU_U64_SAVERAM:
+            ram_size = 64 * 1024;
+            if(cmd->user_interface->string_box("Save RAM as..", buffer, 22) > 0) {
+                fix_filename(buffer);
+                set_extension(buffer, ".bin", 32);
+
+                res = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+                if(res == FR_OK) {
+                    printf("Opened file successfully.\n");
+
+                    uint32_t bytes_written;
+                    uint8_t *src;
+
+                    src = (uint8_t *)U64_RAM_BASE;
+
+                    f->write(src, ram_size, &bytes_written);
+
+                    printf("written: %d...", bytes_written);
+                    sprintf(buffer, "bytes saved: %d ($%8x)", bytes_written, bytes_written);
+                    cmd->user_interface->popup(buffer, BUTTON_OK);
+
+                    fm->fclose(f);
+                } else {
+                    printf("Couldn't open file..\n");
+                    cmd->user_interface->popup(FileSystem :: get_error_string(res), BUTTON_OK);
+                }
+            }
+            break;
+
         case MENU_C64_SAVEEASYFLASH:
             res = fm->fopen(cmd->path.c_str(), "module.crt", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
             if(res == FR_OK) {
