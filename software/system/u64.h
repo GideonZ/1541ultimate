@@ -103,6 +103,8 @@
 #define C64_BUS_BRIDGE    (*(volatile uint8_t *)(C64_IO_BASE + 0x2A))
 #define C64_BUS_INTERNAL  (*(volatile uint8_t *)(C64_IO_BASE + 0x2B))
 #define C64_BUS_EXTERNAL  (*(volatile uint8_t *)(C64_IO_BASE + 0x2C))
+#define C64_SPEED_PREFER  (*(volatile uint8_t *)(C64_IO_BASE + 0x2D))
+#define C64_SPEED_UPDATE  (*(volatile uint8_t *)(C64_IO_BASE + 0x2E))
 
 /*
 #define C64_PLD_PORTA      ((volatile uint8_t *)(C64_IO_BASE + 0x16))

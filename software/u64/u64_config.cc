@@ -102,6 +102,8 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_AUTO_MIRRORING    0x4A
 // #define CFG_CART_PREFERENCE   0x4B // moved to C64 for user experience consistency
 #define CFG_SPEED_REGS        0x4C
+#define CFG_SPEED_PREF        0x52
+#define CFG_BADLINES_EN       0x53
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -211,7 +213,7 @@ static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 25
 
 static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
 static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
-
+static const char *speeds[] = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "64" };
 
 /*
 00 ff ff ff ff ff ff 00  09 d1 db 78 45 54 00 00
@@ -252,6 +254,8 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
     { CFG_SPEED_REGS,           CFG_TYPE_ENUM, "Turbo Registers",              "%s", en_dis,       0,  1, 0 },
+    { CFG_SPEED_PREF,           CFG_TYPE_ENUM, "CPU Speed",                "%s MHz", speeds,       0, 14, 0 },
+    { CFG_BADLINES_EN,          CFG_TYPE_ENUM, "Badline Timing",               "%s", en_dis,       0,  1, 1 },
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
@@ -787,6 +791,9 @@ void U64Config :: effectuate_settings()
     C64_TURBOREGS_EN = cfg->get_value(CFG_SPEED_REGS);
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
     C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP);
+
+    C64_SPEED_PREFER = cfg->get_value(CFG_SPEED_PREF) | (cfg->get_value(CFG_BADLINES_EN) << 7);
+    C64_SPEED_UPDATE = 1;
 
     //printf("U64Config :: effectuate_settings()\n");
     uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
