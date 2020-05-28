@@ -81,6 +81,7 @@ architecture gideon of free_queue is
     signal sw_pop_size      : std_logic_vector(11 downto 0) := (others => '0');
     signal used_valid       : std_logic;
     signal soft_reset       : std_logic;
+    signal free_full        : std_logic;
 begin
     io_irq <= used_valid;
     
@@ -138,9 +139,17 @@ begin
             if io_req.read = '1' then
                 io_resp.ack <= '1';
                 case local_addr is
-
+--                when X"0" =>
+--                    io_resp.data <= '0' & std_logic_vector(used_head);
+--                when X"1" =>
+--                    io_resp.data <= '0' & std_logic_vector(used_tail);
+--                when X"2" =>
+--                    io_resp.data <= '0' & std_logic_vector(free_head);
+--                when X"3" =>
+--                    io_resp.data <= '0' & std_logic_vector(free_tail);
                 when X"4" =>
                     io_resp.data(0) <= sw_insert;
+                    io_resp.data(1) <= free_full;
                 when X"8" =>
                     io_resp.data <= sw_pop_id;
                 when X"A" =>
@@ -182,12 +191,21 @@ begin
         en           => table_en,
         we           => table_we
     );
-    
+
+--    i_table: entity work.spram_freequeue
+--    port map (
+--        address => std_logic_vector(table_addr),
+--        clock   => clock,
+--        data    => table_wdata(c_mem_width-1 downto 0),
+--        rden    => table_en,
+--        wren    => table_we,
+--        q       => table_rdata(c_mem_width-1 downto 0)
+--    );
 
     alloc_resp <= alloc_resp_i;
     
     process(alloc_req, alloc_resp_i, state, sw_insert, sw_pop, sw_id, sw_addr, used_req,
-            free_head, free_tail, used_head, used_tail, offset_r, table_rdata)
+            free_head, free_tail, used_head, used_tail, offset_r, table_rdata, free_full)
     begin
         next_state <= state;
         alloc_resp_c <= alloc_resp_i;
@@ -209,15 +227,23 @@ begin
             table_wdata(19 downto 8) <= std_logic_vector(used_req.bytes);
         end if;
         
+        if (free_head + 1) = free_tail then
+            free_full <= '1';
+        else
+            free_full <= '0';
+        end if;
+
         case state is
         when idle =>
             if sw_insert = '1' then
                 -- Push into Free area
                 table_addr  <= '0' & free_head;
                 table_wdata(7 downto 0) <= sw_id;
-                table_we <= '1';
-                table_en <= '1';
-                free_head_next <= free_head + 1;
+                if free_full = '0' then
+                    table_we <= '1';
+                    table_en <= '1';
+                    free_head_next <= free_head + 1;
+                end if;
                 sw_done <= '1';
             elsif used_req.request = '1' then
                 -- Push into Used Area

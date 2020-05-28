@@ -100,6 +100,11 @@ begin
             io_write(io, 4, std_logic_vector(to_unsigned(id, 8)));
         end procedure;
 
+        procedure reset_queue is
+        begin
+            io_write(io, 14, X"01");
+        end procedure;
+
         procedure used(id : natural; size: unsigned(11 downto 0)) is
         begin
             wait until clock = '1';
@@ -147,6 +152,39 @@ begin
 
         alloc;
         assert(alloc_resp.error = '1') report "Allocation should now fail";
+
+        -- check reset
+        free(55); --add free block
+        reset_queue;
+        alloc;
+        assert(alloc_resp.error = '1') report "Allocation should now fail";
+        
+        --for i in 0 to 130 loop -- deliberately overwrite as depth = 128
+        for i in 0 to 126 loop
+            free(i);
+        end loop;
+
+        alloc; -- 0
+        alloc; -- 1
+        alloc; -- 2
+        alloc; -- 3
+        alloc; -- 4
+
+        v_id := to_integer(alloc_resp.id);
+        assert(v_id = 4) report "Unexpected ID";
+        
+        for i in 0 to 4 loop
+            free(i);
+        end loop;
+
+        alloc; -- 5
+        alloc; -- 6
+        alloc; -- 7
+        alloc; -- 8
+        alloc; -- 9
+
+        v_id := to_integer(alloc_resp.id);
+        assert(v_id = 9) report "Unexpected ID";
 
         wait;
     end process;

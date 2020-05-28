@@ -46,6 +46,8 @@ class RmiiInterface
 
 	static void startRmiiTask(void *);
     void rmiiTask(void);
+    void initRx(void);
+    void deinitRx(void);
 public:
 	RmiiInterface();
 	~RmiiInterface();
