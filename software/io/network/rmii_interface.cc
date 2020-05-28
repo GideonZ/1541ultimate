@@ -75,6 +75,25 @@ void RmiiInterface :: startRmiiTask(void *a)
 	rmii_interface.rmiiTask();
 }
 
+void RmiiInterface :: initRx(void)
+{
+    RMII_RX_ENABLE  = 0;
+    vTaskDelay(1); // wait a few ms
+    RMII_FREE_RESET = 1;
+    for(int i=0;i<127;i++) {
+        RMII_FREE_PUT = (uint8_t)i;
+    }
+//    printf("RMII Initialized, pointers: %08x\n", RMII_FREE_BASE);
+    RMII_RX_ENABLE = 1;
+    ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_RMIIRX);
+}
+
+void RmiiInterface :: deinitRx(void)
+{
+    RMII_RX_ENABLE  = 0;
+    ioWrite8(ITU_IRQ_DISABLE, ITU_INTERRUPT_RMIIRX);
+}
+
 void RmiiInterface :: rmiiTask(void)
 {
 	netstack = getNetworkStack(this, RmiiInterface_output, RmiiInterface_free_buffer);
@@ -98,19 +117,12 @@ void RmiiInterface :: rmiiTask(void)
     // we're not a whore
     RMII_RX_PROMISC = 0;
     RMII_RX_ENABLE  = 0;
-    RMII_FREE_RESET = 1;
-
-
     if (netstack) {
-    	for(int i=0;i<64;i++) {
-    		RMII_FREE_PUT = (uint8_t)i;
-    	}
     	netstack->set_mac_address(local_mac);
     	netstack->start();
     	link_up = false;
-    	ioWrite8(ITU_IRQ_ENABLE, ITU_INTERRUPT_RMIIRX);
     }
-    RMII_RX_ENABLE = 1;
+
 /*
     uint8_t broadcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
     for (int i=700;i<1530;i+=16) {
@@ -126,8 +138,10 @@ void RmiiInterface :: rmiiTask(void)
 			if(status & 0x04) {
 				if(!link_up) {
 					//printf("Bringing link up.\n");
-					if (netstack)
+					if (netstack) {
+					    initRx();
 						netstack->link_up();
+					}
 					link_up = true;
 				}
 			} else {
@@ -140,8 +154,10 @@ void RmiiInterface :: rmiiTask(void)
 			if ((status & 0x04) == 0) {
 				if(link_up) {
 					//printf("Bringing link down.\n");
-					if (netstack)
+					if (netstack) {
+						deinitRx();
 						netstack->link_down();
+					}
 					link_up = false;
 				}
 			}
@@ -192,7 +208,7 @@ void RmiiInterface :: free_buffer(uint8_t *buffer)
 {
 	uint32_t offset = (uint32_t)buffer - (uint32_t)ram_base;
 	uint8_t id = (offset / 1536);
-	// printf("FREE PBUF CALLED %p (=> %8x => %b)!\n", buffer, offset, id);
+	//printf("FREE PBUF CALLED %p (=> %8x => %b)! Pointers: %08x %b\n", buffer, offset, id, RMII_FREE_BASE, RMII_FREE_PUT);
 	RMII_FREE_PUT = id;
 }
 
