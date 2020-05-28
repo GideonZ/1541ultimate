@@ -182,6 +182,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 	uint32_t transferred;
     int ram_size;
     char buffer[64] = "memory";
+    uint8_t *pb;
 
     switch(cmd->functionID) {
     case C64_PUSH_BUTTON:
@@ -305,11 +306,12 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                 if(res == FR_OK) {
                     printf("Opened file successfully.\n");
 
+                    pb = new uint8_t[ram_size];
+                    memcpy(pb, (uint8_t *)U64_RAM_BASE, ram_size);
                     uint32_t bytes_written;
                     uint8_t *src;
 
-                    src = (uint8_t *)U64_RAM_BASE;
-
+                    src = pb;
                     f->write(src, ram_size, &bytes_written);
 
                     printf("written: %d...", bytes_written);
@@ -317,6 +319,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                     cmd->user_interface->popup(buffer, BUTTON_OK);
 
                     fm->fclose(f);
+                    delete[] pb;
                 } else {
                     printf("Couldn't open file..\n");
                     cmd->user_interface->popup(FileSystem :: get_error_string(res), BUTTON_OK);
