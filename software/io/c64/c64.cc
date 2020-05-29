@@ -1290,8 +1290,8 @@ bool C64 :: ConfigureU64SystemBus(void)
         ext_cart = false;
         break;
     case 2: // External: Force all external resources
-        internal = 7;
-        external = 0;
+        internal = 0;
+        external = 7;
         break;
 
     case 3: // Manual: Take settings from other config items
