@@ -25,6 +25,10 @@
 #define MENU_C64_PAUSE      0x640B
 #define MENU_C64_RESUME     0x640C
 #define MENU_U64_SAVERAM    0x640D
+#define MENU_C64_SAVE_MP3_DRV_A 0x640E
+#define MENU_C64_SAVE_MP3_DRV_B 0x640F
+#define MENU_C64_SAVE_MP3_DRV_C 0x6410
+#define MENU_C64_SAVE_MP3_DRV_D 0x6411
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
 #define C64_DMA_LOAD_RAW	0x6466
@@ -127,6 +131,8 @@
 #define CART_TYPE_COMAL80PAKMA 0x1A
 #define CART_TYPE_SUPERGAMES   0x1B
 #define CART_TYPE_NORDIC      0x1C
+
+#define DRVTYPE_MP3_DNP       31
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
@@ -334,6 +340,9 @@ public:
     void reset(void);
     void start(void);
         
+    static int isMP3RamDrive(int dev);
+    static int getSizeOfMP3NativeRamdrive(int dev);
+
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access
     friend class REUPreloader; // preloader needs to access config
