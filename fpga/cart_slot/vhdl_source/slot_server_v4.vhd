@@ -509,7 +509,6 @@ begin
         RST_in          => reset_button,
         c64_reset       => control.c64_reset,
 
-        ethernet_enable => control.eth_enable,
         freeze_trig     => freeze_trig,
         freeze_act      => freeze_active, 
         unfreeze        => unfreeze,
