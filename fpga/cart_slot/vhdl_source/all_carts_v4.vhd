@@ -19,7 +19,6 @@ port (
     RST_in          : in  std_logic;
     c64_reset       : in  std_logic;
     
-    ethernet_enable : in  std_logic := '1';
     kernal_enable   : in  std_logic;
     kernal_16k      : in  std_logic;
     kernal_area     : in  std_logic;
@@ -64,7 +63,6 @@ architecture gideon of all_carts_v4 is
     signal mode_bits    : std_logic_vector(2 downto 0);
     signal ef_write     : std_logic_vector(2 downto 0);
     signal ef_write_addr : std_logic_vector(21 downto 0);
-    signal ram_select   : std_logic;
     signal georam_bank  : std_logic_vector(15 downto 0);
     
 --    signal rom_enable   : std_logic;
@@ -76,7 +74,6 @@ architecture gideon of all_carts_v4 is
     signal do_io2       : std_logic;
     signal allow_bank   : std_logic;
     signal hold_nmi     : std_logic;
-    signal eth_addr     : boolean;
     signal cart_logic_d : std_logic_vector(cart_logic'range) := (others => '0');
     signal mem_addr_i   : std_logic_vector(27 downto 0);
         
@@ -156,7 +153,6 @@ begin
                 ef_write     <= (others => '0');
                 ef_write_addr <= (others => '0');
                 allow_bank   <= '0';
-                ram_select   <= '0';
                 do_io2       <= '1';
                 cart_en      <= '1';
 --                unfreeze     <= '0';
@@ -165,7 +161,6 @@ begin
                 bank_bits  <= (others => '0');
                 mode_bits  <= (others => '0');
                 --allow_bank <= '0';
-                ram_select <= '0';
                 cart_en    <= '1';
 --                unfreeze   <= '0';
                 hold_nmi   <= '1';
@@ -691,12 +686,9 @@ begin
 
     CART_LEDn <= not cart_en;
 
-    -- decode address DE02-DE0F
-    eth_addr <= slot_addr(15 downto 4) = X"DE0" and slot_addr(3 downto 1) /= "000" and ethernet_enable='1';
-
     -- determine address
---  process(cart_logic_d, cart_base_d, slot_addr, mode_bits, bank_bits, do_io2, allow_bank, eth_addr)
-    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, eth_addr, kernal_area, georam_bank, sense)
+    process(cart_logic_d, slot_addr, mode_bits, bank_bits, ext_bank, do_io2, allow_bank, 
+            kernal_area, kernal_16k, georam_bank, sense, ef_write, ef_write_addr)
     begin
         mem_addr_i <= g_rom_base;
 
@@ -852,14 +844,6 @@ begin
            end if;
         end if;
 
---        if eth_addr then
---            mem_addr_i(25 downto 21) <= eth_base(25 downto 21);
---            mem_addr_i(20)           <= '1'; -- indicate it is a slot access
---            allow_write            <= '1'; -- we should also be able to write to the ethernet chip
---            -- invert bit 3
---            mem_addr_i(3)            <= not slot_addr(3);
---            -- leave other bits in tact
---        end if;
     end process;
 
     mem_addr <= unsigned(mem_addr_i(mem_addr'range));
