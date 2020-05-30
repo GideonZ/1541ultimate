@@ -117,7 +117,7 @@ architecture gideon of slot_slave is
 --    attribute fsm_encoding : string;
 --    attribute fsm_encoding of state : signal is "sequential";
 
-    signal epyx_timer       : unsigned(7 downto 0) := (others => '0');
+    signal epyx_timer       : natural range 0 to 511;
     signal epyx_reset       : std_logic := '0';
 begin
     slot_req.io_write      <= do_io_event and io_write_cond;
@@ -147,9 +147,9 @@ begin
             
             -- 470 nF / 3.3K pup / Vih = 2V, but might be lower
             -- Voh buffer = 0.3V, so let's take a threshold of 1.2V => 400 cycles
-            -- Now implemented: 256
+            -- Now implemented: 512
             if epyx_reset='1' then
-                epyx_timer <= to_unsigned(128, epyx_timer'length);
+                epyx_timer <= 511;
                 epyx_timeout <= '0';
             elsif phi2_tick='1' and dma_active_n = '1' then
                 if epyx_timer = 0 then
@@ -170,7 +170,7 @@ begin
                 late_write_cond <= not rwn_c;
                 io_write_cond <= not rwn_c and (not io2n_c or not io1n_c);
                 io_read_cond  <= rwn_c and (not io2n_c or not io1n_c);
-                epyx_reset    <= not io2n_c or not io1n_c or not romln_c or not RSTn;
+                epyx_reset    <= not io1n_c or not romln_c or not RSTn;
             end if;
 
             if do_probe_end='1' then
