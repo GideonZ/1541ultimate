@@ -795,6 +795,7 @@ begin
             if mode_bits(2 downto 0) ="110" then
                 if slot_addr(15 downto 13)="100" then
                     mem_addr_i <= g_rom_base(27 downto 15) & bank_bits(14 downto 13) & slot_addr(12 downto 0);
+                    allow_write <= '0';
                 end if;
                 if slot_addr(15 downto 13)="101" then
                     mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
