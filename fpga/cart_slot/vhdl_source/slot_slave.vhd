@@ -342,6 +342,7 @@ begin
                                 
     slot_req.data        <= mem_wdata_i;
     slot_req.bus_address <= unsigned(address_c(15 downto 0));
+    slot_req.bus_rwn     <= rwn_c;
 
     kernal_probe <= kernal_probe_i;
     kernal_area  <= kernal_area_i;
