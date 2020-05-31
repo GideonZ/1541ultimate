@@ -286,7 +286,7 @@ begin
                     if mode_bits(2 downto 0)="110" then
                        game_n    <= '0';
                        -- Switch to Ultimax mode for writes to address A000-BFFF (disable C64 RAM write)
-                       exrom_n   <= slot_addr(15) and not slot_addr(14) and slot_addr(13) and slot_rwn;
+                       exrom_n   <= slot_addr(15) and not slot_addr(14) and slot_addr(13) and not slot_rwn;
                     else 
                        game_n    <= not mode_bits(0);
                        exrom_n   <= mode_bits(1);
