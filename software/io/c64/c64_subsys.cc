@@ -139,6 +139,12 @@ int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list
     	item_list.append(new Action("Save Easyflash", SUBSYSID_C64, MENU_C64_SAVEEASYFLASH));
     	count ++;
     }
+
+    if (C64 :: isMP3RamDrive(0) > 0) {item_list.append(new Action("Save MP3 Drv A", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_A)); count++;}
+    if (C64 :: isMP3RamDrive(1) > 0) {item_list.append(new Action("Save MP3 Drv B", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_B)); count++;}
+    if (C64 :: isMP3RamDrive(2) > 0) {item_list.append(new Action("Save MP3 Drv C", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_C)); count++;}
+    if (C64 :: isMP3RamDrive(3) > 0) {item_list.append(new Action("Save MP3 Drv D", SUBSYSID_C64, MENU_C64_SAVE_MP3_DRV_D)); count++;}
+
 	return count;
 }
 
@@ -432,6 +438,54 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                 c64->enable_kernal( (uint8_t*) cmd->buffer );
                 // c64->reset();
     	        break;
+    case MENU_C64_SAVE_MP3_DRV_A:
+    case MENU_C64_SAVE_MP3_DRV_B:
+    case MENU_C64_SAVE_MP3_DRV_C:
+    case MENU_C64_SAVE_MP3_DRV_D:
+        {
+           int devNo = cmd->functionID - MENU_C64_SAVE_MP3_DRV_A;
+           int ftype = C64 :: isMP3RamDrive(devNo);
+           uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
+           int expSize = 1;
+           char* extension = 0;
+           if (ftype == 1541) { expSize = 174848; extension = ".D64"; }
+           if (ftype == 1571) { expSize = 2*174848; extension = ".D71"; }
+           if (ftype == 1581) { expSize = 819200; extension = ".D81"; }
+           if (ftype == DRVTYPE_MP3_DNP)
+           {
+               expSize = C64 :: getSizeOfMP3NativeRamdrive(devNo);
+               extension = ".DNP"; 
+           }
+
+           uint8_t ramBase = reu[0x7dc7 + devNo] ;
+           uint8_t* srcAddr = reu+(((uint32_t) ramBase) << 16);
+
+           if(cmd->user_interface->string_box("Save RAMDISK as..", buffer, 22) > 0) {
+              fix_filename(buffer);
+              set_extension(buffer, extension, 32);
+              
+              res = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+              if(res == FR_OK) {
+                    printf("Opened file successfully.\n");
+                    uint32_t bytes_written;
+
+                    f->write(srcAddr, expSize, &bytes_written);
+
+                    printf("written: %d...", bytes_written);
+                    sprintf(buffer, "bytes saved: %d ($%8x)", bytes_written, bytes_written);
+                    cmd->user_interface->popup(buffer, BUTTON_OK);
+
+                    fm->fclose(f);
+              } else {
+                  printf("Couldn't open file..\n");
+                  cmd->user_interface->popup(FileSystem :: get_error_string(res), BUTTON_OK);
+              }
+           }
+        }
+
+
+
+
 
     default:
 		break;
