@@ -1344,3 +1344,35 @@ bool C64 :: ConfigureU64SystemBus(void)
     return ext_cart;
 }
 #endif
+
+int C64 :: isMP3RamDrive(int drvNo)
+{
+    uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
+    uint8_t RealDrvType = reu[0xbb0e + drvNo];
+    if ((reu[0xbb0e] == 0x03) && (reu[0xbb0f] == 0xA9) && (reu[0xbb10] == 0x06) && (reu[0xbb11] == 0x8D))
+    {
+        RealDrvType = reu[0x798e + drvNo];
+        if (RealDrvType > 0x83)
+            RealDrvType = 0;
+    }
+    
+    uint8_t ramBase = reu[0x7dc7 + drvNo] ;
+    int drvType = 0;
+    if (RealDrvType == 0x81) drvType = 1541;
+    if (RealDrvType == 0x82) drvType = 1571;
+    if (RealDrvType == 0x83) drvType = 1581;
+    if (RealDrvType == 0x84) drvType = DRVTYPE_MP3_DNP;
+    if (RealDrvType == 0xA4) drvType = DRVTYPE_MP3_DNP;
+    if (ramBase > 0x40) drvType = 0;
+    return drvType;
+}
+
+int C64 :: getSizeOfMP3NativeRamdrive(int devNo)
+{
+    uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
+    uint8_t DskDrvBaseL = reu[0xbafe + devNo];
+    uint8_t DskDrvBaseH = reu[0xbafe + 4 + devNo];
+    uint16_t dskDrvBase = (((uint16_t) DskDrvBaseH) << 8) | DskDrvBaseL;
+    uint8_t noTracks = reu[dskDrvBase + 0x84];
+    return ((uint32_t) noTracks) << 16;
+}
