@@ -1253,7 +1253,11 @@ int C64 :: isMP3RamDrive(int drvNo)
 {
     uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
     uint8_t RealDrvType = reu[0xbb0e + drvNo];
-    if ((reu[0xbb0e] == 0x03) && (reu[0xbb0f] == 0xA9) && (reu[0xbb10] == 0x06) && (reu[0xbb11] == 0x8D))
+    if (((reu[0xbb0e] == 0x03) && (reu[0xbb0f] == 0xA9) && (reu[0xbb10] == 0x06) && (reu[0xbb11] == 0x8D)) // Geos 64
+#ifndef U64
+        || ((reu[0xbb0e] == 0xDF) && (reu[0xbb0f] == 0xA5) && (reu[0xbb10] == 0x07) && (reu[0xbb11] == 0x8D)) // Geos 128
+#endif
+       )
     {
         RealDrvType = reu[0x798e + drvNo];
         if (RealDrvType > 0x83)
