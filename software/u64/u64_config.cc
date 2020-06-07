@@ -434,28 +434,19 @@ int U64Config :: detectRemakes(int socket)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
 
-/*
-    base[29] = 0;
-    C64_PEEK(2); // dummy cycle
-    base[30] = 0;
-    C64_PEEK(2); // dummy cycle
-    base[31] = 0;
-    C64_PEEK(2); // dummy cycle
-*/
-
     base[29] = 'S';
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
     base[30] = 'I';
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
     base[31] = 'D';
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
 
     wait_ms(10);
 
     uint8_t id1 = base[27];
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
     uint8_t id2 = base[28];
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
 
     printf("ARMSID Detect: %b %b\n", id1, id2);
 
@@ -467,13 +458,14 @@ int U64Config :: detectRemakes(int socket)
 
     if ((id1 == 'N') && (id2 == 'O')) {
         base[31] = 'I';
-        C64_PEEK(2); // dummy cycle
+        wait_10us(1);
         base[30] = 'I';
-        C64_PEEK(2); // dummy cycle
+        wait_10us(1);
         wait_ms(10);
         uint8_t id1 = base[27];
+        wait_10us(1);
         base[29] = 0;
-        C64_PEEK(2); // dummy cycle
+        wait_10us(1);
         sidDevice[socket] = new SidDeviceArmSid(socket, base);
 
         if ((id1 == 'L') || (id1 == 'R')) {
