@@ -251,6 +251,7 @@ void S25FLxxxL_Flash :: protect_disable(void)
 
 bool S25FLxxxL_Flash :: protect_configure(void)
 {
+    return true;
 }
 
 void S25FLxxxL_Flash :: protect_enable(void)
