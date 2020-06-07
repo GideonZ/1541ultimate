@@ -173,6 +173,7 @@ int main(int argc, char *argv[]) {
 	ioWrite8(ITU_IRQ_TIMER_LO, (uint8_t)(freq & 0xFF));
 	ioWrite8(ITU_IRQ_TIMER_EN, 1);
 	ioWrite8(ITU_IRQ_ENABLE, 0x01); // timer only : other modules shall enable their own interrupt
+	ioWrite8(ITU_IRQ_GLOBAL, 0x01); // Enable interrupts globally
 	ioWrite8(UART_DATA, 0x35);
 
 	// Finally start the scheduler.
