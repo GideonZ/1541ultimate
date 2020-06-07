@@ -1005,18 +1005,19 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
         CMD_IF_SLOT_ENABLE = 0;
 
         init_system_roms();
-        bool external = false;
-#if U64
-        // In case of the U64, when an external cartridge is detected, we should not enable our cart
-        external = ConfigureU64SystemBus();
-        // Or should it depend on the automatic setting what we do here?
-#endif
         // Passing 0 to this function means that the default selected cartridge should be run
         if (def == 0) {
-            int cart = cfg->get_value(CFG_C64_CART);
-            def = &cartridges[cart];
-        }
-        if (!external) {
+            bool external = false;
+#if U64
+            // In case of the U64, when an external cartridge is detected, we should not enable our cart
+            external = ConfigureU64SystemBus();
+#endif
+            if (!external) {
+                int cart = cfg->get_value(CFG_C64_CART);
+                def = &cartridges[cart];
+                set_cartridge(def);
+            }
+        } else { // Cartridge specified
             set_cartridge(def);
         }
         C64_MODE = C64_MODE_UNRESET;
