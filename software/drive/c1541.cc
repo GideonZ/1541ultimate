@@ -717,7 +717,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 			printf("Mounting disk.. %s\n", cmd->filename.c_str());
 			res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
 		}
-		if(cmd->mode & RUNCODE_MOUNT_BUFFER || res == FR_OK) {
+		if((cmd->mode & RUNCODE_MOUNT_BUFFER) || (res == FR_OK)) {
 			if (!(cmd->mode & RUNCODE_NO_CHECKSAVE)) {
 				check_if_save_needed(cmd);
 			}
