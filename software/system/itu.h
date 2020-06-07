@@ -89,6 +89,7 @@ extern "C" {
 
 // Timer functions
 void wait_ms(int);
+void wait_10us(uint8_t mult); // max=126
 void outbyte(int c);
 uint8_t getButtons(void);
 

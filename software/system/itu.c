@@ -52,6 +52,13 @@ void wait_ms(int time)
     }
 }
 
+void wait_10us(uint8_t mult)
+{
+    ioWrite8(ITU_TIMER, (mult<<1)+1);
+    while(ioRead8(ITU_TIMER))
+        ;
+}
+
 uint16_t getMsTimer()
 {
 	uint16_t result1, result2;
