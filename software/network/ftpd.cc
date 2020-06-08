@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include "pattern.h"
+
 #if RUNS_ON_PC
 	#include <netinet/in.h>
 #else
@@ -83,7 +85,7 @@ int dbg_printf(const char *fmt, ...);
 #define msg230 "230 User logged in, proceed."
 #define msg250 "250 Requested file action okay, completed."
 #define msg257PWD "257 \"%s\" is current directory."
-#define msg257 "257 \"%s\" created."
+#define msg257MKD "257 \"%s/%s\" created."
 /*
          257 "PATHNAME" created.
 */
@@ -288,7 +290,8 @@ int FTPDaemonThread :: handle_connection()
 			if ((command_buffer[idx] == '\n') || (command_buffer[idx] == '\r')) {
 				command_buffer[idx] = 0;
 				if (idx > 0) {
-					dispatch_command(command_buffer, idx);
+				    dbg_printf("FTPD: '%s'\n", command_buffer);
+				    dispatch_command(command_buffer, idx);
 					idx = 0;
 				}
 			} else {
@@ -299,10 +302,10 @@ int FTPDaemonThread :: handle_connection()
 		} else if (n < 0) {
 			if (errno == EAGAIN)
 				continue;
-			printf("FTPD: ERROR reading from socket %d. Errno = %d", n, errno);
+			dbg_printf("FTPD: ERROR reading from socket %d. Errno = %d", n, errno);
 			return errno;
 		} else { // n == 0
-			printf("FTPD: Socket got closed\n");
+		    dbg_printf("FTPD: Socket got closed\n");
 			break;
 		}
 	}
@@ -321,7 +324,7 @@ void FTPDaemonThread :: send_msg(const char *msg, ...)
 	strcat(buffer, "\r\n");
 	len = strlen(buffer);
 	lwip_write(socket, buffer, len);
-	// printf("response: %s", buffer);
+	dbg_printf("FTPD response: %s", buffer);
 }
 
 void FTPDaemonThread :: cmd_user(const char *arg)
@@ -396,21 +399,23 @@ void FTPDaemonThread :: cmd_pwd(const char *arg)
 	}
 }
 
+// listType: 0 = list, 1 = nlst, 2 = mlst
 void FTPDaemonThread :: cmd_list_common(const char *arg, int listType)
 {
 	vfs_dir_t *vfs_dir;
-	char *cwd;
 
-	cwd = vfs_getcwd(vfs, NULL, 0);
-	if ((!cwd)) {
-		send_msg(msg451);
-		return;
+	// Strip off arguments, as we don't support them
+	while (*arg == '-') {
+	    while((*arg) && (*arg != ' ')) {
+	        arg++;
+	    }
 	}
-	vfs_dir = vfs_opendir(vfs, cwd);
-	delete cwd;
+
+	vfs_dir = vfs_opendir(vfs, arg);
+
 	if (!vfs_dir) {
-		send_msg(msg451);
-		return;
+        send_msg(msg451);
+        return;
 	}
 
 	if (listType != 0)
@@ -643,11 +648,16 @@ void FTPDaemonThread :: cmd_mkd(const char *arg)
 		send_msg(msg501);
 		return;
 	}
-	if (vfs_mkdir(vfs, arg, VFS_IRWXU | VFS_IRWXG | VFS_IRWXO) != 0) {
-		send_msg(msg550);
+    char *path = vfs_getcwd(vfs, NULL, 0);
+    if (!path) {
+        send_msg(msg553);
+    }
+    if (vfs_mkdir(vfs, arg, VFS_IRWXU | VFS_IRWXG | VFS_IRWXO) != 0) {
+		send_msg(msg553);
 	} else {
-		send_msg(msg257, arg);
+	    send_msg(msg257MKD, path, arg);
 	}
+    delete path;
 }
 
 void FTPDaemonThread :: cmd_rmd(const char *arg)
@@ -841,7 +851,7 @@ int FTPDataConnection :: setup_connection()
 			vTaskDelete(acceptTaskHandle);
 			return 0;
 		} else {
-			printf("Taking semaphore timed out.\n");
+			printf("FTPD: Taking semaphore timed out.\n");
 			return -1;
 		}
 	}
@@ -877,7 +887,7 @@ int FTPDataConnection :: connect_to(struct ip_addr ip, uint16_t port) // active 
 
 	if( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
 	{
-	   printf("FTPD Error : Connect Failed \n");
+	   dbg_printf("FTPD Error : Connect Failed \n");
 	   return -ENOTCONN;
 	}
 	connected = 1;
@@ -911,8 +921,8 @@ int FTPDataConnection :: do_bind(void)
     	result = bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
     } while(result < 0);
 
-    parent->send_msg(msg227, parent->my_ip[0], parent->my_ip[1], parent->my_ip[2], parent->my_ip[3], port >> 8, port & 0xFF);
     result = listen(sockfd, 2);
+    parent->send_msg(msg227, parent->my_ip[0], parent->my_ip[1], parent->my_ip[2], parent->my_ip[3], port >> 8, port & 0xFF);
 
     spawningTask = xTaskGetCurrentTaskHandle();
     xTaskCreate( FTPDataConnection :: accept_data, "FTP Data", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &acceptTaskHandle );
@@ -937,7 +947,7 @@ void FTPDataConnection :: accept_data(void *a) // task entry point
 	}
 	xTaskNotifyGive(conn->spawningTask);
 
-	printf("Suspending FTPDataConnection\n");
+	dbg_printf("FTPD: Suspending FTPDataConnection\n");
 	vTaskSuspend(NULL);
 }
 

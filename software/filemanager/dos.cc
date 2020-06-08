@@ -77,7 +77,7 @@ void Dos::cd(Message *command, Message **reply, Message **status) {
     path->cd((char *) &command->message[2]);
 
     cleanupDirectory();
-    FRESULT fres = path->get_directory(directoryList);
+    FRESULT fres = path->get_directory(directoryList, NULL);
     if (fres == FR_OK) {
         *status = &c_status_ok;
     } else {
@@ -475,7 +475,7 @@ void Dos::parse_command(Message *command, Message **reply, Message **status) {
         break;
     case DOS_CMD_OPEN_DIR:
         cleanupDirectory();
-        res = path->get_directory(directoryList);
+        res = path->get_directory(directoryList, NULL);
         *reply = &c_message_empty;
         if (res != FR_OK) {
             *status = &c_status_cannot_read_dir;
