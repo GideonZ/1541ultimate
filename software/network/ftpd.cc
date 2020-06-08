@@ -799,12 +799,6 @@ int FTPDaemonThread::open_dataconnection(bool passive)
     return 0;
 }
 
-/*
- void FTPDataConnection :: send_next_directory(int shortlist)
- {
- }
- */
-
 // both the PORT and the PASV command create a new data socket and thread.
 // In case of the PORT command, we will perform the connect to the specified IP/Port
 // In case of the PASV command, we will bind a local socket, reply our IP address and socket port, and then switch to listen mode
@@ -857,12 +851,6 @@ int FTPDataConnection::connect_to(struct ip_addr ip, uint16_t port) // active mo
     serv_addr.sin_port = htons(port);
 
     serv_addr.sin_addr.s_addr = ip.addr;
-    /*
-     ((uint32_t)ip.addr[0]) << 24 |
-     ((uint32_t)ip.addr[1]) << 16 |
-     ((uint32_t)ip.addr[2]) << 8 |
-     ((uint32_t)ip.addr[3]);
-     */
 
     if ( connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         dbg_printf("FTPD Error : Connect Failed \n");
