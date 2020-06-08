@@ -40,7 +40,7 @@ struct t_cfg_definition modem_cfg[] = {
     { CFG_MODEM_ACIA,          CFG_TYPE_ENUM,   "ACIA (6551) Mode",              "%s", acia_mode,    0,  6, 0 },
     { CFG_MODEM_LISTEN_PORT,   CFG_TYPE_STRING, "Listening Port",                "%s", NULL,         2,  8, (int)"3000" },
     { CFG_MODEM_LISTEN_RING,   CFG_TYPE_ENUM,   "Do RING sequence (incoming)",   "%s", en_dis,       0,  1, 1 },
-    { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR=0",      "%s", en_dis,       0,  1, 1 },
+    { CFG_MODEM_DTRDROP,       CFG_TYPE_ENUM,   "Drop connection on DTR low",    "%s", en_dis,       0,  1, 1 },
     { CFG_MODEM_CTS,           CFG_TYPE_ENUM,   "CTS Behavior",                  "%s", dcd_dsr,      0,  3, 0 },
     { CFG_MODEM_DCD,           CFG_TYPE_ENUM,   "DCD Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
     { CFG_MODEM_DSR,           CFG_TYPE_ENUM,   "DSR Behavior",                  "%s", dcd_dsr,      0,  3, 1 },
