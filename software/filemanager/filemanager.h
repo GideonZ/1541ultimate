@@ -195,7 +195,7 @@ public:
     FRESULT create_dir(Path *path, const char *name);
     FRESULT create_dir(const char *pathname);
 
-    FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target);
+    FRESULT get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern);
     FRESULT print_directory(const char *path);
 
     void registerObserver(ObserverQueue *q) {

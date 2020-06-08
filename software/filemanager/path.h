@@ -28,6 +28,7 @@ private:
 public:
     const char *owner;
 
+    int up(mstring *stripped);
     int cd(const char *p);
     const char *get_path(void);
 
@@ -39,7 +40,7 @@ public:
     const char *getElement(int);
 
     void get_display_string(const char *filename, char *buffer, int width);
-    FRESULT get_directory(IndexedList<FileInfo *> &target);
+    FRESULT get_directory(IndexedList<FileInfo *> &target, const char *matchPattern);
     bool isValid();
     void dump() {
     	printf("** PATH OBJECT ** Owner = %s ** FullPathString = %s\n", owner, full_path.c_str());

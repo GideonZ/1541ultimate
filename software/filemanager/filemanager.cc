@@ -183,7 +183,7 @@ bool FileManager :: reworkPath(Path *path, const char *pathstr, const char *file
 }
 */
 
-FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target)
+FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target, const char *matchPattern)
 {
 	lock();
 
@@ -206,6 +206,9 @@ FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target)
 				break;
 			if ((info.lfname[0] == '.') || (info.attrib & AM_HID))
 				continue; // skip files to be hidden.
+            if (matchPattern && (strlen(matchPattern) > 0) && !pattern_match(matchPattern, info.lfname, false)) {
+                continue;
+            }
 			target.append(new FileInfo(info));
 		}
 		fs->dir_close(dir);
@@ -701,7 +704,7 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 			if (dir_create_result == FR_OK) {
 				IndexedList<FileInfo *> *dirlist = new IndexedList<FileInfo *>(16, NULL);
 				sp->cd(filename);
-				FRESULT get_dir_result = get_directory(sp, *dirlist);
+				FRESULT get_dir_result = get_directory(sp, *dirlist, NULL);
 				if (get_dir_result == FR_OK) {
 					dp->cd(filename);
 					for (int i=0;i<dirlist->get_elements();i++) {
