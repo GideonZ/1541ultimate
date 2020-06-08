@@ -264,6 +264,7 @@ class C64 : public GenericHost, ConfigurableObject
     void init_system_roms(void);
 
     void stop(bool do_raster = true);
+    static void hard_stop(void);
     void resume(void);
     void freeze(void);
     

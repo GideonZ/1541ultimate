@@ -365,13 +365,7 @@ int U64Config :: detectDukestahAdapter()
     volatile uint8_t *base1 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400); // D400
     volatile uint8_t *base2 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500); // D500
 
-    if (!(C64_STOP & C64_HAS_STOPPED)) {
-        C64_STOP_MODE = STOP_COND_FORCE;
-        C64_STOP = 1;
-        C64_PEEK(2);
-        C64_PEEK(2);
-        C64_PEEK(2);
-    }
+    C64 :: hard_stop();
     
     base1[25] = 0x81; // Enter config mode
     base1[26] = 0x65;
@@ -405,13 +399,7 @@ int U64Config :: detectFPGASID(int socket)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
 
-    if (!(C64_STOP & C64_HAS_STOPPED)) {
-        C64_STOP_MODE = STOP_COND_FORCE;
-        C64_STOP = 1;
-        C64_PEEK(2);
-        C64_PEEK(2);
-        C64_PEEK(2);
-    }
+    C64 :: hard_stop();
 
     // For FPGASID: Switch to DIAG mode
     base[25] = 0xEE;
@@ -1692,10 +1680,8 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
     for (uint32_t *pul = begin; pul < end; pul++) {
         *(dest++) = *pul;
     }
-    if (!(C64_STOP & C64_HAS_STOPPED)) {
-        C64_STOP_MODE = STOP_COND_FORCE;
-        C64_STOP = 1;
-    }
+
+    C64 :: hard_stop();
 
     func detection = (func)ONCHIP;
 
