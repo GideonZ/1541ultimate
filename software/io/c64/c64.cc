@@ -488,6 +488,7 @@ void C64 :: hard_stop(void)
         while (!(C64_STOP & C64_HAS_STOPPED))
             ;
     }
+    wait_10us(2);
 }
 
 void C64::stop(bool do_raster)

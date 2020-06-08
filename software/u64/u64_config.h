@@ -93,6 +93,7 @@ public:
     static int setFilter(ConfigItem *it);
     static int setSidEmuParams(ConfigItem *it);
     static int setLedSelector(ConfigItem *it);
+    static int setSpeedRegs(ConfigItem *it);
 
     static void SetResampleFilter(int mode);
     static void auto_mirror(uint8_t *base, uint8_t *mask, uint8_t *split, int count);
