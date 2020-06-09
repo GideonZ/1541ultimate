@@ -258,7 +258,7 @@ char *vfs_getcwd(vfs_t *fs, void *args, int dummy)
     strcpy(retval, full_path);
     int n = strlen(retval);
     // snoop off the last slash
-    if ((n > 0) && (retval[n-1] == '/'))
+    if ((n > 1) && (retval[n-1] == '/'))
         retval[n-1] = 0;
     //dbg_printf("CWD: %s\n", retval);
     return retval;
