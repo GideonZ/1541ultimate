@@ -112,7 +112,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void poll();
     static void run(void *a);
 
-    void save_disk_to_file(SubsysCommand *cmd);
+    bool save_disk_to_file(SubsysCommand *cmd);
     void drive_reset(uint8_t doit);
     void set_hw_address(int addr);
     void set_sw_address(int addr);
