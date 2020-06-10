@@ -829,12 +829,14 @@ void C1541 :: unlink(void)
 	}
 }
 
-void C1541 :: save_disk_to_file(SubsysCommand *cmd)
+bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
 {
     static char buffer[32] = {0};
-	File *file = 0;
+    char errstr[40];
+    File *file = 0;
 	FRESULT fres;
 	int res;
+	bool success = true;
 
 	res = cmd->user_interface->string_box("Give name for image file..", buffer, 24);
 	if(res > 0) {
@@ -844,18 +846,27 @@ void C1541 :: save_disk_to_file(SubsysCommand *cmd)
 		if(fres == FR_OK) {
 			if(cmd->mode) {
 				cmd->user_interface->show_progress("Saving G64...", 84);
-				gcr_image->save(file, (cfg->get_value(CFG_C1541_GCRALIGN)!=0), cmd->user_interface);
+				success = gcr_image->save(file, (cfg->get_value(CFG_C1541_GCRALIGN)!=0), cmd->user_interface);
 				cmd->user_interface->hide_progress();
 			} else {
 				cmd->user_interface->show_progress("Converting disk...", 2*bin_image->num_tracks);
-				gcr_image->convert_disk_gcr2bin(bin_image, cmd->user_interface);
-				cmd->user_interface->update_progress("Saving D64...", 0);
-				bin_image->save(file, cmd->user_interface);
+				int errors = gcr_image->convert_disk_gcr2bin(bin_image, cmd->user_interface);
+				if (errors) {
+	                cmd->user_interface->hide_progress();
+				    sprintf(errstr, "Found %d errors while decoding.", errors);
+				    cmd->user_interface->popup(errstr, BUTTON_OK);
+	                cmd->user_interface->show_progress("Saving D64...", 42);
+				} else {
+				    cmd->user_interface->update_progress("Saving D64...", 0);
+				}
+				success = bin_image->save(file, cmd->user_interface);
 				cmd->user_interface->hide_progress();
 			}
 			fm->fclose(file);
+			return success;
 		} else {
 			cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
 		}
 	}
+    return false;
 }
