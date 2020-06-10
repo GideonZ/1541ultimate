@@ -357,23 +357,31 @@ void C1541 :: set_ram(t_1541_ram ram_setting)
     registers[C1541_RAMMAP] = bank_is_ram;
 }    
 
-void C1541 :: check_if_save_needed(SubsysCommand *cmd)
+bool C1541 :: check_if_save_needed(SubsysCommand *cmd)
 {
     printf("## Checking if disk change is needed: %c %d %d\n", drive_letter, registers[C1541_ANYDIRTY], disk_state);
 	if(!((registers[C1541_ANYDIRTY])||(write_skip))) {
-        return;
+        return false;
     }
     if(disk_state == e_no_disk) {
-        return;
+        return false;
     }
     if(cmd->user_interface == NULL || !cmd->user_interface->is_available()) {
-        return;
+        return false;
     }
 	if(cmd->user_interface->popup("About to remove a changed disk. Save?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
-      return;
+      return false;
     }
-	cmd->mode = (disk_state == e_gcr_disk) ? 1 : 0;
-	save_disk_to_file(cmd);
+	return true;
+}
+
+bool C1541 :: save_if_needed(SubsysCommand *cmd)
+{
+    if (check_if_save_needed(cmd)) {
+        cmd->mode = (disk_state == e_gcr_disk) ? 1 : 0;
+        return save_disk_to_file(cmd);
+    }
+    return true; // not needed, so success
 }
 
 void C1541 :: remove_disk(void)
@@ -713,14 +721,21 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	case D64FILE_MOUNT:
 	case D64FILE_MOUNT_UL:
 	case D64FILE_MOUNT_RO:
-		if (!(cmd->mode & RUNCODE_MOUNT_BUFFER)) {
+        if (!(cmd->mode & RUNCODE_NO_CHECKSAVE)) {
+            if (!save_if_needed(cmd)) {
+                if(cmd->user_interface) {
+                    if (cmd->user_interface->popup("Disk could not be saved. Continue?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
+                        break;
+                    }
+                } // else: No user interface: we just do it! Oops?
+            }
+        }
+
+	    if (!(cmd->mode & RUNCODE_MOUNT_BUFFER)) {
 			printf("Mounting disk.. %s\n", cmd->filename.c_str());
 			res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
 		}
 		if((cmd->mode & RUNCODE_MOUNT_BUFFER) || (res == FR_OK)) {
-			if (!(cmd->mode & RUNCODE_NO_CHECKSAVE)) {
-				check_if_save_needed(cmd);
-			}
 			if (!(cmd->mode & RUNCODE_NO_UNFREEZE)) {
 				c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
 					C64_UNFREEZE, 0, "", "");
@@ -749,11 +764,16 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	case G64FILE_MOUNT:
 	case G64FILE_MOUNT_UL:
 	case G64FILE_MOUNT_RO:
+        if (!save_if_needed(cmd)) {
+            if(cmd->user_interface) {
+                if (cmd->user_interface->popup("Disk could not be saved. Continue?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
+                    break;
+                }
+            } // else: No user interface: we just do it! Oops?
+        }
 		printf("Mounting disk.. %s\n", cmd->filename.c_str());
 		res = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), flags, &newFile);
 		if(res == FR_OK) {
-			check_if_save_needed(cmd);
-
 			c64_command = new SubsysCommand(cmd->user_interface, SUBSYSID_C64,
             		C64_UNFREEZE, 0, "", "");
             c64_command->execute();
@@ -788,7 +808,13 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	    drive_power(cfg->get_value(CFG_C1541_POWERED) != 0);
 		break;
 	case MENU_1541_REMOVE:
-        check_if_save_needed(cmd);
+        if (!save_if_needed(cmd)) {
+            if(cmd->user_interface) {
+                if (cmd->user_interface->popup("Disk could not be saved. Continue?", BUTTON_YES|BUTTON_NO) == BUTTON_NO) {
+                    break;
+                }
+            } // else: No user interface: we just do it! Oops?
+        }
 		if(mount_file) {
 			fm->fclose(mount_file);
 			mount_file = NULL;
