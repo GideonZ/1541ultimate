@@ -28,14 +28,14 @@ architecture Harness of harness_floppy is
     signal clock           : std_logic := '0';
     signal reset           : std_logic;
     signal tick_16MHz      : std_logic;
-    signal mem_rdata       : std_logic_vector(7 downto 0) := X"AA";
+    signal mem_rdata       : std_logic_vector(7 downto 0) := X"00";
     signal do_read         : std_logic;
     signal do_write        : std_logic;
     signal do_advance      : std_logic;
     signal floppy_inserted : std_logic := '1';
     signal motor_on        : std_logic := '1';
     signal sync            : std_logic;
-    signal mode            : std_logic := '1';
+    signal mode            : std_logic := '0';
     signal write_prot_n    : std_logic := '1';
     signal step            : std_logic_vector(1 downto 0) := "00";
     signal byte_ready      : std_logic;
@@ -45,29 +45,30 @@ architecture Harness of harness_floppy is
     signal read_data_d     : std_logic_vector(7 downto 0) := X"FF";
 
     type t_bytes is array(natural range <>) of std_logic_vector(7 downto 0);
-    constant input : t_bytes := ( X"FF", X"FF", X"55", X"55", X"00", X"00", X"00", X"00", X"00", X"00", X"00", 
-                                  X"00", X"00", X"00", X"00", X"55", X"F7", X"54", X"55", X"55", X"55", X"55",
-                                  X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"AA" );
+--    constant input : t_bytes := ( X"FF", X"FF", X"55", X"55", X"00", X"00", X"00", X"00", X"00", X"00", X"00", 
+--                                  X"00", X"00", X"00", X"00", X"55", X"F7", X"54", X"55", X"55", X"55", X"55",
+--                                  X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"00", X"AA" );
 
---    constant input : t_bytes := (
---        X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", 
---        X"55", X"55", X"55", X"55", X"55", X"55", X"5F", X"55", X"55", X"F5", X"25", X"4B", X"52", X"94", X"B5", X"29", 
---        X"4A", X"52", X"94", X"A4", X"A4", X"A4", X"A4", X"A4", X"A4", X"A4", X"A4", X"AB", X"BB", X"FF", X"FF", X"FF", 
---        X"FF", X"FF", X"FD", X"57", X"56", X"A9", X"24", X"00", X"02", X"AB", X"53", X"BB", X"BB", X"BB", X"BB", X"BB", 
---        X"BB", X"BB", X"BA", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", 
---        X"A9", X"6A", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", X"A9" ); 
+    constant input : t_bytes := (
+        X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", X"55", 
+        X"55", X"55", X"55", X"55", X"55", X"55", X"5F", X"55", X"55", X"F5", X"25", X"4B", X"52", X"94", X"B5", X"29", 
+        X"4A", X"52", X"94", X"A4", X"A4", X"A4", X"A4", X"A4", X"A4", X"A4", X"A4", X"AB", X"BB", X"FF", X"FF", X"FF", 
+        X"FF", X"FF", X"FD", X"57", X"56", X"A9", X"24", X"00", X"02", X"AB", X"53", X"BB", X"BB", X"BB", X"BB", X"BB", 
+        X"BB", X"BB", X"BA", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", 
+        X"A9", X"6A", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", X"A9", X"6A", X"5A", X"96", X"A5", X"A9" ); 
 
 
     --constant bytes_per_track : natural := rocket_array'length;
     constant bytes_per_track : natural := 7756;
     constant bits_per_track  : natural := 8 * bytes_per_track;
     constant half_clocks_per_track : natural := 100_000_000 / 5; -- 5 RPS = 300 RPM
-    signal bit_time        : unsigned(9 downto 0) := to_unsigned(half_clocks_per_track / bits_per_track, 10); -- steps of 10 ns (half clocks)
+    signal bit_time        : unsigned(9 downto 0) := to_unsigned((half_clocks_per_track / bits_per_track) + 43, 10); -- steps of 10 ns (half clocks)
 
 begin
     clock <= not clock after 10 ns; -- 50 MHz
     reset <= '1', '0' after 100 ns;
-    
+    mode <= transport '0', '1' after 5 ms, '0' after 10 ms;
+        
     i_div: entity work.fractional_div
     generic map (
         g_numerator   => 8,

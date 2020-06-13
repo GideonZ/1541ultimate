@@ -99,7 +99,7 @@ GcrImage :: GcrImage(void)
     }
 #endif
     gcr_data = new uint8_t[C1541_MAX_GCR_LEN];
-    gcr_data += 0x80000000; // make it uncachable
+    //gcr_data += 0x80000000; // make it uncachable
 
     gcr_image = gcr_data; // point to my own array
 //    mounted_on = NULL;
@@ -374,7 +374,10 @@ int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trac
 	while(secs < maxSector) {
 
 		new_gcr = find_sync(current, begin, end);
-        if(new_gcr < current) {
+		if (!new_gcr) {
+		    break; // no sync found
+		}
+		if(new_gcr < current) {
         	if (wrapped) {
         		break;
         	}
