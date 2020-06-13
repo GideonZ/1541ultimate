@@ -28,6 +28,9 @@ IecChannel :: ~IecChannel()
 
 void IecChannel :: reset_prefetch(void)
 {
+#if IECDEBUG
+    printf("(R)");
+#endif
     prefetch = pointer;
 }
 
@@ -241,6 +244,7 @@ int IecChannel :: push_command(uint8_t b)
             state = e_idle;
             break;
         case 0x60:
+            reset_prefetch();
             break;
         case 0x00: // end of data
             if(last_command == 0xF0)
@@ -898,6 +902,8 @@ int IecCommandChannel :: push_command(uint8_t b)
 
     switch(b) {
         case 0x60:
+            reset_prefetch();
+            break;
         case 0xE0:
         case 0xF0:
             pointer = 0;

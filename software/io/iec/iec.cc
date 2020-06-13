@@ -125,7 +125,7 @@ const char msg69[] = "FILESYSTEM ERROR";        //69
 const char msg70[] = "NO CHANNEL";	            //70
 const char msg71[] = "DIRECTORY ERROR";			//71
 const char msg72[] = "DISK FULL";				//72
-const char msg73[] = "ULTIMATE IEC DOS V0.9";	//73 DOS MISMATCH(Returns DOS Version)
+const char msg73[] = "ULTIMATE IEC DOS V1.0";	//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 const char msg77[] = "SELECTED PARTITION ILLEGAL"; //77
 const char msg_c1[] = "BAD COMMAND";			//custom
@@ -373,8 +373,10 @@ void IecInterface :: poll()
 		while (!((a = HW_IEC_RX_FIFO_STATUS) & IEC_FIFO_EMPTY)) {
 			data = HW_IEC_RX_DATA;
 			if(a & IEC_FIFO_CTRL) {
+
 #if IECDEBUG
-				printf("<%b>", data);
+			    if (data == 0x41) printf("\n");
+			    printf("<%b>", data);
 #endif
 				switch(data) {
 					case 0xDA:
@@ -391,7 +393,6 @@ void IecInterface :: poll()
 						printf("{warp mode}");
 						break;
 					case 0x43:
-						// printf("{tlk} ");
 						HW_IEC_TX_FIFO_RELEASE = 1;
 						talking = true;
 						break;
@@ -406,15 +407,10 @@ void IecInterface :: poll()
 						break;
 					case 0x41:
 						atn = true;
-						if (talking) {
-							channels[current_channel]->reset_prefetch();
-							talking = false;
-						}
-						//printf("<1>", data);
+                        talking = false;
 						break;
 					case 0x42:
 						atn = false;
-						//printf("<0> ", data);
 						break;
 					case 0x47:
 						if (!printer) {
@@ -460,12 +456,21 @@ void IecInterface :: poll()
 
 		int st;
 		if(talking) {
-			while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
+//#if IECDEBUG
+//		    printf("(%d|%d|%d)'", channels[current_channel]->pointer, channels[current_channel]->prefetch, channels[current_channel]->prefetch_max);
+//#endif
+		    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
 				st = channels[current_channel]->prefetch_data(data);
 				if(st == IEC_OK) {
 					HW_IEC_TX_DATA = data;
+#if IECDEBUG
+					outbyte(data < 0x20?'.':data);
+#endif
 				} else if(st == IEC_LAST) {
 					HW_IEC_TX_LAST = data;
+#if IECDEBUG
+                    outbyte(data < 0x20?'.':data);
+#endif
 					talking = false;
 					break;
 				} else if(st == IEC_BUFFER_END) {
@@ -477,6 +482,9 @@ void IecInterface :: poll()
 					break;
 				}
 			}
+#if IECDEBUG
+            outbyte('\'');
+#endif
 		}
     }
 }
