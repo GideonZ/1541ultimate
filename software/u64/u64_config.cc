@@ -715,6 +715,9 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
         cfg->set_change_hook(CFG_LED_SELECT_0, U64Config::setLedSelector);
         cfg->set_change_hook(CFG_LED_SELECT_1, U64Config::setLedSelector);
+        cfg->set_change_hook(CFG_SPEED_REGS, U64Config::setCpuSpeed);
+        cfg->set_change_hook(CFG_SPEED_PREF, U64Config::setCpuSpeed);
+        cfg->set_change_hook(CFG_BADLINES_EN, U64Config::setCpuSpeed);
         effectuate_settings();
         sockets.effectuate_settings();
         mixercfg.effectuate_settings();
@@ -770,10 +773,10 @@ void U64Config :: effectuate_settings()
         return;
 
     C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
-    C64_TURBOREGS_EN = speedregs_regvalues[cfg->get_value(CFG_SPEED_REGS)];
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
     C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP);
 
+    C64_TURBOREGS_EN = speedregs_regvalues[cfg->get_value(CFG_SPEED_REGS)];
     uint8_t prefRegValue = cfg->get_value(CFG_SPEED_PREF) | (cfg->get_value(CFG_BADLINES_EN) << 7);
     C64_SPEED_PREFER = prefRegValue;
 //    C64_SPEED_UPDATE = 1;
@@ -960,6 +963,17 @@ int U64Config :: setLedSelector(ConfigItem *it)
         U64_CASELED_SELECT = (sel1 << 4) | sel0;
     }
     return 0;
+}
+
+int U64Config :: setCpuSpeed(ConfigItem *it)
+{
+    if(it) {
+        ConfigStore *cfg = it->store;
+        C64_TURBOREGS_EN = speedregs_regvalues[cfg->get_value(CFG_SPEED_REGS)];
+        uint8_t prefRegValue = cfg->get_value(CFG_SPEED_PREF) | (cfg->get_value(CFG_BADLINES_EN) << 7);
+        C64_SPEED_PREFER = prefRegValue;
+        C64_SPEED_UPDATE = 1;
+    }
 }
 
 int U64Config :: setSidEmuParams(ConfigItem *it)
