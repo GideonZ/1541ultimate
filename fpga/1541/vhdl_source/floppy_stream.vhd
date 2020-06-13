@@ -131,7 +131,7 @@ begin
             if bit_tick='1' then
                 random_bit <= '0';
                 history  := history(3 downto 0) & mem_rd_bit;
-                if history = "00000" and mode = '1' then -- something weird can happen now:
+                if history = "00000" then -- something weird can happen now:
                     random_bit <= '1'; --random_data(2) and random_data(7) and random_data(11) and random_data(12); -- 1/16 
                 end if;
 
@@ -154,11 +154,13 @@ begin
     -- Pulse from the floppy (a one-clock pulse that happens only when data is '1')
     random_trans <= '1' when random_data(10 downto 0) = "10010010101" else '0';
     
-    transition_pulse <= (bit_tick and mem_rd_bit) or (random_trans and random_bit);
+    -- These pulses only in read mode
+    transition_pulse <= mode and ((bit_tick and mem_rd_bit) or (random_trans and random_bit));
+
     p_resample: process(clock)
     begin
         if rising_edge(clock) then
-            if transition_pulse = '1' then
+            if transition_pulse = '1' or reset = '1' then
                 cnt16 <= "00" & unsigned(rate_ctrl);
             elsif tick_16MHz = '1' then
                 if cnt16 = X"F" then
@@ -169,7 +171,7 @@ begin
             end if;
 
             rd_shift_pulse <= '0';
-            if transition_pulse = '1' then
+            if transition_pulse = '1' or reset = '1' then
                 sampl <= (others => '0');
             elsif tick_16MHz = '1' and cnt16 = X"F" then
                 if sampl(1 downto 0) = "01" then
@@ -204,9 +206,13 @@ begin
             end if;
             
             do_write <= '0';
-            if rd_bit_cnt = "111" and mode='0' and bit_tick='1' then
+            if rd_bit_cnt = "111" and mode='0' and rd_shift_pulse='1' then
                 if write_delay = 0 then
-                    do_write <= floppy_inserted; --'1';
+                    if write_prot_n = '1' and floppy_inserted = '1' then
+                        do_write <= '1';
+                    else
+                        do_advance <= '1';
+                    end if;
                 else
                     do_advance <= '0';
                     write_delay <= write_delay - 1;
