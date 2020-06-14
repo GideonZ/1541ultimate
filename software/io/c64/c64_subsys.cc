@@ -123,7 +123,7 @@ int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list
     if(fm->is_path_writable(path)) {
     	item_list.append(new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU));
     	count ++;
-#if U64
+#if 0
         item_list.append(new Action("Save C64 Memory", SUBSYSID_C64, MENU_U64_SAVERAM));
         count ++;
 #endif
