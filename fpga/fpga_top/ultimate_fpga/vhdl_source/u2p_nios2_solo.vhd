@@ -505,9 +505,7 @@ begin
         g_vic_copper    => false,
         g_video_overlay => false,
         g_sampler       => true,
-        g_analyzer      => false,
         g_acia          => true,
-        g_profiler      => true,
         g_rmii          => true )
     port map (
         -- globals

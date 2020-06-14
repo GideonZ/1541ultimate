@@ -31,7 +31,6 @@
 #include "dump_hex.h"
 #include "c64.h"
 #include "u64.h"
-#include "u64_config.h"
 #include "flash.h"
 #include "keyboard_c64.h"
 #include "config.h"
