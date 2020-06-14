@@ -1074,7 +1074,6 @@ void C64::set_cartridge(cart_def *def)
     printf("Setting cart mode %u. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
     C64_CARTRIDGE_TYPE = (uint8_t) (def->type & 0x1F) | force_cart;
     force_cart = 0;
-//    push_event(e_cart_mode_change, NULL, def->type);
 
     set_emulation_flags(def);
 
@@ -1350,6 +1349,11 @@ bool C64 :: ConfigureU64SystemBus(void)
     C64_BUS_EXTERNAL = external;
 
     return ext_cart;
+}
+
+void C64 :: EnableWriteMirroring(void)
+{
+    C64_BUS_BRIDGE = 0x01 | bus_mode_values[cfg->get_value(CFG_BUS_MODE)];
 }
 #endif
 

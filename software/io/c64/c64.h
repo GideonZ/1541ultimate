@@ -108,17 +108,17 @@
 #define CART_TYPE_8K          0x01
 #define CART_TYPE_16K         0x02
 #define CART_TYPE_16K_UMAX    0x03
-#define CART_TYPE_FC3         0x04
-#define CART_TYPE_SS5         0x05
-#define CART_TYPE_RETRO       0x06
-#define CART_TYPE_ACTION      0x07
-#define CART_TYPE_SYSTEM3     0x08
-#define CART_TYPE_DOMARK      0x09
-#define CART_TYPE_OCEAN128    0x0A
-#define CART_TYPE_OCEAN256    0x0B
-#define CART_TYPE_EASY_FLASH  0x0C
-#define CART_TYPE_EPYX        0x0E
-#define CART_TYPE_KCS         0x10
+#define CART_TYPE_FC3         0x04 // Ok without write mirroring
+#define CART_TYPE_SS5         0x05 // Ok without write mirroring
+#define CART_TYPE_RETRO       0x06 // Ok without write mirroring
+#define CART_TYPE_ACTION      0x07 // Ok without write mirroring
+#define CART_TYPE_SYSTEM3     0x08 // Doesn't have external RAM
+#define CART_TYPE_DOMARK      0x09 // Doesn't have external RAM
+#define CART_TYPE_OCEAN128    0x0A // Doesn't have external RAM
+#define CART_TYPE_OCEAN256    0x0B // Doesn't have external RAM
+#define CART_TYPE_EASY_FLASH  0x0C // ?
+#define CART_TYPE_EPYX        0x0E // Doesn't have external RAM
+#define CART_TYPE_KCS         0x10 // Ok without write mirroring
 #define CART_TYPE_FINAL12     0x11
 #define CART_TYPE_COMAL80     0x12
 #define CART_TYPE_SBASIC      0x13
@@ -130,7 +130,7 @@
 #define CART_TYPE_FC3PLUS     0x19
 #define CART_TYPE_COMAL80PAKMA 0x1A
 #define CART_TYPE_SUPERGAMES   0x1B
-#define CART_TYPE_NORDIC      0x1C
+#define CART_TYPE_NORDIC      0x1C // requires Writes to be on
 
 #define DRVTYPE_MP3_DNP       31
 
@@ -287,6 +287,7 @@ class C64 : public GenericHost, ConfigurableObject
 
 #if U64
     bool ConfigureU64SystemBus(void);
+    void EnableWriteMirroring(void);
 #endif
 
     C64();
@@ -347,7 +348,8 @@ public:
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access
     friend class REUPreloader; // preloader needs to access config
-    friend class FileTypeREU; // REU file needs to access config 
+    friend class FileTypeREU; // REU file needs to access config
+    friend class FileTypeCRT; // CRT file may need to enable Write mirroring on U64
     friend class U64Config; // U64 config needs to stop / resume for SID detection
 };
 
