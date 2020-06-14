@@ -299,6 +299,8 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
     if (crt_header[0x16])
         hdrOk = false;
 
+    C64 *c64 = C64 :: getMachine();
+
     if (hdrOk) {
         printf("CRT Hardware type: %b ", crt_header[0x17]);
         int idx = 0;
@@ -464,6 +466,9 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
         C64_CARTRIDGE_TYPE = CART_TYPE_PAGEFOX; // Business Basic
         break;
     case CART_NORDIC:
+#if U64
+        c64->EnableWriteMirroring();
+#endif
         C64_CARTRIDGE_TYPE = CART_TYPE_NORDIC;
         break;
 
@@ -750,6 +755,9 @@ void FileTypeCRT::configure_cart(void)
         break;
     case CART_NORDIC:
         C64_CARTRIDGE_TYPE = CART_TYPE_NORDIC;
+#if U64
+        C64 :: getMachine()->EnableWriteMirroring();
+#endif
         break;
     case CART_EXOS:
         if (total_read > 8192) {
