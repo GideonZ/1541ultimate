@@ -36,6 +36,7 @@ SRCS_BIN =
 VPATH     := $(PATH_SW)/chan_fat/tiny_ro  $(VPATH) 
 VPATH     += $(PATH_SW)/portable/microblaze
 VPATH     += $(PATH_SW)/application/2nd_boot
+VPATH     += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
 
 
 PATH_INC =  $(addprefix -I, $(VPATH))
