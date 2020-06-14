@@ -104,6 +104,7 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_SPEED_REGS        0x4C
 #define CFG_SPEED_PREF        0x52
 #define CFG_BADLINES_EN       0x53
+#define CFG_SUPERCPU_DET      0x54
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -214,8 +215,8 @@ static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 25
 static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
 static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
 static const char *speeds[] = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48" };
-static const char *speed_regs[] = { "Menu Only", "U64 Mode", "U64 + D0BC", "TurboEN bit", "TurboEN + D0BC" };
-static const uint8_t speedregs_regvalues[] = { 0x00, 0x01, 0x03, 0x05, 0x07 };
+static const char *speed_regs[] = { "Off", "Manual", "U64 Turbo Registers", "TurboEnable Bit", "a", "b" };
+static const uint8_t speedregs_regvalues[] = { 0x00, 0x00, 0x01, 0x05, 0x00, 0x00 }; // removed 3 and 7
 
 /*
 00 ff ff ff ff ff ff 00  09 d1 db 78 45 54 00 00
@@ -255,10 +256,10 @@ struct t_cfg_definition u64_cfg[] = {
     //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
-    { CFG_SPEED_REGS,           CFG_TYPE_ENUM, "Turbo Registers",              "%s", speed_regs,   0,  4, 0 },
+    { CFG_SPEED_REGS,           CFG_TYPE_ENUM, "Turbo Control",                "%s", speed_regs,   0,  3, 0 },
     { CFG_SPEED_PREF,           CFG_TYPE_ENUM, "CPU Speed",                "%s MHz", speeds,       0, 15, 0 },
     { CFG_BADLINES_EN,          CFG_TYPE_ENUM, "Badline Timing",               "%s", en_dis,       0,  1, 1 },
-
+    { CFG_SUPERCPU_DET,         CFG_TYPE_ENUM, "SuperCPU Detect (D0BC)",       "%s", en_dis,       0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_sid_detection_cfg[] = {
@@ -718,6 +719,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_SPEED_REGS, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_SPEED_PREF, U64Config::setCpuSpeed);
         cfg->set_change_hook(CFG_BADLINES_EN, U64Config::setCpuSpeed);
+        cfg->set_change_hook(CFG_SUPERCPU_DET, U64Config::setCpuSpeed);
         effectuate_settings();
         sockets.effectuate_settings();
         mixercfg.effectuate_settings();
@@ -776,10 +778,10 @@ void U64Config :: effectuate_settings()
     C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
     C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP);
 
-    C64_TURBOREGS_EN = speedregs_regvalues[cfg->get_value(CFG_SPEED_REGS)];
-    uint8_t prefRegValue = cfg->get_value(CFG_SPEED_PREF) | (cfg->get_value(CFG_BADLINES_EN) << 7);
-    C64_SPEED_PREFER = prefRegValue;
-//    C64_SPEED_UPDATE = 1;
+    //C64_TURBOREGS_EN = 0;
+    //C64_SPEED_PREFER = 0;
+
+    setCpuSpeed(cfg->find_item(CFG_SPEED_REGS));
 
     //printf("U64Config :: effectuate_settings()\n");
     uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
@@ -967,13 +969,40 @@ int U64Config :: setLedSelector(ConfigItem *it)
 
 int U64Config :: setCpuSpeed(ConfigItem *it)
 {
+    int ret = 0;
+
     if(it) {
         ConfigStore *cfg = it->store;
-        C64_TURBOREGS_EN = speedregs_regvalues[cfg->get_value(CFG_SPEED_REGS)];
-        uint8_t prefRegValue = cfg->get_value(CFG_SPEED_PREF) | (cfg->get_value(CFG_BADLINES_EN) << 7);
+        switch(it->definition->id) {
+        case CFG_SPEED_REGS:
+            ret = 1;
+            switch(it->getValue()) {
+            case 0: // Off
+                cfg->disable(CFG_SPEED_PREF);
+                cfg->disable(CFG_BADLINES_EN);
+                cfg->disable(CFG_SUPERCPU_DET);
+                break;
+            default:
+                cfg->enable(CFG_SPEED_PREF);
+                cfg->enable(CFG_BADLINES_EN);
+                cfg->enable(CFG_SUPERCPU_DET);
+                break;
+            }
+        }
+        uint8_t prefRegValue, turboRegs;
+        if (cfg->get_value(CFG_SPEED_REGS) == 0) { // Off
+            prefRegValue = 0x80;
+            turboRegs = 0;
+        } else {
+            prefRegValue = cfg->get_value(CFG_SPEED_PREF) | (cfg->get_value(CFG_BADLINES_EN) << 7);
+            turboRegs = speedregs_regvalues[cfg->get_value(CFG_SPEED_REGS)] + (cfg->get_value(CFG_SUPERCPU_DET) ? 0x02 : 0x00);
+        }
+        printf("Speed regs: %b %b\n", turboRegs, prefRegValue);
+        C64_TURBOREGS_EN = turboRegs;
         C64_SPEED_PREFER = prefRegValue;
         C64_SPEED_UPDATE = 1;
     }
+    return ret;
 }
 
 int U64Config :: setSidEmuParams(ConfigItem *it)
