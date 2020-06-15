@@ -87,6 +87,7 @@ extern "C" void ultimate_main(void *a)
 	if (capabilities & CAPAB_CARTRIDGE) {
 		c64 = C64 :: getMachine();
 		c64_subsys = new C64_Subsys(c64);
+		c64->init();
 		c64->start();
 	} else {
 		c64 = NULL;

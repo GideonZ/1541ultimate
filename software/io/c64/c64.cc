@@ -222,18 +222,15 @@ C64::C64()
     client = 0;
     available = false;
 
-    if (phi2_present()) {
-        init();
-    }
 #ifndef U64
 #ifdef OS
-    else {
+    if (!phi2_present()) {
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
         xTaskCreate(C64 :: init_poll_task, "C64 Init poll task", 500, this, 2, NULL);
     }
 #endif
 #else
-    else {
+    if (!phi2_present()) {
         printf("U64, and no PHI2?  Something is seriously wrong!!\n");
     }
 #endif
