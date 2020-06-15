@@ -283,7 +283,6 @@ class C64 : public GenericHost, ConfigurableObject
 
     static void init_poll_task(void *a);
     static int setCartPref(ConfigItem *item);
-    void init(void);
 
 #if U64
     bool ConfigureU64SystemBus(void);
@@ -292,6 +291,7 @@ class C64 : public GenericHost, ConfigurableObject
 
     C64();
 public:
+    void init(void);
     ~C64();
 
     /* Get static object */
