@@ -168,6 +168,7 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	}
 	// Handle the other keys
 	uint8_t restore = 0;
+    uint8_t freeze = 0;
 	uint8_t something_else_pressed = 0;
 	for(int i=2; i<USB_DATA_SIZE; i++) {
 		if (!kd[i]) {
@@ -175,6 +176,9 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 		}
 		if (keymap_normal[kd[i]] == KEY_F12) {
 			restore = 1;
+		}
+		if (keymap_normal[kd[i]] == KEY_F11) {
+		    freeze = 1;
 		}
 		uint8_t n = (kd[0] & 0x22) ? keymap_usb2matrix_shift[kd[i]] :
 		                            keymap_usb2matrix[kd[i]];
@@ -189,6 +193,7 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 	}
 
 	matrix[9] = restore;
+	matrix[10] = freeze;
 
 	if (!something_else_pressed) {
 	    if (modi & 0x02) { // left shift
