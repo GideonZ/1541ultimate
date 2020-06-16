@@ -42,6 +42,8 @@ ConfigManager :: ConfigManager() : stores(16, NULL), pages(16, NULL)
 	if (U64_RESTORE_REG == 1) {
 	    safeMode = true;
 	}
+#elif SAFEMODE
+    safeMode = true;
 #endif
 	//    root.add_child(this); // make ourselves visible in the browser
 }
@@ -108,7 +110,6 @@ ConfigStore *ConfigManager :: register_store(uint32_t page_id, const char *name,
             flash->read_config_page(i, 4, &id);
             if (page_id == id) {
                 page = new ConfigPage(flash, id, i, page_size);
-                page->read(safeMode);
                 pages.append(page);
                 break;
             }
