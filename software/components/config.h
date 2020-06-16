@@ -124,7 +124,7 @@ public:
 
 // Interface functions
     virtual void reset(void);
-    virtual void read(void);
+    virtual void read(bool ignore);
     virtual void write(void);
     virtual void at_open_config(void) { }
 
@@ -198,7 +198,7 @@ public:
         return id;
     }
 
-    void read();
+    void read(bool ignore);
     void write();
     void unpack(ConfigStore *s);
 };
@@ -209,6 +209,7 @@ class ConfigManager
 	IndexedList<ConfigPage*> pages;
     Flash *flash;
     int num_pages;
+    bool safeMode;
 
     ConfigManager();
     ~ConfigManager();
