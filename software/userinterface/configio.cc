@@ -102,7 +102,7 @@ int ConfigIO :: S_restore(SubsysCommand *cmd)
     ConfigStore *s;
     for(int n = 0; n < cm->stores.get_elements();n++) {
         s = cm->stores[n];
-        s->read();
+        s->read(false);
         s->effectuate();
     }
     return 0;
