@@ -180,7 +180,8 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
     //
     // vector_in <= phi2 & dman & exromn & ba & irqn & rom & nmin & rwn & data & addr;
     // const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","EXROMn","SYNC","PHI2" };
-    const char *labels[8] = { "RWn","NMIn","ROMn", "IRQn","BA","EXROMn","GAMEn","PHI2" };
+    //const char *labels[8] = { "RWn","NMIn","IRQn","BA","ROMn", "EXROMn","GAMEn","PHI2" };
+    const char *labels[8] = { "RWn","NMIn","IRQn","BA","CLOCK", "DATA","ATN","PHI2" };
     const char *drive_labels[8] = { "1541_RWn", "1541_IRQn", "1541_BYTEREADY", "1541_SYNC", "1541_CLOCK", "1541_DATA", "1541_ATN", "nul" };
     const char *vic_regs[47] = { "M0X", "M0Y", "M1X", "M1Y", "M2X", "M2Y", "M3X", "M3Y",
             "M4X", "M4Y", "M5X", "M5Y", "M6X", "M6Y", "M7X", "M7Y",
@@ -239,18 +240,6 @@ void dump_trace(struct data_entry *entries, int size, int lines, int text_mode, 
     }
 
     for(i=0;i<size;i++) {
-        d->flags |= 0x40;
-/*
-        if ((d->flags & 0x80) == 0) {
-            if (d->flags & 0x40) {
-                enable = 1;
-                cycle = 16028;
-            } else {
-                cycle ++;
-            }
-            cycle = cycle % 19656;
-        }
-*/
 
         if ((d->flags & 0x80) == 0) {
             cycle ++;
