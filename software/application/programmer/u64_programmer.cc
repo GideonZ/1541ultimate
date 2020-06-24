@@ -372,6 +372,12 @@ void do_update(void)
                 ;
         }
     }
+    printf("\nClearing Configuration Area");
+    int cfg_pages = flash2->get_number_of_config_pages();
+    for(int i=0; i<cfg_pages; i++) {
+        flash2->clear_config_page(i);
+        printf(".");
+    }
     printf("\nConfiguring Flash write protection..\n");
     flash2->protect_configure();
     flash2->protect_enable();
@@ -613,8 +619,9 @@ extern "C" {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
+#if DOTESTS
                 printf("\e4U64 Tester - 15.05.2020 - 10:52\e?\n");
-	            errors =  test_esp32();
+                errors =  test_esp32();
 	            errors += U64AudioCodecTest();
                 errors += TestSidSockets(elite);
 	            if (elite) {
@@ -639,12 +646,17 @@ extern "C" {
 	                errors ++;
 	                printf("\e2RTC not valid. Battery inserted?\n\eO");
 	            }
-	            if (errors) {
-	                printf("\n\e2** BOARD FAILED **\n");
-	            } else {
-	                printf("\n\e5-> Passed!\n\e?");
-	                do_update();
-	            }
+                if (errors) {
+                    printf("\n\e2** BOARD FAILED **\n");
+                } else {
+                    printf("\n\e5-> Passed!\n\e?");
+                    do_update();
+                }
+#else
+                printf("\e4U64 Programmer - 24.06.2020 - 20:40\e?\n");
+                printf("\n\e5Tests skipped.\n\e?");
+                do_update();
+#endif
 	        }
 	    }
         printf("\n\n\033\023Press power button to turn off the machine..\n");
