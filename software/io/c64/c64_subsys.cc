@@ -361,11 +361,13 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                     printf("written: %d...", transferred);
                     char* eapi = (char*)(mem_addr + 512*1024 + 0x1800);
                     if (i == 0 && eapi[0] == 0x65 && eapi[1] == 0x61 && eapi[2] == 0x70 && eapi[3] == 0x69) {
-                        size = 0x1800; f->write((void *)(mem_addr+512*1024), size, &transferred); printf("written: %d...", transferred);
-                        size = 0x300; f->write(eapiOrg, size, &transferred); printf("written: %d...", transferred);
-                        size = 0x500;f->write((void *)(mem_addr+512*1024+6144+768), size, &transferred);printf("written: %d...", transferred);
+                        size = 0x1800;
+                        f->write((void *)(mem_addr+512*1024), size, &transferred); printf("written: %d...", transferred);
+                        size = 0x300;
+                        f->write(eapiOrg, size, &transferred); printf("written: %d...", transferred);
+                        size = 0x500;                        f->write((void *)(mem_addr+512*1024+6144+768), size, &transferred);                        printf("written: %d...", transferred);
                     } else {
-                        size = 8192; f->write((void *)(mem_addr+512*1024+8192*i), size, &transferred);printf("written: %d...", transferred);
+                        size = 8192; f->write((void *)(mem_addr+512*1024+8192*i), size, &transferred);                        printf("written: %d...", transferred);
                     }
                 }
                 fm->fclose(f);
@@ -482,10 +484,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
               }
            }
         }
-
-
-
-
+        break;
 
     default:
 		break;
