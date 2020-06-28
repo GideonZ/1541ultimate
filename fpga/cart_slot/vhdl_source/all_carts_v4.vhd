@@ -229,30 +229,7 @@ begin
                 irq_n     <= '1';
                 nmi_n     <= not(freeze_trig or freeze_act or hold_nmi);
                                     
-            when c_action =>
-                if io_write='1' and io_addr(8) = '0' and cart_en='1' then
-                    bank_bits <= io_wdata(7) & io_wdata(4 downto 3);
-                    mode_bits <= io_wdata(5) & io_wdata(1 downto 0);
-                    unfreeze  <= io_wdata(6);
-                    cart_en   <= not io_wdata(2);
-                end if;
-                if freeze_act='1' then
-                    game_n    <= '0';
-                    exrom_n   <= '1';
-                    serve_rom <= '1';
-                    serve_io1 <= '0';
-                    serve_io2 <= '0';
-                else
-                    game_n    <= not mode_bits(0);
-                    exrom_n   <= mode_bits(1);
-                    serve_io1 <= c_serve_io_rr(to_integer(unsigned(mode_bits)));
-                    serve_io2 <= c_serve_io_rr(to_integer(unsigned(mode_bits))) and do_io2;
-                    serve_rom <= c_serve_rom_rr(to_integer(unsigned(mode_bits)));
-                end if;
-                irq_n     <= not(freeze_trig or freeze_act);
-                nmi_n     <= not(freeze_trig or freeze_act);
-
-            when c_retro =>
+            when c_retro | c_action =>
                 if io_write='1' and io_addr(8 downto 1) = X"00" and cart_en='1' then -- DE00/DE01
                     if io_addr(0)='0' then
                         bank_bits <= io_wdata(7) & io_wdata(4 downto 3);
@@ -285,11 +262,20 @@ begin
                 nmi_n     <= not(freeze_trig or freeze_act);
 
             when c_nordic =>
-                if io_write='1' and io_addr(8) = '0' and cart_en='1' then
-                    bank_bits <= io_wdata(7) & io_wdata(4 downto 3);
-                    mode_bits <= io_wdata(5) & io_wdata(1 downto 0);
-                    unfreeze  <= io_wdata(6);
-                    cart_en   <= not io_wdata(2);
+                if io_write='1' and io_addr(8 downto 1) = X"00" and cart_en='1' then -- DE00/DE01
+                    if io_addr(0)='0' then
+                        bank_bits <= io_wdata(7) & io_wdata(4 downto 3);
+                        mode_bits <= io_wdata(5) & io_wdata(1 downto 0);
+                        unfreeze  <= io_wdata(6);
+                        cart_en   <= not io_wdata(2);
+                    else
+                        if io_wdata(6)='1' then
+                            do_io2 <= '0';
+                        end if;
+                        if io_wdata(1)='1' then
+                            allow_bank <= '1';
+                        end if;
+                    end if;
                 end if;
                 if freeze_act='1' then
                     game_n    <= '0';
@@ -775,12 +761,18 @@ begin
             end if;
         
         when c_action =>
-            -- 8K RAM
+            -- 32K RAM
             if mode_bits(2)='1' then
                 if slot_addr(13)='0' then
-                    mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
+                    mem_addr_i <= g_ram_base(27 downto 15) & bank_bits(14 downto 13) & slot_addr(12 downto 0);
+                    if allow_bank='0' and slot_addr(15 downto 13)="110" then -- io range exceptions
+                        mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
+                    end if;
                 end if;
                 if slot_addr(15 downto 13)="100" then -- and mode_bits(1 downto 0)="11" then
+                    allow_write <= '1';
+                end if;
+                if slot_addr(15 downto 8)=X"DE" and slot_addr(7 downto 1)/="0000000" then
                     allow_write <= '1';
                 end if;
                 if slot_addr(15 downto 8)=X"DF" and do_io2='1' then
@@ -795,6 +787,9 @@ begin
                     mem_addr_i <= g_ram_base(27 downto 15) & "00" & slot_addr(12 downto 0);
                 end if;
                 if slot_addr(15 downto 13)="100" then -- and mode_bits(1 downto 0)="11" then
+                    allow_write <= '1';
+                end if;
+                if slot_addr(15 downto 8)=X"DE" and slot_addr(7 downto 1)/="0000000" then
                     allow_write <= '1';
                 end if;
                 if slot_addr(15 downto 8)=X"DF" and do_io2='1' then
