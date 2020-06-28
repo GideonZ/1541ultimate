@@ -138,7 +138,7 @@ int  C64_Subsys :: fetch_task_items(Path *path, IndexedList<Action *> &item_list
     if(fm->is_path_writable(path)) {
     	item_list.append(new Action("Save REU Memory", SUBSYSID_C64, MENU_C64_SAVEREU));
     	count ++;
-#if 0
+#if 1
         item_list.append(new Action("Save C64 Memory", SUBSYSID_C64, MENU_U64_SAVERAM));
         count ++;
 #endif
@@ -329,7 +329,14 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                     printf("Opened file successfully.\n");
 
                     pb = new uint8_t[ram_size];
-                    memcpy(pb, (uint8_t *)U64_RAM_BASE, ram_size);
+                    // Stop is on U64 no longer required (and on C64 not possible to save RAM this way), but for consistency
+                    c64->stop(false);
+                    portENTER_CRITICAL();
+                    C64_DMA_MEMONLY = 1;
+                    memcpy(pb, (uint8_t *)C64_MEMORY_BASE, ram_size);
+                    C64_DMA_MEMONLY = 0;
+                    portEXIT_CRITICAL();
+                    c64->resume();
                     uint32_t bytes_written;
                     uint8_t *src;
 
