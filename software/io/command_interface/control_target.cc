@@ -438,9 +438,12 @@ void ControlTarget :: save_u64_memory(Message *command)
     if(res == FR_OK) {
         printf("Opened file successfully.\n");
 
-        uint8_t *src = (uint8_t *)U64_RAM_BASE;
         uint8_t *dest = new uint8_t[65536];
-        memcpy(dest, src, 65536);
+        portENTER_CRITICAL();
+        C64_DMA_MEMONLY = 1;
+        memcpy(dest, (uint8_t *)C64_MEMORY_BASE, 65536);
+        C64_DMA_MEMONLY = 0;
+        portEXIT_CRITICAL();
         uint32_t bytes_written;
 
         f->write(dest, 0x10000, &bytes_written);

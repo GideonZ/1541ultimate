@@ -75,6 +75,7 @@
 #define C64_SCANLINES    (*(volatile uint8_t *)(C64_IO_BASE + 0x00))
 #define C64_VIDEOFORMAT  (*(volatile uint8_t *)(C64_IO_BASE + 0x01))
 #define C64_TURBOREGS_EN (*(volatile uint8_t *)(C64_IO_BASE + 0x02))
+#define C64_DMA_MEMONLY  (*(volatile uint8_t *)(C64_IO_BASE + 0x03))
 #define C64_LUMA_DELAY   (*(volatile uint8_t *)(C64_IO_BASE + 0x04))
 #define C64_CHROMA_DELAY (*(volatile uint8_t *)(C64_IO_BASE + 0x05))
 #define C64_BURST_PHASE  (*(volatile uint8_t *)(C64_IO_BASE + 0x06))
