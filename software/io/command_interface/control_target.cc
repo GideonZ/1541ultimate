@@ -252,7 +252,7 @@ void ControlTarget :: parse_command(Message *command, Message **reply, Message *
                             break;
                         }
 
-                        uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+                        uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
                         unsigned char bank = command->message[3];
                         unsigned char baseAddr = command->message[4];
                         mem_addr += (bank & 0x38) * 8192;

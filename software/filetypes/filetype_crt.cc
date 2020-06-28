@@ -224,7 +224,7 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
 
     FileManager *fm = FileManager::getFileManager();
 
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
     memset((void *) mem_addr, 0, 1024 * 1024); // clear all cart memory
 
     printf("Cartridge Load.. %s\n", cmd->filename.c_str());
@@ -277,7 +277,7 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
 int FileTypeCRT::parseCrt(void *bufferVoid)
 {
     char *buffer = (char*) bufferVoid;
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
     memset((void *) mem_addr, 0, 1024 * 1024); // clear all cart memory
 
     uint32_t dw;
@@ -355,7 +355,7 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
                         || (type_select == CART_SYSTEM3))
                     split = true;
 
-            uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+            uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
 
             if (type_select == CART_KCS) {
                 mem_addr += load - 0x8000;
@@ -606,7 +606,7 @@ bool FileTypeCRT::read_chip_packet(File *f)
                 || (type_select == CART_SYSTEM3))
             split = true;
 
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
 
     if (type_select == CART_KCS) {
         mem_addr += load - 0x8000;
@@ -762,7 +762,7 @@ void FileTypeCRT::configure_cart(void)
     case CART_EXOS:
         if (total_read > 8192) {
             C64_KERNAL_ENABLE = 3;
-            uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
+            uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
             for (int i = 16383; i > 0; i--)
                 *(src + 4 * i) = *(src + i);
             for (int i = 8191; i >= 0; i--)
@@ -771,7 +771,7 @@ void FileTypeCRT::configure_cart(void)
                 *(src + 4 * i + 2) = *(src + 32768 + 4*i);
             }
         } else {
-            uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
+            uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
             int fastreset = C64 :: getMachine()->get_cfg_value(CFG_C64_FASTRESET);
             C64 :: getMachine()->enable_kernal( src, fastreset);
         }

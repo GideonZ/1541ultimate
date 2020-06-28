@@ -1074,7 +1074,7 @@ void C64::set_cartridge(cart_def *def)
 
     set_emulation_flags(def);
 
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
     if (def->type & CART_RAM) {
         printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, mem_addr);
         memcpy((void *) mem_addr, def->custom_addr, def->length);

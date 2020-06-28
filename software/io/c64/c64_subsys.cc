@@ -309,7 +309,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 
             res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), "module.bin", &f);
             if(res == FR_OK) {
-                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
                 printf("Opened file successfully.\n");
                 f->write((void *)mem_addr, ram_size, &transferred);
                 printf("written: %d...", transferred);
@@ -359,7 +359,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
         case MENU_C64_SAVEEASYFLASH:
             res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), "module.crt", &f);
             if(res == FR_OK) {
-                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+                uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
                 printf("Opened file successfully.\n");
                 uint8_t header[64] = { 0x43, 0x36, 0x34, 0x20, 0x43, 0x41, 0x52, 0x54, 0x52, 0x49, 0x44, 0x47, 0x45, 0x20, 0x20, 0x20,                    0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0x00, 0x20, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x45, 0x61,
                              0x73, 0x79, 0x46, 0x6c, 0x61, 0x73, 0x68, 0x20, 0x43, 0x61, 0x72, 0x74, 0x72, 0x69, 0x64, 0x67, 0x65, 0x00,
