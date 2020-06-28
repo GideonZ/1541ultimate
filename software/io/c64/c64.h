@@ -50,7 +50,7 @@
 #define C64_STOP                *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x1))
 #define C64_STOP_MODE           *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x2))
 #define C64_CLOCK_DETECT        *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x3))
-#define C64_CARTRIDGE_RAM_BASE  *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x4))
+#define C64_CARTRIDGE_ROM_BASE  *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x4))
 #define C64_CARTRIDGE_TYPE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x5))
 #define C64_CARTRIDGE_KILL      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x6))
 #define C64_CARTRIDGE_ACTIVE    *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x6))
