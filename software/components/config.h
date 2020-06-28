@@ -159,7 +159,7 @@ public:
     bool is_flash_stale(void) { return staleFlash; }
     bool need_effectuate(void) { return staleEffect; }
     void set_effectuated(void) { staleEffect = false; }
-    const void set_need_flash_write(void) { staleFlash = true; }
+    const void set_need_flash_write(bool b) { staleFlash = b; }
     const void set_need_effectuate(void) { staleEffect = true; }
     ConfigPage *get_page(void) { return page; }
 
