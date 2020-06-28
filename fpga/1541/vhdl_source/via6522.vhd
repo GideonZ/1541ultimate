@@ -213,16 +213,8 @@ begin
             -- CA1/CA2/CB1/CB2 edge detect flipflops
             ca1_c <= To_X01(ca1_i);
             ca2_c <= To_X01(ca2_i);
-            if cb1_t_int = '0' then
-                cb1_c <= To_X01(cb1_i);
-            else
-                cb1_c <= cb1_o_int;
-            end if;
-            if cb2_t_int = '0'  then
-                cb2_c <= To_X01(cb2_i);
-            else
-                cb2_c <= cb2_o_int;
-            end if;
+            cb1_c <= To_X01(cb1_i);
+            cb2_c <= To_X01(cb2_i);
 
             ca1_d <= ca1_c;
             ca2_d <= ca2_c;
