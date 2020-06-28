@@ -86,6 +86,21 @@ static inline uint16_t le2cpu(uint16_t p)
 #endif
 }
 
+// TODO: Remove from here: place these helper functions in a new source file / class
+// TODO: Use these functions in other user-interface based subsystem calls
+// TODO: Asking for a filename could also be factored out
+FRESULT create_file_ask_if_exists(FileManager *fm, UserInterface *ui, const char *path, const char *filename, File **f)
+{
+    FRESULT res = fm->fopen(path, filename, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, f);
+    if (res == FR_EXIST) {
+        if (ui->popup("File already exists. Overwrite?", BUTTON_YES | BUTTON_NO) == BUTTON_YES) {
+            res = fm->fopen(path, filename, FA_WRITE | FA_CREATE_ALWAYS, f);
+        }
+    }
+    return res;
+}
+
+
 C64_Subsys::C64_Subsys(C64 *machine)  : SubSystem(SUBSYSID_C64) {
 	taskHandle = 0;
 	c64 = machine;
@@ -249,7 +264,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
             fix_filename(buffer);
             set_extension(buffer, ".reu", 32);
 
-            res = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+            res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
             if(res == FR_OK) {
                 printf("Opened file successfully.\n");
                 
@@ -291,7 +306,8 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
 
         case MENU_C64_SAVEMODULE:
             ram_size = 1024 * 1024;
-            res = fm->fopen(cmd->path.c_str(), "module.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+
+            res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), "module.bin", &f);
             if(res == FR_OK) {
                 uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
                 printf("Opened file successfully.\n");
@@ -308,7 +324,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
                 fix_filename(buffer);
                 set_extension(buffer, ".bin", 32);
 
-                res = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+                res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
                 if(res == FR_OK) {
                     printf("Opened file successfully.\n");
 
@@ -334,7 +350,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
             break;
 
         case MENU_C64_SAVEEASYFLASH:
-            res = fm->fopen(cmd->path.c_str(), "module.crt", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+            res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), "module.crt", &f);
             if(res == FR_OK) {
                 uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
                 printf("Opened file successfully.\n");
@@ -377,7 +393,8 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
             break;
 
     case MENU_C64_SAVEFLASH: // doesn't belong here, but i need it fast
-        res = fm->fopen(cmd->path.c_str(), "flash_dump.bin", FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+        res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), "flash_dump.bin", &f);
+
         if(res == FR_OK) {
             int pages = c64->flash->get_number_of_pages();
             int page_size = c64->flash->get_page_size();
@@ -466,7 +483,7 @@ int C64_Subsys :: executeCommand(SubsysCommand *cmd)
               fix_filename(buffer);
               set_extension(buffer, extension, 32);
               
-              res = fm->fopen(cmd->path.c_str(), buffer, FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS, &f);
+              res = create_file_ask_if_exists(fm, cmd->user_interface, cmd->path.c_str(), buffer, &f);
               if(res == FR_OK) {
                     printf("Opened file successfully.\n");
                     uint32_t bytes_written;
