@@ -240,6 +240,9 @@ C64::C64()
 
 int C64 :: setCartPref(ConfigItem *item)
 {
+    if (!item) {
+        return 0;
+    }
     // This is only a UI thing
     if (item->getValue() == 3) { // If manual, enable the other settings
         item->store->enable(CFG_BUS_SHARING_ROM);
