@@ -7,6 +7,8 @@ use work.io_bus_pkg.all;
 use work.dma_bus_pkg.all;
 
 entity io_to_dma_bridge is
+generic (
+    g_ignore_stop   : boolean := false );
 port (
     clock           : in  std_logic;
     reset           : in  std_logic;
@@ -45,7 +47,7 @@ begin
                 dma_req_i.read_writen <= io_req.read;
                 dma_req_i.data        <= io_req.data;
 
-                if c64_stopped='1' then
+                if c64_stopped='1' or g_ignore_stop then
                     dma_req_i.request <= '1';
                 else
                     io_resp.ack <= '1';
