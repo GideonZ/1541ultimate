@@ -705,7 +705,7 @@ int ConfigItem :: previous(int a)
 
 int ConfigItem :: setChanged()
 {
-    store->set_need_flash_write();
+    store->set_need_flash_write(true);
     int ret = 0;
     if(hook) {
         ret = hook(this);
