@@ -655,7 +655,6 @@ void C64::resume(void)
 
         C64_STOP_MODE = STOP_COND_BADLINE;
 
-        printf("Normal!!\n");
         // return to normal mode
         C64_MODE = MODE_NORMAL;
 
@@ -801,7 +800,7 @@ void C64::freeze(void)
     if (!phi2_present())
         return;
 
-    stop();
+    stop(true);
     backup_io();
     init_io();
 
@@ -1211,7 +1210,7 @@ void C64::init_cartridge()
         C64_MODE = C64_MODE_UNRESET;
         C64_STOP = 0;
         wait_ms(100);
-        freeze();
+        stop(false);
         wait_ms(1400);
         start_cartridge(cart2, false);
     }
@@ -1220,7 +1219,7 @@ void C64::init_cartridge()
         C64_MODE = C64_MODE_UNRESET;
         C64_STOP = 0;
         wait_ms(100);
-        freeze();
+        stop(false);
         wait_ms(1400);
         start_cartridge(cart2, false);
     }
