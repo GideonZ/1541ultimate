@@ -7,7 +7,7 @@ use work.slot_bus_pkg.all;
 
 entity all_carts_v4 is
 generic (
-    g_kernal_base   : std_logic_vector(27 downto 0) := X"0ECC000"; -- multiple of 16K
+    g_kernal_base   : std_logic_vector(27 downto 0) := X"0EC8000"; -- multiple of 32K
     g_rom_base      : std_logic_vector(27 downto 0) := X"0F00000"; -- multiple of 1M
     g_georam_base   : std_logic_vector(27 downto 0) := X"1000000"; -- Shared with reu
     g_ram_base      : std_logic_vector(27 downto 0) := X"0EF0000" ); -- multiple of 64K
