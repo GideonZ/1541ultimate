@@ -257,6 +257,8 @@ begin
         resps(1) => io_resp_dma );
         
     i_bridge: entity work.io_to_dma_bridge
+    generic map (
+        g_ignore_stop => g_direct_dma )
     port map (
         clock       => clock,
         reset       => reset,
