@@ -35,7 +35,7 @@
 #define U64_BASIC_BASE   (U64_ROMS_BASE + 0x0000)
 #define U64_KERNAL_BASE  (U64_ROMS_BASE + 0x2000)
 
-#define U64_RAM_BASE     0xA00A0000
+//#define U64_RAM_BASE     0xA00A0000 // No longer available -> use DMA channel with C64_DMA_MEMONLY
 #endif
 
 #define U64_HDMI_REG       (*(volatile uint8_t *)(U64_IO_BASE + 0x00))
