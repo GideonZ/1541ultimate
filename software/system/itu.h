@@ -92,6 +92,7 @@ void wait_ms(int);
 void wait_10us(uint8_t mult); // max=126
 void outbyte(int c);
 uint8_t getButtons(void);
+void itu_clear_irqs(void);
 
 #define UART_DATA  (ITU_BASE + 0x10)
 #define UART_GET   (ITU_BASE + 0x11)
