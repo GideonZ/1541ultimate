@@ -763,13 +763,8 @@ void FileTypeCRT::configure_cart(void)
         if (total_read > 8192) {
             C64_KERNAL_ENABLE = 3;
             uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
-            for (int i = 16383; i > 0; i--)
-                *(src + 4 * i) = *(src + i);
-            for (int i = 8191; i >= 0; i--)
-            {
-                *(src + 4 * i + 1) = *(src + 4*i);
-                *(src + 4 * i + 2) = *(src + 32768 + 4*i);
-            }
+            for (int i = 16383; i >= 0; i--)
+                *(src + 2 * i + 1) = *(src + i);
         } else {
             uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
             int fastreset = C64 :: getMachine()->get_cfg_value(CFG_C64_FASTRESET);

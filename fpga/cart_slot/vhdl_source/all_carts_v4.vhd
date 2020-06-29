@@ -41,7 +41,6 @@ port (
     serve_io1       : out std_logic; -- IO1n
     serve_io2       : out std_logic; -- IO2n
     allow_write     : out std_logic;
-    kernal_bank     : out  std_logic_vector(1 downto 0);
 
     mem_addr        : out unsigned(25 downto 0);   
 
@@ -911,13 +910,9 @@ begin
         if kernal_area='1' then
             if kernal_16k='0' then
                 mem_addr_i <= g_kernal_base(27 downto 14) & slot_addr(12 downto 0) & '0';
-                kernal_bank <= "00";
             else
-                mem_addr_i <= g_rom_base(27 downto 15) & slot_addr(12 downto 0) & '0' & '0';
-                kernal_bank <= '0' & (not sense);
+                mem_addr_i <= g_rom_base(27 downto 15) & (not sense) & slot_addr(12 downto 0) & '0';
             end if;
-        else
-            kernal_bank <= "00";
         end if;
 
     end process;
