@@ -53,7 +53,6 @@ port (
     serve_io1       : in  std_logic := '0'; -- IO1n
     serve_io2       : in  std_logic := '0'; -- IO2n
     allow_write     : in  std_logic := '0';
-    kernal_bank     : in  std_logic_vector(1 downto 0) := "00";
     kernal_enable   : in  std_logic := '0';
     kernal_probe    : out std_logic := '0';
     kernal_area     : out std_logic := '0';
@@ -98,8 +97,6 @@ architecture gideon of slot_slave is
     signal kernal_area_i    : std_logic;
     signal mem_data_0       : std_logic_vector(7 downto 0) := X"00";
     signal mem_data_1       : std_logic_vector(7 downto 0) := X"00";
-    signal mem_data_2       : std_logic_vector(7 downto 0) := X"00";
-    signal mem_data_3       : std_logic_vector(7 downto 0) := X"00";
     signal data_mux         : std_logic;
     
     attribute register_duplication : string;
@@ -253,13 +250,9 @@ begin
                     if g_big_endian then
                         mem_data_0 <= mem_rdata(31 downto 24);
                         mem_data_1 <= mem_rdata(23 downto 16);
-                        mem_data_2 <= mem_rdata(15 downto 8);
-                        mem_data_3 <= mem_rdata(7 downto 0);
                     else
                         mem_data_0 <= mem_rdata(7 downto 0);
                         mem_data_1 <= mem_rdata(15 downto 8);
-                        mem_data_2 <= mem_rdata(23 downto 16);
-                        mem_data_3 <= mem_rdata(31 downto 24);
                     end if;
                     dav      <= '1';
                 end if;
@@ -345,11 +338,7 @@ begin
         
     BUFFER_ENn <= '0';
 
-    -- DATA_out <= mem_data_0 when data_mux='0' else mem_data_1;
-    DATA_out <= mem_data_0 when data_mux='0' else
-                mem_data_1 when kernal_bank = "00" else
-                mem_data_2 when kernal_bank = "01" else
-                mem_data_3;
+    DATA_out <= mem_data_0 when data_mux='0' else mem_data_1;
                                 
     slot_req.data        <= mem_wdata_i;
     slot_req.bus_address <= unsigned(address_c(15 downto 0));
