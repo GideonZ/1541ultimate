@@ -153,7 +153,6 @@ architecture structural of slot_server_v4 is
     signal serve_io1       : std_logic := '0'; -- IO1n
     signal serve_io2       : std_logic := '0'; -- IO2n
     signal allow_write     : std_logic := '0';
-    signal kernal_bank     : std_logic_vector(1 downto 0);
 
     -- kernal replacement logic
     signal kernal_area     : std_logic := '0';
@@ -402,7 +401,6 @@ begin
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
         allow_write     => allow_write,
-        kernal_bank     => kernal_bank,
 
         -- kernal emulation
         kernal_enable   => control.kernal_enable,
@@ -533,7 +531,6 @@ begin
         serve_io1       => serve_io1, -- IO1n
         serve_io2       => serve_io2, -- IO2n
         allow_write     => allow_write,
-        kernal_bank     => kernal_bank,
         kernal_area     => kernal_area,
         kernal_enable   => control.kernal_enable,
         kernal_16k      => control.kernal_16k,
