@@ -217,9 +217,8 @@ C64::C64()
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-//    C64_STOP = 0;
     isFrozen = false;
-//    C64_MODE = C64_MODE_RESET;
+    backupIsValid = false;
     buttonPushSeen = false;
     client = 0;
     available = false;
@@ -701,6 +700,8 @@ void C64::reset(void)
  */
 void C64::backup_io(void)
 {
+    configASSERT( !backupIsValid );
+
     int i;
     // enter ultimax mode, as this might not have taken place already!
     goUltimax();
@@ -755,6 +756,7 @@ void C64::backup_io(void)
     cia_backup[6] = CIA1_CRA;
     cia_backup[7] = CIA1_CRB;
 
+    backupIsValid = true;
 }
 
 void C64::init_io(void)
@@ -826,6 +828,8 @@ void C64::freeze(void)
 
 void C64::restore_io(void)
 {
+    configASSERT( backupIsValid );
+
     int i;
 
     // disable screen
@@ -868,6 +872,8 @@ void C64::restore_io(void)
     SID_DUMMY = 0;   // clear internal charge on databus!
     SID2_DUMMY = 0;   // clear internal charge on databus!
     SID3_DUMMY = 0;   // clear internal charge on databus!
+
+    backupIsValid = false;
 }
 
 void C64::init_system_roms(void)
@@ -948,6 +954,8 @@ void C64::init_system_roms(void)
  */
 void C64::unfreeze()
 {
+    if (!isFrozen)
+        return;
 
     if (!phi2_present())
         return;

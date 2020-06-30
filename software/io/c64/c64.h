@@ -238,7 +238,6 @@ class C64 : public GenericHost, ConfigurableObject
     uint32_t screen_backup[COLOR_SIZE/4]; // only used now for vic state write
     uint32_t color_backup[COLOR_SIZE/4];
     uint8_t cia_backup[8];
-    
     uint8_t stop_mode;
     uint8_t raster;
     uint8_t raster_hi;
@@ -247,6 +246,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_d011;
     uint8_t vic_d012;
     uint8_t force_cart;
+    bool backupIsValid;
 
     uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
