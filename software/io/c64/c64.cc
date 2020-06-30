@@ -1039,6 +1039,7 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     }
 
     isFrozen = false;
+    backupIsValid = false;
 }
 
 Screen *C64::getScreen(void)
