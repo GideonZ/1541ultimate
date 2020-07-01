@@ -700,8 +700,9 @@ void C64::reset(void)
  */
 void C64::backup_io(void)
 {
+#ifdef OS
     configASSERT( !backupIsValid );
-
+#endif
     int i;
     // enter ultimax mode, as this might not have taken place already!
     goUltimax();
@@ -828,7 +829,9 @@ void C64::freeze(void)
 
 void C64::restore_io(void)
 {
+#ifdef OS
     configASSERT( backupIsValid );
+#endif
 
     int i;
 
