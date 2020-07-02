@@ -25,6 +25,8 @@ SRCS_6502 =
 
 SRCS_BIN =  
 
+VPATH += $(PATH_SW)/FreeRTOS/Source/portable/microblaze
+
 PATH_INC =  $(addprefix -I, $(VPATH))
 APPL_OPT = -DBOOTLOADER -D_FS_READONLY=1 -D_FS_MINIMIZE=3
 COPTIONS = -ffunction-sections -Os -std=c99 $(APPL_OPT)

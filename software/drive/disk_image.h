@@ -74,7 +74,7 @@ public:
     bool write_track(int, File *f, bool);
     void convert_disk_bin2gcr(BinImage *bin_image, UserInterface *ui);
     int  convert_disk_gcr2bin(BinImage *bin_image, UserInterface *ui);
-    int  convert_track_gcr2bin(int track, BinImage *bin_image);
+    int  convert_track_gcr2bin(int track, BinImage *bin_image, int &errors);
     void invalidate(void);
     bool test(void);
     

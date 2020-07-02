@@ -6,6 +6,7 @@ use ieee.numeric_std.all;
 library work;
 use work.mem_bus_pkg.all;
 use work.io_bus_pkg.all;
+use work.dma_bus_pkg.all;
 
 entity ultimate_logic_32 is
 generic (
@@ -21,6 +22,8 @@ generic (
     g_fpga_type     : natural := 0;
     g_cartreset_init: std_logic := '0';
     g_boot_stop     : boolean := false;
+    g_direct_dma    : boolean := false;
+    g_ext_freeze_act: boolean := false;
     g_microblaze    : boolean := true;
     g_big_endian    : boolean := true;
     g_boot_rom      : boolean := false;
@@ -50,9 +53,7 @@ generic (
     g_spi_flash     : boolean := true;
     g_vic_copper    : boolean := false;
     g_sampler       : boolean := true;
-    g_profiler      : boolean := true;
     g_rmii          : boolean := false;
-    g_analyzer      : boolean := false;
     g_kernal_repl   : boolean := true );
 port (
     -- globals
@@ -72,8 +73,8 @@ port (
     rstn_o      : out   std_logic := '1';
     rstn_i      : in    std_logic := '1';
 
-    slot_addr_o : out   std_logic_vector(15 downto 0);
-    slot_addr_i : in    std_logic_vector(15 downto 0) := (others => '1');
+    slot_addr_o : out   unsigned(15 downto 0);
+    slot_addr_i : in    unsigned(15 downto 0) := (others => '1');
     slot_addr_tl: out   std_logic;
     slot_addr_th: out   std_logic;
     
@@ -103,12 +104,17 @@ port (
     io2n_i      : in    std_logic := '1';
 
     VCC         : in    std_logic := '1';
-    
+    freeze_activate : in  std_logic := '0';
+
     -- local bus side
     mem_inhibit : out   std_logic;
     mem_req     : out   t_mem_req_32;
     mem_resp    : in    t_mem_resp_32;
     
+    -- Direct DMA for U64
+    direct_dma_req   : out   t_dma_req := c_dma_req_init;
+    direct_dma_resp  : in    t_dma_resp := c_dma_resp_init;
+
     -- Audio outputs
     audio_speaker    : out signed(12 downto 0);
     audio_left       : out signed(18 downto 0);
@@ -158,9 +164,8 @@ port (
     drv_via1_cb1_t      : out std_logic;
 
     -- Debug port
-    debug_data          : out std_logic_vector(31 downto 0);
-    debug_valid         : out std_logic;
-    debug_ready         : in  std_logic := '0';
+    drv_debug_data      : out std_logic_vector(31 downto 0);
+    drv_debug_valid     : out std_logic;
 
 	-- Debug UART
 	UART_TXD	: out   std_logic;
@@ -283,7 +288,7 @@ architecture logic of ultimate_logic_32 is
         cap(19) := to_std(g_vic_copper);
         cap(20) := to_std(g_video_overlay);
         cap(21) := to_std(g_sampler);
-        cap(22) := to_std(g_analyzer) or to_std(g_profiler);
+        cap(22) := '0';
         cap(23) := to_std(g_usb_host2);
         cap(24) := to_std(g_rmii);
         cap(25) := to_std(g_ultimate2plus);
@@ -383,10 +388,10 @@ architecture logic of ultimate_logic_32 is
     signal io_resp_icap     : t_io_resp := c_io_resp_init;
     signal io_req_aud_sel   : t_io_req;
     signal io_resp_aud_sel  : t_io_resp := c_io_resp_init;
-    signal io_req_debug     : t_io_req;
-    signal io_resp_debug    : t_io_resp := c_io_resp_init;
     signal io_req_rmii      : t_io_req;
     signal io_resp_rmii     : t_io_resp := c_io_resp_init;
+    signal io_req_debug     : t_io_req;
+    signal io_resp_debug    : t_io_resp := c_io_resp_init;
     signal io_irq           : std_logic;
     
     signal drive_sample_1   : signed(12 downto 0);
@@ -400,11 +405,6 @@ architecture logic of ultimate_logic_32 is
     signal audio_select_left    : std_logic_vector(3 downto 0);
     signal audio_select_right   : std_logic_vector(3 downto 0);
     
-    signal bus_debug_data       : std_logic_vector(31 downto 0);
-    signal bus_debug_valid      : std_logic;
-    signal drv_debug_data       : std_logic_vector(31 downto 0);
-    signal drv_debug_valid      : std_logic;
-
     -- IEC signal routing
     signal atn_o, atn_i     : std_logic := '1';
     signal clk_o, clk_i     : std_logic := '1';
@@ -439,11 +439,9 @@ architecture logic of ultimate_logic_32 is
 	signal busy_led			: std_logic;
 	signal sd_busy          : std_logic;
 	signal sd_act_stretched : std_logic;
-	signal error			: std_logic;
 	signal disk_led_n		: std_logic := '1';
 	signal motor_led_n		: std_logic := '1';
 	signal cart_led_n		: std_logic := '1';
-    signal task             : std_logic_vector(3 downto 0);
 	signal c2n_pull_sense   : std_logic := '0';
     signal freezer_state    : std_logic_vector(1 downto 0);
     signal dirty_led_1_n    : std_logic := '1';
@@ -461,7 +459,6 @@ architecture logic of ultimate_logic_32 is
     signal sys_irq_eth_tx   : std_logic := '0';
     signal sys_irq_eth_rx   : std_logic := '0';
     signal misc_io          : std_logic_vector(7 downto 0);
-    signal profiler_irq_flags   : std_logic_vector(7 downto 0);
 
     signal audio_speaker_tmp : signed(17 downto 0);
 begin
@@ -569,8 +566,6 @@ begin
         
         irq_out     => io_irq,
         
-        irq_flags   => profiler_irq_flags,
-
         busy_led    => busy_led,
         misc_io     => misc_io,
 
@@ -730,6 +725,8 @@ begin
         i_slot_srv: entity work.slot_server_v4
         generic map (
             g_clock_freq    => g_clock_freq,
+            g_direct_dma    => g_direct_dma,
+            g_ext_freeze_act=> g_ext_freeze_act,
             g_tag_slot      => c_tag_slot,
             g_tag_reu       => c_tag_reu,
             g_ram_base_reu  => X"1000000", -- should be on 16M boundary, or should be limited in size
@@ -804,6 +801,7 @@ begin
             samp_right      => samp_right,
 
             -- debug
+            freeze_activate => freeze_activate,
             freezer_state   => freezer_state,
             sync            => sync,
             sw_trigger      => sw_trigger,
@@ -818,6 +816,9 @@ begin
             memctrl_inhibit => mem_inhibit,
             mem_req         => mem_req_32_cart,
             mem_resp        => mem_resp_32_cart,
+
+            direct_dma_req  => direct_dma_req,
+            direct_dma_resp => direct_dma_resp,
             
             -- slave on io bus
             io_req          => io_req_cart,
@@ -1215,7 +1216,7 @@ begin
 
     i_mem_arb: entity work.mem_bus_arbiter_pri_32
     generic map (
-        g_ports      => 8,
+        g_ports      => 7,
         g_registered => false )
     port map (
         clock       => sys_clock,
@@ -1225,19 +1226,17 @@ begin
         reqs(1)     => mem_req_32_1541,
         reqs(2)     => mem_req_32_1541_2,
         reqs(3)     => mem_req_32_rmii,
-        reqs(4)     => mem_req_32_debug,
-        reqs(5)     => mem_req_32_usb,
-        reqs(6)     => mem_req_32_cpu,
-        reqs(7)     => ext_mem_req,
+        reqs(4)     => mem_req_32_usb,
+        reqs(5)     => mem_req_32_cpu,
+        reqs(6)     => ext_mem_req,
         
         resps(0)    => mem_resp_32_cart,
         resps(1)    => mem_resp_32_1541,
         resps(2)    => mem_resp_32_1541_2,
         resps(3)    => mem_resp_32_rmii,
-        resps(4)    => mem_resp_32_debug,
-        resps(5)    => mem_resp_32_usb,
-        resps(6)    => mem_resp_32_cpu,
-        resps(7)    => ext_mem_resp,
+        resps(4)    => mem_resp_32_usb,
+        resps(5)    => mem_resp_32_cpu,
+        resps(6)    => ext_mem_resp,
         
         req         => mem_req,
         resp        => mem_resp );        
@@ -1341,17 +1340,10 @@ begin
     iec_data_o   <= '0' when data_o='0' or data_o_2='0' or hw_data_o='0' else '1';
     iec_srq_o    <= hw_srq_o; -- only source
         
-    error <= cpu_io_busy;
-
     MOTOR_LEDn  <= motor_led_n;
 	DISK_ACTn   <= disk_led_n;
     CART_LEDn   <= cart_led_n;
 	SDACT_LEDn  <= (dirty_led_1_n and dirty_led_2_n and not (sd_act_stretched or busy_led));
-
---    MOTOR_LEDn  <= not task(3);
---    DISK_ACTn   <= not task(2);
---    CART_LEDn   <= not task(1);
---    SDACT_LEDn  <= not task(0);
 
     filt1: entity work.spike_filter generic map (10) port map(sys_clock, iec_atn_i,    atn_i);
     filt2: entity work.spike_filter generic map (10) port map(sys_clock, iec_clock_i,  clk_i);
@@ -1364,142 +1356,11 @@ begin
     -- dummy
     SD_DATA     <= "ZZ";
     
-    g_ela: if g_analyzer generate
-        signal ev_data  : std_logic_vector(15 downto 0);
-    begin
-        i_ela: entity work.logic_analyzer
-        generic map (
-            g_timer_div    => 50,
-            g_change_width => 16,
-            g_data_length  => 2 )
-        port map (
-            clock       => sys_clock,
-            reset       => sys_reset,
-            
-            ev_dav      => '0',
-            ev_data     => ev_data,
-            
-            ---
-            mem_req     => mem_req_debug,
-            mem_resp    => mem_resp_debug,
-            
-            io_req      => io_req_debug,
-            io_resp     => io_resp_debug );
-         
-        i_conv32_debug: entity work.mem_to_mem32(route_through)
-        generic map (
-            g_big_endian => g_big_endian )
-        port map(
-            clock       => sys_clock,
-            reset       => sys_reset,
-            mem_req_8   => mem_req_debug,
-            mem_resp_8  => mem_resp_debug,
-            mem_req_32  => mem_req_32_debug,
-            mem_resp_32 => mem_resp_32_debug );
-    
-        ev_data <= srq_i & atn_i & data_i & clk_i & '1' & atn_o_2 & data_o_2 & clk_o_2 &
-                   '0' & atn_o & data_o & clk_o & hw_srq_o & hw_atn_o & hw_data_o & hw_clk_o;
-    end generate;
-    
---    g_ela32: if g_profiler generate
---        signal ev_data  : std_logic_vector(7 downto 0);
---    begin
---        i_ela: entity work.logic_analyzer_32
---        generic map (
---            g_big_endian   => g_big_endian,
---            g_timer_div    => 25 )
---        port map (
---            clock       => sys_clock,
---            reset       => sys_reset,
---            
---            ev_dav      => '0',
---            ev_data     => ev_data,
---            
---            ---
---            mem_req     => mem_req_32_debug,
---            mem_resp    => mem_resp_32_debug,
---            
---            io_req      => io_req_debug,
---            io_resp     => io_resp_debug );
---         
---        ev_data <= profiler_irq_flags;
---    end generate;
-
-    g_ela32: if g_profiler generate
-        signal drv_pending  : std_logic;
-        signal bus_pending  : std_logic;
-        signal drv_debug_enable : std_logic;
-    begin
-        i_ela: entity work.bus_analyzer_32
-        generic map (
-            g_big_endian => g_big_endian
-        )
-        port map (
-            clock        => sys_clock,
-            reset        => sys_reset,
-            addr         => SLOT_ADDR_i,
-            data         => SLOT_DATA_i,
-            rstn         => RSTn_i,
-            phi2         => PHI2_i,
-            rwn          => RWn_i,
-            ba           => BA_i,
-            IO1n         => IO1n_i,
-            IO2n         => IO2n_i,
-            IRQn         => IRQn_i,
-            NMIn         => NMIn_i,
-            DMAn         => DMAn_oi,
-            ROMLn        => ROMLn_i,
-            ROMHn        => ROMHn_i,
-            EXROMn       => EXROMn_i,
-            GAMEn        => GAMEn_i,
-            sync         => sync,
-            trigger      => trigger,
-
-            debug_data   => bus_debug_data,
-            debug_valid  => bus_debug_valid,
-            drv_enable   => drv_debug_enable,
-
-            mem_req      => mem_req_32_debug,
-            mem_resp     => mem_resp_32_debug,
-            io_req       => io_req_debug,
-            io_resp      => io_resp_debug
-        );
-
-        process(sys_clock)
-        begin
-            if rising_edge(sys_clock) then
-                if sys_reset = '1' then
-                    drv_pending <= '0';
-                    bus_pending <= '0';
-                else
-                    if debug_ready = '1' then
-                        if bus_pending = '1' then
-                            bus_pending <= '0';
-                        elsif drv_pending = '1' then
-                            drv_pending <= '0';
-                        end if;
-                    end if;
-                    if drv_debug_valid = '1' and drv_debug_enable = '1' then
-                        drv_pending <= '1';
-                    end if;
-                    if bus_debug_valid = '1' then
-                        bus_pending <= '1';
-                    end if;
-                end if;
-            end if;
-        end process;
-
-        debug_data  <= bus_debug_data when bus_pending = '1' else drv_debug_data;
-        debug_valid <= bus_pending or drv_pending;
-    end generate;
-
-    g_no_elas: if not g_profiler and not g_analyzer generate
-        i_dummy: entity work.io_dummy
-        port map (
-            clock       => sys_clock,
-            io_req      => io_req_debug,
-            io_resp     => io_resp_debug );
-    end generate;
+    i_debug_dummy: entity work.io_dummy
+    port map (
+        clock       => sys_clock,
+        io_req      => io_req_debug,
+        io_resp     => io_resp_debug );
 
     r_rmii: if g_rmii generate
     begin

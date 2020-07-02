@@ -29,7 +29,7 @@ uint8_t usb_irq(void) __attribute__ ((weak));
 
 uint8_t command_interface_irq(void)
 {
-
+    return pdFALSE;
 }
 
 void RmiiRxInterruptHandler()

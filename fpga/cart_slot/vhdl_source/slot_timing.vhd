@@ -21,6 +21,7 @@ port (
     allow_serve     : out std_logic;
 
     phi2_tick       : out std_logic;
+    phi2_fall       : out std_logic;
     phi2_recovered  : out std_logic;
     clock_det       : out std_logic;
     vic_cycle       : out std_logic;    
@@ -62,6 +63,7 @@ begin
     vic_cycle      <= '1' when (ba_hist = "0000") else '0';
     phi2_recovered <= phi2_rec_i;
     phi2_tick      <= phi2_tick_i;
+    phi2_fall      <= phi2_d and not phi2_c;
     
     process(clock)
     begin

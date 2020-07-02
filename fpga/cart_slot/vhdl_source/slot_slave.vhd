@@ -23,7 +23,7 @@ port (
     GAMEn           : in  std_logic;
     EXROMn          : in  std_logic;
     RWn             : in  std_logic;
-    ADDRESS         : in  std_logic_vector(15 downto 0);
+    ADDRESS         : in  unsigned(15 downto 0);
     DATA_in         : in  std_logic_vector(7 downto 0);
     DATA_out        : out std_logic_vector(7 downto 0) := (others => '0');
     DATA_tri        : out std_logic;
@@ -70,7 +70,7 @@ port (
 end slot_slave;    
 
 architecture gideon of slot_slave is
-    signal address_c    : std_logic_vector(15 downto 0) := (others => '0');
+    signal address_c    : unsigned(15 downto 0) := (others => '0');
     signal data_c       : std_logic_vector(7 downto 0) := X"FF";
     signal io1n_c       : std_logic := '1';
     signal io2n_c       : std_logic := '1';
@@ -117,7 +117,7 @@ architecture gideon of slot_slave is
 --    attribute fsm_encoding : string;
 --    attribute fsm_encoding of state : signal is "sequential";
 
-    signal epyx_timer       : unsigned(6 downto 0) := (others => '0');
+    signal epyx_timer       : natural range 0 to 511;
     signal epyx_reset       : std_logic := '0';
 begin
     slot_req.io_write      <= do_io_event and io_write_cond;
@@ -145,11 +145,14 @@ begin
             ultimax_d <= ultimax;
             ultimax_d2 <= ultimax_d;
             
+            -- 470 nF / 3.3K pup / Vih = 2V, but might be lower
+            -- Voh buffer = 0.3V, so let's take a threshold of 1.2V => 400 cycles
+            -- Now implemented: 512
             if epyx_reset='1' then
-                epyx_timer <= (others => '1');
+                epyx_timer <= 511;
                 epyx_timeout <= '0';
             elsif phi2_tick='1' and dma_active_n = '1' then
-                if epyx_timer = "0000000" then
+                if epyx_timer = 0 then
                     epyx_timeout <= '1';
                 else
                     epyx_timer <= epyx_timer - 1;
@@ -161,13 +164,13 @@ begin
                 cpu_write  <= not RWn;
 
                 slot_req.bus_write  <= not RWn;
-                slot_req.io_address <= unsigned(address_c);
+                slot_req.io_address <= address_c;
                 mem_wdata_i         <= data_c;
 
                 late_write_cond <= not rwn_c;
                 io_write_cond <= not rwn_c and (not io2n_c or not io1n_c);
                 io_read_cond  <= rwn_c and (not io2n_c or not io1n_c);
-                epyx_reset    <= not io2n_c or not io1n_c or not romln_c or not RSTn;
+                epyx_reset    <= not io1n_c or not romln_c or not RSTn;
             end if;
 
             if do_probe_end='1' then
@@ -197,10 +200,10 @@ begin
                             kernal_area_i  <= '1';
                         end if;
                         if addr_is_io then
-                            if ba_c='1' then -- only serve IO when BA='1' (Fix for Ethernet)
+                            --if ba_c='1' then -- only serve IO when BA='1' (Fix for Ethernet)
                                 mem_req_ff <= '1';
                                 state      <= mem_access;
-                            end if;
+                            --end if;
                             if address_c(8)='0' and serve_io1='1' then
                                 io_out <= (rwn_c='1');
                             elsif address_c(8)='1' and serve_io2='1' then
@@ -339,6 +342,7 @@ begin
                                 
     slot_req.data        <= mem_wdata_i;
     slot_req.bus_address <= unsigned(address_c(15 downto 0));
+    slot_req.bus_rwn     <= rwn_c;
 
     kernal_probe <= kernal_probe_i;
     kernal_area  <= kernal_area_i;

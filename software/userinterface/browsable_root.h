@@ -110,7 +110,7 @@ public:
 
 		setPath();
 		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-		if (path->get_directory(*infos) != FR_OK) {
+		if (path->get_directory(*infos, NULL) != FR_OK) {
 			delete infos;
 			error = -1;
 		} else {
@@ -175,7 +175,7 @@ public:
 	virtual IndexedList<Browsable *> *getSubItems(int &error) {
 		if (children.get_elements() == 0) {
 			IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-			fm -> get_directory(root, *infos);
+			fm -> get_directory(root, *infos, NULL);
 			// printf("Root get sub items: get_directory of %s returned %d elements.\n", root->get_path(), infos->get_elements());
 			for(int i=0;i<infos->get_elements();i++) {
 				FileInfo *inf = (*infos)[i];

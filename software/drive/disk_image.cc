@@ -99,7 +99,7 @@ GcrImage :: GcrImage(void)
     }
 #endif
     gcr_data = new uint8_t[C1541_MAX_GCR_LEN];
-    gcr_data += 0x80000000; // make it uncachable
+    //gcr_data += 0x80000000; // make it uncachable
 
     gcr_image = gcr_data; // point to my own array
 //    mounted_on = NULL;
@@ -340,9 +340,7 @@ int GcrImage :: convert_disk_gcr2bin(BinImage *bin_image, UserInterface *user_in
     int errors = 0;
     int result = 0;
     for(int track=0;track<bin_image->num_tracks;track++) {
-        result = convert_track_gcr2bin(track, bin_image);
-        if(result)
-            errors ++;
+        result = convert_track_gcr2bin(track, bin_image, errors);
         if(user_interface)
             user_interface->update_progress(NULL, 1);
     }
@@ -376,7 +374,10 @@ int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trac
 	while(secs < maxSector) {
 
 		new_gcr = find_sync(current, begin, end);
-        if(new_gcr < current) {
+		if (!new_gcr) {
+		    break; // no sync found
+		}
+		if(new_gcr < current) {
         	if (wrapped) {
         		break;
         	}
@@ -404,18 +405,19 @@ int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trac
 			if (st) {
 				*(st++) = s;
 			}
+			expect_data = true;
 
 			if(t != trackNumber) {
 				if (st) {
 					*(st++) = 0xE1;
+					expect_data = false;
 				}
-			}
-			if(s >= maxSector) {
+			} else if(s >= maxSector) {
 				if (st) {
 					*(st++) = 0xE2;
+                    expect_data = false;
 				}
 			}
-			expect_data = true;
 			continue;
 		}
 
@@ -453,18 +455,26 @@ int GcrImage :: convert_gcr_track_to_bin(uint8_t *gcr, int trackNumber, int trac
 	return secs;
 }
 
-int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image)
+int GcrImage :: convert_track_gcr2bin(int track, BinImage *bin_image, int &errors)
 {
-	static uint8_t header[8];
+    uint8_t status[64];
+    uint8_t header[8];
 	int t, s;
 
 	int expected_secs = bin_image->track_sectors[track];
 	uint8_t *bin = bin_image->track_start[track];
     uint8_t *begin = track_address[2*track];
     
-    int secs = convert_gcr_track_to_bin(begin, track+1, track_length[2*track], expected_secs, bin, NULL);
-	
-	printf("%d sectors found.\n", secs);
+    int secs = convert_gcr_track_to_bin(begin, track+1, track_length[2*track], expected_secs, bin, status);
+	printf("%d sectors found. (", secs);
+
+    for(int i=0;i<2*secs;i++) {
+        printf("%b ", status[i]);
+        if ((i & 1) && (status[i])) {
+            errors++;
+        }
+    } printf(")\n");
+
 	if(secs != expected_secs)
 		return -3;
 
@@ -722,13 +732,14 @@ bool GcrImage :: test(void)
     
     // now start decoding 600 times
     int total = 0;
+    int dummy = 0;
     for(int i=0;i<600;i++) {
         // clear
         for(int j=0;j<bytes;j++)
             decoded[j] = 0;
 
         // decode
-        convert_track_gcr2bin(0, bin);
+        convert_track_gcr2bin(0, bin, dummy);
 
         // compare (better than checking the return value)
         int errors = 0;
@@ -965,7 +976,8 @@ int BinImage :: format(const char *name)
 
 int BinImage :: write_track(int track, GcrImage *gcr_image, File *file)
 {
-	int res = gcr_image->convert_track_gcr2bin(track, this);
+	int dummy = 0;
+    int res = gcr_image->convert_track_gcr2bin(track, this, dummy);
 	if(res) {
         printf("Decode failed with error %d.\n", res);
 		return res;

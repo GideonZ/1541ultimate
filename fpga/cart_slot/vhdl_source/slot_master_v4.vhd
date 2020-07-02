@@ -65,7 +65,8 @@ architecture gideon of slot_master_v4 is
     constant match_ptrn : std_logic_vector(1 downto 0) := "01"; -- read from left to right
     signal rwn_hist     : std_logic_vector(3 downto 0);
     signal ba_count     : integer range 0 to 15;
-
+    signal c64_stopped_i: std_logic;
+    
     attribute register_duplication : string;
     attribute register_duplication of rwn_c   : signal is "no";
     attribute register_duplication of ba_c    : signal is "no";
@@ -120,24 +121,19 @@ begin
                 dma_ack_i <= dma_req.request and dma_req.read_writen; -- do not serve DMA requests when machine is not stopped
                 dma_rack  <= dma_req.request;
                 
-                dma_n_i <= '1';                
-                reu_active <= '0';
-                cmd_if_active <= '0';
-                if reu_dma_n='0' then -- for software assited REU-debugging
+                if reu_dma_n='0' then
                     reu_active <= '1';
                     dma_n_i <= '0';
-                    c64_stopped <= '1';
                     state <= stopped;
                 elsif cmd_if_freeze='1' then
                     cmd_if_active <= '1';
                     dma_n_i <= '0';
-                    c64_stopped <= '1';
                     state <= stopped;
                 elsif c64_stop='1' and do_io_event='1' then
                     if stop then
                         dma_n_i <= '0';
                         state <= stopped;
-                        c64_stopped <= '1';
+                        c64_stopped_i <= '1';
                     end if;
                 end if;
                 
@@ -153,16 +149,16 @@ begin
                     rwn_out_i <= dma_req.read_writen;
                     state     <= do_dma;
                 elsif reu_active='1' and reu_dma_n='1' and do_io_event='1' then
-                    c64_stopped <= '0';
                     dma_n_i  <= '1';
+                    reu_active <= '0';
                     state   <= idle;
                 elsif cmd_if_active='1' and cmd_if_freeze='0' and do_io_event='1' then
-                    c64_stopped <= '0';
                     dma_n_i  <= '1';
+                    cmd_if_active <= '0';
                     state   <= idle;
-                elsif reu_active='0' and c64_stop = '0' and do_io_event='1' then
+                elsif c64_stopped_i = '1' and c64_stop = '0' and do_io_event='1' then
                     if stop then
-                        c64_stopped <= '0';
+                        c64_stopped_i <= '0';
                         dma_n_i  <= '1';
                         state   <= idle;
                     end if;
@@ -189,14 +185,16 @@ begin
             end if;
 
             if reset='1' then
+                reu_active <= '0';
+                cmd_if_active <= '0';
                 if g_start_in_stopped_state then
                     state           <= stopped;
                     dma_n_i         <= '0';
-                    c64_stopped     <= '1';
+                    c64_stopped_i   <= '1';
                 else
                     state           <= idle;
                     dma_n_i         <= '1';
-                    c64_stopped     <= '0';
+                    c64_stopped_i   <= '0';
                 end if;
                 rwn_out_i       <= '1';
                 addr_out        <= (others => '1');
@@ -204,6 +202,8 @@ begin
         end if;
     end process;
     
+    c64_stopped   <= c64_stopped_i;
+
     dma_resp.dack <= dma_ack_i and rwn_out_i; -- only data-acknowledge reads
     dma_resp.rack <= dma_rack;
     dma_resp.data <= data_d(3) when dma_ack_i='1' and rwn_out_i='1' else X"00";

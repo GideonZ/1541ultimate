@@ -101,6 +101,10 @@ static SemaphoreHandle_t resetSemaphore;
 #define CFG_JOYSWAP           0x49
 #define CFG_AUTO_MIRRORING    0x4A
 // #define CFG_CART_PREFERENCE   0x4B // moved to C64 for user experience consistency
+#define CFG_SPEED_REGS        0x4C
+#define CFG_SPEED_PREF        0x52
+#define CFG_BADLINES_EN       0x53
+#define CFG_SUPERCPU_DET      0x54
 
 #define CFG_SCAN_MODE_TEST    0xA8
 #define CFG_VIC_TEST          0xA9
@@ -210,7 +214,9 @@ static const uint16_t pan_ctrl[] = { 0, 40, 79, 116, 150, 181, 207, 228, 243, 25
 
 static const uint8_t stereo_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x20 };
 static const uint8_t split_bits[] = { 0x00, 0x02, 0x04, 0x08, 0x10, 0x06, 0x12, 0x18 };
-
+static const char *speeds[] = { " 1", " 2", " 3", " 4", " 5", " 6", " 8", "10", "12", "14", "16", "20", "24", "32", "40", "48" };
+static const char *speed_regs[] = { "Off", "Manual", "U64 Turbo Registers", "TurboEnable Bit", "a", "b" };
+static const uint8_t speedregs_regvalues[] = { 0x00, 0x00, 0x01, 0x05, 0x00, 0x00 }; // removed 3 and 7
 
 /*
 00 ff ff ff ff ff ff 00  09 d1 db 78 45 54 00 00
@@ -235,7 +241,7 @@ struct t_cfg_definition u64_cfg[] = {
     { CFG_SYSTEM_MODE,          CFG_TYPE_ENUM, "System Mode",                  "%s", color_sel,    0,  1, 0 },
     { CFG_JOYSWAP,              CFG_TYPE_ENUM, "Joystick Swapper",             "%s", joyswaps,     0,  1, 0 },
 //    { CFG_CART_PREFERENCE,      CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,    0,  2, 0 }, // moved to C64 for user consistency
-    //    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
+    { CFG_COLOR_CLOCK_ADJ,      CFG_TYPE_VALUE, "Adjust Color Clock",      "%d ppm", NULL,      -100,100, 0 },
     { CFG_ANALOG_OUT_SELECT,    CFG_TYPE_ENUM, "Analog Video Mode",            "%s", video_sel,    0,  1, 0 },
     { CFG_CHROMA_DELAY,         CFG_TYPE_VALUE, "Chroma Delay",                "%d", NULL,        -3,  3, 0 },
     { CFG_HDMI_ENABLE,          CFG_TYPE_ENUM, "Digital Video Mode",           "%s", dvi_hdmi,     0,  2, 0 },
@@ -250,6 +256,10 @@ struct t_cfg_definition u64_cfg[] = {
     //    { CFG_COLOR_CODING,         CFG_TYPE_ENUM, "Color Coding (not Timing!)",   "%s", color_sel,    0,  1, 0 },
     { CFG_VIC_TEST,             CFG_TYPE_ENUM, "VIC Test Colors",              "%s", en_dis5,      0,  2, 0 },
 #endif
+    { CFG_SPEED_REGS,           CFG_TYPE_ENUM, "Turbo Control",                "%s", speed_regs,   0,  3, 0 },
+    { CFG_SPEED_PREF,           CFG_TYPE_ENUM, "CPU Speed",                "%s MHz", speeds,       0, 15, 0 },
+    { CFG_BADLINES_EN,          CFG_TYPE_ENUM, "Badline Timing",               "%s", en_dis,       0,  1, 1 },
+    { CFG_SUPERCPU_DET,         CFG_TYPE_ENUM, "SuperCPU Detect (D0BC)",       "%s", en_dis,       0,  1, 0 },
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,         0,  0, 0 } };
 
 struct t_cfg_definition u64_sid_detection_cfg[] = {
@@ -356,13 +366,7 @@ int U64Config :: detectDukestahAdapter()
     volatile uint8_t *base1 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400); // D400
     volatile uint8_t *base2 = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD500); // D500
 
-    if (!(C64_STOP & C64_HAS_STOPPED)) {
-        C64_STOP_MODE = STOP_COND_FORCE;
-        C64_STOP = 1;
-        C64_PEEK(2);
-        C64_PEEK(2);
-        C64_PEEK(2);
-    }
+    C64 :: hard_stop();
     
     base1[25] = 0x81; // Enter config mode
     base1[26] = 0x65;
@@ -396,13 +400,7 @@ int U64Config :: detectFPGASID(int socket)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
 
-    if (!(C64_STOP & C64_HAS_STOPPED)) {
-        C64_STOP_MODE = STOP_COND_FORCE;
-        C64_STOP = 1;
-        C64_PEEK(2);
-        C64_PEEK(2);
-        C64_PEEK(2);
-    }
+    C64 :: hard_stop();
 
     // For FPGASID: Switch to DIAG mode
     base[25] = 0xEE;
@@ -425,28 +423,19 @@ int U64Config :: detectRemakes(int socket)
 {
     volatile uint8_t *base = (volatile uint8_t *)(C64_MEMORY_BASE + 0xD400 + 256 * socket); // D400 or D500
 
-/*
-    base[29] = 0;
-    C64_PEEK(2); // dummy cycle
-    base[30] = 0;
-    C64_PEEK(2); // dummy cycle
-    base[31] = 0;
-    C64_PEEK(2); // dummy cycle
-*/
-
     base[29] = 'S';
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
     base[30] = 'I';
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
     base[31] = 'D';
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
 
     wait_ms(10);
 
     uint8_t id1 = base[27];
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
     uint8_t id2 = base[28];
-    C64_PEEK(2); // dummy cycle
+    wait_10us(1);
 
     printf("ARMSID Detect: %b %b\n", id1, id2);
 
@@ -458,13 +447,14 @@ int U64Config :: detectRemakes(int socket)
 
     if ((id1 == 'N') && (id2 == 'O')) {
         base[31] = 'I';
-        C64_PEEK(2); // dummy cycle
+        wait_10us(1);
         base[30] = 'I';
-        C64_PEEK(2); // dummy cycle
+        wait_10us(1);
         wait_ms(10);
         uint8_t id1 = base[27];
+        wait_10us(1);
         base[29] = 0;
-        C64_PEEK(2); // dummy cycle
+        wait_10us(1);
         sidDevice[socket] = new SidDeviceArmSid(socket, base);
 
         if ((id1 == 'L') || (id1 == 'R')) {
@@ -713,8 +703,7 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
 
 		// Tweak: This has to be done first in order to make sure that the correct cart is started
 		// at cold boot.
-		machine = C64 :: getMachine();
-		U64_CART_PREF    =  machine->cfg->get_value(CFG_C64_CART_PREF);
+		C64 :: getMachine() -> ConfigureU64SystemBus();
 
         sidDevice[0] = NULL;
         sidDevice[1] = NULL;
@@ -727,6 +716,10 @@ U64Config :: U64Config() : SubSystem(SUBSYSID_U64)
         cfg->set_change_hook(CFG_COLOR_CLOCK_ADJ, U64Config::setPllOffset);
         cfg->set_change_hook(CFG_LED_SELECT_0, U64Config::setLedSelector);
         cfg->set_change_hook(CFG_LED_SELECT_1, U64Config::setLedSelector);
+        cfg->set_change_hook(CFG_SPEED_REGS, U64Config::setCpuSpeed);
+        cfg->set_change_hook(CFG_SPEED_PREF, U64Config::setCpuSpeed);
+        cfg->set_change_hook(CFG_BADLINES_EN, U64Config::setCpuSpeed);
+        cfg->set_change_hook(CFG_SUPERCPU_DET, U64Config::setCpuSpeed);
         effectuate_settings();
         sockets.effectuate_settings();
         mixercfg.effectuate_settings();
@@ -781,12 +774,20 @@ void U64Config :: effectuate_settings()
     if(!cfg)
         return;
 
+    C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
+    C64_PLD_JOYCTRL  = cfg->get_value(CFG_JOYSWAP) ^ 1;
+    C64_PADDLE_SWAP  = cfg->get_value(CFG_JOYSWAP);
+
+    //C64_TURBOREGS_EN = 0;
+    //C64_SPEED_PREFER = 0;
+
+    setCpuSpeed(cfg->find_item(CFG_SPEED_REGS));
+
     //printf("U64Config :: effectuate_settings()\n");
     uint8_t sp_vol = cfg->get_value(CFG_SPEAKER_VOL);
 
     U2PIO_SPEAKER_EN = sp_vol ? (sp_vol << 1) | 0x01 : 0;
     C64_SCANLINES    = cfg->get_value(CFG_SCANLINES);
-    C64_PADDLE_EN    = cfg->get_value(CFG_PADDLE_EN);
 
     uint8_t hdmiSetting = cfg->get_value(CFG_HDMI_ENABLE);
 
@@ -797,9 +798,6 @@ void U64Config :: effectuate_settings()
     }
 
     U64_PARCABLE_EN  =  cfg->get_value(CFG_PARCABLE_ENABLE);
-    C64_PLD_JOYCTRL  =  cfg->get_value(CFG_JOYSWAP) ^ 1;
-    C64_PADDLE_SWAP  =  cfg->get_value(CFG_JOYSWAP);
-    U64_CART_PREF    =  C64::getMachine()->cfg->get_value(CFG_C64_CART_PREF); // moved to C64 for user experience consistency
     int chromaDelay  =  cfg->get_value(CFG_CHROMA_DELAY);
     if (chromaDelay < 0) {
         C64_LUMA_DELAY   = -chromaDelay;
@@ -967,6 +965,44 @@ int U64Config :: setLedSelector(ConfigItem *it)
         U64_CASELED_SELECT = (sel1 << 4) | sel0;
     }
     return 0;
+}
+
+int U64Config :: setCpuSpeed(ConfigItem *it)
+{
+    int ret = 0;
+
+    if(it) {
+        ConfigStore *cfg = it->store;
+        switch(it->definition->id) {
+        case CFG_SPEED_REGS:
+            ret = 1;
+            switch(it->getValue()) {
+            case 0: // Off
+                cfg->disable(CFG_SPEED_PREF);
+                cfg->disable(CFG_BADLINES_EN);
+                cfg->disable(CFG_SUPERCPU_DET);
+                break;
+            default:
+                cfg->enable(CFG_SPEED_PREF);
+                cfg->enable(CFG_BADLINES_EN);
+                cfg->enable(CFG_SUPERCPU_DET);
+                break;
+            }
+        }
+        uint8_t prefRegValue, turboRegs;
+        if (cfg->get_value(CFG_SPEED_REGS) == 0) { // Off
+            prefRegValue = 0x80;
+            turboRegs = 0;
+        } else {
+            prefRegValue = cfg->get_value(CFG_SPEED_PREF) | (cfg->get_value(CFG_BADLINES_EN) << 7);
+            turboRegs = speedregs_regvalues[cfg->get_value(CFG_SPEED_REGS)] + (cfg->get_value(CFG_SUPERCPU_DET) ? 0x02 : 0x00);
+        }
+        printf("Speed regs: %b %b\n", turboRegs, prefRegValue);
+        C64_TURBOREGS_EN = turboRegs;
+        C64_SPEED_PREFER = prefRegValue;
+        C64_SPEED_UPDATE = 1;
+    }
+    return ret;
 }
 
 int U64Config :: setSidEmuParams(ConfigItem *it)
@@ -1688,10 +1724,8 @@ int U64Config :: S_SidDetector(int &sid1, int &sid2)
     for (uint32_t *pul = begin; pul < end; pul++) {
         *(dest++) = *pul;
     }
-    if (!(C64_STOP & C64_HAS_STOPPED)) {
-        C64_STOP_MODE = STOP_COND_FORCE;
-        C64_STOP = 1;
-    }
+
+    C64 :: hard_stop();
 
     func detection = (func)ONCHIP;
 
@@ -1914,17 +1948,6 @@ volatile uint8_t *U64Config :: access_socket_pre(int socket)
 
     if (!(C64_STOP & C64_HAS_STOPPED)) {
         machine->stop(false);
-/*
-        if (machine) { // in case this gets called before the object is created
-            machine->stop(false);
-        } else {
-            C64_STOP_MODE = STOP_COND_FORCE;
-            C64_STOP = 1;
-            while (!(C64_STOP & C64_HAS_STOPPED))
-                ;
-            C64_PEEK(2);
-        }
-*/
         temporary_stop = true;
     } else {
         temporary_stop = false;

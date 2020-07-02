@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include "u64.h"
 #include "fpll.h"
+#include "itu.h"
+
+#define RECONFIG_LITE
 
 #define FPLL_REFERENCES         1
 #define FPLL_N_MAX              2
@@ -21,11 +24,18 @@
 #define M_NTSC                  19
 #define MFRAC_BASE_PAL          0xEAB16BF3
 #define MFRAC_BASE_NTSC         0xA2E89059
+#define MFRAC_PPM_PAL           81247
+#define MFRAC_PPM_NTSC          84338
 #define AUDIO_DIV_PAL           77
 #define AUDIO_DIV_NTSC          80
 
+// Normal setting OLD  = 0C.9C76584C = 54164609100 / 1000000 = 54164,6091
+// Normal setting PAL  = 12.EAB16BF3 = 81246907379 / 1000000 = 81246,9074 ==> PPM = 81247
+// Normal setting NTSC = 13.A2E89059 = 84337528921 / 1000000 = 84337,5289 ==> PPM = 84338
+
 #define REFERENCE_CLOCK			630559111 // 50000000
 
+#ifndef RECONFIG_LITE
 #define FPLL_RECONFIG_REGS      ((volatile uint32_t*)0x92000000)
 #define FPLL_RECONFIG_MODE      FPLL_RECONFIG_REGS[0]
 #define FPLL_RECONFIG_STATUS    FPLL_RECONFIG_REGS[1]
@@ -59,6 +69,7 @@
 #define HDMIPLL_RECONFIG_C0        HDMIPLL_RECONFIG_REGS[10]
 #define HDMIPLL_RECONFIG_C1        HDMIPLL_RECONFIG_REGS[11]
 #define HDMIPLL_RECONFIG_VCODIV    HDMIPLL_RECONFIG_REGS[28]
+
 
 
 extern "C" void dumpPllParams(void)
@@ -112,7 +123,7 @@ extern "C" void pllOffsetPpm(int ppm)
 	setMFrac(mfrac);
 }
 
-uint32_t IntToPll(int value)
+static uint32_t IntToPll(int value)
 {
 	if(value < 2) {
 		return 0x10000; // bypass
@@ -172,60 +183,18 @@ extern "C" void SetHdmiClock(int Hz)
 	U64_HDMI_PLL_RESET = 0;
 }
 
-extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const TVideoMode *mode)
-{
-    regs->VID_HSYNCPOL     = mode->hsyncpol;
-    regs->VID_HSYNCTIME    = mode->hsync >> 1;
-    regs->VID_HBACKPORCH   = mode->hbackporch >> 1;
-    regs->VID_HACTIVE      = mode->hactive >> 3;
-    regs->VID_HFRONTPORCH  = mode->hfrontporch >> 1;
-    regs->VID_HREPETITION  = 0;
-    regs->VID_VSYNCPOL     = mode->vsyncpol;
-    regs->VID_VSYNCTIME    = mode->vsync;
-    regs->VID_VBACKPORCH   = mode->vbackporch;
-    regs->VID_VACTIVE      = mode->vactive >> 3;
-    regs->VID_VFRONTPORCH  = mode->vfrontporch;
-    regs->VID_VIC          = mode->vic;
-    regs->VID_REPCN        = mode->pixel_repetition - 1;
-    regs->VID_Y            = mode->color_mode;
-}
-
-extern "C" void SetScanMode(int modeIndex)
-{
-	TVideoMode modes[] = {
-			{ 01, 25175000,  640, 16,  96,  48, 0,   480, 10, 2, 33, 0, 1, 0 },  // VGA 60
-			{ 00, 34960000,  768, 24,  80, 104, 0,   576,  1, 3, 17, 1, 1, 0 },  // VESA 768x576 @ 60Hz
-			{ 00, 40000000,  800, 40, 128,  88, 1,   600,  1, 4, 23, 1, 1, 0 },  // VESA 800x600 @ 60Hz
-			{ 00, 65000000, 1024, 24, 136, 160, 0,   768,  3, 6, 29, 0, 1, 0 },  // VESA 1024x768 @ 60Hz
-			{ 03, 27000000,  720, 16,  62,  60, 0,   480,  9, 6, 30, 0, 1, 0 },  // VIC 2/3 720x480 @ 60Hz
-			{ 17, 27000000,  720, 12,  64,  68, 0,   576,  5, 5, 39, 0, 1, 0 },  // VIC 17/18 720x576 @ 50Hz (625 lines)     // according to standard
-			{ 17, 27067270,  720, 12,  64,  68, 0,   576,  5, 5, 39, 0, 1, 0 },  // VIC 17/18 720x576 @ 50.12Hz (625 lines)  // detuned only
-			{ 17, 26956800,  720, 12,  64,  68, 0,   576,  4, 5, 39, 0, 1, 0 },  // VIC 17/18 720x576 @ 50Hz (624 lines) (!) // one line less
-			{ 17, 27023962,  720, 12,  64,  68, 0,   576,  4, 5, 39, 0, 1, 0 },  // VIC 17/18 720x576 @ 50.12Hz (624 lines) (!) // detuned + one line less
-			{ 23, 27000000, 1440, 24, 126, 138, 0,   288,  2, 3, 19, 0, 2, 0 },  // VIC 23/24 1440x288 @ 50Hz (312 lines) // according to standard
-			{ 23, 27000000, 1440, 24, 126, 138, 0,   288,  3, 3, 19, 0, 2, 0 },  // VIC 23/24 1440x288 @ 50Hz (313 lines) // according to standard
-			{ 00, 31527956,  720, 24,  64, 200, 0,   576,  4, 5, 39, 0, 1, 0 },  // Commodore, extended blanking  // As designed (50.12 Hz)
-			{ 00, 31449600,  720, 24,  64, 200, 0,   576,  4, 5, 39, 0, 1, 1 },  // Commodore, detuned
-			{ 00, 31527956,  800, 24,  64, 120, 0,   576,  4, 5, 39, 0, 1, 2 },  // Commodore, wide borders as designed (50.12 Hz)
-			{ 14, 54000000, 1440, 32, 124, 120, 0,   480,  9, 6, 30, 0, 2, 0 },  // VIC 14, 720x480 with double pixels
-	};
-	TVideoMode *mode = &modes[modeIndex];
-	SetScanModeRegisters((volatile t_video_timing_regs *)VID_IO_BASE, mode);
-	SetHdmiClock(mode->frequency);
-}
-
 extern "C" void SetVideoPll(int mode)
 {
-    // Clock 0
-
     FPLL_RECONFIG_MODE = 0; // no polling
     if (mode == 0) { // PAL
         FPLL_RECONFIG_M = IntToPll(M_PAL);
         FPLL_RECONFIG_C = IntToPll(AUDIO_DIV_PAL) | (4 << 18);
+        FPLL_RECONFIG_C = IntToPll(120) | (3 << 18);
         FPLL_RECONFIG_MFRAC_K = MFRAC_BASE_PAL;
     } else { // NTSC
         FPLL_RECONFIG_M = IntToPll(M_NTSC);
         FPLL_RECONFIG_C = IntToPll(AUDIO_DIV_NTSC) | (4 << 18);
+        FPLL_RECONFIG_C = IntToPll(120) | (3 << 18);
         FPLL_RECONFIG_MFRAC_K = MFRAC_BASE_NTSC;
     }
     FPLL_RECONFIG_START = 1;
@@ -242,6 +211,261 @@ extern "C" void SetHdmiPll(int mode)
         HDMIPLL_RECONFIG_N = IntToPll(10);
     }
     HDMIPLL_RECONFIG_START = 1;
+}
+
+
+extern "C" void SetScanMode(int modeIndex)
+{
+    TVideoMode modes[] = {
+            { 01, 25175000,  640, 16,  96,  48, 0,   480, 10, 2, 33, 0, 1, 0 },  // VGA 60
+            { 00, 34960000,  768, 24,  80, 104, 0,   576,  1, 3, 17, 1, 1, 0 },  // VESA 768x576 @ 60Hz
+            { 00, 40000000,  800, 40, 128,  88, 1,   600,  1, 4, 23, 1, 1, 0 },  // VESA 800x600 @ 60Hz
+            { 00, 65000000, 1024, 24, 136, 160, 0,   768,  3, 6, 29, 0, 1, 0 },  // VESA 1024x768 @ 60Hz
+            { 03, 27000000,  720, 16,  62,  60, 0,   480,  9, 6, 30, 0, 1, 0 },  // VIC 2/3 720x480 @ 60Hz
+            { 17, 27000000,  720, 12,  64,  68, 0,   576,  5, 5, 39, 0, 1, 0 },  // VIC 17/18 720x576 @ 50Hz (625 lines)     // according to standard
+            { 17, 27067270,  720, 12,  64,  68, 0,   576,  5, 5, 39, 0, 1, 0 },  // VIC 17/18 720x576 @ 50.12Hz (625 lines)  // detuned only
+            { 17, 26956800,  720, 12,  64,  68, 0,   576,  4, 5, 39, 0, 1, 0 },  // VIC 17/18 720x576 @ 50Hz (624 lines) (!) // one line less
+            { 17, 27023962,  720, 12,  64,  68, 0,   576,  4, 5, 39, 0, 1, 0 },  // VIC 17/18 720x576 @ 50.12Hz (624 lines) (!) // detuned + one line less
+            { 23, 27000000, 1440, 24, 126, 138, 0,   288,  2, 3, 19, 0, 2, 0 },  // VIC 23/24 1440x288 @ 50Hz (312 lines) // according to standard
+            { 23, 27000000, 1440, 24, 126, 138, 0,   288,  3, 3, 19, 0, 2, 0 },  // VIC 23/24 1440x288 @ 50Hz (313 lines) // according to standard
+            { 00, 31527956,  720, 24,  64, 200, 0,   576,  4, 5, 39, 0, 1, 0 },  // Commodore, extended blanking  // As designed (50.12 Hz)
+            { 00, 31449600,  720, 24,  64, 200, 0,   576,  4, 5, 39, 0, 1, 1 },  // Commodore, detuned
+            { 00, 31527956,  800, 24,  64, 120, 0,   576,  4, 5, 39, 0, 1, 2 },  // Commodore, wide borders as designed (50.12 Hz)
+            { 14, 54000000, 1440, 32, 124, 120, 0,   480,  9, 6, 30, 0, 2, 0 },  // VIC 14, 720x480 with double pixels
+    };
+    TVideoMode *mode = &modes[modeIndex];
+    SetScanModeRegisters((volatile t_video_timing_regs *)VID_IO_BASE, mode);
+    SetHdmiClock(mode->frequency);
+}
+
+#else
+
+static Fpll *videoPll;
+static Fpll *hdmiPll;
+
+t_pll_counter_def videoPll_def[6] = {
+        { 0x02, 0x01, 0x01 },
+        { 0x0F, 0x0F, 0x01 },
+        { 0x1E, 0x1E, 0x01 },
+        { 0x3C, 0x3C, 0x01 },
+        { 0x28, 0x28, 0x01 },
+        { 0x08, 0x07, 0x01 },
+};
+
+t_pll_counter_def hdmiPll_def[4] = {
+        { 0x02, 0x02, 0x03 },
+        { 0x04, 0x24, 0x21 },
+        { 0x14, 0x14, 0x27 },
+        { 0x05, 0x05, 0x03 },
+};
+
+Fpll :: Fpll(uint32_t baseAddr, t_pll_counter_def *counters, int numCounters)
+{
+    pll = (volatile t_pll_direct *)baseAddr;
+    update = (volatile uint32_t *)(baseAddr + 0x100);
+
+    for(int i=0; i<9; i++) {
+        indices[i] = -1;
+    }
+
+    *update = 2; // flush
+
+    for(int i=0; i<numCounters; i++) {
+        uint32_t div = (((uint32_t)counters[i].div_hi) << 8) | counters[i].div_lo;
+        uint32_t phs = (uint32_t)counters[i].phase;
+
+        for(int k=0; k<9; k++) {
+            if (((pll->counter_c1_div[k] & 0xFFFF) == div) && ((pll->counter_c1_phase[k] & 0xFFFF) == phs)) {
+                indices[i] = k;
+                break;
+            }
+        }
+    }
+    bypassLo = pll->counter_bypass_lo;
+    bypassHi = pll->counter_bypass_hi;
+    oddLo    = pll->counter_odd_lo;
+    oddHi    = pll->counter_odd_hi;
+
+    mFracBase = 0;
+    mFracPPM  = 0;
+}
+
+void Fpll :: setC(int index, int div)
+{
+    int physicalIndex = indices[index];
+    if (physicalIndex < 0) {
+        return;
+    }
+
+    uint32_t reg = div / 2;
+    uint32_t low = (div - reg);
+    reg = (reg << 8) | low;
+
+    *update = 8 + (physicalIndex << 4);
+    pll->counter_c1_div[physicalIndex] = reg;
+    if (physicalIndex < 4) {
+        if (div < 2) {
+            bypassLo |= (1 << (3-physicalIndex));
+        } else {
+            bypassLo &= ~(1 << (3-physicalIndex));
+        }
+        pll->counter_bypass_lo = bypassLo;
+        if (div & 1) {
+            oddLo |= (1 << (3-physicalIndex));
+        } else {
+            oddLo &= ~(1 << (3-physicalIndex));
+        }
+        pll->counter_odd_lo = oddLo;
+    } else { // counter 4 or higher
+        if (div < 2) {
+            bypassHi |= (1 << (17-physicalIndex));
+        } else {
+            bypassHi &= ~(1 << (17-physicalIndex));
+        }
+        pll->counter_bypass_hi = bypassHi;
+        if (div & 1) {
+            oddHi |= (1 << (17 - physicalIndex));
+        } else {
+            oddHi &= ~(1 << (17 - physicalIndex));
+        }
+        pll->counter_odd_hi = oddHi;
+    }
+}
+
+void Fpll :: setN(int div)
+{
+    uint32_t reg = div / 2;
+    uint32_t low = (div - reg);
+    reg = (reg << 8) | low;
+
+    pll->counter_n_div = reg;
+
+    if (div < 2) {
+        bypassLo |= (1 << 5);
+    } else {
+        bypassLo &= ~(1 << 5);
+    }
+    pll->counter_bypass_lo = bypassLo;
+
+    if (div & 1) {
+        oddLo |= (1 << 5);
+    } else {
+        oddLo &= ~(1 << 5);
+    }
+    pll->counter_odd_lo = oddLo;
+}
+
+void Fpll :: setM(int div)
+{
+    uint32_t reg = div / 2;
+    uint32_t low = (div - reg);
+    reg = (reg << 8) | low;
+
+    pll->counter_m_div = reg;
+    if (div < 2) {
+        bypassLo |= (1 << 4);
+    } else {
+        bypassLo &= ~(1 << 4);
+    }
+    pll->counter_bypass_lo = bypassLo;
+
+    if (div & 1) {
+        oddLo |= (1 << 4);
+    } else {
+        oddLo &= ~(1 << 4);
+    }
+    pll->counter_odd_lo = oddLo;
+}
+
+void Fpll :: setK(uint32_t k)
+{
+    pll->counter_odd_lo = oddLo & ~(1 << 11);
+    pll->k_lo = k & 0xFFFF;
+    pll->k_lo = k & 0xFFFF;
+    pll->k_hi = k >> 16;
+    pll->k_hi = k >> 16;
+    pll->counter_odd_lo = oddLo | (1 << 11);
+}
+
+void Fpll :: execute(void)
+{
+    *update = 1; // burp
+    *update = 8 + (5 << 4); // random
+
+    uint32_t a = pll->k_hi;
+    uint32_t b = pll->k_lo;
+    printf("RB: %04x%04x\n", a, b);
+}
+
+extern "C" void SetVideoPll(int mode)
+{
+    if (!videoPll) {
+        videoPll = new Fpll(0x92000000, videoPll_def, 6);
+    }
+
+    if (mode == 0) { // PAL
+        videoPll->setM(M_PAL);
+        videoPll->setC(4, AUDIO_DIV_PAL);
+        videoPll->setK(MFRAC_BASE_PAL);
+        videoPll->mFracBase = MFRAC_BASE_PAL;
+        videoPll->mFracPPM = MFRAC_PPM_PAL;
+    } else { // NTSC
+        videoPll->setM(M_NTSC);
+        videoPll->setC(4, AUDIO_DIV_NTSC);
+        videoPll->setK(MFRAC_BASE_NTSC);
+        videoPll->mFracBase = MFRAC_BASE_NTSC;
+        videoPll->mFracPPM = MFRAC_PPM_NTSC;
+    }
+    videoPll->execute();
+}
+
+extern "C" void SetHdmiPll(int mode)
+{
+    if (!hdmiPll) {
+        hdmiPll = new Fpll(0x93000000, hdmiPll_def, 4);
+    }
+
+    if (mode == 0) { // PAL
+        hdmiPll->setM(24);
+        hdmiPll->setN(7);
+    } else { // NTSC
+        hdmiPll->setM(33);
+        hdmiPll->setN(10);
+    }
+    hdmiPll->execute();
+}
+
+extern "C" void pllOffsetPpm(int ppm)
+{
+    if (!videoPll) {
+        return;
+    }
+
+    int offset = ppm * videoPll->mFracPPM;
+    uint32_t mfrac = videoPll->mFracBase + offset;
+    videoPll->setK(mfrac);
+    videoPll->execute();
+}
+
+#endif // Reconfig Lite
+
+
+extern "C" void SetScanModeRegisters(volatile t_video_timing_regs *regs, const TVideoMode *mode)
+{
+    regs->VID_HSYNCPOL     = mode->hsyncpol;
+    regs->VID_HSYNCTIME    = mode->hsync >> 1;
+    regs->VID_HBACKPORCH   = mode->hbackporch >> 1;
+    regs->VID_HACTIVE      = mode->hactive >> 3;
+    regs->VID_HFRONTPORCH  = mode->hfrontporch >> 1;
+    regs->VID_HREPETITION  = 0;
+    regs->VID_VSYNCPOL     = mode->vsyncpol;
+    regs->VID_VSYNCTIME    = mode->vsync;
+    regs->VID_VBACKPORCH   = mode->vbackporch;
+    regs->VID_VACTIVE      = mode->vactive >> 3;
+    regs->VID_VFRONTPORCH  = mode->vfrontporch;
+    regs->VID_VIC          = mode->vic;
+    regs->VID_REPCN        = mode->pixel_repetition - 1;
+    regs->VID_Y            = mode->color_mode;
 }
 
 extern "C" void SetVideoMode(int mode)

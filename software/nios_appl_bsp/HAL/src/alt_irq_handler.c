@@ -127,7 +127,7 @@ void alt_irq_handler (void)
 
   active = alt_irq_pending ();
 
-  do
+  while(active)
   {
     i = 0;
     mask = 1;
@@ -152,11 +152,11 @@ void alt_irq_handler (void)
       mask <<= 1;
       i++;
 
-    } while (1);
+    } while (mask);
 
     active = alt_irq_pending ();
     
-  } while (active);
+  }
 #endif /* ALT_CI_INTERRUPT_VECTOR */
 
   /*

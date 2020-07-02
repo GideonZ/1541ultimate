@@ -24,6 +24,11 @@
 #define MENU_C64_POWEROFF   0x640A
 #define MENU_C64_PAUSE      0x640B
 #define MENU_C64_RESUME     0x640C
+#define MENU_U64_SAVERAM    0x640D
+#define MENU_C64_SAVE_MP3_DRV_A 0x640E
+#define MENU_C64_SAVE_MP3_DRV_B 0x640F
+#define MENU_C64_SAVE_MP3_DRV_C 0x6410
+#define MENU_C64_SAVE_MP3_DRV_D 0x6411
 #define C64_DMA_LOAD		0x6464
 #define C64_DRIVE_LOAD	    0x6465
 #define C64_DMA_LOAD_RAW	0x6466
@@ -45,7 +50,7 @@
 #define C64_STOP                *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x1))
 #define C64_STOP_MODE           *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x2))
 #define C64_CLOCK_DETECT        *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x3))
-#define C64_CARTRIDGE_RAM_BASE  *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x4))
+#define C64_CARTRIDGE_ROM_BASE  *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x4))
 #define C64_CARTRIDGE_TYPE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x5))
 #define C64_CARTRIDGE_KILL      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x6))
 #define C64_CARTRIDGE_ACTIVE    *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x6))
@@ -59,7 +64,7 @@
 #define C64_SAMPLER_ENABLE      *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xE))
 #define C64_ETHERNET_ENABLE     *((volatile uint8_t *)(C64_CARTREGS_BASE + 0xF))
 
-#define C64_KERNAL_BASE         0x0ECC000
+#define C64_KERNAL_BASE         0x0EC8000
 
 #define C64_MODE_ULTIMAX   0x02
 #define C64_MODE_RESET     0x04
@@ -103,17 +108,17 @@
 #define CART_TYPE_8K          0x01
 #define CART_TYPE_16K         0x02
 #define CART_TYPE_16K_UMAX    0x03
-#define CART_TYPE_FC3         0x04
-#define CART_TYPE_SS5         0x05
-#define CART_TYPE_RETRO       0x06
-#define CART_TYPE_ACTION      0x07
-#define CART_TYPE_SYSTEM3     0x08
-#define CART_TYPE_DOMARK      0x09
-#define CART_TYPE_OCEAN128    0x0A
-#define CART_TYPE_OCEAN256    0x0B
-#define CART_TYPE_EASY_FLASH  0x0C
-#define CART_TYPE_EPYX        0x0E
-#define CART_TYPE_KCS         0x10
+#define CART_TYPE_FC3         0x04 // Ok without write mirroring
+#define CART_TYPE_SS5         0x05 // Ok without write mirroring
+#define CART_TYPE_RETRO       0x06 // Ok without write mirroring
+#define CART_TYPE_ACTION      0x07 // Ok without write mirroring
+#define CART_TYPE_SYSTEM3     0x08 // Doesn't have external RAM
+#define CART_TYPE_DOMARK      0x09 // Doesn't have external RAM
+#define CART_TYPE_OCEAN128    0x0A // Doesn't have external RAM
+#define CART_TYPE_OCEAN256    0x0B // Doesn't have external RAM
+#define CART_TYPE_EASY_FLASH  0x0C // ?
+#define CART_TYPE_EPYX        0x0E // Doesn't have external RAM
+#define CART_TYPE_KCS         0x10 // Ok without write mirroring
 #define CART_TYPE_FINAL12     0x11
 #define CART_TYPE_COMAL80     0x12
 #define CART_TYPE_SBASIC      0x13
@@ -125,6 +130,9 @@
 #define CART_TYPE_FC3PLUS     0x19
 #define CART_TYPE_COMAL80PAKMA 0x1A
 #define CART_TYPE_SUPERGAMES   0x1B
+#define CART_TYPE_NORDIC      0x1C // requires Writes to be on
+
+#define DRVTYPE_MP3_DNP       31
 
 #define VIC_REG(x)   *((volatile uint8_t *)(C64_MEMORY_BASE + 0xD000 + x))
 #define CIA1_REG(x)  *((volatile uint8_t *)(C64_MEMORY_BASE + 0xDC00 + x))
@@ -199,6 +207,11 @@
 #define CFG_C64_ALT_BASI    0x83
 #define CFG_C64_ALT_CHAR    0x84
 
+#define CFG_BUS_MODE          0x4D
+#define CFG_BUS_SHARING_ROM   0x4E
+#define CFG_BUS_SHARING_IO    0x4F
+#define CFG_BUS_SHARING_IRQ   0x50
+
 #define ID_MODPLAYER 0xAA
 #define ID_SIDCART   0xBB
 #define ID_CMDTEST   0xCC
@@ -225,7 +238,6 @@ class C64 : public GenericHost, ConfigurableObject
     uint32_t screen_backup[COLOR_SIZE/4]; // only used now for vic state write
     uint32_t color_backup[COLOR_SIZE/4];
     uint8_t cia_backup[8];
-    
     uint8_t stop_mode;
     uint8_t raster;
     uint8_t raster_hi;
@@ -234,6 +246,7 @@ class C64 : public GenericHost, ConfigurableObject
     uint8_t vic_d011;
     uint8_t vic_d012;
     uint8_t force_cart;
+    bool backupIsValid;
 
     uint8_t lastCartridgeId;
     volatile bool buttonPushSeen;
@@ -250,7 +263,8 @@ class C64 : public GenericHost, ConfigurableObject
     void disable_kernal();
     void init_system_roms(void);
 
-    void stop(bool do_raster = true);
+    void stop(bool do_raster);
+    static void hard_stop(void);
     void resume(void);
     void freeze(void);
     
@@ -268,10 +282,16 @@ class C64 : public GenericHost, ConfigurableObject
     }
 
     static void init_poll_task(void *a);
-    void init(void);
+    static int setCartPref(ConfigItem *item);
+
+#if U64
+    bool ConfigureU64SystemBus(void);
+    void EnableWriteMirroring(void);
+#endif
 
     C64();
 public:
+    void init(void);
     ~C64();
 
     /* Get static object */
@@ -322,10 +342,14 @@ public:
     void reset(void);
     void start(void);
         
+    static int isMP3RamDrive(int dev);
+    static int getSizeOfMP3NativeRamdrive(int dev);
+
     friend class FileTypeSID; // sid load does some tricks
     friend class C64_Subsys; // the wrapper with file access
     friend class REUPreloader; // preloader needs to access config
-    friend class FileTypeREU; // REU file needs to access config 
+    friend class FileTypeREU; // REU file needs to access config
+    friend class FileTypeCRT; // CRT file may need to enable Write mirroring on U64
     friend class U64Config; // U64 config needs to stop / resume for SID detection
 };
 

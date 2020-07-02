@@ -8,7 +8,7 @@
 #include "filemanager.h"
 
 #define dbg_printf(...)
-// #define dbg_printf(...)  printf(__VA_ARGS__)
+//#define dbg_printf(...)  printf(__VA_ARGS__)
 
 void  vfs_load_plugin()
 {
@@ -41,7 +41,7 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, const char *flags)
     Path *path = (Path *)fs->path;
     uint8_t bfl = FA_READ;
     if(flags[0] == 'w')
-        bfl = FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS;
+        bfl = FA_WRITE | FA_CREATE_ALWAYS;
         
     File *file = 0;
     FRESULT fres = FileManager :: getFileManager() -> fopen(path, (char *)name, bfl, &file);
@@ -107,6 +107,21 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
     Path *path = (Path *)fs->path;
     dbg_printf("OpenDIR: fs = %p, name arg = '%s'\n", fs, name);
 
+    mstring matchPattern;
+    FileManager *fm = FileManager :: getFileManager();
+    Path *temp = fm->get_new_path("FTP Temp");
+    temp->cd(path->get_path());
+    temp->cd(name);
+    if (!temp->isValid()) { // Is it not a directory?
+        // Maybe it's a file, so we 'cd' one step up and store the last part of the path as a pattern
+        temp->up(&matchPattern);
+        dbg_printf("Stripped = '%s'\n", matchPattern.c_str());
+        if (!temp->isValid()) { // Is the parent not a directory? then we don't know.
+            fm->release_path(temp);
+            return NULL;
+        }
+    }
+
     // create objects
     vfs_dir_t *dir = (vfs_dir_t *)new vfs_dir_t;
     vfs_dirent_t *ent = (vfs_dirent_t *)new vfs_dirent_t;
@@ -120,8 +135,10 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
     fs->last_direntry = NULL;
     fs->last_dir = dir;
 
-    path->get_directory(*listOfEntries);
-    
+    temp->get_directory(*listOfEntries, matchPattern.c_str());
+
+    fm->release_path(temp);
+
     // clear wrapper for file info
     ent->file_info = NULL;
     return dir;
@@ -210,10 +227,25 @@ int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
 
 int  vfs_chdir(vfs_t *fs, const char *name)
 {
+//    dbg_printf("CD: %s\n", name);
+
+    FileManager *fm = FileManager :: getFileManager();
+    Path *temp = fm->get_new_path("Temp FTP");
     Path *p = (Path *)fs->path;
-    dbg_printf("CD: VFS=%p -> %s\n", fs, name);
-    if(! p->cd((char*)name))
+
+    temp->cd(p->get_path());
+
+    if (!temp->cd((char*)name)) { // Construction of Path is illegal
+        fm->release_path(temp);
         return -1;
+    }
+
+    if (!temp->isValid()) { // Resulting path doesn't exist on the file system
+        fm->release_path(temp);
+        return -2;
+    }
+    p->cd((char *)name); // This was a valid action for temp, so the same can be done on p
+    fm->release_path(temp);
     return 0;
 }
 
@@ -224,7 +256,11 @@ char *vfs_getcwd(vfs_t *fs, void *args, int dummy)
     // now copy the string to output
     char *retval = (char *)malloc(strlen(full_path)+1);
     strcpy(retval, full_path);
-    dbg_printf("CWD: %s\n", retval);
+    int n = strlen(retval);
+    // snoop off the last slash
+    if ((n > 1) && (retval[n-1] == '/'))
+        retval[n-1] = 0;
+    //dbg_printf("CWD: %s\n", retval);
     return retval;
 }
 

@@ -21,14 +21,14 @@ extern "C" {
 #define CFG_STREAM_DEST3    0xD3
 #define CFG_STREAM_BUSMODE  0xD4
 
-static const char *modes[] = { "6510 Only", "VIC Only", "6510 & VIC", "1541 Only", "6510 & 1541" };
-static const uint8_t modeBytes[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x00, 0x00, 0x00 };
+static const char *modes[] = { "6510 Only", "VIC Only", "6510 & VIC", "1541 Only", "6510 & 1541", "6510 w/IEC", "6510 & VIC w/IEC" };
+static const uint8_t modeBytes[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x09, 0x0B, 0x00 };
 
 struct t_cfg_definition stream_cfg[] = {
     { CFG_STREAM_DEST0,         CFG_TYPE_STRING, "Stream VIC to",     "%s", NULL,  0, 36, (int)"239.0.1.64:11000" },
     { CFG_STREAM_DEST1,         CFG_TYPE_STRING, "Stream Audio to",   "%s", NULL,  0, 36, (int)"239.0.1.65:11001" },
     { CFG_STREAM_DEST2,         CFG_TYPE_STRING, "Stream Debug to",   "%s", NULL,  0, 36, (int)"239.0.1.66:11002" },
-    { CFG_STREAM_BUSMODE,       CFG_TYPE_ENUM,   "Debug Stream Mode", "%s", modes, 0, 4,  0 },
+    { CFG_STREAM_BUSMODE,       CFG_TYPE_ENUM,   "Debug Stream Mode", "%s", modes, 0, 6,  0 },
     //    { CFG_STREAM_DEST3,         CFG_TYPE_STRING, "Stream IEC to",     "%s", NULL,  0, 36, (int)"239.0.1.67:11003" },
 
     { CFG_TYPE_END,             CFG_TYPE_END,  "",                             "",   NULL,  0,  0, 0 } };
@@ -380,7 +380,8 @@ void DataStreamer :: calculate_udp_headers(int id)
 
     if (id == 2) { // debug stream
         uint8_t mode = cfg->get_value(CFG_STREAM_BUSMODE);
-        PROFILER_MODE = modeBytes[mode & 7];
+        U64_ETHSTREAM_ENA &= 0x0F;
+        U64_ETHSTREAM_ENA |= (modeBytes[mode & 7] << 4);
     }
     // enable
     U64_ETHSTREAM_ENA |= (1 << id);

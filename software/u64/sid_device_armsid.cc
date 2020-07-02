@@ -190,6 +190,7 @@ void SidDeviceArmSid :: ArmSidConfig :: write()
     volatile uint8_t *base = parent->pre();
     S_config_mode(base);
     S_save_flash(base);
+    set_need_flash_write(false);
     parent->post();
 }
 

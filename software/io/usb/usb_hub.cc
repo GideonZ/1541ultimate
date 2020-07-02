@@ -52,6 +52,7 @@ UsbHubDriver :: UsbHubDriver(UsbInterface *intf) : UsbDriver(intf)
     reset_timeout = 0;
     port_in_reset = 0;
     irq_stopped = 0;
+    alignment = 0;
 }
 
 UsbHubDriver :: ~UsbHubDriver()

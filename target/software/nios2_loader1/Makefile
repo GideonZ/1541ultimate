@@ -5,6 +5,7 @@ ARCHITECTURE = nios2
 
 include ../common/environment.mk
 
+BSP      = $(PATH_SW)/nios_solo_bsp
 DEST     =  ../../fpga/u2plus_recovery/onchip_mem.hex
 PRJ      =  primary
 FINAL    =  $(RESULT)/$(PRJ).hex $(RESULT)/$(PRJ).elf $(DEST)
@@ -30,11 +31,15 @@ SRCS_IEC =
 
 SRCS_NANO = 
 
+VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/nios
+VPATH +=	$(BSP)
+VPATH +=	$(BSP)/HAL/inc
+VPATH +=	$(BSP)/drivers/inc
+
 PATH_INC =  $(addprefix -I, $(VPATH))
 OPTIONS  = -g -ffunction-sections -Os -Wno-write-strings -mno-hw-div -mno-hw-mul -mno-hw-mulx -DRECOVERY=1
 COPTIONS = $(OPTIONS) -std=gnu99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics -fpermissive
-BSP      = $(PATH_SW)/nios_solo_bsp
 LINK 	 = $(BSP)/linker.x
 LIBS2    = $(BSP)/libhal_bsp.a
 LFLAGS   = --gc-sections -msys-crt0=$(BSP)/obj/HAL/src/crt0.o

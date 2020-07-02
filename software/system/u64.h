@@ -20,21 +20,22 @@
 #define C64_IO_BASE  0xA0080000
 #define C64_IO_LED   0xA0081000
 #define C64_IO_DEBUG 0xA0082000
+#define C64_PLD_ACC  0xA0083000
 
 #define LEDSTRIP_DATA ( (volatile uint8_t *)(C64_IO_LED))
 #define LEDSTRIP_FROM (*(volatile uint8_t *)(C64_IO_LED + 0x1FE))
 #define LEDSTRIP_LEN  (*(volatile uint8_t *)(C64_IO_LED + 0x1FF))
 #define U64_DEBUG_REGISTER (*(volatile uint8_t *)C64_IO_DEBUG)
 
-#define C64_SID_BASE     0xA0088000
-#define U64_ROMS_BASE    0xA0090000
-#define U64_UDP_BASE     0xA00A0000
+#define C64_SID_BASE     0xA0084000
+#define U64_ROMS_BASE    0xA0088000
+#define U64_CHARROM_BASE 0xA008C000
+#define U64_UDP_BASE     0xA0090000
 
 #define U64_BASIC_BASE   (U64_ROMS_BASE + 0x0000)
 #define U64_KERNAL_BASE  (U64_ROMS_BASE + 0x2000)
-#define U64_CHARROM_BASE (U64_ROMS_BASE + 0x4000)
 
-#define U64_RAM_BASE     0xA00C0000
+//#define U64_RAM_BASE     0xA00A0000 // No longer available -> use DMA channel with C64_DMA_MEMONLY
 #endif
 
 #define U64_HDMI_REG       (*(volatile uint8_t *)(U64_IO_BASE + 0x00))
@@ -46,7 +47,7 @@
 #define U64_EXT_I2C_SDA    (*(volatile uint8_t *)(U64_IO_BASE + 0x07))
 #define U64_HDMI_ENABLE    (*(volatile uint8_t *)(U64_IO_BASE + 0x08))
 #define U64_PARCABLE_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x09))
-#define U64_CART_PREF      (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Logical disable of external cart
+#define U64_CART_DETECT    (*(volatile uint8_t *)(U64_IO_BASE + 0x0A)) // Inputs Game (bit 0) and Exrom (bit 1) lines
 #define U64_MB_RESET       (*(volatile uint8_t *)(U64_IO_BASE + 0x0B)) // Write a 0 to start the microblaze, if available
 #define U64_LEDSTRIP_EN    (*(volatile uint8_t *)(U64_IO_BASE + 0x0C)) // Write a 1 to make CIA_PWM pins become LED strip control pins
 #define U64_PWM_DUTY       (*(volatile uint8_t *)(U64_IO_BASE + 0x0D)) // any value between 00 (off) and FF (nearly full phase)
@@ -73,8 +74,8 @@
 
 #define C64_SCANLINES    (*(volatile uint8_t *)(C64_IO_BASE + 0x00))
 #define C64_VIDEOFORMAT  (*(volatile uint8_t *)(C64_IO_BASE + 0x01))
-#define C64_LINE_PHASE   (*(volatile uint8_t *)(C64_IO_BASE + 0x02))
-#define C64_PHASE_INCR   (*(volatile uint8_t *)(C64_IO_BASE + 0x03))
+#define C64_TURBOREGS_EN (*(volatile uint8_t *)(C64_IO_BASE + 0x02))
+#define C64_DMA_MEMONLY  (*(volatile uint8_t *)(C64_IO_BASE + 0x03))
 #define C64_LUMA_DELAY   (*(volatile uint8_t *)(C64_IO_BASE + 0x04))
 #define C64_CHROMA_DELAY (*(volatile uint8_t *)(C64_IO_BASE + 0x05))
 #define C64_BURST_PHASE  (*(volatile uint8_t *)(C64_IO_BASE + 0x06))
@@ -92,10 +93,6 @@
 #define C64_SID2_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x12))
 #define C64_PADDLE_EN  	 (*(volatile uint8_t *)(C64_IO_BASE + 0x13))
 #define C64_STEREO_ADDRSEL (*(volatile uint8_t *)(C64_IO_BASE + 0x14))
-#define C64_PLD_PORTA      ((volatile uint8_t *)(C64_IO_BASE + 0x16))
-#define C64_PLD_PORTB      ((volatile uint8_t *)(C64_IO_BASE + 0x17))
-#define C64_PLD_STATE0    (*(volatile uint8_t *)(C64_IO_BASE + 0x18))
-#define C64_PLD_STATE1    (*(volatile uint8_t *)(C64_IO_BASE + 0x19))
 #define C64_PADDLE_SWAP   (*(volatile uint8_t *)(C64_IO_BASE + 0x1A))
 #define C64_EMUSID1_WAVES (*(volatile uint8_t *)(C64_IO_BASE + 0x20))
 #define C64_EMUSID2_WAVES (*(volatile uint8_t *)(C64_IO_BASE + 0x21))
@@ -104,9 +101,30 @@
 #define C64_EMUSID1_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x27))
 #define C64_EMUSID2_DIGI  (*(volatile uint8_t *)(C64_IO_BASE + 0x28))
 #define C64_EMUSID_SPLIT  (*(volatile uint8_t *)(C64_IO_BASE + 0x29))
+#define C64_BUS_BRIDGE    (*(volatile uint8_t *)(C64_IO_BASE + 0x2A))
+#define C64_BUS_INTERNAL  (*(volatile uint8_t *)(C64_IO_BASE + 0x2B))
+#define C64_BUS_EXTERNAL  (*(volatile uint8_t *)(C64_IO_BASE + 0x2C))
+#define C64_SPEED_PREFER  (*(volatile uint8_t *)(C64_IO_BASE + 0x2D))
+#define C64_SPEED_UPDATE  (*(volatile uint8_t *)(C64_IO_BASE + 0x2E))
+
+/*
+#define C64_PLD_PORTA      ((volatile uint8_t *)(C64_IO_BASE + 0x16))
+#define C64_PLD_PORTB      ((volatile uint8_t *)(C64_IO_BASE + 0x17))
+#define C64_PLD_STATE0    (*(volatile uint8_t *)(C64_IO_BASE + 0x18))
+#define C64_PLD_STATE1    (*(volatile uint8_t *)(C64_IO_BASE + 0x19))
 #define C64_PLD_SIDCTRL2  (*(volatile uint8_t *)(C64_IO_BASE + 0x3A))
 #define C64_PLD_SIDCTRL1  (*(volatile uint8_t *)(C64_IO_BASE + 0x3B))
 #define C64_PLD_JOYCTRL   (*(volatile uint8_t *)(C64_IO_BASE + 0x3E))
+*/
+
+#define C64_PLD_PORTA      ((volatile uint8_t *)(C64_PLD_ACC + 0x10))
+#define C64_PLD_PORTB      ((volatile uint8_t *)(C64_PLD_ACC + 0x11))
+#define C64_PLD_STATE0    (*(volatile uint8_t *)(C64_PLD_ACC + 0x00))
+#define C64_PLD_STATE1    (*(volatile uint8_t *)(C64_PLD_ACC + 0x01))
+#define C64_PLD_SIDCTRL2  (*(volatile uint8_t *)(C64_PLD_ACC + 0x1A))
+#define C64_PLD_SIDCTRL1  (*(volatile uint8_t *)(C64_PLD_ACC + 0x1B))
+#define C64_PLD_JOYCTRL   (*(volatile uint8_t *)(C64_PLD_ACC + 0x1E))
+
 #define C64_VOICE_ADSR(x) (*(volatile uint8_t *)(C64_IO_BASE + 0x80 + x))
 
 #define VIDEO_FMT_NTSC_ENCODING 0x01

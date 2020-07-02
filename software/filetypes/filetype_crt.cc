@@ -108,6 +108,7 @@ struct t_cart {
 #define CART_PAGEFOX    17
 #define CART_EXOS       18
 #define CART_SUPERGAMES 19
+#define CART_NORDIC     20
 
 const struct t_cart c_recognized_carts[] = {
     {  0, CART_NORMAL,    "Normal cartridge" },
@@ -119,7 +120,7 @@ const struct t_cart c_recognized_carts[] = {
     {  6, CART_NOT_IMPL,  "Expert Cartridge" },
     {  7, CART_NOT_IMPL,  "Fun Play" },
     {  8, CART_SUPERGAMES,"Super Games" },
-    {  9, CART_RETRO,     "Atomic Power" },
+    {  9, CART_NORDIC,    "Atomic Power" },
     { 10, CART_EPYX,      "Epyx Fastload" },
     { 11, CART_WESTERMANN,"Westermann" },
     { 12, CART_NOT_IMPL,  "Rex" },
@@ -223,7 +224,7 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
 
     FileManager *fm = FileManager::getFileManager();
 
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
     memset((void *) mem_addr, 0, 1024 * 1024); // clear all cart memory
 
     printf("Cartridge Load.. %s\n", cmd->filename.c_str());
@@ -276,7 +277,7 @@ int FileTypeCRT::execute(SubsysCommand *cmd)
 int FileTypeCRT::parseCrt(void *bufferVoid)
 {
     char *buffer = (char*) bufferVoid;
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
     memset((void *) mem_addr, 0, 1024 * 1024); // clear all cart memory
 
     uint32_t dw;
@@ -297,6 +298,8 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
         hdrOk = false;
     if (crt_header[0x16])
         hdrOk = false;
+
+    C64 *c64 = C64 :: getMachine();
 
     if (hdrOk) {
         printf("CRT Hardware type: %b ", crt_header[0x17]);
@@ -352,7 +355,7 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
                         || (type_select == CART_SYSTEM3))
                     split = true;
 
-            uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+            uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
 
             if (type_select == CART_KCS) {
                 mem_addr += load - 0x8000;
@@ -461,6 +464,12 @@ int FileTypeCRT::parseCrt(void *bufferVoid)
         break;
     case CART_PAGEFOX:
         C64_CARTRIDGE_TYPE = CART_TYPE_PAGEFOX; // Business Basic
+        break;
+    case CART_NORDIC:
+#if U64
+        c64->EnableWriteMirroring();
+#endif
+        C64_CARTRIDGE_TYPE = CART_TYPE_NORDIC;
         break;
 
     default:
@@ -597,7 +606,7 @@ bool FileTypeCRT::read_chip_packet(File *f)
                 || (type_select == CART_SYSTEM3))
             split = true;
 
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
 
     if (type_select == CART_KCS) {
         mem_addr += load - 0x8000;
@@ -744,14 +753,20 @@ void FileTypeCRT::configure_cart(void)
     case CART_SUPERGAMES:
         C64_CARTRIDGE_TYPE = CART_TYPE_SUPERGAMES; // Super Games, 16K banks
         break;
+    case CART_NORDIC:
+        C64_CARTRIDGE_TYPE = CART_TYPE_NORDIC;
+#if U64
+        C64 :: getMachine()->EnableWriteMirroring();
+#endif
+        break;
     case CART_EXOS:
         if (total_read > 8192) {
             C64_KERNAL_ENABLE = 3;
-            uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
+            uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
             for (int i = 16383; i >= 0; i--)
                 *(src + 2 * i + 1) = *(src + i);
         } else {
-            uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16);
+            uint8_t *src = (uint8_t *) (((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16);
             int fastreset = C64 :: getMachine()->get_cfg_value(CFG_C64_FASTRESET);
             C64 :: getMachine()->enable_kernal( src, fastreset);
         }

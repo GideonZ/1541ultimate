@@ -1,4 +1,4 @@
-#/*
+/*
  * c64.cc
  *
  * Written by 
@@ -73,6 +73,7 @@ const char *cart_mode[] = { "None",
 
                       "GeoRAM",
                       "Custom 8K ROM",
+                      "Custom 16K ROM Ultimax",
                       "Custom 16K ROM",
 /*
                       "Custom System 3 ROM",
@@ -110,6 +111,7 @@ cart_def cartridges[] = { { 0x00,               0x000000, 0x00000,  0x00 | CART_
 
                           { 0x00,               0x000000, 0x04000,  0x15 | CART_UCI }, // GeoRam
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x02000,  0x01 | CART_REU | CART_ETH },
+                          { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x03 | CART_REU | CART_ETH },
                           { FLASH_ID_CUSTOM_ROM,0x000000, 0x04000,  0x02 | CART_REU | CART_ETH },
 /*
                           { 0x00,               0x000000, 0x80000,  0x08 | CART_REU },
@@ -141,14 +143,21 @@ static const char *timing2[] = { "16ns", "32ns", "48ns", "64ns", "80ns", "96ns",
 static const char *timing3[] = { "15ns", "30ns", "45ns", "60ns", "75ns", "90ns", "105ns", "120ns" };
 static const char *ultimatedos[] = { "Disabled", "Enabled", "Enabled (v1.1)", "Enabled (v1.0)" };
 static const char *fc3mode[] = { "Unchanged", "Desktop", "BASIC" };
-static const char *cartmodes[] = { "Auto", "Internal", "External" };
+static const char *cartmodes[] = { "Auto", "Internal", "External", "Manual" };
+static const char *bus_modes[] = { "Quiet", "Writes", "CPU", "CPU/VIC", "VIC" };
+static const uint8_t bus_mode_values[] = { 0x00, 0x01, 0x03, 0x07, 0x04 };
+static const char *bus_sharing[] = { "Internal", "External", "Both" };
 
 struct t_cfg_definition c64_config[] = {
 #if U64
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 19, 0 },
-    { CFG_C64_CART_PREF,CFG_TYPE_ENUM,   "Cartridge Preference",         "%s", cartmodes,  0,  2, 0 },
+    { CFG_C64_CART,        CFG_TYPE_ENUM, "Cartridge",                    "%s", cart_mode,  0, 20, 0 },
+    { CFG_C64_CART_PREF,   CFG_TYPE_ENUM, "Cartridge Preference",         "%s", cartmodes,  0,  3, 0 },
+    { CFG_BUS_MODE,        CFG_TYPE_ENUM, "Bus Operation Mode",           "%s", bus_modes,    0,  4, 0 },
+    { CFG_BUS_SHARING_ROM, CFG_TYPE_ENUM, "Bus Sharing - ROMs",           "%s", bus_sharing,  0,  2, 2 },
+    { CFG_BUS_SHARING_IO,  CFG_TYPE_ENUM, "Bus Sharing - I/O",            "%s", bus_sharing,  0,  2, 2 },
+    { CFG_BUS_SHARING_IRQ, CFG_TYPE_ENUM, "Bus Sharing - Interrupts",     "%s", bus_sharing,  0,  2, 2 },
 #else
-    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 21, 4 },
+    { CFG_C64_CART,     CFG_TYPE_ENUM,   "Cartridge",                    "%s", cart_mode,  0, 22, 4 },
 #endif
     { CFG_C64_FC3MODE,  CFG_TYPE_ENUM,   "Final Cartridge 3 Mode",       "%s", fc3mode,    0,  2, 0 },
     { CFG_C64_FASTRESET,CFG_TYPE_ENUM,   "Fast Reset",                   "%s", en_dis,     0,  1, 0 },
@@ -197,6 +206,9 @@ C64::C64()
 
     register_store(0x43363420, "C64 and Cartridge Settings", c64_config);
 
+    cfg->set_change_hook(CFG_C64_CART_PREF, C64::setCartPref);
+    setCartPref(cfg->find_item(CFG_C64_CART_PREF));
+
     // char_set = new BYTE[CHARSET_SIZE];
     // flash->read_image(FLASH_ID_CHARS, (void *)char_set, CHARSET_SIZE);
     char_set = (uint8_t *) &_chars_bin_start;
@@ -205,28 +217,42 @@ C64::C64()
 
     C64_STOP_MODE = STOP_COND_FORCE;
     C64_MODE = MODE_NORMAL;
-//    C64_STOP = 0;
     isFrozen = false;
-//    C64_MODE = C64_MODE_RESET;
+    backupIsValid = false;
     buttonPushSeen = false;
     client = 0;
     available = false;
 
-    if (phi2_present()) {
-        init();
-    }
 #ifndef U64
 #ifdef OS
-    else {
+    if (!phi2_present()) {
         printf("No PHI2 clock detected.. Stand alone mode. Stopped = %d\n", C64_STOP);
         xTaskCreate(C64 :: init_poll_task, "C64 Init poll task", 500, this, 2, NULL);
     }
 #endif
 #else
-    else {
+    if (!phi2_present()) {
         printf("U64, and no PHI2?  Something is seriously wrong!!\n");
     }
 #endif
+}
+
+int C64 :: setCartPref(ConfigItem *item)
+{
+    if (!item) {
+        return 0;
+    }
+    // This is only a UI thing
+    if (item->getValue() == 3) { // If manual, enable the other settings
+        item->store->enable(CFG_BUS_SHARING_ROM);
+        item->store->enable(CFG_BUS_SHARING_IO);
+        item->store->enable(CFG_BUS_SHARING_IRQ);
+    } else {
+        item->store->disable(CFG_BUS_SHARING_ROM);
+        item->store->disable(CFG_BUS_SHARING_IO);
+        item->store->disable(CFG_BUS_SHARING_IRQ);
+    }
+    return 1;
 }
 
 void C64 :: init(void)
@@ -315,6 +341,9 @@ void C64::effectuate_settings(void)
     // init_cartridge is called only at reboot, and will cause the C64 to reset.
     C64_SWAP_CART_BUTTONS = cfg->get_value(CFG_C64_SWAP_BTN);
 
+#if U64
+    ConfigureU64SystemBus();
+#endif
     cart_def *def;
     int cart = cfg->get_value(CFG_C64_CART);
     def = &cartridges[cart];
@@ -448,6 +477,18 @@ void C64::determine_d012(void)
 void C64 :: goUltimax(void)
 {
     C64_MODE = MODE_ULTIMAX;
+}
+
+void C64 :: hard_stop(void)
+{
+    if (!(C64_STOP & C64_HAS_STOPPED)) {
+        C64_STOP_MODE = STOP_COND_FORCE;
+        C64_STOP = 1;
+        // wait until it is stopped (it always will!)
+        while (!(C64_STOP & C64_HAS_STOPPED))
+            ;
+    }
+    wait_10us(2);
 }
 
 void C64::stop(bool do_raster)
@@ -616,7 +657,6 @@ void C64::resume(void)
 
         C64_STOP_MODE = STOP_COND_BADLINE;
 
-        printf("Normal!!\n");
         // return to normal mode
         C64_MODE = MODE_NORMAL;
 
@@ -660,6 +700,9 @@ void C64::reset(void)
  */
 void C64::backup_io(void)
 {
+#ifdef OS
+    configASSERT( !backupIsValid );
+#endif
     int i;
     // enter ultimax mode, as this might not have taken place already!
     goUltimax();
@@ -714,6 +757,7 @@ void C64::backup_io(void)
     cia_backup[6] = CIA1_CRA;
     cia_backup[7] = CIA1_CRB;
 
+    backupIsValid = true;
 }
 
 void C64::init_io(void)
@@ -754,7 +798,7 @@ void C64::init_io(void)
     VIC_REG(22) = 0xC8; // Screen = 40 cols with correct scroll
     VIC_REG(32) = 0x00; // black border
     //VIC_REG(26) = 0x01; // Enable Raster interrupt
-    VIC_REG(48) = 252;
+    //VIC_REG(48) = 252;
 }
 
 void C64::freeze(void)
@@ -762,7 +806,7 @@ void C64::freeze(void)
     if (!phi2_present())
         return;
 
-    stop();
+    stop(true);
     backup_io();
     init_io();
 
@@ -785,6 +829,10 @@ void C64::freeze(void)
 
 void C64::restore_io(void)
 {
+#ifdef OS
+    configASSERT( backupIsValid );
+#endif
+
     int i;
 
     // disable screen
@@ -827,6 +875,8 @@ void C64::restore_io(void)
     SID_DUMMY = 0;   // clear internal charge on databus!
     SID2_DUMMY = 0;   // clear internal charge on databus!
     SID3_DUMMY = 0;   // clear internal charge on databus!
+
+    backupIsValid = false;
 }
 
 void C64::init_system_roms(void)
@@ -907,6 +957,8 @@ void C64::init_system_roms(void)
  */
 void C64::unfreeze()
 {
+    if (!isFrozen)
+        return;
 
     if (!phi2_present())
         return;
@@ -925,13 +977,8 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
 
     // If we are called from the overlay or telnet menu, it may be so that the C64 is not even frozen.
     // In this case, we need to stop the machine first in order to poke anything into memory
-    if (!C64_HAS_STOPPED) {
-        C64_STOP_MODE = STOP_COND_FORCE;
-        C64_STOP = 1;
-        // wait until it is stopped (it always will!)
-        while (!C64_HAS_STOPPED)
-            ;
-    }
+    hard_stop();
+
     // Now that the machine is stopped, we can clear certain VIC registers. This is required for the FC3
     // cartridge, but maybe also for others. Obviously, we may not know in what mode we are, so we
     // force Ultimax mode, so that the IO range is accessible.
@@ -955,8 +1002,10 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
     // internal cart, or even override it altogether. This is only done when a custom cart definition is given.
 
     if ((def != 0) || startLater) { // special cart
-        U64_CART_PREF = U64_CARTRIDGE_INTERNAL;
-        // this register will be set back to the correct value upon a reset interrupt, that calls u64_configurator.effectuate_settings()
+        // C64_BUS_BRIDGE   = 0; // Quiet mode  (to hear the SID difference, let's not set this register now)
+        C64_BUS_INTERNAL = 7; // All ON
+        C64_BUS_EXTERNAL = 0; // All OFF
+        // these registers will be set back to the correct value upon a reset interrupt, that calls u64_configurator.effectuate_settings()
     }
 #endif
 
@@ -974,25 +1023,26 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
         CMD_IF_SLOT_ENABLE = 0;
 
         init_system_roms();
-        bool external = false;
-#if U64
-        // In case of the U64, when an external cartridge is detected, we should not enable our cart
-        if (!(U64_CART_PREF & 0x80)) {
-            external = true;
-        }
-#endif
         // Passing 0 to this function means that the default selected cartridge should be run
         if (def == 0) {
-            int cart = cfg->get_value(CFG_C64_CART);
-            def = &cartridges[cart];
-        }
-        if (!external) {
+            bool external = false;
+#if U64
+            // In case of the U64, when an external cartridge is detected, we should not enable our cart
+            external = ConfigureU64SystemBus();
+#endif
+            if (!external) {
+                int cart = cfg->get_value(CFG_C64_CART);
+                def = &cartridges[cart];
+                set_cartridge(def);
+            }
+        } else { // Cartridge specified
             set_cartridge(def);
         }
         C64_MODE = C64_MODE_UNRESET;
     }
 
     isFrozen = false;
+    backupIsValid = false;
 }
 
 Screen *C64::getScreen(void)
@@ -1036,11 +1086,10 @@ void C64::set_cartridge(cart_def *def)
     printf("Setting cart mode %u. Reu enable flag: %b\n", def->type, cfg->get_value(CFG_C64_REU_EN));
     C64_CARTRIDGE_TYPE = (uint8_t) (def->type & 0x1F) | force_cart;
     force_cart = 0;
-//    push_event(e_cart_mode_change, NULL, def->type);
 
     set_emulation_flags(def);
 
-    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_RAM_BASE) << 16;
+    uint32_t mem_addr = ((uint32_t)C64_CARTRIDGE_ROM_BASE) << 16;
     if (def->type & CART_RAM) {
         printf("Copying %d bytes from array %p to mem addr %p\n", def->length, def->custom_addr, mem_addr);
         memcpy((void *) mem_addr, def->custom_addr, def->length);
@@ -1075,15 +1124,17 @@ void C64::set_cartridge(cart_def *def)
         {
            int found = -1;
            unsigned char* mem_addr8 = (unsigned char*) mem_addr;
-           for (int i=0; i<300; i++)
+           for (int i=0; i<300; i++) {
               if ( mem_addr8[i+0] == 0x58 && mem_addr8[i+1] == 0x68
                    && mem_addr8[i+2] == 0xAA && mem_addr8[i+3] == 0x68
                    && mem_addr8[i+4] == 0xE0 && mem_addr8[i+5] == 0x7F
                    && (mem_addr8[i+6] == 0xD0 || mem_addr8[i+6] == 0xF0)
                    && mem_addr8[i+8] == 0xe0 && mem_addr8[i+9] == 0xDF
-                   && mem_addr8[i+10] == 0xf0 )
+                   && mem_addr8[i+10] == 0xf0 ) {
                    found = i;
-
+                   break;
+              }
+           }
            if (found != -1) {
                mem_addr8[found+6] = fc3mode == 1 ? 0xF0 : 0xD0;
            }
@@ -1157,7 +1208,7 @@ void C64::init_cartridge()
     init_system_roms();
 
 #if U64
-    if (!(U64_CART_PREF & 0x80)) { // external cart selected
+    if (ConfigureU64SystemBus()) { // returns true if external cartridge is present and has preference
         printf("External Cartridge Selected. Not initializing cartridge.\n");
         wait_ms(100);
         C64_MODE = C64_MODE_UNRESET;
@@ -1174,7 +1225,7 @@ void C64::init_cartridge()
         C64_MODE = C64_MODE_UNRESET;
         C64_STOP = 0;
         wait_ms(100);
-        freeze();
+        stop(false);
         wait_ms(1400);
         start_cartridge(cart2, false);
     }
@@ -1183,7 +1234,7 @@ void C64::init_cartridge()
         C64_MODE = C64_MODE_UNRESET;
         C64_STOP = 0;
         wait_ms(100);
-        freeze();
+        stop(false);
         wait_ms(1400);
         start_cartridge(cart2, false);
     }
@@ -1232,4 +1283,120 @@ void C64::checkButton(void)
         buttonPushSeen = true;
     }
     button_prev = buttons;
+}
+
+#if U64
+bool C64 :: ConfigureU64SystemBus(void)
+{
+    C64_BUS_BRIDGE   = bus_mode_values[cfg->get_value(CFG_BUS_MODE)];
+    uint8_t internal = 0;
+    uint8_t external = 0;
+    bool ext_cart = ((U64_CART_DETECT & 3) != 3); // true when external cartridge is present
+
+    switch (cfg->get_value(CFG_C64_CART_PREF)) {
+    case 0: // Automatic: If external cartridge is present, switch entire bus to external
+        if (ext_cart) {
+            internal = 0;
+            external = 7;
+        } else {
+            internal = 7;
+            external = 0;
+        }
+        break;
+    case 1: // Internal: Force all internal resources
+        internal = 7;
+        external = 0;
+        ext_cart = false;
+        break;
+    case 2: // External: Force all external resources
+        internal = 0;
+        external = 7;
+        break;
+
+    case 3: // Manual: Take settings from other config items
+        ext_cart = false; // let's assume there is none
+
+        switch (cfg->get_value(CFG_BUS_SHARING_ROM)) {
+        case 0: // Internal
+            internal |= 0x02;
+            break;
+        case 1: // External
+            external |= 0x02;
+            break;
+        case 2: // Both
+            internal |= 0x02;
+            external |= 0x02;
+            break;
+        }
+
+        switch (cfg->get_value(CFG_BUS_SHARING_IRQ)) {
+        case 0: // Internal
+            internal |= 0x04;
+            break;
+        case 1: // External
+            external |= 0x04;
+            break;
+        case 2: // Both
+            internal |= 0x04;
+            external |= 0x04;
+            break;
+        }
+
+        switch (cfg->get_value(CFG_BUS_SHARING_IO)) {
+        case 0: // Internal
+            internal |= 0x01;
+            break;
+        case 1: // External
+            external |= 0x01;
+            break;
+        case 2: // Both
+            internal |= 0x01;
+            external |= 0x01;
+            break;
+        }
+
+    }
+
+    C64_BUS_INTERNAL = internal;
+    C64_BUS_EXTERNAL = external;
+
+    return ext_cart;
+}
+
+void C64 :: EnableWriteMirroring(void)
+{
+    C64_BUS_BRIDGE = 0x01 | bus_mode_values[cfg->get_value(CFG_BUS_MODE)];
+}
+#endif
+
+int C64 :: isMP3RamDrive(int drvNo)
+{
+    uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
+    uint8_t RealDrvType = reu[0xbb0e + drvNo];
+    if ((reu[0xbb0e] == 0x03) && (reu[0xbb0f] == 0xA9) && (reu[0xbb10] == 0x06) && (reu[0xbb11] == 0x8D))
+    {
+        RealDrvType = reu[0x798e + drvNo];
+        if (RealDrvType > 0x83)
+            RealDrvType = 0;
+    }
+    
+    uint8_t ramBase = reu[0x7dc7 + drvNo] ;
+    int drvType = 0;
+    if (RealDrvType == 0x81) drvType = 1541;
+    if (RealDrvType == 0x82) drvType = 1571;
+    if (RealDrvType == 0x83) drvType = 1581;
+    if (RealDrvType == 0x84) drvType = DRVTYPE_MP3_DNP;
+    if (RealDrvType == 0xA4) drvType = DRVTYPE_MP3_DNP;
+    if (ramBase > 0x40) drvType = 0;
+    return drvType;
+}
+
+int C64 :: getSizeOfMP3NativeRamdrive(int devNo)
+{
+    uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
+    uint8_t DskDrvBaseL = reu[0xbafe + devNo];
+    uint8_t DskDrvBaseH = reu[0xbafe + 4 + devNo];
+    uint16_t dskDrvBase = (((uint16_t) DskDrvBaseH) << 8) | DskDrvBaseL;
+    uint8_t noTracks = reu[dskDrvBase + 0x84];
+    return ((uint32_t) noTracks) << 16;
 }

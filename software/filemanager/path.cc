@@ -52,23 +52,33 @@ void Path :: cleanupElements() {
 	depth = 0;
 }
 
-int Path :: cd_single(char *cd)
+int Path :: up(mstring *stripped)
 {
     int p_len = full_path.length();
     char *p = (char *)full_path.c_str();
+    int ret = 0;
+    for(int i=p_len-2;i>=0;i--) {
+        if((p[i] == '/')||(p[i] == '\\')||(i==0)) {
+            p[i+1] = '\0';
+            depth--;
+            if (stripped) {
+                (*stripped) = *(elements[depth]);
+            }
+            delete elements[depth];
+            elements.set(depth, 0);
+            ret = 1;
+            break;
+        }
+    }
+    return ret;
+}
+
+int Path :: cd_single(char *cd)
+{
 
 	// printf("CD Single: %s\n", cd);
     if(strcmp(cd, "..") == 0) {
-		for(int i=p_len-2;i>=0;i--) {
-			if((p[i] == '/')||(p[i] == '\\')||(i==0)) {
-				p[i+1] = '\0';
-				depth--;
-				delete elements[depth];
-				elements.set(depth, 0);
-				break;
-			}
-		}
-        return 1;
+        return up(NULL);
     }
     if(strcmp(cd, ".") == 0) {
         return 1;
@@ -220,9 +230,9 @@ void Path :: regenerateFullPath()
 }
 
 
-FRESULT Path :: get_directory(IndexedList<FileInfo *> &target)
+FRESULT Path :: get_directory(IndexedList<FileInfo *> &target, const char *matchPattern)
 {
-	return FileManager :: getFileManager() -> get_directory(this, target);
+	return FileManager :: getFileManager() -> get_directory(this, target, matchPattern);
 }
 
 bool Path :: isValid()

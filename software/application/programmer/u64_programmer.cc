@@ -372,6 +372,12 @@ void do_update(void)
                 ;
         }
     }
+    printf("\nClearing Configuration Area");
+    int cfg_pages = flash2->get_number_of_config_pages();
+    for(int i=0; i<cfg_pages; i++) {
+        flash2->clear_config_page(i);
+        printf(".");
+    }
     printf("\nConfiguring Flash write protection..\n");
     flash2->protect_configure();
     flash2->protect_enable();
@@ -497,15 +503,16 @@ int test_socket_caps(volatile socket_tester_t *test, volatile uint8_t *ctrl, uin
     // should be in 22 nF mode now. 5-7% caps
     read_caps(test, cap1, cap2);
     if ((cap1 < low) || (cap1 > high)) {
-        printf("\e2CAP1 out of range: %d pF, expected %d pF\n", cap1, expected);
+        printf("\e2CAP1 out of range: %d pF, expected (%d-%d-%d) pF\n", cap1, low, expected, high);
         error |= (1 << 0);
     }
     if ((cap2 < low) || (cap2 > high)) {
-        printf("\e2CAP2 out of range: %d pF, expected %d pF\n", cap2, expected);
+        printf("\e2CAP2 out of range: %d pF, expected (%d-%d-%d) pF\n", cap2, low, expected, high);
         error |= (1 << 1);
     }
     return error;
 }
+
 int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t magic, bool elite)
 {
 //    PLD_WR_CTRL1 = 0xBF; // all on = 12V, 22 nF, 1K
@@ -532,10 +539,10 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
 
     if (elite) {
         error |= test_socket_voltages(i2c, ctrl, magic | 0,  4800,  5200, false);
-        error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9400, false) << 3;
-        error |= test_socket_voltages(i2c, ctrl, magic | 3, 11600, 12800, false) << 6;
-        error |= test_socket_voltages(i2c, ctrl, magic | 7, 11600, 12800, true) << 9;
-        error |= test_socket_caps(test, ctrl, magic | 7, 21000, 24800, 22470) << 12;
+        error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9560, false) << 3;
+        error |= test_socket_voltages(i2c, ctrl, magic | 3, 11600, 13000, false) << 6;
+        error |= test_socket_voltages(i2c, ctrl, magic | 7, 11600, 13000, true) << 9;
+        error |= test_socket_caps(test, ctrl, magic | 7, 20000, 24800, 22470) << 12;
         error |= test_socket_caps(test, ctrl, magic | 15, 200, 900, 470) << 14;
     } else {
         error |= test_socket_voltages(i2c, 0, 0, 11600, 12800, true);
@@ -543,7 +550,7 @@ int socket_test(volatile socket_tester_t *test, volatile uint8_t *ctrl, uint8_t 
         printf("\e?Place all jumpers for socket %d and press power button.\n", (test == SOCKET1)?1:2);
         wait_button();
         error |= test_socket_voltages(i2c, ctrl, magic | 2,  8640,  9400, true) << 8;
-        error |= test_socket_caps(test, 0, 0, 21000, 24800, 22470) << 11;
+        error |= test_socket_caps(test, 0, 0, 20000, 24800, 22470) << 11;
     }
 
     if (!error) {
@@ -612,7 +619,9 @@ extern "C" {
 	        if (!load_images()) {
 	            screen->clear();
 	            screen->move_cursor(0,0);
-	            errors =  test_esp32();
+#if DOTESTS
+                printf("\e4U64 Tester - 15.05.2020 - 10:52\e?\n");
+                errors =  test_esp32();
 	            errors += U64AudioCodecTest();
                 errors += TestSidSockets(elite);
 	            if (elite) {
@@ -637,12 +646,17 @@ extern "C" {
 	                errors ++;
 	                printf("\e2RTC not valid. Battery inserted?\n\eO");
 	            }
-	            if (errors) {
-	                printf("\n\e2** BOARD FAILED **\n");
-	            } else {
-	                printf("\n\e5-> Passed!\n\e?");
-	                do_update();
-	            }
+                if (errors) {
+                    printf("\n\e2** BOARD FAILED **\n");
+                } else {
+                    printf("\n\e5-> Passed!\n\e?");
+                    do_update();
+                }
+#else
+                printf("\e4U64 Programmer - 24.06.2020 - 20:40\e?\n");
+                printf("\n\e5Tests skipped.\n\e?");
+                do_update();
+#endif
 	        }
 	    }
         printf("\n\n\033\023Press power button to turn off the machine..\n");

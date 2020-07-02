@@ -112,7 +112,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void poll();
     static void run(void *a);
 
-    void save_disk_to_file(SubsysCommand *cmd);
+    bool save_disk_to_file(SubsysCommand *cmd);
     void drive_reset(uint8_t doit);
     void set_hw_address(int addr);
     void set_sw_address(int addr);
@@ -125,8 +125,8 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void mount_d64(bool protect, File *);
     void mount_g64(bool protect, File *);
     void mount_blank(void);
-    void check_if_save_needed(SubsysCommand *cmd);
-    
+    bool check_if_save_needed(SubsysCommand *cmd);
+    bool save_if_needed(SubsysCommand *cmd);
 public:
     C1541(volatile uint8_t *regs, char letter);
     ~C1541();
