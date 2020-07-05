@@ -1,0 +1,284 @@
+;-------------------------------------------------
+; Command Interface I/O Module Tester
+;
+; Programmed by Gideon Zweijtzer
+;
+; Copyright (c) 2020 - Gideon Zweijtzer
+;
+;-------------------------------------------------
+;
+; This module installs some basic extensions to test the UCI load / save functions.
+; The load/save functions are hooked by vectors and should fall through to UCI
+; when the device number is 7.
+
+            CMD_IF_CONTROL = $DF1C
+            CMD_IF_COMMAND = $DF1D
+            CMD_IF_RESULT  = $DF1E
+            CMD_IF_STATUS  = $DF1F
+
+            UCI_IDENTIFIER = $C9
+            CMD_PUSH_CMD   = $01
+            CMD_NEXT_DATA  = $02
+            CMD_ABORT      = $04
+
+            CMD_STATE_BITS      = $30
+            CMD_STATE_IDLE      = $00
+            CMD_STATE_BUSY      = $10
+            CMD_STATE_LAST_DATA = $20
+            CMD_STATE_MORE_DATA = $30
+
+            UCI_TARGET   = $05
+            UCI_CMD_LOAD = $11
+            UCI_CMD_SAVE = $12
+            
+            *= $C000            ;base of wedge
+            jmp install
+
+            .text $00, 'Test routines for loading / saving through UCI. Copyright (c) 2020 - Gideon Zweijtzer', $00
+
+; $FFD5 
+; LOAD. Load or verify file. (Must call SETLFS and SETNAM beforehands.)
+; Input: A: 0 = Load, 1-255 = Verify; X/Y = Load address (if secondary address = 0).
+; Output: Carry: 0 = No errors, 1 = Error; A = KERNAL error code (if Carry = 1); X/Y = Address of last byte loaded/verified (if Carry = 0).
+; Used registers: A, X, Y.
+; Real address: $F49E.
+; Vectors through $0330, after storing X in $C3 and Y in $C4
+
+; $FFD8   
+; SAVE. Save file. (Must call SETLFS and SETNAM beforehands.)
+; Input: A = Address of zero page register holding start address of memory area to save; X/Y = End address of memory area plus 1.
+; Output: Carry: 0 = No errors, 1 = Error; A = KERNAL error code (if Carry = 1).
+; Used registers: A, X, Y.
+; Real address: $F5DD.
+; Vector: 
+
+            LOAD_VECTOR = $0330
+            SAVE_VECTOR = $0332
+            
+            STATUS     = $90
+            VERIFYFLAG = $93
+            LOADPNTR   = $AE
+            SECADDR    = $B9
+            DEVNUM     = $BA
+            NAMEPTR    = $BB
+            NAMELEN    = $B7
+            LOADADDR   = $C3            
+            SAVEADDR   = $C1
+            SAVEEND    = $AE
+            
+            CHROUT = $FFD2
+            FILE_NOT_FOUND_ERROR = $F704
+            MISSING_FILENAME_ERROR = $F710
+            SHOW_SEARCHING = $F5AF            
+            SHOW_LOADING = $F5D2
+            SHOW_SAVING = $F68F
+install
+            lda LOAD_VECTOR
+            ldy LOAD_VECTOR+1
+            sta origvect_load
+            sty origvect_load+1
+            lda #<load
+            ldy #>load
+            sta LOAD_VECTOR
+            sty LOAD_VECTOR+1
+
+            lda SAVE_VECTOR
+            ldy SAVE_VECTOR+1
+            sta origvect_save
+            sty origvect_save+1
+            lda #<save
+            ldy #>save
+            sta SAVE_VECTOR
+            sty SAVE_VECTOR+1
+
+            rts
+
+origvect_load    .word 0
+origvect_save    .word 0
+
+load
+            sta VERIFYFLAG
+            lda DEVNUM
+            cmp #$07
+            beq myload
+-           lda VERIFYFLAG
+            jmp (origvect_load)            
+
+myload
+            lda #$00
+            sta STATUS
+            ldy NAMELEN
+            bne +
+            jmp MISSING_FILENAME_ERROR
+
+            lda CMD_IF_COMMAND
+            cmp #UCI_IDENTIFIER
+            beq -
+
++           ldx SECADDR
+            jsr SHOW_SEARCHING
+            ldx #UCI_CMD_LOAD
+            ldy #LOADADDR
+            jsr uci_setup_loadsave
+
+            bmi _verify_err
+            beq + ; all OK when zero
+
+            jsr uci_ack
+            jmp FILE_NOT_FOUND_ERROR
+
+_verify_err lda #$10
+            ora STATUS
+            sta STATUS
+
++           jsr SHOW_LOADING
+
+            lda CMD_IF_STATUS
+            sta LOADPNTR
+            lda CMD_IF_STATUS
+            sta LOADPNTR+1
+
+            ; jsr show_end_addr
+
+            jsr uci_ack
+
+            ldx LOADPNTR
+            ldy LOADPNTR+1
+            clc
+            rts                        
+
+save
+            sta VERIFYFLAG
+            lda DEVNUM
+            cmp #$07
+            beq mysave
+-           lda VERIFYFLAG
+            jmp (origvect_save)            
+
+mysave
+            lda #$00
+            sta STATUS
+            ldy NAMELEN
+            bne +
+            jmp MISSING_FILENAME_ERROR
+
+            lda CMD_IF_COMMAND
+            cmp #UCI_IDENTIFIER
+            beq -
+
++           jsr SHOW_SAVING
+
+            ldx #UCI_CMD_SAVE
+            ldy #SAVEADDR
+            jsr uci_setup_loadsave
+            beq + ; all OK when zero
+
+            jsr uci_ack
+            sec
+            rts
+
++           jsr uci_ack
+            clc
+            rts                        
+
+
+uci_setup_loadsave  .proc
+            lda #UCI_TARGET
+            sta CMD_IF_COMMAND
+            stx CMD_IF_COMMAND
+            lda VERIFYFLAG
+            sta CMD_IF_COMMAND
+            lda SECADDR
+            sta CMD_IF_COMMAND
+            lda $00,y
+            sta CMD_IF_COMMAND
+            lda $01,y
+            sta CMD_IF_COMMAND
+            lda SAVEEND
+            sta CMD_IF_COMMAND
+            lda SAVEEND+1
+            sta CMD_IF_COMMAND
+            ldy #$00
+-           lda (NAMEPTR),y
+            sta CMD_IF_COMMAND
+            iny
+            cpy NAMELEN
+            bne -
+            jmp uci_execute
+            .pend
+
+uci_execute .proc
+            lda #CMD_PUSH_CMD
+            sta CMD_IF_CONTROL
+-           lda CMD_IF_CONTROL
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_BUSY
+            beq -
+            ; we should now be in the data state, where we can also read the status
+            lda CMD_IF_STATUS
+            ; pha
+            ; jsr hexout
+            ; pla
+            rts
+            .pend
+
+uci_ack     .proc
+            ldy #CMD_NEXT_DATA
+            sty CMD_IF_CONTROL
+            rts
+            .pend
+                        
+;; Print some info
+printinfo   .proc
+            ldy #$00
+-           lda (NAMEPTR),y
+            jsr CHROUT
+            iny
+            cpy NAMELEN
+            bne -
+            lda #$2C
+            jsr CHROUT
+            
+            lda SECADDR
+            jsr hexout
+            lda #$2C
+            jsr CHROUT
+            lda LOADADDR+1
+            jsr hexout
+            lda LOADADDR
+            jsr hexout
+            lda #$2C
+            jsr CHROUT
+            lda VERIFYFLAG
+            jsr hexout
+            lda #$0D
+            jmp CHROUT
+            .pend
+
+show_end_addr .proc
+            lda #$20
+            jsr CHROUT
+            lda LOADPNTR+1
+            jsr hexout
+            lda LOADPNTR
+            jmp hexout
+            .pend
+
+hexout      .proc
+            pha
+            and #$F0
+            lsr
+            lsr
+            lsr
+            lsr
+            tax
+            lda hex_chars,x
+            jsr CHROUT
+            pla
+            and #$0f
+            tax
+            lda hex_chars,x
+            jmp CHROUT
+hex_chars   .text "0123456789ABCDEF"
+            .pend
+            

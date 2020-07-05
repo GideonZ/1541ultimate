@@ -334,6 +334,27 @@ class IecChannel
 
     // temporaries
     uint32_t bytes;
+    char filename[64];
+    const char *extension;
+    bool explicitExt;
+    uint8_t flags;
+    IecPartition *partition;
+
+private:
+    void fix_filename(void);
+    void parse_filename(command_t& command);
+    int  setup_directory_read(command_t &command);
+    int  setup_file_access(command_t& command);
+    int  init_iec_transfer(void);
+
+    int open_file(void);  // name should be in buffer
+    int close_file(void); // file should be open
+    int read_dir_entry(void);
+    int read_block(void);
+    void parse_command(char *buffer, command_t *command);
+    void dump_command(command_t& cmd);
+    bool hasIllegalChars(const char *name);
+    const char *GetExtension(char specifiedType, bool &explicitExt);
 
 public:
     IecChannel(IecInterface *intf, int ch);
@@ -341,17 +362,11 @@ public:
     virtual void reset_prefetch(void);
     virtual int prefetch_data(uint8_t& data);
     virtual int pop_data(void);
-    int read_dir_entry(void);
-    int read_block(void);
     virtual int push_data(uint8_t b);
     virtual int push_command(uint8_t b);
-    void parse_command(char *buffer, command_t *command);
-    void dump_command(command_t& cmd);
-    bool hasIllegalChars(const char *name);
-    const char *GetExtension(char specifiedType, bool &explicitExt);
-private:
-    int open_file(void);  // name should be in buffer
-    int close_file(void); // file should be open
+
+    virtual int ext_open_file(const char *name);
+    virtual int ext_close_file(void);
     friend class IecCommandChannel;
 };
 

@@ -114,6 +114,7 @@ public:
     void effectuate_settings(void); // from ConfigurableObject
     int get_last_error(char *, int track = 0, int sector = 0); // writes string into buffer
     IecCommandChannel *get_command_channel();
+    IecCommandChannel *get_data_channel(int chan);
     const char *get_root_path();
 
     friend class IecChannel;
@@ -121,7 +122,7 @@ public:
     friend class IecPrinter;
 };
 
-extern IecInterface HW_IEC;
+extern IecInterface iec_if;
  
 class UltiCopy : public UIObject
 {
