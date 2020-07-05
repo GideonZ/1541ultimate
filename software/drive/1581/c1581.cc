@@ -33,11 +33,12 @@ const char *yes_no_81[] = { "No", "Yes" };
 #define BASIC_START			0x0801
 #define MAX_FILE_COUNT		296
 
+/*
 struct t_cfg_definition c1581_config[] = {
-    { CFG_C1581_POWERED,   CFG_TYPE_ENUM,   "1581 Drive",                 "%s", en_dis_81,     0,  1, 1 },
+    { CFG_C1581_POWERED,   CFG_TYPE_ENUM,   "1581 Drive",                 "%s", en_dis_81,  0,  1,  1 },
     { CFG_C1581_BUS_ID,    CFG_TYPE_VALUE,  "1581 Drive Bus ID",          "%d", NULL,       8, 11, 10 },
-    { 0xFF, CFG_TYPE_END,    "", "", NULL, 0, 0, 0 }
-};
+    { CFG_TYPE_END,        CFG_TYPE_END,    "",                             "", NULL,       0,  0,  0 }
+};*/
 
 uint32_t trackOffset[80] = {
 		0x00000,0x02800,0x05000,0x07800,0x0A000,0x0C800,0x0F000,0x11800,0x14000,0x16800,0x19000,0x1B800,0x1E000,0x20800,0x23000,0x25800,
@@ -1018,14 +1019,16 @@ int C1581::getNextDirectoryEntry(bool *firstcall, int *dirctr, bool *lastdirsect
 
 }
 
-int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track, uint8_t *sector, uint8_t relRecordLength, uint8_t *relssbtrack, uint8_t *relssbsector)
+int C1581::createDirectoryEntry(DirectoryEntry *newDirEntry)
 {
 	bool firstcall = true;
 	int dirctr = 0;
 	bool lastdirsector = false;
 	DirectoryEntry *dirEntry = new DirectoryEntry;
 	int dirptr;
+	int er = 0;
 	int filecount = 0;
+	uint8_t sstrack = 0, sssector = 0;
 
 	while(filecount < MAX_FILE_COUNT)
 	{
@@ -1040,21 +1043,21 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 			{
 				// if not CBM file type (they have already been allocated)
 				// allocate a starting sector for the file
-				if(filetype != 0x85)
+				if(newDirEntry->file_type != 5) //0x85)
 				{
-					int err = findFreeSector(true, track, sector);
-					if(err != ERR_OK)
+					er = findFreeSector(true, &(newDirEntry->first_data_track), &(newDirEntry->first_data_sector));
+					if(er != ERR_OK)
 					{
 						delete dirEntry;
-						return err;
+						return er;
 					}
 
 					// allocate the sector
-					err = setTrackSectorAllocation(*track, *sector, true);
-					if(err != ERR_OK)
+					er = setTrackSectorAllocation(newDirEntry->first_data_track, newDirEntry->first_data_sector, true);
+					if(er != ERR_OK)
 					{
 						delete dirEntry;
-						return err;
+						return er;
 					}
 				}
 
@@ -1072,26 +1075,56 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 				}
 
 				// filetype byte
-				sectorBuffer[dirptr + 0x02] = filetype;
+				sectorBuffer[dirptr + 0x02] = newDirEntry->file_type + 0x80; //filetype;
 
 				// track/sector of first sector of file or partition
-				sectorBuffer[dirptr + 0x03] = *track;
-				sectorBuffer[dirptr + 0x04] = *sector;
+				sectorBuffer[dirptr + 0x03] = newDirEntry->first_data_track;
+				sectorBuffer[dirptr + 0x04] = newDirEntry->first_data_sector;
 
 				// filename
 				int v = 0;
-				for (; v < strlen(filename); v++)
-					sectorBuffer[dirptr + 0x05 + v] = filename[v];
+				for (; v < strlen((const char *)newDirEntry->filename); v++)
+					sectorBuffer[dirptr + 0x05 + v] = newDirEntry->filename[v];
 
 				for (; v < 16; v++)
 					sectorBuffer[dirptr + 0x05 + v] = 160;
 
 				// Track/sector of first super side sector block (REL only)
-				if(dirEntry->file_type == 0x84)
+				if(newDirEntry->file_type == 4)
 				{
-					sectorBuffer[dirptr + 0x15] = *relssbtrack;
-					sectorBuffer[dirptr + 0x16] = *relssbsector;
-					sectorBuffer[dirptr + 0x17] = relRecordLength;
+					// Allocate a side sector
+					er = findFreeSector(false, &sstrack, &sssector);
+					if(er != ERR_OK)
+					{
+						delete dirEntry;
+						return er;
+					}
+
+					er = setTrackSectorAllocation(sstrack, sssector, true);
+					if(er != ERR_OK)
+					{
+						delete dirEntry;
+						return er;
+					}
+
+					// Allocate a super side sector
+					er = this->findFreeSector(false, &(newDirEntry->first_track_ssb), &(newDirEntry->first_sector_ssb));
+					if(er != ERR_OK)
+					{
+						delete dirEntry;
+						return er;
+					}
+
+					er = setTrackSectorAllocation(newDirEntry->first_track_ssb, newDirEntry->first_sector_ssb, true);
+					if(er != ERR_OK)
+					{
+						delete dirEntry;
+						return er;
+					}
+
+					sectorBuffer[dirptr + 0x15] = newDirEntry->first_track_ssb;
+					sectorBuffer[dirptr + 0x16] = newDirEntry->first_sector_ssb;
+					sectorBuffer[dirptr + 0x17] = newDirEntry->rel_file_length;
 
 					// not a splat file
 					sectorBuffer[dirptr + 0x02] = sectorBuffer[dirptr + 0x02] | 0x80;
@@ -1113,6 +1146,48 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 
 				// write the data back
 				writeSector();
+
+				// if relative file, still have some setup to do
+				if(newDirEntry->file_type == 4)
+				{
+					// Super side sector will contain first side sector block
+					goTrackSector(newDirEntry->first_track_ssb, newDirEntry->first_sector_ssb);
+					sectorBuffer[0] = sstrack;
+					sectorBuffer[1] = sssector;
+					sectorBuffer[2] = 0xfe;
+					sectorBuffer[3] = sstrack;
+					sectorBuffer[4] = sssector;
+					writeSector();
+
+					// First sector block will contain...
+					goTrackSector(sstrack, sssector);
+					sectorBuffer[0] = 0x00;	// no more side sectors (normally next side sector track)
+					sectorBuffer[1] = 0x11;	// dummy data (normally next side sector sector)
+					sectorBuffer[2] = 0x00;	// first side sector is 0
+					sectorBuffer[3] = newDirEntry->rel_file_length;	// record length
+					sectorBuffer[4] = sstrack;  // side sector track group 0 (here)
+					sectorBuffer[5] = sssector; // side sector sector group 0 (here)
+					sectorBuffer[16] = newDirEntry->first_data_track;
+					sectorBuffer[17] = newDirEntry->first_data_sector;
+
+					writeSector();
+
+					// Now set up the first data sector
+					goTrackSector(newDirEntry->first_data_track, newDirEntry->first_data_sector);
+					sectorBuffer[0] = 0x00;	// no more data tracks
+					sectorBuffer[1] = 0xfb;	// no more data sectors
+
+					for(int bn=2; bn<256; bn++)
+					{
+						if((bn-2) % newDirEntry->rel_file_length == 0)
+							sectorBuffer[bn] = 0xff;
+						else
+							sectorBuffer[bn] = 0x00;
+					}
+					writeSector();
+				}
+
+
 				delete dirEntry;
 				return ERR_OK;
 			}
@@ -1126,23 +1201,25 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 		sectorBuffer[1] = cursector + 1;	// sector to the new one
 		writeSector();						// write the current dir sector back
 
+		//TODO: this should not exist...just go back up and do it again!
+
 		// if not CBM file type (they have already been allocated)
 		// allocate a starting sector for the file
-		if(filetype != 0x85)
+		if(newDirEntry->file_type + 0x80 != 0x85)
 		{
-			int err = findFreeSector(true, track, sector);
-			if(err != ERR_OK)
+			int er = findFreeSector(true, &(newDirEntry->first_data_track), &(newDirEntry->first_data_sector));
+			if(er != ERR_OK)
 			{
 				delete dirEntry;
-				return err;
+				return er;
 			}
 
 			// allocate the sector
-			err = setTrackSectorAllocation(*track, *sector, true);
-			if(err != ERR_OK)
+			er = setTrackSectorAllocation(newDirEntry->first_data_track, newDirEntry->first_data_sector, true);
+			if(er != ERR_OK)
 			{
 				delete dirEntry;
-				return err;
+				return er;
 			}
 		}
 
@@ -1150,13 +1227,13 @@ int C1581::createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track
 		goTrackSector(curtrack, cursector + 1);
 		sectorBuffer[0x00] = 0x00;
 		sectorBuffer[0x01] = 0xff;
-		sectorBuffer[0x02] = filetype;
-		sectorBuffer[0x03] = *track;
-		sectorBuffer[0x04] = *sector;
+		sectorBuffer[0x02] = newDirEntry->file_type;
+		sectorBuffer[0x03] = newDirEntry->first_data_track;
+		sectorBuffer[0x04] = newDirEntry->first_data_sector;
 
 		int v = 0;
-		for (; v < strlen(filename); v++)
-			sectorBuffer[0x05 + v] = filename[v];
+		for (; v < strlen((const char *)newDirEntry->filename); v++)
+			sectorBuffer[0x05 + v] = newDirEntry->filename[v];
 
 		for (; v < 16; v++)
 			sectorBuffer[0x05 + v] = 160;
@@ -1242,13 +1319,16 @@ int C1581::updateDirectoryEntry(char *filename, char* extension, DirectoryEntry 
 	sectorBuffer[offset + 0x02] = updateddirEntry->file_type;
 	sectorBuffer[offset + 0x03] = updateddirEntry->first_data_track;
 	sectorBuffer[offset + 0x04] = updateddirEntry->first_data_sector;
+	//sectorBuffer[offset + 0x15] = updateddirEntry->first_track_ssb;
+	//sectorBuffer[offset + 0x16] = updateddirEntry->first_sector_ssb;
+	//sectorBuffer[offset + 0x17] = updateddirEntry->rel_file_length;
 	sectorBuffer[offset + 0x1e] = updateddirEntry->size_lo;
 	sectorBuffer[offset + 0x1f] = updateddirEntry->size_hi;
 
 	for (int v = 0; v < 16; v++)
 		sectorBuffer[offset + 0x05 + v]	= updateddirEntry->filename[v];
 
-	delete [] dirEntry;
+	delete dirEntry;
 	write_d81();
 	return ERR_OK;
 }

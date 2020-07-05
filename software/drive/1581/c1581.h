@@ -131,7 +131,7 @@ class C1581: public SubSystem, ConfigurableObject, ObjectWithMenu
 
 		int get_directory(uint8_t *buffer);
 		int getNextDirectoryEntry(bool *firstcall, int *dirctr, bool *lastdirsector, DirectoryEntry *dirEntry);
-		int createDirectoryEntry(char *filename, uint8_t filetype, uint8_t *track, uint8_t *sector, uint8_t relRecordLength, uint8_t *relssbtrack, uint8_t *relssbsector);
+		int createDirectoryEntry(DirectoryEntry *newDirEntry);
 		int findDirectoryEntry(char *filename, char* extension, DirectoryEntry *dirEntry);
 		int updateDirectoryEntry(char *filename, char* extension, DirectoryEntry *dirEntry);
 		int getBlocksFree(void);

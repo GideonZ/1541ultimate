@@ -7,17 +7,15 @@
 class FileTypeD64 : public FileType
 {
 	BrowsableDirEntry *node;
-	int ftype;
 	
 public:
-    FileTypeD64(BrowsableDirEntry *node, int ftype);
+    FileTypeD64(BrowsableDirEntry *node);
     virtual ~FileTypeD64();
 
     int   fetch_context_items(IndexedList<Action *> &list);
 
     static FileType *test_type(BrowsableDirEntry *obj);
 
-    static int loadMP3_st(SubsysCommand *cmd);
 };
 
 #endif

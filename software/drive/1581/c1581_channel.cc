@@ -133,7 +133,7 @@ int C1581_Channel :: push_command(uint8_t b)
         case 0x00: // end of data
             if(last_command == 0xF0)
             {
-            	C1581_CommandChannel *cmdChannel = c1581->channels[15];
+            	C1581_CommandChannel *cmdChannel = (C1581_CommandChannel*)c1581->channels[15];
             	cmdChannel->get_last_error(open_file(), 0,0);
             }
             break;
@@ -496,18 +496,12 @@ uint8_t C1581_Channel::open_file(void)
 			uint8_t sector;
 			uint8_t ftype;
 
-			if(strcmp(extension, ".del") == 0)
-				ftype = 0;
-			else if(strcmp(extension, ".seq") == 0)
-				ftype = 1;
-			else if(strcmp(extension, ".prg") == 0)
-				ftype = 2;
-			else if(strcmp(extension, ".usr") == 0)
-				ftype = 3;
-			else if(strcmp(extension, ".rel") == 0)
-				ftype = 4;
-			else if(strcmp(extension, ".cbm") == 0)
-				ftype = 5;
+			if(strcmp(extension, ".del") == 0)		ftype = 0;
+			else if(strcmp(extension, ".seq") == 0) ftype = 1;
+			else if(strcmp(extension, ".prg") == 0) ftype = 2;
+			else if(strcmp(extension, ".usr") == 0) ftype = 3;
+			else if(strcmp(extension, ".rel") == 0) ftype = 4;
+			else if(strcmp(extension, ".cbm") == 0) ftype = 5;
 
 			// Check if file exists
 			uint8_t tmptrack, tmpsector;
@@ -516,18 +510,25 @@ uint8_t C1581_Channel::open_file(void)
 			if(err == ERR_FILE_NOT_FOUND)
 			{
 				// Create directory entry and allocate
-				err = c1581->createDirectoryEntry((char *)file_name, ftype, &track, &sector,0 ,NULL, NULL);
+				DirectoryEntry *newDirEntry = new DirectoryEntry();
+				newDirEntry->file_type = ftype;
+
+				strcpy((char *)newDirEntry->filename, (const char *)file_name);
+
+				err = c1581->createDirectoryEntry(newDirEntry);
 
 				if(err != ERR_OK)
 				{
 					state = e_error;
+					delete newDirEntry;
 					return err;
 				}
 
 				writeblock = 1;
-				writetrack = track;
-				writesector = sector;
+				writetrack = newDirEntry->first_data_track;
+				writesector = newDirEntry->first_data_sector;
 				pointer=2;
+				delete newDirEntry;
 			}
 			else
 			{
@@ -555,26 +556,30 @@ uint8_t C1581_Channel::open_file(void)
 	// relative file (r/w)
 	else
 	{
-		// Check if file exists
 		uint8_t tmptrack, tmpsector;
+		DirectoryEntry *relDirEntry = new DirectoryEntry();
+
+		// Check if file exists
 		int err = c1581->getFileTrackSector((char *)file_name, &tmptrack, &tmpsector, false);
 
 		// create the file if not found
 		if(err == ERR_FILE_NOT_FOUND)
 		{
+			relDirEntry->file_type = 4;
+			relDirEntry->rel_file_length = relrecordsize;
+
+			for(int fnl=0; fnl<16; fnl++)
+				relDirEntry->filename[fnl] = file_name[fnl];
+
 			// Create directory entry and allocate
-			err = c1581->createDirectoryEntry((char *)file_name, 4, &track, &sector, relrecordsize, &relssbtrack, &relssbsector);
+			err = c1581->createDirectoryEntry(relDirEntry);
 
 			if(err != ERR_OK)
 			{
 				state = e_error;
+				delete relDirEntry;
 				return err;
 			}
-
-			writeblock = 1;
-			writetrack = track;
-			writesector = sector;
-			pointer=2;
 		}
 		else
 		{
@@ -586,17 +591,29 @@ uint8_t C1581_Channel::open_file(void)
 				return err;
 			}
 
-			DirectoryEntry *relDirEntry = new DirectoryEntry();
 			err = c1581->findDirectoryEntry((char *)file_name, ".rel", relDirEntry);
 
-			relssbtrack = relDirEntry->first_track_ssb;
-			relssbsector = relDirEntry->first_sector_ssb;
-
-			delete [] relDirEntry;
-
-			blocknumber = 0;
-			read_block();
+			if(err != ERR_OK)
+			{
+				state = e_error;
+				delete relDirEntry;
+				return err;
+			}
 		}
+
+		relssbtrack = relDirEntry->first_track_ssb;
+		relssbsector = relDirEntry->first_sector_ssb;
+
+		write = true;
+		writeblock = 1;
+		writetrack = relDirEntry->first_data_track;
+		writesector = relDirEntry->first_data_sector;
+		pointer=2;
+
+		delete relDirEntry;
+
+		blocknumber = 0;
+		read_block();
 	}
 
 	return ERR_OK;
@@ -992,7 +1009,15 @@ void C1581_CommandChannel :: copy(command_t& command)
 		srcSizeHi = dirEntry->size_hi;
 		srcSizeLo = dirEntry->size_lo;
 
-		c1581->createDirectoryEntry((char *)toName, ftype, &destTrack, &destSector, 0, NULL, NULL);
+		DirectoryEntry *newDirEntry = new DirectoryEntry();
+		newDirEntry->file_type = ftype;
+
+		for(int fnl=0; fnl<16; fnl++)
+			newDirEntry->filename[fnl] = toName[fnl];
+
+		c1581->createDirectoryEntry(newDirEntry);
+		destTrack = newDirEntry->first_data_track;
+		destSector = newDirEntry->first_data_sector;
 
 		uint8_t nxt_srcTrack;
 		uint8_t nxt_srcSector;
@@ -1034,13 +1059,14 @@ void C1581_CommandChannel :: copy(command_t& command)
 		c1581->write_d81();
 		get_last_error(ERR_OK, 0,0);
 
+		delete newDirEntry;
 	}
 	else
 	{
 		get_last_error(ERR_FILE_NOT_FOUND, 0,0);
 	}
 
-	delete [] dirEntry;
+	delete dirEntry;
 	return;
 }
 
@@ -1124,7 +1150,7 @@ void C1581_CommandChannel :: renam(command_t& command)
 		get_last_error(ERR_FILE_NOT_FOUND,0,0);
 	}
 
-	delete [] dirEntry;
+	delete dirEntry;
 	return;
 }
 
@@ -1214,7 +1240,7 @@ void C1581_CommandChannel :: scratch(command_t& command)
 		x = c1581->updateDirectoryEntry(name, (char*)fromExt, dirEntry);
     }
 
-    delete [] dirEntry;
+    delete dirEntry;
 
     if (x > -1)
     	get_last_error(ERR_FILES_SCRATCHED, 1,0);
@@ -1231,7 +1257,7 @@ void C1581_CommandChannel :: validate(command_t& command)
 	}
 
 	c1581->goTrackSector(c1581->curbamtrack, 1);
-	c1581->resetBAM((uint8_t *)c1581->sectorBuffer[0x04]);
+	c1581->resetBAM(&(c1581->sectorBuffer[0x04]));
 
 	//
 	// Read disk directory and allocate the appropriate chain
@@ -1388,9 +1414,6 @@ void C1581_CommandChannel :: u1(command_t& command)
 	c1581->channels[ichanl]->prefetch_max = BLOCK_SIZE-1;
 
 	get_last_error(ERR_OK, 0,0);
-
-	//TODO: there seems to be a bug in block read (U1) where the last 14 bytes are incorrect for any sector.
-	// this only seems to impact the U1 command and not normal program loading
 }
 
 void C1581_CommandChannel :: u2(command_t& command)
@@ -1772,26 +1795,28 @@ void C1581_CommandChannel :: create_select_partition(command_t& command)
 		}
 
 		//add the directory entry
-		c1581->createDirectoryEntry(cmdbuf, 0x85, &istarting_track, &istarting_sector, 0, NULL, NULL);
+		DirectoryEntry *newDirEntry = new DirectoryEntry();
+		newDirEntry->file_type = 0x85;
 
-		//update the file size
-		DirectoryEntry *dirEntry = new DirectoryEntry();
-		strcpy((char*)dirEntry->filename, cmdbuf);
-		dirEntry->file_type = 0x85;
-		dirEntry->first_data_track = istarting_track;
-		dirEntry->first_data_sector = istarting_sector;
-		dirEntry->size_hi = ihi_numsectors;
-		dirEntry->size_lo = ilo_numsectors;
+		for(int fnl=0; fnl<16; fnl++)
+			newDirEntry->filename[fnl] = cmdbuf[fnl];
 
 		// pad the filename for the directory entry
-		uint8_t z = strlen((const char*)dirEntry->filename);
+		uint8_t z = strlen((const char*)newDirEntry->filename);
 		for(; z < 16; z++)
-			dirEntry->filename[z] = 0xa0;
+			newDirEntry->filename[z] = 0xa0;
 
-		c1581->updateDirectoryEntry(cmdbuf, "CBM", dirEntry);
+		err = c1581->createDirectoryEntry(newDirEntry);
+
+		newDirEntry->first_data_track = trk;
+		newDirEntry->first_data_sector = sec;
+		newDirEntry->size_hi = ihi_numsectors;
+		newDirEntry->size_lo = ilo_numsectors;
+
+		c1581->updateDirectoryEntry(cmdbuf, "CBM", newDirEntry);
 
 		get_last_error(ERR_OK, 0, 0);
-		delete dirEntry;
+		delete newDirEntry;
 		return;
 	}
 	else
