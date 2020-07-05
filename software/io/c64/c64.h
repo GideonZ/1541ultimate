@@ -14,7 +14,6 @@
 
 #define MENU_C64_RESET      0x6401
 #define MENU_C64_REBOOT     0x6402
-//#define MENU_C64_TRACE    0x6581
 #define MENU_C64_SAVEREU    0x6403
 #define MENU_C64_SAVEFLASH  0x6404
 #define MENU_C64_SAVEMODULE 0x6405
@@ -42,9 +41,6 @@
 #define C64_STOP_COMMAND	0x647B
 #define C64_SET_KERNAL		0x647C
 #define C64_READ_FLASH      0x647D
-
-//#define SID_TRACE_END           *((volatile uint32_t *)(C64_TRACE_BASE + 0x80))
-//#define SID_REGS(x)             *((volatile uint8_t *)(C64_TRACE_BASE + x))
 
 #define C64_MODE                *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x0))
 #define C64_STOP                *((volatile uint8_t *)(C64_CARTREGS_BASE + 0x1))
@@ -351,6 +347,7 @@ public:
     friend class FileTypeREU; // REU file needs to access config
     friend class FileTypeCRT; // CRT file may need to enable Write mirroring on U64
     friend class U64Config; // U64 config needs to stop / resume for SID detection
+    friend class SoftIECTarget; // UCI target that performs DMA load
 };
 
 // extern C64 *c64;

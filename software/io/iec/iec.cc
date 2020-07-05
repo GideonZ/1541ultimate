@@ -259,6 +259,11 @@ IecCommandChannel *IecInterface :: get_command_channel(void)
     return (IecCommandChannel *)channels[15];
 }
 
+IecCommandChannel *IecInterface :: get_data_channel(int chan)
+{
+    return (IecCommandChannel *)channels[chan & 15];
+}
+
 void IecInterface :: effectuate_settings(void)
 {
     uint32_t was_talk   = 0x18800040 + last_addr; // compare instruction
