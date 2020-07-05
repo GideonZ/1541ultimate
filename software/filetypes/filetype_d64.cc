@@ -154,7 +154,14 @@ int FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
 	FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
 	if(file) {
 		total_bytes_read = 0;
-		file->read(dstAddr, expSize, &bytes_read);
+    if (ftype == 1571)
+    {
+		   file->read(dstAddr, expSize/2, &bytes_read);
+		   total_bytes_read += bytes_read;
+		   file->read(dstAddr+700*256, expSize/2, &bytes_read);
+    }
+    else
+		   file->read(dstAddr, expSize, &bytes_read);
 		total_bytes_read += bytes_read;
 
 		printf("\nClosing file. ");
