@@ -677,6 +677,6 @@ void Dos::get_more_data(Message **reply, Message **status) {
     }
 }
 
-void Dos::abort(void) {
+void Dos::abort(int a) {
     dos_state = e_dos_idle;
 }

@@ -128,7 +128,7 @@ public:
         *status = &c_status_ok; 
     }
     
-    virtual void abort(void) { }
+    virtual void abort(int a) { }
 };
 
 extern CommandTarget *command_targets[];

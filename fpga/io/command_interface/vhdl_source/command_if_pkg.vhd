@@ -17,7 +17,7 @@ package command_if_pkg is
     constant c_cif_io_status_length     : unsigned(3 downto 0) := X"A"; -- write will reset status readout
     constant c_cif_io_irq_mask          : unsigned(3 downto 0) := X"B"; -- read/write
     constant c_cif_io_response_len_l    : unsigned(3 downto 0) := X"C"; -- write will reset response readout
-    constant c_cif_io_response_len_h    : unsigned(3 downto 0) := X"D";
+    constant c_cif_io_response_len_h    : unsigned(3 downto 0) := X"D"; -- read will return the current pointer
     constant c_cif_io_command_len_l     : unsigned(3 downto 0) := X"E"; -- read only
     constant c_cif_io_command_len_h     : unsigned(3 downto 0) := X"F"; 
 
