@@ -72,7 +72,7 @@ public:
 
     void parse_command(Message *command, Message **reply, Message **status);
     void get_more_data(Message **reply, Message **status);  
-    void abort(void);
+    void abort(int);
 };
 
 #endif
