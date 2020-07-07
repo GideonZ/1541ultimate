@@ -6,9 +6,12 @@
 SoftIECTarget softIecTarget(5);
 
 static Message c_message_identification     = { 24, true, (uint8_t *)"SOFTWARE IEC TARGET V0.1" };
+static Message c_message_first_message      = { 28,false, (uint8_t *)"THIS IS THE FIRST MESSAGE..." };
+static Message c_message_second_message     = { 11, true, (uint8_t *)"SECOND MSG!" };
 static Message c_status_all_ok              = {  1, true, (uint8_t *)"\x00" };
 static Message c_status_file_not_found      = {  1, true, (uint8_t *)"\x01" };
 static Message c_status_save_error          = {  1, true, (uint8_t *)"\x02" };
+static Message c_status_unknown_cmd_local   = {  1, true, (uint8_t *)"\x03" };
 
 SoftIECTarget :: SoftIECTarget(int id)
 {
@@ -32,18 +35,44 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
     // the second byte is the command byte for the target
 
     *reply  = &c_message_empty;
-    *status = &c_status_unknown_command;
+    *status = &c_status_unknown_cmd_local;
 
     switch(command->message[1]) {
         case SOFTIEC_CMD_IDENTIFY:
 		    *reply  = &c_message_identification;
             *status = &c_status_ok;
             break;
-        case SOFTIEC_CMD_LOAD:
-            cmd_load(command, reply, status);
+        case SOFTIEC_CMD_LOAD_SU:
+            printf("LOAD_SU command:\n");
+            dump_hex(command->message, command->length);
+            cmd_load_su(command, reply, status);
+            break;
+        case SOFTIEC_CMD_LOAD_EX:
+            printf("LOAD_EX command:\n");
+            dump_hex(command->message, command->length);
+            cmd_load_ex(command, reply, status);
             break;
         case SOFTIEC_CMD_SAVE:
+            printf("SAVE command:\n");
             cmd_save(command, reply, status);
+            break;
+        case SOFTIEC_CMD_OPEN:
+            printf("OPEN command:\n");
+            dump_hex(command->message, command->length);
+            break;
+        case SOFTIEC_CMD_CLOSE:
+            printf("CLOSE command:\n");
+            dump_hex(command->message, command->length);
+            break;
+        case SOFTIEC_CMD_CHKOUT:
+            printf("CHKOUT command:\n");
+            dump_hex(command->message, command->length);
+            break;
+        case SOFTIEC_CMD_CHKIN:
+            printf("CHKIN command:\n");
+            dump_hex(command->message, command->length);
+            *reply  = &c_message_first_message;
+            *status = &c_status_ok;
             break;
         default:
             printf("Unknown command:\n");
@@ -54,7 +83,7 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
     }
 }
 
-void SoftIECTarget :: cmd_load(Message *command, Message **reply, Message **status)
+void SoftIECTarget :: cmd_load_su(Message *command, Message **reply, Message **status)
 {
     // 0, 1: TARGET, COMMAND
     // 2: verify flag
@@ -67,34 +96,48 @@ void SoftIECTarget :: cmd_load(Message *command, Message **reply, Message **stat
 
     IecChannel *channel;
 
-    dump_hex(command->message, command->length);
     command->message[command->length] = 0; // make it a null-terminated string
     channel = iec_if.get_data_channel(0); // corresponds to ATN byte $60
 
     int result = channel->ext_open_file((const char *)&command->message[8]);
     if (result) {
-        uint16_t startaddr = get_start_addr(channel);
-        if (!command->message[3]) {
+        startaddr = get_start_addr(channel);
+        if (!command->message[2]) {
             startaddr = (((uint16_t)(command->message[5])) << 8) | command->message[4];
         }
-
-        status_message.length = 1;
-        status_message.message[0] = 0;
-        if (command->message[2]) {
-            if (!do_verify(channel, startaddr)) {
-                status_message.message[0] = 0x80; // verify error
-            }
-        } else {
-            uint16_t endAddr = do_load(channel, startaddr);
-            status_message.length = 3;
-            status_message.message[1] = (uint8_t)(endAddr & 0xFF);
-            status_message.message[2] = (uint8_t)(endAddr >> 8);
-        }
-        channel->ext_close_file();
+        *status = &c_status_all_ok; // What if the first two bytes cannot be read?
     } else {
         *status = &c_status_file_not_found;
     }
 }
+
+void SoftIECTarget :: cmd_load_ex(Message *command, Message **reply, Message **status)
+{
+    // 0, 1: TARGET, COMMAND
+    // 2: verify flag
+    // 3: secondary address
+    *reply  = &c_message_empty;
+    *status = &status_message;
+
+    IecChannel *channel;
+
+    channel = iec_if.get_data_channel(0); // corresponds to ATN byte $60
+
+    status_message.length = 1;
+    status_message.message[0] = 0;
+    if (command->message[3]) {
+        if (!do_verify(channel, startaddr)) {
+            status_message.message[0] = 0x80; // verify error
+        }
+    } else {
+        uint16_t endAddr = do_load(channel, startaddr);
+        status_message.length = 3;
+        status_message.message[1] = (uint8_t)(endAddr & 0xFF);
+        status_message.message[2] = (uint8_t)(endAddr >> 8);
+    }
+    channel->ext_close_file();
+}
+
 
 void SoftIECTarget :: cmd_save(Message *command, Message **reply, Message **status)
 {
@@ -179,7 +222,6 @@ uint16_t SoftIECTarget :: do_load(IecChannel *chan, uint16_t addr)
     do {
         res1 = chan->prefetch_data(data);
         res2 = chan->pop_data();
-        //printf("%04x %d %d\n", addr, res1, res2);
         if (res2 == IEC_READ_ERROR) {
             error = 1;
             break;
@@ -217,11 +259,11 @@ bool SoftIECTarget :: do_save(IecChannel *chan, uint16_t start, uint16_t end)
 
 void SoftIECTarget :: get_more_data(Message **reply, Message **status)
 {
-	*reply  = &c_message_empty;
+	*reply  = &c_message_second_message;
 	*status = &c_message_empty;
 }
 
-void SoftIECTarget :: abort(void)
+void SoftIECTarget :: abort(int a)
 {
-
+    printf("SoftIECTarget with Abort = %d.\n", a);
 }
