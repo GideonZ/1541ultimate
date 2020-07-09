@@ -34,6 +34,7 @@
 #define D64FILE_MOUNT      0x2102
 #define D64FILE_MOUNT_RO   0x2103
 #define D64FILE_MOUNT_UL   0x2104
+#define D64_DIR	           0x2105
 
 #define G64FILE_RUN        0x2121
 #define G64FILE_MOUNT      0x2122
@@ -127,6 +128,7 @@ class C1541 : public SubSystem, ConfigurableObject, ObjectWithMenu
     void mount_blank(void);
     bool check_if_save_needed(SubsysCommand *cmd);
     bool save_if_needed(SubsysCommand *cmd);
+    void getDir(SubsysCommand *cmd);
 public:
     C1541(volatile uint8_t *regs, char letter);
     ~C1541();

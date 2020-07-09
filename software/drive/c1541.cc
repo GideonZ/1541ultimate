@@ -671,6 +671,7 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	FileInfo info(32);
 
 	switch(cmd->functionID) {
+	case D64_DIR:
 	case D64FILE_MOUNT_UL:
 	case G64FILE_MOUNT_UL:
 	case D64FILE_MOUNT_RO:
@@ -717,6 +718,13 @@ int C1541 :: executeCommand(SubsysCommand *cmd)
 	SubsysCommand *c64_command;
 
 	switch(cmd->functionID) {
+	case D64_DIR:
+	{
+		if(cmd->user_interface) {
+			getDir(cmd);
+		}
+		break;
+	}
 	case D64FILE_RUN:
 	case D64FILE_MOUNT:
 	case D64FILE_MOUNT_UL:
@@ -895,4 +903,181 @@ bool C1541 :: save_disk_to_file(SubsysCommand *cmd)
 		}
 	}
     return false;
+}
+
+#define TRK18_OFFSET	0x16500
+#define SECTOR_SIZE		256
+#define QUOTE			0x22
+
+void C1541::getDir(SubsysCommand *cmd)
+{
+	uint8_t filetypes[6][3] = {
+				{ 'D', 'E', 'L' },
+				{ 'S', 'E', 'Q' },
+				{ 'P', 'R', 'G' },
+				{ 'U', 'S', 'R' },
+				{ 'R', 'E', 'L' },
+				{ 'C', 'B', 'M' }
+	};
+
+    FileManager *fm = FileManager::getFileManager();
+    File *f = 0;
+    FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &f);
+    uint32_t transferred;
+    if (f != NULL) {
+        uint32_t size = f->get_size();
+        char *text_buf = new char[size + 1];
+        char *output = new char[3000];
+        FRESULT fres = f->read(text_buf, size, &transferred);
+
+        printf("Res = %d. Read text buffer: %d bytes\n", fres, transferred);
+        text_buf[transferred] = 0;
+
+        uint32_t ctr = 0;
+
+        // drive number
+        output[ctr++] = '0';
+        output[ctr++] = ' ';
+
+        // get disk name
+        output[ctr++] = QUOTE;
+
+        uint8_t tmp=0;
+        while(tmp<16) {
+        	output[ctr] = text_buf[TRK18_OFFSET+0x90+tmp];
+        	if(output[ctr] == 0xA0)
+        		output[ctr] = 0x20;
+        	ctr++;
+        	tmp++;
+        }
+
+        output[ctr++] = QUOTE;
+        output[ctr++] = ' ';
+        output[ctr++] = text_buf[TRK18_OFFSET+0xA2];
+        output[ctr++] = text_buf[TRK18_OFFSET+0xA3];
+        output[ctr++] = ' ';
+        output[ctr++] = text_buf[TRK18_OFFSET+0xA5];
+        output[ctr++] = text_buf[TRK18_OFFSET+0xA6];
+
+        output[ctr++] = 0x0D;
+
+        uint8_t cur_track = 18;
+        uint8_t cur_sector = 0;
+        uint8_t nxt_track = 18;
+        uint8_t nxt_sector = 1;
+
+        while(nxt_track != 0x00)
+        {
+        	cur_track = nxt_track;
+        	cur_sector = nxt_sector;
+
+        	nxt_track = text_buf[TRK18_OFFSET+ (SECTOR_SIZE * cur_sector) + 0];
+        	nxt_sector = text_buf[TRK18_OFFSET+ (SECTOR_SIZE * cur_sector) + 1];
+
+        	// file type
+        	uint8_t ftype = 0;
+        	uint8_t size_lo = 0;
+        	uint8_t size_hi = 0;
+
+            for(uint8_t entry=0; entry<7;entry++)
+            {
+            	ftype = text_buf[TRK18_OFFSET+ (SECTOR_SIZE * cur_sector) + (entry * 32) + 0x02];
+            	size_lo = text_buf[TRK18_OFFSET+ (SECTOR_SIZE * cur_sector) + (entry * 32) + 0x1e];
+            	size_hi = text_buf[TRK18_OFFSET+ (SECTOR_SIZE * cur_sector) + (entry * 32) + 0x1f];
+
+            	// only display file if not deleted
+            	if (ftype != 0)
+            	{
+            		int blocks = size_hi * 256 + size_lo;
+
+					// format file size in blocks
+					char str[4];
+					sprintf(str, "%d", blocks);
+
+					for(int x=0; x<strlen(str);x++)
+						output[ctr++] = str[x];
+
+					int digits = 1;
+					while (blocks >= 0)
+					{
+						blocks /= 10;
+						++digits;
+
+						if (blocks == 0)
+							break;
+					}
+					int spaces = 6 - digits;
+					for (; spaces > 0; spaces--)
+						output[ctr++] = ' ';
+
+					// filenames
+					output[ctr++] = QUOTE;
+
+					uint8_t tmp=0;
+					uint8_t namelen = 0;
+
+					while(tmp<16) {
+
+						uint8_t c = text_buf[TRK18_OFFSET+ (SECTOR_SIZE * cur_sector) + (entry * 32) + 0x05 + tmp];
+
+						if(c != 0x00 && c != 0xA0) {
+							output[ctr] = c;
+							namelen++;
+						}
+						else
+							break;
+
+						ctr++;
+						tmp++;
+					}
+
+					output[ctr++] = QUOTE;
+
+					// formatting
+					spaces = 16-namelen;
+					for (; spaces > 0; spaces--)
+						output[ctr++] = ' ';
+
+
+					// file type
+					uint8_t tmptype = ftype;
+					tmptype = tmptype & ~128;
+					tmptype = tmptype & ~64;
+					tmptype = tmptype & ~32;
+					tmptype = tmptype & ~16;
+
+					if ((ftype & 0x80) != 0x80)
+						output[ctr++] = '*';
+					else
+						output[ctr++] = ' ';
+
+					output[ctr++] = filetypes[tmptype][0];
+					output[ctr++] = filetypes[tmptype][1];
+					output[ctr++] = filetypes[tmptype][2];
+
+					// file lock
+					if ((ftype & 64) == 64)
+						output[ctr++] = '<';
+					else
+						output[ctr++] = ' ';
+
+					output[ctr++] = 0x0D;
+            	}
+            }
+        }
+
+        output[ctr] = 0x00;
+
+        // do a late case conversion
+        for(int x=0; x<strlen(output); x++)
+        {
+        	if(output[x] > 64 and output[x] < 91)
+        		output[x] = output[x] + 32;
+        }
+
+        cmd->user_interface->run_editor(output);
+        delete text_buf;
+        delete output;
+    }
+    return;
 }
