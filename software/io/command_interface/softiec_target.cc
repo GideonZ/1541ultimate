@@ -11,13 +11,17 @@ static Message c_message_second_message     = { 11, true, (uint8_t *)"SECOND MSG
 static Message c_status_all_ok              = {  1, true, (uint8_t *)"\x00" };
 static Message c_status_file_not_found      = {  1, true, (uint8_t *)"\x01" };
 static Message c_status_save_error          = {  1, true, (uint8_t *)"\x02" };
-static Message c_status_unknown_cmd_local   = {  1, true, (uint8_t *)"\x03" };
+static Message c_status_no_input_channel    = {  1, true, (uint8_t *)"\x03" };
+static Message c_status_unknown_cmd_local   = {  1, true, (uint8_t *)"\x04" };
 
 SoftIECTarget :: SoftIECTarget(int id)
 {
     command_targets[id] = this;
     data_message.message = new uint8_t[512];
     status_message.message = new uint8_t[80];
+    input_channel = NULL;
+    input_length = 0;
+    startaddr = 0;
 }
    
 
@@ -54,25 +58,28 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
             break;
         case SOFTIEC_CMD_SAVE:
             printf("SAVE command:\n");
+            dump_hex(command->message, command->length);
             cmd_save(command, reply, status);
             break;
         case SOFTIEC_CMD_OPEN:
             printf("OPEN command:\n");
             dump_hex(command->message, command->length);
+            cmd_open(command, reply, status);
             break;
         case SOFTIEC_CMD_CLOSE:
             printf("CLOSE command:\n");
             dump_hex(command->message, command->length);
+            cmd_close(command, reply, status);
             break;
         case SOFTIEC_CMD_CHKOUT:
             printf("CHKOUT command:\n");
             dump_hex(command->message, command->length);
+            cmd_chkout(command, reply, status);
             break;
         case SOFTIEC_CMD_CHKIN:
             printf("CHKIN command:\n");
             dump_hex(command->message, command->length);
-            *reply  = &c_message_first_message;
-            *status = &c_status_ok;
+            cmd_chkin(command, reply, status);
             break;
         default:
             printf("Unknown command:\n");
@@ -86,8 +93,8 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
 void SoftIECTarget :: cmd_load_su(Message *command, Message **reply, Message **status)
 {
     // 0, 1: TARGET, COMMAND
-    // 2: verify flag
-    // 3: secondary address
+    // 2: secondary address
+    // 3: verify flag
     // 4,5 : load address
     // 6,7 : end address (for save)
     // 8- : name
@@ -114,8 +121,8 @@ void SoftIECTarget :: cmd_load_su(Message *command, Message **reply, Message **s
 void SoftIECTarget :: cmd_load_ex(Message *command, Message **reply, Message **status)
 {
     // 0, 1: TARGET, COMMAND
-    // 2: verify flag
-    // 3: secondary address
+    // 2: secondary address
+    // 3: verify flag
     *reply  = &c_message_empty;
     *status = &status_message;
 
@@ -152,7 +159,6 @@ void SoftIECTarget :: cmd_save(Message *command, Message **reply, Message **stat
 
     IecChannel *channel;
 
-    dump_hex(command->message, command->length);
     command->message[command->length] = 0; // make it a null-terminated string
     channel = iec_if.get_data_channel(1); // corresponds to ATN byte $61
 
@@ -167,6 +173,122 @@ void SoftIECTarget :: cmd_save(Message *command, Message **reply, Message **stat
     } else {
         *status = &c_status_save_error;
     }
+}
+
+void SoftIECTarget :: cmd_open(Message *command, Message **reply, Message **status)
+{
+    // 0, 1: TARGET, COMMAND
+    // 2: secondary address
+    // 3: unused
+    *reply  = &c_message_empty;
+    *status = &c_message_empty;
+
+    IecChannel *channel;
+
+    command->message[command->length] = 0; // make it a null-terminated string
+    channel = iec_if.get_data_channel((int)command->message[2]); // also works for command channel ;-)
+
+    channel->ext_open_file((const char *)&command->message[4]);
+
+    input_channel = NULL;
+}
+
+void SoftIECTarget :: cmd_chkin(Message *command, Message **reply, Message **status)
+{
+    // 0, 1: TARGET, COMMAND
+    // 2: unused
+    // 3: secondary address
+    *reply  = &data_message;
+    *status = &c_message_empty;
+
+    input_channel = iec_if.get_data_channel((int)command->message[2]); // also works for command channel ;-)
+    input_channel->talk();
+    prepare_data();
+}
+
+void SoftIECTarget :: prepare_data(void)
+{
+    data_message.last_part = false;
+
+    uint8_t data;
+    int len = 0;
+    for(int i=0; i < 64; i++) {
+        int res = input_channel->prefetch_data(data);
+        if ((res == IEC_OK) || (res == IEC_LAST)) {
+            data_message.message[i] = data;
+            len++;
+        }
+        if ((res == IEC_LAST) || (res == IEC_NO_FILE)) { // the latter is actually an error
+            data_message.last_part = true;
+            break;
+        }
+        if (res == IEC_BUFFER_END) {
+            break; // simply break and wait for pop (when get more data is called)
+        }
+    }
+    data_message.length = len;
+    // the number of bytes that we prepared for reading is stored here, such that these bytes can be popped
+    // whenever get_more_data is called.
+    input_length = len;
+    dump_hex(data_message.message, len);
+}
+
+void SoftIECTarget :: get_more_data(Message **reply, Message **status)
+{
+    if (input_channel) {
+        for(int i=0; i<input_length; i++) {
+            input_channel->pop_data(); // how about passing the number of bytes, that would be way more efficient.
+        }
+        prepare_data();
+        *reply = &data_message;
+        *status = &c_status_all_ok;
+    } else {
+        *reply = &c_message_empty;
+        *status = &c_status_no_input_channel;
+    }
+}
+
+void SoftIECTarget :: abort(int a)
+{
+    //printf("SoftIECTarget with Abort = %d.\n", a);
+    if (input_channel) {
+        int bytes = (a < input_length) ? a : input_length;
+        for(int i=0; i<bytes; i++) {
+            input_channel->pop_data(); // how about passing the number of bytes, that would be way more efficient.
+        }
+        input_channel->reset_prefetch();
+        input_channel = NULL;
+    }
+}
+
+void SoftIECTarget :: cmd_chkout(Message *command, Message **reply, Message **status)
+{
+    // 0, 1: TARGET, COMMAND
+    // 2: secondary address
+    // 3: unused
+    // 4 -: data
+    *reply  = &c_message_empty;
+    *status = &c_status_ok;
+
+    input_channel = NULL;
+
+    IecChannel *channel = iec_if.get_data_channel((int)command->message[2]); // also works for command channel ;-)
+    for(int i=4; i<command->length; i++) {
+        channel->push_data(command->message[i]);
+    }
+    channel->push_command(0); // end
+}
+
+void SoftIECTarget :: cmd_close(Message *command, Message **reply, Message **status)
+{
+    // 0, 1: TARGET, COMMAND
+    // 2: secondary address
+    // 3: unused
+    *reply  = &c_message_empty;
+    *status = &c_status_ok;
+
+    IecChannel *channel = iec_if.get_data_channel((int)command->message[2]); // also works for command channel ;-)
+    channel->ext_close_file();
 }
 
 uint16_t SoftIECTarget :: get_start_addr(IecChannel *chan)
@@ -257,13 +379,3 @@ bool SoftIECTarget :: do_save(IecChannel *chan, uint16_t start, uint16_t end)
     return success;
 }
 
-void SoftIECTarget :: get_more_data(Message **reply, Message **status)
-{
-	*reply  = &c_message_second_message;
-	*status = &c_message_empty;
-}
-
-void SoftIECTarget :: abort(int a)
-{
-    printf("SoftIECTarget with Abort = %d.\n", a);
-}

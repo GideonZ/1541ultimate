@@ -27,6 +27,24 @@ IecChannel :: ~IecChannel()
     close_file();
 }
 
+void IecChannel :: reset(void)
+{
+    close_file();
+
+    pointer = 0;
+    write = 0;
+    dir_index = 0;
+    dir_last = 0;
+    bytes = 0;
+    last_byte = 0;
+    size = 0;
+    last_command = 0;
+    prefetch = 0;
+    prefetch_max = 0;
+    dirPartition = NULL;
+    append = false;
+}
+
 void IecChannel :: reset_prefetch(void)
 {
 #if IECDEBUG
@@ -479,7 +497,7 @@ int IecChannel :: setup_directory_read(command_t &command)
     dirpattern += first;
     printf("IEC Channel: Opening directory... (Pattern = %s)\n", dirpattern.c_str());
     if (dirPartition->ReadDirectory()) {
-        interface->get_command_channel()->get_last_error(ERR_DRIVE_NOT_READY, dirPartition->GetPartitionNumber());
+        interface->get_command_channel()->set_error(ERR_DRIVE_NOT_READY, dirPartition->GetPartitionNumber());
         return 0;
     }
     dir_last = dirPartition->GetDirItemCount();
@@ -529,7 +547,7 @@ int IecChannel :: setup_file_access(command_t& command)
 
     if(append) {
         if (pos < 0) {
-            interface->get_command_channel()->get_last_error(ERR_FILE_NOT_FOUND, dirPartition->GetPartitionNumber());
+            interface->get_command_channel()->set_error(ERR_FILE_NOT_FOUND, dirPartition->GetPartitionNumber());
             state = e_error;
             return 0;
         } else {
@@ -538,7 +556,7 @@ int IecChannel :: setup_file_access(command_t& command)
         }
     } else if(write) {
         if ((pos >= 0) && (!replace)) { // file exists, and not allowed to overwrite
-            interface->get_command_channel()->get_last_error(ERR_FILE_EXISTS, dirPartition->GetPartitionNumber());
+            interface->get_command_channel()->set_error(ERR_FILE_EXISTS, dirPartition->GetPartitionNumber());
             state = e_error;
             return 0;
         } else {
@@ -547,7 +565,7 @@ int IecChannel :: setup_file_access(command_t& command)
         }
     } else { // read
         if (pos < 0) {
-            interface->get_command_channel()->get_last_error(ERR_FILE_NOT_FOUND, dirPartition->GetPartitionNumber());
+            interface->get_command_channel()->set_error(ERR_FILE_NOT_FOUND, dirPartition->GetPartitionNumber());
             state = e_error;
             return 0;
         }
@@ -573,7 +591,7 @@ int IecChannel :: init_iec_transfer(void)
     if (append) {
         FRESULT fres = f->seek(f->get_size());
         if (fres != FR_OK) {
-            interface->get_command_channel()->get_last_error(ERR_FRESULT_CODE, fres);
+            interface->get_command_channel()->set_error(ERR_FRESULT_CODE, fres);
             state = e_error;
             return 0;
         }
@@ -651,7 +669,7 @@ int IecChannel :: ext_close_file(void)
 
 IecCommandChannel :: IecCommandChannel(IecInterface *intf, int ch) : IecChannel(intf, ch)
 {
-    get_last_error();
+    wr_pointer = 0;
 }
 
 IecCommandChannel :: ~IecCommandChannel()
@@ -659,36 +677,60 @@ IecCommandChannel :: ~IecCommandChannel()
 
 }
 
-void IecCommandChannel :: get_last_error(int err, int track, int sector)
+void IecCommandChannel :: reset(void)
 {
-    if(err >= 0)
-        interface->last_error = err;
+    IecChannel::reset();
+    set_error(ERR_DOS);
+}
 
-    last_byte = interface->get_last_error((char *)buffer, track, sector) - 1;
-    printf("Get last error: last = %d. buffer = %s.\n", last_byte, buffer);
+void IecCommandChannel :: set_error(int err, int track, int sector)
+{
+    if(err >= 0) {
+        interface->set_error(err, track, sector);
+        state = e_idle;
+    }
+}
+
+void IecCommandChannel :: get_error_string(void)
+{
+    last_byte = interface->get_error_string((char *)buffer) - 1;
+    //printf("Get last error: last = %d. buffer = %s.\n", last_byte, buffer);
     pointer = 0;
     prefetch = 0;
     prefetch_max = last_byte;
-    interface->last_error = ERR_OK;
+
+    interface->set_error(0, 0, 0);
+}
+
+void IecCommandChannel :: talk(void)
+{
+    if (state != e_status) {
+        get_error_string();
+        state = e_status;
+    }
 }
 
 int IecCommandChannel :: pop_data(void)
 {
-    if(pointer > last_byte) {
-        return IEC_NO_FILE;
+    if (state == e_status) {
+        if(pointer > last_byte) {
+            state = e_idle;
+            return IEC_NO_FILE;
+        }
+        if(pointer == last_byte) {
+            state = e_idle;
+            return IEC_LAST;
+        }
+        pointer++;
+        return IEC_OK;
     }
-    if(pointer == last_byte) {
-        get_last_error();
-        return IEC_LAST;
-    }
-    pointer++;
-    return IEC_OK;
+    return IEC_NO_FILE;
 }
 
 int IecCommandChannel :: push_data(uint8_t b)
 {
-    if(pointer < 64) {
-        buffer[pointer++] = b;
+    if(wr_pointer < 64) {
+        wr_buffer[wr_pointer++] = b;
         return IEC_OK;
     }
     return IEC_BYTE_LOST;
@@ -706,7 +748,7 @@ void IecCommandChannel :: mem_read(void)
     pointer = 0;
     prefetch = 0;
     prefetch_max = last_byte;
-    interface->last_error = ERR_OK;
+    set_error(ERR_OK);
 
 }
 
@@ -723,7 +765,7 @@ void IecCommandChannel :: mem_write(void)
 
     memcpy(interface->getRam() + addr, buffer + 6, len);
 
-    get_last_error(ERR_OK);
+    set_error(ERR_OK);
 }
 
 void IecCommandChannel :: exec_command(command_t &command)
@@ -733,65 +775,65 @@ void IecCommandChannel :: exec_command(command_t &command)
     if (strcmp(command.cmd, "CD") == 0) {
         p = interface->vfs->GetPartition(command.digits);
         if (!command.names[0].name) {
-            get_last_error(ERR_SYNTAX_ERROR_CMD);
+            set_error(ERR_SYNTAX_ERROR_CMD);
         } else if (p->cd(command.names[0].name)) {
-            get_last_error(ERR_OK);
+            set_error(ERR_OK);
         } else {
-            get_last_error(ERR_DIRECTORY_ERROR);
+            set_error(ERR_DIRECTORY_ERROR);
         }
     } else if (strncmp(command.cmd, "CP", 2) == 0) {
         if (command.digits < 0) {
-            get_last_error(ERR_SYNTAX_ERROR_CMD);
+            set_error(ERR_SYNTAX_ERROR_CMD);
         } else if (command.digits >= MAX_PARTITIONS) {
-            get_last_error(ERR_SYNTAX_ERROR_CMD);
+            set_error(ERR_SYNTAX_ERROR_CMD);
         } else { // partition number found
             p = interface->vfs->GetPartition(command.digits);
             if (p->IsValid()) {
-                get_last_error(ERR_PARTITION_OK, command.digits);
+                set_error(ERR_PARTITION_OK, command.digits);
                 interface->vfs->SetCurrentPartition(command.digits);
             } else {
-                get_last_error(ERR_PARTITION_ERROR, command.digits);
+                set_error(ERR_PARTITION_ERROR, command.digits);
             }
         }
     } else if (strcmp(command.cmd, "MD")== 0) {
         p = interface->vfs->GetPartition(command.digits);
         if (!p->IsValid()) {
-            get_last_error(ERR_PARTITION_ERROR, command.digits);
+            set_error(ERR_PARTITION_ERROR, command.digits);
         } else if (!command.names[0].name) {
-            get_last_error(ERR_SYNTAX_ERROR_CMD);
+            set_error(ERR_SYNTAX_ERROR_CMD);
         } else if (hasIllegalChars(command.names[0].name)) {
-            get_last_error(ERR_SYNTAX_ERROR_CMD);
+            set_error(ERR_SYNTAX_ERROR_CMD);
         } else if (p->MakeDirectory(command.names[0].name)) {
-            get_last_error(ERR_OK);
+            set_error(ERR_OK);
         } else {
-            get_last_error(ERR_DIRECTORY_ERROR);
+            set_error(ERR_DIRECTORY_ERROR);
         }
     } else if (strcmp(command.cmd, "RD")== 0) {
         p = interface->vfs->GetPartition(command.digits);
         int f = p->Remove(command, true);
         if (f < 0) {
-            get_last_error(ERR_SYNTAX_ERROR_CMD);
+            set_error(ERR_SYNTAX_ERROR_CMD);
         } else {
-            get_last_error(ERR_FILES_SCRATCHED, f);
+            set_error(ERR_FILES_SCRATCHED, f);
         }
     } else if (strncmp(command.cmd, "SCRATCH", strlen(command.cmd))== 0) {
         p = interface->vfs->GetPartition(command.digits);
         int f = p->Remove(command, false);
         if (f < 0) {
-            get_last_error(ERR_SYNTAX_ERROR_CMD);
+            set_error(ERR_SYNTAX_ERROR_CMD);
         } else {
-            get_last_error(ERR_FILES_SCRATCHED, f);
+            set_error(ERR_FILES_SCRATCHED, f);
         }
-    } else if (strncmp(command.cmd , "RENAME", strlen(command.cmd)) == 0) {
+    } else if (strncmp(command.cmd, "RENAME", strlen(command.cmd)) == 0) {
         renam(command);
-    } else if (strncmp(command.cmd , "COPY", strlen(command.cmd)) == 0) {
+    } else if (strncmp(command.cmd, "COPY", strlen(command.cmd)) == 0) {
         copy(command);
-    } else if (strncmp(command.cmd , "INITIALIZE", strlen(command.cmd)) == 0) {
-        get_last_error(ERR_OK);
+    } else if (strncmp(command.cmd, "INITIALIZE", strlen(command.cmd)) == 0) {
+        set_error(ERR_OK);
     } else if (strcmp(command.cmd, "UI") == 0) {
-        get_last_error(ERR_DOS);
+        set_error(ERR_DOS);
     } else { // unknown command
-        get_last_error(ERR_SYNTAX_ERROR_CMD);
+        set_error(ERR_SYNTAX_ERROR_CMD);
     }
 }
 
@@ -806,7 +848,7 @@ void IecCommandChannel :: renam(command_t& command)
     bool keepExtension = false;
     int fromAt;
     if ((!command.names[1].name) || (!command.names[0].name)) {
-        get_last_error(ERR_SYNTAX_ERROR_CMD);
+        set_error(ERR_SYNTAX_ERROR_CMD);
         return;
     }
 
@@ -820,7 +862,7 @@ void IecCommandChannel :: renam(command_t& command)
         strcat(toName, GetExtension(command.names[1].name[0], dummy));
         fromAt = 2;
     } else {
-        get_last_error(ERR_SYNTAX_ERROR_CMD);
+        set_error(ERR_SYNTAX_ERROR_CMD);
         return;
     }
 
@@ -842,7 +884,7 @@ void IecCommandChannel :: renam(command_t& command)
     partitionFrom->ReadDirectory();
     int posFrom = partitionFrom->FindIecName(fromName, fromExt, true);
     if (posFrom < 0) {
-        get_last_error(ERR_FILE_NOT_FOUND, 0);
+        set_error(ERR_FILE_NOT_FOUND, 0);
         return;
     }
     FileInfo *fromInfo = partitionFrom->GetSystemFile(posFrom);
@@ -857,24 +899,24 @@ void IecCommandChannel :: renam(command_t& command)
     // Just try the actual rename by the filesystem
     FRESULT fres = fm->rename(partitionFrom->GetPath(), fromInfo->lfname, partitionTo->GetPath(), toName);
     if (fres == FR_OK) {
-        get_last_error(ERR_OK, 0);
+        set_error(ERR_OK, 0);
         return;
     } else if (fres == FR_EXIST) {
-        get_last_error(ERR_FILE_EXISTS, 0);
+        set_error(ERR_FILE_EXISTS, 0);
         return;
     }
 
-    get_last_error(ERR_FRESULT_CODE, fres);
+    set_error(ERR_FRESULT_CODE, fres);
 }
 
 void IecCommandChannel :: copy(command_t& command)
 {
     if ((!command.names[1].name) || (!command.names[0].name)) {
-        get_last_error(ERR_SYNTAX_ERROR_CMD);
+        set_error(ERR_SYNTAX_ERROR_CMD);
         return;
     }
     if (command.names[1].separator != '=') {
-        get_last_error(ERR_SYNTAX_ERROR_CMD);
+        set_error(ERR_SYNTAX_ERROR_CMD);
         return;
     }
 
@@ -888,13 +930,13 @@ void IecCommandChannel :: copy(command_t& command)
         partitionFrom->ReadDirectory();
         int posFrom = partitionFrom->FindIecName(command.names[i].name, "???", false);
         if (posFrom < 0) {
-            get_last_error(ERR_FILE_NOT_FOUND, i);
+            set_error(ERR_FILE_NOT_FOUND, i);
             return;
         }
         FileInfo *info = partitionFrom->GetSystemFile(posFrom);
         infos[i-1] = info;
         if (info->attrib & AM_DIR) {
-            get_last_error(ERR_FILE_TYPE_MISMATCH, i);
+            set_error(ERR_FILE_TYPE_MISMATCH, i);
             return;
         }
     }
@@ -909,10 +951,10 @@ void IecCommandChannel :: copy(command_t& command)
     File *fo;
     FRESULT fres = fm->fopen(partitionTo->GetPath(), toName, (FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS), &fo);
     if (fres == FR_EXIST) {
-        get_last_error(ERR_FILE_EXISTS, 0);
+        set_error(ERR_FILE_EXISTS, 0);
         return;
     } else if(fres != FR_OK) {
-        get_last_error(ERR_FRESULT_CODE, fres);
+        set_error(ERR_FRESULT_CODE, fres);
         return;
     }
     int blocks = 0;
@@ -929,7 +971,7 @@ void IecCommandChannel :: copy(command_t& command)
             FRESULT fres = fm->fopen(partitionFrom->GetPath(), infos[i]->lfname, FA_READ, &fi);
             if (fres != FR_OK) {
                 fm->fclose(fo);
-                get_last_error(ERR_FRESULT_CODE, fres);
+                set_error(ERR_FRESULT_CODE, fres);
                 return;
             }
             if (fi) {
@@ -946,7 +988,22 @@ void IecCommandChannel :: copy(command_t& command)
         }
         fm->fclose(fo);
     }
-    get_last_error(ERR_OK, 0, blocks);
+    set_error(ERR_OK, 0, blocks);
+}
+
+int IecCommandChannel :: ext_open_file(const char *filenameOrCommand)
+{
+    strncpy((char *)wr_buffer, filenameOrCommand, 63);
+    wr_buffer[63] = 0;
+    wr_pointer = strlen((char *)wr_buffer);
+    push_command(0x60);
+    return push_command(0x00);
+}
+
+int IecCommandChannel :: ext_close_file(void)
+{
+    // Do nothing
+    return IEC_OK;
 }
 
 int IecCommandChannel :: push_command(uint8_t b)
@@ -960,21 +1017,22 @@ int IecCommandChannel :: push_command(uint8_t b)
         case 0xE0:
         case 0xF0:
             pointer = 0;
+            wr_pointer = 0;
             break;
         case 0x00: // end of data, command received in buffer
-            buffer[pointer]=0;
-            // printf("Command received:\n");
-            // dump_hex(buffer, pointer);
-            if (strncmp((char *)buffer, "M-R", 3) == 0) {
-                mem_read();
-                break;
-            } else if (strncmp((char *)buffer, "M-W", 3) == 0) {
-                mem_write();
-                break;
+            wr_buffer[wr_pointer]=0;
+            if (wr_pointer) {
+                if (strncmp((char *)wr_buffer, "M-R", 3) == 0) {
+                    mem_read();
+                    break;
+                } else if (strncmp((char *)wr_buffer, "M-W", 3) == 0) {
+                    mem_write();
+                    break;
+                }
+                parse_command((char *)wr_buffer, &command);
+                dump_command(command);
+                exec_command(command);
             }
-            parse_command((char *)buffer, &command);
-            dump_command(command);
-            exec_command(command);
             break;
         default:
             printf("Error on channel %d. Unknown command: %b\n", channel, b);

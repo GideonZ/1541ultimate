@@ -10,7 +10,7 @@
 #include "mystring.h"
 
 typedef enum _t_channel_state {
-    e_idle, e_filename, e_file, e_dir, e_complete, e_error
+    e_idle, e_filename, e_file, e_dir, e_complete, e_error, e_status
     
 } t_channel_state;
 
@@ -26,13 +26,13 @@ static uint8_t c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
 
 class IecCommandChannel;
 
-typedef struct {
+typedef struct _name_t {
     int drive;
     char *name;
     char separator;
 } name_t;
 
-typedef struct {
+typedef struct _command_t {
     char *cmd;
     int digits;
     name_t names[5];
@@ -359,6 +359,8 @@ private:
 public:
     IecChannel(IecInterface *intf, int ch);
     virtual ~IecChannel();
+    virtual void reset(void);
+    virtual void talk(void) { }
     virtual void reset_prefetch(void);
     virtual int prefetch_data(uint8_t& data);
     virtual int pop_data(void);
@@ -372,20 +374,26 @@ public:
 
 class IecCommandChannel : public IecChannel
 {
-//    BYTE error_buf[40];
-    int track_counter;
+    uint8_t wr_buffer[64];
+    int  wr_pointer;
+
     void mem_read(void);
     void mem_write(void);
     void renam(command_t& command);
     void copy(command_t& command);
+    void exec_command(command_t &command);
+    void get_error_string(void);
 public:
     IecCommandChannel(IecInterface *intf, int ch);
     virtual ~IecCommandChannel();
-    void get_last_error(int err = -1, int track = 0, int sector = 0);
+    void set_error(int err = -1, int track = 0, int sector = 0);
+    void reset(void);
+    void talk(void);
     int pop_data(void);
     int push_data(uint8_t b);
-    void exec_command(command_t &command);
     int push_command(uint8_t b);
+    int ext_open_file(const char *name);
+    int ext_close_file(void);
 };
 
 #endif /* IEC_CHANNEL_H */

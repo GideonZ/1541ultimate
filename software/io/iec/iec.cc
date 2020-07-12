@@ -207,7 +207,10 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     cmd_path = fm->get_new_path("IEC Gui Path");
     cmd_ui = 0;
 
-    last_error = ERR_DOS;
+    last_error_code = ERR_DOS;
+    last_error_track = 0;
+    last_error_sector = 0;
+
     current_channel = 0;
     talking = false;
     last_addr = 10;
@@ -398,7 +401,8 @@ void IecInterface :: poll()
 						printf("{warp mode}");
 						break;
 					case 0x43:
-						HW_IEC_TX_FIFO_RELEASE = 1;
+					    channels[current_channel]->talk();
+					    HW_IEC_TX_FIFO_RELEASE = 1;
 						talking = true;
 						break;
 					case 0x45:
@@ -461,9 +465,6 @@ void IecInterface :: poll()
 
 		int st;
 		if(talking) {
-//#if IECDEBUG
-//		    printf("(%d|%d|%d)'", channels[current_channel]->pointer, channels[current_channel]->prefetch, channels[current_channel]->prefetch_max);
-//#endif
 		    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
 				st = channels[current_channel]->prefetch_data(data);
 				if(st == IEC_OK) {
@@ -508,9 +509,8 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 
 	switch(cmd->functionID) {
 		case MENU_IEC_RESET:
-			channel_printer->reset();
+            reset();
 			HW_IEC_RESET_ENABLE = iec_enable;
-			last_error = ERR_DOS;
 			break;
 		case MENU_IEC_FLUSH:
 			channel_printer->flush();
@@ -575,6 +575,15 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
     }
     return 0;
 }
+
+void IecInterface :: reset(void)
+{
+    channel_printer->reset();
+    for(int i=0; i < 16; i++) {
+        channels[i]->reset();
+    }
+}
+
 
 #include "c1541.h"
 extern C1541 *c1541_A;
@@ -778,12 +787,19 @@ void IecInterface :: save_copied_disk()
 	}
 }
                 
-int IecInterface :: get_last_error(char *buffer, int track, int sector)
+void IecInterface :: set_error(int code, int track, int sector)
+{
+    last_error_code = code;
+    last_error_track = track;
+    last_error_sector = sector;
+}
+
+int IecInterface :: get_error_string(char *buffer)
 {
 	int len;
 	for(int i = 0; i < NR_OF_EL(last_error_msgs); i++) {
-		if(last_error == last_error_msgs[i].nr) {
-			return sprintf(buffer,"%02d,%s,%02d,%02d\015", last_error,last_error_msgs[i].msg, track, sector);
+		if(last_error_code == last_error_msgs[i].nr) {
+			return sprintf(buffer,"%02d,%s,%02d,%02d\015", last_error_code, last_error_msgs[i].msg, last_error_track, last_error_sector);
 		}
 	}
     return sprintf(buffer,"99,UNKNOWN,00,00\015");

@@ -38,7 +38,7 @@
             UCI_CMD_CHKIN  = $15
             UCI_CMD_CHKOUT = $16
 
-            OUR_DEVICE = #$07
+            OUR_DEVICE = #$09
             
             *= $C000            ;base of wedge
             jmp install
@@ -81,12 +81,19 @@
             SAVEEND    = $AE
             MY_OUTLEN  = $0276 ; Last byte of logical file table 
             
-            CHROUT_SCREEN = $E716
-            FILE_NOT_FOUND_ERROR = $F704
-            MISSING_FILENAME_ERROR = $F710
-            SHOW_SEARCHING = $F5AF            
-            SHOW_LOADING = $F5D2
-            SHOW_SAVING = $F68F
+            FILE_LOOKUP_A           = $F314
+            FILE_LOOKUP_X           = $F30F ; Might be different for JD!
+            FILE_NOT_OPEN_ERROR     = $F701 ; Might be different for JD!
+            GET_FILE_PARAMS         = $F31F ; Might be different for JD!
+            CHKIN_CONTINUED         = $F219 ; Might be different for JD!
+            CHKOUT_CONTINUED        = $F25B ; Might be different for JD!
+            CLRCHN_CONTINUED        = $F343 ; Might be different for JD! Call with X = $03
+            CHROUT_SCREEN           = $E716
+            FILE_NOT_FOUND_ERROR    = $F704
+            MISSING_FILENAME_ERROR  = $F710
+            SHOW_SEARCHING          = $F5AF            
+            SHOW_LOADING            = $F5D2
+            SHOW_SAVING             = $F68F
 
 new_vectors
     .word open
@@ -375,14 +382,26 @@ myopen      lda CMD_IF_COMMAND
 ; Real address: ($031C), $F291.
 ;
 
-close       lda DEVNUM
+close       pha
+            jsr FILE_LOOKUP_A
+            beq +
+            pla
+            clc
+            rts
+
+            ; x is now set to index and stack has original a
++           jsr GET_FILE_PARAMS
+            
+            lda DEVNUM
             cmp OUR_DEVICE
             beq myclose
--           jmp (origvect_close)            
+-           pla ; restore stack for exit
+            jmp (origvect_close)   ; And do the lookup again. ;)            
         
 myclose     lda CMD_IF_COMMAND
             cmp #UCI_IDENTIFIER
             bne -
+            pla ; restore stack, but we don't need a
 
             ldx #UCI_CMD_CLOSE
             jsr uci_setup_cmd
@@ -418,32 +437,39 @@ chrin       lda DEVFROM
             beq my_chrin
             jmp (origvect_chrin)
 
-my_chrin    ;lda #$3a
-            ;jsr CHROUT_SCREEN
-            ;lda CMD_IF_CONTROL
-            ;jsr hexout
-
-            lda CMD_IF_CONTROL
+my_chrin    lda CMD_IF_CONTROL
+;            jsr hexout
             bpl _no_data_avail
-            lda CMD_IF_RESULT
-            ; jsr hexout
+            ldy CMD_IF_RESULT
+            lda CMD_IF_CONTROL
+            bmi _ok            
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_LAST_DATA
+            bne _ok
+            jmp _eof
+_ok         tya
             clc
             rts ; done!!            
+
 _no_data_avail
-            and #CMD_STATE_DATA
-            bne _still_in_data_state
-            ; end of file
-            lda #$40
-            ora STATUS
-            sta STATUS
-            lda #$0D
-            clc
-            rts
-_still_in_data_state
+            and #CMD_STATE_BITS
+            cmp #CMD_STATE_LAST_DATA
+            beq _end_of_file
             jsr uci_ack                                         
             jsr uci_wait_busy
             ; jsr do_chkin
             jmp my_chrin
+
+_end_of_file
+            ldy #$0D
+_eof
+            lda #$40
+            ora STATUS
+            sta STATUS
+            tya
+            clc
+            rts
+
 
 ; $FFD2   
 ; CHROUT. Write byte to default output. (If not screen, must call OPEN and CHKOUT beforehand.)
@@ -479,13 +505,6 @@ _breakup_out
             jmp -
 
 
-            FILE_LOOKUP         = $F30F ; Might be different for JD!
-            FILE_NOT_OPEN_ERROR = $F701 ; Might be different for JD!
-            GET_FILE_PARAMS     = $F31F ; Might be different for JD!
-            CHKIN_CONTINUED     = $F219 ; Might be different for JD!
-            CHKOUT_CONTINUED    = $F25B ; Might be different for JD!
-            CLRCHN_CONTINUED    = $F343 ; Might be different for JD! Call with X = $03
-
 ; $FFC6   
 ; CHKIN. Define file as default input. (Must call OPEN beforehand.)
 ; Input: X = Logical number.
@@ -493,7 +512,7 @@ _breakup_out
 ; Used registers: A, X.
 ; Real address: ($031E), $F20E.
 ; 
-chkin       jsr FILE_LOOKUP         ; as copied from stock kernal
+chkin       jsr FILE_LOOKUP_X       ; as copied from stock kernal
             beq +                   ; as copied from stock kernal
             jmp FILE_NOT_OPEN_ERROR ; as copied from stock kernal
 +           jsr GET_FILE_PARAMS     ; as copied from stock kernal
@@ -516,7 +535,7 @@ do_chkin    ldx #UCI_CMD_CHKIN
 ; Used registers: A, X.
 ; Real address: ($0320), $F250.
 ; 
-chkout      jsr FILE_LOOKUP         ; as copied from stock kernal
+chkout      jsr FILE_LOOKUP_X       ; as copied from stock kernal
             beq +                   ; as copied from stock kernal
             jmp FILE_NOT_OPEN_ERROR ; as copied from stock kernal
 +           jsr GET_FILE_PARAMS     ; as copied from stock kernal
@@ -574,13 +593,15 @@ uci_setup_range .proc
             .pend
             
 uci_filename .proc
+            lda NAMELEN
+            beq +
             ldy #$00
 -           lda (NAMEPTR),y
             sta CMD_IF_COMMAND
             iny
             cpy NAMELEN
             bne -
-            jmp uci_execute
++           jmp uci_execute
             .pend
 
 uci_execute lda #CMD_PUSH_CMD
@@ -688,8 +709,8 @@ hexout      .proc
             tax
             lda hex_chars,x
             jsr CHROUT_SCREEN
-            pla
             ldx $02
+            pla
             rts
             
 hex_chars   .text "0123456789ABCDEF"
