@@ -20,15 +20,21 @@ class SoftIECTarget : CommandTarget
     Message data_message;
     Message status_message;
     uint16_t startaddr;
+    IecChannel *input_channel;
+    int input_length;
 
     void cmd_load_su(Message *command, Message **reply, Message **status);
     void cmd_load_ex(Message *command, Message **reply, Message **status);
     void cmd_save(Message *command, Message **reply, Message **status);
+    void cmd_open(Message *command, Message **reply, Message **status);
+    void cmd_close(Message *command, Message **reply, Message **status);
+    void cmd_chkin(Message *command, Message **reply, Message **status);
+    void cmd_chkout(Message *command, Message **reply, Message **status);
     uint16_t get_start_addr(IecChannel *chan);
     uint16_t do_load(IecChannel *chan, uint16_t startaddr);
     bool do_verify(IecChannel *chan, uint16_t startaddr);
     bool do_save(IecChannel *chan, uint16_t start, uint16_t end);
-
+    void prepare_data(void);
 public:
     SoftIECTarget(int id);
     ~SoftIECTarget();

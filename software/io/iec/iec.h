@@ -69,6 +69,10 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     FileManager *fm;
     IecFileSystem *vfs;
 
+    int last_error_code;
+    int last_error_track;
+    int last_error_sector;
+
     const char *rootPath;
     int last_addr;
     int last_printer_addr;
@@ -85,6 +89,7 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     uint8_t warp_return_code;
     uint8_t *emulatedRam;
 
+    void reset(void);
     void poll(void);
     void test_master(int);
     void start_warp(int);
@@ -101,7 +106,6 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     static void iec_task(void *a);
     uint8_t *getRam() { return emulatedRam; }
 public:
-    int last_error;
     uint8_t iec_enable;
 
     IecInterface();
@@ -112,7 +116,9 @@ public:
 
     int fetch_task_items(Path *path, IndexedList<Action *> &list);
     void effectuate_settings(void); // from ConfigurableObject
-    int get_last_error(char *, int track = 0, int sector = 0); // writes string into buffer
+
+    void set_error(int err, int track, int sector);
+    int get_error_string(char *); // writes string into buffer
     IecCommandChannel *get_command_channel();
     IecCommandChannel *get_data_channel(int chan);
     const char *get_root_path();

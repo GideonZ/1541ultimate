@@ -48,7 +48,8 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
     
         // dump_registers();
     
-        response_buffer = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_RESPONSE_START));
+        response_offset = (8*CMD_IF_RESPONSE_START);
+        response_buffer = (uint8_t *)(CMD_IF_RAM_BASE + response_offset);
         status_buffer   = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_STATUS_START));
         command_buffer  = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_COMMAND_START));
     
@@ -127,9 +128,10 @@ void CommandInterface :: run_task(void)
 		xQueueReceive(queue, &status_byte, portMAX_DELAY);
 
 		if(status_byte & CMD_ABORT_DATA) {
-			printf("Abort received.\n");
+			//printf("Abort received.\n");
 			if (target != CMD_TARGET_NONE) {
-				command_targets[target]->abort((((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L);
+			    int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
+				command_targets[target]->abort(offset - response_offset);
 			}
 			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
 			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA;
