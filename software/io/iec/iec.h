@@ -87,7 +87,6 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     int current_channel;
     int warp_drive;
     uint8_t warp_return_code;
-    uint8_t *emulatedRam;
 
     void reset(void);
     void poll(void);
@@ -104,7 +103,6 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     UltiCopy *ui_window;
     uint8_t last_track;
     static void iec_task(void *a);
-    uint8_t *getRam() { return emulatedRam; }
 public:
     uint8_t iec_enable;
 
