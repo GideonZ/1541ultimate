@@ -236,9 +236,6 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     ulticopyMutex = xSemaphoreCreateMutex();
     queueGuiToIec = xQueueCreate(2, sizeof(int));
 
-    emulatedRam = new uint8_t[65536];
-    memset(emulatedRam, 0x44, 65536);
-
     xTaskCreate( IecInterface :: iec_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
 }
 
