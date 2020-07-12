@@ -34,7 +34,7 @@ class SoftIECTarget : CommandTarget
     uint16_t do_load(IecChannel *chan, uint16_t startaddr);
     bool do_verify(IecChannel *chan, uint16_t startaddr);
     bool do_save(IecChannel *chan, uint16_t start, uint16_t end);
-    void prepare_data(void);
+    void prepare_data(int count);
 public:
     SoftIECTarget(int id);
     ~SoftIECTarget();
