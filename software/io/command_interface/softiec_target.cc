@@ -47,38 +47,38 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
             *status = &c_status_ok;
             break;
         case SOFTIEC_CMD_LOAD_SU:
-            printf("LOAD_SU command:\n");
-            dump_hex(command->message, command->length);
+            //printf("LOAD_SU command:\n");
+            //dump_hex(command->message, command->length);
             cmd_load_su(command, reply, status);
             break;
         case SOFTIEC_CMD_LOAD_EX:
-            printf("LOAD_EX command:\n");
-            dump_hex(command->message, command->length);
+            //printf("LOAD_EX command:\n");
+            //dump_hex(command->message, command->length);
             cmd_load_ex(command, reply, status);
             break;
         case SOFTIEC_CMD_SAVE:
-            printf("SAVE command:\n");
-            dump_hex(command->message, command->length);
+            //printf("SAVE command:\n");
+            //dump_hex(command->message, command->length);
             cmd_save(command, reply, status);
             break;
         case SOFTIEC_CMD_OPEN:
-            printf("OPEN command:\n");
-            dump_hex(command->message, command->length);
+            //printf("OPEN command:\n");
+            //dump_hex(command->message, command->length);
             cmd_open(command, reply, status);
             break;
         case SOFTIEC_CMD_CLOSE:
-            printf("CLOSE command:\n");
-            dump_hex(command->message, command->length);
+            //printf("CLOSE command:\n");
+            //dump_hex(command->message, command->length);
             cmd_close(command, reply, status);
             break;
         case SOFTIEC_CMD_CHKOUT:
-            printf("CHKOUT command:\n");
-            dump_hex(command->message, command->length);
+            //printf("CHKOUT command:\n");
+            //dump_hex(command->message, command->length);
             cmd_chkout(command, reply, status);
             break;
         case SOFTIEC_CMD_CHKIN:
             printf("CHKIN command:\n");
-            dump_hex(command->message, command->length);
+            //dump_hex(command->message, command->length);
             cmd_chkin(command, reply, status);
             break;
         default:
@@ -203,16 +203,16 @@ void SoftIECTarget :: cmd_chkin(Message *command, Message **reply, Message **sta
 
     input_channel = iec_if.get_data_channel((int)command->message[2]); // also works for command channel ;-)
     input_channel->talk();
-    prepare_data();
+    prepare_data(32); // we don't know yet how serious the client is about reading, so let's give him a little
 }
 
-void SoftIECTarget :: prepare_data(void)
+void SoftIECTarget :: prepare_data(int count)
 {
     data_message.last_part = false;
 
     uint8_t data;
     int len = 0;
-    for(int i=0; i < 64; i++) {
+    for(int i=0; i < count; i++) {
         int res = input_channel->prefetch_data(data);
         if ((res == IEC_OK) || (res == IEC_LAST)) {
             data_message.message[i] = data;
@@ -230,7 +230,7 @@ void SoftIECTarget :: prepare_data(void)
     // the number of bytes that we prepared for reading is stored here, such that these bytes can be popped
     // whenever get_more_data is called.
     input_length = len;
-    dump_hex(data_message.message, len);
+    //dump_hex(data_message.message, len);
 }
 
 void SoftIECTarget :: get_more_data(Message **reply, Message **status)
@@ -239,7 +239,7 @@ void SoftIECTarget :: get_more_data(Message **reply, Message **status)
         for(int i=0; i<input_length; i++) {
             input_channel->pop_data(); // how about passing the number of bytes, that would be way more efficient.
         }
-        prepare_data();
+        prepare_data(256);
         *reply = &data_message;
         *status = &c_status_all_ok;
     } else {
@@ -250,7 +250,7 @@ void SoftIECTarget :: get_more_data(Message **reply, Message **status)
 
 void SoftIECTarget :: abort(int a)
 {
-    //printf("SoftIECTarget with Abort = %d.\n", a);
+    printf("Abrt(%d)", a);
     if (input_channel) {
         int bytes = (a < input_length) ? a : input_length;
         for(int i=0; i<bytes; i++) {
