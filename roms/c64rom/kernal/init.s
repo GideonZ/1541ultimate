@@ -21,7 +21,7 @@ start	ldx #$ff
 start1	stx vicreg+22   ;set up refresh (.x=<5)
 	jsr ioinit      ;go initilize i/o devices
 	jsr ramtas      ;go ram test and set
-	jsr restor      ;go set up os vectors
+	jsr ulti_restor ;go set up os vectors
 ;
 	jsr pcint       ;go initilize screen newxxx
 	cli             ;interrupts okay now

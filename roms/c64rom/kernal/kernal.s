@@ -22,6 +22,7 @@
 ;.include "tapecontrol.s"
 ;.include "read.s"
 ;.include "write.s"
+.include "uci.s"
 .include "init.s"
 .include "rs232nmi.s"
 .include "irqfile.s"

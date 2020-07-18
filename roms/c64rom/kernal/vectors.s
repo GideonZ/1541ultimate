@@ -7,7 +7,7 @@
 	jmp ioinit
 	jmp ramtas
 
-	jmp restor      ;restore vectors to initial system
+	jmp ulti_restor      ;restore vectors to initial system
 	jmp vector      ;change vectors for user
 
 	jmp setmsg      ;control o.s. messages

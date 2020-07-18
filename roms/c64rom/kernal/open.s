@@ -42,8 +42,8 @@ op110	inc ldtnd       ;new file
 ;perform device specific open tasks
 ;
 	beq op175       ;is keyboard...done.
-	cmp #3
-	beq op175       ;is screen...done.
+        jsr ultiopen
+        nop
 	bcc op150       ;are cassettes 1 & 2
 ;
 	jsr openi       ;is on serial...open it
