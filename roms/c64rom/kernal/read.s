@@ -220,10 +220,6 @@ radj	jsr newch       ;finish byte, clr flags
 ;* to correction table for pass2.                *
 ;*************************************************
 ;
-sperr=16
-ckerr=32
-sberr=4
-lberr=8
 ;
 rd15	lda #$f
 ;
@@ -389,7 +385,7 @@ vprty	lda (sal),y      ;calc block bcc
 	jsr udst
 rd180	jmp prend
 
-rd300	lda stah        ; restore starting address...
+oldrd300	lda stah        ; restore starting address...
 	sta sah         ;...pointers (sah & sal)
 	lda stal
 	sta sal
