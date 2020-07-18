@@ -12,6 +12,8 @@ extern "C" {
 #include "disk_image.h"
 #include "pattern.h"
 
+#define IECDEBUG 0
+
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
 #define MENU_IEC_TRACE_OFF   0xCA12
