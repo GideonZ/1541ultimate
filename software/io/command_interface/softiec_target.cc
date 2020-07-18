@@ -2,6 +2,8 @@
 #include "dump_hex.h"
 #include "c64.h"
 
+#define SIEC_TARGET_DEBUG 0
+
 // crate and register ourselves!
 SoftIECTarget softIecTarget(5);
 
@@ -47,38 +49,52 @@ void SoftIECTarget :: parse_command(Message *command, Message **reply, Message *
             *status = &c_status_ok;
             break;
         case SOFTIEC_CMD_LOAD_SU:
-            //printf("LOAD_SU command:\n");
-            //dump_hex(command->message, command->length);
+#if SIEC_TARGET_DEBUG
+            printf("LOAD_SU command:\n");
+            dump_hex(command->message, command->length);
+#endif
             cmd_load_su(command, reply, status);
             break;
         case SOFTIEC_CMD_LOAD_EX:
-            //printf("LOAD_EX command:\n");
-            //dump_hex(command->message, command->length);
+#if SIEC_TARGET_DEBUG
+            printf("LOAD_EX command:\n");
+            dump_hex(command->message, command->length);
+#endif
             cmd_load_ex(command, reply, status);
             break;
         case SOFTIEC_CMD_SAVE:
-            //printf("SAVE command:\n");
-            //dump_hex(command->message, command->length);
+#if SIEC_TARGET_DEBUG
+            printf("SAVE command:\n");
+            dump_hex(command->message, command->length);
+#endif
             cmd_save(command, reply, status);
             break;
         case SOFTIEC_CMD_OPEN:
-            //printf("OPEN command:\n");
-            //dump_hex(command->message, command->length);
+#if SIEC_TARGET_DEBUG
+            printf("OPEN command:\n");
+            dump_hex(command->message, command->length);
+#endif
             cmd_open(command, reply, status);
             break;
         case SOFTIEC_CMD_CLOSE:
-            //printf("CLOSE command:\n");
-            //dump_hex(command->message, command->length);
+#if SIEC_TARGET_DEBUG
+            printf("CLOSE command:\n");
+            dump_hex(command->message, command->length);
+#endif
             cmd_close(command, reply, status);
             break;
         case SOFTIEC_CMD_CHKOUT:
-            //printf("CHKOUT command:\n");
-            //dump_hex(command->message, command->length);
+#if SIEC_TARGET_DEBUG
+            printf("CHKOUT command:\n");
+            dump_hex(command->message, command->length);
+#endif
             cmd_chkout(command, reply, status);
             break;
         case SOFTIEC_CMD_CHKIN:
+#if SIEC_TARGET_DEBUG
             printf("CHKIN command:\n");
-            //dump_hex(command->message, command->length);
+            dump_hex(command->message, command->length);
+#endif
             cmd_chkin(command, reply, status);
             break;
         default:
@@ -250,7 +266,9 @@ void SoftIECTarget :: get_more_data(Message **reply, Message **status)
 
 void SoftIECTarget :: abort(int a)
 {
-    printf("Abrt(%d)", a);
+#if SIEC_TARGET_DEBUG
+    printf("Abrt(%d)\n", a);
+#endif
     if (input_channel) {
         int bytes = (a < input_length) ? a : input_length;
         for(int i=0; i<bytes; i++) {

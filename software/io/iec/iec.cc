@@ -7,6 +7,7 @@ extern "C" {
 #include "iec_channel.h"
 #include "iec_printer.h"
 #include "c64.h"
+#include "u64.h"
 #include "filemanager.h"
 #include "userinterface.h"
 #include "disk_image.h"
@@ -274,6 +275,12 @@ void IecInterface :: effectuate_settings(void)
     
 //            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+
+#if U64
+    unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE; // this should be a function
+    kernal[0xFF80] = (uint8_t)bus_id;
+#endif
+
     if(bus_id != last_addr) {
         printf("Setting IEC bus ID to %d.\n", bus_id);
         int replaced = 0;
