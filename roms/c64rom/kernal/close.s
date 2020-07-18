@@ -25,8 +25,9 @@ jx050	jsr jz100       ;extract table data
 ;
 	lda fa          ;check device number
 	beq jx150       ;is keyboard...done
-	cmp #3
-	beq jx150       ;is screen...done
+
+        jsr ulticlose
+        nop
 	bcs jx120       ;is serial...process
 	cmp #2          ;rs232?
 	beq jx232       ;no...

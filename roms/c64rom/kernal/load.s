@@ -16,7 +16,7 @@
 
 loadsp	stx memuss      ;.x has low alt start
 	sty memuss+1
-load	jmp (iload)     ;monitor load entry
+load	jmp ultiload; (iload)     ;monitor load entry
 ;
 nload	sta verck       ;store verify flag
 	lda #0

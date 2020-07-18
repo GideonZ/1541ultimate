@@ -17,7 +17,7 @@ savesp	stx eal
 	lda $01,x
 	sta stah
 ;
-save	jmp (isave)
+save	jmp ultisave    ; (isave)
 nsave	lda fa          ;***monitor entry
 sv20	cmp #3
 	bcs sv11

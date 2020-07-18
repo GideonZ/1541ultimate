@@ -26,9 +26,11 @@ jx310	jsr jz100       ;extract file info
 ;
 ;could be screen, keyboard, or serial
 ;
-	cmp #3
-	beq jx320       ;is screen...done.
-	bcs jx330       ;is serial...address it
+;	cmp #3
+;	beq jx320       ;is screen...done.
+        jmp ultichkin
+        nop
+jx314	bcs jx330       ;is serial...address it
 	cmp #2          ;rs232?
 	bne jx315       ;no...
 ;
@@ -95,14 +97,15 @@ ck20	jmp error7      ;yes...not output file
 ;
 ;could be screen,serial,or tapes
 ;
-ck10	cmp #3
-	beq ck30        ;is screen...done
-	bcs ck40        ;is serial...address it
+ck10    jmp ultichkout
+        nop
+;	cmp #3
+;	beq ck30        ;is screen...done
+ck14	bcs ck40        ;is serial...address it
 	cmp #2          ;rs232?
 	bne ck15
 ;
 	jmp cko232
-;
 ;
 ;special tape channel handling
 ;

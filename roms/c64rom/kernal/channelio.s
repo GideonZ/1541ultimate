@@ -53,10 +53,10 @@ nbasin	lda dfltn       ;check device
 	sta lsxp        ;... line number
 	jmp loop5       ;blink cursor until return
 ;
-bn10	cmp #3          ;is input from screen?
-	bne bn20        ;no...
+bn10	jmp ultichrin
+        nop
 ;
-	sta crsw        ;fake a carriage return
+bn15	sta crsw        ;fake a carriage return
 	lda lnmx        ;say we ended...
 	sta indx        ;...up on this line
 	jmp loop5       ;pick up characters
@@ -137,7 +137,7 @@ bn50	jsr gn232       ;get info
 ;*  4-31 -- serial bus                 *
 ;***************************************
 ;
-nbsout	pha             ;preserve .a
+nbsout  pha             ;preserve .a
 	lda dflto       ;check device
 	cmp #3          ;is it the screen?
 	bne bo10        ;no...
@@ -148,12 +148,14 @@ nbsout	pha             ;preserve .a
 	jmp prt         ;print on crt
 ;
 bo10
+
 	bcc bo20        ;device 1 or 2
 ;
-;print to serial bus
+;print to serial bus - or uci
 ;
-	pla
-	jmp ciout
+        jmp ultichrout
+        nop
+
 ;
 ;print to cassette devices
 ;
