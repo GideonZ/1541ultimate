@@ -19,14 +19,13 @@ savesp	stx eal
 ;
 save	jmp (isave)
 nsave	lda fa          ;***monitor entry
-	bne sv20
-;
-sv10	jmp error9      ;bad device #
-;
 sv20	cmp #3
-	beq sv10
-	bcc sv100
-	lda #$61
+	bcs sv11
+sv10	jmp error9      ;bad device #
+
+        .res 4, $33
+
+sv11	lda #$61
 	sta sa
 	ldy fnlen
 	bne sv25
@@ -73,44 +72,71 @@ clsei	bit sa
 cunlsn	jsr unlsn       ;entry for openi
 ;
 clsei2	clc
-	rts
+svrts	rts
 
-sv100	lsr a
-	bcs sv102       ;if c-set then it's cassette
+;compare start and end load/save
+;addresses.  subroutine called by
+;tape read, save, tape write
 ;
-	jmp error9      ;bad device #
+cmpste  sec
+        lda sal
+        sbc eal
+        lda sah
+        sbc eah
+        rts
+
+;increment address pointer sal
 ;
-sv102	jsr zzz         ;get addr of tape
-	bcc sv10        ;buffer is deallocated
-	jsr cste2
-	bcs sv115       ;stop key pressed
-	jsr saving      ;tell user 'saving'
-sv105	ldx #plf        ;decide type to save
-	lda sa          ;1-plf 0-blf
-	and #01
-	bne sv106
-	ldx #blf
-sv106	txa
-	jsr tapeh
-	bcs sv115       ;stop key pressed
-	jsr twrt
-	bcs sv115       ;stop key pressed
-	lda sa
-	and #2          ;write end of tape?
-	beq sv110       ;no...
+incsal  inc sal
+        bne incr
+        inc sah
+incr    rts
+
+rd300   lda stah        ; restore starting address...
+        sta sah         ;...pointers (sah & sal)
+        lda stal
+        sta sal
+        rts
+
+        .res 28, $33
+
+
+;sv100	lsr a
+;	bcs sv102       ;if c-set then it's cassette
+;;
+;	jmp error9      ;bad device #
+;;
+;sv102	jsr zzz         ;get addr of tape
+;	bcc sv10        ;buffer is deallocated
+;	jsr cste2
+;	bcs sv115       ;stop key pressed
+;	jsr saving      ;tell user 'saving'
+;sv105	ldx #plf        ;decide type to save
+;	lda sa          ;1-plf 0-blf
+;	and #01
+;	bne sv106
+;	ldx #blf
+;sv106	txa
+;	jsr tapeh
+;	bcs sv115       ;stop key pressed
+;	jsr twrt
+;	bcs sv115       ;stop key pressed
+;	lda sa
+;	and #2          ;write end of tape?
+;	beq sv110       ;no...
+;;
+;	lda #eot
+;	jsr tapeh
+;	.byt $24        ;skip 1 byte
 ;
-	lda #eot
-	jsr tapeh
-	.byt $24        ;skip 1 byte
-;
-sv110	clc
-sv115	rts
+;sv110	clc
+;sv115	rts
 
 ;subroutine to output:
 ;'saving <file name>'
 ;
 saving	lda msgflg
-	bpl sv115       ;no print
+	bpl svrts       ;no print
 ;
 	ldy #ms11-ms1   ;'saving'
 	jsr msg

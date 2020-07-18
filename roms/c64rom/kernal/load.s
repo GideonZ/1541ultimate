@@ -23,17 +23,15 @@ nload	sta verck       ;store verify flag
 	sta status
 ;
 	lda fa          ;check device number
-	bne ld20
-;
-ld10	jmp error9      ;bad device #-keyboard
-;
 ld20	cmp #3
-	beq ld10        ;disallow screen load
-	bcc ld100       ;handle tapes different
+	bcs ld10        ;anything <= 3 is bad
+	jmp error9      ;bad device #-keyboard
+;
+        .res 4, $33
 ;
 ;load from cbm ieee device
 ;
-	ldy fnlen       ;must have file name
+ld10	ldy fnlen       ;must have file name
 	bne ld25        ;yes...ok
 ;
 	jmp error8      ;missing file name
@@ -104,81 +102,83 @@ ld64	bit status      ;eoi?
 	bcc ld180       ;branch always
 ;
 ld90	jmp error4      ;file not found
+
+        .res 118, $33
 ;
-;load from tape
-;
-ld100	lsr a
-	bcs ld102       ;if c-set then it's cassette
-;
-	jmp error9      ;bad device #
-;
-ld102	jsr zzz         ;set pointers at tape
-	bcs ld104
-	jmp error9      ;deallocated...
-ld104	jsr cste1       ;tell user about buttons
-	bcs ld190       ;stop key pressed?
-	jsr luking      ;tell user searching
-;
-ld112	lda fnlen       ;is there a name?
-	beq ld150       ;none...load anything
-	jsr faf         ;find a file on tape
-	bcc ld170       ;got it!
-	beq ld190       ;stop key pressed
-	bcs ld90        ;nope...end of tape
-;
-ld150	jsr fah         ;find any header
-	beq ld190       ;stop key pressed
-	bcs ld90        ;no header
-;
-ld170	lda status
-	and #sperr      ;must got header right
-	sec
-	bne ld190       ;is bad
-;
-	cpx #blf        ;is it a movable program...
-	beq ld178       ;yes
-;
-	cpx #plf        ;is it a program
-	bne ld112       ;no...its something else
-;
-ld177	ldy #1          ;fixed load...
-	lda (tape1),y    ;...the address in the...
-	sta memuss      ;...buffer is the start address
-	iny
-	lda (tape1),y
-	sta memuss+1
-	bcs ld179       ;jmp ..carry set by cpx's
-;
-ld178	lda sa          ;check for monitor load...
-	bne ld177       ;...yes we want fixed type
-;
-ld179	ldy #3          ;tapea - tapesta
-;carry set by cpx's
-	lda (tape1),y
-	ldy #1
-	sbc (tape1),y
-	tax             ;low to .x
-	ldy #4
-	lda (tape1),y
-	ldy #2
-	sbc (tape1),y
-	tay             ;high to .y
-;
-	clc             ;ea = sta+(tapea-tapesta)
-	txa
-	adc memuss      ;
-	sta eal
-	tya
-	adc memuss+1
-	sta eah
-	lda memuss      ;set up starting address
-	sta stal
-	lda memuss+1
-	sta stah
-	jsr loding      ;tell user loading
-	jsr trd         ;do tape block load
-	.byt $24        ;carry from trd
-;
+;;load from tape
+;;
+;ld100	lsr a
+;	bcs ld102       ;if c-set then it's cassette
+;;
+;	jmp error9      ;bad device #
+;;
+;ld102	jsr zzz         ;set pointers at tape
+;	bcs ld104
+;	jmp error9      ;deallocated...
+;ld104	jsr cste1       ;tell user about buttons
+;	bcs ld190       ;stop key pressed?
+;	jsr luking      ;tell user searching
+;;
+;ld112	lda fnlen       ;is there a name?
+;	beq ld150       ;none...load anything
+;	jsr faf         ;find a file on tape
+;	bcc ld170       ;got it!
+;	beq ld190       ;stop key pressed
+;	bcs ld90        ;nope...end of tape
+;;
+;ld150	jsr fah         ;find any header
+;	beq ld190       ;stop key pressed
+;	bcs ld90        ;no header
+;;
+;ld170	lda status
+;	and #sperr      ;must got header right
+;	sec
+;	bne ld190       ;is bad
+;;
+;	cpx #blf        ;is it a movable program...
+;	beq ld178       ;yes
+;;
+;	cpx #plf        ;is it a program
+;	bne ld112       ;no...its something else
+;;
+;ld177	ldy #1          ;fixed load...
+;	lda (tape1),y    ;...the address in the...
+;	sta memuss      ;...buffer is the start address
+;	iny
+;	lda (tape1),y
+;	sta memuss+1
+;	bcs ld179       ;jmp ..carry set by cpx's
+;;
+;ld178	lda sa          ;check for monitor load...
+;	bne ld177       ;...yes we want fixed type
+;;
+;ld179	ldy #3          ;tapea - tapesta
+;;carry set by cpx's
+;	lda (tape1),y
+;	ldy #1
+;	sbc (tape1),y
+;	tax             ;low to .x
+;	ldy #4
+;	lda (tape1),y
+;	ldy #2
+;	sbc (tape1),y
+;	tay             ;high to .y
+;;
+;	clc             ;ea = sta+(tapea-tapesta)
+;	txa
+;	adc memuss      ;
+;	sta eal
+;	tya
+;	adc memuss+1
+;	sta eah
+;	lda memuss      ;set up starting address
+;	sta stal
+;	lda memuss+1
+;	sta stah
+;	jsr loding      ;tell user loading
+;	jsr trd         ;do tape block load
+;	.byt $24        ;carry from trd
+;;
 ld180	clc             ;good exit
 ;
 ; set up end load address

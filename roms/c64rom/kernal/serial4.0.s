@@ -1,3 +1,8 @@
+sperr=16
+ckerr=32
+sberr=4
+lberr=8
+
 	.segment "SERIAL"
 ;command serial bus device to talk
 ;

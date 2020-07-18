@@ -53,62 +53,59 @@ op110	inc ldtnd       ;new file
 ;
 op150	cmp #2
 	bne op152
-;
 	jmp opn232
+op152	jmp error9      ;no...deallocated
 ;
-op152	jsr zzz         ;see if tape buffer
-	bcs op155       ;yes
-;
-	jmp error9      ;no...deallocated
-;
-op155	lda sa
-	and #$f         ;mask off command
-	bne op200       ;non zero is tape write
-;
-;open cassete tape file to read
-;
-	jsr cste1       ;tell "press play"
-	bcs op180       ;stop key pressed
-;
-	jsr luking      ;tell user "searching"
-;
-	lda fnlen
-	beq op170       ;looking for any file
-;
-	jsr faf         ;looking for named file
-	bcc op171       ;found it!!!
-	beq op180       ;stop key pressed
-;
-op160	jmp error4      ;file not found
-;
-op170	jsr fah         ;get any old header
-	beq op180       ;stop key pressed
-	bcc op171       ;all o.k.
-	bcs op160       ;file not found...
-;
-;open cassette tape for write
-;
-op200	jsr cste2       ;tell "press play and record"
-	bcs op180       ;stop key pressed
-	lda #bdfh       ;data file header type
-	jsr tapeh       ;write it
-;
-;finish open for tape read/write
-;
-op171	lda #bufsz-1    ;assume force read
-;
-	ldy sa
-	cpy #$60        ;open for read?
-	beq op172
-;
-;set pointers for buffering data
-;
-	ldy #0
-	lda #bdf        ;type flag for block
-	sta (tape1),y    ;to begin of buffer
-	tya
-;
-op172	sta bufpt       ;point to data
+        .res 69,$33
+
+;op155	lda sa
+;	and #$f         ;mask off command
+;	bne op200       ;non zero is tape write
+;;
+;;open cassete tape file to read
+;;
+;	jsr cste1       ;tell "press play"
+;	bcs op180       ;stop key pressed
+;;
+;	jsr luking      ;tell user "searching"
+;;
+;	lda fnlen
+;	beq op170       ;looking for any file
+;;
+;	jsr faf         ;looking for named file
+;	bcc op171       ;found it!!!
+;	beq op180       ;stop key pressed
+;;
+;op160	jmp error4      ;file not found
+;;
+;op170	jsr fah         ;get any old header
+;	beq op180       ;stop key pressed
+;	bcc op171       ;all o.k.
+;	bcs op160       ;file not found...
+;;
+;;open cassette tape for write
+;;
+;op200	jsr cste2       ;tell "press play and record"
+;	bcs op180       ;stop key pressed
+;	lda #bdfh       ;data file header type
+;	jsr tapeh       ;write it
+;;
+;;finish open for tape read/write
+;;
+;op171	lda #bufsz-1    ;assume force read
+;;
+;	ldy sa
+;	cpy #$60        ;open for read?
+;	beq op172
+;;
+;;set pointers for buffering data
+;;
+;	ldy #0
+;	lda #bdf        ;type flag for block
+;	sta (tape1),y    ;to begin of buffer
+;	tya
+;;
+;op172	sta bufpt       ;point to data
 op175	clc             ;flag good open
 op180	rts             ;exit in peace
 

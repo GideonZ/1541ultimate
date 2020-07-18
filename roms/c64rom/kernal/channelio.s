@@ -64,44 +64,47 @@ bn10	cmp #3          ;is input from screen?
 bn20	bcs bn30        ;devices >3
 	cmp #2          ;rs232?
 	beq bn50
+        jmp error9      ; Cassette -> error
+
+        .res 49,$33
 ;
 ;input from cassette buffers
 ;
-	stx xsav
-	jsr jtget
-	bcs jtg37       ;stop key/error
-	pha
-	jsr jtget
-	bcs jtg36       ;stop key/error
-	bne jtg35       ;not an end of file
-	lda #64         ;tell user eof
-	jsr udst        ;in status
-jtg35	dec bufpt
-	ldx xsav        ;.x preserved
-	pla             ;character returned
-;c-clear from jtget
-	rts             ;all done
+;	stx xsav
+;	jsr jtget
+;	bcs jtg37       ;stop key/error
+;	pha
+;	jsr jtget
+;	bcs jtg36       ;stop key/error
+;	bne jtg35       ;not an end of file
+;	lda #64         ;tell user eof
+;	jsr udst        ;in status
+;jtg35	dec bufpt
+;	ldx xsav        ;.x preserved
+;	pla             ;character returned
+;;c-clear from jtget
+;	rts             ;all done
+;;
+;jtg36	tax             ;save error info
+;	pla             ;toss data
+;	txa             ;restore error
+;jtg37	ldx xsav        ;return
+;	rts             ;error return c-set from jtget
 ;
-jtg36	tax             ;save error info
-	pla             ;toss data
-	txa             ;restore error
-jtg37	ldx xsav        ;return
-	rts             ;error return c-set from jtget
-
-;get a character from appropriate
-;cassette buffer
-;
-jtget	jsr jtp20       ;buffer pointer wrap?
-	bne jtg10       ;no...
-	jsr rblk        ;yes...read next block
-	bcs bn33        ;stop key pressed
-	lda #0
-	sta bufpt       ;point to begin.
-	beq jtget       ;branch always
-;
-jtg10	lda (tape1),y    ;get char from buf
-	clc             ;good return
-	rts 
+;;get a character from appropriate
+;;cassette buffer
+;;
+;jtget	jsr jtp20       ;buffer pointer wrap?
+;	bne jtg10       ;no...
+;	jsr rblk        ;yes...read next block
+;	bcs bn33        ;stop key pressed
+;	lda #0
+;	sta bufpt       ;point to begin.
+;	beq jtget       ;branch always
+;;
+;jtg10	lda (tape1),y    ;get char from buf
+;	clc             ;good return
+;	rts
 
 ;input from serial bus
 ;
@@ -167,27 +170,30 @@ casout	sta t1          ;pass data in t1
 	pha
 	bcc bo50        ;c-clr means dflto=2 (rs232)
 ;
-	jsr jtp20       ;check buffer pointer
-	bne jtp10       ;has not reached end
-	jsr wblk        ;write full buffer
-	bcs rstor       ;abort on stop key
-;
-;put buffer type byte
-;
-	lda #bdf
-	ldy #0
-	sta (tape1),y
-;
-;reset buffer pointer
-;
-	iny             ;make .y=1
-	sty bufpt       ;bufpt=1
-;
-jtp10	lda t1
-	sta (tape1),y    ;data to buffer
-;
-;restore .x and .y
-;
+        jmp error9      ; Bad device!
+        .res 20, $33
+
+;	jsr jtp20       ;check buffer pointer
+;	bne jtp10       ;has not reached end
+;	jsr wblk        ;write full buffer
+;	bcs rstor       ;abort on stop key
+;;
+;;put buffer type byte
+;;
+;	lda #bdf
+;	ldy #0
+;	sta (tape1),y
+;;
+;;reset buffer pointer
+;;
+;	iny             ;make .y=1
+;	sty bufpt       ;bufpt=1
+;;
+;jtp10	lda t1
+;	sta (tape1),y    ;data to buffer
+;;
+;;restore .x and .y
+;;
 rstoa	clc             ;good return
 rstor	pla
 	tay

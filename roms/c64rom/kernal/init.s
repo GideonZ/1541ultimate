@@ -121,7 +121,8 @@ size	tya             ;set top of memory
 	sta hibase      ;set base of screen
 	rts
 
-bsit	.word wrtz,wrtn,key,read ;table of indirects for cassette irq's
+        .res 8, $33
+;bsit	.word wrtz,wrtn,key,read ;table of indirects for cassette irq's
 
 ; ioinit - initilize io devices
 ;

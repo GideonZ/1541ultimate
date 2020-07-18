@@ -175,7 +175,7 @@ tnof	lda r6510       ;turn off cassette motor
 ;addresses.  subroutine called by
 ;tape read, save, tape write
 ;
-cmpste	sec
+oldcmpste	sec
 	lda sal
 	sbc eal
 	lda sah
@@ -184,10 +184,10 @@ cmpste	sec
 
 ;increment address pointer sal
 ;
-incsal	inc sal
-	bne incr
+oldincsal	inc sal
+	bne oldincr
 	inc sah
-incr	rts
+oldincr	rts
 
 ; rsr 7/28/80 add comments
 ; rsr 8/4/80 changed i/o for vixen
