@@ -1,4 +1,5 @@
 #include "pattern.h"
+#include <string.h>
 #include <cctype>
 /*
 -------------------------------------------------------------------------------
@@ -61,6 +62,28 @@ bool pattern_match(const char *pattern, const char *fixed, bool case_sensitive)
     } while(true);
         
 	return false; // never gets here.
+}
+
+void split_string(char sep, char *s, char **parts, int maxParts)
+{
+    int len = strlen(s);
+    int idx = 0;
+    parts[idx++] = s;
+    for(int i=0;(i<len) && (idx < maxParts);i++) {
+        if (s[i] == sep) {
+            s[i] = 0;
+            parts[idx++] = s + i + 1;
+        }
+    }
+}
+
+bool isEmptyString(const char *c)
+{
+    if (!c)
+        return true;
+    if (strlen(c) == 0)
+        return true;
+    return false;
 }
 
 #ifdef TESTPTRN
