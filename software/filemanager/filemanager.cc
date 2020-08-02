@@ -769,33 +769,38 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 /* some handy functions */
 void set_extension(char *buffer, const char *ext, int buf_size)
 {
-    // skip leading dots of extension to set
-    while(*ext == '.') {
-        ext++;
-    }
-    int ext_len = strlen(ext) + 1; // +1 because of dot
-	if(buf_size < 1+ext_len)
-		return; // cant append, even to an empty base
-
-	// try to remove the extension
+	// try to remove the existing extension
 	int name_len = strlen(buffer);
-
 	for(int i=name_len-1;i>=0;i--) {
 		if(buffer[i] == '.') {
 			buffer[i] = 0;
 			break;
 		}
 	}
-	if (!(*ext)) { // there is nothing to append
-	    return;
-	}
 
-	name_len = strlen(buffer);
-	if(name_len + ext_len + 1 > buf_size) {
-		buffer[buf_size-ext_len-1] = 0; // truncate to make space for extension!
-	}
+	add_extension(buffer, ext, buf_size);
+}
+
+void add_extension(char *buffer, const char *ext, int buf_size)
+{
+    // skip leading dots of extension to set
+    while(*ext == '.') {
+        ext++;
+    }
+    int ext_len = strlen(ext) + 1; // +1 because of dot
+    if(buf_size < 1+ext_len)
+        return; // cant append, even to an empty base
+
+    if (!(*ext)) { // there is nothing to append
+        return;
+    }
+
+    int name_len = strlen(buffer);
+    if(name_len + ext_len + 1 > buf_size) {
+        buffer[buf_size-ext_len-1] = 0; // truncate to make space for extension!
+    }
     strcat(buffer, ".");
-	strcat(buffer, ext);
+    strcat(buffer, ext);
 }
 
 void fix_filename(char *buffer)
