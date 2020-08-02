@@ -26,16 +26,27 @@ static uint8_t c_header[32] = { 1,  1,  4,  1,  0,  0, 18, 34,
 
 class IecCommandChannel;
 
+typedef enum _access_mode_t {
+    e_undefined = 0,
+    e_read,
+    e_write,
+    e_replace,
+    e_append,
+} access_mode_t;
+
 typedef struct _name_t {
     int drive;
     char *name;
-    char separator;
+    bool directory;
+    bool explicitExt;
+    const char *extension;
+    access_mode_t mode;
 } name_t;
 
 typedef struct _command_t {
-    char *cmd;
+    char cmd[16];
     int digits;
-    name_t names[5];
+    char *remaining;
 } command_t;
 
 #define MAX_PARTITIONS 256
@@ -234,19 +245,22 @@ public:
     }
 
     int Remove(command_t& command, bool dir) {
-        if (!command.names[0].name) {
+        if (!command.remaining) {
             return -1;
         }
         int f = 0;
+        char *filenames[5] = { 0, 0, 0, 0, 0 };
+        split_string(',', command.remaining, filenames, 5);
         for(int i=0;i<5;i++) {
-            if (!command.names[i].name) {
+            if (!filenames[i]) {
                 break;
             }
-            char *name = command.names[i].name;
+            //name_t name;
+            //parse_filename(filenames[i], &name, false);
             int idx = -1;
             for (int fl=0; fl < iecNames->get_elements(); fl++) {
                 char *iecName = (*iecNames)[fl];
-                if (pattern_match(name, &iecName[3], false)) {
+                if (pattern_match(filenames[i], &iecName[3], false)) {
                     FileInfo *inf = (*dirlist)[fl];
                     if ( ((inf->attrib & AM_DIR) && !dir) || (!(inf->attrib & AM_DIR) && dir) ) {
                         continue; // skip entries that are not of the right type
@@ -315,14 +329,13 @@ class IecChannel
     FileManager *fm;
 
 	int  channel;
-    int  write;
-    int  append;
     uint8_t buffer[256];
     int  size;
     int  pointer;
     int  prefetch;
     int  prefetch_max;
     File *f;
+    access_mode_t file_mode;
     int  last_command;
     int  dir_index;
     int  dir_last;
@@ -334,25 +347,24 @@ class IecChannel
 
     // temporaries
     uint32_t bytes;
-    char filename[64];
-    const char *extension;
-    bool explicitExt;
+    name_t name;
     uint8_t flags;
     IecPartition *partition;
+    char fs_filename[64];
 
 private:
     void fix_filename(void);
-    void parse_filename(command_t& command);
-    int  setup_directory_read(command_t &command);
-    int  setup_file_access(command_t& command);
+    bool parse_filename(char *buffer, name_t *name, int default_drive, bool doFlags);
+    int  setup_directory_read(name_t& name);
+    int  setup_file_access(name_t &name);
     int  init_iec_transfer(void);
 
     int open_file(void);  // name should be in buffer
     int close_file(void); // file should be open
     int read_dir_entry(void);
     int read_block(void);
-    void parse_command(char *buffer, command_t *command);
     void dump_command(command_t& cmd);
+    void dump_name(name_t& name, const char *id);
     bool hasIllegalChars(const char *name);
     const char *GetExtension(char specifiedType, bool &explicitExt);
 
@@ -383,6 +395,7 @@ class IecCommandChannel : public IecChannel
     void copy(command_t& command);
     void exec_command(command_t &command);
     void get_error_string(void);
+    bool parse_command(char *buffer, command_t *command);
 public:
     IecCommandChannel(IecInterface *intf, int ch);
     virtual ~IecCommandChannel();
