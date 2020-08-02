@@ -660,23 +660,24 @@ void FileTypeCRT::configure_cart(void)
     C64_CARTRIDGE_TYPE = CART_TYPE_NONE;
 
     uint32_t len = total_read;
-    if (!len)
-        type_select = CART_NOT_IMPL;
-
     int bits = 21;
-    while (len < 0x100001) {
-        len <<= 1;
-        bits--;
-    }
-
     uint16_t b = max_bank;
     uint16_t mask = 0;
-    while (b) {
-        mask <<= 1;
-        mask |= 1;
-        b >>= 1;
-    }
 
+    if (!len) {
+        type_select = CART_NOT_IMPL;
+    } else {
+        while (len < 0x100001) {
+            len <<= 1;
+            bits--;
+        }
+
+        while (b) {
+            mask <<= 1;
+            mask |= 1;
+            b >>= 1;
+        }
+    }
     printf("Total ROM size read: %6x bytes; %d bits (%6x). Max_Bank = %d. Mask = %d\n", total_read, bits, (1 << bits), max_bank,
             mask);
 
