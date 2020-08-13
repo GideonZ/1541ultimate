@@ -11,6 +11,7 @@
 #include "task.h"
 #include "semphr.h"
 
+#define IECDEBUG 1
 
 #define HW_IEC_REGS      IEC_BASE
 #define HW_IEC_CODE      (IEC_BASE + 0x800)

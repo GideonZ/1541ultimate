@@ -34,6 +34,7 @@
 #include "flash.h"
 #include "keyboard_c64.h"
 #include "config.h"
+#include "iec.h"
 
 #ifndef CMD_IF_SLOT_BASE
 #define CMD_IF_SLOT_BASE       *((volatile uint8_t *)(CMD_IF_BASE + 0x0))
@@ -903,6 +904,7 @@ void C64::init_system_roms(void)
                 memcpy((void *) (kernal+0x1d6c), (void *) fastresetPatch, 22);
             }
         }
+        iec_if.effectuate_settings();
         delete[] temp;
     }
 
@@ -1047,11 +1049,7 @@ void C64 :: start_cartridge(void *vdef, bool startLater)
 
 Screen *C64::getScreen(void)
 {
-    /*
-     if (!screen)
-     screen = new Screen_MemMappedCharMatrix(C64_SCREEN, C64_COLORRAM, 40, 25);
-     */
-    screen->clear();
+    //screen->clear();
     return screen;
 }
 

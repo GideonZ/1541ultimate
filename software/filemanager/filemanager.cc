@@ -834,6 +834,93 @@ void get_extension(const char *name, char *ext)
 	}
 }
 
+void petscii_to_fat(const char *pet, char *fat)
+{
+    // clear output string
+    const char *hex = "0123456789ABCDEF";
+    bool escape = false;
+    int i = 0;
+    while(*pet) {
+        char p = *(pet++);
+        if ((p < 32) || (p >= 96) || (p == ':') || (p == '/') ||
+                (p == '\\') || (p == '*') || (p == '\x22') ||
+                (p == '<') || (p == '>') || (p == '?')) {  // '|' > 96 ;)
+            if (!escape) {
+                fat[i++] = '{';
+                escape = true;
+            }
+            fat[i++] = hex[((uint8_t)p) >> 4];
+            fat[i++] = hex[p & 15];
+        } else {
+            if (escape) {
+                fat[i++] = '}';
+                escape = false;
+            }
+            fat[i++] = tolower(p);
+        }
+    }
+    if (escape) {
+        fat[i++] = '}';
+        escape = false;
+    }
+    fat[i] = 0;
+}
+
+static bool hex2bin(char c, uint8_t& out)
+{
+    if ((c >= '0') && (c <= '9')) {
+        out = (uint8_t)(c - '0');
+        return true;
+    }
+    if ((c >= 'A') && (c <= 'F')) {
+        out = (uint8_t)(c - 'A') + 10;
+        return true;
+    }
+    if ((c >= 'a') && (c <= 'f')) {
+        out = (uint8_t)(c - 'a') + 10;
+        return true;
+    }
+    return false;
+}
+
+void fat_to_petscii(const char *fat, char *pet, int len)
+{
+    int i = 0;
+    bool escape = false;
+    while(*fat && i < len) {
+        char f = *fat;
+        if (f == '{') {
+            escape = true;
+            fat++;
+        }
+        if (escape) {
+            char h = fat[0];
+            char l = fat[1];
+            if (!h || !l) {
+                break;
+            }
+            uint8_t hb, lb;
+            if (!hex2bin(h, hb) || !hex2bin(l, lb)) {
+                escape = false;
+                // do not advance
+            } else {
+                pet[i++] = (hb << 4) | lb;
+                fat += 2;
+            }
+        } else {
+            if (f == '}') {
+                escape = false;
+                fat++;
+            } else {
+                pet[i++] = toupper(f);
+                fat++;
+            }
+        }
+    }
+    pet[i] = 0;
+}
+
+
 const char *FileManager :: eventStrings[] = {
     "eRefreshDirectory",  // Contents of directory have changed
     "eNodeAdded",         // New Node
