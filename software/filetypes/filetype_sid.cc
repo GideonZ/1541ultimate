@@ -361,7 +361,7 @@ void FileTypeSID :: showInfo()
     sng |= sid_header[0x11];
     stream.format("Default song: %d\n", sng);
 
-	cmd->user_interface->run_editor(stream.getText());
+	cmd->user_interface->run_editor(stream.getText(), stream.getLength());
 	// stream gets out of scope.
 }
 

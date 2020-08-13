@@ -60,7 +60,7 @@ C64 *c64;
 C64_Subsys *c64_subsys;
 HomeDirectory *home_directory;
 REUPreloader *reu_preloader;
-StreamTextLog textLog(65536);
+StreamTextLog textLog(96*1024);
 
 extern "C" void (*custom_outbyte)(int c);
 
@@ -191,6 +191,8 @@ extern "C" void ultimate_main(void *a)
     }
 #endif
 */
+
+    custom_outbyte = outbyte_log;
 
     while(c64) {
         int doIt = 0;
