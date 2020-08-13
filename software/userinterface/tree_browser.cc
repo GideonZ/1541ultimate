@@ -151,7 +151,7 @@ void TreeBrowser :: task_menu(void)
 
 void TreeBrowser :: test_editor(void)
 {
-    Editor *edit = new Editor(user_interface, NULL); // use built-in text
+    Editor *edit = new Editor(user_interface, NULL, 0); // use built-in text
     edit->init(screen, keyb);
     int ret;
     do {
@@ -337,7 +337,7 @@ void TreeBrowser :: tasklist(void)
     	if (*b == 9)
     		*b = 32;
     }
-    user_interface->run_editor(buffer);
+    user_interface->run_editor(buffer, strlen(buffer));
     delete buffer;
 }
 
@@ -368,7 +368,7 @@ int TreeBrowser :: handle_key(int c)
         case KEY_F3: // F3 -> help
         	reset_quick_seek();
         	state->refresh = true;
-        	user_interface->run_editor(helptext);
+        	user_interface->run_editor(helptext, strlen(helptext));
             break;
 		case KEY_F5: // F5: Menu
 			task_menu();
@@ -393,13 +393,13 @@ int TreeBrowser :: handle_key(int c)
         case KEY_ESCAPE:
         	ret = -1;
         	break;
-/*
+
         case KEY_F6: // F6 -> show log
         	reset_quick_seek();
         	state->refresh = true;
-        	user_interface->run_editor(textLog.getText());
+        	user_interface->run_editor(textLog.getText(), textLog.getLength());
         	break;
-*/
+
         case KEY_BACK: // backspace
             if(quick_seek_length) {
                 quick_seek_length--;
