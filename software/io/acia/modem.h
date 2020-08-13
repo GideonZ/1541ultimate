@@ -29,7 +29,7 @@ class Modem : public ConfigurableObject
     void IncomingConnection(int socket);
     void Caller(void);
     void CollectCommand(ModemCommand_t *cmd, char *buf, int len);
-    bool ExecuteCommand(ModemCommand_t *cmd);
+    int  ExecuteCommand(ModemCommand_t *cmd);
     void RunRelay(int socket);
     void ResetRegisters();
     void WriteRegister(int value);
