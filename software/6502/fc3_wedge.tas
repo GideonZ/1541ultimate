@@ -1,0 +1,69 @@
+                .text "C64 CARTRIDGE   "
+                .byte $00,$00           ;header length
+                .byte $00,$40           ;header length
+                .word $0001             ;version
+                .word $0300             ;crt type = FC3
+                .byte $01               ;extrom line
+                .byte $01               ;game line
+                .byte $00,$00,$00,$00,$00,$00;unused
+                .text "U64 DOS WEDGE V0.1"
+name
+                .fill ($0040-name),0
+
+                .text "CHIP"
+                .byte $00,$00,$40,$10   ;chunk length, incl header
+                .byte $00,$00           ;chip type
+                .byte $00,$00           ;bank
+                .byte $80,$00           ;adress
+                .byte $40,$00           ;length
+
+rom_start
+                .logical $8000
+                
+                .word coldstart
+                .word warmstart
+                .byte $c3               ;c
+                .byte $c2               ;b
+                .byte $cd               ;m
+                .byte $38               ;8
+                .byte $30               ;0
+
+warmstart       jmp $fe5e
+coldstart       sei       
+                jmp basic_start  ; DE04!
+
+                .here
+                ; the .here makes current offset 0x50 higher than the offset from beginning of the rom
+                ; due to the header. maybe it's better to split the CRT header and the actual ROM
+                ; from each other.. Anyway.. 
+jumpers
+                .fill (rom_start + $1e04 - jumpers),$ff
+                .logical $de04
+basic_start
+                ; turn off the ROM, so that we get 38911 bytes free
+                lda #$30
+                sta $dfff
+
+                ; do the usual initialization stuff
+                jsr $ff84       ; init I/O devices / CIA timers
+                jsr $ff87       ; init RAM, tape buffer, screen 
+                jsr $ff8a       ; restore default IO vectors
+        
+                jsr $ff81           ;(init screen and VIC-Chip the normal way)
+                jsr $e453       ; copy BASIC vectors to RAM
+                jsr $e3bf       ; initialize basic
+                jsr $e422       ; print BASIC start up messages
+        
+                ; jump to basic
+                cli
+                ldx #$80
+                jmp ($0300)
+
+                .here
+                
+                ; the .here makes current offset 0x50 higher than the offset from beginning of the rom
+                ; due to the header. maybe it's better to split the CRT header and the actual ROM
+                ; from each other.. Anyway.. 
+
+main_file_end
+                .fill (rom_start + $4000 - main_file_end),$ff
