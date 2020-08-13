@@ -2,7 +2,7 @@
 #include "dump_hex.h"
 #include "c64.h"
 
-#define SIEC_TARGET_DEBUG 0
+#define SIEC_TARGET_DEBUG 1
 
 // crate and register ourselves!
 SoftIECTarget softIecTarget(5);
@@ -246,7 +246,9 @@ void SoftIECTarget :: prepare_data(int count)
     // the number of bytes that we prepared for reading is stored here, such that these bytes can be popped
     // whenever get_more_data is called.
     input_length = len;
-    //dump_hex(data_message.message, len);
+#if SIEC_TARGET_DEBUG > 1
+    dump_hex(data_message.message, len);
+#endif
 }
 
 void SoftIECTarget :: get_more_data(Message **reply, Message **status)
@@ -356,6 +358,9 @@ uint16_t SoftIECTarget :: do_load(IecChannel *chan, uint16_t addr)
     C64 *c64 = C64 :: getMachine();
     c64->stop(false);
 
+#if SIEC_TARGET_DEBUG
+    printf("Loading %04x-", addr);
+#endif
     uint8_t data;
     int res1, res2;
     int error = 0;
@@ -371,6 +376,9 @@ uint16_t SoftIECTarget :: do_load(IecChannel *chan, uint16_t addr)
     } while(res2 != IEC_NO_FILE);
 
     c64->resume();
+#if SIEC_TARGET_DEBUG
+    printf("%04x\n", addr);
+#endif
     return addr;
 }
 

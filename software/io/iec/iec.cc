@@ -13,8 +13,6 @@ extern "C" {
 #include "disk_image.h"
 #include "pattern.h"
 
-#define IECDEBUG 0
-
 #define MENU_IEC_RESET       0xCA10
 #define MENU_IEC_TRACE_ON    0xCA11
 #define MENU_IEC_TRACE_OFF   0xCA12
@@ -278,7 +276,7 @@ void IecInterface :: effectuate_settings(void)
 
 #if U64
     unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE; // this should be a function
-    kernal[0xFF80] = (uint8_t)bus_id;
+    kernal[0x1F80] = (uint8_t)bus_id;
 #endif
 
     if(bus_id != last_addr) {
@@ -388,7 +386,7 @@ void IecInterface :: poll()
 			data = HW_IEC_RX_DATA;
 			if(a & IEC_FIFO_CTRL) {
 
-#if IECDEBUG
+#if IECDEBUG > 2
 			    if (data == 0x41) printf("\n");
 			    printf("<%b>", data);
 #endif
@@ -442,7 +440,7 @@ void IecInterface :: poll()
 				}
 			} else {
 				if(atn) {
-#if IECDEBUG
+#if IECDEBUG > 2
 					printf("[/%b] ", data);
 #endif
 					if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
@@ -457,7 +455,7 @@ void IecInterface :: poll()
 					if (printer) {
 						channel_printer->push_data(data);
 					} else {
-#if IECDEBUG
+#if IECDEBUG > 2
 						printf("[%b] ", data);
 #endif
 						channels[current_channel]->push_data(data);
@@ -475,12 +473,12 @@ void IecInterface :: poll()
 				st = channels[current_channel]->prefetch_data(data);
 				if(st == IEC_OK) {
 					HW_IEC_TX_DATA = data;
-#if IECDEBUG
+#if IECDEBUG > 2
 					outbyte(data < 0x20?'.':data);
 #endif
 				} else if(st == IEC_LAST) {
 					HW_IEC_TX_LAST = data;
-#if IECDEBUG
+#if IECDEBUG > 2
                     outbyte(data < 0x20?'.':data);
 #endif
 					talking = false;
@@ -494,7 +492,7 @@ void IecInterface :: poll()
 					break;
 				}
 			}
-#if IECDEBUG
+#if IECDEBUG > 2
             outbyte('\'');
 #endif
 		}

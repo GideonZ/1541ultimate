@@ -110,6 +110,8 @@ public:
             memcpy(out, "SEQ", 3);
         }
 
+        fat_to_petscii(temp, out+3, 16);
+/*
         for(int i=0;i<16;i++) {
             char o;
             if(temp[i] == 0) {
@@ -123,6 +125,7 @@ public:
             }
             out[i+3] = o;
         }
+*/
         return out;
     }
 
@@ -335,7 +338,6 @@ class IecChannel
     int  prefetch;
     int  prefetch_max;
     File *f;
-    access_mode_t file_mode;
     int  last_command;
     int  dir_index;
     int  dir_last;
@@ -353,7 +355,6 @@ class IecChannel
     char fs_filename[64];
 
 private:
-    void fix_filename(void);
     bool parse_filename(char *buffer, name_t *name, int default_drive, bool doFlags);
     int  setup_directory_read(name_t& name);
     int  setup_file_access(name_t &name);
