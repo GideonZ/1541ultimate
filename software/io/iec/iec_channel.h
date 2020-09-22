@@ -367,7 +367,6 @@ private:
     void dump_command(command_t& cmd);
     void dump_name(name_t& name, const char *id);
     bool hasIllegalChars(const char *name);
-    const char *GetExtension(char specifiedType, bool &explicitExt);
 
 public:
     IecChannel(IecInterface *intf, int ch);

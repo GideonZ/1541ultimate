@@ -7,7 +7,6 @@
 
 #include "filesystem_d64.h"
 #include "pattern.h"
-#include "filemanager.h"
 #include <ctype.h>
 
 /*********************************************************************/
@@ -179,17 +178,6 @@ int FileSystemD64 :: get_root_sector(void)
 
     return get_abs_sector(18, 0);
 }
-
-/*
-bool FileSystemD64 :: is_free(int abs)
-{
-    if(image_mode > 1)
-        return true; // we don't understand D71/D81 bit allocation maps yet
-
-
-
-}
-*/
 
 bool FileSystemD64 :: allocate_sector_on_track(int track, int &sector)
 {
@@ -693,13 +681,6 @@ FRESULT FileInD64 :: open(FileInfo *info, uint8_t flags, int dirtrack, int dirse
 	    start_cluster = -1; // to be allocated
         num_blocks = 0;
         current_track = 0;
-        /* to be moved elsewhere
-	    int track, sector;
-	    if (!fs->get_next_free_sector(track, sector)) {
-	        return FR_DISK_FULL;
-	    }
-	    start_cluster = fs->get_abs_sector(track, sector);
-*/
 	} else { // open existing file
         start_cluster = info->cluster;
         if(!(fs->get_track_sector(info->cluster, current_track, current_sector)))
