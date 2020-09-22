@@ -798,6 +798,64 @@ void IecInterface :: set_error(int code, int track, int sector)
     last_error_sector = sector;
 }
 
+void IecInterface :: set_error_fres(FRESULT fres)
+{
+    int tr=0, sec=0, err = 0;
+
+    switch (fres) {
+    case FR_OK:                  err = ERR_OK;                /* (0) Succeeded */
+        break;
+    case FR_DISK_ERR:            err = ERR_DRIVE_NOT_READY;   /* (1) A hard error occurred in the low level disk I/O layer */
+        break;
+    case FR_INT_ERR:             err = ERR_FRESULT_CODE;      /* (2) Assertion failed */
+        break;
+    case FR_NOT_READY:           err = ERR_DRIVE_NOT_READY;   /* (3) The physical drive cannot work */
+        break;
+    case FR_NO_FILE:             err = ERR_FILE_NOT_FOUND;    /* (4) Could not find the file */
+        break;
+    case FR_NO_PATH:             err = ERR_FILE_NOT_FOUND;    /* (5) Could not find the path */
+        break;
+    case FR_INVALID_NAME:        err = ERR_SYNTAX_ERROR_NAME; /* (6) The path name format is invalid */
+        break;
+    case FR_DENIED:              err = ERR_DIRECTORY_ERROR;   /* (7) Access denied due to prohibited access or directory full */
+        break;
+    case FR_EXIST:               err = ERR_FILE_EXISTS;       /* (8) Access denied due to prohibited access */
+        break;
+    case FR_INVALID_OBJECT:      err = ERR_FRESULT_CODE;      /* (9) The file/directory object is invalid */
+        break;
+    case FR_WRITE_PROTECTED:     err = ERR_WRITE_PROTECT_ON;  /* (10) The physical drive is write protected */
+        break;
+    case FR_INVALID_DRIVE:       err = ERR_DRIVE_NOT_READY;   /* (11) The logical drive number is invalid */
+        break;
+    case FR_NOT_ENABLED:         err = ERR_DRIVE_NOT_READY;   /* (12) The volume has no work area */
+        break;
+    case FR_NO_FILESYSTEM:       err = ERR_DRIVE_NOT_READY;   /* (13) There is no valid FAT volume */
+        break;
+    case FR_MKFS_ABORTED:        err = ERR_FRESULT_CODE;      /* (14) The f_mkfs() aborted due to any parameter error */
+        break;
+    case FR_TIMEOUT:             err = ERR_DRIVE_NOT_READY;   /* (15) Could not get a grant to access the volume within defined period */
+        break;
+    case FR_LOCKED:              err = ERR_WRITE_FILE_OPEN;   /* (16) The operation is rejected according to the file sharing policy */
+        break;
+    case FR_NO_MEMORY:           err = ERR_FRESULT_CODE;      /* (17) LFN working buffer could not be allocated */
+        break;
+    case FR_TOO_MANY_OPEN_FILES: err = ERR_FRESULT_CODE;      /* (18) Number of open files > _FS_SHARE */
+        break;
+    case FR_INVALID_PARAMETER:   err = ERR_FRESULT_CODE;      /* (19) Given parameter is invalid */
+        break;
+    case FR_DISK_FULL:           err = ERR_DISK_FULL;         /* (20) OLD FATFS: no more free clusters */
+        break;
+    case FR_DIR_NOT_EMPTY:       err = ERR_FILE_EXISTS;       /* (21) Directory not empty */
+        break;
+    default:                     err = ERR_FRESULT_CODE;
+    }
+    if (err == ERR_FRESULT_CODE) {
+        tr = fres;
+    }
+    set_error(err, tr, sec);
+}
+
+
 int IecInterface :: get_error_string(char *buffer)
 {
 	int len;

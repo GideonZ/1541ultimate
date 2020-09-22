@@ -117,6 +117,8 @@ public:
     void effectuate_settings(void); // from ConfigurableObject
 
     void set_error(int err, int track, int sector);
+    void set_error_fres(FRESULT fres);
+
     int get_error_string(char *); // writes string into buffer
     IecCommandChannel *get_command_channel();
     IecCommandChannel *get_data_channel(int chan);

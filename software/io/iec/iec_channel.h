@@ -10,7 +10,7 @@
 #include "mystring.h"
 
 typedef enum _t_channel_state {
-    e_idle, e_filename, e_file, e_dir, e_complete, e_error, e_status
+    e_idle, e_filename, e_file, e_dir, e_record, e_complete, e_error, e_status
     
 } t_channel_state;
 
@@ -32,6 +32,7 @@ typedef enum _access_mode_t {
     e_write,
     e_replace,
     e_append,
+    e_relative,
 } access_mode_t;
 
 typedef struct _name_t {
@@ -41,6 +42,7 @@ typedef struct _name_t {
     bool explicitExt;
     const char *extension;
     access_mode_t mode;
+    uint8_t recordSize;
 } name_t;
 
 typedef struct _command_t {
@@ -338,14 +340,13 @@ class IecChannel
     int  prefetch;
     int  prefetch_max;
     File *f;
-    int  last_command;
     int  dir_index;
     int  dir_last;
     IecPartition *dirPartition;
     t_channel_state state;
     mstring dirpattern;
-
     int  last_byte;
+    uint8_t recordSize;
 
     // temporaries
     uint32_t bytes;
@@ -364,6 +365,9 @@ private:
     int close_file(void); // file should be open
     int read_dir_entry(void);
     int read_block(void);
+    int read_record(void);
+    int write_record(void);
+
     void dump_command(command_t& cmd);
     void dump_name(name_t& name, const char *id);
     bool hasIllegalChars(const char *name);
@@ -381,6 +385,8 @@ public:
 
     virtual int ext_open_file(const char *name);
     virtual int ext_close_file(void);
+
+    void seek_record(const uint8_t *);
     friend class IecCommandChannel;
 };
 
@@ -395,7 +401,7 @@ class IecCommandChannel : public IecChannel
     void copy(command_t& command);
     void exec_command(command_t &command);
     void get_error_string(void);
-    bool parse_command(char *buffer, command_t *command);
+    bool parse_command(char *buffer, int length, command_t *command);
 public:
     IecCommandChannel(IecInterface *intf, int ch);
     virtual ~IecCommandChannel();
