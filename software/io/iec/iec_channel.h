@@ -256,6 +256,7 @@ public:
         int f = 0;
         char *filenames[5] = { 0, 0, 0, 0, 0 };
         split_string(',', command.remaining, filenames, 5);
+        ReadDirectory();
         for(int i=0;i<5;i++) {
             if (!filenames[i]) {
                 break;
