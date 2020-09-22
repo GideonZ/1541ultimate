@@ -1,7 +1,7 @@
 #include "iec_channel.h"
 #include "dump_hex.h"
 
-const char *modeNames[] = { "", "Read", "Write", "Replace", "Append" };
+const char *modeNames[] = { "", "Read", "Write", "Replace", "Append", "Relative" };
 
 IecChannel :: IecChannel(IecInterface *intf, int ch)
 {
@@ -16,7 +16,6 @@ IecChannel :: IecChannel(IecInterface *intf, int ch)
     bytes = 0;
     last_byte = 0;
     size = 0;
-    last_command = 0;
     prefetch = 0;
     prefetch_max = 0;
     dirPartition = NULL;
@@ -26,7 +25,7 @@ IecChannel :: IecChannel(IecInterface *intf, int ch)
     name.mode = e_undefined;
     partition = NULL;
     flags = 0;
-
+    recordSize = 0;
 }
 
 IecChannel :: ~IecChannel()
@@ -44,7 +43,6 @@ void IecChannel :: reset(void)
     bytes = 0;
     last_byte = 0;
     size = 0;
-    last_command = 0;
     prefetch = 0;
     prefetch_max = 0;
     dirPartition = NULL;
@@ -78,7 +76,7 @@ int IecChannel :: prefetch_data(uint8_t& data)
     if (prefetch > prefetch_max) {
         return IEC_NO_FILE;
     }
-    return IEC_BUFFER_END;
+    return IEC_BUFFER_END; // prefetch == prefetch_max, buffer needs refresh
 }
 
 int IecChannel :: pop_data(void)
@@ -103,6 +101,16 @@ int IecChannel :: pop_data(void)
                 while(read_dir_entry())
                     ;
                 return IEC_OK;
+            }
+            break;
+        case e_record:
+            if(pointer >= recordSize) {
+                if (read_record()) {
+                    return IEC_OK;
+                } else {
+                    state = e_complete;
+                    return IEC_NO_FILE;
+                }
             }
             break;
         default:
@@ -206,6 +214,55 @@ int IecChannel :: read_block(void)
     return 0;
 }
 
+int IecChannel :: read_record(void)
+{
+    FRESULT res = FR_DENIED;
+    uint32_t bytes;
+    if(f) {
+        res = f->read(buffer, recordSize, &bytes);
+    }
+    if(res != FR_OK) {
+        state = e_error;
+        return IEC_READ_ERROR;
+    }
+    if(bytes == 0)
+        state = e_complete; // end should have triggered already
+
+    last_byte = recordSize - 1;
+
+    pointer = 0;
+    prefetch = 0;
+    prefetch_max = recordSize;
+    return 0;
+}
+
+int IecChannel :: write_record(void)
+{
+    FRESULT res = FR_DENIED;
+    uint32_t bytes;
+
+    if(f) {
+        if ((pointer < recordSize) && (pointer >= 0)) {
+            memset(buffer+pointer, 0, recordSize-pointer); // fill up with zeros at the end
+        }
+        // should we do a seek here?  Or will it bug exactly like a CBM drive if we don't?
+        res = f->write(buffer, recordSize, &bytes);
+        // If the file pointer was aligned on a record boundary, it will still be on a record boundary.
+        // The file pointer will be on the next record. Should we read it and seek back to the beginning of the record?
+        // What happens on a real drive when we switch between writing and reading?
+
+        // FIXME: On real drives, the file size does not grow by just writing; only by seeking; so we may want to
+        // check the current position against the size and issue "Record does not exist" error when the
+        // file boundary would be exceeded here.
+    }
+
+    if(res != FR_OK) {
+        state = e_error;
+        return IEC_WRITE_ERROR;
+    }
+    return IEC_OK;
+}
+
 int IecChannel :: push_data(uint8_t b)
 {
     uint32_t bytes;
@@ -215,6 +272,18 @@ int IecChannel :: push_data(uint8_t b)
             if(pointer < 64)
                 buffer[pointer++] = b;
             break;
+
+        case e_record:
+            if (pointer == recordSize) {
+                // issue error 50
+                interface->get_command_channel()->set_error(ERR_OVERFLOW_IN_RECORD, 0, 0);
+                state = e_error;
+            } else {
+                buffer[pointer++] = b;
+            }
+            break;
+            // the actual writing does not happen here, because it is initiated by EOI
+
         case e_file:
             buffer[pointer++] = b;
             if(pointer == 256) {
@@ -240,9 +309,6 @@ int IecChannel :: push_data(uint8_t b)
 
 int IecChannel :: push_command(uint8_t b)
 {
-    if(b)
-        last_command = b;
-
     switch(b) {
         case 0xF0: // open
             close_file();
@@ -266,6 +332,13 @@ int IecChannel :: push_command(uint8_t b)
                     state = e_error;
                     return IEC_WRITE_ERROR;
                 }
+            } else if(state == e_record) {
+                state = e_idle;
+                int r = write_record();
+                close_file();
+                return r;
+            } else {
+                close_file();
             }
             state = e_idle;
             break;
@@ -273,8 +346,12 @@ int IecChannel :: push_command(uint8_t b)
             reset_prefetch();
             break;
         case 0x00: // end of data
-            if(last_command == 0xF0)
+            // if(last_command == 0xF0) // shouldn't we check on state == e_filename here?
+            if (state == e_filename) {
                 open_file();
+            } else if(state == e_record) {
+                return write_record(); // sets error if necessary. Advances to next record if OK
+            }
             break;
         default:
             printf("Error on channel %d. Unknown command: %b\n", channel, b);
@@ -294,12 +371,11 @@ void IecChannel :: dump_name(name_t& name, const char *id)
 {
 #if IECDEBUG
     const char *n = name.name ? name.name : "(null)";
-    printf("  %s: [%d:] '%s%s' [%s] Dir: %s, Explicit Extension: %s\n",  id, name.drive, n,
+    printf("%s: [%d:] '%s%s'\n  Mode: %s\n  Dir: %s\n  Explicit Extension: %s\n  Record size: %d\n",  id, name.drive, n,
             name.extension, modeNames[name.mode], name.directory ? "Yes" : "No",
-            name.explicitExt ? "Yes" : "No");
+            name.explicitExt ? "Yes" : "No", name.recordSize);
 #endif
 }
-
 
 bool IecChannel :: hasIllegalChars(const char *name)
 {
@@ -324,11 +400,12 @@ bool IecChannel :: parse_filename(char *buffer, name_t *name, int default_drive,
 #endif
 
     name->drive = default_drive;
-    name->extension = (channel < 2) ? ".prg" : ".seq";
+    name->extension = 0;
     name->explicitExt = false;
     name->mode = (channel == 0) ? e_read : ((channel == 1) ? e_write : e_undefined);
     name->name = buffer;
     name->directory = false;
+    name->recordSize = 0;
 
     char *s = buffer;
     if (isEmptyString(s)) {
@@ -396,6 +473,11 @@ bool IecChannel :: parse_filename(char *buffer, name_t *name, int default_drive,
             case 'L':
                 name->extension = ".rel";
                 name->explicitExt = true;
+                if (parts[3-i]) {
+                    name->recordSize = parts[3-i][0];
+                }
+                name->mode = e_relative;
+                i = 2;
                 break;
             case 'R':
                 name->mode = e_read;
@@ -413,6 +495,11 @@ bool IecChannel :: parse_filename(char *buffer, name_t *name, int default_drive,
         if (name->name[0] == '@') {
             name->mode = e_replace;
             name->name++;
+        }
+    }
+    if (!name->extension) {
+        if (name->mode == e_read) {
+            name->extension = ".???";
         }
     }
 
@@ -499,6 +586,12 @@ int IecChannel :: setup_file_access(name_t& name)
         flags = FA_WRITE|FA_CREATE_ALWAYS;
         break;
 
+    case e_relative:
+        petscii_to_fat(name.name, fs_filename);
+        strcat(fs_filename, name.extension);
+        flags = FA_READ | FA_WRITE | FA_OPEN_ALWAYS;
+        break;
+
     default: // read / undefined
         if (pos < 0) {
             interface->get_command_channel()->set_error(ERR_FILE_NOT_FOUND, dirPartition->GetPartitionNumber());
@@ -545,10 +638,12 @@ int IecChannel :: open_file(void)  // name should be in buffer
     printf("Open file. Raw Filename = '%s'\n", buffer);
 
     fs_filename[0] = 0;
+    uint32_t tr = 0;
 
     parse_filename((char *)buffer, &name, -1, true);
 
     dirPartition = interface->vfs->GetPartition(name.drive);
+    recordSize = 0;
 
     if(name.directory) {
         return setup_directory_read(name);
@@ -556,12 +651,33 @@ int IecChannel :: open_file(void)  // name should be in buffer
     setup_file_access(name);
 
     FRESULT fres = fm->fopen(partition->GetPath(), fs_filename, flags, &f);
+    interface->get_command_channel()->set_error(ERR_OK, 0, 0);
     if(f) {
         printf("Successfully opened file %s in %s\n", fs_filename, partition->GetFullPath());
-        interface->set_error(ERR_OK, 0, 0);
+
+        if (name.mode == e_relative) {
+            if (!f->get_size()) { // the file must be newly created, because its size is 0.
+                uint16_t wrd = name.recordSize;
+                fres = f->write(&wrd, 2, &tr);
+                interface->set_error_fres(fres);
+                if (fres == FR_OK) {
+                    recordSize = name.recordSize;
+                }
+            } else { // file already exists
+                uint16_t wrd;
+                fres = f->read(&wrd, 2, &tr);
+                recordSize = (uint8_t)wrd;
+                if (wrd >= 256) {
+                    printf("WARNING: Illegal record size in .rel file...Is it a REL file at all? (%d)\n", wrd);
+                }
+                interface->set_error_fres(fres);
+                printf("Opened existing relative file. Record size is: %d.\n", recordSize);
+            }
+        }
         return init_iec_transfer();
     } else {
         printf("Can't open file %s in %s: %s\n", fs_filename, partition->GetFullPath(), FileSystem :: get_error_string(fres));
+        interface->set_error_fres(fres);
     }
     return 0;
 }
@@ -591,6 +707,68 @@ int IecChannel :: ext_open_file(const char *name)
 int IecChannel :: ext_close_file(void)
 {
     return push_command(0xE0);
+}
+
+void IecChannel :: seek_record(const uint8_t *cmd)
+{
+    const uint32_t c_header = 2;
+
+    uint32_t recordNumber = ((uint32_t)cmd[3]) << 8;
+    recordNumber |= cmd[2];
+    uint8_t offset = cmd[4];
+
+    if (recordNumber != 0)
+        recordNumber--;  // Record numbers are starting from 1.
+    if (offset != 0)
+        offset--; // Offset starts from 1, too.. we are 0 based
+
+    printf("SEEK Record Number #%d. Offset = %d\n", recordNumber, offset);
+    if (!f) {
+        interface->get_command_channel()->set_error(ERR_FILE_NOT_OPEN, 0, 0);
+        return;
+    }
+    if (!recordSize) { // not a (valid) rel file
+        interface->get_command_channel()->set_error(ERR_FILE_TYPE_MISMATCH, 0, 0);
+        return;
+    }
+    uint32_t minimumFileSize = c_header + (recordNumber+1) * recordSize; // reserve 2 bytes in the beginning
+    uint32_t currentSize = f->get_size();
+    FRESULT fres;
+    if (currentSize < minimumFileSize) { // append with additional records that are 'FF's, followed by zeros.
+        fres = f->seek(currentSize);
+
+        uint8_t *block = new uint8_t[512];
+        uint32_t tr = 0;
+        memset(block, 0x00, 512);
+        uint32_t partialRecord = (currentSize - c_header) % recordSize;
+
+        if (partialRecord) {
+            printf("Current file size should be a multiple of record size.. This should not happen.\n");
+            fres = f->write(block, partialRecord, &tr);
+            currentSize += partialRecord;
+        }
+        printf("Append REL file until size %d (was %d)\n", minimumFileSize, currentSize);
+        uint32_t remain = minimumFileSize - currentSize;
+        block[0] = 0xFF;
+        while(remain >= recordSize) {
+            fres = f->write(block, recordSize, &tr);
+            remain -= recordSize;
+        }
+        delete[] block;
+        interface->get_command_channel()->set_error(ERR_RECORD_NOT_PRESENT, 0, 0);
+    }
+    if (offset > recordSize - 1) {
+        offset = recordSize - 1;
+        interface->get_command_channel()->set_error(ERR_OVERFLOW_IN_RECORD, 0, 0);
+    }
+    uint32_t targetPosition = c_header + (recordNumber * recordSize) + offset; // reserve 2 bytes for control (record Size)
+
+    fres = f->seek(targetPosition);
+    if (fres != FR_OK) {
+        interface->set_error_fres(fres);
+        return;
+    }
+    reset_prefetch();
 }
 
 /******************************************************************************
@@ -666,7 +844,7 @@ int IecCommandChannel :: push_data(uint8_t b)
     return IEC_BYTE_LOST;
 }
 
-bool IecCommandChannel :: parse_command(char *buffer, command_t *command)
+bool IecCommandChannel :: parse_command(char *buffer, int length, command_t *command)
 {
 #if IECDEBUG
     printf("Parsing command: '%s'\n", buffer);
@@ -674,6 +852,16 @@ bool IecCommandChannel :: parse_command(char *buffer, command_t *command)
     // initialize
     bool digits = false;
     command->digits = 0;
+    command->remaining = 0;
+
+    // Handle non-null terminated string commands
+    if ((buffer[0] == 'P') && ((buffer[1] & 0xF0) == 0x60) && (length >=4)) { // rel file positioning command
+        memcpy(command->cmd, buffer, 5);
+        if (length < 5) {
+            command->cmd[4] = 1; // default for Positioning command
+        }
+        return true;
+    }
 
     // First strip off any carriage returns, in any case
     int len = strlen(buffer);
@@ -723,9 +911,16 @@ bool IecCommandChannel :: parse_command(char *buffer, command_t *command)
 void IecCommandChannel :: exec_command(command_t &command)
 {
     IecPartition *p;
+    IecChannel *ch;
 
     if (isEmptyString(command.cmd)) {
         set_error(ERR_SYNTAX_ERROR_GEN);
+    } else if(command.cmd[0] == 'P') {
+        if ((command.cmd[1] <= 0x60) || (command.cmd[1] >= 0x6E)) {
+            set_error(ERR_SYNTAX_ERROR_CMD);
+        }
+        ch = interface->get_data_channel(command.cmd[1] & 0x0F);
+        ch->seek_record((uint8_t *)command.cmd);
     } else if (strcmp(command.cmd, "CD") == 0) {
         p = interface->vfs->GetPartition(command.digits);
         if (isEmptyString(command.remaining)) {
@@ -1000,7 +1195,7 @@ int IecCommandChannel :: push_command(uint8_t b)
         case 0x00: // end of data, command received in buffer
             wr_buffer[wr_pointer]=0;
             if (wr_pointer) {
-                parse_command((char *)wr_buffer, &command);
+                parse_command((char *)wr_buffer, wr_pointer, &command);
                 dump_command(command);
                 exec_command(command);
             }
