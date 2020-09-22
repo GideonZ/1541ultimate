@@ -317,33 +317,6 @@ bool IecChannel :: hasIllegalChars(const char *name)
     return false;
 }
 
-const char *IecChannel :: GetExtension(char specifiedType, bool &explicitExt)
-{
-    explicitExt = false;
-    const char *extension = "";
-    switch(specifiedType) {
-    case 'P':
-        extension = ".prg";
-        explicitExt = true;
-        break;
-    case 'S':
-        extension = ".seq";
-        explicitExt = true;
-        break;
-    case 'U':
-        extension = ".usr";
-        explicitExt = true;
-        break;
-    case 'D':
-        extension = ".dir";
-        explicitExt = true;
-        break;
-    default:
-        printf("Unknown filetype: %c\n", specifiedType);
-    }
-    return extension;
-}
-
 bool IecChannel :: parse_filename(char *buffer, name_t *name, int default_drive, bool doFlags)
 {
 #if IECDEBUG

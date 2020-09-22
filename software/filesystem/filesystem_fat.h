@@ -23,7 +23,7 @@ public:
 
     bool    init(void);              // Initialize file system
     FRESULT get_free (uint32_t *e);  // Get number of free sectors on the file system
-    bool is_writable();				 // by default a file system is not writable, unless we implement it
+    bool    is_writable();           // by default a file system is not writable, unless we implement it
     FRESULT sync(void); 			 // by default we can't write, and syncing is thus always successful
 
     // functions for reading directories
@@ -34,7 +34,6 @@ public:
 
     // functions for reading and writing files
     FRESULT file_open(const char *path, Directory *, const char *filename, uint8_t flags, File **);
-    FRESULT file_open(const char *path, uint8_t flags, File **);  // Opens file (creates file object)
     FRESULT file_rename(const char *old_name, const char *new_name); // Renames a file
 	FRESULT file_delete(const char *name); // deletes a file
 

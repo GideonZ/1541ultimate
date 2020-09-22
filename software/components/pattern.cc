@@ -1,5 +1,6 @@
 #include "pattern.h"
 #include <string.h>
+#include <stdint.h>
 #include <cctype>
 /*
 -------------------------------------------------------------------------------
@@ -132,3 +133,157 @@ int main()
 }
 
 #endif
+
+/* some handy functions */
+void set_extension(char *buffer, const char *ext, int buf_size)
+{
+    // try to remove the existing extension
+    int name_len = strlen(buffer);
+    for(int i=name_len-1;i>=0;i--) {
+        if(buffer[i] == '.') {
+            buffer[i] = 0;
+            break;
+        }
+    }
+
+    add_extension(buffer, ext, buf_size);
+}
+
+void add_extension(char *buffer, const char *ext, int buf_size)
+{
+    // skip leading dots of extension to set
+    while(*ext == '.') {
+        ext++;
+    }
+    int ext_len = strlen(ext) + 1; // +1 because of dot
+    if(buf_size < 1+ext_len)
+        return; // cant append, even to an empty base
+
+    if (!(*ext)) { // there is nothing to append
+        return;
+    }
+
+    int name_len = strlen(buffer);
+    if(name_len + ext_len + 1 > buf_size) {
+        buffer[buf_size-ext_len-1] = 0; // truncate to make space for extension!
+    }
+    strcat(buffer, ".");
+    strcat(buffer, ext);
+}
+
+void fix_filename(char *buffer)
+{
+    const char illegal[] = "\"*:/<>\\?|,\x7F";
+    int illegal_count = strlen(illegal);
+    int len = strlen(buffer);
+
+    for(int i=0;i<len;i++)
+        for(int j=0;j<illegal_count;j++)
+            if(buffer[i] == illegal[j])
+                buffer[i] = '_';
+
+}
+
+void get_extension(const char *name, char *ext)
+{
+    int len = strlen(name);
+    ext[0] = 0;
+
+    for (int i=len-1;i>=0;i--) {
+        if (name[i] == '.') { // last . found
+            for(int j=0;j<3;j++) { // copy max 3 chars
+                ext[j+1] = 0; // the char after the current is always end
+                if (!name[i+1+j])
+                    break;
+                ext[j] = toupper(name[i+1+j]);
+            }
+            break;
+        }
+    }
+}
+
+void petscii_to_fat(const char *pet, char *fat)
+{
+    // clear output string
+    const char *hex = "0123456789ABCDEF";
+    bool escape = false;
+    int i = 0;
+    while(*pet) {
+        char p = *(pet++);
+        if ((p < 32) || (p >= 96) || (p == ':') || (p == '/') ||
+                (p == '\\') || (p == '*') || (p == '\x22') ||
+                (p == '<') || (p == '>') || (p == '?')) {  // '|' > 96 ;)
+            if (!escape) {
+                fat[i++] = '{';
+                escape = true;
+            }
+            fat[i++] = hex[((uint8_t)p) >> 4];
+            fat[i++] = hex[p & 15];
+        } else {
+            if (escape) {
+                fat[i++] = '}';
+                escape = false;
+            }
+            fat[i++] = tolower(p);
+        }
+    }
+    if (escape) {
+        fat[i++] = '}';
+        escape = false;
+    }
+    fat[i] = 0;
+}
+
+static bool hex2bin(char c, uint8_t& out)
+{
+    if ((c >= '0') && (c <= '9')) {
+        out = (uint8_t)(c - '0');
+        return true;
+    }
+    if ((c >= 'A') && (c <= 'F')) {
+        out = (uint8_t)(c - 'A') + 10;
+        return true;
+    }
+    if ((c >= 'a') && (c <= 'f')) {
+        out = (uint8_t)(c - 'a') + 10;
+        return true;
+    }
+    return false;
+}
+
+void fat_to_petscii(const char *fat, char *pet, int len)
+{
+    int i = 0;
+    bool escape = false;
+    while(*fat && i < len) {
+        char f = *fat;
+        if (f == '{') {
+            escape = true;
+            fat++;
+        }
+        if (escape) {
+            char h = fat[0];
+            char l = fat[1];
+            if (!h || !l) {
+                break;
+            }
+            uint8_t hb, lb;
+            if (!hex2bin(h, hb) || !hex2bin(l, lb)) {
+                escape = false;
+                // do not advance
+            } else {
+                pet[i++] = (hb << 4) | lb;
+                fat += 2;
+            }
+        } else {
+            if (f == '}') {
+                escape = false;
+                fat++;
+            } else {
+                pet[i++] = toupper(f);
+                fat++;
+            }
+        }
+    }
+    pet[i] = 0;
+}
