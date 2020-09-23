@@ -52,7 +52,7 @@ void REUPreloader::poll(void)
     while (1) {
         if ((event = (FileManagerEvent *) observerQueue->waitForEvent(25))) {
 
-            if (event->eventType == eNodeUpdated && event->pathName == "/") {
+            if (((event->eventType == eNodeUpdated) || (event->eventType == eNodeAdded)) && event->pathName == "/") {
 
                 if (strcasecmp(path->getElement(0), event->newName.c_str()) == 0) {
 
