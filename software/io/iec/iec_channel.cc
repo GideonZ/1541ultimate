@@ -26,6 +26,8 @@ IecChannel :: IecChannel(IecInterface *intf, int ch)
     partition = NULL;
     flags = 0;
     recordSize = 0;
+    recordOffset = 0;
+    recordDirty = false;
 }
 
 IecChannel :: ~IecChannel()
@@ -63,7 +65,7 @@ int IecChannel :: prefetch_data(uint8_t& data)
     if (state == e_error) {
         return IEC_NO_FILE;
     }
-    if (prefetch == last_byte) {
+    if (prefetch >= last_byte) {
         data = buffer[prefetch];
         prefetch++;
         return IEC_LAST;
@@ -105,7 +107,8 @@ int IecChannel :: pop_data(void)
             break;
         case e_record:
             if(pointer >= recordSize) {
-                if (read_record()) {
+                recordOffset += recordSize;
+                if (read_record(0)) {
                     return IEC_OK;
                 } else {
                     state = e_complete;
@@ -214,12 +217,20 @@ int IecChannel :: read_block(void)
     return 0;
 }
 
-int IecChannel :: read_record(void)
+int IecChannel :: read_record(int offset)
 {
     FRESULT res = FR_DENIED;
     uint32_t bytes;
     if(f) {
         res = f->read(buffer, recordSize, &bytes);
+    }
+    last_byte = recordSize - 1;
+    for(int i=offset;i <= recordSize; i++) {
+        if ((buffer[i] == 0) || (buffer[i] == 0xFF)) {
+            buffer[i] = 0x0D;
+            last_byte = i;
+            break;
+        }
     }
     if(res != FR_OK) {
         state = e_error;
@@ -228,11 +239,11 @@ int IecChannel :: read_record(void)
     if(bytes == 0)
         state = e_complete; // end should have triggered already
 
-    last_byte = recordSize - 1;
-
-    pointer = 0;
-    prefetch = 0;
-    prefetch_max = recordSize;
+    pointer = offset;
+    prefetch = offset;
+    prefetch_max = last_byte + 1;
+    recordDirty = false;
+    state = e_record;
     return 0;
 }
 
@@ -241,15 +252,26 @@ int IecChannel :: write_record(void)
     FRESULT res = FR_DENIED;
     uint32_t bytes;
 
+    if (!recordDirty) {
+        return IEC_OK; // do nothing; no data was received
+    }
     if(f) {
         if ((pointer < recordSize) && (pointer >= 0)) {
             memset(buffer+pointer, 0, recordSize-pointer); // fill up with zeros at the end
+            if (pointer == 0) {
+                buffer[0] = 0xFF;
+            }
         }
-        // should we do a seek here?  Or will it bug exactly like a CBM drive if we don't?
-        res = f->write(buffer, recordSize, &bytes);
+        // if everything went well, we are on a record boundary already by the last 'seek' operation
+        res = f->seek(recordOffset);
+        if (res == FR_OK) {
+            res = f->write(buffer, recordSize, &bytes);
+            if (res == FR_OK) {
+                res = f->sync();
+            }
+        }
         // If the file pointer was aligned on a record boundary, it will still be on a record boundary.
         // The file pointer will be on the next record. Should we read it and seek back to the beginning of the record?
-        // What happens on a real drive when we switch between writing and reading?
 
         // FIXME: On real drives, the file size does not grow by just writing; only by seeking; so we may want to
         // check the current position against the size and issue "Record does not exist" error when the
@@ -280,6 +302,7 @@ int IecChannel :: push_data(uint8_t b)
                 state = e_error;
             } else {
                 buffer[pointer++] = b;
+                recordDirty = true;
             }
             break;
             // the actual writing does not happen here, because it is initiated by EOI
@@ -713,6 +736,9 @@ void IecChannel :: seek_record(const uint8_t *cmd)
 {
     const uint32_t c_header = 2;
 
+    // flush
+    write_record();
+
     uint32_t recordNumber = ((uint32_t)cmd[3]) << 8;
     recordNumber |= cmd[2];
     uint8_t offset = cmd[4];
@@ -761,14 +787,15 @@ void IecChannel :: seek_record(const uint8_t *cmd)
         offset = recordSize - 1;
         interface->get_command_channel()->set_error(ERR_OVERFLOW_IN_RECORD, 0, 0);
     }
-    uint32_t targetPosition = c_header + (recordNumber * recordSize) + offset; // reserve 2 bytes for control (record Size)
+    uint32_t targetPosition = c_header + (recordNumber * recordSize); // + offset; // reserve 2 bytes for control (record Size)
 
     fres = f->seek(targetPosition);
     if (fres != FR_OK) {
         interface->set_error_fres(fres);
         return;
     }
-    reset_prefetch();
+    recordOffset = targetPosition;
+    read_record(offset);
 }
 
 /******************************************************************************

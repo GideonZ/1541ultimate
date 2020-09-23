@@ -347,7 +347,9 @@ class IecChannel
     t_channel_state state;
     mstring dirpattern;
     int  last_byte;
+    uint32_t recordOffset;
     uint8_t recordSize;
+    bool recordDirty;
 
     // temporaries
     uint32_t bytes;
@@ -366,7 +368,7 @@ private:
     int close_file(void); // file should be open
     int read_dir_entry(void);
     int read_block(void);
-    int read_record(void);
+    int read_record(int offset);
     int write_record(void);
 
     void dump_command(command_t& cmd);
