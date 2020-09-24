@@ -1,30 +1,14 @@
-RESULT    = .
-OUTPUT    = output
+PRJ      =  cyg_filesystems
+FINAL    =  $(RESULT)/$(PRJ)
 
-PATH_SW  =  ../../../software
+include ../common/environment.mk
 
-VPATH     = $(PATH_SW)/test/filesys \
-            $(PATH_SW)/chan_fat \
-			$(PATH_SW)/chan_fat/option \
-			$(PATH_SW)/chan_fat/full \
-			$(PATH_SW)/filesystem \
-			$(PATH_SW)/filemanager \
-			$(PATH_SW)/components \
-			$(PATH_SW)/infra \
-			$(PATH_SW)/system \
-			$(PATH_SW)/FreeRTOS/Source \
-			$(PATH_SW)/FreeRTOS/Source/include \
-			$(PATH_SW)/FreeRTOS/Source/portable \
-			$(PATH_SW)/FreeRTOS/Source/MemMang \
+VPATH +=	$(PATH_SW)/FreeRTOS/Source/portable/microblaze
+VPATH +=	$(PATH_SW)/test/filesys
 
 INCLUDES =  $(wildcard $(addsuffix /*.h, $(VPATH)))
 
-# XILINX ?= C:/Xilinx/13.2
-# TOOLCHAIN = $(XILINX)/ISE_DS/EDK/gnu/microblaze/nt
-# XILINXBIN = $(XILINX)/ISE_DS/ISE/bin/nt
-
 PATH_INC =  $(addprefix -I, $(VPATH))
-# VPATH   += $(OUTPUT) $(RESULT)
 
 CROSS     = 
 CC		  = $(CROSS)gcc
@@ -36,8 +20,6 @@ SIZE	  = $(CROSS)size
 
 .SUFFIXES:
 
-PRJ      =  cyg_filesystems
-FINAL    =  $(RESULT)/$(PRJ).exe
 
 SRCS_C   =	ff2.c \
             ccsbcs.c \
@@ -80,7 +62,7 @@ SRCS_IEC =
 SRCS_NANO = 
 
 PATH_INC =  $(addprefix -I, $(VPATH))
-OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC 
+OPTIONS  = -g -ffunction-sections -O0 -DRUNS_ON_PC -Wno-format -Wno-format-extra-args
 COPTIONS = $(OPTIONS) -std=c99
 CPPOPT   = $(OPTIONS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 LINK 	 = ./mb_app.lds
@@ -89,7 +71,7 @@ LFLAGS   = --gc-sections
 
 include ../common/rules.mk
 
-$(RESULT)/$(PRJ).exe: $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO)
+$(RESULT)/$(PRJ): $(OBJS_C) $(OBJS_CC) $(OBJS_ASM) $(OBJS_6502) $(OBJS_BIN) $(OBJS_IEC) $(OBJS_NANO)
 	@echo Linking...
 	$(CPP) $(ALL_OBJS) $(LLIB) -o $(RESULT)/$(PRJ).exe  $(LIBS)
 

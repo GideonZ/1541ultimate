@@ -2,7 +2,6 @@
 #define ITU_H
 
 #include "integer.h"
-#include "portmacro.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -78,6 +77,7 @@ extern "C" {
 # define ENTER_SAFE_SECTION
 # define LEAVE_SAFE_SECTION
 #else
+#include "portmacro.h"
 # define ENTER_SAFE_SECTION portDISABLE_INTERRUPTS(); // ioWrite8(ITU_IRQ_GLOBAL,0);
 # define LEAVE_SAFE_SECTION portENABLE_INTERRUPTS();  // ioWrite8(ITU_IRQ_GLOBAL,1);
 #endif
