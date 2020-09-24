@@ -6,9 +6,14 @@
 #include "filesystem_root.h"
 #include "cached_tree_node.h"
 #include "observer.h"
+#include "embedded_fs.h"
+
+#ifdef OS
 #include "FreeRTOS.h"
 #include "semphr.h"
-#include "embedded_fs.h"
+#else
+typedef void * SemaphoreHandle_t;
+#endif
 
 #define INFO_SIZE 128
 
