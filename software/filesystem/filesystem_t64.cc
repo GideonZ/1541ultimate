@@ -55,7 +55,7 @@ FRESULT FileSystemT64 :: dir_open(const char *path, Directory **dir, FileInfo *i
 	}
 
 	*dir = new Directory(this, 0); // use handle as index in dir. reset to 0
-    return FR_OK;
+	return FR_OK;
 }
 
 // Closes (and destructs dir object)
@@ -67,7 +67,7 @@ void FileSystemT64 :: dir_close(Directory *d)
 // reads next entry from dir
 FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 {
-    uint32_t idx = (uint32_t)d->handle;
+    uint32_t idx = (uint32_t)d->index;
 	uint8_t read_buf[32], c;
 	uint8_t *p;
 	FRESULT fres;
@@ -166,7 +166,7 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 		}
 	}
     idx++;
-    d->handle = (void*)idx;
+    d->index = idx;
 	return FR_OK;
 }
 
