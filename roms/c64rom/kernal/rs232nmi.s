@@ -24,7 +24,7 @@ nnmi19
 ;
 ; timb - where system goes on a brk instruction
 ;
-timb	jsr restor      ;restore system indirects
+timb	jsr ulti_restor ;restore system indirects
 	jsr ioinit      ;restore i/o for basic
 	jsr cint        ;restore screen for basic
 	jmp ($a002)     ;...no, so basic warm start
