@@ -35,23 +35,8 @@
         UCI_CMD_CHKIN  = $15
         UCI_CMD_CHKOUT = $16
 
-        OUR_DEVICE = $96
-
-        OPEN_VECTOR   = $031A
-        CLOSE_VECTOR  = $031C
-        CHKIN_VECTOR  = $031E
-        CHKOUT_VECTOR = $0320
-        CLRCHN_VECTOR = $0322
-        CHRIN_VECTOR  = $0324
-        CHROUT_VECTOR = $0326
-        GETIN_VECTOR  = $032A
-        LOAD_VECTOR   = $0330
-        SAVE_VECTOR   = $0332
-
         STATUS     = $90
         VERIFYFLAG = $93
-        DEVFROM    = $99
-        DEVTO      = $9A
         LOADPNTR   = $AE
         SECADDR    = $B9
         DEVNUM     = $BA
@@ -64,14 +49,8 @@
         MY_OUTLEN       = $0276 ; Last byte of secondary address table
         UCI_PENDING_CMD = $026C ; Last byte of device number table
 
-        SHOW_SEARCHING          = $F5AF
-        SHOW_LOADING            = $F5D2
-        SHOW_SAVING             = $F68F
-
 
 ulti_restor
-            lda #9
-            sta OUR_DEVICE
             jsr uci_abort
             jsr uci_clear_error
             jmp restor
@@ -102,7 +81,7 @@ ld2         lda CMD_IF_COMMAND
             bne ld1
 
             ldx SECADDR
-            jsr SHOW_SEARCHING
+            jsr luking ; print SEARCHING
             ldx #UCI_CMD_LOADSU
             jsr uci_setup_cmd
             ldy #LOADADDR
@@ -113,7 +92,7 @@ ld2         lda CMD_IF_COMMAND
             beq ld3 ; all OK when zero
             jmp error4
 
-ld3         jsr SHOW_LOADING
+ld3         jsr loding ; print LOADING
 
             ldx #UCI_CMD_LOADEX
             jsr uci_setup_cmd
@@ -164,7 +143,7 @@ sv2         lda CMD_IF_COMMAND
             cmp #UCI_IDENTIFIER
             bne sv1
 
-            jsr SHOW_SAVING
+            jsr saving ; print SAVING
 
             ldx #UCI_CMD_SAVE
             jsr uci_setup_cmd
@@ -234,8 +213,7 @@ myclose     ldx CMD_IF_COMMAND
             jsr uci_setup_cmd
             jsr uci_execute
             jsr uci_ack
-            clc
-            rts
+            jmp jx150
 
 ; $FFE4   
 ; GETIN. Read byte from default input. (If not keyboard, must call OPEN and CHKIN beforehand.)
@@ -267,38 +245,51 @@ ultichrin   cmp OUR_DEVICE
             jmp bn15
 cin1        jmp bn20
 
-my_chrin    lda CMD_IF_CONTROL
+my_chrin    ; is there any data available in the current buffer?
+            lda CMD_IF_CONTROL
             bpl _no_data_avail
+
+            ; read available data and store it on the stack
             lda CMD_IF_RESULT
             pha
+
+            ; a byte was succesfully read. However, was this the last byte?
             lda CMD_IF_CONTROL
-            bmi _ok
+            bmi _ok   ; there is more in the current buffer
+
+            ; end of current buffer. Is this the last buffer?
             and #CMD_STATE_BITS
-            cmp #CMD_STATE_LAST_DATA
-            bne _ok
-            jmp _eof
+            cmp #CMD_STATE_MORE_DATA
+            beq _ok   ; there is a next buffer. So we are fine
+
+            ; No next buffer available, so set EOI
+            lda #$40
+            ora STATUS
+            sta STATUS
+
+            ; pick up the byte we read and leave
 _ok         pla
             clc
             rts ; done!!
 
+
 _no_data_avail
+            ; Current buffer is empty. Are we in the MORE data state?
             and #CMD_STATE_BITS
-            cmp #CMD_STATE_LAST_DATA
-            beq _end_of_file
+            cmp #CMD_STATE_MORE_DATA
+            bne _read_error
 
             ; Get next block of data
             jsr uci_ack
             jsr uci_wait_busy
             jmp my_chrin
 
-_end_of_file
-            lda #$0D
-            pha
-_eof
-            lda #$40
+_read_error
+            ; No data could be read. We return $0D, and set EOF + Read Error
+            lda #$42
             ora STATUS
             sta STATUS
-            pla
+            lda #$0D
             clc
             rts
 
@@ -370,7 +361,7 @@ ultichkout  cmp OUR_DEVICE
             jmp ck14
 _ck30       jmp ck30
 
-_my_chkout  sta DEVTO
+_my_chkout  sta dflto
 do_chkout   lda #0
             sta MY_OUTLEN
             ldx #UCI_CMD_CHKOUT
@@ -384,10 +375,18 @@ do_chkout   lda #0
 ; Used registers: A, X.
 ; Real address: ($0322), $F333.
 ; 
-ulticlrchn  cpx OUR_DEVICE
-            beq _my_clrchn
+ulticlrchn_lsn
+            lda dflto
+            cmp OUR_DEVICE
+            beq uci_abort; _my_clrchn
             jmp unlsn ; if it was not us, it is serial
-_my_clrchn  jmp uci_abort
+;_my_clrchn  jmp uci_abort
+
+ulticlrchn_tlk
+            lda dfltn
+            cmp OUR_DEVICE
+            beq uci_abort; _my_clrchn
+            jmp untlk ; if it was not us, it is serial
 
 ;; UCI
 

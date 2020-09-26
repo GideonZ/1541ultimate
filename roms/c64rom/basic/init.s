@@ -111,7 +111,7 @@ initv1	lda bvtrs,x
 chke0	.byt $00
 
 words	.byt " BASIC BYTES FREE",13,0
-fremes	.byt 147,13,"    **** COMMODORE 64 BASIC V2 ****"
+fremes	.byt 147,13,"    **** ULTIMATE 64  BASIC V2 ****"
 	.byt 13,13," 64K RAM SYSTEM  ",0
 	.byt 0
 ; ppach - print# patch to coout (save .a)
