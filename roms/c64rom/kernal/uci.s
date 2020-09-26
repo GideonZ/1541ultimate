@@ -60,7 +60,9 @@
         LOADADDR   = $C3
         SAVEADDR   = $C1
         SAVEEND    = $AE
-        MY_OUTLEN  = $0276 ; Last byte of logical file table
+
+        MY_OUTLEN       = $0276 ; Last byte of secondary address table
+        UCI_PENDING_CMD = $026C ; Last byte of device number table
 
         SHOW_SEARCHING          = $F5AF
         SHOW_LOADING            = $F5D2
@@ -70,6 +72,7 @@
 ulti_restor
             lda #9
             sta OUR_DEVICE
+            jsr uci_abort
             jsr uci_clear_error
             jmp restor
 
@@ -389,6 +392,13 @@ _my_clrchn  jmp uci_abort
 ;; UCI
 
 uci_setup_cmd
+            bit UCI_PENDING_CMD
+            bpl :+
+            jsr uci_abort ; this will also abort an open command by executing it
+:
+            sec
+            ror UCI_PENDING_CMD
+
             lda #UCI_TARGET
             sta CMD_IF_COMMAND
             stx CMD_IF_COMMAND
@@ -422,6 +432,8 @@ _fn2        jmp uci_execute
 
 uci_execute lda #CMD_PUSH_CMD
             sta CMD_IF_CONTROL
+            lda #0
+            sta UCI_PENDING_CMD
 
 uci_wait_busy
 _wb1        lda CMD_IF_CONTROL
@@ -440,18 +452,21 @@ _ack1       lda CMD_IF_CONTROL
             pla
             rts
 
-uci_abort   lda CMD_IF_CONTROL
+uci_abort   ; may be in command state
+            bit UCI_PENDING_CMD
+            bpl _abrt2 ; Bit 7 not set, no pending command
+            jsr uci_execute
+            jsr uci_ack
+_abrt2      lda CMD_IF_CONTROL
             and #CMD_STATE_DATA
-            bne _abrt1
-            ; Not in data state, but may be in command state
-            ; So send command, even if it may be an empty command
-            lda #CMD_PUSH_CMD
+            beq _abrt1 ; NOT in Data state
+            ; Perform Abort of current command
+            lda #CMD_ABORT
             sta CMD_IF_CONTROL
-            jsr uci_wait_busy
-            jmp uci_ack
-_abrt1      lda #CMD_ABORT
-            sta CMD_IF_CONTROL
-            jmp uci_wait_abort
+            jsr uci_wait_abort
+_abrt1      rts
+
+
 
 uci_wait_abort
 _wa1        lda CMD_IF_CONTROL
