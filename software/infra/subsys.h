@@ -30,6 +30,7 @@ class UserInterface;
 #define SUBSYSID_IEC             6
 #define SUBSYSID_CMD_IF			 7
 #define SUBSYSID_U64			 8
+#define SUBSYSID_DRIVE_C		 9
 
 class SubSystem  // implements function "executeCommand"
 {

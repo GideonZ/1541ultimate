@@ -44,10 +44,9 @@ FactoryRegistrator<BrowsableDirEntry *, FileType *> tester_d64(FileType :: getFi
 /*********************************************************************/
 
 
-FileTypeD64 :: FileTypeD64(BrowsableDirEntry *node, int ftype)
+FileTypeD64 :: FileTypeD64(BrowsableDirEntry *node)
 {
 	this->node = node; // link
-	this->ftype = ftype;
 }
 
 FileTypeD64 :: ~FileTypeD64()
@@ -61,28 +60,22 @@ int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
     int count = 0;
     uint32_t capabilities = getFpgaCapabilities();
     C64 *machine = C64 :: getMachine();
-    if (ftype == 1541) {
-        if(capabilities & CAPAB_DRIVE_1541_1) {
-            list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, D64FILE_MOUNT));
-            if (machine->exists())
-                list.append(new Action("Run Disk", SUBSYSID_DRIVE_A, D64FILE_RUN));
-            list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, D64FILE_MOUNT_RO));
-            list.append(new Action("Mount Disk Unlinked", SUBSYSID_DRIVE_A, D64FILE_MOUNT_UL));
-            count += 4;
-        }
     
-        if(capabilities & CAPAB_DRIVE_1541_2) {
-            list.append(new Action("Mount Disk on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT));
-            list.append(new Action("Mount Disk R/O on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT_RO));
-            list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT_UL));
-            count += 3;
-        }
+    if(capabilities & CAPAB_DRIVE_1541_1) {
+        list.append(new Action("Mount Disk", SUBSYSID_DRIVE_A, D64FILE_MOUNT));
+    	if (machine->exists())
+    		list.append(new Action("Run Disk", SUBSYSID_DRIVE_A, D64FILE_RUN));
+        list.append(new Action("Mount Disk Read Only", SUBSYSID_DRIVE_A, D64FILE_MOUNT_RO));
+        list.append(new Action("Mount Disk Unlinked", SUBSYSID_DRIVE_A, D64FILE_MOUNT_UL));
+        count += 4;
     }
     
-    if (C64 :: isMP3RamDrive(0) == ftype) {list.append(new Action("Load into MP3 Drv A", FileTypeD64 :: loadMP3_st, (ftype << 2) | 0)); count++;}
-    if (C64 :: isMP3RamDrive(1) == ftype) {list.append(new Action("Load into MP3 Drv B", FileTypeD64 :: loadMP3_st, (ftype << 2) | 1)); count++;}
-    if (C64 :: isMP3RamDrive(2) == ftype) {list.append(new Action("Load into MP3 Drv C", FileTypeD64 :: loadMP3_st, (ftype << 2) | 2)); count++;}
-    if (C64 :: isMP3RamDrive(3) == ftype) {list.append(new Action("Load into MP3 Drv D", FileTypeD64 :: loadMP3_st, (ftype << 2) | 3)); count++;}
+    if(capabilities & CAPAB_DRIVE_1541_2) {
+        list.append(new Action("Mount Disk on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT));
+        list.append(new Action("Mount Disk R/O on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT_RO));
+        list.append(new Action("Mount Disk Unl. on B", SUBSYSID_DRIVE_B, D64FILE_MOUNT_UL));
+        count += 3;
+    }
     
     return count;
 }
@@ -91,83 +84,8 @@ FileType *FileTypeD64 :: test_type(BrowsableDirEntry *obj)
 {
 	FileInfo *inf = obj->getInfo();
     if(strcmp(inf->extension, "D64")==0)
-        return new FileTypeD64(obj, 1541);
-    if(strcmp(inf->extension, "D71")==0)
-        return new FileTypeD64(obj, 1571);
-    if(strcmp(inf->extension, "D81")==0)
-        return new FileTypeD64(obj, 1581);
-    if(strcmp(inf->extension, "DNP")==0)
-        return new FileTypeD64(obj, DRVTYPE_MP3_DNP);
+        return new FileTypeD64(obj);
+
     return NULL;
 }
 
-int FileTypeD64 :: loadMP3_st(SubsysCommand *cmd)
-{
-    int total_bytes_read;
-    uint32_t bytes_read;
-
-    int drvNo = cmd->functionID & 3;
-    int ftype = cmd->functionID >> 2;
-    uint8_t* reu = (uint8_t *)(REU_MEMORY_BASE);
-    uint8_t ramBase = reu[0x7dc7 + drvNo] ;
-    
-    bool ok = C64 :: isMP3RamDrive(drvNo) == ftype;
-    if (ramBase > 0x40) ok=false;
-    if (!ok)
-    {
-       cmd->user_interface->popup("Invalid operation", BUTTON_OK);
-       return -2;
-    }
-    
-    uint8_t* dstAddr = reu+(((uint32_t) ramBase) << 16);
-    
-    int expSize = 1;
-    if (ftype == 1541) expSize = 174848;
-    if (ftype == 1571) expSize = 2*174848;
-    if (ftype == 1581) expSize = 819200;
-    if (ftype == DRVTYPE_MP3_DNP)
-    {
-        expSize = C64 :: getSizeOfMP3NativeRamdrive(drvNo);
-        
-        FileInfo info(32);
-        FileManager *fm = FileManager :: getFileManager();
-        fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
-        int actSize = info.size;
-        
-        if (expSize != actSize)
-        {
-           cmd->user_interface->popup("Size does not match", BUTTON_OK);
-           return -3;
-        }
-        if (expSize > 12*1024*1024)
-        {
-           cmd->user_interface->popup("DNP file too large", BUTTON_OK);
-           return -4;
-        }
-    }
-
-    FileManager *fm = FileManager :: getFileManager();
-    FileInfo info(32);
-    fm->fstat(cmd->path.c_str(), cmd->filename.c_str(), info);
-    
-    File *file = 0;
-	FRESULT fres = fm->fopen(cmd->path.c_str(), cmd->filename.c_str(), FA_READ, &file);
-	if(file) {
-		total_bytes_read = 0;
-		file->read(dstAddr, expSize, &bytes_read);
-		total_bytes_read += bytes_read;
-
-		printf("\nClosing file. ");
-		fm->fclose(file);
-		file = NULL;
-		printf("done.\n");
-                  static char buffer[48];
-			sprintf(buffer, "Bytes loaded: %d ($%8x)", total_bytes_read, total_bytes_read);
-			cmd->user_interface->popup(buffer, BUTTON_OK);
-	} else {
-		printf("Error opening file.\n");
-        cmd->user_interface->popup(FileSystem :: get_error_string(fres), BUTTON_OK);
-		return -2;
-	}
-
-}

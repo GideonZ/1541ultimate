@@ -10,7 +10,7 @@
 #include "mystring.h"
 
 typedef enum _t_channel_state {
-    e_idle, e_filename, e_file, e_dir, e_complete, e_error
+    e_idle, e_filename, e_file, e_dir, e_complete, e_error, e_block
     
 } t_channel_state;
 
@@ -316,9 +316,11 @@ class IecChannel
 
 	int  channel;
     int  write;
-    int  append;
-    uint8_t buffer[256];
+
     int  size;
+    int  append;
+    //uint8_t buffer[256];
+
     int  pointer;
     int  prefetch;
     int  prefetch_max;
@@ -336,6 +338,7 @@ class IecChannel
     uint32_t bytes;
 
 public:
+     uint8_t buffer[256];
     IecChannel(IecInterface *intf, int ch);
     virtual ~IecChannel();
     virtual void reset_prefetch(void);

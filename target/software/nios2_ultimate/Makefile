@@ -58,6 +58,8 @@ SRCS_CC	 =  u2p_init.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
+			c1581.cc \
+			c1581_channel.cc \
 			bam_header.cc \
 			mystring.cc \
 			path.cc \
@@ -89,6 +91,7 @@ SRCS_CC	 =  u2p_init.cc \
 			task_menu.cc \
 			audio_select.cc \
 			filetype_d64.cc \
+			filetype_d81.cc \
 			filetype_g64.cc \
 			filetype_t64.cc \
 			filetype_prg.cc \
