@@ -65,7 +65,7 @@ int IecChannel :: prefetch_data(uint8_t& data)
     if (state == e_error) {
         return IEC_NO_FILE;
     }
-    if (prefetch >= last_byte) {
+    if ((last_byte > 0) && (prefetch >= last_byte)) {
         data = buffer[prefetch];
         prefetch++;
         return IEC_LAST;
@@ -106,9 +106,9 @@ int IecChannel :: pop_data(void)
             }
             break;
         case e_record:
-            if(pointer >= recordSize) {
+            if(pointer >= last_byte) {
                 recordOffset += recordSize;
-                if (read_record(0)) {
+                if (!read_record(0)) {
                     return IEC_OK;
                 } else {
                     state = e_complete;
@@ -223,16 +223,20 @@ int IecChannel :: read_record(int offset)
     uint32_t bytes;
     if(f) {
         res = f->read(buffer, recordSize, &bytes);
+#if IECDEBUG > 2
+        printf("Read record. Expected file position: %d\n", recordOffset);
+        dump_hex_relative(buffer, bytes);
+#endif
     }
-    last_byte = recordSize - 1;
-    for(int i=offset;i <= recordSize; i++) {
-        if ((buffer[i] == 0) || (buffer[i] == 0xFF)) {
-            buffer[i] = 0x0D;
+    last_byte = 0; // recordSize - 1;
+    for(int i=recordSize-1;i > 0; i--) {
+        if (buffer[i] != 0) {
             last_byte = i;
             break;
         }
     }
     if(res != FR_OK) {
+        printf("%s!\n", FileSystem :: get_error_string(res));
         state = e_error;
         return IEC_READ_ERROR;
     }
@@ -265,8 +269,13 @@ int IecChannel :: write_record(void)
         // if everything went well, we are on a record boundary already by the last 'seek' operation
         res = f->seek(recordOffset);
         if (res == FR_OK) {
+#if IECDEBUG > 2
+            printf("Writing record to position %d:\n", recordOffset);
+            dump_hex_relative(buffer, recordSize);
+#endif
             res = f->write(buffer, recordSize, &bytes);
             if (res == FR_OK) {
+                recordOffset += recordSize; // move to the next record
                 res = f->sync();
             }
         }
@@ -299,7 +308,7 @@ int IecChannel :: push_data(uint8_t b)
             if (pointer == recordSize) {
                 // issue error 50
                 interface->get_command_channel()->set_error(ERR_OVERFLOW_IN_RECORD, 0, 0);
-                state = e_error;
+                return IEC_BYTE_LOST;
             } else {
                 buffer[pointer++] = b;
                 recordDirty = true;
@@ -341,7 +350,6 @@ int IecChannel :: push_command(uint8_t b)
         case 0xE0: // close
             printf("close %d %d\n", pointer, name.mode);
             if ((name.mode == e_write) || (name.mode == e_append) || (name.mode == e_replace)) {
-                //dump_hex(buffer, pointer);
                 if (f) {
                     if (pointer > 0) {
                         FRESULT res = f->write(buffer, pointer, &bytes);
@@ -373,7 +381,11 @@ int IecChannel :: push_command(uint8_t b)
             if (state == e_filename) {
                 open_file();
             } else if(state == e_record) {
-                return write_record(); // sets error if necessary. Advances to next record if OK
+                int r = write_record(); // sets error if necessary. Advances to next record if OK
+                if (r == IEC_OK) {
+                    r = read_record(0);
+                }
+                return r;
             }
             break;
         default:
@@ -523,6 +535,8 @@ bool IecChannel :: parse_filename(char *buffer, name_t *name, int default_drive,
     if (!name->extension) {
         if (name->mode == e_read) {
             name->extension = ".???";
+        } else {
+            name->extension = (channel < 2) ? ".prg" : ".seq";
         }
     }
 
@@ -564,7 +578,6 @@ int IecChannel :: setup_directory_read(name_t& name)
     int pos = 8;
     while((pos < 23) && (*fullname))
         buffer[pos++] = toupper(*(fullname++));
-    //dump_hex(buffer, 32);
     dir_index = 0;
     return 0;
 }
@@ -757,6 +770,8 @@ void IecChannel :: seek_record(const uint8_t *cmd)
         interface->get_command_channel()->set_error(ERR_FILE_TYPE_MISMATCH, 0, 0);
         return;
     }
+    interface->get_command_channel()->set_error(ERR_OK, 0, 0);
+
     uint32_t minimumFileSize = c_header + (recordNumber+1) * recordSize; // reserve 2 bytes in the beginning
     uint32_t currentSize = f->get_size();
     FRESULT fres;
