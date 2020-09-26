@@ -19,12 +19,12 @@ nclrch	ldx #3
 	cpx dflto       ;is output channel ieee?
 	bcs jx750       ;no...
 ;
-	jsr ulticlrchn  ;unlsn       ;yes...unlisten it
+	jsr ulticlrchn_lsn  ;unlsn       ;yes...unlisten it
 ;
 jx750	cpx dfltn       ;is input channel ieee?
 	bcs clall2      ;no...
 ;
-	jsr untlk       ;yes...untalk it
+	jsr ulticlrchn_tlk  ; untlk       ;yes...untalk it
 ;
 ;restore default values
 ;
