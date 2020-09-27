@@ -51,9 +51,12 @@
 
 
 ulti_restor
+            lda CMD_IF_COMMAND
+            cmp #UCI_IDENTIFIER
+            bne rest1
             jsr uci_abort
             jsr uci_clear_error
-            jmp restor
+rest1       jmp restor
 
 ; $FFD5 
 ; LOAD. Load or verify file. (Must call SETLFS and SETNAM beforehand.)
@@ -245,7 +248,8 @@ ultichrin   cmp OUR_DEVICE
             jmp bn15
 cin1        jmp bn20
 
-my_chrin    ; is there any data available in the current buffer?
+my_chrin
+; is there any data available in the current buffer?
             lda CMD_IF_CONTROL
             bpl _no_data_avail
 
@@ -306,7 +310,8 @@ ultichrout  cmp OUR_DEVICE
             pla
             jmp ciout ; to serial bus
 
-_my_chrout  inc MY_OUTLEN
+_my_chrout
+            inc MY_OUTLEN
             lda MY_OUTLEN
             beq _breakup_out
 
