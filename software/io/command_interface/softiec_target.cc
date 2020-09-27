@@ -2,7 +2,7 @@
 #include "dump_hex.h"
 #include "c64.h"
 
-#define SIEC_TARGET_DEBUG 1
+#define SIEC_TARGET_DEBUG 0
 
 // crate and register ourselves!
 SoftIECTarget softIecTarget(5);
