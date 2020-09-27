@@ -589,7 +589,18 @@ int IecChannel :: setup_file_access(name_t& name)
     partition = interface->vfs->GetPartition(name.drive);
     partition->ReadDirectory();
     int pos = partition->FindIecName(name.name, name.extension, false);
+    if ((pos < 0) && !name.explicitExt) {
+        name.extension = ".???";
+        pos = partition->FindIecName(name.name, name.extension, false);
+    }
+
     FileInfo *info;
+    if (pos >= 0) {
+        info = partition->GetSystemFile(pos);
+        if (strncmp(info->extension, "REL", 3) == 0) {
+            name.mode = e_relative;
+        }
+    }
 
     switch(name.mode) {
     case e_append:
@@ -634,7 +645,6 @@ int IecChannel :: setup_file_access(name_t& name)
             state = e_error;
             return 0;
         }
-        info = partition->GetSystemFile(pos);
         strncpy(fs_filename, info->lfname, 64);
         flags = FA_READ;
     }
@@ -761,7 +771,9 @@ void IecChannel :: seek_record(const uint8_t *cmd)
     if (offset != 0)
         offset--; // Offset starts from 1, too.. we are 0 based
 
+#if IECDEBUG > 0
     printf("SEEK Record Number #%d. Offset = %d\n", recordNumber, offset);
+#endif
     if (!f) {
         interface->get_command_channel()->set_error(ERR_FILE_NOT_OPEN, 0, 0);
         return;
@@ -788,7 +800,9 @@ void IecChannel :: seek_record(const uint8_t *cmd)
             fres = f->write(block, partialRecord, &tr);
             currentSize += partialRecord;
         }
+#if IECDEBUG > 0
         printf("Append REL file until size %d (was %d)\n", minimumFileSize, currentSize);
+#endif
         uint32_t remain = minimumFileSize - currentSize;
         block[0] = 0xFF;
         while(remain >= recordSize) {
