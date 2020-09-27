@@ -47,6 +47,7 @@ class Modem : public ConfigurableObject
     uint8_t lastHandshake;
     bool keepConnection;
     bool commandMode;
+    bool busyMode;
     int baudRate;
     bool dropOnDTR;
     int registerSelect;

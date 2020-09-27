@@ -68,6 +68,7 @@ Modem :: Modem()
     xTaskCreate( Modem :: callerTask, "Outgoing Caller", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     listenerSocket = new ListenerSocket("Modem Listener", Modem :: listenerTask, "Modem External Connection");
     keepConnection = false;
+    busyMode = false;
     commandMode = true;
     baudRate = 0;
     dropOnDTR = true;
@@ -186,7 +187,7 @@ void Modem :: RunRelay(int socket)
 void Modem :: IncomingConnection(int socket)
 {
     char buffer[64];
-    if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
+    if (busyMode || xSemaphoreTake(connectionLock, 0) != pdTRUE) {
         RelayFileToSocket(cfg->get_string(CFG_MODEM_BUSYFILE), socket, "The modem you are connecting to is currently busy.\n");
         return;
     } else if(!(lastHandshake & ACIA_HANDSH_DTR)) {
@@ -443,20 +444,9 @@ int Modem :: ExecuteCommand(ModemCommand_t *cmd)
             sscanf(cmd->command + i + 1, "%d", &temp);
             while(i < cmd->length && (isdigit(cmd->command[i+1])))
                 i++;
-            if (temp == 0) {
-                keepConnection = false;
-                connectionStateChange = 1;
-            } else {
-/*
-                if (keepConnection) {
-                    response = "";
-                } else {
-                    response = "NO DIALTONE\r";
-                }
-*/
-                keepConnection = false;
-                connectionStateChange = 3;
-            }
+            busyMode = (temp > 0);
+            keepConnection = false;
+            connectionStateChange = 1 + (busyMode) ? 2 : 0; // if busy mode is selected, return 3
             break;
         case 'A': // answer
             if (keepConnection) {
