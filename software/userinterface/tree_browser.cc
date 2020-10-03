@@ -508,27 +508,30 @@ void TreeBrowser :: copy_selection(void)
 //	printf("Copied %d files in path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
 }
 
-void TreeBrowser :: paste(void)
+void TreeBrowser::paste(void)
 {
-	printf("Going to paste %d files from path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
+    printf("Going to paste %d files from path %s\n", clipboard.getNumberOfFiles(), clipboard.getPath());
 
-	int items = clipboard.getNumberOfFiles();
-	user_interface->show_progress("Copying...", items);
-	for (int i=0;i<items;i++) {
-		const char *fn = clipboard.getFileNameByIndex(i);
-		FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath());  // from path, filename, dest path
-		if (res != FR_OK) {
-	                screen->restore();
-			printf("Error while copying: %d %s to %s\n", res, fn, this->getPath());
-			int resp = user_interface->popup("Copy error occurred. Continue?", BUTTON_YES | BUTTON_NO);
-			screen->backup();
-			if (resp == BUTTON_NO)
-				break;
-		}
-		user_interface->update_progress(0, 1);
-	}
-	user_interface->hide_progress();
-	state->refresh = true;
+    fm->deregisterObserver(observerQueue);
+    int items = clipboard.getNumberOfFiles();
+    user_interface->show_progress("Copying...", items);
+    for (int i = 0; i < items; i++) {
+        const char *fn = clipboard.getFileNameByIndex(i);
+        FRESULT res = fm->fcopy(clipboard.getPath(), fn, this->getPath());  // from path, filename, dest path
+        if (res != FR_OK) {
+            user_interface->hide_progress(); // temporarily
+            printf("Error while copying: %s %s to %s\n", FileSystem::get_error_string(res), fn, this->getPath());
+            int resp = user_interface->popup("Copy error occurred. Continue?", BUTTON_YES | BUTTON_NO);
+            user_interface->show_progress("Copying...", items); // show it again
+            user_interface->update_progress(0, i); // set back to original fill
+            if (resp == BUTTON_NO)
+                break;
+        }
+        user_interface->update_progress(0, 1);
+    }
+    user_interface->hide_progress();
+    fm->registerObserver(observerQueue);
+    state->refresh = true;
 }
 
 
