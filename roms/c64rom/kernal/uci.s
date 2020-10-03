@@ -81,9 +81,11 @@ myload      sta VERIFYFLAG
 
 ld2         lda CMD_IF_COMMAND
             cmp #UCI_IDENTIFIER
-            bne ld1
+            beq ld3
+            lda VERIFYFLAG
+            jmp (iload)
 
-            ldx SECADDR
+ld3         ldx SECADDR
             jsr luking ; print SEARCHING
             ldx #UCI_CMD_LOADSU
             jsr uci_setup_cmd
@@ -92,10 +94,10 @@ ld2         lda CMD_IF_COMMAND
             jsr uci_filename ; also executes
             lda CMD_IF_STATUS
             jsr uci_ack ; restores A
-            beq ld3 ; all OK when zero
+            beq ld4 ; all OK when zero
             jmp error4
 
-ld3         jsr loding ; print LOADING
+ld4         jsr loding ; print LOADING
 
             ldx #UCI_CMD_LOADEX
             jsr uci_setup_cmd
@@ -383,9 +385,9 @@ do_chkout   lda #0
 ulticlrchn_lsn
             lda dflto
             cmp OUR_DEVICE
-            beq uci_abort; _my_clrchn
+            beq _my_clrchn
             jmp unlsn ; if it was not us, it is serial
-;_my_clrchn  jmp uci_abort
+_my_clrchn  jmp uci_abort
 
 ulticlrchn_tlk
             lda dfltn
@@ -396,12 +398,11 @@ ulticlrchn_tlk
 ;; UCI
 
 uci_setup_cmd
-            bit UCI_PENDING_CMD
-            bpl :+
-            jsr uci_abort ; this will also abort an open command by executing it
-:
-            sec
-            ror UCI_PENDING_CMD
+            jsr uci_abort ; will abort any pending command first
+
+            ; clean slate
+            lda #$80
+            sta UCI_PENDING_CMD ; Bit 7 is now set
 
             lda #UCI_TARGET
             sta CMD_IF_COMMAND
@@ -436,9 +437,8 @@ _fn2        jmp uci_execute
 
 uci_execute lda #CMD_PUSH_CMD
             sta CMD_IF_CONTROL
-            lda #0
-            sta UCI_PENDING_CMD
-
+            sta UCI_PENDING_CMD ; bit 7 is now cleared; since CMD_PUSH_CMD is 01
+            ; intentional fall through
 uci_wait_busy
 _wb1        lda CMD_IF_CONTROL
             and #CMD_STATE_BITS
@@ -458,25 +458,21 @@ _ack1       lda CMD_IF_CONTROL
 
 uci_abort   ; may be in command state
             bit UCI_PENDING_CMD
-            bpl _abrt2 ; Bit 7 not set, no pending command
+            bpl _abrt2 ; Bit 7 is not set, so there is no pending command
             jsr uci_execute
-            jsr uci_ack
 _abrt2      lda CMD_IF_CONTROL
             and #CMD_STATE_DATA
             beq _abrt1 ; NOT in Data state
             ; Perform Abort of current command
             lda #CMD_ABORT
             sta CMD_IF_CONTROL
-            jsr uci_wait_abort
-_abrt1      rts
-
-
+            ; jmp uci_wait_abort ; fall through
 
 uci_wait_abort
 _wa1        lda CMD_IF_CONTROL
             and #CMD_ABORT
             bne _wa1
-            rts
+_abrt1      rts
 
 uci_clear_error
             lda #CMD_ERROR
