@@ -110,6 +110,7 @@ SRCS_CC	 =  small_printf.cc \
 			dos.cc \
 			network_target.cc \
 			control_target.cc \
+			softiec_target.cc \
 			iec.cc \
 			iec_channel.cc \
 			iec_printer.cc \
