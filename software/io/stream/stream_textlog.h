@@ -23,8 +23,8 @@ class StreamTextLog
     bool enabled;
 public:
     StreamTextLog(int size) {
-    	this->size = size;
     	buffer = new char[size];
+    	this->size = size - 4;
     	offset = 0;
     	enabled = true;
     }
@@ -33,17 +33,20 @@ public:
     }
 
     void charout(int c) {
-    	if (c == 27) {
+        if (offset >= size) {
+            offset = 0; // clear!
+        }
+        if (!enabled) {
+            return;
+        }
+        if (c == 27) {
     		c = '<';
     	} else if (c == 9) {
     		c = ' ';
     	} else if ((c < 32) && (c != 10) && (c != 13)) {
     		return;
     	}
-
-    	if (offset < (size-1)) {
-    		buffer[offset++] = (char)c;
-    	}
+        buffer[offset++] = (char)c;
     }
 
     char *getText(void) {

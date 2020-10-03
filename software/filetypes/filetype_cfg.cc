@@ -85,7 +85,7 @@ int FileTypeCfg :: execute(SubsysCommand *cmd)
             cmd->user_interface->popup("Loading configuration successful!", BUTTON_OK);
         } else {
             cmd->user_interface->popup("There were errors.", BUTTON_OK);
-            cmd->user_interface->run_editor(log.getText());
+            cmd->user_interface->run_editor(log.getText(), log.getLength());
         }
         ConfigStore *s;
         ConfigManager *cm = ConfigManager :: getConfigManager();

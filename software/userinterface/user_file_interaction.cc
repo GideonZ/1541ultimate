@@ -136,7 +136,7 @@ int UserFileInteraction::S_view(SubsysCommand *cmd)
         FRESULT fres = f->read(text_buf, size, &transferred);
         printf("Res = %d. Read text buffer: %d bytes\n", fres, transferred);
         text_buf[transferred] = 0;
-        cmd->user_interface->run_editor(text_buf);
+        cmd->user_interface->run_editor(text_buf, transferred);
         delete text_buf;
     }
     return 0;

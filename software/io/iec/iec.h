@@ -11,6 +11,7 @@
 #include "task.h"
 #include "semphr.h"
 
+#define IECDEBUG 0
 
 #define HW_IEC_REGS      IEC_BASE
 #define HW_IEC_CODE      (IEC_BASE + 0x800)
@@ -69,6 +70,10 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     FileManager *fm;
     IecFileSystem *vfs;
 
+    int last_error_code;
+    int last_error_track;
+    int last_error_sector;
+
     const char *rootPath;
     int last_addr;
     int last_printer_addr;
@@ -83,8 +88,8 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     int current_channel;
     int warp_drive;
     uint8_t warp_return_code;
-    uint8_t *emulatedRam;
 
+    void reset(void);
     void poll(void);
     void test_master(int);
     void start_warp(int);
@@ -99,9 +104,7 @@ class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
     UltiCopy *ui_window;
     uint8_t last_track;
     static void iec_task(void *a);
-    uint8_t *getRam() { return emulatedRam; }
 public:
-    int last_error;
     uint8_t iec_enable;
 
     IecInterface();
@@ -112,8 +115,13 @@ public:
 
     int fetch_task_items(Path *path, IndexedList<Action *> &list);
     void effectuate_settings(void); // from ConfigurableObject
-    int get_last_error(char *, int track = 0, int sector = 0); // writes string into buffer
+
+    void set_error(int err, int track, int sector);
+    void set_error_fres(FRESULT fres);
+
+    int get_error_string(char *); // writes string into buffer
     IecCommandChannel *get_command_channel();
+    IecCommandChannel *get_data_channel(int chan);
     const char *get_root_path();
 
     friend class IecChannel;
@@ -121,7 +129,7 @@ public:
     friend class IecPrinter;
 };
 
-extern IecInterface HW_IEC;
+extern IecInterface iec_if;
  
 class UltiCopy : public UIObject
 {

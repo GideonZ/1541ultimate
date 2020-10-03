@@ -101,6 +101,7 @@ begin
 
     slot_resp.reg_output <= enabled when slot_req.bus_address(8 downto 2) = slot_base else '0';
     slot_resp.irq <= '0';
+    slot_resp.nmi <= '0';
 
     -- signals to RAM
     en <= enabled;
@@ -117,18 +118,16 @@ begin
         begin
             response_pointer <= c_cmd_if_response_buffer_addr;
             status_pointer   <= c_cmd_if_status_buffer_addr;
-            response_length  <= (others => '0');
-            status_length    <= (others => '0');
         end procedure;
     begin
         if rising_edge(clock) then
             if (response_pointer - c_cmd_if_response_buffer_addr) < response_length then
-                response_valid <= '1';
+                response_valid <= state(1) and not handshake_in(2); -- Only in data state when abort is not set
             else
                 response_valid <= '0';
             end if;
             if (status_pointer - c_cmd_if_status_buffer_addr) < status_length then
-                status_valid <= '1';
+                status_valid <= state(1) and not handshake_in(2); -- Only in data state when abort is not set
             else
                 status_valid <= '0';
             end if;
@@ -146,7 +145,6 @@ begin
                         if slot_req.data(0)='1' then
                             freeze <= slot_req.data(7);
                             if state = "00" then                            
-                                reset_response;
                                 state <= "01";
                                 handshake_in(0) <= '1';
                             else
@@ -155,12 +153,10 @@ begin
                         end if;
                         if slot_req.data(1)='1' and state(1) = '1' then -- data accept
                             handshake_in(1) <= '1'; -- data accepted, only ultimate can clear it
-                            reset_response;
                             state(1) <= '0'; -- either goes to idle, or back to wait for software
                         end if;
                         if slot_req.data(2)='1' then
                             handshake_in(2) <= '1'; -- abort, only ultimate can clear it.
-                            reset_response;
                         end if;
                     when others =>
                         null;
@@ -204,6 +200,7 @@ begin
                         freeze   <= '0';
                         state(1) <= '1';
                         state(0) <= io_req.data(5); -- more bit
+                        reset_response;
                     end if;                        
                     if io_req.data(7)='1' then
                         freeze   <= '0';
@@ -251,11 +248,11 @@ begin
                 when c_cif_io_status_end     =>
                     io_resp.data <= std_logic_vector(c_cmd_if_status_buffer_end(10 downto 3));
                 when c_cif_io_status_length  =>
-                    io_resp.data <= std_logic_vector(status_length(7 downto 0)); -- fixme
+                    io_resp.data <= std_logic_vector(status_pointer(7 downto 0)); -- fixme
                 when c_cif_io_response_len_l =>
-                    io_resp.data <= std_logic_vector(response_length(7 downto 0));
+                    io_resp.data <= std_logic_vector(response_pointer(7 downto 0));
                 when c_cif_io_response_len_h =>
-                    io_resp.data(2 downto 0) <= std_logic_vector(response_length(10 downto 8));
+                    io_resp.data(2 downto 0) <= std_logic_vector(response_pointer(10 downto 8));
                 when c_cif_io_command_len_l  =>
                     io_resp.data <= std_logic_vector(command_length(7 downto 0));
                 when c_cif_io_command_len_h  =>
@@ -270,6 +267,8 @@ begin
             if reset='1' then
                 command_pointer  <= c_cmd_if_command_buffer_addr;
                 reset_response;
+                response_length  <= (others => '0');
+                status_length    <= (others => '0');
                 irq_mask         <= "111";
                 handshake_in     <= "000";
                 state            <= "00";

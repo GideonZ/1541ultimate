@@ -6,13 +6,14 @@
 #include "filesystem_root.h"
 #include "cached_tree_node.h"
 #include "observer.h"
-#include "FreeRTOS.h"
-#include "semphr.h"
 #include "embedded_fs.h"
 
-void set_extension(char *buffer, const char *ext, int buf_size);
-void get_extension(const char *name, char *ext);
-void fix_filename(char *buffer);
+#ifdef OS
+#include "FreeRTOS.h"
+#include "semphr.h"
+#else
+typedef void * SemaphoreHandle_t;
+#endif
 
 #define INFO_SIZE 128
 

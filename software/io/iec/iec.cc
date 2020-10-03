@@ -7,6 +7,7 @@ extern "C" {
 #include "iec_channel.h"
 #include "iec_printer.h"
 #include "c64.h"
+#include "u64.h"
 #include "filemanager.h"
 #include "userinterface.h"
 #include "disk_image.h"
@@ -125,7 +126,7 @@ const char msg69[] = "FILESYSTEM ERROR";        //69
 const char msg70[] = "NO CHANNEL";	            //70
 const char msg71[] = "DIRECTORY ERROR";			//71
 const char msg72[] = "DISK FULL";				//72
-const char msg73[] = "ULTIMATE IEC DOS V1.0";	//73 DOS MISMATCH(Returns DOS Version)
+const char msg73[] = "U64IEC ULTIMATE DOS V1.1";//73 DOS MISMATCH(Returns DOS Version)
 const char msg74[] = "DRIVE NOT READY";			//74
 const char msg77[] = "SELECTED PARTITION ILLEGAL"; //77
 const char msg_c1[] = "BAD COMMAND";			//custom
@@ -207,7 +208,10 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     cmd_path = fm->get_new_path("IEC Gui Path");
     cmd_ui = 0;
 
-    last_error = ERR_DOS;
+    last_error_code = ERR_DOS;
+    last_error_track = 0;
+    last_error_sector = 0;
+
     current_channel = 0;
     talking = false;
     last_addr = 10;
@@ -233,9 +237,6 @@ IecInterface :: IecInterface() : SubSystem(SUBSYSID_IEC)
     ulticopyMutex = xSemaphoreCreateMutex();
     queueGuiToIec = xQueueCreate(2, sizeof(int));
 
-    emulatedRam = new uint8_t[65536];
-    memset(emulatedRam, 0x44, 65536);
-
     xTaskCreate( IecInterface :: iec_task, "IEC Server", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 2, &taskHandle );
 }
 
@@ -259,6 +260,11 @@ IecCommandChannel *IecInterface :: get_command_channel(void)
     return (IecCommandChannel *)channels[15];
 }
 
+IecCommandChannel *IecInterface :: get_data_channel(int chan)
+{
+    return (IecCommandChannel *)channels[chan & 15];
+}
+
 void IecInterface :: effectuate_settings(void)
 {
     uint32_t was_talk   = 0x18800040 + last_addr; // compare instruction
@@ -267,6 +273,12 @@ void IecInterface :: effectuate_settings(void)
     
 //            data = (0x08 << 20) + (bit << 24) + (inv << 29) + (addr << 8) + (value << 0)
     int bus_id = cfg->get_value(CFG_IEC_BUS_ID);
+
+#if U64
+    unsigned char *kernal = (unsigned char *)U64_KERNAL_BASE; // this should be a function
+    kernal[0x1F80] = (uint8_t)bus_id;
+#endif
+
     if(bus_id != last_addr) {
         printf("Setting IEC bus ID to %d.\n", bus_id);
         int replaced = 0;
@@ -374,7 +386,7 @@ void IecInterface :: poll()
 			data = HW_IEC_RX_DATA;
 			if(a & IEC_FIFO_CTRL) {
 
-#if IECDEBUG
+#if IECDEBUG > 2
 			    if (data == 0x41) printf("\n");
 			    printf("<%b>", data);
 #endif
@@ -393,7 +405,8 @@ void IecInterface :: poll()
 						printf("{warp mode}");
 						break;
 					case 0x43:
-						HW_IEC_TX_FIFO_RELEASE = 1;
+					    channels[current_channel]->talk();
+					    HW_IEC_TX_FIFO_RELEASE = 1;
 						talking = true;
 						break;
 					case 0x45:
@@ -427,7 +440,7 @@ void IecInterface :: poll()
 				}
 			} else {
 				if(atn) {
-#if IECDEBUG
+#if IECDEBUG > 2
 					printf("[/%b] ", data);
 #endif
 					if(data >= 0x60) {  // workaround for passing of wrong atn codes talk/untalk
@@ -442,7 +455,7 @@ void IecInterface :: poll()
 					if (printer) {
 						channel_printer->push_data(data);
 					} else {
-#if IECDEBUG
+#if IECDEBUG > 2
 						printf("[%b] ", data);
 #endif
 						channels[current_channel]->push_data(data);
@@ -456,19 +469,16 @@ void IecInterface :: poll()
 
 		int st;
 		if(talking) {
-//#if IECDEBUG
-//		    printf("(%d|%d|%d)'", channels[current_channel]->pointer, channels[current_channel]->prefetch, channels[current_channel]->prefetch_max);
-//#endif
 		    while(!(HW_IEC_TX_FIFO_STATUS & IEC_FIFO_FULL)) {
 				st = channels[current_channel]->prefetch_data(data);
 				if(st == IEC_OK) {
 					HW_IEC_TX_DATA = data;
-#if IECDEBUG
+#if IECDEBUG > 2
 					outbyte(data < 0x20?'.':data);
 #endif
 				} else if(st == IEC_LAST) {
 					HW_IEC_TX_LAST = data;
-#if IECDEBUG
+#if IECDEBUG > 2
                     outbyte(data < 0x20?'.':data);
 #endif
 					talking = false;
@@ -482,7 +492,7 @@ void IecInterface :: poll()
 					break;
 				}
 			}
-#if IECDEBUG
+#if IECDEBUG > 2
             outbyte('\'');
 #endif
 		}
@@ -503,9 +513,8 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
 
 	switch(cmd->functionID) {
 		case MENU_IEC_RESET:
-			channel_printer->reset();
+            reset();
 			HW_IEC_RESET_ENABLE = iec_enable;
-			last_error = ERR_DOS;
 			break;
 		case MENU_IEC_FLUSH:
 			channel_printer->flush();
@@ -570,6 +579,15 @@ int IecInterface :: executeCommand(SubsysCommand *cmd)
     }
     return 0;
 }
+
+void IecInterface :: reset(void)
+{
+    channel_printer->reset();
+    for(int i=0; i < 16; i++) {
+        channels[i]->reset();
+    }
+}
+
 
 #include "c1541.h"
 extern C1541 *c1541_A;
@@ -773,12 +791,77 @@ void IecInterface :: save_copied_disk()
 	}
 }
                 
-int IecInterface :: get_last_error(char *buffer, int track, int sector)
+void IecInterface :: set_error(int code, int track, int sector)
+{
+    last_error_code = code;
+    last_error_track = track;
+    last_error_sector = sector;
+}
+
+void IecInterface :: set_error_fres(FRESULT fres)
+{
+    int tr=0, sec=0, err = 0;
+
+    switch (fres) {
+    case FR_OK:                  err = ERR_OK;                /* (0) Succeeded */
+        break;
+    case FR_DISK_ERR:            err = ERR_DRIVE_NOT_READY;   /* (1) A hard error occurred in the low level disk I/O layer */
+        break;
+    case FR_INT_ERR:             err = ERR_FRESULT_CODE;      /* (2) Assertion failed */
+        break;
+    case FR_NOT_READY:           err = ERR_DRIVE_NOT_READY;   /* (3) The physical drive cannot work */
+        break;
+    case FR_NO_FILE:             err = ERR_FILE_NOT_FOUND;    /* (4) Could not find the file */
+        break;
+    case FR_NO_PATH:             err = ERR_FILE_NOT_FOUND;    /* (5) Could not find the path */
+        break;
+    case FR_INVALID_NAME:        err = ERR_SYNTAX_ERROR_NAME; /* (6) The path name format is invalid */
+        break;
+    case FR_DENIED:              err = ERR_DIRECTORY_ERROR;   /* (7) Access denied due to prohibited access or directory full */
+        break;
+    case FR_EXIST:               err = ERR_FILE_EXISTS;       /* (8) Access denied due to prohibited access */
+        break;
+    case FR_INVALID_OBJECT:      err = ERR_FRESULT_CODE;      /* (9) The file/directory object is invalid */
+        break;
+    case FR_WRITE_PROTECTED:     err = ERR_WRITE_PROTECT_ON;  /* (10) The physical drive is write protected */
+        break;
+    case FR_INVALID_DRIVE:       err = ERR_DRIVE_NOT_READY;   /* (11) The logical drive number is invalid */
+        break;
+    case FR_NOT_ENABLED:         err = ERR_DRIVE_NOT_READY;   /* (12) The volume has no work area */
+        break;
+    case FR_NO_FILESYSTEM:       err = ERR_DRIVE_NOT_READY;   /* (13) There is no valid FAT volume */
+        break;
+    case FR_MKFS_ABORTED:        err = ERR_FRESULT_CODE;      /* (14) The f_mkfs() aborted due to any parameter error */
+        break;
+    case FR_TIMEOUT:             err = ERR_DRIVE_NOT_READY;   /* (15) Could not get a grant to access the volume within defined period */
+        break;
+    case FR_LOCKED:              err = ERR_WRITE_FILE_OPEN;   /* (16) The operation is rejected according to the file sharing policy */
+        break;
+    case FR_NO_MEMORY:           err = ERR_FRESULT_CODE;      /* (17) LFN working buffer could not be allocated */
+        break;
+    case FR_TOO_MANY_OPEN_FILES: err = ERR_FRESULT_CODE;      /* (18) Number of open files > _FS_SHARE */
+        break;
+    case FR_INVALID_PARAMETER:   err = ERR_FRESULT_CODE;      /* (19) Given parameter is invalid */
+        break;
+    case FR_DISK_FULL:           err = ERR_DISK_FULL;         /* (20) OLD FATFS: no more free clusters */
+        break;
+    case FR_DIR_NOT_EMPTY:       err = ERR_FILE_EXISTS;       /* (21) Directory not empty */
+        break;
+    default:                     err = ERR_FRESULT_CODE;
+    }
+    if (err == ERR_FRESULT_CODE) {
+        tr = fres;
+    }
+    set_error(err, tr, sec);
+}
+
+
+int IecInterface :: get_error_string(char *buffer)
 {
 	int len;
 	for(int i = 0; i < NR_OF_EL(last_error_msgs); i++) {
-		if(last_error == last_error_msgs[i].nr) {
-			return sprintf(buffer,"%02d,%s,%02d,%02d\015", last_error,last_error_msgs[i].msg, track, sector);
+		if(last_error_code == last_error_msgs[i].nr) {
+			return sprintf(buffer,"%02d,%s,%02d,%02d\015", last_error_code, last_error_msgs[i].msg, last_error_track, last_error_sector);
 		}
 	}
     return sprintf(buffer,"99,UNKNOWN,00,00\015");

@@ -7,7 +7,6 @@
 
 #include "filesystem_d64.h"
 #include "pattern.h"
-#include "filemanager.h"
 #include <ctype.h>
 
 /*********************************************************************/
@@ -179,17 +178,6 @@ int FileSystemD64 :: get_root_sector(void)
 
     return get_abs_sector(18, 0);
 }
-
-/*
-bool FileSystemD64 :: is_free(int abs)
-{
-    if(image_mode > 1)
-        return true; // we don't understand D71/D81 bit allocation maps yet
-
-
-
-}
-*/
 
 bool FileSystemD64 :: allocate_sector_on_track(int track, int &sector)
 {
@@ -626,7 +614,7 @@ FRESULT DirInD64 :: read(FileInfo *f)
             uint8_t *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
             //dump_hex(p, 32);
             uint8_t tp = (p[2] & 0x0f);
-            if ((tp == 0x01) || (tp == 0x02) || (tp == 0x03)) { // PRG
+            if ((tp == 0x01) || (tp == 0x02) || (tp == 0x03) || (tp == 0x04)) { // PRG
                 int j = 0;
                 for(int i=5;i<21;i++) {
                 	if ((p[i] == 0xA0) || (p[i] < 0x20))
@@ -652,10 +640,9 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 	strncpy(f->extension, "PRG", 4);
                 } else if (tp == 3) {
                 	strncpy(f->extension, "USR", 4);
+                } else if (tp == 4) {
+                    strncpy(f->extension, "REL", 4);
                 }
-                // GZW: This is wrong!
-                //strcat(f->lfname, ".");
-                //strcat(f->lfname, f->extension);
                 idx ++;
                 return FR_OK;
             }
@@ -693,13 +680,6 @@ FRESULT FileInD64 :: open(FileInfo *info, uint8_t flags, int dirtrack, int dirse
 	    start_cluster = -1; // to be allocated
         num_blocks = 0;
         current_track = 0;
-        /* to be moved elsewhere
-	    int track, sector;
-	    if (!fs->get_next_free_sector(track, sector)) {
-	        return FR_DISK_FULL;
-	    }
-	    start_cluster = fs->get_abs_sector(track, sector);
-*/
 	} else { // open existing file
         start_cluster = info->cluster;
         if(!(fs->get_track_sector(info->cluster, current_track, current_sector)))
@@ -791,8 +771,7 @@ FRESULT FileInD64 :: visit(void)
     return FR_OK;
 }
 
-static unsigned char cvtSignature[] = { 0x50, 0x52, 0x47, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x74, 0x65, 0x64, 0x20, 0x47, 0x45, 0x4f, 0x53, 0x20, 0x66, 0x69, 0x6c, 0x65, 0x20, 0x56, 0x31, 0x2e, 0x30};
-
+static char cvtSignature[] = "PRG formatted GEOS file V1.0";
 FRESULT FileInD64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
 {
     bool isCVT = start_cluster == -1;
@@ -824,7 +803,7 @@ FRESULT FileInD64 :: read(void *buffer, uint32_t len, uint32_t *transferred)
            vlir[0] = 0;
            vlir[1] = 255;
            memcpy(vlir+2, fs->sect_buffer+dir_entry_offset+2, 30);
-           memcpy(vlir+32, cvtSignature, sizeof(cvtSignature));
+           memcpy(vlir+32, cvtSignature, strlen(cvtSignature));
            memcpy(tmpBuffer, vlir, 256);
            tmpBuffer[0x15] = 1;
            tmpBuffer[0x16] = 255;
