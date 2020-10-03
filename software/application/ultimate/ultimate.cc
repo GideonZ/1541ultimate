@@ -226,7 +226,9 @@ extern "C" void ultimate_main(void *a)
             }
             break;
         case 1:
+            system_usb_keyboard.enableMatrix(false);
             ui->run_once();
+            system_usb_keyboard.enableMatrix(true);
             break;
         case 2:
             ui->swapDisk();
