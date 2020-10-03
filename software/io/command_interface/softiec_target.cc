@@ -8,8 +8,6 @@
 SoftIECTarget softIecTarget(5);
 
 static Message c_message_identification     = { 24, true, (uint8_t *)"SOFTWARE IEC TARGET V0.1" };
-static Message c_message_first_message      = { 28,false, (uint8_t *)"THIS IS THE FIRST MESSAGE..." };
-static Message c_message_second_message     = { 11, true, (uint8_t *)"SECOND MSG!" };
 static Message c_status_all_ok              = {  1, true, (uint8_t *)"\x00" };
 static Message c_status_file_not_found      = {  1, true, (uint8_t *)"\x01" };
 static Message c_status_save_error          = {  1, true, (uint8_t *)"\x02" };
