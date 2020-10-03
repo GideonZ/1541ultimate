@@ -27,6 +27,11 @@ class Keyboard_USB : public Keyboard
     void putch(uint8_t ch);
     bool PresentInLastData(uint8_t check);
     void usb2matrix(uint8_t *data);
+
+    int  num_keys;
+    int  repeat_speed;
+    int  first_delay;
+    int  delay_count;
 public:
     Keyboard_USB();
     ~Keyboard_USB();
