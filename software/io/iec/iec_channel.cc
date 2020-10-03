@@ -589,7 +589,7 @@ int IecChannel :: setup_file_access(name_t& name)
     partition = interface->vfs->GetPartition(name.drive);
     partition->ReadDirectory();
     int pos = partition->FindIecName(name.name, name.extension, false);
-    if ((pos < 0) && !name.explicitExt) {
+    if ((pos < 0) && !name.explicitExt && (name.mode != e_append) && (name.mode != e_write)) {
         name.extension = ".???";
         pos = partition->FindIecName(name.name, name.extension, false);
     }
@@ -650,7 +650,7 @@ int IecChannel :: setup_file_access(name_t& name)
     }
 
     state = e_error; // assume something goes wrong ;)
-    return 0; //?
+    return 1; // OK so far
 }
 
 int IecChannel :: init_iec_transfer(void)
@@ -694,10 +694,16 @@ int IecChannel :: open_file(void)  // name should be in buffer
     if(name.directory) {
         return setup_directory_read(name);
     }
-    setup_file_access(name);
+
+    interface->get_command_channel()->set_error(ERR_OK, 0, 0);
+    if (!setup_file_access(name)) {
+        interface->get_error_string(fs_filename); // abusing this buffer to store temporary error
+        printf("Setup file access failed for file '%d:%s%s': %s\n", name.drive, name.name, name.extension, fs_filename);
+        // Something went wrong, so just exit.
+        return 0;
+    }
 
     FRESULT fres = fm->fopen(partition->GetPath(), fs_filename, flags, &f);
-    interface->get_command_channel()->set_error(ERR_OK, 0, 0);
     if(f) {
         printf("Successfully opened file %s in %s\n", fs_filename, partition->GetFullPath());
 
