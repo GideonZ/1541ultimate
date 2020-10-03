@@ -98,6 +98,11 @@ Keyboard_USB :: Keyboard_USB()
 	key_head = 0;
 	key_tail = 0;
 
+    repeat_speed = 4;
+    first_delay = 16;
+    delay_count = first_delay;
+    num_keys = 0;
+
 	memset(key_buffer, 0, KEY_BUFFER_SIZE);
 	memset(last_data, 0, USB_DATA_SIZE);
 }
@@ -217,9 +222,11 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 		usb2matrix(kbdata);
 	}
 
+	num_keys = USB_DATA_SIZE - 2;
 	for(int i=2; i<USB_DATA_SIZE; i++) {
 		if (!kbdata[i]) {
-			break;
+		    num_keys = i-2;
+		    break;
 		}
 		if (!PresentInLastData(kbdata[i])) {
 			if (kbdata[0] & 0x11) { // control
@@ -233,12 +240,28 @@ void Keyboard_USB :: process_data(uint8_t *kbdata)
 	}
 
 	memcpy(last_data, kbdata, USB_DATA_SIZE);
+    delay_count = first_delay;
 }
 
 // called from the user interface thread
 int  Keyboard_USB :: getch(void)
 {
-	if (key_head != key_tail) {
+    if (num_keys == 1) { // implement repeat for one key pressed (other than the modifiers)
+        if (delay_count == 0) {
+            delay_count = repeat_speed;
+
+            if (last_data[0] & 0x11) { // control
+                putch(keymap_control[last_data[2]]);
+            } else if (last_data[0] & 0x22) { // shift
+                putch(keymap_shifted[last_data[2]]);
+            } else {
+                putch(keymap_normal[last_data[2]]);
+            }
+        } else {
+            delay_count --;
+        }
+    }
+    if (key_head != key_tail) {
 		uint8_t key = key_buffer[key_tail];
 		key_tail ++;
 		if (key_tail == KEY_BUFFER_SIZE) {
