@@ -66,6 +66,7 @@ class CommandInterface : public SubSystem, ObjectWithMenu
 	TaskHandle_t taskHandle;
 	TaskHandle_t resetTaskHandle;
 
+	int response_offset;
 	uint8_t *command_buffer;
     uint8_t *response_buffer;
     uint8_t *status_buffer;
@@ -128,7 +129,7 @@ public:
         *status = &c_status_ok; 
     }
     
-    virtual void abort(void) { }
+    virtual void abort(int a) { }
 };
 
 extern CommandTarget *command_targets[];

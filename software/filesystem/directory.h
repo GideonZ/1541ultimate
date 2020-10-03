@@ -10,8 +10,10 @@ class Directory
 {
     FileSystem *fs;
 public:
-    void *handle;
-
+    union {
+        void *handle;
+        uint32_t index;
+    };
     Directory(FileSystem *f, void *h) {
         handle = h;
         fs = f;

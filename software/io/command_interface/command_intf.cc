@@ -48,7 +48,8 @@ CommandInterface :: CommandInterface() : SubSystem(SUBSYSID_CMD_IF)
     
         // dump_registers();
     
-        response_buffer = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_RESPONSE_START));
+        response_offset = (8*CMD_IF_RESPONSE_START);
+        response_buffer = (uint8_t *)(CMD_IF_RAM_BASE + response_offset);
         status_buffer   = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_STATUS_START));
         command_buffer  = (uint8_t *)(CMD_IF_RAM_BASE + (8*CMD_IF_COMMAND_START));
     
@@ -127,20 +128,27 @@ void CommandInterface :: run_task(void)
 		xQueueReceive(queue, &status_byte, portMAX_DELAY);
 
 		if(status_byte & CMD_ABORT_DATA) {
-			printf("Abort received.\n");
+			//printf("Abort received.\n");
 			if (target != CMD_TARGET_NONE) {
-				command_targets[target]->abort();
+			    int offset = (((int)CMD_IF_RESPONSE_LEN_H) << 8) | CMD_IF_RESPONSE_LEN_L;
+				command_targets[target]->abort(offset - response_offset);
 			}
 			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
 			CMD_IF_IRQMASK_CLEAR = CMD_ABORT_DATA;
 		}
 		if(status_byte & CMD_DATA_ACCEPTED) {
-			if (target != CMD_TARGET_NONE) {
-				command_targets[target]->get_more_data(&data, &status);
-				copy_result(data, status);
+		    uint8_t state = CMD_IF_HANDSHAKE_OUT;
+
+            if (state & CMD_STATE_DATA_MORE) {
+                if (target != CMD_TARGET_NONE) {
+                    command_targets[target]->get_more_data(&data, &status);
+                    copy_result(data, status);
+                } else {
+                    printf("CMDIF: Requested for more data, but target is not set!\n");
+                }
 			}
-			CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
-			CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
+            CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_NEXTDATA;
+            CMD_IF_IRQMASK_CLEAR = CMD_DATA_ACCEPTED;
 		}
 
 		if(status_byte & CMD_NEW_COMMAND) {
@@ -154,8 +162,8 @@ void CommandInterface :: run_task(void)
 				target = incoming_command.message[0] & CMD_IF_MAX_TARGET;
 				bool no_reply = ((incoming_command.message[0] & CMD_IF_NO_REPLY) != 0);
 				command_targets[target]->parse_command(&incoming_command, &data, &status);
-				CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
 				copy_result(data, status);
+                CMD_IF_HANDSHAKE_OUT = HANDSHAKE_ACCEPT_COMMAND;
 				if (no_reply) {
 				    CMD_IF_HANDSHAKE_OUT = HANDSHAKE_RESET;
 				}
@@ -185,7 +193,6 @@ void CommandInterface :: copy_result(Message *data, Message *status)
     CMD_IF_STATUS_LENGTH = status->length;
     if(data->last_part) {
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_LAST;
-        target = CMD_TARGET_NONE;
     } else {
         CMD_IF_HANDSHAKE_OUT = HANDSHAKE_VALIDATE_MORE;
     }    

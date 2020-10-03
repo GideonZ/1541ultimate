@@ -460,6 +460,6 @@ void ControlTarget :: get_more_data(Message **reply, Message **status)
 	*status = &c_status_no_data;
 }
 
-void ControlTarget :: abort(void) {
+void ControlTarget :: abort(int a) {
 
 }

@@ -364,9 +364,9 @@ void UserInterface :: hide_progress(void)
     delete status_box;
 }
 
-void UserInterface :: run_editor(const char *text_buf)
+void UserInterface :: run_editor(const char *text_buf, int max_len)
 {
-    Editor *edit = new Editor(this, text_buf);
+    Editor *edit = new Editor(this, text_buf, max_len);
     edit->init(screen, keyboard);
     int ret;
     do {

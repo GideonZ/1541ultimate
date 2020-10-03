@@ -5,7 +5,7 @@
 const char *test_text =
                   "Een editor is iemand die verantwoordelijk is voor de verwerking, bewerking en/of samenstelling "
                   "(montage) van beeld- en/of geluidsmateriaal tot een product dat geschikt is voor publicatie.\n\n"
-                  "Een editor kan werkzaam zijn in de filmbranche, bij de televisie, bij de radio, of bij commerciële "
+                  "Een editor kan werkzaam zijn in de filmbranche, bij de televisie, bij de radio, of bij commerciï¿½le "
                   "audio/videobedrijven. Er is geen goede vertaling van het woord 'editor' in het Nederlands. "
                   "'Montagespecialist' komt dichtbij, maar is geen gangbare term. Overigens moet 'editor' vanuit "
                   "het Engels vertaald worden met 'redacteur'.\n\n"
@@ -17,7 +17,7 @@ const char *test_text =
 
 struct Line empty_line = { NULL, 0 };
 
-Editor :: Editor(UserInterface *ui, const char *text_buffer)
+Editor :: Editor(UserInterface *ui, const char *text_buffer, int max_len)
 {
 	user_interface = ui;
 	screen = NULL;
@@ -28,10 +28,13 @@ Editor :: Editor(UserInterface *ui, const char *text_buffer)
     linecount = 0;
     first_line = 0;
     complete_text = text_buffer;
+    text_length = max_len;
     
     text = new IndexedList<Line>(16, empty_line);
-    if(!text_buffer)
+    if(!text_buffer) {
         text_buffer = (char *)test_text;
+        text_length = strlen(test_text);
+    }
         
 }
 
@@ -43,53 +46,59 @@ Editor :: ~Editor(void)
     delete text;
 }
 
-void Editor :: line_breakdown(const char *text_buffer)
+void Editor :: line_breakdown(const char *text_buffer, int buffer_size)
 {
     Line current;
 
-    const char *c = text_buffer;
+    //const char *c = text_buffer;
+    int pos = 0;
     char last;
     int last_space;
 	linecount = 0;
 
-    // printf("Line length = %d\n", line_length);
-	text->clear_list();
-    while(c) {
-        current.buffer = c;
-        last_space = -1;
+	// custom_outbyte = 0;
 
-        for(int i=0;i<line_length;i++) {
+	// printf("Line length = %d\n", line_length);
+	text->clear_list();
+    while(text_buffer[pos] && pos < buffer_size) {
+        current.buffer = &text_buffer[pos];
+        current.length = -1;
+        last_space = -1;
+        const char *c = &text_buffer[pos];
+        int max_line_length = (line_length > (buffer_size - pos)) ? buffer_size - pos : line_length;
+        for(int i=0;i<max_line_length;i++) {
             last = c[i];
             if((last == 0x0a)||(last == 0x0d)||(last == 0)) {
                 current.length = i;
-                // printf("adding returned line = %d\n", current.length);
+                //printf("adding returned line = %d '%#s'\n", current.length, (current.length ? current.length : 1), current.buffer);
                 text->append(current);
 				linecount++;
                 if(last == 0)
                     return;
-                c = c + i + 1;
-                if((*c == 0x0a)&&(last == 0x0d))
-                    c++;
-                i = -1;
-                last_space = -1;
-                current.buffer = c;
-                // printf("First char = %b\n", *c);
-                continue;
+                i++;
+                if((c[i] == 0x0a)&&(last == 0x0d))
+                    i++;
+                pos += i;
+                break;
             }
             if(last == 0x20) {
                 last_space = i;
             }
         }
-        if(last_space == -1) { // truncate!
-            current.length = line_length;
-            c += line_length;
-        } else { // break at last space
-            current.length = last_space + 1;
-            c += last_space + 1;
+        if (current.length < 0) { // line was not yet added
+            if(last_space == -1) { // truncate!
+                current.length = max_line_length;
+                pos += max_line_length;
+                //printf("adding hard truncated line = %d '%#s'\n", current.length, (current.length ? current.length : 1), current.buffer);
+            } else { // break at last space
+                current.length = last_space;
+                pos += last_space + 1;
+                //printf("adding space truncated line = %d '%#s'\n", current.length, (current.length ? current.length : 1), current.buffer);
+            }
+            // printf("adding line len = %d\n", current.length);
+            text->append(current);
+            linecount++;
         }
-        // printf("adding line len = %d\n", current.length);
-        text->append(current);
-		linecount++;
     }
 }
 
@@ -109,7 +118,7 @@ void Editor :: init(Screen *scr, Keyboard *key)
     height -= 2;
     first_line = 0;
     line_length -= 2;
-    line_breakdown(complete_text);
+    line_breakdown(complete_text, text_length);
     draw();
 }
     

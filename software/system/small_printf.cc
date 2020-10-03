@@ -83,7 +83,8 @@ extern "C" int
 _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, va_list ap)
 {
     char buf[128];
-    char c, *cp=buf;
+    char c;
+    const char *cp=buf;
     long long val = 0;
     int res = 0, length, width;
     int prepad, postpad, leading_zeros;
@@ -124,6 +125,9 @@ _my_vprintf(void (*putc)(char c, void **param), void **param, const char *fmt, v
             case 's':
                 cp = va_arg(ap, char *);
                 length = 0;
+                if (!cp) {
+                    cp = "(null)";
+                };
                 while (cp[length] != '\0') length++;
                 if(length < width)
                     postpad = width - length;

@@ -379,6 +379,7 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 	bool create = (flags & FA_CREATE_NEW) && (fres == FR_NO_FILE);
 	create |= (flags & FA_CREATE_ALWAYS) && (fres == FR_OK);
 	create |= (flags & FA_CREATE_ALWAYS) && (fres == FR_NO_FILE);
+    create |= (flags & FA_OPEN_ALWAYS) && (fres == FR_NO_FILE);
 
 	if ((fres != FR_OK) && (!create))
 		return fres;
@@ -766,68 +767,6 @@ FRESULT FileManager :: fcopy(const char *path, const char *filename, const char 
 	return ret;
 }
 
-/* some handy functions */
-void set_extension(char *buffer, const char *ext, int buf_size)
-{
-    // skip leading dots of extension to set
-    while(*ext == '.') {
-        ext++;
-    }
-    int ext_len = strlen(ext) + 1; // +1 because of dot
-	if(buf_size < 1+ext_len)
-		return; // cant append, even to an empty base
-
-	// try to remove the extension
-	int name_len = strlen(buffer);
-
-	for(int i=name_len-1;i>=0;i--) {
-		if(buffer[i] == '.') {
-			buffer[i] = 0;
-			break;
-		}
-	}
-	if (!(*ext)) { // there is nothing to append
-	    return;
-	}
-
-	name_len = strlen(buffer);
-	if(name_len + ext_len + 1 > buf_size) {
-		buffer[buf_size-ext_len-1] = 0; // truncate to make space for extension!
-	}
-    strcat(buffer, ".");
-	strcat(buffer, ext);
-}
-
-void fix_filename(char *buffer)
-{
-	const char illegal[] = "\"*:/<>\\?|,\x7F";
-	int illegal_count = strlen(illegal);
-	int len = strlen(buffer);
-
-	for(int i=0;i<len;i++)
-		for(int j=0;j<illegal_count;j++)
-			if(buffer[i] == illegal[j])
-				buffer[i] = '_';
-
-}
-
-void get_extension(const char *name, char *ext)
-{
-	int len = strlen(name);
-	ext[0] = 0;
-
-	for (int i=len-1;i>=0;i--) {
-		if (name[i] == '.') { // last . found
-			for(int j=0;j<3;j++) { // copy max 3 chars
-				ext[j+1] = 0; // the char after the current is always end
-				if (!name[i+1+j])
-					break;
-				ext[j] = toupper(name[i+1+j]);
-			}
-			break;
-		}
-	}
-}
 
 const char *FileManager :: eventStrings[] = {
     "eRefreshDirectory",  // Contents of directory have changed

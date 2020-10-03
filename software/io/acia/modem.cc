@@ -68,6 +68,7 @@ Modem :: Modem()
     xTaskCreate( Modem :: callerTask, "Outgoing Caller", configMINIMAL_STACK_SIZE, this, tskIDLE_PRIORITY + 1, NULL );
     listenerSocket = new ListenerSocket("Modem Listener", Modem :: listenerTask, "Modem External Connection");
     keepConnection = false;
+    busyMode = false;
     commandMode = true;
     baudRate = 0;
     dropOnDTR = true;
@@ -186,7 +187,7 @@ void Modem :: RunRelay(int socket)
 void Modem :: IncomingConnection(int socket)
 {
     char buffer[64];
-    if (xSemaphoreTake(connectionLock, 0) != pdTRUE) {
+    if (busyMode || xSemaphoreTake(connectionLock, 0) != pdTRUE) {
         RelayFileToSocket(cfg->get_string(CFG_MODEM_BUSYFILE), socket, "The modem you are connecting to is currently busy.\n");
         return;
     } else if(!(lastHandshake & ACIA_HANDSH_DTR)) {
@@ -197,6 +198,7 @@ void Modem :: IncomingConnection(int socket)
         RelayFileToSocket(cfg->get_string(CFG_MODEM_CONNFILE), socket, "Welcome to the Modem Emulation Layer of the Ultimate!\n");
     }
 
+    int connChange;
     if (cfg->get_value(CFG_MODEM_LISTEN_RING)) {
         ModemCommand_t modemCommand;
         registerValues[MODEM_REG_RINGCOUNTER] = 0;
@@ -215,7 +217,11 @@ void Modem :: IncomingConnection(int socket)
             }
             BaseType_t cmdAvailable = xQueueReceive(commandQueue, &modemCommand, 600); // wait max 3 seconds for a command
             if (cmdAvailable) {
-                if (ExecuteCommand(&modemCommand)) {
+                connChange = ExecuteCommand(&modemCommand);
+                if (connChange) {
+                    if (connChange == 3) { // ATH1
+                        RelayFileToSocket(cfg->get_string(CFG_MODEM_BUSYFILE), socket, "The modem you are connecting to is currently busy.\n");
+                    }
                     break;
                 }
             }
@@ -401,9 +407,9 @@ void Modem :: CollectCommand(ModemCommand_t *cmd, char *buf, int len)
     }
 }
 
-bool Modem :: ExecuteCommand(ModemCommand_t *cmd)
+int Modem :: ExecuteCommand(ModemCommand_t *cmd)
 {
-    bool connectionStateChange = false;
+    int connectionStateChange = 0;
     char *c;
     const char *response = "OK\r";
     char responseBuffer[16];
@@ -413,6 +419,7 @@ bool Modem :: ExecuteCommand(ModemCommand_t *cmd)
 
     // Parse Command string
     for(int i=0; i < cmd->length; i++) {
+        temp = 0;
         switch(cmd->command[i]) {
         case 'D': // Dial
             c = cmd->command; // overwrite current command
@@ -431,29 +438,22 @@ bool Modem :: ExecuteCommand(ModemCommand_t *cmd)
         case 'Z': // reset
             ResetRegisters();
             keepConnection = false;
-            connectionStateChange = true;
+            connectionStateChange = 1;
             break;
         case 'H': // hang up
             sscanf(cmd->command + i + 1, "%d", &temp);
             while(i < cmd->length && (isdigit(cmd->command[i+1])))
                 i++;
-            if (temp == 0) {
-                keepConnection = false;
-            } else {
-                if (keepConnection) {
-                    response = "";
-                } else {
-                    response = "NO DIALTONE\r";
-                }
-            }
-            connectionStateChange = true;
+            busyMode = (temp > 0);
+            keepConnection = false;
+            connectionStateChange = 1 + (busyMode) ? 2 : 0; // if busy mode is selected, return 3
             break;
         case 'A': // answer
             if (keepConnection) {
                 commandMode = false;
             }
             keepConnection = true;
-            connectionStateChange = true;
+            connectionStateChange = 2;
             break;
         case 'O': // Return Online
             if (keepConnection) {
@@ -526,6 +526,7 @@ void Modem :: ModemTask()
     char outbuf[32];
     uint8_t txbuf[32];
     int len;
+    int newRate = 0;
 
     ModemCommand_t modemCommand;
     modemCommand.length = 0;
@@ -541,10 +542,12 @@ void Modem :: ModemTask()
         //printf("Message type: %d. Value: %b. DataLen: %d Buffer: %d\n", message.messageType, message.smallValue, message.dataLength, aciaTxBuffer->AvailableData());
         switch(message.messageType) {
         case ACIA_MSG_CONTROL:
-            printf("BAUD=%d\n", baudRates[message.smallValue & 0x0F]);
-            acia.SetRxRate(rateValues[message.smallValue & 0x0F]);
-            baudRate = baudRates[message.smallValue & 0x0F];
-            //acia.SendToRx((uint8_t *)outbuf, strlen(outbuf));
+            newRate = baudRates[message.smallValue & 0x0F];
+            if (newRate != baudRate) {
+                printf("BAUD=%d\n", newRate);
+                acia.SetRxRate(rateValues[message.smallValue & 0x0F]);
+                baudRate = newRate;
+            }
             break;
 /*
         case ACIA_MSG_DCD:
