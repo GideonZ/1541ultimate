@@ -394,12 +394,13 @@ int TreeBrowser :: handle_key(int c)
         	ret = -1;
         	break;
 
+#ifndef RECOVERYAPP
         case KEY_F6: // F6 -> show log
         	reset_quick_seek();
         	state->refresh = true;
         	user_interface->run_editor(textLog.getText(), textLog.getLength());
         	break;
-
+#endif
         case KEY_BACK: // backspace
             if(quick_seek_length) {
                 quick_seek_length--;

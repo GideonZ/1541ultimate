@@ -73,13 +73,13 @@ extern "C" {
 
 #define FPGA_TYPE_SHIFT     28
 
-#if RUNS_ON_PC
-# define ENTER_SAFE_SECTION
-# define LEAVE_SAFE_SECTION
-#else
-#include "portmacro.h"
+#ifdef OS
+# include "portmacro.h"
 # define ENTER_SAFE_SECTION portDISABLE_INTERRUPTS(); // ioWrite8(ITU_IRQ_GLOBAL,0);
 # define LEAVE_SAFE_SECTION portENABLE_INTERRUPTS();  // ioWrite8(ITU_IRQ_GLOBAL,1);
+#else
+# define ENTER_SAFE_SECTION
+# define LEAVE_SAFE_SECTION
 #endif
 
 #define ITU_BUTTON0 0x20
