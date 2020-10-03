@@ -182,7 +182,7 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
 		}
 		uint8_t n = (kd[0] & 0x22) ? keymap_usb2matrix_shift[kd[i]] :
 		                            keymap_usb2matrix[kd[i]];
-		printf("[%b]", n);
+		//printf("[%b]", n);
 		if (n != 0xFF) {
 		    something_else_pressed = 1;
 		    out[(n & 0x38) >> 3] |= (1 << (n & 0x07));
@@ -203,14 +203,6 @@ void Keyboard_USB :: usb2matrix(uint8_t *kd)
             out[6] |= 0x10;
         }
 	}
-
-	/*
-	for(int i=0; i<8; i++) {
-		printf("%b ", out[i]);
-	} printf("\n");
-
-	return;
-*/
 
 	// copy temporary to hardware
 	for(int i=0; i<8; i++) {
