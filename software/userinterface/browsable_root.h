@@ -130,8 +130,8 @@ public:
 
 	virtual void getDisplayString(char *buffer, int width) {
 		static char sizebuf[8];
-		if (info->special_display) {
-			parent_path->get_display_string(info->lfname, buffer, width);
+		if (info->name_format & NAME_FORMAT_DIRECT) {
+			FileManager :: getFileManager() -> get_display_string(parent_path, info->lfname, buffer, width);
 		} else {
 			char sel = getSelection() ? '\x13': ' ';
 			if (info->attrib & AM_VOL) {
