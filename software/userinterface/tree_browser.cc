@@ -553,7 +553,7 @@ void TreeBrowser :: cd_impl(const char *dst)
         return;
     }
     
-    // walk back up to root if neccessary...
+    // walk back up to root if necessary...
     while(state != state_root) {
         state->level_up();
     }

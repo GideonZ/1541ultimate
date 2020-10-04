@@ -110,7 +110,7 @@ public:
 
 		setPath();
 		IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-		if (path->get_directory(*infos, NULL) != FR_OK) {
+		if (FileManager :: getFileManager()->get_directory(path, *infos, NULL) != FR_OK) {
 			delete infos;
 			error = -1;
 		} else {

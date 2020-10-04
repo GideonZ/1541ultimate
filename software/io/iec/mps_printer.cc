@@ -701,7 +701,7 @@ MpsPrinter::calcPageNum(void)
 
     path->cd(dirname);
     IndexedList<FileInfo *> *infos = new IndexedList<FileInfo *>(8, NULL);
-    if (path->get_directory(*infos, NULL) != FR_OK)
+    if (fm->get_directory(path, *infos, NULL) != FR_OK)
     {
         delete infos;
     }

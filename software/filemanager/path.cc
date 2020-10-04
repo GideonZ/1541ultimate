@@ -229,22 +229,6 @@ void Path :: regenerateFullPath()
 	}
 }
 
-
-FRESULT Path :: get_directory(IndexedList<FileInfo *> &target, const char *matchPattern)
-{
-	return FileManager :: getFileManager() -> get_directory(this, target, matchPattern);
-}
-
-bool Path :: isValid()
-{
-	return FileManager :: getFileManager() -> is_path_valid(this);
-}
-
-void Path :: get_display_string(const char *filename, char *buffer, int width)
-{
-	FileManager :: getFileManager() -> get_display_string(this, filename, buffer, width);
-}
-
 // =======================
 //   COMPARE PATH OBJECTS 
 // =======================

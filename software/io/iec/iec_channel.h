@@ -167,7 +167,7 @@ public:
     FRESULT ReadDirectory()
     {
         CleanupDir();
-        FRESULT res = path->get_directory(*dirlist, NULL);
+        FRESULT res = fm->get_directory(path, *dirlist, NULL);
         for(int i=0;i<dirlist->get_elements();i++) {
             FileInfo *inf = (*dirlist)[i];
             iecNames->append(CreateIecName(inf->lfname, inf->extension, inf->attrib & AM_DIR));

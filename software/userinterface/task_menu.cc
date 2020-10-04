@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "task_menu.h"
 #include <string.h>
 #include "tree_browser_state.h"

@@ -75,10 +75,12 @@ void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 		}
 	}
 
+/*
 	for(int i=0;i<used_paths.get_elements();i++) {
 		path = used_paths[i];
 		// path->invalidate(); // clear the validated state  (comment: not yet implemented)
 	}
+*/
 
 	if(includeSelf == 0) { // 0: the object still exists, just clean up the children
 		o->cleanup_children();

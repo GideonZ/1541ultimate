@@ -10,6 +10,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#include "fs_errors_flags.h"
 
 #define IECDEBUG 0
 
@@ -58,6 +59,7 @@ class IecCommandChannel;
 class IecPrinter;
 class UltiCopy;
 class IecFileSystem;
+class FileManager;
 
 class IecInterface : public SubSystem, ObjectWithMenu,  ConfigurableObject
 {
