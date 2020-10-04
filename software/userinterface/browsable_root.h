@@ -53,7 +53,7 @@ class BrowsableDirEntry : public Browsable
 	Browsable *parent;
 	FileInfo *info;
 	FileType *type;
-
+	char *fatname;
 	Path *path;
 	Path *parent_path;
 
@@ -72,6 +72,7 @@ public:
 		this->path = 0;
 		this->parent = parent;
 		this->parent_path = pp;
+		this->fatname = NULL;
 	}
 
 	virtual ~BrowsableDirEntry() {
@@ -79,6 +80,8 @@ public:
 			delete type;
 		if (info)
 			delete info;
+		if (fatname)
+		    delete fatname;
 		if (path)
 			FileManager :: getFileManager() -> release_path(path);
 	}
@@ -125,7 +128,18 @@ public:
 	}
 
 	virtual const char *getName() {
-		return info->lfname;
+		if (fatname) {
+		    return fatname;
+		}
+	    if (!info) {
+		    return "No info!";
+		}
+		if (info->name_format & NAME_FORMAT_CBM) {
+		    fatname = new char[48];
+		    info->generate_fat_name(fatname, 48);
+		    return fatname;
+		}
+	    return info->lfname;
 	}
 
 	virtual void getDisplayString(char *buffer, int width) {

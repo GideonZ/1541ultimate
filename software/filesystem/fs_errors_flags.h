@@ -40,9 +40,9 @@ typedef enum {
 
 #define FA_READ             0x01
 #define FA_OPEN_EXISTING    0x00
-#define FA_WRITE            0x02
-#define FA_CREATE_NEW       0x04
-#define FA_CREATE_ALWAYS    0x08
+#define FA_WRITE            0x02 // if none of the following is set: file should exist.
+#define FA_CREATE_NEW       0x04 // file should not exist yet.
+#define FA_CREATE_ALWAYS    0x08 // file may be overwritten, even if it exists. File contents are cleared
 #define FA_ANY_WRITE_FLAG   0x0E // the three above orred
 #define FA_OPEN_ALWAYS      0x10
 #define FA__WRITTEN         0x20

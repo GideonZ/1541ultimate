@@ -7,8 +7,8 @@
 
 #include "filemanager.h"
 
-#define dbg_printf(...)
-//#define dbg_printf(...)  printf(__VA_ARGS__)
+//#define dbg_printf(...)
+#define dbg_printf(...)  printf(__VA_ARGS__)
 
 void  vfs_load_plugin()
 {
@@ -18,8 +18,6 @@ vfs_t *vfs_openfs()
 {
     vfs_t *vfs = new vfs_t;
     vfs->path = FileManager :: getFileManager() -> get_new_path("vfs");
-    vfs->last_direntry = NULL;
-    vfs->last_dir = NULL;
     vfs->open_file = NULL;
     return vfs;
 }
@@ -41,7 +39,7 @@ vfs_file_t *vfs_open(vfs_t *fs, const char *name, const char *flags)
     Path *path = (Path *)fs->path;
     uint8_t bfl = FA_READ;
     if(flags[0] == 'w')
-        bfl = FA_WRITE | FA_CREATE_ALWAYS;
+        bfl = FA_WRITE | FA_CREATE_ALWAYS | FA_CREATE_NEW;
         
     File *file = 0;
     FRESULT fres = FileManager :: getFileManager() -> fopen(path, (char *)name, bfl, &file);
@@ -132,8 +130,6 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
     dir->index = 0;
     dir->entry = ent;
     dir->parent_fs = fs;
-    fs->last_direntry = NULL;
-    fs->last_dir = dir;
 
     fm->get_directory(temp, *listOfEntries, matchPattern.c_str());
 
@@ -148,8 +144,6 @@ void vfs_closedir(vfs_dir_t *dir)
 {
     dbg_printf("CloseDIR (%p)\n", dir);
     if(dir) {
-        dir->parent_fs->last_direntry = NULL;
-        dir->parent_fs->last_dir = NULL;
         if (dir->entries) {
         	IndexedList<FileInfo *> *listOfEntries = (IndexedList<FileInfo *> *)(dir->entries);
         	for(int i=0;i<listOfEntries->get_elements();i++) {
@@ -169,34 +163,15 @@ vfs_dirent_t *vfs_readdir(vfs_dir_t *dir)
     if(dir->index < listOfEntries->get_elements()) {
         FileInfo *inf = (*listOfEntries)[dir->index];
         dir->entry->file_info = inf;
-        dir->entry->name = inf->lfname;
-        dir->parent_fs->last_direntry = dir->entry;
-        dbg_printf("Read: %s\n", dir->entry->name);
+        dbg_printf("Read: %s\n", inf->lfname);
         dir->index++;
         return dir->entry;
     }
     return NULL;
 }
 
-int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
+static int vfs_stat_impl(FileInfo *inf, vfs_stat_t *st)
 {
-    dbg_printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
-    FileInfo *inf = NULL;
-    if(fs->last_direntry) {
-        inf = (FileInfo *)fs->last_direntry->file_info;
-        dbg_printf("Last inf: %s\n", inf->lfname);
-        if(strcmp(inf->lfname, name) != 0) {
-            inf = NULL;
-        }
-    }
-    FileInfo localInfo(32);
-    if(!inf) {
-    	if((FileManager :: getFileManager() -> fstat((Path *)fs->path, name, localInfo)) == FR_OK)
-    		inf = &localInfo;
-    }
-    if(!inf)
-        return -1;        
-    
     st->year  = (inf->date >> 9) + 1980;
     st->month = (inf->date >> 5) & 0x0F;
     st->day   = (inf->date) & 0x1F;
@@ -208,21 +183,36 @@ int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
 
     // make sure that the date makes sense, otherwise the FTP client will get confused
     if (st->month > 12)
-    	st->month = 12;
+        st->month = 12;
     if (st->month < 1)
-    	st->month = 1;
+        st->month = 1;
     if (st->day < 1)
-    	st->day = 1;
+        st->day = 1;
     if (st->min > 59)
-    	st->min = 59;
+        st->min = 59;
     if (st->hr > 23)
-    	st->hr = 23;
+        st->hr = 23;
 
-    strncpy(st->name, inf->lfname, 64);
-    st->name[63] = 0;
+    inf->generate_fat_name(st->name, 64);
 
     // > 31 is not possible
     return 0;
+}
+
+int  vfs_stat_dirent(vfs_dirent_t *ent, vfs_stat_t *st)
+{
+    FileInfo *inf = (FileInfo *)ent->file_info;
+    return vfs_stat_impl(inf, st);
+}
+
+int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st)
+{
+    dbg_printf("STAT: VFS=%p. %s -> %p\n", fs, name, st);
+    FileInfo localInfo(32);
+    if ((FileManager :: getFileManager() -> fstat((Path *)fs->path, name, localInfo)) == FR_OK) {
+        return vfs_stat_impl(&localInfo, st);
+    }
+    return -1;
 }
 
 int  vfs_chdir(vfs_t *fs, const char *name)

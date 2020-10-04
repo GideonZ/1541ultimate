@@ -86,48 +86,38 @@ public:
     void SetInitialPath(void);
     bool IsValid(); // implemented in iec_channel.cc, to resolve an illegal forward reference
 
-    char *CreateIecName(char *in, char *ext, bool dir)
+    char *CreateIecName(FileInfo *inf)
     {
+        bool dir  = inf->attrib & AM_DIR;
+        char *ext = inf->extension;
         char *out = new char[24];
         memset(out, 0, 24);
 
-        char temp[64];
-        strncpy(temp, in, 64);
-
-        if (dir) {
-            memcpy(out, "DIR", 3);
-        } else if (strcmp(ext, "PRG") == 0) {
+        if (inf->name_format & NAME_FORMAT_CBM) {
+            // Format is already CBM; simply copy the parts together
             memcpy(out, ext, 3);
-            set_extension(temp, "", 64);
-        } else if (strcmp(ext, "SEQ") == 0) {
-            memcpy(out, ext, 3);
-            set_extension(temp, "", 64);
-        } else if (strcmp(ext, "REL") == 0) {
-            memcpy(out, ext, 3);
-            set_extension(temp, "", 64);
-        } else if (strcmp(ext, "USR") == 0) {
-            memcpy(out, ext, 3);
-            set_extension(temp, "", 64);
+            strncpy(out+3, inf->lfname, 16);
         } else {
-            memcpy(out, "SEQ", 3);
-        }
-
-        fat_to_petscii(temp, out+3, 16);
-/*
-        for(int i=0;i<16;i++) {
-            char o;
-            if(temp[i] == 0) {
-                break;
-            } else if(temp[i] == '_') {
-                o = 164;
-            } else if(temp[i] < 32) {
-                o = 32;
+            bool cutExtension = false;
+            if (dir) {
+                memcpy(out, "DIR", 3);
+            } else if (strcmp(ext, "PRG") == 0) {
+                memcpy(out, ext, 3);
+                cutExtension = true;
+            } else if (strcmp(ext, "SEQ") == 0) {
+                memcpy(out, ext, 3);
+                cutExtension = true;
+            } else if (strcmp(ext, "REL") == 0) {
+                memcpy(out, ext, 3);
+                cutExtension = true;
+            } else if (strcmp(ext, "USR") == 0) {
+                memcpy(out, ext, 3);
+                cutExtension = true;
             } else {
-                o = toupper(in[i]);
+                memcpy(out, "SEQ", 3);
             }
-            out[i+3] = o;
+            fat_to_petscii(inf->lfname, cutExtension, out+3, 16, true);
         }
-*/
         return out;
     }
 
@@ -170,7 +160,7 @@ public:
         FRESULT res = fm->get_directory(path, *dirlist, NULL);
         for(int i=0;i<dirlist->get_elements();i++) {
             FileInfo *inf = (*dirlist)[i];
-            iecNames->append(CreateIecName(inf->lfname, inf->extension, inf->attrib & AM_DIR));
+            iecNames->append(CreateIecName(inf));
         }
         return res;
     }
@@ -321,11 +311,6 @@ public:
     void SetCurrentPartition(int pn) {
         currentPartition = pn;
     }
-/*
-    int GetCurrentPartition(void) {
-        return currentPartition;
-    }
-*/
 };
 
 

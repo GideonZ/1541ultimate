@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "indexed_list.h"
+#include "pattern.h"
 
 /* File attribute bits for directory entry */
 
@@ -140,6 +141,17 @@ public:
 		printf("LFname     : %s\n", lfname);
 		printf("Attrib:    : %b\n", attrib);
 		printf("Extension  : %s\n", extension);
+	}
+
+	void generate_fat_name(char *buffer, int maxlen)
+	{
+	    if (name_format & NAME_FORMAT_CBM) {
+	        petscii_to_fat(lfname, buffer);
+	        add_extension(buffer, extension, maxlen);
+	    } else {
+	        buffer[maxlen-1] = 0;
+	        strncpy(buffer, lfname, maxlen-1);
+	    }
 	}
 
 	static int compare(IndexedList<FileInfo *> *list, int a, int b)

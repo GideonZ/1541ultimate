@@ -532,6 +532,7 @@ void TreeBrowser::paste(void)
     user_interface->hide_progress();
     fm->registerObserver(observerQueue);
     state->refresh = true;
+    state->needs_reload = true;
 }
 
 
