@@ -66,12 +66,12 @@ class FileManager
 
 	IndexedList<MountPoint *>mount_points;
     IndexedList<File *>open_file_list;
-	IndexedList<Path *>used_paths;
+	//IndexedList<Path *>used_paths;
 	IndexedList<ObserverQueue *>observers;
 	CachedTreeNode *root;
 	FileSystem *rootfs;
 
-    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), used_paths(8, NULL), observers(4, NULL) {
+    FileManager() : mount_points(8, NULL), open_file_list(16, NULL), /*used_paths(8, NULL), */observers(4, NULL) {
         root = new CachedTreeNode(NULL, "RootNode");
         root->get_file_info()->attrib = AM_DIR;
         rootfs = new FileSystem_Root(root);
@@ -89,9 +89,11 @@ class FileManager
     	for(int i=0;i<open_file_list.get_elements();i++) {
         	delete open_file_list[i];
         }
+/*
         for(int i=0;i<used_paths.get_elements();i++) {
         	delete used_paths[i];
         }
+*/
         for(int i=0;i<mount_points.get_elements();i++) {
         	delete mount_points[i];
         }
@@ -138,11 +140,13 @@ public:
     		File *f = open_file_list[i];
     		printf("'%s' (%d)\n", f->get_path(), f->get_size());
     	}
+/*
     	printf("\nUsed paths:\n");
     	for(int i=0;i<used_paths.get_elements();i++) {
     		Path *p = used_paths[i];
     		printf("'%s'\n", p->get_path());
     	}
+*/
     	printf("\nMount Points:\n");
     	for(int i=0;i<mount_points.get_elements();i++) {
     		MountPoint *f = mount_points[i];
@@ -162,11 +166,11 @@ public:
     Path *get_new_path(const char *owner) {
     	Path *p = new Path();
     	p->owner = owner;
-    	used_paths.append(p);
+    	//used_paths.append(p);
     	return p;
     }
     void  release_path(Path *p) {
-    	used_paths.remove(p);
+    	//used_paths.remove(p);
     	delete p;
     }
 

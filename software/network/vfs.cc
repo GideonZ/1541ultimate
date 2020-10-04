@@ -112,11 +112,11 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
     Path *temp = fm->get_new_path("FTP Temp");
     temp->cd(path->get_path());
     temp->cd(name);
-    if (!temp->isValid()) { // Is it not a directory?
+    if (!fm->is_path_valid(temp)) { // Is it not a directory?
         // Maybe it's a file, so we 'cd' one step up and store the last part of the path as a pattern
         temp->up(&matchPattern);
         dbg_printf("Stripped = '%s'\n", matchPattern.c_str());
-        if (!temp->isValid()) { // Is the parent not a directory? then we don't know.
+        if (! fm->is_path_valid(temp)) { // Is the parent not a directory? then we don't know.
             fm->release_path(temp);
             return NULL;
         }
@@ -135,7 +135,7 @@ vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name)
     fs->last_direntry = NULL;
     fs->last_dir = dir;
 
-    temp->get_directory(*listOfEntries, matchPattern.c_str());
+    fm->get_directory(temp, *listOfEntries, matchPattern.c_str());
 
     fm->release_path(temp);
 
@@ -240,7 +240,7 @@ int  vfs_chdir(vfs_t *fs, const char *name)
         return -1;
     }
 
-    if (!temp->isValid()) { // Resulting path doesn't exist on the file system
+    if (!fm->is_path_valid(temp)) { // Resulting path doesn't exist on the file system
         fm->release_path(temp);
         return -2;
     }
