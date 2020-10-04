@@ -11,7 +11,7 @@ FilePartition :: FilePartition(CachedTreeNode *par, Partition *p, char *n) : Cac
     prt = p; // link to partition object.
     info.cluster = 0; // indicate root dir
     info.attrib = AM_DIR; // ;-)
-    info.special_display = 1;
+    info.name_format = NAME_FORMAT_DIRECT;
 }
 
 FilePartition :: ~FilePartition()

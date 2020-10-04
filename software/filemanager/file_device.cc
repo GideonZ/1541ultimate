@@ -11,7 +11,7 @@ FileDevice :: FileDevice(BlockDevice *b, const char *n, const char *dn) : Cached
     info.fs = NULL;
     info.cluster = 0; // indicate root dir
     info.attrib = AM_DIR; // ;-)
-    info.special_display = 1;
+    info.name_format = NAME_FORMAT_DIRECT;
     isFloppy = false;
     //printf("FileDevice Created. This = %p, Disk = %p, blk = %p, name = %s, disp = %s, info = %p\n", this, disk, b, n, dn, get_file_info());
 }

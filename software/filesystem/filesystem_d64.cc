@@ -569,13 +569,14 @@ FRESULT DirInD64 :: read(FileInfo *f)
 			int offset = (fs->image_mode==2)?4:144;
 			for(int i=0;i<24;i++) {
                 if(i < f->lfsize) {
-                	char c = char(fs->sect_buffer[offset+i] & 0x7F);
-                    f->lfname[i] = c; //(c == '/')? '!' : c;
+                	char c = char(fs->sect_buffer[offset+i]);
+                    f->lfname[i] = c;// & 0x7F; //(c == '/')? '!' : c;
                 }
             }
             if(f->lfsize > 24)
                 f->lfname[24] = 0;
         	f->size    = 0;
+        	f->name_format = NAME_FORMAT_CBM;
         	idx        = 0;
         	return FR_OK;
         } else {
@@ -612,26 +613,28 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 }
             }
             uint8_t *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
-            //dump_hex(p, 32);
+
             uint8_t tp = (p[2] & 0x0f);
-            if ((tp == 0x01) || (tp == 0x02) || (tp == 0x03) || (tp == 0x04)) { // PRG
+            if ((tp == 0x01) || (tp == 0x02) || (tp == 0x03) || (tp == 0x04)) {
                 int j = 0;
                 for(int i=5;i<21;i++) {
                 	if ((p[i] == 0xA0) || (p[i] < 0x20))
                 		break;
                 	if(j < f->lfsize) {
-                    	char c = char(p[i] & 0x7F);
-                        f->lfname[j++] = (c == '/')? '!' : c;
+                    	//char c = char(p[i] & 0x7F);
+                        //f->lfname[j++] = (c == '/')? '!' : c;
+                        f->lfname[j++] = p[i];
                 	}
                 }
                 if(j < f->lfsize)
                     f->lfname[j] = 0;
 
-                fix_filename(f->lfname);
+                //fix_filename(f->lfname);
                 f->attrib = (p[2] & 0x40)?AM_RDO:0;
                 f->cluster = fs->get_abs_sector((int)p[3], (int)p[4]);
                 f->size = (int)p[30] + 256*(int)p[31];
                 f->size *= 254;
+                f->name_format = NAME_FORMAT_CBM;
                 if (tp >= 1 && tp <= 3 && (p[0x17] == 0 || p[0x17] == 1) && p[0x15] >= 1 && p[0x15] <= 35 && p[0x16] <= 21) {
                 	strncpy(f->extension, "CVT", 4);
                 } else if (tp == 1) {

@@ -25,6 +25,9 @@
 #define AM_MASK  0x3F    /* Mask of defined bits */
 #define AM_HASCHILDREN 0x40 /* Is the kind of file that might have a directory listing */
 
+#define NAME_FORMAT_DIRECT 0x01
+#define NAME_FORMAT_CBM    0x02
+
 class FileSystem;
 
 class FileInfo
@@ -47,15 +50,14 @@ class FileInfo
 
 public:
 	FileSystem *fs;  /* Reference to file system, to uniquely identify file */
-    uint32_t  cluster; /* Start cluster, easy for open! */
+    uint32_t  cluster; /* To compare if a file is the same even after rename */
     uint32_t  size;	 /* File size */
 	uint16_t  date;	 /* Last modified date */
 	uint16_t  time;	 /* Last modified time */
     uint16_t  lfsize;
-    void   *object;
+    uint8_t   attrib;  /* Attribute */
+    uint8_t   name_format;
     char   *lfname;
-	uint8_t	attrib;	 /* Attribute */
-	uint8_t special_display;
 	char    extension[4];
 
     void init()
@@ -100,8 +102,7 @@ public:
         strcpy(lfname, new_name);
         attrib = i->attrib;
         extension[0] = 0;
-        object = i->object;
-        special_display = i->special_display;
+        name_format = i->name_format;
     }
 
 	~FileInfo()
@@ -120,8 +121,7 @@ public:
         strncpy(extension, i->extension, 4);
         attrib = i->attrib;
         extension[3] = 0;
-        object = i->object;
-        special_display = i->special_display;
+        name_format = i->name_format;
 	}
 
 	bool is_directory(void) {
