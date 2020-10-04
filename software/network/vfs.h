@@ -22,8 +22,6 @@ struct vfs_dirent;
 
 struct vfs {
     void *path; // owned by file manager
-    struct vfs_dirent *last_direntry; // reference only
-    struct vfs_dir *last_dir; // reference only
     struct vfs_file *open_file; // reference only
 };
 
@@ -35,7 +33,6 @@ struct vfs_file {
 
 struct vfs_dirent {
     void *file_info;
-    char *name;
 };
 
 struct vfs_dir {
@@ -76,6 +73,7 @@ EXTERNC vfs_dir_t *vfs_opendir(vfs_t *fs, const char *name);
 EXTERNC void vfs_closedir(vfs_dir_t *dir);
 EXTERNC vfs_dirent_t *vfs_readdir(vfs_dir_t *dir);
 
+EXTERNC int  vfs_stat_dirent(vfs_dirent_t *ent, vfs_stat_t *st);
 EXTERNC int  vfs_stat(vfs_t *fs, const char *name, vfs_stat_t *st);
 EXTERNC int  vfs_chdir(vfs_t *fs, const char *name);
 EXTERNC char *vfs_getcwd(vfs_t *fs, void *args, int dummy);

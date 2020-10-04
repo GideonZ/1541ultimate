@@ -620,7 +620,7 @@ int IecChannel :: setup_file_access(name_t& name)
             state = e_error;
             return 0;
         }
-        petscii_to_fat(name.name, fs_filename);
+        petscii_to_fat(name.name, fs_filename); // we may convert it back later!!
         //strcpy(fs_filename, name.name);
         strcat(fs_filename, name.extension);
         flags = FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS;

@@ -83,6 +83,7 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 	// should terminate with e_TerminatedOnFile, where the remaining path = "/hello.prg",
 
 	pathInfo.enterFileSystem(this);
+	char cbmBuffer[64];
 
 	FileInfo info(128);
 	Directory *dir;
@@ -92,13 +93,25 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 	while(pathInfo.hasMore()) {
 		fres = dir_open(pathInfo.getPathFromLastFS(workdir), &dir, pathInfo.getLastInfo());
 		if (fres == FR_OK) {
-			while(1) {
+            const char *lookingForFat = pathInfo.workPath.getElement(pathInfo.index);
+            const char *lookingForCbm = NULL;
+            const char *lookingFor;
+            while(1) {
 				fres = dir_read(dir, &info);
 				if (fres == FR_OK) {
 					// printf("%9d: %-32s (%d)\n", info.size, info.lfname, info.cluster);
 					if (info.attrib & AM_VOL)
 						continue;
-					if (pattern_match(pathInfo.workPath.getElement(pathInfo.index), info.lfname)) {
+					if (info.name_format & NAME_FORMAT_CBM) {
+					    if (!lookingForCbm) {
+					        lookingForCbm = cbmBuffer;
+					        fat_to_petscii(lookingForFat, true, cbmBuffer, 64, true);
+					    }
+                        lookingFor = lookingForCbm;
+					} else {
+					    lookingFor = lookingForFat;
+					}
+					if (pattern_match(lookingFor, info.lfname)) {
 						dir_close(dir);
 						pathInfo.replace(info.lfname);
 						pathInfo.index++;

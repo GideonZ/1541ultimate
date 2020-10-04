@@ -166,9 +166,13 @@ void add_extension(char *buffer, const char *ext, int buf_size)
     int name_len = strlen(buffer);
     if(name_len + ext_len + 1 > buf_size) {
         buffer[buf_size-ext_len-1] = 0; // truncate to make space for extension!
+        name_len = buf_size-ext_len-1;
     }
-    strcat(buffer, ".");
-    strcat(buffer, ext);
+    buffer[name_len++] = '.';
+    // strcat + tolower
+    while(*ext) {
+        buffer[name_len++] = tolower(*(ext++));
+    } buffer[name_len] = 0;
 }
 
 void fix_filename(char *buffer)
@@ -251,19 +255,30 @@ static bool hex2bin(char c, uint8_t& out)
     return false;
 }
 
-void fat_to_petscii(const char *fat, char *pet, int len)
+void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term)
 {
-    int i = 0;
+    int i = 0, k = 0;
     bool escape = false;
-    while(*fat && i < len) {
-        char f = *fat;
+    int max = strlen(fat);
+
+    if (cutExt) {
+        for(int j=max-1;j>=0;j--) {
+            if(fat[j] == '.') {
+                max = j;
+                break;
+            }
+        }
+    }
+
+    while(fat[k] && (k < max) && (i < len)) {
+        char f = fat[k];
         if (f == '{') {
             escape = true;
-            fat++;
+            k++;
         }
         if (escape) {
-            char h = fat[0];
-            char l = fat[1];
+            char h = fat[k+0];
+            char l = fat[k+1];
             if (!h || !l) {
                 break;
             }
@@ -273,17 +288,19 @@ void fat_to_petscii(const char *fat, char *pet, int len)
                 // do not advance
             } else {
                 pet[i++] = (hb << 4) | lb;
-                fat += 2;
+                k += 2;
             }
         } else {
             if (f == '}') {
                 escape = false;
-                fat++;
+                k++;
             } else {
                 pet[i++] = toupper(f);
-                fat++;
+                k++;
             }
         }
     }
-    pet[i] = 0;
+    if (term) {
+        pet[i] = 0;
+    }
 }

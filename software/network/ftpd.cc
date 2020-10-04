@@ -923,49 +923,48 @@ void FTPDataConnection::directory(int listType, vfs_dir_t *dir)
     if (setup_connection() == ERR_OK) {
         int len;
         vfs_stat_t st;
+        vfs_dirent = vfs_readdir(dir);
 
-        do {
-            vfs_dirent = vfs_readdir(dir);
+        while(vfs_dirent) {
+            vfs_stat_dirent(vfs_dirent, &st);
 
-            if (vfs_dirent) {
-                switch (listType) {
-                case 0:
-                    vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
-
-                    if (st.year == parent->current_year)
-                        len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
-                                month_table[st.month], st.day, st.hr, st.min, vfs_dirent->name);
-                    else
-                        len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
-                                month_table[st.month], st.day, st.year, vfs_dirent->name);
-                    if (VFS_ISDIR(st.st_mode))
-                        buffer[0] = 'd';
-                    break;
-                case 1:
-                    len = sprintf(buffer, "%s\r\n", vfs_dirent->name);
-                    break;
-                case 2:
-                    vfs_stat(dir->parent_fs, vfs_dirent->name, &st);
-                    if (parent->d64asdir == 2 && (EndsWith(vfs_dirent->name, ".d64") || EndsWith(vfs_dirent->name, ".D64")))
-                        len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n"
-                                "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.year, st.month, st.day, st.hr,
-                                st.min, st.sec, vfs_dirent->name, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec,
-                                vfs_dirent->name);
-                    else if ( VFS_ISDIR(st.st_mode)
-                            || (parent->d64asdir && (EndsWith(vfs_dirent->name, ".d64") || EndsWith(vfs_dirent->name, ".D64"))))
-                        len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.year, st.month, st.day, st.hr,
-                                st.min, st.sec, vfs_dirent->name);
-                    else
-                        len = sprintf(buffer, "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.st_size, st.year,
-                                st.month, st.day, st.hr, st.min, st.sec, vfs_dirent->name);
-                    break;
-                default:
-                    len = sprintf(buffer, "Internal Error\r\n");
-                }
-                buffer[len] = 0;
-                lwip_send(actual_socket, buffer, len, 0);
+            switch (listType) {
+            case 0:
+                if (st.year == parent->current_year)
+                    len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %02d:%02d %s\r\n", st.st_size,
+                            month_table[st.month], st.day, st.hr, st.min, st.name);
+                else
+                    len = sprintf(buffer, "-rw-rw-rw-   1 user     ftp  %11d %s %02d %5d %s\r\n", st.st_size,
+                            month_table[st.month], st.day, st.year, st.name);
+                if (VFS_ISDIR(st.st_mode))
+                    buffer[0] = 'd';
+                break;
+            case 1:
+                len = sprintf(buffer, "%s\r\n", st.name);
+                break;
+            case 2:
+                if (parent->d64asdir == 2 && (EndsWith(st.name, ".d64") || EndsWith(st.name, ".D64")))
+                    len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n"
+                            "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.year, st.month, st.day, st.hr,
+                            st.min, st.sec, st.name, st.st_size, st.year, st.month, st.day, st.hr, st.min, st.sec,
+                            st.name);
+                else if ( VFS_ISDIR(st.st_mode)
+                        || (parent->d64asdir && (EndsWith(st.name, ".d64") || EndsWith(st.name, ".D64"))))
+                    len = sprintf(buffer, "type=dir;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.year, st.month, st.day, st.hr,
+                            st.min, st.sec, st.name);
+                else
+                    len = sprintf(buffer, "type=file;size=%d;modify=%04d%02d%02d%02d%02d%02d; %s\r\n", st.st_size, st.year,
+                            st.month, st.day, st.hr, st.min, st.sec, st.name);
+                break;
+            default:
+                len = sprintf(buffer, "Internal Error\r\n");
             }
-        } while (vfs_dirent);
+            buffer[len] = 0;
+            lwip_send(actual_socket, buffer, len, 0);
+
+            // for the next iteration
+            vfs_dirent = vfs_readdir(dir);
+        }
     }
     vfs_closedir(dir);
 }

@@ -525,26 +525,24 @@ FRESULT DirInD64 :: create(FileInfo *info)
         idx ++;
     } while(idx < 256);
 
-    if (strcasecmp(info->extension, "PRG") == 0) {
+    if (strcasecmp(info->extension, "prg") == 0) {
         p[2] = 0x02; // PRG, opened file
+    } else if (strcasecmp(info->extension, "usr") == 0) {
+        p[2] = 0x03; // USR, opened file
+    } else if (strcasecmp(info->extension, "rel") == 0) {
+        p[2] = 0x04; // REL, opened file
+    } else if (strcasecmp(info->extension, "seq") == 0) {
+        p[2] = 0x04; // SEQ, opened file
     } else {
-        p[2] = 0x01; // SEQ, opened file
+        p[2] = 0x02; // PRG, opened file
     }
     memset(p+5, 0xA0, 16);
     memset(p+21, 0x00, 11);
-    int len = strlen(info->lfname);
-    len = (len > 16) ? 16 : len;
-    for (int i=0; i < len; i++) {
-        p[5+i] = toupper(info->lfname[i]);
-    }
-//    memcpy(p+5, info->lfname, (len > 16)?16:len);
+
+    fat_to_petscii(info->lfname, false, (char *)p+5, 16, false);
+
     fs->dirty = 1;
     fs->sync();
-/*
-    // Now open a FileInD64, and initialize it to an empty - non existing file
-    FileInD64 *d64_file = new FileInD64(fs);
-    d64_file->
-*/
     return FR_OK;
 }
 
