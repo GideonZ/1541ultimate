@@ -37,6 +37,7 @@ typedef struct {
 	uint32_t  size;
 } BinaryImage_t;
 
+#define DOTESTS 1
 
 BinaryImage_t images[] = {
      { "/Usb?/u64/u64.swp",      "FPGA Binary",         0x000000, 0, 0 },
