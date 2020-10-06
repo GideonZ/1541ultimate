@@ -7,11 +7,33 @@
 
 #include "filesystem_d64.h"
 #include "pattern.h"
+#include "cbmname.h"
 #include <ctype.h>
 
 /*********************************************************************/
 /* D64/D71/D81 File System implementation                            */
 /*********************************************************************/
+
+uint8_t bam_header[144] = {
+    0x12, 0x01, 0x41, 0x20,
+
+    0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, // 1,2,3
+    0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, // 4,5,6
+    0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, // 7,8,9
+    0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, // 10,11,12
+    0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F, // 13,14,15
+    0x15, 0xFF, 0xFF, 0x1F, 0x15, 0xFF, 0xFF, 0x1F,                         // 16,17
+
+    0x11, 0xFC, 0xFF, 0x07, 0x13, 0xFF, 0xFF, 0x07, 0x13, 0xFF, 0xFF, 0x07, // 18,19,20
+    0x13, 0xFF, 0xFF, 0x07, 0x13, 0xFF, 0xFF, 0x07, 0x13, 0xFF, 0xFF, 0x07, // 21,22,23
+    0x13, 0xFF, 0xFF, 0x07,                                                 // 24
+
+    0x12, 0xFF, 0xFF, 0x03, 0x12, 0xFF, 0xFF, 0x03, 0x12, 0xFF, 0xFF, 0x03, // 25,26,27
+    0x12, 0xFF, 0xFF, 0x03, 0x12, 0xFF, 0xFF, 0x03, 0x12, 0xFF, 0xFF, 0x03, // 28,29,30
+
+    0x11, 0xFF, 0xFF, 0x01, 0x11, 0xFF, 0xFF, 0x01, 0x11, 0xFF, 0xFF, 0x01, // 31,32,33
+    0x11, 0xFF, 0xFF, 0x01, 0x11, 0xFF, 0xFF, 0x01 };                       // 34,35
+
 
 FileSystemD64 :: FileSystemD64(Partition *p) : FileSystem(p)
 {
@@ -34,11 +56,46 @@ FileSystemD64 :: FileSystemD64(Partition *p) : FileSystem(p)
     if(p->read(bam_buffer, get_root_sector(), 1) == RES_OK) {
         bam_valid = true;
     }
-
 }
 
 FileSystemD64 :: ~FileSystemD64()
 {
+}
+
+FRESULT FileSystemD64 :: format(const char *name)
+{
+    dirty = 0;
+    uint8_t *bam_name = bam_buffer + 144;
+    memcpy(bam_buffer, bam_header, 144);
+
+    // part that comes after bam header
+    for(int t=0;t<27;t++) {
+        bam_name[t] = 0xA0;
+    }
+    bam_name[21] = '2';
+    bam_name[22] = 'A';
+
+    char c;
+    int b;
+    for(int t=0,b=0;t<27;t++) {
+        c = name[b++];
+        if(!c)
+            break;
+        c = toupper(c);
+        if(c == ',') {
+            t = 17;
+            continue;
+        }
+        bam_name[t] = (uint8_t)c;
+    }
+    bam_dirty = 1;
+
+    current_sector = get_root_sector() + 1; // track 18, sector 1
+    memset(sect_buffer, 0, 256);
+    sect_buffer[1] = 0xFF;
+    dirty = 1;
+
+    return sync(); // write bam and first dir sector
 }
 
 int FileSystemD64 :: get_abs_sector(int track, int sector)
@@ -179,6 +236,20 @@ int FileSystemD64 :: get_root_sector(void)
     return get_abs_sector(18, 0);
 }
 
+bool FileSystemD64 :: deallocate_sector(int track, int sector)
+{
+    uint8_t *m = &bam_buffer[4*track];
+    int n = (sector >> 3);
+    int b = (sector & 7);
+    if (m[n+1] & (1 << b)) { // already free?!
+        return false;
+    }
+    m[n+1] |= (1 << b); // set bit
+    m[0] ++; // add one free block
+    bam_dirty = true;
+    return true;
+}
+
 bool FileSystemD64 :: allocate_sector_on_track(int track, int &sector)
 {
     uint8_t k,b,*m;
@@ -249,6 +320,7 @@ FRESULT FileSystemD64 :: move_window(int abs)
     	res = prt->read(sect_buffer, abs, 1);
         if(res == RES_OK) {
             current_sector = abs;
+            dirty = 0;
         } else {
         	return FR_DISK_ERR;
         }
@@ -271,9 +343,19 @@ bool FileSystemD64 :: init(void)
 }
 
 // Get number of free sectors on the file system
-FRESULT FileSystemD64 :: get_free (uint32_t*)
+FRESULT FileSystemD64 :: get_free (uint32_t *a)
 {
-    return FR_DENIED; // not yet implemented
+	if (!bam_valid) {
+		return FR_NO_FILESYSTEM;
+	}
+	uint32_t f = 0;
+	for(int i=1; i<=35; i++) {
+		if (i != 18) {
+			f += bam_buffer[4*i];
+		}
+	}
+	*a = f;
+	return FR_OK;
 }
 
 // Clean-up cached data
@@ -330,10 +412,32 @@ FRESULT FileSystemD64 :: dir_read(Directory *d, FileInfo *f)
     return dd->read(f);
 }
 
-FRESULT FileSystemD64 :: dir_create_file(Directory *d, FileInfo *info)
+FRESULT FileSystemD64 :: dir_create_file(Directory *d, const char *filename)
 {
     DirInD64 *dd = (DirInD64 *)d->handle;
-    return dd->create(info);
+    return dd->create(filename);
+}
+
+FRESULT FileSystemD64 :: find_file(const char *filename, DirInD64 *dir, FileInfo *info)
+{
+    CbmFileName cbm(filename);
+
+    dir->open(NULL); // Just root
+
+    FRESULT res = FR_NOT_READY;
+    do {
+        res = dir->read(info);
+        if (res != FR_OK) {
+            break;
+        }
+        if (info->match_to_pattern(cbm)) {
+            printf("Found '%s' -> '%s'!\n", filename, info->lfname);
+            break;
+        }
+    } while(1);
+
+    dir->close();
+    return res;
 }
 
 // functions for reading and writing files
@@ -344,13 +448,10 @@ FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char 
 
     if (flags & FA_CREATE_NEW) {
         info.fs = this;
-        strncpy(info.lfname, filename, info.lfsize);
-        get_extension(filename, info.extension);
-        set_extension(info.lfname, "", info.lfsize);
 
-        FRESULT fres = dir_create_file(dir, &info);
+        FRESULT fres = dir_create_file(dir, filename);
         if (fres != FR_OK) {
-            dir_close(dir);
+            //dir_close(dir);
             return fres;
         }
     } else {
@@ -358,7 +459,7 @@ FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char 
         do {
             FRESULT fres = dir_read(dir, &info);
             if (fres != FR_OK) {
-                dir_close(dir);
+                //dir_close(dir);
                 return FR_NO_FILE;
             }
             if (info.attrib & AM_VOL)
@@ -372,7 +473,7 @@ FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char 
 	int dir_t = ((DirInD64 *)dir->handle)->curr_t;
 	int dir_s = ((DirInD64 *)dir->handle)->curr_s;
 	int dir_idx = (((DirInD64 *)dir->handle)->idx) % 8; // GZW removed -1 here, as indices are 0 based
-	dir_close(dir);
+	//dir_close(dir);
 
 
 	FileInD64 *ff = new FileInD64(this);
@@ -421,13 +522,70 @@ FRESULT FileSystemD64::file_seek(File *f, uint32_t pos)
     return ff->seek(pos);
 }
 
-/*
-void FileSystemD64 :: collect_file_info(File *f, FileInfo *inf)
+FRESULT FileSystemD64::file_rename(const char *old_name, const char *new_name)
 {
-    FileInD64 *ff = (FileInD64 *)f->handle;
-    ff->collect_info(inf);
+    FileInfo info(20);
+    DirInD64 *dd = new DirInD64(this);
+    FRESULT res = find_file(old_name, dd, &info);
+    CbmFileName cbm(new_name);
+
+    if (res == FR_OK) {
+        uint8_t *p = dd->get_pointer();
+        p[2] = (p[2] & 0xF8) | cbm.getType(); // save upper bits
+        memset(p+5, 0xA0, 16);
+        memcpy(p+5, cbm.getName(), cbm.getLength());
+        dirty = 1;
+        sync();
+    }
+
+    delete dd;
+    return res;
 }
-*/
+
+FRESULT FileSystemD64 :: deallocate_chain(uint8_t track, uint8_t sector, uint8_t *visited)
+{
+    FRESULT res = FR_OK;
+    while(track) {
+        int absolute = get_abs_sector(track, sector);
+        if (absolute > num_sectors) {
+        	res = FR_DISK_ERR;
+        	break;
+        }
+        if (visited[absolute]) {
+            res = FR_LOOP_DETECTED;
+            break;
+        }
+        visited[absolute] = 1;
+
+        res = move_window(absolute);
+        if (res == FR_OK) {
+            bool ok = deallocate_sector(track, sector);
+            track = sect_buffer[0];
+            sector = sect_buffer[1];
+        } else {
+            break;
+        }
+    }
+    return res;
+}
+
+FRESULT FileSystemD64::file_delete(const char *path)
+{
+    FileInfo info(20);
+    DirInD64 *dd = new DirInD64(this);
+    FRESULT res = find_file(path, dd, &info);
+
+    if (res == FR_OK) {
+    	uint8_t *p = dd->get_pointer();
+        p[2] = 0x00;
+        dirty = 1;
+        deallocate_chain(p[3], p[4], dd->visited); // file chain
+        deallocate_chain(p[21], p[22], dd->visited); // side sector chain
+        sync();
+    }
+    delete dd;
+    return res;
+}
 
 /*********************************************************************/
 /* D64/D71/D81 File System implementation                            */
@@ -441,31 +599,47 @@ DirInD64 :: DirInD64(FileSystemD64 *f)
     curr_s = 0;
 }
 
+DirInD64 :: ~DirInD64()
+{
+	if (visited) {
+		delete [] visited;
+	}
+}
+
 FRESULT DirInD64 :: open(FileInfo *info)
 {
-    idx = -1;
+    idx = -2;
 
-    visited = new uint8_t[fs->num_sectors];
-    for (int i=0; i<fs->num_sectors; i++) {
-        visited[i] = 0;
+    if (!visited) {
+        visited = new uint8_t[fs->num_sectors];
     }
-
+    memset(visited, 0, fs->num_sectors);
     return FR_OK;
 }
 
 FRESULT DirInD64 :: close(void)
 {
-	if (visited)
+/*
+	if (visited) {
 		delete [] visited;
-
+		visited = 0;
+	}
+*/
     return FR_OK;
 }
 
-FRESULT DirInD64 :: create(FileInfo *info)
+uint8_t *DirInD64 :: get_pointer(void)
+{
+    return &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
+}
+
+FRESULT DirInD64 :: create(const char *filename)
 {
     int next_t, next_s;
     idx = 0;
     uint8_t *p;
+
+    CbmFileName cbm(filename);
 
     do {
         if((idx & 7)==0) {
@@ -525,21 +699,11 @@ FRESULT DirInD64 :: create(FileInfo *info)
         idx ++;
     } while(idx < 256);
 
-    if (strcasecmp(info->extension, "prg") == 0) {
-        p[2] = 0x02; // PRG, opened file
-    } else if (strcasecmp(info->extension, "usr") == 0) {
-        p[2] = 0x03; // USR, opened file
-    } else if (strcasecmp(info->extension, "rel") == 0) {
-        p[2] = 0x04; // REL, opened file
-    } else if (strcasecmp(info->extension, "seq") == 0) {
-        p[2] = 0x04; // SEQ, opened file
-    } else {
-        p[2] = 0x02; // PRG, opened file
-    }
-    memset(p+5, 0xA0, 16);
     memset(p+21, 0x00, 11);
 
-    fat_to_petscii(info->lfname, false, (char *)p+5, 16, false);
+    p[2] = cbm.getType();
+    memset(p+5, 0xA0, 16);
+    memcpy(p+5, cbm.getName(), cbm.getLength());
 
     fs->dirty = 1;
     fs->sync();
@@ -554,6 +718,8 @@ FRESULT DirInD64 :: read(FileInfo *f)
     f->fs      = fs;
 	f->date    = 0;
 	f->time    = 0;
+
+	idx ++;
 
 	if(idx == -1) {
 		f->attrib  = AM_VOL;
@@ -575,7 +741,6 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 f->lfname[24] = 0;
         	f->size    = 0;
         	f->name_format = NAME_FORMAT_CBM;
-        	idx        = 0;
         	return FR_OK;
         } else {
             return FR_DISK_ERR;
@@ -611,7 +776,10 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 }
             }
             uint8_t *p = &fs->sect_buffer[(idx & 7) << 5]; // 32x from start of sector
-
+            if (!p[2]) { // deleted file
+            	idx++;
+            	continue;
+            }
             uint8_t tp = (p[2] & 0x0f);
             if ((tp == 0x01) || (tp == 0x02) || (tp == 0x03) || (tp == 0x04)) {
                 int j = 0;
@@ -619,15 +787,12 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 	if ((p[i] == 0xA0) || (p[i] < 0x20))
                 		break;
                 	if(j < f->lfsize) {
-                    	//char c = char(p[i] & 0x7F);
-                        //f->lfname[j++] = (c == '/')? '!' : c;
                         f->lfname[j++] = p[i];
                 	}
                 }
                 if(j < f->lfsize)
                     f->lfname[j] = 0;
 
-                //fix_filename(f->lfname);
                 f->attrib = (p[2] & 0x40)?AM_RDO:0;
                 f->cluster = fs->get_abs_sector((int)p[3], (int)p[4]);
                 f->size = (int)p[30] + 256*(int)p[31];
@@ -644,7 +809,6 @@ FRESULT DirInD64 :: read(FileInfo *f)
                 } else if (tp == 4) {
                     strncpy(f->extension, "REL", 4);
                 }
-                idx ++;
                 return FR_OK;
             }
             idx++;
@@ -653,7 +817,6 @@ FRESULT DirInD64 :: read(FileInfo *f)
     }
     return FR_INT_ERR;
 }
-
 
 
 FileInD64 :: FileInD64(FileSystemD64 *f)
@@ -694,9 +857,7 @@ FRESULT FileInD64 :: open(FileInfo *info, uint8_t flags, int dirtrack, int dirse
 	dir_entry_offset = dirindex*32;
 
     visited = new uint8_t[fs->num_sectors];
-    for (int i=0; i<fs->num_sectors; i++) {
-        visited[i] = 0;
-    }
+    memset(visited, 0, fs->num_sectors);
 
     visit(); // mark initial sector
     section = 0;

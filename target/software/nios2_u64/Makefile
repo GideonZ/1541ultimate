@@ -62,7 +62,6 @@ SRCS_CC	 =  u2p_init.cc \
 			keyboard_c64.cc \
 			disk_image.cc \
 			c1541.cc \
-			bam_header.cc \
 			mystring.cc \
 			path.cc \
 			pattern.cc \

@@ -13,6 +13,7 @@
 #include <string.h>
 #include "indexed_list.h"
 #include "pattern.h"
+#include "cbmname.h"
 
 /* File attribute bits for directory entry */
 
@@ -152,6 +153,24 @@ public:
 	        buffer[maxlen-1] = 0;
 	        strncpy(buffer, lfname, maxlen-1);
 	    }
+	}
+
+	bool match_to_pattern(CbmFileName &cbm)
+	{
+        bool match_name = pattern_match_escaped(cbm.getName(), lfname);
+        bool match_ext  = !cbm.hadExtension() || pattern_match(cbm.getExtension(), extension);
+        return match_name && match_ext;
+	}
+
+	bool match_to_pattern(const char *pattern, CbmFileName &cbm)
+	{
+	    if (name_format & NAME_FORMAT_CBM) {
+	        if (!cbm.isInitialized()) { // optimization, such that init is only done once for a whole bunch of files
+	            cbm.init(pattern);
+	        }
+	        return match_to_pattern(cbm);
+	    }
+	    return pattern_match(pattern, lfname, false); // no escaping! Be aware!
 	}
 
 	static int compare(IndexedList<FileInfo *> *list, int a, int b)

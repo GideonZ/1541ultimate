@@ -18,16 +18,16 @@ class DirInD64
     int idx;
     int curr_t, curr_s;
     uint8_t *visited;  // this should probably be a bit vector
-
+    uint8_t *get_pointer(void);
     FileSystemD64 *fs;
 public:
     DirInD64(FileSystemD64 *);
-    ~DirInD64() { }
+    ~DirInD64();
 
     FRESULT open(FileInfo *info);
     FRESULT close(void);
     FRESULT read(FileInfo *f);
-    FRESULT create(FileInfo *info);
+    FRESULT create(const char *filename);
     friend class FileSystemD64;
 };
 
@@ -83,21 +83,26 @@ class FileSystemD64 : public FileSystem
     int  get_abs_sector(int track, int sector);
     bool get_track_sector(int abs, int &track, int &sector);
     bool allocate_sector_on_track(int track, int &sector);
+    bool deallocate_sector(int track, int sector);
     bool get_next_free_sector(int &track, int &sector);
+    FRESULT deallocate_chain(uint8_t track, uint8_t sector, uint8_t *visited);
+    FRESULT find_file(const char *filename, DirInD64 *dirent, FileInfo *info);
+    FRESULT dir_create_file(Directory *d, const char *filename);
+
 public:
     FileSystemD64(Partition *p);
     ~FileSystemD64();
 
     static  bool check(Partition *p); // check if file system is present on this partition
-    bool    init(void);               // Initialize file system
-    FRESULT get_free (uint32_t*);        // Get number of free sectors on the file system
+    bool    init(void);               // Initialize
+    FRESULT format(const char *name); // Create initial structures of empty disk
+    FRESULT get_free (uint32_t*);     // Get number of free sectors on the file system
     FRESULT sync(void);               // Clean-up cached data
 
     // functions for reading directories
     FRESULT dir_open(const char *path, Directory **, FileInfo *inf = 0); // Opens directory (creates dir object, NULL = root)
-    void dir_close(Directory *d);    // Closes (and destructs dir object)
+    void    dir_close(Directory *d);    // Closes (and destructs dir object)
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
-    FRESULT dir_create_file(Directory *d, FileInfo *info);
 
     // functions for reading and writing files
     FRESULT file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file);  // Opens file (creates file object)
@@ -105,6 +110,9 @@ public:
     FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
+
+    FRESULT file_rename(const char *old_name, const char *new_name); // Renames a file
+    FRESULT file_delete(const char *path); // deletes a file
 
     uint32_t get_file_size(File *f) {
         FileInD64 *handle = (FileInD64 *)f->handle;

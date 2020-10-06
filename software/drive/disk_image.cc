@@ -32,8 +32,6 @@ __inline uint32_t le_to_cpu_32(uint32_t a)
 #define cpu_to_le_32 le_to_cpu_32
 
 
-extern uint8_t bam_header[];
-
 #define HARDWARE_ENCODING 1
 
 // Single nibble GCR table
@@ -942,34 +940,8 @@ int BinImage :: save(File *file, UserInterface *user_interface)
 
 int BinImage :: format(const char *name)
 {
-	uint8_t *track_18 = &bin_data[17*21*256];
-	uint8_t *bam_name = track_18 + 144;
-
-	memset(bin_data, 0, C1541_MAX_D64_LEN);
-	memcpy(track_18, bam_header, 144);
-
-    // part that comes after bam header
-    for(int t=0;t<27;t++) {
-        bam_name[t] = 0xA0;
-    }
-    bam_name[21] = '2';
-    bam_name[22] = 'A';
-
-    char c;
-    int b;
-    for(int t=0,b=0;t<27;t++) {
-        c = name[b++];
-        if(!c)
-            break;
-        c = toupper(c);
-        if(c == ',') {
-        	t = 17;
-        	continue;
-        }
-		bam_name[t] = (uint8_t)c;
-    }
-    track_18[257] = 0xFF; // second byte of second sector 00 FF .. .. ..
-
+    memset(bin_data, 0, C1541_MAX_D64_LEN);
+    fs->format(name);
     num_tracks = 35;
     return 0;
 }

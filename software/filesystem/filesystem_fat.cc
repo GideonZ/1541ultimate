@@ -85,20 +85,6 @@ FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInf
 		}
 		res = dir_sdi(dp, 0);			/* Rewind directory */
 
-/*
-#if _FS_LOCK
-		if (res == FR_OK) {
-			if (dp->sclust) {
-				dp->lockid = inc_lock(dp, 0);	// Lock the sub directory
-				if (!dp->lockid)
-					res = FR_TOO_MANY_OPEN_FILES;
-			} else {
-				dp->lockid = 0;	// Root directory need not to be locked
-			}
-		}
-#endif
-*/
-
 	} else if(path) {
 		res = fs_opendir(&fatfs, dp, path);
 	} else {
@@ -140,6 +126,12 @@ FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 	return fs_mkdir(&fatfs, path);
 }
 
+
+FRESULT FileSystemFAT :: format(const char *name)
+{
+    // call f_mkfs and f_setlabel
+    return FR_NOT_ENABLED;
+}
 
 FRESULT FileSystemFAT :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)
 {

@@ -1,6 +1,7 @@
 #include "pattern.h"
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <cctype>
 /*
 -------------------------------------------------------------------------------
@@ -13,12 +14,73 @@
 
 -------------------------------------------------------------------------------
 */
+
+static bool hex2bin(char c, uint8_t& out)
+{
+    if ((c >= '0') && (c <= '9')) {
+        out = (uint8_t)(c - '0');
+        return true;
+    }
+    if ((c >= 'A') && (c <= 'F')) {
+        out = (uint8_t)(c - 'A') + 10;
+        return true;
+    }
+    if ((c >= 'a') && (c <= 'f')) {
+        out = (uint8_t)(c - 'a') + 10;
+        return true;
+    }
+    return false;
+}
+
+static char get_escaped_char(const char *&p, bool &escape)
+{
+    char ret;
+    while(true) {
+        if (!(*p))
+            return 0;
+
+        if (escape) {
+            if (*p == '}') {
+                escape = false;
+                p++;
+                continue;
+            }
+            char h = p[0];
+            char l = p[1];
+            if (!h || !l) {
+                ret = 0;
+                break;
+            }
+            uint8_t hb, lb;
+            if (!hex2bin(h, hb) || !hex2bin(l, lb)) {
+                escape = false;
+                ret = '{';
+                break;
+            } else {
+                ret = (hb << 4) | lb;
+                p += 2;
+                break;
+            }
+        } else {
+            if (*p == '{') {
+                escape = true;
+                p++;
+            } else {
+                ret = *p;
+                p++;
+                break;
+            }
+        }
+    }
+    return ret;
+}
+
 bool pattern_match(const char *pattern, const char *fixed, bool case_sensitive)
 {
     const char *p;
     const char *f;
     char cp, cf;
-    	
+
     p = pattern;
     f = fixed;
     do {
@@ -65,6 +127,61 @@ bool pattern_match(const char *pattern, const char *fixed, bool case_sensitive)
 	return false; // never gets here.
 }
 
+bool pattern_match_escaped(const char *pattern, const char *fixed, bool case_sensitive, bool p_esc, bool f_esc)
+{
+    const char *p;
+    const char *f;
+    const char *prev_f;
+    char cp, cf, rp;
+
+    p = pattern;
+    f = fixed;
+    do {
+        rp = *p;
+        prev_f = f;
+        cf = get_escaped_char(f, f_esc);
+        cp = get_escaped_char(p, p_esc);
+
+        if(!cp) { // end of pattern
+            return (cf == '\0'); // if the fixed is also at the end, we have a match,
+                                 // if not, then our pattern is too short and we don't match
+        }
+        if(!cf) { // end of fixed string
+            if(rp == '*') // check special case foo* == foo.
+                return true;
+            else
+                return false; // our pattern string was longer
+        }
+        if(rp == '*') {
+            if(!(*p)) // end of our pattern, so we have a match
+                return true;
+
+            // now, recurse and try to find the pattern AFTER the * in the fixed string
+            // first reset F, as we should not consume the char under the *
+            f = prev_f;
+            while(cf) {
+                printf("Recursive match: %s %s\n", p, f);
+                bool match = pattern_match_escaped(p, f, case_sensitive, p_esc, f_esc);
+                if(match)
+                    return true;
+                cf = get_escaped_char(f, f_esc);
+            }
+            return false;
+        } else if(rp == '?') {
+            // assume equality; continue
+        } else {
+            if(!case_sensitive) {
+                cp = toupper(cp);
+                cf = toupper(cf);
+            }
+            if(cf != cp)
+                return false; // two character inequal
+        }
+    } while(true);
+
+    return false; // never gets here.
+}
+
 void split_string(char sep, char *s, char **parts, int maxParts)
 {
     int len = strlen(s);
@@ -95,33 +212,44 @@ int main()
     struct test_vector
     {
         bool case_sens;
-        char *pattern;
-        char *fixed;
+        const char *pattern;
+        const char *fixed;
         bool expected;
     };
     
-    struct test_vector vectors[16] = {
+    struct test_vector vectors[27] = {
         { true, "", "", true },
+        { true, "*", "", true },
+        { true, "?", "", false },
+        { true, "?", "{88}", true },
+        { true, "g*n", "{676964656f6e}", true },
+        { true, "g*n", "{676964656f6e}", true },
+        { true, "g*n{7a}", "{676964656f6e7a}", true },
+        { true, "g{2a}n{7a}", "{676964656f6e7a}", false },
         { true, "gideon", "gideon", true },
         { true, "lili*", "liliana", true },
         { true, "lili*", "lili", true },
         { true, "lili*a", "liliena", true },
-        { true, "lili*a", "liliana", true },
+        { true, "lili*a", "l{69}liana", true },
         { true, "lili*a", "liliane", false },
         { true, "lili*a", "liliana martinez", false },
         { true, "lili*mar*", "liliana martinez", true },
         { true, "lili*mar*ez", "liliana martinez", true },
+        { true, "lili*m?r*ez", "liliana mertinez", true },
         { true, "lil?", "lili", true },
         { true, "lil?", "lil", false },
         { true, "lili", "gideon", false },
         { true, "gideon", "lili", false },
         { true, "lili", "lilian", false },
-        { true, "lilian", "lili", false } };
+        { false, "lil?", "LILI", true },
+        { false, "L{69}L?", "lili", true },
+        { true,  "LIL?", "lili", false },
+        { true,  "lilian", "lili", false } };
 
         
     int errors = 0;
-    for(int i=0;i<16;i++) {
-        bool test = pattern_match(vectors[i].pattern, vectors[i].fixed, vectors[i].case_sens);
+    for(int i=0;i<27;i++) {
+        bool test = pattern_match_escaped(vectors[i].pattern, vectors[i].fixed, vectors[i].case_sens);
         if(test != vectors[i].expected) {
             errors ++;
             printf("Error! wrong result for: %s =? %s. Case = %d\n",
@@ -129,6 +257,15 @@ int main()
         }
     }
     printf("Total number of errors: %d\n", errors);
+
+    const char *escaped = "Dit {69}s {}een t{657374}je. {yy}{123456abcdefghij}{";
+    char n;
+    const char *p = escaped;
+    bool esc = false;
+    while(n = get_escaped_char(p, esc)) {
+        printf("%02x: %c\n", n, n);
+    }
+
     return errors;
 }
 
@@ -188,13 +325,14 @@ void fix_filename(char *buffer)
 
 }
 
-void get_extension(const char *name, char *ext)
+int get_extension(const char *name, char *ext)
 {
     int len = strlen(name);
     ext[0] = 0;
 
     for (int i=len-1;i>=0;i--) {
         if (name[i] == '.') { // last . found
+            len = i; // to return length of base name
             for(int j=0;j<3;j++) { // copy max 3 chars
                 ext[j+1] = 0; // the char after the current is always end
                 if (!name[i+1+j])
@@ -204,6 +342,7 @@ void get_extension(const char *name, char *ext)
             break;
         }
     }
+    return len;
 }
 
 void petscii_to_fat(const char *pet, char *fat)
@@ -238,23 +377,6 @@ void petscii_to_fat(const char *pet, char *fat)
     fat[i] = 0;
 }
 
-static bool hex2bin(char c, uint8_t& out)
-{
-    if ((c >= '0') && (c <= '9')) {
-        out = (uint8_t)(c - '0');
-        return true;
-    }
-    if ((c >= 'A') && (c <= 'F')) {
-        out = (uint8_t)(c - 'A') + 10;
-        return true;
-    }
-    if ((c >= 'a') && (c <= 'f')) {
-        out = (uint8_t)(c - 'a') + 10;
-        return true;
-    }
-    return false;
-}
-
 void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term)
 {
     int i = 0, k = 0;
@@ -262,7 +384,7 @@ void fat_to_petscii(const char *fat, bool cutExt, char *pet, int len, bool term)
     int max = strlen(fat);
 
     if (cutExt) {
-        for(int j=max-1;j>=0;j--) {
+        for(int j=max-1;j>=max-4;j--) {
             if(fat[j] == '.') {
                 max = j;
                 break;
