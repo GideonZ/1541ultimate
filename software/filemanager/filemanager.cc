@@ -5,26 +5,6 @@
 #include "file_device.h"
 #include <cctype>
 
-/*
-int FileManager :: validatePath(Path *p, CachedTreeNode **node)
-{
-	CachedTreeNode *n = root;
-
-	for (int i=0;i<p->getDepth();i++) {
-		n = n->find_child(p->getElement(i));
-		if (!n)
-			return 0;
-		p->update(i, n->get_name());
-	}
-	*node = n;
-
-	mstring full;
-	p->update(n->get_full_path(full));
-
-	return 1;
-}
-*/
-
 void FileManager :: invalidate(CachedTreeNode *o, int includeSelf)
 {
 	CachedTreeNode *par;

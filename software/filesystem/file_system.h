@@ -40,7 +40,8 @@ public:
 
 	virtual PathStatus_t walk_path(PathInfo& pathInfo);
 
-	virtual bool    init(void);              // Initialize file system
+	virtual bool    init();              // Initialize file system
+	virtual FRESULT format(const char *name);    // create initial structures of empty disk
     virtual FRESULT get_free (uint32_t *e) { *e = 0; return FR_OK; } // Get number of free sectors on the file system
     virtual bool is_writable() { return false; } // by default a file system is not writable, unless we implement it
     virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
@@ -100,30 +101,27 @@ public:
 			return;
 		if (!strlen(path))
 			return;
-		if ((path[0] != '/') && (path[0] == '\\'))
-			workPath.cd("/SD"); // configurable?
 		workPath.cd(path);
 	}
+
 	void init(Path *path) {
 		if (!path)
 			return;
 		workPath.cd(path->get_path());
 	}
+
 	void init(const char *path, const char *filename) {
 		if (path)
 			workPath.cd(path);
-		else
-			workPath.cd("/SD"); // configurable?
 		if (filename)
 			workPath.cd(filename);
 	}
+
 	void init(Path *path, const char *filename) {
 		if (path)
 			workPath.cd(path->get_path());
 		if (!filename)
 			return;
-		if ((filename[0] != '/') && (filename[0] == '\\'))
-			workPath.cd("/SD"); // configurable?
 		workPath.cd(filename);
 	}
 
