@@ -20,7 +20,7 @@ public:
 	PathStatus_t walk_path(PathInfo& pathInfo);
 
     // functions for reading directories
-    FRESULT dir_open(const char *path, Directory **, FileInfo *); // Opens directory (creates dir object, NULL = root)
+    FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
     void    dir_close(Directory *d);    // Closes (and destructs dir object)
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
 };

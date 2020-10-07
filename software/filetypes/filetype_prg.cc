@@ -80,7 +80,7 @@ int FileTypePRG :: fetch_context_items(IndexedList<Action *> &list)
 	    // if this file is inside of a D64, then there should be a mount point already of this D64,
 	    // if not, we cannot mount the disk.
 
-	    MountPoint *mp = FileManager :: getFileManager() -> find_mount_point(parentInfo, 0, 0, 0);
+	    MountPoint *mp = FileManager :: getFileManager() -> find_mount_point(parentInfo, 0);
         if(mp) {
             list.append(new Action("Mount & Run", FileTypePRG :: execute_st, PRGFILE_MOUNT_RUN, mode));
             count++;
@@ -163,7 +163,7 @@ int FileTypePRG :: execute_st(SubsysCommand *cmd)
             	printf("%s\n", FileSystem :: get_error_string(fres));
 
             	if (fres == FR_OK) {
-                	MountPoint *mp = fm -> find_mount_point(&info, 0, 0, 0);
+                	MountPoint *mp = fm -> find_mount_point(&info, 0);
                 	if (mp) {
     					printf("Mounting %s to drive A\n", cmd->path.c_str());
 

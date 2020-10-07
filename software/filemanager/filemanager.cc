@@ -309,9 +309,7 @@ FRESULT FileManager :: find_pathentry(PathInfo &pathInfo, bool open_mount)
 			fres = FR_OK;
 			// we end on a file, and we're requested to force open it
 			if (open_mount && !(pathInfo.last->attrib & AM_DIR)) {
-				mp = find_mount_point(pathInfo.last, pathInfo.previous,
-						pathInfo.getDirectoryFromLastFS(dirFromFSRoot),
-						pathInfo.getPathFromLastFS(pathFromFSRoot));
+				mp = find_mount_point(pathInfo.last, pathInfo.previous);
 				if(mp) {
 					fs = mp->get_embedded()->getFileSystem();
 					pathInfo.enterFileSystem(fs);
@@ -321,9 +319,7 @@ FRESULT FileManager :: find_pathentry(PathInfo &pathInfo, bool open_mount)
 			}
 			break;
 		case e_TerminatedOnFile:
-			mp = find_mount_point(pathInfo.last, pathInfo.previous,
-					pathInfo.getDirectoryFromLastFS(dirFromFSRoot),
-					pathInfo.getPathFromLastFS(pathFromFSRoot));
+			mp = find_mount_point(pathInfo.last, pathInfo.previous);
 			if(mp) {
 				fs = mp->get_embedded()->getFileSystem();
 				pathInfo.enterFileSystem(fs);
@@ -369,22 +365,25 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 	// info.print_info();
 	// printf("The path from the root of this filesystem: %s\n", rem.c_str());
 
-	Directory *dir;
 	FileSystem *fs = pathInfo.getLastInfo()->fs;
-
+	FileInfo *relativeDir = 0;
 	mstring workpath;
 
 	if (create) {
-		fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getLastInfo());
-		if (fres == FR_OK) {
-			const char *pathstring = pathInfo.getFullPath(workpath, -1);
-			sendEventToObservers(eRefreshDirectory, pathstring, "");
-		}
+		//fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getLastInfo()->cluster);
+		//if (fres == FR_OK) {
+        const char *pathstring = pathInfo.getFullPath(workpath, -1);
+        sendEventToObservers(eRefreshDirectory, pathstring, "");
+        relativeDir = pathInfo.getLastInfo();
+		//}
 	} else {
-		fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getParentInfo());
+		// fres = fs->dir_open(pathInfo.getDirectoryFromLastFS(workpath), &dir, pathInfo.getParentInfo()->cluster);
+	    relativeDir = pathInfo.getParentInfo();
 	}
+/*
 	if (fres != FR_OK)
 		return fres;
+*/
 
 	mstring workPathFromFSRoot;
 	char *filename = (char *)pathInfo.getFileName();
@@ -392,9 +391,9 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 		fix_filename(filename);
 	}
 
-	fres = fs->file_open(pathInfo.getPathFromLastFS(workPathFromFSRoot), dir, filename, flags, file);
+	// removed: pathInfo.getPathFromLastFS(workPathFromFSRoot)
+	fres = fs->file_open(filename, flags, file, relativeDir);
 	if (fres == FR_OK) {
-//		fs->collect_file_info(*file, (*file)->getFileInfo());
 	    open_file_list.append(*file);
 	    pathInfo.workPath.getTail(0, (*file)->get_path_reference());
 	}
@@ -477,7 +476,7 @@ MountPoint *FileManager :: add_mount_point(File *file, FileSystemInFile *emb)
 	return mp;
 }
 
-MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent, const char *dirpath, const char *filepath)
+MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent)
 {
 	// printf("FileManager :: find_mount_point: '%s' (parent: %s)\n", info->lfname, parent->lfname);
 	lock();
@@ -488,24 +487,14 @@ MountPoint *FileManager :: find_mount_point(FileInfo *info, FileInfo *parent, co
 			return mount_points[i];
 		}
 	}
-	if (!filepath) {
-		unlock();
-		return 0;
-	}
+
 	File *file;
 	FileSystemInFile *emb = 0;
 	MountPoint *mp = 0;
 
-	Directory *dir;
-	FRESULT frd = info->fs->dir_open(dirpath, &dir, parent);
-	if (frd != FR_OK) {
-		unlock();
-		return 0;
-	}
-
 	uint8_t flags = (info->attrib & AM_RDO) ? FA_READ : FA_READ | FA_WRITE;
 
-	FRESULT fr = info->fs->file_open(filepath, dir, info->lfname, flags, &file);
+	FRESULT fr = info->fs->file_open(info->lfname, flags, &file, parent);
 	if (fr == FR_OK) {
 		emb = FileSystemInFile :: getEmbeddedFileSystemFactory() -> create(info);
 		if (emb) {

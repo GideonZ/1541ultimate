@@ -57,7 +57,7 @@ PathStatus_t FileSystem_Root::walk_path(PathInfo& pathInfo)
 }
 
 // functions for reading directories
-FRESULT FileSystem_Root :: dir_open(const char *path, Directory **dir, FileInfo *dummy)
+FRESULT FileSystem_Root :: dir_open(const char *path, Directory **dir, FileInfo *relativeDir)
 {
 	FileManager *fm = FileManager :: getFileManager();
 	Path *p = fm->get_new_path("root_temp");

@@ -35,12 +35,13 @@ uint8_t bam_header[144] = {
     0x11, 0xFF, 0xFF, 0x01, 0x11, 0xFF, 0xFF, 0x01 };                       // 34,35
 
 
-FileSystemD64 :: FileSystemD64(Partition *p) : FileSystem(p)
+FileSystemD64 :: FileSystemD64(Partition *p, bool writable) : FileSystem(p)
 {
     uint32_t sectors;
     image_mode = 0;
     current_sector = -1;
     dirty = 0;
+    this->writable = writable;
 
     if(p->ioctl(GET_SECTOR_COUNT, &sectors) == RES_OK) {
         if(sectors >= 1366) // D71
@@ -60,6 +61,11 @@ FileSystemD64 :: FileSystemD64(Partition *p) : FileSystem(p)
 
 FileSystemD64 :: ~FileSystemD64()
 {
+}
+
+bool FileSystemD64 :: is_writable()
+{
+    return writable;
 }
 
 FRESULT FileSystemD64 :: format(const char *name)
@@ -379,15 +385,11 @@ FRESULT FileSystemD64 :: sync(void)
 }
 
 // Opens directory (creates dir object, NULL = root)
-FRESULT FileSystemD64 :: dir_open(const char *path, Directory **dir, FileInfo *info)
+FRESULT FileSystemD64 :: dir_open(const char *path, Directory **dir, FileInfo *relativeDir) // Opens directory
 {
-//    if(info) { // can only get root directory, D64 does not allow sub directories
-//        return NULL;
-//    }
-
 	DirInD64 *dd = new DirInD64(this);
     *dir = new Directory(this, dd);
-	FRESULT res = dd->open(info);
+	FRESULT res = dd->open();
 	if(res == FR_OK) {
 		return FR_OK;
 	}
@@ -420,9 +422,15 @@ FRESULT FileSystemD64 :: dir_create_file(Directory *d, const char *filename)
 
 FRESULT FileSystemD64 :: find_file(const char *filename, DirInD64 *dir, FileInfo *info)
 {
+    // Easy peasy, for single directories. When we need subdirectories,
+    // we simply parse the path using the Path object and search the each element.
+
+    if (filename[0] == '/') {
+        filename++;
+    }
     CbmFileName cbm(filename);
 
-    dir->open(NULL); // Just root
+    dir->open(); // Just root
 
     FRESULT res = FR_NOT_READY;
     do {
@@ -442,24 +450,25 @@ FRESULT FileSystemD64 :: find_file(const char *filename, DirInD64 *dir, FileInfo
 
 // functions for reading and writing files
 // Opens file (creates file object)
-FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)
+FRESULT FileSystemD64 :: file_open(const char *filename, uint8_t flags, File **file, FileInfo *relativeDir)
 {
     FileInfo info(24);
+
+    DirInD64 dd(this);
+    dd.open();
 
     if (flags & FA_CREATE_NEW) {
         info.fs = this;
 
-        FRESULT fres = dir_create_file(dir, filename);
+        FRESULT fres = dd.create(filename);
         if (fres != FR_OK) {
-            //dir_close(dir);
             return fres;
         }
     } else {
         // Seek requested file for reading
         do {
-            FRESULT fres = dir_read(dir, &info);
+            FRESULT fres = dd.read(&info);
             if (fres != FR_OK) {
-                //dir_close(dir);
                 return FR_NO_FILE;
             }
             if (info.attrib & AM_VOL)
@@ -470,11 +479,9 @@ FRESULT FileSystemD64 :: file_open(const char *path, Directory *dir, const char 
         } while(1);
     }
 
-	int dir_t = ((DirInD64 *)dir->handle)->curr_t;
-	int dir_s = ((DirInD64 *)dir->handle)->curr_s;
-	int dir_idx = (((DirInD64 *)dir->handle)->idx) % 8; // GZW removed -1 here, as indices are 0 based
-	//dir_close(dir);
-
+	int dir_t = dd.curr_t;
+	int dir_s = dd.curr_s;
+	int dir_idx = dd.idx % 8;
 
 	FileInD64 *ff = new FileInD64(this);
 	*file = new File(this, ff);
@@ -527,6 +534,9 @@ FRESULT FileSystemD64::file_rename(const char *old_name, const char *new_name)
     FileInfo info(20);
     DirInD64 *dd = new DirInD64(this);
     FRESULT res = find_file(old_name, dd, &info);
+
+    if (new_name[0] == '/')
+        new_name++;
     CbmFileName cbm(new_name);
 
     if (res == FR_OK) {
@@ -606,7 +616,7 @@ DirInD64 :: ~DirInD64()
 	}
 }
 
-FRESULT DirInD64 :: open(FileInfo *info)
+FRESULT DirInD64 :: open(void)
 {
     idx = -2;
 

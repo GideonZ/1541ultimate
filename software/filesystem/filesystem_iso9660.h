@@ -227,12 +227,12 @@ public:
     bool    init(void);              // Initialize file system
     
     // functions for reading directories
-    FRESULT dir_open(const char *path, Directory **dir, FileInfo *inf = 0); // Opens directory (creates dir object, NULL = root)
+    FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
     void 	dir_close(Directory *d);    // Closes (and destructs dir object)
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
     
     // functions for reading and writing files
-    FRESULT file_open(const char *path, Directory *, const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
+    FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
     void    file_close(File *f);                // Closes file (and destructs file object)
     FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     FRESULT file_seek(File *f, uint32_t pos);
