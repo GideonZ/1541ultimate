@@ -172,9 +172,12 @@ FRESULT FileSystemT64 :: dir_read(Directory *d, FileInfo *f)
 
 // functions for reading and writing files
 // Opens file (creates file object)
-FRESULT FileSystemT64 :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)  // Opens file (creates file object)
+FRESULT FileSystemT64 :: file_open(const char *filename, uint8_t flags, File **file, FileInfo *relativeDir)  // Opens file (creates file object)
 {
-	FileInfo info(24);
+    Directory *dir;
+    dir_open("", &dir, relativeDir);
+
+    FileInfo info(24);
 	do {
 		FRESULT fres = dir_read(dir, &info);
 		if (fres != FR_OK) {

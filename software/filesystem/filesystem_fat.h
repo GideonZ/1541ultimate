@@ -28,15 +28,15 @@ public:
     FRESULT sync(void); 			 // by default we can't write, and syncing is thus always successful
 
     // functions for reading directories
-    FRESULT dir_open(const char *path, Directory **, FileInfo *inf); // Opens directory (creates dir object, NULL = root)
+    FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
     void    dir_close(Directory *d);    // Closes (and destructs dir object)
     FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
     FRESULT dir_create(const char *path);  // Creates a directory
 
     // functions for reading and writing files
-    FRESULT file_open(const char *path, Directory *, const char *filename, uint8_t flags, File **);
-    FRESULT file_rename(const char *old_name, const char *new_name); // Renames a file
-	FRESULT file_delete(const char *name); // deletes a file
+    FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
+    FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
+    FRESULT file_delete(const char *path); // deletes a file
 
 	void    file_close(File *f);                // Closes file (and destructs file object)
     FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);

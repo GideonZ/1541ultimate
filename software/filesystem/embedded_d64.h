@@ -20,8 +20,9 @@ class FileSystemInFile_D64: public FileSystemInFile {
     Partition *prt;
     FileSystem *fs;
     int mode;
+    bool writable;
 public:
-	FileSystemInFile_D64(int mode);
+	FileSystemInFile_D64(int mode, bool writable);
 	virtual ~FileSystemInFile_D64();
 
 	void init(File *f);

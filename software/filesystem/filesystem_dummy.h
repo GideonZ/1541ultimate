@@ -43,15 +43,17 @@ public:
 	}
 
 	// functions for reading directories
-    FRESULT dir_open(const char *path, Directory **dir, FileInfo *inf = 0) {
+    FRESULT dir_open(const char *path, Directory **dir, FileInfo *relativeDir = 0)
+    {   // Opens directory (creates dir object)
     	printf("Dummy open dir: %s\n", path);
     	*dir = new Directory(this, 0);
     	return FR_OK;
     }
 
     // functions for reading and writing files
-    FRESULT file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file) {
-    	printf("Dummy open file: %s (%s)\n", path, filename);
+    FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0)
+    {   // Opens file (creates file object)
+    	printf("Dummy open file: %s\n", filename);
     	return FR_DENIED;
     }
 };

@@ -67,29 +67,28 @@ FRESULT FileSystemFAT :: sync(void)
 }
 
 // functions for reading directories
-FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInfo *inf)
+FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInfo *relativeDir)
 {
 	*dirout = 0;
 
-//	printf("FAT Open DIR: %s\n", path);
+	printf("FAT Open DIR: %s\n", path);
 
 	DIR *dp = new DIR;
 	FRESULT res;
-	if (inf) {
-		dp->fs = &fatfs;
-		dp->id = fatfs.id;
-		if (!inf) {
-			dp->sclust = 0; // root directory
-		} else {
-			dp->sclust = inf->cluster;
-		}
-		res = dir_sdi(dp, 0);			/* Rewind directory */
 
-	} else if(path) {
+	if (relativeDir) {
+        relativeDir->print_info();
+        fatfs.cdir = relativeDir->cluster;
+    } else {
+        fatfs.cdir = 0;
+    }
+
+	if(path) {
 		res = fs_opendir(&fatfs, dp, path);
 	} else {
 		res = FR_INVALID_PARAMETER;
 	}
+
 	if (res == FR_OK) {
 		*dirout = new Directory(this, dp);
 	} else {
@@ -123,7 +122,8 @@ FRESULT FileSystemFAT :: dir_read(Directory *d, FileInfo *f)
 
 FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
 {
-	return fs_mkdir(&fatfs, path);
+    fatfs.cdir = 0;
+    return fs_mkdir(&fatfs, path);
 }
 
 
@@ -133,12 +133,18 @@ FRESULT FileSystemFAT :: format(const char *name)
     return FR_NOT_ENABLED;
 }
 
-FRESULT FileSystemFAT :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **file)
+FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **file, FileInfo *relativeDir)
 {
-//	printf("FAT Open file: %s (%s)\n", path, filename);
+	printf("FAT Open file: %s\n", filename);
+	if (relativeDir) {
+	    relativeDir->print_info();
+	    fatfs.cdir = relativeDir->cluster;
+	} else {
+	    fatfs.cdir = 0;
+	}
 
 	FIL *fil = new FIL;
-	FRESULT res = fs_open(&fatfs, path, flags, fil);
+    FRESULT res = fs_open(&fatfs, filename, flags, fil);
 
 	if (res == FR_OK) {
 		*file = new File(this, fil);
@@ -163,12 +169,15 @@ uint32_t FileSystemFAT :: get_inode(File *f)
 
 FRESULT FileSystemFAT :: file_rename(const TCHAR *path, const char *new_name)
 {
+    fatfs.cdir = 0;
 	return fs_rename(&fatfs, path, new_name);
 }
 
 FRESULT FileSystemFAT :: file_delete(const TCHAR *path)
 {
-	return fs_unlink(&fatfs, path);
+    fatfs.cdir = 0;
+    printf("FAT delete '%s'\n", path);
+    return fs_unlink(&fatfs, path);
 }
 
 void    FileSystemFAT :: file_close(File *f)

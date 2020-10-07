@@ -781,7 +781,7 @@ BinImage :: BinImage(const char *name)
     // actually, we could have made a ram-mapped partition as well directly, TODO
     blk = new BlockDevice_Ram(bin_data, 256, 768);
     prt = new Partition(blk, 0, 768, 0);
-    fs  = new FileSystemD64(prt);
+    fs  = new FileSystemD64(prt, true);
 }
 
 BinImage :: ~BinImage()

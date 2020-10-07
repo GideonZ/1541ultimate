@@ -128,12 +128,12 @@ bool    FileSystem_ISO9660 :: init(void)              // Initialize file system
 }
 
 // functions for reading directories
-FRESULT FileSystem_ISO9660 :: dir_open(const char *path, Directory **dir, FileInfo *info) // Opens directory (creates dir object, NULL = root)
+FRESULT FileSystem_ISO9660 :: dir_open(const char *path, Directory **dir, FileInfo *relativeDir) // Opens directory (creates dir object)
 {
     t_iso_handle *handle = new t_iso_handle;
-    if(info && info->cluster) {
-        handle->sector = info->cluster;
-        handle->remaining = info->size;
+    if(relativeDir) {
+        handle->sector = relativeDir->cluster;
+        handle->remaining = relativeDir->size;
     }
     else {
         handle->sector = root_dir_sector;
@@ -246,11 +246,16 @@ try_next:
 }
 
 // functions for reading files
-FRESULT FileSystem_ISO9660 :: file_open(const char *path, Directory *dir, const char *filename, uint8_t flags, File **f)  // Opens file (creates file object)
+FRESULT FileSystem_ISO9660 :: file_open(const char *filename, uint8_t flags, File **f, FileInfo *relativeDir)  // Opens file (creates file object)
 {
-	FileInfo info(128);
+    Directory *dir;
+    FRESULT fres = dir_open("", &dir, relativeDir);
+    if (fres != FR_OK)
+        return fres;
+
+    FileInfo info(128);
 	do {
-		FRESULT fres = dir_read(dir, &info);
+		fres = dir_read(dir, &info);
 		if (fres != FR_OK) {
 			dir_close(dir);
 			return FR_NO_FILE;

@@ -142,7 +142,7 @@ FRESULT FileSystem :: format(const char *name)
     return FR_NO_FILESYSTEM;
 }
 
-FRESULT FileSystem :: dir_open(const char *path, Directory **, FileInfo *inf)
+FRESULT FileSystem :: dir_open(const char *path, Directory **, FileInfo *relativeDir)
 {
     return FR_NO_FILESYSTEM;
 }
@@ -163,7 +163,7 @@ FRESULT FileSystem :: dir_create(const char *path)
     return FR_NO_FILESYSTEM;
 }
     
-FRESULT FileSystem :: file_open(const char *path, Directory *, const char *filename, uint8_t flags, File **)
+FRESULT FileSystem :: file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir)  // Opens file (creates file object)
 {
     return FR_NO_FILESYSTEM;
 }

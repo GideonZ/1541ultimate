@@ -41,22 +41,24 @@ public:
 	virtual PathStatus_t walk_path(PathInfo& pathInfo);
 
 	virtual bool    init();              // Initialize file system
+    virtual bool    is_writable() { return false; } // by default a file system is not writable, unless we implement it
 	virtual FRESULT format(const char *name);    // create initial structures of empty disk
     virtual FRESULT get_free (uint32_t *e) { *e = 0; return FR_OK; } // Get number of free sectors on the file system
-    virtual bool is_writable() { return false; } // by default a file system is not writable, unless we implement it
     virtual FRESULT sync(void) { return FR_OK; } // by default we can't write, and syncing is thus always successful
     
     // functions for reading directories
-    virtual FRESULT dir_open(const char *path, Directory **, FileInfo *inf = 0); // Opens directory (creates dir object, NULL = root)
+    // In the following functions 'dirCluster' is a suggestive start cluster.
+    // If other than 0 (which means root), it is assumed the path/filenames are relative to that cluster
+    virtual FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
     virtual void    dir_close(Directory *d);    // Closes (and destructs dir object)
     virtual FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
     virtual FRESULT dir_create(const char *path);  // Creates a directory
     
     // functions for reading and writing files
-    virtual FRESULT file_open(const char *path, Directory *, const char *filename, uint8_t flags, File **);  // Opens file (creates file object)
-    virtual FRESULT file_rename(const char *old_name, const char *new_name); // Renames a file
+    virtual FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
+    virtual FRESULT file_rename(const char *old_name, const char *new_name);  // Renames a file
 	virtual FRESULT file_delete(const char *path); // deletes a file
-    virtual void    file_close(File *f);
+	virtual void    file_close(File *f);
     virtual FRESULT file_read(File *f, void *buffer, uint32_t len, uint32_t *transferred);
     virtual FRESULT file_write(File *f, const void *buffer, uint32_t len, uint32_t *transferred);
     virtual FRESULT file_seek(File *f, uint32_t pos);

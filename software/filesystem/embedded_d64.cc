@@ -12,8 +12,9 @@
 FactoryRegistrator<FileInfo *, FileSystemInFile *>
 	tester_emb_d64(FileSystemInFile :: getEmbeddedFileSystemFactory(), FileSystemInFile_D64 :: test_type);
 
-FileSystemInFile_D64::FileSystemInFile_D64(int mode) {
+FileSystemInFile_D64::FileSystemInFile_D64(int mode, bool writable) {
 	this->mode = mode;
+	this->writable = writable;
 	file = 0;
 	blk = 0;
 	prt = 0;
@@ -39,17 +40,16 @@ void FileSystemInFile_D64 :: init(File *f)
 	if(blk)
 		prt = new Partition(blk, 0, f->get_size() >> 8, 0);
 	if(prt)
-		fs  = new FileSystemD64(prt);
+		fs  = new FileSystemD64(prt, writable);
 }
-
 
 FileSystemInFile *FileSystemInFile_D64 :: test_type(FileInfo *inf)
 {
     if(strcmp(inf->extension, "D64")==0)
-        return new FileSystemInFile_D64(0);
+        return new FileSystemInFile_D64(0, inf->is_writable());
     if(strcmp(inf->extension, "D71")==0)
-        return new FileSystemInFile_D64(1);
+        return new FileSystemInFile_D64(1, inf->is_writable());
     if(strcmp(inf->extension, "D81")==0)
-        return new FileSystemInFile_D64(2);
+        return new FileSystemInFile_D64(2, inf->is_writable());
     return NULL;
 }

@@ -160,7 +160,7 @@ public:
     void remove_root_entry(CachedTreeNode *obj);
 
     MountPoint *add_mount_point(File *, FileSystemInFile *);
-    MountPoint *find_mount_point(FileInfo *info, FileInfo *parent, const char *dirpath, const char *filepath);
+    MountPoint *find_mount_point(FileInfo *info, FileInfo *parent);
 
     // Functions to use / handle path objects:
     Path *get_new_path(const char *owner) {
