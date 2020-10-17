@@ -21,16 +21,18 @@ class File
 {
 	FileSystem *filesystem;
 	mstring pathString;
+	bool written;
 
 	// the following function shall only be called by the file manager
 	friend class FileManager;
-	virtual void    close(void);
+	virtual void close(void);
 public:
     void *handle;   // could be a pointer to an object used in the derived class
 
     File(FileSystem *fs, void *h) {
     	filesystem = fs;
     	handle = h;
+    	written = false;
     }
 
     virtual ~File() {
@@ -42,6 +44,8 @@ public:
     }
 
     bool isValid(void) { return (filesystem != NULL); }
+
+    bool was_written_to(void) { return written; }
 
     const char *get_path() {
     	return pathString.c_str();

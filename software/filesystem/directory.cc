@@ -2,5 +2,5 @@
 
 FRESULT Directory :: get_entry(FileInfo &info)
 {
-    return fs->dir_read(this, &info);
+    return FR_NO_FILESYSTEM; // fs->dir_read(this, &info);
 }

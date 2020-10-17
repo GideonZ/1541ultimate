@@ -345,7 +345,7 @@ int get_extension(const char *name, char *ext)
     return len;
 }
 
-void petscii_to_fat(const char *pet, char *fat)
+void petscii_to_fat(const char *pet, char *fat, int maxlen)
 {
     // clear output string
     const char *hex = "0123456789ABCDEF";
@@ -356,6 +356,10 @@ void petscii_to_fat(const char *pet, char *fat)
         if ((p < 32) || (p >= 96) || (p == ':') || (p == '/') ||
                 (p == '\\') || (p == '*') || (p == '\x22') ||
                 (p == '<') || (p == '>') || (p == '?')) {  // '|' > 96 ;)
+
+            if ((i + 4) >= maxlen) {
+                break;
+            }
             if (!escape) {
                 fat[i++] = '{';
                 escape = true;
@@ -363,6 +367,9 @@ void petscii_to_fat(const char *pet, char *fat)
             fat[i++] = hex[((uint8_t)p) >> 4];
             fat[i++] = hex[p & 15];
         } else {
+            if ((i + 2) >= maxlen) {
+                break;
+            }
             if (escape) {
                 fat[i++] = '}';
                 escape = false;

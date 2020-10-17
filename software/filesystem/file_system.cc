@@ -97,13 +97,13 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 		if (fres == FR_OK) {
 	        cbm.reset();
             while(1) {
-				fres = dir_read(dir, &info);
+				fres = dir->get_entry(info);
 				if (fres == FR_OK) {
 				    // printf("%9d: %-32s (%d)\n", info.size, info.lfname, info.cluster);
 					if (info.attrib & AM_VOL)
 						continue;
 					if (info.match_to_pattern(pathInfo.workPath.getElement(pathInfo.index), cbm)) {
-					    dir_close(dir);
+					    delete dir; // close directory
 						pathInfo.replace(info.lfname);
 						pathInfo.index++;
 						ninf = pathInfo.getNewInfoPointer();
@@ -117,8 +117,11 @@ PathStatus_t FileSystem :: walk_path(PathInfo& pathInfo)
 								return e_EntryFound;
 							}
 						}
+					} else { // no match, continue looking
+					    continue;
 					}
-				} else { // not found
+				} else { // not found, nothing else to compare to
+				    delete dir; // close directory
 					pathInfo.index ++; // we will still return something, even if it doesn't exist (for file create)
 					if (pathInfo.hasMore())
 						return e_DirNotFound;
@@ -143,17 +146,6 @@ FRESULT FileSystem :: format(const char *name)
 }
 
 FRESULT FileSystem :: dir_open(const char *path, Directory **, FileInfo *relativeDir)
-{
-    return FR_NO_FILESYSTEM;
-}
-
-void FileSystem :: dir_close(Directory *d)
-{
-	if (d)
-		delete d;
-}
-
-FRESULT FileSystem :: dir_read(Directory *d, FileInfo *f)
 {
     return FR_NO_FILESYSTEM;
 }

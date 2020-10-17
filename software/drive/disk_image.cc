@@ -971,7 +971,10 @@ void BinImage :: get_sensible_name(char *buffer)
 {
     buffer[0] = 0;
     Directory *r;
-    fs->dir_open(NULL, &r);
+    if (fs->dir_open(NULL, &r) != FR_OK) {
+        strcpy(buffer, "Unreadable.");
+        return;
+    }
     char *n;
     FileInfo fi(32);    
     r->get_entry(fi); // title
@@ -993,7 +996,7 @@ void BinImage :: get_sensible_name(char *buffer)
         if((buffer[i]>='A')&&(buffer[i]<='Z'))
             buffer[i] |= 0x20;
     }
-    fs->dir_close(r);    
+    delete r;
 }
 
 BinImage static_bin_image("Static Binary Image"); // for general use

@@ -21,16 +21,15 @@ public:
 
     // functions for reading directories
     FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
-    void    dir_close(Directory *d);    // Closes (and destructs dir object)
-    FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
 };
 
 class DirectoryInRoot : public Directory
 {
+	FileSystem *fs;
 	CachedTreeNode *node;
 	int index;
 public:
-	DirectoryInRoot(FileSystem *fs, CachedTreeNode *n) : Directory(fs, 0), node(n) {
+	DirectoryInRoot(FileSystem *fs, CachedTreeNode *n) : fs(fs), node(n) {
 		index = 0;
 	}
 	virtual ~DirectoryInRoot() { }

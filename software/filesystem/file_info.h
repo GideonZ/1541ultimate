@@ -147,7 +147,7 @@ public:
 	void generate_fat_name(char *buffer, int maxlen)
 	{
 	    if (name_format & NAME_FORMAT_CBM) {
-	        petscii_to_fat(lfname, buffer);
+	        petscii_to_fat(lfname, buffer, maxlen);
 	        add_extension(buffer, extension, maxlen);
 	    } else {
 	        buffer[maxlen-1] = 0;

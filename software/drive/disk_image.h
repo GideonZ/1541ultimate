@@ -93,7 +93,7 @@ class BinImage
 
     BlockDevice_Ram *blk;
     Partition *prt;
-    FileSystemD64 *fs;
+    FileSystemCBM *fs;
 
     int init(uint32_t size);
 public:
