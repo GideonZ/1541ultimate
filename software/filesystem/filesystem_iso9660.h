@@ -205,6 +205,18 @@ struct t_iso_handle {
     int   offset;
 };
 
+class FileSystem_ISO9660;
+
+class Directory_ISO9660 : public Directory
+{
+	t_iso_handle handle;
+	FileSystem_ISO9660 *fs;
+public:
+	Directory_ISO9660(FileSystem_ISO9660 *fs) { this->fs = fs; }
+	t_iso_handle *getHandle(void) { return &handle; }
+	FRESULT get_entry(FileInfo &inf);
+};
+
 class FileSystem_ISO9660 : public FileSystem 
 {
 protected:
@@ -219,6 +231,7 @@ protected:
     bool joliet;
     
     void get_dir_record(void *);
+    FRESULT get_dir_entry(t_iso_handle &handle, FileInfo &f);
 public:
     FileSystem_ISO9660(Partition *p);
     ~FileSystem_ISO9660();
@@ -228,8 +241,6 @@ public:
     
     // functions for reading directories
     FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
-    void 	dir_close(Directory *d);    // Closes (and destructs dir object)
-    FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
     
     // functions for reading and writing files
     FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
@@ -258,4 +269,5 @@ public:
 
     bool     needs_sorting() { return false; } // aren't files already sorted in an ISO?
 
+    friend class Directory_ISO9660;
 };

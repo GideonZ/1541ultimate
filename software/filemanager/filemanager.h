@@ -179,6 +179,7 @@ public:
 
     void  get_display_string(Path *p, const char *filename, char *buffer, int width);
 
+    FRESULT get_free(Path *path, uint32_t& free);
     FRESULT fstat(Path *path, const char *filename, FileInfo &info);
     FRESULT fstat(const char *path, const char *name, FileInfo &info);
     FRESULT fstat(const char *pathname, FileInfo &info);

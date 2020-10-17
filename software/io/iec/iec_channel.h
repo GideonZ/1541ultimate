@@ -95,7 +95,11 @@ public:
 
         if (inf->name_format & NAME_FORMAT_CBM) {
             // Format is already CBM; simply copy the parts together
-            memcpy(out, ext, 3);
+            if (inf->attrib & AM_DIR) {
+                memcpy(out, "DIR", 3);
+            } else {
+                memcpy(out, ext, 3);
+            }
             strncpy(out+3, inf->lfname, 16);
         } else {
             bool cutExtension = false;
@@ -328,6 +332,7 @@ class IecChannel
     File *f;
     int  dir_index;
     int  dir_last;
+    uint32_t dir_free;
     IecPartition *dirPartition;
     t_channel_state state;
     mstring dirpattern;

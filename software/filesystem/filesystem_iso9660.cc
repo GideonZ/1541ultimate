@@ -130,8 +130,11 @@ bool    FileSystem_ISO9660 :: init(void)              // Initialize file system
 // functions for reading directories
 FRESULT FileSystem_ISO9660 :: dir_open(const char *path, Directory **dir, FileInfo *relativeDir) // Opens directory (creates dir object)
 {
-    t_iso_handle *handle = new t_iso_handle;
-    if(relativeDir) {
+	Directory_ISO9660 *dd = new Directory_ISO9660(this);
+	t_iso_handle *handle = dd->getHandle();
+	*dir = dd;
+
+	if ((relativeDir) && (relativeDir->cluster)) {
         handle->sector = relativeDir->cluster;
         handle->remaining = relativeDir->size;
     }
@@ -142,67 +145,64 @@ FRESULT FileSystem_ISO9660 :: dir_open(const char *path, Directory **dir, FileIn
 
     handle->start  = handle->sector;
     handle->offset = 0;
-    *dir = new Directory(this, handle);
+
+	// FIXME: If path is a string, we should walk the subdirs to find it!
     return FR_OK;
 }
 
-void FileSystem_ISO9660 :: dir_close(Directory *d)    // Closes (and destructs dir object)
+FRESULT Directory_ISO9660 :: get_entry(FileInfo &f) // reads next entry from dir
 {
-    t_iso_handle *handle = (t_iso_handle *)d->handle;
-    delete handle;
-    delete d;
+	return fs->get_dir_entry(handle, f);
 }
 
-FRESULT FileSystem_ISO9660 :: dir_read(Directory *d, FileInfo *f) // reads next entry from dir
+FRESULT FileSystem_ISO9660 :: get_dir_entry(t_iso_handle &handle, FileInfo &f)
 {
-    t_iso_handle *handle = (t_iso_handle *)d->handle;
-
 try_next:
-//	printf("Handle: Sector: %d. Offset: %d Remaining: %d\n", handle->sector, handle->offset, handle->remaining);
+//	printf("Handle: Sector: %d. Offset: %d Remaining: %d\n", handle.sector, handle.offset, handle.remaining);
 
-	if (handle->remaining <= handle->offset) {
+	if (handle.remaining <= handle.offset) {
 		return FR_NO_FILE;
 	}
 
-	if(last_read_sector != handle->sector) {
-        DRESULT status = prt->read(sector_buffer, handle->sector, 1);
+	if(last_read_sector != handle.sector) {
+        DRESULT status = prt->read(sector_buffer, handle.sector, 1);
         //dump_hex(sector_buffer, sector_size);
-        last_read_sector = handle->sector;
+        last_read_sector = handle.sector;
     }
-	get_dir_record(&sector_buffer[handle->offset]);
+	get_dir_record(&sector_buffer[handle.offset]);
 
-    if((!dir_record.actual.record_length)||(handle->offset >= sector_size)) {
+    if((!dir_record.actual.record_length)||(handle.offset >= sector_size)) {
         // lets try the following sector, in case offset != 0
-        if (handle->offset == 0)
+        if (handle.offset == 0)
             return FR_NO_FILE;
-        handle->sector ++;
-        handle->offset = 0;
-        handle->remaining -= sector_size;
+        handle.sector ++;
+        handle.offset = 0;
+        handle.remaining -= sector_size;
 		goto try_next;
     }
 
     // skip . and ..
     if(dir_record.actual.identifier_length == 1) {
         if((dir_record.identifier[0] == 0) || (dir_record.identifier[0] == 1)) {
-            handle->offset += int(dir_record.actual.record_length);
+            handle.offset += int(dir_record.actual.record_length);
             goto try_next;
         }
     }
 
-    f->cluster    = dir_record.actual.sector;
-//    f->dir_clust  = handle->start;
-    f->attrib     = (dir_record.actual.flags & 0x02)?(AM_DIR):0;
-    f->fs         = this;
-    f->size       = dir_record.actual.file_size;
+    f.cluster    = dir_record.actual.sector;
+//    f.dir_clust  = handle.start;
+    f.attrib     = (dir_record.actual.flags & 0x02)?(AM_DIR):0;
+    f.fs         = this;
+    f.size       = dir_record.actual.file_size;
     // get filename
     int ident_len = int(dir_record.actual.identifier_length);
     char *ident = dir_record.identifier;
-    char *dest = f->lfname;
+    char *dest = f.lfname;
     if(joliet) {
         ident_len >>= 1; // copy only half of the chars
     }
-    if(ident_len >= f->lfsize)  // truncate
-        ident_len = f->lfsize-1;
+    if(ident_len >= f.lfsize)  // truncate
+        ident_len = f.lfsize-1;
     for(int i=0;i<ident_len;i++) {
         if(joliet)
             ident++;
@@ -211,8 +211,8 @@ try_next:
     *(dest) = 0;
 
     // eliminate version string ;1
-    if(!(f->attrib & AM_DIR)) {
-        while(dest != f->lfname) {
+    if(!(f.attrib & AM_DIR)) {
+        while(dest != f.lfname) {
             if(*(--dest) == ';') {
                 *dest = 0;
                 break;
@@ -220,7 +220,7 @@ try_next:
         }    
     }
     // get extension
-    f->extension[0] = 0;
+    f.extension[0] = 0;
     ident_len = int(dir_record.actual.identifier_length);
     int pos = ident_len-1;
     ident = &(dir_record.identifier[ident_len-1]);
@@ -229,18 +229,18 @@ try_next:
             for(int i=0;i<3;i++) {
                 pos += (joliet)?2:1;
                 if(pos < ident_len)
-                    f->extension[i] = toupper(dir_record.identifier[pos]);
+                    f.extension[i] = toupper(dir_record.identifier[pos]);
                 else
-                    f->extension[i] = 0;
+                    f.extension[i] = 0;
             }
             break;
         }
         pos -= (joliet)?2:1;
     }            
-    f->extension[3] = 0;
+    f.extension[3] = 0;
     
     // move to next
-    handle->offset += int(dir_record.actual.record_length);
+    handle.offset += int(dir_record.actual.record_length);
 
     return FR_OK;
 }
@@ -255,9 +255,9 @@ FRESULT FileSystem_ISO9660 :: file_open(const char *filename, uint8_t flags, Fil
 
     FileInfo info(128);
 	do {
-		fres = dir_read(dir, &info);
+		fres = dir->get_entry(info);
 		if (fres != FR_OK) {
-			dir_close(dir);
+			delete dir;
 			return FR_NO_FILE;
 		}
 		if (info.attrib & AM_VOL)
@@ -267,7 +267,7 @@ FRESULT FileSystem_ISO9660 :: file_open(const char *filename, uint8_t flags, Fil
 		}
 	} while(1);
 
-	dir_close(dir);
+	delete dir;
 
     t_iso_handle *handle = new t_iso_handle;
     handle->sector    = info.cluster;

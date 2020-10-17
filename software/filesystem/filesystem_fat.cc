@@ -21,27 +21,6 @@ FileSystemFAT :: ~FileSystemFAT()
 
 }
 
-//private
-void FileSystemFAT :: copy_info(FILINFO *fi, FileInfo *inf)
-{
-	inf->fs = this;
-	inf->attrib = fi->fattrib;
-	inf->size = fi->fsize;
-	inf->date = fi->fdate;
-	inf->time = fi->ftime;
-
-#if _USE_LFN
-	get_extension(fi->fname, inf->extension);
-	inf->cluster = fi->fclust;
-
-	if(!(*inf->lfname)) {
-		strncpy(inf->lfname, fi->fname, inf->lfsize);
-	}
-#else
-	strncpy(inf->lfname, fi->fname, inf->lfsize);
-#endif
-}
-
 bool    FileSystemFAT :: init(void)
 {
 	fs_init_volume(&fatfs, 0);
@@ -71,53 +50,35 @@ FRESULT FileSystemFAT :: dir_open(const TCHAR *path, Directory **dirout, FileInf
 {
 	*dirout = 0;
 
-	printf("FAT Open DIR: %s\n", path);
-
-	DIR *dp = new DIR;
+	DirectoryFAT *dir = new DirectoryFAT(this);
 	FRESULT res;
+	if (!path) {
+	    path = "";
+	}
 
-	if (relativeDir) {
-        relativeDir->print_info();
+	if ((relativeDir) && (relativeDir->cluster)) {
         fatfs.cdir = relativeDir->cluster;
     } else {
         fatfs.cdir = 0;
     }
-
-	if(path) {
-		res = fs_opendir(&fatfs, dp, path);
-	} else {
-		res = FR_INVALID_PARAMETER;
-	}
+    res = fs_opendir(&fatfs, dir->getDIR(), path);
 
 	if (res == FR_OK) {
-		*dirout = new Directory(this, dp);
+		*dirout = dir;
 	} else {
-		delete dp;
+		delete dir;
 	}
 	return res;
 }
 
 void FileSystemFAT :: dir_close(Directory *d)
 {
-	DIR *dir = (DIR *)d->handle;
-	f_closedir(dir);
-	delete dir;
 	delete d;
 }
 
 FRESULT FileSystemFAT :: dir_read(Directory *d, FileInfo *f)
 {
-	DIR *dir = (DIR *)d->handle;
-	FILINFO inf;
-#if _USE_LFN
-	inf.lfname = f->lfname;
-	inf.lfsize = f->lfsize;
-#endif
-	FRESULT res = f_readdir(dir, &inf);
-	if (dir->sect == 0)
-		return FR_NO_FILE;
-	copy_info(&inf, f);
-	return res;
+	return d->get_entry(*f);
 }
 
 FRESULT FileSystemFAT :: dir_create(const TCHAR *path)
@@ -135,9 +96,7 @@ FRESULT FileSystemFAT :: format(const char *name)
 
 FRESULT FileSystemFAT :: file_open(const char *filename, uint8_t flags, File **file, FileInfo *relativeDir)
 {
-	printf("FAT Open file: %s\n", filename);
 	if (relativeDir) {
-	    relativeDir->print_info();
 	    fatfs.cdir = relativeDir->cluster;
 	} else {
 	    fatfs.cdir = 0;
@@ -176,7 +135,6 @@ FRESULT FileSystemFAT :: file_rename(const TCHAR *path, const char *new_name)
 FRESULT FileSystemFAT :: file_delete(const TCHAR *path)
 {
     fatfs.cdir = 0;
-    printf("FAT delete '%s'\n", path);
     return fs_unlink(&fatfs, path);
 }
 

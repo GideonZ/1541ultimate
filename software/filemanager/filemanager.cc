@@ -193,7 +193,7 @@ FRESULT FileManager :: get_directory(Path *p, IndexedList<FileInfo *> &target, c
             }
 			target.append(new FileInfo(info));
 		}
-		fs->dir_close(dir);
+		delete dir;
 	}
 	unlock();
 	if (fs->needs_sorting()) {
@@ -219,7 +219,8 @@ FRESULT FileManager :: print_directory(const char *path)
 		FileInfo info(INFO_SIZE);
 		mstring pathFromFSRoot;
 		fs = pathInfo.getLastInfo()->fs;
-		fres = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir, pathInfo.getLastInfo());
+		//fres = fs->dir_open(pathInfo.getPathFromLastFS(pathFromFSRoot), &dir, pathInfo.getLastInfo());
+        fres = fs->dir_open(NULL, &dir, pathInfo.getLastInfo());
 		if (fres == FR_OK) {
 			while(1) {
 				fres = dir->get_entry(info);
@@ -227,7 +228,7 @@ FRESULT FileManager :: print_directory(const char *path)
 					break;
 				printf("%32s (%s) %10d\n", info.lfname, (info.attrib &AM_DIR)?"DIR ":"FILE", info.size);
 			}
-			fs->dir_close(dir);
+			delete dir;
 		}
 		printf("***\n");
 	}
@@ -400,6 +401,21 @@ FRESULT FileManager :: fopen_impl(PathInfo &pathInfo, uint8_t flags, File **file
 	return fres;
 }
 
+FRESULT FileManager :: get_free(Path *path, uint32_t& free)
+{
+    PathInfo pathInfo(rootfs);
+    pathInfo.init(path);
+    FRESULT fres = find_pathentry(pathInfo, true);
+    if (fres != FR_OK) {
+        return fres;
+    }
+    FileInfo *inf = pathInfo.getLastInfo();
+    if (!inf || !(inf->fs)) {
+        return FR_NO_FILESYSTEM;
+    }
+    return inf->fs->get_free(&free);
+}
+
 FRESULT FileManager :: fstat(Path *path, const char *filename, FileInfo &info)
 {
 	PathInfo pathInfo(rootfs);
@@ -444,6 +460,10 @@ void FileManager :: fclose(File *f)
 	}
 	else {
 		printf("ERR: Closing invalidated file.\n");
+	}
+//	printf("CLOSE '%s'\n", f->get_path());
+	if (f->was_written_to()) {
+	    sendEventToObservers(eNodeUpdated, f->get_path(), "*");
 	}
 	open_file_list.remove(f);
 	f->close();

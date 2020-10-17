@@ -11,6 +11,57 @@
 #include "file_system.h"
 #include "ff2.h"
 
+class DirectoryFAT : public Directory
+{
+	DIR *fatdir;
+	FileSystem *fs;
+
+	void copy_info(FILINFO *fi, FileInfo *inf)
+	{
+		inf->fs = fs;
+		inf->attrib = fi->fattrib;
+		inf->size = fi->fsize;
+		inf->date = fi->fdate;
+		inf->time = fi->ftime;
+
+	#if _USE_LFN
+		get_extension(fi->fname, inf->extension);
+		inf->cluster = fi->fclust;
+
+		if(!(*inf->lfname)) {
+			strncpy(inf->lfname, fi->fname, inf->lfsize);
+		}
+	#else
+		strncpy(inf->lfname, fi->fname, inf->lfsize);
+	#endif
+	}
+
+public:
+	DirectoryFAT(FileSystem *fs) {
+		this->fs = fs;
+		fatdir = new DIR;
+	}
+	~DirectoryFAT() {
+		f_closedir(fatdir);
+		delete fatdir;
+    }
+
+    DIR *getDIR(void) { return fatdir; }
+
+    FRESULT get_entry(FileInfo &out) {
+    	FILINFO inf;
+    #if _USE_LFN
+    	inf.lfname = out.lfname;
+    	inf.lfsize = out.lfsize;
+    #endif
+    	FRESULT res = f_readdir(fatdir, &inf);
+    	if (fatdir->sect == 0)
+    		return FR_NO_FILE;
+    	copy_info(&inf, &out);
+    	return res;
+    }
+};
+
 class FileSystemFAT : public FileSystem
 {
 	FATFS fatfs;

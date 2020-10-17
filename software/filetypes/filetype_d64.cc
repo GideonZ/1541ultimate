@@ -55,7 +55,6 @@ FileTypeD64 :: ~FileTypeD64()
 
 }
 
-
 int FileTypeD64 :: fetch_context_items(IndexedList<Action *> &list)
 {
     int count = 0;

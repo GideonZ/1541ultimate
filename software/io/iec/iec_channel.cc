@@ -28,6 +28,7 @@ IecChannel :: IecChannel(IecInterface *intf, int ch)
     recordSize = 0;
     recordOffset = 0;
     recordDirty = false;
+    dir_free = 0;
 }
 
 IecChannel :: ~IecChannel()
@@ -127,8 +128,13 @@ int IecChannel :: pop_data(void)
 int IecChannel :: read_dir_entry(void)
 {
     if(dir_index >= dir_last) {
-        buffer[2] = 9999 & 255;
-        buffer[3] = 9999 >> 8;
+        if (dir_free > 65535) {
+            buffer[2] = 0xFF;
+            buffer[3] = 0xFF;
+        } else {
+            buffer[2] = (uint8_t)(dir_free & 0xFF);
+            buffer[3] = (uint8_t)(dir_free >> 8);
+        }
         memcpy(&buffer[4], "BLOCKS FREE.             \0\0\0", 28);
         last_byte = 31;
         pointer = 0;
@@ -563,6 +569,8 @@ int IecChannel :: setup_directory_read(name_t& name)
         state = e_error;
         return -1;
     }
+
+    fm->get_free(dirPartition->GetPath(), dir_free);
     interface->get_command_channel()->set_error(ERR_OK, 0, 0);
     dir_last = dirPartition->GetDirItemCount();
     state = e_dir;
@@ -574,10 +582,23 @@ int IecChannel :: setup_directory_read(name_t& name)
     memcpy(buffer, c_header, 32);
     buffer[4] = (uint8_t)dirPartition->GetPartitionNumber();
 
-    const char *fullname = dirPartition->GetFullPath();
-    int pos = 8;
-    while((pos < 23) && (*fullname))
-        buffer[pos++] = toupper(*(fullname++));
+    // If we are listing a CBM medium, let's use the volume indicator
+    FileInfo *header = dirPartition->GetSystemFile(0);
+    if ((header->attrib & AM_VOL) && (header->name_format & NAME_FORMAT_CBM)) {
+        for(int i=0;i<20;i++) {
+            buffer[8+i] = header->lfname[i] & 0x7F;
+        }
+        buffer[8+16] = 0x22;
+    } else {
+        const char *fullname = dirPartition->GetFullPath();
+        int pos = 8;
+        int len = strlen(fullname);
+        if (len > 16) {
+            fullname += (len - 16);
+        }
+        while((pos < 24) && (*fullname))
+            buffer[pos++] = toupper(*(fullname++));
+    }
     dir_index = 0;
     return 0;
 }
@@ -620,21 +641,21 @@ int IecChannel :: setup_file_access(name_t& name)
             state = e_error;
             return 0;
         }
-        petscii_to_fat(name.name, fs_filename); // we may convert it back later!!
+        petscii_to_fat(name.name, fs_filename, 64); // we may convert it back later!!
         //strcpy(fs_filename, name.name);
         strcat(fs_filename, name.extension);
         flags = FA_WRITE|FA_CREATE_NEW|FA_CREATE_ALWAYS;
         break;
 
     case e_replace:
-        petscii_to_fat(name.name, fs_filename);
+        petscii_to_fat(name.name, fs_filename, 64);
         //strcpy(fs_filename, name.name);
         strcat(fs_filename, name.extension);
         flags = FA_WRITE|FA_CREATE_ALWAYS;
         break;
 
     case e_relative:
-        petscii_to_fat(name.name, fs_filename);
+        petscii_to_fat(name.name, fs_filename, 64);
         strcat(fs_filename, name.extension);
         flags = FA_READ | FA_WRITE | FA_OPEN_ALWAYS;
         break;

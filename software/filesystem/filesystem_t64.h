@@ -15,20 +15,18 @@
 class FileSystemT64 : public FileSystem
 {
 	File *t64_file;
-	int max, used;
-	uint16_t strt, stop;
 
 	void    openT64File();
 public:
     FileSystemT64(File *file);
     ~FileSystemT64();
 
+    File *getFile() { return t64_file; }
+
     FRESULT get_free (uint32_t*);        // Get number of free sectors on the file system
 
     // functions for reading directories
     FRESULT dir_open(const char *path, Directory **, FileInfo *relativeDir = 0); // Opens directory (creates dir object)
-    void    dir_close(Directory *d);    // Closes (and destructs dir object)
-    FRESULT dir_read(Directory *d, FileInfo *f); // reads next entry from dir
 
     // functions for reading and writing files
     FRESULT file_open(const char *filename, uint8_t flags, File **, FileInfo *relativeDir = 0);  // Opens file (creates file object)
@@ -39,6 +37,24 @@ public:
     FRESULT sync();
 
     friend class FileInT64;
+};
+
+class DirectoryT64 : public Directory
+{
+	FileSystemT64 *fs;
+	uint32_t idx;
+	File *t64_file;
+	int max, used;
+	uint16_t strt, stop;
+public:
+	DirectoryT64(FileSystemT64 *fs) {
+		this->fs = fs;
+		t64_file = fs->getFile();
+		idx = 0;
+	}
+	~DirectoryT64() { }
+
+    FRESULT get_entry(FileInfo &out);
 };
 
 class FileInT64
